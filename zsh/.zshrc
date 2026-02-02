@@ -146,6 +146,7 @@ alias reload='source ~/.zshrc && clear'
 
 alias encrypt='ansible-vault encrypt'
 alias decrypt='ansible-vault decrypt'
+alias lg='lazygit'
 
 alias workspace='cd ~/workspace/github.com/bcorey85'
 

@@ -9,7 +9,9 @@ export ZSH="$HOME/.oh-my-zsh"
 # load a random theme each time oh-my-zsh is loaded, in which case,
 # to know which specific one was loaded, run: echo $RANDOM_THEME
 # See https://github.com/ohmyzsh/ohmyzsh/wiki/Themes
-ZSH_THEME="robbyrussell"
+
+# ZSH_THEME="powerlevel10k/powerlevel10k"
+# typeset -g POWERLEVEL9K_INSTANT_PROMPT=quiet
 
 # Set list of themes to pick from when loading at random
 # Setting this variable when ZSH_THEME=random will cause zsh to load
@@ -69,7 +71,7 @@ ZSH_THEME="robbyrussell"
 # Custom plugins may be added to $ZSH_CUSTOM/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(git)
+plugins=(git zsh-syntax-highlighting zsh-autosuggestions)
 
 source $ZSH/oh-my-zsh.sh
 
@@ -98,8 +100,6 @@ source $ZSH/oh-my-zsh.sh
 # Example aliases
 # alias zshconfig="mate ~/.zshrc"
 # alias ohmyzsh="mate ~/.oh-my-zsh"
-export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
-eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 
 alias yrw="yarn run watch"
 
@@ -115,13 +115,41 @@ function djc() {
     python manage.py runserver
 }
 
+function pro() {
+    project=$1
+    base=~/Desktop/dev
+
+    if [ "$project" = "ps" ]
+    then
+        code "$base/saitama"
+    elif [ "$project" = "lf" ]
+    then
+        code "$base/legalfit"
+    elif [ "$project" = "st" ]
+    then
+        code "$base/starfield"
+    else
+        code "$base/$project"
+    fi
+}
+
+function kill_port() {
+    if [[ -n "$1" && "$1" =~ ^[0-9]+$ ]]; then
+        lsof -t -i:$1 | xargs kill -9
+        echo "Killing process running on port $1"
+    else
+        echo "Usage: kill_port <port_number>"
+        echo "Error: Invalid or missing port number."
+    fi
+}
+
 alias dj="python manage.py"
 alias djlu="python manage.py load_users"
 alias djrs="python manage.py runserver"
 alias djic="python manage.py init_client"
 alias djsc="python manage.py switch_client"
 alias djlcd="python manage.py load_client_data"
-alias djld="python manage.py load_database --environment"
+alias djldb="python manage.py load_database"
 alias djtqc="python manage.py task_queue_celery"
 
 alias gcm='git checkout master'
@@ -130,6 +158,7 @@ alias gf="git fetch"
 alias gmom="git merge origin/master"
 alias grom="git rebase -i origin/master"
 alias gpou='git push origin -u'
+alias gpf='git push --force-with-lease'
 alias ga='git add --all'
 alias gcom='git commit -m'
 alias gs='git switch'
@@ -142,47 +171,40 @@ alias rfs='./run_frontend_server'
 alias rtqa='./run_task_queue_all'
 
 alias zshrc='code ~/.zshrc'
-alias reload='source ~/.zshrc && clear'
 
-alias encrypt='ansible-vault encrypt'
-alias decrypt='ansible-vault decrypt'
-alias lg='lazygit'
+alias brew86="arch -x86_64 /usr/local/homebrew/bin/brew"
+alias brewARM="/opt/homebrew/bin/brew"
 
-alias workspace='cd ~/workspace/github.com/bcorey85'
+alias reload="source ~/.zshrc && clear && echo 'Reloaded .zshrc'"
+alias dev="cd ~/dev && ls"
 
+export EDITOR='nvim'
 export PYENV_ROOT="$HOME/.pyenv"
 export PATH="$PYENV_ROOT/bin:$PATH"
-
 eval "$(pyenv init --path)"
-eval "$(pyenv init -)"
 eval "$(pyenv virtualenv-init -)"
 
 export PIPENV_VERBOSITY=-1
+export PATH="/opt/homebrew/opt/node@18/bin:$PATH"
 
 export GRPC_PYTHON_BUILD_SYSTEM_OPENSSL=1
 export GRPC_PYTHON_BUILD_SYSTEM_ZLIB=1
-
-# --- Homebrew build helpers (opt-in only) ---
-brew-build() {
-  export LDFLAGS="-L$(brew --prefix zlib)/lib -L$(brew --prefix openssl)/lib -L$(brew --prefix xz)/lib -L$(brew --prefix bzip2)/lib"
-  export CPPFLAGS="-I$(brew --prefix zlib)/include -I$(brew --prefix openssl)/include -I$(brew --prefix xz)/include -I$(brew --prefix bzip2)/include"
-  exec "$SHELL"
-}
-
-brew-unbuild() {
-  unset LDFLAGS CPPFLAGS
-  exec "$SHELL"
-}
+export LDFLAGS="-L$(brew --prefix zlib)/lib -L$(brew --prefix openssl)/lib\
+ -L$(brew --prefix xz)/lib -L$(brew --prefix bzip2)/lib"
+export CPPFLAGS="-I$(brew --prefix zlib)/include -I$(brew --prefix openssl)/include\
+ -I$(brew --prefix xz)/include -I$(brew --prefix bzip2)/include"
 
 export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+  [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+export PATH="/opt/homebrew/opt/openssl@3/bin:$PATH"
 
-eval $(ssh-agent -s)
+eval "$(starship init zsh)"
 
-. "$HOME/.local/bin/env"
-eval "$(direnv hook zsh)"
-export PATH="/home/linuxbrew/.linuxbrew/opt/postgresql@16/bin:$PATH"
+export TERM=xterm-256color
 
-# Dotfiles management
-alias dotfiles='/usr/bin/git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME'
+alias lg="lazygit"
+export FZF_DEFAULT_COMMAND='fd'
+
+[[ "$TERM_PROGRAM" == "kiro" ]] && . "$(kiro --locate-shell-integration-path zsh)"
+export PATH="/Users/legalfit/.local/bin:$PATH"

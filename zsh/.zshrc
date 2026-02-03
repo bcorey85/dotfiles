@@ -101,7 +101,6 @@ source $ZSH/oh-my-zsh.sh
 # alias zshconfig="mate ~/.zshrc"
 # alias ohmyzsh="mate ~/.oh-my-zsh"
 
-alias yrw="yarn run watch"
 
 function djc() {
     python manage.py init_client "$1"
@@ -151,6 +150,8 @@ alias djsc="python manage.py switch_client"
 alias djlcd="python manage.py load_client_data"
 alias djldb="python manage.py load_database"
 alias djtqc="python manage.py task_queue_celery"
+
+alias yrw="yarn run watch"
 
 alias gcm='git checkout master'
 alias gcb='git checkout -b'
@@ -207,4 +208,5 @@ alias lg="lazygit"
 export FZF_DEFAULT_COMMAND='fd'
 
 [[ "$TERM_PROGRAM" == "kiro" ]] && . "$(kiro --locate-shell-integration-path zsh)"
-export PATH="/Users/legalfit/.local/bin:$PATH"
+[[ -f /home/linuxbrew/.linuxbrew/bin/brew ]] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+export PATH="$HOME/.local/bin:$PATH"

@@ -1,0 +1,66 @@
+{
+  "Vue Component with Props": {
+    "prefix": "vprops",
+    "body": [
+      "<template>",
+      "  <div class=\"${1:component-name}\">",
+      "    $0",
+      "  </div>",
+      "</template>",
+      "",
+      "<script setup lang=\"ts\">",
+      "interface Props {",
+      "  ${2:propName}: ${3:string}",
+      "}",
+      "",
+      "const props = defineProps<Props>()",
+      "</script>",
+      "",
+      "<style scoped>",
+      ".${1:component-name} {",
+      "  /* styles */",
+      "}",
+      "</style>"
+    ],
+    "description": "Vue component with TypeScript props"
+  },
+  "Vue Composable": {
+    "prefix": "vcomposable",
+    "body": [
+      "import { ref } from 'vue'",
+      "",
+      "export function use${1:Name}() {",
+      "  const ${2:state} = ref(${3:initialValue})",
+      "",
+      "  const ${4:method} = () => {",
+      "    $0",
+      "  }",
+      "",
+      "  return {",
+      "    ${2:state},",
+      "    ${4:method}",
+      "  }",
+      "}"
+    ],
+    "description": "Vue composable function"
+  },
+  "Vue 3 Component with SCSS": {
+    "prefix": "vbase-scss",
+    "body": [
+      "<template>",
+      "  <div>",
+      "    $0",
+      "  </div>",
+      "</template>",
+      "",
+      "<script setup lang=\"ts\">",
+      "",
+      "</script>",
+      "",
+      "<style scoped lang=\"scss\">",
+      "",
+      "</style>"
+    ],
+    "description": "Vue 3 base component with TypeScript and SCSS"
+  }
+}

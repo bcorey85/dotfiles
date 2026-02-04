@@ -1,0 +1,18 @@
+{
+  "model": "Opus",
+  "statusLine": {
+    "type": "command",
+    "command": "bash /home/bc/.claude/statusline-command.sh"
+  },
+  "enabledPlugins": {
+    "ralph-loop@claude-plugins-official": true,
+    "context7@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": true,
+    "figma@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true,
+    "chrome-devtools-mcp@chrome-devtools-plugins": true,
+    "lua-lsp@claude-plugins-official": true
+  }
+}

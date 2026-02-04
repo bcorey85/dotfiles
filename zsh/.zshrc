@@ -116,19 +116,19 @@ function djc() {
 
 function pro() {
     project=$1
-    base=~/Desktop/dev
+    base=~/dev
 
     if [ "$project" = "ps" ]
     then
-        code "$base/saitama"
+        cd "$base/saitama"
     elif [ "$project" = "lf" ]
     then
-        code "$base/legalfit"
+        cd "$base/legalfit"
     elif [ "$project" = "st" ]
     then
-        code "$base/starfield"
+        cd "$base/starfield"
     else
-        code "$base/$project"
+        cd "$base/$project"
     fi
 }
 

@@ -4,3 +4,9 @@
 
 -- Load clipboard configuration
 require("config.clipboard")
+
+-- Keep cursor centered with padding
+vim.opt.scrolloff = 30
+
+-- Smaller scroll distance for C-d/C-u (default is half screen)
+vim.opt.scroll = 10

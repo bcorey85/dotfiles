@@ -25,6 +25,7 @@ return {
     diff_opts = {
       auto_close_on_accept = true,
       vertical_split = true,
+      show_native_diff = false,
     },
   },
 }

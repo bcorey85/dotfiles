@@ -10,3 +10,11 @@ vim.keymap.set("i", "kk", "<Esc>", { desc = "Exit insert mode" })
 
 -- Source current file
 vim.keymap.set("n", "<leader>so", ":source %<CR>", { desc = "Source current file" })
+
+-- Keep cursor centered when scrolling
+vim.keymap.set("n", "<C-d>", "<C-d>zz", { desc = "Scroll down and center" })
+vim.keymap.set("n", "<C-u>", "<C-u>zz", { desc = "Scroll up and center" })
+
+-- Keep cursor centered when searching
+vim.keymap.set("n", "n", "nzzzv", { desc = "Next search result and center" })
+vim.keymap.set("n", "N", "Nzzzv", { desc = "Previous search result and center" })

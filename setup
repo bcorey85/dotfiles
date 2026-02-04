@@ -125,9 +125,20 @@ stow_dotfiles() {
         mv ~/.zshrc ~/.zshrc.backup.$(date +%Y%m%d_%H%M%S)
     fi
 
+    # Backup existing claude config
+    if [ -d ~/.claude ] && [ ! -L ~/.claude ]; then
+        print_info "Backing up existing claude config..."
+        mv ~/.claude ~/.claude.backup.$(date +%Y%m%d_%H%M%S)
+    fi
+
     # Stow configs
-    stow -R nvim tmux zsh
+    stow -R nvim tmux zsh claude
     print_success "Symlinks created"
+}
+
+# Setup Claude Code plugins (delegated to separate script)
+setup_claude() {
+    "$DOTFILES_DIR/setup-claude-plugins"
 }
 
 # Change default shell to zsh
@@ -149,6 +160,8 @@ main() {
     echo ""
     stow_dotfiles
     echo ""
+    setup_claude
+    echo ""
     setup_zsh
     echo ""
     print_success "Setup complete!"
@@ -157,6 +170,7 @@ main() {
     echo "  1. Restart your terminal"
     echo "  2. Open Neovim and run: :Lazy sync"
     echo "  3. Run: :checkhealth"
+    echo "  4. If Claude Code was not installed, run: ./setup-claude-plugins"
     echo ""
 }
 

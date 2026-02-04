@@ -1,0 +1,46 @@
+#!/bin/bash
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_info() { echo -e "${YELLOW}→${NC} $1"; }
+
+if ! command -v claude &> /dev/null; then
+    print_info "Claude Code not installed, skipping plugin setup"
+    print_info "Install Claude Code first, then run: ./setup-claude-plugins"
+    echo "  npm install -g @anthropic-ai/claude-code"
+    exit 0
+fi
+
+print_info "Configuring Claude Code marketplaces..."
+
+# Add official marketplace
+claude mcp add-registry claude-plugins-official https://cdn.jsdelivr.net/gh/anthropics/claude-plugins-official@main/registry.json 2>/dev/null || true
+
+# Add chrome-devtools marketplace
+claude mcp add-registry chrome-devtools-plugins https://cdn.jsdelivr.net/gh/nicobytes/chrome-devtools-plugins@main/registry.json 2>/dev/null || true
+
+print_success "Marketplaces configured"
+
+print_info "Installing Claude Code plugins..."
+
+# Install plugins from official marketplace
+OFFICIAL_PLUGINS="ralph-loop context7 playwright security-guidance figma frontend-design code-review lua-lsp"
+for plugin in $OFFICIAL_PLUGINS; do
+    print_info "Installing $plugin..."
+    claude mcp install "$plugin@claude-plugins-official" 2>/dev/null || true
+done
+
+# Install chrome-devtools plugin
+print_info "Installing chrome-devtools-mcp..."
+claude mcp install "chrome-devtools-mcp@chrome-devtools-plugins" 2>/dev/null || true
+
+print_success "Claude Code plugins installed"
+echo ""
+print_info "Restart Claude Code to load the plugins"

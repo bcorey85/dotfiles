@@ -18,3 +18,16 @@ vim.keymap.set("n", "<C-u>", "<C-u>zz", { desc = "Scroll up and center" })
 -- Keep cursor centered when searching
 vim.keymap.set("n", "n", "nzzzv", { desc = "Next search result and center" })
 vim.keymap.set("n", "N", "Nzzzv", { desc = "Previous search result and center" })
+
+-- Copy file paths
+vim.keymap.set("n", "<leader>fy", function()
+  local path = vim.fn.expand("%")
+  vim.fn.setreg("+", path)
+  Snacks.notify("Copied: " .. path)
+end, { desc = "Copy relative path" })
+
+vim.keymap.set("n", "<leader>fY", function()
+  local path = vim.fn.expand("%:p")
+  vim.fn.setreg("+", path)
+  Snacks.notify("Copied: " .. path)
+end, { desc = "Copy absolute path" })

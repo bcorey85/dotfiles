@@ -1,20 +1,11 @@
 return {
   -- Configure tokyonight theme
   {
-    "folke/tokyonight.nvim",
+    "olimorris/onedarkpro.nvim",
     lazy = false,
     priority = 1000,
-    opts = {
-      style = "night", -- storm, moon, night, day
-      transparent = false,
-      styles = {
-        sidebars = "dark",
-        floats = "dark",
-      },
-    },
     config = function(_, opts)
-      require("tokyonight").setup(opts)
-      vim.cmd([[colorscheme tokyonight-night]])
+      vim.cmd([[colorscheme onedark]])
     end,
   },
 

@@ -13,7 +13,7 @@ return {
   opts = {
     terminal = {
       split_side = "right",
-      split_width_percentage = 0.35,
+      split_width_percentage = 0.20,
       provider = "snacks",
       snacks_win_opts = {
         wo = {
@@ -26,6 +26,8 @@ return {
       auto_close_on_accept = true,
       vertical_split = true,
       show_native_diff = false,
+      open_in_current_tab = false,
+      keep_terminal_focus = true,
     },
   },
 }

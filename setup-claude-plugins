@@ -18,28 +18,23 @@ if ! command -v claude &> /dev/null; then
     exit 0
 fi
 
-print_info "Configuring Claude Code marketplaces..."
-
-# Add official marketplace
-claude mcp add-registry claude-plugins-official https://cdn.jsdelivr.net/gh/anthropics/claude-plugins-official@main/registry.json 2>/dev/null || true
-
-# Add chrome-devtools marketplace
-claude mcp add-registry chrome-devtools-plugins https://cdn.jsdelivr.net/gh/nicobytes/chrome-devtools-plugins@main/registry.json 2>/dev/null || true
-
+print_info "Adding marketplaces..."
+claude plugin marketplace add anthropics/claude-plugins-official 2>/dev/null || true
+claude plugin marketplace add ChromeDevTools/chrome-devtools-mcp 2>/dev/null || true
 print_success "Marketplaces configured"
 
 print_info "Installing Claude Code plugins..."
 
-# Install plugins from official marketplace
+# Official marketplace plugins
 OFFICIAL_PLUGINS="ralph-loop context7 playwright security-guidance figma frontend-design code-review lua-lsp"
 for plugin in $OFFICIAL_PLUGINS; do
     print_info "Installing $plugin..."
-    claude mcp install "$plugin@claude-plugins-official" 2>/dev/null || true
+    claude plugin install "$plugin@claude-plugins-official" 2>/dev/null || true
 done
 
-# Install chrome-devtools plugin
+# Chrome DevTools plugin (from chrome-devtools-plugins marketplace)
 print_info "Installing chrome-devtools-mcp..."
-claude mcp install "chrome-devtools-mcp@chrome-devtools-plugins" 2>/dev/null || true
+claude plugin install "chrome-devtools-mcp@chrome-devtools-plugins" 2>/dev/null || true
 
 print_success "Claude Code plugins installed"
 echo ""

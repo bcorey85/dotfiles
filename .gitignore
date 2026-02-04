@@ -1,1 +1,14 @@
 *.log
+
+# Claude runtime files (not config)
+claude/.claude/cache/
+claude/.claude/debug/
+claude/.claude/file-history/
+claude/.claude/history.jsonl
+claude/.claude/ide/
+claude/.claude/plugins/
+claude/.claude/projects/
+claude/.claude/session-env/
+claude/.claude/shell-snapshots/
+claude/.claude/todos/
+claude/.claude/plans/

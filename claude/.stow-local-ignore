@@ -1,0 +1,12 @@
+# Claude runtime files - don't symlink these
+\.claude/cache
+\.claude/debug
+\.claude/file-history
+\.claude/history\.jsonl
+\.claude/ide
+\.claude/plugins
+\.claude/projects
+\.claude/session-env
+\.claude/shell-snapshots
+\.claude/todos
+\.claude/plans

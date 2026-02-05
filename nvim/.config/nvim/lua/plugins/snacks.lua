@@ -14,7 +14,7 @@ return {
         },
         grep = {
           hidden = true,
-          ignored = true,
+          ignored = false,
           follow = true,
         },
       },

@@ -1,5 +1,6 @@
 return {
   "coder/claudecode.nvim",
+  enabled = false,
   dependencies = { "folke/snacks.nvim" },
   keys = {
     { "<C-'>", "<cmd>ClaudeCodeFocus<cr>", desc = "Claude Code", mode = { "n", "x", "t" } },

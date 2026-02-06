@@ -1,10 +1,10 @@
 return {
   {
-    "olimorris/onedarkpro.nvim",
+    "AlexvZyl/nordic.nvim",
     lazy = false,
     priority = 1000,
     config = function(_, opts)
-      vim.cmd([[colorscheme onedark]])
+      vim.cmd([[colorscheme nordic]])
     end,
   },
 }

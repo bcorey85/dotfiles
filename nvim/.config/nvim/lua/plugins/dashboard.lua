@@ -6,18 +6,6 @@ return {
     { "<leader>d", "<cmd>Dashboard<cr>", desc = "Dashboard" },
   },
   config = function()
-    local colors = require("onedarkpro.helpers").get_colors()
-
-    vim.api.nvim_set_hl(0, "DashboardHeader", { fg = colors.blue })
-    vim.api.nvim_set_hl(0, "DashboardProjectTitle", { fg = colors.cyan, bold = true })
-    vim.api.nvim_set_hl(0, "DashboardProjectTitleIcon", { fg = colors.cyan })
-    vim.api.nvim_set_hl(0, "DashboardProjectIcon", { fg = colors.blue })
-    vim.api.nvim_set_hl(0, "DashboardMruTitle", { fg = colors.purple, bold = true })
-    vim.api.nvim_set_hl(0, "DashboardMruIcon", { fg = colors.purple })
-    vim.api.nvim_set_hl(0, "DashboardFiles", { fg = colors.fg })
-    vim.api.nvim_set_hl(0, "DashboardFooter", { fg = colors.gray, italic = true })
-    vim.api.nvim_set_hl(0, "DashboardShortCutIcon", { fg = colors.yellow })
-
     require("dashboard").setup({
       theme = "hyper",
       config = {

@@ -14,6 +14,7 @@
     "code-review@claude-plugins-official": true,
     "chrome-devtools-mcp@chrome-devtools-plugins": true,
     "lua-lsp@claude-plugins-official": true,
-    "typescript-lsp@claude-plugins-official": true
+    "typescript-lsp@claude-plugins-official": true,
+    "pyright-lsp@claude-plugins-official": true
   }
 }

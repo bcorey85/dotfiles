@@ -125,6 +125,11 @@ stow_dotfiles() {
         mv ~/.zshrc ~/.zshrc.backup.$(date +%Y%m%d_%H%M%S)
     fi
 
+    if [ -d ~/.config/kitty ] && [ ! -L ~/.config/kitty ]; then
+        print_info "Backing up existing kitty config..."
+        mv ~/.config/kitty ~/.config/kitty.backup.$(date +%Y%m%d_%H%M%S)
+    fi
+
     # Backup existing claude config
     if [ -d ~/.claude ] && [ ! -L ~/.claude ]; then
         print_info "Backing up existing claude config..."
@@ -132,7 +137,7 @@ stow_dotfiles() {
     fi
 
     # Stow configs
-    stow -R nvim tmux zsh claude
+    stow -R nvim tmux zsh claude kitty
     print_success "Symlinks created"
 }
 

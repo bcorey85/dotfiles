@@ -1,4 +1,5 @@
 *.log
+nvim/.config/nvim/lazy-lock.json
 
 # Claude runtime files (not config)
 claude/.claude/cache/
@@ -12,3 +13,5 @@ claude/.claude/session-env/
 claude/.claude/shell-snapshots/
 claude/.claude/todos/
 claude/.claude/plans/
+claude/.claude/tasks/
+claude/.claude/stats-cache.json

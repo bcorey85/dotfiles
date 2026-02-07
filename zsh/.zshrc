@@ -165,6 +165,9 @@ alias gcom='git commit -m'
 alias gs='git switch'
 alias gstat='git status'
 
+# Git worktree helper: gwa <branch> [base-branch]
+gwa() { git worktree add -b "$1" "../$1" "${2:-master}"; }
+
 alias rsd='./run_stencil_dev'
 alias rwe='./run_watch_editor'
 alias rds='./run_dev_server'

@@ -44,7 +44,7 @@ install_deps() {
         wsl|ubuntu)
             print_info "Installing dependencies via apt..."
             sudo apt update
-            sudo apt install -y stow neovim tmux zsh git curl
+            sudo apt install -y stow neovim tmux zsh git curl libnotify-bin
             print_success "Dependencies installed"
             ;;
         mac)

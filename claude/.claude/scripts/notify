@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Cross-platform notification script for Claude Code hooks
+# Works on macOS, native Ubuntu, and WSL Ubuntu
+#
+# Usage: notify "Title" "Message"
+#   or:  echo "message" | notify "Title"
+
+title="${1:-Claude Code}"
+
+if [[ -n "$2" ]]; then
+  message="$2"
+else
+  message="$(cat)"
+fi
+
+: "${message:=Something needs your attention}"
+
+# Append tmux window info if running inside tmux
+if [[ -n "$TMUX" ]]; then
+  tmux_info="$(tmux display-message -p '#S:#I (#W)' 2>/dev/null)"
+  if [[ -n "$tmux_info" ]]; then
+    message="$message — tmux $tmux_info"
+  fi
+fi
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  osascript -e "display notification \"$message\" with title \"$title\""
+
+elif grep -qi microsoft /proc/version 2>/dev/null; then
+  # WSL - use Windows toast via PowerShell WinRT API
+  powershell.exe -NoProfile -Command "
+    \$app = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+    [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+    [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime] | Out-Null
+    \$template = @'
+<toast>
+  <visual>
+    <binding template=\"ToastGeneric\">
+      <text>$title</text>
+      <text>$message</text>
+    </binding>
+  </visual>
+</toast>
+'@
+    \$xml = New-Object Windows.Data.Xml.Dom.XmlDocument
+    \$xml.LoadXml(\$template)
+    \$toast = [Windows.UI.Notifications.ToastNotification]::new(\$xml)
+    [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier(\$app).Show(\$toast)
+  " &>/dev/null &
+
+else
+  # Native Linux
+  notify-send "$title" "$message"
+fi

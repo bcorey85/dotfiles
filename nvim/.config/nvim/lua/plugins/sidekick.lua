@@ -2,25 +2,16 @@ return {
   {
     "folke/sidekick.nvim",
     opts = {
+      nes = { enabled = false },
       cli = {
+        mux = {
+          backend = "tmux",
+          enabled = true,
+        },
         win = {
           split = {
-            width = 50,
+            width = 60,
           },
-        },
-      },
-    },
-  },
-  {
-    "saghen/blink.cmp",
-    opts = {
-      keymap = {
-        ["<Tab>"] = {
-          "snippet_forward",
-          function()
-            return require("sidekick").nes_jump_or_apply()
-          end,
-          "fallback",
         },
       },
     },

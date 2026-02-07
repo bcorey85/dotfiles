@@ -75,6 +75,8 @@ plugins=(git zsh-syntax-highlighting zsh-autosuggestions)
 
 source $ZSH/oh-my-zsh.sh
 
+eval "$(ssh-agent -s)" > /dev/null 2>&1
+
 # User configuration
 
 # export MANPATH="/usr/local/man:$MANPATH"

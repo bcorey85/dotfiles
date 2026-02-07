@@ -1,3 +1,18 @@
+local exclude = {
+  "node_modules",
+  "dist",
+  "build",
+  "__pycache__",
+  ".venv",
+  "*.pyc",
+  ".mypy_cache",
+  ".ruff_cache",
+  "staticfiles",
+  "media",
+  "*.sqlite3",
+  ".git",
+}
+
 return {
   "folke/snacks.nvim",
   opts = {
@@ -12,11 +27,13 @@ return {
           hidden = true,
           ignored = true,
           follow = true,
+          exclude = exclude,
         },
         grep = {
           hidden = true,
-          ignored = false,
+          ignored = true,
           follow = true,
+          exclude = exclude,
         },
       },
     },

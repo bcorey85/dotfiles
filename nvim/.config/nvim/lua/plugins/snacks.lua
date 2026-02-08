@@ -11,6 +11,7 @@ local exclude = {
   "media",
   "*.sqlite3",
   ".git",
+  ".nuxt",
 }
 
 return {

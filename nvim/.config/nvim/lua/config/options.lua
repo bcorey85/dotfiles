@@ -11,3 +11,5 @@ vim.opt.scrolloff = 8
 -- Smaller scroll distance for C-d/C-u (default is half screen)
 vim.opt.scroll = 10
 vim.g.loaded_python3_provider = 0
+
+vim.g.root_spec = { "cwd" }

@@ -152,6 +152,38 @@ setup_claude() {
     "$DOTFILES_DIR/setup-claude-plugins"
 }
 
+# Install zsh plugins
+install_zsh_plugins() {
+    local ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
+
+    if [ ! -d "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" ]; then
+        print_info "Installing zsh-syntax-highlighting..."
+        git clone https://github.com/zsh-users/zsh-syntax-highlighting.git "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting"
+        print_success "zsh-syntax-highlighting installed"
+    else
+        print_success "zsh-syntax-highlighting already installed"
+    fi
+
+    if [ ! -d "$ZSH_CUSTOM/plugins/zsh-autosuggestions" ]; then
+        print_info "Installing zsh-autosuggestions..."
+        git clone https://github.com/zsh-users/zsh-autosuggestions "$ZSH_CUSTOM/plugins/zsh-autosuggestions"
+        print_success "zsh-autosuggestions installed"
+    else
+        print_success "zsh-autosuggestions already installed"
+    fi
+}
+
+# Install starship prompt
+install_starship() {
+    if ! command -v starship &> /dev/null; then
+        print_info "Installing starship prompt..."
+        curl -sS https://starship.rs/install.sh | sh -s -- -y
+        print_success "Starship installed"
+    else
+        print_success "Starship already installed"
+    fi
+}
+
 # Change default shell to zsh
 setup_zsh() {
     if [ "$SHELL" != "$(which zsh)" ]; then
@@ -170,6 +202,10 @@ main() {
     install_fonts
     echo ""
     stow_dotfiles
+    echo ""
+    install_zsh_plugins
+    echo ""
+    install_starship
     echo ""
     setup_claude
     echo ""

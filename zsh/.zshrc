@@ -185,31 +185,35 @@ alias reload="source ~/.zshrc && clear && echo 'Reloaded .zshrc'"
 alias dev="cd ~/dev && ls"
 
 export EDITOR='nvim'
-export PYENV_ROOT="$HOME/.pyenv"
-export PATH="$PYENV_ROOT/bin:$PATH"
-eval "$(pyenv init --path)"
-eval "$(pyenv virtualenv-init -)"
+if command -v pyenv &>/dev/null; then
+  export PYENV_ROOT="$HOME/.pyenv"
+  export PATH="$PYENV_ROOT/bin:$PATH"
+  eval "$(pyenv init --path)"
+  eval "$(pyenv virtualenv-init -)"
+fi
 
 export PIPENV_VERBOSITY=-1
 export PATH="/opt/homebrew/opt/node@18/bin:$PATH"
 
 export GRPC_PYTHON_BUILD_SYSTEM_OPENSSL=1
 export GRPC_PYTHON_BUILD_SYSTEM_ZLIB=1
-export LDFLAGS="-L$(brew --prefix zlib)/lib -L$(brew --prefix openssl)/lib\
+if command -v brew &>/dev/null; then
+  export LDFLAGS="-L$(brew --prefix zlib)/lib -L$(brew --prefix openssl)/lib\
  -L$(brew --prefix xz)/lib -L$(brew --prefix bzip2)/lib"
-export CPPFLAGS="-I$(brew --prefix zlib)/include -I$(brew --prefix openssl)/include\
+  export CPPFLAGS="-I$(brew --prefix zlib)/include -I$(brew --prefix openssl)/include\
  -I$(brew --prefix xz)/include -I$(brew --prefix bzip2)/include"
+fi
 
 export NVM_DIR="$HOME/.nvm"
   [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
   [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 export PATH="/opt/homebrew/opt/openssl@3/bin:$PATH"
 
-eval "$(starship init zsh)"
+command -v starship &>/dev/null && eval "$(starship init zsh)"
 
 export TERM=xterm-256color
 
-alias lg="lazygit"
+alias gg="lazygit"
 export FZF_DEFAULT_COMMAND='fd'
 
 [[ "$TERM_PROGRAM" == "kiro" ]] && . "$(kiro --locate-shell-integration-path zsh)"

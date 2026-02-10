@@ -1,0 +1,53 @@
+#!/bin/bash
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_info() { echo -e "${YELLOW}→${NC} $1"; }
+
+PLATFORM=${1:-}
+
+if [[ ! "$PLATFORM" =~ ^(wsl|ubuntu|mac)$ ]]; then
+    print_error "Usage: ./setup-fonts [wsl|ubuntu|mac]"
+    exit 1
+fi
+
+case $PLATFORM in
+    wsl)
+        print_info "WSL detected - Fonts must be installed on Windows"
+        echo ""
+        echo "  1. Download: https://github.com/ryanoasis/nerd-fonts/releases"
+        echo "  2. Install DroidSansMono Nerd Font"
+        echo "  3. Windows Terminal → Settings → Font face → 'DroidSansMono Nerd Font'"
+        echo ""
+        print_info "Press Enter when fonts are installed..."
+        read
+        ;;
+    ubuntu)
+        print_info "Installing Nerd Font..."
+        mkdir -p ~/.local/share/fonts
+        cd ~/.local/share/fonts
+
+        if [ ! -f "DroidSansMNerdFont-Regular.otf" ]; then
+            curl -fLo "DroidSansMNerdFont-Regular.otf" \
+                https://github.com/ryanoasis/nerd-fonts/raw/HEAD/patched-fonts/DroidSansMono/DroidSansMNerdFont-Regular.otf
+            fc-cache -fv
+            print_success "Nerd Font installed"
+            print_info "Configure your terminal to use 'DroidSansM Nerd Font'"
+        else
+            print_success "Nerd Font already installed"
+        fi
+        ;;
+    mac)
+        print_info "Installing Nerd Font..."
+        brew install --cask font-droid-sans-mono-nerd-font 2>/dev/null || print_success "Nerd Font already installed"
+        print_success "Nerd Font installed"
+        print_info "Configure your terminal to use 'DroidSansM Nerd Font'"
+        ;;
+esac

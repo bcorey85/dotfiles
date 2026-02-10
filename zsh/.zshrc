@@ -176,13 +176,12 @@ alias rds='./run_dev_server'
 alias rfs='./run_frontend_server'
 alias rtqa='./run_task_queue_all'
 
-alias zshrc='code ~/.zshrc'
+alias zshrc='nvim ~/.zshrc'
 
 alias brew86="arch -x86_64 /usr/local/homebrew/bin/brew"
 alias brewARM="/opt/homebrew/bin/brew"
 
 alias reload="source ~/.zshrc && clear && echo 'Reloaded .zshrc'"
-alias dev="cd ~/dev && ls"
 
 export EDITOR='nvim'
 if command -v pyenv &>/dev/null; then

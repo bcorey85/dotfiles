@@ -1,0 +1,54 @@
+#!/bin/bash
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_info() { echo -e "${YELLOW}→${NC} $1"; }
+
+print_info "Creating symlinks with stow..."
+
+# Get the directory where this script is located
+DOTFILES_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$DOTFILES_DIR"
+
+# Backup existing configs
+if [ -d ~/.config/nvim ] && [ ! -L ~/.config/nvim ]; then
+    print_info "Backing up existing nvim config..."
+    mv ~/.config/nvim ~/.config/nvim.backup.$(date +%Y%m%d_%H%M%S)
+fi
+
+if [ -f ~/.tmux.conf ] && [ ! -L ~/.tmux.conf ]; then
+    print_info "Backing up existing tmux config..."
+    mv ~/.tmux.conf ~/.tmux.conf.backup.$(date +%Y%m%d_%H%M%S)
+fi
+
+if [ -f ~/.zshrc ] && [ ! -L ~/.zshrc ]; then
+    print_info "Backing up existing zshrc..."
+    mv ~/.zshrc ~/.zshrc.backup.$(date +%Y%m%d_%H%M%S)
+fi
+
+if [ -d ~/.config/kitty ] && [ ! -L ~/.config/kitty ]; then
+    print_info "Backing up existing kitty config..."
+    mv ~/.config/kitty ~/.config/kitty.backup.$(date +%Y%m%d_%H%M%S)
+fi
+
+if [ -d ~/.claude ] && [ ! -L ~/.claude ]; then
+    print_info "Backing up existing claude config..."
+    mv ~/.claude ~/.claude.backup.$(date +%Y%m%d_%H%M%S)
+fi
+
+# Stow configs
+stow -R nvim tmux scripts zsh claude kitty kanata
+print_success "Symlinks created"
+
+# Source tmux config if tmux server is running
+if command -v tmux &> /dev/null && tmux list-sessions &> /dev/null; then
+    tmux source-file ~/.tmux.conf
+    print_success "Tmux config reloaded"
+fi

@@ -139,6 +139,12 @@ stow_dotfiles() {
     # Stow configs
     stow -R nvim tmux zsh claude kitty
     print_success "Symlinks created"
+
+    # Source tmux config if tmux server is running
+    if command -v tmux &> /dev/null && tmux list-sessions &> /dev/null; then
+        tmux source-file ~/.tmux.conf
+        print_success "Tmux config reloaded"
+    fi
 }
 
 # Setup Claude Code plugins (delegated to separate script)

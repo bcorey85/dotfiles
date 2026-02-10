@@ -130,14 +130,14 @@ stow_dotfiles() {
         mv ~/.config/kitty ~/.config/kitty.backup.$(date +%Y%m%d_%H%M%S)
     fi
 
-    # Backup existing claude config
+# Backup existing claude config
     if [ -d ~/.claude ] && [ ! -L ~/.claude ]; then
         print_info "Backing up existing claude config..."
         mv ~/.claude ~/.claude.backup.$(date +%Y%m%d_%H%M%S)
     fi
 
     # Stow configs
-    stow -R nvim tmux zsh claude kitty
+    stow -R nvim tmux scripts zsh claude kitty kanata
     print_success "Symlinks created"
 
     # Source tmux config if tmux server is running
@@ -182,6 +182,7 @@ main() {
     echo "  2. Open Neovim and run: :Lazy sync"
     echo "  3. Run: :checkhealth"
     echo "  4. If Claude Code was not installed, run: ./setup-claude-plugins"
+    echo "  5. For kanata keyboard remapping (Linux only), run: sudo ~/kanata-setup"
     echo ""
 }
 

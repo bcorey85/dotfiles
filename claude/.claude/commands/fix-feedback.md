@@ -1,30 +1,35 @@
 ---
-description: Dispatch parallel frontend and backend architect subagents to investigate and resolve valid code review feedback
+description: Dispatch parallel frontend and backend coder subagents to fix valid code review feedback
 allowed-tools: [Task, Read, Glob, Grep]
 ---
 
 # Fix Code Review Feedback
 
-Dispatch parallel frontend-architect and backend-architect subagents to investigate and resolve valid issues from the most recent code review.
+Dispatch parallel frontend-coder and backend-coder subagents to investigate and resolve valid issues from the most recent code review.
 
 ## Instructions
 
 1. **Parse the review feedback** from the conversation to categorize issues as frontend or backend
 
-2. **Launch both agents in parallel** using a single message with multiple Task tool calls:
+2. **Launch coder agents in parallel** using a single message with multiple Task tool calls:
 
-   **Frontend Architect** (`subagent_type: frontend-architect`):
+   **Frontend Coder** (`subagent_type: frontend-coder`):
    - Pass all frontend-specific issues with file paths and line numbers
    - Instruct the agent to investigate and fix each valid issue
+   - Include enough context from the review for the coder to understand the problem
 
-   **Backend Architect** (`subagent_type: backend-architect`):
+   **Backend Coder** (`subagent_type: backend-coder`):
    - Pass all backend-specific issues with file paths and line numbers
    - Instruct the agent to investigate and fix each valid issue
+   - Include enough context from the review for the coder to understand the problem
 
-3. **After both complete**, summarize:
+   If all issues are frontend-only or backend-only, launch only the relevant coder agent.
+
+3. **After coders complete**, summarize:
    - Which issues were fixed
    - Any issues intentionally skipped (with reasoning)
    - Any new concerns discovered
+   - If any issue requires architectural rethinking, recommend the user run `/fe-plan` or `/be-plan` instead
 
 ## Validation
 
@@ -32,3 +37,4 @@ Each agent should verify issues are valid before fixing. Skip issues that are:
 - False positives or stylistic preferences
 - Out of scope for a quick fix
 - Blocked by other unresolved issues
+- Architectural in nature (recommend `/fe-plan` or `/be-plan` instead)

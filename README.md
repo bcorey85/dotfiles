@@ -1,89 +1,45 @@
 # Dotfiles
 
-Personal configuration files for Neovim, tmux, and zsh across WSL, Ubuntu, and macOS.
+Personal configuration files across WSL, Ubuntu, and macOS.
 
 ## What's Included
 
 - **nvim** - Neovim configuration (LazyVim + custom plugins)
 - **tmux** - tmux configuration with true color support
-- **zsh** - zsh configuration
+- **zsh** - zsh configuration with oh-my-zsh
+- **kitty** - Kitty terminal configuration
+- **kanata** - Keyboard remapping
+- **claude** - Claude Code configuration
+- **scripts** - Utility scripts
 
-## Prerequisites
-
-### WSL (Ubuntu)
-```bash
-sudo apt update
-sudo apt install stow neovim tmux zsh git curl
-
-# Install Nerd Font (on Windows side)
-# Download from: https://github.com/ryanoasis/nerd-fonts/releases
-# Install FiraCode Nerd Font or JetBrainsMono Nerd Font
-# Configure Windows Terminal: Settings → Font face → "FiraCode Nerd Font"
-```
-
-### Ubuntu (Native)
-```bash
-sudo apt update
-sudo apt install stow neovim tmux zsh git curl
-
-# Install Nerd Font
-mkdir -p ~/.local/share/fonts
-cd ~/.local/share/fonts
-curl -fLo "FiraCode Nerd Font.ttf" https://github.com/ryanoasis/nerd-fonts/raw/HEAD/patched-fonts/FiraCode/Regular/FiraCodeNerdFont-Regular.ttf
-fc-cache -fv
-
-# Configure terminal to use "FiraCode Nerd Font"
-```
-
-### macOS
-```bash
-# Install Homebrew
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Install dependencies
-brew install stow neovim tmux zsh git
-brew install --cask font-fira-code-nerd-font
-
-# Configure terminal (iTerm2/Terminal.app) to use "FiraCode Nerd Font"
-```
-
-## Installation
-
-### First Time Setup
+## Quick Start
 
 ```bash
-# Clone this repo
-git clone git@github.com:YOUR_USERNAME/dotfiles.git ~/dotfiles
+git clone git@github.com:bcorey85/dotfiles.git ~/dotfiles
 cd ~/dotfiles
-
-# Create symlinks (stow will skip any existing files)
-stow nvim tmux zsh
-
-# Restart your terminal or source zsh
-source ~/.zshrc
+./setup ubuntu  # or: ./setup wsl | ./setup mac
 ```
 
-### Platform-Specific Notes
+The setup script handles everything: dependencies, fonts, symlinks, zsh plugins, starship prompt, and shell configuration.
 
-**WSL:**
-- Terminal runs on Windows, so install Nerd Fonts on Windows
-- Configure Windows Terminal for best experience
-- True color support requires tmux + terminal configuration
+## Individual Installers
 
-**Ubuntu:**
-- Install fonts to `~/.local/share/fonts`
-- Run `fc-cache -fv` after font installation
-- Configure your terminal emulator's font settings
+Each step can also be run independently from the `install/` directory:
 
-**macOS:**
-- Use Homebrew for everything
-- iTerm2 recommended for best terminal experience
-- Terminal.app works but has fewer features
+| Script                     | Args               | Description                                   |
+| -------------------------- | ------------------ | --------------------------------------------- |
+| `./install/deps`           | `wsl\|ubuntu\|mac` | System dependencies (apt/brew)                |
+| `./install/fonts`          | `wsl\|ubuntu\|mac` | Nerd fonts                                    |
+| `./install/stow`           |                    | Symlink configs via stow                      |
+| `./install/zsh-plugins`    |                    | zsh-syntax-highlighting & zsh-autosuggestions |
+| `./install/starship`       |                    | Starship prompt                               |
+| `./install/claude-plugins` |                    | Claude Code plugins                           |
+| `./install/zsh`            |                    | Set zsh as default shell                      |
 
 ## Daily Workflow
 
 ```bash
-# Edit configs normally - they're symlinked!
+# Edit configs normally - they're symlinked
 nvim ~/.config/nvim/lua/plugins/theme.lua
 nvim ~/.tmux.conf
 nvim ~/.zshrc
@@ -100,32 +56,35 @@ git push
 ```bash
 cd ~/dotfiles
 git pull
-# Changes are immediately available via symlinks!
+# Changes are immediately available via symlinks
 ```
 
 ## Uninstall
 
 ```bash
 cd ~/dotfiles
-stow -D nvim tmux zsh  # Removes symlinks
+stow -D nvim tmux zsh claude kitty kanata scripts
 ```
 
 ## Troubleshooting
 
 **Icons not showing:**
-- Install a Nerd Font
+
+- Install a Nerd Font (`./install/fonts ubuntu`)
 - Configure your terminal to use it
 - Restart terminal
 
 **Colors look wrong:**
+
 - Check `echo $TERM` (should be `tmux-256color` in tmux)
 - Verify true color support: `:checkhealth` in Neovim
-- Ensure terminal emulator supports true colors
 
 **Neovim plugins not loading:**
+
 - Open Neovim and run `:Lazy sync`
 - Check `:checkhealth` for issues
 
 **Symlinks not working:**
+
 - Ensure original configs are backed up/removed before running stow
 - Check `ls -la ~` to verify symlinks point to `~/dotfiles/`

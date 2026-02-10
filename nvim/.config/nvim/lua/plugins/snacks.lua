@@ -27,13 +27,13 @@ return {
         },
         files = {
           hidden = true,
-          ignored = true,
+          ignored = false,
           follow = true,
           exclude = exclude,
         },
         grep = {
           hidden = true,
-          ignored = true,
+          ignored = false,
           follow = true,
           exclude = exclude,
         },

@@ -1,6 +1,7 @@
 return {
   "coder/claudecode.nvim",
-  enabled = false,
+  enabled = true,
+  event = "VeryLazy",
   dependencies = { "folke/snacks.nvim" },
   keys = {
     { "<C-'>", "<cmd>ClaudeCodeFocus<cr>", desc = "Claude Code", mode = { "n", "x", "t" } },
@@ -15,7 +16,7 @@ return {
     terminal = {
       split_side = "right",
       split_width_percentage = 0.20,
-      provider = "snacks",
+      provider = "none",
       snacks_win_opts = {
         wo = {
           wrap = true,

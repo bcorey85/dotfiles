@@ -1,0 +1,110 @@
+(defcfg
+  ;; Place your OS specific configurations here, see: https://github.com/jtroo/kanata
+
+  concurrent-tap-hold yes
+)
+;; The config below uses ANSI, if you are on ISO you will have to modify it.
+(defsrc
+  grv       1    2    3    4    5    6    7    8    9    0    -    =    bspc
+  tab       q    w    e    r    t    y    u    i    o    p    [    ]    \
+  caps      a    s    d    f    g    h    j    k    l    ;    '         ret
+  lsft      z    x    c    v    b    n    m    ,    .    /    rsft
+  lctl lmet lalt           spc                 ralt rmet rctl
+)
+
+(deflayer qwerty
+  @grl       1    2    3    4    5    6    7    8    9    0    -    =   bspc
+  tab       q    w    e    r    t    y    u    i    o    p    [    ]    \
+  caps      a    s    d    f    g    h    j    k    l    ;    '         ret
+  lsft      z    x    c    v    b    n    m    ,    .    /    rsft
+  lctl lmet lalt           spc                 ralt rmet rctl
+)
+
+(deflayer sturdy
+  @grl      1    2    3    4    5    6    7    8    9    0    [    ]   bspc
+  tab       v    m    l    c    p    x    f    u    o    q    -    =    \
+  caps      s    t    r    d    y    b    n    e    a    i    ,       ret
+  lsft      k    j    g    w    z    ;    h    /    '    .    rsft
+  lctl lmet @la           spc                 ralt rmet rctl
+)
+
+(deflayer rain
+  @grl      1    2    3    4    5    6    7    8    9    0    [    ]   bspc
+  tab       v    d    l    g    f    z    r    u    o    q    -    =    \
+  caps      s    t    h    c    y    b    n    e    a    i    ,       ret
+  lsft      k    m    p    w    x    ;    j    /    '    .    rsft
+  lctl lmet @la           spc                 ralt rmet rctl
+)
+
+(deflayer gallium
+  @grl      1    2    3    4    5    6    7    8    9    0    [    ]   bspc
+  tab       b    l    d    c    v    j    y    o    u    ,    -    =    \
+  caps      n    r    t    s    g    p    h    a    e    i    ;       ret
+  lsft      q    m    w    z    x    k    f    '    /    .    rsft
+  lctl lmet @la           spc                 ralt rmet rctl
+)
+
+(deflayer nokwts
+  @grl      1    2    3    4    5    6    7    8    9    0    [    ]   bspc
+  tab       z    b    r    l    f    q    y    o    u    ;    -    =    \
+  caps      n    t    h    s    m    c    d    e    i    a    ,       ret
+  lsft      x    j    w    k    v    p    g    /    .    '    rsft
+  lctl lmet @la           spc                 ralt rmet rctl
+)
+
+(defalias
+  ;; Home row mods - left hand (nsht) - GACS
+  n (tap-hold-release 200 200 n lmet)
+  r (tap-hold-release 200 200 r lalt)
+  s (tap-hold-release 200 200 s lctl)
+  t (tap-hold-release 200 200 t lsft)
+
+  ;; Home row mods - right hand (caei) - SCAG
+  h (tap-hold-release 200 200 h rsft)
+  e (tap-hold-release 200 200 e rctl)
+  a (tap-hold-release 200 200 a ralt)
+  i (tap-hold-release 200 200 i rmet)
+)
+
+(defalias
+  '_ (switch
+    ((or lsft rsft)) - break
+    () ' break)
+  -q (switch
+    ((or lsft rsft)) ' break
+    () - break)
+  /< (switch
+    ((or lsft rsft)) , break
+    () / break)
+  ,? (switch
+    ((or lsft rsft)) / break
+    () , break)
+)
+
+(deflayer l1
+  @grl      _    _    _    _    _    _    _    _    _    _    _    _    _
+  tab       _    _    _    _    _    _    _    _    _    _    _    _    _
+  caps      _    _    _    _    _    left down up right  _    _    _
+  lsft      _    _    -    _    _    _    _    _    _    _    _
+  lctl lmet lalt           spc                 ralt rmet rctl
+)
+
+
+(defalias
+  ;; tap: backtick (grave), hold: toggle layer-switching layer while held
+  grl (tap-hold-release 200 200 grv (layer-toggle layers))
+  str (layer-switch sturdy)
+  rai (layer-switch rain)
+  gal (layer-switch gallium)
+  qwr (layer-switch qwerty)
+  nok (layer-switch nokwts)
+  la (layer-while-held l1)
+)
+
+(deflayer layers
+  _    @qwr @nok @rai @gal    _    _    _    _    _    _    _    _    _
+  _    _    _    _    _    _    _    _    _    _    _    _    _    _
+  _    _    _    _    _    _    _    _    _    _    _    _    _
+  _    _    _    _    _    _    _    _    _    _    _    _
+  _    _    _              _              _    _    _
+)

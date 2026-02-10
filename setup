@@ -13,26 +13,26 @@ print_info() { echo -e "${YELLOW}→${NC} $1"; }
 
 # Usage
 usage() {
-    echo "Usage: ./setup [wsl|ubuntu|mac]"
-    echo ""
-    echo "Platforms:"
-    echo "  wsl     - Windows Subsystem for Linux (Ubuntu)"
-    echo "  ubuntu  - Native Ubuntu/Debian"
-    echo "  mac     - macOS"
-    exit 1
+  echo "Usage: ./setup [wsl|ubuntu|mac]"
+  echo ""
+  echo "Platforms:"
+  echo "  wsl     - Windows Subsystem for Linux (Ubuntu)"
+  echo "  ubuntu  - Native Ubuntu/Debian"
+  echo "  mac     - macOS"
+  exit 1
 }
 
 # Check if platform argument provided
 if [ $# -eq 0 ]; then
-    usage
+  usage
 fi
 
 PLATFORM=$1
 
 # Validate platform
 if [[ ! "$PLATFORM" =~ ^(wsl|ubuntu|mac)$ ]]; then
-    print_error "Invalid platform: $PLATFORM"
-    usage
+  print_error "Invalid platform: $PLATFORM"
+  usage
 fi
 
 DOTFILES_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"

@@ -5,7 +5,10 @@ plugins=(git zsh-syntax-highlighting zsh-autosuggestions)
 
 # source $ZSH/oh-my-zsh.sh
 
-eval "$(ssh-agent -s)" > /dev/null 2>&1
+# macOS runs ssh-agent via launchd; only start one on Linux
+if [[ "$(uname)" != "Darwin" ]]; then
+  eval "$(ssh-agent -s)" > /dev/null 2>&1
+fi
 
 function cdev() {
     project=$1

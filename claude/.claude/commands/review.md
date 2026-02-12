@@ -7,15 +7,22 @@ allowed-tools: [Task, Bash, Read, Glob, Grep]
 
 Review recent changes in this codebase using the code-reviewer subagent.
 
+## Modifiers
+
+- `+fast` — Use Haiku model for code-reviewer subagent(s). Use for quick sanity checks on small changes.
+- `+deep` — Use Opus model for code-reviewer subagent(s). Use for security-sensitive changes, complex logic, or architectural modifications.
+
 ## Instructions
 
-1. **Check the number of modified files**:
+1. **Check for modifiers**: If `+deep` is present, pass `model: "opus"` to all Task tool calls below. If `+fast` is present, pass `model: "haiku"`.
+
+2. **Check the number of modified files**:
    ```bash
    git diff --name-only HEAD 2>/dev/null | wc -l
    ```
    Include staged files: `git diff --cached --name-only 2>/dev/null`
 
-2. **Dispatch code-reviewer subagent(s)**:
+3. **Dispatch code-reviewer subagent(s)**:
 
    **If 5 or fewer files changed**: Dispatch a single code-reviewer subagent
 
@@ -36,9 +43,9 @@ Review recent changes in this codebase using the code-reviewer subagent.
 
    If a file path is provided via $ARGUMENTS, focus the review on that file only.
 
-3. **Present the review results** to the user organized by severity
+4. **Present the review results** to the user organized by severity
 
-4. **Remind the user** they can run `/fix-feedback` to dispatch parallel subagents to fix the issues
+5. **Remind the user** they can run `/fix-feedback` to dispatch parallel subagents to fix the issues
 
 ## Arguments
 

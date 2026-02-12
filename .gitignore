@@ -15,3 +15,5 @@ claude/.claude/todos/
 claude/.claude/plans/
 claude/.claude/tasks/
 claude/.claude/stats-cache.json
+
+paste-cache/*

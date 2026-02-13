@@ -1,0 +1,62 @@
+# Gruvbox Material palette
+palette = "gruvbox_material"
+
+[palettes.gruvbox_material]
+red = "#f2594b"
+orange = "#f28534"
+yellow = "#e9b143"
+green = "#b0b846"
+aqua = "#8bba7f"
+blue = "#80aa9e"
+purple = "#d3869b"
+fg = "#d4be98"
+bg = "#282828"
+grey = "#928374"
+
+format = """
+$directory\
+$git_branch\
+$git_status\
+$python\
+$nodejs\
+$cmd_duration\
+$line_break\
+$character"""
+
+[directory]
+style = "bold aqua"
+truncation_length = 3
+truncate_to_repo = true
+
+[git_branch]
+format = " [$branch]($style)"
+style = "yellow"
+
+[git_status]
+format = "[$all_status$ahead_behind]($style) "
+style = "red"
+ahead = " ↑${count}"
+behind = " ↓${count}"
+diverged = " ↑${ahead_count}↓${behind_count}"
+modified = " ✗"
+staged = " +"
+untracked = " ?"
+stashed = " ≡"
+
+[python]
+format = " [${virtualenv}]($style)"
+style = "green"
+detect_extensions = []
+
+[nodejs]
+format = " [ $version]($style)"
+style = "green"
+
+[cmd_duration]
+min_time = 2_000
+format = " [$duration]($style)"
+style = "grey"
+
+[character]
+success_symbol = "[❯](bold aqua)"
+error_symbol = "[❯](bold red)"

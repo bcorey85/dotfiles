@@ -1,0 +1,26 @@
+#!/bin/bash
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_info() { echo -e "${YELLOW}→${NC} $1"; }
+
+TPM_DIR="$HOME/.tmux/plugins/tpm"
+
+if [ ! -d "$TPM_DIR" ]; then
+    print_info "Installing TPM (tmux plugin manager)..."
+    git clone https://github.com/tmux-plugins/tpm "$TPM_DIR"
+    print_success "TPM installed"
+else
+    print_success "TPM already installed"
+fi
+
+print_info "Installing tmux plugins..."
+"$TPM_DIR/bin/install_plugins"
+print_success "Tmux plugins installed"

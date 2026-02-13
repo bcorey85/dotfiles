@@ -1,6 +1,13 @@
 return {
   "sindrets/diffview.nvim",
   cmd = { "DiffviewOpen", "DiffviewFileHistory" },
+  opts = {
+    hooks = {
+      diff_buf_read = function()
+        vim.opt_local.foldenable = false
+      end,
+    },
+  },
   keys = {
     {
       "<leader>dd",

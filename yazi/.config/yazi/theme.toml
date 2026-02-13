@@ -1,0 +1,123 @@
+# Gruvbox Material Dark Medium (mix foreground)
+
+[manager]
+cwd = { fg = "#8bba7f" }
+
+hovered = { fg = "#d4be98", bg = "#3c3836" }
+preview_hovered = { fg = "#d4be98", bg = "#3c3836" }
+
+find_keyword = { fg = "#e9b143", bold = true }
+find_position = { fg = "#d3869b", italic = true }
+
+marker_selected = { fg = "#8bba7f", bg = "#8bba7f" }
+marker_copied = { fg = "#e9b143", bg = "#e9b143" }
+marker_cut = { fg = "#f2594b", bg = "#f2594b" }
+
+tab_active = { fg = "#d4be98", bg = "#3c3836" }
+tab_inactive = { fg = "#928374", bg = "#282828" }
+tab_width = 1
+
+border_symbol = "│"
+border_style = { fg = "#504945" }
+
+[status]
+separator_open = ""
+separator_close = ""
+separator_style = { fg = "#3c3836", bg = "#282828" }
+
+mode_normal = { fg = "#282828", bg = "#8bba7f", bold = true }
+mode_select = { fg = "#282828", bg = "#e9b143", bold = true }
+mode_unset = { fg = "#282828", bg = "#d3869b", bold = true }
+
+progress_label = { fg = "#d4be98", bold = true }
+progress_normal = { fg = "#504945", bg = "#3c3836" }
+progress_error = { fg = "#f2594b", bg = "#3c3836" }
+
+permissions_t = { fg = "#8bba7f" }
+permissions_r = { fg = "#e9b143" }
+permissions_w = { fg = "#f2594b" }
+permissions_x = { fg = "#8bba7f" }
+permissions_s = { fg = "#928374" }
+
+[input]
+border = { fg = "#f28534" }
+title = {}
+value = {}
+selected = { reversed = true }
+
+[pick]
+border = { fg = "#f28534" }
+active = { fg = "#d3869b" }
+inactive = {}
+
+[completion]
+border = { fg = "#f28534" }
+active = { bg = "#3c3836" }
+inactive = {}
+
+[tasks]
+border = { fg = "#f28534" }
+title = {}
+hovered = { underline = true }
+
+[which]
+mask = { bg = "#282828" }
+cand = { fg = "#8bba7f" }
+rest = { fg = "#928374" }
+desc = { fg = "#d3869b" }
+separator = " → "
+separator_style = { fg = "#504945" }
+
+[help]
+on = { fg = "#8bba7f" }
+run = { fg = "#d3869b" }
+desc = { fg = "#928374" }
+hovered = { bg = "#3c3836", bold = true }
+footer = { fg = "#d4be98", bg = "#282828" }
+
+[filetype]
+
+rules = [
+  # Directories
+  { name = "*/", fg = "#8bba7f" },
+
+  # Media
+  { mime = "image/*", fg = "#d3869b" },
+  { mime = "video/*", fg = "#d3869b" },
+  { mime = "audio/*", fg = "#d3869b" },
+
+  # Archives
+  { mime = "application/zip", fg = "#f28534" },
+  { mime = "application/gzip", fg = "#f28534" },
+  { mime = "application/x-tar", fg = "#f28534" },
+  { mime = "application/x-bzip2", fg = "#f28534" },
+  { mime = "application/x-xz", fg = "#f28534" },
+  { mime = "application/x-7z-compressed", fg = "#f28534" },
+  { mime = "application/x-rar", fg = "#f28534" },
+
+  # Documents
+  { mime = "application/pdf", fg = "#e9b143" },
+  { mime = "application/json", fg = "#e9b143" },
+  { mime = "application/xml", fg = "#e9b143" },
+
+  # Code
+  { mime = "text/html", fg = "#f28534" },
+  { mime = "text/css", fg = "#80aa9e" },
+  { mime = "text/javascript", fg = "#e9b143" },
+  { mime = "text/x-python", fg = "#8bba7f" },
+  { mime = "text/x-rust", fg = "#f2594b" },
+  { mime = "text/x-c", fg = "#80aa9e" },
+  { mime = "text/x-c++", fg = "#80aa9e" },
+
+  # Text fallback
+  { mime = "text/*", fg = "#d4be98" },
+
+  # Symlinks
+  { is = "link", fg = "#80aa9e" },
+
+  # Orphan symlinks
+  { is = "orphan", fg = "#f2594b" },
+
+  # Executables
+  { is = "exec", fg = "#8bba7f" },
+]

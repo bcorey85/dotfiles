@@ -23,31 +23,33 @@ case $PLATFORM in
         print_info "WSL detected - Fonts must be installed on Windows"
         echo ""
         echo "  1. Download: https://github.com/ryanoasis/nerd-fonts/releases"
-        echo "  2. Install DroidSansMono Nerd Font"
-        echo "  3. Windows Terminal → Settings → Font face → 'DroidSansMono Nerd Font'"
+        echo "  2. Install CommitMono Nerd Font"
+        echo "  3. Windows Terminal → Settings → Font face → 'CommitMono Nerd Font Mono'"
         echo ""
         print_info "Press Enter when fonts are installed..."
         read
         ;;
     ubuntu)
-        print_info "Installing Nerd Font..."
+        print_info "Installing Nerd Fonts..."
         mkdir -p ~/.local/share/fonts
         cd ~/.local/share/fonts
 
-        if [ ! -f "DroidSansMNerdFont-Regular.otf" ]; then
-            curl -fLo "DroidSansMNerdFont-Regular.otf" \
-                https://github.com/ryanoasis/nerd-fonts/raw/HEAD/patched-fonts/DroidSansMono/DroidSansMNerdFont-Regular.otf
-            fc-cache -fv
-            print_success "Nerd Font installed"
-            print_info "Configure your terminal to use 'DroidSansM Nerd Font'"
+        if [ ! -f "CommitMonoNerdFontMono-Regular.otf" ]; then
+            curl -fLo /tmp/CommitMono.tar.xz \
+                https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CommitMono.tar.xz
+            tar xf /tmp/CommitMono.tar.xz -C ~/.local/share/fonts \
+                CommitMonoNerdFontMono-Regular.otf CommitMonoNerdFontMono-Bold.otf
+            rm /tmp/CommitMono.tar.xz
+            print_success "CommitMono Nerd Font installed"
         else
-            print_success "Nerd Font already installed"
+            print_success "CommitMono Nerd Font already installed"
         fi
+
+        fc-cache -fv
         ;;
     mac)
-        print_info "Installing Nerd Font..."
-        brew install --cask font-droid-sans-mono-nerd-font 2>/dev/null || print_success "Nerd Font already installed"
-        print_success "Nerd Font installed"
-        print_info "Configure your terminal to use 'DroidSansM Nerd Font'"
+        print_info "Installing Nerd Fonts..."
+        brew install --cask font-commit-mono-nerd-font 2>/dev/null || print_success "CommitMono Nerd Font already installed"
+        print_success "Nerd Fonts installed"
         ;;
 esac

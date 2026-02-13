@@ -1,7 +1,7 @@
 # vim:fileencoding=utf-8:foldmethod=marker
 
 # BEGIN_KITTY_THEME
-# Gruvbox Material Dark Medium
+# Sonokai Sushia
 include current-theme.conf
 # END_KITTY_THEME
 
@@ -11,7 +11,7 @@ include current-theme.conf
 #: individual font faces and even specify special fonts for particular
 #: characters.
 
-font_family      CommitMono Nerd Font Mono
+font_family      DroidSansMono Nerd Font
 # bold_font        auto
 # italic_font      auto
 # bold_italic_font auto
@@ -25,7 +25,7 @@ font_family      CommitMono Nerd Font Mono
 #: <https://sw.kovidgoyal.net/kitty/kittens/choose-fonts/#font-spec-
 #: syntax>.
 
-font_size 12.0
+font_size 13.0
 
 #: Font size (in pts).
 
@@ -146,7 +146,7 @@ font_size 12.0
 
 #:     font_features UnifontMedium +isol -medi -fina -init
 
-modify_font cell_height 4px
+# modify_font
 
 #: Modify font characteristics such as the position or thickness of
 #: the underline and strikethrough. The modifications can have the
@@ -953,7 +953,7 @@ modify_font cell_height 4px
 #: set the vertical and horizontal sides. Three values set top,
 #: horizontal and bottom. Four values set top, right, bottom and left.
 
-window_padding_width 4
+# window_padding_width 0
 
 #: The window padding (in pts) (blank area between the text and the
 #: window border). A single value sets all four sides. Two values set
@@ -1706,7 +1706,7 @@ window_padding_width 4
 #: special value of ask means that kitty will ask before opening the
 #: link when clicked.
 
-shell_integration enabled
+# shell_integration enabled
 
 #: Enable shell integration on supported shells. This enables features
 #: such as jumping to previous prompts, browsing the output of the

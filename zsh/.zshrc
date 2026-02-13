@@ -1,9 +1,10 @@
-# ZSH_DISABLE_COMPFIX=true
-# export ZSH="$HOME/.oh-my-zsh"
-
-plugins=(git zsh-syntax-highlighting zsh-autosuggestions)
-
-# source $ZSH/oh-my-zsh.sh
+# Zsh plugins
+autoload -Uz compinit && compinit
+command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
+command -v direnv &>/dev/null && eval "$(direnv hook zsh)"
+source ~/.zsh/plugins/fzf-tab/fzf-tab.plugin.zsh
+source ~/.zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh
+source ~/.zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 
 # macOS runs ssh-agent via launchd; only start one on Linux
 if [[ "$(uname)" != "Darwin" ]]; then

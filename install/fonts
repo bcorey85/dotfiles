@@ -27,7 +27,7 @@ case $PLATFORM in
         echo "  3. Windows Terminal → Settings → Font face → 'CommitMono Nerd Font Mono'"
         echo ""
         print_info "Press Enter when fonts are installed..."
-        read
+        read || true
         ;;
     ubuntu)
         print_info "Installing Nerd Fonts..."

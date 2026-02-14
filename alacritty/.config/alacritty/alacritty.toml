@@ -1,0 +1,56 @@
+[window]
+padding = { x = 4, y = 4 }
+decorations = "Full"
+dynamic_padding = true
+
+[font]
+size = 12.0
+
+[font.normal]
+family = "CommitMono Nerd Font Mono"
+style = "Regular"
+
+[font.bold]
+family = "CommitMono Nerd Font Mono"
+style = "Bold"
+
+[font.italic]
+family = "CommitMono Nerd Font Mono"
+style = "Italic"
+
+[font.bold_italic]
+family = "CommitMono Nerd Font Mono"
+style = "Bold Italic"
+
+# Sonokai Shusia
+[colors.primary]
+background = "#2d2a2e"
+foreground = "#e3e1e4"
+
+[colors.cursor]
+cursor = "#e3e1e4"
+text = "#2d2a2e"
+
+[colors.selection]
+background = "#e3e1e4"
+text = "#2d2a2e"
+
+[colors.normal]
+black   = "#1a181a"
+red     = "#f85e84"
+green   = "#9ecd6f"
+yellow  = "#e5c463"
+blue    = "#7accd7"
+magenta = "#ab9df2"
+cyan    = "#ef9062"
+white   = "#e3e1e4"
+
+[colors.bright]
+black   = "#848089"
+red     = "#f85e84"
+green   = "#9ecd6f"
+yellow  = "#e5c463"
+blue    = "#7accd7"
+magenta = "#ab9df2"
+cyan    = "#ef9062"
+white   = "#e3e1e4"

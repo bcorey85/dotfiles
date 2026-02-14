@@ -13,8 +13,8 @@ print_info() { echo -e "${YELLOW}→${NC} $1"; }
 
 print_info "Creating symlinks with stow..."
 
-# Get the directory where this script is located
-DOTFILES_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+# Get the dotfiles root (parent of install/)
+DOTFILES_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
 cd "$DOTFILES_DIR"
 
 # Backup existing configs
@@ -44,11 +44,11 @@ if [ -d ~/.claude ] && [ ! -L ~/.claude ]; then
 fi
 
 # Stow configs
-stow -R nvim tmux scripts zsh claude kitty kanata yazi starship
+stow -R nvim tmux scripts zsh claude kitty kanata yazi starship alacritty
 print_success "Symlinks created"
 
-# Source tmux config if tmux server is running
-if command -v tmux &> /dev/null && tmux list-sessions &> /dev/null; then
-    tmux source-file ~/.tmux.conf
+# Source tmux config if tmux server is running (timeout prevents hanging)
+if command -v tmux &> /dev/null && tmux list-sessions &> /dev/null 2>&1; then
+    timeout 5 tmux source-file ~/.tmux.conf 2>/dev/null || true
     print_success "Tmux config reloaded"
 fi

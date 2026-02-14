@@ -22,5 +22,8 @@ else
 fi
 
 print_info "Installing tmux plugins..."
-"$TPM_DIR/bin/install_plugins"
-print_success "Tmux plugins installed"
+if "$TPM_DIR/bin/install_plugins" 2>/dev/null; then
+    print_success "Tmux plugins installed"
+else
+    print_info "Tmux plugins will install on next tmux start (prefix + I)"
+fi

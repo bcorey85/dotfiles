@@ -46,6 +46,7 @@ Nuxt 4 frontend in `frontend/` with app code in `frontend/app/`. The project use
 - SCSS for styling
 - Vue 3 Composition API with `<script setup>`
 - A Django backend API that returns camelCase field names
+- **No auto-imports** — all components, composables, and utils use explicit imports. Do NOT rely on Nuxt auto-import magic.
 
 ## Code Style Requirements
 - Do NOT add comments unless explicitly asked by the user
@@ -55,6 +56,27 @@ Nuxt 4 frontend in `frontend/` with app code in `frontend/app/`. The project use
 - Follow Vue 3 best practices: single-file components, composition API, proper reactivity
 - Prefer early returns over deeply nested if/else chains
 - Cognitive complexity and readability are top concerns
+- When resolving inconsistencies between config and code, prefer the option that reduces per-file boilerplate (e.g., use framework globals instead of adding imports to every file)
+
+## File Organization: Directory-Per-Module
+- **Every util and component gets its own directory** with an `index.ts` entry point:
+  ```
+  utils/
+    formatters/
+      index.ts           # re-exports public API
+      formatters.ts       # implementation
+      formatters.test.ts  # colocated test
+  ```
+- The `index.ts` re-exports the public API from the source file (e.g., `export { formatDate } from './formatters'`).
+- Keep implementation in a named file (e.g., `formatters.ts`), NOT in `index.ts` — this keeps editor tabs readable.
+- Consumers import from the directory path (e.g., `~/utils/formatters`), which resolves to the index.
+- Tests import from the sibling source file directly (e.g., `./formatters`).
+- Do NOT create feature-level barrel files that aggregate across multiple modules — only module-level index files.
+
+## Testing Conventions
+- **Vitest globals are enabled** (`globals: true` in `vitest.config.ts`). Do NOT import `describe`, `it`, `expect`, `vi`, `beforeEach`, etc. from `'vitest'` — they are available globally. Only import vitest utilities that are NOT part of the globals API (e.g., type-only imports).
+- When tests create multiple instances of the same object shape (3+), extract a **factory helper** at the top of the test file (e.g., `createExecution(overrides)`) that provides sensible defaults and accepts partial overrides for the meaningful fields. Keep test bodies focused on what varies.
+- **Colocate tests with source code** — place `<module>.test.ts` next to `<module>.ts` in the same directory. Do NOT use `__tests__/` subdirectories.
 
 ## CRITICAL: Design Pattern Consistency Requirement
 

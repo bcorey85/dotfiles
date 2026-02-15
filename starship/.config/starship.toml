@@ -1,17 +1,16 @@
-# Gruvbox Material palette
-palette = "gruvbox_material"
+# Sonokai Maia palette
+palette = "sonokai_maia"
 
-[palettes.gruvbox_material]
-red = "#f2594b"
-orange = "#f28534"
-yellow = "#e9b143"
-green = "#b0b846"
-aqua = "#8bba7f"
-blue = "#80aa9e"
-purple = "#d3869b"
-fg = "#d4be98"
-bg = "#282828"
-grey = "#928374"
+[palettes.sonokai_maia]
+red = "#f76c7c"
+orange = "#f3a96a"
+yellow = "#e3d367"
+green = "#9cd57b"
+blue = "#78cee9"
+purple = "#baa0f8"
+fg = "#e1e2e3"
+bg = "#273136"
+grey = "#82878b"
 
 format = """
 $directory\
@@ -24,7 +23,7 @@ $line_break\
 $character"""
 
 [directory]
-style = "bold aqua"
+style = "bold blue"
 truncation_length = 3
 truncate_to_repo = true
 
@@ -58,5 +57,5 @@ format = " [$duration]($style)"
 style = "grey"
 
 [character]
-success_symbol = "[❯](bold aqua)"
+success_symbol = "[❯](bold blue)"
 error_symbol = "[❯](bold red)"

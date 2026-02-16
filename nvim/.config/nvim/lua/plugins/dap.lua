@@ -38,8 +38,21 @@ return {
       dapui.setup()
 
       dap.listeners.after.event_initialized["dapui_config"] = function()
+        vim.fn.system("tmux resize-pane -Z")
         dapui.open()
       end
+
+      local function close_dap()
+        dapui.close()
+        -- Unzoom if we're still zoomed
+        local zoomed = vim.fn.system("tmux display-message -p '#{window_zoomed_flag}'"):gsub("%s+", "")
+        if zoomed == "1" then
+          vim.fn.system("tmux resize-pane -Z")
+        end
+      end
+
+      dap.listeners.before.event_terminated["dapui_config"] = close_dap
+      dap.listeners.before.event_exited["dapui_config"] = close_dap
     end,
   },
 }

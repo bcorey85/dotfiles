@@ -7,6 +7,9 @@
 [includeIf "gitdir:~/personal/"]
 	path = ~/.gitconfig.personal
 
+[includeIf "gitdir:~/vault/"]
+	path = ~/.gitconfig.personal
+
 [core]
 	pager = delta --side-by-side
 

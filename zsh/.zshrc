@@ -108,6 +108,7 @@ command -v starship &>/dev/null && eval "$(starship init zsh)"
 export TERM=xterm-256color
 
 alias gg="lazygit"
+alias cc="claude"
 export FZF_DEFAULT_COMMAND='fd'
 
 [[ "$TERM_PROGRAM" == "kiro" ]] && . "$(kiro --locate-shell-integration-path zsh)"

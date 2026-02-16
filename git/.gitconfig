@@ -1,6 +1,12 @@
 [include]
 	path = ~/.gitconfig.local
 
+[includeIf "gitdir:~/dotfiles/"]
+	path = ~/.gitconfig.personal
+
+[includeIf "gitdir:~/personal/"]
+	path = ~/.gitconfig.personal
+
 [core]
 	pager = delta --side-by-side
 

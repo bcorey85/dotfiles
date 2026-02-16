@@ -20,21 +20,16 @@ fi
 
 print_info "Adding marketplaces..."
 claude plugin marketplace add anthropics/claude-plugins-official 2>/dev/null || true
-claude plugin marketplace add ChromeDevTools/chrome-devtools-mcp 2>/dev/null || true
 print_success "Marketplaces configured"
 
 print_info "Installing Claude Code plugins..."
 
 # Official marketplace plugins
-OFFICIAL_PLUGINS="ralph-loop context7 playwright security-guidance figma frontend-design code-review lua-lsp"
+OFFICIAL_PLUGINS="context7 security-guidance code-review lua-lsp"
 for plugin in $OFFICIAL_PLUGINS; do
     print_info "Installing $plugin..."
     claude plugin install "$plugin@claude-plugins-official" 2>/dev/null || true
 done
-
-# Chrome DevTools plugin (from chrome-devtools-plugins marketplace)
-print_info "Installing chrome-devtools-mcp..."
-claude plugin install "chrome-devtools-mcp@chrome-devtools-plugins" 2>/dev/null || true
 
 print_success "Claude Code plugins installed"
 echo ""

@@ -1,0 +1,7 @@
+gui:
+  sidePanelWidth: 0.15
+  expandFocusedSidePanel: true
+git:
+  pagers:
+    - colorArg: always
+      pager: delta --dark --paging=never

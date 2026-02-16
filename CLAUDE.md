@@ -38,10 +38,21 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 | `yazi` | `~/.config/yazi/` | File manager config |
 | `kanata` | `~/kanata-config.kbd`, `~/kanata-setup` | Keyboard remapping with systemd service |
 | `scripts` | `~/.local/bin/` | tmux-sessionizer, dev utilities |
+| `lazygit` | `~/.config/lazygit/` | Narrow side panel, expand on focus |
+| `git` | `~/.gitconfig` | Delta pager, side-by-side diffs. Per-machine identity in `~/.gitconfig.local` |
+
+## CRITICAL: Cross-Platform Compatibility
+
+**Everything in this repo MUST work on all three platforms: WSL, Ubuntu, and macOS.** Before installing any tool, adding any dependency, or making any change:
+
+1. **Only use `apt` (WSL/Ubuntu) and `brew` (macOS)** for package installs — never `cargo`, `pip install --global`, `snap`, or other package managers
+2. **Add new dependencies to `install/deps`** in BOTH the `wsl|ubuntu` and `mac` cases
+3. **Never hardcode platform-specific paths** — use `$HOME`, `~`, or detect the platform
+4. **Per-machine config** (user identity, credentials, machine-specific paths) belongs in local files (e.g., `~/.gitconfig.local`), NOT in stow-managed files
 
 ## Key Conventions
 
-- **Theme**: Gruvbox Material Dark Medium everywhere (kitty, alacritty, starship, neovim)
+- **Theme**: Sonokai Maia everywhere (kitty, alacritty, starship, neovim, tmux)
 - **Font**: CommitMono Nerd Font Mono, 12pt
 - **Platform guards**: Use `command -v <tool> &>/dev/null &&` before tool-specific init (see .zshrc)
 - **Install scripts**: All use the same color output pattern (`print_success`, `print_error`, `print_info`) with `set -e`

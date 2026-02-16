@@ -22,7 +22,7 @@ case $PLATFORM in
     wsl|ubuntu)
         print_info "Installing dependencies via apt..."
         sudo apt update
-        sudo apt install -y stow neovim tmux zsh git curl jq libnotify-bin fzf zoxide unzip direnv alacritty
+        sudo apt install -y stow neovim tmux zsh git curl jq libnotify-bin fzf zoxide unzip direnv alacritty git-delta
         print_success "Dependencies installed"
 
         if ! command -v yazi &>/dev/null; then
@@ -50,7 +50,7 @@ case $PLATFORM in
         fi
 
         print_info "Installing dependencies via Homebrew..."
-        brew install stow neovim tmux git jq fzf zoxide yazi direnv alacritty
+        brew install stow neovim tmux git jq fzf zoxide yazi direnv alacritty git-delta
         print_success "Dependencies installed"
         ;;
 esac

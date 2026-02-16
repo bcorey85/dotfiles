@@ -17,3 +17,5 @@ claude/.claude/tasks/
 claude/.claude/stats-cache.json
 claude/.claude/paste-cache/*
 claude/.claude/.credentials.json
+
+nvim/.config/nvim/lazy-lock.json

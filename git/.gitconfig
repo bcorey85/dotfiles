@@ -1,0 +1,21 @@
+[include]
+	path = ~/.gitconfig.local
+
+[core]
+	pager = delta --side-by-side
+
+[interactive]
+	diffFilter = delta --color-only
+
+[delta]
+	navigate = true
+	line-numbers = true
+
+[pull]
+	rebase = true
+
+[merge]
+	conflictstyle = zdiff3
+
+[diff]
+	colorMoved = default

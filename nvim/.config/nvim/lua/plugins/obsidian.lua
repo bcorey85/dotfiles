@@ -1,5 +1,14 @@
 return {
-  "epwalsh/obsidian.nvim",
+{
+  "zbirenbaum/copilot.lua",
+  opts = {
+    filetypes = {
+      markdown = false,
+    },
+  },
+},
+{
+  "obsidian-nvim/obsidian.nvim",
   version = "*",
   lazy = true,
   ft = "markdown",
@@ -7,15 +16,46 @@ return {
     "nvim-lua/plenary.nvim",
     "ibhagwan/fzf-lua",
   },
-  keys = {
-    { "<leader>on", "<cmd>enew<cr>:ObsidianNew ", desc = "New note" },
-    { "<leader>oN", "<cmd>ObsidianNewFromTemplate<cr>", desc = "New from template" },
+  keys = (function()
+    local function ensure_editable_win()
+      if not vim.bo.modifiable then
+        for _, win in ipairs(vim.api.nvim_list_wins()) do
+          local buf = vim.api.nvim_win_get_buf(win)
+          if vim.bo[buf].modifiable and vim.bo[buf].buflisted then
+            vim.api.nvim_set_current_win(win)
+            return
+          end
+        end
+        vim.cmd("vnew")
+      end
+    end
+
+    return {
+    {
+      "<leader>on",
+      function()
+        ensure_editable_win()
+        vim.cmd("enew")
+        vim.api.nvim_feedkeys(":ObsidianNew ", "n", false)
+      end,
+      desc = "New note",
+    },
+    {
+      "<leader>oN",
+      function()
+        ensure_editable_win()
+        vim.cmd("ObsidianNewFromTemplate")
+      end,
+      desc = "New from template",
+    },
     { "<leader>oo", "<cmd>ObsidianQuickSwitch<cr>", desc = "Quick switch" },
     { "<leader>ot", "<cmd>ObsidianTemplate<cr>", desc = "Insert template" },
     { "<leader>ob", "<cmd>ObsidianBacklinks<cr>", desc = "Backlinks" },
     { "<leader>os", "<cmd>ObsidianSearch<cr>", desc = "Search vault" },
+    { "<leader>of", "<cmd>ObsidianFollowLink<cr>", desc = "Follow link" },
     { "<leader>om", desc = "Move note to folder" },
-  },
+  }
+  end)(),
   config = function(_, opts)
     require("obsidian").setup(opts)
 
@@ -59,11 +99,18 @@ return {
     workspaces = {
       {
         name = "general",
-        path = "/mnt/c/vault/general/",
+        path = vim.fn.expand("~/vault/general"),
       },
     },
     templates = {
       folder = "Templates",
+      date_format = "%m/%d/%Y %I:%M %p",
+    },
+    completion = {
+      min_chars = 3,
+    },
+    note = {
+      template = "Inbox.md",
     },
     notes_subdir = "00. Inbox",
     note_id_func = function(title)
@@ -72,5 +119,9 @@ return {
       end
       return tostring(os.time())
     end,
+    wiki_link_func = function(opts)
+      return string.format("[[%s]]", opts.label)
+    end,
   },
+},
 }

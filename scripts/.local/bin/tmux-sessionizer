@@ -3,7 +3,7 @@
 
 SEARCH_DIRS="$HOME/dev $HOME/dotfiles"
 
-selected=$(find $SEARCH_DIRS -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | fzf --reverse --prompt="project> ")
+selected=$(printf '%s\n' $SEARCH_DIRS $(find $SEARCH_DIRS -mindepth 1 -maxdepth 1 -type d 2>/dev/null) | sort -u | fzf --reverse --prompt="project> ")
 
 if [ -z "$selected" ]; then
     exit 0

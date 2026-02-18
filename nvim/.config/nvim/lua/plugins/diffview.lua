@@ -15,7 +15,12 @@ return {
         local lib = require("diffview.lib")
         if lib.get_current_view() then
           vim.cmd("DiffviewClose")
+          local zoomed = vim.fn.system("tmux display-message -p '#{window_zoomed_flag}'"):gsub("%s+", "")
+          if zoomed == "1" then
+            vim.fn.system("tmux resize-pane -Z")
+          end
         else
+          vim.fn.system("tmux resize-pane -Z")
           vim.cmd("DiffviewOpen")
         end
       end,
@@ -27,7 +32,12 @@ return {
         local lib = require("diffview.lib")
         if lib.get_current_view() then
           vim.cmd("DiffviewClose")
+          local zoomed = vim.fn.system("tmux display-message -p '#{window_zoomed_flag}'"):gsub("%s+", "")
+          if zoomed == "1" then
+            vim.fn.system("tmux resize-pane -Z")
+          end
         else
+          vim.fn.system("tmux resize-pane -Z")
           vim.cmd("DiffviewFileHistory %")
         end
       end,

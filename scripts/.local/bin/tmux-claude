@@ -1,7 +1,7 @@
 #!/bin/bash
-# Persistent Claude popup using a nested tmux session.
-# Close with: Ctrl+Space Ctrl+Space d (detaches inner session, popup closes, Claude lives)
-# Reopen with: prefix a (reattaches to same conversation)
+# Persistent Claude popup via nested tmux session.
+# Toggle with: prefix o (opens popup outside, detaches inside)
+# Session persists in background so reopening resumes the conversation.
 
 dir_name=$(basename "$PWD")
 session="claude-${dir_name}"
@@ -12,5 +12,5 @@ unset TMUX
 if tmux has-session -t "$session" 2>/dev/null; then
   tmux attach-session -t "$session"
 else
-  tmux new-session -s "$session" -c "$PWD" "claude"
+  tmux new-session -s "$session" -c "$PWD" "claude --continue"
 fi

@@ -106,12 +106,19 @@ return {
       picker = {
         name = "fzf-lua",
       },
-      workspaces = {
-        {
-          name = "general",
-          path = vim.fn.expand("~/vault/general"),
-        },
-      },
+      workspaces = (function()
+        local candidates = {
+          { name = "general", path = vim.fn.expand("~/vaults/general") },
+          { name = "general", path = vim.fn.expand("~/vault") },
+        }
+        local ws = {}
+        for _, w in ipairs(candidates) do
+          if vim.fn.isdirectory(w.path) == 1 then
+            table.insert(ws, w)
+          end
+        end
+        return ws
+      end)(),
       templates = {
         folder = "Templates",
         date_format = "%m/%d/%Y %I:%M %p",

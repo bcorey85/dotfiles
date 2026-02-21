@@ -5,6 +5,7 @@ return {
       filetypes = {
         markdown = false,
       },
+      disable_limit_reached_message = true,
     },
   },
   {

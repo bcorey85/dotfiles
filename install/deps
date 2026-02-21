@@ -22,8 +22,13 @@ case $PLATFORM in
     wsl|ubuntu)
         print_info "Installing dependencies via apt..."
         sudo apt update
-        sudo apt install -y stow neovim tmux zsh git curl jq libnotify-bin fzf zoxide unzip direnv alacritty git-delta btop bat atuin eza glow fd-find
+        sudo apt install -y stow neovim tmux zsh git curl jq libnotify-bin fzf zoxide unzip direnv kitty git-delta btop bat atuin eza glow fd-find
         print_success "Dependencies installed"
+
+        # Ubuntu installs bat as batcat and fd as fdfind — symlink to expected names
+        mkdir -p ~/.local/bin
+        command -v bat &>/dev/null || ln -sf "$(command -v batcat)" ~/.local/bin/bat
+        command -v fd &>/dev/null || ln -sf "$(command -v fdfind)" ~/.local/bin/fd
 
         if ! command -v tldr &>/dev/null; then
             print_info "Installing tlrc..."
@@ -73,7 +78,7 @@ case $PLATFORM in
         fi
 
         print_info "Installing dependencies via Homebrew..."
-        brew install stow neovim tmux git jq fzf zoxide yazi direnv alacritty git-delta btop bat atuin eza tlrc lazydocker glow fd
+        brew install stow neovim tmux git jq fzf zoxide yazi direnv kitty git-delta btop bat atuin eza tlrc lazydocker glow fd
         print_success "Dependencies installed"
         ;;
 esac

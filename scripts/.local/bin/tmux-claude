@@ -1,7 +1,7 @@
 #!/bin/bash
-# Persistent Claude popup via nested tmux session.
-# Toggle with: prefix o (opens popup outside, detaches inside)
-# Session persists in background so reopening resumes the conversation.
+# Persistent Claude session per project directory.
+# Run in a narrow pane AND toggle via popup (prefix o) — both attach
+# to the same tmux session so content stays in sync and reflows.
 
 dir_name=$(basename "$PWD")
 session="claude-${dir_name}"
@@ -12,5 +12,5 @@ unset TMUX
 if tmux has-session -t "$session" 2>/dev/null; then
   tmux attach-session -t "$session"
 else
-  tmux new-session -s "$session" -c "$PWD" "claude --continue"
+  tmux new-session -s "$session" -c "$PWD" "claude"
 fi

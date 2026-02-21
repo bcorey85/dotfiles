@@ -71,12 +71,8 @@ alias rds='./run_dev_server'
 alias rfs='./run_frontend_server'
 alias rtqa='./run_task_queue_all'
 
-alias zshrc='nvim ~/.zshrc'
-
 alias brew86="arch -x86_64 /usr/local/homebrew/bin/brew"
 alias brewARM="/opt/homebrew/bin/brew"
-
-alias reload="source ~/.zshrc && clear && echo 'Reloaded .zshrc'"
 
 export EDITOR='nvim'
 if command -v pyenv &>/dev/null; then
@@ -104,11 +100,20 @@ export NVM_DIR="$HOME/.nvm"
 export PATH="/opt/homebrew/opt/openssl@3/bin:$PATH"
 
 command -v starship &>/dev/null && eval "$(starship init zsh)"
+command -v atuin &>/dev/null && eval "$(atuin init zsh)"
 
 export TERM=xterm-256color
 
+alias rl="source ~/.zshrc && clear && echo 'Reloaded .zshrc'"
+alias zs='nvim ~/.zshrc'
+alias vv='nvim ~/dotfiles'
 alias gg="lazygit"
-alias cc="claude"
+alias dd="lazydocker"
+alias cc="tmux-claude"
+alias cat="bat --plain"
+alias ls="eza --icons"
+alias ll="eza --icons -lha"
+alias lt="eza --icons --tree --level=2"
 export FZF_DEFAULT_COMMAND='fd'
 
 [[ "$TERM_PROGRAM" == "kiro" ]] && . "$(kiro --locate-shell-integration-path zsh)"

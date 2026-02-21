@@ -6,9 +6,6 @@ return {
     { "<leader>Y", "<cmd>Yazi cwd<cr>", desc = "Open Yazi in cwd" },
   },
   opts = {
-    open_for_directories = true,
+    open_for_directories = false,
   },
-  init = function()
-    vim.g.loaded_netrwPlugin = 1
-  end,
 }

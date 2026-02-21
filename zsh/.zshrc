@@ -102,12 +102,12 @@ export PATH="/opt/homebrew/opt/openssl@3/bin:$PATH"
 command -v starship &>/dev/null && eval "$(starship init zsh)"
 command -v atuin &>/dev/null && eval "$(atuin init zsh)"
 
-export TERM=xterm-256color
 
 alias rl="source ~/.zshrc && clear && echo 'Reloaded .zshrc'"
 alias zs='nvim ~/.zshrc'
 alias vv='nvim ~/dotfiles'
 alias gg="lazygit"
+alias tt="tmux"
 alias dd="lazydocker"
 alias cc="tmux-claude"
 alias cat="bat --plain"

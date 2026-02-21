@@ -139,6 +139,7 @@ return {
       wiki_link_func = function(opts)
         return string.format("[[%s]]", opts.label)
       end,
+      ui = { enable = false },
     },
   },
 }

@@ -32,8 +32,7 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 | `tmux` | `~/.tmux.conf` | Prefix=`Ctrl+Space`, vim-style panes, TPM |
 | `zsh` | `~/.zshrc` | Plugins, aliases, pyenv/nvm/starship init |
 | `claude` | `~/.claude/` | Agents, commands, settings, hooks |
-| `kitty` | `~/.config/kitty/` | Gruvbox Material Dark Medium theme |
-| `alacritty` | `~/.config/alacritty/` | Gruvbox Material Dark Hard theme, same font as kitty |
+| `kitty` | `~/.config/kitty/` | Sonokai Maia theme |
 | `starship` | `~/.config/starship.toml` | Gruvbox Material prompt |
 | `yazi` | `~/.config/yazi/` | File manager config |
 | `kanata` | `~/kanata-config.kbd`, `~/kanata-setup` | Keyboard remapping with systemd service |
@@ -52,7 +51,7 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 
 ## Key Conventions
 
-- **Theme**: Sonokai Maia everywhere (kitty, alacritty, starship, neovim, tmux)
+- **Theme**: Sonokai Maia everywhere (kitty, starship, neovim, tmux)
 - **Font**: CommitMono Nerd Font Mono, 12pt
 - **Platform guards**: Use `command -v <tool> &>/dev/null &&` before tool-specific init (see .zshrc)
 - **Install scripts**: All use the same color output pattern (`print_success`, `print_error`, `print_info`) with `set -e`

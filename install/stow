@@ -44,7 +44,7 @@ if [ -d ~/.claude ] && [ ! -L ~/.claude ]; then
 fi
 
 # Stow configs
-stow -R nvim tmux scripts zsh claude kitty kanata yazi starship alacritty lazygit git btop
+stow -R nvim tmux scripts zsh claude kitty kanata yazi starship lazygit git btop
 print_success "Symlinks created"
 
 # Source tmux config if tmux server is running (timeout prevents hanging)

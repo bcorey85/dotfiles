@@ -1,0 +1,86 @@
+# Sonokai Maia theme for btop
+# Based on https://github.com/sainnhe/sonokai (Maia variant)
+
+# Main background
+theme[main_bg]="#273136"
+
+# Main text color
+theme[main_fg]="#e1e2e3"
+
+# Title color for boxes
+theme[title]="#e1e2e3"
+
+# Highlight color for keyboard shortcuts
+theme[hi_fg]="#78cee9"
+
+# Background color of selected item in processes box
+theme[selected_bg]="#3a444b"
+
+# Foreground color of selected item in processes box
+theme[selected_fg]="#e1e2e3"
+
+# Color of inactive/disabled text
+theme[inactive_fg]="#82878b"
+
+# Color of text appearing on top of graphs, % and process mem
+theme[proc_misc]="#78cee9"
+
+# Cpu box outline color
+theme[cpu_box]="#3a444b"
+
+# Memory/disks box outline color
+theme[mem_box]="#3a444b"
+
+# Net up/down box outline color
+theme[net_box]="#3a444b"
+
+# Processes box outline color
+theme[proc_box]="#3a444b"
+
+# Box divider line and target line color
+theme[div_line]="#3a444b"
+
+# Temperature graph colors
+theme[temp_start]="#9cd57b"
+theme[temp_mid]="#e3d367"
+theme[temp_end]="#f76c7c"
+
+# CPU graph colors
+theme[cpu_start]="#9cd57b"
+theme[cpu_mid]="#e3d367"
+theme[cpu_end]="#f76c7c"
+
+# Mem/Disk free meter
+theme[free_start]="#78cee9"
+theme[free_mid]="#baa0f8"
+theme[free_end]="#9cd57b"
+
+# Mem/Disk cached meter
+theme[cached_start]="#78cee9"
+theme[cached_mid]="#baa0f8"
+theme[cached_end]="#f3a96a"
+
+# Mem/Disk available meter
+theme[available_start]="#9cd57b"
+theme[available_mid]="#e3d367"
+theme[available_end]="#f3a96a"
+
+# Mem/Disk used meter
+theme[used_start]="#e3d367"
+theme[used_mid]="#f3a96a"
+theme[used_end]="#f76c7c"
+
+# Download graph colors
+theme[download_start]="#78cee9"
+theme[download_mid]="#baa0f8"
+theme[download_end]="#9cd57b"
+
+# Upload graph colors
+theme[upload_start]="#f3a96a"
+theme[upload_mid]="#e3d367"
+theme[upload_end]="#f76c7c"
+
+# Process box color gradient for threads, mem and cpu usage
+theme[process_start]="#78cee9"
+theme[process_mid]="#baa0f8"
+theme[process_end]="#f76c7c"

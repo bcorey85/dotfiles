@@ -114,6 +114,7 @@ alias cat="bat --plain"
 alias ls="eza --icons"
 alias ll="eza --icons -lha"
 alias lt="eza --icons --tree --level=2"
+command -v fd &>/dev/null || command -v fdfind &>/dev/null && alias fd="fdfind"
 export FZF_DEFAULT_COMMAND='fd'
 
 [[ "$TERM_PROGRAM" == "kiro" ]] && . "$(kiro --locate-shell-integration-path zsh)"

@@ -1,123 +1,123 @@
-# Gruvbox Material Dark Medium (mix foreground)
+# Sonokai Maia
 
 [manager]
-cwd = { fg = "#8bba7f" }
+cwd = { fg = "#9cd57b" }
 
-hovered = { fg = "#d4be98", bg = "#3c3836" }
-preview_hovered = { fg = "#d4be98", bg = "#3c3836" }
+hovered = { fg = "#e1e2e3", bg = "#3a444b" }
+preview_hovered = { fg = "#e1e2e3", bg = "#3a444b" }
 
-find_keyword = { fg = "#e9b143", bold = true }
-find_position = { fg = "#d3869b", italic = true }
+find_keyword = { fg = "#e3d367", bold = true }
+find_position = { fg = "#baa0f8", italic = true }
 
-marker_selected = { fg = "#8bba7f", bg = "#8bba7f" }
-marker_copied = { fg = "#e9b143", bg = "#e9b143" }
-marker_cut = { fg = "#f2594b", bg = "#f2594b" }
+marker_selected = { fg = "#9cd57b", bg = "#9cd57b" }
+marker_copied = { fg = "#e3d367", bg = "#e3d367" }
+marker_cut = { fg = "#f76c7c", bg = "#f76c7c" }
 
-tab_active = { fg = "#d4be98", bg = "#3c3836" }
-tab_inactive = { fg = "#928374", bg = "#282828" }
+tab_active = { fg = "#e1e2e3", bg = "#3a444b" }
+tab_inactive = { fg = "#82878b", bg = "#273136" }
 tab_width = 1
 
 border_symbol = "│"
-border_style = { fg = "#504945" }
+border_style = { fg = "#3a444b" }
 
 [status]
 separator_open = ""
 separator_close = ""
-separator_style = { fg = "#3c3836", bg = "#282828" }
+separator_style = { fg = "#3a444b", bg = "#273136" }
 
-mode_normal = { fg = "#282828", bg = "#8bba7f", bold = true }
-mode_select = { fg = "#282828", bg = "#e9b143", bold = true }
-mode_unset = { fg = "#282828", bg = "#d3869b", bold = true }
+mode_normal = { fg = "#273136", bg = "#9cd57b", bold = true }
+mode_select = { fg = "#273136", bg = "#e3d367", bold = true }
+mode_unset = { fg = "#273136", bg = "#baa0f8", bold = true }
 
-progress_label = { fg = "#d4be98", bold = true }
-progress_normal = { fg = "#504945", bg = "#3c3836" }
-progress_error = { fg = "#f2594b", bg = "#3c3836" }
+progress_label = { fg = "#e1e2e3", bold = true }
+progress_normal = { fg = "#3a444b", bg = "#3a444b" }
+progress_error = { fg = "#f76c7c", bg = "#3a444b" }
 
-permissions_t = { fg = "#8bba7f" }
-permissions_r = { fg = "#e9b143" }
-permissions_w = { fg = "#f2594b" }
-permissions_x = { fg = "#8bba7f" }
-permissions_s = { fg = "#928374" }
+permissions_t = { fg = "#9cd57b" }
+permissions_r = { fg = "#e3d367" }
+permissions_w = { fg = "#f76c7c" }
+permissions_x = { fg = "#9cd57b" }
+permissions_s = { fg = "#82878b" }
 
 [input]
-border = { fg = "#f28534" }
+border = { fg = "#f3a96a" }
 title = {}
 value = {}
 selected = { reversed = true }
 
 [pick]
-border = { fg = "#f28534" }
-active = { fg = "#d3869b" }
+border = { fg = "#f3a96a" }
+active = { fg = "#baa0f8" }
 inactive = {}
 
 [completion]
-border = { fg = "#f28534" }
-active = { bg = "#3c3836" }
+border = { fg = "#f3a96a" }
+active = { bg = "#3a444b" }
 inactive = {}
 
 [tasks]
-border = { fg = "#f28534" }
+border = { fg = "#f3a96a" }
 title = {}
 hovered = { underline = true }
 
 [which]
-mask = { bg = "#282828" }
-cand = { fg = "#8bba7f" }
-rest = { fg = "#928374" }
-desc = { fg = "#d3869b" }
+mask = { bg = "#273136" }
+cand = { fg = "#9cd57b" }
+rest = { fg = "#82878b" }
+desc = { fg = "#baa0f8" }
 separator = " → "
-separator_style = { fg = "#504945" }
+separator_style = { fg = "#3a444b" }
 
 [help]
-on = { fg = "#8bba7f" }
-run = { fg = "#d3869b" }
-desc = { fg = "#928374" }
-hovered = { bg = "#3c3836", bold = true }
-footer = { fg = "#d4be98", bg = "#282828" }
+on = { fg = "#9cd57b" }
+run = { fg = "#baa0f8" }
+desc = { fg = "#82878b" }
+hovered = { bg = "#3a444b", bold = true }
+footer = { fg = "#e1e2e3", bg = "#273136" }
 
 [filetype]
 
 rules = [
   # Directories
-  { name = "*/", fg = "#8bba7f" },
+  { name = "*/", fg = "#9cd57b" },
 
   # Media
-  { mime = "image/*", fg = "#d3869b" },
-  { mime = "video/*", fg = "#d3869b" },
-  { mime = "audio/*", fg = "#d3869b" },
+  { mime = "image/*", fg = "#baa0f8" },
+  { mime = "video/*", fg = "#baa0f8" },
+  { mime = "audio/*", fg = "#baa0f8" },
 
   # Archives
-  { mime = "application/zip", fg = "#f28534" },
-  { mime = "application/gzip", fg = "#f28534" },
-  { mime = "application/x-tar", fg = "#f28534" },
-  { mime = "application/x-bzip2", fg = "#f28534" },
-  { mime = "application/x-xz", fg = "#f28534" },
-  { mime = "application/x-7z-compressed", fg = "#f28534" },
-  { mime = "application/x-rar", fg = "#f28534" },
+  { mime = "application/zip", fg = "#f3a96a" },
+  { mime = "application/gzip", fg = "#f3a96a" },
+  { mime = "application/x-tar", fg = "#f3a96a" },
+  { mime = "application/x-bzip2", fg = "#f3a96a" },
+  { mime = "application/x-xz", fg = "#f3a96a" },
+  { mime = "application/x-7z-compressed", fg = "#f3a96a" },
+  { mime = "application/x-rar", fg = "#f3a96a" },
 
   # Documents
-  { mime = "application/pdf", fg = "#e9b143" },
-  { mime = "application/json", fg = "#e9b143" },
-  { mime = "application/xml", fg = "#e9b143" },
+  { mime = "application/pdf", fg = "#e3d367" },
+  { mime = "application/json", fg = "#e3d367" },
+  { mime = "application/xml", fg = "#e3d367" },
 
   # Code
-  { mime = "text/html", fg = "#f28534" },
-  { mime = "text/css", fg = "#80aa9e" },
-  { mime = "text/javascript", fg = "#e9b143" },
-  { mime = "text/x-python", fg = "#8bba7f" },
-  { mime = "text/x-rust", fg = "#f2594b" },
-  { mime = "text/x-c", fg = "#80aa9e" },
-  { mime = "text/x-c++", fg = "#80aa9e" },
+  { mime = "text/html", fg = "#f3a96a" },
+  { mime = "text/css", fg = "#78cee9" },
+  { mime = "text/javascript", fg = "#e3d367" },
+  { mime = "text/x-python", fg = "#9cd57b" },
+  { mime = "text/x-rust", fg = "#f76c7c" },
+  { mime = "text/x-c", fg = "#78cee9" },
+  { mime = "text/x-c++", fg = "#78cee9" },
 
   # Text fallback
-  { mime = "text/*", fg = "#d4be98" },
+  { mime = "text/*", fg = "#e1e2e3" },
 
   # Symlinks
-  { is = "link", fg = "#80aa9e" },
+  { is = "link", fg = "#78cee9" },
 
   # Orphan symlinks
-  { is = "orphan", fg = "#f2594b" },
+  { is = "orphan", fg = "#f76c7c" },
 
   # Executables
-  { is = "exec", fg = "#8bba7f" },
+  { is = "exec", fg = "#9cd57b" },
 ]

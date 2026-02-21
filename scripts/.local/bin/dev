@@ -29,7 +29,7 @@ tmux select-pane -L
 tmux split-window -v -l 30% -c "$dir"
 
 # Start claude in the right pane
-tmux send-keys -t '{right}' 'claude' C-m
+tmux send-keys -t '{right}' 'tmux-claude' C-m
 
 # Start nvim in the top-left pane
 tmux select-pane -U

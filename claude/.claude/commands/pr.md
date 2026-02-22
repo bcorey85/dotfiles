@@ -1,6 +1,6 @@
 ---
 description: Create a pull request from the current branch
-allowed-tools: [Bash, Read, Glob, Grep]
+allowed-tools: [Bash, Read, Glob, Grep, mcp__jira__getJiraIssue, mcp__jira__transitionJiraIssue, mcp__jira__getTransitionsForJiraIssue]
 ---
 
 # Create Pull Request
@@ -22,7 +22,7 @@ Analyze the current branch's changes and create a pull request using `gh`.
 4. **Analyze ALL commits** on the branch (not just the latest) to understand the full scope of changes. Read key changed files if needed for context.
 
 5. **Draft the PR**:
-   - Title: short, under 70 characters
+   - Title: short, under 70 characters. **If the branch name contains a Jira ticket key** (e.g., `TAS-1-repo-standup`), the PR title MUST follow the convention: `JIRAPROJECT-TICKETNUMBER: description` (e.g., `TAS-1: stand up monorepo`). Extract the key from the branch name.
    - Body: use this format:
 
    ```
@@ -44,6 +44,8 @@ Analyze the current branch's changes and create a pull request using `gh`.
    ```
 
 7. **Return the PR URL** to the user.
+
+8. **Suggest Jira transition**: If the branch contains a Jira ticket key, remind the user: "The PR is up. Want me to move JIRAPROJECT-TICKETNUMBER to **In Review** in Jira?" If the user says yes, use Jira MCP tools to transition the ticket.
 
 ## Arguments
 

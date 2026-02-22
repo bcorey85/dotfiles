@@ -18,7 +18,7 @@ Analyze the code to refactor, determine whether it's frontend, backend, or fulls
 
 2. **Analyze the refactoring target** described below:
    - Read the referenced files to understand the current code
-   - Determine if this is a **frontend** refactor (components, pages, stores, styles, composables), a **backend** refactor (models, views, serializers, tasks, migrations), or **both**
+   - Determine if this is a **frontend** refactor (components, pages, stores, styles), a **backend** refactor (models, controllers/views, services, middleware, migrations), or **both**
    - Identify the refactoring goal: structure, readability, performance, maintainability, pattern alignment
 
 3. **Dispatch the appropriate coder(s)**:
@@ -30,7 +30,7 @@ Analyze the code to refactor, determine whether it's frontend, backend, or fulls
    For each coder:
    - Pass the refactoring description and any relevant context you gathered
    - Instruct it to: read and understand the existing code, implement the refactoring step by step, and ensure no functionality is broken
-   - If the refactor turns out to need architectural redesign, have it report back and recommend `/fe-plan`, `/be-plan`, or `/fs-plan` instead
+   - If the refactor turns out to need architectural redesign, have it report back and recommend `/eng-plan` instead
 
 4. **After coder(s) complete**, summarize:
    - What was refactored and why

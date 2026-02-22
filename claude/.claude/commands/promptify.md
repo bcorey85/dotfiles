@@ -66,7 +66,7 @@ Before optimizing:
 Search the web for:
 - Current best practices for the task domain
 - API documentation if relevant
-- Recent patterns or approaches (2024-2025)
+- Recent patterns or approaches (prefer current year)
 - Framework-specific conventions
 
 Incorporate findings into the optimized prompt's context section.

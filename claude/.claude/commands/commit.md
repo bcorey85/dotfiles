@@ -1,7 +1,12 @@
-Review the staged changes (or all changes if nothing staged) and create a good commit message following conventional commits format.
+---
+description: Draft a commit message from current changes
+allowed-tools: [Bash]
+---
 
-Format: type(scope): description
+# Commit
 
-Types: feat, fix, refactor, docs, style, test, chore
+Run `git diff` (or `git diff --cached` if there are staged changes) to review what changed. Draft a commit message using `JIRAPROJECT-TICKETNUMBER: description` if the branch has a ticket key, otherwise use conventional commits (`type(scope): description`). Present the message and wait for approval before committing.
 
-Do not commit without my approval.
+## Arguments
+
+$ARGUMENTS

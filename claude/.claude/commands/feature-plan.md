@@ -145,9 +145,9 @@ Write a unified spec document to `/product-specs/FEATURE_NAME.md` with this stru
 ## Implementation Notes
 
 ### Suggested Build Order
-1. Backend: models + migrations
-2. Backend: serializers + views
-3. Frontend: stores + API composables
+1. Backend: data models + migrations
+2. Backend: API layer (routes, controllers/views, services)
+3. Frontend: state management + API integration
 4. Frontend: components + pages
 
 ### Open Questions
@@ -160,7 +160,7 @@ After writing the file, present a concise summary to the user:
 - Where the spec was saved
 - Key decisions made across all stages
 - Any open questions or concerns flagged by any agent
-- Remind the user they can use `/be-plan` and `/fe-plan` (or `/fs-plan`) to implement from this spec
+- Remind the user they can use `/eng-plan` to create an implementation plan from this spec
 
 ## Feature
 

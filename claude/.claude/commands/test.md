@@ -18,7 +18,7 @@ Analyze what needs testing, determine whether it's frontend or backend, and disp
 
 2. **Analyze the testing target** described below:
    - Read the referenced files to understand what needs testing
-   - Determine if this is **frontend** (components, pages, stores, composables → Vitest) or **backend** (models, views, serializers, tasks → Django test framework) or **both**
+   - Determine if this is **frontend** (components, pages, stores, hooks/composables) or **backend** (models, controllers, services, tasks) or **both**
 
 3. **Dispatch the appropriate coder(s)**:
 
@@ -29,8 +29,7 @@ Analyze what needs testing, determine whether it's frontend or backend, and disp
    For each coder:
    - Pass the test target description and any relevant context you gathered
    - Instruct it to: examine existing test patterns in the codebase, write tests that follow those patterns, cover happy paths, edge cases, and error scenarios
-   - For backend: use Django's test framework
-   - For frontend: use Vitest
+   - Follow the project's existing test patterns and framework
 
 4. **After coder(s) complete**, summarize:
    - What tests were written

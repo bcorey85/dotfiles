@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SERVERS=(
+  "github|http|https://api.githubcopilot.com/mcp|pat|GitHub Personal Access Token"
+  "jira|http|https://mcp.atlassian.com/v1/mcp|oauth|"
+  "notion|http|https://mcp.notion.com/mcp|oauth|"
+  "figma|http|https://mcp.figma.com/mcp|oauth|"
+)
+
+usage() {
+  echo "Usage: mcp_auth <server> [--scope local|user|project]"
+  echo ""
+  echo "Servers:"
+  for entry in "${SERVERS[@]}"; do
+    IFS='|' read -r name _ _ _ _ <<< "$entry"
+    echo "  $name"
+  done
+  exit 1
+}
+
+[[ $# -lt 1 ]] && usage
+
+SERVER="$1"
+SCOPE="${2:-user}"
+
+# Find the server config
+MATCH=""
+for entry in "${SERVERS[@]}"; do
+  IFS='|' read -r name transport url auth token_prompt <<< "$entry"
+  if [[ "$name" == "$SERVER" ]]; then
+    MATCH="$entry"
+    break
+  fi
+done
+
+if [[ -z "$MATCH" ]]; then
+  echo "Unknown server: $SERVER"
+  usage
+fi
+
+IFS='|' read -r name transport url auth token_prompt <<< "$MATCH"
+
+# Remove existing server config if present
+if claude mcp list 2>/dev/null | grep -q "^$name"; then
+  echo "Removing existing $name config..."
+  claude mcp remove "$name"
+fi
+
+SCOPE_FLAG=""
+[[ -n "$SCOPE" ]] && SCOPE_FLAG="--scope $SCOPE"
+
+if [[ "$auth" == "pat" ]]; then
+  read -rsp "$token_prompt: " token
+  echo ""
+  claude mcp add-json "$name" \
+    "{\"type\":\"http\",\"url\":\"$url\",\"headers\":{\"Authorization\":\"Bearer $token\"}}" \
+    $SCOPE_FLAG
+else
+  claude mcp add --transport "$transport" "$name" "$url" $SCOPE_FLAG
+fi
+
+echo ""
+echo "$name MCP server added. Run 'claude mcp list' to verify."

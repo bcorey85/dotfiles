@@ -125,3 +125,10 @@ export PATH="$HOME/.local/bin:$HOME:$PATH"
 if [[ "$(uname)" == "Linux" ]]; then
     eval "$(keychain --eval --quiet --agents ssh id_ed25519)"
 fi
+
+# bun completions
+[ -s "/home/brandon/.bun/_bun" ] && source "/home/brandon/.bun/_bun"
+
+# bun
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"

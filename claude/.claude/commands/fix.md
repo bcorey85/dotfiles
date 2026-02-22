@@ -1,24 +1,27 @@
 ---
-description: Smart bug fixer — analyzes the issue and dispatches the right coder subagent(s)
+description: Smart bug fixer — auto-detects scope or accepts be/fe/fs modifier, dispatches coder subagent(s)
 allowed-tools: [Task, Read, Glob, Grep]
 ---
 
 # Fix
 
-Analyze the bug or issue, determine whether it's frontend, backend, or fullstack, and dispatch the appropriate coder subagent(s).
+Analyze a bug or issue, determine scope, and dispatch the appropriate coder subagent(s) to investigate and fix it.
 
 ## Modifiers
 
-- `+fast` — Use Haiku model for coder subagents. Use for trivial fixes like renames, typos, or simple one-line changes.
-- `+deep` — Use Opus model for coder subagents. Use for complex bugs, race conditions, subtle logic errors, or anything requiring deeper reasoning.
+- `be` or `backend` — force backend-only scope
+- `fe` or `frontend` — force frontend-only scope
+- `fs` or `fullstack` — force fullstack scope
+- `+fast` — Use Haiku model. For trivial fixes like renames, typos, or simple one-line changes.
+- `+deep` — Use Opus model. For complex bugs, race conditions, subtle logic errors, or anything requiring deeper reasoning.
 
 ## Instructions
 
 1. **Check for modifiers**: If `+deep` is present, pass `model: "opus"` to all Task tool calls below. If `+fast` is present, pass `model: "haiku"`. Strip modifiers from the prompt passed to coders.
 
-2. **Analyze the issue** described below:
-   - Read any referenced files, error messages, or stack traces
-   - Determine if this is a **frontend** issue (components, pages, stores, styles, composables), a **backend** issue (models, views, serializers, tasks, migrations), or **both**
+2. **Determine scope**:
+   - If a scope modifier (`be`, `fe`, `fs`) was provided, use that
+   - Otherwise, analyze the issue — read referenced files, error messages, stack traces — and determine if this is frontend, backend, or both
 
 3. **Dispatch the appropriate coder(s)**:
 
@@ -29,7 +32,8 @@ Analyze the bug or issue, determine whether it's frontend, backend, or fullstack
    For each coder:
    - Pass the full bug description and any relevant context you gathered
    - Instruct it to explore the code, identify the root cause, and implement the fix
-   - If the issue turns out to be architectural, have it report back and recommend `/fe-plan`, `/be-plan`, or `/fs-plan` instead
+   - Verify the fix doesn't break related functionality
+   - If the issue turns out to be architectural, have it report back and recommend `/eng-plan` instead
 
 4. **After coder(s) complete**, summarize:
    - What the root cause was

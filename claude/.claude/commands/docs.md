@@ -3,7 +3,7 @@ Write or update documentation in the /docs directory. Before writing:
 1. Understand what needs to be documented (feature, API, architecture, guide, etc.)
 2. Review existing documentation structure and style
 3. Determine the best format (markdown, API specs, diagrams, etc.)
-4. Identify which documentation files in /docs need to be created or updated
+4. Identify which documentation files need to be created or updated (check for existing `docs/`, `documentation/`, or similar directories; if none exist, ask the user where to put them)
 5. Present a plan for approval
 6. Write concise, implementation-focused documentation
 

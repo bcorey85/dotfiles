@@ -14,8 +14,8 @@ Analyze the test suite for a given scope (backend, frontend, or specific module)
 ## Target Scope
 
 The user will specify a scope via arguments. Interpret it as follows:
-- **"backend"** or **"be"**: Review all backend test files (`backend/*/tests.py`) against their source modules
-- **"frontend"** or **"fe"**: Review all frontend test files (`frontend/app/utils/__tests__/*.test.ts`, and any component tests) against their source
+- **"backend"** or **"be"**: Review all backend test files against their source modules. Detect test file locations by reading `CLAUDE.md` and globbing for common patterns (`**/*.test.ts`, `**/*.spec.ts`, `**/tests.py`, `**/test_*.py`, etc.) in the backend directory.
+- **"frontend"** or **"fe"**: Review all frontend test files against their source. Detect test file locations the same way in the frontend directory.
 - **A specific app/module name** (e.g., "engine", "workflow", "formatters"): Review only that module's tests
 - **No arguments**: Review both backend and frontend
 
@@ -156,6 +156,6 @@ that a coder agent can execute. Group by backend/frontend if both were reviewed.
 - **Prioritize business logic.** A missing test for a queue claiming function matters more than a missing test for a simple getter.
 - **Be specific.** "Needs more tests" is useless. "The `resolve_next_node()` function in `engine/routing.py:45` has no test for the case where a decision node has no matching edge rule" is actionable.
 - **Don't flag trivial gaps.** Simple data classes, constants files, and pure config don't need unit tests. Focus on logic.
-- **Consider the test framework.** Backend uses Django's TestCase/TransactionTestCase. Frontend uses Vitest. Align suggestions with the framework's idioms.
+- **Consider the test framework.** Read `CLAUDE.md` and examine existing test files to determine which framework is used (Jest, Vitest, pytest, Django TestCase, Bun test, etc.). Align suggestions with that framework's idioms.
 - **Count assertions per behavior, not per test.** A test with 5 assertions about one behavior is fine. A test with 1 assertion about 5 behaviors is not.
 - **Your report will be handed to coder agents.** Make every finding precise enough that a coder can write the fix without asking follow-up questions.

@@ -31,7 +31,7 @@ Dispatch an Explore agent to dig into an issue, trace data flow, read code, and 
    - Relevant file paths and line numbers
    - Data flow / call chain
    - Suggested fix approach (without implementing it)
-   - Recommend the appropriate next command: `/fix`, `/be-fix`, `/fe-fix`, `/fs-fix`, or a `-plan` command if architectural
+   - Recommend the appropriate next command: `/fix` (with `be`, `fe`, or `fs` modifier if scope is clear), or `/eng-plan` if the issue is architectural
 
 ## Issue
 

@@ -27,8 +27,8 @@ Review recent changes in this codebase using the code-reviewer subagent.
    **If 5 or fewer files changed**: Dispatch a single code-reviewer subagent
 
    **If more than 5 files changed**: Dispatch parallel code-reviewer subagents to speed up the process:
-   - One for frontend files (components, pages, stores, etc.)
-   - One for backend files (models, views, serializers, tests, etc.)
+   - One for frontend files (components, pages, stores, styles, etc.)
+   - One for backend files (models, controllers/views, services, migrations, tests, etc.)
 
    Launch both in a single message with multiple Task tool calls.
 

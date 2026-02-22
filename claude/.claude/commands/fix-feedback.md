@@ -36,7 +36,7 @@ Dispatch parallel frontend-coder and backend-coder subagents to investigate and 
    - Which issues were fixed
    - Any issues intentionally skipped (with reasoning)
    - Any new concerns discovered
-   - If any issue requires architectural rethinking, recommend the user run `/fe-plan` or `/be-plan` instead
+   - If any issue requires architectural rethinking, recommend the user run `/eng-plan` instead
 
 ## Validation
 
@@ -44,4 +44,4 @@ Each agent should verify issues are valid before fixing. Skip issues that are:
 - False positives or stylistic preferences
 - Out of scope for a quick fix
 - Blocked by other unresolved issues
-- Architectural in nature (recommend `/fe-plan` or `/be-plan` instead)
+- Architectural in nature (recommend `/eng-plan` instead)

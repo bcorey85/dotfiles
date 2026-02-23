@@ -26,7 +26,7 @@ Run a full product-to-architecture planning pipeline for a new feature. This pro
 Launch the product-spec-manager agent (`subagent_type: product-spec-manager`):
 - Pass the feature description below
 - Instruct it to define: problem statement, user stories, success criteria, scope boundaries, and priority
-- Instruct it to examine the existing codebase and any existing product specs in `/product-specs/` for context
+- Instruct it to examine the existing codebase and any existing product specs in `product-specs/` for context
 - Tell it to NOT create or write any files — just return the analysis as text output
 - The output should follow its standard spec format but returned as text, not written to disk
 
@@ -98,7 +98,7 @@ Launch the frontend-architect agent (`subagent_type: frontend-architect`):
 
 Derive a filename from the feature name (kebab-case, e.g., `user-notifications.md`).
 
-Write a unified spec document to `/product-specs/FEATURE_NAME.md` with these sections, sourced from the respective agents:
+Write a unified spec document to `product-specs/FEATURE_NAME.md` with these sections, sourced from the respective agents:
 
 1. **Product Specification** — Problem Statement, User Stories, Success Criteria, Scope (from product-spec-manager)
 2. **UX Design** — Recommended User Flows, Interaction Patterns, Accessibility & Responsive Notes (from UX researcher)

@@ -31,7 +31,6 @@ If a bare topic name is passed (not `be`/`fe`/`fs`/`+quick`/`+deep`), treat it a
    - `CLAUDE.md` — project structure, conventions, stack
    - Glob `eng-arch/*.md` — existing architecture docs
    - Glob `eng-plan/*.md` — recent implementation plans (scan for recurring patterns)
-   - Glob `product-specs/*.md` — product context
 
 2. **Determine what exists.** Categorize:
    - **Fresh run** — `eng-arch/` is empty or doesn't exist

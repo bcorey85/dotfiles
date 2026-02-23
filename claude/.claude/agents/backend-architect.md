@@ -1,6 +1,6 @@
 ---
 name: backend-architect
-description: "Design and plan backend features — data models, API contracts, database schemas, service architecture. Produces implementation plans for backend-coder. Read-only, no code changes. Use for features requiring design decisions, complex tradeoff analysis, or API contract coordination. Skip this agent for simple, well-defined tasks (add a field, CRUD endpoint, bug fix) — use backend-coder directly instead."
+description: "Design and plan backend features — data models, API contracts, database schemas, service architecture. Produces implementation plans for backend-coder. Read-only, no code changes. Validates approach against real codebase to catch coupling risks, stale assumptions, and edge cases. Skip only for pure configuration (adding an env var, enabling a flag) — not for endpoints, services, or anything involving data flow."
 model: opus
 color: blue
 ---

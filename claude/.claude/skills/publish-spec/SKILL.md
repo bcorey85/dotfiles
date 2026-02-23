@@ -14,17 +14,17 @@ Publish a feature spec to the Notion Specs database. This is a PM-side command �
 
 The input may be one of:
 
-- **A `/product-specs/*.md` file** (output of `/feature-plan`) — this is the richest source. Read and extract from it.
+- **A `product-specs/*.md` file** (output of `/feature-plan`) — this is the richest source. Read and extract from it.
 - **A brief description** ("task filtering API") — you'll write the spec content yourself.
 
 **Check for existing product specs first:**
-- Glob `/product-specs/*.md` for files matching the feature name
+- Glob `product-specs/*.md` for files matching the feature name
 - If found, ask the user: "Found `product-specs/task-filtering.md` — want me to publish this to Notion?"
 - If multiple matches, let the user choose
 
 ### Step 2: Extract Spec Content
 
-**If publishing from a `/product-specs/` file:**
+**If publishing from a `product-specs/` file:**
 - Read the file
 - Extract: Problem Statement, Approach (from the architecture sections), Acceptance Criteria (from Success Criteria + scope), and Open Questions
 - Condense the multi-agent output into the Notion spec template format — the Notion spec should be a concise summary, not a copy of the full feature plan
@@ -50,7 +50,7 @@ Create the spec page in the Specs database using `notion-create-pages`:
   - **Open Questions** — unresolved decisions
 
 If publishing from a product spec, also add a reference line:
-> Source: `/product-specs/<filename>.md`
+> Source: `product-specs/<filename>.md`
 
 ### Step 4: User Review
 

@@ -7,13 +7,6 @@ allowed-tools: [Read, Glob, Grep, Bash, mcp__notion__notion-search, mcp__notion_
 
 Create or update customer-facing documentation in the Notion Docs section after shipping a feature.
 
-## Notion Context
-
-- Docs page: `30ed798c-c4fd-81d3-97a4-e6ad3f32f14f`
-- Getting Started: `30ed798c-c4fd-817b-b7dc-e73221b7c4b6`
-- API Reference: `30ed798c-c4fd-81cf-9ea0-d1a331a99edc`
-- Guides DB data source: `c83c5e06-e528-4f7c-9e99-503c0764af0e`
-
 ## Instructions
 
 1. **Determine what needs documenting** from the user's input. This may be:
@@ -41,8 +34,6 @@ Create or update customer-facing documentation in the Notion Docs section after 
 5. **For Getting Started updates**, fetch the current page first, then use `insert_content_after` or `replace_content_range` to update it.
 
 6. **Show the user** what was created/updated with links.
-
-7. **Log MCP usage** to `docs/mcp-usage.jsonl` for each tool call.
 
 ## Arguments
 

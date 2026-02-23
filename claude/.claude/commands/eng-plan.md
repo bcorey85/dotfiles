@@ -1,6 +1,6 @@
 ---
 description: Plan a feature — auto-detects scope (fe/be/fullstack), runs architect(s), asks questions. Optionally writes plan to disk and/or dispatches coders.
-allowed-tools: [Bash, Read, Glob, Grep, Task, AskUserQuestion]
+allowed-tools: [Bash, Read, Glob, Grep, Task, AskUserQuestion, Skill]
 ---
 
 # Engineering Plan
@@ -34,7 +34,8 @@ Auto-detects scope and launches the appropriate architect(s). After planning, as
 5a. **Assess complexity.** If the task is configuration-level (installing packages, wiring pipes/middleware, adding a field) with no design decisions:
    - Skip Phase 3 (architect analysis) entirely
    - Write the plan directly based on existing codebase patterns
-   - Ask the user: "This is straightforward configuration — I'll write the plan directly. Want me to skip the architect and go lean?"
+   - Ask the user: "This is straightforward configuration — I'll write the plan directly. Want me to skip the architect and go lean?" **Wait for explicit confirmation before proceeding.** If the user says no or wants the full analysis, continue to Phase 3.
+   - **Still dispatch coder subagent(s) in Phase 5 if the user chooses "Implement now."** "Go lean" means skipping the architect, NOT skipping the coder. The coder dispatch is what triggers the auto-review chain — implementing inline breaks that chain.
 
 6. **If a scope hint was passed** (`be`, `fe`, `fs`), use it directly.
 
@@ -73,7 +74,11 @@ Auto-detects scope and launches the appropriate architect(s). After planning, as
 
 ### Phase 5: User Choice
 
-14. **Ask the user two independent questions:**
+14. **HARD STOP — DO NOT WRITE ANY FILES OR DISPATCH ANY AGENTS UNTIL THE USER ANSWERS THESE QUESTIONS.**
+
+    This has been a recurring failure point. The user has corrected this behavior TWICE.
+    You MUST present these questions and WAIT for explicit answers before taking any action.
+    Presenting the plan in the conversation is fine. Writing files or dispatching coders is NOT.
 
     **Save to disk?**
     - Yes → Write to `eng-plan/` using the template below. File naming:
@@ -86,6 +91,7 @@ Auto-detects scope and launches the appropriate architect(s). After planning, as
       - Backend only: launch `backend-coder` with the architect's plan
       - Frontend only: launch `frontend-coder` with the architect's plan
       - Fullstack: launch BOTH `backend-coder` and `frontend-coder` in parallel — frontend-coder also gets the API contract
+      **IMPORTANT: Always dispatch a coder subagent. Do NOT implement code changes yourself.** The coder dispatch is what triggers the auto-review chain. Implementing inline bypasses peer review.
     - Later → Stop here
 
 15. **Present summary**:
@@ -93,6 +99,7 @@ Auto-detects scope and launches the appropriate architect(s). After planning, as
     - File written (if saved)
     - What was implemented (if coded)
     - Remind to check Figma if frontend work is involved
+    - **If any code was changed during this session** (whether by dispatched coders OR by you directly), tell the user: "Auto-dispatching `/peer-review` to check the implementation before committing." Then invoke the `/peer-review` skill using the Skill tool (`skill: "peer-review"`). This runs AFTER all implementation is complete and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing. **Never skip peer review just because no coder subagent was dispatched** — the review is triggered by code changes, not by how those changes were made.
 
 ## Template (for saving to disk)
 
@@ -125,8 +132,16 @@ Key decisions made during planning, with rationale.
 - Internal modules to build on
 
 ## Verification
-- [ ] Acceptance criteria as checkboxes
-- [ ] How to manually test
+Write verification items as TESTABLE assertions, not just descriptions. Each item should specify HOW to verify, not just WHAT to verify.
+
+- [ ] **Test-verified**: [item] — "run tests, confirm [specific test name/pattern] passes"
+- [ ] **Build-verified**: [item] — "build succeeds with zero errors"
+- [ ] **Code-verified**: [item] — "grep for [pattern] in [file], confirm [count/shape]" (weakest — flag when this is the only verification)
+- [ ] **Manual-verified**: [item] — "hit [endpoint], confirm [expected response]"
+
+Prefer test-verified items. If an AC item has no existing test, note whether one should be written.
+
+Integration checks: route ordering, validator edge cases, no-op handling, caller compatibility.
 ```
 
 ## Design Note

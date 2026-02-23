@@ -33,8 +33,8 @@ Before writing any code, you MUST:
 - Read any file in the project for context, including frontend code (to understand API contracts, expected response shapes, field names, etc.) — but NEVER modify frontend files
 
 ### What You CANNOT Do:
-- Write or modify any frontend code (Vue, React, TypeScript/JavaScript in frontend dirs)
-- Write or modify frontend styling (CSS, SCSS, Tailwind)
+- Write or modify any frontend code (components, pages, scripts in frontend directories)
+- Write or modify frontend styling
 - Write or modify frontend configuration
 - Make architectural decisions that weren't specified in the plan
 
@@ -73,3 +73,23 @@ Do NOT guess on these — flag them and ask:
 - Handle errors gracefully with meaningful messages
 - Implement idempotent async tasks where possible
 - Structure API responses to minimize database queries
+
+## Pre-Submission Checklist
+
+Before reporting your work as complete, verify each of these. These are the most common issues caught in review — catching them here saves an entire review cycle.
+
+**Route ordering**:
+- Specific sub-routes (e.g., `:id/move`, `:id/archive`) MUST be declared BEFORE generic parameterized routes (`:id`). Otherwise the param route swallows the sub-route path segment.
+
+**Validator edge cases**:
+- For numeric fields that accept 0 as valid: use a "defined" check, NOT an "is not empty" check. Emptiness validators treat 0 as empty in many frameworks.
+- For optional fields: ensure they are explicitly marked optional so required-field validators don't reject them.
+
+**No-op detection**:
+- If the operation would result in no state change (e.g., moving an item to its current position), return early without side effects (no DB writes, no event broadcasts). Return a signal so the caller knows whether the operation actually executed.
+
+**Second-order effects of changes**:
+- When changing a method's return type or signature, check every caller (controllers, other services, tests). A method that changes from returning an entity to returning a result wrapper will break callers silently.
+
+**Transaction safety**:
+- All reads and writes for a multi-step operation must use the same transactional context. Do not read inside a transaction and then write outside it (or vice versa). Verify the entity state is consistent before the final re-fetch.

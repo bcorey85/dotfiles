@@ -34,6 +34,19 @@ Use the Task tool with `subagent_type: "the-cloptimizer"`.
 - Add to the prompt: "Analyze only the last 3-5 exchanges in the conversation. Only read behavior files that are directly referenced or relevant to those exchanges — skip the full corpus scan."
 - Strip `+quick` from the prompt
 
+### Step 1b: Framework-Specific Content Gate (MANDATORY)
+
+Before presenting recommendations to the user, scan EVERY proposed change targeting a skill file (`~/.claude/commands/*.md`) or agent file (`~/.claude/agents/*.md`) for framework-specific content. This includes:
+- Runtime/package manager commands (`bun`, `npm`, `pip`, `cargo`, etc.)
+- Framework names (NestJS, Django, Vue, React, Express, etc.)
+- Language-specific patterns (decorators, hooks, middleware, etc.)
+- Specific test runners (Jest, Vitest, pytest, etc.)
+- Technology-specific file extensions (`.vue`, `.tsx`, `.py`, etc.)
+
+If ANY recommendation targeting a USER-SCOPED file (`~/.claude/commands/` or `~/.claude/agents/`) contains framework-specific content, **rewrite it to be generic before presenting**. Use phrasing like "Run the project's test suite (refer to CLAUDE.md for commands)" instead of "Run `bun run --filter api test`". The user has corrected this behavior MULTIPLE TIMES. Do not let it through.
+
+**Exception:** Framework-specific content IS allowed in project-scoped files: CLAUDE.md, project MEMORY.md, and project-local agents/skills (files inside the repo). The gate only applies to user-scoped files shared across projects.
+
 ### Step 2: Present Recommendations
 
 Format the agent's output as a numbered menu for the user. Group by severity (CRITICAL first):

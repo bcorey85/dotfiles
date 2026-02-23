@@ -1,6 +1,26 @@
 {
   "model": "Opus",
   "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=\"$CLAUDE_FILE_PATH\"; if [ -n \"$FILE\" ] && echo \"$FILE\" | grep -qE '\\.(ts|tsx|js|jsx|vue|json|css|scss|md)$'; then prettier --write \"$FILE\" 2>/dev/null || true; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=\"$CLAUDE_FILE_PATH\"; if [ -n \"$FILE\" ] && echo \"$FILE\" | grep -qiE 'CLAUDE\\.md$'; then LINES=$(wc -l < \"$FILE\" 2>/dev/null || echo 0); if [ \"$LINES\" -gt 150 ]; then echo \"CLAUDE.md is $LINES lines (target: <150). Consider moving reference data to skills or MEMORY.md.\" >&2; fi; fi"
+          }
+        ]
+      }
+    ],
     "Notification": [
       {
         "matcher": "idle_prompt",
@@ -39,6 +59,14 @@
       "mcp__plugin_context7_context7__resolve-library-id",
       "mcp__plugin_context7_context7__query-docs",
       "WebSearch"
+    ],
+    "deny": [
+      "Read(path:**/.env*)",
+      "Read(path:**/credentials*)",
+      "Read(path:**/*.key)",
+      "Read(path:**/*.pem)",
+      "Edit(path:**/.env*)",
+      "Write(path:**/.env*)"
     ]
   }
 }

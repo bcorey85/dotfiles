@@ -1,5 +1,5 @@
 ---
-description: Review recent changes using the code-reviewer subagent
+description: Peer-review recent changes using the code-reviewer subagent
 allowed-tools: [Task, Bash, Read, Glob, Grep]
 ---
 
@@ -45,7 +45,9 @@ Review recent changes in this codebase using the code-reviewer subagent.
 
 4. **Present the review results** to the user organized by severity
 
-5. **Remind the user** they can run `/fix-feedback` to dispatch parallel subagents to fix the issues
+5. **Suggest next steps** based on the review outcome:
+   - **If issues found**: "Run `/fix-feedback` to fix these issues, then `/peer-review` again to verify the fixes."
+   - **If all clear**: "No issues found. Ready for `/commit`."
 
 ## Arguments
 

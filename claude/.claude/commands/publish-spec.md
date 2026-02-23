@@ -7,11 +7,6 @@ allowed-tools: [Read, Glob, Grep, Bash, Task, mcp__notion__notion-search, mcp__n
 
 Publish a feature spec to the Notion Specs database. This is a PM-side command — it only touches Notion. Use `/create-ticket` afterwards to generate Jira tickets from the spec's acceptance criteria.
 
-## Notion Context
-
-- Specs DB data source: `99f1726c-e413-4fbe-bcd1-f7411d361bb0`
-- Spec Template page: `30ed798c-c4fd-81cb-b456-c08e87c5fd1f`
-
 ## Instructions
 
 ### Step 1: Determine the Source
@@ -40,7 +35,7 @@ The input may be one of:
 ### Step 3: Create the Notion Spec
 
 Create the spec page in the Specs database using `notion-create-pages`:
-- Parent: data source `99f1726c-e413-4fbe-bcd1-f7411d361bb0`
+- Parent: the Specs DB data source (see CLAUDE.md Notion Workspace section)
 - Properties:
   - **Name**: feature name
   - **Status**: "Draft"
@@ -68,10 +63,6 @@ Show the spec to the user and ask if they want to:
 Present:
 - Link to the Notion spec
 - Suggested next step: "Run `/create-ticket` to generate Jira tickets from the acceptance criteria"
-
-### Step 6: Log MCP Usage
-
-Log each Notion tool call to `docs/mcp-usage.jsonl`.
 
 ## The Pipeline
 

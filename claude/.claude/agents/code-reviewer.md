@@ -36,6 +36,9 @@ For each changed file, analyze for the following categories:
 - Incorrect boolean logic or operator precedence
 - Missing return statements or incorrect return values
 - Async/await misuse and unhandled promise rejections
+- No-op scenarios: operations that result in no state change but still execute side effects (DB writes, event broadcasts)
+- Route/URL ordering: parameterized routes shadowing specific sub-routes (e.g., `:id` before `:id/action`)
+- Validator falsy traps: fields where 0, false, or "" are valid but would be rejected by emptiness checks
 
 **🏗️ Architectural Violations**
 - Violations of established project structure and layering

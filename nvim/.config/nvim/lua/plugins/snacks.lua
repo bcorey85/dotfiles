@@ -23,6 +23,7 @@ return {
           hidden = true,
           ignored = true,
           exclude = { ".git" },
+          watcher = true,
         },
         files = {
           hidden = true,

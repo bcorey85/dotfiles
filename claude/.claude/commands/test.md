@@ -18,7 +18,7 @@ Analyze what needs testing, determine whether it's frontend or backend, and disp
 
 2. **Analyze the testing target** described below:
    - Read the referenced files to understand what needs testing
-   - Determine if this is **frontend** (components, pages, stores, hooks/composables) or **backend** (models, controllers, services, tasks) or **both**
+   - Determine if this is **frontend** (components, pages, stores, state management) or **backend** (models, controllers, services, tasks) or **both**
 
 3. **Dispatch the appropriate coder(s)**:
 

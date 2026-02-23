@@ -27,9 +27,9 @@ Present the extracted criteria to the user and confirm before creating tickets.
 ### Step 3: Create Jira Tickets
 
 For each acceptance criterion:
-- Create a Jira Task via `createJiraIssue` in project `TAS` (cloud ID: `ce38e0b7-717f-44a8-9ff0-aeac82a26560`)
+- Create a Jira Task via `createJiraIssue` using the project key and Jira Cloud ID from CLAUDE.md
 - **Summary**: concise version of the criterion
-- **Description**: include the full criterion text + a link back to the Notion spec URL
+- **Description**: include the full criterion text + a link back to the Notion spec URL. **Pass description as a plain markdown string** — the Jira MCP tool handles ADF conversion internally. Do NOT pass Atlassian Document Format (ADF) JSON objects.
 - If there are many criteria, ask the user if they want:
   - One ticket per criterion
   - Grouped tickets (related criteria merged)
@@ -48,10 +48,6 @@ Present:
 - Link to the Notion spec
 - List of Jira tickets created (keys + summaries)
 - Suggested next step: "Dev can now `git checkout -b JIRAPROJECT-TICKETNUMBER-description` and run `/pull-ticket`"
-
-### Step 6: Log MCP Usage
-
-Log each Notion and Jira tool call to `docs/mcp-usage.jsonl`.
 
 ## Arguments
 

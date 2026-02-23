@@ -124,6 +124,16 @@ Sort recommendations by severity (CRITICAL first), then by impact within the sam
 - Purely cosmetic changes unless in `+deep` mode
 - Changes that would break existing working workflows
 - Removing instructions without evidence they're harmful
+- **NEVER include language, framework, or technology-specific content in skills or agents.** This is a HARD rule the user has enforced MULTIPLE TIMES. Agent and skill definitions MUST be stack-agnostic. No framework names, no CLI commands, no package managers, no file extensions, no library-specific patterns. If a recommendation contains ANY of the following in a skill/agent file, it is WRONG and must be rewritten:
+  - Runtime/package manager commands (e.g., `bun run`, `npm test`, `pip install`)
+  - Framework names (e.g., NestJS, Django, Vue, React)
+  - Language-specific syntax or patterns (e.g., decorators, hooks, middleware)
+  - Specific test runners (e.g., Jest, Vitest, pytest)
+  - File extensions tied to a stack (e.g., `.vue`, `.tsx`, `.py`)
+
+  Instead, use generic phrasing and defer to CLAUDE.md: "Run the project's test suite (see CLAUDE.md for commands)."
+
+  **Where framework-specific content IS allowed:** CLAUDE.md, project MEMORY.md, and project-local agents/skills (files inside the repo, not in `~/.claude/`). The rule applies to USER-SCOPED files in `~/.claude/commands/` and `~/.claude/agents/` which are shared across projects.
 
 ## When Focused on a Specific Interaction (args provided)
 

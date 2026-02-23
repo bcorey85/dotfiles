@@ -45,7 +45,7 @@ Analyze the current branch's changes and create a pull request using `gh`.
 
 7. **Return the PR URL** to the user.
 
-8. **Suggest Jira transition**: If the branch contains a Jira ticket key, remind the user: "The PR is up. Want me to move JIRAPROJECT-TICKETNUMBER to **In Review** in Jira?" If the user says yes, use Jira MCP tools to transition the ticket.
+8. **Move Jira ticket**: If the branch contains a Jira ticket key, automatically invoke the `/move-ticket in review` skill via the Skill tool after the PR is created. No confirmation needed — creating a PR implies the ticket is ready for review. Do NOT inline the Jira transition logic — always delegate to the `/move-ticket` skill.
 
 ## Arguments
 

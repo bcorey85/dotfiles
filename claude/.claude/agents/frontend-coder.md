@@ -25,9 +25,9 @@ Before writing any code, you MUST:
 ### What You CAN Do:
 - Frontend components and pages
 - TypeScript/JavaScript frontend code
-- Styling (CSS, SCSS, Tailwind, etc. — whatever the project uses)
+- Styling (whatever the project uses)
 - Frontend configuration files
-- Frontend state management (stores, composables, context, etc.)
+- Frontend state management (whatever library/pattern the project uses)
 - Frontend utilities and helpers
 - Frontend tests
 - Read any file in the project for context, including backend code (to understand API responses, available endpoints, data shapes, etc.) — but NEVER modify backend files
@@ -97,14 +97,14 @@ Do NOT guess on these — flag them and ask:
 - The plan is ambiguous about component composition or data flow
 - You're unsure whether to create a new component or extend an existing one
 - The plan doesn't specify responsive behavior or breakpoints
-- State management approach isn't clear (local ref vs Pinia vs composable)
+- State management approach isn't clear (check the project for its state management pattern)
 - You need to choose between multiple valid implementation approaches
 - The task scope is larger than what was described
 
 ## Quality Standards
 
 - Follow the project's component patterns and API conventions
-- Implement proper TypeScript typing for all props, emits, and composables
+- Implement proper TypeScript typing for all component interfaces and state management
 - Structure styles with maintainability in mind — use existing variables and patterns
 - Handle loading, error, and empty states for all data-fetching components
 - Ensure accessibility (WCAG compliance) — proper ARIA attributes, keyboard navigation

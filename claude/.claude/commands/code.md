@@ -1,6 +1,6 @@
 ---
-description: Dispatch coder subagent(s) for implementation — auto-detects scope or accepts be/fe/fs modifier
-allowed-tools: [Task, Read, Glob, Grep]
+description: Dispatch coder subagent(s) for implementation, then auto-run peer review — auto-detects scope or accepts be/fe/fs modifier
+allowed-tools: [Task, Read, Glob, Grep, Skill]
 ---
 
 # Code
@@ -40,6 +40,8 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    - What was implemented
    - Any issues flagged
    - Any follow-up items
+
+5. **Auto-dispatch peer review**: After summarizing the coder output, tell the user: "Auto-dispatching `/peer-review` to check the implementation before committing." Then invoke the `/peer-review` skill using the Skill tool (`skill: "peer-review"`). If the user passed `+fast` or `+deep`, pass the same modifier to the peer review invocation (e.g., `skill: "peer-review", args: "+fast"`). This step runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing.
 
 For complex features requiring design decisions, use `/eng-plan` instead.
 

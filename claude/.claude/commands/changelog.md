@@ -7,11 +7,6 @@ allowed-tools: [Bash, Read, Glob, Grep, mcp__notion__notion-create-pages, mcp__n
 
 Create a changelog entry in the Notion Changelog database based on recent commits or a version bump.
 
-## Notion Context
-
-- Changelog DB data source: `b355aefa-a396-4879-b948-344a05d6c2be`
-- Type options: Feature, Fix, Improvement, Breaking
-
 ## Instructions
 
 1. **Determine the version and scope** from the user's input:
@@ -36,8 +31,6 @@ Create a changelog entry in the Notion Changelog database based on recent commit
    - Content: bulleted list of all changes, grouped by type
 
 5. **Show the user** the created entry with a link.
-
-6. **Log MCP usage** to `docs/mcp-usage.jsonl` for each tool call.
 
 ## Arguments
 

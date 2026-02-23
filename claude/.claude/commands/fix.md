@@ -1,6 +1,6 @@
 ---
-description: Smart bug fixer — auto-detects scope or accepts be/fe/fs modifier, dispatches coder subagent(s)
-allowed-tools: [Task, Read, Glob, Grep]
+description: Smart bug fixer — auto-detects scope or accepts be/fe/fs modifier, dispatches coder subagent(s), then auto-runs peer review
+allowed-tools: [Task, Read, Glob, Grep, Skill]
 ---
 
 # Fix
@@ -39,6 +39,8 @@ Analyze a bug or issue, determine scope, and dispatch the appropriate coder suba
    - What the root cause was
    - What was changed and why
    - Any related concerns or follow-up items
+
+5. **Auto-dispatch peer review**: After summarizing the fix, tell the user: "Auto-dispatching `/peer-review` to check the fix before committing." Then invoke the `/peer-review` skill using the Skill tool (`skill: "peer-review"`). If the user passed `+fast` or `+deep`, pass the same modifier to the peer review invocation (e.g., `skill: "peer-review", args: "+fast"`). This step runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing.
 
 ## Issue
 

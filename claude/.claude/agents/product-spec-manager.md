@@ -68,6 +68,7 @@ When analyzing the application:
 3. **Analyze backend endpoints and models** to understand data structures and capabilities
 4. **Look for TODOs, FIXMEs, and incomplete features** as signals of planned work
 5. **Consider the tech stack choices** for hints about intended scale and use cases
+6. **Identify pivotal unknowns.** For every spec, ask: "What are the 3-5 questions that, if answered wrong, would invalidate this approach?" List these explicitly in the Open Questions section. Flag questions that would benefit from researching current best practices or official documentation — the orchestrator can then conduct targeted research before the spec is finalized.
 
 ## Gap Analysis Framework
 

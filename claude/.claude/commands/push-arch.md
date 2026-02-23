@@ -7,10 +7,6 @@ allowed-tools: [Read, Glob, Grep, Bash, mcp__notion__notion-search, mcp__notion_
 
 Push a local engineering architecture document from `/eng-arch/` to the Notion Wiki. Use this for cross-cutting decisions (ADRs, patterns, conventions) that should be shared and discoverable.
 
-## Notion Context
-
-- Wiki page: `30ed798c-c4fd-8105-8054-c6f729e3f049`
-
 ## Instructions
 
 ### Step 1: Find the Target File
@@ -29,14 +25,14 @@ If no argument provided:
 
 ### Step 3: Check for Existing Notion Page
 
-- Search Notion Wiki (`30ed798c-c4fd-8105-8054-c6f729e3f049`) for a page with the same or similar name using `notion-search`
+- Search the Notion Wiki (use the Wiki page ID from CLAUDE.md) for a page with the same or similar name using `notion-search`
 - If found: confirm with user, then **update** the existing page using `notion-update-page`
 - If not found: **create** a new page under the Wiki using `notion-create-pages`
 
 ### Step 4: Create or Update
 
 **When creating a new page:**
-- Parent: Wiki page `30ed798c-c4fd-8105-8054-c6f729e3f049`
+- Parent: the Wiki page (use the Wiki page ID from CLAUDE.md)
 - Title: derive from filename (kebab-case → Title Case)
 - Content: the full markdown from the local file
 
@@ -50,10 +46,6 @@ Present:
 - Notion page link (if available)
 - Whether it was created or updated
 - Remind the user that `/eng-arch/` docs are for cross-cutting decisions, not per-ticket plans
-
-### Step 6: Log MCP Usage
-
-Log each Notion tool call to `docs/mcp-usage.jsonl`.
 
 ## When to Use
 

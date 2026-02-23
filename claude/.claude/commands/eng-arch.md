@@ -39,7 +39,7 @@ If a bare topic name is passed (not `be`/`fe`/`fs`/`+quick`/`+deep`), treat it a
 
 3. **Read key source files** based on scope. Use Glob + Read to scan:
    - **Backend:** entry points, modules, controllers, services, entities, gateway files
-   - **Frontend:** main app file, router, stores, key components, composables
+   - **Frontend:** main app file, router, stores, key components, shared utilities
    - **Shared:** package.json files, config files, database schema
 
 ### Phase 2: Scope & Plan
@@ -79,7 +79,7 @@ If a bare topic name is passed (not `be`/`fe`/`fs`/`+quick`/`+deep`), treat it a
    **Frontend scope:**
    - Launch `frontend-architect` (`subagent_type: frontend-architect`). Instruct it to:
      - Explore the frontend codebase thoroughly
-     - Document: component architecture, state management, routing, API integration patterns, styling conventions, composables/utilities
+     - Document: component architecture, state management, routing, API integration patterns, styling conventions, shared utilities
      - Read existing `eng-arch/` docs as context
      - Return structured analysis as text (do NOT write files)
 

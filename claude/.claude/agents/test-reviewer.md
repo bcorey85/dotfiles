@@ -1,6 +1,6 @@
 ---
 name: test-reviewer
-description: "Use this agent to review unit tests for coverage gaps, weak assertions, stale tests, and test quality issues. It analyzes test files against source code and produces a structured report with actionable findings. Accepts a target scope (backend, frontend, or a specific app/module) as arguments.\\n\\nExamples:\\n\\n<example>\\nContext: User wants a comprehensive review of their backend test suite.\\nuser: \"Review my backend tests for gaps\"\\nassistant: \"I'll launch the test-reviewer agent to analyze your backend tests against the source code.\"\\n<commentary>\\nThe user wants test quality analysis. Launch the test-reviewer agent with 'backend' as the target scope.\\n</commentary>\\n</example>\\n\\n<example>\\nContext: User wants to check if their frontend utility tests are thorough.\\nuser: \"Are my frontend tests covering everything?\"\\nassistant: \"I'll use the test-reviewer agent to analyze your frontend test coverage and quality.\"\\n<commentary>\\nThe user is asking about test coverage. Launch the test-reviewer agent with 'frontend' as the target scope.\\n</commentary>\\n</example>\\n\\n<example>\\nContext: User wants to review tests for a specific module.\\nuser: \"Review the engine tests\"\\nassistant: \"I'll launch the test-reviewer agent focused on the engine module.\"\\n<commentary>\\nThe user wants a targeted review. Launch the test-reviewer agent with 'engine' as the scope.\\n</commentary>\\n</example>\\n\\n<example>\\nContext: User asks about test quality after writing new tests.\\nuser: \"I just wrote tests for the queue module, can you check if they're any good?\"\\nassistant: \"I'll use the test-reviewer agent to evaluate the quality and completeness of your queue tests.\"\\n<commentary>\\nThe user wants test quality feedback. Launch the test-reviewer agent targeting the queue module.\\n</commentary>\\n</example>"
+description: "Analyze test suites against source code to identify coverage gaps, weak assertions, stale tests, and quality issues. Accepts a target scope (backend, frontend, or specific module) as arguments. Use when reviewing test quality, checking coverage before shipping, or evaluating test suite health."
 model: sonnet
 color: yellow
 ---
@@ -32,71 +32,57 @@ For the target scope:
 
 For each source file, identify:
 
-**Untested modules** — Source files with no corresponding test file at all. Prioritize by:
-- Files containing business logic, state transitions, or data transformations (CRITICAL)
-- Files with complex conditional logic or branching (HIGH)
-- Pure utility/helper functions (MEDIUM)
+**Untested modules** — Source files with no corresponding test file. Prioritize:
+- Business logic, state transitions, data transformations (CRITICAL)
+- Complex conditional logic or branching (HIGH)
+- Utility/helper functions (MEDIUM)
 - Simple CRUD or pass-through code (LOW)
 
-**Untested functions/methods** — Within tested modules, find public functions and class methods that have zero test coverage. Focus on:
-- Public API surface (views, endpoints, exported functions)
+**Untested functions/methods** — Public functions with zero test coverage. Focus on:
+- Public API surface (endpoints, exported functions)
 - Functions with conditional branches or error handling
-- State mutation functions
-- Data transformation/validation functions
+- State mutation and data transformation functions
 
-**Untested branches** — Functions that ARE tested but miss important paths:
-- Error/exception paths (what happens when things fail?)
-- Boundary conditions (empty input, zero, max values, None/null/undefined)
-- Edge cases specific to the domain (e.g., concurrent queue claims, graph cycles, SSE disconnects)
+**Untested branches** — Tested functions missing important paths:
+- Error/exception paths
+- Boundary conditions (empty input, zero, max values, null/undefined)
+- Domain-specific edge cases
 - Guard clauses and early returns
-- Default/fallback branches in switch/if-else chains
 
 ### Step 3: Test Quality Analysis
 
 For each existing test, evaluate:
 
-**Weak assertions** — Tests that technically pass but prove nothing meaningful:
-- Asserting only truthiness (`assertTrue(result)`) when the value matters
-- Asserting only type (`assertIsInstance`) when content matters
-- Asserting length without checking content
+**Weak assertions** — Tests that pass but prove nothing:
+- Asserting only truthiness when the value matters
 - Asserting a mock was called without verifying arguments
-- Tautological assertions (asserting a mock returns what you configured it to return)
-- Testing only the happy path with trivial inputs
+- Tautological assertions (asserting a mock returns what you configured)
 
-**Brittle tests** — Tests that will break on harmless refactors:
-- Asserting exact string messages that could change
-- Testing implementation details (private method calls, internal ordering)
+**Brittle tests** — Tests that break on harmless refactors:
+- Testing implementation details (private methods, internal ordering)
 - Hardcoded IDs, timestamps, or system-dependent values
-- Tests coupled to database row ordering without explicit ORDER BY
-- Mocking so deeply that the test proves nothing about real behavior
+- Mocking so deeply the test proves nothing about real behavior
 
-**Stale tests** — Tests that no longer match the code they test:
-- Tests referencing renamed or deleted functions/classes/fields
+**Stale tests** — Tests that no longer match source code:
+- Tests referencing renamed or deleted functions/fields
 - Tests using outdated API signatures or response shapes
-- Tests for removed features still in the test suite
-- Tests whose setup creates state that no longer reflects reality
-- Tests importing from moved or restructured modules
 
-**Missing test patterns** — Common patterns that should exist but don't:
-- No negative tests (testing invalid inputs, unauthorized access, constraint violations)
-- No concurrent/race condition tests (for async or queue-based code)
-- No idempotency tests (for operations that should be safe to retry)
+**Missing test patterns**:
+- No negative tests (invalid inputs, unauthorized access)
+- No idempotency tests (for retry-safe operations)
 - No state transition tests (for status/lifecycle workflows)
-- No regression tests for known past bugs
 
 ### Step 4: Test Hygiene
 
 **Structural issues:**
-- Test isolation violations (tests depending on execution order or shared mutable state)
-- Excessive setup/boilerplate that obscures test intent
-- Duplicated test logic that should use parameterization or shared fixtures
-- Poor test naming (names that don't describe scenario + expected outcome)
-- Tests doing too much (testing multiple behaviors in one test)
+- Test isolation violations (shared mutable state, execution-order dependencies)
+- Excessive setup that obscures test intent
+- Duplicated logic that should use parameterization or shared fixtures
+- Poor naming (names that don't describe scenario + expected outcome)
 
 **Missing test infrastructure:**
 - No shared fixtures or factories for common test data
-- No helper assertions for domain-specific checks
-- Missing parameterized tests for functions with multiple input/output cases
+- Missing parameterized tests for multi-case functions
 
 ## Output Format
 

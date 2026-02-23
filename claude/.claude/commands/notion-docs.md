@@ -9,6 +9,8 @@ Create or update customer-facing documentation in the Notion Docs section after 
 
 ## Instructions
 
+0. **Check for workspace config**: If `NOTION.md` exists in the project root, read it for page IDs and workspace structure.
+
 1. **Determine what needs documenting** from the user's input. This may be:
    - A new feature that needs a guide ("document the task filtering API")
    - An API endpoint that needs reference docs ("update API reference for /tasks")
@@ -23,7 +25,7 @@ Create or update customer-facing documentation in the Notion Docs section after 
 
 3. **For API Reference updates**, read the actual code to generate accurate docs:
    - Find the route definitions and handlers
-   - Document request/response shapes from the TypeScript types
+   - Document request/response shapes from the source code
    - Include examples
 
 4. **For Guides**, create a new entry in the Guides DB:

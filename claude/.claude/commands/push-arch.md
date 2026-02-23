@@ -25,14 +25,14 @@ If no argument provided:
 
 ### Step 3: Check for Existing Notion Page
 
-- Search the Notion Wiki (use the Wiki page ID from CLAUDE.md) for a page with the same or similar name using `notion-search`
+- Search the Notion Wiki (use the Wiki page ID from `NOTION.md`) for a page with the same or similar name using `notion-search`
 - If found: confirm with user, then **update** the existing page using `notion-update-page`
 - If not found: **create** a new page under the Wiki using `notion-create-pages`
 
 ### Step 4: Create or Update
 
 **When creating a new page:**
-- Parent: the Wiki page (use the Wiki page ID from CLAUDE.md)
+- Parent: the Wiki page (use the Wiki page ID from `NOTION.md`)
 - Title: derive from filename (kebab-case → Title Case)
 - Content: the full markdown from the local file
 

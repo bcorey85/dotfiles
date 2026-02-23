@@ -35,7 +35,7 @@ The input may be one of:
 ### Step 3: Create the Notion Spec
 
 Create the spec page in the Specs database using `notion-create-pages`:
-- Parent: the Specs DB data source (see CLAUDE.md Notion Workspace section)
+- Parent: the Specs DB data source (read `NOTION.md` for the ID)
 - Properties:
   - **Name**: feature name
   - **Status**: "Draft"

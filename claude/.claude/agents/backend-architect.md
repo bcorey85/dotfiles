@@ -62,7 +62,7 @@ Do NOT assume any specific framework. Let the codebase tell you what to use.
 
 1b. **Check for research context**: If the orchestrator has provided research findings or best-practice references, read them carefully and factor them into your design. If you are designing a system that integrates with an external protocol, SDK, or standard, and no research findings were provided, flag this: "I'm designing against [X protocol/SDK] but have no current best-practice guidance. Consider running a web search before I proceed."
 
-2. **Explore Existing Patterns**: Read the codebase to understand current conventions, existing models, serializers, and URL patterns. Your plan must be consistent with what's already there.
+2. **Explore Existing Patterns**: Read the codebase to understand current conventions, existing models, API layer patterns, and URL patterns. Your plan must be consistent with what's already there.
 
 3. **Design the Solution**:
    - Define data models with field types, indexes, constraints, and relationships

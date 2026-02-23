@@ -1,6 +1,6 @@
 ---
 description: Pull Jira ticket context for the current branch before coding (dev command)
-allowed-tools: [Bash, Read, Glob, Grep, mcp__jira__getJiraIssue, mcp__jira__searchJiraIssuesUsingJql, mcp__jira__getTransitionsForJiraIssue, mcp__jira__transitionJiraIssue]
+allowed-tools: [Bash, Read, Glob, Grep, Skill, mcp__jira__getJiraIssue, mcp__jira__searchJiraIssuesUsingJql]
 ---
 
 # Pull Ticket Context
@@ -16,7 +16,7 @@ Fetch the Jira ticket details for the current branch so you have full context be
 
 2. **Extract the Jira ticket number** from the branch name (format: `JIRAPROJECT-TICKETNUMBER-description`). If the branch doesn't contain a ticket number, ask the user which ticket to pull.
 
-3. **Fetch the Jira ticket** using `getJiraIssue` with the Jira Cloud ID from CLAUDE.md:
+3. **Fetch the Jira ticket** using `getJiraIssue` with the Jira Cloud ID from `JIRA.md`:
    - Summary, description, acceptance criteria
    - Current status
    - Any comments with context

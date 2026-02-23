@@ -159,5 +159,5 @@ Apply as needed:
 ## Output
 
 1. Show optimized prompt in a code block
-2. Copy to clipboard (macOS): `echo 'PROMPT' | pbcopy`
+2. Copy to clipboard: use the platform's clipboard utility (`pbcopy` on macOS, `xclip -selection clipboard` on Linux, `clip.exe` on WSL/Windows)
 3. Brief explanation of changes (2-3 sentences max)

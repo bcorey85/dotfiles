@@ -1,6 +1,6 @@
 ---
 name: frontend-architect
-description: "Design and plan frontend features — component architecture, state management, styling approach. Produces implementation plans for frontend-coder. Read-only, no code changes. Use for features requiring design decisions, complex UI patterns, or UX research translation. Skip this agent for simple tasks (add a prop, fix a style, add loading state) — use frontend-coder directly instead."
+description: "Design and plan frontend features — component architecture, state management, styling approach. Produces implementation plans for frontend-coder. Read-only, no code changes. Validates component design against existing patterns to ensure consistency and reuse. Skip only for pure configuration (adding an import, toggling a flag) — not for new components, state changes, or API integration."
 model: opus
 color: green
 ---

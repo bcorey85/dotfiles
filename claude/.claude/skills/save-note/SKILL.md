@@ -58,7 +58,8 @@ Use Glob to check if a note with a similar title exists. If found, ask whether t
 1. Read the chosen template from `~/vault/Templates/`
 2. Fill in template sections with content
 3. Replace `{{date}}` with today's date (`M/D/YYYY hh:mm A`)
-4. Write to the appropriate folder with topic-prefix filename
+4. If the content originated from a URL, web search, PDF, or any external source, include the source URL(s) in the note. Templates with a `Source:` field should use that; otherwise append a `### References` section at the bottom with source links.
+5. Write to the appropriate folder with topic-prefix filename
 
 ### Step 5: Confirm
 

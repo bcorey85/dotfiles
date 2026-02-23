@@ -32,12 +32,9 @@ Fetch the Jira ticket details for the current branch so you have full context be
    parent = JIRAPROJECT-TICKETNUMBER
    ```
 
-6. **Check for a local product spec** — Glob for `/product-specs/*.md` files that reference the ticket key. If found, read it for additional context.
-
-7. **Present a summary** to the user:
+6. **Present a summary** to the user:
    - Jira ticket: key, summary, status (including any transition made), acceptance criteria
    - Subtasks and their statuses (if any)
-   - Local spec reference (if found)
    - Suggested approach based on the context
 
 ## Design Note

@@ -24,29 +24,37 @@ Auto-detects scope and launches the appropriate architect(s). After planning, as
 
 2. **If no context is apparent**, ask the user: "What are we building? Describe the feature or paste a ticket."
 
-3. **Check for a local product spec** — Glob `/product-specs/*.md` for files that reference the feature. If found, read it.
-
-4. **Check for an existing eng plan** — Glob `/eng-plan/*.md` for matching files. If found, read it and ask: "Found an existing plan — update it or start fresh?"
+3. **Check for an existing eng plan** — Glob `/eng-plan/*.md` for matching files. If found, read it and ask: "Found an existing plan — update it or start fresh?"
 
 ### Phase 2: Scope Assessment
 
 5. **Determine scope** (frontend, backend, or fullstack) based on the task description, conversation context, and codebase structure.
 
-5a. **Assess complexity.** If the task is configuration-level (installing packages, wiring pipes/middleware, adding a field) with no design decisions:
-   - Skip Phase 3 (architect analysis) entirely
+5a. **Assess whether architect agents are needed.** Default is YES — run the architects. Only skip Phase 3 if ALL of these are true:
+   - The task is pure configuration with zero implementation choices (e.g., installing a package, adding an env var, enabling a flag)
+   - No new files are being created
+   - No existing service/module signatures are changing
+   - No data model, API contract, or state management decisions are involved
+   - The entire change could be described in under 5 lines of diff
+
+   **A well-written ticket is NOT a reason to skip the architect.** Tickets describe the PM's intended approach. Architects validate that approach against the actual codebase — catching coupling risks, stale assumptions, and edge cases the ticket cannot see. If the ticket includes an "Approach" section, that is context FOR the architect, not a replacement for one.
+
+   If skipping:
    - Write the plan directly based on existing codebase patterns
-   - Ask the user: "This is straightforward configuration — I'll write the plan directly. Want me to skip the architect and go lean?" **Wait for explicit confirmation before proceeding.** If the user says no or wants the full analysis, continue to Phase 3.
+   - Ask the user: "This is pure configuration — skip the architect and go lean?" **Wait for explicit confirmation.**
    - **Still dispatch coder subagent(s) in Phase 5 if the user chooses "Implement now."** "Go lean" means skipping the architect, NOT skipping the coder. The coder dispatch is what triggers the auto-review chain — implementing inline breaks that chain.
+
+   If uncertain, run the architect. A 2-minute architect pass that confirms "the approach is sound" is cheap insurance. A skipped architect that misses a coupling risk costs an entire review-fix cycle.
 
 6. **If a scope hint was passed** (`be`, `fe`, `fs`), use it directly.
 
 7. **If scope is ambiguous**, ask the user: "This could be frontend-only, backend-only, or fullstack. What's the scope?"
 
-8. **Read existing codebase context** for the affected areas — key files, existing patterns, relevant `eng-arch/` docs.
-
-9. **Present scope to user**: "This is [frontend/backend/fullstack]. I'll spin up [which architects]. Sound right?"
+8. **Present scope to user**: "This is [frontend/backend/fullstack]. I'll spin up [which architects]. Sound right?"
 
 ### Phase 3: Architect Analysis
+
+9. **Read existing codebase context** for the affected areas — key files, existing patterns, relevant `eng-arch/` docs. Include this as context when launching architect agents.
 
 10. **Launch architect agents** based on scope. Use the Task tool:
 
@@ -107,7 +115,7 @@ Auto-detects scope and launches the appropriate architect(s). After planning, as
 ```markdown
 # Title
 > Jira: JIRAPROJECT-TICKETNUMBER (if applicable)
-> Product spec: product-specs/<filename>.md (if exists)
+> Context sources: Jira ticket, Figma mockups (sourced via MCP)
 > Date: YYYY-MM-DD
 
 ## Summary

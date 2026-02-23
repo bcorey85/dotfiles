@@ -17,13 +17,13 @@ Verify that the current implementation satisfies the eng-plan verification check
    git branch --show-current
    ```
 
-2. **Find the eng-plan** — Glob `eng-plan/*.md` for a file matching the ticket number or branch description. Read it if found. Extract the `## Verification` checklist.
+2. **Resolve the base branch** — Check for an existing PR: `gh pr view --json baseRefName -q .baseRefName 2>/dev/null`. If a PR exists, use its base. Otherwise default to `main`.
 
-3. **Find the product spec** — Glob `product-specs/*.md` for files referencing the ticket. Read the relevant AC section if found.
+3. **Find the eng-plan** — Glob `eng-plan/*.md` for a file matching the ticket number or branch description. Read it if found. Extract the `## Verification` checklist.
 
 4. **Pull Jira ticket AC** — If a Jira ticket number was extracted in step 1, fetch the ticket using `getJiraIssue` (use the Jira Cloud ID from `JIRA.md`) and extract the acceptance criteria from the description.
 
-5. **Get the diff** — Run `git diff main...HEAD --stat` and `git diff main...HEAD` to understand what was actually changed on this branch.
+5. **Get the diff** — Run `git diff <base>...HEAD --stat` and `git diff <base>...HEAD` to understand what was actually changed on this branch.
 
 6. **Run the full test suite** — This is the single most important verification step. Run ALL relevant test suites based on which packages have changes. Refer to CLAUDE.md for the project's test commands.
 
@@ -36,11 +36,11 @@ Verify that the current implementation satisfies the eng-plan verification check
 Compile a unified checklist from all sources:
 - Eng-plan `## Verification` items (primary)
 - Jira ticket AC items (if referenced in the eng-plan)
-- Product spec AC items (if a different level of detail than the eng-plan)
+- Jira ticket AC items (if a different level of detail than the eng-plan)
 
 Deduplicate items that appear in multiple sources.
 
-**Add diff-derived items**: Compare the `git diff main...HEAD --stat` output against the compiled checklist. For each file in the diff that is NOT mentioned in any checklist item, add a new verification item: "Verify [filename] changes are correct and consistent with the ticket scope." This catches scope creep, bonus changes, and files the eng-plan forgot to mention.
+**Add diff-derived items**: Compare the `git diff <base>...HEAD --stat` output against the compiled checklist. For each file in the diff that is NOT mentioned in any checklist item, add a new verification item: "Verify [filename] changes are correct and consistent with the ticket scope." This catches scope creep, bonus changes, and files the eng-plan forgot to mention.
 
 ### Step 3: Verify Each Item
 

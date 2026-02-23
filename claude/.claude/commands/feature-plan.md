@@ -80,7 +80,7 @@ Launch BOTH agents in parallel using a single message with multiple Task tool ca
 - Instruct it to explore the codebase, search for existing patterns, and produce a detailed implementation plan
 - Instruct it to explicitly address how its design aligns with (or intentionally deviates from) the researched best practices
 - The plan MUST include a clearly defined **API contract** section specifying: endpoint URLs, HTTP methods, request body shapes, response shapes, status codes, and any query parameters or pagination
-- Also include: data models with field types/indexes/constraints, serializer definitions, viewset structure, Celery tasks if needed, and migration strategy
+- Also include: data models with field types/indexes/constraints, API layer structure (read the project to learn the conventions), async/background tasks if needed, and migration strategy
 
 ### Step 4: Frontend Architecture
 
@@ -144,7 +144,7 @@ Write a unified spec document to `/product-specs/FEATURE_NAME.md` with this stru
 ### Data Models
 [From backend architect]
 
-### Serializers & Views
+### API Layer
 [From backend architect]
 
 ### Async Tasks
@@ -175,7 +175,7 @@ Write a unified spec document to `/product-specs/FEATURE_NAME.md` with this stru
 
 ### Suggested Build Order
 1. Backend: data models + migrations
-2. Backend: API layer (routes, controllers/views, services)
+2. Backend: API layer (routes, services, controllers)
 3. Frontend: state management + API integration
 4. Frontend: components + pages
 

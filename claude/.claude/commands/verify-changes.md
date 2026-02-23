@@ -20,7 +20,7 @@ Verify that the current implementation satisfies the eng-plan verification check
 
 3. **Find the product spec** — Glob `product-specs/*.md` for files referencing the ticket. Read the relevant AC section if found.
 
-4. **Pull Jira ticket AC** — If a Jira ticket number was extracted in step 1, fetch the ticket using `getJiraIssue` (use the Jira Cloud ID from CLAUDE.md) and extract the acceptance criteria from the description.
+4. **Pull Jira ticket AC** — If a Jira ticket number was extracted in step 1, fetch the ticket using `getJiraIssue` (use the Jira Cloud ID from `JIRA.md`) and extract the acceptance criteria from the description.
 
 5. **Get the diff** — Run `git diff main...HEAD --stat` and `git diff main...HEAD` to understand what was actually changed on this branch.
 

@@ -1,6 +1,6 @@
 ---
 description: Create a pull request from the current branch
-allowed-tools: [Bash, Read, Glob, Grep, mcp__jira__getJiraIssue, mcp__jira__transitionJiraIssue, mcp__jira__getTransitionsForJiraIssue]
+allowed-tools: [Bash, Read, Glob, Grep, Skill, mcp__jira__getJiraIssue]
 ---
 
 # Create Pull Request

@@ -1,6 +1,6 @@
 ---
 description: Move the current Jira ticket to a new status (e.g., /move-ticket in review)
-allowed-tools: [Bash, mcp__jira__getTransitionsForJiraIssue, mcp__jira__transitionJiraIssue]
+allowed-tools: [Bash, Read, mcp__jira__getTransitionsForJiraIssue, mcp__jira__transitionJiraIssue]
 ---
 
 # Move Ticket
@@ -25,13 +25,13 @@ Examples: `/move-ticket in progress`, `/move-ticket in review`, `/move-ticket do
 
 2. **Determine the target status** from `$ARGUMENTS`. If no arguments provided, ask the user: "What status? (e.g., in progress, in review, done)"
 
-3. **Fetch available transitions** using `getTransitionsForJiraIssue` with the Jira Cloud ID from CLAUDE.md and the ticket key.
+3. **Fetch available transitions** using `getTransitionsForJiraIssue` with the Jira Cloud ID from `JIRA.md` and the ticket key.
 
 4. **Match the user's input** against the available transition names. Use case-insensitive fuzzy matching (e.g., "review" matches "In Review", "Peer Review", "Ready for Review", etc.). If no match or ambiguous, show the available transitions and ask the user to pick.
 
 5. **Execute the transition** using `transitionJiraIssue`. IMPORTANT — the `transition` parameter is an **object**, not a string:
    ```
-   cloudId: <from CLAUDE.md>
+   cloudId: <from `JIRA.md`>
    issueIdOrKey: <ticket key>
    transition: {"id": "<matched transition id>"}
    ```

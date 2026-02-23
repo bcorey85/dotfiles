@@ -9,6 +9,8 @@ Create a changelog entry in the Notion Changelog database based on recent commit
 
 ## Instructions
 
+0. **Check for workspace config**: If `NOTION.md` exists in the project root, read it for the Changelog DB data source ID.
+
 1. **Determine the version and scope** from the user's input:
    - If they specify a version: use it (e.g., "changelog for v0.2.0")
    - If not: check `package.json` for the current version, or ask

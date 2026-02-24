@@ -430,6 +430,12 @@ Skills chain into other skills automatically. The orchestrator (parent skill) in
 - **Research before architecture.** The pivotal questions pattern prevents rework downstream.
 - **Backend architect as API contract auditor.** Even for frontend-only specs, run the backend architect to READ actual code. Specs can diverge from reality.
 
+### Design vs Ticket Tension
+- **Figma and tickets will diverge.** Figma shows visual details the ticket doesn't mention (hover states, spacing, empty states). Tickets specify behavior Figma can't express (debounce timing, error handling, rollback logic). Sometimes they actively contradict each other (Figma shows a save button, ticket says auto-save on blur).
+- **Precedence rule:** Ticket AC wins for behavior, Figma wins for visual measurements. When silent (Figma shows something, ticket doesn't mention it), implement as shown unless it conflicts with the data model.
+- **Discover divergences early, not mid-implementation.** Run `/pull-design` before `/eng-plan` so the architect can account for gaps. Discovering 10 conflicts mid-`/code` means stopping, analyzing each one, deciding precedence, and potentially re-planning.
+- **Aspirational: PM bakes design context into the ticket.** The ideal flow is the PM extracts Figma measurements and visual decisions during `/create-ticket` and includes a Design Brief in the ticket description — with a divergence table and resolutions. This way `/pull-ticket` gives the dev complete context, and `/pull-design` becomes validation rather than discovery. Not fully automated yet but the direction we're heading.
+
 ### Quality
 - **1 review round target.** Push quality upstream (architect checklists, coder pre-submission checks) instead of catching everything at review time.
 - **`/peer-review` = code quality.** Bugs, patterns, security.
@@ -438,16 +444,6 @@ Skills chain into other skills automatically. The orchestrator (parent skill) in
 - **Never report "all checks pass" if verification was file-reading only.** Be honest about confidence levels.
 
 ---
-
-> **Footnote: Design vs Ticket Tension**
->
-> Figma mockups and Jira ticket AC will diverge. Figma shows visual details the ticket doesn't mention (hover states, spacing, empty states). Tickets specify behavior Figma can't express (debounce timing, error handling, rollback logic). Sometimes they actively contradict each other (Figma shows a save button, ticket says auto-save on blur).
->
-> **Precedence rule:** Ticket AC wins for behavior, Figma wins for visual measurements. When silent (Figma shows something, ticket doesn't mention it), implement as shown unless it conflicts with the data model.
->
-> **The expensive discovery:** These divergences are cheapest to resolve at spec time (PM loop) and most expensive at implementation time (dev loop). If the dev discovers 10 conflicts mid-`/code`, they have to stop, analyze each one, decide precedence, and potentially re-plan. `/pull-design` surfaces these gaps explicitly — run it before `/eng-plan` so the architect can account for them, not after.
->
-> **The ideal (aspirational):** The PM extracts Figma context during `/create-ticket` and bakes a Design Brief into the ticket description — measurements, visual decisions, and a divergence table with resolutions. This way the dev gets complete context from `/pull-ticket` alone, and `/pull-design` becomes a validation step rather than a discovery step. This flow isn't fully automated yet but is the direction we're heading.
 
 > **Footnote: MCP Usage Logging**
 >

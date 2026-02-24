@@ -6,7 +6,7 @@ allowed-tools: [Bash, Read, Edit, Glob, Grep, mcp__jira__getJiraIssue, mcp__figm
 
 # Pull Design Context
 
-Pull Figma design context for the current feature. Run after `/eng-plan`, before `/code`.
+Pull Figma design context for the current feature. Run before `/eng-plan`, so the architect has design context.
 
 ## Instructions
 
@@ -139,7 +139,7 @@ Suggest: "Run `/cache-design-tokens` to cache the design system for faster futur
 ## Tips
 
 - **Select one frame at a time.** Full pages produce truncated or noisy output. If the design has multiple sections, run `/pull-design` once per section or let the skill chunk automatically.
-- **Run after `/eng-plan`.** The eng plan establishes component architecture. This skill fills in visual details — measurements, tokens, and gaps.
+- **Run before `/eng-plan`.** This gives the architect design context (measurements, tokens, gaps) to inform the implementation plan.
 - **Figma shows the WHAT, not the HOW.** Don't let Figma output override architectural decisions from the eng plan.
 
 ## Arguments

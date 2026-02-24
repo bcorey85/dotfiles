@@ -142,9 +142,19 @@ Update spec status → Implemented   → via Notion MCP directly
 
 ### Step 0: Create the branch
 
+**Option A — Manual:**
 ```bash
 git checkout -b PROJ-XX-short-description
 ```
+
+**Option B — `/create-branch` (recommended):**
+```
+/create-branch PROJ-20                       → fetches ticket summary, builds branch name, bases off main
+/create-branch PROJ-20 off Sprint-A-2026     → explicit ticket + sprint branch base
+/create-branch my-experiment                  → no ticket, custom name off main
+```
+
+`/create-branch` does more than `git checkout -b`: it fetches the Jira ticket summary to auto-name the branch, creates an empty init commit (required by GitHub to open a PR), pushes, and opens a draft PR via `/pr +draft` so the team can track changes from the start.
 
 Branch naming convention: `JIRAPROJECT-TICKETNUMBER-short-description` (e.g., `PROJ-14-task-detail-modal`)
 
@@ -348,7 +358,7 @@ The pattern: a `/cache-*` skill pulls data once via MCP, writes it to a local fi
 
 **`/explain <code path>`** — Step-by-step code explanation for beginners.
 
-**`/create-branch [ticket-key]`** — Creates a feature branch, pushes it, and opens a draft PR.
+**`/create-branch [ticket-key] [off base-branch]`** — Creates a feature branch (auto-names from Jira ticket summary if a ticket key is provided), creates an empty init commit, pushes, and opens a draft PR via `/pr +draft`. Accepts an optional `off <base>` to branch from a sprint branch instead of `main`.
 
 **`/migrate`** — Detects the ORM/migration tool and runs migrations.
 

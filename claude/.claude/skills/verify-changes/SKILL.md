@@ -31,6 +31,18 @@ Verify that the current implementation satisfies the eng-plan verification check
 
    If the test suite passes, note the number of passing tests and suites as a baseline.
 
+6b. **Run a build/type-check** — After the test suite, run the project's build or type-check command for each changed package (refer to CLAUDE.md for the specific commands). This catches type errors, import resolution failures, and compilation issues that the test suite may not cover — tests often use their own compiler configuration and can pass even when the production build is broken.
+
+   If the build fails, this is a blocker just like a test failure. Report the errors immediately before proceeding to individual checklist verification.
+
+   If the project has no build step or type-checker, skip this sub-step.
+
+6c. **Run lint/format check** — After the build, run the project's linter and/or formatter in check mode for each changed package (refer to CLAUDE.md for the specific commands). This catches style violations, unused imports, and formatting drift that tests and builds won't flag.
+
+   If the check fails, report the errors. Unlike test/build failures, lint issues are not an automatic blocker — present them as findings and let the user decide whether to fix before proceeding.
+
+   If the project has no linter or formatter configured, skip this sub-step.
+
 ### Step 2: Build the Checklist
 
 Compile a unified checklist from all sources:

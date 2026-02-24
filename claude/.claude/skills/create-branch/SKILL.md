@@ -50,7 +50,19 @@ git fetch origin <base-branch> && git checkout <base-branch> && git pull && git 
 
 If the base branch doesn't exist at all, stop and tell the user.
 
-### Step 4: Push and Draft PR
+### Step 4: Initialize the Branch
+
+GitHub requires at least one commit diverging from the base to create a PR. Create an empty initialization commit:
+
+```bash
+git commit --allow-empty -m "<commit-message>"
+```
+
+Use the branch name as the commit message, following git conventions:
+- If a Jira ticket key was resolved: `<TICKET-KEY>: <slugified-summary>` (e.g., `TAS-13: board-rendering`)
+- Otherwise: the branch name itself
+
+### Step 5: Push and Draft PR
 
 Push the branch and create a draft PR against the base by invoking `/pr` via the Skill tool:
 
@@ -61,7 +73,7 @@ args: "+draft --base <base-branch>"
 
 This delegates all PR creation logic (title convention, body format) and ensures the base branch is stored on the PR for downstream skills (`/pr`, `/verify-changes`) to read later.
 
-### Step 5: Summary
+### Step 6: Summary
 
 Report to the user:
 - Branch created: `<branch-name>` off `<base-branch>`

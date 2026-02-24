@@ -1,7 +1,7 @@
 ---
 name: pull-ticket
 description: Pull Jira ticket context for the current branch before coding (dev command)
-allowed-tools: [Bash, Read, Glob, Grep, Skill, mcp__jira__getJiraIssue, mcp__jira__searchJiraIssuesUsingJql]
+allowed-tools: [Bash, Read, Glob, Grep, Skill, mcp__jira__getJiraIssue]
 ---
 
 # Pull Ticket Context
@@ -27,14 +27,8 @@ Fetch the Jira ticket details for the current branch so you have full context be
    - If status is **"In Progress"**: no action needed, just note it in the summary.
    - If status is **"In Review"** or **"Done"**: warn the user — "This ticket is in [status]. Are you sure you want to work on it?"
 
-5. **Check for subtasks** — if the ticket has subtasks, fetch them too using JQL:
-   ```
-   parent = JIRAPROJECT-TICKETNUMBER
-   ```
-
-6. **Present a summary** to the user:
+5. **Present a summary** to the user:
    - Jira ticket: key, summary, status (including any transition made), acceptance criteria
-   - Subtasks and their statuses (if any)
    - Suggested approach based on the context
 
 ## Design Note

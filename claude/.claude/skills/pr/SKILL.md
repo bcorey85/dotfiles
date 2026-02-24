@@ -30,14 +30,18 @@ Convention: `+toggle` for boolean switches (no value), `--key value` for paramet
 
 3. **If there are uncommitted changes**, warn the user and ask if they want to commit first (suggest `/commit`) or proceed without them.
 
-4. **If the branch hasn't been pushed**, push it with `git push -u origin <branch>`.
-
-5. **Check for existing PR**: Run `gh pr view --json state,url,isDraft 2>/dev/null` to see if a PR already exists for this branch.
+4. **Check for existing PR**: Run `gh pr view --json state,url,isDraft 2>/dev/null` to see if a PR already exists for this branch.
    - **If a non-draft PR exists**: inform the user and stop — nothing to do.
    - **If a draft PR exists AND `+draft` was NOT passed**: convert it to ready with `gh pr ready`, then proceed to step 9 (Jira transition). Skip PR creation.
-   - **If no PR exists**: continue to step 6.
+   - **If no PR exists**: continue to step 5.
 
-6. **Analyze ALL commits** on the branch (not just the latest) to understand the full scope of changes. Read key changed files if needed for context. If `+draft` is set and there are zero commits (empty branch), that's fine — the summary can say "WIP: branch created, implementation pending."
+5. **Analyze ALL commits** on the branch (not just the latest) to understand the full scope of changes. Read key changed files if needed for context.
+
+   **If there are zero commits between the branch and the base** (`git log --oneline <base>..HEAD` is empty):
+   - If `+draft` is set: create an initialization commit — `git commit --allow-empty -m "<branch-name>"`. Use the Jira ticket convention for the message if a ticket key is in the branch name (e.g., `TAS-13: board-rendering`). Push, then continue to step 7 with summary "WIP: branch created, implementation pending."
+   - If `+draft` is NOT set: stop and tell the user — "This branch has no commits. Nothing to open a PR for. Did you mean `/pr +draft` or `/commit` first?"
+
+6. **If the branch hasn't been pushed**, push it with `git push -u origin <branch>`.
 
 7. **Draft the PR**:
    - Title: short, under 70 characters. **If the branch name contains a Jira ticket key** (e.g., `TAS-1-repo-standup`), the PR title MUST follow the convention: `JIRAPROJECT-TICKETNUMBER: description` (e.g., `TAS-1: stand up monorepo`). Extract the key from the branch name.

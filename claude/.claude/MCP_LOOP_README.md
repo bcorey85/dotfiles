@@ -439,6 +439,16 @@ Skills chain into other skills automatically. The orchestrator (parent skill) in
 
 ---
 
+> **Footnote: Design vs Ticket Tension**
+>
+> Figma mockups and Jira ticket AC will diverge. Figma shows visual details the ticket doesn't mention (hover states, spacing, empty states). Tickets specify behavior Figma can't express (debounce timing, error handling, rollback logic). Sometimes they actively contradict each other (Figma shows a save button, ticket says auto-save on blur).
+>
+> **Precedence rule:** Ticket AC wins for behavior, Figma wins for visual measurements. When silent (Figma shows something, ticket doesn't mention it), implement as shown unless it conflicts with the data model.
+>
+> **The expensive discovery:** These divergences are cheapest to resolve at spec time (PM loop) and most expensive at implementation time (dev loop). If the dev discovers 10 conflicts mid-`/code`, they have to stop, analyze each one, decide precedence, and potentially re-plan. `/pull-design` surfaces these gaps explicitly — run it before `/eng-plan` so the architect can account for them, not after.
+>
+> **The ideal (aspirational):** The PM extracts Figma context during `/create-ticket` and bakes a Design Brief into the ticket description — measurements, visual decisions, and a divergence table with resolutions. This way the dev gets complete context from `/pull-ticket` alone, and `/pull-design` becomes a validation step rather than a discovery step. This flow isn't fully automated yet but is the direction we're heading.
+
 > **Footnote: MCP Usage Logging**
 >
 > Optionally, you can track MCP tool calls for usage analysis. We batch-log all calls at PR time (not mid-session) to `docs/mcp-usage.jsonl` — one JSON object per line:

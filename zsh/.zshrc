@@ -117,6 +117,9 @@ export FZF_DEFAULT_COMMAND='fd'
 [[ -f /home/linuxbrew/.linuxbrew/bin/brew ]] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 export PATH="$HOME/.local/bin:$HOME:$PATH"
 
+# Flatpak desktop integration
+command -v flatpak &>/dev/null && export XDG_DATA_DIRS="/var/lib/flatpak/exports/share:$HOME/.local/share/flatpak/exports/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+
 # SSH agent
 if [[ "$(uname)" == "Linux" ]] && command -v keychain &>/dev/null; then
     eval "$(keychain --eval --quiet id_ed25519)"

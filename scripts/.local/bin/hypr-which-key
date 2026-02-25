@@ -2,26 +2,47 @@
 # Display Hyprland keybindings in rofi
 
 cat <<'EOF' | rofi -dmenu -i -p "Keybinds" -no-custom
-SUPER + Q         Terminal (kitty)
-SUPER + R         App launcher (rofi)
-SUPER + C         Close window
-SUPER + F         Fullscreen
-SUPER + V         Toggle floating
-SUPER + L         Lock screen
-SUPER + E         File manager
-SUPER + S         Scratchpad
-SUPER + SHIFT+S   Move to scratchpad
-SUPER + SHIFT+V   Clipboard history
-SUPER + J         Toggle split
-SUPER + P         Pseudo tile
-SUPER + M         Exit Hyprland
-SUPER + 1-0       Switch workspace
-SUPER + SHIFT+1-0 Move window to workspace
-SUPER + Arrows    Move focus
-SUPER + LMB       Move window (drag)
-SUPER + RMB       Resize window (drag)
-SUPER + Scroll    Cycle workspaces
-Print             Screenshot (full)
-SUPER + Print     Screenshot (region)
-SUPER + /         This menu
+--- Window Management ---
+SUPER + Return      Terminal
+SUPER + W           Close window
+SUPER + F           Fullscreen
+SUPER + SHIFT+F     Full width
+SUPER + T           Toggle floating
+SUPER + J           Toggle split
+SUPER + P           Pseudo tile
+SUPER + Arrows      Move focus
+SUPER + SHIFT+Arrow Swap windows
+SUPER + Equal       Grow window
+SUPER + Minus       Shrink window
+SUPER + S           Scratchpad
+SUPER + SHIFT+S     Move to scratchpad
+SUPER + LMB         Move window (drag)
+SUPER + RMB         Resize window (drag)
+
+--- Workspaces ---
+SUPER + 1-0         Switch workspace
+SUPER + SHIFT+1-0   Move to workspace
+SUPER + Tab         Next workspace
+SUPER + SHIFT+Tab   Prev workspace
+SUPER + Scroll      Cycle workspaces
+
+--- App Launchers ---
+SUPER + Space       App launcher
+SUPER + E           File manager
+SUPER + SHIFT+B     Browser
+SUPER + SHIFT+N     Neovim
+SUPER + SHIFT+D     Lazydocker
+SUPER + SHIFT+G     Lazygit
+SUPER + SHIFT+A     Claude.ai
+SUPER + SHIFT+M     Plexamp
+
+--- System ---
+SUPER + Escape      Power menu
+SUPER + CTRL+A      Audio controls
+SUPER + CTRL+Space  Cycle wallpaper
+SUPER + CTRL+L      Lock screen
+SUPER + CTRL+V      Clipboard history
+SUPER + K           This menu
+Print               Screenshot (full)
+SUPER + Print       Screenshot (region)
 EOF

@@ -82,8 +82,13 @@ case $PLATFORM in
         ;;
     arch)
         print_info "Installing dependencies via pacman..."
-        sudo pacman -S --needed stow neovim tmux zsh git curl jq libnotify fzf zoxide unzip direnv kitty git-delta btop bat atuin eza glow fd yazi lazydocker lazygit keychain rustup
+        sudo pacman -S --needed stow neovim tmux zsh git curl jq libnotify fzf zoxide unzip direnv kitty git-delta btop bat atuin eza glow fd yazi lazydocker lazygit keychain rustup playerctl xdg-user-dirs
         print_success "Dependencies installed"
+
+        # Hyprland desktop packages
+        print_info "Installing Hyprland desktop packages..."
+        sudo pacman -S --needed hyprland hyprlock hypridle waybar rofi dunst swww xdg-desktop-portal-hyprland xdg-desktop-portal-gtk polkit-gnome wl-clipboard cliphist grim slurp pavucontrol thunar tumbler thunar-archive-plugin file-roller gvfs gvfs-mtp udisks2 pipewire-alsa qt5ct qt6ct
+        print_success "Hyprland desktop packages installed"
 
         if ! command -v tldr &>/dev/null; then
             print_info "Installing tlrc..."
@@ -111,7 +116,7 @@ case $PLATFORM in
         fi
 
         print_info "Installing dependencies via Homebrew..."
-        brew install stow neovim tmux git jq fzf zoxide yazi direnv kitty git-delta btop bat atuin eza tlrc lazydocker glow fd keychain rustup
+        brew install stow neovim tmux git jq fzf zoxide yazi direnv kitty git-delta btop bat atuin eza tlrc lazydocker lazygit glow fd keychain rustup
         print_success "Dependencies installed"
         ;;
 esac

@@ -1,0 +1,17 @@
+#!/bin/bash
+# Set or cycle wallpapers using swww
+# Usage: hypr-wallpaper [path]   - set specific wallpaper
+#        hypr-wallpaper          - pick random from ~/Pictures/wallpapers
+
+WALLPAPER_DIR="$HOME/Pictures/wallpapers"
+
+if [ -n "$1" ]; then
+    WALL="$1"
+elif [ -d "$WALLPAPER_DIR" ] && [ "$(ls -A "$WALLPAPER_DIR" 2>/dev/null)" ]; then
+    WALL=$(find "$WALLPAPER_DIR" -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.webp" \) | shuf -n 1)
+else
+    echo "No wallpapers found in $WALLPAPER_DIR"
+    exit 1
+fi
+
+swww img "$WALL" --transition-type grow --transition-duration 1 --transition-fps 60

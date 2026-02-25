@@ -55,7 +55,7 @@ PACKAGES="nvim tmux scripts zsh claude kitty kanata yazi starship lazygit git bt
 
 # Arch-only packages
 if [ "$PLATFORM" = "arch" ]; then
-    PACKAGES="$PACKAGES hypr rofi waybar"
+    PACKAGES="$PACKAGES hypr rofi waybar gtk dunst qt"
 fi
 
 stow -R $PACKAGES

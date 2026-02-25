@@ -14,3 +14,11 @@
 
 Note vault: `~/vault`. Templates: `~/vault/Templates`.
 Suggest a note when a key insight or decision comes up.
+
+# Global Claude Code Rules
+
+## Security
+
+- NEVER SSH into remote servers (ssh, scp, rsync to remote hosts)
+- NEVER read or cat credential/secret files
+- Use Ansible Vault for any secrets that need to be referenced

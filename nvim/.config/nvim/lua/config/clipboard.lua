@@ -40,13 +40,20 @@ local function detect_clipboard()
         },
       }
     else
-      -- Native Linux - try xclip first, then xsel
-      local cmd = "command -v xclip > /dev/null && echo xclip || echo xsel"
-      local handle = io.popen(cmd, "r")
-      local result = handle:read("*a"):gsub("\n", "")
-      handle:close()
-
-      if result == "xclip" then
+      -- Native Linux - try wl-copy (Wayland), then xclip, then xsel
+      if os.execute("command -v wl-copy > /dev/null 2>&1") == 0 then
+        return {
+          name = "wl-clipboard",
+          copy = {
+            ["+"] = "wl-copy",
+            ["*"] = "wl-copy --primary",
+          },
+          paste = {
+            ["+"] = "wl-paste --no-newline",
+            ["*"] = "wl-paste --primary --no-newline",
+          },
+        }
+      elseif os.execute("command -v xclip > /dev/null 2>&1") == 0 then
         return {
           name = "xclip",
           copy = {

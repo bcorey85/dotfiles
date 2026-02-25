@@ -2,6 +2,12 @@ return {
   "sindrets/diffview.nvim",
   cmd = { "DiffviewOpen", "DiffviewFileHistory" },
   opts = {
+    view = {
+      merge_tool = {
+        layout = "diff1_plain",
+        disable_diagnostics = true,
+      },
+    },
     hooks = {
       diff_buf_read = function()
         vim.opt_local.foldenable = false
@@ -25,6 +31,11 @@ return {
         end
       end,
       desc = "Toggle Diff View",
+    },
+    {
+      "<leader>dm",
+      "<cmd>DiffviewOpen<cr>",
+      desc = "Merge Conflicts",
     },
     {
       "<leader>df",

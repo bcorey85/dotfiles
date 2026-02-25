@@ -1,17 +1,13 @@
 #!/bin/bash
-# Launch a coding layout in the current tmux window
-# Usage: code [directory]
-#   If directory is provided, all panes open there
+# Launch a coding layout with 3 tmux windows
+# Usage: dev [directory]
+#   If directory is provided, all windows open there
 #   Otherwise uses current directory
 #
 # Layout:
-#   ┌──────────────┬──────────┐
-#   │              │          │
-#   │    nvim      │  claude  │
-#   │              │          │
-#   ├──────────────┤          │
-#   │   terminal   │          │
-#   └──────────────┴──────────┘
+#   Window 1: nvim    (editor)
+#   Window 2: claude  (AI assistant)
+#   Window 3: console (terminal)
 
 if [ -z "$TMUX" ]; then
     echo "Not in a tmux session"
@@ -21,16 +17,16 @@ fi
 dir="${1:-.}"
 dir="$(cd "$dir" && pwd)"
 
-# Split right for claude (33% width)
-tmux split-window -h -l 33% -c "$dir"
+# Rename current window to "nvim" and launch editor
+tmux rename-window "nvim"
+tmux send-keys "nvim ." C-m
 
-# Go back to left pane and split bottom for terminal (30% height)
-tmux select-pane -L
-tmux split-window -v -l 30% -c "$dir"
+# Create claude window and launch claude
+tmux new-window -n "claude" -c "$dir"
+tmux send-keys "claude" C-m
 
-# Start claude in the right pane
-tmux send-keys -t '{right}' 'tmux-claude' C-m
+# Create console window (plain shell)
+tmux new-window -n "console" -c "$dir"
 
-# Start nvim in the top-left pane
-tmux select-pane -U
-tmux send-keys 'nvim .' C-m
+# Jump back to nvim window
+tmux select-window -t 1

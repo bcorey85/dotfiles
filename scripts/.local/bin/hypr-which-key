@@ -1,0 +1,27 @@
+#!/bin/bash
+# Display Hyprland keybindings in rofi
+
+cat <<'EOF' | rofi -dmenu -i -p "Keybinds" -no-custom
+SUPER + Q         Terminal (kitty)
+SUPER + R         App launcher (rofi)
+SUPER + C         Close window
+SUPER + F         Fullscreen
+SUPER + V         Toggle floating
+SUPER + L         Lock screen
+SUPER + E         File manager
+SUPER + S         Scratchpad
+SUPER + SHIFT+S   Move to scratchpad
+SUPER + SHIFT+V   Clipboard history
+SUPER + J         Toggle split
+SUPER + P         Pseudo tile
+SUPER + M         Exit Hyprland
+SUPER + 1-0       Switch workspace
+SUPER + SHIFT+1-0 Move window to workspace
+SUPER + Arrows    Move focus
+SUPER + LMB       Move window (drag)
+SUPER + RMB       Resize window (drag)
+SUPER + Scroll    Cycle workspaces
+Print             Screenshot (full)
+SUPER + Print     Screenshot (region)
+SUPER + /         This menu
+EOF

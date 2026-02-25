@@ -4,16 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-Personal dotfiles managed with **GNU Stow** across WSL, Ubuntu, and macOS. Each top-level directory is a stow package that mirrors the home directory structure (e.g., `nvim/.config/nvim/` symlinks to `~/.config/nvim/`).
+Personal dotfiles managed with **GNU Stow** across WSL, Ubuntu, macOS, and Arch Linux. Each top-level directory is a stow package that mirrors the home directory structure (e.g., `nvim/.config/nvim/` symlinks to `~/.config/nvim/`).
 
 ## Setup & Install
 
 ```bash
-./setup wsl    # or: ./setup ubuntu | ./setup mac
+./setup wsl    # or: ./setup ubuntu | ./setup mac | ./setup arch
 ```
 
 Individual scripts in `install/` can be run standalone:
-- `install/deps <platform>` - system packages (apt/brew)
+- `install/deps <platform>` - system packages (apt/brew/pacman)
 - `install/fonts <platform>` - CommitMono Nerd Font
 - `install/stow` - create all symlinks
 - `install/zsh-plugins` - clone fzf-tab, zsh-autosuggestions, zsh-syntax-highlighting to `~/.zsh/plugins/`
@@ -42,10 +42,10 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 
 ## CRITICAL: Cross-Platform Compatibility
 
-**Everything in this repo MUST work on all three platforms: WSL, Ubuntu, and macOS.** Before installing any tool, adding any dependency, or making any change:
+**Everything in this repo MUST work on all four platforms: WSL, Ubuntu, macOS, and Arch Linux.** Before installing any tool, adding any dependency, or making any change:
 
-1. **Only use `apt` (WSL/Ubuntu) and `brew` (macOS)** for package installs — never `cargo`, `pip install --global`, `snap`, or other package managers
-2. **Add new dependencies to `install/deps`** in BOTH the `wsl|ubuntu` and `mac` cases
+1. **Only use `apt` (WSL/Ubuntu), `brew` (macOS), and `pacman` (Arch)** for package installs — never `cargo`, `pip install --global`, `snap`, or other package managers
+2. **Add new dependencies to `install/deps`** in ALL platform cases (`wsl|ubuntu`, `mac`, and `arch`)
 3. **Never hardcode platform-specific paths** — use `$HOME`, `~`, or detect the platform
 4. **Per-machine config** (user identity, credentials, machine-specific paths) belongs in local files (e.g., `~/.gitconfig.local`), NOT in stow-managed files
 

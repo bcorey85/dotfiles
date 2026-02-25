@@ -1,0 +1,98 @@
+* {
+    font-family: "CommitMono Nerd Font Mono";
+    font-size: 13px;
+    min-height: 0;
+}
+
+window#waybar {
+    background-color: #273136;
+    color: #e1e2e3;
+    border-bottom: 2px solid #3a474d;
+}
+
+tooltip {
+    background-color: #2f3b40;
+    border: 1px solid #3a474d;
+    border-radius: 8px;
+    color: #e1e2e3;
+}
+
+#workspaces button {
+    padding: 0 8px;
+    color: #82878b;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+}
+
+#workspaces button.active {
+    color: #78cee9;
+    border-bottom: 2px solid #78cee9;
+}
+
+#workspaces button.urgent {
+    color: #f76c7c;
+}
+
+#workspaces button:hover {
+    background: #2f3b40;
+    color: #e1e2e3;
+}
+
+#window {
+    color: #82878b;
+    padding: 0 12px;
+}
+
+#clock {
+    color: #e1e2e3;
+    font-weight: bold;
+}
+
+#cpu {
+    color: #9cd57b;
+}
+
+#memory {
+    color: #baa0f8;
+}
+
+#temperature {
+    color: #f3a96a;
+}
+
+#temperature.critical {
+    color: #f76c7c;
+}
+
+#network {
+    color: #78cee9;
+}
+
+#network.disconnected {
+    color: #f76c7c;
+}
+
+#pulseaudio {
+    color: #e3d367;
+}
+
+#pulseaudio.muted {
+    color: #82878b;
+}
+
+#tray {
+    padding: 0 4px;
+}
+
+#tray > .passive {
+    -gtk-icon-effect: dim;
+}
+
+#tray > .needs-attention {
+    -gtk-icon-effect: highlight;
+}
+
+#cpu, #memory, #temperature, #network, #pulseaudio, #tray {
+    padding: 0 10px;
+}

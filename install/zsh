@@ -13,8 +13,11 @@ print_info() { echo -e "${YELLOW}→${NC} $1"; }
 
 if [ "$SHELL" != "$(which zsh)" ]; then
     print_info "Changing default shell to zsh..."
-    chsh -s $(which zsh)
-    print_success "Default shell changed to zsh (restart terminal to apply)"
+    if chsh -s "$(which zsh)"; then
+        print_success "Default shell changed to zsh (restart terminal to apply)"
+    else
+        print_error "Failed to change shell. Run manually: chsh -s $(which zsh)"
+    fi
 else
     print_success "zsh is already the default shell"
 fi

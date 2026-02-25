@@ -11,6 +11,8 @@ print_success() { echo -e "${GREEN}✓${NC} $1"; }
 print_error() { echo -e "${RED}✗${NC} $1"; }
 print_info() { echo -e "${YELLOW}→${NC} $1"; }
 
+PLATFORM=${1:-}
+
 print_info "Creating symlinks with stow..."
 
 # Get the dotfiles root (parent of install/)
@@ -43,8 +45,20 @@ if [ -d ~/.claude ] && [ ! -L ~/.claude ]; then
     mv ~/.claude ~/.claude.backup.$(date +%Y%m%d_%H%M%S)
 fi
 
-# Stow configs
-stow -R nvim tmux scripts zsh claude kitty kanata yazi starship lazygit git btop
+if [ "$PLATFORM" = "arch" ] && [ -d ~/.config/hypr ] && [ ! -L ~/.config/hypr ]; then
+    print_info "Backing up existing hypr config..."
+    mv ~/.config/hypr ~/.config/hypr.backup.$(date +%Y%m%d_%H%M%S)
+fi
+
+# Stow configs — common packages for all platforms
+PACKAGES="nvim tmux scripts zsh claude kitty kanata yazi starship lazygit git btop"
+
+# Arch-only packages
+if [ "$PLATFORM" = "arch" ]; then
+    PACKAGES="$PACKAGES hypr rofi waybar"
+fi
+
+stow -R $PACKAGES
 print_success "Symlinks created"
 
 # Source tmux config if tmux server is running (timeout prevents hanging)

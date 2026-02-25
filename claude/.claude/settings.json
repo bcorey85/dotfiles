@@ -1,6 +1,125 @@
 {
   "model": "Opus",
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE '\\b(ssh|scp|rsync)\\b.*@'; then echo 'BLOCKED: SSH connections (ssh, scp, rsync) to remote hosts are not allowed' >&2; exit 2; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE 'ansible-vault\\s+(view|decrypt)\\b'; then echo 'BLOCKED: ansible-vault view/decrypt is not allowed — use ansible-vault edit instead' >&2; exit 2; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE 'cat\\s+.*(\\.aws/credentials|\\.aws/config|\\.kube/config|\\.docker/config\\.json|\\.boto|\\.s3cfg|\\.netrc|\\.git-credentials|\\.npmrc|vault/password|1pass\\.txt|github\\.txt)'; then echo 'BLOCKED: Reading credential/secret files via shell is not allowed' >&2; exit 2; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE 'git\\s+(push\\s+--force|push\\s+-f|reset\\s+--hard|clean\\s+-f)'; then echo 'BLOCKED: Destructive git commands (force push, reset --hard, clean -f) are not allowed' >&2; exit 2; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE 'git\\s+push\\b' && echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE '\\b(main|master)\\b'; then echo 'BLOCKED: Pushing directly to main/master is not allowed' >&2; exit 2; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE 'rm\\s+-[a-z]*r[a-z]*f' && echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE '\\s/(\\s|$)|\\s/(home|mnt|etc|usr|var)(\\s|/)'; then echo 'BLOCKED: rm -rf on broad system paths is not allowed' >&2; exit 2; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE '(curl|wget)\\s.*\\|\\s*(ba)?sh'; then echo 'BLOCKED: Pipe-to-shell (curl|bash) is not allowed' >&2; exit 2; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE 'chmod\\s+777'; then echo 'BLOCKED: chmod 777 sets world-writable permissions — use a safer mode' >&2; exit 2; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE '\\b(DROP\\s+(TABLE|DATABASE|SCHEMA)|TRUNCATE\\s+TABLE|DELETE\\s+FROM\\s+\\S+\\s*;)'; then echo 'BLOCKED: Destructive database operations (DROP, TRUNCATE, unfiltered DELETE) are not allowed' >&2; exit 2; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE 'docker\\s+run.*--(privileged|net=host)|docker\\s+run.*-v\\s+/:/'; then echo 'BLOCKED: Docker privileged mode, host networking, and root volume mounts are not allowed' >&2; exit 2; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE '(terraform|pulumi|cdktf)\\s+destroy'; then echo 'BLOCKED: Infrastructure destroy commands are not allowed' >&2; exit 2; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE '(pip|pip3)\\s+install\\s+https?://|npm\\s+install\\s+https?://|yarn\\s+add\\s+https?://'; then echo 'BLOCKED: Installing packages from arbitrary URLs is not allowed — use a registry' >&2; exit 2; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qiE '(\\.aws/(credentials|config)|credentials\\.json|service.account\\.json|\\.kube/config|\\.docker/config\\.json|\\.boto|\\.s3cfg|\\.netrc|\\.git-credentials|\\.npmrc|token\\.json)'; then echo 'BLOCKED: Reading cloud/service credential files is not allowed' >&2; exit 2; fi"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
@@ -65,8 +184,33 @@
       "Read(path:**/credentials*)",
       "Read(path:**/*.key)",
       "Read(path:**/*.pem)",
+      "Read(path:**/vault.yml)",
+      "Read(path:**/vault.yaml)",
+      "Edit(path:**/vault.yml)",
+      "Edit(path:**/vault.yaml)",
       "Edit(path:**/.env*)",
-      "Write(path:**/.env*)"
+      "Write(path:**/.env*)",
+      "Write(path:**/vault.yml)",
+      "Write(path:**/vault.yaml)",
+      "Read(path:**/vault/password)",
+      "Read(path:**/1pass.txt)",
+      "Read(path:**/github.txt)",
+      "Read(path:**/.aws/**)",
+      "Read(path:**/.kube/config)",
+      "Read(path:**/.docker/config.json)",
+      "Read(path:**/.boto)",
+      "Read(path:**/.s3cfg)",
+      "Read(path:**/.netrc)",
+      "Read(path:**/.git-credentials)",
+      "Read(path:**/.npmrc)",
+      "Read(path:**/service_account*.json)",
+      "Read(path:**/token.json)",
+      "Read(path:**/*.p12)",
+      "Read(path:**/*.pfx)",
+      "Write(path:**/.aws/**)",
+      "Write(path:**/.kube/config)",
+      "Write(path:**/.docker/config.json)",
+      "Write(path:**/.npmrc)"
     ]
   }
 }

@@ -14,109 +14,109 @@ print_info() { echo -e "${YELLOW}→${NC} $1"; }
 PLATFORM=${1:-}
 
 if [[ ! "$PLATFORM" =~ ^(wsl|ubuntu|mac|arch)$ ]]; then
-    print_error "Usage: ./setup-deps [wsl|ubuntu|mac|arch]"
-    exit 1
+  print_error "Usage: ./setup-deps [wsl|ubuntu|mac|arch]"
+  exit 1
 fi
 
 case $PLATFORM in
-    wsl|ubuntu)
-        print_info "Installing dependencies via apt..."
-        sudo apt update
-        sudo apt install -y stow neovim tmux zsh git curl jq libnotify-bin fzf zoxide unzip direnv kitty git-delta btop bat atuin eza glow fd-find keychain rustup
-        print_success "Dependencies installed"
+wsl | ubuntu)
+  print_info "Installing dependencies via apt..."
+  sudo apt update
+  sudo apt install -y stow neovim tmux zsh git curl jq libnotify-bin fzf zoxide unzip direnv kitty git-delta btop bat atuin eza glow fd-find keychain rustup ansible
+  print_success "Dependencies installed"
 
-        # Ubuntu installs bat as batcat and fd as fdfind — symlink to expected names
-        mkdir -p ~/.local/bin
-        command -v bat &>/dev/null || ln -sf "$(command -v batcat)" ~/.local/bin/bat
-        command -v fd &>/dev/null || ln -sf "$(command -v fdfind)" ~/.local/bin/fd
+  # Ubuntu installs bat as batcat and fd as fdfind — symlink to expected names
+  mkdir -p ~/.local/bin
+  command -v bat &>/dev/null || ln -sf "$(command -v batcat)" ~/.local/bin/bat
+  command -v fd &>/dev/null || ln -sf "$(command -v fdfind)" ~/.local/bin/fd
 
-        if ! command -v tldr &>/dev/null; then
-            print_info "Installing tlrc..."
-            TLRC_VER=$(curl -sI "https://github.com/tldr-pages/tlrc/releases/latest" | grep -i location | sed 's/.*tag\///' | tr -d '[:space:]')
-            TLRC_URL="https://github.com/tldr-pages/tlrc/releases/latest/download/tlrc-${TLRC_VER}-$(uname -m)-unknown-linux-musl.tar.gz"
-            mkdir -p ~/.local/bin
-            curl -fLo /tmp/tlrc.tar.gz "$TLRC_URL"
-            tar -xzf /tmp/tlrc.tar.gz -C /tmp
-            cp /tmp/tldr ~/.local/bin/
-            chmod +x ~/.local/bin/tldr
-            rm -f /tmp/tlrc.tar.gz /tmp/tldr
-            print_success "tlrc installed"
-        else
-            print_success "tlrc already installed"
-        fi
+  if ! command -v tldr &>/dev/null; then
+    print_info "Installing tlrc..."
+    TLRC_VER=$(curl -sI "https://github.com/tldr-pages/tlrc/releases/latest" | grep -i location | sed 's/.*tag\///' | tr -d '[:space:]')
+    TLRC_URL="https://github.com/tldr-pages/tlrc/releases/latest/download/tlrc-${TLRC_VER}-$(uname -m)-unknown-linux-musl.tar.gz"
+    mkdir -p ~/.local/bin
+    curl -fLo /tmp/tlrc.tar.gz "$TLRC_URL"
+    tar -xzf /tmp/tlrc.tar.gz -C /tmp
+    cp /tmp/tldr ~/.local/bin/
+    chmod +x ~/.local/bin/tldr
+    rm -f /tmp/tlrc.tar.gz /tmp/tldr
+    print_success "tlrc installed"
+  else
+    print_success "tlrc already installed"
+  fi
 
-        if ! command -v lazygit &>/dev/null; then
-            print_info "Installing lazygit..."
-            LAZYGIT_VER=$(curl -sI "https://github.com/jesseduffield/lazygit/releases/latest" | grep -i location | sed 's/.*tag\/v//' | tr -d '[:space:]')
-            curl -fLo /tmp/lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LAZYGIT_VER}_Linux_$(uname -m).tar.gz"
-            tar -xzf /tmp/lazygit.tar.gz -C /tmp lazygit
-            cp /tmp/lazygit ~/.local/bin/
-            chmod +x ~/.local/bin/lazygit
-            rm -f /tmp/lazygit.tar.gz /tmp/lazygit
-            print_success "lazygit installed"
-        else
-            print_success "lazygit already installed"
-        fi
+  if ! command -v lazygit &>/dev/null; then
+    print_info "Installing lazygit..."
+    LAZYGIT_VER=$(curl -sI "https://github.com/jesseduffield/lazygit/releases/latest" | grep -i location | sed 's/.*tag\/v//' | tr -d '[:space:]')
+    curl -fLo /tmp/lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LAZYGIT_VER}_Linux_$(uname -m).tar.gz"
+    tar -xzf /tmp/lazygit.tar.gz -C /tmp lazygit
+    cp /tmp/lazygit ~/.local/bin/
+    chmod +x ~/.local/bin/lazygit
+    rm -f /tmp/lazygit.tar.gz /tmp/lazygit
+    print_success "lazygit installed"
+  else
+    print_success "lazygit already installed"
+  fi
 
-        if ! command -v lazydocker &>/dev/null; then
-            print_info "Installing lazydocker..."
-            curl -fsSL https://raw.githubusercontent.com/jesseduffield/lazydocker/master/scripts/install_update_linux.sh | DIR="$HOME/.local/bin" bash
-            print_success "lazydocker installed"
-        else
-            print_success "lazydocker already installed"
-        fi
+  if ! command -v lazydocker &>/dev/null; then
+    print_info "Installing lazydocker..."
+    curl -fsSL https://raw.githubusercontent.com/jesseduffield/lazydocker/master/scripts/install_update_linux.sh | DIR="$HOME/.local/bin" bash
+    print_success "lazydocker installed"
+  else
+    print_success "lazydocker already installed"
+  fi
 
-        if ! command -v yazi &>/dev/null; then
-            print_info "Installing yazi..."
-            YAZI_URL="https://github.com/sxyazi/yazi/releases/latest/download/yazi-$(uname -m)-unknown-linux-gnu.zip"
-            curl -fLo /tmp/yazi.zip "$YAZI_URL"
-            unzip -o /tmp/yazi.zip -d /tmp/yazi-extract
-            mkdir -p ~/.local/bin
-            cp /tmp/yazi-extract/yazi-*/yazi /tmp/yazi-extract/yazi-*/ya ~/.local/bin/
-            chmod +x ~/.local/bin/yazi ~/.local/bin/ya
-            rm -rf /tmp/yazi.zip /tmp/yazi-extract
-            print_success "yazi installed"
-        else
-            print_success "yazi already installed"
-        fi
-        ;;
-    arch)
-        print_info "Installing dependencies via pacman..."
-        sudo pacman -S --needed stow neovim tmux zsh git curl jq libnotify fzf zoxide unzip direnv kitty git-delta btop bat atuin eza glow fd yazi lazydocker lazygit keychain rustup playerctl xdg-user-dirs
-        print_success "Dependencies installed"
+  if ! command -v yazi &>/dev/null; then
+    print_info "Installing yazi..."
+    YAZI_URL="https://github.com/sxyazi/yazi/releases/latest/download/yazi-$(uname -m)-unknown-linux-gnu.zip"
+    curl -fLo /tmp/yazi.zip "$YAZI_URL"
+    unzip -o /tmp/yazi.zip -d /tmp/yazi-extract
+    mkdir -p ~/.local/bin
+    cp /tmp/yazi-extract/yazi-*/yazi /tmp/yazi-extract/yazi-*/ya ~/.local/bin/
+    chmod +x ~/.local/bin/yazi ~/.local/bin/ya
+    rm -rf /tmp/yazi.zip /tmp/yazi-extract
+    print_success "yazi installed"
+  else
+    print_success "yazi already installed"
+  fi
+  ;;
+arch)
+  print_info "Installing dependencies via pacman..."
+  sudo pacman -S --needed stow neovim tmux zsh git curl jq libnotify fzf zoxide unzip direnv kitty git-delta btop bat atuin eza glow fd yazi lazydocker lazygit keychain rustup playerctl xdg-user-dirs ripgrep brightnessctl base-devel bluez bluez-utils less ansible
+  print_success "Dependencies installed"
 
-        # Hyprland desktop packages
-        print_info "Installing Hyprland desktop packages..."
-        sudo pacman -S --needed hyprland hyprlock hypridle waybar rofi dunst swww xdg-desktop-portal-hyprland xdg-desktop-portal-gtk polkit-gnome wl-clipboard cliphist grim slurp pavucontrol thunar tumbler thunar-archive-plugin file-roller gvfs gvfs-mtp udisks2 pipewire-alsa qt5ct qt6ct
-        print_success "Hyprland desktop packages installed"
+  # Hyprland desktop packages
+  print_info "Installing Hyprland desktop packages..."
+  sudo pacman -S --needed hyprland hyprlock hypridle waybar rofi dunst swww xdg-desktop-portal-hyprland xdg-desktop-portal-gtk polkit-gnome wl-clipboard cliphist grim slurp pavucontrol thunar tumbler thunar-archive-plugin file-roller gvfs gvfs-mtp udisks2 pipewire-alsa qt5ct qt6ct
+  print_success "Hyprland desktop packages installed"
 
-        if ! command -v tldr &>/dev/null; then
-            print_info "Installing tlrc..."
-            TLRC_VER=$(curl -sI "https://github.com/tldr-pages/tlrc/releases/latest" | grep -i location | sed 's/.*tag\///' | tr -d '[:space:]')
-            TLRC_URL="https://github.com/tldr-pages/tlrc/releases/latest/download/tlrc-${TLRC_VER}-$(uname -m)-unknown-linux-musl.tar.gz"
-            mkdir -p ~/.local/bin
-            curl -fLo /tmp/tlrc.tar.gz "$TLRC_URL"
-            tar -xzf /tmp/tlrc.tar.gz -C /tmp
-            cp /tmp/tldr ~/.local/bin/
-            chmod +x ~/.local/bin/tldr
-            rm -f /tmp/tlrc.tar.gz /tmp/tldr
-            print_success "tlrc installed"
-        else
-            print_success "tlrc already installed"
-        fi
-        ;;
-    mac)
-        print_info "Checking for Homebrew..."
-        if ! command -v brew &> /dev/null; then
-            print_info "Installing Homebrew..."
-            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-            print_success "Homebrew installed"
-        else
-            print_success "Homebrew already installed"
-        fi
+  if ! command -v tldr &>/dev/null; then
+    print_info "Installing tlrc..."
+    TLRC_VER=$(curl -sI "https://github.com/tldr-pages/tlrc/releases/latest" | grep -i location | sed 's/.*tag\///' | tr -d '[:space:]')
+    TLRC_URL="https://github.com/tldr-pages/tlrc/releases/latest/download/tlrc-${TLRC_VER}-$(uname -m)-unknown-linux-musl.tar.gz"
+    mkdir -p ~/.local/bin
+    curl -fLo /tmp/tlrc.tar.gz "$TLRC_URL"
+    tar -xzf /tmp/tlrc.tar.gz -C /tmp
+    cp /tmp/tldr ~/.local/bin/
+    chmod +x ~/.local/bin/tldr
+    rm -f /tmp/tlrc.tar.gz /tmp/tldr
+    print_success "tlrc installed"
+  else
+    print_success "tlrc already installed"
+  fi
+  ;;
+mac)
+  print_info "Checking for Homebrew..."
+  if ! command -v brew &>/dev/null; then
+    print_info "Installing Homebrew..."
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    print_success "Homebrew installed"
+  else
+    print_success "Homebrew already installed"
+  fi
 
-        print_info "Installing dependencies via Homebrew..."
-        brew install stow neovim tmux git jq fzf zoxide yazi direnv kitty git-delta btop bat atuin eza tlrc lazydocker lazygit glow fd keychain rustup
-        print_success "Dependencies installed"
-        ;;
+  print_info "Installing dependencies via Homebrew..."
+  brew install stow neovim tmux git jq fzf zoxide yazi direnv kitty git-delta btop bat atuin eza tlrc lazydocker lazygit glow fd keychain rustup ansible
+  print_success "Dependencies installed"
+  ;;
 esac

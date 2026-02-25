@@ -1,0 +1,12 @@
+#!/bin/bash
+# Power menu via rofi
+
+choice=$(printf "Lock\nSuspend\nRestart Hyprland\nShutdown\nReboot" | rofi -dmenu -i -p "Power")
+
+case "$choice" in
+    Lock) hyprlock ;;
+    Suspend) systemctl suspend ;;
+    "Restart Hyprland") hyprctl dispatch exit ;;
+    Shutdown) systemctl poweroff ;;
+    Reboot) systemctl reboot ;;
+esac

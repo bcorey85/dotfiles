@@ -1,0 +1,20 @@
+#!/bin/bash
+# Screenshot tool
+# Usage: hypr-screenshot        - full screen
+#        hypr-screenshot region  - select region
+
+DIR="$HOME/Pictures"
+FILE="$DIR/screenshot-$(date +%Y%m%d-%H%M%S).png"
+
+mkdir -p "$DIR"
+
+if [ "$1" = "region" ]; then
+    grim -g "$(slurp)" "$FILE"
+else
+    grim "$FILE"
+fi
+
+if [ -f "$FILE" ]; then
+    wl-copy < "$FILE"
+    notify-send "Screenshot copied & saved" "$FILE"
+fi

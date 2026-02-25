@@ -58,6 +58,11 @@ echo ""
 "$DOTFILES_DIR/install/zsh"
 echo ""
 
+# Create standard XDG directories
+command -v xdg-user-dirs-update &>/dev/null && xdg-user-dirs-update
+print_success "XDG user directories created"
+echo ""
+
 print_success "Setup complete!"
 echo ""
 print_info "Next steps:"

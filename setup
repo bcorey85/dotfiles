@@ -13,12 +13,13 @@ print_info() { echo -e "${YELLOW}→${NC} $1"; }
 
 # Usage
 usage() {
-  echo "Usage: ./setup [wsl|ubuntu|mac]"
+  echo "Usage: ./setup [wsl|ubuntu|mac|arch]"
   echo ""
   echo "Platforms:"
   echo "  wsl     - Windows Subsystem for Linux (Ubuntu)"
   echo "  ubuntu  - Native Ubuntu/Debian"
   echo "  mac     - macOS"
+  echo "  arch    - Arch Linux"
   exit 1
 }
 
@@ -30,7 +31,7 @@ fi
 PLATFORM=$1
 
 # Validate platform
-if [[ ! "$PLATFORM" =~ ^(wsl|ubuntu|mac)$ ]]; then
+if [[ ! "$PLATFORM" =~ ^(wsl|ubuntu|mac|arch)$ ]]; then
   print_error "Invalid platform: $PLATFORM"
   usage
 fi
@@ -44,7 +45,7 @@ echo ""
 echo ""
 "$DOTFILES_DIR/install/fonts" "$PLATFORM"
 echo ""
-"$DOTFILES_DIR/install/stow"
+"$DOTFILES_DIR/install/stow" "$PLATFORM"
 echo ""
 "$DOTFILES_DIR/install/zsh-plugins"
 echo ""

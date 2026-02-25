@@ -6,10 +6,6 @@ source ~/.zsh/plugins/fzf-tab/fzf-tab.plugin.zsh
 source ~/.zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh
 source ~/.zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 
-# macOS runs ssh-agent via launchd; only start one on Linux
-if [[ "$(uname)" != "Darwin" ]]; then
-  eval "$(ssh-agent -s)" > /dev/null 2>&1
-fi
 
 function cdev() {
     project=$1
@@ -122,8 +118,8 @@ export FZF_DEFAULT_COMMAND='fd'
 export PATH="$HOME/.local/bin:$HOME:$PATH"
 
 # SSH agent
-if [[ "$(uname)" == "Linux" ]]; then
-    eval "$(keychain --eval --quiet --agents ssh id_ed25519)"
+if [[ "$(uname)" == "Linux" ]] && command -v keychain &>/dev/null; then
+    eval "$(keychain --eval --quiet id_ed25519)"
 fi
 
 # bun completions
@@ -132,4 +128,4 @@ fi
 # bun
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
-source "$HOME/.cargo/env"
+[[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"

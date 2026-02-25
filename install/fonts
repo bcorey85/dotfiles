@@ -13,8 +13,8 @@ print_info() { echo -e "${YELLOW}→${NC} $1"; }
 
 PLATFORM=${1:-}
 
-if [[ ! "$PLATFORM" =~ ^(wsl|ubuntu|mac)$ ]]; then
-    print_error "Usage: ./setup-fonts [wsl|ubuntu|mac]"
+if [[ ! "$PLATFORM" =~ ^(wsl|ubuntu|mac|arch)$ ]]; then
+    print_error "Usage: ./setup-fonts [wsl|ubuntu|mac|arch]"
     exit 1
 fi
 
@@ -30,6 +30,24 @@ case $PLATFORM in
         read || true
         ;;
     ubuntu)
+        print_info "Installing Nerd Fonts..."
+        mkdir -p ~/.local/share/fonts
+        cd ~/.local/share/fonts
+
+        if [ ! -f "CommitMonoNerdFontMono-Regular.otf" ]; then
+            curl -fLo /tmp/CommitMono.tar.xz \
+                https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CommitMono.tar.xz
+            tar xf /tmp/CommitMono.tar.xz -C ~/.local/share/fonts \
+                CommitMonoNerdFontMono-Regular.otf CommitMonoNerdFontMono-Bold.otf
+            rm /tmp/CommitMono.tar.xz
+            print_success "CommitMono Nerd Font installed"
+        else
+            print_success "CommitMono Nerd Font already installed"
+        fi
+
+        fc-cache -fv
+        ;;
+    arch)
         print_info "Installing Nerd Fonts..."
         mkdir -p ~/.local/share/fonts
         cd ~/.local/share/fonts

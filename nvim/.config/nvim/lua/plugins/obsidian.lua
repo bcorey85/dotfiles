@@ -85,7 +85,9 @@ return {
           prompt = "Move note to> ",
           actions = {
             ["default"] = function(selected)
-              if not selected or #selected == 0 then return end
+              if not selected or #selected == 0 then
+                return
+              end
               local choice = selected[1]
               local src = vim.fn.expand("%:p")
               local fname = vim.fn.expand("%:t")
@@ -109,7 +111,6 @@ return {
       },
       workspaces = (function()
         local candidates = {
-          { name = "general", path = vim.fn.expand("~/vaults/general") },
           { name = "general", path = vim.fn.expand("~/vault") },
         }
         local ws = {}

@@ -93,7 +93,7 @@ return {
       border = "thick",
     },
     bullet = {
-      icons = { "●", "○", "◆", "◇" },
+      icons = { "»", "›", "∘", "·" },
     },
     checkbox = {
       position = "inline",

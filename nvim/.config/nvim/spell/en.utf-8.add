@@ -35,3 +35,6 @@ frontend
 Jinja2
 dicts
 Jinja2
+hostname
+ip
+hostvars

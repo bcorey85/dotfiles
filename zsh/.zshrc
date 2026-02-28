@@ -1,4 +1,5 @@
 # Zsh plugins
+fpath=(~/.zsh/completions $fpath)
 autoload -Uz compinit && compinit
 command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
 command -v direnv &>/dev/null && eval "$(direnv hook zsh)"
@@ -71,6 +72,7 @@ alias brew86="arch -x86_64 /usr/local/homebrew/bin/brew"
 alias brewARM="/opt/homebrew/bin/brew"
 
 export EDITOR='nvim'
+bindkey -e  # use emacs keybindings (ctrl+a/e/u) despite EDITOR=nvim
 if command -v pyenv &>/dev/null; then
   export PYENV_ROOT="$HOME/.pyenv"
   export PATH="$PYENV_ROOT/bin:$PATH"

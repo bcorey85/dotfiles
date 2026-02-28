@@ -1,0 +1,14 @@
+#!/bin/bash
+set -e
+
+GREEN='\033[0;32m'
+NC='\033[0m'
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+
+COMP_DIR="$HOME/.zsh/completions"
+mkdir -p "$COMP_DIR"
+
+# Add tools here as you install them
+command -v just &>/dev/null && just --completions zsh > "$COMP_DIR/_just"
+
+print_success "Zsh completions installed"

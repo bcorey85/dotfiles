@@ -19,13 +19,10 @@
     },
 
     "clock": {
-        "format": "{:%a %b %d  %I:%M %p}",
-        "tooltip-format": "<tt>{calendar}</tt>",
-        "calendar": {
-            "format": {
-                "today": "<span color='#78cee9'><b>{}</b></span>"
-            }
-        }
+        "format": "{:%I:%M %p  %m/%d/%Y}",
+        "format-alt": "{:%A, %B %d, %Y}",
+        "tooltip": false,
+        "on-click": "gsimplecal"
     },
 
     "cpu": {

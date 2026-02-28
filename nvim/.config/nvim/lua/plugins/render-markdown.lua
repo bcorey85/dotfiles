@@ -60,7 +60,7 @@ return {
     indent = { enabled = false },
     heading = {
       sign = false,
-      icons = { "󰎤 ", "󰎧 ", "󰎪 ", "󰎭 ", "󰎱 ", "󰎳 " },
+      icons = { "⌘ ", "λ ", "△ ", "⟐ ", "⊡ ", "∷ " },
       position = "inline",
       width = "full",
       border = true,

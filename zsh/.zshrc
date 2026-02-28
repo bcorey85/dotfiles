@@ -98,7 +98,6 @@ export NVM_DIR="$HOME/.nvm"
 export PATH="/opt/homebrew/opt/openssl@3/bin:$PATH"
 
 command -v starship &>/dev/null && eval "$(starship init zsh)"
-command -v atuin &>/dev/null && eval "$(atuin init zsh)"
 
 
 alias rl="source ~/.zshrc && clear && echo 'Reloaded .zshrc'"
@@ -134,3 +133,6 @@ fi
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 [[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
+
+# Atuin — must be last to avoid hook conflicts
+command -v atuin &>/dev/null && eval "$(atuin init zsh)"

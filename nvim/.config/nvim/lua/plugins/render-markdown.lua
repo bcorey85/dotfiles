@@ -6,25 +6,47 @@ return {
     "nvim-tree/nvim-web-devicons",
   },
   config = function(_, opts)
-    -- Sonokai Maia heading colors (bg tinted with accent, fg = accent)
+    -- Sonokai Maia heading colors (fg only, no background)
     local colors = {
-      { fg = "#f76c7c", bg = "#55393d" }, -- H1: red
-      { fg = "#f3a96a", bg = "#4e432f" }, -- H2: orange
-      { fg = "#e3d367", bg = "#4e432f" }, -- H3: yellow
-      { fg = "#9cd57b", bg = "#394634" }, -- H4: green
-      { fg = "#78cee9", bg = "#354157" }, -- H5: blue
-      { fg = "#baa0f8", bg = "#404256" }, -- H6: purple
+      "#f76c7c", -- H1: red
+      "#f3a96a", -- H2: orange
+      "#e3d367", -- H3: yellow
+      "#9cd57b", -- H4: green
+      "#78cee9", -- H5: blue
+      "#baa0f8", -- H6: purple
     }
-    for i, c in ipairs(colors) do
-      vim.api.nvim_set_hl(0, "RenderMarkdownH" .. i, { fg = c.fg, bold = true })
-      vim.api.nvim_set_hl(0, "RenderMarkdownH" .. i .. "Bg", { bg = c.bg })
+    for i, fg in ipairs(colors) do
+      vim.api.nvim_set_hl(0, "RenderMarkdownH" .. i, { fg = fg, bold = true })
+      vim.api.nvim_set_hl(0, "RenderMarkdownH" .. i .. "Bg", { bg = fg })
     end
 
     require("render-markdown").setup(opts)
+
+    -- Patch: colored borders without heading/icon background
+    -- The plugin uses the same Bg group for icon highlight, line background, AND
+    -- border color. We override run() to hide bg from everything except border.
+    local Heading = require("render-markdown.render.markdown.heading")
+    Heading.run = function(self)
+      local saved_bg = self.data.bg
+      self.data.bg = nil
+      self:sign(self.config, self.config.sign, self.data.sign, self.data.fg)
+      local box = self:box(self:marker())
+      self:padding(box)
+      self.data.bg = saved_bg
+      if self.data.atx then
+        self:border(box, true)
+        self:border(box, false)
+      else
+        local node = self.data.marker
+        self.marks:over(self.config, true, node, { conceal = "" })
+        self.marks:over(self.config, true, node, { conceal_lines = "" })
+      end
+    end
   end,
   opts = {
     render_modes = { "n", "c", "t" },
     latex = { enabled = false },
+    yaml = { enabled = false },
     anti_conceal = {
       enabled = true,
       ignore = {
@@ -35,12 +57,17 @@ return {
     win_options = {
       conceallevel = { default = vim.o.conceallevel, rendered = 3 },
     },
+    indent = { enabled = false },
     heading = {
       sign = false,
       icons = { "󰎤 ", "󰎧 ", "󰎪 ", "󰎭 ", "󰎱 ", "󰎳 " },
+      position = "inline",
       width = "full",
       border = true,
       border_virtual = true,
+      border_prefix = false,
+      above = "",
+      below = "─",
       backgrounds = {
         "RenderMarkdownH1Bg",
         "RenderMarkdownH2Bg",

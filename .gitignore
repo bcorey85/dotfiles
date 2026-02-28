@@ -21,5 +21,6 @@ claude/.claude/.credentials.json
 claude/.claude/claude-devtools-notifications.json
 claude/.claude/agent-memory/
 claude/.claude/security_warnings_state_*.json
+claude/.claude/mcp-needs-auth-cache.json
 
 nvim/.config/nvim/lazy-lock.json

@@ -15,6 +15,11 @@ tooltip {
     border: 1px solid #3a474d;
     border-radius: 8px;
     color: #e1e2e3;
+    padding: 8px;
+}
+
+tooltip label {
+    font-size: 14px;
 }
 
 #workspaces button {

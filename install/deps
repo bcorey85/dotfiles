@@ -22,7 +22,7 @@ case $PLATFORM in
 wsl | ubuntu)
   print_info "Installing dependencies via apt..."
   sudo apt update
-  sudo apt install -y stow neovim tmux zsh git curl jq libnotify-bin fzf zoxide unzip direnv kitty git-delta btop bat atuin eza glow fd-find keychain rustup ansible
+  sudo apt install -y stow neovim tmux zsh git curl jq libnotify-bin fzf zoxide unzip direnv kitty git-delta btop bat atuin eza glow fd-find keychain rustup ansible just
   print_success "Dependencies installed"
 
   # Ubuntu installs bat as batcat and fd as fdfind — symlink to expected names
@@ -82,12 +82,12 @@ wsl | ubuntu)
   ;;
 arch)
   print_info "Installing dependencies via pacman..."
-  sudo pacman -S --needed stow neovim tmux zsh git curl jq libnotify fzf zoxide unzip direnv kitty git-delta btop bat atuin eza glow fd yazi lazydocker lazygit keychain rustup playerctl xdg-user-dirs ripgrep brightnessctl base-devel bluez bluez-utils less ansible
+  sudo pacman -S --needed stow neovim tmux zsh git curl jq libnotify fzf zoxide unzip direnv kitty git-delta btop bat atuin eza glow fd yazi lazydocker lazygit keychain rustup playerctl xdg-user-dirs ripgrep brightnessctl base-devel bluez bluez-utils less ansible just rsync
   print_success "Dependencies installed"
 
   # Hyprland desktop packages
   print_info "Installing Hyprland desktop packages..."
-  sudo pacman -S --needed hyprland hyprlock hypridle waybar rofi dunst swww xdg-desktop-portal-hyprland xdg-desktop-portal-gtk polkit-gnome wl-clipboard cliphist grim slurp pavucontrol thunar tumbler thunar-archive-plugin file-roller gvfs gvfs-mtp udisks2 pipewire-alsa qt5ct qt6ct
+  sudo pacman -S --needed hyprland hyprlock hypridle waybar rofi dunst swww xdg-desktop-portal-hyprland xdg-desktop-portal-gtk polkit-gnome wl-clipboard cliphist grim slurp pavucontrol thunar tumbler thunar-archive-plugin file-roller gvfs gvfs-mtp udisks2 pipewire-alsa qt5ct qt6ct gsimplecal
   print_success "Hyprland desktop packages installed"
 
   # Install paru (AUR helper)
@@ -136,7 +136,7 @@ mac)
   fi
 
   print_info "Installing dependencies via Homebrew..."
-  brew install stow neovim tmux git jq fzf zoxide yazi direnv kitty git-delta btop bat atuin eza tlrc lazydocker lazygit glow fd keychain rustup ansible
+  brew install stow neovim tmux git jq fzf zoxide yazi direnv kitty git-delta btop bat atuin eza tlrc lazydocker lazygit glow fd keychain rustup ansible just
   print_success "Dependencies installed"
   ;;
 esac

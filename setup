@@ -57,6 +57,8 @@ echo ""
 echo ""
 "$DOTFILES_DIR/install/zsh"
 echo ""
+"$DOTFILES_DIR/install/completions"
+echo ""
 
 # Create standard XDG directories
 command -v xdg-user-dirs-update &>/dev/null && xdg-user-dirs-update

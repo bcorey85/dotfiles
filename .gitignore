@@ -15,7 +15,7 @@ claude/.claude/todos/
 claude/.claude/plans/
 claude/.claude/tasks/
 claude/.claude/stats-cache.json
-claude/.claude/paste-cache/*
+claude/.claude/paste-cache/
 claude/.claude/backups/*
 claude/.claude/.credentials.json
 claude/.claude/claude-devtools-notifications.json

@@ -10,6 +10,7 @@
 - Never hardcode paths or project names in rules, agents, skills, or commands — keep portable.
 - Only add rules that increase efficiency or reduce rework. Don't duplicate the system prompt.
 - Always prefer multiple parallel subagents when appropriate. Speed > token efficiency.
+- Don't guess at APIs, config options, or library interfaces. Read docs (websearch, source code, `--help`) before writing code. Two minutes of research beats five rounds of trial-and-error.
 
 ## Obsidian
 

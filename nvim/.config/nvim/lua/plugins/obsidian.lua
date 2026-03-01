@@ -61,8 +61,19 @@ return {
       require("obsidian").setup(opts)
 
       vim.keymap.set("n", "<leader>om", function()
-        local client = require("obsidian").get_client()
-        local vault_root = tostring(client.dir)
+        local vault_root = tostring(Obsidian.dir)
+
+        -- Capture source buffer info before opening picker
+        local src_buf = vim.api.nvim_get_current_buf()
+        local src = vim.api.nvim_buf_get_name(src_buf)
+        local fname = vim.fn.fnamemodify(src, ":t")
+
+        -- Save the note before moving
+        if vim.bo[src_buf].modified then
+          vim.api.nvim_buf_call(src_buf, function()
+            vim.cmd("write")
+          end)
+        end
 
         local dirs = {}
         local function scan(dir)
@@ -89,15 +100,11 @@ return {
                 return
               end
               local choice = selected[1]
-              local src = vim.fn.expand("%:p")
-              local fname = vim.fn.expand("%:t")
               local dest = vault_root .. "/" .. choice .. "/" .. fname
-              local old_buf = vim.api.nvim_get_current_buf()
 
-              vim.cmd("write")
               vim.fn.rename(src, dest)
               vim.cmd("edit " .. vim.fn.fnameescape(dest))
-              vim.api.nvim_buf_delete(old_buf, { force = true })
+              vim.api.nvim_buf_delete(src_buf, { force = true })
               vim.notify("Moved to " .. choice, vim.log.levels.INFO)
             end,
           },

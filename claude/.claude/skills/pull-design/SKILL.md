@@ -18,7 +18,7 @@ Pull Figma design context for the current feature. Run before `/eng-plan`, so th
 2. **If no URL in arguments**, check the current Jira ticket:
    - Get branch name: `git branch --show-current`
    - Extract ticket key (e.g., `TAS-13` from `TAS-13-board-rendering`)
-   - Read `JIRA.md` for Cloud ID, fetch ticket via `getJiraIssue`
+   - Read `mcp-references/JIRA.md` for Cloud ID, fetch ticket via `getJiraIssue`
    - Scan the ticket description for `figma.com` URLs. Note: `getJiraIssue` may not include comments by default. If no URL found in the description, proceed to asking the user rather than silently missing URLs in comments.
    - If one URL found: use it, tell the user where you found it
    - If multiple URLs found: list them and ask which frame to pull

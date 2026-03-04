@@ -10,7 +10,7 @@ Create or update customer-facing documentation in the Notion Docs section after 
 
 ## Instructions
 
-0. **Check for workspace config**: If `NOTION.md` exists in the project root, read it for page IDs and workspace structure.
+0. **Check for workspace config**: If `mcp-references/NOTION.md` exists in the project root, read it for page IDs and workspace structure.
 
 1. **Determine what needs documenting** from the user's input. This may be:
    - A new feature that needs a guide ("document the task filtering API")

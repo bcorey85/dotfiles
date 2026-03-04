@@ -6,6 +6,7 @@
 
 ## Behavior
 
+- Save all Playwright screenshots to `/tmp/`, never inside a project repo.
 - Don't over-engineer. Only change what's requested.
 - Never hardcode paths or project names in rules, agents, skills, or commands — keep portable.
 - Only add rules that increase efficiency or reduce rework. Don't duplicate the system prompt.

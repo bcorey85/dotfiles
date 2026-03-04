@@ -26,14 +26,14 @@ Examples: `/move-ticket in progress`, `/move-ticket in review`, `/move-ticket do
 
 2. **Determine the target status** from `$ARGUMENTS`. If no arguments provided, ask the user: "What status? (e.g., in progress, in review, done)"
 
-3. **Resolve transition ID** — check `JIRA.md` first, cache-refresh second:
-   a. Read the **Board Transitions** table in `JIRA.md`. Case-insensitive fuzzy match the user's input against the status names (e.g., "review" matches "In Review", "progress" matches "In Progress").
+3. **Resolve transition ID** — check `mcp-references/JIRA.md` first, cache-refresh second:
+   a. Read the **Board Transitions** table in `mcp-references/JIRA.md`. Case-insensitive fuzzy match the user's input against the status names (e.g., "review" matches "In Review", "progress" matches "In Progress").
    b. If a match is found, use that transition ID directly — **skip any API calls**.
-   c. If NO match is found in `JIRA.md` (e.g., the table is missing or the status name is unfamiliar), AND `JIRA.md` has a Cloud ID and project key, invoke `/cache-jira-transitions` via the Skill tool to refresh the cached transitions. Then re-read `JIRA.md` and match again. If still no match or ambiguous after the refresh, show the available transitions and ask the user to pick.
+   c. If NO match is found in `mcp-references/JIRA.md` (e.g., the table is missing or the status name is unfamiliar), AND `mcp-references/JIRA.md` has a Cloud ID and project key, invoke `/cache-jira-transitions` via the Skill tool to refresh the cached transitions. Then re-read `mcp-references/JIRA.md` and match again. If still no match or ambiguous after the refresh, show the available transitions and ask the user to pick.
 
 4. **Execute the transition** using `transitionJiraIssue`. IMPORTANT — the `transition` parameter is an **object**, not a string:
    ```
-   cloudId: <from `JIRA.md`>
+   cloudId: <from `mcp-references/JIRA.md`>
    issueIdOrKey: <ticket key>
    transition: {"id": "<matched transition id>"}
    ```

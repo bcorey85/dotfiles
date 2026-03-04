@@ -16,10 +16,13 @@ fi
 : "${message:=Something needs your attention}"
 
 # Append tmux window info if running inside tmux
-if [[ -n "$TMUX" ]]; then
-  tmux_info="$(tmux display-message -p '#S:#I (#W)' 2>/dev/null)"
-  if [[ -n "$tmux_info" ]]; then
-    message="$message — tmux $tmux_info"
+# Use $TMUX_PANE with -t to resolve the correct window, not the focused one
+if [[ -n "$TMUX" && -n "$TMUX_PANE" ]]; then
+  session_name="$(tmux display-message -t "$TMUX_PANE" -p '#S' 2>/dev/null)"
+  window_index="$(tmux display-message -t "$TMUX_PANE" -p '#I' 2>/dev/null)"
+  window_name="$(tmux display-message -t "$TMUX_PANE" -p '#W' 2>/dev/null)"
+  if [[ -n "$session_name" && -n "$window_index" ]]; then
+    message="$message — tmux $session_name:$window_index ($window_name)"
   fi
 fi
 

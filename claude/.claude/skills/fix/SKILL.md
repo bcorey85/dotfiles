@@ -41,7 +41,16 @@ Analyze a bug or issue, determine scope, and dispatch the appropriate coder suba
    - What was changed and why
    - Any related concerns or follow-up items
 
-5. **Auto-dispatch peer review**: After summarizing the fix, tell the user: "Auto-dispatching `/peer-review` to check the fix before committing." Then invoke the `/peer-review` skill using the Skill tool (`skill: "peer-review"`). If the user passed `+fast` or `+deep`, pass the same modifier to the peer review invocation (e.g., `skill: "peer-review", args: "+fast"`). This step runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing.
+5. **Verify frontend fixes with Playwright** (frontend or fullstack scope only):
+   - If the fix involved frontend changes, use the Playwright MCP tools to visually verify the fix is complete before proceeding
+   - Navigate to the affected page/route using `browser_navigate`
+   - Take a snapshot with `browser_snapshot` to confirm the UI renders correctly
+   - If the bug involved a specific interaction (click, form submit, etc.), reproduce the original steps and confirm the issue is resolved
+   - Save any screenshots to `/tmp/` (never inside the project repo)
+   - If verification fails, report what's still broken and dispatch the `frontend-coder` again to address the remaining issue — repeat until the fix is confirmed
+   - Skip this step if there is no running dev server or the bug is not visually verifiable (e.g., build errors, type errors)
+
+6. **Auto-dispatch peer review**: After summarizing the fix (and completing Playwright verification if applicable), tell the user: "Auto-dispatching `/peer-review` to check the fix before committing." Then invoke the `/peer-review` skill using the Skill tool (`skill: "peer-review"`). If the user passed `+fast` or `+deep`, pass the same modifier to the peer review invocation (e.g., `skill: "peer-review", args: "+fast"`). This step runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing.
 
 ## Issue
 

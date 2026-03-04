@@ -33,7 +33,7 @@ Parse `$ARGUMENTS` to extract:
 
 ### Step 2: Resolve Branch Name
 
-- **If a Jira ticket key was provided** (matches pattern `[A-Z]+-\d+`): fetch the ticket using `getJiraIssue` (Cloud ID from `JIRA.md`) to get the summary. Build the branch name: `<TICKET-KEY>-<slugified-summary>` (lowercase, hyphens, max ~50 chars). Example: `TAS-20-dockerize-dev-environment`.
+- **If a Jira ticket key was provided** (matches pattern `[A-Z]+-\d+`): fetch the ticket using `getJiraIssue` (Cloud ID from `mcp-references/JIRA.md`) to get the summary. Build the branch name: `<TICKET-KEY>-<slugified-summary>` (lowercase, hyphens, max ~50 chars). Example: `TAS-20-dockerize-dev-environment`.
 - **If a descriptive name was provided** (not a ticket key): use it directly as the branch name.
 - **If nothing was provided**: ask the user — "What should the branch be named? (Jira ticket key like TAS-20, or a descriptive name)"
 

@@ -21,7 +21,7 @@ Verify that the current implementation satisfies the eng-plan verification check
 
 3. **Find the eng-plan** — Glob `eng-plan/*.md` for a file matching the ticket number or branch description. Read it if found. Extract the `## Verification` checklist.
 
-4. **Pull Jira ticket AC** — If a Jira ticket number was extracted in step 1, fetch the ticket using `getJiraIssue` (use the Jira Cloud ID from `JIRA.md`) and extract the acceptance criteria from the description.
+4. **Pull Jira ticket AC** — If a Jira ticket number was extracted in step 1, fetch the ticket using `getJiraIssue` (use the Jira Cloud ID from `mcp-references/JIRA.md`) and extract the acceptance criteria from the description.
 
 5. **Get the diff** — Run `git diff <base>...HEAD --stat` and `git diff <base>...HEAD` to understand what was actually changed on this branch.
 

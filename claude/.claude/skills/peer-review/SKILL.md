@@ -1,7 +1,7 @@
 ---
 name: peer-review
 description: Peer-review recent changes using the code-reviewer subagent
-allowed-tools: [Task, Bash, Read, Glob, Grep]
+allowed-tools: [Task, Bash, Read, Glob, Grep, Skill]
 ---
 
 # Code Review
@@ -46,9 +46,24 @@ Review recent changes in this codebase using the code-reviewer subagent.
 
 4. **Present the review results** to the user organized by severity
 
-5. **Suggest next steps** based on the review outcome:
-   - **If issues found**: "Run `/fix-feedback` to fix these issues, then `/peer-review` again to verify the fixes."
+5. **Decide next steps** based on the review outcome:
+
    - **If all clear**: "No issues found. Ready for `/commit`."
+
+   - **If issues found but NO critical blockers**: Auto-dispatch `/fix-feedback` to resolve them. Tell the user: "Auto-dispatching `/fix-feedback` to resolve N issues." Then invoke the Skill tool (`skill: "fix-feedback"`). Pass the same `+fast`/`+deep` modifier if one was used.
+
+   - **If critical blockers that need user judgment**: STOP and alert the user. Critical blockers are:
+     - Security vulnerabilities that require design decisions
+     - Architectural issues that need `/eng-plan`
+     - Ambiguous fixes where multiple valid approaches exist and the wrong choice could break things
+     - Issues that require changing the public API contract
+
+     Present these to the user and wait for direction. Do NOT auto-dispatch `/fix-feedback` in this case.
+
+   `/fix-feedback` already auto-dispatches `/peer-review` when it finishes, so this creates an automatic review-fix loop. The loop terminates when:
+   - All issues are resolved (clean review)
+   - A critical blocker surfaces that needs user input
+   - 3 iterations pass without converging (stop and alert the user to avoid churn)
 
 ## Arguments
 

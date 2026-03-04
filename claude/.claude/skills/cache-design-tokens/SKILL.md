@@ -18,7 +18,7 @@ Extract the project's design system from Figma and cache it locally. This makes 
 2. **If no URL in arguments**, check the current Jira ticket:
    - Get branch name: `git branch --show-current`
    - Extract ticket key from branch name
-   - Read `JIRA.md` for Cloud ID, fetch ticket via `getJiraIssue`
+   - Read `mcp-references/JIRA.md` for Cloud ID, fetch ticket via `getJiraIssue`
    - Scan description for `figma.com` URLs
    - If no URL found: ask the user to paste one
 

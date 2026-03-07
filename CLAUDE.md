@@ -51,7 +51,7 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 
 ## Key Conventions
 
-- **Theme**: Sonokai Maia everywhere (kitty, starship, neovim, tmux)
+- **Theme**: Catppuccin Mocha (OneDark BG) everywhere (kitty, starship, neovim, tmux, waybar, rofi, dunst, hyprlock)
 - **Font**: CommitMono Nerd Font Mono, 12pt
 - **Platform guards**: Use `command -v <tool> &>/dev/null &&` before tool-specific init (see .zshrc)
 - **Install scripts**: All use the same color output pattern (`print_success`, `print_error`, `print_info`) with `set -e`

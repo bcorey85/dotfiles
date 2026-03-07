@@ -1,14 +1,14 @@
 * {
-    bg:         #273136;
-    bg-alt:     #2f3b40;
-    bg-sel:     #3a474d;
-    fg:         #e1e2e3;
-    fg-alt:     #82878b;
-    blue:       #78cee9;
-    green:      #9cd57b;
-    red:        #f76c7c;
-    purple:     #baa0f8;
-    orange:     #f3a96a;
+    bg:         #282c34;
+    bg-alt:     #2e3440;
+    bg-sel:     #3b4252;
+    fg:         #cdd6f4;
+    fg-alt:     #6c7086;
+    blue:       #94e2d5;
+    green:      #a6e3a1;
+    red:        #f38ba8;
+    purple:     #b4befe;
+    orange:     #fab387;
 
     background-color: transparent;
     text-color: @fg;

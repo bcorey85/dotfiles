@@ -10,4 +10,4 @@ configuration {
     display-ssh: "SSH";
 }
 
-@theme "sonokai-maia"
+@theme "catppuccin-mocha"

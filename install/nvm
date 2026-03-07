@@ -1,0 +1,36 @@
+#!/bin/bash
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_info() { echo -e "${YELLOW}→${NC} $1"; }
+
+export NVM_DIR="$HOME/.nvm"
+
+if [ ! -d "$NVM_DIR" ]; then
+  print_info "Installing nvm..."
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+  print_success "nvm installed"
+else
+  print_success "nvm already installed"
+fi
+
+# Load nvm for this script
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+if ! nvm ls 24 &>/dev/null; then
+  print_info "Installing Node.js 24..."
+  nvm install 24
+  print_success "Node.js 24 installed"
+else
+  print_success "Node.js 24 already installed"
+fi
+
+nvm alias default 24
+print_success "Node.js 24 set as default"

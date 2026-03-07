@@ -5,16 +5,16 @@
 }
 
 window#waybar {
-    background-color: #273136;
-    color: #e1e2e3;
-    border-bottom: 2px solid #3a474d;
+    background-color: #282c34;
+    color: #cdd6f4;
+    border-bottom: 2px solid #3b4252;
 }
 
 tooltip {
-    background-color: #2f3b40;
-    border: 1px solid #3a474d;
+    background-color: #2e3440;
+    border: 1px solid #3b4252;
     border-radius: 8px;
-    color: #e1e2e3;
+    color: #cdd6f4;
     padding: 8px;
 }
 
@@ -24,66 +24,66 @@ tooltip label {
 
 #workspaces button {
     padding: 0 8px;
-    color: #82878b;
+    color: #6c7086;
     border: none;
     border-radius: 0;
     background: transparent;
 }
 
 #workspaces button.active {
-    color: #78cee9;
-    border-bottom: 2px solid #78cee9;
+    color: #94e2d5;
+    border-bottom: 2px solid #94e2d5;
 }
 
 #workspaces button.urgent {
-    color: #f76c7c;
+    color: #f38ba8;
 }
 
 #workspaces button:hover {
-    background: #2f3b40;
-    color: #e1e2e3;
+    background: #2e3440;
+    color: #cdd6f4;
 }
 
 #window {
-    color: #82878b;
+    color: #6c7086;
     padding: 0 12px;
 }
 
 #clock {
-    color: #e1e2e3;
+    color: #cdd6f4;
     font-weight: bold;
 }
 
 #cpu {
-    color: #9cd57b;
+    color: #a6e3a1;
 }
 
 #memory {
-    color: #baa0f8;
+    color: #b4befe;
 }
 
 #temperature {
-    color: #f3a96a;
+    color: #fab387;
 }
 
 #temperature.critical {
-    color: #f76c7c;
+    color: #f38ba8;
 }
 
 #network {
-    color: #78cee9;
+    color: #94e2d5;
 }
 
 #network.disconnected {
-    color: #f76c7c;
+    color: #f38ba8;
 }
 
 #pulseaudio {
-    color: #e3d367;
+    color: #f9e2af;
 }
 
 #pulseaudio.muted {
-    color: #82878b;
+    color: #6c7086;
 }
 
 #tray {

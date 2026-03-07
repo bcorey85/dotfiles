@@ -5,6 +5,8 @@ command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
 command -v direnv &>/dev/null && eval "$(direnv hook zsh)"
 source ~/.zsh/plugins/fzf-tab/fzf-tab.plugin.zsh
 source ~/.zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh
+autoload -Uz bracketed-paste-magic
+zle -N bracketed-paste bracketed-paste-magic
 source ~/.zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 
 

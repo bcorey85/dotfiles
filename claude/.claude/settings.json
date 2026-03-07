@@ -87,7 +87,6 @@
     ],
     "deny": []
   },
-  "model": "Opus",
   "hooks": {
     "PreToolUse": [
       {

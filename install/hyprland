@@ -1,0 +1,36 @@
+#!/bin/bash
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_info() { echo -e "${YELLOW}→${NC} $1"; }
+
+if ! command -v hyprctl &>/dev/null; then
+    print_info "Hyprland not installed, skipping"
+    exit 0
+fi
+
+LOCAL_CONF="$HOME/.config/hypr/hyprland.local.conf"
+DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [ -f "$LOCAL_CONF" ]; then
+    print_success "hyprland.local.conf already exists"
+    exit 0
+fi
+
+# Detect machine type by GPU
+if lspci 2>/dev/null | grep -qi nvidia; then
+    PROFILE="desktop"
+else
+    PROFILE="thinkpad"
+fi
+
+print_info "Detected profile: $PROFILE"
+ln -sf "$DOTFILES_DIR/hypr/.config/hypr/hyprland.$PROFILE.conf" "$LOCAL_CONF"
+print_success "Linked hyprland.$PROFILE.conf → hyprland.local.conf"

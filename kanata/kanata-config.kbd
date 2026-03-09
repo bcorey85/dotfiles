@@ -52,6 +52,14 @@
   lctl lmet @la           spc                 ralt rmet rctl
 )
 
+(deflayer pine
+  @grl      1    2    3    4    5    6    7    8    9    0    [    ]   bspc
+  tab       q    l    c    m    k    '    f    u    o    y    -    =    \
+  caps      n    r    s    t    g    p    h    e    a    i    ,       ret
+  lsft      x    v    w    j    z    b    d    ;    .    /    rsft
+  lctl lmet @la           spc                 ralt rmet rctl
+)
+
 (defalias
   ;; Home row mods - left hand (nsht) - GACS
   n (tap-hold-release 200 200 n lmet)
@@ -98,11 +106,12 @@
   gal (layer-switch gallium)
   qwr (layer-switch qwerty)
   nok (layer-switch nokwts)
+  pin (layer-switch pine)
   la (layer-while-held l1)
 )
 
 (deflayer layers
-  _    @qwr @nok @rai @gal    _    _    _    _    _    _    _    _    _
+  _    @qwr @nok @rai @gal @pin    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _

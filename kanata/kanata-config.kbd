@@ -53,10 +53,10 @@
 )
 
 (deflayer pine
-  @grl      1    2    3    4    5    6    7    8    9    0    [    ]   bspc
-  tab       q    l    c    m    k    '    f    u    o    y    -    =    \
-  caps      n    r    s    t    g    p    h    e    a    i    ,       ret
-  lsft      x    v    w    j    z    b    d    ;    .    /    rsft
+  @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
+  tab       q    l    c    m    k    '    f    u    o    y    [    ]    \
+  caps      n    r    s    t    g    p    h    e    a    i    ;       ret
+  lsft      x    v    w    j    z    b    d    ,    .    /    rsft
   lctl lmet @la           spc                 ralt rmet rctl
 )
 

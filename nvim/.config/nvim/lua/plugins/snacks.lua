@@ -48,5 +48,14 @@ return {
       end,
       desc = "Find files (including ignored)",
     },
+    {
+      "<leader>gs",
+      function()
+        Snacks.picker.git_status({
+          layout = "sidebar",
+        })
+      end,
+      desc = "Git Status (sidebar)",
+    },
   },
 }

@@ -113,4 +113,24 @@ else
     token_info=$(printf " ${DIM}[${RESET}%s${DIM}]${RESET} ${DIM}[${RESET}0${DIM}/${RESET}%s${DIM}]${RESET}" "$model_name" "$context_size")
 fi
 
-printf "${GREEN}➜${RESET} ${CYAN}%s${RESET}%s%s" "$dir_name" "$git_info" "$token_info"
+# Headroom proxy status
+if lsof -iTCP:8787 -sTCP:LISTEN &>/dev/null 2>&1; then
+    log="/tmp/headroom.err"
+    if [[ -f "$log" ]]; then
+        saved=$(grep 'saved.*streaming' "$log" 2>/dev/null | sed 's/.*saved \([0-9,]*\).*/\1/' | tr -d ',' | awk '{s+=$1} END {print s+0}')
+        if [[ "$saved" -gt 1000000 ]] 2>/dev/null; then
+            saved_display="$(( saved / 1000000 ))M"
+        elif [[ "$saved" -gt 1000 ]] 2>/dev/null; then
+            saved_display="$(( saved / 1000 ))k"
+        else
+            saved_display="${saved:-0}"
+        fi
+        headroom_info=$(printf " ${DIM}[${RESET}${GREEN}⚡headroom ${saved_display} saved${RESET}${DIM}]${RESET}")
+    else
+        headroom_info=$(printf " ${DIM}[${RESET}${GREEN}⚡headroom${RESET}${DIM}]${RESET}")
+    fi
+else
+    headroom_info=""
+fi
+
+printf "${GREEN}➜${RESET} ${CYAN}%s${RESET}%s%s%s" "$dir_name" "$git_info" "$token_info" "$headroom_info"

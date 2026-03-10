@@ -213,7 +213,16 @@
         "hooks": [
           {
             "type": "command",
-            "command": "FILE=\"$CLAUDE_FILE_PATH\"; if [ -n \"$FILE\" ] && echo \"$FILE\" | grep -qE '\\.(ts|tsx|js|jsx|vue|json|css|scss|md)$'; then prettier --write \"$FILE\" 2>/dev/null || true; fi"
+            "command": "~/.claude/scripts/prettier-hook.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/eslint-hook.sh"
           }
         ]
       },
@@ -267,5 +276,9 @@
     "lua-lsp@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": true,
     "pyright-lsp@claude-plugins-official": true
+  },
+  "attribution": {
+    "commit": "",
+    "pr": ""
   }
 }

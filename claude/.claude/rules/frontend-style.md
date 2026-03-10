@@ -7,7 +7,7 @@ paths:
 
 # Frontend Style
 
-- Always use curly braces on control flow blocks, even single-line.
+- CRITICAL: Always use curly braces `{}` on control flow blocks (`if`, `else`, `for`, `while`, `do`), even single-line. Braceless blocks are a lint error and will break CI.
 - `function` for declarations, arrow functions for callbacks.
 - `const` over `let`; never `var`.
 - Template literals over string concatenation.

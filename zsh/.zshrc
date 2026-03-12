@@ -74,6 +74,7 @@ alias brew86="arch -x86_64 /usr/local/homebrew/bin/brew"
 alias brewARM="/opt/homebrew/bin/brew"
 
 export EDITOR='nvim'
+export VISUAL='nvim'
 bindkey -e  # use emacs keybindings (ctrl+a/e/u) despite EDITOR=nvim
 if command -v pyenv &>/dev/null; then
   export PYENV_ROOT="$HOME/.pyenv"

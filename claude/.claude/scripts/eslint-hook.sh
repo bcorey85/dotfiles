@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # PostToolUse hook: run ESLint on JS/TS/Vue files after Write|Edit
-FILE="$CLAUDE_FILE_PATH"
+INPUT=$(cat)
+FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 if [ -z "$FILE" ]; then exit 0; fi
 
 case "$FILE" in

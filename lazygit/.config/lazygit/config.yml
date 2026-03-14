@@ -1,5 +1,5 @@
 gui:
-  sidePanelWidth: 0.15
+  sidePanelWidth: 0.25
   expandFocusedSidePanel: true
 git:
   pagers:

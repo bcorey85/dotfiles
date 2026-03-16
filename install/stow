@@ -51,7 +51,7 @@ if [ "$PLATFORM" = "arch" ] && [ -d ~/.config/hypr ] && [ ! -L ~/.config/hypr ];
 fi
 
 # Stow configs — common packages for all platforms
-PACKAGES="nvim tmux scripts zsh claude kitty kanata yazi starship lazygit git btop"
+PACKAGES="nvim tmux scripts zsh claude kitty ghostty kanata yazi starship lazygit git btop"
 
 # Arch-only packages
 if [ "$PLATFORM" = "arch" ]; then
@@ -60,6 +60,19 @@ fi
 
 stow -R $PACKAGES
 print_success "Symlinks created"
+
+# macOS: Ghostty reads from Application Support, symlink to stow-managed config
+if [ "$PLATFORM" = "mac" ] && [ -d "$HOME/Library/Application Support/com.mitchellh.ghostty" ]; then
+    GHOSTTY_MAC="$HOME/Library/Application Support/com.mitchellh.ghostty/config"
+    if [ -f "$GHOSTTY_MAC" ] && [ ! -L "$GHOSTTY_MAC" ]; then
+        print_info "Backing up existing macOS Ghostty config..."
+        mv "$GHOSTTY_MAC" "$GHOSTTY_MAC.backup.$(date +%Y%m%d_%H%M%S)"
+    fi
+    if [ ! -L "$GHOSTTY_MAC" ]; then
+        ln -s "$HOME/.config/ghostty/config" "$GHOSTTY_MAC"
+        print_success "Ghostty macOS symlink created"
+    fi
+fi
 
 # Source tmux config if tmux server is running (timeout prevents hanging)
 if command -v tmux &> /dev/null && tmux list-sessions &> /dev/null 2>&1; then

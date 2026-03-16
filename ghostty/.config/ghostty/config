@@ -1,0 +1,50 @@
+# Font
+font-family = CommitMono Nerd Font Mono
+font-size = 10
+
+# Theme - Catppuccin Mocha (OneDark BG)
+background = #282c34
+foreground = #cdd6f4
+
+selection-foreground = #cdd6f4
+selection-background = #3b4252
+
+cursor-color = #cdd6f4
+cursor-text = #282c34
+
+# Color palette
+palette = 0=#1b1f27
+palette = 1=#f38ba8
+palette = 2=#a6e3a1
+palette = 3=#f9e2af
+palette = 4=#89b4fa
+palette = 5=#cba6f7
+palette = 6=#fab387
+palette = 7=#cdd6f4
+palette = 8=#6c7086
+palette = 9=#f38ba8
+palette = 10=#a6e3a1
+palette = 11=#f9e2af
+palette = 12=#89b4fa
+palette = 13=#cba6f7
+palette = 14=#fab387
+palette = 15=#cdd6f4
+
+# Window
+window-padding-x = 4
+window-padding-y = 4
+
+# Cell height adjustment (matches kitty's modify_font cell_height 8px)
+adjust-cell-height = 8
+
+# Shell integration
+shell-integration = detect
+
+# macOS cmd key mappings
+keybind = super+j=text:\x1bj
+keybind = super+k=text:\x1bk
+keybind = super+l=text:\x1bl
+keybind = super+semicolon=text:\x1b;
+
+# Mouse
+link-url = true

@@ -1,0 +1,166 @@
+#!/bin/bash
+# Analyze Claude Code local conversation logs for usage breakdown
+# Usage: ccusage-breakdown [start_date] [end_date]
+#   ccusage-breakdown                  # today
+#   ccusage-breakdown 2026-03-12       # single day
+#   ccusage-breakdown 2026-03-12 2026-03-13  # date range (inclusive)
+
+set -e
+
+CLAUDE_DIR="$HOME/.claude/projects"
+# The directory encoding Claude uses: replace / with -
+HOME_ENCODED=$(echo "$HOME" | tr '/' '-')
+
+if [ ! -d "$CLAUDE_DIR" ]; then
+    echo "Error: $CLAUDE_DIR not found"
+    exit 1
+fi
+
+# Parse date args
+if [ -z "$1" ]; then
+    start_date=$(date "+%Y-%m-%d")
+    end_date="$start_date"
+elif [ -z "$2" ]; then
+    start_date="$1"
+    end_date="$1"
+else
+    start_date="$1"
+    end_date="$2"
+fi
+
+# Convert to epoch - handle both macOS and Linux
+if date -j &>/dev/null; then
+    start_epoch=$(date -j -f "%Y-%m-%d %H:%M:%S" "${start_date} 00:00:00" "+%s" 2>/dev/null)
+    end_epoch=$(date -j -f "%Y-%m-%d %H:%M:%S" "${end_date} 23:59:59" "+%s" 2>/dev/null)
+    STAT_FMT="mac"
+else
+    start_epoch=$(date -d "${start_date} 00:00:00" "+%s" 2>/dev/null)
+    end_epoch=$(date -d "${end_date} 23:59:59" "+%s" 2>/dev/null)
+    STAT_FMT="linux"
+fi
+
+if [ -z "$start_epoch" ] || [ -z "$end_epoch" ]; then
+    echo "Error: Invalid date format. Use YYYY-MM-DD"
+    exit 1
+fi
+
+echo "Claude Code Usage: ${start_date} → ${end_date}"
+echo "════════════════════════════════════════════════════"
+echo ""
+
+# Collect all JSONL files with timestamps and sizes
+tmpfile=$(mktemp)
+trap "rm -f $tmpfile" EXIT
+
+if [ "$STAT_FMT" = "mac" ]; then
+    find "$CLAUDE_DIR" -name "*.jsonl" -print0 | xargs -0 stat -f '%m %z %N' 2>/dev/null
+else
+    find "$CLAUDE_DIR" -name "*.jsonl" -print0 | xargs -0 stat --format='%Y %s %n' 2>/dev/null
+fi | awk -v s="$start_epoch" -v e="$end_epoch" '$1 >= s && $1 <= e' > "$tmpfile"
+
+total_files=$(wc -l < "$tmpfile" | tr -d ' ')
+if [ "$total_files" -eq 0 ]; then
+    echo "No conversations found in this date range."
+    exit 0
+fi
+
+total_bytes=$(awk '{sum+=$2} END {print sum}' "$tmpfile")
+total_mb=$(echo "scale=1; $total_bytes / 1048576" | bc)
+
+main_sessions=$(grep -v subagents "$tmpfile" | wc -l | tr -d ' ')
+subagent_count=$(grep subagents "$tmpfile" | wc -l | tr -d ' ')
+subagent_bytes=$(grep subagents "$tmpfile" | awk '{sum+=$2} END {print sum+0}')
+subagent_mb=$(echo "scale=1; $subagent_bytes / 1048576" | bc)
+
+echo "Total: ${total_mb} MB across ${main_sessions} sessions + ${subagent_count} subagents (${subagent_mb} MB)"
+echo ""
+
+# Sessions by project
+echo "Sessions by Project"
+echo "────────────────────────────────────────────────────"
+grep -v subagents "$tmpfile" | awk -v enc="$HOME_ENCODED" '{
+    path=$3
+    # Strip: .../projects//-Users-foo-bar- prefix
+    idx = index(path, "projects/" enc "-")
+    if (idx > 0) {
+        path = substr(path, idx + length("projects/" enc "-"))
+    }
+    # Remove session filename
+    n = split(path, parts, "/")
+    proj = parts[1]
+    size[proj]+=$2
+    count[proj]++
+} END {
+    for(p in size) printf "%3d sessions  %7.1f MB  %s\n", count[p], size[p]/1048576, p
+}' | sort -k3 -rn
+echo ""
+
+# Model breakdown
+echo "Model Breakdown"
+echo "────────────────────────────────────────────────────"
+awk '{print $3}' "$tmpfile" | xargs grep -oh '"model":"[^"]*"' 2>/dev/null | \
+    sort | uniq -c | sort -rn | while read count model; do
+    name=$(echo "$model" | tr -d '"' | sed 's/model://')
+    printf "%6d calls  %s\n" "$count" "$name"
+done
+echo ""
+
+# MCP tool usage
+echo "MCP Tool Usage"
+echo "────────────────────────────────────────────────────"
+mcp_results=$(awk '{print $3}' "$tmpfile" | xargs grep -oh '"name":"mcp__[^"]*"' 2>/dev/null | \
+    sort | uniq -c | sort -rn)
+
+if [ -z "$mcp_results" ]; then
+    echo "  (none)"
+else
+    echo "$mcp_results" | while read count name; do
+        clean=$(echo "$name" | tr -d '"' | sed 's/name://')
+        printf "%6d calls  %s\n" "$count" "$clean"
+    done
+fi
+echo ""
+
+# Top conversations by size
+echo "Top 10 Heaviest Conversations"
+echo "────────────────────────────────────────────────────"
+grep -v subagents "$tmpfile" | sort -k2 -rn | head -10 | while IFS= read -r line; do
+    sz=$(echo "$line" | awk '{print $2}')
+    f=$(echo "$line" | awk '{print $3}')
+    sz_mb=$(echo "scale=1; $sz / 1048576" | bc)
+
+    # Extract project name (first path component after the home-encoded prefix)
+    proj=$(echo "$f" | awk -v enc="$HOME_ENCODED" '{
+        idx = index($0, "projects/" enc "-")
+        if (idx > 0) {
+            rest = substr($0, idx + length("projects/" enc "-"))
+            split(rest, parts, "/")
+            print parts[1]
+        }
+    }')
+
+    # Model breakdown for this conversation
+    models=$(grep -o '"model":"[^"]*"' "$f" 2>/dev/null | sort | uniq -c | sort -rn | head -1 | awk '{gsub(/"/, "", $2); sub(/model:/, "", $2); printf "%s (%d calls)", $2, $1}')
+
+    # Count subagents
+    session_id=$(basename "$f" .jsonl)
+    subdir=$(dirname "$f")/${session_id}/subagents
+    sub_count=0
+    if [ -d "$subdir" ]; then
+        sub_count=$(find "$subdir" -name "*.jsonl" | wc -l | tr -d ' ')
+    fi
+
+    # First user prompt
+    prompt=$(jq -r 'select(.userType == "external") | .message.content | if type == "array" then .[] | select(.type? == "text") | .text else . end' "$f" 2>/dev/null | \
+        grep -v '<local-command' | grep -v '<command-' | grep -v 'null' | grep -v '^{' | grep -v '^\[' | grep -v '^$' | grep -v '"type"' | grep -v '"thinking"' | \
+        head -1 | cut -c1-100)
+
+    printf "%6.1f MB  %-30s  %s" "$sz_mb" "$models" "$proj"
+    if [ "$sub_count" -gt 0 ]; then
+        printf " (+%d subagents)" "$sub_count"
+    fi
+    echo ""
+    if [ -n "$prompt" ]; then
+        echo "         └─ ${prompt}"
+    fi
+done

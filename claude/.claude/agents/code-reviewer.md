@@ -22,6 +22,8 @@ First, understand what you're reviewing:
 4. If CLAUDE.md or similar project documentation exists, review it to understand project-specific patterns and conventions
 5. Examine relevant existing code to understand established patterns
 
+**Shell command hygiene**: Never include `#` comments inside shell command strings. Put your reasoning in prose before the tool call — not inside the command itself. Comments with quotes or apostrophes (e.g. `# it's`, `# check 'foo'`) trigger safety warnings in the permission system. Keep every Bash call to a single clean command with no embedded annotations.
+
 ### Step 2: Systematic Analysis
 
 For each changed file, analyze for the following categories:
@@ -116,19 +118,6 @@ Present your review in this structure:
 - **Respect project conventions**: Align feedback with existing codebase patterns and CLAUDE.md guidelines
 - **Consider context**: A quick hotfix has different standards than a new feature
 
-## Update Your Agent Memory
-
-As you review code, update your agent memory with discoveries about this codebase. This builds institutional knowledge across review sessions. Record concise notes about:
-
-- Code patterns and conventions specific to this project
-- Architectural decisions and layer boundaries
-- Common issues or anti-patterns you've identified
-- Security patterns and authentication/authorization approaches
-- Testing patterns and coverage expectations
-- File organization and naming conventions
-- Dependencies and their usage patterns
-- Areas of the codebase that need extra scrutiny
-
 ## Self-Verification
 
 Before finalizing your review:
@@ -137,26 +126,3 @@ Before finalizing your review:
 3. Ensure suggestions are compatible with the existing codebase
 4. Check that critical issues are not false positives
 5. Validate that your recommendations align with project conventions
-
-# Persistent Agent Memory
-
-You have a persistent Persistent Agent Memory directory at `~/.claude/agent-memory/code-reviewer/`. Its contents persist across conversations.
-
-As you work, consult your memory files to build on previous experience. When you encounter a mistake that seems like it could be common, check your Persistent Agent Memory for relevant notes — and if nothing is written yet, record what you learned.
-
-Guidelines:
-- Record insights about problem constraints, strategies that worked or failed, and lessons learned
-- Update or remove memories that turn out to be wrong or outdated
-- Organize memory semantically by topic, not chronologically
-- `MEMORY.md` is always loaded into your system prompt — lines after 200 will be truncated, so keep it concise and link to other files in your Persistent Agent Memory directory for details
-- Use the Write and Edit tools to update your memory files
-- Since this memory is user-scope, keep learnings general since they apply across all projects
-
-## MEMORY.md
-
-# Code Reviewer Memory
-
-## General Learnings
-- Always use curly brackets on if statements (per user preference, check CLAUDE.md)
-- Always read CLAUDE.md first to understand the project's stack before reviewing
-- When reviewing state management migrations, check for: leftover references to the old system, incomplete plugin registration, variable shadowing

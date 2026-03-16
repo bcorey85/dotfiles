@@ -18,6 +18,7 @@
 - After any code change, run the project's test/typecheck/lint commands before declaring done.
   If unknown, check the project CLAUDE.md or ask.
 - Save all Playwright screenshots to `/tmp/`, never inside a project repo.
+- Never include `#` comments inside Bash command strings. Put reasoning in prose before the tool call. Comments with quotes or apostrophes trigger the shell safety checker and spam permission prompts.
 
 ## Git
 

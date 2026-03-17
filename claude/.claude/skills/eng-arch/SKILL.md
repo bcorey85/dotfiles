@@ -6,7 +6,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, Task, AskUserQuestion]
 
 # Engineering Architecture
 
-Generate or update cross-cutting architecture documentation in `eng-arch/`. Scans the codebase, dispatches architect agents, and produces structured docs that capture how the system works — not how to build a single feature (that's `/eng-plan`).
+Generate or update cross-cutting architecture documentation in `eng-arch/`. Scans the codebase, dispatches architect agents, and produces structured docs that capture how the system works — not how to build a single feature (that's `/eng-spec`).
 
 ## Modifiers
 
@@ -30,7 +30,7 @@ If a bare topic name is passed (not `be`/`fe`/`fs`/`+quick`/`+deep`), treat it a
 1. **Read foundational files.** In parallel:
    - `CLAUDE.md` — project structure, conventions, stack
    - Glob `eng-arch/*.md` — existing architecture docs
-   - Glob `eng-plan/*.md` — recent implementation plans (scan for recurring patterns)
+   - Glob `docs/eng-specs/*.md` — recent implementation plans (scan for recurring patterns)
 
 2. **Determine what exists.** Categorize:
    - **Fresh run** — `eng-arch/` is empty or doesn't exist
@@ -90,7 +90,7 @@ If a bare topic name is passed (not `be`/`fe`/`fs`/`+quick`/`+deep`), treat it a
 
    For `+deep` modifier, pass `model: "opus"` to the Task tool calls.
 
-8. **Scan `eng-plan/` for patterns** to promote. Look for:
+8. **Scan `docs/eng-specs/` for patterns** to promote. Look for:
    - Decisions that recur across multiple plans
    - Patterns that started as one-off choices but became conventions
    - Mention these as candidates for the architecture docs
@@ -133,7 +133,7 @@ If a bare topic name is passed (not `be`/`fe`/`fs`/`+quick`/`+deep`), treat it a
     - Files written/updated (with paths)
     - Key architectural patterns documented
     - Any drift detected (code differs from previously documented patterns)
-    - Patterns promoted from `eng-plan/` (if any)
+    - Patterns promoted from `docs/eng-specs/` (if any)
 
 16. **Offer Notion push:** "Want to push these to the Notion Wiki? Run `/push-arch <filename>` for any doc."
 

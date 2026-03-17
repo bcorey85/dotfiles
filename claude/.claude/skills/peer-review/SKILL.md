@@ -54,7 +54,7 @@ Review recent changes in this codebase using the code-reviewer subagent.
 
    - **If critical blockers that need user judgment**: STOP and alert the user. Critical blockers are:
      - Security vulnerabilities that require design decisions
-     - Architectural issues that need `/eng-plan`
+     - Architectural issues that need `/eng-spec`
      - Ambiguous fixes where multiple valid approaches exist and the wrong choice could break things
      - Issues that require changing the public API contract
 

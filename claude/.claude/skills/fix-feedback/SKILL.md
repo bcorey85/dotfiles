@@ -38,7 +38,7 @@ Dispatch parallel frontend-coder and backend-coder subagents to investigate and 
    - Which issues were fixed
    - Any issues intentionally skipped (with reasoning)
    - Any new concerns discovered
-   - If any issue requires architectural rethinking, recommend the user run `/eng-plan` instead
+   - If any issue requires architectural rethinking, recommend the user run `/eng-spec` instead
 
 5. **Auto-dispatch peer review**: After summarizing the fixes, tell the user: "Auto-dispatching `/peer-review` to verify the fixes before committing." Then invoke the `/peer-review` skill using the Skill tool (`skill: "peer-review"`). If the user passed `+fast` or `+deep`, pass the same modifier to the peer review invocation (e.g., `skill: "peer-review", args: "+fast"`). This step runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing.
 
@@ -48,4 +48,4 @@ Each agent should verify issues are valid before fixing. Skip issues that are:
 - False positives or stylistic preferences
 - Out of scope for a quick fix
 - Blocked by other unresolved issues
-- Architectural in nature (recommend `/eng-plan` instead)
+- Architectural in nature (recommend `/eng-spec` instead)

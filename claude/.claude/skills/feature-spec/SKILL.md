@@ -1,5 +1,5 @@
 ---
-name: feature-plan
+name: feature-spec
 description: Full product-to-architecture feature planning pipeline. Runs product spec, UX research, and backend/frontend architects to produce a comprehensive feature spec.
 allowed-tools: [Task, Read, Write, Glob, Grep, AskUserQuestion, WebSearch, WebFetch]
 ---
@@ -113,7 +113,7 @@ After writing the file, present a concise summary to the user:
 - Where the spec was saved
 - Key decisions made across all stages
 - Any open questions or concerns flagged by any agent
-- Remind the user they can use `/eng-plan` to create an implementation plan from this spec
+- Remind the user they can use `/eng-spec` to create an implementation plan from this spec
 
 ## Feature
 

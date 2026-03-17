@@ -6,7 +6,7 @@ allowed-tools: [Bash, Read, Edit, Glob, Grep, mcp__jira__getJiraIssue, mcp__figm
 
 # Pull Design Context
 
-Pull Figma design context for the current feature. Run before `/eng-plan`, so the architect has design context.
+Pull Figma design context for the current feature. Run before `/eng-spec`, so the architect has design context.
 
 ## Instructions
 
@@ -52,7 +52,7 @@ Pull Figma design context for the current feature. Run before `/eng-plan`, so th
 
 ### Phase 5: Check for Eng Plan
 
-9. **Look for an eng plan** in the conversation thread or on disk (`eng-plan/*.md` matching the ticket). If found, use it as context for the gap analysis in Phase 6.
+9. **Look for an eng plan** in the conversation thread or on disk (`docs/eng-specs/*.md` matching the ticket). If found, use it as context for the gap analysis in Phase 6.
 
 ### Phase 6: Present the Design Brief
 
@@ -139,7 +139,7 @@ Suggest: "Run `/cache-design-tokens` to cache the design system for faster futur
 ## Tips
 
 - **Select one frame at a time.** Full pages produce truncated or noisy output. If the design has multiple sections, run `/pull-design` once per section or let the skill chunk automatically.
-- **Run before `/eng-plan`.** This gives the architect design context (measurements, tokens, gaps) to inform the implementation plan.
+- **Run before `/eng-spec`.** This gives the architect design context (measurements, tokens, gaps) to inform the implementation plan.
 - **Figma shows the WHAT, not the HOW.** Don't let Figma output override architectural decisions from the eng plan.
 
 ## Arguments

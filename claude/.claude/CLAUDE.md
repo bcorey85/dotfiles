@@ -12,7 +12,7 @@
 - Check for a project-level CLAUDE.md before starting work. It contains stack-specific commands and conventions.
 - Don't over-engineer. Only change what's requested. Don't refactor unrelated code while implementing a feature.
 - Never hardcode paths or project names in rules, agents, skills, or commands — keep portable.
-- Don't guess at APIs, config options, or library interfaces. Check docs (websearch, source, `--help`) before writing code.
+- Don't guess at APIs, config options, or library interfaces. Use WebSearch to look it up, or check source/`--help` before writing code.
   If research would take >5 minutes, say so and ask for direction instead.
 - Maximum 3 attempts on any failing approach. After 3, stop, document what failed, and ask for direction.
 - After any code change, run the project's test/typecheck/lint commands before declaring done.

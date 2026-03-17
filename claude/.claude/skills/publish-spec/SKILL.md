@@ -1,6 +1,6 @@
 ---
 name: publish-spec
-description: PM command — publish a feature spec to Notion. Use after /feature-plan or with a quick description.
+description: PM command — publish a feature spec to Notion. Use after /feature-spec or with a quick description.
 allowed-tools: [Read, Glob, Grep, Bash, Task, mcp__notion__notion-search, mcp__notion__notion-fetch, mcp__notion__notion-create-pages, mcp__notion__notion-update-page]
 ---
 
@@ -14,7 +14,7 @@ Publish a feature spec to the Notion Specs database. This is a PM-side command �
 
 The input may be one of:
 
-- **A `product-specs/*.md` file** (output of `/feature-plan`) — this is the richest source. Read and extract from it.
+- **A `product-specs/*.md` file** (output of `/feature-spec`) — this is the richest source. Read and extract from it.
 - **A brief description** ("task filtering API") — you'll write the spec content yourself.
 
 **Check for existing product specs first:**
@@ -67,7 +67,7 @@ Present:
 
 ## Pipeline Context
 
-This command sits in the PM pipeline: `/feature-plan` → **`/publish-spec`** → `/create-ticket`. After publishing, suggest the user run `/create-ticket` to generate Jira tickets from the acceptance criteria.
+This command sits in the PM pipeline: `/feature-spec` → **`/publish-spec`** → `/create-ticket`. After publishing, suggest the user run `/create-ticket` to generate Jira tickets from the acceptance criteria.
 
 ## Arguments
 

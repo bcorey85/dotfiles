@@ -34,7 +34,7 @@ Analyze a bug or issue, determine scope, and dispatch the appropriate coder suba
    - Pass the full bug description and any relevant context you gathered
    - Instruct it to explore the code, identify the root cause, and implement the fix
    - Verify the fix doesn't break related functionality
-   - If the issue turns out to be architectural, have it report back and recommend `/eng-plan` instead
+   - If the issue turns out to be architectural, have it report back and recommend `/eng-spec` instead
 
 4. **After coder(s) complete**, summarize:
    - What the root cause was

@@ -1,10 +1,10 @@
 ---
-name: eng-plan
-description: Plan a feature — auto-detects scope (fe/be/fullstack), runs architect(s), asks questions. Optionally writes plan to disk and/or dispatches coders.
+name: eng-spec
+description: Spec a feature — auto-detects scope (fe/be/fullstack), runs architect(s), asks questions. Optionally writes spec to disk and/or dispatches coders.
 allowed-tools: [Bash, Read, Glob, Grep, Task, AskUserQuestion, Skill]
 ---
 
-# Engineering Plan
+# Engineering Spec
 
 Plan a feature or task. Consumes whatever context is already in the conversation thread (Jira ticket from `/pull-ticket`, user description, product spec, etc.). Does NOT fetch external context itself.
 
@@ -24,7 +24,7 @@ Auto-detects scope and launches the appropriate architect(s). After planning, as
 
 2. **If no context is apparent**, ask the user: "What are we building? Describe the feature or paste a ticket."
 
-3. **Check for an existing eng plan** — Glob `/eng-plan/*.md` for matching files. If found, read it and ask: "Found an existing plan — update it or start fresh?"
+3. **Check for an existing eng spec** — Glob `docs/eng-specs/*.md` for matching files. If found, read it and ask: "Found an existing plan — update it or start fresh?"
 
 ### Phase 2: Scope Assessment
 
@@ -90,9 +90,9 @@ Auto-detects scope and launches the appropriate architect(s). After planning, as
     Presenting the plan in the conversation is fine. Writing files or dispatching coders is NOT.
 
     **Save to disk?**
-    - Yes → Write to `eng-plan/` using the template below. File naming:
-      - If a Jira ticket was mentioned in context: `eng-plan/JIRAPROJECT-TICKETNUMBER-description.md`
-      - Otherwise: `eng-plan/<feature-name>.md` (kebab-case from description)
+    - Yes → Write to `docs/eng-specs/` using the template below. File naming:
+      - If a Jira ticket was mentioned in context: `docs/eng-specs/JIRAPROJECT-TICKETNUMBER-description.md`
+      - Otherwise: `docs/eng-specs/<feature-name>.md` (kebab-case from description)
     - No → Plan stays in the conversation only
 
     **Implement now?**

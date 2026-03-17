@@ -1,12 +1,12 @@
 ---
 name: verify-changes
-description: Verify implementation against eng-plan and Jira ticket AC before PR. Final quality gate.
+description: Verify implementation against eng-spec and Jira ticket AC before PR. Final quality gate.
 allowed-tools: [Bash, Read, Glob, Grep, Task, AskUserQuestion, mcp__jira__getJiraIssue]
 ---
 
 # Verify Changes
 
-Verify that the current implementation satisfies the eng-plan verification checklist and Jira ticket acceptance criteria. Run this before `/pr` to catch missed requirements.
+Verify that the current implementation satisfies the eng-spec verification checklist and Jira ticket acceptance criteria. Run this before `/pr` to catch missed requirements.
 
 ## Instructions
 
@@ -19,7 +19,7 @@ Verify that the current implementation satisfies the eng-plan verification check
 
 2. **Resolve the base branch** — Check for an existing PR: `gh pr view --json baseRefName -q .baseRefName 2>/dev/null`. If a PR exists, use its base. Otherwise default to `main`.
 
-3. **Find the eng-plan** — Glob `eng-plan/*.md` for a file matching the ticket number or branch description. Read it if found. Extract the `## Verification` checklist.
+3. **Find the eng-spec** — Glob `docs/eng-specs/*.md` for a file matching the ticket number or branch description. Read it if found. Extract the `## Verification` checklist.
 
 4. **Pull Jira ticket AC** — If a Jira ticket number was extracted in step 1, fetch the ticket using `getJiraIssue` (use the Jira Cloud ID from `mcp-references/JIRA.md`) and extract the acceptance criteria from the description.
 
@@ -47,12 +47,12 @@ Verify that the current implementation satisfies the eng-plan verification check
 
 Compile a unified checklist from all sources:
 - Eng-plan `## Verification` items (primary)
-- Jira ticket AC items (if referenced in the eng-plan)
-- Jira ticket AC items (if a different level of detail than the eng-plan)
+- Jira ticket AC items (if referenced in the eng-spec)
+- Jira ticket AC items (if a different level of detail than the eng-spec)
 
 Deduplicate items that appear in multiple sources.
 
-**Add diff-derived items**: Compare the `git diff <base>...HEAD --stat` output against the compiled checklist. For each file in the diff that is NOT mentioned in any checklist item, add a new verification item: "Verify [filename] changes are correct and consistent with the ticket scope." This catches scope creep, bonus changes, and files the eng-plan forgot to mention.
+**Add diff-derived items**: Compare the `git diff <base>...HEAD --stat` output against the compiled checklist. For each file in the diff that is NOT mentioned in any checklist item, add a new verification item: "Verify [filename] changes are correct and consistent with the ticket scope." This catches scope creep, bonus changes, and files the eng-spec forgot to mention.
 
 ### Step 3: Verify Each Item
 
@@ -81,11 +81,11 @@ Mark each item as:
 
 ### Step 3b: Coverage Gap Check (REQUIRED)
 
-After checking all items from the eng-plan/Jira AC, independently assess:
+After checking all items from the docs/eng-specs/Jira AC, independently assess:
 
-1. **Are there new code paths without tests?** — If the diff introduces new functions, branches, or handlers that have zero test coverage, flag them as WEAK PASS even if the eng-plan verification item passed by file reading.
+1. **Are there new code paths without tests?** — If the diff introduces new functions, branches, or handlers that have zero test coverage, flag them as WEAK PASS even if the eng-spec verification item passed by file reading.
 2. **Are there modified files without corresponding test updates?** — Check whether every modified source file has a corresponding test file that was also updated (or already covers the changes).
-3. **Did the eng-plan verification checklist miss anything?** — Compare the actual diff against the checklist. If the diff touches code not mentioned in any checklist item, flag it as an uncovered change.
+3. **Did the eng-spec verification checklist miss anything?** — Compare the actual diff against the checklist. If the diff touches code not mentioned in any checklist item, flag it as an uncovered change.
 
 ### Step 4: Present Results
 
@@ -97,7 +97,7 @@ Format as a checklist:
 ### Test Suite
 [X] suites, [Y] tests — all passing / N failures
 
-### From: eng-plan/TAS-X-description.md
+### From: docs/eng-specs/TAS-X-description.md
 - [x] PASS: Item description
 - [~] WEAK PASS: Item description — verified by file reading only
 - [ ] FAIL: Item description — what's wrong

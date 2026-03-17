@@ -53,7 +53,7 @@ Present:
 - After making an architectural decision that affects multiple tickets
 - When documenting a pattern or convention the team should follow
 - When writing an ADR (Architecture Decision Record)
-- NOT for per-ticket implementation plans (use `/eng-plan` for those)
+- NOT for per-ticket implementation plans (use `/eng-spec` for those)
 
 ## Arguments
 

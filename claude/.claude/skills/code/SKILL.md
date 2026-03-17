@@ -35,7 +35,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    - Instruct it to follow existing patterns in the codebase
    - Write tests if needed
    - Flag any ambiguities or issues
-   - If the task turns out to be architectural, have it report back and recommend `/eng-plan` instead
+   - If the task turns out to be architectural, have it report back and recommend `/eng-spec` instead
 
 4. **After coder(s) complete**, summarize:
    - What was implemented
@@ -44,7 +44,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 5. **Auto-dispatch peer review**: After summarizing the coder output, tell the user: "Auto-dispatching `/peer-review` to check the implementation before committing." Then invoke the `/peer-review` skill using the Skill tool (`skill: "peer-review"`). If the user passed `+fast` or `+deep`, pass the same modifier to the peer review invocation (e.g., `skill: "peer-review", args: "+fast"`). This step runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing.
 
-For complex features requiring design decisions, use `/eng-plan` instead.
+For complex features requiring design decisions, use `/eng-spec` instead.
 
 ## Task
 

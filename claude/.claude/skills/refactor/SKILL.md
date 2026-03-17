@@ -31,7 +31,7 @@ Analyze the code to refactor, determine whether it's frontend, backend, or fulls
    For each coder:
    - Pass the refactoring description and any relevant context you gathered
    - Instruct it to: read and understand the existing code, implement the refactoring step by step, and ensure no functionality is broken
-   - If the refactor turns out to need architectural redesign, have it report back and recommend `/eng-plan` instead
+   - If the refactor turns out to need architectural redesign, have it report back and recommend `/eng-spec` instead
 
 4. **After coder(s) complete**, summarize:
    - What was refactored and why

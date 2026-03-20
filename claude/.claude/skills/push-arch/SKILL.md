@@ -33,7 +33,7 @@ If no argument provided:
 ### Step 4: Create or Update
 
 **When creating a new page:**
-- Parent: the Wiki page (use the Wiki page ID from `mcp-references/NOTION.md`)
+- Parent: the Wiki page (use the Wiki page ID from `docs/mcp-references/NOTION.md`)
 - Title: derive from filename (kebab-case → Title Case)
 - Content: the full markdown from the local file
 

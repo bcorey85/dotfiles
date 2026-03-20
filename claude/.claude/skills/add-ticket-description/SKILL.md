@@ -17,7 +17,7 @@ The user may provide:
 - **A URL** (e.g., `https://centerbase1.atlassian.net/browse/CHR-6`) — extract the key
 - **Nothing** — infer from the current git branch name (e.g., `chr-6-migrate-to-monorepo` → `CHR-6`)
 
-Read `mcp-references/JIRA.md` for the Cloud ID. Fetch the current ticket with `getJiraIssue` to see existing description and summary.
+Read `docs/mcp-references/JIRA.md` for the Cloud ID. Fetch the current ticket with `getJiraIssue` to see existing description and summary.
 
 ### Step 2: Gather Content
 

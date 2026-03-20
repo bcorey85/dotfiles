@@ -36,7 +36,7 @@ The input may be one of:
 ### Step 3: Create the Notion Spec
 
 Create the spec page in the Specs database using `notion-create-pages`:
-- Parent: the Specs DB data source (read `mcp-references/NOTION.md` for the ID)
+- Parent: the Specs DB data source (read `docs/mcp-references/NOTION.md` for the ID)
 - Properties:
   - **Name**: feature name
   - **Status**: "Draft"

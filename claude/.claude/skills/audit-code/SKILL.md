@@ -1,12 +1,16 @@
 ---
 name: audit-code
-description: Audit code for DRY violations, code smells, security issues, accessibility, bugs, and design pattern opportunities — presents findings for user decision
+description: Audit code for security, bugs, DRY/maintainability, and accessibility — auto-triages findings and presents only actionable issues
 allowed-tools: [Task, Bash, Read, Write, Glob, Grep]
 ---
 
 # Code Audit
 
-Deep audit of a codebase (or a specified scope) for quality, security, and design issues. **Read-only** — presents findings for the user to decide what to fix. Writes a findings ledger so re-runs are deterministic and converge.
+Audit a codebase for security vulnerabilities, real bugs, DRY/maintainability issues, and accessibility violations. **Read-only** — presents findings for the user to decide what to fix. Writes a findings ledger so re-runs are deterministic and converge.
+
+## Philosophy
+
+Report only issues that a senior staff engineer at a top-tier company would flag in a PR review. The goal is world-class engineering standards, not theoretical perfection. If an issue wouldn't survive triage, don't report it.
 
 ## Modifiers
 
@@ -46,7 +50,11 @@ If not found (or `+fresh` was passed):
 
 3. **Discover scope**: If no path/pattern was given, identify the project's source directories (check CLAUDE.md, look for `src/`, `packages/`, `app/`, `lib/`, etc.). Exclude `node_modules`, `dist`, `build`, `.git`, vendor dirs, and generated files.
 
-4. **Collect file list**: Use Glob to gather all source files in scope. **Sort the file list alphabetically.** This is critical for determinism.
+4. **Classify files by tier**:
+   - **Production code** (library source, components, utilities, services) — full audit depth
+   - **Supporting code** (tests, scripts, playground/demo apps, dev tooling, config) — light scan only
+
+5. **Collect file list**: Use Glob to gather all source files in scope. **Sort the file list alphabetically.** This is critical for determinism. Tag each file with its tier.
 
 ### Phase 2: Deterministic File Assignment
 
@@ -62,40 +70,31 @@ This ensures identical scope always produces identical batches. Do NOT group by 
 
 Launch one subagent per batch via the Task tool. Each subagent receives:
 
-- Its exact list of files (full paths)
+- Its exact list of files (full paths), with each file tagged as **production** or **supporting**
 - The list of **known open findings** (from the ledger) for its files — with instructions to **skip these** and only report NEW issues
 - The audit prompt below
 - If the user provided a focus keyword, tell subagents to prioritize that category but still note anything critical in other categories.
 
 **Auditor prompt** (pass to each subagent):
 
-> You are a senior code auditor. Read every file in your assigned batch thoroughly. For each issue found, report the exact file path, line number(s), the category, the severity, a brief description, and a concrete suggestion.
+> You are a senior staff engineer conducting a code audit. Read every file in your assigned batch thoroughly. Your standard is world-class engineering — report only issues that would warrant a comment in a PR review at a top-tier company.
 >
 > **IMPORTANT**: You have been given a list of KNOWN findings. Do NOT re-report these. Only report issues that are genuinely NEW and not already captured. If you find zero new issues in a file, say so explicitly.
 >
-> Audit for ALL of the following categories:
+> ## File Tiers
 >
-> **DRY Violations & Duplication**
+> Each file is tagged as **production** or **supporting**:
 >
-> - Copy-pasted logic across files (even with minor variations)
-> - Repeated constants, magic strings, or config values
-> - Similar functions that could share an abstraction
-> - Duplicated type definitions or interfaces
+> - **Production files** (library source, components, utilities, services): Audit with full depth across all categories below.
+> - **Supporting files** (tests, scripts, playground/demo apps, dev tooling): Light scan only. Flag: security issues, real bugs, significant DRY violations, and tests that give false confidence (testing the wrong thing, assertions that always pass). Skip style nits, minor DRY, pattern suggestions, and cosmetic a11y issues in supporting code.
 >
-> **Code Smells**
+> ## Audit Categories
 >
-> - God functions/components (doing too much)
-> - Deep nesting (>3 levels of conditionals/callbacks)
-> - Long parameter lists (>4 params without an options object)
-> - Dead code, unused imports, commented-out blocks
-> - Overly complex conditionals that need simplification
-> - Inconsistent naming or conventions across files
-> - Primitive obsession (using strings/numbers where a type/enum fits)
-> - Feature envy (a function that uses another module's data more than its own)
+> Audit in this priority order:
 >
-> **Security Issues**
+> ### 1. Security Issues (highest priority)
 >
-> - XSS vectors (unsanitized user input in templates/HTML)
+> - XSS vectors (unsanitized user input in templates/HTML, v-html with untrusted data)
 > - Injection risks (SQL, command, path traversal)
 > - Hardcoded secrets, API keys, or credentials
 > - Missing input validation at system boundaries
@@ -103,53 +102,82 @@ Launch one subagent per batch via the Task tool. Each subagent receives:
 > - Sensitive data in logs or error messages
 > - Prototype pollution or unsafe object manipulation
 >
-> **Accessibility (a11y)**
+> ### 2. Bugs & Logic Errors
 >
-> - Missing ARIA attributes on interactive elements
-> - Non-semantic HTML (div/span where button/nav/main fits)
-> - Missing alt text on images
-> - Missing label associations on form inputs
-> - Keyboard navigation gaps (click handlers without key handlers)
-> - Color contrast or focus indicator concerns
-> - Missing skip-navigation or landmark roles
+> **Only flag bugs that could be triggered through normal user interaction or standard API usage.** Skip bugs that require 2+ unlikely preconditions, only affect impossible states, or are purely theoretical in the current codebase.
 >
-> **Bugs & Logic Errors**
->
-> - Null/undefined access without guards
-> - Off-by-one errors, boundary conditions
-> - Race conditions or timing issues
-> - Unhandled promise rejections or missing error handling
+> - Null/undefined access on realistic code paths
+> - Race conditions in user-facing flows
 > - Incorrect boolean logic or operator precedence
-> - Type coercion traps (== vs ===, falsy 0/"" checks)
+> - Unhandled promise rejections in error paths users can trigger
+> - Type coercion traps that affect real behavior (not theoretical)
 > - Missing return statements or wrong return types
+> - State management bugs (stale refs, missing reactivity, lost updates)
 >
-> **Design Pattern Opportunities**
+> ### 3. DRY & Code Health
 >
-> - Logic that would benefit from Strategy, Observer, Factory, Adapter, etc.
-> - State management that's tangled or could use a well-known pattern
-> - Components that should be composed differently (slots, render props, provide/inject)
-> - Missing separation of concerns (business logic in UI, data fetching in components)
-> - Opportunities for dependency inversion or interface extraction
+> Focus on issues that hurt **long-term human readability and maintainability**:
 >
-> **Performance**
+> - Copy-pasted logic across files (3+ duplications, or 2 with divergence risk)
+> - Repeated constants or magic strings that will drift out of sync
+> - God functions/components (>200 lines doing multiple unrelated things)
+> - Dead code that confuses readers (unused exports, unreachable branches)
+> - Deeply nested logic (>3 levels) that could be flattened
+> - Missing separation of concerns that makes code hard to test or modify
 >
-> - Unnecessary re-renders or missing memoization
-> - N+1 queries or unbounded loops over large datasets
-> - Missing debounce/throttle on frequent events
-> - Large synchronous operations that should be async
-> - Bundle size concerns (large imports that could be tree-shaken or lazy-loaded)
+> Skip: minor naming nits, single-use abstractions, "this could be a Map", vendored files, convention-only violations caught by linters.
 >
-> Categorize every finding by severity:
+> ### 4. Accessibility (a11y)
 >
-> - **CRITICAL** — Security vulnerability, data loss risk, or crash-level bug
-> - **HIGH** — Likely bug, significant architectural issue, or a11y blocker
-> - **MEDIUM** — Code smell, DRY violation, or design improvement
-> - **LOW** — Minor suggestion, style nit, or optimization opportunity
+> Focus on issues that block real users of assistive technology:
+>
+> - Missing ARIA attributes on **interactive** elements (buttons, inputs, dialogs)
+> - Non-semantic HTML for interactive controls (div with onClick instead of button)
+> - Missing label associations on form inputs
+> - Keyboard navigation gaps on interactive components (click handlers without key handlers)
+> - Missing alt text on informational images
+>
+> Skip: decorative SVG missing aria-hidden in demo/playground code, color contrast concerns in non-production pages, landmark roles on internal tooling pages.
+>
+> ### 5. Architecture & Patterns (production code only)
+>
+> Only flag when the current approach will cause **real pain within 6 months** — not theoretical improvements:
+>
+> - Business logic tightly coupled to UI that prevents testing or reuse
+> - State management that will break as the feature grows
+> - Missing error boundaries that will cause cascading failures
+> - Fragile coupling to library internals that will break on upgrade
+>
+> Skip: "this could use Strategy pattern", "consider dependency inversion", or any suggestion that adds abstraction without solving a concrete near-term problem.
+>
+> ### 6. Performance (production code only)
+>
+> Only flag issues with **measurable user impact**:
+>
+> - N+1 queries or unbounded loops over user-scale datasets
+> - Bundle size regressions (importing entire libraries for one function)
+> - Missing cleanup (event listeners, subscriptions, timers that leak)
+>
+> Skip: missing memoization on cheap computations, theoretical re-render concerns, micro-optimizations.
+>
+> ## Self-Filter Rule
+>
+> Before reporting any finding, ask: **"Would a senior staff engineer at a top company leave this comment on a PR, or would they let it go?"** If the answer is "let it go," do not report it. Fewer high-quality findings are better than many noisy ones.
+>
+> ## Severity Levels
+>
+> - **CRITICAL** — Security vulnerability, data loss risk, or crash-level bug reachable through normal usage
+> - **HIGH** — Likely bug in a user-facing flow, significant a11y blocker, or security concern that needs design discussion
+> - **MEDIUM** — DRY violation that will cause drift, maintainability issue that hurts the next developer, or pattern that needs refactoring
+>
+> Do NOT use LOW severity. If a finding isn't worth MEDIUM, don't report it.
+>
+> ## Output Format
 >
 > Format each finding as a JSON object on its own line:
 >
 > ```
-> {"file": "path/to/file.ts", "line": 42, "category": "Code Smells", "severity": "MEDIUM", "description": "...", "suggestion": "..."}
+> {"file": "path/to/file.ts", "line": 42, "category": "Security Issues", "severity": "CRITICAL", "description": "...", "suggestion": "..."}
 > ```
 >
 > At the end, after all JSON findings, list your top 3 highest-impact recommendations as plain text.
@@ -189,13 +217,13 @@ Write the updated ledger to `.claude/audit-findings.json` in this format:
 
 ### Phase 6: Present Report
 
-Present the audit report to the user:
+Present the audit report to the user. Only show MEDIUM and above — no LOW findings.
 
 ```
 ## Code Audit Report
 
 **Scope**: [files/directories audited]
-**Files Analyzed**: [count]
+**Files Analyzed**: [count] ([count] production, [count] supporting)
 **Previous Known Findings**: [count from ledger, if any]
 **New Findings This Run**: [count]
 **Total Open Findings**: [count]
@@ -207,9 +235,6 @@ Present the audit report to the user:
 [file:line — category — description — suggestion]
 
 ### MEDIUM
-[file:line — category — description — suggestion]
-
-### LOW
 [file:line — category — description — suggestion]
 
 ### Top Recommendations

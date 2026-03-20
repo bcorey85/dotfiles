@@ -59,18 +59,30 @@ Create or update a `.changeset/*.md` file summarizing changes for the next relea
    - **Shared configs** — new ESLint/Prettier/tsconfig exports for consumer apps
    - **Developer tooling** — CLI tools, test utilities, scaffold scripts
 
-6. **Write the file**:
-   - **Updating**: overwrite the existing changeset file, preserving its filename. Adjust the frontmatter package list and bump levels if the scope changed.
-   - **Creating** (no existing changeset, or `+new`): generate a slug (lowercase, kebab-case, descriptive), check `.changeset/` for collisions, and write to `.changeset/<slug>.md`.
+6. **Write the file(s)**:
 
-   Format:
+   **Critical: one changeset per package.** Changesets copies the entire body to every package listed in the frontmatter. If both `@big6media/core` and `@big6media/vue` changed, write **two separate changeset files** — each with only that package in the frontmatter and a body describing only what changed in that package. This prevents duplicate/irrelevant entries in each package's CHANGELOG.
+
+   Exception: if a change is truly identical in both packages (e.g. a shared config update), a single changeset listing both is fine.
+
+   - **Updating**: overwrite the existing changeset file, preserving its filename. If the existing changeset incorrectly lists multiple packages, split it into separate files.
+   - **Creating** (no existing changeset, or `+new`): generate a slug (lowercase, kebab-case, descriptive), check `.changeset/` for collisions, and write to `.changeset/<slug>.md`. When creating two, use related slugs (e.g. `feature-name-vue.md` and `feature-name-core.md`).
+
+   Format (one package per file):
    ```
    ---
    '@big6media/vue': patch
+   ---
+
+   Vue-specific changes here.
+   ```
+
+   ```
+   ---
    '@big6media/core': patch
    ---
 
-   Changeset body here.
+   Core-specific changes here.
    ```
 
    Only include packages that actually changed. Use single quotes around package names in the frontmatter.

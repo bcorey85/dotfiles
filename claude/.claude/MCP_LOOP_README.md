@@ -342,7 +342,7 @@ The pattern: a `/cache-*` skill pulls data once via MCP, writes it to a local fi
 
 **`/cache-design-tokens`** — Pulls the full design system from Figma (colors, typography, spacing, shadows, component inventory) and caches to `eng-arch/design-tokens.md`. Run once per project, or when the design system changes. Without the cache, every `/pull-design` run does a full extraction. With the cache, `/pull-design` runs in lightweight diff mode — only reporting what's new or changed in the target frame vs the cached system.
 
-**`/cache-jira-transitions`** — Pulls available Jira board transitions via `getTransitionsForJiraIssue` and writes the status → transition ID mapping to `PROJECT_ROOT/mcp-references/JIRA.md`. Transition IDs are stable (To Do=11, In Progress=21, In Review=31, Done=41) — they don't change unless the board workflow is reconfigured. Without the cache, every `/move-ticket`, `/pull-ticket`, and `/pr` invocation would need an API call to look up the transition ID. With the cache, those skills read `PROJECT_ROOT/mcp-references/JIRA.md` directly — zero MCP calls for the common case. `/move-ticket` auto-invokes this on cache miss (status not found in the table).
+**`/cache-jira-transitions`** — Pulls available Jira board transitions via `getTransitionsForJiraIssue` and writes the status → transition ID mapping to `PROJECT_ROOT/docs/mcp-references/JIRA.md`. Transition IDs are stable (To Do=11, In Progress=21, In Review=31, Done=41) — they don't change unless the board workflow is reconfigured. Without the cache, every `/move-ticket`, `/pull-ticket`, and `/pr` invocation would need an API call to look up the transition ID. With the cache, those skills read `PROJECT_ROOT/docs/mcp-references/JIRA.md` directly — zero MCP calls for the common case. `/move-ticket` auto-invokes this on cache miss (status not found in the table).
 
 ### Testing
 
@@ -352,7 +352,7 @@ The pattern: a `/cache-*` skill pulls data once via MCP, writes it to a local fi
 
 ### Workflow Utilities
 
-**`/move-ticket <status>`** — Transitions Jira ticket. Used internally by `/pull-ticket` and `/pr`. Can also be called directly for ad-hoc transitions (e.g., `/move-ticket done`). Reads cached transition IDs from `PROJECT_ROOT/mcp-references/JIRA.md` — zero MCP calls in the common case.
+**`/move-ticket <status>`** — Transitions Jira ticket. Used internally by `/pull-ticket` and `/pr`. Can also be called directly for ad-hoc transitions (e.g., `/move-ticket done`). Reads cached transition IDs from `PROJECT_ROOT/docs/mcp-references/JIRA.md` — zero MCP calls in the common case.
 
 **`/investigate <issue>`** — Read-only diagnosis. Explores an issue without making changes.
 
@@ -421,7 +421,7 @@ Skills chain into other skills automatically. The orchestrator (parent skill) in
 - **If you have the data locally, don't use MCP.** Grep, git log, file reads — all faster and free.
 - **MCP shines for cross-system workflows.** Jira ticket → code → PR that references it.
 - **`gh` CLI completely displaced GitHub MCP** for solo dev. MCP would be useful for cross-repo search in a team setting.
-- **Jira transition IDs are stable** — cached in `PROJECT_ROOT/mcp-references/JIRA.md`, zero API calls for common transitions.
+- **Jira transition IDs are stable** — cached in `PROJECT_ROOT/docs/mcp-references/JIRA.md`, zero API calls for common transitions.
 
 ### Workflow Patterns
 - **Encapsulate flaky MCP calls into skills.** When Claude gets an API call wrong repeatedly, wrap it in a skill. The skill becomes the correctness boundary.
@@ -451,4 +451,4 @@ Skills chain into other skills automatically. The orchestrator (parent skill) in
 > ```jsonl
 > {"ts":"2026-02-21T19:46:38Z","server":"jira","tool":"getJiraIssue","context":"pulled PROJ-14 ticket context"}
 > ```
-> Only MCP tool calls are logged (Jira, Notion, Figma, GitHub) — not `gh` CLI or local tools. Include failures with `"error": true`. This data is useful for spotting wasteful call patterns (e.g., we found 13 avoidable `getTransitionsForJiraIssue` calls, which led to caching transition IDs locally in `PROJECT_ROOT/mcp-references/JIRA.md`).
+> Only MCP tool calls are logged (Jira, Notion, Figma, GitHub) — not `gh` CLI or local tools. Include failures with `"error": true`. This data is useful for spotting wasteful call patterns (e.g., we found 13 avoidable `getTransitionsForJiraIssue` calls, which led to caching transition IDs locally in `PROJECT_ROOT/docs/mcp-references/JIRA.md`).

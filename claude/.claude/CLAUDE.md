@@ -9,7 +9,6 @@
 
 ## Behavior
 
-- Check for a project-level CLAUDE.md before starting work. It contains stack-specific commands and conventions.
 - Don't over-engineer. Only change what's requested. Don't refactor unrelated code while implementing a feature.
 - Never hardcode paths or project names in rules, agents, skills, or commands — keep portable.
 - **MANDATORY: WebSearch before writing any config, CI, infra, or library integration code.**
@@ -23,10 +22,11 @@
 - After any code change, run the project's test/typecheck/lint commands before declaring done.
   If unknown, check the project CLAUDE.md or ask.
 - Save all Playwright screenshots to `/tmp/`, never inside a project repo.
-- Never include `#` comments inside Bash command strings. Put reasoning in prose before the tool call. Comments with quotes or apostrophes trigger the shell safety checker and spam permission prompts.
-- When editing files, use `view` with line ranges instead of reading entire files.
-- For files over ~300 lines, always use line-range reads or sed/awk for edits.
-- Never re-read an entire large file just because compression hid lines — use bash tools to target specific line ranges.
+- **NEVER use Bash to write files.** This is non-negotiable:
+  - Create/overwrite files → **Write tool** (not `cat <<`, `echo >`, heredocs)
+  - Edit files → **Edit tool** (not `sed`, `awk`)
+- Prefer **Read tool** with offset/limit over `cat`, `head`, `tail` for reading files.
+- Prefer `rg` over `grep` and `fd` over `find` when available.
 
 ## Git
 

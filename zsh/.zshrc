@@ -118,6 +118,47 @@ function cc() {
         claude "$@"
     # fi
 }
+
+function cw() {
+    local name="${1:-$(openssl rand -hex 4)}"
+    local branch
+    branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+    if [[ -z "$branch" ]]; then
+        echo "Not in a git repo"
+        return 1
+    fi
+    local wt_dir=".claude/worktrees/$name"
+    local wt_branch="worktree-$name"
+    git worktree add "$wt_dir" -b "$wt_branch" "$branch" && cd "$wt_dir" && claude
+}
+
+function cwc() {
+    local repo_root
+    repo_root=$(git worktree list --porcelain 2>/dev/null | head -1 | sed 's/^worktree //')
+    if [[ -z "$repo_root" ]]; then
+        echo "Not in a git repo"
+        return 1
+    fi
+    local cwd="$PWD"
+    local wt_dir="${cwd#$repo_root/}"
+    if [[ "$wt_dir" == "$cwd" || ! "$wt_dir" == .claude/worktrees/* ]]; then
+        echo "Not inside a .claude/worktrees/ worktree"
+        echo "Current dir: $cwd"
+        return 1
+    fi
+    local name="${wt_dir#.claude/worktrees/}"
+    name="${name%%/*}"
+    local wt_branch="worktree-$name"
+    cd "$repo_root" || return 1
+    git worktree remove ".claude/worktrees/$name" && echo "Removed worktree: $name"
+    if git rev-parse --verify "$wt_branch" &>/dev/null; then
+        read -q "reply?Delete branch $wt_branch? (y/n) "
+        echo
+        if [[ "$reply" == "y" ]]; then
+            git branch -d "$wt_branch" 2>/dev/null || git branch -D "$wt_branch"
+        fi
+    fi
+}
 alias headroom-stats="grep 'Pipeline complete' /tmp/headroom.err | sed 's/.*: \([0-9,]*\) -> \([0-9,]*\) tokens.*/\1 \2/' | tr -d ',' | awk 'function fmt(v) {if(v>=1000000) return sprintf(\"%.1fM\",v/1000000); if(v>=1000) return sprintf(\"%.1fk\",v/1000); return v+0} {o+=\$1; c+=\$2; n++} END {s=o-c; pct=(o>0?s/o*100:0); printf \"requests:    %d\noriginal:    %s tokens\ncompressed:  %s tokens\nsaved:       %s tokens (%d%%)\n\n* Totals are cumulative per-request — the same\n  context is re-compressed each turn, so saved\n  tokens reflect total API billing reduction,\n  not unique content compressed.\n\", n, fmt(o), fmt(c), fmt(s), pct}'"
 alias cat="bat --plain"
 alias ls="eza --icons"

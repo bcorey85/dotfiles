@@ -11,12 +11,13 @@ Distill the current conversation into a structured idea document at `docs/backlo
 ## Modifiers
 
 - `+name:<slug>` — Override the auto-generated filename (e.g. `+name:dark-mode-v2`).
+- `wishlist` — Save to `docs/backlog/wishlist/` instead of `docs/backlog/`. Use for long-term ideas that aren't actionable in the current sprint (e.g. future framework ports, speculative features).
 
 ## Instructions
 
 1. **Identify the idea** — Review the recent conversation to extract the core idea or feature being discussed. If the user provided a topic as an argument, use that as the focus. If unclear, ask.
 
-2. **Check for existing ideas** — Glob `docs/backlog/*.md` and check if a related document already exists. If so, update it rather than creating a duplicate.
+2. **Check for existing ideas** — Glob `docs/backlog/*.md` and `docs/backlog/wishlist/*.md` and check if a related document already exists. If so, update it rather than creating a duplicate.
 
 3. **Synthesize the conversation** into the following structure:
 
@@ -48,7 +49,7 @@ Distill the current conversation into a structured idea document at `docs/backlo
 
 4. **Keep it concise** — An idea doc should be 30-80 lines. It's a capture, not a spec. Don't pad it with boilerplate or restate things that are obvious from the title.
 
-5. **Write the file** — Save to `docs/backlog/<slug>.md`. Generate a kebab-case slug from the title unless overridden with `+name:`. Check for filename collisions.
+5. **Write the file** — Save to `docs/backlog/<slug>.md` (or `docs/backlog/wishlist/<slug>.md` if the `wishlist` modifier is set). Generate a kebab-case slug from the title unless overridden with `+name:`. Check for filename collisions.
 
 6. **Show the user** the final file path and a one-line summary of what was captured.
 

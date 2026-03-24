@@ -11,6 +11,7 @@
       "mcp__plugin_context7_context7__resolve-library-id",
       "mcp__plugin_context7_context7__query-docs",
       "WebSearch",
+      "Skill",
       "Bash(ls *)",
       "Bash(ls)",
       "Bash(pwd)",
@@ -33,66 +34,50 @@
       "Bash(jq *)",
       "Bash(grep *)",
       "Bash(rg *)",
+      "Bash(fd *)",
       "Bash(mkdir -p *)",
       "Bash(mkdir *)",
-      "Bash(* --version)",
-      "Bash(* --help)",
       "Bash(man *)",
-      "Bash(git status)",
-      "Bash(git status *)",
-      "Bash(git log)",
-      "Bash(git log *)",
-      "Bash(git diff)",
-      "Bash(git diff *)",
-      "Bash(git branch)",
-      "Bash(git branch -a)",
-      "Bash(git branch -r)",
-      "Bash(git branch -v)",
-      "Bash(git branch -vv)",
-      "Bash(git branch --show-current)",
-      "Bash(git branch --list *)",
-      "Bash(git rev-parse *)",
-      "Bash(git remote -v)",
-      "Bash(git show *)",
-      "Bash(git stash list)",
-      "Bash(git tag)",
-      "Bash(git tag -l)",
-      "Bash(git tag -l *)",
-      "Bash(git config --get *)",
-      "Bash(git config --list)",
-      "Bash(git ls-files)",
-      "Bash(git ls-files *)",
-      "Bash(git describe *)",
-      "Bash(git shortlog *)",
       "Bash(node --version)",
       "Bash(node -v)",
+      "Bash(node --help *)",
       "Bash(npm --version)",
       "Bash(npm list *)",
       "Bash(npm ls *)",
+      "Bash(pnpm --version)",
+      "Bash(pnpm build*)",
+      "Bash(pnpm lint*)",
+      "Bash(pnpm test*)",
+      "Bash(pnpm ci:*)",
+      "Bash(pnpm exec vitest *)",
+      "Bash(pnpm exec playwright *)",
+      "Bash(pnpm list *)",
+      "Bash(pnpm ls *)",
+      "Bash(pnpm why *)",
+      "Bash(pnpm size*)",
+      "Bash(pnpm knip*)",
+      "Bash(pnpm jscpd*)",
+      "Bash(pnpm changeset*)",
+      "Bash(pnpm type-coverage*)",
+      "Bash(pnpm vue:api:*)",
+      "Bash(pnpm format*)",
+      "Bash(pnpm mutation*)",
+      "Bash(pnpm api:*)",
+      "Bash(npx vitest *)",
       "Bash(python --version)",
       "Bash(python3 --version)",
       "Bash(pip list *)",
       "Bash(pip3 list *)",
+      "Bash(git *)",
+      "Bash(gh *)",
       "Bash(stow *)",
       "Bash(tree *)",
       "Bash(file *)",
       "Bash(stat *)",
       "Bash(du *)",
       "Bash(df *)",
-      "Bash(gh pr view *)",
-      "Bash(gh pr list)",
-      "Bash(gh pr list *)",
-      "Bash(gh issue view *)",
-      "Bash(gh issue list)",
-      "Bash(gh issue list *)",
-      "Bash(gh run view *)",
-      "Bash(gh run list)",
-      "Bash(gh run list *)",
-      "Bash(npx vitest*)",
-      "Bash(npx vitest *)",
-      "Bash(pnpm *)",
       "Bash(nvm use*)",
-      "Bash(cd *)"
+      "Bash(source ~/.nvm/nvm.sh *)"
     ],
     "deny": []
   },
@@ -103,106 +88,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE '\\b(ssh|scp|rsync)\\b'; then echo 'BLOCKED: SSH connections (ssh, scp, rsync) to remote hosts are not allowed' >&2; exit 2; fi"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE 'ansible-vault\\s+(view|decrypt)\\b'; then echo 'BLOCKED: ansible-vault view/decrypt is not allowed — use ansible-vault edit instead' >&2; exit 2; fi"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE '(cat|head|tail|less|more)\\s+.*(\\.aws/credentials|\\.aws/config|\\.kube/config|\\.docker/config\\.json|\\.boto|\\.s3cfg|\\.netrc|\\.git-credentials|\\.npmrc|vault/password|1pass\\.txt|github\\.txt)'; then echo 'BLOCKED: Reading credential/secret files via shell is not allowed' >&2; exit 2; fi"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE 'git\\s+(push\\s+--force|push\\s+-f|reset\\s+--hard|clean\\s+-f)'; then echo 'BLOCKED: Destructive git commands (force push, reset --hard, clean -f) are not allowed' >&2; exit 2; fi"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE 'git\\s+push\\b' && echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE '\\b(main|master)\\b'; then echo 'BLOCKED: Pushing directly to main/master is not allowed' >&2; exit 2; fi"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE 'rm\\s+-[a-z]*r[a-z]*f' && echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE '\\s/(\\s|$)|\\s/(home|mnt|etc|usr|var)(\\s|/)'; then echo 'BLOCKED: rm -rf on broad system paths is not allowed' >&2; exit 2; fi"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE '(curl|wget)\\s.*\\|\\s*(ba)?sh'; then echo 'BLOCKED: Pipe-to-shell (curl|bash) is not allowed' >&2; exit 2; fi"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE 'chmod\\s+777'; then echo 'BLOCKED: chmod 777 sets world-writable permissions — use a safer mode' >&2; exit 2; fi"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE '\\b(DROP\\s+(TABLE|DATABASE|SCHEMA)|TRUNCATE\\s+TABLE|DELETE\\s+FROM\\s+\\S+\\s*;)'; then echo 'BLOCKED: Destructive database operations (DROP, TRUNCATE, unfiltered DELETE) are not allowed' >&2; exit 2; fi"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE 'docker\\s+run.*--(privileged|net=host)|docker\\s+run.*-v\\s+/:/'; then echo 'BLOCKED: Docker privileged mode, host networking, and root volume mounts are not allowed' >&2; exit 2; fi"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE '(terraform|pulumi|cdktf)\\s+destroy'; then echo 'BLOCKED: Infrastructure destroy commands are not allowed' >&2; exit 2; fi"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qiE '(pip|pip3)\\s+install\\s+https?://|npm\\s+install\\s+https?://|yarn\\s+add\\s+https?://'; then echo 'BLOCKED: Installing packages from arbitrary URLs is not allowed — use a registry' >&2; exit 2; fi"
+            "command": "~/.claude/scripts/bash-safety-gate.sh"
           }
         ]
       },

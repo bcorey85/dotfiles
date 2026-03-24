@@ -25,8 +25,8 @@ Execute all steps in a single pass — do NOT pause for user approval between st
 3. **If there are unstaged or untracked changes** beyond what's staged: Briefly note them (e.g., "FYI: 3 unstaged files not included in this commit: [list]"). Do NOT stage them — just inform.
 4. Draft a commit message from the staged diff.
 5. Create the commit.
-6. **Push to remote** (unless `+no-push` was passed): Run `git push`. If no upstream is set, use `git push -u origin <branch>`. If the push fails for any reason (auth, diverged history, network), report the error clearly — do NOT retry with `--force` or destructive flags.
-7. **Confirm completion**: Report the commit hash, branch name, and push result. Do NOT end without confirming the push succeeded.
+6. **Push to remote** (unless `+no-push` was passed or on a worktree branch): Check the branch name with `git branch --show-current`. If the branch starts with `worktree-`, skip pushing — worktree branches are merged by the parent session, not pushed directly. Otherwise, run `git push`. If no upstream is set, use `git push -u origin <branch>`. If the push fails for any reason (auth, diverged history, network), report the error clearly — do NOT retry with `--force` or destructive flags.
+7. **Confirm completion**: Report the commit hash, branch name, and push result (or "push skipped — worktree branch"). Do NOT end without confirming the commit succeeded.
 
 ## Arguments
 

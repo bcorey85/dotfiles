@@ -16,6 +16,8 @@ Pull GitHub Copilot's automated review comments from the current branch's PR, tr
 
 ## Instructions
 
+0. **Check for prior triage**: If the current conversation already contains a "Copilot Review Triage" table with "Valid (Actionable)" findings from an earlier `/copilot-review` run, skip steps 1-6 and reuse those findings. Go directly to step 7.
+
 1. **Detect the PR** for the current branch:
    ```bash
    gh pr view --json number,url --jq '{number: .number, url: .url}'

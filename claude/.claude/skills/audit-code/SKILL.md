@@ -17,6 +17,7 @@ Report only issues that a senior staff engineer at a top-tier company would flag
 - `+fast` — Use Haiku model for auditor subagents. Quick surface-level scan.
 - `+deep` — Use Opus model for auditor subagents. Thorough, line-by-line analysis.
 - `+fresh` — Ignore previous findings ledger and start a clean audit.
+- Default (no modifier) — Use Sonnet model for auditor subagents. Always explicitly pass `model: "sonnet"` — never inherit the parent session's model.
 
 ## Arguments
 
@@ -46,7 +47,7 @@ If not found (or `+fresh` was passed):
 
 1. **Parse arguments**: Extract scope and focus from `$ARGUMENTS`. Strip modifiers (`+fast`, `+deep`, `+fresh`).
 
-2. **Determine model**: If `+deep`, pass `model: "opus"` to all Task calls. If `+fast`, pass `model: "haiku"`. Default: no model override (Sonnet).
+2. **Determine model**: If `+deep`, pass `model: "opus"` to all Task calls. If `+fast`, pass `model: "haiku"`. Default: pass `model: "sonnet"` to all Task calls. Audit subagents must ALWAYS use Sonnet unless a modifier overrides it — never inherit the parent model.
 
 3. **Discover scope**: If no path/pattern was given, identify the project's source directories (check CLAUDE.md, look for `src/`, `packages/`, `app/`, `lib/`, etc.). Exclude `node_modules`, `dist`, `build`, `.git`, vendor dirs, and generated files.
 

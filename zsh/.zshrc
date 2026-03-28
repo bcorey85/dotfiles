@@ -111,13 +111,7 @@ export LG_CONFIG_FILE="$HOME/.config/lazygit/config.yml,$HOME/.config/lazygit/co
 alias gg="lazygit"
 alias tt="tmux"
 alias dd="lazydocker"
-function cc() {
-    # if lsof -iTCP:8787 -sTCP:LISTEN &>/dev/null; then
-    #     ANTHROPIC_BASE_URL=http://localhost:8787 claude "$@"
-    # else
-        claude "$@"
-    # fi
-}
+alias cc="claude"
 
 function cw() {
     local name="${1:-$(openssl rand -hex 4)}"

@@ -1,3 +1,8 @@
+# Auto-start tmux
+if command -v tmux &>/dev/null && [ -z "$TMUX" ]; then
+  tmux new-session -A -s main
+fi
+
 # Zsh plugins
 fpath=(~/.zsh/completions $fpath)
 autoload -Uz compinit && compinit

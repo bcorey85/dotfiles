@@ -32,6 +32,11 @@ vim.keymap.set("n", "<leader>fY", function()
   Snacks.notify("Copied: " .. path)
 end, { desc = "Copy absolute path" })
 
+-- Toggle inlay hints
+vim.keymap.set("n", "<leader>ih", function()
+  vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled())
+end, { desc = "Toggle inlay hints" })
+
 -- Project-wide diagnostics
 vim.keymap.set("n", "<leader>xp", function()
   local cwd = vim.fn.getcwd()

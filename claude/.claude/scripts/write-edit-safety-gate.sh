@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
 # PreToolUse hook: block Write/Edit to sensitive paths
 INPUT=$(cat)
-FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
+FILE=$(printf '%s' "$INPUT" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
 if [ -z "$FILE" ]; then exit 0; fi
 
-# Resolve to absolute path (macOS compatible) to catch traversal attacks
-RESOLVED=$(python3 -c "import os,sys; print(os.path.abspath(sys.argv[1]))" "$FILE" 2>/dev/null || echo "$FILE")
+# Resolve to absolute path to catch traversal attacks (e.g. ../../.ssh/id_rsa).
+# Tries python3, then realpath; falls back to the raw path if neither is available.
+if command -v python3 &>/dev/null; then
+    RESOLVED=$(python3 -c "import os,sys; print(os.path.abspath(sys.argv[1]))" "$FILE" 2>/dev/null) || RESOLVED="$FILE"
+elif command -v realpath &>/dev/null; then
+    RESOLVED=$(realpath "$FILE" 2>/dev/null) || RESOLVED="$FILE"
+else
+    RESOLVED="$FILE"
+fi
 
 block() {
-    jq -n --arg reason "$1" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$reason}}'
+    local reason
+    reason=$(printf '%s' "$1" | sed 's/"/\\"/g')
+    printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$reason"
     exit 0
 }
 

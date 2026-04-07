@@ -1,6 +1,12 @@
 {
   "env": {
-    "ENABLE_LSP_TOOL": "1"
+    "ENABLE_LSP_TOOL": "1",
+    "ENABLE_TOOL_SEARCH": "1",
+    "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1",
+    "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet",
+    "ANTHROPIC_BASE_URL": "https://llm.centerbase.ai",
+    "ANTHROPIC_API_KEY": "REDACTED"
   },
   "attribution": {
     "commit": "",
@@ -79,8 +85,10 @@
       "Bash(nvm use*)",
       "Bash(source ~/.nvm/nvm.sh *)"
     ],
-    "deny": []
+    "deny": [],
+    "defaultMode": "auto"
   },
+  "model": "sonnet",
   "hooks": {
     "PreToolUse": [
       {
@@ -93,11 +101,39 @@
         ]
       },
       {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/write-edit-safety-gate.sh"
+          }
+        ]
+      },
+      {
         "matcher": "Read",
         "hooks": [
           {
             "type": "command",
             "command": "~/.claude/scripts/block-credential-read.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/legalfit/.claude/hooks/rtk-rewrite.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/legalfit/.claude/hooks/sonar-secrets/build-scripts/pretool-secrets.sh",
+            "timeout": 60
           }
         ]
       }
@@ -159,6 +195,18 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/legalfit/.claude/hooks/sonar-secrets/build-scripts/prompt-secrets.sh",
+            "timeout": 60
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
@@ -171,6 +219,9 @@
     "lua-lsp@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": true,
     "pyright-lsp@claude-plugins-official": true,
-    "skill-creator@claude-plugins-official": true
-  }
+    "skill-creator@claude-plugins-official": true,
+    "sonarqube-agent-plugins@claude-plugins-official": true
+  },
+  "autoMemoryEnabled": false,
+  "skipAutoPermissionPrompt": true
 }

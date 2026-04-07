@@ -44,3 +44,5 @@
 
 - Note vault: `~/vault`. Templates: `~/vault/Templates`.
 - Suggest a note when a key insight or decision comes up.
+
+@RTK.md

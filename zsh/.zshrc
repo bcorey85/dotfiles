@@ -188,3 +188,6 @@ export PATH="$BUN_INSTALL/bin:$PATH"
 
 # Atuin — must be last to avoid hook conflicts
 command -v atuin &>/dev/null && eval "$(atuin init zsh)"
+
+# Added by sonarqube-cli installer
+export PATH="$HOME/.local/share/sonarqube-cli/bin:$PATH"

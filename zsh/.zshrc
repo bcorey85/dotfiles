@@ -118,8 +118,8 @@ alias tt="tmux"
 alias dd="lazydocker"
 alias cc="claude"
 
-# Machine-local Claude Code secrets (API key, base URL, etc.)
-[[ -f ~/.claude/.env.local ]] && source ~/.claude/.env.local
+# Machine-local overrides (secrets, paths, etc.)
+[[ -f ~/.zshrc.local ]] && source ~/.zshrc.local
 
 function cw() {
     local name="${1:-$(openssl rand -hex 4)}"

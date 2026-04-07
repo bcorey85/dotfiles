@@ -4,9 +4,7 @@
     "ENABLE_TOOL_SEARCH": "1",
     "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1",
     "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet",
-    "ANTHROPIC_BASE_URL": "https://llm.centerbase.ai",
-    "ANTHROPIC_API_KEY": "REDACTED"
+    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"
   },
   "attribution": {
     "commit": "",

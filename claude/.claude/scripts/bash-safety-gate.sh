@@ -32,7 +32,7 @@ if echo "$CMD" | grep -qiE 'git\s+push\b' && echo "$CMD" | grep -qiE '\b(main|ma
     block "Pushing directly to main/master is not allowed"
 fi
 
-if echo "$CMD" | grep -qE '\brm\b'; then
+if echo "$CMD" | grep -qE '\brm\b' && ! echo "$CMD" | grep -qiE 'git\s+rm\b'; then
     if echo "$CMD" | grep -qiE '\brm\b.*-[a-zA-Z]*[rf]'; then
         if ! echo "$CMD" | grep -qiE '(node_modules|/dist\b|\bdist/|\b\.cache\b|/tmp/|\bcoverage\b|\.next\b|\.nuxt\b|\.turbo\b)'; then
             block "rm with -r or -f flags may delete untracked files — not git-recoverable"

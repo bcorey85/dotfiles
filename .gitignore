@@ -19,6 +19,7 @@ claude/.claude/stats-cache.json
 claude/.claude/paste-cache/
 claude/.claude/backups/*
 claude/.claude/.credentials.json
+claude/.claude/.env.local
 claude/.claude/claude-devtools-notifications.json
 claude/.claude/agent-memory/
 claude/.claude/security_warnings_state_*.json

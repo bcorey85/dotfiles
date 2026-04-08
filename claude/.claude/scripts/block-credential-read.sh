@@ -3,7 +3,7 @@ set -euo pipefail
 # CB Security Hooks
 # Version: 0.1.2
 # ==========
-# GENERATED — edit generator/rules/block-credential-read.yaml and run: python generator/cli.py generate
+# GENERATED — do not edit directly
 # PreToolUse hook: block-credential-read
 trap 'printf '"'"'{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"block-credential-read encountered an unexpected error — denying for safety"}}\n'"'"'; exit 0' ERR
 [[ -n "${CLAUDE_SKIP_HOOKS:-}" ]] && exit 0
@@ -37,7 +37,7 @@ if command -v python3 &>/dev/null; then
 elif command -v realpath &>/dev/null; then
     RESOLVED=$(realpath "$FILE" 2>/dev/null) || RESOLVED="$FILE"
 else
-    RESOLVED="$FILE"
+    block "Cannot resolve absolute path (python3 and realpath unavailable) — denying for safety"
 fi
 
 # Case-insensitive matching for macOS (APFS is case-insensitive by default)

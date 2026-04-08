@@ -3,7 +3,7 @@ set -euo pipefail
 # CB Security Hooks
 # Version: 0.1.2
 # ==========
-# GENERATED — edit generator/rules/bash-safety-gate.yaml and run: python generator/cli.py generate
+# GENERATED — do not edit directly
 # PreToolUse hook: bash-safety-gate
 trap 'printf '"'"'{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"bash-safety-gate encountered an unexpected error — denying for safety"}}\n'"'"'; exit 0' ERR
 [[ -n "${CLAUDE_SKIP_HOOKS:-}" ]] && exit 0
@@ -23,7 +23,7 @@ if command -v jq &>/dev/null; then
 elif command -v python3 &>/dev/null; then
     CMD=$(printf '%s' "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('command',''))" 2>/dev/null)
 else
-    CMD=$(printf '%s' "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+    block "jq and python3 are unavailable — cannot safely parse hook input"
 fi
 
 if [ -z "$CMD" ]; then
@@ -71,6 +71,11 @@ fi
 if printf '%s\n' "$CMD" | grep -qiE 'git\s+push\b' && \
    printf '%s\n' "$CMD" | grep -qiE '\b(main|master)\b'; then
     block "Pushing directly to main/master is not allowed"
+fi
+if printf '%s\n' "$CMD" | grep -qiE 'git\s+push\b.*\bHEAD\b'; then
+    if ! printf '%s\n' "$CMD" | grep -qiE '\bHEAD:[^\s]'; then
+        block "Pushing using HEAD resolves to the current branch — use an explicit branch name instead"
+    fi
 fi
 if printf '%s\n' "$CMD" | grep -qiE 'git\s+(commit|push|merge)\b.*--no-verify'; then
     block "git --no-verify bypasses pre-commit security hooks and is not allowed"
@@ -185,6 +190,9 @@ if printf '%s\n' "$CMD" | grep -qiE '(export\s+)?ANTHROPIC_(BASE_URL|AUTH_TOKEN|
 fi
 if printf '%s\n' "$CMD" | grep -qiE '^\s*(env|printenv|set)\s*$'; then
     block "Dumping environment variables may expose secrets"
+fi
+if printf '%s\n' "$CMD" | grep -qiE '(env|printenv)\s*\|'; then
+    block "Piped env/printenv commands may expose secrets"
 fi
 if printf '%s\n' "$CMD" | grep -qiE 'printenv\s+\S*(ANTHROPIC_|AWS_SECRET|AWS_SESSION|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|PYPI_TOKEN|DATABASE_URL|_SECRET|_PASSWORD|_KEY|_TOKEN|_CREDENTIAL)'; then
     block "Reading sensitive environment variables may expose API keys and credentials"

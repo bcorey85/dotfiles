@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# CB Security Hooks
+# Version: 0.1.2
+# ==========
 # GENERATED — edit generator/rules/block-credential-read.yaml and run: python generator/cli.py generate
 # PreToolUse hook: block-credential-read
 trap 'printf '"'"'{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"block-credential-read encountered an unexpected error — denying for safety"}}\n'"'"'; exit 0' ERR
@@ -20,7 +23,7 @@ if command -v jq &>/dev/null; then
 elif command -v python3 &>/dev/null; then
     FILE=$(printf '%s' "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" 2>/dev/null)
 else
-    FILE=$(printf '%s' "$INPUT" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+    block "jq and python3 are unavailable — cannot safely parse hook input"
 fi
 
 if [ -z "$FILE" ]; then
@@ -87,5 +90,8 @@ if printf '%s\n' "$RESOLVED" | grep -qiE '\.config/gh/hosts\.yml'; then
 fi
 if printf '%s\n' "$RESOLVED" | grep -qiE '\.tfstate$'; then
     block "Reading Terraform state files is not allowed — may contain plaintext secrets"
+fi
+if printf '%s\n' "$RESOLVED" | grep -qiE '(^|/)([^/]*decrypted[^/]*\.(ya?ml|json|env|txt|key|pem|gpg|enc)|[^/]+\.decrypted)$'; then
+    block "Reading decrypted secret/vault files is not allowed"
 fi
 shopt -u nocasematch

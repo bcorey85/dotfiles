@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# CB Security Hooks
+# Version: 0.1.2
+# ==========
 # GENERATED — edit generator/rules/bash-safety-gate.yaml and run: python generator/cli.py generate
 # PreToolUse hook: bash-safety-gate
 trap 'printf '"'"'{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"bash-safety-gate encountered an unexpected error — denying for safety"}}\n'"'"'; exit 0' ERR
@@ -35,19 +38,19 @@ if printf '%s\n' "$CMD" | grep -qiE '\beval\s'; then
     block "eval is not allowed — prevents rule bypass via dynamic command construction"
 fi
 if printf '%s\n' "$CMD" | grep -qiE '\bexec\s'; then
-    if ! printf '%s\n' "$CMD" | grep -qiE '\b(docker|kubectl)\s+exec\b'; then
+    if ! printf '%s\n' "$CMD" | grep -qiE '^\s*(docker|kubectl)\s+exec\b'; then
         block "exec replaces the current process and can bypass future hooks"
     fi
 fi
-if printf '%s\n' "$CMD" | grep -qiE '\bsource\s|\.\s+/'; then
+if printf '%s\n' "$CMD" | grep -qiE '\bsource\s|(^|\|\||&&|;|\|)\s*\.\s+\S'; then
     block "source/dot-source is not allowed — prevents rule bypass via external scripts"
 fi
 # Interpreter inline execution — runs arbitrary code, bypasses all keyword rules
-if printf '%s\n' "$CMD" | grep -qiE '\b(python3?|node|perl|ruby|php)\b.*\s-(c|e|r)\b'; then
+if printf '%s\n' "$CMD" | grep -qiE '\b(python3?|node|perl|ruby|php)\b.*(\s-(c|e|r)\b|\s--?(eval|command)\b)'; then
     block "Interpreter inline execution (python -c, node -e, perl -e) is not allowed — prevents rule bypass"
 fi
 # SSH connections to remote hosts
-if printf '%s\n' "$CMD" | grep -qiE '\b(ssh|scp|rsync)\b'; then
+if printf '%s\n' "$CMD" | grep -qiE '\b(ssh|scp|rsync|sftp)\b'; then
     block "SSH connections (ssh, scp, rsync) to remote hosts are not allowed"
 fi
 # Ansible vault operations
@@ -62,7 +65,7 @@ fi
 if printf '%s\n' "$CMD" | grep -qiE 'git\s+push\b.*--(force|force-with-lease)\b|git\s+push\s+-f\b'; then
     block "Destructive git push (--force, --force-with-lease, -f) is not allowed"
 fi
-if printf '%s\n' "$CMD" | grep -qiE 'git\s+(reset\s+--hard|clean\s+(-f|--force)|checkout\s+--\s+\.)'; then
+if printf '%s\n' "$CMD" | grep -qiE 'git\s+(reset\s+--hard|clean\s+(-f|--force)|checkout\s+--\s+\.|restore\s+(--(staged|worktree)\s+)*\.\s*$)'; then
     block "Destructive git commands (reset --hard, clean -f, checkout -- .) are not allowed"
 fi
 if printf '%s\n' "$CMD" | grep -qiE 'git\s+push\b' && \
@@ -73,12 +76,12 @@ if printf '%s\n' "$CMD" | grep -qiE 'git\s+(commit|push|merge)\b.*--no-verify'; 
     block "git --no-verify bypasses pre-commit security hooks and is not allowed"
 fi
 if printf '%s\n' "$CMD" | grep -qiE 'git\s+stash\b'; then
-    if ! printf '%s\n' "$CMD" | grep -qiE 'git\s+stash\s+(list|show)\b'; then
+    if ! printf '%s\n' "$CMD" | grep -qiE '^\s*git\s+stash\s+(list|show)\b'; then
         block "git stash is not allowed — agents overwriting each other's work via stash is a known issue"
     fi
 fi
-if printf '%s\n' "$CMD" | grep -qiE 'git\s+branch\s+-[a-zA-Z]*D'; then
-    block "git branch -D force-deletes local commits that may not be pushed"
+if printf '%s\n' "$CMD" | grep -qiE 'git\s+branch\s+-[a-zA-Z]*[dD]'; then
+    block "git branch -d/-D deletes local branches and may remove commits not yet pushed"
 fi
 if printf '%s\n' "$CMD" | grep -qiE 'git\s+tag\s+(-[a-zA-Z]*[df]|--delete|--force)\b'; then
     block "git tag -d/-f may destroy release markers — not easily recovered"
@@ -93,21 +96,37 @@ if printf '%s\n' "$CMD" | grep -qiE '\brm\b.*-[a-zA-Z]*[rf]'; then
     fi
 fi
 # Generic pipe-to-shell
-if printf '%s\n' "$CMD" | grep -qiE '\|\s*(ba)?sh\b|\|\s*zsh\b|\|\s*dash\b|\|\s*ksh\b'; then
+if printf '%s\n' "$CMD" | grep -qiE '\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?(ba)?sh\b|\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?zsh\b|\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?dash\b|\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?ksh\b'; then
     block "Pipe-to-shell is not allowed — piping any command into a shell interpreter"
 fi
 # Network exfiltration — outbound data transfer
 if printf '%s\n' "$CMD" | grep -qiE 'curl\b.*(-d\b|--data|--upload-file|-F\b|-T\b|--form)'; then
-    block "curl with data upload flags may exfiltrate sensitive data"
+    if ! printf '%s\n' "$CMD" | grep -qiE 'https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:[0-9]+)?(/|$|\s)'; then
+        block "curl with data upload flags to external hosts may exfiltrate sensitive data"
+    fi
 fi
 if printf '%s\n' "$CMD" | grep -qiE 'wget\b.*--post-(data|file)'; then
-    block "wget with POST flags may exfiltrate sensitive data"
+    if ! printf '%s\n' "$CMD" | grep -qiE 'https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:[0-9]+)?(/|$|\s)'; then
+        block "wget with POST flags to external hosts may exfiltrate sensitive data"
+    fi
 fi
 if printf '%s\n' "$CMD" | grep -qiE '\b(nc|ncat|socat|telnet)\b'; then
     block "Raw network tools (nc, ncat, socat, telnet) are not allowed"
 fi
 if printf '%s\n' "$CMD" | grep -qiE '\b(dig|nslookup|host)\b.*\$\('; then
     block "DNS lookup tools (dig, nslookup, host) may be used for data exfiltration"
+fi
+if printf '%s\n' "$CMD" | grep -qiE 'curl\b.*(-o\b|--output\b)' && \
+   printf '%s\n' "$CMD" | grep -qiE '(\.zshrc|\.bashrc|\.bash_profile|\.zprofile|\.zshenv|/\.ssh/|/\.aws/|/\.kube/|/\.docker/config|\.gitconfig|\.git-credentials|\.github/workflows|\.claude/settings\.json|\.claude/scripts/|/etc/|Library/LaunchAgents|\.env\b)'; then
+    block "curl download to protected paths can overwrite critical config files"
+fi
+if printf '%s\n' "$CMD" | grep -qiE 'wget\b.*(-O\b|--output-document\b)' && \
+   printf '%s\n' "$CMD" | grep -qiE '(\.zshrc|\.bashrc|\.bash_profile|\.zprofile|\.zshenv|/\.ssh/|/\.aws/|/\.kube/|/\.docker/config|\.gitconfig|\.git-credentials|\.github/workflows|\.claude/settings\.json|\.claude/scripts/|/etc/|Library/LaunchAgents|\.env\b)'; then
+    block "wget download to protected paths can overwrite critical config files"
+fi
+# Privilege escalation commands
+if printf '%s\n' "$CMD" | grep -qiE '\bsudo\b'; then
+    block "Running commands as root is not allowed"
 fi
 # Dangerous chmod modes
 if printf '%s\n' "$CMD" | grep -qiE 'chmod\s+(777|666|a\+[rwx]|o\+[rwx]|\+s)\b'; then
@@ -122,7 +141,7 @@ if printf '%s\n' "$CMD" | grep -qiE '\b(DROP\s+(TABLE|DATABASE|SCHEMA)|TRUNCATE\
     block "Destructive database operations (DROP, TRUNCATE, unfiltered DELETE) are not allowed"
 fi
 # Dangerous Docker configurations
-if printf '%s\n' "$CMD" | grep -qiE 'docker\s+run.*--(privileged|net=host)|docker\s+run.*-v\s+/:/'; then
+if printf '%s\n' "$CMD" | grep -qiE 'docker\s+run\b.*--(privileged|net(work)?=host|network\s+host|pid=host|ipc=host|cap-add\s+(ALL|SYS_ADMIN|SYS_PTRACE|NET_ADMIN)\b)|docker\s+run\b.*-v\s+/:/'; then
     block "Docker privileged mode, host networking, and root volume mounts are not allowed"
 fi
 # Infrastructure destroy commands
@@ -149,6 +168,10 @@ fi
 if printf '%s\n' "$CMD" | grep -qiE 'gh\s+release\s+create\b'; then
     block "gh release create publishes artifacts — not git-reversible"
 fi
+if printf '%s\n' "$CMD" | grep -qiE 'gh\s+api\b' && \
+   printf '%s\n' "$CMD" | grep -qiE '(-X\s*(POST|PUT|PATCH|DELETE)\b|--method\s+(POST|PUT|PATCH|DELETE)\b|--input\b)'; then
+    block "gh api with mutation methods (POST, PUT, PATCH, DELETE) can bypass specific gh subcommand blocks"
+fi
 # Package publishing
 if printf '%s\n' "$CMD" | grep -qiE '(pnpm|npm|yarn|bun)\s+publish\b'; then
     block "Package publishing is not git-reversible"
@@ -163,7 +186,10 @@ fi
 if printf '%s\n' "$CMD" | grep -qiE '^\s*(env|printenv|set)\s*$'; then
     block "Dumping environment variables may expose secrets"
 fi
-if printf '%s\n' "$CMD" | grep -qiE 'cat\s+/proc/self/environ'; then
+if printf '%s\n' "$CMD" | grep -qiE 'printenv\s+\S*(ANTHROPIC_|AWS_SECRET|AWS_SESSION|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|PYPI_TOKEN|DATABASE_URL|_SECRET|_PASSWORD|_KEY|_TOKEN|_CREDENTIAL)'; then
+    block "Reading sensitive environment variables may expose API keys and credentials"
+fi
+if printf '%s\n' "$CMD" | grep -qiE '(cat|head|tail|less|more|strings|xxd|od|tac|hexdump)\s+/proc/(self|\$\$|[0-9]+)/environ'; then
     block "Reading /proc/self/environ exposes all environment variables"
 fi
 # Persistence mechanisms
@@ -185,7 +211,7 @@ if printf '%s\n' "$CMD" | grep -qiE 'sed\s+(-[a-zA-Z]*i|-i\b)' && \
    printf '%s\n' "$CMD" | grep -qiE '(\.zshrc|\.bashrc|\.bash_profile|\.zprofile|\.zshenv|/\.ssh/|/\.aws/|/\.kube/|/\.docker/config|\.gitconfig|\.git-credentials|\.github/workflows|\.claude/settings\.json|/etc/|Library/LaunchAgents)'; then
     block "sed -i on protected paths is not allowed"
 fi
-if printf '%s\n' "$CMD" | grep -qiE '(tee\s|>>\s*~?\/?(\.|/))' && \
+if printf '%s\n' "$CMD" | grep -qiE '(tee\s|>>?\s*[~/]|>>?\s*\.\.?/)' && \
    printf '%s\n' "$CMD" | grep -qiE '(\.zshrc|\.bashrc|\.bash_profile|\.zprofile|\.zshenv|/\.ssh/|/\.aws/|/\.kube/|/\.docker/config|\.gitconfig|\.git-credentials|\.github/workflows|\.claude/settings\.json|/etc/|Library/LaunchAgents)'; then
     block "Shell redirection to protected paths is not allowed"
 fi

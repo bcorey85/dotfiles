@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# CB Security Hooks
+# Version: 0.1.2
+# ==========
 # GENERATED — edit generator/rules/write-edit-safety-gate.yaml and run: python generator/cli.py generate
 # PreToolUse hook: write-edit-safety-gate
 trap 'printf '"'"'{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"write-edit-safety-gate encountered an unexpected error — denying for safety"}}\n'"'"'; exit 0' ERR
@@ -20,7 +23,7 @@ if command -v jq &>/dev/null; then
 elif command -v python3 &>/dev/null; then
     FILE=$(printf '%s' "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" 2>/dev/null)
 else
-    FILE=$(printf '%s' "$INPUT" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+    block "jq and python3 are unavailable — cannot safely parse hook input"
 fi
 
 if [ -z "$FILE" ]; then
@@ -51,11 +54,11 @@ case "$FILE" in
     "$H"/.zshrc|"$H"/.bashrc|"$H"/.bash_profile|"$H"/.profile|"$H"/.zprofile|"$H"/.zshenv|"$H"/.bash_login|"$H"/.tcshrc|"$H"/.cshrc)
         block "Writing to shell profile files is not allowed — persists across sessions" ;;
 esac
-[[ "$RESOLVED" == "$H/.config/fish/"* ]] && block "Writing to fish config is not allowed"
-[[ "$FILE" == "$H/.config/fish/"* ]] && block "Writing to fish config is not allowed"
+[[ "$RESOLVED" == ""$H"/.config/fish/"* ]] && block "Writing to fish config is not allowed"
+[[ "$FILE" == ""$H"/.config/fish/"* ]] && block "Writing to fish config is not allowed"
 # SSH and git credentials
-[[ "$RESOLVED" == "$H/.ssh/"* ]] && block "Writing to ~/.ssh/ is not allowed"
-[[ "$FILE" == "$H/.ssh/"* ]] && block "Writing to ~/.ssh/ is not allowed"
+[[ "$RESOLVED" == ""$H"/.ssh/"* ]] && block "Writing to ~/.ssh/ is not allowed"
+[[ "$FILE" == ""$H"/.ssh/"* ]] && block "Writing to ~/.ssh/ is not allowed"
 case "$RESOLVED" in
     "$H"/.gitconfig|"$H"/.git-credentials)
         block "Writing to global git config/credentials is not allowed" ;;
@@ -65,21 +68,21 @@ case "$FILE" in
         block "Writing to global git config/credentials is not allowed" ;;
 esac
 # Cloud credential directories
-[[ "$RESOLVED" == "$H/.aws/"* ]] && block "Writing to cloud credential directories is not allowed"
-[[ "$FILE" == "$H/.aws/"* ]] && block "Writing to cloud credential directories is not allowed"
-[[ "$RESOLVED" == "$H/.gcloud/"* ]] && block "Writing to cloud credential directories is not allowed"
-[[ "$FILE" == "$H/.gcloud/"* ]] && block "Writing to cloud credential directories is not allowed"
-[[ "$RESOLVED" == "$H/.config/gcloud/"* ]] && block "Writing to cloud credential directories is not allowed"
-[[ "$FILE" == "$H/.config/gcloud/"* ]] && block "Writing to cloud credential directories is not allowed"
-[[ "$RESOLVED" == "$H/.azure/"* ]] && block "Writing to cloud credential directories is not allowed"
-[[ "$FILE" == "$H/.azure/"* ]] && block "Writing to cloud credential directories is not allowed"
-[[ "$RESOLVED" == "$H/.kube/"* ]] && block "Writing to cloud credential directories is not allowed"
-[[ "$FILE" == "$H/.kube/"* ]] && block "Writing to cloud credential directories is not allowed"
-[[ "$RESOLVED" == "$H/.docker/"* ]] && block "Writing to cloud credential directories is not allowed"
-[[ "$FILE" == "$H/.docker/"* ]] && block "Writing to cloud credential directories is not allowed"
+[[ "$RESOLVED" == ""$H"/.aws/"* ]] && block "Writing to cloud credential directories is not allowed"
+[[ "$FILE" == ""$H"/.aws/"* ]] && block "Writing to cloud credential directories is not allowed"
+[[ "$RESOLVED" == ""$H"/.gcloud/"* ]] && block "Writing to cloud credential directories is not allowed"
+[[ "$FILE" == ""$H"/.gcloud/"* ]] && block "Writing to cloud credential directories is not allowed"
+[[ "$RESOLVED" == ""$H"/.config/gcloud/"* ]] && block "Writing to cloud credential directories is not allowed"
+[[ "$FILE" == ""$H"/.config/gcloud/"* ]] && block "Writing to cloud credential directories is not allowed"
+[[ "$RESOLVED" == ""$H"/.azure/"* ]] && block "Writing to cloud credential directories is not allowed"
+[[ "$FILE" == ""$H"/.azure/"* ]] && block "Writing to cloud credential directories is not allowed"
+[[ "$RESOLVED" == ""$H"/.kube/"* ]] && block "Writing to cloud credential directories is not allowed"
+[[ "$FILE" == ""$H"/.kube/"* ]] && block "Writing to cloud credential directories is not allowed"
+[[ "$RESOLVED" == ""$H"/.docker/"* ]] && block "Writing to cloud credential directories is not allowed"
+[[ "$FILE" == ""$H"/.docker/"* ]] && block "Writing to cloud credential directories is not allowed"
 # GPG and package manager credentials
-[[ "$RESOLVED" == "$H/.gnupg/"* ]] && block "Writing to ~/.gnupg/ is not allowed"
-[[ "$FILE" == "$H/.gnupg/"* ]] && block "Writing to ~/.gnupg/ is not allowed"
+[[ "$RESOLVED" == ""$H"/.gnupg/"* ]] && block "Writing to ~/.gnupg/ is not allowed"
+[[ "$FILE" == ""$H"/.gnupg/"* ]] && block "Writing to ~/.gnupg/ is not allowed"
 case "$RESOLVED" in
     "$H"/.npmrc|"$H"/.pypirc|"$H"/.gem/credentials)
         block "Writing to package manager credentials is not allowed" ;;
@@ -89,8 +92,8 @@ case "$FILE" in
         block "Writing to package manager credentials is not allowed" ;;
 esac
 # GitHub CLI auth and vault
-[[ "$RESOLVED" == "$H/.config/gh/"* ]] && block "Writing to GitHub CLI auth config is not allowed"
-[[ "$FILE" == "$H/.config/gh/"* ]] && block "Writing to GitHub CLI auth config is not allowed"
+[[ "$RESOLVED" == ""$H"/.config/gh/"* ]] && block "Writing to GitHub CLI auth config is not allowed"
+[[ "$FILE" == ""$H"/.config/gh/"* ]] && block "Writing to GitHub CLI auth config is not allowed"
 case "$RESOLVED" in
     "$H"/.vault-token)
         block "Writing to vault token is not allowed" ;;
@@ -117,10 +120,10 @@ case "$FILE" in
     "$H"/.claude/settings.json)
         block "Writing to global Claude settings is not allowed" ;;
 esac
-[[ "$RESOLVED" == "$H/.claude/scripts/"* ]] && block "Writing to Claude hook scripts is not allowed — prevents disabling security hooks"
-[[ "$FILE" == "$H/.claude/scripts/"* ]] && block "Writing to Claude hook scripts is not allowed — prevents disabling security hooks"
-[[ "$RESOLVED" == "$H/.claude/hooks/"* ]] && block "Writing to Claude hook scripts is not allowed — prevents disabling security hooks"
-[[ "$FILE" == "$H/.claude/hooks/"* ]] && block "Writing to Claude hook scripts is not allowed — prevents disabling security hooks"
+[[ "$RESOLVED" == ""$H"/.claude/scripts/"* ]] && block "Writing to Claude hook scripts is not allowed — prevents disabling security hooks"
+[[ "$FILE" == ""$H"/.claude/scripts/"* ]] && block "Writing to Claude hook scripts is not allowed — prevents disabling security hooks"
+[[ "$RESOLVED" == ""$H"/.claude/hooks/"* ]] && block "Writing to Claude hook scripts is not allowed — prevents disabling security hooks"
+[[ "$FILE" == ""$H"/.claude/hooks/"* ]] && block "Writing to Claude hook scripts is not allowed — prevents disabling security hooks"
 # CI/CD pipeline files
 if printf '%s\n' "$RESOLVED" | grep -qiE '\.github/workflows/|\.gitlab-ci\.yml$|Jenkinsfile$|azure-pipelines\.yml$|\.travis\.yml$|bitbucket-pipelines\.yml$|\.buildkite/|\.circleci/'; then
     block "Writing to CI/CD pipeline files requires manual review"
@@ -132,14 +135,16 @@ fi
 [[ "$RESOLVED" == "/bin/"* ]] && block "Writing to system directories is not allowed"
 [[ "$RESOLVED" == "/sbin/"* ]] && block "Writing to system directories is not allowed"
 [[ "$RESOLVED" == "/private/etc/"* ]] && block "Writing to system directories is not allowed"
+[[ "$RESOLVED" == "/private/bin/"* ]] && block "Writing to system binary directories is not allowed"
+[[ "$RESOLVED" == "/private/sbin/"* ]] && block "Writing to system binary directories is not allowed"
 # Persistence mechanisms (launchd, cron, systemd, autostart)
-[[ "$RESOLVED" == "$H/Library/LaunchAgents/"* ]] && block "Writing persistence mechanism files (launchd, cron) is not allowed"
-[[ "$FILE" == "$H/Library/LaunchAgents/"* ]] && block "Writing persistence mechanism files (launchd, cron) is not allowed"
+[[ "$RESOLVED" == ""$H"/Library/LaunchAgents/"* ]] && block "Writing persistence mechanism files (launchd, cron) is not allowed"
+[[ "$FILE" == ""$H"/Library/LaunchAgents/"* ]] && block "Writing persistence mechanism files (launchd, cron) is not allowed"
 [[ "$RESOLVED" == "/Library/LaunchDaemons/"* ]] && block "Writing persistence mechanism files (launchd, cron) is not allowed"
 [[ "$RESOLVED" == "/var/spool/cron/"* ]] && block "Writing persistence mechanism files (launchd, cron) is not allowed"
 [[ "$RESOLVED" == "/private/var/spool/cron/"* ]] && block "Writing persistence mechanism files (launchd, cron) is not allowed"
-[[ "$RESOLVED" == "$H/.config/autostart/"* ]] && block "Writing to XDG autostart is not allowed"
-[[ "$FILE" == "$H/.config/autostart/"* ]] && block "Writing to XDG autostart is not allowed"
-[[ "$RESOLVED" == "$H/.local/share/systemd/user/"* ]] && block "Writing to user systemd units is not allowed"
-[[ "$FILE" == "$H/.local/share/systemd/user/"* ]] && block "Writing to user systemd units is not allowed"
+[[ "$RESOLVED" == ""$H"/.config/autostart/"* ]] && block "Writing to XDG autostart is not allowed"
+[[ "$FILE" == ""$H"/.config/autostart/"* ]] && block "Writing to XDG autostart is not allowed"
+[[ "$RESOLVED" == ""$H"/.local/share/systemd/user/"* ]] && block "Writing to user systemd units is not allowed"
+[[ "$FILE" == ""$H"/.local/share/systemd/user/"* ]] && block "Writing to user systemd units is not allowed"
 shopt -u nocasematch

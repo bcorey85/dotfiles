@@ -50,3 +50,34 @@ for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     watch_buffer(buf)
   end
 end
+
+-- Fallback: check for external changes on idle (covers tmux pane switches)
+vim.api.nvim_create_autocmd(
+  { "CursorHold", "CursorHoldI" },
+  {
+    callback = function()
+      vim.cmd("checktime")
+    end,
+  }
+)
+
+-- Force LSP to re-analyze after external file changes reload the buffer
+-- vtsls doesn't re-publish diagnostics on didClose+didOpen from checktime
+vim.api.nvim_create_autocmd("FileChangedShellPost", {
+  callback = function(args)
+    local buf = args.buf
+    for _, client in pairs(vim.lsp.get_clients({ bufnr = buf })) do
+      local version = (vim.lsp.util.buf_versions[buf] or 0) + 1
+      vim.lsp.util.buf_versions[buf] = version
+      client:notify("textDocument/didChange", {
+        textDocument = {
+          uri = vim.uri_from_bufnr(buf),
+          version = version,
+        },
+        contentChanges = {
+          { text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n") .. "\n" },
+        },
+      })
+    end
+  end,
+})

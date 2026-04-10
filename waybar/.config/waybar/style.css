@@ -1,103 +1,126 @@
 * {
-    font-family: "CommitMono Nerd Font Mono";
-    font-size: 13px;
-    min-height: 0;
+  font-family: "CommitMono Nerd Font Mono";
+  font-size: 13px;
+  min-height: 0;
 }
 
 window#waybar {
-    background-color: #282c34;
-    color: #cdd6f4;
-    border-bottom: 2px solid #3b4252;
+  background-color: #282c34;
+  color: #cdd6f4;
+  border-bottom: 2px solid #3b4252;
 }
 
 tooltip {
-    background-color: #2e3440;
-    border: 1px solid #3b4252;
-    border-radius: 8px;
-    color: #cdd6f4;
-    padding: 8px;
+  background-color: #2e3440;
+  border: 1px solid #3b4252;
+  border-radius: 8px;
+  color: #cdd6f4;
+  padding: 8px;
 }
 
 tooltip label {
-    font-size: 14px;
+  font-size: 14px;
 }
 
 #workspaces button {
-    padding: 0 8px;
-    color: #6c7086;
-    border: none;
-    border-radius: 0;
-    background: transparent;
+  padding: 0 8px;
+  color: #6c7086;
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 
 #workspaces button.active {
-    color: #94e2d5;
-    border-bottom: 2px solid #94e2d5;
+  color: #94e2d5;
+  border-bottom: 2px solid #94e2d5;
 }
 
 #workspaces button.urgent {
-    color: #f38ba8;
+  color: #f38ba8;
 }
 
 #workspaces button:hover {
-    background: #2e3440;
-    color: #cdd6f4;
+  background: #2e3440;
+  color: #cdd6f4;
 }
 
 #window {
-    color: #6c7086;
-    padding: 0 12px;
+  color: #6c7086;
+  padding: 0 12px;
 }
 
 #clock {
-    color: #cdd6f4;
-    font-weight: bold;
+  color: #cdd6f4;
+  font-weight: bold;
 }
 
 #cpu {
-    color: #a6e3a1;
+  color: #a6e3a1;
 }
 
 #memory {
-    color: #b4befe;
+  color: #b4befe;
 }
 
 #temperature {
-    color: #fab387;
+  color: #fab387;
 }
 
 #temperature.critical {
-    color: #f38ba8;
+  color: #f38ba8;
 }
 
 #network {
-    color: #94e2d5;
+  color: #94e2d5;
 }
 
 #network.disconnected {
-    color: #f38ba8;
+  color: #f38ba8;
 }
 
 #pulseaudio {
-    color: #f9e2af;
+  color: #f9e2af;
 }
 
 #pulseaudio.muted {
-    color: #6c7086;
+  color: #6c7086;
 }
 
 #tray {
-    padding: 0 4px;
+  padding: 0 4px;
 }
 
 #tray > .passive {
-    -gtk-icon-effect: dim;
+  -gtk-icon-effect: dim;
 }
 
 #tray > .needs-attention {
-    -gtk-icon-effect: highlight;
+  -gtk-icon-effect: highlight;
 }
 
-#cpu, #memory, #temperature, #network, #pulseaudio, #tray {
-    padding: 0 10px;
+#battery {
+  color: #a6e3a1;
+}
+
+#battery.warning {
+  color: #f9e2af;
+}
+
+#battery.critical {
+  color: #f38ba8;
+}
+
+#battery.charging,
+#battery.plugged {
+  color: #a6e3a1;
+}
+
+#cpu,
+#memory,
+#temperature,
+#network,
+#pulseaudio,
+#battery,
+#tray {
+  padding: 0 10px;
 }

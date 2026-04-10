@@ -89,6 +89,22 @@
     () , break)
 )
 
+(deflayer semimak
+  @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
+  tab       f    l    h    v    z    '    w    u    o    y    [    ]    \
+  caps      s    r    n    t    k    c    d    e    a    i    ;       ret
+  lsft      x    q    b    m    j    p    g    ,    .    /    rsft
+  lctl lmet @la           spc                 ralt rmet rctl
+)
+
+(deflayer recurva
+  @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
+  tab       f    r    d    p    v    q    x    u    o    y    [    ]    \
+  caps      s    n    t    c    g    .    h    e    a    i    ,       ret
+  lsft      j    k    b    w    z    m    l    ;    '    /    rsft
+  lctl lmet @la           spc                 ralt rmet rctl
+)
+
 (deflayer l1
   @grl      _    _    _    _    _    _    _    _    _    _    _    _    _
   tab       _    _    _    _    _    _    _    _    _    _    _    _    _
@@ -107,6 +123,8 @@
   qwr (layer-switch qwerty)
   nok (layer-switch nokwts)
   pin (layer-switch pine)
+  sem (layer-switch semimak)
+  rec (layer-switch recurva)
   la (layer-while-held l1)
   ra (tap-hold-release 200 200 ralt (layer-toggle ralt-layer))
 )
@@ -120,7 +138,7 @@
 )
 
 (deflayer layers
-  _    @qwr @pin @rai @gal @nok    _    _    _    _    _    _    _    _
+  _    @qwr @pin @sem @rai @gal @nok @rec  _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _

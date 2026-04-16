@@ -138,7 +138,7 @@
 )
 
 (deflayer layers
-  _    @qwr @pin @sem @rai @gal @nok @rec  _    _    _    _    _    _
+  _    @qwr @nok @sem @rai @gal @nok @rec  _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _

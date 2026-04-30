@@ -27,5 +27,10 @@ claude/.claude/mcp-needs-auth-cache.json
 claude/.claude/telemetry/
 claude/.claude/image-cache/
 claude/.claude/sessions/
+claude/.claude/policy-limits.json
+claude/.claude/settings.json.bak.*
+claude/.claude/remote-settings.json
+claude/.claude/security-hook-block-log.jsonl*
+claude/.claude/.security-level
 
 nvim/.config/nvim/lazy-lock.json

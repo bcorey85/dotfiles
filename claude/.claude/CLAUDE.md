@@ -9,6 +9,7 @@
 
 ## Behavior
 
+- **MANDATORY: Never code directly. Always delegate to the `/code` subagents** (`backend-coder`, `frontend-coder`, or `backend-architect` / `frontend-architect` first when design decisions are needed). The main agent's role is briefing, reviewing, and orchestration — not editing files. The only exceptions are trivial single-line edits explicitly requested by the user (e.g., "change this variable name") or repository configuration files like `CLAUDE.md` itself.
 - Don't over-engineer. Only change what's requested. Don't refactor unrelated code while implementing a feature.
 - Never hardcode paths or project names in rules, agents, skills, or commands — keep portable.
 - **MANDATORY: WebSearch before writing any config, CI, infra, or library integration code.**

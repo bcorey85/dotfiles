@@ -13,3 +13,6 @@ vim.opt.scroll = 10
 vim.g.loaded_python3_provider = 0
 
 vim.g.root_spec = { "cwd" }
+
+-- Disable inlay hints by default (toggle with <leader>ih)
+vim.g.lazyvim_inlay_hints = false

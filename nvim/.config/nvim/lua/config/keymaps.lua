@@ -34,7 +34,9 @@ end, { desc = "Copy absolute path" })
 
 -- Toggle inlay hints
 vim.keymap.set("n", "<leader>ih", function()
-  vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled())
+  local enabled = not vim.lsp.inlay_hint.is_enabled()
+  vim.lsp.inlay_hint.enable(enabled)
+  vim.g.lazyvim_inlay_hints = enabled
 end, { desc = "Toggle inlay hints" })
 
 -- Project-wide diagnostics

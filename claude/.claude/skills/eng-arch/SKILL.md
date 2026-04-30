@@ -6,20 +6,20 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, Task, AskUserQuestion]
 
 # Engineering Architecture
 
-Generate or update cross-cutting architecture documentation in `eng-arch/`. Scans the codebase, dispatches architect agents, and produces structured docs that capture how the system works — not how to build a single feature (that's `/eng-spec`).
+Generate or update cross-cutting architecture documentation in `docs/eng-arch/`. Scans the codebase, dispatches architect agents, and produces structured docs that capture how the system works — not how to build a single feature (that's `/eng-spec`).
 
 ## Modifiers
 
 Parse modifiers from `$ARGUMENTS`:
 
-| Modifier | Effect |
-|----------|--------|
-| `be` or `backend` | Backend scope only |
-| `fe` or `frontend` | Frontend scope only |
-| `fs` or `fullstack` | Fullstack (explicit — default if no scope given) |
-| `+quick` | Overview doc only, skip deep-dives |
-| `+deep` | Overview + all deep-dives, use `model: "opus"` for architect agents |
-| `<topic>` | Regenerate a single deep-dive (e.g., `/eng-arch data-model`) |
+| Modifier            | Effect                                                              |
+| ------------------- | ------------------------------------------------------------------- |
+| `be` or `backend`   | Backend scope only                                                  |
+| `fe` or `frontend`  | Frontend scope only                                                 |
+| `fs` or `fullstack` | Fullstack (explicit — default if no scope given)                    |
+| `+quick`            | Overview doc only, skip deep-dives                                  |
+| `+deep`             | Overview + all deep-dives, use `model: "opus"` for architect agents |
+| `<topic>`           | Regenerate a single deep-dive (e.g., `/eng-arch data-model`)        |
 
 If a bare topic name is passed (not `be`/`fe`/`fs`/`+quick`/`+deep`), treat it as a single deep-dive request.
 
@@ -29,12 +29,12 @@ If a bare topic name is passed (not `be`/`fe`/`fs`/`+quick`/`+deep`), treat it a
 
 1. **Read foundational files.** In parallel:
    - `CLAUDE.md` — project structure, conventions, stack
-   - Glob `eng-arch/*.md` — existing architecture docs
+   - Glob `docs/eng-arch/*.md` — existing architecture docs
    - Glob `docs/eng-specs/*.md` — recent implementation plans (scan for recurring patterns)
 
 2. **Determine what exists.** Categorize:
-   - **Fresh run** — `eng-arch/` is empty or doesn't exist
-   - **Update run** — `eng-arch/` has existing docs
+   - **Fresh run** — `docs/eng-arch/` is empty or doesn't exist
+   - **Update run** — `docs/eng-arch/` has existing docs
    - **Single topic** — user requested a specific deep-dive topic
 
 3. **Read key source files** based on scope. Use Glob + Read to scan:
@@ -73,14 +73,14 @@ If a bare topic name is passed (not `be`/`fe`/`fs`/`+quick`/`+deep`), treat it a
    - Launch `backend-architect` (`subagent_type: backend-architect`). Instruct it to:
      - Explore the backend codebase thoroughly
      - Document: data model (entities, relationships, constraints), API surface (all endpoints with shapes), async patterns (queues, workers), error handling conventions, coding patterns
-     - Read existing `eng-arch/` docs as context to understand what's already documented
+     - Read existing `docs/eng-arch/` docs as context to understand what's already documented
      - Return structured analysis as text (do NOT write files)
 
    **Frontend scope:**
    - Launch `frontend-architect` (`subagent_type: frontend-architect`). Instruct it to:
      - Explore the frontend codebase thoroughly
      - Document: component architecture, state management, routing, API integration patterns, styling conventions, shared utilities
-     - Read existing `eng-arch/` docs as context
+     - Read existing `docs/eng-arch/` docs as context
      - Return structured analysis as text (do NOT write files)
 
    **Fullstack (both):**
@@ -97,10 +97,11 @@ If a bare topic name is passed (not `be`/`fe`/`fs`/`+quick`/`+deep`), treat it a
 
 ### Phase 4: Diff+Merge (Update Runs Only)
 
-**Skip this phase if `eng-arch/` is empty (fresh run) or this is a single topic request with no existing doc for that topic.**
+**Skip this phase if `docs/eng-arch/` is empty (fresh run) or this is a single topic request with no existing doc for that topic.**
 
 9. **For each section in each doc that differs from existing content:**
    - Show the user a clear comparison:
+
      ```
      ### Section: [name]
 
@@ -110,6 +111,7 @@ If a bare topic name is passed (not `be`/`fe`/`fs`/`+quick`/`+deep`), treat it a
      **PROPOSED:**
      [new content from architect]
      ```
+
    - Ask: "Accept proposed change, keep existing, or edit?"
    - Use AskUserQuestion with options: `Accept`, `Keep existing`, `Edit` (user provides custom text)
 
@@ -121,9 +123,9 @@ If a bare topic name is passed (not `be`/`fe`/`fs`/`+quick`/`+deep`), treat it a
 
 ### Phase 5: Write Docs
 
-12. **Write the overview doc** to `eng-arch/00-system-overview.md` using the template below.
+12. **Write the overview doc** to `docs/eng-arch/00-system-overview.md` using the template below.
 
-13. **Write deep-dive docs** (unless `+quick`) to `eng-arch/<topic>.md` using the deep-dive template.
+13. **Write deep-dive docs** (unless `+quick`) to `docs/eng-arch/<topic>.md` using the deep-dive template.
 
 14. **For single topic requests**, only write the requested topic file.
 
@@ -135,17 +137,15 @@ If a bare topic name is passed (not `be`/`fe`/`fs`/`+quick`/`+deep`), treat it a
     - Any drift detected (code differs from previously documented patterns)
     - Patterns promoted from `docs/eng-specs/` (if any)
 
-16. **Offer Notion push:** "Want to push these to the Notion Wiki? Run `/push-arch <filename>` for any doc."
-
-17. **Flag drift** if detected: "These areas of code have diverged from the documented architecture: [list]. Consider updating the code or the docs."
+16. **Flag drift** if detected: "These areas of code have diverged from the documented architecture: [list]. Consider updating the code or the docs."
 
 ## Overview Template
 
-Write to `eng-arch/00-system-overview.md`. Sections: System Map (packages + communication flows), Data Model (entities + relationships), API Surface (REST endpoints, WebSocket events, MCP tools as applicable), Coding Conventions (naming, patterns, error handling), Key Architectural Decisions (context, decision, rationale, consequences). Include a header with generation date and scope.
+Write to `docs/eng-arch/00-system-overview.md`. Sections: System Map (packages + communication flows), Data Model (entities + relationships), API Surface (REST endpoints, WebSocket events, MCP tools as applicable), Coding Conventions (naming, patterns, error handling), Key Architectural Decisions (context, decision, rationale, consequences). Include a header with generation date and scope.
 
 ## Deep-Dive Template
 
-Write deep-dives to `eng-arch/<topic>.md`. Sections: Overview, Current Implementation (with file/line references), Patterns & Conventions, Interfaces, Known Limitations.
+Write deep-dives to `docs/eng-arch/<topic>.md`. Sections: Overview, Current Implementation (with file/line references), Patterns & Conventions, Interfaces, Known Limitations.
 
 ## Arguments
 

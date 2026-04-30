@@ -2,7 +2,6 @@
   "env": {
     "ENABLE_LSP_TOOL": "1",
     "ENABLE_TOOL_SEARCH": "1",
-    "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1",
     "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1",
     "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"
   },
@@ -14,6 +13,9 @@
     "allow": [
       "mcp__plugin_context7_context7__resolve-library-id",
       "mcp__plugin_context7_context7__query-docs",
+      "Bash(printenv *)",
+      "Bash(open *)",
+      "Bash(stow *)",
       "Bash(ls *)",
       "Bash(ls)",
       "Bash(pwd)",
@@ -53,7 +55,13 @@
       "Bash(sha256sum *)",
       "Bash(shasum *)",
       "Bash(md5sum *)",
-      "Bash(printenv *)",
+      "Bash(printenv PATH)",
+      "Bash(printenv HOME)",
+      "Bash(printenv USER)",
+      "Bash(printenv SHELL)",
+      "Bash(printenv TERM)",
+      "Bash(printenv LANG)",
+      "Bash(printenv PWD)",
       "Bash(mkdir -p *)",
       "Bash(mkdir *)",
       "Bash(man *)",
@@ -125,55 +133,15 @@
       "Bash(brew --version)",
       "Bash(brew list *)",
       "Bash(brew info *)",
-      "Bash(open *)",
-      "Bash(stow *)",
-      "Bash(printenv PATH)",
-      "Bash(printenv HOME)",
-      "Bash(printenv USER)",
-      "Bash(printenv SHELL)",
-      "Bash(printenv TERM)",
-      "Bash(printenv LANG)",
-      "Bash(printenv PWD)",
       "Bash(open .)",
       "Bash(open -R *)"
     ],
-    "deny": [
-      "Bash(sudo *)",
-      "Bash(rm -rf /)",
-      "Bash(chmod 777 *)"
-    ],
+    "deny": ["Bash(sudo *)", "Bash(rm -rf /)", "Bash(chmod 777 *)"],
     "defaultMode": "auto"
   },
-  "model": "sonnet",
+  "model": "opus",
   "hooks": {
     "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/scripts/bash-safety-gate.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/scripts/write-edit-safety-gate.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/scripts/block-credential-read.sh"
-          }
-        ]
-      },
       {
         "matcher": "Bash",
         "hooks": [
@@ -200,6 +168,33 @@
             "type": "command",
             "command": "~/.claude/hooks/sonar-secrets/build-scripts/pretool-secrets.sh",
             "timeout": 60
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/bash-safety-gate.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/block-credential-read.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "(Write|Edit|MultiEdit|NotebookEdit)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/write-edit-safety-gate.sh"
           }
         ]
       }
@@ -309,6 +304,7 @@
     "skill-creator@claude-plugins-official": true,
     "sonarqube-agent-plugins@claude-plugins-official": true
   },
+  "effortLevel": "high",
   "autoMemoryEnabled": false,
   "skipAutoPermissionPrompt": true
 }

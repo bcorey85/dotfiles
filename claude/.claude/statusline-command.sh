@@ -16,7 +16,9 @@ eval "$(echo "$input" | jq -r '
   @sh "lines_removed=\(.cost.total_lines_removed // 0)",
   @sh "cache_read=\(.context_window.current_usage.cache_read_input_tokens // 0)",
   @sh "cache_create=\(.context_window.current_usage.cache_creation_input_tokens // 0)",
-  @sh "fresh_input=\(.context_window.current_usage.input_tokens // 0)"
+  @sh "fresh_input=\(.context_window.current_usage.input_tokens // 0)",
+  @sh "five_hour_pct=\(.rate_limits.five_hour.used_percentage // empty)",
+  @sh "five_hour_resets_at=\(.rate_limits.five_hour.resets_at // empty)"
 ')"
 
 # Change to the working directory
@@ -113,24 +115,36 @@ else
     token_info=$(printf " ${DIM}[${RESET}%s${DIM}]${RESET} ${DIM}[${RESET}0${DIM}/${RESET}%s${DIM}]${RESET}" "$model_name" "$context_size")
 fi
 
-# Headroom proxy status
-if lsof -iTCP:8787 -sTCP:LISTEN &>/dev/null 2>&1; then
-    log="/tmp/headroom.err"
-    if [[ -f "$log" ]]; then
-        saved=$(grep 'saved.*streaming' "$log" 2>/dev/null | sed 's/.*saved \([0-9,]*\).*/\1/' | tr -d ',' | awk '{s+=$1} END {print s+0}')
-        if [[ "$saved" -gt 1000000 ]] 2>/dev/null; then
-            saved_display="$(( saved / 1000000 ))M"
-        elif [[ "$saved" -gt 1000 ]] 2>/dev/null; then
-            saved_display="$(( saved / 1000 ))k"
-        else
-            saved_display="${saved:-0}"
-        fi
-        headroom_info=$(printf " ${DIM}[${RESET}${GREEN}⚡headroom ${saved_display} saved${RESET}${DIM}]${RESET}")
+# 5-hour rate-limit window
+five_hour_info=""
+if [ -n "$five_hour_pct" ] && [ -n "$five_hour_resets_at" ]; then
+    # Round used % to integer
+    five_h_int=$(printf '%.0f' "$five_hour_pct")
+
+    # Time until reset
+    now=$(date +%s)
+    secs_left=$(( five_hour_resets_at - now ))
+    if [ "$secs_left" -lt 0 ]; then secs_left=0; fi
+    if [ "$secs_left" -ge 3600 ]; then
+        h=$(( secs_left / 3600 ))
+        m=$(( (secs_left % 3600) / 60 ))
+        reset_display="${h}h${m}m"
+    elif [ "$secs_left" -ge 60 ]; then
+        reset_display="$(( secs_left / 60 ))m"
     else
-        headroom_info=$(printf " ${DIM}[${RESET}${GREEN}⚡headroom${RESET}${DIM}]${RESET}")
+        reset_display="${secs_left}s"
     fi
-else
-    headroom_info=""
+
+    # Color-code by usage
+    if [ "$five_h_int" -ge 90 ]; then
+        five_color=$RED
+    elif [ "$five_h_int" -ge 70 ]; then
+        five_color=$YELLOW
+    else
+        five_color=$GREEN
+    fi
+
+    five_hour_info=$(printf " ${DIM}[${RESET}${five_color}%s%%${RESET} ${DIM}resets in${RESET} %s${DIM}]${RESET}" "$five_h_int" "$reset_display")
 fi
 
-printf "${GREEN}➜${RESET} ${CYAN}%s${RESET}%s%s%s" "$dir_name" "$git_info" "$token_info" "$headroom_info"
+printf "${GREEN}➜${RESET} ${CYAN}%s${RESET}%s%s%s" "$dir_name" "$git_info" "$five_hour_info" "$token_info"

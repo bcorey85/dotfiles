@@ -20,14 +20,37 @@
      This is NOT optional. Do NOT write config changes based on reasoning alone. Every CI/infra guess costs 5-10 minutes of pipeline time.
      If research would take >5 minutes, say so and ask for direction instead.
 - Maximum 3 attempts on any failing approach. After 3, stop, document what failed, and ask for direction.
-- After any code change, run the project's test/typecheck/lint commands before declaring done.
-  If unknown, check the project CLAUDE.md or ask.
 - Save all Playwright screenshots to `/tmp/`, never inside a project repo.
 - **NEVER use Bash to write files.** This is non-negotiable:
   - Create/overwrite files → **Write tool** (not `cat <<`, `echo >`, heredocs)
   - Edit files → **Edit tool** (not `sed`, `awk`)
 - Prefer **Read tool** with offset/limit over `cat`, `head`, `tail` for reading files.
 - Prefer `rg` over `grep` and `fd` over `find` when available.
+- **Every `Agent` call MUST set `model` explicitly.** No exceptions. The `agent-model-guard` PreToolUse hook (`~/.claude/hooks/agent-model-guard.sh`) rejects any unmodeled call with exit code 2 — if you forget, the tool call fails before the subagent runs.
+  - `model: "haiku"` — read-only / lookup work (research, fact extraction, "where is X", file surveys). This is the default for QRSPI research and tactical lookups.
+  - `model: "sonnet"` — fan-out implementation, code edits, multi-file analysis, code review.
+  - `model: "opus"` — **never from the call site.** The hook also rejects `model: "opus"`. Opus is reserved for the main orchestrator. The only way a subagent runs on Opus is if its own frontmatter pins it; you do not override to Opus.
+  - Pair with `subagent_type` deliberately: `Explore` (read-only lookup, default for research), `general-purpose` (multi-file tracing Explore can't handle), `backend-coder` / `frontend-coder` / `*-architect` / `code-reviewer` per their descriptions.
+- **Prefer LSP over grep+Read for typed code.** When working in a project with a language server (TypeScript, Python with pyright, Go, Rust, etc.), use the LSP tool for: finding references, go-to-definition, hover/type info, and diagnostics. One LSP call replaces 5–10 grep+Read pairs. Reach for it on refactors, signature changes, import rewrites, "find every usage of X", and post-edit type checks. Fall back to `rg` only for plain text or unindexed file types.
+
+## Quality Checks
+
+After any code change, run the project's quality checks (validate, lint, typecheck, tests, build, format — whatever CLAUDE.md specifies) before declaring done. If unknown, check the project CLAUDE.md or ask.
+
+- **Hard cap: run any single quality-check command at most TWICE per task.** Applies to every check — validate, linters, type checkers, test runners, builds, formatters.
+- If exit code is 0, you're done with that check.
+- If non-zero, redirect output to `/tmp/check.log`, read the full log, and fix **every reported failure in a single batch** before re-running. Do not re-run to inspect different parts of the same output — grep the log.
+- If the second run still fails, **stop**. Document what's failing and ask for direction. Do NOT enter a fix-rerun-fix-rerun loop. That single anti-pattern is the largest source of runaway tool use.
+
+## Tool Use Efficiency
+
+You're paying real time and tokens for every tool call. Be deliberate.
+
+- **Run expensive commands once.** If you need to inspect different parts of a long-running command's output (test runs, builds), redirect to `/tmp/<name>.log` and grep the file. Never re-run the same command with different filters or to a different `tail`/`head`.
+- **One source of truth per fact.** Look up a package version, config value, or symbol location once and trust it. Don't cross-check the same fact through multiple tools.
+- **Parallel ≠ better.** Parallel tool calls are for _independent_ questions. Multiple calls answering the same question are wasted, even when concurrent.
+- **Read before grep.** If you already know the file path, just read the file. Don't grep for a symbol whose location you already have.
+- **Trust framework guarantees.** The build tool, test runner, type checker, ORM, and linter do their jobs. Don't verify their output via separate spot checks.
 
 ## Git
 

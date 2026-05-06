@@ -15,6 +15,9 @@ local function watch_buffer(buf)
   event:start(path, {}, vim.schedule_wrap(function(err)
     if err then
       event:stop()
+      if not event:is_closing() then
+        event:close()
+      end
       watchers[buf] = nil
       return
     end
@@ -39,7 +42,25 @@ vim.api.nvim_create_autocmd("BufDelete", {
     local w = watchers[args.buf]
     if w then
       w:stop()
+      if not w:is_closing() then
+        w:close()
+      end
       watchers[args.buf] = nil
+    end
+  end,
+})
+
+-- Close all fs_event handles on exit so libuv doesn't keep neovim alive
+vim.api.nvim_create_autocmd("VimLeavePre", {
+  callback = function()
+    for buf, w in pairs(watchers) do
+      pcall(function()
+        w:stop()
+        if not w:is_closing() then
+          w:close()
+        end
+      end)
+      watchers[buf] = nil
     end
   end,
 })

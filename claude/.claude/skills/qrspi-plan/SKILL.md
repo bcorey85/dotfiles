@@ -55,7 +55,8 @@ Use the project's actual commands in the Automated Verification checklist — no
 1. Read all four input documents FULLY.
 2. Detect verification commands (above).
 3. For each phase in the structure outline, flesh out specific file changes and code.
-4. Spawn sub-agents (`Explore` for lookups, `general-purpose` for tracing) only for tactical details — current function signatures, test patterns, import paths.
+4. Spawn sub-agents only for tactical lookups — current function signatures, test patterns, import paths. **Every Task call MUST set `model: "haiku"` — these are read-only fact-extractions, exactly what Haiku is for. The agent-model-guard PreToolUse hook will reject any unmodeled or `model: "opus"` call.**
+   - Default `subagent_type: "Explore"`. Reach for `general-purpose` only when Explore can't handle the trace; still pin `model: "haiku"`.
 5. Write the plan to `docs/eng-specs/IQ-XXX-description/IQ-XXX-05-plan.md`.
 6. Present a brief summary — tell the user to spot-check, not deep-review (save that for the code).
 7. Print the short footer (below).
@@ -83,6 +84,15 @@ Substitute the real path.
 
 ## Overview
 [1-2 sentence summary]
+
+## Phase Status
+
+<!-- Updated by /code after each phase completes + peer-review passes. Source of truth for "which phase is next" across /clear boundaries. Do not delete. -->
+
+- [ ] Phase 1: [name from structure outline]
+- [ ] Phase 2: [name]
+- [ ] Phase 3: [name]
+<!-- one line per phase, matching the Phase headers below -->
 
 ## Current State Analysis
 [Brief — from design doc]
@@ -156,6 +166,10 @@ Spawn sub-agents only for tactical lookups:
 - Existing test patterns to follow.
 - Import paths and module structure.
 - Do NOT use sub-agents for design decisions — those are already resolved.
+
+**Model and subagent_type are mandatory:**
+- `model: "haiku"` always — these are read-only fact-extractions. The agent-model-guard hook rejects unmodeled or `opus` calls.
+- `subagent_type: "Explore"` by default. Only use `general-purpose` when Explore can't handle the trace.
 
 ## What NOT To Do
 

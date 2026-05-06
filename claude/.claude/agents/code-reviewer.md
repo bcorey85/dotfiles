@@ -128,6 +128,13 @@ If a category is empty, omit the section. Do not pad sections with marginal item
 
 Do not include "Positive Observations" or "Recommendations" sections. They add noise without value.
 
+## Reviewer-Specific Tool Use
+
+Generic tool-use rules (run expensive commands once, parallel ≠ better, read before grep, LSP before grep, trust framework guarantees, 2-run cap on quality checks) are in `~/.claude/CLAUDE.md`. Plus these reviewer-specific rules:
+
+- **Don't re-verify framework guarantees as a "second opinion."** If the diff handoff says checks passed, trust it — do not re-run them.
+- **Stay in scope.** Review only the files in the handoff (or the diff). Do not expand into unchanged files for context unless a specific finding requires it.
+
 ## Self-Check Before Reporting
 
 For each issue you're about to flag, run the calibration question one more time:

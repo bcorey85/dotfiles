@@ -47,14 +47,26 @@ The user should NOT paste the questions. Read them from disk.
 ## Process
 
 1. Resolve the task directory and read `IQ-XXX-01-questions.md` (above).
-2. For each question (or cluster of 2-3 related questions), spawn a focused sub-agent via the Task tool:
-   - Use `Explore` (subagent_type) for "where is X" / "find files that..." lookups.
-   - Use `general-purpose` for "how does X work" multi-file tracing and pattern surveys.
+2. For each question (or cluster of 2-3 related questions), spawn a focused sub-agent via the Task tool. **Every Task call MUST set `model: "haiku"` — this is read-only research, exactly what Haiku is for. The agent-model-guard PreToolUse hook will reject any unmodeled or `model: "opus"` call.**
+   - Default to `subagent_type: "Explore"` — research is fundamentally lookup work ("where is X", "what does this file do", "find every place Y is called"). Explore is read-only and cheaper.
+   - Use `subagent_type: "general-purpose"` only when a question genuinely requires tracing across many files in a way Explore can't handle (rare). Still pin `model: "haiku"`.
+   - Never use `general-purpose` as the default. Never omit `model`. Never set `model: "opus"`.
 3. Tell every sub-agent: "Document what exists. No opinions. No suggestions. Include `file_path:line_number` references."
 4. Run sub-agents in parallel.
 5. Synthesize findings into a research document.
 6. Save to `docs/eng-specs/IQ-XXX-description/IQ-XXX-02-research.md`.
 7. Print the short footer (below).
+
+### Example Task invocation
+
+```
+Task({
+  description: "Router config and gate components",
+  subagent_type: "Explore",
+  model: "haiku",
+  prompt: "..."
+})
+```
 
 ## Footer (print this at the end — keep it short, no boxes)
 
@@ -109,6 +121,7 @@ status: complete
 - Do NOT add implementation recommendations.
 - Do NOT include the ticket in your context.
 - Do NOT editorialize ("this could be improved by...") — just document.
+- Do NOT spawn `general-purpose` agents on Opus or without a model — the hook will block you and you should never have tried.
 
 ## Arguments
 

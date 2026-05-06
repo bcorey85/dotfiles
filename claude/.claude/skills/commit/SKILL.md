@@ -12,6 +12,8 @@ The USER is responsible for staging files. Claude NEVER stages files. Draft the 
 
 Use `JIRAPROJECT-TICKETNUMBER: description` if the branch has a ticket key, otherwise use conventional commits (`type(scope): description`).
 
+**First commit on a branch must match the branch slug verbatim.** If the branch is `IQ-402-extract-shared-constants` and there are no prior commits on the branch (check with `git log <base>..HEAD --oneline`), the commit message must be `IQ-402: extract shared constants` — same ticket key, same description words, same order. Subsequent commits on the branch describe what changed in that specific commit and do not need to match the branch name.
+
 ## Modifiers
 
 - `+no-push` — Skip the push to remote after committing. By default, `/commit` pushes to the tracking remote after a successful commit.

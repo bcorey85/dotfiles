@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # CB Security Hooks
-# Version: 0.1.4
+# Version: 0.1.5
 # ==========
 # GENERATED — do not edit directly
 # PreToolUse hook: block-credential-read

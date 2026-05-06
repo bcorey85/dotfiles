@@ -53,8 +53,6 @@ Convention: `+toggle` for boolean switches (no value), `--key value` for paramet
 
    ## Test plan
    <Bulleted checklist of how to verify the changes>
-
-   🤖 Generated with [Claude Code](https://claude.com/claude-code)
    ```
 
 8. **Create the PR** using:

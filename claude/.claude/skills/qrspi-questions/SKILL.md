@@ -56,8 +56,8 @@ git rev-parse --abbrev-ref HEAD | grep -oE '^[a-zA-Z]+-[0-9]+' | tr '[:lower:]' 
    - Skip this step if a ticket file already exists at that path (don't overwrite — ask first).
 5. Identify the components, patterns, and systems the ticket touches.
 6. Generate 5-12 research questions.
-7. Present the questions for user review.
-8. After approval, save to `docs/eng-specs/IQ-XXX-description/IQ-XXX-01-questions.md`.
+7. **Write the questions to disk immediately** at `docs/eng-specs/IQ-XXX-description/IQ-XXX-01-questions.md`.
+8. Print the short footer (see "After Writing" below) and ask the user if they want any edits to the questions before moving on.
 
 ## Question Rules
 
@@ -68,12 +68,12 @@ git rev-parse --abbrev-ref HEAD | grep -oE '^[a-zA-Z]+-[0-9]+' | tr '[:lower:]' 
 - NEVER mention what is being built or why in the question text.
 - A skilled engineer reading these questions should know exactly which codebase areas the research will explore.
 
-## Output Format
+## Saved File Format
 
-Present questions as a numbered list with an exploration map:
+Write the questions file as a numbered list with an exploration map. The file on disk is the source of truth:
 
 ```
-Based on the ticket, here are the research questions:
+# IQ-XXX Research Questions
 
 1. How does the [component] system work? Trace the data flow from [entry] to [exit].
 2. What types and interfaces exist for [entity]? Where are they defined?
@@ -81,25 +81,26 @@ Based on the ticket, here are the research questions:
 4. What test patterns exist for [area]? Where are the test files?
 ...
 
-These questions will cause the research agent to explore:
+## Exploration Map
+
 - `worker/src/[module]/` — [why]
 - `frontend/src/components/[area]/` — [why]
 - `worker/src/[entrypoint]` — [why]
-
-Task directory: docs/eng-specs/IQ-XXX-description/
-Adjust any questions before we proceed to `/qrspi-research`?
 ```
 
-## After Approval
+## After Writing
 
-Once questions are approved, save them and print this short footer (no ASCII boxes, no copy-pasted question list — the file on disk is the source of truth):
+After saving, print this short footer and ask if the user wants any edits. Do NOT copy-paste the questions inline — the file on disk is the source of truth.
 
 ```
 Saved → docs/eng-specs/IQ-XXX-description/IQ-XXX-01-questions.md
-Next: run /clear, then /qrspi-research docs/eng-specs/IQ-XXX-description/
+
+Want any edits to the questions? Otherwise, run /clear, then /qrspi-research docs/eng-specs/IQ-XXX-description/
 ```
 
-Substitute the real path. Do NOT print the questions inline — the file is the source of truth.
+Substitute the real path.
+
+If the user requests edits, update the saved file directly (use the Edit tool) and re-print the footer. Do NOT regenerate from scratch unless asked.
 
 Do NOT include any ticket context, goal descriptions, or implementation intent in the saved questions.
 

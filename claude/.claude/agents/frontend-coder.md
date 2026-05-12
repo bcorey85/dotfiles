@@ -72,7 +72,19 @@ Only create a new component when:
 1. **Read the plan/spec carefully** — understand every detail before writing code
 2. **Search for existing patterns** — find similar implementations in the codebase and follow them exactly
 3. **Implement in order** — follow the project's natural dependency chain (types → state management → components → styling → tests, or equivalent)
-4. **Verify your work** — run the project's quality checks per the rules in `~/.claude/CLAUDE.md`. Also confirm components handle loading/error/empty states and styles match existing patterns.
+4. **Verify your work** — run the project's quality checks following the **Quality Check Cap** below. Also confirm components handle loading/error/empty states and styles match existing patterns.
+
+## Quality Check Cap (HARD RULE)
+
+**You may run any single quality-check command (validate, lint, typecheck, tests, build, format) at MOST TWICE per task. No exceptions.**
+
+- Exit code 0 → done with that check. Move on.
+- Non-zero → redirect output to `/tmp/check.log`, read the full log, fix **every reported failure in a single batch**, then re-run **once**.
+- Do NOT re-run the same command to inspect different parts of the output. Grep `/tmp/check.log` instead.
+- Do NOT vary the command (`| tail -5`, `| grep …`, `2>&1`) to dodge the cap — those count as the same command.
+- If the second run still fails: **STOP**. Report what's failing and ask for direction. Never enter a fix-rerun-fix-rerun loop.
+
+This is the single largest source of runaway tool use. Treat it as non-negotiable.
 
 ## Commands
 

@@ -32,6 +32,18 @@ vim.keymap.set("n", "<leader>fY", function()
   Snacks.notify("Copied: " .. path)
 end, { desc = "Copy absolute path" })
 
+-- LSP restart + clear stale diagnostics
+vim.keymap.set("n", "<leader>xr", function()
+  vim.diagnostic.reset()
+  for _, client in ipairs(vim.lsp.get_clients({ bufnr = 0 })) do
+    vim.lsp.stop_client(client.id, true)
+  end
+  vim.defer_fn(function()
+    vim.api.nvim_exec_autocmds("FileType", { buffer = 0 })
+    Snacks.notify("LSP restarted")
+  end, 300)
+end, { desc = "Restart LSP (clear diagnostics)" })
+
 -- Toggle inlay hints
 vim.keymap.set("n", "<leader>ih", function()
   local enabled = not vim.lsp.inlay_hint.is_enabled()

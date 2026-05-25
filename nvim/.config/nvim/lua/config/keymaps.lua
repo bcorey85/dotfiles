@@ -51,7 +51,7 @@ vim.keymap.set("n", "<leader>gP", "<cmd>Git push<cr>", { desc = "Git push" })
 vim.keymap.set("n", "<leader>gp", "<cmd>Git pull<cr>", { desc = "Git pull" })
 vim.keymap.set("n", "<leader>gl", "<cmd>Git log --oneline --decorate --all --graph<cr>", { desc = "Git log" })
 vim.keymap.set("n", "<leader>gB", "<cmd>Git blame<cr>", { desc = "Git blame (file)" })
-vim.keymap.set("n", "<leader>gm", "<cmd>Noice<cr>", { desc = "Message history (noice)" })
+vim.keymap.set("n", "<leader>gm", "<cmd>NoiceHistory<cr>", { desc = "Message history (noice)" })
 
 -- Notification history (yankable buffer)
 vim.keymap.set("n", "<leader>N", function() Snacks.notifier.show_history() end, { desc = "Notification history (yankable)" })

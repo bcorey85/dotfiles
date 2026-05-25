@@ -109,10 +109,10 @@ command -v starship &>/dev/null && eval "$(starship init zsh)"
 
 
 alias rl="source ~/.zshrc && clear && echo 'Reloaded .zshrc'"
-alias vc='nvim ~/.zshrc'
+alias vc='nvim +"cd ~/dotfiles" ~/dotfiles/zsh/.zshrc'
 alias vv='nvim .'
-alias vd='nvim ~/dotfiles'
-alias vn='nvim ~/vault'
+alias vd='nvim +"cd ~/dotfiles" ~/dotfiles'
+alias vn='nvim +"cd ~/vault" ~/vault'
 # Lazygit: base config + machine-local overrides
 export LG_CONFIG_FILE="$HOME/.config/lazygit/config.yml,$HOME/.config/lazygit/config.local.yml"
 alias gg="lazygit"

@@ -46,12 +46,36 @@ end, { desc = "Restart LSP (clear diagnostics)" })
 
 -- Fugitive (overrides LazyVim's lazygit defaults)
 vim.keymap.set("n", "<leader>gg", "<cmd>tab Git<cr>", { desc = "Fugitive Status (tab)" })
-vim.keymap.set("n", "<leader>gc", "<cmd>Git commit<cr>", { desc = "Git commit" })
+-- Commit in a terminal split so pre-commit hook output (husky/eslint) is fully visible.
+-- Fugitive's cc swallows failing-hook output (E21 / trimmed to one line) — terminal shows it all.
+vim.keymap.set("n", "<leader>gc", function()
+  vim.ui.input({ prompt = "Commit message: " }, function(msg)
+    if not msg or msg == "" then
+      return
+    end
+    vim.cmd("botright 15split")
+    vim.cmd("terminal git commit -m " .. vim.fn.shellescape(msg))
+    vim.cmd("startinsert")
+  end)
+end, { desc = "Git commit (terminal — shows hook output)" })
 vim.keymap.set("n", "<leader>gP", "<cmd>Git push<cr>", { desc = "Git push" })
 vim.keymap.set("n", "<leader>gp", "<cmd>Git pull<cr>", { desc = "Git pull" })
 vim.keymap.set("n", "<leader>gl", "<cmd>Git log --oneline --decorate --all --graph<cr>", { desc = "Git log" })
 vim.keymap.set("n", "<leader>gB", "<cmd>Git blame<cr>", { desc = "Git blame (file)" })
-vim.keymap.set("n", "<leader>gm", "<cmd>NoiceHistory<cr>", { desc = "Message history (noice)" })
+vim.keymap.set("n", "<leader>gm", function()
+  local msgs = vim.api.nvim_exec2("messages", { output = true }).output
+  if msgs == "" then
+    Snacks.notify("No messages")
+    return
+  end
+  vim.cmd("botright new")
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(msgs, "\n"))
+  vim.bo.buftype = "nofile"
+  vim.bo.bufhidden = "wipe"
+  vim.bo.swapfile = false
+  vim.api.nvim_buf_set_name(0, "Messages")
+  vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = true, silent = true })
+end, { desc = "Messages (scratch buffer)" })
 
 -- Notification history (yankable buffer)
 vim.keymap.set("n", "<leader>N", function() Snacks.notifier.show_history() end, { desc = "Notification history (yankable)" })

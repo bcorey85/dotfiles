@@ -4,6 +4,8 @@ return {
   opts = {
     keymaps = {
       file_panel = {
+        { "n", "cc", "<Cmd>Git commit<bar>wincmd J<CR>", { desc = "Commit staged" } },
+        { "n", "ca", "<Cmd>Git commit --amend<bar>wincmd J<CR>", { desc = "Amend last commit" } },
         { "n", "<C-d>", function()
           local key = vim.api.nvim_replace_termcodes("<C-d>", true, false, true)
           for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do

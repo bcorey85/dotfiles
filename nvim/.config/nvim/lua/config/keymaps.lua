@@ -48,13 +48,21 @@ end, { desc = "Restart LSP (clear diagnostics)" })
 vim.keymap.set("n", "<leader>gg", "<cmd>tab Git<cr>", { desc = "Fugitive Status (tab)" })
 -- Commit in a terminal split so pre-commit hook output (husky/eslint) is fully visible.
 -- Fugitive's cc swallows failing-hook output (E21 / trimmed to one line) — terminal shows it all.
+-- On exit, refresh fugitive's status buffer (the external commit happens outside fugitive's knowledge).
 vim.keymap.set("n", "<leader>gc", function()
   vim.ui.input({ prompt = "Commit message: " }, function(msg)
     if not msg or msg == "" then
       return
     end
-    vim.cmd("botright 15split")
-    vim.cmd("terminal git commit -m " .. vim.fn.shellescape(msg))
+    vim.cmd("botright 15split | enew")
+    vim.fn.jobstart({ "git", "commit", "-m", msg }, {
+      term = true,
+      on_exit = function()
+        vim.schedule(function()
+          pcall(vim.fn["fugitive#DidChange"])
+        end)
+      end,
+    })
     vim.cmd("startinsert")
   end)
 end, { desc = "Git commit (terminal — shows hook output)" })

@@ -52,6 +52,9 @@ vim.keymap.set("n", "<leader>gp", "<cmd>Git pull<cr>", { desc = "Git pull" })
 vim.keymap.set("n", "<leader>gl", "<cmd>Git log --oneline --decorate --all --graph<cr>", { desc = "Git log" })
 vim.keymap.set("n", "<leader>gB", "<cmd>Git blame<cr>", { desc = "Git blame (file)" })
 
+-- Notification history (yankable buffer)
+vim.keymap.set("n", "<leader>N", function() Snacks.notifier.show_history() end, { desc = "Notification history (yankable)" })
+
 -- Toggle inlay hints
 vim.keymap.set("n", "<leader>ih", function()
   local enabled = not vim.lsp.inlay_hint.is_enabled()

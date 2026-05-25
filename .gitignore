@@ -32,5 +32,6 @@ claude/.claude/settings.json.bak.*
 claude/.claude/remote-settings.json
 claude/.claude/security-hook-block-log.jsonl*
 claude/.claude/.security-level
+claude/.claude/.last-cleanup
 
 nvim/.config/nvim/lazy-lock.json

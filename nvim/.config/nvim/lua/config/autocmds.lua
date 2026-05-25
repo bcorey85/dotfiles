@@ -82,6 +82,15 @@ vim.api.nvim_create_autocmd(
   }
 )
 
+-- Soft-wrap prose filetypes (code stays unwrapped per LazyVim default)
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = { "markdown", "text", "gitcommit" },
+  callback = function()
+    vim.opt_local.wrap = true
+    vim.opt_local.linebreak = true -- break at word boundaries, not mid-word
+  end,
+})
+
 -- Force LSP to re-analyze after external file changes reload the buffer
 -- vtsls doesn't re-publish diagnostics on didClose+didOpen from checktime
 vim.api.nvim_create_autocmd("FileChangedShellPost", {

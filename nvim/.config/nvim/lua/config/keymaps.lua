@@ -44,6 +44,14 @@ vim.keymap.set("n", "<leader>xr", function()
   end, 300)
 end, { desc = "Restart LSP (clear diagnostics)" })
 
+-- Fugitive (overrides LazyVim's lazygit defaults)
+vim.keymap.set("n", "<leader>gg", "<cmd>tab Git<cr>", { desc = "Fugitive Status (tab)" })
+vim.keymap.set("n", "<leader>gc", "<cmd>Git commit<cr>", { desc = "Git commit" })
+vim.keymap.set("n", "<leader>gP", "<cmd>Git push<cr>", { desc = "Git push" })
+vim.keymap.set("n", "<leader>gp", "<cmd>Git pull<cr>", { desc = "Git pull" })
+vim.keymap.set("n", "<leader>gl", "<cmd>Git log --oneline --decorate --all --graph<cr>", { desc = "Git log" })
+vim.keymap.set("n", "<leader>gB", "<cmd>Git blame<cr>", { desc = "Git blame (file)" })
+
 -- Toggle inlay hints
 vim.keymap.set("n", "<leader>ih", function()
   local enabled = not vim.lsp.inlay_hint.is_enabled()

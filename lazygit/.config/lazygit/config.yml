@@ -1,6 +1,7 @@
 gui:
   sidePanelWidth: 0.25
   expandFocusedSidePanel: true
+  scrollHeight: 14
 git:
   pagers:
     - colorArg: always

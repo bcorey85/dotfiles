@@ -1,5 +1,5 @@
 ---
-name: qrspi-design
+name: q-design
 description: Interactive design discussion — align on what we're building before plan (QRSPI step 3 of 5)
 allowed-tools: [Bash, Read, Glob, Grep, Write, AskUserQuestion]
 ---
@@ -56,7 +56,7 @@ If either is missing, ask. Read both FULLY (no limit/offset) before proceeding.
 
 ```
 Saved → docs/eng-specs/IQ-XXX-description/IQ-XXX-03-design.md
-Next: run /clear, then /qrspi-structure docs/eng-specs/IQ-XXX-description/
+Next: run /clear, then /q-structure docs/eng-specs/IQ-XXX-description/
 ```
 
 Substitute the real path.
@@ -138,7 +138,7 @@ Only write this AFTER all questions are resolved:
 
 - Do NOT write the design doc without asking questions first — this is the whole point.
 - Do NOT make design decisions unilaterally — present options, get user input.
-- Do NOT include implementation details (phases, specific file changes) — that is `/qrspi-structure`.
+- Do NOT include implementation details (phases, specific file changes) — that is `/q-structure`.
 - Do NOT produce more than ~200 lines — concise alignment, not exhaustive spec.
 - Do NOT skip presenting patterns for confirmation — the user needs to catch bad patterns before they propagate.
 

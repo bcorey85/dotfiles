@@ -1,5 +1,5 @@
 ---
-name: qrspi-plan
+name: q-plan
 description: Tactical implementation plan from all QRSPI artifacts (QRSPI step 5 of 5)
 allowed-tools: [Bash, Read, Glob, Grep, Write, Task]
 ---

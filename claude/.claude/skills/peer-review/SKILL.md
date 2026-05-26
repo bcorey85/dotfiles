@@ -18,6 +18,7 @@ Review recent changes in this codebase using the code-reviewer subagent.
 1. **Parse args**:
    - **Modifiers**: If `+deep` is present, pass `model: "opus"` to all Task tool calls below. If `+fast` is present, pass `model: "haiku"`.
    - **Iteration counter**: Look for `iter=N` in args (default `iter=1`). Tracks how many times the review-fix loop has run. **If `iter >= 3`, STOP immediately** and alert the user: "Review-fix loop has run 3 iterations without converging. Stopping to avoid churn. Outstanding issues: [list]. Decide manually how to proceed." Do NOT auto-dispatch `/fix-feedback`.
+   - **One-shot mode**: If `iter=oneshot` is present, this is the post-convergence verification pass after a MEDIUM triage `/fix-feedback`. Run the review as normal, report results to the user, but **do NOT auto-dispatch anything** — skip step 5's branching entirely. Report findings as a final summary, then stop. (Rationale: MEDIUM triage already happened in the prior turn; re-triaging would loop indefinitely.)
    - **Handoff block**: Look for a `handoff:` block in args (produced by `/code` or `/fix-feedback`). If present, use it as the review scope per the "Handoff Block" section below.
 
 2. **Determine review scope**:
@@ -67,10 +68,12 @@ Review recent changes in this codebase using the code-reviewer subagent.
 
 4. **Present the review results** to the user organized by severity
 
-5. **Decide next steps** based on the review outcome. Severity gating is **strict** — only CRITICAL and HIGH trigger the auto-fix loop. MEDIUM and LOW are report-only.
-   - **If all clear (no CRITICAL or HIGH issues)**: "No issues found that warrant auto-fix. Ready for `/commit`." If there are MEDIUM items or Notes, list them inline so the user can decide manually whether to address.
+5. **Decide next steps** based on the review outcome. Severity gating has two tiers:
+   - **CRITICAL / HIGH** → auto-fix loop (convergence-bounded, counts toward `iter` limit)
+   - **MEDIUM** → main-agent triage as a single follow-up after the loop converges (one-shot, NOT counted toward `iter`)
+   - **LOW** → report-only, never auto-handled
 
-   - **If HIGH issues found but NO critical blockers**: Auto-dispatch `/fix-feedback` for the HIGH (and CRITICAL, if any non-blocking) issues only. Tell the user: "Auto-dispatching `/fix-feedback` to resolve N high-priority issues (iteration M of 3). M MEDIUM and L LOW items reported but skipped from auto-fix." Invoke the Skill tool (`skill: "fix-feedback"`, args including `iter=M` — current count, unchanged; `/fix-feedback` increments before re-invoking peer-review). **Do not pass MEDIUM or LOW items to `/fix-feedback`** — they are reported to the user, not fed into the loop.
+   - **If HIGH issues found but NO critical blockers**: Auto-dispatch `/fix-feedback` for the HIGH (and CRITICAL, if any non-blocking) issues only. Tell the user: "Auto-dispatching `/fix-feedback` to resolve N high-priority issues (iteration M of 3). M MEDIUM items will be triaged after the loop converges. L LOW items reported only." Invoke the Skill tool (`skill: "fix-feedback"`, args including `iter=M` — current count, unchanged; `/fix-feedback` increments before re-invoking peer-review). **Do not pass MEDIUM or LOW items to `/fix-feedback`** — MEDIUMs are deferred to post-loop triage, LOWs are reported only.
 
    - **If critical blockers that need user judgment**: STOP and alert the user. Critical blockers are:
      - Security vulnerabilities that require design decisions
@@ -80,14 +83,26 @@ Review recent changes in this codebase using the code-reviewer subagent.
 
      Present these to the user and wait for direction. Do NOT auto-dispatch `/fix-feedback` in this case.
 
-   - **If only MEDIUM and/or LOW items**: Report them and stop. Tell the user: "Review found N medium-priority items and L notes. None warrant auto-fix — review and address manually if you want them fixed." Do NOT auto-dispatch `/fix-feedback`.
+   - **If all clear on the auto-fix gate (no CRITICAL or HIGH issues remain)**: The convergence loop is done. Now triage MEDIUMs as a follow-up:
 
-   `/fix-feedback` already auto-dispatches `/peer-review` when it finishes, so this creates an automatic review-fix loop. The loop terminates when:
-   - No CRITICAL or HIGH issues remain (clean by the gate, even if MEDIUM/LOW items exist)
+     - **If MEDIUM items exist**: The main agent (caller of this skill) must triage each MEDIUM with explicit judgment. For every MEDIUM, classify it as:
+       - **fix** — clear win, safe to auto-apply (e.g. missing null check, obvious dead code, real but non-blocking bug)
+       - **skip** — false positive, intentional choice, stylistic noise, or out-of-scope for this change
+       - **ask** — ambiguous, requires design decision, or could plausibly be either fix/skip
+
+       Then:
+       1. Bundle the **fix** bucket into a **single one-shot** `/fix-feedback` dispatch. This dispatch is NOT counted toward the `iter` limit — pass `iter=oneshot` (or omit) so `/fix-feedback` knows not to re-enter the convergence loop. After this one-shot fix, run `/peer-review` once more to verify, then stop regardless of remaining MEDIUMs.
+       2. List the **skip** bucket inline with a one-line reason each ("intentional — matches existing pattern in X", "false positive — reviewer missed Y", etc.).
+       3. Present the **ask** bucket to the user and wait for direction before doing anything with them.
+
+     - **If no MEDIUM items**: "No issues found that warrant auto-fix. Ready for `/commit`." List any LOW items / Notes inline.
+
+   `/fix-feedback` already auto-dispatches `/peer-review` when it finishes, so the HIGH/CRITICAL path is an automatic review-fix loop. The convergence loop terminates when:
+   - No CRITICAL or HIGH issues remain (clean by the auto-fix gate, regardless of MEDIUM/LOW)
    - A critical blocker surfaces that needs user input
    - 3 iterations pass without converging (stop and alert the user to avoid churn)
 
-   This severity gate is the primary defense against noise-driven loop iterations. If reviewer noise creeps into MEDIUM/LOW, it costs you a single report — not another full iteration.
+   The MEDIUM triage step runs **after** convergence and is a single one-shot — it does NOT re-enter the iter-bounded loop. This keeps the loop's termination condition simple while still surfacing actionable MEDIUMs for fix instead of dropping them on the user.
 
 ## Handoff Block
 

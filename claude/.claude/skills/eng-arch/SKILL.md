@@ -20,8 +20,43 @@ Parse modifiers from `$ARGUMENTS`:
 | `+quick`            | Overview doc only, skip deep-dives                                  |
 | `+deep`             | Overview + all deep-dives, use `model: "opus"` for architect agents |
 | `<topic>`           | Regenerate a single deep-dive (e.g., `/eng-arch data-model`)        |
+| `<adr-path>`        | ADR-driven mode — read an ADR (`docs/eng-specs/IQ-*.md`), update or create the matching deep-dive without scanning the rest of the codebase |
 
-If a bare topic name is passed (not `be`/`fe`/`fs`/`+quick`/`+deep`), treat it as a single deep-dive request.
+If a bare topic name is passed (not `be`/`fe`/`fs`/`+quick`/`+deep`), treat it as a single deep-dive request. If a path ending in `.md` under `docs/eng-specs/` is passed, enter **ADR-driven mode** (see below).
+
+## ADR-Driven Mode
+
+Triggered when `$ARGUMENTS` matches `docs/eng-specs/IQ-*.md`. Skips Phase 2 (no plan presentation), replaces Phase 3 (no codebase sweep). Uses Phases 4–6 as written.
+
+| Step | Action |
+|---|---|
+| 1 | Read ADR FULLY |
+| 2 | `ls docs/eng-arch/*.md` — filenames only |
+| 3 | Identify target from ADR's `Decision` + `Patterns to follow`. Existing match → propose update. No match → propose new kebab-case filename. AskUserQuestion: `Update <file>` / `Create <new-file>` / `Edit` |
+| 4 | If updating, read the existing deep-dive FULLY |
+| 5 | Dispatch scoped `frontend-architect` or `backend-architect`, `model: "sonnet"` (`"opus"` if `+deep`). See prompt below |
+| 6 | Diff/merge per-section if updating (Phase 4 flow) |
+| 7 | Write to target path |
+| 8 | Summary: ADR path, deep-dive path, file-path drift the architect surfaced |
+
+### Architect prompt — required fields
+
+- Full ADR content (ground truth)
+- Target deep-dive path
+- Existing deep-dive content (if updating)
+- **Content instructions**: Use the ADR as source of truth for the decision. Verify cited file paths against the codebase on the current branch (ADR may be stale). Produce durable architecture — current-state, patterns, interfaces, limitations. Do NOT recap migration story, alternatives, or implementation phases — those belong in the ADR. Return content as text; do not write files.
+- **Format directive — must pass to the architect verbatim:**
+
+  > Engineers in problem-solving mode scan headings (NN/g layer-cake pattern), they don't read. Write to be skimmed.
+  >
+  > - **Headings = answers, not topics.** `Token interceptor` not `Implementation details`. `401 handling` not `Error section`.
+  > - **BLUF at every level.** Start each section with the claim, not the setup.
+  > - **Bullets > paragraphs. Tables > bullets** for comparisons (endpoints, phases, options, before/after).
+  > - **`file:line` refs**, never "the file that handles X".
+  > - **Bold the load-bearing word** in any multi-line bullet.
+  > - **Cut connective tissue** ("Importantly", "It's worth noting", "Going forward").
+  > - **One Diátaxis mode**: deep-dives are **reference** (*how* the subsystem currently works). Do NOT recap migration, alternatives, or decision rationale — those live in the ADR. Cross-link.
+  > - **If a section is one paragraph, it's probably wrong.** Split or cut.
 
 ## Instructions
 

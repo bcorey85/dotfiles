@@ -1,5 +1,5 @@
 ---
-name: qrspi-questions
+name: q-questions
 description: Generate objective research questions from a ticket (QRSPI step 1 of 5)
 allowed-tools: [Bash, Read, Glob, Grep, Write, AskUserQuestion]
 ---
@@ -52,7 +52,7 @@ git rev-parse --abbrev-ref HEAD | grep -oE '^[a-zA-Z]+-[0-9]+' | tr '[:lower:]' 
 4. **Snapshot the ticket** to `docs/eng-specs/IQ-XXX-description/IQ-XXX-00-ticket.md` so the task folder is self-contained:
    - If the user passed a file path, copy its contents verbatim.
    - If the user pasted ticket text in the conversation, write that text.
-   - If only a Jira key/URL was provided, suggest running `/pull-ticket` first to pull Jira context locally, then re-run `/qrspi-questions`.
+   - If only a Jira key/URL was provided, suggest running `/pull-ticket` first to pull Jira context locally, then re-run `/q-questions`.
    - Skip this step if a ticket file already exists at that path (don't overwrite — ask first).
 5. Identify the components, patterns, and systems the ticket touches.
 6. Generate 5-12 research questions.
@@ -95,7 +95,7 @@ After saving, print this short footer and ask if the user wants any edits. Do NO
 ```
 Saved → docs/eng-specs/IQ-XXX-description/IQ-XXX-01-questions.md
 
-Want any edits to the questions? Otherwise, run /clear, then /qrspi-research docs/eng-specs/IQ-XXX-description/
+Want any edits to the questions? Otherwise, run /clear, then /q-research docs/eng-specs/IQ-XXX-description/
 ```
 
 Substitute the real path.

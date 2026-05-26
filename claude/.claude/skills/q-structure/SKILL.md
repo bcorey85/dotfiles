@@ -1,5 +1,5 @@
 ---
-name: qrspi-structure
+name: q-structure
 description: Vertical-phase structure outline with test checkpoints (QRSPI step 4 of 5)
 allowed-tools: [Bash, Read, Glob, Grep, Write, AskUserQuestion]
 ---
@@ -52,7 +52,7 @@ If any are missing, ask. Read all FULLY (no limit/offset) before proceeding.
 
 ```
 Saved → docs/eng-specs/IQ-XXX-description/IQ-XXX-04-structure.md
-Next: run /clear, then /qrspi-plan docs/eng-specs/IQ-XXX-description/
+Next: run /clear, then /q-plan docs/eng-specs/IQ-XXX-description/
 ```
 
 Substitute the real path.

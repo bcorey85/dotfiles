@@ -1,5 +1,5 @@
 ---
-name: qrspi-research
+name: q-research
 description: Objective codebase research from questions only — no ticket context (QRSPI step 2 of 5)
 allowed-tools: [Bash, Read, Glob, Grep, Write, Task]
 ---
@@ -72,7 +72,7 @@ Task({
 
 ```
 Saved → docs/eng-specs/IQ-XXX-description/IQ-XXX-02-research.md
-Next: run /clear, then /qrspi-design docs/eng-specs/IQ-XXX-description/
+Next: run /clear, then /q-design docs/eng-specs/IQ-XXX-description/
 ```
 
 Substitute the real path.

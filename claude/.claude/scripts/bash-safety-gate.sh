@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # CB Security Hooks
-# Version: 0.1.5
+# Version: 0.1.6
 # ==========
 # GENERATED — do not edit directly
 # PreToolUse hook: bash-safety-gate
+if [[ -n "${BASH_TRACE_OUT:-}" ]]; then
+    exec {__trace_fd}>>"${BASH_TRACE_OUT}"
+    export BASH_XTRACEFD=$__trace_fd
+    export PS4='+ ${BASH_SOURCE}:${LINENO}: '
+    set -x
+fi
 trap 'printf '"'"'{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"bash-safety-gate encountered an unexpected error — denying for safety"}}\n'"'"'; exit 0' ERR
 [[ -n "${CLAUDE_SKIP_HOOKS:-}" ]] && exit 0
 HOOK_LOGGING=1  # set to 1 via: ./unix/install.sh --add-logging
@@ -52,7 +58,7 @@ if [ -z "$CMD" ]; then
 fi
 
 # Fast path: if nothing in the input can match any rule, allow immediately
-if ! grep -qiE '(\b(bash|sh|dash|zsh|ksh)\s+-(c|s)\b)|((^|\|\||&&|;|\s\|\s)\s*eval\s)|((^|\|\||&&|;|\|)\s*(\w+=[^\s$()`]*\s+)*exec\s)|((^|\|\||&&|;|\s\|\s)\s*source\s|(^|\|\||&&|;|\s\|\s)\s*\.\s+\S)|(\b(python3?|node|perl|ruby|php)\b.*(\s-(c|e|r)\b|\s--?(eval|command)\b))|((\b(scp|rsync|sftp)\b|(^|[ \t;|&])ssh([ \t]|$)|\$\([ \t]*ssh([ \t]|$)|\([ \t]*ssh([ \t]|$)|`[ \t]*ssh([ \t]|$)))|(ansible-vault\s+(view|decrypt)\b)|((cat|head|tail|less|more|sort|diff|jq|cut|strings|uniq|nl|tac|rev|od|xxd|hexdump)\s+.*(\.aws/(credentials|config)|\.kube/config|\.docker/config\.json|\.boto|\.s3cfg|\.netrc|\.git-credentials|\.npmrc|\.pypirc|\.gem/credentials|vault/password|1pass\.txt|github\.txt|\.(pem|key|p12|pfx)\b|\.ssh/(id_(rsa|ed25519|ecdsa|dsa)|authorized_keys|config)|\.gnupg/|\.config/gcloud/|\.azure/(accessTokens|azureProfile|msal_token_cache)|\.config/gh/hosts\.yml|\.env(rc|(\.[a-z]+)*)?$|(credentials|service[._]account|application_default_credentials)\.json|\.tfstate|\.vault-token|\.dev\.vars|\.htpasswd|token\.json))|((cat|head|tail|less|more|sort|grep|rg|strings|diff)\s+.*\.(bash_history|zsh_history|sh_history|python_history|node_repl_history|mysql_history|psql_history|irb_history|rediscli_history))|(\b(grep|rg|ack|ag)\b.*(\s-[a-zA-Z]*[rRl]|--recursive|--files-with-matches).*(\bAKIA|sk-[a-zA-Z0-9]|PRIVATE KEY|password\s*[=:]|secret.?key\s*[=:]|api.?key\s*[=:]|access.?token\s*[=:]|auth.?token\s*[=:]|BEGIN RSA|BEGIN EC|BEGIN OPENSSH|BEGIN DSA|BEGIN PGP))|(git\s+push\b.*--(force|force-with-lease)\b|git\s+push\s+-f\b)|(git\s+(reset\s+--hard|clean\s+(-f|--force)|checkout\s+--\s+\.|restore\s+(--(staged|worktree)\s+)*\.\s*$))|(git\s+push\b)|(git\s+(commit|push|merge)\b.*--no-verify)|(\brm\b.*?\s-[a-zA-Z]*[rf]\b)|(\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?(ba)?sh\b|\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?zsh\b|\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?dash\b|\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?ksh\b)|(curl\b.*(--output\b|-o\b)|wget\b.*(-O\b|--output-document\b))|(curl\b.*(-d\b|--data|--upload-file|-F\b|-T\b|--form))|(wget\b.*--post-(data|file))|((^|[^a-zA-Z0-9_-])(socat|telnet)($|[^a-zA-Z0-9_-]))|((^|[^a-zA-Z0-9_-])(nc|ncat)($|[^a-zA-Z0-9_-]))|(\b(dig|nslookup|host)\b.*\$\()|(curl\b.*(-o\b|--output\b))|(wget\b.*(-O\b|--output-document\b))|(\bsudo\b)|(chmod\s+(777|666|a\+[rwx]|o\+[rwx]|\+s)\b)|(chmod\s+(\+x|[0-7]*[1357])\b)|((^|\|\||&&|;|\s\|\s)\s*\b(DROP\s+(TABLE|DATABASE|SCHEMA)|TRUNCATE\s+TABLE|DELETE\s+FROM\s+\S+\s*(;|$)))|(docker\s+run\b.*--(privileged|net(work)?=host|network\s+host|pid=host|ipc=host|cap-add\s+(ALL|SYS_ADMIN|SYS_PTRACE|NET_ADMIN)\b)|docker\s+run\b.*-v\s+/:/)|((terraform|pulumi|cdktf)\s+destroy)|((pip|pip3)\s+install\s+https?://|npm\s+install\s+https?://|yarn\s+add\s+https?://)|(gh\s+(secret|variable)\s+(set|remove|delete)\b)|(gh\s+repo\s+(delete|rename|transfer)\b)|(gh\s+workflow\s+run\b)|(gh\s+release\s+create\b)|(gh\s+api\b)|((pnpm|npm|yarn|bun)\s+publish\b)|((pnpm|npm|yarn|bun)\s+run\s+(deploy|release|publish|postinstall|prepublish)\b)|((export\s+)?ANTHROPIC_(BASE_URL|AUTH_TOKEN|API_KEY)\s*=)|(^\s*(env|printenv|set)\s*$)|((env|printenv)\s*\|)|(printenv\s+\S*(ANTHROPIC_|AWS_SECRET|AWS_SESSION|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|PYPI_TOKEN|DATABASE_URL|_SECRET|_PASSWORD|_KEY|_TOKEN|_CREDENTIAL))|((cat|head|tail|less|more|strings|xxd|od|tac|hexdump)\s+/proc/(self|\$\$|[0-9]+)/environ)|((crontab\s+(-e|[^-\s])|(^|\|\||&&|;|\|)\s*at\s+[0-9]|\blaunchctl\s+load\b|\bsystemctl\s+(enable|start)\b))|(\$\([^)]*\b(curl|wget|nc|ncat|socat|telnet|ssh|scp|rsync|fetch)\b)|(`[^`]*\b(curl|wget|nc|ncat|socat|telnet|ssh|scp|rsync|fetch)\b)|(sed\s+(-[a-zA-Z]*i|-i\b))|((tee[[:space:]]+(-{1,2}[a-zA-Z][a-zA-Z0-9-]*(=[^[:space:]]+)?[[:space:]]+)*|>>?[[:space:]]*)(~|\.\.?/|/)?[^[:space:]|;&<>]*(\.zshrc|\.bashrc|\.bash_profile|\.zprofile|\.zshenv|/\.ssh/|/\.aws/|/\.kube/|/\.docker/config|\.gitconfig|\.git-credentials|\.github/workflows|\.claude/settings\.json|/etc/|Library/LaunchAgents|\.git/hooks/))|((python3?|node|perl)\b.*-(c|e)\b.*(write|open|writeFile|writeSync))|(\bsecurity\s+(find-generic-password|find-internet-password|dump-keychain)\b)|(\bsecret-tool\s+lookup\b)|(\bosascript\b)|(aws\s+(s3\s+rm\b.*--recursive|s3\s+rb\b|ec2\s+terminate-instances|rds\s+delete-db-(instance|cluster)|iam\s+delete-|lambda\s+delete-function|cloudformation\s+delete-stack|ecs\s+delete-(cluster|service))\b)|(gcloud\s+(projects\s+delete|compute\s+instances\s+delete|sql\s+instances\s+delete|container\s+clusters\s+delete|functions\s+delete|run\s+services\s+delete|app\s+services\s+delete)\b)|(az\s+(group\s+delete|vm\s+delete|sql\s+server\s+delete|aks\s+delete|storage\s+(account\s+delete|blob\s+delete-batch)|webapp\s+delete|functionapp\s+delete)\b)|(kubectl\s+(delete|drain|replace)\b)|(helm\s+(uninstall|delete|rollback)\b)|(\bdd\b.*\bof=)|(\b(mkfs(\.[a-z0-9]+)?|fdisk|gdisk|parted|diskutil\s+(eraseDisk|partitionDisk|eraseVolume))\b)|(\bxargs\b)|(\bfind\b.*-delete\b)|(\bfind\b.*-(exec|execdir)\b)|(\bawk\b.*\b(system\s*\(|getline))|(\bsed\b.*(/e\b|[0-9]*\s*e\s*$))|(git\s+config\b)|(git\s+config\b)|((bash|sh|zsh|ksh)\s+<<<|\|\s*(bash|sh|zsh|ksh)\s+<<)' <<< "$CMD"; then
+if ! grep -qiE '(\b(bash|sh|dash|zsh|ksh)\s+-(c|s)\b)|((^|\|\||&&|;|\s\|\s)\s*eval\s)|((^|\|\||&&|;|\|)\s*(\w+=[^\s$()`]*\s+)*exec\s)|((^|\|\||&&|;|\s\|\s)\s*source\s|(^|\|\||&&|;|\s\|\s)\s*\.\s+\S)|(\b(python3?|node|perl|ruby|php)\b.*(\s-(c|e|r)\b|\s--?(eval|command)\b))|(((^|\|\||&&|;|\|)\s*(scp|rsync|sftp|ssh)([ \t]|$)|\$\([ \t]*ssh([ \t]|$)|\([ \t]*ssh([ \t]|$)|`[ \t]*ssh([ \t]|$)))|(ansible-vault\s+(view|decrypt)\b)|((cat|head|tail|less|more|sort|diff|jq|cut|strings|uniq|nl|tac|rev|od|xxd|hexdump|grep|rg|egrep|fgrep|awk|sed)\s+.*(\.aws/(credentials|config)|\.kube/config|\.docker/config\.json|\.boto|\.s3cfg|\.netrc|\.git-credentials|\.npmrc|\.pypirc|\.gem/credentials|vault/password|1pass\.txt|github\.txt|\.(pem|key|p12|pfx)\b|\.ssh/(id_(rsa|ed25519|ecdsa|dsa)|authorized_keys|config)|\.gnupg/|\.config/gcloud/|\.azure/(accessTokens|azureProfile|msal_token_cache)|\.config/gh/hosts\.yml|\.env(rc|(\.[a-z]+)*)?\b|(credentials|service[._]account|application_default_credentials)\.json|\.tfstate|\.vault-token|\.dev\.vars|\.htpasswd|token\.json))|((cat|head|tail|less|more|sort|grep|rg|strings|diff)\s+.*\.(bash_history|zsh_history|sh_history|python_history|node_repl_history|mysql_history|psql_history|irb_history|rediscli_history))|(\b(grep|rg|ack|ag)\b.*(\s-[a-zA-Z]*[rRl]|--recursive|--files-with-matches).*(\bAKIA|sk-[a-zA-Z0-9]|PRIVATE KEY|password\s*[=:]|secret.?key\s*[=:]|api.?key\s*[=:]|access.?token\s*[=:]|auth.?token\s*[=:]|BEGIN RSA|BEGIN EC|BEGIN OPENSSH|BEGIN DSA|BEGIN PGP))|(git\s+push\b.*--(force|force-with-lease)\b|git\s+push\s+-f\b)|(git\s+(reset\s+--hard|clean\s+(-f|--force)|checkout\s+--\s+\.|restore\s+(--(staged|worktree)\s+)*\.\s*$))|(git\s+push\b)|(git\s+(commit|push|merge)\b.*--no-verify)|(\brm\b.*?\s-[a-zA-Z]*[rf]\b)|(\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?(ba)?sh\b|\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?zsh\b|\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?dash\b|\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?ksh\b)|(curl\b.*(--output\b|-o\b)|wget\b.*(-O\b|--output-document\b))|(curl\b.*(-d\b|--data|--upload-file|-F\b|-T\b|--form))|(wget\b.*--post-(data|file))|((^|[^a-zA-Z0-9_-])(socat|telnet)($|[^a-zA-Z0-9_-]))|((^|[^a-zA-Z0-9_-])(nc|ncat)($|[^a-zA-Z0-9_-]))|(\b(dig|nslookup|host)\b.*\$\()|(curl\b.*(-o\b|--output\b))|(wget\b.*(-O\b|--output-document\b))|(\bsudo\b)|(chmod\s+(777|666|a\+[rwx]|o\+[rwx]|\+s)\b)|(chmod\s+(\+x|[0-7]*[1357])\b)|((^|\|\||&&|;|\s\|\s)\s*\b(DROP\s+(TABLE|DATABASE|SCHEMA)|TRUNCATE\s+TABLE|DELETE\s+FROM\s+\S+\s*(;|$)))|(docker\s+run\b.*--(privileged|net(work)?=host|network\s+host|pid=host|ipc=host|cap-add\s+(ALL|SYS_ADMIN|SYS_PTRACE|NET_ADMIN)\b)|docker\s+run\b.*-v\s+/:/)|((terraform|pulumi|cdktf)\s+destroy)|((pip|pip3)\s+install\s+https?://|npm\s+install\s+https?://|yarn\s+add\s+https?://)|(gh\s+(secret|variable)\s+(set|remove|delete)\b)|(gh\s+repo\s+(delete|rename|transfer)\b)|(gh\s+workflow\s+run\b)|(gh\s+release\s+create\b)|(gh\s+api\b)|((pnpm|npm|yarn|bun)\s+publish\b)|((pnpm|npm|yarn|bun)\s+run\s+(deploy|release|publish|postinstall|prepublish)\b)|((export\s+)?ANTHROPIC_(BASE_URL|AUTH_TOKEN|API_KEY)\s*=)|(^\s*(env|printenv|set)\s*$)|((^|\|\||&&|;|\s\|\s)\s*(env|printenv)\s*\|)|(printenv\s+\S*(ANTHROPIC_|AWS_SECRET|AWS_SESSION|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|PYPI_TOKEN|DATABASE_URL|_SECRET|_PASSWORD|_KEY|_TOKEN|_CREDENTIAL))|((cat|head|tail|less|more|strings|xxd|od|tac|hexdump)\s+/proc/(self|\$\$|[0-9]+)/environ)|((crontab\s+(-e|[^-\s])|(^|\|\||&&|;|\s\|\s)\s*at\s+[0-9]|\blaunchctl\s+load\b|\bsystemctl\s+(enable|start)\b))|(\$\([^)]*\b(curl|wget|nc|ncat|socat|telnet|ssh|scp|rsync|fetch)\b)|(`[^`]*\b(curl|wget|nc|ncat|socat|telnet|ssh|scp|rsync|fetch)\b)|(sed\s+(-[a-zA-Z]*i|-i\b))|((tee[[:space:]]+(-{1,2}[a-zA-Z][a-zA-Z0-9-]*(=[^[:space:]]+)?[[:space:]]+)*|>>?[[:space:]]*)(~|\.\.?/|/)?[^[:space:]|;&<>]*(\.zshrc|\.bashrc|\.bash_profile|\.zprofile|\.zshenv|/\.ssh/|/\.aws/|/\.kube/|/\.docker/config|\.gitconfig|\.git-credentials|\.github/workflows|\.claude/settings\.json|/etc/|Library/LaunchAgents|\.git/hooks/))|((python3?|node|perl)\b.*-(c|e)\b.*(write|open|writeFile|writeSync))|(\bsecurity\s+(find-generic-password|find-internet-password|dump-keychain)\b)|(\bsecret-tool\s+lookup\b)|(\bosascript\b)|(aws\s+(s3\s+rm\b.*--recursive|s3\s+rb\b|ec2\s+terminate-instances|rds\s+delete-db-(instance|cluster)|iam\s+delete-|lambda\s+delete-function|cloudformation\s+delete-stack|ecs\s+delete-(cluster|service))\b)|(gcloud\s+(projects\s+delete|compute\s+instances\s+delete|sql\s+instances\s+delete|container\s+clusters\s+delete|functions\s+delete|run\s+services\s+delete|app\s+services\s+delete)\b)|(az\s+(group\s+delete|vm\s+delete|sql\s+server\s+delete|aks\s+delete|storage\s+(account\s+delete|blob\s+delete-batch)|webapp\s+delete|functionapp\s+delete)\b)|(kubectl\s+(delete|drain|replace)\b)|(helm\s+(uninstall|delete|rollback)\b)|(\bdd\b.*\bof=)|(\b(mkfs(\.[a-z0-9]+)?|fdisk|gdisk|parted|diskutil\s+(eraseDisk|partitionDisk|eraseVolume))\b)|(\bxargs\b)|(\bfind\b.*-delete\b)|(\bfind\b.*-(exec|execdir)\b)|(\bawk\b.*\b(system\s*\(|getline))|(\bsed\b.*(/e\b|[0-9$,]+e\b))|(git\s+config\b)|(git\s+config\b)|((bash|sh|zsh|ksh)\s+<<<|\|\s*(bash|sh|zsh|ksh)\s+<<)' <<< "$CMD"; then
     exit 0
 fi
 # Indirect execution — bypasses all keyword-based rules
@@ -77,7 +83,7 @@ if grep -qiE '\b(python3?|node|perl|ruby|php)\b.*(\s-(c|e|r)\b|\s--?(eval|comman
     fi
 fi
 # SSH connections to remote hosts
-if grep -qiE '(\b(scp|rsync|sftp)\b|(^|[ \t;|&])ssh([ \t]|$)|\$\([ \t]*ssh([ \t]|$)|\([ \t]*ssh([ \t]|$)|`[ \t]*ssh([ \t]|$))' <<< "$CMD"; then
+if grep -qiE '((^|\|\||&&|;|\|)\s*(scp|rsync|sftp|ssh)([ \t]|$)|\$\([ \t]*ssh([ \t]|$)|\([ \t]*ssh([ \t]|$)|`[ \t]*ssh([ \t]|$))' <<< "$CMD"; then
     block "[ssh_scp_rsync] [threat:7] SSH connections (ssh, scp, rsync) to remote hosts are not allowed"
 fi
 # Ansible vault operations
@@ -85,7 +91,7 @@ if grep -qiE 'ansible-vault\s+(view|decrypt)\b' <<< "$CMD"; then
     block "[ansible_vault_view] [threat:5] ansible-vault view/decrypt is not allowed — use ansible-vault edit instead"
 fi
 # Reading credential/secret files via shell
-if grep -qiE '(cat|head|tail|less|more|sort|diff|jq|cut|strings|uniq|nl|tac|rev|od|xxd|hexdump)\s+.*(\.aws/(credentials|config)|\.kube/config|\.docker/config\.json|\.boto|\.s3cfg|\.netrc|\.git-credentials|\.npmrc|\.pypirc|\.gem/credentials|vault/password|1pass\.txt|github\.txt|\.(pem|key|p12|pfx)\b|\.ssh/(id_(rsa|ed25519|ecdsa|dsa)|authorized_keys|config)|\.gnupg/|\.config/gcloud/|\.azure/(accessTokens|azureProfile|msal_token_cache)|\.config/gh/hosts\.yml|\.env(rc|(\.[a-z]+)*)?$|(credentials|service[._]account|application_default_credentials)\.json|\.tfstate|\.vault-token|\.dev\.vars|\.htpasswd|token\.json)' <<< "$CMD"; then
+if grep -qiE '(cat|head|tail|less|more|sort|diff|jq|cut|strings|uniq|nl|tac|rev|od|xxd|hexdump|grep|rg|egrep|fgrep|awk|sed)\s+.*(\.aws/(credentials|config)|\.kube/config|\.docker/config\.json|\.boto|\.s3cfg|\.netrc|\.git-credentials|\.npmrc|\.pypirc|\.gem/credentials|vault/password|1pass\.txt|github\.txt|\.(pem|key|p12|pfx)\b|\.ssh/(id_(rsa|ed25519|ecdsa|dsa)|authorized_keys|config)|\.gnupg/|\.config/gcloud/|\.azure/(accessTokens|azureProfile|msal_token_cache)|\.config/gh/hosts\.yml|\.env(rc|(\.[a-z]+)*)?\b|(credentials|service[._]account|application_default_credentials)\.json|\.tfstate|\.vault-token|\.dev\.vars|\.htpasswd|token\.json)' <<< "$CMD"; then
     if ! grep -qiE '\.env(rc)?\.(example|sample|template|test|dist)\b' <<< "$CMD"; then
         block "[cat_creds] [threat:5] Reading credential/secret files via shell is not allowed"
     fi
@@ -115,7 +121,7 @@ if grep -qiE 'git\s+(commit|push|merge)\b.*--no-verify' <<< "$CMD"; then
 fi
 # rm with -r or -f flags on non-safe paths
 if grep -qiE '\brm\b.*?\s-[a-zA-Z]*[rf]\b' <<< "$CMD"; then
-    if ! grep -qiE '(git\s+rm\b|node_modules|/dist\b|\bdist/|\b\.cache\b|/tmp/|\bcoverage\b|\.next\b|\.nuxt\b|\.turbo\b|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.tox|\.DS_Store)' <<< "$CMD"; then
+    if ! grep -qiE '(git\s+rm\b|node_modules|/dist\b|\bdist/|(^|/|\s)\.cache(/[a-zA-Z0-9_-][^/\s]*)*/?(\s|$)|/tmp/|\bcoverage\b|\.next\b|\.nuxt\b|\.turbo\b|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.tox|\.DS_Store)' <<< "$CMD"; then
         block "[rm_recursive_force] [threat:7] rm with -r or -f flags may delete untracked files — not git-recoverable"
     fi
 fi
@@ -218,7 +224,7 @@ fi
 if grep -qiE '^\s*(env|printenv|set)\s*$' <<< "$CMD"; then
     block "[env_dump] [threat:7] Dumping environment variables may expose secrets"
 fi
-if grep -qiE '(env|printenv)\s*\|' <<< "$CMD"; then
+if grep -qiE '(^|\|\||&&|;|\s\|\s)\s*(env|printenv)\s*\|' <<< "$CMD"; then
     block "[env_dump_piped] [threat:5] Piped env/printenv commands may expose secrets"
 fi
 if grep -qiE 'printenv\s+\S*(ANTHROPIC_|AWS_SECRET|AWS_SESSION|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|PYPI_TOKEN|DATABASE_URL|_SECRET|_PASSWORD|_KEY|_TOKEN|_CREDENTIAL)' <<< "$CMD"; then
@@ -228,7 +234,7 @@ if grep -qiE '(cat|head|tail|less|more|strings|xxd|od|tac|hexdump)\s+/proc/(self
     block "[proc_environ] [threat:5] Reading /proc/self/environ exposes all environment variables"
 fi
 # Persistence mechanisms
-if grep -qiE '(crontab\s+(-e|[^-\s])|(^|\|\||&&|;|\|)\s*at\s+[0-9]|\blaunchctl\s+load\b|\bsystemctl\s+(enable|start)\b)' <<< "$CMD"; then
+if grep -qiE '(crontab\s+(-e|[^-\s])|(^|\|\||&&|;|\s\|\s)\s*at\s+[0-9]|\blaunchctl\s+load\b|\bsystemctl\s+(enable|start)\b)' <<< "$CMD"; then
     block "[persistence_mechanisms] [threat:7] Persistence mechanisms (cron, at, launchd, systemctl) are not allowed"
 fi
 # Network commands inside command substitution — exfiltration via path injection
@@ -292,7 +298,9 @@ if grep -qiE '\bxargs\b' <<< "$CMD"; then
     fi
 fi
 if grep -qiE '\bfind\b.*-delete\b' <<< "$CMD"; then
-    block "[find_delete] [threat:6] find -delete removes matched files unconditionally — high blast-radius destructive operation"
+    if ! grep -qiE '(^|/|\s)\.cache(/[a-zA-Z0-9_-][^/\s]*)*/?(\s|$)|node_modules|/tmp/|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.DS_Store' <<< "$CMD"; then
+        block "[find_delete] [threat:6] find -delete removes matched files unconditionally — high blast-radius destructive operation"
+    fi
 fi
 if grep -qiE '\bfind\b.*-(exec|execdir)\b' <<< "$CMD"; then
     if ! grep -qiE '\b(exec|execdir)\s+(/usr/bin/|/bin/)?(wc|grep|rg|ack|ag|cat|head|tail|ls|stat|file|basename|dirname|echo)\s' <<< "$CMD"; then
@@ -302,7 +310,7 @@ fi
 if grep -qiE '\bawk\b.*\b(system\s*\(|getline)' <<< "$CMD"; then
     block "[awk_system] [threat:6] awk system()/getline executes arbitrary commands — bypasses keyword-based rules"
 fi
-if grep -qiE '\bsed\b.*(/e\b|[0-9]*\s*e\s*$)' <<< "$CMD"; then
+if grep -qiE '\bsed\b.*(/e\b|[0-9$,]+e\b)' <<< "$CMD"; then
     block "[sed_execute] [threat:5] sed e-flag executes the pattern space as a shell command — bypasses keyword-based rules"
 fi
 # Git config mutations that create persistence or redirect hooks

@@ -18,6 +18,7 @@ Dispatch parallel frontend-coder and backend-coder subagents to investigate and 
 1. **Parse args**:
    - **Modifiers**: If `+deep` is present, pass `model: "opus"` to all Task tool calls below. If `+fast` is present, pass `model: "haiku"`. Strip modifiers from the prompt.
    - **Iteration counter**: Look for `iter=N` in args (default `iter=1`). Hold this value — when re-invoking `/peer-review` in step 5, pass `iter=N+1` so the loop is bounded.
+   - **One-shot mode**: If `iter=oneshot` is present, this invocation is the post-convergence MEDIUM triage from `/peer-review` — NOT part of the iter-bounded loop. Do not increment. In step 5, pass `iter=oneshot` to `/peer-review` so it performs a single verification pass and stops without re-triaging MEDIUMs.
 
 2. **Parse the review feedback** from the conversation (and from args, if `/peer-review` passed an issues list) to categorize issues by which coder owns the file (frontend vs backend, or whichever split applies to this codebase)
 
@@ -69,7 +70,11 @@ Dispatch parallel frontend-coder and backend-coder subagents to investigate and 
 
    The `prior-issues` list scopes the verification reviewer to "did these fixes take?" first, before any new-issue scan. This is the main token saving — the reviewer no longer re-reviews untouched code.
 
-5. **Auto-dispatch peer review**: After summarizing the fixes, tell the user: "Auto-dispatching `/peer-review` to verify the fixes before committing (iteration N+1 of 3)." Then invoke the `/peer-review` skill via the Skill tool with `skill: "peer-review"` and `args` containing the handoff block from step 4 plus `iter=N+1` and any `+fast`/`+deep` modifier. This runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs.
+5. **Auto-dispatch peer review**: After summarizing the fixes, invoke the `/peer-review` skill via the Skill tool with `skill: "peer-review"` and `args` containing the handoff block from step 4 plus the iter value and any `+fast`/`+deep` modifier.
+   - **Normal (loop) mode**: Tell the user "Auto-dispatching `/peer-review` to verify the fixes before committing (iteration N+1 of 3)." Pass `iter=N+1`.
+   - **One-shot mode** (incoming `iter=oneshot`): Tell the user "Auto-dispatching `/peer-review` for one final verification of the MEDIUM fixes." Pass `iter=oneshot`. `/peer-review` will run a single verification pass and stop without re-triaging.
+
+   This runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs.
 
 ## Validation
 

@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # CB Security Hooks
-# Version: 0.1.5
+# Version: 0.1.6
 # ==========
 # GENERATED — do not edit directly
 # PreToolUse hook: block-credential-read
+if [[ -n "${BASH_TRACE_OUT:-}" ]]; then
+    exec {__trace_fd}>>"${BASH_TRACE_OUT}"
+    export BASH_XTRACEFD=$__trace_fd
+    export PS4='+ ${BASH_SOURCE}:${LINENO}: '
+    set -x
+fi
 trap 'printf '"'"'{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"block-credential-read encountered an unexpected error — denying for safety"}}\n'"'"'; exit 0' ERR
 [[ -n "${CLAUDE_SKIP_HOOKS:-}" ]] && exit 0
 HOOK_LOGGING=1  # set to 1 via: ./unix/install.sh --add-logging

@@ -1,3 +1,21 @@
+-- The snacks picker doesn't implement octo's live search prompt, so the
+-- search/list-by-owner commands would otherwise fire against an empty prompt
+-- (e.g. all of GitHub). This helper supplies the missing input box.
+--   allow_empty = true -> run even with no input (command has a safe default).
+local function octo_prompt(label, cmd, allow_empty)
+  return function()
+    vim.ui.input({ prompt = label }, function(input)
+      if input == nil then
+        return -- cancelled
+      end
+      if input == "" and not allow_empty then
+        return
+      end
+      vim.cmd(cmd .. " " .. input)
+    end)
+  end
+end
+
 return {
   "pwntester/octo.nvim",
   opts = {
@@ -22,22 +40,11 @@ return {
     -- Octo lives under its own <leader>go group instead.
     { "<leader>go", "", desc = "+octo (GitHub)" },
     { "<leader>gop", "<cmd>Octo pr list<cr>", desc = "List PRs (Octo)" },
-    { "<leader>goP", "<cmd>Octo pr search<cr>", desc = "Search PRs (Octo)" },
+    { "<leader>goP", octo_prompt("Octo PR search: ", "Octo pr search"), desc = "Search PRs (Octo)" },
     { "<leader>goi", "<cmd>Octo issue list<cr>", desc = "List Issues (Octo)" },
-    { "<leader>goI", "<cmd>Octo issue search<cr>", desc = "Search Issues (Octo)" },
-    { "<leader>gor", "<cmd>Octo repo list<cr>", desc = "List Repos (Octo)" },
-    {
-      "<leader>gos",
-      function()
-        -- The snacks picker fires `Octo search` against an empty prompt
-        -- (i.e. all of GitHub). Ask for the query first and scope it.
-        vim.ui.input({ prompt = "Octo search: " }, function(query)
-          if query and query ~= "" then
-            vim.cmd("Octo search " .. query)
-          end
-        end)
-      end,
-      desc = "Search (Octo)",
-    },
+    { "<leader>goI", octo_prompt("Octo issue search: ", "Octo issue search"), desc = "Search Issues (Octo)" },
+    -- Blank input -> your own repos (octo's default); type an org/user to scope.
+    { "<leader>gor", octo_prompt("Repos for (blank = you): ", "Octo repo list", true), desc = "List Repos (Octo)" },
+    { "<leader>gos", octo_prompt("Octo search: ", "Octo search"), desc = "Search (Octo)" },
   },
 }

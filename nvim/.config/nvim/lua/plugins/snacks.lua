@@ -17,6 +17,11 @@ local exclude = {
 return {
   "folke/snacks.nvim",
   opts = {
+    -- Skip the dashboard in the CodeDiff review popup (tmux `prefix d`, which
+    -- sets CODEDIFF_POPUP). Otherwise it opens on startup and `prefix d` shows
+    -- the dashboard before codediff, needing a second `q` to dismiss. Stays
+    -- enabled for normal nvim (env var unset).
+    dashboard = { enabled = vim.env.CODEDIFF_POPUP == nil },
     picker = {
       sources = {
         explorer = {

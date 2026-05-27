@@ -5,36 +5,25 @@ nvim/.config/nvim/lazy-lock.json
 # Machine-specific hyprland config (created by install/hyprland)
 hypr/.config/hypr/hyprland.local.conf
 
-# Claude runtime files (not config)
-claude/.claude/cache/
-claude/.claude/debug/
-claude/.claude/file-history/
-claude/.claude/history.jsonl
-claude/.claude/ide/
-claude/.claude/plugins/
-claude/.claude/projects/
-claude/.claude/session-env/
-claude/.claude/shell-snapshots/
-claude/.claude/todos/
-claude/.claude/plans/
-claude/.claude/tasks/
-claude/.claude/stats-cache.json
-claude/.claude/paste-cache/
-claude/.claude/backups/*
-claude/.claude/.credentials.json
-claude/.claude/.env.local
-claude/.claude/claude-devtools-notifications.json
-claude/.claude/agent-memory/
-claude/.claude/security_warnings_state_*.json
-claude/.claude/mcp-needs-auth-cache.json
-claude/.claude/telemetry/
-claude/.claude/image-cache/
-claude/.claude/sessions/
-claude/.claude/policy-limits.json
-claude/.claude/settings.json.bak.*
-claude/.claude/remote-settings.json
-claude/.claude/security-hook-block-log.jsonl*
-claude/.claude/.security-level
-claude/.claude/.last-cleanup
+# === Claude Code (claude/.claude/) ===
+# Allowlist strategy: ignore everything by default, then un-ignore the
+# authored config we want shared. New runtime files Claude drops in here
+# are ignored automatically — no need to chase them with new rules.
+claude/.claude/*
+
+# Authored config shared across machines:
+!claude/.claude/agents/
+!claude/.claude/skills/
+!claude/.claude/commands/
+!claude/.claude/hooks/
+!claude/.claude/rules/
+!claude/.claude/scripts/
+!claude/.claude/CLAUDE.md
+!claude/.claude/RTK.md
+!claude/.claude/MCP_LOOP_README.md
+!claude/.claude/settings.json
+!claude/.claude/statusline-command.sh
+!claude/.claude/policy-limits.json
+!claude/.claude/.security-level
 
 nvim/.config/nvim/lazy-lock.json

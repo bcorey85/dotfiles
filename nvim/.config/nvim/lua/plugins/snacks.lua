@@ -41,6 +41,8 @@ return {
     },
   },
   keys = {
+    -- Released so oil.nvim can own <leader>e (see plugins/oil.lua).
+    { "<leader>e", false },
     {
       "<leader>fI",
       function()

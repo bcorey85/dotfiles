@@ -35,6 +35,34 @@ return {
   -- Drop-in: same `diffview` module + Diffview* commands, no config changes.
   "dlyongemallo/diffview.nvim",
   cmd = { "DiffviewOpen", "DiffviewFileHistory" },
+  -- Neovim 0.12 forbids Vimscript functions in fast-event/async contexts.
+  -- diffview's PathLib:expand resolves `$VAR` path segments via `vim.env`
+  -- (which calls getenv) from inside its async git jobs, raising E5560 and
+  -- breaking every diff. Override that one method to use os.getenv (pure Lua,
+  -- fast-event-safe, nil when unset - same semantics). Patching here instead of
+  -- the plugin dir survives :Lazy update. Drop once upstream ships a fix.
+  config = function(_, opts)
+    local PathLib = require("diffview.path").PathLib
+    function PathLib:expand(path)
+      local segments = self:explode(path)
+      local idx = 1
+      if segments[1] == "~" then
+        segments[1] = vim.uv.os_homedir()
+        idx = 2
+      end
+      for i = idx, #segments do
+        local env_var = segments[i]:match("^%$(%S+)$")
+        if env_var then
+          local value = os.getenv(env_var)
+          if value ~= nil then
+            segments[i] = value
+          end
+        end
+      end
+      return self:join(unpack(segments))
+    end
+    require("diffview").setup(opts)
+  end,
   opts = {
     keymaps = {
       view = {

@@ -20,11 +20,36 @@ return {
   lazy = false,
   opts = {
     bigfile = { enabled = true },
-    -- Skip the dashboard in the Diffview review popup (tmux `prefix d`, which
-    -- sets DIFFVIEW_POPUP). Otherwise it opens on startup and `prefix d` shows
-    -- the dashboard before diffview, needing a second `q` to dismiss. Stays
-    -- enabled for normal nvim (env var unset).
-    dashboard = { enabled = vim.env.DIFFVIEW_POPUP == nil },
+    dashboard = {
+      enabled = true,
+      preset = {
+        keys = {
+          { key = "c", action = ":lua Snacks.dashboard.pick('files', {cwd = vim.fn.stdpath('config')})" },
+          { key = "l", action = ":Lazy" },
+          { key = "u", action = ":Lazy update" },
+          { key = "q", action = ":qa" },
+        },
+      },
+      sections = {
+        { section = "header" },
+        {
+          align = "center",
+          padding = 1,
+          text = {
+            { "  Config [c]  ", hl = "Function" },
+            { "│ ", hl = "NonText" },
+            { " Lazy [l]  ", hl = "Special" },
+            { "│ ", hl = "NonText" },
+            { "  Update [u]  ", hl = "Constant" },
+            { "│ ", hl = "NonText" },
+            { "  Quit [q]", hl = "DiagnosticError" },
+          },
+        },
+        { icon = " ", title = "Recent Files", section = "recent_files", indent = 2, padding = 1 },
+        { icon = " ", title = "Projects", section = "projects", indent = 2, padding = 1 },
+        { section = "startup" },
+      },
+    },
     explorer = { enabled = false },
     indent = { enabled = true },
     input = { enabled = true },

@@ -128,3 +128,17 @@ vim.api.nvim_create_autocmd("BufReadPost", {
     end
   end,
 })
+
+vim.api.nvim_create_autocmd("User", {
+  pattern = "SnacksDashboardOpened",
+  callback = function(args)
+    local buf = args.buf or vim.api.nvim_get_current_buf()
+    local opts = { buffer = buf, nowait = true, silent = true }
+    vim.keymap.set("n", "c", function()
+      Snacks.dashboard.pick("files", { cwd = vim.fn.stdpath("config") })
+    end, opts)
+    vim.keymap.set("n", "l", "<cmd>Lazy<cr>", opts)
+    vim.keymap.set("n", "u", "<cmd>Lazy update<cr>", opts)
+    vim.keymap.set("n", "q", "<cmd>qa<cr>", opts)
+  end,
+})

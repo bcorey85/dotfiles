@@ -104,7 +104,7 @@ arch)
   # AUR packages
   if command -v paru &>/dev/null; then
     print_info "Installing AUR packages via paru..."
-    paru -S --needed discord_arch_electron google-chrome plexamp-bin
+    paru -S --needed discord_arch_electron google-chrome plexamp-bin revdiff
     print_success "AUR packages installed"
   else
     print_error "paru not found — skipping AUR packages"
@@ -137,6 +137,7 @@ mac)
 
   print_info "Installing dependencies via Homebrew..."
   brew install stow neovim tmux git jq fzf zoxide yazi direnv kitty git-delta btop bat atuin eza tlrc lazydocker lazygit glow fd keychain rustup ansible just
+  brew install umputun/apps/revdiff
   print_success "Dependencies installed"
   ;;
 esac

@@ -1,9 +1,75 @@
+-- Diffview runs in a tmux pane we zoom on open and un-zoom on close, so every
+-- close path (q, <leader>dd toggle) must funnel through the same teardown.
+-- When launched as the tmux review popup (prefix d), there is no surrounding
+-- nvim pane to zoom - a display-popup is an overlay, not a pane, so resize-pane
+-- would wrongly toggle zoom on the underlying window. Skip the zoom dance there.
+local in_popup = vim.env.DIFFVIEW_POPUP ~= nil
+
+local function tmux_unzoom()
+  if in_popup then
+    return
+  end
+  local zoomed = vim.fn.system("tmux display-message -p '#{window_zoomed_flag}'"):gsub("%s+", "")
+  if zoomed == "1" then
+    vim.fn.system("tmux resize-pane -Z")
+  end
+end
+
+local function tmux_zoom()
+  if in_popup then
+    return
+  end
+  local zoomed = vim.fn.system("tmux display-message -p '#{window_zoomed_flag}'"):gsub("%s+", "")
+  if zoomed ~= "1" then
+    vim.fn.system("tmux resize-pane -Z")
+  end
+end
+
+local function close_diffview()
+  vim.cmd("DiffviewClose")
+  tmux_unzoom()
+end
+
 return {
-  "sindrets/diffview.nvim",
+  -- Maintained fork of sindrets/diffview.nvim (upstream stale since Jun 2024).
+  -- Drop-in: same `diffview` module + Diffview* commands, no config changes.
+  "dlyongemallo/diffview.nvim",
   cmd = { "DiffviewOpen", "DiffviewFileHistory" },
+  -- Neovim 0.12 forbids Vimscript functions in fast-event/async contexts.
+  -- diffview's PathLib:expand resolves `$VAR` path segments via `vim.env`
+  -- (which calls getenv) from inside its async git jobs, raising E5560 and
+  -- breaking every diff. Override that one method to use os.getenv (pure Lua,
+  -- fast-event-safe, nil when unset - same semantics). Patching here instead of
+  -- the plugin dir survives :Lazy update. Drop once upstream ships a fix.
+  config = function(_, opts)
+    local PathLib = require("diffview.path").PathLib
+    function PathLib:expand(path)
+      local segments = self:explode(path)
+      local idx = 1
+      if segments[1] == "~" then
+        segments[1] = vim.uv.os_homedir()
+        idx = 2
+      end
+      for i = idx, #segments do
+        local env_var = segments[i]:match("^%$(%S+)$")
+        if env_var then
+          local value = os.getenv(env_var)
+          if value ~= nil then
+            segments[i] = value
+          end
+        end
+      end
+      return self:join(unpack(segments))
+    end
+    require("diffview").setup(opts)
+  end,
   opts = {
     keymaps = {
+      view = {
+        { "n", "q", close_diffview, { desc = "Close Diffview" } },
+      },
       file_panel = {
+        { "n", "q", close_diffview, { desc = "Close Diffview" } },
         { "n", "cc", "<Cmd>Git commit<bar>wincmd J<CR>", { desc = "Commit staged" } },
         { "n", "ca", "<Cmd>Git commit --amend<bar>wincmd J<CR>", { desc = "Amend last commit" } },
         { "n", "<C-d>", function()
@@ -36,6 +102,23 @@ return {
       diff_buf_read = function()
         vim.opt_local.foldenable = false
       end,
+      -- Soft-wrap long lines in the diff panes. Diff mode defaults to nowrap;
+      -- linebreak wraps at word boundaries instead of mid-token. Note this can
+      -- drift the two sides' vertical alignment when a wrapped line spans a
+      -- different number of screen rows on each side - the tradeoff for not
+      -- scrolling horizontally on long lines.
+      diff_buf_win_enter = function(_, winid)
+        vim.wo[winid].wrap = true
+        vim.wo[winid].linebreak = true
+      end,
+      -- In the tmux review popup, closing the diff means we're done - quit the
+      -- throwaway nvim so the popup dismisses (mirrors closing lazygit). In the
+      -- main editor (no env var) this is a no-op and close just returns to work.
+      view_closed = function()
+        if in_popup then
+          vim.cmd("qa")
+        end
+      end,
     },
   },
   keys = {
@@ -44,16 +127,9 @@ return {
       function()
         local lib = require("diffview.lib")
         if lib.get_current_view() then
-          vim.cmd("DiffviewClose")
-          local zoomed = vim.fn.system("tmux display-message -p '#{window_zoomed_flag}'"):gsub("%s+", "")
-          if zoomed == "1" then
-            vim.fn.system("tmux resize-pane -Z")
-          end
+          close_diffview()
         else
-          local zoomed = vim.fn.system("tmux display-message -p '#{window_zoomed_flag}'"):gsub("%s+", "")
-          if zoomed ~= "1" then
-            vim.fn.system("tmux resize-pane -Z")
-          end
+          tmux_zoom()
           vim.cmd("DiffviewOpen")
         end
       end,
@@ -69,32 +145,13 @@ return {
       function()
         local lib = require("diffview.lib")
         if lib.get_current_view() then
-          vim.cmd("DiffviewClose")
-          local zoomed = vim.fn.system("tmux display-message -p '#{window_zoomed_flag}'"):gsub("%s+", "")
-          if zoomed == "1" then
-            vim.fn.system("tmux resize-pane -Z")
-          end
+          close_diffview()
         else
-          local zoomed = vim.fn.system("tmux display-message -p '#{window_zoomed_flag}'"):gsub("%s+", "")
-          if zoomed ~= "1" then
-            vim.fn.system("tmux resize-pane -Z")
-          end
+          tmux_zoom()
           vim.cmd("DiffviewFileHistory %")
         end
       end,
       desc = "Toggle File History",
-    },
-    {
-      "<leader>gd",
-      function()
-        local lib = require("diffview.lib")
-        if lib.get_current_view() then
-          vim.cmd("DiffviewClose")
-        else
-          vim.cmd("DiffviewOpen")
-        end
-      end,
-      desc = "Diff view (toggle)",
     },
   },
 }

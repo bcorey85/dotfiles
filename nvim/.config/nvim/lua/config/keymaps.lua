@@ -11,6 +11,10 @@ vim.keymap.set("n", "<C-u>", "<C-u>zz", { desc = "Scroll up and center" })
 vim.keymap.set("n", "n", "nzzzv", { desc = "Next search result and center" })
 vim.keymap.set("n", "N", "Nzzzv", { desc = "Previous search result and center" })
 
+-- Keep cursor centered when jumping between diff hunks (diffview / :diffsplit)
+vim.keymap.set("n", "]c", "]czz", { desc = "Next hunk and center" })
+vim.keymap.set("n", "[c", "[czz", { desc = "Previous hunk and center" })
+
 vim.keymap.set("n", "<leader>fy", function()
   local path = vim.fn.expand("%")
   vim.fn.setreg("+", path)
@@ -58,6 +62,46 @@ vim.keymap.set("n", "<leader>gP", "<cmd>Git push<cr>", { desc = "Git push" })
 vim.keymap.set("n", "<leader>gp", "<cmd>Git pull<cr>", { desc = "Git pull" })
 vim.keymap.set("n", "<leader>gl", "<cmd>Git log --oneline --decorate --all --graph<cr>", { desc = "Git log" })
 vim.keymap.set("n", "<leader>gB", "<cmd>Git blame<cr>", { desc = "Git blame (file)" })
+-- Tear down a Gvdiffsplit from ANY window. Fugitive's built-in `dq` is
+-- buffer-local to its own buffers (the :G summary and the fugitive:// object
+-- side), so it won't fire from the working-tree file you land on after
+-- reviewing. This walks the tab's windows instead: closes the HEAD/index side
+-- and clears diff mode. Returns the :G summary window if one is open.
+local function close_fugitive_diff()
+  local status_win
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    local buf = vim.api.nvim_win_get_buf(win)
+    if vim.bo[buf].filetype == "fugitive" then
+      status_win = win
+    elseif vim.api.nvim_buf_get_name(buf):match("^fugitive://") then
+      pcall(vim.api.nvim_win_close, win, false)
+    end
+  end
+  vim.cmd("diffoff!")
+  return status_win
+end
+
+-- Close the current diff and return focus to the status list.
+vim.keymap.set("n", "<leader>gq", function()
+  local status_win = close_fugitive_diff()
+  if status_win and vim.api.nvim_win_is_valid(status_win) then
+    vim.api.nvim_set_current_win(status_win)
+  end
+end, { desc = "Close fugitive diff (from any pane) -> status" })
+
+-- Review loop: close the current diff, jump to the NEXT changed file, and open
+-- its vertical diff - one key instead of repeating dv. `)` advances to the next
+-- file and `dv` opens the split; "m" replays them through fugitive's
+-- buffer-local maps.
+vim.keymap.set("n", "<leader>gn", function()
+  local status_win = close_fugitive_diff()
+  if not (status_win and vim.api.nvim_win_is_valid(status_win)) then
+    vim.notify("No :G status window open - run <leader>gf first", vim.log.levels.WARN)
+    return
+  end
+  vim.api.nvim_set_current_win(status_win)
+  vim.api.nvim_feedkeys(")dv", "m", false)
+end, { desc = "Review next changed file (close + next + vdiff)" })
 
 vim.keymap.set("n", "<leader>gm", function()
   local msgs = vim.api.nvim_exec2("messages", { output = true }).output

@@ -17,14 +17,12 @@ return {
     config = function(_, opts)
       require("catppuccin").setup(opts)
       vim.cmd.colorscheme("catppuccin")
-      -- Which-key accents
       vim.api.nvim_set_hl(0, "WhichKey", { fg = "#94e2d5" })
       vim.api.nvim_set_hl(0, "WhichKeyGroup", { fg = "#b4befe" })
       vim.api.nvim_set_hl(0, "WhichKeySeparator", { fg = "#6c7086" })
       vim.api.nvim_set_hl(0, "WhichKeyDesc", { fg = "#cdd6f4" })
       vim.api.nvim_set_hl(0, "WhichKeyBorder", { fg = "#94e2d5" })
       vim.api.nvim_set_hl(0, "WhichKeyTitle", { fg = "#94e2d5" })
-      -- Snacks picker accents
       vim.api.nvim_set_hl(0, "SnacksPickerMatch", { fg = "#94e2d5", bold = true })
       vim.api.nvim_set_hl(0, "SnacksPickerPrompt", { fg = "#94e2d5" })
       vim.api.nvim_set_hl(0, "SnacksPickerSpecial", { fg = "#94e2d5" })
@@ -33,13 +31,11 @@ return {
       vim.api.nvim_set_hl(0, "SnacksPickerIcon", { fg = "#94e2d5" })
       vim.api.nvim_set_hl(0, "SnacksPickerToggle", { fg = "#b4befe" })
       vim.api.nvim_set_hl(0, "SnacksPickerBorder", { fg = "#94e2d5" })
-      -- Snacks dashboard accents
       vim.api.nvim_set_hl(0, "SnacksDashboardHeader", { fg = "#94e2d5" })
       vim.api.nvim_set_hl(0, "SnacksDashboardIcon", { fg = "#94e2d5" })
       vim.api.nvim_set_hl(0, "SnacksDashboardKey", { fg = "#b4befe" })
       vim.api.nvim_set_hl(0, "SnacksDashboardTitle", { fg = "#94e2d5" })
       vim.api.nvim_set_hl(0, "SnacksDashboardDesc", { fg = "#cdd6f4" })
-      -- HTML/Vue markup accents
       vim.api.nvim_set_hl(0, "@tag", { fg = "#94e2d5" })
       vim.api.nvim_set_hl(0, "@tag.builtin", { fg = "#94e2d5" })
       vim.api.nvim_set_hl(0, "@tag.attribute", { fg = "#b4befe" })

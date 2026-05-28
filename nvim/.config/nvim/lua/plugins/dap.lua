@@ -21,7 +21,6 @@ return {
       local dap = require("dap")
       local dapui = require("dapui")
 
-      -- Find python: check VIRTUAL_ENV, then .venv in cwd, then system python3
       local function get_python()
         local venv = os.getenv("VIRTUAL_ENV")
         if venv then
@@ -44,7 +43,6 @@ return {
 
       local function close_dap()
         dapui.close()
-        -- Unzoom if we're still zoomed
         local zoomed = vim.fn.system("tmux display-message -p '#{window_zoomed_flag}'"):gsub("%s+", "")
         if zoomed == "1" then
           vim.fn.system("tmux resize-pane -Z")

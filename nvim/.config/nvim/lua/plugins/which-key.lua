@@ -1,0 +1,48 @@
+return {
+  "folke/which-key.nvim",
+  event = "VeryLazy",
+  opts = {
+    preset = "helix",
+    delay = function(ctx)
+      return ctx.plugin and 0 or 300
+    end,
+    icons = {
+      mappings = true,
+      colors = true,
+    },
+    win = {
+      no_overlap = true,
+      padding = { 1, 2 },
+      title = true,
+      title_pos = "center",
+      wo = { winblend = 0 },
+    },
+  },
+  config = function(_, opts)
+    local wk = require("which-key")
+    wk.setup(opts)
+
+    wk.add({
+      { "<leader>b", group = "buffer" },
+      { "<leader>c", group = "code" },
+      { "<leader>d", group = "debug" },
+      { "<leader>f", group = "file/find" },
+      { "<leader>g", group = "git" },
+      { "<leader>go", group = "octo/github" },
+      { "<leader>i", group = "inlay hints" },
+      { "<leader>m", group = "markdown" },
+      { "<leader>n", group = "notes (obsidian)" },
+      { "<leader>o", group = "obsidian" },
+      { "<leader>q", group = "quit/session" },
+      { "<leader>h", group = "harpoon" },
+      { "<leader>s", group = "search" },
+      { "<leader>w", group = "windows" },
+      { "<leader>x", group = "diagnostics/qf" },
+      { "<leader>D", group = "dashboard" },
+      { "<leader>N", group = "notifications" },
+      { "g", group = "goto" },
+      { "[", group = "prev" },
+      { "]", group = "next" },
+    })
+  end,
+}

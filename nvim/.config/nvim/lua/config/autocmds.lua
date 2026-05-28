@@ -1,4 +1,3 @@
--- Watch open buffers for external file changes using fs_event (no polling)
 local watchers = {}
 
 local function watch_buffer(buf)
@@ -50,7 +49,6 @@ vim.api.nvim_create_autocmd("BufDelete", {
   end,
 })
 
--- Close all fs_event handles on exit so libuv doesn't keep neovim alive
 vim.api.nvim_create_autocmd("VimLeavePre", {
   callback = function()
     for buf, w in pairs(watchers) do
@@ -65,14 +63,12 @@ vim.api.nvim_create_autocmd("VimLeavePre", {
   end,
 })
 
--- Watch any already-open buffers
 for _, buf in ipairs(vim.api.nvim_list_bufs()) do
   if vim.api.nvim_buf_is_loaded(buf) then
     watch_buffer(buf)
   end
 end
 
--- Fallback: check for external changes on idle (covers tmux pane switches)
 vim.api.nvim_create_autocmd(
   { "CursorHold", "CursorHoldI" },
   {
@@ -82,17 +78,14 @@ vim.api.nvim_create_autocmd(
   }
 )
 
--- Soft-wrap prose filetypes (code stays unwrapped per LazyVim default)
 vim.api.nvim_create_autocmd("FileType", {
   pattern = { "markdown", "text", "gitcommit" },
   callback = function()
     vim.opt_local.wrap = true
-    vim.opt_local.linebreak = true -- break at word boundaries, not mid-word
+    vim.opt_local.linebreak = true
   end,
 })
 
--- Force LSP to re-analyze after external file changes reload the buffer
--- vtsls doesn't re-publish diagnostics on didClose+didOpen from checktime
 vim.api.nvim_create_autocmd("FileChangedShellPost", {
   callback = function(args)
     local buf = args.buf
@@ -108,6 +101,30 @@ vim.api.nvim_create_autocmd("FileChangedShellPost", {
           { text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n") .. "\n" },
         },
       })
+    end
+  end,
+})
+
+vim.api.nvim_create_autocmd("TextYankPost", {
+  callback = function()
+    vim.highlight.on_yank()
+  end,
+})
+
+vim.api.nvim_create_autocmd("VimResized", {
+  callback = function()
+    local current_tab = vim.fn.tabpagenr()
+    vim.cmd("tabdo wincmd =")
+    vim.cmd("tabnext " .. current_tab)
+  end,
+})
+
+vim.api.nvim_create_autocmd("BufReadPost", {
+  callback = function(args)
+    local mark = vim.api.nvim_buf_get_mark(args.buf, '"')
+    local lcount = vim.api.nvim_buf_line_count(args.buf)
+    if mark[1] > 0 and mark[1] <= lcount then
+      pcall(vim.api.nvim_win_set_cursor, 0, mark)
     end
   end,
 })

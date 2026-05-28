@@ -1,18 +1,42 @@
--- Options are automatically loaded before lazy.nvim startup
--- Default options that are always set: https://github.com/LazyVim/LazyVim/blob/main/lua/lazyvim/config/options.lua
--- Add any additional options here
-
--- Load clipboard configuration
 require("config.clipboard")
 
--- Keep cursor centered with padding
+vim.g.mapleader = " "
+vim.g.maplocalleader = "\\"
+
+vim.opt.autowrite = true
+vim.opt.clipboard = "unnamedplus"
+vim.opt.completeopt = "menu,menuone,noselect"
+vim.opt.conceallevel = 2
+vim.opt.confirm = true
+vim.opt.cursorline = true
+vim.opt.expandtab = true
+vim.opt.foldlevel = 99
+vim.opt.foldmethod = "indent"
+vim.opt.ignorecase = true
+vim.opt.inccommand = "nosplit"
+vim.opt.laststatus = 3
+vim.opt.linebreak = true
+vim.opt.list = true
+vim.opt.mouse = "a"
+vim.opt.number = true
+vim.opt.pumheight = 10
+vim.opt.relativenumber = true
 vim.opt.scrolloff = 8
-
--- Smaller scroll distance for C-d/C-u (default is half screen)
 vim.opt.scroll = 10
+vim.opt.shiftwidth = 2
+vim.opt.smartcase = true
+vim.opt.smartindent = true
+vim.opt.splitbelow = true
+vim.opt.splitright = true
+vim.opt.tabstop = 2
+vim.opt.termguicolors = true
+vim.opt.timeoutlen = 300
+vim.opt.undofile = true
+vim.opt.undolevels = 10000
+vim.opt.updatetime = 200
+vim.opt.wrap = false
+vim.opt.signcolumn = "yes"
+vim.opt.sessionoptions = { "buffers", "curdir", "tabpages", "winsize", "help", "globals", "skiprtp", "folds" }
+
 vim.g.loaded_python3_provider = 0
-
 vim.g.root_spec = { "cwd" }
-
--- Disable inlay hints by default (toggle with <leader>ih)
-vim.g.lazyvim_inlay_hints = false

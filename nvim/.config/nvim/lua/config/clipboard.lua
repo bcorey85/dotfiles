@@ -1,10 +1,8 @@
--- Detect OS and configure clipboard accordingly
 local function detect_clipboard()
   local uname = vim.loop.os_uname()
   local sysname = uname.sysname
 
   if sysname == "Darwin" then
-    -- macOS
     return {
       name = "macOS-clipboard",
       copy = {
@@ -17,7 +15,6 @@ local function detect_clipboard()
       },
     }
   elseif sysname == "Linux" then
-    -- Check if running in WSL
     local proc_version = io.open("/proc/version", "r")
     local is_wsl = false
     if proc_version then
@@ -27,7 +24,6 @@ local function detect_clipboard()
     end
 
     if is_wsl then
-      -- WSL2
       return {
         name = "win32yank-wsl",
         copy = {
@@ -40,7 +36,6 @@ local function detect_clipboard()
         },
       }
     else
-      -- Native Linux - try wl-copy (Wayland), then xclip, then xsel
       if os.execute("command -v wl-copy > /dev/null 2>&1") == 0 then
         return {
           name = "wl-clipboard",
@@ -81,7 +76,6 @@ local function detect_clipboard()
     end
   end
 
-  -- Fallback (shouldn't reach here)
   return {}
 end
 

@@ -1,18 +1,13 @@
 return {
   "stevearc/oil.nvim",
-  -- Oil should not be lazy-loaded (see oil.nvim docs).
   lazy = false,
   dependencies = { "nvim-tree/nvim-web-devicons" },
   opts = {
     view_options = {
       show_hidden = true,
     },
-    -- Merged with oil's defaults (use_default_keymaps stays true).
     keymaps = {
       ["q"] = { "actions.close", mode = "n" },
-      -- Always open the entry under the cursor in the system file manager
-      -- (Thunar on Linux, Finder on macOS), regardless of xdg-open defaults.
-      -- Directory -> open that dir; file -> reveal/select in its folder.
       ["gO"] = {
         mode = "n",
         desc = "Open in file manager",

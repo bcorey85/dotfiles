@@ -1,13 +1,33 @@
 return {
   {
     "nvim-lualine/lualine.nvim",
-    opts = function(_, opts)
-      -- Add a bold "unsaved" indicator right after the mode section
-      table.insert(opts.sections.lualine_b, 1, {
-        function() return "UNSAVED" end,
-        cond = function() return vim.bo.modified end,
-        color = { fg = "#1a1a2e", bg = "#f85e84", gui = "bold" },
-      })
-    end,
+    event = "VeryLazy",
+    dependencies = { "nvim-tree/nvim-web-devicons" },
+    opts = {
+      options = {
+        theme = "catppuccin",
+        globalstatus = true,
+        disabled_filetypes = { statusline = { "dashboard", "alpha", "starter" } },
+      },
+      sections = {
+        lualine_a = { "mode" },
+        lualine_b = {
+          {
+            function() return "UNSAVED" end,
+            cond = function() return vim.bo.modified end,
+            color = { fg = "#1a1a2e", bg = "#f85e84", gui = "bold" },
+          },
+          "branch",
+          "diff",
+          "diagnostics",
+        },
+        lualine_c = {
+          { "filename", path = 1 },
+        },
+        lualine_x = { "encoding", "fileformat", "filetype" },
+        lualine_y = { "progress" },
+        lualine_z = { "location" },
+      },
+    },
   },
 }

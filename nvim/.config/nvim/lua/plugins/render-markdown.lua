@@ -6,14 +6,13 @@ return {
     "nvim-tree/nvim-web-devicons",
   },
   config = function(_, opts)
-    -- Sonokai Maia heading colors (fg only, no background)
     local colors = {
-      "#f76c7c", -- H1: red
-      "#f3a96a", -- H2: orange
-      "#e3d367", -- H3: yellow
-      "#9cd57b", -- H4: green
-      "#78cee9", -- H5: blue
-      "#baa0f8", -- H6: purple
+      "#f76c7c",
+      "#f3a96a",
+      "#e3d367",
+      "#9cd57b",
+      "#78cee9",
+      "#baa0f8",
     }
     for i, fg in ipairs(colors) do
       vim.api.nvim_set_hl(0, "RenderMarkdownH" .. i, { fg = fg, bold = true })
@@ -22,24 +21,23 @@ return {
 
     require("render-markdown").setup(opts)
 
-    -- Patch: colored borders without heading/icon background
-    -- The plugin uses the same Bg group for icon highlight, line background, AND
-    -- border color. We override run() to hide bg from everything except border.
-    local Heading = require("render-markdown.render.markdown.heading")
-    Heading.run = function(self)
-      local saved_bg = self.data.bg
-      self.data.bg = nil
-      self:sign(self.config, self.config.sign, self.data.sign, self.data.fg)
-      local box = self:box(self:marker())
-      self:padding(box)
-      self.data.bg = saved_bg
-      if self.data.atx then
-        self:border(box, true)
-        self:border(box, false)
-      else
-        local node = self.data.marker
-        self.marks:over(self.config, true, node, { conceal = "" })
-        self.marks:over(self.config, true, node, { conceal_lines = "" })
+    local ok, Heading = pcall(require, "render-markdown.render.markdown.heading")
+    if ok then
+      Heading.run = function(self)
+        local saved_bg = self.data.bg
+        self.data.bg = nil
+        self:sign(self.config, self.config.sign, self.data.sign, self.data.fg)
+        local box = self:box(self:marker())
+        self:padding(box)
+        self.data.bg = saved_bg
+        if self.data.atx then
+          self:border(box, true)
+          self:border(box, false)
+        else
+          local node = self.data.marker
+          self.marks:over(self.config, true, node, { conceal = "" })
+          self.marks:over(self.config, true, node, { conceal_lines = "" })
+        end
       end
     end
   end,

@@ -1,14 +1,5 @@
 return {
   {
-    "zbirenbaum/copilot.lua",
-    opts = {
-      filetypes = {
-        markdown = false,
-      },
-      disable_limit_reached_message = true,
-    },
-  },
-  {
     "obsidian-nvim/obsidian.nvim",
     version = "*",
     lazy = true,
@@ -63,12 +54,10 @@ return {
       vim.keymap.set("n", "<leader>om", function()
         local vault_root = tostring(Obsidian.dir)
 
-        -- Capture source buffer info before opening picker
         local src_buf = vim.api.nvim_get_current_buf()
         local src = vim.api.nvim_buf_get_name(src_buf)
         local fname = vim.fn.fnamemodify(src, ":t")
 
-        -- Save the note before moving
         if vim.bo[src_buf].modified then
           vim.api.nvim_buf_call(src_buf, function()
             vim.cmd("write")

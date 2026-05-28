@@ -1,10 +1,11 @@
 return {
   {
     "akinsho/bufferline.nvim",
+    event = "VeryLazy",
+    dependencies = { "nvim-tree/nvim-web-devicons" },
     opts = {
       options = {
         always_show_bufferline = true,
-        -- Prevent bufferline from forcing showtabline on every render
         auto_toggle_bufferline = false,
       },
       highlights = {
@@ -15,7 +16,6 @@ return {
     },
     config = function(_, opts)
       require("bufferline").setup(opts)
-      -- Show bufferline only when at least one real file buffer exists
       local function update_tabline()
         for _, buf in ipairs(vim.api.nvim_list_bufs()) do
           if vim.bo[buf].buflisted and vim.api.nvim_buf_get_name(buf) ~= "" then
@@ -30,5 +30,11 @@ return {
       })
       update_tabline()
     end,
+    keys = {
+      { "<leader>bp", "<cmd>BufferLineTogglePin<cr>", desc = "Toggle pin" },
+      { "<leader>bP", "<cmd>BufferLineGroupClose ungrouped<cr>", desc = "Delete non-pinned buffers" },
+      { "<S-h>", "<cmd>BufferLineCyclePrev<cr>", desc = "Prev buffer" },
+      { "<S-l>", "<cmd>BufferLineCycleNext<cr>", desc = "Next buffer" },
+    },
   },
 }

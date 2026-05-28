@@ -16,8 +16,20 @@ local exclude = {
 
 return {
   "folke/snacks.nvim",
+  priority = 1000,
+  lazy = false,
   opts = {
+    bigfile = { enabled = true },
+    dashboard = { enabled = false },
+    explorer = { enabled = false },
+    indent = { enabled = true },
+    input = { enabled = true },
+    notifier = {
+      enabled = true,
+      timeout = 3000,
+    },
     picker = {
+      enabled = true,
       sources = {
         explorer = {
           hidden = true,
@@ -39,24 +51,36 @@ return {
         },
       },
     },
+    quickfile = { enabled = true },
+    scope = { enabled = true },
+    scroll = { enabled = false },
+    statuscolumn = { enabled = false },
+    words = { enabled = true },
+    lazygit = { enabled = true },
+    styles = {
+      notification = {},
+    },
   },
   keys = {
-    -- Released so oil.nvim can own <leader>e (see plugins/oil.lua).
-    { "<leader>e", false },
+    { "<leader><space>", function() Snacks.picker.smart() end, desc = "Smart Find Files" },
+    { "<leader>,", function() Snacks.picker.buffers() end, desc = "Buffers" },
+    { "<leader>/", function() Snacks.picker.grep() end, desc = "Grep" },
+    { "<leader>ff", function() Snacks.picker.files() end, desc = "Find files" },
+    { "<leader>fr", function() Snacks.picker.recent() end, desc = "Recent files" },
+    { "<leader>fg", function() Snacks.picker.grep() end, desc = "Grep" },
+    { "<leader>fb", function() Snacks.picker.buffers() end, desc = "Buffers" },
+    { "<leader>fh", function() Snacks.picker.help() end, desc = "Help pages" },
+    { "<leader>fk", function() Snacks.picker.keymaps() end, desc = "Keymaps" },
+    { "<leader>fc", function() Snacks.picker.command_history() end, desc = "Command history" },
+    { "<leader>fo", function() Snacks.picker.colorschemes() end, desc = "Colorschemes" },
     {
       "<leader>fI",
-      function()
-        Snacks.picker.files({ hidden = true, ignored = true })
-      end,
+      function() Snacks.picker.files({ hidden = true, ignored = true }) end,
       desc = "Find files (including ignored)",
     },
     {
       "<leader>gs",
-      function()
-        Snacks.picker.git_status({
-          layout = "sidebar",
-        })
-      end,
+      function() Snacks.picker.git_status({ layout = "sidebar" }) end,
       desc = "Git Status (sidebar)",
     },
     {
@@ -86,5 +110,8 @@ return {
       end,
       desc = "Lazygit (zoomed)",
     },
+    { "<leader>sd", function() Snacks.picker.diagnostics() end, desc = "Diagnostics" },
+    { "<leader>ss", function() Snacks.picker.lsp_symbols() end, desc = "LSP symbols" },
+    { "<leader>sw", function() Snacks.picker.grep_word() end, desc = "Grep word under cursor" },
   },
 }

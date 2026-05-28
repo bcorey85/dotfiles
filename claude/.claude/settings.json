@@ -135,11 +135,7 @@
       "Bash(open .)",
       "Bash(open -R *)"
     ],
-    "deny": [
-      "Bash(sudo *)",
-      "Bash(rm -rf /)",
-      "Bash(chmod 777 *)"
-    ],
+    "deny": ["Bash(sudo *)", "Bash(rm -rf /)", "Bash(chmod 777 *)"],
     "defaultMode": "auto"
   },
   "model": "opus",
@@ -150,27 +146,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/legalfit/.claude/hooks/rtk-rewrite.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/legalfit/.claude/hooks/sonar-secrets/build-scripts/pretool-secrets.sh",
-            "timeout": 60
-          }
-        ]
-      },
-      {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/sonar-secrets/build-scripts/pretool-secrets.sh",
-            "timeout": 60
+            "command": "~/.claude/hooks/rtk-rewrite.sh"
           }
         ]
       },
@@ -269,28 +245,6 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/legalfit/.claude/hooks/sonar-secrets/build-scripts/prompt-secrets.sh",
-            "timeout": 60
-          }
-        ]
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/sonar-secrets/build-scripts/prompt-secrets.sh",
-            "timeout": 60
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "matcher": "",
@@ -313,8 +267,7 @@
     "lua-lsp@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": true,
     "pyright-lsp@claude-plugins-official": true,
-    "skill-creator@claude-plugins-official": true,
-    "sonarqube-agent-plugins@claude-plugins-official": true
+    "skill-creator@claude-plugins-official": true
   },
   "effortLevel": "high",
   "autoMemoryEnabled": false,

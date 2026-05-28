@@ -113,6 +113,7 @@ alias vc='nvim +"cd ~/dotfiles" ~/dotfiles/zsh/.zshrc'
 alias vv='nvim .'
 alias vd='nvim +"cd ~/dotfiles" ~/dotfiles'
 alias vn='nvim +"cd ~/vault" ~/vault'
+alias nvim-old='NVIM_APPNAME=nvim-old nvim'
 # Lazygit: base config + machine-local overrides
 export LG_CONFIG_FILE="$HOME/.config/lazygit/config.yml,$HOME/.config/lazygit/config.local.yml"
 alias gg="lazygit"

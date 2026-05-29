@@ -2,6 +2,7 @@
 
 # Read JSON input
 input=$(cat)
+echo "$input" | jq -c '{sid: .session_id, dir: .workspace.current_dir, cw: .context_window}' >> /tmp/sl-debug.jsonl 2>/dev/null  # TEMP debug
 
 # Extract all values in a single jq call
 eval "$(echo "$input" | jq -r '

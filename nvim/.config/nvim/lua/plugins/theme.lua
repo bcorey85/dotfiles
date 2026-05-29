@@ -45,6 +45,8 @@ return {
       vim.api.nvim_set_hl(0, "SnacksPickerGitStatusUntracked", { link = "DiagnosticWarn" })
       vim.api.nvim_set_hl(0, "SnacksPickerPathIgnored", { fg = "#6c7086" })
       vim.api.nvim_set_hl(0, "SnacksPickerPathHidden", { link = "Normal" })
+      vim.api.nvim_set_hl(0, "SnacksIndent", { fg = "#313244" })
+      vim.api.nvim_set_hl(0, "SnacksIndentScope", { fg = "#6c7086" })
     end,
   },
 }

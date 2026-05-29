@@ -108,6 +108,13 @@ return {
       desc = "Find files (including ignored)",
     },
     {
+      "<leader>gs",
+      function()
+        Snacks.picker.git_status({ layout = "sidebar" })
+      end,
+      desc = "Git Status (sidebar)",
+    },
+    {
       "<leader>gg",
       function()
         local in_tmux = vim.env.TMUX ~= nil
@@ -137,5 +144,6 @@ return {
     { "<leader>sd", function() Snacks.picker.diagnostics() end, desc = "Diagnostics" },
     { "<leader>ss", function() Snacks.picker.lsp_symbols() end, desc = "LSP symbols" },
     { "<leader>sw", function() Snacks.picker.grep_word() end, desc = "Grep word under cursor" },
+    { "<leader>wm", function() Snacks.toggle.zoom():toggle() end, desc = "Toggle Zoom" },
   },
 }

@@ -85,8 +85,8 @@ return {
 
       vim.keymap.set("n", "]f", function() move.goto_next_start("@function.outer", "textobjects") end)
       vim.keymap.set("n", "[f", function() move.goto_previous_start("@function.outer", "textobjects") end)
-      vim.keymap.set("n", "]c", function() move.goto_next_start("@class.outer", "textobjects") end)
-      vim.keymap.set("n", "[c", function() move.goto_previous_start("@class.outer", "textobjects") end)
+      vim.keymap.set("n", "]C", function() move.goto_next_start("@class.outer", "textobjects") end)
+      vim.keymap.set("n", "[C", function() move.goto_previous_start("@class.outer", "textobjects") end)
     end,
   },
 }

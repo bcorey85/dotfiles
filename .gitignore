@@ -27,3 +27,6 @@ claude/.claude/*
 !claude/.claude/.security-level
 
 nvim/.config/nvim/lazy-lock.json
+
+# Claude Code harness-managed runtime state (auto-refreshed by the CLI)
+claude/.claude/policy-limits.json

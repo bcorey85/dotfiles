@@ -5,6 +5,9 @@ vim.keymap.set("i", "kk", "<Esc>", { desc = "Exit insert mode" })
 
 vim.keymap.set("n", "<leader>so", ":source %<CR>", { desc = "Source current file" })
 
+-- Save file (works in insert/visual/normal/select), LazyVim-style
+vim.keymap.set({ "i", "x", "n", "s" }, "<C-s>", "<cmd>w<cr><esc>", { desc = "Save file" })
+
 vim.keymap.set("n", "<C-d>", "<C-d>zz", { desc = "Scroll down and center" })
 vim.keymap.set("n", "<C-u>", "<C-u>zz", { desc = "Scroll up and center" })
 
@@ -206,6 +209,20 @@ vim.keymap.set("n", "<leader>bo", function() Snacks.bufdelete.other() end, { des
 
 -- Diagnostics list shortcut
 vim.keymap.set("n", "<leader>xx", function() Snacks.picker.diagnostics() end, { desc = "Diagnostics list" })
+
+-- Yank diagnostics on the current line to the clipboard
+vim.keymap.set("n", "<leader>cy", function()
+  local lnum = vim.api.nvim_win_get_cursor(0)[1] - 1
+  local diags = vim.diagnostic.get(0, { lnum = lnum })
+  if vim.tbl_isempty(diags) then
+    vim.notify("No diagnostics on this line", vim.log.levels.INFO)
+    return
+  end
+  local msgs = vim.tbl_map(function(d) return d.message end, diags)
+  local text = table.concat(msgs, "\n")
+  vim.fn.setreg("+", text)
+  vim.notify(("Yanked %d diagnostic(s)"):format(#diags))
+end, { desc = "Yank line diagnostics" })
 
 -- UI toggles
 vim.keymap.set("n", "<leader>uw", function() vim.wo.wrap = not vim.wo.wrap end, { desc = "Toggle wrap" })

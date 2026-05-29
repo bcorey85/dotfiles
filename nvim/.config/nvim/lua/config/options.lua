@@ -5,6 +5,7 @@ vim.g.maplocalleader = "\\"
 
 vim.opt.autowrite = true
 vim.opt.clipboard = "unnamedplus"
+vim.opt.cmdheight = 0 -- reclaim bottom row; noice shows the cmdline as a popup
 vim.opt.completeopt = "menu,menuone,noselect"
 vim.opt.conceallevel = 2
 vim.opt.confirm = true

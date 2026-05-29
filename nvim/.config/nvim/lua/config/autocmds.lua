@@ -142,3 +142,38 @@ vim.api.nvim_create_autocmd("User", {
     vim.keymap.set("n", "q", "<cmd>qa<cr>", opts)
   end,
 })
+
+-- Close certain helper/utility buffers with `q` (ported from LazyVim's
+-- close_with_q). grug-far is included so <leader>sr can be dismissed with q.
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = {
+    "PlenaryTestPopup",
+    "checkhealth",
+    "dbout",
+    "gitsigns-blame",
+    "grug-far",
+    "help",
+    "lspinfo",
+    "neotest-output",
+    "neotest-output-panel",
+    "neotest-summary",
+    "notify",
+    "qf",
+    "spectre_panel",
+    "startuptime",
+    "tsplayground",
+  },
+  callback = function(event)
+    vim.bo[event.buf].buflisted = false
+    vim.schedule(function()
+      vim.keymap.set("n", "q", function()
+        vim.cmd("close")
+        pcall(vim.api.nvim_buf_delete, event.buf, { force = true })
+      end, {
+        buffer = event.buf,
+        silent = true,
+        desc = "Quit buffer",
+      })
+    end)
+  end,
+})

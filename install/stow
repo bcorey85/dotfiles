@@ -58,6 +58,11 @@ if [ "$PLATFORM" = "arch" ]; then
     PACKAGES="$PACKAGES hypr rofi waybar gtk dunst qt"
 fi
 
+# macOS-only packages
+if [ "$PLATFORM" = "mac" ]; then
+    PACKAGES="$PACKAGES aerospace"
+fi
+
 stow -R $PACKAGES
 print_success "Symlinks created"
 

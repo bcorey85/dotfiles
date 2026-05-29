@@ -30,32 +30,6 @@ local function close_diffview()
   tmux_unzoom()
 end
 
--- fugitive's :Git commit opens the commit-message buffer in this Vim instance
--- and emits a line or two of git output. With cmdheight=0 (see options.lua)
--- there's no room to show it, so Neovim throws a "Press ENTER" prompt before
--- the buffer appears. Lend the cmdline one line for the commit, then restore 0
--- when the commit buffer is gone. If nothing is staged no commit buffer opens,
--- so restore immediately rather than leaking cmdheight=1.
-local function fugitive_commit(cmd)
-  return function()
-    local saved = vim.o.cmdheight
-    vim.o.cmdheight = 1
-    vim.cmd(cmd)
-    if vim.bo.filetype == "gitcommit" then
-      vim.cmd("wincmd J")
-      vim.api.nvim_create_autocmd({ "BufWipeout", "BufUnload" }, {
-        buffer = 0,
-        once = true,
-        callback = function()
-          vim.o.cmdheight = saved
-        end,
-      })
-    else
-      vim.o.cmdheight = saved
-    end
-  end
-end
-
 return {
   -- Maintained fork of sindrets/diffview.nvim (upstream stale since Jun 2024).
   -- Drop-in: same `diffview` module + Diffview* commands, no config changes.
@@ -96,8 +70,8 @@ return {
       },
       file_panel = {
         { "n", "q", close_diffview, { desc = "Close Diffview" } },
-        { "n", "cc", fugitive_commit("Git commit"), { desc = "Commit staged" } },
-        { "n", "ca", fugitive_commit("Git commit --amend"), { desc = "Amend last commit" } },
+        { "n", "cc", "<Cmd>Git commit<bar>wincmd J<CR>", { desc = "Commit staged" } },
+        { "n", "ca", "<Cmd>Git commit --amend<bar>wincmd J<CR>", { desc = "Amend last commit" } },
         { "n", "<C-d>", function()
           local key = vim.api.nvim_replace_termcodes("<C-d>", true, false, true)
           for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do

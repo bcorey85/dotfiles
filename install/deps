@@ -138,6 +138,7 @@ mac)
   print_info "Installing dependencies via Homebrew..."
   brew install stow neovim tmux git jq fzf zoxide yazi direnv kitty git-delta btop bat atuin eza tlrc lazydocker lazygit glow fd keychain rustup ansible just
   brew install umputun/apps/revdiff
+  brew install --cask nikitabobko/tap/aerospace
   print_success "Dependencies installed"
   ;;
 esac

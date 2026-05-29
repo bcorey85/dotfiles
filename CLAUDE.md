@@ -13,6 +13,7 @@ Personal dotfiles managed with **GNU Stow** across WSL, Ubuntu, macOS, and Arch 
 ```
 
 Individual scripts in `install/` can be run standalone:
+
 - `install/deps <platform>` - system packages (apt/brew/pacman)
 - `install/fonts <platform>` - CommitMono Nerd Font
 - `install/stow` - create all symlinks
@@ -26,19 +27,20 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 
 ## Stow Packages
 
-| Package | Target | Key files |
-|---------|--------|-----------|
-| `nvim` | `~/.config/nvim/` | LazyVim config, `lua/plugins/*.lua` (22 plugin configs) |
-| `tmux` | `~/.tmux.conf` | Prefix=`Ctrl+Space`, vim-style panes, TPM |
-| `zsh` | `~/.zshrc` | Plugins, aliases, pyenv/nvm/starship init |
-| `claude` | `~/.claude/` | Agents, commands, settings, hooks |
-| `kitty` | `~/.config/kitty/` | Sonokai Maia theme |
-| `starship` | `~/.config/starship.toml` | Gruvbox Material prompt |
-| `yazi` | `~/.config/yazi/` | File manager config |
-| `kanata` | `~/kanata-config.kbd`, `~/kanata-setup` | Keyboard remapping with systemd service |
-| `scripts` | `~/.local/bin/` | tmux-sessionizer, dev utilities |
-| `lazygit` | `~/.config/lazygit/` | Narrow side panel, expand on focus |
-| `git` | `~/.gitconfig` | Delta pager, side-by-side diffs. Per-machine identity in `~/.gitconfig.local` |
+| Package     | Target                                  | Key files                                                                                                 |
+| ----------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `nvim`      | `~/.config/nvim/`                       | LazyVim config, `lua/plugins/*.lua` (22 plugin configs)                                                   |
+| `tmux`      | `~/.tmux.conf`                          | Prefix=`Ctrl+Space`, vim-style panes, TPM                                                                 |
+| `zsh`       | `~/.zshrc`                              | Plugins, aliases, pyenv/nvm/starship init                                                                 |
+| `claude`    | `~/.claude/`                            | Agents, commands, settings, hooks                                                                         |
+| `aerospace` | `~/.config/aerospace/`                  | macOS tiling WM. Workspaces 1-9 pinned to external monitor, built-in screen dedicated to Teams (mac only) |
+| `kitty`     | `~/.config/kitty/`                      | Sonokai Maia theme                                                                                        |
+| `starship`  | `~/.config/starship.toml`               | Gruvbox Material prompt                                                                                   |
+| `yazi`      | `~/.config/yazi/`                       | File manager config                                                                                       |
+| `kanata`    | `~/kanata-config.kbd`, `~/kanata-setup` | Keyboard remapping with systemd service                                                                   |
+| `scripts`   | `~/.local/bin/`                         | tmux-sessionizer, dev utilities                                                                           |
+| `lazygit`   | `~/.config/lazygit/`                    | Narrow side panel, expand on focus                                                                        |
+| `git`       | `~/.gitconfig`                          | Delta pager, side-by-side diffs. Per-machine identity in `~/.gitconfig.local`                             |
 
 ## CRITICAL: Cross-Platform Compatibility
 

@@ -80,7 +80,10 @@ vim.keymap.set("n", "<leader>gt", function()
   end)
 end, { desc = "Git push + set upstream tracking (prompt)" })
 vim.keymap.set("n", "<leader>gl", "<cmd>Git log --oneline --decorate --all --graph<cr>", { desc = "Git log" })
-vim.keymap.set("n", "<leader>gu", "<cmd>Git log @{u}..HEAD --oneline --decorate<cr>", { desc = "Git log unpushed commits" })
+vim.keymap.set("n", "<leader>gu", function()
+  vim.cmd("Git log @{u}..HEAD --oneline --decorate")
+  vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = true, desc = "Close unpushed log" })
+end, { desc = "Git log unpushed commits" })
 vim.keymap.set("n", "<leader>gB", "<cmd>Git blame<cr>", { desc = "Git blame (file)" })
 -- Tear down a Gvdiffsplit from ANY window. Fugitive's built-in `dq` is
 -- buffer-local to its own buffers (the :G summary and the fugitive:// object

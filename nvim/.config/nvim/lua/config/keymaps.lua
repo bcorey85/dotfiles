@@ -66,8 +66,19 @@ vim.keymap.set("n", "<leader>gc", function()
   end)
 end, { desc = "Git commit (terminal — shows hook output)" })
 
-vim.keymap.set("n", "<leader>gP", "<cmd>Git push<cr>", { desc = "Git push" })
-vim.keymap.set("n", "<leader>gp", "<cmd>Git pull<cr>", { desc = "Git pull" })
+vim.keymap.set("n", "<leader>gp", "<cmd>Git push<cr>", { desc = "Git push" })
+vim.keymap.set("n", "<leader>gP", "<cmd>Git pull<cr>", { desc = "Git pull" })
+vim.keymap.set("n", "<leader>gt", function()
+  local branch = vim.fn.systemlist("git symbolic-ref --short HEAD")[1]
+  if not branch or branch == "" then
+    vim.notify("Not on a branch", vim.log.levels.WARN)
+    return
+  end
+  vim.ui.input({ prompt = "Remote tracking branch: ", default = branch }, function(input)
+    if not input or input == "" then return end
+    vim.cmd("Git push -u origin " .. input)
+  end)
+end, { desc = "Git push + set upstream tracking (prompt)" })
 vim.keymap.set("n", "<leader>gl", "<cmd>Git log --oneline --decorate --all --graph<cr>", { desc = "Git log" })
 vim.keymap.set("n", "<leader>gB", "<cmd>Git blame<cr>", { desc = "Git blame (file)" })
 -- Tear down a Gvdiffsplit from ANY window. Fugitive's built-in `dq` is

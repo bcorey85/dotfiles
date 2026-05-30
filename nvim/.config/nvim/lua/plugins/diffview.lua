@@ -25,10 +25,9 @@ local function tmux_zoom()
   end
 end
 
-local function leave_review_comment(mode)
+local function resolve_abs_path()
   local abs_path
 
-  -- pcall so pressing <leader>cc in a random buffer never force-loads diffview
   local ok, lib = pcall(require, "diffview.lib")
   if ok then
     local view = lib.get_current_view()
@@ -43,26 +42,30 @@ local function leave_review_comment(mode)
     local bufname = vim.api.nvim_buf_get_name(0)
     if bufname:match("^diffview://") then
       vim.notify("Could not resolve real file path", vim.log.levels.WARN)
-      return
+      return nil
     end
     if bufname == "" then
       vim.notify("Buffer has no file name", vim.log.levels.WARN)
-      return
+      return nil
     end
     abs_path = bufname
   end
 
-  local line_ref
-  if mode == "v" then
-    local start_line = vim.fn.line("'<")
-    local end_line = vim.fn.line("'>")
-    if start_line == end_line then
-      line_ref = tostring(start_line)
+  if not abs_path:match("^/") then
+    local repo_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
+    if repo_root and repo_root ~= "" then
+      abs_path = repo_root .. "/" .. abs_path
     else
-      line_ref = start_line .. "-" .. end_line
+      abs_path = vim.fn.getcwd() .. "/" .. abs_path
     end
-  else
-    line_ref = tostring(vim.fn.line("."))
+  end
+  return vim.fn.fnamemodify(abs_path, ":p")
+end
+
+local function write_review_entry(line_ref, snippet_lines)
+  local abs_path = resolve_abs_path()
+  if not abs_path then
+    return
   end
 
   vim.ui.input({ prompt = "Review comment: " }, function(input)
@@ -70,22 +73,25 @@ local function leave_review_comment(mode)
       return
     end
 
-    if not abs_path:match("^/") then
-      local repo_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
-      if repo_root and repo_root ~= "" then
-        abs_path = repo_root .. "/" .. abs_path
-      else
-        abs_path = vim.fn.getcwd() .. "/" .. abs_path
-      end
-    end
-    abs_path = vim.fn.fnamemodify(abs_path, ":p")
-
     local claude_dir = vim.uv.os_homedir() .. "/.claude"
     vim.fn.mkdir(claude_dir, "p")
 
     local review_path = claude_dir .. "/review.md"
     local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
-    local entry = string.format("## %s:%s\n%s\n\n%s\n\n---\n\n", abs_path, line_ref, timestamp, input)
+
+    local entry
+    if snippet_lines then
+      local ft = vim.bo.filetype
+      local fence_open = "````" .. ft
+      local fence_close = "````"
+      local snippet = table.concat(snippet_lines, "\n")
+      entry = string.format(
+        "## %s:%s\n%s\n\n%s\n%s\n%s\n\n%s\n\n---\n\n",
+        abs_path, line_ref, timestamp, fence_open, snippet, fence_close, input
+      )
+    else
+      entry = string.format("## %s:%s\n%s\n\n%s\n\n---\n\n", abs_path, line_ref, timestamp, input)
+    end
 
     local fh = io.open(review_path, "a")
     if not fh then
@@ -97,6 +103,108 @@ local function leave_review_comment(mode)
 
     vim.notify("Comment saved to ~/.claude/review.md")
   end)
+end
+
+local function leave_review_comment_normal()
+  local line_ref = tostring(vim.fn.line("."))
+  write_review_entry(line_ref, nil)
+end
+
+local function leave_review_comment_range(line1, line2)
+  local line_ref
+  if line1 == line2 then
+    line_ref = tostring(line1)
+  else
+    line_ref = line1 .. "-" .. line2
+  end
+  local snippet_lines = vim.api.nvim_buf_get_lines(0, line1 - 1, line2, false)
+  write_review_entry(line_ref, snippet_lines)
+end
+
+vim.api.nvim_create_user_command("ClaudeReviewComment", function(args)
+  if args.range == 0 then
+    leave_review_comment_normal()
+  else
+    leave_review_comment_range(args.line1, args.line2)
+  end
+end, { range = true, desc = "Leave Claude review comment" })
+
+local function preview_review_comments()
+  local review_path = vim.uv.os_homedir() .. "/.claude/review.md"
+  local fh = io.open(review_path, "r")
+  if not fh then
+    vim.notify("No pending Claude review comments", vim.log.levels.INFO)
+    return
+  end
+  local content = fh:read("*a")
+  fh:close()
+
+  if not content or content == "" then
+    vim.notify("No pending Claude review comments", vim.log.levels.INFO)
+    return
+  end
+
+  local repo_root
+  local root_result = vim.fn.systemlist("git rev-parse --show-toplevel")
+  if vim.v.shell_error == 0 and root_result[1] and root_result[1] ~= "" then
+    repo_root = root_result[1]
+  end
+
+  local entries = {}
+  local current = {}
+  for line in (content .. "\n"):gmatch("([^\n]*)\n") do
+    if line:match("^## ") then
+      if #current > 0 then
+        entries[#entries + 1] = table.concat(current, "\n")
+      end
+      current = { line }
+    else
+      current[#current + 1] = line
+    end
+  end
+  if #current > 0 then
+    entries[#entries + 1] = table.concat(current, "\n")
+  end
+
+  local filtered = {}
+  for _, entry in ipairs(entries) do
+    local header = entry:match("^## ([^\n]+)")
+    if header then
+      local path = header:match("^(.-):%S+$") or header
+      if not repo_root or path:sub(1, #repo_root) == repo_root then
+        filtered[#filtered + 1] = entry
+      end
+    end
+  end
+
+  local lines = {}
+  if repo_root then
+    lines[#lines + 1] = "# Claude Review Comments — " .. repo_root
+  else
+    lines[#lines + 1] = "# Claude Review Comments"
+  end
+  lines[#lines + 1] = ""
+
+  if #filtered == 0 then
+    local label = repo_root and ("# No pending comments in " .. repo_root) or "# No pending comments"
+    lines = { label }
+  else
+    for _, entry in ipairs(filtered) do
+      for line in (entry .. "\n"):gmatch("([^\n]*)\n") do
+        lines[#lines + 1] = line
+      end
+      lines[#lines + 1] = ""
+    end
+  end
+
+  vim.cmd("new")
+  vim.bo.buftype = "nofile"
+  vim.bo.bufhidden = "wipe"
+  vim.bo.filetype = "markdown"
+  vim.api.nvim_buf_set_name(0, "ClaudeReview")
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+  vim.bo.modifiable = false
+  vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = true })
 end
 
 local function close_diffview()
@@ -196,17 +304,14 @@ return {
     },
   },
   keys = {
+    { "<leader>cc", "<cmd>ClaudeReviewComment<cr>", mode = "n", desc = "Leave Claude review comment" },
+    -- `:` (not `<cmd>`) so vim auto-inserts `'<,'>` as the range before executing
+    { "<leader>cc", ":ClaudeReviewComment<cr>", mode = "v", desc = "Leave Claude review comment" },
     {
-      "<leader>cc",
-      function() leave_review_comment("n") end,
+      "<leader>cp",
+      preview_review_comments,
       mode = "n",
-      desc = "Leave Claude review comment",
-    },
-    {
-      "<leader>cc",
-      function() leave_review_comment("v") end,
-      mode = "v",
-      desc = "Leave Claude review comment",
+      desc = "Preview pending Claude review comments",
     },
     {
       "<leader>dd",

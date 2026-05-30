@@ -1,6 +1,6 @@
 ---
-name: peer-review
-description: Peer-review recent changes using the code-reviewer subagent
+name: review
+description: Review recent changes using the code-reviewer subagent
 allowed-tools: [Task, Bash, Read, Glob, Grep, Skill]
 ---
 
@@ -17,9 +17,9 @@ Review recent changes in this codebase using the code-reviewer subagent.
 
 1. **Parse args**:
    - **Modifiers**: If `+deep` is present, pass `model: "opus"` to all Task tool calls below. If `+fast` is present, pass `model: "haiku"`.
-   - **Iteration counter**: Look for `iter=N` in args (default `iter=1`). Tracks how many times the review-fix loop has run. **If `iter >= 3`, STOP immediately** and alert the user: "Review-fix loop has run 3 iterations without converging. Stopping to avoid churn. Outstanding issues: [list]. Decide manually how to proceed." Do NOT auto-dispatch `/fix-feedback`.
-   - **One-shot mode**: If `iter=oneshot` is present, this is the post-convergence verification pass after a MEDIUM triage `/fix-feedback`. Run the review as normal, report results to the user, but **do NOT auto-dispatch anything** — skip step 5's branching entirely. Report findings as a final summary, then stop. (Rationale: MEDIUM triage already happened in the prior turn; re-triaging would loop indefinitely.)
-   - **Handoff block**: Look for a `handoff:` block in args (produced by `/code` or `/fix-feedback`). If present, use it as the review scope per the "Handoff Block" section below.
+   - **Iteration counter**: Look for `iter=N` in args (default `iter=1`). Tracks how many times the review-fix loop has run. **If `iter >= 3`, STOP immediately** and alert the user: "Review-fix loop has run 3 iterations without converging. Stopping to avoid churn. Outstanding issues: [list]. Decide manually how to proceed." Do NOT auto-dispatch `/fix`.
+   - **One-shot mode**: If `iter=oneshot` is present, this is the post-convergence verification pass after a MEDIUM triage `/fix`. Run the review as normal, report results to the user, but **do NOT auto-dispatch anything** — skip step 5's branching entirely. Report findings as a final summary, then stop. (Rationale: MEDIUM triage already happened in the prior turn; re-triaging would loop indefinitely.)
+   - **Handoff block**: Look for a `handoff:` block in args (produced by `/code` or `/fix`). If present, use it as the review scope per the "Handoff Block" section below.
 
 2. **Determine review scope**:
 
@@ -73,7 +73,7 @@ Review recent changes in this codebase using the code-reviewer subagent.
    - **MEDIUM** → main-agent triage as a single follow-up after the loop converges (one-shot, NOT counted toward `iter`)
    - **LOW** → report-only, never auto-handled
 
-   - **If HIGH issues found but NO critical blockers**: Auto-dispatch `/fix-feedback` for the HIGH (and CRITICAL, if any non-blocking) issues only. Tell the user: "Auto-dispatching `/fix-feedback` to resolve N high-priority issues (iteration M of 3). M MEDIUM items will be triaged after the loop converges. L LOW items reported only." Invoke the Skill tool (`skill: "fix-feedback"`, args including `iter=M` — current count, unchanged; `/fix-feedback` increments before re-invoking peer-review). **Do not pass MEDIUM or LOW items to `/fix-feedback`** — MEDIUMs are deferred to post-loop triage, LOWs are reported only.
+   - **If HIGH issues found but NO critical blockers**: Auto-dispatch `/fix` for the HIGH (and CRITICAL, if any non-blocking) issues only. Tell the user: "Auto-dispatching `/fix` to resolve N high-priority issues (iteration M of 3). M MEDIUM items will be triaged after the loop converges. L LOW items reported only." Invoke the Skill tool (`skill: "fix"`, args including `iter=M` — current count, unchanged; `/fix` increments before re-invoking review). **Do not pass MEDIUM or LOW items to `/fix`** — MEDIUMs are deferred to post-loop triage, LOWs are reported only.
 
    - **If critical blockers that need user judgment**: STOP and alert the user. Critical blockers are:
      - Security vulnerabilities that require design decisions
@@ -81,23 +81,22 @@ Review recent changes in this codebase using the code-reviewer subagent.
      - Ambiguous fixes where multiple valid approaches exist and the wrong choice could break things
      - Issues that require changing the public API contract
 
-     Present these to the user and wait for direction. Do NOT auto-dispatch `/fix-feedback` in this case.
+     Present these to the user and wait for direction. Do NOT auto-dispatch `/fix` in this case.
 
    - **If all clear on the auto-fix gate (no CRITICAL or HIGH issues remain)**: The convergence loop is done. Now triage MEDIUMs as a follow-up:
-
      - **If MEDIUM items exist**: The main agent (caller of this skill) must triage each MEDIUM with explicit judgment. For every MEDIUM, classify it as:
        - **fix** — clear win, safe to auto-apply (e.g. missing null check, obvious dead code, real but non-blocking bug)
        - **skip** — false positive, intentional choice, stylistic noise, or out-of-scope for this change
        - **ask** — ambiguous, requires design decision, or could plausibly be either fix/skip
 
        Then:
-       1. Bundle the **fix** bucket into a **single one-shot** `/fix-feedback` dispatch. This dispatch is NOT counted toward the `iter` limit — pass `iter=oneshot` (or omit) so `/fix-feedback` knows not to re-enter the convergence loop. After this one-shot fix, run `/peer-review` once more to verify, then stop regardless of remaining MEDIUMs.
+       1. Bundle the **fix** bucket into a **single one-shot** `/fix` dispatch. This dispatch is NOT counted toward the `iter` limit — pass `iter=oneshot` (or omit) so `/fix` knows not to re-enter the convergence loop. After this one-shot fix, run `/review` once more to verify, then stop regardless of remaining MEDIUMs.
        2. List the **skip** bucket inline with a one-line reason each ("intentional — matches existing pattern in X", "false positive — reviewer missed Y", etc.).
        3. Present the **ask** bucket to the user and wait for direction before doing anything with them.
 
      - **If no MEDIUM items**: "No issues found that warrant auto-fix. Ready for `/commit`." List any LOW items / Notes inline.
 
-   `/fix-feedback` already auto-dispatches `/peer-review` when it finishes, so the HIGH/CRITICAL path is an automatic review-fix loop. The convergence loop terminates when:
+   `/fix` already auto-dispatches `/review` when it finishes, so the HIGH/CRITICAL path is an automatic review-fix loop. The convergence loop terminates when:
    - No CRITICAL or HIGH issues remain (clean by the auto-fix gate, regardless of MEDIUM/LOW)
    - A critical blocker surfaces that needs user input
    - 3 iterations pass without converging (stop and alert the user to avoid churn)
@@ -106,7 +105,7 @@ Review recent changes in this codebase using the code-reviewer subagent.
 
 ## Handoff Block
 
-When invoked from `/code` or `/fix-feedback`, args may contain a handoff block. Canonical schema:
+When invoked from `/code` or `/fix`, args may contain a handoff block. Canonical schema:
 
 ```
 handoff:
@@ -115,7 +114,7 @@ handoff:
       change: <one line: what changed and why>
   tests-run: <command(s) and pass/fail status, or "none">
   flagged: <issues the upstream coder explicitly flagged, or "none">
-  prior-issues:           # only present on fix-feedback → peer-review
+  prior-issues:           # only present on fix → review
     - issue: <one line>
       status: fixed | skipped | partial
       file: <path>
@@ -129,7 +128,7 @@ When present:
 - Use `iter` for the iteration counter check (step 1).
 - Treat the schema as a versioned interface — if a producer skill needs additional fields, add them here first and update both producers and consumers in the same change.
 
-When absent (manual `/peer-review` invocation), fall back to git discovery in step 2.
+When absent (manual `/review` invocation), fall back to git discovery in step 2.
 
 ## Arguments
 

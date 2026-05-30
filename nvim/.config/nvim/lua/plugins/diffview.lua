@@ -25,6 +25,74 @@ local function tmux_zoom()
   end
 end
 
+local function leave_review_comment(mode)
+  local lib = require("diffview.lib")
+  local view = lib.get_current_view()
+  local abs_path
+
+  if view and view.panel and view.panel.cur_file then
+    abs_path = view.panel.cur_file.path
+  elseif view and view:instanceof(lib.StandardView or {}) and view.cur_entry then
+    abs_path = view.cur_entry.path
+  end
+
+  if not abs_path then
+    local bufname = vim.api.nvim_buf_get_name(0)
+    if bufname:match("^diffview://") then
+      vim.notify("Could not resolve real file path", vim.log.levels.WARN)
+      return
+    end
+    abs_path = bufname
+  end
+
+  local line_ref
+  if mode == "v" then
+    local start_line = vim.fn.line("'<")
+    local end_line = vim.fn.line("'>")
+    if start_line == end_line then
+      line_ref = tostring(start_line)
+    else
+      line_ref = start_line .. "-" .. end_line
+    end
+  else
+    line_ref = tostring(vim.fn.line("."))
+  end
+
+  vim.ui.input({ prompt = "Review comment: " }, function(input)
+    if not input or input == "" then
+      return
+    end
+
+    local repo_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
+    if not repo_root or repo_root == "" then
+      vim.notify("Not inside a git repo", vim.log.levels.ERROR)
+      return
+    end
+
+    if not abs_path:match("^/") then
+      abs_path = repo_root .. "/" .. abs_path
+    end
+    abs_path = vim.fn.fnamemodify(abs_path, ":p")
+
+    local claude_dir = vim.uv.os_homedir() .. "/.claude"
+    vim.fn.mkdir(claude_dir, "p")
+
+    local review_path = claude_dir .. "/review.md"
+    local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    local entry = string.format("## %s:%s\n%s\n\n%s\n\n---\n\n", abs_path, line_ref, timestamp, input)
+
+    local fh = io.open(review_path, "a")
+    if not fh then
+      vim.notify("Failed to open " .. review_path, vim.log.levels.ERROR)
+      return
+    end
+    fh:write(entry)
+    fh:close()
+
+    vim.notify("Comment saved to ~/.claude/review.md")
+  end)
+end
+
 local function close_diffview()
   vim.cmd("DiffviewClose")
   tmux_unzoom()
@@ -67,9 +135,13 @@ return {
     keymaps = {
       view = {
         { "n", "q", close_diffview, { desc = "Close Diffview" } },
+        { "n", "<leader>dc", function() leave_review_comment("n") end, { desc = "Leave Claude review comment" } },
+        { "v", "<leader>dc", function() leave_review_comment("v") end, { desc = "Leave Claude review comment" } },
       },
       file_panel = {
         { "n", "q", close_diffview, { desc = "Close Diffview" } },
+        { "n", "<leader>dc", function() leave_review_comment("n") end, { desc = "Leave Claude review comment" } },
+        { "v", "<leader>dc", function() leave_review_comment("v") end, { desc = "Leave Claude review comment" } },
         { "n", "cc", "<Cmd>Git commit<bar>wincmd J<CR>", { desc = "Commit staged" } },
         { "n", "ca", "<Cmd>Git commit --amend<bar>wincmd J<CR>", { desc = "Amend last commit" } },
         { "n", "<C-d>", function()

@@ -1,57 +1,103 @@
 ---
 name: fix
-description: Smart bug fixer — auto-detects scope or accepts be/fe/fs modifier, dispatches coder subagent(s), then auto-runs peer review
+description: Dispatch coder subagents to fix review feedback (from `.claude/review.md`, the conversation, or a `/review` handoff), then auto-run `/review`
 allowed-tools: [Task, Read, Glob, Grep, Skill]
 ---
 
-# Fix
+# Fix Code Review Feedback
 
-Analyze a bug or issue, determine scope, and dispatch the appropriate coder subagent(s) to investigate and fix it.
+Dispatch parallel frontend-coder and backend-coder subagents to investigate and resolve valid issues from the most recent code review.
 
 ## Modifiers
 
-- `be` or `backend` — force backend-only scope
-- `fe` or `frontend` — force frontend-only scope
-- `fs` or `fullstack` — force fullstack scope
-- `+fast` — Use Haiku model. For trivial fixes like renames, typos, or simple one-line changes.
-- `+deep` — Use Opus model. For complex bugs, race conditions, subtle logic errors, or anything requiring deeper reasoning.
+- `+fast` — Use Haiku model for coder subagents. Use when review findings are trivial (typos, simple style fixes).
+- `+deep` — Use Opus model for coder subagents. Use for complex review findings that require deeper reasoning to fix correctly.
 
 ## Instructions
 
-1. **Check for modifiers**: If `+deep` is present, pass `model: "opus"` to all Task tool calls below. If `+fast` is present, pass `model: "haiku"`. Strip modifiers from the prompt passed to coders.
+1. **Parse args**:
+   - **Modifiers**: If `+deep` is present, pass `model: "opus"` to all Task tool calls below. If `+fast` is present, pass `model: "haiku"`. Strip modifiers from the prompt.
+   - **Iteration counter**: Look for `iter=N` in args (default `iter=1`). Hold this value — when re-invoking `/review` in step 5, pass `iter=N+1` so the loop is bounded.
+   - **One-shot mode**: If `iter=oneshot` is present, this invocation is the post-convergence MEDIUM triage from `/review` — NOT part of the iter-bounded loop. Do not increment. In step 5, pass `iter=oneshot` to `/review` so it performs a single verification pass and stops without re-triaging MEDIUMs.
 
-2. **Determine scope**:
-   - If a scope modifier (`be`, `fe`, `fs`) was provided, use that
-   - Otherwise, analyze the issue — read referenced files, error messages, stack traces — and determine if this is frontend, backend, or both
+2. **Parse the review feedback** from these sources (in order), then categorize issues by which coder owns the file (frontend vs backend, or whichever split applies to this codebase):
 
-3. **Dispatch the appropriate coder(s)**:
+   a. **`~/.claude/review.md`** (global, shared across all repos) — if this file exists, it contains inline comments left by the user from diffview.nvim (`<leader>dc`). Each entry has the shape `## <absolute_path>:<line[-end]>` followed by a UTC ISO 8601 timestamp line (`YYYY-MM-DDTHH:MM:SSZ`) and the comment body, separated by `---`. Treat every entry as a user-authored issue at the highest priority — these are explicit requests, not heuristic findings.
 
-   **Frontend only** → Launch a single `frontend-coder` subagent
-   **Backend only** → Launch a single `backend-coder` subagent
-   **Both** → Launch both in parallel using a single message with multiple Task tool calls
+   **Filter to the current repo**: run `git rev-parse --show-toplevel` to get the current repo root. Only process entries whose absolute path is inside that root. Leave all other entries untouched.
 
-   For each coder:
-   - Pass the full bug description and any relevant context you gathered
-   - Instruct it to explore the code, identify the root cause, and implement the fix
-   - Verify the fix doesn't break related functionality
-   - If the issue turns out to be architectural, have it report back and recommend `/eng-spec` instead
+   **Stale TTL**: drop any entry whose timestamp is older than 48 hours from now. Use `date -u +%s` for current epoch and `date -u -d "<timestamp>" +%s` to parse (GNU date) or `date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "<timestamp>" +%s` (BSD/macOS date). Stale entries are dropped from the file silently (just note the count in the summary).
 
-4. **After coder(s) complete**, summarize:
-   - What the root cause was
-   - What was changed and why
-   - Any related concerns or follow-up items
+   **Selective clear (no `rm`)**: after dispatching, do a read-modify-write on the file. Identify each in-scope entry by its `(absolute_path, timestamp)` tuple — these are unique IDs. Rewrite `~/.claude/review.md` containing, in this order:
+   1. Every entry from a different repo (left exactly as-is).
+   2. Every in-scope entry the skill **deferred** (e.g. recommended `/eng-spec`, waiting on user input) — left as-is so the next run can pick them up.
+   3. Drop: in-scope entries the skill **resolved** (fix attempted) or **skipped after triage** (false positive, intentional, out of scope). Note skip reasons in the user summary so they aren't lost.
 
-5. **Verify frontend fixes with Playwright** (frontend or fullstack scope only):
-   - If the fix involved frontend changes, use the Playwright MCP tools to visually verify the fix is complete before proceeding
-   - Navigate to the affected page/route using `browser_navigate`
-   - Take a snapshot with `browser_snapshot` to confirm the UI renders correctly
-   - If the bug involved a specific interaction (click, form submit, etc.), reproduce the original steps and confirm the issue is resolved
-   - Save any screenshots to `/tmp/` (never inside the project repo)
-   - If verification fails, report what's still broken and dispatch the `frontend-coder` again to address the remaining issue — repeat until the fix is confirmed
-   - Skip this step if there is no running dev server or the bug is not visually verifiable (e.g., build errors, type errors)
+   Read the file once at the start of this skill. Re-read it just before the rewrite so any entries added by another nvim session in the meantime are preserved (the rewrite drops only the specific `(path, timestamp)` tuples we resolved). If the file ends up empty after the rewrite, delete it.
 
-6. **Auto-dispatch peer review**: After summarizing the fix (and completing Playwright verification if applicable), tell the user: "Auto-dispatching `/peer-review` to check the fix before committing." Then invoke the `/peer-review` skill using the Skill tool (`skill: "peer-review"`). If the user passed `+fast` or `+deep`, pass the same modifier to the peer review invocation (e.g., `skill: "peer-review", args: "+fast"`). This step runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing.
+   b. **Args from `/review`** — if invoked via the review handoff, the issues list is passed in args.
 
-## Issue
+   c. **The conversation** — any review findings discussed above.
 
-$ARGUMENTS
+3. **Launch coder agents in parallel** using a single message with multiple Task tool calls.
+
+   **Common instructions for every coder dispatched here** (include verbatim in the prompt):
+
+   > Fix only the issues listed below. Do not refactor surrounding code. Do not "improve" things you notice along the way. Do not rename, restructure, or add abstractions that aren't required by the fix itself. A focused 5-line fix is the right output, not a 50-line cleanup PR.
+   >
+   > After fixing each issue, check all callers and consumers of the changed code. If a fix changes a method signature, return type, or behavioral contract, update every caller in the same pass. Do not leave callers out of sync.
+   >
+   > If a listed issue turns out to be a false positive on inspection, skip it and report why. Do not "fix" issues that aren't actually broken just because the reviewer flagged them.
+
+   **Frontend Coder** (`subagent_type: frontend-coder`):
+   - Pass all frontend-specific issues with file paths and line numbers
+   - Include enough context from the review for the coder to understand the problem
+   - Apply the common instructions above
+
+   **Backend Coder** (`subagent_type: backend-coder`):
+   - Pass all backend-specific issues with file paths and line numbers
+   - Include enough context from the review for the coder to understand the problem
+   - Apply the common instructions above
+
+   If all issues are frontend-only or backend-only, launch only the relevant coder agent.
+
+4. **After coders complete**, summarize for the user AND build a handoff block for the verification reviewer.
+
+   User summary:
+   - Which issues were fixed
+   - Any issues intentionally skipped (with reasoning)
+   - Any new concerns discovered
+   - If any issue requires architectural rethinking, recommend the user run `/eng-spec` instead
+
+   Handoff block (passed as args to `/review` in step 5). Schema is defined in `review/SKILL.md` under "Handoff Block". Required fields:
+
+   ```
+   handoff:
+     files:
+       - path: <relative path>
+         change: <one line: what fix was applied>
+     tests-run: <command(s) and pass/fail status, or "none">
+     prior-issues:
+       - issue: <one line from prior review>
+         status: fixed | skipped | partial
+         file: <path>
+     flagged: <new concerns from this fix pass, or "none">
+     iter: <N+1 — incremented from incoming iter>
+   ```
+
+   The `prior-issues` list scopes the verification reviewer to "did these fixes take?" first, before any new-issue scan. This is the main token saving — the reviewer no longer re-reviews untouched code.
+
+5. **Auto-dispatch peer review**: After summarizing the fixes, invoke the `/review` skill via the Skill tool with `skill: "review"` and `args` containing the handoff block from step 4 plus the iter value and any `+fast`/`+deep` modifier.
+   - **Normal (loop) mode**: Tell the user "Auto-dispatching `/review` to verify the fixes before committing (iteration N+1 of 3)." Pass `iter=N+1`.
+   - **One-shot mode** (incoming `iter=oneshot`): Tell the user "Auto-dispatching `/review` for one final verification of the MEDIUM fixes." Pass `iter=oneshot`. `/review` will run a single verification pass and stop without re-triaging.
+
+   This runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs.
+
+## Validation
+
+Each agent should verify issues are valid before fixing. Skip issues that are:
+
+- False positives or stylistic preferences
+- Out of scope for a quick fix
+- Blocked by other unresolved issues
+- Architectural in nature (recommend `/eng-spec` instead)

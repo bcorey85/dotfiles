@@ -259,9 +259,8 @@ The codebase is clean relative to the audit criteria. No further audit runs need
 
 Ask the user which findings they'd like to address. Suggest appropriate next commands:
 
-- `/fix` for bug fixes
 - `/refactor` for DRY/pattern/smell issues
-- `/fix-feedback` if they want to batch-fix specific items
+- `/fix` if they want to batch-fix specific items
 - Manual fixes for security issues that need design decisions
 - Re-run `/audit-code` after fixes to verify — the ledger will skip known issues and only surface anything truly new.
 

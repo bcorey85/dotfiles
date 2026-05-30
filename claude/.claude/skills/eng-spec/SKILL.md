@@ -31,20 +31,22 @@ Auto-detects scope and launches the appropriate architect(s). After planning, as
 5. **Determine scope** (frontend, backend, or fullstack) based on the task description, conversation context, and codebase structure.
 
 5a. **Assess whether architect agents are needed.** Default is YES — run the architects. Only skip Phase 3 if ALL of these are true:
-   - The task is pure configuration with zero implementation choices (e.g., installing a package, adding an env var, enabling a flag)
-   - No new files are being created
-   - No existing service/module signatures are changing
-   - No data model, API contract, or state management decisions are involved
-   - The entire change could be described in under 5 lines of diff
 
-   **A well-written ticket is NOT a reason to skip the architect.** Tickets describe the PM's intended approach. Architects validate that approach against the actual codebase — catching coupling risks, stale assumptions, and edge cases the ticket cannot see. If the ticket includes an "Approach" section, that is context FOR the architect, not a replacement for one.
+- The task is pure configuration with zero implementation choices (e.g., installing a package, adding an env var, enabling a flag)
+- No new files are being created
+- No existing service/module signatures are changing
+- No data model, API contract, or state management decisions are involved
+- The entire change could be described in under 5 lines of diff
 
-   If skipping:
-   - Write the plan directly based on existing codebase patterns
-   - Ask the user: "This is pure configuration — skip the architect and go lean?" **Wait for explicit confirmation.**
-   - **Still dispatch coder subagent(s) in Phase 5 if the user chooses "Implement now."** "Go lean" means skipping the architect, NOT skipping the coder. The coder dispatch is what triggers the auto-review chain — implementing inline breaks that chain.
+**A well-written ticket is NOT a reason to skip the architect.** Tickets describe the PM's intended approach. Architects validate that approach against the actual codebase — catching coupling risks, stale assumptions, and edge cases the ticket cannot see. If the ticket includes an "Approach" section, that is context FOR the architect, not a replacement for one.
 
-   If uncertain, run the architect. A 2-minute architect pass that confirms "the approach is sound" is cheap insurance. A skipped architect that misses a coupling risk costs an entire review-fix cycle.
+If skipping:
+
+- Write the plan directly based on existing codebase patterns
+- Ask the user: "This is pure configuration — skip the architect and go lean?" **Wait for explicit confirmation.**
+- **Still dispatch coder subagent(s) in Phase 5 if the user chooses "Implement now."** "Go lean" means skipping the architect, NOT skipping the coder. The coder dispatch is what triggers the auto-review chain — implementing inline breaks that chain.
+
+If uncertain, run the architect. A 2-minute architect pass that confirms "the approach is sound" is cheap insurance. A skipped architect that misses a coupling risk costs an entire review-fix cycle.
 
 6. **If a scope hint was passed** (`be`, `fe`, `fs`), use it directly.
 
@@ -59,12 +61,15 @@ Auto-detects scope and launches the appropriate architect(s). After planning, as
 10. **Launch architect agents** based on scope. Use the Task tool:
 
 **Backend only:**
+
 - Launch `backend-architect` with the task context. Instruct it to explore the codebase, evaluate tradeoffs, and produce specific design decisions.
 
 **Frontend only:**
+
 - Launch `frontend-architect` with the task context. Same: explore, evaluate, decide.
 
 **Fullstack:**
+
 - Launch `backend-architect` first — instruct it to include a clearly defined **API contract** (endpoint URLs, methods, request/response shapes, status codes).
 - Extract the API contract from the backend architect's output.
 - Launch `frontend-architect` with the task context AND the API contract — instruct it to design against the defined contract, not invent its own.
@@ -100,7 +105,7 @@ Auto-detects scope and launches the appropriate architect(s). After planning, as
       - Backend only: launch `backend-coder` with the architect's plan
       - Frontend only: launch `frontend-coder` with the architect's plan
       - Fullstack: launch BOTH `backend-coder` and `frontend-coder` in parallel — frontend-coder also gets the API contract
-      **IMPORTANT: Always dispatch a coder subagent. Do NOT implement code changes yourself.** The coder dispatch is what triggers the auto-review chain. Implementing inline bypasses peer review.
+        **IMPORTANT: Always dispatch a coder subagent. Do NOT implement code changes yourself.** The coder dispatch is what triggers the auto-review chain. Implementing inline bypasses peer review.
     - Later → Stop here
 
 15. **Present summary**:
@@ -108,39 +113,47 @@ Auto-detects scope and launches the appropriate architect(s). After planning, as
     - File written (if saved)
     - What was implemented (if coded)
     - Remind to check Figma if frontend work is involved
-    - **If any code was changed during this session** (whether by dispatched coders OR by you directly), tell the user: "Auto-dispatching `/peer-review` to check the implementation before committing." Then invoke the `/peer-review` skill using the Skill tool (`skill: "peer-review"`). This runs AFTER all implementation is complete and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing. **Never skip peer review just because no coder subagent was dispatched** — the review is triggered by code changes, not by how those changes were made.
+    - **If any code was changed during this session** (whether by dispatched coders OR by you directly), tell the user: "Auto-dispatching `/review` to check the implementation before committing." Then invoke the `/review` skill using the Skill tool (`skill: "review"`). This runs AFTER all implementation is complete and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing. **Never skip peer review just because no coder subagent was dispatched** — the review is triggered by code changes, not by how those changes were made.
 
 ## Template (for saving to disk)
 
 ```markdown
 # Title
+
 > Jira: JIRAPROJECT-TICKETNUMBER (if applicable)
 > Context sources: Jira ticket, Figma mockups (sourced via MCP)
 > Date: YYYY-MM-DD
 
 ## Summary
+
 One paragraph on what this accomplishes.
 
 ## Decisions
+
 Key decisions made during planning, with rationale.
 
 ## Approach
+
 - Breakdown by area (backend, frontend, etc.)
 - Specific patterns to follow
 
 ## File Changes
-| File | Action | Description |
-|------|--------|-------------|
+
+| File | Action               | Description  |
+| ---- | -------------------- | ------------ |
 | path | Create/Modify/Delete | What and why |
 
 ## Sequence
+
 1. Step-by-step implementation order with dependencies noted
 
 ## Dependencies
+
 - External packages to install
 - Internal modules to build on
 
 ## Verification
+
 Write verification items as TESTABLE assertions, not just descriptions. Each item should specify HOW to verify, not just WHAT to verify.
 
 - [ ] **Test-verified**: [item] — "run tests, confirm [specific test name/pattern] passes"

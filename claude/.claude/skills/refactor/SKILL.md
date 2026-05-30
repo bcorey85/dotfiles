@@ -1,6 +1,6 @@
 ---
 name: refactor
-description: Smart refactorer — dispatches coder subagent(s), then auto-runs peer review
+description: Smart refactorer — dispatches coder subagent(s), then auto-runs `/review`
 allowed-tools: [Task, Read, Glob, Grep, Skill]
 ---
 
@@ -38,7 +38,7 @@ Analyze the code to refactor, determine whether it's frontend, backend, or fulls
    - What changed structurally
    - Any related concerns or follow-up items
 
-5. **Auto-dispatch peer review**: After summarizing the refactor, tell the user: "Auto-dispatching `/peer-review` to check the refactored code before committing." Then invoke the `/peer-review` skill using the Skill tool (`skill: "peer-review"`). If the user passed `+fast` or `+deep`, pass the same modifier to the peer review invocation (e.g., `skill: "peer-review", args: "+fast"`). This step runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing.
+5. **Auto-dispatch peer review**: After summarizing the refactor, tell the user: "Auto-dispatching `/review` to check the refactored code before committing." Then invoke the `/review` skill using the Skill tool (`skill: "review"`). If the user passed `+fast` or `+deep`, pass the same modifier to the peer review invocation (e.g., `skill: "review", args: "+fast"`). This step runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing.
 
 ## Code to refactor
 

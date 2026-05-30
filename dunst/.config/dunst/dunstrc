@@ -46,6 +46,17 @@
     mouse_middle_click = close_all
     mouse_right_click = close_current
 
+# Suppress YouTube notifications (browser desktop notifications)
+[suppress_youtube_summary]
+    summary = "*YouTube*"
+    skip_display = yes
+    history_ignore = yes
+
+[suppress_youtube_body]
+    body = "*YouTube*"
+    skip_display = yes
+    history_ignore = yes
+
 [urgency_low]
     background = "#2e3440"
     foreground = "#6c7086"

@@ -33,6 +33,7 @@ docs/eng-specs/IQ-XXX-short-description/
 ## Inputs
 
 You need:
+
 1. The ticket — prefer the snapshot at `IQ-XXX-00-ticket.md` if it exists in the task directory; otherwise accept a path or description from the user.
 2. The research document (`IQ-XXX-02-research.md` in the task directory).
 3. The design document (`IQ-XXX-03-design.md` in the task directory).
@@ -83,11 +84,12 @@ Substitute the real path.
 **Date**: YYYY-MM-DD
 
 ## Overview
+
 [1-2 sentence summary]
 
 ## Phase Status
 
-<!-- Updated by /code after each phase completes + peer-review passes. Source of truth for "which phase is next" across /clear boundaries. Do not delete. -->
+<!-- Updated by /code after each phase completes + review passes. Source of truth for "which phase is next" across /clear boundaries. Do not delete. -->
 
 - [ ] Phase 1: [name from structure outline]
 - [ ] Phase 2: [name]
@@ -95,25 +97,31 @@ Substitute the real path.
 <!-- one line per phase, matching the Phase headers below -->
 
 ## Current State Analysis
+
 [Brief — from design doc]
 
 ## Desired End State
+
 [Brief — from design doc, with verification criteria]
 
 ## What We're NOT Doing
+
 [Scope boundaries from design doc]
 
 ## Implementation Approach
+
 [Strategy and key decisions — from design doc]
 
 ## Phase 1: [Name from structure outline]
 
 ### Overview
+
 [What this phase accomplishes]
 
 ### Changes Required:
 
 #### 1. [Component/File]
+
 **File**: `path/to/file.ts`
 **Changes**: [specific changes]
 
@@ -122,6 +130,7 @@ Substitute the real path.
 `​`​`
 
 #### 2. [Component/File]
+
 **File**: `path/to/file.ts`
 **Changes**: [specific changes]
 
@@ -130,6 +139,7 @@ Substitute the real path.
 Write verification items as TESTABLE assertions, not just descriptions. Each item specifies HOW to verify, not just WHAT.
 
 #### Automated Verification:
+
 - [ ] **Build-verified**: build succeeds with zero errors — `<project build cmd>`
 - [ ] **Test-verified**: [specific test name/pattern] passes — `<project test cmd>`
 - [ ] **Lint/type-verified**: no new errors — `<project lint/typecheck cmd>`
@@ -137,6 +147,7 @@ Write verification items as TESTABLE assertions, not just descriptions. Each ite
 (For this repo: `npm run validate` covers typecheck + lint + tests + build.)
 
 #### Manual Verification:
+
 - [ ] **Manual-verified**: [scenario] — "hit [endpoint/UI flow], confirm [expected response/behavior]"
 - [ ] **Code-verified**: [item] — "grep for [pattern] in [file], confirm [count/shape]" (weakest — flag when it's the only verification)
 
@@ -145,14 +156,17 @@ Write verification items as TESTABLE assertions, not just descriptions. Each ite
 ---
 
 ## Phase 2: [Name]
+
 [Same structure...]
 
 ---
 
 ## Testing Strategy
+
 [Unit tests, E2E tests, manual steps]
 
 ## References
+
 - Ticket: IQ-XXX
 - Research: docs/eng-specs/IQ-XXX-description/IQ-XXX-02-research.md
 - Design: docs/eng-specs/IQ-XXX-description/IQ-XXX-03-design.md
@@ -162,12 +176,14 @@ Write verification items as TESTABLE assertions, not just descriptions. Each ite
 ## Sub-Agent Usage
 
 Spawn sub-agents only for tactical lookups:
+
 - Current function signatures you need to match.
 - Existing test patterns to follow.
 - Import paths and module structure.
 - Do NOT use sub-agents for design decisions — those are already resolved.
 
 **Model and subagent_type are mandatory:**
+
 - `model: "haiku"` always — these are read-only fact-extractions. The agent-model-guard hook rejects unmodeled or `opus` calls.
 - `subagent_type: "Explore"` by default. Only use `general-purpose` when Explore can't handle the trace.
 

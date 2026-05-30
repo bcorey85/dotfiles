@@ -1,7 +1,20 @@
 ---
 name: migrate-component
 description: Migrate a component from the React toolkit to the Vue toolkit — investigates React source for feature parity, pulls Figma tokens, and produces an implementation plan.
-allowed-tools: [Task, Read, Glob, Grep, Bash, AskUserQuestion, Skill, mcp__figma__get_design_context, mcp__figma__get_variable_defs, mcp__figma__get_metadata, mcp__figma__get_screenshot]
+allowed-tools:
+  [
+    Task,
+    Read,
+    Glob,
+    Grep,
+    Bash,
+    AskUserQuestion,
+    Skill,
+    mcp__figma__get_design_context,
+    mcp__figma__get_variable_defs,
+    mcp__figma__get_metadata,
+    mcp__figma__get_screenshot,
+  ]
 ---
 
 # Migrate Component
@@ -39,7 +52,6 @@ Example: `/migrate-component pagination https://www.figma.com/design/DCoURttbQoy
 ### Phase 1: Investigate React Source (Feature Parity Audit)
 
 4. **Launch an Explore agent** (`subagent_type: Explore`, thoroughness: `"very thorough"`) against the **source** repo to investigate the React component. Instruct it to find and document:
-
    - **Component file(s):** Main component, sub-components, index/barrel exports
    - **Props interface:** Every prop with its type, default value, and whether it's required — copy the full TypeScript interface verbatim
    - **Variants/sizes:** All visual variants (e.g., severity, size, outlined, text, rounded)
@@ -90,18 +102,18 @@ Example: `/migrate-component pagination https://www.figma.com/design/DCoURttbQoy
 
 14. **Map React features to Vue equivalents:**
 
-    | React Pattern | Vue Equivalent |
-    |---|---|
-    | Props interface | `defineProps<T>()` with same prop names |
-    | `children` / render props | Vue `<slot>` / named slots |
-    | `useState` | `ref()` / `reactive()` |
-    | `useEffect` | `watch()` / `onMounted()` |
-    | `useCallback`/`useMemo` | `computed()` |
-    | `forwardRef` | `defineExpose()` |
-    | MUI component | PrimeVue equivalent (unstyled + PT) |
-    | MUI `sx` prop / styled() | SCSS component file + PT classes |
-    | `className` prop | `:class` binding in PT or template |
-    | `data-testid` | Same convention via PT `data-testid` or template attribute |
+    | React Pattern             | Vue Equivalent                                             |
+    | ------------------------- | ---------------------------------------------------------- |
+    | Props interface           | `defineProps<T>()` with same prop names                    |
+    | `children` / render props | Vue `<slot>` / named slots                                 |
+    | `useState`                | `ref()` / `reactive()`                                     |
+    | `useEffect`               | `watch()` / `onMounted()`                                  |
+    | `useCallback`/`useMemo`   | `computed()`                                               |
+    | `forwardRef`              | `defineExpose()`                                           |
+    | MUI component             | PrimeVue equivalent (unstyled + PT)                        |
+    | MUI `sx` prop / styled()  | SCSS component file + PT classes                           |
+    | `className` prop          | `:class` binding in PT or template                         |
+    | `data-testid`             | Same convention via PT `data-testid` or template attribute |
 
 15. **Identify gaps:**
     - React props with no clear PrimeVue equivalent
@@ -121,6 +133,7 @@ Example: `/migrate-component pagination https://www.figma.com/design/DCoURttbQoy
 **PrimeVue Base:** `<PrimeVue component name>` (or "Custom — no PrimeVue equivalent")
 
 **Props Interface (Vue)**
+
 ```typescript
 // Mapped from React, adapted for Vue conventions
 interface <ComponentName>Props {
@@ -129,6 +142,7 @@ interface <ComponentName>Props {
 ```
 
 **Variants & Visual States**
+
 - List all variants from React + any additional states from Figma
 - Note which are handled by PrimeVue PT vs custom SCSS
 
@@ -140,25 +154,28 @@ interface <ComponentName>Props {
 
 **Files to Create/Modify**
 
-| File | Action | Description |
-|---|---|---|
-| `lib/components/<Name>/<Name>.vue` | Create | Main component |
-| `lib/assets/scss/components/_<name>.scss` | Create | Component styles |
-| `lib/primevue/preset.ts` | Modify | Add PT entry for PrimeVue component |
-| `lib/components/index.ts` | Modify | Export new component |
-| `src/pages/<Name>Page.vue` | Create | Demo page with all variants |
-| `src/router.ts` | Modify | Add demo route |
-| `src/pages/HomePage.vue` | Modify | Add link to demo |
-| `docs/component-mapping.md` | Modify | Document migration |
+| File                                      | Action | Description                         |
+| ----------------------------------------- | ------ | ----------------------------------- |
+| `lib/components/<Name>/<Name>.vue`        | Create | Main component                      |
+| `lib/assets/scss/components/_<name>.scss` | Create | Component styles                    |
+| `lib/primevue/preset.ts`                  | Modify | Add PT entry for PrimeVue component |
+| `lib/components/index.ts`                 | Modify | Export new component                |
+| `src/pages/<Name>Page.vue`                | Create | Demo page with all variants         |
+| `src/router.ts`                           | Modify | Add demo route                      |
+| `src/pages/HomePage.vue`                  | Modify | Add link to demo                    |
+| `docs/component-mapping.md`               | Modify | Document migration                  |
 
 **Implementation Sequence**
+
 1. Numbered steps with dependencies noted
 
 **Feature Parity Checklist**
+
 - [ ] Each React feature mapped to Vue implementation
 - [ ] Each Figma visual state accounted for
 
 **Open Questions** (if any)
+
 - Decisions that need user input before implementation
 
 ---
@@ -175,7 +192,7 @@ interface <ComponentName>Props {
 
 18. **Auto-dispatch `/code fe`** — invoke the Skill tool (`skill: "code", args: "fe"`) with the full migration plan as context. The coder has everything it needs: React audit, Figma tokens, Vue props interface, file list, and implementation sequence.
 
-19. **After coder completes**, auto-dispatch `/peer-review` — invoke the Skill tool (`skill: "peer-review"`). This is mandatory; never skip it.
+19. **After coder completes**, auto-dispatch `/review` — invoke the Skill tool (`skill: "review"`). This is mandatory; never skip it.
 
 ## Arguments
 

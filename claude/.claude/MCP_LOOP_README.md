@@ -33,29 +33,29 @@ mcp_auth jira --scope local
 
 ### Role-Based MCP Access
 
-| Role | Reads From | Writes To |
-|------|-----------|-----------|
-| PM | Notion (specs), Figma (mockups) | Notion (specs, docs, changelog), Jira (tickets) |
-| Dev | Jira (tickets, AC), Figma (mockups) | GitHub (code, PRs), Jira (transitions only), Notion (eng-arch → Wiki) |
+| Role | Reads From                          | Writes To                                                             |
+| ---- | ----------------------------------- | --------------------------------------------------------------------- |
+| PM   | Notion (specs), Figma (mockups)     | Notion (specs, docs, changelog), Jira (tickets)                       |
+| Dev  | Jira (tickets, AC), Figma (mockups) | GitHub (code, PRs), Jira (transitions only), Notion (eng-arch → Wiki) |
 
-The default path: **devs pull from Jira, not Notion**. The Jira ticket has everything needed (summary, AC, link to Notion spec for optional deep-dive). This cut dev-loop MCP calls by ~50%. Devs *can* read Notion directly if they need deeper spec context — it's just not the efficient default. Devs also push `eng-arch/` docs to the Notion Wiki via `/push-arch`.
+The default path: **devs pull from Jira, not Notion**. The Jira ticket has everything needed (summary, AC, link to Notion spec for optional deep-dive). This cut dev-loop MCP calls by ~50%. Devs _can_ read Notion directly if they need deeper spec context — it's just not the efficient default. Devs also push `eng-arch/` docs to the Notion Wiki via `/push-arch`.
 
 ### Three-Tier Artifact System
 
-| Tier | Location | Owner | Synced to Notion? | Purpose |
-|------|----------|-------|--------------------|---------|
-| Product specs | `PM_WORKSPACE/product-specs/` | PM | Yes (Specs DB) | What/why |
-| Eng plans | `eng-plan/` (in repo) | Dev | No (local only) | How (per-ticket) |
-| Eng architecture | `eng-arch/` (in repo) | Dev | Yes (Wiki) | How (cross-cutting) |
+| Tier             | Location                      | Owner | Synced to Notion? | Purpose             |
+| ---------------- | ----------------------------- | ----- | ----------------- | ------------------- |
+| Product specs    | `PM_WORKSPACE/product-specs/` | PM    | Yes (Specs DB)    | What/why            |
+| Eng plans        | `eng-plan/` (in repo)         | Dev   | No (local only)   | How (per-ticket)    |
+| Eng architecture | `eng-arch/` (in repo)         | Dev   | Yes (Wiki)        | How (cross-cutting) |
 
 ### MCP Servers
 
-| Server | Transport | Primary Role | Notes |
-|--------|-----------|-------------|-------|
-| Jira | HTTP (`https://mcp.atlassian.com/v1/mcp`) | Both loops | Sessions expire ~2hr. Carries 74% of all MCP calls. |
-| Notion | HTTP (`https://mcp.notion.com/mcp`) | Primarily PM loop | Specs DB, Docs, Wiki, Changelog. Devs use for `/push-arch` and optional spec deep-dives. |
-| Figma | HTTP (`https://mcp.figma.com/mcp`) | Both loops (frontend) | Rate limits on free plan (6 calls/month) |
-| GitHub | HTTP (`https://api.githubcopilot.com/mcp`) | Rarely used | `gh` CLI displaces it for most operations |
+| Server | Transport                                  | Primary Role          | Notes                                                                                    |
+| ------ | ------------------------------------------ | --------------------- | ---------------------------------------------------------------------------------------- |
+| Jira   | HTTP (`https://mcp.atlassian.com/v1/mcp`)  | Both loops            | Sessions expire ~2hr. Carries 74% of all MCP calls.                                      |
+| Notion | HTTP (`https://mcp.notion.com/mcp`)        | Primarily PM loop     | Specs DB, Docs, Wiki, Changelog. Devs use for `/push-arch` and optional spec deep-dives. |
+| Figma  | HTTP (`https://mcp.figma.com/mcp`)         | Both loops (frontend) | Rate limits on free plan (6 calls/month)                                                 |
+| GitHub | HTTP (`https://api.githubcopilot.com/mcp`) | Rarely used           | `gh` CLI displaces it for most operations                                                |
 
 ---
 
@@ -72,6 +72,7 @@ The default path: **devs pull from Jira, not Notion**. The Jira ticket has every
 Runs a multi-agent research and planning pipeline to produce a comprehensive product spec.
 
 **What happens:**
+
 1. **Product spec agent** defines the problem, user stories, success criteria, scope
 2. **Research phase** (mandatory) — identifies 3-5 pivotal questions, runs web searches for best practices, flags findings that contradict initial assumptions
 3. **User checkpoint** — presents spec + research for approval before continuing
@@ -88,6 +89,7 @@ Runs a multi-agent research and planning pipeline to produce a comprehensive pro
 Publishes the local product spec to Notion's Specs DB.
 
 **What happens:**
+
 1. Finds the source — either a `product-specs/*.md` file or a brief description
 2. Extracts and condenses into Notion template format: Problem → Approach → AC → Jira Tickets → Open Questions
 3. Creates a page in the Specs DB (`notion-create-pages`) with Status: "Draft"
@@ -100,6 +102,7 @@ Publishes the local product spec to Notion's Specs DB.
 Reads a Notion spec and creates Jira tickets from its acceptance criteria.
 
 **What happens:**
+
 1. Finds the Notion spec (by name search or page ID)
 2. Extracts each acceptance criterion → each becomes a Jira Task
 3. Creates tickets via `createJiraIssue` (description as **markdown string**, NOT ADF JSON)
@@ -138,16 +141,18 @@ Update spec status → Implemented   → via Notion MCP directly
 **Tools:** Jira MCP (read) + Figma MCP (read, if frontend) + `gh` CLI (write)
 **Goal:** Turn a Jira ticket into a shipped, reviewed PR.
 
-### Pipeline: `/pull-ticket` → `/pull-design` → `/eng-plan` → `/code` → `/peer-review` → `/commit` → `/verify-changes` → `/pr`
+### Pipeline: `/pull-ticket` → `/pull-design` → `/eng-plan` → `/code` → `/review` → `/commit` → `/verify-changes` → `/pr`
 
 ### Step 0: Create the branch
 
 **Option A — Manual:**
+
 ```bash
 git checkout -b PROJ-XX-short-description
 ```
 
 **Option B — `/create-branch` (recommended):**
+
 ```
 /create-branch PROJ-20                       → fetches ticket summary, builds branch name, bases off main
 /create-branch PROJ-20 off Sprint-A-2026     → explicit ticket + sprint branch base
@@ -165,6 +170,7 @@ For work without a Jira ticket: `feature-short-description` or `fix-short-descri
 Fetches the Jira ticket for the current branch. This is the entry point to the dev loop.
 
 **What happens:**
+
 1. Reads the branch name, extracts the Jira ticket key (e.g., `PROJ-14`)
 2. Fetches the ticket via `getJiraIssue` — summary, description, AC, status
 3. **Auto-transitions**: If status is "To Do" → automatically invokes `/move-ticket in progress` (no confirmation)
@@ -172,13 +178,14 @@ Fetches the Jira ticket for the current branch. This is the entry point to the d
 
 **Auto-invocation:** `/move-ticket in progress` (via Skill tool)
 
-**Design note:** The efficient default is Jira only — the ticket description has everything needed. Devs *can* read Notion for deeper spec context, but it's rarely necessary.
+**Design note:** The efficient default is Jira only — the ticket description has everything needed. Devs _can_ read Notion for deeper spec context, but it's rarely necessary.
 
 ### Step 2: `/pull-design [figma-url]` (Frontend only)
 
 Extracts Figma design context before architecture/implementation. **Run before `/eng-plan`** so the architect has design measurements.
 
 **What happens:**
+
 1. Finds the Figma URL — from arguments, Jira ticket description, or asks the user
 2. Parses the URL for `fileKey` and `nodeId`
 3. Checks for cached design tokens (`eng-arch/design-tokens.md`) — if cached, runs in lightweight diff mode (only reports NEW or CHANGED tokens)
@@ -194,6 +201,7 @@ Extracts Figma design context before architecture/implementation. **Run before `
 Plans the implementation. Consumes whatever context is already in the conversation thread (from `/pull-ticket`, `/pull-design`, or user description).
 
 **What happens:**
+
 1. **Gathers context** — uses thread context, checks for existing eng plan in `eng-plan/`
 2. **Assesses scope** — frontend, backend, or fullstack. Accepts `be`/`fe`/`fs` modifiers.
 3. **Launches architect agent(s)** — based on scope:
@@ -205,61 +213,66 @@ Plans the implementation. Consumes whatever context is already in the conversati
    - "Save to disk?" → writes to `eng-plan/PROJ-XX-description.md`
    - "Implement now?" → dispatches coder subagent(s)
 
-**If implementing:** Dispatches `backend-coder` and/or `frontend-coder`, then auto-invokes `/peer-review`.
+**If implementing:** Dispatches `backend-coder` and/or `frontend-coder`, then auto-invokes `/review`.
 
 **Key rule:** A well-written ticket is NOT a reason to skip the architect. Tickets describe the PM's approach; architects validate against real code.
 
-**Auto-invocation:** `/peer-review` (if coders dispatched)
+**Auto-invocation:** `/review` (if coders dispatched)
 
 ### Step 4: `/code [modifiers] <task description>`
 
 Dispatches coder subagent(s) without architectural planning. Use for straightforward implementation where the plan is already clear.
 
 **Modifiers:**
+
 - `be`/`fe`/`fs` — force scope
 - `+fast` — Haiku model (trivial changes)
 - `+deep` — Opus model (complex tasks)
 
 **What happens:**
+
 1. Determines scope (auto-detect or from modifier)
 2. Dispatches `backend-coder` and/or `frontend-coder` subagents
 3. Summarizes what was implemented
-4. **Auto-dispatches `/peer-review`** (passes through `+fast`/`+deep` modifier)
+4. **Auto-dispatches `/review`** (passes through `+fast`/`+deep` modifier)
 
 **When to use `/code` vs `/eng-plan`:** Use `/code` when the approach is clear. Use `/eng-plan` when design decisions are needed.
 
-### Step 5: `/peer-review [modifiers]`
+### Step 5: `/review [modifiers]`
 
 Reviews recent changes using the `code-reviewer` subagent. This is the quality gate between implementation and commit.
 
 **Modifiers:** `+fast` (Haiku), `+deep` (Opus)
 
 **What happens:**
+
 1. Checks modified file count
 2. If 5 or fewer files → single reviewer. If more → parallel reviewers (frontend + backend)
 3. Reviews for: bugs, security, performance, style, missing error handling, anti-patterns, architectural violations
 4. Presents results by severity
-5. Suggests next steps: `/fix-feedback` if issues found, `/commit` if clean
+5. Suggests next steps: `/fix` if issues found, `/commit` if clean
 
-**Auto-invoked by:** `/code`, `/fix`, `/refactor`, `/fix-feedback`, `/eng-plan` (when coders dispatched)
+**Auto-invoked by:** `/code`, `/fix`, `/refactor`, `/fix`, `/eng-plan` (when coders dispatched)
 
 **Target:** 1 review round for standard features, 2 max for complex ones.
 
-### Step 5b: `/fix-feedback [modifiers]` (If review found issues)
+### Step 5b: `/fix [modifiers]` (If review found issues)
 
 Dispatches coder subagents to fix valid review findings.
 
 **What happens:**
+
 1. Parses review feedback, categorizes as frontend or backend
 2. Dispatches appropriate coder(s) with the specific issues
 3. Coders include a **caller-check**: if a fix changes a method signature or return type, all callers are updated in the same pass
-4. **Auto-dispatches `/peer-review`** after fixes complete
+4. **Auto-dispatches `/review`** after fixes complete
 
 ### Step 6: `/commit [modifiers]`
 
 Creates a commit and pushes. User MUST stage files first — Claude never stages.
 
 **What happens:**
+
 1. Checks staged changes (`git diff --cached`)
 2. Notes any unstaged changes (informational only)
 3. Drafts commit message: `PROJ-XX: description` if branch has ticket key, else conventional commit format
@@ -272,6 +285,7 @@ Creates a commit and pushes. User MUST stage files first — Claude never stages
 Verifies implementation against eng-plan checklist and Jira ticket AC. Final quality gate before PR.
 
 **What happens:**
+
 1. Finds the eng plan and extracts verification checklist
 2. Pulls Jira ticket AC via `getJiraIssue`
 3. Gets the branch diff
@@ -283,6 +297,7 @@ Verifies implementation against eng-plan checklist and Jira ticket AC. Final qua
 9. Reports coverage gaps and uncovered changes
 
 **Key rules:**
+
 - Never says "all checks pass" if any item was verified by file reading alone
 - Tests can pass while the build is broken — always run both
 - WEAK PASS = code looks correct but has no test coverage
@@ -294,6 +309,7 @@ Creates the pull request and transitions the Jira ticket.
 **Modifiers:** `+draft` (draft PR, no Jira transition), `--base <branch>` (custom base)
 
 **What happens:**
+
 1. Resolves base branch (from `--base`, existing PR, or default to `main`)
 2. Gathers context — status, commits, diff, branch name
 3. Checks for existing PR (converts draft → ready if applicable)
@@ -310,9 +326,9 @@ git checkout -b PROJ-XX-description
 /pull-ticket                        → fetches Jira ticket, auto-moves To Do → In Progress
 /pull-design                        → extracts Figma measurements (frontend only, before eng-plan)
 /eng-plan                           → runs architect(s), asks questions, optionally implements
-/code                               → dispatches coder(s), auto-runs /peer-review
-/peer-review                        → reviews changes, suggests /fix-feedback or /commit
-  └─ /fix-feedback                  → fixes issues, auto-re-runs /peer-review
+/code                               → dispatches coder(s), auto-runs /review
+/review                        → reviews changes, suggests /fix or /commit
+  └─ /fix                  → fixes issues, auto-re-runs /review
 /commit                             → stages, commits, pushes
 /verify-changes                     → tests + build + checklist verification
 /pr                                 → creates PR, auto-moves In Progress → In Review
@@ -324,9 +340,9 @@ git checkout -b PROJ-XX-description
 
 ### Bug Fixing
 
-**`/fix [be/fe/fs] [+fast/+deep] <bug description>`** — Analyzes a bug, determines scope, dispatches coder(s) to fix it. Auto-invokes `/peer-review`.
+**`/fix [be/fe/fs] [+fast/+deep] <bug description>`** — Analyzes a bug, determines scope, dispatches coder(s) to fix it. Auto-invokes `/review`.
 
-**`/refactor [+fast/+deep] <description>`** — Dispatches coder(s) for refactoring. Auto-invokes `/peer-review`.
+**`/refactor [+fast/+deep] <description>`** — Dispatches coder(s) for refactoring. Auto-invokes `/review`.
 
 ### Architecture & Documentation
 
@@ -374,15 +390,15 @@ The pattern: a `/cache-*` skill pulls data once via MCP, writes it to a local fi
 
 Skills chain into other skills automatically. The orchestrator (parent skill) invokes follow-up skills — subagents cannot invoke skills themselves.
 
-| Trigger Skill | Auto-Invokes | Condition |
-|--------------|-------------|-----------|
-| `/pull-ticket` | `/move-ticket in progress` | Ticket is in "To Do" |
-| `/code` | `/peer-review` | After all coders complete |
-| `/fix` | `/peer-review` | After all coders complete |
-| `/refactor` | `/peer-review` | After all coders complete |
-| `/fix-feedback` | `/peer-review` | After all coders complete |
-| `/eng-plan` | `/peer-review` | After coders dispatched + complete |
-| `/pr` | `/move-ticket in review` | Non-draft PRs only |
+| Trigger Skill  | Auto-Invokes               | Condition                          |
+| -------------- | -------------------------- | ---------------------------------- |
+| `/pull-ticket` | `/move-ticket in progress` | Ticket is in "To Do"               |
+| `/code`        | `/review`                  | After all coders complete          |
+| `/fix`         | `/review`                  | After all coders complete          |
+| `/refactor`    | `/review`                  | After all coders complete          |
+| `/fix`         | `/review`                  | After all coders complete          |
+| `/eng-plan`    | `/review`                  | After coders dispatched + complete |
+| `/pr`          | `/move-ticket in review`   | Non-draft PRs only                 |
 
 **Manual triggers (never auto-invoked):** `/commit`, `/pr`, `/verify-changes` — these are user decision points.
 
@@ -390,11 +406,11 @@ Skills chain into other skills automatically. The orchestrator (parent skill) in
 
 ## When to Skip the PM Loop
 
-| Work Type | PM Loop? | Jira Ticket? | Example |
-|-----------|----------|-------------|---------|
-| Product features | Full PM loop | Yes (from spec) | "Add task filtering" |
-| Infrastructure / DX | Skip PM loop | Yes (direct Task) | "Add Docker", "CI/CD pipeline" |
-| Experiments / spikes | Skip both | No | Throwaway branches, "let me try something" |
+| Work Type            | PM Loop?     | Jira Ticket?      | Example                                    |
+| -------------------- | ------------ | ----------------- | ------------------------------------------ |
+| Product features     | Full PM loop | Yes (from spec)   | "Add task filtering"                       |
+| Infrastructure / DX  | Skip PM loop | Yes (direct Task) | "Add Docker", "CI/CD pipeline"             |
+| Experiments / spikes | Skip both    | No                | Throwaway branches, "let me try something" |
 
 **Infrastructure tickets** skip Notion entirely. Create a Jira Task directly, then use the full dev loop from `/pull-ticket` onward.
 
@@ -403,11 +419,13 @@ Skills chain into other skills automatically. The orchestrator (parent skill) in
 ## Git Conventions
 
 **With Jira ticket:**
+
 - Branch: `PROJ-XX-short-description`
 - Commit: `PROJ-XX: description`
 - PR title: `PROJ-XX: description`
 
 **Without ticket:**
+
 - Branch: `feature-short-description` or `fix-short-description`
 - Commit: conventional format (`type(scope): description`)
 
@@ -418,12 +436,14 @@ Skills chain into other skills automatically. The orchestrator (parent skill) in
 ## Key Lessons Learned
 
 ### MCP vs Local
+
 - **If you have the data locally, don't use MCP.** Grep, git log, file reads — all faster and free.
 - **MCP shines for cross-system workflows.** Jira ticket → code → PR that references it.
 - **`gh` CLI completely displaced GitHub MCP** for solo dev. MCP would be useful for cross-repo search in a team setting.
 - **Jira transition IDs are stable** — cached in `PROJECT_ROOT/docs/mcp-references/JIRA.md`, zero API calls for common transitions.
 
 ### Workflow Patterns
+
 - **Encapsulate flaky MCP calls into skills.** When Claude gets an API call wrong repeatedly, wrap it in a skill. The skill becomes the correctness boundary.
 - **Defense in depth for enforcement.** Three layers: skill-level (strongest), CLAUDE.md (backup), MEMORY.md (context shaping). Use strong gating language: "STOP", "hard gate", "Do NOT proceed."
 - **Auto-invoke mechanical steps, keep decision points manual.** Ticket transitions = auto. Commit/PR/verify = manual.
@@ -431,14 +451,16 @@ Skills chain into other skills automatically. The orchestrator (parent skill) in
 - **Backend architect as API contract auditor.** Even for frontend-only specs, run the backend architect to READ actual code. Specs can diverge from reality.
 
 ### Design vs Ticket Tension
+
 - **Figma and tickets will diverge.** Figma shows visual details the ticket doesn't mention (hover states, spacing, empty states). Tickets specify behavior Figma can't express (debounce timing, error handling, rollback logic). Sometimes they actively contradict each other (Figma shows a save button, ticket says auto-save on blur).
 - **Precedence rule:** Ticket AC wins for behavior, Figma wins for visual measurements. When silent (Figma shows something, ticket doesn't mention it), implement as shown unless it conflicts with the data model.
 - **Discover divergences early, not mid-implementation.** Run `/pull-design` before `/eng-plan` so the architect can account for gaps. Discovering 10 conflicts mid-`/code` means stopping, analyzing each one, deciding precedence, and potentially re-planning.
 - **Aspirational: PM bakes design context into the ticket.** The ideal flow is the PM extracts Figma measurements and visual decisions during `/create-ticket` and includes a Design Brief in the ticket description — with a divergence table and resolutions. This way `/pull-ticket` gives the dev complete context, and `/pull-design` becomes validation rather than discovery. Not fully automated yet but the direction we're heading.
 
 ### Quality
+
 - **1 review round target.** Push quality upstream (architect checklists, coder pre-submission checks) instead of catching everything at review time.
-- **`/peer-review` = code quality.** Bugs, patterns, security.
+- **`/review` = code quality.** Bugs, patterns, security.
 - **`/verify-changes` = AC completeness.** Does it do what the ticket says?
 - **Tests can pass while the build is broken.** Always run both.
 - **Never report "all checks pass" if verification was file-reading only.** Be honest about confidence levels.
@@ -448,7 +470,14 @@ Skills chain into other skills automatically. The orchestrator (parent skill) in
 > **Footnote: MCP Usage Logging**
 >
 > Optionally, you can track MCP tool calls for usage analysis. We batch-log all calls at PR time (not mid-session) to `docs/mcp-usage.jsonl` — one JSON object per line:
+>
 > ```jsonl
-> {"ts":"2026-02-21T19:46:38Z","server":"jira","tool":"getJiraIssue","context":"pulled PROJ-14 ticket context"}
+> {
+>   "ts": "2026-02-21T19:46:38Z",
+>   "server": "jira",
+>   "tool": "getJiraIssue",
+>   "context": "pulled PROJ-14 ticket context"
+> }
 > ```
+>
 > Only MCP tool calls are logged (Jira, Notion, Figma, GitHub) — not `gh` CLI or local tools. Include failures with `"error": true`. This data is useful for spotting wasteful call patterns (e.g., we found 13 avoidable `getTransitionsForJiraIssue` calls, which led to caching transition IDs locally in `PROJECT_ROOT/docs/mcp-references/JIRA.md`).

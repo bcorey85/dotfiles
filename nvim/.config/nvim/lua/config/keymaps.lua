@@ -67,6 +67,7 @@ vim.keymap.set("n", "<leader>gc", function()
 end, { desc = "Git commit (terminal — shows hook output)" })
 
 vim.keymap.set("n", "<leader>gp", "<cmd>Git push<cr>", { desc = "Git push" })
+vim.keymap.set("n", "<leader>gF", "<cmd>Git push --force-with-lease<cr>", { desc = "Git push --force-with-lease" })
 vim.keymap.set("n", "<leader>gP", "<cmd>Git pull<cr>", { desc = "Git pull" })
 vim.keymap.set("n", "<leader>gt", function()
   local branch = vim.fn.systemlist("git symbolic-ref --short HEAD")[1]

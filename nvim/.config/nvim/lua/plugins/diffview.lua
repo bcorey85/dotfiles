@@ -26,20 +26,27 @@ local function tmux_zoom()
 end
 
 local function leave_review_comment(mode)
-  local lib = require("diffview.lib")
-  local view = lib.get_current_view()
   local abs_path
 
-  if view and view.panel and view.panel.cur_file then
-    abs_path = view.panel.cur_file.path
-  elseif view and view:instanceof(lib.StandardView or {}) and view.cur_entry then
-    abs_path = view.cur_entry.path
+  -- pcall so pressing <leader>cc in a random buffer never force-loads diffview
+  local ok, lib = pcall(require, "diffview.lib")
+  if ok then
+    local view = lib.get_current_view()
+    if view and view.panel and view.panel.cur_file then
+      abs_path = view.panel.cur_file.path
+    elseif view and view:instanceof(lib.StandardView or {}) and view.cur_entry then
+      abs_path = view.cur_entry.path
+    end
   end
 
   if not abs_path then
     local bufname = vim.api.nvim_buf_get_name(0)
     if bufname:match("^diffview://") then
       vim.notify("Could not resolve real file path", vim.log.levels.WARN)
+      return
+    end
+    if bufname == "" then
+      vim.notify("Buffer has no file name", vim.log.levels.WARN)
       return
     end
     abs_path = bufname
@@ -63,14 +70,13 @@ local function leave_review_comment(mode)
       return
     end
 
-    local repo_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
-    if not repo_root or repo_root == "" then
-      vim.notify("Not inside a git repo", vim.log.levels.ERROR)
-      return
-    end
-
     if not abs_path:match("^/") then
-      abs_path = repo_root .. "/" .. abs_path
+      local repo_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
+      if repo_root and repo_root ~= "" then
+        abs_path = repo_root .. "/" .. abs_path
+      else
+        abs_path = vim.fn.getcwd() .. "/" .. abs_path
+      end
     end
     abs_path = vim.fn.fnamemodify(abs_path, ":p")
 
@@ -135,13 +141,9 @@ return {
     keymaps = {
       view = {
         { "n", "q", close_diffview, { desc = "Close Diffview" } },
-        { "n", "<leader>dc", function() leave_review_comment("n") end, { desc = "Leave Claude review comment" } },
-        { "v", "<leader>dc", function() leave_review_comment("v") end, { desc = "Leave Claude review comment" } },
       },
       file_panel = {
         { "n", "q", close_diffview, { desc = "Close Diffview" } },
-        { "n", "<leader>dc", function() leave_review_comment("n") end, { desc = "Leave Claude review comment" } },
-        { "v", "<leader>dc", function() leave_review_comment("v") end, { desc = "Leave Claude review comment" } },
         { "n", "cc", "<Cmd>Git commit<bar>wincmd J<CR>", { desc = "Commit staged" } },
         { "n", "ca", "<Cmd>Git commit --amend<bar>wincmd J<CR>", { desc = "Amend last commit" } },
         { "n", "<C-d>", function()
@@ -194,6 +196,18 @@ return {
     },
   },
   keys = {
+    {
+      "<leader>cc",
+      function() leave_review_comment("n") end,
+      mode = "n",
+      desc = "Leave Claude review comment",
+    },
+    {
+      "<leader>cc",
+      function() leave_review_comment("v") end,
+      mode = "v",
+      desc = "Leave Claude review comment",
+    },
     {
       "<leader>dd",
       function()

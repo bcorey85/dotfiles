@@ -57,6 +57,7 @@ return {
       desc = "Open URL from clipboard (Octo)",
     },
     { "<leader>ghc", "<cmd>Octo pr create<cr>", desc = "Create PR (Octo)" },
+    { "<leader>gho", "<cmd>Octo pr checkout<cr>", desc = "Checkout PR locally (Octo)" },
     { "<leader>ghp", "<cmd>Octo pr list<cr>", desc = "List PRs (Octo)" },
     { "<leader>ghP", octo_prompt("Octo PR search: ", "Octo pr search"), desc = "Search PRs (Octo)" },
     { "<leader>ghi", "<cmd>Octo issue list<cr>", desc = "List Issues (Octo)" },

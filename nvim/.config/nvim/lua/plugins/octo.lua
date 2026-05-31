@@ -64,6 +64,11 @@ return {
     { "<leader>ghI", octo_prompt("Octo issue search: ", "Octo issue search"), desc = "Search Issues (Octo)" },
     { "<leader>ghr", octo_prompt("Repos for (blank = you): ", "Octo repo list", true), desc = "List Repos (Octo)" },
     { "<leader>ghs", octo_prompt("Octo search: ", "Octo search"), desc = "Search (Octo)" },
+    {
+      "<leader>ghb",
+      function() require("octo.navigation").open_in_browser() end,
+      desc = "Open current PR/issue in browser (Octo)",
+    },
 
     -- Review / comments / threads (all under <leader>gr*)
     { "<leader>gr", "", desc = "+review (Octo)" },

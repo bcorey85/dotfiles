@@ -24,10 +24,24 @@ vim.keymap.set("n", "]c", "]czz", { desc = "Next hunk and center" })
 vim.keymap.set("n", "[c", "[czz", { desc = "Previous hunk and center" })
 
 vim.keymap.set("n", "<leader>fy", function()
-  local path = vim.fn.expand("%")
+  local abs = vim.fn.expand("%:p")
+  if abs == "" then
+    Snacks.notify.warn("Buffer has no file")
+    return
+  end
+  local dir = vim.fn.fnamemodify(abs, ":h")
+  local out = vim.fn.systemlist({ "git", "-C", dir, "rev-parse", "--show-toplevel" })
+  local path
+  if vim.v.shell_error == 0 and out[1] and out[1] ~= "" then
+    local root = out[1]
+    path = abs:sub(#root + 2)
+  else
+    path = abs
+    Snacks.notify.warn("Not in a git repo; copied absolute path")
+  end
   vim.fn.setreg("+", path)
   Snacks.notify("Copied: " .. path)
-end, { desc = "Copy relative path" })
+end, { desc = "Copy git-root-relative path" })
 
 vim.keymap.set("n", "<leader>fY", function()
   local path = vim.fn.expand("%:p")

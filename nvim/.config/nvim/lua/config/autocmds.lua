@@ -78,6 +78,19 @@ vim.api.nvim_create_autocmd(
   }
 )
 
+vim.api.nvim_create_autocmd("BufEnter", {
+  callback = function(args)
+    local path = vim.api.nvim_buf_get_name(args.buf)
+    if path == "" or vim.bo[args.buf].buftype ~= "" then
+      return
+    end
+    local root = vim.fs.root(path, { ".git" })
+    if root and root ~= vim.fn.getcwd(-1, 0) then
+      pcall(vim.cmd.lcd, root)
+    end
+  end,
+})
+
 vim.api.nvim_create_autocmd({ "FocusGained", "TermClose", "TermLeave" }, {
   callback = function()
     if vim.o.buftype ~= "nofile" then

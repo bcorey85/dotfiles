@@ -134,9 +134,7 @@ return {
         end
         return tostring(os.time())
       end,
-      wiki_link_func = function(opts)
-        return string.format("[[%s]]", opts.label)
-      end,
+      link = { style = "wiki" },
       ui = { enable = false },
     },
   },

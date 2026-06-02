@@ -37,6 +37,7 @@ return {
       { "<leader>o", group = "obsidian" },
       { "<leader>q", group = "quit/session" },
       { "<leader>s", group = "search" },
+      { "<leader>t", group = "test" },
       { "<leader>w", group = "windows" },
       { "<leader>x", group = "diagnostics/qf" },
       { "<leader>y", group = "yank" },

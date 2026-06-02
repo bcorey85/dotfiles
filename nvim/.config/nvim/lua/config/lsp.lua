@@ -27,7 +27,7 @@ vim.api.nvim_create_autocmd("LspAttach", {
     map("n", "gr", function() Snacks.picker.lsp_references() end, "References")
     map("n", "<leader>cr", vim.lsp.buf.rename, "Rename symbol")
     map({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, "Code action")
-    map("n", "<leader>cf", function() vim.lsp.buf.format({ async = true }) end, "Format buffer")
+    map("n", "<leader>cF", function() vim.lsp.buf.format({ async = true }) end, "Format buffer (LSP)")
     map("n", "gK", vim.lsp.buf.signature_help, "Signature help")
 
     map("n", "]d", function() vim.diagnostic.jump({ count = 1 }) end, "Next diagnostic")
@@ -42,32 +42,34 @@ vim.api.nvim_create_autocmd("LspAttach", {
   end,
 })
 
-local vue_ls_path = vim.fn.stdpath("data")
+-- vtsls + vue_ls hybrid mode (Vue 3 / vue-language-server v3).
+-- vtsls runs the TS server with @vue/typescript-plugin loaded, which gives it
+-- awareness of .vue files. vue_ls handles Vue-specific work (template syntax,
+-- SFC structure). The two servers talk via the plugin layer; vtsls owns TS,
+-- vue_ls owns Vue.
+local vue_language_server_path = vim.fn.stdpath("data")
   .. "/mason/packages/vue-language-server/node_modules/@vue/language-server"
 
 local vue_plugin = {
   name = "@vue/typescript-plugin",
-  location = vue_ls_path,
+  location = vue_language_server_path,
   languages = { "vue" },
   configNamespace = "typescript",
 }
 
-local ts_filetypes = { "typescript", "javascript", "javascriptreact", "typescriptreact", "vue" }
-
-vim.lsp.config("ts_ls", {
-  init_options = {
-    plugins = { vue_plugin },
+vim.lsp.config("vtsls", {
+  settings = {
+    vtsls = {
+      tsserver = {
+        globalPlugins = { vue_plugin },
+      },
+    },
   },
-  filetypes = ts_filetypes,
+  filetypes = { "typescript", "javascript", "javascriptreact", "typescriptreact", "vue" },
 })
 
 vim.lsp.config("vue_ls", {
   filetypes = { "vue" },
-  init_options = {
-    typescript = {
-      tsdk = vim.fn.stdpath("data") .. "/mason/packages/typescript-language-server/node_modules/typescript/lib",
-    },
-  },
 })
 
 vim.lsp.config("eslint", {
@@ -143,7 +145,7 @@ vim.lsp.config("ansiblels", {})
 vim.lsp.config("oxlint", {})
 
 vim.lsp.enable({
-  "ts_ls",
+  "vtsls",
   "vue_ls",
   "eslint",
   "lua_ls",

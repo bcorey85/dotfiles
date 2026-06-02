@@ -18,7 +18,7 @@ return {
     dependencies = { "mason-org/mason.nvim" },
     opts = {
       ensure_installed = {
-        "ts_ls",
+        "vtsls",
         "vue_ls",
         "eslint",
         "lua_ls",
@@ -44,6 +44,7 @@ return {
         "prettier",
         "black",
         "isort",
+        "js-debug-adapter",
       },
       auto_update = false,
       run_on_start = true,

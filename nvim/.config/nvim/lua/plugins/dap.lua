@@ -36,6 +36,72 @@ return {
       require("dap-python").setup(get_python())
       dapui.setup()
 
+      -- ── JS/TS: vscode-js-debug via Mason's js-debug-adapter ──────────────
+      -- `pwa-node` is Microsoft's modern Node debugger (replaces the legacy
+      -- `node2` adapter). It speaks DAP over a TCP port that the dapDebugServer
+      -- script spawns for us; `${port}` is interpolated by nvim-dap.
+      dap.adapters["pwa-node"] = {
+        type = "server",
+        host = "127.0.0.1",
+        port = "${port}",
+        executable = {
+          command = "node",
+          args = {
+            vim.fn.stdpath("data") .. "/mason/packages/js-debug-adapter/js-debug/src/dapDebugServer.js",
+            "${port}",
+          },
+        },
+      }
+
+      for _, lang in ipairs({ "typescript", "javascript", "typescriptreact", "javascriptreact" }) do
+        dap.configurations[lang] = {
+          {
+            name = "Launch current file (node)",
+            type = "pwa-node",
+            request = "launch",
+            program = "${file}",
+            cwd = "${workspaceFolder}",
+            sourceMaps = true,
+            protocol = "inspector",
+            console = "integratedTerminal",
+            skipFiles = { "<node_internals>/**", "node_modules/**" },
+          },
+          {
+            -- Requires `tsx` (npm i -g tsx, or in project devDeps).
+            -- Lets you debug .ts files directly without a compile step.
+            name = "Launch current file (tsx)",
+            type = "pwa-node",
+            request = "launch",
+            runtimeExecutable = "tsx",
+            program = "${file}",
+            cwd = "${workspaceFolder}",
+            sourceMaps = true,
+            protocol = "inspector",
+            console = "integratedTerminal",
+            skipFiles = { "<node_internals>/**", "node_modules/**" },
+          },
+          {
+            name = "Attach to process",
+            type = "pwa-node",
+            request = "attach",
+            processId = require("dap.utils").pick_process,
+            cwd = "${workspaceFolder}",
+            sourceMaps = true,
+          },
+          {
+            -- For `node --inspect` or `node --inspect-brk` (default port 9229).
+            name = "Attach to :9229 (node --inspect)",
+            type = "pwa-node",
+            request = "attach",
+            address = "localhost",
+            port = 9229,
+            cwd = "${workspaceFolder}",
+            sourceMaps = true,
+            skipFiles = { "<node_internals>/**", "node_modules/**" },
+          },
+        }
+      end
+
       dap.listeners.after.event_initialized["dapui_config"] = function()
         vim.fn.system("tmux resize-pane -Z")
         dapui.open()

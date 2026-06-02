@@ -219,6 +219,18 @@ vim.keymap.set("n", "<leader>ih", function()
   vim.lsp.inlay_hint.enable(enabled)
 end, { desc = "Toggle inlay hints" })
 
+-- Apply every fixable LSP diagnostic in the current buffer in one shot.
+-- `source.fixAll` is a standardized LSP code-action kind that eslint, ruff,
+-- oxlint, biome, and most modern linters implement. Equivalent to running
+-- :EslintFixAll for eslint, ruff's "Fix all" action, etc — but works
+-- uniformly across whichever LSP is attached.
+vim.keymap.set("n", "<leader>cA", function()
+  vim.lsp.buf.code_action({
+    apply = true,
+    context = { only = { "source.fixAll" }, diagnostics = {} },
+  })
+end, { desc = "LSP: fix all (source.fixAll)" })
+
 vim.keymap.set("n", "<leader>xp", function()
   local cwd = vim.fn.getcwd()
   local cmds = {}

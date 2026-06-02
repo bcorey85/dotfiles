@@ -24,6 +24,7 @@ return {
       enabled = true,
       preset = {
         keys = {
+          { key = "s", action = ":lua require('persistence').load()" },
           { key = "c", action = ":lua Snacks.dashboard.pick('files', {cwd = vim.fn.stdpath('config')})" },
           { key = "l", action = ":Lazy" },
           { key = "u", action = ":Lazy update" },
@@ -36,6 +37,8 @@ return {
           align = "center",
           padding = 1,
           text = {
+            { "  Session [s]  ", hl = "String" },
+            { "│ ", hl = "NonText" },
             { "  Config [c]  ", hl = "Function" },
             { "│ ", hl = "NonText" },
             { " Lazy [l]  ", hl = "Special" },

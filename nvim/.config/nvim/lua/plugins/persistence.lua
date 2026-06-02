@@ -4,7 +4,9 @@
 -- <leader>qs to restore the session for the current cwd when you want it.
 return {
   "folke/persistence.nvim",
-  event = "BufReadPre",
+  -- Load on VimEnter (every launch, including dashboard) so the keymaps are
+  -- always live and the VimLeavePre autosave hook is always registered.
+  event = "VimEnter",
   opts = {
     branch = true,
     need = 1,

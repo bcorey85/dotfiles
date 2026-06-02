@@ -1,3 +1,6 @@
+vim.keymap.set("n", "q", "<nop>", { desc = "Disabled (was: record macro)" })
+vim.keymap.set("n", "Q", "<nop>", { desc = "Disabled (was: replay last macro)" })
+
 vim.keymap.set("i", "jk", "<Esc>", { desc = "Exit insert mode" })
 vim.keymap.set("i", "kj", "<Esc>", { desc = "Exit insert mode" })
 vim.keymap.set("i", "jj", "<Esc>", { desc = "Exit insert mode" })
@@ -8,7 +11,15 @@ vim.keymap.set({ "i", "n", "s" }, "<esc>", "<esc><cmd>noh<cr>", { silent = true,
 vim.keymap.set({ "n", "x" }, "j", "v:count == 0 ? 'gj' : 'j'", { expr = true, silent = true, desc = "Down" })
 vim.keymap.set({ "n", "x" }, "k", "v:count == 0 ? 'gk' : 'k'", { expr = true, silent = true, desc = "Up" })
 
-vim.keymap.set("n", "<leader>so", ":source %<CR>", { desc = "Source current file" })
+vim.keymap.set("n", "<leader>so", function()
+  local ft = vim.bo.filetype
+  if ft ~= "lua" and ft ~= "vim" then
+    Snacks.notify.warn("Not a lua/vim file (ft=" .. ft .. ")")
+    return
+  end
+  vim.cmd("source %")
+  Snacks.notify("Sourced " .. vim.fn.expand("%:t"))
+end, { desc = "Source current file" })
 
 -- Save file (works in insert/visual/normal/select), LazyVim-style
 vim.keymap.set({ "i", "x", "n", "s" }, "<C-s>", "<cmd>w<cr><esc>", { desc = "Save file" })
@@ -23,7 +34,7 @@ vim.keymap.set("n", "N", "Nzzzv", { desc = "Previous search result and center" }
 vim.keymap.set("n", "]c", "]czz", { desc = "Next hunk and center" })
 vim.keymap.set("n", "[c", "[czz", { desc = "Previous hunk and center" })
 
-vim.keymap.set("n", "<leader>fy", function()
+vim.keymap.set("n", "<leader>yf", function()
   local abs = vim.fn.expand("%:p")
   if abs == "" then
     Snacks.notify.warn("Buffer has no file")
@@ -43,11 +54,46 @@ vim.keymap.set("n", "<leader>fy", function()
   Snacks.notify("Copied: " .. path)
 end, { desc = "Copy git-root-relative path" })
 
-vim.keymap.set("n", "<leader>fY", function()
+vim.keymap.set("n", "<leader>yF", function()
   local path = vim.fn.expand("%:p")
   vim.fn.setreg("+", path)
   Snacks.notify("Copied: " .. path)
 end, { desc = "Copy absolute path" })
+
+vim.keymap.set("n", "<leader>yl", function()
+  local abs = vim.fn.expand("%:p")
+  if abs == "" then
+    Snacks.notify.warn("Buffer has no file")
+    return
+  end
+  local line = vim.api.nvim_win_get_cursor(0)[1]
+  local dir = vim.fn.fnamemodify(abs, ":h")
+  local out = vim.fn.systemlist({ "git", "-C", dir, "rev-parse", "--show-toplevel" })
+  local path = (vim.v.shell_error == 0 and out[1] and out[1] ~= "") and abs:sub(#out[1] + 2) or abs
+  local ref = path .. ":" .. line
+  vim.fn.setreg("+", ref)
+  Snacks.notify("Copied: " .. ref)
+end, { desc = "Copy file:line reference" })
+
+vim.keymap.set("n", "<leader>yb", function()
+  local branch = vim.fn.systemlist({ "git", "-C", vim.fn.getcwd(), "symbolic-ref", "--short", "HEAD" })[1]
+  if vim.v.shell_error ~= 0 or not branch or branch == "" then
+    Snacks.notify.warn("Not on a branch")
+    return
+  end
+  vim.fn.setreg("+", branch)
+  Snacks.notify("Copied: " .. branch)
+end, { desc = "Copy git branch name" })
+
+vim.keymap.set("n", "<leader>yc", function()
+  local hash = vim.fn.systemlist({ "git", "-C", vim.fn.getcwd(), "rev-parse", "HEAD" })[1]
+  if vim.v.shell_error ~= 0 or not hash or hash == "" then
+    Snacks.notify.warn("Not in a git repo")
+    return
+  end
+  vim.fn.setreg("+", hash)
+  Snacks.notify("Copied: " .. hash:sub(1, 12) .. "…")
+end, { desc = "Copy git commit hash (HEAD)" })
 
 vim.keymap.set("n", "<leader>xr", function()
   vim.diagnostic.reset()
@@ -86,7 +132,7 @@ vim.keymap.set("n", "<leader>gP", "<cmd>Git pull<cr>", { desc = "Git pull" })
 vim.keymap.set("n", "<leader>gt", function()
   local branch = vim.fn.systemlist("git symbolic-ref --short HEAD")[1]
   if not branch or branch == "" then
-    vim.notify("Not on a branch", vim.log.levels.WARN)
+    Snacks.notify.warn("Not on a branch")
     return
   end
   vim.ui.input({ prompt = "Remote tracking branch: ", default = branch }, function(input)
@@ -99,7 +145,31 @@ vim.keymap.set("n", "<leader>gu", function()
   vim.cmd("Git log @{u}..HEAD --oneline --decorate")
   vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = true, desc = "Close unpushed log" })
 end, { desc = "Git log unpushed commits" })
-vim.keymap.set("n", "<leader>gB", "<cmd>Git blame<cr>", { desc = "Git blame (file)" })
+vim.keymap.set("n", "<leader>gb", function() Snacks.git.blame_line() end, { desc = "Git blame line (float)" })
+
+vim.keymap.set("n", "<leader>gB", function()
+  local file = vim.fn.expand("%:p")
+  if file == "" then
+    Snacks.notify.warn("No file in buffer")
+    return
+  end
+  local dir = vim.fn.fnamemodify(file, ":h")
+  vim.fn.system({ "git", "-C", dir, "rev-parse", "--git-dir" })
+  if vim.v.shell_error ~= 0 then
+    Snacks.notify.warn("Not in a git repository")
+    return
+  end
+  require("lazy").load({ plugins = { "vim-fugitive" } })
+  vim.fn.FugitiveDetect(dir)
+  vim.api.nvim_create_autocmd("FileType", {
+    pattern = "fugitiveblame",
+    once = true,
+    callback = function(args)
+      vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = args.buf, silent = true })
+    end,
+  })
+  vim.cmd("Git blame")
+end, { desc = "Git blame (file)" })
 -- Tear down a Gvdiffsplit from ANY window. Fugitive's built-in `dq` is
 -- buffer-local to its own buffers (the :G summary and the fugitive:// object
 -- side), so it won't fire from the working-tree file you land on after
@@ -127,21 +197,7 @@ vim.keymap.set("n", "<leader>gq", function()
   end
 end, { desc = "Close fugitive diff (from any pane) -> status" })
 
--- Review loop: close the current diff, jump to the NEXT changed file, and open
--- its vertical diff - one key instead of repeating dv. `)` advances to the next
--- file and `dv` opens the split; "m" replays them through fugitive's
--- buffer-local maps.
-vim.keymap.set("n", "<leader>gn", function()
-  local status_win = close_fugitive_diff()
-  if not (status_win and vim.api.nvim_win_is_valid(status_win)) then
-    vim.notify("No :G status window open - run <leader>gf first", vim.log.levels.WARN)
-    return
-  end
-  vim.api.nvim_set_current_win(status_win)
-  vim.api.nvim_feedkeys(")dv", "m", false)
-end, { desc = "Review next changed file (close + next + vdiff)" })
-
-vim.keymap.set("n", "<leader>gm", function()
+vim.keymap.set("n", "<leader>M", function()
   local msgs = vim.api.nvim_exec2("messages", { output = true }).output
   if msgs == "" then
     Snacks.notify("No messages")
@@ -208,8 +264,8 @@ vim.keymap.set("n", "<leader>xp", function()
   })
 end, { desc = "Project-wide diagnostics" })
 
-vim.keymap.set("n", "<leader>bd", "<cmd>bdelete<cr>", { desc = "Delete buffer" })
-vim.keymap.set("n", "<leader>bD", "<cmd>bdelete!<cr>", { desc = "Delete buffer (force)" })
+vim.keymap.set("n", "<leader>bd", function() Snacks.bufdelete() end, { desc = "Delete buffer" })
+vim.keymap.set("n", "<leader>bD", function() Snacks.bufdelete({ force = true }) end, { desc = "Delete buffer (force)" })
 vim.keymap.set("n", "[b", "<cmd>bprevious<cr>", { desc = "Prev buffer" })
 vim.keymap.set("n", "]b", "<cmd>bnext<cr>", { desc = "Next buffer" })
 
@@ -249,17 +305,17 @@ vim.keymap.set("n", "<leader>bo", function() Snacks.bufdelete.other() end, { des
 vim.keymap.set("n", "<leader>xx", function() Snacks.picker.diagnostics() end, { desc = "Diagnostics list" })
 
 -- Yank diagnostics on the current line to the clipboard
-vim.keymap.set("n", "<leader>cy", function()
+vim.keymap.set("n", "<leader>yd", function()
   local lnum = vim.api.nvim_win_get_cursor(0)[1] - 1
   local diags = vim.diagnostic.get(0, { lnum = lnum })
   if vim.tbl_isempty(diags) then
-    vim.notify("No diagnostics on this line", vim.log.levels.INFO)
+    Snacks.notify("No diagnostics on this line")
     return
   end
   local msgs = vim.tbl_map(function(d) return d.message end, diags)
   local text = table.concat(msgs, "\n")
   vim.fn.setreg("+", text)
-  vim.notify(("Yanked %d diagnostic(s)"):format(#diags))
+  Snacks.notify(("Yanked %d diagnostic(s)"):format(#diags))
 end, { desc = "Yank line diagnostics" })
 
 -- UI toggles

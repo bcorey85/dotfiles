@@ -40,7 +40,7 @@ return {
       { "<leader>bD", "<cmd>:bd<cr>", desc = "Delete buffer + window" },
       { "<leader>bo", function() Snacks.bufdelete.other() end, desc = "Delete other buffers" },
       { "<leader>bb", "<cmd>e #<cr>", desc = "Switch to other buffer" },
-      { "<leader>`", "<cmd>e #<cr>", desc = "Switch to other buffer" },
+      { "<leader>`", function() Snacks.terminal() end, mode = { "n", "t" }, desc = "Toggle terminal" },
       { "<S-h>", "<cmd>BufferLineCyclePrev<cr>", desc = "Prev buffer" },
       { "<S-l>", "<cmd>BufferLineCycleNext<cr>", desc = "Next buffer" },
       { "[b", "<cmd>BufferLineCyclePrev<cr>", desc = "Prev buffer" },

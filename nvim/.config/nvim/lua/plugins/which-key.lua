@@ -39,6 +39,7 @@ return {
       { "<leader>s", group = "search" },
       { "<leader>w", group = "windows" },
       { "<leader>x", group = "diagnostics/qf" },
+      { "<leader>y", group = "yank" },
       { "<leader>D", group = "dashboard" },
       { "<leader>N", group = "notifications" },
       { "g", group = "goto" },

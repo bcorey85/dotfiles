@@ -20,11 +20,11 @@ vim.api.nvim_create_autocmd("LspAttach", {
     end
 
     map("n", "K", vim.lsp.buf.hover, "LSP Hover")
-    map("n", "gd", vim.lsp.buf.definition, "Go to definition")
-    map("n", "gD", vim.lsp.buf.declaration, "Go to declaration")
-    map("n", "gI", vim.lsp.buf.implementation, "Go to implementation")
-    map("n", "gy", vim.lsp.buf.type_definition, "Go to type definition")
-    map("n", "gr", vim.lsp.buf.references, "References")
+    map("n", "gd", function() Snacks.picker.lsp_definitions() end, "Go to definition")
+    map("n", "gD", function() Snacks.picker.lsp_declarations() end, "Go to declaration")
+    map("n", "gI", function() Snacks.picker.lsp_implementations() end, "Go to implementation")
+    map("n", "gy", function() Snacks.picker.lsp_type_definitions() end, "Go to type definition")
+    map("n", "gr", function() Snacks.picker.lsp_references() end, "References")
     map("n", "<leader>cr", vim.lsp.buf.rename, "Rename symbol")
     map({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, "Code action")
     map("n", "<leader>cf", function() vim.lsp.buf.format({ async = true }) end, "Format buffer")
@@ -38,7 +38,7 @@ vim.api.nvim_create_autocmd("LspAttach", {
     map("n", "[w", function() vim.diagnostic.jump({ count = -1, severity = vim.diagnostic.severity.WARN }) end, "Prev warning")
 
     map("n", "<leader>cd", vim.diagnostic.open_float, "Line diagnostics")
-    map("n", "<leader>cs", vim.lsp.buf.document_symbol, "Document symbols")
+    map("n", "<leader>cs", function() Snacks.picker.lsp_symbols() end, "Document symbols")
   end,
 })
 

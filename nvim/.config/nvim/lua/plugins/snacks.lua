@@ -94,20 +94,88 @@ return {
     },
   },
   keys = {
-    { "<leader><space>", function() Snacks.picker.smart() end, desc = "Smart Find Files" },
-    { "<leader>.", function() Snacks.picker.resume() end, desc = "Resume last picker" },
-    { "<leader>/", function() Snacks.picker.grep() end, desc = "Grep" },
-    { "<leader>ff", function() Snacks.picker.files() end, desc = "Find files" },
-    { "<leader>fr", function() Snacks.picker.recent() end, desc = "Recent files" },
-    { "<leader>fg", function() Snacks.picker.grep() end, desc = "Grep" },
-    { "<leader>fb", function() Snacks.picker.buffers() end, desc = "Buffers" },
-    { "<leader>fh", function() Snacks.picker.help() end, desc = "Help pages" },
-    { "<leader>fk", function() Snacks.picker.keymaps() end, desc = "Keymaps" },
-    { "<leader>fc", function() Snacks.picker.command_history() end, desc = "Command history" },
-    { "<leader>fo", function() Snacks.picker.colorschemes() end, desc = "Colorschemes" },
+    {
+      "<leader><space>",
+      function()
+        Snacks.picker.smart({ cwd = require("util.root").get() })
+      end,
+      desc = "Smart Find Files",
+    },
+    {
+      "<leader>,",
+      function()
+        Snacks.picker.buffers()
+      end,
+      desc = "Buffers",
+    },
+    {
+      "<leader>/",
+      function()
+        Snacks.picker.grep({ cwd = require("util.root").get() })
+      end,
+      desc = "Grep (Root Dir)",
+    },
+    {
+      "<leader>ff",
+      function()
+        Snacks.picker.files({ cwd = require("util.root").get() })
+      end,
+      desc = "Find files (Root Dir)",
+    },
+    {
+      "<leader>fr",
+      function()
+        Snacks.picker.recent()
+      end,
+      desc = "Recent files",
+    },
+    {
+      "<leader>fg",
+      function()
+        Snacks.picker.git_files()
+      end,
+      desc = "Find Files (git-files)",
+    },
+    {
+      "<leader>fb",
+      function()
+        Snacks.picker.buffers()
+      end,
+      desc = "Buffers",
+    },
+    {
+      "<leader>fh",
+      function()
+        Snacks.picker.help()
+      end,
+      desc = "Help pages",
+    },
+    {
+      "<leader>fk",
+      function()
+        Snacks.picker.keymaps()
+      end,
+      desc = "Keymaps",
+    },
+    {
+      "<leader>fc",
+      function()
+        Snacks.picker.command_history()
+      end,
+      desc = "Command history",
+    },
+    {
+      "<leader>fo",
+      function()
+        Snacks.picker.colorschemes()
+      end,
+      desc = "Colorschemes",
+    },
     {
       "<leader>fI",
-      function() Snacks.picker.files({ hidden = true, ignored = true }) end,
+      function()
+        Snacks.picker.files({ hidden = true, ignored = true })
+      end,
       desc = "Find files (including ignored)",
     },
     {
@@ -137,9 +205,49 @@ return {
       end,
       desc = "Lazygit (zoomed)",
     },
-    { "<leader>sd", function() Snacks.picker.diagnostics() end, desc = "Diagnostics" },
-    { "<leader>ss", function() Snacks.picker.lsp_symbols() end, desc = "LSP symbols" },
-    { "<leader>sw", function() Snacks.picker.grep_word() end, desc = "Grep word under cursor" },
-    { "<leader>wm", function() Snacks.toggle.zoom():toggle() end, desc = "Toggle Zoom" },
+    {
+      "<leader>sd",
+      function()
+        Snacks.picker.diagnostics()
+      end,
+      desc = "Diagnostics",
+    },
+    {
+      "<leader>ss",
+      function()
+        Snacks.picker.lsp_symbols()
+      end,
+      desc = "LSP symbols",
+    },
+    {
+      "<leader>sw",
+      function()
+        Snacks.picker.grep_word({ cwd = require("util.root").get() })
+      end,
+      desc = "Grep word/selection (Root Dir)",
+      mode = { "n", "x" },
+    },
+    {
+      "<leader>sG",
+      function()
+        Snacks.picker.grep({ cwd = vim.fn.getcwd() })
+      end,
+      desc = "Grep (cwd)",
+    },
+    {
+      "<leader>sW",
+      function()
+        Snacks.picker.grep_word({ cwd = vim.fn.getcwd() })
+      end,
+      desc = "Grep word/selection (cwd)",
+      mode = { "n", "x" },
+    },
+    {
+      "<leader>wm",
+      function()
+        Snacks.toggle.zoom():toggle()
+      end,
+      desc = "Toggle Zoom",
+    },
   },
 }

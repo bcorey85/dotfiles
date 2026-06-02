@@ -106,7 +106,7 @@ vim.keymap.set("n", "<leader>xr", function()
   end, 300)
 end, { desc = "Restart LSP (clear diagnostics)" })
 
-vim.keymap.set("n", "<leader>gf", "<cmd>tab Git<cr>", { desc = "Fugitive Status (tab)" })
+vim.keymap.set("n", "<leader>gs", "<cmd>tab Git<cr>", { desc = "Fugitive Status (tab)" })
 
 vim.keymap.set("n", "<leader>gc", function()
   vim.ui.input({ prompt = "Commit message: " }, function(msg)

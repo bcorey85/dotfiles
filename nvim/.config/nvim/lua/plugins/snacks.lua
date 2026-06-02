@@ -108,13 +108,6 @@ return {
       desc = "Find files (including ignored)",
     },
     {
-      "<leader>gs",
-      function()
-        Snacks.picker.git_status({ layout = "sidebar" })
-      end,
-      desc = "Git Status (sidebar)",
-    },
-    {
       "<leader>gg",
       function()
         local in_tmux = vim.env.TMUX ~= nil

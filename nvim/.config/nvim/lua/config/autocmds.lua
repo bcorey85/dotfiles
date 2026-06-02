@@ -192,6 +192,8 @@ vim.api.nvim_create_autocmd("FileType", {
     "checkhealth",
     "dap-float",
     "dbout",
+    "fugitive",
+    "fugitiveblame",
     "gitsigns-blame",
     "grug-far",
     "help",

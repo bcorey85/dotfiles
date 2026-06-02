@@ -175,6 +175,7 @@ vim.api.nvim_create_autocmd("User", {
   callback = function(args)
     local buf = args.buf or vim.api.nvim_get_current_buf()
     local opts = { buffer = buf, nowait = true, silent = true }
+    vim.keymap.set("n", "s", function() require("persistence").load() end, opts)
     vim.keymap.set("n", "c", function()
       Snacks.dashboard.pick("files", { cwd = vim.fn.stdpath("config") })
     end, opts)

@@ -45,6 +45,10 @@ return {
         "black",
         "isort",
         "js-debug-adapter",
+        -- nvim-lint runners (see lua/plugins/nvim-lint.lua)
+        "shellcheck",
+        "markdownlint",
+        "yamllint",
       },
       auto_update = false,
       run_on_start = true,

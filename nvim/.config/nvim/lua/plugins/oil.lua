@@ -8,6 +8,10 @@ return {
       show_hidden = true,
     },
     keymaps = {
+      ["<C-l>"] = false,
+      ["<C-h>"] = false,
+      ["<C-x>"] = { "actions.select", opts = { horizontal = true }, desc = "Open in horizontal split" },
+      ["gr"] = { "actions.refresh", mode = "n", desc = "Refresh" },
       ["q"] = { "actions.close", mode = "n" },
       ["gO"] = {
         mode = "n",

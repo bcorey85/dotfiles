@@ -21,7 +21,7 @@ vim.keymap.set("n", "<leader>so", function()
   Snacks.notify("Sourced " .. vim.fn.expand("%:t"))
 end, { desc = "Source current file" })
 
--- Save file (works in insert/visual/normal/select), LazyVim-style
+-- Save file (works in insert/visual/normal/select)
 vim.keymap.set({ "i", "x", "n", "s" }, "<C-s>", "<cmd>w<cr><esc>", { desc = "Save file" })
 
 vim.keymap.set("n", "<C-d>", "<C-d>zz", { desc = "Scroll down and center" })

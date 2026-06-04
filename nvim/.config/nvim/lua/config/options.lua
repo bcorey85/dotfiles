@@ -51,8 +51,8 @@ pcall(function()
 end)
 
 -- Solid fill for deleted/filler lines in diff mode (diffview, :diffsplit).
--- LazyVim defaults fillchars `diff` to "╱", which renders the diagonal-stripe
--- hatch over the DiffDelete background. A space makes it a solid block - the
--- clean fill codediff shows. (codediff does its own rendering, so it's
--- unaffected; this only touches Neovim's native diff filler.)
+-- A "╱" fillchar renders the diagonal-stripe hatch over the DiffDelete
+-- background; a space makes it a solid block - the clean fill codediff
+-- shows. (codediff does its own rendering, so it's unaffected; this only
+-- touches Neovim's native diff filler.)
 vim.opt.fillchars:append({ diff = " " })

@@ -41,6 +41,7 @@ return {
       { "<leader>w", group = "windows" },
       { "<leader>x", group = "diagnostics/qf" },
       { "<leader>y", group = "yank" },
+      { "<leader>A", desc = "Multicursor: add cursors for all matches" },
       { "<leader>D", group = "dashboard" },
       { "<leader>N", group = "notifications" },
       { "g", group = "goto" },

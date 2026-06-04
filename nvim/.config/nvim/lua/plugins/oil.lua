@@ -3,6 +3,7 @@ return {
   lazy = false,
   dependencies = { "nvim-tree/nvim-web-devicons" },
   opts = {
+    watch_for_changes = true,
     view_options = {
       show_hidden = true,
     },

@@ -1,7 +1,7 @@
 -- fidget: LSP progress spinner (bottom-right, updates in place). Fills the gap
--- left by noice's lsp.progress being disabled and snacks not doing progress.
+-- left by noice's lsp.progress being disabled.
 --
--- Notifications stay with snacks.notifier: fidget's notification backend is told
+-- Notifications stay with mini.notify: fidget's notification backend is told
 -- NOT to take over vim.notify, so the two don't fight over toasts.
 return {
   "j-hui/fidget.nvim",

@@ -15,6 +15,10 @@ return {
     config = function()
       local lint = require("lint")
 
+      -- MD013 (line length) is noise for prose; disable it globally. A CLI
+      -- --disable overrides config files and applies to every markdown buffer.
+      lint.linters.markdownlint.args = { "--stdin", "--disable", "MD013" }
+
       lint.linters_by_ft = {
         sh = { "shellcheck" },
         bash = { "shellcheck" },

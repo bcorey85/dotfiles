@@ -25,7 +25,11 @@ return {
       })
 
       vim.keymap.set("n", "<leader>gd", function()
-        diff.toggle_overlay()
+        if diff.get_buf_data(0) then
+          diff.toggle_overlay(0)
+        else
+          vim.notify("mini.diff: buffer not tracked (no diff overlay)", vim.log.levels.WARN)
+        end
       end, { desc = "Toggle diff overlay" })
 
       -- Only jump when the current buffer actually has mini.diff data, so [h/]h

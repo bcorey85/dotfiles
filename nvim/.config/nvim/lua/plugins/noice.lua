@@ -4,7 +4,7 @@ return {
     event = "VeryLazy",
     dependencies = { "MunifTanjim/nui.nvim" },
     opts = {
-      -- Cmdline popup + message handling; let snacks.notifier own vim.notify.
+      -- Cmdline popup + message handling; let mini.notify own vim.notify.
       -- messages must be enabled so command/echo output (e.g. fugitive commits)
       -- has somewhere to go under cmdheight=0 instead of the hit-enter prompt.
       cmdline = { enabled = true, view = "cmdline_popup" },

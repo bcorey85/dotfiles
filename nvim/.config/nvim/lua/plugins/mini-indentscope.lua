@@ -1,8 +1,7 @@
 -- mini.indentscope: animated vertical line marking the current indent scope.
 --
--- snacks.indent's own `scope` is disabled (snacks.lua) so the two don't both draw
--- the active scope. snacks still draws the faint all-level indent guides;
--- mini.indentscope adds the animated current-scope line + [i / ]i motions.
+-- mini.indentscope draws the active-scope line; there are no longer all-level
+-- indent guides. Adds the animated current-scope line + [i / ]i motions.
 --
 -- The `ai`/`ii` indent textobjects are intentionally disabled: mini.ai owns the
 -- a/i namespace and would clobber a 2-char `ai`/`ii` mapping. Only goto kept.
@@ -24,7 +23,6 @@ return {
     vim.api.nvim_create_autocmd("FileType", {
       pattern = {
         "help",
-        "snacks_dashboard",
         "lazy",
         "mason",
         "oil",

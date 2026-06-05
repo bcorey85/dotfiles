@@ -35,6 +35,7 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 | `claude`    | `~/.claude/`                            | Agents, commands, settings, hooks                                                                         |
 | `aerospace` | `~/.config/aerospace/`                  | macOS tiling WM. Workspaces 1-9 pinned to external monitor, built-in screen dedicated to Teams (mac only) |
 | `kitty`     | `~/.config/kitty/`                      | Sonokai Maia theme                                                                                        |
+| `alacritty` | `~/.config/alacritty/`                  | Catppuccin Mocha (OneDark BG), matches kitty                                                              |
 | `starship`  | `~/.config/starship.toml`               | Gruvbox Material prompt                                                                                   |
 | `yazi`      | `~/.config/yazi/`                       | File manager config                                                                                       |
 | `kanata`    | `~/kanata-config.kbd`, `~/kanata-setup` | Keyboard remapping with systemd service                                                                   |

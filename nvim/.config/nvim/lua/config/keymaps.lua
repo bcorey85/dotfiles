@@ -106,26 +106,7 @@ vim.keymap.set("n", "<leader>xr", function()
   end, 300)
 end, { desc = "Restart LSP (clear diagnostics)" })
 
-vim.keymap.set("n", "<leader>gs", "<cmd>tab Git<cr>", { desc = "Fugitive Status (tab)" })
-
-vim.keymap.set("n", "<leader>gc", function()
-  vim.ui.input({ prompt = "Commit message: " }, function(msg)
-    if not msg or msg == "" then
-      return
-    end
-    vim.cmd("botright 15split | enew")
-    vim.fn.jobstart({ "git", "commit", "-m", msg }, {
-      term = true,
-      on_exit = function()
-        vim.schedule(function()
-          pcall(vim.fn["fugitive#DidChange"])
-        end)
-      end,
-    })
-    vim.cmd("startinsert")
-  end)
-end, { desc = "Git commit (terminal — shows hook output)" })
-
+vim.keymap.set("n", "<leader>gc", "<cmd>Git commit<cr>", { desc = "Git commit" })
 vim.keymap.set("n", "<leader>gp", "<cmd>Git push<cr>", { desc = "Git push" })
 vim.keymap.set("n", "<leader>gF", "<cmd>Git push --force-with-lease<cr>", { desc = "Git push --force-with-lease" })
 vim.keymap.set("n", "<leader>gP", "<cmd>Git pull<cr>", { desc = "Git pull" })
@@ -140,62 +121,10 @@ vim.keymap.set("n", "<leader>gt", function()
     vim.cmd("Git push -u origin " .. input)
   end)
 end, { desc = "Git push + set upstream tracking (prompt)" })
-vim.keymap.set("n", "<leader>gl", "<cmd>Git log --oneline --decorate --all --graph<cr>", { desc = "Git log" })
-vim.keymap.set("n", "<leader>gu", function()
-  vim.cmd("Git log @{u}..HEAD --oneline --decorate")
-  vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = true, desc = "Close unpushed log" })
-end, { desc = "Git log unpushed commits" })
+vim.keymap.set("n", "<leader>gl", function() require("neogit").open({ "log" }) end, { desc = "Git log (neogit)" })
+vim.keymap.set("n", "<leader>gu", function() vim.cmd("DiffviewFileHistory --range=@{upstream}..HEAD") end, { desc = "Git log unpushed (diffview)" })
 vim.keymap.set("n", "<leader>gb", function() Snacks.git.blame_line() end, { desc = "Git blame line (float)" })
-
-vim.keymap.set("n", "<leader>gB", function()
-  local file = vim.fn.expand("%:p")
-  if file == "" then
-    Snacks.notify.warn("No file in buffer")
-    return
-  end
-  local dir = vim.fn.fnamemodify(file, ":h")
-  vim.fn.system({ "git", "-C", dir, "rev-parse", "--git-dir" })
-  if vim.v.shell_error ~= 0 then
-    Snacks.notify.warn("Not in a git repository")
-    return
-  end
-  require("lazy").load({ plugins = { "vim-fugitive" } })
-  vim.fn.FugitiveDetect(dir)
-  vim.api.nvim_create_autocmd("FileType", {
-    pattern = "fugitiveblame",
-    once = true,
-    callback = function(args)
-      vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = args.buf, silent = true })
-    end,
-  })
-  vim.cmd("Git blame")
-end, { desc = "Git blame (file)" })
--- Tear down a Gvdiffsplit from ANY window. Fugitive's built-in `dq` is
--- buffer-local to its own buffers (the :G summary and the fugitive:// object
--- side), so it won't fire from the working-tree file you land on after
--- reviewing. This walks the tab's windows instead: closes the HEAD/index side
--- and clears diff mode. Returns the :G summary window if one is open.
-local function close_fugitive_diff()
-  local status_win
-  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-    local buf = vim.api.nvim_win_get_buf(win)
-    if vim.bo[buf].filetype == "fugitive" then
-      status_win = win
-    elseif vim.api.nvim_buf_get_name(buf):match("^fugitive://") then
-      pcall(vim.api.nvim_win_close, win, false)
-    end
-  end
-  vim.cmd("diffoff!")
-  return status_win
-end
-
--- Close the current diff and return focus to the status list.
-vim.keymap.set("n", "<leader>gq", function()
-  local status_win = close_fugitive_diff()
-  if status_win and vim.api.nvim_win_is_valid(status_win) then
-    vim.api.nvim_set_current_win(status_win)
-  end
-end, { desc = "Close fugitive diff (from any pane) -> status" })
+vim.keymap.set("n", "<leader>gB", function() require("mini.git").show_at_cursor() end, { desc = "Git show at cursor" })
 
 vim.keymap.set("n", "<leader>M", function()
   local msgs = vim.api.nvim_exec2("messages", { output = true }).output

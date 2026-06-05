@@ -47,6 +47,11 @@ return {
       vim.api.nvim_set_hl(0, "SnacksPickerPathHidden", { link = "Normal" })
       vim.api.nvim_set_hl(0, "SnacksIndent", { fg = "#313244" })
       vim.api.nvim_set_hl(0, "SnacksIndentScope", { fg = "#6c7086" })
+      -- snacks.words / LSP document-highlight: underline instead of Catppuccin's
+      -- background block (these are the groups document_highlight renders with).
+      vim.api.nvim_set_hl(0, "LspReferenceText", { underline = true })
+      vim.api.nvim_set_hl(0, "LspReferenceRead", { underline = true })
+      vim.api.nvim_set_hl(0, "LspReferenceWrite", { underline = true })
     end,
   },
 }

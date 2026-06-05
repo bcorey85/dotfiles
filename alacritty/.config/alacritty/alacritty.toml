@@ -1,0 +1,55 @@
+# Alacritty config — styled to match kitty
+# Theme: Catppuccin Mocha (OneDark BG)
+
+[font]
+size = 10.0
+
+[font.normal]
+family = "CommitMono Nerd Font Mono"
+style = "Regular"
+
+# Adds vertical line spacing to match kitty's `modify_font cell_height 8px`
+[font.offset]
+y = 8
+
+# Re-center the glyph within the taller cell (offset.y adds space below the
+# glyph only; this pushes it up by half so text is vertically centered like kitty)
+[font.glyph_offset]
+y = 4
+
+[window.padding]
+x = 4
+y = 4
+
+# Catppuccin Mocha (OneDark BG)
+[colors.primary]
+foreground = "#cdd6f4"
+background = "#282c34"
+
+[colors.selection]
+text = "#cdd6f4"
+background = "#3b4252"
+
+[colors.cursor]
+text = "#282c34"
+cursor = "#cdd6f4"
+
+[colors.normal]
+black = "#1b1f27"
+red = "#f38ba8"
+green = "#a6e3a1"
+yellow = "#f9e2af"
+blue = "#89b4fa"
+magenta = "#cba6f7"
+cyan = "#fab387"
+white = "#cdd6f4"
+
+[colors.bright]
+black = "#6c7086"
+red = "#f38ba8"
+green = "#a6e3a1"
+yellow = "#f9e2af"
+blue = "#89b4fa"
+magenta = "#cba6f7"
+cyan = "#fab387"
+white = "#cdd6f4"

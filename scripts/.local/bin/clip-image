@@ -1,0 +1,50 @@
+#!/bin/bash
+set -euo pipefail
+
+SAVE_DIR="${HOME}/Pictures/clipboard"
+mkdir -p "$SAVE_DIR"
+FILE="$SAVE_DIR/clip-$(date +%Y%m%d-%H%M%S).png"
+
+notify() {
+  command -v notify-send >/dev/null && notify-send "clip-image" "$1"
+}
+
+if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wl-paste >/dev/null; then
+  MIME_TYPES=$(wl-paste --list-types 2>/dev/null || true)
+  if echo "$MIME_TYPES" | grep -q "^image/png"; then
+    wl-paste --type image/png > "$FILE"
+  elif echo "$MIME_TYPES" | grep -q "^image/"; then
+    IMG_TYPE=$(echo "$MIME_TYPES" | grep "^image/" | head -1)
+    wl-paste --type "$IMG_TYPE" > "$FILE"
+  else
+    notify "No image in clipboard"
+    exit 0
+  fi
+elif command -v xclip >/dev/null; then
+  xclip -selection clipboard -t image/png -o > "$FILE" 2>/dev/null || true
+  if [[ ! -s "$FILE" ]]; then
+    rm -f "$FILE"
+    notify "No image in clipboard"
+    exit 0
+  fi
+elif command -v pngpaste >/dev/null; then
+  if ! pngpaste "$FILE" 2>/dev/null; then
+    rm -f "$FILE"
+    notify "No image in clipboard"
+    exit 0
+  fi
+elif command -v pbpaste >/dev/null; then
+  notify "pngpaste required for image paste on macOS (brew install pngpaste)"
+  exit 0
+else
+  notify "No wl-paste/xclip available"
+  exit 1
+fi
+
+notify "Pasted $FILE"
+
+if [[ -n "${TMUX:-}" ]]; then
+  tmux send-keys -l -- "$FILE "
+else
+  echo "$FILE"
+fi

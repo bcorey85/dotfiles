@@ -1,10 +1,10 @@
 -- Auto-saves a session per (cwd + git branch) to ~/.local/state/nvim/sessions/.
 -- Loaded on BufReadPre so its VimLeavePre save hook is registered before exit;
--- does not auto-restore on startup — your snacks dashboard owns startup. Use
+-- does not auto-restore on startup (nvim opens to an empty buffer). Use
 -- <leader>qs to restore the session for the current cwd when you want it.
 return {
   "folke/persistence.nvim",
-  -- Load on VimEnter (every launch, including dashboard) so the keymaps are
+  -- Load on VimEnter (every launch) so the keymaps are
   -- always live and the VimLeavePre autosave hook is always registered.
   event = "VimEnter",
   opts = {

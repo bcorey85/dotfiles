@@ -23,7 +23,7 @@ return {
     "nvim-tree/nvim-web-devicons",
   },
   opts = {
-    picker = "snacks",
+    picker = "telescope",
     default_to_projects_v2 = false,
     timeout = 20000,
     suppress_missing_scope = {
@@ -49,7 +49,7 @@ return {
       function()
         local url = vim.fn.getreg("+"):gsub("%s+", "")
         if not url:match("^https?://.*github") then
-          Snacks.notify.warn("Clipboard doesn't look like a GitHub URL: " .. url)
+          vim.notify("Clipboard doesn't look like a GitHub URL: " .. url, vim.log.levels.WARN)
           return
         end
         vim.cmd("Octo " .. url)

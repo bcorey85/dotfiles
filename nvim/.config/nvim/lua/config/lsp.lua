@@ -20,11 +20,11 @@ vim.api.nvim_create_autocmd("LspAttach", {
     end
 
     map("n", "K", vim.lsp.buf.hover, "LSP Hover")
-    map("n", "gd", function() Snacks.picker.lsp_definitions() end, "Go to definition")
-    map("n", "gD", function() Snacks.picker.lsp_declarations() end, "Go to declaration")
-    map("n", "gI", function() Snacks.picker.lsp_implementations() end, "Go to implementation")
-    map("n", "gy", function() Snacks.picker.lsp_type_definitions() end, "Go to type definition")
-    map("n", "gr", function() Snacks.picker.lsp_references() end, "References")
+    map("n", "gd", vim.lsp.buf.definition, "Go to definition")
+    map("n", "gD", vim.lsp.buf.declaration, "Go to declaration")
+    map("n", "gI", function() require("telescope.builtin").lsp_implementations() end, "Go to implementation")
+    map("n", "gy", vim.lsp.buf.type_definition, "Go to type definition")
+    map("n", "gr", function() require("telescope.builtin").lsp_references() end, "References")
     map("n", "<leader>cr", vim.lsp.buf.rename, "Rename symbol")
     map({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, "Code action")
     map("n", "<leader>cF", function() vim.lsp.buf.format({ async = true }) end, "Format buffer (LSP)")
@@ -38,7 +38,18 @@ vim.api.nvim_create_autocmd("LspAttach", {
     map("n", "[w", function() vim.diagnostic.jump({ count = -1, severity = vim.diagnostic.severity.WARN }) end, "Prev warning")
 
     map("n", "<leader>cd", vim.diagnostic.open_float, "Line diagnostics")
-    map("n", "<leader>cs", function() Snacks.picker.lsp_symbols() end, "Document symbols")
+    map("n", "<leader>cs", function() require("telescope.builtin").lsp_document_symbols() end, "Document symbols")
+
+    local client = vim.lsp.get_client_by_id(args.data.client_id)
+    if client and client:supports_method("textDocument/documentHighlight") then
+      local hl_group = vim.api.nvim_create_augroup("lsp_document_highlight_" .. bufnr, { clear = true })
+      vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
+        group = hl_group, buffer = bufnr, callback = vim.lsp.buf.document_highlight,
+      })
+      vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+        group = hl_group, buffer = bufnr, callback = vim.lsp.buf.clear_references,
+      })
+    end
   end,
 })
 
@@ -86,7 +97,7 @@ vim.lsp.config("eslint", {
 vim.lsp.config("lua_ls", {
   settings = {
     Lua = {
-      diagnostics = { globals = { "vim", "Snacks" } },
+      diagnostics = { globals = { "vim" } },
       workspace = { checkThirdParty = false },
       telemetry = { enable = false },
     },

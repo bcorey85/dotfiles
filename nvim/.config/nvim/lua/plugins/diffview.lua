@@ -87,7 +87,13 @@ local function write_review_entry(line_ref, snippet_lines)
       local snippet = table.concat(snippet_lines, "\n")
       entry = string.format(
         "## %s:%s\n%s\n\n%s\n%s\n%s\n\n%s\n\n---\n\n",
-        abs_path, line_ref, timestamp, fence_open, snippet, fence_close, input
+        abs_path,
+        line_ref,
+        timestamp,
+        fence_open,
+        snippet,
+        fence_close,
+        input
       )
     else
       entry = string.format("## %s:%s\n%s\n\n%s\n\n---\n\n", abs_path, line_ref, timestamp, input)
@@ -252,8 +258,8 @@ return {
       },
       file_panel = {
         { "n", "q", close_diffview, { desc = "Close Diffview" } },
-        { "n", "cc", "<Cmd>Git commit<bar>wincmd J<CR>", { desc = "Commit staged" } },
-        { "n", "ca", "<Cmd>Git commit --amend<bar>wincmd J<CR>", { desc = "Amend last commit" } },
+        { "n", "cc", "<Cmd>Git commit<CR>", { desc = "Commit staged" } },
+        { "n", "ca", "<Cmd>Git commit --amend<CR>", { desc = "Amend last commit" } },
         { "n", "<C-d>", function()
           local key = vim.api.nvim_replace_termcodes("<C-d>", true, false, true)
           for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
@@ -343,6 +349,19 @@ return {
         end
       end,
       desc = "Toggle File History",
+    },
+    {
+      "<leader>dh",
+      function()
+        local lib = require("diffview.lib")
+        if lib.get_current_view() then
+          close_diffview()
+        else
+          tmux_zoom()
+          vim.cmd("DiffviewFileHistory")
+        end
+      end,
+      desc = "Toggle Repo History",
     },
   },
 }

@@ -38,7 +38,8 @@ case $PLATFORM in
             curl -fLo /tmp/CommitMono.tar.xz \
                 https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CommitMono.tar.xz
             tar xf /tmp/CommitMono.tar.xz -C ~/.local/share/fonts \
-                CommitMonoNerdFontMono-Regular.otf CommitMonoNerdFontMono-Bold.otf
+                CommitMonoNerdFontMono-Regular.otf CommitMonoNerdFontMono-Bold.otf \
+                CommitMonoNerdFontMono-Italic.otf CommitMonoNerdFontMono-BoldItalic.otf
             rm /tmp/CommitMono.tar.xz
             print_success "CommitMono Nerd Font installed"
         else
@@ -56,7 +57,8 @@ case $PLATFORM in
             curl -fLo /tmp/CommitMono.tar.xz \
                 https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CommitMono.tar.xz
             tar xf /tmp/CommitMono.tar.xz -C ~/.local/share/fonts \
-                CommitMonoNerdFontMono-Regular.otf CommitMonoNerdFontMono-Bold.otf
+                CommitMonoNerdFontMono-Regular.otf CommitMonoNerdFontMono-Bold.otf \
+                CommitMonoNerdFontMono-Italic.otf CommitMonoNerdFontMono-BoldItalic.otf
             rm /tmp/CommitMono.tar.xz
             print_success "CommitMono Nerd Font installed"
         else

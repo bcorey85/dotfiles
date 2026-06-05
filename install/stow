@@ -40,6 +40,11 @@ if [ -d ~/.config/kitty ] && [ ! -L ~/.config/kitty ]; then
     mv ~/.config/kitty ~/.config/kitty.backup.$(date +%Y%m%d_%H%M%S)
 fi
 
+if [ -d ~/.config/alacritty ] && [ ! -L ~/.config/alacritty ]; then
+    print_info "Backing up existing alacritty config..."
+    mv ~/.config/alacritty ~/.config/alacritty.backup.$(date +%Y%m%d_%H%M%S)
+fi
+
 if [ -d ~/.claude ] && [ ! -L ~/.claude ]; then
     print_info "Backing up existing claude config..."
     mv ~/.claude ~/.claude.backup.$(date +%Y%m%d_%H%M%S)
@@ -51,7 +56,7 @@ if [ "$PLATFORM" = "arch" ] && [ -d ~/.config/hypr ] && [ ! -L ~/.config/hypr ];
 fi
 
 # Stow configs — common packages for all platforms
-PACKAGES="nvim nvim-old tmux scripts zsh claude kitty ghostty kanata yazi starship lazygit git btop"
+PACKAGES="nvim nvim-old tmux scripts zsh claude kitty alacritty ghostty kanata yazi starship lazygit git btop"
 
 # Arch-only packages
 if [ "$PLATFORM" = "arch" ]; then

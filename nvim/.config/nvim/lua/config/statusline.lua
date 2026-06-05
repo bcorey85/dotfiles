@@ -6,7 +6,7 @@
 --   mode       → cursor shape (normal=block, insert=bar, replace=underline)
 --   filename   → breadcrumbs winbar (always visible, full path context)
 --   line/col   → relative line numbers + ruler in the gutter
---   diff +/-/~ → gitsigns sign column (per-line, right where the change is)
+--   diff +/-/~ → mini.diff sign column (per-line, right where the change is)
 -- Diagnostics are kept because nothing else aggregates them in one place.
 -- Mode, location, search count, and fileinfo are intentionally omitted.
 --
@@ -158,15 +158,23 @@ vim.api.nvim_create_autocmd({ "BufEnter", "FocusGained", "BufWritePost" }, {
   callback = trigger_git_refresh,
 })
 
--- FugitiveChanged fires after fugitive push/pull/commit/checkout.
 vim.api.nvim_create_autocmd("User", {
-  pattern = "FugitiveChanged",
-  group = vim.api.nvim_create_augroup("StatuslineGitFugitive", { clear = true }),
+  pattern = {
+    "NeogitPushComplete",
+    "NeogitPullComplete",
+    "NeogitCommitComplete",
+    "NeogitFetchComplete",
+    "NeogitReset",
+    "NeogitRebase",
+    "NeogitBranchCheckout",
+    "MiniGitUpdated",
+    "MiniGitCommandDone",
+  },
+  group = vim.api.nvim_create_augroup("StatuslineGitNeogit", { clear = true }),
   callback = function()
     local bufnr = vim.api.nvim_get_current_buf()
     local bufname = vim.api.nvim_buf_get_name(bufnr)
     local dir = bufname ~= "" and vim.fn.fnamemodify(bufname, ":p:h") or vim.fn.getcwd()
-    -- Invalidate cache so the next refresh fetches fresh data.
     _git_cache[dir] = nil
     trigger_git_refresh()
   end,
@@ -235,7 +243,8 @@ end
 function _G.Statusline_render()
   local parts = {}
 
-  local branch = vim.b.gitsigns_head
+  local summary = vim.b.minigit_summary
+  local branch = summary and summary.head_name or nil
   if branch and branch ~= "" then
     parts[#parts + 1] = "%#StatuslineBranch# " .. ICONS.branch .. branch .. " %*"
   end

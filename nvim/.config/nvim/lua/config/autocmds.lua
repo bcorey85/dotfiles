@@ -195,7 +195,7 @@ vim.api.nvim_create_autocmd("FileType", {
     "dbout",
     "fugitive",
     "fugitiveblame",
-    "gitsigns-blame",
+
     "grug-far",
     "help",
     "lspinfo",

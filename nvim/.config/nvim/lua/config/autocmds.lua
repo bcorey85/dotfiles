@@ -11,21 +11,25 @@ local function watch_buffer(buf)
     return
   end
 
-  event:start(path, {}, vim.schedule_wrap(function(err)
-    if err then
-      event:stop()
-      if not event:is_closing() then
-        event:close()
+  event:start(
+    path,
+    {},
+    vim.schedule_wrap(function(err)
+      if err then
+        event:stop()
+        if not event:is_closing() then
+          event:close()
+        end
+        watchers[buf] = nil
+        return
       end
-      watchers[buf] = nil
-      return
-    end
-    if vim.api.nvim_buf_is_valid(buf) then
-      vim.api.nvim_buf_call(buf, function()
-        vim.cmd("checktime")
-      end)
-    end
-  end))
+      if vim.api.nvim_buf_is_valid(buf) then
+        vim.api.nvim_buf_call(buf, function()
+          vim.cmd("checktime")
+        end)
+      end
+    end)
+  )
 
   watchers[buf] = event
 end
@@ -69,16 +73,13 @@ for _, buf in ipairs(vim.api.nvim_list_bufs()) do
   end
 end
 
-vim.api.nvim_create_autocmd(
-  { "CursorHold", "CursorHoldI" },
-  {
-    callback = function()
-      if vim.fn.getcmdwintype() == "" then
-        vim.cmd("checktime")
-      end
-    end,
-  }
-)
+vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
+  callback = function()
+    if vim.fn.getcmdwintype() == "" then
+      vim.cmd("checktime")
+    end
+  end,
+})
 
 vim.api.nvim_create_autocmd("BufEnter", {
   callback = function(args)
@@ -167,21 +168,6 @@ vim.api.nvim_create_autocmd("BufReadPost", {
     if mark[1] > 0 and mark[1] <= lcount then
       pcall(vim.api.nvim_win_set_cursor, 0, mark)
     end
-  end,
-})
-
-vim.api.nvim_create_autocmd("User", {
-  pattern = "SnacksDashboardOpened",
-  callback = function(args)
-    local buf = args.buf or vim.api.nvim_get_current_buf()
-    local opts = { buffer = buf, nowait = true, silent = true }
-    vim.keymap.set("n", "s", function() require("persistence").load() end, opts)
-    vim.keymap.set("n", "c", function()
-      Snacks.dashboard.pick("files", { cwd = vim.fn.stdpath("config") })
-    end, opts)
-    vim.keymap.set("n", "l", "<cmd>Lazy<cr>", opts)
-    vim.keymap.set("n", "u", "<cmd>Lazy update<cr>", opts)
-    vim.keymap.set("n", "q", "<cmd>qa<cr>", opts)
   end,
 })
 

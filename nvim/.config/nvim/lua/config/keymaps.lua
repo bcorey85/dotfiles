@@ -124,7 +124,7 @@ end, { desc = "Git push + set upstream tracking (prompt)" })
 vim.keymap.set("n", "<leader>gl", function() require("neogit").open({ "log" }) end, { desc = "Git log (neogit)" })
 vim.keymap.set("n", "<leader>gu", function() vim.cmd("DiffviewFileHistory --range=@{upstream}..HEAD") end, { desc = "Git log unpushed (diffview)" })
 vim.keymap.set("n", "<leader>gb", function() Snacks.git.blame_line() end, { desc = "Git blame line (float)" })
-vim.keymap.set("n", "<leader>gB", function() require("mini.git").show_at_cursor() end, { desc = "Git show at cursor" })
+vim.keymap.set("n", "<leader>gB", "<cmd>Git blame -- %<cr>", { desc = "Git blame (file)" })
 
 vim.keymap.set("n", "<leader>M", function()
   local msgs = vim.api.nvim_exec2("messages", { output = true }).output
@@ -222,30 +222,10 @@ vim.keymap.set("n", "<leader>w|", "<C-w>v", { desc = "Split window right" })
 
 vim.keymap.set("n", "<leader>qq", "<cmd>qa<cr>", { desc = "Quit all" })
 
--- Pickers (Snacks)
-vim.keymap.set("n", "<leader><leader>", function() Snacks.picker.smart({ cwd = require("util.root").get() }) end, { desc = "Smart find" })
-vim.keymap.set("n", "<leader>/", function() Snacks.picker.grep({ cwd = require("util.root").get() }) end, { desc = "Grep (Root Dir)" })
-vim.keymap.set("n", "<leader>ff", function() Snacks.picker.files({ cwd = require("util.root").get() }) end, { desc = "Find files (Root Dir)" })
-vim.keymap.set("n", "<leader>fF", function() Snacks.picker.files({ hidden = true, ignored = true }) end, { desc = "Find files (all)" })
-vim.keymap.set("n", "<leader>fr", function() Snacks.picker.recent() end, { desc = "Recent files" })
-vim.keymap.set("n", "<leader>fb", function() Snacks.picker.buffers() end, { desc = "Buffers" })
-vim.keymap.set("n", "<leader>fc", function() Snacks.picker.files({ cwd = vim.fn.stdpath("config") }) end, { desc = "Config files" })
-
--- Search
-vim.keymap.set("n", "<leader>sg", function() Snacks.picker.grep({ cwd = require("util.root").get() }) end, { desc = "Grep (Root Dir)" })
-vim.keymap.set("n", "<leader>sG", function() Snacks.picker.grep({ cwd = vim.fn.getcwd() }) end, { desc = "Grep (cwd)" })
-vim.keymap.set({ "n", "x" }, "<leader>sw", function() Snacks.picker.grep_word({ cwd = require("util.root").get() }) end, { desc = "Grep word/selection (Root Dir)" })
-vim.keymap.set({ "n", "x" }, "<leader>sW", function() Snacks.picker.grep_word({ cwd = vim.fn.getcwd() }) end, { desc = "Grep word/selection (cwd)" })
-vim.keymap.set("n", "<leader>sR", function() Snacks.picker.resume() end, { desc = "Resume picker" })
-vim.keymap.set("n", "<leader>sd", function() Snacks.picker.diagnostics() end, { desc = "Diagnostics (picker)" })
-
 -- Buffer cycle
 vim.keymap.set("n", "<S-h>", "<cmd>BufferLineCyclePrev<cr>", { desc = "Prev buffer" })
 vim.keymap.set("n", "<S-l>", "<cmd>BufferLineCycleNext<cr>", { desc = "Next buffer" })
 vim.keymap.set("n", "<leader>bo", function() Snacks.bufdelete.other() end, { desc = "Delete other buffers" })
-
--- Diagnostics list shortcut
-vim.keymap.set("n", "<leader>xx", function() Snacks.picker.diagnostics() end, { desc = "Diagnostics list" })
 
 -- Yank diagnostics on the current line to the clipboard
 vim.keymap.set("n", "<leader>yd", function()

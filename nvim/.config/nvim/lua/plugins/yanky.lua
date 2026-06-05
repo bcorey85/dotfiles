@@ -39,13 +39,6 @@ return {
       { "gP", "<Plug>(YankyGPutBefore)", mode = { "n", "x" }, desc = "Put before (stay)" },
       { "<C-p>", "<Plug>(YankyPreviousEntry)", desc = "Yanky: prev entry" },
       { "<C-n>", "<Plug>(YankyNextEntry)", desc = "Yanky: next entry" },
-      {
-        "<leader>yh",
-        function()
-          Snacks.picker.yanky()
-        end,
-        desc = "Yank history (Snacks picker)",
-      },
     },
   },
 }

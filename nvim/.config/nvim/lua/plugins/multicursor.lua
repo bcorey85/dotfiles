@@ -3,7 +3,7 @@
 -- KEYMAP SUMMARY
 -- ─────────────────────────────────────────────────────────────────────────────
 --   <C-Up>   / <C-Down>   add cursor above / below main cursor
---   <M-n>    / <M-N>      add cursor at next / prev match of word or selection
+--   <C-n>    / <C-p>      add cursor at next / prev match of word or selection
 --   <M-x>    / <M-X>      skip (no cursor) next / prev match
 --   <leader>A             add cursors for ALL matches of word/selection in buffer
 --   <M-q>                 toggle/disable individual cursor under main cursor
@@ -14,16 +14,12 @@
 --   <Esc>                 enable disabled cursors; or clear all cursors
 --
 -- WHY these keys:
---   <C-n>/<C-p>  → yanky  (yanky.lua:40-41) — off-limits
---   <C-d>/<C-u>  → scroll+center             — off-limits
---   <C-h/j/k/l>  → smart-splits              — off-limits
---   <A-j>/<A-k>  → move-lines                — off-limits
---   <C-s>        → save                      — off-limits
---   s/S          → flash                     — off-limits
---   <leader>s    → search group              — off-limits
---   <leader>n/<leader>N and <leader>s/<leader>S are the plugin defaults but
---   <leader>n conflicts with notes group and <leader>s is the search group,
---   so we use <M-n>/<M-N> (Alt+n) for match navigation instead.
+--   <C-n>/<C-p> add the next/prev match (Sublime <C-d> style). Freed up when
+--   yanky was removed; they're NORMAL/VISUAL-mode only, so they don't collide
+--   with blink.cmp's insert-mode <C-n>/<C-p> completion nav. Skip stays on
+--   <M-x>/<M-X>. Other keys are off-limits (used elsewhere):
+--   <C-d>/<C-u> scroll+center · <C-h/j/k/l> smart-splits · <A-j>/<A-k>
+--   move-lines · <C-s> save · s/S flash · <leader>s search.
 return {
   {
     "jake-stewart/multicursor.nvim",
@@ -32,8 +28,8 @@ return {
     keys = {
       { "<C-Up>", mode = { "n", "x" } },
       { "<C-Down>", mode = { "n", "x" } },
-      { "<M-n>", mode = { "n", "x" } },
-      { "<M-N>", mode = { "n", "x" } },
+      { "<C-n>", mode = { "n", "x" } },
+      { "<C-p>", mode = { "n", "x" } },
       { "<M-x>", mode = { "n", "x" } },
       { "<M-X>", mode = { "n", "x" } },
       { "<leader>A", mode = { "n", "x" } },
@@ -54,10 +50,10 @@ return {
       end, { desc = "Multicursor: add cursor below" })
 
       -- Add / skip next or previous match of word under cursor (Sublime <C-d> style).
-      set({ "n", "x" }, "<M-n>", function()
+      set({ "n", "x" }, "<C-n>", function()
         mc.matchAddCursor(1)
       end, { desc = "Multicursor: add cursor at next match" })
-      set({ "n", "x" }, "<M-N>", function()
+      set({ "n", "x" }, "<C-p>", function()
         mc.matchAddCursor(-1)
       end, { desc = "Multicursor: add cursor at prev match" })
       set({ "n", "x" }, "<M-x>", function()

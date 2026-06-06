@@ -22,10 +22,11 @@ vim.ui.input = function(opts, on_confirm)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { default })
 
+  -- No explicit border here: inherits vim.o.winborder set in config/options.lua
+  -- (rounded on 0.11+; degrades to no border on 0.10, which is cosmetic-only).
   local win = vim.api.nvim_open_win(buf, true, {
     relative = "editor",
     style = "minimal",
-    border = "rounded",
     title = " " .. prompt .. " ",
     title_pos = "center",
     width = width,

@@ -51,5 +51,12 @@ return {
       end,
       desc = "Neogit (zoomed)",
     },
+    {
+      "<leader>gl",
+      function()
+        require("neogit").open({ "log" })
+      end,
+      desc = "Git log (neogit)",
+    },
   },
 }

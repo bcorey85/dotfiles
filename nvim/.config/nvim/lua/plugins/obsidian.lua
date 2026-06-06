@@ -6,7 +6,7 @@ return {
     ft = "markdown",
     dependencies = {
       "nvim-lua/plenary.nvim",
-      "ibhagwan/fzf-lua",
+      "nvim-telescope/telescope.nvim",
     },
     keys = (function()
       local function ensure_editable_win()
@@ -81,29 +81,26 @@ return {
         scan(vault_root)
         table.sort(dirs)
 
-        require("fzf-lua").fzf_exec(dirs, {
-          prompt = "Move note to> ",
-          actions = {
-            ["default"] = function(selected)
-              if not selected or #selected == 0 then
-                return
-              end
-              local choice = selected[1]
-              local dest = vault_root .. "/" .. choice .. "/" .. fname
+        -- vim.ui.select is intercepted by telescope (via telescope's ui-select
+        -- extension or its native vim.ui.select override) so this renders as a
+        -- styled telescope picker rather than a plain prompt.
+        vim.ui.select(dirs, { prompt = "Move note to" }, function(choice)
+          if not choice then
+            return
+          end
+          local dest = vault_root .. "/" .. choice .. "/" .. fname
 
-              vim.fn.rename(src, dest)
-              vim.cmd("edit " .. vim.fn.fnameescape(dest))
-              vim.api.nvim_buf_delete(src_buf, { force = true })
-              vim.notify("Moved to " .. choice, vim.log.levels.INFO)
-            end,
-          },
-        })
+          vim.fn.rename(src, dest)
+          vim.cmd("edit " .. vim.fn.fnameescape(dest))
+          vim.api.nvim_buf_delete(src_buf, { force = true })
+          vim.notify("Moved to " .. choice, vim.log.levels.INFO)
+        end)
       end, { desc = "Move note to folder" })
     end,
     opts = {
       legacy_commands = false,
       picker = {
-        name = "fzf-lua",
+        name = "telescope.nvim",
       },
       workspaces = (function()
         local candidates = {

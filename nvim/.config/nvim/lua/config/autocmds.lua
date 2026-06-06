@@ -153,6 +153,41 @@ vim.api.nvim_create_autocmd("TextYankPost", {
   end,
 })
 
+-- Suppress LSP diagnostics in buffers with unresolved git conflict markers.
+-- Language servers (lua_ls especially) parse `<<<<<<<` / `=======` / `>>>>>>>`
+-- as code and spam syntax errors (`<<` reads as a bit-shift op, `HEAD` as an
+-- undefined global). Disable diagnostics while markers are present, and
+-- re-enable ONLY the buffers we disabled once they resolve — so this never
+-- fights the manual <leader>ud toggle. Diffview's merge tool already sets
+-- disable_diagnostics; this covers conflicted files opened directly too.
+local conflict_disabled = {}
+
+local function has_conflict_markers(buf)
+  for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+    if line:find("^<<<<<<<") then
+      return true
+    end
+  end
+  return false
+end
+
+vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost" }, {
+  group = vim.api.nvim_create_augroup("ConflictDiagnostics", { clear = true }),
+  callback = function(args)
+    local buf = args.buf
+    if vim.bo[buf].buftype ~= "" then
+      return
+    end
+    if has_conflict_markers(buf) then
+      vim.diagnostic.enable(false, { bufnr = buf })
+      conflict_disabled[buf] = true
+    elseif conflict_disabled[buf] then
+      vim.diagnostic.enable(true, { bufnr = buf })
+      conflict_disabled[buf] = nil
+    end
+  end,
+})
+
 vim.api.nvim_create_autocmd("VimResized", {
   callback = function()
     local current_tab = vim.fn.tabpagenr()

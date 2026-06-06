@@ -45,44 +45,10 @@ wsl | ubuntu)
     print_success "tlrc already installed"
   fi
 
-  if ! command -v lazygit &>/dev/null; then
-    print_info "Installing lazygit..."
-    LAZYGIT_VER=$(curl -sI "https://github.com/jesseduffield/lazygit/releases/latest" | grep -i location | sed 's/.*tag\/v//' | tr -d '[:space:]')
-    curl -fLo /tmp/lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LAZYGIT_VER}_Linux_$(uname -m).tar.gz"
-    tar -xzf /tmp/lazygit.tar.gz -C /tmp lazygit
-    cp /tmp/lazygit ~/.local/bin/
-    chmod +x ~/.local/bin/lazygit
-    rm -f /tmp/lazygit.tar.gz /tmp/lazygit
-    print_success "lazygit installed"
-  else
-    print_success "lazygit already installed"
-  fi
-
-  if ! command -v lazydocker &>/dev/null; then
-    print_info "Installing lazydocker..."
-    curl -fsSL https://raw.githubusercontent.com/jesseduffield/lazydocker/master/scripts/install_update_linux.sh | DIR="$HOME/.local/bin" bash
-    print_success "lazydocker installed"
-  else
-    print_success "lazydocker already installed"
-  fi
-
-  if ! command -v yazi &>/dev/null; then
-    print_info "Installing yazi..."
-    YAZI_URL="https://github.com/sxyazi/yazi/releases/latest/download/yazi-$(uname -m)-unknown-linux-gnu.zip"
-    curl -fLo /tmp/yazi.zip "$YAZI_URL"
-    unzip -o /tmp/yazi.zip -d /tmp/yazi-extract
-    mkdir -p ~/.local/bin
-    cp /tmp/yazi-extract/yazi-*/yazi /tmp/yazi-extract/yazi-*/ya ~/.local/bin/
-    chmod +x ~/.local/bin/yazi ~/.local/bin/ya
-    rm -rf /tmp/yazi.zip /tmp/yazi-extract
-    print_success "yazi installed"
-  else
-    print_success "yazi already installed"
-  fi
   ;;
 arch)
   print_info "Installing dependencies via pacman..."
-  sudo pacman -S --needed stow neovim tmux zsh git curl jq libnotify fzf zoxide unzip direnv kitty alacritty ghostty git-delta btop bat atuin eza glow fd yazi lazydocker lazygit keychain rustup playerctl xdg-user-dirs ripgrep brightnessctl base-devel bluez bluez-utils less ansible just rsync xclip
+  sudo pacman -S --needed stow neovim tmux zsh git curl jq libnotify fzf zoxide unzip direnv kitty alacritty ghostty git-delta btop bat atuin eza glow fd keychain rustup playerctl xdg-user-dirs ripgrep brightnessctl base-devel bluez bluez-utils less ansible just rsync xclip
   print_success "Dependencies installed"
 
   # Hyprland desktop packages
@@ -136,7 +102,7 @@ mac)
   fi
 
   print_info "Installing dependencies via Homebrew..."
-  brew install stow neovim tmux git jq fzf zoxide yazi direnv kitty alacritty git-delta btop bat atuin eza tlrc lazydocker lazygit glow fd keychain rustup ansible just
+  brew install stow neovim tmux git jq fzf zoxide direnv kitty alacritty git-delta btop bat atuin eza tlrc glow fd keychain rustup ansible just
   brew install umputun/apps/revdiff
   brew install --cask nikitabobko/tap/aerospace
   print_success "Dependencies installed"

@@ -37,10 +37,8 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 | `kitty`     | `~/.config/kitty/`                      | Sonokai Maia theme                                                                                        |
 | `alacritty` | `~/.config/alacritty/`                  | Catppuccin Mocha (OneDark BG), matches kitty                                                              |
 | `starship`  | `~/.config/starship.toml`               | Gruvbox Material prompt                                                                                   |
-| `yazi`      | `~/.config/yazi/`                       | File manager config                                                                                       |
 | `kanata`    | `~/kanata-config.kbd`, `~/kanata-setup` | Keyboard remapping with systemd service                                                                   |
 | `scripts`   | `~/.local/bin/`                         | tmux-sessionizer, dev utilities                                                                           |
-| `lazygit`   | `~/.config/lazygit/`                    | Narrow side panel, expand on focus                                                                        |
 | `git`       | `~/.gitconfig`                          | Delta pager, side-by-side diffs. Per-machine identity in `~/.gitconfig.local`                             |
 
 ## CRITICAL: Cross-Platform Compatibility

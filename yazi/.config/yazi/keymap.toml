@@ -1,4 +1,0 @@
-[[mgr.prepend_keymap]]
-on   = "F"
-run  = "shell -- open -R %h"
-desc = "Reveal in Finder"

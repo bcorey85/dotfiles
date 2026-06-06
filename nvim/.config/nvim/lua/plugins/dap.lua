@@ -7,15 +7,69 @@ return {
       "nvim-neotest/nvim-nio",
     },
     keys = {
-      { "<leader>db", function() require("dap").toggle_breakpoint() end, desc = "Toggle breakpoint" },
-      { "<leader>dc", function() require("dap").continue() end, desc = "Start/Continue debugger" },
-      { "<leader>do", function() require("dap").step_over() end, desc = "Step over" },
-      { "<leader>di", function() require("dap").step_into() end, desc = "Step into" },
-      { "<leader>dO", function() require("dap").step_out() end, desc = "Step out" },
-      { "<leader>dx", function() require("dap").terminate() end, desc = "Stop debugger" },
-      { "<leader>dB", function() require("dap").set_breakpoint(vim.fn.input("Condition: ")) end, desc = "Conditional breakpoint" },
-      { "<leader>dC", function() require("dap").clear_breakpoints() end, desc = "Clear all breakpoints" },
-      { "<leader>du", function() require("dapui").toggle() end, desc = "Toggle DAP UI" },
+      {
+        "<leader>db",
+        function()
+          require("dap").toggle_breakpoint()
+        end,
+        desc = "Toggle breakpoint",
+      },
+      {
+        "<leader>dc",
+        function()
+          require("dap").continue()
+        end,
+        desc = "Start/Continue debugger",
+      },
+      {
+        "<leader>do",
+        function()
+          require("dap").step_over()
+        end,
+        desc = "Step over",
+      },
+      {
+        "<leader>di",
+        function()
+          require("dap").step_into()
+        end,
+        desc = "Step into",
+      },
+      {
+        "<leader>dO",
+        function()
+          require("dap").step_out()
+        end,
+        desc = "Step out",
+      },
+      {
+        "<leader>dx",
+        function()
+          require("dap").terminate()
+        end,
+        desc = "Stop debugger",
+      },
+      {
+        "<leader>dB",
+        function()
+          require("dap").set_breakpoint(vim.fn.input("Condition: "))
+        end,
+        desc = "Conditional breakpoint",
+      },
+      {
+        "<leader>dC",
+        function()
+          require("dap").clear_breakpoints()
+        end,
+        desc = "Clear all breakpoints",
+      },
+      {
+        "<leader>du",
+        function()
+          require("dapui").toggle()
+        end,
+        desc = "Toggle DAP UI",
+      },
     },
     config = function()
       local dap = require("dap")
@@ -102,17 +156,16 @@ return {
         }
       end
 
+      local tmux = require("util.tmux")
+
       dap.listeners.after.event_initialized["dapui_config"] = function()
-        vim.fn.system("tmux resize-pane -Z")
+        tmux.zoom()
         dapui.open()
       end
 
       local function close_dap()
         dapui.close()
-        local zoomed = vim.fn.system("tmux display-message -p '#{window_zoomed_flag}'"):gsub("%s+", "")
-        if zoomed == "1" then
-          vim.fn.system("tmux resize-pane -Z")
-        end
+        tmux.unzoom()
       end
 
       dap.listeners.before.event_terminated["dapui_config"] = close_dap

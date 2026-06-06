@@ -58,14 +58,8 @@ vim.keymap.set("n", "<leader>yf", function()
     vim.notify("Buffer has no file", vim.log.levels.WARN)
     return
   end
-  local dir = vim.fn.fnamemodify(abs, ":h")
-  local out = vim.fn.systemlist({ "git", "-C", dir, "rev-parse", "--show-toplevel" })
-  local path
-  if vim.v.shell_error == 0 and out[1] and out[1] ~= "" then
-    local root = out[1]
-    path = abs:sub(#root + 2)
-  else
-    path = abs
+  local path, in_repo = require("util.git").relpath(abs)
+  if not in_repo then
     vim.notify("Not in a git repo; copied absolute path", vim.log.levels.WARN)
   end
   vim.fn.setreg("+", path)
@@ -85,17 +79,15 @@ vim.keymap.set("n", "<leader>yl", function()
     return
   end
   local line = vim.api.nvim_win_get_cursor(0)[1]
-  local dir = vim.fn.fnamemodify(abs, ":h")
-  local out = vim.fn.systemlist({ "git", "-C", dir, "rev-parse", "--show-toplevel" })
-  local path = (vim.v.shell_error == 0 and out[1] and out[1] ~= "") and abs:sub(#out[1] + 2) or abs
+  local path = require("util.git").relpath(abs)
   local ref = path .. ":" .. line
   vim.fn.setreg("+", ref)
   vim.notify("Copied: " .. ref)
 end, { desc = "Copy file:line reference" })
 
 vim.keymap.set("n", "<leader>yb", function()
-  local branch = vim.fn.systemlist({ "git", "-C", vim.fn.getcwd(), "symbolic-ref", "--short", "HEAD" })[1]
-  if vim.v.shell_error ~= 0 or not branch or branch == "" then
+  local branch = require("util.git").branch()
+  if not branch then
     vim.notify("Not on a branch", vim.log.levels.WARN)
     return
   end
@@ -104,8 +96,8 @@ vim.keymap.set("n", "<leader>yb", function()
 end, { desc = "Copy git branch name" })
 
 vim.keymap.set("n", "<leader>yc", function()
-  local hash = vim.fn.systemlist({ "git", "-C", vim.fn.getcwd(), "rev-parse", "HEAD" })[1]
-  if vim.v.shell_error ~= 0 or not hash or hash == "" then
+  local hash = require("util.git").head()
+  if not hash then
     vim.notify("Not in a git repo", vim.log.levels.WARN)
     return
   end

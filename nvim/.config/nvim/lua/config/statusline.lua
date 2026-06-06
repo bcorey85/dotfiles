@@ -1,14 +1,17 @@
 -- Hand-rolled minimal statusline.
 --
--- Design: the statusline surfaces exactly two signals — the current git branch
--- and a diagnostic count. Everything else that lualine/mini.statusline used to
--- show has a better, less noisy home:
+-- Design: the statusline surfaces exactly three signals — the current git
+-- branch, LSP progress while work is in flight, and a diagnostic count.
+-- Everything else that lualine/mini.statusline used to show has a better,
+-- less noisy home:
 --   mode       → cursor shape (normal=block, insert=bar, replace=underline)
 --   filename   → breadcrumbs winbar (always visible, full path context)
 --   line/col   → relative line numbers + ruler in the gutter
 --   diff +/-/~ → mini.diff sign column (per-line, right where the change is)
 -- Diagnostics are kept because nothing else aggregates them in one place.
--- Mode, location, search count, and fileinfo are intentionally omitted.
+-- LSP progress replaces fidget: events are captured via LspProgress autocmd
+-- and stored in a module-local var; the render path is pure Lua with zero
+-- subprocess calls. Mode, location, search count, and fileinfo are omitted.
 --
 -- laststatus=3 (global statusline) is set in config/options.lua:18 and is
 -- unaffected by this module.
@@ -51,6 +54,65 @@ define_highlights()
 vim.api.nvim_create_autocmd("ColorScheme", {
   group = vim.api.nvim_create_augroup("StatuslineHighlights", { clear = true }),
   callback = define_highlights,
+})
+
+-- LSP progress: captured via LspProgress autocmd; cleared with a short delay
+-- after the "end" event so completion is visible briefly before disappearing.
+local _lsp_progress = nil
+-- _lsp_progress_token: tracks the active event token so a delayed clear does
+-- not clobber a newer in-flight event that arrived during the defer window.
+local _lsp_progress_token = 0
+
+vim.api.nvim_create_autocmd("LspProgress", {
+  group = vim.api.nvim_create_augroup("StatuslineLspProgress", { clear = true }),
+  callback = function(ev)
+    local value = ev.data and ev.data.params and ev.data.params.value
+    if not value then
+      return
+    end
+
+    local client = vim.lsp.get_client_by_id(ev.data.client_id)
+    -- Escape user-derived text so % signs don't become statusline directives.
+    local safe = function(s)
+      return (s or ""):gsub("%%", "%%%%")
+    end
+    local client_name = safe(client and client.name or "lsp")
+    local title = safe(value.title)
+    local msg = safe(value.message)
+
+    if value.kind == "end" then
+      -- Show the completion label briefly, then clear.
+      local token = _lsp_progress_token + 1
+      _lsp_progress_token = token
+      local label = client_name .. ": " .. title
+      if msg ~= "" then
+        label = label .. " " .. msg
+      end
+      _lsp_progress = label
+      vim.cmd.redrawstatus()
+      vim.defer_fn(function()
+        -- Guard: only wipe if no newer event arrived during the delay.
+        if _lsp_progress_token == token then
+          _lsp_progress = nil
+          vim.cmd.redrawstatus()
+        end
+      end, 1500)
+      return
+    end
+
+    local label = client_name .. ": " .. title
+    if msg ~= "" then
+      label = label .. " " .. msg
+    end
+    if value.percentage then
+      -- Append the literal text "42%" — the % is a real percent sign here,
+      -- not a statusline directive, so it must be doubled.
+      label = label .. " " .. tostring(value.percentage) .. "%%"
+    end
+    _lsp_progress = label
+    _lsp_progress_token = _lsp_progress_token + 1
+    vim.cmd.redrawstatus()
+  end,
 })
 
 -- venv_label: return the display name for the given VIRTUAL_ENV path.
@@ -250,6 +312,12 @@ function _G.Statusline_render()
   end
 
   parts[#parts + 1] = "%="
+
+  -- LSP progress segment: populated by the LspProgress autocmd above.
+  -- Uses a muted highlight so it reads as context, not an alert.
+  if _lsp_progress and _lsp_progress ~= "" then
+    parts[#parts + 1] = "%#StatuslineVenv# " .. _lsp_progress .. " %*"
+  end
 
   -- Python venv segment: cheap env-var read, shown only in python buffers.
   if vim.bo.filetype == "python" then

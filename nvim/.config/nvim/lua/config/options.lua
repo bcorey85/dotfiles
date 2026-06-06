@@ -5,7 +5,22 @@ vim.g.maplocalleader = "\\"
 
 vim.opt.autowrite = true
 vim.opt.clipboard = "unnamedplus"
-vim.opt.cmdheight = 0 -- reclaim bottom row; global statusline sits flush at the bottom (noice handles cmdline + messages)
+-- vim._core.ui2 is the 0.12 stable name for the experimental native message UI
+-- (was vim._extui in pre-release builds; private path, may move again in future).
+-- When available, route messages to a floating ephemeral window and reclaim the
+-- cmdline row with cmdheight=0. Falls back to cmdheight=1 on older nvim (WSL/
+-- Ubuntu/Arch machines that ship 0.10/0.11) so classic cmdline still works there.
+local _ui2_ok, _ui2 = pcall(require, "vim._core.ui2")
+if _ui2_ok then
+  local _en_ok = pcall(_ui2.enable, { msg = { target = "msg" } })
+  if _en_ok then
+    vim.opt.cmdheight = 0
+  else
+    vim.opt.cmdheight = 1
+  end
+else
+  vim.opt.cmdheight = 1
+end
 vim.opt.completeopt = "menu,menuone,noselect"
 vim.opt.conceallevel = 2
 vim.opt.confirm = true

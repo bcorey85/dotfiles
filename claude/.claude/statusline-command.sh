@@ -2,7 +2,6 @@
 
 # Read JSON input
 input=$(cat)
-echo "$input" | jq -c '{sid: .session_id, dir: .workspace.current_dir, cw: .context_window}' >> /tmp/sl-debug.jsonl 2>/dev/null  # TEMP debug
 
 # Extract all values in a single jq call
 eval "$(echo "$input" | jq -r '
@@ -11,13 +10,6 @@ eval "$(echo "$input" | jq -r '
   @sh "context_size=\(.context_window.context_window_size // 0)",
   @sh "used_pct=\(.context_window.used_percentage // 0)",
   @sh "remaining_pct=\(.context_window.remaining_percentage // empty)",
-  @sh "total_cost=\(.cost.total_cost_usd // 0)",
-  @sh "total_duration_ms=\(.cost.total_duration_ms // 0)",
-  @sh "lines_added=\(.cost.total_lines_added // 0)",
-  @sh "lines_removed=\(.cost.total_lines_removed // 0)",
-  @sh "cache_read=\(.context_window.current_usage.cache_read_input_tokens // 0)",
-  @sh "cache_create=\(.context_window.current_usage.cache_creation_input_tokens // 0)",
-  @sh "fresh_input=\(.context_window.current_usage.input_tokens // 0)",
   @sh "five_hour_pct=\(.rate_limits.five_hour.used_percentage // empty)",
   @sh "five_hour_resets_at=\(.rate_limits.five_hour.resets_at // empty)"
 ')"
@@ -81,37 +73,7 @@ if [ -n "$remaining_pct" ]; then
     for ((i=0; i<filled; i++)); do bar+="█"; done
     for ((i=0; i<empty; i++)); do bar+="░"; done
 
-    # Format cost
-    cost_display=$(printf "≈\$%.2f" "$total_cost")
-
-    # Cache efficiency
-    cache_total=$(( cache_read + cache_create + fresh_input ))
-    if [ "$cache_total" -gt 0 ]; then
-        cache_pct=$(( cache_read * 100 / cache_total ))
-    else
-        cache_pct=0
-    fi
-
-    # Format lines changed
-    lines_info=""
-    if [ "$lines_added" -gt 0 ] || [ "$lines_removed" -gt 0 ]; then
-        lines_info=$(printf " ${DIM}[${RESET}${GREEN}+%s${RESET} ${RED}-%s${RESET}${DIM}]${RESET}" "$lines_added" "$lines_removed")
-    fi
-
-    # Format session duration
-    total_seconds=$(( total_duration_ms / 1000 ))
-    if [ "$total_seconds" -ge 3600 ]; then
-        hours=$(( total_seconds / 3600 ))
-        mins=$(( (total_seconds % 3600) / 60 ))
-        duration_display="${hours}h${mins}m"
-    elif [ "$total_seconds" -ge 60 ]; then
-        mins=$(( total_seconds / 60 ))
-        duration_display="${mins}m"
-    else
-        duration_display="${total_seconds}s"
-    fi
-
-    token_info=$(printf " ${DIM}[${RESET}%s${DIM}]${RESET} ${DIM}[${RESET}${pct_color}%s${RESET} %s%% ${DIM}left |${RESET} %s${DIM}/${RESET}%s${DIM}]${RESET} ${DIM}[${RESET}%s${DIM}]${RESET}%s ${DIM}[${RESET}⚡%s%% cached${DIM}]${RESET} ${DIM}[${RESET}%s${DIM}]${RESET}" "$model_name" "$bar" "$remaining_pct" "$used_display" "$size_display" "$cost_display" "$lines_info" "$cache_pct" "$duration_display")
+    token_info=$(printf " ${DIM}[${RESET}%s${DIM}]${RESET} ${DIM}[${RESET}${pct_color}%s${RESET} %s%% ${DIM}left |${RESET} %s${DIM}/${RESET}%s${DIM}]${RESET}" "$model_name" "$bar" "$remaining_pct" "$used_display" "$size_display")
 else
     token_info=$(printf " ${DIM}[${RESET}%s${DIM}]${RESET} ${DIM}[${RESET}0${DIM}/${RESET}%s${DIM}]${RESET}" "$model_name" "$context_size")
 fi

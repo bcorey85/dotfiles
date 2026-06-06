@@ -26,12 +26,12 @@
     },
 
     "cpu": {
-        "format": "  {usage}%",
+        "format": "  CPU {usage}%",
         "interval": 5
     },
 
     "memory": {
-        "format": "  {percentage}%",
+        "format": "  RAM {percentage}%",
         "interval": 5
     },
 
@@ -42,14 +42,14 @@
     },
 
     "network": {
-        "format-wifi": "  {signalStrength}%",
+        "format-wifi": "  WiFi {signalStrength}%",
         "format-ethernet": "  {ipaddr}",
         "format-disconnected": "  Disconnected",
         "tooltip-format": "{ifname}: {ipaddr}/{cidr}\n{essid}"
     },
 
     "pulseaudio": {
-        "format": "{icon} {volume}%",
+        "format": "{icon} VOL {volume}%",
         "format-muted": "  Muted",
         "format-icons": {
             "default": ["", "", ""]
@@ -63,9 +63,9 @@
             "warning": 30,
             "critical": 15
         },
-        "format": "{icon} {capacity}%",
-        "format-charging": " {capacity}%",
-        "format-plugged": " {capacity}%",
+        "format": "{icon} BAT {capacity}%",
+        "format-charging": " BAT {capacity}%",
+        "format-plugged": " BAT {capacity}%",
         "format-icons": ["", "", "", "", ""]
     },
 

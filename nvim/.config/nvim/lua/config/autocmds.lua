@@ -161,16 +161,6 @@ vim.api.nvim_create_autocmd("VimResized", {
   end,
 })
 
-vim.api.nvim_create_autocmd("BufReadPost", {
-  callback = function(args)
-    local mark = vim.api.nvim_buf_get_mark(args.buf, '"')
-    local lcount = vim.api.nvim_buf_line_count(args.buf)
-    if mark[1] > 0 and mark[1] <= lcount then
-      pcall(vim.api.nvim_win_set_cursor, 0, mark)
-    end
-  end,
-})
-
 -- mini.git status output has no filetype, so the FileType autocmd below never
 -- fires for it. Use the User event fired after any :Git command opens a split.
 vim.api.nvim_create_autocmd("User", {

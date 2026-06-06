@@ -260,24 +260,38 @@ return {
         { "n", "q", close_diffview, { desc = "Close Diffview" } },
         { "n", "cc", "<Cmd>Git commit<CR>", { desc = "Commit staged" } },
         { "n", "ca", "<Cmd>Git commit --amend<CR>", { desc = "Amend last commit" } },
-        { "n", "<C-d>", function()
-          local key = vim.api.nvim_replace_termcodes("<C-d>", true, false, true)
-          for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-            if vim.wo[win].diff then
-              vim.api.nvim_win_call(win, function() vim.cmd("normal! " .. key) end)
-              return
+        {
+          "n",
+          "<C-d>",
+          function()
+            local key = vim.api.nvim_replace_termcodes("<C-d>", true, false, true)
+            for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+              if vim.wo[win].diff then
+                vim.api.nvim_win_call(win, function()
+                  vim.cmd("normal! " .. key)
+                end)
+                return
+              end
             end
-          end
-        end, { desc = "Scroll diff down" } },
-        { "n", "<C-u>", function()
-          local key = vim.api.nvim_replace_termcodes("<C-u>", true, false, true)
-          for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-            if vim.wo[win].diff then
-              vim.api.nvim_win_call(win, function() vim.cmd("normal! " .. key) end)
-              return
+          end,
+          { desc = "Scroll diff down" },
+        },
+        {
+          "n",
+          "<C-u>",
+          function()
+            local key = vim.api.nvim_replace_termcodes("<C-u>", true, false, true)
+            for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+              if vim.wo[win].diff then
+                vim.api.nvim_win_call(win, function()
+                  vim.cmd("normal! " .. key)
+                end)
+                return
+              end
             end
-          end
-        end, { desc = "Scroll diff up" } },
+          end,
+          { desc = "Scroll diff up" },
+        },
       },
     },
     view = {
@@ -362,6 +376,13 @@ return {
         end
       end,
       desc = "Toggle Repo History",
+    },
+    {
+      "<leader>gu",
+      function()
+        vim.cmd("DiffviewFileHistory --range=@{upstream}..HEAD")
+      end,
+      desc = "Git log unpushed (diffview)",
     },
   },
 }

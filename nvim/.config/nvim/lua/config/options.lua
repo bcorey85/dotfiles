@@ -57,6 +57,14 @@ vim.opt.sessionoptions = { "buffers", "curdir", "tabpages", "winsize", "help", "
 vim.g.loaded_python3_provider = 0
 vim.g.root_spec = { "cwd" }
 
+-- Global float border style (Neovim 0.11+): all floats (LSP hover, signature
+-- help, diagnostic floats, which-key, tiny-cmdline) inherit this one setting.
+-- Guarded with pcall because vim.o.winborder does not exist on 0.10 and would
+-- error without the guard.
+pcall(function()
+  vim.o.winborder = "rounded"
+end)
+
 -- Word-level inline diff (Neovim 0.12+): highlight only the changed characters
 -- on reworded lines instead of washing the whole line in a neutral DiffChange.
 -- Gives delta/GitHub-style precision in diffview and :diffsplit. Guarded with

@@ -229,6 +229,112 @@ return {
       end
       return self:join(unpack(segments))
     end
+    -- Positional conflict-choose keys for the merge tool: h = OURS (left pane),
+    -- l = THEIRS (right pane), mirroring the diff3 layout spatially. These ADD to
+    -- diffview's mnemonic <leader>co/ct (which still work). Spliced into every
+    -- merge-layout context so they hold if you cycle diff3 -> diff1/diff4. Done
+    -- here (not in the static opts below) so requiring diffview.actions doesn't
+    -- force-load the plugin at startup; diffview merges these with its defaults.
+    local actions = require("diffview.actions")
+
+    -- Custom "keep both" (ours + theirs, NO base) for the merge tool. diffview's
+    -- native conflict_choose("all") joins ours+base+theirs, dragging in the common
+    -- ancestor; this mirrors diffview's internal conflict_choose but joins only
+    -- ours then theirs — the usual "keep both changes". FRAGILE: it reaches into
+    -- diffview internals (lib / StandardView / parse_conflicts / layout main win),
+    -- so it may need updating if the plugin reshuffles those modules.
+    local function conflict_choose_both()
+      local lib = require("diffview.lib")
+      local StandardView = require("diffview.scene.views.standard.standard_view").StandardView
+      local vcs_utils = require("diffview.vcs.utils")
+      local dv_utils = require("diffview.utils")
+
+      local view = lib.get_current_view()
+      if not (view and view:instanceof(StandardView)) then
+        return
+      end
+      -- Inlined equivalent of diffview's local get_valid_main(view).
+      local main = view.cur_layout and view.cur_layout:get_main_win()
+      if not (main and main:is_valid() and main.file and main.file:is_valid()) then
+        return
+      end
+      local bufnr = main.file.bufnr
+      local _, cur = vcs_utils.parse_conflicts(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), main.id)
+      if not cur then
+        return
+      end
+      local content = dv_utils.vec_join(cur.ours.content, cur.theirs.content)
+      vim.api.nvim_buf_set_lines(bufnr, cur.first - 1, cur.last, false, content)
+      dv_utils.set_cursor(main.id, #content + cur.first - 1, 0)
+    end
+
+    -- Whole-file "keep both": ours+theirs for EVERY conflict. Mirrors diffview's
+    -- resolve_all_conflicts — a forward pass with a line-offset accumulator, so
+    -- each replacement's length change shifts the remaining conflicts' ranges.
+    -- Same internal-API fragility caveat as conflict_choose_both above.
+    local function conflict_choose_both_all()
+      local lib = require("diffview.lib")
+      local StandardView = require("diffview.scene.views.standard.standard_view").StandardView
+      local vcs_utils = require("diffview.vcs.utils")
+      local dv_utils = require("diffview.utils")
+
+      local view = lib.get_current_view()
+      if not (view and view:instanceof(StandardView)) then
+        return
+      end
+      local main = view.cur_layout and view.cur_layout:get_main_win()
+      if not (main and main:is_valid() and main.file and main.file:is_valid()) then
+        return
+      end
+      local bufnr = main.file.bufnr
+      local conflicts = vcs_utils.parse_conflicts(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), main.id)
+      if not next(conflicts) then
+        return
+      end
+      local content, first
+      local offset = 0
+      for _, c in ipairs(conflicts) do
+        first = c.first + offset
+        local last = c.last + offset
+        content = dv_utils.vec_join(c.ours.content, c.theirs.content)
+        vim.api.nvim_buf_set_lines(bufnr, first - 1, last, false, content)
+        offset = offset + (#content - (last - first) - 1)
+      end
+      dv_utils.set_cursor(main.id, #content + first - 1, 0)
+      view.cur_layout:sync_scroll()
+    end
+
+    local positional_conflict = {
+      -- Choose (positional): h = left/ours, l = right/theirs, a = all/both.
+      -- ca/cA point at the CUSTOM both (ours+theirs, no base), overriding
+      -- diffview's native base-including ca/cA.
+      { "n", "<leader>ch", actions.conflict_choose("ours"), { desc = "Conflict: choose ours (left)" } },
+      { "n", "<leader>cl", actions.conflict_choose("theirs"), { desc = "Conflict: choose theirs (right)" } },
+      { "n", "<leader>ca", conflict_choose_both, { desc = "Conflict: keep both (ours+theirs)" } },
+      -- Whole-file (uppercase): apply the choice to every conflict at once.
+      { "n", "<leader>cH", actions.conflict_choose_all("ours"), { desc = "Conflict: choose ours, whole file" } },
+      { "n", "<leader>cL", actions.conflict_choose_all("theirs"), { desc = "Conflict: choose theirs, whole file" } },
+      { "n", "<leader>cA", conflict_choose_both_all, { desc = "Conflict: keep both, whole file" } },
+      -- Navigation: j = next (down), k = prev (up). Replaces the default ]x / [x.
+      { "n", "<leader>cj", actions.next_conflict, { desc = "Conflict: next" } },
+      { "n", "<leader>ck", actions.prev_conflict, { desc = "Conflict: prev" } },
+      -- Hide diffview's mnemonic / base defaults (false disables a default) so
+      -- only the scheme above remains: co/cO/ct/cT (mnemonic ours/theirs) and
+      -- cb/cB (base). Native ca/cA are overridden above, not hidden. Use the
+      -- positional keys, or dx/dX to delete a conflict region.
+      { "n", "<leader>co", false },
+      { "n", "<leader>cO", false },
+      { "n", "<leader>ct", false },
+      { "n", "<leader>cT", false },
+      { "n", "<leader>cb", false },
+      { "n", "<leader>cB", false },
+      { "n", "]x", false },
+      { "n", "[x", false },
+    }
+    opts.keymaps = opts.keymaps or {}
+    for _, ctx in ipairs({ "diff1", "diff3", "diff4" }) do
+      opts.keymaps[ctx] = vim.list_extend(opts.keymaps[ctx] or {}, positional_conflict)
+    end
     require("diffview").setup(opts)
   end,
   opts = {
@@ -276,7 +382,12 @@ return {
     },
     view = {
       merge_tool = {
-        layout = "diff1_plain",
+        -- diff3_horizontal: 3 colored panes (OURS | BASE | THEIRS) with conflict
+        -- highlighting — diffview's default and the proper layout for resolving.
+        -- diff1_plain (the old value) is a single plain buffer with raw markers
+        -- and no coloring, since there are no panes to diff against. Cycle layouts
+        -- live in a merge with the cycle_layout action if you want the 1-pane view.
+        layout = "diff3_horizontal",
         disable_diagnostics = true,
       },
     },

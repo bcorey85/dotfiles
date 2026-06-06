@@ -171,6 +171,26 @@ vim.api.nvim_create_autocmd("BufReadPost", {
   end,
 })
 
+-- mini.git status output has no filetype, so the FileType autocmd below never
+-- fires for it. Use the User event fired after any :Git command opens a split.
+vim.api.nvim_create_autocmd("User", {
+  pattern = "MiniGitCommandSplit",
+  callback = function(ev)
+    local buf = vim.api.nvim_win_get_buf(ev.data.win_stdout)
+    vim.bo[buf].buflisted = false
+    vim.schedule(function()
+      vim.keymap.set("n", "q", function()
+        vim.cmd("close")
+        pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      end, {
+        buffer = buf,
+        silent = true,
+        desc = "Quit buffer",
+      })
+    end)
+  end,
+})
+
 -- Close certain helper/utility buffers with `q`. grug-far is included so
 -- <leader>sr can be dismissed with q.
 vim.api.nvim_create_autocmd("FileType", {
@@ -189,7 +209,6 @@ vim.api.nvim_create_autocmd("FileType", {
     "neotest-output",
     "neotest-output-panel",
     "neotest-summary",
-    "notify",
     "qf",
     "spectre_panel",
     "startuptime",

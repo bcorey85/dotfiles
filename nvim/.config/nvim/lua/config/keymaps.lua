@@ -111,6 +111,7 @@ vim.keymap.set("n", "<leader>gp", "<cmd>Git pull<cr>", { desc = "Git pull" })
 vim.keymap.set("n", "<leader>gF", "<cmd>Git push --force-with-lease<cr>", { desc = "Git push --force-with-lease" })
 vim.keymap.set("n", "<leader>gP", "<cmd>Git push<cr>", { desc = "Git push" })
 vim.keymap.set("n", "<leader>gf", "<cmd>Git fetch<cr>", { desc = "Git fetch" })
+vim.keymap.set("n", "<leader>gs", "<cmd>horizontal Git status<cr>", { desc = "Git status (panel)" })
 vim.keymap.set("n", "<leader>gt", function()
   local branch = vim.fn.systemlist("git symbolic-ref --short HEAD")[1]
   if not branch or branch == "" then
@@ -118,13 +119,21 @@ vim.keymap.set("n", "<leader>gt", function()
     return
   end
   vim.ui.input({ prompt = "Remote tracking branch: ", default = branch }, function(input)
-    if not input or input == "" then return end
+    if not input or input == "" then
+      return
+    end
     vim.cmd("Git push -u origin " .. input)
   end)
 end, { desc = "Git push + set upstream tracking (prompt)" })
-vim.keymap.set("n", "<leader>gl", function() require("neogit").open({ "log" }) end, { desc = "Git log (neogit)" })
-vim.keymap.set("n", "<leader>gu", function() vim.cmd("DiffviewFileHistory --range=@{upstream}..HEAD") end, { desc = "Git log unpushed (diffview)" })
-vim.keymap.set("n", "<leader>gb", function() require("mini.git").show_at_cursor() end, { desc = "Git blame line (float)" })
+vim.keymap.set("n", "<leader>gl", function()
+  require("neogit").open({ "log" })
+end, { desc = "Git log (neogit)" })
+vim.keymap.set("n", "<leader>gu", function()
+  vim.cmd("DiffviewFileHistory --range=@{upstream}..HEAD")
+end, { desc = "Git log unpushed (diffview)" })
+vim.keymap.set("n", "<leader>gb", function()
+  require("mini.git").show_at_cursor()
+end, { desc = "Git blame line (float)" })
 vim.keymap.set("n", "<leader>gB", "<cmd>Git blame -- %<cr>", { desc = "Git blame (file)" })
 
 vim.keymap.set("n", "<leader>M", function()
@@ -142,7 +151,7 @@ vim.keymap.set("n", "<leader>M", function()
   vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = true, silent = true })
 end, { desc = "Messages (scratch buffer)" })
 
-vim.keymap.set("n", "<leader>N", function() require("mini.notify").show_history() end, { desc = "Notification history (yankable)" })
+vim.keymap.set("n", "<leader>N", "<cmd>messages<cr>", { desc = "Message history" })
 
 vim.keymap.set("n", "<leader>ih", function()
   local enabled = not vim.lsp.inlay_hint.is_enabled()
@@ -215,8 +224,12 @@ local function delete_other_buffers()
   end
 end
 
-vim.keymap.set("n", "<leader>bd", function() require("mini.bufremove").delete() end, { desc = "Delete buffer" })
-vim.keymap.set("n", "<leader>bD", function() require("mini.bufremove").delete(0, true) end, { desc = "Delete buffer (force)" })
+vim.keymap.set("n", "<leader>bd", function()
+  require("mini.bufremove").delete()
+end, { desc = "Delete buffer" })
+vim.keymap.set("n", "<leader>bD", function()
+  require("mini.bufremove").delete(0, true)
+end, { desc = "Delete buffer (force)" })
 vim.keymap.set("n", "[b", "<cmd>bprevious<cr>", { desc = "Prev buffer" })
 vim.keymap.set("n", "]b", "<cmd>bnext<cr>", { desc = "Next buffer" })
 
@@ -245,7 +258,9 @@ vim.keymap.set("n", "<leader>qq", "<cmd>qa<cr>", { desc = "Quit all" })
 -- Buffer cycle
 vim.keymap.set("n", "<S-h>", "<cmd>BufferLineCyclePrev<cr>", { desc = "Prev buffer" })
 vim.keymap.set("n", "<S-l>", "<cmd>BufferLineCycleNext<cr>", { desc = "Next buffer" })
-vim.keymap.set("n", "<leader>bo", function() delete_other_buffers() end, { desc = "Delete other buffers" })
+vim.keymap.set("n", "<leader>bo", function()
+  delete_other_buffers()
+end, { desc = "Delete other buffers" })
 
 -- Yank diagnostics on the current line to the clipboard
 vim.keymap.set("n", "<leader>yd", function()
@@ -255,17 +270,27 @@ vim.keymap.set("n", "<leader>yd", function()
     vim.notify("No diagnostics on this line")
     return
   end
-  local msgs = vim.tbl_map(function(d) return d.message end, diags)
+  local msgs = vim.tbl_map(function(d)
+    return d.message
+  end, diags)
   local text = table.concat(msgs, "\n")
   vim.fn.setreg("+", text)
   vim.notify(("Yanked %d diagnostic(s)"):format(#diags))
 end, { desc = "Yank line diagnostics" })
 
 -- UI toggles
-vim.keymap.set("n", "<leader>uw", function() vim.wo.wrap = not vim.wo.wrap end, { desc = "Toggle wrap" })
-vim.keymap.set("n", "<leader>us", function() vim.wo.spell = not vim.wo.spell end, { desc = "Toggle spell" })
-vim.keymap.set("n", "<leader>ul", function() vim.wo.relativenumber = not vim.wo.relativenumber end, { desc = "Toggle rel numbers" })
-vim.keymap.set("n", "<leader>ud", function() vim.diagnostic.enable(not vim.diagnostic.is_enabled()) end, { desc = "Toggle diagnostics" })
+vim.keymap.set("n", "<leader>uw", function()
+  vim.wo.wrap = not vim.wo.wrap
+end, { desc = "Toggle wrap" })
+vim.keymap.set("n", "<leader>us", function()
+  vim.wo.spell = not vim.wo.spell
+end, { desc = "Toggle spell" })
+vim.keymap.set("n", "<leader>ul", function()
+  vim.wo.relativenumber = not vim.wo.relativenumber
+end, { desc = "Toggle rel numbers" })
+vim.keymap.set("n", "<leader>ud", function()
+  vim.diagnostic.enable(not vim.diagnostic.is_enabled())
+end, { desc = "Toggle diagnostics" })
 
 -- Move lines
 vim.keymap.set("n", "<A-j>", "<cmd>execute 'move .+' . v:count1<cr>==", { desc = "Move down" })

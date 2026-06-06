@@ -237,57 +237,62 @@ return {
     -- force-load the plugin at startup; diffview merges these with its defaults.
     local actions = require("diffview.actions")
 
-    -- Custom "keep both" (ours + theirs, NO base) for the merge tool. diffview's
-    -- native conflict_choose("all") joins ours+base+theirs, dragging in the common
-    -- ancestor; this mirrors diffview's internal conflict_choose but joins only
-    -- ours then theirs — the usual "keep both changes". FRAGILE: it reaches into
-    -- diffview internals (lib / StandardView / parse_conflicts / layout main win),
-    -- so it may need updating if the plugin reshuffles those modules.
-    local function conflict_choose_both()
+    -- Resolve the active merge view's main window + result buffer, plus the
+    -- diffview internal modules the custom "both" actions below need. Returns nil
+    -- when not in a mergeable diffview. FRAGILE: reaches into diffview internals
+    -- (lib / StandardView / layout main win / parse_conflicts / utils), so the
+    -- custom "both" actions may need updating if the plugin reshuffles these.
+    local function merge_ctx()
       local lib = require("diffview.lib")
       local StandardView = require("diffview.scene.views.standard.standard_view").StandardView
-      local vcs_utils = require("diffview.vcs.utils")
-      local dv_utils = require("diffview.utils")
-
       local view = lib.get_current_view()
       if not (view and view:instanceof(StandardView)) then
-        return
+        return nil
       end
       -- Inlined equivalent of diffview's local get_valid_main(view).
       local main = view.cur_layout and view.cur_layout:get_main_win()
       if not (main and main:is_valid() and main.file and main.file:is_valid()) then
+        return nil
+      end
+      return {
+        view = view,
+        main = main,
+        bufnr = main.file.bufnr,
+        vcs_utils = require("diffview.vcs.utils"),
+        utils = require("diffview.utils"),
+      }
+    end
+
+    -- Custom "keep both" (ours + theirs, NO base): diffview's native
+    -- conflict_choose("all") joins ours+base+theirs, dragging in the common
+    -- ancestor. These join only ours then theirs — the usual "keep both changes".
+
+    -- For the conflict under the cursor.
+    local function conflict_choose_both()
+      local ctx = merge_ctx()
+      if not ctx then
         return
       end
-      local bufnr = main.file.bufnr
-      local _, cur = vcs_utils.parse_conflicts(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), main.id)
+      local _, cur =
+        ctx.vcs_utils.parse_conflicts(vim.api.nvim_buf_get_lines(ctx.bufnr, 0, -1, false), ctx.main.id)
       if not cur then
         return
       end
-      local content = dv_utils.vec_join(cur.ours.content, cur.theirs.content)
-      vim.api.nvim_buf_set_lines(bufnr, cur.first - 1, cur.last, false, content)
-      dv_utils.set_cursor(main.id, #content + cur.first - 1, 0)
+      local content = ctx.utils.vec_join(cur.ours.content, cur.theirs.content)
+      vim.api.nvim_buf_set_lines(ctx.bufnr, cur.first - 1, cur.last, false, content)
+      ctx.utils.set_cursor(ctx.main.id, #content + cur.first - 1, 0)
     end
 
-    -- Whole-file "keep both": ours+theirs for EVERY conflict. Mirrors diffview's
-    -- resolve_all_conflicts — a forward pass with a line-offset accumulator, so
-    -- each replacement's length change shifts the remaining conflicts' ranges.
-    -- Same internal-API fragility caveat as conflict_choose_both above.
+    -- For EVERY conflict in the file. Mirrors diffview's resolve_all_conflicts —
+    -- a forward pass with a line-offset accumulator, so each replacement's length
+    -- change shifts the remaining conflicts' ranges.
     local function conflict_choose_both_all()
-      local lib = require("diffview.lib")
-      local StandardView = require("diffview.scene.views.standard.standard_view").StandardView
-      local vcs_utils = require("diffview.vcs.utils")
-      local dv_utils = require("diffview.utils")
-
-      local view = lib.get_current_view()
-      if not (view and view:instanceof(StandardView)) then
+      local ctx = merge_ctx()
+      if not ctx then
         return
       end
-      local main = view.cur_layout and view.cur_layout:get_main_win()
-      if not (main and main:is_valid() and main.file and main.file:is_valid()) then
-        return
-      end
-      local bufnr = main.file.bufnr
-      local conflicts = vcs_utils.parse_conflicts(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), main.id)
+      local conflicts =
+        ctx.vcs_utils.parse_conflicts(vim.api.nvim_buf_get_lines(ctx.bufnr, 0, -1, false), ctx.main.id)
       if not next(conflicts) then
         return
       end
@@ -296,12 +301,12 @@ return {
       for _, c in ipairs(conflicts) do
         first = c.first + offset
         local last = c.last + offset
-        content = dv_utils.vec_join(c.ours.content, c.theirs.content)
-        vim.api.nvim_buf_set_lines(bufnr, first - 1, last, false, content)
+        content = ctx.utils.vec_join(c.ours.content, c.theirs.content)
+        vim.api.nvim_buf_set_lines(ctx.bufnr, first - 1, last, false, content)
         offset = offset + (#content - (last - first) - 1)
       end
-      dv_utils.set_cursor(main.id, #content + first - 1, 0)
-      view.cur_layout:sync_scroll()
+      ctx.utils.set_cursor(ctx.main.id, #content + first - 1, 0)
+      ctx.view.cur_layout:sync_scroll()
     end
 
     local positional_conflict = {

@@ -12,7 +12,7 @@ return {
       "<leader><space>",
       function()
         require("telescope.builtin").find_files({
-          cwd = require("util.root").get(),
+          cwd = vim.uv.cwd(),
           hidden = true,
         })
       end,
@@ -22,7 +22,7 @@ return {
       "<leader>/",
       function()
         require("telescope.builtin").live_grep({
-          cwd = require("util.root").get(),
+          cwd = vim.uv.cwd(),
         })
       end,
       desc = "Live grep",

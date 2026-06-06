@@ -1,4 +1,5 @@
 local in_popup = vim.env.NEOGIT_POPUP ~= nil
+local tmux = require("util.tmux")
 
 return {
   "NeogitOrg/neogit",
@@ -24,12 +25,7 @@ return {
           vim.cmd("qa")
           return
         end
-        if vim.env.TMUX then
-          local zoomed = vim.fn.system("tmux display-message -p '#{window_zoomed_flag}'"):gsub("%s+", "")
-          if zoomed == "1" then
-            vim.fn.system("tmux resize-pane -Z")
-          end
-        end
+        tmux.unzoom()
       end,
     })
   end,
@@ -41,12 +37,7 @@ return {
           require("neogit").open()
           return
         end
-        if vim.env.TMUX then
-          local zoomed = vim.fn.system("tmux display-message -p '#{window_zoomed_flag}'"):gsub("%s+", "")
-          if zoomed ~= "1" then
-            vim.fn.system("tmux resize-pane -Z")
-          end
-        end
+        tmux.zoom()
         require("neogit").open()
       end,
       desc = "Neogit (zoomed)",

@@ -16,8 +16,8 @@ return {
       {
         "<leader>gt",
         function()
-          local branch = vim.fn.systemlist("git symbolic-ref --short HEAD")[1]
-          if not branch or branch == "" then
+          local branch = require("util.git").branch()
+          if not branch then
             vim.notify("Not on a branch", vim.log.levels.WARN)
             return
           end

@@ -5,25 +5,7 @@
 -- would wrongly toggle zoom on the underlying window. Skip the zoom dance there.
 local in_popup = vim.env.DIFFVIEW_POPUP ~= nil
 
-local function tmux_unzoom()
-  if in_popup then
-    return
-  end
-  local zoomed = vim.fn.system("tmux display-message -p '#{window_zoomed_flag}'"):gsub("%s+", "")
-  if zoomed == "1" then
-    vim.fn.system("tmux resize-pane -Z")
-  end
-end
-
-local function tmux_zoom()
-  if in_popup then
-    return
-  end
-  local zoomed = vim.fn.system("tmux display-message -p '#{window_zoomed_flag}'"):gsub("%s+", "")
-  if zoomed ~= "1" then
-    vim.fn.system("tmux resize-pane -Z")
-  end
-end
+local tmux = require("util.tmux")
 
 local function resolve_abs_path()
   local abs_path
@@ -52,8 +34,8 @@ local function resolve_abs_path()
   end
 
   if not abs_path:match("^/") then
-    local repo_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
-    if repo_root and repo_root ~= "" then
+    local repo_root = require("util.git").root()
+    if repo_root then
       abs_path = repo_root .. "/" .. abs_path
     else
       abs_path = vim.fn.getcwd() .. "/" .. abs_path
@@ -150,11 +132,7 @@ local function preview_review_comments()
     return
   end
 
-  local repo_root
-  local root_result = vim.fn.systemlist("git rev-parse --show-toplevel")
-  if vim.v.shell_error == 0 and root_result[1] and root_result[1] ~= "" then
-    repo_root = root_result[1]
-  end
+  local repo_root = require("util.git").root()
 
   local entries = {}
   local current = {}
@@ -215,7 +193,9 @@ end
 
 local function close_diffview()
   vim.cmd("DiffviewClose")
-  tmux_unzoom()
+  if not in_popup then
+    tmux.unzoom()
+  end
 end
 
 return {
@@ -301,9 +281,6 @@ return {
       },
     },
     hooks = {
-      diff_buf_read = function()
-        vim.opt_local.foldenable = false
-      end,
       -- Soft-wrap long lines in the diff panes. Diff mode defaults to nowrap;
       -- linebreak wraps at word boundaries instead of mid-token. Note this can
       -- drift the two sides' vertical alignment when a wrapped line spans a
@@ -312,6 +289,14 @@ return {
       diff_buf_win_enter = function(_, winid)
         vim.wo[winid].wrap = true
         vim.wo[winid].linebreak = true
+        -- Collapse unchanged regions so only changed hunks (plus the diffopt
+        -- `context` lines around them) show. Diff mode folds non-change text via
+        -- foldmethod=diff; foldlevel=0 starts those folds closed, countering the
+        -- global foldlevel=99 (options.lua) that would otherwise leave every fold
+        -- open and show the whole file. Press zR in a diff to expand it all.
+        vim.wo[winid].foldenable = true
+        vim.wo[winid].foldmethod = "diff"
+        vim.wo[winid].foldlevel = 0
       end,
       -- In the tmux review popup, closing the diff means we're done - quit the
       -- throwaway nvim so the popup dismisses (mirrors closing lazygit). In the
@@ -340,7 +325,9 @@ return {
         if lib.get_current_view() then
           close_diffview()
         else
-          tmux_zoom()
+          if not in_popup then
+            tmux.zoom()
+          end
           vim.cmd("DiffviewOpen")
         end
       end,
@@ -358,7 +345,9 @@ return {
         if lib.get_current_view() then
           close_diffview()
         else
-          tmux_zoom()
+          if not in_popup then
+            tmux.zoom()
+          end
           vim.cmd("DiffviewFileHistory %")
         end
       end,
@@ -371,7 +360,9 @@ return {
         if lib.get_current_view() then
           close_diffview()
         else
-          tmux_zoom()
+          if not in_popup then
+            tmux.zoom()
+          end
           vim.cmd("DiffviewFileHistory")
         end
       end,

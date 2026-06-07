@@ -1,6 +1,6 @@
 -- ─── Disabled keys ────────────────────────────────────────────────────────────
 vim.keymap.set("n", "q", "<nop>", { desc = "Disabled (was: record macro)" })
-vim.keymap.set("n", "Q", "<nop>", { desc = "Disabled (was: replay last macro)" })
+vim.keymap.set("n", "Q", "q", { desc = "Record macro (Qq starts, Q stops; @q replays)" })
 
 -- ─── Insert-mode escape ───────────────────────────────────────────────────────
 vim.keymap.set("i", "jk", "<Esc>", { desc = "Exit insert mode" })
@@ -210,8 +210,6 @@ vim.keymap.set("n", "<leader>M", function()
   vim.api.nvim_buf_set_name(0, "Messages")
   vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = true, silent = true })
 end, { desc = "Messages (scratch buffer)" })
-
-vim.keymap.set("n", "<leader>N", "<cmd>messages<cr>", { desc = "Message history" })
 
 -- ─── Windows ──────────────────────────────────────────────────────────────────
 vim.keymap.set("n", "<leader>wd", "<C-w>c", { desc = "Delete window" })

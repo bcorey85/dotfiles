@@ -79,3 +79,6 @@ end)
 -- shows. (codediff does its own rendering, so it's unaffected; this only
 -- touches Neovim's native diff filler.)
 vim.opt.fillchars:append({ diff = " " })
+
+-- hide default dashboard
+vim.cmd("set shortmess+=I")

@@ -8,47 +8,36 @@
 --   filename   → breadcrumbs winbar (always visible, full path context)
 --   line/col   → relative line numbers + ruler in the gutter
 --   diff +/-/~ → mini.diff sign column (per-line, right where the change is)
--- Diagnostics are kept because nothing else aggregates them in one place.
--- LSP progress replaces fidget: events are captured via LspProgress autocmd
--- and stored in a module-local var; the render path is pure Lua with zero
--- subprocess calls. Mode, location, search count, and fileinfo are omitted.
---
--- laststatus=3 (global statusline) is set in config/options.lua:18 and is
--- unaffected by this module.
 
 local M = {}
 
 local ERROR = vim.diagnostic.severity.ERROR
 local WARN = vim.diagnostic.severity.WARN
 
+-- Populated with standard Nerd Fonts. Adjust if using a different font set.
 local ICONS = {
-  branch = " ",
-  error = " ",
-  warn = " ",
-  venv = " ",
-  unpushed = " ",
+  branch = " ",
+  error = " ",
+  warn = " ",
+  venv = " ",
+  unpushed = "󰶣 ",
 }
 
--- GENERIC_VENV_NAMES: when the venv basename is one of these, show the parent
--- directory name instead (more informative than ".venv").
 local GENERIC_VENV_NAMES = { [".venv"] = true, ["venv"] = true, ["env"] = true }
 
--- Git ahead/behind cache.
---   Keys are git toplevel paths (strings).
---   Values are tables: { ahead = N, behind = N, no_upstream = bool, stranded = N|nil }
---     or nil when the directory is not a git repo.
+-- Git lookups: Split into a toplevel state cache and a dir-to-toplevel map
+-- to achieve instant O(1) lookups during statusline rendering.
 local _git_cache = {}
-
--- In-flight guard: true while an async refresh is running for that toplevel.
+local _dir_to_toplevel = {}
 local _git_inflight = {}
 
 local function define_highlights()
   vim.api.nvim_set_hl(0, "StatuslineBranch", { fg = "#94e2d5", bg = "#313244", bold = true })
-  -- Neutral/muted color for venv segment (context, not an alert).
   vim.api.nvim_set_hl(0, "StatuslineVenv", { fg = "#a6adc8", bg = "#313244" })
-  -- Reuses DiagnosticWarn for the unpushed/no-upstream state — already catppuccin-consistent.
-  vim.api.nvim_set_hl(0, "StatuslineModified", { fg = "#fab387", bold = true })
   vim.api.nvim_set_hl(0, "StatuslineRecording", { fg = "#f38ba8", bold = true })
+
+  -- HIGH VISIBILITY: Inverted block badge for modified files (Dark Crust text on Bright Red background)
+  vim.api.nvim_set_hl(0, "StatuslineModified", { fg = "#11111b", bg = "#f38ba8", bold = true })
 end
 
 define_highlights()
@@ -58,11 +47,7 @@ vim.api.nvim_create_autocmd("ColorScheme", {
   callback = define_highlights,
 })
 
--- LSP progress: captured via LspProgress autocmd; cleared with a short delay
--- after the "end" event so completion is visible briefly before disappearing.
 local _lsp_progress = nil
--- _lsp_progress_token: tracks the active event token so a delayed clear does
--- not clobber a newer in-flight event that arrived during the defer window.
 local _lsp_progress_token = 0
 
 vim.api.nvim_create_autocmd("LspProgress", {
@@ -74,7 +59,6 @@ vim.api.nvim_create_autocmd("LspProgress", {
     end
 
     local client = vim.lsp.get_client_by_id(ev.data.client_id)
-    -- Escape user-derived text so % signs don't become statusline directives.
     local safe = function(s)
       return (s or ""):gsub("%%", "%%%%")
     end
@@ -83,7 +67,6 @@ vim.api.nvim_create_autocmd("LspProgress", {
     local msg = safe(value.message)
 
     if value.kind == "end" then
-      -- Show the completion label briefly, then clear.
       local token = _lsp_progress_token + 1
       _lsp_progress_token = token
       local label = client_name .. ": " .. title
@@ -93,7 +76,6 @@ vim.api.nvim_create_autocmd("LspProgress", {
       _lsp_progress = label
       vim.cmd.redrawstatus()
       vim.defer_fn(function()
-        -- Guard: only wipe if no newer event arrived during the delay.
         if _lsp_progress_token == token then
           _lsp_progress = nil
           vim.cmd.redrawstatus()
@@ -107,8 +89,6 @@ vim.api.nvim_create_autocmd("LspProgress", {
       label = label .. " " .. msg
     end
     if value.percentage then
-      -- Append the literal text "42%" — the % is a real percent sign here,
-      -- not a statusline directive, so it must be doubled.
       label = label .. " " .. tostring(value.percentage) .. "%%"
     end
     _lsp_progress = label
@@ -117,8 +97,6 @@ vim.api.nvim_create_autocmd("LspProgress", {
   end,
 })
 
--- venv_label: return the display name for the given VIRTUAL_ENV path.
--- Uses the basename unless it is generic, in which case the parent dir name is used.
 local function venv_label(venv_path)
   local basename = vim.fn.fnamemodify(venv_path, ":t")
   if GENERIC_VENV_NAMES[basename] then
@@ -127,8 +105,6 @@ local function venv_label(venv_path)
   return basename
 end
 
--- git_refresh: asynchronously fetch ahead/behind for the given toplevel and
--- update the cache. Skips if a refresh is already in flight for this toplevel.
 local function git_refresh(toplevel)
   if _git_inflight[toplevel] then
     return
@@ -140,7 +116,6 @@ local function git_refresh(toplevel)
     { text = true },
     function(obj)
       if obj.code == 0 and obj.stdout and obj.stdout ~= "" then
-        -- stdout is "behind\tahead\n"
         local behind_s, ahead_s = obj.stdout:match("^(%d+)%s+(%d+)")
         local behind = tonumber(behind_s) or 0
         local ahead = tonumber(ahead_s) or 0
@@ -150,8 +125,6 @@ local function git_refresh(toplevel)
           vim.cmd.redrawstatus()
         end)
       else
-        -- No upstream configured (exit 128) or other error.
-        -- Try to count commits vs origin/HEAD to show stranded count.
         vim.system(
           { "git", "-C", toplevel, "rev-list", "--count", "origin/HEAD..HEAD" },
           { text = true },
@@ -172,15 +145,11 @@ local function git_refresh(toplevel)
   )
 end
 
--- git_toplevel_async: get the git toplevel for the given directory, then call
--- git_refresh. This runs git rev-parse asynchronously so the render path stays
--- pure Lua with zero subprocess calls.
 local function git_toplevel_async(dir)
   vim.system({ "git", "-C", dir, "rev-parse", "--show-toplevel" }, { text = true }, function(obj)
     if obj.code ~= 0 then
-      -- Not a git repo; cache a sentinel so we don't keep spawning.
       vim.schedule(function()
-        _git_cache[dir] = false
+        _dir_to_toplevel[dir] = false
       end)
       return
     end
@@ -188,29 +157,24 @@ local function git_toplevel_async(dir)
     if not toplevel or toplevel == "" then
       return
     end
-    git_refresh(toplevel)
+
+    vim.schedule(function()
+      _dir_to_toplevel[dir] = toplevel
+      git_refresh(toplevel)
+    end)
   end)
 end
 
--- trigger_git_refresh: called from autocmds. Finds the buffer's directory,
--- skips non-file buffers and already-known non-repos.
 local function trigger_git_refresh()
   local bufnr = vim.api.nvim_get_current_buf()
-  local buftype = vim.bo[bufnr].buftype
-  if buftype ~= "" then
+  if vim.bo[bufnr].buftype ~= "" then
     return
   end
 
   local bufname = vim.api.nvim_buf_get_name(bufnr)
-  local dir
-  if bufname ~= "" then
-    dir = vim.fn.fnamemodify(bufname, ":p:h")
-  else
-    dir = vim.fn.getcwd()
-  end
+  local dir = bufname ~= "" and vim.fn.fnamemodify(bufname, ":p:h") or vim.fn.getcwd()
 
-  -- If we already know this dir is not a git repo, skip.
-  if _git_cache[dir] == false then
+  if _dir_to_toplevel[dir] == false then
     return
   end
 
@@ -239,41 +203,22 @@ vim.api.nvim_create_autocmd("User", {
     local bufnr = vim.api.nvim_get_current_buf()
     local bufname = vim.api.nvim_buf_get_name(bufnr)
     local dir = bufname ~= "" and vim.fn.fnamemodify(bufname, ":p:h") or vim.fn.getcwd()
-    _git_cache[dir] = nil
+    _dir_to_toplevel[dir] = nil
     trigger_git_refresh()
   end,
 })
 
--- git_segment: read from cache and format. Zero subprocess calls.
--- Returns the cache entry or nil if not yet populated.
--- Also returns the toplevel key used so callers can check cache presence.
 local function git_segment()
   local bufnr = vim.api.nvim_get_current_buf()
   local bufname = vim.api.nvim_buf_get_name(bufnr)
-  local dir
-  if bufname ~= "" then
-    dir = vim.fn.fnamemodify(bufname, ":p:h")
-  else
-    dir = vim.fn.getcwd()
-  end
+  local dir = bufname ~= "" and vim.fn.fnamemodify(bufname, ":p:h") or vim.fn.getcwd()
 
-  -- Walk the cache: the cache may be keyed by dir (sentinel false) or by toplevel.
-  -- Check the dir sentinel first.
-  if _git_cache[dir] == false then
+  local toplevel = _dir_to_toplevel[dir]
+  if toplevel == false or not toplevel then
     return nil
   end
 
-  -- Search for a toplevel that is a prefix of dir.
-  local entry = nil
-  for key, val in pairs(_git_cache) do
-    if val and type(val) == "table" then
-      if dir == key or dir:sub(1, #key + 1) == key .. "/" then
-        entry = val
-        break
-      end
-    end
-  end
-
+  local entry = _git_cache[toplevel]
   if not entry then
     return nil
   end
@@ -281,7 +226,6 @@ local function git_segment()
   local parts = {}
 
   if entry.no_upstream then
-    -- Branch has never been pushed — distinct warning state.
     if entry.stranded and entry.stranded > 0 then
       parts[#parts + 1] = "%#DiagnosticWarn#" .. ICONS.unpushed .. entry.stranded .. " unpushed%*"
     else
@@ -308,8 +252,19 @@ local function modified_segment()
   if vim.bo.buftype ~= "" then
     return nil
   end
-  if vim.bo.modified then
-    return "%#StatuslineModified#● %*"
+  -- Formatted as a high-visibility block pill
+  return vim.bo.modified and "%#StatuslineModified# ● UNSAVED %*" or nil
+end
+
+local function project_segment()
+  local root = vim.b.minigit_summary and vim.b.minigit_summary.root
+  return root and root ~= "" and vim.fs.basename(root) or vim.fs.basename(vim.fn.getcwd())
+end
+
+local function readonly_segment()
+  if vim.bo.readonly or not vim.bo.modifiable then
+    -- Added a leading space before the icon so it centers perfectly in the block
+    return "%#StatuslineModified#  %*"
   end
   return nil
 end
@@ -332,10 +287,7 @@ vim.api.nvim_create_autocmd("RecordingLeave", {
 
 local function recording_segment()
   local reg = vim.fn.reg_recording()
-  if reg == "" then
-    return nil
-  end
-  return "%#StatuslineRecording#⏺ REC @" .. reg .. "%*"
+  return reg ~= "" and ("%#StatuslineRecording#⏺ REC @" .. reg .. "%*") or nil
 end
 
 function _G.Statusline_render()
@@ -346,26 +298,34 @@ function _G.Statusline_render()
     parts[#parts + 1] = rec .. " "
   end
 
+  local project = project_segment()
+  if project then
+    parts[#parts + 1] = "%#StatuslineVenv# " .. project .. " %*"
+  end
+
   local summary = vim.b.minigit_summary
   local branch = summary and summary.head_name or nil
   if branch and branch ~= "" then
     parts[#parts + 1] = "%#StatuslineBranch# " .. ICONS.branch .. branch .. " %*"
   end
 
+  local ro = readonly_segment()
+  if ro then
+    parts[#parts + 1] = ro
+  end
+
+  -- Placed clearly on the left side right after the core file/branch details
   local mod = modified_segment()
   if mod then
-    parts[#parts + 1] = mod
+    parts[#parts + 1] = mod .. " "
   end
 
   parts[#parts + 1] = "%="
 
-  -- LSP progress segment: populated by the LspProgress autocmd above.
-  -- Uses a muted highlight so it reads as context, not an alert.
   if _lsp_progress and _lsp_progress ~= "" then
     parts[#parts + 1] = "%#StatuslineVenv# " .. _lsp_progress .. " %*"
   end
 
-  -- Python venv segment: cheap env-var read, shown only in python buffers.
   if vim.bo.filetype == "python" then
     local venv = os.getenv("VIRTUAL_ENV")
     if venv and venv ~= "" then

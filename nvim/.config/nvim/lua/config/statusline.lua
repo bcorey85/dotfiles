@@ -48,6 +48,7 @@ local function define_highlights()
   vim.api.nvim_set_hl(0, "StatuslineVenv", { fg = "#a6adc8", bg = "#313244" })
   -- Reuses DiagnosticWarn for the unpushed/no-upstream state — already catppuccin-consistent.
   vim.api.nvim_set_hl(0, "StatuslineModified", { fg = "#fab387", bold = true })
+  vim.api.nvim_set_hl(0, "StatuslineRecording", { fg = "#f38ba8", bold = true })
 end
 
 define_highlights()
@@ -313,8 +314,37 @@ local function modified_segment()
   return nil
 end
 
+vim.api.nvim_create_autocmd("RecordingEnter", {
+  group = vim.api.nvim_create_augroup("StatuslineRecording", { clear = true }),
+  callback = function()
+    vim.cmd.redrawstatus()
+  end,
+})
+
+vim.api.nvim_create_autocmd("RecordingLeave", {
+  group = "StatuslineRecording",
+  callback = function()
+    vim.schedule(function()
+      vim.cmd.redrawstatus()
+    end)
+  end,
+})
+
+local function recording_segment()
+  local reg = vim.fn.reg_recording()
+  if reg == "" then
+    return nil
+  end
+  return "%#StatuslineRecording#⏺ REC @" .. reg .. "%*"
+end
+
 function _G.Statusline_render()
   local parts = {}
+
+  local rec = recording_segment()
+  if rec then
+    parts[#parts + 1] = rec .. " "
+  end
 
   local summary = vim.b.minigit_summary
   local branch = summary and summary.head_name or nil

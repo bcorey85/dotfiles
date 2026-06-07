@@ -30,7 +30,6 @@ return {
       { "<leader>g", group = "git" },
       { "<leader>gh", group = "github (octo)" },
       { "<leader>gr", group = "octo: review" },
-      { "<leader>h", group = "hunks (mini.diff)" },
       { "<leader>i", group = "inlay hints" },
       { "<leader>m", group = "markdown" },
       { "<leader>n", group = "notes (obsidian)" },

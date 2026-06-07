@@ -1,11 +1,12 @@
 -- Primary fuzzy finder. Speed comes from telescope-fzf-native (compiled C
 -- sorter via `make`). Keys mirror the former mini.pick layout so muscle
--- memory carries over: <leader><space> files / <leader>/ grep / <leader>, buffers.
+-- memory carries over: <leader><space> files / <leader>/ grep / <leader>; buffers.
 return {
   "nvim-telescope/telescope.nvim",
   dependencies = {
     "nvim-lua/plenary.nvim",
     { "nvim-telescope/telescope-fzf-native.nvim", build = "make" },
+    "nvim-telescope/telescope-ui-select.nvim",
   },
   keys = {
     {
@@ -28,7 +29,7 @@ return {
       desc = "Live grep",
     },
     {
-      "<leader>,",
+      "<leader>;",
       function()
         require("telescope.builtin").buffers()
       end,
@@ -40,6 +41,55 @@ return {
         require("telescope.builtin").resume()
       end,
       desc = "Resume last picker",
+    },
+    {
+      "<leader>sw",
+      function()
+        require("telescope.builtin").grep_string()
+      end,
+      desc = "Grep word under cursor",
+    },
+    {
+      "<leader>ss",
+      function()
+        require("telescope.builtin").lsp_document_symbols()
+      end,
+      desc = "Symbols (document)",
+    },
+    {
+      "<leader>sS",
+      function()
+        require("telescope.builtin").lsp_dynamic_workspace_symbols()
+      end,
+      desc = "Symbols (workspace)",
+    },
+    {
+      "<leader>sk",
+      function()
+        require("telescope.builtin").keymaps()
+      end,
+      desc = "Keymaps",
+    },
+    {
+      "<leader>sb",
+      function()
+        require("telescope.builtin").current_buffer_fuzzy_find()
+      end,
+      desc = "Search in buffer",
+    },
+    {
+      "<leader>sh",
+      function()
+        require("telescope.builtin").help_tags()
+      end,
+      desc = "Help tags",
+    },
+    {
+      "<leader>fr",
+      function()
+        require("telescope.builtin").oldfiles()
+      end,
+      desc = "Recent files",
     },
   },
   config = function()
@@ -144,9 +194,13 @@ return {
           override_file_sorter = true,
           case_mode = "smart_case",
         },
+        ["ui-select"] = {
+          require("telescope.themes").get_dropdown({}),
+        },
       },
     })
 
     telescope.load_extension("fzf")
+    telescope.load_extension("ui-select")
   end,
 }

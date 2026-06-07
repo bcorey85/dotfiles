@@ -29,8 +29,24 @@ return {
       vim.api.nvim_create_autocmd({ "BufWritePost", "BufReadPost", "InsertLeave" }, {
         group = vim.api.nvim_create_augroup("nvim_lint", { clear = true }),
         callback = function()
-          -- try_lint without args uses linters_by_ft for the current filetype.
-          lint.try_lint()
+          -- Only run linters whose binary is actually installed, so a missing
+          -- tool (e.g. before mason finishes installing) can't throw ENOENT
+          -- inside BufReadPost and break buffer loads / harpoon jumps.
+          local names = lint.linters_by_ft[vim.bo.filetype] or {}
+          local available = {}
+          for _, name in ipairs(names) do
+            local linter = lint.linters[name]
+            if type(linter) == "function" then
+              linter = linter()
+            end
+            local cmd = linter and linter.cmd
+            if cmd and vim.fn.executable(cmd) == 1 then
+              table.insert(available, name)
+            end
+          end
+          if #available > 0 then
+            lint.try_lint(available)
+          end
         end,
       })
     end,

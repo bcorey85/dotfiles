@@ -2,7 +2,8 @@
 --
 -- Replaces the bottom-corner cmdline prompt with a rounded floating window,
 -- matching the border style used elsewhere in this config. No plugins — just
--- nvim API. vim.ui.select is intentionally left alone; telescope owns pickers.
+-- nvim API. vim.ui.select is handled by telescope-ui-select (wired in
+-- telescope.lua), so telescope owns all pickers.
 --
 -- Omission: opts.completion is not wired up. The native completion sources
 -- that would need hooking (wildmenu, omnifunc) don't map cleanly into a

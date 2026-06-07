@@ -16,6 +16,7 @@ return {
   {
     "mason-org/mason-lspconfig.nvim",
     dependencies = { "mason-org/mason.nvim" },
+    event = "VeryLazy",
     opts = {
       ensure_installed = require("config.servers"),
       automatic_enable = false,
@@ -24,6 +25,7 @@ return {
   {
     "WhoIsSethDaniel/mason-tool-installer.nvim",
     dependencies = { "mason-org/mason.nvim" },
+    event = "VeryLazy",
     opts = {
       ensure_installed = {
         "stylua",

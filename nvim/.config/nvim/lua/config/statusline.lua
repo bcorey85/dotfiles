@@ -47,6 +47,7 @@ local function define_highlights()
   -- Neutral/muted color for venv segment (context, not an alert).
   vim.api.nvim_set_hl(0, "StatuslineVenv", { fg = "#a6adc8", bg = "#313244" })
   -- Reuses DiagnosticWarn for the unpushed/no-upstream state — already catppuccin-consistent.
+  vim.api.nvim_set_hl(0, "StatuslineModified", { fg = "#fab387", bold = true })
 end
 
 define_highlights()
@@ -302,6 +303,16 @@ local function git_segment()
   return table.concat(parts, " ")
 end
 
+local function modified_segment()
+  if vim.bo.buftype ~= "" then
+    return nil
+  end
+  if vim.bo.modified then
+    return "%#StatuslineModified#● %*"
+  end
+  return nil
+end
+
 function _G.Statusline_render()
   local parts = {}
 
@@ -309,6 +320,11 @@ function _G.Statusline_render()
   local branch = summary and summary.head_name or nil
   if branch and branch ~= "" then
     parts[#parts + 1] = "%#StatuslineBranch# " .. ICONS.branch .. branch .. " %*"
+  end
+
+  local mod = modified_segment()
+  if mod then
+    parts[#parts + 1] = mod
   end
 
   parts[#parts + 1] = "%="

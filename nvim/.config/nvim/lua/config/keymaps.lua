@@ -17,6 +17,9 @@ vim.keymap.set({ "n", "x" }, "k", "v:count == 0 ? 'gk' : 'k'", { expr = true, si
 vim.keymap.set("n", "<C-d>", "10<C-d>zz", { desc = "Scroll down and center" })
 vim.keymap.set("n", "<C-u>", "10<C-u>zz", { desc = "Scroll up and center" })
 
+-- Alternate file: toggle between the two most recent buffers (test ↔ impl).
+vim.keymap.set("n", "<BS>", "<C-^>", { desc = "Alternate file" })
+
 vim.keymap.set("n", "n", "nzzzv", { desc = "Next search result and center" })
 vim.keymap.set("n", "N", "Nzzzv", { desc = "Previous search result and center" })
 

@@ -18,6 +18,11 @@ return {
     config = function(_, opts)
       require("bufferline").setup(opts)
       local function update_tabline()
+        -- User override (toggled by <leader>ub). When hidden, never auto-show.
+        if vim.g.bufferline_hidden then
+          vim.o.showtabline = 0
+          return
+        end
         for _, buf in ipairs(vim.api.nvim_list_bufs()) do
           if vim.bo[buf].buflisted and vim.api.nvim_buf_get_name(buf) ~= "" then
             vim.o.showtabline = 2
@@ -29,6 +34,10 @@ return {
       vim.api.nvim_create_autocmd({ "BufAdd", "BufEnter", "BufDelete", "BufWipeout" }, {
         callback = vim.schedule_wrap(update_tabline),
       })
+      -- Trial: start with the tabline hidden. Toggle with <leader>ub.
+      if vim.g.bufferline_hidden == nil then
+        vim.g.bufferline_hidden = true
+      end
       update_tabline()
     end,
     keys = {
@@ -67,15 +76,14 @@ return {
       { "<S-l>", "<cmd>BufferLineCycleNext<cr>", desc = "Next buffer" },
       { "[b", "<cmd>BufferLineCyclePrev<cr>", desc = "Prev buffer" },
       { "]b", "<cmd>BufferLineCycleNext<cr>", desc = "Next buffer" },
-      { "<leader>1", "<cmd>BufferLineGoToBuffer 1<cr>", desc = "which_key_ignore" },
-      { "<leader>2", "<cmd>BufferLineGoToBuffer 2<cr>", desc = "which_key_ignore" },
-      { "<leader>3", "<cmd>BufferLineGoToBuffer 3<cr>", desc = "which_key_ignore" },
-      { "<leader>4", "<cmd>BufferLineGoToBuffer 4<cr>", desc = "which_key_ignore" },
-      { "<leader>5", "<cmd>BufferLineGoToBuffer 5<cr>", desc = "which_key_ignore" },
-      { "<leader>6", "<cmd>BufferLineGoToBuffer 6<cr>", desc = "which_key_ignore" },
-      { "<leader>7", "<cmd>BufferLineGoToBuffer 7<cr>", desc = "which_key_ignore" },
-      { "<leader>8", "<cmd>BufferLineGoToBuffer 8<cr>", desc = "which_key_ignore" },
-      { "<leader>9", "<cmd>BufferLineGoToBuffer 9<cr>", desc = "which_key_ignore" },
+      {
+        "<leader>ub",
+        function()
+          vim.g.bufferline_hidden = not vim.g.bufferline_hidden
+          vim.o.showtabline = vim.g.bufferline_hidden and 0 or 2
+        end,
+        desc = "Toggle bufferline",
+      },
     },
   },
 }

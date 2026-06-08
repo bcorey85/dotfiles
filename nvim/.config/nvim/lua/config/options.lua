@@ -21,13 +21,25 @@ if _ui2_ok then
 else
   vim.opt.cmdheight = 1
 end
+-- With cmdheight=0 the native showcmd (pending count/operator, and the visual
+-- selection size like 3x5 in visual-block) has no cmdline to render in. Route
+-- it into the statusline instead, where the `%S` field in config/statusline.lua
+-- displays it. showcmd itself is on by default.
+vim.opt.showcmdloc = "statusline"
 vim.opt.completeopt = "menu,menuone,noselect"
 vim.opt.conceallevel = 2
 vim.opt.confirm = true
 vim.opt.cursorline = true
 vim.opt.expandtab = true
 vim.opt.foldlevel = 99
-vim.opt.foldmethod = "indent"
+-- Treesitter-aware folds. foldexpr returns "0" for buffers with no parser, so
+-- those simply don't fold (indent folding was marginal there anyway). Set
+-- globally rather than per-FileType to avoid the known window-local fold leak
+-- where wo options set in a FileType autocmd bleed into other buffers sharing
+-- the window. foldtext="" opts into Neovim's syntax-highlighted fold text.
+vim.opt.foldmethod = "expr"
+vim.opt.foldexpr = "v:lua.vim.treesitter.foldexpr()"
+vim.opt.foldtext = ""
 vim.opt.ignorecase = true
 vim.opt.inccommand = "nosplit"
 vim.opt.laststatus = 3
@@ -38,7 +50,6 @@ vim.opt.number = true
 vim.opt.pumheight = 10
 vim.opt.relativenumber = true
 vim.opt.scrolloff = 8
-vim.opt.scroll = 10
 vim.opt.shiftwidth = 4
 vim.opt.smartcase = true
 vim.opt.smartindent = true

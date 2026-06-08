@@ -80,4 +80,7 @@ local function detect_clipboard()
 end
 
 vim.g.clipboard = detect_clipboard()
-vim.g.clipboard.cache_enabled = 0
+-- Cache clipboard reads so a paste doesn't re-spawn the provider binary every
+-- time. Critical on WSL where the provider is win32yank.exe over the interop
+-- boundary (slow) and with clipboard=unnamedplus every yank/paste hits it.
+vim.g.clipboard.cache_enabled = 1

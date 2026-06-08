@@ -21,6 +21,7 @@ local ICONS = {
   warn = " ",
   venv = " ",
   unpushed = "󰶣 ",
+  search = "\xF3\xB0\x8D\x89 ",
 }
 
 local GENERIC_VENV_NAMES = { [".venv"] = true, ["venv"] = true, ["env"] = true }
@@ -256,6 +257,31 @@ local function modified_segment()
   return vim.bo.modified and "%#StatuslineModified# ● UNSAVED %*" or nil
 end
 
+-- Search match position (current/total), reclaiming the native [n/N] counter
+-- that cmdheight=0 hides. Gated on vim.v.hlsearch so it only appears while a
+-- search is highlighted (the <esc>→:noh map clears it). recompute=true keeps
+-- `current` accurate as the cursor moves through matches with n/N.
+local function search_segment()
+  if vim.v.hlsearch == 0 then
+    return nil
+  end
+  local ok, sc = pcall(vim.fn.searchcount, { recompute = true, maxcount = 999, timeout = 250 })
+  if not ok or type(sc) ~= "table" or (sc.total or 0) == 0 then
+    return nil
+  end
+  local label
+  if sc.incomplete == 1 then
+    -- searchcount timed out before finishing the count
+    label = "?/?"
+  elseif sc.incomplete == 2 then
+    -- more matches than maxcount; show the cap with a trailing +
+    label = sc.current .. "/" .. sc.maxcount .. "+"
+  else
+    label = sc.current .. "/" .. sc.total
+  end
+  return "%#StatuslineVenv# " .. ICONS.search .. label .. " %*"
+end
+
 local function project_segment()
   local root = vim.b.minigit_summary and vim.b.minigit_summary.root
   return root and root ~= "" and vim.fs.basename(root) or vim.fs.basename(vim.fn.getcwd())
@@ -319,6 +345,15 @@ function _G.Statusline_render()
   if mod then
     parts[#parts + 1] = mod .. " "
   end
+
+  -- Transient readouts live in the empty middle so they never jitter the
+  -- right-anchored diagnostics/git: search count, then the native showcmd via
+  -- %S (rendered raw so it occupies nothing when there's no pending command).
+  local search = search_segment()
+  if search then
+    parts[#parts + 1] = search .. " "
+  end
+  parts[#parts + 1] = "%S "
 
   parts[#parts + 1] = "%="
 

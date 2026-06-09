@@ -138,21 +138,12 @@ vim.api.nvim_create_autocmd("User", {
 vim.api.nvim_create_autocmd("FileType", {
   group = group,
   pattern = {
-    "PlenaryTestPopup",
     "checkhealth",
-    "dap-float",
-    "dbout",
-    "fugitive",
-    "fugitiveblame",
     "git",
-
     "grug-far",
     "help",
     "lspinfo",
     "qf",
-    "spectre_panel",
-    "startuptime",
-    "tsplayground",
   },
   callback = function(event)
     vim.bo[event.buf].buflisted = false

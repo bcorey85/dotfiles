@@ -198,6 +198,40 @@ vim.keymap.set("n", "<leader>yd", function()
   vim.notify(("Yanked %d diagnostic(s)"):format(#diags))
 end, { desc = "Yank line diagnostics" })
 
+-- ─── Markdown preview ─────────────────────────────────────────────────────────
+-- Render the current buffer's file fullscreen in a glow popup. Triggered by
+-- tmux `prefix m` (which send-keys `:GlowFile`), or run directly. glow wraps at
+-- 80 by default; we size the wrap to the popup's interior so lines fill the
+-- screen on any terminal (client_width drives both the popup and glow width).
+vim.api.nvim_create_user_command("GlowFile", function()
+  local file = vim.api.nvim_buf_get_name(0)
+  if file == "" then
+    vim.notify("GlowFile: buffer has no file on disk", vim.log.levels.WARN)
+    return
+  end
+  if vim.env.TMUX == nil then
+    vim.notify("GlowFile: not inside tmux", vim.log.levels.ERROR)
+    return
+  end
+  if vim.fn.executable("glow") == 0 then
+    vim.notify("GlowFile: glow is not installed", vim.log.levels.ERROR)
+    return
+  end
+  vim.cmd("silent! update") -- flush pending edits so glow renders the latest
+
+  local popup_pct = 90
+  local client_w = tonumber(vim.fn.system("tmux display-message -p '#{client_width}'")) or 120
+  -- wrap to the popup interior: popup width minus glow's side margins/border.
+  local wrap = math.max(40, math.floor(client_w * popup_pct / 100) - 6)
+
+  vim.fn.jobstart({
+    "tmux", "display-popup", "-E",
+    "-w", popup_pct .. "%", "-h", "90%",
+    "-T", " " .. vim.fn.fnamemodify(file, ":t") .. " ",
+    "glow", "-p", "-w", tostring(wrap), file,
+  })
+end, { desc = "Render current file in a glow popup" })
+
 -- ─── Messages ─────────────────────────────────────────────────────────────────
 vim.keymap.set("n", "<leader>M", function()
   local msgs = vim.api.nvim_exec2("messages", { output = true }).output

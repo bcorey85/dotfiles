@@ -1,0 +1,7 @@
+#!/bin/bash
+# Render markdown with glow, wrapped to the available width (glow defaults to a
+# narrow 80 columns). Inside an fzf preview, FZF_PREVIEW_COLUMNS holds the
+# preview pane width; otherwise fall back to the terminal width. Remaining args
+# (e.g. -p, -s dark, the file) pass straight through to glow.
+width="${FZF_PREVIEW_COLUMNS:-$(tput cols 2>/dev/null || echo 100)}"
+exec glow -w "$width" "$@"

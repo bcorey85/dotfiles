@@ -16,6 +16,13 @@ return {
     return vim.o.cmdheight == 0
   end,
   setup = function()
-    require("tiny-cmdline").setup()
+    ---@diagnostic disable-next-line: missing-fields
+    require("tiny-cmdline").setup({
+      width = {
+        value = "80%",
+        min = 40,
+        max = 140,
+      },
+    })
   end,
 }

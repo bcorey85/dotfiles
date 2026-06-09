@@ -5,7 +5,7 @@ return {
     wk.setup({
       preset = "helix",
       delay = function(ctx)
-        return ctx.plugin and 0 or 300
+        return ctx.plugin and 0 or 500
       end,
       icons = {
         mappings = true,

@@ -1,8 +1,9 @@
+-- mini.surround — add/delete/replace surrounding pairs. From the mini.nvim
+-- monorepo (shared clone).
 return {
-  {
-    "echasnovski/mini.surround",
-    event = { "BufReadPost", "BufNewFile" },
-    opts = {
+  src = "echasnovski/mini.nvim",
+  setup = function()
+    require("mini.surround").setup({
       mappings = {
         add = "gsa",
         delete = "gsd",
@@ -12,6 +13,6 @@ return {
         replace = "gsr",
         update_n_lines = "gsn",
       },
-    },
-  },
+    })
+  end,
 }

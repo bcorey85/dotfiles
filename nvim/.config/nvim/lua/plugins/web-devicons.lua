@@ -1,7 +1,8 @@
--- Loaded eagerly (not lazy) because the winbar (lua/config/winbar.lua) renders
--- a file icon on every window and needs the icon table available from the first
--- buffer. Still serves as the shared dependency for oil and render-markdown.
+-- Loaded eagerly (it's listed early in pack.lua's plugin_order) because the
+-- winbar (lua/config/winbar.lua) renders a file icon on every window and needs
+-- the icon table available from the first buffer. Also the shared icon provider
+-- for oil and render-markdown. No setup() needed — the module auto-initializes
+-- its default icon set on first require.
 return {
-  "nvim-tree/nvim-web-devicons",
-  lazy = false,
+  src = "nvim-tree/nvim-web-devicons",
 }

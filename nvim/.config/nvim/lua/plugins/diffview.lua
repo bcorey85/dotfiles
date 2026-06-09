@@ -198,298 +198,282 @@ local function close_diffview()
   end
 end
 
-return {
-  -- Maintained fork of sindrets/diffview.nvim (upstream stale since Jun 2024).
-  -- Drop-in: same `diffview` module + Diffview* commands, no config changes.
-  "dlyongemallo/diffview.nvim",
-  cmd = { "DiffviewOpen", "DiffviewFileHistory" },
-  -- Neovim 0.12 forbids Vimscript functions in fast-event/async contexts.
-  -- diffview's PathLib:expand resolves `$VAR` path segments via `vim.env`
-  -- (which calls getenv) from inside its async git jobs, raising E5560 and
-  -- breaking every diff. Override that one method to use os.getenv (pure Lua,
-  -- fast-event-safe, nil when unset - same semantics). Patching here instead of
-  -- the plugin dir survives :Lazy update. Drop once upstream ships a fix.
-  config = function(_, opts)
-    local PathLib = require("diffview.path").PathLib
-    function PathLib:expand(path)
-      local segments = self:explode(path)
-      local idx = 1
-      if segments[1] == "~" then
-        segments[1] = vim.uv.os_homedir()
-        idx = 2
-      end
-      for i = idx, #segments do
-        local env_var = segments[i]:match("^%$(%S+)$")
-        if env_var then
-          local value = os.getenv(env_var)
-          if value ~= nil then
-            segments[i] = value
-          end
+-- Maintained fork of sindrets/diffview.nvim (upstream stale since Jun 2024).
+-- Drop-in: same `diffview` module + Diffview* commands.
+--
+-- Neovim 0.12 forbids Vimscript functions in fast-event/async contexts.
+-- diffview's PathLib:expand resolves `$VAR` path segments via `vim.env`
+-- (which calls getenv) from inside its async git jobs, raising E5560 and
+-- breaking every diff. Override that one method to use os.getenv (pure Lua,
+-- fast-event-safe, nil when unset - same semantics). Drop once upstream fixes it.
+local function configure(opts)
+  local PathLib = require("diffview.path").PathLib
+  function PathLib:expand(path)
+    local segments = self:explode(path)
+    local idx = 1
+    if segments[1] == "~" then
+      segments[1] = vim.uv.os_homedir()
+      idx = 2
+    end
+    for i = idx, #segments do
+      local env_var = segments[i]:match("^%$(%S+)$")
+      if env_var then
+        local value = os.getenv(env_var)
+        if value ~= nil then
+          segments[i] = value
         end
       end
-      return self:join(unpack(segments))
     end
-    -- Positional conflict-choose keys for the merge tool: h = OURS (left pane),
-    -- l = THEIRS (right pane), mirroring the diff3 layout spatially. These ADD to
-    -- diffview's mnemonic <leader>co/ct (which still work). Spliced into every
-    -- merge-layout context so they hold if you cycle diff3 -> diff1/diff4. Done
-    -- here (not in the static opts below) so requiring diffview.actions doesn't
-    -- force-load the plugin at startup; diffview merges these with its defaults.
-    local actions = require("diffview.actions")
+    return self:join(unpack(segments))
+  end
+  -- Positional conflict-choose keys for the merge tool: h = OURS (left pane),
+  -- l = THEIRS (right pane), mirroring the diff3 layout spatially. These ADD to
+  -- diffview's mnemonic <leader>co/ct (which still work). Spliced into every
+  -- merge-layout context so they hold if you cycle diff3 -> diff1/diff4.
+  local actions = require("diffview.actions")
 
-    -- Resolve the active merge view's main window + result buffer, plus the
-    -- diffview internal modules the custom "both" actions below need. Returns nil
-    -- when not in a mergeable diffview. FRAGILE: reaches into diffview internals
-    -- (lib / StandardView / layout main win / parse_conflicts / utils), so the
-    -- custom "both" actions may need updating if the plugin reshuffles these.
-    local function merge_ctx()
-      local lib = require("diffview.lib")
-      local StandardView = require("diffview.scene.views.standard.standard_view").StandardView
-      local view = lib.get_current_view()
-      if not (view and view:instanceof(StandardView)) then
-        return nil
-      end
-      -- Inlined equivalent of diffview's local get_valid_main(view).
-      local main = view.cur_layout and view.cur_layout:get_main_win()
-      if not (main and main:is_valid() and main.file and main.file:is_valid()) then
-        return nil
-      end
-      return {
-        view = view,
-        main = main,
-        bufnr = main.file.bufnr,
-        vcs_utils = require("diffview.vcs.utils"),
-        utils = require("diffview.utils"),
-      }
+  -- Resolve the active merge view's main window + result buffer, plus the
+  -- diffview internal modules the custom "both" actions below need. Returns nil
+  -- when not in a mergeable diffview. FRAGILE: reaches into diffview internals
+  -- (lib / StandardView / layout main win / parse_conflicts / utils), so the
+  -- custom "both" actions may need updating if the plugin reshuffles these.
+  local function merge_ctx()
+    local lib = require("diffview.lib")
+    local StandardView = require("diffview.scene.views.standard.standard_view").StandardView
+    local view = lib.get_current_view()
+    if not (view and view:instanceof(StandardView)) then
+      return nil
     end
-
-    -- Custom "keep both" (ours + theirs, NO base): diffview's native
-    -- conflict_choose("all") joins ours+base+theirs, dragging in the common
-    -- ancestor. These join only ours then theirs — the usual "keep both changes".
-
-    -- For the conflict under the cursor.
-    local function conflict_choose_both()
-      local ctx = merge_ctx()
-      if not ctx then
-        return
-      end
-      local _, cur =
-        ctx.vcs_utils.parse_conflicts(vim.api.nvim_buf_get_lines(ctx.bufnr, 0, -1, false), ctx.main.id)
-      if not cur then
-        return
-      end
-      local content = ctx.utils.vec_join(cur.ours.content, cur.theirs.content)
-      vim.api.nvim_buf_set_lines(ctx.bufnr, cur.first - 1, cur.last, false, content)
-      ctx.utils.set_cursor(ctx.main.id, #content + cur.first - 1, 0)
+    -- Inlined equivalent of diffview's local get_valid_main(view).
+    local main = view.cur_layout and view.cur_layout:get_main_win()
+    if not (main and main:is_valid() and main.file and main.file:is_valid()) then
+      return nil
     end
-
-    -- For EVERY conflict in the file. Mirrors diffview's resolve_all_conflicts —
-    -- a forward pass with a line-offset accumulator, so each replacement's length
-    -- change shifts the remaining conflicts' ranges.
-    local function conflict_choose_both_all()
-      local ctx = merge_ctx()
-      if not ctx then
-        return
-      end
-      local conflicts =
-        ctx.vcs_utils.parse_conflicts(vim.api.nvim_buf_get_lines(ctx.bufnr, 0, -1, false), ctx.main.id)
-      if not next(conflicts) then
-        return
-      end
-      local content, first
-      local offset = 0
-      for _, c in ipairs(conflicts) do
-        first = c.first + offset
-        local last = c.last + offset
-        content = ctx.utils.vec_join(c.ours.content, c.theirs.content)
-        vim.api.nvim_buf_set_lines(ctx.bufnr, first - 1, last, false, content)
-        offset = offset + (#content - (last - first) - 1)
-      end
-      ctx.utils.set_cursor(ctx.main.id, #content + first - 1, 0)
-      ctx.view.cur_layout:sync_scroll()
-    end
-
-    local positional_conflict = {
-      -- Choose (positional): h = left/ours, l = right/theirs, a = all/both.
-      -- ca/cA point at the CUSTOM both (ours+theirs, no base), overriding
-      -- diffview's native base-including ca/cA.
-      { "n", "<leader>ch", actions.conflict_choose("ours"), { desc = "Conflict: choose ours (left)" } },
-      { "n", "<leader>cl", actions.conflict_choose("theirs"), { desc = "Conflict: choose theirs (right)" } },
-      { "n", "<leader>ca", conflict_choose_both, { desc = "Conflict: keep both (ours+theirs)" } },
-      -- Whole-file (uppercase): apply the choice to every conflict at once.
-      { "n", "<leader>cH", actions.conflict_choose_all("ours"), { desc = "Conflict: choose ours, whole file" } },
-      { "n", "<leader>cL", actions.conflict_choose_all("theirs"), { desc = "Conflict: choose theirs, whole file" } },
-      { "n", "<leader>cA", conflict_choose_both_all, { desc = "Conflict: keep both, whole file" } },
-      -- Navigation: j = next (down), k = prev (up). Replaces the default ]x / [x.
-      { "n", "<leader>cj", actions.next_conflict, { desc = "Conflict: next" } },
-      { "n", "<leader>ck", actions.prev_conflict, { desc = "Conflict: prev" } },
-      -- Hide diffview's mnemonic / base defaults (false disables a default) so
-      -- only the scheme above remains: co/cO/ct/cT (mnemonic ours/theirs) and
-      -- cb/cB (base). Native ca/cA are overridden above, not hidden. Use the
-      -- positional keys, or dx/dX to delete a conflict region.
-      { "n", "<leader>co", false },
-      { "n", "<leader>cO", false },
-      { "n", "<leader>ct", false },
-      { "n", "<leader>cT", false },
-      { "n", "<leader>cb", false },
-      { "n", "<leader>cB", false },
-      { "n", "]x", false },
-      { "n", "[x", false },
+    return {
+      view = view,
+      main = main,
+      bufnr = main.file.bufnr,
+      vcs_utils = require("diffview.vcs.utils"),
+      utils = require("diffview.utils"),
     }
-    opts.keymaps = opts.keymaps or {}
-    for _, ctx in ipairs({ "diff1", "diff3", "diff4" }) do
-      opts.keymaps[ctx] = vim.list_extend(opts.keymaps[ctx] or {}, positional_conflict)
+  end
+
+  -- Custom "keep both" (ours + theirs, NO base): diffview's native
+  -- conflict_choose("all") joins ours+base+theirs, dragging in the common
+  -- ancestor. These join only ours then theirs — the usual "keep both changes".
+
+  -- For the conflict under the cursor.
+  local function conflict_choose_both()
+    local ctx = merge_ctx()
+    if not ctx then
+      return
     end
-    require("diffview").setup(opts)
-  end,
-  opts = {
-    keymaps = {
-      view = {
-        { "n", "q", close_diffview, { desc = "Close Diffview" } },
-      },
-      file_panel = {
-        { "n", "q", close_diffview, { desc = "Close Diffview" } },
-        { "n", "cc", "<Cmd>Git commit<CR>", { desc = "Commit staged" } },
-        { "n", "ca", "<Cmd>Git commit --amend<CR>", { desc = "Amend last commit" } },
-        {
-          "n",
-          "<C-d>",
-          function()
-            local key = vim.api.nvim_replace_termcodes("<C-d>", true, false, true)
-            for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-              if vim.wo[win].diff then
-                vim.api.nvim_win_call(win, function()
-                  vim.cmd("normal! " .. key)
-                end)
-                return
-              end
-            end
-          end,
-          { desc = "Scroll diff down" },
-        },
-        {
-          "n",
-          "<C-u>",
-          function()
-            local key = vim.api.nvim_replace_termcodes("<C-u>", true, false, true)
-            for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-              if vim.wo[win].diff then
-                vim.api.nvim_win_call(win, function()
-                  vim.cmd("normal! " .. key)
-                end)
-                return
-              end
-            end
-          end,
-          { desc = "Scroll diff up" },
-        },
-      },
-    },
+    local _, cur =
+      ctx.vcs_utils.parse_conflicts(vim.api.nvim_buf_get_lines(ctx.bufnr, 0, -1, false), ctx.main.id)
+    if not cur then
+      return
+    end
+    local content = ctx.utils.vec_join(cur.ours.content, cur.theirs.content)
+    vim.api.nvim_buf_set_lines(ctx.bufnr, cur.first - 1, cur.last, false, content)
+    ctx.utils.set_cursor(ctx.main.id, #content + cur.first - 1, 0)
+  end
+
+  -- For EVERY conflict in the file. Mirrors diffview's resolve_all_conflicts —
+  -- a forward pass with a line-offset accumulator, so each replacement's length
+  -- change shifts the remaining conflicts' ranges.
+  local function conflict_choose_both_all()
+    local ctx = merge_ctx()
+    if not ctx then
+      return
+    end
+    local conflicts =
+      ctx.vcs_utils.parse_conflicts(vim.api.nvim_buf_get_lines(ctx.bufnr, 0, -1, false), ctx.main.id)
+    if not next(conflicts) then
+      return
+    end
+    local content, first
+    local offset = 0
+    for _, c in ipairs(conflicts) do
+      first = c.first + offset
+      local last = c.last + offset
+      content = ctx.utils.vec_join(c.ours.content, c.theirs.content)
+      vim.api.nvim_buf_set_lines(ctx.bufnr, first - 1, last, false, content)
+      offset = offset + (#content - (last - first) - 1)
+    end
+    ctx.utils.set_cursor(ctx.main.id, #content + first - 1, 0)
+    ctx.view.cur_layout:sync_scroll()
+  end
+
+  local positional_conflict = {
+    -- Choose (positional): h = left/ours, l = right/theirs, a = all/both.
+    -- ca/cA point at the CUSTOM both (ours+theirs, no base), overriding
+    -- diffview's native base-including ca/cA.
+    { "n", "<leader>ch", actions.conflict_choose("ours"), { desc = "Conflict: choose ours (left)" } },
+    { "n", "<leader>cl", actions.conflict_choose("theirs"), { desc = "Conflict: choose theirs (right)" } },
+    { "n", "<leader>ca", conflict_choose_both, { desc = "Conflict: keep both (ours+theirs)" } },
+    -- Whole-file (uppercase): apply the choice to every conflict at once.
+    { "n", "<leader>cH", actions.conflict_choose_all("ours"), { desc = "Conflict: choose ours, whole file" } },
+    { "n", "<leader>cL", actions.conflict_choose_all("theirs"), { desc = "Conflict: choose theirs, whole file" } },
+    { "n", "<leader>cA", conflict_choose_both_all, { desc = "Conflict: keep both, whole file" } },
+    -- Navigation: j = next (down), k = prev (up). Replaces the default ]x / [x.
+    { "n", "<leader>cj", actions.next_conflict, { desc = "Conflict: next" } },
+    { "n", "<leader>ck", actions.prev_conflict, { desc = "Conflict: prev" } },
+    -- Hide diffview's mnemonic / base defaults (false disables a default) so
+    -- only the scheme above remains: co/cO/ct/cT (mnemonic ours/theirs) and
+    -- cb/cB (base). Native ca/cA are overridden above, not hidden. Use the
+    -- positional keys, or dx/dX to delete a conflict region.
+    { "n", "<leader>co", false },
+    { "n", "<leader>cO", false },
+    { "n", "<leader>ct", false },
+    { "n", "<leader>cT", false },
+    { "n", "<leader>cb", false },
+    { "n", "<leader>cB", false },
+    { "n", "]x", false },
+    { "n", "[x", false },
+  }
+  opts.keymaps = opts.keymaps or {}
+  for _, ctx in ipairs({ "diff1", "diff3", "diff4" }) do
+    opts.keymaps[ctx] = vim.list_extend(opts.keymaps[ctx] or {}, positional_conflict)
+  end
+  require("diffview").setup(opts)
+end
+
+local opts = {
+  keymaps = {
     view = {
-      merge_tool = {
-        -- diff3_horizontal: 3 colored panes (OURS | BASE | THEIRS) with conflict
-        -- highlighting — diffview's default and the proper layout for resolving.
-        -- diff1_plain (the old value) is a single plain buffer with raw markers
-        -- and no coloring, since there are no panes to diff against. Cycle layouts
-        -- live in a merge with the cycle_layout action if you want the 1-pane view.
-        layout = "diff3_horizontal",
-        disable_diagnostics = true,
+      { "n", "q", close_diffview, { desc = "Close Diffview" } },
+    },
+    file_panel = {
+      { "n", "q", close_diffview, { desc = "Close Diffview" } },
+      { "n", "cc", "<Cmd>Git commit<CR>", { desc = "Commit staged" } },
+      { "n", "ca", "<Cmd>Git commit --amend<CR>", { desc = "Amend last commit" } },
+      {
+        "n",
+        "<C-d>",
+        function()
+          local key = vim.api.nvim_replace_termcodes("<C-d>", true, false, true)
+          for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+            if vim.wo[win].diff then
+              vim.api.nvim_win_call(win, function()
+                vim.cmd("normal! " .. key)
+              end)
+              return
+            end
+          end
+        end,
+        { desc = "Scroll diff down" },
+      },
+      {
+        "n",
+        "<C-u>",
+        function()
+          local key = vim.api.nvim_replace_termcodes("<C-u>", true, false, true)
+          for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+            if vim.wo[win].diff then
+              vim.api.nvim_win_call(win, function()
+                vim.cmd("normal! " .. key)
+              end)
+              return
+            end
+          end
+        end,
+        { desc = "Scroll diff up" },
       },
     },
-    hooks = {
-      -- Soft-wrap long lines in the diff panes. Diff mode defaults to nowrap;
-      -- linebreak wraps at word boundaries instead of mid-token. Note this can
-      -- drift the two sides' vertical alignment when a wrapped line spans a
-      -- different number of screen rows on each side - the tradeoff for not
-      -- scrolling horizontally on long lines.
-      diff_buf_win_enter = function(_, winid)
-        vim.wo[winid].wrap = true
-        vim.wo[winid].linebreak = true
-        -- Collapse unchanged regions so only changed hunks (plus the diffopt
-        -- `context` lines around them) show. Diff mode folds non-change text via
-        -- foldmethod=diff; foldlevel=0 starts those folds closed, countering the
-        -- global foldlevel=99 (options.lua) that would otherwise leave every fold
-        -- open and show the whole file. Press zR in a diff to expand it all.
-        vim.wo[winid].foldenable = true
-        vim.wo[winid].foldmethod = "diff"
-        vim.wo[winid].foldlevel = 0
-      end,
-      -- In the tmux review popup, closing the diff means we're done - quit the
-      -- throwaway nvim so the popup dismisses (mirrors closing lazygit). In the
-      -- main editor (no env var) this is a no-op and close just returns to work.
-      view_closed = function()
-        if in_popup then
-          vim.cmd("qa")
-        end
-      end,
+  },
+  view = {
+    merge_tool = {
+      -- diff3_horizontal: 3 colored panes (OURS | BASE | THEIRS) with conflict
+      -- highlighting — diffview's default and the proper layout for resolving.
+      -- diff1_plain (the old value) is a single plain buffer with raw markers
+      -- and no coloring, since there are no panes to diff against. Cycle layouts
+      -- live in a merge with the cycle_layout action if you want the 1-pane view.
+      layout = "diff3_horizontal",
+      disable_diagnostics = true,
     },
   },
-  keys = {
-    { "<leader>cc", "<cmd>ClaudeReviewComment<cr>", mode = "n", desc = "Leave Claude review comment" },
-    -- `:` (not `<cmd>`) so vim auto-inserts `'<,'>` as the range before executing
-    { "<leader>cc", ":ClaudeReviewComment<cr>", mode = "v", desc = "Leave Claude review comment" },
-    {
-      "<leader>cp",
-      preview_review_comments,
-      mode = "n",
-      desc = "Preview pending Claude review comments",
-    },
-    {
-      "<leader>dd",
-      function()
-        local lib = require("diffview.lib")
-        if lib.get_current_view() then
-          close_diffview()
-        else
-          if not in_popup then
-            tmux.zoom()
-          end
-          vim.cmd("DiffviewOpen")
-        end
-      end,
-      desc = "Toggle Diff View",
-    },
-    {
-      "<leader>dm",
-      "<cmd>DiffviewOpen<cr>",
-      desc = "Merge Conflicts",
-    },
-    {
-      "<leader>df",
-      function()
-        local lib = require("diffview.lib")
-        if lib.get_current_view() then
-          close_diffview()
-        else
-          if not in_popup then
-            tmux.zoom()
-          end
-          vim.cmd("DiffviewFileHistory %")
-        end
-      end,
-      desc = "Toggle File History",
-    },
-    {
-      "<leader>dh",
-      function()
-        local lib = require("diffview.lib")
-        if lib.get_current_view() then
-          close_diffview()
-        else
-          if not in_popup then
-            tmux.zoom()
-          end
-          vim.cmd("DiffviewFileHistory")
-        end
-      end,
-      desc = "Toggle Repo History",
-    },
-    {
-      "<leader>gu",
-      function()
-        vim.cmd("DiffviewFileHistory --range=@{upstream}..HEAD")
-      end,
-      desc = "Git log unpushed (diffview)",
-    },
+  hooks = {
+    -- Soft-wrap long lines in the diff panes. Diff mode defaults to nowrap;
+    -- linebreak wraps at word boundaries instead of mid-token. Note this can
+    -- drift the two sides' vertical alignment when a wrapped line spans a
+    -- different number of screen rows on each side - the tradeoff for not
+    -- scrolling horizontally on long lines.
+    diff_buf_win_enter = function(_, winid)
+      vim.wo[winid].wrap = true
+      vim.wo[winid].linebreak = true
+      -- Collapse unchanged regions so only changed hunks (plus the diffopt
+      -- `context` lines around them) show. Diff mode folds non-change text via
+      -- foldmethod=diff; foldlevel=0 starts those folds closed, countering the
+      -- global foldlevel=99 (options.lua) that would otherwise leave every fold
+      -- open and show the whole file. Press zR in a diff to expand it all.
+      vim.wo[winid].foldenable = true
+      vim.wo[winid].foldmethod = "diff"
+      vim.wo[winid].foldlevel = 0
+    end,
+    -- In the tmux review popup, closing the diff means we're done - quit the
+    -- throwaway nvim so the popup dismisses (mirrors closing lazygit). In the
+    -- main editor (no env var) this is a no-op and close just returns to work.
+    view_closed = function()
+      if in_popup then
+        vim.cmd("qa")
+      end
+    end,
   },
+}
+
+local function set_keys()
+  vim.keymap.set("n", "<leader>cc", "<cmd>ClaudeReviewComment<cr>", { desc = "Leave Claude review comment" })
+  -- `:` (not `<cmd>`) so vim auto-inserts `'<,'>` as the range before executing
+  vim.keymap.set("v", "<leader>cc", ":ClaudeReviewComment<cr>", { desc = "Leave Claude review comment" })
+  vim.keymap.set("n", "<leader>cp", preview_review_comments, { desc = "Preview pending Claude review comments" })
+
+  vim.keymap.set("n", "<leader>dd", function()
+    local lib = require("diffview.lib")
+    if lib.get_current_view() then
+      close_diffview()
+    else
+      if not in_popup then
+        tmux.zoom()
+      end
+      vim.cmd("DiffviewOpen")
+    end
+  end, { desc = "Toggle Diff View" })
+
+  vim.keymap.set("n", "<leader>dm", "<cmd>DiffviewOpen<cr>", { desc = "Merge Conflicts" })
+
+  vim.keymap.set("n", "<leader>df", function()
+    local lib = require("diffview.lib")
+    if lib.get_current_view() then
+      close_diffview()
+    else
+      if not in_popup then
+        tmux.zoom()
+      end
+      vim.cmd("DiffviewFileHistory %")
+    end
+  end, { desc = "Toggle File History" })
+
+  vim.keymap.set("n", "<leader>dh", function()
+    local lib = require("diffview.lib")
+    if lib.get_current_view() then
+      close_diffview()
+    else
+      if not in_popup then
+        tmux.zoom()
+      end
+      vim.cmd("DiffviewFileHistory")
+    end
+  end, { desc = "Toggle Repo History" })
+
+  vim.keymap.set("n", "<leader>gu", function()
+    vim.cmd("DiffviewFileHistory --range=@{upstream}..HEAD")
+  end, { desc = "Git log unpushed (diffview)" })
+end
+
+return {
+  src = "dlyongemallo/diffview.nvim",
+  setup = function()
+    configure(opts)
+    set_keys()
+  end,
 }

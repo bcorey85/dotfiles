@@ -1,100 +1,23 @@
 -- Primary fuzzy finder. Speed comes from telescope-fzf-native (compiled C
--- sorter via `make`). Keys mirror the former mini.pick layout so muscle
--- memory carries over: <leader><space> files / <leader>/ grep / <leader>o buffers.
+-- sorter via `make` — wired as a vim.pack build hook below). Keys mirror the
+-- former mini.pick layout so muscle memory carries over: <leader><space> files
+-- / <leader>/ grep / <leader>o buffers.
 return {
-  "nvim-telescope/telescope.nvim",
-  dependencies = {
+  src = "nvim-telescope/telescope.nvim",
+  deps = {
     "nvim-lua/plenary.nvim",
-    { "nvim-telescope/telescope-fzf-native.nvim", build = "make" },
+    {
+      src = "nvim-telescope/telescope-fzf-native.nvim",
+      build = function(d)
+        vim.system({ "make" }, { cwd = d.path }):wait()
+      end,
+    },
     "nvim-telescope/telescope-ui-select.nvim",
   },
-  keys = {
-    {
-      "<leader><space>",
-      function()
-        require("telescope.builtin").find_files({
-          cwd = vim.uv.cwd(),
-          hidden = true,
-        })
-      end,
-      desc = "Find files",
-    },
-    {
-      "<leader>/",
-      function()
-        require("telescope.builtin").live_grep({
-          cwd = vim.uv.cwd(),
-        })
-      end,
-      desc = "Live grep",
-    },
-    {
-      "<leader>o",
-      function()
-        require("telescope.builtin").buffers()
-      end,
-      desc = "Buffers",
-    },
-    {
-      "<leader>.",
-      function()
-        require("telescope.builtin").resume()
-      end,
-      desc = "Resume last picker",
-    },
-    {
-      "<leader>sw",
-      function()
-        require("telescope.builtin").grep_string()
-      end,
-      desc = "Grep word under cursor",
-    },
-    {
-      "<leader>ss",
-      function()
-        require("telescope.builtin").lsp_document_symbols()
-      end,
-      desc = "Symbols (document)",
-    },
-    {
-      "<leader>sS",
-      function()
-        require("telescope.builtin").lsp_dynamic_workspace_symbols()
-      end,
-      desc = "Symbols (workspace)",
-    },
-    {
-      "<leader>sk",
-      function()
-        require("telescope.builtin").keymaps()
-      end,
-      desc = "Keymaps",
-    },
-    {
-      "<leader>sb",
-      function()
-        require("telescope.builtin").current_buffer_fuzzy_find()
-      end,
-      desc = "Search in buffer",
-    },
-    {
-      "<leader>sh",
-      function()
-        require("telescope.builtin").help_tags()
-      end,
-      desc = "Help tags",
-    },
-    {
-      "<leader>fr",
-      function()
-        require("telescope.builtin").oldfiles()
-      end,
-      desc = "Recent files",
-    },
-  },
-  config = function()
+  setup = function()
     local telescope = require("telescope")
     local actions = require("telescope.actions")
+    local builtin = require("telescope.builtin")
 
     -- Shared blacklist: dirs that are always junk and must be excluded from
     -- every search surface (rg globs, fd --exclude, and the Lua post-filter).
@@ -202,5 +125,43 @@ return {
 
     telescope.load_extension("fzf")
     telescope.load_extension("ui-select")
+
+    local map = function(lhs, fn, desc)
+      vim.keymap.set("n", lhs, fn, { desc = desc })
+    end
+
+    map("<leader><space>", function()
+      builtin.find_files({ cwd = vim.uv.cwd(), hidden = true })
+    end, "Find files")
+    map("<leader>/", function()
+      builtin.live_grep({ cwd = vim.uv.cwd() })
+    end, "Live grep")
+    map("<leader>o", function()
+      builtin.buffers()
+    end, "Buffers")
+    map("<leader>.", function()
+      builtin.resume()
+    end, "Resume last picker")
+    map("<leader>sw", function()
+      builtin.grep_string()
+    end, "Grep word under cursor")
+    map("<leader>ss", function()
+      builtin.lsp_document_symbols()
+    end, "Symbols (document)")
+    map("<leader>sS", function()
+      builtin.lsp_dynamic_workspace_symbols()
+    end, "Symbols (workspace)")
+    map("<leader>sk", function()
+      builtin.keymaps()
+    end, "Keymaps")
+    map("<leader>sb", function()
+      builtin.current_buffer_fuzzy_find()
+    end, "Search in buffer")
+    map("<leader>sh", function()
+      builtin.help_tags()
+    end, "Help tags")
+    map("<leader>fr", function()
+      builtin.oldfiles()
+    end, "Recent files")
   end,
 }

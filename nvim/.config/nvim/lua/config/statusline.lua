@@ -5,7 +5,7 @@
 -- Everything else that lualine/mini.statusline used to show has a better,
 -- less noisy home:
 --   mode       → cursor shape (normal=block, insert=bar, replace=underline)
---   filename   → breadcrumbs winbar (always visible, full path context)
+--   filename   → statusline left side (cwd-relative path + modified flag)
 --   line/col   → relative line numbers + ruler in the gutter
 --   diff +/-/~ → mini.diff sign column (per-line, right where the change is)
 
@@ -189,17 +189,10 @@ vim.api.nvim_create_autocmd({ "BufEnter", "FocusGained", "BufWritePost" }, {
 
 vim.api.nvim_create_autocmd("User", {
   pattern = {
-    "NeogitPushComplete",
-    "NeogitPullComplete",
-    "NeogitCommitComplete",
-    "NeogitFetchComplete",
-    "NeogitReset",
-    "NeogitRebase",
-    "NeogitBranchCheckout",
     "MiniGitUpdated",
     "MiniGitCommandDone",
   },
-  group = vim.api.nvim_create_augroup("StatuslineGitNeogit", { clear = true }),
+  group = vim.api.nvim_create_augroup("StatuslineGitMini", { clear = true }),
   callback = function()
     local bufnr = vim.api.nvim_get_current_buf()
     local bufname = vim.api.nvim_buf_get_name(bufnr)
@@ -295,6 +288,18 @@ local function readonly_segment()
   return nil
 end
 
+local function filename_segment()
+  if vim.bo.buftype ~= "" then
+    return nil
+  end
+  local name = vim.fn.expand("%:.")
+  if name == "" then
+    name = "[No Name]"
+  end
+  local mod = vim.bo.modified and " ●" or ""
+  return "%#StatuslineVenv# " .. name .. mod .. " %*"
+end
+
 vim.api.nvim_create_autocmd("RecordingEnter", {
   group = vim.api.nvim_create_augroup("StatuslineRecording", { clear = true }),
   callback = function()
@@ -333,6 +338,11 @@ function _G.Statusline_render()
   local branch = summary and summary.head_name or nil
   if branch and branch ~= "" then
     parts[#parts + 1] = "%#StatuslineBranch# " .. ICONS.branch .. branch .. " %*"
+  end
+
+  local fname = filename_segment()
+  if fname then
+    parts[#parts + 1] = fname
   end
 
   local ro = readonly_segment()

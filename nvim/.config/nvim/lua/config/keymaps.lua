@@ -10,6 +10,12 @@ vim.keymap.set("i", "kk", "<Esc>", { desc = "Exit insert mode" })
 
 vim.keymap.set({ "i", "n", "s" }, "<esc>", "<esc><cmd>noh<cr>", { silent = true, desc = "Escape and clear hlsearch" })
 
+-- ─── Buffer cycling ───────────────────────────────────────────────────────────
+vim.keymap.set("n", "<S-h>", "<cmd>bprevious<cr>", { desc = "Prev buffer" })
+vim.keymap.set("n", "<S-l>", "<cmd>bnext<cr>", { desc = "Next buffer" })
+vim.keymap.set("n", "[b", "<cmd>bprevious<cr>", { desc = "Prev buffer" })
+vim.keymap.set("n", "]b", "<cmd>bnext<cr>", { desc = "Next buffer" })
+
 -- ─── Movement & scrolling ─────────────────────────────────────────────────────
 vim.keymap.set({ "n", "x" }, "j", "v:count == 0 ? 'gj' : 'j'", { expr = true, silent = true, desc = "Down" })
 vim.keymap.set({ "n", "x" }, "k", "v:count == 0 ? 'gk' : 'k'", { expr = true, silent = true, desc = "Up" })
@@ -256,3 +262,4 @@ vim.keymap.set("n", "<leader>l", "<cmd>Lazy<cr>", { desc = "Lazy" })
 vim.keymap.set("n", "<leader>K", "<cmd>norm! K<cr>", { desc = "Keywordprg" })
 -- Select entire file in Visual Line mode
 vim.keymap.set("n", "<leader>va", "ggVG", { desc = "Select entire file" })
+

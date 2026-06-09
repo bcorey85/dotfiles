@@ -1,6 +1,6 @@
 -- Primary fuzzy finder. Speed comes from telescope-fzf-native (compiled C
 -- sorter via `make`). Keys mirror the former mini.pick layout so muscle
--- memory carries over: <leader><space> files / <leader>/ grep / <leader>; buffers.
+-- memory carries over: <leader><space> files / <leader>/ grep / <leader>o buffers.
 return {
   "nvim-telescope/telescope.nvim",
   dependencies = {
@@ -29,7 +29,7 @@ return {
       desc = "Live grep",
     },
     {
-      "<leader>;",
+      "<leader>o",
       function()
         require("telescope.builtin").buffers()
       end,

@@ -258,7 +258,10 @@ end, { desc = "Toggle diagnostics" })
 vim.keymap.set("n", "<leader>qq", "<cmd>qa<cr>", { desc = "Quit all" })
 
 -- ─── Misc ─────────────────────────────────────────────────────────────────────
-vim.keymap.set("n", "<leader>l", "<cmd>Lazy<cr>", { desc = "Lazy" })
+-- Plugin manager (vim.pack)
+vim.keymap.set("n", "<leader>pp", "<cmd>PackStatus<cr>", { desc = "Plugins: status" })
+vim.keymap.set("n", "<leader>pP", "<cmd>PackUpdate<cr>", { desc = "Plugins: update" })
+vim.keymap.set("n", "<leader>pC", "<cmd>PackClean<cr>", { desc = "Plugins: clean" })
 vim.keymap.set("n", "<leader>K", "<cmd>norm! K<cr>", { desc = "Keywordprg" })
 -- Select entire file in Visual Line mode
 vim.keymap.set("n", "<leader>va", "ggVG", { desc = "Select entire file" })

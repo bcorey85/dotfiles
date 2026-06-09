@@ -1,46 +1,37 @@
+-- mini.git — git command wrapper + blame. Sourced from the mini.nvim monorepo
+-- (shared clone). The standalone echasnovski/mini.git is avoided because its
+-- ".git" repo name collides with git's URL suffix convention.
 return {
-  {
-    -- Sourced from the mini.nvim monorepo, NOT the standalone `echasnovski/mini.git`:
-    -- the standalone's `.git` repo name collides with git's URL suffix convention
-    -- (lazy builds `.../mini.git.git`, which GitHub resolves to a nonexistent `mini`
-    -- repo → credential prompt). The monorepo ships the same `mini.git` module.
-    "echasnovski/mini.nvim",
-    event = "VeryLazy",
-    keys = {
-      { "<leader>gc", "<cmd>Git commit<cr>", desc = "Git commit" },
-      { "<leader>gp", "<cmd>Git pull<cr>", desc = "Git pull" },
-      { "<leader>gF", "<cmd>Git push --force-with-lease<cr>", desc = "Git push --force-with-lease" },
-      { "<leader>gP", "<cmd>Git push<cr>", desc = "Git push" },
-      { "<leader>gf", "<cmd>Git fetch<cr>", desc = "Git fetch" },
-      { "<leader>gs", "<cmd>horizontal Git status<cr>", desc = "Git status (panel)" },
-      {
-        "<leader>gt",
-        function()
-          local branch = require("util.git").branch()
-          if not branch then
-            vim.notify("Not on a branch", vim.log.levels.WARN)
-            return
-          end
-          vim.ui.input({ prompt = "Remote tracking branch: ", default = branch }, function(input)
-            if not input or input == "" then
-              return
-            end
-            vim.cmd("Git push -u origin " .. input)
-          end)
-        end,
-        desc = "Git push + set upstream tracking (prompt)",
-      },
-      {
-        "<leader>gb",
-        function()
-          require("mini.git").show_at_cursor()
-        end,
-        desc = "Git blame line (float)",
-      },
-      { "<leader>gB", "<cmd>Git blame -- %<cr>", desc = "Git blame (file)" },
-    },
-    config = function()
-      require("mini.git").setup({})
-    end,
-  },
+  src = "echasnovski/mini.nvim",
+  setup = function()
+    require("mini.git").setup({})
+
+    local map = function(lhs, rhs, desc)
+      vim.keymap.set("n", lhs, rhs, { desc = desc })
+    end
+
+    map("<leader>gc", "<cmd>Git commit<cr>", "Git commit")
+    map("<leader>gp", "<cmd>Git pull<cr>", "Git pull")
+    map("<leader>gF", "<cmd>Git push --force-with-lease<cr>", "Git push --force-with-lease")
+    map("<leader>gP", "<cmd>Git push<cr>", "Git push")
+    map("<leader>gf", "<cmd>Git fetch<cr>", "Git fetch")
+    map("<leader>gs", "<cmd>horizontal Git status<cr>", "Git status (panel)")
+    map("<leader>gt", function()
+      local branch = require("util.git").branch()
+      if not branch then
+        vim.notify("Not on a branch", vim.log.levels.WARN)
+        return
+      end
+      vim.ui.input({ prompt = "Remote tracking branch: ", default = branch }, function(input)
+        if not input or input == "" then
+          return
+        end
+        vim.cmd("Git push -u origin " .. input)
+      end)
+    end, "Git push + set upstream tracking (prompt)")
+    map("<leader>gb", function()
+      require("mini.git").show_at_cursor()
+    end, "Git blame line (float)")
+    map("<leader>gB", "<cmd>Git blame -- %<cr>", "Git blame (file)")
+  end,
 }

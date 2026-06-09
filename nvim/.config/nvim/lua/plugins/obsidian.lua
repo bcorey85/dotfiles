@@ -24,7 +24,7 @@ return {
 
       return {
         {
-          "<leader>on",
+          "<leader>nn",
           function()
             ensure_editable_win()
             vim.cmd("enew")
@@ -33,25 +33,25 @@ return {
           desc = "New note",
         },
         {
-          "<leader>oN",
+          "<leader>nN",
           function()
             ensure_editable_win()
             vim.cmd("Obsidian new_from_template")
           end,
           desc = "New from template",
         },
-        { "<leader>oo", "<cmd>Obsidian quick_switch<cr>", desc = "Quick switch" },
-        { "<leader>ot", "<cmd>Obsidian template<cr>", desc = "Insert template" },
-        { "<leader>ob", "<cmd>Obsidian backlinks<cr>", desc = "Backlinks" },
-        { "<leader>os", "<cmd>Obsidian search<cr>", desc = "Search vault" },
-        { "<leader>of", "<cmd>Obsidian follow_link<cr>", desc = "Follow link" },
-        { "<leader>om", desc = "Move note to folder" },
+        { "<leader>no", "<cmd>Obsidian quick_switch<cr>", desc = "Quick switch" },
+        { "<leader>nt", "<cmd>Obsidian template<cr>", desc = "Insert template" },
+        { "<leader>nb", "<cmd>Obsidian backlinks<cr>", desc = "Backlinks" },
+        { "<leader>ns", "<cmd>Obsidian search<cr>", desc = "Search vault" },
+        { "<leader>nf", "<cmd>Obsidian follow_link<cr>", desc = "Follow link" },
+        { "<leader>nm", desc = "Move note to folder" },
       }
     end)(),
     config = function(_, opts)
       require("obsidian").setup(opts)
 
-      vim.keymap.set("n", "<leader>om", function()
+      vim.keymap.set("n", "<leader>nm", function()
         local vault_root = tostring(Obsidian.dir)
 
         local src_buf = vim.api.nvim_get_current_buf()

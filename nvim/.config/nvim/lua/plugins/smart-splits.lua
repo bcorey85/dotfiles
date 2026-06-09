@@ -11,7 +11,7 @@
 -- tmux from $TERM_PROGRAM (still "tmux" in a popup), so unsetting $TMUX won't do
 -- it; instead use the documented pre-load vim.g hook (config.lua:80), which works
 -- because this top-level runs during lazy spec collection, before the plugin loads.
-if vim.env.NEOGIT_POPUP or vim.env.DIFFVIEW_POPUP then
+if vim.env.DIFFVIEW_POPUP then
   vim.g.smart_splits_multiplexer_integration = false
 end
 

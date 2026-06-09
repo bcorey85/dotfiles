@@ -32,7 +32,6 @@ return {
         "prettier",
         "black",
         "isort",
-        "js-debug-adapter",
         -- nvim-lint runners (see lua/plugins/nvim-lint.lua)
         "shellcheck",
         "markdownlint",

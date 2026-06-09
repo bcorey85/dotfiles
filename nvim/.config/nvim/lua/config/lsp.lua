@@ -156,7 +156,6 @@ vim.lsp.config("html", {})
 vim.lsp.config("jsonls", {
   settings = {
     json = {
-      schemas = require("schemastore").json.schemas(),
       validate = { enable = true },
     },
   },
@@ -165,14 +164,10 @@ vim.lsp.config("yamlls", {
   settings = {
     yaml = {
       keyOrdering = false,
+      -- Use yamlls's built-in SchemaStore catalog fetcher (default url).
       schemaStore = {
-        -- Disable yamlls's built-in schema fetcher so SchemaStore.nvim is the
-        -- single source of truth; the plugin's `ignore`/override APIs only
-        -- work if yamlls isn't also racing to load schemas.
-        enable = false,
-        url = "",
+        enable = true,
       },
-      schemas = require("schemastore").yaml.schemas(),
     },
   },
 })

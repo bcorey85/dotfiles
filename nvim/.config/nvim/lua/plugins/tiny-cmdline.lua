@@ -4,23 +4,18 @@
 -- the statusline drawn during cmdline entry instead of letting the cmdline cover
 -- it, so the statusline jumps up a row on every `:`. tiny-cmdline lifts the
 -- cmdline into a floating window (centered) on CmdlineEnter so the bottom row
--- is never touched and the statusline stays put. Built on the same
--- vim._core.ui2 system that options.lua already enables.
+-- is never touched and the statusline stays put.
 --
--- Guarded to the ui2 branch via cmdheight==0 so it no-ops on older nvim
+-- cond gates this to the ui2 branch (cmdheight==0) so it no-ops on older nvim
 -- (0.10/0.11 on WSL/Ubuntu/Arch where options.lua falls back to cmdheight=1).
---
--- Loaded eagerly (lazy=false) because the plugin registers its own
--- UIEnter/CmdlineEnter autocmds at load time. Loading on CmdlineEnter would
--- miss the first `:`, and loading on VeryLazy fires after UIEnter so its init
--- autocmd would never run.
+-- The plugin registers its own UIEnter/CmdlineEnter autocmds on setup, so it
+-- must load at startup (it does — pack.lua loads everything eagerly).
 return {
-  "rachartier/tiny-cmdline.nvim",
-  lazy = false,
+  src = "rachartier/tiny-cmdline.nvim",
   cond = function()
     return vim.o.cmdheight == 0
   end,
-  config = function()
+  setup = function()
     require("tiny-cmdline").setup()
   end,
 }

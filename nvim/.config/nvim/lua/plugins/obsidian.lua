@@ -1,103 +1,12 @@
 return {
-  {
-    "obsidian-nvim/obsidian.nvim",
-    version = "*",
-    lazy = true,
-    ft = "markdown",
-    dependencies = {
-      "nvim-lua/plenary.nvim",
-      "nvim-telescope/telescope.nvim",
-    },
-    keys = (function()
-      local function ensure_editable_win()
-        if not vim.bo.modifiable then
-          for _, win in ipairs(vim.api.nvim_list_wins()) do
-            local buf = vim.api.nvim_win_get_buf(win)
-            if vim.bo[buf].modifiable and vim.bo[buf].buflisted then
-              vim.api.nvim_set_current_win(win)
-              return
-            end
-          end
-          vim.cmd("vnew")
-        end
-      end
-
-      return {
-        {
-          "<leader>on",
-          function()
-            ensure_editable_win()
-            vim.cmd("enew")
-            vim.api.nvim_feedkeys(":Obsidian new ", "n", false)
-          end,
-          desc = "New note",
-        },
-        {
-          "<leader>oN",
-          function()
-            ensure_editable_win()
-            vim.cmd("Obsidian new_from_template")
-          end,
-          desc = "New from template",
-        },
-        { "<leader>oo", "<cmd>Obsidian quick_switch<cr>", desc = "Quick switch" },
-        { "<leader>ot", "<cmd>Obsidian template<cr>", desc = "Insert template" },
-        { "<leader>ob", "<cmd>Obsidian backlinks<cr>", desc = "Backlinks" },
-        { "<leader>os", "<cmd>Obsidian search<cr>", desc = "Search vault" },
-        { "<leader>of", "<cmd>Obsidian follow_link<cr>", desc = "Follow link" },
-        { "<leader>om", desc = "Move note to folder" },
-      }
-    end)(),
-    config = function(_, opts)
-      require("obsidian").setup(opts)
-
-      vim.keymap.set("n", "<leader>om", function()
-        local vault_root = tostring(Obsidian.dir)
-
-        local src_buf = vim.api.nvim_get_current_buf()
-        local src = vim.api.nvim_buf_get_name(src_buf)
-        local fname = vim.fn.fnamemodify(src, ":t")
-
-        if vim.bo[src_buf].modified then
-          vim.api.nvim_buf_call(src_buf, function()
-            vim.cmd("write")
-          end)
-        end
-
-        local dirs = {}
-        local function scan(dir)
-          local entries = vim.fn.readdir(dir)
-          for _, name in ipairs(entries) do
-            if name:sub(1, 1) ~= "." and name ~= "Templates" then
-              local full = dir .. "/" .. name
-              if vim.fn.isdirectory(full) == 1 then
-                local rel = full:sub(#vault_root + 2)
-                table.insert(dirs, rel)
-                scan(full)
-              end
-            end
-          end
-        end
-        scan(vault_root)
-        table.sort(dirs)
-
-        -- vim.ui.select is intercepted by telescope (via telescope's ui-select
-        -- extension or its native vim.ui.select override) so this renders as a
-        -- styled telescope picker rather than a plain prompt.
-        vim.ui.select(dirs, { prompt = "Move note to" }, function(choice)
-          if not choice then
-            return
-          end
-          local dest = vault_root .. "/" .. choice .. "/" .. fname
-
-          vim.fn.rename(src, dest)
-          vim.cmd("edit " .. vim.fn.fnameescape(dest))
-          vim.api.nvim_buf_delete(src_buf, { force = true })
-          vim.notify("Moved to " .. choice, vim.log.levels.INFO)
-        end)
-      end, { desc = "Move note to folder" })
-    end,
-    opts = {
+  src = "obsidian-nvim/obsidian.nvim",
+  version = vim.version.range("^3.0.0"),
+  deps = {
+    "nvim-lua/plenary.nvim",
+    "nvim-telescope/telescope.nvim",
+  },
+  setup = function()
+    require("obsidian").setup({
       legacy_commands = false,
       picker = {
         name = "telescope.nvim",
@@ -133,6 +42,80 @@ return {
       end,
       link = { style = "wiki" },
       ui = { enable = false },
-    },
-  },
+    })
+
+    local function ensure_editable_win()
+      if not vim.bo.modifiable then
+        for _, win in ipairs(vim.api.nvim_list_wins()) do
+          local buf = vim.api.nvim_win_get_buf(win)
+          if vim.bo[buf].modifiable and vim.bo[buf].buflisted then
+            vim.api.nvim_set_current_win(win)
+            return
+          end
+        end
+        vim.cmd("vnew")
+      end
+    end
+
+    vim.keymap.set("n", "<leader>nn", function()
+      ensure_editable_win()
+      vim.cmd("enew")
+      vim.api.nvim_feedkeys(":Obsidian new ", "n", false)
+    end, { desc = "New note" })
+    vim.keymap.set("n", "<leader>nN", function()
+      ensure_editable_win()
+      vim.cmd("Obsidian new_from_template")
+    end, { desc = "New from template" })
+    vim.keymap.set("n", "<leader>no", "<cmd>Obsidian quick_switch<cr>", { desc = "Quick switch" })
+    vim.keymap.set("n", "<leader>nt", "<cmd>Obsidian template<cr>", { desc = "Insert template" })
+    vim.keymap.set("n", "<leader>nb", "<cmd>Obsidian backlinks<cr>", { desc = "Backlinks" })
+    vim.keymap.set("n", "<leader>ns", "<cmd>Obsidian search<cr>", { desc = "Search vault" })
+    vim.keymap.set("n", "<leader>nf", "<cmd>Obsidian follow_link<cr>", { desc = "Follow link" })
+
+    vim.keymap.set("n", "<leader>nm", function()
+      local vault_root = tostring(Obsidian.dir)
+
+      local src_buf = vim.api.nvim_get_current_buf()
+      local src = vim.api.nvim_buf_get_name(src_buf)
+      local fname = vim.fn.fnamemodify(src, ":t")
+
+      if vim.bo[src_buf].modified then
+        vim.api.nvim_buf_call(src_buf, function()
+          vim.cmd("write")
+        end)
+      end
+
+      local dirs = {}
+      local function scan(dir)
+        local entries = vim.fn.readdir(dir)
+        for _, name in ipairs(entries) do
+          if name:sub(1, 1) ~= "." and name ~= "Templates" then
+            local full = dir .. "/" .. name
+            if vim.fn.isdirectory(full) == 1 then
+              local rel = full:sub(#vault_root + 2)
+              table.insert(dirs, rel)
+              scan(full)
+            end
+          end
+        end
+      end
+      scan(vault_root)
+      table.sort(dirs)
+
+      -- vim.ui.select is intercepted by telescope (via telescope's ui-select
+      -- extension or its native vim.ui.select override) so this renders as a
+      -- styled telescope picker rather than a plain prompt.
+      vim.ui.select(dirs, { prompt = "Move note to" }, function(choice)
+        if not choice then
+          return
+        end
+        local dest = vault_root .. "/" .. choice .. "/" .. fname
+
+        vim.fn.rename(src, dest)
+        vim.cmd("edit " .. vim.fn.fnameescape(dest))
+        vim.api.nvim_buf_delete(src_buf, { force = true })
+        vim.notify("Moved to " .. choice, vim.log.levels.INFO)
+      end)
+    end, { desc = "Move note to folder" })
+  end,
 }

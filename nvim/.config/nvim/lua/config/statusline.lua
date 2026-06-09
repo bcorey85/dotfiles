@@ -5,7 +5,7 @@
 -- Everything else that lualine/mini.statusline used to show has a better,
 -- less noisy home:
 --   mode       → cursor shape (normal=block, insert=bar, replace=underline)
---   filename   → breadcrumbs winbar (always visible, full path context)
+--   filename   → winbar (cwd-relative path breadcrumb + modified flag)
 --   line/col   → relative line numbers + ruler in the gutter
 --   diff +/-/~ → mini.diff sign column (per-line, right where the change is)
 
@@ -189,17 +189,10 @@ vim.api.nvim_create_autocmd({ "BufEnter", "FocusGained", "BufWritePost" }, {
 
 vim.api.nvim_create_autocmd("User", {
   pattern = {
-    "NeogitPushComplete",
-    "NeogitPullComplete",
-    "NeogitCommitComplete",
-    "NeogitFetchComplete",
-    "NeogitReset",
-    "NeogitRebase",
-    "NeogitBranchCheckout",
     "MiniGitUpdated",
     "MiniGitCommandDone",
   },
-  group = vim.api.nvim_create_augroup("StatuslineGitNeogit", { clear = true }),
+  group = vim.api.nvim_create_augroup("StatuslineGitMini", { clear = true }),
   callback = function()
     local bufnr = vim.api.nvim_get_current_buf()
     local bufname = vim.api.nvim_buf_get_name(bufnr)
@@ -247,14 +240,6 @@ local function git_segment()
   end
 
   return table.concat(parts, " ")
-end
-
-local function modified_segment()
-  if vim.bo.buftype ~= "" then
-    return nil
-  end
-  -- Formatted as a high-visibility block pill
-  return vim.bo.modified and "%#StatuslineModified# ● UNSAVED %*" or nil
 end
 
 -- Search match position (current/total), reclaiming the native [n/N] counter
@@ -338,12 +323,6 @@ function _G.Statusline_render()
   local ro = readonly_segment()
   if ro then
     parts[#parts + 1] = ro
-  end
-
-  -- Placed clearly on the left side right after the core file/branch details
-  local mod = modified_segment()
-  if mod then
-    parts[#parts + 1] = mod .. " "
   end
 
   -- Transient readouts live in the empty middle so they never jitter the

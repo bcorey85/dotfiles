@@ -30,7 +30,7 @@ return {
 { "<leader>i", group = "inlay hints" },
 
       { "<leader>n", group = "notes (obsidian)" },
-      { "<leader>q", group = "quit/session" },
+      { "<leader>q", group = "quit" },
       { "<leader>s", group = "search" },
       { "<leader>w", group = "windows" },
       { "<leader>x", group = "diagnostics/qf" },

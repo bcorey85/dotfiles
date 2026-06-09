@@ -5,7 +5,7 @@
 -- Everything else that lualine/mini.statusline used to show has a better,
 -- less noisy home:
 --   mode       → cursor shape (normal=block, insert=bar, replace=underline)
---   filename   → statusline left side (cwd-relative path + modified flag)
+--   filename   → winbar (cwd-relative path breadcrumb + modified flag)
 --   line/col   → relative line numbers + ruler in the gutter
 --   diff +/-/~ → mini.diff sign column (per-line, right where the change is)
 
@@ -242,14 +242,6 @@ local function git_segment()
   return table.concat(parts, " ")
 end
 
-local function modified_segment()
-  if vim.bo.buftype ~= "" then
-    return nil
-  end
-  -- Formatted as a high-visibility block pill
-  return vim.bo.modified and "%#StatuslineModified# ● UNSAVED %*" or nil
-end
-
 -- Search match position (current/total), reclaiming the native [n/N] counter
 -- that cmdheight=0 hides. Gated on vim.v.hlsearch so it only appears while a
 -- search is highlighted (the <esc>→:noh map clears it). recompute=true keeps
@@ -286,18 +278,6 @@ local function readonly_segment()
     return "%#StatuslineModified#  %*"
   end
   return nil
-end
-
-local function filename_segment()
-  if vim.bo.buftype ~= "" then
-    return nil
-  end
-  local name = vim.fn.expand("%:.")
-  if name == "" then
-    name = "[No Name]"
-  end
-  local mod = vim.bo.modified and " ●" or ""
-  return "%#StatuslineVenv# " .. name .. mod .. " %*"
 end
 
 vim.api.nvim_create_autocmd("RecordingEnter", {
@@ -340,20 +320,9 @@ function _G.Statusline_render()
     parts[#parts + 1] = "%#StatuslineBranch# " .. ICONS.branch .. branch .. " %*"
   end
 
-  local fname = filename_segment()
-  if fname then
-    parts[#parts + 1] = fname
-  end
-
   local ro = readonly_segment()
   if ro then
     parts[#parts + 1] = ro
-  end
-
-  -- Placed clearly on the left side right after the core file/branch details
-  local mod = modified_segment()
-  if mod then
-    parts[#parts + 1] = mod .. " "
   end
 
   -- Transient readouts live in the empty middle so they never jitter the

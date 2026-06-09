@@ -1,17 +1,12 @@
+-- version ^1.0.0 tracks the latest 1.x release tag, whose assets include the
+-- prebuilt rust fuzzy matcher — so `implementation = "rust"` works without a
+-- local cargo build (no build hook needed).
 return {
-  {
-    "saghen/blink.cmp",
-    event = "InsertEnter",
-    dependencies = {
-      "rafamadriz/friendly-snippets",
-    },
-    build = function()
-      require("blink.cmp").build():wait(60000)
-    end,
-    version = "*",
-    ---@module 'blink.cmp'
-    ---@type blink.cmp.Config
-    opts = {
+  src = "saghen/blink.cmp",
+  version = vim.version.range("^1.0.0"),
+  deps = { "rafamadriz/friendly-snippets" },
+  setup = function()
+    require("blink.cmp").setup({
       keymap = { preset = "default" },
       appearance = {
         nerd_font_variant = "mono",
@@ -45,7 +40,6 @@ return {
       fuzzy = {
         implementation = "rust",
       },
-    },
-    opts_extend = { "sources.default" },
-  },
+    })
+  end,
 }

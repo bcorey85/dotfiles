@@ -110,7 +110,7 @@ end, { desc = "Copy git commit hash (HEAD)" })
 vim.keymap.set("n", "<leader>fn", "<cmd>enew<cr>", { desc = "New File" })
 
 -- ─── LSP & diagnostics ────────────────────────────────────────────────────────
-vim.keymap.set("n", "<leader>xr", function()
+vim.keymap.set("n", "<leader>lr", function()
   vim.diagnostic.reset()
   for _, client in ipairs(vim.lsp.get_clients({ bufnr = 0 })) do
     vim.lsp.stop_client(client.id, true)
@@ -138,7 +138,7 @@ vim.keymap.set("n", "<leader>ih", function()
   vim.lsp.inlay_hint.enable(enabled)
 end, { desc = "Toggle inlay hints" })
 
-vim.keymap.set("n", "<leader>xp", function()
+vim.keymap.set("n", "<leader>lp", function()
   local cwd = vim.fn.getcwd()
   local cmds = {}
   local dirs = { cwd }
@@ -197,9 +197,6 @@ vim.keymap.set("n", "<leader>yd", function()
   vim.fn.setreg("+", text)
   vim.notify(("Yanked %d diagnostic(s)"):format(#diags))
 end, { desc = "Yank line diagnostics" })
-
-vim.keymap.set("n", "<leader>xl", "<cmd>lopen<cr>", { desc = "Location list" })
-vim.keymap.set("n", "<leader>xq", "<cmd>copen<cr>", { desc = "Quickfix list" })
 
 -- ─── Messages ─────────────────────────────────────────────────────────────────
 vim.keymap.set("n", "<leader>M", function()

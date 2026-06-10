@@ -78,13 +78,13 @@ end)
 
 -- Word-level inline diff (Neovim 0.12+): highlight only the changed characters
 -- on reworded lines instead of washing the whole line in a neutral DiffChange.
--- Gives delta/GitHub-style precision in diffview and :diffsplit. Guarded with
+-- Gives delta/GitHub-style precision in :Gdiffsplit and :diffsplit. Guarded with
 -- pcall because the `inline:` value errors on <0.12.
 pcall(function()
   vim.opt.diffopt:append("inline:word")
 end)
 
--- Solid fill for deleted/filler lines in diff mode (diffview, :diffsplit).
+-- Solid fill for deleted/filler lines in diff mode (:Gdiffsplit, :diffsplit).
 -- A "╱" fillchar renders the diagonal-stripe hatch over the DiffDelete
 -- background; a space makes it a solid block - the clean fill codediff
 -- shows. (codediff does its own rendering, so it's unaffected; this only

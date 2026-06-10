@@ -3,14 +3,14 @@
 -- `if -F "#{@pane-is-vim}"` to decide whether to forward C-/A-hjkl to nvim or
 -- handle it in tmux.
 --
--- In the throwaway nvim launched inside a tmux display-popup (prefix g / prefix d),
+-- In the throwaway nvim launched inside the fugitive tmux popup (prefix g),
 -- there is no real pane for smart-splits' tmux backend to attach to, so its
 -- on_init warns "tmux init: could not detect pane ID". The popup needs no
 -- cross-pane nav, so disable the multiplexer there. smart-splits auto-detects
 -- tmux from $TERM_PROGRAM (still "tmux" in a popup), so unsetting $TMUX won't do
 -- it; instead set the documented pre-load vim.g hook here. This runs when the
 -- module is required (during pack.lua's plugin walk), before the plugin loads.
-if vim.env.DIFFVIEW_POPUP then
+if vim.env.FUGITIVE_POPUP then
   vim.g.smart_splits_multiplexer_integration = false
 end
 

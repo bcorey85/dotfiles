@@ -73,8 +73,7 @@ vim.api.nvim_create_autocmd("TextYankPost", {
 -- as code and spam syntax errors (`<<` reads as a bit-shift op, `HEAD` as an
 -- undefined global). Disable diagnostics while markers are present, and
 -- re-enable ONLY the buffers we disabled once they resolve — so this never
--- fights the manual <leader>ud toggle. Diffview's merge tool already sets
--- disable_diagnostics; this covers conflicted files opened directly too.
+-- fights the manual <leader>ud toggle.
 local conflict_disabled = {}
 
 local function has_conflict_markers(buf)
@@ -103,33 +102,32 @@ vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost" }, {
   end,
 })
 
+-- Native merge-conflict keymaps: auto-attach util/merge.lua's buffer-local
+-- <leader>c* bindings to any normal file buffer that contains git conflict
+-- markers. Buffer-local so the keys only bind where there's a conflict. Works
+-- in a plain file AND in the working/middle pane of fugitive's 3-way diffsplit
+-- (it edits the markers directly, so diff mode doesn't matter).
+vim.api.nvim_create_autocmd({ "BufReadPost", "BufWinEnter" }, {
+  group = vim.api.nvim_create_augroup("native-merge-keys", { clear = true }),
+  callback = function(ev)
+    if vim.b[ev.buf].merge_keys or vim.bo[ev.buf].buftype ~= "" then
+      return
+    end
+    local found = vim.api.nvim_buf_call(ev.buf, function()
+      return vim.fn.search([[^<<<<<<<]], "nw") ~= 0
+    end)
+    if found then
+      require("util.merge").attach(ev.buf)
+    end
+  end,
+})
+
 vim.api.nvim_create_autocmd("VimResized", {
   group = group,
   callback = function()
     local current_tab = vim.fn.tabpagenr()
     vim.cmd("tabdo wincmd =")
     vim.cmd("tabnext " .. current_tab)
-  end,
-})
-
--- mini.git status output has no filetype, so the FileType autocmd below never
--- fires for it. Use the User event fired after any :Git command opens a split.
-vim.api.nvim_create_autocmd("User", {
-  group = group,
-  pattern = "MiniGitCommandSplit",
-  callback = function(ev)
-    local buf = vim.api.nvim_win_get_buf(ev.data.win_stdout)
-    vim.bo[buf].buflisted = false
-    vim.schedule(function()
-      vim.keymap.set("n", "q", function()
-        vim.cmd("close")
-        pcall(vim.api.nvim_buf_delete, buf, { force = true })
-      end, {
-        buffer = buf,
-        silent = true,
-        desc = "Quit buffer",
-      })
-    end)
   end,
 })
 

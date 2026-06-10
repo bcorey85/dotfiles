@@ -31,5 +31,9 @@ return {
     vim.api.nvim_set_hl(0, "LspReferenceText", { underline = true })
     vim.api.nvim_set_hl(0, "LspReferenceRead", { underline = true })
     vim.api.nvim_set_hl(0, "LspReferenceWrite", { underline = true })
+    -- Word-level diff: changed words (DiffText, used by diffopt "inline:word")
+    -- default to a near-white wash that's hard to read. Paint them on a
+    -- saturated green background so reworded text stands out in :Gdiffsplit.
+    vim.api.nvim_set_hl(0, "DiffText", { bg = "#2e5d3a", bold = true })
   end,
 }

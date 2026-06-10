@@ -55,17 +55,25 @@ return {
     end, "Open/create PR on GitHub")
 
     -- In fugitive's status buffer, make <CR> open a vertical diff (fugitive's
-    -- `dv`) on the file under the cursor instead of editing it. remap=true
-    -- replays fugitive's own `dv` mapping. The default file-open is still on
-    -- `o` (split) / `gO` (vsplit) / `O` (tab) if you want it.
+    -- `dv`) on the file under the cursor instead of editing it, then resize the
+    -- status window (top) to ~30% of screen height so the diff panes below get
+    -- ~60%. The left/right width of the two diff windows is left as-is.
+    -- The default file-open is still on `o` (split) / `gO` (vsplit) / `O` (tab).
     vim.api.nvim_create_autocmd("FileType", {
       group = vim.api.nvim_create_augroup("fugitive-cr-diff", { clear = true }),
       pattern = "fugitive",
       callback = function(ev)
-        vim.keymap.set("n", "<CR>", "dv", {
+        vim.keymap.set("n", "<CR>", function()
+          vim.cmd.normal({ "dv", bang = false })
+          for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+            if vim.bo[vim.api.nvim_win_get_buf(win)].filetype == "fugitive" then
+              vim.api.nvim_win_set_height(win, math.floor(vim.o.lines * 0.3))
+              break
+            end
+          end
+        end, {
           buffer = ev.buf,
-          remap = true,
-          desc = "Fugitive: vertical diff (dv)",
+          desc = "Fugitive: vertical diff (dv), status 30% height",
         })
         -- In the tmux popup (prefix g), `q` quits the throwaway nvim so the
         -- popup dismisses like lazygit. Outside the popup the env var is unset,

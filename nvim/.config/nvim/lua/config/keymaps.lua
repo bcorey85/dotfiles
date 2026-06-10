@@ -29,9 +29,23 @@ vim.keymap.set("n", "<BS>", "<C-^>", { desc = "Alternate file" })
 vim.keymap.set("n", "n", "nzzzv", { desc = "Next search result and center" })
 vim.keymap.set("n", "N", "Nzzzv", { desc = "Previous search result and center" })
 
--- Keep cursor centered when jumping between diff hunks (diffview / :diffsplit)
-vim.keymap.set("n", "]c", "]czz", { desc = "Next hunk and center" })
-vim.keymap.set("n", "[c", "[czz", { desc = "Previous hunk and center" })
+-- ]c/[c: native diff-mode change motion when the window is a real diff
+-- (fugitive :Gdiffsplit / :diffsplit); otherwise gitsigns hunk navigation. Both center.
+local function hunk_jump(direction, native)
+  return function()
+    if vim.wo.diff then
+      vim.cmd("normal! " .. native)
+      return
+    end
+    local ok, gs = pcall(require, "gitsigns")
+    if ok then
+      pcall(gs.nav_hunk, direction, { preview = true })
+      vim.cmd("normal! zz")
+    end
+  end
+end
+vim.keymap.set("n", "]c", hunk_jump("next", "]czz"), { desc = "Next hunk and center" })
+vim.keymap.set("n", "[c", hunk_jump("prev", "[czz"), { desc = "Previous hunk and center" })
 
 -- ─── Editing ──────────────────────────────────────────────────────────────────
 

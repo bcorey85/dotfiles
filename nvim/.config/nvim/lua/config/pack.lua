@@ -33,8 +33,8 @@ local plugin_order = {
   "telescope", -- finder (+ plenary / fzf-native / ui-select)
   "oil",
   "smart-splits",
-  "mini-diff",
-  "mini-git",
+  "gitsigns",
+  "fugitive",
   "mini-ai",
   "mini-surround",
   "mini-bufremove",
@@ -49,7 +49,6 @@ local plugin_order = {
   "grug-far",
   "trouble",
   "gitlinker",
-  "diffview",
   "obsidian",
   "render-markdown",
   "tiny-cmdline",

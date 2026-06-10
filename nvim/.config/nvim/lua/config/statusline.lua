@@ -7,7 +7,7 @@
 --   mode       → cursor shape (normal=block, insert=bar, replace=underline)
 --   filename   → winbar (cwd-relative path breadcrumb + modified flag)
 --   line/col   → relative line numbers + ruler in the gutter
---   diff +/-/~ → mini.diff sign column (per-line, right where the change is)
+--   diff +/-/~ → gitsigns sign column (per-line, right where the change is)
 
 local M = {}
 
@@ -187,12 +187,12 @@ vim.api.nvim_create_autocmd({ "BufEnter", "FocusGained", "BufWritePost" }, {
   callback = trigger_git_refresh,
 })
 
+-- Invalidate the toplevel cache and re-run the async refresh after any
+-- fugitive Git command completes (e.g. commit, push, pull), so the
+-- unpushed-count badge stays accurate without a full BufEnter cycle.
 vim.api.nvim_create_autocmd("User", {
-  pattern = {
-    "MiniGitUpdated",
-    "MiniGitCommandDone",
-  },
-  group = vim.api.nvim_create_augroup("StatuslineGitMini", { clear = true }),
+  pattern = "FugitiveChanged",
+  group = vim.api.nvim_create_augroup("StatuslineGitFugitive", { clear = true }),
   callback = function()
     local bufnr = vim.api.nvim_get_current_buf()
     local bufname = vim.api.nvim_buf_get_name(bufnr)
@@ -268,8 +268,15 @@ local function search_segment()
 end
 
 local function project_segment()
-  local root = vim.b.minigit_summary and vim.b.minigit_summary.root
-  return root and root ~= "" and vim.fs.basename(root) or vim.fs.basename(vim.fn.getcwd())
+  -- Use the toplevel already resolved by the async git cache; fall back to cwd.
+  local bufnr = vim.api.nvim_get_current_buf()
+  local bufname = vim.api.nvim_buf_get_name(bufnr)
+  local dir = bufname ~= "" and vim.fn.fnamemodify(bufname, ":p:h") or vim.fn.getcwd()
+  local toplevel = _dir_to_toplevel[dir]
+  if toplevel and toplevel ~= false and toplevel ~= "" then
+    return vim.fs.basename(toplevel)
+  end
+  return vim.fs.basename(vim.fn.getcwd())
 end
 
 local function readonly_segment()
@@ -314,8 +321,9 @@ function _G.Statusline_render()
     parts[#parts + 1] = "%#StatuslineVenv# " .. project .. " %*"
   end
 
-  local summary = vim.b.minigit_summary
-  local branch = summary and summary.head_name or nil
+  -- gitsigns sets b:gitsigns_head to the current branch short name whenever it
+  -- attaches to a buffer. Falls back to nil for non-git buffers (dashboard, help).
+  local branch = vim.b.gitsigns_head
   if branch and branch ~= "" then
     parts[#parts + 1] = "%#StatuslineBranch# " .. ICONS.branch .. branch .. " %*"
   end

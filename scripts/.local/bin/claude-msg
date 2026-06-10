@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# Inter-agent message mailbox via tmux named buffers.
+# Two Claude Code agents in separate tmux sessions share a tmux server,
+# so named buffers are globally visible — no network, no files needed.
+#
+# Usage:
+#   claude-msg send <recipient> <message...>   send a message to <recipient>'s inbox
+#   claude-msg read [recipient]                 print and consume inbox (default: basename $PWD)
+#   claude-msg peek [recipient]                 print without consuming
+#   claude-msg list                             list all inboxes that have mail
+
+set -euo pipefail
+
+_BUFFER_PREFIX="claude_inbox_"
+
+_usage() {
+    cat >&2 <<'EOF'
+Usage: claude-msg <subcommand> [args]
+
+Subcommands:
+  send <recipient> <message...>   deliver a message to recipient's inbox
+  read [recipient]                print and consume inbox (default: basename $PWD)
+  peek [recipient]                print inbox without consuming
+  list                            list all inboxes with pending mail
+EOF
+    exit 1
+}
+
+_check_tmux() {
+    if ! command -v tmux &>/dev/null; then
+        echo "claude-msg: tmux not found" >&2
+        exit 1
+    fi
+    if ! tmux list-buffers &>/dev/null 2>&1; then
+        echo "claude-msg: no tmux server running (start a tmux session first)" >&2
+        exit 1
+    fi
+}
+
+_buffer_exists() {
+    tmux show-buffer -b "$1" &>/dev/null 2>&1
+}
+
+cmd_send() {
+    if [[ $# -lt 2 ]]; then
+        echo "claude-msg send: requires <recipient> and <message>" >&2
+        exit 1
+    fi
+
+    local recipient="$1"
+    shift
+    local body="$*"
+    local from
+    from="$(basename "$PWD")"
+    local ts
+    ts="$(date '+%Y-%m-%d %H:%M')"
+    local buf="${_BUFFER_PREFIX}${recipient}"
+
+    local block
+    block="$(printf '┌─ from: %s · %s ─────────────\n%s\n└────────────────────────────────────\n' \
+        "$from" "$ts" "$body")"
+
+    tmux set-buffer -a -b "$buf" "${block}"$'\n'
+    echo "✉️  sent to ${recipient}"
+}
+
+cmd_read() {
+    local target="${1:-$(basename "$PWD")}"
+    local buf="${_BUFFER_PREFIX}${target}"
+
+    if _buffer_exists "$buf"; then
+        tmux show-buffer -b "$buf"
+        tmux delete-buffer -b "$buf"
+    else
+        echo "📭 inbox empty (${target})"
+    fi
+}
+
+cmd_peek() {
+    local target="${1:-$(basename "$PWD")}"
+    local buf="${_BUFFER_PREFIX}${target}"
+
+    if _buffer_exists "$buf"; then
+        tmux show-buffer -b "$buf"
+    else
+        echo "📭 inbox empty (${target})"
+    fi
+}
+
+cmd_list() {
+    local lines
+    lines="$(tmux list-buffers -F "#{buffer_name} #{buffer_size}" \
+        -f "#{m:${_BUFFER_PREFIX}*,#{buffer_name}}" 2>/dev/null)" || true
+
+    if [[ -z "$lines" ]]; then
+        echo "📭 no pending messages"
+        return
+    fi
+
+    while IFS=' ' read -r name size; do
+        local repo="${name#"${_BUFFER_PREFIX}"}"
+        printf '%-30s %s bytes\n' "$repo" "$size"
+    done <<< "$lines"
+}
+
+_check_tmux
+
+case "${1:-}" in
+    send)
+        shift
+        cmd_send "$@"
+        ;;
+    read)
+        shift
+        cmd_read "${1:-}"
+        ;;
+    peek)
+        shift
+        cmd_peek "${1:-}"
+        ;;
+    list)
+        cmd_list
+        ;;
+    *)
+        _usage
+        ;;
+esac

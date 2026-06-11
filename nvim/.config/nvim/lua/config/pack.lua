@@ -41,6 +41,7 @@ local plugin_order = {
   "smart-splits",
   "gitsigns",
   "fugitive",
+  "diffs", -- treesitter syntax highlighting for fugitive/diff-mode diffs (display only)
   "mini-ai",
   "mini-surround",
   "mini-bufremove",

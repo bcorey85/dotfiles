@@ -47,7 +47,7 @@ local plugin_order = {
   "mini-pairs",
   "mini-indentscope",
   "flash",
-  "which-key",
+  "mini-clue", -- key-clue hints (replaced which-key)
   "ts-comments",
   "lazydev",
   "conform",
@@ -58,7 +58,6 @@ local plugin_order = {
   "dispatch", -- async :Make/:Dispatch → tmux pane + quickfix
   "undotree", -- visual undo history navigator
   "sleuth", -- auto-detect shiftwidth/expandtab per buffer
-  "gitlinker",
   "obsidian",
   "render-markdown",
   "snacks", -- image module: inline mermaid/images via kitty graphics

@@ -1,4 +1,4 @@
--- snacks.nvim — image and zen modules enabled.
+-- snacks.nvim — image, zen, and gitbrowse keymaps.
 --
 -- image: renders markdown image links and ```mermaid fences inline via the
 -- Kitty Graphics Protocol. Degrades gracefully when dependencies are absent.
@@ -48,5 +48,22 @@ return {
     vim.keymap.set("n", "<leader>z", function()
       Snacks.zen()
     end, { desc = "Zen mode (centered, width-capped)" })
+
+    -- gitbrowse keymaps — replaced gitlinker.nvim.
+    -- gitbrowse defaults to what = "commit" (commit-pinned permalink URLs),
+    -- matching the permalink behavior gitlinker provided.
+    vim.keymap.set({ "n", "v" }, "<leader>go", function()
+      Snacks.gitbrowse()
+    end, { desc = "Open git permalink in browser" })
+
+    vim.keymap.set({ "n", "v" }, "<leader>yg", function()
+      Snacks.gitbrowse({
+        open = function(url)
+          vim.fn.setreg("+", url)
+          vim.notify("Copied: " .. url)
+        end,
+        notify = false,
+      })
+    end, { desc = "Yank git permalink" })
   end,
 }

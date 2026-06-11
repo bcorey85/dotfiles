@@ -22,7 +22,6 @@ return {
 
     wk.add({
       { "<leader>b", group = "buffer" },
-      { "<leader>d", group = "dispatch" },
       { "<leader>c", group = "code" },
       { "<leader>f", group = "file/find" },
       { "<leader>g", group = "git" },
@@ -32,6 +31,7 @@ return {
       { "<leader>p", group = "plugins" },
       { "<leader>q", group = "quit" },
       { "<leader>s", group = "search" },
+      { "<leader>t", group = "tasks" },
       { "<leader>w", group = "windows" },
       { "<leader>y", group = "yank" },
       { "g", group = "goto" },

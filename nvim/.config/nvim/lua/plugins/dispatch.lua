@@ -5,14 +5,16 @@
 return {
   src = "tpope/vim-dispatch",
   setup = function()
-    vim.keymap.set("n", "<leader>dm", "<cmd>Make<cr>", { desc = "Make (compiler → quickfix)" })
-    vim.keymap.set("n", "<leader>dM", "<cmd>Make!<cr>", { desc = "Make (background)" })
-    vim.keymap.set("n", "<leader>dr", "<cmd>Dispatch<cr>", { desc = "Re-run focused dispatch" })
+    -- <leader>t = tasks. <leader>d is deliberately left free: it's the de-facto
+    -- DAP/debug namespace, reserved for if nvim-dap ever lands (C#/.NET future).
+    vim.keymap.set("n", "<leader>tm", "<cmd>Make<cr>", { desc = "Make (compiler → quickfix)" })
+    vim.keymap.set("n", "<leader>tM", "<cmd>Make!<cr>", { desc = "Make (background)" })
+    vim.keymap.set("n", "<leader>tr", "<cmd>Dispatch<cr>", { desc = "Re-run focused task" })
 
     -- Open-cmdline mappings: pre-fill the command so the user can type args.
-    vim.keymap.set("n", "<leader>dd", ":Dispatch ", { desc = "Dispatch command…" })
-    vim.keymap.set("n", "<leader>df", ":FocusDispatch ", { desc = "Set focused dispatch…" })
-    vim.keymap.set("n", "<leader>ds", ":Start ", { desc = "Start process in tmux…" })
+    vim.keymap.set("n", "<leader>td", ":Dispatch ", { desc = "Dispatch task…" })
+    vim.keymap.set("n", "<leader>tf", ":FocusDispatch ", { desc = "Set focused task…" })
+    vim.keymap.set("n", "<leader>ts", ":Start ", { desc = "Start process in tmux…" })
 
     -- Per-filetype defaults so <leader>dr / `<CR> work with zero typing.
     -- These are *defaults*; :FocusDispatch (or <leader>df) overrides per session.

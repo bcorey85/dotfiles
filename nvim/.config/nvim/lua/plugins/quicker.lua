@@ -31,10 +31,10 @@ return {
       vim.keymap.set("n", lhs, rhs, { desc = desc })
     end
 
-    map("<leader>lt", function()
+    map("<leader>ld", function()
       vim.diagnostic.setqflist({ open = true })
     end, "Diagnostics → quickfix (workspace)")
-    map("<leader>lT", function()
+    map("<leader>lD", function()
       vim.diagnostic.setloclist({ open = true })
     end, "Diagnostics → loclist (buffer)")
     map("<leader>lq", function()

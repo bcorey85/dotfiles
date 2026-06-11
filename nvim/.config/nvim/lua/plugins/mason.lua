@@ -35,8 +35,9 @@ return {
         ensure_installed = {
           "stylua",
           "prettier",
-          "black",
-          "isort",
+          -- Python formatting/import-sorting is handled by ruff (installed via
+          -- mason-lspconfig in config/servers.lua, used by conform.nvim as
+          -- ruff_fix + ruff_format). black/isort removed — they conflicted.
           -- nvim-lint runners (see lua/plugins/nvim-lint.lua)
           "shellcheck",
           "markdownlint",

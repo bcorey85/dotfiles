@@ -4,7 +4,11 @@ return {
     require("conform").setup({
       formatters_by_ft = {
         lua = { "stylua" },
-        python = { "isort", "black" },
+        -- Mirror the repo's pre-commit (ruff-check --fix → ruff-format) so a
+        -- saved buffer is already commit-clean. ruff reads pyproject.toml
+        -- (e.g. line-length = 120) and owns import sorting via the I rules —
+        -- black (wraps at 88) + isort would fight it and churn the diff.
+        python = { "ruff_fix", "ruff_format" },
         javascript = { "prettier" },
         javascriptreact = { "prettier" },
         typescript = { "prettier" },

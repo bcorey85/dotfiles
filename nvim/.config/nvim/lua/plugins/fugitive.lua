@@ -4,7 +4,7 @@
 -- where `-` stages/unstages files, `=` expands an inline diff, and `<cr>`
 -- opens a vertical diff (remapped from the default file-open; `o`/`gO`/`O`
 -- still open in split/vsplit/tab). It runs alongside gitsigns (in-file hunk
--- signs/navigation). History is via :0Gclog (file) / :Gclog (repo).
+-- signs/navigation). History is via :Git log (newest-first pager buffer).
 --
 return {
   src = "tpope/vim-fugitive",
@@ -21,12 +21,15 @@ return {
     map("<leader>gf", "<cmd>Git fetch<cr>", "Git fetch")
     map("<leader>gb", "<cmd>Git blame<cr>", "Git blame (fugitive)")
 
-    -- File/repo history via fugitive's quickfix log.
-    -- 0Gclog populates the qf list with every commit that touched the current file;
-    -- Gclog does the same for the whole repo. Navigate with :cnext/:cprev as usual.
-    map("<leader>df", "<cmd>0Gclog<cr>", "File history (current file)")
-    map("<leader>dh", "<cmd>Gclog<cr>", "Repo history")
-    map("<leader>gu", "<cmd>Gclog @{upstream}..HEAD<cr>", "Git log unpushed")
+    -- Git log via fugitive's native pager buffer (filetype=git): newest commit
+    -- on top, <CR> opens the commit under the cursor. Deliberately NOT :Gclog —
+    -- that routes through the quickfix, and the Trouble qf-hijack (trouble.lua)
+    -- re-sorts entries by filename, which for fugitive commits is the sha path.
+    -- That makes the list land on the lowest SHA (a stale commit) instead of
+    -- HEAD. The pager buffer bypasses the quickfix entirely, so order is honest.
+    map("<leader>gl", "<cmd>Git log --oneline<cr>", "Git log (repo)")
+    map("<leader>gL", "<cmd>Git log --oneline -- %<cr>", "Git log (current file)")
+    map("<leader>gu", "<cmd>Git log --oneline @{upstream}..HEAD<cr>", "Git log unpushed")
 
     -- Push current branch and set its upstream tracking branch. Prompts for
     -- the remote branch name (defaults to the current local branch).

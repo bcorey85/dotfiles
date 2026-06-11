@@ -23,7 +23,6 @@ return {
     wk.add({
       { "<leader>b", group = "buffer" },
       { "<leader>c", group = "code" },
-      { "<leader>d", group = "diff" },
       { "<leader>f", group = "file/find" },
       { "<leader>g", group = "git" },
       { "<leader>i", group = "inlay hints" },

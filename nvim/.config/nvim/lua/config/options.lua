@@ -65,6 +65,9 @@ vim.opt.wrap = false
 vim.opt.signcolumn = "yes"
 
 vim.g.loaded_python3_provider = 0
+vim.g.loaded_node_provider = 0
+vim.g.loaded_perl_provider = 0
+vim.g.loaded_ruby_provider = 0
 vim.g.root_spec = { "cwd" }
 
 -- Global float border style (Neovim 0.11+): all floats (LSP hover, signature

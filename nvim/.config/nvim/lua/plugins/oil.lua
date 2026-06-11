@@ -1,6 +1,6 @@
 return {
   src = "stevearc/oil.nvim",
-  -- nvim-web-devicons is already loaded earlier in pack.lua's plugin_order.
+  -- Icon support comes from MiniIcons.mock_nvim_web_devicons(), loaded earlier in plugin_order.
   setup = function()
     require("oil").setup({
       watch_for_changes = true,

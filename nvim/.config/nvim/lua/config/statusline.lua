@@ -175,7 +175,15 @@ local function trigger_git_refresh()
   local bufname = vim.api.nvim_buf_get_name(bufnr)
   local dir = bufname ~= "" and vim.fn.fnamemodify(bufname, ":p:h") or vim.fn.getcwd()
 
-  if _dir_to_toplevel[dir] == false then
+  local cached = _dir_to_toplevel[dir]
+  if cached == false then
+    return
+  end
+  -- Cache already holds a toplevel: skip the rev-parse subprocess entirely.
+  -- FugitiveChanged sets _dir_to_toplevel[dir] = nil to invalidate, so
+  -- freshness is preserved without any extra bookkeeping here.
+  if cached then
+    git_refresh(cached)
     return
   end
 

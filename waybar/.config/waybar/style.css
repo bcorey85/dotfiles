@@ -115,11 +115,34 @@ tooltip label {
   color: #a6e3a1;
 }
 
+#idle_inhibitor {
+  color: #cba6f7;
+}
+
+#idle_inhibitor.activated {
+  color: #f38ba8;
+}
+
+#bluetooth {
+  color: #89b4fa;
+}
+
+#bluetooth.connected {
+  color: #89dceb;
+}
+
+#bluetooth.off,
+#bluetooth.disabled {
+  color: #6c7086;
+}
+
 #cpu,
 #memory,
 #temperature,
 #network,
 #pulseaudio,
+#bluetooth,
+#idle_inhibitor,
 #battery,
 #tray {
   padding: 0 10px;

@@ -1,10 +1,10 @@
 #!/bin/bash
 # Screenshot tool
 # Usage: hypr-screenshot        - full screen
-#        hypr-screenshot region  - select region
+#        hypr-screenshot region  - select region (saves + copies to clipboard)
 
-DIR="$HOME/Pictures"
-FILE="$DIR/screenshot-$(date +%Y%m%d-%H%M%S).png"
+DIR="$HOME/Pictures/Screenshots"
+FILE="$DIR/$(date +%Y%m%d_%H%M%S).png"
 
 mkdir -p "$DIR"
 
@@ -16,5 +16,5 @@ fi
 
 if [ -f "$FILE" ]; then
     wl-copy < "$FILE"
-    notify-send "Screenshot copied & saved" "$FILE"
+    notify-send "Screenshot saved" "$FILE"
 fi

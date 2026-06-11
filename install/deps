@@ -53,7 +53,7 @@ arch)
 
   # Hyprland desktop packages
   print_info "Installing Hyprland desktop packages..."
-  sudo pacman -S --needed hyprland hyprlock hypridle waybar rofi dunst swww xdg-desktop-portal-hyprland xdg-desktop-portal-gtk polkit-gnome wl-clipboard cliphist grim slurp pavucontrol thunar tumbler thunar-archive-plugin file-roller gvfs gvfs-mtp udisks2 pipewire-alsa qt5ct qt6ct gsimplecal
+  sudo pacman -S --needed hyprland hyprlock hypridle hyprsunset hyprpicker waybar rofi dunst swww xdg-desktop-portal-hyprland xdg-desktop-portal-gtk polkit-gnome wl-clipboard cliphist grim slurp pavucontrol thunar tumbler thunar-archive-plugin file-roller gvfs gvfs-mtp udisks2 pipewire-alsa qt5ct qt6ct gsimplecal batsignal blueman
   print_success "Hyprland desktop packages installed"
 
   # Install paru (AUR helper)

@@ -3,7 +3,7 @@ return {
   version = vim.version.range("^3.0.0"),
   deps = {
     "nvim-lua/plenary.nvim",
-    "echasnovski/mini.pick",
+    "echasnovski/mini.nvim",
   },
   setup = function()
     require("obsidian").setup({

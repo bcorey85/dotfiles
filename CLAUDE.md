@@ -18,7 +18,6 @@ Individual scripts in `install/` can be run standalone:
 - `install/fonts <platform>` - CommitMono Nerd Font
 - `install/stow` - create all symlinks
 - `install/zsh-plugins` - clone fzf-tab, zsh-autosuggestions, zsh-syntax-highlighting to `~/.zsh/plugins/`
-- `install/tmux-plugins` - TPM and tmux plugins
 - `install/starship` - Starship prompt
 - `install/claude-plugins` - Claude Code plugins (skips if Claude not installed)
 - `install/zsh` - set zsh as default shell
@@ -30,11 +29,11 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 | Package     | Target                                  | Key files                                                                                                 |
 | ----------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `nvim`      | `~/.config/nvim/`                       | Native `vim.pack` config (bootstrap in `lua/config/pack.lua`), one spec file per plugin in `lua/plugins/` |
-| `tmux`      | `~/.tmux.conf`                          | Prefix=`Ctrl+Space`, vim-style panes, TPM                                                                 |
+| `tmux`      | `~/.tmux.conf`                          | Prefix=`Ctrl+Space`, vim-style panes                                                                      |
 | `zsh`       | `~/.zshrc`                              | Plugins, aliases, pyenv/nvm/starship init                                                                 |
 | `claude`    | `~/.claude/`                            | Agents, commands, settings, hooks                                                                         |
 | `aerospace` | `~/.config/aerospace/`                  | macOS tiling WM. Workspaces 1-9 pinned to external monitor, built-in screen dedicated to Teams (mac only) |
-| `kitty`     | `~/.config/kitty/`                      | Sonokai Maia theme                                                                                        |
+| `kitty`     | `~/.config/kitty/`                      | Catppuccin Mocha (OneDark BG)                                                                             |
 | `alacritty` | `~/.config/alacritty/`                  | Catppuccin Mocha (OneDark BG), matches kitty                                                              |
 | `starship`  | `~/.config/starship.toml`               | Gruvbox Material prompt                                                                                   |
 | `kanata`    | `~/kanata-config.kbd`, `~/kanata-setup` | Keyboard remapping with systemd service                                                                   |
@@ -53,7 +52,7 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 ## Key Conventions
 
 - **Theme**: Catppuccin Mocha (OneDark BG) everywhere (kitty, starship, neovim, tmux, waybar, rofi, dunst, hyprlock)
-- **Font**: CommitMono Nerd Font Mono, 12pt
+- **Font**: CommitMono Nerd Font Mono, 10pt (kitty + alacritty)
 - **Platform guards**: Use `command -v <tool> &>/dev/null &&` before tool-specific init (see .zshrc)
 - **Install scripts**: All use the same color output pattern (`print_success`, `print_error`, `print_info`) with `set -e`
 - **Stow structure**: `<package>/<home-relative-path>` (e.g., `nvim/.config/nvim/init.lua` becomes `~/.config/nvim/init.lua`)
@@ -63,5 +62,4 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 - Configs are live-symlinked; edits in `~/dotfiles/` take effect immediately (except tmux which needs `tmux source-file ~/.tmux.conf`)
 - Neovim plugins are managed by native `vim.pack` (Neovim 0.12); specs live in `lua/plugins/`, revisions are pinned in `nvim-pack-lock.json`, and `:PackUpdate` / `:PackStatus` / `:PackClean` are defined in `lua/config/pack.lua`
 - Zsh plugins are git-cloned to `~/.zsh/plugins/` (not in this repo, installed by `install/zsh-plugins`)
-- Tmux plugins are managed by TPM at `~/.tmux/plugins/` (installed by `install/tmux-plugins`)
 - Kanata setup requires `sudo ~/kanata-setup` post-install for systemd service and udev rules

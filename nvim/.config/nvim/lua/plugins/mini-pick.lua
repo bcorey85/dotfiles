@@ -123,9 +123,12 @@ return {
       -- :grep / :copen quickfix searches get the same visibility as the pickers
       -- (hidden files, gitignored dotfiles). Exclusion globs live here — single
       -- source of truth alongside rg_base — not in options.lua.
+      -- Single-quote each glob: :grep runs grepprg through the shell, and zsh
+      -- expands unquoted `!`/`*` itself (erroring "no matches found" on a miss,
+      -- unlike bash which passes them through). Quotes make zsh hand them to rg.
       local grepprg_globs = {}
       for _, dir in ipairs(excluded_dirs) do
-        table.insert(grepprg_globs, "--glob=!" .. "**/" .. dir .. "/**")
+        table.insert(grepprg_globs, "--glob='!" .. "**/" .. dir .. "/**'")
       end
       vim.o.grepprg = "rg --vimgrep --smart-case --hidden --no-ignore-vcs " .. table.concat(grepprg_globs, " ")
       vim.o.grepformat = "%f:%l:%c:%m"

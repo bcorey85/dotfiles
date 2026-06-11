@@ -11,10 +11,10 @@
 -- path segments are escaped below.)
 
 -- Resolve nvim-web-devicons lazily: at the time this module is sourced (before
--- lazy.setup runs) the plugin isn't on the runtimepath yet, so a top-level
+-- pack.setup runs) the plugin isn't on the runtimepath yet, so a top-level
 -- require would fail and cache a permanent miss. Retry on each call until it
--- loads, then cache the module. (web-devicons is forced to load at startup via
--- its own spec, so in practice this succeeds on the first render.)
+-- loads, then cache the module. (The "nvim-web-devicons" require is satisfied
+-- by MiniIcons.mock_nvim_web_devicons(), called in mini-icons.lua's setup().)
 local _devicons
 local function get_devicons()
   if _devicons then

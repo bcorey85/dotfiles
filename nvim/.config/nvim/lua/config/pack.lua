@@ -23,10 +23,16 @@
 
 -- Deterministic load order. Deps are pulled in per-spec, so only top-level
 -- plugins are listed here.
+--
+-- All mini.* modules share a single "echasnovski/mini.nvim" monorepo src.
+-- register() dedupes by derived repo name ("mini.nvim"), so the repo is
+-- cloned once regardless of how many spec files declare it. Each file's
+-- setup() still runs independently in the order listed here.
 local plugin_order = {
   "theme", -- colorscheme — must be first
-  "web-devicons", -- icon table (winbar + others) — before consumers
+  "mini-icons", -- icon mock (satisfies require("nvim-web-devicons")) — before consumers
   "treesitter", -- before render-markdown / mini.ai textobjects
+  "treesitter-context", -- sticky scope header — after treesitter
   "lspconfig", -- ships lsp/ server defs consumed by config.lsp
   "mason", -- LSP / tool installer (3 plugins)
   "blink", -- completion
@@ -38,7 +44,8 @@ local plugin_order = {
   "mini-ai",
   "mini-surround",
   "mini-bufremove",
-  "autoclose",
+  "mini-pairs",
+  "mini-indentscope",
   "flash",
   "which-key",
   "ts-comments",
@@ -56,6 +63,8 @@ local plugin_order = {
   "render-markdown",
   "snacks", -- image module: inline mermaid/images via kitty graphics
   "tiny-cmdline",
+  "persistence", -- session save/restore per cwd
+  "dap", -- DAP: nvim-dap + dap-ui + dap-python (deferred — no require until <leader>d)
 }
 
 local GITHUB = "https://github.com/"

@@ -2,7 +2,8 @@ return {
   src = "MeanderingProgrammer/render-markdown.nvim",
   deps = {
     "nvim-treesitter/nvim-treesitter",
-    "nvim-tree/nvim-web-devicons",
+    -- icon support comes from the mini.icons mock (loaded earlier in plugin_order)
+    "echasnovski/mini.nvim",
   },
   setup = function()
     local colors = {

@@ -42,6 +42,9 @@ return {
           "shellcheck",
           "markdownlint",
           "yamllint",
+          -- DAP adapters (lua/plugins/dap.lua)
+          "debugpy", -- Python debug adapter; dap-python points at its venv python
+          "js-debug-adapter", -- JS/TS debug adapter (pwa-node); used by dap.lua
         },
         auto_update = false,
         run_on_start = true,

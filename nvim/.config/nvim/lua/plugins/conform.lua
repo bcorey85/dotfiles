@@ -22,14 +22,42 @@ return {
         yaml = { "prettier" },
         markdown = { "prettier" },
       },
-      format_on_save = {
-        timeout_ms = 3000,
-        lsp_fallback = true,
-      },
+      -- format_on_save as a function so we can respect the disable escape hatch
+      -- (vim.g.disable_autoformat / vim.b.disable_autoformat) per the conform README.
+      format_on_save = function(bufnr)
+        if vim.g.disable_autoformat or vim.b[bufnr].disable_autoformat then
+          return
+        end
+        return { timeout_ms = 3000, lsp_format = "fallback" }
+      end,
     })
 
+    -- Gate prettier on project config presence so it doesn't reformat repos
+    -- that don't use prettier. require_cwd makes the formatter a no-op when
+    -- no prettier config is found in the project root.
+    require("conform").formatters.prettier = { require_cwd = true }
+
     vim.keymap.set("n", "<leader>cf", function()
-      require("conform").format({ async = true, lsp_fallback = true })
+      require("conform").format({ async = true, lsp_format = "fallback" })
     end, { desc = "Format buffer (conform)" })
+
+    -- Escape hatch: :FormatDisable (global) or :FormatDisable! (buffer-local).
+    -- :FormatEnable clears both flags. Follows the conform README recipe verbatim.
+    vim.api.nvim_create_user_command("FormatDisable", function(args)
+      if args.bang then
+        vim.b.disable_autoformat = true
+      else
+        vim.g.disable_autoformat = true
+      end
+    end, {
+      desc = "Disable autoformat-on-save",
+      bang = true,
+    })
+    vim.api.nvim_create_user_command("FormatEnable", function()
+      vim.b.disable_autoformat = false
+      vim.g.disable_autoformat = false
+    end, {
+      desc = "Re-enable autoformat-on-save",
+    })
   end,
 }

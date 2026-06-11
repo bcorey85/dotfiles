@@ -5,7 +5,7 @@ return {
     { src = "nvim-treesitter/nvim-treesitter-textobjects", version = "main" },
   },
   setup = function()
-    require("nvim-treesitter").install({
+    local langs = {
       "bash",
       "c",
       "css",
@@ -30,35 +30,19 @@ return {
       "vue",
       "xml",
       "yaml",
-    })
+    }
+    require("nvim-treesitter").install(langs)
+
+    -- Derive the FileType pattern from the install list so the two can never
+    -- drift. vim.treesitter.language.get_filetypes() maps parser → real ft names
+    -- (e.g. tsx → typescriptreact, bash → sh, vimdoc → help).
+    local fts = {}
+    for _, lang in ipairs(langs) do
+      vim.list_extend(fts, vim.treesitter.language.get_filetypes(lang))
+    end
 
     vim.api.nvim_create_autocmd("FileType", {
-      pattern = {
-        "bash",
-        "c",
-        "css",
-        "diff",
-        "help",
-        "html",
-        "javascript",
-        "jsdoc",
-        "json",
-        "jsonc",
-        "lua",
-        "luadoc",
-        "markdown",
-        "python",
-        "query",
-        "regex",
-        "scss",
-        "toml",
-        "tsx",
-        "typescript",
-        "vim",
-        "vue",
-        "xml",
-        "yaml",
-      },
+      pattern = fts,
       callback = function(args)
         pcall(vim.treesitter.start, args.buf)
         vim.bo[args.buf].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"

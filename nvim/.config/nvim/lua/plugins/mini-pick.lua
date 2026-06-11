@@ -7,7 +7,7 @@
 return {
   -- ── mini.pick ──────────────────────────────────────────────────────────────
   {
-    src = "echasnovski/mini.pick",
+    src = "echasnovski/mini.nvim",
     setup = function()
       local pick = require("mini.pick")
 
@@ -213,7 +213,7 @@ return {
 
   -- ── mini.extra ─────────────────────────────────────────────────────────────
   {
-    src = "echasnovski/mini.extra",
+    src = "echasnovski/mini.nvim",
     setup = function()
       require("mini.extra").setup({})
     end,
@@ -224,7 +224,7 @@ return {
   -- BufEnter (1 s debounce); persists to disk on exit. Trial — cut this spec
   -- and the <leader>fv keymap if unused after a few weeks.
   {
-    src = "echasnovski/mini.visits",
+    src = "echasnovski/mini.nvim",
     setup = function()
       require("mini.visits").setup({})
 

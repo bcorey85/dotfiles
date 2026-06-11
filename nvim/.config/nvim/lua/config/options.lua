@@ -63,7 +63,6 @@ vim.opt.undolevels = 10000
 vim.opt.updatetime = 200
 vim.opt.wrap = false
 vim.opt.signcolumn = "yes"
-vim.opt.sessionoptions = { "buffers", "curdir", "tabpages", "winsize", "help", "globals", "skiprtp", "folds" }
 
 vim.g.loaded_python3_provider = 0
 vim.g.root_spec = { "cwd" }

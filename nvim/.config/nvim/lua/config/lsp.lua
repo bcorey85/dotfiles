@@ -23,11 +23,11 @@ vim.api.nvim_create_autocmd("LspAttach", {
     map("n", "gd", vim.lsp.buf.definition, "Go to definition")
     map("n", "gD", vim.lsp.buf.declaration, "Go to declaration")
     map("n", "gI", function()
-      require("telescope.builtin").lsp_implementations()
+      require("mini.extra").pickers.lsp({ scope = "implementation" })
     end, "Go to implementation")
     map("n", "gy", vim.lsp.buf.type_definition, "Go to type definition")
     map("n", "gr", function()
-      require("telescope.builtin").lsp_references()
+      require("mini.extra").pickers.lsp({ scope = "references" })
     end, "References")
     map("n", "<leader>cr", vim.lsp.buf.rename, "Rename symbol")
     map({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, "Code action")
@@ -57,7 +57,7 @@ vim.api.nvim_create_autocmd("LspAttach", {
 
     map("n", "<leader>cd", vim.diagnostic.open_float, "Line diagnostics")
     map("n", "<leader>cs", function()
-      require("telescope.builtin").lsp_document_symbols()
+      require("mini.extra").pickers.lsp({ scope = "document_symbol" })
     end, "Document symbols")
 
     local client = vim.lsp.get_client_by_id(args.data.client_id)
@@ -73,6 +73,29 @@ vim.api.nvim_create_autocmd("LspAttach", {
         buffer = bufnr,
         callback = vim.lsp.buf.clear_references,
       })
+    end
+  end,
+})
+
+-- Clean up per-buffer document-highlight augroups on detach. Augroups created
+-- in LspAttach are named per-buffer but are never auto-deleted — they leak for
+-- the session lifetime. Only tear down when the LAST client that supports
+-- textDocument/documentHighlight leaves the buffer; if another highlight-capable
+-- client is still attached, the group (and its autocmds) must remain.
+vim.api.nvim_create_autocmd("LspDetach", {
+  callback = function(args)
+    local bufnr = args.buf
+    local detaching_id = args.data.client_id
+
+    local remaining = vim.tbl_filter(function(c)
+      return c.id ~= detaching_id and c:supports_method("textDocument/documentHighlight")
+    end, vim.lsp.get_clients({ bufnr = bufnr }))
+
+    if #remaining == 0 then
+      pcall(vim.api.nvim_del_augroup_by_name, "lsp_document_highlight_" .. bufnr)
+      -- buf_clear_references targets bufnr explicitly; LspDetach can fire for a
+      -- background buffer, where clear_references() would hit the wrong one.
+      vim.lsp.util.buf_clear_references(bufnr)
     end
   end,
 })
@@ -132,6 +155,12 @@ vim.lsp.config("lua_ls", {
   },
 })
 
+-- pyright + ruff division of labour: ruff owns all lint diagnostics (faster,
+-- project-aware), so pyright's analysis diagnostics are silenced via
+-- python.analysis.ignore = { "*" } to avoid duplicate/conflicting reports.
+-- pyright is kept alive for hover, completion, go-to-definition, and rename —
+-- the things ruff doesn't provide. Pairing with ruff's hoverProvider = false
+-- (below) ensures K always resolves through pyright, not ruff's bare-bones hover.
 vim.lsp.config("pyright", {
   settings = {
     pyright = {

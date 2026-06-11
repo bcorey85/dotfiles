@@ -50,7 +50,7 @@ local function esc(s)
 end
 
 -- A window gets a winbar only if it's a normal, non-floating window holding a
--- real file buffer. Special buffers (oil, telescope, trouble, help, terminals)
+-- real file buffer. Special buffers (oil, mini.pick, quickfix, help, terminals)
 -- and floats stay bare.
 local function eligible(win)
   if vim.api.nvim_win_get_config(win).relative ~= "" then
@@ -101,10 +101,7 @@ end
 
 -- BufModifiedSet keeps the ● in sync the moment &modified flips; the rest catch
 -- a window changing which buffer it holds.
-vim.api.nvim_create_autocmd(
-  { "BufWinEnter", "WinEnter", "BufEnter", "BufWritePost", "BufModifiedSet", "FileType" },
-  {
-    group = vim.api.nvim_create_augroup("Winbar", { clear = true }),
-    callback = update,
-  }
-)
+vim.api.nvim_create_autocmd({ "BufWinEnter", "WinEnter", "BufEnter", "BufWritePost", "BufModifiedSet", "FileType" }, {
+  group = vim.api.nvim_create_augroup("Winbar", { clear = true }),
+  callback = update,
+})

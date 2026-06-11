@@ -88,5 +88,11 @@ return {
     vim.keymap.set("n", "[C", function()
       move.goto_previous_start("@class.outer", "textobjects")
     end)
+    vim.keymap.set("n", "]a", function()
+      move.goto_next_start("@parameter.inner", "textobjects")
+    end, { desc = "Next argument" })
+    vim.keymap.set("n", "[a", function()
+      move.goto_previous_start("@parameter.inner", "textobjects")
+    end, { desc = "Previous argument" })
   end,
 }

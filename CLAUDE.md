@@ -29,7 +29,7 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 
 | Package     | Target                                  | Key files                                                                                                 |
 | ----------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `nvim`      | `~/.config/nvim/`                       | LazyVim config, `lua/plugins/*.lua` (22 plugin configs)                                                   |
+| `nvim`      | `~/.config/nvim/`                       | Native `vim.pack` config (bootstrap in `lua/config/pack.lua`), one spec file per plugin in `lua/plugins/` |
 | `tmux`      | `~/.tmux.conf`                          | Prefix=`Ctrl+Space`, vim-style panes, TPM                                                                 |
 | `zsh`       | `~/.zshrc`                              | Plugins, aliases, pyenv/nvm/starship init                                                                 |
 | `claude`    | `~/.claude/`                            | Agents, commands, settings, hooks                                                                         |
@@ -61,7 +61,7 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 ## Working with This Repo
 
 - Configs are live-symlinked; edits in `~/dotfiles/` take effect immediately (except tmux which needs `tmux source-file ~/.tmux.conf`)
-- Neovim plugins are managed by Lazy.nvim; `lazy-lock.json` is gitignored
+- Neovim plugins are managed by native `vim.pack` (Neovim 0.12); specs live in `lua/plugins/`, revisions are pinned in `nvim-pack-lock.json`, and `:PackUpdate` / `:PackStatus` / `:PackClean` are defined in `lua/config/pack.lua`
 - Zsh plugins are git-cloned to `~/.zsh/plugins/` (not in this repo, installed by `install/zsh-plugins`)
 - Tmux plugins are managed by TPM at `~/.tmux/plugins/` (installed by `install/tmux-plugins`)
 - Kanata setup requires `sudo ~/kanata-setup` post-install for systemd service and udev rules

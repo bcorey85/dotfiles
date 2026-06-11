@@ -65,6 +65,70 @@ return {
           TreesitterContextLineNumber = { fg = "#6c7086", bg = "#313244" },
           TreesitterContextBottom = { underline = true, sp = "#94e2d5" },
           TreesitterContextLineNumberBottom = { underline = true, sp = "#94e2d5" },
+
+          -- De-blue pass: swap catppuccin blue (#89b4fa) and sky (#89dceb) out of
+          -- every UI group that actually renders in this config. Rule: chrome/controls
+          -- → teal #94e2d5; names/identity/info → lavender #b4befe.
+
+          -- ── Teal chrome/controls ────────────────────────────────────────────────
+          -- Title, MoreMsg, Question: blue → teal; preserve bold on Title.
+          Title = { fg = "#94e2d5", bold = true },
+          MoreMsg = { fg = "#94e2d5" },
+          Question = { fg = "#94e2d5" },
+          -- SpellLocal: sp only (undercurl style kept); blue sp → teal.
+          SpellLocal = { sp = "#94e2d5", undercurl = true },
+          -- RenderMarkdownBullet: sky → teal (bullet is chrome punctuation).
+          RenderMarkdownBullet = { fg = "#94e2d5" },
+          -- nvim wildmenu popup border: link to the established FloatBorder baseline.
+          PmenuBorder = { link = "FloatBorder" },
+          -- DAP UI: sky/blue → teal (debugger chrome).
+          DapUIStepBack = { fg = "#94e2d5" },
+          DapUIStepInto = { fg = "#94e2d5" },
+          DapUIStepOut = { fg = "#94e2d5" },
+          DapUIStepOver = { fg = "#94e2d5" },
+          DapUIScope = { fg = "#94e2d5" },
+          DapUILineNumber = { fg = "#94e2d5" },
+          DapUIDecoration = { fg = "#94e2d5" },
+          DapUIBreakpointsPath = { fg = "#94e2d5" },
+          DapUIStoppedThread = { fg = "#94e2d5" },
+          DapUIValue = { fg = "#94e2d5" },
+          DapLogPoint = { fg = "#94e2d5" },
+          -- BlinkCmpKindOperator: sky → teal (operator is punctuation/chrome).
+          BlinkCmpKindOperator = { fg = "#94e2d5" },
+
+          -- ── Lavender names/identity/info ────────────────────────────────────────
+          -- qfFileName: blue → lavender (file identity).
+          qfFileName = { fg = "#b4befe" },
+          -- Folded: blue fg → lavender; preserve catppuccin bg blend (#45475a).
+          Folded = { fg = "#b4befe", bg = "#45475a" },
+          -- Diagnostic severity ladder: red error / yellow warn / lavender info / teal hint.
+          -- DiagnosticInfo: sky fg → lavender; preserve italic.
+          DiagnosticInfo = { fg = "#b4befe", italic = true },
+          DiagnosticSignInfo = { fg = "#b4befe" },
+          -- DiagnosticVirtualTextInfo: sky fg → lavender; preserve italic + bg blend (#313d45).
+          DiagnosticVirtualTextInfo = { fg = "#b4befe", italic = true, bg = "#313d45" },
+          DiagnosticFloatingInfo = { fg = "#b4befe" },
+          -- DiagnosticUnderlineInfo: sp only (undercurl kept); sky sp → lavender.
+          DiagnosticUnderlineInfo = { sp = "#b4befe", underline = true },
+          -- RenderMarkdown: table header/info → lavender (content identity).
+          RenderMarkdownTableHead = { fg = "#b4befe" },
+          RenderMarkdownInfo = { fg = "#b4befe" },
+          -- BlinkCmp kind icons: blue → lavender (symbol identity).
+          BlinkCmpKindFunction = { fg = "#b4befe" },
+          BlinkCmpKindMethod = { fg = "#b4befe" },
+          BlinkCmpKindModule = { fg = "#b4befe" },
+          BlinkCmpKindProperty = { fg = "#b4befe" },
+          BlinkCmpKindStruct = { fg = "#b4befe" },
+          BlinkCmpKindFile = { fg = "#b4befe" },
+          BlinkCmpKindFolder = { fg = "#b4befe" },
+          BlinkCmpKindConstructor = { fg = "#b4befe" },
+          BlinkCmpKindEvent = { fg = "#b4befe" },
+          -- Fallback for any kind without a specific BlinkCmpKind* group (was catppuccin blue).
+          BlinkCmpKind = { fg = "#b4befe" },
+          -- Changed/diff: blue → lavender (file identity in diff context).
+          Changed = { fg = "#b4befe" },
+          diffChanged = { fg = "#b4befe" },
+          diffFile = { fg = "#b4befe" },
         }
       end,
     })

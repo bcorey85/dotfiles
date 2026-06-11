@@ -3,13 +3,13 @@ return {
   version = vim.version.range("^3.0.0"),
   deps = {
     "nvim-lua/plenary.nvim",
-    "nvim-telescope/telescope.nvim",
+    "echasnovski/mini.pick",
   },
   setup = function()
     require("obsidian").setup({
       legacy_commands = false,
       picker = {
-        name = "telescope.nvim",
+        name = "mini.pick",
       },
       workspaces = (function()
         local candidates = {
@@ -102,9 +102,8 @@ return {
       scan(vault_root)
       table.sort(dirs)
 
-      -- vim.ui.select is intercepted by telescope (via telescope's ui-select
-      -- extension or its native vim.ui.select override) so this renders as a
-      -- styled telescope picker rather than a plain prompt.
+      -- vim.ui.select is handled by MiniPick.ui_select (wired in mini-pick.lua)
+      -- so this renders as a mini.pick floating picker rather than a plain prompt.
       vim.ui.select(dirs, { prompt = "Move note to" }, function(choice)
         if not choice then
           return

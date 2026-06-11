@@ -76,13 +76,13 @@ vim.api.nvim_create_autocmd("TextYankPost", {
 -- fights the manual <leader>ud toggle.
 local conflict_disabled = {}
 
+-- vim.fn.search with "nw" is O(lines-until-match) and runs in the context of the
+-- buffer, so it short-circuits on the first hit. This is faster than a Lua
+-- full-buffer scan and stays consistent with the native-merge-keys check below.
 local function has_conflict_markers(buf)
-  for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
-    if line:find("^<<<<<<<") then
-      return true
-    end
-  end
-  return false
+  return vim.api.nvim_buf_call(buf, function()
+    return vim.fn.search([[^<<<<<<<]], "nw") ~= 0
+  end)
 end
 
 vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost" }, {
@@ -113,10 +113,7 @@ vim.api.nvim_create_autocmd({ "BufReadPost", "BufWinEnter" }, {
     if vim.b[ev.buf].merge_keys or vim.bo[ev.buf].buftype ~= "" then
       return
     end
-    local found = vim.api.nvim_buf_call(ev.buf, function()
-      return vim.fn.search([[^<<<<<<<]], "nw") ~= 0
-    end)
-    if found then
+    if has_conflict_markers(ev.buf) then
       require("util.merge").attach(ev.buf)
     end
   end,

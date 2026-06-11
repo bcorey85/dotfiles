@@ -23,10 +23,10 @@ return {
 
     -- Git log via fugitive's native pager buffer (filetype=git): newest commit
     -- on top, <CR> opens the commit under the cursor. Deliberately NOT :Gclog —
-    -- that routes through the quickfix, and the Trouble qf-hijack (trouble.lua)
-    -- re-sorts entries by filename, which for fugitive commits is the sha path.
-    -- That makes the list land on the lowest SHA (a stale commit) instead of
-    -- HEAD. The pager buffer bypasses the quickfix entirely, so order is honest.
+    -- that routes through the quickfix, which for fugitive commits uses the sha
+    -- path as the filename and sorts accordingly, landing on the lowest SHA (a
+    -- stale commit) instead of HEAD. The pager buffer bypasses the quickfix
+    -- entirely, so order is honest and navigation is via the buffer itself.
     map("<leader>gl", "<cmd>Git log --oneline<cr>", "Git log (repo)")
     map("<leader>gL", "<cmd>Git log --oneline -- %<cr>", "Git log (current file)")
     map("<leader>gu", "<cmd>Git log --oneline @{upstream}..HEAD<cr>", "Git log unpushed")

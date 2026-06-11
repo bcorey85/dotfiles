@@ -106,32 +106,29 @@ return {
       require("gitsigns").reset_buffer()
     end, "Reset buffer (discard all — destructive)")
 
-    -- Hunk quickfix list → Trouble (via the FileType=qf hijack in trouble.lua).
+    -- Hunk quickfix lists (native qf, rendered by quicker.nvim).
     --
     -- <leader>ghq is the headline feature: dumps every modified hunk across
-    -- every file in the repo into the quickfix list, which Trouble then renders
-    -- with its preview pane. Navigate with ]q/[q as usual.
+    -- every file in the repo into the quickfix list. Navigate with ]q/[q as
+    -- usual; `>` in the qf window expands diff context around each entry.
     --
     -- NOTE: the list goes stale as soon as you stage or reset a hunk because
     -- gitsigns recalculates line numbers after each change. Re-run <leader>ghq
     -- to rebuild it after a staging session.
     map("<leader>ghq", function()
       require("gitsigns").setqflist("all", {}, function()
-        -- Tag this quickfix list so the ]q/[q handlers (trouble.lua) know to
-        -- pop gitsigns' inline diff while walking it. {what}-only setqflist:
-        -- the empty {list} is ignored, only the title property is set, items
-        -- are preserved.
+        -- Name the list for the qf header. {what}-only setqflist: the empty
+        -- {list} is ignored, only the title property is set, items are preserved.
         vim.fn.setqflist({}, "a", { title = "Gitsigns Hunks" })
       end)
-    end, "Hunk qf list (repo-wide) → Trouble")
+    end, "Hunk qf list (repo-wide)")
 
     -- Current buffer only — useful for a focused "what did I change here?" scan.
     map("<leader>ghl", function()
       require("gitsigns").setqflist(0, {}, function()
-        -- Same tag as <leader>ghq so ]q/[q show the inline diff regardless of
-        -- whether the list was built from the whole repo or a single buffer.
+        -- Same title as <leader>ghq for a consistent qf header.
         vim.fn.setqflist({}, "a", { title = "Gitsigns Hunks" })
       end)
-    end, "Hunk qf list (buffer) → Trouble")
+    end, "Hunk qf list (buffer)")
   end,
 }

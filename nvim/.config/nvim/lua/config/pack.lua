@@ -30,7 +30,7 @@ local plugin_order = {
   "lspconfig", -- ships lsp/ server defs consumed by config.lsp
   "mason", -- LSP / tool installer (3 plugins)
   "blink", -- completion
-  "telescope", -- finder (+ plenary / fzf-native / ui-select)
+  "mini-pick", -- finder: mini.pick + mini.extra + mini.visits
   "oil",
   "smart-splits",
   "gitsigns",
@@ -47,10 +47,14 @@ local plugin_order = {
   "nvim-lint",
   "harpoon",
   "grug-far",
-  "trouble",
+  "quicker", -- quickfix/loclist (replaces trouble)
+  "dispatch", -- async :Make/:Dispatch → tmux pane + quickfix
+  "undotree", -- visual undo history navigator
+  "sleuth", -- auto-detect shiftwidth/expandtab per buffer
   "gitlinker",
   "obsidian",
   "render-markdown",
+  "snacks", -- image module: inline mermaid/images via kitty graphics
   "tiny-cmdline",
 }
 
@@ -166,11 +170,14 @@ end, { desc = "Review installed vim.pack plugins (offline)" })
 -- :PackClean — delete plugins still on disk but no longer in your specs (not
 -- added this session). Prompts before removing.
 vim.api.nvim_create_user_command("PackClean", function()
-  local stale = vim.tbl_map(function(p)
-    return p.spec.name
-  end, vim.tbl_filter(function(p)
-    return not p.active
-  end, vim.pack.get()))
+  local stale = vim.tbl_map(
+    function(p)
+      return p.spec.name
+    end,
+    vim.tbl_filter(function(p)
+      return not p.active
+    end, vim.pack.get())
+  )
 
   if #stale == 0 then
     vim.notify("vim.pack: nothing to clean", vim.log.levels.INFO)

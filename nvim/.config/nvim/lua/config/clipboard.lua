@@ -1,5 +1,5 @@
 local function detect_clipboard()
-  local uname = vim.loop.os_uname()
+  local uname = vim.uv.os_uname()
   local sysname = uname.sysname
 
   if sysname == "Darwin" then
@@ -36,7 +36,7 @@ local function detect_clipboard()
         },
       }
     else
-      if os.execute("command -v wl-copy > /dev/null 2>&1") == 0 then
+      if vim.fn.executable("wl-copy") == 1 then
         return {
           name = "wl-clipboard",
           copy = {
@@ -48,7 +48,7 @@ local function detect_clipboard()
             ["*"] = "wl-paste --primary --no-newline",
           },
         }
-      elseif os.execute("command -v xclip > /dev/null 2>&1") == 0 then
+      elseif vim.fn.executable("xclip") == 1 then
         return {
           name = "xclip",
           copy = {

@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# fetch-pr-comments — fetch + dedup PR review comments for /pr-comments
+#
+# Detects the current branch's PR, fetches inline review comments and top-level
+# review bodies, then dedups deterministically:
+#   - replies (in_reply_to_id != null) are dropped
+#   - inline comments are grouped by (path, line, author); only the most recent
+#     per group is kept (bots re-review on every push)
+#   - empty review bodies (approvals without comments) are dropped
+#
+# stdout: {"pr": N, "url": "...", "inline": [...], "reviews": [...]}
+# exit 1 with a message on stderr when no PR exists for the branch.
+set -euo pipefail
+
+command -v gh >/dev/null || { echo "gh is required" >&2; exit 1; }
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
+
+pr_json=$(gh pr view --json number,url 2>/dev/null) || { echo "no PR for the current branch" >&2; exit 1; }
+number=$(jq -r '.number' <<< "$pr_json")
+url=$(jq -r '.url' <<< "$pr_json")
+repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+
+inline=$(gh api "repos/$repo/pulls/$number/comments" --paginate | jq -s '
+  add // []
+  | [.[]
+     | select(.in_reply_to_id == null)
+     | {path, line: (.line // .original_line), diff_hunk, body, user: .user.login, created_at}]
+  | group_by((.path // "") + "|" + ((.line // 0) | tostring) + "|" + .user)
+  | map(max_by(.created_at))
+  | sort_by(.path, .line)
+')
+
+reviews=$(gh api "repos/$repo/pulls/$number/reviews" --paginate | jq -s '
+  add // []
+  | [.[]
+     | select(.body != null and .body != "")
+     | {state, body, user: .user.login, submitted_at}]
+  | sort_by(.submitted_at)
+')
+
+jq -n \
+  --argjson pr "$number" \
+  --arg url "$url" \
+  --argjson inline "$inline" \
+  --argjson reviews "$reviews" \
+  '{pr: $pr, url: $url, inline: $inline, reviews: $reviews}'

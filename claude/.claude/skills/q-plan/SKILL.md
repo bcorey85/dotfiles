@@ -22,13 +22,12 @@ docs/eng-specs/IQ-XXX-short-description/
 
 ## Resolving the Task Directory (auto, not paste)
 
-1. If `$ARGUMENTS` is a path under `docs/eng-specs/`, use it.
-2. Otherwise infer from branch:
+1. Run the shared resolver:
    ```bash
-   git rev-parse --abbrev-ref HEAD | grep -oE '^[a-zA-Z]+-[0-9]+' | tr '[:lower:]' '[:upper:]'
+   bash ~/.claude/scripts/qrspi-resolve-dir.sh "$ARGUMENTS"
    ```
-   then glob `docs/eng-specs/IQ-XXX-*/`. Single match → use it. Multiple → ask. None → ask for path.
-3. Read `IQ-XXX-00-ticket.md`, `IQ-XXX-02-research.md`, `IQ-XXX-03-design.md`, and `IQ-XXX-04-structure.md` directly. Do NOT ask the user to paste.
+   Exit 0 → use the printed directory. Exit 3 → multiple matches printed; ask the user which. Exit 4 → ask for the path.
+2. Read `IQ-XXX-00-ticket.md`, `IQ-XXX-02-research.md`, `IQ-XXX-03-design.md`, and `IQ-XXX-04-structure.md` directly. Do NOT ask the user to paste.
 
 ## Inputs
 

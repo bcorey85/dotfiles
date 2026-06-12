@@ -16,43 +16,23 @@ Pull every review comment on the current branch's PR — inline and top-level, f
 
 ## Instructions
 
-0. **Check for prior triage**: If the current conversation already contains a "PR Comments Triage" table with "Valid (Actionable)" findings from an earlier `/pr-comments` run, skip steps 1-6 and reuse those findings. Go directly to step 7.
+0. **Check for prior triage**: If the current conversation already contains a "PR Comments Triage" table with "Valid (Actionable)" findings from an earlier `/pr-comments` run, skip steps 1-3 and reuse those findings. Go directly to step 4.
 
-1. **Detect the PR** for the current branch:
-
-   ```bash
-   gh pr view --json number,url --jq '{number: .number, url: .url}'
-   ```
-
-   If no PR exists, tell the user and stop.
-
-2. **Detect the repo** (owner/name):
+1. **Fetch + dedup via the bundled script**:
 
    ```bash
-   gh repo view --json nameWithOwner --jq '.nameWithOwner'
+   bash "${CLAUDE_SKILL_DIR}/fetch-pr-comments"
    ```
 
-3. **Fetch all PR review comments** (inline) using the GitHub API:
+   Outputs `{pr, url, inline, reviews}` JSON. Inline comments are already deduplicated — replies dropped, only the most recent comment per `(path, line, author)` kept (bots like Copilot and the Claude review bot re-review on every push) — and top-level review bodies are filtered to non-empty. If the script exits non-zero with "no PR", tell the user and stop. Do NOT re-fetch or re-dedup by hand.
 
-   ```bash
-   gh api "repos/{owner}/{repo}/pulls/{number}/comments" --jq '[.[] | {path, line, original_line, diff_hunk, body, user: .user.login, created_at, in_reply_to_id}]'
-   ```
-
-   Also fetch top-level review bodies (skip empty ones — approvals without comments come back with an empty `body`):
-
-   ```bash
-   gh api "repos/{owner}/{repo}/pulls/{number}/reviews" --jq '[.[] | select(.body != null and .body != "") | {state, body, user: .user.login, submitted_at}]'
-   ```
-
-4. **Deduplicate**: Bots (Copilot, Claude code review, etc.) often re-review after each push. Group inline comments by `path + line + user` and keep only the most recent per `(location, author)` (by `created_at`). Drop any comment that is a reply (`in_reply_to_id != null`) — those are follow-ups, not original findings.
-
-5. **Triage each comment** by reading the file at the referenced path and line:
+2. **Triage each comment** by reading the file at the referenced path and line:
    - **Already fixed** — the code no longer matches what the comment flagged (likely addressed in a later commit)
    - **Valid** — the issue still exists in the current code
    - **Invalid / Wrong** — the commenter misunderstood the code, API, or convention
    - **Low priority** — technically valid but not worth fixing now (cosmetic, stylistic, or pre-existing)
 
-6. **Present findings** as a table, with an Author column so the user can weight bot vs human input:
+3. **Present findings** as a table, with an Author column so the user can weight bot vs human input:
 
    ```
    ## PR Comments Triage — PR #{number}
@@ -74,12 +54,12 @@ Pull every review comment on the current branch's PR — inline and top-level, f
    | ...    | ...  | ...  | ...   | ...    |
    ```
 
-7. **If `+fix` modifier is present** and there are valid actionable items:
+4. **If `+fix` modifier is present** and there are valid actionable items:
    - Format the valid findings as review feedback (file paths, line numbers, issue descriptions, author for context)
    - Invoke `/fix` skill, passing through any `+fast` or `+deep` modifier
    - If no valid items found, tell the user there's nothing to fix
 
-8. **If `+fix` is NOT present**, end with:
+5. **If `+fix` is NOT present**, end with:
    > Run `/pr-comments +fix` to auto-fix the valid items, or `/fix` manually after reviewing.
 
 ## Arguments

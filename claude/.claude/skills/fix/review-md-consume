@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# review-md-consume — deterministic reader/rewriter for ~/.claude/review.md (used by /fix)
+#
+# Entry format in review.md (entries separated by lines containing only "---"):
+#   ## /abs/path/file.ts:42[-50]
+#   2026-06-10T12:00:00Z
+#   <comment body...>
+#   ---
+#
+# Modes:
+#   list <repo-root>
+#       Print in-scope (path under repo-root), fresh (<=48h) entries as a JSON
+#       array: [{id, path, line, timestamp, body}]. The id ("<path>@@<timestamp>")
+#       is the handle for resolve. Stale in-scope entries are counted on stderr.
+#       Out-of-scope entries are never printed or touched.
+#   resolve <repo-root> <id>...
+#       Re-read the file and rewrite it keeping: every out-of-scope entry, and
+#       every in-scope fresh entry whose id was NOT passed. Stale in-scope
+#       entries are dropped. The file is deleted if nothing remains. Because the
+#       file is re-read at resolve time, entries added by another session
+#       between list and resolve are preserved.
+set -euo pipefail
+
+REVIEW_FILE="${REVIEW_MD_FILE:-$HOME/.claude/review.md}"
+TTL_SECONDS=$((48 * 3600))
+
+mode="${1:-}"
+repo="${2:-}"
+case "$mode" in list|resolve) ;; *) echo "usage: review-md-consume list|resolve <repo-root> [id...]" >&2; exit 2 ;; esac
+[ -n "$repo" ] || { echo "missing repo-root" >&2; exit 2; }
+shift 2
+repo="${repo%/}"
+
+if [ ! -f "$REVIEW_FILE" ]; then
+  [ "$mode" = "list" ] && echo "[]"
+  exit 0
+fi
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
+
+to_epoch() {
+  date -u -d "$1" +%s 2>/dev/null || date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$1" +%s 2>/dev/null || echo 0
+}
+now=$(date -u +%s)
+
+# Parse entries into RS=\x1e records with \x1f-separated fields: header, ts, body
+records=$(awk '
+  function flush() { if (header != "") printf "%s\037%s\037%s\036", header, ts, body }
+  /^## / { flush(); header = substr($0, 4); ts = ""; body = ""; next }
+  /^---[[:space:]]*$/ { next }
+  {
+    if (header == "") next
+    if (ts == "" && $0 ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9:]+Z[[:space:]]*$/) {
+      ts = $0; gsub(/[[:space:]]+$/, "", ts); next
+    }
+    body = body $0 "\n"
+  }
+  END { flush() }
+' "$REVIEW_FILE")
+
+RESOLVED_IDS=""
+if [ $# -gt 0 ]; then
+  RESOLVED_IDS=$(printf '%s\n' "$@")
+fi
+is_resolved() {
+  [ -n "$RESOLVED_IDS" ] && printf '%s\n' "$RESOLVED_IDS" | grep -qxF "$1"
+}
+
+json_items=""
+kept=""
+stale_count=0
+
+while IFS=$'\x1f' read -r -d $'\x1e' header ts body; do
+  [ -n "$header" ] || continue
+  path="$header"
+  line=""
+  if printf '%s' "$header" | grep -qE ':[0-9]+(-[0-9]+)?$'; then
+    line="${header##*:}"
+    path="${header%:*}"
+  fi
+
+  in_scope=0
+  case "$path" in "$repo"/*) in_scope=1 ;; esac
+
+  fresh=0
+  ep=$(to_epoch "$ts")
+  [ "$ep" -gt 0 ] && [ $((now - ep)) -le "$TTL_SECONDS" ] && fresh=1
+
+  if [ "$in_scope" -eq 0 ]; then
+    # never touched — always kept on rewrite, never listed
+    kept="${kept}## ${header}
+${ts}
+${body}---
+
+"
+    continue
+  fi
+
+  if [ "$fresh" -eq 0 ]; then
+    stale_count=$((stale_count + 1))   # dropped silently on rewrite
+    continue
+  fi
+
+  id="${path}@@${ts}"
+  if [ "$mode" = "list" ]; then
+    json_items="${json_items}$(jq -n --arg id "$id" --arg path "$path" --arg line "$line" \
+      --arg ts "$ts" --arg body "$body" \
+      '{id: $id, path: $path, line: $line, timestamp: $ts, body: $body}')
+"
+  else
+    if ! is_resolved "$id"; then
+      kept="${kept}## ${header}
+${ts}
+${body}---
+
+"
+    fi
+  fi
+done <<< "$records"
+
+if [ "$mode" = "list" ]; then
+  if [ -n "$json_items" ]; then
+    printf '%s' "$json_items" | jq -s .
+  else
+    echo "[]"
+  fi
+  [ "$stale_count" -gt 0 ] && echo "stale entries (>48h, will be dropped on resolve): $stale_count" >&2
+  exit 0
+fi
+
+# resolve mode: rewrite or delete
+if [ -n "$kept" ]; then
+  tmp=$(mktemp)
+  printf '%s' "$kept" > "$tmp"
+  mv "$tmp" "$REVIEW_FILE"
+  echo "rewrote $REVIEW_FILE (stale dropped: $stale_count)"
+else
+  rm -f "$REVIEW_FILE"
+  echo "all entries consumed — deleted $REVIEW_FILE (stale dropped: $stale_count)"
+fi

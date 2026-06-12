@@ -1,7 +1,7 @@
 ---
 name: fix
 description: Dispatch coder subagents to fix review feedback (from `.claude/review.md`, the conversation, or a `/review` handoff), then auto-run `/review`
-allowed-tools: [Task, Read, Glob, Grep, Skill]
+allowed-tools: [Task, Bash, Read, Glob, Grep, Skill]
 ---
 
 # Fix Code Review Feedback
@@ -22,18 +22,23 @@ Dispatch parallel frontend-coder and backend-coder subagents to investigate and 
 
 2. **Parse the review feedback** from these sources (in order), then categorize issues by which coder owns the file (frontend vs backend, or whichever split applies to this codebase):
 
-   a. **`~/.claude/review.md`** (global, shared across all repos) — if this file exists, it contains inline comments left by the user from diffview.nvim (`<leader>dc`). Each entry has the shape `## <absolute_path>:<line[-end]>` followed by a UTC ISO 8601 timestamp line (`YYYY-MM-DDTHH:MM:SSZ`) and the comment body, separated by `---`. Treat every entry as a user-authored issue at the highest priority — these are explicit requests, not heuristic findings.
+   a. **`~/.claude/review.md`** (global, shared across all repos) — inline comments left by the user from diffview.nvim (`<leader>dc`). These are explicit user-authored requests at the highest priority — not heuristic findings. Use the bundled script for ALL reading and rewriting; do NOT parse or rewrite the file by hand:
 
-   **Filter to the current repo**: run `git rev-parse --show-toplevel` to get the current repo root. Only process entries whose absolute path is inside that root. Leave all other entries untouched.
+   1. List in-scope entries:
 
-   **Stale TTL**: drop any entry whose timestamp is older than 48 hours from now. Use `date -u +%s` for current epoch and `date -u -d "<timestamp>" +%s` to parse (GNU date) or `date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "<timestamp>" +%s` (BSD/macOS date). Stale entries are dropped from the file silently (just note the count in the summary).
+      ```bash
+      bash "${CLAUDE_SKILL_DIR}/review-md-consume" list "$(git rev-parse --show-toplevel)"
+      ```
 
-   **Selective clear (no `rm`)**: after dispatching, do a read-modify-write on the file. Identify each in-scope entry by its `(absolute_path, timestamp)` tuple — these are unique IDs. Rewrite `~/.claude/review.md` containing, in this order:
-   1. Every entry from a different repo (left exactly as-is).
-   2. Every in-scope entry the skill **deferred** (e.g. recommended `/eng-spec`, waiting on user input) — left as-is so the next run can pick them up.
-   3. Drop: in-scope entries the skill **resolved** (fix attempted) or **skipped after triage** (false positive, intentional, out of scope). Note skip reasons in the user summary so they aren't lost.
+      Returns fresh (≤48h), current-repo entries as JSON (`[{id, path, line, timestamp, body}]`). Stale in-scope entries are counted on stderr — note the count in the summary. Entries from other repos are never listed or touched.
 
-   Read the file once at the start of this skill. Re-read it just before the rewrite so any entries added by another nvim session in the meantime are preserved (the rewrite drops only the specific `(path, timestamp)` tuples we resolved). If the file ends up empty after the rewrite, delete it.
+   2. After dispatching and triaging, clear what was handled:
+
+      ```bash
+      bash "${CLAUDE_SKILL_DIR}/review-md-consume" resolve "$(git rev-parse --show-toplevel)" <id>...
+      ```
+
+      Pass the `id` of every entry that was **resolved** (fix attempted) or **skipped after triage** (false positive, intentional, out of scope — note skip reasons in the summary). Do NOT pass ids of **deferred** entries (recommended `/eng-spec`, waiting on user input) — they stay in the file for the next run. The script re-reads the file at resolve time, so entries added by another nvim session in the meantime are preserved, and it deletes the file when nothing remains.
 
    b. **Args from `/review`** — if invoked via the review handoff, the issues list is passed in args.
 

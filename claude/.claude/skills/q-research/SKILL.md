@@ -34,15 +34,13 @@ docs/eng-specs/IQ-XXX-short-description/
 
 The user should NOT paste the questions. Read them from disk.
 
-1. If `$ARGUMENTS` is a path to a directory under `docs/eng-specs/`, use it.
-2. Otherwise infer the ticket from the current branch:
+1. Run the shared resolver:
    ```bash
-   git rev-parse --abbrev-ref HEAD | grep -oE '^[a-zA-Z]+-[0-9]+' | tr '[:lower:]' '[:upper:]'
+   bash ~/.claude/scripts/qrspi-resolve-dir.sh "$ARGUMENTS"
    ```
-   Then glob `docs/eng-specs/IQ-XXX-*/` for the matching task directory.
-3. If exactly one match, use it. If multiple, ask the user which. If none, ask for the path.
-4. Read `IQ-XXX-01-questions.md` directly. **Do NOT read `IQ-XXX-00-ticket.md`** — it's off-limits.
-5. Do NOT ask what is being built. Do NOT ask the user to paste questions.
+   Exit 0 → use the printed directory. Exit 3 → multiple matches printed; ask the user which. Exit 4 → ask for the path.
+2. Read `IQ-XXX-01-questions.md` directly. **Do NOT read `IQ-XXX-00-ticket.md`** — it's off-limits.
+3. Do NOT ask what is being built. Do NOT ask the user to paste questions.
 
 ## Process
 
@@ -97,19 +95,23 @@ status: complete
 ## Findings
 
 ### [Question 1 topic]
+
 [Factual answer with file_path:line_number references]
 [Code snippets where helpful]
 
 ### [Question 2 topic]
+
 [Factual answer with file_path:line_number references]
 
 ...
 
 ## Code References
+
 - `path/to/file.ts:123` - Description of what's there
 - `path/to/file.ts:456` - Description of what's there
 
 ## Patterns Found
+
 [Existing patterns discovered, documented without judgment]
 ```
 

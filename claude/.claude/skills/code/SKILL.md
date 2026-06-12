@@ -13,12 +13,12 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 - `be` or `backend` — force backend-only scope
 - `fe` or `frontend` — force frontend-only scope
 - `fs` or `fullstack` — force fullstack scope
-- `+fast` — Use Haiku model. For trivial tasks like renames, typos, or simple one-line changes.
-- `+deep` — Use Opus model. For complex tasks requiring deeper reasoning.
+- `+fast` — Pass `model: "haiku"` to coder dispatches. For trivial tasks like renames, typos, or simple one-line changes.
+- `+deep` — Dispatch the `-deep` coder variants (`backend-coder-deep` / `frontend-coder-deep`, Opus via frontmatter pin) and omit `model`. For complex tasks requiring deeper reasoning. Call-site `model: "opus"` is blocked by the agent-model-guard hook.
 
 ## Instructions
 
-1. **Check for modifiers**: If `+deep` is present, pass `model: "opus"` to all Task tool calls below. If `+fast` is present, pass `model: "haiku"`. Strip modifiers from the prompt passed to coders.
+1. **Check for modifiers**: If `+deep` is present, swap each coder for its `-deep` variant and omit `model`. If `+fast` is present, pass `model: "haiku"`. Strip modifiers from the prompt passed to coders.
 
 2. **Detect multi-phase plans (MANDATORY check)**: If the task input is a path to a plan file (e.g., `*-plan.md` under `docs/eng-specs/`) or pasted plan content, read it and check whether it contains multiple `## Phase N:` sections.
 
@@ -33,13 +33,14 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 3. **Determine scope**:
    - If a scope modifier (`be`, `fe`, `fs`) was provided, use that
-   - Otherwise, analyze the task description — read referenced files, check relevant directories — and determine if this is frontend, backend, or both
+   - Otherwise, analyze the task description — read referenced files, check relevant directories — and determine if this is frontend, backend, both, or neither (non-web repo: CLI tool, library, scripts, infra, config)
 
 4. **Dispatch the appropriate coder(s)**:
 
    **Frontend only** → Launch a single `frontend-coder` subagent
    **Backend only** → Launch a single `backend-coder` subagent
    **Both** → Launch both in parallel using a single message with multiple Task tool calls
+   **Neither** (non-web repo) → Launch a single `coder` subagent — the frontend/backend split only applies to web-fullstack codebases
 
    For each coder:
    - Pass the full task description and any relevant context

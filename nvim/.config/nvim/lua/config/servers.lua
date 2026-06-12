@@ -15,4 +15,5 @@ return {
   "bashls",
   "ansiblels",
   "oxlint",
+  "taplo",
 }

@@ -1,4 +1,4 @@
--- snacks.nvim — image, zen, and gitbrowse keymaps.
+-- snacks.nvim — image, zen, scratch, and gitbrowse keymaps.
 --
 -- image: renders markdown image links and ```mermaid fences inline via the
 -- Kitty Graphics Protocol. Degrades gracefully when dependencies are absent.
@@ -48,6 +48,19 @@ return {
     vim.keymap.set("n", "<leader>z", function()
       Snacks.zen()
     end, { desc = "Zen mode (centered, width-capped)" })
+
+    -- scratch: persistent per-project scratch buffers, keyed by cwd + branch +
+    -- filetype (stored in stdpath("data")/scratch). The scratch inherits the
+    -- current buffer's filetype (markdown fallback); lua scratches get <cr> to
+    -- source the buffer. <leader>. is taken by picker-resume, so toggle lives
+    -- on <leader>S and select joins the <leader>f find namespace.
+    vim.keymap.set("n", "<leader>S", function()
+      Snacks.scratch()
+    end, { desc = "Toggle scratch buffer" })
+
+    vim.keymap.set("n", "<leader>fs", function()
+      Snacks.scratch.select()
+    end, { desc = "Find scratch buffer" })
 
     -- gitbrowse keymaps — replaced gitlinker.nvim.
     -- gitbrowse defaults to what = "commit" (commit-pinned permalink URLs),

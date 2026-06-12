@@ -201,6 +201,7 @@ vim.lsp.config("yamlls", {
   },
 })
 vim.lsp.config("bashls", {})
+vim.lsp.config("taplo", {})
 vim.lsp.config("ansiblels", {})
 
 -- oxlint has LSP mode (--lsp) and is in Mason registry as "oxlint"

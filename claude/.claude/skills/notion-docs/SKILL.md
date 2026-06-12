@@ -1,7 +1,21 @@
 ---
 name: notion-docs
 description: Create or update customer-facing documentation in Notion after shipping a feature
-allowed-tools: [Read, Glob, Grep, Bash, mcp__notion__notion-search, mcp__notion__notion-fetch, mcp__notion__notion-create-pages, mcp__notion__notion-update-page]
+allowed-tools:
+  [
+    Read,
+    Glob,
+    Grep,
+    Bash,
+    mcp__notion__notion-search,
+    mcp__notion__notion-fetch,
+    mcp__notion__notion-create-pages,
+    mcp__notion__notion-update-page,
+    mcp__claude_ai_Notion__notion-search,
+    mcp__claude_ai_Notion__notion-fetch,
+    mcp__claude_ai_Notion__notion-create-pages,
+    mcp__claude_ai_Notion__notion-update-page,
+  ]
 ---
 
 # Update Customer Docs
@@ -19,9 +33,11 @@ Create or update customer-facing documentation in the Notion Docs section after 
    - A general instruction ("update docs for what we just shipped")
 
 2. **If vague**, examine recent git history to understand what was shipped:
+
    ```bash
    git log --oneline -10
    ```
+
    Read the relevant source files to understand the feature.
 
 3. **For API Reference updates**, read the actual code to generate accurate docs:

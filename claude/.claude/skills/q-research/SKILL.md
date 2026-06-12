@@ -1,12 +1,14 @@
 ---
 name: q-research
-description: Objective codebase research from questions only — no ticket context (QRSPI step 2 of 5)
+description: Objective codebase research from questions only — no ticket context (QRSPI step 2 of 6)
 allowed-tools: [Bash, Read, Glob, Grep, Write, Task]
 ---
 
 # Objective Codebase Research
 
 Answer research questions by exploring the codebase and documenting what you find. This is step 2 of the QRSPI workflow.
+
+> Agent variant: `~/.claude/agents/qrspi-research.md` (dispatched by /q-orchestrator). This SKILL.md is the authoritative spec for the step; the agent variant answers the questions directly without spawning haiku sub-agents and takes its paths from the orchestrator. Keep behavioral changes in sync.
 
 ## Critical Rule
 

@@ -1,7 +1,7 @@
 ---
 name: q-structure
-description: Vertical-phase structure outline with test checkpoints (QRSPI step 4 of 5)
-allowed-tools: [Bash, Read, Glob, Grep, Write, AskUserQuestion]
+description: Vertical-phase structure outline with test checkpoints (QRSPI step 4 of 6)
+allowed-tools: [Bash, Read, Glob, Grep, Write, Edit, AskUserQuestion]
 ---
 
 # Structure Outline

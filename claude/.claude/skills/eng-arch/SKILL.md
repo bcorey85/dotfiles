@@ -12,21 +12,21 @@ Generate or update cross-cutting architecture documentation in `docs/eng-arch/`.
 
 Parse modifiers from `$ARGUMENTS`:
 
-| Modifier            | Effect                                                                                                                                      |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `be` or `backend`   | Backend scope only                                                                                                                          |
-| `fe` or `frontend`  | Frontend scope only                                                                                                                         |
-| `fs` or `fullstack` | Fullstack (explicit — default if no scope given)                                                                                            |
-| `+quick`            | Overview doc only, skip deep-dives                                                                                                          |
-| `+deep`             | Overview + all deep-dives                                                                                                                   |
-| `<topic>`           | Regenerate a single deep-dive (e.g., `/eng-arch data-model`)                                                                                |
-| `<adr-path>`        | ADR-driven mode — read an ADR (`docs/eng-specs/IQ-*.md`), update or create the matching deep-dive without scanning the rest of the codebase |
+| Modifier            | Effect                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `be` or `backend`   | Backend scope only                                                                                                                                |
+| `fe` or `frontend`  | Frontend scope only                                                                                                                               |
+| `fs` or `fullstack` | Fullstack (explicit — default if no scope given)                                                                                                  |
+| `+quick`            | Overview doc only, skip deep-dives                                                                                                                |
+| `+deep`             | Overview + all deep-dives                                                                                                                         |
+| `<topic>`           | Regenerate a single deep-dive (e.g., `/eng-arch data-model`)                                                                                      |
+| `<adr-path>`        | ADR-driven mode — read an ADR (any `docs/eng-specs/*.md` file), update or create the matching deep-dive without scanning the rest of the codebase |
 
 If a bare topic name is passed (not `be`/`fe`/`fs`/`+quick`/`+deep`), treat it as a single deep-dive request. If a path ending in `.md` under `docs/eng-specs/` is passed, enter **ADR-driven mode** (see below).
 
 ## ADR-Driven Mode
 
-Triggered when `$ARGUMENTS` matches `docs/eng-specs/IQ-*.md`. Skips Phase 2 (no plan presentation), replaces Phase 3 (no codebase sweep). Uses Phases 4–6 as written.
+Triggered when `$ARGUMENTS` is a path to a `.md` file under `docs/eng-specs/` (any ticket prefix). Skips Phase 2 (no plan presentation), replaces Phase 3 (no codebase sweep). Uses Phases 4–6 as written.
 
 | Step | Action                                                                                                                                                                                                     |
 | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

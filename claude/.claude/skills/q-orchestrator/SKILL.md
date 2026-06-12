@@ -1,7 +1,7 @@
 ---
 name: q-orchestrator
 description: Run the full QRSPI pipeline (Questions → leak-check → Research → Design → Structure → Plan) in one orchestrated session. Routes artifact file paths between subagents; preserves Q→R isolation structurally instead of relying on /clear discipline.
-allowed-tools: [Bash, Read, Glob, Task, AskUserQuestion, Edit]
+allowed-tools: [Bash, Read, Glob, Task, AskUserQuestion, Edit, Write]
 ---
 
 # QRSPI Orchestrator

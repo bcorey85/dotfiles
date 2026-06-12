@@ -39,7 +39,17 @@ Analyze the code to refactor, determine whether it's frontend, backend, or fulls
    - What changed structurally
    - Any related concerns or follow-up items
 
-5. **Auto-dispatch peer review**: After summarizing the refactor, tell the user: "Auto-dispatching `/review` to check the refactored code before committing." Then invoke the `/review` skill using the Skill tool (`skill: "review"`). If the user passed `+fast` or `+deep`, pass the same modifier to the peer review invocation (e.g., `skill: "review", args: "+fast"`). This step runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing.
+5. **Auto-dispatch peer review**: After summarizing the refactor, tell the user: "Auto-dispatching `/review` to check the refactored code before committing." Build a handoff block from the coder output (same protocol as `/code`) and pass it as args so the reviewer doesn't re-derive scope from `git diff`:
+
+   ```
+   handoff:
+   files: [<files the coder(s) reported changing>]
+   tests-run: <what the coder(s) ran, or none>
+   flagged: <anything the coder(s) flagged, or none>
+   iter: 1
+   ```
+
+   Then invoke the `/review` skill using the Skill tool (`skill: "review"`, `args: <handoff block>`). If the user passed `+fast` or `+deep`, prepend the same modifier to the args (e.g., `args: "+fast\nhandoff: ..."`). This step runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing.
 
 ## Code to refactor
 

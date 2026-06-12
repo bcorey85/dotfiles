@@ -1,7 +1,19 @@
 ---
 name: pull-design
 description: Pull Figma design context for the current feature — extracts measurements, tokens, and component mapping before implementation
-allowed-tools: [Bash, Read, Edit, Glob, Grep, mcp__jira__getJiraIssue, mcp__figma__get_design_context, mcp__figma__get_variable_defs, mcp__figma__get_metadata, mcp__figma__get_screenshot]
+allowed-tools:
+  [
+    Bash,
+    Read,
+    Edit,
+    Glob,
+    Grep,
+    mcp__jira__getJiraIssue,
+    mcp__figma__get_design_context,
+    mcp__figma__get_variable_defs,
+    mcp__figma__get_metadata,
+    mcp__figma__get_screenshot,
+  ]
 ---
 
 # Pull Design Context
@@ -34,9 +46,9 @@ Pull Figma design context for the current feature. Run before `/eng-spec`, so th
 
 ### Phase 3: Check for Cached Design Tokens
 
-5. **Check for `eng-arch/design-tokens.md`**. If it exists, read it — this is the cached design system from a previous `/cache-design-tokens` run. This changes how Phase 6 works:
+5. **Check for `eng-arch/design-tokens.md`**. If it exists, read it — this is a previously cached design system. This changes how Phase 6 works:
    - **Cache exists**: You already have the full design system (colors, typography, spacing, component inventory). Do NOT re-extract or re-document these. Phase 6 becomes a lightweight diff — only report what's NEW or CHANGED in this frame vs the cache.
-   - **No cache**: Full extraction mode (original behavior). Suggest running `/cache-design-tokens` after this pull to speed up future runs.
+   - **No cache**: Full extraction mode (original behavior).
 
 ### Phase 4: Pull Design Context
 
@@ -59,25 +71,31 @@ Pull Figma design context for the current feature. Run before `/eng-spec`, so th
 **If cached tokens exist** — present a lightweight brief:
 
 **Frame-Specific Measurements**
+
 - Dimensions, layout, and spacing unique to THIS frame (e.g., modal width/height, field grid layout)
 - Only include values that differ from or aren't covered by the cached tokens
 
 **New Elements** (not in cache)
+
 - NEW components, colors, or patterns that appear in this frame but aren't in `design-tokens.md`
 - Flag these clearly: "NEW — not in cached tokens"
 
 **Token Conflicts** (if any)
+
 - Values in this frame that DIFFER from the cached tokens (e.g., a color used differently)
 
 **Visual Decisions**
+
 - Interactive states shown in Figma (hover, active, disabled, focus)
 - UI states (empty, loading, error) if present as separate frames
 - Any visual detail NOT covered by the Jira ticket AC — flag these: "Figma shows [X], ticket is silent — implementing as shown unless you say otherwise"
 
 **Data Model Gaps**
+
 - Figma elements that reference data NOT in the current data model (from cache or freshly detected)
 
 **Gaps & Conflicts** (only if eng plan exists)
+
 - Discrepancies between Figma and the eng plan
 - Recommend precedence: ticket AC > Figma for behavior; Figma > ticket for visual measurements
 - Figma elements the eng plan intentionally omits (with rationale if noted in the plan)
@@ -105,32 +123,36 @@ Pull Figma design context for the current feature. Run before `/eng-spec`, so th
 **If NO cached tokens** — present the full brief:
 
 **Measurements**
+
 - Frame dimensions, column widths, gap values, padding, border radius
 - Exact values from the design
 
 **Design Tokens**
+
 - Colors: map Figma variable names to the project's existing token system. Flag any colors in the design that don't have a matching project token.
 - Typography: font family, sizes, weights, line heights
 - Spacing: padding, gap, margin values
 
 **Component Inventory**
+
 - List Figma components visible in this frame
 - For each, note whether a matching code component already exists (check the codebase) or is NEW
 - Flag Figma elements that reference data the current data model doesn't have (e.g., "Figma shows assignee avatar — not in our data model")
 
 **Visual Decisions**
+
 - Interactive states shown in Figma (hover, active, disabled, focus)
 - UI states (empty, loading, error) if present as separate frames
 - Any visual detail NOT covered by the Jira ticket AC — flag these: "Figma shows [X], ticket is silent — implementing as shown unless you say otherwise"
 
 **Gaps & Conflicts** (only if eng plan exists)
+
 - Discrepancies between Figma and the eng plan
 - Recommend precedence: ticket AC > Figma for behavior; Figma > ticket for visual measurements
 - Figma elements the eng plan intentionally omits (with rationale if noted in the plan)
 
 **Next Step**
 "Design context loaded. Ready for `/code` with these measurements as reference."
-Suggest: "Run `/cache-design-tokens` to cache the design system for faster future pulls."
 
 ## Modifiers
 

@@ -1,7 +1,7 @@
 ---
 name: q-design
-description: Interactive design discussion — align on what we're building before plan (QRSPI step 3 of 5)
-allowed-tools: [Bash, Read, Glob, Grep, Write, AskUserQuestion]
+description: Interactive design discussion — align on what we're building before plan (QRSPI step 3 of 6)
+allowed-tools: [Bash, Read, Glob, Grep, Write, Edit, AskUserQuestion]
 ---
 
 # Design Discussion

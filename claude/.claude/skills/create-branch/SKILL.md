@@ -18,6 +18,7 @@ Create a feature branch, push it, and open a draft PR so the team can track chan
 ```
 
 Examples:
+
 - `/create-branch off Sprint-A-2026` — base off sprint branch, infer ticket from context
 - `/create-branch TAS-20 off Sprint-A-2026` — explicit ticket + sprint branch
 - `/create-branch TAS-20` — base off main (default)
@@ -28,6 +29,7 @@ Examples:
 ### Step 1: Parse Arguments
 
 Parse `$ARGUMENTS` to extract:
+
 - **Base branch**: everything after `off `. If no `off` keyword, default to `main`.
 - **Ticket key or branch name**: everything before `off ` (or the entire argument if no `off`). Could be a Jira key like `TAS-20`, a descriptive name, or empty.
 
@@ -44,6 +46,7 @@ git checkout <base-branch> && git pull && git checkout -b <branch-name>
 ```
 
 If the base branch doesn't exist locally, try fetching it first:
+
 ```bash
 git fetch origin <base-branch> && git checkout <base-branch> && git pull && git checkout -b <branch-name>
 ```
@@ -59,6 +62,7 @@ git commit --allow-empty -m "<commit-message>"
 ```
 
 Use the branch name as the commit message, following git conventions:
+
 - If a Jira ticket key was resolved: `<TICKET-KEY>: <slugified-summary>` (e.g., `TAS-13: board-rendering`)
 - Otherwise: the branch name itself
 
@@ -71,11 +75,12 @@ skill: "pr"
 args: "+draft --base <base-branch>"
 ```
 
-This delegates all PR creation logic (title convention, body format) and ensures the base branch is stored on the PR for downstream skills (`/pr`, `/verify-changes`) to read later.
+This delegates all PR creation logic (title convention, body format) and ensures the base branch is stored on the PR for downstream skills to read later.
 
 ### Step 6: Summary
 
 Report to the user:
+
 - Branch created: `<branch-name>` off `<base-branch>`
 - Draft PR URL (from `/pr` output)
 - If a Jira ticket was used: remind them to `/pull-ticket` for full context before coding

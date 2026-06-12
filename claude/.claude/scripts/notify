@@ -27,7 +27,11 @@ if [[ -n "$TMUX" && -n "$TMUX_PANE" ]]; then
 fi
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
-  osascript -e "display notification \"$message\" with title \"$title\""
+  # Escape backslashes and double quotes so arbitrary text (e.g. tmux window
+  # names) can't break out of the AppleScript string literal
+  esc_message=${message//\\/\\\\}; esc_message=${esc_message//\"/\\\"}
+  esc_title=${title//\\/\\\\}; esc_title=${esc_title//\"/\\\"}
+  osascript -e "display notification \"$esc_message\" with title \"$esc_title\""
 
 elif grep -qi microsoft /proc/version 2>/dev/null; then
   # WSL - use Windows toast via PowerShell WinRT API

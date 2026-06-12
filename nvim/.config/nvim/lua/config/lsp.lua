@@ -130,6 +130,27 @@ vim.lsp.config("vue_ls", {
   filetypes = { "vue" },
 })
 
+-- lspconfig's eslint root_dir only checks for a config file, so a project
+-- with an eslint config but uninstalled deps spawns a server that instantly
+-- fails with "[lspconfig] Unable to find ESLint library". Wrap the base
+-- root_dir with a library check (node_modules walk from the buffer up to the
+-- project root, Yarn PnP, or a global install) and skip startup otherwise.
+local base_eslint_root_dir = vim.lsp.config.eslint.root_dir
+
+local function eslint_lib_available(bufname, root)
+  for dir in vim.fs.parents(bufname) do
+    if vim.uv.fs_stat(dir .. "/node_modules/eslint") then
+      return true
+    end
+    if dir == root then
+      break
+    end
+  end
+  return vim.uv.fs_stat(root .. "/.pnp.cjs") ~= nil
+    or vim.uv.fs_stat(root .. "/.pnp.js") ~= nil
+    or vim.fn.executable("eslint") == 1
+end
+
 vim.lsp.config("eslint", {
   filetypes = {
     "javascript",
@@ -143,6 +164,13 @@ vim.lsp.config("eslint", {
   settings = {
     workingDirectories = { mode = "auto" },
   },
+  root_dir = function(bufnr, on_dir)
+    base_eslint_root_dir(bufnr, function(root)
+      if eslint_lib_available(vim.api.nvim_buf_get_name(bufnr), root) then
+        on_dir(root)
+      end
+    end)
+  end,
 })
 
 vim.lsp.config("lua_ls", {

@@ -1,73 +1,82 @@
 ---
 name: create-ticket
-description: PM command — pull a Notion spec and create Jira ticket(s) from its acceptance criteria
+description: Create a Jira ticket from intent + codebase scoping. Scopes the work against the real repo and writes a TIGHT description. Use when asked to "spec out a ticket", "make a ticket", "create a ticket".
 allowed-tools:
   [
     Bash,
     Read,
     Glob,
     Grep,
-    mcp__notion__notion-search,
-    mcp__notion__notion-fetch,
-    mcp__notion__notion-update-page,
-    mcp__claude_ai_Notion__notion-search,
-    mcp__claude_ai_Notion__notion-fetch,
-    mcp__claude_ai_Notion__notion-update-page,
     mcp__jira__createJiraIssue,
+    mcp__jira__editJiraIssue,
     mcp__jira__getJiraIssue,
+    mcp__jira__getJiraProjectIssueTypesMetadata,
+    mcp__jira__getAccessibleAtlassianResources,
     mcp__jira__searchJiraIssuesUsingJql,
   ]
 ---
 
-# Create Jira Tickets from Notion Spec
+# Create a Jira Ticket
 
-Read a Notion spec and create Jira tickets from its acceptance criteria. This is a PM-side command.
+Turn a request (+ the current repo) into one well-scoped Jira ticket.
 
-## Instructions
+## Brevity contract — NON-NEGOTIABLE
 
-### Step 1: Find the Notion Spec
+The whole point of this skill. A ticket is a pointer to work, not a design doc.
 
-The user may provide:
+- **Hard cap: the description fits on one screen (~150 words / ~15 lines).** If it doesn't, cut — don't scroll.
+- **Bullets, not paragraphs. One line per bullet.** No multi-sentence bullets, no sub-bullets unless truly needed.
+- **Definitions are terse.** Name the thing, point to the file (`path:line`), move on. Do NOT explain what a tool/config does, re-derive rationale, or teach the reader the domain.
+- **Say each thing once.** Don't repeat a point across Why / Scope / Acceptance.
+- **Why = 1–3 bullets max.** If the motivation needs a paragraph, it's a doc, not a ticket.
+- **Default sections: just `## Work` and `## Acceptance`.** Add `## Why` only if non-obvious, `## Out of scope` only to head off scope creep, `## Open Questions` whenever the work is gated on an unanswered question (see below).
+- **Link, don't transcribe.** Reference repo files/PRs instead of pasting their contents or summarizing them at length.
 
-- **A spec name** ("repo standup") — search Notion for it
-- **A Notion page ID or URL** — fetch directly
-- **Nothing** — search the Specs DB for specs in "Ready" status that don't have a Jira Key yet
+If you catch yourself writing prose to sound thorough in the main body: stop, delete it, move it to Technical Notes or cut it.
 
-Use `notion-search` to find the spec, then `notion-fetch` to read the full content.
+### Brevity ≠ deletion — never drop load-bearing specifics
 
-### Step 2: Extract Acceptance Criteria
+The contract kills *padding*, not *content*. Some things are terse AND essential; they stay in the body, never cut, never buried in Technical Notes:
 
-Parse the spec content to find the **Acceptance Criteria** section. Each criterion becomes a Jira ticket.
+- **Open questions / blocking dependencies** → `## Open Questions` in the body. Anything awaiting an answer from a named person or team (e.g. "for Amik: which schema name is correct?"), or an external dependency that gates the work. These are action items, not discovery. Preserve every one; attribute who owns the answer.
+- **Load-bearing examples** → keep in the body (a `## Example` block, or inline). A concrete sample that *pins* the requirement — a representative input/output, a sample payload, a canonical query — is part of the definition, not verbosity. Reproduce it faithfully (code fences intact). Only illustrative-but-skippable examples go to Technical Notes.
+- **Verbatim stakeholder asks** → preserve the exact quote + attribution (who, when, where). Paraphrasing loses the source of truth; park the quote in Technical Notes if it's long, but never reword or drop it.
 
-Present the extracted criteria to the user and confirm before creating tickets.
+Litmus test before cutting a line: *is this padding, or is it a specific the implementer/reviewer can't reconstruct?* Padding goes. Specifics relocate at most — they never disappear.
 
-### Step 3: Create Jira Tickets
+### The verbosity escape valve: `## Technical Notes`
 
-For each acceptance criterion:
+Discovery findings, file-by-file detail, gotchas, rejected approaches, the long "why" — they go in a **`## Technical Notes`** section at the **very bottom**, under a `---` rule that separates it from the problem definition. This is the ONE place verbosity is allowed.
 
-- Create a Jira Task via `createJiraIssue` using the project key and Jira Cloud ID from `docs/mcp-references/JIRA.md`
-- **Summary**: concise version of the criterion
-- **Description**: include the full criterion text + a link back to the Notion spec URL. **Pass description as a plain markdown string** — the Jira MCP tool handles ADF conversion internally. Do NOT pass Atlassian Document Format (ADF) JSON objects.
-- If there are many criteria, ask the user if they want:
-  - One ticket per criterion
-  - Grouped tickets (related criteria merged)
-  - A single parent ticket with subtasks
+- The contract above governs everything **above** the `---`. Technical Notes is below it.
+- Omit the section entirely when there's nothing worth logging — don't pad it.
+- The reader must be able to grasp the ticket from Work + Acceptance alone, ignoring Technical Notes.
 
-### Step 4: Update the Notion Spec
+## Steps
 
-After creating tickets:
+### 1. Resolve the target
 
-- Update the spec's `Jira Key` property with the primary ticket key
-- Update the **Jira Tickets** section in the spec content with links to all created tickets
-- Update spec **Status** from "Draft" to "Ready" (if still Draft)
+From the user's input figure out: project key, issue type, and parent (if any).
 
-### Step 5: Summary
+- **Jira URL/key given** (`https://<site>.atlassian.net/browse/ABC-123` or `ABC-123`) — that's usually the **parent epic** to file under, or context. Fetch it with `getJiraIssue` to confirm what it is before assuming.
+- **Cloud ID:** pass the site hostname (e.g. `<site>.atlassian.net`) straight to the jira tools as `cloudId`. Only if that fails, call `getAccessibleAtlassianResources`.
+- **Issue type:** default **Task**. Use `getJiraProjectIssueTypesMetadata` if unsure which types exist. File under an epic via the `parent` field.
+- If you'd be **overwriting** an existing ticket's description, stop and confirm — don't clobber.
 
-Present:
+### 2. Scope against the repo
 
-- Link to the Notion spec
-- List of Jira tickets created (keys + summaries)
-- Suggested next step: "Dev can now `git checkout -b JIRAPROJECT-TICKETNUMBER-description` and run `/pull-ticket`"
+Briefly explore the actual codebase (Glob/Grep/Read) so the ticket names real files, not guesses. This research is for *you* — it informs tight bullets; it does not get dumped into the description.
+
+### 3. Write it (honor the brevity contract)
+
+- **Summary:** imperative, specific, no ticket-key prefix (Jira adds it).
+- **Description:** plain markdown string (the MCP converts to ADF — never pass ADF JSON). Tight body — `## Work` + `## Acceptance` (+ `## Why` / `## Out of scope` if earned). Then, only if there's discovery worth keeping, a `---` followed by `## Technical Notes` where verbosity is allowed.
+- Surface genuine forks/risks as a single line in the body; the supporting detail goes in Technical Notes.
+
+### 4. Create + report
+
+- `createJiraIssue` (set `parent` for epic children).
+- Report the new key + URL and a one-line summary of what you filed. Don't paste the whole description back.
 
 ## Arguments
 

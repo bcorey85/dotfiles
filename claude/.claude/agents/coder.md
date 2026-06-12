@@ -44,3 +44,4 @@ Do NOT guess on these — flag them and ask:
 
 - **Second-order effects**: if a fix changes a signature, return type, or behavioral contract, update every caller in the same pass. If you can't find them all, say so.
 - **No-op detection**: if an operation results in no state change, return early without side effects and signal it to the caller.
+- **Review handoff (last line of your report)**: end with `REVIEW: recommended — <changed files>` for any non-trivial change, or `REVIEW: skip (trivial)` for a typo / single-line / rename / comment-only edit. This is the orchestrator's cue to run `/review` before `/commit` — a direct `Agent` dispatch does not auto-review, so make the cue impossible to miss.

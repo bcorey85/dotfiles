@@ -107,3 +107,7 @@ Before reporting your work as complete, verify each of these. These are the most
 **Transaction safety**:
 
 - All reads and writes for a multi-step operation must use the same transactional context. Do not read inside a transaction and then write outside it (or vice versa). Verify the entity state is consistent before the final re-fetch.
+
+**Review handoff (last line of your report)**:
+
+- End with `REVIEW: recommended — <changed files>` for any non-trivial change, or `REVIEW: skip (trivial)` for a typo / single-line / rename / comment-only edit. This is the orchestrator's cue to run `/review` before `/commit` — a direct `Agent` dispatch does not auto-review, so make the cue impossible to miss.

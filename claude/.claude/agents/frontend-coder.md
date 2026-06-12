@@ -128,3 +128,7 @@ Before reporting your work as complete, verify each of these. These are common f
 
 - Response shapes match what the backend actually returns (read the controller or API docs, don't assume from the spec alone)
 - Field name casing matches the API (backend may use snake_case while frontend uses camelCase — check if a transform layer exists)
+
+**Review handoff (last line of your report):**
+
+- End with `REVIEW: recommended — <changed files>` for any non-trivial change, or `REVIEW: skip (trivial)` for a typo / single-line / rename / comment-only edit. This is the orchestrator's cue to run `/review` before `/commit` — a direct `Agent` dispatch does not auto-review, so make the cue impossible to miss.

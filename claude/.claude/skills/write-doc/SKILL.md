@@ -79,7 +79,7 @@ If the topic genuinely needs more, **split it**. Two 100-line docs that cross-li
 
 ## Phase 4 — Prose discipline
 
-While drafting:
+While drafting, apply the shared skimmability directive (`~/.claude/skills/_shared/skimmable-writing.md`) plus:
 
 - **Code pointers over prose.** "The DO is named `tenantId--userId` at `iq-chat-agent.ts:42`" beats a paragraph explaining the naming.
 - **Tables over prose for anything enumerable.** Tools, files, modes, fields → table.

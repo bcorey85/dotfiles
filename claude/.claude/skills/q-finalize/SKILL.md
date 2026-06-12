@@ -29,11 +29,11 @@ Folder = in-progress. File = finalized.
 
 ## Resolve the task directory
 
-| `$ARGUMENTS` | Resolution |
-|---|---|
-| Path under `docs/eng-specs/` | Use directly |
-| Ticket pattern (`^[a-zA-Z]+-[0-9]+$`) | Uppercase, glob `docs/eng-specs/{TICKET}-*/` |
-| Empty / other | Infer from branch: `git rev-parse --abbrev-ref HEAD \| grep -oE '^[a-zA-Z]+-[0-9]+' \| tr '[:lower:]' '[:upper:]'`, then glob |
+| `$ARGUMENTS`                          | Resolution                                                                                                                    |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Path under `docs/eng-specs/`          | Use directly                                                                                                                  |
+| Ticket pattern (`^[a-zA-Z]+-[0-9]+$`) | Uppercase, glob `docs/eng-specs/{TICKET}-*/`                                                                                  |
+| Empty / other                         | Infer from branch: `git rev-parse --abbrev-ref HEAD \| grep -oE '^[a-zA-Z]+-[0-9]+' \| tr '[:lower:]' '[:upper:]'`, then glob |
 
 Single match → use. Multiple → ask. None → ask for path. Folder basename is the slug for the output file.
 
@@ -41,20 +41,20 @@ Single match → use. Multiple → ask. None → ask for path. Folder basename i
 
 Read FULLY (no limit/offset):
 
-| File | Used for |
-|---|---|
-| `IQ-XXX-00-ticket.md` | Problem |
+| File                  | Used for                                                    |
+| --------------------- | ----------------------------------------------------------- |
+| `IQ-XXX-00-ticket.md` | Problem                                                     |
 | `IQ-XXX-03-design.md` | Decision, Consequences, Alternatives, Patterns, Constraints |
 
 **Do NOT read** `02-research.md` / `04-structure.md` / `05-plan.md` — design.md distilled them; re-reading adds noise.
 
-Missing `03-design.md` → stop: *"/q-finalize is for completed QRSPI tasks. Run /q-design first, or finalize manually."*
+Missing `03-design.md` → stop: _"/q-finalize is for completed QRSPI tasks. Run /q-design first, or finalize manually."_
 
 ## Detect the PR
 
-| Mode | When | Command |
-|---|---|---|
-| Live | Task ticket == current branch | `gh pr view --json url,number,title 2>/dev/null` |
+| Mode        | When                                          | Command                                                                                                                    |
+| ----------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Live        | Task ticket == current branch                 | `gh pr view --json url,number,title 2>/dev/null`                                                                           |
 | Retroactive | Task ticket ≠ current branch (cleanup branch) | `gh pr list --search "IQ-XXX" --state all --json url,number,title,state,mergedAt` — pick merged PR matching the task title |
 
 Neither finds → `**PR**: (pending)`. Live mode: run `/q-finalize` **after** `/pr` so the link populates and the ADR commit lands on the same PR. Retroactive works either way.
@@ -69,7 +69,7 @@ Neither finds → `**PR**: (pending)`. Live mode: run `/q-finalize` **after** `/
 6. Spot-check offer: `Drafted → <path>. Anything to adjust before I delete the folder?`
 7. Apply edits, re-offer. On approval, continue.
 8. `git rm -r docs/eng-specs/IQ-XXX-name/` — NOT plain `rm`; `git rm` refuses with uncommitted in-flight work.
-9. AskUserQuestion (Yes/No): *"Does this change introduce a new pattern or change a subsystem's contract that future readers need to know about?"*
+9. AskUserQuestion (Yes/No): _"Does this change introduce a new pattern or change a subsystem's contract that future readers need to know about?"_
 10. Print footer for the answer.
 
 ## Decision Record Template
@@ -78,36 +78,29 @@ Target **100–140 lines**. Past that, you're including state-of-code material t
 
 ### Section rubric
 
-| Section | Purpose | Source |
-|---|---|---|
-| Header | Status / Ticket / PR / Date — stacked bullets | metadata |
-| Problem | 1–2 paras, technical only (strip story framing) | `00-ticket.md` |
-| Decision | 1–2 paras, what we built | `03-design.md` Decisions |
-| Consequences | `Easier` + `Watch out for`. Do NOT manufacture downsides | synthesize |
-| Alternatives rejected | Load-bearing. One option not taken + 1–3 sentences why | `03-design.md` Alternatives + Reasoning |
-| Patterns | To follow / To avoid — `path:line` refs, minimal prose | `03-design.md` Patterns |
-| Constraints | Limits of approach, what code intentionally does NOT do | `03-design.md` Constraints |
-| Related | Eng-arch links — only if eng-arch was updated; else omit | post-/eng-arch |
+| Section               | Purpose                                                  | Source                                  |
+| --------------------- | -------------------------------------------------------- | --------------------------------------- |
+| Header                | Status / Ticket / PR / Date — stacked bullets            | metadata                                |
+| Problem               | 1–2 paras, technical only (strip story framing)          | `00-ticket.md`                          |
+| Decision              | 1–2 paras, what we built                                 | `03-design.md` Decisions                |
+| Consequences          | `Easier` + `Watch out for`. Do NOT manufacture downsides | synthesize                              |
+| Alternatives rejected | Load-bearing. One option not taken + 1–3 sentences why   | `03-design.md` Alternatives + Reasoning |
+| Patterns              | To follow / To avoid — `path:line` refs, minimal prose   | `03-design.md` Patterns                 |
+| Constraints           | Limits of approach, what code intentionally does NOT do  | `03-design.md` Constraints              |
+| Related               | Eng-arch links — only if eng-arch was updated; else omit | post-/eng-arch                          |
 
 ### Discipline
 
 - **Status**: `Accepted` default. `Deprecated` when no longer in force. `Superseded by IQ-YYY` (with link) when replaced. **Once Accepted, do NOT silently edit** — write a new finalize that supersedes. Editing destroys the audit chain.
-- **Consequences vs Constraints**: Consequences = what we *accepted* by deciding. Constraints = rules we worked *within*.
+- **Consequences vs Constraints**: Consequences = what we _accepted_ by deciding. Constraints = rules we worked _within_.
 - **No manufactured downsides**: trust `Alternatives rejected` to carry the trade-off load. Thin filler is worse than asymmetry.
 
 ### Write for skimmability
 
-Engineers in problem-solving mode don't read — they scan headings (NN/g layer-cake pattern). Your job: trigger layer-cake, then earn commitment reading with trust signals.
+Read `~/.claude/skills/_shared/skimmable-writing.md` (single source of truth for the skimmability rules) and apply it in full. ADR-specific additions:
 
-- **Headings = answers, not topics.** `Status: Accepted` not `Status field`. `FormData Content-Type footgun` not `Implementation note 3`. A layer-cake scanner must extract value without dropping into the body.
-- **BLUF at every level.** Each section starts with the claim, not the setup. Inverted pyramid all the way down.
-- **Bullets > paragraphs. Tables > bullets** for structured comparisons (options, phases, endpoint maps, before/after).
-- **Code refs over descriptions.** `file:line` beats "the file that handles X". Cite the path; let the reader click.
-- **Bold the load-bearing word** in any multi-line bullet. Triggers spotted-pattern scanning back to the key term.
-- **One idea per bullet.** No em-dash chains. Split.
-- **Cut connective tissue.** "Importantly", "It's worth noting", "Going forward" — delete on sight.
-- **One Diátaxis mode**: ADRs are **explanation** (*why* we decided). Do NOT mix in state-of-code reference — that's eng-arch's job. Cross-link instead.
-- **If a section is one paragraph, it's probably wrong.** Split into bullets or cut.
+- **One Diátaxis mode**: ADRs are **explanation** (_why_ we decided). Do NOT mix in state-of-code reference — that's eng-arch's job. Cross-link instead.
+- **Headings = answers**, ADR flavor: `Status: Accepted` not `Status field`. `FormData Content-Type footgun` not `Implementation note 3`.
 - **Per-section line caps** (hard — if you blow it, you're writing the wrong section): Problem ≤ 8. Decision ≤ 8. Consequences ≤ 10. Alternatives ≤ 12. Patterns ≤ 12. Constraints ≤ 8.
 
 ### Template
@@ -121,35 +114,45 @@ Engineers in problem-solving mode don't read — they scan headings (NN/g layer-
 - **Date**: MM-DD-YYYY
 
 ## Problem
+
 [1–2 paras]
 
 ## Decision
+
 [1–2 paras]
 
 ## Consequences
 
 ### Easier
+
 - [what this enables / makes faster / safer]
 
 ### Watch out for
+
 - [latent risks, ongoing friction, drift, hidden coupling]
 
 ## Alternatives rejected
+
 - **[Option]** — [why not, 1–3 sentences]
 
 ## Patterns
 
 ### To follow
+
 - `path/to/file.ts:42` — [what / why right]
 
 ### To avoid
+
 - `path/to/file.ts:99` — [what / why wrong]
 
 ## Constraints
+
 - [Non-obvious limit]
 
 ## Related
+
 [Omit unless eng-arch updated]
+
 - Eng-arch: `docs/eng-arch/[subsystem].md`
 ```
 

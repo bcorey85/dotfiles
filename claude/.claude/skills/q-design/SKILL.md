@@ -26,17 +26,17 @@ docs/eng-specs/IQ-XXX-short-description/
 
 ## Resolving the Task Directory (auto, not paste)
 
-1. If `$ARGUMENTS` is a path under `docs/eng-specs/`, use it.
-2. Otherwise infer from branch:
+1. Run the shared resolver:
    ```bash
-   git rev-parse --abbrev-ref HEAD | grep -oE '^[a-zA-Z]+-[0-9]+' | tr '[:lower:]' '[:upper:]'
+   bash ~/.claude/scripts/qrspi-resolve-dir.sh "$ARGUMENTS"
    ```
-   then glob `docs/eng-specs/IQ-XXX-*/`. Single match → use it. Multiple → ask. None → ask for path.
-3. Read `IQ-XXX-00-ticket.md` and `IQ-XXX-02-research.md` directly. Do NOT ask the user to paste.
+   Exit 0 → use the printed directory. Exit 3 → multiple matches printed; ask the user which. Exit 4 → ask for the path.
+2. Read `IQ-XXX-00-ticket.md` and `IQ-XXX-02-research.md` directly. Do NOT ask the user to paste.
 
 ## Inputs
 
 You need two things:
+
 1. The ticket — prefer the snapshot at `IQ-XXX-00-ticket.md` if it exists in the task directory; otherwise accept a path or description from the user.
 2. The research document (`IQ-XXX-02-research.md` in the task directory).
 
@@ -104,33 +104,41 @@ Only write this AFTER all questions are resolved:
 **Status**: draft
 
 ## Current State
+
 [What exists today — from research, with file_path:line_number refs]
 
 ## Desired End State
+
 [What the system looks like after implementation]
 [How to verify we're done]
 
 ## Patterns to Follow
+
 - [Pattern with file_path:line_number reference and brief description]
 
 ## Patterns to AVOID
+
 - [Anti-pattern with explanation of why to avoid]
 
 ## Design Decisions
 
 ### 1. [Topic]
+
 **Choice**: [what was decided]
 **Reasoning**: [why, referencing user's input]
 **Alternatives rejected**: [what was considered and why not]
 
 ### 2. [Topic]
+
 ...
 
 ## Constraints
+
 - [Technical constraint from research]
 - [Business constraint from ticket]
 
 ## Open Risks
+
 - [Risk that implementation might surface]
 ```
 

@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# ledger-merge — merge new audit findings into the /audit-code findings ledger
+#
+# usage: ledger-merge <ledger.json> <new-findings.jsonl> [--scope <s>] [--files-analyzed <n>]
+#
+# - dedup key (hash): lowercase(trimmed(file) + ":" + line + ":" + first 60 chars of description)
+# - new findings are appended with status=open and foundDate=today
+# - open findings whose file no longer exists on disk are marked status=stale
+# - writes the merged ledger in place; prints a summary to stdout
+set -euo pipefail
+
+ledger="${1:?usage: ledger-merge <ledger.json> <new-findings.jsonl> [--scope s] [--files-analyzed n]}"
+new="${2:?missing new-findings.jsonl}"
+shift 2
+
+scope=""
+files_analyzed=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --scope) scope="$2"; shift 2 ;;
+    --files-analyzed) files_analyzed="$2"; shift 2 ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
+today=$(date -u +%F)
+
+if [ ! -f "$ledger" ]; then
+  mkdir -p "$(dirname "$ledger")"
+  printf '{"lastAuditDate":"%s","scope":"","filesAnalyzed":0,"findings":[]}\n' "$today" > "$ledger"
+fi
+
+# Slurp JSONL into a JSON array; tolerate non-object lines (prose between findings).
+incoming=$(jq -cs '[.[] | select(type == "object" and has("file"))]' "$new" 2>/dev/null || echo '[]')
+
+tmp=$(mktemp)
+jq --argjson incoming "$incoming" --arg today "$today" --arg scope "$scope" --arg fa "$files_analyzed" '
+  def fhash:
+    (((.file // "") | gsub("^\\s+|\\s+$"; "")) + ":"
+     + ((.line // 0) | tostring) + ":"
+     + (((.description // "") | gsub("^\\s+|\\s+$"; ""))[0:60]))
+    | ascii_downcase;
+  . as $ledger
+  | ($incoming | map(. + {hash: fhash}) | unique_by(.hash)) as $tagged
+  | ($ledger.findings | map(.hash)) as $known
+  | ($tagged | map(select(.hash as $h | ($known | index($h)) | not))
+     | map(. + {status: "open", foundDate: $today})) as $fresh
+  | $ledger
+  | .findings += $fresh
+  | .lastAuditDate = $today
+  | (if $scope != "" then .scope = $scope else . end)
+  | (if $fa != "" then .filesAnalyzed = ($fa | tonumber) else . end)
+' "$ledger" > "$tmp"
+
+# Mark open findings whose file no longer exists as stale.
+missing=$(jq -r '[.findings[] | select(.status == "open") | .file] | unique | .[]' "$tmp" \
+  | while IFS= read -r f; do [ -f "$f" ] || printf '%s\n' "$f"; done \
+  | jq -R . | jq -cs .)
+
+tmp2=$(mktemp)
+jq --argjson missing "${missing:-[]}" '
+  .findings |= map(
+    if .status == "open" and (.file as $f | ($missing | index($f))) then .status = "stale" else . end
+  )
+' "$tmp" > "$tmp2"
+mv "$tmp2" "$ledger"
+rm -f "$tmp"
+
+incoming_count=$(jq -r 'length' <<< "$incoming")
+new_count=$(jq -r --arg today "$today" '[.findings[] | select(.foundDate == $today)] | length' "$ledger")
+jq -r --arg today "$today" --arg incoming "$incoming_count" '
+  [.findings[] | .status] as $s
+  | "incoming: \($incoming)  " +
+    "new-this-run: \([.findings[] | select(.foundDate == $today)] | length)  " +
+    "open: \([$s[] | select(. == "open")] | length)  " +
+    "fixed: \([$s[] | select(. == "fixed")] | length)  " +
+    "wontfix: \([$s[] | select(. == "wontfix")] | length)  " +
+    "stale: \([$s[] | select(. == "stale")] | length)"
+' "$ledger"

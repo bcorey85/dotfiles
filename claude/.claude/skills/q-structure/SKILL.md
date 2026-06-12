@@ -22,17 +22,17 @@ docs/eng-specs/IQ-XXX-short-description/
 
 ## Resolving the Task Directory (auto, not paste)
 
-1. If `$ARGUMENTS` is a path under `docs/eng-specs/`, use it.
-2. Otherwise infer from branch:
+1. Run the shared resolver:
    ```bash
-   git rev-parse --abbrev-ref HEAD | grep -oE '^[a-zA-Z]+-[0-9]+' | tr '[:lower:]' '[:upper:]'
+   bash ~/.claude/scripts/qrspi-resolve-dir.sh "$ARGUMENTS"
    ```
-   then glob `docs/eng-specs/IQ-XXX-*/`. Single match → use it. Multiple → ask. None → ask for path.
-3. Read `IQ-XXX-00-ticket.md`, `IQ-XXX-02-research.md`, and `IQ-XXX-03-design.md` directly. Do NOT ask the user to paste.
+   Exit 0 → use the printed directory. Exit 3 → multiple matches printed; ask the user which. Exit 4 → ask for the path.
+2. Read `IQ-XXX-00-ticket.md`, `IQ-XXX-02-research.md`, and `IQ-XXX-03-design.md` directly. Do NOT ask the user to paste.
 
 ## Inputs
 
 You need:
+
 1. The ticket — prefer the snapshot at `IQ-XXX-00-ticket.md` if it exists in the task directory; otherwise accept a path or description from the user.
 2. The research document (`IQ-XXX-02-research.md` in the task directory).
 3. The design document (`IQ-XXX-03-design.md` in the task directory).
@@ -60,6 +60,7 @@ Substitute the real path.
 ## Vertical vs Horizontal Plans
 
 WRONG (horizontal):
+
 - Phase 1: all database changes
 - Phase 2: all service layer changes
 - Phase 3: all API changes
@@ -67,6 +68,7 @@ WRONG (horizontal):
 - Result: 1200 lines of code before anything is testable
 
 RIGHT (vertical):
+
 - Phase 1: feature A end-to-end (DB + service + API + UI for one slice)
 - Phase 2: feature B end-to-end
 - Phase 3: edge cases + polish
@@ -104,9 +106,10 @@ Wait for approval. Iterate if needed.
 
 **Scope**: [which vertical slice]
 **Key changes**:
+
 - `[file/component]`: [what changes — new types, signatures, or brief description]
 - `[file/component]`: [what changes]
-**Verification**: [how to confirm this phase works]
+  **Verification**: [how to confirm this phase works]
 
 ---
 
@@ -114,8 +117,9 @@ Wait for approval. Iterate if needed.
 
 **Scope**: [which vertical slice]
 **Key changes**:
+
 - `[file/component]`: [what changes]
-**Verification**: [how to confirm this phase works]
+  **Verification**: [how to confirm this phase works]
 
 ---
 
@@ -123,9 +127,10 @@ Wait for approval. Iterate if needed.
 
 **Scope**: edge cases, error handling, cleanup
 **Key changes**:
+
 - [tests to add]
 - [error handling to add]
-**Verification**: project's verification command (e.g., `npm run validate`) passes, plus manual verification of [scenarios]
+  **Verification**: project's verification command (e.g., `npm run validate`) passes, plus manual verification of [scenarios]
 ```
 
 ## When to Add Detail

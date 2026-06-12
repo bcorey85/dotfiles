@@ -23,27 +23,20 @@ Sweep a docs tree, find rot, report it. Read-only — the user fixes the finding
 
 ## Phase 2 — Run checks in parallel
 
-Five independent checks. Run as parallel Bash/Grep calls.
+Five independent checks. Checks 1–2 are mechanical and run via the bundled script; checks 3–5 are judgment checks.
 
-### Check 1 — Broken `file:line` pointers
+### Checks 1 & 2 — run the bundled script
 
-Every doc in `docs/eng-arch/` and `docs/coordination/` (or equivalent behavioral docs) tends to anchor on `path/to/file.ts:NN` or `path/to/file.ts` references. For each:
+```bash
+bash "${CLAUDE_SKILL_DIR}/doc-pointer-check" <dir>...
+```
 
-1. Extract all matches of `\`[^`]+\.[a-z]+:\d+\``and bare`[a-z][a-z0-9_/-]+\.(ts|js|py|md|sql|yaml|yml|tsx)` strings.
-2. For each, check the file exists. If a line number is given, check the file has that many lines.
-3. **Report**: file does not exist OR line out of range OR file exists but is much smaller than the cited line (within ±10 lines is fine — drift, not broken).
+Emits TSV findings (`check<TAB>doc:line<TAB>detail`):
 
-### Check 2 — Stale temporal phrases
+- **pointer** (Check 1) — backticked or bare `path[.ext][:NN]` references whose file doesn't resolve (checked against the doc's git repo root, then the doc's own directory), or whose cited line is more than 10 past EOF (±10 is drift, not broken — the script already applies that tolerance).
+- **temporal** (Check 2) — time-relative phrases that age silently ("currently", "recently", "this quarter", ...) and hardcoded `YYYY-MM-DD` dates older than 30 days.
 
-Pattern-match for time-relative claims that age silently:
-
-- `\b(today|currently|right now|at the moment|as of (today|now))\b`
-- `\b(this (week|month|quarter|year))\b`
-- `\b(last|next) (week|month|quarter)\b`
-- `\b(recently|lately|just (added|shipped|landed))\b`
-- Hardcoded dates: `\d{4}-\d{2}-\d{2}` — flag any older than **30 days** from `currentDate`.
-
-**Report**: file:line, the matched phrase, the age (if a date is nearby in the same paragraph). One pass per file.
+Trust the script's output — do NOT re-grep the same patterns by hand. Filter obvious heuristic false positives (example paths, template placeholders) while assembling the report, not by re-running.
 
 ### Check 3 — Duplicate facts
 
@@ -62,7 +55,7 @@ Process:
 
 For doc files in behavioral genres (`eng-arch/`, `architecture/`, `behavior/`):
 
-1. Pull cited code pointers (Check 1's matches that resolved).
+1. Pull cited code pointers (the ones the script did NOT flag — those resolved).
 2. Scan the cited file ±10 lines for symbols mentioned in the doc paragraph.
 3. **Report**: doc says `MAX_TOOL_ROUNDS = 3` but the cited line now reads `MAX_TOOL_ROUNDS = 5`. This is a heuristic — false positives are expected. Tag findings as **likely** vs **certain**.
 

@@ -45,18 +45,9 @@ Triggered when `$ARGUMENTS` matches `docs/eng-specs/IQ-*.md`. Skips Phase 2 (no 
 - Target deep-dive path
 - Existing deep-dive content (if updating)
 - **Content instructions**: Use the ADR as source of truth for the decision. Verify cited file paths against the codebase on the current branch (ADR may be stale). Produce durable architecture — current-state, patterns, interfaces, limitations. Do NOT recap migration story, alternatives, or implementation phases — those belong in the ADR. Return content as text; do not write files.
-- **Format directive — must pass to the architect verbatim:**
+- **Format directive**: Read `~/.claude/skills/_shared/skimmable-writing.md` (single source of truth for the skimmability rules) and pass its contents to the architect verbatim, plus this deep-dive addendum:
 
-  > Engineers in problem-solving mode scan headings (NN/g layer-cake pattern), they don't read. Write to be skimmed.
-  >
-  > - **Headings = answers, not topics.** `Token interceptor` not `Implementation details`. `401 handling` not `Error section`.
-  > - **BLUF at every level.** Start each section with the claim, not the setup.
-  > - **Bullets > paragraphs. Tables > bullets** for comparisons (endpoints, phases, options, before/after).
-  > - **`file:line` refs**, never "the file that handles X".
-  > - **Bold the load-bearing word** in any multi-line bullet.
-  > - **Cut connective tissue** ("Importantly", "It's worth noting", "Going forward").
-  > - **One Diátaxis mode**: deep-dives are **reference** (_how_ the subsystem currently works). Do NOT recap migration, alternatives, or decision rationale — those live in the ADR. Cross-link.
-  > - **If a section is one paragraph, it's probably wrong.** Split or cut.
+  > **One Diátaxis mode**: deep-dives are **reference** (_how_ the subsystem currently works). Do NOT recap migration, alternatives, or decision rationale — those live in the ADR. Cross-link.
 
 ## Instructions
 

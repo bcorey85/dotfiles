@@ -62,15 +62,7 @@ Read CLAUDE.md for project-specific commands (runtime, test runner, dev server, 
 
 ## Quality Check Cap (HARD RULE)
 
-**You may run any single quality-check command (validate, lint, typecheck, tests, build, format) at MOST TWICE per task. No exceptions.**
-
-- Exit code 0 → done with that check. Move on.
-- Non-zero → redirect output to `/tmp/check.log`, read the full log, fix **every reported failure in a single batch**, then re-run **once**.
-- Do NOT re-run the same command to inspect different parts of the output. Grep `/tmp/check.log` instead.
-- Do NOT vary the command (`| tail -5`, `| grep …`, `2>&1`) to dodge the cap — those count as the same command.
-- If the second run still fails: **STOP**. Report what's failing and ask for direction. Never enter a fix-rerun-fix-rerun loop.
-
-This is the single largest source of runaway tool use. Treat it as non-negotiable.
+The 2-run cap on quality-check commands is defined in `~/.claude/CLAUDE.md` ("Quality Checks") and applies here verbatim: at most two runs per command per task, fix every failure in a single batch from `/tmp/check.log`, and STOP if the second run still fails. One coder-specific addition: do NOT vary the command (`| tail -5`, `| grep …`, `2>&1`) to dodge the cap — variants count as the same command.
 
 ## When to Stop and Ask
 
@@ -93,7 +85,7 @@ Do NOT guess on these — flag them and ask:
 
 ## Pre-Submission Checklist
 
-Before reporting your work as complete, verify each of these. These are the most common issues caught in review — catching them here saves an entire review cycle.
+Before reporting your work as complete, verify each of these. These are the most common issues caught in review — catching them here saves an entire review cycle. They were distilled from Express/Nest-style REST projects — skip any item that doesn't apply to the project's actual stack (e.g., route ordering in convention-routed frameworks).
 
 **Route ordering**:
 

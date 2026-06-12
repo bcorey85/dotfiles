@@ -10,12 +10,12 @@ Analyze the code to refactor, determine whether it's frontend, backend, or fulls
 
 ## Modifiers
 
-- `+fast` — Use Haiku model for coder subagents. Use for simple renames, extract-variable, or mechanical refactors.
-- `+deep` — Use Opus model for coder subagents. Use for complex refactors involving multiple interacting systems, subtle architectural changes, or tricky migration of patterns.
+- `+fast` — Pass `model: "haiku"` to coder dispatches. Use for simple renames, extract-variable, or mechanical refactors.
+- `+deep` — Dispatch the `-deep` coder variants (`backend-coder-deep` / `frontend-coder-deep`, Opus via frontmatter pin) and omit `model`. Use for complex refactors involving multiple interacting systems, subtle architectural changes, or tricky migration of patterns. Call-site `model: "opus"` is blocked by the agent-model-guard hook.
 
 ## Instructions
 
-1. **Check for modifiers**: If `+deep` is present, pass `model: "opus"` to all Task tool calls below. If `+fast` is present, pass `model: "haiku"`. Strip modifiers from the prompt passed to coders.
+1. **Check for modifiers**: If `+deep` is present, swap each coder for its `-deep` variant and omit `model`. If `+fast` is present, pass `model: "haiku"`. Strip modifiers from the prompt passed to coders.
 
 2. **Analyze the refactoring target** described below:
    - Read the referenced files to understand the current code
@@ -27,6 +27,7 @@ Analyze the code to refactor, determine whether it's frontend, backend, or fulls
    **Frontend only** → Launch a single `frontend-coder` subagent
    **Backend only** → Launch a single `backend-coder` subagent
    **Both** → Launch both in parallel using a single message with multiple Task tool calls
+   **Neither** (non-web repo) → Launch a single `coder` subagent
 
    For each coder:
    - Pass the refactoring description and any relevant context you gathered

@@ -95,5 +95,5 @@ vim.opt.fillchars:append({ diff = " " })
 
 vim.opt.showtabline = 0
 
--- hide default dashboard
-vim.cmd("set shortmess+=I")
+-- -- hide default dashboard
+-- vim.cmd("set shortmess+=I")

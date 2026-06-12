@@ -11,12 +11,12 @@ Review recent changes in this codebase using the code-reviewer subagent.
 ## Modifiers
 
 - `+fast` — Use Haiku model for code-reviewer subagent(s). Use for quick sanity checks on small changes.
-- `+deep` — Use Opus model for code-reviewer subagent(s). Use for security-sensitive changes, complex logic, or architectural modifications.
+- `+deep` — Dispatch `code-reviewer-deep` instead of `code-reviewer` (Opus via its frontmatter pin; call-site `model: "opus"` is blocked by the agent-model-guard hook). Use for security-sensitive changes, complex logic, or architectural modifications.
 
 ## Instructions
 
 1. **Parse args**:
-   - **Modifiers**: If `+deep` is present, pass `model: "opus"` to all Task tool calls below. If `+fast` is present, pass `model: "haiku"`.
+   - **Modifiers**: If `+deep` is present, dispatch `code-reviewer-deep` instead of `code-reviewer` and omit `model` (its frontmatter pins Opus). If `+fast` is present, pass `model: "haiku"`.
    - **Iteration counter**: Look for `iter=N` in args (default `iter=1`). Tracks how many times the review-fix loop has run. **If `iter >= 3`, STOP immediately** and alert the user: "Review-fix loop has run 3 iterations without converging. Stopping to avoid churn. Outstanding issues: [list]. Decide manually how to proceed." Do NOT auto-dispatch `/fix`.
    - **One-shot mode**: If `iter=oneshot` is present, this is the post-convergence verification pass after a MEDIUM triage `/fix`. Run the review as normal, report results to the user, but **do NOT auto-dispatch anything** — skip step 5's branching entirely. Report findings as a final summary, then stop. (Rationale: MEDIUM triage already happened in the prior turn; re-triaging would loop indefinitely.)
    - **Handoff block**: Look for a `handoff:` block in args (produced by `/code` or `/fix`). If present, use it as the review scope per the "Handoff Block" section below.
@@ -53,16 +53,8 @@ Review recent changes in this codebase using the code-reviewer subagent.
    - The exact file list it owns (from handoff or git discovery — never let the subagent rediscover scope)
    - If `handoff.prior-issues` exists, the subset relevant to its files
    - If `handoff.flagged` exists, the subset relevant to its files
-   - The standard review checklist below
 
-   Each reviewer should check for:
-   - Bugs or logic errors
-   - Security issues
-   - Performance problems
-   - Code style violations
-   - Missing error handling
-   - Anti-patterns
-   - Architectural violations
+   Do NOT include a category checklist (e.g. "check for style violations, missing error handling, anti-patterns") in the dispatch prompt. The code-reviewer agent file defines its own calibration — what to flag and what to suppress — and a flat category list in the task prompt reads as a quota, re-opening the noise channels that calibration closes. Pass only scope and context the agent cannot discover itself.
 
    If a file path is provided via $ARGUMENTS (and no handoff block), focus the review on that file only.
 

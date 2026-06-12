@@ -30,11 +30,11 @@ Any remaining text after the modifier is passed as a focus area (e.g., `/test-re
 3. **Dispatch test-reviewer agent(s)** based on scope:
 
    **Frontend only:**
-   - Launch `test-reviewer` (`model: "opus"`) with scope `frontend`
+   - Launch `test-reviewer` (omit `model` — its frontmatter pins Opus; call-site `model: "opus"` is hook-blocked) with scope `frontend`
    - Include focus area if provided
 
    **Backend only:**
-   - Launch `test-reviewer` (`model: "opus"`) with scope `backend`
+   - Launch `test-reviewer` (omit `model` — its frontmatter pins Opus; call-site `model: "opus"` is hook-blocked) with scope `backend`
    - Include focus area if provided
 
    **Fullstack:**

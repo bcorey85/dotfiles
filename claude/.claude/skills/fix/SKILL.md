@@ -10,13 +10,13 @@ Dispatch parallel frontend-coder and backend-coder subagents to investigate and 
 
 ## Modifiers
 
-- `+fast` — Use Haiku model for coder subagents. Use when review findings are trivial (typos, simple style fixes).
-- `+deep` — Use Opus model for coder subagents. Use for complex review findings that require deeper reasoning to fix correctly.
+- `+fast` — Pass `model: "haiku"` to coder dispatches. Use when review findings are trivial (typos, simple style fixes).
+- `+deep` — Dispatch the `-deep` coder variants (`backend-coder-deep` / `frontend-coder-deep`, Opus via frontmatter pin) and omit `model`. Use for complex review findings that require deeper reasoning to fix correctly. Call-site `model: "opus"` is blocked by the agent-model-guard hook.
 
 ## Instructions
 
 1. **Parse args**:
-   - **Modifiers**: If `+deep` is present, pass `model: "opus"` to all Task tool calls below. If `+fast` is present, pass `model: "haiku"`. Strip modifiers from the prompt.
+   - **Modifiers**: If `+deep` is present, swap each coder for its `-deep` variant and omit `model`. If `+fast` is present, pass `model: "haiku"`. Strip modifiers from the prompt.
    - **Iteration counter**: Look for `iter=N` in args (default `iter=1`). Hold this value — when re-invoking `/review` in step 5, pass `iter=N+1` so the loop is bounded.
    - **One-shot mode**: If `iter=oneshot` is present, this invocation is the post-convergence MEDIUM triage from `/review` — NOT part of the iter-bounded loop. Do not increment. In step 5, pass `iter=oneshot` to `/review` so it performs a single verification pass and stops without re-triaging MEDIUMs.
 
@@ -59,7 +59,7 @@ Dispatch parallel frontend-coder and backend-coder subagents to investigate and 
    - Include enough context from the review for the coder to understand the problem
    - Apply the common instructions above
 
-   If all issues are frontend-only or backend-only, launch only the relevant coder agent.
+   If all issues are frontend-only or backend-only, launch only the relevant coder agent. In non-web repos where the frontend/backend split doesn't apply, dispatch a single `coder` subagent with all issues.
 
 4. **After coders complete**, summarize for the user AND build a handoff block for the verification reviewer.
 

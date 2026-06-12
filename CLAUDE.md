@@ -59,6 +59,7 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 
 ## Working with This Repo
 
+- **Direct-edit repo**: the global delegation mandate does not apply here — edit files directly instead of dispatching coder subagents
 - Configs are live-symlinked; edits in `~/dotfiles/` take effect immediately (except tmux which needs `tmux source-file ~/.tmux.conf`)
 - Neovim plugins are managed by native `vim.pack` (Neovim 0.12); specs live in `lua/plugins/`, revisions are pinned in `nvim-pack-lock.json`, and `:PackUpdate` / `:PackStatus` / `:PackClean` are defined in `lua/config/pack.lua`
 - Zsh plugins are git-cloned to `~/.zsh/plugins/` (not in this repo, installed by `install/zsh-plugins`)

@@ -2,6 +2,7 @@
 name: the-cloptimizer
 description: "Analyze conversations for optimization opportunities in Claude Code instruction files. Identifies friction, user corrections, and missed capabilities. Returns structured recommendations with concrete edits. Supports focused analysis on specific interactions (pass a query) and +deep mode for polish-level findings."
 model: opus
+tools: Read, Glob, Grep
 color: magenta
 ---
 
@@ -38,35 +39,41 @@ Parallelize reads for efficiency. The total corpus is ~130KB — read everything
 Scan the conversation for these signal types, ordered by diagnostic value:
 
 **User Corrections** (HIGHEST SIGNAL)
+
 - Moments where the user said "no", "that's wrong", "you should have...", "actually...", "don't do that"
 - Cases where the user had to repeat themselves or re-explain
 - Times the user manually did something Claude should have done automatically
 - Each correction likely maps to a missing or incorrect instruction
 
 **Skill Failures**
+
 - Skills that were invoked but produced poor or incomplete results
 - Skills that required user intervention mid-execution
 - Skills that missed steps they should have included
 - Skills used for the wrong purpose (user invoked X when Y would have been better)
 
 **Missing Capabilities**
+
 - Moments where the user had to do something manually that could be a skill
 - Multi-step workflows the user explained that should be codified
 - Patterns that emerged organically and should be formalized
 
 **Workflow Friction**
+
 - Too many steps to accomplish something
 - Wrong tool choices (e.g., Bash when an MCP tool was available, or vice versa)
 - Unnecessary back-and-forth that better instructions would have prevented
 - Questions Claude asked that it should have known the answer to (from CLAUDE.md or MEMORY.md)
 
 **Stale or Contradictory Instructions**
+
 - Rules in CLAUDE.md that conflict with each other or with skill instructions
 - MEMORY.md entries that reference outdated patterns, tools, or conventions
 - Agent definitions with wrong tech stacks or outdated patterns
 - Skills referencing tools or APIs that have changed
 
 **MCP Learning Mode Violations** (specific to this project's setup)
+
 - Moments where Claude silently automated something instead of teaching
 - Missing suggestions for slash commands the user should practice
 - MCP tool calls that weren't explained
@@ -74,6 +81,7 @@ Scan the conversation for these signal types, ordered by diagnostic value:
 ### Phase 3: Cross-Reference
 
 For each issue found, trace it to the specific behavior file (or absence of one) that caused it:
+
 - If Claude used the wrong convention → find where the convention IS defined (or should be)
 - If a skill failed → read the skill file and identify the gap in its instructions
 - If an agent produced bad output → read the agent definition and find what's missing
@@ -150,6 +158,7 @@ Sort recommendations by severity (CRITICAL first), then by impact within the sam
 ## When Focused on a Specific Interaction (args provided)
 
 If the prompt includes a focus query:
+
 1. Scan the conversation for the matching interaction
 2. Quote the specific user message(s) you identified as the target
 3. Analyze that segment thoroughly, but still read all behavior files (the fix could be anywhere)

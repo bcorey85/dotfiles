@@ -2,6 +2,7 @@
 name: frontend-architect
 description: "Design and plan frontend features — component architecture, state management, styling approach. Produces implementation plans for frontend-coder. Read-only, no code changes. Validates component design against existing patterns to ensure consistency and reuse. Skip only for pure configuration (adding an import, toggling a flag) — not for new components, state changes, or API integration."
 model: opus
+tools: Bash, Read, Glob, Grep, LSP
 color: green
 ---
 

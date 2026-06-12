@@ -2,6 +2,7 @@
 name: test-reviewer
 description: "Analyze test suites against source code to identify coverage gaps, weak assertions, stale tests, and quality issues. Accepts a target scope (backend, frontend, or specific module) as arguments. Use when reviewing test quality, checking coverage before shipping, or evaluating test suite health."
 model: opus
+tools: Bash, Read, Glob, Grep
 color: yellow
 ---
 

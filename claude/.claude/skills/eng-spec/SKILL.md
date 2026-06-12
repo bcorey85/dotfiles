@@ -1,6 +1,6 @@
 ---
 name: eng-spec
-description: Spec a feature — auto-detects scope (fe/be/fullstack), runs architect(s), asks questions. Optionally writes spec to disk and/or dispatches coders.
+description: Spec a feature — architect exploration first, then design decisions resolved with you one at a time, then a finalized plan. Auto-detects scope (fe/be/fullstack). Optionally writes spec to disk and/or dispatches coders.
 allowed-tools: [Bash, Read, Glob, Grep, Task, AskUserQuestion, Skill]
 ---
 
@@ -30,7 +30,7 @@ Auto-detects scope and launches the appropriate architect(s). After planning, as
 
 5. **Determine scope** (frontend, backend, or fullstack) based on the task description, conversation context, and codebase structure.
 
-5a. **Assess whether architect agents are needed.** Default is YES — run the architects. Only skip Phase 3 if ALL of these are true:
+5a. **Assess whether architect agents are needed.** Default is YES — run the architects. Only skip Phases 3–5 if ALL of these are true:
 
 - The task is pure configuration with zero implementation choices (e.g., installing a package, adding an env var, enabling a flag)
 - No new files are being created
@@ -44,7 +44,7 @@ If skipping:
 
 - Write the plan directly based on existing codebase patterns
 - Ask the user: "This is pure configuration — skip the architect and go lean?" **Wait for explicit confirmation.**
-- **Still dispatch coder subagent(s) in Phase 5 if the user chooses "Implement now."** "Go lean" means skipping the architect, NOT skipping the coder. The coder dispatch is what triggers the auto-review chain — implementing inline breaks that chain.
+- **Still dispatch coder subagent(s) in Phase 6 if the user chooses "Implement now."** "Go lean" means skipping the architect, NOT skipping the coder. The coder dispatch is what triggers the auto-review chain — implementing inline breaks that chain.
 
 If uncertain, run the architect. A 2-minute architect pass that confirms "the approach is sound" is cheap insurance. A skipped architect that misses a coupling risk costs an entire review-fix cycle.
 
@@ -54,41 +54,42 @@ If uncertain, run the architect. A 2-minute architect pass that confirms "the ap
 
 8. **Present scope to user**: "This is [frontend/backend/fullstack]. I'll spin up [which architects]. Sound right?"
 
-### Phase 3: Architect Analysis
+### Phase 3: Architect Exploration (Stage 1 — no design yet)
 
 9. **Read existing codebase context** for the affected areas — key files, existing patterns, relevant `eng-arch/` docs. Include this as context when launching architect agents.
 
-10. **Launch architect agents** based on scope. Use the Task tool:
+10. **Launch architect agent(s)** based on scope (both in parallel for fullstack — exploration has no contract dependency). Omit `model` — their frontmatter pins Opus. The dispatch asks for an EXPLORATION brief, not a plan. Include this instruction verbatim:
 
-**Backend only:**
+    > Explore only — do NOT produce an implementation plan yet. Return an **exploration brief**:
+    >
+    > 1. **Current state** — what exists today, with `file:line` refs
+    > 2. **Patterns** — to follow and to avoid, with refs
+    > 3. **Constraints** — technical and convention constraints you found
+    > 4. **Decision points** — every place where two or more viable approaches exist: each with options, pros/cons, and your recommendation
+    > 5. **Open questions** — ambiguities in the requirements only the user can resolve
+    >
+    > Exception: if the task genuinely has NO design decisions (exactly one reasonable approach), say so explicitly and return the full plan in your Output Format instead.
 
-- Launch `backend-architect` with the task context. Instruct it to explore the codebase, evaluate tradeoffs, and produce specific design decisions.
+11. If every architect returned a full plan (zero decision points and zero open questions), skip Phases 4–5 and go to Phase 6.
 
-**Frontend only:**
+### Phase 4: Interactive Design Resolution (the point of this skill — never batch it)
 
-- Launch `frontend-architect` with the task context. Same: explore, evaluate, decide.
+12. **Present understanding FIRST**, before any decisions: current state, the patterns found (ask the user to confirm they're the RIGHT ones to follow), and constraints. The user needs the chance to catch a wrong pattern before it propagates into every downstream decision.
 
-**Fullstack:**
+13. **Resolve decision points ONE AT A TIME** — never as a single batched list. For each: present the options with pros/cons and the architect's recommendation, then wait for the answer before moving to the next (AskUserQuestion works well — recommended option first). Ask follow-ups freely. Decisions made while the design is still liquid beat review of a finished proposal.
 
-- Launch `backend-architect` first — instruct it to include a clearly defined **API contract** (endpoint URLs, methods, request/response shapes, status codes).
-- Extract the API contract from the backend architect's output.
-- Launch `frontend-architect` with the task context AND the API contract — instruct it to design against the defined contract, not invent its own.
+14. **Track resolved decisions.** Do NOT write any spec document and do NOT dispatch finalization until every decision point and open question is resolved.
 
-11. **Synthesize architect outputs** — identify key decisions, tradeoffs, and open questions.
+### Phase 5: Architect Finalization (Stage 2)
 
-### Phase 4: Human Input (REQUIRED)
+15. **Re-dispatch each architect** (omit `model`) with: its own Stage-1 exploration brief verbatim, plus the resolved decision list. Instruct it to produce the full plan per its Output Format and NOT to re-litigate resolved decisions — they carry the user's authority.
+    - **Fullstack ordering**: finalize `backend-architect` first — its plan must include a clearly defined **API contract** (endpoint URLs, methods, request/response shapes, status codes). Then finalize `frontend-architect` with the contract — design against it, not invent one.
 
-12. **Present decisions and questions to the user.** Never skip this step. Examples:
-    - Tradeoff choices the architects identified
-    - Ambiguities in the task description
-    - Convention questions (naming, patterns, structure)
-    - Scope questions (do X now or defer?)
+16. **Synthesize the finalized plan(s)** — key decisions (and who made them), tradeoffs accepted, anything deferred.
 
-13. **Wait for answers.** Incorporate them into the plan.
+### Phase 6: User Choice
 
-### Phase 5: User Choice
-
-14. **HARD STOP — DO NOT WRITE ANY FILES OR DISPATCH ANY AGENTS UNTIL THE USER ANSWERS THESE QUESTIONS.**
+17. **HARD STOP — DO NOT WRITE ANY FILES OR DISPATCH ANY CODER AGENTS UNTIL THE USER ANSWERS THESE QUESTIONS.**
 
     This has been a recurring failure point. The user has corrected this behavior TWICE.
     You MUST present these questions and WAIT for explicit answers before taking any action.
@@ -108,7 +109,7 @@ If uncertain, run the architect. A 2-minute architect pass that confirms "the ap
         **IMPORTANT: Always dispatch a coder subagent. Do NOT implement code changes yourself.** The coder dispatch is what triggers the auto-review chain. Implementing inline bypasses peer review.
     - Later → Stop here
 
-15. **Present summary**:
+18. **Present summary**:
     - Key decisions made (and who made them)
     - File written (if saved)
     - What was implemented (if coded)

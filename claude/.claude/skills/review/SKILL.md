@@ -1,7 +1,7 @@
 ---
 name: review
 description: Review recent changes using the code-reviewer subagent
-allowed-tools: [Task, Bash, Read, Glob, Grep, Skill]
+allowed-tools: [Task, Bash, Read, Glob, Grep, LSP, Skill]
 ---
 
 # Code Review
@@ -18,7 +18,7 @@ Review recent changes in this codebase using the code-reviewer subagent.
 1. **Parse args**:
    - **Modifiers**: If `+deep` is present, dispatch `code-reviewer-deep` instead of `code-reviewer` and omit `model` (its frontmatter pins Opus). If `+fast` is present, pass `model: "haiku"`.
    - **Iteration counter**: Look for `iter=N` in args (default `iter=1`). Tracks how many times the review-fix loop has run. **If `iter >= 3`, STOP immediately** and alert the user: "Review-fix loop has run 3 iterations without converging. Stopping to avoid churn. Outstanding issues: [list]. Decide manually how to proceed." Do NOT auto-dispatch `/fix`.
-   - **One-shot mode**: If `iter=oneshot` is present, this is the post-convergence verification pass after a MEDIUM triage `/fix`. Run the review as normal, report results to the user, but **do NOT auto-dispatch anything** — skip step 5's branching entirely. Report findings as a final summary, then stop. (Rationale: MEDIUM triage already happened in the prior turn; re-triaging would loop indefinitely.)
+   - **One-shot mode**: If `iter=oneshot` is present, this is the post-convergence verification pass after a MEDIUM triage `/fix`. Run the review as normal, report results to the user, but **do NOT auto-dispatch anything** — skip step 5's branching entirely. Report findings as a final summary, then stop. (Rationale: MEDIUM triage already happened in the prior turn; re-triaging would loop indefinitely.) **Reviewer for this pass**: if the just-converged loop ran 2 or more iterations, dispatch `code-reviewer-deep` (omit `model`) instead of `code-reviewer` — the task proved itself hard, so the final declare-victory pass gets one decorrelated Opus look (same-model reviewers share the coder's blind spots). Single-iteration loops keep the standard reviewer.
    - **Handoff block**: Look for a `handoff:` block in args (produced by `/code` or `/fix`). If present, use it as the review scope per the "Handoff Block" section below.
 
 2. **Determine review scope**:
@@ -36,6 +36,8 @@ Review recent changes in this codebase using the code-reviewer subagent.
    ```
 
    This captures unstaged, staged, AND new untracked files. `git diff --name-only HEAD` alone misses untracked files — the most common case right after a coder dispatch.
+
+   **Second-order supplement (both paths)**: From the handoff `change` lines (or the diff), list every exported symbol whose signature, return type, or name changed. For each, run LSP find-references (fall back to `rg` for untyped code) and collect call sites OUTSIDE the current scope. Append those files to the reviewer's scope tagged "out-of-scope caller — check call-site compatibility only". This is a targeted expansion to catch the coder's most characteristic miss (a forgotten caller in a file it didn't touch); it is NOT an invitation to re-review unchanged code.
 
 3. **Dispatch code-reviewer subagent(s)**:
 
@@ -75,6 +77,8 @@ Review recent changes in this codebase using the code-reviewer subagent.
 
      Present these to the user and wait for direction. Do NOT auto-dispatch `/fix` in this case.
 
+   - **Execution gate (before declaring convergence)**: A reviewer PASS is an opinion; a passing check run is evidence. Before treating the loop as converged, verify the evidence link: if the handoff's `tests-run` shows a real command with exit 0, accept it. If it is "none", missing, or has no exit code while code changed: run the project's quality-check command (from project CLAUDE.md, e.g. `npm run validate`) ONCE, redirected to `/tmp/review-gate.log`. Exit 0 → proceed. Non-zero → the failures are ground truth: treat them as CRITICAL findings and route into the severity gating above. Never skip this because the review "looked clean" — model approval without executed evidence is the loop's weakest exit, and this gate is what makes convergence mean something.
+
    - **If all clear on the auto-fix gate (no CRITICAL or HIGH issues remain)**: The convergence loop is done. Now triage MEDIUMs as a follow-up:
      - **If MEDIUM items exist**: The main agent (caller of this skill) must triage each MEDIUM with explicit judgment. For every MEDIUM, classify it as:
        - **fix** — clear win, safe to auto-apply (e.g. missing null check, obvious dead code, real but non-blocking bug)
@@ -95,7 +99,13 @@ Review recent changes in this codebase using the code-reviewer subagent.
 
    The MEDIUM triage step runs **after** convergence and is a single one-shot — it does NOT re-enter the iter-bounded loop. This keeps the loop's termination condition simple while still surfacing actionable MEDIUMs for fix instead of dropping them on the user.
 
-## Handoff Block
+6. **Log the run** (every invocation, including oneshot — this is the loop's flywheel):
+
+   ```bash
+   bash "${CLAUDE_SKILL_DIR}/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" iter=<N|oneshot> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> skipped_fp=<n> ask=<n> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
+   ```
+
+   `fixed`/`skipped_fp`/`ask` are the MEDIUM-triage bucket counts when triage ran, else 0. The JSONL at `~/.claude/review-metrics.jsonl` accumulates the convergence distribution and false-positive rate (`skipped_fp` fraction) — the evidence base for tuning the reviewer's calibration and the iter cap. Recurring `skipped_fp` patterns are `/cloptimize` input for the reviewer's "Do NOT Flag" list.
 
 When invoked from `/code` or `/fix`, args may contain a handoff block. Canonical schema:
 
@@ -104,7 +114,7 @@ handoff:
   files:
     - path: <relative path>
       change: <one line: what changed and why>
-  tests-run: <command(s) and pass/fail status, or "none">
+  tests-run: <exact command + exit code, e.g. "npm run validate → exit 0"; or "none">
   flagged: <issues the upstream coder explicitly flagged, or "none">
   prior-issues:           # only present on fix → review
     - issue: <one line>

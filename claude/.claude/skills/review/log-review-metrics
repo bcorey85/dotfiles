@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# log-review-metrics — append one JSONL line per /review run to the metrics log
+#
+# usage: log-review-metrics key=value [key=value ...]
+#   e.g. log-review-metrics repo=myapp iter=2 critical=0 high=1 medium=3 low=0 \
+#          fixed=2 skipped_fp=1 ask=0 result=PASS
+#
+# Numeric-looking values are stored as numbers, everything else as strings.
+# A "date" field (UTC ISO 8601) is always added. Output file:
+#   $REVIEW_METRICS_FILE or ~/.claude/review-metrics.jsonl
+set -euo pipefail
+
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
+out="${REVIEW_METRICS_FILE:-$HOME/.claude/review-metrics.jsonl}"
+
+json=$(jq -cn '{date: (now | todate)}')
+for kv in "$@"; do
+  case "$kv" in
+    *=*) ;;
+    *) echo "skipping malformed arg (want key=value): $kv" >&2; continue ;;
+  esac
+  k="${kv%%=*}"
+  v="${kv#*=}"
+  json=$(jq -c --arg k "$k" --arg v "$v" '.[$k] = ($v | (tonumber? // .))' <<< "$json")
+done
+
+printf '%s\n' "$json" >> "$out"
+echo "logged → $out"

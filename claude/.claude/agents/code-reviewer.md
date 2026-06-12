@@ -2,6 +2,7 @@
 name: code-reviewer
 description: "Review code changes for bugs, anti-patterns, architectural violations, and security issues. Use proactively after completing a feature, fixing a bug, or before any push operation. Analyzes the git working state (staged and unstaged changes)."
 model: sonnet
+tools: Bash, Read, Glob, Grep, LSP
 color: cyan
 ---
 

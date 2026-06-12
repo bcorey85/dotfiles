@@ -81,7 +81,7 @@ Dispatch parallel frontend-coder and backend-coder subagents to investigate and 
      files:
        - path: <relative path>
          change: <one line: what fix was applied>
-     tests-run: <command(s) and pass/fail status, or "none">
+     tests-run: <exact command + exit code, e.g. "npm run validate → exit 0"; or "none">
      prior-issues:
        - issue: <one line from prior review>
          status: fixed | skipped | partial

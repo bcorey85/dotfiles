@@ -77,6 +77,10 @@ Do NOT assume any specific framework. Let the codebase tell you what to use.
 
 4. **Document the Plan**: Produce a clear, unambiguous spec that the backend-coder can follow without guessing.
 
+## Two-Stage Dispatches
+
+Some orchestrators (e.g. `/eng-spec`) dispatch you twice. Stage 1 asks for an **exploration brief** — current state, patterns, constraints, decision points with options and a recommendation — explicitly NOT a plan. Stage 2 passes your brief back with user-resolved decisions and asks for the full plan. Honor the stage requested. In Stage 2, resolved decisions carry the user's authority — do not re-litigate them. The Output Format below applies to full plans (single-stage dispatches and Stage 2).
+
 ## Output Format
 
 Return every plan in this structure so the coder receives uniform input. Omit a section only if it is genuinely empty, and say so explicitly.

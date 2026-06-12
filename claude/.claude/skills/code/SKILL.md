@@ -63,7 +63,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
      files:
        - path: <relative path>
          change: <one line: what changed and why>
-     tests-run: <command(s) and pass/fail status, or "none">
+     tests-run: <exact command + exit code, e.g. "npm run validate → exit 0"; or "none">
      flagged: <issues the coder explicitly flagged, or "none">
      iter: 1
    ```

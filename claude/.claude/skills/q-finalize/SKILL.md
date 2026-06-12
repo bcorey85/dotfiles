@@ -1,6 +1,6 @@
 ---
 name: q-finalize
-description: Collapse a completed QRSPI task folder into a single durable decision record (ADR) and delete the process artifacts. Runs pre-merge so the record ships in the same PR as the code.
+description: Collapse a completed QRSPI task folder into a single durable decision record (ADR) and delete the process artifacts (QRSPI step 6 of 6). Runs pre-merge so the record ships in the same PR as the code.
 allowed-tools: [Bash, Read, Glob, Grep, Write, Edit, AskUserQuestion]
 ---
 
@@ -29,13 +29,13 @@ Folder = in-progress. File = finalized.
 
 ## Resolve the task directory
 
-| `$ARGUMENTS`                          | Resolution                                                                                                                    |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Path under `docs/eng-specs/`          | Use directly                                                                                                                  |
-| Ticket pattern (`^[a-zA-Z]+-[0-9]+$`) | Uppercase, glob `docs/eng-specs/{TICKET}-*/`                                                                                  |
-| Empty / other                         | Infer from branch: `git rev-parse --abbrev-ref HEAD \| grep -oE '^[a-zA-Z]+-[0-9]+' \| tr '[:lower:]' '[:upper:]'`, then glob |
+Run the shared resolver (same one used by /q-research, /q-design, /q-structure, /q-plan — do NOT reimplement the logic inline):
 
-Single match → use. Multiple → ask. None → ask for path. Folder basename is the slug for the output file.
+```bash
+bash ~/.claude/scripts/qrspi-resolve-dir.sh "$ARGUMENTS"
+```
+
+Exit 0 → single match, use it. Exit 3 → multiple matches printed, ask the user which. Exit 4 → nothing resolvable, ask for a path. Folder basename is the slug for the output file.
 
 ## Inputs
 
@@ -52,10 +52,10 @@ Missing `03-design.md` → stop: _"/q-finalize is for completed QRSPI tasks. Run
 
 ## Detect the PR
 
-| Mode        | When                                          | Command                                                                                                                    |
-| ----------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Live        | Task ticket == current branch                 | `gh pr view --json url,number,title 2>/dev/null`                                                                           |
-| Retroactive | Task ticket ≠ current branch (cleanup branch) | `gh pr list --search "IQ-XXX" --state all --json url,number,title,state,mergedAt` — pick merged PR matching the task title |
+| Mode        | When                                          | Command                                                                                                                                                                                   |
+| ----------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Live        | Task ticket == current branch                 | `gh pr view --json url,number,title 2>/dev/null`                                                                                                                                          |
+| Retroactive | Task ticket ≠ current branch (cleanup branch) | `gh pr list --search "<TICKET>" --state all --json url,number,title,state,mergedAt` — substitute the resolved ticket key (e.g. `IQ-400`), then pick the merged PR matching the task title |
 
 Neither finds → `**PR**: (pending)`. Live mode: run `/q-finalize` **after** `/pr` so the link populates and the ADR commit lands on the same PR. Retroactive works either way.
 
@@ -109,7 +109,7 @@ Read `~/.claude/skills/_shared/skimmable-writing.md` (single source of truth for
 # IQ-XXX: [Feature name from ticket]
 
 - **Status**: Accepted
-- **Ticket**: [IQ-XXX](jira-url) — from `**URL:**` in ticket.md, or `https://centerbase1.atlassian.net/browse/IQ-XXX`
+- **Ticket**: [IQ-XXX](jira-url) — from `**URL:**` in ticket.md; if the ticket file records no URL, use the ticket key as plain text (do NOT invent a tracker URL)
 - **PR**: [repo#NNN](pr-url) — or `(pending)`
 - **Date**: MM-DD-YYYY
 

@@ -24,9 +24,8 @@ elif [ -f "$ROOT/node_modules/.bin/eslint" ]; then
   npx eslint --fix --no-warn-ignored --max-warnings=0 "$FILE" 2>/dev/null
 fi
 
-# Format: prefer oxfmt, fall back to prettier
+# Format: oxfmt only — prettier-hook.sh (also wired on Write|Edit) owns the
+# prettier path; falling back here would run prettier twice per edit
 if command -v oxfmt &>/dev/null || [ -f "$ROOT/node_modules/.bin/oxfmt" ]; then
   npx oxfmt "$FILE" 2>/dev/null
-elif [ -f "$ROOT/node_modules/.bin/prettier" ]; then
-  npx prettier --write "$FILE" 2>/dev/null
 fi

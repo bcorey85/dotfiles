@@ -1,12 +1,14 @@
 ---
 name: q-plan
-description: Tactical implementation plan from all QRSPI artifacts (QRSPI step 5 of 5)
+description: Tactical implementation plan from all QRSPI artifacts (QRSPI step 5 of 6)
 allowed-tools: [Bash, Read, Glob, Grep, Write, Task]
 ---
 
 # Write Tactical Plan
 
 Write the detailed implementation plan that an executing agent will follow to build the feature. This is step 5 of the QRSPI workflow. The design discussion and structure outline have already aligned with the user — this plan fills in the tactical details.
+
+> Agent variant: `~/.claude/agents/qrspi-plan.md` (dispatched by /q-orchestrator). This SKILL.md is the authoritative spec for the step; the agent variant does its lookups directly without spawning haiku sub-agents and takes its paths from the orchestrator. Keep behavioral changes in sync.
 
 ## Task Directory & Ticket Detection
 

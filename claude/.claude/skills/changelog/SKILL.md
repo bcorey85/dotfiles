@@ -1,7 +1,19 @@
 ---
 name: changelog
 description: Add a changelog entry to the Notion Changelog database from recent commits or a version bump
-allowed-tools: [Bash, Read, Glob, Grep, mcp__notion__notion-create-pages, mcp__notion__notion-fetch, mcp__notion__notion-search]
+allowed-tools:
+  [
+    Bash,
+    Read,
+    Glob,
+    Grep,
+    mcp__notion__notion-create-pages,
+    mcp__notion__notion-fetch,
+    mcp__notion__notion-search,
+    mcp__claude_ai_Notion__notion-create-pages,
+    mcp__claude_ai_Notion__notion-fetch,
+    mcp__claude_ai_Notion__notion-search,
+  ]
 ---
 
 # Add Changelog Entry

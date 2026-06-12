@@ -28,9 +28,9 @@ Auto-detects scope and launches the appropriate architect(s). After planning, as
 
 ### Phase 2: Scope Assessment
 
-5. **Determine scope** (frontend, backend, or fullstack) based on the task description, conversation context, and codebase structure.
+4. **Determine scope** (frontend, backend, or fullstack) based on the task description, conversation context, and codebase structure.
 
-5a. **Assess whether architect agents are needed.** Default is YES — run the architects. Only skip Phases 3–5 if ALL of these are true:
+4a. **Assess whether architect agents are needed.** Default is YES — run the architects. Only skip Phases 3–5 if ALL of these are true:
 
 - The task is pure configuration with zero implementation choices (e.g., installing a package, adding an env var, enabling a flag)
 - No new files are being created
@@ -48,48 +48,48 @@ If skipping:
 
 If uncertain, run the architect. A 2-minute architect pass that confirms "the approach is sound" is cheap insurance. A skipped architect that misses a coupling risk costs an entire review-fix cycle.
 
-6. **If a scope hint was passed** (`be`, `fe`, `fs`), use it directly.
+5. **If a scope hint was passed** (`be`, `fe`, `fs`), use it directly.
 
-7. **If scope is ambiguous**, ask the user: "This could be frontend-only, backend-only, or fullstack. What's the scope?"
+6. **If scope is ambiguous**, ask the user: "This could be frontend-only, backend-only, or fullstack. What's the scope?"
 
-8. **Present scope to user**: "This is [frontend/backend/fullstack]. I'll spin up [which architects]. Sound right?"
+7. **Present scope to user**: "This is [frontend/backend/fullstack]. I'll spin up [which architects]. Sound right?"
 
 ### Phase 3: Architect Exploration (Stage 1 — no design yet)
 
-9. **Read existing codebase context** for the affected areas — key files, existing patterns, relevant `eng-arch/` docs. Include this as context when launching architect agents.
+8. **Read existing codebase context** for the affected areas — key files, existing patterns, relevant `eng-arch/` docs. Include this as context when launching architect agents.
 
-10. **Launch architect agent(s)** based on scope (both in parallel for fullstack — exploration has no contract dependency). Omit `model` — their frontmatter pins Opus. The dispatch asks for an EXPLORATION brief, not a plan. Include this instruction verbatim:
+9. **Launch architect agent(s)** based on scope (both in parallel for fullstack — exploration has no contract dependency). Omit `model` — their frontmatter pins Opus. The dispatch asks for an EXPLORATION brief, not a plan. Include this instruction verbatim:
 
-    > Explore only — do NOT produce an implementation plan yet. Return an **exploration brief**:
-    >
-    > 1. **Current state** — what exists today, with `file:line` refs
-    > 2. **Patterns** — to follow and to avoid, with refs
-    > 3. **Constraints** — technical and convention constraints you found
-    > 4. **Decision points** — every place where two or more viable approaches exist: each with options, pros/cons, and your recommendation
-    > 5. **Open questions** — ambiguities in the requirements only the user can resolve
-    >
-    > Exception: if the task genuinely has NO design decisions (exactly one reasonable approach), say so explicitly and return the full plan in your Output Format instead.
+   > Explore only — do NOT produce an implementation plan yet. Return an **exploration brief**:
+   >
+   > 1. **Current state** — what exists today, with `file:line` refs
+   > 2. **Patterns** — to follow and to avoid, with refs
+   > 3. **Constraints** — technical and convention constraints you found
+   > 4. **Decision points** — every place where two or more viable approaches exist: each with options, pros/cons, and your recommendation
+   > 5. **Open questions** — ambiguities in the requirements only the user can resolve
+   >
+   > Exception: if the task genuinely has NO design decisions (exactly one reasonable approach), say so explicitly and return the full plan in your Output Format instead.
 
-11. If every architect returned a full plan (zero decision points and zero open questions), skip Phases 4–5 and go to Phase 6.
+10. If every architect returned a full plan (zero decision points and zero open questions), skip Phases 4–5 and go to Phase 6.
 
 ### Phase 4: Interactive Design Resolution (the point of this skill — never batch it)
 
-12. **Present understanding FIRST**, before any decisions: current state, the patterns found (ask the user to confirm they're the RIGHT ones to follow), and constraints. The user needs the chance to catch a wrong pattern before it propagates into every downstream decision.
+11. **Present understanding FIRST**, before any decisions: current state, the patterns found (ask the user to confirm they're the RIGHT ones to follow), and constraints. The user needs the chance to catch a wrong pattern before it propagates into every downstream decision.
 
-13. **Resolve decision points ONE AT A TIME** — never as a single batched list. For each: present the options with pros/cons and the architect's recommendation, then wait for the answer before moving to the next (AskUserQuestion works well — recommended option first). Ask follow-ups freely. Decisions made while the design is still liquid beat review of a finished proposal.
+12. **Resolve decision points ONE AT A TIME** — never as a single batched list. For each: present the options with pros/cons and the architect's recommendation, then wait for the answer before moving to the next (AskUserQuestion works well — recommended option first). Ask follow-ups freely. Decisions made while the design is still liquid beat review of a finished proposal.
 
-14. **Track resolved decisions.** Do NOT write any spec document and do NOT dispatch finalization until every decision point and open question is resolved.
+13. **Track resolved decisions.** Do NOT write any spec document and do NOT dispatch finalization until every decision point and open question is resolved.
 
 ### Phase 5: Architect Finalization (Stage 2)
 
-15. **Re-dispatch each architect** (omit `model`) with: its own Stage-1 exploration brief verbatim, plus the resolved decision list. Instruct it to produce the full plan per its Output Format and NOT to re-litigate resolved decisions — they carry the user's authority.
+14. **Re-dispatch each architect** (omit `model`) with: its own Stage-1 exploration brief verbatim, plus the resolved decision list. Instruct it to produce the full plan per its Output Format and NOT to re-litigate resolved decisions — they carry the user's authority.
     - **Fullstack ordering**: finalize `backend-architect` first — its plan must include a clearly defined **API contract** (endpoint URLs, methods, request/response shapes, status codes). Then finalize `frontend-architect` with the contract — design against it, not invent one.
 
-16. **Synthesize the finalized plan(s)** — key decisions (and who made them), tradeoffs accepted, anything deferred.
+15. **Synthesize the finalized plan(s)** — key decisions (and who made them), tradeoffs accepted, anything deferred.
 
 ### Phase 6: User Choice
 
-17. **HARD STOP — DO NOT WRITE ANY FILES OR DISPATCH ANY CODER AGENTS UNTIL THE USER ANSWERS THESE QUESTIONS.**
+16. **HARD STOP — DO NOT WRITE ANY FILES OR DISPATCH ANY CODER AGENTS UNTIL THE USER ANSWERS THESE QUESTIONS.**
 
     This has been a recurring failure point. The user has corrected this behavior TWICE.
     You MUST present these questions and WAIT for explicit answers before taking any action.
@@ -109,7 +109,7 @@ If uncertain, run the architect. A 2-minute architect pass that confirms "the ap
         **IMPORTANT: Always dispatch a coder subagent. Do NOT implement code changes yourself.** The coder dispatch is what triggers the auto-review chain. Implementing inline bypasses peer review.
     - Later → Stop here
 
-18. **Present summary**:
+17. **Present summary**:
     - Key decisions made (and who made them)
     - File written (if saved)
     - What was implemented (if coded)

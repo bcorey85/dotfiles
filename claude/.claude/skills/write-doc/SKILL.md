@@ -1,6 +1,6 @@
 ---
 name: write-doc
-description: Write a reference doc someone will actually read — short, scannable, code-pointer-anchored. Use when the user says "write a doc", "/write-doc", "/doc", "document X", or asks for an architecture/behavioral/eng-arch markdown file in a /docs folder. Do NOT use for ADRs (use /eng-spec or /push-arch), READMEs, or PR descriptions.
+description: Write a reference doc someone will actually read — short, scannable, code-pointer-anchored. Use when the user says "write a doc", "/write-doc", "/doc", "document X", or asks for an architecture/behavioral/eng-arch markdown file in a /docs folder. Do NOT use for ADRs (use /eng-spec or /q-finalize), READMEs, or PR descriptions.
 ---
 
 # Write-doc
@@ -107,7 +107,7 @@ Report at the end: doc path, final line count, what was cut from the first draft
 
 ## Guidelines
 
-- **Never write in `iq-ecosystem/docs/narratives/` or any "drafting space" if the doc is single-repo behavior.** Single-repo doc → owning repo's `docs/`, every time. Cross-repo coordination → `iq-ecosystem/docs/coordination/` or similar.
+- **Never write in a shared ecosystem/meta repo's "drafting space" if the doc is single-repo behavior.** Single-repo doc → owning repo's `docs/`, every time. Cross-repo coordination → the ecosystem repo's coordination docs folder, if the project has one.
 - **Code is the source of truth.** The doc is a reading aid. When in doubt, prefer "see `path:line`" to a re-explanation.
 - **Don't write what the linked code already says.** Document the non-obvious: invariants, gotchas, the "why" the code can't show, the cross-cutting picture.
 - **One doc, one topic.** Resist the urge to "while I'm here, also cover Y." That's a separate doc.

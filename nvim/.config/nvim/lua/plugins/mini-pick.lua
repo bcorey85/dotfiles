@@ -2,8 +2,8 @@
 -- Replaces telescope.nvim (+ fzf-native / ui-select).
 -- Keymaps mirror the former telescope layout so muscle memory carries over.
 --
--- Mark items with <C-x>; <M-CR> (choose_marked) sends them to quickfix when
--- the items are files or buffers (MiniPick.default_choose_marked behaviour).
+-- <C-q> sends results to quickfix (telescope-style): marked items (<C-x> /
+-- <C-a>) if any, otherwise all current matches.
 return {
   -- ── mini.pick ──────────────────────────────────────────────────────────────
   {
@@ -117,6 +117,32 @@ return {
           scroll_down = "<C-d>",
           scroll_up = "<C-u>",
           delete_left = "<M-u>",
+          -- <C-q>: telescope-style send-to-quickfix. Builtin choose_marked
+          -- only acts on marked items (no-op with zero marks), so this custom
+          -- action falls back to ALL matches when nothing is marked. Default
+          -- <M-CR> is unusable here (kitty extkeys escape garbles tmux).
+          send_to_quickfix = {
+            char = "<C-q>",
+            func = function()
+              local matches = MiniPick.get_picker_matches()
+              if matches == nil or matches.all == nil then
+                return
+              end
+              local items = (matches.marked ~= nil and #matches.marked > 0) and matches.marked or matches.all
+              -- setqflist allocates a buffer per unique filename (~1.7ms
+              -- each): an unfiltered 13k-file list blocks nvim ~25s. Cap it.
+              local max_items = 1000
+              if #items > max_items then
+                local total = #items
+                items = vim.list_slice(items, 1, max_items)
+                vim.schedule(function()
+                  vim.notify(("quickfix: sent first %d of %d matches — narrow the query for the rest"):format(max_items, total), vim.log.levels.WARN)
+                end)
+              end
+              MiniPick.default_choose_marked(items)
+              return true -- stop picker
+            end,
+          },
         },
       })
 

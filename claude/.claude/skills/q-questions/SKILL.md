@@ -1,12 +1,14 @@
 ---
 name: q-questions
-description: Generate objective research questions from a ticket (QRSPI step 1 of 5)
+description: Generate objective research questions from a ticket (QRSPI step 1 of 6)
 allowed-tools: [Bash, Read, Glob, Grep, Write, AskUserQuestion]
 ---
 
 # Generate Research Questions
 
-Transform a ticket/task description into focused research questions that will guide objective codebase exploration. This is step 1 of the QRSPI workflow (Questions -> Research -> Design -> Structure -> Plan).
+Transform a ticket/task description into focused research questions that will guide objective codebase exploration. This is step 1 of the QRSPI workflow (Questions -> Research -> Design -> Structure -> Plan -> Finalize).
+
+> Agent variant: `~/.claude/agents/qrspi-questions.md` (dispatched by /q-orchestrator). This SKILL.md is the authoritative spec for the step; the agent variant differs only in that it takes the resolved directory from the orchestrator and returns the file path instead of printing the interactive footer. Keep behavioral changes in sync.
 
 QRSPI is for larger features where a monolithic plan would skip steps or leak opinions. For small/medium tasks, prefer `/eng-spec` instead.
 
@@ -39,6 +41,8 @@ Branches follow `TICKET-NUM-description` (e.g., `iq-400-frontend-ts-migration` â
 ```bash
 git rev-parse --abbrev-ref HEAD | grep -oE '^[a-zA-Z]+-[0-9]+' | tr '[:lower:]' '[:upper:]'
 ```
+
+(This mirrors the extraction in `~/.claude/scripts/qrspi-resolve-dir.sh` â€” that script resolves _existing_ task directories for later steps; this step creates the directory, so only the extraction is shared. Keep the regex in sync.)
 
 - If the branch yields a ticket, use it (e.g., `IQ-400`) and derive a slug from the rest of the branch name.
 - If the branch has no ticket prefix (e.g., `feature/foo`), check the conversation context for a ticket. If still none, ask the user: "I couldn't detect a ticket from the branch. What's the ticket number, or should I create a slug-only directory?"

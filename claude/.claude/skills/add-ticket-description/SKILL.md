@@ -1,7 +1,8 @@
 ---
 name: add-ticket-description
 description: Update a Jira ticket's description from a local file or user-provided content
-allowed-tools: [Read, Glob, Grep, mcp__jira__getJiraIssue, mcp__jira__editJiraIssue]
+allowed-tools:
+  [Read, Glob, Grep, mcp__jira__getJiraIssue, mcp__jira__editJiraIssue]
 ---
 
 # Add Ticket Description
@@ -13,8 +14,9 @@ Read content from a local file (or user-provided text) and update a Jira ticket'
 ### Step 1: Identify the Ticket
 
 The user may provide:
+
 - **A Jira key** (e.g., `CHR-6`) — use directly
-- **A URL** (e.g., `https://centerbase1.atlassian.net/browse/CHR-6`) — extract the key
+- **A URL** (e.g., `https://<org>.atlassian.net/browse/CHR-6`) — extract the key
 - **Nothing** — infer from the current git branch name (e.g., `chr-6-migrate-to-monorepo` → `CHR-6`)
 
 Read `docs/mcp-references/JIRA.md` for the Cloud ID. Fetch the current ticket with `getJiraIssue` to see existing description and summary.
@@ -22,6 +24,7 @@ Read `docs/mcp-references/JIRA.md` for the Cloud ID. Fetch the current ticket wi
 ### Step 2: Gather Content
 
 The user may provide:
+
 - **A file path** — read the file and summarize it
 - **Inline text** — use directly
 - **Nothing** — ask what content to add
@@ -37,11 +40,13 @@ Present the draft to the user and confirm before updating.
 Use `editJiraIssue` to set the `description` field.
 
 **CRITICAL — Jira MCP description format:**
+
 - Pass `description` as a **plain markdown string** — the Jira MCP tool handles ADF conversion internally.
 - Do **NOT** pass Atlassian Document Format (ADF) JSON objects. The tool will reject them.
 - Markdown features that work: headings (`###`), bullet lists (`-`), bold (`**bold**`), inline code (`` `code` ``), links (`[text](url)`).
 
 Example payload:
+
 ```json
 {
   "description": "Summary paragraph.\n\n### Section\n\n- **Bold label:** detail\n- Another point\n- `inline code` works too"

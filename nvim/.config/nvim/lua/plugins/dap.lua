@@ -25,6 +25,24 @@ return {
         -- dap-ui: plain defaults are fine; layout is configured inside dapui.
         dapui.setup({})
 
+        -- Signs: the stock "B" breakpoint marker is near-invisible against the
+        -- Catppuccin Mocha gutter. Use a bold filled dot in theme-matched colors
+        -- so breakpoints actually read at a glance. Highlights are set explicitly
+        -- (not linked) so they survive colorscheme reloads.
+        vim.api.nvim_set_hl(0, "DapBreakpoint", { fg = "#f38ba8" }) -- red
+        vim.api.nvim_set_hl(0, "DapBreakpointCondition", { fg = "#fab387" }) -- peach
+        vim.api.nvim_set_hl(0, "DapBreakpointRejected", { fg = "#6c7086" }) -- overlay/dim
+        vim.api.nvim_set_hl(0, "DapLogPoint", { fg = "#89b4fa" }) -- blue
+        vim.api.nvim_set_hl(0, "DapStopped", { fg = "#a6e3a1" }) -- green
+        vim.api.nvim_set_hl(0, "DapStoppedLine", { bg = "#313244" }) -- surface0
+
+        vim.fn.sign_define("DapBreakpoint", { text = "●", texthl = "DapBreakpoint" })
+        vim.fn.sign_define("DapBreakpointCondition", { text = "●", texthl = "DapBreakpointCondition" })
+        vim.fn.sign_define("DapBreakpointRejected", { text = "●", texthl = "DapBreakpointRejected" })
+        vim.fn.sign_define("DapLogPoint", { text = "◆", texthl = "DapLogPoint" })
+        -- Stopped: arrow marker + a subtle full-line highlight on the paused line.
+        vim.fn.sign_define("DapStopped", { text = "▶", texthl = "DapStopped", linehl = "DapStoppedLine" })
+
         -- Auto-open dap-ui when a debug session attaches or launches; auto-close
         -- on termination / exit so the layout cleans up without a manual toggle.
         dap.listeners.before.attach.dapui_config = function()

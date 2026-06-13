@@ -32,6 +32,14 @@ return {
     map("<C-j>", ss.move_cursor_down, "Move cursor down (smart)")
     map("<C-k>", ss.move_cursor_up, "Move cursor up (smart)")
     map("<C-l>", ss.move_cursor_right, "Move cursor right (smart)")
+
+    -- Same nav keys in terminal mode so you can move OUT of a terminal split
+    -- without first hitting <C-\><C-n>. Tradeoff: <C-l> no longer reaches the
+    -- shell as clear-screen inside nvim terminals — type `clear` instead.
+    vim.keymap.set("t", "<C-h>", ss.move_cursor_left, { desc = "Move cursor left (smart)" })
+    vim.keymap.set("t", "<C-j>", ss.move_cursor_down, { desc = "Move cursor down (smart)" })
+    vim.keymap.set("t", "<C-k>", ss.move_cursor_up, { desc = "Move cursor up (smart)" })
+    vim.keymap.set("t", "<C-l>", ss.move_cursor_right, { desc = "Move cursor right (smart)" })
     map("<A-h>", ss.resize_left, "Resize left (smart)")
     map("<A-j>", ss.resize_down, "Resize down (smart)")
     map("<A-k>", ss.resize_up, "Resize up (smart)")

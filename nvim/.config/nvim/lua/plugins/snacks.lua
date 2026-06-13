@@ -1,4 +1,4 @@
--- snacks.nvim — image, zen, scratch, and gitbrowse keymaps.
+-- snacks.nvim — image, zen, scratch, terminal, and gitbrowse keymaps.
 --
 -- image: renders markdown image links and ```mermaid fences inline via the
 -- Kitty Graphics Protocol. Degrades gracefully when dependencies are absent.
@@ -42,12 +42,38 @@ return {
           require("util.reading").cleanup()
         end,
       },
+      -- terminal: toggleable bottom-split terminal keyed by cwd (one per
+      -- project). A split (not a float) so smart-splits <C-hjkl> can navigate
+      -- between it and your code windows — floats sit outside the split tree.
+      terminal = {
+        win = {
+          position = "bottom",
+          height = 0.3,
+        },
+      },
     })
 
     -- Toggle zen mode: centered 120-col window, pairs with tmux prefix-m zoom.
     vim.keymap.set("n", "<leader>z", function()
       Snacks.zen()
     end, { desc = "Zen mode (centered, width-capped)" })
+
+    -- Terminal toggle, keyed by cwd (one float per project). Lives in the
+    -- <leader>t tasks namespace as <leader>tt — "tasks → terminal" — alongside
+    -- the dispatch maps (tm/tr/td/…). Bare <leader>t is their prefix, so the
+    -- toggle takes the doubled key to avoid shadowing the group.
+    vim.keymap.set("n", "<leader>tt", function()
+      Snacks.terminal()
+    end, { desc = "Toggle terminal (cwd)" })
+
+    -- Dismiss-from-inside uses a chord, not <leader>: in terminal mode <leader>
+    -- (space) would intercept every space you type in the shell. <C-/> (sent as
+    -- <C-_> by kitty/alacritty) hides the terminal split without leaving insert.
+    for _, key in ipairs({ "<C-/>", "<C-_>" }) do
+      vim.keymap.set("t", key, function()
+        Snacks.terminal()
+      end, { desc = "Hide terminal" })
+    end
 
     -- scratch: persistent per-project scratch buffers, keyed by cwd + branch +
     -- filetype (stored in stdpath("data")/scratch). The scratch inherits the

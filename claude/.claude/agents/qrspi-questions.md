@@ -19,7 +19,7 @@ You transform a task document into focused research questions that guide objecti
 ## Process
 
 1. Create the task directory if it doesn't exist.
-2. If the source document is not already at `DIR/IQ-XXX-00-ticket.md`, snapshot it there verbatim. Never overwrite an existing snapshot.
+2. Snapshot the source to `DIR/IQ-XXX-00-ticket.md` so the folder is self-contained, unless it is already there. If the source already lives *inside* `DIR` under a different name, **rename it (`mv`) to the canonical name — do not copy**, or you leave a duplicate sibling. If it lives outside `DIR`, copy it verbatim. Never overwrite an existing snapshot.
 3. Read the source document fully. Identify the components, patterns, and systems it touches.
 4. Generate 5–12 questions, ordered foundational (data/types) → surface (UI/API). Cover: data flow, types/interfaces, existing patterns, test patterns, error handling.
 5. Write `DIR/IQ-XXX-01-questions.md` in the format below.

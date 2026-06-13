@@ -11,9 +11,9 @@ return {
     setup = function()
       local pick = require("mini.pick")
 
-      -- Shared blacklist: dirs that are always junk and must be excluded from
-      -- every search surface. Keep this list in one place so all consumers
-      -- below never diverge.
+      -- Junk dirs excluded at ANY depth: caches, build output, deps. Never
+      -- worth searching wherever they sit. Single source of truth — every
+      -- search surface (rg globs, fd --exclude, grepprg) consumes this.
       local excluded_dirs = {
         ".git",
         "node_modules",
@@ -26,6 +26,25 @@ return {
         "target",
         "coverage",
         ".cache",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        "htmlcov",
+        "COMPRESS_CACHE",
+      }
+
+      -- Junk dirs excluded only at the REPO ROOT. Names like static/ and media/
+      -- are generated/collected asset trees at the project root (Django
+      -- collectstatic, user uploads) — huge and pointless to search — but are
+      -- often real source when nested (app/static/, frontend/**/static/).
+      -- Root-anchoring ("/<dir>/**") kills the big generated trees without
+      -- hiding nested source. Because we run --no-ignore-vcs (below), we can't
+      -- delegate this distinction to .gitignore, so we encode it explicitly.
+      local excluded_root_dirs = {
+        "static",
+        "staticfiles",
+        "media",
+        "media_files",
       }
 
       -- Build rg exclusion flags: each dir becomes "--glob=!**/<dir>/**".
@@ -45,6 +64,9 @@ return {
       for _, dir in ipairs(excluded_dirs) do
         table.insert(rg_base, "--glob=!" .. "**/" .. dir .. "/**")
       end
+      for _, dir in ipairs(excluded_root_dirs) do
+        table.insert(rg_base, "--glob=!" .. "/" .. dir .. "/**")
+      end
 
       -- Build fd flags for file finding: --no-ignore-vcs mirrors rg above —
       -- fd also respects .gitignore by default, which would hide .env-style
@@ -53,6 +75,10 @@ return {
       for _, dir in ipairs(excluded_dirs) do
         table.insert(fd_cmd, "--exclude")
         table.insert(fd_cmd, dir)
+      end
+      for _, dir in ipairs(excluded_root_dirs) do
+        table.insert(fd_cmd, "--exclude")
+        table.insert(fd_cmd, "/" .. dir)
       end
 
       -- Live grep modeled on MiniPick.builtin.grep_live (pick.lua ~line 1416).
@@ -107,10 +133,8 @@ return {
 
       pick.setup({
         mappings = {
-          -- <C-j>/<C-k>: next/prev item — muscle memory from telescope config.
-          -- mini.pick's defaults are <C-n>/<C-p>; we remap to j/k variants.
-          move_down = "<C-j>",
-          move_up = "<C-k>",
+          -- Navigation uses mini.pick defaults: <C-n>/<C-p> (and <Up>/<Down>)
+          -- move to next/prev item. (No move_down/move_up override here.)
           -- <C-d>/<C-u>: scroll — scrolls the preview when it's open (<Tab>),
           -- otherwise pages the match list. <C-u> is delete_left's default, so
           -- that action moves to <M-u> to avoid the collision.
@@ -155,6 +179,9 @@ return {
       local grepprg_globs = {}
       for _, dir in ipairs(excluded_dirs) do
         table.insert(grepprg_globs, "--glob='!" .. "**/" .. dir .. "/**'")
+      end
+      for _, dir in ipairs(excluded_root_dirs) do
+        table.insert(grepprg_globs, "--glob='!" .. "/" .. dir .. "/**'")
       end
       vim.o.grepprg = "rg --vimgrep --smart-case --hidden --no-ignore-vcs " .. table.concat(grepprg_globs, " ")
       vim.o.grepformat = "%f:%l:%c:%m"

@@ -10,7 +10,7 @@ You are a router. Until Phase D begins, you NEVER read, summarize, or paraphrase
 
 ## Phase 0 — Resolve
 
-1. Run `bash ~/.claude/scripts/qrspi-resolve-dir.sh "$ARGUMENTS"`. Exit 0 → that is `DIR`. Exit 3 → ask the user which. Exit 4 → ask for a ticket file path (suggest `/pull-ticket` first if they only have a Jira key); the questions agent will create `DIR`.
+1. Run `bash ~/.claude/scripts/qrspi-resolve-dir.sh "$ARGUMENTS"`. Exit 0 → that is `DIR`. Exit 3 → ask the user which. Exit 4 → no `DIR` yet; get the ticket onto disk, then hand its path to Phase Q (which creates `DIR` if absent). **Never pre-copy the ticket into `DIR`** — Phase Q snapshots the source to `<KEY>-00-ticket.md`, so a stray sibling there becomes a duplicate. If the user has a ticket file, pass that path **as-is**. If they only have a Jira key/URL, fetch it (`/pull-ticket` or the Jira tools — neither persists a file on its own) and `Write` it verbatim straight to the canonical path `docs/eng-specs/<KEY>-<slug>/<KEY>-00-ticket.md`: raw fields only, no paraphrase or goal words in your context.
 2. Glob `DIR/*.md` (filenames only — do not read). If artifacts already exist, ask which phase to resume from and skip completed phases.
 
 ## Phase Q — Questions (subagent)

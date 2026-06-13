@@ -1,13 +1,11 @@
 #!/bin/bash
-# Launch a coding layout with 3 tmux windows
+# Launch a coding layout for a project.
 # Usage: dev [directory]
-#   If directory is provided, all windows open there
-#   Otherwise uses current directory
+#   If a directory is provided, all panes/windows open there; otherwise cwd.
 #
 # Layout:
-#   Window 1: nvim    (editor)
-#   Window 2: claude  (AI assistant)
-#   Window 3: console (terminal)
+#   Window 1 "code"     nvim (60%) | claude (40%)  — M-o (tmux) toggles them fullscreen
+#   Window 2 "console"  three equal shells for git / tests / logs
 
 if [ -z "$TMUX" ]; then
     echo "Not in a tmux session"
@@ -15,18 +13,23 @@ if [ -z "$TMUX" ]; then
 fi
 
 dir="${1:-.}"
-dir="$(cd "$dir" && pwd)"
+dir="$(cd "$dir" && pwd)" || { echo "dev: no such directory: ${1:-.}" >&2; exit 1; }
 
-# Rename current window to "nvim" and launch editor
-tmux rename-window "nvim"
+# Window 1 "code": nvim left (60%) + claude right (40%).
+# -p 40 sizes the NEW (right) pane to 40%, leaving nvim at 60%.
+# Using -p instead of -l 40% for compatibility with older tmux (Ubuntu/WSL).
+tmux rename-window "code"
 tmux send-keys "nvim ." C-m
-
-# Create claude window and launch claude
-tmux new-window -n "claude" -c "$dir"
+tmux split-window -h -p 40 -c "$dir"
 tmux send-keys "claude" C-m
+tmux select-pane -L          # land on the editor
 
-# Create console window (plain shell)
+# Window 2 "console": three equal shells side by side
 tmux new-window -n "console" -c "$dir"
+tmux split-window -h -c "$dir"
+tmux split-window -h -c "$dir"
+tmux select-layout even-horizontal
+tmux select-pane -t 1        # focus the leftmost shell
 
-# Jump back to nvim window
+# Back to the code window, editor pane
 tmux select-window -t 1

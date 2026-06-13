@@ -1,0 +1,27 @@
+#!/bin/bash
+# Switch to (or create) a tmux session for a project directory.
+# Creates the session detached, runs the `dev` layout for ~/dev/* projects,
+# then switches the client to it.
+# Shared source of truth for tmux-sessionizer (fuzzy) and tmux-harpoon (slots).
+
+selected="$1"
+[ -z "$selected" ] && exit 1
+
+if [ ! -d "$selected" ]; then
+    tmux display-message "no such dir: $selected" 2>/dev/null
+    exit 1
+fi
+
+session_name=$(basename "$selected" | tr '.' '_')
+
+if ! tmux has-session -t="$session_name" 2>/dev/null; then
+    tmux new-session -d -s "$session_name" -c "$selected"
+    if [[ "$selected" == "$HOME/dev/"* ]]; then
+        tmux send-keys -t "$session_name" "dev" C-m
+    fi
+fi
+
+# Tag the session with its project root so harpoon can pin it accurately
+# regardless of where the active pane has cd'd to.
+tmux set-option -t "$session_name" @project_root "$selected"
+tmux switch-client -t "$session_name"

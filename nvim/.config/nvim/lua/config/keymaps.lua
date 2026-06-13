@@ -26,6 +26,9 @@ vim.keymap.set("n", "<BS>", "<C-^>", { desc = "Alternate file" })
 vim.keymap.set("n", "n", "nzzzv", { desc = "Next search result and center" })
 vim.keymap.set("n", "N", "Nzzzv", { desc = "Previous search result and center" })
 
+-- Code-review keys (]c/[c, =) — full workflow cheatsheet lives in the header of
+-- plugins/fugitive.lua.
+--
 -- ]c/[c: native diff-mode change motion when the window is a real diff
 -- (fugitive :Gdiffsplit / :diffsplit); otherwise gitsigns hunk navigation. Both center.
 local function hunk_jump(direction, native)
@@ -36,13 +39,47 @@ local function hunk_jump(direction, native)
     end
     local ok, gs = pcall(require, "gitsigns")
     if ok then
-      pcall(gs.nav_hunk, direction, { preview = true })
-      vim.cmd("normal! zz")
+      -- preview = false so gitsigns doesn't open its floating window; show the
+      -- hunk inline instead via the callback once the (async) nav completes.
+      -- target="all" keeps staged hunks navigable; nav_hunk defaults to
+      -- "unstaged", so without it a hunk drops out of the ]c walk the moment you
+      -- stage it (gitsigns tracks the staged set via signs_staged_enable).
+      -- No inline preview on jump — diff visibility is owned by <leader>gV
+      -- (persistent whole-file inline diff). ]c/[c just navigate and center.
+      pcall(gs.nav_hunk, direction, { preview = false, target = "all" }, function()
+        vim.cmd("normal! zz")
+      end)
     end
   end
 end
 vim.keymap.set("n", "]c", hunk_jump("next", "]czz"), { desc = "Next hunk and center" })
 vim.keymap.set("n", "[c", hunk_jump("prev", "[czz"), { desc = "Previous hunk and center" })
+-- ]p/[p alias for hunk nav (same diff-mode-aware jump). This shadows the
+-- built-in indent-adjusting paste (]p/[p) outright — no operator form to fall
+-- back on — but conform format_on_save makes manual reindent-paste rare.
+vim.keymap.set("n", "]p", hunk_jump("next", "]czz"), { desc = "Next hunk and center" })
+vim.keymap.set("n", "[p", hunk_jump("prev", "[czz"), { desc = "Previous hunk and center" })
+
+-- `=`: when the cursor sits in a hunk, fire gitsigns' inline preview (same as
+-- <leader>gd) for a one-key peek; otherwise fall through to the native `=`
+-- reindent operator. conform format_on_save makes manual `=` rare, so hijacking
+-- it on changes is cheap, and the feedkeys passthrough preserves =ip / gg=G off
+-- a hunk. Non-expr (expr maps hit textlock when preview sets extmarks).
+vim.keymap.set("n", "=", function()
+  local ok, gs = pcall(require, "gitsigns")
+  if ok and not vim.wo.diff then
+    local row = vim.fn.line(".")
+    for _, h in ipairs(gs.get_hunks() or {}) do
+      local s = h.added.start
+      local e = s + math.max(h.added.count, 1) - 1
+      if row >= s and row <= e then
+        gs.preview_hunk_inline()
+        return
+      end
+    end
+  end
+  vim.api.nvim_feedkeys("=", "n", false) -- not on a hunk: native operator
+end, { desc = "Inline hunk preview on a change, else = operator" })
 
 -- ─── Editing ──────────────────────────────────────────────────────────────────
 

@@ -1,0 +1,73 @@
+#!/bin/bash
+# harpoon-for-tmux: pin projects / sessions to numbered slots and jump instantly.
+#
+# Each slot (one line in the list) is one of:
+#   /abs/project/dir   a PROJECT entry  — jump recreates the session on demand
+#                      (with the `dev` layout) via tmux-project-open; survives reboots.
+#   @session-name      an AD-HOC entry  — jump returns to that exact session; if it
+#                      no longer exists, an empty session of that name is recreated.
+#
+# Subcommands:
+#   add         pin the current session — by project root if it has one
+#               (tagged @project_root), else by @session-name.
+#   jump <N>    switch to the project/session pinned at slot N (1-based).
+#   menu        open the list in nvim — line N == slot N. Reorder lines to reorder
+#               slots; `dd` a line to clear that slot.
+
+set -euo pipefail
+
+LIST="${XDG_DATA_HOME:-$HOME/.local/share}/tmux-harpoon/list"
+mkdir -p "$(dirname "$LIST")"
+touch "$LIST"
+
+cmd="${1:-menu}"
+
+case "$cmd" in
+    add)
+        root=$(tmux display-message -p '#{@project_root}')
+        if [ -n "$root" ]; then
+            entry="$root"
+            label=$(basename "$root")
+        else
+            # Ad-hoc session with no project root — pin it by name so we can return to it.
+            entry="@$(tmux display-message -p '#{session_name}')"
+            label="session ${entry#@}"
+        fi
+        if grep -Fxq "$entry" "$LIST"; then
+            tmux display-message "harpoon: $label already pinned (slot $(grep -nFx "$entry" "$LIST" | cut -d: -f1))"
+        else
+            echo "$entry" >> "$LIST"
+            tmux display-message "harpoon: pinned $label -> slot $(wc -l < "$LIST" | tr -d ' ')"
+        fi
+        ;;
+    jump)
+        n="${2:-}"
+        if [ -z "$n" ]; then
+            tmux display-message "harpoon: jump requires a slot number"
+            exit 1
+        fi
+        entry=$(sed -n "${n}p" "$LIST")
+        if [ -z "$entry" ]; then
+            tmux display-message "harpoon: slot $n is empty"
+            exit 0
+        fi
+        if [[ "$entry" == @* ]]; then
+            sess="${entry#@}"
+            if ! tmux has-session -t="$sess" 2>/dev/null; then
+                # Pinned ad-hoc session is gone (e.g. after a reboot) — recreate it empty.
+                tmux new-session -d -s "$sess" -c "$HOME"
+            fi
+            tmux switch-client -t "$sess"
+        else
+            tmux-project-open "$entry"
+        fi
+        ;;
+    menu)
+        # Run inside a tmux popup (see the binding); edit + :w persists the order.
+        exec nvim "$LIST"
+        ;;
+    *)
+        echo "usage: tmux-harpoon {add | jump <N> | menu}" >&2
+        exit 1
+        ;;
+esac

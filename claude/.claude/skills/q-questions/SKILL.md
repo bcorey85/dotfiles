@@ -54,7 +54,7 @@ git rev-parse --abbrev-ref HEAD | grep -oE '^[a-zA-Z]+-[0-9]+' | tr '[:lower:]' 
 2. Read any provided ticket/file FULLY (no limit/offset).
 3. Detect the ticket from the current branch (see above).
 4. **Snapshot the ticket** to `docs/eng-specs/IQ-XXX-description/IQ-XXX-00-ticket.md` so the task folder is self-contained:
-   - If the user passed a file path, copy its contents verbatim.
+   - If the user passed a file path, copy its contents verbatim. But if that file already lives *inside* the task directory under a different name, rename it (`mv`) to `IQ-XXX-00-ticket.md` instead of copying — copying leaves a duplicate sibling.
    - If the user pasted ticket text in the conversation, write that text.
    - If only a Jira key/URL was provided, suggest running `/pull-ticket` first to pull Jira context locally, then re-run `/q-questions`.
    - Skip this step if a ticket file already exists at that path (don't overwrite — ask first).

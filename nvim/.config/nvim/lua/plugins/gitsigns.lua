@@ -35,6 +35,20 @@ return {
         topdelete = { text = "▎" },
         changedelete = { text = "▎" },
       },
+      -- Persistent current-line blame: GitLens-style virtual text at end of the
+      -- line under the cursor (author, relative time, summary), updating as the
+      -- cursor moves. Toggle on/off with <leader>gB. The full-buffer blame split
+      -- stays on fugitive's <leader>gb. Formatter left at the gitsigns default
+      -- (" <author>, <author_time:%R> - <summary> "; %R = relative time).
+      current_line_blame = true,
+      current_line_blame_opts = {
+        virt_text = true,
+        virt_text_pos = "eol",
+        -- ms after the cursor settles before blame appears; low enough to feel
+        -- persistent without flickering while scrolling through lines.
+        delay = 300,
+        ignore_whitespace = false,
+      },
     })
 
     -- mode defaults to "n" when omitted; pass an explicit mode string for
@@ -76,6 +90,12 @@ return {
       local on = gs.toggle_deleted()
       gs.toggle_word_diff(on)
     end, "Toggle inline diff (persistent, whole file)")
+
+    -- Toggle the persistent current-line blame virtual text. fugitive's
+    -- <leader>gb owns the full-buffer blame split; <leader>gB is the inline one.
+    map("<leader>gB", function()
+      require("gitsigns").toggle_current_line_blame()
+    end, "Toggle line blame (inline)")
 
     -- Staging/unstaging — <leader>gh* namespace.
     --

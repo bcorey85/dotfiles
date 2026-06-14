@@ -1,6 +1,10 @@
 #!/bin/bash
 # Fuzzy-find a project directory and switch to (or create) a tmux session for it.
 
+# tmux's run-shell/display-popup inherit the server's PATH, which may not include
+# ~/.local/bin (true on macOS). Prepend it so sibling scripts resolve everywhere.
+export PATH="$HOME/.local/bin:$PATH"
+
 selected=$({
     find "$HOME/dev" -mindepth 1 -maxdepth 1 -type d 2>/dev/null
     echo "$HOME/vault"

@@ -16,6 +16,10 @@
 
 set -euo pipefail
 
+# tmux's run-shell/display-popup inherit the server's PATH, which may not include
+# ~/.local/bin (true on macOS). Prepend it so tmux-project-open resolves everywhere.
+export PATH="$HOME/.local/bin:$PATH"
+
 LIST="${XDG_DATA_HOME:-$HOME/.local/share}/tmux-harpoon/list"
 mkdir -p "$(dirname "$LIST")"
 touch "$LIST"
@@ -64,7 +68,8 @@ case "$cmd" in
         ;;
     menu)
         # Run inside a tmux popup (see the binding); edit + :w persists the order.
-        exec nvim "$LIST"
+        # `q` writes and closes so reorders persist and the popup dismisses (-E).
+        exec nvim -c 'nnoremap <buffer> q <Cmd>wq<CR>' "$LIST"
         ;;
     *)
         echo "usage: tmux-harpoon {add | jump <N> | menu}" >&2

@@ -16,7 +16,7 @@ return {
       custom_highlights = function()
         return {
           -- Float chrome baseline: teal borders, red titles on mantle. Every float that
-          -- links to FloatBorder/FloatTitle (mini.pick, tiny-cmdline, LSP floats,
+          -- links to FloatBorder/FloatTitle (tiny-cmdline, LSP floats,
           -- ui-input, blink docs) inherits this — single source of truth, no blue UI.
           -- Small red pop keeps red-as-accent without red-framing every float.
           FloatBorder = { fg = "#94e2d5", bg = "#21252b" },
@@ -41,13 +41,14 @@ return {
           Directory = { fg = "#cdd6f4" },
           MiniIconsAzure = { fg = "#a6e3a1" },
           MiniIndentscopeSymbol = { fg = "#6c7086" },
-          -- Selected row: bg-only surface0, matching blink's PmenuSel, so "current
-          -- item" reads identically in the picker and the completion menu.
-          MiniPickMatchCurrent = { bg = "#313244", fg = "NONE" },
-          -- mini.pick title/info text in the border: lavender (palette: teal chrome,
-          -- red titles, lavender identity). Catppuccin's default here is mauve.
-          -- Note: titles are red globally, but picker identity stays lavender per design.
-          MiniPickBorderText = { fg = "#b4befe", bg = "#21252b" },
+          -- Selected row in the snacks.picker list: bg-only surface0, matching
+          -- blink's PmenuSel, so "current item" reads identically in the picker
+          -- and the completion menu.
+          SnacksPickerListCursorLine = { bg = "#313244", fg = "NONE" },
+          -- Picker title/border text: lavender (palette: teal chrome, red titles,
+          -- lavender identity). Titles are red globally, but picker identity stays
+          -- lavender per design.
+          SnacksPickerTitle = { fg = "#b4befe", bg = "#21252b" },
           -- LSP document-highlight: underline instead of Catppuccin's
           -- background block (these are the groups document_highlight renders with).
           LspReferenceText = { underline = true },

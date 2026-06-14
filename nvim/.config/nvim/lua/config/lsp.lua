@@ -23,11 +23,11 @@ vim.api.nvim_create_autocmd("LspAttach", {
     map("n", "gd", vim.lsp.buf.definition, "Go to definition")
     map("n", "gD", vim.lsp.buf.declaration, "Go to declaration")
     map("n", "gI", function()
-      require("mini.extra").pickers.lsp({ scope = "implementation" })
+      Snacks.picker.lsp_implementations()
     end, "Go to implementation")
     map("n", "gy", vim.lsp.buf.type_definition, "Go to type definition")
     map("n", "gr", function()
-      require("mini.extra").pickers.lsp({ scope = "references" })
+      Snacks.picker.lsp_references()
     end, "References")
     map("n", "<leader>cr", vim.lsp.buf.rename, "Rename symbol")
     map({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, "Code action")
@@ -57,7 +57,7 @@ vim.api.nvim_create_autocmd("LspAttach", {
 
     map("n", "<leader>cd", vim.diagnostic.open_float, "Line diagnostics")
     map("n", "<leader>cs", function()
-      require("mini.extra").pickers.lsp({ scope = "document_symbol" })
+      Snacks.picker.lsp_symbols()
     end, "Document symbols")
 
     local client = vim.lsp.get_client_by_id(args.data.client_id)

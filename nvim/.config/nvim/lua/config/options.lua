@@ -93,6 +93,21 @@ end)
 -- touches Neovim's native diff filler.)
 vim.opt.fillchars:append({ diff = " " })
 
+-- :grep / :copen quickfix searches get the same visibility as the snacks
+-- pickers (hidden files, gitignored dotfiles, junk-dir excludes). Exclusion
+-- globs come from util.search — single source of truth shared with the picker.
+-- Single-quote each glob: :grep runs grepprg through the shell, and zsh expands
+-- unquoted `!`/`*` itself (erroring "no matches found" on a miss, unlike bash);
+-- quotes make zsh hand them to rg. (Relocated here from the old mini-pick.lua.)
+do
+  local globs = {}
+  for _, pat in ipairs(require("util.search").exclude_patterns()) do
+    table.insert(globs, "--glob='!" .. pat .. "'")
+  end
+  vim.o.grepprg = "rg --vimgrep --smart-case --hidden --no-ignore-vcs " .. table.concat(globs, " ")
+  vim.o.grepformat = "%f:%l:%c:%m"
+end
+
 vim.opt.showtabline = 0
 
 -- -- hide default dashboard

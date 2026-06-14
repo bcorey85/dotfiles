@@ -3,13 +3,13 @@ return {
   version = vim.version.range("^3.0.0"),
   deps = {
     "nvim-lua/plenary.nvim",
-    "echasnovski/mini.nvim",
+    "folke/snacks.nvim",
   },
   setup = function()
     require("obsidian").setup({
       legacy_commands = false,
       picker = {
-        name = "mini.pick",
+        name = "snacks.pick",
       },
       workspaces = (function()
         local candidates = {
@@ -102,8 +102,8 @@ return {
       scan(vault_root)
       table.sort(dirs)
 
-      -- vim.ui.select is handled by MiniPick.ui_select (wired in mini-pick.lua)
-      -- so this renders as a mini.pick floating picker rather than a plain prompt.
+      -- vim.ui.select is routed through snacks.picker (picker.ui_select, set in
+      -- plugins/snacks.lua) so this renders as a snacks floating picker.
       vim.ui.select(dirs, { prompt = "Move note to" }, function(choice)
         if not choice then
           return

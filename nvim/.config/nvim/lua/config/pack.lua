@@ -36,7 +36,7 @@ local plugin_order = {
   "lspconfig", -- ships lsp/ server defs consumed by config.lsp
   "mason", -- LSP / tool installer (3 plugins)
   "blink", -- completion
-  "mini-pick", -- finder: mini.pick + mini.extra + mini.visits
+  "snacks", -- finder (snacks.picker, replaced mini.pick) + image/zen/scratch/terminal/gitbrowse; before obsidian (picker) + lsp consumers
   "oil",
   "smart-splits",
   "gitsigns",
@@ -61,7 +61,6 @@ local plugin_order = {
   "sleuth", -- auto-detect shiftwidth/expandtab per buffer
   "obsidian",
   "render-markdown",
-  "snacks", -- image module: inline mermaid/images via kitty graphics
   "tiny-cmdline",
   "persistence", -- session save/restore per cwd
   "dap", -- DAP: nvim-dap + dap-ui + dap-python (deferred — no require until <leader>d)

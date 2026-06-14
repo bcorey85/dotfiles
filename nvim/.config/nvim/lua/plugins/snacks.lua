@@ -27,6 +27,33 @@ return {
   src = "folke/snacks.nvim",
   setup = function()
     require("snacks").setup({
+      -- picker: fuzzy finder (replaced mini.pick + mini.extra + mini.visits).
+      -- Telescope-style layout — narrow result list + preview pane — so grep
+      -- hits show the matched line, not just long monorepo paths. ui_select
+      -- defaults to true: enabling the picker also routes vim.ui.select through
+      -- it (code-action / rename / obsidian / oil prompts), replacing the old
+      -- MiniPick.ui_select wiring. Keymaps live below.
+      picker = {
+        ui_select = true,
+        -- <C-d>/<C-u> scroll the PREVIEW (snacks defaults them to list half-page
+        -- scroll; preview scroll lives on <C-f>/<C-b>). Override per-window so
+        -- they hit the preview whether focus is in the input or the list — snacks
+        -- merges these key-by-key, so every other default binding is preserved.
+        win = {
+          input = {
+            keys = {
+              ["<c-d>"] = { "preview_scroll_down", mode = { "i", "n" } },
+              ["<c-u>"] = { "preview_scroll_up", mode = { "i", "n" } },
+            },
+          },
+          list = {
+            keys = {
+              ["<c-d>"] = "preview_scroll_down",
+              ["<c-u>"] = "preview_scroll_up",
+            },
+          },
+        },
+      },
       image = {
         enabled = true,
         math = { enabled = false },
@@ -104,5 +131,70 @@ return {
         notify = false,
       })
     end, { desc = "Yank git permalink" })
+
+    -- ── picker keymaps (ported 1:1 from the old mini.pick layout) ──────────────
+    -- Show hidden files + gitignored dotfiles (.env, .env.local) but exclude junk
+    -- dirs (node_modules, dist, caches…). hidden → --hidden, ignored → --no-ignore;
+    -- exclude globs come from util.search (shared with grepprg in options.lua).
+    -- <C-q> → send to quickfix is a snacks built-in; no custom action needed.
+    local exclude = require("util.search").exclude_patterns()
+    local search_opts = { hidden = true, ignored = true, exclude = exclude }
+
+    local pmap = function(lhs, fn, desc)
+      vim.keymap.set("n", lhs, fn, { desc = desc })
+    end
+
+    -- <leader>/: project-wide live grep over file CONTENTS.
+    pmap("<leader>/", function()
+      Snacks.picker.grep(search_opts)
+    end, "Live grep")
+
+    -- <leader><space>: file finder.
+    pmap("<leader><space>", function()
+      Snacks.picker.files(search_opts)
+    end, "Find files")
+
+    pmap("<leader>o", function()
+      Snacks.picker.buffers()
+    end, "Buffers")
+
+    pmap("<leader>.", function()
+      Snacks.picker.resume()
+    end, "Resume last picker")
+
+    -- <leader>sw: one-shot grep for the word under the cursor.
+    pmap("<leader>sw", function()
+      Snacks.picker.grep_word(search_opts)
+    end, "Grep word under cursor")
+
+    pmap("<leader>ss", function()
+      Snacks.picker.lsp_symbols()
+    end, "Symbols (document)")
+
+    pmap("<leader>sS", function()
+      Snacks.picker.lsp_workspace_symbols()
+    end, "Symbols (workspace)")
+
+    pmap("<leader>sk", function()
+      Snacks.picker.keymaps()
+    end, "Keymaps")
+
+    pmap("<leader>sb", function()
+      Snacks.picker.lines()
+    end, "Search in buffer")
+
+    pmap("<leader>sh", function()
+      Snacks.picker.help()
+    end, "Help tags")
+
+    pmap("<leader>fr", function()
+      Snacks.picker.recent()
+    end, "Recent files")
+
+    -- <leader>fv: frecency-ranked smart picker (buffers + recent + files),
+    -- replacing the old mini.visits visit_paths finder.
+    pmap("<leader>fv", function()
+      Snacks.picker.smart()
+    end, "Frecent files")
   end,
 }

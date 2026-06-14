@@ -50,8 +50,8 @@ local function esc(s)
 end
 
 -- A window gets a winbar only if it's a normal, non-floating window holding a
--- real file buffer. Special buffers (oil, mini.pick, quickfix, help, terminals)
--- and floats stay bare.
+-- real file buffer. Special buffers (oil, snacks.picker, quickfix, help,
+-- terminals) and floats stay bare.
 local function eligible(win)
   if vim.api.nvim_win_get_config(win).relative ~= "" then
     return false

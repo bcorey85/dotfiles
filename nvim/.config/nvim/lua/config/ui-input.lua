@@ -2,8 +2,8 @@
 --
 -- Replaces the bottom-corner cmdline prompt with a rounded floating window,
 -- matching the border style used elsewhere in this config. No plugins — just
--- nvim API. vim.ui.select is handled by MiniPick.ui_select (wired in
--- mini-pick.lua), so mini.pick owns all select pickers.
+-- nvim API. vim.ui.select is routed through snacks.picker (picker.ui_select,
+-- set in plugins/snacks.lua), so snacks owns all select pickers.
 --
 -- Esc behavior (differs from typical prompt UIs):
 --   INSERT mode <Esc> → drop to normal mode so vim motions/operators work on the text.

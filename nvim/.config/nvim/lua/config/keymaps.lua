@@ -60,14 +60,23 @@ vim.keymap.set("n", "[c", hunk_jump("prev", "[czz"), { desc = "Previous hunk and
 vim.keymap.set("n", "]p", hunk_jump("next", "]czz"), { desc = "Next hunk and center" })
 vim.keymap.set("n", "[p", hunk_jump("prev", "[czz"), { desc = "Previous hunk and center" })
 
--- `=`: when the cursor sits in a hunk, fire gitsigns' inline preview (same as
--- <leader>gd) for a one-key peek; otherwise fall through to the native `=`
--- reindent operator. conform format_on_save makes manual `=` rare, so hijacking
--- it on changes is cheap, and the feedkeys passthrough preserves =ip / gg=G off
--- a hunk. Non-expr (expr maps hit textlock when preview sets extmarks).
+-- `=`: TOGGLE gitsigns' inline preview (same display as <leader>gd / the ]q
+-- review walk). If a preview is already up — wherever it came from — clear it;
+-- else, on a hunk, show it; off a hunk with nothing shown, fall through to the
+-- native `=` reindent operator. The "already shown?" probe reads the public
+-- gitsigns_preview_inline extmark namespace (the inline preview's own render
+-- target), so the toggle-off works no matter which key raised the preview.
+-- conform format_on_save makes manual `=` rare, so hijacking it on changes is
+-- cheap, and the feedkeys passthrough preserves =ip / gg=G off a hunk. Non-expr
+-- (expr maps hit textlock when preview sets extmarks).
 vim.keymap.set("n", "=", function()
   local ok, gs = pcall(require, "gitsigns")
   if ok and not vim.wo.diff then
+    local ns = vim.api.nvim_get_namespaces()["gitsigns_preview_inline"]
+    if ns and #vim.api.nvim_buf_get_extmarks(0, ns, 0, -1, {}) > 0 then
+      vim.api.nvim_buf_clear_namespace(0, ns, 0, -1) -- already showing → toggle off
+      return
+    end
     local row = vim.fn.line(".")
     for _, h in ipairs(gs.get_hunks() or {}) do
       local s = h.added.start
@@ -79,7 +88,7 @@ vim.keymap.set("n", "=", function()
     end
   end
   vim.api.nvim_feedkeys("=", "n", false) -- not on a hunk: native operator
-end, { desc = "Inline hunk preview on a change, else = operator" })
+end, { desc = "Toggle inline hunk preview on a change, else = operator" })
 
 -- ─── Editing ──────────────────────────────────────────────────────────────────
 
@@ -158,7 +167,7 @@ end, { desc = "Copy git commit hash (HEAD)" })
 vim.keymap.set("n", "<leader>fn", "<cmd>enew<cr>", { desc = "New File" })
 
 -- ─── LSP & diagnostics ────────────────────────────────────────────────────────
-vim.keymap.set("n", "<leader>lr", function()
+vim.keymap.set("n", "<leader>lR", function()
   vim.diagnostic.reset()
   for _, client in ipairs(vim.lsp.get_clients({ bufnr = 0 })) do
     vim.lsp.stop_client(client.id, true)
@@ -174,7 +183,7 @@ end, { desc = "Restart LSP (clear diagnostics)" })
 -- oxlint, biome, and most modern linters implement. Equivalent to running
 -- :EslintFixAll for eslint, ruff's "Fix all" action, etc — but works
 -- uniformly across whichever LSP is attached.
-vim.keymap.set("n", "<leader>cA", function()
+vim.keymap.set("n", "<leader>lA", function()
   vim.lsp.buf.code_action({
     apply = true,
     context = { only = { "source.fixAll" }, diagnostics = {} },

@@ -12,6 +12,37 @@ vim.diagnostic.config({
   },
 })
 
+-- Diagnostic navigation + float live at global scope, not in LspAttach: nvim-lint
+-- produces diagnostics in buffers with no LSP client (markdown, shell, etc.), so
+-- these must work everywhere — not only where a language server attached.
+local dmap = function(lhs, rhs, desc)
+  vim.keymap.set("n", lhs, rhs, { desc = desc })
+end
+
+dmap("]d", function()
+  vim.diagnostic.jump({ count = 1 })
+end, "Next diagnostic")
+dmap("[d", function()
+  vim.diagnostic.jump({ count = -1 })
+end, "Prev diagnostic")
+dmap("]e", function()
+  vim.diagnostic.jump({ count = 1, severity = vim.diagnostic.severity.ERROR })
+end, "Next error")
+dmap("[e", function()
+  vim.diagnostic.jump({ count = -1, severity = vim.diagnostic.severity.ERROR })
+end, "Prev error")
+dmap("]w", function()
+  vim.diagnostic.jump({ count = 1, severity = vim.diagnostic.severity.WARN })
+end, "Next warning")
+dmap("[w", function()
+  vim.diagnostic.jump({ count = -1, severity = vim.diagnostic.severity.WARN })
+end, "Prev warning")
+
+-- Line diagnostics float lives in the <leader>l (lsp/diag/qf) group alongside the
+-- diagnostic→quickfix/loclist lists, not in <leader>c (code mutation). Document
+-- symbols moved out entirely — <leader>ss (snacks search) already covers it.
+dmap("<leader>ll", vim.diagnostic.open_float, "Line diagnostics (float)")
+
 vim.api.nvim_create_autocmd("LspAttach", {
   callback = function(args)
     local bufnr = args.buf
@@ -29,36 +60,12 @@ vim.api.nvim_create_autocmd("LspAttach", {
     map("n", "gr", function()
       Snacks.picker.lsp_references()
     end, "References")
-    map("n", "<leader>cr", vim.lsp.buf.rename, "Rename symbol")
-    map({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, "Code action")
-    map("n", "<leader>cF", function()
+    map("n", "<leader>lr", vim.lsp.buf.rename, "Rename symbol")
+    map({ "n", "v" }, "<leader>la", vim.lsp.buf.code_action, "Code action")
+    map("n", "<leader>lF", function()
       vim.lsp.buf.format({ async = true })
     end, "Format buffer (LSP)")
     map("n", "gK", vim.lsp.buf.signature_help, "Signature help")
-
-    map("n", "]d", function()
-      vim.diagnostic.jump({ count = 1 })
-    end, "Next diagnostic")
-    map("n", "[d", function()
-      vim.diagnostic.jump({ count = -1 })
-    end, "Prev diagnostic")
-    map("n", "]e", function()
-      vim.diagnostic.jump({ count = 1, severity = vim.diagnostic.severity.ERROR })
-    end, "Next error")
-    map("n", "[e", function()
-      vim.diagnostic.jump({ count = -1, severity = vim.diagnostic.severity.ERROR })
-    end, "Prev error")
-    map("n", "]w", function()
-      vim.diagnostic.jump({ count = 1, severity = vim.diagnostic.severity.WARN })
-    end, "Next warning")
-    map("n", "[w", function()
-      vim.diagnostic.jump({ count = -1, severity = vim.diagnostic.severity.WARN })
-    end, "Prev warning")
-
-    map("n", "<leader>cd", vim.diagnostic.open_float, "Line diagnostics")
-    map("n", "<leader>cs", function()
-      Snacks.picker.lsp_symbols()
-    end, "Document symbols")
 
     local client = vim.lsp.get_client_by_id(args.data.client_id)
     if client and client:supports_method("textDocument/documentHighlight") then

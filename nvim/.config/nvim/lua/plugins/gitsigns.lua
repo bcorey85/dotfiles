@@ -132,6 +132,39 @@ return {
       vim.api.nvim_feedkeys(count .. "-", "n", false) -- not on a hunk: native motion
     end, "Stage hunk on a change, else - motion")
 
+    -- `_` UNSTAGES the staged hunk under the cursor — the safe inverse of `-`
+    -- (stage), for a fast ]p → - (accept) / ]p → _ (pull back) review loop.
+    -- gitsigns' stage_hunk() is a toggle: called on a staged hunk it inverts to
+    -- unstage, preserving the working-tree change (only the index entry is
+    -- dropped — non-destructive, unlike reset_hunk). The public get_hunks()
+    -- reports UNSTAGED hunks only, so we read the staged set straight from the
+    -- cache to fire ONLY when a staged hunk sits under the cursor; off one, `_`
+    -- replays its native motion. To DISCARD a change outright (destructive),
+    -- use <leader>ghr — deliberately not on a bare key.
+    map("_", function()
+      local ok, gs = pcall(require, "gitsigns")
+      if ok and not vim.wo.diff then
+        local ok2, on_staged = pcall(function()
+          local bcache = require("gitsigns.cache").cache[vim.api.nvim_get_current_buf()]
+          local row = vim.fn.line(".")
+          for _, h in ipairs(bcache and bcache.hunks_staged or {}) do
+            local s = h.added.start
+            local e = s + math.max(h.added.count, 1) - 1
+            if row >= s and row <= e then
+              return true
+            end
+          end
+          return false
+        end)
+        if ok2 and on_staged then
+          gs.stage_hunk() -- toggle → unstages the staged hunk under the cursor
+          return
+        end
+      end
+      local count = vim.v.count > 0 and tostring(vim.v.count) or ""
+      vim.api.nvim_feedkeys(count .. "_", "n", false) -- not on a staged hunk: native motion
+    end, "Unstage staged hunk under cursor, else _ motion")
+
     -- reset_hunk discards the working-tree change (irreversible for unsaved
     -- edits — the hunk is simply dropped, not staged).
     map("<leader>ghr", function()

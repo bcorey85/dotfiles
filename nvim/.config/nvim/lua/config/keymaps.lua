@@ -20,8 +20,8 @@ vim.keymap.set({ "n", "x" }, "k", "v:count == 0 ? 'gk' : 'k'", { expr = true, si
 vim.keymap.set("n", "<C-d>", "10<C-d>zz", { desc = "Scroll down and center" })
 vim.keymap.set("n", "<C-u>", "10<C-u>zz", { desc = "Scroll up and center" })
 
--- Alternate file: toggle between the two most recent buffers (test ↔ impl).
-vim.keymap.set("n", "<BS>", "<C-^>", { desc = "Alternate file" })
+-- Alternate file: toggle between the two most recent buffers (test ↔ impl). Mirrors tmux prefix-; alt-window.
+vim.keymap.set("n", "<leader>;", "<C-^>", { desc = "Alternate file" })
 
 vim.keymap.set("n", "n", "nzzzv", { desc = "Next search result and center" })
 vim.keymap.set("n", "N", "Nzzzv", { desc = "Previous search result and center" })
@@ -181,7 +181,7 @@ vim.keymap.set("n", "<leader>cA", function()
   })
 end, { desc = "LSP: fix all (source.fixAll)" })
 
-vim.keymap.set("n", "<leader>ih", function()
+vim.keymap.set("n", "<leader>ui", function()
   local enabled = not vim.lsp.inlay_hint.is_enabled()
   vim.lsp.inlay_hint.enable(enabled)
 end, { desc = "Toggle inlay hints" })

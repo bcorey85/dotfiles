@@ -37,7 +37,7 @@ return {
     -- no prettier config is found in the project root.
     require("conform").formatters.prettier = { require_cwd = true }
 
-    vim.keymap.set("n", "<leader>cf", function()
+    vim.keymap.set("n", "<leader>lf", function()
       require("conform").format({ async = true, lsp_format = "fallback" })
     end, { desc = "Format buffer (conform)" })
 

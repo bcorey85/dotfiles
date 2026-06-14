@@ -9,8 +9,6 @@
 --   line/col   → relative line numbers + ruler in the gutter
 --   diff +/-/~ → gitsigns sign column (per-line, right where the change is)
 
-local M = {}
-
 local ERROR = vim.diagnostic.severity.ERROR
 local WARN = vim.diagnostic.severity.WARN
 
@@ -384,5 +382,3 @@ function _G.Statusline_render()
 end
 
 vim.o.statusline = "%!v:lua.Statusline_render()"
-
-return M

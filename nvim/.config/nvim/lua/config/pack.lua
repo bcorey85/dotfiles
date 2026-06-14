@@ -44,7 +44,6 @@ local plugin_order = {
   "diffs", -- treesitter syntax highlighting for fugitive/diff-mode diffs (display only)
   "mini-ai",
   "mini-surround",
-  "mini-bufremove",
   "mini-pairs",
   "mini-indentscope",
   "flash",

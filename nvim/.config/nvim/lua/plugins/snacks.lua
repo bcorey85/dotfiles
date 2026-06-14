@@ -85,6 +85,13 @@ return {
       Snacks.zen()
     end, { desc = "Zen mode (centered, width-capped)" })
 
+    -- Delete the current buffer without disturbing the window layout. Snacks owns
+    -- this now (replaced mini.bufremove); a modified buffer prompts rather than
+    -- silently discarding.
+    vim.keymap.set("n", "<leader>bd", function()
+      Snacks.bufdelete()
+    end, { desc = "Delete buffer" })
+
     -- Terminal toggle, keyed by cwd (one float per project). Lives in the
     -- <leader>t tasks namespace as <leader>tt — "tasks → terminal" — alongside
     -- the dispatch maps (tm/tr/td/…). Bare <leader>t is their prefix, so the

@@ -3,8 +3,8 @@
 --
 -- Division of responsibilities in this config:
 --   gitsigns  → signs in the sign column, first/last hunk jumps (]H/[H), in-file
---               staging (- and <leader>gh*), persistent inline diff (<leader>gV),
---               and the hunk quickfix list (<leader>ghq / <leader>ghl)
+--               staging (- and the <leader>c* "changes" namespace), persistent
+--               inline diff (<leader>gV), hunk quickfix list (<leader>cq repo / <leader>cQ buffer)
 --   keymaps   → next/prev hunk nav (]c/[c) and the = peek key
 --   fugitive  → status staging, commit, 3-way merge via :Gdiffsplit!, history
 --   util/merge → plugin-free conflict resolution for files with raw markers
@@ -97,15 +97,15 @@ return {
       require("gitsigns").toggle_current_line_blame()
     end, "Toggle line blame (inline)")
 
-    -- Staging/unstaging — <leader>gh* namespace.
+    -- Staging/unstaging — <leader>c* "changes" namespace.
     --
     -- stage_hunk TOGGLES: calling it on a hunk that is already staged will
     -- unstage it. There is no separate "unstage hunk" binding needed for that.
-    map("<leader>ghs", function()
+    map("<leader>cs", function()
       require("gitsigns").stage_hunk()
     end, "Stage/unstage hunk")
     -- Visual: stage only the selected lines within a hunk.
-    map("<leader>ghs", function()
+    map("<leader>cs", function()
       require("gitsigns").stage_hunk({ vim.fn.line("."), vim.fn.line("v") })
     end, "Stage/unstage hunk (range)", "v")
 
@@ -113,7 +113,7 @@ return {
     -- fast ]c → - → ]c → - review loop. It only hijacks `-` when the cursor sits
     -- inside an unstaged hunk; anywhere else it replays the built-in `-` motion
     -- (first non-blank of the previous line), count included. Unstaging stays on
-    -- <leader>ghs (toggle) and <leader>ghU — get_hunks only reports unstaged
+    -- <leader>cs (toggle) and <leader>cU — get_hunks only reports unstaged
     -- hunks, so the fallthrough can't see staged ones to toggle them back.
     map("-", function()
       local ok, gs = pcall(require, "gitsigns")
@@ -140,7 +140,7 @@ return {
     -- reports UNSTAGED hunks only, so we read the staged set straight from the
     -- cache to fire ONLY when a staged hunk sits under the cursor; off one, `_`
     -- replays its native motion. To DISCARD a change outright (destructive),
-    -- use <leader>ghr — deliberately not on a bare key.
+    -- use <leader>cr — deliberately not on a bare key.
     map("_", function()
       local ok, gs = pcall(require, "gitsigns")
       if ok and not vim.wo.diff then
@@ -167,24 +167,24 @@ return {
 
     -- reset_hunk discards the working-tree change (irreversible for unsaved
     -- edits — the hunk is simply dropped, not staged).
-    map("<leader>ghr", function()
+    map("<leader>cr", function()
       require("gitsigns").reset_hunk()
     end, "Reset hunk")
     -- Visual: discard only the selected lines.
-    map("<leader>ghr", function()
+    map("<leader>cr", function()
       require("gitsigns").reset_hunk({ vim.fn.line("."), vim.fn.line("v") })
     end, "Reset hunk (range)", "v")
 
     -- Whole-buffer operations.
-    map("<leader>ghS", function()
+    map("<leader>cS", function()
       require("gitsigns").stage_buffer()
     end, "Stage buffer")
-    map("<leader>ghU", function()
+    map("<leader>cU", function()
       -- reset_buffer_index unstages all staged hunks in the buffer (index →
       -- HEAD), leaving the working-tree untouched.
       require("gitsigns").reset_buffer_index()
     end, "Unstage buffer (reset index)")
-    map("<leader>ghR", function()
+    map("<leader>cR", function()
       -- DESTRUCTIVE: reset_buffer discards ALL working-tree changes in the
       -- buffer, reverting to the last commit. Cannot be undone.
       require("gitsigns").reset_buffer()
@@ -192,25 +192,38 @@ return {
 
     -- Hunk quickfix lists (native qf, rendered by quicker.nvim).
     --
-    -- <leader>ghq is the headline feature: dumps every modified hunk across
+    -- <leader>cq is the headline feature: dumps every modified hunk across
     -- every file in the repo into the quickfix list. Navigate with ]q/[q as
     -- usual; `>` in the qf window expands diff context around each entry.
     --
     -- NOTE: the list goes stale as soon as you stage or reset a hunk because
-    -- gitsigns recalculates line numbers after each change. Re-run <leader>ghq
+    -- gitsigns recalculates line numbers after each change. Re-run <leader>cq
     -- to rebuild it after a staging session.
-    map("<leader>ghq", function()
+    map("<leader>cq", function()
       require("gitsigns").setqflist("all", {}, function()
-        -- Name the list for the qf header. {what}-only setqflist: the empty
-        -- {list} is ignored, only the title property is set, items are preserved.
-        vim.fn.setqflist({}, "a", { title = "Gitsigns Hunks" })
+        -- setqflist("all") is repo-wide and includes whole-file deletions
+        -- (gitsigns emits a single "Removed" hunk for a `git rm`'d file). Those
+        -- are dead entries in the review walk: the file is gone from disk, the
+        -- deletion is already staged, and ]q into it just opens an empty buffer.
+        -- Drop any item whose file no longer exists; partial removals inside
+        -- still-present files keep their (existing) path and stay. Re-set the
+        -- list with the title in one "r" (replace) call.
+        local kept = vim.tbl_filter(function(it)
+          local name = it.filename
+          if (not name or name == "") and it.bufnr and it.bufnr > 0 then
+            name = vim.api.nvim_buf_get_name(it.bufnr)
+          end
+          return name and name ~= "" and vim.uv.fs_stat(name) ~= nil
+        end, vim.fn.getqflist())
+        vim.fn.setqflist({}, "r", { title = "Gitsigns Hunks", items = kept })
       end)
     end, "Hunk qf list (repo-wide)")
 
-    -- Current buffer only — useful for a focused "what did I change here?" scan.
-    map("<leader>ghl", function()
+    -- Current buffer only — focused "what did I change here?" scan. Capital Q
+    -- pairs with the more-used repo-wide <leader>cq.
+    map("<leader>cQ", function()
       require("gitsigns").setqflist(0, {}, function()
-        -- Same title as <leader>ghq for a consistent qf header.
+        -- Same title as <leader>cq for a consistent qf header.
         vim.fn.setqflist({}, "a", { title = "Gitsigns Hunks" })
       end)
     end, "Hunk qf list (buffer)")

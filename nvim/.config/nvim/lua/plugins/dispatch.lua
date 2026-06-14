@@ -5,8 +5,7 @@
 return {
   src = "tpope/vim-dispatch",
   setup = function()
-    -- <leader>t = tasks. <leader>d is deliberately left free: it's the de-facto
-    -- DAP/debug namespace, reserved for if nvim-dap ever lands (C#/.NET future).
+    -- <leader>t = tasks. <leader>d is the DAP/debug namespace (see dap.lua).
     vim.keymap.set("n", "<leader>tm", "<cmd>Make<cr>", { desc = "Make (compiler → quickfix)" })
     vim.keymap.set("n", "<leader>tM", "<cmd>Make!<cr>", { desc = "Make (background)" })
     vim.keymap.set("n", "<leader>tr", "<cmd>Dispatch<cr>", { desc = "Re-run focused task" })

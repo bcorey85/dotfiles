@@ -34,7 +34,6 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 | `claude`    | `~/.claude/`                            | Agents, commands, settings, hooks                                                                         |
 | `aerospace` | `~/.config/aerospace/`                  | macOS tiling WM. Workspaces 1-9 pinned to external monitor, built-in screen dedicated to Teams (mac only) |
 | `kitty`     | `~/.config/kitty/`                      | Catppuccin Mocha (OneDark BG)                                                                             |
-| `alacritty` | `~/.config/alacritty/`                  | Catppuccin Mocha (OneDark BG), matches kitty                                                              |
 | `starship`  | `~/.config/starship.toml`               | Gruvbox Material prompt                                                                                   |
 | `kanata`    | `~/kanata-config.kbd`, `~/kanata-setup` | Keyboard remapping with systemd service                                                                   |
 | `scripts`   | `~/.local/bin/`                         | tmux-sessionizer, dev utilities                                                                           |
@@ -52,7 +51,7 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 ## Key Conventions
 
 - **Theme**: Catppuccin Mocha (OneDark BG) everywhere (kitty, starship, neovim, tmux, waybar, rofi, dunst, hyprlock)
-- **Font**: CommitMono Nerd Font Mono, 10pt (kitty + alacritty)
+- **Font**: CommitMono Nerd Font Mono, 10pt (kitty)
 - **Platform guards**: Use `command -v <tool> &>/dev/null &&` before tool-specific init (see .zshrc)
 - **Install scripts**: All use the same color output pattern (`print_success`, `print_error`, `print_info`) with `set -e`
 - **Stow structure**: `<package>/<home-relative-path>` (e.g., `nvim/.config/nvim/init.lua` becomes `~/.config/nvim/init.lua`)

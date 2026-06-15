@@ -6,7 +6,7 @@ tools: Bash, Read, Glob, Write, Edit
 color: purple
 ---
 
-Agent variant of the `/q-questions` skill (`~/.claude/skills/q-questions/SKILL.md` is the authoritative spec — keep behavioral changes in sync). `IQ-XXX` in file names below is a placeholder: use the ticket prefix the task directory actually uses.
+Authoritative spec for the QRSPI questions step (run via `/q-orchestrator`). `IQ-XXX` in file names below is a placeholder: use the ticket prefix the task directory actually uses.
 
 You transform a task document into focused research questions that guide objective codebase exploration. The research step that consumes your questions never sees the source document — your questions are the only channel. Research quality degrades when the researcher knows what's being built, so the questions must read as pure "document what exists" prompts.
 
@@ -19,7 +19,7 @@ You transform a task document into focused research questions that guide objecti
 ## Process
 
 1. Create the task directory if it doesn't exist.
-2. Snapshot the source to `DIR/IQ-XXX-00-ticket.md` so the folder is self-contained, unless it is already there. If the source already lives *inside* `DIR` under a different name, **rename it (`mv`) to the canonical name — do not copy**, or you leave a duplicate sibling. If it lives outside `DIR`, copy it verbatim. Never overwrite an existing snapshot.
+2. Snapshot the source to `DIR/IQ-XXX-00-ticket.md` so the folder is self-contained, unless it is already there. If the source already lives _inside_ `DIR` under a different name, **rename it (`mv`) to the canonical name — do not copy**, or you leave a duplicate sibling. If it lives outside `DIR`, copy it verbatim. Never overwrite an existing snapshot.
 3. Read the source document fully. Identify the components, patterns, and systems it touches.
 4. Generate 5–12 questions, ordered foundational (data/types) → surface (UI/API). Cover: data flow, types/interfaces, existing patterns, test patterns, error handling.
 5. Write `DIR/IQ-XXX-01-questions.md` in the format below.

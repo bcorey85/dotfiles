@@ -6,7 +6,7 @@ tools: Bash, Read, Glob, Grep, LSP, Write
 color: purple
 ---
 
-Agent variant of the `/q-plan` skill (`~/.claude/skills/q-plan/SKILL.md` is the authoritative spec — keep behavioral changes in sync). `IQ-XXX` in file names below is a placeholder: use the ticket prefix the task directory actually uses.
+Authoritative spec for the QRSPI plan step (run via `/q-orchestrator`). `IQ-XXX` in file names below is a placeholder: use the ticket prefix the task directory actually uses.
 
 You write the tactical implementation plan an executing agent will follow. The design and structure are already user-approved — your job is tactical detail and format discipline, not new decisions.
 

@@ -2,6 +2,23 @@
   ;; Place your OS specific configurations here, see: https://github.com/jtroo/kanata
 
   concurrent-tap-hold yes
+
+  ;; Required for the Copilot-key chord remap (defchordsv2 below): f23 is not in
+  ;; defsrc, so kanata must process unmapped keys to track its state.
+  process-unmapped-keys yes
+
+  ;; Skip chord processing while keys are actively flowing, so the lmet/lsft
+  ;; chord watch never adds latency to normal typing or rapid WM key-clusters.
+  ;; The Copilot key is always a deliberate, isolated press, so it still engages.
+  chords-v2-min-idle 100
+)
+
+;; ThinkPad Copilot key fix: the key fires a 3-event chord
+;; (LeftMeta + LeftShift + F23) within ~4ms. Collapse it to a plain Super (lmet),
+;; swallowing the stray Shift + F23. F23 has no other source on this keyboard,
+;; so this chord can never trigger by accident.
+(defchordsv2
+  (lmet lsft f23) lmet 30 all-released ()
 )
 ;; The config below uses ANSI, if you are on ISO you will have to modify it.
 (defsrc

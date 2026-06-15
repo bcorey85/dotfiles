@@ -14,8 +14,8 @@ KANATA_CONFIG_REL_PATH="kanata-config.kbd"
 # (DO NOT EDIT)
 SYSTEM_KANATA_CONFIG_DST="/etc/kanata/kanata-config.kbd"
 
-# Kanata version to download
-KANATA_VERSION="v1.9.0"
+# Kanata version to download (latest release — not pinned)
+KANATA_VERSION="latest"
 
 # Dedicated user/group names
 KANATA_USER="kanata"
@@ -113,7 +113,7 @@ echo "KERNEL==\"uinput\", MODE=\"0660\", GROUP=\"$UINPUT_GROUP\", OPTIONS+=\"sta
 #========================
 # STEP 5: Download and Install Kanata
 #========================
-KANATA_URL="https://github.com/jtroo/kanata/releases/download/${KANATA_VERSION}/kanata"
+KANATA_URL="https://github.com/jtroo/kanata/releases/latest/download/kanata"
 KANATA_BIN_PATH="/usr/local/bin/kanata"
 
 echoinfo "Stopping kanata.service (if running) before download..."

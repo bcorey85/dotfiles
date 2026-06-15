@@ -13,7 +13,7 @@
 --   mermaid-cli — npm-only, manual install: npm i -g @mermaid-js/mermaid-cli (mmdc binary)
 --
 -- Terminals: kitty and ghostty support Kitty Graphics Protocol.
--- alacritty and WSL do NOT support it — images will not render there.
+-- WSL does NOT support it — images will not render there.
 --
 -- tmux: requires `set -g allow-passthrough on` in .tmux.conf (see tmux/.tmux.conf).
 --
@@ -102,7 +102,7 @@ return {
 
     -- Dismiss-from-inside uses a chord, not <leader>: in terminal mode <leader>
     -- (space) would intercept every space you type in the shell. <C-/> (sent as
-    -- <C-_> by kitty/alacritty) hides the terminal split without leaving insert.
+    -- <C-_> by kitty/ghostty) hides the terminal split without leaving insert.
     for _, key in ipairs({ "<C-/>", "<C-_>" }) do
       vim.keymap.set("t", key, function()
         Snacks.terminal()

@@ -7,13 +7,7 @@ vim.keymap.set("i", "kk", "<Esc>", { desc = "Exit insert mode" })
 
 vim.keymap.set({ "i", "n", "s" }, "<esc>", "<esc><cmd>noh<cr>", { silent = true, desc = "Escape and clear hlsearch" })
 
--- ─── Buffer cycling ───────────────────────────────────────────────────────────
-vim.keymap.set("n", "<S-h>", "<cmd>bprevious<cr>", { desc = "Prev buffer" })
-vim.keymap.set("n", "<S-l>", "<cmd>bnext<cr>", { desc = "Next buffer" })
-vim.keymap.set("n", "[b", "<cmd>bprevious<cr>", { desc = "Prev buffer" })
-vim.keymap.set("n", "]b", "<cmd>bnext<cr>", { desc = "Next buffer" })
-
--- ─── Movement & scrolling ─────────────────────────────────────────────────────
+-- Movement & scrolling
 vim.keymap.set({ "n", "x" }, "j", "v:count == 0 ? 'gj' : 'j'", { expr = true, silent = true, desc = "Down" })
 vim.keymap.set({ "n", "x" }, "k", "v:count == 0 ? 'gk' : 'k'", { expr = true, silent = true, desc = "Up" })
 
@@ -54,14 +48,9 @@ local function hunk_jump(direction, native)
 end
 vim.keymap.set("n", "]c", hunk_jump("next", "]czz"), { desc = "Next hunk and center" })
 vim.keymap.set("n", "[c", hunk_jump("prev", "[czz"), { desc = "Previous hunk and center" })
--- ]p/[p alias for hunk nav (same diff-mode-aware jump). This shadows the
--- built-in indent-adjusting paste (]p/[p) outright — no operator form to fall
--- back on — but conform format_on_save makes manual reindent-paste rare.
-vim.keymap.set("n", "]p", hunk_jump("next", "]czz"), { desc = "Next hunk and center" })
-vim.keymap.set("n", "[p", hunk_jump("prev", "[czz"), { desc = "Previous hunk and center" })
 
--- `=`: TOGGLE gitsigns' inline preview (same display as <leader>gd / the ]q
--- review walk). If a preview is already up — wherever it came from — clear it;
+-- `=`: TOGGLE gitsigns' inline preview (same display as <leader>gd). If a
+-- preview is already up — wherever it came from — clear it;
 -- else, on a hunk, show it; off a hunk with nothing shown, fall through to the
 -- native `=` reindent operator. The "already shown?" probe reads the public
 -- gitsigns_preview_inline extmark namespace (the inline preview's own render

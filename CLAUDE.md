@@ -26,18 +26,18 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 
 ## Stow Packages
 
-| Package     | Target                                  | Key files                                                                                                 |
-| ----------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `nvim`      | `~/.config/nvim/`                       | Native `vim.pack` config (bootstrap in `lua/config/pack.lua`), one spec file per plugin in `lua/plugins/` |
-| `tmux`      | `~/.tmux.conf`                          | Prefix=`Ctrl+Space`, vim-style panes                                                                      |
-| `zsh`       | `~/.zshrc`                              | Plugins, aliases, pyenv/nvm/starship init                                                                 |
-| `claude`    | `~/.claude/`                            | Agents, commands, settings, hooks                                                                         |
-| `aerospace` | `~/.config/aerospace/`                  | macOS tiling WM. Workspaces 1-9 pinned to external monitor, built-in screen dedicated to Teams (mac only) |
-| `kitty`     | `~/.config/kitty/`                      | Catppuccin Mocha (OneDark BG)                                                                             |
-| `starship`  | `~/.config/starship.toml`               | Gruvbox Material prompt                                                                                   |
-| `kanata`    | `~/kanata-config.kbd`, `~/kanata-setup` | Keyboard remapping with systemd service                                                                   |
-| `scripts`   | `~/.local/bin/`                         | tmux-sessionizer, dev utilities                                                                           |
-| `git`       | `~/.gitconfig`                          | Delta pager, side-by-side diffs. Per-machine identity in `~/.gitconfig.local`                             |
+| Package     | Target                                                        | Key files                                                                                                           |
+| ----------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `nvim`      | `~/.config/nvim/`                                             | Native `vim.pack` config (bootstrap in `lua/config/pack.lua`), one spec file per plugin in `lua/plugins/`           |
+| `tmux`      | `~/.tmux.conf`                                                | Prefix=`Ctrl+Space`, vim-style panes                                                                                |
+| `zsh`       | `~/.zshrc`                                                    | Plugins, aliases, pyenv/nvm/starship init                                                                           |
+| `claude`    | `~/.claude/`                                                  | Agents, commands, settings, hooks                                                                                   |
+| `aerospace` | `~/.config/aerospace/`                                        | macOS tiling WM. Workspaces 1-9 pinned to external monitor, built-in screen dedicated to Teams (mac only)           |
+| `kitty`     | `~/.config/kitty/`                                            | Catppuccin Mocha (OneDark BG)                                                                                       |
+| `starship`  | `~/.config/starship.toml`                                     | Gruvbox Material prompt                                                                                             |
+| `kanata`    | `~/kanata-config.kbd`, `~/kanata-setup`, `~/kanata-setup-mac` | Keyboard remapping. Linux: systemd service (`kanata-setup`). macOS: launchd + Karabiner driver (`kanata-setup-mac`) |
+| `scripts`   | `~/.local/bin/`                                               | tmux-sessionizer, dev utilities                                                                                     |
+| `git`       | `~/.gitconfig`                                                | Delta pager, side-by-side diffs. Per-machine identity in `~/.gitconfig.local`                                       |
 
 ## CRITICAL: Cross-Platform Compatibility
 
@@ -62,4 +62,4 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 - Configs are live-symlinked; edits in `~/dotfiles/` take effect immediately (except tmux which needs `tmux source-file ~/.tmux.conf`)
 - Neovim plugins are managed by native `vim.pack` (Neovim 0.12); specs live in `lua/plugins/`, revisions are pinned in `nvim-pack-lock.json`, and `:PackUpdate` / `:PackStatus` / `:PackClean` are defined in `lua/config/pack.lua`
 - Zsh plugins are git-cloned to `~/.zsh/plugins/` (not in this repo, installed by `install/zsh-plugins`)
-- Kanata setup requires `sudo ~/kanata-setup` post-install for systemd service and udev rules
+- Kanata setup is post-install and per-OS: Linux `sudo ~/kanata-setup` (systemd service + udev rules); macOS `sudo ~/kanata-setup-mac` (Homebrew kanata + version-pinned Karabiner driver + launchd daemons, then manual Driver Extension / Input Monitoring / Accessibility approvals + reboot)

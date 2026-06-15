@@ -18,8 +18,6 @@
 --                word-diff) that survives cursor movement. [gitsigns.lua]
 --   ]c / [c      next/prev hunk + center; native diff-change motion inside a
 --                real diff (dv). Quiet — no auto-preview. [keymaps.lua]
---   ]p / [p      alias for ]c / [c (same jump); shadows indent-paste. In the
---                status buffer, routes to fugitive's own ]c/[c. [keymaps + this file]
 --   =            on a hunk: one-key inline preview (transient); off a hunk:
 --                native `=` reindent operator. [keymaps.lua]
 --   -            on a hunk: stage it (stage_hunk); off a hunk: native `-`
@@ -32,9 +30,9 @@
 -- open diff splits and the status window auto-shrinks to 30% [this file]; `=`
 -- expands fugitive's own inline diff; `o`/`gO`/`O` open split/vsplit/tab.
 --
--- In-file staging detail (gitsigns.lua): <leader>ghs stage/unstage hunk (toggle,
--- n+v), <leader>ghr reset hunk, <leader>ghS/ghU stage/unstage buffer, <leader>ghR
--- discard buffer (destructive), <leader>ghq/ghl hunk quickfix repo/buffer,
+-- In-file staging detail (gitsigns.lua): <leader>cs stage/unstage hunk (toggle,
+-- n+v), <leader>cr reset hunk, <leader>cS/cU stage/unstage buffer, <leader>cR
+-- discard buffer (destructive), <leader>cq/cl hunk quickfix repo/buffer,
 -- <leader>gd/gD inline/float one-off hunk preview.
 --
 -- Git commands (this file): <leader>gc commit · gp/gP pull/push · gF push-force ·
@@ -42,7 +40,7 @@
 -- gr open/create PR. History is :Git log (newest-first pager buffer).
 --
 -- Note: `-` and `=` only STAGE/peek unstaged hunks (get_hunks reports unstaged
--- only); unstage via <leader>ghs / <leader>ghU / <leader>gW.
+-- only); unstage via <leader>cs / <leader>cU / <leader>gW.
 -- ════════════════════════════════════════════════════════════════════════════
 --
 return {
@@ -54,7 +52,7 @@ return {
 
     -- Jump to an already-open fugitive status buffer (in any tab/window) if one
     -- exists, else open one in a new tab. Idempotent: pressing it from an
-    -- O-opened review tab snaps you straight back to status — no :tabclose — and
+    -- O-opened review tab snaps you straict back to status — no :tabclose — and
     -- it never piles up duplicate status tabs the way a bare `tab Git` does.
     map("<leader>gg", function()
       for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
@@ -62,6 +60,12 @@ return {
           if vim.bo[vim.api.nvim_win_get_buf(win)].filetype == "fugitive" then
             vim.api.nvim_set_current_tabpage(tab)
             vim.api.nvim_set_current_win(win)
+            -- The status buffer is a cached snapshot. gitsigns stages by writing
+            -- the index directly (- / _ / <leader>c*), so fugitive never learns
+            -- the index moved and the file still shows "unstaged" until the
+            -- buffer is rebuilt. DidChange expires + reloads the status buffers,
+            -- so landing here always reflects current staging — no close/reopen.
+            pcall(vim.fn["fugitive#DidChange"])
             return
           end
         end
@@ -76,7 +80,7 @@ return {
     map("<leader>gb", "<cmd>Git blame<cr>", "Git blame (fugitive)")
 
     -- Stage the current file from wherever you're reading it (working buffer,
-    -- O-tab, or the dv diff's right pane) — no trip back to the status buffer.
+    -- O-tab, or the dv diff's rict pane) — no trip back to the status buffer.
     map("<leader>gw", "<cmd>Gwrite<cr>", "Git write (stage current file)")
     map("<leader>gW", "<cmd>Git reset -- %<cr>", "Git unstage current file")
 
@@ -132,12 +136,6 @@ return {
           buffer = ev.buf,
           desc = "Fugitive: open file in new tab (whole-file review)",
         })
-        -- Make ]p/[p navigate hunks in the status buffer too, by routing to
-        -- fugitive's own ]c/[c (buffer-local, expands inline diffs). gitsigns
-        -- isn't active here — the status buffer isn't a file — so the global
-        -- ]p/[p gitsigns nav no-ops; remap=true resolves ]c to fugitive's map.
-        vim.keymap.set("n", "]p", "]c", { buffer = ev.buf, remap = true, desc = "Fugitive: next hunk" })
-        vim.keymap.set("n", "[p", "[c", { buffer = ev.buf, remap = true, desc = "Fugitive: prev hunk" })
         -- In the tmux popup (prefix g), `q` quits the throwaway nvim so the
         -- popup dismisses like lazygit. Outside the popup the env var is unset,
         -- so `q` keeps its normal meaning and fugitive's `gq` still closes the

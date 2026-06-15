@@ -102,7 +102,7 @@ mac)
   fi
 
   print_info "Installing dependencies via Homebrew..."
-  brew install stow neovim tmux git jq fzf zoxide direnv kitty git-delta btop bat atuin eza tlrc glow fd keychain rustup ansible just imagemagick
+  brew install stow neovim tmux git jq fzf zoxide direnv kitty git-delta btop bat atuin eza tlrc glow fd keychain rustup ansible just imagemagick kanata
   brew install umputun/apps/revdiff
   brew install --cask nikitabobko/tap/aerospace
   print_success "Dependencies installed"

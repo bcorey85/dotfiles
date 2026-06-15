@@ -40,5 +40,20 @@ return {
     })
 
     vim.keymap.set("n", "<leader>e", "<cmd>Oil<cr>", { desc = "Open Oil (parent dir)" })
+
+    -- mini.clue doesn't install its prefix triggers (g, z, etc.) in oil's
+    -- buffer-local keymaps, so chords like `gO` fall back to raw timeoutlen
+    -- (300ms) — they only fire if you press both keys faster than that.
+    -- Re-arm mini.clue's triggers per oil buffer so the `g` prefix waits
+    -- indefinitely, like everywhere else.
+    vim.api.nvim_create_autocmd("User", {
+      pattern = "OilEnter",
+      callback = function(args)
+        local oil = require("oil")
+        if vim.api.nvim_get_current_buf() == args.data.buf and oil.get_cursor_entry() then
+          require("mini.clue").ensure_buf_triggers(args.data.buf)
+        end
+      end,
+    })
   end,
 }

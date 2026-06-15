@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # qrspi-resolve-dir.sh — resolve the QRSPI task directory under docs/eng-specs/
-# Shared by /q-research, /q-design, /q-structure, /q-plan, /q-finalize.
+# Shared by /q-finalize and the qrspi-* agents (run via /q-orchestrator).
 #
 # usage: qrspi-resolve-dir.sh [<path-or-ticket>]
 #   <path>    existing directory -> used directly

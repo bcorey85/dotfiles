@@ -11,6 +11,7 @@ Fetch the Jira ticket details for the current branch so you have full context be
 ## Instructions
 
 1. **Get the current branch name**:
+
    ```bash
    git branch --show-current
    ```
@@ -22,13 +23,13 @@ Fetch the Jira ticket details for the current branch so you have full context be
    - Current status
    - Any comments with context
 
-4. **Check ticket status and auto-transition**:
-   - If status is **"To Do"**: automatically move to "In Progress" by invoking the `/move-ticket in progress` skill via the Skill tool. Pulling a ticket implies starting work — no confirmation needed. Do NOT inline the Jira transition logic — always delegate to the `/move-ticket` skill.
+4. **Check ticket status**:
+   - If status is **"To Do"**: note in the summary that work is starting (transition it in Jira manually if your workflow requires).
    - If status is **"In Progress"**: no action needed, just note it in the summary.
    - If status is **"In Review"** or **"Done"**: warn the user — "This ticket is in [status]. Are you sure you want to work on it?"
 
 5. **Present a summary** to the user:
-   - Jira ticket: key, summary, status (including any transition made), acceptance criteria
+   - Jira ticket: key, summary, status, acceptance criteria
    - Suggested approach based on the context
 
 ## Design Note

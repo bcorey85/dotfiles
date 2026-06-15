@@ -105,7 +105,7 @@ Review recent changes in this codebase using the code-reviewer subagent.
    bash "${CLAUDE_SKILL_DIR}/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" iter=<N|oneshot> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> skipped_fp=<n> ask=<n> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
    ```
 
-   `fixed`/`skipped_fp`/`ask` are the MEDIUM-triage bucket counts when triage ran, else 0. The JSONL at `~/.claude/review-metrics.jsonl` accumulates the convergence distribution and false-positive rate (`skipped_fp` fraction) — the evidence base for tuning the reviewer's calibration and the iter cap. Recurring `skipped_fp` patterns are `/cloptimize` input for the reviewer's "Do NOT Flag" list.
+   `fixed`/`skipped_fp`/`ask` are the MEDIUM-triage bucket counts when triage ran, else 0. The JSONL at `~/.claude/review-metrics.jsonl` accumulates the convergence distribution and false-positive rate (`skipped_fp` fraction) — the evidence base for tuning the reviewer's calibration and the iter cap. Recurring `skipped_fp` patterns are evidence for refining the reviewer's "Do NOT Flag" list.
 
 When invoked from `/code` or `/fix`, args may contain a handoff block. Canonical schema:
 

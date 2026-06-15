@@ -5,7 +5,7 @@ description: Audit a docs tree for stale data, broken code pointers, duplication
 
 # Audit-docs
 
-Sweep a docs tree, find rot, report it. Read-only — the user fixes the findings (or invokes `/write-doc` to rewrite).
+Sweep a docs tree, find rot, report it. Read-only — the user fixes the findings.
 
 ## Arguments
 
@@ -104,7 +104,7 @@ Single markdown report. Sections in this order, each present only if it has find
 
 ## Suggested next moves
 
-1-3 concrete actions, ranked. e.g. "Run /write-doc to merge X and Y", "Open these three pointers and fix the line numbers", "Delete this orphan".
+1-3 concrete actions, ranked. e.g. "Merge X and Y into one doc", "Open these three pointers and fix the line numbers", "Delete this orphan".
 ```
 
 ## Guidelines

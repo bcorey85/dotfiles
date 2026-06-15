@@ -56,19 +56,17 @@ Convention: `+toggle` for boolean switches (no value), `--key value` for paramet
    ```
 
 8. **Create the PR** using:
+
    ```bash
    gh pr create --title "title" --base "<base>" [--draft] --body "$(cat <<'EOF'
    body here
    EOF
    )"
    ```
+
    Add `--draft` flag to the `gh` command if `+draft` was passed. Always pass `--base` explicitly.
 
 9. **Return the PR URL** to the user.
-
-10. **Move Jira ticket** (non-draft only): If `+draft` was NOT passed and the branch contains a Jira ticket key, automatically invoke the `/move-ticket in review` skill via the Skill tool after the PR is created. No confirmation needed — creating a PR implies the ticket is ready for review. Do NOT inline the Jira transition logic — always delegate to the `/move-ticket` skill.
-
-   **If `+draft` was passed**: skip the Jira transition entirely. The ticket stays in its current status.
 
 ## Arguments
 

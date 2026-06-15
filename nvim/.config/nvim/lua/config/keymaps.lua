@@ -159,7 +159,7 @@ vim.keymap.set("n", "<leader>fn", "<cmd>enew<cr>", { desc = "New File" })
 vim.keymap.set("n", "<leader>lR", function()
   vim.diagnostic.reset()
   for _, client in ipairs(vim.lsp.get_clients({ bufnr = 0 })) do
-    vim.lsp.stop_client(client.id, true)
+    client:stop(true)
   end
   vim.defer_fn(function()
     vim.api.nvim_exec_autocmds("FileType", { buffer = 0 })

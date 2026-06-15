@@ -133,7 +133,7 @@ return {
     end, "Stage hunk on a change, else - motion")
 
     -- `_` UNSTAGES the staged hunk under the cursor — the safe inverse of `-`
-    -- (stage), for a fast ]p → - (accept) / ]p → _ (pull back) review loop.
+    -- (stage), for a fast ]c → - (accept) / ]c → _ (pull back) review loop.
     -- gitsigns' stage_hunk() is a toggle: called on a staged hunk it inverts to
     -- unstage, preserving the working-tree change (only the index entry is
     -- dropped — non-destructive, unlike reset_hunk). The public get_hunks()
@@ -199,7 +199,10 @@ return {
     -- NOTE: the list goes stale as soon as you stage or reset a hunk because
     -- gitsigns recalculates line numbers after each change. Re-run <leader>cq
     -- to rebuild it after a staging session.
-    map("<leader>cq", function()
+    -- Body lives in a user command so it's reusable from outside a keymap: the
+    -- <leader>cq map calls it, and the `prefix s` tmux popup boots straight into
+    -- it via `nvim -c GitHunksQf`, skipping fugitive's status buffer entirely.
+    vim.api.nvim_create_user_command("GitHunksQf", function()
       require("gitsigns").setqflist("all", {}, function()
         -- setqflist("all") is repo-wide and includes whole-file deletions
         -- (gitsigns emits a single "Removed" hunk for a `git rm`'d file). Those
@@ -216,8 +219,25 @@ return {
           return name and name ~= "" and vim.uv.fs_stat(name) ~= nil
         end, vim.fn.getqflist())
         vim.fn.setqflist({}, "r", { title = "Gitsigns Hunks", items = kept })
+
+        -- In the `prefix s` tmux popup, `q` in the qf window quits the throwaway
+        -- nvim so the popup dismisses like lazygit. Set it here — after the qf
+        -- window exists and quicker has run — via vim.schedule so this
+        -- buffer-local map is the last writer and wins over quicker's `q`.
+        if vim.env.GIT_QF_POPUP ~= nil then
+          vim.schedule(function()
+            for _, win in ipairs(vim.api.nvim_list_wins()) do
+              local buf = vim.api.nvim_win_get_buf(win)
+              if vim.bo[buf].filetype == "qf" then
+                vim.keymap.set("n", "q", "<cmd>qa<cr>", { buffer = buf, desc = "Close git qf popup" })
+              end
+            end
+          end)
+        end
       end)
-    end, "Hunk qf list (repo-wide)")
+    end, { desc = "Repo-wide gitsigns hunk quickfix list" })
+
+    map("<leader>cq", "<cmd>GitHunksQf<cr>", "Hunk qf list (repo-wide)")
 
     -- Current buffer only — focused "what did I change here?" scan. Capital Q
     -- pairs with the more-used repo-wide <leader>cq.

@@ -1,6 +1,6 @@
 # Skimmable Writing Directive
 
-Shared by `/eng-arch`, `/q-finalize`, and `/write-doc` — the single source of truth for the skimmability rules. Engineers in problem-solving mode scan headings (NN/g layer-cake pattern); they don't read. Write to be skimmed: trigger layer-cake scanning, then earn commitment reading with trust signals.
+Shared by `/eng-arch` and `/q-finalize` — the single source of truth for the skimmability rules. Engineers in problem-solving mode scan headings (NN/g layer-cake pattern); they don't read. Write to be skimmed: trigger layer-cake scanning, then earn commitment reading with trust signals.
 
 - **Headings = answers, not topics.** `Token interceptor` not `Implementation details`. `401 handling` not `Error section`. A layer-cake scanner must extract value without dropping into the body.
 - **BLUF at every level.** Start each section with the claim, not the setup. Inverted pyramid all the way down.

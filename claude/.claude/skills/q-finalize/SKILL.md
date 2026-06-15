@@ -29,7 +29,7 @@ Folder = in-progress. File = finalized.
 
 ## Resolve the task directory
 
-Run the shared resolver (same one used by /q-research, /q-design, /q-structure, /q-plan — do NOT reimplement the logic inline):
+Run the shared resolver (also used by /q-orchestrator — do NOT reimplement the logic inline):
 
 ```bash
 bash ~/.claude/scripts/qrspi-resolve-dir.sh "$ARGUMENTS"
@@ -48,7 +48,7 @@ Read FULLY (no limit/offset):
 
 **Do NOT read** `02-research.md` / `04-structure.md` / `05-plan.md` — design.md distilled them; re-reading adds noise.
 
-Missing `03-design.md` → stop: _"/q-finalize is for completed QRSPI tasks. Run /q-design first, or finalize manually."_
+Missing `03-design.md` → stop: _"/q-finalize is for completed QRSPI tasks. Run /q-orchestrator first, or finalize manually."_
 
 ## Detect the PR
 

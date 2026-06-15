@@ -63,7 +63,7 @@ $ARGUMENTS
 ## Boundaries
 
 - **Read-only. Never edit.** This rebuilds understanding; it does not change code.
-- This is _not_ `/review` (correctness/bugs) and _not_ `/explain` (beginner walkthrough).
+- This is _not_ `/review` (correctness/bugs).
   It answers one question: **how does this change relate to the code around it?**
 - Keep it tight. Refs over prose. The goal is to reload the user's mental map fast,
   not to write an essay.

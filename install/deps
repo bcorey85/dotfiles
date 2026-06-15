@@ -22,7 +22,7 @@ case $PLATFORM in
 wsl | ubuntu)
   print_info "Installing dependencies via apt..."
   sudo apt update
-  sudo apt install -y stow neovim tmux zsh git curl jq libnotify-bin fzf zoxide unzip direnv kitty alacritty git-delta btop bat atuin eza glow fd-find keychain rustup ansible just xclip wl-clipboard imagemagick
+  sudo apt install -y stow neovim tmux zsh git curl jq libnotify-bin fzf zoxide unzip direnv kitty git-delta btop bat atuin eza glow fd-find keychain rustup ansible just xclip wl-clipboard imagemagick
   print_success "Dependencies installed"
 
   # Ubuntu installs bat as batcat and fd as fdfind — symlink to expected names
@@ -48,7 +48,7 @@ wsl | ubuntu)
   ;;
 arch)
   print_info "Installing dependencies via pacman..."
-  sudo pacman -S --needed stow neovim tmux zsh git curl jq libnotify fzf zoxide unzip direnv kitty alacritty ghostty git-delta btop bat atuin eza glow fd keychain rustup playerctl xdg-user-dirs ripgrep brightnessctl base-devel bluez bluez-utils less ansible just rsync xclip imagemagick
+  sudo pacman -S --needed stow neovim tmux zsh git curl jq libnotify fzf zoxide unzip direnv kitty ghostty git-delta btop bat atuin eza glow fd keychain rustup playerctl xdg-user-dirs ripgrep brightnessctl base-devel bluez bluez-utils less ansible just rsync xclip imagemagick
   print_success "Dependencies installed"
 
   # Hyprland desktop packages
@@ -102,7 +102,7 @@ mac)
   fi
 
   print_info "Installing dependencies via Homebrew..."
-  brew install stow neovim tmux git jq fzf zoxide direnv kitty alacritty git-delta btop bat atuin eza tlrc glow fd keychain rustup ansible just imagemagick
+  brew install stow neovim tmux git jq fzf zoxide direnv kitty git-delta btop bat atuin eza tlrc glow fd keychain rustup ansible just imagemagick
   brew install umputun/apps/revdiff
   brew install --cask nikitabobko/tap/aerospace
   print_success "Dependencies installed"

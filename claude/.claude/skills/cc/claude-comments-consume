@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# review-md-consume — deterministic reader/rewriter for ~/.claude/review.md (used by /fix)
+# claude-comments-consume — deterministic reader/rewriter for ~/.claude/claude-comments.md (used by /cc)
 #
-# Entry format in review.md (entries separated by lines containing only "---"):
+# Entry format in claude-comments.md (entries separated by lines containing only "---"):
 #   ## /abs/path/file.ts:42[-50]
 #   2026-06-10T12:00:00Z
 #   <comment body...>
@@ -21,12 +21,12 @@
 #       between list and resolve are preserved.
 set -euo pipefail
 
-REVIEW_FILE="${REVIEW_MD_FILE:-$HOME/.claude/review.md}"
+REVIEW_FILE="${CLAUDE_COMMENTS_FILE:-$HOME/.claude/claude-comments.md}"
 TTL_SECONDS=$((48 * 3600))
 
 mode="${1:-}"
 repo="${2:-}"
-case "$mode" in list|resolve) ;; *) echo "usage: review-md-consume list|resolve <repo-root> [id...]" >&2; exit 2 ;; esac
+case "$mode" in list|resolve) ;; *) echo "usage: claude-comments-consume list|resolve <repo-root> [id...]" >&2; exit 2 ;; esac
 [ -n "$repo" ] || { echo "missing repo-root" >&2; exit 2; }
 shift 2
 repo="${repo%/}"

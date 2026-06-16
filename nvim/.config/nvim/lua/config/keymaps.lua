@@ -38,8 +38,8 @@ local function hunk_jump(direction, native)
       -- target="all" keeps staged hunks navigable; nav_hunk defaults to
       -- "unstaged", so without it a hunk drops out of the ]c walk the moment you
       -- stage it (gitsigns tracks the staged set via signs_staged_enable).
-      -- No inline preview on jump — diff visibility is owned by <leader>gV
-      -- (persistent whole-file inline diff). ]c/[c just navigate and center.
+      -- No inline preview on jump — diff visibility is owned by `=`
+      -- (whole-file inline overlay) / <leader>gd (diffthis). ]c/[c just navigate.
       pcall(gs.nav_hunk, direction, { preview = false, target = "all" }, function()
         vim.cmd("normal! zz")
       end)
@@ -49,30 +49,30 @@ end
 vim.keymap.set("n", "]c", hunk_jump("next", "]czz"), { desc = "Next hunk and center" })
 vim.keymap.set("n", "[c", hunk_jump("prev", "[czz"), { desc = "Previous hunk and center" })
 
--- `=`: TOGGLE gitsigns' inline preview (same display as <leader>gd). If a
--- preview is already up — wherever it came from — clear it; else, on a hunk
--- (staged or unstaged — on_hunk checks both), show it persistently (stays across
--- motion, scrolls with j / <C-d>); off a hunk with nothing shown, fall through
--- to the native `=` reindent operator. The persistence/toggle/scroll/on-hunk
--- mechanics live in util.hunk_preview (shared with <leader>gd). conform
--- format_on_save makes manual `=` rare, so hijacking it on changes is cheap, and
--- the feedkeys passthrough preserves =ip / gg=G off a hunk. Non-expr (expr maps
--- hit textlock when preview sets extmarks).
+-- `=`: TOGGLE the PERSISTENT whole-file inline diff overlay, matching fugitive's
+-- <CR> "open the file WHOLE, read in context" review gear — the everyday
+-- "show me what changed here" key. Fires anywhere in the buffer (it's a
+-- file-wide view; no cursor-on-a-hunk requirement). Native `=` reindent is
+-- intentionally given up — conform format_on_save makes manual reindent moot.
+-- Three gitsigns flags flip together, all synced to toggle_deleted's returned
+-- state (they are GLOBAL config flags, so the overlay spans buffers while on):
+--   show_deleted → removed lines as virtual lines (the OLD side)
+--   linehl       → full-line background on added/changed lines (the NEW side —
+--                  without this you "only see deleted lines")
+--   word_diff    → intra-line changed-word highlights on line-for-line changes
+-- Guarded off inside a real diff (vim.wo.diff) so it doesn't fight <leader>gd's
+-- diffthis split. NOTE: j/k skip the virtual deleted lines (a Neovim core limit
+-- on virt_lines) — scroll the overlay with <C-d>/<C-e>, or use <leader>gd
+-- (:Gitsigns diffthis) for a real, line-navigable diff split.
 vim.keymap.set("n", "=", function()
-  local ok = pcall(require, "gitsigns")
-  if ok and not vim.wo.diff then
-    local gsui = require("util.hunk_preview")
-    if gsui.inline_shown() then
-      gsui.clear_inline() -- already showing → toggle off
-      return
-    end
-    if gsui.on_hunk() then
-      gsui.show_inline()
-      return
-    end
+  local ok, gs = pcall(require, "gitsigns")
+  if not ok or vim.wo.diff then
+    return
   end
-  vim.api.nvim_feedkeys("=", "n", false) -- not on a hunk: native operator
-end, { desc = "Toggle inline hunk preview on a change, else = operator" })
+  local on = gs.toggle_deleted()
+  gs.toggle_linehl(on)
+  gs.toggle_word_diff(on)
+end, { desc = "Toggle whole-file inline diff overlay" })
 
 -- ─── Editing ──────────────────────────────────────────────────────────────────
 

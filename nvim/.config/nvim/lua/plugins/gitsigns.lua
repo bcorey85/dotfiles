@@ -3,9 +3,9 @@
 --
 -- Division of responsibilities in this config:
 --   gitsigns  → signs in the sign column, first/last hunk jumps (]H/[H), in-file
---               staging (- and the <leader>c* "changes" namespace), persistent
---               inline diff (<leader>gV), hunk quickfix list (<leader>cq repo / <leader>cQ buffer)
---   keymaps   → next/prev hunk nav (]c/[c) and the = peek key
+--               staging (- and the <leader>c* "changes" namespace), real diff
+--               split (<leader>gd diffthis), hunk quickfix list (<leader>cq repo / <leader>cQ buffer)
+--   keymaps   → next/prev hunk nav (]c/[c) and the = whole-file inline-diff toggle
 --   fugitive  → status staging, commit, 3-way merge via :Gdiffsplit!, history
 --   util/merge → plugin-free conflict resolution for files with raw markers
 --
@@ -69,33 +69,21 @@ return {
       require("gitsigns").nav_hunk("first", { target = "all" })
     end, "First hunk")
 
-    -- Hunk preview.
+    -- Hunk preview float — quick single-hunk peek without leaving the buffer.
+    -- (Whole-file inline overlay is the `=` key in keymaps.lua.)
     map("<leader>gD", function()
       require("gitsigns").preview_hunk()
     end, "Preview hunk (float)")
-    -- Persistent per-hunk inline diff: shows the hunk under the cursor and, unlike
-    -- raw preview_hunk_inline(), keeps it across cursor movement so j / <C-d>
-    -- scroll a tall diff; re-press to dismiss. The persistence/toggle/scroll logic
-    -- lives in util.hunk_preview (shared with the `=` peek key in keymaps.lua);
-    -- see there for why gitsigns' auto-clear autocmd has to be stripped. Whole-
-    -- file persistent inline diff stays on <leader>gV below.
-    map("<leader>gd", function()
-      require("util.hunk_preview").toggle_inline()
-    end, "Toggle inline hunk diff (persistent)")
 
-    -- Persistent whole-file inline diff for the <CR>/O review flow. Toggles the
-    -- old/removed lines (show_deleted) + word-level highlighting ON, and they
-    -- STAY as you move the cursor and step hunks with ]h — unlike <leader>gd
-    -- (preview_hunk_inline), which clears on CursorMoved. show_deleted is the
-    -- deprecated-but-functional config behind toggle_deleted(); it only flips the
-    -- flag (no redraw), so toggle_word_diff() is paired to force the repaint and
-    -- is kept in sync via toggle_deleted's return value. If a future gitsigns
-    -- drops show_deleted, only the old-line display stops; word_diff keeps working.
-    map("<leader>gV", function()
-      local gs = require("gitsigns")
-      local on = gs.toggle_deleted()
-      gs.toggle_word_diff(on)
-    end, "Toggle inline diff (persistent, whole file)")
+    -- <leader>gd ("git diff"): a REAL two-buffer diff split (working tree vs
+    -- index) via :Gitsigns diffthis. Unlike the `=` inline overlay — whose
+    -- removed lines are virtual lines the cursor can't enter, so j/k skip the
+    -- whole block — both sides here are real buffers: j/k step line-by-line and
+    -- ]c/[c, dp/do work. Use `=` to read a change in context; use this when you
+    -- need to navigate or operate on the old/new lines. :q closes the split.
+    map("<leader>gd", function()
+      require("gitsigns").diffthis()
+    end, "Diff this (real split, navigable)")
 
     -- Toggle the persistent current-line blame virtual text. fugitive's
     -- <leader>gb owns the full-buffer blame split; <leader>gB is the inline one.

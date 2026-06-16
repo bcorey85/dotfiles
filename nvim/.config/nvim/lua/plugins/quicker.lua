@@ -45,8 +45,9 @@ return {
     end, "Loclist (toggle)")
 
     -- Plain qf navigation. No diff-on-hop: when walking the <leader>cq hunk
-    -- list, use <leader>gV (persistent whole-file inline diff) or = / <leader>gd
-    -- to see a hunk's change. The notify replaces the bare "E553: No more items".
+    -- list, use = (whole-file inline overlay) or <leader>gd (:Gitsigns diffthis,
+    -- real navigable split) to see a hunk's change. The notify replaces the bare
+    -- "E553: No more items".
     map("[q", function()
       if not pcall(vim.cmd.cprev) then
         vim.notify("No previous quickfix item", vim.log.levels.WARN)

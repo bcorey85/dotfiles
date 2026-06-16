@@ -1,6 +1,6 @@
 -- Claude review-comment feature — extracted from plugins/diffview.lua (which is
 -- now removed). This module is independent of any plugin: it writes entries to
--- ~/.claude/review.md and exposes :ClaudeReviewComment plus preview keymaps.
+-- ~/.claude/claude-comments.md and exposes :ClaudeReviewComment plus preview keymaps.
 
 local function resolve_abs_path()
   local bufname = vim.api.nvim_buf_get_name(0)
@@ -30,7 +30,7 @@ local function write_review_entry(line_ref, snippet_lines)
     local claude_dir = vim.uv.os_homedir() .. "/.claude"
     vim.fn.mkdir(claude_dir, "p")
 
-    local review_path = claude_dir .. "/review.md"
+    local review_path = claude_dir .. "/claude-comments.md"
     local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
 
     local entry
@@ -61,7 +61,7 @@ local function write_review_entry(line_ref, snippet_lines)
     fh:write(entry)
     fh:close()
 
-    vim.notify("Comment saved to ~/.claude/review.md")
+    vim.notify("Comment saved to ~/.claude/claude-comments.md")
   end)
 end
 
@@ -90,7 +90,7 @@ vim.api.nvim_create_user_command("ClaudeReviewComment", function(args)
 end, { range = true, desc = "Leave Claude review comment" })
 
 local function preview_review_comments()
-  local review_path = vim.uv.os_homedir() .. "/.claude/review.md"
+  local review_path = vim.uv.os_homedir() .. "/.claude/claude-comments.md"
   local fh = io.open(review_path, "r")
   if not fh then
     vim.notify("No pending Claude review comments", vim.log.levels.INFO)

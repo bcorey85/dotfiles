@@ -14,12 +14,15 @@
 --                (idempotent — no duplicate status tabs). [this file]
 --   <CR>         on a file in status: open it WHOLE in a new tab — read in
 --                context, not as diff noise. The reflex review gear. [this file]
---   <leader>gV   toggle a PERSISTENT whole-file inline diff (old lines +
---                word-diff) that survives cursor movement. [gitsigns.lua]
+--   =            toggle a PERSISTENT whole-file inline diff (old lines +
+--                word-diff) that survives cursor movement — the in-context
+--                read. On a change toggles it; off a change with the overlay
+--                down, native `=` reindent (=ip / gg=G). [keymaps.lua]
+--   <leader>gd   :Gitsigns diffthis — a REAL two-buffer diff split where j/k
+--                step line-by-line and ]c/[c, dp/do work (the `=` overlay's
+--                virtual lines can't be entered). [gitsigns.lua]
 --   ]c / [c      next/prev hunk + center; native diff-change motion inside a
 --                real diff (dv). Quiet — no auto-preview. [keymaps.lua]
---   =            on a hunk: one-key inline preview (transient); off a hunk:
---                native `=` reindent operator. [keymaps.lua]
 --   -            on a hunk: stage it (stage_hunk); off a hunk: native `-`
 --                motion. Fast ]c → - → ]c → - staging loop. [gitsigns.lua]
 --   <leader>gw   :Gwrite — stage the whole current file from any buffer.

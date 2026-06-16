@@ -50,30 +50,25 @@ vim.keymap.set("n", "]c", hunk_jump("next", "]czz"), { desc = "Next hunk and cen
 vim.keymap.set("n", "[c", hunk_jump("prev", "[czz"), { desc = "Previous hunk and center" })
 
 -- `=`: TOGGLE gitsigns' inline preview (same display as <leader>gd). If a
--- preview is already up — wherever it came from — clear it;
--- else, on a hunk, show it; off a hunk with nothing shown, fall through to the
--- native `=` reindent operator. The "already shown?" probe reads the public
--- gitsigns_preview_inline extmark namespace (the inline preview's own render
--- target), so the toggle-off works no matter which key raised the preview.
--- conform format_on_save makes manual `=` rare, so hijacking it on changes is
--- cheap, and the feedkeys passthrough preserves =ip / gg=G off a hunk. Non-expr
--- (expr maps hit textlock when preview sets extmarks).
+-- preview is already up — wherever it came from — clear it; else, on a hunk
+-- (staged or unstaged — on_hunk checks both), show it persistently (stays across
+-- motion, scrolls with j / <C-d>); off a hunk with nothing shown, fall through
+-- to the native `=` reindent operator. The persistence/toggle/scroll/on-hunk
+-- mechanics live in util.hunk_preview (shared with <leader>gd). conform
+-- format_on_save makes manual `=` rare, so hijacking it on changes is cheap, and
+-- the feedkeys passthrough preserves =ip / gg=G off a hunk. Non-expr (expr maps
+-- hit textlock when preview sets extmarks).
 vim.keymap.set("n", "=", function()
-  local ok, gs = pcall(require, "gitsigns")
+  local ok = pcall(require, "gitsigns")
   if ok and not vim.wo.diff then
-    local ns = vim.api.nvim_get_namespaces()["gitsigns_preview_inline"]
-    if ns and #vim.api.nvim_buf_get_extmarks(0, ns, 0, -1, {}) > 0 then
-      vim.api.nvim_buf_clear_namespace(0, ns, 0, -1) -- already showing → toggle off
+    local gsui = require("util.hunk_preview")
+    if gsui.inline_shown() then
+      gsui.clear_inline() -- already showing → toggle off
       return
     end
-    local row = vim.fn.line(".")
-    for _, h in ipairs(gs.get_hunks() or {}) do
-      local s = h.added.start
-      local e = s + math.max(h.added.count, 1) - 1
-      if row >= s and row <= e then
-        gs.preview_hunk_inline()
-        return
-      end
+    if gsui.on_hunk() then
+      gsui.show_inline()
+      return
     end
   end
   vim.api.nvim_feedkeys("=", "n", false) -- not on a hunk: native operator

@@ -73,9 +73,15 @@ return {
     map("<leader>gD", function()
       require("gitsigns").preview_hunk()
     end, "Preview hunk (float)")
+    -- Persistent per-hunk inline diff: shows the hunk under the cursor and, unlike
+    -- raw preview_hunk_inline(), keeps it across cursor movement so j / <C-d>
+    -- scroll a tall diff; re-press to dismiss. The persistence/toggle/scroll logic
+    -- lives in util.hunk_preview (shared with the `=` peek key in keymaps.lua);
+    -- see there for why gitsigns' auto-clear autocmd has to be stripped. Whole-
+    -- file persistent inline diff stays on <leader>gV below.
     map("<leader>gd", function()
-      require("gitsigns").preview_hunk_inline()
-    end, "Preview hunk (inline)")
+      require("util.hunk_preview").toggle_inline()
+    end, "Toggle inline hunk diff (persistent)")
 
     -- Persistent whole-file inline diff for the <CR>/O review flow. Toggles the
     -- old/removed lines (show_deleted) + word-level highlighting ON, and they

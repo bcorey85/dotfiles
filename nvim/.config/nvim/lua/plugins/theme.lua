@@ -57,7 +57,29 @@ return {
           -- Word-level diff: changed words (DiffText, used by diffopt "inline:word")
           -- default to a near-white wash that's hard to read. Paint them on a
           -- saturated green background so reworded text stands out in :Gdiffsplit.
+          -- ── Single diff palette, used EVERYWHERE ────────────────────────────
+          -- The four native groups below are the one source of truth for diff
+          -- colors. fugitive (dv / :Git log), :Gitsigns diffthis, native diff
+          -- mode, diffview, and diffs.nvim all render through them — so the `=`
+          -- inline overlay must too, instead of gitsigns' own (washed-out: its
+          -- inline word groups even default to TermCursor / near-white). Linking
+          -- the gitsigns overlay groups to Diff{Add,Change,Text,Delete} makes
+          -- every diff surface identical. To re-tune diffs anywhere, edit only
+          -- these four — the links follow. DiffText kept green+bold (the changed-
+          -- region emphasis); the other three are Catppuccin's muted defaults
+          -- (what fugitive already shows), left as-is for a calm, standard look.
           DiffText = { bg = "#2e5d3a", bold = true },
+          -- `=` overlay → standard diff groups. Line bgs: added/changed/deleted
+          -- lines. Inline (word_diff) regions: added & changed words take the
+          -- DiffText emphasis; removed words take DiffDelete. (DeleteInline also
+          -- cascades to the virtual deleted lines' words via
+          -- GitSignsDeleteVirtLnInLine → …DeleteLnInline → …DeleteInline.)
+          GitSignsAddLn = { link = "DiffAdd" },
+          GitSignsChangeLn = { link = "DiffChange" },
+          GitSignsDeleteVirtLn = { link = "DiffDelete" },
+          GitSignsAddInline = { link = "DiffText" },
+          GitSignsChangeInline = { link = "DiffText" },
+          GitSignsDeleteInline = { link = "DiffDelete" },
           -- treesitter-context sticky header: lift it off the buffer with the same
           -- surface tone the statusline badges use (#313244) so it reads as chrome,
           -- not code, and underline the bottom edge in teal to mark exactly where

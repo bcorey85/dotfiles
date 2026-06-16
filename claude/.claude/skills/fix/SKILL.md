@@ -1,6 +1,6 @@
 ---
 name: fix
-description: Dispatch coder subagents to fix review feedback (from `.claude/review.md`, the conversation, or a `/review` handoff), then auto-run `/review`
+description: Dispatch coder subagents to fix review feedback (from a `/cc` comment handoff, a `/review` handoff, or the conversation), then auto-run `/review`. To act on inline comments left in `~/.claude/claude-comments.md`, use `/cc` — it reads them and routes here.
 allowed-tools: [Task, Bash, Read, Glob, Grep, Skill]
 ---
 
@@ -22,27 +22,13 @@ Dispatch parallel frontend-coder and backend-coder subagents to investigate and 
 
 2. **Parse the review feedback** from these sources (in order), then categorize issues by which coder owns the file (frontend vs backend, or whichever split applies to this codebase):
 
-   a. **`~/.claude/review.md`** (global, shared across all repos) — inline comments left by the user from diffview.nvim (`<leader>dc`). These are explicit user-authored requests at the highest priority — not heuristic findings. Use the bundled script for ALL reading and rewriting; do NOT parse or rewrite the file by hand:
-
-   1. List in-scope entries:
-
-      ```bash
-      bash "${CLAUDE_SKILL_DIR}/review-md-consume" list "$(git rev-parse --show-toplevel)"
-      ```
-
-      Returns fresh (≤48h), current-repo entries as JSON (`[{id, path, line, timestamp, body}]`). Stale in-scope entries are counted on stderr — note the count in the summary. Entries from other repos are never listed or touched.
-
-   2. After dispatching and triaging, clear what was handled:
-
-      ```bash
-      bash "${CLAUDE_SKILL_DIR}/review-md-consume" resolve "$(git rev-parse --show-toplevel)" <id>...
-      ```
-
-      Pass the `id` of every entry that was **resolved** (fix attempted) or **skipped after triage** (false positive, intentional, out of scope — note skip reasons in the summary). Do NOT pass ids of **deferred** entries (recommended `/eng-spec`, waiting on user input) — they stay in the file for the next run. The script re-reads the file at resolve time, so entries added by another nvim session in the meantime are preserved, and it deletes the file when nothing remains.
+   a. **Args from `/cc`** — inline comments the user authored in `~/.claude/claude-comments.md` (Neovim `<leader>cc` → `:ClaudeReviewComment`), passed in as an entry list (`path`, `line`, `body`, `id`). These are explicit user-authored requests at the **highest priority** — not heuristic findings. `/cc` owns reading and clearing `claude-comments.md`; this skill just fixes the entries it hands over. Do not read or rewrite `claude-comments.md` here.
 
    b. **Args from `/review`** — if invoked via the review handoff, the issues list is passed in args.
 
    c. **The conversation** — any review findings discussed above.
+
+   If invoked bare with none of these sources, but `~/.claude/claude-comments.md` may hold inline comments, point the user at `/cc` rather than parsing the file here.
 
 3. **Launch coder agents in parallel** using a single message with multiple Task tool calls.
 

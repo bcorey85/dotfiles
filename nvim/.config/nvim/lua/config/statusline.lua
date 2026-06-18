@@ -37,20 +37,13 @@ local _git_cache = {}
 local _dir_to_toplevel = {}
 local _git_inflight = {}
 
-local function define_highlights()
-  vim.api.nvim_set_hl(0, "StatuslineBranch", { fg = "#94e2d5", bg = "#313244", bold = true })
-  vim.api.nvim_set_hl(0, "StatuslineVenv", { fg = "#a6adc8", bg = "#313244" })
-  vim.api.nvim_set_hl(0, "StatuslineRecording", { fg = "#f38ba8", bold = true })
-
-  -- HIGH VISIBILITY: Inverted block badge for modified files (Dark Crust text on Bright Red background)
-  vim.api.nvim_set_hl(0, "StatuslineModified", { fg = "#11111b", bg = "#f38ba8", bold = true })
-end
-
-define_highlights()
-
-vim.api.nvim_create_autocmd("ColorScheme", {
-  group = vim.api.nvim_create_augroup("StatuslineHighlights", { clear = true }),
-  callback = define_highlights,
+local C = require("util.palette")
+require("util.hl").register("StatuslineHighlights", {
+  StatuslineBranch = { fg = C.teal, bg = C.surface0, bold = true },
+  StatuslineVenv = { fg = C.subtext0, bg = C.surface0 },
+  StatuslineRecording = { fg = C.red, bold = true },
+  -- HIGH VISIBILITY: inverted block badge for modified files (crust text on red bg)
+  StatuslineModified = { fg = C.crust, bg = C.red, bold = true },
 })
 
 local _lsp_progress = nil
@@ -65,9 +58,7 @@ vim.api.nvim_create_autocmd("LspProgress", {
     end
 
     local client = vim.lsp.get_client_by_id(ev.data.client_id)
-    local safe = function(s)
-      return (s or ""):gsub("%%", "%%%%")
-    end
+    local safe = require("util.str").escape_pct
     local client_name = safe(client and client.name or "lsp")
     local title = safe(value.title)
     local msg = safe(value.message)
@@ -217,21 +208,16 @@ local function git_segment()
     return nil
   end
 
-  local parts = {}
-
   if entry.no_upstream then
-    if entry.stranded and entry.stranded > 0 then
-      parts[#parts + 1] = "%#DiagnosticWarn#" .. ICONS.unpushed .. entry.stranded .. " unpushed%*"
-    else
-      parts[#parts + 1] = "%#DiagnosticWarn#" .. ICONS.unpushed .. "unpushed%*"
-    end
-    return table.concat(parts)
+    local count = (entry.stranded and entry.stranded > 0) and (entry.stranded .. " ") or ""
+    return "%#DiagnosticWarn#" .. ICONS.unpushed .. count .. "unpushed%*"
   end
 
   if entry.ahead == 0 and entry.behind == 0 then
     return nil
   end
 
+  local parts = {}
   if entry.ahead > 0 then
     parts[#parts + 1] = "%#DiagnosticWarn#↑" .. entry.ahead .. "%*"
   end

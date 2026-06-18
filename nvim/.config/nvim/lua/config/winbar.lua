@@ -30,24 +30,16 @@ end
 -- Thin powerline chevron (U+E0B1) as the breadcrumb separator.
 local SEP = " \xEE\x82\xB1 "
 
-local function define_highlights()
-  -- bg = NONE so segments inherit the window's Winbar/Normal background.
-  vim.api.nvim_set_hl(0, "WinbarPath", { fg = "#6c7086", bg = "NONE" })
-  vim.api.nvim_set_hl(0, "WinbarFile", { fg = "#cdd6f4", bg = "NONE", bold = true })
-  vim.api.nvim_set_hl(0, "WinbarModified", { fg = "#f38ba8", bg = "NONE", bold = true })
-end
-
-define_highlights()
-
-vim.api.nvim_create_autocmd("ColorScheme", {
-  group = vim.api.nvim_create_augroup("WinbarHighlights", { clear = true }),
-  callback = define_highlights,
+-- bg = NONE so segments inherit the window's Winbar/Normal background.
+local C = require("util.palette")
+require("util.hl").register("WinbarHighlights", {
+  WinbarPath = { fg = C.overlay0, bg = "NONE" },
+  WinbarFile = { fg = C.text, bg = "NONE", bold = true },
+  WinbarModified = { fg = C.red, bg = "NONE", bold = true },
 })
 
 -- Escape `%` so filenames/dirs containing it aren't read as winbar items.
-local function esc(s)
-  return (s:gsub("%%", "%%%%"))
-end
+local esc = require("util.str").escape_pct
 
 -- A window gets a winbar only if it's a normal, non-floating window holding a
 -- real file buffer. Special buffers (oil, snacks.picker, quickfix, help,

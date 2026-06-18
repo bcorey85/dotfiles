@@ -43,6 +43,17 @@ end, "Prev warning")
 -- symbols moved out entirely — <leader>ss (snacks search) already covers it.
 dmap("<leader>ll", vim.diagnostic.open_float, "Line diagnostics (float)")
 
+-- Remove Neovim's built-in gr* LSP default keymaps (gra/gri/grn/grr/grt/grx,
+-- created globally at startup in core's _defaults.lua). They're redundant here —
+-- the LspAttach maps below cover the same actions and route through Snacks
+-- pickers for previews. Deleting them also stops bare `gr` (our References map)
+-- from stalling for timeoutlen waiting on a `gr*` continuation, and clears the
+-- mini.clue popup that listed them by their raw `vim.lsp.buf.*()` descriptions.
+-- pcall per key: silently skips any the running Neovim version doesn't define.
+for _, k in ipairs({ "gra", "gri", "grn", "grr", "grt", "grx" }) do
+  pcall(vim.keymap.del, "n", k)
+end
+
 vim.api.nvim_create_autocmd("LspAttach", {
   callback = function(args)
     local bufnr = args.buf

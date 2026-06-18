@@ -97,12 +97,12 @@ local function yank(text, display)
 end
 
 -- Absolute path of the current buffer's file, or nil (with a warning) for an
--- unnamed buffer. Centralizes the guard shared by the path/line yank maps.
+-- unnamed buffer. Thin UX wrapper over util.buf.path — the warning is keymaps'
+-- concern, the path resolution is the shared primitive.
 local function current_file()
-  local abs = vim.fn.expand("%:p")
-  if abs == "" then
+  local abs = require("util.buf").path()
+  if not abs then
     vim.notify("Buffer has no file", vim.log.levels.WARN)
-    return nil
   end
   return abs
 end

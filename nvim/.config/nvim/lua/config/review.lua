@@ -3,8 +3,8 @@
 -- ~/.claude/claude-comments.md and exposes :ClaudeReviewComment plus preview keymaps.
 
 local function resolve_abs_path()
-  local bufname = vim.api.nvim_buf_get_name(0)
-  if bufname == "" then
+  local bufname = require("util.buf").name()
+  if not bufname then
     vim.notify("Buffer has no file name", vim.log.levels.WARN)
     return nil
   end

@@ -88,6 +88,14 @@ vim.keymap.set("i", ";", ";<c-g>u")
 vim.keymap.set({ "i", "x", "n", "s" }, "<C-s>", "<cmd>w<cr><esc>", { desc = "Save file" })
 
 -- ─── Files & paths ────────────────────────────────────────────────────────────
+-- Copy text to the system clipboard (+ register) and report it. `display`
+-- overrides what's echoed when it differs from the copied text (e.g. a
+-- truncated commit hash).
+local function yank(text, display)
+  vim.fn.setreg("+", text)
+  vim.notify("Copied: " .. (display or text))
+end
+
 vim.keymap.set("n", "<leader>so", function()
   local ft = vim.bo.filetype
   if ft ~= "lua" and ft ~= "vim" then
@@ -108,14 +116,11 @@ vim.keymap.set("n", "<leader>yf", function()
   if not in_repo then
     vim.notify("Not in a git repo; copied absolute path", vim.log.levels.WARN)
   end
-  vim.fn.setreg("+", path)
-  vim.notify("Copied: " .. path)
+  yank(path)
 end, { desc = "Copy git-root-relative path" })
 
 vim.keymap.set("n", "<leader>yF", function()
-  local path = vim.fn.expand("%:p")
-  vim.fn.setreg("+", path)
-  vim.notify("Copied: " .. path)
+  yank(vim.fn.expand("%:p"))
 end, { desc = "Copy absolute path" })
 
 vim.keymap.set("n", "<leader>yl", function()
@@ -126,9 +131,7 @@ vim.keymap.set("n", "<leader>yl", function()
   end
   local line = vim.api.nvim_win_get_cursor(0)[1]
   local path = require("util.git").relpath(abs)
-  local ref = path .. ":" .. line
-  vim.fn.setreg("+", ref)
-  vim.notify("Copied: " .. ref)
+  yank(path .. ":" .. line)
 end, { desc = "Copy file:line reference" })
 
 vim.keymap.set("n", "<leader>yb", function()
@@ -137,8 +140,7 @@ vim.keymap.set("n", "<leader>yb", function()
     vim.notify("Not on a branch", vim.log.levels.WARN)
     return
   end
-  vim.fn.setreg("+", branch)
-  vim.notify("Copied: " .. branch)
+  yank(branch)
 end, { desc = "Copy git branch name" })
 
 vim.keymap.set("n", "<leader>yc", function()
@@ -147,8 +149,7 @@ vim.keymap.set("n", "<leader>yc", function()
     vim.notify("Not in a git repo", vim.log.levels.WARN)
     return
   end
-  vim.fn.setreg("+", hash)
-  vim.notify("Copied: " .. hash:sub(1, 12) .. "…")
+  yank(hash, hash:sub(1, 12) .. "…")
 end, { desc = "Copy git commit hash (HEAD)" })
 
 vim.keymap.set("n", "<leader>fn", "<cmd>enew<cr>", { desc = "New File" })

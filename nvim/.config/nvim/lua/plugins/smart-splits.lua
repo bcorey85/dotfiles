@@ -11,7 +11,13 @@
 -- $TMUX won't do it; instead set the documented pre-load vim.g hook here. This
 -- runs when the module is required (during pack.lua's plugin walk), before the
 -- plugin loads.
-if vim.env.FUGITIVE_POPUP or vim.env.GIT_QF_POPUP then
+-- A headless nvim (`nvim --headless ...`: CI, scripted checks, ad-hoc
+-- verification) has no UI and no business owning the pane's @pane-is-vim flag.
+-- smart-splits' on_init would set it on whatever tmux pane launched the script
+-- and not clear it on exit, stranding the flag — so tmux then forwards
+-- C-hjkl / prefix-m to that pane (e.g. a Claude/terminal pane) instead of the
+-- real nvim. No UI ⇒ list_uis() is empty; disable the integration there too.
+if vim.env.FUGITIVE_POPUP or vim.env.GIT_QF_POPUP or #vim.api.nvim_list_uis() == 0 then
   vim.g.smart_splits_multiplexer_integration = false
 end
 

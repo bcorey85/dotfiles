@@ -100,8 +100,19 @@ return {
           Question = { fg = "#94e2d5" },
           -- SpellLocal: sp only (undercurl style kept); blue sp → teal.
           SpellLocal = { sp = "#94e2d5", undercurl = true },
-          -- RenderMarkdownBullet: sky → teal (bullet is chrome punctuation).
-          RenderMarkdownBullet = { fg = "#94e2d5" },
+          -- markview list bullets: teal (bullet is chrome punctuation). Custom
+          -- group referenced by markview.lua's list_items config — markview never
+          -- defines MdBullet, so this theme definition always wins.
+          MdBullet = { fg = "#94e2d5" },
+          -- markview heading per-level colours (fg + bold, no background bar).
+          -- Custom groups referenced by markview.lua's headings config so they
+          -- survive markview re-applying its own Markview* groups after setup.
+          MdHeading1 = { fg = "#f76c7c", bold = true },
+          MdHeading2 = { fg = "#f3a96a", bold = true },
+          MdHeading3 = { fg = "#e3d367", bold = true },
+          MdHeading4 = { fg = "#9cd57b", bold = true },
+          MdHeading5 = { fg = "#78cee9", bold = true },
+          MdHeading6 = { fg = "#baa0f8", bold = true },
           -- nvim wildmenu popup border: link to the established FloatBorder baseline.
           PmenuBorder = { link = "FloatBorder" },
           -- DAP UI: sky/blue → teal (debugger chrome).
@@ -133,9 +144,6 @@ return {
           DiagnosticFloatingInfo = { fg = "#b4befe" },
           -- DiagnosticUnderlineInfo: sp only (undercurl kept); sky sp → lavender.
           DiagnosticUnderlineInfo = { sp = "#b4befe", underline = true },
-          -- RenderMarkdown: table header/info → lavender (content identity).
-          RenderMarkdownTableHead = { fg = "#b4befe" },
-          RenderMarkdownInfo = { fg = "#b4befe" },
           -- BlinkCmp kind icons: blue → lavender (symbol identity).
           BlinkCmpKindFunction = { fg = "#b4befe" },
           BlinkCmpKindMethod = { fg = "#b4befe" },

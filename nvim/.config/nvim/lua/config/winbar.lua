@@ -49,10 +49,8 @@ local function eligible(win)
     return false
   end
   local buf = vim.api.nvim_win_get_buf(win)
-  if vim.bo[buf].buftype ~= "" then
-    return false
-  end
-  return vim.api.nvim_buf_get_name(buf) ~= ""
+  local b = require("util.buf")
+  return b.is_file(buf) and b.name(buf) ~= nil
 end
 
 -- Build the breadcrumb for the *current* window (correct here because the

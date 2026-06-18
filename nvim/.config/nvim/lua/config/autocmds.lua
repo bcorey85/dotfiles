@@ -16,7 +16,7 @@ vim.api.nvim_create_autocmd("BufEnter", {
     -- root is stable per buffer, so memoize to skip the vim.fs.root walk after
     -- the first enter. The lcd still re-applies each visit (cheap, and keeps the
     -- window-local cwd correct when revisiting a buffer from a different root).
-    if vim.bo[args.buf].buftype ~= "" then
+    if not require("util.buf").is_file(args.buf) then
       return
     end
     local root = vim.b[args.buf].lcd_root
@@ -100,7 +100,7 @@ vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost" }, {
   group = vim.api.nvim_create_augroup("ConflictDiagnostics", { clear = true }),
   callback = function(args)
     local buf = args.buf
-    if vim.bo[buf].buftype ~= "" then
+    if not require("util.buf").is_file(buf) then
       return
     end
     if has_conflict_markers(buf) then
@@ -121,7 +121,7 @@ vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost" }, {
 vim.api.nvim_create_autocmd({ "BufReadPost", "BufWinEnter" }, {
   group = vim.api.nvim_create_augroup("native-merge-keys", { clear = true }),
   callback = function(ev)
-    if vim.b[ev.buf].merge_keys or vim.bo[ev.buf].buftype ~= "" then
+    if vim.b[ev.buf].merge_keys or not require("util.buf").is_file(ev.buf) then
       return
     end
     if has_conflict_markers(ev.buf) then

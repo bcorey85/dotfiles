@@ -160,7 +160,7 @@ local function git_toplevel_async(dir)
 end
 
 local function trigger_git_refresh()
-  if vim.bo[vim.api.nvim_get_current_buf()].buftype ~= "" then
+  if not require("util.buf").is_file() then
     return
   end
 

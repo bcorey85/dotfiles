@@ -44,17 +44,22 @@ return {
       require("quicker").toggle({ loclist = true })
     end, "Loclist (toggle)")
 
-    -- Plain qf navigation. No diff-on-hop: when walking the <leader>cq hunk
-    -- list, use = (whole-file inline overlay) or <leader>gd (:Gitsigns diffthis,
-    -- real navigable split) to see a hunk's change. The notify replaces the bare
-    -- "E553: No more items".
+    -- Plain qf navigation. Centers on hop (zz) to match the rest of the config's
+    -- center-on-jump behavior (]c/[c, n/N, <C-d>/<C-u>, gitsigns hunk nav). No
+    -- diff-on-hop: when walking the <leader>cq hunk list, use = (whole-file inline
+    -- overlay) or <leader>gd (:Gitsigns diffthis, real navigable split) to see a
+    -- hunk's change. The notify replaces the bare "E553: No more items".
     map("[q", function()
-      if not pcall(vim.cmd.cprev) then
+      if pcall(vim.cmd.cprev) then
+        vim.cmd("normal! zz")
+      else
         vim.notify("No previous quickfix item", vim.log.levels.WARN)
       end
     end, "Previous quickfix item")
     map("]q", function()
-      if not pcall(vim.cmd.cnext) then
+      if pcall(vim.cmd.cnext) then
+        vim.cmd("normal! zz")
+      else
         vim.notify("No next quickfix item", vim.log.levels.WARN)
       end
     end, "Next quickfix item")

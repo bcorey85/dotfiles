@@ -33,7 +33,13 @@ return {
         if vim.g.disable_autoformat or vim.b[bufnr].disable_autoformat then
           return
         end
-        return { timeout_ms = 3000, lsp_format = "fallback" }
+        -- format_on_save is synchronous (it must finish before the write), so the
+        -- timeout is also the worst-case UI freeze on save — and autowrite=true
+        -- means buffer switches / :make trigger it too. lsp_format="fallback"
+        -- routes filetypes with no conform formatter through the LSP, which is the
+        -- slowest/least predictable path; 1000ms caps the stall without tripping
+        -- the fast CLI formatters (stylua/ruff/prettier finish well under it).
+        return { timeout_ms = 1000, lsp_format = "fallback" }
       end,
     })
 

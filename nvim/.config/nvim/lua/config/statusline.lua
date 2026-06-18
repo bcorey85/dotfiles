@@ -24,6 +24,13 @@ local ICONS = {
 
 local GENERIC_VENV_NAMES = { [".venv"] = true, ["venv"] = true, ["env"] = true }
 
+-- Directory the git/project segments key off: the current buffer's parent dir,
+-- or cwd for unnamed buffers. Used by every git-aware segment + refresh trigger.
+local function current_dir()
+  local bufname = vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf())
+  return bufname ~= "" and vim.fn.fnamemodify(bufname, ":p:h") or vim.fn.getcwd()
+end
+
 -- Git lookups: Split into a toplevel state cache and a dir-to-toplevel map
 -- to achieve instant O(1) lookups during statusline rendering.
 local _git_cache = {}
@@ -65,13 +72,14 @@ vim.api.nvim_create_autocmd("LspProgress", {
     local title = safe(value.title)
     local msg = safe(value.message)
 
+    local label = client_name .. ": " .. title
+    if msg ~= "" then
+      label = label .. " " .. msg
+    end
+
     if value.kind == "end" then
       local token = _lsp_progress_token + 1
       _lsp_progress_token = token
-      local label = client_name .. ": " .. title
-      if msg ~= "" then
-        label = label .. " " .. msg
-      end
       _lsp_progress = label
       vim.cmd.redrawstatus()
       vim.defer_fn(function()
@@ -83,10 +91,6 @@ vim.api.nvim_create_autocmd("LspProgress", {
       return
     end
 
-    local label = client_name .. ": " .. title
-    if msg ~= "" then
-      label = label .. " " .. msg
-    end
     if value.percentage then
       label = label .. " " .. tostring(value.percentage) .. "%%"
     end
@@ -165,14 +169,11 @@ local function git_toplevel_async(dir)
 end
 
 local function trigger_git_refresh()
-  local bufnr = vim.api.nvim_get_current_buf()
-  if vim.bo[bufnr].buftype ~= "" then
+  if vim.bo[vim.api.nvim_get_current_buf()].buftype ~= "" then
     return
   end
 
-  local bufname = vim.api.nvim_buf_get_name(bufnr)
-  local dir = bufname ~= "" and vim.fn.fnamemodify(bufname, ":p:h") or vim.fn.getcwd()
-
+  local dir = current_dir()
   local cached = _dir_to_toplevel[dir]
   if cached == false then
     return
@@ -200,20 +201,13 @@ vim.api.nvim_create_autocmd("User", {
   pattern = "FugitiveChanged",
   group = vim.api.nvim_create_augroup("StatuslineGitFugitive", { clear = true }),
   callback = function()
-    local bufnr = vim.api.nvim_get_current_buf()
-    local bufname = vim.api.nvim_buf_get_name(bufnr)
-    local dir = bufname ~= "" and vim.fn.fnamemodify(bufname, ":p:h") or vim.fn.getcwd()
-    _dir_to_toplevel[dir] = nil
+    _dir_to_toplevel[current_dir()] = nil
     trigger_git_refresh()
   end,
 })
 
 local function git_segment()
-  local bufnr = vim.api.nvim_get_current_buf()
-  local bufname = vim.api.nvim_buf_get_name(bufnr)
-  local dir = bufname ~= "" and vim.fn.fnamemodify(bufname, ":p:h") or vim.fn.getcwd()
-
-  local toplevel = _dir_to_toplevel[dir]
+  local toplevel = _dir_to_toplevel[current_dir()]
   if toplevel == false or not toplevel then
     return nil
   end
@@ -275,10 +269,7 @@ end
 
 local function project_segment()
   -- Use the toplevel already resolved by the async git cache; fall back to cwd.
-  local bufnr = vim.api.nvim_get_current_buf()
-  local bufname = vim.api.nvim_buf_get_name(bufnr)
-  local dir = bufname ~= "" and vim.fn.fnamemodify(bufname, ":p:h") or vim.fn.getcwd()
-  local toplevel = _dir_to_toplevel[dir]
+  local toplevel = _dir_to_toplevel[current_dir()]
   if toplevel and toplevel ~= false and toplevel ~= "" then
     return vim.fs.basename(toplevel)
   end

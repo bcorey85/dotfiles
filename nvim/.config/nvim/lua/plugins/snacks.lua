@@ -27,6 +27,11 @@ return {
   src = "folke/snacks.nvim",
   setup = function()
     require("snacks").setup({
+      -- bigfile: above ~1.5MB, disable the expensive per-buffer machinery
+      -- (treesitter highlight + foldexpr folds, LSP attach, etc.) so opening a
+      -- minified bundle, a huge lockfile, or a generated dump doesn't freeze the
+      -- editor. No-op on normal files.
+      bigfile = { enabled = true },
       -- picker: fuzzy finder (replaced mini.pick + mini.extra + mini.visits).
       -- Telescope-style layout — narrow result list + preview pane — so grep
       -- hits show the matched line, not just long monorepo paths. ui_select

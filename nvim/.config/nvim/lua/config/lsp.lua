@@ -215,8 +215,6 @@ vim.lsp.config("ruff", {
   end,
 })
 
-vim.lsp.config("cssls", {})
-vim.lsp.config("html", {})
 vim.lsp.config("jsonls", {
   settings = {
     json = {
@@ -235,12 +233,8 @@ vim.lsp.config("yamlls", {
     },
   },
 })
-vim.lsp.config("bashls", {})
-vim.lsp.config("taplo", {})
-vim.lsp.config("ansiblels", {})
 
--- oxlint has LSP mode (--lsp) and is in Mason registry as "oxlint"
--- It supports JS/TS/Vue filetypes via lspconfig definition
-vim.lsp.config("oxlint", {})
-
+-- cssls, html, bashls, taplo, ansiblels, and oxlint need no extra config —
+-- vim.lsp.enable(config.servers) below activates them with lspconfig's
+-- shipped defaults (servers.lua is the source of truth for the list).
 vim.lsp.enable(require("config.servers"))

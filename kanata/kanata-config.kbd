@@ -45,14 +45,6 @@
   lctl lmet @la           spc                 ralt rmet rctl
 )
 
-(deflayer rain
-  @grl      1    2    3    4    5    6    7    8    9    0    [    ]   bspc
-  tab       v    d    l    g    f    z    r    u    o    q    -    =    \
-  caps      s    t    h    c    y    b    n    e    a    i    ,       ret
-  lsft      k    m    p    w    x    ;    j    /    '    .    rsft
-  lctl lmet @la           spc                 ralt rmet rctl
-)
-
 (deflayer gallium
   @grl      1    2    3    4    5    6    7    8    9    0    [    ]   bspc
   tab       b    l    d    c    v    z    y    o    u    ,    -    =    \
@@ -143,7 +135,6 @@
   ;; tap: backtick (grave), hold: toggle layer-switching layer while held
   grl (tap-hold-release 200 200 grv (layer-toggle layers))
   str (layer-switch sturdy)
-  rai (layer-switch rain)
   gal (layer-switch gallium)
   qwr (layer-switch qwerty)
   nok (layer-switch nokwts)
@@ -164,7 +155,7 @@
 )
 
 (deflayer layers
-  _    @qwr @nok @kni @rai @gal @nok @rec @sem _    _    _    _    _
+  _    @qwr @rec @kni - @gal @nok @rec @sem _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _

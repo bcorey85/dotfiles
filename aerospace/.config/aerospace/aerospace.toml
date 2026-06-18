@@ -60,6 +60,12 @@ on-mode-changed = []
     alt-minus = 'resize smart -50'
     alt-equal = 'resize smart +50'
 
+    alt-ctrl-h = 'resize width +50'  # wider
+    alt-ctrl-l = 'resize width -50'  # narrower
+
+    alt-ctrl-f = 'fullscreen'
+    alt-ctrl-space = 'layout floating tiling'  # toggle float/tile
+
     alt-1 = 'workspace 1'
     alt-2 = 'workspace 2'
     alt-3 = 'workspace 3'

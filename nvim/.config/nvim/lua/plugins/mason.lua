@@ -35,6 +35,8 @@ return {
         ensure_installed = {
           "stylua",
           "prettier",
+          "shfmt", -- shell formatter (conform: sh/bash); bashls has no formatting
+
           -- Python formatting/import-sorting is handled by ruff (installed via
           -- mason-lspconfig in config/servers.lua, used by conform.nvim as
           -- ruff_fix + ruff_format). black/isort removed — they conflicted.

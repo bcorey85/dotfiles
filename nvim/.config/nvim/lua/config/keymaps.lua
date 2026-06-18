@@ -48,6 +48,9 @@ local function hunk_jump(direction, native)
 end
 vim.keymap.set("n", "]c", hunk_jump("next", "]czz"), { desc = "Next hunk and center" })
 vim.keymap.set("n", "[c", hunk_jump("prev", "[czz"), { desc = "Previous hunk and center" })
+-- ]h/[h: aliases for hunk nav (native diff motion is ]c/[c, so reuse it as the fallback).
+vim.keymap.set("n", "]h", hunk_jump("next", "]czz"), { desc = "Next hunk and center" })
+vim.keymap.set("n", "[h", hunk_jump("prev", "[czz"), { desc = "Previous hunk and center" })
 
 -- `=`: TOGGLE the PERSISTENT whole-file inline diff overlay, matching fugitive's
 -- <CR> "open the file WHOLE, read in context" review gear — the everyday
@@ -213,7 +216,7 @@ vim.keymap.set("n", "<leader>M", function()
 end, { desc = "Messages (scratch buffer)" })
 
 -- ─── Windows ──────────────────────────────────────────────────────────────────
-vim.keymap.set("n", "<leader>wd", "<C-w>c", { desc = "Delete window" })
+vim.keymap.set("n", "<leader>ww", "<C-w>c", { desc = "Delete window" })
 vim.keymap.set("n", "<leader>w-", "<C-w>s", { desc = "Split window below" })
 vim.keymap.set("n", "<leader>w|", "<C-w>v", { desc = "Split window right" })
 vim.keymap.set("n", "<leader>wm", function()

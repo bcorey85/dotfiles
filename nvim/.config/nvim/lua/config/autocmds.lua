@@ -12,11 +12,22 @@ vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
 vim.api.nvim_create_autocmd("BufEnter", {
   group = group,
   callback = function(args)
-    local path = vim.api.nvim_buf_get_name(args.buf)
-    if path == "" or vim.bo[args.buf].buftype ~= "" then
+    -- BufEnter fires on every window/buffer switch and picker preview. The git
+    -- root is stable per buffer, so memoize to skip the vim.fs.root walk after
+    -- the first enter. The lcd still re-applies each visit (cheap, and keeps the
+    -- window-local cwd correct when revisiting a buffer from a different root).
+    if vim.bo[args.buf].buftype ~= "" then
       return
     end
-    local root = vim.fs.root(path, { ".git" })
+    local root = vim.b[args.buf].lcd_root
+    if root == nil then
+      local path = vim.api.nvim_buf_get_name(args.buf)
+      if path == "" then
+        return
+      end
+      root = vim.fs.root(path, { ".git" }) or false
+      vim.b[args.buf].lcd_root = root
+    end
     if root and root ~= vim.fn.getcwd(-1, 0) then
       pcall(vim.cmd.lcd, root)
     end

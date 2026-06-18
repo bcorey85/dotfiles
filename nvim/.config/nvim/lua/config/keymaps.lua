@@ -96,6 +96,17 @@ local function yank(text, display)
   vim.notify("Copied: " .. (display or text))
 end
 
+-- Absolute path of the current buffer's file, or nil (with a warning) for an
+-- unnamed buffer. Centralizes the guard shared by the path/line yank maps.
+local function current_file()
+  local abs = vim.fn.expand("%:p")
+  if abs == "" then
+    vim.notify("Buffer has no file", vim.log.levels.WARN)
+    return nil
+  end
+  return abs
+end
+
 vim.keymap.set("n", "<leader>so", function()
   local ft = vim.bo.filetype
   if ft ~= "lua" and ft ~= "vim" then
@@ -107,9 +118,8 @@ vim.keymap.set("n", "<leader>so", function()
 end, { desc = "Source current file" })
 
 vim.keymap.set("n", "<leader>yf", function()
-  local abs = vim.fn.expand("%:p")
-  if abs == "" then
-    vim.notify("Buffer has no file", vim.log.levels.WARN)
+  local abs = current_file()
+  if not abs then
     return
   end
   local path, in_repo = require("util.git").relpath(abs)
@@ -120,17 +130,23 @@ vim.keymap.set("n", "<leader>yf", function()
 end, { desc = "Copy git-root-relative path" })
 
 vim.keymap.set("n", "<leader>yF", function()
-  yank(vim.fn.expand("%:p"))
+  local abs = current_file()
+  if not abs then
+    return
+  end
+  yank(abs)
 end, { desc = "Copy absolute path" })
 
 vim.keymap.set("n", "<leader>yl", function()
-  local abs = vim.fn.expand("%:p")
-  if abs == "" then
-    vim.notify("Buffer has no file", vim.log.levels.WARN)
+  local abs = current_file()
+  if not abs then
     return
   end
   local line = vim.api.nvim_win_get_cursor(0)[1]
-  local path = require("util.git").relpath(abs)
+  local path, in_repo = require("util.git").relpath(abs)
+  if not in_repo then
+    vim.notify("Not in a git repo; copied absolute path", vim.log.levels.WARN)
+  end
   yank(path .. ":" .. line)
 end, { desc = "Copy file:line reference" })
 
@@ -207,13 +223,12 @@ vim.keymap.set("n", "<leader>M", function()
     vim.notify("No messages")
     return
   end
-  vim.cmd("botright new")
-  vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(msgs, "\n"))
-  vim.bo.buftype = "nofile"
-  vim.bo.bufhidden = "wipe"
-  vim.bo.swapfile = false
-  vim.api.nvim_buf_set_name(0, "Messages")
-  vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = true, silent = true })
+  require("util.scratch").open({
+    name = "Messages",
+    lines = vim.split(msgs, "\n"),
+    split = "botright new",
+    modifiable = true,
+  })
 end, { desc = "Messages (scratch buffer)" })
 
 -- ─── Windows ──────────────────────────────────────────────────────────────────

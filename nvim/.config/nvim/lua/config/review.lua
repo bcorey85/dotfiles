@@ -153,14 +153,11 @@ local function preview_review_comments()
     end
   end
 
-  vim.cmd("new")
-  vim.bo.buftype = "nofile"
-  vim.bo.bufhidden = "wipe"
-  vim.bo.filetype = "markdown"
-  vim.api.nvim_buf_set_name(0, "ClaudeReview")
-  vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
-  vim.bo.modifiable = false
-  vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = true })
+  require("util.scratch").open({
+    name = "ClaudeReview",
+    lines = lines,
+    filetype = "markdown",
+  })
 end
 
 vim.keymap.set("n", "<leader>cc", "<cmd>ClaudeReviewComment<cr>", { desc = "Leave Claude review comment" })

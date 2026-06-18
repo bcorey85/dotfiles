@@ -4,6 +4,11 @@ return {
     require("conform").setup({
       formatters_by_ft = {
         lua = { "stylua" },
+        -- bashls provides no formatting, so shell would otherwise go
+        -- unformatted (lsp_format="fallback" has nothing to fall back to).
+        -- shfmt rounds out the toolchain for this shell-heavy dotfiles repo.
+        sh = { "shfmt" },
+        bash = { "shfmt" },
         -- Mirror the repo's pre-commit (ruff-check --fix → ruff-format) so a
         -- saved buffer is already commit-clean. ruff reads pyproject.toml
         -- (e.g. line-length = 120) and owns import sorting via the I rules —

@@ -23,6 +23,26 @@ return {
       yaml = { "yamllint" },
     }
 
+    -- Memoize the executable() check by linter name. Availability is stable for
+    -- the session once mason finishes installing, so there's no need to re-probe
+    -- PATH on every BufWritePost/BufReadPost/InsertLeave. A nil entry means "not
+    -- yet resolved"; once a linter resolves to true it's cached, and false
+    -- results are retried (so a tool that installs mid-session is picked up).
+    local available_cache = {}
+    local function is_available(name)
+      if available_cache[name] then
+        return true
+      end
+      local linter = lint.linters[name]
+      if type(linter) == "function" then
+        linter = linter()
+      end
+      local cmd = linter and linter.cmd
+      local ok = cmd ~= nil and vim.fn.executable(cmd) == 1
+      available_cache[name] = ok
+      return ok
+    end
+
     vim.api.nvim_create_autocmd({ "BufWritePost", "BufReadPost", "InsertLeave" }, {
       group = vim.api.nvim_create_augroup("nvim_lint", { clear = true }),
       callback = function()
@@ -32,12 +52,7 @@ return {
         local names = lint.linters_by_ft[vim.bo.filetype] or {}
         local available = {}
         for _, name in ipairs(names) do
-          local linter = lint.linters[name]
-          if type(linter) == "function" then
-            linter = linter()
-          end
-          local cmd = linter and linter.cmd
-          if cmd and vim.fn.executable(cmd) == 1 then
+          if is_available(name) then
             table.insert(available, name)
           end
         end

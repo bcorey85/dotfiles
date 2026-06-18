@@ -31,7 +31,7 @@
 local plugin_order = {
   "theme", -- colorscheme — must be first
   "mini-icons", -- icon mock (satisfies require("nvim-web-devicons")) — before consumers
-  "treesitter", -- before render-markdown / mini.ai textobjects
+  "treesitter", -- before markview / mini.ai textobjects
   "treesitter-context", -- sticky scope header — after treesitter
   "lspconfig", -- ships lsp/ server defs consumed by config.lsp
   "mason", -- LSP / tool installer (3 plugins)
@@ -59,7 +59,7 @@ local plugin_order = {
   "undotree", -- visual undo history navigator
   "sleuth", -- auto-detect shiftwidth/expandtab per buffer
   "obsidian",
-  "render-markdown",
+  "markview",
   "tiny-cmdline",
   "persistence", -- session save/restore per cwd
   "dap", -- DAP: nvim-dap + dap-ui + dap-python (deferred — no require until <leader>d)
@@ -100,6 +100,17 @@ vim.api.nvim_create_autocmd("PackChanged", {
 
 local specs = {} -- flat list passed to vim.pack.add
 local seen = {} -- dedupe by resolved name (so shared deps install once)
+local declared = {} -- every plugin name the config knows about, INCLUDING
+-- cond-skipped specs (e.g. obsidian outside ~/vault) and their deps. This is
+-- the truth set for :PackClean — a plugin is stale only if it's absent here,
+-- never merely because its cond was false this session.
+
+local function declare(item)
+  if type(item) == "string" then
+    item = { src = item }
+  end
+  declared[item.name or derive_name(item.src)] = true
+end
 
 local function register(item)
   if type(item) == "string" then
@@ -123,6 +134,12 @@ for _, modname in ipairs(plugin_order) do
   -- A file returns a single spec (has .src) or a list of specs.
   local entries = mod.src and { mod } or mod
   for _, spec in ipairs(entries) do
+    -- Record names for :PackClean regardless of cond, so a cond-gated plugin
+    -- (and its deps) is never mistaken for an orphan when its cond is false.
+    declare(spec)
+    for _, dep in ipairs(spec.deps or {}) do
+      declare(dep)
+    end
     if spec.cond == nil or spec.cond() then
       for _, dep in ipairs(spec.deps or {}) do
         register(dep)
@@ -174,15 +191,17 @@ vim.api.nvim_create_user_command("PackStatus", function()
   vim.pack.update(nil, { offline = true })
 end, { desc = "Review installed vim.pack plugins (offline)" })
 
--- :PackClean — delete plugins still on disk but no longer in your specs (not
--- added this session). Prompts before removing.
+-- :PackClean — delete plugins still on disk but no longer declared in the
+-- config. Keyed off `declared` (not `p.active`) so cond-gated plugins like
+-- obsidian aren't flagged just because their cond was false this session —
+-- :PackClean is therefore safe to run from any cwd. Prompts before removing.
 vim.api.nvim_create_user_command("PackClean", function()
   local stale = vim.tbl_map(
     function(p)
       return p.spec.name
     end,
     vim.tbl_filter(function(p)
-      return not p.active
+      return not declared[p.spec.name]
     end, vim.pack.get())
   )
 

@@ -1,12 +1,12 @@
 # Dotfiles
 
-Personal configuration files across WSL, Ubuntu, and macOS.
+Personal configuration files across WSL, Ubuntu, macOS, and Arch Linux.
 
 ## What's Included
 
-- **nvim** - Neovim configuration (LazyVim + custom plugins)
+- **nvim** - Neovim configuration (native `vim.pack`, specs in `lua/plugins/`)
 - **tmux** - tmux configuration with true color support
-- **zsh** - zsh configuration with oh-my-zsh
+- **zsh** - zsh configuration (manually cloned plugins, starship prompt)
 - **kitty** - Kitty terminal configuration
 - **kanata** - Keyboard remapping
 - **claude** - Claude Code configuration
@@ -17,7 +17,7 @@ Personal configuration files across WSL, Ubuntu, and macOS.
 ```bash
 git clone git@github.com:bcorey85/dotfiles.git ~/dotfiles
 cd ~/dotfiles
-./setup ubuntu  # or: ./setup wsl | ./setup mac
+./setup ubuntu  # or: ./setup wsl | ./setup mac | ./setup arch
 ```
 
 The setup script handles everything: dependencies, fonts, symlinks, zsh plugins, starship prompt, and shell configuration.
@@ -26,15 +26,15 @@ The setup script handles everything: dependencies, fonts, symlinks, zsh plugins,
 
 Each step can also be run independently from the `install/` directory:
 
-| Script                     | Args               | Description                                   |
-| -------------------------- | ------------------ | --------------------------------------------- |
-| `./install/deps`           | `wsl\|ubuntu\|mac` | System dependencies (apt/brew)                |
-| `./install/fonts`          | `wsl\|ubuntu\|mac` | Nerd fonts                                    |
-| `./install/stow`           |                    | Symlink configs via stow                      |
-| `./install/zsh-plugins`    |                    | zsh-syntax-highlighting & zsh-autosuggestions |
-| `./install/starship`       |                    | Starship prompt                               |
-| `./install/claude-plugins` |                    | Claude Code plugins                           |
-| `./install/zsh`            |                    | Set zsh as default shell                      |
+| Script                     | Args                     | Description                                   |
+| -------------------------- | ------------------------ | --------------------------------------------- |
+| `./install/deps`           | `wsl\|ubuntu\|mac\|arch` | System dependencies (apt/brew/pacman)         |
+| `./install/fonts`          | `wsl\|ubuntu\|mac\|arch` | Nerd fonts                                    |
+| `./install/stow`           |                          | Symlink configs via stow                      |
+| `./install/zsh-plugins`    |                          | zsh-syntax-highlighting & zsh-autosuggestions |
+| `./install/starship`       |                          | Starship prompt                               |
+| `./install/claude-plugins` |                          | Claude Code plugins                           |
+| `./install/zsh`            |                          | Set zsh as default shell                      |
 
 ## Daily Workflow
 
@@ -81,7 +81,7 @@ stow -D nvim tmux zsh claude kitty kanata scripts
 
 **Neovim plugins not loading:**
 
-- Open Neovim and run `:Lazy sync`
+- Open Neovim and run `:PackUpdate` (see `:PackStatus`)
 - Check `:checkhealth` for issues
 
 **Symlinks not working:**

@@ -28,7 +28,6 @@ return {
         "checkhealth",
         "fugitive",
         "git",
-        "grug-far",
         "help",
         "lspinfo",
         "mason",

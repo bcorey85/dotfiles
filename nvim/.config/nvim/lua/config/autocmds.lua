@@ -139,14 +139,12 @@ vim.api.nvim_create_autocmd("VimResized", {
   end,
 })
 
--- Close certain helper/utility buffers with `q`. grug-far is included so
--- <leader>sr can be dismissed with q.
+-- Close certain helper/utility buffers with `q`.
 vim.api.nvim_create_autocmd("FileType", {
   group = group,
   pattern = {
     "checkhealth",
     "git",
-    "grug-far",
     "help",
     "lspinfo",
     "qf",

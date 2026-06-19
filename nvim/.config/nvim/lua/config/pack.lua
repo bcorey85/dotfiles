@@ -46,22 +46,18 @@ local plugin_order = {
   "mini-surround",
   "mini-pairs",
   "mini-indentscope",
-  "flash",
   "mini-clue", -- key-clue hints (replaced which-key)
   "ts-comments",
   "lazydev",
   "conform",
   "nvim-lint",
   "harpoon",
-  "grug-far",
   "quicker", -- quickfix/loclist (replaces trouble)
-  "dispatch", -- async :Make/:Dispatch → tmux pane + quickfix
   "undotree", -- visual undo history navigator
   "sleuth", -- auto-detect shiftwidth/expandtab per buffer
   "obsidian",
   "markview",
   "tiny-cmdline",
-  "persistence", -- session save/restore per cwd
   "dap", -- DAP: nvim-dap + dap-ui + dap-python (deferred — no require until <leader>d)
 }
 

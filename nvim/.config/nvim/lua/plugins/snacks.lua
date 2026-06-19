@@ -98,9 +98,7 @@ return {
     end, { desc = "Delete buffer" })
 
     -- Terminal toggle, keyed by cwd (one float per project). Lives in the
-    -- <leader>t tasks namespace as <leader>tt — "tasks → terminal" — alongside
-    -- the dispatch maps (tm/tr/td/…). Bare <leader>t is their prefix, so the
-    -- toggle takes the doubled key to avoid shadowing the group.
+    -- <leader>t tasks namespace as <leader>tt — "tasks → terminal".
     vim.keymap.set("n", "<leader>tt", function()
       Snacks.terminal()
     end, { desc = "Toggle terminal (cwd)" })

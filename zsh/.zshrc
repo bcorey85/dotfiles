@@ -15,24 +15,6 @@ zle -N bracketed-paste bracketed-paste-magic
 source ~/.zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 
 
-function cdev() {
-    project=$1
-    base=~/dev
-
-    if [ "$project" = "ps" ]
-    then
-        cd "$base/saitama"
-    elif [ "$project" = "lf" ]
-    then
-        cd "$base/legalfit"
-    elif [ "$project" = "st" ]
-    then
-        cd "$base/starfield"
-    else
-        cd "$base/$project"
-    fi
-}
-
 function kill_port() {
     if [[ -n "$1" && "$1" =~ ^[0-9]+$ ]]; then
         lsof -t -i:$1 | xargs kill -9
@@ -181,7 +163,7 @@ if [[ "$(uname)" == "Linux" ]] && command -v keychain &>/dev/null; then
 fi
 
 # bun completions
-[ -s "/home/brandon/.bun/_bun" ] && source "/home/brandon/.bun/_bun"
+[ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"
 
 # bun
 export BUN_INSTALL="$HOME/.bun"

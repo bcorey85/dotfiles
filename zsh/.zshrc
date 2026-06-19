@@ -1,5 +1,5 @@
 # Auto-start tmux
-if command -v tmux &>/dev/null && [ -z "$TMUX" ]; then
+if command -v tmux &>/dev/null && [ -z "$TMUX" ] && [ -z "$INSIDE_EMACS" ]; then
   tmux new-session -A -s main
 fi
 
@@ -153,6 +153,9 @@ export FZF_DEFAULT_COMMAND='fd'
 [[ "$TERM_PROGRAM" == "kiro" ]] && . "$(kiro --locate-shell-integration-path zsh)"
 [[ -f /home/linuxbrew/.linuxbrew/bin/brew ]] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 export PATH="$HOME/.local/bin:$HOME:$PATH"
+
+# Doom Emacs CLI
+[ -d "$HOME/.config/emacs/bin" ] && export PATH="$HOME/.config/emacs/bin:$PATH"
 
 # Flatpak desktop integration
 command -v flatpak &>/dev/null && export XDG_DATA_DIRS="/var/lib/flatpak/exports/share:$HOME/.local/share/flatpak/exports/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"

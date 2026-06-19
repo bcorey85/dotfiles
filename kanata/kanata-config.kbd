@@ -61,6 +61,14 @@
   lctl lmet @la           spc                 ralt rmet rctl
 )
 
+(deflayer knight
+  @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
+  tab       b    f    r    l    k    z    g    o    u    ;    [    ]    \
+  caps      n    s    h    t    m    y    c    e    i    a    ,       ret
+  lsft      v    x    d    j    q    p    w    /    .    '    rsft
+  lctl lmet @la           spc                 ralt rmet rctl
+)
+
 (deflayer pine
   @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
   tab       q    l    c    m    k    '    f    u    o    y    [    ]    \
@@ -114,13 +122,6 @@
   lctl lmet @la           spc                 ralt rmet rctl
 )
 
-(deflayer knight
-  @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
-  tab       b    f    r    l    d    z    g    o    u    ,    [    ]    \
-  caps      n    s    h    t    m    y    c    a    e    i    ;       ret
-  lsft      v    x    k    j    q    p    w    '    /    .    rsft
-  lctl lmet @la           spc                 ralt rmet rctl
-)
 
 (deflayer l1
   @grl      _    _    _    _    _    _    _    _    _    _    _    _    _

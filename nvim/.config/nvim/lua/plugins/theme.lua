@@ -142,8 +142,15 @@ return {
           -- DiagnosticVirtualTextInfo: sky fg → lavender; preserve italic + bg blend (#313d45).
           DiagnosticVirtualTextInfo = { fg = "#b4befe", italic = true, bg = "#313d45" },
           DiagnosticFloatingInfo = { fg = "#b4befe" },
-          -- DiagnosticUnderlineInfo: sp only (undercurl kept); sky sp → lavender.
-          DiagnosticUnderlineInfo = { sp = "#b4befe", underline = true },
+          -- Diagnostic squiggles: Catppuccin (this version) defines the
+          -- DiagnosticUnderline* groups with flat `underline`, which renders as a
+          -- straight line, not a squiggle. Force `undercurl` back on all four so
+          -- lint/LSP diagnostics squiggle again (kitty draws undercurl natively;
+          -- tmux passes it via usstyle). Colors preserved: red/yellow/lavender/teal.
+          DiagnosticUnderlineError = { sp = "#f38ba8", undercurl = true },
+          DiagnosticUnderlineWarn = { sp = "#f9e2af", undercurl = true },
+          DiagnosticUnderlineInfo = { sp = "#b4befe", undercurl = true },
+          DiagnosticUnderlineHint = { sp = "#94e2d5", undercurl = true },
           -- BlinkCmp kind icons: blue → lavender (symbol identity).
           BlinkCmpKindFunction = { fg = "#b4befe" },
           BlinkCmpKindMethod = { fg = "#b4befe" },

@@ -53,6 +53,7 @@ local plugin_order = {
   "nvim-lint",
   "harpoon",
   "quicker", -- quickfix/loclist (replaces trouble)
+  "grug-far", -- project-wide find & replace (editable buffer)
   "undotree", -- visual undo history navigator
   "sleuth", -- auto-detect shiftwidth/expandtab per buffer
   "obsidian",

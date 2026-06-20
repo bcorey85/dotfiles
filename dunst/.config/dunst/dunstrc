@@ -46,14 +46,13 @@
     mouse_middle_click = close_all
     mouse_right_click = close_current
 
-# Suppress YouTube notifications (browser desktop notifications)
-[suppress_youtube_summary]
-    summary = "*YouTube*"
-    skip_display = yes
-    history_ignore = yes
-
-[suppress_youtube_body]
-    body = "*YouTube*"
+# Suppress YouTube notifications (Chrome web-push).
+# Chrome sets appname="Google Chrome" for all sites, so we discriminate on the
+# youtube.com URL that Chrome embeds in the body. Matching is case-sensitive,
+# so this must be lowercase to match the href.
+[suppress_youtube]
+    appname = "Google Chrome"
+    body = "*youtube.com*"
     skip_display = yes
     history_ignore = yes
 

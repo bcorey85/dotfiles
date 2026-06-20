@@ -34,7 +34,7 @@ return {
         { mode = { "n", "x" }, keys = "<Leader>c", desc = "+changes" },
         { mode = { "n", "x" }, keys = "<Leader>f", desc = "+file/find" },
         { mode = { "n", "x" }, keys = "<Leader>g", desc = "+git" },
-        { mode = { "n", "x" }, keys = "<Leader>l", desc = "+lsp" },
+        { mode = { "n", "x" }, keys = "<Leader>l", desc = "+lsp/quickfix" },
         { mode = { "n", "x" }, keys = "<Leader>n", desc = "+notes (obsidian)" },
         { mode = { "n", "x" }, keys = "<Leader>p", desc = "+plugins" },
         { mode = { "n", "x" }, keys = "<Leader>q", desc = "+quit/session" },

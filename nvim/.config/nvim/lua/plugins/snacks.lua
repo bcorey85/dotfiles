@@ -189,6 +189,18 @@ return {
       Snacks.picker.keymaps()
     end, "Keymaps")
 
+    -- <leader>: — the Emacs M-x: fuzzy-search and run any Ex command by name,
+    -- the "I don't remember the binding, just find the command" escape hatch.
+    -- Pairs with <leader>sk (keymaps) for full command discoverability. Mnemonic:
+    -- mirrors the `:` cmdline. <leader>s: gives the command HISTORY (M-x repeat).
+    pmap("<leader>:", function()
+      Snacks.picker.commands()
+    end, "Commands (M-x)")
+
+    pmap("<leader>s:", function()
+      Snacks.picker.command_history()
+    end, "Command history")
+
     pmap("<leader>sb", function()
       Snacks.picker.lines()
     end, "Search in buffer")

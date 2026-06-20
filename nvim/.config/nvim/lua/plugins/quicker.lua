@@ -24,6 +24,27 @@ return {
           end,
           desc = "Collapse quickfix context",
         },
+        -- Buffer-local filtering, usable while focused IN the qf/loclist window
+        -- (leader maps are awkward here). cmdline-prefill via feedkeys (not <Cmd>)
+        -- so the cursor lands ready for a BARE pattern. No `/` prefix: cfilter
+        -- reads `/pat` as the literal pattern unless you close it (`/pat/`), so a
+        -- lone slash silently matches nothing — the undelimited `:Cfilter pat`
+        -- form is what works. f keeps matches, F rejects them — the narrow step of
+        -- the grug-far pipeline (Snacks.picker.grep → <C-q> → f/F → :cdo s///).
+        {
+          "f",
+          function()
+            vim.api.nvim_feedkeys(":Cfilter ", "n", false)
+          end,
+          desc = "Filter quickfix (keep)",
+        },
+        {
+          "F",
+          function()
+            vim.api.nvim_feedkeys(":Cfilter! ", "n", false)
+          end,
+          desc = "Filter quickfix (reject)",
+        },
       },
     })
 

@@ -1,7 +1,9 @@
 vim.diagnostic.config({
   severity_sort = true,
   underline = true,
-  virtual_text = { spacing = 2, source = "if_many", prefix = "●" },
+  -- Inline diagnostics are rendered by tiny-inline-diagnostic.nvim (cursor-line
+  -- focused), so the native virtual_text is disabled to avoid double display.
+  virtual_text = false,
   signs = {
     text = {
       [vim.diagnostic.severity.ERROR] = " ",

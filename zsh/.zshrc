@@ -98,6 +98,7 @@ alias vn='nvim +"cd ~/vault" ~/vault'
 alias nvim-old='NVIM_APPNAME=nvim-old nvim'
 alias tt="tmux"
 alias cc="claude"
+alias oc="opencode"
 
 # Machine-local overrides (secrets, paths, etc.)
 [[ -f ~/.zshrc.local ]] && source ~/.zshrc.local
@@ -178,3 +179,6 @@ command -v atuin &>/dev/null && eval "$(atuin init zsh)"
 
 # Added by sonarqube-cli installer
 export PATH="$HOME/.local/share/sonarqube-cli/bin:$PATH"
+
+# opencode
+export PATH=/home/brandon/.opencode/bin:$PATH

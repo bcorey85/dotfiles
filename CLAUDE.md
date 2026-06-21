@@ -32,6 +32,7 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 | `tmux`      | `~/.tmux.conf`                                                | Prefix=`Ctrl+Space`, vim-style panes                                                                                |
 | `zsh`       | `~/.zshrc`                                                    | Plugins, aliases, pyenv/nvm/starship init                                                                           |
 | `claude`    | `~/.claude/`                                                  | Agents, commands, settings, hooks                                                                                   |
+| `opencode`  | `~/.config/opencode/`                                         | Global config (`opencode.jsonc`), `AGENTS.md` global rules, `agents/` ported from claude. Auto-loads `~/.claude/skills/` |
 | `aerospace` | `~/.config/aerospace/`                                        | macOS tiling WM. Workspaces 1-9 pinned to external monitor, built-in screen dedicated to Teams (mac only)           |
 | `kitty`     | `~/.config/kitty/`                                            | Catppuccin Mocha (OneDark BG)                                                                                       |
 | `starship`  | `~/.config/starship.toml`                                     | Gruvbox Material prompt                                                                                             |
@@ -63,3 +64,4 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 - Neovim plugins are managed by native `vim.pack` (Neovim 0.12); specs live in `lua/plugins/`, revisions are pinned in `nvim-pack-lock.json`, and `:PackUpdate` / `:PackStatus` / `:PackClean` are defined in `lua/config/pack.lua`
 - Zsh plugins are git-cloned to `~/.zsh/plugins/` (not in this repo, installed by `install/zsh-plugins`)
 - Kanata setup is post-install and per-OS: Linux `sudo ~/kanata-setup` (systemd service + udev rules); macOS `sudo ~/kanata-setup-mac` (Homebrew kanata + version-pinned Karabiner driver + launchd daemons, then manual Driver Extension / Input Monitoring / Accessibility approvals + reboot)
+- opencode global config is stowed at `opencode/.config/opencode/opencode.jsonc`; it auto-loads external skills from `~/.claude/skills/`, so existing stowed claude skills work as-is. opencode-specific agents/commands live under `~/.config/opencode/agent(s)/` and `command(s)/` (port from claude separately if desired)

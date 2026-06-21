@@ -33,3 +33,10 @@ nvim/.config/nvim/lazy-lock.json
 
 # Claude Code harness-managed runtime state (auto-refreshed by the CLI)
 claude/.claude/policy-limits.json
+
+# === opencode (opencode/.config/opencode/) ===
+# opencode regenerates these at runtime via the plugin SDK; don't track them.
+opencode/.config/opencode/node_modules
+opencode/.config/opencode/package.json
+opencode/.config/opencode/package-lock.json
+opencode/.config/opencode/bun.lock

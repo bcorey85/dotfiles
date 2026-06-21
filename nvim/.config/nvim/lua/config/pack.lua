@@ -33,6 +33,7 @@ local plugin_order = {
   "mini-icons", -- icon mock (satisfies require("nvim-web-devicons")) — before consumers
   "treesitter", -- before markview / mini.ai textobjects
   "treesitter-context", -- sticky scope header — after treesitter
+  "matchup", -- `%` matches keyword/tag pairs (function/end, <div></div>) — after treesitter
   "lspconfig", -- ships lsp/ server defs consumed by config.lsp
   "mason", -- LSP / tool installer (3 plugins)
   "blink", -- completion
@@ -52,6 +53,8 @@ local plugin_order = {
   "conform",
   "nvim-lint",
   "harpoon",
+  "aerial", -- code outline / symbol tree sidebar — after treesitter + lspconfig
+  "tiny-inline-diagnostic", -- inline diagnostic render (virtual_text off in config.lsp)
   "quicker", -- quickfix/loclist (replaces trouble)
   "grug-far", -- project-wide find & replace (editable buffer)
   "undotree", -- visual undo history navigator

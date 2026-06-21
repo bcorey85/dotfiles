@@ -1,6 +1,6 @@
 ---
 description: "Review code changes for bugs, anti-patterns, architectural violations, and security issues. Use proactively after completing a feature, fixing a bug, or before any push operation. Analyzes the git working state (staged and unstaged changes)."
-model: opencode-go/glm-5.2
+model: opencode-go/minimax-m3
 mode: subagent
 permission:
   edit: deny

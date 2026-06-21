@@ -1,6 +1,6 @@
 ---
 description: "Rewrite-and-diff audit of a research-questions file: rewrites each question into its most intent-free form, diffs against the original, and reports any question whose rewrite differs materially. Read-only; sees only the questions file."
-model: opencode-go/glm-5.2
+model: opencode-go/deepseek-v4-pro
 mode: subagent
 permission:
   edit: deny

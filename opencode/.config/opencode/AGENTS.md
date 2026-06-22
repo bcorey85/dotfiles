@@ -5,6 +5,7 @@
 - Never paste secrets — give me the command to run.
 - Verify CLI syntax with `--help` before guessing.
 - Be concise. Reference code with `file_path:line_number`.
+- Do NOT paste code in your response that was already written via a tool call. The user can see the tool output. Summarize what you changed instead.
 - When a task spans >3 files or >1 service, propose a plan before writing code.
 
 ## Behavior
@@ -12,6 +13,7 @@
 - **MANDATORY: Never code directly. Always delegate to the `/code` subagents** (`backend-coder`, `frontend-coder`, `coder` for non-web repos, or `backend-architect` / `frontend-architect` first when design decisions are needed). The main agent's role is briefing, reviewing, and orchestration — not editing files. Exceptions: trivial single-line edits explicitly requested by the user (e.g., "change this variable name"), repository configuration files like `AGENTS.md` itself, and repos whose project `AGENTS.md` declares itself a **direct-edit repo** (dotfiles, config-only, personal scripts) — there, edit directly.
 - **MANDATORY: A coder dispatch obligates a `/review` before `/commit` — no exceptions for how it was dispatched.** The `/code` skill chains review automatically; a **raw `Task` call to a coder (`backend-coder`/`frontend-coder`/`coder`, incl. `-deep`) does NOT** — so when you dispatch a coder directly, you MUST invoke `/review` yourself once it returns, before committing. Prefer `/code` precisely because it wires this up. The ONLY skip is a genuinely trivial change (typo, single-line, rename, comment-only). "I'll review later" / "it looks fine" / "the coder said it passes" are not exemptions. If you're about to `/commit` and no `/review` ran this session on the current changes, stop and run it first.
 - Don't over-engineer. Only change what's requested. Don't refactor unrelated code while implementing a feature.
+- Don't add unnecessary preamble or postamble. Answer the question directly without "Here's what I did" or "Based on the information provided" wrappers.
 - Never hardcode paths or project names in rules, agents, skills, or commands — keep portable.
 - DO NOT GIT STASH UNLESS YOU HAVE EXPLICIT PERMISSION FROM THE USER. Stashing causes critical failures in parallel agent work and also resets staged files.
 - **MANDATORY: WebSearch before writing any config, CI, infra, or library integration code.**

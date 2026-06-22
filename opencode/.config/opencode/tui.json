@@ -1,0 +1,16 @@
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "attention": {
+    "enabled": true,
+    "notifications": true,
+    "sound": true,
+    "volume": 0.4
+  },
+  "keybinds": {
+    "which_key_toggle": "<leader>w",
+    "app_exit": "ctrl+c,<leader>q",
+    "session_delete": "none",
+    "messages_next": "<leader>j",
+    "messages_previous": "<leader>k"
+  }
+}

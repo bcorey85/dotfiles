@@ -3,7 +3,16 @@
   "formatter": true,
   "lsp": true,
   "small_model": "opencode-go/deepseek-v4-flash",
+  "tool_output": { "max_lines": 5 },
+  "mcp": {
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp"
+    }
+  },
   "permission": {
+    "websearch": "allow",
+    "webfetch": "allow",
     "bash": {
       "sudo *": "deny",
       "rm -rf /": "deny",

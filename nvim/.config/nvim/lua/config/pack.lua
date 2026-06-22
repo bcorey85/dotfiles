@@ -49,6 +49,8 @@ local plugin_order = {
   "mini-indentscope",
   "mini-clue", -- key-clue hints (replaced which-key)
   "ts-comments",
+  "vim-repeat", -- make `.` repeat plugin maps (abolish coercions, etc.)
+  "abolish", -- case coercion (crs/crc/cru…) + case-preserving :S substitute
   "lazydev",
   "conform",
   "nvim-lint",

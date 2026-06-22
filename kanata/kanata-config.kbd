@@ -69,6 +69,14 @@
   lctl lmet @la           spc                 ralt rmet rctl
 )
 
+(deflayer silence
+  @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
+  tab       b    c    r    l    k    z    f    o    u    ;    [    ]    \
+  caps      n    s    h    t    m    y    d    e    i    a    ,       ret
+  lsft      v    x    g    j    q    p    w    /    .    '    rsft
+  lctl lmet @la           spc                 ralt rmet rctl
+)
+
 (deflayer pine
   @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
   tab       q    l    c    m    k    '    f    u    o    y    [    ]    \
@@ -143,6 +151,7 @@
   sem (layer-switch semimak)
   rec (layer-switch recurva)
   kni (layer-switch knight)
+  sil (layer-switch silence)
   la (layer-while-held l1)
   ra (tap-hold-release 200 200 ralt (layer-toggle ralt-layer))
 )
@@ -156,7 +165,7 @@
 )
 
 (deflayer layers
-  _    @qwr @rec @kni - @gal @nok @rec @sem _    _    _    _    _
+  _    @qwr @sil @kni - @gal @nok @rec @sem _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _

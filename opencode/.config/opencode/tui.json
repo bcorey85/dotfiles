@@ -1,9 +1,10 @@
 {
   "$schema": "https://opencode.ai/tui.json",
+  "diff_style": "stacked",
   "attention": {
     "enabled": true,
     "notifications": true,
-    "sound": true,
+    "sound": false,
     "volume": 0.4
   },
   "keybinds": {

@@ -11,7 +11,6 @@
 
 - **MANDATORY: Never code directly. Always delegate to the `/code` subagents** (`backend-coder`, `frontend-coder`, `coder` for non-web repos, or `backend-architect` / `frontend-architect` first when design decisions are needed). The main agent's role is briefing, reviewing, and orchestration — not editing files. Exceptions: trivial single-line edits explicitly requested by the user (e.g., "change this variable name"), repository configuration files like `CLAUDE.md` itself, and repos whose project CLAUDE.md declares itself a **direct-edit repo** (dotfiles, config-only, personal scripts) — there, edit directly.
 - **MANDATORY: A coder dispatch obligates a `/review` before `/commit` — no exceptions for how it was dispatched.** The `/code` skill chains review automatically; a **raw `Agent` call to a coder (`backend-coder`/`frontend-coder`/`coder`, incl. `-deep`) does NOT** — so when you dispatch a coder directly, you MUST invoke `/review` yourself once it returns, before committing. Prefer `/code` precisely because it wires this up. The ONLY skip is a genuinely trivial change (typo, single-line, rename, comment-only). "I'll review later" / "it looks fine" / "the coder said it passes" are not exemptions. If you're about to `/commit` and no `/review` ran this session on the current changes, stop and run it first.
-- Don't over-engineer. Only change what's requested. Don't refactor unrelated code while implementing a feature.
 - Never hardcode paths or project names in rules, agents, skills, or commands — keep portable.
 - DO NOT GIT STASH UNLESS YOU HAVE EXPLICIT PERMISSION FROM THE USER. Stashing causes critical failures in parallel agent work and also resets staged files.
 - **MANDATORY: WebSearch before writing any config, CI, infra, or library integration code.**
@@ -36,6 +35,14 @@
   - `+deep` dispatches use the Opus-pinned wrapper agents (`backend-coder-deep`, `frontend-coder-deep`, `code-reviewer-deep`) with `model` omitted. A _deliberate_ call-site downgrade of a pinned agent (e.g. `+fast` passing `model: "haiku"` to a sonnet-pinned coder) is allowed by the hook — only opus and "inherit" are forbidden at the call site.
   - Pair with `subagent_type` deliberately: `Explore` (read-only lookup, default for research), `general-purpose` (multi-file tracing Explore can't handle), `backend-coder` / `frontend-coder` / `*-architect` / `code-reviewer` per their descriptions.
 - **Prefer LSP over grep+Read for typed code.** When working in a project with a language server (TypeScript, Python with pyright, Go, Rust, etc.), use the LSP tool for: finding references, go-to-definition, hover/type info, and diagnostics. One LSP call replaces 5–10 grep+Read pairs. Reach for it on refactors, signature changes, import rewrites, "find every usage of X", and post-edit type checks. Fall back to `rg` only for plain text or unindexed file types.
+
+## Engineering Judgment
+
+1. **Ask, don't assume.** If something is unclear, ask before writing a single line. Never make silent assumptions about intent, architecture, or requirements. When running unattended, pick the most reasonable interpretation, proceed, and record the assumption rather than blocking.
+2. **Match solution complexity to the problem** — simplest solution for simple problems, better solutions for harder ones. Before a non-trivial implementation, state the approach in 1–2 lines and what it makes harder later. Don't over-engineer or add flexibility that isn't needed yet; don't paint into a corner either.
+3. **Don't touch unrelated code** — only change what's requested. But do surface bad code or design smells you discover so we can address them as a separate issue.
+4. **Flag uncertainty explicitly.** If you're unsure about something, see rule 1. Where it makes sense, run a small, localized, low-risk experiment and bring the hypothesis and results back to discuss. Confidence without certainty causes more damage than admitting a gap.
+5. **Suggest a better way when you see one** — favor approaches with long-lasting impact over tactical fixes. But interrupt only for material tradeoffs (irreversible work, security, data loss, broad refactors, hours of wasted debugging), not style preferences.
 
 ## Quality Checks
 

@@ -50,6 +50,8 @@ if [ -d ~/.config/opencode ] && [ ! -L ~/.config/opencode ]; then
     mv ~/.config/opencode ~/.config/opencode.backup.$(date +%Y%m%d_%H%M%S)
 fi
 
+
+
 if [ "$PLATFORM" = "arch" ] && [ -d ~/.config/hypr ] && [ ! -L ~/.config/hypr ]; then
     print_info "Backing up existing hypr config..."
     mv ~/.config/hypr ~/.config/hypr.backup.$(date +%Y%m%d_%H%M%S)

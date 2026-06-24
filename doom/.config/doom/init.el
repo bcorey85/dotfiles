@@ -63,7 +63,7 @@
        (json +lsp)                 ; vscode-json-languageserver
        (yaml +lsp)                 ; yaml-language-server
        (markdown)                  ; markview equiv
-       (org)
+       (org +roam2)                ; org-roam v2 — md-roam layered on top in config.el for ~/vault markdown
 
        :config
        (default +bindings +smartparens))

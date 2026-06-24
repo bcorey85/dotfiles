@@ -807,3 +807,28 @@ scrollback nav keeps working."
          "* TODO %?\n  %U\n  %i")))
 
 (setq org-refile-targets '((org-agenda-files :maxlevel . 3))))
+
+;;; ---------------------------------------------------------------------------
+;;; Org-roam + md-roam — Obsidian-like notes over ~/.md files in ~/vault
+;;; ---------------------------------------------------------------------------
+
+;; Doom's `(org +roam2)' flag installs org-roam and binds its commands under the
+;; `SPC n' / `C-c n' prefixes. We override `org-roam-directory' to ~/vault (the
+;; existing Obsidian vault) and tell it to index `.md' alongside `.org'.
+
+;; md-roam-mode MUST be active before the autosync scan or .md files never get
+;; indexed — so require+enable it here, then re-trigger db-autosync after. On a
+;; first run or after editing .md files outside Emacs, run
+;;   M-x org-roam-db-clear-all RET ; M-x org-roam-db-sync RET
+;; (Doom binds these under `SPC n' too: `SPC n d c' / `SPC n d s'.)
+(setq org-roam-directory (file-truename "~/vault")
+      org-roam-file-extensions '("org" "md"))
+
+(use-package! md-roam
+  :after org-roam
+  :config
+  (setq md-roam-file-extension "md")
+  (md-roam-mode 1)
+  ;; Re-arm autosync AFTER md-roam is active so the first scan picks up .md.
+  (when (fboundp 'org-roam-db-autosync-mode)
+    (org-roam-db-autosync-mode 1)))

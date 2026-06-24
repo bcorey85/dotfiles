@@ -10,3 +10,9 @@
 
 ;; Catppuccin Mocha to match the rest of the dotfiles theme.
 (package! catppuccin-theme)
+
+;; md-roam — lets org-roam index markdown files alongside .org, so the existing
+;; Obsidian-style ~/vault (wikilinks + plain .md) works without converting
+;; anything. Must load BEFORE `org-roam-db-autosync-mode' runs — see config.el.
+(package! md-roam
+  :recipe (:host github :repo "nobiot/md-roam"))

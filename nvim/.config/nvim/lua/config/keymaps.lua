@@ -247,12 +247,12 @@ vim.keymap.set("n", "<leader>wm", function()
 end, { desc = "Toggle zoom" })
 
 -- ─── Tabs ─────────────────────────────────────────────────────────────────────
-vim.keymap.set("n", "<leader><tab><tab>", "<cmd>tabnew<cr>", { desc = "New Tab" })
-vim.keymap.set("n", "<leader><tab>d", "<cmd>tabclose<cr>", { desc = "Close Tab" })
-vim.keymap.set("n", "<leader><tab>]", "<cmd>tabnext<cr>", { desc = "Next Tab" })
-vim.keymap.set("n", "<leader><tab>[", "<cmd>tabprevious<cr>", { desc = "Prev Tab" })
-vim.keymap.set("n", "<leader><tab>f", "<cmd>tabfirst<cr>", { desc = "First Tab" })
-vim.keymap.set("n", "<leader><tab>l", "<cmd>tablast<cr>", { desc = "Last Tab" })
+vim.keymap.set("n", "<leader>Tt", "<cmd>tabnew<cr>", { desc = "New Tab" })
+vim.keymap.set("n", "<leader>Td", "<cmd>tabclose<cr>", { desc = "Close Tab" })
+vim.keymap.set("n", "<leader>T]", "<cmd>tabnext<cr>", { desc = "Next Tab" })
+vim.keymap.set("n", "<leader>T[", "<cmd>tabprevious<cr>", { desc = "Prev Tab" })
+vim.keymap.set("n", "<leader>Tf", "<cmd>tabfirst<cr>", { desc = "First Tab" })
+vim.keymap.set("n", "<leader>Tl", "<cmd>tablast<cr>", { desc = "Last Tab" })
 
 -- ─── UI toggles ───────────────────────────────────────────────────────────────
 vim.keymap.set("n", "<leader>uw", function()

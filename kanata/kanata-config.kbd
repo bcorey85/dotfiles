@@ -42,7 +42,7 @@
   tab       v    m    l    c    p    x    f    u    o    q    -    =    \
   caps      s    t    r    d    y    b    n    e    a    i    ,       ret
   lsft      k    j    g    w    z    ;    h    /    '    .    rsft
-  lctl lmet @la           spc                 ralt rmet rctl
+  lctl lmet lalt           spc                 ralt rmet rctl
 )
 
 (deflayer gallium
@@ -50,7 +50,7 @@
   tab       b    l    d    c    v    z    y    o    u    ,    -    =    \
   caps      n    r    t    s    g    p    h    a    e    i    ;       ret
   lsft      x    m    w    j    q    k    f    '    /    .    rsft
-  lctl lmet @la           spc                 ralt rmet rctl
+  lctl lmet lalt           spc                 ralt rmet rctl
 )
 
 (deflayer nokwts
@@ -58,7 +58,7 @@
   tab       z    b    r    l    f    q    y    o    u    ;    [    ]    \
   caps      n    t    h    s    m    c    d    e    i    a    ,       ret
   lsft      x    j    w    k    v    p    g    /    .    '    rsft
-  lctl lmet @la           spc                 ralt rmet rctl
+  lctl lmet lalt           spc                 ralt rmet rctl
 )
 
 (deflayer knight
@@ -66,7 +66,7 @@
   tab       b    f    r    l    k    z    g    o    u    ;    [    ]    \
   caps      n    s    h    t    m    y    c    e    i    a    ,       ret
   lsft      v    x    d    j    q    p    w    /    .    '    rsft
-  lctl lmet @la           spc                 ralt rmet rctl
+  lctl lmet lalt           spc                 ralt rmet rctl
 )
 
 (deflayer silence
@@ -74,7 +74,7 @@
   tab       b    c    r    l    k    z    f    o    u    ;    [    ]    \
   caps      n    s    h    t    m    y    d    e    i    a    ,       ret
   lsft      v    x    g    j    q    p    w    /    .    '    rsft
-  lctl lmet @la           spc                 ralt rmet rctl
+  lctl lmet lalt           spc                 ralt rmet rctl
 )
 
 (deflayer pine
@@ -82,7 +82,7 @@
   tab       q    l    c    m    k    '    f    u    o    y    [    ]    \
   caps      n    r    s    t    g    p    h    e    a    i    ;       ret
   lsft      x    v    w    j    z    b    d    ,    .    /    rsft
-  lctl lmet @la           spc                 @ra  rmet rctl
+  lctl lmet lalt           spc                 @ra  rmet rctl
 )
 
 (defalias
@@ -119,7 +119,7 @@
   tab       f    l    h    v    z    '    w    u    o    y    [    ]    \
   caps      s    r    n    t    k    c    d    e    a    i    ;       ret
   lsft      x    q    b    m    j    p    g    ,    .    /    rsft
-  lctl lmet @la           spc                 ralt rmet rctl
+  lctl lmet lalt           spc                 ralt rmet rctl
 )
 
 (deflayer recurva
@@ -127,7 +127,7 @@
   tab       f    r    d    p    v    q    x    u    o    y    [    ]    \
   caps      s    n    t    c    g    .    h    e    a    i    ,       ret
   lsft      j    k    b    w    z    m    l    ;    '    /    rsft
-  lctl lmet @la           spc                 ralt rmet rctl
+  lctl lmet lalt           spc                 ralt rmet rctl
 )
 
 

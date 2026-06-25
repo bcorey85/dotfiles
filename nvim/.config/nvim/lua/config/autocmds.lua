@@ -79,12 +79,23 @@ vim.api.nvim_create_autocmd("TextYankPost", {
   end,
 })
 
--- Suppress LSP diagnostics in buffers with unresolved git conflict markers.
--- Language servers (lua_ls especially) parse `<<<<<<<` / `=======` / `>>>>>>>`
--- as code and spam syntax errors (`<<` reads as a bit-shift op, `HEAD` as an
--- undefined global). Disable diagnostics while markers are present, and
--- re-enable ONLY the buffers we disabled once they resolve — so this never
--- fights the manual <leader>ud toggle.
+-- Suppress LSP diagnostics, treesitter highlighting, AND markview rendering in
+-- buffers with unresolved git conflict markers.
+--
+-- Diagnostics: language servers (lua_ls especially) parse `<<<<<<<` /
+-- `=======` / `>>>>>>>` as code and spam syntax errors (`<<` reads as a
+-- bit-shift op, `HEAD` as an undefined global).
+--
+-- Treesitter: the parser can't parse the markers either, so it mis-scopes
+-- nodes — e.g. it smears markdown `@markup.heading.1` (and other) highlights
+-- across marker/plain lines inconsistently. That's the "random red" in
+-- diffview's merge buffer (verified via :Inspect: pure @markup.heading,no diff
+-- extmark). Stopping the highlighter while markers are present makes the
+-- conflicted buffer render as uniform plain text. The clean OURS/THEIRS panes
+-- are separate marker-free buffers, so they keep their syntax highlighting.
+--
+-- Both are re-enabled ONLY on buffers we disabled, once markers resolve — so
+-- this never fights the manual <leader>ud toggle.
 local conflict_disabled = {}
 
 -- vim.fn.search with "nw" is O(lines-until-match) and runs in the context of the
@@ -105,9 +116,30 @@ vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost" }, {
     end
     if has_conflict_markers(buf) then
       vim.diagnostic.enable(false, { bufnr = buf })
+      -- Scheduled: treesitter (FileType) AND markview both (re)attach AFTER this
+      -- BufReadPost — a synchronous stop here would just be undone. Defer past
+      -- that tick so it sticks. markview is the worst offender on a conflicted
+      -- markdown buffer: its parser chokes on the markers and it renders garbage
+      -- virtual-text (the per-char `P r e p` blocks were 7 markview virt extmarks)
+      -- plus heading icons/colors over the conflict.
+      -- Order matters: markview turns native treesitter highlighting OFF while
+      -- it renders and turns it back ON when disabled — so disable markview
+      -- FIRST, then stop treesitter, or markview's re-enable would undo the stop.
+      vim.schedule(function()
+        if vim.api.nvim_buf_is_valid(buf) then
+          pcall(function()
+            require("markview.commands").disable(buf)
+          end)
+          pcall(vim.treesitter.stop, buf)
+        end
+      end)
       conflict_disabled[buf] = true
     elseif conflict_disabled[buf] then
       vim.diagnostic.enable(true, { bufnr = buf })
+      pcall(vim.treesitter.start, buf)
+      pcall(function()
+        require("markview.commands").enable(buf)
+      end)
       conflict_disabled[buf] = nil
     end
   end,
@@ -116,12 +148,20 @@ vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost" }, {
 -- Native merge-conflict keymaps: auto-attach util/merge.lua's buffer-local
 -- <leader>c* bindings to any normal file buffer that contains git conflict
 -- markers. Buffer-local so the keys only bind where there's a conflict. Works
--- in a plain file AND in the working/middle pane of fugitive's 3-way diffsplit
+-- in a plain file AND in the working/middle pane of a 3-way :diffsplit
 -- (it edits the markers directly, so diff mode doesn't matter).
 vim.api.nvim_create_autocmd({ "BufReadPost", "BufWinEnter" }, {
   group = vim.api.nvim_create_augroup("native-merge-keys", { clear = true }),
   callback = function(ev)
     if vim.b[ev.buf].merge_keys or not require("util.buf").is_file(ev.buf) then
+      return
+    end
+    -- Don't collide with diffview: inside its merge tool, diffview's own
+    -- `view`-context conflict keys (plugins/diffview.lua, same <leader>c* scheme)
+    -- own the merged buffer. util/merge is the path for conflicted files opened
+    -- OUTSIDE diffview (plain edit, neogit RET).
+    local ok, lib = pcall(require, "diffview.lib")
+    if ok and lib.get_current_view() then
       return
     end
     if has_conflict_markers(ev.buf) then

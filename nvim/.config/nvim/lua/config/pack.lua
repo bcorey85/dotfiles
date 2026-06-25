@@ -41,8 +41,9 @@ local plugin_order = {
   "oil",
   "smart-splits",
   "gitsigns",
-  "fugitive",
-  "diffs", -- treesitter syntax highlighting for fugitive/diff-mode diffs (display only)
+  "neogit",
+  "diffs", -- treesitter syntax highlighting for diff-mode diffs (display only)
+  "diffview", -- 3-way merge tool + diff/history viewer (neogit delegates conflicts here)
   "mini-ai",
   "mini-surround",
   "mini-pairs",

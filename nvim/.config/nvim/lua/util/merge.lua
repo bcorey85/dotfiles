@@ -1,6 +1,6 @@
 -- Native (plugin-free) git merge-conflict resolution. Operates directly on the
 -- conflict markers git writes into the working file — no plugins required.
--- Also works on the middle/working buffer inside a `:Gdiffsplit!` 3-way split.
+-- Also works on the middle/working buffer inside a `:diffsplit!` 3-way split.
 -- choose ours / theirs / both, per-conflict or whole-file, plus navigation.
 -- Handles diff3/zdiff3 style (with a ||||||| base section) and the default style.
 local M = {}

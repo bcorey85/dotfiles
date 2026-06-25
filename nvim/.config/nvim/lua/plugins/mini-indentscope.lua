@@ -26,7 +26,7 @@ return {
       group = vim.api.nvim_create_augroup("MiniIndentscopeDisable", { clear = true }),
       pattern = {
         "checkhealth",
-        "fugitive",
+        "NeogitStatus",
         "git",
         "help",
         "lspinfo",

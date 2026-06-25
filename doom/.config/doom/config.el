@@ -20,11 +20,16 @@
 ;; which the daemon never gets because ~/.zshrc (where nvm initializes) isn't
 ;; sourced. Without this, lsp-mode can't find npm — so it "can't find a way to
 ;; install" pyright/typescript-language-server, and can't run them either. Pick
-;; the newest installed version's bin and prepend it. Update happens for free on
-;; the next `nvm install` since it globs at startup.
-(let ((node-bin (car (last (sort (file-expand-wildcards
-                                  (expand-file-name "~/.nvm/versions/node/*/bin"))
-                                 #'string<)))))
+;; the HIGHEST installed version's bin and prepend it. Compare with `version<'
+;; (not `string<', which sorts "v9" above "v10" lexically and would pin the
+;; older node); globs at startup, so a new `nvm install' is picked up for free
+;; on the next restart.
+(let* ((dirs (file-expand-wildcards (expand-file-name "~/.nvm/versions/node/*")))
+       (newest (car (sort dirs
+                          (lambda (a b)
+                            (version< (string-remove-prefix "v" (file-name-nondirectory b))
+                                      (string-remove-prefix "v" (file-name-nondirectory a)))))))
+       (node-bin (and newest (expand-file-name "bin" newest))))
   (when (and node-bin (file-directory-p node-bin))
     (add-to-list 'exec-path node-bin)
     (setenv "PATH" (concat node-bin path-separator (getenv "PATH")))))
@@ -174,215 +179,170 @@
       "M-j" #'enlarge-window
       "M-k" #'shrink-window)
 
-;; vterm (the Claude Code backend) forwards nearly every key straight to the
-;; terminal, so the global M-hjkl above never fires while focused in the Claude
-;; pane — the keys get swallowed by the TUI. (C-hjkl nav works in there only
-;; because C-h/C-l are in vterm's default keep-in-Emacs exceptions.) Reclaim the
-;; resize chords in vterm-mode-map so they resize the window instead of being
-;; sent to Claude. Once one fires, repeat-mode's transient map outranks vterm,
-;; so bare h/j/k/l keep repeating in the Claude pane too.
-(after! vterm
-  (map! :map vterm-mode-map
+;; ghostel (the Claude Code backend) is a semi-char terminal: it forwards
+;; nearly every key straight to the PTY, so the global M-hjkl above never fires
+;; while focused in the Claude pane — the keys get swallowed by the TUI. Reclaim
+;; the resize chords in `ghostel-semi-char-mode-map' (ghostel's default input
+;; mode) so they resize the window instead of being sent to Claude. Once one
+;; fires, repeat-mode's transient map outranks ghostel, so bare h/j/k/l keep
+;; repeating in the Claude pane too.
+(after! ghostel
+  (map! :map ghostel-semi-char-mode-map
         "M-h" #'shrink-window-horizontally
         "M-l" #'enlarge-window-horizontally
         "M-j" #'enlarge-window
         "M-k" #'shrink-window)
-  ;; Paste into the Claude prompt the vim way. vterm only routes `yank' (C-y)
-  ;; through `vterm-yank' (which sends kill-ring text to the PTY); evil's `p'
-  ;; and `C-v' don't, so they silently fail. Wire normal-state `p' and an
-  ;; insert-state `C-v' straight to `vterm-yank' so clipboard paste just works.
-  (map! :map vterm-mode-map
-        :n "p" #'vterm-yank
-        :i "C-v" #'vterm-yank)
 
-  ;; Right-edge cutoff fix: vterm clamps the PTY to `vterm-min-window-width'
-  ;; (default 80) — `(max width vterm-min-window-width)' in vterm.el. So when you
-  ;; shrink the Claude split below 80 cols, the PTY stays at 80 while the window
-  ;; is narrower, and Claude's 80-col lines overflow and get sliced at the right
-  ;; edge. Lower the floor so the PTY reflows down to match a shrunk window.
-  (setq vterm-min-window-width 40)
+  ;; Paste into the Claude prompt the vim way. ghostel has no built-in yank
+  ;; command, so wire normal-state `p' and insert-state `C-v' to a command that
+  ;; sends the top of the kill-ring down the PTY via `ghostel-send-string'.
+  (defun +ghostel/yank ()
+    "Send the top of the kill-ring to the ghostel pty."
+    (interactive)
+    (ghostel-send-string (current-kill 0)))
+  (map! :map ghostel-semi-char-mode-map
+        :n "p" #'+ghostel/yank
+        :i "C-v" #'+ghostel/yank)
 
-  ;; Height sync fix: vterm's default size function
-  ;; (`window-adjust-process-window-size-smallest') derives the pty row count
-  ;; from `window-screen-lines', which divides the window body by the font's
-  ;; intrinsic line-box height (char-cell + the font's built-in leading).
-  ;; libvterm, though, lays out rows at `frame-char-height' (the pure char
-  ;; cell). When a font's line-box exceeds its char-cell — common with fonts
-  ;; that ship extra leading — screen-lines under-reports rows vs what libvterm
-  ;; actually paints, so the pty is too short and full-screen TUIs (opencode,
-  ;; btop, htop) render with a band of blank space below. Swap in a size
-  ;; function that derives height from `window-text-height' (char-cell math,
-  ;; matching libvterm's row layout). Symmetric to the width floor above.
-  (defun +vterm/adjust-window-size-charcell (process windows)
-    "Size PROCESS pty from char-cell metrics, not the font line-box.
-Like `window-adjust-process-window-size-smallest' but uses
-`window-text-height' / `window-body-width' (char-cell counts that
-match libvterm's row layout) instead of `window-screen-lines' (which
-bakes in the font's leading and under-reports rows)."
-    (let ((width most-positive-fixnum)
-          (height most-positive-fixnum))
-      (dolist (w windows)
-        (setq width  (min width  (window-body-width w)))
-        (setq height (min height (window-text-height w))))
-      (when (and (< width most-positive-fixnum)
-                 (< height most-positive-fixnum))
-        (cons width height))))
-  (add-hook 'vterm-mode-hook
-            (lambda ()
-              (setq-local window-adjust-process-window-size-function
-                          #'+vterm/adjust-window-size-charcell)))
-
-  ;; Redraw throughput: vterm coalesces redraws on `vterm-timer-delay' (default
-  ;; 0.1s = 100ms = 10fps) — app-streamed output (opencode's spinner, streaming
-  ;; tokens, btop's gauges) only redraws when that timer fires, because the
-  ;; immediate-redraw flag is set only by key sends, not by output arriving on
-  ;; the process filter. tmux/zsh write straight to a rigid cell grid, so they
-  ;; feel instant; vterm goes libvterm → Emacs buffer → redisplay with per-line
-  ;; elastic glyph metrics (see the spinner-jitter note), which is inherently
-  ;; heavier, and the 100ms cap makes it visibly choppy. Drop to 10ms (~100fps
-  ;; ceiling) — bursts still coalesce within a frame, interactive output is
-  ;; imperceptibly latent. Nil would redraw on every invalidation (maximally
-  ;; responsive but can thrash on `cat`-style bursts); 0.01 is the sweet spot.
-  (setq vterm-timer-delay 0.01)
+  ;; evil integration — `evil-ghostel-mode' syncs the terminal cursor with Emacs
+  ;; point on state transitions so normal-state nav (hjkl etc.) works correctly,
+  ;; and it owns `cursor-type' in the terminal so the per-state cursor SHAPES
+  ;; below actually take effect. This replaces the manual cursor-refresh hook the
+  ;; old vterm setup needed — ghostel + evil-ghostel auto-refresh on state entry.
+  (add-hook 'ghostel-mode-hook #'evil-ghostel-mode)
+  ;; Shape-only cursor: box in normal, bar in insert, hollow in visual. No
+  ;; per-state color — ghostel now switches the cursor SHAPE by mode (vterm
+  ;; couldn't, so the colors were the only mode signal there); the cursor keeps
+  ;; the theme's default `cursor' color in every state.
+  (setq evil-normal-state-cursor 'box
+        evil-insert-state-cursor 'bar
+        evil-visual-state-cursor 'hollow)
 
   ;; Overlay shedding: `global-hl-line-mode' and `show-paren-mode' are on
   ;; globally and add per-redraw overlay work (highlight the cursor line, scan
   ;; for parens). Both are useless in a terminal buffer — there are no code
   ;; parens to match and no useful line highlight on app-rendered cells — but
   ;; they keep recomputing every redisplay. Disable them buffer-locally.
-  (add-hook 'vterm-mode-hook
+  (add-hook 'ghostel-mode-hook
             (lambda ()
               (setq-local global-hl-line-mode nil)
-              (setq-local show-paren-mode nil)))
-
-  ;; Mouse wheel forwarding: Emacs' global `mouse-wheel-mode' binds
-  ;; [wheel-up]/[wheel-down]/[mouse-4]/[mouse-5] to `mwheel-scroll', which
-  ;; scrolls the vterm window's scrollback — but when a TUI app (opencode,
-  ;; btop) has enabled mouse reporting, you want the wheel to reach the app so
-  ;; it scrolls its own view. vterm has no native mouse-forwarding (only
-  ;; click-to-point), so bind the wheel events in `vterm-mode-map' to commands
-  ;; that translate each notch into an SGR mouse sequence (\e[<BTN;COL;ROWM)
-  ;; and feed it to the pty. BTN 64 = wheel up, 65 = wheel down (xterm SGR
-  ;; 1006, which opencode/Bubble Tea speaks). COL and ROW are 1-based, derived
-  ;; from the pointer's pixel position divided by `frame-char-{width,height}'
-  ;; — char-cell math matching libvterm's row layout (same alignment as the
-  ;; height fix above). Gate on `vterm-copy-mode' so entering scrollback (C-')
-  ;; restores Emacs-side wheel scrolling.
-  (defun +vterm/mouse-wheel-forward (event button)
-    "Forward mouse wheel EVENT to the pty as an SGR mouse sequence.
-BUTTON is 64 (up) or 65 (down).  Writes directly to the pty via
-`process-send-string' (the same fast path `vterm-send-return' uses)
-rather than `vterm-send-string', which ends with a sync
-`accept-process-output' round-trip — that blocks up to
-`vterm-timer-delay' per notch and makes rapid wheel scrolling janky.
-With the direct write, notches fire instantly and the app's render
-response arrives on the process filter, redrawing on the (now 10ms)
-timer.  In `vterm-copy-mode', scroll the Emacs window instead so
-scrollback nav keeps working."
-    (interactive "e")
-    (if (bound-and-true-p vterm-copy-mode)
-        (mwheel-scroll event)
-      (let* ((pos (event-start event))
-             (xy (posn-x-y pos))
-             (frame (window-frame (posn-window pos)))
-             (col (1+ (/ (car xy) (frame-char-width frame))))
-             (row (1+ (/ (cdr xy) (frame-char-height frame)))))
-        (process-send-string vterm--process
-                             (format "\e[<%d;%d;%dM" button col row)))))
-  (defun +vterm/mouse-wheel-up (event)
-    "Forward wheel-up to the pty as SGR mouse button 64."
-    (interactive "e")
-    (+vterm/mouse-wheel-forward event 64))
-  (defun +vterm/mouse-wheel-down (event)
-    "Forward wheel-down to the pty as SGR mouse button 65."
-    (interactive "e")
-    (+vterm/mouse-wheel-forward event 65))
-  (map! :map vterm-mode-map
-        [wheel-up]   #'+vterm/mouse-wheel-up
-        [wheel-down] #'+vterm/mouse-wheel-down
-        [mouse-4]    #'+vterm/mouse-wheel-down
-        [mouse-5]    #'+vterm/mouse-wheel-up)
+              ;; show-paren is a global mode driven by its own machinery; the
+              ;; per-buffer off switch is the local mode, not a setq-local on the
+              ;; global var (which is a silent no-op).
+              (show-paren-local-mode -1)))
 
   ;; Redraw fix: the global `line-spacing' 0.25 we set above (nice for prose)
-  ;; makes vterm leave cursor trails and stale rows — libvterm lays out on tight
-  ;; line boxes and the extra pixels desync it. Zero it out in terminal buffers.
-  (add-hook 'vterm-mode-hook (lambda () (setq-local line-spacing nil)))
+  ;; makes ghostel leave cursor trails and stale rows — libghostty-vt lays out
+  ;; on tight line boxes and the extra pixels desync it. Zero it out in terminal
+  ;; buffers.
+  (add-hook 'ghostel-mode-hook (lambda () (setq-local line-spacing nil)))
 
-  ;; Show the evil state in the Claude window. Doom hides the modeline in every
-  ;; vterm buffer via `mode-line-invisible-mode' on `vterm-mode-hook', which also
-  ;; swallows the doom-modeline modal (NORMAL/INSERT) indicator — that's why you
-  ;; can't tell your mode here, even though it shows fine in code buffers. Drop
-  ;; that hook and give vterm the compact `minimal' modeline instead (bar +
-  ;; modal state + buffer name), which fits the narrow side window.
-  (remove-hook 'vterm-mode-hook #'mode-line-invisible-mode)
-  (defun +vterm/use-minimal-modeline-h ()
-    "Give vterm a compact modeline that still surfaces the evil state."
+  ;; Colour re-sync chord. `doom/reload' tears the theme down and back up, and
+  ;; ghostel's own `enable-theme-functions' sync fires mid-teardown — reading
+  ;; unspecified faces and falling back to ANSI palette indices, so an open
+  ;; terminal's default fg/bg land on garbage (blue bg + magenta/cyan fg) with
+  ;; nothing re-syncing afterward. Pinning `ghostel-default' to concrete colours
+  ;; (README "Color palette" / dakra/ghostel#178) does NOT beat the race here —
+  ;; Doom re-applies customised faces through that same hook. A standalone
+  ;; `ghostel-sync-theme' at a quiescent moment fixes it reliably, so bind it to
+  ;; a chord ghostel RECLAIMS from the PTY (the TUI would otherwise swallow it):
+  ;; after a `SPC h r r' with Claude open, hit `C-c r' in the pane to restore
+  ;; colours.
+  (map! :map ghostel-semi-char-mode-map
+        "C-c r" #'ghostel-sync-theme)
+
+  ;; Automatic version of the above — event-driven, not timed. A *timed* re-sync
+  ;; can't beat doom/reload's late VT-default color reset (tested: even a 2s
+  ;; deferred sync gets overwritten), but a re-sync at quiescence holds
+  ;; permanently. So on reload, ARM a one-shot: re-sync the first time a ghostel
+  ;; buffer is focused or receives a command (the reload has long settled by
+  ;; then, so it sticks), then remove the triggers — so `post-command-hook' isn't
+  ;; carried on the hot path forever, only transiently after a reload.
+  ;; `C-c r' / `SPC l t' remain the manual fallback.
+  (defun +ghostel--resync-once (&rest _)
+    "Re-sync ghostel colors once a ghostel buffer is current, then disarm."
+    (when (derived-mode-p 'ghostel-mode)
+      (remove-hook 'post-command-hook #'+ghostel--resync-once)
+      (remove-hook 'window-selection-change-functions #'+ghostel--resync-on-select)
+      (when (fboundp 'ghostel-sync-theme) (ghostel-sync-theme))))
+  (defun +ghostel--resync-on-select (&rest _)
+    "`window-selection-change-functions' shim for `+ghostel--resync-once'."
+    (with-current-buffer (window-buffer (selected-window))
+      (+ghostel--resync-once)))
+  (defun +ghostel--arm-resync (&rest _)
+    "Arm a one-shot ghostel color re-sync for the next ghostel focus/command."
+    (add-hook 'post-command-hook #'+ghostel--resync-once)
+    (add-hook 'window-selection-change-functions #'+ghostel--resync-on-select))
+  (add-hook 'doom-after-reload-hook #'+ghostel--arm-resync)
+
+  ;; Show the evil state in the Claude window. Give ghostel the compact
+  ;; `minimal' modeline (bar + modal state + buffer name), which fits the narrow
+  ;; side window. (Doom doesn't auto-hide the modeline for ghostel the way it
+  ;; does for its built-in vterm module, so there's no hook to remove — just set
+  ;; the minimal modeline directly.)
+  (defun +ghostel/use-minimal-modeline-h ()
+    "Give ghostel a compact modeline that still surfaces the evil state."
     (doom-modeline-set-modeline 'minimal))
-  (add-hook 'vterm-mode-hook #'+vterm/use-minimal-modeline-h 90)
+  (add-hook 'ghostel-mode-hook #'+ghostel/use-minimal-modeline-h 90)
 
-  ;; Cursor shape per evil state in the Claude window. This vterm build never
-  ;; touches `cursor-type', so evil CAN own the cursor here — it just doesn't
-  ;; auto-refresh on state change in vterm the way it does in code buffers
-  ;; (verified: state was `insert' but cursor stayed `box' until a manual
-  ;; `evil-refresh-cursor'). So refresh it on each state entry buffer-locally,
-  ;; and once on open. Catppuccin colors make the box/bar switch unmissable.
-  (setq evil-normal-state-cursor '(box "#89b4fa")      ; blue block
-        evil-insert-state-cursor '(bar "#a6e3a1")      ; green beam
-        evil-visual-state-cursor '(hollow "#f9e2af"))  ; yellow hollow
-  (defun +vterm/track-evil-cursor-h ()
-    "Refresh the evil cursor on state changes in vterm (no auto-refresh here)."
-    (dolist (hook '(evil-normal-state-entry-hook
-                    evil-insert-state-entry-hook
-                    evil-visual-state-entry-hook
-                    evil-operator-state-entry-hook))
-      (add-hook hook #'evil-refresh-cursor nil t))
-    (evil-refresh-cursor))
-  (add-hook 'vterm-mode-hook #'+vterm/track-evil-cursor-h)
+  ;; Image paste: ghostel/claude-code-ide only move text through the PTY, so a
+  ;; clipboard image can't be piped in like in a GUI terminal. The command
+  ;; (+claude/paste-clipboard-image, defined top-level in the Claude Code
+  ;; section so the SPC l v leader binding can reach it too) dumps the Wayland
+  ;; clipboard image to a temp PNG and types its path at the prompt. C-S-v here.
+  (map! :map ghostel-semi-char-mode-map
+        :i "C-S-v" #'+claude/paste-clipboard-image)
 
-  ;; Image paste: vterm/claude-code-ide only move text through the PTY, so a
-  ;; clipboard image can't be piped in like in a GUI terminal. Instead dump the
-  ;; Wayland clipboard image to a temp PNG and type its path at the prompt —
-  ;; Claude Code reads local image files referenced by path. Insert-state C-S-v.
-  (defun +claude/vterm-paste-clipboard-image ()
-    "Save a Wayland clipboard image to a temp PNG and insert its path at point."
-    (interactive)
-    (unless (string-match-p "image/" (shell-command-to-string "wl-paste --list-types 2>/dev/null"))
-      (user-error "No image on the clipboard"))
-    (let ((file (make-temp-file "claude-clip-" nil ".png")))
-      (call-process-shell-command
-       (format "wl-paste --type image/png > %s" (shell-quote-argument file)))
-      (vterm-send-string file)
-      (message "Pasted image path: %s" file)))
-  (map! :map vterm-mode-map
-        :i "C-S-v" #'+claude/vterm-paste-clipboard-image)
-
-  ;; Keyboard-native scrollback for a vim brain. `vterm-copy-mode' freezes the
+  ;; Keyboard-native scrollback for a vim brain. `ghostel-copy-mode' freezes the
   ;; view (so streaming output stops yanking point to the bottom) and turns the
-  ;; buffer into a read-only nav buffer. The one real gap: Doom leaves you in evil
-  ;; INSERT state there, where hjkl self-insert and motions are dead. Switch to
-  ;; NORMAL on entry — then k/j/C-u/C-d/gg/G/`/' all work (vim AND tmux copy-mode
-  ;; muscle memory) — and back to INSERT on exit to resume typing to Claude.
-  (defun +vterm/copy-mode-evil-state-h ()
-    "Evil normal state inside `vterm-copy-mode', insert state outside it."
-    (if (bound-and-true-p vterm-copy-mode) (evil-normal-state) (evil-insert-state)))
-  (add-hook 'vterm-copy-mode-hook #'+vterm/copy-mode-evil-state-h)
+  ;; buffer into a read-only nav buffer. The one real gap: ghostel leaves you in
+  ;; evil INSERT state there, where hjkl self-insert and motions are dead.
+  ;; Switch to NORMAL on entry — then k/j/C-u/C-d/gg/G/`/' all work (vim AND
+  ;; tmux copy-mode muscle memory) — and back to INSERT on exit to resume typing
+  ;; to Claude.
+  (defun +ghostel/copy-mode-evil-state-h ()
+    "Evil normal state inside `ghostel-copy-mode', insert state outside it."
+    (if (bound-and-true-p ghostel-copy-mode) (evil-normal-state) (evil-insert-state)))
+  (add-hook 'ghostel-copy-mode-hook #'+ghostel/copy-mode-evil-state-h)
   ;; Enter scrollback with one free chord: `C-'' is unbound in insert state, in
-  ;; vterm-mode-map, and globally, so this fills a blank rather than shadowing a
-  ;; load-bearing key. `q' quits (tmux habit + idiomatic special-buffer quit);
-  ;; `C-c C-t' and RET still work too. C-' lives in vterm-mode-map, which is
+  ;; ghostel-semi-char-mode-map, and globally, so this fills a blank rather than
+  ;; shadowing a load-bearing key. `q' quits (tmux habit + idiomatic
+  ;; special-buffer quit) by disabling copy-mode directly — ghostel's
+  ;; `ghostel-readonly-fast-exit' would otherwise self-insert `q' and forward it
+  ;; to Claude, so the explicit toggle is what gives a clean exit. `C-c C-t' and
+  ;; RET still work too. C-' lives in ghostel-semi-char-mode-map, which is
   ;; shadowed once copy-mode is active, so it's enter-only — exit via `q'.
-  (map! :map vterm-mode-map "C-'" #'vterm-copy-mode
-        :map vterm-copy-mode-map :n "q" #'vterm-copy-mode-done)
+  (map! :map ghostel-semi-char-mode-map "C-'" #'ghostel-copy-mode
+        :map ghostel-copy-mode-map :n "q"
+        (lambda () (interactive) (ghostel-copy-mode -1)))
 
   ;; Send Escape to Claude with a second Esc. Claude clears the input draft on
   ;; Escape, but evil eats bare ESC in insert state (→ normal state) so it never
   ;; reaches the PTY. `<escape>' (the GUI key — distinct from the ESC/Meta prefix
   ;; that powers M-x etc.) is idle in evil normal state (just re-asserts normal),
-  ;; so rebinding it there — in vterm only — to send a real Escape makes "ESC ESC"
-  ;; from insert = clear the prompt. `i' to start typing again. (Caveat: spamming
-  ;; ESC in normal state now sends repeated escapes to Claude, which is its
-  ;; double-Esc rewind menu — see the single-chord alternative if that bites.)
-  (map! :map vterm-mode-map :n "<escape>" #'vterm-send-escape))
+  ;; so rebinding it there — in ghostel only — to send a real Escape makes "ESC
+  ;; ESC" from insert = clear the prompt. `i' to start typing again. (Caveat:
+  ;; spamming ESC in normal state now sends repeated escapes to Claude, which is
+  ;; its double-Esc rewind menu — see the single-chord alternative if that
+  ;; bites.)
+  (defun +ghostel/send-escape ()
+    "Send ESC to the ghostel pty."
+    (interactive)
+    (ghostel-send-key "escape"))
+  (map! :map ghostel-semi-char-mode-map :n "<escape>" #'+ghostel/send-escape))
+
+;; Open a standalone ghostel terminal. Replaces the `SPC o t' / `SPC o T'
+;; bindings Doom's :term vterm module provided before it was removed.
+(map! :leader
+      (:prefix ("o" . "open")
+       :desc "Ghostel terminal"        "t" #'ghostel
+       :desc "Ghostel terminal (split)" "T" #'+ghostel/split))
+
+(defun +ghostel/split ()
+  "Open ghostel in a split window below."
+  (interactive)
+  (split-window-below)
+  (ghostel))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Tree-sitter grammars — mason-treesitter equivalent (auto-install on open)
@@ -491,48 +451,23 @@ scrollback nav keeps working."
   (setq lsp-ui-sideline-show-diagnostics nil))
 
 ;;; ---------------------------------------------------------------------------
-;;; Flycheck — inline diagnostics, colored by severity (popup-tip)
+;;; Flycheck — childframe diagnostics, colored by severity
 ;;; ---------------------------------------------------------------------------
 
-;; The diagnostic that rendered WHITE is `flycheck-popup-tip' — an inline popup.el
-;; overlay (it reflows the buffer text below point; a posframe childframe would
-;; overlay WITHOUT reflowing, which is how we know it's popup-tip, not posframe).
-;; Two problems with the stock setup:
+;; Doom's `(syntax +childframe)' shows diagnostics in a `flycheck-posframe'
+;; childframe — the nvim diagnostic-float equivalent, and it draws over the
+;; window rather than reflowing buffer text. Its per-severity faces inherit
+;; `default' (= white under Catppuccin Mocha), so the ONLY fix needed is to
+;; recolor them: red error / yellow warn / lavender info — the same ladder the
+;; nvim diagnostics use (theme.lua). `set-face-attribute' in `after!' runs when
+;; the package loads (custom-set-faces! can miss lazily-loaded faces).
 ;;
-;;   1. Doom's `+syntax-init-popups-h' tries to pick posframe vs popup-tip vs
-;;      nothing (it no-ops under lsp-ui) — non-deterministic, and posframe won't
-;;      even draw in a narrow window (Claude docked right). We don't want the
-;;      guesswork: remove that picker and always use popup-tip, which is an
-;;      overlay that ALWAYS draws regardless of window width.
-;;   2. `flycheck-popup-tip-format-errors' paints the whole message with ONE flat
-;;      `popup-tip-face' (flycheck-popup-tip.el:85-94) — no per-severity color, so
-;;      under Catppuccin's dark `popup-tip-face' every error is white. Override it
-;;      to propertize each line by level: red error / yellow warn / lavender info,
-;;      the same ladder the nvim diagnostics use (theme.lua).
-(after! flycheck
-  (remove-hook 'flycheck-mode-hook #'+syntax-init-popups-h)
-  (add-hook 'flycheck-mode-hook #'flycheck-popup-tip-mode))
-
-(after! flycheck-popup-tip
-  (defun flycheck-popup-tip-format-errors (errors)
-    "Color each ERROR line by severity instead of one flat `popup-tip-face'."
-    (let ((lines (mapcar
-                  (lambda (err)
-                    (let ((color (pcase (flycheck-error-level err)
-                                   ('error   "#f38ba8")   ; Catppuccin red
-                                   ('warning "#f9e2af")   ; yellow
-                                   (_        "#b4befe")))) ; lavender (info)
-                      (propertize (concat flycheck-popup-tip-error-prefix
-                                          (flycheck-error-format-message-and-id err))
-                                  'face `(:foreground ,color))))
-                  (delete-dups errors))))
-      (mapconcat #'identity (sort lines #'string-lessp) "\n"))))
-
-;; INSURANCE: if a buffer is still rendering through `flycheck-posframe' (its
-;; per-severity faces inherit `default' = white), color those too — via
-;; `set-face-attribute' inside `after!' so it runs WHEN the package loads, not on
-;; the theme hook (custom-set-faces! can miss lazily-loaded faces). Whichever
-;; renderer a given buffer ended up with, the diagnostic is now colored.
+;; (This replaces an earlier setup that swapped in flycheck-popup-tip and
+;; redefined its formatter to get color — three face attributes do the same job
+;; with no function patching.) If the childframe ever fails to draw in a very
+;; narrow split, switch to lsp-ui-sideline virtual text instead: set
+;; `lsp-ui-sideline-show-diagnostics' back to t above — it's width-agnostic
+;; inline text rather than a floating frame.
 (after! flycheck-posframe
   (set-face-attribute 'flycheck-posframe-error-face   nil :foreground "#f38ba8")
   (set-face-attribute 'flycheck-posframe-warning-face nil :foreground "#f9e2af")
@@ -549,17 +484,10 @@ scrollback nav keeps working."
   (setq flycheck-highlighting-mode 'symbols
         flycheck-highlighting-style 'level-face))
 
-(after! magit
-  ;; Word-level highlighting within hunks. (No magit-delta: it breaks
-  ;; `magit-diff-visit-file' / RET with "Search failed" because delta rewrites
-  ;; the diff text magit searches against. Step into the real file for tree-sitter.)
-  (setq magit-diff-refine-hunk 'all))
-
 ;; Deep-review mode: after RET'ing into a file from magit, walk the diff in the
 ;; real (tree-sitter'd) buffer. vc-gutter is diff-hl under the hood.
 ;;   ]c / [c  step through hunks (vim :Gdiffsplit muscle memory; ]d/[d also work)
-;;   =        pop the hunk's diff inline  (we have format-on-save, so the evil
-;;            `=' indent operator is expendable here)
+;;   g h      pop the hunk (added + removed) in a posframe popup
 ;; The one that actually does what was wanted: a unified diff (green/red) of the
 ;; current file vs HEAD, in a real `diff-mode' buffer, where `diff-font-lock-syntax'
 ;; layers the SOURCE language's highlighting (treesitter for treesit modes) over
@@ -598,8 +526,9 @@ scrollback nav keeps working."
 (defface +diff-hl-line-delete '((t :background "#48262b" :extend t))
   "gitsigns-style line wash anchoring deleted lines.")
 
-(defvar +diff-hl-inline-enabled t
-  "When non-nil, wash diff-hl hunk overlays with a line background.")
+(defvar +diff-hl-inline-enabled nil
+  "When non-nil, wash diff-hl hunk overlays with a line background.
+Off by default so only the fringe gutter signs show; toggle on with `g L'.")
 
 (defun +diff-hl-paint-hunks (&rest _)
   "Give every diff-hl hunk overlay a background face (gitsigns `linehl`)."
@@ -624,128 +553,48 @@ scrollback nav keeps working."
       (when (overlay-get o 'diff-hl-hunk) (overlay-put o 'face nil))))
   (message "diff-hl inline linehl %s" (if +diff-hl-inline-enabled "on" "off")))
 
-;; gitsigns deleted-line preview for Emacs ------------------------------------
-;; The wash above only colors lines that still EXIST. To "see what was removed"
-;; (gitsigns deleted-preview, toggled with `='), render the removed lines as
-;; phantom virtual lines ABOVE where they were, fontified in the buffer's OWN
-;; major mode (so treesit highlights them) with a red `:extend' background
-;; layered UNDER the syntax foreground. diff-hl-show-hunk's inline backend can't
-;; do this (it strips faces and repaints lines flat), so we build it directly on
-;; `diff-hl-changes-buffer' — the raw unified diff vs the reference revision.
-(defface +diff-hl-deleted-face '((t :background "#48262b" :extend t))
-  "Background for inline removed lines; fg nil so syntax shows through.")
-
-(defvar-local +diff-hl-deleted--overlays nil
-  "Phantom overlays currently showing removed lines in this buffer.")
-(defvar-local +diff-hl-deleted-showing nil
-  "Non-nil when inline removed-line previews are active in this buffer.")
-(defvar-local +diff-hl-deleted--timer nil
-  "Debounce timer for re-rendering removed-line previews.")
-
-(defun +diff-hl-deleted--clear ()
-  "Remove all phantom removed-line overlays from the current buffer."
-  (mapc #'delete-overlay +diff-hl-deleted--overlays)
-  (setq +diff-hl-deleted--overlays nil))
-
-(defun +diff-hl-deleted--fontify (text mode)
-  "Return TEXT fontified as if it were source in MODE (treesit-aware).
-`delay-mode-hooks' keeps lsp/flycheck/etc. from activating in the scratch buffer."
-  (condition-case nil
-      (with-temp-buffer
-        (insert text)
-        (delay-mode-hooks (funcall mode))
-        (font-lock-ensure)
-        (buffer-string))
-    (error text)))
-
-(defun +diff-hl-deleted--block-string (lines mode)
-  "Build the phantom string for removed LINES, fontified in MODE with a red bg."
-  (let ((s (concat (+diff-hl-deleted--fontify (string-join lines "\n") mode) "\n")))
-    ;; Prepend (not set) the bg so the syntax foreground underneath still wins.
-    (font-lock-prepend-text-property 0 (length s) 'face '+diff-hl-deleted-face s)
-    s))
-
-(defun +diff-hl-deleted--collect (file backend)
-  "Return a list of (NEW-LINE . REMOVED-LINES) blocks parsed from FILE's diff."
-  (let ((diff-hl-update-async nil)          ; force the diff to run synchronously
-        (blocks nil))
-    (with-current-buffer (diff-hl-changes-buffer file backend)
-      (goto-char (point-min))
-      (while (re-search-forward
-              "^@@ -[0-9]+\\(?:,[0-9]+\\)? \\+\\([0-9]+\\)\\(?:,[0-9]+\\)? @@" nil t)
-        (let ((new-line (string-to-number (match-string 1)))
-              (removed nil))
-          (forward-line 1)
-          (while (and (not (eobp)) (not (looking-at "^@@")))
-            (cond
-             ((looking-at "^-\\(.*\\)$")          ; removed line: collect, don't advance
-              (push (match-string 1) removed))
-             (t                                   ; context/added: flush, then advance
-              (when removed
-                (push (cons new-line (nreverse removed)) blocks)
-                (setq removed nil))
-              (when (memq (char-after (line-beginning-position)) '(?\s ?+))
-                (setq new-line (1+ new-line)))))
-            (forward-line 1))
-          (when removed                           ; removals at the tail of the hunk
-            (push (cons new-line (nreverse removed)) blocks)))))
-    (nreverse blocks)))
-
-(defun +diff-hl-deleted--render ()
-  "Render removed lines for the current buffer as phantom virtual lines."
-  (+diff-hl-deleted--clear)
-  (let* ((file (buffer-file-name))
-         (backend (and file (vc-backend file)))
-         (mode major-mode))
-    (when backend
-      (dolist (block (+diff-hl-deleted--collect file backend))
-        (save-excursion
-          (goto-char (point-min))
-          (forward-line (1- (car block)))
-          (let ((ov (make-overlay (line-beginning-position) (line-beginning-position))))
-            (overlay-put ov 'before-string
-                         (+diff-hl-deleted--block-string (cdr block) mode))
-            (overlay-put ov '+diff-hl-deleted t)
-            (push ov +diff-hl-deleted--overlays)))))))
-
-(defun +diff-hl-deleted--maybe-refresh (&rest _)
-  "Debounced re-render of phantoms after a diff-hl update, when active."
-  (when +diff-hl-deleted-showing
-    (when (timerp +diff-hl-deleted--timer) (cancel-timer +diff-hl-deleted--timer))
-    (let ((buf (current-buffer)))
-      (setq +diff-hl-deleted--timer
-            (run-with-idle-timer
-             0.3 nil
-             (lambda ()
-               (when (buffer-live-p buf)
-                 (with-current-buffer buf
-                   (when +diff-hl-deleted-showing
-                     (ignore-errors (+diff-hl-deleted--render)))))))))))
-
-(defun +diff-hl-toggle-deleted ()
-  "Toggle gitsigns-style inline preview of removed lines (treesit + red bg)."
-  (interactive)
-  (setq +diff-hl-deleted-showing (not +diff-hl-deleted-showing))
-  (if +diff-hl-deleted-showing
-      (+diff-hl-deleted--render)
-    (+diff-hl-deleted--clear))
-  (message "diff-hl removed-line preview %s"
-           (if +diff-hl-deleted-showing "on" "off")))
+;; Removed lines ("what did I delete here?") are shown via diff-hl's own
+;; posframe popup — `diff-hl-show-hunk', bound to `g h' below — which lists the
+;; added AND removed lines for the hunk at point. (An earlier version rendered
+;; the removed lines as inline phantom overlays by hand-parsing the unified diff;
+;; that was ~150 lines riding on diff-hl internals, so it's gone — the popup is
+;; the idiomatic, maintenance-free equivalent. `g =' still gives the full-file
+;; syntax-highlighted diff for a deeper read.)
 
 (after! diff-hl
-  ;; Show staged changes too (review-from-magit workflow stages first).
-  (setq diff-hl-show-staged-changes t)
+  ;; Split staged from unstaged indicators: staged hunks render as "reference"
+  ;; signs (dimmed via `diff-hl-reference-*' faces below) and unstaged hunks
+  ;; stay solid — so `-'/`stage-hunk' FADES the hunk's gutter sign instead of
+  ;; leaving it solid. The old `t' folded both into one HEAD-vs-working sign,
+  ;; hiding which hunks were staged. Review-from-magit still works: staged
+  ;; changes remain visible, just dimmed. See diff-hl.el:251,511-530,744-749.
+  (setq diff-hl-show-staged-changes nil)
+  ;; Render staged (reference) hunks with the SAME fringe renderer as unstaged
+  ;; hunks. The default `diff-hl-highlight-reference-function' is
+  ;; `diff-hl-highlight-on-fringe-flat', whose bitmap (`diff-hl-bmp-empty' =
+  ;; `[0]', diff-hl.el:377) is a 1px EMPTY bitmap — so staged hunks render as
+  ;; NOTHING in the fringe. Pointing it at `diff-hl-highlight-on-fringe' keeps
+  ;; the same arrow shape as working hunks; only the dimmed
+  ;; `diff-hl-reference-*' faces below differentiate staged from unstaged —
+  ;; the gitsigns fade effect (same sign, dimmer color).
+  (setq diff-hl-highlight-reference-function 'diff-hl-highlight-on-fringe)
+  ;; Fade the staged (reference) fringe signs. The default `diff-hl-reference-*'
+  ;; faces inherit the bright working faces, so without this staged hunks look
+  ;; identical to unstaged. custom-set-faces! re-applies on theme load, so the
+  ;; catppuccin reload in +catppuccin-apply won't clobber the dim palette.
+  ;; Hues track the line-wash faces below (#26402b / #48262b / #2b3650), bumped
+  ;; brighter so the thin fringe bitmap stays legible on the #282c34 base.
+  (custom-set-faces!
+    '(diff-hl-reference-insert :foreground "#4d7a4d")  ; dim green  (staged add)
+    '(diff-hl-reference-delete :foreground "#7a4d4d")  ; dim red    (staged delete)
+    '(diff-hl-reference-change  :foreground "#4d5d8a")); dim blue   (staged change)
   ;; Paint the hunk lines after every (sync or async) overlay refresh.
   (advice-add 'diff-hl--update-overlays :after #'+diff-hl-paint-hunks)
-  ;; Keep the removed-line phantoms in sync as you edit (debounced).
-  (advice-add 'diff-hl--update :after #'+diff-hl-deleted--maybe-refresh)
   (map! :n "] c" #'diff-hl-next-hunk
         :n "[ c" #'diff-hl-previous-hunk
-        :n "="   #'+diff-hl-toggle-deleted        ; toggle inline removed-line preview (treesit + red)
         :n "g L" #'+diff-hl-toggle-inline         ; toggle the ambient line wash (linehl)
-        :n "g h" #'diff-hl-show-hunk              ; rich floating posframe popup (fallback)
-        :n "g =" #'+git-diff-file-highlighted     ; full-file side-buffer syntax diff
-        :n "-"   #'+vc-gutter/stage-hunk))   ; fugitive-style stage hunk at point
+        :n "g h" #'diff-hl-show-hunk              ; floating posframe popup: added + removed lines
+        :n "g =" #'+git-diff-file-highlighted))   ; full-file side-buffer syntax diff
 
 ;; indent-bars: character mode instead of stipple ----------------------------
 ;; The doom `indent-guides' module picks stipple bitmaps here (non-macOS, Emacs
@@ -773,9 +622,133 @@ scrollback nav keeps working."
   '(ediff-even-diff-B    :background "#2c3a2e" :foreground nil :extend t)
   '(ediff-odd-diff-B     :background "#2c3a2e" :foreground nil :extend t))
 
+;; Activate evil-ediff (declared in packages.el). The package's autoloads only
+;; register `evil-ediff-init' as an M-x command — they do NOT auto-add the
+;; ediff-startup-hook that actually applies the overriding keymap. Without this,
+;; `a' in ediff falls through to evil-append (insert mode). `(require 'evil-ediff)'
+;; loads the file, whose top-level `(unless (featurep 'evil-ediff) (evil-ediff-init))'
+;; then initializes: sets ediff's initial state to motion and calls
+;; `evil-make-overriding-map' on `ediff-mode-map' (the canonical evil API for
+;; making a mode-map win over evil's state maps). NOTE: ediff's merge commands
+;; (`ac', `bc', `rc') only fire in the CONTROL buffer (the small help window at
+;; the bottom) — the A/B/C file panes stay in their file's major mode.
+(with-eval-after-load 'evil
+  (require 'evil-ediff))
+
+;; Syntax-highlighted magit diffs via delta — match nvim/diffs.nvim -------------
+;; Stock magit does NOT fontify diff bodies (`magit-diff-wash-hunk` inserts raw
+;; +/- lines; only the bg faces are applied), so code in a magit diff renders in
+;; one flat color — comments are NOT muted the way treesitter shows them in nvim.
+;; `magit-delta` pipes each hunk through `delta`, which syntax-highlights it. We
+;; pair delta's "Catppuccin Mocha" syntax theme (muted comments, colored keywords)
+;; with custom +/- backgrounds blended the diffs.nvim way so the wash reads at the
+;; SAME intensity as the nvim diff surfaces.
+;;
+;; The +/- backgrounds: floor(diff*0.6 + base*0.4) per channel — the diffs.nvim
+;; recipe (`lua/diffs/runtime/highlight_groups.lua`). Sources are catppuccin-nvim's
+;; DiffAdd/DiffDelete bgs (#3f4d48 / #4d3d49) blended over the OneDark base
+;; (#282c34). Since the theme is fixed (Catppuccin Mocha + the OneDark base
+;; override above), the result is precomputed to static hex rather than derived
+;; live from the `default' face — same colors, no blend function and no
+;; theme-tracking hook to keep in sync. Recompute by hand only if the base bg
+;; changes: add = blend(#3f4d48) -> #353f40, minus = blend(#4d3d49) -> #3e3640.
+;;
+;; Under magit-delta the hunk colors live in delta's `--plus-style`/`--minus-style`
+;; ("syntax #hex" = syntax-highlighted fg over the bg), not Emacs faces.
+;; `--no-gitconfig' is the load-bearing flag: it drops the gitconfig
+;; `line-numbers`/`navigate` settings whose gutter shifts the +/- markers off
+;; column 0 and breaks `magit-diff-visit-file' with "Search failed". magit-delta
+;; auto-appends --syntax-theme and --color-only; don't repeat them.
+(use-package! magit-delta
+  :hook (magit-mode . magit-delta-mode)
+  :init (setq magit-delta-default-dark-theme "Catppuccin Mocha")
+  :config
+  (setq magit-delta-delta-args
+        '("--no-gitconfig"
+          "--max-line-distance" "0.6"
+          "--true-color" "always"
+          "--plus-style"       "syntax #353f40"      ; DiffAdd.bg blended over base
+          "--minus-style"      "syntax #3e3640"      ; DiffDelete.bg blended over base
+          "--plus-emph-style"  "syntax #2e5d3a"      ; word-level add  (nvim DiffText)
+          "--minus-emph-style" "syntax #5d2e36")))   ; word-level remove
+
+;; File-row status keywords — neogit-style coloring. Magit faces the WHOLE file
+;; heading (status word + filename) with one `magit-diff-file-heading` face
+;; (`magit-format-file-default`, magit-diff.el), so "modified"/"new file"/"deleted"
+;; render flat white. neogit colors the keyword instead. Swap in a format function
+;; that faces the leading status word per-status and leaves the filename alone.
+;;   modified → blue (NeogitChangeModified = bg_blue)
+;;   new file → green (Catppuccin green)
+;;   deleted  → red  (Catppuccin red)
+;;   renamed  → mauve
+(defface +magit-status-modified '((t :foreground "#89b4fa")) "Neogit-style modified keyword (blue).")
+(defface +magit-status-added    '((t :foreground "#a6e3a1")) "Neogit-style new-file keyword (green).")
+(defface +magit-status-removed  '((t :foreground "#f38ba8")) "Neogit-style deleted keyword (red).")
+(defface +magit-status-renamed  '((t :foreground "#cba6f7")) "Neogit-style renamed keyword (mauve).")
+
+(defun +magit-format-file-neogit (_kind file face &optional status orig)
+  "Like `magit-format-file-default` but color the leading status keyword."
+  (concat
+   (and status
+        (propertize (format "%-11s" status)
+                    'font-lock-face
+                    (pcase status
+                      ("new file" '+magit-status-added)
+                      ("deleted"  '+magit-status-removed)
+                      ("renamed"  '+magit-status-renamed)
+                      (_          '+magit-status-modified))))
+   (propertize (if orig (format "%s -> %s" orig file) file)
+               'font-lock-face face)))
+
+(after! magit
+  ;; Word-level diff refinement is delegated to delta (--plus-emph/--minus-emph),
+  ;; so magit's own refine is off here to avoid double word-emphasis.
+  (setq magit-diff-refine-hunk nil)
+  ;; defcustom won't clobber a value set before load, but set it post-load to be safe.
+  (setq magit-format-file-function #'+magit-format-file-neogit))
+
+;; Static magit/diff faces delta doesn't own (context, hunk headings, stat
+;; numbers). The +/- hunk-body colors come from delta's --plus/--minus-style;
+;; these cover the rest, and double as the fallback if magit-delta-mode is off.
+(custom-set-faces!
+  '(magit-diff-context           :background nil      :foreground nil :extend t)
+  '(magit-diff-context-highlight :background "#313244" :foreground nil :extend t)
+  '(magit-diff-hunk-heading           :background "#313244" :foreground "#94e2d5" :extend t)
+  '(magit-diff-hunk-heading-highlight :background "#45475a" :foreground "#94e2d5" :extend t)
+  ;; +N/-M stat fringe (commit diffstat), not the file-row keywords above.
+  '(magit-diffstat-added   :foreground "#a6e3a1")
+  '(magit-diffstat-removed :foreground "#f38ba8"))
+
+;; Word-level diff refinement is delegated to delta now (magit-diff-refine-hunk is
+;; nil above), so these `diff-refine-added` / `diff-refine-removed` faces only show
+;; as the no-delta fallback. Catppuccin paints them BRIGHT saturated green/red;
+;; override to a subtle bg-only emphasis (brighter than the line bg, same hue, no
+;; FG flip) matching the nvim DiffText treatment (theme.lua :: `DiffText`).
+(custom-set-faces!
+  '(diff-refine-added           :background "#2e5d3a" :foreground nil :extend t)
+  '(diff-refine-removed         :background "#5d2e36" :foreground nil :extend t)
+  ;; status-buffer section chrome
+  '(magit-section-highlight   :background "#313244" :foreground nil)
+  '(magit-section-heading     :foreground "#cba6f7" :weight bold))   ; mauve, matches NeogitSectionHeader
+
 ;;; ---------------------------------------------------------------------------
 ;;; Claude Code — the cockpit centerpiece
 ;;; ---------------------------------------------------------------------------
+
+;; Clipboard-image paste for the Claude prompt. ghostel/claude-code-ide only
+;; move text through the PTY, so dump the Wayland clipboard image to a temp PNG
+;; and type its path — Claude Code reads local image files by path. Bound to
+;; insert-state C-S-v in ghostel and to SPC l v below.
+(defun +claude/paste-clipboard-image ()
+  "Save a Wayland clipboard image to a temp PNG and insert its path at point."
+  (interactive)
+  (unless (string-match-p "image/" (shell-command-to-string "wl-paste --list-types 2>/dev/null"))
+    (user-error "No image on the clipboard"))
+  (let ((file (make-temp-file "claude-clip-" nil ".png")))
+    (call-process-shell-command
+     (format "wl-paste --type image/png > %s" (shell-quote-argument file)))
+    (ghostel-send-string file)
+    (message "Pasted image path: %s" file)))
 
 (use-package! claude-code-ide
   :defer t
@@ -789,14 +762,18 @@ scrollback nav keeps working."
          :desc "Claude: resume a session"        "r" #'claude-code-ide-resume
          :desc "Claude: send prompt/region"      "s" #'claude-code-ide-send-prompt
          :desc "Claude: switch to buffer"        "b" #'claude-code-ide-switch-to-buffer
-         :desc "Claude: paste clipboard image"   "v" #'+claude/vterm-paste-clipboard-image
+         :desc "Claude: re-sync terminal colors" "t" #'ghostel-sync-theme
+         :desc "Claude: paste clipboard image"   "v" #'+claude/paste-clipboard-image
          :desc "Claude: list sessions"           "L" #'claude-code-ide-list-sessions
          :desc "Claude: stop session"            "q" #'claude-code-ide-stop))
   ;; Upstream-style global chord, bound to the real entry command.
   (map! "C-c C-'" #'claude-code-ide)
   :config
-  ;; vterm renders Claude's TUI colors better than the eat backend.
-  (setq claude-code-ide-terminal-backend 'vterm)
+  ;; ghostel (libghostty-vt) renders Claude's TUI better than vterm/eat:
+  ;; native mouse forwarding, Kitty keyboard protocol, DEC 2026 synchronized
+  ;; output, and off-main-thread parsing so Emacs stays responsive during
+  ;; output floods. Configured in the (after! ghostel ...) block above.
+  (setq claude-code-ide-terminal-backend 'ghostel)
   ;; Expose Emacs editor tools (xref, diagnostics, etc.) to Claude over MCP.
   (claude-code-ide-emacs-tools-setup))
 
@@ -806,7 +783,7 @@ scrollback nav keeps working."
       '(("t" "Task" entry (file "~/org/inbox.org")
          "* TODO %?\n  %U\n  %i")))
 
-(setq org-refile-targets '((org-agenda-files :maxlevel . 3))))
+(setq org-refile-targets '((org-agenda-files :maxlevel . 3)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Org-roam + md-roam — Obsidian-like notes over ~/.md files in ~/vault
@@ -824,11 +801,21 @@ scrollback nav keeps working."
 (setq org-roam-directory (file-truename "~/vault")
       org-roam-file-extensions '("org" "md"))
 
+;; Load md-roam eagerly (not deferrable) so it's active BEFORE org-roam's
+;; autosync scans files at startup. A `:after org-roam' here races with
+;; doom's `org-load' hook in contrib/roam.el and loses — .md never indexes.
 (use-package! md-roam
-  :after org-roam
+  :demand t
   :config
   (setq md-roam-file-extension "md")
   (md-roam-mode 1)
-  ;; Re-arm autosync AFTER md-roam is active so the first scan picks up .md.
   (when (fboundp 'org-roam-db-autosync-mode)
-    (org-roam-db-autosync-mode 1)))
+    (org-roam-db-autosync-mode 1))
+  ;; Doom's `+default/find-in-notes' (SPC n f) opens ~/org, not the roam
+  ;; vault. Override the keybinding to point at `org-roam-node-find' once
+  ;; org-roam is loaded, so SPC n f finds nodes across ~/vault.
+  (after! org-roam
+    (map! :leader :desc "Find roam node" "n f" #'org-roam-node-find
+                     :desc "Insert roam node" "n i" #'org-roam-node-insert
+                     :desc "Toggle backlinks" "n l" #'org-roam-buffer-toggle
+                     :desc "Capture roam note" "n c" #'org-roam-capture)))

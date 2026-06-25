@@ -170,8 +170,8 @@ local function trigger_git_refresh()
     return
   end
   -- Cache already holds a toplevel: skip the rev-parse subprocess entirely.
-  -- FugitiveChanged sets _dir_to_toplevel[dir] = nil to invalidate, so
-  -- freshness is preserved without any extra bookkeeping here.
+  -- The neogit User autocmd block below sets _dir_to_toplevel[dir] = nil to
+  -- invalidate, so freshness is preserved without extra bookkeeping here.
   if cached then
     git_refresh(cached)
     return
@@ -186,11 +186,29 @@ vim.api.nvim_create_autocmd({ "BufEnter", "FocusGained", "BufWritePost" }, {
 })
 
 -- Invalidate the toplevel cache and re-run the async refresh after any
--- fugitive Git command completes (e.g. commit, push, pull), so the
--- unpushed-count badge stays accurate without a full BufEnter cycle.
+-- neogit operation completes (commit, push, pull, fetch, branch, rebase,
+-- merge, stash, reset, checkout), so the unpushed-count badge stays accurate
+-- without a full BufEnter cycle. NeogitStatusRefreshed is deliberately
+-- excluded — it fires on the 1s filewatcher poll and would spam refreshes.
 vim.api.nvim_create_autocmd("User", {
-  pattern = "FugitiveChanged",
-  group = vim.api.nvim_create_augroup("StatuslineGitFugitive", { clear = true }),
+  pattern = {
+    "NeogitCommitComplete",
+    "NeogitPushComplete",
+    "NeogitPullComplete",
+    "NeogitFetchComplete",
+    "NeogitRebase",
+    "NeogitMerge",
+    "NeogitReset",
+    "NeogitBranchCreate",
+    "NeogitBranchDelete",
+    "NeogitBranchCheckout",
+    "NeogitBranchRename",
+    "NeogitStash",
+    "NeogitTagCreate",
+    "NeogitTagDelete",
+    "NeogitCherryPick",
+  },
+  group = vim.api.nvim_create_augroup("StatuslineGitNeogit", { clear = true }),
   callback = function()
     _dir_to_toplevel[current_dir()] = nil
     trigger_git_refresh()

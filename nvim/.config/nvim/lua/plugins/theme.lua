@@ -56,18 +56,18 @@ return {
           LspReferenceWrite = { underline = true },
           -- Word-level diff: changed words (DiffText, used by diffopt "inline:word")
           -- default to a near-white wash that's hard to read. Paint them on a
-          -- saturated green background so reworded text stands out in :Gdiffsplit.
+          -- saturated green background so reworded text stands out in diff splits.
           -- ── Single diff palette, used EVERYWHERE ────────────────────────────
           -- The four native groups below are the one source of truth for diff
-          -- colors. fugitive (dv / :Git log), :Gitsigns diffthis, native diff
-          -- mode, diffview, and diffs.nvim all render through them — so the `=`
-          -- inline overlay must too, instead of gitsigns' own (washed-out: its
-          -- inline word groups even default to TermCursor / near-white). Linking
-          -- the gitsigns overlay groups to Diff{Add,Change,Text,Delete} makes
-          -- every diff surface identical. To re-tune diffs anywhere, edit only
-          -- these four — the links follow. DiffText kept green+bold (the changed-
-          -- region emphasis); the other three are Catppuccin's muted defaults
-          -- (what fugitive already shows), left as-is for a calm, standard look.
+          -- colors. neogit (status inline diffs / log buffers), :Gitsigns
+          -- diffthis, native diff mode, diffview, and diffs.nvim all render
+          -- through them — so the `=` inline overlay must too, instead of
+          -- gitsigns' own (washed-out: its inline word groups even default to
+          -- TermCursor / near-white). Linking the gitsigns overlay groups to
+          -- Diff{Add,Change,Text,Delete} makes every diff surface identical. To
+          -- re-tune diffs anywhere, edit only these four — the links follow.
+          -- DiffText kept green+bold (the changed-region emphasis); the other
+          -- three are Catppuccin's muted defaults, left as-is for a calm, standard look.
           DiffText = { bg = "#2e5d3a", bold = true },
           -- `=` overlay → standard diff groups. Line bgs: added/changed/deleted
           -- lines. Inline (word_diff) regions: added & changed words take the
@@ -80,6 +80,30 @@ return {
           GitSignsAddInline = { link = "DiffText" },
           GitSignsChangeInline = { link = "DiffText" },
           GitSignsDeleteInline = { link = "DiffDelete" },
+          -- Neogit status-buffer diffs use its own NeogitDiff* highlight groups,
+          -- NOT the native Diff* groups every other surface (gitsigns =, diffthis,
+          -- native diff mode, diffs.nvim) renders through. Unlinked, neogit
+          -- derives fg from `get_fg("String")` (Catppuccin's bright green) and
+          -- ends up "bright green text on the muted green DiffAdd background" —
+          -- readable but loud. Linking the four line-groups to the same single
+          -- source of truth makes the status buffer match the `=` overlay and
+          -- every other diff surface. (Neogit's hl.lua checks `is_set()` before
+          -- defining — these links win, neogit respects them.)
+          --
+          -- NeogitDiffAddHighlight / NeogitDiffDeleteHighlight are the cursor-
+          -- LINE variants; linking them too keeps the active hunk visually
+          -- consistent with the inactive ones (no jarring fg flip on hover).
+          NeogitDiffAdd = { link = "DiffAdd" },
+          NeogitDiffAddHighlight = { link = "DiffAdd" },
+          NeogitDiffAddCursor = { link = "DiffAdd" },
+          NeogitDiffDelete = { link = "DiffDelete" },
+          NeogitDiffDeleteHighlight = { link = "DiffDelete" },
+          NeogitDiffDeleteCursor = { link = "DiffDelete" },
+          -- Inline (word-diff) regions inside a diff hunk — match the `=`
+          -- overlay and gitsigns word-diff: added/changed words take the
+          -- DiffText emphasis (green+bold), removed words take DiffDelete.
+          NeogitDiffAddInline = { link = "DiffText" },
+          NeogitDiffDeleteInline = { link = "DiffDelete" },
           -- treesitter-context sticky header: lift it off the buffer with the same
           -- surface tone the statusline badges use (#313244) so it reads as chrome,
           -- not code, and underline the bottom edge in teal to mark exactly where

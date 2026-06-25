@@ -40,9 +40,6 @@
        (undo +tree)                ; undotree equiv
        vc
 
-       :term
-       vterm                       ; real terminal backend for Claude Code
-
        :checkers
        (syntax +childframe)        ; nvim-lint / diagnostics equiv
 

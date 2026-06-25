@@ -6,10 +6,10 @@
 --               staging (- and the <leader>c* "changes" namespace), real diff
 --               split (<leader>gd diffthis), hunk quickfix list (<leader>cq repo / <leader>cQ buffer)
 --   keymaps   → next/prev hunk nav (]c/[c) and the = whole-file inline-diff toggle
---   fugitive  → status staging, commit, 3-way merge via :Gdiffsplit!, history
+--   neogit    → status buffer, transient popups (commit/push/pull/rebase/branch), history
 --   util/merge → plugin-free conflict resolution for files with raw markers
 --
--- Full code-review workflow cheatsheet: see the header of plugins/fugitive.lua.
+-- Full code-review workflow cheatsheet: see the header of plugins/neogit.lua.
 --
 -- No preview_config.border is set here — vim.o.winborder = "rounded" in
 -- options.lua already covers all floats globally (Neovim 0.11+).
@@ -38,7 +38,7 @@ return {
       -- Persistent current-line blame: GitLens-style virtual text at end of the
       -- line under the cursor (author, relative time, summary), updating as the
       -- cursor moves. Toggle on/off with <leader>gB. The full-buffer blame split
-      -- stays on fugitive's <leader>gb. Formatter left at the gitsigns default
+      -- stays on neogit's `B` BranchPopup (`<leader>gg` then `B`). Formatter left at the gitsigns default
       -- (" <author>, <author_time:%R> - <summary> "; %R = relative time).
       current_line_blame = true,
       current_line_blame_opts = {
@@ -85,8 +85,10 @@ return {
       require("gitsigns").diffthis()
     end, "Diff this (real split, navigable)")
 
-    -- Toggle the persistent current-line blame virtual text. fugitive's
-    -- <leader>gb owns the full-buffer blame split; <leader>gB is the inline one.
+    -- Toggle the persistent current-line blame virtual text. neogit's
+    -- `B` BranchPopup (open via <leader>gg) covers branch ops; <leader>gB is the
+    -- inline current-line blame toggle. (Full-buffer blame split: `gb` in
+    -- neogit's status buffer.)
     map("<leader>gB", function()
       require("gitsigns").toggle_current_line_blame()
     end, "Toggle line blame (inline)")
@@ -195,7 +197,7 @@ return {
     -- to rebuild it after a staging session.
     -- Body lives in a user command so it's reusable from outside a keymap: the
     -- <leader>cq map calls it, and the `prefix s` tmux popup boots straight into
-    -- it via `nvim -c GitHunksQf`, skipping fugitive's status buffer entirely.
+    -- it via `nvim -c GitHunksQf`, skipping neogit's status buffer entirely.
     vim.api.nvim_create_user_command("GitHunksQf", function()
       require("gitsigns").setqflist("all", {}, function()
         -- setqflist("all") is repo-wide and includes whole-file deletions

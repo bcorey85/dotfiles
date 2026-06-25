@@ -20,11 +20,11 @@ vim.keymap.set("n", "<leader>;", "<C-^>", { desc = "Alternate file" })
 vim.keymap.set("n", "n", "nzzzv", { desc = "Next search result and center" })
 vim.keymap.set("n", "N", "Nzzzv", { desc = "Previous search result and center" })
 
--- Code-review keys (]c/[c, =) — full workflow cheatsheet lives in the header of
--- plugins/fugitive.lua.
+-- Code-review keys (]c/[c, =) — full workflow cheatsheet lives in the header
+-- of plugins/neogit.lua.
 --
 -- ]c/[c: native diff-mode change motion when the window is a real diff
--- (fugitive :Gdiffsplit / :diffsplit); otherwise gitsigns hunk navigation. Both center.
+-- (:diffsplit / nvim diff mode); otherwise gitsigns hunk navigation. Both center.
 local function hunk_jump(direction, native)
   return function()
     if vim.wo.diff then
@@ -52,7 +52,7 @@ vim.keymap.set("n", "[c", hunk_jump("prev", "[czz"), { desc = "Previous hunk and
 vim.keymap.set("n", "]h", hunk_jump("next", "]czz"), { desc = "Next hunk and center" })
 vim.keymap.set("n", "[h", hunk_jump("prev", "[czz"), { desc = "Previous hunk and center" })
 
--- `=`: TOGGLE the PERSISTENT whole-file inline diff overlay, matching fugitive's
+-- `=`: TOGGLE the PERSISTENT whole-file inline diff overlay, matching neogit's
 -- <CR> "open the file WHOLE, read in context" review gear — the everyday
 -- "show me what changed here" key. Fires anywhere in the buffer (it's a
 -- file-wide view; no cursor-on-a-hunk requirement). Native `=` reindent is

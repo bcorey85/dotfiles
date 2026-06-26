@@ -116,14 +116,10 @@ return {
     -- filetype (stored in stdpath("data")/scratch). The scratch inherits the
     -- current buffer's filetype (markdown fallback); lua scratches get <cr> to
     -- source the buffer. <leader>. is taken by picker-resume, so toggle lives
-    -- on <leader>S and select joins the <leader>f find namespace.
+    -- on <leader>S. (Scratch.select is unbound — <leader>fs is save, Doom-style.)
     vim.keymap.set("n", "<leader>S", function()
       Snacks.scratch()
     end, { desc = "Toggle scratch buffer" })
-
-    vim.keymap.set("n", "<leader>fs", function()
-      Snacks.scratch.select()
-    end, { desc = "Find scratch buffer" })
 
     -- gitbrowse keymaps — replaced gitlinker.nvim.
     -- gitbrowse defaults to what = "commit" (commit-pinned permalink URLs),
@@ -168,7 +164,21 @@ return {
       Snacks.picker.buffers()
     end, "Buffers")
 
+    -- <leader>,: switch buffer (mirrors Doom `SPC ,`); same picker as <leader>o.
+    pmap("<leader>,", function()
+      Snacks.picker.buffers()
+    end, "Switch buffer")
+
+    -- <leader>.: find file from the CURRENT buffer's directory (Doom `SPC .`),
+    -- vs <leader><space> which is project-wide. Resume moved to <leader>'.
     pmap("<leader>.", function()
+      Snacks.picker.files(vim.tbl_extend("force", search_opts, {
+        cwd = vim.fn.expand("%:p:h"),
+      }))
+    end, "Find file (current dir)")
+
+    -- <leader>': resume last picker (Doom `SPC '` / vertico-repeat).
+    pmap("<leader>'", function()
       Snacks.picker.resume()
     end, "Resume last picker")
 

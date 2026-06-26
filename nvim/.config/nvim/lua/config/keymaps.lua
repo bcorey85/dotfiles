@@ -170,6 +170,9 @@ end, { desc = "Copy git commit hash (HEAD)" })
 
 vim.keymap.set("n", "<leader>fn", "<cmd>enew<cr>", { desc = "New File" })
 
+-- Save file — mirrors Doom Emacs `SPC f s` (C-s also saves, see Editing section).
+vim.keymap.set("n", "<leader>fs", "<cmd>w<cr>", { desc = "Save file" })
+
 -- ─── LSP & diagnostics ────────────────────────────────────────────────────────
 vim.keymap.set("n", "<leader>lR", function()
   vim.diagnostic.reset()
@@ -232,9 +235,14 @@ vim.keymap.set("n", "<leader>M", function()
 end, { desc = "Messages (scratch buffer)" })
 
 -- ─── Windows ──────────────────────────────────────────────────────────────────
-vim.keymap.set("n", "<leader>ww", "<C-w>c", { desc = "Delete window" })
+vim.keymap.set("n", "<leader>wd", "<C-w>c", { desc = "Delete window" })
+-- SPC w w cycles to the other window (Doom), not delete; delete moved to SPC w d.
+vim.keymap.set("n", "<leader>ww", "<C-w>w", { desc = "Other window" })
 vim.keymap.set("n", "<leader>w-", "<C-w>s", { desc = "Split window below" })
 vim.keymap.set("n", "<leader>w|", "<C-w>v", { desc = "Split window right" })
+-- Doom-style split aliases (SPC w s / SPC w v) alongside the -/| scheme above.
+vim.keymap.set("n", "<leader>ws", "<C-w>s", { desc = "Split window below" })
+vim.keymap.set("n", "<leader>wv", "<C-w>v", { desc = "Split window right" })
 vim.keymap.set("n", "<leader>wm", function()
   if vim.t.zoomed then
     vim.cmd(vim.t.zoom_restore or "")

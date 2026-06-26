@@ -17,15 +17,6 @@
 ;; dodge the gitconfig line-numbers gutter that otherwise breaks visit-file.
 (package! magit-delta)
 
-;; evil-ediff — evil integration for ediff. Without it, ediff-mode inherits
-;; evil's normal state, so `a` (ediff's copy-A-to-C in a merge) falls through to
-;; evil-append and drops you into insert mode. This sets ediff's initial state
-;; to motion and makes `ediff-mode-map` override evil's state maps via
-;; `evil-make-overriding-map` (the canonical evil API for this). Auto-initializes
-;; on load; no config needed. Covers the magit `e` (ediff-resolve) path that
-;; Doom's emacs/vc module doesn't configure (smerge is covered, ediff isn't).
-(package! evil-ediff)
-
 ;; md-roam — lets org-roam index markdown files alongside .org, so the existing
 ;; Obsidian-style ~/vault (wikilinks + plain .md) works without converting
 ;; anything. Must load BEFORE `org-roam-db-autosync-mode' runs — see config.el.

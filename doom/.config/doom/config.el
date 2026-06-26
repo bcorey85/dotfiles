@@ -149,6 +149,14 @@
       "C-k" #'evil-window-up
       "C-l" #'evil-window-right)
 
+;; Reclaiming C-h above breaks which-key's paging: its `C-h`-to-page dispatch
+;; only fires as a fallback when C-h is otherwise unbound, and now it isn't. So
+;; instead of paging a multi-page popup we make the popup tall/wide enough to
+;; show every binding on a single page — no paging key needed.
+(after! which-key
+  (setq which-key-side-window-max-height 0.5   ; up from 0.25; fits more rows
+        which-key-max-display-columns nil))    ; use full frame width
+
 ;;; ---------------------------------------------------------------------------
 ;;; Window resizing — tmux `prefix` + hjkl "resize-pane" mode, the Emacs 30 way
 ;;; ---------------------------------------------------------------------------
@@ -622,18 +630,15 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
   '(ediff-even-diff-B    :background "#2c3a2e" :foreground nil :extend t)
   '(ediff-odd-diff-B     :background "#2c3a2e" :foreground nil :extend t))
 
-;; Activate evil-ediff (declared in packages.el). The package's autoloads only
-;; register `evil-ediff-init' as an M-x command — they do NOT auto-add the
-;; ediff-startup-hook that actually applies the overriding keymap. Without this,
-;; `a' in ediff falls through to evil-append (insert mode). `(require 'evil-ediff)'
-;; loads the file, whose top-level `(unless (featurep 'evil-ediff) (evil-ediff-init))'
-;; then initializes: sets ediff's initial state to motion and calls
-;; `evil-make-overriding-map' on `ediff-mode-map' (the canonical evil API for
-;; making a mode-map win over evil's state maps). NOTE: ediff's merge commands
-;; (`ac', `bc', `rc') only fire in the CONTROL buffer (the small help window at
-;; the bottom) — the A/B/C file panes stay in their file's major mode.
-(with-eval-after-load 'evil
-  (require 'evil-ediff))
+;; Ediff + evil bindings (a/b copy, j/k/n/p navigate, q quit) are handled by
+;; `evil-collection-ediff', enabled via `(evil +everywhere)' in init.el. It sets
+;; ediff-mode's initial state to `normal' AND registers ediff-mode-map as an
+;; overriding map for `normal' — the two MUST agree or evil wins and `a' becomes
+;; evil-append (insert). A previous custom block here forced `motion' state while
+;; evil-collection's override stayed on `normal', so the control buffer's `a'
+;; fell through to insert. Don't reintroduce a competing state/override here.
+
+
 
 ;; Syntax-highlighted magit diffs via delta — match nvim/diffs.nvim -------------
 ;; Stock magit does NOT fontify diff bodies (`magit-diff-wash-hunk` inserts raw

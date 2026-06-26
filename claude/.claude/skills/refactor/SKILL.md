@@ -8,6 +8,10 @@ allowed-tools: [Task, Read, Glob, Grep, Skill]
 
 Analyze the code to refactor, determine whether it's frontend, backend, or fullstack, and dispatch the appropriate coder subagent(s).
 
+## CRITICAL: Never modify a test to make a refactor pass
+
+A refactor changes structure, not behavior — so the tests are the contract. **Never edit, weaken, or delete a test to get a refactor to pass.** Tests pin current behavior; modifying them mid-refactor masks the exact regressions a refactor is most likely to introduce. If you reach an issue that seems unsolvable without changing a test, **stop and alert the user** — do not work around it. Moving a test verbatim to a new file (no assertion changes) is safe.
+
 ## Modifiers
 
 - `+fast` — Pass `model: "haiku"` to coder dispatches. Use for simple renames, extract-variable, or mechanical refactors.
@@ -32,6 +36,7 @@ Analyze the code to refactor, determine whether it's frontend, backend, or fulls
    For each coder:
    - Pass the refactoring description and any relevant context you gathered
    - Instruct it to: read and understand the existing code, implement the refactoring step by step, and ensure no functionality is broken
+   - **Pass the CRITICAL test rule above verbatim**: never modify/weaken/delete a test to make the refactor pass; if blocked, stop and report back rather than touching a test (moving a test verbatim to a new file is fine)
    - If the refactor turns out to need architectural redesign, have it report back and recommend `/eng-spec` instead
 
 4. **After coder(s) complete**, summarize:

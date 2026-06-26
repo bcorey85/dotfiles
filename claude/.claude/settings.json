@@ -150,15 +150,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/rtk-rewrite.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
             "command": "~/.claude/scripts/bash-safety-gate.sh"
           }
         ]
@@ -258,6 +249,14 @@
             "command": "~/.claude/scripts/warn-skip-hooks.sh"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/Users/legalfit/.claude/hooks/context-mode-cache-heal.mjs\""
+          }
+        ]
       }
     ]
   },
@@ -271,9 +270,19 @@
     "lua-lsp@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": true,
     "pyright-lsp@claude-plugins-official": true,
-    "skill-creator@claude-plugins-official": true
+    "skill-creator@claude-plugins-official": true,
+    "context-mode@context-mode": true
+  },
+  "extraKnownMarketplaces": {
+    "context-mode": {
+      "source": {
+        "source": "github",
+        "repo": "mksglu/context-mode"
+      }
+    }
   },
   "effortLevel": "high",
+  "tui": "fullscreen",
   "autoMemoryEnabled": false,
   "skipAutoPermissionPrompt": true
 }

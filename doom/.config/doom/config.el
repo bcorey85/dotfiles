@@ -858,9 +858,12 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
 
 (setq org-agenda-files '("~/org"))
 
-(setq org-capture-templates
-      '(("t" "Task" entry (file "~/org/inbox.org")
-         "* TODO %?\n  %U\n  %i")))
+;; Wrap in `after! org' so this runs AFTER Doom's org module sets its own
+;; default templates — a bare top-level `setq' loses the race and gets clobbered.
+(after! org
+  (setq org-capture-templates
+        '(("t" "Task" entry (file "~/org/inbox.org")
+           "* TODO %?\n  %U\n  %i"))))
 
 (setq org-refile-targets '((org-agenda-files :maxlevel . 3)))
 

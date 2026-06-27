@@ -8,8 +8,15 @@
 (package! claude-code-ide
   :recipe (:host github :repo "manzaltu/claude-code-ide.el"))
 
-;; Catppuccin Mocha to match the rest of the dotfiles theme.
+;; Catppuccin Mocha — kept installed as a fallback during the Rosé Pine migration.
 (package! catppuccin-theme)
+
+;; Rosé Pine Moon — donniebreve's DOOM port: a full doom-themes theme (built on
+;; the already-installed `doom-themes') with the complete 6-accent palette
+;; (love/gold/rose/pine/foam/iris) on syntax — pine on keywords/builtins, foam on
+;; methods. The theme files are vendored into ~/.config/doom/themes/ (Doom adds
+;; that dir to `custom-theme-load-path' automatically), so no package! recipe is
+;; needed here. Provides `doom-rose-pine', `-moon', and `-dawn'.
 
 ;; magit-delta — pipes magit diff hunks through `delta` (already in install/deps
 ;; on every platform) so they get real syntax highlighting, matching nvim's

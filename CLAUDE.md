@@ -15,7 +15,7 @@ Personal dotfiles managed with **GNU Stow** across WSL, Ubuntu, macOS, and Arch 
 Individual scripts in `install/` can be run standalone:
 
 - `install/deps <platform>` - system packages (apt/brew/pacman)
-- `install/fonts <platform>` - CommitMono Nerd Font
+- `install/fonts <platform>` - JetBrainsMono Nerd Font
 - `install/stow` - create all symlinks
 - `install/zsh-plugins` - clone fzf-tab, zsh-autosuggestions, zsh-syntax-highlighting to `~/.zsh/plugins/`
 - `install/starship` - Starship prompt
@@ -26,19 +26,19 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 
 ## Stow Packages
 
-| Package     | Target                                                        | Key files                                                                                                           |
-| ----------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `nvim`      | `~/.config/nvim/`                                             | Native `vim.pack` config (bootstrap in `lua/config/pack.lua`), one spec file per plugin in `lua/plugins/`           |
-| `tmux`      | `~/.tmux.conf`                                                | Prefix=`Ctrl+Space`, vim-style panes                                                                                |
-| `zsh`       | `~/.zshrc`                                                    | Plugins, aliases, pyenv/nvm/starship init                                                                           |
-| `claude`    | `~/.claude/`                                                  | Agents, commands, settings, hooks                                                                                   |
+| Package     | Target                                                        | Key files                                                                                                                |
+| ----------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `nvim`      | `~/.config/nvim/`                                             | Native `vim.pack` config (bootstrap in `lua/config/pack.lua`), one spec file per plugin in `lua/plugins/`                |
+| `tmux`      | `~/.tmux.conf`                                                | Prefix=`Ctrl+Space`, vim-style panes                                                                                     |
+| `zsh`       | `~/.zshrc`                                                    | Plugins, aliases, pyenv/nvm/starship init                                                                                |
+| `claude`    | `~/.claude/`                                                  | Agents, commands, settings, hooks                                                                                        |
 | `opencode`  | `~/.config/opencode/`                                         | Global config (`opencode.jsonc`), `AGENTS.md` global rules, `agents/` ported from claude. Auto-loads `~/.claude/skills/` |
-| `aerospace` | `~/.config/aerospace/`                                        | macOS tiling WM. Workspaces 1-9 pinned to external monitor, built-in screen dedicated to Teams (mac only)           |
-| `kitty`     | `~/.config/kitty/`                                            | Catppuccin Mocha (OneDark BG)                                                                                       |
-| `starship`  | `~/.config/starship.toml`                                     | Gruvbox Material prompt                                                                                             |
-| `kanata`    | `~/kanata-config.kbd`, `~/kanata-setup`, `~/kanata-setup-mac` | Keyboard remapping. Linux: systemd service (`kanata-setup`). macOS: launchd + Karabiner driver (`kanata-setup-mac`) |
-| `scripts`   | `~/.local/bin/`                                               | tmux-sessionizer, dev utilities                                                                                     |
-| `git`       | `~/.gitconfig`                                                | Delta pager, side-by-side diffs. Per-machine identity in `~/.gitconfig.local`                                       |
+| `aerospace` | `~/.config/aerospace/`                                        | macOS tiling WM. Workspaces 1-9 pinned to external monitor, built-in screen dedicated to Teams (mac only)                |
+| `kitty`     | `~/.config/kitty/`                                            | Catppuccin Mocha (OneDark BG)                                                                                            |
+| `starship`  | `~/.config/starship.toml`                                     | Gruvbox Material prompt                                                                                                  |
+| `kanata`    | `~/kanata-config.kbd`, `~/kanata-setup`, `~/kanata-setup-mac` | Keyboard remapping. Linux: systemd service (`kanata-setup`). macOS: launchd + Karabiner driver (`kanata-setup-mac`)      |
+| `scripts`   | `~/.local/bin/`                                               | tmux-sessionizer, dev utilities                                                                                          |
+| `git`       | `~/.gitconfig`                                                | Delta pager, side-by-side diffs. Per-machine identity in `~/.gitconfig.local`                                            |
 
 ## CRITICAL: Cross-Platform Compatibility
 
@@ -51,8 +51,8 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 
 ## Key Conventions
 
-- **Theme**: Catppuccin Mocha (OneDark BG) everywhere (kitty, starship, neovim, tmux, waybar, rofi, dunst, hyprlock)
-- **Font**: CommitMono Nerd Font Mono, 10pt (kitty)
+- **Theme**: Rosé Pine Moon (OneDark BG) everywhere — the rose-pine palette (love/gold/rose/pine/foam/iris) with OneDark neutral backgrounds (`#282c34` base, `#1b1f27` darkest) swapped in for rose-pine's purple-tinted surfaces (kitty, ghostty, starship, neovim, tmux, waybar, rofi, dunst, hyprlock)
+- **Font**: JetBrainsMono Nerd Font Mono, 11.5pt (ghostty + kitty)
 - **Platform guards**: Use `command -v <tool> &>/dev/null &&` before tool-specific init (see .zshrc)
 - **Install scripts**: All use the same color output pattern (`print_success`, `print_error`, `print_info`) with `set -e`
 - **Stow structure**: `<package>/<home-relative-path>` (e.g., `nvim/.config/nvim/init.lua` becomes `~/.config/nvim/init.lua`)

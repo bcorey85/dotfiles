@@ -2,13 +2,13 @@
     bg:         #282c34;
     bg-alt:     #2e3440;
     bg-sel:     #3b4252;
-    fg:         #cdd6f4;
-    fg-alt:     #6c7086;
-    blue:       #94e2d5;
-    green:      #a6e3a1;
-    red:        #f38ba8;
-    purple:     #b4befe;
-    orange:     #fab387;
+    fg:         #e0def4;
+    fg-alt:     #6e6a86;
+    blue:       #9ccfd8;
+    green:      #3e8fb0;
+    red:        #eb6f92;
+    purple:     #c4a7e7;
+    orange:     #ea9a97;
 
     background-color: transparent;
     text-color: @fg;

@@ -23,8 +23,8 @@ case $PLATFORM in
         print_info "WSL detected - Fonts must be installed on Windows"
         echo ""
         echo "  1. Download: https://github.com/ryanoasis/nerd-fonts/releases"
-        echo "  2. Install CommitMono Nerd Font"
-        echo "  3. Windows Terminal → Settings → Font face → 'CommitMono Nerd Font Mono'"
+        echo "  2. Install JetBrainsMono Nerd Font"
+        echo "  3. Windows Terminal → Settings → Font face → 'JetBrainsMono Nerd Font Mono'"
         echo ""
         print_info "Press Enter when fonts are installed..."
         read || true
@@ -34,16 +34,16 @@ case $PLATFORM in
         mkdir -p ~/.local/share/fonts
         cd ~/.local/share/fonts
 
-        if [ ! -f "CommitMonoNerdFontMono-Regular.otf" ]; then
-            curl -fLo /tmp/CommitMono.tar.xz \
-                https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CommitMono.tar.xz
-            tar xf /tmp/CommitMono.tar.xz -C ~/.local/share/fonts \
-                CommitMonoNerdFontMono-Regular.otf CommitMonoNerdFontMono-Bold.otf \
-                CommitMonoNerdFontMono-Italic.otf CommitMonoNerdFontMono-BoldItalic.otf
-            rm /tmp/CommitMono.tar.xz
-            print_success "CommitMono Nerd Font installed"
+        if [ ! -f "JetBrainsMonoNerdFontMono-Regular.ttf" ]; then
+            curl -fLo /tmp/JetBrainsMono.tar.xz \
+                https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.tar.xz
+            tar xf /tmp/JetBrainsMono.tar.xz -C ~/.local/share/fonts \
+                JetBrainsMonoNerdFontMono-Regular.ttf JetBrainsMonoNerdFontMono-Bold.ttf \
+                JetBrainsMonoNerdFontMono-Italic.ttf JetBrainsMonoNerdFontMono-BoldItalic.ttf
+            rm /tmp/JetBrainsMono.tar.xz
+            print_success "JetBrainsMono Nerd Font installed"
         else
-            print_success "CommitMono Nerd Font already installed"
+            print_success "JetBrainsMono Nerd Font already installed"
         fi
 
         fc-cache -fv
@@ -53,23 +53,23 @@ case $PLATFORM in
         mkdir -p ~/.local/share/fonts
         cd ~/.local/share/fonts
 
-        if [ ! -f "CommitMonoNerdFontMono-Regular.otf" ]; then
-            curl -fLo /tmp/CommitMono.tar.xz \
-                https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CommitMono.tar.xz
-            tar xf /tmp/CommitMono.tar.xz -C ~/.local/share/fonts \
-                CommitMonoNerdFontMono-Regular.otf CommitMonoNerdFontMono-Bold.otf \
-                CommitMonoNerdFontMono-Italic.otf CommitMonoNerdFontMono-BoldItalic.otf
-            rm /tmp/CommitMono.tar.xz
-            print_success "CommitMono Nerd Font installed"
+        if [ ! -f "JetBrainsMonoNerdFontMono-Regular.ttf" ]; then
+            curl -fLo /tmp/JetBrainsMono.tar.xz \
+                https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.tar.xz
+            tar xf /tmp/JetBrainsMono.tar.xz -C ~/.local/share/fonts \
+                JetBrainsMonoNerdFontMono-Regular.ttf JetBrainsMonoNerdFontMono-Bold.ttf \
+                JetBrainsMonoNerdFontMono-Italic.ttf JetBrainsMonoNerdFontMono-BoldItalic.ttf
+            rm /tmp/JetBrainsMono.tar.xz
+            print_success "JetBrainsMono Nerd Font installed"
         else
-            print_success "CommitMono Nerd Font already installed"
+            print_success "JetBrainsMono Nerd Font already installed"
         fi
 
         fc-cache -fv
         ;;
     mac)
         print_info "Installing Nerd Fonts..."
-        brew install --cask font-commit-mono-nerd-font 2>/dev/null || print_success "CommitMono Nerd Font already installed"
+        brew install --cask font-jetbrains-mono-nerd-font 2>/dev/null || print_success "JetBrainsMono Nerd Font already installed"
         print_success "Nerd Fonts installed"
         ;;
 esac

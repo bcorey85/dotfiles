@@ -6,7 +6,7 @@
 
 window#waybar {
   background-color: #282c34;
-  color: #cdd6f4;
+  color: #e0def4;
   border-bottom: 2px solid #3b4252;
 }
 
@@ -14,7 +14,7 @@ tooltip {
   background-color: #2e3440;
   border: 1px solid #3b4252;
   border-radius: 8px;
-  color: #cdd6f4;
+  color: #e0def4;
   padding: 8px;
 }
 
@@ -24,66 +24,66 @@ tooltip label {
 
 #workspaces button {
   padding: 0 8px;
-  color: #6c7086;
+  color: #6e6a86;
   border: none;
   border-radius: 0;
   background: transparent;
 }
 
 #workspaces button.active {
-  color: #94e2d5;
-  border-bottom: 2px solid #94e2d5;
+  color: #9ccfd8;
+  border-bottom: 2px solid #9ccfd8;
 }
 
 #workspaces button.urgent {
-  color: #f38ba8;
+  color: #eb6f92;
 }
 
 #workspaces button:hover {
   background: #2e3440;
-  color: #cdd6f4;
+  color: #e0def4;
 }
 
 #window {
-  color: #6c7086;
+  color: #6e6a86;
   padding: 0 12px;
 }
 
 #clock {
-  color: #cdd6f4;
+  color: #e0def4;
   font-weight: bold;
 }
 
 #cpu {
-  color: #a6e3a1;
+  color: #3e8fb0;
 }
 
 #memory {
-  color: #b4befe;
+  color: #c4a7e7;
 }
 
 #temperature {
-  color: #fab387;
+  color: #ea9a97;
 }
 
 #temperature.critical {
-  color: #f38ba8;
+  color: #eb6f92;
 }
 
 #network {
-  color: #94e2d5;
+  color: #9ccfd8;
 }
 
 #network.disconnected {
-  color: #f38ba8;
+  color: #eb6f92;
 }
 
 #pulseaudio {
-  color: #f9e2af;
+  color: #f6c177;
 }
 
 #pulseaudio.muted {
-  color: #6c7086;
+  color: #6e6a86;
 }
 
 #tray {
@@ -99,41 +99,41 @@ tooltip label {
 }
 
 #battery {
-  color: #a6e3a1;
+  color: #3e8fb0;
 }
 
 #battery.warning {
-  color: #f9e2af;
+  color: #f6c177;
 }
 
 #battery.critical {
-  color: #f38ba8;
+  color: #eb6f92;
 }
 
 #battery.charging,
 #battery.plugged {
-  color: #a6e3a1;
+  color: #3e8fb0;
 }
 
 #idle_inhibitor {
-  color: #cba6f7;
+  color: #c4a7e7;
 }
 
 #idle_inhibitor.activated {
-  color: #f38ba8;
+  color: #eb6f92;
 }
 
 #bluetooth {
-  color: #89b4fa;
+  color: #9ccfd8;
 }
 
 #bluetooth.connected {
-  color: #89dceb;
+  color: #9ccfd8;
 }
 
 #bluetooth.off,
 #bluetooth.disabled {
-  color: #6c7086;
+  color: #6e6a86;
 }
 
 #cpu,

@@ -25,11 +25,12 @@ end
 -- selection size like 3x5 in visual-block) has no cmdline to render in. Route
 -- it into the statusline instead, where the `%S` field in config/statusline.lua
 -- displays it. showcmd itself is on by default.
+vim.opt.shortmess:append("I")
 vim.opt.showcmdloc = "statusline"
 vim.opt.completeopt = "menu,menuone,noselect"
 vim.opt.conceallevel = 2
 vim.opt.confirm = true
-vim.opt.cursorline = true
+vim.opt.cursorline = false
 vim.opt.expandtab = true
 vim.opt.foldlevel = 99
 -- Treesitter-aware folds. foldexpr returns "0" for buffers with no parser, so

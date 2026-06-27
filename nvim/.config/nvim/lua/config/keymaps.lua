@@ -280,10 +280,11 @@ end, { desc = "Toggle diagnostics" })
 vim.keymap.set("n", "<leader>qq", "<cmd>qa<cr>", { desc = "Quit all" })
 
 -- ─── Misc ─────────────────────────────────────────────────────────────────────
--- Plugin manager (vim.pack)
-vim.keymap.set("n", "<leader>pp", "<cmd>PackStatus<cr>", { desc = "Plugins: status" })
-vim.keymap.set("n", "<leader>pP", "<cmd>PackUpdate<cr>", { desc = "Plugins: update" })
-vim.keymap.set("n", "<leader>pC", "<cmd>PackClean<cr>", { desc = "Plugins: clean" })
+-- Plugin manager (vim.pack). Lives on <leader>P so <leader>p is free for the
+-- project namespace (Doom `SPC p`).
+vim.keymap.set("n", "<leader>Pp", "<cmd>PackStatus<cr>", { desc = "Plugins: status" })
+vim.keymap.set("n", "<leader>PP", "<cmd>PackUpdate<cr>", { desc = "Plugins: update" })
+vim.keymap.set("n", "<leader>PC", "<cmd>PackClean<cr>", { desc = "Plugins: clean" })
 vim.keymap.set("n", "<leader>K", "<cmd>norm! K<cr>", { desc = "Keywordprg" })
 -- Select entire file in Visual Line mode
 vim.keymap.set("n", "<leader>va", "ggVG", { desc = "Select entire file" })

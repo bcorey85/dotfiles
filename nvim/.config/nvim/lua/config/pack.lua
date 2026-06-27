@@ -44,6 +44,7 @@ local plugin_order = {
   "neogit",
   "diffs", -- treesitter syntax highlighting for diff-mode diffs (display only)
   "diffview", -- 3-way merge tool + diff/history viewer (neogit delegates conflicts here)
+  "octo", -- GitHub issues/PRs (forge port) — after snacks (picker) + mini-icons (devicons mock)
   "mini-ai",
   "mini-surround",
   "mini-pairs",

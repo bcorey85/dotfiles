@@ -61,7 +61,7 @@ vim.opt.timeoutlen = 300
 vim.opt.undofile = true
 vim.opt.undolevels = 10000
 vim.opt.updatetime = 200
-vim.opt.wrap = false
+vim.opt.wrap = true
 vim.opt.signcolumn = "yes"
 
 vim.g.loaded_python3_provider = 0

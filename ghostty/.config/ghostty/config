@@ -1,46 +1,47 @@
-# Font
-font-family = CommitMono Nerd Font Mono
-font-size = 11
+# Font — JetBrains Mono, chosen after an audition for its tall x-height and
+# sturdy weight (far less eye-strain than CommitMono for all-day reading).
+font-family = JetBrainsMono Nerd Font Mono
+font-size = 11.5
 
 # Linux/FreeType only: disable light hinting (on by default in 1.3+) so glyph
 # stems render heavier — closest match to kitty's bolder text rendering, since
 # font-thicken is macOS-only. If still too light, use `font-style = Bold`.
 freetype-load-flags = no-light
 
-# Theme - Catppuccin Mocha (OneDark BG)
+# Theme - Rosé Pine Moon (OneDark BG)
 background = #282c34
-foreground = #cdd6f4
+foreground = #e0def4
 
-selection-foreground = #cdd6f4
+selection-foreground = #e0def4
 selection-background = #3b4252
 
-cursor-color = #cdd6f4
+cursor-color = #e0def4
 cursor-text = #282c34
 
 # Color palette
 palette = 0=#1b1f27
-palette = 1=#f38ba8
-palette = 2=#a6e3a1
-palette = 3=#f9e2af
-palette = 4=#89b4fa
-palette = 5=#cba6f7
-palette = 6=#fab387
-palette = 7=#cdd6f4
-palette = 8=#6c7086
-palette = 9=#f38ba8
-palette = 10=#a6e3a1
-palette = 11=#f9e2af
-palette = 12=#89b4fa
-palette = 13=#cba6f7
-palette = 14=#fab387
-palette = 15=#cdd6f4
+palette = 1=#eb6f92
+palette = 2=#3e8fb0
+palette = 3=#f6c177
+palette = 4=#9ccfd8
+palette = 5=#c4a7e7
+palette = 6=#ea9a97
+palette = 7=#e0def4
+palette = 8=#6e6a86
+palette = 9=#eb6f92
+palette = 10=#3e8fb0
+palette = 11=#f6c177
+palette = 12=#9ccfd8
+palette = 13=#c4a7e7
+palette = 14=#ea9a97
+palette = 15=#e0def4
 
 # Window
 window-padding-x = 4
 window-padding-y = 4
 
-# Line height. Kitty uses `modify_font cell_height 8px`; ghostty's base cell is
-# a touch smaller at the same size, so +10px (vs 8) matches kitty's line spacing.
+# Line height — extra cell height reduces line-tracking effort when reading
+# dense markdown/diffs all day.
 adjust-cell-height = 10
 
 # Shell integration

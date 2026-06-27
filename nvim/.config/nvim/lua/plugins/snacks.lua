@@ -26,9 +26,6 @@
 return {
   src = "folke/snacks.nvim",
   setup = function()
-    -- DOOM neovim? — Doom Emacs's iconic splash banner, lifted verbatim from
-    -- modules/ui/dashboard/config.el. The art already spells DOOM, so the footer
-    -- slot (where "E M A C S" sat) gets the "neovim?" punchline instead.
     local doom_banner = [[
 =================     ===============     ===============   ========  ========
 \\ . . . . . . .\\   //. . . . . . .\\   //. . . . . . .\\  \\. . .\\// . . //
@@ -46,7 +43,7 @@ return {
 ||      .=='    _-'    `-_  `='    _-'   `-_    `='  _-'   `-_  /|  \/  |   ||
 ||   .=='    _-'          '-__\._-'         '-_./__-'         `' |. /|  |   ||
 ||.=='    _-'                                                     `' |  /==.||
-=='    _-'                          neovim?                          \/   `==
+=='    _-'                       N E O V I M ?                        \/   `==
 \   _-'                                                                `-_   /
  `''                                                                      ``']]
 

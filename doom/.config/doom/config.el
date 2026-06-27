@@ -57,11 +57,12 @@
 ;; bounce (taller fallback box) nor the horizontal shimmy (proportional fallback
 ;; widths) that every Nerd Font tested here suffered. No dingbat pin.
 ;;
-;; Icons: JuliaMono isn't a Nerd Font, so Doom's modeline/dashboard/dired/
-;; completion icons come from "Symbols Nerd Font Mono" (installed via
-;; `M-x nerd-icons-install-fonts'). A float :size is in POINTS (DPI-independent).
-(setq doom-font (font-spec :family "JuliaMono" :size 19.0 :weight 'medium)
-      doom-variable-pitch-font (font-spec :family "JuliaMono" :size 19.0 :weight 'medium))
+;; JetBrains Mono Nerd Font (matches the nvim/terminal font). It IS a Nerd Font,
+;; so it also carries glyph icons; Doom's nerd-icons still uses its own
+;; "Symbols Nerd Font Mono" (installed via `M-x nerd-icons-install-fonts').
+;; A float :size is in POINTS (DPI-independent).
+(setq doom-font (font-spec :family "JetBrainsMono Nerd Font Mono" :size 19.0 :weight 'medium)
+      doom-variable-pitch-font (font-spec :family "JetBrainsMono Nerd Font Mono" :size 19.0 :weight 'medium))
 
 ;; DejaVu Sans Mono has no color-emoji glyphs, so emoji in Claude's output render
 ;; as tofu boxes. Point the `emoji' charset at a real color-emoji family when one
@@ -74,41 +75,39 @@
 ;; Extra vertical space between lines, in pixels (nil = none). Bump to taste.
 (setq-default line-spacing 0.25)
 
-;; Catppuccin Mocha. Flavor must be set before the theme loads.
-(setq catppuccin-flavor 'mocha)
-(setq doom-theme 'catppuccin)
+;; Rosé Pine Moon, with the OneDark-ish backgrounds ported from nvim (theme.lua):
+;; the theme supplies the foreground palette (love/gold/foam/iris/pine), while we
+;; force a uniform OneDark base #282c34 (no solaire two-tone) to match nvim/tmux.
+(setq doom-theme 'doom-rose-pine-moon)
 
-;; Port the nvim `color_overrides` (theme.lua): Catppuccin Mocha but with the
-;; OneDark-ish backgrounds, plus a uniform background (no solaire two-tone) to
-;; match the nvim/tmux look.
+;; doom-rose-pine is a doom-themes theme, so it bakes colors into faces at load and
+;; has no palette-setter (unlike catppuccin-set-color). So the OneDark bg is applied
+;; two ways: (1) this hook kills solaire's two-tone on every theme load (and removes
+;; Doom's re-enabler so reloads stay flat); (2) the `custom-set-faces!` block below
+;; repaints the core background faces. custom-set-faces! re-applies on each theme
+;; load, so a live `doom/reload` / `SPC h r r` stays uniform.
 ;;
-;; `+catppuccin-apply` is idempotent and recursion-guarded, so it works both at
-;; startup (via doom-load-theme-hook, before the first GUI frame) AND on a live
-;; `doom/reload` / `SPC h r r` (the immediate call at the bottom, when the theme
-;; is already loaded). It removes Doom's `(doom-load-theme . solaire-global-mode)`
-;; enabler so the reload below won't bring solaire back.
-;;
-;; NOTE: the large `custom_highlights` block in theme.lua is nvim-plugin-specific
-;; (BlinkCmp*, SnacksPicker*, MiniClue*, GitSigns*, …) and has no Emacs
-;; equivalent — only these base/mantle/crust overrides carry over.
-(defvar +catppuccin--applying nil)
-(defun +catppuccin-apply (&rest _)
-  "Apply nvim base/mantle/crust overrides and force a uniform background."
-  (unless +catppuccin--applying
-    (let ((+catppuccin--applying t))
-      ;; uniform bg: stop Doom re-enabling solaire on theme loads, turn it off now
-      (remove-hook 'doom-load-theme-hook #'solaire-global-mode)
-      (when (bound-and-true-p solaire-global-mode) (solaire-global-mode -1))
-      ;; palette overrides (only once the theme's color alist exists)
-      (when (boundp 'catppuccin-mocha-colors)
-        (catppuccin-set-color 'base   "#282c34" 'mocha)
-        (catppuccin-set-color 'mantle "#21252b" 'mocha)
-        (catppuccin-set-color 'crust  "#1b1f27" 'mocha)
-        (catppuccin-reload)))))
+;; NOTE: rose-pine's own base #232136 still shows through on any face we don't
+;; override below — those get caught case-by-case in the re-tune blocks further down.
+(defun +onedark-bg-apply (&rest _)
+  "Disable solaire so the OneDark base background stays uniform."
+  (remove-hook 'doom-load-theme-hook #'solaire-global-mode)
+  (when (bound-and-true-p solaire-global-mode) (solaire-global-mode -1)))
 
-(add-hook 'doom-load-theme-hook #'+catppuccin-apply)
+(add-hook 'doom-load-theme-hook #'+onedark-bg-apply)
 ;; live reload: theme is already loaded, so apply right away
-(when (memq 'catppuccin custom-enabled-themes) (+catppuccin-apply))
+(when (memq 'doom-rose-pine-moon custom-enabled-themes) (+onedark-bg-apply))
+
+;; OneDark base #282c34 / current-line #2c313a. Repaint the core background faces
+;; so the editing area, sidebars (solaire off), fringe, and gutter read as one flat
+;; OneDark surface instead of rose-pine's #232136.
+(custom-set-faces!
+  '(default                  :background "#282c34")
+  '(solaire-default-face     :background "#282c34")
+  '(hl-line                  :background "#2c313a")
+  '(fringe                   :background "#282c34")
+  '(line-number              :background "#282c34")
+  '(line-number-current-line :background "#282c34"))
 
 (setq display-line-numbers-type 'relative)   ; matches nvim relativenumber
 
@@ -127,6 +126,30 @@
   ;; against the Mocha base. Soften to Catppuccin red, matching the echo-area
   ;; error message color so the two read as one signal. Keeps the wave style.
   '(flycheck-error :underline (:style wave :color "#f38ba8")))
+
+;; Markdown — match the nvim render-markdown look. The theme paints every heading
+;; level `love' (pink), bold comes out gold, and code blocks sit on rose-pine's
+;; `surface' #2a273f (the purple bleed). Instead: cycle heading colors per level
+;; like render-markdown.nvim (H1 love → H2 foam → …), make bold plain `text', and
+;; flatten code-block backgrounds onto the OneDark base. The header-face-N faces
+;; inherit bold from `markdown-header-face', so a :foreground-only override keeps it.
+(custom-set-faces!
+  '(markdown-header-face-1 :foreground "#eb6f92")               ; love
+  '(markdown-header-face-2 :foreground "#9ccfd8")               ; foam
+  '(markdown-header-face-3 :foreground "#c4a7e7")               ; iris
+  '(markdown-header-face-4 :foreground "#f6c177")               ; gold
+  '(markdown-header-face-5 :foreground "#3e8fb0")               ; pine
+  '(markdown-header-face-6 :foreground "#ea9a97")               ; rose
+  '(markdown-bold-face     :inherit bold :foreground "#e0def4") ; text, not gold
+  '(markdown-code-face     :background "#282c34")               ; inline `code`, flat
+  '(markdown-pre-face      :background "#282c34"))              ; fenced ``` blocks, flat
+
+;; Hide markup (##, **, _, backticks) by default — the closest thing to nvim
+;; markview's clean look without a renderer package. `markdown-hide-markup' is the
+;; var `SPC m t' (markdown-toggle-markup-hiding) flips, so per-buffer toggling
+;; still works on top of this default.
+(after! markdown-mode
+  (setq markdown-hide-markup t))
 
 ;; `vertical-border' is a 1px char-cell line — drawn, but not a draggable handle,
 ;; so the mouse resize cursor only catches a sliver. window-divider-mode draws a
@@ -362,6 +385,9 @@
        :desc "Ghostel terminal"        "t" #'ghostel
        :desc "Ghostel terminal (split)" "T" #'+ghostel/split
        :desc "Browser (eww)"           "w" #'eww))
+
+;; oil.nvim muscle memory: SPC e opens dired at the current buffer's directory
+(map! :leader :desc "Dired jump" "e" #'dired-jump)
 
 (defun +ghostel/split ()
   "Open ghostel in a split window below."

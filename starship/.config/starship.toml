@@ -1,17 +1,17 @@
-# Catppuccin Mocha palette (Maia BG)
-palette = "catppuccin_mocha"
+# Rosé Pine Moon palette (OneDark BG)
+palette = "rose_pine_moon"
 
-[palettes.catppuccin_mocha]
-red = "#f38ba8"
-orange = "#fab387"
-yellow = "#f9e2af"
-green = "#a6e3a1"
-blue = "#89b4fa"
-teal = "#94e2d5"
-purple = "#b4befe"
-fg = "#cdd6f4"
+[palettes.rose_pine_moon]
+red = "#eb6f92"
+orange = "#ea9a97"
+yellow = "#f6c177"
+green = "#3e8fb0"
+blue = "#9ccfd8"
+teal = "#9ccfd8"
+purple = "#c4a7e7"
+fg = "#e0def4"
 bg = "#282c34"
-grey = "#6c7086"
+grey = "#6e6a86"
 
 format = """
 $directory\

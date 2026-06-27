@@ -65,6 +65,7 @@ local plugin_order = {
   "sleuth", -- auto-detect shiftwidth/expandtab per buffer
   "obsidian",
   "markview",
+  "dirtytalk", -- programming spellcheck dictionary (en + programming spelllang)
   "tiny-cmdline",
   "dap", -- DAP: nvim-dap + dap-ui + dap-python (deferred — no require until <leader>d)
 }

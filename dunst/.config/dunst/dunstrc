@@ -58,21 +58,21 @@
 
 [urgency_low]
     background = "#2e3440"
-    foreground = "#6c7086"
+    foreground = "#6e6a86"
     frame_color = "#3b4252"
-    highlight = "#94e2d5"
+    highlight = "#9ccfd8"
     timeout = 5
 
 [urgency_normal]
     background = "#2e3440"
-    foreground = "#cdd6f4"
-    frame_color = "#94e2d5"
-    highlight = "#94e2d5"
+    foreground = "#e0def4"
+    frame_color = "#9ccfd8"
+    highlight = "#9ccfd8"
     timeout = 10
 
 [urgency_critical]
     background = "#2e3440"
-    foreground = "#cdd6f4"
-    frame_color = "#f38ba8"
-    highlight = "#f38ba8"
+    foreground = "#e0def4"
+    frame_color = "#eb6f92"
+    highlight = "#eb6f92"
     timeout = 0

@@ -19,6 +19,15 @@
 [delta]
 	navigate = true
 	line-numbers = true
+	# Calm diffs: default delta is loud (Monokai Extended + saturated +/-).
+	# Catppuccin Mocha syntax-theme + desaturated add/remove backgrounds match
+	# the muted nvim/neogit diffs so terminal diffs stop "screaming". Values are
+	# quoted so the # in hex codes isn't parsed as a gitconfig comment.
+	syntax-theme = Catppuccin Mocha
+	minus-style = "syntax #3a2b30"
+	minus-emph-style = "syntax #5a3a42"
+	plus-style = "syntax #28332b"
+	plus-emph-style = "syntax #38513f"
 
 [pull]
 	rebase = true

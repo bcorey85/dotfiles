@@ -39,10 +39,12 @@ return {
     require("markview").setup({
       preview = {
         -- Render in normal, command, and terminal modes (matches the old
-        -- render_modes). hybrid_modes reveals the raw source on the cursor
-        -- line in normal mode — the equivalent of render-md's anti_conceal.
+        -- render_modes). hybrid_modes is OFF (empty): markers like ** and _
+        -- stay concealed even on the cursor line, so scrolling doesn't make
+        -- bold/italic spans expand and snap back. Enter insert mode to see/edit
+        -- raw source (insert isn't in `modes`, so the whole buffer un-renders).
         modes = { "n", "c", "t" },
-        hybrid_modes = { "n" },
+        hybrid_modes = {},
       },
 
       -- Hand table rendering to smart-tables.

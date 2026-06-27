@@ -121,6 +121,10 @@
       "src": "https://github.com/obsidian-nvim/obsidian.nvim",
       "version": "3.0.0 - 4.0.0"
     },
+    "octo.nvim": {
+      "rev": "66b8eeca8e18213a19742f8a031e6947c738342f",
+      "src": "https://github.com/pwntester/octo.nvim"
+    },
     "oil.nvim": {
       "rev": "b73018b75affd13fa38e2fc94ef753b465f770d7",
       "src": "https://github.com/stevearc/oil.nvim"

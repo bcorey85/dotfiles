@@ -182,18 +182,72 @@ return {
       Snacks.picker.resume()
     end, "Resume last picker")
 
-    -- <leader>sw: one-shot grep for the word under the cursor.
+    -- Search namespace aligned to Doom `SPC s`. Doom uses s s / s b for buffer
+    -- search and s i / s I for symbols (nvim historically had these swapped).
+
+    -- Grep a directory chosen at the prompt (used by sD / sP). nvim has no
+    -- project registry like Doom's projectile, so "other project" is really
+    -- just "pick a directory and grep it".
+    local function grep_dir(prompt)
+      vim.ui.input({ prompt = prompt, completion = "dir" }, function(dir)
+        if not dir or dir == "" then
+          return
+        end
+        Snacks.picker.grep(vim.tbl_extend("force", search_opts, { cwd = vim.fn.expand(dir) }))
+      end)
+    end
+
+    -- s s: search the current buffer (Doom `SPC s s`; <leader>sb is the alias).
+    pmap("<leader>ss", function()
+      Snacks.picker.lines()
+    end, "Search in buffer")
+
+    -- s i / s I: document / workspace symbols (Doom `s i` imenu / `s I`).
+    pmap("<leader>si", function()
+      Snacks.picker.lsp_symbols()
+    end, "Symbols (document)")
+
+    pmap("<leader>sI", function()
+      Snacks.picker.lsp_workspace_symbols()
+    end, "Symbols (workspace)")
+
+    -- s p: project grep (Doom `s p`); same target as <leader>/.
+    pmap("<leader>sp", function()
+      Snacks.picker.grep(search_opts)
+    end, "Search project")
+
+    -- s d / s D: grep the current file's dir / a chosen dir (Doom `s d` / `s D`).
+    pmap("<leader>sd", function()
+      Snacks.picker.grep(vim.tbl_extend("force", search_opts, { cwd = vim.fn.expand("%:p:h") }))
+    end, "Search current dir")
+
+    pmap("<leader>sD", function()
+      grep_dir("Search dir: ")
+    end, "Search other dir")
+
+    -- s P: grep another project/dir (Doom `s P`; see grep_dir note above).
+    pmap("<leader>sP", function()
+      grep_dir("Search project dir: ")
+    end, "Search other project")
+
+    -- s S / s w: grep the symbol/word under the cursor (Doom `s S`). sw kept as
+    -- a no-Doom-counterpart extra so the old muscle memory still works.
+    pmap("<leader>sS", function()
+      Snacks.picker.grep_word(search_opts)
+    end, "Grep word under cursor")
+
     pmap("<leader>sw", function()
       Snacks.picker.grep_word(search_opts)
     end, "Grep word under cursor")
 
-    pmap("<leader>ss", function()
-      Snacks.picker.lsp_symbols()
-    end, "Symbols (document)")
+    -- s j / s r: jumplist / marks (Doom `s j` evil-show-jumps / `s r` show-marks).
+    pmap("<leader>sj", function()
+      Snacks.picker.jumps()
+    end, "Jumps")
 
-    pmap("<leader>sS", function()
-      Snacks.picker.lsp_workspace_symbols()
-    end, "Symbols (workspace)")
+    pmap("<leader>sr", function()
+      Snacks.picker.marks()
+    end, "Marks")
 
     pmap("<leader>sk", function()
       Snacks.picker.keymaps()
@@ -228,5 +282,11 @@ return {
     pmap("<leader>fv", function()
       Snacks.picker.smart()
     end, "Frecent files")
+
+    -- <leader>pp: switch project (mirrors Doom `SPC p p`). In-editor switcher;
+    -- the OS-level equivalent is tmux-sessionizer (tmux `prefix f`).
+    pmap("<leader>pp", function()
+      Snacks.picker.projects()
+    end, "Switch project")
   end,
 }

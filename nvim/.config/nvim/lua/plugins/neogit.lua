@@ -171,6 +171,26 @@ return {
       end,
     })
 
+    -- <leader>gb — fuzzy branch checkout (mirrors Doom/magit `SPC g b`,
+    -- magit-branch-checkout). Snacks' git_branches picker checks out the
+    -- selected branch on <CR>; branch create/rename/delete stay in neogit's
+    -- B BranchPopup (<leader>gg then B).
+    map("<leader>gb", function()
+      Snacks.picker.git_branches()
+    end, "Checkout branch")
+
+    -- <leader>gL — log of commits touching the current file (mirrors Doom
+    -- `SPC g L`, magit-log-buffer-file). Repo-wide log stays inside neogit
+    -- (<leader>gg then l l). <CR> on a commit shows its diff. Guarded: without
+    -- a real file git_log_file runs `git log -- ` with an empty pathspec.
+    map("<leader>gL", function()
+      if vim.fn.expand("%") == "" or vim.bo.buftype ~= "" then
+        vim.notify("No file in buffer for git log", vim.log.levels.WARN)
+        return
+      end
+      Snacks.picker.git_log_file()
+    end, "Log (current file)")
+
     -- <leader>gr — open the current branch's PR on GitHub, or start one if
     -- none exists. Pure vim.system / gh call — independent of any git plugin.
     map("<leader>gr", function()

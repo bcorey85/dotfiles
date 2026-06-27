@@ -149,13 +149,29 @@
       "C-k" #'evil-window-up
       "C-l" #'evil-window-right)
 
-;; Reclaiming C-h above breaks which-key's paging: its `C-h`-to-page dispatch
-;; only fires as a fallback when C-h is otherwise unbound, and now it isn't. So
-;; instead of paging a multi-page popup we make the popup tall/wide enough to
-;; show every binding on a single page — no paging key needed.
+;; Paging the which-key popup is a two-part fix here:
+;;
+;; 1. TRIGGER KEY. The popup's help/paging trigger is whatever is in
+;;    `help-event-list' (default C-h / <f1>). C-h is now window-left and <f1> is
+;;    taken, so we add M-h. M-h is also our resize key (below), but that's a
+;;    complete top-level binding firing only when NO prefix is pending;
+;;    `help-event-list' keys fire only WHILE a prefix is mid-completion (popup
+;;    up) — the contexts never overlap, so no conflict.
+;;
+;; 2. WHAT THE TRIGGER DOES. Doom sets `prefix-help-command' to a searchable
+;;    completing-read of the prefix's commands (the "Command under SPC w" list).
+;;    That's why M-h/<f1> searched instead of paging. We point it straight at
+;;    `which-key-show-next-page-cycle' — not the C-h *dispatch menu* (whose
+;;    sub-keys didn't advance the page here) — so each M-h directly flips to the
+;;    next page and wraps around. Tradeoff: this is global, so it replaces the
+;;    searchable prefix-help everywhere. Revert this one setq to get the search
+;;    back.
 (after! which-key
-  (setq which-key-side-window-max-height 0.5   ; up from 0.25; fits more rows
-        which-key-max-display-columns nil))    ; use full frame width
+  (setq which-key-side-window-max-height 0.5      ; up from 0.25; fits more rows
+        which-key-max-display-columns nil         ; use full frame width
+        which-key-use-C-h-commands t
+        prefix-help-command #'which-key-show-next-page-cycle)
+  (add-to-list 'help-event-list ?\M-h))           ; M-h pages the popup (C-h is taken)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Window resizing — tmux `prefix` + hjkl "resize-pane" mode, the Emacs 30 way
@@ -344,7 +360,8 @@
 (map! :leader
       (:prefix ("o" . "open")
        :desc "Ghostel terminal"        "t" #'ghostel
-       :desc "Ghostel terminal (split)" "T" #'+ghostel/split))
+       :desc "Ghostel terminal (split)" "T" #'+ghostel/split
+       :desc "Browser (eww)"           "w" #'eww))
 
 (defun +ghostel/split ()
   "Open ghostel in a split window below."
@@ -705,12 +722,69 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
    (propertize (if orig (format "%s -> %s" orig file) file)
                'font-lock-face face)))
 
+;; Untracked file content on TAB (neogit-style). Stock magit lists untracked
+;; files but TAB no-ops on them — it won't synthesize a diff for a file git
+;; doesn't track (deliberate, perf-minded). neogit DOES, via `git diff
+;; --no-index'. This swaps magit's untracked section for one whose per-file body
+;; is filled LAZILY (magit-insert-section-body runs only on expand) with that
+;; same output. Pure display — no index mutation, unlike `SPC u s' (intent-to-add).
+;; The body pipes the diff through the `delta' binary directly and converts its
+;; ANSI to text properties (magit-delta's wash hook doesn't fire on lazily
+;; inserted content), reusing the exact `magit-delta-delta-args' + the
+;; --color-only/--syntax-theme magit-delta auto-appends, so colors match the rest
+;; of magit. Falls back to the raw diff if delta is missing or errors.
+(defun +magit-insert-untracked-files-with-content ()
+  "Untracked files as sections whose body lazily shows their content."
+  (when-let ((files (magit-list-untracked-files)))
+    (magit-insert-section (untracked)
+      (magit-insert-heading "Untracked files")
+      (dolist (file files)
+        (magit-insert-section (file file t)   ; t = collapsed by default
+          (magit-insert-heading
+            (funcall magit-format-file-function 'list file 'magit-filename))
+          ;; Only regular files get an expandable diff; dirs render as headings.
+          (when (file-regular-p file)
+            (magit-insert-section-body
+              (let* ((dir default-directory)
+                     ;; `--no-index' exits 1 when the file is non-empty; expected.
+                     (raw (with-temp-buffer
+                            (setq default-directory dir)
+                            (ignore-errors
+                              (call-process "git" nil t nil
+                                            "diff" "--no-index" "--" "/dev/null" file))
+                            (buffer-string)))
+                     (out (if (and (executable-find "delta")
+                                   (boundp 'magit-delta-delta-args)
+                                   (not (string-empty-p raw)))
+                              (with-temp-buffer
+                                (insert raw)
+                                (if (eq 0 (condition-case nil
+                                              (apply #'call-process-region
+                                                     (point-min) (point-max) "delta" t t nil
+                                                     (append (list "--color-only"
+                                                                   "--syntax-theme"
+                                                                   magit-delta-default-dark-theme)
+                                                             magit-delta-delta-args))
+                                            (error 1)))
+                                    (ansi-color-apply (buffer-string))
+                                  raw))
+                            raw)))
+                (insert out)
+                (unless (or (string-empty-p out) (string-suffix-p "\n" out))
+                  (insert ?\n)))))))
+      (insert ?\n))))
+
 (after! magit
   ;; Word-level diff refinement is delegated to delta (--plus-emph/--minus-emph),
   ;; so magit's own refine is off here to avoid double word-emphasis.
   (setq magit-diff-refine-hunk nil)
   ;; defcustom won't clobber a value set before load, but set it post-load to be safe.
-  (setq magit-format-file-function #'+magit-format-file-neogit))
+  (setq magit-format-file-function #'+magit-format-file-neogit)
+  ;; Swap magit's untracked section for the expandable-content version above.
+  (magit-add-section-hook 'magit-status-sections-hook
+                          #'+magit-insert-untracked-files-with-content
+                          #'magit-insert-untracked-files)   ; same position
+  (remove-hook 'magit-status-sections-hook #'magit-insert-untracked-files))
 
 ;; Static magit/diff faces delta doesn't own (context, hunk headings, stat
 ;; numbers). The +/- hunk-body colors come from delta's --plus/--minus-style;

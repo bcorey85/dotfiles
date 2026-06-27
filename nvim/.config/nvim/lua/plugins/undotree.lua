@@ -7,5 +7,7 @@ return {
     vim.g.undotree_SetFocusWhenToggle = 1
 
     vim.keymap.set("n", "<leader>uu", vim.cmd.UndotreeToggle, { desc = "Undo tree" })
+    -- <leader>su mirrors Doom `SPC s u` (undo-tree-visualize).
+    vim.keymap.set("n", "<leader>su", vim.cmd.UndotreeToggle, { desc = "Undo tree" })
   end,
 }

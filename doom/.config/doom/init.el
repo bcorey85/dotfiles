@@ -37,6 +37,7 @@
        :emacs
        (dired +icons)              ; oil.nvim equiv
        electric
+       eww                         ; built-in web browser
        (undo +tree)                ; undotree equiv
        vc
 

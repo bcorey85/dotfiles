@@ -26,12 +26,59 @@
 return {
   src = "folke/snacks.nvim",
   setup = function()
+    -- DOOM neovim? — Doom Emacs's iconic splash banner, lifted verbatim from
+    -- modules/ui/dashboard/config.el. The art already spells DOOM, so the footer
+    -- slot (where "E M A C S" sat) gets the "neovim?" punchline instead.
+    local doom_banner = [[
+=================     ===============     ===============   ========  ========
+\\ . . . . . . .\\   //. . . . . . .\\   //. . . . . . .\\  \\. . .\\// . . //
+||. . ._____. . .|| ||. . ._____. . .|| ||. . ._____. . .|| || . . .\/ . . .||
+|| . .||   ||. . || || . .||   ||. . || || . .||   ||. . || ||. . . . . . . ||
+||. . ||   || . .|| ||. . ||   || . .|| ||. . ||   || . .|| || . | . . . . .||
+|| . .||   ||. _-|| ||-_ .||   ||. . || || . .||   ||. _-|| ||-_.|\ . . . . ||
+||. . ||   ||-'  || ||  `-||   || . .|| ||. . ||   ||-'  || ||  `|\_ . .|. .||
+|| . _||   ||    || ||    ||   ||_ . || || . _||   ||    || ||   |\ `-_/| . ||
+||_-' ||  .|/    || ||    \|.  || `-_|| ||_-' ||  .|/    || ||   | \  / |-_.||
+||    ||_-'      || ||      `-_||    || ||    ||_-'      || ||   | \  / |  `||
+||    `'         || ||         `'    || ||    `'         || ||   | \  / |   ||
+||            .===' `===.         .==='.`===.         .===' /==. |  \/  |   ||
+||         .=='   \_|-_ `===. .==='   _|_   `===. .===' _-|/   `==  \/  |   ||
+||      .=='    _-'    `-_  `='    _-'   `-_    `='  _-'   `-_  /|  \/  |   ||
+||   .=='    _-'          '-__\._-'         '-_./__-'         `' |. /|  |   ||
+||.=='    _-'                                                     `' |  /==.||
+=='    _-'                          neovim?                          \/   `==
+\   _-'                                                                `-_   /
+ `''                                                                      ``']]
+
     require("snacks").setup({
       -- bigfile: above ~1.5MB, disable the expensive per-buffer machinery
       -- (treesitter highlight + foldexpr folds, LSP attach, etc.) so opening a
       -- minified bundle, a huge lockfile, or a generated dump doesn't freeze the
       -- editor. No-op on normal files.
       bigfile = { enabled = true },
+      -- dashboard: the Doom splash on an empty start. preset.header is the
+      -- banner; "neovim?" rides underneath as a centered subtitle. Keys mirror
+      -- the Doom-style picker layout already bound below.
+      dashboard = {
+        enabled = true,
+        preset = {
+          header = doom_banner,
+          keys = {
+            { icon = " ", key = "f", desc = "Find File", action = ":lua Snacks.dashboard.pick('files')" },
+            { icon = " ", key = "r", desc = "Recent Files", action = ":lua Snacks.dashboard.pick('oldfiles')" },
+            { icon = " ", key = "g", desc = "Find Text", action = ":lua Snacks.dashboard.pick('live_grep')" },
+            { icon = " ", key = "p", desc = "Projects", action = ":lua Snacks.picker.projects()" },
+            { icon = " ", key = "c", desc = "Config", action = ":e $MYVIMRC" },
+            { icon = " ", key = "q", desc = "Quit", action = ":qa" },
+          },
+        },
+        sections = {
+          { section = "header" },
+          { section = "keys", gap = 1, padding = 1 },
+          -- NB: no { section = "startup" } — that section pulls in lazy.stats,
+          -- which doesn't exist under vim.pack and throws, aborting the render.
+        },
+      },
       -- picker: fuzzy finder (replaced mini.pick + mini.extra + mini.visits).
       -- Telescope-style layout — narrow result list + preview pane — so grep
       -- hits show the matched line, not just long monorepo paths. ui_select

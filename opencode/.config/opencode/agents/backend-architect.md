@@ -1,4 +1,5 @@
 ---
+name: backend-architect
 description: "Design and plan backend features — data models, API contracts, database schemas, service architecture. Produces implementation plans for backend-coder. Read-only, no code changes. Validates approach against real codebase to catch coupling risks, stale assumptions, and edge cases. Skip only for pure configuration (adding an env var, enabling a flag) — not for endpoints, services, or anything involving data flow."
 model: opencode-go/glm-5.2
 mode: subagent

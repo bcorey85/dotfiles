@@ -1,4 +1,5 @@
 ---
+name: coder
 description: "Implement code in repos that aren't web-fullstack — CLI tools, scripts, libraries, infra, config. Same plan-following discipline as backend-coder/frontend-coder without the frontend/backend fence. Use when neither scope fits the repo."
 model: opencode-go/minimax-m3
 mode: subagent

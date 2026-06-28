@@ -1,4 +1,5 @@
 ---
+name: frontend-coder-deep
 description: "Opus variant of frontend-coder for `+deep` dispatches — complex implementations requiring deeper reasoning. Same instructions as frontend-coder; the only difference is the model pin."
 model: opencode-go/glm-5.2
 mode: subagent

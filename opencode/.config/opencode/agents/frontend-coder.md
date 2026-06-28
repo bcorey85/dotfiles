@@ -1,4 +1,5 @@
 ---
+name: frontend-coder
 description: "Implement frontend code from plans, specifications, or well-defined tasks — components, pages, state management, styling, and tests. Adapts to the project's stack via AGENTS.md. Use frontend-architect first for features needing design decisions, then hand the plan to this agent. Use this agent directly for simple tasks, bug fixes, or writing tests."
 model: opencode-go/minimax-m3
 mode: subagent

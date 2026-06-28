@@ -1,4 +1,5 @@
 ---
+name: qrspi-plan
 description: "Produce a tactical implementation plan from a completed task-directory artifact set (ticket, research, design, structure). Fleshes out per-phase file changes and testable success criteria using the project's real verification commands; writes the plan file and returns its path."
 model: opencode-go/minimax-m3
 mode: subagent

@@ -61,13 +61,21 @@ return {
           },
         },
       })
+      -- nvim-orgmode's singleton config (used by all internal modules) does NOT
+      -- pick up user's org_return_uses_meta_return. Patch it explicitly so
+      -- org_return() routes through meta_return for list continuation.
+      require("orgmode.config").mappings.org_return_uses_meta_return = true
     end,
   },
 
   {
     src = "nvim-orgmode/org-bullets.nvim",
     setup = function()
-      require("org-bullets").setup()
+      require("org-bullets").setup({
+        symbols = {
+          checkboxes = false,
+        },
+      })
       -- Concealment is what turns "** " into a single nested bullet and hides
       -- *bold*/_underline_ markers. orgmode + org-bullets both rely on it.
       vim.api.nvim_create_autocmd("FileType", {
@@ -76,9 +84,28 @@ return {
         callback = function()
           vim.opt_local.conceallevel = 1
           vim.opt_local.concealcursor = ""
-          -- @markup.list.checked has no foreground in doom-one, making checked [X] show as [ ]
-          vim.cmd("highlight @org.checkbox.checked guifg=#ff0000 guibg=NONE")
-          vim.cmd("highlight @markup.list.checked guifg=#ff0000 guibg=NONE")
+          -- <CR> in insert mode: continue list items only (skip headline handling
+          -- that meta_return would also do). Falls back to plain <CR> otherwise.
+          vim.keymap.set("i", "<CR>", function()
+            local line = vim.fn.getline(".")
+            local lnum = vim.fn.line(".")
+            local col = vim.fn.col(".")
+            local after_cursor = line:sub(col)
+            local at_end = after_cursor:match("^%s*$")
+            local on_list_item = line:match("^%s*[-+*]%s") ~= nil
+            if at_end and on_list_item then
+              local ok, result = pcall(function()
+                return require("orgmode").instance().org_mappings:meta_return()
+              end)
+              if ok and result then
+                return
+              end
+            end
+            vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "n", true)
+          end, { buffer = true, desc = "org cr (list only)" })
+          -- @markup.list.checked is undefined in doom-one; link so X inherits
+          -- the same Special (#a9a1e1) as the brackets via @org.checkbox.checked.
+          vim.api.nvim_set_hl(0, "@markup.list.checked", { link = "Special", default = true })
           -- <leader>nv adds [ ] to a plain list item or toggles an existing one
           vim.keymap.set("n", "<leader>nv", function()
             local line = vim.fn.getline(".")
@@ -88,7 +115,7 @@ return {
             end
             local status, after = rest:match("^%[([Xx -])%]%s?(.*)$")
             if status then
-              local new_status = status == "X" and " " or "X"
+              local new_status = (status == "X" or status == "x") and " " or "X"
               vim.fn.setline(".", prefix .. "[" .. new_status .. "] " .. after)
             else
               vim.fn.setline(".", prefix .. "[ ] " .. rest)

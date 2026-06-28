@@ -9,6 +9,11 @@
   "defaultThinkingLevel": "high",
   "hideThinkingBlock": true,
   "packages": [
-    "npm:pi-spark"
-  ]
+    "npm:pi-spark",
+    "npm:@gotgenes/pi-permission-system",
+    "npm:pi-subagents"
+  ],
+  "subagents": {
+    "disableBuiltins": true
+  }
 }

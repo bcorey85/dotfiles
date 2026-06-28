@@ -1,0 +1,50 @@
+{
+  "$schema": "https://raw.githubusercontent.com/gotgenes/pi-permission-system/main/schemas/permissions.schema.json",
+
+  "debugLog": false,
+  "permissionReviewLog": true,
+  "yoloMode": false,
+
+  "permission": {
+    "*": "allow",
+    "bash": {
+      "*": "allow",
+      "git add *": "ask",
+      "git commit *": "ask",
+      "git push *": "ask",
+      "git reset *": "ask",
+      "git checkout -- *": "ask",
+      "git clean *": "ask",
+      "git merge *": "ask",
+      "git rebase *": "ask",
+      "git rm *": "ask",
+      "git branch -D *": "ask",
+      "git stash drop *": "ask",
+      "git tag *": "ask",
+      "rm -rf *": "deny",
+      "sudo *": "ask",
+      "chmod 777 *": "deny",
+      "mv *": "ask"
+    },
+    "read": "allow",
+    "write": "ask",
+    "edit": "ask",
+    "path": {
+      "*": "allow",
+      "*.env": "deny",
+      "*.env.*": "deny",
+      "*.env.example": "allow",
+      "*.pem": "deny",
+      "*.key": "deny",
+      "*credentials.json": "deny",
+      "*service_account.json": "deny",
+      "**/.ssh/*": "deny",
+      "**/.aws/*": "deny",
+      "**/.kube/*": "deny",
+      "**/.git-credentials": "deny",
+      "~/.zshrc.local": "deny",
+      "~/.gitconfig.local": "deny"
+    },
+    "external_directory": "ask"
+  }
+}

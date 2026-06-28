@@ -4,8 +4,10 @@
 -- clocking, archiving, refile. Gaps vs Emacs: org-babel (code execution) and full
 -- export — neither is wired here.
 --
--- Org files live in ~/org (created by install/setup or on first capture), kept
--- separate from the markdown vault for full .org fidelity.
+-- Org files live in ~/vault/org — the same git repo as the markdown vault, so
+-- they share one remote/backup. They're excluded from Obsidian's index (see the
+-- vault's .obsidian/app.json) so the org "doing" layer stays out of the vault
+-- graph/search. (~/org is a symlink to ~/vault/org for shell muscle memory.)
 --
 -- Returns three specs as a list (pack.lua handles list-valued modules). Order
 -- matters: orgmode first (registers the org parser + filetype), then the two
@@ -22,8 +24,8 @@ return {
       --               refile/export — the `mappings.prefix` rebase below.
       -- (<leader>o is the snacks buffers picker, untouched.)
       require("orgmode").setup({
-        org_agenda_files = "~/org/**/*",
-        org_default_notes_file = "~/org/inbox.org",
+        org_agenda_files = "~/vault/org/**/*",
+        org_default_notes_file = "~/vault/org/inbox.org",
 
         -- Richer-than-default workflow states (the bit people rave about).
         -- (t)/(n)/... are fast-access keys when cycling with org_todo.
@@ -42,17 +44,17 @@ return {
           t = {
             description = "Todo",
             template = "* TODO %?\n  %u",
-            target = "~/org/inbox.org",
+            target = "~/vault/org/inbox.org",
           },
           n = {
             description = "Note",
             template = "* %?\n  %u",
-            target = "~/org/notes.org",
+            target = "~/vault/org/notes.org",
           },
           j = {
             description = "Journal",
             template = "\n*** %<%Y-%m-%d> %<%A>\n**** %U\n\n%?",
-            target = "~/org/journal.org",
+            target = "~/vault/org/journal.org",
           },
         },
 
@@ -84,10 +86,10 @@ return {
       nmap("<leader>nC", "clock.org_clock_cancel", "org: cancel clock")
       -- search / browse the org dir via the snacks picker
       vim.keymap.set("n", "<leader>ns", function()
-        require("snacks").picker.grep({ cwd = vim.fn.expand("~/org") })
+        require("snacks").picker.grep({ cwd = vim.fn.expand("~/vault/org") })
       end, { desc = "org: search notes" })
       vim.keymap.set("n", "<leader>nF", function()
-        require("snacks").picker.files({ cwd = vim.fn.expand("~/org") })
+        require("snacks").picker.files({ cwd = vim.fn.expand("~/vault/org") })
       end, { desc = "org: browse notes" })
     end,
   },

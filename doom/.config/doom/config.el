@@ -46,7 +46,7 @@
 (setq evil-escape-key-sequence "kk")
 
 ;;; ---------------------------------------------------------------------------
-;;; Look & feel — Catppuccin Mocha + JuliaMono (icon glyphs via Symbols Nerd
+;;; Look & feel — Rosé Pine Moon + JetBrainsMono (icon glyphs via Symbols Nerd
 ;;; Font Mono)
 ;;; ---------------------------------------------------------------------------
 
@@ -78,7 +78,7 @@
 ;; Rosé Pine Moon, with the OneDark-ish backgrounds ported from nvim (theme.lua):
 ;; the theme supplies the foreground palette (love/gold/foam/iris/pine), while we
 ;; force a uniform OneDark base #282c34 (no solaire two-tone) to match nvim/tmux.
-(setq doom-theme 'doom-rose-pine-moon)
+(setq doom-theme 'doom-one)
 
 ;; doom-rose-pine is a doom-themes theme, so it bakes colors into faces at load and
 ;; has no palette-setter (unlike catppuccin-set-color). So the OneDark bg is applied
@@ -96,7 +96,7 @@
 
 (add-hook 'doom-load-theme-hook #'+onedark-bg-apply)
 ;; live reload: theme is already loaded, so apply right away
-(when (memq 'doom-rose-pine-moon custom-enabled-themes) (+onedark-bg-apply))
+(when (memq 'doom-one custom-enabled-themes) (+onedark-bg-apply))
 
 ;; OneDark base #282c34 / current-line #2c313a. Repaint the core background faces
 ;; so the editing area, sidebars (solaire off), fringe, and gutter read as one flat
@@ -111,21 +111,21 @@
 
 (setq display-line-numbers-type 'relative)   ; matches nvim relativenumber
 
-;; The split divider ships near-invisible (Catppuccin sets its fg ~= the bg).
+;; The split divider ships near-invisible (rose-pine sets its fg ~= the bg).
 ;; Bump it to a mid gray that reads against the OneDark base #282c34 but stays
 ;; subtle. `vertical-border' is the 1-col line between side-by-side windows;
 ;; the window-divider faces cover Doom's thicker dividers if enabled.
-;; custom-set-faces! re-applies on every theme load, so the catppuccin reload
-;; in +catppuccin-apply above won't clobber it.
+;; custom-set-faces! re-applies on every theme load, so a live `doom/reload'
+;; won't clobber it.
 (custom-set-faces!
   '(vertical-border            :foreground "#5c6370")
   '(window-divider             :foreground "#5c6370")
   '(window-divider-first-pixel :foreground "#5c6370")
   '(window-divider-last-pixel  :foreground "#5c6370")
   ;; flycheck's wavy error underline defaults to pure Red1 (#FF0000) — too hot
-  ;; against the Mocha base. Soften to Catppuccin red, matching the echo-area
+  ;; against the OneDark base. Soften to rose-pine love, matching the echo-area
   ;; error message color so the two read as one signal. Keeps the wave style.
-  '(flycheck-error :underline (:style wave :color "#f38ba8")))
+  '(flycheck-error :underline (:style wave :color "#ff6c6b")))
 
 ;; Markdown — match the nvim render-markdown look. The theme paints every heading
 ;; level `love' (pink), bold comes out gold, and code blocks sit on rose-pine's
@@ -134,13 +134,13 @@
 ;; flatten code-block backgrounds onto the OneDark base. The header-face-N faces
 ;; inherit bold from `markdown-header-face', so a :foreground-only override keeps it.
 (custom-set-faces!
-  '(markdown-header-face-1 :foreground "#eb6f92")               ; love
-  '(markdown-header-face-2 :foreground "#9ccfd8")               ; foam
-  '(markdown-header-face-3 :foreground "#c4a7e7")               ; iris
-  '(markdown-header-face-4 :foreground "#f6c177")               ; gold
-  '(markdown-header-face-5 :foreground "#3e8fb0")               ; pine
-  '(markdown-header-face-6 :foreground "#ea9a97")               ; rose
-  '(markdown-bold-face     :inherit bold :foreground "#e0def4") ; text, not gold
+  '(markdown-header-face-1 :foreground "#ff6c6b")               ; love
+  '(markdown-header-face-2 :foreground "#51afef")               ; foam
+  '(markdown-header-face-3 :foreground "#c678dd")               ; iris
+  '(markdown-header-face-4 :foreground "#ECBE7B")               ; gold
+  '(markdown-header-face-5 :foreground "#98be65")               ; pine
+  '(markdown-header-face-6 :foreground "#da8548")               ; rose
+  '(markdown-bold-face     :inherit bold :foreground "#bbc2cf") ; text, not gold
   '(markdown-code-face     :background "#282c34")               ; inline `code`, flat
   '(markdown-pre-face      :background "#282c34"))              ; fenced ``` blocks, flat
 
@@ -460,14 +460,14 @@
 
 ;; THE actual reason TSX looked flat: tsx-ts-mode *does* face parameters, `const`
 ;; bindings, and imports — but all with `font-lock-variable-name-face`, which
-;; catppuccin-theme paints `text` (#cdd6f4 ≈ default fg), so they read as
+;; doom-rose-pine paints `text` (#bbc2cf ≈ default fg), so they read as
 ;; uncolored. nvim-treesitter avoids this by giving `@variable.parameter` its own
-;; maroon. Emacs's face set can't split param from binding (they share one face),
-;; so recolor that shared face to Catppuccin maroon — params and bindings now
-;; pop like nvim. custom-set-faces! re-applies on every theme load, so the
-;; +catppuccin-apply reload above won't clobber it.
+;; accent. Emacs's face set can't split param from binding (they share one face),
+;; so recolor that shared face to rose-pine rose — params and bindings now
+;; pop like nvim. custom-set-faces! re-applies on every theme load, so a live
+;; `doom/reload' won't clobber it.
 (custom-set-faces!
-  '(font-lock-variable-name-face :foreground "#eba0ac"))   ; Catppuccin Mocha maroon
+  '(font-lock-variable-name-face :foreground "#da8548"))   ; rose-pine rose
 
 ;;; ---------------------------------------------------------------------------
 ;;; Dired — oil.nvim muscle memory: `-` goes up a directory
@@ -508,8 +508,8 @@
 ;; Doom's `(syntax +childframe)' shows diagnostics in a `flycheck-posframe'
 ;; childframe — the nvim diagnostic-float equivalent, and it draws over the
 ;; window rather than reflowing buffer text. Its per-severity faces inherit
-;; `default' (= white under Catppuccin Mocha), so the ONLY fix needed is to
-;; recolor them: red error / yellow warn / lavender info — the same ladder the
+;; `default' (= white under doom-rose-pine), so the ONLY fix needed is to
+;; recolor them: love error / gold warn / iris info — the same ladder the
 ;; nvim diagnostics use (theme.lua). `set-face-attribute' in `after!' runs when
 ;; the package loads (custom-set-faces! can miss lazily-loaded faces).
 ;;
@@ -520,9 +520,9 @@
 ;; `lsp-ui-sideline-show-diagnostics' back to t above — it's width-agnostic
 ;; inline text rather than a floating frame.
 (after! flycheck-posframe
-  (set-face-attribute 'flycheck-posframe-error-face   nil :foreground "#f38ba8")
-  (set-face-attribute 'flycheck-posframe-warning-face nil :foreground "#f9e2af")
-  (set-face-attribute 'flycheck-posframe-info-face    nil :foreground "#b4befe"))
+  (set-face-attribute 'flycheck-posframe-error-face   nil :foreground "#ff6c6b")
+  (set-face-attribute 'flycheck-posframe-warning-face nil :foreground "#ECBE7B")
+  (set-face-attribute 'flycheck-posframe-info-face    nil :foreground "#c678dd"))
 
 ;; Red wavy underline under the whole offending expression. `flycheck-highlighting-mode'
 ;; keeps the region (with LSP end positions, that's the full call). The catch:
@@ -631,8 +631,8 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
   (setq diff-hl-highlight-reference-function 'diff-hl-highlight-on-fringe)
   ;; Fade the staged (reference) fringe signs. The default `diff-hl-reference-*'
   ;; faces inherit the bright working faces, so without this staged hunks look
-  ;; identical to unstaged. custom-set-faces! re-applies on theme load, so the
-  ;; catppuccin reload in +catppuccin-apply won't clobber the dim palette.
+  ;; identical to unstaged. custom-set-faces! re-applies on theme load, so a
+  ;; live `doom/reload' won't clobber the dim palette.
   ;; Hues track the line-wash faces below (#26402b / #48262b / #2b3650), bumped
   ;; brighter so the thin fringe bitmap stays legible on the #282c34 base.
   (custom-set-faces!
@@ -662,7 +662,7 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
 ;; Make ediff look like vim's :Gdiffsplit: red = old/removed (buffer A), green =
 ;; new/added (buffer B), BACKGROUND-ONLY so treesitter foreground shows through
 ;; instead of ediff's flat opaque "peach" wash. `nil' foreground = inherit the
-;; char's own syntax color. Catppuccin-ish reds/greens.
+;; char's own syntax color. Desaturated reds/greens.
 (custom-set-faces!
   '(ediff-current-diff-A :background "#48262b" :foreground nil :extend t)   ; removed line
   '(ediff-fine-diff-A    :background "#6e353d" :foreground nil)             ; exact removed text
@@ -695,7 +695,7 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
 ;; The +/- backgrounds: floor(diff*0.6 + base*0.4) per channel — the diffs.nvim
 ;; recipe (`lua/diffs/runtime/highlight_groups.lua`). Sources are catppuccin-nvim's
 ;; DiffAdd/DiffDelete bgs (#3f4d48 / #4d3d49) blended over the OneDark base
-;; (#282c34). Since the theme is fixed (Catppuccin Mocha + the OneDark base
+;; (#282c34). Since the theme is fixed (Rosé Pine Moon + the OneDark base
 ;; override above), the result is precomputed to static hex rather than derived
 ;; live from the `default' face — same colors, no blend function and no
 ;; theme-tracking hook to keep in sync. Recompute by hand only if the base bg
@@ -725,14 +725,14 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
 ;; (`magit-format-file-default`, magit-diff.el), so "modified"/"new file"/"deleted"
 ;; render flat white. neogit colors the keyword instead. Swap in a format function
 ;; that faces the leading status word per-status and leaves the filename alone.
-;;   modified → blue (NeogitChangeModified = bg_blue)
-;;   new file → green (Catppuccin green)
-;;   deleted  → red  (Catppuccin red)
-;;   renamed  → mauve
-(defface +magit-status-modified '((t :foreground "#89b4fa")) "Neogit-style modified keyword (blue).")
-(defface +magit-status-added    '((t :foreground "#a6e3a1")) "Neogit-style new-file keyword (green).")
-(defface +magit-status-removed  '((t :foreground "#f38ba8")) "Neogit-style deleted keyword (red).")
-(defface +magit-status-renamed  '((t :foreground "#cba6f7")) "Neogit-style renamed keyword (mauve).")
+;;   modified → foam (NeogitChangeModified)
+;;   new file → pine (rose-pine's green slot)
+;;   deleted  → love (red)
+;;   renamed  → iris
+(defface +magit-status-modified '((t :foreground "#51afef")) "Neogit-style modified keyword (foam).")
+(defface +magit-status-added    '((t :foreground "#98be65")) "Neogit-style new-file keyword (pine).")
+(defface +magit-status-removed  '((t :foreground "#ff6c6b")) "Neogit-style deleted keyword (love).")
+(defface +magit-status-renamed  '((t :foreground "#c678dd")) "Neogit-style renamed keyword (iris).")
 
 (defun +magit-format-file-neogit (_kind file face &optional status orig)
   "Like `magit-format-file-default` but color the leading status keyword."
@@ -810,31 +810,34 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
   (magit-add-section-hook 'magit-status-sections-hook
                           #'+magit-insert-untracked-files-with-content
                           #'magit-insert-untracked-files)   ; same position
-  (remove-hook 'magit-status-sections-hook #'magit-insert-untracked-files))
+  (remove-hook 'magit-status-sections-hook #'magit-insert-untracked-files)
+  ;; Magit truncates lines by default, so long messages/diffs run off-screen.
+  ;; Wrap them at the window edge instead.
+  (add-hook 'magit-mode-hook (lambda () (setq-local truncate-lines nil))))
 
 ;; Static magit/diff faces delta doesn't own (context, hunk headings, stat
 ;; numbers). The +/- hunk-body colors come from delta's --plus/--minus-style;
 ;; these cover the rest, and double as the fallback if magit-delta-mode is off.
 (custom-set-faces!
   '(magit-diff-context           :background nil      :foreground nil :extend t)
-  '(magit-diff-context-highlight :background "#313244" :foreground nil :extend t)
-  '(magit-diff-hunk-heading           :background "#313244" :foreground "#94e2d5" :extend t)
-  '(magit-diff-hunk-heading-highlight :background "#45475a" :foreground "#94e2d5" :extend t)
+  '(magit-diff-context-highlight :background "#31353f" :foreground nil :extend t)
+  '(magit-diff-hunk-heading           :background "#31353f" :foreground "#51afef" :extend t)
+  '(magit-diff-hunk-heading-highlight :background "#3e4451" :foreground "#51afef" :extend t)
   ;; +N/-M stat fringe (commit diffstat), not the file-row keywords above.
-  '(magit-diffstat-added   :foreground "#a6e3a1")
-  '(magit-diffstat-removed :foreground "#f38ba8"))
+  '(magit-diffstat-added   :foreground "#98be65")
+  '(magit-diffstat-removed :foreground "#ff6c6b"))
 
 ;; Word-level diff refinement is delegated to delta now (magit-diff-refine-hunk is
 ;; nil above), so these `diff-refine-added` / `diff-refine-removed` faces only show
-;; as the no-delta fallback. Catppuccin paints them BRIGHT saturated green/red;
+;; as the no-delta fallback. doom-rose-pine paints them BRIGHT saturated green/red;
 ;; override to a subtle bg-only emphasis (brighter than the line bg, same hue, no
 ;; FG flip) matching the nvim DiffText treatment (theme.lua :: `DiffText`).
 (custom-set-faces!
   '(diff-refine-added           :background "#2e5d3a" :foreground nil :extend t)
   '(diff-refine-removed         :background "#5d2e36" :foreground nil :extend t)
   ;; status-buffer section chrome
-  '(magit-section-highlight   :background "#313244" :foreground nil)
-  '(magit-section-heading     :foreground "#cba6f7" :weight bold))   ; mauve, matches NeogitSectionHeader
+  '(magit-section-highlight   :background "#31353f" :foreground nil)
+  '(magit-section-heading     :foreground "#c678dd" :weight bold))   ; iris, matches NeogitSectionHeader
 
 ;;; ---------------------------------------------------------------------------
 ;;; Claude Code — the cockpit centerpiece

@@ -5,7 +5,7 @@ return {
   -- .note / .api / .yaml) that cost a few ms on EVERY startup, but the plugin is
   -- only useful inside ~/vault. cond is evaluated in config.pack — when false the
   -- spec (and its setup, keymaps, completion wiring) is skipped entirely. Tradeoff:
-  -- the <leader>n* note commands only exist when nvim is launched from the vault.
+  -- the <leader>N* note commands only exist when nvim is launched from the vault.
   cond = function()
     return vim.startswith(vim.fs.normalize(vim.fn.getcwd()), vim.fs.normalize(vim.fn.expand("~/vault")))
   end,
@@ -65,22 +65,22 @@ return {
       end
     end
 
-    vim.keymap.set("n", "<leader>nn", function()
+    vim.keymap.set("n", "<leader>Nn", function()
       ensure_editable_win()
       vim.cmd("enew")
       vim.api.nvim_feedkeys(":Obsidian new ", "n", false)
     end, { desc = "New note" })
-    vim.keymap.set("n", "<leader>nN", function()
+    vim.keymap.set("n", "<leader>NN", function()
       ensure_editable_win()
       vim.cmd("Obsidian new_from_template")
     end, { desc = "New from template" })
-    vim.keymap.set("n", "<leader>no", "<cmd>Obsidian quick_switch<cr>", { desc = "Quick switch" })
-    vim.keymap.set("n", "<leader>nt", "<cmd>Obsidian template<cr>", { desc = "Insert template" })
-    vim.keymap.set("n", "<leader>nb", "<cmd>Obsidian backlinks<cr>", { desc = "Backlinks" })
-    vim.keymap.set("n", "<leader>ns", "<cmd>Obsidian search<cr>", { desc = "Search vault" })
-    vim.keymap.set("n", "<leader>nf", "<cmd>Obsidian follow_link<cr>", { desc = "Follow link" })
+    vim.keymap.set("n", "<leader>No", "<cmd>Obsidian quick_switch<cr>", { desc = "Quick switch" })
+    vim.keymap.set("n", "<leader>Nt", "<cmd>Obsidian template<cr>", { desc = "Insert template" })
+    vim.keymap.set("n", "<leader>Nb", "<cmd>Obsidian backlinks<cr>", { desc = "Backlinks" })
+    vim.keymap.set("n", "<leader>Ns", "<cmd>Obsidian search<cr>", { desc = "Search vault" })
+    vim.keymap.set("n", "<leader>Nf", "<cmd>Obsidian follow_link<cr>", { desc = "Follow link" })
 
-    vim.keymap.set("n", "<leader>nm", function()
+    vim.keymap.set("n", "<leader>Nm", function()
       local vault_root = tostring(Obsidian.dir)
 
       local src_buf = vim.api.nvim_get_current_buf()

@@ -1,0 +1,19 @@
+{
+  "presets": {
+    "fast": {
+      "provider": "opencode",
+      "model": "opencode-go/deepseek-v4-flash",
+      "thinkingLevel": "off"
+    },
+    "default": {
+      "provider": "opencode",
+      "model": "deepseek-v4-flash-free",
+      "thinkingLevel": "high"
+    },
+    "pro": {
+      "provider": "opencode",
+      "model": "opencode-go/deepseek-v4-pro",
+      "thinkingLevel": "high"
+    }
+  }
+}

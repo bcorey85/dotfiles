@@ -1,17 +1,17 @@
-# Rosé Pine Moon palette (OneDark BG)
-palette = "rose_pine_moon"
+# doom-one palette (Atom One Dark lineage)
+palette = "doom_one"
 
-[palettes.rose_pine_moon]
-red = "#eb6f92"
-orange = "#ea9a97"
-yellow = "#f6c177"
-green = "#3e8fb0"
-blue = "#9ccfd8"
-teal = "#9ccfd8"
-purple = "#c4a7e7"
-fg = "#e0def4"
+[palettes.doom_one]
+red = "#ff6c6b"
+orange = "#da8548"
+yellow = "#ECBE7B"
+green = "#98be65"
+blue = "#51afef"
+teal = "#4db5bd"
+purple = "#c678dd"
+fg = "#bbc2cf"
 bg = "#282c34"
-grey = "#6e6a86"
+grey = "#5B6268"
 
 format = """
 $directory\

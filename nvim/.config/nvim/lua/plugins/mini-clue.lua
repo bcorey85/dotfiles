@@ -36,7 +36,8 @@ return {
         { mode = { "n", "x" }, keys = "<Leader>g", desc = "+git" },
         { mode = { "n", "x" }, keys = "<Leader>gl", desc = "+list (forge)" },
         { mode = { "n", "x" }, keys = "<Leader>l", desc = "+lsp/quickfix" },
-        { mode = { "n", "x" }, keys = "<Leader>n", desc = "+notes (obsidian)" },
+        { mode = { "n", "x" }, keys = "<Leader>n", desc = "+org" },
+        { mode = { "n", "x" }, keys = "<Leader>N", desc = "+notes (obsidian)" },
         { mode = { "n", "x" }, keys = "<Leader>p", desc = "+project" },
         { mode = { "n", "x" }, keys = "<Leader>P", desc = "+plugins" },
         { mode = { "n", "x" }, keys = "<Leader>q", desc = "+quit/session" },
@@ -52,7 +53,7 @@ return {
       },
 
       window = {
-        delay = 500,
+        delay = 300,
         config = { width = "auto" },
       },
     })

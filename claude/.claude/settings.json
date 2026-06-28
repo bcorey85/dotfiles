@@ -284,6 +284,5 @@
   "effortLevel": "high",
   "tui": "fullscreen",
   "autoMemoryEnabled": false,
-  "skipAutoPermissionPrompt": true,
-  "tui": "fullscreen"
+  "skipAutoPermissionPrompt": true
 }

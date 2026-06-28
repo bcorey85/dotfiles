@@ -1,3 +1,6 @@
+# Local overrides (not in repo)
+[ -f ~/.zshrc.local ] && source ~/.zshrc.local
+
 # Auto-start tmux
 if command -v tmux &>/dev/null && [ -z "$TMUX" ] && [ -z "$INSIDE_EMACS" ]; then
   tmux new-session -A -s main

@@ -275,6 +275,26 @@ end, { desc = "Toggle rel numbers" })
 vim.keymap.set("n", "<leader>ud", function()
   vim.diagnostic.enable(not vim.diagnostic.is_enabled())
 end, { desc = "Toggle diagnostics" })
+-- Toggle LSP semantic tokens for this buffer. Off = no async "white→color flip"
+-- (tree-sitter only); on = type-accurate recoloring once the server responds.
+vim.keymap.set("n", "<leader>uh", function()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local enabled = vim.b[bufnr].semantic_tokens_enabled
+  if enabled == nil then
+    enabled = true
+  end
+  for _, client in ipairs(vim.lsp.get_clients({ bufnr = bufnr })) do
+    if client:supports_method("textDocument/semanticTokens/full") then
+      if enabled then
+        vim.lsp.semantic_tokens.stop(bufnr, client.id)
+      else
+        vim.lsp.semantic_tokens.start(bufnr, client.id)
+      end
+    end
+  end
+  vim.b[bufnr].semantic_tokens_enabled = not enabled
+  vim.notify("Semantic tokens: " .. (enabled and "off" or "on"))
+end, { desc = "Toggle semantic tokens" })
 
 -- ─── Quit ─────────────────────────────────────────────────────────────────────
 vim.keymap.set("n", "<leader>qq", "<cmd>qa<cr>", { desc = "Quit all" })

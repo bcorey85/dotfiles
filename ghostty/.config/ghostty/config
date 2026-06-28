@@ -1,40 +1,42 @@
 # Font — JetBrains Mono, chosen after an audition for its tall x-height and
 # sturdy weight (far less eye-strain than CommitMono for all-day reading).
 font-family = JetBrainsMono Nerd Font Mono
-font-size = 11.5
+font-style = SemiBold
+font-size = 11
 
 # Linux/FreeType only: disable light hinting (on by default in 1.3+) so glyph
 # stems render heavier — closest match to kitty's bolder text rendering, since
 # font-thicken is macOS-only. If still too light, use `font-style = Bold`.
 freetype-load-flags = no-light
 
-# Theme - Rosé Pine Moon (OneDark BG)
+# Theme - doom-one (Atom One Dark lineage)
 background = #282c34
-foreground = #e0def4
+foreground = #bbc2cf
 
-selection-foreground = #e0def4
-selection-background = #3b4252
+selection-foreground = #bbc2cf
+selection-background = #3f444a
 
-cursor-color = #e0def4
+cursor-color = #bbc2cf
 cursor-text = #282c34
 
-# Color palette
-palette = 0=#1b1f27
-palette = 1=#eb6f92
-palette = 2=#3e8fb0
-palette = 3=#f6c177
-palette = 4=#9ccfd8
-palette = 5=#c4a7e7
-palette = 6=#ea9a97
-palette = 7=#e0def4
-palette = 8=#6e6a86
-palette = 9=#eb6f92
-palette = 10=#3e8fb0
-palette = 11=#f6c177
-palette = 12=#9ccfd8
-palette = 13=#c4a7e7
-palette = 14=#ea9a97
-palette = 15=#e0def4
+# Color palette — doom-one's canonical ANSI mapping (matches doom-one.nvim's
+# terminal_colors), so tmux/nvim/shell read identically.
+palette = 0=#1c1f24
+palette = 1=#ff6c6b
+palette = 2=#98be65
+palette = 3=#ECBE7B
+palette = 4=#51afef
+palette = 5=#c678dd
+palette = 6=#46D9FF
+palette = 7=#bbc2cf
+palette = 8=#5B6268
+palette = 9=#ff6c6b
+palette = 10=#98be65
+palette = 11=#ECBE7B
+palette = 12=#51afef
+palette = 13=#c678dd
+palette = 14=#46D9FF
+palette = 15=#DFDFDF
 
 # Window
 window-padding-x = 4

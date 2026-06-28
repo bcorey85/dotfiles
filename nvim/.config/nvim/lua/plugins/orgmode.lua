@@ -76,6 +76,9 @@ return {
         callback = function()
           vim.opt_local.conceallevel = 1
           vim.opt_local.concealcursor = ""
+          -- @markup.list.checked has no foreground in doom-one, making checked [X] show as [ ]
+          vim.cmd("highlight @org.checkbox.checked guifg=#ff0000 guibg=NONE")
+          vim.cmd("highlight @markup.list.checked guifg=#ff0000 guibg=NONE")
           -- <leader>nv adds [ ] to a plain list item or toggles an existing one
           vim.keymap.set("n", "<leader>nv", function()
             local line = vim.fn.getline(".")

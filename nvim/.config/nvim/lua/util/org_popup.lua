@@ -91,12 +91,13 @@ function M.capture(shortcut)
   end)
 end
 
-function M.agenda()
+-- Open an agenda-family view (agenda.agenda / agenda.todos / agenda.tags / ...)
+-- fullscreen in the popup. Note: org's own `q` does nvim_win_close on the
+-- current window, which can't close the LAST window — so in a single-window
+-- popup it silently does nothing. We override `q` in the agenda buffer to quit
+-- the whole popup instead. (Safe: you don't record macros in the agenda.)
+local function open_agenda_view(action)
   quiet_throwaway()
-  -- Fullscreen single window. Note: org's own `q` does nvim_win_close on the
-  -- current window, which can't close the LAST window — so in a single-window
-  -- popup it silently does nothing. We override `q` in the agenda buffer to quit
-  -- the whole popup instead. (Safe: you don't record macros in the agenda.)
   require("orgmode.config").opts.win_split_mode = "edit"
 
   vim.api.nvim_create_autocmd("FileType", {
@@ -112,8 +113,16 @@ function M.agenda()
   })
 
   vim.schedule(function()
-    require("orgmode").action("agenda.agenda")
+    require("orgmode").action(action)
   end)
+end
+
+function M.agenda()
+  open_agenda_view("agenda.agenda")
+end
+
+function M.todos()
+  open_agenda_view("agenda.todos")
 end
 
 return M

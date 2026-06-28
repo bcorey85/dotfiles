@@ -14,10 +14,13 @@ return {
   {
     src = "nvim-orgmode/orgmode",
     setup = function()
-  -- Doom Emacs convention: SPC n = org mode. The <leader>o leaf is the snacks
-  -- buffers picker (see plugins/snacks.lua), so no conflict there. `prefix`
-  -- rebases the in-buffer org_* maps; the two global entry points have
-  -- explicit lhs and are moved alongside it.
+      -- Doom layout, split across two prefixes (the same split Doom uses):
+      --   <leader>n = GLOBAL notes (Doom SPC n): agenda/capture/todos/tags/
+      --               clock/search — reachable everywhere, defined as keymaps
+      --               below (+ org_agenda/org_capture via mappings.global).
+      --   <leader>m = org-buffer localleader (Doom SPC m): todo/schedule/clock/
+      --               refile/export — the `mappings.prefix` rebase below.
+      -- (<leader>o is the snacks buffers picker, untouched.)
       require("orgmode").setup({
         org_agenda_files = "~/org/**/*",
         org_default_notes_file = "~/org/inbox.org",
@@ -54,7 +57,7 @@ return {
         },
 
         mappings = {
-          prefix = "<leader>n",
+          prefix = "<leader>m",
           global = {
             org_agenda = "<leader>na",
             org_capture = "<leader>nc",
@@ -65,6 +68,27 @@ return {
       -- pick up user's org_return_uses_meta_return. Patch it explicitly so
       -- org_return() routes through meta_return for list continuation.
       require("orgmode.config").mappings.org_return_uses_meta_return = true
+
+      -- Global "notes" entry points (Doom SPC n): reachable from any buffer, not
+      -- just inside org files (those use <leader>m above). agenda/capture are
+      -- already bound via mappings.global; these add the rest of the SPC n menu.
+      local function nmap(lhs, action, desc)
+        vim.keymap.set("n", lhs, function()
+          require("orgmode").action(action)
+        end, { desc = desc })
+      end
+      nmap("<leader>nt", "agenda.todos", "org: todo list")
+      nmap("<leader>nm", "agenda.tags", "org: tags search")
+      nmap("<leader>nS", "agenda.search", "org: search agenda headlines")
+      nmap("<leader>no", "clock.org_clock_goto", "org: goto active clock")
+      nmap("<leader>nC", "clock.org_clock_cancel", "org: cancel clock")
+      -- search / browse the org dir via the snacks picker
+      vim.keymap.set("n", "<leader>ns", function()
+        require("snacks").picker.grep({ cwd = vim.fn.expand("~/org") })
+      end, { desc = "org: search notes" })
+      vim.keymap.set("n", "<leader>nF", function()
+        require("snacks").picker.files({ cwd = vim.fn.expand("~/org") })
+      end, { desc = "org: browse notes" })
     end,
   },
 
@@ -95,8 +119,8 @@ return {
             end
             vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "n", true)
           end, { buffer = true, desc = "org cr (list only)" })
-          -- <leader>nv adds [ ] to a plain list item or toggles an existing one
-          vim.keymap.set("n", "<leader>nv", function()
+          -- <leader>mv adds [ ] to a plain list item or toggles an existing one
+          vim.keymap.set("n", "<leader>mv", function()
             local line = vim.fn.getline(".")
             local prefix, rest = line:match("^(%s*[-+*]%s)(.*)$")
             if not prefix then

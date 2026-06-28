@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# org-popup — drive nvim-orgmode capture / agenda from a throwaway nvim, meant to
+# run inside a tmux display-popup so org is reachable from ANY pane (mid-shell,
+# not just when you're already in nvim).
+#
+# Usage:
+#   org-popup capture        # capture menu — pick a template (t=todo n=note j=journal)
+#   org-popup capture t       # straight to one template, skipping the menu
+#   org-popup agenda          # open the agenda view
+#   org-popup todos           # open the global TODO list view
+#
+# All the nvim-side logic (single-window layout, insert-mode <C-c> finalize,
+# auto-close on finalize/kill/quit, menu-abort handling) lives in the Lua module
+# lua/util/org_popup.lua, loaded from the user's normal config.
+set -euo pipefail
+
+mode="${1:-capture}"
+
+# Tell persistence.nvim (and the smart-splits guard) this is a throwaway nvim:
+# don't auto-restore the cwd session into the popup or autosave over it. Mirrors
+# the NEOGIT_POPUP / GIT_QF_POPUP flags those specs already honor.
+export ORG_POPUP=1
+
+case "$mode" in
+  capture)
+    tpl="${2:-}"
+    if [ -n "$tpl" ]; then
+      case "$tpl" in t | n | j) ;; *)
+        echo "org-popup: unknown template '$tpl' (expected t|n|j)" >&2
+        exit 1
+        ;;
+      esac
+    fi
+    exec nvim -c "lua require('util.org_popup').capture('$tpl')"
+    ;;
+  agenda)
+    exec nvim -c "lua require('util.org_popup').agenda()"
+    ;;
+  todos)
+    exec nvim -c "lua require('util.org_popup').todos()"
+    ;;
+  *)
+    echo "org-popup: unknown mode '$mode' (expected: capture | agenda | todos)" >&2
+    exit 1
+    ;;
+esac

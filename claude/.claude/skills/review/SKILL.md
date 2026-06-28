@@ -79,7 +79,14 @@ Review recent changes in this codebase using the code-reviewer subagent.
 
    - **Execution gate (before declaring convergence)**: A reviewer PASS is an opinion; a passing check run is evidence. Before treating the loop as converged, verify the evidence link: if the handoff's `tests-run` shows a real command with exit 0, accept it. If it is "none", missing, or has no exit code while code changed: run the project's quality-check command (from project CLAUDE.md, e.g. `npm run validate`) ONCE, redirected to `/tmp/review-gate.log`. Exit 0 → proceed. Non-zero → the failures are ground truth: treat them as CRITICAL findings and route into the severity gating above. Never skip this because the review "looked clean" — model approval without executed evidence is the loop's weakest exit, and this gate is what makes convergence mean something.
 
-   - **If all clear on the auto-fix gate (no CRITICAL or HIGH issues remain)**: The convergence loop is done. Now triage MEDIUMs as a follow-up:
+   - **If all clear on the auto-fix gate (no CRITICAL or HIGH issues remain)**: The convergence loop is done.
+
+     - **Test-intent audit (conditional, one-shot)**: If the review scope (`handoff.files` or git discovery) contains any **test files**, dispatch ONE `test-intent-reviewer` subagent (omit `model` — its frontmatter pins Opus; call-site `model: "opus"` is hook-blocked). This is the decorrelated check that a `code-reviewer` PASS cannot give: it judges whether the changed assertions pin _intended_ behavior or merely snapshot the now-blessed implementation (a bug-pinning test). Pass it the changed test files + their source-under-test, and any intent context available in args (ticket/plan path, conversation). It self-resolves the intent oracle via `qrspi-resolve-dir.sh`. Run it **once here only** — never per loop iteration, and skip entirely when no test files changed. Route its findings into the same fix/skip/ask buckets as the MEDIUM triage below:
+       - **BUG-PINNING (spec-backed)** → treat as a **fix** item (bundle into the one-shot `/fix`). The fix corrects whichever of {test, code} the oracle says is wrong — often the code.
+       - **BUG-PINNING / derived-low-confidence**, **UNVERIFIABLE (spec gaps)**, and the **"Derived intent — confirm"** block → **ask** items. Present to the user; do not auto-fix against a weak or absent oracle.
+       - If `test-intent-reviewer` returns exit 3 (multiple spec dirs) or asks which directory, relay that to the user.
+
+     Now triage MEDIUMs as a follow-up:
      - **If MEDIUM items exist**: The main agent (caller of this skill) must triage each MEDIUM with explicit judgment. For every MEDIUM, classify it as:
        - **fix** — clear win, safe to auto-apply (e.g. missing null check, obvious dead code, real but non-blocking bug)
        - **skip** — false positive, intentional choice, stylistic noise, or out-of-scope for this change
@@ -102,10 +109,10 @@ Review recent changes in this codebase using the code-reviewer subagent.
 6. **Log the run** (every invocation, including oneshot — this is the loop's flywheel):
 
    ```bash
-   bash "${CLAUDE_SKILL_DIR}/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" iter=<N|oneshot> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> skipped_fp=<n> ask=<n> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
+   bash "${CLAUDE_SKILL_DIR}/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" iter=<N|oneshot> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> skipped_fp=<n> ask=<n> test_intent=<n> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
    ```
 
-   `fixed`/`skipped_fp`/`ask` are the MEDIUM-triage bucket counts when triage ran, else 0. The JSONL at `~/.claude/review-metrics.jsonl` accumulates the convergence distribution and false-positive rate (`skipped_fp` fraction) — the evidence base for tuning the reviewer's calibration and the iter cap. Recurring `skipped_fp` patterns are evidence for refining the reviewer's "Do NOT Flag" list.
+   `fixed`/`skipped_fp`/`ask` are the MEDIUM-triage bucket counts when triage ran, else 0. `test_intent` is the count of bug-pinning/unverifiable findings from the `test-intent-reviewer` (0 when it didn't run). The JSONL at `~/.claude/review-metrics.jsonl` accumulates the convergence distribution and false-positive rate (`skipped_fp` fraction) — the evidence base for tuning the reviewer's calibration and the iter cap. Recurring `skipped_fp` patterns are evidence for refining the reviewer's "Do NOT Flag" list.
 
 When invoked from `/code` or `/fix`, args may contain a handoff block. Canonical schema:
 

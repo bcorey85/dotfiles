@@ -4,8 +4,10 @@
 -- clocking, archiving, refile. Gaps vs Emacs: org-babel (code execution) and full
 -- export — neither is wired here.
 --
--- Org files live in ~/org (created by install/setup or on first capture), kept
--- separate from the markdown vault for full .org fidelity.
+-- Org files live in ~/vault/org — the same git repo as the markdown vault, so
+-- they share one remote/backup. They're excluded from Obsidian's index (see the
+-- vault's .obsidian/app.json) so the org "doing" layer stays out of the vault
+-- graph/search. (~/org is a symlink to ~/vault/org for shell muscle memory.)
 --
 -- Returns three specs as a list (pack.lua handles list-valued modules). Order
 -- matters: orgmode first (registers the org parser + filetype), then the two
@@ -14,13 +16,16 @@ return {
   {
     src = "nvim-orgmode/orgmode",
     setup = function()
-  -- Doom Emacs convention: SPC n = org mode. The <leader>o leaf is the snacks
-  -- buffers picker (see plugins/snacks.lua), so no conflict there. `prefix`
-  -- rebases the in-buffer org_* maps; the two global entry points have
-  -- explicit lhs and are moved alongside it.
+      -- Doom layout, split across two prefixes (the same split Doom uses):
+      --   <leader>n = GLOBAL notes (Doom SPC n): agenda/capture/todos/tags/
+      --               clock/search — reachable everywhere, defined as keymaps
+      --               below (+ org_agenda/org_capture via mappings.global).
+      --   <leader>m = org-buffer localleader (Doom SPC m): todo/schedule/clock/
+      --               refile/export — the `mappings.prefix` rebase below.
+      -- (<leader>o is the snacks buffers picker, untouched.)
       require("orgmode").setup({
-        org_agenda_files = "~/org/**/*",
-        org_default_notes_file = "~/org/inbox.org",
+        org_agenda_files = "~/vault/org/**/*",
+        org_default_notes_file = "~/vault/org/inbox.org",
 
         -- Richer-than-default workflow states (the bit people rave about).
         -- (t)/(n)/... are fast-access keys when cycling with org_todo.
@@ -39,22 +44,22 @@ return {
           t = {
             description = "Todo",
             template = "* TODO %?\n  %u",
-            target = "~/org/inbox.org",
+            target = "~/vault/org/inbox.org",
           },
           n = {
             description = "Note",
             template = "* %?\n  %u",
-            target = "~/org/notes.org",
+            target = "~/vault/org/notes.org",
           },
           j = {
             description = "Journal",
             template = "\n*** %<%Y-%m-%d> %<%A>\n**** %U\n\n%?",
-            target = "~/org/journal.org",
+            target = "~/vault/org/journal.org",
           },
         },
 
         mappings = {
-          prefix = "<leader>n",
+          prefix = "<leader>m",
           global = {
             org_agenda = "<leader>na",
             org_capture = "<leader>nc",
@@ -65,6 +70,27 @@ return {
       -- pick up user's org_return_uses_meta_return. Patch it explicitly so
       -- org_return() routes through meta_return for list continuation.
       require("orgmode.config").mappings.org_return_uses_meta_return = true
+
+      -- Global "notes" entry points (Doom SPC n): reachable from any buffer, not
+      -- just inside org files (those use <leader>m above). agenda/capture are
+      -- already bound via mappings.global; these add the rest of the SPC n menu.
+      local function nmap(lhs, action, desc)
+        vim.keymap.set("n", lhs, function()
+          require("orgmode").action(action)
+        end, { desc = desc })
+      end
+      nmap("<leader>nt", "agenda.todos", "org: todo list")
+      nmap("<leader>nm", "agenda.tags", "org: tags search")
+      nmap("<leader>nS", "agenda.search", "org: search agenda headlines")
+      nmap("<leader>no", "clock.org_clock_goto", "org: goto active clock")
+      nmap("<leader>nC", "clock.org_clock_cancel", "org: cancel clock")
+      -- search / browse the org dir via the snacks picker
+      vim.keymap.set("n", "<leader>ns", function()
+        require("snacks").picker.grep({ cwd = vim.fn.expand("~/vault/org") })
+      end, { desc = "org: search notes" })
+      vim.keymap.set("n", "<leader>nF", function()
+        require("snacks").picker.files({ cwd = vim.fn.expand("~/vault/org") })
+      end, { desc = "org: browse notes" })
     end,
   },
 
@@ -84,30 +110,19 @@ return {
         callback = function()
           vim.opt_local.conceallevel = 1
           vim.opt_local.concealcursor = ""
-          -- <CR> in insert mode: continue list items only (skip headline handling
-          -- that meta_return would also do). Falls back to plain <CR> otherwise.
+          -- <CR> in insert mode continues list items via orgmode's meta_return
+          -- (listitem nodes only — headlines excluded to avoid spurious * headings).
           vim.keymap.set("i", "<CR>", function()
-            local line = vim.fn.getline(".")
-            local lnum = vim.fn.line(".")
-            local col = vim.fn.col(".")
-            local after_cursor = line:sub(col)
-            local at_end = after_cursor:match("^%s*$")
-            local on_list_item = line:match("^%s*[-+*]%s") ~= nil
-            if at_end and on_list_item then
-              local ok, result = pcall(function()
-                return require("orgmode").instance().org_mappings:meta_return()
-              end)
-              if ok and result then
-                return
-              end
+            local ts_utils = require("orgmode.utils.treesitter")
+            local node = ts_utils.get_node_at_cursor()
+            local closest = ts_utils.closest_node(node, "listitem")
+            if closest then
+              return require("orgmode").instance().org_mappings:meta_return()
             end
             vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "n", true)
           end, { buffer = true, desc = "org cr (list only)" })
-          -- @markup.list.checked is undefined in doom-one; link so X inherits
-          -- the same Special (#a9a1e1) as the brackets via @org.checkbox.checked.
-          vim.api.nvim_set_hl(0, "@markup.list.checked", { link = "Special", default = true })
-          -- <leader>nv adds [ ] to a plain list item or toggles an existing one
-          vim.keymap.set("n", "<leader>nv", function()
+          -- <leader>mv adds [ ] to a plain list item or toggles an existing one
+          vim.keymap.set("n", "<leader>mv", function()
             local line = vim.fn.getline(".")
             local prefix, rest = line:match("^(%s*[-+*]%s)(.*)$")
             if not prefix then

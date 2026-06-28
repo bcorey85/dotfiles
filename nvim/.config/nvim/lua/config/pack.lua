@@ -57,6 +57,7 @@ local plugin_order = {
   "conform",
   "nvim-lint",
   "harpoon",
+  "persistence", -- session save/restore (per cwd+branch) — the sessionizer "always there" loop
   "aerial", -- code outline / symbol tree sidebar — after treesitter + lspconfig
   "tiny-inline-diagnostic", -- inline diagnostic render (virtual_text off in config.lsp)
   "quicker", -- quickfix/loclist (replaces trouble)
@@ -64,6 +65,7 @@ local plugin_order = {
   "undotree", -- visual undo history navigator
   "sleuth", -- auto-detect shiftwidth/expandtab per buffer
   "obsidian",
+  "orgmode", -- org-mode (engine + org-bullets + headlines) — after treesitter
   "markview",
   "dirtytalk", -- programming spellcheck dictionary (en + programming spelllang)
   "tiny-cmdline",

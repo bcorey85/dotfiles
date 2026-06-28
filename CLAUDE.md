@@ -34,7 +34,7 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 | `claude`    | `~/.claude/`                                                  | Agents, commands, settings, hooks                                                                                        |
 | `opencode`  | `~/.config/opencode/`                                         | Global config (`opencode.jsonc`), `AGENTS.md` global rules, `agents/` ported from claude. Auto-loads `~/.claude/skills/` |
 | `aerospace` | `~/.config/aerospace/`                                        | macOS tiling WM. Workspaces 1-9 pinned to external monitor, built-in screen dedicated to Teams (mac only)                |
-| `kitty`     | `~/.config/kitty/`                                            | Catppuccin Mocha (OneDark BG)                                                                                            |
+| `kitty`     | `~/.config/kitty/`                                            | doom-one (Atom One Dark)                                                                                                 |
 | `starship`  | `~/.config/starship.toml`                                     | Gruvbox Material prompt                                                                                                  |
 | `kanata`    | `~/kanata-config.kbd`, `~/kanata-setup`, `~/kanata-setup-mac` | Keyboard remapping. Linux: systemd service (`kanata-setup`). macOS: launchd + Karabiner driver (`kanata-setup-mac`)      |
 | `scripts`   | `~/.local/bin/`                                               | tmux-sessionizer, dev utilities                                                                                          |
@@ -51,7 +51,7 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 
 ## Key Conventions
 
-- **Theme**: Rosé Pine Moon (OneDark BG) everywhere — the rose-pine palette (love/gold/rose/pine/foam/iris) with OneDark neutral backgrounds (`#282c34` base, `#1b1f27` darkest) swapped in for rose-pine's purple-tinted surfaces (kitty, ghostty, starship, neovim, tmux, waybar, rofi, dunst, hyprlock)
+- **Theme**: doom-one (Atom One Dark lineage) everywhere — the native One Dark palette on its native `#282c34` base (red `#ff6c6b`, green `#98be65`, yellow `#ECBE7B`, blue `#51afef` primary accent, magenta `#c678dd`, cyan `#46D9FF`, fg `#bbc2cf`, muted `#5B6268`, borders `#3f444a`) across kitty, ghostty, starship, neovim, tmux, waybar, rofi, dunst, hyprlock. nvim uses `NTBBloodbath/doom-one.nvim`. (Note: `btop` and the GTK/Qt app theme are on Sonokai-Maia — a separate theme, not part of this set.)
 - **Font**: JetBrainsMono Nerd Font Mono, 11.5pt (ghostty + kitty)
 - **Platform guards**: Use `command -v <tool> &>/dev/null &&` before tool-specific init (see .zshrc)
 - **Install scripts**: All use the same color output pattern (`print_success`, `print_error`, `print_info`) with `set -e`

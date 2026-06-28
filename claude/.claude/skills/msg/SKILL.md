@@ -1,6 +1,6 @@
 ---
 name: msg
-description: Send or receive messages between Claude agents running in separate repos' tmux sessions. Verbs — send <repo> <message>: deliver a message to another agent's inbox; read [repo]: fetch and consume the current inbox (triggers on "check my inbox", "any messages", "what's in my inbox"); peek [repo]: inspect without consuming; list: show all inboxes with pending mail. Also triggers on "tell <repo>", "message <repo>", "ask <repo>", "send <repo>". Works for questions and statements alike. Messages travel via tmux named buffers — no network, no files.
+description: "Send or receive messages between Claude agents running in separate repos' tmux sessions. Verbs — send <repo> <message>: deliver a message to another agent's inbox; read [repo]: fetch and consume the current inbox (triggers on \"check my inbox\", \"any messages\", \"what's in my inbox\"); peek [repo]: inspect without consuming; list: show all inboxes with pending mail. Also triggers on \"tell <repo>\", \"message <repo>\", \"ask <repo>\", \"send <repo>\". Works for questions and statements alike. Messages travel via tmux named buffers — no network, no files."
 argument-hint: "<send|read|peek|list> [repo] [message...]"
 allowed-tools: Bash(bash:*)
 ---

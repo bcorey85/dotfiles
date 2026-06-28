@@ -1,6 +1,6 @@
 ---
 name: eng-arch
-description: Generate or update system architecture docs — auto-detects subsystems, runs architect agents, diff+merge existing docs. Modifiers: be/fe/fs, +quick, +deep.
+description: "Generate or update system architecture docs — auto-detects subsystems, runs architect agents, diff+merge existing docs. Modifiers: be/fe/fs, +quick, +deep."
 allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, Task, AskUserQuestion]
 ---
 

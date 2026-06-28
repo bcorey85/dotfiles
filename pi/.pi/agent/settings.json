@@ -1,0 +1,14 @@
+{
+  "skills": [
+    "~/.claude/skills"
+  ],
+  "lastChangelogVersion": "0.80.2",
+  "theme": "dark",
+  "defaultProvider": "opencode",
+  "defaultModel": "deepseek-v4-flash-free",
+  "defaultThinkingLevel": "high",
+  "hideThinkingBlock": true,
+  "packages": [
+    "npm:pi-spark"
+  ]
+}

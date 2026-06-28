@@ -11,9 +11,14 @@
   "packages": [
     "npm:pi-spark",
     "npm:@gotgenes/pi-permission-system",
-    "npm:pi-subagents"
+    "npm:pi-subagents",
+    "npm:pi-questionnaire",
+    "npm:pi-lens",
+    "npm:pi-powerline-footer",
+    "npm:pi-cmux"
   ],
   "subagents": {
     "disableBuiltins": true
-  }
+  },
+  "workingVibe": "star trek"
 }

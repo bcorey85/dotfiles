@@ -84,28 +84,17 @@ return {
         callback = function()
           vim.opt_local.conceallevel = 1
           vim.opt_local.concealcursor = ""
-          -- <CR> in insert mode: continue list items only (skip headline handling
-          -- that meta_return would also do). Falls back to plain <CR> otherwise.
+          -- <CR> in insert mode continues list items via orgmode's meta_return
+          -- (listitem nodes only — headlines excluded to avoid spurious * headings).
           vim.keymap.set("i", "<CR>", function()
-            local line = vim.fn.getline(".")
-            local lnum = vim.fn.line(".")
-            local col = vim.fn.col(".")
-            local after_cursor = line:sub(col)
-            local at_end = after_cursor:match("^%s*$")
-            local on_list_item = line:match("^%s*[-+*]%s") ~= nil
-            if at_end and on_list_item then
-              local ok, result = pcall(function()
-                return require("orgmode").instance().org_mappings:meta_return()
-              end)
-              if ok and result then
-                return
-              end
+            local ts_utils = require("orgmode.utils.treesitter")
+            local node = ts_utils.get_node_at_cursor()
+            local closest = ts_utils.closest_node(node, "listitem")
+            if closest then
+              return require("orgmode").instance().org_mappings:meta_return()
             end
             vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "n", true)
           end, { buffer = true, desc = "org cr (list only)" })
-          -- @markup.list.checked is undefined in doom-one; link so X inherits
-          -- the same Special (#a9a1e1) as the brackets via @org.checkbox.checked.
-          vim.api.nvim_set_hl(0, "@markup.list.checked", { link = "Special", default = true })
           -- <leader>nv adds [ ] to a plain list item or toggles an existing one
           vim.keymap.set("n", "<leader>nv", function()
             local line = vim.fn.getline(".")

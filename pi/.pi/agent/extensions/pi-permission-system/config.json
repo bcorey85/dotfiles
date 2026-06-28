@@ -32,18 +32,27 @@
     "path": {
       "*": "allow",
       "*.env": "deny",
+      ".env": "deny",
+      "**/.env": "deny",
+      "**/*.env": "deny",
       "*.env.*": "deny",
-      "*.env.example": "allow",
+      "**/*.env.*": "deny",
       "*.pem": "deny",
+      "**/*.pem": "deny",
       "*.key": "deny",
+      "**/*.key": "deny",
       "*credentials.json": "deny",
+      "**/*credentials.json": "deny",
       "*service_account.json": "deny",
+      "**/*service_account.json": "deny",
       "**/.ssh/*": "deny",
       "**/.aws/*": "deny",
       "**/.kube/*": "deny",
       "**/.git-credentials": "deny",
       "~/.zshrc.local": "deny",
-      "~/.gitconfig.local": "deny"
+      "~/.gitconfig.local": "deny",
+      "*.env.example": "allow",
+      "**/*.env.example": "allow"
     },
     "external_directory": "ask"
   }

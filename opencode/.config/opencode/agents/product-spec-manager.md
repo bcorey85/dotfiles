@@ -1,4 +1,5 @@
 ---
+name: product-spec-manager
 description: "Analyze the application from a product perspective. Create and maintain product spec documents in the project's product-specs/ directory. Identifies feature gaps and ensures alignment with product goals. Use when documenting product vision, evaluating feature fit, conducting gap analysis, or prioritizing what to build next."
 model: opencode-go/glm-5.2
 mode: subagent

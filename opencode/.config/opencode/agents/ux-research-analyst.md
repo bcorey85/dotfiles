@@ -1,4 +1,5 @@
 ---
+name: ux-research-analyst
 description: "Evaluate application usability and produce actionable UX recommendations for engineers. Read-only — does not modify code. Use when reviewing UX before release, identifying feature gaps, analyzing user flows for pain points, or translating usability research into engineering specs."
 model: opencode-go/glm-5.2
 mode: subagent

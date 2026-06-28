@@ -1,4 +1,5 @@
 ---
+name: qrspi-research
 description: "Answer a numbered list of codebase questions with strictly factual documentation — what exists, how it works, where it lives, with file:line references. Sees only the questions file and declines any other task context. Writes the findings document into the task directory and returns its path."
 model: opencode-go/minimax-m3
 mode: subagent

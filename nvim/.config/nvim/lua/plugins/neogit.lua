@@ -191,6 +191,35 @@ return {
       Snacks.picker.git_log_file()
     end, "Log (current file)")
 
+    -- Neogit buffers are special (non-listed, buftype=acwrite/nofile) and bind
+    -- their keys buffer-local with `nowait=true` (lib/buffer.lua). Two knock-on
+    -- effects, both fixed here on the Neogit* FileType:
+    --
+    --   1. wrap — global `wrap` is off (options.lua), so diffs in the status and
+    --      commit views overflow off-screen. Force it back on per-window.
+    --   2. <leader> maps — mini.clue only auto-installs its <Leader> trigger in
+    --      listed buffers, so it never lands in Neogit's. Without the trigger,
+    --      <space> is swallowed and the next keys hit Neogit's nowait maps
+    --      directly (u→Unstage, w→WorktreePopup), eating e.g. <leader>uw.
+    --      MiniClue.ensure_buf_triggers() re-installs the trigger buffer-local
+    --      (mini.clue docs :: "Triggers in special buffers"). vim.schedule defers
+    --      it past Neogit's own mapping setup so the trigger wins precedence.
+    vim.api.nvim_create_autocmd("FileType", {
+      group = vim.api.nvim_create_augroup("neogit-wrap-and-clue", { clear = true }),
+      pattern = "Neogit*",
+      callback = function(ev)
+        vim.wo.wrap = true
+        vim.wo.linebreak = false
+        vim.wo.breakindent = true
+        vim.schedule(function()
+          local ok, miniclue = pcall(require, "mini.clue")
+          if ok and vim.api.nvim_buf_is_valid(ev.buf) then
+            miniclue.ensure_buf_triggers(ev.buf)
+          end
+        end)
+      end,
+    })
+
     -- <leader>gr — open the current branch's PR on GitHub, or start one if
     -- none exists. Pure vim.system / gh call — independent of any git plugin.
     map("<leader>gr", function()

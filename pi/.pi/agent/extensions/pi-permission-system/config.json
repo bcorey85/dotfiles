@@ -27,8 +27,8 @@
       "mv *": "ask"
     },
     "read": "allow",
-    "write": "ask",
-    "edit": "ask",
+    "write": "allow",
+    "edit": "allow",
     "path": {
       "*": "allow",
       "*.env": "deny",
@@ -54,6 +54,11 @@
       "*.env.example": "allow",
       "**/*.env.example": "allow"
     },
-    "external_directory": "ask"
+    "external_directory": {
+      "*": "ask",
+      "/tmp/*": "allow",
+      "$HOME/.cargo/registry/*": "allow",
+      "$HOME/.cache/*": "allow"
+    }
   }
 }

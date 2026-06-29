@@ -1,0 +1,36 @@
+#!/bin/bash
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_info() { echo -e "${YELLOW}→${NC} $1"; }
+
+# Linux-only: macOS has no modprobe / iwlwifi.
+if [ "$(uname -s)" != "Linux" ]; then
+    exit 0
+fi
+
+# Only act if an Intel BE200 (Wi-Fi 7) using iwlwifi is present.
+if ! lspci -k 2>/dev/null | grep -qi 'BE200'; then
+    print_info "No Intel BE200 detected, skipping WiFi stability fix"
+    exit 0
+fi
+
+DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SRC="$DOTFILES_DIR/install/files/iwlwifi.conf"
+DEST="/etc/modprobe.d/iwlwifi.conf"
+
+if [ -f "$DEST" ] && cmp -s "$SRC" "$DEST"; then
+    print_success "BE200 WiFi fix already installed ($DEST)"
+    exit 0
+fi
+
+print_info "Installing BE200 WiFi stability fix (disable 802.11be) → $DEST"
+sudo install -m 644 "$SRC" "$DEST"
+print_success "Installed. Reboot (or 'sudo modprobe -r iwlmld iwlwifi && sudo modprobe iwlwifi') to apply."

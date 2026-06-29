@@ -17,6 +17,7 @@ Individual scripts in `install/` can be run standalone:
 - `install/deps <platform>` - system packages (apt/brew/pacman)
 - `install/fonts <platform>` - JetBrainsMono Nerd Font
 - `install/stow` - create all symlinks
+- `install/wifi-be200` - Intel BE200 Wi-Fi 7 stability fix (writes `/etc/modprobe.d/iwlwifi.conf` to disable 802.11be; auto-skips if no BE200 detected)
 - `install/zsh-plugins` - clone fzf-tab, zsh-autosuggestions, zsh-syntax-highlighting to `~/.zsh/plugins/`
 - `install/starship` - Starship prompt
 - `install/claude-plugins` - Claude Code plugins (skips if Claude not installed)

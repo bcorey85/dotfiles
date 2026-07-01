@@ -885,6 +885,273 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
   ;; Expose Emacs editor tools (xref, diagnostics, etc.) to Claude over MCP.
   (claude-code-ide-emacs-tools-setup))
 
+;;; --- tmux-sessionizer + dev layout (on top of :ui workspaces) -----------
+;; Ports ~/.local/bin/{tmux-sessionizer,tmux-project-open,dev}. The workspaces
+;; module already IS the tmux-session layer (M-1..9 switch, gt/gT cycle, SPC TAB
+;; menu, auto-workspace on projectile-switch-project). What's missing is the
+;; picker + the two-"window" `dev' layout, so that's all this adds:
+;;   window 1 "code"    -> project files (dired) | Claude (claude-code-ide side window)
+;;   window 2 "console" -> `+dev-console-shells' ghostel shells (your 1-3 servers)
+;; As in tmux-project-open, the layout is built only when the workspace is NEW;
+;; re-running on an existing project just switches to it.
+
+(defcustom +dev-project-parents '("~/dev")
+  "Dirs whose immediate children are selectable projects (mirrors tmux-sessionizer)."
+  :type '(repeat directory) :group 'doom)
+
+(defcustom +dev-project-extras '("~/vault" "~/dotfiles")
+  "Standalone project dirs added to the sessionizer list."
+  :type '(repeat directory) :group 'doom)
+
+(defcustom +dev-console-shells 3
+  "Number of ghostel shells in the console layout (`dev' spawns 3)."
+  :type 'integer :group 'doom)
+
+(defvar +dev--roots (make-hash-table :test 'equal)
+  "Workspace name -> project root, recorded by `+dev/sessionizer'.")
+
+(defun +dev--root ()
+  "Project root for the current workspace: recorded root, else projectile, else cwd."
+  (or (gethash (+workspace-current-name) +dev--roots)
+      (doom-project-root)
+      default-directory))
+
+(defun +dev--shell-buffer (dir n)
+  "Get or create this workspace's Nth console shell, a login shell in DIR."
+  (require 'ghostel)
+  (let ((name (format "*sh:%s:%d*" (+workspace-current-name) n)))
+    (or (get-buffer name)
+        (let* ((default-directory dir)
+               (buf   (get-buffer-create name))
+               (shell (or (getenv "SHELL") shell-file-name)))
+          (ghostel-exec buf shell)
+          buf))))
+
+(defcustom +dev-code-landing 'project-buffer
+  "What the code layout's editor window shows:
+- `project-buffer' : empty buffer rooted at the project (no prompt, no dired)
+- `find-file'      : the projectile-find-file picker
+- `dired'          : dired of the project root (nvim . style)"
+  :type '(choice (const project-buffer) (const find-file) (const dired))
+  :group 'doom)
+
+(defun +dev--open-editor (dir)
+  "Show the editor landing for DIR per `+dev-code-landing'."
+  (pcase +dev-code-landing
+    ('dired (dired dir))
+    ('find-file (let ((default-directory dir)) (ignore-errors (projectile-find-file))))
+    (_ ;; empty buffer rooted at the project: no prompt, and SPC SPC / SPC .
+       ;; work instantly because `default-directory' is the project root.
+       (let ((buf (get-buffer-create (format "*code:%s*" (+workspace-current-name)))))
+         (with-current-buffer buf (setq-local default-directory dir))
+         (switch-to-buffer buf)))))
+
+(defun +dev--single-main-window ()
+  "Collapse the frame to one main window, tolerating side windows.
+`delete-other-windows' errors with \"Cannot make side window the only
+window\" when a side window (e.g. claude-code-ide's Claude pane) is
+selected or present, so step off it and delete side windows first."
+  (when (window-parameter (selected-window) 'window-side)
+    (select-window (or (window-main-window) (frame-first-window))))
+  (dolist (w (window-list nil 'nomini))
+    (when (and (window-live-p w) (window-parameter w 'window-side))
+      (ignore-errors (delete-window w))))
+  (delete-other-windows))
+
+(defun +dev/window-code ()
+  "dev window 1: editor landing (see `+dev-code-landing') | Claude side window."
+  (interactive)
+  (+dev--single-main-window)
+  (+dev--open-editor (+dev--root))
+  ;; claude-code-ide places/toggles its own side window, scoped to the project
+  ;; root of the current buffer's `default-directory', so no manual split.
+  (claude-code-ide))
+
+(defun +dev/window-console ()
+  "dev window 2: `+dev-console-shells' ghostel shells side by side."
+  (interactive)
+  (let ((dir (+dev--root)))
+    (+dev--single-main-window)
+    (set-window-buffer (selected-window) (+dev--shell-buffer dir 1))
+    (dotimes (i (1- +dev-console-shells))
+      (let ((w (split-window-right)))
+        (set-window-buffer w (+dev--shell-buffer dir (+ i 2)))
+        (select-window w)))
+    (balance-windows)
+    (select-window (frame-first-window))))
+
+(defun +dev--candidates ()
+  "Selectable project dirs, mirroring tmux-sessionizer's sources."
+  (delete-dups
+   (append
+    (cl-loop for parent in +dev-project-parents
+             for p = (expand-file-name parent)
+             when (file-directory-p p)
+             append (cl-remove-if-not
+                     #'file-directory-p (directory-files p t "\\`[^.]")))
+    (cl-remove-if-not #'file-directory-p
+                      (mapcar #'expand-file-name +dev-project-extras)))))
+
+(defun +dev/setup-current-workspace (&optional dir)
+  "Build the `dev' layout in the CURRENT workspace for DIR, unless already set up.
+DIR defaults to the current project root. Idempotent: the presence of the
+first console shell buffer marks a workspace as already laid out, so re-entry
+(via sessionizer, harpoon, or SPC p p) never clobbers your windows."
+  (interactive)
+  (let* ((dir  (file-name-as-directory (expand-file-name (or dir (+dev--root)))))
+         (name (+workspace-current-name)))
+    (puthash name dir +dev--roots)
+    (unless (get-buffer (format "*sh:%s:1*" name))
+      ;; spawn the console shells up front so all servers are live, like `dev'
+      (dotimes (i +dev-console-shells) (+dev--shell-buffer dir (1+ i)))
+      (+dev/window-code))))
+
+(defun +dev-open-project (dir)
+  "Open DIR in its own workspace (create if new) and ensure the `dev' layout.
+Shared core of the sessionizer and harpoon jumps; the Emacs tmux-project-open."
+  (setq dir (file-name-as-directory (expand-file-name dir)))
+  ;; Name the workspace after the project basename. Unlike tmux-project-open we
+  ;; do NOT map "." -> "_" (that exists only because tmux session names can't
+  ;; contain dots) — Emacs workspace names allow dots, and the mapping would
+  ;; collide distinct projects like node.js / node_js onto one workspace.
+  (let ((name (file-name-nondirectory (directory-file-name dir))))
+    (+workspace-switch name t)
+    (+dev/setup-current-workspace dir)))
+
+(defun +dev/sessionizer (dir)
+  "Pick project DIR, open it in its own workspace, and build the `dev' layout.
+The Emacs analog of tmux-sessionizer (prefix + f)."
+  (interactive (list (completing-read "project> " (+dev--candidates) nil t)))
+  (+dev-open-project dir))
+
+;; (a) Doom auto-creates a workspace on `projectile-switch-project' (SPC p p);
+;; hook the same layout builder onto it so the native project switch also lays
+;; out code+console. Guarded + idempotent (see `+dev/setup-current-workspace').
+(defcustom +dev-auto-layout-on-switch t
+  "If non-nil, SPC p p also builds the `dev' layout in the new project's
+workspace. When nil, SPC p p keeps Doom's default (find file in project)."
+  :type 'boolean :group 'doom)
+
+;; Replace Doom's post-switch action rather than stacking a hook on it. Doom
+;; runs `+workspaces-switch-project-function' (default `doom-project-find-file')
+;; after creating the workspace on SPC p p; the old `projectile-after-switch-
+;; project-hook' fired IN ADDITION to it (two prompts) and also fires twice
+;; (doomemacs#6559). Overriding the function gives exactly one post-switch action.
+(defun +dev-switch-project-h (dir)
+  "Doom `+workspaces-switch-project-function' for SPC p p."
+  (if +dev-auto-layout-on-switch
+      (+dev/setup-current-workspace dir)
+    (doom-project-find-file dir)))
+(setq +workspaces-switch-project-function #'+dev-switch-project-h)
+
+;;; --- harpoon: pin projects to numbered slots (ports tmux-harpoon) --------
+;; A persistent, ordered list of project dirs. M-1..9 jump to a slot's project
+;; (opening its workspace + dev layout on demand, surviving restarts). Reorder
+;; or clear slots by editing the list file (SPC o h), exactly like the tmux menu.
+
+(defcustom +harpoon-file
+  (expand-file-name "doom-harpoon/list"
+                    (or (getenv "XDG_DATA_HOME") (expand-file-name "~/.local/share")))
+  "File of pinned project dirs, one absolute path per line (harpoon slots)."
+  :type 'file :group 'doom)
+
+(defun +harpoon--slots ()
+  "Pinned project dirs, one per non-blank line in `+harpoon-file'."
+  (when (file-readable-p +harpoon-file)
+    (with-temp-buffer
+      (insert-file-contents +harpoon-file)
+      (split-string (buffer-string) "\n" t "[ \t]+"))))
+
+(defun +harpoon--save (slots)
+  "Write SLOTS (a list of dirs) back to `+harpoon-file'."
+  (make-directory (file-name-directory +harpoon-file) t)
+  (with-temp-file +harpoon-file
+    (when slots (insert (mapconcat #'identity slots "\n") "\n"))))
+
+(defun +harpoon/add ()
+  "Pin the current workspace's project to the next free harpoon slot."
+  (interactive)
+  (let* ((dir   (directory-file-name (expand-file-name (+dev--root))))
+         (slots (+harpoon--slots))
+         (label (file-name-nondirectory dir)))
+    (if-let* ((pos (cl-position dir slots :test #'string=)))
+        (message "harpoon: %s already pinned (slot %d)" label (1+ pos))
+      (+harpoon--save (append slots (list dir)))
+      (message "harpoon: pinned %s -> slot %d" label (length (+harpoon--slots))))))
+
+(defun +harpoon/jump (n)
+  "Open the project pinned at harpoon slot N (1-based)."
+  (interactive "p")
+  (let ((slots (+harpoon--slots)))
+    (if (<= 1 n (length slots))
+        (+dev-open-project (nth (1- n) slots))
+      (message "harpoon: slot %d is empty" n))))
+
+(defun +harpoon/menu ()
+  "Edit the harpoon slots: line N = slot N. Reorder to reorder, delete to clear."
+  (interactive)
+  (make-directory (file-name-directory +harpoon-file) t)
+  (find-file +harpoon-file))
+
+;; (b) M-1..9 jump to pinned harpoon projects (was Doom's workspace-switch-to-N).
+;; Raw workspace nav still lives on gt/gT and the SPC TAB menu.
+(map! "M-1" (cmd! (+harpoon/jump 1)) "M-2" (cmd! (+harpoon/jump 2))
+      "M-3" (cmd! (+harpoon/jump 3)) "M-4" (cmd! (+harpoon/jump 4))
+      "M-5" (cmd! (+harpoon/jump 5)) "M-6" (cmd! (+harpoon/jump 6))
+      "M-7" (cmd! (+harpoon/jump 7)) "M-8" (cmd! (+harpoon/jump 8))
+      "M-9" (cmd! (+harpoon/jump 9)))
+
+;; Under the existing SPC o "open" prefix. prefix + f muscle memory -> SPC o p;
+;; the two dev windows are SPC o 1 / SPC o 2 (SPC 1..9 is Doom's winum).
+(map! :leader
+      (:prefix ("o" . "open")
+       :desc "Project session (sessionizer)" "p" #'+dev/sessionizer
+       :desc "dev: window 1 (code)"          "1" (cmd! (+dev/window 1))
+       :desc "dev: window 2 (console)"       "2" (cmd! (+dev/window 2))
+       :desc "dev: window 3"                 "3" (cmd! (+dev/window 3))
+       :desc "Harpoon: pin current project"  "a" #'+harpoon/add
+       :desc "Harpoon: edit slots"           "h" #'+harpoon/menu))
+
+;; Windows within a workspace (the tmux windows). An ordered, extensible list:
+;; to add a 3rd, append e.g. ("scratch" . +dev/window-scratch) — then M-o 3
+;; (or SPC o 3) snaps straight to it. No other code changes needed.
+(defvar +dev-windows
+  '(("code"    . +dev/window-code)
+    ("console" . +dev/window-console))
+  "Ordered layouts for a workspace (the tmux windows). Each is (NAME . BUILDER).")
+
+(defun +dev--show-window (idx)
+  "Build window IDX (0-based) of `+dev-windows'."
+  (funcall (cdr (nth idx +dev-windows))))
+
+(defun +dev/window (n)
+  "Snap directly to window N (1-based) in the current workspace."
+  (interactive "p")
+  (if (<= 1 n (length +dev-windows))
+      (+dev--show-window (1- n))
+    (message "dev: no window %d (have %d)" n (length +dev-windows))))
+
+(defun +dev/window-dwim ()
+  "Snap to the dev window numbered by the digit key that invoked this."
+  (interactive)
+  (+dev/window (- last-command-event ?0)))
+
+;; M-o is the window PREFIX (the tmux prefix analog): M-o 1 / M-o 2 / M-o 3 snap
+;; DIRECTLY to that window — no cycling, exactly like tmux `prefix N'.
+;; `last-command-event' carries the digit, so one command covers 1-9 without
+;; closures. Bound in the evil states AND ghostel's own map, so M-o never
+;; reaches the PTY and can't interrupt anything in a shell.
+(defvar +dev-window-map
+  (let ((m (make-sparse-keymap)))
+    (dolist (d '("1" "2" "3" "4" "5" "6" "7" "8" "9"))
+      (define-key m (kbd d) #'+dev/window-dwim))
+    m)
+  "Keymap under the M-o window prefix; digit 1-9 snaps to that dev window.")
+
+(map! :nvime "M-o" +dev-window-map)
+(after! ghostel
+  (map! :map ghostel-semi-char-mode-map "M-o" +dev-window-map))
+
 (setq org-agenda-files '("~/org"))
 
 ;; Wrap in `after! org' so this runs AFTER Doom's org module sets its own

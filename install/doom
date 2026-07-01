@@ -1,0 +1,54 @@
+#!/bin/bash
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_info() { echo -e "${YELLOW}→${NC} $1"; }
+
+# Doom Emacs bootstrap. The `doom' stow package places the config at
+# ~/.config/doom; the Doom framework itself (and the package install) lives at
+# ~/.config/emacs and is NOT stow-managed, so clone + sync it here. Run AFTER
+# install/deps (emacs) and install/stow (the config must exist first).
+# ghostel's native module auto-downloads on first terminal, so no extra
+# toolchain is needed on any platform.
+
+if ! command -v emacs &>/dev/null; then
+    print_info "Emacs not installed, skipping Doom setup (install/deps installs emacs)"
+    exit 0
+fi
+
+EMACSDIR="$HOME/.config/emacs"
+DOOMBIN="$EMACSDIR/bin/doom"
+
+if [ ! -d "$EMACSDIR" ]; then
+    print_info "Cloning doomemacs to $EMACSDIR..."
+    if git clone --depth 1 https://github.com/doomemacs/doomemacs "$EMACSDIR"; then
+        print_success "doomemacs cloned"
+    else
+        print_error "Failed to clone doomemacs — skipping Doom setup"
+        exit 0
+    fi
+else
+    print_success "doomemacs already present at $EMACSDIR"
+fi
+
+# `doom sync' installs and builds every package declared in the stowed config
+# (ghostel, evil-ghostel, claude-code-ide, ...). It is non-interactive and
+# idempotent — safe to re-run, and it's what you run after any packages.el
+# change. Kept non-fatal so a package warning doesn't abort the whole setup.
+if [ -x "$DOOMBIN" ]; then
+    print_info "Running doom sync (installs packages, may take a few minutes)..."
+    if "$DOOMBIN" sync; then
+        print_success "Doom synced"
+    else
+        print_error "doom sync reported errors — run '$DOOMBIN doctor' to inspect"
+    fi
+else
+    print_error "doom binary not found at $DOOMBIN — skipping sync"
+fi

@@ -17,6 +17,7 @@ Individual scripts in `install/` can be run standalone:
 - `install/deps <platform>` - system packages (apt/brew/pacman)
 - `install/fonts <platform>` - JetBrainsMono Nerd Font
 - `install/stow` - create all symlinks
+- `install/doom` - clone doomemacs to `~/.config/emacs` and run `doom sync` (skips if emacs absent; the `doom` package supplies the config)
 - `install/wifi-be200` - Intel BE200 Wi-Fi 7 stability fix (writes `/etc/modprobe.d/iwlwifi.conf` to disable 802.11be; auto-skips if no BE200 detected)
 - `install/zsh-plugins` - clone fzf-tab, zsh-autosuggestions, zsh-syntax-highlighting to `~/.zsh/plugins/`
 - `install/starship` - Starship prompt
@@ -27,19 +28,20 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 
 ## Stow Packages
 
-| Package     | Target                                                        | Key files                                                                                                                |
-| ----------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `nvim`      | `~/.config/nvim/`                                             | Native `vim.pack` config (bootstrap in `lua/config/pack.lua`), one spec file per plugin in `lua/plugins/`                |
-| `tmux`      | `~/.tmux.conf`                                                | Prefix=`Ctrl+Space`, vim-style panes                                                                                     |
-| `zsh`       | `~/.zshrc`                                                    | Plugins, aliases, pyenv/nvm/starship init                                                                                |
-| `claude`    | `~/.claude/`                                                  | Agents, commands, settings, hooks                                                                                        |
-| `opencode`  | `~/.config/opencode/`                                         | Global config (`opencode.jsonc`), `AGENTS.md` global rules, `agents/` ported from claude. Auto-loads `~/.claude/skills/` |
-| `aerospace` | `~/.config/aerospace/`                                        | macOS tiling WM. Workspaces 1-9 pinned to external monitor, built-in screen dedicated to Teams (mac only)                |
-| `kitty`     | `~/.config/kitty/`                                            | doom-one (Atom One Dark)                                                                                                 |
-| `starship`  | `~/.config/starship.toml`                                     | Gruvbox Material prompt                                                                                                  |
-| `kanata`    | `~/kanata-config.kbd`, `~/kanata-setup`, `~/kanata-setup-mac` | Keyboard remapping. Linux: systemd service (`kanata-setup`). macOS: launchd + Karabiner driver (`kanata-setup-mac`)      |
-| `scripts`   | `~/.local/bin/`                                               | tmux-sessionizer, dev utilities                                                                                          |
-| `git`       | `~/.gitconfig`                                                | Delta pager, side-by-side diffs. Per-machine identity in `~/.gitconfig.local`                                            |
+| Package     | Target                                                        | Key files                                                                                                                                                                                                         |
+| ----------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `nvim`      | `~/.config/nvim/`                                             | Native `vim.pack` config (bootstrap in `lua/config/pack.lua`), one spec file per plugin in `lua/plugins/`                                                                                                         |
+| `tmux`      | `~/.tmux.conf`                                                | Prefix=`Ctrl+Space`, vim-style panes                                                                                                                                                                              |
+| `zsh`       | `~/.zshrc`                                                    | Plugins, aliases, pyenv/nvm/starship init                                                                                                                                                                         |
+| `claude`    | `~/.claude/`                                                  | Agents, commands, settings, hooks                                                                                                                                                                                 |
+| `opencode`  | `~/.config/opencode/`                                         | Global config (`opencode.jsonc`), `AGENTS.md` global rules, `agents/` ported from claude. Auto-loads `~/.claude/skills/`                                                                                          |
+| `aerospace` | `~/.config/aerospace/`                                        | macOS tiling WM. Workspaces 1-9 pinned to external monitor, built-in screen dedicated to Teams (mac only)                                                                                                         |
+| `kitty`     | `~/.config/kitty/`                                            | doom-one (Atom One Dark)                                                                                                                                                                                          |
+| `starship`  | `~/.config/starship.toml`                                     | Gruvbox Material prompt                                                                                                                                                                                           |
+| `kanata`    | `~/kanata-config.kbd`, `~/kanata-setup`, `~/kanata-setup-mac` | Keyboard remapping. Linux: systemd service (`kanata-setup`). macOS: launchd + Karabiner driver (`kanata-setup-mac`)                                                                                               |
+| `scripts`   | `~/.local/bin/`                                               | tmux-sessionizer, dev utilities                                                                                                                                                                                   |
+| `git`       | `~/.gitconfig`                                                | Delta pager, side-by-side diffs. Per-machine identity in `~/.gitconfig.local`                                                                                                                                     |
+| `doom`      | `~/.config/doom/`                                             | Doom Emacs config (`config.el`, `init.el`, `packages.el`). Framework itself is not stowed — `install/doom` bootstraps it to `~/.config/emacs`. tmux-style sessionizer + dev layouts + harpoon live in `config.el` |
 
 ## CRITICAL: Cross-Platform Compatibility
 

@@ -3,6 +3,7 @@ name: frontend-coder-deep
 description: "Opus variant of frontend-coder for `+deep` dispatches — complex implementations requiring deeper reasoning. Same instructions as frontend-coder; the only difference is the model pin."
 model: opus
 color: green
+disallowedTools: Agent
 ---
 
 You are the frontend-coder agent running on Opus for a `+deep` task.

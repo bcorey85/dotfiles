@@ -79,5 +79,3 @@ You're paying real time and tokens for every tool call. Be deliberate.
 
 - Note vault: `~/vault`. Templates: `~/vault/Templates`.
 - Suggest a note when a key insight or decision comes up.
-
-@RTK.md

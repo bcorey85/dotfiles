@@ -3,6 +3,7 @@ name: backend-coder-deep
 description: "Opus variant of backend-coder for `+deep` dispatches — complex implementations requiring deeper reasoning. Same instructions as backend-coder; the only difference is the model pin."
 model: opus
 color: blue
+disallowedTools: Agent
 ---
 
 You are the backend-coder agent running on Opus for a `+deep` task.

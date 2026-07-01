@@ -22,7 +22,7 @@ case $PLATFORM in
 wsl | ubuntu)
   print_info "Installing dependencies via apt..."
   sudo apt update
-  sudo apt install -y stow neovim emacs tmux zsh git curl jq libnotify-bin fzf zoxide unzip direnv kitty git-delta btop bat atuin eza glow fd-find keychain rustup ansible just xclip wl-clipboard imagemagick
+  sudo apt install -y stow neovim emacs tmux zsh git curl jq libnotify-bin fzf zoxide unzip direnv kitty git-delta btop bat atuin eza glow fd-find ripgrep keychain rustup ansible just xclip wl-clipboard imagemagick
   print_success "Dependencies installed"
 
   # Ubuntu installs bat as batcat and fd as fdfind — symlink to expected names
@@ -102,7 +102,7 @@ mac)
   fi
 
   print_info "Installing dependencies via Homebrew..."
-  brew install stow neovim emacs tmux git jq fzf zoxide direnv kitty git-delta btop bat atuin eza tlrc glow fd keychain rustup ansible just imagemagick kanata
+  brew install stow neovim emacs tmux git jq fzf zoxide direnv kitty git-delta btop bat atuin eza tlrc glow fd ripgrep keychain rustup ansible just imagemagick kanata
   brew install umputun/apps/revdiff
   brew install --cask nikitabobko/tap/aerospace
   print_success "Dependencies installed"

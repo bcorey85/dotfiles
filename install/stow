@@ -50,6 +50,11 @@ if [ -d ~/.config/opencode ] && [ ! -L ~/.config/opencode ]; then
     mv ~/.config/opencode ~/.config/opencode.backup.$(date +%Y%m%d_%H%M%S)
 fi
 
+if [ -d ~/.config/doom ] && [ ! -L ~/.config/doom ]; then
+    print_info "Backing up existing doom config..."
+    mv ~/.config/doom ~/.config/doom.backup.$(date +%Y%m%d_%H%M%S)
+fi
+
 
 
 if [ "$PLATFORM" = "arch" ] && [ -d ~/.config/hypr ] && [ ! -L ~/.config/hypr ]; then
@@ -58,7 +63,7 @@ if [ "$PLATFORM" = "arch" ] && [ -d ~/.config/hypr ] && [ ! -L ~/.config/hypr ];
 fi
 
 # Stow configs — common packages for all platforms
-PACKAGES="nvim tmux scripts zsh claude opencode pi kitty ghostty kanata starship git btop"
+PACKAGES="nvim tmux scripts zsh claude opencode pi kitty ghostty kanata starship git btop doom"
 
 # Arch-only packages
 if [ "$PLATFORM" = "arch" ]; then

@@ -102,6 +102,7 @@ alias nvim-old='NVIM_APPNAME=nvim-old nvim'
 alias tt="tmux"
 alias cc="claude"
 alias oc="opencode"
+alias e="emacsclient -c -a ''"
 
 # Machine-local overrides (secrets, paths, etc.)
 [[ -f ~/.zshrc.local ]] && source ~/.zshrc.local

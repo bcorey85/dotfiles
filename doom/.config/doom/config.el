@@ -46,7 +46,7 @@
 (setq evil-escape-key-sequence "kk")
 
 ;;; ---------------------------------------------------------------------------
-;;; Look & feel — Rosé Pine Moon + JetBrainsMono (icon glyphs via Symbols Nerd
+;;; Look & feel — Modus Vivendi + AporeticSansMono (icon glyphs via Symbols Nerd
 ;;; Font Mono)
 ;;; ---------------------------------------------------------------------------
 
@@ -75,74 +75,23 @@
 ;; Extra vertical space between lines, in pixels (nil = none). Bump to taste.
 (setq-default line-spacing 0.25)
 
-;; Rosé Pine Moon, with the OneDark-ish backgrounds ported from nvim (theme.lua):
-;; the theme supplies the foreground palette (love/gold/foam/iris/pine), while we
-;; force a uniform OneDark base #282c34 (no solaire two-tone) to match nvim/tmux.
-(setq doom-theme 'doom-one)
+;; Modus Vivendi — high-contrast dark theme, accessibility-focused (WCAG AAA).
+;; Ships with Emacs 28+; no extra package needed.
+(setq doom-theme 'modus-vivendi)
 
-;; doom-rose-pine is a doom-themes theme, so it bakes colors into faces at load and
-;; has no palette-setter (unlike catppuccin-set-color). So the OneDark bg is applied
-;; two ways: (1) this hook kills solaire's two-tone on every theme load (and removes
-;; Doom's re-enabler so reloads stay flat); (2) the `custom-set-faces!` block below
-;; repaints the core background faces. custom-set-faces! re-applies on each theme
-;; load, so a live `doom/reload` / `SPC h r r` stays uniform.
-;;
-;; NOTE: rose-pine's own base #232136 still shows through on any face we don't
-;; override below — those get caught case-by-case in the re-tune blocks further down.
-(defun +onedark-bg-apply (&rest _)
-  "Disable solaire so the OneDark base background stays uniform."
-  (remove-hook 'doom-load-theme-hook #'solaire-global-mode)
-  (when (bound-and-true-p solaire-global-mode) (solaire-global-mode -1)))
-
-(add-hook 'doom-load-theme-hook #'+onedark-bg-apply)
-;; live reload: theme is already loaded, so apply right away
-(when (memq 'doom-one custom-enabled-themes) (+onedark-bg-apply))
-
-;; OneDark base #282c34 / current-line #2c313a. Repaint the core background faces
-;; so the editing area, sidebars (solaire off), fringe, and gutter read as one flat
-;; OneDark surface instead of rose-pine's #232136.
-(custom-set-faces!
-  '(default                  :background "#282c34")
-  '(solaire-default-face     :background "#282c34")
-  '(hl-line                  :background "#2c313a")
-  '(fringe                   :background "#282c34")
-  '(line-number              :background "#282c34")
-  '(line-number-current-line :background "#282c34"))
+;; modus-vivendi handles its own background palette — no overrides needed.
 
 (setq display-line-numbers-type 'relative)   ; matches nvim relativenumber
 
-;; The split divider ships near-invisible (rose-pine sets its fg ~= the bg).
-;; Bump it to a mid gray that reads against the OneDark base #282c34 but stays
-;; subtle. `vertical-border' is the 1-col line between side-by-side windows;
-;; the window-divider faces cover Doom's thicker dividers if enabled.
-;; custom-set-faces! re-applies on every theme load, so a live `doom/reload'
-;; won't clobber it.
+;; Window dividers — modus-vivendi has its own palette; use its muted gray
+;; for a subtle split line that's visible but not distracting.
 (custom-set-faces!
-  '(vertical-border            :foreground "#5c6370")
-  '(window-divider             :foreground "#5c6370")
-  '(window-divider-first-pixel :foreground "#5c6370")
-  '(window-divider-last-pixel  :foreground "#5c6370")
-  ;; flycheck's wavy error underline defaults to pure Red1 (#FF0000) — too hot
-  ;; against the OneDark base. Soften to rose-pine love, matching the echo-area
-  ;; error message color so the two read as one signal. Keeps the wave style.
-  '(flycheck-error :underline (:style wave :color "#ff6c6b")))
+  '(vertical-border            :foreground "#595959")
+  '(window-divider             :foreground "#595959")
+  '(window-divider-first-pixel :foreground "#595959")
+  '(window-divider-last-pixel  :foreground "#595959"))
 
-;; Markdown — match the nvim render-markdown look. The theme paints every heading
-;; level `love' (pink), bold comes out gold, and code blocks sit on rose-pine's
-;; `surface' #2a273f (the purple bleed). Instead: cycle heading colors per level
-;; like render-markdown.nvim (H1 love → H2 foam → …), make bold plain `text', and
-;; flatten code-block backgrounds onto the OneDark base. The header-face-N faces
-;; inherit bold from `markdown-header-face', so a :foreground-only override keeps it.
-(custom-set-faces!
-  '(markdown-header-face-1 :foreground "#ff6c6b")               ; love
-  '(markdown-header-face-2 :foreground "#51afef")               ; foam
-  '(markdown-header-face-3 :foreground "#c678dd")               ; iris
-  '(markdown-header-face-4 :foreground "#ECBE7B")               ; gold
-  '(markdown-header-face-5 :foreground "#98be65")               ; pine
-  '(markdown-header-face-6 :foreground "#da8548")               ; rose
-  '(markdown-bold-face     :inherit bold :foreground "#bbc2cf") ; text, not gold
-  '(markdown-code-face     :background "#282c34")               ; inline `code`, flat
-  '(markdown-pre-face      :background "#282c34"))              ; fenced ``` blocks, flat
+;; Markdown — modus-vivendi provides its own markdown faces. No overrides needed.
 
 ;; Hide markup (##, **, _, backticks) by default — the closest thing to nvim
 ;; markview's clean look without a renderer package. `markdown-hide-markup' is the
@@ -458,17 +407,6 @@
 ;; looks dimmer than nvim-treesitter (roughly level 4). Max it out for parity.
 (setq treesit-font-lock-level 4)
 
-;; THE actual reason TSX looked flat: tsx-ts-mode *does* face parameters, `const`
-;; bindings, and imports — but all with `font-lock-variable-name-face`, which
-;; doom-rose-pine paints `text` (#bbc2cf ≈ default fg), so they read as
-;; uncolored. nvim-treesitter avoids this by giving `@variable.parameter` its own
-;; accent. Emacs's face set can't split param from binding (they share one face),
-;; so recolor that shared face to rose-pine rose — params and bindings now
-;; pop like nvim. custom-set-faces! re-applies on every theme load, so a live
-;; `doom/reload' won't clobber it.
-(custom-set-faces!
-  '(font-lock-variable-name-face :foreground "#da8548"))   ; rose-pine rose
-
 ;;; ---------------------------------------------------------------------------
 ;;; Dired — oil.nvim muscle memory: `-` goes up a directory
 ;;; ---------------------------------------------------------------------------
@@ -507,22 +445,8 @@
 
 ;; Doom's `(syntax +childframe)' shows diagnostics in a `flycheck-posframe'
 ;; childframe — the nvim diagnostic-float equivalent, and it draws over the
-;; window rather than reflowing buffer text. Its per-severity faces inherit
-;; `default' (= white under doom-rose-pine), so the ONLY fix needed is to
-;; recolor them: love error / gold warn / iris info — the same ladder the
-;; nvim diagnostics use (theme.lua). `set-face-attribute' in `after!' runs when
-;; the package loads (custom-set-faces! can miss lazily-loaded faces).
-;;
-;; (This replaces an earlier setup that swapped in flycheck-popup-tip and
-;; redefined its formatter to get color — three face attributes do the same job
-;; with no function patching.) If the childframe ever fails to draw in a very
-;; narrow split, switch to lsp-ui-sideline virtual text instead: set
-;; `lsp-ui-sideline-show-diagnostics' back to t above — it's width-agnostic
-;; inline text rather than a floating frame.
-(after! flycheck-posframe
-  (set-face-attribute 'flycheck-posframe-error-face   nil :foreground "#ff6c6b")
-  (set-face-attribute 'flycheck-posframe-warning-face nil :foreground "#ECBE7B")
-  (set-face-attribute 'flycheck-posframe-info-face    nil :foreground "#c678dd"))
+;; window rather than reflowing buffer text. modus-vivendi provides its own
+;; accessibility-focused palette for these faces, so no overrides needed.
 
 ;; Red wavy underline under the whole offending expression. `flycheck-highlighting-mode'
 ;; keeps the region (with LSP end positions, that's the full call). The catch:
@@ -570,12 +494,14 @@
 ;; carrying `diff-hl-hunk-type`) — it just never gives it a face. We add one.
 ;; bg-only + :extend t + fg nil ⇒ tree-sitter foreground shows through and the
 ;; wash fills to the window edge (same trick as the ediff faces below).
-(defface +diff-hl-line-insert '((t :background "#26402b" :extend t))
-  "gitsigns-style line wash for inserted lines.")
-(defface +diff-hl-line-change '((t :background "#2b3650" :extend t))
-  "gitsigns-style line wash for changed lines.")
-(defface +diff-hl-line-delete '((t :background "#48262b" :extend t))
-  "gitsigns-style line wash anchoring deleted lines.")
+;; modus-vivendi has built-in diff-hl faces, so use its palette:
+;;   green bg for insert, yellow bg for change, red bg for delete.
+(defface +diff-hl-line-insert '((t :background "#2e3c2e" :extend t))
+  "gitsigns-style line wash for inserted lines (modus green-muted).")
+(defface +diff-hl-line-change '((t :background "#3c3c2e" :extend t))
+  "gitsigns-style line wash for changed lines (modus yellow-muted).")
+(defface +diff-hl-line-delete '((t :background "#3c2e2e" :extend t))
+  "gitsigns-style line wash anchoring deleted lines (modus red-muted).")
 
 (defvar +diff-hl-inline-enabled nil
   "When non-nil, wash diff-hl hunk overlays with a line background.
@@ -633,12 +559,11 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
   ;; faces inherit the bright working faces, so without this staged hunks look
   ;; identical to unstaged. custom-set-faces! re-applies on theme load, so a
   ;; live `doom/reload' won't clobber the dim palette.
-  ;; Hues track the line-wash faces below (#26402b / #48262b / #2b3650), bumped
-  ;; brighter so the thin fringe bitmap stays legible on the #282c34 base.
+  ;; Using modus-vivendi muted tones for staged hunks.
   (custom-set-faces!
-    '(diff-hl-reference-insert :foreground "#4d7a4d")  ; dim green  (staged add)
-    '(diff-hl-reference-delete :foreground "#7a4d4d")  ; dim red    (staged delete)
-    '(diff-hl-reference-change  :foreground "#4d5d8a")); dim blue   (staged change)
+    '(diff-hl-reference-insert :foreground "#4ea04e")  ; muted green (staged add)
+    '(diff-hl-reference-delete :foreground "#a04e4e")  ; muted red   (staged delete)
+    '(diff-hl-reference-change  :foreground "#a08e4e")) ; muted yellow (staged change)
   ;; Paint the hunk lines after every (sync or async) overlay refresh.
   (advice-add 'diff-hl--update-overlays :after #'+diff-hl-paint-hunks)
   (map! :n "] c" #'diff-hl-next-hunk
@@ -659,19 +584,8 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
 (after! indent-bars
   (setq indent-bars-prefer-character t))
 
-;; Make ediff look like vim's :Gdiffsplit: red = old/removed (buffer A), green =
-;; new/added (buffer B), BACKGROUND-ONLY so treesitter foreground shows through
-;; instead of ediff's flat opaque "peach" wash. `nil' foreground = inherit the
-;; char's own syntax color. Desaturated reds/greens.
-(custom-set-faces!
-  '(ediff-current-diff-A :background "#48262b" :foreground nil :extend t)   ; removed line
-  '(ediff-fine-diff-A    :background "#6e353d" :foreground nil)             ; exact removed text
-  '(ediff-current-diff-B :background "#26402b" :foreground nil :extend t)   ; added line
-  '(ediff-fine-diff-B    :background "#365a3d" :foreground nil)             ; exact added text
-  '(ediff-even-diff-A    :background "#3a2c2e" :foreground nil :extend t)
-  '(ediff-odd-diff-A     :background "#3a2c2e" :foreground nil :extend t)
-  '(ediff-even-diff-B    :background "#2c3a2e" :foreground nil :extend t)
-  '(ediff-odd-diff-B     :background "#2c3a2e" :foreground nil :extend t))
+;; Ediff — modus-vivendi provides its own high-contrast diff faces. No overrides
+;; needed — the built-in palette uses green/red/yellow with proper contrast.
 
 ;; Ediff + evil bindings (a/b copy, j/k/n/p navigate, q quit) are handled by
 ;; `evil-collection-ediff', enabled via `(evil +everywhere)' in init.el. It sets
@@ -683,56 +597,42 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
 
 
 
-;; Syntax-highlighted magit diffs via delta — match nvim/diffs.nvim -------------
+;; Syntax-highlighted magit diffs via delta ------------------------------------
 ;; Stock magit does NOT fontify diff bodies (`magit-diff-wash-hunk` inserts raw
 ;; +/- lines; only the bg faces are applied), so code in a magit diff renders in
-;; one flat color — comments are NOT muted the way treesitter shows them in nvim.
-;; `magit-delta` pipes each hunk through `delta`, which syntax-highlights it. We
-;; pair delta's "Catppuccin Mocha" syntax theme (muted comments, colored keywords)
-;; with custom +/- backgrounds blended the diffs.nvim way so the wash reads at the
-;; SAME intensity as the nvim diff surfaces.
+;; one flat color. `magit-delta` pipes each hunk through `delta`, which
+;; syntax-highlights it.
 ;;
-;; The +/- backgrounds: floor(diff*0.6 + base*0.4) per channel — the diffs.nvim
-;; recipe (`lua/diffs/runtime/highlight_groups.lua`). Sources are catppuccin-nvim's
-;; DiffAdd/DiffDelete bgs (#3f4d48 / #4d3d49) blended over the OneDark base
-;; (#282c34). Since the theme is fixed (Rosé Pine Moon + the OneDark base
-;; override above), the result is precomputed to static hex rather than derived
-;; live from the `default' face — same colors, no blend function and no
-;; theme-tracking hook to keep in sync. Recompute by hand only if the base bg
-;; changes: add = blend(#3f4d48) -> #353f40, minus = blend(#4d3d49) -> #3e3640.
-;;
-;; Under magit-delta the hunk colors live in delta's `--plus-style`/`--minus-style`
-;; ("syntax #hex" = syntax-highlighted fg over the bg), not Emacs faces.
 ;; `--no-gitconfig' is the load-bearing flag: it drops the gitconfig
-;; `line-numbers`/`navigate` settings whose gutter shifts the +/- markers off
+;; `line-numbers`/`navigate' settings whose gutter shifts the +/- markers off
 ;; column 0 and breaks `magit-diff-visit-file' with "Search failed". magit-delta
 ;; auto-appends --syntax-theme and --color-only; don't repeat them.
 (use-package! magit-delta
   :hook (magit-mode . magit-delta-mode)
-  :init (setq magit-delta-default-dark-theme "Catppuccin Mocha")
+  :init (setq magit-delta-default-dark-theme "Dracula")
   :config
   (setq magit-delta-delta-args
         '("--no-gitconfig"
           "--max-line-distance" "0.6"
           "--true-color" "always"
-          "--plus-style"       "syntax #353f40"      ; DiffAdd.bg blended over base
-          "--minus-style"      "syntax #3e3640"      ; DiffDelete.bg blended over base
-          "--plus-emph-style"  "syntax #2e5d3a"      ; word-level add  (nvim DiffText)
-          "--minus-emph-style" "syntax #5d2e36")))   ; word-level remove
+          "--plus-style"       "syntax #2e3c2e"      ; muted green (modus)
+          "--minus-style"      "syntax #3c2e2e"      ; muted red   (modus)
+          "--plus-emph-style"  "syntax #3a5a3a"      ; word-level add
+          "--minus-emph-style" "syntax #5a3a3a")))   ; word-level remove
 
 ;; File-row status keywords — neogit-style coloring. Magit faces the WHOLE file
 ;; heading (status word + filename) with one `magit-diff-file-heading` face
 ;; (`magit-format-file-default`, magit-diff.el), so "modified"/"new file"/"deleted"
 ;; render flat white. neogit colors the keyword instead. Swap in a format function
 ;; that faces the leading status word per-status and leaves the filename alone.
-;;   modified → foam (NeogitChangeModified)
-;;   new file → pine (rose-pine's green slot)
-;;   deleted  → love (red)
-;;   renamed  → iris
-(defface +magit-status-modified '((t :foreground "#51afef")) "Neogit-style modified keyword (foam).")
-(defface +magit-status-added    '((t :foreground "#98be65")) "Neogit-style new-file keyword (pine).")
-(defface +magit-status-removed  '((t :foreground "#ff6c6b")) "Neogit-style deleted keyword (love).")
-(defface +magit-status-renamed  '((t :foreground "#c678dd")) "Neogit-style renamed keyword (iris).")
+;;   modified → blue
+;;   new file → green
+;;   deleted  → red
+;;   renamed  → yellow
+(defface +magit-status-modified '((t :foreground "#5fafaf")) "neogit-style modified keyword (blue).")
+(defface +magit-status-added    '((t :foreground "#5faf5f")) "neogit-style new-file keyword (green).")
+(defface +magit-status-removed  '((t :foreground "#ff5f5f")) "neogit-style deleted keyword (red).")
+(defface +magit-status-renamed  '((t :foreground "#d0a05f")) "neogit-style renamed keyword (yellow).")
 
 (defun +magit-format-file-neogit (_kind file face &optional status orig)
   "Like `magit-format-file-default` but color the leading status keyword."
@@ -820,24 +720,22 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
 ;; these cover the rest, and double as the fallback if magit-delta-mode is off.
 (custom-set-faces!
   '(magit-diff-context           :background nil      :foreground nil :extend t)
-  '(magit-diff-context-highlight :background "#31353f" :foreground nil :extend t)
-  '(magit-diff-hunk-heading           :background "#31353f" :foreground "#51afef" :extend t)
-  '(magit-diff-hunk-heading-highlight :background "#3e4451" :foreground "#51afef" :extend t)
+  '(magit-diff-context-highlight :background "#2a2a2a" :foreground nil :extend t)
+  '(magit-diff-hunk-heading           :background "#2a2a2a" :foreground "#5fafaf" :extend t)
+  '(magit-diff-hunk-heading-highlight :background "#333333" :foreground "#5fafaf" :extend t)
   ;; +N/-M stat fringe (commit diffstat), not the file-row keywords above.
-  '(magit-diffstat-added   :foreground "#98be65")
-  '(magit-diffstat-removed :foreground "#ff6c6b"))
+  '(magit-diffstat-added   :foreground "#5faf5f")
+  '(magit-diffstat-removed :foreground "#ff5f5f"))
 
 ;; Word-level diff refinement is delegated to delta now (magit-diff-refine-hunk is
 ;; nil above), so these `diff-refine-added` / `diff-refine-removed` faces only show
-;; as the no-delta fallback. doom-rose-pine paints them BRIGHT saturated green/red;
-;; override to a subtle bg-only emphasis (brighter than the line bg, same hue, no
-;; FG flip) matching the nvim DiffText treatment (theme.lua :: `DiffText`).
+;; as the no-delta fallback. Use subtle bg-only emphasis matching modus-vivendi.
 (custom-set-faces!
-  '(diff-refine-added           :background "#2e5d3a" :foreground nil :extend t)
-  '(diff-refine-removed         :background "#5d2e36" :foreground nil :extend t)
+  '(diff-refine-added           :background "#3a5a3a" :foreground nil :extend t)
+  '(diff-refine-removed         :background "#5a3a3a" :foreground nil :extend t)
   ;; status-buffer section chrome
-  '(magit-section-highlight   :background "#31353f" :foreground nil)
-  '(magit-section-heading     :foreground "#c678dd" :weight bold))   ; iris, matches NeogitSectionHeader
+  '(magit-section-highlight   :background "#2a2a2a" :foreground nil)
+  '(magit-section-heading     :foreground "#d0a05f" :weight bold))   ; yellow, matches modus palette
 
 ;;; ---------------------------------------------------------------------------
 ;;; Claude Code — the cockpit centerpiece
@@ -884,6 +782,273 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
   (setq claude-code-ide-terminal-backend 'ghostel)
   ;; Expose Emacs editor tools (xref, diagnostics, etc.) to Claude over MCP.
   (claude-code-ide-emacs-tools-setup))
+
+;;; --- tmux-sessionizer + dev layout (on top of :ui workspaces) -----------
+;; Ports ~/.local/bin/{tmux-sessionizer,tmux-project-open,dev}. The workspaces
+;; module already IS the tmux-session layer (M-1..9 switch, gt/gT cycle, SPC TAB
+;; menu, auto-workspace on projectile-switch-project). What's missing is the
+;; picker + the two-"window" `dev' layout, so that's all this adds:
+;;   window 1 "code"    -> project files (dired) | Claude (claude-code-ide side window)
+;;   window 2 "console" -> `+dev-console-shells' ghostel shells (your 1-3 servers)
+;; As in tmux-project-open, the layout is built only when the workspace is NEW;
+;; re-running on an existing project just switches to it.
+
+(defcustom +dev-project-parents '("~/dev")
+  "Dirs whose immediate children are selectable projects (mirrors tmux-sessionizer)."
+  :type '(repeat directory) :group 'doom)
+
+(defcustom +dev-project-extras '("~/vault" "~/dotfiles")
+  "Standalone project dirs added to the sessionizer list."
+  :type '(repeat directory) :group 'doom)
+
+(defcustom +dev-console-shells 3
+  "Number of ghostel shells in the console layout (`dev' spawns 3)."
+  :type 'integer :group 'doom)
+
+(defvar +dev--roots (make-hash-table :test 'equal)
+  "Workspace name -> project root, recorded by `+dev/sessionizer'.")
+
+(defun +dev--root ()
+  "Project root for the current workspace: recorded root, else projectile, else cwd."
+  (or (gethash (+workspace-current-name) +dev--roots)
+      (doom-project-root)
+      default-directory))
+
+(defun +dev--shell-buffer (dir n)
+  "Get or create this workspace's Nth console shell, a login shell in DIR."
+  (require 'ghostel)
+  (let ((name (format "*sh:%s:%d*" (+workspace-current-name) n)))
+    (or (get-buffer name)
+        (let* ((default-directory dir)
+               (buf   (get-buffer-create name))
+               (shell (or (getenv "SHELL") shell-file-name)))
+          (ghostel-exec buf shell)
+          buf))))
+
+(defcustom +dev-code-landing 'project-buffer
+  "What the code layout's editor window shows:
+- `project-buffer' : empty buffer rooted at the project (no prompt, no dired)
+- `find-file'      : the projectile-find-file picker
+- `dired'          : dired of the project root (nvim . style)"
+  :type '(choice (const project-buffer) (const find-file) (const dired))
+  :group 'doom)
+
+(defun +dev--open-editor (dir)
+  "Show the editor landing for DIR per `+dev-code-landing'."
+  (pcase +dev-code-landing
+    ('dired (dired dir))
+    ('find-file (let ((default-directory dir)) (ignore-errors (projectile-find-file))))
+    (_ ;; empty buffer rooted at the project: no prompt, and SPC SPC / SPC .
+       ;; work instantly because `default-directory' is the project root.
+       (let ((buf (get-buffer-create (format "*code:%s*" (+workspace-current-name)))))
+         (with-current-buffer buf (setq-local default-directory dir))
+         (switch-to-buffer buf)))))
+
+(defun +dev--single-main-window ()
+  "Collapse the frame to one main window, tolerating side windows.
+`delete-other-windows' errors with \"Cannot make side window the only
+window\" when a side window (e.g. claude-code-ide's Claude pane) is
+selected or present, so step off it and delete side windows first."
+  (when (window-parameter (selected-window) 'window-side)
+    (select-window (or (window-main-window) (frame-first-window))))
+  (dolist (w (window-list nil 'nomini))
+    (when (and (window-live-p w) (window-parameter w 'window-side))
+      (ignore-errors (delete-window w))))
+  (delete-other-windows))
+
+(defun +dev/window-code ()
+  "dev window 1: editor landing (see `+dev-code-landing') | Claude side window."
+  (interactive)
+  (+dev--single-main-window)
+  (+dev--open-editor (+dev--root))
+  ;; claude-code-ide places/toggles its own side window, scoped to the project
+  ;; root of the current buffer's `default-directory', so no manual split.
+  (claude-code-ide))
+
+(defun +dev/window-console ()
+  "dev window 2: `+dev-console-shells' ghostel shells side by side."
+  (interactive)
+  (let ((dir (+dev--root)))
+    (+dev--single-main-window)
+    (set-window-buffer (selected-window) (+dev--shell-buffer dir 1))
+    (dotimes (i (1- +dev-console-shells))
+      (let ((w (split-window-right)))
+        (set-window-buffer w (+dev--shell-buffer dir (+ i 2)))
+        (select-window w)))
+    (balance-windows)
+    (select-window (frame-first-window))))
+
+(defun +dev--candidates ()
+  "Selectable project dirs, mirroring tmux-sessionizer's sources."
+  (delete-dups
+   (append
+    (cl-loop for parent in +dev-project-parents
+             for p = (expand-file-name parent)
+             when (file-directory-p p)
+             append (cl-remove-if-not
+                     #'file-directory-p (directory-files p t "\\`[^.]")))
+    (cl-remove-if-not #'file-directory-p
+                      (mapcar #'expand-file-name +dev-project-extras)))))
+
+(defun +dev/setup-current-workspace (&optional dir)
+  "Build the `dev' layout in the CURRENT workspace for DIR, unless already set up.
+DIR defaults to the current project root. Idempotent: the presence of the
+first console shell buffer marks a workspace as already laid out, so re-entry
+(via sessionizer, harpoon, or SPC p p) never clobbers your windows."
+  (interactive)
+  (let* ((dir  (file-name-as-directory (expand-file-name (or dir (+dev--root)))))
+         (name (+workspace-current-name)))
+    (puthash name dir +dev--roots)
+    (unless (get-buffer (format "*sh:%s:1*" name))
+      ;; spawn the console shells up front so all servers are live, like `dev'
+      (dotimes (i +dev-console-shells) (+dev--shell-buffer dir (1+ i)))
+      (+dev/window-code))))
+
+(defun +dev-open-project (dir)
+  "Open DIR in its own workspace (create if new) and ensure the `dev' layout.
+Shared core of the sessionizer and harpoon jumps; the Emacs tmux-project-open."
+  (setq dir (file-name-as-directory (expand-file-name dir)))
+  ;; Name the workspace after the project basename. Unlike tmux-project-open we
+  ;; do NOT map "." -> "_" (that exists only because tmux session names can't
+  ;; contain dots) — Emacs workspace names allow dots, and the mapping would
+  ;; collide distinct projects like node.js / node_js onto one workspace.
+  (let ((name (file-name-nondirectory (directory-file-name dir))))
+    (+workspace-switch name t)
+    (+dev/setup-current-workspace dir)))
+
+(defun +dev/sessionizer (dir)
+  "Pick project DIR, open it in its own workspace, and build the `dev' layout.
+The Emacs analog of tmux-sessionizer (prefix + f)."
+  (interactive (list (completing-read "project> " (+dev--candidates) nil t)))
+  (+dev-open-project dir))
+
+;; (a) Doom auto-creates a workspace on `projectile-switch-project' (SPC p p);
+;; hook the same layout builder onto it so the native project switch also lays
+;; out code+console. Guarded + idempotent (see `+dev/setup-current-workspace').
+(defcustom +dev-auto-layout-on-switch t
+  "If non-nil, SPC p p also builds the `dev' layout in the new project's
+workspace. When nil, SPC p p keeps Doom's default (find file in project)."
+  :type 'boolean :group 'doom)
+
+;; Replace Doom's post-switch action rather than stacking a hook on it. Doom
+;; runs `+workspaces-switch-project-function' (default `doom-project-find-file')
+;; after creating the workspace on SPC p p; the old `projectile-after-switch-
+;; project-hook' fired IN ADDITION to it (two prompts) and also fires twice
+;; (doomemacs#6559). Overriding the function gives exactly one post-switch action.
+(defun +dev-switch-project-h (dir)
+  "Doom `+workspaces-switch-project-function' for SPC p p."
+  (if +dev-auto-layout-on-switch
+      (+dev/setup-current-workspace dir)
+    (doom-project-find-file dir)))
+(setq +workspaces-switch-project-function #'+dev-switch-project-h)
+
+;;; --- harpoon: pin projects to numbered slots (ports tmux-harpoon) --------
+;; A persistent, ordered list of project dirs. M-1..9 jump to a slot's project
+;; (opening its workspace + dev layout on demand, surviving restarts). Reorder
+;; or clear slots by editing the list file (SPC o h), exactly like the tmux menu.
+
+(defcustom +harpoon-file
+  (expand-file-name "doom-harpoon/list"
+                    (or (getenv "XDG_DATA_HOME") (expand-file-name "~/.local/share")))
+  "File of pinned project dirs, one absolute path per line (harpoon slots)."
+  :type 'file :group 'doom)
+
+(defun +harpoon--slots ()
+  "Pinned project dirs, one per non-blank line in `+harpoon-file'."
+  (when (file-readable-p +harpoon-file)
+    (with-temp-buffer
+      (insert-file-contents +harpoon-file)
+      (split-string (buffer-string) "\n" t "[ \t]+"))))
+
+(defun +harpoon--save (slots)
+  "Write SLOTS (a list of dirs) back to `+harpoon-file'."
+  (make-directory (file-name-directory +harpoon-file) t)
+  (with-temp-file +harpoon-file
+    (when slots (insert (mapconcat #'identity slots "\n") "\n"))))
+
+(defun +harpoon/add ()
+  "Pin the current workspace's project to the next free harpoon slot."
+  (interactive)
+  (let* ((dir   (directory-file-name (expand-file-name (+dev--root))))
+         (slots (+harpoon--slots))
+         (label (file-name-nondirectory dir)))
+    (if-let* ((pos (cl-position dir slots :test #'string=)))
+        (message "harpoon: %s already pinned (slot %d)" label (1+ pos))
+      (+harpoon--save (append slots (list dir)))
+      (message "harpoon: pinned %s -> slot %d" label (length (+harpoon--slots))))))
+
+(defun +harpoon/jump (n)
+  "Open the project pinned at harpoon slot N (1-based)."
+  (interactive "p")
+  (let ((slots (+harpoon--slots)))
+    (if (<= 1 n (length slots))
+        (+dev-open-project (nth (1- n) slots))
+      (message "harpoon: slot %d is empty" n))))
+
+(defun +harpoon/menu ()
+  "Edit the harpoon slots: line N = slot N. Reorder to reorder, delete to clear."
+  (interactive)
+  (make-directory (file-name-directory +harpoon-file) t)
+  (find-file +harpoon-file))
+
+;; (b) M-1..9 jump to pinned harpoon projects (was Doom's workspace-switch-to-N).
+;; Raw workspace nav still lives on gt/gT and the SPC TAB menu.
+(map! "M-1" (cmd! (+harpoon/jump 1)) "M-2" (cmd! (+harpoon/jump 2))
+      "M-3" (cmd! (+harpoon/jump 3)) "M-4" (cmd! (+harpoon/jump 4))
+      "M-5" (cmd! (+harpoon/jump 5)) "M-6" (cmd! (+harpoon/jump 6))
+      "M-7" (cmd! (+harpoon/jump 7)) "M-8" (cmd! (+harpoon/jump 8))
+      "M-9" (cmd! (+harpoon/jump 9)))
+
+;; Under the existing SPC o "open" prefix. prefix + f muscle memory -> SPC o p;
+;; the two dev windows are SPC o 1 / SPC o 2 (SPC 1..9 is Doom's winum).
+(map! :leader
+      (:prefix ("o" . "open")
+       :desc "Project session (sessionizer)" "p" #'+dev/sessionizer
+       :desc "dev: window 1 (code)"          "1" (cmd! (+dev/window 1))
+       :desc "dev: window 2 (console)"       "2" (cmd! (+dev/window 2))
+       :desc "dev: window 3"                 "3" (cmd! (+dev/window 3))
+       :desc "Harpoon: pin current project"  "a" #'+harpoon/add
+       :desc "Harpoon: edit slots"           "h" #'+harpoon/menu))
+
+;; Windows within a workspace (the tmux windows). An ordered, extensible list:
+;; to add a 3rd, append e.g. ("scratch" . +dev/window-scratch) — then M-o 3
+;; (or SPC o 3) snaps straight to it. No other code changes needed.
+(defvar +dev-windows
+  '(("code"    . +dev/window-code)
+    ("console" . +dev/window-console))
+  "Ordered layouts for a workspace (the tmux windows). Each is (NAME . BUILDER).")
+
+(defun +dev--show-window (idx)
+  "Build window IDX (0-based) of `+dev-windows'."
+  (funcall (cdr (nth idx +dev-windows))))
+
+(defun +dev/window (n)
+  "Snap directly to window N (1-based) in the current workspace."
+  (interactive "p")
+  (if (<= 1 n (length +dev-windows))
+      (+dev--show-window (1- n))
+    (message "dev: no window %d (have %d)" n (length +dev-windows))))
+
+(defun +dev/window-dwim ()
+  "Snap to the dev window numbered by the digit key that invoked this."
+  (interactive)
+  (+dev/window (- last-command-event ?0)))
+
+;; M-o is the window PREFIX (the tmux prefix analog): M-o 1 / M-o 2 / M-o 3 snap
+;; DIRECTLY to that window — no cycling, exactly like tmux `prefix N'.
+;; `last-command-event' carries the digit, so one command covers 1-9 without
+;; closures. Bound in the evil states AND ghostel's own map, so M-o never
+;; reaches the PTY and can't interrupt anything in a shell.
+(defvar +dev-window-map
+  (let ((m (make-sparse-keymap)))
+    (dolist (d '("1" "2" "3" "4" "5" "6" "7" "8" "9"))
+      (define-key m (kbd d) #'+dev/window-dwim))
+    m)
+  "Keymap under the M-o window prefix; digit 1-9 snaps to that dev window.")
+
+(map! :nvime "M-o" +dev-window-map)
+(after! ghostel
+  (map! :map ghostel-semi-char-mode-map "M-o" +dev-window-map))
 
 (setq org-agenda-files '("~/org"))
 

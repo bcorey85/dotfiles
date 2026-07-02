@@ -79,7 +79,16 @@
 ;; Ships with Emacs 28+; no extra package needed.
 (setq doom-theme 'modus-vivendi)
 
-;; modus-vivendi handles its own background palette — no overrides needed.
+;; oxocarbon-tinted backgrounds: remap modus-vivendi's pure-black layers to
+;; IBM Carbon's warmer dark greys, matching the rest of the dotfiles.
+;; (base #161616, elevated #262626, selection #393939).
+(custom-set-faces!
+  '(default             :background "#161616")
+  '(fringe              :background "#161616")
+  '(mode-line           :background "#262626" :foreground "#d0d0d0")
+  '(mode-line-inactive  :background "#161616" :foreground "#535353")
+  '(child-frame-border  :background "#262626")
+  '(internal-border     :background "#262626"))
 
 (setq display-line-numbers-type 'relative)   ; matches nvim relativenumber
 

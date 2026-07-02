@@ -67,6 +67,7 @@ local plugin_order = {
   "obsidian",
   "orgmode", -- org-mode (engine + org-bullets + headlines) — after treesitter
   "markview",
+  "live-preview", -- browser markdown/html preview, live updates as you type
   "dirtytalk", -- programming spellcheck dictionary (en + programming spelllang)
   "tiny-cmdline",
   "dap", -- DAP: nvim-dap + dap-ui + dap-python (deferred — no require until <leader>d)

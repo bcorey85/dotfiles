@@ -151,7 +151,20 @@ return {
       vim.api.nvim_set_hl(0, "Headline", { link = "ColorColumn" })
       vim.api.nvim_set_hl(0, "CodeBlock", { link = "CursorLine" })
       vim.api.nvim_set_hl(0, "Dash", { link = "Comment" })
-      require("headlines").setup()
+      local headlines = require("headlines")
+      headlines.setup()
+
+      -- headlines.nvim is unmaintained. Its Syntax-triggered refresh can fire
+      -- mid treesitter-highlighter-init, iterating a partially-parsed tree where
+      -- a heading match resolves with no marker text — make_reverse_highlight
+      -- then concatenates a nil hl_group and throws (E5108) on every affected
+      -- markdown buffer. The failure is transient: the next refresh (TextChanged/
+      -- WinScrolled, once the tree is fully parsed) renders correctly. Guard the
+      -- refresh so the racy pass is a no-op instead of an error.
+      local refresh = headlines.refresh
+      headlines.refresh = function(...)
+        pcall(refresh, ...)
+      end
     end,
   },
 }

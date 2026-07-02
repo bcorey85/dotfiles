@@ -46,7 +46,7 @@
 (setq evil-escape-key-sequence "kk")
 
 ;;; ---------------------------------------------------------------------------
-;;; Look & feel — Rosé Pine Moon + JetBrainsMono (icon glyphs via Symbols Nerd
+;;; Look & feel — Modus Vivendi + AporeticSansMono (icon glyphs via Symbols Nerd
 ;;; Font Mono)
 ;;; ---------------------------------------------------------------------------
 
@@ -75,74 +75,23 @@
 ;; Extra vertical space between lines, in pixels (nil = none). Bump to taste.
 (setq-default line-spacing 0.25)
 
-;; Rosé Pine Moon, with the OneDark-ish backgrounds ported from nvim (theme.lua):
-;; the theme supplies the foreground palette (love/gold/foam/iris/pine), while we
-;; force a uniform OneDark base #282c34 (no solaire two-tone) to match nvim/tmux.
-(setq doom-theme 'doom-one)
+;; Modus Vivendi — high-contrast dark theme, accessibility-focused (WCAG AAA).
+;; Ships with Emacs 28+; no extra package needed.
+(setq doom-theme 'modus-vivendi)
 
-;; doom-rose-pine is a doom-themes theme, so it bakes colors into faces at load and
-;; has no palette-setter (unlike catppuccin-set-color). So the OneDark bg is applied
-;; two ways: (1) this hook kills solaire's two-tone on every theme load (and removes
-;; Doom's re-enabler so reloads stay flat); (2) the `custom-set-faces!` block below
-;; repaints the core background faces. custom-set-faces! re-applies on each theme
-;; load, so a live `doom/reload` / `SPC h r r` stays uniform.
-;;
-;; NOTE: rose-pine's own base #232136 still shows through on any face we don't
-;; override below — those get caught case-by-case in the re-tune blocks further down.
-(defun +onedark-bg-apply (&rest _)
-  "Disable solaire so the OneDark base background stays uniform."
-  (remove-hook 'doom-load-theme-hook #'solaire-global-mode)
-  (when (bound-and-true-p solaire-global-mode) (solaire-global-mode -1)))
-
-(add-hook 'doom-load-theme-hook #'+onedark-bg-apply)
-;; live reload: theme is already loaded, so apply right away
-(when (memq 'doom-one custom-enabled-themes) (+onedark-bg-apply))
-
-;; OneDark base #282c34 / current-line #2c313a. Repaint the core background faces
-;; so the editing area, sidebars (solaire off), fringe, and gutter read as one flat
-;; OneDark surface instead of rose-pine's #232136.
-(custom-set-faces!
-  '(default                  :background "#282c34")
-  '(solaire-default-face     :background "#282c34")
-  '(hl-line                  :background "#2c313a")
-  '(fringe                   :background "#282c34")
-  '(line-number              :background "#282c34")
-  '(line-number-current-line :background "#282c34"))
+;; modus-vivendi handles its own background palette — no overrides needed.
 
 (setq display-line-numbers-type 'relative)   ; matches nvim relativenumber
 
-;; The split divider ships near-invisible (rose-pine sets its fg ~= the bg).
-;; Bump it to a mid gray that reads against the OneDark base #282c34 but stays
-;; subtle. `vertical-border' is the 1-col line between side-by-side windows;
-;; the window-divider faces cover Doom's thicker dividers if enabled.
-;; custom-set-faces! re-applies on every theme load, so a live `doom/reload'
-;; won't clobber it.
+;; Window dividers — modus-vivendi has its own palette; use its muted gray
+;; for a subtle split line that's visible but not distracting.
 (custom-set-faces!
-  '(vertical-border            :foreground "#5c6370")
-  '(window-divider             :foreground "#5c6370")
-  '(window-divider-first-pixel :foreground "#5c6370")
-  '(window-divider-last-pixel  :foreground "#5c6370")
-  ;; flycheck's wavy error underline defaults to pure Red1 (#FF0000) — too hot
-  ;; against the OneDark base. Soften to rose-pine love, matching the echo-area
-  ;; error message color so the two read as one signal. Keeps the wave style.
-  '(flycheck-error :underline (:style wave :color "#ff6c6b")))
+  '(vertical-border            :foreground "#595959")
+  '(window-divider             :foreground "#595959")
+  '(window-divider-first-pixel :foreground "#595959")
+  '(window-divider-last-pixel  :foreground "#595959"))
 
-;; Markdown — match the nvim render-markdown look. The theme paints every heading
-;; level `love' (pink), bold comes out gold, and code blocks sit on rose-pine's
-;; `surface' #2a273f (the purple bleed). Instead: cycle heading colors per level
-;; like render-markdown.nvim (H1 love → H2 foam → …), make bold plain `text', and
-;; flatten code-block backgrounds onto the OneDark base. The header-face-N faces
-;; inherit bold from `markdown-header-face', so a :foreground-only override keeps it.
-(custom-set-faces!
-  '(markdown-header-face-1 :foreground "#ff6c6b")               ; love
-  '(markdown-header-face-2 :foreground "#51afef")               ; foam
-  '(markdown-header-face-3 :foreground "#c678dd")               ; iris
-  '(markdown-header-face-4 :foreground "#ECBE7B")               ; gold
-  '(markdown-header-face-5 :foreground "#98be65")               ; pine
-  '(markdown-header-face-6 :foreground "#da8548")               ; rose
-  '(markdown-bold-face     :inherit bold :foreground "#bbc2cf") ; text, not gold
-  '(markdown-code-face     :background "#282c34")               ; inline `code`, flat
-  '(markdown-pre-face      :background "#282c34"))              ; fenced ``` blocks, flat
+;; Markdown — modus-vivendi provides its own markdown faces. No overrides needed.
 
 ;; Hide markup (##, **, _, backticks) by default — the closest thing to nvim
 ;; markview's clean look without a renderer package. `markdown-hide-markup' is the
@@ -458,17 +407,6 @@
 ;; looks dimmer than nvim-treesitter (roughly level 4). Max it out for parity.
 (setq treesit-font-lock-level 4)
 
-;; THE actual reason TSX looked flat: tsx-ts-mode *does* face parameters, `const`
-;; bindings, and imports — but all with `font-lock-variable-name-face`, which
-;; doom-rose-pine paints `text` (#bbc2cf ≈ default fg), so they read as
-;; uncolored. nvim-treesitter avoids this by giving `@variable.parameter` its own
-;; accent. Emacs's face set can't split param from binding (they share one face),
-;; so recolor that shared face to rose-pine rose — params and bindings now
-;; pop like nvim. custom-set-faces! re-applies on every theme load, so a live
-;; `doom/reload' won't clobber it.
-(custom-set-faces!
-  '(font-lock-variable-name-face :foreground "#da8548"))   ; rose-pine rose
-
 ;;; ---------------------------------------------------------------------------
 ;;; Dired — oil.nvim muscle memory: `-` goes up a directory
 ;;; ---------------------------------------------------------------------------
@@ -507,22 +445,8 @@
 
 ;; Doom's `(syntax +childframe)' shows diagnostics in a `flycheck-posframe'
 ;; childframe — the nvim diagnostic-float equivalent, and it draws over the
-;; window rather than reflowing buffer text. Its per-severity faces inherit
-;; `default' (= white under doom-rose-pine), so the ONLY fix needed is to
-;; recolor them: love error / gold warn / iris info — the same ladder the
-;; nvim diagnostics use (theme.lua). `set-face-attribute' in `after!' runs when
-;; the package loads (custom-set-faces! can miss lazily-loaded faces).
-;;
-;; (This replaces an earlier setup that swapped in flycheck-popup-tip and
-;; redefined its formatter to get color — three face attributes do the same job
-;; with no function patching.) If the childframe ever fails to draw in a very
-;; narrow split, switch to lsp-ui-sideline virtual text instead: set
-;; `lsp-ui-sideline-show-diagnostics' back to t above — it's width-agnostic
-;; inline text rather than a floating frame.
-(after! flycheck-posframe
-  (set-face-attribute 'flycheck-posframe-error-face   nil :foreground "#ff6c6b")
-  (set-face-attribute 'flycheck-posframe-warning-face nil :foreground "#ECBE7B")
-  (set-face-attribute 'flycheck-posframe-info-face    nil :foreground "#c678dd"))
+;; window rather than reflowing buffer text. modus-vivendi provides its own
+;; accessibility-focused palette for these faces, so no overrides needed.
 
 ;; Red wavy underline under the whole offending expression. `flycheck-highlighting-mode'
 ;; keeps the region (with LSP end positions, that's the full call). The catch:
@@ -570,12 +494,14 @@
 ;; carrying `diff-hl-hunk-type`) — it just never gives it a face. We add one.
 ;; bg-only + :extend t + fg nil ⇒ tree-sitter foreground shows through and the
 ;; wash fills to the window edge (same trick as the ediff faces below).
-(defface +diff-hl-line-insert '((t :background "#26402b" :extend t))
-  "gitsigns-style line wash for inserted lines.")
-(defface +diff-hl-line-change '((t :background "#2b3650" :extend t))
-  "gitsigns-style line wash for changed lines.")
-(defface +diff-hl-line-delete '((t :background "#48262b" :extend t))
-  "gitsigns-style line wash anchoring deleted lines.")
+;; modus-vivendi has built-in diff-hl faces, so use its palette:
+;;   green bg for insert, yellow bg for change, red bg for delete.
+(defface +diff-hl-line-insert '((t :background "#2e3c2e" :extend t))
+  "gitsigns-style line wash for inserted lines (modus green-muted).")
+(defface +diff-hl-line-change '((t :background "#3c3c2e" :extend t))
+  "gitsigns-style line wash for changed lines (modus yellow-muted).")
+(defface +diff-hl-line-delete '((t :background "#3c2e2e" :extend t))
+  "gitsigns-style line wash anchoring deleted lines (modus red-muted).")
 
 (defvar +diff-hl-inline-enabled nil
   "When non-nil, wash diff-hl hunk overlays with a line background.
@@ -633,12 +559,11 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
   ;; faces inherit the bright working faces, so without this staged hunks look
   ;; identical to unstaged. custom-set-faces! re-applies on theme load, so a
   ;; live `doom/reload' won't clobber the dim palette.
-  ;; Hues track the line-wash faces below (#26402b / #48262b / #2b3650), bumped
-  ;; brighter so the thin fringe bitmap stays legible on the #282c34 base.
+  ;; Using modus-vivendi muted tones for staged hunks.
   (custom-set-faces!
-    '(diff-hl-reference-insert :foreground "#4d7a4d")  ; dim green  (staged add)
-    '(diff-hl-reference-delete :foreground "#7a4d4d")  ; dim red    (staged delete)
-    '(diff-hl-reference-change  :foreground "#4d5d8a")); dim blue   (staged change)
+    '(diff-hl-reference-insert :foreground "#4ea04e")  ; muted green (staged add)
+    '(diff-hl-reference-delete :foreground "#a04e4e")  ; muted red   (staged delete)
+    '(diff-hl-reference-change  :foreground "#a08e4e")) ; muted yellow (staged change)
   ;; Paint the hunk lines after every (sync or async) overlay refresh.
   (advice-add 'diff-hl--update-overlays :after #'+diff-hl-paint-hunks)
   (map! :n "] c" #'diff-hl-next-hunk
@@ -659,19 +584,8 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
 (after! indent-bars
   (setq indent-bars-prefer-character t))
 
-;; Make ediff look like vim's :Gdiffsplit: red = old/removed (buffer A), green =
-;; new/added (buffer B), BACKGROUND-ONLY so treesitter foreground shows through
-;; instead of ediff's flat opaque "peach" wash. `nil' foreground = inherit the
-;; char's own syntax color. Desaturated reds/greens.
-(custom-set-faces!
-  '(ediff-current-diff-A :background "#48262b" :foreground nil :extend t)   ; removed line
-  '(ediff-fine-diff-A    :background "#6e353d" :foreground nil)             ; exact removed text
-  '(ediff-current-diff-B :background "#26402b" :foreground nil :extend t)   ; added line
-  '(ediff-fine-diff-B    :background "#365a3d" :foreground nil)             ; exact added text
-  '(ediff-even-diff-A    :background "#3a2c2e" :foreground nil :extend t)
-  '(ediff-odd-diff-A     :background "#3a2c2e" :foreground nil :extend t)
-  '(ediff-even-diff-B    :background "#2c3a2e" :foreground nil :extend t)
-  '(ediff-odd-diff-B     :background "#2c3a2e" :foreground nil :extend t))
+;; Ediff — modus-vivendi provides its own high-contrast diff faces. No overrides
+;; needed — the built-in palette uses green/red/yellow with proper contrast.
 
 ;; Ediff + evil bindings (a/b copy, j/k/n/p navigate, q quit) are handled by
 ;; `evil-collection-ediff', enabled via `(evil +everywhere)' in init.el. It sets
@@ -683,56 +597,42 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
 
 
 
-;; Syntax-highlighted magit diffs via delta — match nvim/diffs.nvim -------------
+;; Syntax-highlighted magit diffs via delta ------------------------------------
 ;; Stock magit does NOT fontify diff bodies (`magit-diff-wash-hunk` inserts raw
 ;; +/- lines; only the bg faces are applied), so code in a magit diff renders in
-;; one flat color — comments are NOT muted the way treesitter shows them in nvim.
-;; `magit-delta` pipes each hunk through `delta`, which syntax-highlights it. We
-;; pair delta's "Catppuccin Mocha" syntax theme (muted comments, colored keywords)
-;; with custom +/- backgrounds blended the diffs.nvim way so the wash reads at the
-;; SAME intensity as the nvim diff surfaces.
+;; one flat color. `magit-delta` pipes each hunk through `delta`, which
+;; syntax-highlights it.
 ;;
-;; The +/- backgrounds: floor(diff*0.6 + base*0.4) per channel — the diffs.nvim
-;; recipe (`lua/diffs/runtime/highlight_groups.lua`). Sources are catppuccin-nvim's
-;; DiffAdd/DiffDelete bgs (#3f4d48 / #4d3d49) blended over the OneDark base
-;; (#282c34). Since the theme is fixed (Rosé Pine Moon + the OneDark base
-;; override above), the result is precomputed to static hex rather than derived
-;; live from the `default' face — same colors, no blend function and no
-;; theme-tracking hook to keep in sync. Recompute by hand only if the base bg
-;; changes: add = blend(#3f4d48) -> #353f40, minus = blend(#4d3d49) -> #3e3640.
-;;
-;; Under magit-delta the hunk colors live in delta's `--plus-style`/`--minus-style`
-;; ("syntax #hex" = syntax-highlighted fg over the bg), not Emacs faces.
 ;; `--no-gitconfig' is the load-bearing flag: it drops the gitconfig
-;; `line-numbers`/`navigate` settings whose gutter shifts the +/- markers off
+;; `line-numbers`/`navigate' settings whose gutter shifts the +/- markers off
 ;; column 0 and breaks `magit-diff-visit-file' with "Search failed". magit-delta
 ;; auto-appends --syntax-theme and --color-only; don't repeat them.
 (use-package! magit-delta
   :hook (magit-mode . magit-delta-mode)
-  :init (setq magit-delta-default-dark-theme "Catppuccin Mocha")
+  :init (setq magit-delta-default-dark-theme "Dracula")
   :config
   (setq magit-delta-delta-args
         '("--no-gitconfig"
           "--max-line-distance" "0.6"
           "--true-color" "always"
-          "--plus-style"       "syntax #353f40"      ; DiffAdd.bg blended over base
-          "--minus-style"      "syntax #3e3640"      ; DiffDelete.bg blended over base
-          "--plus-emph-style"  "syntax #2e5d3a"      ; word-level add  (nvim DiffText)
-          "--minus-emph-style" "syntax #5d2e36")))   ; word-level remove
+          "--plus-style"       "syntax #2e3c2e"      ; muted green (modus)
+          "--minus-style"      "syntax #3c2e2e"      ; muted red   (modus)
+          "--plus-emph-style"  "syntax #3a5a3a"      ; word-level add
+          "--minus-emph-style" "syntax #5a3a3a")))   ; word-level remove
 
 ;; File-row status keywords — neogit-style coloring. Magit faces the WHOLE file
 ;; heading (status word + filename) with one `magit-diff-file-heading` face
 ;; (`magit-format-file-default`, magit-diff.el), so "modified"/"new file"/"deleted"
 ;; render flat white. neogit colors the keyword instead. Swap in a format function
 ;; that faces the leading status word per-status and leaves the filename alone.
-;;   modified → foam (NeogitChangeModified)
-;;   new file → pine (rose-pine's green slot)
-;;   deleted  → love (red)
-;;   renamed  → iris
-(defface +magit-status-modified '((t :foreground "#51afef")) "Neogit-style modified keyword (foam).")
-(defface +magit-status-added    '((t :foreground "#98be65")) "Neogit-style new-file keyword (pine).")
-(defface +magit-status-removed  '((t :foreground "#ff6c6b")) "Neogit-style deleted keyword (love).")
-(defface +magit-status-renamed  '((t :foreground "#c678dd")) "Neogit-style renamed keyword (iris).")
+;;   modified → blue
+;;   new file → green
+;;   deleted  → red
+;;   renamed  → yellow
+(defface +magit-status-modified '((t :foreground "#5fafaf")) "neogit-style modified keyword (blue).")
+(defface +magit-status-added    '((t :foreground "#5faf5f")) "neogit-style new-file keyword (green).")
+(defface +magit-status-removed  '((t :foreground "#ff5f5f")) "neogit-style deleted keyword (red).")
+(defface +magit-status-renamed  '((t :foreground "#d0a05f")) "neogit-style renamed keyword (yellow).")
 
 (defun +magit-format-file-neogit (_kind file face &optional status orig)
   "Like `magit-format-file-default` but color the leading status keyword."
@@ -820,24 +720,22 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
 ;; these cover the rest, and double as the fallback if magit-delta-mode is off.
 (custom-set-faces!
   '(magit-diff-context           :background nil      :foreground nil :extend t)
-  '(magit-diff-context-highlight :background "#31353f" :foreground nil :extend t)
-  '(magit-diff-hunk-heading           :background "#31353f" :foreground "#51afef" :extend t)
-  '(magit-diff-hunk-heading-highlight :background "#3e4451" :foreground "#51afef" :extend t)
+  '(magit-diff-context-highlight :background "#2a2a2a" :foreground nil :extend t)
+  '(magit-diff-hunk-heading           :background "#2a2a2a" :foreground "#5fafaf" :extend t)
+  '(magit-diff-hunk-heading-highlight :background "#333333" :foreground "#5fafaf" :extend t)
   ;; +N/-M stat fringe (commit diffstat), not the file-row keywords above.
-  '(magit-diffstat-added   :foreground "#98be65")
-  '(magit-diffstat-removed :foreground "#ff6c6b"))
+  '(magit-diffstat-added   :foreground "#5faf5f")
+  '(magit-diffstat-removed :foreground "#ff5f5f"))
 
 ;; Word-level diff refinement is delegated to delta now (magit-diff-refine-hunk is
 ;; nil above), so these `diff-refine-added` / `diff-refine-removed` faces only show
-;; as the no-delta fallback. doom-rose-pine paints them BRIGHT saturated green/red;
-;; override to a subtle bg-only emphasis (brighter than the line bg, same hue, no
-;; FG flip) matching the nvim DiffText treatment (theme.lua :: `DiffText`).
+;; as the no-delta fallback. Use subtle bg-only emphasis matching modus-vivendi.
 (custom-set-faces!
-  '(diff-refine-added           :background "#2e5d3a" :foreground nil :extend t)
-  '(diff-refine-removed         :background "#5d2e36" :foreground nil :extend t)
+  '(diff-refine-added           :background "#3a5a3a" :foreground nil :extend t)
+  '(diff-refine-removed         :background "#5a3a3a" :foreground nil :extend t)
   ;; status-buffer section chrome
-  '(magit-section-highlight   :background "#31353f" :foreground nil)
-  '(magit-section-heading     :foreground "#c678dd" :weight bold))   ; iris, matches NeogitSectionHeader
+  '(magit-section-highlight   :background "#2a2a2a" :foreground nil)
+  '(magit-section-heading     :foreground "#d0a05f" :weight bold))   ; yellow, matches modus palette
 
 ;;; ---------------------------------------------------------------------------
 ;;; Claude Code — the cockpit centerpiece

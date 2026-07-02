@@ -46,8 +46,8 @@
 (setq evil-escape-key-sequence "kk")
 
 ;;; ---------------------------------------------------------------------------
-;;; Look & feel — Modus Vivendi + AporeticSansMono (icon glyphs via Symbols Nerd
-;;; Font Mono)
+;;; Look & feel — oxocarbon dark / Modus Operandi light (icon glyphs via Symbols
+;;; Nerd Font Mono)
 ;;; ---------------------------------------------------------------------------
 
 ;; JuliaMono — monospace with exceptionally broad Unicode coverage. Chosen for
@@ -76,7 +76,7 @@
 (setq-default line-spacing 0.25)
 
 ;;; ---------------------------------------------------------------------------
-;;; Theme — modus-vivendi/operandi toggle synced via ~/.cache/theme-mode
+;;; Theme — oxocarbon (dark) / modus-operandi (light) toggle synced via ~/.cache/theme-mode
 ;;; ---------------------------------------------------------------------------
 
 ;; Shared state file: `theme-mode toggle' (tmux prefix T) flips this, and nvim
@@ -92,8 +92,10 @@
     (if (member raw '("dark" "light")) raw "dark")))
 
 (defun +theme/apply (mode &optional force)
-  "Switch to MODE (\"dark\"/\"light\")."
-  (let ((scheme (if (equal mode "light") 'modus-operandi 'modus-vivendi)))
+  "Switch to MODE (\"dark\"/\"light\").
+Dark is oxocarbon; light stays modus-operandi because no Emacs oxocarbon port
+ships a light variant (tmux/nvim have oxocarbon-light, Emacs can't yet)."
+  (let ((scheme (if (equal mode "light") 'modus-operandi 'doom-oxocarbon)))
     (unless (and (not force) (eq doom-theme scheme))
       (setq doom-theme scheme)
       (load-theme scheme t))))
@@ -126,15 +128,15 @@
 
 (setq display-line-numbers-type 'relative)   ; matches nvim relativenumber
 
-;; Window dividers — modus-vivendi has its own palette; use its muted gray
-;; for a subtle split line that's visible but not distracting.
+;; Window dividers — a mid-gray that stays legible on both oxocarbon's dark
+;; base and modus-operandi's light base, for a subtle split line.
 (custom-set-faces!
   '(vertical-border            :foreground "#595959")
   '(window-divider             :foreground "#595959")
   '(window-divider-first-pixel :foreground "#595959")
   '(window-divider-last-pixel  :foreground "#595959"))
 
-;; Markdown — modus-vivendi provides its own markdown faces. No overrides needed.
+;; Markdown — both themes provide their own markdown faces. No overrides needed.
 
 ;; Hide markup (##, **, _, backticks) by default — the closest thing to nvim
 ;; markview's clean look without a renderer package. `markdown-hide-markup' is the

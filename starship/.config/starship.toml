@@ -1,6 +1,20 @@
 # modus-vivendi palette (Protesilaos Stavrou)
 palette = "modus_vivendi"
 
+# NOTE: the root `format` MUST come before [palettes.*] — any key after a
+# table header belongs to that table. Placed below the palette it silently
+# became palettes.modus_vivendi.format and starship fell back to the default
+# `$all` format (which pulls in $aws et al.).
+format = """
+$directory\
+$git_branch\
+$git_status\
+$python\
+$nodejs\
+$cmd_duration\
+$line_break\
+$character"""
+
 [palettes.modus_vivendi]
 red = "#ff5f59"
 orange = "#db7b5f"
@@ -13,16 +27,6 @@ fg = "#ffffff"
 bg = "#000000"
 grey = "#535353"
 
-format = """
-$directory\
-$git_branch\
-$git_status\
-$python\
-$nodejs\
-$cmd_duration\
-$line_break\
-$character"""
-
 [directory]
 style = "bold teal"
 truncation_length = 3
@@ -30,7 +34,7 @@ truncate_to_repo = true
 
 [git_branch]
 format = " [$branch]($style)"
-style = "yellow"
+style = "blue"
 
 [git_status]
 format = "[$all_status$ahead_behind]($style) "

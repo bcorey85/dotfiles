@@ -1,18 +1,27 @@
--- theme-sync — keep nvim's modus style in sync with the shared light/dark
--- state written by the `theme-mode` script (see scripts/.local/bin/theme-mode).
+-- theme-sync — keep nvim's oxocarbon background in sync with the shared
+-- light/dark state written by the `theme-mode` script (see
+-- scripts/.local/bin/theme-mode).
 --
 -- Design: one state file (~/.cache/theme-mode) holds "dark" or "light". tmux
 -- and nvim both read it. nvim polls the file via libuv fs_poll (~1s) so a
--- toggle from tmux (prefix T) flips every running instance, focused or not,
+-- toggle from tmux (prefix t) flips every running instance, focused or not,
 -- with no sockets or lifecycle to manage. <leader>ut shells out to the same
 -- script, so a toggle from nvim flips tmux too — one source of truth, both ways.
+--
+-- oxocarbon is a single colorscheme whose palette forks on vim.o.background, so
+-- switching mode means setting the background then re-running :colorscheme.
 
 local M = {}
 
 local STATE_FILE = vim.env.HOME .. "/.cache/theme-mode"
-local SCHEME = { dark = "modus_vivendi", light = "modus_operandi" }
+local COLORSCHEME = "oxocarbon"
 
 local applied ---@type string|nil  last mode we set, to skip redundant reloads
+
+-- Normalize any input to "dark" (the default) or "light".
+local function normalize(mode)
+  return mode == "light" and "light" or "dark"
+end
 
 -- Read the mode from the state file; default to dark if missing/garbage.
 function M.read_mode()
@@ -22,20 +31,20 @@ function M.read_mode()
   end
   local raw = f:read("l") or ""
   f:close()
-  local mode = raw:gsub("%s+", "")
-  return SCHEME[mode] and mode or "dark"
+  return normalize(raw:gsub("%s+", ""))
 end
 
--- Apply a mode's colorscheme. Skips the reload if it's already active (a
--- colorscheme reload clears user highlights and re-runs the theme build), unless
--- `force` is set (used for the initial apply).
+-- Apply a mode by setting oxocarbon's background and rebuilding. Skips the
+-- reload if it's already active (a colorscheme reload clears user highlights and
+-- re-runs the theme build), unless `force` is set (used for the initial apply).
 function M.apply(mode, force)
-  mode = SCHEME[mode] and mode or "dark"
+  mode = normalize(mode)
   if not force and mode == applied then
     return
   end
   applied = mode
-  vim.cmd.colorscheme(SCHEME[mode])
+  vim.o.background = mode
+  vim.cmd.colorscheme(COLORSCHEME)
 end
 
 function M.apply_from_file(force)

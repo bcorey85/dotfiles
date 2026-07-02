@@ -47,7 +47,9 @@ return {
       end,
     })
 
-    vim.cmd.colorscheme("modus_vivendi")
+    -- Apply the shared light/dark mode (~/.cache/theme-mode) and poll it so a
+    -- toggle from tmux (prefix T) or another nvim flips this instance too.
+    require("config.theme-sync").start()
 
     -- markview heading colours (referenced by markview.lua's headings config).
     -- Two muted tones — magenta for H1, blue for H2-H6 — since markview already

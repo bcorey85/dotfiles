@@ -23,8 +23,8 @@ green = "#44bc44"
 blue = "#2fafff"
 teal = "#00d3d0"
 purple = "#feacd0"
-fg = "#d0d0d0"
-bg = "#161616"
+fg = "#ffffff"
+bg = "#000000"
 grey = "#535353"
 
 [directory]

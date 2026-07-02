@@ -1,9 +1,9 @@
 * {
-    bg:         #161616;
-    bg-alt:     #262626;
-    bg-sel:     #393939;
-    fg:         #d0d0d0;
-    fg-alt:     #535353;
+    bg:         #000000;
+    bg-alt:     #1e1e1e;
+    bg-sel:     #535353;
+    fg:         #ffffff;
+    fg-alt:     #989898;
     blue:       #2fafff;
     green:      #44bc44;
     red:        #ff5f59;

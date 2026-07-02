@@ -39,12 +39,33 @@ return {
     require("markview").setup({
       preview = {
         -- Render in normal, command, and terminal modes (matches the old
-        -- render_modes). hybrid_modes is OFF (empty): markers like ** and _
-        -- stay concealed even on the cursor line, so scrolling doesn't make
-        -- bold/italic spans expand and snap back. Enter insert mode to see/edit
-        -- raw source (insert isn't in `modes`, so the whole buffer un-renders).
+        -- render_modes). Enter insert mode to see/edit raw source (insert isn't
+        -- in `modes`, so the whole buffer un-renders).
         modes = { "n", "c", "t" },
-        hybrid_modes = {},
+
+        -- Hybrid mode reveals a node's raw source when the cursor is ON it.
+        -- smart-tables REQUIRES this to enter/edit a wide table: it draws the
+        -- fitted table as virt_lines over 0-height `conceal_lines` source rows,
+        -- so with no reveal the cursor falls into the concealed rows and <C-d>
+        -- scrolling desyncs — it can't step into the table (smart-tables
+        -- table.lua:353 documents hybrid mode as the edit path).
+        hybrid_modes = { "n" },
+        -- Block (all-or-nothing) reveal, NOT linewise: smart-tables falls back
+        -- to the stock renderer when linewise hybrid mode is on (table.lua:
+        -- 372-378), and the stock renderer shatters overflowing tables. Keep
+        -- false (also the default) — pinned here to document the constraint.
+        linewise_hybrid_mode = false,
+        -- Scope the reveal to ONLY tables, preserving the old "markers stay
+        -- concealed on the cursor line so scrolling doesn't snap **/_ spans"
+        -- behaviour everywhere else. raw_previews is per-language and an
+        -- UNLISTED language reveals ALL its nodes, so both markdown (tables
+        -- only) and markdown_inline (nothing) must be pinned. Bold/italic live
+        -- in markdown_inline; "none" is a sentinel class that matches nothing,
+        -- so the inclusion filter leaves that language revealing zero nodes.
+        raw_previews = {
+          markdown = { "tables" },
+          markdown_inline = { "none" },
+        },
       },
 
       -- Hand table rendering to smart-tables.

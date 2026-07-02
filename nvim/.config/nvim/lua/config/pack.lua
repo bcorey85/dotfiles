@@ -137,7 +137,16 @@ end
 local setups = {} -- { name, fn } in declared order
 
 for _, modname in ipairs(plugin_order) do
-  local mod = require("plugins." .. modname)
+  -- Guard the require: a spec file that fails to parse (syntax error, or an
+  -- unresolved merge-conflict marker mid-rebase/stash) would otherwise throw
+  -- here and abort the whole loop — vim.pack.add never runs and NOTHING loads,
+  -- including neogit, leaving no way to fix the conflict from inside nvim.
+  -- Skip the broken spec instead so every other plugin still loads.
+  local ok, mod = pcall(require, "plugins." .. modname)
+  if not ok then
+    vim.notify("plugin spec failed to load (" .. modname .. "): " .. tostring(mod), vim.log.levels.ERROR)
+    goto continue
+  end
   -- A file returns a single spec (has .src) or a list of specs.
   local entries = mod.src and { mod } or mod
   for _, spec in ipairs(entries) do
@@ -157,6 +166,7 @@ for _, modname in ipairs(plugin_order) do
       end
     end
   end
+  ::continue::
 end
 
 vim.pack.add(specs, { confirm = false })

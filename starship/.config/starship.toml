@@ -1,17 +1,17 @@
-# doom-one palette (Atom One Dark lineage)
-palette = "doom_one"
+# modus-vivendi palette (Protesilaos Stavrou)
+palette = "modus_vivendi"
 
-[palettes.doom_one]
-red = "#ff6c6b"
-orange = "#da8548"
-yellow = "#ECBE7B"
-green = "#98be65"
-blue = "#51afef"
-teal = "#4db5bd"
-purple = "#c678dd"
-fg = "#bbc2cf"
-bg = "#282c34"
-grey = "#5B6268"
+[palettes.modus_vivendi]
+red = "#ff5f59"
+orange = "#db7b5f"
+yellow = "#d0bc00"
+green = "#44bc44"
+blue = "#2fafff"
+teal = "#00d3d0"
+purple = "#feacd0"
+fg = "#ffffff"
+bg = "#000000"
+grey = "#535353"
 
 format = """
 $directory\

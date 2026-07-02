@@ -2,10 +2,10 @@
 # theme-mode — single source of truth for light/dark across tmux + neovim.
 #
 # Writes the mode to a shared state file; tmux and nvim both read it:
-#   - tmux: this script sources the matching ~/.config/tmux/modus-{mode}.conf
+#   - tmux: this script sources the matching ~/.config/tmux/oxocarbon-{mode}.conf
 #           so every client updates immediately.
 #   - nvim: each instance polls the state file (see lua/config/theme-sync.lua)
-#           and flips modus_vivendi <-> modus_operandi within ~1s.
+#           and flips oxocarbon's background dark <-> light within ~1s.
 #
 # Usage: theme-mode [dark|light|toggle]   (default: toggle)
 set -euo pipefail
@@ -32,7 +32,7 @@ printf '%s\n' "$mode" >"$STATE_FILE"
 # Apply to tmux now, if a server is running. source-file is server-global, so
 # every attached client updates at once.
 if command -v tmux >/dev/null 2>&1 && tmux has-session >/dev/null 2>&1; then
-  tmux source-file -q "$TMUX_THEME_DIR/modus-$mode.conf" 2>/dev/null || true
+  tmux source-file -q "$TMUX_THEME_DIR/oxocarbon-$mode.conf" 2>/dev/null || true
   tmux display-message "theme: $mode"
 fi
 

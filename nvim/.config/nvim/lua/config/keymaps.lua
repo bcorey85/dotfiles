@@ -263,18 +263,16 @@ vim.keymap.set("n", "<leader>Tf", "<cmd>tabfirst<cr>", { desc = "First Tab" })
 vim.keymap.set("n", "<leader>Tl", "<cmd>tablast<cr>", { desc = "Last Tab" })
 
 -- ─── UI toggles ───────────────────────────────────────────────────────────────
--- Toggle between modus-themes dark (vivendi) and light (operandi). The
--- ColorScheme autocmd in plugins/theme.lua re-applies the markview heading
--- colours per background, so headings stay legible after the swap.
+-- Toggle dark (vivendi) ↔ light (operandi) across tmux AND nvim. Shells out to
+-- the shared `theme-mode` script (single source of truth: it writes
+-- ~/.cache/theme-mode and re-sources tmux), then applies the new mode here
+-- immediately rather than waiting on theme-sync's ~1s poll. The ColorScheme
+-- autocmd in plugins/theme.lua re-applies markview heading colours after.
 vim.keymap.set("n", "<leader>ut", function()
-  -- modus-themes keeps colors_name as "modus" for both styles, so read the
-  -- active style from its config to decide which way to flip.
-  local ok, cfg = pcall(require, "modus-themes.config")
-  local light = ok and cfg.options.style == "modus_operandi"
-  local next_style = light and "modus_vivendi" or "modus_operandi"
-  vim.cmd.colorscheme(next_style)
-  vim.notify("Theme: " .. next_style)
-end, { desc = "Toggle theme (vivendi/operandi)" })
+  vim.system({ vim.fn.expand("~/.local/bin/theme-mode"), "toggle" }, {}, vim.schedule_wrap(function()
+    require("config.theme-sync").apply_from_file(true)
+  end))
+end, { desc = "Toggle theme dark/light (tmux + nvim)" })
 vim.keymap.set("n", "<leader>uw", function()
   vim.wo.wrap = not vim.wo.wrap
 end, { desc = "Toggle wrap" })

@@ -1,0 +1,39 @@
+#!/bin/bash
+# theme-mode — single source of truth for light/dark across tmux + neovim.
+#
+# Writes the mode to a shared state file; tmux and nvim both read it:
+#   - tmux: this script sources the matching ~/.config/tmux/modus-{mode}.conf
+#           so every client updates immediately.
+#   - nvim: each instance polls the state file (see lua/config/theme-sync.lua)
+#           and flips modus_vivendi <-> modus_operandi within ~1s.
+#
+# Usage: theme-mode [dark|light|toggle]   (default: toggle)
+set -euo pipefail
+
+STATE_FILE="$HOME/.cache/theme-mode"
+TMUX_THEME_DIR="$HOME/.config/tmux"
+
+current() { cat "$STATE_FILE" 2>/dev/null | tr -d '[:space:]'; }
+
+arg="${1:-toggle}"
+case "$arg" in
+  dark | light) mode="$arg" ;;
+  toggle) [ "$(current)" = "light" ] && mode="dark" || mode="light" ;;
+  *)
+    echo "usage: theme-mode [dark|light|toggle]" >&2
+    exit 2
+    ;;
+esac
+
+# Write state (nvim picks this up via its poller).
+mkdir -p "$(dirname "$STATE_FILE")"
+printf '%s\n' "$mode" >"$STATE_FILE"
+
+# Apply to tmux now, if a server is running. source-file is server-global, so
+# every attached client updates at once.
+if command -v tmux >/dev/null 2>&1 && tmux has-session >/dev/null 2>&1; then
+  tmux source-file -q "$TMUX_THEME_DIR/modus-$mode.conf" 2>/dev/null || true
+  tmux display-message "theme: $mode"
+fi
+
+echo "$mode"

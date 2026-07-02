@@ -30,9 +30,6 @@
 -- setup() still runs independently in the order listed here.
 local plugin_order = {
   "theme", -- colorscheme — must be first
-  "kanagawa", -- kanagawa (dark) + kanagawalotus (light) colorschemes
-  "gruvbox", -- gruvbox dark/light
-  "everforest", -- everforest dark/light
   "mini-icons", -- icon mock (satisfies require("nvim-web-devicons")) — before consumers
   "treesitter", -- before markview / mini.ai textobjects
   "treesitter-context", -- sticky scope header — after treesitter

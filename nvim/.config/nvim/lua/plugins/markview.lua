@@ -59,12 +59,12 @@ return {
           enable = true,
           shift_width = 0, -- no per-level indent (render-md had indent disabled)
 
-          heading_1 = { style = "icon", icon = "⌘ ", hl = "MdHeading1" },
-          heading_2 = { style = "icon", icon = "λ ", hl = "MdHeading2" },
-          heading_3 = { style = "icon", icon = "△ ", hl = "MdHeading3" },
-          heading_4 = { style = "icon", icon = "⟐ ", hl = "MdHeading4" },
-          heading_5 = { style = "icon", icon = "⊡ ", hl = "MdHeading5" },
-          heading_6 = { style = "icon", icon = "∷ ", hl = "MdHeading6" },
+          heading_1 = { style = "inline", icon = "⌘ ", hl = "MdHeading1" },
+          heading_2 = { style = "inline", icon = "λ ", hl = "MdHeading2" },
+          heading_3 = { style = "inline", icon = "△ ", hl = "MdHeading3" },
+          heading_4 = { style = "inline", icon = "⟐ ", hl = "MdHeading4" },
+          heading_5 = { style = "inline", icon = "⊡ ", hl = "MdHeading5" },
+          heading_6 = { style = "inline", icon = "∷ ", hl = "MdHeading6" },
         },
 
         code_blocks = {

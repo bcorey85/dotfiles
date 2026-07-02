@@ -14,6 +14,37 @@ return {
         comments = { italic = true },
         keywords = { italic = true },
       },
+      -- TEST: map the vivendi background layers onto oxocarbon's grays.
+      -- on_colors() runs before highlights are built, so these cascade to every
+      -- group derived from them. bg_sidebar is set from bg_dim earlier in the
+      -- plugin, so it must be overridden explicitly to follow. Defaults (vivendi):
+      --   bg_main #000000, bg_alt #0f0f0f, bg_dim #1e1e1e, bg_active #303030.
+      -- Remove this block to go back to pure black.
+      --
+      -- on_colors is shared across BOTH styles, so gate it to vivendi — applying
+      -- these dark greys to operandi (light) breaks the light theme on toggle.
+      on_colors = function(colors)
+        if require("modus-themes.config").options.style ~= "modus_vivendi" then
+          return
+        end
+        colors.bg_main = "#161616" -- oxocarbon base — Normal / editor bg
+        colors.bg_alt = "#131313" -- a hair darker than base, keeps subtle depth
+        colors.bg_dim = "#262626" -- oxocarbon elevated — floats, popups
+        colors.bg_sidebar = "#262626" -- match bg_dim (else stays derived from old bg_dim)
+        colors.bg_active = "#393939" -- oxocarbon selection gray
+        colors.fg_main = "#d0d0d0" -- oxocarbon base04 — dimmed off-white (was #ffffff)
+      end,
+      -- Float popups (mini-clue, LSP hover, etc.) render on NormalFloat, which
+      -- modus maps to bg_active — my bg_active bump to #393939 made them read
+      -- too light. Pin the popup surface to the #262626 elevated grey so the
+      -- hierarchy is editor #161616 < popup #262626 < selection #393939.
+      -- Gated to vivendi, same as on_colors, so operandi keeps its own float bg.
+      on_highlights = function(hl, c)
+        if require("modus-themes.config").options.style ~= "modus_vivendi" then
+          return
+        end
+        hl.NormalFloat = { fg = c.fg_main, bg = c.bg_dim } -- fg_main is dimmed #d0d0d0 → popups match
+      end,
     })
 
     vim.cmd.colorscheme("modus_vivendi")

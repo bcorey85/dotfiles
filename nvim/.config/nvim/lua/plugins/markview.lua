@@ -1,14 +1,15 @@
--- markview.nvim + markview-smart-tables.nvim — markdown previewer.
+-- markview.nvim — markdown previewer. Replaces render-markdown.nvim.
 --
--- Replaces render-markdown.nvim. The reason for the swap is tables: render-md
--- renders a table at its natural width and then lets Neovim's `wrap` soft-wrap
--- the over-long line, which desyncs its row-by-row extmarks and shatters wide
--- tables in the prefix-m reading popup. markview-smart-tables re-lays-out the
--- table to FIT the window — shrinks the widest columns first, then word-wraps
--- overflowing cells INSIDE the cell borders — so wide tables stay intact.
---
--- Wiring: smart-tables is a companion that takes over markview's table renderer
--- via the `renderers.markdown_table` hook (see setup below).
+-- Tables use markview's STOCK renderer. We previously wired
+-- markview-smart-tables.nvim to re-fit wide tables to the window, but it drew
+-- tables as virt_lines over 0-height `conceal_lines` source rows, which broke
+-- cursor navigation: <C-d> scrolling couldn't step into a table (the source
+-- rows had no screen height and the render was non-interactive). Enabling
+-- markview hybrid mode was needed just to reveal the raw table, which brought
+-- back inline-marker snapping — not worth it. smart-tables was removed.
+-- Tradeoff: the stock renderer draws tables at natural width, so a table wider
+-- than the window soft-wraps and its row extmarks desync (shattered look) in
+-- the <leader>m reading popup. Navigable-but-occasionally-ugly beats unusable.
 --
 -- Heading colours + list bullets use custom hl groups (MdHeading1..6, MdBullet)
 -- defined in theme.lua's catppuccin custom_highlights. markview only REFERENCES
@@ -25,54 +26,17 @@ return {
   deps = {
     "nvim-treesitter/nvim-treesitter", -- markdown + markdown_inline parsers
     "echasnovski/mini.nvim", -- icon provider (mini.icons mock satisfies devicons)
-    "gunasekar/markview-smart-tables.nvim",
   },
   setup = function()
-    -- Auto-fit wide tables to the window. wrap_width: max table width as a
-    -- fraction of the window; wrap_minwidth: floor a column shrinks to before
-    -- long words are hard-broken.
-    require("markview-smart-tables").setup({
-      wrap_width = 0.9,
-      wrap_minwidth = 5,
-    })
-
     require("markview").setup({
       preview = {
         -- Render in normal, command, and terminal modes (matches the old
-        -- render_modes). Enter insert mode to see/edit raw source (insert isn't
-        -- in `modes`, so the whole buffer un-renders).
+        -- render_modes). hybrid_modes is OFF (empty): markers like ** and _
+        -- stay concealed even on the cursor line, so scrolling doesn't make
+        -- bold/italic spans expand and snap back. Enter insert mode to see/edit
+        -- raw source (insert isn't in `modes`, so the whole buffer un-renders).
         modes = { "n", "c", "t" },
-
-        -- Hybrid mode reveals a node's raw source when the cursor is ON it.
-        -- smart-tables REQUIRES this to enter/edit a wide table: it draws the
-        -- fitted table as virt_lines over 0-height `conceal_lines` source rows,
-        -- so with no reveal the cursor falls into the concealed rows and <C-d>
-        -- scrolling desyncs — it can't step into the table (smart-tables
-        -- table.lua:353 documents hybrid mode as the edit path).
-        hybrid_modes = { "n" },
-        -- Block (all-or-nothing) reveal, NOT linewise: smart-tables falls back
-        -- to the stock renderer when linewise hybrid mode is on (table.lua:
-        -- 372-378), and the stock renderer shatters overflowing tables. Keep
-        -- false (also the default) — pinned here to document the constraint.
-        linewise_hybrid_mode = false,
-        -- Scope the reveal to ONLY tables, preserving the old "markers stay
-        -- concealed on the cursor line so scrolling doesn't snap **/_ spans"
-        -- behaviour everywhere else. raw_previews is per-language and an
-        -- UNLISTED language reveals ALL its nodes, so both markdown (tables
-        -- only) and markdown_inline (nothing) must be pinned. Bold/italic live
-        -- in markdown_inline; "none" is a sentinel class that matches nothing,
-        -- so the inclusion filter leaves that language revealing zero nodes.
-        raw_previews = {
-          markdown = { "tables" },
-          markdown_inline = { "none" },
-        },
-      },
-
-      -- Hand table rendering to smart-tables.
-      renderers = {
-        markdown_table = function(buffer, item)
-          require("markview-smart-tables").render(buffer, item)
-        end,
+        hybrid_modes = {},
       },
 
       markdown = {

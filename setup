@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+sset -e
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -36,7 +36,7 @@ if [[ ! "$PLATFORM" =~ ^(wsl|ubuntu|mac|arch)$ ]]; then
   usage
 fi
 
-DOTFILES_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 print_info "Setting up dotfiles for: $PLATFORM"
 echo ""

@@ -21,14 +21,6 @@
       "rev": "d5c09986681a671613aef0226ef409c01561d64c",
       "src": "https://github.com/dlyongemallo/diffview-plus.nvim"
     },
-    "doom-one": {
-      "rev": "beae92173315c7282f6897e666cfd67fbf0f3ac9",
-      "src": "https://github.com/NTBBloodbath/doom-one.nvim"
-    },
-    "everforest-nvim": {
-      "rev": "d235ca0aa6a29546e661a020e2618612acbbffbe",
-      "src": "https://github.com/neanias/everforest-nvim"
-    },
     "friendly-snippets": {
       "rev": "6cd7280adead7f586db6fccbd15d2cac7e2188b9",
       "src": "https://github.com/rafamadriz/friendly-snippets"
@@ -41,10 +33,6 @@
       "rev": "c995bbacf8229dc096ec1c3d60f8531059c86c1b",
       "src": "https://github.com/MagicDuck/grug-far.nvim"
     },
-    "gruvbox.nvim": {
-      "rev": "154eb5ff5b96d0641307113fa385eaf0d36d9796",
-      "src": "https://github.com/ellisonleao/gruvbox.nvim"
-    },
     "harpoon": {
       "rev": "87b1a3506211538f460786c23f98ec63ad9af4e5",
       "src": "https://github.com/ThePrimeagen/harpoon",
@@ -54,14 +42,6 @@
       "rev": "bf17c96a836ea27c0a7a2650ba385a7783ed322e",
       "src": "https://github.com/lukas-reineke/headlines.nvim"
     },
-    "kanagawa": {
-      "rev": "bb85e4bfc8d89b0e62c8fa53ccdd13d12e2f77b3",
-      "src": "https://github.com/rebelot/kanagawa.nvim"
-    },
-    "kanagawa.nvim": {
-      "rev": "bb85e4bfc8d89b0e62c8fa53ccdd13d12e2f77b3",
-      "src": "https://github.com/rebelot/kanagawa.nvim"
-    },
     "lazydev.nvim": {
       "rev": "ff2cbcba459b637ec3fd165a2be59b7bbaeedf0d",
       "src": "https://github.com/folke/lazydev.nvim"
@@ -69,10 +49,6 @@
     "live-preview.nvim": {
       "rev": "5977060965161f7b3be3166467d03e09d10c68ea",
       "src": "https://github.com/brianhuster/live-preview.nvim"
-    },
-    "markview-smart-tables.nvim": {
-      "rev": "539b3b5a75fb64f5c69397e3f1a8daa1909aa217",
-      "src": "https://github.com/gunasekar/markview-smart-tables.nvim"
     },
     "markview.nvim": {
       "rev": "301e431c7b618235f5447d54465c70934bd33668",
@@ -101,10 +77,6 @@
     "neogit": {
       "rev": "43ea1a0854052e583f647e0b35879f0158a70a78",
       "src": "https://github.com/NeogitOrg/neogit"
-    },
-    "nightfox.nvim": {
-      "rev": "26b61b1f856ec37cae3cb64f5690adb955f246a1",
-      "src": "https://github.com/EdenEast/nightfox.nvim"
     },
     "nvim-dap": {
       "rev": "531771530d4f82ad2d21e436e3cc052d68d7aebb",
@@ -168,10 +140,6 @@
     "orgmode": {
       "rev": "4f99b3780950370e49d6ab88d041b2afe4da2566",
       "src": "https://github.com/nvim-orgmode/orgmode"
-    },
-    "oxocarbon": {
-      "rev": "cf49e389c22dab56224e43ae16422ddcd5b61b28",
-      "src": "https://github.com/nyoom-engineering/oxocarbon.nvim"
     },
     "persistence.nvim": {
       "rev": "b20b2a7887bd39c1a356980b45e03250f3dce49c",

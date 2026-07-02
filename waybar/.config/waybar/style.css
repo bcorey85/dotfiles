@@ -5,16 +5,16 @@
 }
 
 window#waybar {
-  background-color: #161616;
-  color: #d0d0d0;
-  border-bottom: 2px solid #262626;
+  background-color: #000000;
+  color: #ffffff;
+  border-bottom: 2px solid #1e1e1e;
 }
 
 tooltip {
-  background-color: #262626;
-  border: 1px solid #393939;
+  background-color: #1e1e1e;
+  border: 1px solid #535353;
   border-radius: 8px;
-  color: #d0d0d0;
+  color: #ffffff;
   padding: 8px;
 }
 
@@ -24,7 +24,7 @@ tooltip label {
 
 #workspaces button {
   padding: 0 8px;
-  color: #393939;
+  color: #535353;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -40,17 +40,17 @@ tooltip label {
 }
 
 #workspaces button:hover {
-  background: #262626;
-  color: #d0d0d0;
+  background: #1e1e1e;
+  color: #ffffff;
 }
 
 #window {
-  color: #393939;
+  color: #535353;
   padding: 0 12px;
 }
 
 #clock {
-  color: #d0d0d0;
+  color: #ffffff;
   font-weight: bold;
 }
 
@@ -83,7 +83,7 @@ tooltip label {
 }
 
 #pulseaudio.muted {
-  color: #393939;
+  color: #535353;
 }
 
 #tray {
@@ -133,7 +133,7 @@ tooltip label {
 
 #bluetooth.off,
 #bluetooth.disabled {
-  color: #393939;
+  color: #535353;
 }
 
 #cpu,

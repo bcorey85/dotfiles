@@ -75,20 +75,54 @@
 ;; Extra vertical space between lines, in pixels (nil = none). Bump to taste.
 (setq-default line-spacing 0.25)
 
-;; Modus Vivendi — high-contrast dark theme, accessibility-focused (WCAG AAA).
-;; Ships with Emacs 28+; no extra package needed.
-(setq doom-theme 'modus-vivendi)
+;;; ---------------------------------------------------------------------------
+;;; Theme — modus-vivendi/operandi toggle synced via ~/.cache/theme-mode
+;;; ---------------------------------------------------------------------------
 
-;; oxocarbon-tinted backgrounds: remap modus-vivendi's pure-black layers to
-;; IBM Carbon's warmer dark greys, matching the rest of the dotfiles.
-;; (base #161616, elevated #262626, selection #393939).
-(custom-set-faces!
-  '(default             :background "#161616")
-  '(fringe              :background "#161616")
-  '(mode-line           :background "#262626" :foreground "#d0d0d0")
-  '(mode-line-inactive  :background "#161616" :foreground "#535353")
-  '(child-frame-border  :background "#262626")
-  '(internal-border     :background "#262626"))
+;; Shared state file: `theme-mode toggle' (tmux prefix T) flips this, and nvim
+;; polls it too. Emacs joins the same bus — one toggle flips tmux + nvim + Emacs.
+(defvar +theme/state-file (expand-file-name "~/.cache/theme-mode"))
+
+(defun +theme/read-mode ()
+  "Read dark/light from the state file, default to dark."
+  (let ((raw (and (file-exists-p +theme/state-file)
+                  (string-trim (with-temp-buffer
+                                 (insert-file-contents +theme/state-file)
+                                 (buffer-string))))))
+    (if (member raw '("dark" "light")) raw "dark")))
+
+(defun +theme/apply (mode &optional force)
+  "Switch to MODE (\"dark\"/\"light\")."
+  (let ((scheme (if (equal mode "light") 'modus-operandi 'modus-vivendi)))
+    (unless (and (not force) (eq doom-theme scheme))
+      (setq doom-theme scheme)
+      (load-theme scheme t))))
+
+(defun +theme/sync ()
+  "Read the state file and apply the matching theme."
+  (+theme/apply (+theme/read-mode) t))
+
+(defun +theme/toggle ()
+  "Toggle light/dark via the shared theme-mode script, then sync."
+  (interactive)
+  (call-process (expand-file-name "~/.local/bin/theme-mode") nil nil nil "toggle")
+  (+theme/sync)
+  (message "theme: %s" (+theme/read-mode)))
+
+;; Initial apply on startup.
+(+theme/sync)
+
+;; Watch ~/.cache/theme-mode for external toggles (tmux prefix T, nvim <leader>ut).
+(defun +theme/setup-watcher ()
+  "Set up file-notify watch on the state file."
+  (when (file-exists-p +theme/state-file)
+    (file-notify-add-watch +theme/state-file '(change) (lambda (_) (+theme/sync)))))
+(run-with-idle-timer 1 nil #'+theme/setup-watcher)
+
+;; SPC t t — toggle light/dark (mirrors tmux prefix T and nvim <leader>ut).
+(map! :leader
+      (:prefix ("t" . "toggle")
+       :desc "Toggle theme (light/dark)" "t" #'+theme/toggle))
 
 (setq display-line-numbers-type 'relative)   ; matches nvim relativenumber
 

@@ -102,7 +102,19 @@ alias nvim-old='NVIM_APPNAME=nvim-old nvim'
 alias tt="tmux"
 alias cc="claude"
 alias oc="opencode"
-alias e="emacsclient -c -a ''"
+# Open a frame on the emacs daemon. Where systemd manages the daemon (Arch's
+# emacs.service), start that unit first — idempotent, Type=notify blocks until
+# ready — and DON'T pass `-a ''`, which would race the service and spawn a
+# competing second daemon. Elsewhere (macOS, no systemd unit) `-a ''` is the
+# right auto-start since emacsclient is then the only thing launching a daemon.
+e() {
+  if command -v systemctl &>/dev/null && systemctl --user cat emacs.service &>/dev/null; then
+    systemctl --user start emacs 2>/dev/null
+    emacsclient -c "$@"
+  else
+    emacsclient -c -a '' "$@"
+  fi
+}
 
 # Machine-local overrides (secrets, paths, etc.)
 [[ -f ~/.zshrc.local ]] && source ~/.zshrc.local

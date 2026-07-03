@@ -282,10 +282,32 @@ Dark is modus-vivendi with oxocarbon bg/fg; light is modus-operandi."
   ;; lays out on tight line boxes and the extra pixels desync it. It ALSO shrinks
   ;; the grid: ghostel derives its row count from `default-line-height', so 0.25
   ;; spacing inflates each cell ~8px and ghostel computes ~9 fewer rows than the
-  ;; window has — the TUI (Claude Code) then draws short and leaves the bottom
-  ;; blank. Must be integer 0, NOT nil: nil means "inherit the frame/global
+  ;; window has — the TUI (Claude Code, opencode) then draws short and leaves the
+  ;; bottom blank. Must be integer 0, NOT nil: nil means "inherit the frame/global
   ;; line-spacing" (i.e. the 0.25), so nil never actually zeroed it.
-  (add-hook 'ghostel-mode-hook (lambda () (setq-local line-spacing 0)))
+  ;;
+  ;; Two subtleties this MUST get right, or the fix silently regresses:
+  ;;   1. Named defun, not a lambda. `add-hook' dedupes by function identity;
+  ;;      anonymous lambdas never compare `equal', so every `doom/reload' STACKS
+  ;;      another copy and stale ones survive. An earlier `line-spacing nil'
+  ;;      lambda outlived its edit and ran AFTER the 0 one, clobbering it back —
+  ;;      new buffers went short again. A named symbol replaces in place.
+  ;;   2. Setting the var doesn't resize the live grid. ghostel computes its
+  ;;      initial size during mode init (before this hook) with the old 0.25
+  ;;      cell, and nothing re-fires. Re-run ghostel's own `ghostel--adjust-size'
+  ;;      once the buffer is on-screen (0s timer: after display settles a window
+  ;;      exists) so the grid recomputes at the 0-spacing cell height.
+  (defun +ghostel/tighten-grid-h ()
+    "Zero `line-spacing' in the ghostel buffer and force a grid re-adjust."
+    (setq-local line-spacing 0)
+    (let ((buf (current-buffer)))
+      (run-at-time
+       0 nil
+       (lambda ()
+         (when (buffer-live-p buf)
+           (when-let ((win (get-buffer-window buf t)))
+             (with-current-buffer buf (ghostel--adjust-size win))))))))
+  (add-hook 'ghostel-mode-hook #'+ghostel/tighten-grid-h)
 
   ;; Colour re-sync chord. `doom/reload' tears the theme down and back up, and
   ;; ghostel's own `enable-theme-functions' sync fires mid-teardown — reading

@@ -277,11 +277,15 @@ Dark is modus-vivendi with oxocarbon bg/fg; light is modus-operandi."
               ;; global var (which is a silent no-op).
               (show-paren-local-mode -1)))
 
-  ;; Redraw fix: the global `line-spacing' 0.25 we set above (nice for prose)
-  ;; makes ghostel leave cursor trails and stale rows — libghostty-vt lays out
-  ;; on tight line boxes and the extra pixels desync it. Zero it out in terminal
-  ;; buffers.
-  (add-hook 'ghostel-mode-hook (lambda () (setq-local line-spacing nil)))
+  ;; Redraw + PTY-height fix: the global `line-spacing' 0.25 we set above (nice
+  ;; for prose) makes ghostel leave cursor trails and stale rows — libghostty-vt
+  ;; lays out on tight line boxes and the extra pixels desync it. It ALSO shrinks
+  ;; the grid: ghostel derives its row count from `default-line-height', so 0.25
+  ;; spacing inflates each cell ~8px and ghostel computes ~9 fewer rows than the
+  ;; window has — the TUI (Claude Code) then draws short and leaves the bottom
+  ;; blank. Must be integer 0, NOT nil: nil means "inherit the frame/global
+  ;; line-spacing" (i.e. the 0.25), so nil never actually zeroed it.
+  (add-hook 'ghostel-mode-hook (lambda () (setq-local line-spacing 0)))
 
   ;; Colour re-sync chord. `doom/reload' tears the theme down and back up, and
   ;; ghostel's own `enable-theme-functions' sync fires mid-teardown — reading
@@ -321,15 +325,12 @@ Dark is modus-vivendi with oxocarbon bg/fg; light is modus-operandi."
     (add-hook 'window-selection-change-functions #'+ghostel--resync-on-select))
   (add-hook 'doom-after-reload-hook #'+ghostel--arm-resync)
 
-  ;; Show the evil state in the Claude window. Give ghostel the compact
-  ;; `minimal' modeline (bar + modal state + buffer name), which fits the narrow
-  ;; side window. (Doom doesn't auto-hide the modeline for ghostel the way it
-  ;; does for its built-in vterm module, so there's no hook to remove — just set
-  ;; the minimal modeline directly.)
-  (defun +ghostel/use-minimal-modeline-h ()
-    "Give ghostel a compact modeline that still surfaces the evil state."
-    (doom-modeline-set-modeline 'minimal))
-  (add-hook 'ghostel-mode-hook #'+ghostel/use-minimal-modeline-h 90)
+  ;; Hide the modeline in ghostel buffers — same treatment Doom's :term vterm
+  ;; module gives vterm (mode-line-invisible-mode). The modeline eats one row
+  ;; of terminal height, which prevents TUIs (Claude Code, opencode) from
+  ;; filling the full window. Evil state is already visible via cursor shape
+  ;; (box/bar/hollow, set above).
+  (add-hook 'ghostel-mode-hook #'mode-line-invisible-mode)
 
   ;; Image paste: ghostel/claude-code-ide only move text through the PTY, so a
   ;; clipboard image can't be piped in like in a GUI terminal. The command

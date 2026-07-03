@@ -1,7 +1,7 @@
 ---
 name: code
 description: Dispatch coder subagent(s) for implementation, then auto-run `/review` — auto-detects scope or accepts be/fe/fs modifier
-allowed-tools: [Task, Read, Glob, Grep, Skill]
+allowed-tools: [Agent, Read, Glob, Grep, Skill]
 ---
 
 # Code
@@ -39,7 +39,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
    **Frontend only** → Launch a single `frontend-coder` subagent
    **Backend only** → Launch a single `backend-coder` subagent
-   **Both** → Launch both in parallel using a single message with multiple Task tool calls
+   **Both** → Launch both in parallel using a single message with multiple Agent tool calls
    **Neither** (non-web repo) → Launch a single `coder` subagent — the frontend/backend split only applies to web-fullstack codebases
 
    For each coder:

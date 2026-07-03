@@ -1,7 +1,7 @@
 ---
 name: test-review
 description: Review test suites for coverage gaps, weak assertions, and stale tests — auto-detects scope or accepts be/fe/fs modifier
-allowed-tools: [Task, Read, Glob, Grep]
+allowed-tools: [Agent, Read, Glob, Grep]
 ---
 
 # Test Review
@@ -38,7 +38,7 @@ Any remaining text after the modifier is passed as a focus area (e.g., `/test-re
    - Include focus area if provided
 
    **Fullstack:**
-   - Launch TWO `test-reviewer` agents in parallel (single message, multiple Task calls):
+   - Launch TWO `test-reviewer` agents in parallel (single message, multiple Agent calls):
      - One with scope `frontend`
      - One with scope `backend`
    - Include focus area for both if provided

@@ -1,7 +1,7 @@
 ---
 name: eng-spec
 description: Spec a feature — architect exploration first, then design decisions resolved with you one at a time, then a finalized plan. Auto-detects scope (fe/be/fullstack). Optionally writes spec to disk and/or dispatches coders.
-allowed-tools: [Bash, Read, Glob, Grep, Task, AskUserQuestion, Skill]
+allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion, Skill]
 ---
 
 # Engineering Spec

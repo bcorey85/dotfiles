@@ -7,9 +7,10 @@
 #      This keeps parity with other security hooks and lets the user bypass
 #      all hooks consistently via the documented CLAUDE_SKIP_HOOKS mechanism.
 #   2. Non-Agent tools pass immediately.
-#   3. Call-site model containing "opus" (case-insensitive) is always blocked.
-#      Opus subagents must be opted into via the agent file's own frontmatter,
-#      never overridden from the call site.
+#   3. Call-site model containing "opus" or "fable" (case-insensitive) is always
+#      blocked. Opus subagents must be opted into via the agent file's own
+#      frontmatter, never overridden from the call site. Fable sits above Opus
+#      in cost and is never a legitimate subagent model.
 #   4. Call-site model containing "inherit" (case-insensitive) is always blocked.
 #      "inherit" resolves to the orchestrator's model at runtime — identical to
 #      leaving model empty, but explicit. When the orchestrator is on Opus this
@@ -45,15 +46,16 @@ if [[ -n "$subagent" ]] && [[ ! "$subagent" =~ ^[A-Za-z0-9_-]+$ ]]; then
 fi
 
 shopt -s nocasematch
-if [[ "$model" == *opus* ]]; then
+if [[ "$model" == *opus* || "$model" == *fable* ]]; then
   shopt -u nocasematch
   {
-    echo "[agent-model-guard] BLOCKED: Agent call sets model containing 'opus' at the call site."
-    echo "Call-site Opus is forbidden. The only legitimate way to run a subagent on Opus"
-    echo "is a 'model: opus' line in the agent file's own frontmatter."
+    echo "[agent-model-guard] BLOCKED: Agent call sets model containing 'opus' or 'fable' at the call site."
+    echo "Call-site Opus/Fable is forbidden. The only legitimate way to run a subagent on Opus"
+    echo "is a 'model: opus' line in the agent file's own frontmatter. Fable is never a"
+    echo "legitimate subagent model — it costs more than Opus."
     echo "Use 'haiku' (read-only/lookup) or 'sonnet' (fan-out implementation) at the call site."
   } >&2
-  reason="Agent call sets model containing 'opus' at the call site. Call-site Opus is forbidden — add a 'model: opus' pin in the agent file frontmatter instead."
+  reason="Agent call sets model containing 'opus' or 'fable' at the call site. Call-site Opus/Fable is forbidden — for Opus, add a 'model: opus' pin in the agent file frontmatter instead; Fable is never a legitimate subagent model."
   jq -cn --arg r "$reason" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
   exit 0
 fi

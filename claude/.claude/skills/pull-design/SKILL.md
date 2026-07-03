@@ -22,6 +22,8 @@ Pull Figma design context for the current feature. Run before `/eng-spec`, so th
 
 ## Instructions
 
+If the Figma MCP tools aren't available in this session, say so and stop — don't describe designs from memory.
+
 ### Phase 1: Find the Figma URL
 
 1. **Check `$ARGUMENTS`** for a Figma URL (`figma.com/design/...` or `figma.com/file/...`).

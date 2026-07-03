@@ -21,6 +21,10 @@
       "rev": "d5c09986681a671613aef0226ef409c01561d64c",
       "src": "https://github.com/dlyongemallo/diffview-plus.nvim"
     },
+    "ef-themes": {
+      "rev": "d9076b0e81cc1ec9f59ab6e65af9317763b7d2bb",
+      "src": "https://github.com/oonamo/ef-themes.nvim"
+    },
     "friendly-snippets": {
       "rev": "6cd7280adead7f586db6fccbd15d2cac7e2188b9",
       "src": "https://github.com/rafamadriz/friendly-snippets"
@@ -45,6 +49,10 @@
     "kanagawa": {
       "rev": "bb85e4bfc8d89b0e62c8fa53ccdd13d12e2f77b3",
       "src": "https://github.com/rebelot/kanagawa.nvim"
+    },
+    "kanagawa-paper": {
+      "rev": "ecf19801a2673054c19421d82b766f7641688320",
+      "src": "https://github.com/thesimonho/kanagawa-paper.nvim"
     },
     "lazydev.nvim": {
       "rev": "ff2cbcba459b637ec3fd165a2be59b7bbaeedf0d",
@@ -146,6 +154,10 @@
       "src": "https://github.com/nvim-orgmode/orgmode"
     },
     "oxocarbon": {
+      "rev": "cf49e389c22dab56224e43ae16422ddcd5b61b28",
+      "src": "https://github.com/nyoom-engineering/oxocarbon.nvim"
+    },
+    "oxocarbon.nvim": {
       "rev": "cf49e389c22dab56224e43ae16422ddcd5b61b28",
       "src": "https://github.com/nyoom-engineering/oxocarbon.nvim"
     },

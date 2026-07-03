@@ -35,9 +35,9 @@ return {
         org_startup_indented = true,
 
         org_todo_keyword_faces = {
-          DONE = ":foreground #98be65 :weight bold",
-          CANCELLED = ":foreground #c678dd :slant italic",
-          WAITING = ":foreground #ECBE7B",
+          DONE = ":foreground #44bc44 :weight bold",
+          CANCELLED = ":foreground #feacd0 :slant italic",
+          WAITING = ":foreground #d0bc00",
         },
 
         org_capture_templates = {

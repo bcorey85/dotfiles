@@ -1,12 +1,12 @@
--- Catppuccin Mocha palette subset used by the hand-rolled UI modules
+-- Modus-vivendi palette subset used by the hand-rolled UI modules
 -- (statusline.lua, winbar.lua). Single source of truth so those modules don't
 -- each hardcode the same hex values — change a color here and both follow.
 return {
-  teal = "#94e2d5",
-  surface0 = "#313244",
-  subtext0 = "#a6adc8",
-  red = "#f38ba8",
-  crust = "#11111b",
-  overlay0 = "#6c7086",
-  text = "#cdd6f4",
+  teal = "#00d3d0",
+  surface0 = "#303030",
+  subtext0 = "#989898",
+  red = "#ff5f59",
+  crust = "#000000",
+  overlay0 = "#6e768a",
+  text = "#ffffff",
 }

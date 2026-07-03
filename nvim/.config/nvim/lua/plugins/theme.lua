@@ -1,26 +1,43 @@
 return {
-  src = "nyoom-engineering/oxocarbon.nvim",
-  name = "oxocarbon", -- derive_name would give "oxocarbon.nvim"; pin it explicitly
+  src = "miikanissi/modus-themes.nvim",
+  name = "modus-themes",
   setup = function()
-    -- oxocarbon is a plain colorscheme with no setup() — light/dark is selected
-    -- by vim.o.background, then `:colorscheme oxocarbon` rebuilds. Apply the
-    -- shared light/dark mode (~/.cache/theme-mode) and poll it so a toggle from
-    -- tmux (prefix t) or another nvim flips this instance too.
+    require("modus-themes").setup({
+      style = "auto",
+      variants = {
+        modus_operandi = "default",
+        modus_vivendi = "default",
+      },
+      dim_inactive = false,
+      styles = {
+        comments = { italic = true },
+        keywords = { italic = true },
+        functions = {},
+        variables = {},
+      },
+    })
+
+    -- Override modus-vivendi bg/fg with oxocarbon colors — must be registered
+    -- before theme-sync.start() so it fires on the initial colorscheme load too.
+    vim.api.nvim_create_autocmd("ColorScheme", {
+      group = vim.api.nvim_create_augroup("OxocarbonOverride", { clear = true }),
+      callback = function()
+        if vim.o.background == "dark" then
+          vim.api.nvim_set_hl(0, "Normal", { bg = "#161616", fg = "#f2f4f8" })
+          vim.api.nvim_set_hl(0, "NormalNC", { bg = "#161616", fg = "#f2f4f8" })
+          vim.api.nvim_set_hl(0, "NormalFloat", { bg = "#161616", fg = "#f2f4f8" })
+        end
+      end,
+    })
+
+    -- Sync background from ~/.cache/theme-mode and poll for changes.
     require("config.theme-sync").start()
 
     -- markview heading colours (referenced by markview.lua's headings config).
-    -- Two muted tones — magenta for H1, blue for H2-H6 — since markview already
-    -- gives each level a distinct icon, so the icons carry the hierarchy and the
-    -- colour load on prose stays low. MdBullet (list markers) matches the blue.
-    --
-    -- Neovim clears user highlights on every colorscheme reload, and the
-    -- dark↔light toggle is a reload — so re-apply on ColorScheme, and pick
-    -- accents by active background so they stay legible on both the dark
-    -- (#161616) and light (#ffffff) base. Colours are oxocarbon accents.
     local function set_headings()
       local dark = vim.o.background == "dark"
-      local magenta = dark and "#be95ff" or "#673ab7" -- purple (base14 / base12)
-      local blue = dark and "#78a9ff" or "#0f62fe" -- blue (base09 / base11)
+      local magenta = dark and "#feacd0" or "#721045"
+      local blue = dark and "#79a8ff" or "#3548cf"
       local hl = vim.api.nvim_set_hl
       hl(0, "MdHeading1", { fg = magenta, bold = true })
       hl(0, "MdHeading2", { fg = blue, bold = true })

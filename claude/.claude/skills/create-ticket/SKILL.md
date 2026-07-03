@@ -36,13 +36,13 @@ If you catch yourself writing prose to sound thorough in the main body: stop, de
 
 ### Brevity ≠ deletion — never drop load-bearing specifics
 
-The contract kills *padding*, not *content*. Some things are terse AND essential; they stay in the body, never cut, never buried in Technical Notes:
+The contract kills _padding_, not _content_. Some things are terse AND essential; they stay in the body, never cut, never buried in Technical Notes:
 
 - **Open questions / blocking dependencies** → `## Open Questions` in the body. Anything awaiting an answer from a named person or team (e.g. "for Amik: which schema name is correct?"), or an external dependency that gates the work. These are action items, not discovery. Preserve every one; attribute who owns the answer.
-- **Load-bearing examples** → keep in the body (a `## Example` block, or inline). A concrete sample that *pins* the requirement — a representative input/output, a sample payload, a canonical query — is part of the definition, not verbosity. Reproduce it faithfully (code fences intact). Only illustrative-but-skippable examples go to Technical Notes.
+- **Load-bearing examples** → keep in the body (a `## Example` block, or inline). A concrete sample that _pins_ the requirement — a representative input/output, a sample payload, a canonical query — is part of the definition, not verbosity. Reproduce it faithfully (code fences intact). Only illustrative-but-skippable examples go to Technical Notes.
 - **Verbatim stakeholder asks** → preserve the exact quote + attribution (who, when, where). Paraphrasing loses the source of truth; park the quote in Technical Notes if it's long, but never reword or drop it.
 
-Litmus test before cutting a line: *is this padding, or is it a specific the implementer/reviewer can't reconstruct?* Padding goes. Specifics relocate at most — they never disappear.
+Litmus test before cutting a line: _is this padding, or is it a specific the implementer/reviewer can't reconstruct?_ Padding goes. Specifics relocate at most — they never disappear.
 
 ### The verbosity escape valve: `## Technical Notes`
 
@@ -53,6 +53,8 @@ Discovery findings, file-by-file detail, gotchas, rejected approaches, the long 
 - The reader must be able to grasp the ticket from Work + Acceptance alone, ignoring Technical Notes.
 
 ## Steps
+
+If the Jira MCP tools aren't available in this session, say so and stop — offer to draft the ticket text inline for manual filing instead.
 
 ### 1. Resolve the target
 
@@ -65,7 +67,7 @@ From the user's input figure out: project key, issue type, and parent (if any).
 
 ### 2. Scope against the repo
 
-Briefly explore the actual codebase (Glob/Grep/Read) so the ticket names real files, not guesses. This research is for *you* — it informs tight bullets; it does not get dumped into the description.
+Briefly explore the actual codebase (Glob/Grep/Read) so the ticket names real files, not guesses. This research is for _you_ — it informs tight bullets; it does not get dumped into the description.
 
 ### 3. Write it (honor the brevity contract)
 

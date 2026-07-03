@@ -1,7 +1,7 @@
 # Font — JetBrains Mono, chosen after an audition for its tall x-height and
 # sturdy weight (far less eye-strain than CommitMono for all-day reading).
 font-family = JetBrainsMono Nerd Font Mono
-font-style = SemiBold
+font-style = Medium
 font-size = 11
 
 # Linux/FreeType only: disable light hinting (on by default in 1.3+) so glyph
@@ -53,11 +53,23 @@ shell-integration = detect
 # Don't prompt to confirm closing a surface/window
 confirm-close-surface = false
 
-# macOS cmd key mappings
+# macOS cmd key mappings. Option/Command are swapped in System Settings and
+# aerospace owns real Option, so the physical "Alt" key emits Command (super) —
+# these binds turn that back into the Alt sequences tmux/smart-splits expect.
 keybind = super+j=text:\x1bj
 keybind = super+k=text:\x1bk
 keybind = super+l=text:\x1bl
 keybind = super+semicolon=text:\x1b;
+
+# Harpoon jumps: send tmux's M-1..4 as CSI-u (codepoint 49-52 + modifier 3=alt).
+# Mirrors kitty's `map cmd+N send_text \x1b[<cp>;3u`; tmux has extended-keys on
+# so it reads these as Alt+1..4. NOTE: the digit key is named `digit_N`, not
+# `one`/`1` — and Ghostty 1.2.0+ binds cmd+1..9 to goto_tab by default, so this
+# rebind is what reclaims them (a mismatched key name silently loses to that).
+keybind = super+digit_1=csi:49;3u
+keybind = super+digit_2=csi:50;3u
+keybind = super+digit_3=csi:51;3u
+keybind = super+digit_4=csi:52;3u
 
 # Mouse
 link-url = true

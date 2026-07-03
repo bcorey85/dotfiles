@@ -54,7 +54,7 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 
 ## Key Conventions
 
-- **Theme**: **modus-themes** (miikanissi/modus-themes.nvim) — modus-vivendi (dark) / modus-operandi (light). Dark base `#161616` (oxocarbon), fg `#f2f4f8` (oxocarbon), blue `#2fafff` primary accent, cyan `#00d3d0`, green `#44bc44`, red `#ff5f59`. Light base `#ffffff`, fg `#000000`, blue `#3548cf` primary accent. tmux/nvim/Emacs share a light/dark toggle via `~/.cache/theme-mode` (see `scripts/.local/bin/theme-mode`). **Still on modus-vivendi** (`#000000` base, blue `#2fafff` accent): kitty, starship, waybar, rofi, dunst. (Note: `btop` and the GTK/Qt app theme are on Sonokai-Maia — a separate theme, not part of this set.)
+- **Theme**: **modus-themes** (miikanissi/modus-themes.nvim) — modus-vivendi (dark) / modus-operandi (light). Dark base `#161616` (oxocarbon), fg `#f2f4f8` (oxocarbon), blue `#2fafff` primary accent, cyan `#00d3d0`, green `#44bc44`, red `#ff5f59`. Light base `#ffffff`, fg `#000000`, blue `#3548cf` primary accent. tmux/nvim/Emacs share a light/dark toggle via `~/.cache/theme-mode` (see `scripts/.local/bin/theme-mode`). **Still on modus-vivendi** (`#000000` base, blue `#2fafff` accent): kitty, starship, waybar, rofi, dunst. GTK/Qt apps use Adwaita-dark.
 - **Font**: JetBrainsMono Nerd Font Mono, 11pt (ghostty + kitty)
 - **Platform guards**: Use `command -v <tool> &>/dev/null &&` before tool-specific init (see .zshrc)
 - **Install scripts**: All use the same color output pattern (`print_success`, `print_error`, `print_info`) with `set -e`

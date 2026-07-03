@@ -67,7 +67,7 @@ PACKAGES="nvim tmux scripts zsh claude opencode pi kitty ghostty kanata starship
 
 # Arch-only packages
 if [ "$PLATFORM" = "arch" ]; then
-    PACKAGES="$PACKAGES hypr rofi waybar gtk dunst qt"
+    PACKAGES="$PACKAGES hypr rofi waybar gtk dunst qt applications"
 fi
 
 # macOS-only packages

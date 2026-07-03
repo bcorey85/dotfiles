@@ -1,0 +1,26 @@
+[Desktop Entry]
+# User-level override of Arch's /usr/share/applications/emacsclient.desktop
+# (~/.local/share/applications wins over /usr/share, and survives package
+# upgrades). Upstream runs `emacsclient --alternate-editor=`, which SILENTLY
+# spawns its own daemon whenever it can't reach one — racing the systemd
+# `emacs.service` at login and after a daemon crash, leaving two daemons
+# fighting over the same server socket / org-roam DB. Instead: start the
+# systemd unit first (idempotent; Type=notify blocks until the daemon is ready)
+# and connect with a plain emacsclient that never self-daemonizes.
+Name=Emacs (Client)
+GenericName=Text Editor
+Comment=Edit text
+MimeType=text/english;text/plain;text/x-makefile;text/x-c++hdr;text/x-c++src;text/x-chdr;text/x-csrc;text/x-java;text/x-moc;text/x-pascal;text/x-tcl;text/x-tex;application/x-shellscript;text/x-c;text/x-c++;x-scheme-handler/org-protocol;
+Exec=sh -c "systemctl --user start emacs 2>/dev/null; if [ -n \\"\\$*\\" ]; then exec /usr/bin/emacsclient --display=\\"\\$DISPLAY\\" \\"\\$@\\"; else exec emacsclient --create-frame; fi" sh %F
+Icon=emacs
+Type=Application
+Terminal=false
+Categories=Development;TextEditor;
+StartupNotify=true
+StartupWMClass=Emacs
+Keywords=emacsclient;
+Actions=new-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=sh -c "systemctl --user start emacs 2>/dev/null; exec /usr/bin/emacsclient --create-frame \\"\\$@\\"" sh %F

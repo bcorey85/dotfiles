@@ -3,55 +3,47 @@
 font-family = JetBrainsMono Nerd Font Mono
 font-style = Medium
 font-size = 11
+adjust-cell-height = 30%
+confirm-close-surface = false
 
 # Linux/FreeType only: disable light hinting (on by default in 1.3+) so glyph
 # stems render heavier — closest match to kitty's bolder text rendering, since
 # font-thicken is macOS-only. If still too light, use `font-style = Bold`.
 freetype-load-flags = no-light
-
-# Theme - oxocarbon dark (nyoom-engineering/oxocarbon), IBM Carbon palette
+# Theme - modus-vivendi default (miikanissi/modus-themes.nvim)
 background = #161616
-foreground = #ffffff
+foreground = #f2f4f8
 
-selection-foreground = #161616
-selection-background = #33b1ff
+selection-foreground = #ffffff
+selection-background = #7030af
 
-cursor-color = #ffffff
+cursor-color = #f2f4f8
 cursor-text = #161616
 
-# Color palette — oxocarbon's canonical terminal ANSI mapping
-# (matches nyoom-engineering/oxocarbon-alacritty). Note red maps to oxocarbon's
-# pink #ee5396 and magenta to #ff7eb6 — that's the theme's intended mapping.
-palette = 0=#262626
-palette = 1=#ee5396
-palette = 2=#42be65
-palette = 3=#ffe97b
-palette = 4=#33b1ff
-palette = 5=#ff7eb6
-palette = 6=#3ddbd9
-palette = 7=#dde1e6
-palette = 8=#393939
-palette = 9=#ee5396
-palette = 10=#42be65
-palette = 11=#ffe97b
-palette = 12=#33b1ff
-palette = 13=#ff7eb6
-palette = 14=#3ddbd9
-palette = 15=#ffffff
+# Color palette — modus-vivendi deuteranopia terminal colors
+palette = 0=#000000
+palette = 1=#ff5f59
+palette = 2=#44bc44
+palette = 3=#d0bc00
+palette = 4=#2fafff
+palette = 5=#feacd0
+palette = 6=#00d3d0
+palette = 7=#ffffff
+palette = 8=#303030
+palette = 9=#ff5f5f
+palette = 10=#44df44
+palette = 11=#efef00
+palette = 12=#338fff
+palette = 13=#ff66ff
+palette = 14=#00eff0
+palette = 15=#989898
 
 # Window
 window-padding-x = 4
 window-padding-y = 4
 
-# Line height — extra cell height reduces line-tracking effort when reading
-# dense markdown/diffs all day.
-adjust-cell-height = 10
-
 # Shell integration
 shell-integration = detect
-
-# Don't prompt to confirm closing a surface/window
-confirm-close-surface = false
 
 # macOS cmd key mappings. Option/Command are swapped in System Settings and
 # aerospace owns real Option, so the physical "Alt" key emits Command (super) —

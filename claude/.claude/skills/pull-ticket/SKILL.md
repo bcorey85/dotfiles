@@ -18,7 +18,7 @@ Fetch the Jira ticket details for the current branch so you have full context be
 
 2. **Extract the Jira ticket number** from the branch name (format: `JIRAPROJECT-TICKETNUMBER-description`). If the branch doesn't contain a ticket number, ask the user which ticket to pull.
 
-3. **Fetch the Jira ticket** using `getJiraIssue` with the Jira Cloud ID from `docs/mcp-references/JIRA.md`:
+3. **Fetch the Jira ticket** using `getJiraIssue`. Resolve the Cloud ID portably: pass the Jira site hostname (e.g. `<site>.atlassian.net`) as `cloudId` if it's known from context (a ticket URL, project docs); otherwise call `getAccessibleAtlassianResources` first. If the Jira MCP tools aren't available in this session, say so and stop — don't guess ticket content. Pull:
    - Summary, description, acceptance criteria
    - Current status
    - Any comments with context

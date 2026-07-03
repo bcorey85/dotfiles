@@ -1,7 +1,7 @@
 ---
 name: audit-code
 description: Audit code for security, bugs, DRY/maintainability, and accessibility — auto-triages findings and presents only actionable issues
-allowed-tools: [Task, Bash, Read, Write, Glob, Grep]
+allowed-tools: [Agent, Bash, Read, Write, Glob, Grep]
 ---
 
 # Code Audit
@@ -47,7 +47,7 @@ If not found (or `+fresh` was passed):
 
 1. **Parse arguments**: Extract scope and focus from `$ARGUMENTS`. Strip modifiers (`+fast`, `+deep`, `+fresh`).
 
-2. **Determine model**: If `+fast`, pass `model: "haiku"`. Otherwise pass `model: "sonnet"` to all Task calls — never inherit the parent model, never pass `model: "opus"` (hook-blocked). If `+deep`, keep Sonnet but use 1 batch per 15 files in Phase 2 and append to the auditor prompt: "Audit line by line; trace every code path in production files."
+2. **Determine model**: If `+fast`, pass `model: "haiku"`. Otherwise pass `model: "sonnet"` to all Agent calls — never inherit the parent model, never pass `model: "opus"` (hook-blocked). If `+deep`, keep Sonnet but use 1 batch per 15 files in Phase 2 and append to the auditor prompt: "Audit line by line; trace every code path in production files."
 
 3. **Discover scope**: If no path/pattern was given, identify the project's source directories (check CLAUDE.md, look for `src/`, `packages/`, `app/`, `lib/`, etc.). Exclude `node_modules`, `dist`, `build`, `.git`, vendor dirs, and generated files.
 
@@ -70,7 +70,7 @@ It sorts and assigns round-robin (file i → batch i % count), so identical scop
 
 ### Phase 3: Dispatch Auditor Subagents
 
-Launch one subagent per batch via the Task tool. Each subagent receives:
+Launch one subagent per batch via the Agent tool. Each subagent receives:
 
 - Its exact list of files (full paths), with each file tagged as **production** or **supporting**
 - The list of **known open findings** (from the ledger) for its files — with instructions to **skip these** and only report NEW issues

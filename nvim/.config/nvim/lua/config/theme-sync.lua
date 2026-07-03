@@ -1,4 +1,4 @@
--- theme-sync — keep nvim's oxocarbon background in sync with the shared
+-- theme-sync — keep nvim's colorscheme background in sync with the shared
 -- light/dark state written by the `theme-mode` script (see
 -- scripts/.local/bin/theme-mode).
 --
@@ -8,13 +8,12 @@
 -- with no sockets or lifecycle to manage. <leader>ut shells out to the same
 -- script, so a toggle from nvim flips tmux too — one source of truth, both ways.
 --
--- oxocarbon is a single colorscheme whose palette forks on vim.o.background, so
--- switching mode means setting the background then re-running :colorscheme.
+-- oxocarbon.nvim uses vim.o.background to pick dark or light variant.
 
 local M = {}
 
 local STATE_FILE = vim.env.HOME .. "/.cache/theme-mode"
-local COLORSCHEME = "oxocarbon"
+local COLORSCHEME = "modus"
 
 local applied ---@type string|nil  last mode we set, to skip redundant reloads
 
@@ -34,9 +33,10 @@ function M.read_mode()
   return normalize(raw:gsub("%s+", ""))
 end
 
--- Apply a mode by setting oxocarbon's background and rebuilding. Skips the
--- reload if it's already active (a colorscheme reload clears user highlights and
--- re-runs the theme build), unless `force` is set (used for the initial apply).
+-- Apply a mode by setting background and re-running :colorscheme. Skips the
+-- reload if it's already active (a colorscheme reload clears user highlights
+-- and re-runs the theme build), unless `force` is set (used for the initial
+-- apply).
 function M.apply(mode, force)
   mode = normalize(mode)
   if not force and mode == applied then

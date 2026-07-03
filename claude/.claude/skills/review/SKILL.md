@@ -1,7 +1,7 @@
 ---
 name: review
 description: Review recent changes using the code-reviewer subagent
-allowed-tools: [Task, Bash, Read, Glob, Grep, LSP, Skill]
+allowed-tools: [Agent, Bash, Read, Glob, Grep, LSP, Skill]
 ---
 
 # Code Review
@@ -49,7 +49,7 @@ Review recent changes in this codebase using the code-reviewer subagent.
    - Two unrelated subsystems / packages in a monorepo
    - Rules/config vs runtime code
 
-   Pick the split that minimizes overlap between reviewers. Launch both in a single message with multiple Task tool calls.
+   Pick the split that minimizes overlap between reviewers. Launch both in a single message with multiple Agent tool calls.
 
    When invoking each reviewer subagent, pass:
    - The exact file list it owns (from handoff or git discovery — never let the subagent rediscover scope)

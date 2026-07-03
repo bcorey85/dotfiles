@@ -1,7 +1,7 @@
 ---
 name: refactor
 description: Smart refactorer — dispatches coder subagent(s), then auto-runs `/review`
-allowed-tools: [Task, Read, Glob, Grep, Skill]
+allowed-tools: [Agent, Read, Glob, Grep, Skill]
 ---
 
 # Refactor
@@ -30,7 +30,7 @@ A refactor changes structure, not behavior — so the tests are the contract. **
 
    **Frontend only** → Launch a single `frontend-coder` subagent
    **Backend only** → Launch a single `backend-coder` subagent
-   **Both** → Launch both in parallel using a single message with multiple Task tool calls
+   **Both** → Launch both in parallel using a single message with multiple Agent tool calls
    **Neither** (non-web repo) → Launch a single `coder` subagent
 
    For each coder:

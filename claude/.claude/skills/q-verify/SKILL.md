@@ -1,7 +1,7 @@
 ---
 name: q-verify
 description: Reconcile the shipped changes against the QRSPI ticket + plan to confirm everything was actually built, BEFORE /pr. A completeness gate, not a code review — checks "did we build what the plan called for", not code quality. Runs after /code (+/review) and before /pr.
-allowed-tools: [Bash, Read, Glob, Grep, Task, AskUserQuestion]
+allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion]
 ---
 
 # Verify QRSPI Completeness
@@ -41,7 +41,7 @@ This is the one QRSPI step that DOES read the plan in full (contrast `/q-finaliz
 
 1. Resolve the directory; locate ticket + plan.
 2. Determine the change set: everything on this branch (committed + uncommitted) vs its base branch. Default `git diff --stat $(git merge-base HEAD origin/master)...HEAD` plus working-tree changes; adjust the base if the branch was cut from a sprint branch.
-3. **Dispatch a read-only reconciliation agent** — `Task` with `subagent_type: "general-purpose"`, `model: "sonnet"`. Pass it: the ticket path, the plan path, and the diff scope. Instruct it to, for every ticket requirement and every plan `Success Criteria` item:
+3. **Dispatch a read-only reconciliation agent** — `Agent` with `subagent_type: "general-purpose"`, `model: "sonnet"`. Pass it: the ticket path, the plan path, and the diff scope. Instruct it to, for every ticket requirement and every plan `Success Criteria` item:
    - decide `done` / `partial` / `missing` by inspecting the actual diff and source (file:line evidence), NOT the Phase Status checkboxes;
    - run each **Automated Verification** command from the plan and record pass/fail;
    - list **Manual Verification** items as `needs-manual` (it can't run them — flag for `/verify`);

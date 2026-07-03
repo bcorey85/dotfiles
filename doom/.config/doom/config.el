@@ -93,12 +93,17 @@
 
 (defun +theme/apply (mode &optional force)
   "Switch to MODE (\"dark\"/\"light\").
-Dark is oxocarbon; light stays modus-operandi because no Emacs oxocarbon port
-ships a light variant (tmux/nvim have oxocarbon-light, Emacs can't yet)."
-  (let ((scheme (if (equal mode "light") 'modus-operandi 'doom-oxocarbon)))
+Dark is modus-vivendi with oxocarbon bg/fg; light is modus-operandi."
+  (let ((scheme (if (equal mode "light") 'modus-operandi 'modus-vivendi)))
     (unless (and (not force) (eq doom-theme scheme))
       (setq doom-theme scheme)
-      (load-theme scheme t))))
+      (load-theme scheme t)
+      ;; Override bg/fg with oxocarbon colors in dark mode, reset in light
+      (if (equal mode "dark")
+          (custom-set-faces!
+            '(default :background "#161616" :foreground "#f2f4f8"))
+        (custom-set-faces!
+          '(default :background nil :foreground nil))))))
 
 (defun +theme/sync ()
   "Read the state file and apply the matching theme."

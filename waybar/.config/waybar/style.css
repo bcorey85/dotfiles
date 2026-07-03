@@ -6,7 +6,7 @@
 
 window#waybar {
   background-color: #161616;
-  color: #ffffff;
+  color: #f2f4f8;
   border-bottom: 2px solid #262626;
 }
 
@@ -14,7 +14,7 @@ tooltip {
   background-color: #262626;
   border: 1px solid #393939;
   border-radius: 8px;
-  color: #ffffff;
+  color: #f2f4f8;
   padding: 8px;
 }
 
@@ -36,12 +36,12 @@ tooltip label {
 }
 
 #workspaces button.urgent {
-  color: #ff6e6e;
+  color: #ee5396;
 }
 
 #workspaces button:hover {
   background: #262626;
-  color: #ffffff;
+  color: #f2f4f8;
 }
 
 #window {
@@ -50,7 +50,7 @@ tooltip label {
 }
 
 #clock {
-  color: #ffffff;
+  color: #f2f4f8;
   font-weight: bold;
 }
 
@@ -59,15 +59,15 @@ tooltip label {
 }
 
 #memory {
-  color: #ff7eb6;
+  color: #ee5396;
 }
 
 #temperature {
-  color: #d0a900;
+  color: #d0bc00;
 }
 
 #temperature.critical {
-  color: #ff6e6e;
+  color: #ee5396;
 }
 
 #network {
@@ -75,11 +75,11 @@ tooltip label {
 }
 
 #network.disconnected {
-  color: #ff6e6e;
+  color: #ee5396;
 }
 
 #pulseaudio {
-  color: #d0a900;
+  color: #d0bc00;
 }
 
 #pulseaudio.muted {
@@ -103,11 +103,11 @@ tooltip label {
 }
 
 #battery.warning {
-  color: #d0a900;
+  color: #d0bc00;
 }
 
 #battery.critical {
-  color: #ff6e6e;
+  color: #ee5396;
 }
 
 #battery.charging,
@@ -116,11 +116,11 @@ tooltip label {
 }
 
 #idle_inhibitor {
-  color: #ff7eb6;
+  color: #ee5396;
 }
 
 #idle_inhibitor.activated {
-  color: #ff6e6e;
+  color: #ee5396;
 }
 
 #bluetooth {

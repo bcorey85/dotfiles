@@ -186,3 +186,13 @@ export PATH="$HOME/.local/share/sonarqube-cli/bin:$PATH"
 
 # opencode
 export PATH=/home/brandon/.opencode/bin:$PATH
+
+# theme-mode wrapper: runs the real script, then sends OSC 12 to update the
+# cursor color in the current terminal (ghostty reads this sequence).
+function theme-mode() {
+  local mode
+  mode=$("$HOME/.local/bin/theme-mode" "$@") || return 1
+  local cursor="#f2f4f8"  # oxocarbon fg (dark)
+  [[ "$mode" == "light" ]] && cursor="#000000"  # modus-operandi
+  printf "\033]12;%s\007" "$cursor"
+}

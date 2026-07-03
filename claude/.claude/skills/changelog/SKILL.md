@@ -22,7 +22,7 @@ Create a changelog entry in the Notion Changelog database based on recent commit
 
 ## Instructions
 
-0. **Check for workspace config**: If `docs/mcp-references/NOTION.md` exists in the project root, read it for the Changelog DB data source ID.
+0. **Check for workspace config**: If `docs/mcp-references/NOTION.md` exists in the project root, read it for the Changelog DB data source ID. If the Notion MCP tools aren't available in this session, say so and stop — offer to draft the entry text inline instead.
 
 1. **Determine the version and scope** from the user's input:
    - If they specify a version: use it (e.g., "changelog for v0.2.0")

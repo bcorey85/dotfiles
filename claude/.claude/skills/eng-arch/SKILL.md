@@ -1,7 +1,7 @@
 ---
 name: eng-arch
 description: "Generate or update system architecture docs — auto-detects subsystems, runs architect agents, diff+merge existing docs. Modifiers: be/fe/fs, +quick, +deep."
-allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, Task, AskUserQuestion]
+allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion]
 ---
 
 # Engineering Architecture
@@ -93,7 +93,7 @@ Triggered when `$ARGUMENTS` is a path to a `.md` file under `docs/eng-specs/` (a
 
 ### Phase 3: Architect Analysis
 
-7. **Launch architect agents** via Task tool based on scope:
+7. **Launch architect agents** via the Agent tool based on scope:
 
    **Backend scope:**
    - Launch `backend-architect` (`subagent_type: backend-architect`). Instruct it to:
@@ -110,7 +110,7 @@ Triggered when `$ARGUMENTS` is a path to a `.md` file under `docs/eng-specs/` (a
      - Return structured analysis as text (do NOT write files)
 
    **Fullstack (both):**
-   - Launch both agents in parallel (single message, two Task tool calls)
+   - Launch both agents in parallel (single message, two Agent tool calls)
    - Backend architect produces its analysis first conceptually, but both run concurrently
    - After both complete, synthesize into a unified system view
 

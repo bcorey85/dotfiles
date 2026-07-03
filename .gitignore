@@ -17,12 +17,10 @@ claude/.claude/*
 # Authored config shared across machines:
 !claude/.claude/agents/
 !claude/.claude/skills/
-!claude/.claude/commands/
 !claude/.claude/hooks/
 !claude/.claude/rules/
 !claude/.claude/scripts/
 !claude/.claude/CLAUDE.md
-!claude/.claude/RTK.md
 !claude/.claude/MCP_LOOP_README.md
 !claude/.claude/settings.json
 !claude/.claude/statusline-command.sh

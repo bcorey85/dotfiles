@@ -1,7 +1,7 @@
 ---
 name: fix
 description: Dispatch coder subagents to fix review feedback (from a `/cc` comment handoff, a `/review` handoff, or the conversation), then auto-run `/review`. To act on inline comments left in `~/.claude/claude-comments.md`, use `/cc` — it reads them and routes here.
-allowed-tools: [Task, Bash, Read, Glob, Grep, Skill]
+allowed-tools: [Agent, Bash, Read, Glob, Grep, Skill]
 ---
 
 # Fix Code Review Feedback
@@ -30,7 +30,7 @@ Dispatch parallel frontend-coder and backend-coder subagents to investigate and 
 
    If invoked bare with none of these sources, but `~/.claude/claude-comments.md` may hold inline comments, point the user at `/cc` rather than parsing the file here.
 
-3. **Launch coder agents in parallel** using a single message with multiple Task tool calls.
+3. **Launch coder agents in parallel** using a single message with multiple Agent tool calls.
 
    **Common instructions for every coder dispatched here** (include verbatim in the prompt):
 

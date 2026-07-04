@@ -74,87 +74,19 @@ Neither finds → `**PR**: (pending)`. Live mode: run `/q-finalize` **after** `/
 
 ## Decision Record Template
 
-Target **100–140 lines**. Past that, you're including state-of-code material that belongs in eng-arch (Mega-ADR anti-pattern).
+Read `~/.claude/skills/_shared/adr-template.md` and follow it in full — it is the single source of truth for the ADR structure, section line caps, skimmability rules, and mutation discipline (shared with `/adr`, which owns the non-QRSPI lanes).
 
-### Section rubric
+q-finalize-specific source mapping:
 
-| Section               | Purpose                                                  | Source                                  |
-| --------------------- | -------------------------------------------------------- | --------------------------------------- |
-| Header                | Status / Ticket / PR / Date — stacked bullets            | metadata                                |
-| Problem               | 1–2 paras, technical only (strip story framing)          | `00-ticket.md`                          |
-| Decision              | 1–2 paras, what we built                                 | `03-design.md` Decisions                |
-| Consequences          | `Easier` + `Watch out for`. Do NOT manufacture downsides | synthesize                              |
-| Alternatives rejected | Load-bearing. One option not taken + 1–3 sentences why   | `03-design.md` Alternatives + Reasoning |
-| Patterns              | To follow / To avoid — `path:line` refs, minimal prose   | `03-design.md` Patterns                 |
-| Constraints           | Limits of approach, what code intentionally does NOT do  | `03-design.md` Constraints              |
-| Related               | Eng-arch links — only if eng-arch was updated; else omit | post-/eng-arch                          |
-
-### Discipline
-
-- **Status**: `Accepted` default. `Deprecated` when no longer in force. `Superseded by IQ-YYY` (with link) when replaced. **Once Accepted, do NOT silently edit** — write a new finalize that supersedes. Editing destroys the audit chain.
-- **Consequences vs Constraints**: Consequences = what we _accepted_ by deciding. Constraints = rules we worked _within_.
-- **No manufactured downsides**: trust `Alternatives rejected` to carry the trade-off load. Thin filler is worse than asymmetry.
-
-### Write for skimmability
-
-Read `~/.claude/skills/_shared/skimmable-writing.md` (single source of truth for the skimmability rules) and apply it in full. ADR-specific additions:
-
-- **One Diátaxis mode**: ADRs are **explanation** (_why_ we decided). Do NOT mix in state-of-code reference — that's eng-arch's job. Cross-link instead.
-- **Headings = answers**, ADR flavor: `Status: Accepted` not `Status field`. `FormData Content-Type footgun` not `Implementation note 3`.
-- **Per-section line caps** (hard — if you blow it, you're writing the wrong section): Problem ≤ 8. Decision ≤ 8. Consequences ≤ 10. Alternatives ≤ 12. Patterns ≤ 12. Constraints ≤ 8.
-
-### Template
-
-```markdown
-# IQ-XXX: [Feature name from ticket]
-
-- **Status**: Accepted
-- **Ticket**: [IQ-XXX](jira-url) — from `**URL:**` in ticket.md; if the ticket file records no URL, use the ticket key as plain text (do NOT invent a tracker URL)
-- **PR**: [repo#NNN](pr-url) — or `(pending)`
-- **Date**: MM-DD-YYYY
-
-## Problem
-
-[1–2 paras]
-
-## Decision
-
-[1–2 paras]
-
-## Consequences
-
-### Easier
-
-- [what this enables / makes faster / safer]
-
-### Watch out for
-
-- [latent risks, ongoing friction, drift, hidden coupling]
-
-## Alternatives rejected
-
-- **[Option]** — [why not, 1–3 sentences]
-
-## Patterns
-
-### To follow
-
-- `path/to/file.ts:42` — [what / why right]
-
-### To avoid
-
-- `path/to/file.ts:99` — [what / why wrong]
-
-## Constraints
-
-- [Non-obvious limit]
-
-## Related
-
-[Omit unless eng-arch updated]
-
-- Eng-arch: `docs/eng-arch/[subsystem].md`
-```
+| Section                                          | Source                                                                          |
+| ------------------------------------------------ | ------------------------------------------------------------------------------- |
+| Header                                           | metadata + PR detection above                                                   |
+| TL;DR                                            | written LAST, distilled from the finished ADR                                   |
+| Problem                                          | `00-ticket.md`                                                                  |
+| Decision / Alternatives / Patterns / Constraints | `03-design.md`                                                                  |
+| Assumptions                                      | `03-design.md` context — record only conditions the decision actually relies on |
+| Consequences                                     | synthesize                                                                      |
+| Related                                          | only if eng-arch was updated; else omit                                         |
 
 ## Footer
 

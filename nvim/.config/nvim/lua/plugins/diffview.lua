@@ -147,5 +147,12 @@ return {
         vim.cmd("DiffviewOpen")
       end
     end, { desc = "Diffview: open/close (resolve merge conflicts)" })
+
+    -- <leader>gh — file/range history. Normal mode: the current file's commit
+    -- timeline. Visual mode: log of just the selected lines (git log -L), the
+    -- "who changed this function and why" answer. Both land in the same
+    -- file-history panel; q closes it.
+    vim.keymap.set("n", "<leader>gh", "<cmd>DiffviewFileHistory %<cr>", { desc = "Diffview: file history" })
+    vim.keymap.set("v", "<leader>gh", ":DiffviewFileHistory<cr>", { desc = "Diffview: history for selection" })
   end,
 }

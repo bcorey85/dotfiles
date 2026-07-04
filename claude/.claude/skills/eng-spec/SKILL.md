@@ -164,6 +164,8 @@ Write verification items as TESTABLE assertions, not just descriptions. Each ite
 
 Prefer test-verified items. If an AC item has no existing test, note whether one should be written.
 
+If the feature has behavioral acceptance criteria, prefer scaffolding them as todo-marked tests up front (the project runner's todo/pending primitive — `it.todo` in Jest/Vitest, a registered pytest marker, etc.; domain-language names, no ticket keys in code) and add "remaining stub count is zero" as a Test-verified item. Stubs authored before implementation cannot pin bugs.
+
 Integration checks: route ordering, validator edge cases, no-op handling, caller compatibility.
 ```
 

@@ -48,7 +48,7 @@ Dispatch `qrspi-plan` (omit `model`) with ONLY the task directory. It reads the 
 ```
 Saved → <plan path>
 QRSPI complete. Next: /clear, then /code <plan path>
-Spot-check the plan; save deep review for the actual code. After the code ships: /q-verify confirms the plan was fully built, then /pr, then /q-finalize collapses the folder into an ADR.
+Spot-check the plan — the Acceptance Stubs sentences are the highest-leverage lines in it; save deep review for the actual code. After the code ships: /q-verify confirms the plan was fully built, then /pr, then /q-finalize collapses the folder into an ADR.
 ```
 
 ## Hard Rules

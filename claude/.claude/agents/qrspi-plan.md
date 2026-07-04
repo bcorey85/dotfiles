@@ -19,8 +19,10 @@ A task directory path. Read FULLY (no limit/offset): `IQ-XXX-00-ticket.md`, `IQ-
 1. Read all four artifacts fully.
 2. Detect the project's verification commands: project `CLAUDE.md` first, then `package.json` scripts (`validate`, `test`, `lint`, `typecheck`, `build`). Use the project's actual commands in the checklists — never generic placeholders.
 3. For each phase in the structure outline, flesh out specific file changes and code. Look up current function signatures, import paths, and test patterns directly (Read/Grep/LSP) as needed.
-4. Write the plan to `DIR/IQ-XXX-05-plan.md` using the template below.
-5. Return ONLY the plan file path and a one-line phase count.
+4. **Acceptance stubs (behavioral tickets only)**: if the ticket has user-observable acceptance criteria, make Phase 1 scaffold them as todo-marked tests in one spec file per feature — or, once a feature's contract has outgrown a single file, a feature-local `specs/` dir split by behavior area (domain-named files; never ticket keys or numbers). Placement is INSIDE the feature's folder per the project's existing test-tree conventions — never a new top-level directory or parallel taxonomy. New stubs join the existing file/dir; the count command scopes to the whole file or glob (sound because every merge requires zero remaining todos). Pitch them at the highest altitude the runner exercises cheaply (API endpoint, component render, CLI invocation — not browser e2e unless that's already the project's norm, and not unit level). Unit tests are unaffected: coders write them per phase alongside implementation as usual; stubbing units at plan time would encode implementation shape that doesn't exist yet. Use the project's test runner's todo/pending primitive — detect it from project CLAUDE.md and existing tests, never assume a stack (Jest/Vitest: `it.todo(...)`; pytest: a registered `todo` marker or skip-with-reason; etc.). Stub names are domain-language behavior sentences lifted from the ticket, phrased EARS-style where possible ("when <trigger>, <expected behavior>") so each translates mechanically to a test body — NO ticket keys in code; traceability flows through commits, the PR, and the ADR. Fill the plan's `Acceptance Stubs` section: spec file path, primitive, and the exact count command for remaining stubs. Each later phase's Success Criteria names which stubs it flips to real tests; the FINAL phase's Automated Verification includes the count command returning zero. Skip this mechanism entirely for tickets with no behavioral criteria (infra/config/tooling) — do not manufacture pseudo-requirements.
+5. Assign each phase a risk tier, recorded on its `Phase Status` line. `high`: touches migrations or data mutation, auth/security surface, public API contracts, irreversible operations, or cross-service boundaries. `low`: internal logic, UI, tests, easily-reverted config. When in doubt, `high`. `/code` keys its phase-boundary behavior on this tag — `low` gets a mechanical resume (machine gates only), `high` gets a human sign-off with manual verification.
+6. Write the plan to `DIR/IQ-XXX-05-plan.md` using the template below.
+7. Return ONLY the plan file path and a one-line phase count.
 
 ## Plan Template
 
@@ -41,8 +43,8 @@ A task directory path. Read FULLY (no limit/offset): `IQ-XXX-00-ticket.md`, `IQ-
 
 <!-- Updated by /code after each phase completes + review passes. Source of truth for "which phase is next" across /clear boundaries. Do not delete. -->
 
-- [ ] Phase 1: [name from structure outline]
-- [ ] Phase 2: [name]
+- [ ] Phase 1: [name from structure outline] (risk: low|high)
+- [ ] Phase 2: [name] (risk: low|high)
 
 ## Current State Analysis
 
@@ -55,6 +57,16 @@ A task directory path. Read FULLY (no limit/offset): `IQ-XXX-00-ticket.md`, `IQ-
 ## What We're NOT Doing
 
 [Scope boundaries from design doc]
+
+## Acceptance Stubs
+
+<!-- Omit this section entirely if the ticket has no behavioral criteria. -->
+
+- **Spec file(s)**: `path or glob (feature-root spec file, or feature-local specs/ dir)`
+- **Primitive**: [the project runner's todo/pending marker]
+- **Count command**: `<exact command that prints the remaining-stub count>`
+- **Stubs** (one per ticket acceptance criterion; domain language, no ticket keys):
+  - "[behavior sentence]"
 
 ## Implementation Approach
 
@@ -75,7 +87,7 @@ A task directory path. Read FULLY (no limit/offset): `IQ-XXX-00-ticket.md`, `IQ-
 
 ### Success Criteria
 
-Write verification items as TESTABLE assertions — each specifies HOW to verify, not just WHAT.
+Write verification items as TESTABLE assertions — each specifies HOW to verify, not just WHAT. Phases that flip acceptance stubs list which ones; the final phase's Automated Verification must include the stub count command returning zero.
 
 #### Automated Verification:
 
@@ -87,7 +99,7 @@ Write verification items as TESTABLE assertions — each specifies HOW to verify
 
 - [ ] **Manual-verified**: [scenario] — "hit [endpoint/UI flow], confirm [expected behavior]"
 
-**Pause for manual verification before proceeding to Phase 2.**
+**High-risk phases: pause for manual verification before proceeding. Low-risk phases: manual items defer to the feature-level `/verify` pass before `/pr`.**
 
 ---
 
@@ -108,3 +120,4 @@ Write verification items as TESTABLE assertions — each specifies HOW to verify
 - Do NOT restructure the phases — they're set in the structure outline.
 - Do NOT write horizontal phases — the structure outline enforces vertical slices.
 - Do NOT omit the Phase Status section — `/code` uses it as the durable record across `/clear`.
+- Do NOT omit the `(risk: ...)` tag on Phase Status lines — `/code` treats an untagged phase as high.

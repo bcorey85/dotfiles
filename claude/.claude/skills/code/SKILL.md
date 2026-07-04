@@ -27,6 +27,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    - Dispatch the coder for THAT ONE PHASE ONLY. The coder must run the phase's "Automated Verification" gate (typically `npm run validate` or equivalent) before returning.
    - After the coder completes and you summarize, auto-dispatch `/review` (step 5).
    - **Drift gate** — after `/review` converges, before marking the phase done: dispatch ONE read-only reconciliation agent (`subagent_type: "general-purpose"`, `model: "sonnet"`) with ONLY the plan path, the phase number, and the handoff file list. It verdicts each of the phase's `Success Criteria` items `done` / `partial` / `missing` against the actual diff (file:line evidence; changes nothing). If the plan has an `Acceptance Stubs` section, it also verifies stub-sentence survival: every stub sentence must still exist — as a todo or as a real test bearing that name. A reworded or deleted stub is tampering; report it as `missing`. This is the phase-scoped version of `/q-verify` — it catches plan drift while it is still phase-sized. Clean → proceed. Any `partial`/`missing` → do NOT mark the phase done; dispatch `/fix` once with the gaps as the issue list, then re-run the drift gate once. Still dirty → stop and hand the remaining gaps to the user.
+   - **Behavioral verification (agent-executed)** — after the drift gate is clean: if the phase has `Manual Verification` items, dispatch ONE `general-purpose` agent (`model: "sonnet"`) with the plan path, the phase number, and the items. It executes every item it can drive from the terminal — curl the endpoint, run the CLI, execute the scenario command. For UI flows: **scripted Playwright, NEVER the Playwright MCP** (the MCP holds a live browser session with per-action tool calls and accessibility-tree payloads — too expensive; a script compresses the whole flow into one Bash call whose only context cost is what it prints). Form: write a throwaway `/tmp/verify-phase<N>.mjs` using the plain `playwright` library (launch → drive → print assertions → exit code), run it once, keep the printed output as evidence; `npx playwright screenshot <url> /tmp/<name>.png` for render checks; screenshots always to `/tmp`, never the repo. Browser items only when the project already has Playwright installed — never install browsers to verify; tag those items `human-only` instead. It edits the plan in place: `- [x] agent-verified: <item> — <evidence: command + observed result>`, or `- [ ] human-only: <item> — <why it can't be driven>`. It changes NO code, and it never checks an item without captured evidence — observed output, not asserted success. Human-only remainders accumulate for the end-of-feature review packet (`/q-verify`).
    - After peer review passes AND the drift gate is clean, mark the phase done in the plan: `Edit` the `## Phase Status` section to flip `- [ ] Phase N: ...` → `- [x] Phase N: ...`. This single Edit is the durable record across `/clear`.
    - Then stop and print the phase-complete block (see "Phase-Complete Block" below) — it has a low-risk and a high-risk variant; pick by the `(risk: ...)` tag on the phase's `## Phase Status` line. NEVER auto-advance to the next phase in-session, regardless of risk tier: every phase boundary stops for `/clear` (context hygiene — re-entry via `## Phase Status` is cheaper than letting context auto-compact mid-build). The risk tier changes what the block asks of the user, not whether it stops.
    - If the plan has only one phase or no phase headers, treat it as a single dispatch (skip the phase loop).
@@ -81,9 +82,9 @@ After each phase + review + drift gate completes, print ONE of these blocks verb
 **Low risk, all machine gates green** (review converged, execution gate exit 0, drift gate clean) — mechanical resume; no sign-off judgment is being requested:
 
 ```
-Phase <N> complete — machine gates green (review ✓, execution gate ✓, drift ✓). Risk: low.
+Phase <N> complete — machine gates green (review ✓, execution gate ✓, drift ✓, behavioral ✓). Risk: low.
 
-Manual verification deferred to feature-level /verify (items stay logged in the plan).
+Manual verification: agent-executed with evidence in the plan (<n> verified, <m> human-only deferred to the /q-verify review packet).
 
 Next:
   1. /clear
@@ -95,13 +96,15 @@ Next:
 ```
 Phase <N> complete. Risk: high — phase-level sign-off requested.
 
-Manual verification (from the plan):
-- <item 1 from phase's Manual Verification>
-- <item 2>
+Agent-verified (evidence in the plan):
+- <item — one-line evidence summary>
+
+Human-only verification remaining:
+- <item 1>
 - <...>
 
 Next:
-  1. Run the manual verification above.
+  1. Spot-check the evidence lines; run the human-only items.
   2. /clear
   3. Paste: /code <plan-path> continue
 
@@ -112,8 +115,8 @@ Resolution rules:
 
 - `<N>` is the just-finished phase number.
 - `<plan-path>` is the absolute or repo-relative path the orchestrator was invoked with.
-- Manual-verification items come from the just-finished phase's `#### Manual Verification:` section in the plan. If that section is empty in the high-risk block, omit the bulleted list and replace step 1 with: "Spot-check the diff."
-- If this was the LAST phase, replace the "Next" block (either variant) with: "All phases complete. Next: /q-verify (completeness) → /verify (accumulated manual items) → /pr."
+- Verification items come from the just-finished phase's `#### Manual Verification:` section in the plan, split by the verifier agent's `agent-verified` / `human-only` tags. If that section is empty in the high-risk block, omit both lists and replace step 1 with: "Spot-check the diff."
+- If this was the LAST phase, replace the "Next" block (either variant) with: "All phases complete. Next: /q-verify (completeness + review packet; includes the remaining human-only checks) → /pr."
 
 For complex features requiring design decisions, use `/eng-spec` instead.
 

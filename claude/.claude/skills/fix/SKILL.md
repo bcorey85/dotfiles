@@ -10,8 +10,7 @@ Dispatch parallel frontend-coder and backend-coder subagents to investigate and 
 
 ## Modifiers
 
-- `+fast` — Pass `model: "haiku"` to coder dispatches. Use when review findings are trivial (typos, simple style fixes).
-- `+deep` — Dispatch the `-deep` coder variants (`backend-coder-deep` / `frontend-coder-deep`, Opus via frontmatter pin) and omit `model`. Use for complex review findings that require deeper reasoning to fix correctly. Call-site `model: "opus"` is blocked by the agent-model-guard hook.
+- `+fast` / `+deep` — semantics defined in `~/.claude/skills/_shared/modifiers.md` (read it when either is present). `+fast` for trivial findings (typos, simple style fixes); `+deep` for complex findings requiring deeper reasoning to fix correctly.
 
 ## Instructions
 

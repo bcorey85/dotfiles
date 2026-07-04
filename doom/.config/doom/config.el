@@ -1083,6 +1083,28 @@ workspace. When nil, SPC p p keeps Doom's default (find file in project)."
        :desc "Harpoon: pin current project"  "a" #'+harpoon/add
        :desc "Harpoon: edit slots"           "h" #'+harpoon/menu))
 
+;;; --- harpoon.el: buffer-level quick-bookmarks (ports nvim harpoon) ---------
+;; Marks files per-project+branch.  SPC j j opens the hydra menu, SPC j f adds
+;; the current file, SPC j 1-9 jumps directly to a slot.  `SPC j' is the
+;; buffer-harpoon prefix — distinct from the project-harpoon on `M-1-9' / `SPC o'.
+(use-package! harpoon
+  :config
+  (harpoon)
+  (map! :leader
+        (:prefix ("j" . "buffer-harpoon")
+         :desc "Harpoon menu"         "j" #'harpoon-quick-menu-hydra
+         :desc "Toggle file"          "f" #'harpoon-toggle-file
+         :desc "Clear"                "c" #'harpoon-clear
+         :desc "Jump to slot 1"       "1" #'harpoon-go-to-1
+         :desc "Jump to slot 2"       "2" #'harpoon-go-to-2
+         :desc "Jump to slot 3"       "3" #'harpoon-go-to-3
+         :desc "Jump to slot 4"       "4" #'harpoon-go-to-4
+         :desc "Jump to slot 5"       "5" #'harpoon-go-to-5
+         :desc "Jump to slot 6"       "6" #'harpoon-go-to-6
+         :desc "Jump to slot 7"       "7" #'harpoon-go-to-7
+         :desc "Jump to slot 8"       "8" #'harpoon-go-to-8
+         :desc "Jump to slot 9"       "9" #'harpoon-go-to-9)))
+
 ;; Windows within a workspace (the tmux windows). An ordered, extensible list:
 ;; to add a 3rd, append e.g. ("scratch" . +dev/window-scratch) — then M-o 3
 ;; (or SPC o 3) snaps straight to it. No other code changes needed.

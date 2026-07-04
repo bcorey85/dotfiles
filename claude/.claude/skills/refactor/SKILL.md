@@ -14,8 +14,7 @@ A refactor changes structure, not behavior — so the tests are the contract. **
 
 ## Modifiers
 
-- `+fast` — Pass `model: "haiku"` to coder dispatches. Use for simple renames, extract-variable, or mechanical refactors.
-- `+deep` — Dispatch the `-deep` coder variants (`backend-coder-deep` / `frontend-coder-deep`, Opus via frontmatter pin) and omit `model`. Use for complex refactors involving multiple interacting systems, subtle architectural changes, or tricky migration of patterns. Call-site `model: "opus"` is blocked by the agent-model-guard hook.
+- `+fast` / `+deep` — semantics defined in `~/.claude/skills/_shared/modifiers.md` (read it when either is present). `+fast` for simple renames, extract-variable, or mechanical refactors; `+deep` for refactors involving multiple interacting systems, subtle architectural changes, or tricky pattern migrations.
 
 ## Instructions
 

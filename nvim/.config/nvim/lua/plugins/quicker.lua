@@ -30,7 +30,7 @@ return {
         -- reads `/pat` as the literal pattern unless you close it (`/pat/`), so a
         -- lone slash silently matches nothing — the undelimited `:Cfilter pat`
         -- form is what works. f keeps matches, F rejects them — the narrow step of
-        -- the grug-far pipeline (Snacks.picker.grep → <C-q> → f/F → :cdo s///).
+        -- the search-and-replace pipeline (Snacks.picker.grep → <C-q> → f/F → :cdo s///).
         {
           "f",
           function()

@@ -42,7 +42,9 @@ vim.opt.foldmethod = "expr"
 vim.opt.foldexpr = "v:lua.vim.treesitter.foldexpr()"
 vim.opt.foldtext = ""
 vim.opt.ignorecase = true
-vim.opt.inccommand = "nosplit"
+-- "split" opens a preview pane listing EVERY :s match (off-screen included)
+-- while typing — the native stand-in for grug-far's streaming preview.
+vim.opt.inccommand = "split"
 vim.opt.laststatus = 3
 vim.opt.linebreak = true
 vim.opt.list = true

@@ -48,4 +48,12 @@ allowed-tools: [Bash, Read, Glob, Grep, Skill]
 
    Pass the `id` of every entry that was **resolved** (fix applied) or **skipped after triage** (false positive, intentional, out of scope — note skip reasons in the summary). Do **NOT** pass ids of **deferred** entries (recommended `/eng-spec`, waiting on user input) — they stay in the file for next time. The script re-reads the file at resolve time, so comments added by another nvim session in the meantime are preserved; it deletes the file when nothing remains.
 
-7. **Summarize** for the user: which comments were fixed, which were skipped (with reasons), which were deferred and why, and the stale-dropped count (if any).
+7. **Log escapes.** Every comment that resulted in a real fix is ground truth: the human caught something the automated gates blessed. For each entry resolved **with a fix applied** (not skipped-as-FP, not deferred), log one line:
+
+   ```bash
+   bash ~/.claude/scripts/log-escape repo="$(basename "<repo-root>")" stage_found=cc gate_missed=review class=<bug|smell|duplication|plan-drift|test-gap|other> severity=<high|medium|low> desc="<comment gist>" file=<path>
+   ```
+
+   Classify `class` from the comment body; when unsure, `other`. Do NOT log comments that were new requirements or changed direction — a gate can't miss information it never had.
+
+8. **Summarize** for the user: which comments were fixed, which were skipped (with reasons), which were deferred and why, and the stale-dropped count (if any).

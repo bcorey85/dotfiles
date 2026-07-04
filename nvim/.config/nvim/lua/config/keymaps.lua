@@ -219,6 +219,16 @@ vim.keymap.set("n", "<leader>yd", function()
   vim.notify(("Yanked %d diagnostic(s)"):format(#diags))
 end, { desc = "Yank line diagnostics" })
 
+-- ─── Tasks ────────────────────────────────────────────────────────────────────
+-- <leader>t is the tasks namespace (tt = terminal, in snacks.lua). tq/tQ close
+-- the tests-in-tmux loop: pull failures from the test pane into quickfix.
+vim.keymap.set("n", "<leader>tq", function()
+  require("util.testqf").pull()
+end, { desc = "Test failures → quickfix (tmux pane)" })
+vim.keymap.set("n", "<leader>tQ", function()
+  require("util.testqf").repick()
+end, { desc = "Re-pick test pane, then failures → quickfix" })
+
 -- ─── Messages ─────────────────────────────────────────────────────────────────
 vim.keymap.set("n", "<leader>M", function()
   local msgs = vim.api.nvim_exec2("messages", { output = true }).output

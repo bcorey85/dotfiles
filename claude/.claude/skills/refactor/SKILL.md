@@ -43,6 +43,14 @@ A refactor changes structure, not behavior — so the tests are the contract. **
    - What changed structurally
    - Any related concerns or follow-up items
 
+   **Log escapes**: if the refactor target is code produced by this branch's coding loop (i.e., `/code` + `/review` already blessed it), each distinct smell the refactor fixed is a miss by the quality layer. Log one line per distinct smell (not per file):
+
+   ```bash
+   bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=refactor gate_missed=review class=<smell|duplication> severity=medium desc="<one line>" file=<representative path>
+   ```
+
+   Skip logging when the target is legacy code that never went through the loop — old debt is not an escape.
+
 5. **Auto-dispatch peer review**: After summarizing the refactor, tell the user: "Auto-dispatching `/review` to check the refactored code before committing." Build a handoff block from the coder output (same protocol as `/code`) and pass it as args so the reviewer doesn't re-derive scope from `git diff`:
 
    ```

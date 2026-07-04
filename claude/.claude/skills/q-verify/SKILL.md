@@ -1,7 +1,7 @@
 ---
 name: q-verify
 description: Reconcile the shipped changes against the QRSPI ticket + plan to confirm everything was actually built, BEFORE /pr. A completeness gate, not a code review — checks "did we build what the plan called for", not code quality. Runs after /code (+/review) and before /pr.
-allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion]
+allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion, Skill]
 ---
 
 # Verify QRSPI Completeness
@@ -43,6 +43,7 @@ This is the one QRSPI step that DOES read the plan in full (contrast `/q-finaliz
 2. Determine the change set: everything on this branch (committed + uncommitted) vs its base branch. Default `git diff --stat $(git merge-base HEAD origin/master)...HEAD` plus working-tree changes; adjust the base if the branch was cut from a sprint branch.
 3. **Dispatch a read-only reconciliation agent** — `Agent` with `subagent_type: "general-purpose"`, `model: "sonnet"`. Pass it: the ticket path, the plan path, and the diff scope. Instruct it to, for every ticket requirement and every plan `Success Criteria` item:
    - decide `done` / `partial` / `missing` by inspecting the actual diff and source (file:line evidence), NOT the Phase Status checkboxes;
+   - if the plan has an `Acceptance Stubs` section, run its count command FIRST — a nonzero remainder is hard evidence of `missing` items (name the unflipped stubs); also verify every stub sentence still exists, as a todo or as a real test bearing that name — a reworded or deleted stub is tampering, reported as `missing`; this beats opinion-based reconciliation for those criteria;
    - run each **Automated Verification** command from the plan and record pass/fail;
    - list **Manual Verification** items as `needs-manual` (it can't run them — flag for `/verify`);
    - skip anything under `What We're NOT Doing` (intentional scope cuts are not gaps);
@@ -65,8 +66,15 @@ Out of scope (skipped): …
 
 ## Routing
 
-- **Gaps found (`partial`/`missing`/failing check)**: list them, then offer to dispatch `/fix` (or `/code` for net-new work) to close them. Re-run q-verify after.
-- **Clean**: say so, then point forward: `/verify` for any `needs-manual` items, otherwise `/pr`. After the PR, `/q-finalize`.
+- **Gaps found (`partial`/`missing`/failing check)**: list them, and log each as an escape past the phase-level drift gates (ground truth for the loop's trustworthiness — see `/review-stats`):
+
+  ```bash
+  bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=q-verify gate_missed=drift-gate class=plan-drift severity=<high|medium> desc="<one line>" file=<path>
+  ```
+
+  Then offer to dispatch `/fix` (or `/code` for net-new work) to close them. Re-run q-verify after.
+
+- **Clean**: say so, then auto-invoke `/orient` via the Skill tool (`skill: "orient"`, no args — it self-scopes to the branch diff). Its map plus the completeness table above form the human review packet: read those first, then the diff hotspots they point at. Then point forward: `/verify` for any `needs-manual` items, otherwise `/pr`. After the PR, `/q-finalize`.
 
 ## What NOT to do
 

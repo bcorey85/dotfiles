@@ -12,8 +12,15 @@ committing, when you've read the diff but don't feel the structure.
 
 ## Scope
 
-Default target is the current working-tree changes (staged + unstaged). The user
-may instead pass a file, directory, symbol, or feature name in `$ARGUMENTS` — if so,
+Default target depends on where you are:
+
+- **On a feature branch** — the WHOLE branch: merge-base diff vs the default branch,
+  which also covers the working tree. By orient time most phases are usually already
+  committed; `git diff HEAD` alone would silently orient around the last uncommitted
+  sliver.
+- **On the default branch** — working-tree changes (staged + unstaged) only.
+
+The user may instead pass a file, directory, symbol, or feature name in `$ARGUMENTS` — if so,
 orient around that instead of the diff.
 
 ```
@@ -22,8 +29,11 @@ $ARGUMENTS
 
 ## Method — do NOT just read the diff
 
-1. **Get the changed surface.** `git diff --stat HEAD` then `git diff HEAD` to learn
-   _what_ changed and _which_ symbols/files. This is the only step that looks at the diff.
+1. **Get the changed surface.** On a feature branch:
+   `BASE=$(git merge-base HEAD origin/master 2>/dev/null || git merge-base HEAD origin/main)`,
+   then `git diff --stat "$BASE"` and `git diff "$BASE"` (covers committed phases AND the
+   working tree). On the default branch: `git diff --stat HEAD` then `git diff HEAD`.
+   This is the only step that looks at the diff.
 
 2. **Now read the unchanged neighbors.** This is the whole point — open the actual
    files and read the changed symbols _in full, in place_, plus:

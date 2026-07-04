@@ -1090,20 +1090,26 @@ workspace. When nil, SPC p p keeps Doom's default (find file in project)."
 (use-package! harpoon
   :config
   (harpoon)
-  (map! :leader
-        (:prefix ("j" . "buffer-harpoon")
-         :desc "Harpoon menu"         "j" #'harpoon-quick-menu-hydra
-         :desc "Toggle file"          "f" #'harpoon-toggle-file
-         :desc "Clear"                "c" #'harpoon-clear
-         :desc "Jump to slot 1"       "1" #'harpoon-go-to-1
-         :desc "Jump to slot 2"       "2" #'harpoon-go-to-2
-         :desc "Jump to slot 3"       "3" #'harpoon-go-to-3
-         :desc "Jump to slot 4"       "4" #'harpoon-go-to-4
-         :desc "Jump to slot 5"       "5" #'harpoon-go-to-5
-         :desc "Jump to slot 6"       "6" #'harpoon-go-to-6
-         :desc "Jump to slot 7"       "7" #'harpoon-go-to-7
-         :desc "Jump to slot 8"       "8" #'harpoon-go-to-8
-         :desc "Jump to slot 9"       "9" #'harpoon-go-to-9)))
+  ;; :prefix inside :leader uses :infix, which can only append to existing
+  ;; prefix-maps.  SPC j has no pre-existing map, so bind directly on
+  ;; doom-leader-map instead.
+  (let ((j-map (make-sparse-keymap)))
+    (define-key doom-leader-map (kbd "j") j-map)
+    (define-key j-map (kbd "j") #'harpoon-quick-menu-hydra)
+    (define-key j-map (kbd "f") #'harpoon-toggle-file)
+    (define-key j-map (kbd "c") #'harpoon-clear)
+    (define-key j-map (kbd "1") #'harpoon-go-to-1)
+    (define-key j-map (kbd "2") #'harpoon-go-to-2)
+    (define-key j-map (kbd "3") #'harpoon-go-to-3)
+    (define-key j-map (kbd "4") #'harpoon-go-to-4)
+    (define-key j-map (kbd "5") #'harpoon-go-to-5)
+    (define-key j-map (kbd "6") #'harpoon-go-to-6)
+    (define-key j-map (kbd "7") #'harpoon-go-to-7)
+    (define-key j-map (kbd "8") #'harpoon-go-to-8)
+    (define-key j-map (kbd "9") #'harpoon-go-to-9))
+  (after! which-key
+    (which-key-add-key-based-replacements (kbd (concat doom-leader-key " j"))
+      "buffer-harpoon")))
 
 ;; Windows within a workspace (the tmux windows). An ordered, extensible list:
 ;; to add a 3rd, append e.g. ("scratch" . +dev/window-scratch) — then M-o 3

@@ -30,9 +30,10 @@ One escape = one defect found downstream of the gate that should have caught it.
 
    1. **Type / lint / schema** — make the illegal state unrepresentable (e.g. a design-token union type turns `xxs` vs `2xs` into a compile error). Caught by the execution gate forever, at zero attention cost. Always prefer this rung.
    2. **Stated convention** — one line in the project's CLAUDE.md or conventions doc, where coders and reviewers already look. Conventions that live only in humans' heads are invisible to every gate.
-   3. **Agent/reviewer rule** — a calibration line in the relevant agent file. Weakest rung: it spends prompt budget forever and relies on recall. Use only when 1–2 are impossible.
+   3. **Skill gotcha** — when the defect traces to a workflow a skill owns (not a code convention), append one dated line to that SKILL.md's `## Gotchas` section (create it if absent). Gotchas built from observed failures are the highest-signal content a skill carries — this rung is how the toolkit itself learns.
+   4. **Agent/reviewer rule** — a calibration line in the relevant agent file. Weakest rung: it spends prompt budget forever and relies on recall. Use only when 1–3 are impossible.
 
-   Propose the specific guard to the user; on approval, apply it (or create a ticket if it belongs in another repo). Then append `guard=type|convention|rule|none` to the log line so `/review-stats` can flag escapes that never got a guard.
+   Propose the specific guard to the user; on approval, apply it (or create a ticket if it belongs in another repo). Then append `guard=type|convention|gotcha|rule|none` to the log line so `/review-stats` can flag escapes that never got a guard.
 
    **ADR addendum**: if the defect traces back to a decision recorded in an ADR (`docs/eng-specs/*.md`), also append a dated line to that ADR's `## Addenda` section (create the section if absent) — outcomes are part of the record, and this is one of the two legal mutations `_shared/adr-template.md` allows. Never edit the sections above it.
 

@@ -82,7 +82,7 @@ If uncertain, run the architect. A 2-minute architect pass that confirms "the ap
 
 ### Phase 5: Architect Finalization (Stage 2)
 
-14. **Re-dispatch each architect** (omit `model`) with: its own Stage-1 exploration brief verbatim, plus the resolved decision list. Instruct it to produce the full plan per its Output Format and NOT to re-litigate resolved decisions — they carry the user's authority.
+14. **Continue each architect via `SendMessage`** (preferred): its Stage-1 context is intact, so send only the resolved decision list and the instruction to produce the full plan per its Output Format, NOT re-litigating resolved decisions — they carry the user's authority. If the Stage-1 agent is no longer addressable (session cleared, agent expired), fall back to a fresh dispatch (omit `model`) with its Stage-1 brief verbatim plus the resolved decisions.
     - **Fullstack ordering**: finalize `backend-architect` first — its plan must include a clearly defined **API contract** (endpoint URLs, methods, request/response shapes, status codes). Then finalize `frontend-architect` with the contract — design against it, not invent one.
 
 15. **Synthesize the finalized plan(s)** — key decisions (and who made them), tradeoffs accepted, anything deferred.

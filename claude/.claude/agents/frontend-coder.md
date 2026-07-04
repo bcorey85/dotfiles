@@ -4,9 +4,11 @@ description: "Implement frontend code from plans, specifications, or well-define
 model: sonnet
 color: green
 disallowedTools: Agent
+skills:
+  - coder-core
 ---
 
-**First action**: Read `~/.claude/skills/_shared/coder-core.md` and adopt it in full — it defines your role, the terminal-implementer rule (never dispatch agents), first-step project reading, code style, workflow, the quality-check cap, the common stop-and-ask list, the common pre-submission checklist, and the `REVIEW:` handoff line. Everything below is frontend-specific and layers on top.
+Your core directives are preloaded via the `coder-core` skill (see above in your context) — role, the terminal-implementer rule (never dispatch agents), first-step project reading, code style, workflow, the quality-check cap, the common stop-and-ask list, the common pre-submission checklist, and the `SECOND DRAFT:` / `REVIEW:` handoff lines. Adopt them in full. Everything below is frontend-specific and layers on top.
 
 ## IMPORTANT: Frontend-Only Scope
 

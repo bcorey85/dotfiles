@@ -42,6 +42,19 @@ if command -v tmux >/dev/null 2>&1 && tmux has-session >/dev/null 2>&1; then
   cursor="#ffffff"
   [ "$mode" = "light" ] && cursor="#000000"
   tmux set-option -g cursor-colour "$cursor" 2>/dev/null || true
+  # Re-arm tmux-continuum: its autosave trigger lives inside status-right,
+  # which the theme file we just sourced overwrote. Re-running continuum.tmux
+  # doesn't work here (its "another server running" heuristic misfires when
+  # invoked mid-session), so prepend the interpolation directly — same logic
+  # as continuum's add_resurrect_save_interpolation. No-op when not installed.
+  cont_save="$HOME/.tmux/plugins/tmux-continuum/scripts/continuum_save.sh"
+  if [ -f "$cont_save" ]; then
+    sr="$(tmux show-option -gqv status-right 2>/dev/null || true)"
+    case "$sr" in
+      *continuum_save.sh*) : ;; # already armed
+      *) tmux set-option -g status-right "#($cont_save)$sr" 2>/dev/null || true ;;
+    esac
+  fi
   tmux display-message "theme: $mode"
 fi
 

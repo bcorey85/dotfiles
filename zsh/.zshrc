@@ -119,17 +119,45 @@ e() {
 # Machine-local overrides (secrets, paths, etc.)
 [[ -f ~/.zshrc.local ]] && source ~/.zshrc.local
 
+# cw [name] — worktree + agent cockpit. Creates .claude/worktrees/<name> off
+# the current branch, copies untracked env files (.env*, .envrc — copied, never
+# symlinked, so an agent editing one can't poison the other trees), then opens
+# a dedicated tmux window running the nvim|claude dev split in the worktree.
+# Outside tmux, falls back to the old cd + claude in place. Clean up with cwc.
 function cw() {
+    emulate -L zsh
+    setopt null_glob
     local name="${1:-$(openssl rand -hex 4)}"
-    local branch
+    local branch repo_root
     branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
     if [[ -z "$branch" ]]; then
         echo "Not in a git repo"
         return 1
     fi
-    local wt_dir=".claude/worktrees/$name"
+    repo_root=$(git rev-parse --show-toplevel)
+    local wt_dir="$repo_root/.claude/worktrees/$name"
     local wt_branch="worktree-$name"
-    git worktree add "$wt_dir" -b "$wt_branch" "$branch" && cd "$wt_dir" && claude
+    git -C "$repo_root" worktree add "$wt_dir" -b "$wt_branch" "$branch" || return 1
+
+    # Env bootstrap — agents stall on a missing env; tracked files are already
+    # in the worktree, so only copy what git didn't bring over.
+    local f
+    for f in "$repo_root"/.env "$repo_root"/.env.* "$repo_root"/.envrc; do
+        [[ -f "$f" && ! -e "$wt_dir/${f:t}" ]] && cp "$f" "$wt_dir/${f:t}"
+    done
+    [[ -f "$wt_dir/.envrc" ]] && command -v direnv &>/dev/null && direnv allow "$wt_dir"
+
+    if [[ -n "$TMUX" ]]; then
+        # One cockpit window per worktree: nvim (60%) | claude (40%), named
+        # after the worktree so the status line shows which agent lives where.
+        tmux new-window -n "$name" -c "$wt_dir"
+        tmux send-keys "nvim ." C-m
+        tmux split-window -h -p 40 -c "$wt_dir"
+        tmux send-keys "claude" C-m
+        tmux select-pane -L
+    else
+        cd "$wt_dir" && claude
+    fi
 }
 
 function cwc() {

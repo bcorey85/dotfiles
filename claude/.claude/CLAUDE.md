@@ -13,14 +13,7 @@
 - **MANDATORY: A coder dispatch obligates a `/review` before `/commit` — no exceptions for how it was dispatched.** The `/code` skill chains review automatically; a **raw `Agent` call to a coder (`backend-coder`/`frontend-coder`/`coder`, incl. `-deep`) does NOT** — so when you dispatch a coder directly, you MUST invoke `/review` yourself once it returns, before committing. Prefer `/code` precisely because it wires this up. The ONLY skip is a genuinely trivial change (typo, single-line, rename, comment-only). "I'll review later" / "it looks fine" / "the coder said it passes" are not exemptions. If you're about to `/commit` and no `/review` ran this session on the current changes, stop and run it first.
 - Never hardcode paths or project names in rules, agents, skills, or commands — keep portable.
 - DO NOT GIT STASH UNLESS YOU HAVE EXPLICIT PERMISSION FROM THE USER. Stashing causes critical failures in parallel agent work and also resets staged files.
-- **MANDATORY: WebSearch before writing any config, CI, infra, or library integration code.**
-  Before writing Docker configs, CI pipelines, tool configs (Playwright, Vite, ESLint, etc.), or any code that touches external tool behavior:
-  1. Search the tool's official docs for the specific feature/environment
-  2. Search GitHub issues if the docs don't answer it
-  3. Only then write the code
-     This is NOT optional. Do NOT write config changes based on reasoning alone. Every CI/infra guess costs 5-10 minutes of pipeline time.
-     Scope: this applies when the feedback loop is slow or remote (CI pipelines, Docker builds, deployed infra, configs that only fail at build/run time). Local configs verifiable in seconds (shell aliases, tmux binds, editor settings) are exempt — just test them.
-     If research would take >5 minutes, say so and ask for direction instead.
+- **MANDATORY: WebSearch before writing config, CI, infra, or library-integration code** (Docker, pipelines, tool configs, version migrations): official docs first, then GitHub issues, only then write — never from reasoning alone. Scope: anywhere the feedback loop is slow or remote; local configs verifiable in seconds are exempt (just test them). If research would take >5 minutes, say so and ask for direction.
 - Maximum 3 attempts on any failing approach. After 3, stop, document what failed, and ask for direction.
 - Save all Playwright screenshots to `/tmp/`, never inside a project repo.
 - **NEVER use Bash to write files.** This is non-negotiable:
@@ -29,12 +22,22 @@
 - Prefer **Read tool** with offset/limit over `cat`, `head`, `tail` for reading files.
 - Prefer `rg` over `grep` and `fd` over `find` when available.
 - When the **context-mode plugin** is active, its `ctx_*` tools take precedence over the Read/`rg` preferences above for bulk read-only analysis; Read remains correct for files you're about to edit.
-- **Agent-call model discipline** (enforced by the `agent-model-guard` PreToolUse hook, `~/.claude/scripts/agent-model-guard.sh`):
-  - **Frontmatter-pinned agent → omit `model` at the call site.** A call-site model _overrides_ the pin and silently downgrades Opus-pinned agents (`backend-architect`, `frontend-architect`, `test-reviewer`, `ux-research-analyst`, `product-spec-manager`, and the `-deep` wrappers). This covers EVERY agent file with a `model:` line — when in doubt, check the frontmatter before dispatching.
-  - **Unpinned agent → set `model` explicitly.** `haiku` for read-only/lookup work (research, fact extraction, "where is X", file surveys, QRSPI fan-out lookups); `sonnet` for implementation, code edits, multi-file analysis, code review.
-  - **Never `opus`, `fable`, or `inherit` at the call site** — the hook rejects all three. Opus is reserved for the main orchestrator and runs in subagents only via a frontmatter pin (`+deep` dispatches the Opus-pinned `-deep` wrappers with `model` omitted). Fable costs more than Opus and is never a subagent model. A _deliberate_ call-site downgrade of a pinned agent (e.g. `+fast` passing `haiku` to a sonnet-pinned coder) is allowed.
-  - Pair with `subagent_type` deliberately: `Explore` (read-only lookup, default for research), `general-purpose` (multi-file tracing Explore can't handle), coders / architects / reviewers per their descriptions.
+- **Agent-call model discipline** (hook-enforced by `agent-model-guard`; rationale in the script header — `~/.claude/scripts/agent-model-guard.sh`):
+  - Frontmatter-pinned agent (any agent file with a `model:` line) → **omit `model`** at the call site; a call-site model silently overrides the pin.
+  - Unpinned agent → **set `model` explicitly**: `haiku` for read-only/lookup, `sonnet` for implementation, multi-file analysis, or review.
+  - Never `opus`, `fable`, or `inherit` at the call site (hook-blocked). Deliberate downgrades of a pinned agent (`+fast` → `haiku`) are allowed.
+  - Pair `subagent_type` deliberately: `Explore` (read-only lookup), `general-purpose` (multi-file tracing Explore can't handle), coders / architects / reviewers per their descriptions.
 - **Prefer LSP over grep+Read for typed code.** When working in a project with a language server (TypeScript, Python with pyright, Go, Rust, etc.), use the LSP tool for: finding references, go-to-definition, hover/type info, and diagnostics. One LSP call replaces 5–10 grep+Read pairs. Reach for it on refactors, signature changes, import rewrites, "find every usage of X", and post-edit type checks. Fall back to `rg` only for plain text or unindexed file types.
+
+## Built-in vs Custom Skills (fixed routing — don't mix per-task)
+
+The harness ships built-ins that overlap the custom toolkit. The boundary:
+
+- **Inner-loop review** → custom `/review` (flywheel metrics, handoffs, convergence loop). Built-in `/code-review` is NOT part of the loop; `/code-review ultra` is an optional pre-PR deep pass on large branches only.
+- **Security audit** → built-in `/security-review`. `/audit-code` owns the other categories (bugs, DRY, a11y, findings ledger).
+- **Cleanup** → the coder's second-draft sweep + `/refactor`. Don't run built-in `/simplify` on loop output — it duplicates the sweep and skips escape logging.
+- **Verification** → built-in `/verify` drives the app (behavioral); `/q-verify` reconciles plan↔diff (completeness). Different audits; never substitute one for the other.
+- **Planning lanes** → `/q-orchestrator` (QRSPI) for multi-phase features where research contamination matters; `/eng-spec` for single-sitting features with real design decisions; bare `/code` below that; plan mode for ad-hoc exploration before committing to any lane.
 
 ## Engineering Judgment
 

@@ -1,0 +1,31 @@
+#!/bin/bash
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_info() { echo -e "${YELLOW}→${NC} $1"; }
+
+TMUX_PLUGINS_DIR="$HOME/.tmux/plugins"
+mkdir -p "$TMUX_PLUGINS_DIR"
+
+if [ ! -d "$TMUX_PLUGINS_DIR/tmux-resurrect" ]; then
+    print_info "Installing tmux-resurrect..."
+    git clone https://github.com/tmux-plugins/tmux-resurrect "$TMUX_PLUGINS_DIR/tmux-resurrect"
+    print_success "tmux-resurrect installed"
+else
+    print_success "tmux-resurrect already installed"
+fi
+
+if [ ! -d "$TMUX_PLUGINS_DIR/tmux-continuum" ]; then
+    print_info "Installing tmux-continuum..."
+    git clone https://github.com/tmux-plugins/tmux-continuum "$TMUX_PLUGINS_DIR/tmux-continuum"
+    print_success "tmux-continuum installed"
+else
+    print_success "tmux-continuum already installed"
+fi

@@ -20,6 +20,7 @@ Individual scripts in `install/` can be run standalone:
 - `install/doom` - clone doomemacs to `~/.config/emacs` and run `doom sync` (skips if emacs absent; the `doom` package supplies the config)
 - `install/wifi-be200` - Intel BE200 Wi-Fi 7 stability fix (writes `/etc/modprobe.d/iwlwifi.conf` to disable 802.11be; auto-skips if no BE200 detected)
 - `install/zsh-plugins` - clone fzf-tab, zsh-autosuggestions, zsh-syntax-highlighting to `~/.zsh/plugins/`
+- `install/tmux-plugins` - clone tmux-resurrect + tmux-continuum to `~/.tmux/plugins/` (crash-proof sessions; loaded from `.tmux.conf`, no TPM)
 - `install/starship` - Starship prompt
 - `install/claude-plugins` - Claude Code plugins (skips if Claude not installed)
 - `install/zsh` - set zsh as default shell

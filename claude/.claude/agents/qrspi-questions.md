@@ -3,6 +3,7 @@ name: qrspi-questions
 description: "Generate objective codebase research questions from a source document. Reads only the document at the provided path, writes a numbered questions file with an exploration map into the task directory, and returns the file path. The questions never reference the source document's goals."
 model: sonnet
 tools: Bash, Read, Glob, Write, Edit
+maxTurns: 25
 color: purple
 ---
 

@@ -3,6 +3,7 @@ name: qrspi-plan
 description: "Produce a tactical implementation plan from a completed task-directory artifact set (ticket, research, design, structure). Fleshes out per-phase file changes and testable success criteria using the project's real verification commands; writes the plan file and returns its path."
 model: sonnet
 tools: Bash, Read, Glob, Grep, LSP, Write
+maxTurns: 50
 color: purple
 ---
 

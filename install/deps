@@ -48,7 +48,8 @@ wsl | ubuntu)
   ;;
 arch)
   print_info "Installing dependencies via pacman..."
-  sudo pacman -S --needed stow neovim emacs tmux zsh git curl jq libnotify fzf zoxide unzip direnv kitty ghostty git-delta btop bat atuin eza glow fd keychain rustup playerctl xdg-user-dirs ripgrep brightnessctl base-devel bluez bluez-utils less ansible just rsync xclip imagemagick
+  # inetutils: provides `hostname`, which tmux-resurrect's helpers call
+  sudo pacman -S --needed stow neovim emacs tmux zsh git curl jq libnotify fzf zoxide unzip direnv kitty ghostty git-delta btop bat atuin eza glow fd keychain rustup playerctl xdg-user-dirs ripgrep brightnessctl base-devel bluez bluez-utils less ansible just rsync xclip imagemagick inetutils
   print_success "Dependencies installed"
 
   # Hyprland desktop packages

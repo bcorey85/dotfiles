@@ -69,6 +69,7 @@ local plugin_order = {
   "live-preview", -- browser markdown/html preview, live updates as you type
   "dirtytalk", -- programming spellcheck dictionary (en + programming spelllang)
   "tiny-cmdline",
+  "claudecode", -- Claude Code IDE bridge (WebSocket/MCP) — selection context + native diff review; pane connects via /ide
   "dap", -- DAP: nvim-dap + dap-ui + dap-python (deferred — no require until <leader>d)
 }
 

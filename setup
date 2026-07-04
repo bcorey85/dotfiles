@@ -1,5 +1,5 @@
 #!/bin/bash
-sset -e
+set -e
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -55,6 +55,8 @@ echo ""
 echo ""
 "$DOTFILES_DIR/install/zsh-plugins"
 echo ""
+"$DOTFILES_DIR/install/tmux-plugins"
+echo ""
 "$DOTFILES_DIR/install/nvm"
 echo ""
 "$DOTFILES_DIR/install/starship"
@@ -75,7 +77,7 @@ print_success "Setup complete!"
 echo ""
 print_info "Next steps:"
 echo "  1. Restart your terminal"
-echo "  2. Open Neovim and run: :Lazy sync"
+echo "  2. Open Neovim (vim.pack auto-installs plugins on first launch)"
 echo "  3. Run: :checkhealth"
 echo "  4. For kanata keyboard remapping (Linux only), run: sudo ~/kanata-setup"
 echo ""

@@ -1,0 +1,54 @@
+#!/bin/bash
+# claude-bg — fire-and-forget headless Claude run (the delegation lane).
+#
+# Runs `claude -p` in the background, logs to ~/.local/state/claude-bg/, and
+# pings ~/.claude/scripts/notify when it finishes — so long chores (doc audits,
+# dep bumps, changelog drafts) run while you keep working. Headless runs never
+# prompt: anything not already allowed by settings permissions is denied, so
+# scope prompts to work your allowlist covers, or run interactively instead.
+#
+# Usage:
+#   claude-bg [-C dir] "prompt..."     start a run (dir defaults to cwd)
+#   claude-bg list                     recent runs, newest first
+#   claude-bg logs                     tail -f the latest log
+set -euo pipefail
+
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-bg"
+NOTIFY="$HOME/.claude/scripts/notify"
+mkdir -p "$LOG_DIR"
+
+case "${1:-}" in
+  list)
+    ls -1t "$LOG_DIR" 2>/dev/null | head -20
+    exit 0
+    ;;
+  logs)
+    latest=$(ls -1t "$LOG_DIR" 2>/dev/null | head -1)
+    [ -z "$latest" ] && { echo "no runs yet" >&2; exit 1; }
+    exec tail -f "$LOG_DIR/$latest"
+    ;;
+esac
+
+dir="$PWD"
+if [ "${1:-}" = "-C" ]; then
+  [ $# -ge 3 ] || { echo "usage: claude-bg [-C dir] \"prompt\"" >&2; exit 2; }
+  dir="$2"
+  shift 2
+fi
+prompt="$*"
+[ -z "$prompt" ] && { echo "usage: claude-bg [-C dir] \"prompt\"" >&2; exit 2; }
+
+slug=$(printf '%s' "$prompt" | tr -cs '[:alnum:]' '-' | cut -c1-40)
+log="$LOG_DIR/$(date +%Y%m%d-%H%M%S)-${slug}.log"
+
+(
+  cd "$dir" || exit 1
+  printf 'dir: %s\nprompt: %s\n---\n' "$dir" "$prompt" >"$log"
+  if claude -p "$prompt" >>"$log" 2>&1; then
+    [ -x "$NOTIFY" ] && "$NOTIFY" "Claude BG done" "$slug"
+  else
+    [ -x "$NOTIFY" ] && "$NOTIFY" "Claude BG FAILED" "$slug — see $log"
+  fi
+) &
+disown
+echo "started: $log"

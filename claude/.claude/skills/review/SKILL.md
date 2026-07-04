@@ -40,6 +40,8 @@ Review recent changes in this codebase using the code-reviewer subagent.
 
 3. **Dispatch code-reviewer subagent(s)**:
 
+   **Reviewer continuity (iter ≥ 2)**: when this invocation is a re-review inside the same session's fix loop (handoff has `prior-issues` and `iter ≥ 2`) and the reviewer agent from the previous iteration is still addressable, do NOT spawn a fresh reviewer — continue it via `SendMessage` with the handoff block (prior-issues + changed files). It already holds the context of its earlier review, so it verifies fix-by-fix without re-reading the scope. Spawn fresh only if: no prior reviewer exists in this session, the depth modifier changed (`+fast`/`+deep`), or the parallel-split boundaries changed. **Exception — the `oneshot` pass MUST be a fresh spawn**: a continued reviewer anchors on its own past verdicts, and the declare-victory pass is deliberately decorrelated (per step 1, after 2+ iterations it's `code-reviewer-deep`).
+
    **If 5 or fewer files in scope**: Dispatch a single code-reviewer subagent.
 
    **If more than 5 files in scope**: Dispatch parallel code-reviewer subagents along the largest natural boundary in the changed set. Common splits, in priority order:

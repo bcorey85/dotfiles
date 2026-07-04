@@ -229,9 +229,8 @@ return {
     -- Search namespace aligned to Doom `SPC s`. Doom uses s s / s b for buffer
     -- search and s i / s I for symbols (nvim historically had these swapped).
 
-    -- Grep a directory chosen at the prompt (used by sD / sP). nvim has no
-    -- project registry like Doom's projectile, so "other project" is really
-    -- just "pick a directory and grep it".
+    -- Grep a directory typed at the prompt (used by sD — the escape hatch for
+    -- dirs zoxide has never visited).
     local function grep_dir(prompt)
       vim.ui.input({ prompt = prompt, completion = "dir" }, function(dir)
         if not dir or dir == "" then
@@ -269,9 +268,19 @@ return {
       grep_dir("Search dir: ")
     end, "Search other dir")
 
-    -- s P: grep another project/dir (Doom `s P`; see grep_dir note above).
+    -- s P: grep another project (Doom `s P`). nvim has no project registry like
+    -- Doom's projectile, so zoxide's frecency-ranked dirs stand in for it: pick
+    -- a directory, then grep it. Overrides the source's default confirm
+    -- ("load_session") — we want a grep, not a session switch.
     pmap("<leader>sP", function()
-      grep_dir("Search project dir: ")
+      Snacks.picker.zoxide({
+        confirm = function(picker, item)
+          picker:close()
+          if item then
+            Snacks.picker.grep(vim.tbl_extend("force", search_opts, { cwd = item.file }))
+          end
+        end,
+      })
     end, "Search other project")
 
     -- s S / s w: grep the symbol/word under the cursor (Doom `s S`). sw kept as

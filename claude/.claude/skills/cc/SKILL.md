@@ -10,8 +10,7 @@ allowed-tools: [Bash, Read, Glob, Grep, Skill]
 
 ## Modifiers
 
-- `+fast` — pass through to `/fix` (→ `model: "haiku"` coders). Use when the comments are trivial (typos, simple style).
-- `+deep` — pass through to `/fix` (→ `-deep` Opus coders). Use when a comment needs deep reasoning to address correctly.
+- `+fast` / `+deep` — semantics defined in `~/.claude/skills/_shared/modifiers.md`; pass through to `/fix` unchanged. `+fast` when the comments are trivial (typos, simple style); `+deep` when a comment needs deep reasoning to address correctly.
 - `+show` — read and present the comments, then **stop**. Do not hand off to `/fix` and do not resolve anything. Use when you just want to see what you flagged without acting on it. (The editor-side equivalent is `<leader>cp` in Neovim.)
 
 ## Instructions

@@ -254,7 +254,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"/Users/legalfit/.claude/hooks/context-mode-cache-heal.mjs\""
+            "command": "\"$HOME/.claude/hooks/context-mode-cache-heal.mjs\""
           }
         ]
       }

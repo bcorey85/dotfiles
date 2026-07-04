@@ -61,7 +61,6 @@ local plugin_order = {
   "aerial", -- code outline / symbol tree sidebar — after treesitter + lspconfig
   "tiny-inline-diagnostic", -- inline diagnostic render (virtual_text off in config.lsp)
   "quicker", -- quickfix/loclist (replaces trouble)
-  "grug-far", -- project-wide find & replace (editable buffer)
   "undotree", -- visual undo history navigator
   "sleuth", -- auto-detect shiftwidth/expandtab per buffer
   "obsidian",

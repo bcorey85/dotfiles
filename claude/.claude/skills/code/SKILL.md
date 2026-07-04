@@ -13,8 +13,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 - `be` or `backend` — force backend-only scope
 - `fe` or `frontend` — force frontend-only scope
 - `fs` or `fullstack` — force fullstack scope
-- `+fast` — Pass `model: "haiku"` to coder dispatches. For trivial tasks like renames, typos, or simple one-line changes.
-- `+deep` — Dispatch the `-deep` coder variants (`backend-coder-deep` / `frontend-coder-deep`, Opus via frontmatter pin) and omit `model`. For complex tasks requiring deeper reasoning. Call-site `model: "opus"` is blocked by the agent-model-guard hook.
+- `+fast` / `+deep` — semantics defined in `~/.claude/skills/_shared/modifiers.md` (read it when either is present). `+fast` for trivial tasks (renames, typos, one-liners); `+deep` for complex tasks requiring deeper reasoning.
 
 ## Instructions
 

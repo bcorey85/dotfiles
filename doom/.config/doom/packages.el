@@ -43,3 +43,7 @@
 ;; terminal, and owns cursor-type so per-state cursor shapes take effect.
 ;; Replaces the manual cursor-refresh hook the old vterm setup needed.
 (package! evil-ghostel)
+
+;; harpoon.el — buffer-level quick-bookmarks (ports nvim harpoon).
+;; Marks files per-project+branch; C-SPC opens the hydra menu, C-s adds, SPC 1-9 jumps.
+(package! harpoon)

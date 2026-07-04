@@ -10,8 +10,7 @@ Review recent changes in this codebase using the code-reviewer subagent.
 
 ## Modifiers
 
-- `+fast` — Use Haiku model for code-reviewer subagent(s). Use for quick sanity checks on small changes.
-- `+deep` — Dispatch `code-reviewer-deep` instead of `code-reviewer` (Opus via its frontmatter pin; call-site `model: "opus"` is blocked by the agent-model-guard hook). Use for security-sensitive changes, complex logic, or architectural modifications.
+- `+fast` / `+deep` — semantics defined in `~/.claude/skills/_shared/modifiers.md` (read it when either is present). `+fast` for quick sanity checks on small changes; `+deep` (→ `code-reviewer-deep`) for security-sensitive changes, complex logic, or architectural modifications.
 
 ## Instructions
 

@@ -1,6 +1,6 @@
 # QRSPI Orchestrator — Design Notes
 
-**Status**: built 2026-06-12 — `SKILL.md` (62-line dispatcher), four `qrspi-*` agents (`~/.claude/agents/`), inline phase playbooks (`design-phase.md`, `structure-phase.md`). The eval protocol below is still pending its first end-to-end run; the five standalone q-\* skills remain until that run decides the orchestrator earns its keep.
+**Status**: built 2026-06-12 — `SKILL.md` (62-line dispatcher), four `qrspi-*` agents (`~/.claude/agents/`), inline phase playbooks (`design-phase.md`, `structure-phase.md`). **Verdict (2026-07-04): keep** — in daily use; the orchestrator has earned its maintenance cost by adoption. The formal eval protocol below was never run and is retained only as a template for evaluating future methodology changes (e.g. the 2026-07 agent-verifier/review-packet additions).
 **Companion**: `SKILL.md` (the how) lives in this directory; this doc is the why
 **Last design pass**: 2026-04-29
 

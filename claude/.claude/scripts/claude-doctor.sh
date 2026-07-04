@@ -78,6 +78,24 @@ else
   print_warn "no settings.json at ${SETTINGS/#$HOME/~}"
 fi
 
+# --- 2b. expected hook registrations -----------------------------------------
+print_info "Expected hook registrations"
+reg_blob=$(cat "$SETTINGS" "$CLAUDE_DIR/settings.local.json" 2>/dev/null)
+for pair in "log-skill-use.sh:skill-usage telemetry" "stub-guard.sh:acceptance-stub guard"; do
+  script="${pair%%:*}"; label="${pair#*:}"
+  [[ -f "$CLAUDE_DIR/scripts/$script" ]] || continue
+  if grep -q "$script" <<<"$reg_blob"; then
+    print_success "registered: scripts/$script"
+  else
+    print_warn "scripts/$script exists but is not registered in settings.json — $label inactive"
+  fi
+done
+if [[ -f "$CLAUDE_DIR/scripts/log-skill-use.sh" ]] && grep -q "log-skill-use.sh" <<<"$reg_blob"; then
+  if ! jq -r '.hooks.UserPromptSubmit // [] | tostring' "$SETTINGS" 2>/dev/null | grep -q "log-skill-use"; then
+    print_warn "log-skill-use.sh not wired to UserPromptSubmit — user-typed /commands won't be counted"
+  fi
+fi
+
 # --- 3. orphaned hook files -------------------------------------------------
 print_info "Orphaned files in hooks/"
 if [[ -d "$CLAUDE_DIR/hooks" ]]; then
@@ -114,6 +132,23 @@ for f in "$CLAUDE_DIR"/agents/*.md; do
     if [[ $legal -eq 0 ]]; then
       print_error "agents/$base.md: illegal model '$model' (expected: $LEGAL_MODELS, or omit)"
     fi
+  fi
+  # skills: preload entries must resolve to real skills
+  while IFS= read -r s; do
+    [[ -z "$s" ]] && continue
+    if [[ ! -f "$CLAUDE_DIR/skills/$s/SKILL.md" ]]; then
+      print_error "agents/$base.md: preloaded skill '$s' not found at skills/$s/SKILL.md"
+    fi
+  done < <(echo "$fm" | awk '/^skills:/{f=1;next} f&&/^[[:space:]]*-[[:space:]]*/{sub(/^[[:space:]]*-[[:space:]]*/,""); gsub(/["'"'"']/,""); print; next} f{f=0}')
+  # memory: legal scopes
+  memval=$(echo "$fm" | awk -F': *' '$1=="memory"{print $2; exit}' | tr -d '"')
+  if [[ -n "$memval" && "$memval" != "user" && "$memval" != "project" && "$memval" != "local" ]]; then
+    print_error "agents/$base.md: illegal memory scope '$memval' (expected: user|project|local)"
+  fi
+  # maxTurns must be numeric
+  mt=$(echo "$fm" | awk -F': *' '$1=="maxTurns"{print $2; exit}' | tr -d '"')
+  if [[ -n "$mt" && ! "$mt" =~ ^[0-9]+$ ]]; then
+    print_error "agents/$base.md: maxTurns '$mt' is not a number"
   fi
 done
 print_success "agent frontmatter scan complete ($(ls "$CLAUDE_DIR"/agents/*.md 2>/dev/null | wc -l) files)"

@@ -103,8 +103,11 @@
       "Bash(aws --version)",
       "Bash(git *)",
       "Bash(gh *)",
-      "Bash(curl *)",
-      "Bash(wget *)",
+      "Bash(curl --version)",
+      "Bash(curl -s https://registry.npmjs.org/*)",
+      "Bash(curl -s https://api.github.com/*)",
+      "Bash(curl -s http://localhost*)",
+      "Bash(curl -s http://127.0.0.1*)",
       "Bash(dig *)",
       "Bash(nslookup *)",
       "Bash(docker --version)",
@@ -135,14 +138,10 @@
       "Bash(open .)",
       "Bash(open -R *)"
     ],
-    "deny": [
-      "Bash(sudo *)",
-      "Bash(rm -rf /)",
-      "Bash(chmod 777 *)"
-    ],
+    "deny": ["Bash(sudo *)", "Bash(rm -rf /)", "Bash(chmod 777 *)"],
     "defaultMode": "auto"
   },
-  "model": "opus",
+  "model": "fable",
   "hooks": {
     "PreToolUse": [
       {
@@ -184,6 +183,24 @@
     ],
     "PostToolUse": [
       {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/log-skill-use.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/stub-guard.sh"
+          }
+        ]
+      },
+      {
         "matcher": "Write|Edit",
         "hooks": [
           {
@@ -207,6 +224,16 @@
           {
             "type": "command",
             "command": "~/.claude/scripts/claudemd-linecount.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/log-skill-use.sh"
           }
         ]
       }

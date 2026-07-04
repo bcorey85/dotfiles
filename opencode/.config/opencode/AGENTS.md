@@ -16,14 +16,7 @@
 - Don't add unnecessary preamble or postamble. Answer the question directly without "Here's what I did" or "Based on the information provided" wrappers.
 - Never hardcode paths or project names in rules, agents, skills, or commands — keep portable.
 - DO NOT GIT STASH UNLESS YOU HAVE EXPLICIT PERMISSION FROM THE USER. Stashing causes critical failures in parallel agent work and also resets staged files.
-- **MANDATORY: WebSearch before writing any config, CI, infra, or library integration code.**
-  Before writing Docker configs, CI pipelines, tool configs (Playwright, Vite, ESLint, etc.), or any code that touches external tool behavior:
-  1. Search the tool's official docs for the specific feature/environment
-  2. Search GitHub issues if the docs don't answer it
-  3. Only then write the code
-     This is NOT optional. Do NOT write config changes based on reasoning alone. Every CI/infra guess costs 5-10 minutes of pipeline time.
-     Scope: this applies when the feedback loop is slow or remote (CI pipelines, Docker builds, deployed infra, configs that only fail at build/run time). Local configs verifiable in seconds (shell aliases, tmux binds, editor settings) are exempt — just test them.
-     If research would take >5 minutes, say so and ask for direction instead.
+- **MANDATORY: WebSearch before writing config, CI, infra, or library-integration code** (Docker, pipelines, tool configs, version migrations): official docs first, then GitHub issues, only then write — never from reasoning alone. Scope: anywhere the feedback loop is slow or remote; local configs verifiable in seconds are exempt (just test them). If research would take >5 minutes, say so and ask for direction.
 - Maximum 3 attempts on any failing approach. After 3, stop, document what failed, and ask for direction.
 - Save all Playwright screenshots to `/tmp/`, never inside a project repo.
 - **NEVER use Bash to write files.** This is non-negotiable:

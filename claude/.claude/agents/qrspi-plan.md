@@ -98,9 +98,11 @@ Write verification items as TESTABLE assertions — each specifies HOW to verify
 
 #### Manual Verification:
 
+<!-- Write each item as a DRIVEABLE scenario — exact command, request, or interaction plus expected result. An agent verifier executes these after the phase's drift gate and records evidence in this plan; items only a human can judge (visual polish, UX feel) must say so explicitly so they route to the human-only list. -->
+
 - [ ] **Manual-verified**: [scenario] — "hit [endpoint/UI flow], confirm [expected behavior]"
 
-**High-risk phases: pause for manual verification before proceeding. Low-risk phases: manual items defer to the feature-level `/verify` pass before `/pr`.**
+**All phases: an agent verifier executes these items after the drift gate, tagging each `agent-verified` (with evidence) or `human-only`. High-risk phases: human sign-off reviews the evidence plus human-only items before proceeding. Low-risk phases: the human-only remainder defers to the `/q-verify` review packet before `/pr`.**
 
 ---
 

@@ -14,7 +14,7 @@ Independently reconcile what shipped on this branch against the ticket's require
 
 ## When it runs
 
-After `/code` (and its auto `/review`) report done, **before `/pr`**. Not a behavioral check — for "does the app actually do the thing", that's `/verify`. q-verify is static reconciliation of plan ↔ diff.
+After `/code` (and its auto `/review`) report done, **before `/pr`**. Not a behavioral check — behavioral verification runs per-phase via `/code`'s agent verifier (evidence recorded in the plan), with the built-in `/verify` available for anything left. q-verify is static reconciliation of plan ↔ diff, and on a clean result it assembles the **review packet** — the single artifact for the human's bulk end-of-feature review.
 
 ## Resolve the task directory
 
@@ -74,7 +74,10 @@ Out of scope (skipped): …
 
   Then offer to dispatch `/fix` (or `/code` for net-new work) to close them. Re-run q-verify after.
 
-- **Clean**: say so, then auto-invoke `/orient` via the Skill tool (`skill: "orient"`, no args — it self-scopes to the branch diff). Its map plus the completeness table above form the human review packet: read those first, then the diff hotspots they point at. Then point forward: `/verify` for any `needs-manual` items, otherwise `/pr`. After the PR, `/q-finalize`.
+- **Clean**: build the **review packet** — the single artifact for the human bulk review:
+  1. Auto-invoke `/orient` via the Skill tool (`skill: "orient"`, no args — it self-scopes to the branch diff).
+  2. Assemble one output, in this order: (a) the completeness table above; (b) orient's map (where it sits / wiring / reused-vs-new / structural risks); (c) **human-only checklist** — every `human-only` item from the plan's Manual Verification sections plus anything `needs-manual` from the reconciliation, with one line each on why an agent couldn't drive it; (d) **diff hotspots** — the 3–5 files where orient's structural risks and the completeness evidence point, listed as "read these first, skim the rest"; (e) a one-line pointer to the agent-verified evidence in the plan for spot-checking.
+  3. Point forward: run the human-only checklist, then `/pr`. After the PR, `/q-finalize`.
 
 ## What NOT to do
 

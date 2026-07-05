@@ -6,7 +6,6 @@ if vim.loader and not vim.loader.enabled then
 end
 
 require("config.options")
-require("config.statusline")
 require("config.winbar")
 require("config.autocmds")
 require("config.keymaps")

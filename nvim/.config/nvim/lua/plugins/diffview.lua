@@ -77,7 +77,9 @@ return {
       },
       keymaps = {
         view = { { "n", "q", close_diffview, { desc = "Close Diffview" } } },
-        file_panel = { { "n", "q", close_diffview, { desc = "Close Diffview" } } },
+        file_panel = {
+          { "n", "q", close_diffview, { desc = "Close Diffview" } },
+        },
       },
       hooks = {
         -- Soft-wrap long lines and collapse unchanged regions to just the
@@ -120,6 +122,18 @@ return {
         end,
       },
     }
+    -- <C-d>/<C-u> in the panels scroll the DIFF view (same action as the
+    -- default <c-f>/<c-b>), matching the global 10<C-d>zz scroll muscle memory.
+    -- Without these, C-d falls through to the global map and scrolls the
+    -- panel's own file list instead of the diff.
+    local actions = require("diffview.actions")
+    local panel_scroll = {
+      { "n", "<c-d>", actions.scroll_view(0.25), { desc = "Scroll the view down" } },
+      { "n", "<c-u>", actions.scroll_view(-0.25), { desc = "Scroll the view up" } },
+    }
+    opts.keymaps.file_panel = vim.list_extend(opts.keymaps.file_panel, panel_scroll)
+    opts.keymaps.file_history_panel = vim.list_extend(opts.keymaps.file_history_panel or {}, panel_scroll)
+
     -- Splice the conflict keys into the `view` context, NOT diff1/diff3/diff4.
     -- In this fork the editable MERGED window (where you resolve) only receives
     -- the `view` context — verified: the default `]x`/`[x` (view) bind there but

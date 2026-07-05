@@ -1,0 +1,52 @@
+#!/bin/bash
+# display-popup wrapper that escapes the Claude agent popup.
+#
+# Full-size popup bindings (prefix g / prefix s) pressed INSIDE the C-. agent
+# popup run on the nested client, so "-w 100%" means 100% of the agent popup —
+# a popup can't break out of the client hosting it. This wrapper detects that
+# case: it closes the agent popup (the session keeps running, like the C-.
+# toggle), opens the requested popup on the outer client at true full size,
+# and re-opens the agent popup when it closes. From a normal pane it degrades
+# to a plain display-popup on the invoking client.
+#
+# Usage: tmux-host-popup <client> <session> <dir> <width> <height> <command>
+#        tmux-host-popup --reopen <host_client> <session>          (internal)
+
+SELF="${BASH_SOURCE[0]}"
+
+prefix="$(tmux show-option -gqv @claude_session_prefix)"
+prefix="${prefix:-claude-}"
+
+if [ "${1:-}" = --reopen ]; then # background: bring the agent popup back
+    host="$2" session="$3"
+    w="$(tmux show-option -gqv @claude_popup_width)"
+    h="$(tmux show-option -gqv @claude_popup_height)"
+    sleep 0.1                                    # let the full-size popup finish closing...
+    tmux display-popup -C -c "$host" 2>/dev/null # ...or force it
+    tmux has-session -t "$session" 2>/dev/null || exit 0
+    exec tmux display-popup -c "$host" -w "${w:-90%}" -h "${h:-90%}" \
+        -E "tmux attach-session -t '$session'"
+fi
+
+client="$1" session="$2" dir="$3" w="$4" h="$5" cmd="$6"
+
+# Not inside the agent popup: plain popup on the invoking client.
+if [[ "$session" != "$prefix"* ]]; then
+    exec tmux display-popup -c "$client" -d "$dir" -w "$w" -h "$h" -E "$cmd"
+fi
+
+# Outer client = first client not attached to an agent session.
+host="$(tmux list-clients -F '#{client_name} #{session_name}' 2>/dev/null |
+    awk -v p="$prefix" 'index($2, p) != 1 { print $1; exit }')"
+
+# Close the agent popup (detach its client; the agent session keeps running).
+tmux detach-client -s "$session"
+for _ in $(seq 1 100); do
+    tmux list-clients -F '#{session_name}' 2>/dev/null | grep -q "^${prefix}" || break
+    sleep 0.05
+done
+
+# Re-open the agent popup after the command's popup closes; run-shell -b runs
+# on the server, so it can open the new popup once this one is gone.
+exec tmux display-popup -c "${host:-$client}" -d "$dir" -w "$w" -h "$h" \
+    -E "$cmd; tmux run-shell -b \"'$SELF' --reopen '${host:-$client}' '$session'\""

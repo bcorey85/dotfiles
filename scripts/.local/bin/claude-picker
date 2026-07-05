@@ -1,0 +1,115 @@
+#!/bin/bash
+# Claude session picker (bound to C-/ and C-_ in tmux), replacing the plugin's
+# list.sh -> picker.sh flow (tmux-claude-session-manager).
+#
+# Why not the plugin's own picker: on enter it attaches the chosen session
+# INSIDE the picker popup, so the session inherits the picker's size forever —
+# tmux popups can't be resized after creation. That meant jumps never got the
+# reading-shaped @claude_popup_width/height the C-. / prefix y popups use.
+# Here enter closes the picker popup and re-opens the session in a fresh popup
+# at the agent size, on the outer client.
+#
+# Rows/state icons still come from the plugin (picker.sh --list), so upstream
+# stays the source of truth for session state. The ctrl-/ toggle-close bind
+# lives in our fzf call now — the plugin clone no longer needs a local patch.
+#
+# Usage: claude-picker <client_name> <session_name>   tmux binding entry point
+#        claude-picker --pick <host_client>           internal: fzf inside the popup
+#        claude-picker --attach <host_client> <session>  internal: re-open jump target
+
+SELF="${BASH_SOURCE[0]}"
+PLUGIN="$HOME/.tmux/plugins/tmux-claude-session-manager/scripts"
+
+prefix="$(tmux show-option -gqv @claude_session_prefix)"
+prefix="${prefix:-claude-}"
+
+# First client NOT attached to an agent session — the outer client that should
+# host popups (same heuristic as the plugin's list.sh).
+host_client() {
+    tmux list-clients -F '#{client_name} #{session_name}' 2>/dev/null |
+        awk -v p="$prefix" 'index($2, p) != 1 { print $1; exit }'
+}
+
+# Session of a client attached to an agent session — the popup we're inside, if any.
+nested_session() {
+    tmux list-clients -F '#{client_name} #{session_name}' 2>/dev/null |
+        awk -v p="$prefix" 'index($2, p) == 1 { print $2; exit }'
+}
+
+case "${1:-}" in
+
+--pick) # runs inside the picker popup
+    host="${2:-}"
+    export FZF_DEFAULT_OPTS=''
+    sel=$("$PLUGIN/picker.sh" --list | fzf --ansi --delimiter='\t' --with-nth=3,4,5 \
+        --reverse --cycle --header='Claude sessions · enter: jump · ctrl-x: kill' \
+        --preview='tmux capture-pane -ept {2}' --preview-window='right,62%,wrap' \
+        --bind='ctrl-/:abort' \
+        --bind="ctrl-x:execute-silent(tmux kill-session -t {2})+reload($PLUGIN/picker.sh --list)")
+    [ -z "$sel" ] && exit 0
+    target=$(printf '%s' "$sel" | cut -f2)
+
+    # Park the outer client on the session's origin window (best-effort) so
+    # the popup opens over where the agent was launched.
+    origin=$(tmux show-options -qv -t "$target" @claude_origin 2>/dev/null)
+    [ -n "$origin" ] && [ -n "$host" ] && tmux switch-client -c "$host" -t "$origin" 2>/dev/null
+
+    # Opening the session popup from in here would MODIFY this popup (tmux
+    # ignores -w/-h on an existing popup) — hand off to the server and exit so
+    # the picker popup closes first.
+    tmux run-shell -b "'$SELF' --attach '$host' '$target'"
+    ;;
+
+--attach) # background: open the jump target at agent size on the outer client
+    host="$2" target="$3"
+    w="$(tmux show-option -gqv @claude_popup_width)"
+    h="$(tmux show-option -gqv @claude_popup_height)"
+    sleep 0.1 # let the picker popup finish closing...
+    if [ -n "$host" ]; then
+        tmux display-popup -C -c "$host" 2>/dev/null # ...or force it
+        exec tmux display-popup -c "$host" -w "${w:-90%}" -h "${h:-90%}" \
+            -E "tmux attach-session -t '$target'"
+    else
+        exec tmux display-popup -w "${w:-90%}" -h "${h:-90%}" \
+            -E "tmux attach-session -t '$target'"
+    fi
+    ;;
+
+*) # tmux binding entry point: claude-picker <client_name> <session_name>
+    client="${1:-}" session="${2:-}"
+
+    [ -x "$PLUGIN/picker.sh" ] || {
+        tmux display-message "claude-picker: tmux-claude-session-manager not installed"
+        exit 0
+    }
+    command -v fzf >/dev/null 2>&1 || {
+        tmux display-message "claude-picker: fzf is required"
+        exit 0
+    }
+
+    if [ -n "$client" ] && [ -n "$session" ] && [[ "$session" != "$prefix"* ]]; then
+        host="$client"
+    else
+        # Invoked from inside the agent popup: close it first — a client can
+        # only host one popup, and the picker belongs on the outer client.
+        sess="$(nested_session)"
+        if [ -n "$sess" ]; then
+            tmux detach-client -s "$sess"
+            for _ in $(seq 1 100); do
+                [ -z "$(nested_session)" ] && break
+                sleep 0.05
+            done
+        fi
+        host="$(host_client)"
+    fi
+
+    # Wide stock size for the picker (list + 62% preview pane); the
+    # reading-shaped @claude_popup_width/height apply only to the session
+    # popups themselves (launch.sh and --attach above).
+    if [ -n "$host" ]; then
+        exec tmux display-popup -c "$host" -w 90% -h 90% -E "'$SELF' --pick '$host'"
+    else
+        exec tmux display-popup -w 90% -h 90% -E "'$SELF' --pick ''"
+    fi
+    ;;
+esac

@@ -31,6 +31,7 @@
 local plugin_order = {
   "theme", -- colorscheme — must be first
   "mini-icons", -- icon mock (satisfies require("nvim-web-devicons")) — before consumers
+  "lualine", -- statusline — after mini-icons (icons), before gitsigns/neogit (branch info)
   "treesitter", -- before markview / mini.ai textobjects
   "treesitter-context", -- sticky scope header — after treesitter
   "matchup", -- `%` matches keyword/tag pairs (function/end, <div></div>) — after treesitter

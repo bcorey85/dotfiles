@@ -83,6 +83,74 @@
 ;; polls it too. Emacs joins the same bus — one toggle flips tmux + nvim + Emacs.
 (defvar +theme/state-file (expand-file-name "~/.cache/theme-mode"))
 
+;; No maintained Emacs port of nightfox.nvim ships, so instead of a from-scratch
+;; theme we remap modus-vivendi/modus-operandi's named palette slots to
+;; terafox/dayfox's actual hex values (pulled from nightfox.nvim's own palette
+;; source, not eyeballed) via `modus-themes-common-palette-overrides'-style
+;; per-theme overrides. This cascades through modus's semantic mappings —
+;; keywords, strings, diagnostics, mode-line, everything — not just bg/fg.
+;; Convention: base = nightfox's Shade "base", -warmer/-intense = Shade
+;; "bright", -cooler/-faint = Shade "dim" (or, for dayfox, computed
+;; lighten/darken-by-15% since nightfox generates dayfox's shades
+;; programmatically rather than hand-picking hex triples).
+(setq modus-vivendi-palette-overrides
+      '((bg-main     "#152528")   ; terafox bg1
+        (bg-dim      "#0f1c1e")   ; terafox bg0
+        (fg-main     "#e6eaea")   ; terafox fg1
+        (fg-dim      "#6d7f8b")   ; terafox comment
+        (fg-alt      "#cbd9d8")   ; terafox fg2
+        (bg-active   "#2d4f56")   ; terafox bg4
+        (bg-inactive "#1d3337")   ; terafox bg2
+        (border      "#2d4f56")   ; terafox bg4
+
+        (red             "#e85c51") (red-warmer      "#eb746b")
+        (red-cooler      "#c54e45") (red-faint       "#c54e45")
+        (red-intense     "#eb746b")
+        (green           "#7aa4a1") (green-warmer    "#8eb2af")
+        (green-cooler    "#688b89") (green-faint     "#688b89")
+        (green-intense   "#8eb2af")
+        (yellow          "#fda47f") (yellow-warmer   "#fdb292")
+        (yellow-cooler   "#d78b6c") (yellow-faint    "#d78b6c")
+        (yellow-intense  "#fdb292")
+        (blue            "#5a93aa") (blue-warmer     "#73a3b7")
+        (blue-cooler     "#4d7d90") (blue-faint      "#4d7d90")
+        (blue-intense    "#73a3b7")
+        (magenta         "#ad5c7c") (magenta-warmer  "#b97490")
+        (magenta-cooler  "#934e69") (magenta-faint   "#934e69")
+        (magenta-intense "#b97490")
+        (cyan            "#a1cdd8") (cyan-warmer     "#afd4de")
+        (cyan-cooler     "#89aeb8") (cyan-faint      "#89aeb8")
+        (cyan-intense    "#afd4de")))
+
+(setq modus-operandi-palette-overrides
+      '((bg-main     "#f6f2ee")   ; dayfox bg1
+        (bg-dim      "#e4dcd4")   ; dayfox bg0
+        (fg-main     "#3d2b5a")   ; dayfox fg1
+        (fg-dim      "#837a72")   ; dayfox comment
+        (fg-alt      "#643f61")   ; dayfox fg2
+        (bg-active   "#aab0ad")   ; dayfox bg4
+        (bg-inactive "#dbd1dd")   ; dayfox bg2
+        (border      "#aab0ad")   ; dayfox bg4
+
+        (red             "#a5222f") (red-warmer      "#b2434e")
+        (red-cooler      "#8c1d28") (red-faint       "#8c1d28")
+        (red-intense     "#b2434e")
+        (green           "#396847") (green-warmer    "#577f63")
+        (green-cooler    "#30583c") (green-faint     "#30583c")
+        (green-intense   "#577f63")
+        (yellow          "#ac5402") (yellow-warmer   "#b86e28")
+        (yellow-cooler   "#924702") (yellow-faint    "#924702")
+        (yellow-intense  "#b86e28")
+        (blue            "#2848a9") (blue-warmer     "#4863b6")
+        (blue-cooler     "#223d90") (blue-faint      "#223d90")
+        (blue-intense    "#4863b6")
+        (magenta         "#6e33ce") (magenta-warmer  "#8452d5")
+        (magenta-cooler  "#5e2baf") (magenta-faint   "#5e2baf")
+        (magenta-intense "#8452d5")
+        (cyan            "#287980") (cyan-warmer     "#488d93")
+        (cyan-cooler     "#22676d") (cyan-faint      "#22676d")
+        (cyan-intense    "#488d93")))
+
 (defun +theme/read-mode ()
   "Read dark/light from the state file, default to dark."
   (let ((raw (and (file-exists-p +theme/state-file)
@@ -93,19 +161,13 @@
 
 (defun +theme/apply (mode &optional force)
   "Switch to MODE (\"dark\"/\"light\").
-Dark is modus-vivendi with terafox bg/fg; light is modus-operandi with
-dayfox bg/fg (no maintained Emacs port of nightfox.nvim ships, so we just
-recolor the base/foreground on top of a real theme instead)."
+Dark is modus-vivendi remapped to terafox's palette; light is modus-operandi
+remapped to dayfox's palette (see `modus-vivendi-palette-overrides' /
+`modus-operandi-palette-overrides' above)."
   (let ((scheme (if (equal mode "light") 'modus-operandi 'modus-vivendi)))
     (unless (and (not force) (eq doom-theme scheme))
       (setq doom-theme scheme)
-      (load-theme scheme t)
-      ;; Override bg/fg with terafox/dayfox colors.
-      (if (equal mode "dark")
-          (custom-set-faces!
-            '(default :background "#152528" :foreground "#e6eaea"))
-        (custom-set-faces!
-          '(default :background "#f6f2ee" :foreground "#3d2b5a"))))))
+      (load-theme scheme t))))
 
 (defun +theme/sync ()
   "Read the state file and apply the matching theme."

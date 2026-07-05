@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Gate the tmux picker's "idle" state on background subagents, not just the
+# main agent turn. Claude Code's Stop hook fires as soon as the main thread's
+# turn ends, even if it dispatched Agent calls with run_in_background (the
+# default) that are still working — without this, the picker shows "idle"
+# while a subagent is still going.
+#
+# Tracks two per-session tmux options:
+#   @claude_subagent_count  - in-flight background subagents
+#   @claude_main_stopped    - whether the main thread's Stop hook has fired
+# idle is only forwarded to state.sh when both are true: count == 0 and
+# main_stopped == 1.
+#
+# Wired into Claude Code hooks (~/.claude/settings.json):
+#   PostToolUse (matcher Agent) -> claude-subagent-state start
+#   SubagentStop                -> claude-subagent-state stop
+#   Stop                        -> claude-subagent-state main-stop
+#   UserPromptSubmit             -> claude-subagent-state reset
+#
+# start only counts run_in_background calls (default true; explicit false is
+# synchronous and already covered by the main thread never stopping mid-call).
+STATE_SH="$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh"
+
+[ -z "$TMUX_PANE" ] && exit 0
+session=$(tmux display-message -p -t "$TMUX_PANE" '#{session_name}' 2>/dev/null) || exit 0
+[ -z "$session" ] && exit 0
+
+count_opt="@claude_subagent_count"
+stopped_opt="@claude_main_stopped"
+
+get() { tmux show-option -t "$session" -qv "$1" 2>/dev/null; }
+put() { tmux set-option -t "$session" "$1" "$2"; }
+
+maybe_idle() {
+  local count stopped
+  count=$(get "$count_opt"); count=${count:-0}
+  stopped=$(get "$stopped_opt"); stopped=${stopped:-0}
+  if [ "$count" -le 0 ] && [ "$stopped" = "1" ]; then
+    "$STATE_SH" idle
+  fi
+}
+
+case "$1" in
+  start)
+    input="$(cat)"
+    bg=$(printf '%s' "$input" | jq -r '.tool_input.run_in_background // true')
+    [ "$bg" = "false" ] && exit 0
+    count=$(get "$count_opt"); count=${count:-0}
+    put "$count_opt" "$((count + 1))"
+    ;;
+  stop)
+    count=$(get "$count_opt"); count=${count:-0}
+    [ "$count" -gt 0 ] && count=$((count - 1)) || count=0
+    put "$count_opt" "$count"
+    maybe_idle
+    ;;
+  main-stop)
+    put "$stopped_opt" "1"
+    maybe_idle
+    ;;
+  reset)
+    put "$stopped_opt" "0"
+    ;;
+esac
+exit 0

@@ -1,5 +1,5 @@
-# modus-vivendi palette (Protesilaos Stavrou)
-palette = "modus_vivendi"
+# nightfox palette (EdenEast/nightfox.nvim)
+palette = "nightfox"
 
 # NOTE: the root `format` MUST come before [palettes.*] — any key after a
 # table header belongs to that table. Placed below the palette it silently
@@ -15,17 +15,17 @@ $cmd_duration\
 $line_break\
 $character"""
 
-[palettes.modus_vivendi]
-red = "#ff5f59"
-orange = "#db7b5f"
-yellow = "#d0bc00"
-green = "#44bc44"
-blue = "#2fafff"
-teal = "#00d3d0"
-purple = "#feacd0"
-fg = "#f2f4f8"
-bg = "#161616"
-grey = "#535353"
+[palettes.nightfox]
+red = "#c94f6d"
+orange = "#f4a261"
+yellow = "#dbc074"
+green = "#81b29a"
+blue = "#719cd6"
+teal = "#63cdcf"
+purple = "#9d79d6"
+fg = "#cdcecf"
+bg = "#192330"
+grey = "#71839b"
 
 [directory]
 style = "bold teal"

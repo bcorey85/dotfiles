@@ -12,7 +12,7 @@
 -- the <leader>m reading popup. Navigable-but-occasionally-ugly beats unusable.
 --
 -- Heading colours + list bullets use custom hl groups (MdHeading1..6, MdBullet)
--- defined in theme.lua's catppuccin custom_highlights. markview only REFERENCES
+-- defined in theme.lua's set_headings(). markview only REFERENCES
 -- those names (it never defines them), so the theme's definitions always win —
 -- unlike the built-in Markview* groups, which markview re-applies after setup
 -- and would shadow a theme override made at startup.

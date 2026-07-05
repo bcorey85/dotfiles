@@ -1,0 +1,25 @@
+#!/bin/bash
+# Toggle the managed agent popup (tmux-claude-session-manager) — bound to C-.
+# Outside the popup -> open/launch the current project's agent popup (= prefix y).
+# Inside the popup  -> detach that client, closing the popup (agent keeps running).
+#
+# The same binding works in both places because the popup is a nested client on
+# the SAME tmux server: pressing C-. inside it fires this script with the inner
+# client's context, so we detect the agent-* session and detach instead of launch.
+#
+# Usage: claude-agent-toggle <session_name> <client_name> <pane_path> <window_id>
+#        (all four expanded by the tmux binding at keypress time)
+
+session="$1"
+client="$2"
+path="$3"
+window="$4"
+
+prefix="$(tmux show-option -gqv @claude_session_prefix)"
+prefix="${prefix:-claude-}"
+
+if [[ "$session" == "$prefix"* ]]; then
+    tmux detach-client -t "$client"
+else
+    exec "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/launch.sh" "$path" "$window"
+fi

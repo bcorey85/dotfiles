@@ -25,6 +25,10 @@ return {
         -- dap-ui: plain defaults are fine; layout is configured inside dapui.
         dapui.setup({})
 
+        -- dap-virtual-text: inline values next to variables while stepping,
+        -- so you don't have to jump to the dap-ui scopes pane to read one.
+        require("nvim-dap-virtual-text").setup({})
+
         -- Signs: the stock "B" breakpoint marker is near-invisible against the
         -- Catppuccin Mocha gutter. Use a bold filled dot in theme-matched colors
         -- so breakpoints actually read at a glance. Highlights are set explicitly
@@ -62,6 +66,12 @@ return {
         -- Mason installs debugpy into its own venv; point dap-python at that
         -- Python so it can launch "python -m debugpy.adapter" correctly.
         require("dap-python").setup(vim.fn.stdpath("data") .. "/mason/packages/debugpy/venv/bin/python")
+
+        -- Per-project fixed launch configs: lets a project define its own
+        -- ".vscode/launch.json" (e.g. a fixed entry-point script) instead of
+        -- always falling back to dap-python's generic "launch current buffer"
+        -- default, which only works if the buffer you're in is the entry point.
+        require("dap.ext.vscode").load_launchjs(nil, {})
 
         -- ── JavaScript / TypeScript (js-debug-adapter via Mason) ───────────
         -- js-debug-adapter is a DAP server (not a raw executable): nvim-dap
@@ -129,6 +139,10 @@ return {
         end)
       end, "Conditional breakpoint")
 
+      map("<leader>de", function()
+        require("dap").set_exception_breakpoints()
+      end, "Set exception breakpoints")
+
       map("<leader>dc", function()
         require("dap").continue()
       end, "Continue / start")
@@ -176,5 +190,10 @@ return {
   -- ── dap-python ────────────────────────────────────────────────────────────
   {
     src = "mfussenegger/nvim-dap-python",
+  },
+
+  -- ── dap-virtual-text (depends on nvim-treesitter, installed separately) ───
+  {
+    src = "theHamsta/nvim-dap-virtual-text",
   },
 }

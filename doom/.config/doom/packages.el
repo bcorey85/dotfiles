@@ -1,14 +1,6 @@
 ;; -*- no-byte-compile: t; -*-
 ;;; packages.el
 
-;; oxocarbon (dark) — Doom-native port of the oxocarbon Neovim theme, built on
-;; `doom-themes' (already pulled by the `doom' module) so it styles the modeline,
-;; org, and magit faces the way modus did. Loaded as the dark half of the shared
-;; light/dark toggle in config.el. No Emacs oxocarbon port ships a light variant,
-;; so light mode stays on the built-in modus-operandi.
-(package! doom-oxocarbon
-  :recipe (:host github :repo "roman-xo/doom-oxocarbon"))
-
 ;; Claude Code IDE integration — runs the `claude` CLI in a side window and
 ;; speaks the editor IDE/MCP protocol, so Claude sees buffers, selections, and
 ;; diagnostics (the thing a dumb tmux pane can't do). Requires the `claude` CLI

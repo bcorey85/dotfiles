@@ -141,7 +141,7 @@
     "deny": ["Bash(sudo *)", "Bash(rm -rf /)", "Bash(chmod 777 *)"],
     "defaultMode": "auto"
   },
-  "model": "fable",
+  "model": "sonnet",
   "hooks": {
     "PreToolUse": [
       {
@@ -179,6 +179,15 @@
             "command": "~/.claude/scripts/agent-model-guard.sh"
           }
         ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh waiting"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -188,6 +197,15 @@
           {
             "type": "command",
             "command": "~/.claude/scripts/log-skill-use.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/claude-subagent-state start"
           }
         ]
       },
@@ -234,6 +252,14 @@
           {
             "type": "command",
             "command": "~/.claude/scripts/log-skill-use.sh"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh working"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/claude-subagent-state reset"
           }
         ]
       }
@@ -254,6 +280,10 @@
           {
             "type": "command",
             "command": "~/.claude/scripts/notify 'Claude Code' 'Permission needed'"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh waiting"
           }
         ]
       },
@@ -263,6 +293,28 @@
           {
             "type": "command",
             "command": "~/.claude/scripts/notify 'Claude Code' 'Task complete'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/claude-subagent-state main-stop"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/claude-subagent-state stop"
           }
         ]
       }
@@ -309,7 +361,7 @@
     }
   },
   "effortLevel": "high",
-  "tui": "fullscreen",
+  "tui": "default",
   "autoMemoryEnabled": false,
   "theme": "auto",
   "skipAutoPermissionPrompt": true

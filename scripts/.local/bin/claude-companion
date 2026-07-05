@@ -1,0 +1,31 @@
+#!/bin/bash
+# Toggle a companion claude pane in the current window (bound to C-' in tmux).
+# Unlike the managed agent popups (prefix y / tmux-claude-session-manager),
+# this is for pair-programming: a plain claude pane you glance at while typing.
+#
+#   claude pane in this window  -> stash it (break-pane to a hidden window
+#                                  named _claude; the conversation keeps running)
+#   _claude window in session   -> join it back as a right-hand 40% split
+#   neither                     -> spawn a fresh claude split
+#
+# Usage: claude-companion [start-directory]   (passed by the tmux binding)
+
+dir="${1:-$(tmux display-message -p '#{pane_current_path}')}"
+
+# A claude pane already in the current window? Stash it.
+pane=$(tmux list-panes -F '#{pane_id} #{pane_current_command}' | awk '$2=="claude"{print $1; exit}')
+if [ -n "$pane" ]; then
+    tmux break-pane -d -s "$pane" -n _claude
+    exit 0
+fi
+
+# A stashed companion in this session? Bring it back.
+win=$(tmux list-windows -F '#{window_id} #{window_name}' | awk '$2=="_claude"{print $1; exit}')
+if [ -n "$win" ]; then
+    # -p 40 instead of -l 40% for older-tmux compat (matches the dev script)
+    tmux join-pane -h -p 40 -s "$win"
+    exit 0
+fi
+
+# No companion yet: spawn one.
+tmux split-window -h -p 40 -c "$dir" claude

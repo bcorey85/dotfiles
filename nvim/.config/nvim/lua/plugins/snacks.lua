@@ -148,13 +148,12 @@ return {
     end, { desc = "Toggle terminal (cwd)" })
 
     -- Dismiss-from-inside uses a chord, not <leader>: in terminal mode <leader>
-    -- (space) would intercept every space you type in the shell. <C-/> (sent as
-    -- <C-_> by kitty/ghostty) hides the terminal split without leaving insert.
-    for _, key in ipairs({ "<C-/>", "<C-_>" }) do
-      vim.keymap.set("t", key, function()
-        Snacks.terminal()
-      end, { desc = "Hide terminal" })
-    end
+    -- (space) would intercept every space you type in the shell. <C-t> hides
+    -- the terminal split without leaving insert (C-/ is reserved for tmux's
+    -- claude session picker, see tmux/.tmux.conf).
+    vim.keymap.set("t", "<C-t>", function()
+      Snacks.terminal()
+    end, { desc = "Hide terminal" })
 
     -- scratch: persistent per-project scratch buffers, keyed by cwd + branch +
     -- filetype (stored in stdpath("data")/scratch). The scratch inherits the

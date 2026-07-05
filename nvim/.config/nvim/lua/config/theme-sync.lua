@@ -8,12 +8,13 @@
 -- with no sockets or lifecycle to manage. <leader>ut shells out to the same
 -- script, so a toggle from nvim flips tmux too — one source of truth, both ways.
 --
--- oxocarbon.nvim uses vim.o.background to pick dark or light variant.
+-- nightfox.nvim doesn't auto-switch on vim.o.background — it ships separate
+-- colorscheme names per variant, so each mode maps to its own name here.
 
 local M = {}
 
 local STATE_FILE = vim.env.HOME .. "/.cache/theme-mode"
-local COLORSCHEME = "modus"
+local COLORSCHEMES = { dark = "nightfox", light = "dayfox" }
 
 local applied ---@type string|nil  last mode we set, to skip redundant reloads
 
@@ -44,7 +45,7 @@ function M.apply(mode, force)
   end
   applied = mode
   vim.o.background = mode
-  vim.cmd.colorscheme(COLORSCHEME)
+  vim.cmd.colorscheme(COLORSCHEMES[mode])
 end
 
 function M.apply_from_file(force)

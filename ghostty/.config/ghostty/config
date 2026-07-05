@@ -10,9 +10,6 @@ confirm-close-surface = false
 # stems render heavier — closest match to kitty's bolder text rendering, since
 # font-thicken is macOS-only. If still too light, use `font-style = Bold`.
 freetype-load-flags = no-light
-# macOS only (no-op on Linux): thicken rendering — macOS dropped subpixel AA,
-# so thin stems go fuzzy on the ~111 PPI external monitor without this.
-font-thicken = true
 # Theme - terafox (EdenEast/nightfox.nvim)
 background = #152528
 foreground = #e6eaea

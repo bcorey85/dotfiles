@@ -14,7 +14,7 @@
 local M = {}
 
 local STATE_FILE = vim.env.HOME .. "/.cache/theme-mode"
-local COLORSCHEMES = { dark = "nightfox", light = "dayfox" }
+local COLORSCHEMES = { dark = "terafox", light = "dayfox" }
 
 local applied ---@type string|nil  last mode we set, to skip redundant reloads
 
@@ -73,9 +73,13 @@ function M.start()
   poll = vim.uv.new_fs_poll()
   if poll then
     -- 1s cadence: imperceptible for a manual toggle, negligible overhead.
-    poll:start(STATE_FILE, 1000, vim.schedule_wrap(function()
-      M.apply_from_file(false)
-    end))
+    poll:start(
+      STATE_FILE,
+      1000,
+      vim.schedule_wrap(function()
+        M.apply_from_file(false)
+      end)
+    )
   end
 end
 

@@ -7,8 +7,9 @@
 -- sets on vim.diagnostic.config would be clobbered by lsp.lua afterward. Signs,
 -- underline, and the statusline counts are left to the native config.
 return {
-  src = "rachartier/tiny-inline-diagnostic.nvim",
-  setup = function()
+  "rachartier/tiny-inline-diagnostic.nvim",
+  event = "VeryLazy",
+  config = function()
     require("tiny-inline-diagnostic").setup({
       preset = "modern",
       options = {

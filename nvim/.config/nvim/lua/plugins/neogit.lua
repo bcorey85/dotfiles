@@ -16,8 +16,17 @@
 -- Neogit emits User autocmds (NeogitCommitComplete, NeogitPushComplete, etc.)
 -- which statusline.lua subscribes to in place of fugitive's FugitiveChanged.
 return {
-  src = "NeogitOrg/neogit",
-  setup = function()
+  "NeogitOrg/neogit",
+  cmd = { "Neogit" },
+  keys = {
+    { "<leader>gg", desc = "Neogit status (jump to existing or open)" },
+    { "<leader>gb", desc = "Checkout branch" },
+    { "<leader>gL", desc = "Log (current file)" },
+    { "<leader>gr", desc = "Open/create PR on GitHub" },
+    { "<leader>gt", desc = "Git push + set upstream tracking (prompt)" },
+  },
+  dependencies = { "nvim-lua/plenary.nvim", "dlyongemallo/diffview-plus.nvim", "barrettruth/diffs.nvim" },
+  config = function()
     -- ]f / [f — jump to next / previous FILE in the status list (magit ]]/[[ feel).
     -- neogit's built-ins don't cover this: }/{ walk hunk headers (and dive INTO a
     -- collapsed file), <c-n>/<c-p> walk only the top-level sections (Unstaged /

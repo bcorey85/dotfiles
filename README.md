@@ -4,7 +4,7 @@ Personal configuration files across WSL, Ubuntu, macOS, and Arch Linux.
 
 ## What's Included
 
-- **nvim** - Neovim configuration (native `vim.pack`, specs in `lua/plugins/`)
+- **nvim** - Neovim configuration (lazy.nvim, specs in `lua/plugins/`)
 - **tmux** - tmux configuration with true color support
 - **zsh** - zsh configuration (manually cloned plugins, starship prompt)
 - **kanata** - Keyboard remapping
@@ -80,7 +80,7 @@ stow -D nvim tmux zsh claude kanata scripts
 
 **Neovim plugins not loading:**
 
-- Open Neovim and run `:PackUpdate` (see `:PackStatus`)
+- Open Neovim — lazy.nvim bootstraps and installs plugins on first launch (or run `:Lazy`)
 - Check `:checkhealth` for issues
 
 **Symlinks not working:**

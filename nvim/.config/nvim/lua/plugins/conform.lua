@@ -1,6 +1,9 @@
 return {
-  src = "stevearc/conform.nvim",
-  setup = function()
+  "stevearc/conform.nvim",
+  event = { "BufWritePre" },
+  cmd = { "ConformInfo", "FormatDisable", "FormatEnable" },
+  keys = { { "<leader>lf", desc = "Format buffer (conform)" } },
+  config = function()
     require("conform").setup({
       formatters_by_ft = {
         lua = { "stylua" },

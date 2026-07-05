@@ -14,8 +14,10 @@
 -- No preview_config.border is set here — vim.o.winborder = "rounded" in
 -- options.lua already covers all floats globally (Neovim 0.11+).
 return {
-  src = "lewis6991/gitsigns.nvim",
-  setup = function()
+  "lewis6991/gitsigns.nvim",
+  event = { "BufReadPre", "BufNewFile" },
+  cmd = { "GitHunksQf" },
+  config = function()
     require("gitsigns").setup({
       signs = {
         add = { text = "▎" },

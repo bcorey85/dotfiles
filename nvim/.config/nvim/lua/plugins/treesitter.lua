@@ -1,10 +1,13 @@
 return {
-  src = "nvim-treesitter/nvim-treesitter",
-  version = "main",
-  deps = {
-    { src = "nvim-treesitter/nvim-treesitter-textobjects", version = "main" },
+  "nvim-treesitter/nvim-treesitter",
+  branch = "main",
+  build = ":TSUpdate",
+  event = { "BufReadPost", "BufNewFile" },
+  cmd = { "TSInstall", "TSUpdate", "TSUpdateSync", "TSInstallSync" },
+  dependencies = {
+    { "nvim-treesitter/nvim-treesitter-textobjects", branch = "main" },
   },
-  setup = function()
+  config = function()
     local langs = {
       "bash",
       "c",

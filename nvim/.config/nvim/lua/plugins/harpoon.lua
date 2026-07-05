@@ -1,8 +1,16 @@
 return {
-  src = "ThePrimeagen/harpoon",
-  version = "harpoon2",
-  deps = { "nvim-lua/plenary.nvim" },
-  setup = function()
+  "ThePrimeagen/harpoon",
+  branch = "harpoon2",
+  keys = {
+    { "<leader>a", desc = "Harpoon: add file" },
+    { "<leader><tab>", desc = "Harpoon: menu" },
+    { "<leader>1", desc = "Harpoon: slot 1" },
+    { "<leader>2", desc = "Harpoon: slot 2" },
+    { "<leader>3", desc = "Harpoon: slot 3" },
+    { "<leader>4", desc = "Harpoon: slot 4" },
+  },
+  dependencies = { "nvim-lua/plenary.nvim" },
+  config = function()
     local harpoon = require("harpoon")
     harpoon:setup({ settings = { save_on_toggle = true } })
 

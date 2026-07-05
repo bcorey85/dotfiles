@@ -16,8 +16,11 @@
 -- keyword pairs without it, so we deliberately don't wire that path. Placed after
 -- treesitter in plugin_order purely for tidy ordering.
 return {
-  src = "andymass/vim-matchup",
-  setup = function()
+  "andymass/vim-matchup",
+  event = { "BufReadPost", "BufNewFile" },
+  -- vim.g vars must be set BEFORE the plugin sources, so they live in init()
+  -- (runs at startup, pre-load) rather than config() (runs after load).
+  init = function()
     -- When the matching word is scrolled off-screen, show it in a small popup
     -- (the everyday "where's the opening tag for this </div>" answer) instead of
     -- the default statusline echo.

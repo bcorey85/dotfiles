@@ -42,5 +42,6 @@ vim.g.diffs = {
 }
 
 return {
-  src = "barrettruth/diffs.nvim",
+  "barrettruth/diffs.nvim",
+  event = "VeryLazy",
 }

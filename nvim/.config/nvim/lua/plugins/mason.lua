@@ -1,11 +1,16 @@
--- mason.setup() must run before the two consumers below; pack.lua preserves
--- this list order when collecting setups. (:MasonUpdate is no longer wired as a
--- build hook — the registry is fetched lazily on first use, and
--- mason-tool-installer's run_on_start handles tool installs.)
+-- Mason + LSP/tool install pipeline.
+--
+-- mason-lspconfig is loaded as a dependency of nvim-lspconfig (plugins/lspconfig.lua),
+-- so its ensure_installed runs right before config.lsp's vim.lsp.enable on the
+-- first file open — preserving the old mason -> mason-lspconfig -> enable order.
+-- mason-tool-installer (formatters/linters/DAP adapters) is independent of LSP
+-- activation, so it loads on VeryLazy to install in the background after startup.
+-- (:MasonUpdate is not a build hook — the registry is fetched lazily on first use.)
 return {
   {
-    src = "mason-org/mason.nvim",
-    setup = function()
+    "mason-org/mason.nvim",
+    cmd = { "Mason", "MasonInstall", "MasonUpdate", "MasonUninstall", "MasonLog" },
+    config = function()
       require("mason").setup({
         ui = {
           icons = {
@@ -18,9 +23,10 @@ return {
     end,
   },
   {
-    src = "mason-org/mason-lspconfig.nvim",
-    deps = { "mason-org/mason.nvim" },
-    setup = function()
+    "mason-org/mason-lspconfig.nvim",
+    lazy = true, -- loaded via nvim-lspconfig's dependencies, not eagerly
+    dependencies = { "mason-org/mason.nvim" },
+    config = function()
       require("mason-lspconfig").setup({
         ensure_installed = require("config.servers"),
         automatic_enable = false,
@@ -28,9 +34,10 @@ return {
     end,
   },
   {
-    src = "WhoIsSethDaniel/mason-tool-installer.nvim",
-    deps = { "mason-org/mason.nvim" },
-    setup = function()
+    "WhoIsSethDaniel/mason-tool-installer.nvim",
+    event = "VeryLazy",
+    dependencies = { "mason-org/mason.nvim" },
+    config = function()
       require("mason-tool-installer").setup({
         ensure_installed = {
           "stylua",

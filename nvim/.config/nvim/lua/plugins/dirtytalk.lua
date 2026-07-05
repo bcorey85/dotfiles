@@ -9,9 +9,11 @@
 -- glob the bundled wordlists, concatenate, and mkspell into the writable site
 -- spell dir (which is on the runtimepath, so spelllang finds programming.*.spl).
 return {
-  src = "psliwka/vim-dirtytalk",
+  "psliwka/vim-dirtytalk",
   name = "vim-dirtytalk",
-  setup = function()
+  event = "VeryLazy",
+  build = ":DirtytalkUpdate",
+  config = function()
     local spell_dir = vim.fn.stdpath("data") .. "/site/spell"
 
     local function have_dict()

@@ -8,5 +8,6 @@
 -- Concretely: `crs` (abolish snake_case coercion) then `.` `.` coerces the next
 -- words too, instead of `.` doing nothing.
 return {
-  src = "tpope/vim-repeat",
+  "tpope/vim-repeat",
+  event = "VeryLazy",
 }

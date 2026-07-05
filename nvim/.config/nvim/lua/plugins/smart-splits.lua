@@ -22,8 +22,9 @@ if vim.env.NEOGIT_POPUP or vim.env.GIT_QF_POPUP or #vim.api.nvim_list_uis() == 0
 end
 
 return {
-  src = "mrjones2014/smart-splits.nvim",
-  setup = function()
+  "mrjones2014/smart-splits.nvim",
+  lazy = false,
+  config = function()
     require("smart-splits").setup({
       resize_mode = {
         silent = true,

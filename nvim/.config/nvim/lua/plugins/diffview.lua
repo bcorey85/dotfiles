@@ -62,8 +62,13 @@ local function close_diffview()
 end
 
 return {
-  src = "dlyongemallo/diffview-plus.nvim",
-  setup = function()
+  "dlyongemallo/diffview-plus.nvim",
+  cmd = { "DiffviewOpen", "DiffviewClose", "DiffviewToggleFiles", "DiffviewFocusFiles", "DiffviewRefresh", "DiffviewFileHistory" },
+  keys = {
+    { "<leader>gm", desc = "Diffview: open/close (resolve merge conflicts)" },
+    { "<leader>gh", mode = { "n", "v" }, desc = "Diffview: file history" },
+  },
+  config = function()
     patch_pathlib_expand()
 
     local opts = {

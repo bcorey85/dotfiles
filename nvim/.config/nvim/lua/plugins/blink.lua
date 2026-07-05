@@ -2,10 +2,11 @@
 -- prebuilt rust fuzzy matcher — so `implementation = "rust"` works without a
 -- local cargo build (no build hook needed).
 return {
-  src = "saghen/blink.cmp",
-  version = vim.version.range("^1.0.0"),
-  deps = { "rafamadriz/friendly-snippets" },
-  setup = function()
+  "saghen/blink.cmp",
+  version = "^1.0.0",
+  event = { "InsertEnter", "CmdlineEnter" },
+  dependencies = { "rafamadriz/friendly-snippets" },
+  config = function()
     require("blink.cmp").setup({
       keymap = { preset = "super-tab" },
       appearance = {

@@ -8,8 +8,9 @@
 -- mason-tool-installer in mason.lua so Mason keeps them current without touching
 -- system package managers.
 return {
-  src = "mfussenegger/nvim-lint",
-  setup = function()
+  "mfussenegger/nvim-lint",
+  event = { "BufReadPost", "BufWritePost", "InsertLeave" },
+  config = function()
     local lint = require("lint")
 
     -- MD013 (line length) is noise for prose; disable it globally. A CLI

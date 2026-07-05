@@ -22,10 +22,17 @@ local disabled = vim.env.NEOGIT_POPUP ~= nil
   or #vim.api.nvim_list_uis() == 0
 
 return {
-  src = "folke/persistence.nvim",
-  setup = function()
+  "folke/persistence.nvim",
+  lazy = false,
+  config = function()
     local persistence = require("persistence")
     persistence.setup() -- defaults: dir under stdpath('state'), per-cwd + per-branch, need=1
+
+    -- Neovim's DEFAULT sessionoptions is "blank,buffers,curdir,folds,help,
+    -- tabpages,winsize,terminal" — `blank` and `terminal` make mksession capture
+    -- empty scratch buffers and terminal buffers, both of which restore as junk.
+    -- Drop them (and `help`); keep only what's useful to reopen a project layout.
+    vim.o.sessionoptions = "buffers,curdir,folds,tabpages,winsize"
 
     if disabled then
       persistence.stop() -- throwaway / headless: undo the autosave start() wired in setup()
@@ -42,6 +49,36 @@ return {
       callback = function()
         if vim.fn.argc(-1) == 0 then
           persistence.load()
+        end
+      end,
+    })
+
+    -- Before each save, wipe special / non-file buffers so mksession never
+    -- badd's them into the session (they restore as garbage): terminals,
+    -- quickfix, help, oil:// dir listings, NeogitStatus, [No Name] scratch,
+    -- and stray fs junk like .DS_Store. `need`'s own filter only decides IF we
+    -- save, not WHICH buffers land in the session — this controls the latter.
+    -- Runs on VimLeavePre (via SavePre), so wiping the current buffer is safe.
+    vim.api.nvim_create_autocmd("User", {
+      pattern = "PersistenceSavePre",
+      group = vim.api.nvim_create_augroup("PersistenceCleanBufs", { clear = true }),
+      callback = function()
+        for _, b in ipairs(vim.api.nvim_list_bufs()) do
+          if vim.api.nvim_buf_is_valid(b) then
+            local name = vim.api.nvim_buf_get_name(b)
+            local special = vim.bo[b].buftype ~= "" -- terminal/nofile/acwrite/help/qf/prompt
+              or vim.bo[b].filetype == "oil"
+              or vim.bo[b].filetype:match("^Neogit") ~= nil
+              or name == "" -- [No Name] / blank
+              or name:match("^%w+://") ~= nil -- oil://, fugitive://, etc.
+              or name:match("%.DS_Store$") ~= nil
+            if special then
+              -- Must delete, not just unlist: `buffers` in sessionoptions makes
+              -- mksession save HIDDEN buffers too, so an unlisted-but-alive buffer
+              -- still lands in the session. force handles modified/terminal bufs.
+              pcall(vim.api.nvim_buf_delete, b, { force = true })
+            end
+          end
         end
       end,
     })

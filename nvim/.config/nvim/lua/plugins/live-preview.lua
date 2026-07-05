@@ -8,8 +8,15 @@
 -- Config lives in require("livepreview").setup(); commands are
 -- `:LivePreview start|close|pick|help` (no built-in toggle — see the bind).
 return {
-  src = "brianhuster/live-preview.nvim",
-  setup = function()
+  "brianhuster/live-preview.nvim",
+  -- Load on ft (NOT keys): <leader>mm is a BUFFER-LOCAL map set by the FileType
+  -- autocmd below. A keys trigger would never fire that autocmd (the plugin
+  -- wouldn't load until the key is pressed, by which point FileType is long
+  -- gone), so the buffer-local map would never exist. ft loads it when a
+  -- preview-able buffer opens; lazy re-emits FileType so the autocmd runs.
+  ft = { "markdown", "html", "asciidoc", "svg" },
+  cmd = { "LivePreview" },
+  config = function()
     require("livepreview").setup({
       -- Use the snacks picker (already installed) for `:LivePreview pick`.
       picker = "snacks.picker",

@@ -14,5 +14,7 @@
 --   3. :Abolish — define correcting abbreviations (e.g. common typos). Unused by
 --      default; available if wanted.
 return {
-  src = "tpope/vim-abolish",
+  "tpope/vim-abolish",
+  event = "VeryLazy",
+  cmd = { "Abolish", "Subvert", "S" },
 }

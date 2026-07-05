@@ -1,7 +1,9 @@
 return {
-  src = "EdenEast/nightfox.nvim",
+  "EdenEast/nightfox.nvim",
   name = "nightfox",
-  setup = function()
+  lazy = false,
+  priority = 1000,
+  config = function()
     require("nightfox").setup({
       options = { styles = { comments = "italic", keywords = "italic" } },
     })

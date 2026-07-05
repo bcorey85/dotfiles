@@ -94,7 +94,14 @@ return {
       -- Treesitter-powered diff highlighting in the status buffer. diffs.nvim
       -- keeps its fugitive/diff-mode integration for standalone diff buffers.
       treesitter_diff_highlight = true,
-      word_diff_highlight = true,
+      -- word_diff_highlight is off: neogit pairs the Nth removed line with the
+      -- Nth added line and token-diffs just that pair (lib/diff_highlights.lua),
+      -- which is correct for in-place edits but paints scattered "confetti" on
+      -- reflowed/rewrapped paragraphs (comment rewraps shift content across line
+      -- boundaries, so shared words match all over). The MAX_DISTANCE=0.6 guard
+      -- doesn't catch reflows since enough tokens stay in common. Treesitter
+      -- diff highlighting above still colors the diff.
+      word_diff_highlight = false,
       -- Per-project settings persist to ~/.local/share/nvim/neogit/ — keep
       -- them so a tweaked status view survives, but ignore anything that'd
       -- fight this config.
@@ -195,8 +202,11 @@ return {
     -- their keys buffer-local with `nowait=true` (lib/buffer.lua). Two knock-on
     -- effects, both fixed here on the Neogit* FileType:
     --
-    --   1. wrap — global `wrap` is off (options.lua), so diffs in the status and
-    --      commit views overflow off-screen. Force it back on per-window.
+    --   1. wrap — neogit forces wrap off on its windows when it shows a buffer
+    --      (lib/buffer.lua set_window_option), so diffs in the status and commit
+    --      views overflow off-screen. Force it back on per-window, scheduled so
+    --      it lands AFTER neogit's show step — a synchronous set here fires
+    --      during buffer construction and neogit overrides it.
     --   2. <leader> maps — mini.clue only auto-installs its <Leader> trigger in
     --      listed buffers, so it never lands in Neogit's. Without the trigger,
     --      <space> is swallowed and the next keys hit Neogit's nowait maps
@@ -208,12 +218,18 @@ return {
       group = vim.api.nvim_create_augroup("neogit-wrap-and-clue", { clear = true }),
       pattern = "Neogit*",
       callback = function(ev)
-        vim.wo.wrap = true
-        vim.wo.linebreak = false
-        vim.wo.breakindent = true
         vim.schedule(function()
+          if not vim.api.nvim_buf_is_valid(ev.buf) then
+            return
+          end
+          local win = vim.fn.bufwinid(ev.buf)
+          if win ~= -1 then
+            vim.wo[win].wrap = true
+            vim.wo[win].linebreak = false
+            vim.wo[win].breakindent = true
+          end
           local ok, miniclue = pcall(require, "mini.clue")
-          if ok and vim.api.nvim_buf_is_valid(ev.buf) then
+          if ok then
             miniclue.ensure_buf_triggers(ev.buf)
           end
         end)

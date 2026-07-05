@@ -3,13 +3,16 @@
 font-family = JetBrainsMono Nerd Font Mono
 font-style = SemiBold
 font-size = 11
-adjust-cell-height = 30%
+adjust-cell-height = 20%
 confirm-close-surface = false
 
 # Linux/FreeType only: disable light hinting (on by default in 1.3+) so glyph
 # stems render heavier — closest match to kitty's bolder text rendering, since
 # font-thicken is macOS-only. If still too light, use `font-style = Bold`.
 freetype-load-flags = no-light
+# macOS only (no-op on Linux): thicken rendering — macOS dropped subpixel AA,
+# so thin stems go fuzzy on the ~111 PPI external monitor without this.
+font-thicken = true
 # Theme - terafox (EdenEast/nightfox.nvim)
 background = #152528
 foreground = #e6eaea
@@ -65,3 +68,9 @@ keybind = super+digit_4=csi:52;3u
 
 # Mouse
 link-url = true
+
+# Font audition override — managed by `font-mode` (intel|atkynson|jbm).
+# Machine-local, not stowed. config-file includes are processed after this
+# file finishes parsing, so the override wins over the font block above.
+# `?` = optional: when absent, the JetBrains defaults apply.
+config-file = ?font-mode.conf

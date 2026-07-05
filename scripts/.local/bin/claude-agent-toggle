@@ -7,18 +7,23 @@
 # the SAME tmux server: pressing C-. inside it fires this script with the inner
 # client's context, so we detect the agent-* session and detach instead of launch.
 #
-# Usage: claude-agent-toggle <session_name> <client_name> <pane_path> <window_id>
-#        (all four expanded by the tmux binding at keypress time)
+# Usage: claude-agent-toggle <session_name> <client_name> <pane_path> <window_id> [client_termname]
+#        (all expanded by the tmux binding at keypress time)
 
 session="$1"
 client="$2"
 path="$3"
 window="$4"
+termname="${5:-}"
 
 prefix="$(tmux show-option -gqv @claude_session_prefix)"
 prefix="${prefix:-claude-}"
 
-if [[ "$session" == "$prefix"* ]]; then
+# Detach when pressed on the agent session OR on any nested client (TERM=tmux-*
+# means this client lives inside another tmux — e.g. a popup whose client got
+# switched onto a regular session by a picker jump; the session-name check
+# alone can't close those, which is how popups used to get stuck).
+if [[ "$session" == "$prefix"* || "$termname" == tmux* ]]; then
     tmux detach-client -t "$client"
 else
     exec "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/launch.sh" "$path" "$window"

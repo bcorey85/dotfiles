@@ -5,16 +5,16 @@
 }
 
 window#waybar {
-  background-color: #192330;
-  color: #cdcecf;
-  border-bottom: 2px solid #29394f;
+  background-color: #152528;
+  color: #e6eaea;
+  border-bottom: 2px solid #254147;
 }
 
 tooltip {
-  background-color: #212e3f;
-  border: 1px solid #39506d;
+  background-color: #1d3337;
+  border: 1px solid #2d4f56;
   border-radius: 8px;
-  color: #cdcecf;
+  color: #e6eaea;
   padding: 8px;
 }
 
@@ -24,66 +24,66 @@ tooltip label {
 
 #workspaces button {
   padding: 0 8px;
-  color: #39506d;
+  color: #2d4f56;
   border: none;
   border-radius: 0;
   background: transparent;
 }
 
 #workspaces button.active {
-  color: #719cd6;
-  border-bottom: 2px solid #719cd6;
+  color: #5a93aa;
+  border-bottom: 2px solid #5a93aa;
 }
 
 #workspaces button.urgent {
-  color: #c94f6d;
+  color: #e85c51;
 }
 
 #workspaces button:hover {
-  background: #212e3f;
-  color: #cdcecf;
+  background: #1d3337;
+  color: #e6eaea;
 }
 
 #window {
-  color: #39506d;
+  color: #2d4f56;
   padding: 0 12px;
 }
 
 #clock {
-  color: #cdcecf;
+  color: #e6eaea;
   font-weight: bold;
 }
 
 #cpu {
-  color: #81b29a;
+  color: #7aa4a1;
 }
 
 #memory {
-  color: #c94f6d;
+  color: #e85c51;
 }
 
 #temperature {
-  color: #dbc074;
+  color: #fda47f;
 }
 
 #temperature.critical {
-  color: #c94f6d;
+  color: #e85c51;
 }
 
 #network {
-  color: #719cd6;
+  color: #5a93aa;
 }
 
 #network.disconnected {
-  color: #c94f6d;
+  color: #e85c51;
 }
 
 #pulseaudio {
-  color: #dbc074;
+  color: #fda47f;
 }
 
 #pulseaudio.muted {
-  color: #39506d;
+  color: #2d4f56;
 }
 
 #tray {
@@ -99,41 +99,41 @@ tooltip label {
 }
 
 #battery {
-  color: #81b29a;
+  color: #7aa4a1;
 }
 
 #battery.warning {
-  color: #dbc074;
+  color: #fda47f;
 }
 
 #battery.critical {
-  color: #c94f6d;
+  color: #e85c51;
 }
 
 #battery.charging,
 #battery.plugged {
-  color: #81b29a;
+  color: #7aa4a1;
 }
 
 #idle_inhibitor {
-  color: #c94f6d;
+  color: #e85c51;
 }
 
 #idle_inhibitor.activated {
-  color: #c94f6d;
+  color: #e85c51;
 }
 
 #bluetooth {
-  color: #719cd6;
+  color: #5a93aa;
 }
 
 #bluetooth.connected {
-  color: #719cd6;
+  color: #5a93aa;
 }
 
 #bluetooth.off,
 #bluetooth.disabled {
-  color: #39506d;
+  color: #2d4f56;
 }
 
 #cpu,

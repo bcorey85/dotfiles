@@ -7,7 +7,6 @@ Personal configuration files across WSL, Ubuntu, macOS, and Arch Linux.
 - **nvim** - Neovim configuration (native `vim.pack`, specs in `lua/plugins/`)
 - **tmux** - tmux configuration with true color support
 - **zsh** - zsh configuration (manually cloned plugins, starship prompt)
-- **kitty** - Kitty terminal configuration
 - **kanata** - Keyboard remapping
 - **claude** - Claude Code configuration
 - **scripts** - Utility scripts
@@ -63,7 +62,7 @@ git pull
 
 ```bash
 cd ~/dotfiles
-stow -D nvim tmux zsh claude kitty kanata scripts
+stow -D nvim tmux zsh claude kanata scripts
 ```
 
 ## Troubleshooting

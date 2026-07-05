@@ -10,33 +10,33 @@ confirm-close-surface = false
 # stems render heavier — closest match to kitty's bolder text rendering, since
 # font-thicken is macOS-only. If still too light, use `font-style = Bold`.
 freetype-load-flags = no-light
-# Theme - nightfox default (EdenEast/nightfox.nvim)
-background = #192330
-foreground = #cdcecf
+# Theme - terafox (EdenEast/nightfox.nvim)
+background = #152528
+foreground = #e6eaea
 
-selection-background = #2b3b51
-selection-foreground = #cdcecf
+selection-background = #293e40
+selection-foreground = #e6eaea
 
-cursor-color = #cdcecf
-cursor-text = #192330
+cursor-color = #e6eaea
+cursor-text = #152528
 
-# Color palette — nightfox.nvim terminal colors
-palette = 0=#393b44
-palette = 1=#c94f6d
-palette = 2=#81b29a
-palette = 3=#dbc074
-palette = 4=#719cd6
-palette = 5=#9d79d6
-palette = 6=#63cdcf
-palette = 7=#dfdfe0
-palette = 8=#575860
-palette = 9=#d16983
-palette = 10=#8ebaa4
-palette = 11=#e0c989
-palette = 12=#86abdc
-palette = 13=#baa1e2
-palette = 14=#7ad5d6
-palette = 15=#e4e4e5
+# Color palette — nightfox.nvim terafox terminal colors
+palette = 0=#2f3239
+palette = 1=#e85c51
+palette = 2=#7aa4a1
+palette = 3=#fda47f
+palette = 4=#5a93aa
+palette = 5=#ad5c7c
+palette = 6=#a1cdd8
+palette = 7=#ebebeb
+palette = 8=#4e5157
+palette = 9=#eb746b
+palette = 10=#8eb2af
+palette = 11=#fdb292
+palette = 12=#73a3b7
+palette = 13=#b97490
+palette = 14=#afd4de
+palette = 15=#eeeeee
 
 # Window
 window-padding-x = 4

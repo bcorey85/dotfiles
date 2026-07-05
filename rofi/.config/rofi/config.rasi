@@ -2,7 +2,7 @@ configuration {
     modi: "drun,run,window,ssh";
     show-icons: true;
     icon-theme: "Adwaita";
-    terminal: "kitty";
+    terminal: "ghostty";
     drun-display-format: "{name}";
     display-drun: "Apps";
     display-run: "Run";
@@ -10,4 +10,4 @@ configuration {
     display-ssh: "SSH";
 }
 
-@theme "nightfox"
+@theme "terafox"

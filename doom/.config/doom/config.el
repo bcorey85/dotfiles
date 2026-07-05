@@ -46,7 +46,7 @@
 (setq evil-escape-key-sequence "kk")
 
 ;;; ---------------------------------------------------------------------------
-;;; Look & feel — nightfox dark / dayfox light (icon glyphs via Symbols
+;;; Look & feel — terafox dark / dayfox light (icon glyphs via Symbols
 ;;; Nerd Font Mono)
 ;;; ---------------------------------------------------------------------------
 
@@ -76,7 +76,7 @@
 (setq-default line-spacing 0.25)
 
 ;;; ---------------------------------------------------------------------------
-;;; Theme — nightfox (dark) / dayfox (light) toggle synced via ~/.cache/theme-mode
+;;; Theme — terafox (dark) / dayfox (light) toggle synced via ~/.cache/theme-mode
 ;;; ---------------------------------------------------------------------------
 
 ;; Shared state file: `theme-mode toggle' (tmux prefix T) flips this, and nvim
@@ -93,17 +93,17 @@
 
 (defun +theme/apply (mode &optional force)
   "Switch to MODE (\"dark\"/\"light\").
-Dark is modus-vivendi with nightfox bg/fg; light is modus-operandi with
+Dark is modus-vivendi with terafox bg/fg; light is modus-operandi with
 dayfox bg/fg (no maintained Emacs port of nightfox.nvim ships, so we just
 recolor the base/foreground on top of a real theme instead)."
   (let ((scheme (if (equal mode "light") 'modus-operandi 'modus-vivendi)))
     (unless (and (not force) (eq doom-theme scheme))
       (setq doom-theme scheme)
       (load-theme scheme t)
-      ;; Override bg/fg with nightfox/dayfox colors.
+      ;; Override bg/fg with terafox/dayfox colors.
       (if (equal mode "dark")
           (custom-set-faces!
-            '(default :background "#192330" :foreground "#cdcecf"))
+            '(default :background "#152528" :foreground "#e6eaea"))
         (custom-set-faces!
           '(default :background "#f6f2ee" :foreground "#3d2b5a"))))))
 
@@ -135,7 +135,7 @@ recolor the base/foreground on top of a real theme instead)."
 
 (setq display-line-numbers-type 'relative)   ; matches nvim relativenumber
 
-;; Window dividers — a mid-gray that stays legible on both nightfox's dark
+;; Window dividers — a mid-gray that stays legible on both terafox's dark
 ;; base and dayfox's light base, for a subtle split line.
 (custom-set-faces!
   '(vertical-border            :foreground "#595959")

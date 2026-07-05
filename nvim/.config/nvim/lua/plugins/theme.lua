@@ -12,8 +12,8 @@ return {
     -- markview heading colours (referenced by markview.lua's headings config).
     local function set_headings()
       local dark = vim.o.background == "dark"
-      local purple = dark and "#9d79d6" or "#6e33ce"
-      local blue = dark and "#719cd6" or "#2848a9"
+      local purple = dark and "#ad5c7c" or "#6e33ce"
+      local blue = dark and "#5a93aa" or "#2848a9"
       local hl = vim.api.nvim_set_hl
       hl(0, "MdHeading1", { fg = purple, bold = true })
       hl(0, "MdHeading2", { fg = blue, bold = true })

@@ -1,6 +1,7 @@
 return {
-  src = "obsidian-nvim/obsidian.nvim",
-  version = vim.version.range("^3.0.0"),
+  "obsidian-nvim/obsidian.nvim",
+  version = "^3.0.0",
+  ft = "markdown",
   -- Gate to the vault: obsidian pulls in a require chain (obsidian.actions /
   -- .note / .api / .yaml) that cost a few ms on EVERY startup, but the plugin is
   -- only useful inside ~/vault. cond is evaluated in config.pack — when false the
@@ -9,11 +10,11 @@ return {
   cond = function()
     return vim.startswith(vim.fs.normalize(vim.fn.getcwd()), vim.fs.normalize(vim.fn.expand("~/vault")))
   end,
-  deps = {
+  dependencies = {
     "nvim-lua/plenary.nvim",
     "folke/snacks.nvim",
   },
-  setup = function()
+  config = function()
     require("obsidian").setup({
       legacy_commands = false,
       picker = {

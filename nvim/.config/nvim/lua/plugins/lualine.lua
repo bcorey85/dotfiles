@@ -84,8 +84,9 @@ local function ahead_behind_color()
 end
 
 return {
-  src = "nvim-lualine/lualine.nvim",
-  setup = function()
+  "nvim-lualine/lualine.nvim",
+  event = "VeryLazy",
+  config = function()
     require("lualine").setup({
       options = {
         theme = "auto",

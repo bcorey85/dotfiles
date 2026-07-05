@@ -3,8 +3,15 @@
 -- cfilter (`:Cfilter`/`:Lfilter`) ships with Neovim and is loaded here
 -- since this is the natural home for quickfix tooling.
 return {
-  src = "stevearc/quicker.nvim",
-  setup = function()
+  "stevearc/quicker.nvim",
+  ft = "qf",
+  keys = {
+    { "<leader>ld", desc = "Diagnostics → quickfix (workspace)" },
+    { "<leader>lD", desc = "Diagnostics → loclist (buffer)" },
+    { "<leader>lq", desc = "Quickfix (toggle)" },
+    { "<leader>lL", desc = "Loclist (toggle)" },
+  },
+  config = function()
     -- cfilter ships with Neovim; enables :Cfilter/:Lfilter to narrow qf/loclist by pattern.
     vim.cmd.packadd("cfilter")
 

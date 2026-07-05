@@ -1,7 +1,9 @@
 return {
-  src = "stevearc/oil.nvim",
+  "stevearc/oil.nvim",
+  keys = { { "<leader>e", desc = "Open Oil (parent dir)" } },
+  cmd = { "Oil" },
   -- Icon support comes from MiniIcons.mock_nvim_web_devicons(), loaded earlier in plugin_order.
-  setup = function()
+  config = function()
     require("oil").setup({
       watch_for_changes = true,
       view_options = {

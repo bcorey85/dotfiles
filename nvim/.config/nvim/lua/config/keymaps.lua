@@ -320,11 +320,12 @@ end, { desc = "Toggle semantic tokens" })
 vim.keymap.set("n", "<leader>qq", "<cmd>qa<cr>", { desc = "Quit all" })
 
 -- ─── Misc ─────────────────────────────────────────────────────────────────────
--- Plugin manager (vim.pack). Lives on <leader>P so <leader>p is free for the
--- project namespace (Doom `SPC p`).
-vim.keymap.set("n", "<leader>Pp", "<cmd>PackStatus<cr>", { desc = "Plugins: status" })
-vim.keymap.set("n", "<leader>PP", "<cmd>PackUpdate<cr>", { desc = "Plugins: update" })
-vim.keymap.set("n", "<leader>PC", "<cmd>PackClean<cr>", { desc = "Plugins: clean" })
+-- Plugin manager (lazy.nvim). Lives on <leader>P so <leader>p is free for the
+-- project namespace (Doom `SPC p`). (:PackStatus/:PackUpdate/:PackClean still
+-- work as compat aliases — see config/lazy.lua.)
+vim.keymap.set("n", "<leader>Pp", "<cmd>Lazy<cr>", { desc = "Plugins: status (Lazy)" })
+vim.keymap.set("n", "<leader>PP", "<cmd>Lazy update<cr>", { desc = "Plugins: update" })
+vim.keymap.set("n", "<leader>PC", "<cmd>Lazy clean<cr>", { desc = "Plugins: clean" })
 vim.keymap.set("n", "<leader>K", "<cmd>norm! K<cr>", { desc = "Keywordprg" })
 -- Select entire file in Visual Line mode
 vim.keymap.set("n", "<leader>va", "ggVG", { desc = "Select entire file" })

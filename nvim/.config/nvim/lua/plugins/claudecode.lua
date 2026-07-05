@@ -16,8 +16,13 @@
 --   <leader>cy  accept Claude's proposed diff   ("claude yes")
 --   <leader>cd  reject Claude's proposed diff   ("claude deny")
 return {
-  src = "coder/claudecode.nvim",
-  setup = function()
+  "coder/claudecode.nvim",
+  keys = {
+    { "<leader>ca", mode = { "n", "v" }, desc = "Claude: add buffer / send selection" },
+    { "<leader>cy", desc = "Claude: accept diff" },
+    { "<leader>cd", desc = "Claude: reject diff" },
+  },
+  config = function()
     require("claudecode").setup({
       terminal = {
         provider = "external",

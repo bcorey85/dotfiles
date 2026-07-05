@@ -4,8 +4,10 @@
 -- plain markdown buffers too (no LSP required). Placed after treesitter and
 -- lspconfig in plugin_order since both back the symbol queries.
 return {
-  src = "stevearc/aerial.nvim",
-  setup = function()
+  "stevearc/aerial.nvim",
+  keys = { { "<leader>uo", desc = "Toggle outline" } },
+  cmd = { "AerialToggle", "AerialOpen", "AerialNavToggle" },
+  config = function()
     require("aerial").setup({
       backends = { "treesitter", "lsp", "markdown", "man" },
       layout = { default_direction = "left", min_width = 30 },

@@ -24,8 +24,10 @@
 -- Math/LaTeX rendering is disabled (math.enabled = false) — requires tectonic
 -- or pdflatex which are not part of this setup.
 return {
-  src = "folke/snacks.nvim",
-  setup = function()
+  "folke/snacks.nvim",
+  lazy = false,
+  priority = 90,
+  config = function()
     local doom_banner = [[
 =================     ===============     ===============   ========  ========
 \\ . . . . . . .\\   //. . . . . . .\\   //. . . . . . .\\  \\. . .\\// . . //

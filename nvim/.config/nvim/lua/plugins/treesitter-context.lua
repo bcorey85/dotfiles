@@ -2,8 +2,9 @@
 -- (function, class, if-block, etc.) when it scrolls off screen.
 -- Placed after "treesitter" in plugin_order so its queries resolve correctly.
 return {
-  src = "nvim-treesitter/nvim-treesitter-context",
-  setup = function()
+  "nvim-treesitter/nvim-treesitter-context",
+  event = { "BufReadPost", "BufNewFile" },
+  config = function()
     require("treesitter-context").setup({
       max_lines = 4,
     })

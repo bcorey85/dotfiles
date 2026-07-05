@@ -3,5 +3,6 @@
 -- the fallback for new/unrecognized files; Vue/TS/React repos (2-space) are
 -- corrected automatically before conform's on-save format runs.
 return {
-  src = "tpope/vim-sleuth",
+  "tpope/vim-sleuth",
+  event = { "BufReadPost", "BufNewFile" },
 }

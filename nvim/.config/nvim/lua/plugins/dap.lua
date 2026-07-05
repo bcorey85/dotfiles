@@ -7,10 +7,32 @@
 -- Cost at startup: zero (no require("dap"), no adapter registration, no autocmds
 -- from dap itself). Cost on first debug action: one-time configure() call.
 return {
-  -- ── core ──────────────────────────────────────────────────────────────────
-  {
-    src = "mfussenegger/nvim-dap",
-    setup = function()
+  "mfussenegger/nvim-dap",
+  -- dap-ui / dap-python / dap-virtual-text / nvim-nio load as dependencies when
+  -- nvim-dap loads (first <leader>d keypress) — NOT as separate eager specs, or
+  -- they'd pull dap in at startup and defeat the deferral. configure() require()s
+  -- each of them, which succeeds because deps load before the parent's config.
+  dependencies = {
+    "rcarriga/nvim-dap-ui",
+    "nvim-neotest/nvim-nio",
+    "mfussenegger/nvim-dap-python",
+    "theHamsta/nvim-dap-virtual-text",
+  },
+  keys = {
+      "<leader>db",
+      "<leader>dB",
+      "<leader>dc",
+      "<leader>dC",
+      "<leader>de",
+      "<leader>di",
+      "<leader>dl",
+      "<leader>dO",
+      "<leader>do",
+      "<leader>dr",
+      "<leader>dt",
+      "<leader>du",
+    },
+    config = function()
       local configured = false
 
       local function configure()
@@ -179,21 +201,4 @@ return {
         require("dap").terminate()
       end, "Terminate")
     end,
-  },
-
-  -- ── dap-ui (depends on nvim-nio) ──────────────────────────────────────────
-  {
-    src = "rcarriga/nvim-dap-ui",
-    deps = { { src = "nvim-neotest/nvim-nio" } },
-  },
-
-  -- ── dap-python ────────────────────────────────────────────────────────────
-  {
-    src = "mfussenegger/nvim-dap-python",
-  },
-
-  -- ── dap-virtual-text (depends on nvim-treesitter, installed separately) ───
-  {
-    src = "theHamsta/nvim-dap-virtual-text",
-  },
 }

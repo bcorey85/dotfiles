@@ -14,8 +14,9 @@
 -- cosmetic plugins that decorate org buffers.
 return {
   {
-    src = "nvim-orgmode/orgmode",
-    setup = function()
+    "nvim-orgmode/orgmode",
+    ft = "org",
+    config = function()
       -- Doom layout, split across two prefixes (the same split Doom uses):
       --   <leader>n = GLOBAL notes (Doom SPC n): agenda/capture/todos/tags/
       --               clock/search — reachable everywhere, defined as keymaps
@@ -95,8 +96,9 @@ return {
   },
 
   {
-    src = "nvim-orgmode/org-bullets.nvim",
-    setup = function()
+    "nvim-orgmode/org-bullets.nvim",
+    ft = "org",
+    config = function()
       require("org-bullets").setup({
         symbols = {
           checkboxes = false,
@@ -143,8 +145,9 @@ return {
   },
 
   {
-    src = "lukas-reineke/headlines.nvim",
-    setup = function()
+    "lukas-reineke/headlines.nvim",
+    ft = "org",
+    config = function()
       -- Doom-one-tinted heading backgrounds + code-block highlight. headlines'
       -- default config references these group names; link them so they actually
       -- render instead of falling back to nothing.

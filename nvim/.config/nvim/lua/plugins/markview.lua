@@ -22,12 +22,13 @@
 -- markview only borders setext headings). Headings keep their per-level colour +
 -- icon, just without the trailing rule.
 return {
-  src = "OXY2DEV/markview.nvim",
-  deps = {
+  "OXY2DEV/markview.nvim",
+  ft = "markdown",
+  dependencies = {
     "nvim-treesitter/nvim-treesitter", -- markdown + markdown_inline parsers
     "echasnovski/mini.nvim", -- icon provider (mini.icons mock satisfies devicons)
   },
-  setup = function()
+  config = function()
     require("markview").setup({
       preview = {
         -- Render in normal, command, and terminal modes (matches the old

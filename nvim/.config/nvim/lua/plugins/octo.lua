@@ -9,9 +9,16 @@
 -- In-PR review keys (comment / approve / thread nav) are buffer-local — octo
 -- binds them automatically when a PR or review buffer opens.
 return {
-  src = "pwntester/octo.nvim",
-  deps = { "nvim-lua/plenary.nvim" },
-  setup = function()
+  "pwntester/octo.nvim",
+  cmd = { "Octo" },
+  keys = {
+    { "<leader>gli", desc = "Issues (list)" },
+    { "<leader>glp", desc = "PRs (list)" },
+    { "<leader>gln", desc = "Notifications (list)" },
+    { "<leader>g'", desc = "Octo actions" },
+  },
+  dependencies = { "nvim-lua/plenary.nvim" },
+  config = function()
     require("octo").setup({ picker = "snacks" })
 
     local map = function(lhs, rhs, desc)

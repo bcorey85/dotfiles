@@ -11,11 +11,12 @@
 -- The plugin registers its own UIEnter/CmdlineEnter autocmds on setup, so it
 -- must load at startup (it does — pack.lua loads everything eagerly).
 return {
-  src = "rachartier/tiny-cmdline.nvim",
+  "rachartier/tiny-cmdline.nvim",
+  event = "CmdlineEnter",
   cond = function()
     return vim.o.cmdheight == 0
   end,
-  setup = function()
+  config = function()
     ---@diagnostic disable-next-line: missing-fields
     require("tiny-cmdline").setup({
       width = {

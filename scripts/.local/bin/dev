@@ -7,7 +7,15 @@
 #   Window 1 "code"     nvim full-width — claude now lives in a popup session
 #                       (prefix y, tmux-claude-session-manager); uncomment the
 #                       split below to restore the old nvim (60%) | claude (40%)
-#   Window 2 "console"  three equal shells for git / tests / logs
+#   Window 2 "console"  three equal shells for git / tests / logs. If the
+#                       project has an mprocs config, pane 1 runs the service
+#                       stack under mprocs instead of a bare shell — r restarts
+#                       a proc, x stops it. Config lookup order:
+#                         1. <project>/mprocs.yaml            (committable repos)
+#                         2. ~/.config/mprocs/projects/<basename>.yaml
+#                            (work repos where tooling files can't live in the
+#                            tree; procs still run with the pane's cwd = project
+#                            root, so relative commands work unchanged)
 
 if [ -z "$TMUX" ]; then
     echo "Not in a tmux session"
@@ -33,6 +41,15 @@ tmux split-window -h -c "$dir"
 tmux split-window -h -c "$dir"
 tmux select-layout even-horizontal
 tmux select-pane -t 1        # focus the leftmost shell
+mprocs_cfg=""
+if [ -f "$dir/mprocs.yaml" ]; then
+    mprocs_cfg="$dir/mprocs.yaml"
+elif [ -f "$HOME/.config/mprocs/projects/$(basename "$dir").yaml" ]; then
+    mprocs_cfg="$HOME/.config/mprocs/projects/$(basename "$dir").yaml"
+fi
+if [ -n "$mprocs_cfg" ] && command -v mprocs &>/dev/null; then
+    tmux send-keys "mprocs --config \"$mprocs_cfg\"" C-m
+fi
 
 # Back to the code window, editor pane
 tmux select-window -t 1

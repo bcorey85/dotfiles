@@ -72,11 +72,49 @@ wsl | ubuntu)
     print_success "gh already installed"
   fi
 
+  # lazydocker — docker dashboard TUI (tmux prefix l popup). Not packaged for
+  # apt; GitHub release binary, same pattern as tlrc. Release tags are
+  # v-prefixed but asset names are not, and assets say arm64, not aarch64.
+  if ! command -v lazydocker &>/dev/null; then
+    print_info "Installing lazydocker..."
+    LD_ARCH=$(uname -m)
+    [ "$LD_ARCH" = "aarch64" ] && LD_ARCH="arm64"
+    LD_VER=$(curl -sI "https://github.com/jesseduffield/lazydocker/releases/latest" | grep -i location | sed 's/.*tag\///' | tr -d '[:space:]')
+    LD_URL="https://github.com/jesseduffield/lazydocker/releases/latest/download/lazydocker_${LD_VER#v}_Linux_${LD_ARCH}.tar.gz"
+    mkdir -p ~/.local/bin
+    curl -fLo /tmp/lazydocker.tar.gz "$LD_URL"
+    tar -xzf /tmp/lazydocker.tar.gz -C /tmp lazydocker
+    cp /tmp/lazydocker ~/.local/bin/
+    chmod +x ~/.local/bin/lazydocker
+    rm -f /tmp/lazydocker.tar.gz /tmp/lazydocker
+    print_success "lazydocker installed"
+  else
+    print_success "lazydocker already installed"
+  fi
+
+  # mprocs — service-stack runner for the `dev` console window (per-project
+  # mprocs.yaml). Not packaged for apt; GitHub release binary, same pattern
+  # as tlrc. Release tags are v-prefixed but asset names are not.
+  if ! command -v mprocs &>/dev/null; then
+    print_info "Installing mprocs..."
+    MPROCS_VER=$(curl -sI "https://github.com/pvolok/mprocs/releases/latest" | grep -i location | sed 's/.*tag\///' | tr -d '[:space:]')
+    MPROCS_URL="https://github.com/pvolok/mprocs/releases/latest/download/mprocs-${MPROCS_VER#v}-linux-$(uname -m)-musl.tar.gz"
+    mkdir -p ~/.local/bin
+    curl -fLo /tmp/mprocs.tar.gz "$MPROCS_URL"
+    tar -xzf /tmp/mprocs.tar.gz -C /tmp
+    cp /tmp/mprocs ~/.local/bin/
+    chmod +x ~/.local/bin/mprocs
+    rm -f /tmp/mprocs.tar.gz /tmp/mprocs
+    print_success "mprocs installed"
+  else
+    print_success "mprocs already installed"
+  fi
+
   ;;
 arch)
   print_info "Installing dependencies via pacman..."
   # inetutils: provides `hostname`, which tmux-resurrect's helpers call
-  sudo pacman -S --needed stow neovim emacs tmux zsh git curl jq libnotify fzf zoxide unzip direnv ghostty git-delta btop bat atuin eza glow fd keychain rustup playerctl xdg-user-dirs ripgrep brightnessctl base-devel bluez bluez-utils less ansible just rsync xclip imagemagick inetutils mise github-cli
+  sudo pacman -S --needed stow neovim emacs tmux zsh git curl jq libnotify fzf zoxide unzip direnv ghostty git-delta btop bat atuin eza glow fd keychain rustup playerctl xdg-user-dirs ripgrep brightnessctl base-devel bluez bluez-utils less ansible just rsync xclip imagemagick inetutils mise github-cli lazydocker
   print_success "Dependencies installed"
 
   # Hyprland desktop packages
@@ -98,7 +136,7 @@ arch)
   # AUR packages
   if command -v paru &>/dev/null; then
     print_info "Installing AUR packages via paru..."
-    paru -S --needed discord_arch_electron google-chrome plexamp-bin revdiff
+    paru -S --needed discord_arch_electron google-chrome plexamp-bin revdiff mprocs
     print_success "AUR packages installed"
   else
     print_error "paru not found — skipping AUR packages"
@@ -130,7 +168,7 @@ mac)
   fi
 
   print_info "Installing dependencies via Homebrew..."
-  brew install stow neovim emacs tmux git jq fzf zoxide direnv git-delta btop bat atuin eza tlrc glow fd ripgrep keychain rustup ansible just imagemagick kanata mise gh
+  brew install stow neovim emacs tmux git jq fzf zoxide direnv git-delta btop bat atuin eza tlrc glow fd ripgrep keychain rustup ansible just imagemagick kanata mise gh mprocs lazydocker
   brew install umputun/apps/revdiff
   brew install --cask nikitabobko/tap/aerospace
   print_success "Dependencies installed"

@@ -5,16 +5,16 @@
 }
 
 window#waybar {
-  background-color: #181616;
-  color: #c5c9c5;
-  border-bottom: 2px solid #54546d;
+  background-color: #22262d;
+  color: #c5c9c7;
+  border-bottom: 2px solid #43464e;
 }
 
 tooltip {
-  background-color: #0d0c0c;
-  border: 1px solid #54546d;
+  background-color: #14171d;
+  border: 1px solid #43464e;
   border-radius: 8px;
-  color: #c5c9c5;
+  color: #c5c9c7;
   padding: 8px;
 }
 
@@ -24,7 +24,7 @@ tooltip label {
 
 #workspaces button {
   padding: 0 8px;
-  color: #727169;
+  color: #a4a7a4;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -40,22 +40,22 @@ tooltip label {
 }
 
 #workspaces button:hover {
-  background: #0d0c0c;
-  color: #c5c9c5;
+  background: #14171d;
+  color: #c5c9c7;
 }
 
 #window {
-  color: #727169;
+  color: #a4a7a4;
   padding: 0 12px;
 }
 
 #clock {
-  color: #c5c9c5;
+  color: #c5c9c7;
   font-weight: bold;
 }
 
 #cpu {
-  color: #87a987;
+  color: #8a9a7b;
 }
 
 #memory {
@@ -63,7 +63,7 @@ tooltip label {
 }
 
 #temperature {
-  color: #b6927b;
+  color: #c4b28a;
 }
 
 #temperature.critical {
@@ -79,11 +79,11 @@ tooltip label {
 }
 
 #pulseaudio {
-  color: #b6927b;
+  color: #c4b28a;
 }
 
 #pulseaudio.muted {
-  color: #727169;
+  color: #a4a7a4;
 }
 
 #tray {
@@ -99,11 +99,11 @@ tooltip label {
 }
 
 #battery {
-  color: #87a987;
+  color: #8a9a7b;
 }
 
 #battery.warning {
-  color: #b6927b;
+  color: #c4b28a;
 }
 
 #battery.critical {
@@ -112,7 +112,7 @@ tooltip label {
 
 #battery.charging,
 #battery.plugged {
-  color: #87a987;
+  color: #8a9a7b;
 }
 
 #idle_inhibitor {
@@ -133,7 +133,7 @@ tooltip label {
 
 #bluetooth.off,
 #bluetooth.disabled {
-  color: #727169;
+  color: #a4a7a4;
 }
 
 #cpu,

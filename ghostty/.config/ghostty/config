@@ -10,16 +10,13 @@ confirm-close-surface = false
 # stems render heavier — closest match to kitty's bolder text rendering, since
 # font-thicken is macOS-only. If still too light, use `font-style = Bold`.
 freetype-load-flags = no-light
-# Theme — Kanagawa Dragon (Ghostty built-in). Matches nvim/tmux dark mode
-# (rebelot/kanagawa.nvim kanagawa-dragon). Sets bg/fg/cursor/palette — this is
-# what Claude Code chat renders in. Not wired to the light/dark toggle — nvim
-# & tmux repaint their own surfaces, so this is the static backdrop.
-theme = Kanagawa Dragon
-# One deliberate override: lift the bg #181616 → #1e1c1c (matches nvim + tmux).
-# Stock dragon's near-black dark-adapts the eye — dilated pupils worsen
-# astigmatism halation and glaucoma contrast sensitivity. Explicit keys win
-# over the theme's values.
-background = #1e1c1c
+# Theme — Kanso Mist (Ghostty built-in, zero overrides). Matches nvim/tmux
+# dark mode (webhooked/kanso.nvim kanso-mist): dragon's muted ink + accents on
+# a lifted cool canvas #22262d (bg L=0.019, fg gap 9.1:1). Sets
+# bg/fg/cursor/palette — this is what Claude Code chat renders in. Not wired
+# to the light/dark toggle — nvim & tmux repaint their own surfaces, so this
+# is the static backdrop.
+theme = Kanso Mist
 
 # Window
 window-padding-x = 4

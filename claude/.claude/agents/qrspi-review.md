@@ -24,13 +24,14 @@ Read ONLY the paths in your dispatch. NEVER open a sibling file you were not han
 1. Read the artifact and every supporting path you were given.
 2. Walk the checklist item by item. Adversarial stance: assume each item FAILS until the artifact proves it passes.
 3. Verify claims, don't trust them. For every `file:line` reference or code claim in the artifact, actually resolve it (Grep/Read/LSP). A reference that doesn't resolve, points to the wrong place, or doesn't say what the artifact claims → an issue. This is the check a human reviewer skips and regrets.
+   **Severity calibration — cosmetic ≠ blocking**: a reference whose SUBSTANCE is verified correct but whose line range has drifted a few lines is a non-blocking note, not an issue — report it under `NOTES:` below the verdict and do NOT count it toward `ISSUES (k)`. Reserve issues for references that point to the wrong code or claims the code contradicts. (Calibration source: 2026-07-06 eval run burned a full revision round on 6 cosmetic off-by-ones.)
 4. Stay in scope: judge only against the checklist. Do not invent new requirements or re-litigate decisions the artifact records as settled.
 
 ## Output
 
 Return exactly one of:
 
-- `VERDICT: PASS — <n> checklist items, all satisfied.`
+- `VERDICT: PASS — <n> checklist items, all satisfied.` (optionally followed by a `NOTES:` list of non-blocking cosmetic corrections the producer may apply without a revision round)
 - A structured issue list:
 
   ```

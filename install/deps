@@ -11,6 +11,31 @@ print_success() { echo -e "${GREEN}✓${NC} $1"; }
 print_error() { echo -e "${RED}✗${NC} $1"; }
 print_info() { echo -e "${YELLOW}→${NC} $1"; }
 
+# mprocs — service-stack runner for the `dev` console window (per-project
+# mprocs.yaml). Upstream renamed the repo pvolok/mprocs -> pvolok/dekit, which
+# broke the AUR `mprocs` PKGBUILD (its `cd mprocs-0.9.6` fails — the renamed
+# source archive extracts to dekit-0.9.6/). The prebuilt release binary is
+# unaffected (asset still named mprocs-*, a single top-level `mprocs` binary),
+# so install it from GitHub on every Linux platform. Tags are v-prefixed, asset
+# names are not. Used by wsl|ubuntu and arch below (mac uses brew).
+install_mprocs() {
+  if command -v mprocs &>/dev/null; then
+    print_success "mprocs already installed"
+    return
+  fi
+  print_info "Installing mprocs..."
+  local ver url
+  ver=$(curl -fsSL "https://api.github.com/repos/pvolok/dekit/releases/latest" | jq -r .tag_name)
+  url="https://github.com/pvolok/dekit/releases/download/${ver}/mprocs-${ver#v}-linux-$(uname -m)-musl.tar.gz"
+  mkdir -p ~/.local/bin
+  curl -fLo /tmp/mprocs.tar.gz "$url"
+  tar -xzf /tmp/mprocs.tar.gz -C /tmp
+  cp /tmp/mprocs ~/.local/bin/
+  chmod +x ~/.local/bin/mprocs
+  rm -f /tmp/mprocs.tar.gz /tmp/mprocs
+  print_success "mprocs installed"
+}
+
 PLATFORM=${1:-}
 
 if [[ ! "$PLATFORM" =~ ^(wsl|ubuntu|mac|arch)$ ]]; then
@@ -92,23 +117,7 @@ wsl | ubuntu)
     print_success "lazydocker already installed"
   fi
 
-  # mprocs — service-stack runner for the `dev` console window (per-project
-  # mprocs.yaml). Not packaged for apt; GitHub release binary, same pattern
-  # as tlrc. Release tags are v-prefixed but asset names are not.
-  if ! command -v mprocs &>/dev/null; then
-    print_info "Installing mprocs..."
-    MPROCS_VER=$(curl -sI "https://github.com/pvolok/mprocs/releases/latest" | grep -i location | sed 's/.*tag\///' | tr -d '[:space:]')
-    MPROCS_URL="https://github.com/pvolok/mprocs/releases/latest/download/mprocs-${MPROCS_VER#v}-linux-$(uname -m)-musl.tar.gz"
-    mkdir -p ~/.local/bin
-    curl -fLo /tmp/mprocs.tar.gz "$MPROCS_URL"
-    tar -xzf /tmp/mprocs.tar.gz -C /tmp
-    cp /tmp/mprocs ~/.local/bin/
-    chmod +x ~/.local/bin/mprocs
-    rm -f /tmp/mprocs.tar.gz /tmp/mprocs
-    print_success "mprocs installed"
-  else
-    print_success "mprocs already installed"
-  fi
+  install_mprocs
 
   ;;
 arch)
@@ -133,14 +142,20 @@ arch)
     print_success "paru already installed"
   fi
 
-  # AUR packages
+  # AUR packages. mprocs is intentionally NOT here — its AUR PKGBUILD broke on
+  # the upstream pvolok/mprocs -> pvolok/dekit rename; it's installed from the
+  # release binary via install_mprocs below. `|| print_error` keeps a single
+  # failed/flaky AUR build (set -e is on) from aborting the rest of setup.
   if command -v paru &>/dev/null; then
     print_info "Installing AUR packages via paru..."
-    paru -S --needed discord_arch_electron google-chrome plexamp-bin revdiff mprocs
+    paru -S --needed discord_arch_electron google-chrome plexamp-bin revdiff ||
+      print_error "some AUR packages failed to build — continuing"
     print_success "AUR packages installed"
   else
     print_error "paru not found — skipping AUR packages"
   fi
+
+  install_mprocs
 
   if ! command -v tldr &>/dev/null; then
     print_info "Installing tlrc..."

@@ -16,6 +16,9 @@
 #     severity=high|medium|low
 #     desc="one line"
 #     file=path
+#     lane=q-plan|eng-spec|code|other   (optional: planning lane that produced
+#                                        the shipped work — enables lane-level
+#                                        escape attribution in /review-stats)
 #
 # Numeric-looking values are stored as numbers, everything else as strings.
 # A "date" field (UTC ISO 8601) is always added. Output file:

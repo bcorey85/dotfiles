@@ -76,6 +76,10 @@ Only after ALL questions are resolved, write `DIR/IQ-XXX-03-design.md`:
 ## Constraints
 
 - [technical, from research] / [business, from ticket]
+- [external contracts: NAME every provider/API contract this design touches
+  and the invariant it imposes (e.g. message-format pairing rules, rate
+  limits, ordering guarantees) — and what breaks if violated. "None" must be
+  stated explicitly, not implied by omission.]
 
 ## Open Risks
 

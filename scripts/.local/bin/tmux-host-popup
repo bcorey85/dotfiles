@@ -1,7 +1,7 @@
 #!/bin/bash
 # display-popup wrapper that escapes the Claude agent popup.
 #
-# Full-size popup bindings (prefix g / prefix s) pressed INSIDE the C-. agent
+# Full-size popup bindings (prefix d / prefix g) pressed INSIDE the C-. agent
 # popup run on the nested client, so "-w 100%" means 100% of the agent popup —
 # a popup can't break out of the client hosting it. This wrapper detects that
 # case: it closes the agent popup (the session keeps running, like the C-.
@@ -9,8 +9,10 @@
 # and re-opens the agent popup when it closes. From a normal pane it degrades
 # to a plain display-popup on the invoking client.
 #
-# Usage: tmux-host-popup <client> <session> <dir> <width> <height> <command>
+# Usage: tmux-host-popup [--git] <client> <session> <dir> <width> <height> <command>
 #        tmux-host-popup --reopen <host_client> <session>          (internal)
+# --git guards on <dir> being a git work tree: shows "not a git repository" and
+# no-ops otherwise, so callers don't repeat the guard in every binding.
 
 SELF="${BASH_SOURCE[0]}"
 
@@ -28,7 +30,19 @@ if [ "${1:-}" = --reopen ]; then # background: bring the agent popup back
         -E "tmux attach-session -t '$session'"
 fi
 
+require_git=
+if [ "${1:-}" = --git ]; then
+    require_git=1
+    shift
+fi
+
 client="$1" session="$2" dir="$3" w="$4" h="$5" cmd="$6"
+
+# --git guard: bail (with a message) when the pane isn't in a git work tree.
+if [ -n "$require_git" ] && ! git -C "$dir" rev-parse --git-dir >/dev/null 2>&1; then
+    tmux display-message "not a git repository"
+    exit 0
+fi
 
 # Not inside the agent popup: plain popup on the invoking client.
 if [[ "$session" != "$prefix"* ]]; then

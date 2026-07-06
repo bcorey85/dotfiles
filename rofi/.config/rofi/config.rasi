@@ -10,4 +10,4 @@ configuration {
     display-ssh: "SSH";
 }
 
-@theme "terafox"
+@theme "kanagawa-dragon"

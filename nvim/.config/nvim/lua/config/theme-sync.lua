@@ -8,13 +8,13 @@
 -- with no sockets or lifecycle to manage. <leader>ut shells out to the same
 -- script, so a toggle from nvim flips tmux too — one source of truth, both ways.
 --
--- nightfox.nvim doesn't auto-switch on vim.o.background — it ships separate
--- colorscheme names per variant, so each mode maps to its own name here.
+-- Each mode maps to its own colorscheme name (kanagawa ships one per
+-- variant); apply() sets vim.o.background before the colorscheme call.
 
 local M = {}
 
 local STATE_FILE = vim.env.HOME .. "/.cache/theme-mode"
-local COLORSCHEMES = { dark = "terafox", light = "dayfox" }
+local COLORSCHEMES = { dark = "kanagawa-dragon", light = "kanagawa-lotus" }
 
 local applied ---@type string|nil  last mode we set, to skip redundant reloads
 

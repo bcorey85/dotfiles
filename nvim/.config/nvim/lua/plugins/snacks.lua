@@ -105,6 +105,8 @@ return {
           },
         },
       },
+      -- Terminal detection is pre-seeded below (see the vim.env.TMUX block after
+      -- setup) so the picker preview never runs snacks' blocking graphics probe.
       image = {
         enabled = true,
         math = { enabled = false },
@@ -130,6 +132,25 @@ return {
         },
       },
     })
+
+    -- snacks.image terminal auto-detect deadlocks under our tmux setup. We keep
+    -- tmux `extended-keys always` for the bare C-. / C-' / C-; binds, but snacks'
+    -- #2332 workaround (ask tmux for the terminal name) only fires when that
+    -- setting ends in " on" — `always` falls through to an escape-query that
+    -- never returns a TermResponse while extended-keys is on, freezing the picker
+    -- preview on first open (blocked, 0% CPU). So do the same thing snacks would:
+    -- read the terminal from tmux ourselves and pre-seed its detection cache, so
+    -- the blocking query is never issued. Outside tmux, snacks' own detection is
+    -- fine and this is skipped.
+    if vim.env.TMUX then
+      pcall(function()
+        local term = require("snacks.image.terminal")
+        local name = vim.trim(vim.fn.system({ "tmux", "display-message", "-p", "#{client_termname}" }))
+        -- snacks matches env by this .terminal string (e.g. "ghostty" -> supported
+        -- + placeholders); the tmux passthrough transform is layered on separately.
+        term._terminal = { terminal = name:gsub("^xterm%-", ""), version = "unknown" }
+      end)
+    end
 
     -- Toggle zen mode: centered 120-col window, pairs with tmux prefix-m zoom.
     vim.keymap.set("n", "<leader>z", function()

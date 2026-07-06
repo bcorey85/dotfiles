@@ -45,11 +45,38 @@ wsl | ubuntu)
     print_success "tlrc already installed"
   fi
 
+  # mise — runtime version manager (replaces nvm; official repo via extrepo)
+  if ! command -v mise &>/dev/null; then
+    print_info "Installing mise..."
+    sudo apt install -y extrepo
+    sudo extrepo enable mise
+    sudo apt update
+    sudo apt install -y mise
+    print_success "mise installed"
+  else
+    print_success "mise already installed"
+  fi
+
+  # gh — GitHub CLI (octo.nvim + gh-dash depend on it; official repo is
+  # codename-neutral so one source file covers every Ubuntu/Debian release)
+  if ! command -v gh &>/dev/null; then
+    print_info "Installing gh..."
+    sudo mkdir -p -m 755 /etc/apt/keyrings
+    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null
+    sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+    sudo apt update
+    sudo apt install -y gh
+    print_success "gh installed"
+  else
+    print_success "gh already installed"
+  fi
+
   ;;
 arch)
   print_info "Installing dependencies via pacman..."
   # inetutils: provides `hostname`, which tmux-resurrect's helpers call
-  sudo pacman -S --needed stow neovim emacs tmux zsh git curl jq libnotify fzf zoxide unzip direnv ghostty git-delta btop bat atuin eza glow fd keychain rustup playerctl xdg-user-dirs ripgrep brightnessctl base-devel bluez bluez-utils less ansible just rsync xclip imagemagick inetutils
+  sudo pacman -S --needed stow neovim emacs tmux zsh git curl jq libnotify fzf zoxide unzip direnv ghostty git-delta btop bat atuin eza glow fd keychain rustup playerctl xdg-user-dirs ripgrep brightnessctl base-devel bluez bluez-utils less ansible just rsync xclip imagemagick inetutils mise github-cli
   print_success "Dependencies installed"
 
   # Hyprland desktop packages
@@ -103,7 +130,7 @@ mac)
   fi
 
   print_info "Installing dependencies via Homebrew..."
-  brew install stow neovim emacs tmux git jq fzf zoxide direnv git-delta btop bat atuin eza tlrc glow fd ripgrep keychain rustup ansible just imagemagick kanata
+  brew install stow neovim emacs tmux git jq fzf zoxide direnv git-delta btop bat atuin eza tlrc glow fd ripgrep keychain rustup ansible just imagemagick kanata mise gh
   brew install umputun/apps/revdiff
   brew install --cask nikitabobko/tap/aerospace
   print_success "Dependencies installed"

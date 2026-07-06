@@ -138,11 +138,7 @@
       "Bash(open .)",
       "Bash(open -R *)"
     ],
-    "deny": [
-      "Bash(sudo *)",
-      "Bash(rm -rf /)",
-      "Bash(chmod 777 *)"
-    ],
+    "deny": ["Bash(sudo *)", "Bash(rm -rf /)", "Bash(chmod 777 *)"],
     "defaultMode": "auto"
   },
   "model": "opus",
@@ -189,7 +185,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh waiting"
+            "command": "$HOME/.local/bin/claude-attention ping waiting 'Question for you'"
           }
         ]
       }
@@ -283,11 +279,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/scripts/notify 'Claude Code' 'Permission needed'"
-          },
-          {
-            "type": "command",
-            "command": "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh waiting"
+            "command": "$HOME/.local/bin/claude-attention ping waiting 'Permission needed'"
           }
         ]
       },

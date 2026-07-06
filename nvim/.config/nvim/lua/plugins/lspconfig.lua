@@ -3,13 +3,19 @@
 --
 -- config.lsp reads vim.lsp.config.eslint.root_dir, so it REQUIRES this plugin on
 -- the runtimepath before it runs — hence config.lsp is invoked from THIS spec's
--- config() rather than at top level. Gated on BufReadPre so servers still
--- activate lazily on the first file open (vim.lsp.enable registers FileType
--- autocmds that catch the buffer being read). mason-lspconfig is a dependency so
+-- config() rather than at top level. mason-lspconfig is a dependency so
 -- ensure_installed runs before vim.lsp.enable, preserving the old load order.
+--
+-- Trigger is VeryLazy, NOT BufReadPre: vim.lsp.enable() called after VimEnter
+-- runs `doautoall nvim.lsp.enable FileType`, which sets the global
+-- did_filetype() flag. On BufReadPre that fired MID-READ of the first buffer
+-- (session restore / first file open), so the read's own `setf` no-op'd and the
+-- buffer got NO filetype — no treesitter/markview/spell until :e. VeryLazy runs
+-- after startup+restore finish; the doautoall sweep then attaches LSP to every
+-- already-open buffer, so first-buffer LSP still works.
 return {
   "neovim/nvim-lspconfig",
-  event = { "BufReadPre", "BufNewFile" },
+  event = "VeryLazy",
   dependencies = { "mason-org/mason-lspconfig.nvim" },
   config = function()
     require("config.lsp")

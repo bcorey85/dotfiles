@@ -10,33 +10,16 @@ confirm-close-surface = false
 # stems render heavier — closest match to kitty's bolder text rendering, since
 # font-thicken is macOS-only. If still too light, use `font-style = Bold`.
 freetype-load-flags = no-light
-# Theme - terafox (EdenEast/nightfox.nvim)
-background = #152528
-foreground = #e6eaea
-
-selection-background = #293e40
-selection-foreground = #e6eaea
-
-cursor-color = #e6eaea
-cursor-text = #152528
-
-# Color palette — nightfox.nvim terafox terminal colors
-palette = 0=#2f3239
-palette = 1=#e85c51
-palette = 2=#7aa4a1
-palette = 3=#fda47f
-palette = 4=#5a93aa
-palette = 5=#ad5c7c
-palette = 6=#a1cdd8
-palette = 7=#ebebeb
-palette = 8=#4e5157
-palette = 9=#eb746b
-palette = 10=#8eb2af
-palette = 11=#fdb292
-palette = 12=#73a3b7
-palette = 13=#b97490
-palette = 14=#afd4de
-palette = 15=#eeeeee
+# Theme — Kanagawa Dragon (Ghostty built-in). Matches nvim/tmux dark mode
+# (rebelot/kanagawa.nvim kanagawa-dragon). Sets bg/fg/cursor/palette — this is
+# what Claude Code chat renders in. Not wired to the light/dark toggle — nvim
+# & tmux repaint their own surfaces, so this is the static backdrop.
+theme = Kanagawa Dragon
+# One deliberate override: lift the bg #181616 → #1e1c1c (matches nvim + tmux).
+# Stock dragon's near-black dark-adapts the eye — dilated pupils worsen
+# astigmatism halation and glaucoma contrast sensitivity. Explicit keys win
+# over the theme's values.
+background = #1e1c1c
 
 # Window
 window-padding-x = 4

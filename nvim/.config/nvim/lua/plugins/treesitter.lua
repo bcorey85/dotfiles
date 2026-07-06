@@ -44,13 +44,26 @@ return {
       vim.list_extend(fts, vim.treesitter.language.get_filetypes(lang))
     end
 
+    local function attach(buf)
+      pcall(vim.treesitter.start, buf)
+      vim.bo[buf].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+    end
+
     vim.api.nvim_create_autocmd("FileType", {
       pattern = fts,
       callback = function(args)
-        pcall(vim.treesitter.start, args.buf)
-        vim.bo[args.buf].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+        attach(args.buf)
       end,
     })
+
+    -- Buffers whose FileType fired before this plugin loaded (session restore,
+    -- startup races) never hit the autocmd above — attach them retroactively,
+    -- otherwise they sit unhighlighted until re-edited.
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_is_loaded(buf) and vim.tbl_contains(fts, vim.bo[buf].filetype) then
+        attach(buf)
+      end
+    end
 
     -- select module is no longer used directly (mini.ai owns a/i).
     -- move module is still used for ]f/[f/]C/[C below.

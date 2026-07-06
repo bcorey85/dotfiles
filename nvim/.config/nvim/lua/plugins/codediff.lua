@@ -136,7 +136,26 @@ return {
     -- 2. NEOGIT SYNC: codediff mutates the index via subprocess; neogit's
     --    status buffer doesn't notice and reports nothing staged. Kick
     --    dispatch_refresh() after every index mutation.
-    local cd_git = require("codediff.core.git")
+    --
+    -- DEGRADATION CONTRACT: everything here rides codediff's PRIVATE
+    -- internals (core.git functions, explorer refresh/get_all_files,
+    -- on_file_select). A plugin update may rename any of them. Every touch
+    -- is pcall-guarded so the failure mode is "staging still works, the
+    -- sugar (advance / neogit sync) silently stops" — plus a one-time
+    -- warning so the breakage is noticed, not mysterious. Run
+    -- `verify-review-stack` after :Lazy update.
+    local function glue_broke(what)
+      vim.notify(
+        "codediff review glue: " .. what .. " — plugin internals changed (update?); staging still works, see plugins/codediff.lua",
+        vim.log.levels.WARN
+      )
+    end
+
+    local ok_git, cd_git = pcall(require, "codediff.core.git")
+    if not ok_git then
+      glue_broke("core.git module missing; auto-advance + neogit sync disabled")
+      cd_git = nil
+    end
 
     local function neogit_refresh()
       local ok, neogit = pcall(require, "neogit")
@@ -164,24 +183,30 @@ return {
         if #unstaged > 0 then
           return -- file still has working-tree changes: stay for more picks
         end
-        local all = require("codediff.ui.explorer.refresh").get_all_files(ex.tree)
-        local idx = 0
-        for i, f in ipairs(all) do
-          if f.data.path == ref_path then
-            idx = i
-          end
-        end
-        local n = #all
-        for step = 1, n do
-          local f = all[((idx - 1 + step) % n) + 1]
-          if (f.data.group == "unstaged" or f.data.group == "conflicts") and f.data.path ~= ref_path then
-            if ex.on_file_select then
-              ex.on_file_select(f.data)
+        local ok_adv, err = pcall(function()
+          local all = require("codediff.ui.explorer.refresh").get_all_files(ex.tree)
+          local idx = 0
+          for i, f in ipairs(all) do
+            if f.data.path == ref_path then
+              idx = i
             end
-            return
           end
+          local n = #all
+          for step = 1, n do
+            local f = all[((idx - 1 + step) % n) + 1]
+            if (f.data.group == "unstaged" or f.data.group == "conflicts") and f.data.path ~= ref_path then
+              if ex.on_file_select then
+                ex.on_file_select(f.data)
+              end
+              return
+            end
+          end
+          vim.notify("Review queue empty — everything staged", vim.log.levels.INFO)
+        end)
+        if not ok_adv and not vim.g.codediff_glue_warned then
+          vim.g.codediff_glue_warned = true
+          glue_broke("auto-advance failed (" .. tostring(err):sub(1, 80) .. ")")
         end
-        vim.notify("Review queue empty — everything staged", vim.log.levels.INFO)
       end, 150)
     end
 
@@ -205,14 +230,25 @@ return {
       end
     end
 
-    cd_git.stage_file = wrap(cd_git.stage_file, function(args)
+    -- Only wrap functions that still exist under their expected names; warn
+    -- once about any that vanished (renamed upstream) instead of erroring.
+    local missing = {}
+    local function wrap_if_present(name, after)
+      if cd_git and type(cd_git[name]) == "function" then
+        cd_git[name] = wrap(cd_git[name], after)
+      else
+        table.insert(missing, name)
+      end
+    end
+
+    wrap_if_present("stage_file", function(args)
       neogit_refresh()
       advance_after(args[2]) -- (git_root, rel_path, cb)
     end)
-    cd_git.unstage_file = wrap(cd_git.unstage_file, function()
+    wrap_if_present("unstage_file", function()
       neogit_refresh() -- no advance: the file is back under review
     end)
-    cd_git.apply_patch = wrap(cd_git.apply_patch, function()
+    wrap_if_present("apply_patch", function()
       neogit_refresh()
       -- Hunk staged/unstaged/discarded: advance iff the current file ended
       -- up fully reviewed (advance_after's still-unstaged check handles the
@@ -225,6 +261,10 @@ return {
         end
       end
     end)
+
+    if #missing > 0 then
+      glue_broke("core.git." .. table.concat(missing, "/") .. " not found; their sugar is disabled")
+    end
 
     -- <C-d>/<C-u> in the explorer/history panels scroll the DIFF panes
     -- (ports the retired diffview file-panel scroll_view binds).

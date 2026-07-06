@@ -1,5 +1,5 @@
-# Kanagawa Dragon palette
-palette = "kanagawa_dragon"
+# Kanso Mist palette
+palette = "kanso_mist"
 
 # NOTE: the root `format` MUST come before [palettes.*] — any key after a
 # table header belongs to that table. Placed below the palette it silently
@@ -15,17 +15,17 @@ $cmd_duration\
 $line_break\
 $character"""
 
-[palettes.kanagawa_dragon]
+[palettes.kanso_mist]
 red = "#c4746e"
-orange = "#b6927b"
+orange = "#c4b28a"
 yellow = "#c4b28a"
-green = "#87a987"
+green = "#8a9a7b"
 blue = "#8ba4b0"
-teal = "#949fb5"
-purple = "#8992a7"
-fg = "#c5c9c5"
-bg = "#181616"
-grey = "#727169"
+teal = "#8ea4a2"
+purple = "#938aa9"
+fg = "#c5c9c7"
+bg = "#22262d"
+grey = "#a4a7a4"
 
 [directory]
 style = "bold teal"

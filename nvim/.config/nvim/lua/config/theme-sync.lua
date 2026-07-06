@@ -14,7 +14,7 @@
 local M = {}
 
 local STATE_FILE = vim.env.HOME .. "/.cache/theme-mode"
-local COLORSCHEMES = { dark = "kanagawa-dragon", light = "kanagawa-lotus" }
+local COLORSCHEMES = { dark = "kanso-mist", light = "kanso-pearl" }
 
 local applied ---@type string|nil  last mode we set, to skip redundant reloads
 

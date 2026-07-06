@@ -1,0 +1,15 @@
+#!/bin/bash
+# Run a TUI command inside a tmux popup; on failure, hold the popup open with a
+# readable error instead of flash-closing (so "not installed / daemon down /
+# not authenticated" is actually visible). Used by prefix P (gh dash) and
+# prefix l (lazydocker).
+#
+# Usage: tmux-tui-popup <command> <failure-message>
+
+cmd="$1" msg="$2"
+
+bash -c "$cmd" || {
+    echo
+    echo "$msg enter to close"
+    read -r _
+}

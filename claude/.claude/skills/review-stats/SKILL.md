@@ -25,7 +25,7 @@ Both files accumulate counts/categories only — this skill reports distribution
    - **Ask rate**: `sum(ask)` over the same denominator — high means MEDIUMs are chronically ambiguous.
    - **Test-intent findings**: total `test_intent` and how many runs had any.
    - **Result distribution**: PASS / PASS WITH WARNINGS / NEEDS CHANGES.
-   - **Escapes** (when the escapes file exists): counts by `gate_missed`, by `class`, by `stage_found`; severity mix; per repo. The headline number per gate is the **escape ratio**: escapes attributed to a gate vs. that gate's catch volume over the same period (e.g. `gate_missed=review` escapes vs. total review findings).
+   - **Escapes** (when the escapes file exists): counts by `gate_missed`, by `class`, by `stage_found`; severity mix; per repo; by `lane` when present (lane-level escape rates are the running A/B evidence for /q-plan vs /eng-spec routing). The headline number per gate is the **escape ratio**: escapes attributed to a gate vs. that gate's catch volume over the same period (e.g. `gate_missed=review` escapes vs. total review findings).
    - If a repo filter was passed in arguments, scope everything to that repo.
 
 3. **Interpret** — flag, with thresholds:

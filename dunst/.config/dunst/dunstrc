@@ -57,22 +57,22 @@
     history_ignore = yes
 
 [urgency_low]
-    background = "#14171d"
-    foreground = "#a4a7a4"
-    frame_color = "#43464e"
-    highlight = "#8ba4b0"
+    background = "#1c2128"
+    foreground = "#768390"
+    frame_color = "#444c56"
+    highlight = "#539bf5"
     timeout = 5
 
 [urgency_normal]
-    background = "#14171d"
-    foreground = "#c5c9c7"
-    frame_color = "#8ba4b0"
-    highlight = "#8ba4b0"
+    background = "#1c2128"
+    foreground = "#adbac7"
+    frame_color = "#539bf5"
+    highlight = "#539bf5"
     timeout = 10
 
 [urgency_critical]
-    background = "#14171d"
-    foreground = "#c5c9c7"
-    frame_color = "#e46876"
-    highlight = "#e46876"
+    background = "#1c2128"
+    foreground = "#adbac7"
+    frame_color = "#ff938a"
+    highlight = "#ff938a"
     timeout = 0

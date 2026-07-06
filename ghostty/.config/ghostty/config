@@ -10,13 +10,12 @@ confirm-close-surface = false
 # stems render heavier — closest match to kitty's bolder text rendering, since
 # font-thicken is macOS-only. If still too light, use `font-style = Bold`.
 freetype-load-flags = no-light
-# Theme — Kanso Mist (Ghostty built-in, zero overrides). Matches nvim/tmux
-# dark mode (webhooked/kanso.nvim kanso-mist): dragon's muted ink + accents on
-# a lifted cool canvas #22262d (bg L=0.019, fg gap 9.1:1). Sets
+# Theme — GitHub Dark Dimmed (Ghostty built-in, zero overrides). Matches
+# nvim/tmux dark mode (projekt0n/github-nvim-theme github_dark_dimmed). Sets
 # bg/fg/cursor/palette — this is what Claude Code chat renders in. Not wired
 # to the light/dark toggle — nvim & tmux repaint their own surfaces, so this
-# is the static backdrop.
-theme = Kanso Mist
+# is the static backdrop. Reload with ctrl+shift+, after editing.
+theme = GitHub Dark Dimmed
 
 # Window
 window-padding-x = 4

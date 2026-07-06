@@ -25,20 +25,27 @@
 	# quoted so the # in hex codes isn't parsed as a gitconfig comment.
 	syntax-theme = Catppuccin Mocha
 	minus-style = "syntax #3a2b30"
-	minus-emph-style = "syntax #5a3a42"
 	plus-style = "syntax #28332b"
-	plus-emph-style = "syntax #38513f"
+	# Word-level emphasis is deliberately DISABLED (emph = base style): delta's
+	# within-line diff turns reworded/rewrapped prose into confetti (scattered
+	# per-token highlights), and dotfiles diffs are mostly prose. Line washes +
+	# syntax already localize small code edits. To re-enable, set the emph
+	# styles one step brighter than their base styles.
+	minus-emph-style = "syntax #3a2b30"
+	plus-emph-style = "syntax #28332b"
 
 [pull]
 	rebase = true
 
 [merge]
 	conflictstyle = zdiff3
-	tool = diffview
+	tool = codediff
 
 [diff]
 	colorMoved = default
-[mergetool "diffview"]
-	cmd = nvim -n -c \"DiffviewOpen\" \"$MERGE\"
+[mergetool]
+	keepBackup = false
+[mergetool "codediff"]
+	cmd = nvim \"$MERGED\" -c \"CodeDiff merge $MERGED\"
 [status]
 	showUntrackedFiles = all

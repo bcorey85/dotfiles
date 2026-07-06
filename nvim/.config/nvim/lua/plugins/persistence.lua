@@ -10,14 +10,16 @@
 
 -- Throwaway nvims must never save OR restore a session, or they'd clobber the
 -- real project session / dump a full layout into a popup:
---   • tmux popups: prefix g (neogit), prefix s (git hunk qf), prefix C-c/C-a
---     (org capture/agenda) — argc 0, so the no-args autoload would fire. Same
---     env flags the smart-splits spec guards on.
+--   • tmux popups: prefix g (neogit), prefix s (git hunk qf), prefix d
+--     (codediff review), prefix C-c/C-a (org capture/agenda) — argc 0, so the
+--     no-args autoload would fire. Same env flags the smart-splits spec
+--     guards on.
 --   • headless nvim (CI / scripted checks): no UI ⇒ list_uis() is empty.
 -- (need=1 already blocks autosave for the buffer-less neogit popup, but the
 -- git-qf popup can open real files — so we also hard-stop saving below.)
 local disabled = vim.env.NEOGIT_POPUP ~= nil
   or vim.env.GIT_QF_POPUP ~= nil
+  or vim.env.CODEDIFF_POPUP ~= nil
   or vim.env.ORG_POPUP ~= nil
   or #vim.api.nvim_list_uis() == 0
 

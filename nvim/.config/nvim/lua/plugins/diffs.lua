@@ -39,9 +39,34 @@ vim.g.diffs = {
   conflict = {
     enabled = false,
   },
+  highlights = {
+    -- Intra-line (word/char-level) emphasis OFF: diffs.nvim's job here is
+    -- treesitter syntax + line washes in status/patch buffers. Word-level
+    -- emphasis deliberately lives in ONE surface only — codediff.nvim,
+    -- opened from neogit (see plugins/codediff.lua) — after a whole arc of
+    -- per-renderer confetti (default algorithm: 154 fragment spans on a
+    -- rewritten CLAUDE.md line; vscode algorithm: 7). The 'vscode' algorithm
+    -- setting stays as documentation of the good value should intra ever be
+    -- re-enabled.
+    intra = {
+      enabled = false,
+      algorithm = "vscode",
+    },
+  },
 }
 
 return {
   "barrettruth/diffs.nvim",
   event = "VeryLazy",
+  config = function()
+    -- The 'vscode' intra algorithm needs libvscode_diff (prebuilt FFI lib,
+    -- per-machine download from codediff.nvim's releases). Nothing in the
+    -- plugin fetches it automatically — without this, a fresh machine
+    -- silently falls back to the confetti-prone 'default' algorithm.
+    -- One-time, async, no-op once present.
+    local lib = require("diffs.lib")
+    if not lib.has_lib() then
+      lib.ensure(function() end)
+    end
+  end,
 }

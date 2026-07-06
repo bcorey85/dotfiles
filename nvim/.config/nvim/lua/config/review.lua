@@ -1,6 +1,6 @@
--- Claude review-comment feature. Independent of any plugin (originally lived
--- in plugins/diffview.lua but has no diffview dependency): it writes entries to
--- ~/.claude/claude-comments.md and exposes :ClaudeReviewComment plus preview keymaps.
+-- Claude review-comment feature. Independent of any plugin: it writes entries
+-- to ~/.claude/claude-comments.md and exposes :ClaudeReviewComment plus
+-- preview keymaps.
 
 local function resolve_abs_path()
   local bufname = require("util.buf").name()

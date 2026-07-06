@@ -25,7 +25,7 @@ return {
     { "<leader>gr", desc = "Open/create PR on GitHub" },
     { "<leader>gt", desc = "Git push + set upstream tracking (prompt)" },
   },
-  dependencies = { "nvim-lua/plenary.nvim", "dlyongemallo/diffview-plus.nvim", "barrettruth/diffs.nvim" },
+  dependencies = { "nvim-lua/plenary.nvim", "esmuellert/codediff.nvim", "barrettruth/diffs.nvim" },
   config = function()
     -- ]f / [f — jump to next / previous FILE in the status list (magit ]]/[[ feel).
     -- neogit's built-ins don't cover this: }/{ walk hunk headers (and dive INTO a
@@ -81,6 +81,19 @@ return {
     end
 
     require("neogit").setup({
+      -- Word-level diff emphasis OFF (default true): status hunks show calm
+      -- line washes + treesitter syntax (diffs.nvim). Word-level reading
+      -- lives in ONE place: codediff (`d` popup / diff actions open it via
+      -- diff_viewer below). Same line-level-only call made for delta
+      -- (git/.gitconfig) and magit-delta (doom config.el).
+      word_diff_highlight = false,
+      -- codediff.nvim renders neogit's diff views (VS Code's diff engine —
+      -- see plugins/codediff.lua, which also owns merge conflicts <leader>gm
+      -- and file history <leader>gh; diffview is retired). The integrations
+      -- flag lives in the `integrations` table below — do NOT add a second
+      -- `integrations` key here: duplicate keys in a Lua table constructor
+      -- silently last-win.
+      diff_viewer = "codediff",
       -- magit ]]/[[ file navigation — neogit lacks a file-level action, so these
       -- are custom (see goto_file above). Function-valued status mappings are
       -- bound buffer-local by neogit (lib/buffer.lua :: user_mappings).
@@ -135,9 +148,9 @@ return {
         -- `pcall(require, ...)`. snacks is installed (plugins/snacks.lua) →
         -- auto-detected for menu selection (multi-select over vim.ui.select).
         -- Uninstalled pickers (telescope/fzf-lua/mini.pick) fail the pcall
-        -- silently. diffview IS installed now (plugins/diffview.lua) — enable it
-        -- explicitly so neogit hands diff/conflict views off to the 3-way tool.
-        diffview = true,
+        -- silently. codediff is enabled explicitly so neogit's diff actions
+        -- open the VS Code renderer (diff_viewer above picks it).
+        codediff = true,
       },
     })
 

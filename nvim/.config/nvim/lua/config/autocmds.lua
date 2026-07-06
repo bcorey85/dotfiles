@@ -172,12 +172,13 @@ vim.api.nvim_create_autocmd({ "BufReadPost", "BufWinEnter" }, {
     if vim.b[ev.buf].merge_keys or not require("util.buf").is_file(ev.buf) then
       return
     end
-    -- Don't collide with diffview: inside its merge tool, diffview's own
-    -- `view`-context conflict keys (plugins/diffview.lua, same <leader>c* scheme)
-    -- own the merged buffer. util/merge is the path for conflicted files opened
-    -- OUTSIDE diffview (plain edit, neogit RET).
-    local ok, lib = pcall(require, "diffview.lib")
-    if ok and lib.get_current_view() then
+    -- Don't collide with codediff: inside its merge view, codediff's own
+    -- conflict keys (plugins/codediff.lua, same <leader>c* scheme) own the
+    -- session buffers. util/merge is the path for conflicted files opened
+    -- OUTSIDE a merge view (plain edit, neogit RET). codediff tracks sessions
+    -- per-tabpage, so "this tab has a session" is the ownership test.
+    local ok, lifecycle = pcall(require, "codediff.ui.lifecycle")
+    if ok and lifecycle.get_session and lifecycle.get_session(vim.api.nvim_get_current_tabpage()) then
       return
     end
     if has_conflict_markers(ev.buf) then

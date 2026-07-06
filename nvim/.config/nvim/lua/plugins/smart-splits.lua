@@ -17,7 +17,7 @@
 -- and not clear it on exit, stranding the flag — so tmux then forwards
 -- C-hjkl / prefix-m to that pane (e.g. a Claude/terminal pane) instead of the
 -- real nvim. No UI ⇒ list_uis() is empty; disable the integration there too.
-if vim.env.NEOGIT_POPUP or vim.env.GIT_QF_POPUP or #vim.api.nvim_list_uis() == 0 then
+if vim.env.NEOGIT_POPUP or vim.env.GIT_QF_POPUP or vim.env.CODEDIFF_POPUP or #vim.api.nvim_list_uis() == 0 then
   vim.g.smart_splits_multiplexer_integration = false
 end
 

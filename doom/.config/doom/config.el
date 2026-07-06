@@ -747,14 +747,19 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
   :hook (magit-mode . magit-delta-mode)
   :init (setq magit-delta-default-dark-theme "Dracula")
   :config
+  ;; Word-level emphasis is deliberately DISABLED (emph = base style): delta's
+  ;; within-line diff turns reworded/rewrapped prose into confetti, and this
+  ;; repo's diffs are mostly prose/comments. Line washes + syntax already
+  ;; localize small code edits. Re-enable by making the emph styles one step
+  ;; brighter than their base styles.
   (setq magit-delta-delta-args
         '("--no-gitconfig"
           "--max-line-distance" "0.6"
           "--true-color" "always"
           "--plus-style"       "syntax #2e3c2e"      ; muted green (modus)
           "--minus-style"      "syntax #3c2e2e"      ; muted red   (modus)
-          "--plus-emph-style"  "syntax #3a5a3a"      ; word-level add
-          "--minus-emph-style" "syntax #5a3a3a")))   ; word-level remove
+          "--plus-emph-style"  "syntax #2e3c2e"      ; = plus-style (emph off)
+          "--minus-emph-style" "syntax #3c2e2e")))   ; = minus-style (emph off)
 
 ;; File-row status keywords — neogit-style coloring. Magit faces the WHOLE file
 ;; heading (status word + filename) with one `magit-diff-file-heading` face

@@ -1,0 +1,34 @@
+#!/bin/bash
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_info() { echo -e "${YELLOW}→${NC} $1"; }
+
+# gh-dash — PR/issue dashboard TUI, installed as a gh extension (per-machine
+# clone under ~/.local/share/gh/, same spirit as the zsh/tmux plugin clones).
+# Extension install needs an authenticated gh, so this skips (not fails) on
+# fresh machines; re-run after `gh auth login`.
+if ! command -v gh &>/dev/null; then
+  print_info "gh not installed — skipping (run install/deps first)"
+  exit 0
+fi
+
+if ! gh auth status &>/dev/null; then
+  print_info "gh not authenticated — run 'gh auth login', then re-run install/gh-dash"
+  exit 0
+fi
+
+if gh extension list 2>/dev/null | grep -q 'dlvhdr/gh-dash'; then
+  print_success "gh-dash already installed"
+else
+  print_info "Installing gh-dash extension..."
+  gh extension install dlvhdr/gh-dash
+  print_success "gh-dash installed"
+fi

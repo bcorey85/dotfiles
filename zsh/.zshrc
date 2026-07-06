@@ -11,6 +11,7 @@ fpath=(~/.zsh/completions $fpath)
 autoload -Uz compinit && compinit
 command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
 command -v direnv &>/dev/null && eval "$(direnv hook zsh)"
+command -v mise &>/dev/null && eval "$(mise activate zsh)"
 source ~/.zsh/plugins/fzf-tab/fzf-tab.plugin.zsh
 source ~/.zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh
 autoload -Uz bracketed-paste-magic
@@ -74,7 +75,8 @@ if command -v pyenv &>/dev/null; then
 fi
 
 export PIPENV_VERBOSITY=-1
-export PATH="/opt/homebrew/opt/node@18/bin:$PATH"
+# node@18 pin (mac) — pre-mise fallback; with mise, per-project .nvmrc wins
+command -v mise &>/dev/null || export PATH="/opt/homebrew/opt/node@18/bin:$PATH"
 
 export GRPC_PYTHON_BUILD_SYSTEM_OPENSSL=1
 export GRPC_PYTHON_BUILD_SYSTEM_ZLIB=1
@@ -85,9 +87,13 @@ if command -v brew &>/dev/null; then
  -I$(brew --prefix xz)/include -I$(brew --prefix bzip2)/include"
 fi
 
-export NVM_DIR="$HOME/.nvm"
-  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-  [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+# nvm fallback for machines without mise — mise owns node once installed
+# (~300-700ms saved per shell; run install/mise before removing ~/.nvm)
+if ! command -v mise &>/dev/null; then
+  export NVM_DIR="$HOME/.nvm"
+  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+  [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+fi
 export PATH="/opt/homebrew/opt/openssl@3/bin:$PATH"
 
 command -v starship &>/dev/null && eval "$(starship init zsh)"

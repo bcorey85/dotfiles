@@ -37,7 +37,7 @@ The harness ships built-ins that overlap the custom toolkit. The boundary:
 - **Security audit** → built-in `/security-review`. `/audit-code` owns the other categories (bugs, DRY, a11y, findings ledger).
 - **Cleanup** → the coder's second-draft sweep + `/refactor`. Don't run built-in `/simplify` on loop output — it duplicates the sweep and skips escape logging.
 - **Verification** → built-in `/verify` drives the app (behavioral); `/q-verify` reconciles plan↔diff (completeness). Different audits; never substitute one for the other.
-- **Planning lanes** → `/q-orchestrator` (QRSPI) for multi-phase features where research contamination matters; `/eng-spec` for single-sitting features with real design decisions; bare `/code` below that; plan mode for ad-hoc exploration before committing to any lane.
+- **Planning lanes** → `/q-plan` (QRSPI) for multi-phase features where research contamination matters; `/eng-spec` for single-sitting features with real design decisions; bare `/code` below that; plan mode for ad-hoc exploration before committing to any lane.
 
 ## Engineering Judgment
 

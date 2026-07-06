@@ -12,19 +12,9 @@ WRONG (horizontal): Phase 1 all DB → Phase 2 all services → Phase 3 all API 
 
 RIGHT (vertical): Phase 1 = feature slice A end-to-end (DB + service + API + UI), Phase 2 = slice B, Phase N = edge cases + polish. Each phase independently verifiable; if Phase 2 breaks, Phase 1 still works.
 
-## Initial Presentation (MANDATORY)
+## Decide the phasing (no user gate)
 
-```
-Here's how I'd break this into vertical phases:
-
-Phase 1: [Name] — [one sentence: what becomes testable after this]
-Phase 2: [Name] — [one sentence]
-Phase N: Testing & Polish
-
-Does this ordering make sense? Should any phases be split, merged, or reordered?
-```
-
-Wait for approval. Iterate until the user approves ordering and scope.
+Structure runs automatically — do NOT stop for approval. Break the work into vertical phases yourself, applying the vertical-not-horizontal rule above. If the design doc leaves the phasing genuinely ambiguous, make the most reasonable call and record it as an assumption in the outline rather than pausing. The human review point is the Plan gate that follows.
 
 ## Write the Outline (~2 pages max)
 
@@ -62,8 +52,12 @@ If the implementing agent might get a phase wrong, expand it with specific types
 
 - Do NOT write full implementation code — signatures and types only where needed.
 - Do NOT create horizontal phases.
-- Do NOT skip user review — present and iterate.
+- Do NOT stop for user approval — structure flows straight into Plan; review happens at the Plan gate.
 - Do NOT exceed ~2 pages — longer means phases are too detailed.
 - Do NOT re-debate design decisions — those are resolved.
 
-When saved, continue directly to Phase P (no `/clear`).
+## Review before Plan (MANDATORY)
+
+Structure has no human gate, so this review is its only quality check before it flows into Plan. After writing the outline, run the review loop (`${CLAUDE_SKILL_DIR}/review-loop.md`, **Structure** checklist; inputs: structure + design docs). Fix what it flags (max 2 rounds); if it still fails, STOP and surface the issues to the user — an unresolvable structure problem is the one thing worth interrupting the auto-flow for. Log the verdict (`phase=structure`).
+
+When the review passes, continue directly to Phase P (no `/clear`).

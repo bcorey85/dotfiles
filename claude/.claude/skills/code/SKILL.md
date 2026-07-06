@@ -28,8 +28,13 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    - After the coder completes and you summarize, auto-dispatch `/review` (step 5).
    - **Drift gate** — after `/review` converges, before marking the phase done: dispatch ONE read-only reconciliation agent (`subagent_type: "general-purpose"`, `model: "sonnet"`) with ONLY the plan path, the phase number, and the handoff file list. It verdicts each of the phase's `Success Criteria` items `done` / `partial` / `missing` against the actual diff (file:line evidence; changes nothing). If the plan has an `Acceptance Stubs` section, it also verifies stub-sentence survival: every stub sentence must still exist — as a todo or as a real test bearing that name. A reworded or deleted stub is tampering; report it as `missing`. This is the phase-scoped version of `/q-verify` — it catches plan drift while it is still phase-sized. Clean → proceed. Any `partial`/`missing` → do NOT mark the phase done; dispatch `/fix` once with the gaps as the issue list, then re-run the drift gate once. Still dirty → stop and hand the remaining gaps to the user.
    - **Behavioral verification (agent-executed)** — after the drift gate is clean: if the phase has `Manual Verification` items, dispatch ONE `general-purpose` agent (`model: "sonnet"`) with the plan path, the phase number, and the items. It executes every item it can drive from the terminal — curl the endpoint, run the CLI, execute the scenario command. For UI flows: **scripted Playwright, NEVER the Playwright MCP** (the MCP holds a live browser session with per-action tool calls and accessibility-tree payloads — too expensive; a script compresses the whole flow into one Bash call whose only context cost is what it prints). Form: write a throwaway `/tmp/verify-phase<N>.mjs` using the plain `playwright` library (launch → drive → print assertions → exit code), run it once, keep the printed output as evidence; `npx playwright screenshot <url> /tmp/<name>.png` for render checks; screenshots always to `/tmp`, never the repo. Browser items only when the project already has Playwright installed — never install browsers to verify; tag those items `human-only` instead. It edits the plan in place: `- [x] agent-verified: <item> — <evidence: command + observed result>`, or `- [ ] human-only: <item> — <why it can't be driven>`. It changes NO code, and it never checks an item without captured evidence — observed output, not asserted success. Human-only remainders accumulate for the end-of-feature review packet (`/q-verify`).
-   - After peer review passes AND the drift gate is clean, mark the phase done in the plan: `Edit` the `## Phase Status` section to flip `- [ ] Phase N: ...` → `- [x] Phase N: ...`. This single Edit is the durable record across `/clear`.
-   - Then stop and print the phase-complete block (see "Phase-Complete Block" below) — it has a low-risk and a high-risk variant; pick by the `(risk: ...)` tag on the phase's `## Phase Status` line. NEVER auto-advance to the next phase in-session, regardless of risk tier: every phase boundary stops for `/clear` (context hygiene — re-entry via `## Phase Status` is cheaper than letting context auto-compact mid-build). The risk tier changes what the block asks of the user, not whether it stops.
+   - After peer review passes AND the drift gate is clean, mark the phase done in the plan: `Edit` the `## Phase Status` section to flip `- [ ] Phase N: ...` → `- [x] Phase N: ...`. This single Edit is the durable record of progress — it survives `/clear` and lets in-session re-entry detect the next phase.
+   - **Phase-boundary decision** — the phase is done; now decide stop vs. auto-advance, checking these in order (first match wins), then print the matching Phase-Complete Block:
+     1. **Last phase** → STOP; print the completion footer (block C).
+     2. **Phase 1**, any risk tier → STOP for **calibration** (block B). Cheapest place to catch the coder — and the plan's risk tagging — drifting from intent before phases 2..N build on it.
+     3. **A gate needed an exception, a `/fix` loop hit its cap, or the coder flagged an ambiguity**, any tier → STOP (block B).
+     4. **`(risk: high)`** — and an untagged phase counts as high → STOP for phase-level sign-off (block B).
+     5. Otherwise — genuinely **`(risk: low)`** with all machine gates green → **AUTO-ADVANCE in-session** (block A): print the one-line advance notice, then re-enter step 2 for the next phase. Do NOT `/clear` and do NOT wait — subagent isolation keeps the main-loop context lean, so the coder's heavy context never lands here; the user can interrupt at any boundary.
    - If the plan has only one phase or no phase headers, treat it as a single dispatch (skip the phase loop).
 
 3. **Determine scope**:
@@ -73,28 +78,25 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 6. **Auto-dispatch peer review**: After summarizing the coder output, tell the user: "Auto-dispatching `/review` to check the implementation before committing." Then invoke the `/review` skill via the Skill tool with `skill: "review"` and `args` containing the handoff block from step 5 plus any `+fast`/`+deep` modifier. This runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing.
 
-7. **Multi-phase plans only — pause at the boundary**: If step 2 detected a multi-phase plan, after `/review` returns and the drift gate passes, stop and print the appropriate phase-complete block (see below) with all placeholders resolved. Do not auto-advance. When the user replies to continue (in a fresh context after `/clear`, or in the same context if they skipped clearing), re-enter at step 2 with the next phase — use `git status` and the plan's success criteria to detect what's already done.
+7. **Multi-phase plans only — apply the phase-boundary decision**: If step 2 detected a multi-phase plan, after `/review` returns and the drift gate passes, run the **Phase-boundary decision** (step 2) to choose stop vs. auto-advance. On a STOP, print the matching phase-complete block with all placeholders resolved and wait; when the user confirms (in-session by default — `/clear` only if context genuinely got heavy), re-enter step 2 for the next phase, using the `## Phase Status` section (fallback: `git status` + success criteria) to detect what's already done. On an AUTO-ADVANCE, print the one-line advance notice and re-enter step 2 immediately for the next phase in the same context.
 
 ## Phase-Complete Block
 
-After each phase + review + drift gate completes, print ONE of these blocks verbatim with `<N>`, `<plan-path>`, and lists filled in. Pick by the risk tag on the phase's `## Phase Status` line (`(risk: low)` / `(risk: high)`). **No risk tag (older plan format) → treat as high.**
+After each phase + review + drift gate, the **Phase-boundary decision** (step 2) selects one of three blocks. Print the matching block verbatim with `<N>`, `<N+1>`, `<plan-path>`, and lists filled in.
 
-**Low risk, all machine gates green** (review converged, execution gate exit 0, drift gate clean) — mechanical resume; no sign-off judgment is being requested:
-
-```
-Phase <N> complete — machine gates green (review ✓, execution gate ✓, drift ✓, behavioral ✓). Risk: low.
-
-Manual verification: agent-executed with evidence in the plan (<n> verified, <m> human-only deferred to the /q-verify review packet).
-
-Next:
-  1. /clear
-  2. Paste: /code <plan-path> continue
-```
-
-**High risk** — or ANY phase (regardless of tier) where a gate needed an exception, a fix loop hit its cap, or the coder flagged an ambiguity:
+**A — Auto-advance** (decision rule 5: genuinely `(risk: low)`, all machine gates green, not Phase 1, not the last phase, no exception/cap/ambiguity). No sign-off is requested; do not stop:
 
 ```
-Phase <N> complete. Risk: high — phase-level sign-off requested.
+Phase <N> complete — machine gates green (review ✓, execution ✓, drift ✓, behavioral ✓). Risk: low. Manual verification: <n> agent-verified, <m> human-only deferred to the /q-verify packet.
+→ Auto-advancing to Phase <N+1> in-session (no /clear; interrupt anytime).
+```
+
+Then re-enter step 2 for Phase <N+1> in the same context — do not wait for the user.
+
+**B — Stop for sign-off** (decision rules 2–4: `(risk: high)` or untagged; OR Phase 1 calibration regardless of tier; OR any tier where a gate needed an exception, a fix loop hit its cap, or the coder flagged an ambiguity):
+
+```
+Phase <N> complete. Risk: <high | low — Phase 1 calibration | low — exception>. Phase-level sign-off requested.
 
 Agent-verified (evidence in the plan):
 - <item — one-line evidence summary>
@@ -105,18 +107,23 @@ Human-only verification remaining:
 
 Next:
   1. Spot-check the evidence lines; run the human-only items.
-  2. /clear
-  3. Paste: /code <plan-path> continue
+  2. Confirm to continue to Phase <N+1> — in-session (no /clear needed; /clear only if context got heavy).
 
-Or give feedback now (before clearing) for revisions to phase <N>.
+Or give feedback now for revisions to Phase <N>.
+```
+
+**C — Last phase** (decision rule 1): print block B's verification lists, then replace its "Next" block with:
+
+```
+All phases complete. Next: /q-verify (completeness + review packet; includes the remaining human-only checks) → /pr.
 ```
 
 Resolution rules:
 
-- `<N>` is the just-finished phase number.
+- `<N>` is the just-finished phase number; `<N+1>` the next.
 - `<plan-path>` is the absolute or repo-relative path the orchestrator was invoked with.
-- Verification items come from the just-finished phase's `#### Manual Verification:` section in the plan, split by the verifier agent's `agent-verified` / `human-only` tags. If that section is empty in the high-risk block, omit both lists and replace step 1 with: "Spot-check the diff."
-- If this was the LAST phase, replace the "Next" block (either variant) with: "All phases complete. Next: /q-verify (completeness + review packet; includes the remaining human-only checks) → /pr."
+- Verification items come from the just-finished phase's `#### Manual Verification:` section in the plan, split by the verifier agent's `agent-verified` / `human-only` tags. If that section is empty in block B, omit both lists and replace step 1 with: "Spot-check the diff."
+- **No risk tag (older plan format) → treat as high** (block B).
 
 For complex features requiring design decisions, use `/eng-spec` instead.
 

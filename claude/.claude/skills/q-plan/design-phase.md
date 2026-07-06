@@ -31,7 +31,11 @@ Based on the ticket and research, here's my understanding:
 1. [Question] — A: [option + pros/cons] / B: [...] — Recommended: [pick + why]
 ```
 
-Wait for user responses. Ask follow-ups. Do NOT proceed until every question is answered.
+## Review before presenting (MANDATORY)
+
+Before showing the presentation to the user, draft it to `DIR/.design-draft.md` and run the review loop (`${CLAUDE_SKILL_DIR}/review-loop.md`, **Design** checklist; inputs: the draft + research + ticket). Fix what it flags (max 2 rounds), then present the corrected version — this is why the human's time at the gate is spent on judgment, not catching unresolved refs or leading questions. Log the verdict (`phase=design`). Remove the draft after presenting.
+
+Then present, and wait for user responses. Ask follow-ups. Do NOT proceed until every question is answered.
 
 ## Write the Design Document
 

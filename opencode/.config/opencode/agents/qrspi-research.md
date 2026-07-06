@@ -6,7 +6,7 @@ mode: subagent
 color: "#a855f7"
 ---
 
-Authoritative spec for the QRSPI research step (run via `/q-orchestrator`). `IQ-XXX` in file names below is a placeholder: use the ticket prefix the task directory actually uses.
+Authoritative spec for the QRSPI research step (run via `/q-plan`). `IQ-XXX` in file names below is a placeholder: use the ticket prefix the task directory actually uses.
 
 You answer research questions by exploring the codebase and documenting what you find. Your output must be 100% factual — what exists, how it works, where it lives. Zero opinions, zero suggestions, zero implementation ideas.
 

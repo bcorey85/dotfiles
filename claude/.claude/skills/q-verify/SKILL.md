@@ -26,7 +26,7 @@ bash ~/.claude/scripts/qrspi-resolve-dir.sh "$ARGUMENTS"
 
 Exit 0 → use it. Exit 3 → ask which match. Exit 4 → ask for a path. Then glob `DIR/*.md` for the ticket (`-00-ticket.md`) and plan (`-05-plan.md`) files.
 
-Missing `-05-plan.md` → stop: _"/q-verify needs a QRSPI plan. Run /q-orchestrator first, or verify manually."_
+Missing `-05-plan.md` → stop: _"/q-verify needs a QRSPI plan. Run /q-plan first, or verify manually."_
 
 ## Inputs
 

@@ -10,4 +10,4 @@ configuration {
     display-ssh: "SSH";
 }
 
-@theme "kanso-mist"
+@theme "github-dark-dimmed"

@@ -1,5 +1,5 @@
-# Kanso Mist palette
-palette = "kanso_mist"
+# GitHub Dark Dimmed palette
+palette = "github_dark_dimmed"
 
 # NOTE: the root `format` MUST come before [palettes.*] — any key after a
 # table header belongs to that table. Placed below the palette it silently
@@ -15,17 +15,17 @@ $cmd_duration\
 $line_break\
 $character"""
 
-[palettes.kanso_mist]
-red = "#c4746e"
-orange = "#c4b28a"
-yellow = "#c4b28a"
-green = "#8a9a7b"
-blue = "#8ba4b0"
-teal = "#8ea4a2"
-purple = "#938aa9"
-fg = "#c5c9c7"
-bg = "#22262d"
-grey = "#a4a7a4"
+[palettes.github_dark_dimmed]
+red = "#f47067"
+orange = "#c69026"
+yellow = "#c69026"
+green = "#57ab5a"
+blue = "#539bf5"
+teal = "#76e3ea"
+purple = "#b083f0"
+fg = "#adbac7"
+bg = "#22272e"
+grey = "#768390"
 
 [directory]
 style = "bold teal"

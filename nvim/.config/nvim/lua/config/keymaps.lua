@@ -277,7 +277,7 @@ vim.keymap.set("n", "<leader>Tl", "<cmd>tablast<cr>", { desc = "Last Tab" })
 -- the shared `theme-mode` script (single source of truth: it writes
 -- ~/.cache/theme-mode and re-sources tmux), then applies the new mode here
 -- immediately rather than waiting on theme-sync's ~1s poll. The ColorScheme
--- autocmd in plugins/theme.lua re-applies markview heading colours after.
+-- autocmd in plugins/github-theme.lua re-applies markview heading colours after.
 vim.keymap.set("n", "<leader>ut", function()
   vim.system({ vim.fn.expand("~/.local/bin/theme-mode"), "toggle" }, {}, vim.schedule_wrap(function()
     require("config.theme-sync").apply_from_file(true)

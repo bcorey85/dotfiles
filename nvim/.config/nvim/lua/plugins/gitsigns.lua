@@ -77,15 +77,11 @@ return {
       require("gitsigns").preview_hunk()
     end, "Preview hunk (float)")
 
-    -- <leader>gd ("git diff"): a REAL two-buffer diff split (working tree vs
-    -- index) via :Gitsigns diffthis. Unlike the `=` inline overlay — whose
-    -- removed lines are virtual lines the cursor can't enter, so j/k skip the
-    -- whole block — both sides here are real buffers: j/k step line-by-line and
-    -- ]c/[c, dp/do work. Use `=` to read a change in context; use this when you
-    -- need to navigate or operate on the old/new lines. :q closes the split.
-    map("<leader>gd", function()
-      require("gitsigns").diffthis()
-    end, "Diff this (real split, navigable)")
+    -- <leader>gd is deliberately NOT bound here anymore: it opens the
+    -- codediff review explorer (plugins/codediff.lua), which superseded
+    -- gitsigns' diffthis split as the "show me the diff" surface. diffthis
+    -- remains reachable via :Gitsigns diffthis if the two-real-buffers
+    -- behavior (dp/do) is ever needed.
 
     -- Toggle the persistent current-line blame virtual text. neogit's
     -- `B` BranchPopup (open via <leader>gg) covers branch ops; <leader>gB is the

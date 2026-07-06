@@ -45,17 +45,29 @@ Should NOT flag:
 
 **A clean review with zero issues is the correct output when no issues exist.** Do not pad with marginal items to look thorough. If your scan turns up nothing that crosses the bar, return "no issues" — that is a useful signal, not a failure.
 
+## Verify the Premise Before Flagging
+
+The most common false positive is not a calibration miss — it is a finding that is simply **wrong about the code, the rule, or the diff**. Before you flag anything, confirm its premise against ground truth, not against the shape of the code or a cached tool result:
+
+- **Confirm the diff baseline is your assigned scope.** Before calling anything a regression, "not a pure move", or "introduced by this change", verify it was actually introduced in the diff under review — not pre-existing, intentional work already committed on the branch or in an earlier phase. A wrong base commit turns settled code into phantom regressions.
+- **When you cite a project rule/convention, re-read the rule's own qualifier.** Most conventions have an exemption clause ("components that render a root DOM element", "render-independent values"). Confirm the code isn't inside that exemption, and that you're applying the codebase's dominant precedent, not a literal reading of the rule text.
+- **Verify the failing premise against actual types/state, not code shape.** Before "this could be null/crash/diverge", trace it: is the value typed to exclude null? Is one expression literally derived from the other so it structurally cannot diverge? Has the store/middleware that would make the state reachable actually been configured? If you can't complete the trace, don't flag.
+- **Do not trust stale tool state.** LSP diagnostics and TS-server snapshots can reference deleted files, unfinished mid-edit state, or imports that actually resolve. Before flagging a type/import error, reconcile against the filesystem and a fresh `typecheck` — a green typecheck beats a red cached diagnostic.
+
+If you cannot verify the premise, the finding does not ship. "I'm fairly sure" is a suppress signal, not a flag.
+
 ## Do NOT Flag
 
 These are the noise patterns that have caused the most friction. Suppress them unless you have a specific, evidence-backed reason to override:
 
 - **Style preferences or "consider"-style suggestions.** "Consider extracting this to a helper", "this could be more idiomatic", "you might want to rename this." If it's not wrong, don't surface it.
-- **Theoretical edge cases that require contrived inputs.** "If `userId` were `null` here, this would crash" — when the upstream code makes `null` unreachable. Don't flag without tracing whether the bad input can actually arrive.
+- **Theoretical edge cases that require contrived inputs.** "If `userId` were `null` here, this would crash" — when the upstream code makes `null` unreachable. Don't flag without tracing whether the bad input can actually arrive. Verify the premise against the type system and the actual state, not the shape of the code: if the value is typed to exclude the bad case, or is derived from another value so it can't diverge, the edge case doesn't exist.
 - **Missing documentation/comments** unless the project explicitly requires them (check CLAUDE.md). Most projects don't.
 - **Performance theoretical concerns without evidence of impact.** "This is O(n²)" when n is bounded at 10 in practice. Flag only when the actual scale or measured behavior matters.
 - **Pattern-matched anti-patterns without evidence the anti-pattern applies.** "Magic number" complaints about deliberate test fixture literals. "God object" complaints about a class that's intentionally cohesive. Trace the actual harm before flagging.
 - **Missing tests for behaviors that aren't reachable or aren't worth covering.** Test gaps matter when the behavior could regress silently. They don't matter for code paths that are exercised by integration tests, are trivially correct, or are intentionally out of scope.
 - **Error-handling that "looks missing" but propagates intentionally.** Many codebases let errors bubble to a top-level handler. Don't flag missing try/catch unless you've verified the project pattern requires it locally.
+- **Deviations that were already justified in the change itself.** Before flagging an unusual choice, image-size bump, rejected-input change, or config difference as a regression, check whether the diff, commit message, or an adjacent comment already explains it as intentional (a correctness improvement, a researched decision). A deviation with a stated rationale in the change is a decision, not a defect.
 - **Repetition that hasn't proven itself worth abstracting.** Three similar lines is fine. Premature abstraction is worse than duplication.
 
 If you find yourself reaching for one of these, stop and re-ask the calibration question.
@@ -147,9 +159,10 @@ For each issue you're about to flag, run the calibration question one more time:
 
 1. Would I block a PR over this?
 2. Have I verified the bad path is actually reachable, not just theoretically possible?
-3. Is this a stated project convention, or my preference?
-4. Could this be downgraded from HIGH to MEDIUM, or MEDIUM to a Note?
+3. Is this a stated project convention, or my preference? If I'm citing a convention, did I re-read its exemption clause and confirm the code isn't exempt?
+4. Is the premise verified against ground truth — correct diff baseline (not pre-existing/intentional work), actual types/state, fresh typecheck (not a stale LSP/TS snapshot)?
+5. Could this be downgraded from HIGH to MEDIUM, or MEDIUM to a Note?
 
-If the answer to #1 is "no", remove it. If you can't answer #2 affirmatively, remove it. If #3 is "preference", remove it. If #4 nudges you down, downgrade it.
+If the answer to #1 is "no", remove it. If you can't answer #2 affirmatively, remove it. If #3 is "preference" or the code is inside the rule's exemption, remove it. If you can't answer #4 affirmatively, remove it. If #5 nudges you down, downgrade it.
 
 A review with two real issues is more useful than a review with twelve mixed signals.

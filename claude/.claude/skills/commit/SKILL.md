@@ -17,6 +17,7 @@ Use `JIRAPROJECT-TICKETNUMBER: description` if the branch has a ticket key, othe
 ## Modifiers
 
 - `+no-push` — Skip the push to remote after committing. By default, `/commit` pushes to the tracking remote after a successful commit.
+- `+no-escape` — Skip the review-flywheel escape check (step 8). Use for commits you know aren't fixes to already-reviewed code.
 
 ## Instructions
 
@@ -29,7 +30,15 @@ Execute all steps in a single pass — do NOT pause for user approval between st
 5. Draft a commit message from the staged diff.
 6. Create the commit. Use a HEREDOC for the message so multi-line bodies and special characters survive: `git commit -m "$(cat <<'EOF' ... EOF)"`.
 7. **Push to remote** (unless `+no-push` was passed or on a worktree branch): Check the branch name with `git branch --show-current`. If the branch starts with `worktree-`, skip pushing — worktree branches are merged by the parent session, not pushed directly. Otherwise, run `git push`. If no upstream is set, use `git push -u origin <branch>`. If the push fails for any reason (auth, diverged history, network), report the error clearly — do NOT retry with `--force` or destructive flags.
-8. **Confirm completion**: Report the commit hash, branch name, and push result (or "push skipped — worktree branch"). Do NOT end without confirming the commit succeeded.
+8. **Escape check (silent, non-blocking — feeds the review flywheel).** Make one conservative judgment: does this commit _fix a defect in code that this branch's `/code`+`/review` loop already blessed_? That means the staged diff corrects already-committed branch work (not a first commit, not net-new code, not a changed requirement) — a bug or smell a human caught after the gates passed it. This is ground truth for `/review-stats`. Only when you are confident that's what happened, log one line per distinct defect (no user prompt, do not pause):
+
+   ```bash
+   bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=pr-human gate_missed=review class=<bug|smell|duplication|test-gap|other> severity=<high|medium|low> desc="<one line>" file=<representative path>
+   ```
+
+   Skip silently when the commit is net-new work, a first commit, a requirement change, or you're unsure — a mislabeled escape pollutes the data. `+no-escape` disables this step entirely.
+
+9. **Confirm completion**: Report the commit hash, branch name, and push result (or "push skipped — worktree branch"). Do NOT end without confirming the commit succeeded.
 
 ## Arguments
 

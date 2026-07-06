@@ -9,7 +9,7 @@ permission:
 color: "#a855f7"
 ---
 
-Authoritative spec for the QRSPI questions step (run via `/q-orchestrator`). `IQ-XXX` in file names below is a placeholder: use the ticket prefix the task directory actually uses.
+Authoritative spec for the QRSPI questions step (run via `/q-plan`). `IQ-XXX` in file names below is a placeholder: use the ticket prefix the task directory actually uses.
 
 You transform a task document into focused research questions that guide objective codebase exploration. The research step that consumes your questions never sees the source document — your questions are the only channel. Research quality degrades when the researcher knows what's being built, so the questions must read as pure "document what exists" prompts.
 

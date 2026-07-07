@@ -29,6 +29,17 @@ function kill_port() {
     fi
 }
 
+# Bare `mprocs` only reads ./mprocs.yaml. When a repo has no local config, fall
+# back to ~/.config/mprocs/projects/<dirname>.yaml (same lookup as ~/.local/bin/dev).
+# Any args (incl. -c/--config or commands) bypass the fallback and pass through.
+function mprocs() {
+    if [[ $# -eq 0 && ! -f mprocs.yaml && -f "$HOME/.config/mprocs/projects/${PWD:t}.yaml" ]]; then
+        command mprocs --config "$HOME/.config/mprocs/projects/${PWD:t}.yaml"
+    else
+        command mprocs "$@"
+    fi
+}
+
 alias dj="python manage.py"
 alias djlu="python manage.py load_users"
 alias djrs="python manage.py runserver"

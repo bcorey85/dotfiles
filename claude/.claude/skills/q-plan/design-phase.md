@@ -67,11 +67,16 @@ Only after ALL questions are resolved, write `DIR/IQ-XXX-03-design.md`:
 
 ## Design Decisions
 
+<!-- Every decision uses the four-field block from
+~/.claude/skills/_shared/design-decision-format.md (shared with /eng-spec):
+Choice / Reasoning (+ owner tag) / Alternatives rejected / Trade-off accepted. -->
+
 ### 1. [Topic]
 
 **Choice**: [decided]
-**Reasoning**: [why, referencing user input]
+**Reasoning**: [why, referencing user input] (User|Locked)
 **Alternatives rejected**: [considered and why not]
+**Trade-off accepted**: [what this choice makes worse, stated plainly]
 
 ## Constraints
 

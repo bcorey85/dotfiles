@@ -63,10 +63,11 @@ If uncertain, run the architect. A 2-minute architect pass that confirms "the ap
    > Explore only — do NOT produce an implementation plan yet. Return an **exploration brief**:
    >
    > 1. **Current state** — what exists today, with `file:line` refs
-   > 2. **Patterns** — to follow and to avoid, with refs
-   > 3. **Constraints** — technical and convention constraints you found
-   > 4. **Decision points** — every place where two or more viable approaches exist: each with options, pros/cons, and your recommendation
-   > 5. **Open questions** — ambiguities in the requirements only the user can resolve
+   > 2. **Invariant survey (do this BEFORE thinking about the feature)** — inventory the standing invariants of every surface the change will touch, stated independently of what the feature wants: identity/uniqueness construction, persistence formats and replay paths, ordering guarantees, authority/permission enforcement points (including paths that BYPASS the usual boundary — schedulers, hooks, headless execution), and mode flags that change how tokens/data are classified. Each with `file:line`. The goal-shaped reading you'll do next anchors on the feature's mechanics; this survey is your one pass at the surface's own rules.
+   > 3. **Patterns** — to follow and to avoid, with refs
+   > 4. **Constraints** — technical and convention constraints you found
+   > 5. **Decision points** — every place where two or more viable approaches exist: each with options, pros/cons, and your recommendation
+   > 6. **Open questions** — ambiguities in the requirements only the user can resolve
    >
    > Exception: if the task genuinely has NO design decisions (exactly one reasonable approach), say so explicitly and return the full plan in your Output Format instead.
 
@@ -87,6 +88,16 @@ If uncertain, run the architect. A 2-minute architect pass that confirms "the ap
 
 15. **Synthesize the finalized plan(s)** — key decisions (and who made them), tradeoffs accepted, anything deferred.
 
+15a. **Spec review before presenting** (mirrors q-plan's phase reviews; same reviewer, same log). Draft the full spec (template below) to `docs/eng-specs/.spec-draft.md`, then dispatch `qrspi-review` (omit `model`) with the draft path and this checklist:
+
+    - Every `file:line` reference resolves and says what the spec claims.
+    - Every decision block has all four fields (Choice / Reasoning with owner tag / Alternatives rejected / Trade-off accepted).
+    - `## External Contracts` is present and either names each contract + invariant + breakage, or states "None" explicitly.
+    - **Discovery check (completeness, not presence)**: independently skim/grep the files the spec touches for candidate invariants — identity construction, enforcement points, persistence/replay contracts, non-HTTP execution paths. Every candidate found must appear in External Contracts or be explicitly ruled out in the spec. A diligent-but-incomplete section is the known failure mode (eval rounds 2–3).
+    - Implementation phases are vertical, every Phase Status line has a `(risk: ...)` tag, and Success Criteria use the project's real verification commands.
+
+    Fix what it flags (max 1 revision round), log the verdict (`REVIEW_METRICS_FILE="$HOME/.claude/qrspi-review.jsonl" bash ~/.claude/skills/review/log-review-metrics key=<ticket-or-slug> phase=spec verdict=<PASS|ESCALATED> rounds=<n> issues=<m>`), then present the corrected version. Delete the draft after Phase 6 resolves (it becomes the saved file on "yes", is removed on "no").
+
 ### Phase 6: User Choice
 
 16. **HARD STOP — DO NOT WRITE ANY FILES OR DISPATCH ANY CODER AGENTS UNTIL THE USER ANSWERS THESE QUESTIONS.**
@@ -102,7 +113,8 @@ If uncertain, run the architect. A 2-minute architect pass that confirms "the ap
     - No → Plan stays in the conversation only
 
     **Implement now?**
-    - Yes → Dispatch coder agent(s) based on scope:
+    - Yes, and the Implementation Plan has **more than one phase** → the spec must be saved to disk (save it even if the user answered "no" above — explain why), then invoke `/code` via the Skill tool with the spec path. `/code`'s phase-boundary machinery (auto-advance vs sign-off, drift gates) keys off the plan's Phase Status risk tags — a raw coder dispatch would bypass every phase gate the plan just defined.
+    - Yes, single-phase → Dispatch coder agent(s) based on scope:
       - Backend only: launch `backend-coder` with the architect's plan
       - Frontend only: launch `frontend-coder` with the architect's plan
       - Fullstack: launch BOTH `backend-coder` and `frontend-coder` in parallel — frontend-coder also gets the API contract
@@ -118,6 +130,10 @@ If uncertain, run the architect. A 2-minute architect pass that confirms "the ap
 
 ## Template (for saving to disk)
 
+The spec has two layers in ONE file: a judgment layer (what a human reads at
+the gate) and an implementation layer (what `/code` executes, in the shared
+plan format so its phase gates work identically to `/q-plan` output).
+
 ```markdown
 # Title
 
@@ -131,42 +147,36 @@ One paragraph on what this accomplishes.
 
 ## Decisions
 
-Key decisions made during planning, with rationale.
+<!-- Every decision uses the four-field block from
+~/.claude/skills/_shared/design-decision-format.md:
+Choice / Reasoning (+ owner: User|Locked) / Alternatives rejected /
+Trade-off accepted. Never a table with one-line rationales. -->
+
+## External Contracts
+
+<!-- Mandatory (see design-decision-format.md): every provider/API/platform
+contract touched + the invariant it imposes + what breaks if violated.
+Internal invariants with blast radius (identity construction, hidden
+couplings) belong here too. "None" must be stated explicitly. -->
 
 ## Approach
 
 - Breakdown by area (backend, frontend, etc.)
 - Specific patterns to follow
-
-## File Changes
-
-| File | Action               | Description  |
-| ---- | -------------------- | ------------ |
-| path | Create/Modify/Delete | What and why |
-
-## Sequence
-
-1. Step-by-step implementation order with dependencies noted
+- API contract (fullstack: fixed here, frontend designs against it)
 
 ## Dependencies
 
 - External packages to install
 - Internal modules to build on
 
-## Verification
+## Implementation Plan
 
-Write verification items as TESTABLE assertions, not just descriptions. Each item should specify HOW to verify, not just WHAT to verify.
-
-- [ ] **Test-verified**: [item] — "run tests, confirm [specific test name/pattern] passes"
-- [ ] **Build-verified**: [item] — "build succeeds with zero errors"
-- [ ] **Code-verified**: [item] — "grep for [pattern] in [file], confirm [count/shape]" (weakest — flag when this is the only verification)
-- [ ] **Manual-verified**: [item] — "hit [endpoint], confirm [expected response]"
-
-Prefer test-verified items. If an AC item has no existing test, note whether one should be written.
-
-If the feature has behavioral acceptance criteria, prefer scaffolding them as todo-marked tests up front (the project runner's todo/pending primitive — `it.todo` in Jest/Vitest, a registered pytest marker, etc.; domain-language names, no ticket keys in code) and add "remaining stub count is zero" as a Test-verified item. Stubs authored before implementation cannot pin bugs.
-
-Integration checks: route ordering, validator edge cases, no-op handling, caller compatibility.
+<!-- From here down, follow ~/.claude/skills/_shared/plan-format.md IN FULL:
+## Phase Status with (risk: low|high) tags, vertical phases, per-phase
+Changes Required + Success Criteria (Automated/Manual Verification with the
+project's real commands), Acceptance Stubs when the ticket has behavioral
+criteria. This is what /code's phase-boundary gates and /q-verify consume. -->
 ```
 
 ## Arguments

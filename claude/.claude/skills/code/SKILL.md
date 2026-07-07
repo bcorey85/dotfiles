@@ -57,6 +57,8 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 5. **After coder(s) complete**, summarize for the user AND build a handoff block for downstream review.
 
+   **PLAN-IMPACT gate (before anything else in this step)**: scan the coder report for a `PLAN-IMPACT:` block (coder-core requires `PLAN-IMPACT: yes` as the report's last line when one exists). If present, present it via **AskUserQuestion** — assumed → found → what changes, options `Adopt plan change` / `Keep plan as written` / `Discuss` — BEFORE summarizing or auto-dispatching `/review`. A plan-impact finding folded into a prose summary is a protocol violation: the modal (and its attention-hook notification) is what makes the finding unskippable. Record the answer in the plan's `## Plan Deviations` section (create if absent) so `/q-verify` reconciles against the amended plan.
+
    User summary:
    - What was implemented
    - Any issues flagged
@@ -71,6 +73,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
          change: <one line: what changed and why>
      tests-run: <exact command + exit code, e.g. "npm run validate → exit 0"; or "none">
      flagged: <issues the coder explicitly flagged, or "none">
+     plan_impact: <verbatim PLAN-IMPACT block + the user's decision, or "none">
      iter: 1
    ```
 

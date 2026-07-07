@@ -75,6 +75,26 @@ Todo-marked tests scaffolded from the ticket (see the plan's `Acceptance Stubs` 
 
 Your agent file may add scope-specific items to this list.
 
+## PLAN-IMPACT findings (structured, never prose)
+
+Distinct from ordinary flags: a discovery that **invalidates a plan/design
+decision** — the plan's assumption is false in the code, the change touches an
+external contract or invariant the plan never named, the real scope crosses a
+phase's risk tier, or a security surface appears that the plan doesn't gate.
+You cannot ask the user directly (you're a subagent), so make the finding
+machine-routable: STOP work on the affected part and lead your report with:
+
+```
+PLAN-IMPACT:
+  assumed: <what the plan/design says>
+  found: <what the code actually does — file:line>
+  changes: <what in the plan this invalidates and the options you see>
+```
+
+Never bury a plan-impact inside a summary paragraph — the orchestrator is
+REQUIRED to convert this block into a blocking user question, and it can only
+do that if the block is present verbatim.
+
 ## Pre-Submission Checklist (common to all scopes)
 
 - **Second-order effects**: if a change alters a signature, return type, or behavioral contract, update every caller in the same pass (controllers, other services, tests). If you can't find them all, say so.
@@ -86,3 +106,5 @@ Second-to-last line — the second-draft receipt, always present for non-trivial
 `SECOND DRAFT: <what the sweep consolidated/moved/deleted — one line>` or `SECOND DRAFT: clean (nothing found)`. A report without this line means the sweep was skipped, and the orchestrator should treat the work as unfinished.
 
 End with `REVIEW: recommended — <changed files>` for any non-trivial change, or `REVIEW: skip (trivial)` for a typo / single-line / rename / comment-only edit. This is the orchestrator's cue to run `/review` before `/commit` — a direct `Agent` dispatch does not auto-review, so make the cue impossible to miss.
+
+If a `PLAN-IMPACT:` block exists anywhere in your report, repeat `PLAN-IMPACT: yes` as the very last line so the orchestrator cannot miss it in a long report.

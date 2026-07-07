@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# fetch-pr-comments — fetch + dedup PR review comments for /pr-comments
+# fetch-pr-comments — fetch + dedup PR review comments for /pr-comments and /peer-review
 #
-# Detects the current branch's PR, fetches inline review comments and top-level
-# review bodies, then dedups deterministically:
+# Usage: fetch-pr-comments [PR_NUMBER]
+# With no argument, detects the current branch's PR (original behavior).
+# With a PR number, targets that PR — used by /peer-review for others' PRs.
+# Fetches inline review comments and top-level review bodies, then dedups
+# deterministically:
 #   - replies (in_reply_to_id != null) are dropped
 #   - inline comments are grouped by (path, line, author); only the most recent
 #     per group is kept (bots re-review on every push)
@@ -15,7 +18,7 @@ set -euo pipefail
 command -v gh >/dev/null || { echo "gh is required" >&2; exit 1; }
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 
-pr_json=$(gh pr view --json number,url 2>/dev/null) || { echo "no PR for the current branch" >&2; exit 1; }
+pr_json=$(gh pr view ${1:+"$1"} --json number,url 2>/dev/null) || { echo "no PR ${1:+numbered $1 }for ${1:+this repo}${1:-the current branch}" >&2; exit 1; }
 number=$(jq -r '.number' <<< "$pr_json")
 url=$(jq -r '.url' <<< "$pr_json")
 repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')

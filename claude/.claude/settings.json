@@ -138,7 +138,11 @@
       "Bash(open .)",
       "Bash(open -R *)"
     ],
-    "deny": ["Bash(sudo *)", "Bash(rm -rf /)", "Bash(chmod 777 *)"],
+    "deny": [
+      "Bash(sudo *)",
+      "Bash(rm -rf /)",
+      "Bash(chmod 777 *)"
+    ],
     "defaultMode": "auto"
   },
   "model": "opus",

@@ -42,6 +42,7 @@
 The harness ships built-ins that overlap the custom toolkit. The boundary:
 
 - **Inner-loop review** → custom `/review` (flywheel metrics, handoffs, convergence loop). Built-in `/code-review` is NOT part of the loop; `/code-review ultra` is an optional pre-PR deep pass on large branches only.
+- **Peer review of others' PRs** → custom `/peer-review` (orientation first, report-only tiered findings, drill-down). Never `/review` on code we don't own — its fix loop and metrics assume ownership.
 - **Security audit** → built-in `/security-review`. `/audit-code` owns the other categories (bugs, DRY, a11y, findings ledger).
 - **Cleanup** → the coder's second-draft sweep + `/refactor`. Don't run built-in `/simplify` on loop output — it duplicates the sweep and skips escape logging.
 - **Verification** → built-in `/verify` drives the app (behavioral); `/q-verify` reconciles plan↔diff (completeness). Different audits; never substitute one for the other.

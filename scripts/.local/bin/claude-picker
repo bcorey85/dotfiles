@@ -1,6 +1,7 @@
 #!/bin/bash
-# Claude session picker (bound to C-/ and C-_ in tmux), replacing the plugin's
-# list.sh -> picker.sh flow (tmux-claude-session-manager).
+# Claude session picker (physical Ctrl+comma, seen by tmux as M-, — Ghostty maps
+# ctrl+, -> Meta+comma), replacing the plugin's list.sh -> picker.sh flow
+# (tmux-claude-session-manager).
 #
 # Why not the plugin's own picker: on enter it attaches the chosen session
 # INSIDE the picker popup, so the session inherits the picker's size forever —
@@ -10,8 +11,9 @@
 # at the agent size, on the outer client.
 #
 # Rows/state icons still come from the plugin (picker.sh --list), so upstream
-# stays the source of truth for session state. The ctrl-/ toggle-close bind
-# lives in our fzf call now — the plugin clone no longer needs a local patch.
+# stays the source of truth for session state. The alt-, toggle-close bind (the
+# same physical Ctrl+comma, via Ghostty's Meta remap — fzf can bind alt-, but not
+# ctrl-,) lives in our fzf call now — the plugin clone needs no local patch.
 #
 # Usage: claude-picker <client_name> <session_name>   tmux binding entry point
 #        claude-picker --pick <host_client>           internal: fzf inside the popup
@@ -44,7 +46,7 @@ case "${1:-}" in
     sel=$("$PLUGIN/picker.sh" --list | fzf --ansi --delimiter='\t' --with-nth=3,4,5 \
         --reverse --cycle --header='Claude sessions · enter: jump · ctrl-x: kill' \
         --preview='tmux capture-pane -ept {2}' --preview-window='right,62%,wrap' \
-        --bind='ctrl-/:abort' \
+        --bind='alt-,:abort' \
         --bind="ctrl-x:execute-silent(tmux kill-session -t {2})+reload($PLUGIN/picker.sh --list)")
     [ -z "$sel" ] && exit 0
     target=$(printf '%s' "$sel" | cut -f2)

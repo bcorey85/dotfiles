@@ -21,7 +21,7 @@ Dispatch `qrspi-questions` (omit `model`) with ONLY: the ticket path and the tas
 
 Dispatch `qrspi-leak-check` (omit `model`) with ONLY the questions file path. It returns `PASS` or a flagged list with intent-free rewrites.
 
-If flagged: auto-apply without asking — re-dispatch `qrspi-questions` with the flagged items + rewrites (still no ticket content in your prompt beyond the path), then leak-check again. Max 2 rounds. If still flagged after 2 rounds, proceed to research anyway and note the residual flags to the user (informational — not a stop). No human gate here: questions → leak-check → research flows straight through. Log the verdict (`phase=questions`) per `${CLAUDE_SKILL_DIR}/review-loop.md`.
+If flagged: auto-apply without asking — re-dispatch `qrspi-questions` with the flagged items + rewrites (still no ticket content in your prompt beyond the path), then leak-check again. Max 2 rounds. If still flagged after 2 rounds, proceed to research anyway and note the residual flags to the user (informational — not a stop). No human gate here: questions → leak-check → research flows straight through. Log the verdict (`phase=leak-check`, `issues` = flagged questions, `rounds` = rewrite rounds) per `${CLAUDE_SKILL_DIR}/review-loop.md` — separate from the questions review's own `phase=questions` entry.
 
 ## Phase R — Research (subagent)
 

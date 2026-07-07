@@ -24,11 +24,15 @@ After every review verdict — **including the leak-check** — append one line 
 
 ```
 REVIEW_METRICS_FILE="$HOME/.claude/qrspi-review.jsonl" bash ~/.claude/skills/review/log-review-metrics \
-  key=<TICKET> phase=<questions|research|design|plan> verdict=<PASS|ESCALATED> rounds=<n> issues=<m>
+  key=<TICKET> phase=<questions|leak-check|research|design|plan> verdict=<PASS|ESCALATED> rounds=<n> issues=<m>
 ```
 
 - `rounds` = revision rounds taken (`0` = clean first pass).
-- `issues` = issue count in the FINAL review (`0` on PASS).
+- `issues` = issue count the FIRST review returned — what the gate caught
+  (`0` = clean first pass). This is the per-gate value signal; do not log
+  the final-round count, which is 0 on every PASS by construction.
+- Leak-check: log `phase=leak-check` with `issues` = questions flagged as
+  materially intent-leaking, `rounds` = rewrite rounds taken.
 - Reuses the `/review` metrics script but writes a SEPARATE file, so `/review-stats` (code-finding severities) stays uncontaminated. Inspect with `jq . ~/.claude/qrspi-review.jsonl`.
 
 ## Per-phase checklists

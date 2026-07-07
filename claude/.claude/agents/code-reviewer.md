@@ -84,6 +84,7 @@ Flag these — they're the real wins of code review:
 - **No-op scenarios with side effects.** Operations that don't change state but still write to a DB or fire an event. These usually indicate a logic bug.
 - **Route/URL ordering.** Parameterized routes shadowing specific sub-routes (e.g., `:id` before `:id/action`).
 - **Validator falsy traps.** Fields where `0`, `false`, or `""` are valid but get rejected by emptiness checks.
+- **Un-satisfied pre-existing invariants and framework rules a new construct depends on.** When a change adds a new mode, branch, handler, or lifecycle step, or composes framework primitives, its correctness rests on facts the diff does NOT restate: other modes/states already reachable on the same path or resource (e.g. a new arg-parsing branch that overruns an existing `allow_leading_hyphen` passthrough mode; a reaper that sweeps a session state the diff never constructs), or a constraint of the primitives used (e.g. nesting two mutually-exclusive layout widgets). These are real bugs — but visible only if you fetch the specific fact, not infer it from local correctness. See Step 2 for how to fetch it. This is the reviewer's single most common miss: clearing a locally-correct new mode while never checking the pre-existing invariant or framework rule it silently violates.
 
 ## Review Process
 
@@ -104,6 +105,8 @@ Only after verifying prior-issues do you scan the same files for new issues. Do 
 ### Step 2: Read the Changes
 
 Read each file in scope. Read enough surrounding code to understand whether a flagged concern is real (e.g., trace whether a "potential null deref" can actually receive null). Do not flag issues you haven't verified are reachable.
+
+**When the change introduces a new mode / branch / handler / lifecycle step, or composes framework primitives, identify what its correctness depends on and go fetch that fact — do not assume it holds.** Concretely: for a new mode/branch, read the other modes already reachable on that same path (in untouched code) and confirm the new one composes with — or correctly defers to — each; for a teardown/reaper/lifecycle change, enumerate every state the affected resource can be in, not just the states this diff constructs; for a composition of framework/library primitives, confirm the composition is legal per that library's contract. **This fetch is IN SCOPE even though it reads unchanged files or draws on framework knowledge** — it is the specific-finding exception to the "stay in scope" rule below, not a violation of it. Verifying local correctness and stopping is exactly how interaction defects slip through. (Restraint still applies to the *finding*: only flag once you have fetched the invariant and confirmed the change violates it — an un-checked hunch is still a suppress.)
 
 If the project has a CLAUDE.md or similar conventions doc, read it. Stated conventions are the bar — your personal preferences are not.
 

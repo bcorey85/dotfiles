@@ -26,6 +26,15 @@ technical demerits; a rejection that names no failure mode is unsupported]
   correct choice justified only by adjacent reasons (portability, reuse,
   reboot-survival) leaves the real constraint unstated, and the next reader
   "simplifies" back to the rejected option.
+- **Credentials past user intent — never default this.** When a decision's
+  chosen behavior or accepted trade-off leaves credentials, secrets, or user
+  data alive past a user's explicit removal/revocation/disconnect intent,
+  the block must state that consequence in security terms ("after the user
+  asks to disconnect, X remains on disk / remains usable"), and the decision
+  must be marked as requiring explicit user sign-off — it may not be
+  resolved by a default or by accepting a recommended option. The security
+  framing is what the human at the gate needs to weigh retention against
+  hygiene; a scope-argument framing hides the stakes.
 - A decision with no real alternative is a constraint, not a decision —
   record it under Constraints instead.
 

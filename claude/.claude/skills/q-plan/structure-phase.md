@@ -56,8 +56,9 @@ If the implementing agent might get a phase wrong, expand it with specific types
 - Do NOT exceed ~2 pages — longer means phases are too detailed.
 - Do NOT re-debate design decisions — those are resolved.
 
-## Review before Plan (MANDATORY)
+## No separate review
 
-Structure has no human gate, so this review is its only quality check before it flows into Plan. After writing the outline, run the review loop (`${CLAUDE_SKILL_DIR}/review-loop.md`, **Structure** checklist; inputs: structure + design docs). Fix what it flags (max 2 rounds); if it still fails, STOP and surface the issues to the user — an unresolvable structure problem is the one thing worth interrupting the auto-flow for. Log the verdict (`phase=structure`).
-
-When the review passes, continue directly to Phase P (no `/clear`).
+Structure flows straight into Phase P (no `/clear`, no review dispatch). Its
+quality criteria — vertical phases, independently verifiable slices, a
+concrete "what becomes true" per phase — are enforced at the Plan review,
+which receives this outline as an input.

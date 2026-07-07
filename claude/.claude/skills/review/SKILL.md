@@ -124,6 +124,7 @@ handoff:
       change: <one line: what changed and why>
   tests-run: <exact command + exit code, e.g. "npm run validate → exit 0"; or "none">
   flagged: <issues the upstream coder explicitly flagged, or "none">
+  plan_impact: <verbatim PLAN-IMPACT block + the user's decision, or "none">
   prior-issues:           # only present on fix → review
     - issue: <one line>
       status: fixed | skipped | partial
@@ -139,6 +140,24 @@ When present:
 - Treat the schema as a versioned interface — if a producer skill needs additional fields, add them here first and update both producers and consumers in the same change.
 
 When absent (manual `/review` invocation), fall back to git discovery in step 2.
+
+## Plan-impact findings (unskippable routing)
+
+A reviewer finding that **invalidates a plan/design decision** — not a code
+defect to fix, but evidence the plan's assumption is wrong (missed external
+contract/invariant, mis-tiered risk, security surface the plan doesn't gate) —
+is a `PLAN-IMPACT`, not a severity bucket. When the reviewer report contains
+one (or a coder handoff carried `plan_impact`):
+
+1. Do NOT fold it into the findings summary or triage it as a MEDIUM.
+2. Present it via **AskUserQuestion** before any further auto-dispatch
+   (`/fix`, next iteration, commit): state assumed → found → what changes,
+   with options `Adopt plan change` / `Keep plan as written` / `Discuss`.
+   (The AskUserQuestion hook makes this a desktop notification + tmux badge;
+   the modal blocks until answered — that is the point.)
+3. Record the answer in the plan's `## Plan Deviations` section (create it if
+   absent): date, finding, decision, owner. `/q-verify` reconciles against
+   the amended plan; `/q-finalize`'s ADR inherits the record.
 
 ## Arguments
 

@@ -7,6 +7,14 @@
 - Be concise. Reference code with `file_path:line_number`.
 - When a task spans >3 files or >1 service, propose a plan before writing code.
 
+## Output Discipline
+
+- Report by exception: never narrate what went as planned.
+- Summaries ≤ 10 lines. Tables > paragraphs. No preamble, no recap of the request.
+- One STATUS line per completed dispatch: `STATUS: <ok|blocked|plan-impact> — <one line>`.
+- Never restate file contents the user can open — give the path.
+- PLAN-IMPACT findings are the exception to brevity: those route through AskUserQuestion in full.
+
 ## Behavior
 
 - **MANDATORY: Never code directly. Always delegate to the `/code` subagents** (`backend-coder`, `frontend-coder`, `coder` for non-web repos, or `backend-architect` / `frontend-architect` first when design decisions are needed). The main agent's role is briefing, reviewing, and orchestration — not editing files. Exceptions: trivial single-line edits explicitly requested by the user (e.g., "change this variable name"), repository configuration files like `CLAUDE.md` itself, and repos whose project CLAUDE.md declares itself a **direct-edit repo** (dotfiles, config-only, personal scripts) — there, edit directly.

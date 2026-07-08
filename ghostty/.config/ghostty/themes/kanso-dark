@@ -1,0 +1,24 @@
+# kanso dark — webhooked/kanso.nvim "mist" variant, ANSI from the theme's
+# own terminal colors; white 7/15 = body fg per this repo's convention.
+palette = 0=#393b44
+palette = 1=#c4746e
+palette = 2=#8a9a7b
+palette = 3=#c4b28a
+palette = 4=#8ba4b0
+palette = 5=#a292a3
+palette = 6=#8ea4a2
+palette = 7=#c5c9c7
+palette = 8=#909398
+palette = 9=#e46876
+palette = 10=#87a987
+palette = 11=#e6c384
+palette = 12=#7fb4ca
+palette = 13=#938aa9
+palette = 14=#7aa89f
+palette = 15=#c5c9c7
+background = #22262d
+foreground = #c5c9c7
+cursor-color = #c5c9c7
+cursor-text = #22262d
+selection-background = #393b44
+selection-foreground = #c5c9c7

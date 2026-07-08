@@ -1,0 +1,36 @@
+#!/bin/bash
+# plan-ab-mine — mine GitHub for "regret pairs": a merged fix PR whose text
+# admits an earlier feature/refactor got the design wrong. Each hit is a
+# candidate ticket for a retrospective planning-lane A/B eval (see
+# ~/dev/plan-ab/.sealed/*/ANSWER-KEY.md for the harness pattern).
+#
+# usage: plan-ab-mine [since-date]   (default: Jan 1 of the current year —
+#        keep candidates after the eval models' training cutoff)
+#
+# Output: TSV  repo<TAB>PR#<TAB>merged<TAB>title  (deduped, sorted by repo).
+# Vet candidates by hand: repo size (small = cheap research), a linked
+# feature PR to rewind before, and BOTH halves merged post-cutoff.
+set -euo pipefail
+
+command -v gh >/dev/null || { echo "gh is required" >&2; exit 1; }
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
+
+since="${1:-$(date +%Y)-01-01}"
+
+queries=(
+  "regression introduced"
+  "didn't account for"
+  "introduced in the refactor"
+  "incorrectly assumed"
+  "original design did not"
+  "the original implementation"
+)
+
+for q in "${queries[@]}"; do
+  # NB: search's JSON fields differ from `gh pr view` — no mergedAt here;
+  # closedAt equals the merge date for --merged results.
+  gh search prs "$q" --merged --limit 20 \
+    --created ">${since}" \
+    --json repository,number,title,closedAt 2>/dev/null |
+    jq -r '.[] | [.repository.nameWithOwner, (.number|tostring), (.closedAt[0:10]), .title] | @tsv'
+done | sort -u -t$'\t' -k1,1 -k2,2n

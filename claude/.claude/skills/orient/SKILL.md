@@ -84,7 +84,7 @@ With `+ephemeral`, skip both writes.
 ## Boundaries
 
 - **Read-only. Never edit.** This rebuilds understanding; it does not change code.
-  (`+note` writes only under the vault — never in the repo.)
+  (The default vault persist writes only under the vault — never in the repo.)
 - This is _not_ `/review` (correctness/bugs).
   It answers one question: **how does this change relate to the code around it?**
 - Keep it tight. Refs over prose. The goal is to reload the user's mental map fast,

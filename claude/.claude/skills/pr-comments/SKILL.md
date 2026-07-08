@@ -1,6 +1,6 @@
 ---
 name: pr-comments
-description: Fetch all review comments on the current branch's PR (humans + bots), triage them, and optionally dispatch fixes
+description: Fetch all review comments on the current branch's PR (humans + bots), triage them, and optionally dispatch fixes. Use for "check the PR comments", "what did reviewers say", "address the review feedback on the PR".
 allowed-tools: [Bash, Read, Glob, Grep, Skill]
 ---
 

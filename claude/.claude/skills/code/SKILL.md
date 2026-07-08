@@ -1,7 +1,7 @@
 ---
 name: code
-description: Dispatch coder subagent(s) for implementation, then auto-run `/review` — auto-detects scope or accepts be/fe/fs modifier
-allowed-tools: [Agent, Read, Glob, Grep, Skill]
+description: Dispatch coder subagent(s) for implementation, then auto-run `/review` — auto-detects scope or accepts be/fe/fs modifier. Use for "implement/build/add X" when the task is well-defined or a plan file exists; features needing design decisions go to /eng-spec or /plan first.
+allowed-tools: [Agent, Bash, Read, Edit, Glob, Grep, AskUserQuestion, Skill]
 ---
 
 # Code
@@ -25,7 +25,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    - Do NOT dispatch all phases at once.
    - Identify the next un-executed phase by reading the plan's `## Phase Status` section: the first unchecked (`- [ ]`) entry is the phase to dispatch. This is the source of truth across `/clear` boundaries — do NOT scan git log or diff to figure out where you are. If the plan has no `## Phase Status` section (older plan format), fall back to `git status` + per-phase success criteria, but flag this to the user so they can backfill the section.
    - Dispatch the coder for THAT ONE PHASE ONLY. The coder must run the phase's "Automated Verification" gate (typically `npm run validate` or equivalent) before returning.
-   - After the coder completes and you summarize, auto-dispatch `/review` (step 5).
+   - After the coder completes and you summarize, auto-dispatch `/review` (step 6).
    - **Drift gate** — after `/review` converges, before marking the phase done: dispatch ONE read-only reconciliation agent (`subagent_type: "general-purpose"`, `model: "sonnet"`) with ONLY the plan path, the phase number, and the handoff file list. It verdicts each of the phase's `Success Criteria` items `done` / `partial` / `missing` against the actual diff (file:line evidence; changes nothing). If the plan has an `Acceptance Stubs` section, it also verifies stub-sentence survival: every stub sentence must still exist — as a todo or as a real test bearing that name. A reworded or deleted stub is tampering; report it as `missing`. This is the phase-scoped version of `/q-verify` — it catches plan drift while it is still phase-sized. Clean → proceed. Any `partial`/`missing` → do NOT mark the phase done; dispatch `/fix` once with the gaps as the issue list, then re-run the drift gate once. Still dirty → stop and hand the remaining gaps to the user.
    - **Behavioral verification (agent-executed)** — after the drift gate is clean: if the phase has `Manual Verification` items, dispatch ONE `general-purpose` agent (`model: "sonnet"`) with the plan path, the phase number, and the items. It executes every item it can drive from the terminal — curl the endpoint, run the CLI, execute the scenario command. For UI flows: **scripted Playwright, NEVER the Playwright MCP** (the MCP holds a live browser session with per-action tool calls and accessibility-tree payloads — too expensive; a script compresses the whole flow into one Bash call whose only context cost is what it prints). Form: write a throwaway `/tmp/verify-phase<N>.mjs` using the plain `playwright` library (launch → drive → print assertions → exit code), run it once, keep the printed output as evidence; `npx playwright screenshot <url> /tmp/<name>.png` for render checks; screenshots always to `/tmp`, never the repo. Browser items only when the project already has Playwright installed — never install browsers to verify; tag those items `human-only` instead. It edits the plan in place: `- [x] agent-verified: <item> — <evidence: command + observed result>`, or `- [ ] human-only: <item> — <why it can't be driven>`. It changes NO code, and it never checks an item without captured evidence — observed output, not asserted success. Human-only remainders accumulate for the end-of-feature review packet (`/q-verify`).
    - After peer review passes AND the drift gate is clean, mark the phase done in the plan: `Edit` the `## Phase Status` section to flip `- [ ] Phase N: ...` → `- [x] Phase N: ...`. This single Edit is the durable record of progress — it survives `/clear` and lets in-session re-entry detect the next phase.
@@ -64,7 +64,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    - Any issues flagged
    - Any follow-up items
 
-   Handoff block (passed as args to `/review` in step 5). Schema is defined in `review/SKILL.md` under "Handoff Block". Required fields:
+   Handoff block (passed as args to `/review` in step 6). Schema is defined in `review/SKILL.md` under "Handoff Block". Required fields:
 
    ```
    handoff:

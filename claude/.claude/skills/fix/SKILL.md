@@ -72,10 +72,13 @@ Dispatch parallel frontend-coder and backend-coder subagents to investigate and 
          status: fixed | skipped | partial
          file: <path>
      flagged: <new concerns from this fix pass, or "none">
+     plan_impact: <verbatim PLAN-IMPACT block from a coder report, or "none">
      iter: <N+1 — incremented from incoming iter>
    ```
 
    The `prior-issues` list scopes the verification reviewer to "did these fixes take?" first, before any new-issue scan. This is the main token saving — the reviewer no longer re-reviews untouched code.
+
+   **PLAN-IMPACT pass-through**: scan each coder report for a `PLAN-IMPACT:` block (coder-core requires `PLAN-IMPACT: yes` as the report's last line when one exists). Carry it into the handoff's `plan_impact` field verbatim — `/review` owns the unskippable AskUserQuestion routing for it. Never fold it into the prose summary.
 
 5. **Auto-dispatch peer review**: After summarizing the fixes, invoke the `/review` skill via the Skill tool with `skill: "review"` and `args` containing the handoff block from step 4 plus the iter value and any `+fast`/`+deep` modifier.
    - **Normal (loop) mode**: Tell the user "Auto-dispatching `/review` to verify the fixes before committing (iteration N+1 of 3)." Pass `iter=N+1`.

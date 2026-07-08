@@ -1,7 +1,19 @@
 ---
 name: eng-spec
 description: Spec a feature — architect exploration first, then design decisions resolved with you one at a time, then a finalized plan. Auto-detects scope (fe/be/fullstack). Optionally writes spec to disk and/or dispatches coders.
-allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion, Skill]
+allowed-tools:
+  [
+    Bash,
+    Read,
+    Write,
+    Edit,
+    Glob,
+    Grep,
+    Agent,
+    AskUserQuestion,
+    SendMessage,
+    Skill,
+  ]
 ---
 
 # Engineering Spec
@@ -58,12 +70,13 @@ If uncertain, run the architect. A 2-minute architect pass that confirms "the ap
 
 8. **Read existing codebase context** for the affected areas — key files, existing patterns, relevant `eng-arch/` docs. Include this as context when launching architect agents.
 
-9. **Launch architect agent(s)** based on scope (both in parallel for fullstack — exploration has no contract dependency). Omit `model` — their frontmatter pins Opus. The dispatch asks for an EXPLORATION brief, not a plan. Include this instruction verbatim:
+9. **Launch architect agent(s)** based on scope (both in parallel for fullstack — exploration has no contract dependency). Omit `model` — their frontmatter pins Opus. The dispatch asks for an EXPLORATION brief, not a plan. Read `~/.claude/skills/_shared/invariant-survey.md` (the canonical, version-tagged survey text) and include the instruction below verbatim, inserting that file's "Dispatch text" section in full as item 2:
 
    > Explore only — do NOT produce an implementation plan yet. Return an **exploration brief**:
    >
    > 1. **Current state** — what exists today, with `file:line` refs
-   > 2. **Invariant survey (do this BEFORE thinking about the feature)** — inventory the standing invariants of every surface the change will touch, stated independently of what the feature wants: identity/uniqueness construction, persistence formats and replay paths, ordering guarantees, authority/permission enforcement points (including paths that BYPASS the usual boundary — schedulers, hooks, headless execution), mode flags that change how tokens/data are classified, and lifecycle/liveness discriminators (for every entity the change will reclaim, expire, evict, revoke, or invalidate: what does "gone" mean for it, per the system that owns it?). These categories are examples, not the checklist — the misses live in the classes nobody enumerated. So also apply the generative rule: for each entity a destructive or irreversible action will target, enumerate that entity's FULL state machine (every state it can occupy, including dormant/suspended/resumable ones) and record what the action's trigger does in each state. When evaluating a candidate trigger signal, check it BOTH ways — states where it fails to fire (leak) and states where it fires but shouldn't (false destruction) — and say which cost is worse; a signal justified only by "fires reliably when needed" is half-analyzed. For liveness questions, "gone" is defined by the owning system's own registry/listing — an entity still listed or resumable there is ALIVE regardless of process death, terminal state, or lifecycle events having fired; and EVERY teardown path (eager/fast-path included) must satisfy the same gone-condition as the slow path, never a cheaper proxy signal. Emit one line per category above — an explicit "none found: <what was checked>" is a valid entry; a silently skipped category is not. Each with `file:line`. The goal-shaped reading you'll do next anchors on the feature's mechanics; this survey is your one pass at the surface's own rules.
+   > 2. <insert the "Dispatch text" section of `_shared/invariant-survey.md` here, verbatim — it begins "**Invariant survey (do this BEFORE thinking about the feature)** — inventory the standing invariants…">
+
    > 3. **Patterns** — to follow and to avoid, with refs
    > 4. **Constraints** — technical and convention constraints you found
    > 5. **Decision points** — every place where two or more viable approaches exist: each with options, pros/cons, and your recommendation
@@ -93,20 +106,16 @@ If uncertain, run the architect. A 2-minute architect pass that confirms "the ap
     - Every `file:line` reference resolves and says what the spec claims.
     - Every decision block has all four fields (Choice / Reasoning with owner tag / Alternatives rejected / Trade-off accepted).
     - `## External Contracts` is present and either names each contract + invariant + breakage, or states "None" explicitly.
-    - **Discovery check (completeness, not presence)**: independently skim/grep the files the spec touches for candidate invariants — identity construction, enforcement points, persistence/replay contracts, non-HTTP execution paths. Every candidate found must appear in External Contracts or be explicitly ruled out in the spec. A diligent-but-incomplete section is the known failure mode.
-    - **Destructive-trigger check**: for every destructive or irreversible operation the spec introduces (reap, expire, evict, revoke, invalidate, delete), the trigger predicate must be mapped against each state the target entity can occupy — an unmapped state is a finding. A predicate justified only by "fires reliably when reclamation is needed", with no analysis of states where it fires on a still-live target, is a finding.
-    - **Credentials-past-intent check**: any decision whose chosen behavior leaves credentials, secrets, or user data alive past a user's explicit removal/revocation/disconnect intent must state that consequence in security terms and be flagged for explicit user sign-off (per the shared decision format). Such a decision framed only as a scope trade-off, without the security consequence named, is a finding.
+    - The three invariant checks from `~/.claude/skills/_shared/invariant-survey.md` ("Review gate" section) — read the file and include them in this checklist verbatim: **Discovery check**, **Destructive-trigger check**, **Credentials-past-intent check**. They are the review-side counterpart of the step-9 survey and share its version tag.
     - Implementation phases are vertical, every Phase Status line has a `(risk: ...)` tag, and Success Criteria use the project's real verification commands.
 
     Fix what it flags (max 1 revision round), log the verdict (`REVIEW_METRICS_FILE="$HOME/.claude/qrspi-review.jsonl" bash ~/.claude/skills/review/log-review-metrics key=<ticket-or-slug> phase=spec verdict=<PASS|ESCALATED> rounds=<n> issues=<m>`), then present the corrected version. Delete the draft after Phase 6 resolves (it becomes the saved file on "yes", is removed on "no").
 
 ### Phase 6: User Choice
 
-16. **HARD STOP — DO NOT WRITE ANY FILES OR DISPATCH ANY CODER AGENTS UNTIL THE USER ANSWERS THESE QUESTIONS.**
+16. **HARD STOP — no file writes, no coder dispatches, until the user answers.**
 
-    This has been a recurring failure point. The user has corrected this behavior TWICE.
-    You MUST present these questions and WAIT for explicit answers before taking any action.
-    Presenting the plan in the conversation is fine. Writing files or dispatching coders is NOT.
+    Ask both questions in ONE **AskUserQuestion** call (two questions: "Save to disk?" and "Implement now?") — the blocking modal is the mechanism that makes this stop unskippable; asked as prose, it has been skipped before. Presenting the plan in the conversation is fine. Writing files or dispatching coders before the answers is NOT.
 
     **Save to disk?**
     - Yes → Write to `docs/eng-specs/` using the template below. File naming:
@@ -128,7 +137,7 @@ If uncertain, run the architect. A 2-minute architect pass that confirms "the ap
     - File written (if saved)
     - What was implemented (if coded)
     - Remind to check Figma if frontend work is involved
-    - **If any code was changed during this session** (whether by dispatched coders OR by you directly), tell the user: "Auto-dispatching `/review` to check the implementation before committing." Then invoke the `/review` skill using the Skill tool (`skill: "review"`). This runs AFTER all implementation is complete and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing. **Never skip peer review just because no coder subagent was dispatched** — the review is triggered by code changes, not by how those changes were made.
+    - **If any code was changed during this session** (by dispatched coders — or by any edit that slipped through inline despite the dispatch rule above), tell the user: "Auto-dispatching `/review` to check the implementation before committing." Then invoke the `/review` skill using the Skill tool (`skill: "review"`). This runs AFTER all implementation is complete and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing. **Never skip peer review just because no coder subagent was dispatched** — the review is triggered by code changes, not by how those changes were made.
 
 ## Template (for saving to disk)
 

@@ -1,7 +1,7 @@
 ---
 name: audit-code
 description: Audit code for security, bugs, DRY/maintainability, and accessibility — auto-triages findings and presents only actionable issues
-allowed-tools: [Agent, Bash, Read, Write, Glob, Grep]
+allowed-tools: [Agent, Bash, Read, Write, Edit, Glob, Grep]
 ---
 
 # Code Audit

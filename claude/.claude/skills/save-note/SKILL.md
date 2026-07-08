@@ -6,18 +6,18 @@ allowed-tools: [Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion]
 
 # Save Note to Obsidian Vault
 
-Save or update a Markdown note in the user's Obsidian vault at `~/vault`.
+Save or update a Markdown note in the user's Obsidian vault. Vault root: `$VAULT_DIR` if set, else `~/vault` (matching `/orient`, `/daily-recap`, and `/vault-review`) — all paths below are relative to it.
 
 ## Vault Structure
 
-| Folder | Purpose | Template file |
-|--------|---------|---------------|
-| `00. Inbox/` | Raw captures, quick thoughts, links | `Templates/Inbox.md` |
-| `01. Literature/` | Processed source notes (articles, PDFs, videos) | `Templates/Literature.md` |
-| `02. Permanent/` | Distilled standalone ideas with links | `Templates/Permanent.md` |
-| `90. Projects/` | Active project notes | `Templates/Project Goal.md` or `Templates/Project Ideation.md` |
-| `92. Resources/` | Reference material, cheat sheets | `Templates/Resource.md` |
-| `93. Archives/` | Older archived notes | — |
+| Folder            | Purpose                                         | Template file                                                  |
+| ----------------- | ----------------------------------------------- | -------------------------------------------------------------- |
+| `00. Inbox/`      | Raw captures, quick thoughts, links             | `Templates/Inbox.md`                                           |
+| `01. Literature/` | Processed source notes (articles, PDFs, videos) | `Templates/Literature.md`                                      |
+| `02. Permanent/`  | Distilled standalone ideas with links           | `Templates/Permanent.md`                                       |
+| `90. Projects/`   | Active project notes                            | `Templates/Project Goal.md` or `Templates/Project Ideation.md` |
+| `92. Resources/`  | Reference material, cheat sheets                | `Templates/Resource.md`                                        |
+| `93. Archives/`   | Older archived notes                            | —                                                              |
 
 Extra templates: `Templates/Scratch Note.md` (brain dumps), `Templates/MOC.md` (maps of content).
 
@@ -34,6 +34,7 @@ Extra templates: `Templates/Scratch Note.md` (brain dumps), `Templates/MOC.md` (
 ### Step 1: Determine content
 
 Read the user's arguments. They may provide:
+
 - A title and content directly
 - A reference to conversation context (e.g., "save the summary above")
 - A topic with minimal guidance
@@ -41,6 +42,7 @@ Read the user's arguments. They may provide:
 ### Step 2: Choose folder and template
 
 Match content type to folder:
+
 - Quick thought, link, raw capture → `00. Inbox/` + Inbox template
 - Summary of article, PDF, video, external source → `01. Literature/` + Literature template
 - Distilled idea or concept → `02. Permanent/` + Permanent template
@@ -55,7 +57,7 @@ Use Glob to check if a note with a similar title exists. If found, ask whether t
 
 ### Step 4: Create or update
 
-1. Read the chosen template from `~/vault/Templates/`
+1. Read the chosen template from `<vault>/Templates/`
 2. Fill in template sections with content
 3. Replace `{{date}}` with today's date (`M/D/YYYY hh:mm A`)
 4. If the content originated from a URL, web search, PDF, or any external source, include the source URL(s) in the note. Templates with a `Source:` field should use that; otherwise append a `### References` section at the bottom with source links.

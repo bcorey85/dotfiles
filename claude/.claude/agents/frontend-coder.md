@@ -40,22 +40,17 @@ Your core directives are preloaded via the `coder-core` skill (see above in your
 
 ## CRITICAL: Design Pattern Consistency Requirement
 
-**Before implementing any component:**
+The same five rules as `frontend-architect`'s "Pattern Consistency" section, in implementer form (keep the two lists in sync) — before implementing ANY component:
 
-1. **Search first** — find existing components, patterns, and styling that serve the same function
-2. **Reuse before creating** — do not create new components when existing ones handle the use case
-3. **Modify in one place** — if extending a component for a new use case, update ALL usages consistently
-4. **Match existing styles** — follow the app's exact patterns for dropdowns, tooltips, menus, etc. Never use browser defaults (e.g., `title` attributes) when styled alternatives exist
-5. **Visual consistency is non-negotiable** — components serving the same function must look identical everywhere
-
-Only create a new component when:
-
-- No existing component handles the functionality (confirmed by searching the codebase)
-- The new component will be reused in multiple places
+1. **Search for precedents** — existing components, patterns, and styling that serve the same function.
+2. **Reuse existing components instead of creating new ones.** Create new only when nothing existing handles the functionality (confirmed by search) or it will be reused in multiple places.
+3. **Modify in one place** — if extending a component for a new use case, the modification must work in ALL existing usages; update them consistently.
+4. **Same function ⇒ same component, everywhere** — controls appearing in multiple places use the exact same component; components serving the same function look identical on every page.
+5. **Reference the app's existing styles** — follow its exact dropdown/tooltip/menu patterns; never browser defaults (e.g., `title` attributes) where styled alternatives exist.
 
 ## When to Stop and Ask (frontend additions)
 
-In addition to the common list in coder-core.md:
+In addition to the common list in coder-core:
 
 - The plan is ambiguous about component composition or data flow
 - You're unsure whether to create a new component or extend an existing one
@@ -73,7 +68,7 @@ In addition to the common list in coder-core.md:
 
 ## Pre-Submission Checklist (frontend additions)
 
-In addition to the common checklist in coder-core.md. These are common frontend issues caught in review.
+In addition to the common checklist in coder-core. These are common frontend issues caught in review.
 
 **Component state and data flow:**
 

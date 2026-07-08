@@ -1,0 +1,4 @@
+#!/bin/bash
+# theme-use — convenience alias for `theme-mode use`. Same args:
+#   theme-use <family> [mode]     (theme-mode list shows families)
+exec "$HOME/.local/bin/theme-mode" use "$@"

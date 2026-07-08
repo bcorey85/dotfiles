@@ -1,56 +1,125 @@
 #!/bin/bash
-# theme-mode — single source of truth for light/dark across tmux + neovim.
+# theme-mode — single source of truth for the theme FAMILY and light/dark MODE
+# across tmux + neovim + ghostty.
 #
-# Writes the mode to a shared state file; tmux and nvim both read it:
-#   - tmux: this script sources the matching ~/.config/tmux/github-{mode}.conf
-#           so every client updates immediately.
-#   - nvim: each instance polls the state file (see lua/config/theme-sync.lua)
-#           and flips the active colorscheme dark <-> light within ~1s.
+# State files (read by every consumer):
+#   ~/.cache/theme-mode    dark|light
+#   ~/.cache/theme-family  family name (see families() below)
 #
-# Usage: theme-mode [dark|light|toggle]   (default: toggle)
+# Consumers:
+#   - tmux:    this script sources ~/.config/tmux/<family>-<mode>.conf
+#   - nvim:    lua/config/theme-sync.lua polls both files (~1s) and applies
+#              the family's colorscheme + overrides
+#   - emacs:   watches the mode file only (family stays github-remapped modus)
+#   - ghostty: this script writes ~/.config/ghostty/theme-switch.conf
+#              (machine-local include, same pattern as font-mode.conf).
+#              Ghostty has no external reload — press ctrl+shift+, to apply.
+#
+# Usage:
+#   theme-mode [dark|light|toggle]    flip mode, keep family (default: toggle)
+#   theme-mode use <family> [mode]    switch family, keep mode unless given
+#   theme-mode list                   known families
+#   theme-mode status                 current family + mode
+#
+# Adding a family = four touchpoints, kept in sync by hand:
+#   1. families() + ghostty_theme() below
+#   2. FAMILIES table in nvim lua/config/theme-sync.lua
+#   3. ~/.config/tmux/<family>-{dark,light}.conf
+#   4. a ghostty theme (builtin name, or custom file in ghostty/themes/)
 set -euo pipefail
 
-STATE_FILE="$HOME/.cache/theme-mode"
+MODE_FILE="$HOME/.cache/theme-mode"
+FAMILY_FILE="$HOME/.cache/theme-family"
 TMUX_THEME_DIR="$HOME/.config/tmux"
+GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
+DEFAULT_FAMILY="doom-one"
 
-current() { cat "$STATE_FILE" 2>/dev/null | tr -d '[:space:]'; }
+families() { printf '%s\n' doom-one github gruvbox-material zenbones zenwritten kanso; }
+
+ghostty_theme() { # <family> <mode> -> ghostty theme name
+  case "$1:$2" in
+    doom-one:dark) echo "Doom One" ;;
+    doom-one:light) echo "doom-one-light" ;; # custom: ghostty/themes/doom-one-light
+    github:dark) echo "GitHub Dark Dimmed" ;;
+    github:light) echo "GitHub Light Default" ;;
+    # custom (ghostty/themes/): builtins ship near-white ANSI 7/15 slots that
+    # make Claude Code headers blaze; customs mirror sainnhe's own mapping.
+    gruvbox-material:*) echo "gruvbox-material-$2" ;;
+    zenbones:*) echo "zenbones-$2" ;;   # custom: ghostty/themes/zenbones-{dark,light}
+    zenwritten:*) echo "zenwritten-$2" ;; # custom: ghostty/themes/zenwritten-{dark,light}
+    kanso:*) echo "kanso-$2" ;; # custom: ghostty/themes/kanso-{dark,light} (mist dark, pearl light)
+  esac
+}
+
+current_mode() { cat "$MODE_FILE" 2>/dev/null | tr -d '[:space:]'; }
+current_family() {
+  local f
+  f="$(cat "$FAMILY_FILE" 2>/dev/null | tr -d '[:space:]')"
+  families | grep -qx "$f" && echo "$f" || echo "$DEFAULT_FAMILY"
+}
+
+apply() { # <family> <mode> — write state and repaint tmux + ghostty
+  local family="$1" mode="$2"
+  mkdir -p "$(dirname "$MODE_FILE")"
+  printf '%s\n' "$mode" >"$MODE_FILE"     # nvim + emacs pick these up
+  printf '%s\n' "$family" >"$FAMILY_FILE" # via their own watchers
+
+  # ghostty: machine-local include; wins over the fallback `theme =` line
+  # because config-file includes are processed after the main config.
+  mkdir -p "$(dirname "$GHOSTTY_SWITCH")"
+  {
+    echo "# Written by theme-mode — do not edit. Reload ghostty: ctrl+shift+,"
+    echo "theme = $(ghostty_theme "$family" "$mode")"
+  } >"$GHOSTTY_SWITCH"
+
+  # tmux: source-file is server-global, every attached client updates at once.
+  if command -v tmux >/dev/null 2>&1 && tmux has-session >/dev/null 2>&1; then
+    tmux source-file -q "$TMUX_THEME_DIR/$family-$mode.conf" 2>/dev/null || true
+    # Cursor colour via tmux's built-in option (no escape sequences needed).
+    local cursor="#ffffff"
+    [ "$mode" = "light" ] && cursor="#000000"
+    tmux set-option -g cursor-colour "$cursor" 2>/dev/null || true
+    # Re-arm tmux-continuum: its autosave trigger lives inside status-right,
+    # which the theme file we just sourced overwrote. Re-running continuum.tmux
+    # doesn't work here (its "another server running" heuristic misfires when
+    # invoked mid-session), so prepend the interpolation directly — same logic
+    # as continuum's add_resurrect_save_interpolation. No-op when not installed.
+    local cont_save="$HOME/.tmux/plugins/tmux-continuum/scripts/continuum_save.sh"
+    if [ -f "$cont_save" ]; then
+      local sr
+      sr="$(tmux show-option -gqv status-right 2>/dev/null || true)"
+      case "$sr" in
+        *continuum_save.sh*) : ;; # already armed
+        *) tmux set-option -g status-right "#($cont_save)$sr" 2>/dev/null || true ;;
+      esac
+    fi
+    tmux display-message "theme: $family $mode"
+  fi
+
+  echo "$family $mode"
+}
 
 arg="${1:-toggle}"
 case "$arg" in
-  dark | light) mode="$arg" ;;
-  toggle) [ "$(current)" = "light" ] && mode="dark" || mode="light" ;;
+  dark | light) apply "$(current_family)" "$arg" ;;
+  toggle)
+    [ "$(current_mode)" = "light" ] && mode="dark" || mode="light"
+    apply "$(current_family)" "$mode"
+    ;;
+  use)
+    family="${2:-}"
+    if ! families | grep -qx "$family"; then
+      echo "unknown family: '$family' (see: theme-mode list)" >&2
+      exit 2
+    fi
+    mode="${3:-$(current_mode)}"
+    case "$mode" in dark | light) : ;; *) mode="dark" ;; esac
+    apply "$family" "$mode"
+    ;;
+  list) families ;;
+  status) echo "$(current_family) $(current_mode)" ;;
   *)
-    echo "usage: theme-mode [dark|light|toggle]" >&2
+    echo "usage: theme-mode [dark|light|toggle] | use <family> [mode] | list | status" >&2
     exit 2
     ;;
 esac
-
-# Write state (nvim picks this up via its poller).
-mkdir -p "$(dirname "$STATE_FILE")"
-printf '%s\n' "$mode" >"$STATE_FILE"
-
-# Apply to tmux now, if a server is running. source-file is server-global, so
-# every attached client updates at once.
-if command -v tmux >/dev/null 2>&1 && tmux has-session >/dev/null 2>&1; then
-  tmux source-file -q "$TMUX_THEME_DIR/github-$mode.conf" 2>/dev/null || true
-  # Set cursor colour via tmux's built-in option (no escape sequences needed).
-  cursor="#ffffff"
-  [ "$mode" = "light" ] && cursor="#000000"
-  tmux set-option -g cursor-colour "$cursor" 2>/dev/null || true
-  # Re-arm tmux-continuum: its autosave trigger lives inside status-right,
-  # which the theme file we just sourced overwrote. Re-running continuum.tmux
-  # doesn't work here (its "another server running" heuristic misfires when
-  # invoked mid-session), so prepend the interpolation directly — same logic
-  # as continuum's add_resurrect_save_interpolation. No-op when not installed.
-  cont_save="$HOME/.tmux/plugins/tmux-continuum/scripts/continuum_save.sh"
-  if [ -f "$cont_save" ]; then
-    sr="$(tmux show-option -gqv status-right 2>/dev/null || true)"
-    case "$sr" in
-      *continuum_save.sh*) : ;; # already armed
-      *) tmux set-option -g status-right "#($cont_save)$sr" 2>/dev/null || true ;;
-    esac
-  fi
-  tmux display-message "theme: $mode"
-fi
-
-echo "$mode"

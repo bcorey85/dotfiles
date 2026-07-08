@@ -1,0 +1,25 @@
+# kanso light — webhooked/kanso.nvim "pearl" variant, ANSI from the theme's
+# own terminal colors; black 0/8 = ink, white 7/15 = bg-side tone per this
+# repo's convention.
+palette = 0=#22262d
+palette = 1=#c84053
+palette = 2=#6f894e
+palette = 3=#77713f
+palette = 4=#4d699b
+palette = 5=#b35b79
+palette = 6=#597b75
+palette = 7=#cacac7
+palette = 8=#6d6d69
+palette = 9=#d7474b
+palette = 10=#6e915f
+palette = 11=#836f4a
+palette = 12=#6693bf
+palette = 13=#624c83
+palette = 14=#5e857a
+palette = 15=#cacac7
+background = #f2f1ef
+foreground = #22262d
+cursor-color = #22262d
+cursor-text = #f2f1ef
+selection-background = #dddddb
+selection-foreground = #22262d

@@ -10,12 +10,14 @@ confirm-close-surface = false
 # stems render heavier — closest match to kitty's bolder text rendering, since
 # font-thicken is macOS-only. If still too light, use `font-style = Bold`.
 freetype-load-flags = no-light
-# Theme — GitHub Dark Dimmed (Ghostty built-in, zero overrides). Matches
-# nvim/tmux dark mode (projekt0n/github-nvim-theme github_dark_dimmed). Sets
-# bg/fg/cursor/palette — this is what Claude Code chat renders in. Not wired
-# to the light/dark toggle — nvim & tmux repaint their own surfaces, so this
-# is the static backdrop. Reload with ctrl+shift+, after editing.
-theme = GitHub Dark Dimmed
+# Theme — owned by the `theme-mode` switcher: it writes ?theme-switch.conf
+# (machine-local, not stowed) with the active family+mode's theme name; that
+# include is processed after this file, so it wins. The line below is the
+# fallback when the switcher has never run. This is what Claude Code chat
+# renders in. Ghostty has no external reload — press ctrl+shift+, after
+# switching. Custom (non-builtin) themes live in ./themes/.
+theme = Doom One
+config-file = ?theme-switch.conf
 
 # Window
 window-padding-x = 4

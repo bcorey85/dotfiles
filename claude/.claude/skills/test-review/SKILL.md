@@ -1,7 +1,7 @@
 ---
 name: test-review
-description: Review test suites for coverage gaps, weak assertions, and stale tests — auto-detects scope or accepts be/fe/fs modifier
-allowed-tools: [Agent, Read, Glob, Grep]
+description: Review test suites for coverage gaps, weak assertions, and stale tests — auto-detects scope or accepts be/fe/fs modifier. Use for "review the tests", "test suite health", "coverage check".
+allowed-tools: [Agent, Bash, Read, Glob, Grep]
 ---
 
 # Test Review
@@ -22,8 +22,8 @@ Any remaining text after the modifier is passed as a focus area (e.g., `/test-re
 
 2. **Determine scope** if no modifier was provided:
    - Check `git diff --name-only HEAD` and untracked files for recent changes
-   - If only `packages/web/` or frontend-like files changed → frontend
-   - If only `packages/api/` or backend-like files changed → backend
+   - Classify the changed files as frontend or backend per the project's actual layout (read the project CLAUDE.md if it isn't obvious)
+   - If only frontend files changed → frontend; only backend files → backend
    - If both → fullstack
    - If ambiguous, ask the user: "Frontend, backend, or both?"
 

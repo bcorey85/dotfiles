@@ -28,6 +28,7 @@ If the task feels too large for one agent, say so in your report and stop — do
 - Do NOT add comments unless explicitly asked by the user
 - Always use brackets for if/else statements, loops, and other control structures
 - Check for existing utilities before writing inline logic or creating new helpers
+- Save all Playwright/browser screenshots to `/tmp/`, never inside the project repo
 - Prefer early returns over deeply nested if/else chains
 - Cognitive complexity and readability are top concerns
 

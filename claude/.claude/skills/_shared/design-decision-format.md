@@ -35,6 +35,16 @@ technical demerits; a rejection that names no failure mode is unsupported]
   resolved by a default or by accepting a recommended option. The security
   framing is what the human at the gate needs to weigh retention against
   hygiene; a scope-argument framing hides the stakes.
+- **Scope-only rejections require the user's answer (engaged gate).** When
+  an alternative is rejected SOLELY on scope grounds ("not requested",
+  "out of ticket scope", "scope creep") rather than on a technical failure
+  mode, the decision must be marked as a judgment call requiring explicit
+  user sign-off — it may not be resolved by a default or by accepting the
+  recommended option on the user's behalf. Rationale (plan-ab rounds 7 and
+  11): both lanes reliably SURFACE the correct alternative and then decline
+  it on scope discipline; twice that reproduced the exact regression the
+  maintainer shipped and reverted. Scope is the ticket-owner's call, not
+  the artifact's.
 - A decision with no real alternative is a constraint, not a decision —
   record it under Constraints instead.
 
@@ -46,3 +56,19 @@ semantics, rate limits, ordering guarantees) — and what breaks if violated.
 **"None" must be stated explicitly, not implied by omission.** Internal
 invariants discovered in research (identity construction, hidden couplings)
 belong here too when the change's blast radius depends on them.
+
+**Runtime-acceptance evidence rule.** When the change alters what an
+external tool ACCEPTS or ENFORCES at runtime — a verifier, policy engine,
+admission controller, parser, migration runner, or any component that can
+reject or ignore configuration/input it is handed — each contract claim
+about what that tool accepts must state its evidence class:
+
+- **exercised** — an upstream doc/issue/source citation for the exact
+  runtime path, or a dry-run/staged step in the plan that exercises the
+  real tool before rollout; OR
+- **declared-only** — schema text, type shapes, vendored docs, comments,
+  or in-repo precedent. Declared-only evidence describes intent, not
+  behavior, and a precedent may exercise a different path. A design may
+  NOT rest an accepted-by-the-tool claim on declared-only evidence: it
+  must either upgrade the evidence or add the staged exercise step, and
+  say which.

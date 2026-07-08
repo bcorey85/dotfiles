@@ -70,9 +70,21 @@ $ARGUMENTS
    - An **inconsistent pattern** vs. how siblings do the same thing.
      If there are none, say so plainly — don't manufacture findings.
 
+## Persist to vault (default — `+ephemeral` skips)
+
+After presenting the report, persist it to the vault (root: `$VAULT_DIR` if set, else
+`~/vault`): write the full orientation to
+`<vault>/Orientations/<yyyy-mm-dd>-<repo>-<branch-or-scope>.md`, headed by repo,
+branch, merge-base sha, and date. Then append a capture line so tonight's
+/daily-recap links it:
+`~/.local/bin/note "orientation: <repo>/<branch> — [[<note filename without .md>]]"`.
+Re-orienting the same repo+branch same day overwrites the note (latest map wins).
+With `+ephemeral`, skip both writes.
+
 ## Boundaries
 
 - **Read-only. Never edit.** This rebuilds understanding; it does not change code.
+  (`+note` writes only under the vault — never in the repo.)
 - This is _not_ `/review` (correctness/bugs).
   It answers one question: **how does this change relate to the code around it?**
 - Keep it tight. Refs over prose. The goal is to reload the user's mental map fast,

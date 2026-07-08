@@ -11,6 +11,7 @@ FILE="$INBOX/$(date +%F).md"
 
 if [ $# -eq 0 ]; then
   echo "usage: note <text>    e.g. note platform team blocked on auth schema" >&2
+  echo "lanes: plain text | done: <text> retires a follow-up | @name <text> feeds People/<Name>.md" >&2
   exit 1
 fi
 

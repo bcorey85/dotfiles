@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# vault-person — pick (or create) a person note in <vault>/People and open it.
+# fzf over existing notes; typing an unmatched name and pressing enter creates
+# the note from the same 1:1 template the daily-recap @name routing uses
+# (agenda is machine-fed from `note @name …` captures; Log is human-owned).
+set -euo pipefail
+
+VAULT="${VAULT_DIR:-$HOME/vault}"
+PEOPLE="$VAULT/People"
+mkdir -p "$PEOPLE"
+
+rc=0
+out="$(fd -e md . "$PEOPLE" -x basename {} .md | sort |
+  fzf --prompt='person> ' --print-query \
+      --header 'enter=open | unmatched name creates the note')" || rc=$?
+[ "$rc" -ge 2 ] && exit 0        # 130 = aborted (Esc/Ctrl-C); 1 = no match, query kept
+sel="$(printf '%s\n' "$out" | tail -1)"
+[ -z "$sel" ] && exit 0
+
+FILE="$PEOPLE/$sel.md"
+if [ ! -f "$FILE" ]; then
+  printf '# %s\n\n## 1:1 agenda\n\n## Log\n' "$sel" >"$FILE"
+fi
+exec nvim "$FILE"

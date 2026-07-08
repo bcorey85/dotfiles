@@ -127,6 +127,43 @@ local FAMILIES = {
       end
     end,
   },
+  kanagawa = {
+    -- rebelot/kanagawa.nvim: dragon (desaturated ink-wash, warm black) dark,
+    -- lotus (yellow paper) light. All variants register colors_name "kanagawa".
+    schemes = { dark = "kanagawa-dragon", light = "kanagawa-lotus" },
+    colors_name = "kanagawa",
+    accents = {
+      dark = { heading1 = "#938aa9", heading = "#7fb4ca" },
+      light = { heading1 = "#624c83", heading = "#4d699b" },
+    },
+    -- Dragon: comment dragonAsh #737c73 is 4.2:1 (floor 4.5) — lift to 5.2:1
+    -- keeping its green cast. Lotus: body ink #545464 is only 6.2:1 on the
+    -- yellow paper and comment #8a8980 is 2.9:1 — deepen both (8.1/5.1:1).
+    -- Diff* stay stock: kanagawa ships proper bg-only washes in both modes.
+    fixup = function(mode)
+      if mode == "dark" then
+        vim.api.nvim_set_hl(0, "Comment", { fg = "#848c84", italic = true })
+      else
+        vim.api.nvim_set_hl(0, "Normal", { fg = "#434350", bg = "#f2ecbc" })
+        vim.api.nvim_set_hl(0, "Comment", { fg = "#63625b", italic = true })
+      end
+    end,
+  },
+  alabaster = {
+    -- p00f/alabaster.nvim (tonsky's design): strict 4-hue budget — strings
+    -- green, constants purple, definitions blue, comments red(light)/yellow
+    -- (dark); everything else body fg. One scheme, branches on
+    -- vim.o.background. Wired STOCK by request — no fixups. Known stock
+    -- deviations from the eye spec: dark body 11.9:1 (band ceiling 10),
+    -- light body #000 on #f7f7f7 = 19.6:1, light strings 3.9:1 (floor 4.5).
+    schemes = { dark = "alabaster", light = "alabaster" },
+    accents = {
+      -- markview headings (switcher glue): reuse the theme's own
+      -- definition-blue + constant-purple so no fifth hue enters.
+      dark = { heading1 = "#cc8bc9", heading = "#71ade7" },
+      light = { heading1 = "#7a3e9d", heading = "#325cc0" },
+    },
+  },
 }
 
 local applied ---@type string|nil  last family+mode we set, to skip redundant reloads

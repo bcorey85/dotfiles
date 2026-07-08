@@ -138,7 +138,11 @@
       "Bash(open .)",
       "Bash(open -R *)"
     ],
-    "deny": ["Bash(sudo *)", "Bash(rm -rf /)", "Bash(chmod 777 *)"],
+    "deny": [
+      "Bash(sudo *)",
+      "Bash(rm -rf /)",
+      "Bash(chmod 777 *)"
+    ],
     "defaultMode": "auto"
   },
   "model": "fable",
@@ -361,13 +365,20 @@
     "typescript-lsp@claude-plugins-official": true,
     "pyright-lsp@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
-    "context-mode@context-mode": true
+    "context-mode@context-mode": true,
+    "workmux-status@workmux": true
   },
   "extraKnownMarketplaces": {
     "context-mode": {
       "source": {
         "source": "github",
         "repo": "mksglu/context-mode"
+      }
+    },
+    "workmux": {
+      "source": {
+        "source": "github",
+        "repo": "raine/workmux"
       }
     }
   },

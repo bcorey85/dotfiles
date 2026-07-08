@@ -1,0 +1,109 @@
+#!/bin/bash
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_info() { echo -e "${YELLOW}→${NC} $1"; }
+
+# weekly-recap — schedules a headless `claude -p "/weekly-recap"` run Fridays
+# at 18:30, after Friday's daily-recap (18:00) has compiled. The skill
+# (claude/.claude/skills/weekly-recap) rolls the week's Daily notes into a
+# weekly review note (decisions, themes, open follow-ups carried forward) and
+# appends brag bullets to ~/vault/Brag/<year>.md.
+#   macOS: LaunchAgent (~/Library/LaunchAgents/com.dotfiles.weekly-recap.plist);
+#          a run missed while asleep fires on next wake.
+#   Linux: systemd user timer with Persistent=true (missed runs fire on boot).
+# Skips (not fails) if claude is absent — re-run after installing Claude Code.
+
+if ! command -v claude &>/dev/null; then
+  print_info "claude not installed — skipping (install Claude Code, then re-run install/weekly-recap)"
+  exit 0
+fi
+
+# zsh login shell so claude resolves from the user's real PATH; allowlist is
+# the minimum the skill needs to run unattended (vault reads/writes only).
+RECAP_CMD='claude --permission-mode acceptEdits --allowedTools Read Write Edit Glob Grep "Bash(date:*)" "Bash(mkdir:*)" -p "/weekly-recap"'
+
+if [[ "$(uname)" == "Darwin" ]]; then
+  PLIST="$HOME/Library/LaunchAgents/com.dotfiles.weekly-recap.plist"
+  mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+
+  cat >"$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.dotfiles.weekly-recap</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-l</string>
+    <string>-c</string>
+    <string>$RECAP_CMD || osascript -e 'display notification "see ~/Library/Logs/weekly-recap.log" with title "weekly-recap failed"'</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>30</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>$HOME/Library/Logs/weekly-recap.log</string>
+  <key>StandardErrorPath</key><string>$HOME/Library/Logs/weekly-recap.log</string>
+</dict>
+</plist>
+EOF
+
+  launchctl unload "$PLIST" 2>/dev/null || true
+  launchctl load "$PLIST"
+  print_success "LaunchAgent loaded — Fridays 18:30, logs at ~/Library/Logs/weekly-recap.log"
+  print_info "test now with: launchctl start com.dotfiles.weekly-recap"
+elif command -v systemctl &>/dev/null && systemctl --user show-environment &>/dev/null; then
+  UNIT_DIR="$HOME/.config/systemd/user"
+  mkdir -p "$UNIT_DIR"
+
+  # Failure notifier shared by all recap services (install/daily-recap writes
+  # the same file): a headless run that dies silently erodes trust in the
+  # pipeline, so surface it on the desktop. No-op if libnotify is absent.
+  cat >"$UNIT_DIR/recap-notify@.service" <<'EOF'
+[Unit]
+Description=Desktop notification when %i fails
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'command -v notify-send >/dev/null && exec notify-send -u critical "%i failed" "check: journalctl --user -u %i" || true'
+EOF
+
+  cat >"$UNIT_DIR/weekly-recap.service" <<EOF
+[Unit]
+Description=Roll the week's Daily notes into a weekly review note
+OnFailure=recap-notify@%p.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/zsh -l -c '$RECAP_CMD'
+EOF
+
+  cat >"$UNIT_DIR/weekly-recap.timer" <<EOF
+[Unit]
+Description=Run weekly-recap Fridays at 18:30
+
+[Timer]
+OnCalendar=Fri 18:30
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+  systemctl --user daemon-reload
+  systemctl --user enable --now weekly-recap.timer
+  print_success "systemd user timer enabled — Fridays 18:30 (Persistent=true)"
+  print_info "test now with: systemctl --user start weekly-recap.service"
+else
+  print_info "no launchd or systemd user session (WSL?) — run 'claude -p \"/weekly-recap\"' manually or from cron"
+  exit 0
+fi

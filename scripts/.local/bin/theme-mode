@@ -34,7 +34,7 @@ TMUX_THEME_DIR="$HOME/.config/tmux"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="doom-one"
 
-families() { printf '%s\n' doom-one github gruvbox-material zenbones zenwritten kanso; }
+families() { printf '%s\n' doom-one github gruvbox-material zenbones zenwritten kanso kanagawa alabaster; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   case "$1:$2" in
@@ -48,6 +48,8 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     zenbones:*) echo "zenbones-$2" ;;   # custom: ghostty/themes/zenbones-{dark,light}
     zenwritten:*) echo "zenwritten-$2" ;; # custom: ghostty/themes/zenwritten-{dark,light}
     kanso:*) echo "kanso-$2" ;; # custom: ghostty/themes/kanso-{dark,light} (mist dark, pearl light)
+    kanagawa:*) echo "kanagawa-$2" ;; # custom: ghostty/themes/kanagawa-{dark,light} (dragon dark, lotus light)
+    alabaster:*) echo "alabaster-$2" ;; # custom: ghostty/themes/alabaster-{dark,light} (port's own terminal colors)
   esac
 }
 

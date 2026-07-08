@@ -266,6 +266,34 @@ return {
       glue_broke("core.git." .. table.concat(missing, "/") .. " not found; their sugar is disabled")
     end
 
+    -- <Tab>/<S-Tab> = next/prev file (diffview muscle memory), as ALIASES of
+    -- the stock ]f/[f binds: wrap lifecycle.set_tab_keymap (call-time table
+    -- access from view/keymaps.lua, so the shared-module patch survives any
+    -- load order) and whenever codediff binds its configured next_file /
+    -- prev_file key, bind Tab/S-Tab to the same rhs. Riding the real bind
+    -- call means the alias follows codediff's rebind-per-file-select cycle
+    -- and its session keymap cleanup for free. Same degradation contract as
+    -- the git-layer glue above.
+    local ok_lc, lifecycle = pcall(require, "codediff.ui.lifecycle")
+    local ok_cfg, cd_config = pcall(require, "codediff.config")
+    local view_keys = ok_cfg and ((cd_config.options.keymaps or {}).view or {}) or {}
+    if ok_lc and type(lifecycle.set_tab_keymap) == "function" and view_keys.next_file and view_keys.prev_file then
+      local aliases = {
+        [view_keys.next_file] = "<Tab>",
+        [view_keys.prev_file] = "<S-Tab>",
+      }
+      local stock_set = lifecycle.set_tab_keymap
+      lifecycle.set_tab_keymap = function(tabpage, mode, lhs, rhs, kopts)
+        local result = stock_set(tabpage, mode, lhs, rhs, kopts)
+        if mode == "n" and aliases[lhs] then
+          stock_set(tabpage, mode, aliases[lhs], rhs, kopts)
+        end
+        return result
+      end
+    else
+      glue_broke("<Tab>/<S-Tab> next/prev-file aliases disabled")
+    end
+
     -- <C-d>/<C-u> in the explorer/history panels scroll the DIFF panes
     -- (ports the retired diffview file-panel scroll_view binds).
     -- codediff has no scroll action of its own, so: find the first

@@ -20,6 +20,7 @@ fi
 
 print_info "Adding marketplaces..."
 claude plugin marketplace add anthropics/claude-plugins-official 2>/dev/null || true
+claude plugin marketplace add raine/workmux 2>/dev/null || true
 print_success "Marketplaces configured"
 
 print_info "Installing Claude Code plugins..."
@@ -30,6 +31,12 @@ for plugin in $OFFICIAL_PLUGINS; do
     print_info "Installing $plugin..."
     claude plugin install "$plugin@claude-plugins-official" 2>/dev/null || true
 done
+
+# workmux-status — stamps agent working/waiting/done state for workmux's
+# tmux window icons + dashboard (marketplace: raine/workmux; binary itself
+# comes from install/workmux)
+print_info "Installing workmux-status..."
+claude plugin install workmux-status 2>/dev/null || true
 
 print_success "Claude Code plugins installed"
 echo ""

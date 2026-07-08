@@ -62,7 +62,7 @@ Review recent changes in this codebase using the code-reviewer subagent.
 
    If a file path is provided via $ARGUMENTS (and no handoff block), focus the review on that file only.
 
-4. **Present the review results** to the user organized by severity
+4. **Present the review results** to the user organized by severity. One addition severity ordering can't express: if a high-blast-radius file in scope (enforcement surface, many inbound references, public contract) came back with zero findings, note it in one line — "clean but load-bearing — worth a human glance". Never pre-rank files in the dispatch itself (step 3's no-checklist rule); this note is derived from the reviewer's output, after the fact.
 
 5. **Decide next steps** based on the review outcome. Severity gating has two tiers:
    - **CRITICAL / HIGH** → auto-fix loop (convergence-bounded, counts toward `iter` limit)

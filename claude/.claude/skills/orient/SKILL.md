@@ -70,6 +70,23 @@ $ARGUMENTS
    - An **inconsistent pattern** vs. how siblings do the same thing.
      If there are none, say so plainly — don't manufacture findings.
 
+   ### Attention map (where to spend review time)
+
+   The changed files, ordered by blast radius — derived from the wiring above,
+   never from diff size. One line per file: `path — rank rationale`. Rank by:
+
+   - **Inbound references** — how many unchanged callers reach it (LSP count).
+   - **Enforcement surface** — hooks, gates, auth, anything running with
+     elevated privileges or writing outside the repo/home.
+   - **Contract exposure** — exported/public symbols vs. leaf/internal code.
+   - **Reversibility** — a bad alias is fixed in seconds; a bad system config
+     write is not.
+
+   Tests, docs, and lockfiles sort to the bottom unless the wiring says
+   otherwise. This ranks the USER's review attention only — never feed it into
+   reviewer dispatches (pre-labeling files "low priority" anchors the reviewer
+   into skimming exactly where quiet bugs survive).
+
 ## Persist to vault (default — `+ephemeral` skips)
 
 After presenting the report, persist it to the vault (root: `$VAULT_DIR` if set, else

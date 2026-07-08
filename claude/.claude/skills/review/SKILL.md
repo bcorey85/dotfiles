@@ -1,7 +1,8 @@
 ---
 name: review
-description: Review recent changes using the code-reviewer subagent
-allowed-tools: [Agent, Bash, Read, Glob, Grep, LSP, Skill]
+description: Review recent changes using the code-reviewer subagent — the inner-loop reviewer for OUR working diff. Use for "review my changes", "review this diff", "check before I commit". Others' PRs go to /peer-review; this is not the built-in PR-review skill.
+allowed-tools:
+  [Agent, Bash, Read, Glob, Grep, LSP, AskUserQuestion, SendMessage, Skill]
 ---
 
 # Code Review

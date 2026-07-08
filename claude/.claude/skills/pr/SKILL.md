@@ -1,6 +1,6 @@
 ---
 name: pr
-description: Create a pull request from the current branch
+description: Create a pull request from the current branch. Use for "open a PR", "make a pull request", "PR this".
 allowed-tools: [Bash, Read, Glob, Grep, Skill, mcp__jira__getJiraIssue]
 ---
 
@@ -10,7 +10,7 @@ Analyze the current branch's changes and create a pull request using `gh`.
 
 ## Modifiers
 
-- `+draft` — Create a **draft** PR. Skips the Jira → In Review transition (work is still in progress). Use this for early PRs opened right after branching to track changes.
+- `+draft` — Create a **draft** PR. Use this for early PRs opened right after branching to track changes.
 - `--base <branch>` — Target a specific base branch instead of `main`. Useful for sprint branches (e.g., `--base Sprint-A-2026`).
 
 Convention: `+toggle` for boolean switches (no value), `--key value` for parameterized flags. Parse modifiers from `$ARGUMENTS` before processing. Both are optional and can be combined.
@@ -32,7 +32,7 @@ Convention: `+toggle` for boolean switches (no value), `--key value` for paramet
 
 4. **Check for existing PR**: Run `gh pr view --json state,url,isDraft 2>/dev/null` to see if a PR already exists for this branch.
    - **If a non-draft PR exists**: inform the user and stop — nothing to do.
-   - **If a draft PR exists AND `+draft` was NOT passed**: convert it to ready with `gh pr ready`, then proceed to step 9 (Jira transition). Skip PR creation.
+   - **If a draft PR exists AND `+draft` was NOT passed**: convert it to ready with `gh pr ready`, report the PR URL (step 9), and stop. Skip PR creation.
    - **If no PR exists**: continue to step 5.
 
 5. **Analyze ALL commits** on the branch (not just the latest) to understand the full scope of changes. Read key changed files if needed for context.

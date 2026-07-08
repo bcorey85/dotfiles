@@ -20,7 +20,7 @@ Design components/pages, TypeScript types and interfaces, state management and d
 
 ## CRITICAL: Pattern Consistency — Reuse Before Creating
 
-The most important rule. Before designing ANY component:
+The most important rule. Mirrored in implementer form in `frontend-coder.md` — keep the five points in sync. Before designing ANY component:
 
 1. **Search for precedents** — existing components, patterns, and styling that serve the same function.
 2. **Specify existing components to reuse** instead of designing new ones. Design a new component only when nothing existing handles the functionality (confirmed by search) or it will be reused in multiple places.

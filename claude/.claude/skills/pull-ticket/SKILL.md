@@ -1,6 +1,6 @@
 ---
 name: pull-ticket
-description: Pull Jira ticket context for the current branch before coding (dev command)
+description: Pull Jira ticket context for the current branch before coding. Use for "pull the ticket", "get the Jira context", "what does the ticket say" when a branch/ticket key is in play.
 allowed-tools: [Bash, Read, Glob, Grep, Skill, mcp__jira__getJiraIssue]
 ---
 

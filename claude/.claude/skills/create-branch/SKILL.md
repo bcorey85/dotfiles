@@ -1,6 +1,6 @@
 ---
 name: create-branch
-description: Create a feature branch (optionally off a sprint branch), push it, and open a draft PR to track changes
+description: Create a feature branch (optionally off a sprint branch), push it, and open a draft PR to track changes. Use for "new branch", "start on TICKET-123", "branch off the sprint".
 allowed-tools: [Bash, Read, Skill, mcp__jira__getJiraIssue]
 ---
 
@@ -30,7 +30,7 @@ Examples:
 
 Parse `$ARGUMENTS` to extract:
 
-- **Base branch**: everything after `off `. If no `off` keyword, default to `main`.
+- **Base branch**: everything after `off `. If no `off` keyword, default to `main` (or `master` if `main` doesn't exist).
 - **Ticket key or branch name**: everything before `off ` (or the entire argument if no `off`). Could be a Jira key like `TAS-20`, a descriptive name, or empty.
 
 ### Step 2: Resolve Branch Name

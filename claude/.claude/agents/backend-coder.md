@@ -34,7 +34,7 @@ Your core directives are preloaded via the `coder-core` skill (see above in your
 
 ## When to Stop and Ask (backend additions)
 
-In addition to the common list in coder-core.md:
+In addition to the common list in coder-core:
 
 - The plan is ambiguous about a model relationship (one-to-many vs many-to-many, etc.)
 - You're unsure about the right HTTP status code or error response format
@@ -51,7 +51,7 @@ In addition to the common list in coder-core.md:
 
 ## Pre-Submission Checklist (backend additions)
 
-In addition to the common checklist in coder-core.md. These were distilled from Express/Nest-style REST projects — skip any item that doesn't apply to the project's actual stack (e.g., route ordering in convention-routed frameworks).
+In addition to the common checklist in coder-core. These were distilled from Express/Nest-style REST projects — skip any item that doesn't apply to the project's actual stack (e.g., route ordering in convention-routed frameworks).
 
 **Route ordering**:
 

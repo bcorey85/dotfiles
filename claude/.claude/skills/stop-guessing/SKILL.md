@@ -1,7 +1,6 @@
 ---
 name: stop-guessing
 description: Circuit breaker — stop guessing, research the actual solution. Invoke when Claude has failed repeatedly to fix something by reasoning alone.
-user-invocable: true
 ---
 
 # Stop Guessing

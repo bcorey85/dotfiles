@@ -1,0 +1,24 @@
+# zenwritten dark — zenbones-theme/zenbones.nvim, ANSI from the theme's own
+# terminal colors; white 7/15 = body fg per this repo's convention.
+palette = 0=#3d3839
+palette = 1=#de6e7c
+palette = 2=#819b69
+palette = 3=#b77e64
+palette = 4=#6099c0
+palette = 5=#b279a7
+palette = 6=#66a5ad
+palette = 7=#bbbbbb
+palette = 8=#3d3839
+palette = 9=#de6e7c
+palette = 10=#819b69
+palette = 11=#b77e64
+palette = 12=#6099c0
+palette = 13=#b279a7
+palette = 14=#66a5ad
+palette = 15=#bbbbbb
+background = #191919
+foreground = #bbbbbb
+cursor-color = #bbbbbb
+cursor-text = #191919
+selection-background = #3d3839
+selection-foreground = #bbbbbb

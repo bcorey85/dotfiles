@@ -138,11 +138,7 @@
       "Bash(open .)",
       "Bash(open -R *)"
     ],
-    "deny": [
-      "Bash(sudo *)",
-      "Bash(rm -rf /)",
-      "Bash(chmod 777 *)"
-    ],
+    "deny": ["Bash(sudo *)", "Bash(rm -rf /)", "Bash(chmod 777 *)"],
     "defaultMode": "auto"
   },
   "model": "fable",
@@ -351,6 +347,9 @@
       }
     ]
   },
+  "worktree": {
+    "baseRef": "fresh"
+  },
   "statusLine": {
     "type": "command",
     "command": "bash ~/.claude/statusline-command.sh"
@@ -373,8 +372,11 @@
     }
   },
   "effortLevel": "high",
+  "awaySummaryEnabled": false,
   "tui": "default",
   "autoMemoryEnabled": false,
   "theme": "auto",
+  "editorMode": "normal",
+  "inputNeededNotifEnabled": false,
   "skipAutoPermissionPrompt": true
 }

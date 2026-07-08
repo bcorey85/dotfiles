@@ -30,9 +30,7 @@ If the Figma MCP tools aren't available in this session, say so and stop — don
    - If found, use it directly. Skip to Phase 2.
 
 2. **If no URL in arguments**, check the current Jira ticket:
-   - Get branch name: `git branch --show-current`
-   - Extract ticket key (e.g., `TAS-13` from `TAS-13-board-rendering`)
-   - Read `docs/mcp-references/JIRA.md` for Cloud ID, fetch ticket via `getJiraIssue`
+   - Resolve the key and fetch the ticket per `~/.claude/skills/_shared/jira-ticket.md` (read it). This skill is an **optional-ticket caller**: no key resolvable or Jira MCP unavailable → skip straight to asking the user for the Figma frame URL.
    - Scan the ticket description for `figma.com` URLs. Note: `getJiraIssue` may not include comments by default. If no URL found in the description, proceed to asking the user rather than silently missing URLs in comments.
    - If one URL found: use it, tell the user where you found it
    - If multiple URLs found: list them and ask which frame to pull
@@ -48,7 +46,7 @@ If the Figma MCP tools aren't available in this session, say so and stop — don
 
 ### Phase 3: Check for Cached Design Tokens
 
-5. **Check for `eng-arch/design-tokens.md`**. If it exists, read it — this is a previously cached design system. This changes how Phase 6 works:
+5. **Check for `docs/eng-arch/design-tokens.md`**. If it exists, read it — this is a previously cached design system. This changes how Phase 6 works:
    - **Cache exists**: You already have the full design system (colors, typography, spacing, component inventory). Do NOT re-extract or re-document these. Phase 6 becomes a lightweight diff — only report what's NEW or CHANGED in this frame vs the cache.
    - **No cache**: Full extraction mode (original behavior).
 
@@ -107,7 +105,7 @@ If the Figma MCP tools aren't available in this session, say so and stop — don
 
 ### Phase 7: Auto-Update Cache (only if cache existed in Phase 3)
 
-10. **If the diff found NEW tokens, colors, typography, spacing, shadows, or components**: automatically append them to `eng-arch/design-tokens.md` using the Edit tool.
+10. **If the diff found NEW tokens, colors, typography, spacing, shadows, or components**: automatically append them to `docs/eng-arch/design-tokens.md` using the Edit tool.
     - Add new colors to the appropriate Colors sub-table (Text, Backgrounds, Borders, etc.)
     - Add new typography entries to the Typography table
     - Add new spacing tokens to the Spacing table

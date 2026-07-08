@@ -1,7 +1,7 @@
 ---
 name: refactor
-description: Smart refactorer — dispatches coder subagent(s), then auto-runs `/review`
-allowed-tools: [Agent, Read, Glob, Grep, Skill]
+description: Smart refactorer — dispatches coder subagent(s), then auto-runs `/review`. Use for "refactor X", "clean up X", "extract/rename/restructure" requests on code we own.
+allowed-tools: [Agent, Bash, Read, Glob, Grep, Skill]
 ---
 
 # Refactor
@@ -55,10 +55,13 @@ A refactor changes structure, not behavior — so the tests are the contract. **
 
    ```
    handoff:
-   files: [<files the coder(s) reported changing>]
-   tests-run: <what the coder(s) ran, or none>
-   flagged: <anything the coder(s) flagged, or none>
-   iter: 1
+     files:
+       - path: <relative path>
+         change: <one line: what was refactored and why>
+     tests-run: <exact command + exit code, e.g. "npm run validate → exit 0"; or "none">
+     flagged: <anything the coder(s) flagged, or "none">
+     plan_impact: <verbatim PLAN-IMPACT block from a coder report, or "none">
+     iter: 1
    ```
 
    Then invoke the `/review` skill using the Skill tool (`skill: "review"`, `args: <handoff block>`). If the user passed `+fast` or `+deep`, prepend the same modifier to the args (e.g., `args: "+fast\nhandoff: ..."`). This step runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing.

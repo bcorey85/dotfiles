@@ -44,7 +44,7 @@ if [[ "$(uname)" == "Darwin" ]]; then
     <string>/bin/zsh</string>
     <string>-l</string>
     <string>-c</string>
-    <string>$RECAP_CMD</string>
+    <string>$RECAP_CMD || osascript -e 'display notification "see ~/Library/Logs/daily-recap.log" with title "daily-recap failed"'</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -68,9 +68,22 @@ elif command -v systemctl &>/dev/null && systemctl --user show-environment &>/de
   UNIT_DIR="$HOME/.config/systemd/user"
   mkdir -p "$UNIT_DIR"
 
+  # Failure notifier shared by all recap services (install/weekly-recap writes
+  # the same file): a headless run that dies silently erodes trust in the
+  # pipeline, so surface it on the desktop. No-op if libnotify is absent.
+  cat >"$UNIT_DIR/recap-notify@.service" <<'EOF'
+[Unit]
+Description=Desktop notification when %i fails
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'command -v notify-send >/dev/null && exec notify-send -u critical "%i failed" "check: journalctl --user -u %i" || true'
+EOF
+
   cat >"$UNIT_DIR/daily-recap.service" <<EOF
 [Unit]
 Description=Compile daily recap note from vault captures and GitHub activity
+OnFailure=recap-notify@%p.service
 
 [Service]
 Type=oneshot

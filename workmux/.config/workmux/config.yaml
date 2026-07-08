@@ -1,0 +1,15 @@
+# workmux global config (stowed). Per-repo overrides go in .workmux.yaml at
+# the repo root. Full option list: `workmux config reference`.
+
+# Keep worktrees out of the projects tree — the default is a sibling
+# '<project>__worktrees' dir, which tmux-sessionizer would pick up as a
+# bogus project. {project} resolves to the main worktree's directory name.
+worktree_dir: ~/.workmux/{project}
+
+# 'workmux add <branch>' opens a tmux window in the current session with
+# claude (the default <agent>) already running in the new worktree. Split a
+# shell alongside with the usual prefix \ / prefix - when needed.
+panes:
+  - command: <agent>
+    focus: true
+nerdfont: true

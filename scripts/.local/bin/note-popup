@@ -21,9 +21,14 @@ if [ "${1:-}" = "today" ]; then
   exit 0
 fi
 
+# set -e closes the popup before an error is readable — hold it open so a
+# failed write is never mistaken for a captured note (the ✓ is the receipt).
+trap 'read -r -n1 -s -p "capture failed — press any key"' ERR
+
 echo "capture → $VAULT/Inbox/$TODAY.md   (empty line closes)"
 while IFS= read -e -r -p "note> " line; do
   [ -z "$line" ] && break
   "$HOME/.local/bin/note" "$line"
+  history -s "$line"   # up-arrow recalls prior captures within this popup
   printf '  \033[0;32m✓\033[0m %s\n' "$line"
 done

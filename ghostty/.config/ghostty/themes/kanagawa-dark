@@ -1,0 +1,24 @@
+# kanagawa dark — rebelot/kanagawa.nvim "dragon" variant, ANSI from the
+# theme's own terminal colors; white 7/15 = body fg per this repo's convention.
+palette = 0=#393836
+palette = 1=#c4746e
+palette = 2=#8a9a7b
+palette = 3=#c4b28a
+palette = 4=#8ba4b0
+palette = 5=#a292a3
+palette = 6=#8ea4a2
+palette = 7=#c5c9c5
+palette = 8=#848c84
+palette = 9=#e46876
+palette = 10=#87a987
+palette = 11=#e6c384
+palette = 12=#7fb4ca
+palette = 13=#938aa9
+palette = 14=#68ad99
+palette = 15=#c5c9c5
+background = #181616
+foreground = #c5c9c5
+cursor-color = #c5c9c5
+cursor-text = #181616
+selection-background = #393836
+selection-foreground = #c5c9c5

@@ -1,7 +1,7 @@
 ---
 name: peer-review
 description: Peer-review someone else's PR — orient first (intent, change map, risk surface), then a report-only tiered review (blocking / suggestions / nits) with per-finding drill-down. Never edits code, never enters the fix loop.
-allowed-tools: [Agent, Bash, Read, Glob, Grep, LSP, Skill, AskUserQuestion, mcp__jira__getJiraIssue]
+allowed-tools: [Agent, Bash, Read, Write, Glob, Grep, LSP, Skill, AskUserQuestion, mcp__jira__getJiraIssue]
 ---
 
 # Peer Review
@@ -15,6 +15,11 @@ Assist a human peer review of someone else's PR. Two hard differences from `/rev
 
 - `+deep` — dispatch `code-reviewer-deep` instead of `code-reviewer` (omit `model`; its frontmatter pins Opus). For security-sensitive, concurrent, or architecturally complex PRs.
 - `+comment` — after drill-down, draft GitHub review comments and post ONLY after the user approves the exact text. Without it, nothing ever leaves the terminal.
+- `+ephemeral` — skip the vault save below.
+
+## Persist orientation to vault (default — `+ephemeral` skips)
+
+After the step-3 gate is answered, save the orientation block (intent vs diff, ticket, change map, risk surface, state) to `<vault>/Orientations/<yyyy-mm-dd>-<repo>-pr<number>.md` (vault root: `$VAULT_DIR` if set, else `~/vault`) and append a capture line via `~/.local/bin/note "peer-review orientation: <repo>#<number> — [[<note filename without .md>]]"` so the daily recap links it. Re-reviewing the same PR same day overwrites the note. Findings are NOT saved to the vault — they belong to the PR thread and drill-down.
 
 ## Instructions
 

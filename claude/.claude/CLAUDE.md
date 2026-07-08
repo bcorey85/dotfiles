@@ -1,93 +1,82 @@
 # Global Claude Code Rules
 
+## Precedence
+
+When rules conflict: the user's current instruction > project CLAUDE.md > this file > skill/agent defaults. A project file may relax a global rule only through a mechanism this file names (e.g., direct-edit repos).
+
 ## Communication
 
 - Never paste secrets — give me the command to run.
+- Report by exception: never narrate what went as planned. Reference code as `file_path:line_number`. Never restate file contents I can open — give the path.
+- Status and completion reports: ≤10 lines — headline + one supporting point per item, one `STATUS: <ok|blocked|plan-impact> — <one line>` per completed dispatch.
+- Explanations and design discussion: as long as needed and no longer; lead with a 3-line TLDR when going long. Tables > paragraphs for enumerable facts. No preamble, no recap of the request.
+- PLAN-IMPACT findings are exempt from all brevity rules: route through AskUserQuestion in full.
+
+## Safety Rails (hook-enforced — never work around a block)
+
+`bash-safety-gate`, `git-discipline-gate`, `review-commit-gate`, `block-credential-read`, and `write-edit-safety-gate` deterministically block: SSH/scp/rsync, credential reads, sudo, force-push, push-to-main, `git stash`, `git commit --amend`, destructive resets, pipe-to-shell, and `git commit` after an unreviewed coder dispatch. When a gate blocks you: report it to the user and stop — never rephrase a command to slip past. The gates regex the full command string, so false positives happen; a block is a report, not a retry puzzle.
+
+## Delegation
+
+- Never code directly — dispatch via `/code` (coders; architects first when design decisions are needed). Exceptions: trivial single-line edits the user explicitly requested; rules/agents/skills/CLAUDE.md files; repos whose CLAUDE.md declares **direct-edit repo**.
+- A coder dispatch obligates `/review` before `/commit` — `review-commit-gate` enforces this at `git commit`. The only skip is a genuinely trivial diff with the user's explicit say-so.
+- Parallel writing agents need disjoint file scopes. One feature's fe+be coder split in the same tree is fine (the orchestrator owns all git operations). Separate branches/worktrees only for independent tasks or when scopes could overlap.
+- Agent model discipline (hook-enforced by `agent-model-guard`; rationale in its header): pinned agent → omit `model`; unpinned → `haiku` for read-only lookup, `sonnet` for implementation/analysis/review; never `opus`/`fable`/`inherit` at call sites. Pair `subagent_type` deliberately: `Explore` (read-only lookup), `general-purpose` (multi-file tracing Explore can't handle), coders/architects/reviewers per their descriptions.
+
+## Tools
+
+- File changes go through Write/Edit — shell writes (redirection, heredocs, `sed`/`awk -i`) bypass the Write/Edit hook pipeline (formatters, stub-guard, safety gate) and leave no reviewable diff.
+- Prefer LSP over grep+Read in typed code (references, definitions, hover, diagnostics). Fall back to `rg` for plain text or unindexed file types.
+- When the context-mode plugin is active, its `ctx_*` tools take precedence for bulk read-only analysis; Read remains correct for files you're about to edit.
 - Verify CLI syntax with `--help` before guessing.
-- Be concise. Reference code with `file_path:line_number`.
-- When a task spans >3 files or >1 service, propose a plan before writing code.
+- WebSearch before writing config, CI, infra, or library-integration code wherever the feedback loop is slow or remote: official docs, then GitHub issues, then write. Local configs verifiable in seconds are exempt — just test them. If research would take >5 minutes, say so and ask.
 
-## Output Discipline
+## Quality Checks & Failure Budget
 
-- Report by exception: never narrate what went as planned.
-- Summaries ≤ 10 lines. Tables > paragraphs. No preamble, no recap of the request.
-- One STATUS line per completed dispatch: `STATUS: <ok|blocked|plan-impact> — <one line>`.
-- Never restate file contents the user can open — give the path.
-- PLAN-IMPACT findings are the exception to brevity: those route through AskUserQuestion in full.
+After any code change, run the project's quality checks (whatever its CLAUDE.md specifies) before declaring done; if unknown, check there or ask.
 
-## Behavior
-
-- **MANDATORY: Never code directly. Always delegate to the `/code` subagents** (`backend-coder`, `frontend-coder`, `coder` for non-web repos, or `backend-architect` / `frontend-architect` first when design decisions are needed). The main agent's role is briefing, reviewing, and orchestration — not editing files. Exceptions: trivial single-line edits explicitly requested by the user (e.g., "change this variable name"), repository configuration files like `CLAUDE.md` itself, and repos whose project CLAUDE.md declares itself a **direct-edit repo** (dotfiles, config-only, personal scripts) — there, edit directly.
-- **MANDATORY: A coder dispatch obligates a `/review` before `/commit` — no exceptions for how it was dispatched.** The `/code` skill chains review automatically; a **raw `Agent` call to a coder (`backend-coder`/`frontend-coder`/`coder`, incl. `-deep`) does NOT** — so when you dispatch a coder directly, you MUST invoke `/review` yourself once it returns, before committing. Prefer `/code` precisely because it wires this up. The ONLY skip is a genuinely trivial change (typo, single-line, rename, comment-only). "I'll review later" / "it looks fine" / "the coder said it passes" are not exemptions. If you're about to `/commit` and no `/review` ran this session on the current changes, stop and run it first.
-- Never hardcode paths or project names in rules, agents, skills, or commands — keep portable.
-- DO NOT GIT STASH UNLESS YOU HAVE EXPLICIT PERMISSION FROM THE USER. Stashing causes critical failures in parallel agent work and also resets staged files.
-- **MANDATORY: WebSearch before writing config, CI, infra, or library-integration code** (Docker, pipelines, tool configs, version migrations): official docs first, then GitHub issues, only then write — never from reasoning alone. Scope: anywhere the feedback loop is slow or remote; local configs verifiable in seconds are exempt (just test them). If research would take >5 minutes, say so and ask for direction.
-- Maximum 3 attempts on any failing approach. After 3, stop, document what failed, and ask for direction.
-- Save all Playwright screenshots to `/tmp/`, never inside a project repo.
-- **NEVER use Bash to write files.** This is non-negotiable:
-  - Create/overwrite files → **Write tool** (not `cat <<`, `echo >`, heredocs)
-  - Edit files → **Edit tool** (not `sed`, `awk`)
-- Prefer **Read tool** with offset/limit over `cat`, `head`, `tail` for reading files.
-- Prefer `rg` over `grep` and `fd` over `find` when available.
-- When the **context-mode plugin** is active, its `ctx_*` tools take precedence over the Read/`rg` preferences above for bulk read-only analysis; Read remains correct for files you're about to edit.
-- **Agent-call model discipline** (hook-enforced by `agent-model-guard`; rationale in the script header — `~/.claude/scripts/agent-model-guard.sh`):
-  - Frontmatter-pinned agent (any agent file with a `model:` line) → **omit `model`** at the call site; a call-site model silently overrides the pin.
-  - Unpinned agent → **set `model` explicitly**: `haiku` for read-only/lookup, `sonnet` for implementation, multi-file analysis, or review.
-  - Never `opus`, `fable`, or `inherit` at the call site (hook-blocked). Deliberate downgrades of a pinned agent (`+fast` → `haiku`) are allowed.
-  - Pair `subagent_type` deliberately: `Explore` (read-only lookup), `general-purpose` (multi-file tracing Explore can't handle), coders / architects / reviewers per their descriptions.
-- **Prefer LSP over grep+Read for typed code.** When working in a project with a language server (TypeScript, Python with pyright, Go, Rust, etc.), use the LSP tool for: finding references, go-to-definition, hover/type info, and diagnostics. One LSP call replaces 5–10 grep+Read pairs. Reach for it on refactors, signature changes, import rewrites, "find every usage of X", and post-edit type checks. Fall back to `rg` only for plain text or unindexed file types.
-
-## Built-in vs Custom Skills (fixed routing — don't mix per-task)
-
-The harness ships built-ins that overlap the custom toolkit. The boundary:
-
-- **Inner-loop review** → custom `/review` (flywheel metrics, handoffs, convergence loop). Built-in `/code-review` is NOT part of the loop; `/code-review ultra` is an optional pre-PR deep pass on large branches only.
-- **Peer review of others' PRs** → custom `/peer-review` (orientation first, report-only tiered findings, drill-down). Never `/review` on code we don't own — its fix loop and metrics assume ownership.
-- **Security audit** → built-in `/security-review`. `/audit-code` owns the other categories (bugs, DRY, a11y, findings ledger).
-- **Cleanup** → the coder's second-draft sweep + `/refactor`. Don't run built-in `/simplify` on loop output — it duplicates the sweep and skips escape logging.
-- **Verification** → built-in `/verify` drives the app (behavioral); `/q-verify` reconciles plan↔diff (completeness). Different audits; never substitute one for the other.
-- **Planning lanes** → `/q-plan` (QRSPI) for multi-phase features where research contamination matters; `/eng-spec` for single-sitting features with real design decisions; bare `/code` below that; plan mode for ad-hoc exploration before committing to any lane.
-
-## Engineering Judgment
-
-1. **Ask, don't assume.** If something is unclear, ask before writing a single line. Never make silent assumptions about intent, architecture, or requirements. When running unattended, pick the most reasonable interpretation, proceed, and record the assumption rather than blocking.
-2. **Match solution complexity to the problem** — simplest solution for simple problems, better solutions for harder ones. Before a non-trivial implementation, state the approach in 1–2 lines and what it makes harder later. Don't over-engineer or add flexibility that isn't needed yet; don't paint into a corner either.
-3. **Don't touch unrelated code** — only change what's requested. But do surface bad code or design smells you discover so we can address them as a separate issue.
-4. **Flag uncertainty explicitly.** If you're unsure about something, see rule 1. Where it makes sense, run a small, localized, low-risk experiment and bring the hypothesis and results back to discuss. Confidence without certainty causes more damage than admitting a gap.
-5. **Suggest a better way when you see one** — favor approaches with long-lasting impact over tactical fixes. But interrupt only for material tradeoffs (irreversible work, security, data loss, broad refactors, hours of wasted debugging), not style preferences.
-
-## Quality Checks
-
-After any code change, run the project's quality checks (validate, lint, typecheck, tests, build, format — whatever CLAUDE.md specifies) before declaring done. If unknown, check the project CLAUDE.md or ask.
-
-- **Hard cap: run any single quality-check command at most TWICE per task.** Applies to every check — validate, linters, type checkers, test runners, builds, formatters.
-- If exit code is 0, you're done with that check.
-- If non-zero, redirect output to `/tmp/check.log`, read the full log, and fix **every reported failure in a single batch** before re-running. Do not re-run to inspect different parts of the same output — grep the log.
-- If the second run still fails, **stop**. Document what's failing and ask for direction. Do NOT enter a fix-rerun-fix-rerun loop. That single anti-pattern is the largest source of runaway tool use.
+- Any single quality-check command: max TWO runs per task. Non-zero exit → redirect to `/tmp/check.log`, read the full log, fix every failure in one batch, re-run once. Still failing → stop, document, ask. Never enter fix-rerun loops.
+- Everything else: max 3 attempts per failing approach, then stop and ask. The 2-run cap is the specific rule and wins where both apply.
 
 ## Tool Use Efficiency
 
-You're paying real time and tokens for every tool call. Be deliberate.
+- Run expensive commands once: long output → `/tmp/<name>.log`, then grep the file. Never re-run with different filters.
+- One source of truth per fact — don't cross-check the same fact through multiple tools.
+- Parallel calls are for independent questions only.
+- Read before grep: if you already know the path, read it.
+- Trust framework guarantees — no spot-checking the type checker, test runner, or linter.
 
-- **Run expensive commands once.** If you need to inspect different parts of a long-running command's output (test runs, builds), redirect to `/tmp/<name>.log` and grep the file. Never re-run the same command with different filters or to a different `tail`/`head`.
-- **One source of truth per fact.** Look up a package version, config value, or symbol location once and trust it. Don't cross-check the same fact through multiple tools.
-- **Parallel ≠ better.** Parallel tool calls are for _independent_ questions. Multiple calls answering the same question are wasted, even when concurrent.
-- **Read before grep.** If you already know the file path, just read the file. Don't grep for a symbol whose location you already have.
-- **Trust framework guarantees.** The build tool, test runner, type checker, ORM, and linter do their jobs. Don't verify their output via separate spot checks.
+## Workflow Routing (built-in vs custom — fixed, don't mix per-task)
+
+- Inner-loop review → custom `/review`. Built-in `/code-review` is not in the loop; `/code-review ultra` is an optional pre-PR pass on large branches.
+- Others' PRs → `/peer-review`; never `/review` on code we don't own (its fix loop and metrics assume ownership).
+- Security audit → built-in `/security-review`; bugs/DRY/a11y/findings ledger → `/audit-code`.
+- Cleanup → coder second-draft sweep + `/refactor`; never built-in `/simplify` on loop output.
+- Verification → built-in `/verify` (behavioral) vs `/q-verify` (plan↔diff completeness) — never substitute one for the other.
+- Planning → `/plan` (front door) when no lane is named: recommends + confirms, then dispatches. Direct calls unchanged: `/eng-spec` by default; `/q-plan` for highest-stakes invariant work, unfamiliar surfaces, ANY change to external enforcement-tool config, and reclamation/liveness-teardown work (reapers, sweeps, session/instance GC — eng-spec 0-for-2 on that class). Tag lane escapes with `/escape lane=<lane>`; review via `/review-stats`. Rationale and pilot history: `~/.claude/docs/planning-lanes.md`.
+
+## Engineering Judgment
+
+1. **Ask, don't assume.** If intent, architecture, or requirements are unclear, ask before writing a line. Running unattended: pick the most reasonable interpretation, proceed, and record the assumption.
+2. **Match complexity to the problem.** Before non-trivial work, state the approach in 1–2 lines and what it makes harder later. No speculative flexibility; no painting into corners.
+3. **Don't touch unrelated code.** Surface smells you find as separate issues instead of fixing them inline.
+4. **Flag uncertainty explicitly.** Prefer a small, low-risk experiment plus a hypothesis over confident guessing.
+5. **Suggest a better way when you see one** — but interrupt only for material tradeoffs (irreversible work, security, data loss, broad refactors, hours of wasted debugging), not style preferences.
 
 ## Git
 
-- Never commit directly to main/master. Work on a feature branch.
-- Don't amend or force-push commits unless explicitly asked.
-- Keep diffs focused — one logical change per task.
+- Never commit directly to main/master — feature branch first. Keep diffs focused: one logical change per task.
+- Stash, amend, and force-push are hook-blocked; if one is genuinely needed, ask the user to run it.
 
 ## Security
 
-- NEVER SSH into remote servers (ssh, scp, rsync to remote hosts).
-- NEVER read or cat credential/secret files.
-- Use Ansible Vault for any secrets that need to be referenced.
+- Ansible Vault for any secrets that must be referenced — never inline them anywhere.
 
 ## Obsidian
 
-- Note vault: `~/vault`. Templates: `~/vault/Templates`.
-- Suggest a note when a key insight or decision comes up.
+- Vault: `~/vault`; templates: `~/vault/Templates`. Suggest a note when a key insight or decision surfaces.
+
+## Maintaining These Rules
+
+- Every line here costs attention in every session. When a rule is violated or fights the workflow: **mechanize it** (hook/permission), **move it** (into the skill or agent that triggers it), or **delete it** — never just add emphasis.
+- Keep rules, agents, skills, and commands portable — no hardcoded paths or project names.

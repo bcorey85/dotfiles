@@ -23,6 +23,7 @@ Individual scripts in `install/` can be run standalone:
 - `install/tmux-plugins` - clone tmux-resurrect + tmux-continuum to `~/.tmux/plugins/` (crash-proof sessions; loaded from `.tmux.conf`, no TPM)
 - `install/mise` - global node LTS via mise (mise itself comes from `install/deps`; replaces `install/nvm` in `./setup` — `.zshrc` falls back to nvm on machines without mise)
 - `install/gh-dash` - gh-dash PR/issue dashboard extension (skips if gh missing or unauthenticated; re-run after `gh auth login`)
+- `install/daily-recap` - schedule nightly `claude -p "/daily-recap"` (weekdays 18:00): compiles `note` captures (`~/vault/Inbox`) + GitHub activity into a structured daily note in the vault. macOS LaunchAgent / Linux systemd user timer; skips if claude absent. Capture side is `scripts/.local/bin/note`
 - `install/starship` - Starship prompt
 - `install/claude-plugins` - Claude Code plugins (skips if Claude not installed)
 - `install/zsh` - set zsh as default shell
@@ -57,7 +58,7 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 
 ## Key Conventions
 
-- **Theme**: single family (github-nvim-theme, projekt0n/github-nvim-theme), one state file. **Mode** (`~/.cache/theme-mode`, toggled by `theme-mode` / tmux `prefix T` / nvim `<leader>ut` / Emacs `SPC t t`): dark (`github_dark_dimmed`: bg `#22272e`, fg `#adbac7`, blue `#539bf5` primary accent, cyan `#76e3ea`, green `#57ab5a`, red `#f47067`) or light (`github_light`: bg `#ffffff`, fg `#1f2328`, blue `#0969da`). tmux sources `~/.config/tmux/github-{mode}.conf`; nvim polls the state file (lua/config/theme-sync.lua); Emacs watches it and remaps modus-vivendi/modus-operandi to the github palette (no Emacs port exists); ghostty is static (`theme = GitHub Dark Dimmed`, not wired to the toggle — reload with ctrl+shift+, after editing). **Dark-only, no mode switching**: starship, waybar, rofi, dunst, hyprland, hyprlock — all github_dark_dimmed hex values. GTK/Qt apps use Adwaita-dark.
+- **Theme**: two-axis switcher, owned by the `theme-mode` script (scripts package). **Family** (`~/.cache/theme-family`: `doom-one` default, `github`; switch with `theme-mode use <family> [mode]`) × **mode** (`~/.cache/theme-mode` dark/light, toggled by `theme-mode` / tmux `prefix T` / nvim `<leader>ut` / Emacs `SPC t t`). Consumers: tmux sources `~/.config/tmux/<family>-<mode>.conf`; nvim polls both state files (lua/config/theme-sync.lua — its FAMILIES table maps schemes and owns all theme-reactive overrides: markview headings, gitsigns word-diff, per-family fixups like doom-one's brighter comments + rebuilt Diff washes); ghostty gets `theme-switch.conf` (machine-local include written by the script; reload ctrl+shift+, — custom palettes live in `ghostty/.config/ghostty/themes/`); Emacs is mode-only (remaps modus-vivendi/modus-operandi to the github palette). Adding a family = 4 touchpoints, listed in the `theme-mode` header. **Dark-only, no mode switching**: starship, waybar, rofi, dunst, hyprland, hyprlock — all github_dark_dimmed hex values. GTK/Qt apps use Adwaita-dark.
 - **Font**: JetBrainsMono Nerd Font Mono, 11pt (ghostty)
 - **Platform guards**: Use `command -v <tool> &>/dev/null &&` before tool-specific init (see .zshrc)
 - **Install scripts**: All use the same color output pattern (`print_success`, `print_error`, `print_info`) with `set -e`

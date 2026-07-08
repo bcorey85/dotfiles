@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# note-popup — vault quick-capture for the daily-recap pipeline, meant to run
+# inside a tmux display-popup (prefix n n). Reads lines in a loop so a
+# meeting's worth of captures is a single popup: each entry is appended to
+# today's inbox via `note`, an empty line (or Ctrl-C/Ctrl-D) closes.
+#
+# Usage:
+#   note-popup          # capture loop
+#   note-popup today    # view today's recap if compiled, else today's raw inbox
+set -euo pipefail
+
+VAULT="${VAULT_DIR:-$HOME/vault}"
+TODAY="$(date +%F)"
+
+if [ "${1:-}" = "today" ]; then
+  for f in "$VAULT/Daily/$TODAY.md" "$VAULT/Inbox/$TODAY.md"; do
+    [ -f "$f" ] && exec "$HOME/.local/bin/glow-fit" -p "$f"
+  done
+  echo "nothing captured today — press any key"
+  read -r -n1 -s
+  exit 0
+fi
+
+echo "capture → $VAULT/Inbox/$TODAY.md   (empty line closes)"
+while IFS= read -e -r -p "note> " line; do
+  [ -z "$line" ] && break
+  "$HOME/.local/bin/note" "$line"
+  printf '  \033[0;32m✓\033[0m %s\n' "$line"
+done

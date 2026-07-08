@@ -1,0 +1,99 @@
+#!/bin/bash
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_info() { echo -e "${YELLOW}→${NC} $1"; }
+
+# daily-recap — schedules a headless `claude -p "/daily-recap"` run at 18:00
+# on weekdays. The skill (claude/.claude/skills/daily-recap) compiles the
+# day's `note` captures (~/vault/Inbox) + GitHub activity into a structured
+# daily note in the vault.
+#   macOS: LaunchAgent (~/Library/LaunchAgents/com.dotfiles.daily-recap.plist);
+#          a run missed while asleep fires on next wake.
+#   Linux: systemd user timer with Persistent=true (missed runs fire on boot).
+# Skips (not fails) if claude is absent — re-run after installing Claude Code.
+
+if ! command -v claude &>/dev/null; then
+  print_info "claude not installed — skipping (install Claude Code, then re-run install/daily-recap)"
+  exit 0
+fi
+
+# zsh login shell so claude/gh resolve from the user's real PATH; allowlist is
+# the minimum the skill needs to run unattended (vault writes + gh reads).
+RECAP_CMD='claude --permission-mode acceptEdits --allowedTools Read Write Edit Glob Grep "Bash(gh:*)" "Bash(date:*)" "Bash(mkdir:*)" -p "/daily-recap"'
+
+if [[ "$(uname)" == "Darwin" ]]; then
+  PLIST="$HOME/Library/LaunchAgents/com.dotfiles.daily-recap.plist"
+  mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+
+  cat >"$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.dotfiles.daily-recap</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-l</string>
+    <string>-c</string>
+    <string>$RECAP_CMD</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>$HOME/Library/Logs/daily-recap.log</string>
+  <key>StandardErrorPath</key><string>$HOME/Library/Logs/daily-recap.log</string>
+</dict>
+</plist>
+EOF
+
+  launchctl unload "$PLIST" 2>/dev/null || true
+  launchctl load "$PLIST"
+  print_success "LaunchAgent loaded — weekdays 18:00, logs at ~/Library/Logs/daily-recap.log"
+  print_info "test now with: launchctl start com.dotfiles.daily-recap"
+elif command -v systemctl &>/dev/null && systemctl --user show-environment &>/dev/null; then
+  UNIT_DIR="$HOME/.config/systemd/user"
+  mkdir -p "$UNIT_DIR"
+
+  cat >"$UNIT_DIR/daily-recap.service" <<EOF
+[Unit]
+Description=Compile daily recap note from vault captures and GitHub activity
+
+[Service]
+Type=oneshot
+ExecStart=/bin/zsh -l -c '$RECAP_CMD'
+EOF
+
+  cat >"$UNIT_DIR/daily-recap.timer" <<EOF
+[Unit]
+Description=Run daily-recap at 18:00 on weekdays
+
+[Timer]
+OnCalendar=Mon..Fri 18:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+  systemctl --user daemon-reload
+  systemctl --user enable --now daily-recap.timer
+  print_success "systemd user timer enabled — weekdays 18:00 (Persistent=true)"
+  print_info "test now with: systemctl --user start daily-recap.service"
+else
+  print_info "no launchd or systemd user session (WSL?) — run 'claude -p \"/daily-recap\"' manually or from cron"
+  exit 0
+fi

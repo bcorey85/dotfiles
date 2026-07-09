@@ -40,7 +40,7 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
   case "$1:$2" in
     doom-one:dark) echo "Doom One" ;;
     doom-one:light) echo "doom-one-light" ;; # custom: ghostty/themes/doom-one-light
-    github:dark) echo "GitHub Dark Dimmed" ;;
+    github:dark) echo "GitHub Dark Default" ;;
     github:light) echo "GitHub Light Default" ;;
     # custom (ghostty/themes/): builtins ship near-white ANSI 7/15 slots that
     # make Claude Code headers blaze; customs mirror sainnhe's own mapping.

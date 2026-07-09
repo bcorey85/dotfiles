@@ -40,7 +40,11 @@ else
 fi
 
 # Build token info
-if [ -n "$remaining_pct" ]; then
+# Derive remaining from used_pct so we don't depend on remaining_percentage
+# being present (it's absent early in a session, which stranded the display at 0).
+if [ "$context_size" -gt 0 ]; then
+    remaining_pct=$(( 100 - used_pct ))
+
     # Calculate tokens used from percentage
     tokens_used=$(( context_size * used_pct / 100 ))
 
@@ -75,7 +79,7 @@ if [ -n "$remaining_pct" ]; then
 
     token_info=$(printf " ${DIM}[${RESET}%s${DIM}]${RESET} ${DIM}[${RESET}${pct_color}%s${RESET} %s%% ${DIM}left |${RESET} %s${DIM}/${RESET}%s${DIM}]${RESET}" "$model_name" "$bar" "$remaining_pct" "$used_display" "$size_display")
 else
-    token_info=$(printf " ${DIM}[${RESET}%s${DIM}]${RESET} ${DIM}[${RESET}0${DIM}/${RESET}%s${DIM}]${RESET}" "$model_name" "$context_size")
+    token_info=$(printf " ${DIM}[${RESET}%s${DIM}]${RESET}" "$model_name")
 fi
 
 # 5-hour rate-limit window

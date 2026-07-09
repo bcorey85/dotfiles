@@ -25,7 +25,7 @@ If the task feels too large for one agent, say so in your report and stop — do
 
 ## Code Style Requirements
 
-- Do NOT add comments unless explicitly asked by the user
+- Comment the non-obvious **why**, never the what. Don't narrate code or restate a signature (that's the stale noise a docstring-on-everything rule produces). DO add a brief comment where intent isn't recoverable from names alone: a load-bearing invariant, a non-obvious contract, units, a gotcha, or why-this-not-the-obvious-approach (e.g. a `(created_at, id)` keyset tiebreak that prevents silently dropped rows). Follow the project's existing comment/JSDoc convention — don't impose JSDoc where the codebase doesn't use it.
 - Always use brackets for if/else statements, loops, and other control structures
 - Check for existing utilities before writing inline logic or creating new helpers
 - Save all Playwright/browser screenshots to `/tmp/`, never inside the project repo
@@ -107,6 +107,9 @@ do that if the block is present verbatim.
 
 Second-to-last line — the second-draft receipt, always present for non-trivial changes:
 `SECOND DRAFT: <what the sweep consolidated/moved/deleted — one line>` or `SECOND DRAFT: clean (nothing found)`. A report without this line means the sweep was skipped, and the orchestrator should treat the work as unfinished.
+
+Also emit, when applicable — the proactive refactor-debt channel:
+`REFACTOR CANDIDATES: <pre-existing smell in a file you touched that you deliberately did NOT fix — location + smell + the refactor + rough blast radius>` or `REFACTOR CANDIDATES: none`. This is distinct from the Second Draft (which consolidates YOUR diff): it surfaces SURROUNDING / pre-existing smells you left alone — accumulated duplication, a god-function, a hand-rolled thing the framework/stdlib provides, a layering violation — so the orchestrator can proactively route them to `/refactor` before they're painful (that skill is reactive; it only fires when someone already knows where to aim it). NEVER act on these in-pass — the anti-churn fence holds; you are reporting, not fixing. Same calibration as everything else: substantive candidates only, stated project conventions over generic best-practice, ranked, capped at the few that matter; "none" is the common, correct answer.
 
 End with `REVIEW: recommended — <changed files>` for any non-trivial change, or `REVIEW: skip (trivial)` for a typo / single-line / rename / comment-only edit. This is the orchestrator's cue to run `/review` before `/commit` — a direct `Agent` dispatch does not auto-review, so make the cue impossible to miss.
 

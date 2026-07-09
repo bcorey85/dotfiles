@@ -224,6 +224,24 @@ end
 -- Runs on every ColorScheme. A manual :colorscheme (theme audition) won't
 -- match the active family's scheme — skip its fixup/accents and apply only
 -- the theme-agnostic word-diff glue, so auditions aren't painted over.
+-- nvim-orgmode agenda readability (prefix n a / n t popups). The plugin
+-- samples its @org.agenda.* colors from whatever the active theme defines,
+-- which under minimal families (alabaster, zenwritten…) lands scheduled-item
+-- text near-invisible. Pin them to semantic groups every family paints; the
+-- plugin's own versions are `hi default`, so these explicit links win
+-- regardless of load order.
+local function set_org_agenda()
+  local links = {
+    ["@org.agenda.scheduled"] = "Normal",
+    ["@org.agenda.scheduled_past"] = "WarningMsg",
+    ["@org.agenda.deadline.upcoming"] = "WarningMsg",
+    ["@org.agenda.deadline"] = "ErrorMsg",
+  }
+  for group, target in pairs(links) do
+    vim.api.nvim_set_hl(0, group, { link = target })
+  end
+end
+
 local function apply_overrides()
   local family, mode = M.read_state()
   local fam = FAMILIES[family]
@@ -236,6 +254,7 @@ local function apply_overrides()
     set_headings(fam.accents[mode])
   end
   set_word_diff()
+  set_org_agenda()
 end
 
 -- Apply family+mode by setting background and re-running :colorscheme. Skips

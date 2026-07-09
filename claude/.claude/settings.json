@@ -145,7 +145,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "opus",
+  "model": "Opus",
   "hooks": {
     "PreToolUse": [
       {
@@ -352,7 +352,7 @@
   "awaySummaryEnabled": false,
   "tui": "default",
   "autoMemoryEnabled": false,
-  "theme": "auto",
+  "theme": "dark-ansi",
   "editorMode": "normal",
   "inputNeededNotifEnabled": false,
   "skipAutoPermissionPrompt": true

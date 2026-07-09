@@ -47,12 +47,23 @@ picks="$(grep -rn --include='*.org' -E '^\*+ (TODO|NEXT|WAITING) ' . 2>/dev/null
       --prompt='done> ' --header='enter = done · tab = multi' || true)"
 [ -n "$picks" ] || exit 0
 
-# Flip each picked headline's keyword to DONE. Substitution never changes line
-# counts, so grep's line numbers stay valid across multiple picks. cat > file
-# (not mv) keeps the inode + permissions.
-printf '%s\n' "$picks" | while IFS=: read -r file line _; do
+# Flip each picked headline's keyword to DONE and record a CLOSED timestamp
+# (same shape nvim-orgmode writes), which the nightly /daily-recap reads as
+# "completed today". Process picks bottom-up so the inserted CLOSED lines
+# don't shift the line numbers of picks above. cat > file (not mv) keeps the
+# inode + permissions.
+now="$(date +'%Y-%m-%d %a %H:%M')"
+printf '%s\n' "$picks" | sort -t: -k2 -rn | while IFS=: read -r file line _; do
   tmp="$(mktemp)"
-  sed -E "${line}s/^(\*+) (TODO|NEXT|WAITING) /\1 DONE /" "$file" >"$tmp"
-  cat "$tmp" >"$file" && rm -f "$tmp"
+  awk -v n="$line" -v closed="CLOSED: [$now]" '
+    NR == n && match($0, /^\*+ (TODO|NEXT|WAITING) /) {
+      stars = $0; sub(/ .*/, "", stars)
+      print stars " DONE " substr($0, RLENGTH + 1)
+      print closed
+      next
+    }
+    { print }
+  ' "$file" >"$tmp"
+  cat "$tmp" >"$file"
 done
 printf '%s\n' "$picks" | cut -d: -f3- | sed -E 's/^\*+ (TODO|NEXT|WAITING) /✓ /'

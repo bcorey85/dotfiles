@@ -56,7 +56,8 @@ return {
   opts = {
     diff = {
       -- Default to the inline (vertical stacked / unified) layout; `t`
-      -- (toggle_layout) still flips to side-by-side per session.
+      -- (toggle_layout) still flips to side-by-side per session. Line wrap is
+      -- forced on for this layout only — see the inline-wrap glue in config().
       layout = "inline",
       -- ]c/[c at a file boundary hop to the next/prev file's first/last hunk
       -- (explorer/history mode) instead of wrapping within the file — one key
@@ -134,13 +135,28 @@ return {
       -- non-modifiable, so append is dead anyway. Popup-gated to keep normal
       -- editing sessions' A intact.
       vim.keymap.set("n", "A", function()
-        local ok = pcall(function()
-          Snacks.terminal.open("diffask", { win = { position = "right", width = 0.35 } })
-        end)
-        if not ok then
-          vim.cmd("botright 60vsplit | terminal diffask")
-          vim.cmd("startinsert")
-        end
+        -- Tell diffask which file is on screen so "this file" questions
+        -- resolve. The selected file is EXPLICIT STATE on the explorer
+        -- instance (render.lua keeps ex.current_file_path via its
+        -- on_file_select wrapper; the plugin reads the same field in
+        -- view/keymaps.lua) — buffer names can't answer this (staged views
+        -- are all codediff:// virtual buffers). Repo-relative, matching
+        -- diffask's cwd. PRIVATE internals (lifecycle/current_file_path),
+        -- pcall-guarded per this file's degradation contract: a miss means
+        -- no focus context, asks still work. setenv so the :terminal child
+        -- inherits it; this nvim is a disposable popup, the env leak is
+        -- contained.
+        local ok, lifecycle = pcall(require, "codediff.ui.lifecycle")
+        local ex = ok and lifecycle.get_explorer(vim.api.nvim_get_current_tabpage()) or nil
+        vim.fn.setenv("DIFFASK_FILE", ex and ex.current_file_path or nil)
+        -- Plain :terminal, deliberately NOT Snacks.terminal: snacks keys
+        -- terminals by command and reattaches, so after a diffask exits you
+        -- get the dead "[Process exited]" buffer back instead of a fresh
+        -- ask — and a stale DIFFASK_FILE with it. Fresh spawn per press.
+        vim.cmd("botright vsplit")
+        vim.cmd("vertical resize " .. math.floor(vim.o.columns * 0.35))
+        vim.cmd("terminal diffask")
+        vim.cmd("startinsert")
       end, { desc = "Ask the diff (diffask)" })
     end
 
@@ -351,5 +367,135 @@ return {
         vim.keymap.set("n", "<C-u>", scroll_diff("<C-u>"), { buffer = args.buf, desc = "Scroll the diff up" })
       end,
     })
+
+    -- INLINE WRAP. codediff hardcodes `wrap = false` on every diff pane and has
+    -- no option for it (v2.49.2) — it's re-asserted at each render (view/
+    -- render.lua, view/inline_view.lua) AND from a lifecycle/session.lua
+    -- autocmd on BufWinEnter/BufEnter/WinEnter/FileType, whose own comment says
+    -- it exists to undo "ftplugins/autocmds". A plain wrap=true autocmd loses
+    -- that race on every window enter, so we re-assert from inside vim.schedule:
+    -- the set lands on the next event-loop tick, after codediff's synchronous
+    -- wrap=false, regardless of autocmd definition order.
+    --
+    -- INLINE ONLY, and that restriction is load-bearing. Side-by-side aligns its
+    -- panes with scrollbind + filler lines, which assume one screen row per
+    -- buffer line; wrap makes a long line eat extra rows in one pane and desyncs
+    -- both. Inline has no original_win and no scrollbind at all (it's a single
+    -- unified buffer), so there is nothing to desync. `t` back to side-by-side
+    -- re-renders with codediff's stock wrap=false and this no-ops.
+    --
+    -- Same degradation contract as the git-layer glue: get_layout/get_windows
+    -- are lifecycle accessors, not guaranteed API. If they vanish, wrap silently
+    -- reverts to stock off (warned once) — nothing else breaks.
+    local function inline_wrap()
+      local ok, lc = pcall(require, "codediff.ui.lifecycle")
+      if not ok or type(lc.get_layout) ~= "function" or type(lc.get_windows) ~= "function" then
+        if not vim.g.codediff_wrap_warned then
+          vim.g.codediff_wrap_warned = true
+          glue_broke("inline wrap disabled (lifecycle accessors missing)")
+        end
+        return
+      end
+      -- Cheap synchronous bail: get_layout is a table lookup returning nil for
+      -- every non-codediff tab, so the global BufEnter/WinEnter hooks below cost
+      -- ~nothing. It tests only "does a session exist"; the layout and the
+      -- window are resolved inside the schedule instead, against post-render
+      -- state — which is also what makes this a no-op when a toggle lands on
+      -- side-by-side.
+      local tab = vim.api.nvim_get_current_tabpage()
+      if lc.get_layout(tab) == nil then
+        return
+      end
+      vim.schedule(function()
+        if lc.get_layout(tab) ~= "inline" then
+          return
+        end
+        local _, modified_win = lc.get_windows(tab)
+        if modified_win and vim.api.nvim_win_is_valid(modified_win) then
+          vim.wo[modified_win].wrap = true
+        end
+      end)
+    end
+
+    local wrap_group = vim.api.nvim_create_augroup("CodediffInlineWrap", { clear = true })
+    -- CodeDiffOpen covers open + file-select; the window events cover
+    -- session.lua's re-assert guard.
+    vim.api.nvim_create_autocmd("User", {
+      pattern = "CodeDiffOpen",
+      group = wrap_group,
+      callback = inline_wrap,
+    })
+    vim.api.nvim_create_autocmd({ "BufWinEnter", "BufEnter", "WinEnter", "FileType" }, {
+      group = wrap_group,
+      callback = inline_wrap,
+    })
+
+    -- The autocmds above are not enough on their own: the `t` layout toggle
+    -- emits NOTHING — no CodeDiffOpen, and no window events either, since it
+    -- reuses the current window (verified: zero autocmds fire on side-by-side
+    -- -> inline). So re-assert after every inline render entry point too.
+    -- create() is ASYNC (an on_ready callback), so it gets its callback wrapped
+    -- rather than its return.
+    --
+    -- (An OptionSet/wrap autocmd is the tempting catch-all here. It does not
+    -- work: OptionSet never fires for `vim.wo[win].opt = v` writes — verified,
+    -- zero events — only for `:set`.)
+    --
+    -- Both patches below target module TABLES, whose fields codediff resolves
+    -- with a call-time `require(...)` (view/keymaps.lua:591, view/init.lua:63),
+    -- so they land regardless of load order — the same property the <Tab> alias
+    -- glue above relies on.
+    local wrap_missing = {}
+    local function patch_after(mod, mod_name, fn_name)
+      if not (mod and type(mod[fn_name]) == "function") then
+        table.insert(wrap_missing, mod_name .. "." .. fn_name)
+        return
+      end
+      local stock = mod[fn_name]
+      mod[fn_name] = function(...)
+        local result = stock(...)
+        inline_wrap() -- no-ops unless the session's layout is inline
+        return result
+      end
+    end
+
+    local ok_iv, cd_inline = pcall(require, "codediff.ui.view.inline_view")
+    cd_inline = ok_iv and cd_inline or nil
+    if cd_inline and type(cd_inline.create) == "function" then
+      -- Async: assert once the render actually reports ready, not when create returns.
+      local stock_create = cd_inline.create
+      cd_inline.create = function(session_config, filetype, on_ready)
+        return stock_create(session_config, filetype, function(...)
+          local result
+          if on_ready then
+            result = on_ready(...)
+          end
+          inline_wrap()
+          return result
+        end)
+      end
+    else
+      table.insert(wrap_missing, "inline_view.create")
+    end
+    patch_after(cd_inline, "inline_view", "update")
+    patch_after(cd_inline, "inline_view", "rerender")
+    patch_after(cd_inline, "inline_view", "show_single_file")
+
+    local ok_view, cd_view = pcall(require, "codediff.ui.view")
+    patch_after(ok_view and cd_view or nil, "view", "toggle_layout")
+
+    -- The one that actually decides it. Everything above schedules its
+    -- re-assert from BEFORE codediff's own deferred render, which then stamps
+    -- wrap=false a tick later (inline_view.lua:55, whose neighbouring comment
+    -- confirms "this code can run from a scheduled callback"). That write is
+    -- executed synchronously right after inline.render_inline_diff() returns,
+    -- so a vim.schedule issued from inside a patched render_inline_diff is the
+    -- one hook guaranteed to land after it.
+    local ok_inl, cd_inl = pcall(require, "codediff.ui.inline")
+    patch_after(ok_inl and cd_inl or nil, "inline", "render_inline_diff")
+
+    if #wrap_missing > 0 then
+      glue_broke("inline wrap partially disabled (" .. table.concat(wrap_missing, "/") .. " not found)")
+    end
   end,
 }

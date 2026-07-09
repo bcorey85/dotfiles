@@ -13,8 +13,8 @@ print_info() { echo -e "${YELLOW}→${NC} $1"; }
 
 # daily-recap — schedules a headless `claude -p "/daily-recap"` run at 18:00
 # on weekdays. The skill (claude/.claude/skills/daily-recap) compiles the
-# day's `note` captures (~/vault/Inbox) + GitHub activity into a structured
-# daily note in the vault.
+# day's org captures (~/vault/org: journal + todo activity) + GitHub activity
+# into a structured daily note in the vault.
 #   macOS: LaunchAgent (~/Library/LaunchAgents/com.dotfiles.daily-recap.plist);
 #          a run missed while asleep fires on next wake.
 #   Linux: systemd user timer with Persistent=true (missed runs fire on boot).

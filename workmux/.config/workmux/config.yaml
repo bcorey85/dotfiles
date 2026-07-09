@@ -13,3 +13,7 @@ panes:
   - command: <agent>
     focus: true
 nerdfont: true
+
+# 'workmux merge' rebases the branch onto the base first — linear history,
+# same shape the /merge skill produces.
+merge_strategy: rebase

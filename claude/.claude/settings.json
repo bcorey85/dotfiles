@@ -197,7 +197,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.local/bin/claude-attention ping waiting 'Question for you'"
+            "command": "~/.claude/scripts/notify 'Claude Code' 'Question for you'"
           }
         ]
       }
@@ -215,10 +215,6 @@
       {
         "matcher": "Agent",
         "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.local/bin/claude-subagent-state start"
-          },
           {
             "type": "command",
             "command": "bash ~/.claude/scripts/review-commit-gate.sh"
@@ -268,14 +264,6 @@
           {
             "type": "command",
             "command": "~/.claude/scripts/log-skill-use.sh"
-          },
-          {
-            "type": "command",
-            "command": "$HOME/.tmux/plugins/tmux-claude-session-manager/scripts/state.sh working"
-          },
-          {
-            "type": "command",
-            "command": "$HOME/.local/bin/claude-subagent-state reset"
           }
         ]
       }
@@ -295,7 +283,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.local/bin/claude-attention ping waiting 'Permission needed'"
+            "command": "~/.claude/scripts/notify 'Claude Code' 'Permission needed'"
           }
         ]
       },
@@ -305,28 +293,6 @@
           {
             "type": "command",
             "command": "~/.claude/scripts/notify 'Claude Code' 'Task complete'"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.local/bin/claude-subagent-state main-stop"
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.local/bin/claude-subagent-state stop"
           }
         ]
       }

@@ -1,0 +1,58 @@
+#!/bin/bash
+# todo — frictionless task capture + check-off for the org lane. Appends to
+# ~/vault/org/inbox.org, the same file nvim-orgmode's `t` capture template
+# targets, so everything lands in the agenda (prefix n a / n t). Complements
+# `note` (diary lane → daily-recap): todos are things to DO, notes are things
+# that HAPPENED.
+#
+# Usage:
+#   todo <text>    append "* TODO <text>" to inbox.org
+#   todo           fzf over open TODO/NEXT/WAITING headlines across all org
+#                  files; enter checks off (tab = multi)
+#   todo -i        capture loop for the tmux popup (prefix n T): one todo per
+#                  line, empty line (or Ctrl-C/Ctrl-D) closes
+set -e
+
+VAULT="${VAULT_DIR:-$HOME/vault}"
+ORG="$VAULT/org"
+INBOX="$ORG/inbox.org"
+
+add() {
+  printf '* TODO %s\n  [%s]\n' "$1" "$(date +'%Y-%m-%d %a')" >>"$INBOX"
+  printf '✓ %s\n' "$1"
+}
+
+mkdir -p "$ORG"
+
+if [ "${1:-}" = "-i" ]; then
+  while IFS= read -r -e -p "todo> " line; do
+    [ -z "$line" ] && break
+    add "$line"
+  done
+  exit 0
+fi
+
+if [ $# -gt 0 ]; then
+  add "$*"
+  exit 0
+fi
+
+# Check-off picker. grep from inside $ORG so fzf shows short paths and the
+# flip below can resolve them back.
+command -v fzf >/dev/null || { echo "todo: fzf required for check-off" >&2; exit 1; }
+cd "$ORG"
+picks="$(grep -rn --include='*.org' -E '^\*+ (TODO|NEXT|WAITING) ' . 2>/dev/null \
+  | sed 's|^\./||' \
+  | fzf -m --delimiter=: --with-nth=3.. --no-sort \
+      --prompt='done> ' --header='enter = done · tab = multi' || true)"
+[ -n "$picks" ] || exit 0
+
+# Flip each picked headline's keyword to DONE. Substitution never changes line
+# counts, so grep's line numbers stay valid across multiple picks. cat > file
+# (not mv) keeps the inode + permissions.
+printf '%s\n' "$picks" | while IFS=: read -r file line _; do
+  tmp="$(mktemp)"
+  sed -E "${line}s/^(\*+) (TODO|NEXT|WAITING) /\1 DONE /" "$file" >"$tmp"
+  cat "$tmp" >"$file" && rm -f "$tmp"
+done
+printf '%s\n' "$picks" | cut -d: -f3- | sed -E 's/^\*+ (TODO|NEXT|WAITING) /✓ /'

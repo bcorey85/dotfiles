@@ -1,0 +1,11 @@
+# Global gitignore — git reads ~/.config/git/ignore by default (gitignore(5))
+# when core.excludesFile is unset, so this needs no .gitconfig wiring.
+# For machine-and-tool-local files that shouldn't live in every repo's
+# .gitignore.
+
+# workmux per-project config (workmux only discovers it in-repo; ignoring it
+# globally keeps it out of git status without touching repo gitignores)
+.workmux.yaml
+
+# machine-local Claude Code settings
+**/.claude/settings.local.json

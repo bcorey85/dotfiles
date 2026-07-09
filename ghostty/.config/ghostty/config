@@ -33,6 +33,10 @@ keybind = super+j=text:\x1bj
 keybind = super+k=text:\x1bk
 keybind = super+l=text:\x1bl
 keybind = super+semicolon=text:\x1b;
+# workmux sidebar next/prev (tmux M-n/M-p). super+n reclaims Cmd+N from
+# Ghostty's default new_window — deliberate, tmux owns window creation here.
+keybind = super+n=text:\x1bn
+keybind = super+p=text:\x1bp
 
 # Harpoon jumps: send tmux's M-1..4 as CSI-u (codepoint 49-52 + modifier 3=alt).
 # Mirrors kitty's `map cmd+N send_text \x1b[<cp>;3u`; tmux has extended-keys on
@@ -45,13 +49,9 @@ keybind = super+digit_3=csi:51;3u
 keybind = super+digit_4=csi:52;3u
 
 # Free ctrl+comma for tmux: Ghostty binds it to open_config by default and would
-# swallow the keystroke. Override it to emit Meta+comma (ESC + ',', same text:
-# pattern as the super+j Alt binds above) — NOT CSI-u. Meta is the one encoding
-# both tmux and fzf understand: tmux reads it as M-, (opens the Claude picker)
-# and the picker popup's bare fzf reads it as alt-, (toggles it closed). fzf
-# cannot bind ctrl-,, which is why CSI-u C-, could open but never toggle-close.
-# Config is still reachable via ctrl+shift+,.
-keybind = ctrl+,=text:\x1b,
+# swallow the keystroke. Emit CSI-u C-, (codepoint 44 + modifier 5=ctrl) so tmux
+# reads it as C-, (workmux last-done). Config is still reachable via ctrl+shift+,.
+keybind = ctrl+,=csi:44;5u
 
 # Mouse
 link-url = true

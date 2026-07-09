@@ -29,11 +29,3 @@ if [ ! -d "$TMUX_PLUGINS_DIR/tmux-continuum" ]; then
 else
     print_success "tmux-continuum already installed"
 fi
-
-if [ ! -d "$TMUX_PLUGINS_DIR/tmux-claude-session-manager" ]; then
-    print_info "Installing tmux-claude-session-manager..."
-    git clone https://github.com/craftzdog/tmux-claude-session-manager "$TMUX_PLUGINS_DIR/tmux-claude-session-manager"
-    print_success "tmux-claude-session-manager installed"
-else
-    print_success "tmux-claude-session-manager already installed"
-fi

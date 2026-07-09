@@ -31,6 +31,7 @@ Should flag:
 - A test asserts `expect(x).toBe(x)` or otherwise no longer tests what it claims — false confidence in the suite.
 - A function signature changes and at least one caller is left out of sync — broken at the next compile/run.
 - An error path that callers rely on detecting is now swallowed — silent failures.
+- A non-trivial block (e.g. a ~10-line guard-with-error-handling) is copy-pasted verbatim into a sibling function — a later fix to one copy will silently miss the other.
 
 Should NOT flag:
 
@@ -68,7 +69,7 @@ These are the noise patterns that have caused the most friction. Suppress them u
 - **Missing tests for behaviors that aren't reachable or aren't worth covering.** Test gaps matter when the behavior could regress silently. They don't matter for code paths that are exercised by integration tests, are trivially correct, or are intentionally out of scope.
 - **Error-handling that "looks missing" but propagates intentionally.** Many codebases let errors bubble to a top-level handler. Don't flag missing try/catch unless you've verified the project pattern requires it locally.
 - **Deviations that were already justified in the change itself.** Before flagging an unusual choice, image-size bump, rejected-input change, or config difference as a regression, check whether the diff, commit message, or an adjacent comment already explains it as intentional (a correctness improvement, a researched decision). A deviation with a stated rationale in the change is a decision, not a defect.
-- **Repetition that hasn't proven itself worth abstracting.** Three similar lines is fine. Premature abstraction is worse than duplication.
+- **Premature abstraction of trivial or incidental repetition.** Three similar lines, a repeated two-line guard, or parallel test-setup blocks are fine — premature abstraction is worse than a little duplication. **This exemption is bounded:** it does NOT cover a non-trivial block copied verbatim/near-verbatim across sites that must change together — that is flagged under Do Flag → "Copy-paste duplication of a non-trivial block." The line is *substantive-block-that-must-stay-in-sync* (flag) vs *looks-a-bit-similar* (suppress).
 
 If you find yourself reaching for one of these, stop and re-ask the calibration question.
 
@@ -84,8 +85,7 @@ Flag these — they're the real wins of code review:
 - **No-op scenarios with side effects.** Operations that don't change state but still write to a DB or fire an event. These usually indicate a logic bug.
 - **Route/URL ordering.** Parameterized routes shadowing specific sub-routes (e.g., `:id` before `:id/action`).
 - **Validator falsy traps.** Fields where `0`, `false`, or `""` are valid but get rejected by emptiness checks.
-
-## Review Process
+- **Copy-paste duplication of a non-trivial block.** A substantive unit of logic — a guard clause with error handling, a request-handler scaffold, a parsing/mapping routine (roughly a full logic unit, ~8+ lines) — that appears verbatim or near-verbatim in two or more places whose copies must stay in sync. The harm is concrete and shippable: the next change edits one copy and silently misses the other (exactly how a duplicated guard drifts). Severity by consequence — HIGH if the copies diverging would cause a bug, MEDIUM otherwise — and name the extraction (shared helper/wrapper) that collapses it. Bar check: this is "substantive block + must-change-together," NOT "these two functions look similar." Do not use it to demand premature abstraction of small or incidental repetition (see Do NOT Flag). A block that is about to be deleted or is a pure mechanical mirror with no divergence risk is not worth flagging.
 
 ### Step 1: Determine Scope
 

@@ -44,17 +44,19 @@ If the task feels too large for one agent, say so in your report and stop — do
 
 Before creating ANY new helper, util, hook, component, type, or constant: search for an existing one (LSP references/workspace symbols, `rg` for untyped code). If you still create something new, your report must name the nearest existing candidate and the concrete reason it didn't fit. If you can't name a candidate, you didn't search — go search. "I didn't know it existed" is the single most common way you produce junk.
 
+This rule covers **inline logic, not just named artifacts** — a guard clause, a request-handler scaffold, a mapping/parsing block. **The moment you catch yourself copying a block out of a sibling function/handler/module, stop:** that is duplication you are introducing, not reuse. Extract the shared block into a helper and call it from both the new site and the one you copied from. Copy-paste-from-a-sibling is the single most common DRY violation coders ship, precisely because it feels like "following the existing pattern."
+
 ## Second Draft (MANDATORY — first drafts are presumed smelly)
 
 A first-pass implementation that compiles and passes tests is a DRAFT, not a deliverable. LLM first drafts reliably ship disjointed structure and copy-paste duplication; the human downstream is not your cleanup crew. After step 4 passes, re-read your ENTIRE diff and sweep it:
 
-1. **Duplication** — the same logic appearing twice within your diff, or your diff re-implementing something an existing helper already provides → consolidate NOW, not "in a follow-up".
+1. **Duplication (within your diff AND against existing code)** — the same logic appearing twice in your diff; your diff re-implementing something an existing helper already provides; OR your new code duplicating a non-trivial block that already lives elsewhere in the file/module (the classic case: you copied a sibling handler's guard/scaffold instead of extracting it). Consolidate NOW, not "in a follow-up" — extract a shared helper and route BOTH the new and the pre-existing copy through it. Duplication you introduce by copying existing code is still duplication you own; "the other copy was already there" is not an exemption.
 2. **Layer placement** — business logic sitting in a handler/component that belongs in a service/store; data shaping done at the call site that belongs at the boundary → move it.
 3. **Naming** — every new name describes its role and uses the sibling code's vocabulary. A name you'd have to explain in review is wrong.
 4. **Dead weight** — unused params, imports, branches, and any speculative flexibility ("might need options later") → delete. You wrote it 10 minutes ago; you are allowed to kill it.
 5. **Cohesion** — a function doing three jobs gets split; three fragments that are one idea get merged.
 
-**Anti-churn fence** (the sweep is subtractive, not creative): consolidate REAL duplication only — two similar blocks with different reasons-to-change stay separate; do not manufacture abstractions, add config knobs, or rename/restructure anything OUTSIDE your own diff. If the sweep is growing the diff, you're doing it wrong.
+**Anti-churn fence** (the sweep is subtractive, not creative): consolidate REAL duplication only — two similar blocks with genuinely different reasons-to-change stay separate; do not manufacture abstractions, add config knobs, or restructure code unrelated to your change. **One deliberate exception to "don't touch outside your diff":** when your new code duplicates a substantive, must-stay-in-sync block that already exists in a sibling, extracting a shared helper and updating that one pre-existing call site to use it IS the fix — that bounded touch is required consolidation, not churn. The fence blocks speculative restructuring of unrelated code; it does not license shipping a copy of a block you could have shared. If the sweep is inventing abstractions for incidental similarity, you're doing it wrong; if it's leaving a fresh copy-paste in place to "stay in scope," you're also doing it wrong.
 
 If the sweep changed code, re-run the quality gate (run 2 of 2). The sweep finding nothing is an acceptable outcome — but it must be reported, never silently assumed (see the handoff line below).
 

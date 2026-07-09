@@ -54,3 +54,10 @@ tar -xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR"
 mkdir -p "$HOME/.local/bin"
 install -m 755 "$TMP_DIR/workmux" "$HOME/.local/bin/workmux"
 print_success "workmux installed to ~/.local/bin ($("$HOME/.local/bin/workmux" --version 2>/dev/null || true))"
+
+# Zsh completions — regenerate on every (re)install so they track the binary.
+# ~/.zsh/completions is already on fpath in .zshrc; macOS gets these from the
+# brew formula (that path exits above).
+mkdir -p "$HOME/.zsh/completions"
+"$HOME/.local/bin/workmux" completions zsh > "$HOME/.zsh/completions/_workmux"
+print_success "zsh completions regenerated"

@@ -26,9 +26,11 @@ if ! command -v claude &>/dev/null; then
   exit 0
 fi
 
-# zsh login shell so claude resolves from the user's real PATH; allowlist is
-# the minimum the skill needs to run unattended (vault reads/writes only).
-RECAP_CMD='claude --permission-mode acceptEdits --allowedTools Read Write Edit Glob Grep "Bash(date:*)" "Bash(mkdir:*)" -p "/weekly-recap"'
+# Absolute claude path, resolved at install time: systemd's `zsh -l` only
+# sources .zprofile, not .zshrc where ~/.local/bin joins PATH — a bare
+# `claude` exits 127 there. Re-run this installer if claude moves. Allowlist
+# is the minimum the skill needs to run unattended (vault reads/writes only).
+RECAP_CMD="$(command -v claude)"' --permission-mode acceptEdits --allowedTools Read Write Edit Glob Grep "Bash(date:*)" "Bash(mkdir:*)" -p "/weekly-recap"'
 
 if [[ "$(uname)" == "Darwin" ]]; then
   PLIST="$HOME/Library/LaunchAgents/com.dotfiles.weekly-recap.plist"

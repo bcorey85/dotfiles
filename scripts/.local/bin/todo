@@ -43,7 +43,7 @@ command -v fzf >/dev/null || { echo "todo: fzf required for check-off" >&2; exit
 cd "$ORG"
 picks="$(grep -rn --include='*.org' -E '^\*+ (TODO|NEXT|WAITING) ' . 2>/dev/null \
   | sed 's|^\./||' \
-  | fzf -m --delimiter=: --with-nth=3.. --no-sort \
+  | fzf -m --delimiter=: --with-nth=3.. --no-sort --layout=reverse \
       --prompt='done> ' --header='enter = done · tab = multi' || true)"
 [ -n "$picks" ] || exit 0
 

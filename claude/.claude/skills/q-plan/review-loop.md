@@ -58,3 +58,4 @@ REVIEW_METRICS_FILE="$HOME/.claude/qrspi-review.jsonl" bash ~/.claude/skills/rev
 - Every Success Criterion is a testable assertion naming a real project verification command.
 - Every Phase Status line has a `(risk: low|high)` tag, and each tag is defensible against the rubric (high = migrations/data mutation, auth/security, public API contracts, irreversible ops, cross-service). A dubious `low` is an issue — it's what `/code` auto-advances past without a human.
 - If the ticket is behavioral, Acceptance Stubs exist with a real count command, and the final phase's Automated Verification includes that command returning zero.
+- The four mandatory closing phases (`~/.claude/skills/_shared/closing-phases.md`) are present, in order, after the last feature phase: Refactor pass, Verify pass, Orient pass, Finalize (`/q-finalize` for this lane). Missing or reordered is an issue.

@@ -108,6 +108,7 @@ If uncertain, run the architect. A 2-minute architect pass that confirms "the ap
     - `## External Contracts` is present and either names each contract + invariant + breakage, or states "None" explicitly.
     - The three invariant checks from `~/.claude/skills/_shared/invariant-survey.md` ("Review gate" section) — read the file and include them in this checklist verbatim: **Discovery check**, **Destructive-trigger check**, **Credentials-past-intent check**. They are the review-side counterpart of the step-9 survey and share its version tag.
     - Implementation phases are vertical, every Phase Status line has a `(risk: ...)` tag, and Success Criteria use the project's real verification commands.
+    - The four mandatory closing phases (`~/.claude/skills/_shared/closing-phases.md`) are present, in order, after the last feature phase: Refactor pass, Verify pass, Orient pass, Finalize (`/adr` for this lane). Missing or reordered is an issue.
 
     Fix what it flags (max 1 revision round), log the verdict (`REVIEW_METRICS_FILE="$HOME/.claude/qrspi-review.jsonl" bash ~/.claude/skills/review/log-review-metrics key=<ticket-or-slug> phase=spec verdict=<PASS|ESCALATED> rounds=<n> issues=<m>`), then present the corrected version. Delete the draft after Phase 6 resolves (it becomes the saved file on "yes", is removed on "no").
 
@@ -187,7 +188,10 @@ couplings) belong here too. "None" must be stated explicitly. -->
 ## Phase Status with (risk: low|high) tags, vertical phases, per-phase
 Changes Required + Success Criteria (Automated/Manual Verification with the
 project's real commands), Acceptance Stubs when the ticket has behavioral
-criteria. This is what /code's phase-boundary gates and /q-verify consume. -->
+criteria. This is what /code's phase-boundary gates and /q-verify consume.
+Every spec ends with the four mandatory closing phases from
+~/.claude/skills/_shared/closing-phases.md (Refactor → Verify → Orient →
+Finalize; Finalize = /adr for this lane) — not negotiable, never omitted. -->
 ```
 
 ## Arguments

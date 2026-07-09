@@ -127,6 +127,21 @@ return {
       opts.keymaps.view = opts.keymaps.view or {}
       opts.keymaps.view.quit = false
       vim.keymap.set("n", "q", "<cmd>qa<cr>", { desc = "Close codediff popup" })
+      -- A = ask-the-diff (scripts/.local/bin/diffask) in a floating terminal.
+      -- The popup is bare nvim — no tmux client inside — so the tmux
+      -- `prefix A` binding can never fire here; this is its in-popup stand-in.
+      -- `A` is free real estate in this nvim: every codediff buffer is
+      -- non-modifiable, so append is dead anyway. Popup-gated to keep normal
+      -- editing sessions' A intact.
+      vim.keymap.set("n", "A", function()
+        local ok = pcall(function()
+          Snacks.terminal.open("diffask", { win = { border = "rounded" } })
+        end)
+        if not ok then
+          vim.cmd("botright 15split | terminal diffask")
+          vim.cmd("startinsert")
+        end
+      end, { desc = "Ask the diff (diffask)" })
     end
 
     require("codediff").setup(opts)

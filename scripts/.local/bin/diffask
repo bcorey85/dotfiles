@@ -1,0 +1,129 @@
+#!/bin/bash
+# Ad-hoc questions about the current repo's diff, answered by a headless
+# LLM CLI — for the tmux popup bound to prefix A, so you can interrogate a
+# change without leaving codediff (prefix d) or neogit (prefix g). Rides the
+# CLIs' own auth; no direct API keys.
+#
+# Context sent with every question: staged+unstaged diff vs HEAD, or — when
+# the tree is clean — the branch diff vs merge-base with the default branch.
+# Untracked files are listed by name only.
+#
+# Each question is independent (the diff is re-sent; the last exchange is
+# included so short follow-ups work). `q`, empty Ctrl-D, or Ctrl-C exits.
+#
+# Env:
+#   DIFFASK_BACKEND  opencode | claude — explicit choice; when unset, uses
+#                    opencode if installed, else claude, so machines without
+#                    opencode (work laptop) need no configuration
+#   DIFFASK_MODEL    model override (default: haiku for claude, backend
+#                    default for opencode)
+#
+# opencode is preferred on measured turnaround (~10s vs ~25-30s for
+# headless claude on a 1200-line diff, 2026-07); claude -p pays session
+# init + buffers the full answer before printing.
+#
+# Usage: diffask [one-shot question]
+
+set -euo pipefail
+
+# opencode installs to ~/.opencode/bin, which popup/tmux-server environments
+# don't have on PATH — resolve it explicitly rather than trusting $PATH.
+opencode_bin=$(command -v opencode || true)
+[ -z "$opencode_bin" ] && [ -x "$HOME/.opencode/bin/opencode" ] && opencode_bin="$HOME/.opencode/bin/opencode"
+
+if [ -n "${DIFFASK_BACKEND:-}" ]; then
+    backend="$DIFFASK_BACKEND"
+    if [ "$backend" = opencode ] && [ -z "$opencode_bin" ]; then
+        echo "diffask: DIFFASK_BACKEND=opencode but opencode not found" >&2
+        exit 1
+    fi
+else
+    backend=claude
+    [ -n "$opencode_bin" ] && backend=opencode
+fi
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "diffask: not inside a git repo" >&2
+    exit 1
+fi
+
+collect_context() {
+    local diff untracked
+    diff=$(git diff HEAD 2>/dev/null || true)
+    if [ -z "$diff" ]; then
+        # Clean tree: fall back to the branch's diff against the default
+        # branch, so reviewing committed-but-unmerged work still has context.
+        local default base
+        default=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@')
+        [ -z "$default" ] && default=main
+        base=$(git merge-base HEAD "$default" 2>/dev/null || true)
+        [ -n "$base" ] && [ "$base" != "$(git rev-parse HEAD)" ] && diff=$(git diff "$base" HEAD)
+    fi
+    untracked=$(git ls-files --others --exclude-standard)
+    if [ -z "$diff" ] && [ -z "$untracked" ]; then
+        echo "diffask: no changes to ask about (clean tree, no branch diff)" >&2
+        exit 1
+    fi
+    printf 'Repository: %s (branch %s)\n\n' \
+        "$(basename "$(git rev-parse --show-toplevel)")" \
+        "$(git rev-parse --abbrev-ref HEAD)"
+    if [ -n "$untracked" ]; then
+        printf 'Untracked files (names only):\n%s\n\n' "$untracked"
+    fi
+    printf '```diff\n%s\n```\n' "$diff"
+}
+
+system_prompt="You answer quick questions from a developer who is reading this diff during code review. Be direct and concise: short paragraphs or tight bullet lists, no headers, no preamble. Reference files by path and hunk. If the question is about risk or behavior, answer from the diff itself; say so plainly when the diff alone can't answer."
+
+ask() {
+    local question="$1" context="$2" history="$3" prompt
+    prompt="$question"
+    [ -n "$history" ] && prompt=$(printf 'Previous exchange:\n%s\n\nFollow-up question: %s' "$history" "$question")
+    case "$backend" in
+        claude)
+            # Every skippable init stage costs seconds here: hooks (~15s with
+            # this machine's SessionStart stack), MCP servers, skill loading.
+            # --max-turns 1 keeps a pure Q&A call from wandering into a
+            # multi-turn tool loop.
+            printf '%s' "$context" | claude -p \
+                --settings '{"disableAllHooks":true}' \
+                --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
+                --disable-slash-commands \
+                --max-turns 1 \
+                --model "${DIFFASK_MODEL:-haiku}" \
+                --append-system-prompt "$system_prompt" \
+                "$prompt"
+            ;;
+        opencode)
+            # opencode run takes the whole message as an argument (no stdin
+            # contract); model only passed when explicitly set.
+            "$opencode_bin" run ${DIFFASK_MODEL:+-m "$DIFFASK_MODEL"} \
+                "$(printf '%s\n\n%s\n\n%s' "$system_prompt" "$context" "$prompt")"
+            ;;
+        *)
+            echo "diffask: unknown DIFFASK_BACKEND '$backend' (claude|opencode)" >&2
+            exit 1
+            ;;
+    esac
+}
+
+context=$(collect_context)
+history=""
+
+# One-shot mode: question as argv, print answer, exit (also used for testing).
+if [ $# -gt 0 ]; then
+    ask "$*" "$context" ""
+    exit 0
+fi
+
+printf 'diffask [%s] — %s\nq or Ctrl-C to quit\n\n' "$backend" \
+    "$(git rev-parse --abbrev-ref HEAD)"
+while true; do
+    printf '\033[1mask>\033[0m '
+    IFS= read -r question || break
+    [ -z "$question" ] && continue
+    [ "$question" = "q" ] && break
+    answer=$(ask "$question" "$context" "$history")
+    printf '\n%s\n\n' "$answer"
+    history=$(printf 'Q: %s\nA: %s' "$question" "$answer")
+done

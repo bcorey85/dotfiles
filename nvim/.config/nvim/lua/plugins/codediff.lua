@@ -55,6 +55,9 @@ return {
   },
   opts = {
     diff = {
+      -- Default to the inline (vertical stacked / unified) layout; `t`
+      -- (toggle_layout) still flips to side-by-side per session.
+      layout = "inline",
       -- ]c/[c at a file boundary hop to the next/prev file's first/last hunk
       -- (explorer/history mode) instead of wrapping within the file — one key
       -- walks the entire changeset. In-file wrap remains the fallback when
@@ -66,6 +69,14 @@ return {
       -- codediff's conflict actions are bound to pane SLOTS, not git roles,
       -- so "left" silently inverts accept_current/accept_incoming (verified
       -- empirically; upstream bug).
+    },
+    -- Default the sidebar to the directory tree instead of the flat file
+    -- list; `i` (toggle_view_mode) still flips back to list at runtime.
+    explorer = {
+      view_mode = "tree",
+    },
+    history = {
+      view_mode = "tree",
     },
     keymaps = {
       -- Conflict keys: SPATIAL semantics (deliberate change from the retired

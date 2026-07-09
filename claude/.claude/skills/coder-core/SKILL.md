@@ -30,6 +30,7 @@ If the task feels too large for one agent, say so in your report and stop — do
 - Check for existing utilities before writing inline logic or creating new helpers
 - Save all Playwright/browser screenshots to `/tmp/`, never inside the project repo
 - Prefer early returns over deeply nested if/else chains
+- Prefer named intermediate variables and guard clauses over dense expressions. Extract nested ternaries (`a ? b : c ? d : e`), compound booleans (`(a && b) || c`), and multi-step rollups (`x = x === null ? y : Math.max(x, y)`) into named `const`s or an explicit `if`/`else` whose name states the intent — a reader should grasp each branch without re-parsing the expression. A single simple ternary is fine; the moment it nests, or a boolean has 3+ operands, or a value is computed conditionally-in-place, name the parts. (This is a recurring review escape — default to legibility.)
 - Cognitive complexity and readability are top concerns
 
 ## Implementation Workflow

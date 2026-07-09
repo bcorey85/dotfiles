@@ -17,6 +17,9 @@
 #                    opencode (work laptop) need no configuration
 #   DIFFASK_MODEL    model override (default: haiku for claude, backend
 #                    default for opencode)
+#   DIFFASK_FILE     file the asker is currently viewing (set by the codediff
+#                    nvim keymap) — named in the context, with its working-tree
+#                    content included (capped) so "this file" questions work
 #
 # opencode is preferred on measured turnaround (~10s vs ~25-30s for
 # headless claude on a 1200-line diff, 2026-07); claude -p pays session
@@ -25,6 +28,16 @@
 # Usage: diffask [one-shot question]
 
 set -euo pipefail
+
+# Machine-local config (~/.config/diffask/config, shell syntax): sets the
+# DIFFASK_* defaults. Explicit environment still wins, so one-off overrides
+# like `DIFFASK_BACKEND=claude diffask ...` behave as expected.
+env_backend="${DIFFASK_BACKEND:-}" env_model="${DIFFASK_MODEL:-}"
+config="${XDG_CONFIG_HOME:-$HOME/.config}/diffask/config"
+# shellcheck source=/dev/null
+[ -f "$config" ] && . "$config"
+[ -n "$env_backend" ] && DIFFASK_BACKEND="$env_backend"
+[ -n "$env_model" ] && DIFFASK_MODEL="$env_model"
 
 # opencode installs to ~/.opencode/bin, which popup/tmux-server environments
 # don't have on PATH — resolve it explicitly rather than trusting $PATH.
@@ -69,6 +82,16 @@ collect_context() {
         "$(git rev-parse --abbrev-ref HEAD)"
     if [ -n "$untracked" ]; then
         printf 'Untracked files (names only):\n%s\n\n' "$untracked"
+    fi
+    # Focus file: "this file" in questions means this. Content capped at 48KB
+    # so a generated/vendored file can't blow the prompt.
+    if [ -n "${DIFFASK_FILE:-}" ]; then
+        if [ -f "$DIFFASK_FILE" ]; then
+            printf 'The developer is currently viewing %s — "this file" in questions refers to it. Its current working-tree content:\n```\n%s\n```\n\n' \
+                "$DIFFASK_FILE" "$(head -c 48000 "$DIFFASK_FILE")"
+        else
+            printf 'The developer is currently viewing %s ("this file" in questions).\n\n' "$DIFFASK_FILE"
+        fi
     fi
     printf '```diff\n%s\n```\n' "$diff"
 }
@@ -116,8 +139,9 @@ if [ $# -gt 0 ]; then
     exit 0
 fi
 
-printf 'diffask [%s] — %s\nq or Ctrl-C to quit\n\n' "$backend" \
-    "$(git rev-parse --abbrev-ref HEAD)"
+printf 'diffask [%s] — %s%s\nq or Ctrl-C to quit\n\n' "$backend" \
+    "$(git rev-parse --abbrev-ref HEAD)" \
+    "${DIFFASK_FILE:+ — viewing $DIFFASK_FILE}"
 while true; do
     printf '\033[1mask>\033[0m '
     IFS= read -r question || break

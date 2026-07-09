@@ -54,8 +54,12 @@ return {
           },
           j = {
             description = "Journal",
-            template = "\n*** %<%Y-%m-%d> %<%A>\n**** %U\n\n%?",
+            -- datetree: entries file under one shared year/month/day tree
+            -- instead of each capture stacking its own duplicate date heading.
+            -- /daily-recap reads today's date node for the journal section.
+            template = "* %U\n\n%?",
             target = "~/vault/org/journal.org",
+            datetree = true,
           },
         },
 

@@ -28,6 +28,7 @@ The whole point of this skill. A ticket is a pointer to work, not a design doc.
 - **Bullets, not paragraphs. One line per bullet.** No multi-sentence bullets, no sub-bullets unless truly needed.
 - **Definitions are terse.** Name the thing, point to the file (`path:line`), move on. Do NOT explain what a tool/config does, re-derive rationale, or teach the reader the domain.
 - **Say each thing once.** Don't repeat a point across Why / Scope / Acceptance.
+- **Acceptance bullets are testable.** Each `## Acceptance` bullet is an observable outcome someone outside this conversation could check — a command to run, a behavior to see, a repro that no longer reproduces. "Works correctly" doesn't qualify. If you can't write the check, the ticket isn't clear yet — fix the ticket, not the wording.
 - **Why = 1–3 bullets max.** If the motivation needs a paragraph, it's a doc, not a ticket.
 - **Default sections: just `## Work` and `## Acceptance`.** Add `## Why` only if non-obvious, `## Out of scope` only to head off scope creep, `## Open Questions` whenever the work is gated on an unanswered question (see below).
 - **Link, don't transcribe.** Reference repo files/PRs instead of pasting their contents or summarizing them at length.
@@ -68,6 +69,8 @@ From the user's input figure out: project key, issue type, and parent (if any).
 ### 2. Scope against the repo
 
 Briefly explore the actual codebase (Glob/Grep/Read) so the ticket names real files, not guesses. This research is for _you_ — it informs tight bullets; it does not get dumped into the description.
+
+**Size check:** if scoping reveals the work can't plausibly land in a few days, flag it and confirm before filing — a small description can hide weeks of work, and oversized tickets are the strongest predictor of slow delivery. Don't refuse; the call is the user's.
 
 ### 3. Write it (honor the brevity contract)
 

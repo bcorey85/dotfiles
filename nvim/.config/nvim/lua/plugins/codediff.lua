@@ -135,10 +135,10 @@ return {
       -- editing sessions' A intact.
       vim.keymap.set("n", "A", function()
         local ok = pcall(function()
-          Snacks.terminal.open("diffask", { win = { border = "rounded" } })
+          Snacks.terminal.open("diffask", { win = { position = "right", width = 0.35 } })
         end)
         if not ok then
-          vim.cmd("botright 15split | terminal diffask")
+          vim.cmd("botright 60vsplit | terminal diffask")
           vim.cmd("startinsert")
         end
       end, { desc = "Ask the diff (diffask)" })

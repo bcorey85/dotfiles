@@ -38,7 +38,7 @@ case "$evt" in
     case "$agent" in
       coder|coder-deep|backend-coder|backend-coder-deep|frontend-coder|frontend-coder-deep)
         echo dirty > "$state_file" ;;
-      code-reviewer|code-reviewer-deep|test-intent-reviewer)
+      review-loop|code-reviewer|code-reviewer-deep|test-intent-reviewer)
         echo clean > "$state_file" ;;
     esac
     ;;

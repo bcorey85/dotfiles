@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# bookmark — night-brain URL capture for the learning lane (tmux prefix n b).
+# Logs the link to ~/vault/org/bookmarks.org, then fires a background headless
+# claude that fetches the page and writes a Literature-template stub (Source +
+# Key Points filled) into <vault>/00. Inbox — so morning processing starts from
+# a summary instead of a raw tab. The synthesis sections (Explain It Back,
+# Permanent Notes to Create) are left empty on purpose: that part is the
+# learning — don't delegate it.
+#
+# The headless run gets per-invocation permissions (--allowedTools WebFetch +
+# Write scoped to the Inbox, cwd = vault) so the global allowlist stays closed.
+#
+# Usage:
+#   bookmark [-i]              interactive (tmux popup): URL prefilled from
+#                              clipboard when it looks like one, optional note
+#   bookmark <url> [note...]   one-shot
+set -euo pipefail
+
+VAULT="${VAULT_DIR:-$HOME/vault}"
+ORG="$VAULT/org"
+BM="$ORG/bookmarks.org"
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-bg"
+mkdir -p "$ORG" "$LOG_DIR"
+
+clip_text() {
+  if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v wl-paste >/dev/null; then
+    wl-paste --no-newline 2>/dev/null || true
+  elif command -v xclip >/dev/null; then
+    xclip -selection clipboard -o 2>/dev/null || true
+  elif command -v pbpaste >/dev/null; then
+    pbpaste 2>/dev/null || true
+  fi
+}
+
+url="" note=""
+if [ "${1:-}" = "-i" ] || [ $# -eq 0 ]; then
+  pre="$(clip_text)"
+  case "$pre" in http://* | https://*) ;; *) pre="" ;; esac
+  # Don't re-offer a clipboard URL that's already logged — otherwise every
+  # reopen of the popup prefills the last thing you bookmarked.
+  if [ -n "$pre" ] && grep -qF "[[$pre]]" "$BM" 2>/dev/null; then
+    pre=""
+  fi
+  read -r -e -p "url> " -i "$pre" url
+  [ -z "$url" ] && exit 0
+  read -r -e -p "note (optional)> " note
+else
+  url="$1"
+  shift
+  note="$*"
+fi
+
+case "$url" in
+  http://* | https://*) ;;
+  *)
+    echo "bookmark: not a URL: $url" >&2
+    exit 1
+    ;;
+esac
+
+# Org-side log only — daily-recap treats org files as read-only sources, and
+# the Literature stub (not this file) is the processing queue.
+{
+  printf '* [[%s]]\n  [%s]\n' "$url" "$(date +'%Y-%m-%d %a')"
+  if [ -n "$note" ]; then printf '  %s\n' "$note"; fi
+} >>"$BM"
+
+if ! command -v claude >/dev/null; then
+  printf '✓ logged to bookmarks.org (claude not installed — no summary)\n'
+  sleep 1
+  exit 0
+fi
+
+prompt="Fetch this URL and distill it: $url
+
+Create exactly ONE new markdown file in '00. Inbox/' — filename: short kebab-case slug of the page title, '.md' extension. Mirror the section structure of 'Templates/Literature.md' exactly, filled as follows:
+- Date: today's date
+- Source: the URL, plus author/site when evident
+- Key Points: 5-10 bullets of the substantive claims and arguments — specific enough to be useful without reopening the page
+- Leave 'Quick Reactions', 'Explain It Back', 'Permanent Notes to Create', and 'Open Questions For Later' as empty scaffolding for the human to fill.${note:+
+- Exception: under 'Quick Reactions' add this capture note from the reader: \"$note\"}
+
+If the fetch fails, still create the file with Source filled and a single 'FETCH FAILED: <reason>' bullet under Key Points."
+
+# Prompt via stdin: --allowedTools is variadic and would swallow a positional
+# prompt. Write scope is a space-free glob because the rule parser splits on
+# spaces and the target dir is "00. Inbox". Inside tmux the launch is handed
+# to the server (run-shell -b): the popup's process group gets SIGHUP-killed
+# ~1s after capture, and nohup does not survive that.
+log="$LOG_DIR/$(date +%Y%m%d-%H%M%S)-bookmark.log"
+pf="$(mktemp "${TMPDIR:-/tmp}/bookmark-prompt.XXXXXX")"
+printf '%s' "$prompt" >"$pf"
+runner="cd $(printf %q "$VAULT") && $(printf %q "$(command -v claude)") -p --model sonnet --allowedTools WebFetch $(printf %q 'Write(00.*/**)') <$(printf %q "$pf") >$(printf %q "$log") 2>&1; rm -f $(printf %q "$pf")"
+if [ -n "${TMUX:-}" ]; then
+  tmux run-shell -b "$runner"
+else
+  nohup sh -c "$runner" >/dev/null 2>&1 &
+  disown
+fi
+printf '✓ logged — Literature stub landing in 00. Inbox (log: %s)\n' "${log/#$HOME/\~}"
+sleep 1

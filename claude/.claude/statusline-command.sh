@@ -27,13 +27,13 @@ YELLOW='\033[33m'
 DIM='\033[2m'
 RESET='\033[0m'
 
-# Git info
+# Git info (skip the branch name when it duplicates the directory name, e.g. worktrees)
 if git rev-parse --git-dir > /dev/null 2>&1; then
     branch=$(git branch --show-current 2>/dev/null)
-    if git --no-optional-locks diff-index --quiet HEAD -- 2>/dev/null; then
-        git_info=" git:($branch)"
+    if [ "$branch" = "$dir_name" ]; then
+        git_info=""
     else
-        git_info=" git:($branch) ✗"
+        git_info=" git:($branch)"
     fi
 else
     git_info=""
@@ -77,9 +77,9 @@ if [ "$context_size" -gt 0 ]; then
     for ((i=0; i<filled; i++)); do bar+="█"; done
     for ((i=0; i<empty; i++)); do bar+="░"; done
 
-    token_info=$(printf " ${DIM}[${RESET}%s${DIM}]${RESET} ${DIM}[${RESET}${pct_color}%s${RESET} %s%% ${DIM}left |${RESET} %s${DIM}/${RESET}%s${DIM}]${RESET}" "$model_name" "$bar" "$remaining_pct" "$used_display" "$size_display")
+    token_info=$(printf " ${DIM}[${RESET}${pct_color}%s${RESET} %s${DIM}]${RESET}" "$bar" "$used_display")
 else
-    token_info=$(printf " ${DIM}[${RESET}%s${DIM}]${RESET}" "$model_name")
+    token_info=""
 fi
 
 # 5-hour rate-limit window
@@ -114,4 +114,5 @@ if [ -n "$five_hour_pct" ] && [ -n "$five_hour_resets_at" ]; then
     five_hour_info=$(printf " ${DIM}[${RESET}${five_color}%s%%${RESET} ${DIM}resets in${RESET} %s${DIM}]${RESET}" "$five_h_int" "$reset_display")
 fi
 
-printf "${GREEN}➜${RESET} ${CYAN}%s${RESET}%s%s%s" "$dir_name" "$git_info" "$five_hour_info" "$token_info"
+# Two lines: model + branch/dir on top; context + rate limit below.
+printf "${GREEN}➜${RESET} ${DIM}[${RESET}%s${DIM}]${RESET} ${CYAN}%s${RESET}%s\n%s%s" "$model_name" "$dir_name" "$git_info" "$token_info" "$five_hour_info"

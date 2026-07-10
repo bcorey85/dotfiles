@@ -52,7 +52,7 @@ Stop. Say: "Plan written → `<path>`. Review it — the Acceptance Stubs senten
 ```
 Saved → <plan path>
 deep-plan complete. Next: /clear, then /code <plan path>
-Spot-check the plan — the Acceptance Stubs sentences are the highest-leverage lines in it; save deep review for the actual code. After the code ships: /verify confirms the plan was fully built, then /pr, then /finalize collapses the folder into an ADR.
+Spot-check the plan — the Acceptance Stubs sentences are the highest-leverage lines in it; save deep review for the actual code. After the code ships: /verify confirms the plan was fully built, then you open the PR, then /finalize collapses the folder into an ADR.
 ```
 
 ## Hard Rules

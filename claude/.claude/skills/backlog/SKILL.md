@@ -13,7 +13,7 @@ Distill the current conversation into a structured idea document at `docs/backlo
 - `--name <slug>` — Override the auto-generated filename (e.g. `--name dark-mode-v2`).
 - `+wishlist` — Save to `docs/backlog/wishlist/` instead of `docs/backlog/`. Use for long-term ideas that aren't actionable in the current sprint (e.g. future framework ports, speculative features).
 
-(Convention per `/pr`: `+toggle` for boolean switches, `--key value` for parameterized flags.)
+(Convention: `+toggle` for boolean switches, `--key value` for parameterized flags.)
 
 ## Instructions
 

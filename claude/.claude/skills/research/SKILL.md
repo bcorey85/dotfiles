@@ -1,5 +1,6 @@
 ---
 name: research
+disable-model-invocation: true
 description: Research the best way to do something using web search. Use when the user says "research", "how should I", "what's the best way to", "look up", "what do the docs say about", or "/research". Also trigger when the user asks a technical question where the answer depends on current library versions, tool behavior, or ecosystem conventions that may have changed since training data. Do NOT trigger for questions answerable from the current codebase alone — use Grep/Read for those.
 ---
 

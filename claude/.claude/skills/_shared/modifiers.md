@@ -1,6 +1,6 @@
 # Dispatch Modifiers (+fast / +deep)
 
-Canonical semantics for the `+fast` and `+deep` modifiers accepted by the dispatching skills (`/code`, `/fix`, `/refactor`, `/review`, `/cc`, `/pr-comments`). Skills reference this file instead of redefining the mechanics; each skill's own Modifiers section adds only its when-to-use guidance and any skill-specific modifiers (like `/cc`'s `+show`). `/audit-code` defines its own modifier semantics and does NOT follow this file.
+Canonical semantics for the `+fast` and `+deep` modifiers accepted by the dispatching skills (`/code`, `/fix`, `/refactor`, `/review`, `/cc`, `/pr-comments`). Skills reference this file instead of redefining the mechanics; each skill's own Modifiers section adds only its when-to-use guidance and any skill-specific modifiers (like `/cc`'s `+show`).
 
 ## `+fast`
 

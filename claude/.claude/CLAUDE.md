@@ -50,7 +50,7 @@ After any code change, run the project's quality checks (whatever its CLAUDE.md 
 
 - Inner-loop review → custom `/review`. Built-in `/code-review` is not in the loop; `/code-review ultra` is an optional pre-PR pass on large branches.
 - Others' PRs → `/peer-review`; never `/review` on code we don't own (its fix loop and metrics assume ownership).
-- Security audit → built-in `/security-review`; bugs/DRY/a11y/findings ledger → `/audit-code`.
+- Security audit → built-in `/security-review`.
 - Cleanup → coder second-draft sweep + `/refactor`; never built-in `/simplify` on loop output.
 - Verification → custom `/verify` only (plan↔diff completeness + human smoke-test checklist; deep-plan and eng-spec lanes). The BUILT-IN skill of the same name is retired from the loop — never dispatch it. Agents never browser-drive — UI smoke tests are mine, from the checklist.
 - Planning → `/plan` (front door) when no lane is named: recommends + confirms, then dispatches. Direct calls unchanged: `/eng-spec` by default; `/deep-plan` for highest-stakes invariant work, unfamiliar surfaces, ANY change to external enforcement-tool config, and reclamation/liveness-teardown work (reapers, sweeps, session/instance GC — eng-spec 0-for-2 on that class). Tag lane escapes with `/escape lane=<lane>`; review via `/review-stats`. Rationale and pilot history: `~/.claude/docs/planning-lanes.md`.

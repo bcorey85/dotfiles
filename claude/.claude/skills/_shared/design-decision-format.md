@@ -1,8 +1,8 @@
 # Shared Design-Decision Format (single source of truth)
 
 The structure every recorded design decision follows, in both planning lanes
-(`/q-plan` Phase D and `/eng-spec` Decisions). This is the artifact's
-judgment surface — the part a human reads at the gate and `q-finalize`/`/adr`
+(`/deep-plan` Phase D and `/eng-spec` Decisions). This is the artifact's
+judgment surface — the part a human reads at the gate and `finalize`/`/adr`
 distill later. This block structure plus the External Contracts rule below
 is where decisive invariant statements tend to land.
 

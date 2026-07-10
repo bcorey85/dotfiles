@@ -1,5 +1,0 @@
----
-description: Run the full QRSPI pipeline (Questions → leak-check → Research → Design → Structure → Plan)
----
-
-Load the `q-plan` skill and follow its instructions. $ARGUMENTS

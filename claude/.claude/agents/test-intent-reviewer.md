@@ -18,10 +18,10 @@ You MUST NOT treat the implementation as ground truth. Standard test review ("do
 
 ## Step 1 — Resolve the intent oracle
 
-Run the QRSPI resolver to find the spec directory for the current branch:
+Run the deep-plan resolver to find the spec directory for the current branch:
 
 ```bash
-bash ~/.claude/scripts/qrspi-resolve-dir.sh
+bash ~/.claude/scripts/resolve-task-dir.sh
 ```
 
 - **Exit 0** (one match): the oracle is, in priority order:
@@ -56,7 +56,7 @@ For every changed assertion, classify it:
 
 ## The boundary — state it, don't oversell
 
-If the bug originates in the **spec or plan itself** (intent was wrong on paper), you cannot catch it: test agrees with plan agrees with code, all wrong together. That is out of scope — it belongs to `/q-verify` and human plan review. Say so explicitly when relevant so a clean result is not misread as "the spec is correct."
+If the bug originates in the **spec or plan itself** (intent was wrong on paper), you cannot catch it: test agrees with plan agrees with code, all wrong together. That is out of scope — it belongs to `/verify` and human plan review. Say so explicitly when relevant so a clean result is not misread as "the spec is correct."
 
 ## Output Format
 

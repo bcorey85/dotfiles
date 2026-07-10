@@ -1,6 +1,6 @@
 # Jira Ticket Resolution + Fetch
 
-Canonical mechanics for locating and fetching a Jira ticket. Skills reference this file instead of redefining them (`/pull-ticket`, `/q-plan` Phase 0, `/peer-review`); each caller's own section adds only what it does with the ticket and whether a ticket is required or optional.
+Canonical mechanics for locating and fetching a Jira ticket. Skills reference this file instead of redefining them (`/pull-ticket`, `/deep-plan` Phase 0, `/peer-review`); each caller's own section adds only what it does with the ticket and whether a ticket is required or optional.
 
 ## Resolve the key
 
@@ -24,4 +24,4 @@ If the Jira MCP tools aren't available in this session: **never guess or reconst
 
 ## Persisting to disk (callers that write the ticket to a file)
 
-Write **raw fields only, verbatim** — no paraphrase, no summary, no goal words of your own. This matters most for contamination-sensitive pipelines (`/q-plan` writes to `docs/eng-specs/<KEY>-<slug>/<KEY>-00-ticket.md` before the Questions phase), but verbatim is the rule for every caller: a persisted ticket is a source document, not your reading of it.
+Write **raw fields only, verbatim** — no paraphrase, no summary, no goal words of your own. This matters most for contamination-sensitive pipelines (`/deep-plan` writes to `docs/eng-specs/<KEY>-<slug>/<KEY>-00-ticket.md` before the Questions phase), but verbatim is the rule for every caller: a persisted ticket is a source document, not your reading of it.

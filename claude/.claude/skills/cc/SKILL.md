@@ -51,9 +51,9 @@ allowed-tools: [Bash, Read, Glob, Grep, Skill]
 7. **Log escapes.** Every comment that resulted in a real fix is ground truth: the human caught something the automated gates blessed. For each entry resolved **with a fix applied** (not skipped-as-FP, not deferred), log one line:
 
    ```bash
-   bash ~/.claude/scripts/log-escape repo="$(basename "<repo-root>")" stage_found=cc gate_missed=review class=<bug|smell|duplication|plan-drift|test-gap|other> severity=<high|medium|low> lane=<q-plan|eng-spec|code|other> desc="<comment gist>" file=<path>
+   bash ~/.claude/scripts/log-escape repo="$(basename "<repo-root>")" stage_found=cc gate_missed=review class=<bug|smell|duplication|plan-drift|test-gap|other> severity=<high|medium|low> lane=<deep-plan|eng-spec|code|other> desc="<comment gist>" file=<path>
    ```
 
-   Classify `class` from the comment body; when unsure, `other`. `lane` is the planning lane that produced the work under comment — infer it from the conversation or the branch's planning artifacts (QRSPI task dir → `q-plan`, eng-spec doc → `eng-spec`, direct dispatch → `code`); ask the user only when genuinely ambiguous. Do NOT log comments that were new requirements or changed direction — a gate can't miss information it never had.
+   Classify `class` from the comment body; when unsure, `other`. `lane` is the planning lane that produced the work under comment — infer it from the conversation or the branch's planning artifacts (deep-plan task dir → `deep-plan`, eng-spec doc → `eng-spec`, direct dispatch → `code`); ask the user only when genuinely ambiguous. Do NOT log comments that were new requirements or changed direction — a gate can't miss information it never had.
 
 8. **Summarize** for the user: which comments were fixed, which were skipped (with reasons), which were deferred and why, and the stale-dropped count (if any).

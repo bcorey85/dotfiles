@@ -1,13 +1,13 @@
-# QRSPI Review Loop (shared)
+# deep-plan Review Loop (shared)
 
 Every phase whose human gate was removed (Questions, Research) — plus the two that keep one (Design, Plan) — runs an automated quality review before its artifact flows downstream. This is the compensating control for the removed gates: an artifact is always checked by a human OR an agent, never neither. Reviews never wait on a human; they preserve flow while restoring the quality the gates used to provide. (Structure has no review of its own; its criteria are folded into the Plan checklist, which reviews the structure outline as an input.)
 
 ## The loop
 
-1. **Review**: dispatch `qrspi-review` (omit `model`) with the artifact path, the phase's checklist (below), and the supporting paths allowed for that phase. It returns `PASS` or `ISSUES (k)`.
+1. **Review**: dispatch `deep-plan-review` (omit `model`) with the artifact path, the phase's checklist (below), and the supporting paths allowed for that phase. It returns `PASS` or `ISSUES (k)`.
 2. **PASS** → log (below) and proceed.
 3. **ISSUES** → send the issue list back to the producer for ONE revision, then re-review:
-   - Subagent producers — Research (`qrspi-research`), Plan (`qrspi-plan`): re-dispatch with the same inputs **plus** the issue list. A structural issue on a Plan review (phasing, verifiability) is fixed in the structure outline first, then the plan re-dispatched.
+   - Subagent producers — Research (`deep-plan-research`), Plan (`deep-plan-planner`): re-dispatch with the same inputs **plus** the issue list. A structural issue on a Plan review (phasing, verifiability) is fixed in the structure outline first, then the plan re-dispatched.
    - Inline producers — Design: you revise the artifact yourself against the issues.
    - **Max 2 revision rounds.**
 4. **Still ISSUES after 2 rounds** → ESCALATE and log as `ESCALATED`:
@@ -20,10 +20,10 @@ Pre-design reviews (Research) are dispatched WITHOUT the ticket — pass ONLY th
 
 ## Logging (audit trail)
 
-After every review verdict — **including the leak-check** — append one line to the QRSPI review log:
+After every review verdict — **including the leak-check** — append one line to the deep-plan review log:
 
 ```
-REVIEW_METRICS_FILE="$HOME/.claude/qrspi-review.jsonl" bash ~/.claude/skills/review/log-review-metrics \
+REVIEW_METRICS_FILE="$HOME/.claude/deep-plan-review.jsonl" bash ~/.claude/skills/review/log-review-metrics \
   key=<TICKET> phase=<questions|leak-check|research|design|plan> verdict=<PASS|ESCALATED> rounds=<n> issues=<m>
 ```
 
@@ -33,7 +33,7 @@ REVIEW_METRICS_FILE="$HOME/.claude/qrspi-review.jsonl" bash ~/.claude/skills/rev
   the final-round count, which is 0 on every PASS by construction.
 - Leak-check: log `phase=leak-check` with `issues` = questions flagged as
   materially intent-leaking, `rounds` = rewrite rounds taken.
-- Reuses the `/review` metrics script but writes a SEPARATE file, so `/review-stats` (code-finding severities) stays uncontaminated. Inspect with `jq . ~/.claude/qrspi-review.jsonl`.
+- Reuses the `/review` metrics script but writes a SEPARATE file, so `/review-stats` (code-finding severities) stays uncontaminated. Inspect with `jq . ~/.claude/deep-plan-review.jsonl`.
 
 ## Per-phase checklists
 
@@ -58,4 +58,4 @@ REVIEW_METRICS_FILE="$HOME/.claude/qrspi-review.jsonl" bash ~/.claude/skills/rev
 - Every Success Criterion is a testable assertion naming a real project verification command.
 - Every Phase Status line has a `(risk: low|high)` tag, and each tag is defensible against the rubric (high = migrations/data mutation, auth/security, public API contracts, irreversible ops, cross-service). A dubious `low` is an issue — it's what `/code` auto-advances past without a human.
 - If the ticket is behavioral, Acceptance Stubs exist with a real count command, and the final phase's Automated Verification includes that command returning zero.
-- The four mandatory closing phases (`~/.claude/skills/_shared/closing-phases.md`) are present, in order, after the last feature phase: Refactor pass, Verify pass, Orient pass, Finalize (`/q-finalize` for this lane). Missing or reordered is an issue.
+- The four mandatory closing phases (`~/.claude/skills/_shared/closing-phases.md`) are present, in order, after the last feature phase: Refactor pass, Verify pass, Orient pass, Finalize (`/finalize` for this lane). Missing or reordered is an issue.

@@ -101,7 +101,7 @@ If uncertain, run the architect. A 2-minute architect pass that confirms "the ap
 
 15. **Synthesize the finalized plan(s)** — key decisions (and who made them), tradeoffs accepted, anything deferred.
 
-15a. **Spec review before presenting** (mirrors q-plan's phase reviews; same reviewer, same log). Draft the full spec (template below) to `docs/eng-specs/.spec-draft.md`, then dispatch `qrspi-review` (omit `model`) with the draft path and this checklist:
+15a. **Spec review before presenting** (mirrors deep-plan's phase reviews; same reviewer, same log). Draft the full spec (template below) to `docs/eng-specs/.spec-draft.md`, then dispatch `deep-plan-review` (omit `model`) with the draft path and this checklist:
 
     - Every `file:line` reference resolves and says what the spec claims.
     - Every decision block has all four fields (Choice / Reasoning with owner tag / Alternatives rejected / Trade-off accepted).
@@ -110,7 +110,7 @@ If uncertain, run the architect. A 2-minute architect pass that confirms "the ap
     - Implementation phases are vertical, every Phase Status line has a `(risk: ...)` tag, and Success Criteria use the project's real verification commands.
     - The four mandatory closing phases (`~/.claude/skills/_shared/closing-phases.md`) are present, in order, after the last feature phase: Refactor pass, Verify pass, Orient pass, Finalize (`/adr` for this lane). Missing or reordered is an issue.
 
-    Fix what it flags (max 1 revision round), log the verdict (`REVIEW_METRICS_FILE="$HOME/.claude/qrspi-review.jsonl" bash ~/.claude/skills/review/log-review-metrics key=<ticket-or-slug> phase=spec verdict=<PASS|ESCALATED> rounds=<n> issues=<m>`), then present the corrected version. Delete the draft after Phase 6 resolves (it becomes the saved file on "yes", is removed on "no").
+    Fix what it flags (max 1 revision round), log the verdict (`REVIEW_METRICS_FILE="$HOME/.claude/deep-plan-review.jsonl" bash ~/.claude/skills/review/log-review-metrics key=<ticket-or-slug> phase=spec verdict=<PASS|ESCALATED> rounds=<n> issues=<m>`), then present the corrected version. Delete the draft after Phase 6 resolves (it becomes the saved file on "yes", is removed on "no").
 
 ### Phase 6: User Choice
 
@@ -144,7 +144,7 @@ If uncertain, run the architect. A 2-minute architect pass that confirms "the ap
 
 The spec has two layers in ONE file: a judgment layer (what a human reads at
 the gate) and an implementation layer (what `/code` executes, in the shared
-plan format so its phase gates work identically to `/q-plan` output).
+plan format so its phase gates work identically to `/deep-plan` output).
 
 ```markdown
 # Title
@@ -188,7 +188,7 @@ couplings) belong here too. "None" must be stated explicitly. -->
 ## Phase Status with (risk: low|high) tags, vertical phases, per-phase
 Changes Required + Success Criteria (Automated/Manual Verification with the
 project's real commands), Acceptance Stubs when the ticket has behavioral
-criteria. This is what /code's phase-boundary gates and /q-verify consume.
+criteria. This is what /code's phase-boundary gates and /verify consume.
 Every spec ends with the four mandatory closing phases from
 ~/.claude/skills/_shared/closing-phases.md (Refactor → Verify → Orient →
 Finalize; Finalize = /adr for this lane) — not negotiable, never omitted. -->

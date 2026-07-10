@@ -7,7 +7,7 @@
 # FLIP them to real tests (later phases), so this is a warning, not a block:
 # after an edit to a test file, any todo sentence that was removed AND no
 # longer appears anywhere in the file gets flagged into context. The drift
-# gate and /q-verify remain the hard checks.
+# gate and /verify remain the hard checks.
 set -euo pipefail
 
 command -v jq >/dev/null || exit 0

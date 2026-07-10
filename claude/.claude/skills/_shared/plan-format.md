@@ -1,9 +1,9 @@
 # Shared Plan Format (single source of truth)
 
-The implementation-plan artifact contract. Producers: `qrspi-plan` (via
-`/q-plan`) and `/eng-spec`. Consumers: `/code` (phase-boundary gates key off
+The implementation-plan artifact contract. Producers: `deep-plan-planner` (via
+`/deep-plan`) and `/eng-spec`. Consumers: `/code` (phase-boundary gates key off
 `## Phase Status` risk tags and `#### Manual Verification` sections),
-`/q-verify` (plan↔diff reconciliation), and the human skimming phases.
+`/verify` (plan↔diff reconciliation), and the human skimming phases.
 Both planning lanes emit THIS format so downstream machinery behaves
 identically regardless of which lane planned the work.
 
@@ -39,7 +39,7 @@ identically regardless of which lane planned the work.
 ## Template
 
 Header links: include whichever upstream artifacts exist for the lane
-(QRSPI: ticket/research/design/structure paths; eng-spec: ticket/spec
+(deep-plan: ticket/research/design/structure paths; eng-spec: ticket/spec
 sections above the plan). Do not invent links to artifacts that don't exist.
 
 ```markdown
@@ -63,9 +63,9 @@ sections above the plan). Do not invent links to artifacts that don't exist.
 <!-- Mandatory closing phases (closing-phases.md), renumbered after the last feature phase: -->
 
 - [ ] Phase N: Refactor pass — /refactor cleanup sweep (risk: low)
-- [ ] Phase N+1: Verify pass — /verify (behavioral) + /q-verify (plan↔diff) (risk: high)
+- [ ] Phase N+1: Verify pass — /verify (behavioral) + /verify (plan↔diff) (risk: high)
 - [ ] Phase N+2: Orient pass — /orient situate the change (risk: low)
-- [ ] Phase N+3: Finalize — <q-finalize | adr> durable decision record (risk: low)
+- [ ] Phase N+3: Finalize — <finalize | adr> durable decision record (risk: low)
 
 ## Current State Analysis
 
@@ -121,7 +121,7 @@ Automated Verification must include the stub count command returning zero.
 
 - [ ] **Manual-verified**: [scenario] — "hit [endpoint/UI flow], confirm [expected behavior]"
 
-**All phases: an agent verifier executes these items after the drift gate, tagging each `agent-verified` (with evidence) or `human-only`. High-risk phases: human sign-off reviews the evidence plus human-only items before proceeding. Low-risk phases: the human-only remainder defers to the `/q-verify` review packet before `/pr`.**
+**All phases: an agent verifier executes these items after the drift gate, tagging each `agent-verified` (with evidence) or `human-only`. High-risk phases: human sign-off reviews the evidence plus human-only items before proceeding. Low-risk phases: the human-only remainder defers to the `/verify` review packet before `/pr`.**
 
 ---
 
@@ -135,7 +135,7 @@ Automated Verification must include the stub count command returning zero.
 
 <!-- Created on first deviation; absent until then. One dated entry per
 PLAN-IMPACT finding resolved via user question during implementation:
-finding (assumed → found), decision, owner. /q-verify reconciles the diff
+finding (assumed → found), decision, owner. /verify reconciles the diff
 against the plan AS AMENDED here; the ADR inherits this record. -->
 
 ## References

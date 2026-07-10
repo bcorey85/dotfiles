@@ -1,8 +1,8 @@
 # Invariant Survey (survey-v2.3)
 
-Canonical text for the invariant-survey dispatch instruction and its matching spec-review gate. Extracted verbatim from `eng-spec/SKILL.md` on 2026-07-07 — content unchanged by the extraction. The `survey-v2.x` tags referenced in the planning-lane eval records (`q-plan/DESIGN.md`) version THIS text: bump the tag in the heading when it changes, and note the change in the eval program's next pre-registration.
+Canonical text for the invariant-survey dispatch instruction and its matching spec-review gate. Extracted verbatim from `eng-spec/SKILL.md` on 2026-07-07 — content unchanged by the extraction. The `survey-v2.x` tags referenced in the planning-lane eval records (`deep-plan/DESIGN.md`) version THIS text: bump the tag in the heading when it changes, and note the change in the eval program's next pre-registration.
 
-Consumers: `/eng-spec` step 9 (Dispatch text, inlined verbatim as item 2 of the architect's exploration-brief instruction) and `/eng-spec` step 15a (Review gate, inlined verbatim into the qrspi-review checklist).
+Consumers: `/eng-spec` step 9 (Dispatch text, inlined verbatim as item 2 of the architect's exploration-brief instruction) and `/eng-spec` step 15a (Review gate, inlined verbatim into the deep-plan-review checklist).
 
 ## Dispatch text (exploration-brief item 2)
 

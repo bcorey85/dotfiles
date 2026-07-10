@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Unified planning front door. Use whenever the user wants to plan a feature, ticket, or nontrivial change and has NOT named a specific planning lane — e.g. "plan this", "/plan TICKET.md", "how should we build X", "spec this out". Classifies the task against the planning-lane routing table, recommends /q-plan vs /eng-spec vs bare /code with the matched rule, confirms with ONE question, dispatches the chosen lane, and logs the routing decision. Do NOT use when the user explicitly invokes /q-plan, /eng-spec, or /code themselves — respect the direct call.
+description: Unified planning front door. Use whenever the user wants to plan a feature, ticket, or nontrivial change and has NOT named a specific planning lane — e.g. "plan this", "/plan TICKET.md", "how should we build X", "spec this out". Classifies the task against the planning-lane routing table, recommends /deep-plan vs /eng-spec vs bare /code with the matched rule, confirms with ONE question, dispatches the chosen lane, and logs the routing decision. Do NOT use when the user explicitly invokes /deep-plan, /eng-spec, or /code themselves — respect the direct call.
 allowed-tools: [Bash, Read, Glob, Grep, AskUserQuestion, Skill]
 ---
 
@@ -66,7 +66,7 @@ Log BEFORE dispatching (declined recommendations are the most valuable data
 ```
 
 Then dispatch the chosen lane via the Skill tool, passing the original
-argument through (e.g. `/q-plan TICKET.md`, `/eng-spec TICKET.md`). For bare
+argument through (e.g. `/deep-plan TICKET.md`, `/eng-spec TICKET.md`). For bare
 `/code` or plan mode, say so and let the user proceed — don't dispatch a
 coder from here.
 

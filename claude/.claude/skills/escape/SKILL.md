@@ -6,7 +6,7 @@ allowed-tools: [Bash, Read, Glob, Grep, Edit]
 
 # Log an Escape
 
-One escape = one defect found downstream of the gate that should have caught it. `/cc`, `/refactor`, and `/q-verify` log their own escapes automatically; this skill is the manual channel for everything else — things you catch reading a PR, a prod bug traced back to loop output, a smell noticed weeks later.
+One escape = one defect found downstream of the gate that should have caught it. `/cc`, `/refactor`, and `/verify` log their own escapes automatically; this skill is the manual channel for everything else — things you catch reading a PR, a prod bug traced back to loop output, a smell noticed weeks later.
 
 ## Instructions
 
@@ -17,7 +17,7 @@ One escape = one defect found downstream of the gate that should have caught it.
    - `severity` — `high` | `medium` | `low`
    - `desc` — one line, specific enough to be legible in 3 months
    - `file` — representative path, if known
-   - `lane` — optional: planning lane that produced the work (`q-plan` | `eng-spec` | `code` | `other`); ask if the conversation makes it ambiguous — this feeds the lane-level A/B evidence in /review-stats
+   - `lane` — optional: planning lane that produced the work (`deep-plan` | `eng-spec` | `code` | `other`); ask if the conversation makes it ambiguous — this feeds the lane-level A/B evidence in /review-stats
 
    If the description is too vague to classify, ask ONE clarifying question — a mislabeled escape pollutes the very data this exists to produce. A new requirement or changed mind is NOT an escape; only log things a gate should have caught with the information it had.
 

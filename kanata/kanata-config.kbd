@@ -63,9 +63,9 @@
 
 (deflayer knight
   @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
-  tab       b    f    r    l    k    z    g    o    u    ;    [    ]    \
+  tab       b    f    r    l    v    z    g    o    u    ;    [    ]    \
   caps      n    s    h    t    m    y    c    e    i    a    ,       ret
-  lsft      v    x    d    j    q    p    w    /    .    '    rsft
+  lsft      x    j    d    k    q    p    w    /    .    '    rsft
   lctl lmet lalt           spc                 ralt rmet rctl
 )
 
@@ -165,7 +165,7 @@
 )
 
 (deflayer layers
-  _    @qwr @sil @kni - @gal @nok @rec @sem _    _    _    _    _
+  _    @qwr @kni @sil - @gal @nok @rec @sem _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _

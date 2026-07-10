@@ -17,7 +17,7 @@ Dispatch parallel frontend-coder and backend-coder subagents to investigate and 
 1. **Parse args**:
    - **Modifiers**: If `+deep` is present, swap each coder for its `-deep` variant and omit `model`. If `+fast` is present, pass `model: "haiku"`. Strip modifiers from the prompt.
    - **Iteration counter**: Look for `iter=N` in args (default `iter=1`). Hold this value — when re-invoking `/review` in step 5, pass `iter=N+1` so the loop is bounded.
-   - **One-shot mode**: If `iter=oneshot` is present, this invocation is the post-convergence MEDIUM triage from `/review` — NOT part of the iter-bounded loop. Do not increment. In step 5, pass `iter=oneshot` to `/review` so it performs a single verification pass and stops without re-triaging MEDIUMs.
+   - **No-review mode**: If `no-review` is in args (post-convergence MEDIUM fix bucket from `/review`), skip step 5 entirely — the coder's quality-check run is the verification. Report the fixes and the check exit code, then stop.
 
 2. **Parse the review feedback** from these sources (in order), then categorize issues by which coder owns the file (frontend vs backend, or whichever split applies to this codebase):
 
@@ -91,9 +91,7 @@ Dispatch parallel frontend-coder and backend-coder subagents to investigate and 
 
    **PLAN-IMPACT pass-through**: scan each coder report for a `PLAN-IMPACT:` block (coder-core requires `PLAN-IMPACT: yes` as the report's last line when one exists). Carry it into the handoff's `plan_impact` field verbatim — `/review` owns the unskippable AskUserQuestion routing for it. Never fold it into the prose summary.
 
-5. **Auto-dispatch peer review**: After summarizing the fixes, invoke the `/review` skill via the Skill tool with `skill: "review"` and `args` containing the handoff block from step 4 plus the iter value and any `+fast`/`+deep` modifier.
-   - **Normal (loop) mode**: Tell the user "Auto-dispatching `/review` to verify the fixes before committing (iteration N+1 of 3)." Pass `iter=N+1`.
-   - **One-shot mode** (incoming `iter=oneshot`): Tell the user "Auto-dispatching `/review` for one final verification of the MEDIUM fixes." Pass `iter=oneshot`. `/review` will run a single verification pass and stop without re-triaging.
+5. **Auto-dispatch peer review**: After summarizing the fixes, invoke the `/review` skill via the Skill tool with `skill: "review"` and `args` containing the handoff block from step 4 plus the iter value and any `+fast`/`+deep` modifier. Tell the user "Auto-dispatching `/review` to verify the fixes before committing (iteration N+1 of 3)." Pass `iter=N+1`.
 
    This runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs.
 

@@ -1,6 +1,6 @@
 ---
 name: escape
-description: Log a defect that escaped the automated loop — caught by human PR reading, in production, or anywhere downstream of the gates. Appends to `~/.claude/review-escapes.jsonl`, the ground-truth side of the review flywheel (aggregated by /review-stats). Triggers on "log escape", "the loop missed this", "this got past review", "/escape".
+description: Log a defect that escaped the automated loop — caught by human PR reading, in production, or anywhere downstream of the gates. Appends to `~/.claude/review-escapes.jsonl`, the ground-truth side of the review flywheel (aggregated by /audit review). Triggers on "log escape", "the loop missed this", "this got past review", "/escape".
 allowed-tools: [Bash, Read, Glob, Grep, Edit]
 ---
 
@@ -17,7 +17,7 @@ One escape = one defect found downstream of the gate that should have caught it.
    - `severity` — `high` | `medium` | `low`
    - `desc` — one line, specific enough to be legible in 3 months
    - `file` — representative path, if known
-   - `lane` — optional: planning lane that produced the work (`deep-plan` | `eng-spec` | `code` | `other`); ask if the conversation makes it ambiguous — this feeds the lane-level A/B evidence in /review-stats
+   - `lane` — optional: planning lane that produced the work (`deep-plan` | `eng-spec` | `code` | `other`); ask if the conversation makes it ambiguous — this feeds the lane-level A/B evidence in /audit review
 
    If the description is too vague to classify, ask ONE clarifying question — a mislabeled escape pollutes the very data this exists to produce. A new requirement or changed mind is NOT an escape; only log things a gate should have caught with the information it had.
 
@@ -34,7 +34,7 @@ One escape = one defect found downstream of the gate that should have caught it.
    3. **Skill gotcha** — when the defect traces to a workflow a skill owns (not a code convention), append one dated line to that SKILL.md's `## Gotchas` section (create it if absent). Gotchas built from observed failures are the highest-signal content a skill carries — this rung is how the toolkit itself learns.
    4. **Agent/reviewer rule** — a calibration line in the relevant agent file. Weakest rung: it spends prompt budget forever and relies on recall. Use only when 1–3 are impossible.
 
-   Propose the specific guard to the user; on approval, apply it (or create a ticket if it belongs in another repo). Then append `guard=type|convention|gotcha|rule|none` to the log line so `/review-stats` can flag escapes that never got a guard.
+   Propose the specific guard to the user; on approval, apply it (or create a ticket if it belongs in another repo). Then append `guard=type|convention|gotcha|rule|none` to the log line so `/audit review` can flag escapes that never got a guard.
 
    **ADR addendum**: if the defect traces back to a decision recorded in an ADR (`docs/eng-specs/*.md`), also append a dated line to that ADR's `## Addenda` section (create the section if absent) — outcomes are part of the record, and this is one of the two legal mutations `_shared/adr-template.md` allows. Never edit the sections above it.
 

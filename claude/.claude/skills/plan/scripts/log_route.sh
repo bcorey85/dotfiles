@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # log_route.sh <ticket> <recommended> <rule> <chosen> <agreed>
 # Appends one JSONL routing record for /plan. Joinable with /escape lane=
-# tags via /review-stats to measure routing quality over time.
+# tags via /audit review to measure routing quality over time.
 set -euo pipefail
 
 TICKET="${1:?ticket}"

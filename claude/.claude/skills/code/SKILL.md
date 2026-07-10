@@ -25,6 +25,8 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 2. **Detect multi-phase plans (MANDATORY check)**: If the task input is a path to a plan file (e.g., `*-plan.md` under `docs/eng-specs/`) or pasted plan content, read it and check whether it contains multiple `## Phase N:` sections.
 
+   **Lane provenance (for telemetry, one-time)**: classify the task input — a deep-plan task-dir `*-05-plan.md` (or step-0 exit 0) → `lane=deep-plan`; an eng-spec plan under `docs/eng-specs/` (or step-0 exit 5) → `lane=eng-spec`; anything else → `lane=none`. Carry this value into the second-draft telemetry line (step 5) and the `review-loop` dispatch (step 6).
+
    **If it's a multi-phase plan:**
    - Do NOT dispatch all phases at once.
    - Identify the next un-executed phase by reading the plan's `## Phase Status` section: the first unchecked (`- [ ]`) entry is the phase to dispatch. This is the source of truth across `/clear` boundaries — do NOT scan git log or diff to figure out where you are. If the plan has no `## Phase Status` section (older plan format), fall back to `git status` + per-phase success criteria, but flag this to the user so they can backfill the section.
@@ -69,8 +71,8 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    **Second-draft telemetry (non-blocking)**: for each coder report, read its `SECOND DRAFT:` line and log one JSONL line — the coder-side counterpart to the review metrics:
 
    ```bash
-   bash ~/.claude/skills/review/log-review-metrics out="$HOME/.claude/second-draft.jsonl" \
-     repo="$(basename "$(git rev-parse --show-toplevel)")" source=code coder=<subagent_type> \
+   bash ~/.claude/skills/review/log-review-metrics out="${SECOND_DRAFT_FILE:-$HOME/.claude/second-draft.jsonl}" \
+     repo="$(basename "$(git rev-parse --show-toplevel)")" source=code coder=<subagent_type> lane=<lane> \
      second_draft=<clean|found|missing> categories=<comma-list|none> text="<the SECOND DRAFT line verbatim; omit when clean>"
    ```
 
@@ -96,7 +98,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
    The handoff lets the reviewer skip rediscovery — file scope, change intent, and test status are upstream context the reviewer no longer has to reconstruct via `git diff` and full re-reads. Coders already know all of this; pass it forward instead of forcing re-discovery.
 
-6. **Auto-dispatch peer review**: After summarizing the coder output, tell the user: "Auto-dispatching review to check the implementation before committing." Then dispatch the loop directly — `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"` (unpinned), passing `mode: review-first`, `caller: code`, the handoff block from step 5, and any `+fast`/`+deep` modifier.
+6. **Auto-dispatch peer review**: After summarizing the coder output, tell the user: "Auto-dispatching review to check the implementation before committing." Then dispatch the loop directly — `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"` (unpinned), passing `mode: review-first`, `caller: code`, `lane: <lane>` (from step 2), the handoff block from step 5, and any `+fast`/`+deep` modifier.
 
    Do NOT `Skill`-invoke `/review` here. That re-injects its body into this context once per phase; dispatching the agent keeps the loop's instructions in a subagent context that costs this one nothing. `/review` remains the user-facing entry point for manual review and dispatches the same agent.
 

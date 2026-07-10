@@ -72,7 +72,7 @@ argument through (e.g. `/deep-plan TICKET.md`, `/eng-spec TICKET.md`). For bare
 coder from here.
 
 Once the lane starts, this skill's job is over. The log lives at
-`~/.claude/data/plan-routing.jsonl`; `/review-stats` can join it against
+`~/.claude/data/plan-routing.jsonl`; `/audit review` can join it against
 `/escape lane=` tags to measure routing quality (recommended vs chosen vs
 outcome).
 

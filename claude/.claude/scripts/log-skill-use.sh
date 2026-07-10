@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# log-skill-use.sh — skill-usage telemetry for /skill-audit.
+# log-skill-use.sh — skill-usage telemetry for /audit skills.
 #
 # Registered for two hook events in settings.json:
 #   PostToolUse (matcher: Skill)  — model-invoked skills via the Skill tool
@@ -7,7 +7,7 @@
 #
 # Appends {ts, skill, via, repo} to ~/.claude/skill-usage.jsonl. Never blocks:
 # always exits 0, emits no hook output. User-typed built-in commands (/clear,
-# /model, ...) land in the log too; /skill-audit filters against the skills dir.
+# /model, ...) land in the log too; /audit skills filters against the skills dir.
 set -euo pipefail
 
 command -v jq >/dev/null || exit 0

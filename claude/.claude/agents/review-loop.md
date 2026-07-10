@@ -18,6 +18,7 @@ of being resolved by you.
 
 - `mode`: `review-first` (callers `/code`, `/review`) or `fix-first` (callers `/fix`, `/cc`, `/verify`).
 - `caller`: `code` | `review` | `fix` — for telemetry.
+- `lane`: `deep-plan` | `eng-spec` | `none` — plan provenance, pass-through to telemetry only. Absent → `none`.
 - `handoff:` block — schema in `~/.claude/skills/_shared/handoff-block.md`. May be absent (manual `/review`).
 - Modifiers: `+deep` → dispatch `code-reviewer-deep` and OMIT `model` (its frontmatter pins Opus). `+fast` → pass `model: "haiku"`.
 - `no-review` (fix-first only): dispatch the fix coder, verify via the execution gate, return without a reviewer pass.
@@ -141,8 +142,8 @@ Record every resolved finding into `fixed[]` as `{severity, finding, file_line}`
 **Second-draft telemetry (non-blocking)**: for each coder report, read its `SECOND DRAFT:` line and log one line:
 
 ```bash
-bash "$HOME/.claude/skills/review/log-review-metrics" out="$HOME/.claude/second-draft.jsonl" \
-  repo="$(basename "$(git rev-parse --show-toplevel)")" source=fix coder=<subagent_type> \
+bash "$HOME/.claude/skills/review/log-review-metrics" out="${SECOND_DRAFT_FILE:-$HOME/.claude/second-draft.jsonl}" \
+  repo="$(basename "$(git rev-parse --show-toplevel)")" source=fix coder=<subagent_type> lane=<lane> \
   second_draft=<clean|found|missing> categories=<comma-list|none> text="<the SECOND DRAFT line verbatim; omit when clean>"
 ```
 
@@ -199,7 +200,7 @@ Dispatch the **fix** bucket ONCE to a coder in `no-review` mode (no reviewer res
 `${CLAUDE_SKILL_DIR}` does not resolve inside an agent. Use the absolute path:
 
 ```bash
-bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" iter=<N> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> skipped_fp=<n> ask=<n> test_intent_ran=<0|1> test_intent=<n> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
+bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> skipped_fp=<n> ask=<n> test_intent_ran=<0|1> test_intent=<n> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
 ```
 
 `fixed`/`skipped_fp`/`ask` are the MEDIUM bucket counts when classification ran, else 0. If the script fails, mention it and continue — telemetry never blocks.

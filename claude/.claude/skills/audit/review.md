@@ -1,10 +1,4 @@
----
-name: review-stats
-description: Aggregate the review flywheel — what the gates caught (`~/.claude/review-metrics.jsonl`), what they missed (`~/.claude/review-escapes.jsonl`), and what coders' first drafts got wrong (`~/.claude/second-draft.jsonl`) — to compute convergence, false-positive rate, per-gate escape rates, and first-draft smell distribution, and flag calibration problems
-allowed-tools: [Bash, Read]
----
-
-# Review Stats
+# Lane: review — the review flywheel
 
 Analyze both sides of the flywheel:
 
@@ -12,7 +6,7 @@ Analyze both sides of the flywheel:
 - **Escapes** — what got PAST the gates (via `~/.claude/scripts/log-escape`, fed by `/cc`, `/refactor`, `/verify`, and manual `/escape`): `stage_found`, `gate_missed`, `class`, `severity`. This is the ground truth for which gates are trustable.
 - **Second drafts** — what coders' own sweeps caught in their first drafts (logged by `/code` and `/fix` from each report's `SECOND DRAFT:` line): `source`, `coder`, `second_draft` (clean/found/missing), `categories`, `text`. This is the evidence base for tuning `coder-core` — the smells first drafts reliably ship.
 
-The metrics and escapes files accumulate counts/categories only; the second-draft file also carries the receipt text, but this skill aggregates its categories — read the raw file directly when you need the actual receipts.
+The metrics and escapes files accumulate counts/categories only; the second-draft file also carries the receipt text, but this lane aggregates its categories — read the raw file directly when you need the actual receipts.
 
 ## Instructions
 
@@ -26,8 +20,9 @@ The metrics and escapes files accumulate counts/categories only; the second-draf
    - **Ask rate**: `sum(ask)` over the same denominator — high means MEDIUMs are chronically ambiguous.
    - **Test-intent yield**: firings = runs with `test_intent_ran=1`; findings = sum(`test_intent`). Report findings-per-firing. Rows lacking `test_intent_ran` (and `iter=oneshot` rows) predate the 2026-07 schema — exclude them from yield math.
    - **Result distribution**: PASS / PASS WITH WARNINGS / NEEDS CHANGES.
+   - **Lane split** (rows with a `lane` field): iteration distribution, severity averages, and result mix per lane (`deep-plan` / `eng-spec` / `none`). This is the execution-phase side of the lane A/B — how plans from each lane behave once coders run them — complementing the escape-lane evidence below. Rows without `lane` predate the 2026-07-10 wiring; exclude them from lane math, don't count them as `none`.
    - **Escapes** (when the escapes file exists): counts by `gate_missed`, by `class`, by `stage_found`; severity mix; per repo; by `lane` when present (lane-level escape rates are the running A/B evidence for /deep-plan vs /eng-spec routing; rows logged before 2026-07 use the old `q-plan` label — same lane). The headline number per gate is the **escape ratio**: escapes attributed to a gate vs. that gate's catch volume over the same period (e.g. `gate_missed=review` escapes vs. total review findings).
-   - **Second drafts** (when the file exists): dispatch count; rate of `clean` / `found` / `missing`; category distribution across `found` receipts (overall and per `coder` type); per repo and per `source` (code vs fix).
+   - **Second drafts** (when the file exists): dispatch count; rate of `clean` / `found` / `missing`; category distribution across `found` receipts (overall and per `coder` type); per repo, per `source` (code vs fix), and per `lane` when present.
    - If a repo filter was passed in arguments, scope everything to that repo.
 
 3. **Interpret** — flag, with thresholds:
@@ -47,7 +42,3 @@ The metrics and escapes files accumulate counts/categories only; the second-draf
      - `clean` rate **> 85%** WHILE escapes show `class=smell|duplication` → the sweep is rubber-stamping, not sweeping (coder-core presumes first drafts smelly); recommend reinforcing the sweep's checklist rather than trusting the clean receipts.
 
 4. **Report**: a short table of the numbers, then the flags from step 3 (or "calibration looks healthy"). Note the data limitation once: metrics are counts only — refining the reviewer's specific rules requires reading actual review transcripts, not this file.
-
-## Arguments
-
-$ARGUMENTS

@@ -9,7 +9,7 @@ allowed-tools: [Bash, Read]
 Analyze both sides of the flywheel:
 
 - **Catches** — what `/review` logs on every run (via `log-review-metrics`): repo, iter, severity counts, MEDIUM-triage buckets (`fixed`/`skipped_fp`/`ask`), `test_intent`, `result`.
-- **Escapes** — what got PAST the gates (via `~/.claude/scripts/log-escape`, fed by `/cc`, `/refactor`, `/q-verify`, and manual `/escape`): `stage_found`, `gate_missed`, `class`, `severity`. This is the ground truth for which gates are trustable.
+- **Escapes** — what got PAST the gates (via `~/.claude/scripts/log-escape`, fed by `/cc`, `/refactor`, `/verify`, and manual `/escape`): `stage_found`, `gate_missed`, `class`, `severity`. This is the ground truth for which gates are trustable.
 - **Second drafts** — what coders' own sweeps caught in their first drafts (logged by `/code` and `/fix` from each report's `SECOND DRAFT:` line): `source`, `coder`, `second_draft` (clean/found/missing), `categories`, `text`. This is the evidence base for tuning `coder-core` — the smells first drafts reliably ship.
 
 The metrics and escapes files accumulate counts/categories only; the second-draft file also carries the receipt text, but this skill aggregates its categories — read the raw file directly when you need the actual receipts.
@@ -24,9 +24,9 @@ The metrics and escapes files accumulate counts/categories only; the second-draf
    - **Severity totals and per-run averages**: critical / high / medium / low.
    - **False-positive rate**: `sum(skipped_fp) / sum(fixed + skipped_fp + ask)` across runs where triage ran. This is the key calibration signal.
    - **Ask rate**: `sum(ask)` over the same denominator — high means MEDIUMs are chronically ambiguous.
-   - **Test-intent findings**: total `test_intent` and how many runs had any.
+   - **Test-intent yield**: firings = runs with `test_intent_ran=1`; findings = sum(`test_intent`). Report findings-per-firing. Rows lacking `test_intent_ran` (and `iter=oneshot` rows) predate the 2026-07 schema — exclude them from yield math.
    - **Result distribution**: PASS / PASS WITH WARNINGS / NEEDS CHANGES.
-   - **Escapes** (when the escapes file exists): counts by `gate_missed`, by `class`, by `stage_found`; severity mix; per repo; by `lane` when present (lane-level escape rates are the running A/B evidence for /q-plan vs /eng-spec routing). The headline number per gate is the **escape ratio**: escapes attributed to a gate vs. that gate's catch volume over the same period (e.g. `gate_missed=review` escapes vs. total review findings).
+   - **Escapes** (when the escapes file exists): counts by `gate_missed`, by `class`, by `stage_found`; severity mix; per repo; by `lane` when present (lane-level escape rates are the running A/B evidence for /deep-plan vs /eng-spec routing; rows logged before 2026-07 use the old `q-plan` label — same lane). The headline number per gate is the **escape ratio**: escapes attributed to a gate vs. that gate's catch volume over the same period (e.g. `gate_missed=review` escapes vs. total review findings).
    - **Second drafts** (when the file exists): dispatch count; rate of `clean` / `found` / `missing`; category distribution across `found` receipts (overall and per `coder` type); per repo and per `source` (code vs fix).
    - If a repo filter was passed in arguments, scope everything to that repo.
 
@@ -35,6 +35,7 @@ The metrics and escapes files accumulate counts/categories only; the second-draf
    - **> 25%** of loops reaching iter 3 → convergence problem; recommend checking whether `/fix` is skipping findings or the reviewer re-flags the same issues.
    - Average MEDIUM count **> 4/run** → MEDIUM bar may be too low.
    - Frequent `test_intent > 0` → bug-pinning tests are recurring; worth reinforcing spec-first test writing in the coder agents.
+   - Test-intent yield ≈ 0 over **10+ firings** → the stage fires but finds nothing; tighten its trigger in `review/SKILL.md` or drop it. (General pattern: any always-on stage needs a `*_ran` field so yield-per-firing stays computable.)
    - **Escape flags** (the trust dial — these decide where human attention stays mandatory):
      - Recurring `gate_missed=drift-gate` → the phase drift gates aren't trustworthy; raise more phases to `risk: high` in plans (restores human phase sign-off) until this trends to zero.
      - `stage_found=cc`/`pr-human` escapes with `class=bug` → the reviewer is missing real bugs, not just smells; check which "Do NOT Flag" suppression rule ate them before assuming `+deep` is the fix.

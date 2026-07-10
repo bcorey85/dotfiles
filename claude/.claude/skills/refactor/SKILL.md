@@ -62,10 +62,10 @@ A refactor changes structure, not behavior — so the tests are the contract. **
    **Log escapes**: if the refactor target is code produced by this branch's coding loop (i.e., `/code` + `/review` already blessed it), each distinct smell the refactor fixed is a miss by the quality layer. Log one line per distinct smell (not per file):
 
    ```bash
-   bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=refactor gate_missed=review class=<smell|duplication> severity=medium lane=<q-plan|eng-spec|code|other> desc="<one line>" file=<representative path>
+   bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=refactor gate_missed=review class=<smell|duplication> severity=medium lane=<deep-plan|eng-spec|code|other> desc="<one line>" file=<representative path>
    ```
 
-   `lane` is the planning lane that produced the branch's work — infer from the conversation or planning artifacts (QRSPI task dir → `q-plan`, eng-spec doc → `eng-spec`, direct dispatch → `code`). Skip logging when the target is legacy code that never went through the loop — old debt is not an escape.
+   `lane` is the planning lane that produced the branch's work — infer from the conversation or planning artifacts (deep-plan task dir → `deep-plan`, eng-spec doc → `eng-spec`, direct dispatch → `code`). Skip logging when the target is legacy code that never went through the loop — old debt is not an escape.
 
 5. **Mandatory test audit** (every refactor, no exceptions): After the coder(s) complete, dispatch a `test-reviewer` subagent (`model: "sonnet"`) to audit the test suite touching the refactored code. A refactor's whole safety guarantee rests on the tests, so this runs even when no test files changed — a refactor that leaves behind weakened assertions, stale tests, or newly-uncovered branches is exactly what this catches.
    - Pass the refactor scope as the target (backend / frontend / the specific module(s) refactored) so the reviewer narrows to the relevant suite.

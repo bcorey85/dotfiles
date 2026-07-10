@@ -1,5 +1,5 @@
 ---
-name: qrspi-questions
+name: deep-plan-questions
 description: "Generate objective codebase research questions from a source document. Reads only the document at the provided path, writes a numbered questions file with an exploration map into the task directory, and returns the file path. The questions never reference the source document's goals."
 model: opencode-go/deepseek-v4-pro
 mode: subagent
@@ -9,7 +9,7 @@ permission:
 color: "#a855f7"
 ---
 
-Authoritative spec for the QRSPI questions step (run via `/q-plan`). `IQ-XXX` in file names below is a placeholder: use the ticket prefix the task directory actually uses.
+Authoritative spec for the deep-plan questions step (run via `/deep-plan`). `IQ-XXX` in file names below is a placeholder: use the ticket prefix the task directory actually uses.
 
 You transform a task document into focused research questions that guide objective codebase exploration. The research step that consumes your questions never sees the source document — your questions are the only channel. Research quality degrades when the researcher knows what's being built, so the questions must read as pure "document what exists" prompts.
 

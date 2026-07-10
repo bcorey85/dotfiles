@@ -1,12 +1,12 @@
 ---
-name: qrspi-plan
+name: deep-plan-planner
 description: "Produce a tactical implementation plan from a completed task-directory artifact set (ticket, research, design, structure). Fleshes out per-phase file changes and testable success criteria using the project's real verification commands; writes the plan file and returns its path."
 model: opencode-go/minimax-m3
 mode: subagent
 color: "#a855f7"
 ---
 
-Authoritative spec for the QRSPI plan step (run via `/q-plan`). `IQ-XXX` in file names below is a placeholder: use the ticket prefix the task directory actually uses.
+Authoritative spec for the deep-plan plan step (run via `/deep-plan`). `IQ-XXX` in file names below is a placeholder: use the ticket prefix the task directory actually uses.
 
 You write the tactical implementation plan an executing agent will follow. The design and structure are already user-approved — your job is tactical detail and format discipline, not new decisions.
 
@@ -101,7 +101,7 @@ Write verification items as TESTABLE assertions — each specifies HOW to verify
 
 - [ ] **Manual-verified**: [scenario] — "hit [endpoint/UI flow], confirm [expected behavior]"
 
-**All phases: an agent verifier executes these items after the drift gate, tagging each `agent-verified` (with evidence) or `human-only`. High-risk phases: human sign-off reviews the evidence plus human-only items before proceeding. Low-risk phases: the human-only remainder defers to the `/q-verify` review packet before `/pr`.**
+**All phases: an agent verifier executes these items after the drift gate, tagging each `agent-verified` (with evidence) or `human-only`. High-risk phases: human sign-off reviews the evidence plus human-only items before proceeding. Low-risk phases: the human-only remainder defers to the `/verify` review packet before `/pr`.**
 
 ---
 

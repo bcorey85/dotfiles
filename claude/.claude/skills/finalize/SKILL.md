@@ -1,16 +1,16 @@
 ---
-name: q-finalize
-description: Collapse a completed QRSPI task folder into a single durable decision record (ADR) and delete the process artifacts (QRSPI step 6 of 6). Runs pre-merge so the record ships in the same PR as the code.
+name: finalize
+description: Collapse a completed deep-plan task folder into a single durable decision record (ADR) and delete the process artifacts (deep-plan step 6 of 6). Runs pre-merge so the record ships in the same PR as the code.
 allowed-tools: [Bash, Read, Glob, Grep, Write, Edit, AskUserQuestion]
 ---
 
-# Finalize QRSPI Task
+# Finalize deep-plan Task
 
-Collapse a completed QRSPI task folder into one ADR. Delete the scaffolding. Run pre-merge so the ADR ships in the same PR as the code.
+Collapse a completed deep-plan task folder into one ADR. Delete the scaffolding. Run pre-merge so the ADR ships in the same PR as the code.
 
 ## Why
 
-QRSPI ships 6 artifacts to reach implementation. After merge, only the "why" has durable value; the rest rots (research snapshots state-of-code, plans describe done work, structure ordering is dead). This step extracts decisions + alternatives into one ADR, then deletes the scaffolding.
+deep-plan ships 6 artifacts to reach implementation. After merge, only the "why" has durable value; the rest rots (research snapshots state-of-code, plans describe done work, structure ordering is dead). This step extracts decisions + alternatives into one ADR, then deletes the scaffolding.
 
 ## Folder → File
 
@@ -29,10 +29,10 @@ Folder = in-progress. File = finalized.
 
 ## Resolve the task directory
 
-Run the shared resolver (also used by /q-plan — do NOT reimplement the logic inline):
+Run the shared resolver (also used by /deep-plan — do NOT reimplement the logic inline):
 
 ```bash
-bash ~/.claude/scripts/qrspi-resolve-dir.sh "$ARGUMENTS"
+bash ~/.claude/scripts/resolve-task-dir.sh "$ARGUMENTS"
 ```
 
 Exit 0 → single match, use it. Exit 3 → multiple matches printed, ask the user which. Exit 4 → nothing resolvable, ask for a path. Folder basename is the slug for the output file.
@@ -48,7 +48,7 @@ Read FULLY (no limit/offset):
 
 **Do NOT read** `02-research.md` / `04-structure.md` / `05-plan.md` — design.md distilled them; re-reading adds noise.
 
-Missing `03-design.md` → stop: _"/q-finalize is for completed QRSPI tasks. Run /q-plan first, or finalize manually."_
+Missing `03-design.md` → stop: _"/finalize is for completed deep-plan tasks. Run /deep-plan first, or finalize manually."_
 
 ## Detect the PR
 
@@ -57,7 +57,7 @@ Missing `03-design.md` → stop: _"/q-finalize is for completed QRSPI tasks. Run
 | Live        | Task ticket == current branch                 | `gh pr view --json url,number,title 2>/dev/null`                                                                                                                                          |
 | Retroactive | Task ticket ≠ current branch (cleanup branch) | `gh pr list --search "<TICKET>" --state all --json url,number,title,state,mergedAt` — substitute the resolved ticket key (e.g. `IQ-400`), then pick the merged PR matching the task title |
 
-Neither finds → `**PR**: (pending)`. Live mode: run `/q-finalize` **after** `/pr` so the link populates and the ADR commit lands on the same PR. Retroactive works either way.
+Neither finds → `**PR**: (pending)`. Live mode: run `/finalize` **after** `/pr` so the link populates and the ADR commit lands on the same PR. Retroactive works either way.
 
 ## Process
 
@@ -74,9 +74,9 @@ Neither finds → `**PR**: (pending)`. Live mode: run `/q-finalize` **after** `/
 
 ## Decision Record Template
 
-Read `~/.claude/skills/_shared/adr-template.md` and follow it in full — it is the single source of truth for the ADR structure, section line caps, skimmability rules, and mutation discipline (shared with `/adr`, which owns the non-QRSPI lanes).
+Read `~/.claude/skills/_shared/adr-template.md` and follow it in full — it is the single source of truth for the ADR structure, section line caps, skimmability rules, and mutation discipline (shared with `/adr`, which owns the non-deep-plan lanes).
 
-q-finalize-specific source mapping:
+finalize-specific source mapping:
 
 | Section                                          | Source                                                                          |
 | ------------------------------------------------ | ------------------------------------------------------------------------------- |

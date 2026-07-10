@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# qrspi-resolve-dir.sh — resolve the QRSPI task directory under docs/eng-specs/
-# Shared by /q-finalize and the qrspi-* agents (run via /q-orchestrator).
+# resolve-task-dir.sh — resolve the deep-plan task directory under docs/eng-specs/
+# Shared by /finalize and the deep-plan-* agents (run via /deep-plan).
 #
-# usage: qrspi-resolve-dir.sh [<path-or-ticket>]
+# usage: resolve-task-dir.sh [<path-or-ticket>]
 #   <path>    existing directory -> used directly
 #   <ticket>  e.g. IQ-400 (case-insensitive) -> glob docs/eng-specs/IQ-400-*/
 #   (empty)   infer ticket from the current branch name (TICKET-NUM-prefix)

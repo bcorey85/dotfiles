@@ -9,7 +9,7 @@ When rules conflict: the user's current instruction > project CLAUDE.md > this f
 - Never paste secrets — give me the command to run.
 - Report by exception: never narrate what went as planned. Reference code as `file_path:line_number`. Never restate file contents I can open — give the path.
 - Status and completion reports: ≤10 lines — headline + one supporting point per item, one `STATUS: <ok|blocked|plan-impact> — <one line>` per completed dispatch.
-- Explanations and design discussion: as long as needed and no longer; lead with a 3-line TLDR when going long. Tables > paragraphs for enumerable facts. No preamble, no recap of the request.
+- Progressive disclosure, always: lead with the 1–3 most critical findings only — I ask follow-ups for depth. Hold everything else back; never dump the full analysis unprompted. Tables > paragraphs for enumerable facts. No preamble, no recap of the request.
 - PLAN-IMPACT findings are exempt from all brevity rules: route through AskUserQuestion in full.
 
 ## Safety Rails (hook-enforced — never work around a block)
@@ -52,8 +52,8 @@ After any code change, run the project's quality checks (whatever its CLAUDE.md 
 - Others' PRs → `/peer-review`; never `/review` on code we don't own (its fix loop and metrics assume ownership).
 - Security audit → built-in `/security-review`; bugs/DRY/a11y/findings ledger → `/audit-code`.
 - Cleanup → coder second-draft sweep + `/refactor`; never built-in `/simplify` on loop output.
-- Verification → built-in `/verify` (behavioral) vs `/q-verify` (plan↔diff completeness) — never substitute one for the other.
-- Planning → `/plan` (front door) when no lane is named: recommends + confirms, then dispatches. Direct calls unchanged: `/eng-spec` by default; `/q-plan` for highest-stakes invariant work, unfamiliar surfaces, ANY change to external enforcement-tool config, and reclamation/liveness-teardown work (reapers, sweeps, session/instance GC — eng-spec 0-for-2 on that class). Tag lane escapes with `/escape lane=<lane>`; review via `/review-stats`. Rationale and pilot history: `~/.claude/docs/planning-lanes.md`.
+- Verification → custom `/verify` only (plan↔diff completeness + human smoke-test checklist; deep-plan and eng-spec lanes). The BUILT-IN skill of the same name is retired from the loop — never dispatch it. Agents never browser-drive — UI smoke tests are mine, from the checklist.
+- Planning → `/plan` (front door) when no lane is named: recommends + confirms, then dispatches. Direct calls unchanged: `/eng-spec` by default; `/deep-plan` for highest-stakes invariant work, unfamiliar surfaces, ANY change to external enforcement-tool config, and reclamation/liveness-teardown work (reapers, sweeps, session/instance GC — eng-spec 0-for-2 on that class). Tag lane escapes with `/escape lane=<lane>`; review via `/review-stats`. Rationale and pilot history: `~/.claude/docs/planning-lanes.md`.
 
 ## Engineering Judgment
 

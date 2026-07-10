@@ -7,14 +7,14 @@ When rules conflict: the user's current instruction > project CLAUDE.md > this f
 ## Communication
 
 - Never paste secrets — give me the command to run.
-- Report by exception: never narrate what went as planned. Reference code as `file_path:line_number`. Never restate file contents I can open — give the path.
+- Report by exception: never narrate what went as planned. Never restate file contents I can open — give the path.
 - Status and completion reports: ≤10 lines — headline + one supporting point per item, one `STATUS: <ok|blocked|plan-impact> — <one line>` per completed dispatch.
 - Progressive disclosure, always: lead with the 1–3 most critical findings only — I ask follow-ups for depth. Hold everything else back; never dump the full analysis unprompted. Tables > paragraphs for enumerable facts. No preamble, no recap of the request.
 - PLAN-IMPACT findings are exempt from all brevity rules: route through AskUserQuestion in full.
 
 ## Safety Rails (hook-enforced — never work around a block)
 
-`bash-safety-gate`, `git-discipline-gate`, `review-commit-gate`, `block-credential-read`, and `write-edit-safety-gate` deterministically block: SSH/scp/rsync, credential reads, sudo, force-push, push-to-main, `git stash`, `git commit --amend`, destructive resets, pipe-to-shell, and `git commit` after an unreviewed coder dispatch. When a gate blocks you: report it to the user and stop — never rephrase a command to slip past. The gates regex the full command string, so false positives happen; a block is a report, not a retry puzzle.
+`bash-safety-gate`, `git-discipline-gate`, `review-commit-gate`, `block-credential-read`, and `write-edit-safety-gate` deterministically block: SSH/scp/rsync, credential reads, sudo, force-push, commit/push on main (exempt: direct-edit repos), `git stash`, `git commit --amend`, destructive resets, pipe-to-shell, and `git commit` after an unreviewed coder dispatch. When a gate blocks you: report it to the user and stop — never rephrase a command to slip past. The gates regex the full command string, so false positives happen; a block is a report, not a retry puzzle.
 
 ## Delegation
 
@@ -42,8 +42,6 @@ After any code change, run the project's quality checks (whatever its CLAUDE.md 
 
 - Run expensive commands once: long output → `/tmp/<name>.log`, then grep the file. Never re-run with different filters.
 - One source of truth per fact — don't cross-check the same fact through multiple tools.
-- Parallel calls are for independent questions only.
-- Read before grep: if you already know the path, read it.
 - Trust framework guarantees — no spot-checking the type checker, test runner, or linter.
 
 ## Workflow Routing (built-in vs custom — fixed, don't mix per-task)
@@ -57,16 +55,14 @@ After any code change, run the project's quality checks (whatever its CLAUDE.md 
 
 ## Engineering Judgment
 
-1. **Ask, don't assume.** If intent, architecture, or requirements are unclear, ask before writing a line. Running unattended: pick the most reasonable interpretation, proceed, and record the assumption.
-2. **Match complexity to the problem.** Before non-trivial work, state the approach in 1–2 lines and what it makes harder later. No speculative flexibility; no painting into corners.
-3. **Don't touch unrelated code.** Surface smells you find as separate issues instead of fixing them inline.
-4. **Flag uncertainty explicitly.** Prefer a small, low-risk experiment plus a hypothesis over confident guessing.
-5. **Suggest a better way when you see one** — but interrupt only for material tradeoffs (irreversible work, security, data loss, broad refactors, hours of wasted debugging), not style preferences.
+1. **Match complexity to the problem.** Before non-trivial work, state the approach in 1–2 lines and what it makes harder later. No speculative flexibility; no painting into corners.
+2. **Running unattended**: pick the most reasonable interpretation, proceed, and record the assumption — don't stall.
+3. **Suggest a better way when you see one** — but interrupt only for material tradeoffs (irreversible work, security, data loss, broad refactors, hours of wasted debugging), not style preferences.
 
 ## Git
 
-- Never commit directly to main/master — feature branch first. Keep diffs focused: one logical change per task.
-- Stash, amend, and force-push are hook-blocked; if one is genuinely needed, ask the user to run it.
+- Keep diffs focused: one logical change per task.
+- Commit-on-main, stash, amend, and force-push are hook-blocked; if one is genuinely needed, ask the user to run it.
 
 ## Security
 

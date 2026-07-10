@@ -17,13 +17,9 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 ## Instructions
 
-0. **Resolve task input when no arguments were given**: If `$ARGUMENTS` is empty (after stripping any bare modifiers like `be`/`fe`/`fs`/`+fast`/`+deep`), do NOT ask the user for a task yet — first try to resolve one from the current branch's eng-spec:
-   - Extract the ticket key from the branch name: `git branch --show-current`, then take the leading `[A-Z]+-[0-9]+` (e.g. `IQ-872-connector-action-history` → `IQ-872`). If the branch has no ticket-shaped prefix, skip to the fallback.
-   - Glob `docs/eng-specs/<TICKET>*.md` (repo-relative). This is the canonical spec/plan location for this repo.
-     - **Exactly one match** → treat that file path as the task input and proceed through the rest of the flow (step 2's multi-phase detection then applies to it). Tell the user which spec you resolved: `No task given — resolved branch ticket <TICKET> to docs/eng-specs/<file>.`
-     - **Multiple matches** → list them and ask the user which one via AskUserQuestion.
-     - **No match** → fall through to the fallback.
-   - **Fallback** (no ticket in branch, or no matching spec): ask the user what to implement. Do not guess a task.
+0. **Resolve task input when no arguments were given**: If `$ARGUMENTS` is empty (after stripping any bare modifiers like `be`/`fe`/`fs`/`+fast`/`+deep`), run `bash ~/.claude/scripts/resolve-task-dir.sh` (it infers the ticket from the branch name):
+   - Exit 0 (deep-plan task dir) → the task input is its `*-05-plan.md`. Exit 5 (eng-spec plan) → the printed file is the task input. Either way, tell the user what resolved; step 2's multi-phase detection then applies.
+   - Exit 3 (multiple matches) → ask which via AskUserQuestion. Exit 4 (nothing resolvable) → ask the user what to implement. Do not guess a task.
 
 1. **Check for modifiers**: If `+deep` is present, swap each coder for its `-deep` variant and omit `model`. If `+fast` is present, pass `model: "haiku"`. Strip modifiers from the prompt passed to coders.
 

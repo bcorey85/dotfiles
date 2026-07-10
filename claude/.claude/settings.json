@@ -141,7 +141,9 @@
     "deny": [
       "Bash(sudo *)",
       "Bash(rm -rf /)",
-      "Bash(chmod 777 *)"
+      "Bash(chmod 777 *)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr merge:*)"
     ],
     "defaultMode": "auto"
   },

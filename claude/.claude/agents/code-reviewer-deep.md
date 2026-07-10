@@ -1,6 +1,6 @@
 ---
 name: code-reviewer-deep
-description: "Opus variant of code-reviewer for `+deep` dispatches — security-sensitive changes, complex logic, or architectural modifications. Same instructions as code-reviewer; the only difference is the model pin."
+description: "Opus-pinned code-reviewer. Dispatched by /review on `+deep`."
 model: opus
 tools: Bash, Read, Glob, Grep, LSP
 memory: project

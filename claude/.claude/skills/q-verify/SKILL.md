@@ -69,7 +69,7 @@ Out of scope (skipped): …
 - **Gaps found (`partial`/`missing`/failing check)**: list them, and log each as an escape past the phase-level drift gates (ground truth for the loop's trustworthiness — see `/review-stats`):
 
   ```bash
-  bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=q-verify gate_missed=drift-gate class=plan-drift severity=<high|medium> desc="<one line>" file=<path>
+  bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=q-verify gate_missed=drift-gate class=plan-drift severity=<high|medium> lane=q-plan desc="<one line>" file=<path>
   ```
 
   Then offer to dispatch `/fix` (or `/code` for net-new work) to close them. Re-run q-verify after.

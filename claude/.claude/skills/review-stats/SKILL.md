@@ -1,6 +1,6 @@
 ---
 name: review-stats
-description: Aggregate both sides of the review flywheel — what the gates caught (`~/.claude/review-metrics.jsonl`) and what they missed (`~/.claude/review-escapes.jsonl`) — to compute convergence, false-positive rate, and per-gate escape rates, and flag calibration problems
+description: Aggregate the review flywheel — what the gates caught (`~/.claude/review-metrics.jsonl`), what they missed (`~/.claude/review-escapes.jsonl`), and what coders' first drafts got wrong (`~/.claude/second-draft.jsonl`) — to compute convergence, false-positive rate, per-gate escape rates, and first-draft smell distribution, and flag calibration problems
 allowed-tools: [Bash, Read]
 ---
 
@@ -10,12 +10,13 @@ Analyze both sides of the flywheel:
 
 - **Catches** — what `/review` logs on every run (via `log-review-metrics`): repo, iter, severity counts, MEDIUM-triage buckets (`fixed`/`skipped_fp`/`ask`), `test_intent`, `result`.
 - **Escapes** — what got PAST the gates (via `~/.claude/scripts/log-escape`, fed by `/cc`, `/refactor`, `/q-verify`, and manual `/escape`): `stage_found`, `gate_missed`, `class`, `severity`. This is the ground truth for which gates are trustable.
+- **Second drafts** — what coders' own sweeps caught in their first drafts (logged by `/code` and `/fix` from each report's `SECOND DRAFT:` line): `source`, `coder`, `second_draft` (clean/found/missing), `categories`, `text`. This is the evidence base for tuning `coder-core` — the smells first drafts reliably ship.
 
-Both files accumulate counts/categories only — this skill reports distributions and rates, not per-finding patterns.
+The metrics and escapes files accumulate counts/categories only; the second-draft file also carries the receipt text, but this skill aggregates its categories — read the raw file directly when you need the actual receipts.
 
 ## Instructions
 
-1. **Locate the files**: `${REVIEW_METRICS_FILE:-$HOME/.claude/review-metrics.jsonl}` and `${REVIEW_ESCAPES_FILE:-$HOME/.claude/review-escapes.jsonl}`. If the metrics file is missing or empty, say so and stop. If only the escapes file is missing, analyze catches and note that no escapes have been logged yet — which is either great news or (more likely, early on) means the capture points haven't fired yet; don't interpret an empty escape log as proof of trustworthiness until catch volume is substantial.
+1. **Locate the files**: `${REVIEW_METRICS_FILE:-$HOME/.claude/review-metrics.jsonl}`, `${REVIEW_ESCAPES_FILE:-$HOME/.claude/review-escapes.jsonl}`, and `${SECOND_DRAFT_FILE:-$HOME/.claude/second-draft.jsonl}`. If the metrics file is missing or empty, say so and stop. A missing second-draft file just means no `/code`/`/fix` dispatches since it was wired — note it and move on. If only the escapes file is missing, analyze catches and note that no escapes have been logged yet — which is either great news or (more likely, early on) means the capture points haven't fired yet; don't interpret an empty escape log as proof of trustworthiness until catch volume is substantial.
 
 2. **Aggregate with jq/awk in a single pass** (redirect to a temp file if long). Compute:
    - **Run count** total and per repo.
@@ -26,6 +27,7 @@ Both files accumulate counts/categories only — this skill reports distribution
    - **Test-intent findings**: total `test_intent` and how many runs had any.
    - **Result distribution**: PASS / PASS WITH WARNINGS / NEEDS CHANGES.
    - **Escapes** (when the escapes file exists): counts by `gate_missed`, by `class`, by `stage_found`; severity mix; per repo; by `lane` when present (lane-level escape rates are the running A/B evidence for /q-plan vs /eng-spec routing). The headline number per gate is the **escape ratio**: escapes attributed to a gate vs. that gate's catch volume over the same period (e.g. `gate_missed=review` escapes vs. total review findings).
+   - **Second drafts** (when the file exists): dispatch count; rate of `clean` / `found` / `missing`; category distribution across `found` receipts (overall and per `coder` type); per repo and per `source` (code vs fix).
    - If a repo filter was passed in arguments, scope everything to that repo.
 
 3. **Interpret** — flag, with thresholds:
@@ -38,6 +40,10 @@ Both files accumulate counts/categories only — this skill reports distribution
      - `stage_found=cc`/`pr-human` escapes with `class=bug` → the reviewer is missing real bugs, not just smells; check which "Do NOT Flag" suppression rule ate them before assuming `+deep` is the fix.
      - `class=smell|duplication` dominating → the quality layer structurally can't see smells (its calibration suppresses them by design); evidence for a mandatory second-draft/refactor pass, not for re-tuning the reviewer.
      - Escapes ≈ 0 across several features WITH healthy catch volume → gates are earning trust; safe to keep low-risk phase boundaries mechanical.
+   - **Second-draft flags** (the coder-core tuning dial):
+     - One category dominating `found` receipts (say **> 40%**) → first drafts reliably ship that smell; recommend strengthening the matching `coder-core` rule (cite the category and rate) — this is the same evidence loop `skipped_fp` provides for the reviewer.
+     - `missing` rate **> 10%** → coders are skipping the sweep receipt; the orchestrators should be treating those reports as unfinished, so check whether `/code`/`/fix` are actually enforcing it.
+     - `clean` rate **> 85%** WHILE escapes show `class=smell|duplication` → the sweep is rubber-stamping, not sweeping (coder-core presumes first drafts smelly); recommend reinforcing the sweep's checklist rather than trusting the clean receipts.
 
 4. **Report**: a short table of the numbers, then the flags from step 3 (or "calibration looks healthy"). Note the data limitation once: metrics are counts only — refining the reviewer's specific rules requires reading actual review transcripts, not this file.
 

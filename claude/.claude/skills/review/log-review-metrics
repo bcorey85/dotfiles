@@ -8,6 +8,8 @@
 # Numeric-looking values are stored as numbers, everything else as strings.
 # A "date" field (UTC ISO 8601) is always added. Output file:
 #   $REVIEW_METRICS_FILE or ~/.claude/review-metrics.jsonl
+# The reserved key out=<path> redirects output to a different JSONL (it is
+# consumed, not logged) — used by /code and /fix for second-draft telemetry.
 set -euo pipefail
 
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
@@ -16,6 +18,7 @@ out="${REVIEW_METRICS_FILE:-$HOME/.claude/review-metrics.jsonl}"
 json=$(jq -cn '{date: (now | todate)}')
 for kv in "$@"; do
   case "$kv" in
+    out=*) out="${kv#out=}"; continue ;;
     *=*) ;;
     *) echo "skipping malformed arg (want key=value): $kv" >&2; continue ;;
   esac

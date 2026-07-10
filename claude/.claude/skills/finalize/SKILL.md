@@ -57,7 +57,7 @@ Missing `03-design.md` → stop: _"/finalize is for completed deep-plan tasks. R
 | Live        | Task ticket == current branch                 | `gh pr view --json url,number,title 2>/dev/null`                                                                                                                                          |
 | Retroactive | Task ticket ≠ current branch (cleanup branch) | `gh pr list --search "<TICKET>" --state all --json url,number,title,state,mergedAt` — substitute the resolved ticket key (e.g. `IQ-400`), then pick the merged PR matching the task title |
 
-Neither finds → `**PR**: (pending)`. Live mode: run `/finalize` **after** `/pr` so the link populates and the ADR commit lands on the same PR. Retroactive works either way.
+Neither finds → `**PR**: (pending)`. Live mode: run `/finalize` **after you have opened the PR** so the link populates and the ADR commit lands on the same PR. Retroactive works either way.
 
 ## Process
 

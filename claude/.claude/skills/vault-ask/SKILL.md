@@ -1,5 +1,6 @@
 ---
 name: vault-ask
+disable-model-invocation: true
 description: Answer a question from the vault's own notes — when something was decided, what a roadblock's history is, what the notes say about a person, project, or topic. Searches and reads the vault, answers with dates and note links as evidence. Triggers on "/vault-ask", "when did we decide", "what do my notes say about", "did I capture anything about", "search my notes".
 allowed-tools: [Read, Glob, Grep, Bash]
 ---

@@ -67,12 +67,12 @@ A refactor changes structure, not behavior — so the tests are the contract. **
 
    `lane` is the planning lane that produced the branch's work — infer from the conversation or planning artifacts (deep-plan task dir → `deep-plan`, eng-spec doc → `eng-spec`, direct dispatch → `code`). Skip logging when the target is legacy code that never went through the loop — old debt is not an escape.
 
-5. **Mandatory test audit** (every refactor, no exceptions): After the coder(s) complete, dispatch a `test-reviewer` subagent (`model: "sonnet"`) to audit the test suite touching the refactored code. A refactor's whole safety guarantee rests on the tests, so this runs even when no test files changed — a refactor that leaves behind weakened assertions, stale tests, or newly-uncovered branches is exactly what this catches.
+5. **Test audit (conditional)**: After the coder(s) complete, dispatch a `test-reviewer` subagent (`model: "sonnet"`) when the refactor could have changed what the tests guarantee — logic was moved/split/merged across units, a behavior-adjacent path changed, any test file was touched, or a coder flagged uncertainty. SKIP it (and say so in the summary) for purely mechanical refactors with green quality checks — renames, extract-variable, dead-code deletion, comment/format cleanup — there's no new structure for the suite to have drifted from.
+
+   When it runs:
    - Pass the refactor scope as the target (backend / frontend / the specific module(s) refactored) so the reviewer narrows to the relevant suite.
    - Pass the list of files the coder(s) changed so it can check coverage of the refactored code specifically.
    - Surface its findings in your summary. If it flags weakened assertions or tests that appear altered to accommodate the refactor, treat that as a violation of the CRITICAL test rule above — stop and alert the user rather than proceeding to commit.
-
-   Never skip this step, even under `+fast`.
 
 6. **Auto-dispatch peer review**: After summarizing the refactor, tell the user: "Auto-dispatching `/review` to check the refactored code before committing." Build a handoff block from the coder output (same protocol as `/code`) and pass it as args so the reviewer doesn't re-derive scope from `git diff`:
 

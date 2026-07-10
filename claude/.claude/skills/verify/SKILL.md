@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Reconcile the shipped changes against the deep-plan ticket + plan to confirm everything was actually built, BEFORE /pr. A completeness gate, not a code review — checks "did we build what the plan called for", not code quality. Runs after /code (+/review) and before /pr.
+description: Reconcile the shipped changes against the deep-plan ticket + plan to confirm everything was actually built, BEFORE the PR opens. A completeness gate, not a code review — checks "did we build what the plan called for", not code quality. Runs after /code (+/review); the user opens the PR.
 allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion, Skill]
 ---
 
@@ -10,11 +10,11 @@ Independently reconcile what shipped on this branch against the ticket's require
 
 ## Why
 
-`/review` (chained after `/code`) checks code **quality** — bugs, anti-patterns, security. Nothing in the flow checks **completeness**: did the diff actually satisfy every plan phase + ticket requirement? Those are different audits. The plan's `## Phase Status` checkboxes are self-reported by `/code`; verify does NOT trust them — it verifies against the real diff. Finding a gap here is cheap; finding it after `/pr` (or in `/finalize`, which seals the work) is not.
+`/review` (chained after `/code`) checks code **quality** — bugs, anti-patterns, security. Nothing in the flow checks **completeness**: did the diff actually satisfy every plan phase + ticket requirement? Those are different audits. The plan's `## Phase Status` checkboxes are self-reported by `/code`; verify does NOT trust them — it verifies against the real diff. Finding a gap here is cheap; finding it after the PR opens (or in `/finalize`, which seals the work) is not.
 
 ## When it runs
 
-After `/code` (and its auto `/review`) report done, **before `/pr`**. Not a behavioral check — terminal-drivable behavioral verification runs per-phase via `/code`'s agent verifier (evidence recorded in the plan). verify is static reconciliation of plan ↔ diff, and on a clean result it assembles the **review packet**, whose centerpiece is the **human smoke-test checklist** — UI/browser-level verification is deliberately the user's job; agents never drive a browser.
+After `/code` (and its auto `/review`) report done, **before the user opens the PR**. Not a behavioral check — terminal-drivable behavioral verification runs per-phase via `/code`'s agent verifier (evidence recorded in the plan). verify is static reconciliation of plan ↔ diff, and on a clean result it assembles the **review packet**, whose centerpiece is the **human smoke-test checklist** — UI/browser-level verification is deliberately the user's job; agents never drive a browser.
 
 ## Resolve the task directory
 
@@ -75,9 +75,8 @@ Out of scope (skipped): …
   Then offer to dispatch `/fix` (or `/code` for net-new work) to close them. Re-run verify after.
 
 - **Clean**: build the **review packet** — the single artifact for the human bulk review:
-  1. Auto-invoke `/orient` via the Skill tool (`skill: "orient"`, no args — it self-scopes to the branch diff).
-  2. Assemble one output, in this order: (a) the completeness table above; (b) orient's map (where it sits / wiring / reused-vs-new / structural risks); (c) **smoke-test checklist** — every acceptance criterion restated as a user-observable check, every `human-only` item from the plan's Manual Verification sections, and anything `needs-manual` from the reconciliation, each with concrete steps to exercise it; (d) **diff hotspots** — the 3–5 files where orient's structural risks and the completeness evidence point, listed as "read these first, skim the rest"; (e) a one-line pointer to the agent-verified evidence in the plan for spot-checking.
-  3. Point forward: run the smoke-test checklist, then `/pr`. After the PR, `/finalize` (deep-plan lane).
+  1. Assemble one output, in this order: (a) the completeness table above; (b) **smoke-test checklist** — every acceptance criterion restated as a user-observable check, every `human-only` item from the plan's Manual Verification sections, and anything `needs-manual` from the reconciliation, each with concrete steps to exercise it; (c) **diff hotspots** — the 3–5 files the completeness evidence marks as heaviest/most load-bearing, listed as "read these first, skim the rest"; (d) a one-line pointer to the agent-verified evidence in the plan for spot-checking. Do NOT invoke `/orient` here — the Orient pass is its own closing phase immediately after this one; running it inside verify doubles the spend for the same map.
+  2. Point forward: run the smoke-test checklist, then open the PR yourself — agents never open PRs. After the PR exists, `/finalize` (deep-plan lane).
 
 ## What NOT to do
 

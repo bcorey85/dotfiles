@@ -1,5 +1,6 @@
 ---
 name: plan
+disable-model-invocation: true
 description: Unified planning front door. Use whenever the user wants to plan a feature, ticket, or nontrivial change and has NOT named a specific planning lane — e.g. "plan this", "/plan TICKET.md", "how should we build X", "spec this out". Classifies the task against the planning-lane routing table, recommends /deep-plan vs /eng-spec vs bare /code with the matched rule, confirms with ONE question, dispatches the chosen lane, and logs the routing decision. Do NOT use when the user explicitly invokes /deep-plan, /eng-spec, or /code themselves — respect the direct call.
 allowed-tools: [Bash, Read, Glob, Grep, AskUserQuestion, Skill]
 ---

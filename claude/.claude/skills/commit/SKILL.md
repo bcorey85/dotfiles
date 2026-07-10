@@ -23,7 +23,7 @@ Use `JIRAPROJECT-TICKETNUMBER: description` if the branch has a ticket key, othe
 
 Execute all steps in a single pass — do NOT pause for user approval between steps.
 
-1. **Branch guard**: Run `git branch --show-current`. If the branch is `main` or `master`, STOP: "Refusing to commit directly to `<branch>`. Create a branch first (`/create-branch`) and re-run `/commit`." Never commit or push to main/master, even if changes are already staged.
+1. **Branch guard**: Run `git branch --show-current`. If the branch is `main` or `master`, STOP: "Refusing to commit directly to `<branch>`. Create a branch first (`git checkout -b <TICKET-NUM-desc|feature/desc>`, per `~/.claude/rules/git.md`) and re-run `/commit`." Never commit or push to main/master, even if changes are already staged.
 2. Run `git diff --cached --stat` to see what's staged. Also run `git status --short` to check for unstaged/untracked changes.
 3. **If nothing is staged**: Tell the user "Nothing staged. Stage your changes with `git add` first, then re-run `/commit`." Stop here.
 4. **If there are unstaged or untracked changes** beyond what's staged: Briefly note them (e.g., "FYI: 3 unstaged files not included in this commit: [list]"). Do NOT stage them — just inform.

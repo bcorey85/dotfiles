@@ -36,15 +36,15 @@ Review recent changes in this codebase using the code-reviewer subagent.
 
    This captures unstaged, staged, AND new untracked files. `git diff --name-only HEAD` alone misses untracked files — the most common case right after a coder dispatch.
 
-   **Second-order supplement (both paths)**: From the handoff `change` lines (or the diff), list every exported symbol whose signature, return type, or name changed. For each, run LSP find-references (fall back to `rg` for untyped code) and collect call sites OUTSIDE the current scope. Append those files to the reviewer's scope tagged "out-of-scope caller — check call-site compatibility only". This is a targeted expansion to catch the coder's most characteristic miss (a forgotten caller in a file it didn't touch); it is NOT an invitation to re-review unchanged code.
+   **Second-order supplement (both paths)**: From the handoff `change` lines (or the diff), list every exported symbol whose signature, return type, or name changed. For each, run LSP find-references (fall back to `rg` for untyped code) and collect call sites OUTSIDE the current scope. Append those files to the reviewer's scope tagged "out-of-scope caller — check call-site compatibility only". This is a targeted expansion to catch the coder's most characteristic miss (a forgotten caller in a file it didn't touch); it is NOT an invitation to re-review unchanged code. Run it on `iter=1` and manual invocations only; on re-review iterations (`iter ≥ 2`) limit it to symbols the fix diff itself changed — the base scope was already expanded once and hasn't moved.
 
 3. **Dispatch code-reviewer subagent(s)**:
 
    **Reviewer continuity (iter ≥ 2)**: when this invocation is a re-review inside the same session's fix loop (handoff has `prior-issues` and `iter ≥ 2`) and the reviewer agent from the previous iteration is still addressable, do NOT spawn a fresh reviewer — continue it via `SendMessage` with the handoff block (prior-issues + changed files). It already holds the context of its earlier review, so it verifies fix-by-fix without re-reading the scope. Spawn fresh only if: no prior reviewer exists in this session, the depth modifier changed (`+fast`/`+deep`), or the parallel-split boundaries changed.
 
-   **If 5 or fewer files in scope**: Dispatch a single code-reviewer subagent.
+   **Split threshold — parallel reviewers only when BOTH hold**: more than 5 files in scope AND a substantial combined diff (~300+ changed lines; check `git diff --stat` over the scope). A many-file but small diff (rename ripple, config touches) is one reviewer's job — a second spawn doubles cost without adding coverage. Otherwise dispatch a single code-reviewer subagent.
 
-   **If more than 5 files in scope**: Dispatch parallel code-reviewer subagents along the largest natural boundary in the changed set. Common splits, in priority order:
+   **When splitting**, choose the largest natural boundary in the changed set. Common splits, in priority order:
    - Frontend vs backend (most web codebases)
    - Source vs tests
    - Two unrelated subsystems / packages in a monorepo

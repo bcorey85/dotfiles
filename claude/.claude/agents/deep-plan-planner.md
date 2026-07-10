@@ -1,6 +1,6 @@
 ---
 name: deep-plan-planner
-description: "Produce a tactical implementation plan from a completed task-directory artifact set (ticket, research, design, structure). Fleshes out per-phase file changes and testable success criteria using the project's real verification commands; writes the plan file and returns its path."
+description: "deep-plan step P. Dispatched by /deep-plan only."
 model: sonnet
 tools: Bash, Read, Glob, Grep, LSP, Write
 maxTurns: 50

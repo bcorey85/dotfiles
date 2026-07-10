@@ -1,6 +1,6 @@
 ---
 name: coder-deep
-description: "Opus variant of coder for `+deep` dispatches in non-web repos — complex implementations requiring deeper reasoning. Same instructions as coder; the only difference is the model pin."
+description: "Opus-pinned coder (non-web repos). Dispatched by /code on `+deep`."
 model: opus
 color: yellow
 disallowedTools: Agent

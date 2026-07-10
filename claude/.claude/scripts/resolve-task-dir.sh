@@ -5,9 +5,11 @@
 # usage: resolve-task-dir.sh [<path-or-ticket>]
 #   <path>    existing directory -> used directly
 #   <ticket>  e.g. IQ-400 (case-insensitive) -> glob docs/eng-specs/IQ-400-*/
+#             (task dir), else docs/eng-specs/IQ-400*.md (eng-spec plan)
 #   (empty)   infer ticket from the current branch name (TICKET-NUM-prefix)
 #
-# exit 0: exactly one match, printed on stdout
+# exit 0: exactly one task DIRECTORY match, printed on stdout (deep-plan lane)
+# exit 5: no task dir, exactly one eng-spec plan FILE, printed (eng-spec lane)
 # exit 3: multiple matches, all printed on stdout (caller asks the user)
 # exit 4: nothing resolvable (caller asks the user for a path)
 set -euo pipefail
@@ -42,7 +44,22 @@ for d in "$specs/$ticket"-*/; do
 done
 
 case "$count" in
-  0) echo "no task directory matching $specs/$ticket-*/" >&2; exit 4 ;;
+  0) : ;; # no task dir — fall through to the eng-spec file lookup
   1) printf '%s' "$found"; exit 0 ;;
   *) printf '%s' "$found"; exit 3 ;;
+esac
+
+fcount=0
+ffound=""
+for f in "$specs/$ticket"*.md; do
+  [ -f "$f" ] || continue
+  fcount=$((fcount + 1))
+  ffound="${ffound}${f}
+"
+done
+
+case "$fcount" in
+  0) echo "no task directory or eng-spec matching $specs/$ticket*" >&2; exit 4 ;;
+  1) printf '%s' "$ffound"; exit 5 ;;
+  *) printf '%s' "$ffound"; exit 3 ;;
 esac

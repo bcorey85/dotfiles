@@ -24,7 +24,7 @@ Same resolver as `/finalize` (do NOT reimplement):
 bash ~/.claude/scripts/resolve-task-dir.sh "$ARGUMENTS"
 ```
 
-Exit 0 → use it, then glob `DIR/*.md` for the ticket (`-00-ticket.md`) and plan (`-05-plan.md`) files. Exit 3 → ask which match. Exit 4 → **eng-spec lane fallback**: take the branch's ticket key and glob `docs/eng-specs/<TICKET>*.md` — that doc is both ticket (requirements/ACs section) and plan. If neither lane yields a plan, ask for a path.
+Exit 0 → use it, then glob `DIR/*.md` for the ticket (`-00-ticket.md`) and plan (`-05-plan.md`) files. Exit 5 → **eng-spec lane**: the printed spec file is both ticket (requirements/ACs section) and plan. Exit 3 → ask which match. Exit 4 → ask for a path.
 
 No plan found anywhere → stop: _"/verify needs a plan (deep-plan task dir or docs/eng-specs). Run /deep-plan or /eng-spec first, or verify manually."_
 

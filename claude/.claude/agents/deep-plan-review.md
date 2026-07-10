@@ -1,6 +1,6 @@
 ---
 name: deep-plan-review
-description: "Adversarial read-only reviewer of a single deep-plan artifact against a checklist supplied in the dispatch. Verifies every file:line/code claim actually resolves; returns PASS or a structured issue list with specific fixes. Reads ONLY the paths it is handed — never opens a sibling it wasn't given, which preserves pre-design phase isolation."
+description: "deep-plan artifact reviewer. Dispatched by /deep-plan only."
 model: sonnet
 tools: Bash, Read, Glob, Grep, LSP
 maxTurns: 30

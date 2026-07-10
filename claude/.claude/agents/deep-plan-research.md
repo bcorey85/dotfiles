@@ -1,6 +1,6 @@
 ---
 name: deep-plan-research
-description: "Answer a numbered list of codebase questions with strictly factual documentation — what exists, how it works, where it lives, with file:line references. Sees only the questions file and declines any other task context. Writes the findings document into the task directory and returns its path."
+description: "deep-plan step R. Dispatched by /deep-plan only."
 model: sonnet
 tools: Bash, Read, Glob, Grep, LSP, Write
 maxTurns: 80

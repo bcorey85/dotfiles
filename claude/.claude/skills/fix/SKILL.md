@@ -1,105 +1,41 @@
 ---
 name: fix
 description: Dispatch coder subagents to fix review feedback (from a `/cc` comment handoff, a `/review` handoff, or the conversation), then auto-run `/review`. To act on inline comments left in `~/.claude/claude-comments.md`, use `/cc` — it reads them and routes here.
-allowed-tools: [Agent, Bash, Read, Glob, Grep, Skill]
+allowed-tools: [Agent, Bash, Read, Edit, AskUserQuestion]
 ---
 
 # Fix Code Review Feedback
 
-Dispatch parallel frontend-coder and backend-coder subagents to investigate and resolve valid issues from the most recent code review.
+Thin wrapper. Fixing and the verification loop both live in the `review-loop`
+agent (`~/.claude/agents/review-loop.md`), dispatched with `mode: fix-first`.
+Your job is to hand it the findings, then render the packet it returns and
+raise the modals it cannot.
 
 ## Modifiers
 
-- `+fast` / `+deep` — semantics defined in `~/.claude/skills/_shared/modifiers.md` (read it when either is present). `+fast` for trivial findings (typos, simple style fixes); `+deep` for complex findings requiring deeper reasoning to fix correctly.
+- `+fast` / `+deep` — semantics in `~/.claude/skills/_shared/modifiers.md` (read it when either is present). Pass through verbatim; the agent maps them to the coder variant and model.
 
 ## Instructions
 
-1. **Parse args**:
-   - **Modifiers**: If `+deep` is present, swap each coder for its `-deep` variant and omit `model`. If `+fast` is present, pass `model: "haiku"`. Strip modifiers from the prompt.
-   - **Iteration counter**: Look for `iter=N` in args (default `iter=1`). Hold this value — when re-invoking `/review` in step 5, pass `iter=N+1` so the loop is bounded.
-   - **No-review mode**: If `no-review` is in args (post-convergence MEDIUM fix bucket from `/review`), skip step 5 entirely — the coder's quality-check run is the verification. Report the fixes and the check exit code, then stop.
+1. **Dispatch the loop**. `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"` (the agent is unpinned). Pass, verbatim:
+   - `mode: fix-first`, `caller: fix`
+   - the findings, from whichever source applies: `/cc` entries (`path`, `line`, `body`, `id` — highest priority, user-authored), a `/review` handoff block, or the conversation
+   - any `handoff:` block (schema: `~/.claude/skills/_shared/handoff-block.md`), `iter=N`, and any `+fast` / `+deep` modifier
+   - `no-review` if present — the agent then verifies via the execution gate and returns without a reviewer pass
 
-2. **Parse the review feedback** from these sources (in order), then categorize issues by which coder owns the file (frontend vs backend, or whichever split applies to this codebase):
+   Invoked bare, with no findings in args and no handoff: if `~/.claude/claude-comments.md` may hold inline comments, point the user at `/cc` rather than parsing that file here. `/cc` owns reading and clearing it.
 
-   a. **Args from `/cc`** — inline comments the user authored in `~/.claude/claude-comments.md` (Neovim `<leader>cc` → `:ClaudeReviewComment`), passed in as an entry list (`path`, `line`, `body`, `id`). These are explicit user-authored requests at the **highest priority** — not heuristic findings. `/cc` owns reading and clearing `claude-comments.md`; this skill just fixes the entries it hands over. Do not read or rewrite `claude-comments.md` here.
+2. **Route on the returned `status`** — first match wins:
 
-   b. **Args from `/review`** — if invoked via the review handoff, the issues list is passed in args.
+   - **`plan-impact`** → raise the modal (see `/review`'s "Plan-impact findings" section — same routing), then re-dispatch with the decision and the returned `iter` preserved.
+   - **`critical-blocker`** → STOP. Present `blockers` and wait. Do NOT re-dispatch.
+   - **`cap-reached`** → STOP. Report `findings_remaining`; the user decides. The session is correctly left `dirty`, so `git commit` stays blocked.
+   - **`converged`** → render the packet (step 3).
 
-   c. **The conversation** — any review findings discussed above.
+3. **Render the packet**: `### Findings by severity` from `fixed[]`; any issues the agent skipped, with its reasons; `medium.fix` applied and `medium.skip` with reasons; `perf[]` under its own heading with `Principle:` lines; `low[]` and notes inline. If any finding needs architectural rethinking, recommend `/eng-spec`.
 
-   If invoked bare with none of these sources, but `~/.claude/claude-comments.md` may hold inline comments, point the user at `/cc` rather than parsing the file here.
+4. **Raise what the agent could not**. Present `medium.ask` and `test_intent.ask`; wait for direction. Never auto-fix either.
 
-3. **Launch coder agents in parallel** using a single message with multiple Agent tool calls.
+## Arguments
 
-   **Common instructions for every coder dispatched here** (include verbatim in the prompt):
-
-   > Fix only the issues listed below. Do not refactor surrounding code. Do not "improve" things you notice along the way. Do not rename, restructure, or add abstractions that aren't required by the fix itself. A focused 5-line fix is the right output, not a 50-line cleanup PR.
-   >
-   > After fixing each issue, check all callers and consumers of the changed code. If a fix changes a method signature, return type, or behavioral contract, update every caller in the same pass. Do not leave callers out of sync.
-   >
-   > If a listed issue turns out to be a false positive on inspection, skip it and report why. Do not "fix" issues that aren't actually broken just because the reviewer flagged them.
-
-   **Frontend Coder** (`subagent_type: frontend-coder`):
-   - Pass all frontend-specific issues with file paths and line numbers
-   - Include enough context from the review for the coder to understand the problem
-   - Apply the common instructions above
-
-   **Backend Coder** (`subagent_type: backend-coder`):
-   - Pass all backend-specific issues with file paths and line numbers
-   - Include enough context from the review for the coder to understand the problem
-   - Apply the common instructions above
-
-   If all issues are frontend-only or backend-only, launch only the relevant coder agent. In non-web repos where the frontend/backend split doesn't apply, dispatch a single `coder` subagent with all issues.
-
-4. **After coders complete**, summarize for the user AND build a handoff block for the verification reviewer.
-
-   **Second-draft telemetry (non-blocking)**: log each coder report's `SECOND DRAFT:` line exactly as `/code` step 5 does (same script, same fields), with `source=fix`:
-
-   ```bash
-   bash ~/.claude/skills/review/log-review-metrics out="$HOME/.claude/second-draft.jsonl" \
-     repo="$(basename "$(git rev-parse --show-toplevel)")" source=fix coder=<subagent_type> \
-     second_draft=<clean|found|missing> categories=<duplication|layer|naming|dead-weight|cohesion|other, comma-list|none> \
-     text="<the SECOND DRAFT line verbatim; omit when clean>"
-   ```
-
-   `missing` = non-trivial report with no `SECOND DRAFT:` line (protocol violation — count it). Telemetry never blocks the flow; on script failure, mention it and continue.
-
-   User summary:
-   - Which issues were fixed
-   - Any issues intentionally skipped (with reasoning)
-   - Any new concerns discovered
-   - If any issue requires architectural rethinking, recommend the user run `/eng-spec` instead
-
-   Handoff block (passed as args to `/review` in step 5). Schema is defined in `review/SKILL.md` under "Handoff Block". Required fields:
-
-   ```
-   handoff:
-     files:
-       - path: <relative path>
-         change: <one line: what fix was applied>
-     tests-run: <exact command + exit code, e.g. "npm run validate → exit 0"; or "none">
-     prior-issues:
-       - issue: <one line from prior review>
-         status: fixed | skipped | partial
-         file: <path>
-     flagged: <new concerns from this fix pass, or "none">
-     plan_impact: <verbatim PLAN-IMPACT block from a coder report, or "none">
-     iter: <N+1 — incremented from incoming iter>
-   ```
-
-   The `prior-issues` list scopes the verification reviewer to "did these fixes take?" first, before any new-issue scan. This is the main token saving — the reviewer no longer re-reviews untouched code.
-
-   **PLAN-IMPACT pass-through**: scan each coder report for a `PLAN-IMPACT:` block (coder-core requires `PLAN-IMPACT: yes` as the report's last line when one exists). Carry it into the handoff's `plan_impact` field verbatim — `/review` owns the unskippable AskUserQuestion routing for it. Never fold it into the prose summary.
-
-5. **Auto-dispatch peer review**: After summarizing the fixes, invoke the `/review` skill via the Skill tool with `skill: "review"` and `args` containing the handoff block from step 4 plus the iter value and any `+fast`/`+deep` modifier. Tell the user "Auto-dispatching `/review` to verify the fixes before committing (iteration N+1 of 3)." Pass `iter=N+1`.
-
-   This runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs.
-
-## Validation
-
-Each agent should verify issues are valid before fixing. Skip issues that are:
-
-- False positives or stylistic preferences
-- Out of scope for a quick fix
-- Blocked by other unresolved issues
-- Architectural in nature (recommend `/eng-spec` instead)
+$ARGUMENTS

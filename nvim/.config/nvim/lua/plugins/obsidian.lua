@@ -5,10 +5,21 @@ return {
   -- Gate to the vault: obsidian pulls in a require chain (obsidian.actions /
   -- .note / .api / .yaml) that cost a few ms on EVERY startup, but the plugin is
   -- only useful inside ~/vault. cond is evaluated in config.pack — when false the
-  -- spec (and its setup, keymaps, completion wiring) is skipped entirely. Tradeoff:
-  -- the <leader>N* note commands only exist when nvim is launched from the vault.
+  -- spec (and its setup, keymaps, completion wiring) is skipped entirely. Loads
+  -- when the cwd OR any file argument is under the vault, so popup launches
+  -- (tmux prefix n p / prefix v) get the <leader>N* commands without cd'ing —
+  -- a vault cwd would let persistence.nvim autosave over the real vault session.
   cond = function()
-    return vim.startswith(vim.fs.normalize(vim.fn.getcwd()), vim.fs.normalize(vim.fn.expand("~/vault")))
+    local vault = vim.fs.normalize(vim.fn.expand("~/vault"))
+    if vim.startswith(vim.fs.normalize(vim.fn.getcwd()), vault) then
+      return true
+    end
+    for _, a in ipairs(vim.fn.argv()) do
+      if vim.startswith(vim.fs.normalize(vim.fn.fnamemodify(a, ":p")), vault) then
+        return true
+      end
+    end
+    return false
   end,
   dependencies = {
     "nvim-lua/plenary.nvim",

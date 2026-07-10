@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# vault-inbox-next — open the oldest note in <vault>/00. Inbox for processing
+# (tmux prefix n p). The morning ritual is "process one stub"; choosing which
+# one is itself a brain cost, so: oldest first, no browsing. Processing means
+# filling the synthesis sections and moving the note out of the Inbox
+# (Literature/Permanent) — anything still here counts as unprocessed.
+set -euo pipefail
+
+VAULT="${VAULT_DIR:-$HOME/vault}"
+INBOX="$VAULT/00. Inbox"
+
+# ls -t sorts the glob matches newest-first; tail -1 = oldest. Names with
+# spaces are safe (one per line); vault note names never contain newlines.
+next="$(ls -1t "$INBOX"/*.md 2>/dev/null | tail -1 || true)"
+
+if [ -z "$next" ]; then
+  echo "inbox clear — nothing to process ✓"
+  sleep 2
+  exit 0
+fi
+exec nvim "$next"

@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# ask — question capture for the learning lane (tmux prefix n ?). Logs the
+# question to ~/vault/org/questions.org, then a background headless claude
+# researches it and writes a Literature-template answer stub (Source + Key
+# Points filled) into <vault>/00. Inbox. Same shape as `bookmark` with the
+# page fetch swapped for research; same rule — the synthesis sections stay
+# empty because writing "Explain It Back" is the part that teaches.
+#
+# Usage:
+#   ask [-i]              interactive (tmux popup)
+#   ask <question...>     one-shot
+set -euo pipefail
+
+VAULT="${VAULT_DIR:-$HOME/vault}"
+ORG="$VAULT/org"
+QF="$ORG/questions.org"
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-bg"
+mkdir -p "$ORG" "$LOG_DIR"
+
+q=""
+if [ "${1:-}" = "-i" ] || [ $# -eq 0 ]; then
+  read -r -e -p "q> " q
+  [ -z "$q" ] && exit 0
+else
+  q="$*"
+fi
+
+# Org-side log for durability only — the answer stub in the Inbox is the
+# artifact; this file just makes sure a question outlives a failed run.
+printf '* %s\n  [%s]\n' "$q" "$(date +'%Y-%m-%d %a')" >>"$QF"
+
+if ! command -v claude >/dev/null; then
+  printf '✓ logged to questions.org (claude not installed — no answer stub)\n'
+  sleep 1
+  exit 0
+fi
+
+prompt="Research and answer this question from a senior software engineer: $q
+
+Create exactly ONE new markdown file in '00. Inbox/' — filename: short kebab-case slug of the question, '.md' extension. Mirror the section structure of 'Templates/Literature.md' exactly, filled as follows:
+- Date: today's date
+- Source: 'question capture', plus links to any references actually used
+- Key Points: a direct, technically precise answer in 5-12 bullets — mechanisms, tradeoffs, and rules of thumb, not filler
+- Leave 'Quick Reactions', 'Explain It Back', 'Permanent Notes to Create', and 'Open Questions For Later' as empty scaffolding for the human to fill.
+
+Use WebSearch/WebFetch only when the answer benefits from sources or current information; answer from knowledge otherwise."
+
+# Same launch discipline as `bookmark`: prompt via stdin (the variadic
+# --allowedTools flag swallows a positional prompt), per-run scoped
+# permissions, and inside tmux the run is handed to the server — the popup's
+# process group is SIGHUP-killed ~1s after capture.
+log="$LOG_DIR/$(date +%Y%m%d-%H%M%S)-ask.log"
+pf="$(mktemp "${TMPDIR:-/tmp}/ask-prompt.XXXXXX")"
+printf '%s' "$prompt" >"$pf"
+runner="cd $(printf %q "$VAULT") && $(printf %q "$(command -v claude)") -p --model sonnet --allowedTools WebFetch WebSearch $(printf %q 'Write(00.*/**)') <$(printf %q "$pf") >$(printf %q "$log") 2>&1; rm -f $(printf %q "$pf")"
+if [ -n "${TMUX:-}" ]; then
+  tmux run-shell -b "$runner"
+else
+  nohup sh -c "$runner" >/dev/null 2>&1 &
+  disown
+fi
+printf '✓ logged — answer stub landing in 00. Inbox (log: %s)\n' "${log/#$HOME/\~}"
+sleep 1

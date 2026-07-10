@@ -17,7 +17,7 @@ Data-driven monthly audit of `~/.claude/skills/`. The guidance this implements: 
 
 - `coder-core` — preloaded via agent `skills:` frontmatter; it can never appear in telemetry.
 - `_shared/` files — not skills.
-- Pipeline-internal skills reachable only via chaining (`fix`, `review` when invoked by `/code`) DO log via the model path — they are not exempt, but weight their counts accordingly.
+- `review` and `fix` are thin wrappers over the `review-loop` **agent**, which is dispatched, not `Skill`-invoked — so `log-skill-use.sh` (a `PostToolUse` hook on `Skill`) cannot see the chained runs. The agent self-logs instead: count lines with `"skill":"review-loop"`, and read their `caller` field (`code` | `review` | `fix`) to separate chained runs from user-typed ones. A low `via: user` count on `review` is therefore expected and is NOT evidence of disuse.
 
 ## Process (single pass, jq/awk — don't re-read the log per skill)
 

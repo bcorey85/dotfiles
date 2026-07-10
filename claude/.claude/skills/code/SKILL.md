@@ -81,7 +81,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    - Any issues flagged
    - Any follow-up items
 
-   Handoff block (passed as args to `/review` in step 6). Schema is defined in `review/SKILL.md` under "Handoff Block". Required fields:
+   Handoff block (passed as args to `/review` in step 6). Schema is defined in `~/.claude/skills/_shared/handoff-block.md`. Required fields:
 
    ```
    handoff:
@@ -96,9 +96,19 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
    The handoff lets the reviewer skip rediscovery — file scope, change intent, and test status are upstream context the reviewer no longer has to reconstruct via `git diff` and full re-reads. Coders already know all of this; pass it forward instead of forcing re-discovery.
 
-6. **Auto-dispatch peer review**: After summarizing the coder output, tell the user: "Auto-dispatching `/review` to check the implementation before committing." Then invoke the `/review` skill via the Skill tool with `skill: "review"` and `args` containing the handoff block from step 5 plus any `+fast`/`+deep` modifier. This runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing.
+6. **Auto-dispatch peer review**: After summarizing the coder output, tell the user: "Auto-dispatching review to check the implementation before committing." Then dispatch the loop directly — `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"` (unpinned), passing `mode: review-first`, `caller: code`, the handoff block from step 5, and any `+fast`/`+deep` modifier.
 
-7. **Multi-phase plans only — apply the phase-boundary decision**: If step 2 detected a multi-phase plan, after `/review` returns and the drift gate passes, run the **Phase-boundary decision** (step 2) to choose stop vs. auto-advance. On a STOP, print the matching phase-complete block with all placeholders resolved and wait; when the user confirms (in-session by default — `/clear` only if context genuinely got heavy), re-enter step 2 for the next phase, using the `## Phase Status` section (fallback: `git status` + success criteria) to detect what's already done. On an AUTO-ADVANCE, print the one-line advance notice and re-enter step 2 immediately for the next phase in the same context.
+   Do NOT `Skill`-invoke `/review` here. That re-injects its body into this context once per phase; dispatching the agent keeps the loop's instructions in a subagent context that costs this one nothing. `/review` remains the user-facing entry point for manual review and dispatches the same agent.
+
+   This runs AFTER all coders have completed and the summary is presented. For parallel fullstack dispatches, both coders finish before this step runs — that is the correct sequencing.
+
+   **Route on the returned `status`** — first match wins:
+   - **`plan-impact`** → raise the **AskUserQuestion** modal (assumed → found → what changes; `Adopt plan change` / `Keep plan as written` / `Discuss`), record the answer in the plan's `## Plan Deviations` section, then re-dispatch `review-loop` with the decision and the returned `iter` preserved. The agent cannot raise a modal; this routing is why.
+   - **`critical-blocker`** → STOP. Present `blockers`, do NOT mark the phase done, do NOT advance.
+   - **`cap-reached`** → STOP. Report `findings_remaining`. Do NOT mark the phase done. The session is correctly left `dirty`, so `git commit` stays blocked.
+   - **`converged`** → render the packet — `### Findings by severity` from `fixed[]`, then `perf[]` under its own heading, then `medium.fix`/`medium.skip` and `low[]`. Present `medium.ask` and `test_intent.ask` to the user and wait; never auto-fix either. Then proceed to the phase gate.
+
+7. **Multi-phase plans only — apply the phase-boundary decision**: If step 2 detected a multi-phase plan, after `review-loop` returns `converged` and the drift gate passes, run the **Phase-boundary decision** (step 2) to choose stop vs. auto-advance. Any other status (`plan-impact`, `critical-blocker`, `cap-reached`) is a STOP — never advance a phase on an unconverged loop. On a STOP, print the matching phase-complete block with all placeholders resolved and wait; when the user confirms (in-session by default — `/clear` only if context genuinely got heavy), re-enter step 2 for the next phase, using the `## Phase Status` section (fallback: `git status` + success criteria) to detect what's already done. On an AUTO-ADVANCE, print the one-line advance notice and re-enter step 2 immediately for the next phase in the same context.
 
 ## Phase-Complete Block
 

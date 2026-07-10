@@ -53,6 +53,17 @@ Dispatch parallel frontend-coder and backend-coder subagents to investigate and 
 
 4. **After coders complete**, summarize for the user AND build a handoff block for the verification reviewer.
 
+   **Second-draft telemetry (non-blocking)**: log each coder report's `SECOND DRAFT:` line exactly as `/code` step 5 does (same script, same fields), with `source=fix`:
+
+   ```bash
+   bash ~/.claude/skills/review/log-review-metrics out="$HOME/.claude/second-draft.jsonl" \
+     repo="$(basename "$(git rev-parse --show-toplevel)")" source=fix coder=<subagent_type> \
+     second_draft=<clean|found|missing> categories=<duplication|layer|naming|dead-weight|cohesion|other, comma-list|none> \
+     text="<the SECOND DRAFT line verbatim; omit when clean>"
+   ```
+
+   `missing` = non-trivial report with no `SECOND DRAFT:` line (protocol violation — count it). Telemetry never blocks the flow; on script failure, mention it and continue.
+
    User summary:
    - Which issues were fixed
    - Any issues intentionally skipped (with reasoning)

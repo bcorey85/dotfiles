@@ -34,6 +34,17 @@ If the task feels too large for one agent, say so in your report and stop — do
 - Prefer named intermediate variables and guard clauses over dense expressions. Extract nested ternaries (`a ? b : c ? d : e`), compound booleans (`(a && b) || c`), and multi-step rollups (`x = x === null ? y : Math.max(x, y)`) into named `const`s or an explicit `if`/`else` whose name states the intent — a reader should grasp each branch without re-parsing the expression. A single simple ternary is fine; the moment it nests, or a boolean has 3+ operands, or a value is computed conditionally-in-place, name the parts. (This is a recurring review escape — default to legibility.)
 - Cognitive complexity and readability are top concerns
 
+## Performance Defaults (any code touching a DB or network)
+
+Structural rules, not optimization — the reviewer flags violations as `[perf]`, so get them right at write time:
+
+- Never query inside a loop/map over a prior query's results — use a join, an `IN` batch, or the ORM's relation loader (N+1).
+- Every list query gets a LIMIT/pagination. Never load a whole table to filter or sort in application code.
+- A new query that filters/joins/orders on a column needs a supporting index — check the schema; add the migration or flag the gap in your report.
+- Select only what the caller uses; don't eager-load relations you don't return.
+- Independent awaits run concurrently (`Promise.all`), never in series.
+- One batched call beats a call per item — server-side and from the client.
+
 ## Implementation Workflow
 
 1. **Read the plan/spec carefully** — understand every detail before writing code
@@ -71,6 +82,8 @@ The 2-run cap on quality-check commands is defined in `~/.claude/CLAUDE.md` ("Qu
 Todo-marked tests scaffolded from the ticket (see the plan's `Acceptance Stubs` section, when present) are the executable requirements list. You may do exactly ONE thing to them: flip a stub into a real test whose assertions come from the stub's behavior sentence and the plan's criteria — never from what your implementation happens to do. Never delete, reword, or skip-mark a stub; if one seems wrong, redundant, or unimplementable, stop and report. Deleting a stub to go green is the same offense as weakening a test to pass a refactor.
 
 **One altitude per behavior.** When the project uses feature-level acceptance specs (a feature-root spec file or feature-local `specs/` dir), READ them before writing any test at another level. A behavior already asserted in the feature spec is NOT re-asserted in a parent/page or unit test — parent/page tests own wiring plus at most one smoke traversal per feature; unit tests own the internals the spec can't see. If you notice a behavior asserted at two altitudes (including pre-existing duplication your change would extend), don't add to it — flag it in your report. Tripwire: if one behavior change forces test edits in two files, one of those tests is at the wrong altitude.
+
+**Test value bar (part of your second-draft sweep).** Every test you add must be able to fail for a reason a user cares about — otherwise it is diff noise, not coverage, and it taxes every future reader of an already-noisy diff. Before you keep a test you wrote this task, confirm it exercises real behavior; drop the ones that only: assert a mock/spy was called with the args you just passed it; exercise the framework/library rather than our code; restate the implementation (`render` with no meaningful `expect`, a snapshot of trivial output); or re-hit a branch a sibling test already covers with only cosmetic input changes. This bar governs **tests you wrote this task** — it never licenses touching an acceptance stub (see above) or a pre-existing test, and one smoke test per unit is fine (it is the redundant 2nd+ that goes). When unsure a test earns its place, make it assert something real rather than deleting coverage.
 
 ## When to Stop and Ask (common to all scopes)
 

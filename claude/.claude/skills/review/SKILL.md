@@ -2,7 +2,7 @@
 name: review
 description: Review recent changes using the code-reviewer subagent — the inner-loop reviewer for OUR working diff. Use for "review my changes", "review this diff", "check before I commit". Others' PRs go to /peer-review; this is not the built-in PR-review skill.
 allowed-tools:
-  [Agent, Bash, Read, Glob, Grep, LSP, AskUserQuestion, SendMessage, Skill]
+  [Agent, Bash, Read, Write, Edit, Glob, Grep, LSP, AskUserQuestion, SendMessage, Skill]
 ---
 
 # Code Review
@@ -64,6 +64,17 @@ Review recent changes in this codebase using the code-reviewer subagent.
 
 4. **Present the review results** to the user organized by severity. One addition severity ordering can't express: if a high-blast-radius file in scope (enforcement surface, many inbound references, public contract) came back with zero findings, note it in one line — "clean but load-bearing — worth a human glance". Never pre-rank files in the dispatch itself (step 3's no-checklist rule); this note is derived from the reviewer's output, after the fact.
 
+   **Perf learning surface**: `[perf]`-tagged findings never scroll past silently, regardless of severity bucket or whether they're about to be auto-fixed. Two obligations:
+
+   1. **In-session**: list them in the summary under their own `### Perf findings` heading, each with its `Principle:` line — the user is deliberately building backend-performance intuition from these.
+   2. **Vault log**: append each to `~/vault/91. Areas/Backend Performance/Backend Perf - Findings Log.md` via Read + Edit (Write the file with a `# Backend Perf - Findings Log` heading if it doesn't exist yet). One entry per finding:
+
+      ```
+      - **<today's date>** `<repo>` `<file:line>` — <finding one-liner> → <fix applied or "reported">. *Principle: <principle>*
+      ```
+
+      Append only on iteration 1 and manual invocations — re-review iterations (`iter ≥ 2`) and `oneshot` passes re-see the same findings; don't double-log them.
+
 5. **Decide next steps** based on the review outcome. Severity gating has two tiers:
    - **CRITICAL / HIGH** → auto-fix loop (convergence-bounded, counts toward `iter` limit)
    - **MEDIUM** → main-agent triage as a single follow-up after the loop converges (one-shot, NOT counted toward `iter`)
@@ -90,7 +101,7 @@ Review recent changes in this codebase using the code-reviewer subagent.
 
      Now triage MEDIUMs as a follow-up:
      - **If MEDIUM items exist**: The main agent (caller of this skill) must triage each MEDIUM with explicit judgment. For every MEDIUM, classify it as:
-       - **fix** — clear win, safe to auto-apply (e.g. missing null check, obvious dead code, real but non-blocking bug)
+       - **fix** — clear win, safe to auto-apply (e.g. missing null check, obvious dead code, real but non-blocking bug). A `[test-fluff]` finding on a diff-introduced test defaults to **fix** (prune it, or tighten it to assert real behavior) — this is the auto-prune that keeps test spam out of the diff. **Guard**: NEVER auto-prune a test in an acceptance-spec file (`*.spec.*`) or the plan's Acceptance Stubs — route those to **ask** instead. Same reasoning as the execution gate above: an auto-fixer's cheapest path to a smaller diff is deleting a test, and only the user decides whether lost coverage is acceptable.
        - **skip** — false positive, intentional choice, stylistic noise, or out-of-scope for this change
        - **ask** — ambiguous, requires design decision, or could plausibly be either fix/skip
 

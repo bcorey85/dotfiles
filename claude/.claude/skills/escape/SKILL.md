@@ -24,7 +24,7 @@ One escape = one defect found downstream of the gate that should have caught it.
 2. **Log it**:
 
    ```bash
-   bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")" stage_found=<...> gate_missed=<...> class=<...> severity=<...> desc="<...>" file=<...>
+   bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")" stage_found=<...> gate_missed=<...> class=<...> severity=<...> lane=<...> desc="<...>" file=<...>
    ```
 
 3. **Ratchet — one guard per escape (the actual loop-closer).** Recording the miss is bookkeeping; preventing the recurrence is the point. Ask: _what is the CHEAPEST structural guard that would have caught this at the gate it escaped?_ Work down this hierarchy and stop at the first rung that applies:

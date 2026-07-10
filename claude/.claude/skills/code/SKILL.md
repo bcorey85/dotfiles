@@ -17,6 +17,14 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 ## Instructions
 
+0. **Resolve task input when no arguments were given**: If `$ARGUMENTS` is empty (after stripping any bare modifiers like `be`/`fe`/`fs`/`+fast`/`+deep`), do NOT ask the user for a task yet — first try to resolve one from the current branch's eng-spec:
+   - Extract the ticket key from the branch name: `git branch --show-current`, then take the leading `[A-Z]+-[0-9]+` (e.g. `IQ-872-connector-action-history` → `IQ-872`). If the branch has no ticket-shaped prefix, skip to the fallback.
+   - Glob `docs/eng-specs/<TICKET>*.md` (repo-relative). This is the canonical spec/plan location for this repo.
+     - **Exactly one match** → treat that file path as the task input and proceed through the rest of the flow (step 2's multi-phase detection then applies to it). Tell the user which spec you resolved: `No task given — resolved branch ticket <TICKET> to docs/eng-specs/<file>.`
+     - **Multiple matches** → list them and ask the user which one via AskUserQuestion.
+     - **No match** → fall through to the fallback.
+   - **Fallback** (no ticket in branch, or no matching spec): ask the user what to implement. Do not guess a task.
+
 1. **Check for modifiers**: If `+deep` is present, swap each coder for its `-deep` variant and omit `model`. If `+fast` is present, pass `model: "haiku"`. Strip modifiers from the prompt passed to coders.
 
 2. **Detect multi-phase plans (MANDATORY check)**: If the task input is a path to a plan file (e.g., `*-plan.md` under `docs/eng-specs/`) or pasted plan content, read it and check whether it contains multiple `## Phase N:` sections.
@@ -58,6 +66,16 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 5. **After coder(s) complete**, summarize for the user AND build a handoff block for downstream review.
 
    **PLAN-IMPACT gate (before anything else in this step)**: scan the coder report for a `PLAN-IMPACT:` block (coder-core requires `PLAN-IMPACT: yes` as the report's last line when one exists). If present, present it via **AskUserQuestion** — assumed → found → what changes, options `Adopt plan change` / `Keep plan as written` / `Discuss` — BEFORE summarizing or auto-dispatching `/review`. A plan-impact finding folded into a prose summary is a protocol violation: the modal (and its attention-hook notification) is what makes the finding unskippable. Record the answer in the plan's `## Plan Deviations` section (create if absent) so `/q-verify` reconciles against the amended plan.
+
+   **Second-draft telemetry (non-blocking)**: for each coder report, read its `SECOND DRAFT:` line and log one JSONL line — the coder-side counterpart to the review metrics:
+
+   ```bash
+   bash ~/.claude/skills/review/log-review-metrics out="$HOME/.claude/second-draft.jsonl" \
+     repo="$(basename "$(git rev-parse --show-toplevel)")" source=code coder=<subagent_type> \
+     second_draft=<clean|found|missing> categories=<comma-list|none> text="<the SECOND DRAFT line verbatim; omit when clean>"
+   ```
+
+   `found` when the sweep changed anything (classify the receipt into `categories` using the sweep's own list: `duplication`, `layer`, `naming`, `dead-weight`, `cohesion`, fallback `other`); `clean` when it reports nothing found; `missing` when a non-trivial report has no `SECOND DRAFT:` line at all — that is a coder protocol violation worth counting, not silently forgiving. One line per coder (parallel fullstack = two lines). If the script fails, mention it and continue — telemetry never blocks the flow.
 
    User summary:
    - What was implemented

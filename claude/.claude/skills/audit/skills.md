@@ -1,10 +1,4 @@
----
-name: skill-audit
-description: Audit the skill toolkit against usage telemetry — reports untriggered skills, overlap candidates, and always-loaded context cost. Run monthly. Triggers on "/skill-audit", "audit my skills", "which skills am I not using", "skill usage".
-allowed-tools: [Bash, Read, Glob, Grep]
----
-
-# Skill Audit
+# Lane: skills — toolkit vs usage telemetry
 
 Data-driven monthly audit of `~/.claude/skills/`. The guidance this implements: every skill's description is always-loaded context tax; skills that never trigger should be merged, trimmed, or deleted.
 
@@ -16,7 +10,7 @@ Data-driven monthly audit of `~/.claude/skills/`. The guidance this implements: 
 ## Exempt list (never flag)
 
 - `coder-core` — preloaded via agent `skills:` frontmatter; it can never appear in telemetry.
-- `_shared/` files — not skills.
+- `_shared/` files and lane files inside a skill dir (like this one) — not skills.
 - `review` and `fix` are thin wrappers over the `review-loop` **agent**, which is dispatched, not `Skill`-invoked — so `log-skill-use.sh` (a `PostToolUse` hook on `Skill`) cannot see the chained runs. The agent self-logs instead: count lines with `"skill":"review-loop"`, and read their `caller` field (`code` | `review` | `fix`) to separate chained runs from user-typed ones. A low `via: user` count on `review` is therefore expected and is NOT evidence of disuse.
 
 ## Process (single pass, jq/awk — don't re-read the log per skill)
@@ -27,14 +21,9 @@ Data-driven monthly audit of `~/.claude/skills/`. The guidance this implements: 
    - **Untriggered ≥ 30 days** (with ≥ 30 days of telemetry history) → retire/merge candidate.
    - **Description > ~4 lines or body > 150 lines** on a low-use skill → trim candidate.
    - **Overlapping trigger domains** — two descriptions a reasonable router could confuse → merge or sharpen-description candidate.
-   - **Built-in shadowing** — a custom skill whose job a harness built-in now covers; check against the "Built-in vs Custom Skills" routing table in `~/.claude/CLAUDE.md` before flagging.
+   - **Built-in shadowing** — a custom skill whose job a harness built-in now covers; check against the "Workflow Routing" table in `~/.claude/CLAUDE.md` before flagging.
 4. Report (cap ~60 lines): usage table, then flags, each with a one-line recommended action (delete / merge into X / trim to Y / sharpen description). If telemetry history is thin (< 30 days), say so and mark usage-based flags provisional.
 
 ## Boundaries
 
-- **Read-only** — never delete or edit a skill during the audit; the user decides.
 - Do not flag skills purely for being niche — a skill used twice a year that saves an hour each time earns its ~100-token description. Judge cost vs. value, not raw counts.
-
-## Arguments
-
-$ARGUMENTS

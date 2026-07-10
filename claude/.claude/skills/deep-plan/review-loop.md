@@ -33,7 +33,7 @@ REVIEW_METRICS_FILE="$HOME/.claude/deep-plan-review.jsonl" bash ~/.claude/skills
   the final-round count, which is 0 on every PASS by construction.
 - Leak-check: log `phase=leak-check` with `issues` = questions flagged as
   materially intent-leaking, `rounds` = rewrite rounds taken.
-- Reuses the `/review` metrics script but writes a SEPARATE file, so `/review-stats` (code-finding severities) stays uncontaminated. Inspect with `jq . ~/.claude/deep-plan-review.jsonl`.
+- Reuses the `/review` metrics script but writes a SEPARATE file, so `/audit review` (code-finding severities) stays uncontaminated. Inspect with `jq . ~/.claude/deep-plan-review.jsonl`.
 
 ## Per-phase checklists
 

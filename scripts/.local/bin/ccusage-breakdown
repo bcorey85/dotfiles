@@ -49,14 +49,16 @@ echo "════════════════════════�
 echo ""
 
 # Collect all JSONL files with timestamps and sizes
+tmpall=$(mktemp)
 tmpfile=$(mktemp)
-trap "rm -f $tmpfile" EXIT
+trap "rm -f $tmpall $tmpfile" EXIT
 
 if [ "$STAT_FMT" = "mac" ]; then
     find "$CLAUDE_DIR" -name "*.jsonl" -print0 | xargs -0 stat -f '%m %z %N' 2>/dev/null
 else
     find "$CLAUDE_DIR" -name "*.jsonl" -print0 | xargs -0 stat --format='%Y %s %n' 2>/dev/null
-fi | awk -v s="$start_epoch" -v e="$end_epoch" '$1 >= s && $1 <= e' > "$tmpfile"
+fi > "$tmpall"
+awk -v s="$start_epoch" -v e="$end_epoch" '$1 >= s && $1 <= e' "$tmpall" > "$tmpfile"
 
 total_files=$(wc -l < "$tmpfile" | tr -d ' ')
 if [ "$total_files" -eq 0 ]; then
@@ -64,13 +66,11 @@ if [ "$total_files" -eq 0 ]; then
     exit 0
 fi
 
-total_bytes=$(awk '{sum+=$2} END {print sum}' "$tmpfile")
-total_mb=$(echo "scale=1; $total_bytes / 1048576" | bc)
+total_mb=$(awk '{sum+=$2} END {printf "%.1f", sum/1048576}' "$tmpfile")
 
 main_sessions=$(grep -v subagents "$tmpfile" | wc -l | tr -d ' ')
 subagent_count=$(grep subagents "$tmpfile" | wc -l | tr -d ' ')
-subagent_bytes=$(grep subagents "$tmpfile" | awk '{sum+=$2} END {print sum+0}')
-subagent_mb=$(echo "scale=1; $subagent_bytes / 1048576" | bc)
+subagent_mb=$(grep subagents "$tmpfile" | awk '{sum+=$2} END {printf "%.1f", sum/1048576}')
 
 echo "Total: ${total_mb} MB across ${main_sessions} sessions + ${subagent_count} subagents (${subagent_mb} MB)"
 echo ""
@@ -95,14 +95,80 @@ grep -v subagents "$tmpfile" | awk -v enc="$HOME_ENCODED" '{
 }' | sort -k3 -rn
 echo ""
 
-# Model breakdown
-echo "Model Breakdown"
+# Token usage: real per-message usage fields, grouped by local day × model.
+# File candidates come from the full listing filtered by mtime >= start only —
+# a session resumed after end_date still holds in-range messages; the per-line
+# timestamp filter below is what enforces the range.
+echo "Token Usage (day × model)"
 echo "────────────────────────────────────────────────────"
-awk '{print $3}' "$tmpfile" | xargs grep -oh '"model":"[^"]*"' 2>/dev/null | \
-    sort | uniq -c | sort -rn | while read count model; do
-    name=$(echo "$model" | tr -d '"' | sed 's/model://')
-    printf "%6d calls  %s\n" "$count" "$name"
-done
+if command -v python3 &>/dev/null; then
+    awk -v s="$start_epoch" '$1 >= s {print $3}' "$tmpall" | \
+    python3 -c "
+import sys, json, re
+from collections import defaultdict
+from datetime import datetime
+
+start, end = sys.argv[1], sys.argv[2]
+agg = defaultdict(lambda: [0, 0, 0, 0])          # (day, model) -> msgs, new_in, cache_read, out
+split = defaultdict(lambda: [0, 0])              # main/agent -> new_in, out
+
+def short(m):
+    return re.sub(r'-\d{8}\$', '', re.sub(r'^claude-', '', m))
+
+def human(n):
+    if n >= 1e6: return f'{n/1e6:.1f}M'
+    if n >= 1e3: return f'{n/1e3:.0f}k'
+    return str(n)
+
+for path in sys.stdin:
+    path = path.strip()
+    if not path: continue
+    who = 'agent' if '/subagents/' in path else 'main'
+    try: fh = open(path, errors='replace')
+    except OSError: continue
+    with fh:
+        for line in fh:
+            if '\"usage\"' not in line: continue
+            try: j = json.loads(line)
+            except (json.JSONDecodeError, UnicodeDecodeError): continue
+            m = j.get('message') or {}
+            u = m.get('usage')
+            model = m.get('model')
+            if not u or not model or model == '<synthetic>': continue
+            ts = j.get('timestamp') or ''
+            try:
+                day = datetime.fromisoformat(ts.replace('Z', '+00:00')).astimezone().date().isoformat()
+            except ValueError: continue
+            if not (start <= day <= end): continue
+            new_in = (u.get('input_tokens') or 0) + (u.get('cache_creation_input_tokens') or 0)
+            cr = u.get('cache_read_input_tokens') or 0
+            out = u.get('output_tokens') or 0
+            row = agg[(day, short(model))]
+            row[0] += 1; row[1] += new_in; row[2] += cr; row[3] += out
+            if j.get('isSidechain'): who = 'agent'
+            split[who][0] += new_in; split[who][1] += out
+
+if not agg:
+    print('  (no usage records in range)')
+    sys.exit(0)
+
+print(f'{\"Day\":<12}{\"Model\":<22}{\"Msgs\":>6}{\"New In\":>9}{\"CacheRd\":>9}{\"Output\":>9}')
+totals = defaultdict(lambda: [0, 0, 0, 0])
+for (day, model), v in sorted(agg.items()):
+    print(f'{day:<12}{model:<22}{v[0]:>6}{human(v[1]):>9}{human(v[2]):>9}{human(v[3]):>9}')
+    t = totals[model]
+    for i in range(4): t[i] += v[i]
+print()
+for model, v in sorted(totals.items(), key=lambda x: -(x[1][1] + x[1][3])):
+    print(f'{\"total\":<12}{model:<22}{v[0]:>6}{human(v[1]):>9}{human(v[2]):>9}{human(v[3]):>9}')
+mi, mo = split['main']; ai, ao = split['agent']
+print()
+print(f'main session: {human(mi)} new-in / {human(mo)} out   subagents: {human(ai)} new-in / {human(ao)} out')
+print('(New In = uncached input + cache creation; with Output these drive limit drain. Cache reads are ~10% weight.)')
+" "$start_date" "$end_date"
+else
+    echo "  (python3 not found — skipping token accounting)"
+fi
 echo ""
 
 # MCP tool usage
@@ -127,7 +193,7 @@ echo "────────────────────────�
 grep -v subagents "$tmpfile" | sort -k2 -rn | head -10 | while IFS= read -r line; do
     sz=$(echo "$line" | awk '{print $2}')
     f=$(echo "$line" | awk '{print $3}')
-    sz_mb=$(echo "scale=1; $sz / 1048576" | bc)
+    sz_mb=$(awk -v b="$sz" 'BEGIN {printf "%.1f", b/1048576}')
 
     # Extract project name (first path component after the home-encoded prefix)
     proj=$(echo "$f" | awk -v enc="$HOME_ENCODED" '{

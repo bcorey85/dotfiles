@@ -4,7 +4,7 @@
 # An "escape" is a defect found DOWNSTREAM of the gate that should have caught
 # it: a human PR read, a /cc comment, a /refactor smell sweep, a /q-verify gap,
 # or production. This file is the ground-truth side of the review flywheel;
-# ~/.claude/review-metrics.jsonl is the "what the gates caught" side. /review-stats
+# ~/.claude/review-metrics.jsonl is the "what the gates caught" side. /audit review
 # aggregates both to compute per-gate escape rates.
 #
 # usage: log-escape key=value [key=value ...]
@@ -18,7 +18,7 @@
 #     file=path
 #     lane=q-plan|eng-spec|code|other   (optional: planning lane that produced
 #                                        the shipped work — enables lane-level
-#                                        escape attribution in /review-stats)
+#                                        escape attribution in /audit review)
 #
 # Numeric-looking values are stored as numbers, everything else as strings.
 # A "date" field (UTC ISO 8601) is always added. Output file:

@@ -197,24 +197,28 @@ local FAMILIES = {
     end,
   },
   tokyonight = {
-    -- folke/tokyonight.nvim: storm (the mid-dark blue-violet night) and day.
+    -- folke/tokyonight.nvim: night (the darkest of the three darks — storm and
+    -- moon sit on lighter, bluer bases) and day.
     -- Each variant registers its own colors_name, matching schemes[mode].
-    schemes = { dark = "tokyonight-storm", light = "tokyonight-day" },
+    schemes = { dark = "tokyonight-night", light = "tokyonight-day" },
     accents = {
       dark = { heading1 = "#bb9af7", heading = "#7aa2f7" }, -- purple + blue
       light = { heading1 = "#9854f1", heading = "#2e7de9" },
     },
-    -- Worst comment contrast of any family here: storm's #565f89 is 2.35:1 and
-    -- day's #848cb5 is 2.54:1 (floor 4.5) — both are barely-there blues. Storm
-    -- lifts halfway to body (4.92:1). Day is the harder one: its body fg is a
-    -- BLUE (#3760bf) that only measures 4.52:1 itself, so a floor-clearing
-    -- comment would land on top of body. Deepen body down the same blue ramp to
-    -- 8.07:1 (the solarized-light precedent), which buys the comment room at
-    -- 4.91:1. Diff* ship real bg-only washes in both modes — left stock.
+    -- Worst comment contrast of any family here: night's #565f89 is 2.76:1 and
+    -- day's #848cb5 is 2.54:1 (floor 4.5) — both are barely-there blues. Night
+    -- lifts 40% toward body (5.06:1, against body's 10.59). Day is the harder
+    -- one: its body fg is a BLUE (#3760bf) that only measures 4.52:1 itself, so
+    -- a floor-clearing comment would land on top of body. Deepen body down the
+    -- same blue ramp to 8.07:1 (the solarized-light precedent), which buys the
+    -- comment room at 4.91:1.
+    -- Diff* ship real bg-only washes in both modes and are left stock: night's
+    -- add is a genuine BLUE (#243e4a, hue 198) rather than a green, which is
+    -- what makes its diffs separate cleanly from the red delete.
     fixup = function(mode)
       local hl = vim.api.nvim_set_hl
       if mode == "dark" then
-        hl(0, "Comment", { fg = blend("#c0caf5", "#565f89", 0.5), italic = true })
+        hl(0, "Comment", { fg = blend("#c0caf5", "#565f89", 0.4), italic = true })
       else
         hl(0, "Normal", { fg = "#223c7d", bg = "#e1e2e7" })
         hl(0, "Comment", { fg = "#565e80", italic = true })

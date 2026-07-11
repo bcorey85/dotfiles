@@ -55,7 +55,7 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # builtins: these already put body fg on slot 15 (no blaze to fix).
     rose-pine:dark) echo "Rose Pine" ;;
     rose-pine:light) echo "Rose Pine Dawn" ;;
-    tokyonight:dark) echo "TokyoNight Storm" ;;
+    tokyonight:dark) echo "TokyoNight Night" ;; # darkest of the three darks
     tokyonight:light) echo "TokyoNight Day" ;;
     catppuccin:light) echo "Catppuccin Latte" ;;
     # custom: Mocha is the inverse of the usual blaze — its 7/15 slots (#a6adc8,

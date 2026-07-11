@@ -38,7 +38,7 @@ raise the modals it cannot.
    - `medium.fix` — applied, one line each. `medium.skip` — inline with its reason.
    - `low[]` and notes — inline.
 
-4. **Raise what the agent could not**. Present `medium.ask` and `test_intent.ask`; wait for direction. Never auto-fix either — a weak or absent oracle is exactly when auto-fixing is most wrong.
+4. **Raise what the agent could not**. Present `medium.ask`; wait for direction. Never auto-fix an ambiguous item — when the right call needs a design decision, auto-fixing is most wrong.
 
 5. **If nothing is outstanding**: "No issues found that warrant auto-fix. Ready for `/commit`."
 

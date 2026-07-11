@@ -2,7 +2,8 @@
   "env": {
     "ENABLE_LSP_TOOL": "1",
     "ENABLE_TOOL_SEARCH": "1",
-    "CLAUDE_CODE_DISABLE_1M_CONTEXT": "0"
+    "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "180000"
   },
   "attribution": {
     "commit": "",
@@ -147,7 +148,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "fable",
+  "model": "opus",
   "hooks": {
     "PreToolUse": [
       {

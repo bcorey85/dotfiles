@@ -74,7 +74,7 @@ Out of scope (skipped): …
 
   Then offer to dispatch `/fix` (or `/code` for net-new work) to close them. Re-run verify after.
 
-- **Clean**: build the **review packet** — the single artifact for the human bulk review:
+- **Clean**: first, the **branch-final smell sweep gate** — confirm a bare `/refactor` (full branch-diff sweep) has run on this branch since the last code change. If it hasn't, run it now (Skill tool) and let its loop converge before assembling the packet. Rationale: escape telemetry (`/audit review`) shows smell/duplication defects dominate what survives `/review` — its calibration suppresses them by design — and the sweep only catches them when it actually runs. The sweep is `/refactor`'s job; verify stays read-only and simply refuses to hand over the packet without it. Then build the **review packet** — the single artifact for the human bulk review:
   1. Assemble one output, in this order: (a) the completeness table above; (b) **smoke-test checklist** — every acceptance criterion restated as a user-observable check, every `human-only` item from the plan's Manual Verification sections, and anything `needs-manual` from the reconciliation, each with concrete steps to exercise it; (c) **diff hotspots** — the 3–5 files the completeness evidence marks as heaviest/most load-bearing, listed as "read these first, skim the rest"; (d) a one-line pointer to the agent-verified evidence in the plan for spot-checking. Do NOT invoke `/orient` here — the Orient pass is its own closing phase immediately after this one; running it inside verify doubles the spend for the same map.
   2. Point forward: run the smoke-test checklist, then open the PR yourself — agents never open PRs. After the PR exists, `/finalize` (deep-plan lane).
 

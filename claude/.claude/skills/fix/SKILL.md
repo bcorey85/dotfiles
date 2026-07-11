@@ -34,7 +34,7 @@ raise the modals it cannot.
 
 3. **Render the packet**: `### Findings by severity` from `fixed[]`; any issues the agent skipped, with its reasons; `medium.fix` applied and `medium.skip` with reasons; `perf[]` under its own heading with `Principle:` lines; `low[]` and notes inline. If any finding needs architectural rethinking, recommend `/eng-spec`.
 
-4. **Raise what the agent could not**. Present `medium.ask` and `test_intent.ask`; wait for direction. Never auto-fix either.
+4. **Raise what the agent could not**. Present `medium.ask`; wait for direction. Never auto-fix an ambiguous item.
 
 ## Arguments
 

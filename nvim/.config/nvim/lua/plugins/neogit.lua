@@ -24,6 +24,7 @@ return {
     { "<leader>gL", desc = "Log (current file)" },
     { "<leader>gr", desc = "Open/create PR on GitHub" },
     { "<leader>gt", desc = "Git push + set upstream tracking (prompt)" },
+    { "<leader>gs", desc = "Stage safe file classes (index barrels)" },
   },
   dependencies = { "nvim-lua/plenary.nvim", "esmuellert/codediff.nvim", "barrettruth/diffs.nvim" },
   config = function()
@@ -267,6 +268,58 @@ return {
         end
       end)
     end, "Open/create PR on GitHub")
+
+    -- <leader>gs — "stage safe": bulk-stage the file classes vetted as safe
+    -- to commit without a human read (agentic-code review triage). Index
+    -- barrels only for now; grow `safe_patterns` one class at a time as
+    -- /escape data earns it (types = skim-not-skip, tests = deliberately
+    -- vetoed — assertions need human eyes). Filters `git ls-files` output in
+    -- Lua instead of handing git a pathspec because `git add` exits fatal
+    -- when any pathspec matches nothing. No manual status refresh needed:
+    -- the filewatcher (setup above) picks up the index change.
+    local safe_patterns = {
+      "^index%.[jt]sx?$", -- repo-root index.ts/tsx/js/jsx
+      "/index%.[jt]sx?$", -- nested barrel files
+    }
+    map("<leader>gs", function()
+      local root = vim.fs.root(vim.fn.getcwd(), ".git") or vim.fn.getcwd()
+      -- -m modified + -o untracked (--exclude-standard drops ignored files);
+      -- -m also lists unstaged deletions, and `git add` on a deleted path
+      -- stages the deletion — exactly right for a removed barrel.
+      vim.system({ "git", "ls-files", "-mo", "--exclude-standard" }, { text = true, cwd = root }, function(out)
+        if out.code ~= 0 then
+          vim.schedule(function()
+            vim.notify("git ls-files failed: " .. (out.stderr or ""), vim.log.levels.ERROR)
+          end)
+          return
+        end
+        local files = {}
+        for line in (out.stdout or ""):gmatch("[^\n]+") do
+          for _, pat in ipairs(safe_patterns) do
+            if line:match(pat) then
+              files[#files + 1] = line
+              break
+            end
+          end
+        end
+        if #files == 0 then
+          vim.schedule(function()
+            vim.notify("stage safe: nothing to stage", vim.log.levels.INFO)
+          end)
+          return
+        end
+        local cmd = vim.list_extend({ "git", "add", "--" }, files)
+        vim.system(cmd, { text = true, cwd = root }, function(add)
+          vim.schedule(function()
+            if add.code ~= 0 then
+              vim.notify("git add failed: " .. (add.stderr or ""), vim.log.levels.ERROR)
+            else
+              vim.notify(("stage safe: %d file(s)\n%s"):format(#files, table.concat(files, "\n")))
+            end
+          end)
+        end)
+      end)
+    end, "Stage safe file classes (index barrels)")
 
     -- <leader>gt — push current branch and set its upstream tracking branch.
     -- Prompts for the remote branch name (defaults to the current local

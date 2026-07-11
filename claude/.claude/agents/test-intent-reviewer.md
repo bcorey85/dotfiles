@@ -1,6 +1,6 @@
 ---
 name: test-intent-reviewer
-description: "Audit whether changed tests pin INTENDED behavior or accidentally codify the current implementation (a bug-pinning test), and cull added tests no real bug could fail (test spam). Judges assertions against an intent oracle (ticket + plan success criteria) with the implementation explicitly demoted to suspect. Read-only. Use at the convergence boundary of /review when test files changed — NOT for coverage/health (that is test-reviewer)."
+description: "Audit whether changed tests pin INTENDED behavior or accidentally codify the current implementation (a bug-pinning test), and cull added tests no real bug could fail (test spam). Judges assertions against an intent oracle (ticket + plan success criteria) with the implementation explicitly demoted to suspect. Read-only. Invoked manually by /stage's verify pass when test files changed — NOT wired into the /review or /fix loop, and NOT for coverage/health (that is test-reviewer)."
 model: opus
 tools: Bash, Read, Glob, Grep, LSP
 color: yellow
@@ -56,7 +56,7 @@ For every changed assertion, classify it:
 
 ## Step 4 — Cull check (added tests only)
 
-For every test **added** in the diff — never a modified pre-existing test, and never an acceptance stub (those are requirements) — ask: **what implementation bug would make this test fail?** Name a concrete, plausible defect in our code that this test, and no sibling test, would catch. If you can't, classify it **CULL** — the typical shapes: it asserts a mock/spy was called with the args the code just passed it; it exercises the framework or a library rather than our code; it restates the implementation with no behavioral oracle; or it re-covers a branch a sibling test already owns with only cosmetic input changes. One smoke test per unit is exempt (it is the redundant 2nd+ that culls). This is mutation testing as a thought experiment: a test that kills no imaginable mutant is diff noise taxing every future reader, and flagging it IS your job at this boundary — coverage *gaps* remain `test-reviewer`'s.
+For every test **added** in the diff — never a modified pre-existing test, and never an acceptance stub (those are requirements) — ask: **what implementation bug would make this test fail?** Name a concrete, plausible defect in our code that this test, and no sibling test, would catch. If you can't, classify it **CULL** — the typical shapes: it asserts a mock/spy was called with the args the code just passed it; it exercises the framework or a library rather than our code; it restates the implementation with no behavioral oracle; or it re-covers a branch a sibling test already owns with only cosmetic input changes. One smoke test per unit is exempt (it is the redundant 2nd+ that culls). This is mutation testing as a thought experiment: a test that kills no imaginable mutant is diff noise taxing every future reader, and flagging it IS your job at this boundary — coverage _gaps_ remain `test-reviewer`'s.
 
 ## The boundary — state it, don't oversell
 

@@ -58,12 +58,12 @@ each iteration:
 The cap check runs before the reviewer dispatch. This ordering is load-bearing.
 
 **Why step 1 precedes step 2**: on the non-convergence path your last dispatch
-must be a fix *coder*, leaving the session `dirty` so `git commit` stays
+must be a fix _coder_, leaving the session `dirty` so `git commit` stays
 blocked with findings outstanding. If you review first and only then discover
 non-convergence, your last dispatch is a `code-reviewer`, which writes `clean`
 and unblocks a commit over unresolved HIGH findings. That inverts the gate.
 
-Steps 3 and 4 return *after* a reviewer ran and *before* any coder ran, so
+Steps 3 and 4 return _after_ a reviewer ran and _before_ any coder ran, so
 `clean` is correct there — no unreviewed coder work exists at that moment.
 
 ## Step 1: Parse args
@@ -112,6 +112,7 @@ Severity gating has two tiers:
 **PLAN-IMPACT** (`:158` semantics): a finding that invalidates a plan/design decision — not a defect, but evidence the plan's assumption is wrong (missed external contract/invariant, mis-tiered risk, ungated security surface). It is NOT a severity bucket. Return `status: plan-impact` with the verbatim block. Dispatch no coder.
 
 **Critical blockers** needing user judgment — return `status: critical-blocker` with `blockers`, dispatch no coder:
+
 - Security vulnerabilities requiring design decisions
 - Architectural issues needing `/eng-spec`
 - Ambiguous fixes where multiple valid approaches exist and the wrong choice could break things
@@ -179,17 +180,10 @@ Skip any finding that is a false positive, a stylistic preference, out of scope,
 
 Never skip this because the review "looked clean" — model approval without executed evidence is the loop's weakest exit.
 
-**Test-intent audit (conditional, one-shot)**: Opus-priced, so it fires only when BOTH gates pass:
-
-1. **Assertion gate**: `git diff -U0 HEAD -- <changed test files> | grep -cE '^\+.*\b(expect|assert|should)\b'` — zero added assertion lines → skip.
-2. **Oracle gate**: run `bash ~/.claude/scripts/resolve-task-dir.sh`. Exit 0 → proceed. Exit 5 → proceed, pass the printed eng-spec path as the oracle. Exit 4 → skip unless `+deep`; note "test-intent audit skipped: no spec oracle". Exit 3 → return it as an `ask` item.
-
-When both pass, dispatch ONE `test-intent-reviewer` (omit `model` — pinned Opus). Run it **once here only**, never per iteration. Route findings:
-- **BUG-PINNING (spec-backed)** → `test_intent.fix[]`, tagged `[test-intent]`
-- **BUG-PINNING / derived-low-confidence**, **UNVERIFIABLE**, and the **"Derived intent — confirm"** block → `test_intent.ask[]`. Never auto-fix against a weak oracle.
-- **CULL** → `test_intent.fix[]`, tagged `[test-cull]` — deletion of a diff-added test only. Same guard as `[test-fluff]`: never auto-prune in an acceptance-spec file or the plan's Acceptance Stubs; route those to `ask`.
+**Test-intent audit**: NOT run in this loop. Test-intent review is now a manual step invoked via `/stage`'s verify pass — never fired automatically by /review or /fix. Do not dispatch `test-intent-reviewer` here.
 
 **MEDIUM classification**: classify each MEDIUM as:
+
 - **fix** — clear win, safe to auto-apply. `[test-fluff]` and `[comment-noise]` findings on diff-introduced tests/comments default to **fix**. **Guard**: NEVER auto-prune a test in an acceptance-spec file (`*.spec.*`) or the plan's Acceptance Stubs — route those to **ask**.
 - **skip** — false positive, intentional choice, stylistic noise, out of scope. Record a one-line reason.
 - **ask** — ambiguous, needs a design decision, or plausibly either.
@@ -201,10 +195,10 @@ Dispatch the **fix** bucket ONCE to a coder in `no-review` mode (no reviewer res
 `${CLAUDE_SKILL_DIR}` does not resolve inside an agent. Use the absolute path:
 
 ```bash
-bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> skipped_fp=<n> ask=<n> test_intent_ran=<0|1> test_intent=<n> culled=<n> comment_noise=<n> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
+bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> skipped_fp=<n> ask=<n> test_intent_ran=0 culled=<n> comment_noise=<n> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
 ```
 
-`fixed`/`skipped_fp`/`ask` are the MEDIUM bucket counts when classification ran, else 0. `culled` = diff-added tests deleted this run (`[test-fluff]` + `[test-cull]` fixes applied) — the "are coders still overproducing tests" dial. `comment_noise` = `[comment-noise]` fixes applied — the same dial for narration-comment sprawl. If the script fails, mention it and continue — telemetry never blocks.
+`fixed`/`skipped_fp`/`ask` are the MEDIUM bucket counts when classification ran, else 0. `culled` = diff-added tests deleted this run (`[test-fluff]` fixes applied) — the "are coders still overproducing tests" dial. `comment_noise` = `[comment-noise]` fixes applied — the same dial for narration-comment sprawl. If the script fails, mention it and continue — telemetry never blocks.
 
 ## Return packet (the ONLY thing the orchestrator pays for)
 
@@ -218,7 +212,6 @@ blockers: [<one line each>]              # status=critical-blocker
 findings_remaining: [<one line each>]    # status=cap-reached
 plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
 medium: {fix: [<applied>], skip: [{item, reason}], ask: [<one line each>]}
-test_intent: {ran: <bool>, fix: [<applied>], ask: [<one line each>]}
 perf: [{finding, principle, file_line}]
 files_touched: [<path>]
 low: [<one line each>]
@@ -237,5 +230,5 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 - **Never reorder the loop.** Cap check precedes the reviewer dispatch; plan-impact and blocker returns precede any coder dispatch.
 - **Never pass MEDIUM/LOW to the CRITICAL/HIGH fix coder.**
 - **Never return `converged` with an empty `fixed[]` when `iter > 1`.** You iterated because CRITICAL/HIGH existed; name what you repaired.
-- **Never run the test-intent audit more than once**, or on any iteration but the convergent one.
+- **Never dispatch `test-intent-reviewer`.** It left this loop — it's a manual `/stage` step now.
 - **Never narrate the loop.** The orchestrator sees only the packet; prose above it is wasted context.

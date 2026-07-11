@@ -1,6 +1,6 @@
 ---
 name: test-reviewer
-description: "Analyze test suites against source code to identify coverage gaps, weak assertions, stale tests, and quality issues. Accepts a target scope (backend, frontend, or specific module) as arguments. Use when reviewing test quality, checking coverage before shipping, or evaluating test suite health."
+description: "Analyze test suites against source code to identify coverage gaps, weak assertions, stale tests, and quality issues. Accepts a target scope (backend, frontend, specific module, or branch) as arguments. Branch scope reviews only tests the current branch added and includes the cull check for dead/low-value tests. Use when reviewing test quality, checking coverage before shipping, or evaluating test suite health."
 model: opus
 tools: Bash, Read, Glob, Grep, LSP
 color: yellow
@@ -23,6 +23,7 @@ The user will specify a scope via arguments. Interpret it as follows:
 - **"backend"** or **"be"**: Review all backend test files against their source modules. Detect test file locations by reading `CLAUDE.md` and globbing for common patterns (`**/*.test.ts`, `**/*.spec.ts`, `**/tests.py`, `**/test_*.py`, etc.) in the backend directory.
 - **"frontend"** or **"fe"**: Review all frontend test files against their source. Detect test file locations the same way in the frontend directory.
 - **A specific app/module name** (e.g., "engine", "workflow", "formatters"): Review only that module's tests
+- **"branch"**: Review only test files added or modified on the current branch. Find them with `git diff --name-only --diff-filter=AM $(git merge-base HEAD <default>)..HEAD` (detect the default branch from `origin/HEAD`, falling back to `main`/`master`), filtered to test files. Skip Steps 1–2 (suite mapping and coverage gaps are suite-wide concerns); run Steps 3–4 on the branch's tests only, plus Step 5 (cull check) on tests the branch ADDED. This is the manual reap pass for a feature branch before PR.
 - **No arguments**: Review both backend and frontend
 
 ## Review Process
@@ -100,6 +101,17 @@ For each existing test, evaluate:
 - No shared fixtures or factories for common test data
 - Missing parameterized tests for multi-case functions
 
+### Step 5: Cull Check — branch scope ONLY
+
+Never run this in suite-wide scopes — recommending deletion of pre-existing tests without diff context is out of bounds there. In branch scope, for every test the branch **added** (use `git diff` per test file to separate added tests from modified pre-existing ones; modified tests are out of bounds too), apply the kill test: **name a concrete implementation bug that this test — and no sibling test — would catch.** Can't name one → classify it CULL and recommend deletion. The typical shapes:
+
+- Asserts a mock/spy was called with the args the code just passed it
+- Exercises the framework or a library rather than our code
+- Restates the implementation with no behavioral oracle
+- Re-covers a branch a sibling test already owns with only cosmetic input changes
+
+Exemptions: acceptance-spec files (`*.spec.*` used as acceptance specs) and a plan's Acceptance Stubs are requirements — out of bounds. One smoke test per unit is legitimate; it's the redundant 2nd+ that culls. A test that targets genuinely new behavior but asserts it weakly is a weak-assertion finding (tighten), not a cull (delete).
+
 ## Output Format
 
 Structure your report exactly as follows. Every finding MUST include the specific file path and line numbers so a coder agent can act on it without searching.
@@ -128,6 +140,12 @@ Each item: test file path, test name, what's wrong, what it should assert instea
 
 [Tests that no longer match the code they claim to test.
 Each item: test file path, test name, what changed in source, what needs updating.]
+
+### HIGH — CULL: Dead / Low-Value Tests (branch scope only)
+
+[Tests added on this branch that no concrete implementation bug would fail.
+Each item: test file path and line, test name, which cull shape it matches, deletion recommendation.
+Omit this section entirely outside branch scope.]
 
 ### MEDIUM — Missing Edge Cases and Error Paths
 

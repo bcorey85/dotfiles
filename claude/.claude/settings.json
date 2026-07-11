@@ -357,5 +357,6 @@
   "theme": "dark-ansi",
   "editorMode": "normal",
   "inputNeededNotifEnabled": false,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "skipWorkflowUsageWarning": true
 }

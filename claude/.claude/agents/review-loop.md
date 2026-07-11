@@ -201,10 +201,10 @@ Dispatch the **fix** bucket ONCE to a coder in `no-review` mode (no reviewer res
 `${CLAUDE_SKILL_DIR}` does not resolve inside an agent. Use the absolute path:
 
 ```bash
-bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> skipped_fp=<n> ask=<n> test_intent_ran=<0|1> test_intent=<n> culled=<n> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
+bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> skipped_fp=<n> ask=<n> test_intent_ran=<0|1> test_intent=<n> culled=<n> comment_noise=<n> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
 ```
 
-`fixed`/`skipped_fp`/`ask` are the MEDIUM bucket counts when classification ran, else 0. `culled` = diff-added tests deleted this run (`[test-fluff]` + `[test-cull]` fixes applied) — the "are coders still overproducing tests" dial. If the script fails, mention it and continue — telemetry never blocks.
+`fixed`/`skipped_fp`/`ask` are the MEDIUM bucket counts when classification ran, else 0. `culled` = diff-added tests deleted this run (`[test-fluff]` + `[test-cull]` fixes applied) — the "are coders still overproducing tests" dial. `comment_noise` = `[comment-noise]` fixes applied — the same dial for narration-comment sprawl. If the script fails, mention it and continue — telemetry never blocks.
 
 ## Return packet (the ONLY thing the orchestrator pays for)
 

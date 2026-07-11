@@ -100,6 +100,7 @@ If uncertain, run the architect. A 2-minute architect pass that confirms "the ap
     - **Fullstack ordering**: finalize `backend-architect` first — its plan must include a clearly defined **API contract** (endpoint URLs, methods, request/response shapes, status codes). Then finalize `frontend-architect` with the contract — design against it, not invent one.
 
 15. **Synthesize the finalized plan(s)** — key decisions (and who made them), tradeoffs accepted, anything deferred.
+    - **Fullstack: weave, don't concatenate.** Each architect returns a single-layer plan by design (the scope fence). Merging them as "backend phases, then frontend phases" is the horizontal anti-pattern `plan-format.md` forbids — a layer phase produces no end-to-end pass/fail signal for `/code`'s phase gates. Interleave into vertical slices: each phase delivers one increment of user-observable behavior end-to-end (its BE piece + its FE piece), independently verifiable at the gate. The API contract fixed in step 14 is what makes this safe — each slice's FE half designs against the contract, not against unbuilt code. A phase stays single-layer only when the work genuinely is (migration-only, infra-only).
 
 15a. **Spec review before presenting** (mirrors deep-plan's phase reviews; same reviewer, same log). Draft the full spec (template below) to `docs/eng-specs/.spec-draft.md`, then dispatch `deep-plan-review` (omit `model`) with the draft path and this checklist:
 
@@ -107,7 +108,7 @@ If uncertain, run the architect. A 2-minute architect pass that confirms "the ap
     - Every decision block has all four fields (Choice / Reasoning with owner tag / Alternatives rejected / Trade-off accepted).
     - `## External Contracts` is present and either names each contract + invariant + breakage, or states "None" explicitly.
     - The three invariant checks from `~/.claude/skills/_shared/invariant-survey.md` ("Review gate" section) — read the file and include them in this checklist verbatim: **Discovery check**, **Destructive-trigger check**, **Credentials-past-intent check**. They are the review-side counterpart of the step-9 survey and share its version tag.
-    - Implementation phases are vertical, every Phase Status line has a `(risk: ...)` tag, and Success Criteria use the project's real verification commands.
+    - Implementation phases are vertical — a phase scoped to a layer (named or shaped like "backend", "frontend", "the API", "the UI") is a finding unless the work is genuinely single-layer (migration-only, infra-only; such a phase must state `Manual Verification: N/A (infra-only)`). Phase 1 is the thinnest end-to-end skeleton. Every Phase Status line has a `(risk: ...)` tag, and Success Criteria use the project's real verification commands.
     - The four mandatory closing phases (`~/.claude/skills/_shared/closing-phases.md`) are present, in order, after the last feature phase: Refactor pass, Verify pass, Orient pass, Finalize (`/adr` for this lane). Missing or reordered is an issue.
 
     Fix what it flags (max 1 revision round), log the verdict (`REVIEW_METRICS_FILE="$HOME/.claude/deep-plan-review.jsonl" bash ~/.claude/skills/review/log-review-metrics key=<ticket-or-slug> phase=spec verdict=<PASS|ESCALATED> rounds=<n> issues=<m>`), then present the corrected version. Delete the draft after Phase 6 resolves (it becomes the saved file on "yes", is removed on "no").
@@ -173,7 +174,7 @@ couplings) belong here too. "None" must be stated explicitly. -->
 
 ## Approach
 
-- Breakdown by area (backend, frontend, etc.)
+- Breakdown by area (backend, frontend, etc.) — area framing lives in THIS section only; the Implementation Plan below slices vertically, never by area
 - Specific patterns to follow
 - API contract (fullstack: fixed here, frontend designs against it)
 

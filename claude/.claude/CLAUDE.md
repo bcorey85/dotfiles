@@ -16,12 +16,26 @@ When rules conflict: the user's current instruction > project CLAUDE.md > this f
 
 `bash-safety-gate`, `git-discipline-gate`, `review-commit-gate`, `block-credential-read`, and `write-edit-safety-gate` deterministically block: SSH/scp/rsync, credential reads, sudo, force-push, commit/push on main (exempt: direct-edit repos), `git stash`, `git commit --amend`, destructive resets, pipe-to-shell, and `git commit` after an unreviewed coder dispatch. When a gate blocks you: report it to the user and stop — never rephrase a command to slip past. The gates regex the full command string, so false positives happen; a block is a report, not a retry puzzle.
 
-## Delegation
+## Orchestration (main session only)
+
+**Subagents: this entire section binds the main-session orchestrator that dispatched you — skip it. Your agent file and preloaded skill are your contract.**
+
+### Delegation
 
 - Never code directly — dispatch via `/code` (coders; architects first when design decisions are needed). Exceptions: trivial single-line edits the user explicitly requested; rules/agents/skills/CLAUDE.md files; repos whose CLAUDE.md declares **direct-edit repo**.
 - A coder dispatch obligates `/review` before `/commit` — `review-commit-gate` enforces this at `git commit`. The only skip is a genuinely trivial diff with the user's explicit say-so.
 - Parallel writing agents need disjoint file scopes. One feature's fe+be coder split in the same tree is fine (the orchestrator owns all git operations). Separate branches/worktrees only for independent tasks or when scopes could overlap.
 - Agent model discipline (hook-enforced by `agent-model-guard`; rationale in its header): pinned agent → omit `model`; unpinned → `haiku` for read-only lookup, `sonnet` for implementation/analysis/review; never `opus`/`fable`/`inherit` at call sites. Pair `subagent_type` deliberately: `Explore` (read-only lookup), `general-purpose` (multi-file tracing Explore can't handle), coders/architects/reviewers per their descriptions.
+
+### Workflow Routing (built-in vs custom — fixed, don't mix per-task)
+
+- Inner-loop review → custom `/review`. Built-in `/code-review` is not in the loop; `/code-review ultra` is an optional pre-PR pass on large branches.
+- Others' PRs → `/peer-review`; never `/review` on code we don't own (its fix loop and metrics assume ownership).
+- Security audit → built-in `/security-review`.
+- Cleanup → coder second-draft sweep + `/refactor`; never built-in `/simplify` on loop output.
+- Verification → custom `/verify` only (plan↔diff completeness + human smoke-test checklist; deep-plan and eng-spec lanes). The BUILT-IN skill of the same name is retired from the loop — never dispatch it. Agents never browser-drive — UI smoke tests are mine, from the checklist.
+- Branch exit → `/preflight` (front door): `/stage` deep scan when installed → lane-scoped `/verify` → read-surface triage → receipt. It never stages or commits — I stage, then `/commit`; `/finalize` stays post-PR.
+- Planning → `/plan` (front door) when no lane is named: recommends + confirms, then dispatches. Direct calls unchanged: `/eng-spec` by default; `/deep-plan` for highest-stakes invariant work, unfamiliar surfaces, ANY change to external enforcement-tool config, and reclamation/liveness-teardown work (reapers, sweeps, session/instance GC — eng-spec 0-for-2 on that class). Tag lane escapes with `/escape lane=<lane>`; review via `/audit review`. Rationale and pilot history: `~/.claude/docs/planning-lanes.md`.
 
 ## Tools
 
@@ -43,15 +57,6 @@ After any code change, run the project's quality checks (whatever its CLAUDE.md 
 - Run expensive commands once: long output → `/tmp/<name>.log`, then grep the file. Never re-run with different filters.
 - One source of truth per fact — don't cross-check the same fact through multiple tools.
 - Trust framework guarantees — no spot-checking the type checker, test runner, or linter.
-
-## Workflow Routing (built-in vs custom — fixed, don't mix per-task)
-
-- Inner-loop review → custom `/review`. Built-in `/code-review` is not in the loop; `/code-review ultra` is an optional pre-PR pass on large branches.
-- Others' PRs → `/peer-review`; never `/review` on code we don't own (its fix loop and metrics assume ownership).
-- Security audit → built-in `/security-review`.
-- Cleanup → coder second-draft sweep + `/refactor`; never built-in `/simplify` on loop output.
-- Verification → custom `/verify` only (plan↔diff completeness + human smoke-test checklist; deep-plan and eng-spec lanes). The BUILT-IN skill of the same name is retired from the loop — never dispatch it. Agents never browser-drive — UI smoke tests are mine, from the checklist.
-- Planning → `/plan` (front door) when no lane is named: recommends + confirms, then dispatches. Direct calls unchanged: `/eng-spec` by default; `/deep-plan` for highest-stakes invariant work, unfamiliar surfaces, ANY change to external enforcement-tool config, and reclamation/liveness-teardown work (reapers, sweeps, session/instance GC — eng-spec 0-for-2 on that class). Tag lane escapes with `/escape lane=<lane>`; review via `/audit review`. Rationale and pilot history: `~/.claude/docs/planning-lanes.md`.
 
 ## Engineering Judgment
 

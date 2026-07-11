@@ -12,6 +12,8 @@ WRONG (horizontal): Phase 1 all DB → Phase 2 all services → Phase 3 all API 
 
 RIGHT (vertical): Phase 1 = feature slice A end-to-end (DB + service + API + UI), Phase 2 = slice B, Phase N = edge cases + polish. Each phase independently verifiable; if Phase 2 breaks, Phase 1 still works.
 
+Phase 1 is the WALKING SKELETON: pick the thinnest slice that links every component the feature touches, end-to-end — later phases fatten it. `/code` always stops after Phase 1 for calibration, so a skeleton Phase 1 puts the full wiring in front of that mandatory human stop instead of one layer's internals.
+
 ## Decide the phasing (no user gate)
 
 Structure runs automatically — do NOT stop for approval. Break the work into vertical phases yourself, applying the vertical-not-horizontal rule above. If the design doc leaves the phasing genuinely ambiguous, make the most reasonable call and record it as an assumption in the outline rather than pausing. The human review point is the Plan gate that follows.

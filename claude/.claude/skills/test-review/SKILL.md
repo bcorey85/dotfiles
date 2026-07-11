@@ -1,6 +1,6 @@
 ---
 name: test-review
-description: Review test suites for coverage gaps, weak assertions, and stale tests — auto-detects scope or accepts be/fe/fs modifier. Use for "review the tests", "test suite health", "coverage check".
+description: Review test suites for coverage gaps, weak assertions, and stale tests — auto-detects scope or accepts be/fe/fs modifier; `branch` reviews only tests added on the current branch and reaps dead/low-value ones. Use for "review the tests", "test suite health", "coverage check", "cull the branch's tests".
 allowed-tools: [Agent, Bash, Read, Glob, Grep]
 ---
 
@@ -13,6 +13,7 @@ Dispatch the test-reviewer agent to analyze test suites against their source cod
 - `be` or `backend` — force backend-only scope
 - `fe` or `frontend` — force frontend-only scope
 - `fs` or `fullstack` — force fullstack scope (runs both in parallel)
+- `branch` — review only tests added/modified on the current branch (vs merge-base with the default branch) and run the cull check that reaps dead/low-value added tests. The manual pre-PR reap pass; skips suite-wide coverage analysis.
 
 Any remaining text after the modifier is passed as a focus area (e.g., `/test-review fe useBoard` reviews only frontend tests related to useBoard).
 
@@ -42,6 +43,10 @@ Any remaining text after the modifier is passed as a focus area (e.g., `/test-re
      - One with scope `frontend`
      - One with scope `backend`
    - Include focus area for both if provided
+
+   **Branch:**
+   - Launch ONE `test-reviewer` (omit `model`) with scope `branch` — no fe/be detection needed; the agent diffs against the merge-base itself
+   - Include focus area if provided
 
 4. **Present the report(s)** to the user
 

@@ -80,10 +80,25 @@ apply() { # <family> <mode> — write state and repaint tmux + ghostty
 
   # ghostty: machine-local include; wins over the fallback `theme =` line
   # because config-file includes are processed after the main config.
+  #
+  # Custom themes are pulled in by ABSOLUTE PATH, not by name. `theme = <name>`
+  # resolves against a themes/ dir inside whatever ghostty considers its config
+  # directory — on macOS that's ~/Library/Application Support/com.mitchellh.ghostty/,
+  # NOT the stowed ~/.config/ghostty/, so every custom theme 404s there while
+  # builtins keep working. A theme file is just a config fragment (palette /
+  # background / foreground), so config-file loads it identically on any
+  # platform. Builtins have no file on disk and still go through `theme =`.
   mkdir -p "$(dirname "$GHOSTTY_SWITCH")"
+  local theme custom
+  theme="$(ghostty_theme "$family" "$mode")"
+  custom="$(dirname "$GHOSTTY_SWITCH")/themes/$theme"
   {
     echo "# Written by theme-mode — do not edit. Reload ghostty: ctrl+shift+,"
-    echo "theme = $(ghostty_theme "$family" "$mode")"
+    if [ -f "$custom" ]; then
+      echo "config-file = $custom"
+    else
+      echo "theme = $theme"
+    fi
   } >"$GHOSTTY_SWITCH"
 
   # Ghostty reloads its config on SIGUSR2 (1.2+). Without this the include above

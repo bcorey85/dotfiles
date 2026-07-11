@@ -1,5 +1,6 @@
 ---
 name: adr
+disable-model-invocation: true
 description: Produce a durable decision record (ADR) for features that did NOT go through deep-plan — sources the "why" from an eng-spec doc, the conversation, and the branch diff. Use after shipping a small/medium feature that involved a real design decision. Triggers on "/adr", "write an ADR", "record this decision".
 allowed-tools: [Bash, Read, Glob, Grep, Write, Edit, AskUserQuestion]
 ---

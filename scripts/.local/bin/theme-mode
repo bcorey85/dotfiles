@@ -12,8 +12,9 @@
 #              the family's colorscheme + overrides
 #   - emacs:   watches the mode file only (family stays github-remapped modus)
 #   - ghostty: this script writes ~/.config/ghostty/theme-switch.conf
-#              (machine-local include, same pattern as font-mode.conf).
-#              Ghostty has no external reload — press ctrl+shift+, to apply.
+#              (machine-local include, same pattern as font-mode.conf), then
+#              SIGUSR2s the running ghostty to reload it (1.2+; ctrl+shift+,
+#              still works by hand). Only USR2 — any other signal crashes it.
 #
 # Usage:
 #   theme-mode [dark|light|toggle]    flip mode, keep family (default: toggle)
@@ -34,7 +35,7 @@ TMUX_THEME_DIR="$HOME/.config/tmux"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="doom-one"
 
-families() { printf '%s\n' doom-one github gruvbox-material zenbones zenwritten kanso kanagawa alabaster; }
+families() { printf '%s\n' doom-one github gruvbox-material zenbones zenwritten kanagawa solarized rose-pine tokyonight catppuccin; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   case "$1:$2" in
@@ -47,9 +48,20 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     gruvbox-material:*) echo "gruvbox-material-$2" ;;
     zenbones:*) echo "zenbones-$2" ;;   # custom: ghostty/themes/zenbones-{dark,light}
     zenwritten:*) echo "zenwritten-$2" ;; # custom: ghostty/themes/zenwritten-{dark,light}
-    kanso:*) echo "kanso-$2" ;; # custom: ghostty/themes/kanso-{dark,light} (mist dark, pearl light)
-    kanagawa:*) echo "kanagawa-$2" ;; # custom: ghostty/themes/kanagawa-{dark,light} (dragon dark, lotus light)
-    alabaster:*) echo "alabaster-$2" ;; # custom: ghostty/themes/alabaster-{dark,light} (port's own terminal colors)
+    kanagawa:*) echo "kanagawa-$2" ;; # custom: ghostty/themes/kanagawa-{dark,light} (wave dark, lotus light)
+    # custom: the shipped Solarized builtins are all *patched* forks (shifted
+    # bases, non-canonical greys); ours is Schoonover's own 16-colour ANSI.
+    solarized:*) echo "solarized-$2" ;; # custom: ghostty/themes/solarized-{dark,light}
+    # builtins: these already put body fg on slot 15 (no blaze to fix).
+    rose-pine:dark) echo "Rose Pine" ;;
+    rose-pine:light) echo "Rose Pine Dawn" ;;
+    tokyonight:dark) echo "TokyoNight Storm" ;;
+    tokyonight:light) echo "TokyoNight Day" ;;
+    catppuccin:light) echo "Catppuccin Latte" ;;
+    # custom: Mocha is the inverse of the usual blaze — its 7/15 slots (#a6adc8,
+    # #bac2de) sit BELOW body fg, so "bright white" renders dimmer than normal
+    # text. Ours pins both to body fg (#cdd6f4); everything else is stock Mocha.
+    catppuccin:dark) echo "catppuccin-mocha" ;; # custom: ghostty/themes/catppuccin-mocha
   esac
 }
 
@@ -73,6 +85,13 @@ apply() { # <family> <mode> — write state and repaint tmux + ghostty
     echo "# Written by theme-mode — do not edit. Reload ghostty: ctrl+shift+,"
     echo "theme = $(ghostty_theme "$family" "$mode")"
   } >"$GHOSTTY_SWITCH"
+
+  # Ghostty reloads its config on SIGUSR2 (1.2+). Without this the include above
+  # sits on disk until you hit ctrl+shift+, by hand. USR2 ONLY — ghostty crashes
+  # on any other signal. macOS runs the same binary name from the app bundle.
+  if command -v pkill >/dev/null 2>&1; then
+    pkill -USR2 -x ghostty 2>/dev/null || true
+  fi
 
   # tmux: source-file is server-global, every attached client updates at once.
   if command -v tmux >/dev/null 2>&1 && tmux has-session >/dev/null 2>&1; then

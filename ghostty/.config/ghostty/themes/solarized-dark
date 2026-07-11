@@ -1,0 +1,31 @@
+# solarized dark — Ethan Schoonover's canonical 16-colour ANSI mapping
+# (the shipped "Solarized Dark Patched"/"Higher Contrast" builtins are forks
+# with shifted bases, so we carry the original). Two deliberate deviations:
+#   - 7/15 (base2/base3) are near-white in stock and make Claude Code headers
+#     blaze; per this repo's convention both become body fg (base1).
+#   - 8 (bright black) is base03 in stock — i.e. EXACTLY the background, so
+#     dim text renders invisible. Remapped to base01.
+# Body fg is base1 (5.6:1), one step up the base ladder from stock base0
+# (4.8:1), matching the lift theme-sync applies in nvim.
+palette = 0=#073642
+palette = 1=#dc322f
+palette = 2=#859900
+palette = 3=#b58900
+palette = 4=#268bd2
+palette = 5=#d33682
+palette = 6=#2aa198
+palette = 7=#93a1a1
+palette = 8=#586e75
+palette = 9=#cb4b16
+palette = 10=#586e75
+palette = 11=#657b83
+palette = 12=#839496
+palette = 13=#6c71c4
+palette = 14=#93a1a1
+palette = 15=#93a1a1
+background = #002b36
+foreground = #93a1a1
+cursor-color = #93a1a1
+cursor-text = #002b36
+selection-background = #073642
+selection-foreground = #93a1a1

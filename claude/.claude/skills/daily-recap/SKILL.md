@@ -1,5 +1,6 @@
 ---
 name: daily-recap
+disable-model-invocation: true
 description: Compile today's org captures (journal entries + todo activity in the vault's org dir) and GitHub activity into a structured daily note in the Obsidian vault. Designed for a headless nightly run (launchd/systemd via install/daily-recap); also invocable manually to compile on demand.
 ---
 

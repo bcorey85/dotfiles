@@ -52,7 +52,7 @@ REVIEW_METRICS_FILE="$HOME/.claude/deep-plan-review.jsonl" bash ~/.claude/skills
 
 **Plan** — artifact `IQ-XXX-05-plan.md`; inputs: plan + structure + design + ticket:
 
-- Phases are VERTICAL (each an end-to-end slice), not horizontal layers.
+- Phases are VERTICAL (each an end-to-end slice), not horizontal layers; Phase 1 is the thinnest end-to-end skeleton. A single-layer phase is legitimate only for genuinely infra-only work and must state `Manual Verification: N/A (infra-only)`.
 - Each phase is independently verifiable and leaves the system working.
 - Each phase states a concrete, testable "what becomes true after this" — no vague "implement X".
 - Every Success Criterion is a testable assertion naming a real project verification command.

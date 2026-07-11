@@ -97,7 +97,7 @@ Write verification items as TESTABLE assertions — each specifies HOW to verify
 
 #### Manual Verification:
 
-<!-- Write each item as a DRIVEABLE scenario — exact command, request, or interaction plus expected result. An agent verifier executes these after the phase's drift gate and records evidence in this plan; items only a human can judge (visual polish, UX feel) must say so explicitly so they route to the human-only list. -->
+<!-- Write each item as a DRIVEABLE scenario — exact command, request, or interaction plus expected result. An agent verifier executes these after the phase's drift gate and records evidence in this plan; items only a human can judge (visual polish, UX feel) must say so explicitly so they route to the human-only list. A phase with no user-observable behavior (migration/infra-only) carries its full verification in Automated Verification and states `Manual Verification: N/A (infra-only)` here — never leave the section silently empty. -->
 
 - [ ] **Manual-verified**: [scenario] — "hit [endpoint/UI flow], confirm [expected behavior]"
 

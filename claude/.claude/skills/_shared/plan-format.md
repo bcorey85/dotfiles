@@ -22,7 +22,15 @@ identically regardless of which lane planned the work.
   "which phase is next" across `/clear` boundaries. Never delete it.
 - Every Phase Status line carries a `(risk: low|high)` tag.
 - Phases are VERTICAL slices (each independently verifiable end-to-end),
-  never horizontal layers.
+  never horizontal layers. Phase 1 is the WALKING SKELETON: the thinnest
+  slice that links every component the feature touches — later phases fatten
+  it. (`/code` always stops after Phase 1 for calibration; a skeleton Phase 1
+  puts the full wiring in front of that mandatory human stop.)
+- A phase with no user-observable behavior (migration-only, infra-only — the
+  one legitimate single-layer case) carries its FULL verification in
+  Automated Verification and states `Manual Verification: N/A (infra-only)`
+  explicitly. An empty Manual Verification section is an authoring gap; the
+  N/A line marks the behavioral-gate skip as deliberate.
 - Success Criteria are TESTABLE assertions — each specifies HOW to verify
   with the project's real commands (from project CLAUDE.md / package
   scripts), never generic placeholders.

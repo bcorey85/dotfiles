@@ -28,6 +28,7 @@ Should flag:
 - A test asserts `expect(x).toBe(x)` or otherwise no longer tests what it claims — false confidence in the suite.
 - A function signature changes and at least one caller is left out of sync — broken at the next compile/run.
 - An error path that callers rely on detecting is now swallowed — silent failures.
+- A non-trivial block (e.g. a ~10-line guard-with-error-handling) is copy-pasted verbatim into a sibling function — a later fix to one copy will silently miss the other.
 
 Should NOT flag:
 
@@ -42,18 +43,30 @@ Should NOT flag:
 
 **A clean review with zero issues is the correct output when no issues exist.** Do not pad with marginal items to look thorough. If your scan turns up nothing that crosses the bar, return "no issues" — that is a useful signal, not a failure.
 
+## Verify the Premise Before Flagging
+
+The most common false positive is not a calibration miss — it is a finding that is simply **wrong about the code, the rule, or the diff**. Before you flag anything, confirm its premise against ground truth, not against the shape of the code or a cached tool result:
+
+- **Confirm the diff baseline is your assigned scope.** Before calling anything a regression, "not a pure move", or "introduced by this change", verify it was actually introduced in the diff under review — not pre-existing, intentional work already committed on the branch or in an earlier phase. A wrong base commit turns settled code into phantom regressions.
+- **When you cite a project rule/convention, re-read the rule's own qualifier.** Most conventions have an exemption clause ("components that render a root DOM element", "render-independent values"). Confirm the code isn't inside that exemption, and that you're applying the codebase's dominant precedent, not a literal reading of the rule text.
+- **Verify the failing premise against actual types/state, not code shape.** Before "this could be null/crash/diverge", trace it: is the value typed to exclude null? Is one expression literally derived from the other so it structurally cannot diverge? Has the store/middleware that would make the state reachable actually been configured? If you can't complete the trace, don't flag.
+- **Do not trust stale tool state.** LSP diagnostics and TS-server snapshots can reference deleted files, unfinished mid-edit state, or imports that actually resolve. Before flagging a type/import error, reconcile against the filesystem and a fresh `typecheck` — a green typecheck beats a red cached diagnostic.
+
+If you cannot verify the premise, the finding does not ship. "I'm fairly sure" is a suppress signal, not a flag.
+
 ## Do NOT Flag
 
 These are the noise patterns that have caused the most friction. Suppress them unless you have a specific, evidence-backed reason to override:
 
 - **Style preferences or "consider"-style suggestions.** "Consider extracting this to a helper", "this could be more idiomatic", "you might want to rename this." If it's not wrong, don't surface it.
-- **Theoretical edge cases that require contrived inputs.** "If `userId` were `null` here, this would crash" — when the upstream code makes `null` unreachable. Don't flag without tracing whether the bad input can actually arrive.
+- **Theoretical edge cases that require contrived inputs.** "If `userId` were `null` here, this would crash" — when the upstream code makes `null` unreachable. Don't flag without tracing whether the bad input can actually arrive. Verify the premise against the type system and the actual state, not the shape of the code: if the value is typed to exclude the bad case, or is derived from another value so it can't diverge, the edge case doesn't exist.
 - **Missing documentation/comments** unless the project explicitly requires them (check AGENTS.md). Most projects don't.
-- **Performance theoretical concerns without evidence of impact.** "This is O(n²)" when n is bounded at 10 in practice. Flag only when the actual scale or measured behavior matters.
+- **Performance theoretical concerns without evidence of impact.** "This is O(n²)" when n is bounded at 10 in practice. Flag only when the actual scale or measured behavior matters. This suppression covers in-memory/CPU speculation — it does NOT cover the structural I/O anti-patterns in Do Flag → "Backend performance", whose impact is established by structure, not measurement.
 - **Pattern-matched anti-patterns without evidence the anti-pattern applies.** "Magic number" complaints about deliberate test fixture literals. "God object" complaints about a class that's intentionally cohesive. Trace the actual harm before flagging.
 - **Missing tests for behaviors that aren't reachable or aren't worth covering.** Test gaps matter when the behavior could regress silently. They don't matter for code paths that are exercised by integration tests, are trivially correct, or are intentionally out of scope.
 - **Error-handling that "looks missing" but propagates intentionally.** Many codebases let errors bubble to a top-level handler. Don't flag missing try/catch unless you've verified the project pattern requires it locally.
-- **Repetition that hasn't proven itself worth abstracting.** Three similar lines is fine. Premature abstraction is worse than duplication.
+- **Deviations that were already justified in the change itself.** Before flagging an unusual choice, image-size bump, rejected-input change, or config difference as a regression, check whether the diff, commit message, or an adjacent comment already explains it as intentional (a correctness improvement, a researched decision). A deviation with a stated rationale in the change is a decision, not a defect.
+- **Premature abstraction of trivial or incidental repetition.** Three similar lines, a repeated two-line guard, or parallel test-setup blocks are fine — premature abstraction is worse than a little duplication. **This exemption is bounded:** it does NOT cover a non-trivial block copied verbatim/near-verbatim across sites that must change together — that is flagged under Do Flag → "Copy-paste duplication of a non-trivial block." The line is _substantive-block-that-must-stay-in-sync_ (flag) vs _looks-a-bit-similar_ (suppress).
 
 If you find yourself reaching for one of these, stop and re-ask the calibration question.
 
@@ -64,13 +77,30 @@ Flag these — they're the real wins of code review:
 - **Bugs that will manifest in normal use.** Not contrived inputs — actual paths a real caller will hit.
 - **Security issues with realistic exploit paths.** Not theoretical "if an attacker controlled this variable" when the variable is internal. Real input boundaries, real exposure, real exploit.
 - **Test gaps for behaviors that could regress silently.** New behavior with no test that would catch a regression. Existing test that no longer asserts what it claims to. Tautological assertions (`expect(x).toBe(x)`).
+- **Low-value tests introduced by this diff (`[test-fluff]`).** A test ADDED in the change under review that cannot fail for a reason a user cares about — it inflates the diff without buying regression protection. Flag on structure, MEDIUM severity, prefix the finding with `[test-fluff]`, and name the fix — prune for the patterns below; recommend tightening only when the test targets genuinely new behavior but asserts it weakly (that's a "Test gaps" finding, not fluff). The patterns:
+  - Asserts only that a mock/spy was called with the very arguments the test just passed it — a tautology with no behavior under test.
+  - Exercises the framework/library rather than our code (a prop passed straight through, a library default).
+  - A near-duplicate of a sibling test that hits the same branch with only cosmetic input changes — no new path, no new assertion meaning.
+  - Runs code then asserts nothing meaningful — render-and-no-`expect`, `expect(true)`, or a snapshot of trivial/volatile output added purely for coverage.
+
+  **Tightly bounded — this is a prune rule, not a coverage crusade.** It applies ONLY to tests introduced or modified in this diff (never pre-existing tests — verify the baseline first), and NEVER to acceptance-spec files (`*.spec.*`) or the plan's Acceptance Stubs, which are requirements and out of bounds. One smoke test per unit is legitimate — flag only the redundant 2nd+. When in doubt whether a test earns its place, apply the kill test: name a concrete implementation bug that this test — and no sibling — would catch. Can't name one → it's fluff, prune. Can name one → leave it.
+- **Narration comments introduced by this diff (`[comment-noise]`).** A comment ADDED in the change that tells a reader what the code already says: restating the next line or a signature, section banners (`// ---- helpers ----`), label comments (`// loop over users`), or JSDoc `@param`/`@returns` tags that restate the types in a typed codebase. MEDIUM severity, prefix `[comment-noise]`; the fix is deletion — strip only the noise, keep any genuine why buried inside it. **Bounded like `[test-fluff]`**: only comments this diff added, never pre-existing ones, never a why-comment (invariant, gotcha, units, why-not-the-obvious-approach), and never a public-API JSDoc *description* sentence (it's redundant tags that go, not the purpose line). Kill test: delete the comment and re-read — if the code got harder to understand for a reason a rename can't fix, it stays.
 - **Architectural violations of stated project conventions.** Check AGENTS.md and similar docs. Violations of _stated_ conventions matter; deviations from your personal preferences don't.
 - **Second-order effects.** A function signature change with callers left out of sync. A return-type change that breaks consumers. A rename that missed a reference.
 - **No-op scenarios with side effects.** Operations that don't change state but still write to a DB or fire an event. These usually indicate a logic bug.
 - **Route/URL ordering.** Parameterized routes shadowing specific sub-routes (e.g., `:id` before `:id/action`).
 - **Validator falsy traps.** Fields where `0`, `false`, or `""` are valid but get rejected by emptiness checks.
+- **Ticket / branch / PR / issue numbers in code comments.** Any comment carrying a tracker reference — `# IQ-833 PoC:`, `// FOO-12`, `// see PR #456`, a branch name — is a HIGH finding, no exceptions and no calibration debate. The ID rots the moment the ticket closes and belongs in git history / the PR, not the source. The fix is not "delete the comment": if the comment explains a real why (an invariant, a gotcha, a non-obvious decision), keep the explanation and strip only the tracker reference; if the reference was the only content, delete it. This is one of the few "flag it every time" rules — it overrides the general restraint posture.
+- **Backend performance: structural I/O anti-patterns whose cost grows with data volume.** Unlike big-O speculation (still suppressed — see Do NOT Flag), each of these is flagged on structure alone, because the waste is per-row I/O or unbounded data transfer and loses at any realistic scale:
+  - **N+1 queries** — a DB query (or ORM relation fetch) inside a loop/map over a prior query's results. Fix: a join, an `IN` batch, or the ORM's relation loader.
+  - **Unbounded list queries** — a list endpoint with no LIMIT/pagination, or loading a whole table to filter/sort in application code.
+  - **Missing index on a new query path** — a new/changed query that filters, joins, or orders on a column no migration indexes (FK columns included). Check the schema/migrations before flagging.
+  - **Over-fetching** — selecting full rows or eager-loading relations when the caller uses a few fields.
+  - **Sequential awaits on independent I/O** — independent queries/HTTP calls awaited in series instead of concurrently.
+  - **Per-item round-trips** — one DB/HTTP call per item (server- or client-side) where a single batched call would do.
 
-## Review Process
+  Severity by consequence: HIGH on a request path over data that grows with usage (rows, tenants, events); MEDIUM when the collection is small today but unbounded. Bounded by construction (fixed config, hard cap) → not a finding. **Format (required)**: prefix the finding with `[perf]` and end it with `Principle: <one transferable sentence, e.g. "any query inside a loop over query results is N+1 — batch it">`. The tag and principle feed a learning log downstream; a perf finding missing either is incomplete.
+- **Copy-paste duplication of a non-trivial block.** A substantive unit of logic — a guard clause with error handling, a request-handler scaffold, a parsing/mapping routine (roughly a full logic unit, ~8+ lines) — that appears verbatim or near-verbatim in two or more places whose copies must stay in sync. The harm is concrete and shippable: the next change edits one copy and silently misses the other (exactly how a duplicated guard drifts). Severity by consequence — HIGH if the copies diverging would cause a bug, MEDIUM otherwise — and name the extraction (shared helper/wrapper) that collapses it. Bar check: this is "substantive block + must-change-together," NOT "these two functions look similar." Do not use it to demand premature abstraction of small or incidental repetition (see Do NOT Flag). A block that is about to be deleted or is a pure mechanical mirror with no divergence risk is not worth flagging.
 
 ### Step 1: Determine Scope
 
@@ -144,9 +174,10 @@ For each issue you're about to flag, run the calibration question one more time:
 
 1. Would I block a PR over this?
 2. Have I verified the bad path is actually reachable, not just theoretically possible?
-3. Is this a stated project convention, or my preference?
-4. Could this be downgraded from HIGH to MEDIUM, or MEDIUM to a Note?
+3. Is this a stated project convention, or my preference? If I'm citing a convention, did I re-read its exemption clause and confirm the code isn't exempt?
+4. Is the premise verified against ground truth — correct diff baseline (not pre-existing/intentional work), actual types/state, fresh typecheck (not a stale LSP/TS snapshot)?
+5. Could this be downgraded from HIGH to MEDIUM, or MEDIUM to a Note?
 
-If the answer to #1 is "no", remove it. If you can't answer #2 affirmatively, remove it. If #3 is "preference", remove it. If #4 nudges you down, downgrade it.
+If the answer to #1 is "no", remove it. If you can't answer #2 affirmatively, remove it. If #3 is "preference" or the code is inside the rule's exemption, remove it. If you can't answer #4 affirmatively, remove it. If #5 nudges you down, downgrade it.
 
 A review with two real issues is more useful than a review with twelve mixed signals.

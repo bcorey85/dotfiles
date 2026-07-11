@@ -187,9 +187,10 @@ Never skip this because the review "looked clean" — model approval without exe
 When both pass, dispatch ONE `test-intent-reviewer` (omit `model` — pinned Opus). Run it **once here only**, never per iteration. Route findings:
 - **BUG-PINNING (spec-backed)** → `test_intent.fix[]`, tagged `[test-intent]`
 - **BUG-PINNING / derived-low-confidence**, **UNVERIFIABLE**, and the **"Derived intent — confirm"** block → `test_intent.ask[]`. Never auto-fix against a weak oracle.
+- **CULL** → `test_intent.fix[]`, tagged `[test-cull]` — deletion of a diff-added test only. Same guard as `[test-fluff]`: never auto-prune in an acceptance-spec file or the plan's Acceptance Stubs; route those to `ask`.
 
 **MEDIUM classification**: classify each MEDIUM as:
-- **fix** — clear win, safe to auto-apply. A `[test-fluff]` finding on a diff-introduced test defaults to **fix**. **Guard**: NEVER auto-prune a test in an acceptance-spec file (`*.spec.*`) or the plan's Acceptance Stubs — route those to **ask**.
+- **fix** — clear win, safe to auto-apply. `[test-fluff]` and `[comment-noise]` findings on diff-introduced tests/comments default to **fix**. **Guard**: NEVER auto-prune a test in an acceptance-spec file (`*.spec.*`) or the plan's Acceptance Stubs — route those to **ask**.
 - **skip** — false positive, intentional choice, stylistic noise, out of scope. Record a one-line reason.
 - **ask** — ambiguous, needs a design decision, or plausibly either.
 
@@ -200,10 +201,10 @@ Dispatch the **fix** bucket ONCE to a coder in `no-review` mode (no reviewer res
 `${CLAUDE_SKILL_DIR}` does not resolve inside an agent. Use the absolute path:
 
 ```bash
-bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> skipped_fp=<n> ask=<n> test_intent_ran=<0|1> test_intent=<n> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
+bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> skipped_fp=<n> ask=<n> test_intent_ran=<0|1> test_intent=<n> culled=<n> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
 ```
 
-`fixed`/`skipped_fp`/`ask` are the MEDIUM bucket counts when classification ran, else 0. If the script fails, mention it and continue — telemetry never blocks.
+`fixed`/`skipped_fp`/`ask` are the MEDIUM bucket counts when classification ran, else 0. `culled` = diff-added tests deleted this run (`[test-fluff]` + `[test-cull]` fixes applied) — the "are coders still overproducing tests" dial. If the script fails, mention it and continue — telemetry never blocks.
 
 ## Return packet (the ONLY thing the orchestrator pays for)
 

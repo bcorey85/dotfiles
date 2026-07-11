@@ -89,6 +89,7 @@ Todo-marked tests scaffolded from the ticket (see the plan's `Acceptance Stubs` 
 
 - The task is ambiguous between multiple valid implementation approaches
 - The change would alter a public interface or behavioral contract not mentioned in the task
+- The change requires editing anything the plan's `Phase 0: Contracts` defines (shared types, schemas, API shapes) — Phase 0 content is frozen at plan approval and carries the user's authority; report it as a PLAN-IMPACT finding (below), never edit it silently. Other streams may be coding against it in parallel.
 - The task scope turns out larger than what was described
 
 Your agent file may add scope-specific items to this list.
@@ -116,6 +117,7 @@ do that if the block is present verbatim.
 ## Pre-Submission Checklist (common to all scopes)
 
 - **Second-order effects**: if a change alters a signature, return type, or behavioral contract, update every caller in the same pass (controllers, other services, tests). If you can't find them all, say so.
+- **Copy propagation**: before changing or fixing any block of logic, check whether it exists in other copies (`rg` a distinctive fragment / LSP references) — formatters, guards, and mappers are commonly duplicated. Apply the change to EVERY copy, or better, use the moment to extract the shared helper (second-draft rules apply). A fix applied to two of three copies ships the bug in the third.
 - **No-op detection**: if an operation results in no state change, return early without side effects (no DB writes, no event broadcasts) and signal it to the caller.
 
 ## Review Handoff (last lines of your report)

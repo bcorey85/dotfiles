@@ -9,7 +9,9 @@ eval "$(echo "$input" | jq -r '
   @sh "model_name=\(.model.display_name // "unknown")",
   @sh "context_size=\(.context_window.context_window_size // 0)",
   @sh "used_pct=\(.context_window.used_percentage // 0)",
-  @sh "remaining_pct=\(.context_window.remaining_percentage // empty)",
+  @sh "total_in=\(.context_window.total_input_tokens // 0)",
+  @sh "total_out=\(.context_window.total_output_tokens // 0)",
+  @sh "over_200k=\(.exceeds_200k_tokens // false)",
   @sh "five_hour_pct=\(.rate_limits.five_hour.used_percentage // empty)",
   @sh "five_hour_resets_at=\(.rate_limits.five_hour.resets_at // empty)"
 ')"
@@ -40,13 +42,20 @@ else
 fi
 
 # Build token info
-# Derive remaining from used_pct so we don't depend on remaining_percentage
-# being present (it's absent early in a session, which stranded the display at 0).
+# Prefer the real token count from the API response over the pct-derived
+# estimate — used_percentage clamps at 100 when compaction lags the reported
+# window (the 200k/200k pegged-display failure), so the real count is the
+# only number that stays honest past the window size.
 if [ "$context_size" -gt 0 ]; then
+    tokens_used=$(( total_in + total_out ))
+    if [ "$tokens_used" -gt 0 ]; then
+        used_pct=$(( tokens_used * 100 / context_size ))
+        [ "$used_pct" -gt 100 ] && used_pct=100
+    else
+        # Early in a session the API counts are absent; fall back to pct-derived.
+        tokens_used=$(( context_size * used_pct / 100 ))
+    fi
     remaining_pct=$(( 100 - used_pct ))
-
-    # Calculate tokens used from percentage
-    tokens_used=$(( context_size * used_pct / 100 ))
 
     # Human-readable token counts (e.g., 108k/200k)
     if [ "$tokens_used" -ge 1000 ]; then
@@ -77,7 +86,12 @@ if [ "$context_size" -gt 0 ]; then
     for ((i=0; i<filled; i++)); do bar+="█"; done
     for ((i=0; i<empty; i++)); do bar+="░"; done
 
-    token_info=$(printf " ${DIM}[${RESET}${pct_color}%s${RESET} %s${DIM}]${RESET}" "$bar" "$used_display")
+    over_warn=""
+    if [ "$over_200k" = "true" ]; then
+        over_warn=" ${RED}>200k${RESET}"
+    fi
+
+    token_info=$(printf " ${DIM}[${RESET}${pct_color}%s${RESET} %s${over_warn}${DIM}]${RESET}" "$bar" "$used_display")
 else
     token_info=""
 fi

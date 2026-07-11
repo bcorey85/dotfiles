@@ -22,10 +22,21 @@ identically regardless of which lane planned the work.
   "which phase is next" across `/clear` boundaries. Never delete it.
 - Every Phase Status line carries a `(risk: low|high)` tag.
 - Phases are VERTICAL slices (each independently verifiable end-to-end),
-  never horizontal layers. Phase 1 is the WALKING SKELETON: the thinnest
-  slice that links every component the feature touches — later phases fatten
-  it. (`/code` always stops after Phase 1 for calibration; a skeleton Phase 1
-  puts the full wiring in front of that mandatory human stop.)
+  never horizontal layers.
+- Multi-phase plans open with `Phase 0: Contracts` — the coordination surface
+  between slices/streams (shared types, schemas, API shapes, migration
+  sketches) as committable content, not prose — then `Phase 1: Walking
+skeleton`, the thinnest end-to-end path exercising every Phase 0 contract
+  (`/code` always stops after Phase 1 for calibration, so a skeleton Phase 1
+  puts the full wiring in front of that mandatory human stop). Remaining
+  slices follow in dependency order. Phase 0 is always `(risk: high)` — it IS
+  the public-contract tier — and is FROZEN at plan approval: implementers
+  changing Phase 0 content mid-plan is a stop-and-surface Plan Deviation,
+  never a silent edit. Parallel coder fan-out is allowed only after the
+  skeleton phase completes (it's what proves the contracts the streams code
+  against). Single-slice plans with no coordination surface may fold
+  contracts into Phase 1 — state so explicitly. Front-load only the surface
+  between slices; internal design stays inside its slice.
 - A phase with no user-observable behavior (migration-only, infra-only — the
   one legitimate single-layer case) carries its FULL verification in
   Automated Verification and states `Manual Verification: N/A (infra-only)`
@@ -65,7 +76,8 @@ sections above the plan). Do not invent links to artifacts that don't exist.
 
 <!-- Updated by /code after each phase completes + review passes. Source of truth for "which phase is next" across /clear boundaries. Do not delete. -->
 
-- [ ] Phase 1: [name] (risk: low|high)
+- [ ] Phase 0: Contracts — frozen at plan approval (risk: high)
+- [ ] Phase 1: Walking skeleton — thinnest path through every Phase 0 contract (risk: low|high)
 - [ ] Phase 2: [name] (risk: low|high)
 
 <!-- Mandatory closing phases (closing-phases.md), renumbered after the last feature phase: -->

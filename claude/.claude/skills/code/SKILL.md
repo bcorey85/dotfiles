@@ -25,7 +25,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 2. **Detect multi-phase plans (MANDATORY check)**: If the task input is a path to a plan file (e.g., `*-plan.md` under `docs/eng-specs/`) or pasted plan content, read it and check whether it contains multiple `## Phase N:` sections.
 
-   **Lane provenance (for telemetry, one-time)**: classify the task input — a deep-plan task-dir `*-05-plan.md` (or step-0 exit 0) → `lane=deep-plan`; an eng-spec plan under `docs/eng-specs/` (or step-0 exit 5) → `lane=eng-spec`; anything else → `lane=none`. Carry this value into the second-draft telemetry line (step 5) and the `review-loop` dispatch (step 6).
+   **Lane provenance (for telemetry, one-time)**: classify by the task input's SHAPE, not its parent directory (both lanes live under `docs/eng-specs/`) — a `*-05-plan.md` inside a ticket-named task SUBDIRECTORY (`docs/eng-specs/<TICKET>-<slug>/`, or step-0 exit 0) → `lane=deep-plan`; a plan `.md` sitting DIRECTLY in `docs/eng-specs/` (or step-0 exit 5) → `lane=eng-spec`; anything else → `lane=none`. Carry this value into the second-draft telemetry line (step 5) and the `review-loop` dispatch (step 6).
 
    **If it's a multi-phase plan:**
    - Do NOT dispatch all phases at once.
@@ -60,7 +60,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    For each coder:
    - Pass the full task description and any relevant context
    - Instruct it to follow existing patterns in the codebase
-   - Write tests if needed
+   - Tests follow coder-core's test budget: flip acceptance stubs first; any further tests must trace to a plan criterion or named edge case — never exhaustive per-function coverage
    - Flag any ambiguities or issues
    - If the task turns out to be architectural, have it report back and recommend `/eng-spec` instead
 

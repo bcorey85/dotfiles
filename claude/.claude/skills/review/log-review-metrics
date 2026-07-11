@@ -14,6 +14,12 @@ set -euo pipefail
 
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 out="${REVIEW_METRICS_FILE:-$HOME/.claude/review-metrics.jsonl}"
+# Second-draft rows route to the second-draft log even when the caller forgets
+# out= — a second_draft= key in the review-metrics file corrupts both datasets.
+case " $* " in
+  *" out="*) ;;
+  *" second_draft="*) out="${SECOND_DRAFT_FILE:-$HOME/.claude/second-draft.jsonl}" ;;
+esac
 
 json=$(jq -cn '{date: (now | todate)}')
 for kv in "$@"; do

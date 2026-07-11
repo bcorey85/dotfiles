@@ -14,37 +14,12 @@
 -- (git/.gitconfig).
 return {
   "esmuellert/codediff.nvim",
-  cmd = "CodeDiff",
+  -- CodeDiffReview is ours (defined in config below); it's listed here so lazy
+  -- stubs it and loads the plugin on first call — the tmux `prefix d` popup
+  -- launches with `-c CodeDiffReview`, before any keymap could trigger a load.
+  cmd = { "CodeDiff", "CodeDiffReview" },
   keys = {
-    {
-      "<leader>gm",
-      function()
-        -- During a merge: open the conflict view for the current file if it's
-        -- conflicted, else the first conflicted file (the old diffview <leader>gm
-        -- auto-detect). No conflicts: the working-tree explorer. q closes.
-        local conflicted = vim.fn.systemlist({ "git", "diff", "--name-only", "--diff-filter=U" })
-        if vim.v.shell_error ~= 0 then
-          conflicted = {}
-        end
-        if #conflicted > 0 then
-          local root = vim.fn.systemlist({ "git", "rev-parse", "--show-toplevel" })[1]
-          local cur = vim.fn.expand("%:p")
-          local target
-          for _, f in ipairs(conflicted) do
-            if root .. "/" .. f == cur then
-              target = cur
-              break
-            end
-          end
-          target = target or (root .. "/" .. conflicted[1])
-          vim.cmd.edit(vim.fn.fnameescape(target))
-          vim.cmd("CodeDiff merge " .. vim.fn.fnameescape(target))
-        else
-          vim.cmd("CodeDiff")
-        end
-      end,
-      desc = "Codediff: resolve conflicts / working-tree diff",
-    },
+    { "<leader>gm", "<cmd>CodeDiffReview<cr>", desc = "Codediff: resolve conflicts / working-tree diff" },
     -- <leader>gd — straight to the review explorer (replaces gitsigns'
     -- diffthis on this key; that stays reachable via :Gitsigns diffthis).
     { "<leader>gd", "<cmd>CodeDiff<cr>", desc = "Codediff: review explorer (working tree)" },
@@ -162,9 +137,48 @@ return {
 
     require("codediff").setup(opts)
 
+    -- THE review entry point — used by <leader>gm and by the tmux `prefix d`
+    -- popup (.tmux.conf). Mid-merge it opens the conflict view for the current
+    -- file if that one is conflicted, else the first conflicted file (the old
+    -- diffview <leader>gm auto-detect); otherwise the working-tree explorer.
+    --
+    -- The popup MUST route through here rather than `-c CodeDiff`: the plain
+    -- explorer renders a conflicted file as an ordinary working-tree diff, with
+    -- no conflict UI and no accept keys, which is a silent trap during a merge.
+    vim.api.nvim_create_user_command("CodeDiffReview", function()
+      local conflicted = vim.fn.systemlist({ "git", "diff", "--name-only", "--diff-filter=U" })
+      if vim.v.shell_error ~= 0 then
+        conflicted = {}
+      end
+      if #conflicted == 0 then
+        vim.cmd("CodeDiff")
+        return
+      end
+      local root = vim.fn.systemlist({ "git", "rev-parse", "--show-toplevel" })[1]
+      local cur = vim.fn.expand("%:p")
+      local target
+      for _, f in ipairs(conflicted) do
+        if root .. "/" .. f == cur then
+          target = cur
+          break
+        end
+      end
+      target = target or (root .. "/" .. conflicted[1])
+      vim.cmd.edit(vim.fn.fnameescape(target))
+      vim.cmd("CodeDiff merge " .. vim.fn.fnameescape(target))
+    end, { desc = "Codediff: resolve conflicts / working-tree diff" })
+
     -- Mass-review ergonomics, wired at the GIT LAYER (codediff.core.git) so
     -- every staging path — s (file), - (hunk), explorer toggles — funnels
-    -- through, with no keymap races. Two behaviors ride the wrappers:
+    -- through, with no keymap races. Three behaviors ride the wrappers:
+    --
+    -- 0. INSTANT EXPLORER REFRESH: stock codediff never refreshes the
+    --    explorer after a stage — the UI update rides its .git fs-event
+    --    watcher behind a hardcoded 500ms debounce (explorer/refresh.lua)
+    --    that RESTARTS on every event, and the neogit refresh below fires a
+    --    volley of git subprocesses that keep restarting it, so the tree
+    --    lagged 0.5–1s behind each `s`. Refresh it directly on success; the
+    --    watcher's later pass becomes a no-op re-render.
     --
     -- 1. AUTO-ADVANCE: stock staging re-files the entry into the staged
     --    group and the current-file pointer follows it, so `]f` says "last
@@ -204,6 +218,26 @@ return {
       if ok and neogit.dispatch_refresh then
         pcall(neogit.dispatch_refresh)
       end
+    end
+
+    -- vim.schedule: the git-layer callbacks arrive on the event loop, and
+    -- refresh() touches nvim APIs (window/tree state) — main loop only.
+    local function explorer_refresh()
+      vim.schedule(function()
+        local ok_lc, lifecycle = pcall(require, "codediff.ui.lifecycle")
+        local ok_rf, rf = pcall(require, "codediff.ui.explorer.refresh")
+        if not (ok_lc and ok_rf and type(rf.refresh) == "function") then
+          if not vim.g.codediff_refresh_warned then
+            vim.g.codediff_refresh_warned = true
+            glue_broke("instant explorer refresh disabled (staging falls back to the watcher's 500ms debounce)")
+          end
+          return
+        end
+        local ex = lifecycle.get_explorer(vim.api.nvim_get_current_tabpage())
+        if ex then
+          pcall(rf.refresh, ex)
+        end
+      end)
     end
 
     local function advance_after(ref_path)
@@ -284,13 +318,16 @@ return {
     end
 
     wrap_if_present("stage_file", function(args)
+      explorer_refresh()
       neogit_refresh()
       advance_after(args[2]) -- (git_root, rel_path, cb)
     end)
     wrap_if_present("unstage_file", function()
+      explorer_refresh()
       neogit_refresh() -- no advance: the file is back under review
     end)
     wrap_if_present("apply_patch", function()
+      explorer_refresh()
       neogit_refresh()
       -- Hunk staged/unstaged/discarded: advance iff the current file ended
       -- up fully reviewed (advance_after's still-unstaged check handles the
@@ -316,6 +353,11 @@ return {
     -- call means the alias follows codediff's rebind-per-file-select cycle
     -- and its session keymap cleanup for free. Same degradation contract as
     -- the git-layer glue above.
+    -- Forward-declared: defined in the panel-fixups section below, used by
+    -- the set_tab_keymap wrapper (which only CALLS it at file-select time,
+    -- long after config() finished).
+    local jump_hunk
+
     local ok_lc, lifecycle = pcall(require, "codediff.ui.lifecycle")
     local ok_cfg, cd_config = pcall(require, "codediff.config")
     local view_keys = ok_cfg and ((cd_config.options.keymaps or {}).view or {}) or {}
@@ -324,39 +366,131 @@ return {
         [view_keys.next_file] = "<Tab>",
         [view_keys.prev_file] = "<S-Tab>",
       }
+      -- set_tab_keymap binds every view key to FOUR buffers — both diff
+      -- panes AND the explorer panel (lifecycle/accessors.lua) — so ]c/[c
+      -- in the sidebar get diff-buffer semantics there (the cursor walks
+      -- the file list instead of jumping hunks). Re-point just the
+      -- explorer's copy at the diff window (jump_hunk), from inside the
+      -- wrapper so the override lands after codediff's rebind on every
+      -- file select — out-binding it from an autocmd is a losing race.
+      local hunk_keys = {}
+      if view_keys.next_hunk then
+        hunk_keys[view_keys.next_hunk] = "Next hunk (in diff)"
+      end
+      if view_keys.prev_hunk then
+        hunk_keys[view_keys.prev_hunk] = "Prev hunk (in diff)"
+      end
       local stock_set = lifecycle.set_tab_keymap
       lifecycle.set_tab_keymap = function(tabpage, mode, lhs, rhs, kopts)
         local result = stock_set(tabpage, mode, lhs, rhs, kopts)
         if mode == "n" and aliases[lhs] then
           stock_set(tabpage, mode, aliases[lhs], rhs, kopts)
         end
+        if mode == "n" and hunk_keys[lhs] and jump_hunk then
+          local ex = lifecycle.get_explorer and lifecycle.get_explorer(tabpage)
+          if ex and ex.bufnr and vim.api.nvim_buf_is_valid(ex.bufnr) then
+            vim.keymap.set("n", lhs, jump_hunk(lhs), { buffer = ex.bufnr, nowait = true, silent = true, desc = hunk_keys[lhs] })
+          end
+        end
         return result
       end
     else
-      glue_broke("<Tab>/<S-Tab> next/prev-file aliases disabled")
+      glue_broke("<Tab>/<S-Tab> aliases + sidebar ]c/[c hunk-jump disabled")
     end
 
-    -- <C-d>/<C-u> in the explorer/history panels scroll the DIFF panes
-    -- (ports the retired diffview file-panel scroll_view binds).
-    -- codediff has no scroll action of its own, so: find the first
-    -- non-panel, non-floating window in the tab and scroll it; codediff's
-    -- synchronized scrolling carries the sibling pane along.
+    -- HUNK JUMPS LAND NEAR THE TOP, NOT CENTERED. next_hunk/prev_hunk and
+    -- the conflict navigators all end in a hardcoded `normal! zz`
+    -- (view/navigation.lua, conflict/navigation.lua — no option), which
+    -- costs half a screen of forward visibility on every jump. Re-run `zt`
+    -- after the stock call — 'scrolloff' keeps context lines above the
+    -- hunk. Guarded on the cursor actually moving in the same window:
+    -- no-op jumps (no more hunks) and file-boundary hops (render + landing
+    -- happen later, async) must not reflow the view. Module-level wrap
+    -- works because view/keymaps.lua reads navigation.next_hunk by value
+    -- at SESSION setup, long after this config() runs. Initial file-open
+    -- landing still centers (that zz lives in a local function inside
+    -- inline_view.lua — not reachable without forking the plugin).
+    local function land_at_top(mod, fn_names)
+      local ok, m = pcall(require, mod)
+      if not ok then
+        return false
+      end
+      for _, name in ipairs(fn_names) do
+        local stock = m[name]
+        if type(stock) ~= "function" then
+          return false
+        end
+        m[name] = function(...)
+          local win = vim.api.nvim_get_current_win()
+          local before = vim.api.nvim_win_get_cursor(win)[1]
+          stock(...)
+          if vim.api.nvim_get_current_win() == win and vim.api.nvim_win_get_cursor(win)[1] ~= before then
+            vim.cmd("normal! zt")
+          end
+        end
+      end
+      return true
+    end
+    if not (land_at_top("codediff.ui.view.navigation", { "next_hunk", "prev_hunk" })
+        and land_at_top("codediff.ui.conflict.navigation", { "navigate_next_conflict", "navigate_prev_conflict" })) then
+      glue_broke("hunk jumps re-center instead of landing at the top")
+    end
+
+    -- Panel (explorer/history) fixups, all on the same FileType autocmd:
+    --
+    -- <C-d>/<C-u> scroll the DIFF panes (ports the retired diffview
+    -- file-panel scroll_view binds): find the first non-panel, non-floating
+    -- window in the tab and act in it; codediff's synchronized scrolling
+    -- carries the sibling pane along. (]c/[c hunk jumps reuse the same
+    -- in_diff_win/jump_hunk helpers but are bound from the set_tab_keymap
+    -- wrapper above — codediff rebinds them on the explorer buffer at every
+    -- file select, so an autocmd-time bind loses that race.)
+    --
+    -- mini.clue triggers: the panels are unlisted nofile buffers, and
+    -- mini.clue only auto-installs its <Leader>/g/z triggers in LISTED
+    -- buffers — so <leader>gg (and every other leader map) dies with focus
+    -- in the sidebar. ensure_buf_triggers() re-installs them buffer-local —
+    -- the same fix the neogit-wrap-and-clue autocmd applies to Neogit
+    -- buffers (see plugins/neogit.lua); scheduled past codediff's own
+    -- nowait binds for the same precedence reason.
+    --
+    -- g? help: codediff does bind show_help to the explorer (set_tab_keymap
+    -- covers it), but only once a diff session exists — bind it here too so
+    -- help works from panel creation; after the first file select codediff's
+    -- identical-behavior bind takes over. view_keys comes from the <Tab>
+    -- alias glue above; if config didn't load, this silently skips (that
+    -- glue already warned).
     local PANEL_FTS = { ["codediff-explorer"] = true, ["codediff-history"] = true, ["codediff-help"] = true }
+    local function in_diff_win(fn)
+      local cur = vim.api.nvim_get_current_win()
+      for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if win ~= cur and vim.api.nvim_win_get_config(win).relative == "" then
+          local ft = vim.bo[vim.api.nvim_win_get_buf(win)].filetype
+          if not PANEL_FTS[ft] then
+            vim.api.nvim_win_call(win, fn)
+            return
+          end
+        end
+      end
+    end
     local function scroll_diff(key)
       local termcode = vim.api.nvim_replace_termcodes(key, true, false, true)
       return function()
-        local cur = vim.api.nvim_get_current_win()
-        for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-          if win ~= cur and vim.api.nvim_win_get_config(win).relative == "" then
-            local ft = vim.bo[vim.api.nvim_win_get_buf(win)].filetype
-            if not PANEL_FTS[ft] then
-              vim.api.nvim_win_call(win, function()
-                vim.cmd("normal! " .. termcode)
-              end)
-              return
-            end
-          end
-        end
+        in_diff_win(function()
+          vim.cmd("normal! " .. termcode)
+        end)
+      end
+    end
+    -- Remapped `normal` on purpose: it runs codediff's buffer-local
+    -- next_hunk/prev_hunk binding in the diff buffer (with its
+    -- file-boundary hop), not vim's native diff-mode ]c. Assigns the
+    -- local forward-declared above the set_tab_keymap wrapper.
+    jump_hunk = function(key)
+      local termcode = vim.api.nvim_replace_termcodes(key, true, false, true)
+      return function()
+        in_diff_win(function()
+          vim.cmd.normal(termcode)
+        end)
       end
     end
     vim.api.nvim_create_autocmd("FileType", {
@@ -365,6 +499,23 @@ return {
       callback = function(args)
         vim.keymap.set("n", "<C-d>", scroll_diff("<C-d>"), { buffer = args.buf, desc = "Scroll the diff down" })
         vim.keymap.set("n", "<C-u>", scroll_diff("<C-u>"), { buffer = args.buf, desc = "Scroll the diff up" })
+        vim.schedule(function()
+          if not vim.api.nvim_buf_is_valid(args.buf) then
+            return
+          end
+          local ok, miniclue = pcall(require, "mini.clue")
+          if ok then
+            miniclue.ensure_buf_triggers(args.buf)
+          end
+        end)
+        if view_keys.show_help then
+          vim.keymap.set("n", view_keys.show_help, function()
+            local ok, help = pcall(require, "codediff.ui.keymap_help")
+            if ok then
+              help.toggle(vim.api.nvim_get_current_tabpage())
+            end
+          end, { buffer = args.buf, desc = "Show keymap help" })
+        end
       end,
     })
 

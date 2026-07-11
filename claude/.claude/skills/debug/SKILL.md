@@ -1,6 +1,6 @@
 ---
 name: debug
-description: Systematic debugging — find the root cause before proposing any fix. Traces a failure backward to the origin instead of patching where the error surfaces, then routes the repair through /fix (or a direct edit in a direct-edit repo). Use for any bug, test failure, crash, flaky test, or unexpected behavior whose cause you do NOT yet understand. Triggers on "debug", "why is this failing", "why is this breaking", "root cause", "this bug", "figure out why", "/debug". NOT for applying a fix you already understand (that is /fix), and NOT for scanning a diff you just wrote for bugs (that is /review).
+description: Systematic debugging — find the root cause before proposing any fix, then route the repair through /fix. Use for any bug, test failure, crash, or unexpected behavior whose cause is NOT yet understood ("why is this failing", "root cause", "/debug"). NOT for applying a fix you already understand (/fix) or scanning your own diff (/review).
 ---
 
 # Debug — root cause before fix

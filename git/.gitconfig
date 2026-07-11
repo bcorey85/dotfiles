@@ -26,6 +26,11 @@
 	syntax-theme = Catppuccin Mocha
 	minus-style = "syntax #3a2b30"
 	plus-style = "syntax #28332b"
+	# Moved code (diff.colorMoved below): git emits bold magenta for moved-from
+	# and bold cyan for moved-to. Delta passes those through RAW unless mapped —
+	# loud, unwashed, syntax highlighting stripped. Map them to washes dimmer
+	# than plus/minus so a moved block recedes instead of reading as new logic.
+	map-styles = "bold purple => syntax #2e2a38, bold cyan => syntax #26303a"
 	# Word-level emphasis is deliberately DISABLED (emph = base style): delta's
 	# within-line diff turns reworded/rewrapped prose into confetti (scattered
 	# per-token highlights), and dotfiles diffs are mostly prose. Line washes +
@@ -43,6 +48,10 @@
 
 [diff]
 	colorMoved = default
+	# Treat a re-indented block (wrapped in an if, moved into a function) as
+	# moved rather than rewritten — otherwise every refactor that changes nesting
+	# shows up as a wall of add/remove.
+	colorMovedWS = allow-indentation-change
 [mergetool]
 	keepBackup = false
 [mergetool "codediff"]

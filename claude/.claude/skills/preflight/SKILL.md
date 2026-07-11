@@ -1,6 +1,7 @@
 ---
 name: preflight
-description: Exit front door for the branch — one command between "the loop converged" and "you stage". Runs the pre-commit ladder in order: /stage deep scan (when installed) → lane-scoped /verify → read-surface triage → receipt. Use for "preflight", "wrap up the branch", "ready to commit", "/preflight". Never stages and never commits — the user stages, then /commit.
+disable-model-invocation: true
+description: Exit front door for the branch — one command between "the loop converged" and "you stage". Runs the pre-commit ladder in order: mechanical /stage triage (when installed) → lane-scoped /verify → orient (no-lane) → read-surface triage → receipt. Use for "preflight", "wrap up the branch", "ready to commit", "/preflight". Never stages semantic changes and never commits — the user reads the queue and stages, then /commit.
 allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion, Skill]
 ---
 
@@ -24,33 +25,22 @@ commits, never opens a PR.
   CONVERGED diff and never substitutes for the loop. (`review-commit-gate`
   would block the eventual commit anyway; catch it here, not there.)
 
-## Step 1: Deep scan — `/stage` (runs only when installed)
+## Step 1: Mechanical triage — `/stage` (runs only when installed)
 
 `test -f ~/.claude/skills/stage/SKILL.md`
 
 **Present** → Skill-invoke `/stage` and record its summary for the receipt.
-Interface contract the imported version must satisfy (adapt `/stage` on
-import, not this file):
+Interface contract: `/stage` is DETERMINISTIC — its classifier stages only
+the SAFE tier (mechanical, invariant-verified) and returns the rest as a
+reading queue ordered by blast radius. It dispatches no reviewers, produces
+no findings, and never stages anything semantic. (The former Opus verify/
+suppress tier was removed 2026-07-11 — a model verdict must never license
+the human to skip reading semantic changes.)
 
-- Scans the converged diff with `code-reviewer-deep` + the test-intent agent
-  (both Opus-pinned; omit `model`). This is the escalation tier above the
-  loop's Sonnet passes — the ONLY place a second full review runs.
-- Findings route through `review-loop` (`mode: fix-first`, `caller: fix`,
-  handoff block per `~/.claude/skills/_shared/handoff-block.md`) — never
-  fixed ad hoc outside the loop's gate tracking.
-- Every catch logs one `log-review-metrics` line with `source=stage` — the
-  marginal-catch rate over the converged Sonnet loop is the number that
-  decides whether this tier keeps its Opus bill, and it must be visible to
-  `/audit review`.
-- Prestages hunks it judges safe; returns `{catches, prestaged[], residual[]}`.
+**Absent** → one receipt line: `stage triage: skipped — /stage not
+installed`; step 3's manual classification covers the gap.
 
-**Absent** → one receipt line: `stage scan: skipped — /stage not installed`.
-Do NOT improvise the pass with your own `code-reviewer-deep` dispatch; the
-escalation tier is `/stage`'s job and runs only through it.
-
-Ordering note: the scan (and any fixes/test culls it triggers) runs BEFORE
-verify, so verify certifies the diff that will actually ship. Prestaging only
-moves the index, not content — it may happen either side of verify.
+Staging only moves the index, not content — it may run either side of verify.
 
 ## Step 2: Completeness — `/verify` (lane-scoped)
 
@@ -65,14 +55,24 @@ bash ~/.claude/scripts/resolve-task-dir.sh "$ARGUMENTS"
   not certified)`. Do not run a degraded verify against nothing.
 - Exit 3 → AskUserQuestion: which match.
 
+## Step 2.5: Orient — no-lane branches only
+
+On a lane branch (resolve exit 0 or 5), skip: the plan's Orient closing phase
+owns it, and running it here doubles the spend. On exit 4 (no lane) —
+Skill-invoke `/orient`: no closing phase exists on this path, so this is the
+only place the mental map gets rebuilt before the user reads the diff. Receipt
+line either way: `orient: ran — <vault note link>` or
+`orient: skipped — lane closing phase owns it`.
+
 `/finalize` is NOT run here — it is sequenced after the PR opens (live mode
 wants the PR link). The receipt's Next section points to it on the deep-plan
 lane.
 
 ## Step 3: Read-surface triage (report-only)
 
-When `/stage` ran, its `prestaged[]`/`residual[]` split IS the triage — render
-it. Otherwise classify every changed file, conservatively:
+When `/stage` ran, its SAFE-staged/queue split IS the triage — render the
+queue in its blast-radius order. Otherwise classify every changed file,
+conservatively:
 
 - **stage-ready** — reviewed, low blast radius, no open ask item: docs and
   `*.md`, lockfiles/generated files, formatting-only hunks, test-only files
@@ -83,8 +83,8 @@ it. Otherwise classify every changed file, conservatively:
   file carrying an open ask item, anything you can't confidently classify.
 
 Emit the exact `git add -- <stage-ready files>` command for the user. NEVER
-run it — staging is the human touchpoint, until an installed `/stage` owns
-the safe half.
+run it — staging is the human touchpoint; only `/stage`'s deterministic SAFE
+tier is ever staged unread, and only by that script.
 
 ## Step 4: The receipt
 
@@ -105,8 +105,9 @@ Lane: deep-plan <ticket> | eng-spec <file> | none (completeness not certified)
 | -------------- | --------------------------------------------------------- |
 | review loop    | converged iter <N>, fixed <n> | no packet in context      |
 | execution gate | <cmd> → exit 0 | not evidenced                            |
-| stage scan     | <n> catches (logged source=stage) | skipped — <reason>    |
+| stage triage   | <n> SAFE staged, queue <m> | skipped — <reason>           |
 | verify         | clean | gaps → routed | skipped — no lane                 |
+| orient         | ran → <vault note> | skipped — lane owns it               |
 
 ### Changes  (from handoff | derived from diff)
 - <path> — <one-line change intent>
@@ -140,8 +141,10 @@ printf '{"ts":"%s","repo":"%s","branch":"%s","lane":"%s","review":"%s","stage_sc
 - **Never re-review a converged diff yourself** — no ad-hoc
   `code-reviewer-deep` dispatch; the escalation tier exists only via `/stage`.
 - **Never edit code** — anything found routes through `/fix`.
-- **Never run `/finalize` pre-PR**, and never run `/orient` here — Orient is
-  its own closing phase; running it inside preflight doubles the spend.
+- **Never run `/finalize` pre-PR**, and never run `/orient` on a LANE branch —
+  the plan's Orient closing phase owns it there; doubling it doubles the
+  spend. (No-lane branches DO run it — step 2.5 is the only orient those
+  branches get.)
 - **Never re-run quality checks the execution gate already evidenced** — the
   2-run cap in `~/.claude/CLAUDE.md` applies across the whole task.
 

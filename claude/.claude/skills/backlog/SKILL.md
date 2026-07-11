@@ -1,5 +1,6 @@
 ---
 name: backlog
+disable-model-invocation: true
 description: Capture an idea from the current conversation into docs/backlog/ for later conversion into an /eng-spec. Use when the user says "backlog", "save this idea", "dump this to backlog", "let's capture this", or "/backlog". Distills conversation context into a structured idea document.
 allowed-tools: [Read, Write, Edit, Glob, Grep, Bash]
 ---

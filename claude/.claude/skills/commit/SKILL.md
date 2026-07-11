@@ -1,5 +1,6 @@
 ---
 name: commit
+disable-model-invocation: true
 description: Draft a commit message from the STAGED changes, then commit and push. Use when the user says "commit", "commit and push", or "ship this" — the user stages; this skill never runs `git add`.
 allowed-tools: [Bash]
 ---

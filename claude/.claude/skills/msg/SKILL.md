@@ -1,5 +1,6 @@
 ---
 name: msg
+disable-model-invocation: true
 description: 'Send or receive messages between Claude agents in separate repos'' tmux sessions (named buffers — no network, no files). Verbs: send <repo> <msg> | read [repo] | peek [repo] | list. Triggers on "check my inbox", "any messages", "tell <repo>", "message <repo>", "ask <repo>", "send <repo>". Verb details in the skill body.'
 argument-hint: "<send|read|peek|list> [repo] [message...]"
 allowed-tools: Bash(bash:*)

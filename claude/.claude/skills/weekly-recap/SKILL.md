@@ -1,5 +1,6 @@
 ---
 name: weekly-recap
+disable-model-invocation: true
 description: Roll the week's Daily notes into one weekly review note (decisions, themes, shipped work, current open todos) and append achievement-phrased bullets to the yearly brag doc. Designed for a headless Friday-evening run (launchd/systemd via install/weekly-recap); also invocable manually with a date inside any target week.
 ---
 

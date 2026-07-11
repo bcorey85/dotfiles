@@ -29,6 +29,17 @@ local function blend(c1, c2, a)
   return "#" .. table.concat(out)
 end
 
+-- Rebuild Diff{Add,Delete,Change,Text} as palette-blended background washes.
+-- For themes that ship fg-only (or `reverse`) diffs, which starve codediff,
+-- native diff mode, and the word-diff glue below. p = { bg, green, red, yellow }.
+local function diff_washes(p)
+  local hl = vim.api.nvim_set_hl
+  hl(0, "DiffAdd", { bg = blend(p.green, p.bg, 0.22) })
+  hl(0, "DiffDelete", { bg = blend(p.red, p.bg, 0.22) })
+  hl(0, "DiffChange", { bg = blend(p.yellow, p.bg, 0.16) })
+  hl(0, "DiffText", { bg = blend(p.yellow, p.bg, 0.38), bold = true })
+end
+
 local FAMILIES = {
   ["doom-one"] = {
     -- one scheme for both modes; it picks its palette from vim.o.background
@@ -106,63 +117,128 @@ local FAMILIES = {
       vim.api.nvim_set_hl(0, "Comment", { fg = c, italic = true })
     end,
   },
-  kanso = {
-    -- webhooked/kanso.nvim (kanagawa successor): mist dark, pearl light.
-    -- Both variant colorschemes register colors_name = "kanso".
-    schemes = { dark = "kanso-mist", light = "kanso-pearl" },
-    colors_name = "kanso",
-    accents = {
-      dark = { heading1 = "#938aa9", heading = "#7fb4ca" },
-      light = { heading1 = "#624c83", heading = "#4d699b" },
-    },
-    -- Comment floor: stock #75797f is 3.6:1 dark (lift to gray3, 5.3:1);
-    -- pearl's #6d6d69 passes at 4.7:1. DiffDelete recolors deleted-line
-    -- text red (kanagawa habit) — keep the theme's washes, drop the fg.
-    fixup = function(mode)
-      if mode == "dark" then
-        vim.api.nvim_set_hl(0, "Comment", { fg = "#909398", italic = true })
-        vim.api.nvim_set_hl(0, "DiffDelete", { bg = "#43242b" })
-      else
-        vim.api.nvim_set_hl(0, "DiffDelete", { bg = "#d9a594" })
-      end
-    end,
-  },
   kanagawa = {
-    -- rebelot/kanagawa.nvim: dragon (desaturated ink-wash, warm black) dark,
+    -- rebelot/kanagawa.nvim: wave (the original — indigo night, saturated) dark,
     -- lotus (yellow paper) light. All variants register colors_name "kanagawa".
-    schemes = { dark = "kanagawa-dragon", light = "kanagawa-lotus" },
+    schemes = { dark = "kanagawa-wave", light = "kanagawa-lotus" },
     colors_name = "kanagawa",
     accents = {
-      dark = { heading1 = "#938aa9", heading = "#7fb4ca" },
+      dark = { heading1 = "#957fb8", heading = "#7fb4ca" }, -- oniViolet + springBlue
       light = { heading1 = "#624c83", heading = "#4d699b" },
     },
-    -- Dragon: comment dragonAsh #737c73 is 4.2:1 (floor 4.5) — lift to 5.2:1
-    -- keeping its green cast. Lotus: body ink #545464 is only 6.2:1 on the
-    -- yellow paper and comment #8a8980 is 2.9:1 — deepen both (8.1/5.1:1).
+    -- Wave: comment fujiGray #727169 is 3.33:1 (floor 4.5) — lift toward
+    -- fujiWhite, keeping the grey cast. Lotus: body ink #545464 is only 6.2:1
+    -- on the yellow paper and comment #8a8980 is 2.9:1 — deepen both (8.1/5.1).
     -- Diff* stay stock: kanagawa ships proper bg-only washes in both modes.
     fixup = function(mode)
       if mode == "dark" then
-        vim.api.nvim_set_hl(0, "Comment", { fg = "#848c84", italic = true })
+        vim.api.nvim_set_hl(0, "Comment", { fg = blend("#dcd7ba", "#727169", 0.3), italic = true })
       else
         vim.api.nvim_set_hl(0, "Normal", { fg = "#434350", bg = "#f2ecbc" })
         vim.api.nvim_set_hl(0, "Comment", { fg = "#63625b", italic = true })
       end
     end,
   },
-  alabaster = {
-    -- p00f/alabaster.nvim (tonsky's design): strict 4-hue budget — strings
-    -- green, constants purple, definitions blue, comments red(light)/yellow
-    -- (dark); everything else body fg. One scheme, branches on
-    -- vim.o.background. Wired STOCK by request — no fixups. Known stock
-    -- deviations from the eye spec: dark body 11.9:1 (band ceiling 10),
-    -- light body #000 on #f7f7f7 = 19.6:1, light strings 3.9:1 (floor 4.5).
-    schemes = { dark = "alabaster", light = "alabaster" },
+  solarized = {
+    -- maxmx03/solarized.nvim, palette = "solarized" (Schoonover's original).
+    -- Both palettes of this plugin register colors_name = "solarized" and load
+    -- via the same :colorscheme, so `pre` selects which one gets built.
+    schemes = { dark = "solarized", light = "solarized" },
+    colors_name = "solarized",
+    pre = function()
+      require("solarized").setup({ palette = "solarized" }) -- variant stays "winter" (the canonical accents)
+    end,
     accents = {
-      -- markview headings (switcher glue): reuse the theme's own
-      -- definition-blue + constant-purple so no fifth hue enters.
-      dark = { heading1 = "#cc8bc9", heading = "#71ade7" },
-      light = { heading1 = "#7a3e9d", heading = "#325cc0" },
+      dark = { heading1 = "#6c71c4", heading = "#268bd2" }, -- violet + blue
+      light = { heading1 = "#6c71c4", heading = "#268bd2" },
     },
+    -- Solarized is the hard case for the comment floor: its body fg is itself
+    -- only 4.75:1 dark / 4.13:1 light, so a comment that clears 4.5:1 lands ON
+    -- TOP of stock body. Fix by shifting one step up the theme's OWN base
+    -- ladder (no new colours): body base0→base1 (5.6:1) and comment
+    -- base01→base0 (4.8:1) dark. Light needs more room, so body deepens past
+    -- base01 to 9.9:1 (the kanagawa-lotus precedent) and comment takes base01
+    -- (5.0:1) — separation 4.9 vs 0.4 if body stayed put. Comments keep italic
+    -- to carry the distinction the 0.86 dark separation can't alone.
+    -- Diff* ship fg-only (DiffDelete/DiffText are `reverse`) — rebuild washes.
+    fixup = function(mode)
+      local hl = vim.api.nvim_set_hl
+      local p = mode == "dark"
+          and { bg = "#002b36", fg = "#93a1a1", comment = "#839496" }
+        or { bg = "#fdf6e3", fg = "#0f4451", comment = "#586e75" }
+      hl(0, "Normal", { fg = p.fg, bg = p.bg })
+      hl(0, "Comment", { fg = p.comment, italic = true })
+      diff_washes({
+        bg = p.bg,
+        green = "#859900",
+        red = "#dc322f",
+        yellow = "#b58900",
+      })
+    end,
+  },
+  ["rose-pine"] = {
+    -- rose-pine/neovim: three variants (main/moon/dawn) as separate
+    -- colorschemes that all register colors_name = "rose-pine".
+    schemes = { dark = "rose-pine-main", light = "rose-pine-dawn" },
+    colors_name = "rose-pine",
+    accents = {
+      dark = { heading1 = "#c4a7e7", heading = "#9ccfd8" }, -- iris + foam
+      light = { heading1 = "#907aa9", heading = "#286983" }, -- iris + pine
+    },
+    -- Dawn's comment is `subtle` (#797593) at 4.02:1 — under the floor. The
+    -- palette's next rung down is `text` (#575279, 6.66:1), which lands too
+    -- close to body, so take the midpoint of the two: 5.12:1 against body's
+    -- 8.69:1. Diff* ship real washes (add is teal, not green — rose-pine has
+    -- no green) and are left alone.
+    fixup = function(mode)
+      if mode == "light" then
+        vim.api.nvim_set_hl(0, "Comment", { fg = blend("#575279", "#797593", 0.5), italic = true })
+      end
+    end,
+  },
+  tokyonight = {
+    -- folke/tokyonight.nvim: storm (the mid-dark blue-violet night) and day.
+    -- Each variant registers its own colors_name, matching schemes[mode].
+    schemes = { dark = "tokyonight-storm", light = "tokyonight-day" },
+    accents = {
+      dark = { heading1 = "#bb9af7", heading = "#7aa2f7" }, -- purple + blue
+      light = { heading1 = "#9854f1", heading = "#2e7de9" },
+    },
+    -- Worst comment contrast of any family here: storm's #565f89 is 2.35:1 and
+    -- day's #848cb5 is 2.54:1 (floor 4.5) — both are barely-there blues. Storm
+    -- lifts halfway to body (4.92:1). Day is the harder one: its body fg is a
+    -- BLUE (#3760bf) that only measures 4.52:1 itself, so a floor-clearing
+    -- comment would land on top of body. Deepen body down the same blue ramp to
+    -- 8.07:1 (the solarized-light precedent), which buys the comment room at
+    -- 4.91:1. Diff* ship real bg-only washes in both modes — left stock.
+    fixup = function(mode)
+      local hl = vim.api.nvim_set_hl
+      if mode == "dark" then
+        hl(0, "Comment", { fg = blend("#c0caf5", "#565f89", 0.5), italic = true })
+      else
+        hl(0, "Normal", { fg = "#223c7d", bg = "#e1e2e7" })
+        hl(0, "Comment", { fg = "#565e80", italic = true })
+      end
+    end,
+  },
+  catppuccin = {
+    -- catppuccin/nvim: mocha (dark) / latte (light); frappe and macchiato are
+    -- the mid-dark rungs we skip. Each variant registers its own colors_name.
+    schemes = { dark = "catppuccin-mocha", light = "catppuccin-latte" },
+    accents = {
+      dark = { heading1 = "#cba6f7", heading = "#89b4fa" }, -- mauve + blue
+      light = { heading1 = "#8839ef", heading = "#1e66f5" },
+    },
+    -- Mocha needs nothing: comments clear the floor stock (5.81:1) and its
+    -- Diff* are real bg-only washes. Latte's comment (overlay1 #7c7f93) is
+    -- 3.49:1 — the palette's next rung, subtext0, is still short at 4.37, so
+    -- take the midpoint of subtext0/subtext1 (the rose-pine-dawn precedent):
+    -- ~4.9:1 against body's 7.06:1.
+    fixup = function(mode)
+      if mode == "light" then
+        vim.api.nvim_set_hl(0, "Comment", { fg = blend("#5c5f77", "#6c6f85", 0.5), italic = true })
+      end
+    end,
   },
 }
 
@@ -226,7 +302,7 @@ end
 -- the theme-agnostic word-diff glue, so auditions aren't painted over.
 -- nvim-orgmode agenda readability (prefix n a / n t popups). The plugin
 -- samples its @org.agenda.* colors from whatever the active theme defines,
--- which under minimal families (alabaster, zenwritten…) lands scheduled-item
+-- which under minimal families (zenwritten, zenbones…) lands scheduled-item
 -- text near-invisible. Pin them to semantic groups every family paints; the
 -- plugin's own versions are `hi default`, so these explicit links win
 -- regardless of load order.
@@ -246,7 +322,7 @@ local function apply_overrides()
   local family, mode = M.read_state()
   local fam = FAMILIES[family]
   -- colors_name: guard override for themes whose variant colorschemes all
-  -- register one shared name (e.g. kanso-mist sets colors_name = "kanso")
+  -- register one shared name (e.g. rose-pine-dawn sets colors_name = "rose-pine")
   if vim.g.colors_name == (fam.colors_name or fam.schemes[mode]) then
     if fam.fixup then
       fam.fixup(mode) -- before word-diff: it reads the Diff* bgs set here

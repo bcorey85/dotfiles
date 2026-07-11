@@ -1,5 +1,6 @@
 ---
 name: finalize
+disable-model-invocation: true
 description: Collapse a completed deep-plan task folder into a single durable decision record (ADR) and delete the process artifacts (deep-plan step 6 of 6). Runs pre-merge so the record ships in the same PR as the code.
 allowed-tools: [Bash, Read, Glob, Grep, Write, Edit, AskUserQuestion]
 ---

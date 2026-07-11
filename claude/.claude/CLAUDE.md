@@ -22,7 +22,7 @@ When rules conflict: the user's current instruction > project CLAUDE.md > this f
 
 ### Delegation
 
-- Never code directly — dispatch via `/code` (coders; architects first when design decisions are needed). Exceptions: trivial single-line edits the user explicitly requested; rules/agents/skills/CLAUDE.md files; repos whose CLAUDE.md declares **direct-edit repo**.
+- Never code directly — dispatch via `/code` (coders; architects first when design decisions are needed). Exceptions: trivially small diffs (a few lines, one file) in files already read this session — there, dispatch overhead (coder bootstrap + obligated /review) costs more than the edit; rules/agents/skills/CLAUDE.md files; repos whose CLAUDE.md declares **direct-edit repo**. The bright line is diff size, not task familiarity — anything multi-file or design-shaped still dispatches.
 - A coder dispatch obligates `/review` before `/commit` — `review-commit-gate` enforces this at `git commit`. The only skip is a genuinely trivial diff with the user's explicit say-so.
 - Parallel writing agents need disjoint file scopes. One feature's fe+be coder split in the same tree is fine (the orchestrator owns all git operations). Separate branches/worktrees only for independent tasks or when scopes could overlap.
 - Agent model discipline (hook-enforced by `agent-model-guard`; rationale in its header): pinned agent → omit `model`; unpinned → `haiku` for read-only lookup, `sonnet` for implementation/analysis/review; never `opus`/`fable`/`inherit` at call sites. Pair `subagent_type` deliberately: `Explore` (read-only lookup), `general-purpose` (multi-file tracing Explore can't handle), coders/architects/reviewers per their descriptions.
@@ -41,7 +41,6 @@ When rules conflict: the user's current instruction > project CLAUDE.md > this f
 
 - File changes go through Write/Edit — shell writes (redirection, heredocs, `sed`/`awk -i`) bypass the Write/Edit hook pipeline (formatters, stub-guard, safety gate) and leave no reviewable diff.
 - Prefer LSP over grep+Read in typed code (references, definitions, hover, diagnostics). Fall back to `rg` for plain text or unindexed file types.
-- When the context-mode plugin is active, its `ctx_*` tools take precedence for bulk read-only analysis; Read remains correct for files you're about to edit.
 - Verify CLI syntax with `--help` before guessing.
 - WebSearch before writing config, CI, infra, or library-integration code wherever the feedback loop is slow or remote: official docs, then GitHub issues, then write. Local configs verifiable in seconds are exempt — just test them. If research would take >5 minutes, say so and ask.
 

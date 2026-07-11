@@ -148,7 +148,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "opus",
+  "model": "fable",
   "hooks": {
     "PreToolUse": [
       {
@@ -221,6 +221,10 @@
           {
             "type": "command",
             "command": "bash ~/.claude/scripts/review-commit-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/log-agent-usage.sh"
           }
         ]
       },
@@ -309,14 +313,6 @@
             "command": "~/.claude/scripts/warn-skip-hooks.sh"
           }
         ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$HOME/.claude/hooks/context-mode-cache-heal.mjs\""
-          }
-        ]
       }
     ]
   },
@@ -334,16 +330,9 @@
     "typescript-lsp@claude-plugins-official": true,
     "pyright-lsp@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
-    "context-mode@context-mode": true,
     "workmux-status@workmux": true
   },
   "extraKnownMarketplaces": {
-    "context-mode": {
-      "source": {
-        "source": "github",
-        "repo": "mksglu/context-mode"
-      }
-    },
     "workmux": {
       "source": {
         "source": "github",
@@ -355,9 +344,9 @@
   "awaySummaryEnabled": false,
   "tui": "fullscreen",
   "autoMemoryEnabled": false,
+  "skipWorkflowUsageWarning": true,
   "theme": "dark-ansi",
   "editorMode": "normal",
   "inputNeededNotifEnabled": false,
-  "skipAutoPermissionPrompt": true,
-  "skipWorkflowUsageWarning": true
+  "skipAutoPermissionPrompt": true
 }

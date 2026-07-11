@@ -222,7 +222,23 @@ function importTail(p) {
   // parent segment so `foo/utils` doesn't match every `./utils` in the tree.
   return GENERIC_LEAF_RE.test(tail) && segs.length >= 2 ? segs.slice(-2).join("/") : tail;
 }
+// True if an extensionless import of this module still resolves — i.e. a
+// sibling with the same base but a different extension (or a barrel) survives
+// on disk. This is the `.jsx`→`.tsx` migration case: the module isn't gone,
+// only its extension changed, so `from './StatCard'` still resolves and the
+// deletion is not a dangling reference.
+const RESOLVE_EXTS = ["ts", "tsx", "js", "jsx", "mjs", "cjs"];
+function moduleStillResolves(removedPath) {
+  const base = removedPath.replace(IMPORT_EXT_RE, "");
+  const candidates = [
+    ...RESOLVE_EXTS.map((e) => `${base}.${e}`),
+    ...RESOLVE_EXTS.map((e) => `${base}/index.${e}`),
+  ];
+  // On disk (deleted files aren't) and not itself staged for deletion.
+  return candidates.some((c) => c !== removedPath && existsSync(join(root, c)) && !deletedPaths.has(c));
+}
 function stillImported(removedPath, alsoRemoved) {
+  if (moduleStillResolves(removedPath)) return [];
   const tail = importTail(removedPath);
   if (!tail) return [];
   const esc = tail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

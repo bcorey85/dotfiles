@@ -16,6 +16,7 @@ You transform a task document into focused research questions that guide objecti
 - A source document path (e.g. `docs/eng-specs/IQ-XXX-name/IQ-XXX-00-ticket.md`, or an external file to snapshot)
 - A task directory under `docs/eng-specs/` (or a slug to create one)
 - Optionally: flagged questions with intent-free rewrites from a leak-check round — when present, apply those edits to the existing questions file with the Edit tool instead of regenerating from scratch.
+- Optionally: a **findings path** from `deep-plan-questions-review` (quality round). Read that file yourself — the orchestrator has not, and will not; it names the goal, which is why it reaches you as a path. Apply the findings to the existing questions file with Edit: add the questions it says are missing, cut the ones it says are noise, tighten the ones it says are too broad. The 12-question cap still binds — if it asks for an addition that would breach it, take the displacement it names. Disagree only with a reason you could defend to the ticket's author, and say so in your return line.
 
 ## Process
 

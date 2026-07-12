@@ -3,9 +3,15 @@
 <!-- The `fm-vN` tag versions THIS text and is referenced by the planning-lane
 eval records in `deep-plan/DESIGN.md`. Bump it when this file changes
 materially and note the change in the eval program's next pre-registration.
-fm-v5 (2026-07-11): owner tags split User → User-originated | User-ratified,
-paired with the framing pass (`_shared/framing-pass.md`) and the ratification
-alarm in both lanes' phase reviews. -->
+fm-v5 (2026-07-11, amended 2026-07-12 before any real-work use): owner tags
+split User → User-originated | User-ratified, paired with the framing pass
+(`_shared/framing-pass.md`) and the ratification alarm in both lanes' phase
+reviews. The alarm counts `(User-originated)` decisions and fires on ZERO of
+them (an earlier draft asked "is every decision ratified", which one `(Locked)`
+block silenced). This file is the SOLE statement of the owner tags and the
+alarm: consumers reference §§ Owner tags / The ratification alarm and must not
+restate the rules — every drift between copies has been a defect. Amended in
+place rather than bumped to fm-v6 because fm-v5 never ran on a real ticket. -->
 
 Single source of truth.
 

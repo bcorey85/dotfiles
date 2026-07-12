@@ -6,14 +6,16 @@ Which check guards what:
 
 | Artifact | Guarded by |
 | --- | --- |
-| Questions | `deep-plan-leak-check` (intent-leak only — see the gap below) |
+| Questions | `deep-plan-questions-review` (is it the RIGHT set — `phase=questions`), then `deep-plan-leak-check` (intent-leak — `phase=leak-check`) |
 | Research | `deep-plan-review`, **Research** checklist |
 | Design presentation | `deep-plan-review`, **Design presentation** checklist (`phase=design`) |
 | Design document | `deep-plan-review`, **Design document** checklist (`phase=design-doc`) |
 | Structure | nothing of its own — criteria folded into the Plan checklist, which takes the outline as an input (gate cut 2026-07-07 on metrics) |
 | Plan | `deep-plan-review`, **Plan** checklist, then the human gate |
 
-**Known gap — the questions set has no quality review.** Leak-check asks only "does this question leak the goal?", never "are these the RIGHT questions?" — and a bad question set silently caps the quality of the research built on it. There is no `Questions` checklist below and no `deep-plan-review` dispatch in Phase Q; `phase=questions` survives in the log enum only to read historical entries, which additionally CONFLATE leak-check (see `DESIGN.md`). Adding a real gate here is a cost decision the user has not made — do not invent one mid-run; if the question set looks wrong, say so to the user rather than silently patching it.
+**The questions set is guarded by two checks, in this order, and neither substitutes for the other.** `deep-plan-questions-review` asks "are these the RIGHT questions?" — coverage, answerability, decision-relevance, and above all the question that SHOULD be in the set and isn't. `deep-plan-leak-check` then asks "does any of this give away the goal?" Quality runs FIRST so that whatever it adds gets laundered by leak-check before research ever sees it; run them the other way around and every question the reviewer adds reaches the researcher with the intent still in it.
+
+**How the quality review keeps the goal out of your context.** It is the only pre-design agent that reads both the ticket and the questions — that is what lets it judge the set, and it is why its output is routed, not read. It writes its findings to a file and returns ONLY `PASS — …` or `ISSUES (k of N) → <path>`. You hand that path to `deep-plan-questions` and **you never open it.** Same router discipline you already use for the ticket: paths move through you, content does not. If you find yourself reading the findings file "just to check", stop — that is the isolation breach the whole phase ordering exists to prevent, arriving through the one door that looks like housekeeping.
 
 ## The loop
 
@@ -21,12 +23,14 @@ Which check guards what:
 2. **PASS** → log (below) and proceed.
 3. **ISSUES** → send the issue list back to the producer for ONE revision, then re-review:
    - Subagent producers — Research (`deep-plan-research`), Plan (`deep-plan-planner`): re-dispatch with the same inputs **plus** the issue list. A structural issue on a Plan review (phasing, verifiability) is fixed in the structure outline first, then the plan re-dispatched.
+   - Questions (`deep-plan-questions`): re-dispatch with the findings **path**, not its contents — you have not read it and must not. ONE revision round, not two (the questions are cheap to regenerate and everything downstream is not; a set still contested after one round is a signal about the ticket, not a defect a third lap will fix). See the Questions row in the ESCALATE list below.
    - Inline producers — Design: you revise the artifact yourself against the issues.
    - **Max 2 revision rounds.**
    - **Two findings are exempt from this machinery — see "Findings you may not revise away" below.** Revision is the wrong verb for both, and running them through the loop actively corrupts them.
 4. **Still ISSUES after 2 rounds** → ESCALATE and log as `ESCALATED`. The remedy depends on whether a human is about to look at the artifact anyway:
    - **Research / Plan / Design document (`phase=design-doc`)**: STOP and surface the remaining issues to the user, then resume at whatever step dispatched this review. For `design-doc` specifically there is no presentation left to fold into — it already happened, and nothing downstream of it gates without one — so this is a genuine stop, in the same one-line form as the ratification alarm. (The design-doc review has two callers: Phase D, and Phase P's design-gap round trip. Do not hard-code "next is Phase S" — from the round trip, Phase S is already behind you.)
    - **Design presentation (`phase=design`)**: fold the remaining issues into the presentation you're about to show — the human is already looking, so the cheapest correct move is to show them the flaws alongside it. This is the ONLY checkpoint where "fold it in" is executable, and it does not apply to the missing-framing finding below.
+   - **Questions (`phase=questions`)**: after its single round, proceed to leak-check and then research REGARDLESS, and tell the user the bare count — "the questions review still flags k of N; proceeding." **Never the findings text**: it names the goal, and pasting it to the user puts it in YOUR context, which is the isolation breach this gate was carefully built to avoid. Both questions gates inform and neither stops: a run halted before research has cost the user everything and taught them nothing, and the design phase is where a weak question set actually becomes visible and fixable.
 
 ## Findings you may not revise away
 
@@ -61,6 +65,11 @@ REVIEW_METRICS_FILE="$HOME/.claude/deep-plan-review.jsonl" bash ~/.claude/skills
   the final-round count, which is 0 on every PASS by construction.
 - Leak-check: log `phase=leak-check` with `issues` = questions flagged as
   materially intent-leaking, `rounds` = rewrite rounds taken.
+- Questions quality (`phase=questions`): `issues` = the `k` from the reviewer's
+  `ISSUES (k of N)` line, `rounds` = revision rounds taken. This is a real gate
+  as of 2026-07-12; log entries older than that under `phase=questions` are from
+  the pre-gate era and CONFLATE leak-check (see `DESIGN.md`) — do not read the
+  two eras as one series.
 - `phase=design` is the presentation review (pre-questions); `phase=design-doc`
   is the written design review (post-questions, where the ratification alarm
   fires). They are separate lines — collapsing them loses the alarm's history,

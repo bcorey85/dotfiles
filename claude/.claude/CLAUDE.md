@@ -30,7 +30,7 @@ When rules conflict: the user's current instruction > project CLAUDE.md > this f
 ### Workflow Routing (built-in vs custom — fixed, don't mix per-task)
 
 - Inner-loop review → custom `/review`. Built-in `/code-review` is not in the loop; `/code-review ultra` is an optional pre-PR pass on large branches.
-- Others' PRs → `/peer-review`; never `/review` on code we don't own (its fix loop and metrics assume ownership).
+- Others' PRs → `/pr-triage` when a QUEUE is waiting (ranks by evidence-derived risk), then `/peer-review <n>`; single PR → straight to `/peer-review`. Triage sets how HARD I read, never whether I read — it approves nothing and clears nothing unread. Never `/review` on code we don't own (its fix loop and metrics assume ownership). Triage misses log to `~/.claude/triage-misses.jsonl`, never the review flywheel (that one measures our own loop).
 - Security audit → built-in `/security-review`.
 - Cleanup → coder second-draft sweep + `/refactor`; never built-in `/simplify` on loop output.
 - Verification → custom `/verify` only (plan↔diff completeness + human smoke-test checklist; deep-plan and eng-spec lanes). The BUILT-IN skill of the same name is retired from the loop — never dispatch it. Agents never browser-drive — UI smoke tests are mine, from the checklist.

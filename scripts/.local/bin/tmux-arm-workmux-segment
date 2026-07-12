@@ -1,0 +1,16 @@
+#!/bin/bash
+# Prepend the workmux-attention segment to tmux status-right, idempotently.
+# Theme files own (and overwrite) status-right, so this must re-run after any
+# theme source — call sites: .tmux.conf startup (run-shell, queued after the
+# theme source) and theme-mode's apply() (after its continuum re-arm).
+# No-ops on machines without workmux.
+
+export PATH="$HOME/.local/bin:$PATH"
+command -v workmux >/dev/null 2>&1 || exit 0
+command -v tmux >/dev/null 2>&1 || exit 0
+
+sr="$(tmux show-option -gqv status-right 2>/dev/null)" || exit 0
+case "$sr" in
+  *workmux-attention*) ;; # already armed
+  *) tmux set-option -g status-right "#(~/.local/bin/workmux-attention)$sr" ;;
+esac

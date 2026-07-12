@@ -21,7 +21,7 @@ Dispatch `deep-plan-questions` (omit `model`) with ONLY: the ticket path and the
 
 Dispatch `deep-plan-leak-check` (omit `model`) with ONLY the questions file path. It returns `PASS` or a flagged list with intent-free rewrites.
 
-If flagged: auto-apply without asking — re-dispatch `deep-plan-questions` with the flagged items + rewrites (still no ticket content in your prompt beyond the path), then leak-check again. Max 2 rounds. If still flagged after 2 rounds, proceed to research anyway and note the residual flags to the user (informational — not a stop). No human gate here: questions → leak-check → research flows straight through. Log the verdict (`phase=leak-check`, `issues` = flagged questions, `rounds` = rewrite rounds) per `${CLAUDE_SKILL_DIR}/review-loop.md` — separate from the questions review's own `phase=questions` entry.
+If flagged: auto-apply without asking — re-dispatch `deep-plan-questions` with the flagged items + rewrites (still no ticket content in your prompt beyond the path), then leak-check again. Max 2 rounds. If still flagged after 2 rounds, proceed to research anyway and note the residual flags to the user (informational — not a stop). No human gate here: questions → leak-check → research flows straight through. Log the verdict (`phase=leak-check`, `issues` = flagged questions, `rounds` = rewrite rounds) per `${CLAUDE_SKILL_DIR}/review-loop.md`. This is the ONLY check the questions set gets, and it checks intent-leak only — there is no questions quality review (see that file's "Known gap"); `phase=questions` is a legacy log value, not a gate you should be running.
 
 ## Phase R — Research (subagent)
 
@@ -39,9 +39,21 @@ Read `${CLAUDE_SKILL_DIR}/structure-phase.md` and follow it.
 
 ## Phase P — Plan (subagent)
 
-Dispatch `deep-plan-planner` (omit `model`) with ONLY the task directory. It reads the artifacts itself and returns the plan path.
+Dispatch `deep-plan-planner` (omit `model`) with ONLY the task directory. It reads the artifacts itself and returns the plan path, plus any `DESIGN GAPS` it hit.
 
 Then run the review loop (`${CLAUDE_SKILL_DIR}/review-loop.md`, **Plan** checklist) before the gate — this is what defends the risk tags `/code` auto-advances on.
+
+**Design gaps** (from the planner, or the reviewer's decision-trace check). The plan you were handed contains the planner's own best guess at each gap, marked `<!-- DESIGN GAP: ... -->`. Do not present it. Round trip:
+
+1. Resolve each gap with the user (AskUserQuestion — options, your recommendation, what breaks if it's wrong).
+2. Write each answer into `IQ-XXX-03-design.md` as a decision block with its owner tag. The design doc is the ledger; a choice settled after the design gate otherwise belongs to no one.
+3. **Re-run the Design document review** on the edited design doc (`phase=design-doc`). You just hand-wrote blocks into the ledger the owner tags are audited against; the Plan checklist only asks whether the plan traces to a block, never whether the block is well-formed. Skip this and a malformed or mis-tagged block ships unread — and the alarm's count is recomputed here, not there.
+4. **Re-dispatch `deep-plan-planner`** with the updated design doc and the resolutions. Do NOT hand-patch the plan — the planner's guess may have shaped phases and success criteria well beyond the marked line, and the markers must be gone from the final artifact.
+5. **Re-run the Plan review** on the regenerated plan. Its decision-trace check is what confirms the plan now matches the ledger.
+
+**Termination.** A resolution can force a fresh gap (settling A exposes B). Loop back to 1 — at most **twice**. If a third round surfaces new gaps, stop and tell the user plainly: the design doc is underspecified for this ticket, and the honest fix is a Phase D pass, not another lap. Never present a plan carrying a live `DESIGN GAP` marker.
+
+If the user's answer matches the planner's guess exactly, 3–5 still run — the plan is cheap to regenerate and a stale marker in a shipped plan reads as an unresolved decision to everyone downstream.
 
 ## Gate — human (MANDATORY)
 

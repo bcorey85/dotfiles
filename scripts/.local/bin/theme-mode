@@ -129,6 +129,9 @@ apply() { # <family> <mode> — write state and repaint tmux + ghostty
         *) tmux set-option -g status-right "#($cont_save)$sr" 2>/dev/null || true ;;
       esac
     fi
+    # Re-arm the workmux attention segment for the same reason as continuum:
+    # the theme file just rewrote status-right. No-op without workmux.
+    "$HOME/.local/bin/tmux-arm-workmux-segment" 2>/dev/null || true
     tmux display-message "theme: $family $mode"
   fi
 

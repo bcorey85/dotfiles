@@ -4,7 +4,11 @@ Create a concise structure outline describing HOW to implement the approved desi
 
 ## Inputs
 
-The ticket, research, and design docs are already in context from Phase D. Re-read `DIR/IQ-XXX-03-design.md` only if it was edited during review.
+If Phase D ran in THIS session, the ticket, research, and design docs are already in context — re-read `DIR/IQ-XXX-03-design.md` only if it was edited during review.
+
+**If you are resuming** (Phase 0 found existing artifacts and the user resumed at S, so Phase D ran in an earlier session), read `DIR/IQ-XXX-00-ticket.md`, `DIR/IQ-XXX-02-research.md`, and `DIR/IQ-XXX-03-design.md` FULLY (no limit/offset) before phasing anything. The Q→R isolation rule that forbade reading these does NOT apply here — it ends at Phase D, and you are downstream of it. Phasing work you have not read the design for is how a phase quietly re-decides something the design already settled, and the rule below ("Design is not yours") is unenforceable if you never read what the design said.
+
+**On resume, the design doc's existence is not evidence that Phase D ran.** Phase 0 detects it by filename alone, and a file can be stale, hand-authored, or abandoned mid-phase. Before you treat it as the ledger, confirm it looks like a Phase D output: `## Framing` present with the user's own words, and every decision block carrying one of the three owner tags. If either is missing, STOP and tell the user what you found — offer to re-run Phase D. Do not fill the gaps yourself and do not phase against it anyway: an unowned design doc launders whatever is in it into "approved," which is the precise failure the owner tags exist to make impossible.
 
 ## Vertical, not horizontal
 
@@ -23,6 +27,21 @@ Vertical slices need two special phases in front (pattern: spec-kit `/plan` emit
 ## Decide the phasing (no user gate)
 
 Structure runs automatically — do NOT stop for approval. Break the work into vertical phases yourself, applying the vertical-not-horizontal rule above. If the design doc leaves the phasing genuinely ambiguous, make the most reasonable call and record it as an assumption in the outline rather than pausing. The human review point is the Plan gate that follows.
+
+## Decisions the design doesn't settle (the one thing that DOES stop you)
+
+Phasing is yours. **Design is not.** The owner tags in the design doc are only worth something if the design doc is the whole ledger — a decision the user never saw, made here because structuring forced the question, is an untagged decision that no alarm can ever catch. Phase D's framing pass buys nothing if the real choice gets made in Phase S.
+
+The bar is the decision block, not the feeling of uncertainty: **would this choice need a `Choice / Reasoning / Alternatives rejected / Trade-off accepted` block?** That means two or more viable approaches with a user-visible consequence — a data shape, a contract, a failure mode, a retention or security behavior. It does NOT mean phase ordering, slice boundaries, naming, or how much detail a phase carries. Those are structuring, and structuring is your job.
+
+When a choice clears that bar:
+
+1. **Stop.** Do not pick the reasonable one and note it as an assumption — an assumption is what you record when the answer doesn't matter, and if it cleared the bar it matters.
+2. Ask the user directly (AskUserQuestion) — one question, framed with the options and your recommendation, as in Phase D.
+3. Write the resolution back into `DIR/IQ-XXX-03-design.md` as a proper decision block with its owner tag. The design doc is the ledger; the outline is not.
+4. Then continue phasing.
+
+This should be rare — Phase D is supposed to have drained these. If it happens more than once or twice on a task, that is a signal the design phase under-explored, worth saying out loud to the user.
 
 ## Write the Outline (~2 pages max)
 
@@ -77,6 +96,7 @@ If the implementing agent might get a phase wrong, expand it with specific types
 - Do NOT stop for user approval — structure flows straight into Plan; review happens at the Plan gate.
 - Do NOT exceed ~2 pages — longer means phases are too detailed.
 - Do NOT re-debate design decisions — those are resolved.
+- Do NOT make NEW ones either. Re-debating a settled decision and quietly settling an unsettled one are opposite errors with the same cause: treating the design doc as advisory. It is the ledger. If structuring surfaced a real choice, it goes back to the user and into the doc — see the section above.
 
 ## No separate review
 

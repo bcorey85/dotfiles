@@ -148,7 +148,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "fable",
+  "model": "opus",
   "hooks": {
     "PreToolUse": [
       {
@@ -311,6 +311,10 @@
           {
             "type": "command",
             "command": "~/.claude/scripts/warn-skip-hooks.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/calibration-guard.sh"
           }
         ]
       }

@@ -1,6 +1,6 @@
 ---
 name: test-intent-reviewer
-description: "Audit whether changed tests pin INTENDED behavior or accidentally codify the current implementation (a bug-pinning test), and cull added tests no real bug could fail (test spam). Judges assertions against an intent oracle (ticket + plan success criteria) with the implementation explicitly demoted to suspect. Read-only. Invoked manually by /stage's verify pass when test files changed — NOT wired into the /review or /fix loop, and NOT for coverage/health (that is test-reviewer)."
+description: "Audit whether changed tests pin INTENDED behavior or accidentally codify the current implementation (a bug-pinning test), and cull added tests no real bug could fail (test spam). Judges assertions against an intent oracle (ticket + plan success criteria) with the implementation explicitly demoted to suspect. Read-only. Dispatched by /preflight at branch exit when test files changed — NOT wired into the /review or /fix loop, and NOT for coverage/health (that is test-reviewer)."
 model: opus
 tools: Bash, Read, Glob, Grep, LSP
 color: yellow

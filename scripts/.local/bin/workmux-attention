@@ -1,0 +1,64 @@
+#!/bin/bash
+# Status-right segment: workmux agents that need attention.
+#   waiting (blocked on input)  -> red badge, PULSING
+#   done (finished, unreviewed) -> steady yellow badge
+# Prints nothing while every agent is working — silence means all clear.
+#
+# The pulse is hand-rolled: ghostty (like most modern terminals) parses SGR 5
+# but never animates it, so tmux's `blink` style attribute is a no-op. Instead
+# status-interval is 1s (see .tmux.conf) and this alternates filled/outline on
+# the wall-clock second. Only `waiting` pulses — it's the one state actually
+# blocking you; pulsing `done` too would leave the bar flashing most of the
+# time and train you to ignore it.
+#
+# A 1s status-interval means this runs every second, so the workmux call is
+# cached (STALE_SECS) — the pulse keeps ticking off the cache between refreshes.
+# Colors are ANSI palette names so they track the active terminal theme.
+# Armed into status-right by tmux-arm-workmux-segment; jump to a flagged agent
+# with C-, .
+
+export PATH="$HOME/.local/bin:$PATH"
+command -v workmux >/dev/null 2>&1 || exit 0
+
+CACHE="${TMPDIR:-/tmp}/workmux-attention.$(id -u).cache"
+STALE_SECS=4
+
+fresh=0
+if [ -f "$CACHE" ]; then
+  age=$(( $(date +%s) - $(stat -c %Y "$CACHE" 2>/dev/null || stat -f %m "$CACHE" 2>/dev/null || echo 0) ))
+  [ "$age" -lt "$STALE_SECS" ] && fresh=1
+fi
+
+if [ "$fresh" -eq 0 ]; then
+  json="$(workmux status --json 2>/dev/null)" || exit 0
+  printf '%s %s\n' \
+    "$(grep -c '"status": "waiting"' <<<"$json")" \
+    "$(grep -c '"status": "done"' <<<"$json")" >"$CACHE"
+fi
+
+read -r waiting finished <"$CACHE" 2>/dev/null || exit 0
+: "${waiting:=0}" "${finished:=0}"
+
+# Adaptive refresh: the 1s tick exists only so the badge can pulse, and only a
+# `waiting` agent pulses — which is rare. Paying 1s refreshes (this script +
+# continuum_save.sh, ~22ms a cycle) around the clock for an empty badge is
+# waste, so drop back to 5s whenever nothing is waiting and buy the fast tick
+# only when it's earning its keep.
+want_interval=5
+[ "$waiting" -gt 0 ] && want_interval=1
+if [ "$(tmux show-option -gqv status-interval 2>/dev/null)" != "$want_interval" ]; then
+  tmux set-option -gq status-interval "$want_interval" 2>/dev/null || true
+fi
+
+out=""
+if [ "$waiting" -gt 0 ]; then
+  # Pulse: filled badge on even seconds, outline on odd.
+  if [ $(( $(date +%s) % 2 )) -eq 0 ]; then
+    out+="#[bg=red,fg=black,bold] ⏸ $waiting #[default] "
+  else
+    out+="#[fg=red,bold] ⏸ $waiting #[default] "
+  fi
+fi
+[ "$finished" -gt 0 ] && out+="#[bg=yellow,fg=black,bold] ✔ $finished #[default] "
+[ -n "$out" ] && printf '%s' "$out"
+exit 0

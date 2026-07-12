@@ -180,7 +180,7 @@ Skip any finding that is a false positive, a stylistic preference, out of scope,
 
 Never skip this because the review "looked clean" — model approval without executed evidence is the loop's weakest exit.
 
-**Test-intent audit**: NOT run in this loop. Test-intent review is now a manual step invoked via `/stage`'s verify pass — never fired automatically by /review or /fix. Do not dispatch `test-intent-reviewer` here.
+**Test-intent audit**: NOT run in this loop. Test-intent review is a branch-exit step, dispatched by `/preflight` (step 1.5) when test files changed — never fired automatically by /review or /fix. Do not dispatch `test-intent-reviewer` here.
 
 **MEDIUM classification**: classify each MEDIUM as:
 
@@ -230,5 +230,5 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 - **Never reorder the loop.** Cap check precedes the reviewer dispatch; plan-impact and blocker returns precede any coder dispatch.
 - **Never pass MEDIUM/LOW to the CRITICAL/HIGH fix coder.**
 - **Never return `converged` with an empty `fixed[]` when `iter > 1`.** You iterated because CRITICAL/HIGH existed; name what you repaired.
-- **Never dispatch `test-intent-reviewer`.** It left this loop — it's a manual `/stage` step now.
+- **Never dispatch `test-intent-reviewer`.** It left this loop — `/preflight` owns it at branch exit.
 - **Never narrate the loop.** The orchestrator sees only the packet; prose above it is wasted context.

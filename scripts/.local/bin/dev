@@ -4,9 +4,11 @@
 #   If a directory is provided, all panes/windows open there; otherwise cwd.
 #
 # Layout:
-#   Window 1 "code"     nvim full-width — claude now lives in a popup session
-#                       (prefix y, tmux-claude-session-manager); uncomment the
-#                       split below to restore the old nvim (60%) | claude (40%)
+#   Window 1 "code"     nvim (60%) | claude (40%). The claude pane is a plain
+#                       companion, not a managed agent — stash/restore it with
+#                       C-' (claude-companion) when you want the width back;
+#                       the conversation survives. Background agents are
+#                       workmux's job, and they stay out of this window.
 #   Window 2 "console"  three equal shells for git / tests / logs. If the
 #                       project has an mprocs config, pane 1 runs the service
 #                       stack under mprocs instead of a bare shell — r restarts
@@ -25,15 +27,14 @@ fi
 dir="${1:-.}"
 dir="$(cd "$dir" && pwd)" || { echo "dev: no such directory: ${1:-.}" >&2; exit 1; }
 
-# Window 1 "code": nvim full-width. Claude split disabled while trialing
-# tmux-claude-session-manager popups (prefix y) — uncomment to restore.
+# Window 1 "code": nvim (60%) | claude (40%).
 # -p 40 sizes the NEW (right) pane to 40%, leaving nvim at 60%.
 # Using -p instead of -l 40% for compatibility with older tmux (Ubuntu/WSL).
 tmux rename-window "code"
 tmux send-keys "nvim ." C-m
-# tmux split-window -h -p 40 -c "$dir"
-# tmux send-keys "claude" C-m
-# tmux select-pane -L          # land on the editor
+tmux split-window -h -p 40 -c "$dir"
+tmux send-keys "claude" C-m
+tmux select-pane -L          # land on the editor
 
 # Window 2 "console": three equal shells side by side
 tmux new-window -n "console" -c "$dir"

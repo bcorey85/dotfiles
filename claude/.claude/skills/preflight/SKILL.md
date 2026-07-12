@@ -42,6 +42,23 @@ installed`; step 3's manual classification covers the gap.
 
 Staging only moves the index, not content — it may run either side of verify.
 
+## Step 1.5: Test-intent audit — only when test files changed
+
+`git diff --name-only` hits a test file → dispatch `test-intent-reviewer`
+(pinned; omit `model`), handing it the oracle (ticket / plan success criteria)
+so it judges assertions against INTENDED behavior, not the implementation.
+
+This is the one reviewer preflight still dispatches, and it survives because
+it produces FINDINGS for you, not permission to skip reading: a test that pins
+a bug is invisible to a correctness reviewer (the code and the test agree) and
+invisible to the execution gate (it passes). It never stages anything.
+
+- `weak/bug-pinning` verdicts → route through `/fix`, then re-run the loop's
+  execution gate.
+- Net-removed coverage → it reports where the assertion went, or
+  `COVERAGE-LOST`. Put that file at the top of the read-first queue.
+- Receipt line: `test-intent: <n> flagged | clean | skipped — no test files`.
+
 ## Step 2: Completeness — `/verify` (lane-scoped)
 
 ```bash
@@ -93,7 +110,7 @@ dispatch an agent to reconstruct prose. Sources, best-first: the review-loop
 packet (status, `fixed[]`, `medium.ask`, `test_intent.ask`, `low[]`,
 `load_bearing_clean`), the handoff block (files + change intents,
 `tests-run`), `/tmp/review-gate.log`, the `/verify` packet, the `/stage`
-summary. Absent handoff (fresh session) → derive the file list from git and
+triage (staged count + queue). Absent handoff (fresh session) → derive the file list from git and
 mark it `derived from diff — no handoff in context`.
 
 ```
@@ -106,6 +123,7 @@ Lane: deep-plan <ticket> | eng-spec <file> | none (completeness not certified)
 | review loop    | converged iter <N>, fixed <n> | no packet in context      |
 | execution gate | <cmd> → exit 0 | not evidenced                            |
 | stage triage   | <n> SAFE staged, queue <m> | skipped — <reason>           |
+| test-intent    | <n> flagged | clean | skipped — no test files            |
 | verify         | clean | gaps → routed | skipped — no lane                 |
 | orient         | ran → <vault note> | skipped — lane owns it               |
 
@@ -128,9 +146,10 @@ Deep-plan lane: after the PR opens, /finalize.
 Persist (non-blocking; on failure mention and continue):
 
 ```bash
-printf '{"ts":"%s","repo":"%s","branch":"%s","lane":"%s","review":"%s","stage_scan":"%s","verify":"%s","files":%d,"read_first":%d}\n' \
+printf '{"ts":"%s","repo":"%s","branch":"%s","lane":"%s","review":"%s","stage_triage":"%s","test_intent":"%s","orient":"%s","verify":"%s","files":%d,"read_first":%d}\n' \
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(basename "$(git rev-parse --show-toplevel)")" \
-  "$(git rev-parse --abbrev-ref HEAD)" "<lane>" "<review result>" "<scan result>" "<verify result>" \
+  "$(git rev-parse --abbrev-ref HEAD)" "<lane>" "<review result>" "<triage result>" \
+  "<test-intent result>" "<ran|skipped>" "<verify result>" \
   <changed-file count> <read-first count> >> "$HOME/.claude/preflight-receipts.jsonl"
 ```
 
@@ -138,8 +157,12 @@ printf '{"ts":"%s","repo":"%s","branch":"%s","lane":"%s","review":"%s","stage_sc
 
 - **Never `git add`, never commit, never open a PR** — the residual read and
   the stage are the user's; `/commit` is its own skill.
-- **Never re-review a converged diff yourself** — no ad-hoc
-  `code-reviewer-deep` dispatch; the escalation tier exists only via `/stage`.
+- **Never re-review a converged diff** — no second correctness pass, here or
+  anywhere. A converged loop already reviewed it; a second reviewer over the
+  same diff buys little (reviewer-agent precision is low) and its real function
+  is to shrink what you read, which is the debt this ladder exists to surface.
+  `test-intent-reviewer` (step 1.5) is the sole exception: it audits test
+  INTENT against the oracle, which no other gate can see.
 - **Never edit code** — anything found routes through `/fix`.
 - **Never run `/finalize` pre-PR**, and never run `/orient` on a LANE branch —
   the plan's Orient closing phase owns it there; doubling it doubles the

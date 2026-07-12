@@ -84,10 +84,12 @@ finalize-specific source mapping:
 | Header                                           | metadata + PR detection above                                                   |
 | TL;DR                                            | written LAST, distilled from the finished ADR                                   |
 | Problem                                          | `00-ticket.md`                                                                  |
-| Decision / Alternatives / Patterns / Constraints | `03-design.md`                                                                  |
+| Decision / Alternatives / Patterns / Constraints | `03-design.md` — Alternatives draws on BOTH axes, see below                     |
 | Assumptions                                      | `03-design.md` context — record only conditions the decision actually relies on |
 | Consequences                                     | synthesize                                                                      |
 | Related                                          | only if eng-arch was updated; else omit                                         |
+
+**Alternatives has two sources in `03-design.md`, and they are different axes.** A decision block's `**Alternatives rejected**` field holds options WITHIN one decision. `## Approaches Considered and Not Taken` holds whole approaches to the feature, ruled out before any decision was framed. The ADR needs both — the whole-approach rejections are the ones a future reader is most likely to re-propose ("why didn't you just…"), and they exist nowhere else once the task folder collapses into the ADR. Carry each with the failure mode already named for it; do not manufacture a new one, and do not merge the two axes into one undifferentiated list.
 
 ## Footer
 

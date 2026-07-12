@@ -14,6 +14,14 @@ panes:
     focus: true
 nerdfont: true
 
+# Top bar, not left sidebar. The left sidebar bills you in COLUMNS (25-50 of
+# them) and columns are what code wants — line length, side-by-side diffs. The
+# top bar bills 3 ROWS, the axis we have to spare. Same live per-agent status,
+# affordable enough to leave on. Toggle: prefix w (workmux sidebar).
+sidebar:
+  position: top
+  height: 3
+
 # 'workmux merge' rebases the branch onto the base first — linear history,
 # same shape the /merge skill produces.
 merge_strategy: rebase

@@ -34,7 +34,7 @@ When rules conflict: the user's current instruction > project CLAUDE.md > this f
 - Security audit → built-in `/security-review`.
 - Cleanup → coder second-draft sweep + `/refactor`; never built-in `/simplify` on loop output.
 - Verification → custom `/verify` only (plan↔diff completeness + human smoke-test checklist; deep-plan and eng-spec lanes). The BUILT-IN skill of the same name is retired from the loop — never dispatch it. Agents never browser-drive — UI smoke tests are mine, from the checklist.
-- Branch exit → `/preflight` (front door): `/stage` deep scan when installed → lane-scoped `/verify` → read-surface triage → receipt. It never stages or commits — I stage, then `/commit`; `/finalize` stays post-PR.
+- Branch exit → `/preflight` (front door): mechanical `/stage` triage → test-intent audit (test files only) → lane-scoped `/verify` → `/orient` on no-lane branches → read-surface triage → receipt. No agent ever clears a semantic file for me to skip: only `/stage`'s deterministic SAFE tier is staged unread. I read the queue and stage, then `/commit`; `/finalize` stays post-PR.
 - Planning → `/plan` (front door) when no lane is named: recommends + confirms, then dispatches. Direct calls unchanged: `/eng-spec` by default; `/deep-plan` for highest-stakes invariant work, unfamiliar surfaces, ANY change to external enforcement-tool config, and reclamation/liveness-teardown work (reapers, sweeps, session/instance GC — eng-spec 0-for-2 on that class). Tag lane escapes with `/escape lane=<lane>`; review via `/audit review`. Rationale and pilot history: `~/.claude/docs/planning-lanes.md`.
 
 ## Tools

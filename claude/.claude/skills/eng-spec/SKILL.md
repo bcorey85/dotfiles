@@ -58,14 +58,14 @@ reach the research agent.
 
 5. Dispatch, in order — each is pinned, so omit `model`:
 
-   - **`qrspi-questions`** with the path to `00-ticket.md`. It writes
+   - **`spec-questions`** with the path to `00-ticket.md`. It writes
      `01-questions.md`: objective codebase questions that never reference the
      ticket's goals.
-   - **`qrspi-leak-check`** with the path to `01-questions.md`. It rewrites each
+   - **`spec-leak-check`** with the path to `01-questions.md`. It rewrites each
      question into its most intent-free form and diffs. Any question whose
      rewrite differs materially has leaked the goal — **fix those questions and
      re-run the check** before proceeding.
-   - **`qrspi-research`** with the path to `01-questions.md` — **and nothing
+   - **`spec-research`** with the path to `01-questions.md` — **and nothing
      else.** It must never see the ticket, the slug, or any goal word. It
      inventories what is *there*, factually, with `file:line` refs, and writes
      `02-research.md`.

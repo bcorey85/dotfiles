@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# resolve-task-dir.sh — resolve the deep-plan task directory under docs/eng-specs/
-# Shared by /finalize and the deep-plan-* agents (run via /deep-plan).
+# resolve-task-dir.sh — resolve the /eng-spec task directory under docs/eng-specs/
+# Shared by /verify, /preflight, /code, and /adr. Do NOT reimplement inline.
 #
 # usage: resolve-task-dir.sh [<path-or-ticket>]
 #   <path>    existing directory -> used directly
 #   <ticket>  e.g. IQ-400 (case-insensitive) -> glob docs/eng-specs/IQ-400-*/
-#             (task dir), else docs/eng-specs/IQ-400*.md (eng-spec plan)
+#             (task dir), else docs/eng-specs/IQ-400*.md (legacy flat plan)
 #   (empty)   infer ticket from the current branch name (TICKET-NUM-prefix)
 #
-# exit 0: exactly one task DIRECTORY match, printed on stdout (deep-plan lane)
-# exit 5: no task dir, exactly one eng-spec plan FILE, printed (eng-spec lane)
+# exit 0: exactly one task DIRECTORY match, printed on stdout. The plan inside
+#         it is spec.md; the ticket is 00-ticket.md.
+# exit 5: no task dir, exactly one legacy flat eng-spec plan FILE, printed
 # exit 3: multiple matches, all printed on stdout (caller asks the user)
 # exit 4: nothing resolvable (caller asks the user for a path)
 set -euo pipefail

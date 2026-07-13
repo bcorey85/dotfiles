@@ -1,11 +1,9 @@
 # Shared Plan Format (single source of truth)
 
-The implementation-plan artifact contract. Producers: `deep-plan-planner` (via
-`/deep-plan`) and `/eng-spec`. Consumers: `/code` (phase-boundary gates key off
-`## Phase Status` risk tags and `#### Manual Verification` sections),
-`/verify` (plan↔diff reconciliation), and the human skimming phases.
-Both planning lanes emit THIS format so downstream machinery behaves
-identically regardless of which lane planned the work.
+The implementation-plan artifact contract. Producer: `/eng-spec`. Consumers:
+`/code` (phase-boundary gates key off `## Phase Status` risk tags and
+`#### Manual Verification` sections), `/verify` (plan↔diff reconciliation),
+and the human skimming phases.
 
 ## Risk tiers (assigned per phase, recorded on its Phase Status line)
 
@@ -57,9 +55,9 @@ skeleton`, the thinnest end-to-end path exercising every Phase 0 contract
 
 ## Template
 
-Header links: include whichever upstream artifacts exist for the lane
-(deep-plan: ticket/research/design/structure paths; eng-spec: ticket/spec
-sections above the plan). Do not invent links to artifacts that don't exist.
+Header links: include whichever upstream artifacts exist under the eng-spec
+task dir (ticket/research/spec paths). Do not invent links to artifacts that
+don't exist.
 
 ```markdown
 # [Feature Name] Implementation Plan

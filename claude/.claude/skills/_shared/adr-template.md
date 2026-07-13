@@ -1,6 +1,6 @@
 # ADR Template & Discipline (shared)
 
-Single source of truth for decision-record output. Consumed by `/finalize` (deep-plan lane) and `/adr` (eng-spec and small-feature lanes). The consuming skill supplies the SOURCES for each section; everything here — structure, caps, discipline — applies verbatim.
+Single source of truth for decision-record output. Consumed by `/adr`. The consuming skill supplies the SOURCES for each section; everything here — structure, caps, discipline — applies verbatim.
 
 ## Who this is written for
 

@@ -1,6 +1,6 @@
 ---
 name: code
-description: Dispatch coder subagent(s) for implementation, then auto-run `/review` — auto-detects scope or accepts be/fe/fs modifier. Use for "implement/build/add X" when the task is well-defined or a plan file exists; features needing design decisions go to /eng-spec or /plan first.
+description: Dispatch coder subagent(s) for implementation, then auto-run `/review` — auto-detects scope or accepts be/fe/fs modifier. Use for "implement/build/add X" when the task is well-defined or a plan file exists; features needing design decisions go to /eng-spec first.
 allowed-tools: [Agent, Bash, Read, Edit, Glob, Grep, AskUserQuestion, Skill]
 ---
 
@@ -18,14 +18,14 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 ## Instructions
 
 0. **Resolve task input when no arguments were given**: If `$ARGUMENTS` is empty (after stripping any bare modifiers like `be`/`fe`/`fs`/`+fast`/`+deep`), run `bash ~/.claude/scripts/resolve-task-dir.sh` (it infers the ticket from the branch name):
-   - Exit 0 (deep-plan task dir) → the task input is its `*-05-plan.md`. Exit 5 (eng-spec plan) → the printed file is the task input. Either way, tell the user what resolved; step 2's multi-phase detection then applies.
+   - Exit 0 (eng-spec task directory) → the task input is its `spec.md`. Exit 5 (legacy flat eng-spec plan file) → the printed file is the task input. Either way, tell the user what resolved; step 2's multi-phase detection then applies.
    - Exit 3 (multiple matches) → ask which via AskUserQuestion. Exit 4 (nothing resolvable) → ask the user what to implement. Do not guess a task.
 
 1. **Check for modifiers**: If `+deep` is present, swap each coder for its `-deep` variant and omit `model`. If `+fast` is present, pass `model: "haiku"`. Strip modifiers from the prompt passed to coders.
 
 2. **Detect multi-phase plans (MANDATORY check)**: If the task input is a path to a plan file (e.g., `*-plan.md` under `docs/eng-specs/`) or pasted plan content, read it and check whether it contains multiple `## Phase N:` sections.
 
-   **Lane provenance (for telemetry, one-time)**: classify by the task input's SHAPE, not its parent directory (both lanes live under `docs/eng-specs/`) — a `*-05-plan.md` inside a ticket-named task SUBDIRECTORY (`docs/eng-specs/<TICKET>-<slug>/`, or step-0 exit 0) → `lane=deep-plan`; a plan `.md` sitting DIRECTLY in `docs/eng-specs/` (or step-0 exit 5) → `lane=eng-spec`; anything else → `lane=none`. Carry this value into the second-draft telemetry line (step 5) and the `review-loop` dispatch (step 6).
+   **Lane provenance (for telemetry, one-time)**: `lane=eng-spec` when the task input came from step 0's resolver (task directory `spec.md`, or a legacy flat plan file); `lane=code` otherwise (direct dispatch, no plan). Carry this value into the second-draft telemetry line (step 5) and the `review-loop` dispatch (step 6).
 
    **If it's a multi-phase plan:**
    - Do NOT dispatch all phases at once.

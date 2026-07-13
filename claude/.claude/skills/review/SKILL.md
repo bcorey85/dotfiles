@@ -55,7 +55,7 @@ The agent returns `status: plan-impact` and dispatches no coder. Then:
    `Discuss`. The modal blocks until answered — that is the point.
 3. Record the answer in the plan's `## Plan Deviations` section (create if
    absent): date, finding, decision, owner. `/verify` reconciles against the
-   amended plan; `/finalize`'s ADR inherits it.
+   amended plan; `/adr` inherits it.
 4. Re-dispatch `review-loop` with the decision and the preserved `iter`.
 
 ## Arguments

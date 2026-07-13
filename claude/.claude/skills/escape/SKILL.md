@@ -17,7 +17,7 @@ One escape = one defect found downstream of the gate that should have caught it.
    - `severity` — `high` | `medium` | `low`
    - `desc` — one line, specific enough to be legible in 3 months
    - `file` — representative path, if known
-   - `lane` — optional: planning lane that produced the work (`deep-plan` | `eng-spec` | `code` | `other`); ask if the conversation makes it ambiguous — this feeds the lane-level A/B evidence in /audit review
+   - `lane` — optional: planning lane that produced the work (`eng-spec` | `code` | `other`); ask if the conversation makes it ambiguous — this feeds the lane-level A/B evidence in /audit review
 
    If the description is too vague to classify, ask ONE clarifying question — a mislabeled escape pollutes the very data this exists to produce. A new requirement or changed mind is NOT an escape; only log things a gate should have caught with the information it had.
 

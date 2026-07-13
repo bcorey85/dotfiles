@@ -9,7 +9,7 @@ allowed-tools: [Bash]
 
 Commit staged changes and push to remote. This skill is NOT complete until the push succeeds (or `+no-push` is active). Do NOT stop to ask for approval — execute the full pipeline in one pass.
 
-The USER is responsible for staging files. Claude NEVER stages files. (Sole exception: skills whose documented contract includes staging — e.g. `/finalize`'s `git rm` of task-directory files — may arrive here with those files already staged; that's expected, not a violation.) Draft the commit message from staged changes only (`git diff --cached`), then commit and push.
+The USER is responsible for staging files. Claude NEVER stages files. (Sole exception: skills whose documented contract includes staging — e.g. `/adr`'s `git rm` of task-directory files — may arrive here with those files already staged; that's expected, not a violation.) Draft the commit message from staged changes only (`git diff --cached`), then commit and push.
 
 Use `JIRAPROJECT-TICKETNUMBER: description` if the branch has a ticket key, otherwise use conventional commits (`type(scope): description`).
 

@@ -1,16 +1,16 @@
 ---
 name: verify
-description: Reconcile the shipped changes against the deep-plan ticket + plan to confirm everything was actually built, BEFORE the PR opens. A completeness gate, not a code review — checks "did we build what the plan called for", not code quality. Runs after /code (+/review); the user opens the PR.
+description: Reconcile the shipped changes against the eng-spec ticket + plan to confirm everything was actually built, BEFORE the PR opens. A completeness gate, not a code review — checks "did we build what the plan called for", not code quality. Runs after /code (+/review); the user opens the PR.
 allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion, Skill]
 ---
 
-# Verify deep-plan Completeness
+# Verify Completeness
 
 Independently reconcile what shipped on this branch against the ticket's requirements and the plan's per-phase success criteria. Report unbuilt or partial items before the PR opens.
 
 ## Why
 
-`/review` (chained after `/code`) checks code **quality** — bugs, anti-patterns, security. Nothing in the flow checks **completeness**: did the diff actually satisfy every plan phase + ticket requirement? Those are different audits. The plan's `## Phase Status` checkboxes are self-reported by `/code`; verify does NOT trust them — it verifies against the real diff. Finding a gap here is cheap; finding it after the PR opens (or in `/finalize`, which seals the work) is not.
+`/review` (chained after `/code`) checks code **quality** — bugs, anti-patterns, security. Nothing in the flow checks **completeness**: did the diff actually satisfy every plan phase + ticket requirement? Those are different audits. The plan's `## Phase Status` checkboxes are self-reported by `/code`; verify does NOT trust them — it verifies against the real diff. Finding a gap here is cheap; finding it after the PR opens (or in `/adr`, which seals the work) is not.
 
 ## When it runs
 
@@ -18,24 +18,24 @@ After `/code` (and its auto `/review`) report done, **before the user opens the 
 
 ## Resolve the task directory
 
-Same resolver as `/finalize` (do NOT reimplement):
+Shared resolver (do NOT reimplement):
 
 ```bash
 bash ~/.claude/scripts/resolve-task-dir.sh "$ARGUMENTS"
 ```
 
-Exit 0 → use it, then glob `DIR/*.md` for the ticket (`-00-ticket.md`) and plan (`-05-plan.md`) files. Exit 5 → **eng-spec lane**: the printed spec file is both ticket (requirements/ACs section) and plan. Exit 3 → ask which match. Exit 4 → ask for a path.
+Exit 0 → an `/eng-spec` task directory: the ticket is `DIR/00-ticket.md`, the plan is `DIR/spec.md`. Exit 5 → a legacy flat eng-spec file: it is both ticket (requirements/ACs section) and plan. Exit 3 → ask which match. Exit 4 → ask for a path.
 
-No plan found anywhere → stop: _"/verify needs a plan (deep-plan task dir or docs/eng-specs). Run /deep-plan or /eng-spec first, or verify manually."_
+No plan found anywhere → stop: _"/verify needs a plan (an eng-spec task dir under docs/eng-specs). Run /eng-spec first, or verify manually."_
 
 ## Inputs
 
-| File                  | Read for                                                                    |
-| --------------------- | --------------------------------------------------------------------------- |
-| `IQ-XXX-00-ticket.md` | Acceptance criteria / requirements                                          |
-| `IQ-XXX-05-plan.md`   | `Phase Status`, each phase's `Success Criteria`, and `What We're NOT Doing` |
+| File            | Read for                                                                    |
+| --------------- | --------------------------------------------------------------------------- |
+| `00-ticket.md`  | Acceptance criteria / requirements                                          |
+| `spec.md`       | `Phase Status`, each phase's `Success Criteria`, and `What We're NOT Doing` |
 
-This is the one deep-plan step that DOES read the plan in full (contrast `/finalize`, which forbids it).
+This is the one step that DOES read the plan in full (contrast `/adr`, which forbids it).
 
 ## Process
 
@@ -69,14 +69,14 @@ Out of scope (skipped): …
 - **Gaps found (`partial`/`missing`/failing check)**: list them, and log each as an escape past the phase-level drift gates (ground truth for the loop's trustworthiness — see `/audit review`):
 
   ```bash
-  bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=verify gate_missed=drift-gate class=plan-drift severity=<high|medium> lane=deep-plan desc="<one line>" file=<path>
+  bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=verify gate_missed=drift-gate class=plan-drift severity=<high|medium> lane=eng-spec desc="<one line>" file=<path>
   ```
 
   Then offer to dispatch `/fix` (or `/code` for net-new work) to close them. Re-run verify after.
 
 - **Clean**: first, the **branch-final smell sweep gate** — confirm a bare `/refactor` (full branch-diff sweep) has run on this branch since the last code change. If it hasn't, run it now (Skill tool) and let its loop converge before assembling the packet. Rationale: escape telemetry (`/audit review`) shows smell/duplication defects dominate what survives `/review` — its calibration suppresses them by design — and the sweep only catches them when it actually runs. The sweep is `/refactor`'s job; verify stays read-only and simply refuses to hand over the packet without it. Then build the **review packet** — the single artifact for the human bulk review:
   1. Assemble one output, in this order: (a) the completeness table above; (b) **smoke-test checklist** — every acceptance criterion restated as a user-observable check, every `human-only` item from the plan's Manual Verification sections, and anything `needs-manual` from the reconciliation, each with concrete steps to exercise it; (c) **diff hotspots** — the 3–5 files the completeness evidence marks as heaviest/most load-bearing, listed as "read these first, skim the rest"; (d) a one-line pointer to the agent-verified evidence in the plan for spot-checking. Do NOT invoke `/orient` here — the Orient pass is its own closing phase immediately after this one; running it inside verify doubles the spend for the same map.
-  2. Point forward: run the smoke-test checklist, then open the PR yourself — agents never open PRs. After the PR exists, `/finalize` (deep-plan lane).
+  2. Point forward: run the smoke-test checklist, then open the PR yourself — agents never open PRs. After the PR exists, `/adr`.
 
 ## What NOT to do
 

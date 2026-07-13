@@ -1,6 +1,6 @@
 # Mandatory Closing Phases (single source of truth)
 
-Every implementation plan — from `/deep-plan` (`deep-plan-planner`) or `/eng-spec` —
+Every implementation plan — from `/eng-spec` —
 ends with these FOUR phases, appended after the last feature phase, in this
 exact order. They are **not negotiable and never omitted**, regardless of how
 small the feature is. They appear as real `## Phase Status` entries (tracked
@@ -41,10 +41,8 @@ at Phase 3, these are Phases 4–7).
 
 4. **Finalize** (risk: low) — collapse the work into a durable decision
    record, pre-merge, so it ships in the same PR:
-   - `/deep-plan` lane → `/finalize` (collapses the deep-plan task folder into an
-     ADR and deletes the process artifacts).
-   - `/eng-spec` lane → `/adr` (sources the "why" from the spec + diff).
-     Success Criteria: ADR written; process artifacts collapsed (deep-plan lane).
+   - `/adr` (sources the "why" from the spec + diff).
+     Success Criteria: ADR written.
 
 ## Phase Status lines (copy verbatim, renumbering)
 
@@ -52,5 +50,5 @@ at Phase 3, these are Phases 4–7).
 - [ ] Phase N: Refactor pass — /refactor cleanup sweep (risk: low)
 - [ ] Phase N+1: Verify pass — branch-wide deep review + /verify (plan↔diff + smoke list) (risk: high)
 - [ ] Phase N+2: Orient pass — /orient situate the change (risk: low)
-- [ ] Phase N+3: Finalize — <finalize | adr> durable decision record (risk: low)
+- [ ] Phase N+3: Finalize — /adr durable decision record (risk: low)
 ```

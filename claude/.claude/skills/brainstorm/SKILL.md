@@ -1,7 +1,7 @@
 ---
 name: brainstorm
 disable-model-invocation: true
-description: Vet a rough idea into a correct Jira ticket for a teammate. Use when the user wants to think through an issue before filing it, or says "brainstorm", "write this up for the team", "is this ticket right". Verifies the premise against the real codebase, resolves the approach, then hands off to /create-ticket. Do NOT use for work about to be planned or implemented here — /plan, /eng-spec, and /deep-plan INGEST tickets; this skill PRODUCES them.
+description: Vet a rough idea into a correct Jira ticket for a teammate. Use when the user wants to think through an issue before filing it, or says "brainstorm", "write this up for the team", "is this ticket right". Verifies the premise against the real codebase, resolves the approach, then hands off to /create-ticket. Do NOT use for work about to be planned or implemented here — /eng-spec INGESTS tickets; this skill PRODUCES them.
 allowed-tools: [Bash, Read, Glob, Grep, AskUserQuestion, Skill]
 ---
 
@@ -87,6 +87,6 @@ rewrite the design for the rest. Nothing else — no linking, no sequencing.
 
 ## Boundaries
 
-- Produces tickets; never plans implementation, never dispatches coders, never invokes `/eng-spec` or `/deep-plan`.
+- Produces tickets; never plans implementation, never dispatches coders, never invokes `/eng-spec`.
 - Read-only against the repo.
 - If Jira/`/create-ticket` is unavailable, deliver the vetted brief inline for manual filing.

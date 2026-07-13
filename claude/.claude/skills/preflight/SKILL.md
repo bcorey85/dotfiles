@@ -1,13 +1,13 @@
 ---
 name: preflight
 disable-model-invocation: true
-description: Exit front door for the branch — one command between "the loop converged" and "you stage". Runs the pre-commit ladder in order: mechanical /stage triage (when installed) → lane-scoped /verify → orient (no-lane) → read-surface triage → receipt. Use for "preflight", "wrap up the branch", "ready to commit", "/preflight". Never stages semantic changes and never commits — the user reads the queue and stages, then /commit.
+description: Exit front door for the branch — one command between "the loop converged" and "you stage". Runs the pre-commit ladder in order: mechanical /stage triage (when installed) → /verify (when a spec exists) → orient (when none does) → read-surface triage → receipt. Use for "preflight", "wrap up the branch", "ready to commit", "/preflight". Never stages semantic changes and never commits — the user reads the queue and stages, then /commit.
 allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion, Skill]
 ---
 
 # Preflight
 
-The exit-side front door, symmetric to `/plan` on the entry side. It exists so
+The exit-side front door, symmetric to `/eng-spec` on the entry side. It exists so
 the pre-commit ladder runs by POLICY, not memory: every stage below either
 fires or is reported in the receipt as skipped-with-reason. A stage silently
 not-run is the failure mode this skill deletes.
@@ -59,31 +59,30 @@ invisible to the execution gate (it passes). It never stages anything.
   `COVERAGE-LOST`. Put that file at the top of the read-first queue.
 - Receipt line: `test-intent: <n> flagged | clean | skipped — no test files`.
 
-## Step 2: Completeness — `/verify` (lane-scoped)
+## Step 2: Completeness — `/verify` (only when a spec exists)
 
 ```bash
 bash ~/.claude/scripts/resolve-task-dir.sh "$ARGUMENTS"
 ```
 
-- Exit 0 (deep-plan) or 5 (eng-spec) → Skill-invoke `/verify`, passing the
-  resolved path. Gaps found → `/verify` owns the escape logging and `/fix`
-  routing; follow it to clean before continuing.
-- Exit 4 → skip; receipt line: `verify: skipped — no plan lane (completeness
-  not certified)`. Do not run a degraded verify against nothing.
+- Exit 0 (eng-spec task dir) or 5 (legacy flat eng-spec file) → Skill-invoke
+  `/verify`, passing the resolved path. Gaps found → `/verify` owns the escape
+  logging and `/fix` routing; follow it to clean before continuing.
+- Exit 4 → skip; receipt line: `verify: skipped — no spec (completeness not
+  certified)`. Do not run a degraded verify against nothing.
 - Exit 3 → AskUserQuestion: which match.
 
-## Step 2.5: Orient — no-lane branches only
+## Step 2.5: Orient — branches with no spec only
 
-On a lane branch (resolve exit 0 or 5), skip: the plan's Orient closing phase
-owns it, and running it here doubles the spend. On exit 4 (no lane) —
+On a spec branch (resolve exit 0 or 5), skip: the plan's Orient closing phase
+owns it, and running it here doubles the spend. On exit 4 (no spec) —
 Skill-invoke `/orient`: no closing phase exists on this path, so this is the
 only place the mental map gets rebuilt before the user reads the diff. Receipt
 line either way: `orient: ran — <vault note link>` or
-`orient: skipped — lane closing phase owns it`.
+`orient: skipped — spec closing phase owns it`.
 
-`/finalize` is NOT run here — it is sequenced after the PR opens (live mode
-wants the PR link). The receipt's Next section points to it on the deep-plan
-lane.
+`/adr` is NOT run here — it is sequenced after the PR opens (it wants the PR
+link). The receipt's Next section points to it.
 
 ## Step 3: Read-surface triage (report-only)
 
@@ -116,7 +115,7 @@ mark it `derived from diff — no handoff in context`.
 ```
 ## Preflight receipt — <repo> @ <branch>
 
-Lane: deep-plan <ticket> | eng-spec <file> | none (completeness not certified)
+Spec: <task-dir> | <legacy file> | none (completeness not certified)
 
 | Stage          | Result                                                    |
 | -------------- | --------------------------------------------------------- |
@@ -124,8 +123,8 @@ Lane: deep-plan <ticket> | eng-spec <file> | none (completeness not certified)
 | execution gate | <cmd> → exit 0 | not evidenced                            |
 | stage triage   | <n> SAFE staged, queue <m> | skipped — <reason>           |
 | test-intent    | <n> flagged | clean | skipped — no test files            |
-| verify         | clean | gaps → routed | skipped — no lane                 |
-| orient         | ran → <vault note> | skipped — lane owns it               |
+| verify         | clean | gaps → routed | skipped — no spec                 |
+| orient         | ran → <vault note> | skipped — spec owns it               |
 
 ### Changes  (from handoff | derived from diff)
 - <path> — <one-line change intent>
@@ -136,11 +135,11 @@ Lane: deep-plan <ticket> | eng-spec <file> | none (completeness not certified)
 ### Stage-ready (reviewed, low blast radius)
 git add -- <files>
 
-### Smoke-test checklist   (from the /verify packet, when a lane ran)
+### Smoke-test checklist   (from the /verify packet, when a spec exists)
 ### Open items             (medium.ask, test_intent.ask, low — verbatim)
 
 Next: read the read-first set → run the smoke checklist → stage → /commit.
-Deep-plan lane: after the PR opens, /finalize.
+After the PR opens: /adr.
 ```
 
 Persist (non-blocking; on failure mention and continue):
@@ -164,9 +163,9 @@ printf '{"ts":"%s","repo":"%s","branch":"%s","lane":"%s","review":"%s","stage_tr
   `test-intent-reviewer` (step 1.5) is the sole exception: it audits test
   INTENT against the oracle, which no other gate can see.
 - **Never edit code** — anything found routes through `/fix`.
-- **Never run `/finalize` pre-PR**, and never run `/orient` on a LANE branch —
-  the plan's Orient closing phase owns it there; doubling it doubles the
-  spend. (No-lane branches DO run it — step 2.5 is the only orient those
+- **Never run `/adr` pre-PR**, and never run `/orient` on a branch that has a
+  spec — the spec's Orient closing phase owns it there; doubling it doubles the
+  spend. (Branches with no spec DO run it — step 2.5 is the only orient those
   branches get.)
 - **Never re-run quality checks the execution gate already evidenced** — the
   2-run cap in `~/.claude/CLAUDE.md` applies across the whole task.

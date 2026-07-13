@@ -18,7 +18,7 @@ You MUST NOT treat the implementation as ground truth. Standard test review ("do
 
 ## Step 1 — Resolve the intent oracle
 
-Run the deep-plan resolver to find the spec directory for the current branch:
+Run the task resolver to find the spec directory for the current branch:
 
 ```bash
 bash ~/.claude/scripts/resolve-task-dir.sh

@@ -18,7 +18,7 @@ of being resolved by you.
 
 - `mode`: `review-first` (callers `/code`, `/review`) or `fix-first` (callers `/fix`, `/cc`, `/verify`).
 - `caller`: `code` | `review` | `fix` — for telemetry.
-- `lane`: `deep-plan` | `eng-spec` | `none` — plan provenance, pass-through to telemetry only. Absent → `none`.
+- `lane`: `eng-spec` | `code` | `none` — plan provenance, pass-through to telemetry only. Absent → `none`.
 - `handoff:` block — schema in `~/.claude/skills/_shared/handoff-block.md`. May be absent (manual `/review`).
 - Modifiers: `+deep` → dispatch `code-reviewer-deep` and OMIT `model` (its frontmatter pins Opus). `+fast` → pass `model: "haiku"`.
 - `no-review` (fix-first only): dispatch the fix coder, verify via the execution gate, return without a reviewer pass.

@@ -1,0 +1,26 @@
+# ef light — ef-reverie (oonamo/ef-themes.nvim port). ANSI per the
+# zenbones-light custom's convention: black 0/8 = ink, white 7/15 = bg-side
+# grey (the port's 7/15 are gray65/white, unusable on the warm paper bg;
+# #b9aaa8 is reverie's bg-active).
+palette = 0=#4f204f
+palette = 1=#ba2d2f
+palette = 2=#5a7400
+palette = 3=#87591f
+palette = 4=#5059c0
+palette = 5=#9f4e74
+palette = 6=#3060af
+palette = 7=#b9aaa8
+palette = 8=#4f204f
+palette = 9=#b21f00
+palette = 10=#008250
+palette = 11=#a05900
+palette = 12=#265fbf
+palette = 13=#7755b4
+palette = 14=#0b6e8a
+palette = 15=#b9aaa8
+background = #f3eddf
+foreground = #4f204f
+cursor-color = #4f204f
+cursor-text = #f3eddf
+selection-background = #e0d0ba
+selection-foreground = #4f204f

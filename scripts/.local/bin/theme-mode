@@ -35,7 +35,7 @@ TMUX_THEME_DIR="$HOME/.config/tmux"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="doom-one"
 
-families() { printf '%s\n' doom-one github gruvbox-material zenbones zenwritten kanagawa solarized rose-pine tokyonight catppuccin; }
+families() { printf '%s\n' doom-one github gruvbox-material zenbones zenwritten kanagawa solarized rose-pine tokyonight catppuccin token modus ef; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   case "$1:$2" in
@@ -53,7 +53,7 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # bases, non-canonical greys); ours is Schoonover's own 16-colour ANSI.
     solarized:*) echo "solarized-$2" ;; # custom: ghostty/themes/solarized-{dark,light}
     # builtins: these already put body fg on slot 15 (no blaze to fix).
-    rose-pine:dark) echo "Rose Pine" ;;
+    rose-pine:dark) echo "Rose Pine Moon" ;;
     rose-pine:light) echo "Rose Pine Dawn" ;;
     tokyonight:dark) echo "TokyoNight Night" ;; # darkest of the three darks
     tokyonight:light) echo "TokyoNight Day" ;;
@@ -62,6 +62,9 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # #bac2de) sit BELOW body fg, so "bright white" renders dimmer than normal
     # text. Ours pins both to body fg (#cdd6f4); everything else is stock Mocha.
     catppuccin:dark) echo "catppuccin-mocha" ;; # custom: ghostty/themes/catppuccin-mocha
+    token:*) echo "token-$2" ;; # custom: ghostty/themes/token-{dark,light} (upstream contrib files)
+    modus:*) echo "modus-$2" ;; # custom: ghostty/themes/modus-{dark,light} (tinted variants)
+    ef:*) echo "ef-$2" ;; # custom: ghostty/themes/ef-{dark,light}
   esac
 }
 

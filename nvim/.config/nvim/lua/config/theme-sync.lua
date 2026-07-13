@@ -179,7 +179,7 @@ local FAMILIES = {
   ["rose-pine"] = {
     -- rose-pine/neovim: three variants (main/moon/dawn) as separate
     -- colorschemes that all register colors_name = "rose-pine".
-    schemes = { dark = "rose-pine-main", light = "rose-pine-dawn" },
+    schemes = { dark = "rose-pine-moon", light = "rose-pine-dawn" },
     colors_name = "rose-pine",
     accents = {
       dark = { heading1 = "#c4a7e7", heading = "#9ccfd8" }, -- iris + foam
@@ -241,6 +241,160 @@ local FAMILIES = {
     fixup = function(mode)
       if mode == "light" then
         vim.api.nvim_set_hl(0, "Comment", { fg = blend("#5c5f77", "#6c6f85", 0.5), italic = true })
+      end
+    end,
+  },
+  token = {
+    -- ThorstenRhau/token: zero-config warm palette (orange-tinted off-white
+    -- body, muted sage/red git accents). One scheme for both modes; it picks
+    -- its palette from vim.o.background.
+    schemes = { dark = "token", light = "token" },
+    accents = {
+      dark = { heading1 = "#a68bbf", heading = "#7b9ebd" }, -- purple + blue
+      light = { heading1 = "#7c619a", heading = "#527594" },
+    },
+    -- Stock needs nothing: comments clear the floor (4.66:1 dark / 5.34:1
+    -- light), Diff* are real bg-only washes in both modes, and GitSigns*
+    -- ship with proper fg colors.
+  },
+  modus = {
+    -- miikanissi/modus-themes.nvim, TINTED variants: vivendi-tinted (night-sky
+    -- indigo #0d0e1c) dark / operandi-tinted (warm paper #fbf7f0) light.
+    -- WCAG-AAA by design: body sits ~19:1 in both modes — far above the house
+    -- 9–13 comfort band, kept stock because maximum contrast IS this theme.
+    -- Both styles register colors_name "modus"; the tinted palettes come from
+    -- setup(), so pre() re-primes before every :colorscheme.
+    schemes = { dark = "modus_vivendi", light = "modus_operandi" },
+    colors_name = "modus",
+    pre = function()
+      require("modus-themes").setup({
+        variants = { modus_operandi = "tinted", modus_vivendi = "tinted" },
+      })
+    end,
+    accents = {
+      dark = { heading1 = "#b6a0ff", heading = "#79a8ff" }, -- violet + blue
+      light = { heading1 = "#531ab6", heading = "#0031a9" },
+    },
+    -- The port takes big liberties with prot's syntax mapping (tan functions,
+    -- plain-fg constants, violet statements, invented italics — none exist in
+    -- emacs, where bold/italic constructs are opt-in and off). Re-anchor every
+    -- deviating group to the emacs *-tinted palette slots (modus-themes.el
+    -- defconst blocks): fnname/fnname-call, keyword (also drives Statement*),
+    -- constant, type, variable/property, preprocessor, comment, docstring;
+    -- numbers and plain variable uses are body-fg in emacs. Also: DiffText
+    -- ships IDENTICAL to DiffChange (same bg), which blinds the word-diff
+    -- glue — lift it a shade past the line wash.
+    fixup = function(mode)
+      local hl = vim.api.nvim_set_hl
+      local p = mode == "dark"
+          and {
+            comment = "#ef8386", string = "#2fafff", docstring = "#9ac8e0",
+            fnname = "#f78fe7", fncall = "#d09dc0", keyword = "#79a8ff",
+            constant = "#b6a0ff", type = "#11c777", variable = "#4ae2f0",
+            preproc = "#ff7f86", fg = "#ffffff",
+          }
+          or {
+            comment = "#7f0000", string = "#00598b", docstring = "#304463",
+            fnname = "#602938", fncall = "#7b435c", keyword = "#0031a9",
+            constant = "#531ab6", type = "#306010", variable = "#00603f",
+            preproc = "#894000", fg = "#000000",
+          }
+      hl(0, "Comment", { fg = p.comment })
+      hl(0, "String", { fg = p.string })
+      hl(0, "Character", { fg = p.string })
+      hl(0, "Function", { fg = p.fnname })
+      hl(0, "Keyword", { fg = p.keyword })
+      for _, g in ipairs({ "Statement", "Conditional", "Repeat", "Exception", "StorageClass", "Structure" }) do
+        hl(0, g, { fg = p.keyword })
+      end
+      hl(0, "Type", { fg = p.type })
+      hl(0, "Constant", { fg = p.constant })
+      hl(0, "Boolean", { fg = p.constant })
+      hl(0, "Number", { fg = p.fg })
+      hl(0, "Identifier", { fg = p.variable })
+      for _, g in ipairs({ "PreProc", "Include", "Define", "Macro" }) do
+        hl(0, g, { fg = p.preproc })
+      end
+      hl(0, "@variable", { fg = p.fg })
+      hl(0, "@variable.parameter", { fg = p.variable })
+      hl(0, "@property", { fg = p.variable })
+      hl(0, "@function.call", { fg = p.fncall })
+      hl(0, "@function.method.call", { fg = p.fncall })
+      hl(0, "@constructor", { fg = p.fncall })
+      hl(0, "@keyword.function", { link = "Keyword" })
+      hl(0, "@constant.builtin", { fg = p.constant })
+      hl(0, "@string.documentation", { fg = p.docstring })
+      if mode == "dark" then
+        hl(0, "DiffText", { fg = "#efef80", bg = "#514b12", bold = true })
+      else
+        hl(0, "DiffText", { fg = "#553d00", bg = "#f5c96c", bold = true })
+      end
+    end,
+  },
+  ef = {
+    -- oonamo/ef-themes.nvim port of prot's ef-themes, DREAM/REVERIE pair (the
+    -- dusky couple): purple-tinted grey #232025 with warm cream body dark /
+    -- warm paper #f3eddf with deep purple ink #4f204f light. Body contrast
+    -- 11.5:1 dark / 10.9:1 light — mid comfort band. Each scheme registers
+    -- its own colors_name.
+    schemes = { dark = "ef-dream", light = "ef-reverie" },
+    accents = {
+      dark = { heading1 = "#d0b0ff", heading = "#80aadf" }, -- violet + periwinkle
+      light = { heading1 = "#7755b4", heading = "#5059c0" },
+    },
+    -- The port's colors match the emacs elea palettes but its STYLING doesn't:
+    -- bold keywords/types/operators and italic comments everywhere, where
+    -- prot's engine is flat by default (bold/italic constructs are opt-in).
+    -- Flatten those, break the port's Delimiter→Comment link (punctuation
+    -- rendered as italic comment color), and re-anchor the groups it colored
+    -- off-palette: Statement* to keyword (not constant-violet), numbers to
+    -- body fg, parameters/members/properties to variable-magenta, calls to
+    -- fnname-call, @type.builtin to type. Hexes from the emacs
+    -- ef-{dream,reverie}-theme.el palettes. DiffText is re-anchored on prot's
+    -- own bg-changed-refine/fg-changed (the port's DiffText drifts off the
+    -- changed ramp), which keeps word emphasis inside a changed line on the
+    -- yellow wash instead of reading as an add.
+    fixup = function(mode)
+      local hl = vim.api.nvim_set_hl
+      local p = mode == "dark"
+          and {
+            comment = "#a0a0cf", keyword = "#deb07a", type = "#a9c99f",
+            variable = "#ffaacf", builtin = "#e3b0c0", fncall = "#99bfcf",
+            docstring = "#caa89f", fg = "#efd5c5",
+          }
+          or {
+            comment = "#475d80", keyword = "#906045", type = "#426340",
+            variable = "#9f4e74", builtin = "#97508f", fncall = "#456b82",
+            docstring = "#7a5c50", fg = "#4f204f",
+          }
+      hl(0, "Comment", { fg = p.comment })
+      hl(0, "Keyword", { fg = p.keyword })
+      hl(0, "Statement", { fg = p.keyword })
+      hl(0, "Type", { fg = p.type })
+      hl(0, "Operator", { fg = p.fg })
+      hl(0, "Delimiter", { fg = p.fg })
+      hl(0, "Number", { fg = p.fg })
+      for _, g in ipairs({ "@keyword", "@keyword.function", "@keyword.return", "@keyword.operator", "@keyword.import" }) do
+        hl(0, g, { fg = p.keyword })
+      end
+      hl(0, "@operator", { fg = p.fg })
+      hl(0, "@punctuation.bracket", { fg = p.fg })
+      hl(0, "@punctuation.delimiter", { fg = p.fg })
+      hl(0, "@type.builtin", { fg = p.type })
+      hl(0, "@variable.builtin", { fg = p.builtin })
+      hl(0, "@function.builtin", { fg = p.builtin })
+      hl(0, "@constant.builtin", { fg = p.builtin })
+      hl(0, "@variable.parameter", { fg = p.variable })
+      hl(0, "@variable.member", { fg = p.variable })
+      hl(0, "@property", { fg = p.variable })
+      hl(0, "@function.call", { fg = p.fncall })
+      hl(0, "@function.method.call", { fg = p.fncall })
+      hl(0, "@constructor", { fg = p.fncall })
+      hl(0, "@comment.documentation", { fg = p.docstring })
+      if mode == "dark" then
+        hl(0, "DiffText", { fg = "#dada90", bg = "#64651f", bold = true })
+      else
+        hl(0, "DiffText", { fg = "#553d00", bg = "#eed284", bold = true })
       end
     end,
   },

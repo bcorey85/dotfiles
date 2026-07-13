@@ -99,9 +99,28 @@ An unmet criterion is not automatically blocking — the PR may be a deliberate 
 | Author | File:Line | Overlaps finding # |
 ```
 
-Number findings continuously across tiers. End with:
+Number findings continuously across tiers. Then **actively offer the next step via AskUserQuestion** — do not rely on the user remembering a typed command. Options, in this order:
 
-> Say `dig into <#>` to verify a finding in depth, or re-run with `+comment` to draft review comments from the confirmed set.
+- **Run surprise audit (Recommended)** — second pass on what the description doesn't prepare a reader for (step 5b). Recommend it by default: it reliably surfaces blockers the category pass misses.
+- **Dig into a finding** — user names the number(s); proceed to step 6.
+- **Done for now** — stop; the user acts on the findings as-is.
+
+(`+comment` stays a re-invocation modifier, not a menu option.) If the user picks the audit, run step 5b; after it, offer the same menu again minus the audit. The user can always type `dig into <#>` or `surprise audit` directly instead of using the menu.
+
+### 5b. Surprise audit (user accepts the offer, or types "surprise audit")
+
+A category-tiered review answers "is this line a bug?". This pass answers a different question — **"does this code do something a reviewer who trusted the PR/ticket description would not expect?"** — and it reliably surfaces blockers the first pass misses. Run it only when the user asks; it's a deliberate second look, not part of the default report.
+
+Main-agent, over the diff and findings you already hold (no new dispatch). The frame is the gap between what the description leads a reader to expect and what the code operationally does — not more of the same category sweep. Look for:
+
+- **Hidden runtime dependencies** — a feature that silently hinges on something the description never mentions (a browser tab being open, a specific caller, an external timer).
+- **Silent / permanent failure modes** — paths where a transient error, a swallowed exception, or an ordering choice (e.g. state written *before* a best-effort side effect) loses data or work with no retry and no signal.
+- **Scope surprises** — a limit, cap, default, or deletion that's broader or narrower than the description implies.
+- **"Technically conforms but sharper than the ticket implies"** — edges that meet the acceptance criteria on paper while behaving in a way the author likely didn't intend a reviewer to discover.
+
+**Verify every candidate against the worktree before presenting it** — read the enclosing code, check for the scheduler/guard/retry the candidate assumes is absent, confirm the true scope of a cap or filter. This step is not optional: in the run this pass came from, verification scope-corrected one "blocker" candidate down to a non-issue. Presenting an unverified surprise as confirmed relays a false positive to a colleague, the exact failure this skill guards against.
+
+Merge survivors into the existing tiers, tagged `(surprise-lens)` so the user sees they came from this pass, not the category review. Drop refuted candidates silently (or note one line if the user would otherwise expect it). Then re-present the step-5 menu minus the audit.
 
 ### 6. Drill-down (on "dig into N")
 

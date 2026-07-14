@@ -51,10 +51,9 @@ skeleton`, the thinnest end-to-end path exercising every Phase 0 contract
   polish, UX feel) must say so explicitly so they route to the human-only
   list.
 - Every plan ends with the four mandatory closing phases (Refactor → Verify →
-  Orient → Finalize) from `~/.claude/skills/_shared/closing-phases.md`,
-  appended after the last feature phase and numbered continuously. Not
-  negotiable, never omitted — include them in `## Phase Status` and as full
-  Phase sections.
+  Orient → Recap) from `~/.claude/skills/_shared/closing-phases.md`, appended
+  after the last feature phase and numbered continuously. Not negotiable, never
+  omitted — include them in `## Phase Status` and as full Phase sections.
 
 ## Template
 
@@ -84,9 +83,9 @@ don't exist.
 <!-- Mandatory closing phases (closing-phases.md), renumbered after the last feature phase: -->
 
 - [ ] Phase N: Refactor pass — /refactor cleanup sweep (risk: low)
-- [ ] Phase N+1: Verify pass — /verify (behavioral) + /verify (plan↔diff) (risk: high)
+- [ ] Phase N+1: Verify pass — branch-wide deep review + /verify (plan↔diff + smoke list) (risk: high)
 - [ ] Phase N+2: Orient pass — /orient situate the change (risk: low)
-- [ ] Phase N+3: Finalize — <finalize | adr> durable decision record (risk: low)
+- [ ] Phase N+3: Recap — /branch-recap synthesis + residue triage (risk: low)
 
 ## Current State Analysis
 

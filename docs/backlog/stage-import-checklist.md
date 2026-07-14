@@ -1,5 +1,12 @@
 # /stage Import Checklist
 
+> **SUPERSEDED (2026-07-14) — done, and its premise is gone.** The import landed:
+> `/stage` exists, its Opus verify/suppress tier was removed (2026-07-11), and
+> `review-loop` no longer runs the loop-side test-intent audit. The `/preflight`
+> ladder this checklist is written against no longer exists either — see
+> `docs/eng-specs/preflight-inversion.md`. Gates now fire per phase; branch exit is
+> `/branch-recap`, a synthesis with no gates. Kept for history; do not action.
+
 > Everything in this repo that must change in the same PR as pulling the work machine's `/stage` skill in.
 
 ## Context

@@ -37,6 +37,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
      2. **Behavioral verification (terminal-only)** — only if job 1 is clean and the phase has `Manual Verification` items: execute every item it can drive from the terminal — curl the endpoint, run the CLI, execute the scenario command. **NO browser driving of any kind** (no Playwright, no browser MCP): anything UI-level is tagged `human-only` — UI smoke testing is the user's job, fed by the smoke-test checklist `/verify` emits at branch end. It records results by editing the plan in place: `- [x] agent-verified: <item> — <evidence: command + observed result>`, or `- [ ] human-only: <item> — <why it can't be driven>`. It never checks an item without captured evidence — observed output, not asserted success.
 
      **Write scope (hard fence)**: its ONLY permitted edits are the Manual Verification checkbox lines above. It changes NO code and never touches Success Criteria, Acceptance Stubs, or Phase Status — a gap-finder that can rewrite its own bar isn't a gate. Gaps from job 1: do NOT mark the phase done; dispatch `/fix` once with the gaps as the issue list, then re-run job 1 once (job 2 after, if newly clean). Still dirty → stop and hand the remaining gaps to the user. Human-only remainders accumulate for the end-of-feature review packet (`/verify`).
+   - **Test-intent gate (bug-pinning only)** — only when `git diff --name-only` for this phase hits a test file. Dispatch `test-intent-reviewer` (pinned; omit `model`) with the phase's `Success Criteria` and `Acceptance Stubs` as the intent oracle, scoped to **bug-pinning only**: does each changed assertion pin INTENDED behavior, or codify whatever the implementation happens to do? The oracle is sharpest here — a phase's criteria are specific in a way a whole ticket against a five-phase diff is not — and the cost is asymmetric: a test that pins a bug at phase 2 becomes the bar phases 3..N are built to satisfy. **The cull half (test spam, `COVERAGE-LOST`) does NOT run here** — both are cross-phase properties (a duplicate test across phases 2 and 4 is invisible from inside either; a test deleted in phase 1 and replaced in phase 3 would false-positive), so `/branch-recap` owns them at the Recap closing phase. `weak`/`bug-pinning` verdicts → `/fix`, then re-run the execution gate. Do NOT mark the phase done on an open verdict.
    - After peer review passes AND the drift gate is clean, mark the phase done in the plan: `Edit` the `## Phase Status` section to flip `- [ ] Phase N: ...` → `- [x] Phase N: ...`. This single Edit is the durable record of progress — it survives `/clear` and lets in-session re-entry detect the next phase.
    - **Phase-boundary decision** — the phase is done; now decide stop vs. auto-advance, checking these in order (first match wins), then print the matching Phase-Complete Block:
      1. **Last phase** → STOP; print the completion footer (block C).
@@ -130,6 +131,16 @@ Then re-enter step 2 for Phase <N+1> in the same context — do not wait for the
 ```
 Phase <N> complete. Risk: <high | low — Phase 1 calibration | low — exception>. Phase-level sign-off requested.
 
+What changed:
+- <path> — <one-line change intent>
+
+Read first (/stage queue, blast-radius order):
+  ESCALATE:
+  - <path> — <classifier reason>
+  READ / SKIM:
+  - <path>
+Staged mechanically (<n>) — invariant-verified, skip.
+
 Agent-verified (evidence in the plan):
 - <item — one-line evidence summary>
 
@@ -138,13 +149,13 @@ Human-only verification remaining:
 - <...>
 
 Next:
-  1. Spot-check the evidence lines; run the human-only items.
-  2. Confirm to continue to Phase <N+1> — in-session (no /clear needed; /clear only if context got heavy).
+  1. Read the queue; spot-check the evidence lines; run the human-only items.
+  2. Stage what you've read, then confirm to continue to Phase <N+1> — in-session (no /clear needed; /clear only if context got heavy).
 
 Or give feedback now for revisions to Phase <N>.
 ```
 
-**C — Last phase** (decision rule 1): print block B's verification lists, then replace its "Next" block with:
+**C — Last phase** (decision rule 1): print block B's walkthrough and verification lists, then replace its "Next" block with:
 
 ```
 All phases complete. Next: /verify (completeness + review packet; includes the remaining human-only checks), then you open the PR.
@@ -154,8 +165,37 @@ Resolution rules:
 
 - `<N>` is the just-finished phase number; `<N+1>` the next.
 - `<plan-path>` is the absolute or repo-relative path the orchestrator was invoked with.
-- Verification items come from the just-finished phase's `#### Manual Verification:` section in the plan, split by the verifier agent's `agent-verified` / `human-only` tags. If that section is empty in block B, omit both lists and replace step 1 with: "Spot-check the diff."
+- Verification items come from the just-finished phase's `#### Manual Verification:` section in the plan, split by the verifier agent's `agent-verified` / `human-only` tags. If that section is empty in block B, omit both lists and replace step 1 with: "Read the /stage queue."
 - **No risk tag (older plan format) → treat as high** (block B).
+
+### The walkthrough (blocks B and C)
+
+This is what the user reads to sign off on the phase and decide what to stage.
+**Skill-invoke `/stage` to build it** — do not rank files yourself.
+
+`/stage` runs the deterministic classifier: it stages the SAFE tier (mechanical,
+invariant-verified) and returns everything else as an ESCALATE / READ / SKIM queue
+in blast-radius order. That queue **is** the "Read first" section — render it, never
+re-rank it, never promote a tier. A model verdict that licenses the user to skip
+reading semantic changes is the exact trade `/stage` was written to refuse; ranking
+by judgment here would smuggle it back in.
+
+- **What changed** — one line per changed file: the path and what the phase did to
+  it, in the coder's terms (from the handoff; absent one, `git diff --stat` and mark
+  it `derived from diff`). Not a hunk summary.
+- **Read first** — `/stage`'s queue, verbatim, in its order. SAFE-tier files are
+  already staged and do not appear.
+
+Two fences:
+
+- **Never feed this ordering into a reviewer dispatch.** It renders only after
+  `review-loop` returns `converged`, and only to the user. Pre-labelling files
+  "low priority" for a reviewer anchors it into skimming exactly where quiet bugs
+  survive — the same rule `/orient`'s attention map carries.
+- **This is not `/orient`.** It maps the phase's own diff so the user can read and
+  stage it. It does not open the unchanged neighbours, and it does not replace the
+  branch-wide Orient closing phase, which is the only pass that builds the system
+  model across phases.
 
 For complex features requiring design decisions, use `/eng-spec` instead.
 

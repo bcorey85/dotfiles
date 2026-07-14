@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # resolve-task-dir.sh — resolve the /eng-spec task directory under docs/eng-specs/
-# Shared by /verify, /preflight, /code, and /adr. Do NOT reimplement inline.
+# Shared by /verify, /branch-recap, /code, and /adr. Do NOT reimplement inline.
 #
 # usage: resolve-task-dir.sh [<path-or-ticket>]
 #   <path>    existing directory -> used directly

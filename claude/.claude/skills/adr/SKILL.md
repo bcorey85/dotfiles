@@ -1,6 +1,5 @@
 ---
 name: adr
-disable-model-invocation: true
 description: Produce a durable decision record (ADR) — sources the "why" from an eng-spec task directory, the conversation, and the branch diff, then collapses the spec scaffolding into the record. Use after shipping a feature that involved a real design decision. Triggers on "/adr", "write an ADR", "record this decision".
 allowed-tools: [Bash, Read, Glob, Grep, Write, Edit, AskUserQuestion]
 ---

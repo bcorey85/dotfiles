@@ -1,6 +1,5 @@
 ---
 name: research
-disable-model-invocation: true
 description: Research the best way to do something using web search. Use when the user says "research", "how should I", "what's the best way to", "look up", "what do the docs say about", or "/research". Also trigger when the user asks a technical question where the answer depends on current library versions, tool behavior, or ecosystem conventions that may have changed since training data. Do NOT trigger for questions answerable from the current codebase alone — use Grep/Read for those.
 ---
 
@@ -17,6 +16,7 @@ Investigate a technical question using web search and synthesize a concise, acti
 ### Phase 1: Parse the Question
 
 Extract the core question from `<question>`. Identify:
+
 - **Subject**: the tool, library, or concept being asked about
 - **Context**: any constraints from the current project (check CLAUDE.md and package.json if relevant)
 - **Goal**: what the user wants to achieve or decide
@@ -40,6 +40,7 @@ Prioritize results from the current year. Discard results older than 2 years unl
 For the top 2-3 most promising results, use WebFetch to read the actual page content. Don't rely on search snippets alone — they often lack critical nuance, version constraints, or caveats.
 
 Look for:
+
 - Version-specific guidance (does the answer change between v3 and v4?)
 - Official recommendations vs community workarounds
 - Known gotchas or deprecation warnings

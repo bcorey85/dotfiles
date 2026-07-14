@@ -1,6 +1,5 @@
 ---
 name: brainstorm
-disable-model-invocation: true
 description: Vet a rough idea into a correct Jira ticket for a teammate. Use when the user wants to think through an issue before filing it, or says "brainstorm", "write this up for the team", "is this ticket right". Verifies the premise against the real codebase, resolves the approach, then hands off to /create-ticket. Do NOT use for work about to be planned or implemented here — /eng-spec INGESTS tickets; this skill PRODUCES them.
 allowed-tools: [Bash, Read, Glob, Grep, AskUserQuestion, Skill]
 ---
@@ -69,7 +68,7 @@ Hand off a structured brief: **outcome + verified constraints** → `## Work`
 (with the appetite as one line, e.g. `Appetite: ~2 days` — the timebox is
 what pushes the implementer to decide core vs peripheral), done-criteria →
 `## Acceptance`, the resolved approach → `## Technical Notes` as a
-*recommendation*, rejected approaches + verification evidence →
+_recommendation_, rejected approaches + verification evidence →
 `## Technical Notes`, unknowns → `## Open Questions`. Pass the epic link
 through if one was given.
 

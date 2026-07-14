@@ -1,6 +1,5 @@
 ---
 name: calibrate
-disable-model-invocation: true
 description: Measure your reviewer's actual recall by seeding a known defect into the working diff, running the real reviewer blind, and checking whether it caught it. Answers the question the review metrics cannot - whether a zero-finding run means "clean" or "the instrument failed". Use for "calibrate the reviewer", "seed a defect", "is my review loop actually working", "/calibrate". Always restores the tree; never commits.
 allowed-tools: [Agent, Bash, Read, Write, Edit, Glob, Grep]
 ---
@@ -50,16 +49,16 @@ sabotage. A reviewer catching `x = null; x.foo()` proves nothing.
 Defect classes (pick one; vary across runs, never repeat the same class twice
 in a row — a reviewer can be good at one class and blind to another):
 
-| Class | Mutation |
-| --- | --- |
-| boundary | `<` → `<=`, `i < n` → `i <= n`, off-by-one on a slice/index |
-| inverted-guard | drop a `!`, flip an early-return condition |
-| dropped-async | remove an `await`, drop a `.catch`, fire-and-forget a promise |
-| swapped-args | transpose two same-typed params at a call site |
-| removed-check | delete a null/undefined/empty guard that the code below relies on |
-| wrong-error-path | swallow an error, return a default where it should throw |
-| stale-state | read a value before the write that should precede it; drop a dependency from a hook/memo |
-| resource-leak | remove a cleanup/close/unsubscribe on one path |
+| Class            | Mutation                                                                                 |
+| ---------------- | ---------------------------------------------------------------------------------------- |
+| boundary         | `<` → `<=`, `i < n` → `i <= n`, off-by-one on a slice/index                              |
+| inverted-guard   | drop a `!`, flip an early-return condition                                               |
+| dropped-async    | remove an `await`, drop a `.catch`, fire-and-forget a promise                            |
+| swapped-args     | transpose two same-typed params at a call site                                           |
+| removed-check    | delete a null/undefined/empty guard that the code below relies on                        |
+| wrong-error-path | swallow an error, return a default where it should throw                                 |
+| stale-state      | read a value before the write that should precede it; drop a dependency from a hook/memo |
+| resource-leak    | remove a cleanup/close/unsubscribe on one path                                           |
 
 **Record before mutating**, then write the lock:
 
@@ -166,4 +165,4 @@ conclude from three runs.
 
 ## Arguments
 
-$ARGUMENTS  — `+deep` to calibrate the deep reviewer tier instead of sonnet.
+$ARGUMENTS — `+deep` to calibrate the deep reviewer tier instead of sonnet.

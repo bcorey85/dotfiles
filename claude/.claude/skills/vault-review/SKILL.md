@@ -1,7 +1,6 @@
 ---
 name: vault-review
-disable-model-invocation: true
-description: Turn captured notes into action. `today` (default) — collect open todos from the vault's org files, age them, help pick today's focus, and write it into today's daily note. `week` — compile the last 7 days into a weekly reflection with recurring-roadblock ages, decision log, journal themes, and promotion candidates. Triggers on "/vault-review", "what's open", "weekly review", "review my notes".
+description: Turn captured notes into action. `today` (default) — collect open follow-ups from recent daily notes, age them, help pick today's focus, and write it into today's daily note. `week` — compile the last 7 days into a weekly reflection with recurring-roadblock ages, decision log, and promotion candidates. Triggers on "/vault-review", "what's open", "weekly review", "review my notes".
 allowed-tools: [Read, Glob, Grep, Bash, Write, Edit, AskUserQuestion, Skill]
 ---
 

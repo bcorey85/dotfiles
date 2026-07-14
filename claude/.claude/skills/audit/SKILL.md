@@ -1,6 +1,5 @@
 ---
 name: audit
-disable-model-invocation: true
 description: Entry point for toolkit health and telemetry reports — lanes; usage (token burn by day × model from local transcripts), skills (skill toolkit vs usage telemetry), review (review flywheel — catches, escapes, second drafts, calibration). Use for "/audit", "where are my tokens going", "token burn", "usage breakdown", "am I burning limits", "audit my skills", "which skills am I not using", "review stats", "review flywheel", "how is the review loop calibrated".
 allowed-tools: [Bash, Read, Glob, Grep]
 ---
@@ -12,10 +11,10 @@ that lane's file (same directory as this skill), and follow it. Remaining
 arguments after the lane pass through to the lane (e.g. a repo filter, a date
 range).
 
-| Lane     | File        | Question it answers                                        |
-| -------- | ----------- | ---------------------------------------------------------- |
-| `usage`  | `usage.md`  | Where are my tokens/limits going? (day × model, main vs subagent) |
-| `skills` | `skills.md` | Which skills earn their always-loaded description tax?     |
+| Lane     | File        | Question it answers                                                      |
+| -------- | ----------- | ------------------------------------------------------------------------ |
+| `usage`  | `usage.md`  | Where are my tokens/limits going? (day × model, main vs subagent)        |
+| `skills` | `skills.md` | Which skills earn their always-loaded description tax?                   |
 | `review` | `review.md` | Is the review flywheel calibrated? (catches vs escapes vs second drafts) |
 
 Lane resolution: match the first argument or an obvious synonym (tokens/burn/limits → `usage`; flywheel/escapes/calibration → `review`). `all` runs all three, usage first. No lane and no clear synonym → ask which lane, one line, don't guess.

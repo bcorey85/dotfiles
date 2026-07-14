@@ -17,7 +17,10 @@ and the human skimming phases.
 ## Format rules (hard)
 
 - `## Phase Status` is mandatory — `/code` uses it as the durable record of
-  "which phase is next" across `/clear` boundaries. Never delete it.
+  "which phase is next" across `/clear` boundaries. Never delete it. Consumers
+  find it by HEADING, not position: in `/eng-spec`'s `spec.md` it is hoisted to
+  the top of the file (above the judgment layer) so a peek shows progress
+  immediately. In a standalone plan it sits where the template below puts it.
 - Every Phase Status line carries a `(risk: low|high)` tag.
 - Phases are VERTICAL slices (each independently verifiable end-to-end),
   never horizontal layers.

@@ -24,18 +24,21 @@ and the human skimming phases.
 - Every Phase Status line carries a `(risk: low|high)` tag.
 - Phases are VERTICAL slices (each independently verifiable end-to-end),
   never horizontal layers.
+- Keep each phase's diff signable in one sitting — past ~8–10 semantic files
+  (generated/lockfile/rename churn excluded), split on a natural seam into
+  dependency-ordered slices, unless it can't without losing end-to-end
+  verifiability (walking skeleton, broad rename); then append
+  `— atomic: <why>` to its Phase Status line.
 - Multi-phase plans open with `Phase 0: Contracts` — the coordination surface
   between slices/streams (shared types, schemas, API shapes, migration
   sketches) as committable content, not prose — then `Phase 1: Walking
 skeleton`, the thinnest end-to-end path exercising every Phase 0 contract
-  (`/code` always stops after Phase 1 for calibration, so a skeleton Phase 1
-  puts the full wiring in front of that mandatory human stop). Remaining
+  (`/code` stops after Phase 1 for calibration). Remaining
   slices follow in dependency order. Phase 0 is always `(risk: high)` — it IS
   the public-contract tier — and is FROZEN at plan approval: implementers
   changing Phase 0 content mid-plan is a stop-and-surface Plan Deviation,
   never a silent edit. Parallel coder fan-out is allowed only after the
-  skeleton phase completes (it's what proves the contracts the streams code
-  against). Single-slice plans with no coordination surface may fold
+  skeleton phase completes. Single-slice plans with no coordination surface may fold
   contracts into Phase 1 — state so explicitly. Front-load only the surface
   between slices; internal design stays inside its slice.
 - A phase with no user-observable behavior (migration-only, infra-only — the

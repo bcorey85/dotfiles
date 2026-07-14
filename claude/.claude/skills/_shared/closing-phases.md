@@ -28,8 +28,7 @@ at Phase 3, these are Phases 4–7).
    - `/verify` — reconcile the shipped diff against the ticket/plan
      (completeness, every Acceptance Stub flipped), run the plan's Automated
      Verification commands, and emit the **human smoke-test checklist** (ACs
-     + all human-only Manual Verification items). No agent browser-driving —
-     UI smoke testing is the user's job, from that checklist.
+     + all human-only Manual Verification items).
      Success Criteria: deep review clean, reconciliation reports no missing
      work, smoke-test checklist delivered.
 
@@ -39,10 +38,14 @@ at Phase 3, these are Phases 4–7).
    orientation summary produced; any surprise coupling surfaced as a
    follow-up.
 
-4. **Finalize** (risk: low) — collapse the work into a durable decision
-   record, pre-merge, so it ships in the same PR:
-   - `/adr` (sources the "why" from the spec + diff).
-     Success Criteria: ADR written.
+4. **Recap** (risk: low) — `/branch-recap` reassembles the branch into one
+   artifact before the PR: the **cross-phase test audit** (cull + coverage-net,
+   the half of test-intent no phase can judge locally), `/stage` triage of the
+   closing phases' own residue, and the recap receipt. It runs no gates — each
+   already fired where its oracle was sharper. Success Criteria: recap
+   produced; residue queue handed to the user.
+
+Nothing after this is a phase. `/adr` is **post-PR** — it wants the PR link.
 
 ## Phase Status lines (copy verbatim, renumbering)
 
@@ -50,5 +53,5 @@ at Phase 3, these are Phases 4–7).
 - [ ] Phase N: Refactor pass — /refactor cleanup sweep (risk: low)
 - [ ] Phase N+1: Verify pass — branch-wide deep review + /verify (plan↔diff + smoke list) (risk: high)
 - [ ] Phase N+2: Orient pass — /orient situate the change (risk: low)
-- [ ] Phase N+3: Finalize — /adr durable decision record (risk: low)
+- [ ] Phase N+3: Recap — /branch-recap synthesis + residue triage (risk: low)
 ```

@@ -376,7 +376,7 @@ do not move back down. Lines and risk tags follow plan-format.md exactly. -->
 - [ ] Phase 0: Contracts — frozen at plan approval (risk: high)
 - [ ] Phase 1: Walking skeleton (risk: low|high)
 - [ ] Phase 2: [name] (risk: low|high)
-- [ ] Phase N..N+3: Refactor → Verify → Orient → Finalize (closing-phases.md)
+- [ ] Phase N..N+3: Refactor → Verify → Orient → Recap (closing-phases.md)
 
 ## Decisions
 
@@ -431,8 +431,8 @@ with ONE deviation: its `## Phase Status` section lives at the TOP of this file
 (Automated/Manual Verification with the project's real commands), Acceptance Stubs
 when the ticket has behavioral criteria. This is what /code's phase gates and
 /verify consume. Every spec ends with the four mandatory closing phases from
-~/.claude/skills/_shared/closing-phases.md (Refactor → Verify → Orient → Finalize;
-Finalize = /adr) — never omitted. -->
+~/.claude/skills/_shared/closing-phases.md (Refactor → Verify → Orient → Recap;
+Recap = /branch-recap) — never omitted. -->
 ```
 
 ## Arguments

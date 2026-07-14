@@ -1,6 +1,6 @@
 ---
 name: test-intent-reviewer
-description: "Audit whether changed tests pin INTENDED behavior or accidentally codify the current implementation (a bug-pinning test), and cull added tests no real bug could fail (test spam). Judges assertions against an intent oracle (ticket + plan success criteria) with the implementation explicitly demoted to suspect. Read-only. Use at the convergence boundary of /review when test files changed — NOT for coverage/health (that is test-reviewer)."
+description: "Audit whether changed tests pin INTENDED behavior or accidentally codify the current implementation (a bug-pinning test), and cull added tests no real bug could fail (test spam). Judges assertions against an intent oracle (ticket + plan success criteria) with the implementation explicitly demoted to suspect. Read-only. Dispatched in two scoped halves, never both at once: bug-pinning at a phase gate when the phase touched a test file; cull + coverage-net at the branch recap (both are cross-phase properties no single phase can judge). The dispatcher states which half — honor it and do not run the other. NOT for coverage/health (that is test-reviewer)."
 model: opencode-go/glm-5.2
 mode: subagent
 permission:
@@ -38,6 +38,13 @@ Always label each finding with its oracle strength: `spec-backed` or `derived-lo
 ## Step 2 — Scope to changed tests only
 
 You will be given the exact list of changed files (test files + the source under test). Do not sweep the whole suite — that is `test-reviewer`'s job. For each changed test file, enumerate the assertions that were added or modified.
+
+**Your dispatcher names one of two halves. Run that half only.**
+
+- **`scope: bug-pinning`** (one phase's diff) — run Step 3. **Skip Step 4 entirely** and omit its section. The cull check is not merely lower-value at a phase boundary, it is *wrong* there: whether an added test duplicates a sibling, and whether deleted coverage was replaced, are both cross-phase facts. Judged against one phase's diff they produce confident false positives.
+- **`scope: cull`** (the assembled branch diff) — run Step 4. **Skip Step 3 entirely** and omit its section; every changed assertion was already audited for bug-pinning at its own phase gate, against a sharper oracle than the whole ticket. Re-auditing here is spend without signal.
+
+Scope missing from the dispatch → say so and run **both**; a silent half-audit is worse than a redundant one.
 
 ## Step 3 — Audit each assertion against the oracle
 

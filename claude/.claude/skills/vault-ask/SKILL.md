@@ -18,10 +18,20 @@ index, queryable. Read-only — never edit or create anything.
    "arvo" for Avro). 2–4 `rg -i -l` passes over `*.md` and `*.org`, excluding
    `.git/` and `Templates/`.
 2. **Establish the timeline**: `Daily/`, `Weekly/`, `Inbox/`, and `Orientations/`
-   filenames carry dates — sort hits chronologically before reading.
+   filenames carry dates — sort hits chronologically before reading. Org files
+   under `<vault>/org/` do NOT: they are flat and append-only, and each headline
+   carries its own inline capture date (`[YYYY-MM-DD Day]`) plus, once closed, a
+   `CLOSED:` timestamp. Date an org hit from those, never from the file.
 3. **Read the hits** — the surrounding section, not just the matching line.
    Distinguish source quality: a Decisions entry in a daily note outranks a raw
    inbox capture; a Permanent note outranks both.
+   **Org is the live state of any todo.** A headline's keyword is the answer to
+   "is this still open": `TODO`/`NEXT`/`WAITING` = open, `DONE`/`CANCELLED` = closed
+   (with the `CLOSED:` date). A `Daily/` note's `Open todos` bullets are only a
+   snapshot of org as of that night, and pre-org daily notes carry `- [ ]`
+   checkboxes that nothing ever ticks — neither is evidence that something is still
+   open. Always report a todo's state, and never present a closed item as a live
+   concern on the strength of a stale daily note.
 4. **Answer**:
    - Direct answer first, one or two sentences, with the date(s).
    - Then evidence: `date — quote or tight paraphrase — [[note name]]` (or path),

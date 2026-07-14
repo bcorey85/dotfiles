@@ -21,8 +21,11 @@ no-decision ADRs buries the load-bearing ones.
 
 1. An `/eng-spec` task directory (`docs/eng-specs/<slug>/`) passed in
    `$ARGUMENTS` or matching the branch/ticket key. Its `spec.md` holds the
-   decisions; `02-research.md` holds the facts they were made against. Resolve it
-   with `~/.claude/scripts/resolve-task-dir.sh` — do NOT reimplement the lookup.
+   decisions; `03-decisions.md` is the ledger they were logged into as they were
+   resolved (richer than the spec — it carries the `## Direction & Constraints`
+   the conversation established); `02-research.md` holds the facts they were made
+   against. Resolve it with `~/.claude/scripts/resolve-task-dir.sh` — do NOT
+   reimplement the lookup.
 2. A legacy flat eng-spec file (`docs/eng-specs/<KEY>-*.md`).
 3. The conversation — design decisions discussed and resolved above.
 4. The branch diff (merge-base vs default branch) — for `Patterns` `path:line` refs.
@@ -43,8 +46,8 @@ no-decision ADRs buries the load-bearing ones.
    `feature/<slug>` branch slug).
 6. **If a task directory was the source, collapse it**: the ADR is the durable
    artifact; the scaffolding (`00-ticket.md`, `01-questions.md`, `02-research.md`,
-   `spec.md`) rots. Ask before deleting — the research doc is occasionally worth
-   keeping on its own, and only the user knows that.
+   `03-decisions.md`, `spec.md`) rots. Ask before deleting — the research doc is
+   occasionally worth keeping on its own, and only the user knows that.
 7. Spot-check offer: `Drafted → <path>. Anything to adjust?` Apply edits,
    re-offer. Then `/commit` picks it up — ship it in the same PR as the code when
    possible.

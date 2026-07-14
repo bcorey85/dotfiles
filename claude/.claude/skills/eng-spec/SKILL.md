@@ -1,6 +1,6 @@
 ---
 name: eng-spec
-description: Spec a feature — goal-blind research first, then architect exploration, then design decisions resolved with you one at a time, then a finalized plan. Auto-detects scope (fe/be/fullstack). Optionally writes the spec to disk and/or dispatches coders.
+description: Spec a feature — goal-blind research first, then architect exploration, then design decisions resolved with you one at a time and logged to a decision ledger as they land, then a finalized plan. Auto-detects scope (fe/be/fullstack). Optionally writes the spec to disk and/or dispatches coders.
 allowed-tools:
   [
     Bash,
@@ -21,6 +21,12 @@ allowed-tools:
 The one planning lane. Consumes whatever context is already in the thread (a
 `/pull-ticket` result, a pasted description, a spec file). Does NOT fetch
 external context itself.
+
+**The task directory is the memory; the conversation is not.** Every phase lands
+its output on disk before the next one starts — `00-ticket.md`, `01-questions.md`,
+`02-research.md`, `03-decisions.md`, then `spec.md`. Design resolution is long and
+discursive by design, and a long conversation gets compacted. Anything that lives
+only in the thread when that happens is gone. Write first, then continue.
 
 **The order of the first two phases is the point of this skill.** Research runs
 before anyone — you, the architect, or me — has read the ticket for design.
@@ -81,7 +87,7 @@ reach the research agent.
    it. If genuinely ambiguous, ask. Then state it: "This is [scope]. I'll spin up
    [architects]. Sound right?"
 
-8. **Go lean?** Default is NO — run the architects. Skip Phases 4–6 only if ALL
+8. **Go lean?** Default is NO — run the architects. Skip Phases 4–7 only if ALL
    of these hold:
 
    - Pure configuration with zero implementation choices (install a package, add
@@ -97,7 +103,7 @@ reach the research agent.
 
    If skipping: confirm explicitly with the user ("This is pure configuration —
    skip the architect and go lean?"), write the plan from existing patterns, and
-   **still dispatch a coder in Phase 7 if they choose to implement** — the coder
+   **still dispatch a coder in Phase 8 if they choose to implement** — the coder
    dispatch is what triggers the review chain. In the saved spec,
    `## Decisions` reads `None — pure configuration; the constraints that forced it
    are under Constraints.` and `## Approaches Considered and Not Taken` reads
@@ -143,25 +149,89 @@ reach the research agent.
    > nothing to decide" is itself a claim, and it is the one most worth checking.
 
 10. If every architect returns a full plan (zero decision points, zero open
-    questions), skip Phase 5 and the step-12 finalization; go to Phase 7.
+    questions), skip Phases 5–6 and the step-15 finalization; go to Phase 8.
 
-## Phase 5: Interactive design resolution — never batch it
+## Phase 5: Open the decision ledger (mechanical — no thinking, no asking)
+
+**Do this before the first design question leaves your mouth.** Phase 6 is a long
+conversation and long conversations get compacted; a decision that exists only in
+the thread is a decision you will silently lose, along with the reasoning that
+produced it. The ledger is the fix, and it only works if it exists *before* the
+talking starts.
+
+11. **`Write` `03-decisions.md`** into the task directory, from the architect
+    briefs alone — every decision point and open question they returned, one
+    checklist line each, in the order you intend to raise them:
+
+    ```markdown
+    # Design Decisions — <slug>
+
+    > Research: ./02-research.md
+    > Status: 0/N resolved
+
+    ## Queue
+
+    - [ ] D1. <decision point, one line> — from <architect>
+    - [ ] D2. <decision point> — from <architect>
+    - [ ] Q1. <open question> — from <architect>
+
+    ## Resolved
+
+    ## Direction & Constraints
+
+    <!-- Anything the conversation established that is NOT a decision: a
+    constraint the user named, a direction ruled out, a premise of the ticket
+    they corrected. These are the first casualties of compaction and nothing
+    else captures them. -->
+    ```
+
+    Items are ADD-ONLY: a decision that surfaces mid-conversation gets appended to
+    the queue, never handled off-ledger.
+
+## Phase 6: Interactive design resolution — in prose, one at a time, logged as it lands
 
 **This is the point of the skill.** Everything else is scaffolding around it.
 
-11. **Present understanding FIRST**, before any decisions: current state, the
+12. **Present understanding FIRST**, before any decisions: current state, the
     patterns found (ask the user to confirm they are the RIGHT ones to follow),
     constraints, and the architect's **three counter-primed approaches**. The
     user needs a chance to catch a wrong pattern — and to see what was ruled out
     on their behalf — before either propagates into every downstream decision.
+    Whatever this exchange settles — a rejected direction, a corrected premise, a
+    constraint the user names — goes under `## Direction & Constraints` in the
+    ledger *as it lands*, not later.
 
-12. **Resolve decision points ONE AT A TIME.** Never a batched list. Ask
-    follow-ups freely; there is no question quota, and "the conversation feels
-    done" is not the completeness test — every decision point and open question
-    resolved is. Recommendation first (AskUserQuestion, recommended option
-    first), then the alternatives with their real costs.
+13. **Write the answer down before you ask the next question.** The moment a
+    decision resolves, `Edit` `03-decisions.md`: append the full four-field block
+    (`~/.claude/skills/_shared/design-decision-format.md`) under `## Resolved`,
+    tick its queue line, bump the `Status:` count. Not a note-to-self, not a
+    one-liner — the finished block, because Phase 7 architects and the saved spec
+    both read this file and nothing reconstructs the reasoning later.
 
-    **Never resolve a decision by recommending harder. Ask.**
+    **The ledger is the record; your context is a cache.** If the conversation was
+    compacted — or you are at all unsure what has been settled — re-read
+    `02-research.md` and `03-decisions.md` before continuing. **Never reconstruct a
+    resolved decision from memory, and never re-ask one that is already ticked.**
+
+14. **Resolve decision points ONE AT A TIME, in prose. Never `AskUserQuestion`
+    here.** A multiple-choice modal with a recommended option pre-selected is a
+    rubber stamp: it invites a click, not a conversation, and the clarifying
+    questions the user asks back — the constraints and intent that live only in
+    their head — never get asked. The decision points ARE the interview. Walk the
+    ledger's queue and put each one to the user as written English:
+
+    - what the decision is, and why it is live (what in the research forces it)
+    - the options with their real costs — **all of them**, and what each one makes
+      worse
+    - your recommendation, stated last and stated as a recommendation
+    - **then stop and wait.** Do not bundle the next question into the same turn.
+
+    Expect the user to answer with a question rather than a choice. That is the
+    system working, not a stall: follow it wherever it goes, and log whatever it
+    surfaces under `## Direction & Constraints`. Ask follow-ups freely; there is no
+    question quota.
+
+    **Never resolve a decision by recommending harder. Ask, and wait for words.**
 
     **Split the check out of the decision.** When a decision contains a claim
     shaped like *"we know X because we looked at Y"* — does this record exist? is
@@ -179,29 +249,37 @@ reach the research agent.
     for yourself.
 
     Do NOT write the spec and do NOT dispatch finalization until every decision
-    point and open question is resolved.
+    point and open question is resolved. **The completeness test is mechanical:
+    every queue line in `03-decisions.md` ticked.** Not "the conversation feels
+    finished" — read the ledger and check.
 
-## Phase 6: Architect finalization
+## Phase 7: Architect finalization
 
-13. **Continue each architect via `SendMessage`** — its exploration context is
-    intact, so send only the resolved decision list and the instruction to
-    produce the full plan per its Output Format. Do NOT re-litigate resolved
-    decisions; they carry the user's authority. If the agent is no longer
-    addressable, fall back to a fresh dispatch with its brief verbatim plus the
-    resolved decisions.
+15. **Continue each architect via `SendMessage`** — its exploration context is
+    intact, so send the path to `03-decisions.md` plus the instruction to produce
+    the full plan per its Output Format. Do NOT re-litigate resolved decisions;
+    they carry the user's authority. If the agent is no longer addressable, fall
+    back to a fresh dispatch with its brief verbatim, `02-research.md`, and
+    `03-decisions.md` — the ledger is written to make that fallback lossless.
+
+    Send the ledger **by path, and by path only**. Re-typing the decisions into
+    the dispatch prompt from your context is exactly the compaction-lossy move the
+    ledger exists to prevent, and the two copies will not agree.
 
     **Fullstack ordering**: finalize `backend-architect` first — its plan must
     include a clearly defined **API contract** (endpoints, methods,
     request/response shapes, status codes). Then finalize `frontend-architect`
     *with* that contract, so it designs against it rather than inventing one.
 
-14. **Synthesize the finalized plan(s).**
+16. **Synthesize the finalized plan(s).**
 
-    - **`DESIGN GAPS` returned by an architect**: resolve each with the user, add
-      it to `## Decisions`, **then send the resolution back to that architect**
-      and take its revised plan. Its guess may have shaped steps and success
-      criteria well past the flagged line; hand-patching the one marked spot
-      leaves the rest built on the guess.
+    - **`DESIGN GAPS` returned by an architect**: resolve each with the user in
+      prose (step 14's rule holds — no modal),
+      append it to `03-decisions.md` as a decision block (it is a Phase-6
+      decision that arrived late, not a footnote), **then send the resolution back
+      to that architect** and take its revised plan. Its guess may have shaped
+      steps and success criteria well past the flagged line; hand-patching the one
+      marked spot leaves the rest built on the guess.
     - **Carry the counter-priming into `## Approaches Considered and Not Taken`**
       — the three ruled-out approaches, each with its failure mode.
     - **Write `## Constraints` and `## External Contracts` — nothing upstream
@@ -218,12 +296,12 @@ reach the research agent.
       a layer phase produces no end-to-end pass/fail signal for `/code`'s gates.
       Interleave into vertical slices: each phase delivers one increment of
       user-observable behavior end-to-end, independently verifiable. The API
-      contract fixed in step 13 is what makes this safe. A phase stays
+      contract fixed in step 15 is what makes this safe. A phase stays
       single-layer only when the work genuinely is (migration-only, infra-only).
 
-## Phase 7: User choice
+## Phase 8: User choice
 
-15. **HARD STOP — no spec write, no coder dispatch, until the user answers.**
+17. **HARD STOP — no spec write, no coder dispatch, until the user answers.**
 
     Ask both questions in ONE **AskUserQuestion** call ("Save to disk?" and
     "Implement now?"). The blocking modal is the mechanism that makes this stop
@@ -231,10 +309,17 @@ reach the research agent.
     in conversation is fine. Writing the spec or dispatching coders before the
     answers is NOT.
 
+    **This is the ONLY legal `AskUserQuestion` in the skill** — two mechanical
+    yes/nos with nothing to discuss. Design decisions (Phase 6) are prose, always;
+    a modal there buys a click instead of the user's knowledge.
+
     **Save to disk?**
     - Yes → Write the spec to `docs/eng-specs/<slug>/spec.md` using the template
-      below. The research artifacts stay beside it — they are the evidence the
-      decisions were made against.
+      below. Its `## Decisions` is **copied from `03-decisions.md`**, block for
+      block — do not re-derive it from the conversation, and do not summarize.
+      `## Direction & Constraints` from the ledger feeds `## Constraints`. The
+      research and decision artifacts stay beside the spec — they are the evidence
+      the decisions were made against.
     - No → the spec stays in the conversation, and the task directory is removed.
 
     **Implement now?**
@@ -248,7 +333,7 @@ reach the research agent.
       dispatch is what triggers the review chain.
     - Later → stop here.
 
-16. **Present summary**: key decisions, file written (if saved), what was
+18. **Present summary**: key decisions, file written (if saved), what was
     implemented (if coded). Remind the user to check Figma if frontend work is
     involved.
 
@@ -263,20 +348,41 @@ The spec has two layers in ONE file: a judgment layer (what a human reads at the
 gate) and an implementation layer (what `/code` executes, in the shared plan
 format so its phase gates work).
 
+**`## Phase Status` is hoisted to the top, above both layers.** It is the one
+section that changes after the spec is written — `/code` ticks it as phases land —
+and the whole point is that opening the file answers "where are the agents?" on
+the first screen, without scrolling past the judgment layer. Everything else in
+`plan-format.md` still applies in full; only the checklist moves.
+
 ```markdown
 # Title
 
 > Jira: JIRAPROJECT-TICKETNUMBER (if applicable)
 > Research: ./02-research.md (goal-blind, produced before design began)
+> Decisions: ./03-decisions.md (the design-resolution ledger)
 > Date: YYYY-MM-DD
 
 ## Summary
 
 One paragraph on what this accomplishes.
 
+## Phase Status
+
+<!-- Hoisted here from the Implementation Plan below so a peek at the file shows
+progress immediately. Updated by /code after each phase completes + review passes.
+Source of truth for "which phase is next" across /clear boundaries. Do not delete,
+do not move back down. Lines and risk tags follow plan-format.md exactly. -->
+
+- [ ] Phase 0: Contracts — frozen at plan approval (risk: high)
+- [ ] Phase 1: Walking skeleton (risk: low|high)
+- [ ] Phase 2: [name] (risk: low|high)
+- [ ] Phase N..N+3: Refactor → Verify → Orient → Finalize (closing-phases.md)
+
 ## Decisions
 
-<!-- Every decision uses the four-field block from
+<!-- Copied verbatim from 03-decisions.md's ## Resolved section — that ledger was
+written as each decision landed, and it, not the conversation, is the record.
+Every decision uses the four-field block from
 ~/.claude/skills/_shared/design-decision-format.md: Choice / Reasoning /
 Alternatives rejected / Trade-off accepted. Never a table with one-line
 rationales. -->
@@ -318,13 +424,15 @@ hidden couplings) belong here too. "None" must be stated explicitly. -->
 
 ## Implementation Plan
 
-<!-- From here down, follow ~/.claude/skills/_shared/plan-format.md IN FULL:
-## Phase Status with (risk: low|high) tags, vertical phases, per-phase Changes
-Required + Success Criteria (Automated/Manual Verification with the project's
-real commands), Acceptance Stubs when the ticket has behavioral criteria. This is
-what /code's phase gates and /verify consume. Every spec ends with the four
-mandatory closing phases from ~/.claude/skills/_shared/closing-phases.md
-(Refactor → Verify → Orient → Finalize; Finalize = /adr) — never omitted. -->
+<!-- From here down, follow ~/.claude/skills/_shared/plan-format.md IN FULL —
+with ONE deviation: its `## Phase Status` section lives at the TOP of this file
+(above ## Decisions), not here. Everything else is unchanged: vertical phases with
+(risk: low|high) tags, per-phase Changes Required + Success Criteria
+(Automated/Manual Verification with the project's real commands), Acceptance Stubs
+when the ticket has behavioral criteria. This is what /code's phase gates and
+/verify consume. Every spec ends with the four mandatory closing phases from
+~/.claude/skills/_shared/closing-phases.md (Refactor → Verify → Orient → Finalize;
+Finalize = /adr) — never omitted. -->
 ```
 
 ## Arguments

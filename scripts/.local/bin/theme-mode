@@ -15,6 +15,8 @@
 #              (machine-local include, same pattern as font-mode.conf), then
 #              SIGUSR2s the running ghostty to reload it (1.2+; ctrl+shift+,
 #              still works by hand). Only USR2 — any other signal crashes it.
+#   - workmux: this script sets the tmux-global $COLORFGBG (mode only, no
+#              family); the dashboard popup inherits it and picks light/dark.
 #
 # Usage:
 #   theme-mode [dark|light|toggle]    flip mode, keep family (default: toggle)
@@ -118,6 +120,15 @@ apply() { # <family> <mode> — write state and repaint tmux + ghostty
     local cursor="#ffffff"
     [ "$mode" = "light" ] && cursor="#000000"
     tmux set-option -g cursor-colour "$cursor" 2>/dev/null || true
+    # workmux's dashboard (prefix W / C-.) auto-detects light/dark via an OSC 11
+    # background query. tmux popups don't answer that reliably, so it falls back
+    # to $COLORFGBG — unset by default, which lands it in dark mode on a light
+    # terminal. Publish COLORFGBG into the tmux global env: popups inherit it and
+    # the dashboard spawns fresh each open, so it tracks the mode. Convention is
+    # fg;bg by ANSI slot — bg 15 (light) => light theme, bg 0 (dark) => dark.
+    local colorfgbg="15;0"
+    [ "$mode" = "light" ] && colorfgbg="0;15"
+    tmux set-environment -g COLORFGBG "$colorfgbg" 2>/dev/null || true
     # Re-arm tmux-continuum: its autosave trigger lives inside status-right,
     # which the theme file we just sourced overwrote. Re-running continuum.tmux
     # doesn't work here (its "another server running" heuristic misfires when

@@ -2,7 +2,7 @@
 
 Analyze both sides of the flywheel:
 
-- **Catches** — what `/review` logs on every run (via `log-review-metrics`): repo, iter, severity counts, MEDIUM-triage buckets (`fixed`/`skipped_fp`/`ask`), `test_intent`, `culled`, `comment_noise`, `result`.
+- **Catches** — what `/review` logs on every run (via `log-review-metrics`): repo, iter, severity counts, MEDIUM-triage buckets (`fixed`/`skipped_fp`/`ask`), `test_intent`, `culled`, `comment_noise`, `specialists`, `result`.
 - **Escapes** — what got PAST the gates (via `~/.claude/scripts/log-escape`, fed by `/cc`, `/refactor`, `/verify`, and manual `/escape`): `stage_found`, `gate_missed`, `class`, `severity`. This is the ground truth for which gates are trustable.
 - **Second drafts** — what coders' own sweeps caught in their first drafts (logged by `/code` and `/fix` from each report's `SECOND DRAFT:` line): `source`, `coder`, `second_draft` (clean/found/missing), `categories`, `text`. This is the evidence base for tuning `coder-core` — the smells first drafts reliably ship.
 
@@ -21,6 +21,7 @@ The metrics and escapes files accumulate counts/categories only; the second-draf
    - **Test-intent yield**: firings = runs with `test_intent_ran=1`; findings = sum(`test_intent`). Report findings-per-firing. Rows lacking `test_intent_ran` (and `iter=oneshot` rows) predate the 2026-07 schema — exclude them from yield math.
    - **Cull volume**: sum(`culled`) and per-run average — diff-added tests the loop had to delete (`[test-fluff]` + `[test-cull]`). Rows lacking the field predate the 2026-07-10 wiring; exclude them.
    - **Comment-noise volume**: sum(`comment_noise`) and per-run average — diff-added narration comments the loop deleted. Same schema date and exclusion as `culled`.
+   - **Specialist firing distribution**: rate of `specialists` = `security` / `perf` / both / `none (no match)` / `none (suppressed)`. Rows lacking the field predate the 2026-07 specialist split — exclude them.
    - **Result distribution**: PASS / PASS WITH WARNINGS / NEEDS CHANGES.
    - **Escapes** (when the escapes file exists): counts by `gate_missed`, by `class`, by `stage_found`; severity mix; per repo; by `lane` when present (`eng-spec` vs bare `code` — i.e. whether the work was specced at all; rows logged before 2026-07-13 carry retired `deep-plan`/`q-plan` labels and should be folded into `eng-spec`). The headline number per gate is the **escape ratio**: escapes attributed to a gate vs. that gate's catch volume over the same period (e.g. `gate_missed=review` escapes vs. total review findings).
    - **Second drafts** (when the file exists): dispatch count; rate of `clean` / `found` / `missing`; category distribution across `found` receipts (overall and per `coder` type); per repo, per `source` (code vs fix), and per `lane` when present.
@@ -34,6 +35,7 @@ The metrics and escapes files accumulate counts/categories only; the second-draf
    - `culled` not trending toward 0 across runs → coders are still overproducing tests and the loop is paying to delete them; strengthen coder-core's write-time test budget (cite the average). Sustained `culled=0` with healthy run volume → the budget holds; the cull stages are cheap insurance, not load-bearing.
    - `comment_noise` not trending toward 0 → the second-draft sweep isn't deleting narration comments; strengthen that sweep item in coder-core (same logic as `culled`).
    - Test-intent yield ≈ 0 over **10+ firings** → the stage fires but finds nothing; tighten its trigger in `review/SKILL.md` or drop it. (General pattern: any always-on stage needs a `*_ran` field so yield-per-firing stays computable.)
+   - Specialists firing on **~every** run over healthy volume → the deterministic trigger is effectively always-on; if the extra passes' cost matters, tighten the content regexes in `_shared/reviewer-domains.md` (the path globs are the omission-coverage floor — tighten content first).
    - **Escape flags** (the trust dial — these decide where human attention stays mandatory):
      - Recurring `gate_missed=drift-gate` → the phase drift gates aren't trustworthy; raise more phases to `risk: high` in plans (restores human phase sign-off) until this trends to zero.
      - `stage_found=cc`/`pr-human` escapes with `class=bug` → the reviewer is missing real bugs, not just smells; check which "Do NOT Flag" suppression rule ate them before assuming `+deep` is the fix.

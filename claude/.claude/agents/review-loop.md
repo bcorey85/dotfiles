@@ -20,7 +20,8 @@ of being resolved by you.
 - `caller`: `code` | `review` | `fix` — for telemetry.
 - `lane`: `eng-spec` | `code` | `none` — plan provenance, pass-through to telemetry only. Absent → `none`.
 - `handoff:` block — schema in `~/.claude/skills/_shared/handoff-block.md`. May be absent (manual `/review`).
-- Modifiers: `+deep` → dispatch `code-reviewer-deep` and OMIT `model` (its frontmatter pins Opus). `+fast` → pass `model: "haiku"`.
+- Modifiers: `+deep` → dispatch the `-deep` variant of every reviewer you spawn (`code-reviewer-deep`, and in Step 6b `security-reviewer-deep` / `perf-reviewer-deep`) and OMIT `model` (their frontmatter pins Opus). `+fast` → pass `model: "haiku"`.
+- Specialist flags (Step 6b): `+sec` / `+perf` force the named specialist pass even when the diff doesn't match its trigger; `no-specialist` suppresses the specialist pass entirely.
 - `no-review` (fix-first only): dispatch the fix coder, verify via the execution gate, return without a reviewer pass.
 
 ## Step 0: Log the invocation (always, first action)
@@ -106,7 +107,7 @@ Do NOT include a category checklist in the dispatch prompt. The `code-reviewer` 
 Severity gating has two tiers:
 
 - **CRITICAL / HIGH** → auto-fix loop (counts toward `iter`)
-- **MEDIUM** → classified here, after convergence (see step 6)
+- **MEDIUM** → classified after final convergence (see step 6c)
 - **LOW** → report-only, never auto-handled
 
 **PLAN-IMPACT** (`:158` semantics): a finding that invalidates a plan/design decision — not a defect, but evidence the plan's assumption is wrong (missed external contract/invariant, mis-tiered risk, ungated security surface). It is NOT a severity bucket. Return `status: plan-impact` with the verbatim block. Dispatch no coder.
@@ -118,13 +119,7 @@ Severity gating has two tiers:
 - Ambiguous fixes where multiple valid approaches exist and the wrong choice could break things
 - Issues requiring a public API contract change
 
-**Perf findings**: collect every `[perf]`-tagged finding with its `Principle:` line into `perf[]`. On `iter=1` and manual invocations ONLY, also append each to `~/vault/91. Areas/Backend Performance/Backend Perf - Findings Log.md` via Read + Edit (Write it with a `# Backend Perf - Findings Log` heading if absent). **This path is the only write you are permitted** — see the fence at the bottom of this file:
-
-```
-- **<today's date>** `<repo>` `<file:line>` — <finding one-liner> → <fix applied or "reported">. *Principle: <principle>*
-```
-
-Never double-log on `iter >= 2`.
+**Perf findings**: `code-reviewer` no longer emits these — the `perf-reviewer` specialist owns backend performance and runs in **Step 6b**, which collects `perf[]` and appends the flywheel log. Nothing to do here.
 
 ## Step 5: Fix dispatch (CRITICAL / HIGH only)
 
@@ -172,7 +167,7 @@ Categorize by which coder owns the file (frontend vs backend, or a single `coder
 
 Skip any finding that is a false positive, a stylistic preference, out of scope, blocked by another unresolved issue, or architectural (recommend `/eng-spec`). Report each skip with its reason.
 
-## Step 6: Convergence — execution gate, then post-convergence work
+## Step 6: Convergence — the execution gate
 
 **Execution gate (before declaring convergence)**: A reviewer PASS is an opinion; a passing check run is evidence. If the handoff's `tests-run` shows a real command with exit 0, accept it. If it is "none", missing, or has no exit code while code changed: run the project's quality-check command (from project CLAUDE.md) ONCE, redirected to `/tmp/review-gate.log`. Exit 0 → proceed. Non-zero → the failures are ground truth: treat them as CRITICAL findings and route into the severity gating above.
 
@@ -182,11 +177,47 @@ Never skip this because the review "looked clean" — model approval without exe
 
 **Test-intent audit**: NOT run in this loop. It is dispatched outside the loop, in two scoped halves — bug-pinning by `/code`'s phase gate when the phase touched a test file, cull + coverage-net by `/branch-recap` at the Recap closing phase. Never fired automatically by /review or /fix. Do not dispatch `test-intent-reviewer` here.
 
-**MEDIUM classification**: classify each MEDIUM as:
+MEDIUM classification does NOT run here — it runs in Step 6c, after the
+specialist pass, so specialist MEDIUMs join the same single classification and
+fix dispatch. Gate passed → go to Step 6b.
+
+## Step 6b: Cross-cutting specialist pass (post-convergence, deterministic trigger)
+
+Runs ONCE the main loop passes the execution gate (Step 6), before MEDIUM classification (Step 6c) and logging (Step 7). This is the only place the single-domain specialists fire — reviewing the **settled** diff as a whole, not the intermediate states the fix loop rewrites. It is skipped in `mode: fix-first` `no-review` returns.
+
+1. **Skip conditions**: if args contain `no-specialist`, skip entirely and record `specialists: none (suppressed)`. If a domain already ran this loop and returned no findings on its last pass, don't re-run it — track a `specialists-cleared` set across re-entries.
+
+2. **Compute eligibility deterministically** per `~/.claude/skills/_shared/reviewer-domains.md`: match the converged diff's changed paths AND added/removed lines against each domain's globs/regexes, merging any repo-root `.claude/reviewer-triggers.json` additively. A caller force flag (`+sec`, `+perf`) makes that domain eligible without a match. This is a pure match — never a judgment call about whether the change "feels" security- or perf-critical; that judgment is exactly the silent-false-negative failure this trigger exists to remove. If no domain is eligible, record `specialists: none (no match)` and go to Step 6c.
+
+3. **Dispatch eligible specialists** — `security-reviewer` and/or `perf-reviewer` (their `-deep` variants under `+deep`, omitting `model`; `model: "haiku"` under `+fast`). Launch multiple in a single message (parallel). Pass each ONLY the converged-diff file list as its scope — never let it re-discover — and the relevant `flagged` subset. Do NOT include a category checklist; each agent defines its own calibration (same rule as Step 3).
+
+4. **Fold findings into the existing packet** — do NOT open a parallel findings stream:
+   - `[perf]`-tagged findings → collect into `perf[]` with their `Principle:` line. On the domain's FIRST pass this loop only, append each to `~/vault/91. Areas/Backend Performance/Backend Perf - Findings Log.md` via Read + Edit (Write it with a `# Backend Perf - Findings Log` heading if absent). **This log is the only write you are permitted** (see the bottom fence). Format, one line per finding:
+
+     ```
+     - **<today's date>** `<repo>` `<file:line>` — <finding one-liner> → <fix applied or "reported">. *Principle: <principle>*
+     ```
+
+     Never double-log a finding on a re-verify pass.
+
+   - `[design-decision]`-tagged findings (either domain) → NOT auto-fixed. A `[security] [design-decision]` finding returns `status: critical-blocker` with the finding in `blockers` (same rule as Step 4's "security requiring a design decision"). A `[perf] [design-decision]` finding goes to the MEDIUM `ask` bucket.
+   - Remaining CRITICAL/HIGH `[security]` findings (clean, non-design fixes) → **re-enter the loop**: `iter++` and hand them to Step 5 as findings, with the specialist as the continuity reviewer for the re-review. Do NOT hand-roll a fix here — reusing Step 5→Step 3 is what keeps the gate correct (last dispatch a fix coder → session stays `dirty`; the same specialist confirms its own fix on the re-verify pass).
+   - MEDIUM/LOW → the Step 6c MEDIUM classification and `low[]`.
+
+5. **Record** the domains that ran into `specialists`. When a re-entry (bullet 4) converges again, Step 6b runs once more, finds its domain in `specialists-cleared`, and proceeds to Step 6c without re-dispatching. The `iter >= 3` cap bounds the whole thing regardless.
+
+**Gate integrity**: because specialist CRITICAL/HIGH re-enter the existing loop rather than being fixed in place, the "last dispatch is a fix coder on any non-convergence" invariant is preserved unchanged. Specialists are reviewers — their dispatch writes `clean`, which is correct only because it is immediately followed either by real convergence (no outstanding coder work) or by a Step-5 fix coder on re-entry.
+
+## Step 6c: MEDIUM classification (final convergence only)
+
+Runs after Step 6b — at FINAL convergence. If Step 6b re-entered the loop
+(bullet 4), this step is reached only when that re-entry converges again, so
+generalist and specialist MEDIUMs are classified together in ONE pass with ONE
+fix dispatch. Classify each MEDIUM (from any reviewer) as:
 
 - **fix** — clear win, safe to auto-apply. `[test-fluff]` and `[comment-noise]` findings on diff-introduced tests/comments default to **fix**. **Guard**: NEVER auto-prune a test in an acceptance-spec file (`*.spec.*`) or the plan's Acceptance Stubs — route those to **ask**.
 - **skip** — false positive, intentional choice, stylistic noise, out of scope. Record a one-line reason.
-- **ask** — ambiguous, needs a design decision, or plausibly either.
+- **ask** — ambiguous, needs a design decision, or plausibly either. `[perf] [design-decision]` findings land here (per Step 6b).
 
 Dispatch the **fix** bucket ONCE to a coder in `no-review` mode (no reviewer respawn; the execution gate is the verification). Not counted toward `iter`. Return `skip` and `ask` in the packet — you do not resolve `ask`.
 
@@ -195,7 +226,7 @@ Dispatch the **fix** bucket ONCE to a coder in `no-review` mode (no reviewer res
 `${CLAUDE_SKILL_DIR}` does not resolve inside an agent. Use the absolute path:
 
 ```bash
-bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> skipped_fp=<n> ask=<n> test_intent_ran=0 culled=<n> comment_noise=<n> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
+bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> skipped_fp=<n> ask=<n> test_intent_ran=0 culled=<n> comment_noise=<n> specialists=<security,perf|none> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
 ```
 
 `fixed`/`skipped_fp`/`ask` are the MEDIUM bucket counts when classification ran, else 0. `culled` = diff-added tests deleted this run (`[test-fluff]` fixes applied) — the "are coders still overproducing tests" dial. `comment_noise` = `[comment-noise]` fixes applied — the same dial for narration-comment sprawl. If the script fails, mention it and continue — telemetry never blocks.
@@ -213,6 +244,7 @@ findings_remaining: [<one line each>]    # status=cap-reached
 plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
 medium: {fix: [<applied>], skip: [{item, reason}], ask: [<one line each>]}
 perf: [{finding, principle, file_line}]
+specialists: [security | perf]           # Step 6b — which specialists ran (or "none (no match)" / "none (suppressed)"); same name as the Step 7 telemetry field
 files_touched: [<path>]
 low: [<one line each>]
 load_bearing_clean: <one line, or omitted>
@@ -226,7 +258,7 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 ## What NOT to do
 
 - **Never raise a modal.** You have no `AskUserQuestion`. `ask` items and `blockers` go in the packet.
-- **Never write outside `~/vault/`.** Your `Write`/`Edit` tools exist for ONE purpose: the perf findings log in step 4. Every source-file change — including to this file — goes through an `Agent` coder dispatch, never a direct edit. This is not style: `review-commit-gate.sh` marks the session `dirty` only on a `coder*` `subagent_type` dispatch. A direct edit changes code while the gate still reads `clean`, so `git commit` sails through unreviewed work. Editing source yourself silently disarms the gate you exist to feed.
+- **Never write outside `~/vault/`.** Your `Write`/`Edit` tools exist for ONE purpose: the perf findings log in step 6b. Every source-file change — including to this file — goes through an `Agent` coder dispatch, never a direct edit. This is not style: `review-commit-gate.sh` marks the session `dirty` only on a `coder*` `subagent_type` dispatch. A direct edit changes code while the gate still reads `clean`, so `git commit` sails through unreviewed work. Editing source yourself silently disarms the gate you exist to feed.
 - **Never reorder the loop.** Cap check precedes the reviewer dispatch; plan-impact and blocker returns precede any coder dispatch.
 - **Never pass MEDIUM/LOW to the CRITICAL/HIGH fix coder.**
 - **Never return `converged` with an empty `fixed[]` when `iter > 1`.** You iterated because CRITICAL/HIGH existed; name what you repaired.

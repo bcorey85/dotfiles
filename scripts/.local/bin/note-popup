@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# note-popup — vault quick-capture for the daily-recap pipeline, meant to run
+# inside a tmux display-popup (prefix n n). Reads lines in a loop so a
+# meeting's worth of captures is a single popup: each entry is appended to
+# today's org journal via `note`, an empty line (or Ctrl-C/Ctrl-D) closes.
+#
+# Usage:
+#   note-popup          # capture loop
+#   note-popup today    # view today's recap if compiled, else today's raw journal
+set -euo pipefail
+
+VAULT="${VAULT_DIR:-$HOME/vault}"
+TODAY="$(date +%F)"
+JOURNAL="$VAULT/org/journal.org"
+
+if [ "${1:-}" = "today" ]; then
+  # Compiled recap wins if it exists; else fall back to today's raw journal
+  # captures. journal.org is one shared datetree file, so pull just today's
+  # slice: any heading whose title starts with today's date (the datetree day
+  # node AND the flat headings `note` appends), plus everything nested under
+  # it until the next sibling-or-shallower heading — the same match daily-recap
+  # gathers on.
+  DAILY="$VAULT/Daily/$TODAY.md"
+  if [ -f "$DAILY" ]; then
+    exec "$HOME/.local/bin/glow-fit" -p "$DAILY"
+  fi
+  if [ -f "$JOURNAL" ]; then
+    slice="$(awk -v today="$TODAY" '
+      /^\*+[ ]/ {
+        match($0, /^\*+/); depth = RLENGTH
+        title = substr($0, depth + 1); sub(/^[ ]+/, "", title)
+        if (index(title, today) == 1) { printing = 1; secdepth = depth; print; next }
+        if (printing && depth <= secdepth) { printing = 0 }
+      }
+      printing { print }
+    ' "$JOURNAL")"
+    if [ -n "$slice" ]; then
+      tmp="$(mktemp -t note-today.XXXXXX.md)"
+      printf '# Journal — %s\n\n%s\n' "$TODAY" "$slice" >"$tmp"
+      exec "$HOME/.local/bin/glow-fit" -p "$tmp"
+    fi
+  fi
+  echo "nothing captured today — press any key"
+  read -r -n1 -s
+  exit 0
+fi
+
+# set -e closes the popup before an error is readable — hold it open so a
+# failed write is never mistaken for a captured note (the ✓ is the receipt).
+trap 'read -r -n1 -s -p "capture failed — press any key"' ERR
+
+echo "capture → $JOURNAL   (empty line closes)"
+while IFS= read -e -r -p "note> " line; do
+  [ -z "$line" ] && break
+  "$HOME/.local/bin/note" "$line"
+  history -s "$line"   # up-arrow recalls prior captures within this popup
+  printf '  \033[0;32m✓\033[0m %s\n' "$line"
+done

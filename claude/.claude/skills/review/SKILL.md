@@ -14,6 +14,7 @@ raise the modals it cannot.
 ## Modifiers
 
 - `+fast` / `+deep` — semantics in `~/.claude/skills/_shared/modifiers.md` (read it when either is present). Pass through to the agent verbatim; it maps them to the reviewer variant and model.
+- `+sec` / `+perf` — force that cross-cutting specialist pass even when the loop's deterministic trigger wouldn't fire it. `no-specialist` — suppress the specialist pass entirely. All three pass through verbatim (step 1).
 
 ## Instructions
 
@@ -21,6 +22,7 @@ raise the modals it cannot.
    - `mode: review-first`, `caller: review`
    - any `handoff:` block from `$ARGUMENTS` (schema: `~/.claude/skills/_shared/handoff-block.md`)
    - any `+fast` / `+deep` modifier and `iter=N`
+   - any specialist flag from `$ARGUMENTS`: `+sec` / `+perf` (force that cross-cutting specialist pass) or `no-specialist` (suppress it). Absent these, the loop's Step 6b decides per its deterministic file-path/content trigger.
    - if `$ARGUMENTS` names a file path and no handoff block was given, scope the review to that file only
 
 2. **Route on the returned `status`** — first match wins:
@@ -34,6 +36,7 @@ raise the modals it cannot.
 
    - `### Findings by severity` — every `fixed[]` entry (`severity`, `finding`, `file_line`). The loop repaired these; the user must still learn what they were. An empty `fixed[]` on `iter > 1` is a bug in the agent, not a clean run.
    - `### Perf findings` — its own heading, one entry per `perf[]` item with its `Principle:` line. These never scroll past silently, regardless of severity or auto-fix status; the user is deliberately building backend-performance intuition from them.
+   - `specialists` — one line naming which cross-cutting specialists ran (or that none matched / were suppressed). Security findings, if any, already appear in `fixed[]`/`blockers`/`medium`; this line is the audit trail that the deterministic trigger fired as expected.
    - `load_bearing_clean`, if present — one line.
    - `medium.fix` — applied, one line each. `medium.skip` — inline with its reason.
    - `low[]` and notes — inline.

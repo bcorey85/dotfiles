@@ -4,24 +4,31 @@
 # needed three restatements and still leaked; this hook makes it deterministic.
 #
 # Registered twice in settings.json:
-#   PostToolUse (matcher: Agent) — tracks per-session review state:
-#       coder dispatch    -> "dirty" (unreviewed coder work exists)
-#       reviewer dispatch -> "clean" (a review pass has run)
-#   PreToolUse  (matcher: Bash)  — blocks `git commit` while state is dirty.
+#   PostToolUse (matcher: Agent) — ARMS the gate:
+#       coder* dispatch      -> "dirty" (unreviewed coder work exists)
+#       review-loop dispatch -> "dirty" (a loop is in flight; outcome unknown)
+#   PreToolUse  (matcher: Bash)  — two jobs:
+#       blocks `git commit` while state is dirty
+#       records `review-gate-mark clean` — the ONLY clean transition
 #
-# The review signal is a code-reviewer / test-intent-reviewer Agent dispatch,
-# which every /review path ends in (both /code-chained and standalone).
-# Gating the Bash `git commit` chokepoint covers every invocation route
-# (model Skill call, user-typed /commit, ad-hoc commit).
+# Why Agent events never write "clean": the harness launches subagents async
+# (even when dispatched with run_in_background: false), so PostToolUse fires at
+# LAUNCH with a metadata stub — the reviewer hasn't run yet and the loop's
+# packet is never in .tool_response. Any clean-on-Agent-event rule is therefore
+# either premature (reviewer launch) or unreachable (packet parse). The packet
+# reaches the MAIN session later via task-notification; the /review, /fix, and
+# /code wrappers route on its `status` there and run
+# `bash ~/.claude/scripts/review-gate-mark clean` ONLY after rendering a
+# `converged` packet. This PreToolUse hook sees that command plus the
+# session_id (which the bare script cannot know) and writes the state; the
+# script itself is a no-op carrier. Non-converged statuses (cap-reached,
+# critical-blocker, plan-impact) run no mark, so the session stays dirty —
+# fail-closed: a blocked commit costs one /review; an unblocked commit over
+# outstanding findings is the failure this hook exists to prevent.
 #
-# review-loop is special-cased: its PostToolUse event fires LAST (after every
-# nested coder/reviewer event), so an unconditional "clean" here would erase
-# the dirty state a cap-reached/aborted loop deliberately leaves behind. The
-# loop's returned packet is the authority: `status: converged` -> clean,
-# anything else (cap-reached, critical-blocker, plan-impact, or an unreadable
-# response) -> dirty. Fail-closed: a blocked commit costs one /review; an
-# unblocked commit over outstanding findings is the failure this hook exists
-# to prevent.
+# A command containing `git commit` is never processed as a mark — the block
+# check runs first and exits, so `review-gate-mark clean && git commit` cannot
+# self-authorize in a single command.
 #
 # One-shot override for a USER-approved trivial skip (consumed on use):
 #   touch ~/.claude/state/review-gate/<session_id>.skip
@@ -45,29 +52,25 @@ case "$evt" in
   PostToolUse)
     agent=$(jq -r '.tool_input.subagent_type // ""' <<<"$input")
     case "$agent" in
-      coder|coder-deep|backend-coder|backend-coder-deep|frontend-coder|frontend-coder-deep)
+      coder|coder-deep|backend-coder|backend-coder-deep|frontend-coder|frontend-coder-deep|review-loop)
         echo dirty > "$state_file" ;;
-      review-loop)
-        resp=$(jq -r '.tool_response // "" | tostring' <<<"$input")
-        if grep -qE 'status:[[:space:]]*converged' <<<"$resp"; then
-          echo clean > "$state_file"
-        else
-          echo dirty > "$state_file"
-        fi ;;
-      code-reviewer|code-reviewer-deep|test-intent-reviewer)
-        echo clean > "$state_file" ;;
     esac
     ;;
   PreToolUse)
     cmd=$(jq -r '.tool_input.command // ""' <<<"$input")
-    grep -qE '\bgit\s+commit\b' <<<"$cmd" || exit 0
-    [[ -f "$state_file" && "$(cat "$state_file")" == "dirty" ]] || exit 0
-    if [[ -f "$skip_file" ]]; then
-      rm -f "$skip_file"
-      exit 0
+    if grep -qE '\bgit\s+commit\b' <<<"$cmd"; then
+      [[ -f "$state_file" && "$(cat "$state_file")" == "dirty" ]] || exit 0
+      if [[ -f "$skip_file" ]]; then
+        rm -f "$skip_file"
+        exit 0
+      fi
+      echo "[review-commit-gate] A coder or review-loop dispatch ran this session and no converged review has been recorded since. Run /review — its wrapper records convergence via review-gate-mark. Only if the USER explicitly approved skipping review for a trivial diff, create the one-shot override and retry: touch $skip_file — never create it on your own judgment." >&2
+      exit 2
     fi
-    echo "[review-commit-gate] A coder subagent ran this session and no code review has run since. Run /review before committing. Only if the USER explicitly approved skipping review for a trivial diff, create the one-shot override and retry: touch $skip_file — never create it on your own judgment." >&2
-    exit 2
+    if grep -qE 'review-gate-mark[[:space:]]+(clean|dirty)\b' <<<"$cmd"; then
+      mark=$(grep -oE 'review-gate-mark[[:space:]]+(clean|dirty)' <<<"$cmd" | awk '{print $2}' | head -1)
+      echo "$mark" > "$state_file"
+    fi
     ;;
 esac
 exit 0

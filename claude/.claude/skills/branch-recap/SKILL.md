@@ -40,6 +40,15 @@ Net-removed coverage goes to the top of the read-first queue.
 
 Receipt line: `test audit: <n> culled, <n> coverage-lost | clean | skipped — no test files`.
 
+Log the firing to the review flywheel (non-blocking; on failure mention and continue; skip if the audit was skipped):
+
+```bash
+bash "$HOME/.claude/skills/review/log-review-metrics" \
+  repo="$(basename "$(git rev-parse --show-toplevel)")" lane=branch-recap \
+  test_intent_ran=1 test_intent=<n findings> culled=<n> coverage_lost=<n> \
+  result=<clean|findings>
+```
+
 ## Step 2: Residue triage — `/stage`
 
 Phases stage as they go (`/code` block B invokes `/stage` at each sign-off), so by now the

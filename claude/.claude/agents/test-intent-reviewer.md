@@ -39,8 +39,8 @@ You will be given the exact list of changed files (test files + the source under
 
 **Your dispatcher names one of two halves. Run that half only.**
 
-- **`scope: bug-pinning`** (from `/code`'s phase gate, one phase's diff) — run Step 3. **Skip Step 4 entirely** and omit its section from the report. The cull check is not merely lower-value at a phase boundary, it is *wrong* there: whether an added test duplicates a sibling, and whether deleted coverage was replaced, are both cross-phase facts. Judged against one phase's diff they produce confident false positives.
-- **`scope: cull`** (from `/branch-recap`, the assembled branch diff) — run Step 4. **Skip Step 3 entirely** and omit its section; every changed assertion was already audited for bug-pinning at its own phase gate, where the oracle was that phase's success criteria rather than the whole ticket. Re-auditing here is spend without signal.
+- **`scope: bug-pinning`** (from `/code`'s phase gate, one phase's diff) — run Step 3. **Skip Steps 4 and 5 entirely** and omit their sections from the report. The cull and coverage-net checks are not merely lower-value at a phase boundary, they are *wrong* there: whether an added test duplicates a sibling, and whether deleted coverage was replaced, are both cross-phase facts. Judged against one phase's diff they produce confident false positives.
+- **`scope: cull`** (from `/branch-recap`, the assembled branch diff) — run Steps 4 and 5. **Skip Step 3 entirely** and omit its section; every changed assertion was already audited for bug-pinning at its own phase gate, where the oracle was that phase's success criteria rather than the whole ticket. Re-auditing here is spend without signal.
 
 Scope missing from the dispatch → say so and run **both**; a silent half-audit is worse than a redundant one.
 
@@ -64,6 +64,10 @@ For every changed assertion, classify it:
 ## Step 4 — Cull check (added tests only)
 
 For every test **added** in the diff — never a modified pre-existing test, and never an acceptance stub (those are requirements) — ask: **what implementation bug would make this test fail?** Name a concrete, plausible defect in our code that this test, and no sibling test, would catch. If you can't, classify it **CULL** — the typical shapes: it asserts a mock/spy was called with the args the code just passed it; it exercises the framework or a library rather than our code; it restates the implementation with no behavioral oracle; or it re-covers a branch a sibling test already owns with only cosmetic input changes. One smoke test per unit is exempt (it is the redundant 2nd+ that culls). This is mutation testing as a thought experiment: a test that kills no imaginable mutant is diff noise taxing every future reader, and flagging it IS your job at this boundary — coverage _gaps_ remain `test-reviewer`'s.
+
+## Step 5 — Coverage-net check (deleted tests only)
+
+The cull's mirror image: the branch may have deleted a test (or net-removed assertions from one) whose behavior nothing else now pins. For every test **deleted** in the branch diff — and every pre-existing test whose assertions were net-removed — identify the behavior the old assertion pinned, then search the *surviving* suite for a replacement: coverage often moves rather than vanishes (a later phase's test, a different file, a broader integration test). Only when no surviving test would fail if that behavior regressed, classify it **COVERAGE-LOST**: name the deleted test, the behavior it pinned, and where coverage should be restored (usually the sibling file closest to the behavior). Two exemptions: tests culled by YOUR Step 4 verdict this run (deleting them is the point), and behavior the plan's "What We're NOT Doing" section explicitly cut — a deliberate scope cut is not a loss, cite the plan line. This is loss detection only; proposing *new* coverage for never-tested behavior remains `test-reviewer`'s job.
 
 ## The boundary — state it, don't oversell
 
@@ -92,6 +96,9 @@ If the bug originates in the **spec or plan itself** (intent was wrong on paper)
 
 ### CULL — no bug would fail this test
 [Each: test file:line, which cull shape it matches, and the deletion recommendation. Empty section omitted.]
+
+### COVERAGE-LOST — deleted test, no surviving replacement
+[Each: the deleted test (file + name), the behavior it pinned, where you searched for replacement coverage, and where to restore it. Empty section omitted.]
 
 ### INTENT-ALIGNED (summary count)
 [Just a count + one line. Do not enumerate — these are fine.]

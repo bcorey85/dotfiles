@@ -65,7 +65,7 @@ bash "$HOME/.claude/skills/review/log-review-metrics" \
 
 ### Phase 5: Calibration hook
 
-Any bug later found in a mechanically-staged file → `/escape tier=suppressed`. That is ground truth on whether a SAFE class's invariant actually holds. On any such escape: the class comes out of `stage.mjs` until the invariant is fixed — mechanical tiers tighten on evidence, never loosen without it.
+Any bug later found in a mechanically-staged file → `/escape` with `gate_missed=stage` (plus the usual `stage_found`/`class`/`severity` fields). That is ground truth on whether a SAFE class's invariant actually holds. On any such escape: the class comes out of `stage.mjs` until the invariant is fixed — mechanical tiers tighten on evidence, never loosen without it.
 
 ## Extending
 

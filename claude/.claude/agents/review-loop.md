@@ -43,8 +43,12 @@ Never block on this. If it fails, continue.
 
 `review-commit-gate.sh` is a `PostToolUse(Agent)` hook that marks the session
 `dirty` on a coder dispatch and `clean` on a `code-reviewer` dispatch — and it
-observes your NESTED dispatches under the parent session. The ordering below is
-what keeps that gate honest:
+observes your NESTED dispatches under the parent session. When YOUR OWN
+dispatch completes it also reads your returned packet: `status: converged` →
+`clean`, any other status → `dirty`. That outer event fires last and is the
+final word, so an honest `status` line is itself gate-critical. The ordering
+below keeps the gate honest mid-loop (an interrupted or crashed loop never
+returns a packet, so the nested state is what survives):
 
 ```
 each iteration:
@@ -64,8 +68,11 @@ blocked with findings outstanding. If you review first and only then discover
 non-convergence, your last dispatch is a `code-reviewer`, which writes `clean`
 and unblocks a commit over unresolved HIGH findings. That inverts the gate.
 
-Steps 3 and 4 return _after_ a reviewer ran and _before_ any coder ran, so
-`clean` is correct there — no unreviewed coder work exists at that moment.
+Steps 3 and 4 return _after_ a reviewer ran and _before_ any coder ran — but
+the hook still writes `dirty` on those returns (any non-`converged` status
+does). That is deliberate fail-closed behavior: a plan-impact or blocker
+return means the finding is unresolved, and the commit stays blocked until a
+loop actually converges.
 
 ## Step 1: Parse args
 
@@ -191,7 +198,7 @@ Runs ONCE the main loop passes the execution gate (Step 6), before MEDIUM classi
      Never double-log a finding on a re-verify pass.
 
    - `[design-decision]`-tagged findings (any domain) → NOT auto-fixed. A `[security] [design-decision]` finding returns `status: critical-blocker` with the finding in `blockers` (same rule as Step 4's "security requiring a design decision"). A `[perf] [design-decision]` or `[smell] [design-decision]` finding goes to the MEDIUM `ask` bucket.
-   - Remaining CRITICAL/HIGH `[security]` and HIGH `[smell]` findings (clean, non-design fixes — for `[smell]`, HIGH means must-stay-in-sync duplication whose divergence causes a bug) → **re-enter the loop**: `iter++` and hand them to Step 5 as findings, with the specialist as the continuity reviewer for the re-review. Do NOT hand-roll a fix here — reusing Step 5→Step 3 is what keeps the gate correct (last dispatch a fix coder → session stays `dirty`; the same specialist confirms its own fix on the re-verify pass).
+   - Remaining CRITICAL/HIGH `[security]`, HIGH `[perf]`, and HIGH `[smell]` findings (clean, non-design fixes — for `[smell]`, HIGH means must-stay-in-sync duplication whose divergence causes a bug; for `[perf]`, HIGH means a structural I/O anti-pattern on a request path over growing data, per the specialist's own severity line — it is fixed AND still collected/logged into `perf[]` above, the channel is a learning trail, not a substitute for the fix) → **re-enter the loop**: `iter++` and hand them to Step 5 as findings, with the specialist as the continuity reviewer for the re-review. Do NOT hand-roll a fix here — reusing Step 5→Step 3 is what keeps the gate correct (last dispatch a fix coder → session stays `dirty`; the same specialist confirms its own fix on the re-verify pass).
    - MEDIUM/LOW → the Step 6c MEDIUM classification and `low[]`.
 
 5. **Record** the domains that ran into `specialists`. When a re-entry (bullet 4) converges again, Step 6b runs once more, finds its domain in `specialists-cleared`, and proceeds to Step 6c without re-dispatching. The `iter >= 3` cap bounds the whole thing regardless.
@@ -205,7 +212,7 @@ Runs after Step 6b — at FINAL convergence. If Step 6b re-entered the loop
 generalist and specialist MEDIUMs are classified together in ONE pass with ONE
 fix dispatch. Classify each MEDIUM (from any reviewer) as:
 
-- **fix** — clear win, safe to auto-apply. `[test-fluff]`, `[comment-noise]`, and `[smell]` findings on diff-introduced code default to **fix** — the smell fixes are subtractive consolidations of the diff's own code (extract the helper, move the logic down a layer, delete the dead weight), the exact class the fix fence's "focused fix" language permits. **Guard**: NEVER auto-prune a test in an acceptance-spec file (`*.spec.*`) or the plan's Acceptance Stubs — route those to **ask**. A `[smell]` fix whose consolidation touches a pre-existing call site beyond the one being deduplicated → **ask**.
+- **fix** — clear win, safe to auto-apply. `[comment-noise]` and `[smell]` findings on diff-introduced code default to **fix** — the smell fixes are subtractive consolidations of the diff's own code (extract the helper, move the logic down a layer, delete the dead weight), the exact class the fix fence's "focused fix" language permits. **Guard**: NEVER auto-prune a test in an acceptance-spec file (`*.spec.*`) or the plan's Acceptance Stubs — route those to **ask**. A `[smell]` fix whose consolidation touches a pre-existing call site beyond the one being deduplicated → **ask**.
 - **skip** — false positive, intentional choice, stylistic noise, out of scope. Record a one-line reason.
 - **ask** — ambiguous, needs a design decision, or plausibly either. `[perf] [design-decision]` findings land here (per Step 6b).
 
@@ -223,7 +230,7 @@ bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git re
 didn't fire) — the dial that replaced second-draft telemetry when the coder
 self-sweep was retired (2026-07-16).
 
-`fixed`/`skipped_fp`/`ask` are the MEDIUM bucket counts when classification ran, else 0. `culled` = diff-added tests deleted this run (`[test-fluff]` fixes applied) — the "are coders still overproducing tests" dial. `comment_noise` = `[comment-noise]` fixes applied — the same dial for narration-comment sprawl. If the script fails, mention it and continue — telemetry never blocks.
+`fixed`/`skipped_fp`/`ask` are the MEDIUM bucket counts when classification ran, else 0. `culled` = diff-added tests deleted this run — 0 from 2026-07-17 on (the `[test-fluff]` channel retired into `test-intent-reviewer`'s branch-exit cull); field kept for schema stability. `comment_noise` = `[comment-noise]` fixes applied — the same dial for narration-comment sprawl. If the script fails, mention it and continue — telemetry never blocks.
 
 ## Return packet (the ONLY thing the orchestrator pays for)
 

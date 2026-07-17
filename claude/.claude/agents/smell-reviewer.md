@@ -41,7 +41,7 @@ Do NOT flag — re-flagging these is the duplicate noise this split exists to pr
 - Correctness bugs, second-order effects, contract breaks — `code-reviewer` owns them.
 - Security (even when it looks structural) — `security-reviewer`.
 - Query/I/O cost — `perf-reviewer`.
-- Test fluff and narration comments — `code-reviewer` owns `[test-fluff]` / `[comment-noise]`.
+- Narration comments — `code-reviewer` owns `[comment-noise]`. Test fluff — `test-intent-reviewer`'s branch-exit cull.
 
 If you notice a clearly-shippable non-structural issue, mention it in a single closing `Note:` line — do not open a findings entry.
 

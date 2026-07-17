@@ -14,7 +14,21 @@ return {
         ["<C-h>"] = false,
         ["<C-x>"] = { "actions.select", opts = { horizontal = true }, desc = "Open in horizontal split" },
         ["gr"] = { "actions.refresh", mode = "n", desc = "Refresh" },
-        ["q"] = { "actions.close", mode = "n" },
+        -- tmux `prefix e` popup (see .tmux.conf): the whole nvim is disposable,
+        -- so q in the oil buffer quits it — the popup dismisses lazygit-style,
+        -- like the NEOGIT_POPUP / CODEDIFF_POPUP siblings. Only oil's own q is
+        -- remapped (not a global map like codediff's): files opened from the
+        -- popup are editable, and a global q would eat macro recording. `qa`
+        -- without bang: unsaved buffers still block the quit.
+        ["q"] = vim.env.OIL_POPUP
+            and {
+              mode = "n",
+              desc = "Close oil popup",
+              callback = function()
+                vim.cmd("qa")
+              end,
+            }
+          or { "actions.close", mode = "n" },
         ["gO"] = {
           mode = "n",
           desc = "Open in file manager",

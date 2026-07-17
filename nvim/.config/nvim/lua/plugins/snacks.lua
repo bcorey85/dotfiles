@@ -58,13 +58,14 @@ return {
       -- dashboard: the Doom splash on an empty start. preset.header is the
       -- banner; "neovim?" rides underneath as a centered subtitle. Keys mirror
       -- the Doom-style picker layout already bound below.
-      -- Suppressed in the tmux popup nvims (prefix d/g/s, prefix n org menu):
+      -- Suppressed in the tmux popup nvims (prefix d/g/s/e, prefix n org menu):
       -- they launch straight into their own UI, and the splash frame reads as
       -- flicker there.
       dashboard = {
         enabled = vim.env.CODEDIFF_POPUP == nil
           and vim.env.NEOGIT_POPUP == nil
           and vim.env.GIT_QF_POPUP == nil
+          and vim.env.OIL_POPUP == nil
           and vim.env.ORG_POPUP == nil,
         preset = {
           header = doom_banner,

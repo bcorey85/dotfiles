@@ -17,9 +17,34 @@ return {
   ft = { "markdown", "html", "asciidoc", "svg" },
   cmd = { "LivePreview" },
   config = function()
+    -- Every nvim instance defaults to port 5500, so a second instance collides
+    -- with the first (which still holds it) — the plugin only warns, then binds
+    -- anyway and the preview silently breaks. Ask the OS for a free ephemeral
+    -- port per instance (bind to :0, read the assignment, release it) so
+    -- instances never fight over one port. Falls back to 5500 if the probe fails.
+    local function free_port()
+      local sock = vim.uv.new_tcp()
+      if not sock then
+        return 5500
+      end
+      local ok = pcall(function()
+        assert(sock:bind("127.0.0.1", 0))
+      end)
+      local port = 5500
+      if ok then
+        local addr = sock:getsockname()
+        if addr and addr.port then
+          port = addr.port
+        end
+      end
+      sock:close()
+      return port
+    end
+
     require("livepreview").setup({
       -- Use the snacks picker (already installed) for `:LivePreview pick`.
       picker = "snacks.picker",
+      port = free_port(), -- per-instance free port; see free_port() above
       sync_scroll = true, -- browser follows the cursor as you scroll in nvim
     })
 

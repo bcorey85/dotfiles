@@ -125,6 +125,8 @@ Use these severities. They are **strict** definitions about the issue itself, no
 - **MEDIUM**: Real issue, but the code could ship without fixing this. Should be fixed soon. Report only — does not trigger auto-fix.
 - **LOW**: Worth mentioning once. Single "Notes" line, no fix dispatch.
 
+**CRITICAL and HIGH additionally require real-world likelihood, not just reachability.** The failure path must be one realistic use will plausibly hit — real inputs, normal timing, state the system actually produces. A failure that needs contrived inputs, an improbable race, or state that doesn't occur in practice caps at MEDIUM, and the finding must name the precondition that has to hold for it to fire.
+
 **Severity is a property of the issue, not a lever for whether auto-fix runs.** Do not inflate a MEDIUM to HIGH because you want it addressed. Do not deflate a HIGH to MEDIUM because you're worried about triggering another loop. The severity gate downstream is calibrated against honest severities — gaming it produces worse outcomes for everyone.
 
 If a category is empty, omit the section. Do not pad sections with marginal items to look thorough.
@@ -170,7 +172,7 @@ For each issue you're about to flag, run the calibration question one more time:
 2. Have I verified the bad path is actually reachable, not just theoretically possible?
 3. Is this a stated project convention, or my preference? If I'm citing a convention, did I re-read its exemption clause and confirm the code isn't exempt?
 4. Is the premise verified against ground truth — correct diff baseline (not pre-existing/intentional work), actual types/state, fresh typecheck (not a stale LSP/TS snapshot)?
-5. Could this be downgraded from HIGH to MEDIUM, or MEDIUM to a Note?
+5. Could this be downgraded from HIGH to MEDIUM, or MEDIUM to a Note? In particular: does the failure need contrived inputs, unusual timing, or state real usage won't produce? That caps it at MEDIUM (Step 3).
 
 If the answer to #1 is "no", remove it. If you can't answer #2 affirmatively, remove it. If #3 is "preference" or the code is inside the rule's exemption, remove it. If you can't answer #4 affirmatively, remove it. If #5 nudges you down, downgrade it.
 

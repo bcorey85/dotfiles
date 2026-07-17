@@ -203,7 +203,7 @@ Runs ONCE the main loop passes the execution gate (Step 6), before MEDIUM classi
 
 5. **Record** the domains that ran into `specialists`. When a re-entry (bullet 4) converges again, Step 6b runs once more, finds its domain in `specialists-cleared`, and proceeds to Step 6c without re-dispatching. The `iter >= 3` cap bounds the whole thing regardless.
 
-**Gate integrity**: because specialist CRITICAL/HIGH re-enter the existing loop rather than being fixed in place, the "last dispatch is a fix coder on any non-convergence" invariant is preserved unchanged. Specialists are reviewers — their dispatch writes `clean`, which is correct only because it is immediately followed either by real convergence (no outstanding coder work) or by a Step-5 fix coder on re-entry.
+**Gate integrity**: because specialist CRITICAL/HIGH re-enter the existing loop rather than being fixed in place, the "last dispatch is a fix coder on any non-convergence" invariant is preserved unchanged. Specialist dispatches write NO gate state (the hook's clean-list is `code-reviewer*`/`test-intent-reviewer` only), so the session keeps whatever the last coder/generalist-reviewer event wrote — and your own returned packet is the final word regardless.
 
 ## Step 6c: MEDIUM classification (final convergence only)
 

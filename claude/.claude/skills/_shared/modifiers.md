@@ -8,7 +8,7 @@ Pass `model: "haiku"` on every coder/reviewer dispatch the skill makes. This is 
 
 ## `+deep`
 
-Dispatch the `-deep` variant of each agent (`backend-coder-deep`, `frontend-coder-deep`, `coder-deep`, `code-reviewer-deep`, `security-reviewer-deep`, `perf-reviewer-deep`) and **omit `model`** — the variant's frontmatter pins Opus. Never pass `model: "opus"` at the call site; the agent-model-guard hook blocks it (as it does `fable` and `inherit`). Use for complex work requiring deeper reasoning: intertwined systems, security-sensitive changes, subtle migrations.
+Dispatch the `-deep` variant of each agent (`backend-coder-deep`, `frontend-coder-deep`, `coder-deep`, `code-reviewer-deep`, `security-reviewer-deep`, `perf-reviewer-deep`, `smell-reviewer-deep`) and **omit `model`** — the variant's frontmatter pins Opus. Never pass `model: "opus"` at the call site; the agent-model-guard hook blocks it (as it does `fable` and `inherit`). Use for complex work requiring deeper reasoning: intertwined systems, security-sensitive changes, subtle migrations.
 
 ## Handling rules (all skills)
 

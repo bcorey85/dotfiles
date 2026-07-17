@@ -35,6 +35,10 @@ Insert these between `## Overview` and the shared closing trio (Out of Scope / R
 
 <URL, method, request/response shapes, status codes, auth/permissions>
 
+## Reuse Map
+
+<existing helpers/services/utilities/patterns the coder must use, with file paths — search before listing; an empty map means you searched and found nothing, say so>
+
 ## Implementation Steps
 
 <ordered; each step scoped to specific files/modules>

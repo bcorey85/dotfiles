@@ -9,7 +9,8 @@
 # A "date" field (UTC ISO 8601) is always added. Output file:
 #   $REVIEW_METRICS_FILE or ~/.claude/review-metrics.jsonl
 # The reserved key out=<path> redirects output to a different JSONL (it is
-# consumed, not logged) — used by /code and /fix for second-draft telemetry.
+# consumed, not logged). Second-draft telemetry retired 2026-07-16; the
+# second_draft= routing below stays as a corruption backstop for stale callers.
 set -euo pipefail
 
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }

@@ -31,11 +31,12 @@ Trace each against real input boundaries and real reachability. Flag only what a
 
 ## Explicitly NOT your scope
 
-Do NOT flag — these belong to `code-reviewer` or `perf-reviewer`, and re-flagging them is exactly the duplicate noise this split exists to prevent:
+Do NOT flag — these belong to `code-reviewer`, `perf-reviewer`, or `smell-reviewer`, and re-flagging them is exactly the duplicate noise this split exists to prevent:
 
 - General correctness bugs, logic errors, null derefs, off-by-one — unless the bug IS the vulnerability.
 - Performance / N+1 / query cost — `perf-reviewer` owns it.
-- Style, naming, comments, test fluff, duplication, architecture-fit — `code-reviewer` owns it.
+- Duplication, naming, layer placement, cohesion — `smell-reviewer` owns it.
+- Style, comments, test fluff — `code-reviewer` owns it.
 
 If, while tracing security, you notice a clearly-shippable non-security bug, mention it in a single closing `Note:` line — do not open a findings entry for it.
 

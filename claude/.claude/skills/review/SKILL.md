@@ -14,7 +14,7 @@ raise the modals it cannot.
 ## Modifiers
 
 - `+fast` / `+deep` — semantics in `~/.claude/skills/_shared/modifiers.md` (read it when either is present). Pass through to the agent verbatim; it maps them to the reviewer variant and model.
-- `+sec` / `+perf` — force that cross-cutting specialist pass even when the loop's deterministic trigger wouldn't fire it. `no-specialist` — suppress the specialist pass entirely. All three pass through verbatim (step 1).
+- `+sec` / `+perf` / `+smell` — force that cross-cutting specialist pass even when the loop's deterministic trigger wouldn't fire it. `no-specialist` — suppress the specialist pass entirely. All four pass through verbatim (step 1).
 
 ## Instructions
 
@@ -22,7 +22,7 @@ raise the modals it cannot.
    - `mode: review-first`, `caller: review`
    - any `handoff:` block from `$ARGUMENTS` (schema: `~/.claude/skills/_shared/handoff-block.md`)
    - any `+fast` / `+deep` modifier and `iter=N`
-   - any specialist flag from `$ARGUMENTS`: `+sec` / `+perf` (force that cross-cutting specialist pass) or `no-specialist` (suppress it). Absent these, the loop's Step 6b decides per its deterministic file-path/content trigger.
+   - any specialist flag from `$ARGUMENTS`: `+sec` / `+perf` / `+smell` (force that cross-cutting specialist pass) or `no-specialist` (suppress it). Absent these, the loop's Step 6b decides per its deterministic file-path/content/diff-size trigger.
    - if `$ARGUMENTS` names a file path and no handoff block was given, scope the review to that file only
 
 2. **Route on the returned `status`** — first match wins:

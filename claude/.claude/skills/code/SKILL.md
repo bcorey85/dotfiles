@@ -25,7 +25,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 2. **Detect multi-phase plans (MANDATORY check)**: If the task input is a path to a plan file (e.g., `*-plan.md` under `docs/eng-specs/`) or pasted plan content, read it and check whether it contains multiple `## Phase N:` sections.
 
-   **Lane provenance (for telemetry, one-time)**: `lane=eng-spec` when the task input came from step 0's resolver (task directory `spec.md`, or a legacy flat plan file); `lane=code` otherwise (direct dispatch, no plan). Carry this value into the second-draft telemetry line (step 5) and the `review-loop` dispatch (step 6).
+   **Lane provenance (for telemetry, one-time)**: `lane=eng-spec` when the task input came from step 0's resolver (task directory `spec.md`, or a legacy flat plan file); `lane=code` otherwise (direct dispatch, no plan). Carry this value into the `review-loop` dispatch (step 6).
 
    **If it's a multi-phase plan:**
    - Do NOT dispatch all phases at once.
@@ -70,16 +70,6 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
    **PLAN-IMPACT gate (before anything else in this step)**: scan the coder report for a `PLAN-IMPACT:` block (coder-core requires `PLAN-IMPACT: yes` as the report's last line when one exists). If present, present it via **AskUserQuestion** — assumed → found → what changes, options `Adopt plan change` / `Keep plan as written` / `Discuss` — BEFORE summarizing or auto-dispatching `/review`. A plan-impact finding folded into a prose summary is a protocol violation: the modal (and its attention-hook notification) is what makes the finding unskippable. Record the answer in the plan's `## Plan Deviations` section (create if absent) so `/verify` reconciles against the amended plan.
 
-   **Second-draft telemetry (non-blocking)**: for each coder report, read its `SECOND DRAFT:` line and log one JSONL line — the coder-side counterpart to the review metrics:
-
-   ```bash
-   bash ~/.claude/skills/review/log-review-metrics out="${SECOND_DRAFT_FILE:-$HOME/.claude/second-draft.jsonl}" \
-     repo="$(basename "$(git rev-parse --show-toplevel)")" source=code coder=<subagent_type> lane=<lane> \
-     second_draft=<clean|found|missing> categories=<comma-list|none> text="<the SECOND DRAFT line verbatim; omit when clean>"
-   ```
-
-   `found` when the sweep changed anything (classify the receipt into `categories` using the sweep's own list: `duplication`, `layer`, `naming`, `dead-weight`, `cohesion`, fallback `other`); `clean` when it reports nothing found; `missing` when a non-trivial report has no `SECOND DRAFT:` line at all — that is a coder protocol violation worth counting, not silently forgiving. One line per coder (parallel fullstack = two lines). If the script fails, mention it and continue — telemetry never blocks the flow.
-
    User summary:
    - What was implemented
    - Any issues flagged
@@ -100,7 +90,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
    The handoff lets the reviewer skip rediscovery — file scope, change intent, and test status are upstream context the reviewer no longer has to reconstruct via `git diff` and full re-reads. Coders already know all of this; pass it forward instead of forcing re-discovery.
 
-6. **Auto-dispatch peer review**: After summarizing the coder output, tell the user: "Auto-dispatching review to check the implementation before committing." Then dispatch the loop directly — `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"` (unpinned), passing `mode: review-first`, `caller: code`, `lane: <lane>` (from step 2), the handoff block from step 5, and any `+fast`/`+deep` modifier plus any specialist flag (`+sec`/`+perf`/`no-specialist`). The loop's Step 6b runs the security/perf specialists automatically on its deterministic trigger; the flags only force or suppress that pass.
+6. **Auto-dispatch peer review**: After summarizing the coder output, tell the user: "Auto-dispatching review to check the implementation before committing." Then dispatch the loop directly — `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"` (unpinned), passing `mode: review-first`, `caller: code`, `lane: <lane>` (from step 2), the handoff block from step 5, and any `+fast`/`+deep` modifier plus any specialist flag (`+sec`/`+perf`/`+smell`/`no-specialist`). The loop's Step 6b runs the security/perf/smell specialists automatically on their deterministic triggers; the flags only force or suppress that pass.
 
    Do NOT `Skill`-invoke `/review` here. That re-injects its body into this context once per phase; dispatching the agent keeps the loop's instructions in a subagent context that costs this one nothing. `/review` remains the user-facing entry point for manual review and dispatches the same agent.
 

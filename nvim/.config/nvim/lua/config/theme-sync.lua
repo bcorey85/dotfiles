@@ -117,6 +117,27 @@ local FAMILIES = {
       vim.api.nvim_set_hl(0, "Comment", { fg = c, italic = true })
     end,
   },
+  tokyobones = {
+    -- zenbones.nvim's tokyonight-flavored sibling (same plugin as zenbones/
+    -- zenwritten): the bones generator run over tokyonight's night/day
+    -- palettes. One scheme for both modes; it picks its palette from
+    -- vim.o.background.
+    schemes = { dark = "tokyobones", light = "tokyobones" },
+    accents = {
+      dark = { heading1 = "#bb9af7", heading = "#7aa2f7" }, -- blossom + water (tokyonight purple + blue)
+      light = { heading1 = "#5a4a78", heading = "#34548a" },
+    },
+    -- Comment floor: the bones generator lands comments at #65677d (3.08:1)
+    -- dark / #7c7e89 (2.81:1) light, both under 4.5. Body has room (10.59 /
+    -- 7.76), so lift toward it: dark blends 40% to body fg (#898fad, 5.37:1),
+    -- light deepens 55% toward the ink (#54596e, 4.82:1). Comments stay italic
+    -- per the bones design. Diff* ship real bg-only washes in both modes
+    -- (DiffText a shade above DiffChange), so they're left stock.
+    fixup = function(mode)
+      local c = mode == "dark" and blend("#c0caf5", "#65677d", 0.4) or blend("#333a57", "#7c7e89", 0.55)
+      vim.api.nvim_set_hl(0, "Comment", { fg = c, italic = true })
+    end,
+  },
   kanagawa = {
     -- rebelot/kanagawa.nvim: wave (the original — indigo night, saturated) dark,
     -- lotus (yellow paper) light. All variants register colors_name "kanagawa".

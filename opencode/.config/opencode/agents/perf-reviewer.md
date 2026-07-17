@@ -36,7 +36,8 @@ Prefix every finding with `[perf]` and END it with `Principle: <one transferable
 Do NOT flag — re-flagging these is the duplicate noise this split exists to prevent:
 
 - Security (injection, authz, tenant isolation) — `security-reviewer` owns it, even when it looks query-shaped.
-- General correctness, style, naming, comments, tests, duplication, architecture-fit — `code-reviewer` owns it.
+- Duplication, naming, layer placement, cohesion — `smell-reviewer` owns it.
+- General correctness, style, comments, tests — `code-reviewer` owns it.
 - In-memory/CPU big-O with bounded n — suppressed, per the calibration line above.
 
 If you notice a clearly-shippable non-perf issue, mention it in a single closing `Note:` line — do not open a findings entry.

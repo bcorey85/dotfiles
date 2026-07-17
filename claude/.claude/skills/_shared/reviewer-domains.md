@@ -1,7 +1,7 @@
 # Cross-Cutting Reviewer Domains (deterministic trigger)
 
 Canonical trigger definitions for the single-domain specialist reviewers
-(`security-reviewer`, `perf-reviewer`). `review-loop` reads this file to decide,
+(`security-reviewer`, `perf-reviewer`, `smell-reviewer`). `review-loop` reads this file to decide,
 **deterministically — no judgment call**, whether a converged diff touches a
 domain's surface and therefore warrants a specialist pass. Keeping the patterns
 here (not inline in `review-loop`) makes them one editable, portable source.
@@ -24,8 +24,12 @@ git diff HEAD -U0 | rg '^[+-]' | rg -iE '<domain content regex>'
 ```
 
 Either non-empty → the domain is eligible. Eligibility is a floor, never a
-ceiling: a caller-supplied force flag (`+sec` / `+perf`) makes a domain eligible
-even with no match; `no-specialist` suppresses the pass entirely.
+ceiling: a caller-supplied force flag (`+sec` / `+perf` / `+smell`) makes a domain
+eligible even with no match; `no-specialist` suppresses the pass entirely.
+
+**Exception — the `smell` domain triggers on diff SIZE, not paths/content**
+(structure smells have no path or keyword signature; volume is the risk proxy).
+See its section below.
 
 ## Default patterns (generic, portable — no repo names, no single stack)
 
@@ -53,6 +57,25 @@ endpoints live, not just where auth code lives.
   `**/*dao*`, `**/entities/**`, `**/schema*`
 - **Content regex**:
   `SELECT\s|\.find\(|\.findAll\(|\.query\(|\.aggregate\(|createQueryBuilder|await .*\bfor\b|for .*await|forEach\(.*await|\.map\(.*await|Promise\.all|LIMIT|OFFSET|JOIN\s|include:|eager|lazy|\.count\(|objects\.|select_related|prefetch_related|values_list|annotate\(|bulk_create|\.Include\(|\.ThenInclude\(|ToListAsync|IQueryable|FromSql|SaveChanges|Task\.WhenAll|\.Query\(|\.QueryRow\(|\.Exec\(|rows\.Next|Preload\(|gorm\.`
+
+### smell
+
+Size trigger, not path/content — eligible when EITHER holds on the converged diff:
+
+1. **≥ 40 added lines** across source files (sum of column 1 from
+   `git diff HEAD --numstat`, excluding lockfiles and generated files).
+2. **≥ 1 new source file** (`git ls-files --others --exclude-standard` plus
+   `git diff --name-only --diff-filter=A HEAD`) — a new file is where
+   re-implementing an existing helper is most likely.
+
+```bash
+git diff HEAD --numstat | rg -v 'lock|generated|snapshot' | awk '{s+=$1} END {print s}'
+```
+
+Test-only diffs (every changed file a test file) are NOT eligible — test
+structure is `code-reviewer`'s `[test-fluff]` channel and the test-intent
+gates, not this domain. Force with `+smell`; suppressed by `no-specialist`
+like the others.
 
 ## Per-repo extension
 

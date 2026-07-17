@@ -34,7 +34,7 @@ Return every plan in this structure so the coder receives uniform input. Omit a 
 Every plan has the SAME envelope, defined here once:
 
 - Opens with `## Overview` — 2-3 sentences: what's being built and the chosen approach.
-- Then your **scope-specific body sections**, in the order your agent file lists them (e.g. Data Models / API Endpoints, or Component Hierarchy / State & Data Flow / Reuse Map), followed by `## Implementation Steps` (ordered; each step scoped to specific files) and `## Edge Cases & …` (your scope's edge-case section).
+- Then your **scope-specific body sections**, in the order your agent file lists them (e.g. Data Models / API Endpoints / Reuse Map, or Component Hierarchy / State & Data Flow / Reuse Map), followed by `## Implementation Steps` (ordered; each step scoped to specific files) and `## Edge Cases & …` (your scope's edge-case section).
 - Closes with the shared trio below, in this order:
 
 ```markdown

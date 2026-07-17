@@ -20,8 +20,8 @@ of being resolved by you.
 - `caller`: `code` | `review` | `fix` — for telemetry.
 - `lane`: `eng-spec` | `code` | `none` — plan provenance, pass-through to telemetry only. Absent → `none`.
 - `handoff:` block — schema in `~/.claude/skills/_shared/handoff-block.md`. May be absent (manual `/review`).
-- Modifiers: `+deep` → dispatch the `-deep` variant of every reviewer you spawn (`code-reviewer-deep`, and in Step 6b `security-reviewer-deep` / `perf-reviewer-deep`) and OMIT `model` (their frontmatter pins Opus). `+fast` → pass `model: "haiku"`.
-- Specialist flags (Step 6b): `+sec` / `+perf` force the named specialist pass even when the diff doesn't match its trigger; `no-specialist` suppresses the specialist pass entirely.
+- Modifiers: `+deep` → dispatch the `-deep` variant of every reviewer you spawn (`code-reviewer-deep`, and in Step 6b `security-reviewer-deep` / `perf-reviewer-deep` / `smell-reviewer-deep`) and OMIT `model` (their frontmatter pins Opus). `+fast` → pass `model: "haiku"`.
+- Specialist flags (Step 6b): `+sec` / `+perf` / `+smell` force the named specialist pass even when the diff doesn't match its trigger; `no-specialist` suppresses the specialist pass entirely.
 - `no-review` (fix-first only): dispatch the fix coder, verify via the execution gate, return without a reviewer pass.
 
 ## Step 0: Log the invocation (always, first action)
@@ -135,16 +135,6 @@ Include this fence verbatim in every coder prompt you send:
 
 Record every resolved finding into `fixed[]` as `{severity, finding, file_line}` — this is what the wrapper renders under "Findings by severity". A CRITICAL/HIGH that the loop repairs but never names is a silent repair, and silent repairs are how the loop loses the user's trust.
 
-**Second-draft telemetry (non-blocking)**: for each coder report, read its `SECOND DRAFT:` line and log one line:
-
-```bash
-bash "$HOME/.claude/skills/review/log-review-metrics" out="${SECOND_DRAFT_FILE:-$HOME/.claude/second-draft.jsonl}" \
-  repo="$(basename "$(git rev-parse --show-toplevel)")" source=fix coder=<subagent_type> lane=<lane> \
-  second_draft=<clean|found|missing> categories=<comma-list|none> text="<the SECOND DRAFT line verbatim; omit when clean>"
-```
-
-`missing` = a non-trivial report with no `SECOND DRAFT:` line — a protocol violation worth counting, not silently forgiving.
-
 **PLAN-IMPACT pass-through**: scan each coder report for a `PLAN-IMPACT:` block (`coder-core` requires `PLAN-IMPACT: yes` as the report's last line when one exists). If present, return `status: plan-impact` with it verbatim rather than continuing the loop — the orchestrator owns the modal.
 
 Then `iter++` and re-enter step 1.
@@ -161,7 +151,7 @@ c. **The conversation** — findings discussed upstream, passed in args.
 
 Categorize by which coder owns the file (frontend vs backend, or a single `coder` in non-web repos), launch them in parallel in ONE message with multiple Agent tool calls, and include the same verbatim fence from step 5. Build `prior-issues` (`issue` / `status: fixed|skipped|partial` / `file`) so the verification reviewer checks "did these fixes take?" before scanning for new issues — that scoping is the loop's main token saving.
 
-**Coder-report post-processing (both sub-paths)**: after every fix-first coder dispatch — before entering the loop AND before returning under `no-review` — process each coder report exactly as step 5 does: record resolved findings into `fixed[]`, emit **second-draft telemetry** (`source=fix`), and run the **PLAN-IMPACT pass-through** (scan for a `PLAN-IMPACT:` block; if present, return `status: plan-impact` with it verbatim and dispatch nothing further — do not enter the loop, do not return `converged`). Fix-first is the path where a coder acts before any reviewer sees the diff, so it is the likeliest source of a coder-discovered plan-impact; swallowing it here would violate the plan-impact-aborts-first invariant.
+**Coder-report post-processing (both sub-paths)**: after every fix-first coder dispatch — before entering the loop AND before returning under `no-review` — process each coder report exactly as step 5 does: record resolved findings into `fixed[]` and run the **PLAN-IMPACT pass-through** (scan for a `PLAN-IMPACT:` block; if present, return `status: plan-impact` with it verbatim and dispatch nothing further — do not enter the loop, do not return `converged`). Fix-first is the path where a coder acts before any reviewer sees the diff, so it is the likeliest source of a coder-discovered plan-impact; swallowing it here would violate the plan-impact-aborts-first invariant.
 
 **`no-review`**: when this flag is in args (the post-convergence MEDIUM bucket), dispatch the coder, run the coder-report post-processing above, run the execution gate as verification, and return `status: converged` WITHOUT dispatching a reviewer. Do not enter step 1.
 
@@ -187,9 +177,9 @@ Runs ONCE the main loop passes the execution gate (Step 6), before MEDIUM classi
 
 1. **Skip conditions**: if args contain `no-specialist`, skip entirely and record `specialists: none (suppressed)`. If a domain already ran this loop and returned no findings on its last pass, don't re-run it — track a `specialists-cleared` set across re-entries.
 
-2. **Compute eligibility deterministically** per `~/.claude/skills/_shared/reviewer-domains.md`: match the converged diff's changed paths AND added/removed lines against each domain's globs/regexes, merging any repo-root `.claude/reviewer-triggers.json` additively. A caller force flag (`+sec`, `+perf`) makes that domain eligible without a match. This is a pure match — never a judgment call about whether the change "feels" security- or perf-critical; that judgment is exactly the silent-false-negative failure this trigger exists to remove. If no domain is eligible, record `specialists: none (no match)` and go to Step 6c.
+2. **Compute eligibility deterministically** per `~/.claude/skills/_shared/reviewer-domains.md`: match the converged diff's changed paths AND added/removed lines against each domain's globs/regexes (the `smell` domain instead uses that file's diff-SIZE trigger), merging any repo-root `.claude/reviewer-triggers.json` additively. A caller force flag (`+sec`, `+perf`, `+smell`) makes that domain eligible without a match. This is a pure match — never a judgment call about whether the change "feels" security-, perf-, or smell-critical; that judgment is exactly the silent-false-negative failure this trigger exists to remove. If no domain is eligible, record `specialists: none (no match)` and go to Step 6c.
 
-3. **Dispatch eligible specialists** — `security-reviewer` and/or `perf-reviewer` (their `-deep` variants under `+deep`, omitting `model`; `model: "haiku"` under `+fast`). Launch multiple in a single message (parallel). Pass each ONLY the converged-diff file list as its scope — never let it re-discover — and the relevant `flagged` subset. Do NOT include a category checklist; each agent defines its own calibration (same rule as Step 3).
+3. **Dispatch eligible specialists** — `security-reviewer`, `perf-reviewer`, and/or `smell-reviewer` (their `-deep` variants under `+deep`, omitting `model`; `model: "haiku"` under `+fast`). Launch multiple in a single message (parallel). Pass each ONLY the converged-diff file list as its scope — never let it re-discover — and the relevant `flagged` subset. Do NOT include a category checklist; each agent defines its own calibration (same rule as Step 3).
 
 4. **Fold findings into the existing packet** — do NOT open a parallel findings stream:
    - `[perf]`-tagged findings → collect into `perf[]` with their `Principle:` line. On the domain's FIRST pass this loop only, append each to `~/vault/91. Areas/Backend Performance/Backend Perf - Findings Log.md` via Read + Edit (Write it with a `# Backend Perf - Findings Log` heading if absent). **This log is the only write you are permitted** (see the bottom fence). Format, one line per finding:
@@ -200,8 +190,8 @@ Runs ONCE the main loop passes the execution gate (Step 6), before MEDIUM classi
 
      Never double-log a finding on a re-verify pass.
 
-   - `[design-decision]`-tagged findings (either domain) → NOT auto-fixed. A `[security] [design-decision]` finding returns `status: critical-blocker` with the finding in `blockers` (same rule as Step 4's "security requiring a design decision"). A `[perf] [design-decision]` finding goes to the MEDIUM `ask` bucket.
-   - Remaining CRITICAL/HIGH `[security]` findings (clean, non-design fixes) → **re-enter the loop**: `iter++` and hand them to Step 5 as findings, with the specialist as the continuity reviewer for the re-review. Do NOT hand-roll a fix here — reusing Step 5→Step 3 is what keeps the gate correct (last dispatch a fix coder → session stays `dirty`; the same specialist confirms its own fix on the re-verify pass).
+   - `[design-decision]`-tagged findings (any domain) → NOT auto-fixed. A `[security] [design-decision]` finding returns `status: critical-blocker` with the finding in `blockers` (same rule as Step 4's "security requiring a design decision"). A `[perf] [design-decision]` or `[smell] [design-decision]` finding goes to the MEDIUM `ask` bucket.
+   - Remaining CRITICAL/HIGH `[security]` and HIGH `[smell]` findings (clean, non-design fixes — for `[smell]`, HIGH means must-stay-in-sync duplication whose divergence causes a bug) → **re-enter the loop**: `iter++` and hand them to Step 5 as findings, with the specialist as the continuity reviewer for the re-review. Do NOT hand-roll a fix here — reusing Step 5→Step 3 is what keeps the gate correct (last dispatch a fix coder → session stays `dirty`; the same specialist confirms its own fix on the re-verify pass).
    - MEDIUM/LOW → the Step 6c MEDIUM classification and `low[]`.
 
 5. **Record** the domains that ran into `specialists`. When a re-entry (bullet 4) converges again, Step 6b runs once more, finds its domain in `specialists-cleared`, and proceeds to Step 6c without re-dispatching. The `iter >= 3` cap bounds the whole thing regardless.
@@ -215,7 +205,7 @@ Runs after Step 6b — at FINAL convergence. If Step 6b re-entered the loop
 generalist and specialist MEDIUMs are classified together in ONE pass with ONE
 fix dispatch. Classify each MEDIUM (from any reviewer) as:
 
-- **fix** — clear win, safe to auto-apply. `[test-fluff]` and `[comment-noise]` findings on diff-introduced tests/comments default to **fix**. **Guard**: NEVER auto-prune a test in an acceptance-spec file (`*.spec.*`) or the plan's Acceptance Stubs — route those to **ask**.
+- **fix** — clear win, safe to auto-apply. `[test-fluff]`, `[comment-noise]`, and `[smell]` findings on diff-introduced code default to **fix** — the smell fixes are subtractive consolidations of the diff's own code (extract the helper, move the logic down a layer, delete the dead weight), the exact class the fix fence's "focused fix" language permits. **Guard**: NEVER auto-prune a test in an acceptance-spec file (`*.spec.*`) or the plan's Acceptance Stubs — route those to **ask**. A `[smell]` fix whose consolidation touches a pre-existing call site beyond the one being deduplicated → **ask**.
 - **skip** — false positive, intentional choice, stylistic noise, out of scope. Record a one-line reason.
 - **ask** — ambiguous, needs a design decision, or plausibly either. `[perf] [design-decision]` findings land here (per Step 6b).
 
@@ -226,8 +216,12 @@ Dispatch the **fix** bucket ONCE to a coder in `no-review` mode (no reviewer res
 `${CLAUDE_SKILL_DIR}` does not resolve inside an agent. Use the absolute path:
 
 ```bash
-bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> skipped_fp=<n> ask=<n> test_intent_ran=0 culled=<n> comment_noise=<n> specialists=<security,perf|none> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
+bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> skipped_fp=<n> ask=<n> test_intent_ran=0 culled=<n> comment_noise=<n> smells=<n> specialists=<security,perf,smell|none> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
 ```
+
+`smells` = `[smell]` findings the smell specialist returned this run (0 when it
+didn't fire) — the dial that replaced second-draft telemetry when the coder
+self-sweep was retired (2026-07-16).
 
 `fixed`/`skipped_fp`/`ask` are the MEDIUM bucket counts when classification ran, else 0. `culled` = diff-added tests deleted this run (`[test-fluff]` fixes applied) — the "are coders still overproducing tests" dial. `comment_noise` = `[comment-noise]` fixes applied — the same dial for narration-comment sprawl. If the script fails, mention it and continue — telemetry never blocks.
 
@@ -244,7 +238,7 @@ findings_remaining: [<one line each>]    # status=cap-reached
 plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
 medium: {fix: [<applied>], skip: [{item, reason}], ask: [<one line each>]}
 perf: [{finding, principle, file_line}]
-specialists: [security | perf]           # Step 6b — which specialists ran (or "none (no match)" / "none (suppressed)"); same name as the Step 7 telemetry field
+specialists: [security | perf | smell]   # Step 6b — which specialists ran (or "none (no match)" / "none (suppressed)"); same name as the Step 7 telemetry field
 files_touched: [<path>]
 low: [<one line each>]
 load_bearing_clean: <one line, or omitted>

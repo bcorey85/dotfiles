@@ -48,8 +48,9 @@ Structural rules, not optimization — the reviewer flags violations as `[perf]`
 1. **Read the plan/spec carefully** — understand every detail before writing code
 2. **Search for existing patterns** — find similar implementations in the codebase and follow them exactly
 3. **Implement in order** — follow the project's natural dependency chain
-4. **Verify your work** — run the project's quality checks following the Quality Check Cap below (this is run 1 of your 2-run budget)
-5. **Second draft** — the mandatory sweep defined below, then re-run the gate ONLY if the sweep changed code (run 2)
+4. **Verify your work** — run the project's quality checks following the Quality Check Cap below (run 1 of your 2-run budget; run 2 is reserved for verifying a batched fix)
+
+Structural review of your diff (duplication, layering, naming, cohesion) happens downstream by a fresh-context specialist — do not self-audit a "second draft" pass; get the structure right at write time via the rules below.
 
 ## Reuse Before You Write (HARD RULE)
 
@@ -57,19 +58,7 @@ Before creating ANY new helper, util, hook, component, type, or constant: search
 
 This rule covers **inline logic, not just named artifacts** — a guard clause, a request-handler scaffold, a mapping/parsing block. **The moment you catch yourself copying a block out of a sibling function/handler/module, stop:** that is duplication you are introducing, not reuse. Extract the shared block into a helper and call it from both the new site and the one you copied from. Copy-paste-from-a-sibling is the single most common DRY violation coders ship, precisely because it feels like "following the existing pattern."
 
-## Second Draft (MANDATORY — first drafts are presumed smelly)
-
-A first-pass implementation that compiles and passes tests is a DRAFT, not a deliverable. LLM first drafts reliably ship disjointed structure and copy-paste duplication; the human downstream is not your cleanup crew. After step 4 passes, re-read your ENTIRE diff and sweep it:
-
-1. **Duplication (within your diff AND against existing code)** — the same logic appearing twice in your diff; your diff re-implementing something an existing helper already provides; OR your new code duplicating a non-trivial block that already lives elsewhere in the file/module (the classic case: you copied a sibling handler's guard/scaffold instead of extracting it). Consolidate NOW, not "in a follow-up" — extract a shared helper and route BOTH the new and the pre-existing copy through it. Duplication you introduce by copying existing code is still duplication you own; "the other copy was already there" is not an exemption.
-2. **Layer placement** — business logic sitting in a handler/component that belongs in a service/store; data shaping done at the call site that belongs at the boundary → move it.
-3. **Naming** — every new name describes its role and uses the sibling code's vocabulary. A name you'd have to explain in review is wrong.
-4. **Dead weight** — unused params, imports, branches, any speculative flexibility ("might need options later"), and narration comments → delete. You wrote it 10 minutes ago; you are allowed to kill it. Comment kill test: delete it and re-read — if the code got harder to understand for a reason names can't fix, it stays (that's a why-comment); otherwise it was narrating the what and goes.
-5. **Cohesion** — a function doing three jobs gets split; three fragments that are one idea get merged.
-
-**Anti-churn fence** (the sweep is subtractive, not creative): consolidate REAL duplication only — two similar blocks with genuinely different reasons-to-change stay separate; do not manufacture abstractions, add config knobs, or restructure code unrelated to your change. **One deliberate exception to "don't touch outside your diff":** when your new code duplicates a substantive, must-stay-in-sync block that already exists in a sibling, extracting a shared helper and updating that one pre-existing call site to use it IS the fix — that bounded touch is required consolidation, not churn. The fence blocks speculative restructuring of unrelated code; it does not license shipping a copy of a block you could have shared. If the sweep is inventing abstractions for incidental similarity, you're doing it wrong; if it's leaving a fresh copy-paste in place to "stay in scope," you're also doing it wrong.
-
-If the sweep changed code, re-run the quality gate (run 2 of 2). The sweep finding nothing is an acceptable outcome — but it must be reported, never silently assumed (see the handoff line below).
+**One deliberate exception to "don't touch outside your diff"** (referenced by Reuse Before You Write and Copy Propagation): when your new code would duplicate a substantive, must-stay-in-sync block that already exists in a sibling, extracting a shared helper and updating that one pre-existing call site to use it IS the fix — that bounded touch is required consolidation, not churn. This does not license speculative restructuring of unrelated code; it does not permit shipping a copy of a block you could have shared either. Two similar blocks with genuinely different reasons-to-change stay separate — never manufacture an abstraction for incidental similarity.
 
 ## Quality Check Cap (HARD RULE)
 
@@ -83,7 +72,7 @@ Todo-marked tests scaffolded from the ticket (see the plan's `Acceptance Stubs` 
 
 **One altitude per behavior.** When the project uses feature-level acceptance specs (a feature-root spec file or feature-local `specs/` dir), READ them before writing any test at another level. A behavior already asserted in the feature spec is NOT re-asserted in a parent/page or unit test — parent/page tests own wiring plus at most one smoke traversal per feature; unit tests own the internals the spec can't see. If you notice a behavior asserted at two altitudes (including pre-existing duplication your change would extend), don't add to it — flag it in your report. Tripwire: if one behavior change forces test edits in two files, one of those tests is at the wrong altitude.
 
-**Test value bar (part of your second-draft sweep).** Every test you add must be able to fail for a reason a user cares about — otherwise it is diff noise, not coverage, and it taxes every future reader of an already-noisy diff. Before you keep a test you wrote this task, confirm it exercises real behavior; drop the ones that only: assert a mock/spy was called with the args you just passed it; exercise the framework/library rather than our code; restate the implementation (`render` with no meaningful `expect`, a snapshot of trivial output); or re-hit a branch a sibling test already covers with only cosmetic input changes. This bar governs **tests you wrote this task** — it never licenses touching an acceptance stub (see above) or a pre-existing test, and one smoke test per unit is fine (it is the redundant 2nd+ that goes). When unsure whether a test you wrote this task earns its place, delete it — behavior that actually matters traces back to a criterion and can be re-added deliberately; elaborating an unsure test to justify keeping it is how suites rot.
+**Test value bar (apply before submitting).** Every test you add must be able to fail for a reason a user cares about — otherwise it is diff noise, not coverage, and it taxes every future reader of an already-noisy diff. Before you keep a test you wrote this task, confirm it exercises real behavior; drop the ones that only: assert a mock/spy was called with the args you just passed it; exercise the framework/library rather than our code; restate the implementation (`render` with no meaningful `expect`, a snapshot of trivial output); or re-hit a branch a sibling test already covers with only cosmetic input changes. This bar governs **tests you wrote this task** — it never licenses touching an acceptance stub (see above) or a pre-existing test, and one smoke test per unit is fine (it is the redundant 2nd+ that goes). When unsure whether a test you wrote this task earns its place, delete it — behavior that actually matters traces back to a criterion and can be re-added deliberately; elaborating an unsure test to justify keeping it is how suites rot.
 
 ## When to Stop and Ask (common to all scopes)
 
@@ -117,16 +106,13 @@ do that if the block is present verbatim.
 ## Pre-Submission Checklist (common to all scopes)
 
 - **Second-order effects**: if a change alters a signature, return type, or behavioral contract, update every caller in the same pass (controllers, other services, tests). If you can't find them all, say so.
-- **Copy propagation**: before changing or fixing any block of logic, check whether it exists in other copies (`rg` a distinctive fragment / LSP references) — formatters, guards, and mappers are commonly duplicated. Apply the change to EVERY copy, or better, use the moment to extract the shared helper (second-draft rules apply). A fix applied to two of three copies ships the bug in the third.
+- **Copy propagation**: before changing or fixing any block of logic, check whether it exists in other copies (`rg` a distinctive fragment / LSP references) — formatters, guards, and mappers are commonly duplicated. Apply the change to EVERY copy, or better, use the moment to extract the shared helper (the bounded-touch exception above applies). A fix applied to two of three copies ships the bug in the third.
 - **No-op detection**: if an operation results in no state change, return early without side effects (no DB writes, no event broadcasts) and signal it to the caller.
 
 ## Review Handoff (last lines of your report)
 
-Second-to-last line — the second-draft receipt, always present for non-trivial changes:
-`SECOND DRAFT: <what the sweep consolidated/moved/deleted — one line>` or `SECOND DRAFT: clean (nothing found)`. A report without this line means the sweep was skipped, and the orchestrator should treat the work as unfinished.
-
-Also emit, when applicable — the proactive refactor-debt channel:
-`REFACTOR CANDIDATES: <pre-existing smell in a file you touched that you deliberately did NOT fix — location + smell + the refactor + rough blast radius>` or `REFACTOR CANDIDATES: none`. This is distinct from the Second Draft (which consolidates YOUR diff): it surfaces SURROUNDING / pre-existing smells you left alone — accumulated duplication, a god-function, a hand-rolled thing the framework/stdlib provides, a layering violation — so the orchestrator can proactively route them to `/refactor` before they're painful (that skill is reactive; it only fires when someone already knows where to aim it). NEVER act on these in-pass — the anti-churn fence holds; you are reporting, not fixing. Same calibration as everything else: substantive candidates only, stated project conventions over generic best-practice, ranked, capped at the few that matter; "none" is the common, correct answer.
+Emit, when applicable — the proactive refactor-debt channel:
+`REFACTOR CANDIDATES: <pre-existing smell in a file you touched that you deliberately did NOT fix — location + smell + the refactor + rough blast radius>` or `REFACTOR CANDIDATES: none`. This surfaces SURROUNDING / pre-existing smells you left alone — accumulated duplication, a god-function, a hand-rolled thing the framework/stdlib provides, a layering violation — so the orchestrator can proactively route them to `/refactor` before they're painful (that skill is reactive; it only fires when someone already knows where to aim it). NEVER act on these in-pass — the bounded-touch exception covers only a sibling copy your own diff would duplicate; everything else you are reporting, not fixing. Same calibration as everything else: substantive candidates only, stated project conventions over generic best-practice, ranked, capped at the few that matter; "none" is the common, correct answer.
 
 End with `REVIEW: recommended — <changed files>` for any non-trivial change, or `REVIEW: skip (trivial)` for a typo / single-line / rename / comment-only edit. This is the orchestrator's cue to run `/review` before `/commit` — a direct `Agent` dispatch does not auto-review, so make the cue impossible to miss.
 

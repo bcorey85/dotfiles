@@ -14,6 +14,15 @@
 # Gating the Bash `git commit` chokepoint covers every invocation route
 # (model Skill call, user-typed /commit, ad-hoc commit).
 #
+# review-loop is special-cased: its PostToolUse event fires LAST (after every
+# nested coder/reviewer event), so an unconditional "clean" here would erase
+# the dirty state a cap-reached/aborted loop deliberately leaves behind. The
+# loop's returned packet is the authority: `status: converged` -> clean,
+# anything else (cap-reached, critical-blocker, plan-impact, or an unreadable
+# response) -> dirty. Fail-closed: a blocked commit costs one /review; an
+# unblocked commit over outstanding findings is the failure this hook exists
+# to prevent.
+#
 # One-shot override for a USER-approved trivial skip (consumed on use):
 #   touch ~/.claude/state/review-gate/<session_id>.skip
 set -euo pipefail
@@ -38,7 +47,14 @@ case "$evt" in
     case "$agent" in
       coder|coder-deep|backend-coder|backend-coder-deep|frontend-coder|frontend-coder-deep)
         echo dirty > "$state_file" ;;
-      review-loop|code-reviewer|code-reviewer-deep|test-intent-reviewer)
+      review-loop)
+        resp=$(jq -r '.tool_response // "" | tostring' <<<"$input")
+        if grep -qE 'status:[[:space:]]*converged' <<<"$resp"; then
+          echo clean > "$state_file"
+        else
+          echo dirty > "$state_file"
+        fi ;;
+      code-reviewer|code-reviewer-deep|test-intent-reviewer)
         echo clean > "$state_file" ;;
     esac
     ;;

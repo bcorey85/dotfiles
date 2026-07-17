@@ -73,8 +73,7 @@ git diff HEAD --numstat | rg -v 'lock|generated|snapshot' | awk '{s+=$1} END {pr
 ```
 
 Test-only diffs (every changed file a test file) are NOT eligible — test
-structure is `code-reviewer`'s `[test-fluff]` channel and the test-intent
-gates, not this domain. Force with `+smell`; suppressed by `no-specialist`
+structure belongs to the test-intent gates, not this domain. Force with `+smell`; suppressed by `no-specialist`
 like the others.
 
 ## Per-repo extension

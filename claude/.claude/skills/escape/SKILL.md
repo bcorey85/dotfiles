@@ -12,7 +12,7 @@ One escape = one defect found downstream of the gate that should have caught it.
 
 1. **Extract the fields** from `$ARGUMENTS` and the conversation:
    - `stage_found` — where the defect surfaced: `pr-human` (you, reading the diff), `prod`, `verify`, `other`
-   - `gate_missed` — which layer should have caught it: `review` (bugs/quality), `drift-gate` (plan drift), `test-intent` (bug-pinning tests), `coder` (should never have been written)
+   - `gate_missed` — which layer should have caught it: `review` (bugs/quality), `drift-gate` (plan drift), `test-intent` (bug-pinning tests), `stage` (bug in a mechanically-staged SAFE-tier file — the invariant failed), `coder` (should never have been written)
    - `class` — `bug` | `smell` | `duplication` | `plan-drift` | `test-gap` | `other`
    - `severity` — `high` | `medium` | `low`
    - `desc` — one line, specific enough to be legible in 3 months

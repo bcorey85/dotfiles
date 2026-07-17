@@ -11,7 +11,7 @@
 #   canonical fields:
 #     repo=<basename>
 #     stage_found=cc|refactor|q-verify|verify|pr-human|prod|other
-#     gate_missed=review|drift-gate|test-intent|coder|q-verify
+#     gate_missed=review|drift-gate|test-intent|stage|coder|q-verify
 #     class=bug|smell|duplication|plan-drift|test-gap|other
 #     severity=high|medium|low
 #     desc="one line"

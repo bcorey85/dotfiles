@@ -65,7 +65,7 @@ Dispatch `code-reviewer` (or `code-reviewer-deep` with `+deep`; otherwise `model
 - The worktree path as the code root and the exact changed-file list (never let it rediscover scope). >5 files → split along the largest natural boundary, same heuristic as `/review` step 3, parallel dispatch.
 - The PR description — plus the Jira ticket summary and acceptance criteria when found — as intent context. (AC *reconciliation* stays with the main agent in step 4b; reviewers just get the intent.)
 - Existing review-thread locations from step 1, tagged: "already raised by another reviewer — do not re-report; note only if your severity assessment differs materially".
-- Framing: "Report-only peer review of a colleague's PR. Severity-tiered findings with concrete failure scenarios. No fixes will be applied from this review." Do NOT include a category checklist — the agent defines its own calibration.
+- Framing: "Report-only peer review of a colleague's PR. Severity-tiered findings with concrete failure scenarios. For each CRITICAL/HIGH, state the precondition that must hold for the failure to fire — realistic inputs and state a real caller produces, or it isn't blocking. No fixes will be applied from this review." Do NOT include a category checklist — the agent defines its own calibration.
 
 ### 4b. Acceptance-criteria reconciliation (main agent, when a ticket was found)
 
@@ -87,7 +87,7 @@ An unmet criterion is not automatically blocking — the PR may be a deliberate 
 | Criterion | Verdict | Evidence |
 
 ### 🔴 Blocking (CRITICAL / HIGH)
-| # | File:Line | Issue | Failure scenario |
+| # | File:Line | Issue | Failure scenario | Fires when |
 
 ### 🟡 Suggestions (MEDIUM)
 | # | File:Line | Issue |
@@ -120,7 +120,7 @@ Main-agent, over the diff and findings you already hold (no new dispatch). The f
 
 **Verify every candidate against the worktree before presenting it** — read the enclosing code, check for the scheduler/guard/retry the candidate assumes is absent, confirm the true scope of a cap or filter. This step is not optional: in the run this pass came from, verification scope-corrected one "blocker" candidate down to a non-issue. Presenting an unverified surprise as confirmed relays a false positive to a colleague, the exact failure this skill guards against.
 
-Merge survivors into the existing tiers, tagged `(surprise-lens)` so the user sees they came from this pass, not the category review. Drop refuted candidates silently (or note one line if the user would otherwise expect it). Then re-present the step-5 menu minus the audit.
+Merge survivors into the existing tiers, tagged `(surprise-lens)` so the user sees they came from this pass, not the category review. A survivor merged into Blocking (CRITICAL/HIGH) states the precondition that must hold for the failure to fire, same as step 4's findings, so it has content for the table's "Fires when" column. Drop refuted candidates silently (or note one line if the user would otherwise expect it). Then re-present the step-5 menu minus the audit.
 
 ### 6. Drill-down (on "dig into N")
 

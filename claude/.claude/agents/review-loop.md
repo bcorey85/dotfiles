@@ -42,13 +42,13 @@ Never block on this. If it fails, continue.
 ## Loop ordering (GATE-CRITICAL — do not reorder)
 
 `review-commit-gate.sh` is a `PostToolUse(Agent)` hook that marks the session
-`dirty` on a coder dispatch and `clean` on a `code-reviewer` dispatch — and it
-observes your NESTED dispatches under the parent session. When YOUR OWN
-dispatch completes it also reads your returned packet: `status: converged` →
-`clean`, any other status → `dirty`. That outer event fires last and is the
-final word, so an honest `status` line is itself gate-critical. The ordering
-below keeps the gate honest mid-loop (an interrupted or crashed loop never
-returns a packet, so the nested state is what survives):
+`dirty` on a coder dispatch — and it observes your NESTED dispatches under the
+parent session. Your own dispatch also marks `dirty` at launch. No Agent event
+ever writes `clean` (subagents launch async, so the hook only sees launch
+stubs, never outcomes). The ONLY clean transition is your caller running
+`review-gate-mark clean` after rendering a packet whose `status` is
+`converged` — which makes an honest `status` line itself gate-critical: your
+caller routes on it, and a dishonest `converged` becomes an unearned mark.
 
 ```
 each iteration:
@@ -62,17 +62,16 @@ each iteration:
 
 The cap check runs before the reviewer dispatch. This ordering is load-bearing.
 
-**Why step 1 precedes step 2**: on the non-convergence path your last dispatch
-must be a fix _coder_, leaving the session `dirty` so `git commit` stays
-blocked with findings outstanding. If you review first and only then discover
-non-convergence, your last dispatch is a `code-reviewer`, which writes `clean`
-and unblocks a commit over unresolved HIGH findings. That inverts the gate.
+**Why step 1 precedes step 2**: discovering the cap only after another
+reviewer pass wastes that dispatch — `cap-reached` must return before spending
+it.
 
-Steps 3 and 4 return _after_ a reviewer ran and _before_ any coder ran — but
-the hook still writes `dirty` on those returns (any non-`converged` status
-does). That is deliberate fail-closed behavior: a plan-impact or blocker
-return means the finding is unresolved, and the commit stays blocked until a
-loop actually converges.
+Steps 3 and 4 return _after_ a reviewer ran and _before_ any coder ran — the
+session stays `dirty` regardless, because only a caller-side mark on a
+`converged` packet ever writes `clean`. That is deliberate fail-closed
+behavior: a plan-impact or blocker return means the finding is unresolved, and
+the commit stays blocked until a loop actually converges. The same holds for
+an interrupted or crashed loop: no packet, no mark, gate stays closed.
 
 ## Step 1: Parse args
 
@@ -198,12 +197,12 @@ Runs ONCE the main loop passes the execution gate (Step 6), before MEDIUM classi
      Never double-log a finding on a re-verify pass.
 
    - `[design-decision]`-tagged findings (any domain) → NOT auto-fixed. A `[security] [design-decision]` finding returns `status: critical-blocker` with the finding in `blockers` (same rule as Step 4's "security requiring a design decision"). A `[perf] [design-decision]` or `[smell] [design-decision]` finding goes to the MEDIUM `ask` bucket.
-   - Remaining CRITICAL/HIGH `[security]`, HIGH `[perf]`, and HIGH `[smell]` findings (clean, non-design fixes — for `[smell]`, HIGH means must-stay-in-sync duplication whose divergence causes a bug; for `[perf]`, HIGH means a structural I/O anti-pattern on a request path over growing data, per the specialist's own severity line — it is fixed AND still collected/logged into `perf[]` above, the channel is a learning trail, not a substitute for the fix) → **re-enter the loop**: `iter++` and hand them to Step 5 as findings, with the specialist as the continuity reviewer for the re-review. Do NOT hand-roll a fix here — reusing Step 5→Step 3 is what keeps the gate correct (last dispatch a fix coder → session stays `dirty`; the same specialist confirms its own fix on the re-verify pass).
+   - Remaining CRITICAL/HIGH `[security]`, HIGH `[perf]`, and HIGH `[smell]` findings (clean, non-design fixes — for `[smell]`, HIGH means must-stay-in-sync duplication whose divergence causes a bug; for `[perf]`, HIGH means a structural I/O anti-pattern on a request path over growing data, per the specialist's own severity line — it is fixed AND still collected/logged into `perf[]` above, the channel is a learning trail, not a substitute for the fix) → **re-enter the loop**: `iter++` and hand them to Step 5 as findings, with the specialist as the continuity reviewer for the re-review. Do NOT hand-roll a fix here — reusing Step 5→Step 3 keeps the fix path uniform, and the same specialist confirms its own fix on the re-verify pass.
    - MEDIUM/LOW → the Step 6c MEDIUM classification and `low[]`.
 
 5. **Record** the domains that ran into `specialists`. When a re-entry (bullet 4) converges again, Step 6b runs once more, finds its domain in `specialists-cleared`, and proceeds to Step 6c without re-dispatching. The `iter >= 3` cap bounds the whole thing regardless.
 
-**Gate integrity**: because specialist CRITICAL/HIGH re-enter the existing loop rather than being fixed in place, the "last dispatch is a fix coder on any non-convergence" invariant is preserved unchanged. Specialist dispatches write NO gate state (the hook's clean-list is `code-reviewer*`/`test-intent-reviewer` only), so the session keeps whatever the last coder/generalist-reviewer event wrote — and your own returned packet is the final word regardless.
+**Gate integrity**: because specialist CRITICAL/HIGH re-enter the existing loop rather than being fixed in place, the fix path stays uniform. No Agent dispatch — specialist, reviewer, or coder — ever writes `clean` gate state; the only clean transition is your caller's `review-gate-mark clean` after rendering your `converged` packet, so the packet is the final word by construction.
 
 ## Step 6c: MEDIUM classification (final convergence only)
 
@@ -259,7 +258,8 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 ## What NOT to do
 
 - **Never raise a modal.** You have no `AskUserQuestion`. `ask` items and `blockers` go in the packet.
-- **Never write outside `~/vault/`.** Your `Write`/`Edit` tools exist for ONE purpose: the perf findings log in step 6b. Every source-file change — including to this file — goes through an `Agent` coder dispatch, never a direct edit. This is not style: `review-commit-gate.sh` marks the session `dirty` only on a `coder*` `subagent_type` dispatch. A direct edit changes code while the gate still reads `clean`, so `git commit` sails through unreviewed work. Editing source yourself silently disarms the gate you exist to feed.
+- **Never write outside `~/vault/`.** Your `Write`/`Edit` tools exist for ONE purpose: the perf findings log in step 6b. Every source-file change — including to this file — goes through an `Agent` coder dispatch, never a direct edit. This is not style: `review-commit-gate.sh` marks the session `dirty` only on a `coder*` or `review-loop` `subagent_type` dispatch. A direct edit changes code the gate never saw get reviewed. Editing source yourself silently disarms the gate you exist to feed.
+- **Never run `review-gate-mark`.** The clean mark belongs to your CALLER, after it renders your `converged` packet. Marking from inside the loop would clear the gate before the packet is routed.
 - **Never reorder the loop.** Cap check precedes the reviewer dispatch; plan-impact and blocker returns precede any coder dispatch.
 - **Never pass MEDIUM/LOW to the CRITICAL/HIGH fix coder.**
 - **Never return `converged` with an empty `fixed[]` when `iter > 1`.** You iterated because CRITICAL/HIGH existed; name what you repaired.

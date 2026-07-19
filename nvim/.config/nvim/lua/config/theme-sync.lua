@@ -265,6 +265,30 @@ local FAMILIES = {
       end
     end,
   },
+  nightfox = {
+    -- EdenEast/nightfox.nvim: the namesake nightfox (cool blue-slate night)
+    -- dark / dayfox (warm linen paper) light. The family also ships duskfox,
+    -- nordfox, terafox, carbonfox darks and a dawnfox light — swap the schemes
+    -- below to re-pin. Each variant registers its own colors_name.
+    schemes = { dark = "nightfox", light = "dayfox" },
+    accents = {
+      dark = { heading1 = "#9d79d6", heading = "#719cd6" }, -- magenta + blue
+      light = { heading1 = "#6e33ce", heading = "#2848a9" },
+    },
+    -- Comment floor: stock #738091 is 3.95:1 dark / #837a72 is 3.78:1 light,
+    -- both under 4.5. Unlike solarized/tokyonight-day, body has plenty of room
+    -- in BOTH modes (10.06 / 11.15), so lift the comment alone — no Normal
+    -- deepening needed. Dark blends 30% toward fg1 (5.37:1, the tokyobones
+    -- landing spot); light deepens 30% toward fg1 (5.20:1). Comments stay
+    -- upright: nightfox ships styles.comments = "NONE", so italic would be an
+    -- invention, not a preservation.
+    -- Diff* are left stock: both palettes build them as real bg-only blends
+    -- (generate_spec's spec.diff), with DiffText a shade past DiffChange.
+    fixup = function(mode)
+      local c = mode == "dark" and blend("#cdcecf", "#738091", 0.3) or blend("#3d2b5a", "#837a72", 0.3)
+      vim.api.nvim_set_hl(0, "Comment", { fg = c })
+    end,
+  },
   token = {
     -- ThorstenRhau/token: zero-config warm palette (orange-tinted off-white
     -- body, muted sage/red git accents). One scheme for both modes; it picks

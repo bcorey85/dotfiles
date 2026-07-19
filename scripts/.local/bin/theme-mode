@@ -37,7 +37,7 @@ TMUX_THEME_DIR="$HOME/.config/tmux"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="doom-one"
 
-families() { printf '%s\n' doom-one github gruvbox-material zenbones zenwritten tokyobones kanagawa solarized rose-pine tokyonight catppuccin token modus ef; }
+families() { printf '%s\n' doom-one github gruvbox-material zenbones zenwritten tokyobones kanagawa solarized rose-pine tokyonight catppuccin nightfox token modus ef; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   case "$1:$2" in
@@ -65,6 +65,9 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # #bac2de) sit BELOW body fg, so "bright white" renders dimmer than normal
     # text. Ours pins both to body fg (#cdd6f4); everything else is stock Mocha.
     catppuccin:dark) echo "catppuccin-mocha" ;; # custom: ghostty/themes/catppuccin-mocha
+    # custom: Nightfox blazes the usual way (7/15 above body fg); Dayfox hits
+    # the inverse on a light bg — its 15 (#f4ece6) is a hair off the background.
+    nightfox:*) echo "nightfox-$2" ;; # custom: ghostty/themes/nightfox-{dark,light} (dayfox is the light)
     token:*) echo "token-$2" ;; # custom: ghostty/themes/token-{dark,light} (upstream contrib files)
     modus:*) echo "modus-$2" ;; # custom: ghostty/themes/modus-{dark,light} (tinted variants)
     ef:*) echo "ef-$2" ;; # custom: ghostty/themes/ef-{dark,light}

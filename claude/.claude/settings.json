@@ -353,7 +353,7 @@
   "tui": "fullscreen",
   "autoMemoryEnabled": false,
   "skipWorkflowUsageWarning": true,
-  "theme": "dark-ansi",
+  "theme": "dark",
   "editorMode": "normal",
   "inputNeededNotifEnabled": false,
   "skipAutoPermissionPrompt": true

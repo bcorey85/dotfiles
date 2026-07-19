@@ -46,7 +46,7 @@
 (setq evil-escape-key-sequence "kk")
 
 ;;; ---------------------------------------------------------------------------
-;;; Look & feel — github dark dimmed / github light (icon glyphs via Symbols
+;;; Look & feel — modus tinted light/dark (icon glyphs via Symbols
 ;;; Nerd Font Mono)
 ;;; ---------------------------------------------------------------------------
 
@@ -76,79 +76,12 @@
 (setq-default line-spacing 0.25)
 
 ;;; ---------------------------------------------------------------------------
-;;; Theme — github dark dimmed / github light toggle synced via ~/.cache/theme-mode
+;;; Theme — modus tinted light/dark toggle synced via ~/.cache/theme-mode
 ;;; ---------------------------------------------------------------------------
 
 ;; Shared state file: `theme-mode toggle' (tmux prefix T) flips this, and nvim
 ;; polls it too. Emacs joins the same bus — one toggle flips tmux + nvim + Emacs.
 (defvar +theme/state-file (expand-file-name "~/.cache/theme-mode"))
-
-;; No maintained Emacs port of github-nvim-theme ships, so instead of a
-;; from-scratch theme we remap modus-vivendi/modus-operandi's named palette
-;; slots to github_dark_dimmed/github_light's actual hex values (pulled from
-;; the plugin's own palette source, not eyeballed) via
-;; `modus-themes-common-palette-overrides'-style per-theme overrides. This
-;; cascades through modus's semantic mappings — keywords, strings, diagnostics,
-;; mode-line, everything — not just bg/fg.
-;; Convention: base = github's accent (scale[4] dark / scale[6-7] light),
-;; -warmer/-intense = one step brighter, -cooler/-faint = one step darker.
-(setq modus-vivendi-palette-overrides
-      '((bg-main     "#22272e")   ; github canvas (bg1)
-        (bg-dim      "#1c2128")   ; github inset (popup/float)
-        (fg-main     "#adbac7")   ; github fg
-        (fg-dim      "#768390")   ; github comment/muted
-        (fg-alt      "#cdd9e5")   ; github fg bright
-        (bg-active   "#373e47")   ; github gray[8]
-        (bg-inactive "#2d333b")   ; github gray[9]
-        (border      "#444c56")   ; github border
-
-        (red             "#f47067") (red-warmer      "#ff938a")
-        (red-cooler      "#e5534b") (red-faint       "#e5534b")
-        (red-intense     "#ff938a")
-        (green           "#57ab5a") (green-warmer    "#6bc46d")
-        (green-cooler    "#46954a") (green-faint     "#46954a")
-        (green-intense   "#6bc46d")
-        (yellow          "#c69026") (yellow-warmer   "#daaa3f")
-        (yellow-cooler   "#ae7c14") (yellow-faint    "#ae7c14")
-        (yellow-intense  "#daaa3f")
-        (blue            "#539bf5") (blue-warmer     "#6cb6ff")
-        (blue-cooler     "#4184e4") (blue-faint      "#4184e4")
-        (blue-intense    "#6cb6ff")
-        (magenta         "#b083f0") (magenta-warmer  "#dcbdfb")
-        (magenta-cooler  "#986ee2") (magenta-faint   "#986ee2")
-        (magenta-intense "#dcbdfb")
-        (cyan            "#76e3ea") (cyan-warmer     "#b3f0ff")
-        (cyan-cooler     "#4fb8c0") (cyan-faint      "#4fb8c0")
-        (cyan-intense    "#b3f0ff")))
-
-(setq modus-operandi-palette-overrides
-      '((bg-main     "#ffffff")   ; github light canvas (bg1)
-        (bg-dim      "#f6f8fa")   ; github light inset
-        (fg-main     "#1f2328")   ; github light fg
-        (fg-dim      "#6e7781")   ; github light comment/muted
-        (fg-alt      "#424a53")   ; github light gray[8]
-        (bg-active   "#d0d7de")   ; github light gray[3]
-        (bg-inactive "#eaeef2")   ; github light gray[2]
-        (border      "#d0d7de")   ; github light gray[3]
-
-        (red             "#cf222e") (red-warmer      "#fa4549")
-        (red-cooler      "#a40e26") (red-faint       "#a40e26")
-        (red-intense     "#fa4549")
-        (green           "#116329") (green-warmer    "#1a7f37")
-        (green-cooler    "#044f1e") (green-faint     "#044f1e")
-        (green-intense   "#1a7f37")
-        (yellow          "#9a6700") (yellow-warmer   "#bf8700")
-        (yellow-cooler   "#7d4e00") (yellow-faint    "#7d4e00")
-        (yellow-intense  "#bf8700")
-        (blue            "#0969da") (blue-warmer     "#218bff")
-        (blue-cooler     "#0550ae") (blue-faint      "#0550ae")
-        (blue-intense    "#218bff")
-        (magenta         "#8250df") (magenta-warmer  "#a475f9")
-        (magenta-cooler  "#6639ba") (magenta-faint   "#6639ba")
-        (magenta-intense "#a475f9")
-        (cyan            "#1b7c83") (cyan-warmer     "#3192aa")
-        (cyan-cooler     "#22676d") (cyan-faint      "#22676d")
-        (cyan-intense    "#3192aa")))
 
 (defun +theme/read-mode ()
   "Read dark/light from the state file, default to dark."
@@ -159,11 +92,10 @@
     (if (member raw '("dark" "light")) raw "dark")))
 
 (defun +theme/apply (mode &optional force)
-  "Switch to MODE (\"dark\"/\"light\").
-Dark is modus-vivendi remapped to github_dark_dimmed's palette; light is
-modus-operandi remapped to github_light's palette (see `modus-vivendi-palette-overrides' /
-`modus-operandi-palette-overrides' above)."
-  (let ((scheme (if (equal mode "light") 'modus-operandi 'modus-vivendi)))
+  "Switch to MODE (\"dark\"/\"light\")."
+  (let ((scheme (if (equal mode "light")
+                    'modus-operandi-tinted
+                  'modus-vivendi-tinted)))
     (unless (and (not force) (eq doom-theme scheme))
       (setq doom-theme scheme)
       (load-theme scheme t))))
@@ -196,8 +128,8 @@ modus-operandi remapped to github_light's palette (see `modus-vivendi-palette-ov
 
 (setq display-line-numbers-type 'relative)   ; matches nvim relativenumber
 
-;; Window dividers — a mid-gray that stays legible on both github's dark
-;; base and light base, for a subtle split line.
+;; Window dividers — a mid-gray that stays legible on both tinted bases,
+;; for a subtle split line.
 (custom-set-faces!
   '(vertical-border            :foreground "#595959")
   '(window-divider             :foreground "#595959")

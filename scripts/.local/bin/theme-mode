@@ -1,6 +1,6 @@
 #!/bin/bash
 # theme-mode — single source of truth for the theme FAMILY and light/dark MODE
-# across tmux + neovim + ghostty.
+# across tmux + neovim + ghostty + claude code.
 #
 # State files (read by every consumer):
 #   ~/.cache/theme-mode    dark|light
@@ -17,6 +17,10 @@
 #              still works by hand). Only USR2 — any other signal crashes it.
 #   - workmux: this script sets the tmux-global $COLORFGBG (mode only, no
 #              family); the dashboard popup inherits it and picks light/dark.
+#   - claude:  this script writes .theme (mode only) into ~/.claude/settings.json
+#              via jq; claude code watches the file and hot-reloads live. Bypasses
+#              its OSC 11 auto-detection, which tmux mangles and only samples at
+#              launch (a runtime flip never reaches a running session).
 #
 # Usage:
 #   theme-mode [dark|light|toggle]    flip mode, keep family (default: toggle)
@@ -115,6 +119,23 @@ apply() { # <family> <mode> — write state and repaint tmux + ghostty
   # on any other signal. macOS runs the same binary name from the app bundle.
   if command -v pkill >/dev/null 2>&1; then
     pkill -USR2 -x ghostty 2>/dev/null || true
+  fi
+
+  # Claude Code: it watches ~/.claude/settings.json and hot-reloads `theme`
+  # live (only `model`/`outputStyle` are restart-only). Its `auto` theme relies
+  # on an OSC 11 background query that tmux mangles and only samples at launch,
+  # so a runtime flip never reaches a running session — push the mode in
+  # explicitly instead. `light`/`dark` are valid theme values, so $mode drops
+  # straight in.
+  local claude_settings="$HOME/.claude/settings.json"
+  if command -v jq >/dev/null 2>&1 && [ -f "$claude_settings" ]; then
+    local claude_tmp
+    claude_tmp="$(mktemp)"
+    if jq --arg t "$mode" '.theme = $t' "$claude_settings" >"$claude_tmp" 2>/dev/null; then
+      mv "$claude_tmp" "$claude_settings"
+    else
+      rm -f "$claude_tmp"
+    fi
   fi
 
   # tmux: source-file is server-global, every attached client updates at once.

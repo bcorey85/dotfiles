@@ -29,6 +29,7 @@ shell-integration = detect
 # macOS cmd key mappings. Option/Command are swapped in System Settings and
 # aerospace owns real Option, so the physical "Alt" key emits Command (super) —
 # these binds turn that back into the Alt sequences tmux/smart-splits expect.
+keybind = super+h=text:\x1bh
 keybind = super+j=text:\x1bj
 keybind = super+k=text:\x1bk
 keybind = super+l=text:\x1bl

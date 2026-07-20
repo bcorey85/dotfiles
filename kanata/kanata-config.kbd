@@ -64,16 +64,16 @@
 (deflayer knight
   @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
   tab       b    f    r    l    v    z    g    o    u    ;    [    ]    \
-  caps      n    s    h    t    m    y    c    e    i    a    ,       ret
-  lsft      x    j    d    k    q    p    w    /    .    '    rsft
+  caps      n    s    h    t    m    y    c    e    i    a    '       ret
+  lsft      x    j    d    k    q    p    w    ,    .    /    rsft
   lctl lmet lalt           spc                 ralt rmet rctl
 )
 
 (deflayer silence
   @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
   tab       b    c    r    l    k    z    f    o    u    ;    [    ]    \
-  caps      n    s    h    t    m    y    d    e    i    a    ,       ret
-  lsft      v    x    g    j    q    p    w    /    .    '    rsft
+  caps      n    s    h    t    m    y    d    e    i    a    '       ret
+  lsft      v    x    g    j    q    p    w    ,    .    /    rsft
   lctl lmet lalt           spc                 ralt rmet rctl
 )
 

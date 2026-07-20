@@ -217,6 +217,7 @@ vim.lsp.config("pyright", {
     python = {
       analysis = {
         typeCheckingMode = "off",
+        diagnosticMode = "workspace",
       },
     },
   },

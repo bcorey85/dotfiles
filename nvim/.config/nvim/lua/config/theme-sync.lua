@@ -67,9 +67,9 @@ local FAMILIES = {
     end,
   },
   github = {
-    schemes = { dark = "github_dark_default", light = "github_light" },
+    schemes = { dark = "github_dark_dimmed", light = "github_light" },
     accents = {
-      dark = { heading1 = "#d2a8ff", heading = "#58a6ff" },
+      dark = { heading1 = "#dcbdfb", heading = "#539bf5" },
       light = { heading1 = "#8250df", heading = "#0969da" },
     },
     -- stock palette needs no fixup

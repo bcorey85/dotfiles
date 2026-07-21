@@ -22,7 +22,7 @@ First action: Read `~/.config/opencode/agents/code-reviewer.md` (ignore its fron
    - A non-trivial block (~8+ lines, a full logic unit: a guard-with-error-handling, a handler scaffold, a parsing/mapping routine) copied verbatim/near-verbatim from a sibling site, where the copies must stay in sync. Name the extraction that collapses it.
 2. **Layer placement** — business logic in a route/handler/component that belongs in a service/store; data shaping at the call site that belongs at the boundary.
 3. **Naming** — a new name that doesn't describe its role or diverges from the sibling code's vocabulary. A name a reviewer would have to ask about is wrong.
-4. **Dead weight** — unused params, imports, branches; speculative flexibility ("might need options later") nothing uses.
+4. **Dead weight** — unused params, imports, branches; speculative flexibility ("might need options later") nothing uses. **Dead exports are the highest-value form and need a reference search, not an eyeball:** the `export` keyword hides a symbol's death, and a diff that removes or rewrites call sites is where a producer most often outlives its last consumer. For each export the diff adds, and each symbol whose in-diff caller(s) the diff removed, run LSP find-references (fall back to `rg` by name) across the workspace — zero consumers outside its own definition is a `[smell]` dead-export finding, stating the reference count. No search, no dead-export verdict.
 5. **Cohesion** — a new function doing three jobs; three new fragments that are one idea.
 
 **Severity by consequence**: HIGH only for duplication whose copies diverging would cause a bug (a drifting guard, a forked mapping). MEDIUM is your default. Naming/dead-weight nits that don't obscure intent → LOW.
@@ -50,7 +50,8 @@ If you notice a clearly-shippable non-structural issue, mention it in a single c
 
 1. **Scope**: the file list and bound from the dispatch. Read the in-bound code in each.
 2. **Prior-art pass**: for each new named artifact and substantive block, run the search described in scope item 1. No search, no duplication verdict — a candidate you can't name is a finding you don't have.
-3. Read the project AGENTS.md — layer conventions, utility locations, naming idioms sharpen or exempt findings.
+3. **Dead-reference pass**: for each export the diff adds and each symbol whose call sites the diff removed, run the reference search from scope item 4. No search, no dead-export verdict.
+4. Read the project AGENTS.md — layer conventions, utility locations, naming idioms sharpen or exempt findings.
 
 ## Output Format
 

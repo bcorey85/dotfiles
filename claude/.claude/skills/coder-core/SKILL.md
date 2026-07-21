@@ -106,6 +106,7 @@ do that if the block is present verbatim.
 ## Pre-Submission Checklist (common to all scopes)
 
 - **Second-order effects**: if a change alters a signature, return type, or behavioral contract, update every caller in the same pass (controllers, other services, tests). If you can't find them all, say so.
+- **Dead-reference cleanup**: the mirror of the above — when a change removes or rewrites the last caller of a symbol, that symbol (function, export, import, constant, branch) may now be orphaned. The `export` keyword hides its death from the eye, so search: LSP find-references / `rg` by name across the workspace. Zero remaining consumers → delete it in the same pass. Removing consumers without removing the now-dead producer is the single most common structural escape past review.
 - **Copy propagation**: before changing or fixing any block of logic, check whether it exists in other copies (`rg` a distinctive fragment / LSP references) — formatters, guards, and mappers are commonly duplicated. Apply the change to EVERY copy, or better, use the moment to extract the shared helper (the bounded-touch exception above applies). A fix applied to two of three copies ships the bug in the third.
 - **No-op detection**: if an operation results in no state change, return early without side effects (no DB writes, no event broadcasts) and signal it to the caller.
 

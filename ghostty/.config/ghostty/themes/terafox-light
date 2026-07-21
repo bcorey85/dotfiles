@@ -1,0 +1,27 @@
+# dawnfox light — stock Ghostty builtin "Dawnfox" with the white slots pinned.
+# The inverse of the usual blaze, and worse: on a LIGHT background upstream's
+# 15=#e6ebf3 sits a hair off the background itself (#faf4ed), so "bright white"
+# text is all but invisible, and 7=#b2b6bd is a washed-out grey. Pin both to
+# body fg; everything else is stock Dawnfox.
+palette = 0=#575279
+palette = 1=#b4637a
+palette = 2=#618774
+palette = 3=#ea9d34
+palette = 4=#286983
+palette = 5=#907aa9
+palette = 6=#56949f
+palette = 7=#575279
+palette = 8=#5f5695
+palette = 9=#c26d85
+palette = 10=#629f81
+palette = 11=#eea846
+palette = 12=#2d81a3
+palette = 13=#9a80b9
+palette = 14=#5ca7b4
+palette = 15=#575279
+background = #faf4ed
+foreground = #575279
+cursor-color = #575279
+cursor-text = #faf4ed
+selection-background = #d0d8d8
+selection-foreground = #575279

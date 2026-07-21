@@ -1,0 +1,25 @@
+# one light — onelight (olimorris/onedarkpro.nvim), Atom's One Light. Per the
+# light-theme convention: black 0/8 = ink #6a6a6a (the theme's body fg), white
+# 7/15 = bg-side grey #bebebe (unusable as text on the paper bg).
+palette = 0=#6a6a6a
+palette = 1=#e05661
+palette = 2=#1da912
+palette = 3=#eea825
+palette = 4=#118dc3
+palette = 5=#9a77cf
+palette = 6=#56b6c2
+palette = 7=#bebebe
+palette = 8=#6a6a6a
+palette = 9=#e05661
+palette = 10=#1da912
+palette = 11=#eea825
+palette = 12=#118dc3
+palette = 13=#9a77cf
+palette = 14=#56b6c2
+palette = 15=#bebebe
+background = #eaeaea
+foreground = #6a6a6a
+cursor-color = #6a6a6a
+cursor-text = #eaeaea
+selection-background = #dcdcdc
+selection-foreground = #6a6a6a

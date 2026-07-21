@@ -54,8 +54,8 @@ return {
       -- so you don't have to jump to the dap-ui scopes pane to read one.
       require("nvim-dap-virtual-text").setup({})
 
-      -- Signs: the stock "B" breakpoint marker is near-invisible against the
-      -- Catppuccin Mocha gutter. Use a bold filled dot in theme-matched colors
+      -- Signs: the stock "B" breakpoint marker is near-invisible against a
+      -- dark gutter. Use a bold filled dot in high-contrast colors
       -- so breakpoints actually read at a glance. Highlights are set explicitly
       -- (not linked) so they survive colorscheme reloads.
       vim.api.nvim_set_hl(0, "DapBreakpoint", { fg = "#ff5f59" }) -- red

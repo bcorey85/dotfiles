@@ -41,40 +41,33 @@ TMUX_THEME_DIR="$HOME/.config/tmux"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="doom-one"
 
-families() { printf '%s\n' doom-one github gruvbox-material zenbones zenwritten tokyobones kanagawa solarized rose-pine tokyonight catppuccin nightfox token modus ef; }
+families() { printf '%s\n' doom-one gruvbox-material zenbones zenwritten kanagawa kanagawa-paper solarized selenized tokyonight nightfox terafox modus one; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   case "$1:$2" in
     doom-one:dark) echo "Doom One" ;;
     doom-one:light) echo "doom-one-light" ;; # custom: ghostty/themes/doom-one-light
-    github:dark) echo "GitHub Dark Dimmed" ;;
-    github:light) echo "GitHub Light Default" ;;
     # custom (ghostty/themes/): builtins ship near-white ANSI 7/15 slots that
     # make Claude Code headers blaze; customs mirror sainnhe's own mapping.
     gruvbox-material:*) echo "gruvbox-material-$2" ;;
     zenbones:*) echo "zenbones-$2" ;;   # custom: ghostty/themes/zenbones-{dark,light}
     zenwritten:*) echo "zenwritten-$2" ;; # custom: ghostty/themes/zenwritten-{dark,light}
-    tokyobones:*) echo "tokyobones-$2" ;; # custom: ghostty/themes/tokyobones-{dark,light} (tokyonight-flavored bones)
     kanagawa:*) echo "kanagawa-$2" ;; # custom: ghostty/themes/kanagawa-{dark,light} (wave dark, lotus light)
+    kanagawa-paper:*) echo "kanagawa-paper-$2" ;; # custom: ghostty/themes/kanagawa-paper-{dark,light} (ink dark, canvas light)
     # custom: the shipped Solarized builtins are all *patched* forks (shifted
     # bases, non-canonical greys); ours is Schoonover's own 16-colour ANSI.
     solarized:*) echo "solarized-$2" ;; # custom: ghostty/themes/solarized-{dark,light}
+    selenized:dark) echo "Selenized Dark" ;;   # ghostty builtin
+    selenized:light) echo "Selenized Light" ;; # ghostty builtin
     # builtins: these already put body fg on slot 15 (no blaze to fix).
-    rose-pine:dark) echo "Rose Pine Moon" ;;
-    rose-pine:light) echo "Rose Pine Dawn" ;;
     tokyonight:dark) echo "TokyoNight Night" ;; # darkest of the three darks
     tokyonight:light) echo "TokyoNight Day" ;;
-    catppuccin:light) echo "Catppuccin Latte" ;;
-    # custom: Mocha is the inverse of the usual blaze — its 7/15 slots (#a6adc8,
-    # #bac2de) sit BELOW body fg, so "bright white" renders dimmer than normal
-    # text. Ours pins both to body fg (#cdd6f4); everything else is stock Mocha.
-    catppuccin:dark) echo "catppuccin-mocha" ;; # custom: ghostty/themes/catppuccin-mocha
     # custom: Nightfox blazes the usual way (7/15 above body fg); Dayfox hits
     # the inverse on a light bg — its 15 (#f4ece6) is a hair off the background.
     nightfox:*) echo "nightfox-$2" ;; # custom: ghostty/themes/nightfox-{dark,light} (dayfox is the light)
-    token:*) echo "token-$2" ;; # custom: ghostty/themes/token-{dark,light} (upstream contrib files)
+    terafox:*) echo "terafox-$2" ;; # custom: ghostty/themes/terafox-{dark,light} (dawnfox is the light)
     modus:*) echo "modus-$2" ;; # custom: ghostty/themes/modus-{dark,light} (tinted variants)
-    ef:*) echo "ef-$2" ;; # custom: ghostty/themes/ef-{dark,light}
+    one:*) echo "one-$2" ;; # custom: ghostty/themes/one-{dark,light} (onedark/onelight, atom's one)
   esac
 }
 

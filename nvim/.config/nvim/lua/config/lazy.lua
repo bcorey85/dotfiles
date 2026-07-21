@@ -37,7 +37,7 @@ require("lazy").setup({
   spec = { { import = "plugins" } },
   -- No defaults.lazy = true: an unconverted spec (no trigger) then loads eagerly
   -- like it did under vim.pack, rather than silently never loading.
-  install = { colorscheme = { "github_dark_dimmed" } },
+  install = { colorscheme = { "doom-one" } },
   checker = { enabled = false }, -- no background update checks
   change_detection = { enabled = false }, -- don't watch/reload spec files
   ui = { border = "rounded" },

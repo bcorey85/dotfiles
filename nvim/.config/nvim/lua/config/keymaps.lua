@@ -273,11 +273,11 @@ vim.keymap.set("n", "<leader>Tf", "<cmd>tabfirst<cr>", { desc = "First Tab" })
 vim.keymap.set("n", "<leader>Tl", "<cmd>tablast<cr>", { desc = "Last Tab" })
 
 -- ─── UI toggles ───────────────────────────────────────────────────────────────
--- Toggle modus-themes dark ↔ light across tmux AND nvim. Shells out to
+-- Toggle the active theme family dark ↔ light across tmux AND nvim. Shells out to
 -- the shared `theme-mode` script (single source of truth: it writes
 -- ~/.cache/theme-mode and re-sources tmux), then applies the new mode here
--- immediately rather than waiting on theme-sync's ~1s poll. The ColorScheme
--- autocmd in plugins/github-theme.lua re-applies markview heading colours after.
+-- immediately rather than waiting on theme-sync's ~1s poll. theme-sync's own
+-- ColorScheme autocmd re-applies markview heading colours after.
 vim.keymap.set("n", "<leader>ut", function()
   vim.system({ vim.fn.expand("~/.local/bin/theme-mode"), "toggle" }, {}, vim.schedule_wrap(function()
     require("config.theme-sync").apply_from_file(true)

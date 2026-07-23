@@ -37,7 +37,7 @@ fi
 
 count=0
 found=""
-for d in "$specs/$ticket"-*/; do
+for d in "$specs/$ticket/" "$specs/$ticket"-*/; do
   [ -d "$d" ] || continue
   count=$((count + 1))
   found="${found}${d%/}

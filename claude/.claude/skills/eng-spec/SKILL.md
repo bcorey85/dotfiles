@@ -13,14 +13,16 @@ allowed-tools:
     AskUserQuestion,
     SendMessage,
     Skill,
+    mcp__jira__getJiraIssue,
+    mcp__claude_ai_Atlassian__getJiraIssue,
   ]
 ---
 
 # Engineering Spec
 
-The one planning lane. Consumes whatever context is already in the thread (a
-`/pull-ticket` result, a pasted description, a spec file). Does NOT fetch
-external context itself.
+The one planning lane. Takes a ticket key/URL (fetched in Phase 1), a
+`/pull-ticket` result already in the thread, a pasted description, or a spec
+file.
 
 **The task directory is the memory; the conversation is not.** Every phase lands
 its output on disk before the next one starts — `00-ticket.md`, `01-questions.md`,
@@ -43,10 +45,11 @@ reach the research agent.
 
 ## Phase 1: Ticket
 
-1. **Use the context already in the thread.** If the skill argument is a path to
-   a ticket/spec file, read it. If a `/pull-ticket` result is in the thread, use
-   it. Do NOT fetch from Jira/Notion yourself — if a ticket is relevant and
-   wasn't pulled, tell the user to run `/pull-ticket` first.
+1. **Get the ticket.** In order: a `/pull-ticket` result in the thread → use it;
+   a ticket/spec file path in the argument → read it; a Jira key/URL (argument or
+   branch) → **fetch it yourself** per `~/.claude/skills/_shared/jira-ticket.md`
+   (read it). Required-ticket caller: no key → ask the user; Jira MCP down → say
+   so and stop.
 
 2. **If no context is apparent**, ask: "What are we building? Describe the
    feature or paste a ticket."
@@ -54,11 +57,10 @@ reach the research agent.
 3. **Check for an existing spec** — Glob `docs/eng-specs/**/spec.md`. If one
    matches, read it and ask: "Found an existing spec — update it or start fresh?"
 
-4. **Open the task directory.** `docs/eng-specs/<slug>/` (Jira key if there is
-   one, else kebab-case from the description). `Write` the ticket verbatim to
-   `00-ticket.md` — **raw fields only, no paraphrase, no summary, no goal words
-   of your own.** You are a courier here. A paraphrased ticket is a ticket with
-   your reading already baked into it.
+4. **Open the task directory** `docs/eng-specs/<slug>/` (Jira key, else
+   kebab-case from the description) and `Write` the ticket **verbatim** to
+   `00-ticket.md` per the persistence rule in `jira-ticket.md`. You are a
+   courier: a paraphrased ticket has your reading already baked in.
 
 ## Phase 2: Goal-blind research (before any design thinking)
 

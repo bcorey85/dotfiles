@@ -80,34 +80,20 @@ local FAMILIES = {
       vim.api.nvim_set_hl(0, "Comment", { fg = c, italic = true })
     end,
   },
-  zenbones = {
-    -- one scheme for both modes; light is the paper-cream look
-    schemes = { dark = "zenbones", light = "zenbones" },
+  duskbox = {
+    -- ih-hugh/duskbox: an OKLCH-generated equiluminant family. dusk (indigo
+    -- night #232336) dark / dawn (warm paper #faf2e8) light. Each variant's
+    -- colors/duskbox-<v>.lua sets colors_name "duskbox-<v>", matching
+    -- schemes[mode], so no colors_name override is needed. Raw theme — no
+    -- fixup: it already ships full treesitter @-captures, Diagnostic* (incl.
+    -- virtual-text/underline), @lsp.type semantic tokens, and proper bg-only
+    -- diff washes, and its comments clear the floor (body #828ca2 ~4.6:1 dusk /
+    -- #6a758a ~4.9:1 dawn). Accents mirror duskbox's own blue heading ramp.
+    schemes = { dark = "duskbox-dusk", light = "duskbox-dawn" },
     accents = {
-      dark = { heading1 = "#b279a7", heading = "#6099c0" },
-      light = { heading1 = "#88507d", heading = "#286486" },
+      dark = { heading1 = "#86bafe", heading = "#59c5f5" },
+      light = { heading1 = "#2e69b2", heading = "#067398" },
     },
-    -- Comment floor: stock #6e6763 is 3.1:1 dark / #948985 is 2.8:1 light.
-    -- Dark warms up a step (5.1:1); light reuses the dark theme's own grey
-    -- (4.8:1). Comments stay italic per the theme's design.
-    fixup = function(mode)
-      local c = mode == "dark" and "#928a85" or "#6e6763"
-      vim.api.nvim_set_hl(0, "Comment", { fg = c, italic = true })
-    end,
-  },
-  zenwritten = {
-    -- zenbones' hue-stripped sibling (same plugin): pure grayscale body,
-    -- same muted accent set. One scheme for both modes.
-    schemes = { dark = "zenwritten", light = "zenwritten" },
-    accents = {
-      dark = { heading1 = "#b279a7", heading = "#6099c0" },
-      light = { heading1 = "#88507d", heading = "#286486" },
-    },
-    -- Comment floor: stock #686868 is 3.1:1 dark / #8b8b8b is 3.0:1 light.
-    fixup = function(mode)
-      local c = mode == "dark" and "#8f8f8f" or "#696969"
-      vim.api.nvim_set_hl(0, "Comment", { fg = c, italic = true })
-    end,
   },
   kanagawa = {
     -- rebelot/kanagawa.nvim: wave (the original — indigo night, saturated) dark,
@@ -463,8 +449,8 @@ end
 -- the theme-agnostic word-diff glue, so auditions aren't painted over.
 -- nvim-orgmode agenda readability (prefix n a / n t popups). The plugin
 -- samples its @org.agenda.* colors from whatever the active theme defines,
--- which under minimal families (zenwritten, zenbones…) lands scheduled-item
--- text near-invisible. Pin them to semantic groups every family paints; the
+-- which under minimal, low-colour families lands scheduled-item text
+-- near-invisible. Pin them to semantic groups every family paints; the
 -- plugin's own versions are `hi default`, so these explicit links win
 -- regardless of load order.
 local function set_org_agenda()

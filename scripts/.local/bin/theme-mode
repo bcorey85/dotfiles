@@ -41,7 +41,7 @@ TMUX_THEME_DIR="$HOME/.config/tmux"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="doom-one"
 
-families() { printf '%s\n' doom-one gruvbox-material zenbones zenwritten kanagawa kanagawa-paper solarized selenized tokyonight nightfox terafox modus one; }
+families() { printf '%s\n' doom-one gruvbox-material duskbox kanagawa kanagawa-paper solarized selenized tokyonight nightfox terafox modus one; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   case "$1:$2" in
@@ -50,8 +50,7 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # custom (ghostty/themes/): builtins ship near-white ANSI 7/15 slots that
     # make Claude Code headers blaze; customs mirror sainnhe's own mapping.
     gruvbox-material:*) echo "gruvbox-material-$2" ;;
-    zenbones:*) echo "zenbones-$2" ;;   # custom: ghostty/themes/zenbones-{dark,light}
-    zenwritten:*) echo "zenwritten-$2" ;; # custom: ghostty/themes/zenwritten-{dark,light}
+    duskbox:*) echo "duskbox-$2" ;; # custom: ghostty/themes/duskbox-{dark,light} (dusk dark, dawn light; from duskbox extras)
     kanagawa:*) echo "kanagawa-$2" ;; # custom: ghostty/themes/kanagawa-{dark,light} (wave dark, lotus light)
     kanagawa-paper:*) echo "kanagawa-paper-$2" ;; # custom: ghostty/themes/kanagawa-paper-{dark,light} (ink dark, canvas light)
     # custom: the shipped Solarized builtins are all *patched* forks (shifted

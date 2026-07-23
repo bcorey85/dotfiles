@@ -1,5 +1,5 @@
-# modus light — modus-operandi-tinted. ANSI per the zenbones-light custom's
-# convention: black 0/8 = ink, white 7/15 = bg-side grey (the port's own 0
+# modus light — modus-operandi-tinted. ANSI convention: black 0/8 = ink,
+# white 7/15 = bg-side grey (the port's own 0
 # slot is the bg itself and its 7 is the ink fg, both unusable as-is).
 palette = 0=#000000
 palette = 1=#a60000

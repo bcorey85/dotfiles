@@ -5,7 +5,8 @@
 -- submitted — you compose the prompt around the mention and hit Enter yourself.
 --
 -- Pane discovery matches the claude-companion / .tmux.conf convention
--- (pane_current_command == "claude"): current window first, then any window
+-- (pane_current_command is "claude" or a bare version string — the native
+-- installer runs a versioned binary): current window first, then any window
 -- in the session (catches the stashed _claude companion and workmux agents).
 
 local M = {}
@@ -31,7 +32,7 @@ local function find_claude_pane()
     local out = tmux(args)
     for _, line in ipairs(out and vim.split(out, "\n") or {}) do
       local id, command = line:match("^(%S+) (%S+)$")
-      if command == "claude" then
+      if command == "claude" or (command or ""):match("^%d+%.%d+%.%d+$") then
         return id
       end
     end

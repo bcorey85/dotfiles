@@ -107,7 +107,13 @@ if ! command -v mise &>/dev/null; then
 fi
 export PATH="/opt/homebrew/opt/openssl@3/bin:$PATH"
 
-command -v starship &>/dev/null && eval "$(starship init zsh)"
+# Starship: theme-mode regenerates ~/.cache/starship.toml with the active
+# light/dark palette; use it when present so the prompt tracks the theme, else
+# fall back to the stowed default (fresh machine, before theme-mode has run).
+if command -v starship &>/dev/null; then
+  [ -f "$HOME/.cache/starship.toml" ] && export STARSHIP_CONFIG="$HOME/.cache/starship.toml"
+  eval "$(starship init zsh)"
+fi
 
 
 alias rl="source ~/.zshrc && clear && echo 'Reloaded .zshrc'"

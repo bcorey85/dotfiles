@@ -17,7 +17,7 @@ local M = {}
 
 local MODE_FILE = vim.env.HOME .. "/.cache/theme-mode"
 local FAMILY_FILE = vim.env.HOME .. "/.cache/theme-family"
-local DEFAULT_FAMILY = "doom-one"
+local DEFAULT_FAMILY = "nightfox"
 
 -- alpha-blend two hex colours (a = share of c1).
 local function blend(c1, c2, a)
@@ -29,208 +29,7 @@ local function blend(c1, c2, a)
   return "#" .. table.concat(out)
 end
 
--- Rebuild Diff{Add,Delete,Change,Text} as palette-blended background washes.
--- For themes that ship fg-only (or `reverse`) diffs, which starve codediff,
--- native diff mode, and the word-diff glue below. p = { bg, green, red, yellow }.
-local function diff_washes(p)
-  local hl = vim.api.nvim_set_hl
-  hl(0, "DiffAdd", { bg = blend(p.green, p.bg, 0.22) })
-  hl(0, "DiffDelete", { bg = blend(p.red, p.bg, 0.22) })
-  hl(0, "DiffChange", { bg = blend(p.yellow, p.bg, 0.16) })
-  hl(0, "DiffText", { bg = blend(p.yellow, p.bg, 0.38), bold = true })
-end
-
 local FAMILIES = {
-  ["doom-one"] = {
-    -- one scheme for both modes; it picks its palette from vim.o.background
-    schemes = { dark = "doom-one", light = "doom-one" },
-    accents = {
-      dark = { heading1 = "#c678dd", heading = "#51afef" },
-      light = { heading1 = "#a626a4", heading = "#4078f2" },
-    },
-    -- Fix two port defects (NTBBloodbath/doom-one.nvim; see plugins/doom-one.lua):
-    -- comments are 2.3:1/2.7:1 unreadable (these are the emacs
-    -- doom-one-brighter-comments values), and DiffAdd/Change/Delete are
-    -- fg-only — no backgrounds — which starves codediff, native diff mode,
-    -- and the word-diff glue below. Rebuild them as palette-blended washes.
-    fixup = function(mode)
-      local p = mode == "dark"
-          and { bg = "#282c34", comment = "#5699af", green = "#98be65", red = "#ff6c6b", yellow = "#ecbe7b" }
-        or { bg = "#fafafa", comment = "#3a888e", green = "#50a14f", red = "#e45649", yellow = "#986801" }
-      local hl = vim.api.nvim_set_hl
-      hl(0, "Comment", { fg = p.comment })
-      hl(0, "CommentBold", { fg = p.comment, bold = true })
-      hl(0, "DiffAdd", { bg = blend(p.green, p.bg, 0.22) })
-      hl(0, "DiffDelete", { bg = blend(p.red, p.bg, 0.22) })
-      hl(0, "DiffChange", { bg = blend(p.yellow, p.bg, 0.16) })
-      hl(0, "DiffText", { bg = blend(p.yellow, p.bg, 0.38), bold = true })
-    end,
-  },
-  ["gruvbox-material"] = {
-    -- one scheme for both modes; it picks its palette from vim.o.background
-    schemes = { dark = "gruvbox-material", light = "gruvbox-material" },
-    accents = {
-      dark = { heading1 = "#d3869b", heading = "#7daea3" },
-      light = { heading1 = "#945e80", heading = "#45707a" },
-    },
-    -- Comment floor: stock #928374 measures 4.0:1 dark / 3.0:1 light. Raise
-    -- to palette grey2 (dark) / a floor-clearing dark grey (light): 5.3/5.2:1.
-    fixup = function(mode)
-      local c = mode == "dark" and "#a89984" or "#665c54"
-      vim.api.nvim_set_hl(0, "Comment", { fg = c, italic = true })
-    end,
-  },
-  duskbox = {
-    -- ih-hugh/duskbox: an OKLCH-generated equiluminant family. dusk (indigo
-    -- night #232336) dark / dawn (warm paper #faf2e8) light. Each variant's
-    -- colors/duskbox-<v>.lua sets colors_name "duskbox-<v>", matching
-    -- schemes[mode], so no colors_name override is needed. Raw theme — no
-    -- fixup: it already ships full treesitter @-captures, Diagnostic* (incl.
-    -- virtual-text/underline), @lsp.type semantic tokens, and proper bg-only
-    -- diff washes, and its comments clear the floor (body #828ca2 ~4.6:1 dusk /
-    -- #6a758a ~4.9:1 dawn). Accents mirror duskbox's own blue heading ramp.
-    schemes = { dark = "duskbox-dusk", light = "duskbox-dawn" },
-    accents = {
-      dark = { heading1 = "#86bafe", heading = "#59c5f5" },
-      light = { heading1 = "#2e69b2", heading = "#067398" },
-    },
-  },
-  kanagawa = {
-    -- rebelot/kanagawa.nvim: wave (the original — indigo night, saturated) dark,
-    -- lotus (yellow paper) light. All variants register colors_name "kanagawa".
-    schemes = { dark = "kanagawa-wave", light = "kanagawa-lotus" },
-    colors_name = "kanagawa",
-    accents = {
-      dark = { heading1 = "#957fb8", heading = "#7fb4ca" }, -- oniViolet + springBlue
-      light = { heading1 = "#624c83", heading = "#4d699b" },
-    },
-    -- Wave: comment fujiGray #727169 is 3.33:1 (floor 4.5) — lift toward
-    -- fujiWhite, keeping the grey cast. Lotus: body ink #545464 is only 6.2:1
-    -- on the yellow paper and comment #8a8980 is 2.9:1 — deepen both (8.1/5.1).
-    -- Diff* stay stock: kanagawa ships proper bg-only washes in both modes.
-    fixup = function(mode)
-      if mode == "dark" then
-        vim.api.nvim_set_hl(0, "Comment", { fg = blend("#dcd7ba", "#727169", 0.3), italic = true })
-      else
-        vim.api.nvim_set_hl(0, "Normal", { fg = "#434350", bg = "#f2ecbc" })
-        vim.api.nvim_set_hl(0, "Comment", { fg = "#63625b", italic = true })
-      end
-    end,
-  },
-  ["kanagawa-paper"] = {
-    -- thesimonho/kanagawa-paper.nvim: ink (dusty indigo-night dark) + canvas
-    -- (warm paper light) — a softer, muted cousin of the kanagawa family. Each
-    -- variant ships a colors/*.vim shim registering colors_name
-    -- "kanagawa-paper-<theme>", matching schemes[mode].
-    schemes = { dark = "kanagawa-paper-ink", light = "kanagawa-paper-canvas" },
-    accents = {
-      dark = { heading1 = "#957fb8", heading = "#7fb4ca" }, -- oniViolet + springBlue
-      light = { heading1 = "#624c83", heading = "#3f5f83" },
-    },
-    -- Ink: comment fujiGray #727169 is 3.33:1 on #1F1F28 — lift toward fujiWhite
-    -- keeping the grey cast (5.08:1). Canvas is the hard one: body #73787d is
-    -- only 3.40:1 on the #e1e1de paper and comment canvasGray1 #aeaea6 a washed
-    -- 1.70:1 — deepen body to #4a4e53 (6.40) and comment to #5a5a52 (5.31).
-    -- Diff*: the theme ships real bg washes, but wires DiffText's bg to
-    -- change_light (== DiffChange's yellow), so word-diff reads flat. Repoint
-    -- DiffText to the theme's own intended blue/teal `text` wash so the changed
-    -- word leads its changed line (also feeds set_word_diff's inline groups).
-    fixup = function(mode)
-      local hl = vim.api.nvim_set_hl
-      if mode == "dark" then
-        hl(0, "Comment", { fg = blend("#dcd7ba", "#727169", 0.3), italic = true })
-        hl(0, "DiffText", { bg = blend("#658594", "#1f1f28", 0.38), bold = true })
-      else
-        hl(0, "Normal", { fg = "#4a4e53", bg = "#e1e1de" })
-        hl(0, "Comment", { fg = "#5a5a52", italic = true })
-        hl(0, "DiffText", { bg = blend("#7e8faf", "#e1e1de", 0.38), bold = true })
-      end
-    end,
-  },
-  solarized = {
-    -- maxmx03/solarized.nvim, palette = "solarized" (Schoonover's original).
-    -- Both palettes of this plugin register colors_name = "solarized" and load
-    -- via the same :colorscheme, so `pre` selects which one gets built.
-    schemes = { dark = "solarized", light = "solarized" },
-    colors_name = "solarized",
-    pre = function()
-      require("solarized").setup({ palette = "solarized" }) -- variant stays "winter" (the canonical accents)
-    end,
-    accents = {
-      dark = { heading1 = "#6c71c4", heading = "#268bd2" }, -- violet + blue
-      light = { heading1 = "#6c71c4", heading = "#268bd2" },
-    },
-    -- Solarized is the hard case for the comment floor: its body fg is itself
-    -- only 4.75:1 dark / 4.13:1 light, so a comment that clears 4.5:1 lands ON
-    -- TOP of stock body. Fix by shifting one step up the theme's OWN base
-    -- ladder (no new colours): body base0→base1 (5.6:1) and comment
-    -- base01→base0 (4.8:1) dark. Light needs more room, so body deepens past
-    -- base01 to 9.9:1 (the kanagawa-lotus precedent) and comment takes base01
-    -- (5.0:1) — separation 4.9 vs 0.4 if body stayed put. Comments keep italic
-    -- to carry the distinction the 0.86 dark separation can't alone.
-    -- Diff* ship fg-only (DiffDelete/DiffText are `reverse`) — rebuild washes.
-    fixup = function(mode)
-      local hl = vim.api.nvim_set_hl
-      local p = mode == "dark"
-          and { bg = "#002b36", fg = "#93a1a1", comment = "#839496" }
-        or { bg = "#fdf6e3", fg = "#0f4451", comment = "#586e75" }
-      hl(0, "Normal", { fg = p.fg, bg = p.bg })
-      hl(0, "Comment", { fg = p.comment, italic = true })
-      diff_washes({
-        bg = p.bg,
-        green = "#859900",
-        red = "#dc322f",
-        yellow = "#b58900",
-      })
-    end,
-  },
-  selenized = {
-    -- jan-warchol's Selenized (Solarized's higher-contrast sibling), served by
-    -- the SAME plugin as the solarized family (maxmx03/solarized.nvim) via
-    -- palette = "selenized" — no separate plugin. pre() flips the palette before
-    -- :colorscheme; both palettes register colors_name "solarized" and load via
-    -- the same :colorscheme, so the guard keys on that. Raw theme — no fixup:
-    -- Selenized's own contrast stands (body 6.1:1 dark / 5.4:1 light), and the
-    -- accents below are its own violet/blue, straight from the palette.
-    schemes = { dark = "solarized", light = "solarized" },
-    colors_name = "solarized",
-    pre = function()
-      require("solarized").setup({ palette = "selenized" })
-    end,
-    accents = {
-      dark = { heading1 = "#af88eb", heading = "#4695f7" }, -- violet + blue
-      light = { heading1 = "#8762c6", heading = "#0072d4" },
-    },
-  },
-  tokyonight = {
-    -- folke/tokyonight.nvim: night (the darkest of the three darks — storm and
-    -- moon sit on lighter, bluer bases) and day.
-    -- Each variant registers its own colors_name, matching schemes[mode].
-    schemes = { dark = "tokyonight-night", light = "tokyonight-day" },
-    accents = {
-      dark = { heading1 = "#bb9af7", heading = "#7aa2f7" }, -- purple + blue
-      light = { heading1 = "#9854f1", heading = "#2e7de9" },
-    },
-    -- Worst comment contrast of any family here: night's #565f89 is 2.76:1 and
-    -- day's #848cb5 is 2.54:1 (floor 4.5) — both are barely-there blues. Night
-    -- lifts 40% toward body (5.06:1, against body's 10.59). Day is the harder
-    -- one: its body fg is a BLUE (#3760bf) that only measures 4.52:1 itself, so
-    -- a floor-clearing comment would land on top of body. Deepen body down the
-    -- same blue ramp to 8.07:1 (the solarized-light precedent), which buys the
-    -- comment room at 4.91:1.
-    -- Diff* ship real bg-only washes in both modes and are left stock: night's
-    -- add is a genuine BLUE (#243e4a, hue 198) rather than a green, which is
-    -- what makes its diffs separate cleanly from the red delete.
-    fixup = function(mode)
-      local hl = vim.api.nvim_set_hl
-      if mode == "dark" then
-        hl(0, "Comment", { fg = blend("#c0caf5", "#565f89", 0.4), italic = true })
-      else
-        hl(0, "Normal", { fg = "#223c7d", bg = "#e1e2e7" })
-        hl(0, "Comment", { fg = "#565e80", italic = true })
-      end
-    end,
-  },
   nightfox = {
     -- EdenEast/nightfox.nvim: the namesake nightfox (cool blue-slate night)
     -- dark / dayfox (warm linen paper) light. The family also ships duskfox,
@@ -269,6 +68,49 @@ local FAMILIES = {
       end
     end,
   },
+  duskfox = {
+    -- EdenEast/nightfox.nvim, duskfox (a rose-pine-moon derivative: iris-on-
+    -- #232136 purple-black night — near-identical to duskbox's dusk) paired with
+    -- dawnfox (rosé-dawn light, the same light the terafox family uses). Shares
+    -- the already-installed nightfox plugin (plugins/nightfox.lua) — no separate
+    -- spec. Each variant registers its own colors_name, matching schemes[mode].
+    schemes = { dark = "duskfox", light = "dawnfox" },
+    accents = {
+      dark = { heading1 = "#c4a7e7", heading = "#65b1cd" }, -- iris + blue
+      light = { heading1 = "#907aa9", heading = "#286983" }, -- iris + pine
+    },
+    -- Comment floor: duskfox #817c9c is ~4.0:1 on #232136, dawnfox #9893a5 is
+    -- 2.73:1 on #faf4ed (floor 4.5). Body has room in both (10.5 dark / 6.66
+    -- light), so lift the comment alone. Dark blends 20% toward fg (~4.9:1);
+    -- light reuses the terafox-light recipe (60% toward fg1, 4.56:1). Upright:
+    -- nightfox ships styles.comments = "NONE". Diff* left stock (real bg washes).
+    fixup = function(mode)
+      local c = mode == "dark" and blend("#e0def4", "#817c9c", 0.2) or blend("#575279", "#9893a5", 0.6)
+      vim.api.nvim_set_hl(0, "Comment", { fg = c })
+    end,
+  },
+  nordfox = {
+    -- EdenEast/nightfox.nvim, nordfox (the Nord palette — cool blue-grey
+    -- #2e3440 night, NOT purple-black). Nord ships no light, so it pairs with
+    -- dayfox (warm-linen light, the nightfox namesake's own light — reused here).
+    -- Shares the installed nightfox plugin; each variant registers its own
+    -- colors_name, matching schemes[mode].
+    schemes = { dark = "nordfox", light = "dayfox" },
+    accents = {
+      dark = { heading1 = "#b48ead", heading = "#8cafd2" }, -- aurora purple + frost
+      light = { heading1 = "#6e33ce", heading = "#2848a9" }, -- magenta + blue (dayfox)
+    },
+    -- Comment floor: nordfox #60728a is only 2.51:1 on #2e3440 — Nord's signature
+    -- low-contrast comment, well under the house 4.5 floor. Body #cdcecf has
+    -- room (7.97:1), so lift the comment alone, blending 50% toward fg (4.70:1).
+    -- Light is dayfox: same #837a72-on-#f6f2ee case the nightfox family solves —
+    -- reuse its 30%-toward-fg1 lift (5.20:1). Upright: nightfox ships
+    -- styles.comments = "NONE". Diff* left stock (real bg-only washes).
+    fixup = function(mode)
+      local c = mode == "dark" and blend("#cdcecf", "#60728a", 0.5) or blend("#3d2b5a", "#837a72", 0.3)
+      vim.api.nvim_set_hl(0, "Comment", { fg = c })
+    end,
+  },
   terafox = {
     -- EdenEast/nightfox.nvim, terafox (teal-and-rust autumn-rain dark) paired
     -- with dawnfox (rosé-dawn light, the rose-pine-dawn palette). A second
@@ -292,99 +134,24 @@ local FAMILIES = {
       vim.api.nvim_set_hl(0, "Comment", { fg = c })
     end,
   },
-  modus = {
-    -- miikanissi/modus-themes.nvim, TINTED variants: vivendi-tinted (night-sky
-    -- indigo #0d0e1c) dark / operandi-tinted (warm paper #fbf7f0) light.
-    -- WCAG-AAA by design: body sits ~19:1 in both modes — far above the house
-    -- 9–13 comfort band, kept stock because maximum contrast IS this theme.
-    -- Both styles register colors_name "modus"; the tinted palettes come from
-    -- setup(), so pre() re-primes before every :colorscheme.
-    schemes = { dark = "modus_vivendi", light = "modus_operandi" },
-    colors_name = "modus",
-    pre = function()
-      require("modus-themes").setup({
-        variants = { modus_operandi = "tinted", modus_vivendi = "tinted" },
-      })
-    end,
+  carbonfox = {
+    -- EdenEast/nightfox.nvim, carbonfox (IBM Carbon — a near-black neutral
+    -- #161616 mono-slate dark, the darkest of the family) paired with dayfox
+    -- (warm linen light, the nightfox namesake's own light). Each variant
+    -- registers its own colors_name.
+    schemes = { dark = "carbonfox", light = "dayfox" },
     accents = {
-      dark = { heading1 = "#b6a0ff", heading = "#79a8ff" }, -- violet + blue
-      light = { heading1 = "#531ab6", heading = "#0031a9" },
+      dark = { heading1 = "#be95ff", heading = "#8cb6ff" }, -- purple + blue
+      light = { heading1 = "#6e33ce", heading = "#2848a9" }, -- magenta + blue (dayfox)
     },
-    -- The port takes big liberties with prot's syntax mapping (tan functions,
-    -- plain-fg constants, violet statements, invented italics — none exist in
-    -- emacs, where bold/italic constructs are opt-in and off). Re-anchor every
-    -- deviating group to the emacs *-tinted palette slots (modus-themes.el
-    -- defconst blocks): fnname/fnname-call, keyword (also drives Statement*),
-    -- constant, type, variable/property, preprocessor, comment, docstring;
-    -- numbers and plain variable uses are body-fg in emacs. Also: DiffText
-    -- ships IDENTICAL to DiffChange (same bg), which blinds the word-diff
-    -- glue — lift it a shade past the line wash.
+    -- Comment floor: carbonfox #6e6f70 is 3.48:1 on #161616 (floor 4.5) — body
+    -- #f2f4f8 has ample room (~17:1), so lift the comment alone, blending 20%
+    -- toward fg (5.1:1). Light is dayfox: same #837a72-on-#f6f2ee case the
+    -- nightfox family solves — reuse its 30%-toward-fg1 lift (5.20:1). Upright:
+    -- nightfox ships styles.comments = "NONE". Diff* left stock (real bg washes).
     fixup = function(mode)
-      local hl = vim.api.nvim_set_hl
-      local p = mode == "dark"
-          and {
-            comment = "#ef8386", string = "#2fafff", docstring = "#9ac8e0",
-            fnname = "#f78fe7", fncall = "#d09dc0", keyword = "#79a8ff",
-            constant = "#b6a0ff", type = "#11c777", variable = "#4ae2f0",
-            preproc = "#ff7f86", fg = "#ffffff",
-          }
-          or {
-            comment = "#7f0000", string = "#00598b", docstring = "#304463",
-            fnname = "#602938", fncall = "#7b435c", keyword = "#0031a9",
-            constant = "#531ab6", type = "#306010", variable = "#00603f",
-            preproc = "#894000", fg = "#000000",
-          }
-      hl(0, "Comment", { fg = p.comment })
-      hl(0, "String", { fg = p.string })
-      hl(0, "Character", { fg = p.string })
-      hl(0, "Function", { fg = p.fnname })
-      hl(0, "Keyword", { fg = p.keyword })
-      for _, g in ipairs({ "Statement", "Conditional", "Repeat", "Exception", "StorageClass", "Structure" }) do
-        hl(0, g, { fg = p.keyword })
-      end
-      hl(0, "Type", { fg = p.type })
-      hl(0, "Constant", { fg = p.constant })
-      hl(0, "Boolean", { fg = p.constant })
-      hl(0, "Number", { fg = p.fg })
-      hl(0, "Identifier", { fg = p.variable })
-      for _, g in ipairs({ "PreProc", "Include", "Define", "Macro" }) do
-        hl(0, g, { fg = p.preproc })
-      end
-      hl(0, "@variable", { fg = p.fg })
-      hl(0, "@variable.parameter", { fg = p.variable })
-      hl(0, "@property", { fg = p.variable })
-      hl(0, "@function.call", { fg = p.fncall })
-      hl(0, "@function.method.call", { fg = p.fncall })
-      hl(0, "@constructor", { fg = p.fncall })
-      hl(0, "@keyword.function", { link = "Keyword" })
-      hl(0, "@constant.builtin", { fg = p.constant })
-      hl(0, "@string.documentation", { fg = p.docstring })
-      if mode == "dark" then
-        hl(0, "DiffText", { fg = "#efef80", bg = "#514b12", bold = true })
-      else
-        hl(0, "DiffText", { fg = "#553d00", bg = "#f5c96c", bold = true })
-      end
-    end,
-  },
-  one = {
-    -- olimorris/onedarkpro.nvim: Atom's One, ONEDARK / ONELIGHT pair. Cooler
-    -- and sharper than the doom-one family. Each variant compiles its own
-    -- colors_name ("onedark"/"onelight"), matching schemes[mode].
-    schemes = { dark = "onedark", light = "onelight" },
-    accents = {
-      dark = { heading1 = "#c678dd", heading = "#61afef" }, -- purple + blue
-      -- light headings match the recolored onelight palette (plugins/onedarkpro.lua):
-      -- stock #9a77cf/#118dc3 were 2.95:1/3.10:1 on the #eaeaea bg — too faint.
-      light = { heading1 = "#7942cc", heading = "#056995" }, -- 5.04:1 each
-    },
-    -- Comment floor. Dark (onedark, #282c34 bg): One ships #7f848e (3.73:1) —
-    -- lift to #939aa3 (4.93:1). Light (onelight, toned to #eaeaea): stock
-    -- #9b9fa6 is 2.21:1 — lift to #656971 (4.58:1). onelight's syntax palette
-    -- is darkened wholesale in plugins/onedarkpro.lua; this only covers Comment
-    -- (it also carries the italic that the palette override can't set).
-    fixup = function(mode)
-      local c = mode == "dark" and "#939aa3" or "#656971"
-      vim.api.nvim_set_hl(0, "Comment", { fg = c, italic = true })
+      local c = mode == "dark" and blend("#f2f4f8", "#6e6f70", 0.2) or blend("#3d2b5a", "#837a72", 0.3)
+      vim.api.nvim_set_hl(0, "Comment", { fg = c })
     end,
   },
 }
@@ -468,8 +235,10 @@ end
 local function apply_overrides()
   local family, mode = M.read_state()
   local fam = FAMILIES[family]
-  -- colors_name: guard override for themes whose variant colorschemes all
-  -- register one shared name (e.g. kanagawa-lotus sets colors_name = "kanagawa")
+  -- colors_name: guard override for a family whose light/dark variants both
+  -- register ONE shared colors_name (!= schemes[mode]); set fam.colors_name to
+  -- it so this match still fires. All current families register a per-variant
+  -- name equal to schemes[mode], so none set it — kept for that future case.
   if vim.g.colors_name == (fam.colors_name or fam.schemes[mode]) then
     if fam.fixup then
       fam.fixup(mode) -- before word-diff: it reads the Diff* bgs set here

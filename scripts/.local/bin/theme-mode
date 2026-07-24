@@ -21,6 +21,11 @@
 #              via jq; claude code watches the file and hot-reloads live. Bypasses
 #              its OSC 11 auto-detection, which tmux mangles and only samples at
 #              launch (a runtime flip never reaches a running session).
+#   - starship: this script regenerates ~/.cache/starship.toml (mode only) from
+#              the stowed template with the active `palette =` line swapped;
+#              .zshrc points STARSHIP_CONFIG at the cache. Starship has no
+#              include but re-reads its config every prompt, so the next prompt
+#              flips. Edit the template => re-run theme-mode to refresh the cache.
 #
 # Usage:
 #   theme-mode [dark|light|toggle]    flip mode, keep family (default: toggle)
@@ -39,34 +44,19 @@ MODE_FILE="$HOME/.cache/theme-mode"
 FAMILY_FILE="$HOME/.cache/theme-family"
 TMUX_THEME_DIR="$HOME/.config/tmux"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
-DEFAULT_FAMILY="doom-one"
+DEFAULT_FAMILY="nightfox"
 
-families() { printf '%s\n' doom-one gruvbox-material duskbox kanagawa kanagawa-paper solarized selenized tokyonight nightfox terafox modus one; }
+families() { printf '%s\n' nightfox duskfox nordfox terafox carbonfox; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   case "$1:$2" in
-    doom-one:dark) echo "Doom One" ;;
-    doom-one:light) echo "doom-one-light" ;; # custom: ghostty/themes/doom-one-light
-    # custom (ghostty/themes/): builtins ship near-white ANSI 7/15 slots that
-    # make Claude Code headers blaze; customs mirror sainnhe's own mapping.
-    gruvbox-material:*) echo "gruvbox-material-$2" ;;
-    duskbox:*) echo "duskbox-$2" ;; # custom: ghostty/themes/duskbox-{dark,light} (dusk dark, dawn light; from duskbox extras)
-    kanagawa:*) echo "kanagawa-$2" ;; # custom: ghostty/themes/kanagawa-{dark,light} (wave dark, lotus light)
-    kanagawa-paper:*) echo "kanagawa-paper-$2" ;; # custom: ghostty/themes/kanagawa-paper-{dark,light} (ink dark, canvas light)
-    # custom: the shipped Solarized builtins are all *patched* forks (shifted
-    # bases, non-canonical greys); ours is Schoonover's own 16-colour ANSI.
-    solarized:*) echo "solarized-$2" ;; # custom: ghostty/themes/solarized-{dark,light}
-    selenized:dark) echo "Selenized Dark" ;;   # ghostty builtin
-    selenized:light) echo "Selenized Light" ;; # ghostty builtin
-    # builtins: these already put body fg on slot 15 (no blaze to fix).
-    tokyonight:dark) echo "TokyoNight Night" ;; # darkest of the three darks
-    tokyonight:light) echo "TokyoNight Day" ;;
     # custom: Nightfox blazes the usual way (7/15 above body fg); Dayfox hits
     # the inverse on a light bg — its 15 (#f4ece6) is a hair off the background.
     nightfox:*) echo "nightfox-$2" ;; # custom: ghostty/themes/nightfox-{dark,light} (dayfox is the light)
+    duskfox:*) echo "duskfox-$2" ;; # custom: ghostty/themes/duskfox-{dark,light} (rose-pine-derived; dawnfox is the light)
+    nordfox:*) echo "nordfox-$2" ;; # custom: ghostty/themes/nordfox-{dark,light} (Nord; dayfox is the light)
     terafox:*) echo "terafox-$2" ;; # custom: ghostty/themes/terafox-{dark,light} (dawnfox is the light)
-    modus:*) echo "modus-$2" ;; # custom: ghostty/themes/modus-{dark,light} (tinted variants)
-    one:*) echo "one-$2" ;; # custom: ghostty/themes/one-{dark,light} (onedark/onelight, atom's one)
+    carbonfox:*) echo "carbonfox-$2" ;; # custom: ghostty/themes/carbonfox-{dark,light} (IBM Carbon; dayfox is the light)
   esac
 }
 
@@ -128,6 +118,17 @@ apply() { # <family> <mode> — write state and repaint tmux + ghostty
     else
       rm -f "$claude_tmp"
     fi
+  fi
+
+  # Starship: no include mechanism, but it re-reads its whole config every
+  # prompt. Regenerate a machine-local cache from the stowed template with the
+  # active `palette =` line swapped to $mode; STARSHIP_CONFIG (set in .zshrc)
+  # points here, so the next prompt flips. Only the top-level `palette = ` line
+  # matches the anchored sed — the [palettes.*] headers are untouched.
+  local starship_src="$HOME/.config/starship.toml"
+  local starship_cache="$HOME/.cache/starship.toml"
+  if [ -f "$starship_src" ]; then
+    sed "s/^palette = .*/palette = \"$mode\"/" "$starship_src" >"$starship_cache"
   fi
 
   # tmux: source-file is server-global, every attached client updates at once.

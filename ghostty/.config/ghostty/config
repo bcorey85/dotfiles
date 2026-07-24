@@ -16,7 +16,7 @@ freetype-load-flags = no-light
 # fallback when the switcher has never run. This is what Claude Code chat
 # renders in. Ghostty has no external reload — press ctrl+shift+, after
 # switching. Custom (non-builtin) themes live in ./themes/.
-theme = Doom One
+theme = Nightfox
 config-file = ?theme-switch.conf
 
 # Window

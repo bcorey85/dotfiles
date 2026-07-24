@@ -1,10 +1,19 @@
-# GitHub Dark Dimmed palette
-palette = "github_dark_dimmed"
+# Theme — owned by the `theme-mode` switcher. Starship has no include mechanism,
+# but it re-reads its whole config every prompt, so theme-mode regenerates
+# ~/.cache/starship.toml from THIS file with the `palette =` line below swapped
+# to the active mode (dark|light), and .zshrc points STARSHIP_CONFIG at that
+# cache. The next prompt picks up the flip live — same source-of-truth model as
+# ghostty/tmux, a machine-local file instead of dirtying this tracked one.
+#
+# THIS file is the template: if you edit it, re-run `theme-mode` (any invocation)
+# to regenerate the cache, or the change won't show until the next theme switch.
+#
+# NOTE: the root `palette`/`format` keys MUST come before any [palettes.*] table
+# header — any key after a table header belongs to that table. Placed below a
+# palette, `format` silently became palettes.<name>.format and starship fell
+# back to the default `$all` format (which pulls in $aws et al.).
+palette = "dark"
 
-# NOTE: the root `format` MUST come before [palettes.*] — any key after a
-# table header belongs to that table. Placed below the palette it silently
-# became palettes.modus_vivendi.format and starship fell back to the default
-# `$all` format (which pulls in $aws et al.).
 format = """
 $directory\
 $git_branch\
@@ -15,7 +24,8 @@ $cmd_duration\
 $line_break\
 $character"""
 
-[palettes.github_dark_dimmed]
+# Dark — GitHub Dark Dimmed.
+[palettes.dark]
 red = "#f47067"
 orange = "#c69026"
 yellow = "#c69026"
@@ -26,6 +36,19 @@ purple = "#b083f0"
 fg = "#adbac7"
 bg = "#22272e"
 grey = "#768390"
+
+# Light — GitHub Primer light (accessible contrast on a light terminal bg).
+[palettes.light]
+red = "#cf222e"
+orange = "#bc4c00"
+yellow = "#9a6700"
+green = "#1a7f37"
+blue = "#0969da"
+teal = "#1b7c83"
+purple = "#8250df"
+fg = "#24292f"
+bg = "#ffffff"
+grey = "#6e7781"
 
 [directory]
 style = "bold teal"

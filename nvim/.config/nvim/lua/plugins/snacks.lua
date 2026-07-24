@@ -322,12 +322,13 @@ return {
       Snacks.picker.grep_word(search_opts)
     end, "Grep word under cursor")
 
-    -- s j / s r: jumplist / marks (Doom `s j` evil-show-jumps / `s r` show-marks).
+    -- s j / s m: jumplist / marks (Doom `s j` evil-show-jumps / `s r` show-marks;
+    -- `s r` ceded to grug-far for search-and-replace).
     pmap("<leader>sj", function()
       Snacks.picker.jumps()
     end, "Jumps")
 
-    pmap("<leader>sr", function()
+    pmap("<leader>sm", function()
       Snacks.picker.marks()
     end, "Marks")
 

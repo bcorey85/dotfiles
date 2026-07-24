@@ -2,10 +2,10 @@
   "skills": [
     "~/.claude/skills"
   ],
-  "lastChangelogVersion": "0.80.2",
+  "lastChangelogVersion": "0.82.0",
   "theme": "dark",
-  "defaultProvider": "opencode",
-  "defaultModel": "deepseek-v4-flash-free",
+  "defaultProvider": "opencode-go",
+  "defaultModel": "kimi-k3",
   "defaultThinkingLevel": "high",
   "hideThinkingBlock": true,
   "packages": [
@@ -15,10 +15,129 @@
     "npm:pi-questionnaire",
     "npm:pi-lens",
     "npm:pi-powerline-footer",
-    "npm:pi-cmux"
+    "npm:@piex-dev/hashline",
+    "npm:@piex-dev/lsp",
+    "npm:@hsingjui/pi-hooks"
   ],
   "subagents": {
     "disableBuiltins": true
   },
-  "workingVibe": "star trek"
+  "workingVibe": "star trek",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/bash-safety-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/git-discipline-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/review-commit-gate.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "read|grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/block-credential-read.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "write|edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/write-edit-safety-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/spec-budget-gate.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "write|edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/stub-guard.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/prettier-hook.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/eslint-hook.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/claudemd-linecount.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/log-skill-use.sh"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/warn-skip-hooks.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/calibration-guard.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/warn-skip-hooks.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/calibration-guard.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/warn-skip-hooks.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/calibration-guard.sh"
+          }
+        ]
+      }
+    ]
+  }
 }

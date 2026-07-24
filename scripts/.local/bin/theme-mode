@@ -18,14 +18,21 @@
 #   - workmux: this script sets the tmux-global $COLORFGBG (mode only, no
 #              family); the dashboard popup inherits it and picks light/dark.
 #   - claude:  this script writes .theme (mode only) into ~/.claude/settings.json
-#              via jq; claude code watches the file and hot-reloads live. Bypasses
-#              its OSC 11 auto-detection, which tmux mangles and only samples at
-#              launch (a runtime flip never reaches a running session).
-#   - starship: this script regenerates ~/.cache/starship.toml (mode only) from
-#              the stowed template with the active `palette =` line swapped;
-#              .zshrc points STARSHIP_CONFIG at the cache. Starship has no
-#              include but re-reads its config every prompt, so the next prompt
-#              flips. Edit the template => re-run theme-mode to refresh the cache.
+#              via jq (correct key on Claude Code >= 2.1.119; older builds kept it
+#              in ~/.claude.json). This sets the theme for the NEXT session — a
+#              running session does NOT repaint live: Claude Code reloads the
+#              settings value but never re-renders the TUI on a theme change, and
+#              its `auto` OSC 11 detection only samples at launch (and tmux mangles
+#              it). No supported live-flip lever exists (see anthropics/claude-code
+#              #33899); restart or run /theme by hand to see it in an open session.
+#   - starship: this script regenerates the REAL ~/.config/starship.toml (mode
+#              only) from the stowed ~/.config/starship.toml.template with the
+#              active `palette =` line swapped. Starship has no include but
+#              re-reads its config every prompt from that default path, so EVERY
+#              running shell flips on its next prompt — no reload, no
+#              STARSHIP_CONFIG. The generated file is machine-local (not stowed),
+#              so the tracked template is never dirtied. Edit the template =>
+#              re-run theme-mode to refresh the live config.
 #
 # Usage:
 #   theme-mode [dark|light|toggle]    flip mode, keep family (default: toggle)
@@ -103,12 +110,13 @@ apply() { # <family> <mode> — write state and repaint tmux + ghostty
     pkill -USR2 -x ghostty 2>/dev/null || true
   fi
 
-  # Claude Code: it watches ~/.claude/settings.json and hot-reloads `theme`
-  # live (only `model`/`outputStyle` are restart-only). Its `auto` theme relies
-  # on an OSC 11 background query that tmux mangles and only samples at launch,
-  # so a runtime flip never reaches a running session — push the mode in
-  # explicitly instead. `light`/`dark` are valid theme values, so $mode drops
-  # straight in.
+  # Claude Code: push the mode into ~/.claude/settings.json so the NEXT session
+  # opens in it. A running session does NOT repaint — Claude Code reloads the
+  # settings value but never re-renders the TUI on a `theme` change (known gap,
+  # anthropics/claude-code #33899), and its `auto` OSC 11 detection only samples
+  # at launch (and tmux mangles it), so a runtime flip never reaches an open
+  # session. `light`/`dark` are valid theme values, so $mode drops straight in.
+  # To see it live in an open session, run /theme by hand.
   local claude_settings="$HOME/.claude/settings.json"
   if command -v jq >/dev/null 2>&1 && [ -f "$claude_settings" ]; then
     local claude_tmp
@@ -120,15 +128,16 @@ apply() { # <family> <mode> — write state and repaint tmux + ghostty
     fi
   fi
 
-  # Starship: no include mechanism, but it re-reads its whole config every
-  # prompt. Regenerate a machine-local cache from the stowed template with the
-  # active `palette =` line swapped to $mode; STARSHIP_CONFIG (set in .zshrc)
-  # points here, so the next prompt flips. Only the top-level `palette = ` line
-  # matches the anchored sed — the [palettes.*] headers are untouched.
-  local starship_src="$HOME/.config/starship.toml"
-  local starship_cache="$HOME/.cache/starship.toml"
-  if [ -f "$starship_src" ]; then
-    sed "s/^palette = .*/palette = \"$mode\"/" "$starship_src" >"$starship_cache"
+  # Starship: no include mechanism, but it re-reads its whole config every prompt
+  # from its default path ~/.config/starship.toml. Regenerate that REAL file (not
+  # a symlink — it's machine-local) from the stowed template with the active
+  # `palette =` line swapped to $mode, so EVERY running shell flips on its next
+  # prompt with no reload. Only the top-level `palette = ` line matches the
+  # anchored sed — the [palettes.*] headers are untouched.
+  local starship_tmpl="$HOME/.config/starship.toml.template"
+  local starship_cfg="$HOME/.config/starship.toml"
+  if [ -f "$starship_tmpl" ]; then
+    sed "s/^palette = .*/palette = \"$mode\"/" "$starship_tmpl" >"$starship_cfg"
   fi
 
   # tmux: source-file is server-global, every attached client updates at once.

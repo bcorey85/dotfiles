@@ -4,6 +4,17 @@
 #   done (finished, unreviewed) -> steady yellow badge
 # Prints nothing while every agent is working — silence means all clear.
 #
+# Counts come from the @workmux_pane_status tmux pane option, NOT from
+# `workmux status --json`. Both are written by workmux, but only the pane
+# option is focus-aware: workmux clears it on pane-focus-in, so a chat you've
+# already read stops counting. The JSON keeps reporting "done" until that agent
+# runs again, which left the yellow badge lit for days on finished, read, and
+# entirely uninteresting sessions. Tradeoff: the pane option is a workmux
+# internal where the JSON is the documented contract — if an upgrade renames
+# it the badge just goes quiet, which is the safe direction to fail.
+# The icons below must track `status_icons` in ~/.config/workmux/config.yaml
+# (unset there, so these are workmux's defaults).
+#
 # The pulse is hand-rolled: ghostty (like most modern terminals) parses SGR 5
 # but never animates it, so tmux's `blink` style attribute is a no-op. Instead
 # status-interval is 1s (see .tmux.conf) and this alternates filled/outline on
@@ -11,8 +22,9 @@
 # blocking you; pulsing `done` too would leave the bar flashing most of the
 # time and train you to ignore it.
 #
-# A 1s status-interval means this runs every second, so the workmux call is
-# cached (STALE_SECS) — the pulse keeps ticking off the cache between refreshes.
+# Reading a pane option is an in-process tmux query, so there is nothing to
+# amortize and no cache: the old STALE_SECS file existed only to stop the 1s
+# pulse from re-running `workmux status --json`, which walks every git worktree.
 # Colors are ANSI palette names so they track the active terminal theme.
 # Armed into status-right by tmux-arm-workmux-segment; jump to a flagged agent
 # with C-, .
@@ -20,24 +32,37 @@
 export PATH="$HOME/.local/bin:$PATH"
 command -v workmux >/dev/null 2>&1 || exit 0
 
-CACHE="${TMPDIR:-/tmp}/workmux-attention.$(id -u).cache"
-STALE_SECS=4
+WAIT_ICON='💬'
+DONE_ICON='✅'
 
-fresh=0
-if [ -f "$CACHE" ]; then
-  age=$(( $(date +%s) - $(stat -c %Y "$CACHE" 2>/dev/null || stat -f %m "$CACHE" 2>/dev/null || echo 0) ))
-  [ "$age" -lt "$STALE_SECS" ] && fresh=1
-fi
+panes="$(tmux list-panes -a -F \
+  '#{pane_id}	#{pane_active}#{window_active}#{?session_attached,1,0}	#{@workmux_pane_status}' \
+  2>/dev/null)" || exit 0
 
-if [ "$fresh" -eq 0 ]; then
-  json="$(workmux status --json 2>/dev/null)" || exit 0
-  printf '%s %s\n' \
-    "$(grep -c '"status": "waiting"' <<<"$json")" \
-    "$(grep -c '"status": "done"' <<<"$json")" >"$CACHE"
-fi
+waiting=0
+finished=0
+while IFS=$'\t' read -r pane onscreen status; do
+  case "$status" in
+    "$WAIT_ICON" | "$DONE_ICON") ;;
+    *) continue ;; # working (or not an agent pane) — never flagged
+  esac
 
-read -r waiting finished <"$CACHE" 2>/dev/null || exit 0
-: "${waiting:=0}" "${finished:=0}"
+  # Acknowledge-on-sight. workmux only clears on pane-focus-in, so a pane that
+  # finished while you were already sitting in it stays flagged until you leave
+  # and come back — the badge would nag about the message on your screen. If
+  # it's the active pane of the active window in an attached session, you have
+  # read it; clear it the same way a focus event would.
+  if [ "$onscreen" = "111" ]; then
+    tmux set-option -p -t "$pane" -u @workmux_pane_status 2>/dev/null || true
+    continue
+  fi
+
+  if [ "$status" = "$WAIT_ICON" ]; then
+    waiting=$((waiting + 1))
+  else
+    finished=$((finished + 1))
+  fi
+done <<<"$panes"
 
 # Adaptive refresh: the 1s tick exists only so the badge can pulse, and only a
 # `waiting` agent pulses — which is rare. Paying 1s refreshes (this script +

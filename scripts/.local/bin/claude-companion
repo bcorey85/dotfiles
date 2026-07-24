@@ -13,7 +13,13 @@
 dir="${1:-$(tmux display-message -p '#{pane_current_path}')}"
 
 # A claude pane already in the current window? Stash it.
-pane=$(tmux list-panes -F '#{pane_id} #{pane_current_command}' | awk '$2=="claude"{print $1; exit}')
+# The native installer symlinks ~/.local/bin/claude at a versioned binary, so
+# pane_current_command is the bare version ("2.1.219") there and "claude" only
+# on installs that exec a literally-named binary. Match both — matching only
+# "claude" made the toggle spawn a new pane every press on mac. Same convention
+# as .tmux.conf's @claude-pane and nvim's claude-send.lua.
+pane=$(tmux list-panes -F '#{pane_id} #{pane_current_command}' |
+    awk '$2=="claude" || $2 ~ /^[0-9]+\.[0-9]+\.[0-9]+$/ {print $1; exit}')
 if [ -n "$pane" ]; then
     tmux break-pane -d -s "$pane" -n _claude
     exit 0
@@ -22,8 +28,10 @@ fi
 # A stashed companion in this session? Bring it back.
 win=$(tmux list-windows -F '#{window_id} #{window_name}' | awk '$2=="_claude"{print $1; exit}')
 if [ -n "$win" ]; then
-    # -p 40 instead of -l 40% for older-tmux compat (matches the dev script)
-    tmux join-pane -h -p 40 -s "$win"
+    # -l 40%, not -p 40: join-pane dropped the deprecated -p in tmux 3.7 and
+    # fails with "size missing" (split-window still accepts it). -l with a
+    # percentage needs tmux >= 3.1, which .tmux.conf already requires.
+    tmux join-pane -h -l 40% -s "$win"
     exit 0
 fi
 

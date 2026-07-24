@@ -14,7 +14,7 @@ When rules conflict: the user's current instruction > project CLAUDE.md > this f
 
 ## Safety Rails (hook-enforced — never work around a block)
 
-`bash-safety-gate`, `git-discipline-gate`, `review-commit-gate`, `block-credential-read`, and `write-edit-safety-gate` deterministically block: SSH/scp/rsync, credential reads, sudo, force-push, commit/push on main (exempt: direct-edit repos), `git stash`, `git commit --amend`, destructive resets, pipe-to-shell, and `git commit` after an unreviewed coder dispatch. When a gate blocks you: report it to the user and stop — never rephrase a command to slip past. The gates regex the full command string, so false positives happen; a block is a report, not a retry puzzle.
+`bash-safety-gate`, `git-discipline-gate`, `review-commit-gate`, `block-credential-read`, and `write-edit-safety-gate` deterministically block: SSH/scp/rsync, credential reads, sudo, force-push, commit/push on main (exempt: direct-edit repos), `git stash`, `git commit --amend`, destructive resets, pipe-to-shell, and `git commit` after an unreviewed coder dispatch. omp (Oh My Pi) consumes these same scripts via the `omp` stow package's `claude-security-bridge.ts` — preserve their stdin/stdout contract (hook JSON in; `permissionDecision` JSON or exit-2 out) when editing or regenerating. When a gate blocks you: report it to the user and stop — never rephrase a command to slip past. The gates regex the full command string, so false positives happen; a block is a report, not a retry puzzle.
 
 ## Orchestration (main session only)
 

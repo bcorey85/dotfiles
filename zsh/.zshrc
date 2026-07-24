@@ -107,11 +107,15 @@ if ! command -v mise &>/dev/null; then
 fi
 export PATH="/opt/homebrew/opt/openssl@3/bin:$PATH"
 
-# Starship: theme-mode regenerates ~/.cache/starship.toml with the active
-# light/dark palette; use it when present so the prompt tracks the theme, else
-# fall back to the stowed default (fresh machine, before theme-mode has run).
+# Starship: theme-mode regenerates the REAL ~/.config/starship.toml (starship's
+# default path) with the active light/dark palette, so every running shell flips
+# live on its next prompt — no STARSHIP_CONFIG, no reload. On a fresh machine
+# (before theme-mode has ever run) that file doesn't exist yet, so bootstrap it
+# from the stowed template with the dark palette baked in.
 if command -v starship &>/dev/null; then
-  [ -f "$HOME/.cache/starship.toml" ] && export STARSHIP_CONFIG="$HOME/.cache/starship.toml"
+  if [ ! -f "$HOME/.config/starship.toml" ] && [ -f "$HOME/.config/starship.toml.template" ]; then
+    sed 's/^palette = .*/palette = "dark"/' "$HOME/.config/starship.toml.template" >"$HOME/.config/starship.toml"
+  fi
   eval "$(starship init zsh)"
 fi
 

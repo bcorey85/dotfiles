@@ -54,11 +54,6 @@
       "*.env.example": "allow",
       "**/*.env.example": "allow"
     },
-    "external_directory": {
-      "*": "ask",
-      "/tmp/*": "allow",
-      "$HOME/.cargo/registry/*": "allow",
-      "$HOME/.cache/*": "allow"
-    }
+    "external_directory": "allow"
   }
 }

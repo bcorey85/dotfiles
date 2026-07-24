@@ -118,6 +118,27 @@ return {
           local e = s + math.max(h.added.count, 1) - 1
           if row >= s and row <= e then
             gs.stage_hunk()
+            -- TEST (auto-advance): after the stage lands, jump to the next
+            -- unreviewed hunk repo-wide. Fired from GitSignsUpdate, NOT inline:
+            -- gitsigns writes the index asynchronously, so an inline
+            -- insitu.next() would race the write and re-select the hunk we just
+            -- staged. This event fires after gitsigns re-diffs, so insitu's
+            -- `git diff` sees the stage. Revert = delete this autocmd block;
+            -- `-` returns to stage-and-stay.
+            vim.api.nvim_create_autocmd("User", {
+              pattern = "GitSignsUpdate",
+              once = true,
+              callback = function()
+                -- Defer to the main loop: next() opens the target file with
+                -- :edit, and doing that from inside an autocmd callback runs
+                -- the new buffer's FileType/BufReadPost events in a nested,
+                -- suppressed context -- so treesitter, LSP, and gitsigns never
+                -- attach. vim.schedule lets :edit fire those events normally.
+                vim.schedule(function()
+                  require("insitu").next()
+                end)
+              end,
+            })
             return
           end
         end

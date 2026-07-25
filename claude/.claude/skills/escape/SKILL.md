@@ -36,7 +36,7 @@ One escape = one defect found downstream of the gate that should have caught it.
 
    Propose the specific guard to the user; on approval, apply it (or create a ticket if it belongs in another repo). Then append `guard=type|convention|gotcha|rule|none` to the log line so `/audit review` can flag escapes that never got a guard.
 
-   **ADR addendum**: if the defect traces back to a decision recorded in an ADR (`docs/eng-specs/*.md`), also append a dated line to that ADR's `## Addenda` section (create the section if absent) — outcomes are part of the record, and this is one of the two legal mutations `_shared/adr-template.md` allows. Never edit the sections above it.
+   **ADR addendum**: if the defect traces back to a decision recorded in an ADR (`docs/decisions/*.md`), also append a dated line to that ADR's `## Addenda` section (create the section if absent) — outcomes are part of the record, and this is one of the two legal mutations `_shared/adr-template.md` allows. Never edit the sections above it.
 
 4. **Confirm** by echoing the logged fields and the guard decision, then stop. This skill never fixes the defect itself — route fixes through `/fix`.
 

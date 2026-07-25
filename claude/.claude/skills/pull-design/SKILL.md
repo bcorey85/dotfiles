@@ -46,7 +46,7 @@ If the Figma MCP tools aren't available in this session, say so and stop — don
 
 ### Phase 3: Check for Cached Design Tokens
 
-5. **Check for `docs/eng-arch/design-tokens.md`**. If it exists, read it — this is a previously cached design system. This changes how Phase 6 works:
+5. **Check for `docs/architecture/design-tokens.md`**. If it exists, read it — this is a previously cached design system. This changes how Phase 6 works:
    - **Cache exists**: You already have the full design system (colors, typography, spacing, component inventory). Do NOT re-extract or re-document these. Phase 6 becomes a lightweight diff — only report what's NEW or CHANGED in this frame vs the cache.
    - **No cache**: Full extraction mode (original behavior).
 
@@ -64,7 +64,7 @@ If the Figma MCP tools aren't available in this session, say so and stop — don
 
 ### Phase 5: Check for Eng Plan
 
-9. **Look for an eng plan** in the conversation thread or on disk (`docs/eng-specs/*.md` matching the ticket). If found, use it as context for the gap analysis in Phase 6.
+9. **Look for an eng plan** in the conversation thread or on disk (`docs/plans/*.md` matching the ticket). If found, use it as context for the gap analysis in Phase 6.
 
 ### Phase 6: Present the Design Brief
 
@@ -105,7 +105,7 @@ If the Figma MCP tools aren't available in this session, say so and stop — don
 
 ### Phase 7: Auto-Update Cache (only if cache existed in Phase 3)
 
-10. **If the diff found NEW tokens, colors, typography, spacing, shadows, or components**: automatically append them to `docs/eng-arch/design-tokens.md` using the Edit tool.
+10. **If the diff found NEW tokens, colors, typography, spacing, shadows, or components**: automatically append them to `docs/architecture/design-tokens.md` using the Edit tool.
     - Add new colors to the appropriate Colors sub-table (Text, Backgrounds, Borders, etc.)
     - Add new typography entries to the Typography table
     - Add new spacing tokens to the Spacing table

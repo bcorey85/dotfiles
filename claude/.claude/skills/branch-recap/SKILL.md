@@ -15,7 +15,7 @@ each phase against its Success Criteria, per-phase test-intent caught bug-pinnin
 it was still phase-sized, `/verify` certified branch completeness, `/orient` rebuilt the
 system map. Re-running any of that here would be spend without signal.
 
-What has *not* happened is synthesis. You have seen five phases; you have not seen the
+What has _not_ happened is synthesis. You have seen five phases; you have not seen the
 branch. This skill's whole job is to hand you that one artifact.
 
 Output contract: ONE human-facing **recap**, plus a machine copy appended to
@@ -89,8 +89,7 @@ Spec: <task-dir>
 ### Still unstaged                (from /stage, blast-radius order)
 - <path> — <classifier reason>
 
-Next: read the residue → run the smoke checklist → stage → /commit.
-After the PR opens: /adr.
+Next: read the residue → run the smoke checklist → /adr → stage → /commit → open the PR.
 ```
 
 Persist (non-blocking; on failure mention and continue):
@@ -111,8 +110,8 @@ printf '{"ts":"%s","repo":"%s","branch":"%s","test_audit":"%s","residue":%d,"fil
 - **Never `git add` a semantic file, never commit, never open a PR** — the residual read and
   the stage are the user's; `/commit` is its own skill.
 - **Never edit code** — anything step 1 finds routes through `/fix`.
-- **Never run `/adr`** — it is sequenced after the PR opens (it wants the PR link). The
-  recap's Next line points to it.
+- **Never run `/adr`** — it is the user's own step, sequenced after the recap and before the
+  PR opens so the record ships in the same PR. The recap's Next line points to it.
 - **Never re-run quality checks the execution gate already evidenced** — the 2-run cap in
   `~/.claude/CLAUDE.md` applies across the whole task.
 

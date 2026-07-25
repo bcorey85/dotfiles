@@ -3,7 +3,19 @@
 -- preview keymaps.
 
 local function resolve_abs_path()
-  local bufname = require("util.buf").name()
+  local buf = require("util.buf")
+  -- is_file() BEFORE name(): a special buffer has a name, it just isn't a file.
+  -- Neogit sets its status buffer's name to "NeogitStatus"
+  -- (neogit/buffers/status/init.lua), which sails past the nil check below and
+  -- then gets repo-root-prefixed into "<repo>/NeogitStatus" — silently filing
+  -- the comment against a path that doesn't exist, at a line number taken from
+  -- the status buffer rather than any file. Same for codediff's inline view and
+  -- quickfix. Bail loudly instead.
+  if not buf.is_file() then
+    vim.notify("Review comments need a real file buffer", vim.log.levels.WARN)
+    return nil
+  end
+  local bufname = buf.name()
   if not bufname then
     vim.notify("Buffer has no file name", vim.log.levels.WARN)
     return nil

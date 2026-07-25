@@ -10,8 +10,10 @@
 -- Plugin-independent keepers (<leader>gr gh PR, <leader>gt push+upstream)
 -- live below, converted off fugitive's :Git to vim.system.
 --
--- Filetype of the status buffer is `NeogitStatus` (used by mini-indentscope,
--- diffs.nvim, and the jump-to-existing scan below).
+-- Filetype of the status buffer is `NeogitStatus` (used by diffs.nvim and the
+-- jump-to-existing scan below). Its buffer NAME is also "NeogitStatus" — not a
+-- path — which config/review.lua and config/claude-send.lua guard against via
+-- util.buf.is_file() before building file:line references.
 --
 -- Neogit emits User autocmds (NeogitCommitComplete, NeogitPushComplete, etc.)
 -- which statusline.lua subscribes to in place of fugitive's FugitiveChanged.

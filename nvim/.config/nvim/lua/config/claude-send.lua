@@ -44,7 +44,16 @@ end
 -- file lives under it (claude resolves mentions against its own cwd), absolute
 -- otherwise. line1/line2 optional.
 local function mention(pane, line1, line2)
-  local abs = require("util.buf").path()
+  local buf = require("util.buf")
+  -- Same guard as review.lua's resolve_abs_path, for the same reason: special
+  -- buffers have names, so path() happily returns "<cwd>/NeogitStatus" and we'd
+  -- send claude an @-mention of a file that doesn't exist with line numbers from
+  -- the wrong buffer. An @-mention must point at something claude can read.
+  if not buf.is_file() then
+    vim.notify("@-mentions need a real file buffer", vim.log.levels.WARN)
+    return nil
+  end
+  local abs = buf.path()
   if not abs then
     vim.notify("Buffer has no file", vim.log.levels.WARN)
     return nil

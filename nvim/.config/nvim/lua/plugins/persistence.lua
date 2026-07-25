@@ -22,6 +22,7 @@ local disabled = vim.env.NEOGIT_POPUP ~= nil
   or vim.env.CODEDIFF_POPUP ~= nil
   or vim.env.OIL_POPUP ~= nil
   or vim.env.ORG_POPUP ~= nil
+  or vim.env.INSITU_POPUP ~= nil
   or #vim.api.nvim_list_uis() == 0
 
 return {

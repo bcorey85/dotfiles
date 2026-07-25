@@ -6,12 +6,12 @@ allowed-tools: [Bash, Read, Glob, Grep, Edit]
 
 # Log an Escape
 
-One escape = one defect found downstream of the gate that should have caught it. `/cc`, `/refactor`, and `/verify` log their own escapes automatically; this skill is the manual channel for everything else — things you catch reading a PR, a prod bug traced back to loop output, a smell noticed weeks later.
+One escape = one defect found downstream of the gate that should have caught it. `/cc`, `/fix` (conversation-sourced findings, as `stage_found=walkthrough`), `/refactor`, and `/verify` log their own escapes automatically; this skill is the manual channel for everything else — things you catch reading a PR, a prod bug traced back to loop output, a smell noticed weeks later.
 
 ## Instructions
 
 1. **Extract the fields** from `$ARGUMENTS` and the conversation:
-   - `stage_found` — where the defect surfaced: `pr-human` (you, reading the diff), `prod`, `verify`, `other`
+   - `stage_found` — where the defect surfaced: `walkthrough` (you, reading `/stage`'s queue at a phase sign-off — inside the loop), `pr-human` (you, reading the diff after it left the gates), `prod`, `verify`, `other`
    - `gate_missed` — which layer should have caught it: `review` (bugs/quality), `drift-gate` (plan drift), `test-intent` (bug-pinning tests), `stage` (bug in a mechanically-staged SAFE-tier file — the invariant failed), `coder` (should never have been written)
    - `class` — `bug` | `smell` | `duplication` | `plan-drift` | `test-gap` | `other`
    - `severity` — `high` | `medium` | `low`

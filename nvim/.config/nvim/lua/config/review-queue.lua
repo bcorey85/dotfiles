@@ -3,7 +3,7 @@
 -- The inbound half of the Claude review loop. review.lua is the outbound half
 -- (you leave comments, /cc reads them); this is the return path: skills like
 -- /stage and /review append findings to ~/.claude/review-queue.jsonl, and
--- <leader>cq turns them into quickfix entries plus inline virtual text.
+-- <leader>cf turns them into quickfix entries plus inline virtual text.
 --
 -- Why this exists at all: a findings list rendered into the chat pane is a
 -- transcript — you read it once, in a context you can't act from, and the
@@ -20,7 +20,12 @@
 --   tier  ESCALATE | READ | SKIM   (default READ) — severity + sort order
 --   col   1-indexed (default 1)
 --   repo  absolute repo root; entries for other repos are filtered out
+--   date  ISO8601 (`date -u +%Y-%m-%dT%H:%M:%SZ`) — when the finding was made
 -- A malformed line costs that line only, never the whole queue.
+--
+-- `date` is optional but producers should always send it: without it a finding
+-- can't be aged or drift-checked, and an un-aged row is indistinguishable from
+-- a fresh one. See the staleness note on annotate() below for why that matters.
 --
 -- Producers MUST append (>>), one finding per line, and keep the line short.
 -- Concurrent agents all write this one file; a single `>>` write under 4KB is
@@ -86,6 +91,54 @@ local function in_repo(abs, repo_root)
   return not repo_root or abs:sub(1, #repo_root + 1) == repo_root .. "/"
 end
 
+-- ISO8601 (UTC, as `date -u +%Y-%m-%dT%H:%M:%SZ` emits) -> epoch seconds.
+-- os.time interprets its table in LOCAL time, so subtract the local UTC offset
+-- rather than trusting the result — otherwise every age is off by the timezone
+-- and a finding made minutes ago can read as "stale" or as being in the future.
+local function iso_to_epoch(s)
+  if type(s) ~= "string" then
+    return nil
+  end
+  local y, mo, d, h, mi, sec = s:match("^(%d+)-(%d+)-(%d+)[T ](%d+):(%d+):(%d+)")
+  if not y then
+    return nil
+  end
+  local t = { year = y, month = mo, day = d, hour = h, min = mi, sec = sec, isdst = false }
+  local as_local = os.time(t)
+  if not as_local then
+    return nil
+  end
+  return as_local + os.difftime(as_local, os.time(os.date("!*t", as_local)))
+end
+
+local function age_label(secs)
+  if secs < 3600 then
+    return math.max(math.floor(secs / 60), 0) .. "m"
+  elseif secs < 86400 then
+    return math.floor(secs / 3600) .. "h"
+  end
+  return math.floor(secs / 86400) .. "d"
+end
+
+-- Age and drift for one entry, computed at load time (never stored).
+--
+-- Forgetting <leader>cF is the expected case, so the queue accumulates rows
+-- whose line numbers no longer mean anything. The clamp in mark_buffer keeps
+-- those from erroring, which is exactly the hazard: a finding pointing at code
+-- that moved under it renders identically to a live one. File mtime newer than
+-- the finding's timestamp is the cheap, dependency-free signal that a row may
+-- have drifted — not proof (any unrelated edit trips it), so it's surfaced as a
+-- warning to distrust the line number, not as grounds to drop the finding.
+local function annotate(e)
+  local at = iso_to_epoch(e.date)
+  if not at then
+    return nil, false
+  end
+  local age = age_label(os.time() - at)
+  local st = vim.uv.fs_stat(e.path)
+  return age, st ~= nil and st.mtime.sec > at
+end
+
 local function read_entries()
   local lines = read_lines()
   if not lines then
@@ -106,10 +159,11 @@ local function read_entries()
         col = tonumber(e.col) or 1,
         text = e.text,
         tier = TIERS[e.tier] and e.tier or DEFAULT_TIER,
+        date = e.date,
       }
     end
   end
-  return entries, skipped
+  return entries, skipped, #lines
 end
 
 -- Place virtual text for one buffer, if the queue has anything for its file.
@@ -129,7 +183,7 @@ local function mark_buffer(buf)
   for _, e in ipairs(entries) do
     local row = math.min(math.max(e.lnum, 1), last) - 1
     pcall(vim.api.nvim_buf_set_extmark, buf, ns, row, 0, {
-      virt_text = { { "  ◆ " .. e.text, TIERS[e.tier].hl } },
+      virt_text = { { "  ◆ " .. e.text .. (e.suffix or ""), TIERS[e.tier].hl } },
       virt_text_pos = "eol",
       hl_mode = "combine",
     })
@@ -144,15 +198,22 @@ local function mark_all_loaded()
   end
 end
 
--- <leader>cq — load the queue into quickfix and mark the open buffers.
+-- <leader>cf — load the queue into quickfix and mark the open buffers.
 function M.load()
-  local entries, skipped = read_entries()
+  local entries, skipped, total = read_entries()
   if not entries then
     vim.notify("No review queue at " .. QUEUE_PATH, vim.log.levels.INFO)
     return
   end
+  -- Name the root when the queue has rows but none of them ours: "empty" is
+  -- otherwise indistinguishable from "scoped to a repo you didn't expect",
+  -- which is the actual failure when cwd is somewhere surprising.
   if #entries == 0 then
-    vim.notify("Review queue is empty for this repo", vim.log.levels.INFO)
+    local msg = "Review queue is empty for this repo"
+    if total > 0 then
+      msg = total .. " findings in the queue, none for " .. (require("util.git").root() or vim.fn.getcwd())
+    end
+    vim.notify(msg, vim.log.levels.INFO)
     return
   end
 
@@ -169,8 +230,13 @@ function M.load()
   end)
 
   by_path = {}
-  local items = {}
+  local items, stale = {}, 0
   for _, e in ipairs(entries) do
+    local age, drifted = annotate(e)
+    e.suffix = age and ("  [" .. age .. (drifted and ", stale" or "") .. "]") or ""
+    if drifted then
+      stale = stale + 1
+    end
     by_path[e.path] = by_path[e.path] or {}
     table.insert(by_path[e.path], e)
     items[#items + 1] = {
@@ -178,7 +244,7 @@ function M.load()
       lnum = e.lnum,
       col = e.col,
       type = TIERS[e.tier].qftype,
-      text = e.tier .. ": " .. e.text,
+      text = e.tier .. ": " .. e.text .. e.suffix,
     }
   end
 
@@ -187,13 +253,16 @@ function M.load()
   vim.cmd("botright copen")
 
   local msg = #items .. " findings"
+  if stale > 0 then
+    msg = msg .. ", " .. stale .. " stale (file edited since — distrust the line)"
+  end
   if skipped and skipped > 0 then
     msg = msg .. " (" .. skipped .. " malformed lines skipped)"
   end
-  vim.notify(msg, vim.log.levels.INFO)
+  vim.notify(msg, stale > 0 and vim.log.levels.WARN or vim.log.levels.INFO)
 end
 
--- <leader>cQ — queue worked; drop the marks and remove THIS repo's entries.
+-- <leader>cF — queue worked; drop the marks and remove THIS repo's entries.
 -- Same consume-on-read contract /cc has with claude-comments.md: findings are a
 -- worklist, and a stale one that never empties gets ignored wholesale.
 --
@@ -261,7 +330,10 @@ vim.api.nvim_create_autocmd("BufReadPost", {
 })
 
 -- Claude corner of <leader>c, alongside cc (comment), cp (preview), cm (mention).
-vim.keymap.set("n", "<leader>cq", M.load, { desc = "Load Claude review queue (quickfix)" })
-vim.keymap.set("n", "<leader>cQ", M.clear, { desc = "Clear Claude review queue" })
+-- cf/cF, not cq/cQ: gitsigns already owns those for its hunk quickfix, and it
+-- sets them buffer-locally from on_attach, so a global map here would look bound
+-- (:map shows it) and silently never fire in any git-tracked buffer.
+vim.keymap.set("n", "<leader>cf", M.load, { desc = "Load Claude findings queue (quickfix)" })
+vim.keymap.set("n", "<leader>cF", M.clear, { desc = "Clear Claude findings queue" })
 
 return M

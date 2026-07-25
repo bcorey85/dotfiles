@@ -25,10 +25,12 @@ Not the author, and not this month's reviewer: the reader **two years out** — 
 ## Discipline
 
 - **Status**: `Accepted` default. `Deprecated` when no longer in force. `Superseded by IQ-YYY` (with link) when replaced — and the replacement carries `Supersedes: IQ-XXX`, so the chain reads in both directions.
-- **Two legal mutations after Accepted, nothing else**:
+- **The body freezes at Accepted; the header does not.** Everything from `## TL;DR` down is frozen. The header bullets are mutable metadata — `Status`, `Supersedes`, and `PR` get filled in or flipped as the record's world changes (`PR` is `(pending)` at creation, since `/adr` runs before the PR opens). Changing a header bullet is bookkeeping, not a rewrite of the decision.
+- **Two legal mutations to the body after Accepted, nothing else**:
   1. **Addendum** — a dated line appended under `## Addenda`: outcomes, escapes traced back to this decision, an assumption observed broken. Never alters anything above it.
-  2. **Supersession** — a changed decision gets a NEW record that supersedes this one.
-     Silent edits destroy the audit chain; the trail is only trustworthy if readers can rely on Accepted text being frozen.
+  2. **Supersession** — a changed decision gets a NEW record that supersedes this one. Flip this record's `Status` to `Superseded by IQ-YYY` (header bookkeeping, per above) and leave the body untouched.
+     Silent edits destroy the audit chain; the trail is only trustworthy if readers can rely on Accepted body text being frozen.
+- **Addendum format** — one line, ISO date, newest last (append-only): `- **YYYY-MM-DD** — [what happened]`. Tag the kind inline when it has one: `assumption broken:`, `escape IQ-XXX:`, `outcome:`.
 - **Assumptions are testable or they're filler**: "we assume reasonable scale" records nothing; "valid while single-region" can be checked in 30 seconds by the reader who wonders if this still applies.
 - **Reversibility is one line**: `two-way door` (cheap to undo) or `one-way door` (migration, published API, data model) plus one clause on why. Tells the future reader how much evidence they need before re-litigating.
 - **Consequences vs Constraints**: Consequences = what we _accepted_ by deciding. Constraints = rules we worked _within_.
@@ -51,8 +53,8 @@ Read `~/.claude/skills/_shared/skimmable-writing.md` (single source of truth for
 - **Status**: Accepted
 - **Supersedes**: [IQ-YYY](link) — omit if none
 - **Ticket**: [IQ-XXX](jira-url) — from `**URL:**` in the ticket; if no URL is recorded, use the key as plain text (do NOT invent a tracker URL)
-- **PR**: [repo#NNN](pr-url) — or `(pending)`
-- **Date**: MM-DD-YYYY
+- **PR**: `(pending)` — normal at creation; becomes [repo#NNN](pr-url) once the PR opens
+- **Date**: YYYY-MM-DD
 - **Reversibility**: two-way door — [one clause] | one-way door — [one clause]
 
 ## TL;DR
@@ -99,9 +101,15 @@ Read `~/.claude/skills/_shared/skimmable-writing.md` (single source of truth for
 
 - [Non-obvious limit]
 
+<!-- ## Addenda — OMIT at creation. The first addendum adds the section. Append-only, newest last:
+- **YYYY-MM-DD** — outcome: [what happened]
+- **YYYY-MM-DD** — assumption broken: [which one, what changed]
+- **YYYY-MM-DD** — escape IQ-XXX: [defect traced back to this decision]
+-->
+
 ## Related
 
 [Omit unless eng-arch updated]
 
-- Eng-arch: `docs/eng-arch/[subsystem].md`
+- Eng-arch: `docs/architecture/[subsystem].md`
 ```

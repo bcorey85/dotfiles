@@ -10,7 +10,7 @@ Independently reconcile what shipped on this branch against the ticket's require
 
 ## Why
 
-`/review` (chained after `/code`) checks code **quality** — bugs, anti-patterns, security. Nothing in the flow checks **completeness**: did the diff actually satisfy every plan phase + ticket requirement? Those are different audits. The plan's `## Phase Status` checkboxes are self-reported by `/code`; verify does NOT trust them — it verifies against the real diff. Finding a gap here is cheap; finding it after the PR opens (or in `/adr`, which seals the work) is not.
+`/review` (chained after `/code`) checks code **quality** — bugs, anti-patterns, security. Nothing in the flow checks **completeness**: did the diff actually satisfy every plan phase + ticket requirement? Those are different audits. The plan's `## Phase Status` checkboxes are self-reported by `/code`; verify does NOT trust them — it verifies against the real diff. Finding a gap here is cheap; finding it in `/adr` (which seals the work) or after the PR opens is not.
 
 ## When it runs
 
@@ -26,14 +26,14 @@ bash ~/.claude/scripts/resolve-task-dir.sh "$ARGUMENTS"
 
 Exit 0 → an `/eng-spec` task directory: the ticket is `DIR/00-ticket.md`, the plan is `DIR/spec.md`. Exit 5 → a legacy flat eng-spec file: it is both ticket (requirements/ACs section) and plan. Exit 3 → ask which match. Exit 4 → ask for a path.
 
-No plan found anywhere → stop: _"/verify needs a plan (an eng-spec task dir under docs/eng-specs). Run /eng-spec first, or verify manually."_
+No plan found anywhere → stop: _"/verify needs a plan (an eng-spec task dir under docs/plans). Run /eng-spec first, or verify manually."_
 
 ## Inputs
 
-| File            | Read for                                                                    |
-| --------------- | --------------------------------------------------------------------------- |
-| `00-ticket.md`  | Acceptance criteria / requirements                                          |
-| `spec.md`       | `Phase Status`, each phase's `Success Criteria`, and `What We're NOT Doing` |
+| File           | Read for                                                                    |
+| -------------- | --------------------------------------------------------------------------- |
+| `00-ticket.md` | Acceptance criteria / requirements                                          |
+| `spec.md`      | `Phase Status`, each phase's `Success Criteria`, and `What We're NOT Doing` |
 
 This is the one step that DOES read the plan in full (contrast `/adr`, which forbids it).
 

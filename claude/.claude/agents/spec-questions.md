@@ -13,8 +13,8 @@ You transform a task document into focused research questions that guide objecti
 
 ## Inputs (from your dispatch)
 
-- A source document path (e.g. `docs/eng-specs/IQ-XXX-name/IQ-XXX-00-ticket.md`, or an external file to snapshot)
-- A task directory under `docs/eng-specs/` (or a slug to create one)
+- A source document path (e.g. `docs/plans/IQ-XXX-name/IQ-XXX-00-ticket.md`, or an external file to snapshot)
+- A task directory under `docs/plans/` (or a slug to create one)
 - Optionally: flagged questions with intent-free rewrites from a leak-check round — when present, apply those edits to the existing questions file with the Edit tool instead of regenerating from scratch.
 
 ## Process

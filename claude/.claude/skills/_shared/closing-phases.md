@@ -25,9 +25,9 @@ feature phase (feature ends at Phase 3 → these are 4–7).
    - `/verify` — reconcile the shipped diff against the ticket/plan
      (completeness, every Acceptance Stub flipped), run the plan's Automated
      Verification commands, and emit the **human smoke-test checklist** (ACs
-     + all human-only Manual Verification items).
-     Success Criteria: deep review clean, reconciliation reports no missing
-     work, smoke-test checklist delivered.
+     - all human-only Manual Verification items).
+       Success Criteria: deep review clean, reconciliation reports no missing
+       work, smoke-test checklist delivered.
 
 3. **Orient pass** (risk: low) — `/orient` to rebuild the mental map diff
    review misses: how the change connects to surrounding code, what it touches,
@@ -41,7 +41,7 @@ feature phase (feature ends at Phase 3 → these are 4–7).
    where its oracle was sharper. Success Criteria: recap produced; residue
    queue handed to the user.
 
-Nothing after this is a phase. `/adr` is **post-PR** — it wants the PR link.
+Nothing after this is a phase. `/adr` runs **pre-PR**, shipping in the code's PR.
 
 ## Phase Status lines (copy verbatim, renumbering)
 

@@ -54,10 +54,10 @@ reach the research agent.
 2. **If no context is apparent**, ask: "What are we building? Describe the
    feature or paste a ticket."
 
-3. **Check for an existing spec** — Glob `docs/eng-specs/**/spec.md`. If one
+3. **Check for an existing spec** — Glob `docs/plans/**/spec.md`. If one
    matches, read it and ask: "Found an existing spec — update it or start fresh?"
 
-4. **Open the task directory** `docs/eng-specs/<slug>/` (Jira key, else
+4. **Open the task directory** `docs/plans/<slug>/` (Jira key, else
    kebab-case from the description) and `Write` the ticket **verbatim** to
    `00-ticket.md` per the persistence rule in `jira-ticket.md`. You are a
    courier: a paraphrased ticket has your reading already baked in.
@@ -75,7 +75,7 @@ reach the research agent.
      re-run the check** before proceeding.
    - **`spec-research`** with the path to `01-questions.md` — **and nothing
      else.** It must never see the ticket, the slug, or any goal word. It
-     inventories what is *there*, factually, with `file:line` refs, and writes
+     inventories what is _there_, factually, with `file:line` refs, and writes
      `02-research.md`.
 
 6. **Hand `02-research.md` to the user and stop.** Let them read it before either
@@ -108,7 +108,7 @@ reach the research agent.
    **still dispatch a coder in Phase 8 if they choose to implement** — the coder
    dispatch is what triggers the review chain. In the saved spec,
    `## Decisions` reads `None — pure configuration; the constraints that forced it
-   are under Constraints.` and `## Approaches Considered and Not Taken` reads
+are under Constraints.` and `## Approaches Considered and Not Taken` reads
    `N/A — go-lean path (no architect ran)`. A dangling empty section is
    indistinguishable from one the process forgot to fill.
 
@@ -158,7 +158,7 @@ reach the research agent.
 **Do this before the first design question leaves your mouth.** Phase 6 is a long
 conversation and long conversations get compacted; a decision that exists only in
 the thread is a decision you will silently lose, along with the reasoning that
-produced it. The ledger is the fix, and it only works if it exists *before* the
+produced it. The ledger is the fix, and it only works if it exists _before_ the
 talking starts.
 
 11. **`Write` `03-decisions.md`** into the task directory, from the architect
@@ -201,7 +201,7 @@ talking starts.
     on their behalf — before either propagates into every downstream decision.
     Whatever this exchange settles — a rejected direction, a corrected premise, a
     constraint the user names — goes under `## Direction & Constraints` in the
-    ledger *as it lands*, not later.
+    ledger _as it lands_, not later.
 
 13. **Write the answer down before you ask the next question.** The moment a
     decision resolves, `Edit` `03-decisions.md`: append the full four-field block
@@ -236,7 +236,7 @@ talking starts.
     **Never resolve a decision by recommending harder. Ask, and wait for words.**
 
     **Split the check out of the decision.** When a decision contains a claim
-    shaped like *"we know X because we looked at Y"* — does this record exist? is
+    shaped like _"we know X because we looked at Y"_ — does this record exist? is
     this the same user? is this process still alive? is this value unique? — that
     check is its own decision. Do not let it ride along as a subordinate clause;
     every failure this system has ever shipped lost it exactly there. Ask it as
@@ -271,7 +271,7 @@ talking starts.
     **Fullstack ordering**: finalize `backend-architect` first — its plan must
     include a clearly defined **API contract** (endpoints, methods,
     request/response shapes, status codes). Then finalize `frontend-architect`
-    *with* that contract, so it designs against it rather than inventing one.
+    _with_ that contract, so it designs against it rather than inventing one.
 
 16. **Synthesize the finalized plan(s).**
 
@@ -316,7 +316,7 @@ talking starts.
     a modal there buys a click instead of the user's knowledge.
 
     **Save to disk?**
-    - Yes → Write the spec to `docs/eng-specs/<slug>/spec.md` using the template
+    - Yes → Write the spec to `docs/plans/<slug>/spec.md` using the template
       below. Its `## Decisions` is **copied from `03-decisions.md`**, block for
       block — do not re-derive it from the conversation, and do not summarize.
       `## Direction & Constraints` from the ledger feeds `## Constraints`. The

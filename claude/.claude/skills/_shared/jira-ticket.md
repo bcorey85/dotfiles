@@ -24,4 +24,4 @@ If the Jira MCP tools aren't available in this session: **never guess or reconst
 
 ## Persisting to disk (callers that write the ticket to a file)
 
-Write **raw fields only, verbatim** — no paraphrase, no summary, no goal words of your own. This matters most for contamination-sensitive pipelines (`/eng-spec` writes to `docs/eng-specs/<slug>/00-ticket.md` before the goal-blind research phase), but verbatim is the rule for every caller: a persisted ticket is a source document, not your reading of it.
+Write **raw fields only, verbatim** — no paraphrase, no summary, no goal words of your own. This matters most for contamination-sensitive pipelines (`/eng-spec` writes to `docs/plans/<slug>/00-ticket.md` before the goal-blind research phase), but verbatim is the rule for every caller: a persisted ticket is a source document, not your reading of it.

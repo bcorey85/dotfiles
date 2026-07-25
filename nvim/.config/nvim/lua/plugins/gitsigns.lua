@@ -142,6 +142,27 @@ return {
             return
           end
         end
+
+        -- No unstaged hunk under the cursor. If gitsigns isn't attached to this
+        -- buffer at all, the file may be UNTRACKED -- gitsigns skips those
+        -- (attach_to_untracked defaults off), so get_hunks() above found
+        -- nothing to find and the native motion below would silently win,
+        -- leaving a brand new file stuck in insitu's queue forever. insitu
+        -- accepts it with `git add`, which is synchronous, so unlike the
+        -- staged path there's no async index write to race: advance inline
+        -- instead of waiting on GitSignsUpdate.
+        -- b:gitsigns_status_dict is documented public API (`:h
+        -- b:gitsigns_status_dict`), set on attach and cleared on detach — so
+        -- nil means "gitsigns isn't watching this buffer" without reaching
+        -- into gitsigns.cache, which is internal and free to change shape.
+        if vim.b.gitsigns_status_dict == nil then
+          local ok2, insitu = pcall(require, "insitu")
+          if ok2 and insitu.is_untracked() then
+            insitu.accept()
+            vim.schedule(insitu.next)
+            return
+          end
+        end
       end
       local count = vim.v.count > 0 and tostring(vim.v.count) or ""
       vim.api.nvim_feedkeys(count .. "-", "n", false) -- not on a hunk: native motion
@@ -182,9 +203,20 @@ return {
 
     -- reset_hunk discards the working-tree change (irreversible for unsaved
     -- edits — the hunk is simply dropped, not staged).
+    --
+    -- Routed through insitu, which dispatches: reset_hunk on a tracked file,
+    -- and on an UNTRACKED one a prompt-then-delete, since gitsigns has no hunk
+    -- there to reset and would no-op silently. That branch is the only
+    -- irreversible verb in the review loop — git has never seen the file, so
+    -- there is nothing to restore it from — hence the confirmation.
     map("<leader>cr", function()
-      require("gitsigns").reset_hunk()
-    end, "Reset hunk")
+      local ok, insitu = pcall(require, "insitu")
+      if ok then
+        insitu.reject()
+      else
+        require("gitsigns").reset_hunk()
+      end
+    end, "Reset hunk (or discard new file)")
     -- Visual: discard only the selected lines.
     map("<leader>cr", function()
       require("gitsigns").reset_hunk({ vim.fn.line("."), vim.fn.line("v") })

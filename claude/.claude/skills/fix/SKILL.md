@@ -32,9 +32,27 @@ raise the modals it cannot.
    - **`cap-reached`** → STOP. Report `findings_remaining`; the user decides. The session is correctly left `dirty`, so `git commit` stays blocked.
    - **`converged`** → render the packet (step 3), then record convergence: `bash ~/.claude/scripts/review-gate-mark clean`. Run the mark ONLY for a packet whose `status` is `converged` — the other statuses leave the commit gate dirty by design.
 
-3. **Render the packet**: `### Findings by severity` from `fixed[]`; any issues the agent skipped, with its reasons; `medium.fix` applied and `medium.skip` with reasons; `perf[]` under its own heading with `Principle:` lines; `low[]` and notes inline. If any finding needs architectural rethinking, recommend `/eng-spec`.
+3. **Log walkthrough escapes — MANDATORY on `converged`, do not skip.** When the findings came from **the user, in conversation**, on code a prior `/review` already blessed, each one is ground truth: the human caught what the gates passed. This is the highest-volume escape source in the toolkit and the only one that fires without a dedicated skill invocation — treat it as a hard gate before rendering, not a trailing nicety.
 
-4. **Raise what the agent could not**. Present `medium.ask`; wait for direction. Never auto-fix an ambiguous item.
+   Fires only when ALL hold:
+   - `status: converged` and the fix was actually applied (not skipped as a false positive, not deferred)
+   - the finding came from the **conversation** — NOT from a `/review` handoff block (those are the loop's own catches, already counted in `review-metrics.jsonl`; logging them again would double-count against the loop) and NOT from `/cc` (it logs `stage_found=cc` itself in its step 7 — logging here too would duplicate every comment)
+   - the code under fix was already through `/review` on this branch — a first-pass fix on net-new code is not an escape
+   - it is a defect, not a new requirement or a change of direction. A gate cannot miss information it never had.
+
+   One line per distinct defect, no user prompt, do not pause:
+
+   ```bash
+   bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=walkthrough gate_missed=<review|drift-gate|test-intent|stage|coder> class=<bug|smell|duplication|plan-drift|test-gap|other> severity=<high|medium|low> lane=<eng-spec|code|other> desc="<one line>" file=<path>
+   ```
+
+   Classify from the finding itself; when unsure, `class=other`. Infer `lane` from the branch's planning artifacts (eng-spec doc → `eng-spec`, direct dispatch → `code`); ask only when genuinely ambiguous. If the script fails, mention it and continue — telemetry never blocks a fix.
+
+   Then apply the **ratchet** (`/escape` step 3): propose the cheapest structural guard that would have caught this at the gate it escaped — type/lint/schema first, then a CLAUDE.md convention, then a skill gotcha, then an agent rule. On the user's approval, apply it and append `guard=type|convention|gotcha|rule|none` to the logged row. Recording the miss is bookkeeping; the guard is what closes the loop.
+
+4. **Render the packet**: `### Findings by severity` from `fixed[]`; any issues the agent skipped, with its reasons; `medium.fix` applied and `medium.skip` with reasons; `perf[]` under its own heading with `Principle:` lines; `low[]` and notes inline. If any finding needs architectural rethinking, recommend `/eng-spec`.
+
+5. **Raise what the agent could not**. Present `medium.ask`; wait for direction. Never auto-fix an ambiguous item.
 
 ## Arguments
 

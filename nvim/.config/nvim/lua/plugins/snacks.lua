@@ -55,6 +55,38 @@ return {
       -- minified bundle, a huge lockfile, or a generated dump doesn't freeze the
       -- editor. No-op on normal files.
       bigfile = { enabled = true },
+      -- input: replaces the hand-rolled vim.ui.input in config/ui-input.lua.
+      -- The Esc semantics that file documented as unusual are snacks' defaults:
+      -- insert <Esc> stops insert (so vim motions work on the text), normal
+      -- <Esc>/q cancels, <CR> confirms in both modes. Free on top: prompt
+      -- history on <Up>/<Down> and the opts.completion support ui-input.lua
+      -- listed as a known omission.
+      --
+      -- The `input` style defaults to row=2/width=60 (top of screen). These two
+      -- restore ui-input.lua's centered geometry, which was deliberately kept in
+      -- sync with tiny-cmdline's geometry() — same clamp, same row math. Keep
+      -- them in sync when either changes (plugins/tiny-cmdline.lua).
+      -- col is omitted: snacks centers on the axis when the value is unset.
+      input = {
+        enabled = true,
+        win = {
+          row = function()
+            return math.floor((vim.o.lines - 1) / 2)
+          end,
+          width = function()
+            return math.max(40, math.min(140, math.floor(vim.o.columns * 0.80)))
+          end,
+        },
+      },
+      -- notifier: routes vim.notify into a corner window with history.
+      -- Matters most in the throwaway popup nvims (prefix d/g/G/e): messages
+      -- there previously flashed on the last row and died with the popup, so
+      -- insitu's accept/reject/empty-queue notices were effectively invisible.
+      -- Snacks.notifier.show_history() gets them back.
+      notifier = { enabled = true },
+      -- No `indent` block: mini.indentscope owns indent guides (plugins/mini.lua).
+      -- snacks.indent draws more (every guide, not just the scope) but has no
+      -- animation, which is the reason mini is kept. Don't enable both.
       -- dashboard: the Doom splash on an empty start. preset.header is the
       -- banner; "neovim?" rides underneath as a centered subtitle. Keys mirror
       -- the Doom-style picker layout already bound below.
@@ -66,7 +98,8 @@ return {
           and vim.env.NEOGIT_POPUP == nil
           and vim.env.GIT_QF_POPUP == nil
           and vim.env.OIL_POPUP == nil
-          and vim.env.ORG_POPUP == nil,
+          and vim.env.ORG_POPUP == nil
+          and vim.env.INSITU_POPUP == nil,
         preset = {
           header = doom_banner,
           keys = {

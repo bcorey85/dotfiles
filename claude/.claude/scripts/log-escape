@@ -10,7 +10,11 @@
 # usage: log-escape key=value [key=value ...]
 #   canonical fields:
 #     repo=<basename>
-#     stage_found=cc|refactor|q-verify|verify|pr-human|prod|other
+#     stage_found=cc|walkthrough|refactor|q-verify|verify|pr-human|prod|other
+#       walkthrough = caught reading /stage's queue at a phase sign-off, i.e.
+#       inside the loop. Distinct from pr-human (caught after the branch left
+#       the gates) because the remediation differs: a walkthrough catch means
+#       the reviewer missed something the human then found one step later.
 #     gate_missed=review|drift-gate|test-intent|stage|coder|q-verify
 #     class=bug|smell|duplication|plan-drift|test-gap|other
 #     severity=high|medium|low

@@ -76,13 +76,12 @@ return {
       })
 
       -- ── mini.indentscope ───────────────────────────────────────────────────
-      -- Animation disabled — instant draw keeps the display snappy.
-      local indentscope = require("mini.indentscope")
-      indentscope.setup({
+      -- Scope-only indent guide, animated. `draw.animation` is deliberately NOT
+      -- set: mini's default is a constant 20ms per step, which is the motion
+      -- this is kept for. snacks.indent was tried in its place and reverted —
+      -- it draws every guide plus the scope, but has no equivalent animation.
+      require("mini.indentscope").setup({
         symbol = "│",
-        draw = {
-          animation = indentscope.gen_animation.none(),
-        },
         options = {
           try_as_border = true,
         },

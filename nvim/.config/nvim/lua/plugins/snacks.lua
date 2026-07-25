@@ -126,6 +126,17 @@ return {
       -- MiniPick.ui_select wiring. Keymaps live below.
       picker = {
         ui_select = true,
+        -- Ranking, not just matching. All three default to FALSE upstream, which
+        -- leaves the picker as a pure fuzzy filter — files you open twenty times
+        -- a day rank no higher than ones you've never touched. frecency is the
+        -- one that matters (visit count + recency, persisted across sessions);
+        -- cwd_bonus keeps a monorepo's other packages from outranking the
+        -- subtree you're actually in. history_bonus stays off: it weights raw
+        -- chronological order, which fights frecency's scoring on the same list.
+        matcher = {
+          frecency = true,
+          cwd_bonus = true,
+        },
         -- <C-d>/<C-u> scroll the PREVIEW (snacks defaults them to list half-page
         -- scroll; preview scroll lives on <C-f>/<C-b>). Override per-window so
         -- they hit the preview whether focus is in the input or the list — snacks
@@ -261,9 +272,15 @@ return {
       Snacks.picker.grep(search_opts)
     end, "Live grep")
 
-    -- <leader><space>: file finder.
+    -- <leader><space>: file finder. `smart` (not `files`) — it merges open
+    -- buffers + recent files + the file walk into one frecency-ranked list and
+    -- dedupes them (transform = "unique_file"), so the file you were just in
+    -- ranks above one you've never opened. It also sets sort_empty, which the
+    -- global matcher deliberately doesn't: ranking applies with an empty query
+    -- here, where the candidate list is small enough for that to be cheap.
+    -- <leader>. (dir-scoped) stays on plain `files` — buffers/recent ignore cwd.
     pmap("<leader><space>", function()
-      Snacks.picker.files(search_opts)
+      Snacks.picker.smart(search_opts)
     end, "Find files")
 
     pmap("<leader>o", function()

@@ -27,7 +27,7 @@ raise the modals it cannot.
 
 2. **Route on the returned `status`** — first match wins:
 
-   - **`plan-impact`** → raise the modal (see `/review`'s "Plan-impact findings" section — same routing), then re-dispatch with the decision and the returned `iter` preserved.
+   - **`plan-impact`** → raise the modal (see `/review`'s "Plan-impact findings" section — same routing), then re-dispatch with the decision and BOTH returned counters preserved (`iter` and `spec_iter`).
    - **`critical-blocker`** → STOP. Present `blockers` and wait. Do NOT re-dispatch.
    - **`cap-reached`** → STOP. Report `findings_remaining`; the user decides. The session is correctly left `dirty`, so `git commit` stays blocked.
    - **`converged`** → render the packet (step 3), then record convergence: `bash ~/.claude/scripts/review-gate-mark clean`. Run the mark ONLY for a packet whose `status` is `converged` — the other statuses leave the commit gate dirty by design.
@@ -53,6 +53,8 @@ raise the modals it cannot.
 4. **Render the packet**: `### Findings by severity` from `fixed[]`; any issues the agent skipped, with its reasons; `medium.fix` applied and `medium.skip` with reasons; `perf[]` under its own heading with `Principle:` lines; `low[]` and notes inline. If any finding needs architectural rethinking, recommend `/eng-spec`.
 
 5. **Raise what the agent could not**. Present `medium.ask`; wait for direction. Never auto-fix an ambiguous item.
+
+6. **Reconcile the Hunk sidecar** — only if `.git/hunk-agent-context.json` exists (written by `/code` step 5; see the `why` channel in `~/.claude/skills/_shared/handoff-block.md`). Fixing shifts line numbers, and its annotations are pinned to NEW-file lines, so a surviving sidecar now anchors notes to code that moved — rendering them against the wrong lines rather than dropping them, which misleads the next human to read the diff. Rewrite it from the fix coders' `WHY:` lines plus any still-accurate entries, or delete it. Never leave the pre-fix version in place.
 
 ## Arguments
 

@@ -1,0 +1,224 @@
+#!/bin/bash
+# Persist Hunk review notes past the life of the TUI.
+#
+# Hunk keeps live comments in daemon memory only (upstream #113, open since
+# April 2026) -- quit the window and every note you wrote is gone. This mirrors
+# them into git notes under refs/notes/hunk-review, so annotations survive the
+# session, travel with the checkout, and can be read back by /cc or /fix on
+# your own schedule instead of requiring an agent to be watching the pane at
+# the moment you finish writing them.
+#
+# git notes were chosen over a flat file (~/.claude/hunk-notes.md) because they
+# are per-repo and per-commit automatically, so parallel reviews in different
+# worktrees cannot clobber each other.
+#
+# Usage:
+#   hunk-notes dump  [--repo PATH] [--type T]      one-shot mirror to git notes
+#   hunk-notes watch [--repo PATH] [--interval N]  poll while a session lives
+#   hunk-notes show  [--repo PATH]                 read the stored notes back
+#   hunk-notes clear [--repo PATH]                 drop notes for this commit
+#
+# --session pins a specific session id. It matters more than it looks: hunk
+# refuses --repo addressing outright once two sessions claim the same repo
+# ("Multiple active sessions match repoRoot ..."), and sessions whose terminal
+# died are still listed as active, so a repo reviewed twice becomes permanently
+# unaddressable by path. When --session is not given this resolves the session
+# belonging to the current terminal (by tty, see resolve_session), and only
+# falls back to --repo if that finds nothing.
+#
+# --type defaults to `user`, the notes you typed in the TUI. Comments added via
+# `hunk session comment add` land under `agent` instead, so an agent wanting to
+# leave durable annotations of its own passes --type all.
+#
+# `dump` is a no-op (exit 0, silent) when no live session matches the repo, so
+# it is safe to run from a keybinding or a loop that outlives the TUI.
+#
+# Notes anchor to whatever HEAD was at write time. That is deliberate: review
+# notes describe the pre-commit state, so committing intentionally leaves them
+# attached to the commit you reviewed against rather than following you forward.
+#
+# Reads nothing but the Hunk daemon; writes nothing but refs/notes/hunk-review.
+# The working tree and the index are never touched.
+
+set -uo pipefail
+
+NOTES_REF="hunk-review"
+warned=""
+
+die() {
+    printf 'hunk-notes: %s\n' "$1" >&2
+    exit 1
+}
+
+cmd="${1:-}"
+[ -n "$cmd" ] || die "usage: hunk-notes {dump|watch|show|clear} [--repo PATH] [--interval N]"
+shift
+
+repo=""
+interval=5
+type="user"
+session=""
+tty_dev=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+    --repo)
+        repo="${2:-}"
+        shift 2
+        ;;
+    --interval)
+        interval="${2:-}"
+        shift 2
+        ;;
+    --type)
+        type="${2:-}"
+        shift 2
+        ;;
+    --session)
+        session="${2:-}"
+        shift 2
+        ;;
+    --tty)
+        # `watch` runs backgrounded with its own stdio redirected, so it cannot
+        # reliably ask for its own tty. hunk-review passes the TUI's instead.
+        tty_dev="${2:-}"
+        shift 2
+        ;;
+    *) die "unknown argument: $1" ;;
+    esac
+done
+
+# Default to the repo the caller is standing in. --repo also lets a keybinding
+# pass tmux's #{pane_current_path} without a subshell cd.
+if [ -z "$repo" ]; then
+    repo="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not a git repository"
+fi
+[ -d "$repo" ] || die "no such directory: $repo"
+git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 || die "not a git repository: $repo"
+
+command -v hunk >/dev/null 2>&1 || die "hunk not found on PATH"
+
+# Find the session id hunk registered for this repo in the current terminal.
+# `hunk session list` emits stanzas: an id/title line at column 0 followed by
+# indented `key: value` lines, so track the most recent id and the most recent
+# repo, and print the id when a location line matches. Silent when nothing
+# matches -- the caller falls back to --repo addressing.
+#
+# Matches on tty FIRST, and TMUX_PANE only as a fallback, because tmux's
+# display-popup does NOT export TMUX_PANE (verified: it comes back unset inside
+# a popup) -- and the popup is how `prefix h` launches this. Hunk records both
+# `location[tty]` and `location[tmux]`, so the tty is the identifier that is
+# actually present in every launch path: popup, plain pane, and bare shell.
+resolve_session() {
+    local dev="$tty_dev"
+    [ -n "$dev" ] || dev="$(tty 2>/dev/null)"
+    case "$dev" in /dev/*) ;; *) dev="" ;; esac
+
+    if [ -n "$dev" ]; then
+        hunk session list 2>/dev/null | awk -v repo="$repo" -v dev="$dev" '
+            /^[^[:space:]]/          { id = $1; next }
+            $1 == "repo:"            { r = $2; next }
+            $1 == "location[tty]:"   { if (r == repo && $2 == dev) { print id; exit } }
+        '
+        return 0
+    fi
+
+    [ -n "${TMUX_PANE:-}" ] || return 0
+    hunk session list 2>/dev/null | awk -v repo="$repo" -v pane="$TMUX_PANE" '
+        /^[^[:space:]]/            { id = $1; next }
+        $1 == "repo:"              { r = $2; next }
+        $1 == "location[tmux]:"    { if (r == repo && $3 == pane) { print id; exit } }
+    '
+}
+
+# Render the live session's notes as text. Defaulting to --type user excludes
+# agent-authored annotations, which the agent already has and which would
+# otherwise round-trip back into its own context on every poll.
+#
+# Re-resolves every call rather than once at startup: `hunk-review` starts this
+# watcher before the TUI, so on the first poll the session does not exist yet.
+collect() {
+    local id="$session" out
+    [ -n "$id" ] || id="$(resolve_session)"
+
+    if [ -n "$id" ]; then
+        out="$(hunk session comment list "$id" --type "$type" 2>&1)"
+    else
+        out="$(hunk session comment list --repo "$repo" --type "$type" 2>&1)"
+    fi
+
+    # Ambiguity is the one error worth surfacing: it means notes exist but are
+    # unreachable, and staying quiet would look identical to "nothing to save".
+    case "$out" in
+    *"Multiple active sessions"*)
+        # Once only -- `watch` calls this every interval.
+        if [ -z "$warned" ]; then
+            warned=1
+            printf 'hunk-notes: %s has several registered sessions; pass --session <id> (see `hunk session list`)\n' \
+                "$repo" >&2
+        fi
+        return 1
+        ;;
+    "hunk: "*) return 1 ;;
+    esac
+
+    printf '%s' "$out"
+}
+
+# A session with notes emits `<id>  <file> [<author>]` records; one with none
+# prints "No review notes for repo <path>."; and collect returns empty on any
+# hunk-level error. All three mean "nothing to persist" -- never write an empty
+# note over a good one.
+has_notes() {
+    case "$1" in
+    "" | "No review notes"*) return 1 ;;
+    *) return 0 ;;
+    esac
+}
+
+write_notes() {
+    local body="$1" stamp
+    stamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    printf 'Hunk review notes (%s)\nrepo: %s\n\n%s\n' "$stamp" "$repo" "$body" |
+        git -C "$repo" notes --ref="$NOTES_REF" add -f -F - HEAD 2>/dev/null
+}
+
+case "$cmd" in
+dump)
+    body="$(collect)"
+    has_notes "$body" || exit 0
+    write_notes "$body" || die "failed writing refs/notes/$NOTES_REF"
+    printf 'hunk-notes: saved to refs/notes/%s at %s\n' "$NOTES_REF" "$(git -C "$repo" rev-parse --short HEAD)"
+    ;;
+
+watch)
+    # Overwrite semantics (`notes add -f`) mean each poll replaces the stored
+    # body with the current full set, so re-running can never duplicate a note
+    # and no dedup logic is needed. The hash guard only avoids pointless object
+    # churn when nothing changed between polls.
+    printf 'hunk-notes: watching %s every %ss (ctrl-c to stop)\n' "$repo" "$interval"
+    last=""
+    while true; do
+        body="$(collect)"
+        if has_notes "$body" && [ "$body" != "$last" ]; then
+            if write_notes "$body"; then
+                last="$body"
+                # Record lines start at column 0; their detail lines are indented.
+                printf 'hunk-notes: %s notes saved\n' "$(printf '%s' "$body" | grep -c '^[^[:space:]]')"
+            fi
+        fi
+        sleep "$interval"
+    done
+    ;;
+
+show)
+    git -C "$repo" notes --ref="$NOTES_REF" show HEAD 2>/dev/null ||
+        printf 'hunk-notes: no stored notes for %s\n' "$(git -C "$repo" rev-parse --short HEAD)"
+    ;;
+
+clear)
+    git -C "$repo" notes --ref="$NOTES_REF" remove HEAD 2>/dev/null &&
+        printf 'hunk-notes: cleared\n'
+    ;;
+
+*) die "unknown command: $cmd" ;;
+esac

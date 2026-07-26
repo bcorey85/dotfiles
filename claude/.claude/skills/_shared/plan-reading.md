@@ -4,8 +4,8 @@ Consumer-side counterpart to `plan-format.md`, which owns the artifact's
 shape. This file owns how it is READ. Lives outside the guarded planning
 budget deliberately: it constrains agents, not the plan.
 
-Consumers: `/code` (step 2 orchestrator read, step 4 coder dispatch, the phase
-gate's drift agent), `coder-core` (workflow step 1).
+Consumers: `/code` (step 2 orchestrator read, step 4 coder dispatch),
+`plan-verifier` at `scope: phase`, `coder-core` (workflow step 1).
 
 ## The rule
 
@@ -51,6 +51,6 @@ vertical slices the format requires. A coder reports it as `PLAN-IMPACT`;
 anyone else surfaces it to the user. Silently reading around it hides the
 authoring gap that caused it.
 
-**Whole-plan consumers are exempt** — `/verify`'s plan↔diff reconciliation,
+**Whole-plan consumers are exempt** — `plan-verifier` at `scope: branch`,
 `/branch-recap`'s cross-phase audit, and anything else whose job IS the
 cross-phase view. Scoping applies to working a phase, not to auditing a plan.

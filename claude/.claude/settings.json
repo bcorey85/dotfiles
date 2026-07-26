@@ -200,6 +200,10 @@
           {
             "type": "command",
             "command": "~/.claude/scripts/agent-model-guard.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/mechanical-check-gate.sh"
           }
         ]
       },

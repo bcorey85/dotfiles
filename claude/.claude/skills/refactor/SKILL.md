@@ -49,6 +49,8 @@ A refactor changes structure, not behavior — so the tests are the contract. **
 4. **Targeted mode** — when `$ARGUMENTS` names specific code or a specific goal:
    - Read the referenced files to understand the current code
    - Identify the refactoring goal: structure, readability, performance, maintainability, pattern alignment
+   - **Ask the deletion question before the extraction question.** Extracting a block into a helper RELOCATES complexity — the branching still exists, now behind a name. First ask whether a different data model, a different placement of the decision, or a stronger invariant makes the complexity unnecessary: push a check to a boundary so downstream code cannot be wrong, make an illegal state unrepresentable so its guard is dead, give a value one canonical owner so the code reconciling three copies gets deleted. This is the one mode wide enough to afford the question — the per-phase loop is not, and `smell-reviewer`'s checks are all relocation-shaped by design.
+   - **Every proposed change must earn its keep**: state what it deletes or what class of bug it makes impossible. A change that only moves code to a new shape is not a refactor worth the diff — say so and drop it. If the answer is a redesign rather than a refactor, stop and recommend `/eng-spec` (step 5 covers the same exit from the coder side).
 
 5. **Dispatch the appropriate coder(s)** (branch-audit and targeted modes only — audit mode never dispatches coders):
 

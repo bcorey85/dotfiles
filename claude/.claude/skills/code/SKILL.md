@@ -23,7 +23,9 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 1. **Check for modifiers**: If `+deep` is present, swap each coder for its `-deep` variant and omit `model`. If `+fast` is present, pass `model: "haiku"`. Strip modifiers from the prompt passed to coders.
 
-2. **Detect multi-phase plans (MANDATORY check)**: If the task input is a path to a plan file (e.g., `*-plan.md` under `docs/plans/`) or pasted plan content, read it and check whether it contains multiple `## Phase N:` sections.
+2. **Detect multi-phase plans (MANDATORY check)**: If the task input is a path to a plan file (e.g., `*-plan.md` under `docs/plans/`) or pasted plan content, check whether it contains multiple `## Phase N:` sections.
+
+   **Detect and read by section, never by whole file.** `rg -n '^## ' <plan>` answers the multi-phase question AND gives you every section's line number in one call — do not `Read` the plan to count headings. From there, read phase-scoped per `~/.claude/skills/_shared/plan-reading.md`: the shared sections plus the ONE phase you are dispatching, skipping every sibling `## Phase N:` section, via `Read` with `offset`/`limit`. On a 12-phase plan that is ~60% less file, paid on every phase — and this context holds the plan for the whole ticket, so it is the one read that compounds. Pasted plan content is already in context; scoping applies only to paths.
 
    **Lane provenance (for telemetry, one-time)**: `lane=eng-spec` when the task input came from step 0's resolver (task directory `spec.md`, or a legacy flat plan file); `lane=code` otherwise (direct dispatch, no plan). Carry this value into the `review-loop` dispatch (step 6).
 
@@ -32,7 +34,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    - Identify the next un-executed phase by reading the plan's `## Phase Status` section: the first unchecked (`- [ ]`) entry is the phase to dispatch. This is the source of truth across `/clear` boundaries — do NOT scan git log or diff to figure out where you are. If the plan has no `## Phase Status` section (older plan format), fall back to `git status` + per-phase success criteria, but flag this to the user so they can backfill the section.
    - Dispatch the coder for THAT ONE PHASE ONLY. The coder must run the phase's "Automated Verification" gate (typically `npm run validate` or equivalent) before returning.
    - After the coder completes and you summarize, auto-dispatch `/review` (step 6).
-   - **Phase gate (drift + behavioral, ONE agent)** — after `/review` converges, before marking the phase done: dispatch ONE `general-purpose` agent (`model: "sonnet"`) with ONLY the plan path, the phase number, and the handoff file list. It does two jobs in sequence, in one context (they consume the same plan + diff — never spawn them separately):
+   - **Phase gate (drift + behavioral, ONE agent)** — after `/review` converges, before marking the phase done: dispatch ONE `general-purpose` agent (`model: "sonnet"`) with ONLY the plan path, the phase number, and the handoff file list — plus the instruction to read the plan phase-scoped (shared sections + that phase only, skipping siblings; see `~/.claude/skills/_shared/plan-reading.md`). Its oracle is this phase's `Success Criteria` and the shared contract sections; sibling phases are not evidence for or against a criterion here, and reading them invites verdicting work that belongs to another phase. It does two jobs in sequence, in one context (they consume the same plan + diff — never spawn them separately):
      1. **Drift reconciliation (read-only)**: verdict each of the phase's `Success Criteria` items `done` / `partial` / `missing` against the actual diff (file:line evidence). If the plan has an `Acceptance Stubs` section, verify stub-sentence survival: every stub sentence must still exist — as a todo or as a real test bearing that name; a reworded or deleted stub is tampering, reported as `missing`. This is the phase-scoped version of `/verify` — it catches plan drift while it is still phase-sized. Any `partial`/`missing` → report and STOP; skip job 2 (don't behavioral-test a drifted phase).
      2. **Behavioral verification (terminal-only)** — only if job 1 is clean and the phase has `Manual Verification` items: execute every item it can drive from the terminal — curl the endpoint, run the CLI, execute the scenario command. **NO browser driving of any kind** (no Playwright, no browser MCP): anything UI-level is tagged `human-only` — UI smoke testing is the user's job, fed by the smoke-test checklist `/verify` emits at branch end. It records results by editing the plan in place: `- [x] agent-verified: <item> — <evidence: command + observed result>`, or `- [ ] human-only: <item> — <why it can't be driven>`. It never checks an item without captured evidence — observed output, not asserted success.
 
@@ -60,9 +62,9 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    **Neither** (non-web repo) → Launch a single `coder` subagent — the frontend/backend split only applies to web-fullstack codebases
 
    For each coder:
-   - Pass the full task description and any relevant context
+   - Pass the full task description and any relevant context. **When the task is a phase of a multi-phase plan, name the phase explicitly** ("implement Phase 4 of `<plan-path>`") and tell the coder to read it phase-scoped — shared sections plus Phase 4 only, skipping sibling phases (`coder-core`'s workflow step 1 carries the mechanics). A coder handed a bare plan path reads all twelve phases to find its one.
    - Instruct it to follow existing patterns in the codebase
-   - Tests follow coder-core's test budget: flip acceptance stubs first; any further tests must trace to a plan criterion or named edge case — never exhaustive per-function coverage
+   - Tests follow the test budget in `~/.claude/skills/_shared/test-authoring.md` (coder-core points to it): flip acceptance stubs first; any further tests must trace to a plan criterion or named edge case — never exhaustive per-function coverage
    - Flag any ambiguities or issues
    - If the task turns out to be architectural, have it report back and recommend `/eng-spec` instead
 

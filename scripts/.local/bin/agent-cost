@@ -1,0 +1,274 @@
+#!/bin/bash
+# agent-cost — where the subagent token spend actually goes.
+#
+# Reads the per-subagent records Claude Code writes under
+#   ~/.claude/projects/<project>/<session>/subagents/
+#     agent-<id>.jsonl        full transcript, per-turn message.usage
+#     agent-<id>.meta.json    {agentType, description, toolUseId, spawnDepth}
+# and aggregates them by agent type, repo, model, or spawn depth.
+#
+# Why this source and not ~/.claude/agent-usage.jsonl (the PostToolUse hook,
+# now legacy): that hook fires when the Agent TOOL returns, which for a
+# BACKGROUND dispatch is before the agent has done any work — a third of its
+# rows carry `tokens: null` and no fallback field name can fix it. The
+# transcripts are written by the runtime for every subagent regardless, and go
+# back further: 1,654 meta files on disk vs 210 hook rows when this was written.
+#
+# Why this exists: the coder->review->fix loop is the dominant token spend, and
+# every attempt to optimize it so far started from a guess about which part was
+# expensive. Two of those guesses were wrong by an order of magnitude in
+# opposite directions. The numbers were on disk the whole time.
+#
+# The column that matters most is `boot`: the mean context on the agent's FIRST
+# assistant turn — system prompt + tool schemas + agent file + preloaded skills
+# + the dispatch prompt, paid before it does any work. It is measured, not
+# inferred from the cheapest dispatch: a "min dispatch cost" column reads the
+# floor off aborted runs (agents killed after one turn bottom out in the
+# hundreds) and understates it by two orders of magnitude.
+#
+# Bootstrap is why the first-order cost driver is DISPATCH COUNT, not file size:
+# trimming words from a skill file is noise against it, while removing or
+# merging a dispatch saves the bootstrap plus the work.
+#
+# TWO METRICS, and they answer different questions. Do not substitute one for
+# the other; they differ by more than 10x and have different compositions.
+#
+# PEAK (default) — how big did this dispatch's context get:
+#   sum(output_tokens over assistant turns)
+#   + final turn's (input_tokens + cache_creation + cache_read)
+# Only the FINAL turn's input counts, because input on turn N mostly re-sends
+# turn N-1's context; summing it across turns measures re-sends, not size.
+# Calibrated against the old hook's own totalTokens on dispatches with a unique
+# description: agreement within ~1% (10798/10932, 11283/11411, 13775/13904).
+#
+# SPEND (--spend) — what the dispatch actually cost, which is a sum over API
+# calls, since EVERY call bills its own input including the cached part:
+#   sum over turns of (input + cache_write*1.25 + cache_read*0.1) * model_in_rate
+#   + sum(output) * model_out_rate
+# Those re-sends the peak metric deliberately discards are real charges. On a
+# 47-turn opus backend-architect: peak reports 159,620, while the billed volume
+# is 49k output + 566k cache write + 1,558k cache read. Peak understates the
+# billed traffic ~13x and inverts its composition — spend is overwhelmingly
+# input-side, output is ~2%.
+#
+# Which one you want:
+#   optimizing context/bootstrap, or comparing dispatch counts -> PEAK
+#   deciding whether to move work to a cheaper model            -> SPEND
+# A model-tier change is invisible to PEAK by construction (a token is a token
+# regardless of who emitted it), so judging one on peak numbers scores a cheaper
+# design as a regression. That is the whole reason --spend exists.
+#
+# Usage:
+#   agent-cost                     all time, grouped by agent type
+#   agent-cost --days 14           last 14 days
+#   agent-cost --since '2026-07-25 14:30'  everything after a wall-clock moment
+#   agent-cost --since @1753450200         ...or a raw epoch
+#   agent-cost --by repo           group by repo (also: agent, model, depth)
+#   agent-cost --repo niwa-a       filter to repos matching a regex
+#   agent-cost --repo 'niwa|rolecall'      ...so alternation works
+#   agent-cost --repo '^(?!agent-evals)'   ...but negation does NOT (POSIX ERE)
+#   agent-cost --days 30 --by repo
+#   agent-cost --spend             dollars instead of tokens, with components
+#   agent-cost --spend --by model  which tier the money is going to
+#   agent-cost --rates 'opus:15:75 haiku:1:5'   override the rate table
+#
+# The regex filter matters more than it looks: this machine's history is
+# dominated by the 2026-07 eval program, which ran the real skills against
+# throwaway clones (agent-evals, residuum, *-xa/-xb, *-a/-b). Unfiltered totals
+# describe the eval harness, not the working loop.
+#
+# --since exists for A/B runs of the same task: --days cannot separate two runs
+# that happen on the same day, so a second run's numbers silently include the
+# first run's dispatches. Stamp `date +%s` before a run, pass it back after.
+#
+# RATE TABLE — THESE GO STALE AND NOTHING HERE WILL TELL YOU.
+# Format: <model-substring>:<$ per Mtok input>:<$ per Mtok output>, first match
+# wins, so list more specific substrings first. Cache multipliers are structural
+# rather than per-model (write 1.25x input, read 0.1x input) and are applied on
+# top. Override with --rates or $AGENT_COST_RATES; a model matching NO entry is
+# counted into an "unpriced" bucket and reported, never silently priced at zero.
+#
+# The defaults below are the author's best knowledge at time of writing and are
+# NOT authoritative — verify against current published pricing before quoting a
+# dollar figure to anyone. Every --spend run prints the table it used for
+# exactly this reason. Ratios between tiers are far more stable than absolute
+# rates, so treat "opus costs ~15x haiku on input" as the durable claim and the
+# dollar totals as indicative.
+
+set -u
+
+DEFAULT_RATES='opus:15:75 sonnet:3:15 haiku:1:5'
+CACHE_WRITE_MULT=1.25
+CACHE_READ_MULT=0.1
+
+ROOT="${CLAUDE_PROJECTS_DIR:-$HOME/.claude/projects}"
+BY=agent
+DAYS=0
+REPO=
+SINCE=
+SPEND=0
+RATES="${AGENT_COST_RATES:-$DEFAULT_RATES}"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --days)  DAYS="${2:-0}"; shift 2 ;;
+    --since) SINCE="${2:-}"; shift 2 ;;
+    --spend) SPEND=1; shift ;;
+    --rates) RATES="${2:-}"; shift 2 ;;
+    --by)   BY="${2:-agent}"; shift 2 ;;
+    --repo) REPO="${2:-}"; shift 2 ;;
+    -h|--help) sed -n '/^# Usage:/,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) printf 'agent-cost: unknown argument %s (try --help)\n' "$1" >&2; exit 2 ;;
+  esac
+done
+
+case "$BY" in
+  agent) COL=1 ;;
+  repo)  COL=2 ;;
+  model) COL=3 ;;
+  depth) COL=6 ;;
+  *) printf 'agent-cost: --by must be agent, repo, model, or depth\n' >&2; exit 2 ;;
+esac
+
+command -v jq >/dev/null 2>&1 || { printf 'agent-cost: jq not found\n' >&2; exit 1; }
+[ -d "$ROOT" ] || { printf 'agent-cost: no projects dir at %s\n' "$ROOT" >&2; exit 1; }
+
+# --days prunes by file mtime BEFORE the per-file jq, which is the difference
+# between a sub-second run and several seconds across ~700 transcripts. The
+# in-record timestamp is still the authority; mtime only narrows the candidates.
+if [ -n "$SINCE" ]; then
+  case "$SINCE" in
+    @*) cutoff="${SINCE#@}" ;;
+    # GNU date first, BSD/macOS second — neither accepts the other's syntax.
+    *)  cutoff=$(date -d "$SINCE" +%s 2>/dev/null) ||
+        cutoff=$(date -j -f '%Y-%m-%d %H:%M:%S' "$SINCE" +%s 2>/dev/null) ||
+        cutoff=$(date -j -f '%Y-%m-%d %H:%M' "$SINCE" +%s 2>/dev/null) ||
+        { printf 'agent-cost: cannot parse --since %s\n' "$SINCE" >&2; exit 2; } ;;
+  esac
+  case "$cutoff" in
+    ''|*[!0-9]*) printf 'agent-cost: --since did not resolve to an epoch\n' >&2; exit 2 ;;
+  esac
+  find_args=(-newermt "@$cutoff")
+elif [ "$DAYS" -gt 0 ] 2>/dev/null; then
+  cutoff=$(( $(date +%s) - DAYS * 86400 ))
+  find_args=(-newermt "@$cutoff")
+else
+  cutoff=0
+  find_args=()
+fi
+
+extract() {
+  find "$ROOT" -path '*/subagents/agent-*.jsonl' "${find_args[@]}" -print 2>/dev/null |
+  while IFS= read -r t; do
+    meta="${t%.jsonl}.meta.json"
+    [ -f "$meta" ] || meta=/dev/null
+    # One jq per transcript, meta pulled in via --slurpfile so a dispatch costs
+    # a single process rather than two. Transcripts with no assistant turn
+    # (agent died at spawn) emit nothing rather than a zero-token row.
+    jq -rs --slurpfile m "$meta" '
+      [ .[] | select(.type == "assistant" and (.message.usage | type) == "object") ] as $a
+      | if ($a | length) == 0 then empty else
+          ($a | map(.message.usage)) as $u
+        | ($m[0] // {}) as $meta
+        | [ ($meta.agentType // "?"),
+            (($a[0].cwd // "?") | split("/") | last),
+            ($a[0].message.model // "?"),
+            ( ($u | map(.output_tokens // 0) | add)
+              + ( $u[-1] | (.input_tokens // 0)
+                         + (.cache_creation_input_tokens // 0)
+                         + (.cache_read_input_tokens // 0) ) ),
+            ( (($a[0].timestamp // "")[0:19] + "Z") | fromdateiso8601? // 0 ),
+            ($meta.spawnDepth // 0),
+            ( $u[0] | (.input_tokens // 0)
+                    + (.cache_creation_input_tokens // 0)
+                    + (.cache_read_input_tokens // 0) ),
+            # Fields 8-11: CUMULATIVE across every turn, which is the billing
+            # shape. Kept separate rather than summed because each bills at a
+            # different rate, and a scalar cannot be re-weighted afterwards.
+            ( $u | map(.output_tokens // 0) | add ),
+            ( $u | map(.input_tokens // 0) | add ),
+            ( $u | map(.cache_creation_input_tokens // 0) | add ),
+            ( $u | map(.cache_read_input_tokens // 0) | add )
+          ] | @tsv
+        end
+    ' "$t" 2>/dev/null
+  done
+}
+
+extract | awk -F'\t' -v col="$COL" -v by="$BY" -v repo="$REPO" -v cut="$cutoff" \
+  -v spend="$SPEND" -v rates="$RATES" -v cwm="$CACHE_WRITE_MULT" -v crm="$CACHE_READ_MULT" '
+BEGIN {
+  nrates = split(rates, RR, /[ \t,]+/)
+  for (i = 1; i <= nrates; i++) {
+    if (RR[i] == "") continue
+    split(RR[i], P, ":")
+    pat[i] = P[1]; rin[i] = P[2] + 0; rout[i] = P[3] + 0
+  }
+}
+# First substring match wins, so a rate table lists specific before general.
+# Returns -1 rather than 0 for an unknown model: a dispatch priced at zero is
+# indistinguishable from a free one, and that is how a whole tier goes missing.
+function price(model, out, inp, cw, cr,   i) {
+  for (i = 1; i <= nrates; i++)
+    if (pat[i] != "" && index(model, pat[i]) > 0)
+      return ((inp + cw * cwm + cr * crm) * rin[i] + out * rout[i]) / 1000000
+  return -1
+}
+repo != "" && $2 !~ repo { next }
+cut > 0 && $5 > 0 && $5 < cut { next }
+spend == 1 {
+  d = price($3, $8, $9, $10, $11)
+  if (d < 0) { unpriced++; unpmodel[$3]++; next }
+  k = $col
+  n[k]++; s[k] += d
+  o[k] += $8; w[k] += $10; r[k] += $11
+  tot += d; cnt++
+  totout += $8; totw += $10; totr += $11
+  next
+}
+{
+  k = $col
+  n[k]++; s[k] += $4; b[k] += $7
+  if ($4 > mx[k]) mx[k] = $4
+  tot += $4; boot += $7; cnt++
+}
+END {
+  if (cnt == 0) {
+    print "agent-cost: no dispatches in range"
+    if (unpriced > 0)
+      printf "(%d dispatches present but no rate matched their model)\n", unpriced
+    exit
+  }
+  # Rows through an output pipe, closed before the summary prints: POSIX awk
+  # has no asort, and sorting the whole stream downstream would shuffle the
+  # summary lines into the table.
+  cmd = "sort -k3 -rn"
+  if (spend == 1) {
+    printf "%-28s %5s %10s %9s %9s %9s %9s %7s\n", \
+      by, "n", "cost$", "mean$", "outM", "cwrtM", "creadM", "share"
+    for (k in n)
+      printf "%-28s %5d %10.2f %9.3f %9.2f %9.2f %9.2f %6.1f%%\n", \
+        k, n[k], s[k], s[k]/n[k], o[k]/1e6, w[k]/1e6, r[k]/1e6, 100*s[k]/tot | cmd
+    close(cmd)
+    printf "\n%d dispatches, $%.2f, mean $%.3f\n", cnt, tot, tot/cnt
+    printf "billed volume: %.2fM output, %.2fM cache write, %.2fM cache read\n", \
+      totout/1e6, totw/1e6, totr/1e6
+    printf "rates: %s (cache write x%s, read x%s) -- VERIFY BEFORE QUOTING\n", \
+      rates, cwm, crm
+    if (unpriced > 0) {
+      printf "UNPRICED: %d dispatches excluded, no rate matched:", unpriced
+      for (m in unpmodel) printf " %s(%d)", m, unpmodel[m]
+      printf "\n"
+    }
+    exit
+  }
+  printf "%-28s %5s %12s %9s %9s %9s %7s\n", by, "n", "total", "mean", "boot", "max", "share"
+  for (k in n)
+    printf "%-28s %5d %12d %9d %9d %9d %6.1f%%\n", \
+      k, n[k], s[k], s[k]/n[k], b[k]/n[k], mx[k], 100*s[k]/tot | cmd
+  close(cmd)
+  printf "\n%d dispatches, %d tokens, mean %d\n", cnt, tot, tot/cnt
+  printf "mean bootstrap %d tokens/dispatch (%.0f%% of the mean dispatch)\n", \
+    boot/cnt, 100*(boot/cnt)/(tot/cnt)
+}
+'

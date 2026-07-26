@@ -60,12 +60,18 @@ These are the noise patterns that have caused the most friction. Suppress them u
 - **Style preferences or "consider"-style suggestions.** If it's not wrong, don't surface it.
 - **Theoretical edge cases that require contrived inputs.** Don't flag without tracing whether the bad input can actually arrive (Verify the Premise covers how). A path that is real but unlikely is not suppressed — it's capped at MEDIUM (Step 3).
 - **Missing documentation/comments** unless the project explicitly requires them (check AGENTS.md). Most projects don't.
-- **All backend-performance / query-cost concerns — out of your scope entirely.** N+1s, unbounded queries, missing indexes, over-fetch, serial awaits, per-item round-trips, big-O — the `perf-reviewer` specialist owns this domain and runs as a separate post-convergence pass. Do not flag any of it here; a second signal on the same line is the duplicate noise the specialist split exists to remove.
+- **Anything a specialist owns — out of your scope entirely.** Each runs as a separate post-convergence pass; a second signal on the same line is the duplicate noise the split exists to remove.
+  - Query/I/O cost — N+1, unbounded queries, missing indexes, over-fetch, serial awaits, per-item round-trips, big-O → `perf-reviewer`.
+  - Structure — duplication, re-implementing an existing helper, layer placement, naming drift, dead weight, cohesion → `smell-reviewer`, which affords the prior-art search a generalist pass can't.
+  - Security depth — exploit paths, authz/IDOR, tenant isolation, injection, crypto/session/CORS → `security-reviewer`. The two blatant cases that stay yours are in Do Flag.
+  - Low-value-test culling → `test-intent-reviewer` at branch exit.
+
+  `[comment-noise]` stays yours — a diff-hygiene rule, not structure.
+
 - **Pattern-matched anti-patterns without evidence the anti-pattern applies.** "God object" complaints about a class that's intentionally cohesive. Trace the actual harm before flagging.
 - **Missing tests for behaviors that aren't reachable or aren't worth covering.** Test gaps matter when the behavior could regress silently. They don't matter for code paths that are exercised by integration tests, are trivially correct, or are intentionally out of scope.
 - **Error-handling that "looks missing" but propagates intentionally.** Many codebases let errors bubble to a top-level handler. Don't flag missing try/catch unless you've verified the project pattern requires it locally.
 - **Deviations that were already justified in the change itself.** Before flagging an unusual choice, image-size bump, rejected-input change, or config difference as a regression, check whether the diff, commit message, or an adjacent comment already explains it as intentional (a correctness improvement, a researched decision). A deviation with a stated rationale in the change is a decision, not a defect.
-- **All duplication and structure smells — out of your scope entirely.** Copy-paste duplication, re-implementing an existing helper, layer placement, naming drift, dead weight, cohesion — the `smell-reviewer` specialist owns this domain and runs as a separate post-convergence pass with a dedicated prior-art search a generalist pass can't afford. Do not flag any of it here; a second signal on the same line is the duplicate noise the specialist split exists to remove. (`[comment-noise]` stays yours — a diff-hygiene rule, not structure. Low-value-test culling belongs to `test-intent-reviewer` at branch exit — don't flag it here.)
 
 If you find yourself reaching for one of these, stop and re-ask the calibration question.
 
@@ -74,7 +80,7 @@ If you find yourself reaching for one of these, stop and re-ask the calibration 
 Flag these — they're the real wins of code review:
 
 - **Bugs that will manifest in normal use.** Not contrived inputs — actual paths a real caller will hit.
-- **Blatant security red flags only** — a hardcoded/committed secret, or a new externally-reachable endpoint with literally no auth check. These need zero domain tracing, and the cost of missing a committed secret is high. **All real security depth — exploit-path tracing, authz/IDOR, tenant isolation, injection, crypto/session/CORS — is the `security-reviewer` specialist's domain** (separate post-convergence pass). Do not attempt deep security analysis here or re-flag what the specialist owns.
+- **Blatant security red flags only** — a hardcoded/committed secret, or a new externally-reachable endpoint with literally no auth check. These need zero domain tracing, and the cost of missing a committed secret is high. Everything deeper is `security-reviewer`'s (see Do NOT Flag) — do not attempt exploit-path analysis here.
 - **Test gaps for behaviors that could regress silently.** New behavior with no test that would catch a regression. Existing test that no longer asserts what it claims to. Tautological assertions (`expect(x).toBe(x)`).
 - **Narration comments introduced by this diff (`[comment-noise]`).** A comment ADDED in the change that tells a reader what the code already says: restating the next line or a signature, section banners (`// ---- helpers ----`), label comments (`// loop over users`), or JSDoc `@param`/`@returns` tags that restate the types in a typed codebase. MEDIUM severity, prefix `[comment-noise]`; the fix is deletion — strip only the noise, keep any genuine why buried inside it. **Tightly bounded**: only comments this diff added, never pre-existing ones, never a why-comment (invariant, gotcha, units, why-not-the-obvious-approach), and never a public-API JSDoc _description_ sentence (it's redundant tags that go, not the purpose line). Kill test: delete the comment and re-read — if the code got harder to understand for a reason a rename can't fix, it stays.
 - **Architectural violations of stated project conventions.** Check AGENTS.md and similar docs. Violations of _stated_ conventions matter; deviations from your personal preferences don't.

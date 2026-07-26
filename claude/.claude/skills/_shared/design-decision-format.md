@@ -2,18 +2,8 @@
 
 Single source of truth. The structure every recorded design decision follows, in
 `/eng-spec`'s `## Decisions`. This is the artifact's judgment surface — the part
-a human reads at the gate and `/adr` distills later. This block structure plus
-the External Contracts rule below is where decisive invariant statements tend to
-land.
+a human reads at the gate and `/adr` distills later.
 
-<!-- History: this file previously carried owner tags (User-originated /
-User-ratified / Locked) and a "ratification alarm" that fired when no decision
-traced back to the user. Both were removed 2026-07-13. They worked exactly as
-designed — the alarm fired correctly on the most truthful artifact the system
-ever produced, which was still wrong. They were a prosthetic for the user's
-absence from the design phase, and you cannot tag your way to having been
-present. Do not reintroduce them; the fix is that the user is in the room, which
-is what /eng-spec Phase 5 is for. -->
 
 ## Decision block (all four fields, every decision)
 
@@ -40,7 +30,7 @@ technical demerits; a rejection that names no failure mode is unsupported]
   record it under Constraints instead. If you cannot name an option that a
   constraint killed, no fork ever existed.
 - **Split the check out of the decision.** When a decision contains a claim
-  shaped like *"we know X because we looked at Y"* — does this record exist? is
+  shaped like _"we know X because we looked at Y"_ — does this record exist? is
   this the same user? is this process still alive? is this value unique? — that
   check is its own decision and gets its own block. Every regression this system
   has shipped lost it as a subordinate clause inside a decision about something

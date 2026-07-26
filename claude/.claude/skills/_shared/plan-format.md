@@ -58,6 +58,11 @@ skeleton`, the thinnest end-to-end path exercising every Phase 0 contract
   after the last feature phase and numbered continuously. Not negotiable, never
   omitted — include them in `## Phase Status` and as full Phase sections.
 
+## Reading a plan
+
+Consumers working ONE phase read it phase-scoped — shared sections plus their
+own phase, skipping siblings. Rule and mechanics: `plan-reading.md`.
+
 ## Template
 
 Header links: include whichever upstream artifacts exist under the eng-spec
@@ -104,13 +109,25 @@ don't exist.
 
 ## Acceptance Stubs
 
-<!-- Omit this section entirely if the ticket has no behavioral criteria. -->
+<!-- Omit this section entirely if the ticket has no behavioral criteria.
+Written by the user with the main thread after the plan is final and BEFORE any
+coder is dispatched — the whole value is that no implementation existed yet to
+shape the assertions, so a stub written later, or by the agent that will satisfy
+it, is not an oracle. 3-8 of them; if there are more, the ticket is two tickets. -->
 
 - **Spec file(s)**: `path or glob (feature-root spec file, or feature-local specs/ dir)`
 - **Primitive**: [the project runner's todo/pending marker]
 - **Count command**: `<exact command that prints the remaining-stub count>`
 - **Stubs** (one per ticket acceptance criterion; domain language, no ticket keys):
   - "[behavior sentence]"
+
+Each spec file's head carries `ACCEPTANCE-CONTRACT` in its first 10 lines, which
+makes it immutable to every agent (`acceptance-contract-gate` denies the write).
+Assert at the criterion's boundary — the public entry point a user or caller
+reaches — never an internal function, or the contract pins today's structure and
+blocks the refactor it was supposed to survive. **No mocks or stubs inside a
+contract**: a mock encodes how you assumed the code would be built, which is the
+one thing the contract must not assume.
 
 ## Implementation Approach
 

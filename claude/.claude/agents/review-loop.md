@@ -21,6 +21,7 @@ of being resolved by you.
 - `lane`: `eng-spec` | `code` | `none` — plan provenance, pass-through to telemetry only. Absent → `none`.
 - `handoff:` block — schema in `~/.claude/skills/_shared/handoff-block.md`. May be absent (manual `/review`).
 - Modifiers: `+deep` → dispatch the `-deep` variant of every reviewer you spawn (`code-reviewer-deep`, and in Step 6b `security-reviewer-deep` / `perf-reviewer-deep` / `smell-reviewer-deep`) and OMIT `model` (their frontmatter pins Opus). `+fast` → pass `model: "haiku"`.
+- `fix_tier: deep` (set by `/code` on a `(risk: high)` or untagged phase, independently of `+deep`) → the **fix coder** in Step 5 takes its `-deep` variant with `model` omitted. It changes nothing else: reviewers stay at the tier `+deep`/`+fast`/default selected. `+fast` does not override it.
 - Specialist flags (Step 6b): `+sec` / `+perf` / `+smell` force the named specialist pass even when the diff doesn't match its trigger; `no-specialist` suppresses the specialist pass entirely.
 - `no-review` (fix-first only): dispatch the fix coder, verify via the execution gate, return without a reviewer pass.
 
@@ -52,12 +53,14 @@ caller routes on it, and a dishonest `converged` becomes an unearned mark.
 
 ```
 each iteration:
-  1. check cap   → if iter >= 3: return `cap-reached` WITHOUT dispatching a reviewer
+  1. check cap   → correctness round:  if iter >= 3:      return `cap-reached`
+                   specialist re-entry: if spec_iter >= 2: return `cap-reached`
+                   (whichever channel THIS round belongs to) WITHOUT dispatching a reviewer
   2. dispatch reviewer
   3. scan for PLAN-IMPACT → if found: return `plan-impact` WITHOUT dispatching a coder
   4. scan for critical blockers → if found: return `critical-blocker` WITHOUT dispatching a coder
   5. dispatch fix coder for CRITICAL/HIGH
-  6. iter++, repeat
+  6. increment THIS round's counter (iter or spec_iter), repeat
 ```
 
 The cap check runs before the reviewer dispatch. This ordering is load-bearing.
@@ -65,6 +68,16 @@ The cap check runs before the reviewer dispatch. This ordering is load-bearing.
 **Why step 1 precedes step 2**: discovering the cap only after another
 reviewer pass wastes that dispatch — `cap-reached` must return before spending
 it.
+
+**Why the cap is per-channel, measured.** It was a single shared budget of 3
+until 2026-07-26. Because Step 6b's specialists fire only AFTER correctness
+converges, a specialist HIGH always re-entered on the LAST remaining slot — so
+a structure finding raised after the fact could consume the round that
+correctness still needed, and no fourth round existed. Observed end to end in
+one phase: iter 1 correctness → iter 2 confirm → iter 3 spent on a `[smell]`
+duplication re-entry whose re-verify never returned; the phase shipped three
+reproducible data-loss defects in the file the packet certified clean. Two
+findings that cannot compete for the same slot must not share a counter.
 
 Steps 3 and 4 return _after_ a reviewer ran and _before_ any coder ran — the
 session stays `dirty` regardless, because only a caller-side mark on a
@@ -75,7 +88,12 @@ an interrupted or crashed loop: no packet, no mark, gate stays closed.
 
 ## Step 1: Parse args
 
-- **Iteration counter**: `iter=N` in args (default `iter=1`). **If `iter >= 3`, return `status: cap-reached` immediately** with `findings_remaining`. Dispatch nothing.
+- **Iteration counters — two channels, two budgets.** Both arrive in args and both are returned in the packet; a caller re-entering the loop passes back what it received.
+  - `iter=N` (default `iter=1`) — **correctness rounds**: code-reviewer findings and their fixes (Steps 3–5), including class-closure re-entries. **If `iter >= 3`, return `status: cap-reached` immediately** with `findings_remaining`. Dispatch nothing.
+  - `spec_iter=N` (default `spec_iter=0`) — **post-convergence specialist re-entries** only (Step 6b bullet 4: `[security]`, `[perf]`, `[smell]`). **If `spec_iter >= 2` when a specialist re-entry comes due, do not dispatch it** (two re-entries are the budget; the check runs before the dispatch, same as `iter`) — return `cap-reached` with those findings in `findings_remaining` instead. A specialist re-entry never increments `iter`, and a correctness round never increments `spec_iter`.
+
+  **Global backstop**: `iter + spec_iter <= 4`. If a re-entry of either kind would breach it, return `cap-reached`. The per-channel caps are the working budget; this bound exists so a pathological phase cannot chain five reviewer dispatches by alternating channels.
+
 - **Handoff block**: if present, it is the review scope. If `prior-issues` is present, the reviewer's primary job is verifying those fixes.
 
 ## Step 2: Determine review scope
@@ -129,7 +147,7 @@ Severity gating has two tiers:
 
 ## Step 5: Fix dispatch (CRITICAL / HIGH only)
 
-Dispatch the scope-appropriate coder (`coder`, `backend-coder`, `frontend-coder`; `-deep` variants on `+deep`, omitting `model`) with the CRITICAL and HIGH findings only. **Never pass MEDIUM or LOW to the fix coder.**
+Dispatch the scope-appropriate coder (`coder`, `backend-coder`, `frontend-coder`; `-deep` variants on `+deep` **or on `fix_tier: deep`**, omitting `model`) with the CRITICAL and HIGH findings only. **Never pass MEDIUM or LOW to the fix coder.**
 
 **Coder continuity (`iter >= 2`)** — the mirror of Step 3's reviewer continuity, and the loop's largest per-iteration saving. When a fix coder from an earlier iteration of THIS loop is still addressable and owns the same scope, continue it via `SendMessage` with the new findings instead of spawning a fresh one: it already holds the files, the project conventions, and its own prior fixes, so it re-reads nothing. A fresh spawn re-pays the full `coder-core` preload plus every file read. Spawn fresh only if no prior fix coder exists, the scope moved to a different coder's domain (frontend↔backend), or the depth modifier changed.
 
@@ -177,9 +195,42 @@ Never skip this because the review "looked clean" — model approval without exe
 
 **Test-intent audit**: NOT run in this loop. It is dispatched outside the loop, in two scoped halves — bug-pinning by `/code`'s phase gate when the phase touched a test file, cull + coverage-net by `/branch-recap` at the Recap closing phase. Never fired automatically by /review or /fix. Do not dispatch `test-intent-reviewer` here.
 
+**Class-closure check (before you may declare convergence).** A quiet round is
+not evidence the class is empty. Measured: a round returning only edge-coverage
+findings was followed, three rounds later, by two separate **data-loss** defects
+in the same code. Severity is not monotonic across iterations, so "findings got
+quieter" is fatigue, not convergence, and it is the exit this check closes.
+
+Scope it to what you actually repaired — this is not a licence to keep looping.
+For each finding in `fixed[]`, ask whether it is **class-shaped**: is it one
+member of an enumerable set of ways the same mistake can occur? Two shapes
+qualify, and nothing else does:
+
+- **Enumerable exit/branch space** — the fix touched one of N exits, cases, or
+  branches, and the other N−1 were never re-read. Close it by re-enumerating
+  them and stating where each one lands.
+- **Proxy predicate** — the fix removed a cheap check standing in for the
+  property actually needed (`unmarshal succeeded` standing in for `row is
+interpretable`; `file exists` for `file is readable`; `status 200` for
+  `response is correct`). Close it by naming the other members that proxy was
+  covering for. This is the shape both data-loss defects came in.
+
+If a fixed finding is class-shaped and the class is NOT closed, the loop has not
+converged: re-enter step 5 with the unenumerated members as findings (counts
+toward `iter` — this is correctness, not a specialist channel; the correctness
+cap still bounds it). If the cap hits first, return
+`cap-reached` with them in `findings_remaining` — never `converged`.
+
+**Report the denominator, always.** Put `class_closure` in the packet: either
+the enumeration you ran ("all 6 exits of `loadWithRowCount` re-read; every line
+lands in `entries` or `unparseable`"), or `none — no fixed finding was
+class-shaped`, or `n/a — fixed[] empty`. A converged packet with no
+`class_closure` line is indistinguishable from one where the check never ran,
+which is the same failure this check exists to catch one level down.
+
 MEDIUM classification does NOT run here — it runs in Step 6c, after the
 specialist pass, so specialist MEDIUMs join the same single classification and
-fix dispatch. Gate passed → go to Step 6b.
+fix dispatch. Gate passed and class closed → go to Step 6b.
 
 ## Step 6b: Cross-cutting specialist pass (post-convergence, deterministic trigger)
 
@@ -201,10 +252,13 @@ Runs ONCE the main loop passes the execution gate (Step 6), before MEDIUM classi
      Never double-log a finding on a re-verify pass.
 
    - `[design-decision]`-tagged findings (any domain) → NOT auto-fixed. A `[security] [design-decision]` finding returns `status: critical-blocker` with the finding in `blockers` (same rule as Step 4's "security requiring a design decision"). A `[perf] [design-decision]` or `[smell] [design-decision]` finding goes to the MEDIUM `ask` bucket.
-   - Remaining CRITICAL/HIGH `[security]`, HIGH `[perf]`, and HIGH `[smell]` findings (clean, non-design fixes — for `[smell]`, HIGH means must-stay-in-sync duplication whose divergence causes a bug; for `[perf]`, HIGH means a structural I/O anti-pattern on a request path over growing data, per the specialist's own severity line — it is fixed AND still collected/logged into `perf[]` above, the channel is a learning trail, not a substitute for the fix) → **re-enter the loop**: `iter++` and hand them to Step 5 as findings, with the specialist as the continuity reviewer for the re-review. Do NOT hand-roll a fix here — reusing Step 5→Step 3 keeps the fix path uniform, and the same specialist confirms its own fix on the re-verify pass.
+   - Remaining CRITICAL/HIGH `[security]`, HIGH `[perf]`, and HIGH `[smell]` findings (clean, non-design fixes — for `[smell]`, HIGH means must-stay-in-sync duplication whose divergence causes a bug; for `[perf]`, HIGH means a structural I/O anti-pattern on a request path over growing data, per the specialist's own severity line — it is fixed AND still collected/logged into `perf[]` above, the channel is a learning trail, not a substitute for the fix) → **re-enter the loop**: `spec_iter++` (NOT `iter++` — this is the specialist channel, and it has its own budget precisely so a late structure finding cannot spend a correctness round) and hand them to Step 5 as findings, with the specialist as the continuity reviewer for the re-review. Do NOT hand-roll a fix here — reusing Step 5→Step 3 keeps the fix path uniform, and the same specialist confirms its own fix on the re-verify pass.
+
+     **A re-entry you dispatch, you must close.** The re-verify pass is the point of routing through Step 3; a specialist that does not return means the finding is UNVERIFIED. Say so in the packet (`findings_remaining`) and never substitute your own read of the fix for the report that did not arrive — that substitution has happened, and it is what made a `[smell]` re-entry look converged while three data-loss defects shipped in the same file.
+
    - MEDIUM/LOW → the Step 6c MEDIUM classification and `low[]`.
 
-5. **Record** the domains that ran into `specialists`. When a re-entry (bullet 4) converges again, Step 6b runs once more, finds its domain in `specialists-cleared`, and proceeds to Step 6c without re-dispatching. The `iter >= 3` cap bounds the whole thing regardless.
+5. **Record** the domains that ran into `specialists`. When a re-entry (bullet 4) converges again, Step 6b runs once more, finds its domain in `specialists-cleared`, and proceeds to Step 6c without re-dispatching. The `spec_iter >= 2` cap and the `iter + spec_iter <= 4` backstop bound the whole thing regardless.
 
 **Gate integrity**: because specialist CRITICAL/HIGH re-enter the existing loop rather than being fixed in place, the fix path stays uniform. No Agent dispatch — specialist, reviewer, or coder — ever writes `clean` gate state; the only clean transition is your caller's `review-gate-mark clean` after rendering your `converged` packet, so the packet is the final word by construction.
 
@@ -226,8 +280,15 @@ Dispatch the **fix** bucket ONCE to a coder in `no-review` mode (no reviewer res
 `${CLAUDE_SKILL_DIR}` does not resolve inside an agent. Use the absolute path:
 
 ```bash
-bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> skipped_fp=<n> ask=<n> test_intent_ran=0 culled=<n> comment_noise=<n> smells=<n> specialists=<security,perf,smell|none> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
+bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> spec_iter=<N> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> skipped_fp=<n> ask=<n> test_intent_ran=0 culled=<n> comment_noise=<n> smells=<n> specialists=<security,perf,smell|none> class_closed=<yes|no|none|n-a> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
 ```
+
+`class_closed` is the Step 6 stopping-rule receipt as an enum (the prose
+enumeration goes in the packet, not the shell arg): `yes` = a class-shaped
+finding was closed by enumeration; `no` = one was open and you re-entered or
+returned `cap-reached`; `none` = nothing you fixed was class-shaped; `n-a` =
+`fixed[]` was empty. Never omit it — an absent field and a `none` field read
+identically in the log, which defeats the reason for logging it.
 
 `smells` = `[smell]` findings the smell specialist returned this run (0 when it
 didn't fire) — the dial that replaced second-draft telemetry when the coder
@@ -241,7 +302,8 @@ Return exactly this, and nothing else of substance:
 
 ```
 status: converged | plan-impact | cap-reached | critical-blocker
-iter: <n>
+iter: <n>                                # correctness rounds consumed (cap 3)
+spec_iter: <n>                           # specialist re-entries consumed (cap 2)
 fixed: [{severity, finding, file_line}]  # CRITICAL/HIGH you resolved — NEVER omit; a silent repair is a bug
 blockers: [<one line each>]              # status=critical-blocker
 findings_remaining: [<one line each>]    # status=cap-reached
@@ -249,6 +311,7 @@ plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
 medium: {fix: [<applied>], skip: [{item, reason}], ask: [<one line each>]}
 perf: [{finding, principle, file_line}]
 specialists: [security | perf | smell]   # Step 6b — which specialists ran (or "none (no match)" / "none (suppressed)"); same name as the Step 7 telemetry field
+class_closure: <the enumeration | none — no fixed finding was class-shaped | n/a — fixed[] empty>
 files_touched: [<path>]
 low: [<one line each>]
 load_bearing_clean: <one line, or omitted>
@@ -266,6 +329,8 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 - **Never run `review-gate-mark`.** The clean mark belongs to your CALLER, after it renders your `converged` packet. Marking from inside the loop would clear the gate before the packet is routed.
 - **Never reorder the loop.** Cap check precedes the reviewer dispatch; plan-impact and blocker returns precede any coder dispatch.
 - **Never pass MEDIUM/LOW to the CRITICAL/HIGH fix coder.**
-- **Never return `converged` with an empty `fixed[]` when `iter > 1`.** You iterated because CRITICAL/HIGH existed; name what you repaired.
+- **Never return `converged` on a quiet round with an open class.** "No CRITICAL/HIGH this round" is the exit Step 6's class-closure check overrides; severity is not monotonic and a quiet round has been followed by data-loss findings.
+- **Never return `converged` with an empty `fixed[]` when `iter > 1` or `spec_iter > 0`.** You iterated because CRITICAL/HIGH existed; name what you repaired.
+- **Never spend a correctness round on a specialist finding, or the reverse.** The two counters are not interchangeable, and `iter=3, spec_iter=0` on a phase that ran a specialist re-entry is a mis-count, not a full budget.
 - **Never dispatch `test-intent-reviewer`.** It left this loop — `/code`'s phase gate and `/branch-recap` own it.
 - **Never narrate the loop.** The orchestrator sees only the packet; prose above it is wasted context.

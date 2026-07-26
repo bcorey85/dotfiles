@@ -38,7 +38,31 @@ Hand it the branch diff (`git diff <base>...HEAD`) and the oracle (spec + accept
 criteria). Findings route through `/fix`, then re-run the loop's execution gate.
 Net-removed coverage goes to the top of the read-first queue.
 
-Receipt line: `test audit: <n> culled, <n> coverage-lost | clean | skipped — no test files`.
+**`REQUIRES-MUTATION` findings route to `mutation-tester`, not to `/fix`.** The
+auditor is read-only and will return this class whenever a cull decision cannot be
+settled by reading. Dispatch `mutation-tester` (pinned; omit `model`) with the named
+mutation, and only then resolve the cull. Never resolve one of these by judgement —
+an unrouted `REQUIRES-MUTATION` stays open and is reported as open.
+
+It returns one of four verdicts, and only two of them settle the cull:
+
+- **KILLED** → the test earns its place. Not a cull.
+- **SURVIVED** → the test does not kill this mutant; the cull argument stands.
+- **EQUIVALENT** → the mutant is unobservable, so no test could ever kill it. The
+  cull question was malformed. Do **not** read this as a survivor and do **not**
+  commission coverage to chase it — a test written against an equivalent mutant
+  asserts nothing, which is how vacuous tests get added by a process meant to
+  remove them.
+- **INDETERMINATE** → still open (red baseline, mutation didn't apply, or the
+  expected test never executed). Report it open; do not downgrade it to a pass.
+
+**Carry the denominator into the receipt — a bare `0` is not a result here.** The
+coverage-net check searches the tests that existed at the branch point; when that set
+is empty (greenfield branch, or a base with no tests) the check cannot fail, and its
+pass is byte-identical to its no-op. Take the auditor's `Base suite at branch point`
+header verbatim.
+
+Receipt line: `test audit: <n> culled, <n> coverage-lost of <m> pre-existing tests searched | coverage-net N/A — base suite empty | clean | skipped — no test files`.
 
 Log the firing to the review flywheel (non-blocking; on failure mention and continue; skip if the audit was skipped):
 
@@ -46,6 +70,9 @@ Log the firing to the review flywheel (non-blocking; on failure mention and cont
 bash "$HOME/.claude/skills/review/log-review-metrics" \
   repo="$(basename "$(git rev-parse --show-toplevel)")" lane=branch-recap \
   test_intent_ran=1 test_intent=<n findings> culled=<n> coverage_lost=<n> \
+  base_suite=<m pre-existing tests searched; 0 means the coverage-net gate did not run> \
+  requires_mutation=<n> mutation_equivalent=<n of those the tester ruled EQUIVALENT> \
+  mutation_open=<n still INDETERMINATE or unrouted> \
   result=<clean|findings>
 ```
 
@@ -80,6 +107,8 @@ Spec: <task-dir>
 
 ### Cross-phase test audit
 - <culled / COVERAGE-LOST findings, or "clean">
+- <denominator, always: "N of M pre-existing tests searched" or "coverage-net N/A — base suite had 0 tests, this gate did not run">
+- <any REQUIRES-MUTATION items with their KILLED/SURVIVED/EQUIVALENT/INDETERMINATE verdicts, or marked unrouted-and-open>
 
 ### Smoke-test checklist          (from the /verify closing phase)
 - <every human-only item, with steps>

@@ -92,7 +92,18 @@ const skimRes = config.skim.map((r) => new RegExp(r));
 const enforcementRe = new RegExp(config.enforcementConfig);
 
 const BARREL_RE = /(^|\/)index\.[jt]sx?$/;
-const TEST_RE = /(\.(test|spec|specs)\.[jt]sx?$|(^|\/)__tests__\/)/;
+// Test-file classification. JS/TS-only here for a long time, which silently
+// disabled EVERY test tripwire below on Go, Python, and Rust repos: `isTest`
+// gates "test file deleted" (:~272), the net-removal tripwires, and the READ
+// tier's assertion extraction. Observed live — a branch that net-deleted 36
+// lines across two `_test.go` files produced empty reasons on both, and the one
+// tripwire built to stop a silent test deletion from being staged unread never
+// fired. Filename-only classification, so inline Rust `#[cfg(test)]` modules and
+// Go example files in non-test paths are still invisible; that is a known floor,
+// not a pass. A false positive here (a fixture under `tests/`) escalates to a
+// human read, which is the safe direction.
+const TEST_RE =
+  /(\.(test|spec|specs)\.[jt]sx?$|(^|\/)__tests__\/|_test\.go$|(^|\/)tests?\/|(^|\/)test_[^/]+\.py$|_test\.py$|_(spec|test)\.rb$|[Tt]ests?\.(java|kt|cs)$)/;
 const LOCKFILE_RE = /(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|Cargo\.lock|poetry\.lock|Gemfile\.lock)$/;
 const MANIFEST_RE = /(^|\/)(package\.json|Cargo\.toml|pyproject\.toml|Gemfile)$/;
 
@@ -107,12 +118,26 @@ const ADDED_TRIPWIRES = [
   [/@ts-ignore|@ts-nocheck|@ts-expect-error/, "type suppression added"],
   [/--no-verify|SKIP=|\bset\s+-\s*e\b.*#\s*removed/, "hook/verify bypass added"],
 ];
-// Tripwires on REMOVED lines, test files only.
+// Tripwires on REMOVED lines, test files only. Each pattern must cover every
+// language TEST_RE now classifies — a file correctly identified as a test whose
+// declarations no pattern matches is the same silent no-op as not classifying it
+// at all. `\bassert\w*\s*[.(!]` covers `assert.Equal(`, `assert_eq!(`, and
+// `asserts(`; `\bassert\s` is needed separately for Python's bare statement
+// (`assert x == y`), which has no delimiter.
+const ASSERT_RE =
+  /\bexpect\s*\(|\bassert\w*\s*[.(!]|\bassert\s|\bt\.(Errorf?|Fatalf?)\s*\(|\brequire\.[A-Z]/;
+// Declarations, not invocations: Go `func TestX(`, Python `def test_x(`, Rust
+// `#[test]`, JVM `@Test`, JS `it(`/`test(`, and Go subtests (`t.Run("…"`), which
+// are individually deletable test cases.
+const TEST_CASE_RE =
+  /\b(it|test)\s*\(\s*['"`]|^\s*func\s+(Test|Benchmark|Fuzz|Example)[A-Z_]|^\s*(async\s+)?def\s+test_|^\s*#\[\s*test\s*\]|^\s*@Test\b|\bt\.Run\s*\(/;
 const REMOVED_TEST_TRIPWIRES = [
-  [/\bexpect\s*\(|\bassert\w*\s*[.(]/, "assertions removed"],
-  [/\b(it|test)\s*\(\s*['"`]/, "test cases removed"],
+  [ASSERT_RE, "assertions removed"],
+  [TEST_CASE_RE, "test cases removed"],
 ];
-const ASSERTION_RE = /\bexpect\s*\(|\bassert\w*\s*[.(]|\.to(Be|Equal|Match|Throw|Contain|Have)\w*\(/;
+const ASSERTION_RE = new RegExp(
+  ASSERT_RE.source + /|\.to(Be|Equal|Match|Throw|Contain|Have)\w*\(/.source,
+);
 
 // Strip comment content so "assertions/test cases removed" tripwires and the
 // assertion extractor fire on real code, not prose. A removed `// expect(...)`
@@ -125,6 +150,11 @@ const ASSERTION_RE = /\bexpect\s*\(|\bassert\w*\s*[.(]|\.to(Be|Equal|Match|Throw
 // code — acceptable, since the common churn is caught. NOT applied to the
 // ADDED suppression tripwires (eslint-disable, @ts-ignore, --no-verify), which
 // legitimately live in comments and must still trip.
+// Deliberately does NOT strip `#` comments (Python, Ruby, shell). Stripping them
+// would risk eating `#[test]` and `#` inside JS/Go string literals on the path
+// that already works; leaving them means a removed Python comment mentioning
+// `assert` can trip "assertions removed". That is a false ESCALATE — a human
+// reads a clean file — which is the safe direction, unlike a missed deletion.
 function codeResidue(line) {
   const s = line.replace(/\/\*.*?\*\//g, "").replace(/\/\/.*$/, "");
   const t = s.trim();

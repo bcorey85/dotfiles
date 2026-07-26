@@ -110,6 +110,26 @@ do that if the block is present verbatim.
 
 ## Review Handoff (last lines of your report)
 
+Emit, when applicable — the human-review channel:
+`WHY: <path> <startLine>-<endLine> — <why this block looks the way it does>`,
+one line per note, or `WHY: none`. The orchestrator turns these into Hunk
+annotations that render as boxes anchored to those exact lines while a human
+reads the diff, so the reasoning arrives with the code instead of having to be
+reconstructed from it.
+
+Line numbers are NEW-file numbers — the line as it reads after your change, not
+before. A wrong range is not a harmless miss: the note still renders, anchored
+to the top of the file under a mislabeled header, pointing the reader at code
+it does not describe. Read the range back out of the file before you report it.
+
+Same calibration as REFACTOR CANDIDATES: sparse and substantive. A `WHY` earns
+its place on a choice the diff cannot explain by itself — a workaround for
+something upstream, a deliberate deviation from the local pattern, an ordering
+or concurrency constraint, a tradeoff you took knowingly, a non-obvious reason
+this is not the shorter version. Never on renames, mechanical edits, or
+restatements of what the code plainly says. Most files deserve zero; `WHY: none`
+is a normal report. A note on every hunk trains the reader to skip all of them.
+
 Emit, when applicable — the proactive refactor-debt channel:
 `REFACTOR CANDIDATES: <pre-existing smell in a file you touched that you deliberately did NOT fix — location + smell + the refactor + rough blast radius>` or `REFACTOR CANDIDATES: none`. This surfaces SURROUNDING / pre-existing smells you left alone — accumulated duplication, a god-function, a hand-rolled thing the framework/stdlib provides, a layering violation — so the orchestrator can proactively route them to `/refactor` before they're painful (that skill is reactive; it only fires when someone already knows where to aim it). NEVER act on these in-pass — the bounded-touch exception covers only a sibling copy your own diff would duplicate; everything else you are reporting, not fixing. Same calibration as everything else: substantive candidates only, stated project conventions over generic best-practice, ranked, capped at the few that matter; "none" is the common, correct answer.
 

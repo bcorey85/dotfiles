@@ -249,7 +249,13 @@ fi
 # bun
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
-[[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
+# cargo — rustup.rs writes ~/.cargo/env; distro rustup packages do not, so
+# fall back to putting the bin dir on PATH directly.
+if [[ -f "$HOME/.cargo/env" ]]; then
+  source "$HOME/.cargo/env"
+elif [[ -d "$HOME/.cargo/bin" ]]; then
+  export PATH="$HOME/.cargo/bin:$PATH"
+fi
 
 # Atuin — must be last to avoid hook conflicts
 command -v atuin &>/dev/null && eval "$(atuin init zsh)"

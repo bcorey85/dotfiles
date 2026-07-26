@@ -27,7 +27,7 @@ raise the modals it cannot.
 
 2. **Route on the returned `status`** — first match wins:
 
-   - **`plan-impact`** → raise the modal (see below), then re-dispatch the loop with the user's decision and the returned `iter` preserved.
+   - **`plan-impact`** → raise the modal (see below), then re-dispatch the loop with the user's decision and BOTH returned counters preserved (`iter` and `spec_iter`).
    - **`critical-blocker`** → STOP. Present `blockers` and wait for direction. Do NOT re-dispatch, do NOT `/fix`.
    - **`cap-reached`** → STOP. Report `findings_remaining`; the user decides. Do NOT `/fix`. The session is correctly left `dirty`, so `git commit` stays blocked.
    - **`converged`** → render the packet (step 3), then record convergence: `bash ~/.claude/scripts/review-gate-mark clean`. Run the mark ONLY for a packet whose `status` is `converged` — the other three statuses leave the commit gate dirty by design.
@@ -37,6 +37,7 @@ raise the modals it cannot.
    - `### Findings by severity` — every `fixed[]` entry (`severity`, `finding`, `file_line`). The loop repaired these; the user must still learn what they were. An empty `fixed[]` on `iter > 1` is a bug in the agent, not a clean run.
    - `### Perf findings` — its own heading, one entry per `perf[]` item with its `Principle:` line. These never scroll past silently, regardless of severity or auto-fix status; the user is deliberately building backend-performance intuition from them.
    - `specialists` — one line naming which cross-cutting specialists ran (or that none matched / were suppressed). Security findings, if any, already appear in `fixed[]`/`blockers`/`medium`; this line is the audit trail that the deterministic trigger fired as expected.
+   - `class_closure` — one line, ALWAYS, including when it reads `none` or `n/a`. This is the loop's stopping-rule receipt: it says whether convergence was earned by enumerating a failure class or by nobody having repaired a class-shaped finding. Suppressing it when it is boring is what makes it useless when it is not. A `converged` packet missing the line is a bug in the agent — say so rather than rendering the packet as clean.
    - `load_bearing_clean`, if present — one line.
    - `medium.fix` — applied, one line each. `medium.skip` — inline with its reason.
    - `low[]` and notes — inline.
@@ -59,7 +60,7 @@ The agent returns `status: plan-impact` and dispatches no coder. Then:
 3. Record the answer in the plan's `## Plan Deviations` section (create if
    absent): date, finding, decision, owner. `/verify` reconciles against the
    amended plan; `/adr` inherits it.
-4. Re-dispatch `review-loop` with the decision and the preserved `iter`.
+4. Re-dispatch `review-loop` with the decision and the preserved `iter` and `spec_iter`.
 
 ## Arguments
 

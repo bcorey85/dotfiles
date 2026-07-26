@@ -1,0 +1,34 @@
+# lazygit config
+# Schema: https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md
+#
+# Pagers cycle in-session with `|` (cyclePagers) and `\` (cyclePagersReverse).
+# hunk is listed first so it is the default renderer; delta stays one keypress
+# away as the fallback. Global git `core.pager` is untouched -- plain `git diff`
+# outside lazygit still goes through delta.
+#
+# colorArg is `never` for hunk because hunk parses the raw unified diff and does
+# its own syntax highlighting; pre-applied ANSI escapes would fight that.
+gui:
+  # Reclaim horizontal space for the diff. The side panel is narrow while you
+  # read a diff and only widens when you focus it.
+  sidePanelWidth: 0.2
+  expandFocusedSidePanel: true
+
+  # Toggle wider/narrower at runtime with `+` (nextScreenMode) and `_`.
+  screenMode: normal
+
+git:
+  pagers:
+    # --theme matches scripts/.local/bin/hunk-review, so the pager and the
+    # `prefix h` review popup look identical. hunk silently ignores an
+    # unrecognised theme name rather than erroring, so a typo here degrades to
+    # the default palette with no warning.
+    - name: hunk
+      colorArg: never
+      pager: hunk pager --theme nord
+
+    # No --side-by-side here: lazygit's main panel is already narrow, and the
+    # global core.pager keeps side-by-side for full-width `git diff`.
+    - name: delta
+      colorArg: always
+      pager: delta --paging=never

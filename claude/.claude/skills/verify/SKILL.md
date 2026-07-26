@@ -41,28 +41,18 @@ This is the one step that DOES read the plan in full (contrast `/adr`, which for
 
 1. Resolve the directory; locate ticket + plan.
 2. Determine the change set: everything on this branch (committed + uncommitted) vs its base branch. Default `BASE=$(git merge-base HEAD origin/master 2>/dev/null || git merge-base HEAD origin/main)`, then `git diff --stat "$BASE"...HEAD` plus working-tree changes; adjust the base if the branch was cut from a sprint branch.
-3. **Dispatch a read-only reconciliation agent** — `Agent` with `subagent_type: "general-purpose"`, `model: "sonnet"`. Pass it: the ticket path, the plan path, and the diff scope. Instruct it to, for every ticket requirement and every plan `Success Criteria` item:
-   - decide `done` / `partial` / `missing` by inspecting the actual diff and source (file:line evidence), NOT the Phase Status checkboxes;
-   - if the plan has an `Acceptance Stubs` section, run its count command FIRST — a nonzero remainder is hard evidence of `missing` items (name the unflipped stubs); also verify every stub sentence still exists, as a todo or as a real test bearing that name — a reworded or deleted stub is tampering, reported as `missing`; this beats opinion-based reconciliation for those criteria;
-   - run each **Automated Verification** command from the plan and record pass/fail;
-   - list **Manual Verification** items as `needs-manual` (it can't run them — they feed the smoke-test checklist);
-   - skip anything under `What We're NOT Doing` (intentional scope cuts are not gaps);
-   - return the structured checklist below and change nothing.
+3. **Dispatch `plan-verifier`** (pinned; omit `model`) with `scope: branch` and three things: the ticket path, the plan path, and the diff scope. Nothing else — its contract (verdicting from the diff rather than the Phase Status checkboxes, the acceptance-stub count-then-sentences check, running the Automated Verification commands, deferring manual items as `needs-manual`, skipping `What We're NOT Doing`, and writing nothing at all at this scope) lives in its agent file. It is the same agent `/code`'s phase gate uses at `scope: phase`; the scope is what selects branch-wide reading and strict read-only.
+
+   **`N/A — no criteria in scope`** is not a pass. It means the plan gave the gate nothing to check; surface that to the user rather than reporting completeness.
+
 4. Present the checklist. Route per the result.
 
 ## Reconciliation output
 
-```
-## Completeness: IQ-XXX
-
-| Source item | Status | Evidence |
-| ----------- | ------ | -------- |
-| [ticket req / plan criterion] | done / partial / missing / needs-manual | path:line or cmd result |
-
-Automated checks: <cmd> ✓ / ✗ …
-Manual (for /verify): …
-Out of scope (skipped): …
-```
+`plan-verifier`'s agent file owns the shape — present what it returns; do not restate its
+format here, or the two copies will drift and the one you paraphrase from will be the stale
+one. The parts you consume downstream: the verdict table, the acceptance-stub result, the
+`needs-manual` items (they become the smoke-test checklist), and the denominator.
 
 ## Routing
 

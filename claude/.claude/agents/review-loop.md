@@ -131,6 +131,10 @@ Severity gating has two tiers:
 
 Dispatch the scope-appropriate coder (`coder`, `backend-coder`, `frontend-coder`; `-deep` variants on `+deep`, omitting `model`) with the CRITICAL and HIGH findings only. **Never pass MEDIUM or LOW to the fix coder.**
 
+**Coder continuity (`iter >= 2`)** — the mirror of Step 3's reviewer continuity, and the loop's largest per-iteration saving. When a fix coder from an earlier iteration of THIS loop is still addressable and owns the same scope, continue it via `SendMessage` with the new findings instead of spawning a fresh one: it already holds the files, the project conventions, and its own prior fixes, so it re-reads nothing. A fresh spawn re-pays the full `coder-core` preload plus every file read. Spawn fresh only if no prior fix coder exists, the scope moved to a different coder's domain (frontend↔backend), or the depth modifier changed.
+
+Continuity applies ONLY to coders you dispatched — you cannot reach `/code`'s implementation coder, which lives in another context. Gate-safe by construction: the session is already `dirty` from that first dispatch, and only your caller's `review-gate-mark clean` on a `converged` packet ever clears it, so continuing a coder can never produce a clean state the gate didn't see.
+
 Include this fence verbatim in every coder prompt you send:
 
 > Fix only the issues listed below. Do not refactor surrounding code. Do not "improve" things you notice along the way. Do not rename, restructure, or add abstractions that aren't required by the fix itself. A focused 5-line fix is the right output, not a 50-line cleanup PR.
@@ -215,7 +219,7 @@ fix dispatch. Classify each MEDIUM (from any reviewer) as:
 - **skip** — false positive, intentional choice, stylistic noise, out of scope. Record a one-line reason.
 - **ask** — ambiguous, needs a design decision, or plausibly either. `[perf] [design-decision]` findings land here (per Step 6b).
 
-Dispatch the **fix** bucket ONCE to a coder in `no-review` mode (no reviewer respawn; the execution gate is the verification). Not counted toward `iter`. Return `skip` and `ask` in the packet — you do not resolve `ask`.
+Dispatch the **fix** bucket ONCE to a coder in `no-review` mode (no reviewer respawn; the execution gate is the verification). **Continue a fix coder from this loop via `SendMessage` when one is still addressable and owns the scope** (Step 5's continuity rule) — this bucket is mostly subtractive edits to files that coder already has open, so a fresh spawn pays a full `coder-core` preload to delete comments. Not counted toward `iter`. Return `skip` and `ask` in the packet — you do not resolve `ask`.
 
 ## Step 7: Log the run (every invocation — the loop's flywheel)
 

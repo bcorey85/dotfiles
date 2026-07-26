@@ -1,8 +1,14 @@
 # Local overrides (not in repo)
 [ -f ~/.zshrc.local ] && source ~/.zshrc.local
 
-# Auto-start tmux
-if command -v tmux &>/dev/null && [ -z "$TMUX" ] && [ -z "$INSIDE_EMACS" ]; then
+# Auto-start tmux.
+#   NO_TMUX=1        escape hatch — launch a clean terminal (e.g. to run herdr,
+#                    which is a tmux REPLACEMENT, not something to nest in tmux)
+#   HERDR_*          herdr spawns $SHELL for every pane; without this guard each
+#                    pane would attach tmux inside herdr. Same role INSIDE_EMACS
+#                    plays for the emacs vterm case.
+if command -v tmux &>/dev/null && [ -z "$TMUX" ] && [ -z "$INSIDE_EMACS" ] &&
+  [ -z "$NO_TMUX" ] && [ -z "${HERDR_TAB_ID}${HERDR_PANE_ID}${HERDR_SOCKET_PATH}" ]; then
   tmux new-session -A -s main
 fi
 

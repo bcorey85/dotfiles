@@ -1,6 +1,6 @@
 ---
 name: eng-spec
-description: Spec a feature — goal-blind research first, then architect exploration, then design decisions resolved with you one at a time and logged to a decision ledger as they land, then a finalized plan. Auto-detects scope (fe/be/fullstack). Optionally writes the spec to disk and/or dispatches coders.
+description: Spec a feature — goal-blind research first, then architect exploration, then design decisions resolved with you one at a time and logged to a decision ledger as they land, then a finalized plan. Detects scope (frontend/backend/fullstack) from the ticket and codebase. Optionally writes the spec to disk and/or dispatches coders.
 allowed-tools:
   [
     Bash,
@@ -20,15 +20,12 @@ allowed-tools:
 
 # Engineering Spec
 
-The one planning lane. Takes a ticket key/URL (fetched in Phase 1), a
-`/pull-ticket` result already in the thread, a pasted description, or a spec
-file.
+The one planning lane. Step 1 lists the inputs it accepts.
 
 **The task directory is the memory; the conversation is not.** Every phase lands
 its output on disk before the next one starts — `00-ticket.md`, `01-questions.md`,
-`02-research.md`, `03-decisions.md`, then `spec.md`. Design resolution is long and
-discursive by design, and a long conversation gets compacted. Anything that lives
-only in the thread when that happens is gone. Write first, then continue.
+`02-research.md`, `03-decisions.md`, then `spec.md`. Write first, then continue;
+step 13 says why.
 
 **The order of the first two phases is the point of this skill.** Research runs
 before anyone — you, the architect, or me — has read the ticket for design.
@@ -36,12 +33,6 @@ Facts land on the table before a goal can shape which facts get looked for. This
 is the only step in this system with a clean result behind it. Do not reorder it,
 do not "just have the architect do the research too," and never let a goal word
 reach the research agent.
-
-## Modifiers
-
-- `be` / `backend` — force backend-only scope
-- `fe` / `frontend` — force frontend-only scope
-- `fs` / `fullstack` — force fullstack scope
 
 ## Phase 1: Ticket
 
@@ -85,8 +76,7 @@ reach the research agent.
 ## Phase 3: Scope
 
 7. **Determine scope** (frontend / backend / fullstack) from the ticket, the
-   research, and the codebase. If a scope hint was passed (`be`/`fe`/`fs`), use
-   it. If genuinely ambiguous, ask. Then state it: "This is [scope]. I'll spin up
+   research, and the codebase. If genuinely ambiguous, ask. Then state it: "This is [scope]. I'll spin up
    [architects]. Sound right?"
 
 8. **Go lean?** Default is NO — run the architects. Skip Phases 4–7 only if ALL
@@ -98,10 +88,10 @@ reach the research agent.
    - No data-model, API-contract, or state-management decisions
    - The whole change is under 5 lines of diff
 
-   **A well-written ticket is NOT a reason to skip the architect.** Tickets
-   describe the PM's intended approach; architects validate that approach against
-   the actual codebase. An "Approach" section is context FOR the architect, not a
-   replacement for one.
+   **A well-written ticket is NOT a reason to skip the architect**, and neither is
+   uncertainty — tickets describe the PM's intended approach, and the architect is
+   what validates it against the actual codebase. An "Approach" section is context
+   FOR the architect, not a replacement for one.
 
    If skipping: confirm explicitly with the user ("This is pure configuration —
    skip the architect and go lean?"), write the plan from existing patterns, and
@@ -113,10 +103,8 @@ are under Constraints.` and `## Approaches Considered and Not Taken` reads
    indistinguishable from one the process forgot to fill.
 
    **If you find yourself wanting to write a real decision block, the go-lean
-   call was wrong.** Back out and dispatch the architect. A decision worth
+   call was wrong.** Back out and dispatch the architect — a decision worth
    recording means at least one of the four conditions above was false.
-
-   When uncertain, run the architect.
 
 ## Phase 4: Architect exploration (explore only — no design yet)
 
@@ -155,11 +143,8 @@ are under Constraints.` and `## Approaches Considered and Not Taken` reads
 
 ## Phase 5: Open the decision ledger (mechanical — no thinking, no asking)
 
-**Do this before the first design question leaves your mouth.** Phase 6 is a long
-conversation and long conversations get compacted; a decision that exists only in
-the thread is a decision you will silently lose, along with the reasoning that
-produced it. The ledger is the fix, and it only works if it exists _before_ the
-talking starts.
+**Do this before the first design question leaves your mouth.** The ledger only
+works if it exists _before_ the talking starts (step 13).
 
 11. **`Write` `03-decisions.md`** into the task directory, from the architect
     briefs alone — every decision point and open question they returned, one
@@ -210,10 +195,13 @@ talking starts.
     one-liner — the finished block, because Phase 7 architects and the saved spec
     both read this file and nothing reconstructs the reasoning later.
 
-    **The ledger is the record; your context is a cache.** If the conversation was
-    compacted — or you are at all unsure what has been settled — re-read
-    `02-research.md` and `03-decisions.md` before continuing. **Never reconstruct a
-    resolved decision from memory, and never re-ask one that is already ticked.**
+    **The ledger is the record; your context is a cache.** Design resolution is
+    long and discursive by design, and a long conversation gets compacted: a
+    decision that exists only in the thread is one you will silently lose, along
+    with the reasoning that produced it. If the conversation was compacted — or you
+    are at all unsure what has been settled — re-read `02-research.md` and
+    `03-decisions.md` before continuing. **Never reconstruct a resolved decision
+    from memory, and never re-ask one that is already ticked.**
 
 14. **Resolve decision points ONE AT A TIME, in prose. Never `AskUserQuestion`
     here.** A multiple-choice modal with a recommended option pre-selected is a
@@ -301,9 +289,29 @@ talking starts.
       contract fixed in step 15 is what makes this safe. A phase stays
       single-layer only when the work genuinely is (migration-only, infra-only).
 
+## Phase 7.5: Write the acceptance contract (with the user, before any coder)
+
+17. **If the ticket has behavioral criteria, write them as tests now** — you and
+    the user, from the ticket's criteria and the plan's `Acceptance Stubs`
+    section. No implementation exists yet, and that is the whole source of the
+    contract's authority — every other check in this system reads code that
+    already exists and inherits its assumptions.
+
+    Put each criterion to the user as one sentence and get their words back before
+    writing the assertion: one you translated alone is your reading of the ticket,
+    already baked into the plan. Write the file with `ACCEPTANCE-CONTRACT` in its
+    first 10 lines — that marker makes it immutable to every agent, you included
+    (`acceptance-contract-gate`). Changing it afterward is the user's job, by hand.
+
+    Name the tests so the runner does NOT collect them yet (`contract_*` where
+    `test_*` is collected, or the project's equivalent). The phase implementing a
+    criterion renames its test into the collected form; that rename is the phase's
+    success criterion, and it is what keeps the suite green while the contract
+    stays written down.
+
 ## Phase 8: User choice
 
-17. **HARD STOP — no spec write, no coder dispatch, until the user answers.**
+18. **HARD STOP — no spec write, no coder dispatch, until the user answers.**
 
     Ask both questions in ONE **AskUserQuestion** call ("Save to disk?" and
     "Implement now?"). The blocking modal is the mechanism that makes this stop
@@ -335,7 +343,7 @@ talking starts.
       dispatch is what triggers the review chain.
     - Later → stop here.
 
-18. **Present summary**: key decisions, file written (if saved), what was
+19. **Present summary**: key decisions, file written (if saved), what was
     implemented (if coded). Remind the user to check Figma if frontend work is
     involved.
 
@@ -350,11 +358,8 @@ The spec has two layers in ONE file: a judgment layer (what a human reads at the
 gate) and an implementation layer (what `/code` executes, in the shared plan
 format so its phase gates work).
 
-**`## Phase Status` is hoisted to the top, above both layers.** It is the one
-section that changes after the spec is written — `/code` ticks it as phases land —
-and the whole point is that opening the file answers "where are the agents?" on
-the first screen, without scrolling past the judgment layer. Everything else in
-`plan-format.md` still applies in full; only the checklist moves.
+**`## Phase Status` is hoisted to the top, above both layers** — the one deviation
+from `plan-format.md`, which otherwise applies in full.
 
 ```markdown
 # Title
@@ -370,10 +375,12 @@ One paragraph on what this accomplishes.
 
 ## Phase Status
 
-<!-- Hoisted here from the Implementation Plan below so a peek at the file shows
-progress immediately. Updated by /code after each phase completes + review passes.
-Source of truth for "which phase is next" across /clear boundaries. Do not delete,
-do not move back down. Lines and risk tags follow plan-format.md exactly. -->
+<!-- Hoisted here from the Implementation Plan below so opening the file answers
+"where are the agents?" on the first screen, without scrolling past the judgment
+layer. It is the one section that changes after the spec is written — /code ticks
+it as phases land — and the source of truth for "which phase is next" across
+/clear boundaries. Do not delete, do not move back down. Lines and risk tags
+follow plan-format.md exactly. -->
 
 - [ ] Phase 0: Contracts — frozen at plan approval (risk: high)
 - [ ] Phase 1: Walking skeleton (risk: low|high)

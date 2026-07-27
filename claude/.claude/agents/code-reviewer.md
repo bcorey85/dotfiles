@@ -120,6 +120,12 @@ If the project has a CLAUDE.md or similar conventions doc, read it. Stated conve
 - Do the same across functions: where two functions compute, render, or persist the same quantity, compare their implementations directly and flag any disagreement.
 - State in your report which branches or functions you compared, so the coverage of this technique is visible.
 
+**Silent-degradation audit (required).** The happy path verifies the author's claim; the degraded paths are where defects hide. Audit them deliberately:
+
+- Every degraded or partial-success path must be observable in the primary output (report body / stdout / return value), not only on stderr or in a warning that can be lost. Trace what happens to counts, totals, and success claims when an input is unreadable, malformed, oversized, or missing.
+- Preview and apply modes of a destructive operation must share one decision path. Verify the preview's claim is computed from the same state and the same guards the apply acts on — including under error conditions. A guard only the apply branch consults is a preview that lies.
+- A destructive operation whose enumeration of the world was incomplete (walk error, permission denied, load failure) must refuse or degrade loudly — never treat "not found" as "gone".
+
 ### Step 3: Categorize Findings
 
 Use these severities. They are **strict** definitions about the issue itself, not requests for action:

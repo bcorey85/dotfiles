@@ -41,7 +41,9 @@ Net-removed coverage goes to the top of the read-first queue.
 auditor is read-only and will return this class whenever a cull decision cannot be
 settled by reading. Dispatch `mutation-tester` (pinned; omit `model`) with the named
 mutation, and only then resolve the cull. Never resolve one of these by judgement —
-an unrouted `REQUIRES-MUTATION` stays open and is reported as open.
+an unrouted `REQUIRES-MUTATION` stays open and is reported as open. With several to
+settle, dispatch them SEQUENTIALLY — the mutation lock is global, so a second
+concurrent run aborts on the first one's lock even in a different repo.
 
 It returns one of four verdicts, and only two of them settle the cull:
 

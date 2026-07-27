@@ -21,8 +21,8 @@ of being resolved by you.
 - `lane`: `eng-spec` | `code` | `none` — plan provenance, pass-through to telemetry only. Absent → `none`.
 - `handoff:` block — schema in `~/.claude/skills/_shared/handoff-block.md`. May be absent (manual `/review`).
 - Modifiers: `+deep` → dispatch the `-deep` variant of every reviewer you spawn (`code-reviewer-deep`, and in Step 6b `security-reviewer-deep` / `perf-reviewer-deep` / `smell-reviewer-deep`) and OMIT `model` (their frontmatter pins Opus). `+fast` → pass `model: "haiku"`.
-- `fix_tier: deep` (set by `/code` on a `(risk: high)` or untagged phase, independently of `+deep`) → the **fix coder** in Step 5 takes its `-deep` variant with `model` omitted. It changes nothing else: reviewers stay at the tier `+deep`/`+fast`/default selected. `+fast` does not override it.
 - Specialist flags (Step 6b): `+sec` / `+perf` / `+smell` force the named specialist pass even when the diff doesn't match its trigger; `no-specialist` suppresses the specialist pass entirely.
+- `reviewers: <domains>` (passed by `/code` from the phase's Phase Status line) → those Step 6b specialists are eligible without a trigger match. Additive only; it can never suppress a domain.
 - `no-review` (fix-first only): dispatch the fix coder, verify via the execution gate, return without a reviewer pass.
 
 ## Step 0: Log the invocation (always, first action)
@@ -69,15 +69,9 @@ The cap check runs before the reviewer dispatch. This ordering is load-bearing.
 reviewer pass wastes that dispatch — `cap-reached` must return before spending
 it.
 
-**Why the cap is per-channel, measured.** It was a single shared budget of 3
-until 2026-07-26. Because Step 6b's specialists fire only AFTER correctness
-converges, a specialist HIGH always re-entered on the LAST remaining slot — so
-a structure finding raised after the fact could consume the round that
-correctness still needed, and no fourth round existed. Observed end to end in
-one phase: iter 1 correctness → iter 2 confirm → iter 3 spent on a `[smell]`
-duplication re-entry whose re-verify never returned; the phase shipped three
-reproducible data-loss defects in the file the packet certified clean. Two
-findings that cannot compete for the same slot must not share a counter.
+**The two counters never share a budget.** Step 6b's specialists fire only after
+correctness converges, so a late structure finding must never be able to consume
+a round correctness still needs.
 
 Steps 3 and 4 return _after_ a reviewer ran and _before_ any coder ran — the
 session stays `dirty` regardless, because only a caller-side mark on a
@@ -147,7 +141,7 @@ Severity gating has two tiers:
 
 ## Step 5: Fix dispatch (CRITICAL / HIGH only)
 
-Dispatch the scope-appropriate coder (`coder`, `backend-coder`, `frontend-coder`; `-deep` variants on `+deep` **or on `fix_tier: deep`**, omitting `model`) with the CRITICAL and HIGH findings only. **Never pass MEDIUM or LOW to the fix coder.**
+Dispatch the scope-appropriate coder (`coder`, `backend-coder`, `frontend-coder`; `-deep` variants on `+deep`, omitting `model`) with the CRITICAL and HIGH findings only. **Never pass MEDIUM or LOW to the fix coder.**
 
 **Coder continuity (`iter >= 2`)** — the mirror of Step 3's reviewer continuity, and the loop's largest per-iteration saving. When a fix coder from an earlier iteration of THIS loop is still addressable and owns the same scope, continue it via `SendMessage` with the new findings instead of spawning a fresh one: it already holds the files, the project conventions, and its own prior fixes, so it re-reads nothing. A fresh spawn re-pays the full `coder-core` preload plus every file read. Spawn fresh only if no prior fix coder exists, the scope moved to a different coder's domain (frontend↔backend), or the depth modifier changed.
 
@@ -196,10 +190,9 @@ Never skip this because the review "looked clean" — model approval without exe
 **Test-intent audit**: NOT run in this loop. It is dispatched outside the loop, in two scoped halves — bug-pinning by `/code`'s phase gate when the phase touched a test file, cull + coverage-net by `/branch-recap` at the Recap closing phase. Never fired automatically by /review or /fix. Do not dispatch `test-intent-reviewer` here.
 
 **Class-closure check (before you may declare convergence).** A quiet round is
-not evidence the class is empty. Measured: a round returning only edge-coverage
-findings was followed, three rounds later, by two separate **data-loss** defects
-in the same code. Severity is not monotonic across iterations, so "findings got
-quieter" is fatigue, not convergence, and it is the exit this check closes.
+not evidence the class is empty. Severity is not monotonic across iterations, so
+"findings got quieter" is fatigue, not convergence — that is the exit this check
+closes.
 
 Scope it to what you actually repaired — this is not a licence to keep looping.
 For each finding in `fixed[]`, ask whether it is **class-shaped**: is it one
@@ -238,9 +231,14 @@ Runs ONCE the main loop passes the execution gate (Step 6), before MEDIUM classi
 
 1. **Skip conditions**: if args contain `no-specialist`, skip entirely and record `specialists: none (suppressed)`. If a domain already ran this loop and returned no findings on its last pass, don't re-run it — track a `specialists-cleared` set across re-entries.
 
-2. **Compute eligibility deterministically** per `~/.claude/skills/_shared/reviewer-domains.md`: match the converged diff's changed paths AND added/removed lines against each domain's globs/regexes (the `smell` domain instead uses that file's diff-SIZE trigger), merging any repo-root `.claude/reviewer-triggers.json` additively. A caller force flag (`+sec`, `+perf`, `+smell`) makes that domain eligible without a match. This is a pure match — never a judgment call about whether the change "feels" security-, perf-, or smell-critical; that judgment is exactly the silent-false-negative failure this trigger exists to remove. If no domain is eligible, record `specialists: none (no match)` and go to Step 6c.
+2. **Compute eligibility** per `~/.claude/skills/_shared/reviewer-domains.md`, which defines three signals whose **union** is the eligible set — each a floor, none a ceiling:
+   - **plan-declared** — a domain named in the `reviewers:` arg `/code` passed from the phase's Phase Status line. This is the PRIMARY signal for `security`, which no longer has a broad diff trigger at all.
+   - **force flag** — `+sec` / `+perf` / `+smell`.
+   - **diff trigger** — that file's globs/regexes matched against the converged diff's changed paths and added/removed lines (the `smell` domain instead uses its diff-SIZE trigger; `perf` additionally requires the repo-capability precondition), merging any repo-root `.claude/reviewer-triggers.json` additively.
 
-3. **Dispatch eligible specialists** — `security-reviewer`, `perf-reviewer`, and/or `smell-reviewer` (their `-deep` variants under `+deep`, omitting `model`; `model: "haiku"` under `+fast`). Launch multiple in a single message (parallel). Pass each ONLY the converged-diff file list as its scope — never let it re-discover — and the relevant `flagged` subset. Do NOT include a category checklist; each agent defines its own calibration (same rule as Step 3).
+   The trigger arm is a pure match — never your judgment about whether the change "feels" security- or perf-critical. **But its absence is not a clearance**: the trigger is deliberately narrow, and the plan declaration is where a security surface gets named. If no signal fires for any domain, record `specialists: none (no match)` and go to Step 6c.
+
+3. **Dispatch eligible specialists** — `security-reviewer`, `perf-reviewer`, and/or **`smell-reviewer-deep`** (smell runs `-deep` by DEFAULT; `+fast` takes the cheap tier. The others take their `-deep` variant under `+deep`, omitting `model`; `model: "haiku"` under `+fast`). Launch multiple in a single message (parallel). Pass each ONLY the converged-diff file list as its scope — never let it re-discover — and the relevant `flagged` subset. Do NOT include a category checklist; each agent defines its own calibration (same rule as Step 3).
 
 4. **Fold findings into the existing packet** — do NOT open a parallel findings stream:
    - `[perf]`-tagged findings → collect into `perf[]` with their `Principle:` line. On the domain's FIRST pass this loop only, append each to `~/vault/91. Areas/Backend Performance/Backend Perf - Findings Log.md` via Read + Edit (Write it with a `# Backend Perf - Findings Log` heading if absent). **This log is the only write you are permitted** (see the bottom fence). Format, one line per finding:
@@ -290,11 +288,7 @@ returned `cap-reached`; `none` = nothing you fixed was class-shaped; `n-a` =
 `fixed[]` was empty. Never omit it — an absent field and a `none` field read
 identically in the log, which defeats the reason for logging it.
 
-`smells` = `[smell]` findings the smell specialist returned this run (0 when it
-didn't fire) — the dial that replaced second-draft telemetry when the coder
-self-sweep was retired (2026-07-16).
-
-`fixed`/`skipped_fp`/`ask` are the MEDIUM bucket counts when classification ran, else 0. `culled` = diff-added tests deleted this run — 0 from 2026-07-17 on (the `[test-fluff]` channel retired into `test-intent-reviewer`'s branch-exit cull); field kept for schema stability. `comment_noise` = `[comment-noise]` fixes applied — the same dial for narration-comment sprawl. If the script fails, mention it and continue — telemetry never blocks.
+`smells` = `[smell]` findings the smell specialist returned this run (0 when it didn't fire). `fixed`/`skipped_fp`/`ask` are the MEDIUM bucket counts when classification ran, else 0. `culled` = diff-added tests deleted this run; always 0 (kept for schema stability — the cull lives in `test-intent-reviewer`'s branch-exit half). `comment_noise` = `[comment-noise]` fixes applied. If the script fails, mention it and continue — telemetry never blocks.
 
 ## Return packet (the ONLY thing the orchestrator pays for)
 

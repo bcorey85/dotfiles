@@ -72,9 +72,29 @@ context="$git_dir/hunk-agent-context.json"
 # --agent-notes: hunk hides rationale boxes until you press `a`, which makes
 #   them useless -- a note you have to remember to reveal is a note you read
 #   after forming an opinion, if at all. `a` still toggles them back off.
-# --wrap: rationale boxes and long lines are otherwise truncated at the pane
-#   edge with no indication that text was cut. `--no-wrap` restores truncation.
-args=(diff --watch --theme nord --agent-notes --wrap)
+# NOT --wrap, despite truncation being silent. Wrapping is fine on a normal
+#   diff, but it black-screens the TUI outright on a large untracked set -- a
+#   worktree with ~50 untracked files including a few 40-65k-char JSONL lines
+#   renders nothing at all and stops responding to `q`. Reproduced against
+#   round3/arm3; --no-wrap and --exclude-untracked each clear it, and a single
+#   65k line on its own is fine, so the trigger is total wrapped row count, not
+#   line length. `w` toggles wrapping per-session from the View menu, which is
+#   the right place for it: opt in on the one hunk that needs it.
+args=(diff --watch --theme nord --agent-notes)
+
+# Fall back to the last commit when there is nothing unstaged. `hunk diff`
+# follows `git diff` semantics -- unstaged only -- which is deliberate: staging
+# a file in neogit makes it leave the review pane, so the index works as a free
+# review ledger. But the moment the tree is fully committed that same rule
+# renders "No files match the current filter" on a blank screen, which reads as
+# a hung TUI rather than as an empty queue. Showing HEAD is the useful answer to
+# "review what just happened", and the message says which of the two you got.
+if git diff --quiet 2>/dev/null && git diff --cached --quiet 2>/dev/null; then
+    printf 'hunk-review: working tree clean -- showing the last commit (%s)\n' \
+        "$(git log -1 --format='%h %s' 2>/dev/null)" >&2
+    args=(show HEAD --theme nord --agent-notes)
+fi
+
 [ -f "$context" ] && args+=(--agent-context "$context")
 
 # Start the mirror before the TUI so a comment written in the first seconds is

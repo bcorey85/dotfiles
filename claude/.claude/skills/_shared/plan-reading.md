@@ -5,7 +5,7 @@ shape. This file owns how it is READ. Lives outside the guarded planning
 budget deliberately: it constrains agents, not the plan.
 
 Consumers: `/code` (step 2 orchestrator read, step 4 coder dispatch),
-`plan-verifier` at `scope: phase`, `coder-core` (workflow step 1).
+`coder-core` (workflow step 1).
 
 ## The rule
 
@@ -39,9 +39,7 @@ read, not the attention.
 `Phase 0: Contracts` IS the coordination surface between slices, and
 `plan-format.md` states it directly: "front-load only the surface between
 slices; internal design stays inside its slice." A sibling phase's internals
-are therefore, by construction, not your input. Measured on a representative
-12-phase plan the skipped sections are ~60% of the file — paid once per reader
-per phase, so ~35 times across a ticket.
+are therefore, by construction, not your input.
 
 ## The two fences
 

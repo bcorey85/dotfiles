@@ -22,6 +22,11 @@ and the human skimming phases.
   the top of the file (above the judgment layer) so a peek shows progress
   immediately. In a standalone plan it sits where the template below puts it.
 - Every Phase Status line carries a `(risk: low|high)` tag.
+- A phase MAY add `(reviewers: security[, perf])` — the PRIMARY dispatch signal
+  for `security-reviewer`, which no longer infers a security surface from paths
+  or keywords (`reviewer-domains.md` says why). Declare it when the phase changes
+  authz/tenancy, opts out of a guard, or handles secrets. Additive only: omitting
+  it never suppresses a forced pass.
 - Phases are VERTICAL slices (each independently verifiable end-to-end),
   never horizontal layers.
 - Keep each phase's diff signable in one sitting — past ~8–10 semantic files
@@ -86,7 +91,7 @@ don't exist.
 
 - [ ] Phase 0: Contracts — frozen at plan approval (risk: high)
 - [ ] Phase 1: Walking skeleton — thinnest path through every Phase 0 contract (risk: low|high)
-- [ ] Phase 2: [name] (risk: low|high)
+- [ ] Phase 2: [name] (risk: low|high) (reviewers: security)
 
 <!-- Mandatory closing phases (closing-phases.md), renumbered after the last feature phase: -->
 
@@ -161,7 +166,7 @@ Automated Verification must include the stub count command returning zero.
 
 - [ ] **Manual-verified**: [scenario] — "hit [endpoint/UI flow], confirm [expected behavior]"
 
-**All phases: an agent verifier executes these items after the drift gate, tagging each `agent-verified` (with evidence) or `human-only`. High-risk phases: human sign-off reviews the evidence plus human-only items before proceeding. Low-risk phases: the human-only remainder defers to the `/verify` review packet before the PR opens.**
+**All phases: `/verify` executes these at branch end, tagging each `agent-verified` (with evidence) or `human-only`. High-risk phases still take human sign-off at their boundary — from `/code`'s review queue.**
 
 ---
 

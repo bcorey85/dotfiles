@@ -1,66 +1,78 @@
-# Cross-Cutting Reviewer Domains (deterministic trigger)
+# Cross-Cutting Reviewer Domains (dispatch triggers)
 
 Canonical trigger definitions for the single-domain specialist reviewers
-(`security-reviewer`, `perf-reviewer`, `smell-reviewer`). `review-loop` reads this file to decide,
-**deterministically — no judgment call**, whether a converged diff touches a
-domain's surface and therefore warrants a specialist pass. Keeping the patterns
-here (not inline in `review-loop`) makes them one editable, portable source.
+(`security-reviewer`, `perf-reviewer`, `smell-reviewer`). `review-loop` reads this
+file to decide whether a converged diff warrants a specialist pass.
 
-## The signal
+## Eligibility = union of three signals
 
-A domain is **eligible** for a converged diff when EITHER holds:
+A domain is eligible when ANY holds. Each is a floor, none is a ceiling.
 
-1. **Path match** — a changed file path matches one of the domain's path globs.
-2. **Content match** — an added/removed diff line matches one of the domain's
-   content regexes (case-insensitive).
+1. **Plan-declared** — the phase carries the domain in its `reviewers:` field
+   (`plan-format.md`). PRIMARY signal for `security`.
+2. **Force flag** — `+sec` / `+perf` / `+smell`.
+3. **Diff trigger** — the rules below match the converged diff.
 
-Compute it from the settled diff, e.g.:
+`no-specialist` suppresses the whole pass. Compute matches from the settled diff:
 
 ```bash
-# paths
 git diff --name-only HEAD | rg -i '<domain path glob, alternated>'
-# content (added/removed lines only)
-git diff HEAD -U0 | rg '^[+-]' | rg -iE '<domain content regex>'
+git diff HEAD -U0 | rg '^\+' | rg -E '<domain content regex>'   # -i only where stated
 ```
 
-Either non-empty → the domain is eligible. Eligibility is a floor, never a
-ceiling: a caller-supplied force flag (`+sec` / `+perf` / `+smell`) makes a domain
-eligible even with no match; `no-specialist` suppresses the pass entirely.
+## security
 
-**Exception — the `smell` domain triggers on diff SIZE, not paths/content**
-(structure smells have no path or keyword signature; volume is the risk proxy).
-See its section below.
+The diff trigger is narrow by design: endpoints inherit auth from a global
+subsystem in every mainstream framework, so "forgot the auth check on a new
+endpoint" is not the live failure mode — **disabling the inherited protection
+is.** Declare `reviewers: security` in the plan for anything else.
 
-## Default patterns (generic, portable — no repo names, no single stack)
+- **Auth opt-out markers** (content, case-SENSITIVE — framework tokens, not prose):
+  `@Public\(|AllowAny\b|permission_classes\s*=\s*\[\s*\]|@csrf_exempt|csrf_exempt\b|skip_before_action|permitAll\(|\[AllowAnonymous\]|@SkipAuth|@NoAuth|authenticate:\s*false|requiresAuth:\s*false|auth:\s*false`
+- **The auth subsystem itself** (paths): `**/auth/**`, `**/*auth*`, `**/session*`,
+  `**/middleware/**`, `**/guards/**`, `**/*polic*`, `**/*permission*`,
+  `**/*rbac*`, `**/*crypto*`, `**/*.env*`, `**/secrets*`
 
-Defaults cover the endpoint/data surfaces of TS/Node, Django, C#/.NET, and Go.
-The endpoint-layer globs (`routes`, `controllers`, `handlers`, `views`, `api`)
-are deliberately part of the **security** set: the highest-value security
-findings are by _omission_ (a missing auth/authz check adds no security-flavored
-line for the content regex to catch), so the path side must cover where
-endpoints live, not just where auth code lives.
+Endpoint/route/controller/handler/api/serializer/migration paths are NOT triggers.
+A codebase with a hand-rolled authz layer reinstates pattern dispatch for itself
+via the per-repo extension below.
 
-### security
+## perf
 
-- **Path globs**: `**/auth/**`, `**/*auth*`, `**/session*`, `**/middleware/**`,
-  `**/routes/**`, `**/controllers/**`, `**/*controller*`, `**/handlers/**`,
-  `**/*handler*`, `**/api/**`, `**/views*`, `**/*viewset*`, `**/serializers*`,
-  `**/migrations/**`, `**/*.sql`, `**/*polic*`, `**/*permission*`, `**/*rbac*`,
-  `**/*crypto*`, `**/*security*`, `**/*.env*`, `**/secrets*`
-- **Content regex**:
-  `password|secret|token|jwt|api[_-]?key|crypto|hash|encrypt|decrypt|authoriz|authenticat|permission|\brole\b|tenant|\brls\b|policy|grant\b|cors|csrf|sanitiz|escap|\beval\(|\bexec\(|deserializ|redirect|SELECT\s.*WHERE|INSERT\s+INTO|is[_-]?admin|csrf_exempt|AllowAny|permission_classes|login_required|\[Authorize|AllowAnonymous|HandleFunc|\bmux\b|gin\.|echo\.`
+Two conditions, **BOTH** required.
 
-### perf
+### 1. Repo capability — does a query surface exist at all?
 
-- **Path globs**: `**/*.sql`, `**/migrations/**`, `**/models/**`, `**/models*`,
+Compute once per repo. None present → `perf` is not diff-eligible; skip it. A plan
+declaration or `+perf` still forces the pass.
+
+```bash
+rg -l -m1 -i 'prisma|typeorm|sequelize|drizzle|mongoose|knex|sqlalchemy|django|psycopg|mysql|sqlite3|gorm|sqlx|pgx|entity-?framework|hibernate|activerecord' \
+  package.json go.mod requirements*.txt pyproject.toml *.csproj Gemfile pom.xml 2>/dev/null
+ls -d migrations db/migrate prisma alembic 2>/dev/null
+```
+
+### 2. Diff match — path or content
+
+- **Paths**: `**/*.sql`, `**/migrations/**`, `**/models/**`, `**/models*`,
   `**/managers*`, `**/repositor*/**`, `**/*repository*`, `**/*.query.*`,
   `**/*dao*`, `**/entities/**`, `**/schema*`
-- **Content regex**:
-  `SELECT\s|\.find\(|\.findAll\(|\.query\(|\.aggregate\(|createQueryBuilder|await .*\bfor\b|for .*await|forEach\(.*await|\.map\(.*await|Promise\.all|LIMIT|OFFSET|JOIN\s|include:|eager|lazy|\.count\(|objects\.|select_related|prefetch_related|values_list|annotate\(|bulk_create|\.Include\(|\.ThenInclude\(|ToListAsync|IQueryable|FromSql|SaveChanges|Task\.WhenAll|\.Query\(|\.QueryRow\(|\.Exec\(|rows\.Next|Preload\(|gorm\.`
+- **Content, case-SENSITIVE** — SQL keywords. Matching these case-insensitively is
+  what made ordinary English fire the gate:
+  `\bSELECT\s|\bINSERT\s+INTO\b|\bUPDATE\s+\w+\s+SET\b|\bDELETE\s+FROM\b|\bJOIN\s+\w|\bGROUP\s+BY\b|\bORDER\s+BY\b|\bLIMIT\s+\d|\bOFFSET\s+\d`
+- **Content, case-insensitive** — ORM/driver constructs, each anchored to a real
+  call site rather than a bare English word:
+  `\.findMany\(|\.findAll\(|\.findOne\(|createQueryBuilder|select_related|prefetch_related|values_list\(|\.annotate\(|bulk_create|\.objects\.(all|filter|get|exclude)\(|\.Include\(|\.ThenInclude\(|ToListAsync|IQueryable|FromSql|SaveChanges|\.Preload\(|gorm\.|db\.(Query|QueryRow|Exec)\(|sqlx\.|pgx\.|forEach\([^)]*await|\.map\([^)]*await`
 
-### smell
+Deliberately NOT triggers (each matched prose or non-DB code): bare `LIMIT`,
+`OFFSET`, `JOIN\s`, `eager`, `lazy`, `include:`, `\.count\(`, `\.find\(`,
+`\.query\(`, `objects\.`, `Promise\.all`, `await .*\bfor\b`, `rows\.Next`,
+unqualified `\.Exec\(`.
 
-Size trigger, not path/content — eligible when EITHER holds on the converged diff:
+## smell
+
+Size trigger, not path/content — structure smells have no keyword signature, and
+volume is the risk proxy. Eligible when EITHER holds on the converged diff:
 
 1. **≥ 40 added lines** across source files (sum of column 1 from
    `git diff HEAD --numstat`, excluding lockfiles and generated files).
@@ -72,9 +84,9 @@ Size trigger, not path/content — eligible when EITHER holds on the converged d
 git diff HEAD --numstat | rg -v 'lock|generated|snapshot' | awk '{s+=$1} END {print s}'
 ```
 
-Test-only diffs (every changed file a test file) are NOT eligible — test
-structure belongs to the test-intent gates, not this domain. Force with `+smell`; suppressed by `no-specialist`
-like the others.
+Test-only diffs (every changed file a test file) are NOT eligible — test structure
+belongs to the test-intent gates. Force with `+smell`; suppressed by
+`no-specialist`.
 
 ## Per-repo extension
 
@@ -96,7 +108,4 @@ at its root:
 }
 ```
 
-`review-loop` merges these additively with the defaults above. Absent the file,
-defaults alone apply. This is how a codebase teaches the trigger its own
-security surface (e.g. an RLS/tenant-isolation mechanism) or query-shape surface
-without editing any global file.
+`review-loop` merges these additively.

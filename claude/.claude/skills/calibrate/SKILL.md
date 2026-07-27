@@ -26,7 +26,8 @@ git rev-parse --show-toplevel && git status --porcelain
 - Not a git repo → stop.
 - **Lock file exists** (`~/.claude/calibration-lock.json`) → STOP. A previous
   run mutated a file and never restored it. Restore from the lock's
-  `backup_path` first (step 5), then delete the lock. Never seed on top of an
+  `backup_path` first (step 5), then delete the lock — and if a gate blocks that
+  deletion, report it and stop rather than reaching for another mechanism. Never seed on top of an
   unrestored seed. The lock is shared with `mutation-tester` (distinguished by
   `.kind`) on purpose — neither may seed over the other's stranded mutation.
 - Empty diff → stop: "nothing to calibrate; run this on a converged branch
@@ -116,7 +117,11 @@ Then VERIFY the tree is back, by hash, not by eyeball:
 git diff -- <target> | sha256sum | cut -c1-16   # must equal pre_hash
 ```
 
-- Matches → `rm ~/.claude/calibration-lock.json`.
+- Matches → `rm ~/.claude/calibration-lock.json`. **If a safety gate blocks that
+  removal, you are done: the tree is already restored, so report the result, say
+  the lock removal was blocked, and print the command for the user. Never retry it
+  by another mechanism — not `unlink`, not python, not a rewritten flag set.** The
+  lock is bookkeeping; the tree is already safe without it.
 - **Does not match** → STOP and tell the user, loudly, with the backup path and
   the target path. Do not delete the lock. Do not continue. A mismatch means
   their working tree is not what they think it is, and that outranks every

@@ -69,9 +69,12 @@ reach the research agent.
      inventories what is _there_, factually, with `file:line` refs, and writes
      `02-research.md`.
 
-6. **Hand `02-research.md` to the user and stop.** Let them read it before either
-   of you has proposed anything. This pause is not a formality — it is the only
-   moment in the process where the facts are not yet serving an argument.
+6. **Walk the user through `02-research.md`, one section at a time, in the
+   document's own order — never a goal-curated selection.** Present a section,
+   then stop and wait; do not bundle the next section into the same turn. Answer
+   questions from the document. Log whatever the exchange settles (corrected
+   premise, constraint, ruled-out direction, spawned decision point): create
+   `03-decisions.md` now if needed; Phase 5 appends to it. Propose nothing yet.
 
 ## Phase 3: Scope
 
@@ -99,8 +102,7 @@ reach the research agent.
    dispatch is what triggers the review chain. In the saved spec,
    `## Decisions` reads `None — pure configuration; the constraints that forced it
 are under Constraints.` and `## Approaches Considered and Not Taken` reads
-   `N/A — go-lean path (no architect ran)`. A dangling empty section is
-   indistinguishable from one the process forgot to fill.
+   `N/A — go-lean path (no architect ran)`.
 
    **If you find yourself wanting to write a real decision block, the go-lean
    call was wrong.** Back out and dispatch the architect — a decision worth
@@ -146,9 +148,10 @@ are under Constraints.` and `## Approaches Considered and Not Taken` reads
 **Do this before the first design question leaves your mouth.** The ledger only
 works if it exists _before_ the talking starts (step 13).
 
-11. **`Write` `03-decisions.md`** into the task directory, from the architect
-    briefs alone — every decision point and open question they returned, one
-    checklist line each, in the order you intend to raise them:
+11. **`Write` `03-decisions.md`** (append, if the walkthrough created it) into
+    the task directory, from the architect briefs — every decision point and open
+    question they returned, one checklist line each, in the order you intend to
+    raise them:
 
     ```markdown
     # Design Decisions — <slug>
@@ -182,8 +185,8 @@ works if it exists _before_ the talking starts (step 13).
 12. **Present understanding FIRST**, before any decisions: current state, the
     patterns found (ask the user to confirm they are the RIGHT ones to follow),
     constraints, and the architect's **three counter-primed approaches**. The
-    user needs a chance to catch a wrong pattern — and to see what was ruled out
-    on their behalf — before either propagates into every downstream decision.
+    user needs a chance to catch a wrong pattern before it propagates into every
+    downstream decision.
     Whatever this exchange settles — a rejected direction, a corrected premise, a
     constraint the user names — goes under `## Direction & Constraints` in the
     ledger _as it lands_, not later.
@@ -192,13 +195,10 @@ works if it exists _before_ the talking starts (step 13).
     decision resolves, `Edit` `03-decisions.md`: append the full four-field block
     (`~/.claude/skills/_shared/design-decision-format.md`) under `## Resolved`,
     tick its queue line, bump the `Status:` count. Not a note-to-self, not a
-    one-liner — the finished block, because Phase 7 architects and the saved spec
-    both read this file and nothing reconstructs the reasoning later.
+    one-liner — the finished block: Phase 7 architects and the saved spec read
+    this file.
 
-    **The ledger is the record; your context is a cache.** Design resolution is
-    long and discursive by design, and a long conversation gets compacted: a
-    decision that exists only in the thread is one you will silently lose, along
-    with the reasoning that produced it. If the conversation was compacted — or you
+    **The ledger is the record; your context is a cache.** If the conversation was compacted — or you
     are at all unsure what has been settled — re-read `02-research.md` and
     `03-decisions.md` before continuing. **Never reconstruct a resolved decision
     from memory, and never re-ask one that is already ticked.**
@@ -226,8 +226,7 @@ works if it exists _before_ the talking starts (step 13).
     **Split the check out of the decision.** When a decision contains a claim
     shaped like _"we know X because we looked at Y"_ — does this record exist? is
     this the same user? is this process still alive? is this value unique? — that
-    check is its own decision. Do not let it ride along as a subordinate clause;
-    every failure this system has ever shipped lost it exactly there. Ask it as
+    check is its own decision. Do not let it ride along as a subordinate clause. Ask it as
     its own question. (If you want it attacked, that is what `/falsify` is for —
     you invoke it, on a claim you name. It is not a gate and it does not run
     itself.)
@@ -252,9 +251,8 @@ works if it exists _before_ the talking starts (step 13).
     back to a fresh dispatch with its brief verbatim, `02-research.md`, and
     `03-decisions.md` — the ledger is written to make that fallback lossless.
 
-    Send the ledger **by path, and by path only**. Re-typing the decisions into
-    the dispatch prompt from your context is exactly the compaction-lossy move the
-    ledger exists to prevent, and the two copies will not agree.
+    Send the ledger **by path, and by path only**. Re-typing decisions from context is the
+    compaction-lossy move the ledger exists to prevent.
 
     **Fullstack ordering**: finalize `backend-architect` first — its plan must
     include a clearly defined **API contract** (endpoints, methods,
@@ -293,13 +291,23 @@ works if it exists _before_ the talking starts (step 13).
 
 17. **If the ticket has behavioral criteria, write them as tests now** — you and
     the user, from the ticket's criteria and the plan's `Acceptance Stubs`
-    section. No implementation exists yet, and that is the whole source of the
-    contract's authority — every other check in this system reads code that
-    already exists and inherits its assumptions.
+    section. No implementation exists yet — that is the source of the contract's
+    authority.
 
     Put each criterion to the user as one sentence and get their words back before
     writing the assertion: one you translated alone is your reading of the ticket,
-    already baked into the plan. Write the file with `ACCEPTANCE-CONTRACT` in its
+    already baked into the plan.
+
+    **Damage-path criteria are part of the contract.** Sweep the failure surface
+    before writing: every input read (unreadable, malformed, oversized, missing),
+    every destructive or preview/apply operation acting on an incomplete view.
+    Where the ticket is silent on what the feature must DO on such a path, put
+    the missing criterion to the user as its own one-sentence question —
+    damage-path policy is the ticket-owner's call, never defaulted. "Out of
+    scope" is an answer, logged under `## Direction & Constraints`; silence is
+    not.
+
+    Write the file with `ACCEPTANCE-CONTRACT` in its
     first 10 lines — that marker makes it immutable to every agent, you included
     (`acceptance-contract-gate`). Changing it afterward is the user's job, by hand.
 
@@ -314,8 +322,7 @@ works if it exists _before_ the talking starts (step 13).
 18. **HARD STOP — no spec write, no coder dispatch, until the user answers.**
 
     Ask both questions in ONE **AskUserQuestion** call ("Save to disk?" and
-    "Implement now?"). The blocking modal is the mechanism that makes this stop
-    unskippable; asked as prose, it has been skipped before. Presenting the plan
+    "Implement now?"). The blocking modal is what makes this stop unskippable. Presenting the plan
     in conversation is fine. Writing the spec or dispatching coders before the
     answers is NOT.
 

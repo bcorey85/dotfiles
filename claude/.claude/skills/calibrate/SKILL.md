@@ -38,9 +38,12 @@ defect seeded into already-broken code measures nothing.
 
 ## Step 1: Pick the target
 
-From `git diff --name-only`, choose ONE changed file with real logic (skip
-docs, lockfiles, pure config). Prefer a file the loop passed clean — that is
-exactly the population whose clean verdict you are testing.
+From `git diff --name-only` AND `git ls-files --others --exclude-standard`,
+choose ONE changed file with real logic (skip docs, lockfiles, pure config).
+Untracked files count and are often the BEST target: a new module is code the
+loop reviewed as a whole, with no prior version to diff against, which is where
+a reviewer is most likely to miss something. Prefer a file the loop passed clean
+— that is exactly the population whose clean verdict you are testing.
 
 ## Step 2: Seed one defect
 
@@ -67,8 +70,12 @@ in a row — a reviewer can be good at one class and blind to another):
 ```bash
 mkdir -p ~/.claude/calibration
 cp <target> ~/.claude/calibration/$(basename <target>).bak
-git diff -- <target> | sha256sum | cut -c1-16   # pre-mutation diff hash
+sha256sum <target> | cut -c1-16   # pre-mutation hash of the FILE
 ```
+
+Hash the file's CONTENT, never `git diff -- <target>`: for an untracked file the
+diff is empty both before and after seeding, so a diff hash matches itself and
+"verified restored" would be reported over a file still carrying the seed.
 
 ```bash
 jq -n --arg f "<target>" --arg b "$HOME/.claude/calibration/$(basename <target>).bak" \
@@ -114,7 +121,7 @@ would destroy the real uncommitted work in that file alongside the seed).
 Then VERIFY the tree is back, by hash, not by eyeball:
 
 ```bash
-git diff -- <target> | sha256sum | cut -c1-16   # must equal pre_hash
+sha256sum <target> | cut -c1-16   # must equal pre_hash
 ```
 
 - Matches → `rm ~/.claude/calibration-lock.json`. **If a safety gate blocks that

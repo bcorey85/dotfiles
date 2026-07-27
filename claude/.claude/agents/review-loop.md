@@ -63,23 +63,6 @@ each iteration:
   6. increment THIS round's counter (iter or spec_iter), repeat
 ```
 
-The cap check runs before the reviewer dispatch. This ordering is load-bearing.
-
-**Why step 1 precedes step 2**: discovering the cap only after another
-reviewer pass wastes that dispatch — `cap-reached` must return before spending
-it.
-
-**The two counters never share a budget.** Step 6b's specialists fire only after
-correctness converges, so a late structure finding must never be able to consume
-a round correctness still needs.
-
-Steps 3 and 4 return _after_ a reviewer ran and _before_ any coder ran — the
-session stays `dirty` regardless, because only a caller-side mark on a
-`converged` packet ever writes `clean`. That is deliberate fail-closed
-behavior: a plan-impact or blocker return means the finding is unresolved, and
-the commit stays blocked until a loop actually converges. The same holds for
-an interrupted or crashed loop: no packet, no mark, gate stays closed.
-
 ## Step 1: Parse args
 
 - **Iteration counters — two channels, two budgets.** Both arrive in args and both are returned in the packet; a caller re-entering the loop passes back what it received.
@@ -106,19 +89,19 @@ an interrupted or crashed loop: no packet, no mark, gate stays closed.
 
 `git diff --name-only HEAD` alone misses untracked files — the most common case right after a coder dispatch.
 
-**Second-order supplement (both paths)**: From the handoff `change` lines (or the diff), list every exported symbol whose signature, return type, or name changed. For each, run LSP find-references (fall back to `rg` for untyped code) and collect call sites OUTSIDE the current scope. Append those files to the reviewer's scope tagged "out-of-scope caller — check call-site compatibility only". This is a targeted expansion to catch the coder's most characteristic miss (a forgotten caller in a file it didn't touch); it is NOT an invitation to re-review unchanged code. Run it on `iter=1` and manual invocations only; on `iter >= 2` limit it to symbols the fix diff itself changed.
+**Second-order supplement (both paths)**: From the handoff `change` lines (or the diff), list every exported symbol whose signature, return type, or name changed. For each, run LSP find-references (fall back to `rg` for untyped code) and collect call sites OUTSIDE the current scope. Append those files to the reviewer's scope tagged "out-of-scope caller — check call-site compatibility only". It is NOT an invitation to re-review unchanged code. Run it on `iter=1` and manual invocations only; on `iter >= 2` limit it to symbols the fix diff itself changed.
 
 ## Step 3: Dispatch code-reviewer subagent(s)
 
-**Reviewer continuity (`iter >= 2`)**: when this is a re-review inside the same fix loop (handoff has `prior-issues`) and the previous iteration's reviewer is still addressable, do NOT spawn a fresh reviewer — continue it via `SendMessage` with the handoff block. It already holds the context of its earlier review, so it verifies fix-by-fix without re-reading the scope. Spawn fresh only if: no prior reviewer exists, the depth modifier changed, or the split boundaries changed.
+**Reviewer continuity (`iter >= 2`)**: when this is a re-review inside the same fix loop (handoff has `prior-issues`) and the previous iteration's reviewer is still addressable, do NOT spawn a fresh reviewer — continue it via `SendMessage` with the handoff block. Spawn fresh only if: no prior reviewer exists, the depth modifier changed, or the split boundaries changed.
 
-**Split threshold — parallel reviewers only when BOTH hold**: more than 5 files in scope AND a substantial combined diff (~300+ changed lines; check `git diff --stat`). A many-file but small diff (rename ripple, config touches) is one reviewer's job — a second spawn doubles cost without adding coverage.
+**Split threshold — parallel reviewers only when BOTH hold**: more than 5 files in scope AND a substantial combined diff (~300+ changed lines; check `git diff --stat`). A many-file but small diff (rename ripple, config touches) is one reviewer's job.
 
 **When splitting**, choose the largest natural boundary: frontend vs backend; source vs tests; two unrelated subsystems; rules/config vs runtime code. Pick the split that minimizes overlap. Launch both in a single message with multiple Agent tool calls.
 
 Pass each reviewer: the exact file list it owns (never let it rediscover scope), and the relevant subsets of `prior-issues` and `flagged`.
 
-Do NOT include a category checklist in the dispatch prompt. The `code-reviewer` agent file defines its own calibration — a flat category list reads as a quota and re-opens the noise channels calibration closes. Pass only scope and context the agent cannot discover itself.
+Do NOT include a category checklist in the dispatch prompt. The `code-reviewer` agent file defines its own calibration. Pass only scope and context the agent cannot discover itself.
 
 ## Step 4: Classify the reviewer output
 
@@ -143,7 +126,7 @@ Severity gating has two tiers:
 
 Dispatch the scope-appropriate coder (`coder`, `backend-coder`, `frontend-coder`; `-deep` variants on `+deep`, omitting `model`) with the CRITICAL and HIGH findings only. **Never pass MEDIUM or LOW to the fix coder.**
 
-**Coder continuity (`iter >= 2`)** — the mirror of Step 3's reviewer continuity, and the loop's largest per-iteration saving. When a fix coder from an earlier iteration of THIS loop is still addressable and owns the same scope, continue it via `SendMessage` with the new findings instead of spawning a fresh one: it already holds the files, the project conventions, and its own prior fixes, so it re-reads nothing. A fresh spawn re-pays the full `coder-core` preload plus every file read. Spawn fresh only if no prior fix coder exists, the scope moved to a different coder's domain (frontend↔backend), or the depth modifier changed.
+**Coder continuity (`iter >= 2`)**: when a fix coder from an earlier iteration of THIS loop is still addressable and owns the same scope, continue it via `SendMessage` with the new findings instead of spawning a fresh one. Spawn fresh only if no prior fix coder exists, the scope moved to a different coder's domain (frontend↔backend), or the depth modifier changed.
 
 Continuity applies ONLY to coders you dispatched — you cannot reach `/code`'s implementation coder, which lives in another context. Gate-safe by construction: the session is already `dirty` from that first dispatch, and only your caller's `review-gate-mark clean` on a `converged` packet ever clears it, so continuing a coder can never produce a clean state the gate didn't see.
 
@@ -155,7 +138,7 @@ Include this fence verbatim in every coder prompt you send:
 >
 > If a listed issue turns out to be a false positive on inspection, skip it and report why. Do not "fix" issues that aren't actually broken just because the reviewer flagged them.
 
-Record every resolved finding into `fixed[]` as `{severity, finding, file_line}` — this is what the wrapper renders under "Findings by severity". A CRITICAL/HIGH that the loop repairs but never names is a silent repair, and silent repairs are how the loop loses the user's trust.
+Record every resolved finding into `fixed[]` as `{severity, finding, file_line}` — this is what the wrapper renders under "Findings by severity".
 
 **PLAN-IMPACT pass-through**: scan each coder report for a `PLAN-IMPACT:` block (`coder-core` requires `PLAN-IMPACT: yes` as the report's last line when one exists). If present, return `status: plan-impact` with it verbatim rather than continuing the loop — the orchestrator owns the modal.
 
@@ -171,10 +154,9 @@ a. **`/cc` entries** — inline comments the user authored in Neovim (`path`, `l
 b. **A `/review` handoff** — the issues list in args.
 c. **The conversation** — findings discussed upstream, passed in args.
 
-Categorize by which coder owns the file (frontend vs backend, or a single `coder` in non-web repos), launch them in parallel in ONE message with multiple Agent tool calls, and include the same verbatim fence from step 5. Build `prior-issues` (`issue` / `status: fixed|skipped|partial` / `file`) so the verification reviewer checks "did these fixes take?" before scanning for new issues — that scoping is the loop's main token saving.
+Categorize by which coder owns the file (frontend vs backend, or a single `coder` in non-web repos), launch them in parallel in ONE message with multiple Agent tool calls, and include the same verbatim fence from step 5. Build `prior-issues` (`issue` / `status: fixed|skipped|partial` / `file`) so the verification reviewer checks "did these fixes take?" before scanning for new issues.
 
-**Coder-report post-processing (both sub-paths)**: after every fix-first coder dispatch — before entering the loop AND before returning under `no-review` — process each coder report exactly as step 5 does: record resolved findings into `fixed[]` and run the **PLAN-IMPACT pass-through** (scan for a `PLAN-IMPACT:` block; if present, return `status: plan-impact` with it verbatim and dispatch nothing further — do not enter the loop, do not return `converged`). Fix-first is the path where a coder acts before any reviewer sees the diff, so it is the likeliest source of a coder-discovered plan-impact; swallowing it here would violate the plan-impact-aborts-first invariant.
-
+**Coder-report post-processing (both sub-paths)**: after every fix-first coder dispatch — before entering the loop AND before returning under `no-review` — process each coder report exactly as step 5 does: record resolved findings into `fixed[]` and run the **PLAN-IMPACT pass-through** (scan for a `PLAN-IMPACT:` block; if present, return `status: plan-impact` with it verbatim and dispatch nothing further — do not enter the loop, do not return `converged`).
 **`no-review`**: when this flag is in args (the post-convergence MEDIUM bucket), dispatch the coder, run the coder-report post-processing above, run the execution gate as verification, and return `status: converged` WITHOUT dispatching a reviewer. Do not enter step 1.
 
 Skip any finding that is a false positive, a stylistic preference, out of scope, blocked by another unresolved issue, or architectural (recommend `/eng-spec`). Report each skip with its reason.
@@ -185,14 +167,12 @@ Skip any finding that is a false positive, a stylistic preference, out of scope,
 
 **Exception**: failures in acceptance spec tests (the plan's `Acceptance Stubs` file(s), or `*.spec.*`) are critical BLOCKERS — never route them to auto-fix. Either the code is wrong or the intent changed, and only the user decides which; an auto-fixer's cheapest path to green is editing the spec.
 
-Never skip this because the review "looked clean" — model approval without executed evidence is the loop's weakest exit.
+Never skip this because the review "looked clean".
 
 **Test-intent audit**: NOT run in this loop. It is dispatched outside the loop, in two scoped halves — bug-pinning by `/code`'s phase gate when the phase touched a test file, cull + coverage-net by `/branch-recap` at the Recap closing phase. Never fired automatically by /review or /fix. Do not dispatch `test-intent-reviewer` here.
 
 **Class-closure check (before you may declare convergence).** A quiet round is
-not evidence the class is empty. Severity is not monotonic across iterations, so
-"findings got quieter" is fatigue, not convergence — that is the exit this check
-closes.
+not evidence the class is empty; severity is not monotonic across iterations.
 
 Scope it to what you actually repaired — this is not a licence to keep looping.
 For each finding in `fixed[]`, ask whether it is **class-shaped**: is it one
@@ -206,7 +186,7 @@ qualify, and nothing else does:
   property actually needed (`unmarshal succeeded` standing in for `row is
 interpretable`; `file exists` for `file is readable`; `status 200` for
   `response is correct`). Close it by naming the other members that proxy was
-  covering for. This is the shape both data-loss defects came in.
+  covering for.
 
 If a fixed finding is class-shaped and the class is NOT closed, the loop has not
 converged: re-enter step 5 with the unenumerated members as findings (counts
@@ -217,9 +197,7 @@ cap still bounds it). If the cap hits first, return
 **Report the denominator, always.** Put `class_closure` in the packet: either
 the enumeration you ran ("all 6 exits of `loadWithRowCount` re-read; every line
 lands in `entries` or `unparseable`"), or `none — no fixed finding was
-class-shaped`, or `n/a — fixed[] empty`. A converged packet with no
-`class_closure` line is indistinguishable from one where the check never ran,
-which is the same failure this check exists to catch one level down.
+class-shaped`, or `n/a — fixed[] empty`.
 
 MEDIUM classification does NOT run here — it runs in Step 6c, after the
 specialist pass, so specialist MEDIUMs join the same single classification and
@@ -250,15 +228,13 @@ Runs ONCE the main loop passes the execution gate (Step 6), before MEDIUM classi
      Never double-log a finding on a re-verify pass.
 
    - `[design-decision]`-tagged findings (any domain) → NOT auto-fixed. A `[security] [design-decision]` finding returns `status: critical-blocker` with the finding in `blockers` (same rule as Step 4's "security requiring a design decision"). A `[perf] [design-decision]` or `[smell] [design-decision]` finding goes to the MEDIUM `ask` bucket.
-   - Remaining CRITICAL/HIGH `[security]`, HIGH `[perf]`, and HIGH `[smell]` findings (clean, non-design fixes — for `[smell]`, HIGH means must-stay-in-sync duplication whose divergence causes a bug; for `[perf]`, HIGH means a structural I/O anti-pattern on a request path over growing data, per the specialist's own severity line — it is fixed AND still collected/logged into `perf[]` above, the channel is a learning trail, not a substitute for the fix) → **re-enter the loop**: `spec_iter++` (NOT `iter++` — this is the specialist channel, and it has its own budget precisely so a late structure finding cannot spend a correctness round) and hand them to Step 5 as findings, with the specialist as the continuity reviewer for the re-review. Do NOT hand-roll a fix here — reusing Step 5→Step 3 keeps the fix path uniform, and the same specialist confirms its own fix on the re-verify pass.
+   - Remaining CRITICAL/HIGH `[security]`, HIGH `[perf]`, and HIGH `[smell]` findings (clean, non-design fixes — for `[smell]`, HIGH means must-stay-in-sync duplication whose divergence causes a bug; for `[perf]`, HIGH means a structural I/O anti-pattern on a request path over growing data, per the specialist's own severity line — it is fixed AND still collected/logged into `perf[]` above) → **re-enter the loop**: `spec_iter++` (NOT `iter++`) and hand them to Step 5 as findings, with the specialist as the continuity reviewer for the re-review. Do NOT hand-roll a fix here.
 
-     **A re-entry you dispatch, you must close.** The re-verify pass is the point of routing through Step 3; a specialist that does not return means the finding is UNVERIFIED. Say so in the packet (`findings_remaining`) and never substitute your own read of the fix for the report that did not arrive — that substitution has happened, and it is what made a `[smell]` re-entry look converged while three data-loss defects shipped in the same file.
+     **A re-entry you dispatch, you must close.** The re-verify pass is the point of routing through Step 3; a specialist that does not return means the finding is UNVERIFIED. Say so in the packet (`findings_remaining`) and never substitute your own read of the fix for the report that did not arrive.
 
    - MEDIUM/LOW → the Step 6c MEDIUM classification and `low[]`.
 
 5. **Record** the domains that ran into `specialists`. When a re-entry (bullet 4) converges again, Step 6b runs once more, finds its domain in `specialists-cleared`, and proceeds to Step 6c without re-dispatching. The `spec_iter >= 2` cap and the `iter + spec_iter <= 4` backstop bound the whole thing regardless.
-
-**Gate integrity**: because specialist CRITICAL/HIGH re-enter the existing loop rather than being fixed in place, the fix path stays uniform. No Agent dispatch — specialist, reviewer, or coder — ever writes `clean` gate state; the only clean transition is your caller's `review-gate-mark clean` after rendering your `converged` packet, so the packet is the final word by construction.
 
 ## Step 6c: MEDIUM classification (final convergence only)
 
@@ -271,7 +247,7 @@ fix dispatch. Classify each MEDIUM (from any reviewer) as:
 - **skip** — false positive, intentional choice, stylistic noise, out of scope. Record a one-line reason.
 - **ask** — ambiguous, needs a design decision, or plausibly either. `[perf] [design-decision]` findings land here (per Step 6b).
 
-Dispatch the **fix** bucket ONCE to a coder in `no-review` mode (no reviewer respawn; the execution gate is the verification). **Continue a fix coder from this loop via `SendMessage` when one is still addressable and owns the scope** (Step 5's continuity rule) — this bucket is mostly subtractive edits to files that coder already has open, so a fresh spawn pays a full `coder-core` preload to delete comments. Not counted toward `iter`. Return `skip` and `ask` in the packet — you do not resolve `ask`.
+Dispatch the **fix** bucket ONCE to a coder in `no-review` mode (no reviewer respawn; the execution gate is the verification). **Continue a fix coder from this loop via `SendMessage` when one is still addressable and owns the scope** (Step 5's continuity rule). Not counted toward `iter`. Return `skip` and `ask` in the packet — you do not resolve `ask`.
 
 ## Step 7: Log the run (every invocation — the loop's flywheel)
 
@@ -285,8 +261,7 @@ bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git re
 enumeration goes in the packet, not the shell arg): `yes` = a class-shaped
 finding was closed by enumeration; `no` = one was open and you re-entered or
 returned `cap-reached`; `none` = nothing you fixed was class-shaped; `n-a` =
-`fixed[]` was empty. Never omit it — an absent field and a `none` field read
-identically in the log, which defeats the reason for logging it.
+`fixed[]` was empty. Never omit it.
 
 `smells` = `[smell]` findings the smell specialist returned this run (0 when it didn't fire). `fixed`/`skipped_fp`/`ask` are the MEDIUM bucket counts when classification ran, else 0. `culled` = diff-added tests deleted this run; always 0 (kept for schema stability — the cull lives in `test-intent-reviewer`'s branch-exit half). `comment_noise` = `[comment-noise]` fixes applied. If the script fails, mention it and continue — telemetry never blocks.
 
@@ -319,12 +294,12 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 ## What NOT to do
 
 - **Never raise a modal.** You have no `AskUserQuestion`. `ask` items and `blockers` go in the packet.
-- **Never write outside `~/vault/`.** Your `Write`/`Edit` tools exist for ONE purpose: the perf findings log in step 6b. Every source-file change — including to this file — goes through an `Agent` coder dispatch, never a direct edit. This is not style: `review-commit-gate.sh` marks the session `dirty` only on a `coder*` or `review-loop` `subagent_type` dispatch. A direct edit changes code the gate never saw get reviewed. Editing source yourself silently disarms the gate you exist to feed.
+- **Never write outside `~/vault/`.** Your `Write`/`Edit` tools exist for ONE purpose: the perf findings log in step 6b. Every source-file change — including to this file — goes through an `Agent` coder dispatch, never a direct edit. A direct edit changes code the gate never saw get reviewed.
 - **Never run `review-gate-mark`.** The clean mark belongs to your CALLER, after it renders your `converged` packet. Marking from inside the loop would clear the gate before the packet is routed.
 - **Never reorder the loop.** Cap check precedes the reviewer dispatch; plan-impact and blocker returns precede any coder dispatch.
 - **Never pass MEDIUM/LOW to the CRITICAL/HIGH fix coder.**
-- **Never return `converged` on a quiet round with an open class.** "No CRITICAL/HIGH this round" is the exit Step 6's class-closure check overrides; severity is not monotonic and a quiet round has been followed by data-loss findings.
+- **Never return `converged` on a quiet round with an open class.** "No CRITICAL/HIGH this round" is the exit Step 6's class-closure check overrides.
 - **Never return `converged` with an empty `fixed[]` when `iter > 1` or `spec_iter > 0`.** You iterated because CRITICAL/HIGH existed; name what you repaired.
-- **Never spend a correctness round on a specialist finding, or the reverse.** The two counters are not interchangeable, and `iter=3, spec_iter=0` on a phase that ran a specialist re-entry is a mis-count, not a full budget.
+- **Never spend a correctness round on a specialist finding, or the reverse.** `iter=3, spec_iter=0` on a phase that ran a specialist re-entry is a mis-count, not a full budget.
 - **Never dispatch `test-intent-reviewer`.** It left this loop — `/code`'s phase gate and `/branch-recap` own it.
 - **Never narrate the loop.** The orchestrator sees only the packet; prose above it is wasted context.

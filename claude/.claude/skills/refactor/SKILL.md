@@ -10,7 +10,7 @@ One source of smell truth: the `smell-reviewer` agent finds (fresh eyes, out of 
 
 ## CRITICAL: Never modify a test to make a refactor pass
 
-A refactor changes structure, not behavior — so the tests are the contract. **Never edit, weaken, or delete a test to get a refactor to pass.** Tests pin current behavior; modifying them mid-refactor masks the exact regressions a refactor is most likely to introduce. If you reach an issue that seems unsolvable without changing a test, **stop and alert the user** — do not work around it. Moving a test verbatim to a new file (no assertion changes) is safe.
+A refactor changes structure, not behavior — so the tests are the contract. **Never edit, weaken, or delete a test to get a refactor to pass.** If you reach an issue that seems unsolvable without changing a test, **stop and alert the user** — do not work around it. Moving a test verbatim to a new file (no assertion changes) is safe.
 
 ## Modifiers
 
@@ -49,7 +49,7 @@ A refactor changes structure, not behavior — so the tests are the contract. **
 4. **Targeted mode** — when `$ARGUMENTS` names specific code or a specific goal:
    - Read the referenced files to understand the current code
    - Identify the refactoring goal: structure, readability, performance, maintainability, pattern alignment
-   - **Ask the deletion question before the extraction question.** Extracting a block into a helper RELOCATES complexity — the branching still exists, now behind a name. First ask whether a different data model, a different placement of the decision, or a stronger invariant makes the complexity unnecessary: push a check to a boundary so downstream code cannot be wrong, make an illegal state unrepresentable so its guard is dead, give a value one canonical owner so the code reconciling three copies gets deleted. This is the one mode wide enough to afford the question — the per-phase loop is not, and `smell-reviewer`'s checks are all relocation-shaped by design.
+   - **Ask the deletion question before the extraction question.** Extracting a block into a helper RELOCATES complexity — the branching still exists, now behind a name. First ask whether a different data model, a different placement of the decision, or a stronger invariant makes the complexity unnecessary: push a check to a boundary so downstream code cannot be wrong, make an illegal state unrepresentable so its guard is dead, give a value one canonical owner so the code reconciling three copies gets deleted.
    - **Every proposed change must earn its keep**: state what it deletes or what class of bug it makes impossible. A change that only moves code to a new shape is not a refactor worth the diff — say so and drop it. If the answer is a redesign rather than a refactor, stop and recommend `/eng-spec` (step 5 covers the same exit from the coder side).
 
 5. **Dispatch the appropriate coder(s)** (branch-audit and targeted modes only — audit mode never dispatches coders):
@@ -60,7 +60,6 @@ A refactor changes structure, not behavior — so the tests are the contract. **
 
    For each coder:
    - Pass the work list (with file paths per finding) or the targeted refactoring description, plus any context you gathered
-   - Instruct it to: read and understand the existing code, implement the refactoring step by step, and ensure no functionality is broken
    - **Pass the CRITICAL test rule above verbatim**: never modify/weaken/delete a test to make the refactor pass; if blocked, stop and report back rather than touching a test (moving a test verbatim to a new file is fine)
    - If the refactor turns out to need architectural redesign, have it report back and recommend `/eng-spec` instead
 
@@ -80,7 +79,7 @@ A refactor changes structure, not behavior — so the tests are the contract. **
 
 6. **Audit mode — global DRY / pattern sweep of pre-existing code. Report-only: no coders, no `/review`, no code changes.**
 
-   This is the one lane that deliberately looks at UNCHANGED code — the gates are diff-bounded on purpose, so repo debt (three old copies of a guard, two modules mapping the same shape differently) is invisible to them. Natural trigger: `/audit review` showing recurring `class=duplication` escapes in a module.
+   This is the one lane that deliberately looks at UNCHANGED code. Natural trigger: `/audit review` showing recurring `class=duplication` escapes in a module.
 
    a. **Mechanical clone detection first** (detector finds, agent judges — neither does the other's job). If node is available, verify syntax then run jscpd via npx (no global install — keeps the cross-platform rule):
 
@@ -95,7 +94,7 @@ A refactor changes structure, not behavior — so the tests are the contract. **
    - the candidate clone pairs from (a), if any: "Judge each candidate against the anti-churn line — must-stay-in-sync (flag, name the extraction) vs looks-a-bit-similar (suppress)."
    - the ask: duplication across files, pattern/idiom drift between sibling modules, wrong-altitude code — each finding with both `file:line` sites and the consolidation it proposes. Cross-module consolidations or anything moving a public contract → `[design-decision]`.
 
-   c. **Report the work list — the product is the list, not fixes.** For each surviving finding: the sites, the proposed consolidation, and its route — small single-module extraction → a follow-up **targeted `/refactor`** invocation; `[design-decision]` / cross-module / public-contract → **`/eng-spec`**. Consolidating old shared code is design-shaped and may sit on untested paths; a sweep that rewrites it unsupervised is the risk, not the debt.
+   c. **Report the work list — the product is the list, not fixes.** For each surviving finding: the sites, the proposed consolidation, and its route — small single-module extraction → a follow-up **targeted `/refactor`** invocation; `[design-decision]` / cross-module / public-contract → **`/eng-spec`**.
 
    d. **No escape logging** — old debt is not an escape (same rule as `/escape`).
 

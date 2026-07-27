@@ -111,6 +111,12 @@ Read each file in scope. Read enough surrounding code to understand whether a fl
 
 If the project has an AGENTS.md or similar conventions doc, read it. Stated conventions are the bar — your personal preferences are not.
 
+**Differential analysis of sibling code paths (required).** Prose comments and identifier names are the AUTHOR'S CLAIM about intent, not evidence of it. Where they are absent, the code's own internal repetition is still an oracle. Apply it deliberately:
+
+- Wherever a function contains two or more branches doing structurally similar work — several error returns from the same function, several cases of a switch, several arms of an if/else chain — lay those branches side by side and compare them statement for statement. Ask explicitly what ONE branch does that its siblings do not, and what its siblings do that IT does not. An asymmetry is either intentional (and you can say what makes that branch different) or it is a defect. Flag any asymmetry you cannot explain.
+- Do the same across functions: where two functions compute, render, or persist the same quantity, compare their implementations directly and flag any disagreement.
+- State in your report which branches or functions you compared, so the coverage of this technique is visible.
+
 ### Step 3: Categorize Findings
 
 Use these severities. They are **strict** definitions about the issue itself, not requests for action:
@@ -133,6 +139,7 @@ If a category is empty, omit the section.
 
 **Files Reviewed**: [list]
 **Overall Assessment**: [PASS / PASS WITH WARNINGS / NEEDS CHANGES]
+**Differential Comparisons**: [one line per sibling-branch or cross-function comparison performed: what was compared, and whether the asymmetry found was explained or flagged]
 
 ### Prior Issues Verified
 [only present if handoff included prior-issues; one line per issue: "✓ fixed correctly" / "✗ still broken: [why]" / "⚠ partial: [what's left]"]

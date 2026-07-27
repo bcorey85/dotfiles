@@ -1,6 +1,5 @@
 ---
 name: branch-recap
-disable-model-invocation: true
 description: The final closing phase — reassemble a gated branch into one thing you can hold in your head before the PR. Cross-phase test audit, closing-phase residue triage, and a recap receipt. Use for "recap", "branch recap", "wrap up the branch", "/branch-recap". Never stages semantic changes and never commits — the user reads the queue and stages, then /commit.
 allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion, Skill]
 ---

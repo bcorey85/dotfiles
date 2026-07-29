@@ -16,7 +16,10 @@
 #       the gates) because the remediation differs: a walkthrough catch means
 #       the reviewer missed something the human then found one step later.
 #     gate_missed=review|drift-gate|test-intent|stage|coder|q-verify
-#     class=bug|smell|duplication|plan-drift|test-gap|other
+#     class=bug|smell|duplication|complexity|plan-drift|test-gap|other
+#       complexity = code that need not have existed (branching a data model
+#       collapses, one-implementation indirection, unused configurability,
+#       guards a boundary check kills). Logged by /refactor simplify mode.
 #     severity=high|medium|low
 #     desc="one line"
 #     file=path

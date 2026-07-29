@@ -16,15 +16,14 @@ and the human skimming phases.
 
 ## Format rules (hard)
 
-- `## Phase Status` is mandatory — `/code` uses it as the durable record of
-  "which phase is next" across `/clear` boundaries. Never delete it. Consumers
+- `## Phase Status` is mandatory — never delete it. Consumers
   find it by HEADING, not position: in `/eng-spec`'s `spec.md` it is hoisted to
   the top of the file (above the judgment layer) so a peek shows progress
   immediately. In a standalone plan it sits where the template below puts it.
 - Every Phase Status line carries a `(risk: low|high)` tag.
 - A phase MAY add `(reviewers: security[, perf])` — the PRIMARY dispatch signal
-  for `security-reviewer`, which no longer infers a security surface from paths
-  or keywords (`reviewer-domains.md` says why). Declare it when the phase changes
+  for `security-reviewer`, which never infers a security surface from paths or
+  keywords. Declare it when the phase changes
   authz/tenancy, opts out of a guard, or handles secrets. Additive only: omitting
   it never suppresses a forced pass.
 - Phases are VERTICAL slices (each independently verifiable end-to-end),
@@ -49,8 +48,7 @@ skeleton`, the thinnest end-to-end path exercising every Phase 0 contract
 - A phase with no user-observable behavior (migration-only, infra-only — the
   one legitimate single-layer case) carries its FULL verification in
   Automated Verification and states `Manual Verification: N/A (infra-only)`
-  explicitly. An empty Manual Verification section is an authoring gap; the
-  N/A line marks the behavioral-gate skip as deliberate.
+  explicitly — an empty section is an authoring gap, not a skip.
 - Success Criteria are TESTABLE assertions — each specifies HOW to verify
   with the project's real commands (from project CLAUDE.md / package
   scripts), never generic placeholders.
@@ -60,8 +58,8 @@ skeleton`, the thinnest end-to-end path exercising every Phase 0 contract
   list.
 - Every plan ends with the four mandatory closing phases (Refactor → Verify →
   Orient → Recap) from `~/.claude/skills/_shared/closing-phases.md`, appended
-  after the last feature phase and numbered continuously. Not negotiable, never
-  omitted — include them in `## Phase Status` and as full Phase sections.
+  after the last feature phase and numbered continuously — in `## Phase Status`
+  and as full Phase sections.
 
 ## Reading a plan
 
@@ -116,9 +114,8 @@ don't exist.
 
 <!-- Omit this section entirely if the ticket has no behavioral criteria.
 Written by the user with the main thread after the plan is final and BEFORE any
-coder is dispatched — the whole value is that no implementation existed yet to
-shape the assertions, so a stub written later, or by the agent that will satisfy
-it, is not an oracle. 3-8 of them; if there are more, the ticket is two tickets. -->
+coder is dispatched — never later, and never by the agent that will satisfy it.
+3-8 of them; if there are more, the ticket is two tickets. -->
 
 - **Spec file(s)**: `path or glob (feature-root spec file, or feature-local specs/ dir)`
 - **Primitive**: [the project runner's todo/pending marker]
@@ -131,8 +128,7 @@ makes it immutable to every agent (`acceptance-contract-gate` denies the write).
 Assert at the criterion's boundary — the public entry point a user or caller
 reaches — never an internal function, or the contract pins today's structure and
 blocks the refactor it was supposed to survive. **No mocks or stubs inside a
-contract**: a mock encodes how you assumed the code would be built, which is the
-one thing the contract must not assume.
+contract** — a mock pins how you assumed the code would be built.
 
 ## Implementation Approach
 

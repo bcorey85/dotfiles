@@ -1,10 +1,9 @@
 # Mandatory Closing Phases (single source of truth)
 
-Every `/eng-spec` plan ends with these FOUR phases, in this exact order, after
-the last feature phase — **not negotiable, never omitted**, however small the
-feature. They are real `## Phase Status` entries (checkboxes `/code` advances
-through) with full Phase sections; reaching one, `/code` invokes the named
-skill instead of dispatching a coder. Number them continuing from the last
+Every `/eng-spec` plan ends with these FOUR phases, in this exact order after
+the last feature phase — **not negotiable, never omitted**. They are real
+`## Phase Status` entries with full Phase sections; reaching one, `/code`
+invokes the named skill instead of dispatching a coder. Number them continuing from the last
 feature phase (feature ends at Phase 3 → these are 4–7).
 
 ## The four phases
@@ -13,8 +12,19 @@ feature phase (feature ends at Phase 3 → these are 4–7).
    diff**, backend **and** frontend in one sweep. DRY duplication, delete dead
    scaffolding, tighten names — no behavior change. **Root-cause gate:** adding
    a cast or `?? default` to paper over a fixable wide type or loose structure
-   is a failed refactor; fix the source — `/review` bounces it. Success
-   Criteria: quality checks green, no new cast/fallback dodging a root cause.
+   is a failed refactor; fix the source — `/review` bounces it.
+
+   **Concentration gate.** Group `git diff --numstat <base>...HEAD` by module;
+   if the largest module has **≥100 added lines**, also run
+   `/refactor simplify <that module>` — that module alone, after the branch
+   sweep. Otherwise skip it and report the largest count. Never widen to a
+   second module, never pass the branch diff (`complexity-reviewer` refuses a
+   diff bound). Simplify findings are opt-in per finding, the user's call;
+   accepting one makes this phase `risk: high` — the no-behavior-change
+   contract covers the DRY sweep only.
+
+   Success Criteria: quality checks green, no new cast/fallback dodging a root
+   cause, concentration gate evaluated (module named, or largest count stated).
 
 2. **Verify pass** (risk: high) — confirm the work actually does what the plan
    called for. Two complementary checks, both required:
@@ -37,8 +47,8 @@ feature phase (feature ends at Phase 3 → these are 4–7).
 4. **Recap** (risk: low) — `/branch-recap` reassembles the branch into one
    pre-PR artifact: the **cross-phase test audit** (cull + coverage-net — the
    half of test-intent no phase judges locally), `/stage` triage of the closing
-   phases' residue, and the recap receipt. Runs no gates — each already fired
-   where its oracle was sharper. Success Criteria: recap produced; residue
+   phases' residue, and the recap receipt. Runs no gates. Success
+   Criteria: recap produced; residue
    queue handed to the user.
 
 Nothing after this is a phase. `/adr` runs **pre-PR**, shipping in the code's PR.

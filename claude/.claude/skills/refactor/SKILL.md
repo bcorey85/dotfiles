@@ -1,12 +1,15 @@
 ---
 name: refactor
-description: Smart refactorer — smell-reviewer finds, coders fix, `/review` gates. Three modes. Branch audit (default, no/generic args) sweeps the branch diff via a smell-reviewer finder dispatch. Targeted ("refactor X") refactors named code. Audit (`audit <dir|module>`) sweeps PRE-EXISTING code for global DRY violations and pattern drift — mechanical clone detection + smell-reviewer judgment, report-only work list, no coders. Use for "refactor X", "clean up X", "second pass", end-of-branch cleanup, or "DRY audit / debt audit of <module>".
+description: Smart refactorer — specialist finds, coders fix, `/review` gates. Four modes. Branch audit (default, no/generic args) sweeps the branch diff via a smell-reviewer finder dispatch. Targeted ("refactor X") refactors named code. Audit (`audit <dir|module>`) sweeps PRE-EXISTING code for global DRY violations and pattern drift — mechanical clone detection + smell-reviewer judgment, report-only work list, no coders. Simplify (`simplify <dir|module>`) asks what could be DELETED if a module were shaped differently — branch thickets, one-implementation indirection, unused configurability, guards a boundary kills — via complexity-reviewer. Use for "refactor X", "clean up X", "second pass", end-of-branch cleanup, "DRY audit / debt audit of <module>", or "simplify X / this is too complex / reduce the complexity in X".
 allowed-tools: [Agent, Bash, Read, Glob, Grep, Skill]
 ---
 
 # Refactor
 
-One source of smell truth: the `smell-reviewer` agent finds (fresh eyes, out of this context); coders fix; `/review` gates. This skill never compiles its own smell checklist — the agent's five scope items ARE the checklist.
+Specialist agents find (fresh eyes, out of this context); coders fix; `/review` gates. This skill never compiles its own checklist — the finder agent's scope items ARE the checklist. Two finders, two different questions:
+
+- `smell-reviewer` — **what repeats or sits wrong** (duplication, placement, naming, dead weight, cohesion). Bound: a diff. Modes 3, 4, 6.
+- `complexity-reviewer` — **what need not exist** (branching a data model collapses, indirection with one implementation, configurability nothing configures, guards a boundary kills, values with several owners). Bound: a whole module — never a diff. Mode 7.
 
 ## CRITICAL: Never modify a test to make a refactor pass
 
@@ -14,13 +17,14 @@ A refactor changes structure, not behavior — so the tests are the contract. **
 
 ## Modifiers
 
-- `+fast` / `+deep` — semantics defined in `~/.claude/skills/_shared/modifiers.md` (read it when either is present). They apply to the finder dispatch too: `+deep` → `smell-reviewer-deep` (omit `model`); `+fast` → `model: "haiku"`. `+fast` for simple renames or mechanical refactors; `+deep` for refactors involving multiple interacting systems or semantic duplication that shares no tokens.
+- `+fast` / `+deep` — semantics defined in `~/.claude/skills/_shared/modifiers.md` (read it when either is present). They apply to the finder dispatch too: `+deep` → `smell-reviewer-deep` / `complexity-reviewer-deep` (omit `model`); `+fast` → `model: "haiku"`. `+fast` for simple renames or mechanical refactors; `+deep` for refactors involving multiple interacting systems, semantic duplication that shares no tokens, or (simplify mode) a deletion spanning more than one file. Never `+fast` in simplify mode — the deletion oracle needs the whole module held at once; say so and run at the default.
 
 ## Instructions
 
 1. **Check for modifiers**: If `+deep` is present, swap each agent for its `-deep` variant and omit `model`. If `+fast` is present, pass `model: "haiku"`. Strip modifiers from prompts passed to subagents.
 
 2. **Determine the mode** — first match wins:
+   - `$ARGUMENTS` starts with `simplify`, or names a target plus a complexity complaint ("this is too complex", "reduce the complexity in X", "why is this so convoluted") → **Simplify mode** (step 7). Bare `simplify` with no target: list the repo's top-level source directories and ask which to sweep — never the whole repo in one dispatch.
    - `$ARGUMENTS` starts with `audit` → **Audit mode** (step 6). Bare `audit` with no target: list the repo's top-level source directories and ask which to audit — never sweep the whole repo in one dispatch.
    - `$ARGUMENTS` empty or generic ("cleanup", "final pass", "second pass", "the branch") → **Branch audit mode** (step 3).
    - Otherwise → **Targeted mode** (step 4).
@@ -97,6 +101,24 @@ A refactor changes structure, not behavior — so the tests are the contract. **
    c. **Report the work list — the product is the list, not fixes.** For each surviving finding: the sites, the proposed consolidation, and its route — small single-module extraction → a follow-up **targeted `/refactor`** invocation; `[design-decision]` / cross-module / public-contract → **`/eng-spec`**.
 
    d. **No escape logging** — old debt is not an escape (same rule as `/escape`).
+
+7. **Simplify mode — what could be DELETED if this module were shaped differently.** The one lane whose question is subtraction rather than consolidation. Fixes are opt-in per finding, never wholesale.
+
+   a. **Resolve the bound**: the named module, feature directory, or file set. Expand it to a concrete file list (`git ls-files <target>`) and pass that list — the finder must not rediscover scope. A bound bigger than roughly 25 source files: split it and say which slice you're running.
+
+   b. **Do NOT read the files yourself.** The finder holds the module; this context holds the decision. Reading it here defeats the fresh-eyes split and burns the context you need for the walkthrough.
+
+   c. **Finder dispatch**: ONE `complexity-reviewer` (pinned; omit `model`; `-deep` variant per step 1) with:
+   - the file list from (a) and the bound: "Simplify mode: your bound is the whole existing code of `<target>`. Pre-existing shape IS the target."
+   - the ask, verbatim from its scope: branching a data model collapses, indirection with one implementation, configurability nothing configures, guards a stronger invariant kills, values with more than one owner.
+   - the reminder that its deletion oracle and magnitude floor are hard gates: every finding names what disappears (quantified), the enabling change, why the removed code becomes unreachable, and what the change makes harder.
+   - any project constraint you already know that makes a shape mandatory (a required layer, a framework seam, a public contract).
+
+   d. **Triage the findings yourself before offering any of them.** Drop findings that fail the oracle, sit under the magnitude floor, or propose collapsing irreducible domain complexity into something unreadable. `[design-decision]` findings — public contracts, cross-module moves, migrations, anything needing a test assertion changed — go to the user via AskUserQuestion and never onto a coder list.
+
+   e. **Present the surviving list and let the user choose which to take.** Each entry: the sites, what disappears (quantified), the enabling change, and the cost clause. This is the one mode that asks rather than states — a simplification is a behavior-adjacent restructure, and which risk is worth taking is the user's call. Nothing found → say the module is already as simple as its problem and stop.
+
+   f. **Dispatch the chosen findings** through step 5 with two changes: the test audit is **mandatory, not conditional** (every finding here is behavior-adjacent by construction), and escape logging uses `class=complexity` — and only for code this branch's `/code` loop produced. Pre-existing debt is not an escape.
 
 ## Code to refactor
 

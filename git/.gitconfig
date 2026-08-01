@@ -13,6 +13,16 @@
 [core]
 	pager = delta --side-by-side
 
+# Fugitive decides between a vim buffer and a real terminal by reading
+# pager.<subcommand> only -- never core.pager. A string value routes `:Git diff`
+# to termopen with the pager live; without one it renders into a plain vim
+# buffer. Delta is named explicitly here so `:Git diff` gets the same
+# side-by-side output as the terminal.
+[pager]
+	diff = delta --side-by-side
+	show = delta --side-by-side
+	log = delta --side-by-side
+
 [interactive]
 	diffFilter = delta --color-only
 

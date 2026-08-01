@@ -6,7 +6,7 @@ choice=$(printf "Lock\nSuspend\nExit Hyprland\nShutdown\nReboot" | rofi -dmenu -
 case "$choice" in
     Lock) hyprlock ;;
     Suspend) systemctl suspend ;;
-    "Exit Hyprland") hyprctl dispatch exit ;;
+    "Exit Hyprland") hyprctl dispatch 'hl.dsp.exit()'; hyprctl dispatch exit ;;
     Shutdown) systemctl poweroff ;;
     Reboot) systemctl reboot ;;
 esac

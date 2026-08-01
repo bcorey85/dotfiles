@@ -75,12 +75,16 @@ return {
         discard_all = "<leader>cN",
         next_conflict = "<leader>cj",
         prev_conflict = "<leader>ck",
+        -- <leader>cs (merge tabs only) stages the resolved file and advances —
+        -- bound by the merge_stage glue in config(), not by codediff.
       },
       view = {
         -- Verdict keys, aligned with the neogit + gitsigns dialects:
         --   s = stage/unstage whole file (neogit's key; shadows vim's
         --       substitute in the editable pane — accepted, `cl` is the
-        --       synonym and editing inside a review tab is rare)
+        --       synonym and editing inside a review tab is rare). Standalone
+        --       merge tabs stage on <leader>cs instead — see merge_stage in
+        --       config() — so `s` stays native in the editable Result pane.
         --   - = stage hunk, _ = unstage hunk (gitsigns' in-buffer keys)
         -- Auto-advance to the next unreviewed file is NOT done here — it's
         -- wired at the git layer in config() below, so these stay stock.
@@ -142,9 +146,10 @@ return {
     -- file if that one is conflicted, else the first conflicted file (the old
     -- diffview <leader>gm auto-detect); otherwise the working-tree explorer.
     --
-    -- The popup MUST route through here rather than `-c CodeDiff`: the plain
-    -- explorer renders a conflicted file as an ordinary working-tree diff, with
-    -- no conflict UI and no accept keys, which is a silent trap during a merge.
+    -- The popup routes through here rather than `-c CodeDiff` so a merge lands
+    -- straight on the conflict, no file-select step. (The explorer handles
+    -- conflicts correctly too, but only side-by-side — see the layout force in
+    -- config() below.)
     vim.api.nvim_create_user_command("CodeDiffReview", function()
       local conflicted = vim.fn.systemlist({ "git", "diff", "--name-only", "--diff-filter=U" })
       if vim.v.shell_error ~= 0 then
@@ -647,6 +652,116 @@ return {
 
     if #wrap_missing > 0 then
       glue_broke("inline wrap partially disabled (" .. table.concat(wrap_missing, "/") .. " not found)")
+    end
+
+    -- CONFLICT SESSIONS ARE ALWAYS SIDE-BY-SIDE. A new session's layout resolves
+    -- from config.options.diff.layout BEFORE the explorer knows the first file's
+    -- group (view/init.lua get_layout), so the inline default above opens a
+    -- conflicted file as a plain HEAD-vs-worktree diff: one pane, no Result
+    -- window, no accept keys. The bad render then sticks — re-selecting the same
+    -- file returns early at the same-file guard (explorer/render.lua). Force
+    -- side-by-side at create() for conflict sessions and for any explorer opened
+    -- mid-merge. Session-wide, not per-file: flipping layout on file select
+    -- would hand side_by_side.update a one-window inline session. `t` still
+    -- toggles within the session.
+    local function repo_has_conflicts(git_root)
+      if not git_root or git_root == "" then
+        return false
+      end
+      local out = vim.fn.systemlist({ "git", "-C", git_root, "diff", "--name-only", "--diff-filter=U" })
+      return vim.v.shell_error == 0 and #out > 0
+    end
+
+    -- STAGE FROM THE MERGE VIEW (<leader>cs). codediff binds view.toggle_stage
+    -- only under is_explorer_mode, and its handler resolves the file through the
+    -- explorer's current_file_path — so the standalone view <leader>gm opens has
+    -- no way to mark a resolution done. Writing the Result pane alone leaves the
+    -- index unmerged (UU) and the panes re-read the same :1/:2/:3 stages, which
+    -- reads as "the conflicts came back". Write the Result buffer, git add, then
+    -- advance to the next conflicted file or close.
+    --
+    -- NOT `s` (the explorer's stage key): set_tab_keymap binds tab-wide, and the
+    -- Result pane is modifiable — it is the one review surface where hand-editing
+    -- is expected, so `s` stays native substitute there. <leader>cs joins the
+    -- <leader>c* conflict cluster: same hand, staging the resolution.
+    local MERGE_STAGE_KEY = "<leader>cs"
+    local function merge_stage(tabpage)
+      local ok_l, lc = pcall(require, "codediff.ui.lifecycle")
+      if not (ok_l and cd_git) then
+        glue_broke("merge-view staging unavailable")
+        return
+      end
+      local sess = lc.get_session(tabpage)
+      local rel = sess and sess.modified and sess.modified.relative
+      if not (sess and sess.git_root) or not rel or rel == "" then
+        return
+      end
+      -- Unresolved regions keep their BASE text — codediff strips the markers
+      -- when it seeds the Result buffer — so "are we done" can only be asked of
+      -- the conflict tracker, never of the buffer text.
+      local ok_tr, tracking = pcall(require, "codediff.ui.conflict.tracking")
+      if ok_tr then
+        local active = 0
+        for _, block in ipairs(lc.get_conflict_blocks(tabpage) or {}) do
+          if tracking.is_block_active(sess, block) then
+            active = active + 1
+          end
+        end
+        if active > 0 then
+          vim.notify(active .. " conflict(s) still unresolved — <leader>cj to jump", vim.log.levels.WARN)
+          return
+        end
+      end
+      -- noautocmd: format-on-save would rewrite lines outside the resolution
+      -- (codediff's own writes take the same precaution, view/keymaps.lua).
+      local result_bufnr = lc.get_result(tabpage)
+      if result_bufnr and vim.api.nvim_buf_is_valid(result_bufnr) and vim.bo[result_bufnr].modified then
+        vim.api.nvim_buf_call(result_bufnr, function()
+          vim.cmd("silent noautocmd write")
+        end)
+      end
+      cd_git.stage_file(sess.git_root, rel, function(err)
+        vim.schedule(function()
+          if err then
+            vim.notify("Stage failed: " .. tostring(err), vim.log.levels.ERROR)
+            return
+          end
+          local remaining = vim.fn.systemlist({ "git", "-C", sess.git_root, "diff", "--name-only", "--diff-filter=U" })
+          local more = vim.v.shell_error == 0 and #remaining > 0
+          pcall(lc.close, tabpage)
+          if more then
+            vim.cmd("CodeDiffReview")
+          else
+            vim.notify("All conflicts staged — commit to finish the merge", vim.log.levels.INFO)
+          end
+        end)
+      end)
+    end
+
+    if ok_view and type(cd_view.create) == "function" then
+      local stock_view_create = cd_view.create
+      cd_view.create = function(session_config, filetype, on_ready)
+        local sc = session_config
+        if sc and not sc.layout and (sc.conflict or (sc.explorer_data and repo_has_conflicts(sc.git_root))) then
+          sc.layout = "side-by-side"
+        end
+        local is_merge = sc and sc.conflict and sc.mode == "standalone"
+        return stock_view_create(sc, filetype, function(...)
+          local result
+          if on_ready then
+            result = on_ready(...)
+          end
+          if is_merge and ok_lc and type(lifecycle.set_tab_keymap) == "function" then
+            local tab = vim.api.nvim_get_current_tabpage()
+            lifecycle.set_tab_keymap(tab, "n", MERGE_STAGE_KEY, function()
+              merge_stage(tab)
+            end, { desc = "Stage resolution, then next conflict" })
+          end
+          return result
+        end)
+      end
+    else
+      glue_broke("conflict layout force + merge-view `s` disabled (view.create not found)")
     end
   end,
 }

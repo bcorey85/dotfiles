@@ -1,13 +1,14 @@
 # lazygit config
 # Schema: https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md
 #
-# Pagers cycle in-session with `|` (cyclePagers) and `\` (cyclePagersReverse).
-# hunk is listed first so it is the default renderer; delta stays one keypress
-# away as the fallback. Global git `core.pager` is untouched -- plain `git diff`
-# outside lazygit still goes through delta.
+# Global git `core.pager` is untouched -- plain `git diff` outside lazygit still
+# goes through delta with its own settings.
 #
-# colorArg is `never` for hunk because hunk parses the raw unified diff and does
-# its own syntax highlighting; pre-applied ANSI escapes would fight that.
+# No "Press enter to return to lazygit" pause after a subprocess exits. The
+# prompt exists so you can read subprocess output; our subprocesses are
+# full-screen TUIs with nothing to read on exit.
+promptToReturnFromSubprocess: false
+
 gui:
   # Reclaim horizontal space for the diff. The side panel is narrow while you
   # read a diff and only widens when you focus it.
@@ -19,14 +20,6 @@ gui:
 
 git:
   pagers:
-    # --theme matches scripts/.local/bin/hunk-review, so the pager and the
-    # `prefix h` review popup look identical. hunk silently ignores an
-    # unrecognised theme name rather than erroring, so a typo here degrades to
-    # the default palette with no warning.
-    - name: hunk
-      colorArg: never
-      pager: hunk pager --theme nord
-
     # No --side-by-side here: lazygit's main panel is already narrow, and the
     # global core.pager keeps side-by-side for full-width `git diff`.
     - name: delta

@@ -54,8 +54,6 @@ raise the modals it cannot.
 
 5. **Raise what the agent could not**. Present `medium.ask`; wait for direction. Never auto-fix an ambiguous item.
 
-6. **Reconcile the Hunk sidecar** — only if `.git/hunk-agent-context.json` exists (written by `/code` step 5; see the `why` channel in `~/.claude/skills/_shared/handoff-block.md`). Fixing shifts line numbers, and its annotations are pinned to NEW-file lines, so a surviving sidecar now anchors notes to code that moved — rendering them against the wrong lines rather than dropping them, which misleads the next human to read the diff. Rewrite it from the fix coders' `WHY:` lines plus any still-accurate entries, or delete it. Never leave the pre-fix version in place.
-
 ## Arguments
 
 $ARGUMENTS

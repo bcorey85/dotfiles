@@ -98,25 +98,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
      iter: 1
    ```
 
-   **Then emit the Hunk sidecar** (skip entirely when every coder reported `WHY: none`). Collect the `WHY:` lines from all coder reports and `Write` them to `.git/hunk-agent-context.json` — inside `.git`, never the worktree:
-
-   ```json
-   {
-     "version": 1,
-     "summary": "<one line: what this phase did, for the human about to read it>",
-     "files": [
-       {
-         "path": "<relative path>",
-         "summary": "<the file's `change` line>",
-         "annotations": [
-           { "newRange": [<start>, <end>], "summary": "<the WHY note>", "rationale": "<expand only if the note needs it>", "author": "<coder agent type>" }
-         ]
-       }
-     ]
-   }
-   ```
-
-   `hunk-review` (bound to `prefix h`) picks this up automatically and renders the notes by default; `a` in the TUI toggles them off. Write it fresh each phase — a stale sidecar annotates code that has since moved. Files with no annotations may be omitted.
+   **Then surface the `WHY:` lines to the human** (skip entirely when every coder reported `WHY: none`). They go in the phase summary, grouped by file as `path:start-end — <note>`.
 
    This is a one-way channel to the human, not an input to review. Do NOT put review-relevant caveats here and nowhere else — anything the reviewer needs belongs in `flagged`.
 

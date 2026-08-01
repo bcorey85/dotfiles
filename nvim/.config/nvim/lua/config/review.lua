@@ -2,20 +2,56 @@
 -- to ~/.claude/claude-comments.md and exposes :ClaudeReviewComment plus
 -- preview keymaps.
 
+-- codediff's ORIGINAL pane holds a virtual buffer named
+-- codediff:///<git-root>///<revision>/<path> (codediff/core/virtual_file.lua),
+-- so it fails the is_file() guard below. The three components are recoverable,
+-- which is enough to file the comment against the real file on disk.
+--
+-- Only that pane needs this. The MODIFIED pane of a working-tree diff is the
+-- real file buffer at its real path (helpers.lua treats nil/"WORKING" as
+-- non-virtual), and the inline view renders extmarks onto that same buffer
+-- rather than creating one — both already satisfy the guard.
+--
+-- Returns nil for anything else, including codediff being absent entirely.
+local function resolve_codediff_url(bufname)
+  if not bufname:match("^codediff://") then
+    return nil
+  end
+  local ok, virtual_file = pcall(require, "codediff.core.virtual_file")
+  if not ok then
+    return nil
+  end
+  local git_root, revision, filepath = virtual_file.parse_url(bufname)
+  if not (git_root and filepath) then
+    return nil
+  end
+  return vim.fn.fnamemodify(git_root .. "/" .. filepath, ":p"), revision
+end
+
+-- Returns abs_path, revision. `revision` is non-nil only for a comment left on
+-- a codediff original pane, where the line number is the PRE-change one and the
+-- caller must say so in the entry.
 local function resolve_abs_path()
   local buf = require("util.buf")
-  -- is_file() BEFORE name(): a special buffer has a name, it just isn't a file.
-  -- Neogit sets its status buffer's name to "NeogitStatus"
-  -- (neogit/buffers/status/init.lua), which sails past the nil check below and
-  -- then gets repo-root-prefixed into "<repo>/NeogitStatus" — silently filing
-  -- the comment against a path that doesn't exist, at a line number taken from
-  -- the status buffer rather than any file. Same for codediff's inline view and
-  -- quickfix. Bail loudly instead.
+  local bufname = buf.name()
+
+  if bufname then
+    local codediff_path, revision = resolve_codediff_url(bufname)
+    if codediff_path then
+      return codediff_path, revision
+    end
+  end
+
+  -- is_file() BEFORE the nil check: a special buffer has a name, it just isn't
+  -- a file. Neogit sets its status buffer's name to "NeogitStatus"
+  -- (neogit/buffers/status/init.lua), which sails past the nil check and then
+  -- gets repo-root-prefixed into "<repo>/NeogitStatus" — silently filing the
+  -- comment against a path that doesn't exist, at a line number taken from the
+  -- status buffer rather than any file. Same for quickfix. Bail loudly instead.
   if not buf.is_file() then
     vim.notify("Review comments need a real file buffer", vim.log.levels.WARN)
     return nil
   end
-  local bufname = buf.name()
   if not bufname then
     vim.notify("Buffer has no file name", vim.log.levels.WARN)
     return nil
@@ -29,7 +65,7 @@ local function resolve_abs_path()
 end
 
 local function write_review_entry(line_ref, snippet_lines)
-  local abs_path = resolve_abs_path()
+  local abs_path, revision = resolve_abs_path()
   if not abs_path then
     return
   end
@@ -37,6 +73,13 @@ local function write_review_entry(line_ref, snippet_lines)
   vim.ui.input({ prompt = "Review comment: " }, function(input)
     if not input or input == "" then
       return
+    end
+
+    -- The path is right but the line number is not: it indexes the file as of
+    -- `revision`, and the agent will read the working-tree copy. Say so in the
+    -- body rather than filing a silently-misaligned line.
+    if revision then
+      input = string.format("(line %s is as of %s — locate by content, not by line number)\n\n%s", line_ref, revision, input)
     end
 
     local claude_dir = vim.uv.os_homedir() .. "/.claude"

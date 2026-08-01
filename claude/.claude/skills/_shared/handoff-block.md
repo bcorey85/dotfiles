@@ -33,21 +33,12 @@ handoff:
 ## The `why` channel
 
 `change` serves the reviewer agent: one line, whole file, what and why. `why`
-serves the _human_ reading the diff in Hunk. `/code` translates it into
-`.git/hunk-agent-context.json`, and pressing `a` in the TUI renders each note
-as a box anchored to the lines it explains, so the reader gets the reasoning
-before the code instead of reverse-engineering it.
+serves the _human_ reading the diff. `/code` surfaces it in the phase summary,
+grouped by file.
 
-Two rules, both established by testing the renderer rather than reading its
-docs:
-
-- **A note without `lines` is invisible.** Hunk renders `annotations[]` only —
-  a file-level summary with nothing under it displays nothing at all. If a
-  change is worth explaining, it needs a range.
-- **`lines` are new-file numbers**, the diff's right-hand column. A wrong range
-  does not drop the note, which is worse than it sounds: it renders anchored to
-  the top of the file under a mislabeled header, quietly pointing the reader at
-  the wrong code.
+- **A note without `lines` cannot be anchored.** If a change is worth
+  explaining, it needs a range.
+- **`lines` are new-file numbers**, the diff's right-hand column.
 
 `why` is optional and should stay sparse. It earns its place on non-obvious
 choices — a workaround, a deliberate deviation, an ordering constraint, a

@@ -16,11 +16,11 @@ if ! command -v hyprctl &>/dev/null; then
     exit 0
 fi
 
-LOCAL_CONF="$HOME/.config/hypr/hyprland.local.conf"
+LOCAL_CONF="$HOME/.config/hypr/machine.lua"
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [ -f "$LOCAL_CONF" ]; then
-    print_success "hyprland.local.conf already exists"
+    print_success "machine.lua already exists"
     exit 0
 fi
 
@@ -32,5 +32,5 @@ else
 fi
 
 print_info "Detected profile: $PROFILE"
-ln -sf "$DOTFILES_DIR/hypr/.config/hypr/hyprland.$PROFILE.conf" "$LOCAL_CONF"
-print_success "Linked hyprland.$PROFILE.conf → hyprland.local.conf"
+ln -sf "$DOTFILES_DIR/hypr/.config/hypr/hyprland.$PROFILE.lua" "$LOCAL_CONF"
+print_success "Linked hyprland.$PROFILE.lua → machine.lua"

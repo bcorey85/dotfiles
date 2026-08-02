@@ -10,7 +10,7 @@
 -- runs `doautoall nvim.lsp.enable FileType`, which sets the global
 -- did_filetype() flag. On BufReadPre that fired MID-READ of the first buffer
 -- (session restore / first file open), so the read's own `setf` no-op'd and the
--- buffer got NO filetype — no treesitter/markview/spell until :e. VeryLazy runs
+-- buffer got NO filetype — no treesitter/touchup/spell until :e. VeryLazy runs
 -- after startup+restore finish; the doautoall sweep then attaches LSP to every
 -- already-open buffer, so first-buffer LSP still works.
 return {

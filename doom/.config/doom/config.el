@@ -76,7 +76,7 @@
 (setq-default line-spacing 0.25)
 
 ;;; ---------------------------------------------------------------------------
-;;; Theme — modus tinted light/dark toggle synced via ~/.cache/theme-mode
+;;; Theme — doom-one light/dark toggle synced via ~/.cache/theme-mode
 ;;; ---------------------------------------------------------------------------
 
 ;; Shared state file: `theme-mode toggle' (tmux prefix T) flips this, and nvim
@@ -93,9 +93,11 @@
 
 (defun +theme/apply (mode &optional force)
   "Switch to MODE (\"dark\"/\"light\")."
-  (let ((scheme (if (equal mode "light")
-                    'modus-operandi-tinted
-                  'modus-vivendi-tinted)))
+  ;; doom-one is the Atom One Dark port that ships with doom-themes — the same
+  ;; family nvim/tmux/ghostty paint. It sits on stock #282c34, not the "darker"
+  ;; #1f2329 the terminal side uses; that is deliberate, a background remap here
+  ;; would land after solaire-mode has already derived its own faces.
+  (let ((scheme (if (equal mode "light") 'doom-one-light 'doom-one)))
     (unless (and (not force) (eq doom-theme scheme))
       (setq doom-theme scheme)
       (load-theme scheme t))))
@@ -562,14 +564,14 @@
 ;; carrying `diff-hl-hunk-type`) — it just never gives it a face. We add one.
 ;; bg-only + :extend t + fg nil ⇒ tree-sitter foreground shows through and the
 ;; wash fills to the window edge (same trick as the ediff faces below).
-;; modus-vivendi has built-in diff-hl faces, so use its palette:
-;;   green bg for insert, yellow bg for change, red bg for delete.
-(defface +diff-hl-line-insert '((t :background "#2e3c2e" :extend t))
-  "gitsigns-style line wash for inserted lines (modus green-muted).")
-(defface +diff-hl-line-change '((t :background "#3c3c2e" :extend t))
-  "gitsigns-style line wash for changed lines (modus yellow-muted).")
-(defface +diff-hl-line-delete '((t :background "#3c2e2e" :extend t))
-  "gitsigns-style line wash anchoring deleted lines (modus red-muted).")
+;; Washes are the onedark accent blended 15% into the dark canvas — the same
+;; recipe as delta's plus/minus styles in .gitconfig.
+(defface +diff-hl-line-insert '((t :background "#303a33" :extend t))
+  "gitsigns-style line wash for inserted lines (onedark green, 15%).")
+(defface +diff-hl-line-change '((t :background "#3c3933" :extend t))
+  "gitsigns-style line wash for changed lines (onedark yellow, 15%).")
+(defface +diff-hl-line-delete '((t :background "#3d2a31" :extend t))
+  "gitsigns-style line wash anchoring deleted lines (onedark red, 15%).")
 
 (defvar +diff-hl-inline-enabled nil
   "When non-nil, wash diff-hl hunk overlays with a line background.
@@ -677,7 +679,7 @@ Off by default so only the fringe gutter signs show; toggle on with `g L'.")
 ;; auto-appends --syntax-theme and --color-only; don't repeat them.
 (use-package! magit-delta
   :hook (magit-mode . magit-delta-mode)
-  :init (setq magit-delta-default-dark-theme "Dracula")
+  :init (setq magit-delta-default-dark-theme "TwoDark")
   :config
   ;; Word-level emphasis is deliberately DISABLED (emph = base style): delta's
   ;; within-line diff turns reworded/rewrapped prose into confetti, and this

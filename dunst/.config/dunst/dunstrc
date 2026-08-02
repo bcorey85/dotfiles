@@ -56,23 +56,25 @@
     skip_display = yes
     history_ignore = yes
 
+# onedark "darker" palette (dark-only, no mode axis). Low-urgency foreground is
+# the contrast-lifted comment grey, not the stock #535965.
 [urgency_low]
-    background = "#1c2128"
-    foreground = "#768390"
-    frame_color = "#444c56"
-    highlight = "#539bf5"
+    background = "#181b20"
+    foreground = "#858c9a"
+    frame_color = "#3e4451"
+    highlight = "#4fa6ed"
     timeout = 5
 
 [urgency_normal]
-    background = "#1c2128"
-    foreground = "#adbac7"
-    frame_color = "#539bf5"
-    highlight = "#539bf5"
+    background = "#181b20"
+    foreground = "#a0a8b7"
+    frame_color = "#4fa6ed"
+    highlight = "#4fa6ed"
     timeout = 10
 
 [urgency_critical]
-    background = "#1c2128"
-    foreground = "#adbac7"
-    frame_color = "#ff938a"
-    highlight = "#ff938a"
+    background = "#181b20"
+    foreground = "#a0a8b7"
+    frame_color = "#e55561"
+    highlight = "#e55561"
     timeout = 0

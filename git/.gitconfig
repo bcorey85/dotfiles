@@ -30,17 +30,18 @@
 	navigate = true
 	line-numbers = true
 	# Calm diffs: default delta is loud (Monokai Extended + saturated +/-).
-	# Catppuccin Macchiato syntax-theme + desaturated add/remove backgrounds match
-	# the muted nvim/neogit diffs so terminal diffs stop "screaming". Values are
-	# quoted so the # in hex codes isn't parsed as a gitconfig comment.
-	syntax-theme = Catppuccin Macchiato
-	minus-style = "syntax #3a2b30"
-	plus-style = "syntax #28332b"
+	# TwoDark is bat's Atom One Dark port — the same family nvim/tmux/ghostty
+	# paint. The washes are the onedark accent blended 15% into the #1f2329
+	# canvas, so terminal diffs stop "screaming". Values are quoted so the # in
+	# hex codes isn't parsed as a gitconfig comment.
+	syntax-theme = TwoDark
+	minus-style = "syntax #3d2a31"
+	plus-style = "syntax #303a33"
 	# Moved code (diff.colorMoved below): git emits bold magenta for moved-from
 	# and bold cyan for moved-to. Delta passes those through RAW unless mapped —
 	# loud, unwashed, syntax highlighting stripped. Map them to washes dimmer
 	# than plus/minus so a moved block recedes instead of reading as new logic.
-	map-styles = "bold purple => syntax #2e2a38, bold cyan => syntax #26303a"
+	map-styles = "bold purple => syntax #312b3c, bold cyan => syntax #243239"
 	# Word-level emphasis is deliberately DISABLED (emph = base style): delta's
 	# within-line diff turns reworded/rewrapped prose into confetti (scattered
 	# per-token highlights), and dotfiles diffs are mostly prose. Line washes +

@@ -40,8 +40,9 @@ hl.on("hyprland.start", function()
     -- Authentication Agent
     hl.exec_cmd("/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1")
 
-    -- Wallpaper daemon — must be split: swww-daemon runs in the foreground
-    hl.exec_cmd("swww-daemon")
+    -- Wallpaper daemon — must be split: awww-daemon runs in the foreground.
+    -- (swww was renamed to awww upstream in 0.12; the Arch package followed.)
+    hl.exec_cmd("awww-daemon")
     hl.exec_cmd("sleep 0.5 && hypr-wallpaper")
 
     -- Notification daemon
@@ -109,8 +110,9 @@ hl.config({
         border_size = 2,
 
         col = {
-            active_border   = "rgba(545d68ee)",
-            inactive_border = "rgba(373e47ee)",
+            -- onedark "darker" palette (dark-only, no mode axis).
+            active_border   = "rgba(535965ee)",
+            inactive_border = "rgba(2d3139ee)",
         },
 
         resize_on_border = true,
@@ -131,7 +133,7 @@ hl.config({
             enabled      = true,
             range        = 4,
             render_power = 3,
-            color        = "rgba(1c2128ee)",
+            color        = "rgba(181b20ee)",
         },
 
         blur = {
@@ -201,7 +203,7 @@ hl.config({
     input = {
         numlock_by_default = true,
         kb_layout  = "us,us",
-        kb_variant = "colemak_dh,",
+        kb_variant = "",
         kb_model   = "",
         kb_options = "ctrl:nocaps",
         kb_rules   = "",

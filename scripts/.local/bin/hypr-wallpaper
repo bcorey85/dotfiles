@@ -1,9 +1,19 @@
 #!/bin/bash
-# Set or cycle wallpapers using swww
+# Set or cycle wallpapers using awww (renamed from swww upstream in 0.12; both
+# names are accepted so a machine still on the old package keeps working).
 # Usage: hypr-wallpaper [path]   - set specific wallpaper
 #        hypr-wallpaper          - pick random from ~/Pictures/wallpapers
 
 WALLPAPER_DIR="$HOME/Pictures/wallpapers"
+
+if command -v awww &>/dev/null; then
+    SWWW=awww
+elif command -v swww &>/dev/null; then
+    SWWW=swww
+else
+    echo "neither awww nor swww is installed (pacman -S awww)" >&2
+    exit 1
+fi
 
 if [ -n "$1" ]; then
     WALL="$1"
@@ -14,4 +24,4 @@ else
     exit 1
 fi
 
-swww img "$WALL" --transition-type grow --transition-duration 1 --transition-fps 60
+"$SWWW" img "$WALL" --transition-type grow --transition-duration 1 --transition-fps 60

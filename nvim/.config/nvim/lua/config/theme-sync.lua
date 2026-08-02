@@ -7,7 +7,7 @@
 -- <leader>ut shells out to the same script, so a toggle from nvim flips tmux
 -- and ghostty too — one source of truth, all ways.
 --
--- This module also owns every theme-reactive highlight override (markview
+-- This module also owns every theme-reactive highlight override (markdown
 -- headings, gitsigns word-diff, per-family fixups), re-applied on ColorScheme,
 -- so a family switch always lands with the right set. Plugin specs stay pure
 -- plugin declarations. Keep FAMILIES in sync with theme-mode's registry and
@@ -154,6 +154,89 @@ local FAMILIES = {
       vim.api.nvim_set_hl(0, "Comment", { fg = c })
     end,
   },
+  catppuccin = {
+    -- catppuccin/nvim: Macchiato (dark) / Latte (light). Explicit flavour scheme
+    -- names, so no background dance. Diff* ship as real bg washes — left stock.
+    schemes = { dark = "catppuccin-macchiato", light = "catppuccin-latte" },
+    accents = {
+      dark = { heading1 = "#c6a0f6", heading = "#8aadf4" }, -- mauve + blue
+      light = { heading1 = "#8839ef", heading = "#1e66f5" },
+    },
+    -- Comment floor: macchiato overlay0 #6e738d is 3.15:1 on #24273a, latte overlay0
+    -- #9ca0b0 is 2.30:1 on #eff1f5 (floor 4.5). Body has room (9.92 / 7.06), so
+    -- lift the comment alone: dark 30% toward text (4.67:1), light 65% (4.63:1).
+    -- catppuccin ships italic comments — preserved.
+    fixup = function(mode)
+      local c = mode == "dark" and blend("#cad3f5", "#6e738d", 0.30) or blend("#4c4f69", "#9ca0b0", 0.65)
+      vim.api.nvim_set_hl(0, "Comment", { fg = c, italic = true })
+    end,
+  },
+  gruvbox = {
+    -- ellisonleao/gruvbox.nvim, medium contrast. One scheme name for both modes;
+    -- vim.o.background (set by M.apply before :colorscheme) picks dark/light.
+    -- Diff* stock washes are too bright (see fixup) — repainted there.
+    schemes = { dark = "gruvbox", light = "gruvbox" },
+    accents = {
+      dark = { heading1 = "#d3869b", heading = "#83a598" }, -- purple + blue
+      light = { heading1 = "#8f3f71", heading = "#076678" },
+    },
+    -- Comment floor: dark gray #928374 is 4.02:1 on #282828, light #7c6f64 is
+    -- 4.29:1 on #fbf1c7 (floor 4.5). Small lifts toward fg: dark 15% (4.75:1),
+    -- light 10% (4.63:1). gruvbox ships italic comments — preserved.
+    fixup = function(mode)
+      local c = mode == "dark" and blend("#ebdbb2", "#928374", 0.15) or blend("#3c3836", "#7c6f64", 0.10)
+      vim.api.nvim_set_hl(0, "Comment", { fg = c, italic = true })
+      -- gruvbox.nvim's stock Diff* are bright saturated washes (dark DiffAdd
+      -- #62693e drops comment fg to 1.58:1). Repaint dark, tinted line bgs like
+      -- the house families; DiffText a shade brighter than DiffChange so the
+      -- changed word still pops. fg left unset — lines keep their syntax colours.
+      local diff = mode == "dark"
+          and { DiffAdd = "#33381d", DiffChange = "#35352a", DiffDelete = "#3c2523", DiffText = "#4a4a2b" }
+        or { DiffAdd = "#c7d59b", DiffChange = "#e0dcae", DiffDelete = "#f0c0b0", DiffText = "#cfd18a" }
+      for group, bg in pairs(diff) do
+        vim.api.nvim_set_hl(0, group, { bg = bg })
+      end
+    end,
+  },
+  everforest = {
+    -- sainnhe/everforest (vimscript). One scheme name; vim.o.background plus the
+    -- everforest_background global (set in pre) pick the variant — hard dark /
+    -- medium light, matching the ghostty builtins. Diff* ship real bg washes.
+    schemes = { dark = "everforest", light = "everforest" },
+    pre = function(mode)
+      vim.g.everforest_background = mode == "dark" and "hard" or "medium"
+      vim.g.everforest_better_performance = 1
+    end,
+    accents = {
+      dark = { heading1 = "#d699b6", heading = "#7fbbb3" }, -- purple + blue
+      light = { heading1 = "#df69ba", heading = "#3a94c5" },
+    },
+    -- Comment floor: dark grey1 #859289 is 4.24:1 on #272e33 (hard bg0), light
+    -- grey1 #939f91 is 2.56:1 on #fdf6e3 (floor 4.5). Body has room (8.62 /
+    -- 5.18), so lift the comment: dark 15% toward fg (4.73:1), light 85%
+    -- (4.62:1). everforest ships upright comments by default — no italic added.
+    fixup = function(mode)
+      local c = mode == "dark" and blend("#d3c6aa", "#859289", 0.15) or blend("#5c6a72", "#939f91", 0.85)
+      vim.api.nvim_set_hl(0, "Comment", { fg = c })
+    end,
+  },
+  github = {
+    -- projekt0n/github-nvim-theme: Dark Dimmed (the review-tuned diff variant) /
+    -- Light Default. Explicit scheme names. Diff* ship real bg washes — stock.
+    schemes = { dark = "github_dark_dimmed", light = "github_light_default" },
+    accents = {
+      dark = { heading1 = "#b083f0", heading = "#539bf5" }, -- purple + blue
+      light = { heading1 = "#8250df", heading = "#0969da" },
+    },
+    -- Comment floor: dimmed #768390 is 3.88:1 on #22272e (floor 4.5); lift 25%
+    -- toward fg #adbac7 (4.67:1). Light Default's #6e7781 is already 4.55:1 on
+    -- #ffffff, so light is left stock. github ships italic comments — preserved.
+    fixup = function(mode)
+      if mode == "dark" then
+        vim.api.nvim_set_hl(0, "Comment", { fg = blend("#adbac7", "#768390", 0.25), italic = true })
+      end
+    end,
+  },
 }
 
 local applied ---@type string|nil  last family+mode we set, to skip redundant reloads
@@ -181,14 +264,47 @@ function M.read_state()
   return normalize_family(read_state(FAMILY_FILE)), normalize_mode(read_state(MODE_FILE))
 end
 
--- markview heading colours (referenced by markview.lua's headings config).
+-- Markdown heading + bullet colours. touchup.nvim renders no heading icons and
+-- defines no heading hl of its own, so headings fall back to native treesitter
+-- highlighting — we paint @markup.heading.N.markdown directly (most specific,
+-- so it wins over the family scheme and over touchup's default underline). H1
+-- gets the accent, H2–H6 the muted heading colour, matching the old MdHeading*.
+-- Bullets: touchup keys bullet hl by marker char, so tint all three groups.
 local function set_headings(a)
   local hl = vim.api.nvim_set_hl
-  hl(0, "MdHeading1", { fg = a.heading1, bold = true })
+  hl(0, "@markup.heading.1.markdown", { fg = a.heading1, bold = true })
   for i = 2, 6 do
-    hl(0, "MdHeading" .. i, { fg = a.heading, bold = true })
+    hl(0, "@markup.heading." .. i .. ".markdown", { fg = a.heading, bold = true })
   end
-  hl(0, "MdBullet", { fg = a.heading })
+  for _, g in ipairs({ "TouchupBulletDash", "TouchupBulletPlus", "TouchupBulletStar" }) do
+    hl(0, g, { fg = a.heading })
+  end
+end
+
+-- Prose reading calm. Treesitter's markdown_inline/markdown parsers paint each
+-- markup kind its own hue (bold/italic pink, code green, quote pink, links
+-- lavender, bullets teal), so a single paragraph turns into five competing
+-- colours — the "too busy to read prose" complaint. Strip the COLOUR and keep
+-- the SIGNAL: bold stays bold, italic stays slanted, links keep an underline,
+-- the raw URL and list markers drop to muted. Scoped to the language-specific
+-- groups (.markdown_inline / .markdown) so only markdown is calmed — @markup.*
+-- in help/other langs keeps its scheme colours. Theme-agnostic (weight/underline
+-- + links to Normal/Comment), so it tracks every family/mode switch. Inline code
+-- (@markup.raw) is left alone — it's code content, not prose decoration.
+local function set_prose()
+  local hl = vim.api.nvim_set_hl
+  local rules = {
+    ["@markup.strong.markdown_inline"] = { bold = true },
+    ["@markup.italic.markdown_inline"] = { italic = true },
+    ["@markup.quote.markdown"] = { italic = true },
+    ["@markup.link.markdown_inline"] = { underline = true },
+    ["@markup.link.label.markdown_inline"] = { underline = true },
+    ["@markup.link.url.markdown_inline"] = { link = "Comment" },
+    ["@markup.list.markdown"] = { link = "Comment" },
+  }
+  for group, spec in pairs(rules) do
+    hl(0, group, spec)
+  end
 end
 
 -- gitsigns word-diff readability (the `=` whole-file inline overlay, keymaps.lua).
@@ -247,6 +363,7 @@ local function apply_overrides()
   end
   set_word_diff()
   set_org_agenda()
+  set_prose()
 end
 
 -- Apply family+mode by setting background and re-running :colorscheme. Skips

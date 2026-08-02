@@ -23,7 +23,7 @@ return {
     config = function()
       -- ── mini.icons ─────────────────────────────────────────────────────────
       -- Shared icon provider; the mock lets plugins that require
-      -- "nvim-web-devicons" (winbar, oil, markview) get mini.icons transparently.
+      -- "nvim-web-devicons" (winbar, oil) get mini.icons transparently.
       require("mini.icons").setup()
       MiniIcons.mock_nvim_web_devicons()
 

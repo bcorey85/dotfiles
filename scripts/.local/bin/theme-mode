@@ -53,7 +53,7 @@ TMUX_THEME_DIR="$HOME/.config/tmux"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="nightfox"
 
-families() { printf '%s\n' nightfox duskfox nordfox terafox carbonfox; }
+families() { printf '%s\n' nightfox duskfox nordfox terafox carbonfox catppuccin gruvbox everforest github; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   case "$1:$2" in
@@ -64,6 +64,16 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     nordfox:*) echo "nordfox-$2" ;; # custom: ghostty/themes/nordfox-{dark,light} (Nord; dayfox is the light)
     terafox:*) echo "terafox-$2" ;; # custom: ghostty/themes/terafox-{dark,light} (dawnfox is the light)
     carbonfox:*) echo "carbonfox-$2" ;; # custom: ghostty/themes/carbonfox-{dark,light} (IBM Carbon; dayfox is the light)
+    # builtins (no custom file on disk -> written as `theme = <name>`). Names
+    # must match `ghostty +list-themes` exactly, incl. spaces/casing.
+    catppuccin:dark) echo "Catppuccin Macchiato" ;;
+    catppuccin:light) echo "Catppuccin Latte" ;;
+    gruvbox:dark) echo "Gruvbox Dark" ;;
+    gruvbox:light) echo "Gruvbox Light" ;;
+    everforest:dark) echo "Everforest Dark Hard" ;;
+    everforest:light) echo "Everforest Light Med" ;;
+    github:dark) echo "GitHub Dark Dimmed" ;;
+    github:light) echo "GitHub Light Default" ;;
   esac
 }
 

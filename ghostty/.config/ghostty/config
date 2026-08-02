@@ -2,8 +2,8 @@
 # sturdy weight (far less eye-strain than CommitMono for all-day reading).
 font-family = JetBrainsMono Nerd Font Mono
 font-style = SemiBold
-font-size = 11
-adjust-cell-height = 20%
+font-size = 13
+adjust-cell-height = 25%
 confirm-close-surface = false
 
 # Linux/FreeType only: disable light hinting (on by default in 1.3+) so glyph

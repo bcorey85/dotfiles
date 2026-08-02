@@ -61,6 +61,10 @@ vim.api.nvim_create_autocmd("FileType", {
     vim.opt_local.wrap = true
     vim.opt_local.linebreak = true
     vim.opt_local.spell = true
+    -- touchup.nvim silently disables its marker/link rendering when
+    -- conceallevel > 0 (concealing desyncs its extmark columns). The global
+    -- default is 2, so drop it to 0 here. Harmless for text/gitcommit.
+    vim.opt_local.conceallevel = 0
   end,
 })
 
@@ -95,8 +99,15 @@ vim.api.nvim_create_autocmd("BufReadPost", {
   end,
 })
 
--- Suppress LSP diagnostics, treesitter highlighting, AND markview rendering in
--- buffers with unresolved git conflict markers.
+-- Suppress LSP diagnostics and treesitter highlighting in buffers with
+-- unresolved git conflict markers.
+--
+-- (Markdown rendering: the old markview pass drew heading icons/colours and
+-- per-char virt-text garbage over conflict markers and had a per-buffer
+-- disable command we called here. touchup has neither — no heading rendering,
+-- and no per-buffer disable hook — so there's nothing to toggle. Its remaining
+-- bullet/checkbox overlays on a conflicted markdown buffer are cosmetically
+-- minor and left alone.)
 --
 -- Diagnostics: language servers (lua_ls especially) parse `<<<<<<<` /
 -- `=======` / `>>>>>>>` as code and spam syntax errors (`<<` reads as a
@@ -132,20 +143,12 @@ vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost" }, {
     end
     if has_conflict_markers(buf) then
       vim.diagnostic.enable(false, { bufnr = buf })
-      -- Scheduled: treesitter (FileType) AND markview both (re)attach AFTER this
-      -- BufReadPost — a synchronous stop here would just be undone. Defer past
-      -- that tick so it sticks. markview is the worst offender on a conflicted
-      -- markdown buffer: its parser chokes on the markers and it renders garbage
-      -- virtual-text (the per-char `P r e p` blocks were 7 markview virt extmarks)
-      -- plus heading icons/colors over the conflict.
-      -- Order matters: markview turns native treesitter highlighting OFF while
-      -- it renders and turns it back ON when disabled — so disable markview
-      -- FIRST, then stop treesitter, or markview's re-enable would undo the stop.
+      -- Scheduled: treesitter (FileType) reattaches AFTER this BufReadPost — a
+      -- synchronous stop here would just be undone. Defer past that tick so it
+      -- sticks, killing the "random red" @markup.heading smear the parser makes
+      -- when it mis-scopes conflict markers.
       vim.schedule(function()
         if vim.api.nvim_buf_is_valid(buf) then
-          pcall(function()
-            require("markview.commands").disable(buf)
-          end)
           pcall(vim.treesitter.stop, buf)
         end
       end)
@@ -153,9 +156,6 @@ vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost" }, {
     elseif conflict_disabled[buf] then
       vim.diagnostic.enable(true, { bufnr = buf })
       pcall(vim.treesitter.start, buf)
-      pcall(function()
-        require("markview.commands").enable(buf)
-      end)
       conflict_disabled[buf] = nil
     end
   end,

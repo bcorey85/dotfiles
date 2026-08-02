@@ -46,6 +46,16 @@ return {
       -- so "left" silently inverts accept_current/accept_incoming (verified
       -- empirically; upstream bug).
     },
+    highlights = {
+      -- Char-level (word) emphasis OFF. codediff auto-derives a brighter char
+      -- tier from the DiffAdd/DiffDelete line wash × char_brightness (stock 1.4
+      -- dark / 0.92 light). Because a pure-inserted line's every token counts as
+      -- an "inner change", that tier boxes EVERY word on inserts, not just
+      -- genuinely changed words. char_brightness = 1.0 flattens char to the same
+      -- colour as the line wash — no word boxes, calm line-level washes only
+      -- (matches the delta/neogit/magit surfaces).
+      char_brightness = 1.0,
+    },
     -- Default the sidebar to the directory tree instead of the flat file
     -- list; `i` (toggle_view_mode) still flips back to list at runtime.
     explorer = {

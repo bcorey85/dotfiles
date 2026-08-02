@@ -30,10 +30,10 @@
 	navigate = true
 	line-numbers = true
 	# Calm diffs: default delta is loud (Monokai Extended + saturated +/-).
-	# Catppuccin Mocha syntax-theme + desaturated add/remove backgrounds match
+	# Catppuccin Macchiato syntax-theme + desaturated add/remove backgrounds match
 	# the muted nvim/neogit diffs so terminal diffs stop "screaming". Values are
 	# quoted so the # in hex codes isn't parsed as a gitconfig comment.
-	syntax-theme = Catppuccin Mocha
+	syntax-theme = Catppuccin Macchiato
 	minus-style = "syntax #3a2b30"
 	plus-style = "syntax #28332b"
 	# Moved code (diff.colorMoved below): git emits bold magenta for moved-from

@@ -247,11 +247,11 @@ works if it exists _before_ the talking starts (step 13).
 15. **Continue each architect via `SendMessage`** — its exploration context is
     intact, so send the path to `03-decisions.md` plus the instruction to produce
     the full plan per its Output Format. Do NOT re-litigate resolved decisions;
-    they carry the user's authority. If the agent is no longer addressable, fall
-    back to a fresh dispatch with its brief verbatim, `02-research.md`, and
-    `03-decisions.md` — the ledger is written to make that fallback lossless.
+    they carry the user's authority. If the agent is no longer addressable,
+    re-dispatch fresh with its brief verbatim, `02-research.md`, and
+    `03-decisions.md` — the ledger makes that fallback lossless.
 
-    Send the ledger **by path, and by path only**. Re-typing decisions from context is the
+    Send the ledger **by path only** — re-typing decisions from context is the
     compaction-lossy move the ledger exists to prevent.
 
     **Fullstack ordering**: finalize `backend-architect` first — its plan must
@@ -266,8 +266,12 @@ works if it exists _before_ the talking starts (step 13).
       append it to `03-decisions.md` as a decision block (it is a Phase-6
       decision that arrived late, not a footnote), **then send the resolution back
       to that architect** and take its revised plan. Its guess may have shaped
-      steps and success criteria well past the flagged line; hand-patching the one
-      marked spot leaves the rest built on the guess.
+      steps and criteria well past the flagged line; hand-patching one spot
+      leaves the rest built on the guess.
+    - **Testability lint.** Could a reader of ONLY the plan decide each Success
+      Criterion pass/fail (named command, output, or test)? Failures are
+      UNDERSPECIFIED — resolve with the user like a `DESIGN GAP`, never left to
+      the coder's reading.
     - **Carry the counter-priming into `## Approaches Considered and Not Taken`**
       — the three ruled-out approaches, each with its failure mode.
     - **Write `## Constraints` and `## External Contracts` — nothing upstream
@@ -279,13 +283,13 @@ works if it exists _before_ the talking starts (step 13).
       each acceptance claim states its evidence class — `exercised` or
       `declared-only`. Schema text and in-repo precedent describe intent, not
       runtime behavior.
-    - **Fullstack: weave, don't concatenate.** Merging as "backend phases, then
-      frontend phases" is the horizontal anti-pattern `plan-format.md` forbids —
-      a layer phase produces no end-to-end pass/fail signal for `/code`'s gates.
-      Interleave into vertical slices: each phase delivers one increment of
-      user-observable behavior end-to-end, independently verifiable. The API
-      contract fixed in step 15 is what makes this safe. A phase stays
-      single-layer only when the work genuinely is (migration-only, infra-only).
+    - **Fullstack: weave, don't concatenate.** "Backend phases, then frontend
+      phases" is the horizontal anti-pattern `plan-format.md` forbids — layer
+      phases give `/code`'s gates no end-to-end pass/fail signal. Interleave
+      vertical slices, each delivering one verifiable increment of
+      user-observable behavior; the step-15 API contract makes this safe.
+      Single-layer phases only when the work genuinely is (migration-only,
+      infra-only).
 
 ## Phase 7.5: Write the acceptance contract (with the user, before any coder)
 
@@ -294,9 +298,9 @@ works if it exists _before_ the talking starts (step 13).
     section. No implementation exists yet — that is the source of the contract's
     authority.
 
-    Put each criterion to the user as one sentence and get their words back before
-    writing the assertion: one you translated alone is your reading of the ticket,
-    already baked into the plan.
+    Put each criterion to the user as one sentence and get their words back: an
+    assertion you translate alone is your reading of the ticket, already baked
+    into the plan.
 
     **Damage-path criteria are part of the contract.** Sweep the failure surface
     before writing: every input read (unreadable, malformed, oversized, missing),
@@ -326,9 +330,9 @@ works if it exists _before_ the talking starts (step 13).
     in conversation is fine. Writing the spec or dispatching coders before the
     answers is NOT.
 
-    **This is the ONLY legal `AskUserQuestion` in the skill** — two mechanical
-    yes/nos with nothing to discuss. Design decisions (Phase 6) are prose, always;
-    a modal there buys a click instead of the user's knowledge.
+    **The ONLY legal `AskUserQuestion` in the skill** — two mechanical yes/nos.
+    Design decisions (Phase 6) stay prose; a modal there buys a click instead of
+    the user's knowledge.
 
     **Save to disk?**
     - Yes → Write the spec to `docs/plans/<slug>/spec.md` using the template

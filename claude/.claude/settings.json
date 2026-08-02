@@ -1,230 +1,14 @@
 {
-  "attribution": {
-    "commit": "",
-    "pr": ""
-  },
-  "autoMemoryEnabled": false,
-  "awaySummaryEnabled": false,
-  "editorMode": "normal",
-  "effortLevel": "medium",
-  "enabledPlugins": {
-    "context7@claude-plugins-official": true,
-    "lua-lsp@claude-plugins-official": true,
-    "pyright-lsp@claude-plugins-official": true,
-    "security-guidance@claude-plugins-official": true,
-    "skill-creator@claude-plugins-official": true,
-    "typescript-lsp@claude-plugins-official": true,
-    "workmux-status@workmux": true
-  },
   "env": {
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "180000",
     "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1",
     "ENABLE_LSP_TOOL": "1",
     "ENABLE_TOOL_SEARCH": "1"
   },
-  "extraKnownMarketplaces": {
-    "workmux": {
-      "source": {
-        "repo": "raine/workmux",
-        "source": "github"
-      }
-    }
+  "attribution": {
+    "commit": "",
+    "pr": ""
   },
-  "hooks": {
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "command": "~/.claude/scripts/notify 'Claude Code' 'Ready for input'",
-            "type": "command"
-          }
-        ],
-        "matcher": "idle_prompt"
-      },
-      {
-        "hooks": [
-          {
-            "command": "~/.claude/scripts/notify 'Claude Code' 'Permission needed'",
-            "type": "command"
-          }
-        ],
-        "matcher": "permission_prompt"
-      },
-      {
-        "hooks": [
-          {
-            "command": "~/.claude/scripts/notify 'Claude Code' 'Task complete'",
-            "type": "command"
-          }
-        ],
-        "matcher": "task_complete"
-      }
-    ],
-    "PostToolUse": [
-      {
-        "hooks": [
-          {
-            "command": "~/.claude/scripts/log-skill-use.sh",
-            "type": "command"
-          }
-        ],
-        "matcher": "Skill"
-      },
-      {
-        "hooks": [
-          {
-            "command": "bash ~/.claude/scripts/review-commit-gate.sh",
-            "type": "command"
-          },
-          {
-            "command": "~/.claude/scripts/log-agent-usage.sh",
-            "type": "command"
-          }
-        ],
-        "matcher": "Agent"
-      },
-      {
-        "hooks": [
-          {
-            "command": "~/.claude/scripts/stub-guard.sh",
-            "type": "command"
-          }
-        ],
-        "matcher": "Write|Edit"
-      },
-      {
-        "hooks": [
-          {
-            "command": "~/.claude/scripts/prettier-hook.sh",
-            "type": "command"
-          }
-        ],
-        "matcher": "Write|Edit"
-      },
-      {
-        "hooks": [
-          {
-            "command": "~/.claude/scripts/eslint-hook.sh",
-            "type": "command"
-          }
-        ],
-        "matcher": "Write|Edit"
-      },
-      {
-        "hooks": [
-          {
-            "command": "~/.claude/scripts/claudemd-linecount.sh",
-            "type": "command"
-          }
-        ],
-        "matcher": "Write|Edit"
-      }
-    ],
-    "PreToolUse": [
-      {
-        "hooks": [
-          {
-            "command": "~/.claude/scripts/bash-safety-gate.sh",
-            "type": "command"
-          },
-          {
-            "command": "bash ~/.claude/scripts/git-discipline-gate.sh",
-            "type": "command"
-          },
-          {
-            "command": "bash ~/.claude/scripts/review-commit-gate.sh",
-            "type": "command"
-          }
-        ],
-        "matcher": "Bash"
-      },
-      {
-        "hooks": [
-          {
-            "command": "~/.claude/scripts/block-credential-read.sh",
-            "type": "command"
-          }
-        ],
-        "matcher": "Read|Grep"
-      },
-      {
-        "hooks": [
-          {
-            "command": "~/.claude/scripts/write-edit-safety-gate.sh",
-            "type": "command"
-          },
-          {
-            "command": "bash ~/.claude/scripts/spec-budget-gate.sh",
-            "type": "command"
-          },
-          {
-            "command": "bash ~/.claude/scripts/acceptance-contract-gate.sh",
-            "type": "command"
-          }
-        ],
-        "matcher": "(Write|Edit|MultiEdit|NotebookEdit)"
-      },
-      {
-        "hooks": [
-          {
-            "command": "~/.claude/scripts/agent-model-guard.sh",
-            "type": "command"
-          },
-          {
-            "command": "bash ~/.claude/scripts/mechanical-check-gate.sh",
-            "type": "command"
-          }
-        ],
-        "matcher": "Agent"
-      },
-      {
-        "hooks": [
-          {
-            "command": "~/.claude/scripts/notify 'Claude Code' 'Question for you'",
-            "type": "command"
-          }
-        ],
-        "matcher": "AskUserQuestion"
-      }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "command": "~/.claude/scripts/warn-skip-hooks.sh",
-            "type": "command"
-          },
-          {
-            "command": "~/.claude/scripts/calibration-guard.sh",
-            "type": "command"
-          }
-        ],
-        "matcher": ""
-      },
-      {
-        "hooks": [
-          {
-            "command": "bash '/home/brandon/.claude/hooks/herdr-agent-state.sh' session",
-            "timeout": 10,
-            "type": "command"
-          }
-        ],
-        "matcher": "*"
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "command": "~/.claude/scripts/log-skill-use.sh",
-            "type": "command"
-          }
-        ]
-      }
-    ]
-  },
-  "inputNeededNotifEnabled": false,
-  "model": "opus",
   "permissions": {
     "allow": [
       "mcp__plugin_context7_context7__resolve-library-id",
@@ -355,24 +139,240 @@
       "Bash(open .)",
       "Bash(open -R *)"
     ],
-    "defaultMode": "auto",
     "deny": [
       "Bash(sudo *)",
       "Bash(rm -rf /)",
       "Bash(chmod 777 *)",
       "Bash(gh pr create:*)",
       "Bash(gh pr merge:*)"
+    ],
+    "defaultMode": "auto"
+  },
+  "model": "claude-fable-5[1m]",
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "idle_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/notify 'Claude Code' 'Ready for input'"
+          }
+        ]
+      },
+      {
+        "matcher": "permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/notify 'Claude Code' 'Permission needed'"
+          }
+        ]
+      },
+      {
+        "matcher": "task_complete",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/notify 'Claude Code' 'Task complete'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/log-skill-use.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/review-commit-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/log-agent-usage.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/stub-guard.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/prettier-hook.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/eslint-hook.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/claudemd-linecount.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/bash-safety-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/git-discipline-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/review-commit-gate.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/block-credential-read.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "(Write|Edit|MultiEdit|NotebookEdit)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/write-edit-safety-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/spec-budget-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/acceptance-contract-gate.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/agent-model-guard.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/mechanical-check-gate.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/notify 'Claude Code' 'Question for you'"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/warn-skip-hooks.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/calibration-guard.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash '/home/brandon/.claude/hooks/herdr-agent-state.sh' session",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/log-skill-use.sh"
+          }
+        ]
+      }
     ]
   },
-  "skipAutoPermissionPrompt": true,
-  "skipWorkflowUsageWarning": true,
-  "statusLine": {
-    "command": "bash ~/.claude/statusline-command.sh",
-    "type": "command"
-  },
-  "theme": "dark",
-  "tui": "fullscreen",
   "worktree": {
     "baseRef": "fresh"
-  }
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash ~/.claude/statusline-command.sh"
+  },
+  "enabledPlugins": {
+    "context7@claude-plugins-official": true,
+    "lua-lsp@claude-plugins-official": true,
+    "pyright-lsp@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "workmux-status@workmux": true
+  },
+  "extraKnownMarketplaces": {
+    "workmux": {
+      "source": {
+        "source": "github",
+        "repo": "raine/workmux"
+      }
+    }
+  },
+  "effortLevel": "medium",
+  "awaySummaryEnabled": false,
+  "tui": "fullscreen",
+  "autoMemoryEnabled": false,
+  "skipWorkflowUsageWarning": true,
+  "theme": "dark",
+  "editorMode": "normal",
+  "inputNeededNotifEnabled": false,
+  "skipAutoPermissionPrompt": true
 }

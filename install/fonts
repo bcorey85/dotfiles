@@ -23,8 +23,8 @@ case $PLATFORM in
         print_info "WSL detected - Fonts must be installed on Windows"
         echo ""
         echo "  1. Download: https://github.com/ryanoasis/nerd-fonts/releases"
-        echo "  2. Install JetBrainsMono Nerd Font"
-        echo "  3. Windows Terminal → Settings → Font face → 'JetBrainsMono Nerd Font Mono'"
+        echo "  2. Install FiraCode Nerd Font"
+        echo "  3. Windows Terminal → Settings → Font face → 'FiraCode Nerd Font Mono'"
         echo ""
         print_info "Press Enter when fonts are installed..."
         read || true
@@ -34,16 +34,20 @@ case $PLATFORM in
         mkdir -p ~/.local/share/fonts
         cd ~/.local/share/fonts
 
-        if [ ! -f "JetBrainsMonoNerdFontMono-Regular.ttf" ]; then
-            curl -fLo /tmp/JetBrainsMono.tar.xz \
-                https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.tar.xz
-            tar xf /tmp/JetBrainsMono.tar.xz -C ~/.local/share/fonts \
-                JetBrainsMonoNerdFontMono-Regular.ttf JetBrainsMonoNerdFontMono-Bold.ttf \
-                JetBrainsMonoNerdFontMono-Italic.ttf JetBrainsMonoNerdFontMono-BoldItalic.ttf
-            rm /tmp/JetBrainsMono.tar.xz
-            print_success "JetBrainsMono Nerd Font installed"
+        # Fira Code ships no italic, so there is no -Italic/-BoldItalic to pull.
+        # Retina is not optional: ghostty's config selects `font-style = Retina`.
+        # The rest come along so the weight stays adjustable there.
+        if [ ! -f "FiraCodeNerdFontMono-Regular.ttf" ]; then
+            curl -fLo /tmp/FiraCode.tar.xz \
+                https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz
+            tar xf /tmp/FiraCode.tar.xz -C ~/.local/share/fonts \
+                FiraCodeNerdFontMono-Regular.ttf FiraCodeNerdFontMono-Bold.ttf \
+                FiraCodeNerdFontMono-Light.ttf FiraCodeNerdFontMono-Retina.ttf \
+                FiraCodeNerdFontMono-Medium.ttf FiraCodeNerdFontMono-SemiBold.ttf
+            rm /tmp/FiraCode.tar.xz
+            print_success "FiraCode Nerd Font installed"
         else
-            print_success "JetBrainsMono Nerd Font already installed"
+            print_success "FiraCode Nerd Font already installed"
         fi
 
         fc-cache -fv
@@ -53,23 +57,27 @@ case $PLATFORM in
         mkdir -p ~/.local/share/fonts
         cd ~/.local/share/fonts
 
-        if [ ! -f "JetBrainsMonoNerdFontMono-Regular.ttf" ]; then
-            curl -fLo /tmp/JetBrainsMono.tar.xz \
-                https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.tar.xz
-            tar xf /tmp/JetBrainsMono.tar.xz -C ~/.local/share/fonts \
-                JetBrainsMonoNerdFontMono-Regular.ttf JetBrainsMonoNerdFontMono-Bold.ttf \
-                JetBrainsMonoNerdFontMono-Italic.ttf JetBrainsMonoNerdFontMono-BoldItalic.ttf
-            rm /tmp/JetBrainsMono.tar.xz
-            print_success "JetBrainsMono Nerd Font installed"
+        # Fira Code ships no italic, so there is no -Italic/-BoldItalic to pull.
+        # Retina is not optional: ghostty's config selects `font-style = Retina`.
+        # The rest come along so the weight stays adjustable there.
+        if [ ! -f "FiraCodeNerdFontMono-Regular.ttf" ]; then
+            curl -fLo /tmp/FiraCode.tar.xz \
+                https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz
+            tar xf /tmp/FiraCode.tar.xz -C ~/.local/share/fonts \
+                FiraCodeNerdFontMono-Regular.ttf FiraCodeNerdFontMono-Bold.ttf \
+                FiraCodeNerdFontMono-Light.ttf FiraCodeNerdFontMono-Retina.ttf \
+                FiraCodeNerdFontMono-Medium.ttf FiraCodeNerdFontMono-SemiBold.ttf
+            rm /tmp/FiraCode.tar.xz
+            print_success "FiraCode Nerd Font installed"
         else
-            print_success "JetBrainsMono Nerd Font already installed"
+            print_success "FiraCode Nerd Font already installed"
         fi
 
         fc-cache -fv
         ;;
     mac)
         print_info "Installing Nerd Fonts..."
-        brew install --cask font-jetbrains-mono-nerd-font 2>/dev/null || print_success "JetBrainsMono Nerd Font already installed"
+        brew install --cask font-fira-code-nerd-font 2>/dev/null || print_success "FiraCode Nerd Font already installed"
         print_success "Nerd Fonts installed"
         ;;
 esac

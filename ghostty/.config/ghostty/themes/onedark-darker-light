@@ -1,0 +1,31 @@
+# onedark light — navarasu/onedark.nvim's "light" style (#fafafa canvas). The
+# darker family's light side is the stock light one; only dark drops to #1f2329.
+# Custom theme: loaded by absolute path via config-file (see theme-mode apply()).
+# Slots 7 and 15 are pinned to body fg, not a white: on a light background the
+# "One Half Light" builtin's #ffffff slot 15 is invisible against the canvas.
+# Bright slots are onedark's dark_* set (and a 75%-toward-fg mix for green and
+# blue, which ship no dark variant) — on #fafafa the dimmer colours read better.
+background = #fafafa
+foreground = #383a42
+cursor-color = #4078f2
+cursor-text = #fafafa
+selection-background = #dcdcdc
+selection-foreground = #383a42
+split-divider-color = #dcdcdc
+
+palette = 0=#101012
+palette = 1=#e45649
+palette = 2=#50a14f
+palette = 3=#986801
+palette = 4=#4078f2
+palette = 5=#a626a4
+palette = 6=#0184bc
+palette = 7=#383a42
+palette = 8=#a0a1a7
+palette = 9=#833b3b
+palette = 10=#4a874c
+palette = 11=#7c5c20
+palette = 12=#3e68c6
+palette = 13=#79428a
+palette = 14=#2b5d63
+palette = 15=#383a42

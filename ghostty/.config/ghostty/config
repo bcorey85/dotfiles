@@ -1,22 +1,22 @@
-# Font — JetBrains Mono, chosen after an audition for its tall x-height and
-# sturdy weight (far less eye-strain than CommitMono for all-day reading).
-font-family = JetBrainsMono Nerd Font Mono
-font-style = SemiBold
+# Font — Fira Code. No space in "FiraCode": that is the family name the Nerd
+# Fonts patcher registers, and `Fira Code Nerd Font Mono` silently falls back.
+# The family ships no italic, so italics are synthesised (oblique) by ghostty.
+font-family = FiraCode Nerd Font Mono
+font-style = Retina
 font-size = 13
-adjust-cell-height = 25%
+adjust-cell-height = 15%
 confirm-close-surface = false
 
-# Linux/FreeType only: disable light hinting (on by default in 1.3+) so glyph
-# stems render heavier — closest match to kitty's bolder text rendering, since
-# font-thicken is macOS-only. If still too light, use `font-style = Bold`.
-freetype-load-flags = no-light
 # Theme — owned by the `theme-mode` switcher: it writes ?theme-switch.conf
 # (machine-local, not stowed) with the active family+mode's theme name; that
 # include is processed after this file, so it wins. The line below is the
 # fallback when the switcher has never run. This is what Claude Code chat
 # renders in. Ghostty has no external reload — press ctrl+shift+, after
-# switching. Custom (non-builtin) themes live in ./themes/.
-theme = Nightfox
+# switching. Custom (non-builtin) themes live in ./themes/ and are pulled in as
+# config fragments, never by `theme = <name>` — that resolves against ghostty's
+# own config dir, which is not this one on macOS. A relative config-file path
+# resolves against THIS file's directory, so the fallback works on any platform.
+config-file = themes/onedark-darker-dark
 config-file = ?theme-switch.conf
 
 # Window
@@ -57,8 +57,8 @@ keybind = ctrl+,=csi:44;5u
 # Mouse
 link-url = true
 
-# Font audition override — managed by `font-mode` (intel|atkynson|jbm).
-# Machine-local, not stowed. config-file includes are processed after this
-# file finishes parsing, so the override wins over the font block above.
-# `?` = optional: when absent, the JetBrains defaults apply.
-config-file = ?font-mode.conf
+# Per-machine overrides (font-size on a hidpi laptop vs an external monitor,
+# etc.). Machine-local, not stowed. `?` = optional. config-file includes are
+# processed after this file finishes parsing, and this is the last one, so it
+# wins over everything above.
+config-file = ?local.conf

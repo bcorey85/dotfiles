@@ -152,7 +152,8 @@ return {
     "lukas-reineke/headlines.nvim",
     ft = "org",
     config = function()
-      -- Doom-one-tinted heading backgrounds + code-block highlight. headlines'
+      -- Heading backgrounds + code-block highlight, linked to theme groups so
+      -- they track the active family instead of hardcoding hexes. headlines'
       -- default config references these group names; link them so they actually
       -- render instead of falling back to nothing.
       vim.api.nvim_set_hl(0, "Headline", { link = "ColorColumn" })

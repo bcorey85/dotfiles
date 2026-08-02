@@ -27,31 +27,34 @@ $cmd_duration\
 $line_break\
 $character"""
 
-# Dark — GitHub Dark Dimmed.
+# Dark — onedark "darker" (#1f2329 canvas), the same palette nvim/tmux/ghostty
+# paint. `grey` is the comment colour AFTER the contrast lift theme-sync applies
+# (stock #535965 is 2.24:1 on the canvas); everything else is stock.
 [palettes.dark]
-red = "#f47067"
-orange = "#c69026"
-yellow = "#c69026"
-green = "#57ab5a"
-blue = "#539bf5"
-teal = "#76e3ea"
-purple = "#b083f0"
-fg = "#adbac7"
-bg = "#22272e"
-grey = "#768390"
+red = "#e55561"
+orange = "#e2b86b"
+yellow = "#e2b86b"
+green = "#8ebd6b"
+blue = "#4fa6ed"
+teal = "#48b0bd"
+purple = "#bf68d9"
+fg = "#a0a8b7"
+bg = "#1f2329"
+grey = "#858c9a"
 
-# Light — GitHub Primer light (accessible contrast on a light terminal bg).
+# Light — onedark's "light" style (#fafafa canvas). `grey` is again the lifted
+# comment (stock #a0a1a7 is 2.47:1); the accents are stock and all clear 4.5:1.
 [palettes.light]
-red = "#cf222e"
-orange = "#bc4c00"
-yellow = "#9a6700"
-green = "#1a7f37"
-blue = "#0969da"
-teal = "#1b7c83"
-purple = "#8250df"
-fg = "#24292f"
-bg = "#ffffff"
-grey = "#6e7781"
+red = "#e45649"
+orange = "#986801"
+yellow = "#986801"
+green = "#50a14f"
+blue = "#4078f2"
+teal = "#0184bc"
+purple = "#a626a4"
+fg = "#383a42"
+bg = "#fafafa"
+grey = "#6f7178"
 
 [directory]
 style = "bold teal"

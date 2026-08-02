@@ -39,9 +39,9 @@
 
 (deflayer sturdy
   @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
-  tab       f    m    l    c    p    x    k    u    o    ;    [    ]    \
+  tab       f    m    l    c    p    q    k    u    o    ;    [    ]    \
   caps      s    t    r    d    y    b    n    e    a    i    '       ret
-  lsft      v    q    g    w    z    j    h    ,    .    /    rsft
+  lsft      v    z    g    w    x    j    h    ,    .    /    rsft
   lctl lmet lalt           spc                 ralt rmet rctl
 )
 

@@ -12,6 +12,25 @@ if command -v tmux &>/dev/null && [ -z "$TMUX" ] && [ -z "$INSIDE_EMACS" ] &&
   tmux new-session -A -s main
 fi
 
+# Repair a pane born with stdin detached from its pty. A tmux pane occasionally
+# spawns having inherited the SERVER's fd 0 (/dev/null) instead of its own pty,
+# while fd 1/2 wire up correctly. The prompt renders and tmux stays fully
+# responsive (prefix keys, popups, window switching) but no keystroke can ever
+# reach the shell — the window reads as frozen. /dev/tty is the controlling
+# terminal, so this reattaches stdin to the right pty.
+# Guarded on /dev/tty being readable: a failed exec redirect would leave every
+# shell erroring at startup, which is worse than the freeze it repairs.
+# Guarded on stdout being a tty because that is what separates the real failure
+# (fd 0 detached, fd 1/2 on the pane's pty) from a tool-spawned shell, which has
+# ALL THREE on pipes and is supposed to have no stdin. Without this the redirect
+# fires on every agent/CI/script shell and hands it the terminal's keyboard, so
+# anything reading stdin there silently eats the keystrokes you are typing.
+if [[ -n "$TMUX" && ! -t 0 && -t 1 && -r /dev/tty ]]; then
+  print -r -- "$(date -Iseconds) pane=$TMUX_PANE was=$(readlink /proc/$$/fd/0)" \
+    >>~/.cache/tmux-stdin-repair.log 2>/dev/null
+  exec </dev/tty
+fi
+
 # Zsh plugins
 fpath=(~/.zsh/completions $fpath)
 autoload -Uz compinit && compinit

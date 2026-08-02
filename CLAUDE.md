@@ -15,7 +15,7 @@ Personal dotfiles managed with **GNU Stow** across WSL, Ubuntu, macOS, and Arch 
 Individual scripts in `install/` can be run standalone:
 
 - `install/deps <platform>` - system packages (apt/brew/pacman)
-- `install/fonts <platform>` - JetBrainsMono Nerd Font
+- `install/fonts <platform>` - FiraCode Nerd Font
 - `install/stow` - create all symlinks
 - `install/doom` - clone doomemacs to `~/.config/emacs` and run `doom sync` (skips if emacs absent; the `doom` package supplies the config)
 - `install/wifi-be200` - Intel BE200 Wi-Fi 7 stability fix (writes `/etc/modprobe.d/iwlwifi.conf` to disable 802.11be; auto-skips if no BE200 detected)
@@ -63,7 +63,7 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 ## Key Conventions
 
 - **Theme**: two-axis switcher, owned by the `theme-mode` script (scripts package). **Family** (`~/.cache/theme-family`: `nightfox` default; `theme-mode list` for the full set; switch with `theme-mode use <family> [mode]`) × **mode** (`~/.cache/theme-mode` dark/light, toggled by `theme-mode` / tmux `prefix T` / nvim `<leader>ut` / Emacs `SPC t t`). Consumers: tmux sources `~/.config/tmux/<family>-<mode>.conf`; nvim polls both state files (lua/config/theme-sync.lua — its FAMILIES table maps schemes and owns all theme-reactive overrides: markdown headings, gitsigns word-diff, per-family fixups like carbonfox's comment-contrast lift); ghostty gets `theme-switch.conf` (machine-local include written by the script; reload ctrl+shift+, — custom palettes live in `ghostty/.config/ghostty/themes/`); Emacs is mode-only (remaps modus-vivendi/modus-operandi to the github palette); starship is mode-only too (theme-mode regenerates the REAL `~/.config/starship.toml` — starship's default path — from the stowed `~/.config/starship.toml.template` with the active `dark`/`light` palette; starship has no include but re-reads that path each prompt, so every open shell flips live with no reload and no STARSHIP_CONFIG. `.zshrc` bootstraps the file from the template on a fresh machine). Adding a family = 4 touchpoints, listed in the `theme-mode` header. **Dark-only, no mode switching**: waybar, rofi, dunst, hyprland, hyprlock — all github_dark_dimmed hex values. GTK/Qt apps use Adwaita-dark.
-- **Font**: JetBrainsMono Nerd Font Mono, 11pt (ghostty)
+- **Font**: FiraCode Nerd Font Mono, Retina, 13pt (ghostty; machine-local `~/.config/ghostty/local.conf` overrides the size — last include wins)
 - **Platform guards**: Use `command -v <tool> &>/dev/null &&` before tool-specific init (see .zshrc)
 - **Install scripts**: All use the same color output pattern (`print_success`, `print_error`, `print_info`) with `set -e`
 - **Stow structure**: `<package>/<home-relative-path>` (e.g., `nvim/.config/nvim/init.lua` becomes `~/.config/nvim/init.lua`)

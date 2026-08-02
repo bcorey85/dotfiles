@@ -1,3 +1,7 @@
+/* onedark "darker" (#1f2329) — the same palette nvim/tmux/ghostty paint.
+   Dark-only: waybar has no mode axis, so these are literal hexes, not
+   theme-mode state. #858c9a is the contrast-lifted comment grey (stock
+   #535965 is 2.24:1 on the bar). */
 * {
   font-family: "CommitMono Nerd Font Mono";
   font-size: 13px;
@@ -5,16 +9,16 @@
 }
 
 window#waybar {
-  background-color: #22272e;
-  color: #adbac7;
-  border-bottom: 2px solid #444c56;
+  background-color: #1f2329;
+  color: #a0a8b7;
+  border-bottom: 2px solid #3e4451;
 }
 
 tooltip {
-  background-color: #1c2128;
-  border: 1px solid #444c56;
+  background-color: #181b20;
+  border: 1px solid #3e4451;
   border-radius: 8px;
-  color: #adbac7;
+  color: #a0a8b7;
   padding: 8px;
 }
 
@@ -24,66 +28,66 @@ tooltip label {
 
 #workspaces button {
   padding: 0 8px;
-  color: #768390;
+  color: #858c9a;
   border: none;
   border-radius: 0;
   background: transparent;
 }
 
 #workspaces button.active {
-  color: #539bf5;
-  border-bottom: 2px solid #539bf5;
+  color: #4fa6ed;
+  border-bottom: 2px solid #4fa6ed;
 }
 
 #workspaces button.urgent {
-  color: #f47067;
+  color: #e55561;
 }
 
 #workspaces button:hover {
-  background: #1c2128;
-  color: #adbac7;
+  background: #181b20;
+  color: #a0a8b7;
 }
 
 #window {
-  color: #768390;
+  color: #858c9a;
   padding: 0 12px;
 }
 
 #clock {
-  color: #adbac7;
+  color: #a0a8b7;
   font-weight: bold;
 }
 
 #cpu {
-  color: #57ab5a;
+  color: #8ebd6b;
 }
 
 #memory {
-  color: #f47067;
+  color: #e55561;
 }
 
 #temperature {
-  color: #c69026;
+  color: #e2b86b;
 }
 
 #temperature.critical {
-  color: #f47067;
+  color: #e55561;
 }
 
 #network {
-  color: #539bf5;
+  color: #4fa6ed;
 }
 
 #network.disconnected {
-  color: #f47067;
+  color: #e55561;
 }
 
 #pulseaudio {
-  color: #c69026;
+  color: #e2b86b;
 }
 
 #pulseaudio.muted {
-  color: #768390;
+  color: #858c9a;
 }
 
 #tray {
@@ -99,41 +103,41 @@ tooltip label {
 }
 
 #battery {
-  color: #57ab5a;
+  color: #8ebd6b;
 }
 
 #battery.warning {
-  color: #c69026;
+  color: #e2b86b;
 }
 
 #battery.critical {
-  color: #f47067;
+  color: #e55561;
 }
 
 #battery.charging,
 #battery.plugged {
-  color: #57ab5a;
+  color: #8ebd6b;
 }
 
 #idle_inhibitor {
-  color: #f47067;
+  color: #e55561;
 }
 
 #idle_inhibitor.activated {
-  color: #f47067;
+  color: #e55561;
 }
 
 #bluetooth {
-  color: #539bf5;
+  color: #4fa6ed;
 }
 
 #bluetooth.connected {
-  color: #539bf5;
+  color: #4fa6ed;
 }
 
 #bluetooth.off,
 #bluetooth.disabled {
-  color: #768390;
+  color: #858c9a;
 }
 
 #cpu,

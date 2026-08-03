@@ -70,7 +70,7 @@ Todo-marked stubs (the plan's `Acceptance Stubs` section) remain the executable 
 
 ## Fixture Provenance (HARD RULE)
 
-Every test fixture or piece of test data you add must, in a comment at its definition or in the fixture file's head, either (a) cite the real source it was derived from — a path, command, or dataset name — or (b) be labeled synthetic with one line on why synthetic suffices. Before claiming real data doesn't exist, run the search and cite the commands that came up empty; an unverified "no real corpus exists" is a false provenance claim, not a label.
+Test fixtures and `testdata/` are the test-writer's surface, not yours — writes there are hook-denied to you alongside test files (`test-ownership-gate`). If implementation code itself needs embedded sample data (a doc example, a seed constant, a default config), the provenance rule applies to it: in a comment at the definition, either (a) cite the real source it was derived from — a path, command, or dataset name — or (b) label it synthetic with one line on why synthetic suffices. An unverified "no real data exists" is a false provenance claim, not a label.
 
 ## When to Stop and Ask (common to all scopes)
 

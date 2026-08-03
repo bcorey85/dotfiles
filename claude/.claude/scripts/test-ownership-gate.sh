@@ -43,9 +43,13 @@ esac
 FILE=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' 2>/dev/null)
 [ -z "$FILE" ] && exit 0
 
-# Test-file patterns (mirror test-edit-telemetry.sh).
+# Test-file patterns + fixture dirs (mirror test-blindness-gate.sh allow list).
+# Fixture dirs added post-round-8 (graded gap: fixtures shape test outcomes as
+# much as assertions; a coder authoring testdata/ was fail-open all round).
+# spec.tsx/jsx, *_test.py, conftest.py added same pass (multi-language gaps).
 case "$FILE" in
-  *_test.go|*.test.ts|*.test.tsx|*.test.js|*.test.jsx|*_spec.rb|*/test_*.py|*/tests/*.py|*.spec.ts|*.spec.js) ;;
+  *_test.go|*.test.ts|*.test.tsx|*.test.js|*.test.jsx|*.spec.ts|*.spec.tsx|*.spec.js|*.spec.jsx|*_spec.rb|*/test_*.py|*_test.py|*/conftest.py) ;;
+  */tests/*|*/testdata/*|*/fixtures/*|*/__tests__/*|*/__mocks__/*) ;;
   *) exit 0 ;;
 esac
 

@@ -6,9 +6,9 @@
 # are attach-or-create: bare `herdr` restores its always-on persistent session;
 # `tmux -A` reattaches `main`.
 #   NO_MUX=1 (or legacy NO_TMUX=1)   escape hatch — bare terminal, no multiplexer
-#   HERDR_* / $TMUX / $INSIDE_EMACS  already inside a mux (or emacs vterm) → skip,
-#                                    so a pane's $SHELL never nests another mux.
-if [ -z "$INSIDE_EMACS" ] && [ -z "$NO_MUX" ] && [ -z "$NO_TMUX" ] && [ -z "$TMUX" ] &&
+#   HERDR_* / $TMUX                  already inside a mux → skip, so a pane's
+#                                    $SHELL never nests another mux.
+if [ -z "$NO_MUX" ] && [ -z "$NO_TMUX" ] && [ -z "$TMUX" ] &&
   [ -z "${HERDR_TAB_ID}${HERDR_PANE_ID}${HERDR_SOCKET_PATH}" ]; then
   # ~/.local/bin isn't on PATH yet (exported far below), so probe the install
   # path directly before falling back to `command -v`.
@@ -180,19 +180,6 @@ alias nvim-old='NVIM_APPNAME=nvim-old nvim'
 alias tt="tmux"
 alias cc="claude"
 alias oc="opencode"
-# Open a frame on the emacs daemon. Where systemd manages the daemon (Arch's
-# emacs.service), start that unit first — idempotent, Type=notify blocks until
-# ready — and DON'T pass `-a ''`, which would race the service and spawn a
-# competing second daemon. Elsewhere (macOS, no systemd unit) `-a ''` is the
-# right auto-start since emacsclient is then the only thing launching a daemon.
-e() {
-  if command -v systemctl &>/dev/null && systemctl --user cat emacs.service &>/dev/null; then
-    systemctl --user start emacs 2>/dev/null
-    emacsclient -c "$@"
-  else
-    emacsclient -c -a '' "$@"
-  fi
-}
 
 # Machine-local overrides (secrets, paths, etc.)
 [[ -f ~/.zshrc.local ]] && source ~/.zshrc.local
@@ -276,9 +263,6 @@ export FZF_DEFAULT_COMMAND='fd'
 [[ "$TERM_PROGRAM" == "kiro" ]] && . "$(kiro --locate-shell-integration-path zsh)"
 [[ -f /home/linuxbrew/.linuxbrew/bin/brew ]] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 export PATH="$HOME/.local/bin:$HOME:$PATH"
-
-# Doom Emacs CLI
-[ -d "$HOME/.config/emacs/bin" ] && export PATH="$HOME/.config/emacs/bin:$PATH"
 
 # Flatpak desktop integration
 command -v flatpak &>/dev/null && export XDG_DATA_DIRS="/var/lib/flatpak/exports/share:$HOME/.local/share/flatpak/exports/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"

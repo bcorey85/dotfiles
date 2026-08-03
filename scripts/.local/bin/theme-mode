@@ -10,7 +10,6 @@
 #   - tmux:    this script sources ~/.config/tmux/<family>-<mode>.conf
 #   - nvim:    lua/config/theme-sync.lua polls both files (~1s) and applies
 #              the family's colorscheme + overrides
-#   - emacs:   watches the mode file only (family stays github-remapped modus)
 #   - ghostty: this script writes ~/.config/ghostty/theme-switch.conf
 #              (machine-local include, same pattern as local.conf), then
 #              SIGUSR2s the running ghostty to reload it (1.2+; ctrl+shift+,
@@ -191,8 +190,8 @@ current_family() {
 apply() { # <family> <mode> — write state and repaint tmux + ghostty
   local family="$1" mode="$2"
   mkdir -p "$(dirname "$MODE_FILE")"
-  printf '%s\n' "$mode" >"$MODE_FILE"     # nvim + emacs pick these up
-  printf '%s\n' "$family" >"$FAMILY_FILE" # via their own watchers
+  printf '%s\n' "$mode" >"$MODE_FILE"     # nvim picks these up
+  printf '%s\n' "$family" >"$FAMILY_FILE" # via its own watcher
 
   # ghostty: machine-local include; wins over the fallback `theme =` line
   # because config-file includes are processed after the main config.

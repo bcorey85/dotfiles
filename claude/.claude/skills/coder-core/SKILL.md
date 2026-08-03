@@ -66,6 +66,10 @@ Todo-marked tests scaffolded from the ticket (see the plan's `Acceptance Stubs` 
 
 **If this task adds or changes ANY test, read `~/.claude/skills/_shared/test-authoring.md` before writing it** — the test budget, the one-altitude rule, and the test value bar live there and are binding.
 
+## Fixture Provenance (HARD RULE)
+
+Every test fixture or piece of test data you add must, in a comment at its definition or in the fixture file's head, either (a) cite the real source it was derived from — a path, command, or dataset name — or (b) be labeled synthetic with one line on why synthetic suffices. Before claiming real data doesn't exist, run the search and cite the commands that came up empty; an unverified "no real corpus exists" is a false provenance claim, not a label.
+
 ## When to Stop and Ask (common to all scopes)
 
 - The task is ambiguous between multiple valid implementation approaches

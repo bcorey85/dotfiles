@@ -165,16 +165,23 @@ herdr_apply() { # <family> <mode> — regenerate the live config, reload the ser
   # Same contract as starship: the stowed file is the TEMPLATE and the real
   # config is machine-local, so toggling never dirties the tracked file. herdr
   # has no include mechanism, hence full regeneration rather than a fragment.
-  local tmp
+  local tmp palette_file
   tmp="$(mktemp)"
-  local palette
-  palette="$(herdr_palette "$1" "$2")"
+  palette_file="$(mktemp)"
+  herdr_palette "$1" "$2" >"$palette_file"
   # awk, not sed: the palette is multi-line and contains #/& which sed's
-  # replacement would mangle.
-  awk -v block="$palette" '
-    /^# __THEME_MODE_PALETTE__$/ { print block; next }
+  # replacement would mangle. The block is read from a FILE via getline, not
+  # passed with -v: macOS's awk rejects a newline inside a -v assignment
+  # ("newline in string"), which silently left the mac with no config.toml at
+  # all while gawk/mawk on Linux accepted it.
+  awk -v pf="$palette_file" '
+    /^# __THEME_MODE_PALETTE__$/ {
+      while ((getline line < pf) > 0) print line
+      close(pf); next
+    }
     { print }
-  ' "$tmpl" >"$tmp" && mv "$tmp" "$cfg" || { rm -f "$tmp"; return 0; }
+  ' "$tmpl" >"$tmp" && mv "$tmp" "$cfg" || { rm -f "$tmp" "$palette_file"; return 0; }
+  rm -f "$palette_file"
 
   # No-op (non-zero, swallowed) when no server is running.
   command -v herdr >/dev/null 2>&1 && herdr server reload-config >/dev/null 2>&1 || true

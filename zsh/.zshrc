@@ -1,6 +1,13 @@
 # Local overrides (not in repo)
 [ -f ~/.zshrc.local ] && source ~/.zshrc.local
 
+# ~/.local/bin before ANYTHING below: the multiplexer autostart is next, and the
+# mux server it spawns hands its inherited PATH to every pane and popup command.
+# Exported here rather than with the other PATH lines further down so popups can
+# call hand-installed binaries (tuicr, herdr-*, dev scripts) by bare name — on
+# Linux that prefix is where they live.
+export PATH="$HOME/.local/bin:$HOME:$PATH"
+
 # Auto-start a terminal multiplexer: herdr by default, tmux as the fallback on
 # machines where herdr isn't installed (manual binary — see install/herdr). Both
 # are attach-or-create: bare `herdr` restores its always-on persistent session;
@@ -10,8 +17,13 @@
 #                                    $SHELL never nests another mux.
 if [ -z "$NO_MUX" ] && [ -z "$NO_TMUX" ] && [ -z "$TMUX" ] &&
   [ -z "${HERDR_TAB_ID}${HERDR_PANE_ID}${HERDR_SOCKET_PATH}" ]; then
-  # ~/.local/bin isn't on PATH yet (exported far below), so probe the install
-  # path directly before falling back to `command -v`.
+  # herdr reads config.toml at server start, so the template must be rendered
+  # BEFORE the launch below — not in the herdr block further down, which the
+  # foreground `herdr` here doesn't reach until the session exits.
+  if [ ! -f "$HOME/.config/herdr/config.toml" ] &&
+    [ -f "$HOME/.config/herdr/config.toml.template" ]; then
+    "$HOME/.local/bin/theme-mode" "$(cat "$HOME/.cache/theme-mode" 2>/dev/null || echo dark)" >/dev/null 2>&1 || true
+  fi
   if [ -x "$HOME/.local/bin/herdr" ]; then
     "$HOME/.local/bin/herdr"
   elif command -v herdr &>/dev/null; then
@@ -153,14 +165,9 @@ if command -v starship &>/dev/null; then
   eval "$(starship init zsh)"
 fi
 
-# herdr: same template contract as starship — theme-mode generates the REAL
-# ~/.config/herdr/config.toml from the stowed template. On a fresh machine
-# (before theme-mode has ever run) herdr would start with NO config at all, so
-# bootstrap it with the dark palette baked in.
+# herdr: the config.toml bootstrap lives in the multiplexer autostart at the top
+# of this file — it has to run before the server starts, not here.
 if command -v herdr &>/dev/null; then
-  if [ ! -f "$HOME/.config/herdr/config.toml" ] && [ -f "$HOME/.config/herdr/config.toml.template" ]; then
-    "$HOME/.local/bin/theme-mode" "$(cat "$HOME/.cache/theme-mode" 2>/dev/null || echo dark)" >/dev/null 2>&1 || true
-  fi
   # herdr-automatic-rename shell hook: renames the tab the instant a command
   # starts. Without it naming waits for the next focus/tab event. No-op outside
   # a herdr pane; glob is (N) so a machine without the plugin skips silently.
@@ -262,6 +269,8 @@ export FZF_DEFAULT_COMMAND='fd'
 
 [[ "$TERM_PROGRAM" == "kiro" ]] && . "$(kiro --locate-shell-integration-path zsh)"
 [[ -f /home/linuxbrew/.linuxbrew/bin/brew ]] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+# linuxbrew's shellenv prepends its own bin, so re-assert ~/.local/bin's priority
+# (first set at the top of this file, ahead of the multiplexer autostart).
 export PATH="$HOME/.local/bin:$HOME:$PATH"
 
 # Flatpak desktop integration

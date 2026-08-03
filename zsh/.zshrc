@@ -1,15 +1,24 @@
 # Local overrides (not in repo)
 [ -f ~/.zshrc.local ] && source ~/.zshrc.local
 
-# Auto-start tmux.
-#   NO_TMUX=1        escape hatch — launch a clean terminal (e.g. to run herdr,
-#                    which is a tmux REPLACEMENT, not something to nest in tmux)
-#   HERDR_*          herdr spawns $SHELL for every pane; without this guard each
-#                    pane would attach tmux inside herdr. Same role INSIDE_EMACS
-#                    plays for the emacs vterm case.
-if command -v tmux &>/dev/null && [ -z "$TMUX" ] && [ -z "$INSIDE_EMACS" ] &&
-  [ -z "$NO_TMUX" ] && [ -z "${HERDR_TAB_ID}${HERDR_PANE_ID}${HERDR_SOCKET_PATH}" ]; then
-  tmux new-session -A -s main
+# Auto-start a terminal multiplexer: herdr by default, tmux as the fallback on
+# machines where herdr isn't installed (manual binary — see install/herdr). Both
+# are attach-or-create: bare `herdr` restores its always-on persistent session;
+# `tmux -A` reattaches `main`.
+#   NO_MUX=1 (or legacy NO_TMUX=1)   escape hatch — bare terminal, no multiplexer
+#   HERDR_* / $TMUX / $INSIDE_EMACS  already inside a mux (or emacs vterm) → skip,
+#                                    so a pane's $SHELL never nests another mux.
+if [ -z "$INSIDE_EMACS" ] && [ -z "$NO_MUX" ] && [ -z "$NO_TMUX" ] && [ -z "$TMUX" ] &&
+  [ -z "${HERDR_TAB_ID}${HERDR_PANE_ID}${HERDR_SOCKET_PATH}" ]; then
+  # ~/.local/bin isn't on PATH yet (exported far below), so probe the install
+  # path directly before falling back to `command -v`.
+  if [ -x "$HOME/.local/bin/herdr" ]; then
+    "$HOME/.local/bin/herdr"
+  elif command -v herdr &>/dev/null; then
+    herdr
+  elif command -v tmux &>/dev/null; then
+    tmux new-session -A -s main
+  fi
 fi
 
 # Repair a pane born with stdin detached from its pty. A tmux pane occasionally

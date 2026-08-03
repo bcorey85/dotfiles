@@ -1,1 +1,0 @@
-/home/brandon/.config/emacs/.local/straight/build-30.2/doom-oxocarbon/doom-oxocarbon-theme.el

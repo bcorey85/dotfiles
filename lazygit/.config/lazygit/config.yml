@@ -15,10 +15,9 @@ gui:
   sidePanelWidth: 0.2
   expandFocusedSidePanel: true
 
-  # Neogit-ish: open with the file list dominant instead of a narrow strip
-  # beside a wide diff. `+` (nextScreenMode) goes to full and hides the diff
-  # entirely; `_` drops back to normal.
-  screenMode: half
+  # Open with all panels visible. `+` (nextScreenMode) steps up through half
+  # (file list dominant) and full (diff hidden entirely); `_` steps back down.
+  screenMode: normal
 
 git:
   pagers:

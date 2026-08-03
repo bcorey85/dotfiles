@@ -43,7 +43,7 @@ FILE=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null
 
 # Allow: test files (mirror test-edit-telemetry.sh patterns) and fixture dirs.
 case "$FILE" in
-  *_test.go|*.test.ts|*.test.tsx|*.test.js|*.test.jsx|*_spec.rb|*/test_*.py|*.spec.ts|*.spec.js) exit 0 ;;
+  *_test.go|*.test.ts|*.test.tsx|*.test.js|*.test.jsx|*.spec.ts|*.spec.tsx|*.spec.js|*.spec.jsx|*_spec.rb|*/test_*.py|*_test.py|*/conftest.py) exit 0 ;;
   */tests/*|*/testdata/*|*/fixtures/*|*/__tests__/*|*/__mocks__/*) exit 0 ;;
 esac
 

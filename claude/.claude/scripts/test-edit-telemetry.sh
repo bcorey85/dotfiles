@@ -2,19 +2,20 @@
 # PreToolUse hook: test-edit-telemetry — LOG-ONLY, never blocks.
 #
 # Why this exists (LOOP-COST round 5): under an explicit prose prohibition,
-# coder dispatches still Edit/Wrote test files 25 times across 4 arms. PreToolUse
-# input carries no agent identity (anthropics/claude-code#40140), so a targeted
-# deny ("coders may not edit assertions") is not mechanizable — but the telemetry
-# is. This appends one JSONL line per Write/Edit touching a test file so the
-# question "who edits tests, how often, in what repos" has data instead of grep
-# archaeology when a future round wants the deny hook.
+# coder dispatches still Edit/Wrote test files 25 times across 4 arms. This
+# appends one JSONL line per Write/Edit touching a test file so the question
+# "who edits tests, how often, in what repos" has data instead of grep
+# archaeology. The #40140 no-agent-identity blocker is resolved (verified
+# 2026-08-03): agent_type/agent_id are logged since round 8's grading found
+# 127 lines unattributable without them.
 #
 # Contract (matches the other gates): hook JSON on stdin; empty output = allow.
 # This hook NEVER emits a permissionDecision and always exits 0.
 #
 # Log: ~/.claude/test-edit-telemetry.jsonl
-#   {ts, tool, file, cwd, snippet} — snippet is the first 200 chars of
-#   new_string/content, enough to classify mechanical-vs-assertion edits later.
+#   {ts, tool, agent, file, cwd, snippet} — agent is agent_type or "main";
+#   snippet is the first 200 chars of new_string/content, enough to classify
+#   mechanical-vs-assertion edits later.
 
 [ -n "${CLAUDE_SKIP_HOOKS:-}" ] && exit 0
 
@@ -25,16 +26,19 @@ command -v jq >/dev/null 2>&1 || exit 0
 FILE=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
 [ -z "$FILE" ] && exit 0
 
+# Patterns mirror test-ownership-gate.sh (incl. post-round-8 fixture dirs).
 case "$FILE" in
-  *_test.go|*.test.ts|*.test.tsx|*.test.js|*.test.jsx|*_spec.rb|*/test_*.py|*/tests/*.py|*.spec.ts|*.spec.js) ;;
+  *_test.go|*.test.ts|*.test.tsx|*.test.js|*.test.jsx|*.spec.ts|*.spec.tsx|*.spec.js|*.spec.jsx|*_spec.rb|*/test_*.py|*_test.py|*/conftest.py) ;;
+  */tests/*|*/testdata/*|*/fixtures/*|*/__tests__/*|*/__mocks__/*) ;;
   *) exit 0 ;;
 esac
 
 TOOL=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
+AGENT=$(printf '%s' "$INPUT" | jq -r '.agent_type // "main"' 2>/dev/null)
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf unknown)
 printf '%s' "$INPUT" \
-  | jq -c --arg ts "$TS" --arg tool "$TOOL" --arg file "$FILE" --arg cwd "${PWD:-}" \
-      '{ts:$ts, tool:$tool, file:$file, cwd:$cwd,
+  | jq -c --arg ts "$TS" --arg tool "$TOOL" --arg agent "$AGENT" --arg file "$FILE" --arg cwd "${PWD:-}" \
+      '{ts:$ts, tool:$tool, agent:$agent, file:$file, cwd:$cwd,
         snippet: ((.tool_input.new_string // .tool_input.content // "")[:200])}' \
   >> "$HOME/.claude/test-edit-telemetry.jsonl" 2>/dev/null || true
 

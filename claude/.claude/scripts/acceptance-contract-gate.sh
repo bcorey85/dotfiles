@@ -49,6 +49,23 @@ FILE=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null
 
 head -n 10 "$FILE" 2>/dev/null | grep -q 'ACCEPTANCE-CONTRACT' || exit 0
 
-REASON="acceptance-contract-gate: $FILE is an acceptance contract (ACCEPTANCE-CONTRACT marker) and is immutable to agents. It encodes the ticket's acceptance criteria, was written before the implementation existed, and is the only oracle here that the implementation cannot have shaped. Fix the code so the contract passes. If the contract itself is wrong — the intended behavior changed, or the assertion misreads the criterion — that is the user's call, not yours: report which assertion you believe is wrong and why, and stop. Do not weaken, skip, delete, or rewrite it. If you are trying to ACTIVATE a stub (rename contract_* into the runner-collected form per the plan), that too is edit-shaped and lands here by design: present the exact rename/diff to the user and stop — activation is theirs, in their editor. Do not route around this via shell writes."
+# Sole permitted agent edit (user ruling, 2026-08-02, LOOP-COST round 6):
+# ACTIVATION. An Edit whose old/new strings are byte-identical except for the
+# transformation `func contract_` -> `func Test` flips a stub into the
+# runner-collected form without touching a single assertion. That is the edit
+# the contract file's own header names as the only legal one; everything else
+# — weakening, deleting, rewriting, or a rename bundled with any other change
+# — still lands on the deny below.
+TOOL=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
+if [ "$TOOL" = "Edit" ]; then
+  OLD=$(printf '%s' "$INPUT" | jq -r '.tool_input.old_string // empty' 2>/dev/null)
+  NEW=$(printf '%s' "$INPUT" | jq -r '.tool_input.new_string // empty' 2>/dev/null)
+  if [ -n "$OLD" ] && [ -n "$NEW" ] && [ "$NEW" != "$OLD" ] \
+     && [ "${OLD//func contract_/func Test}" = "$NEW" ]; then
+    exit 0
+  fi
+fi
+
+REASON="acceptance-contract-gate: $FILE is an acceptance contract (ACCEPTANCE-CONTRACT marker) and is immutable to agents. It encodes the ticket's acceptance criteria, was written before the implementation existed, and is the only oracle here that the implementation cannot have shaped. Fix the code so the contract passes. If the contract itself is wrong — the intended behavior changed, or the assertion misreads the criterion — that is the user's call, not yours: report which assertion you believe is wrong and why, and stop. Do not weaken, skip, delete, or rewrite it. To ACTIVATE a stub, use an Edit whose ONLY change is renaming func contract_* to func Test* — that exact transformation passes this gate; bundling any other change with the rename re-blocks it. Do not route around this via shell writes."
 printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$REASON"
 exit 0

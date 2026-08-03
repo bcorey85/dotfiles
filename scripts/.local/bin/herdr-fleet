@@ -1,0 +1,77 @@
+#!/bin/bash
+# Fleet dashboard — the workmux `C-.` popup, herdr-native.
+# Lists every agent pane sorted by who needs you most, previews its recent
+# output, and jumps on Enter. herdr's sidebar covers the same data as a side
+# rail; this is the centered-popup reflex instead.
+#
+# Sort order mirrors herdr's own agent_panel_sort = "priority" so the numbers
+# here match the sidebar's: blocked > done > working > idle > unknown, ties
+# broken by the API's own workspace/pane order. herdr's `done` is an idle agent
+# you haven't looked at yet and `idle` is one you have — which is why a working
+# agent outranks a plain idle one.
+# Targets are pane_ids, which `herdr agent read/focus` both accept.
+#
+# Digits 1-9 direct-address the numbered rows (`C-. 1` -> first agent), but
+# only while the query is empty — once you've started typing, a digit is a
+# search character again, so repos and titles with numbers stay searchable.
+
+export PATH="$HOME/.local/bin:$PATH"
+
+agents=$(herdr agent list 2>/dev/null)
+
+if [ -z "$agents" ]; then
+    echo "herdr is not running (no response from the socket API)."
+    read -r -n1 -p "press any key to close"
+    exit 1
+fi
+
+rows=$(printf '%s' "$agents" | jq -r '
+  .result.agents
+  # Ranks are herdr workspace_attention_priority() inverted (src/ui/sidebar.rs).
+  # sort_by is stable and agent list already comes back in workspace/pane order,
+  # so no explicit tiebreak — adding one would diverge from the sidebar, whose
+  # secondary order is workspace INDEX, not id.
+  | map(. + {rank:
+      (if   .agent_status == "blocked" then 0
+       elif .agent_status == "done"    then 1
+       elif .agent_status == "working" then 2
+       elif .agent_status == "idle"    then 3
+       else 4 end)})
+  | sort_by(.rank)
+  # to_entries after the sort so the printed number IS the fzf row position
+  # the digit binds jump to.
+  | to_entries | .[]
+  # Field 1 is the target and stays hidden in fzf (--with-nth=2,3,4,5).
+  | [ .value.pane_id
+    , (.key + 1 | tostring)
+    , ((.value.agent_status + "       ")[0:7])
+    , ((( .value.workspace_id + " " + .value.tab_id) + "              ")[0:14])
+    , (.value.terminal_title_stripped // .value.agent // "-")
+    ] | @tsv
+')
+
+if [ -z "$rows" ]; then
+    echo "No agent panes detected."
+    read -r -n1 -p "press any key to close"
+    exit 0
+fi
+
+# One bind per digit: empty query -> move to that row and accept; mid-search ->
+# fall through to the literal character.
+digit_binds=()
+for n in 1 2 3 4 5 6 7 8 9; do
+    digit_binds+=(--bind "$n:transform:[ -n {q} ] && echo 'put($n)' || echo 'pos($n)+accept'")
+done
+
+sel=$(printf '%s\n' "$rows" | fzf \
+    --reverse \
+    --ansi \
+    --delimiter='\t' \
+    --with-nth=2,3,4,5 \
+    --prompt="agent> " \
+    --header="1-9=jump  enter=jump" \
+    --preview='herdr agent read {1} --source recent --lines 40 --format ansi' \
+    --preview-window='right,60%' \
+    "${digit_binds[@]}") || exit 0
+
+[ -n "$sel" ] && herdr agent focus "$(printf '%s' "$sel" | cut -f1)"

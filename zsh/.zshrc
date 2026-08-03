@@ -144,6 +144,23 @@ if command -v starship &>/dev/null; then
   eval "$(starship init zsh)"
 fi
 
+# herdr: same template contract as starship — theme-mode generates the REAL
+# ~/.config/herdr/config.toml from the stowed template. On a fresh machine
+# (before theme-mode has ever run) herdr would start with NO config at all, so
+# bootstrap it with the dark palette baked in.
+if command -v herdr &>/dev/null; then
+  if [ ! -f "$HOME/.config/herdr/config.toml" ] && [ -f "$HOME/.config/herdr/config.toml.template" ]; then
+    "$HOME/.local/bin/theme-mode" "$(cat "$HOME/.cache/theme-mode" 2>/dev/null || echo dark)" >/dev/null 2>&1 || true
+  fi
+  # herdr-automatic-rename shell hook: renames the tab the instant a command
+  # starts. Without it naming waits for the next focus/tab event. No-op outside
+  # a herdr pane; glob is (N) so a machine without the plugin skips silently.
+  for _f in "$HOME"/.config/herdr/plugins/github/herdr-automatic-rename-*/shell/hook.zsh(N); do
+    source "$_f"
+    break
+  done
+fi
+
 
 alias rl="source ~/.zshrc && clear && echo 'Reloaded .zshrc'"
 alias vc='nvim +"cd ~/dotfiles" ~/dotfiles/zsh/.zshrc'

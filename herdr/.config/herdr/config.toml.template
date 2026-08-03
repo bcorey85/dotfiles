@@ -1,0 +1,363 @@
+onboarding = false
+# herdr config TEMPLATE — port of ~/dotfiles/tmux/.tmux.conf (stowed: herdr).
+#
+# This file is the TEMPLATE, not the live config. theme-mode regenerates the
+# REAL ~/.config/herdr/config.toml from it (substituting the palette marker
+# below) and then runs `herdr server reload-config`. Same pattern as
+# starship.toml.template: the generated file is machine-local, so toggling the
+# theme never dirties this tracked file.
+#
+#   Edit this file  => re-run `theme-mode` to regenerate the live config.
+#   Edit the live file directly => next toggle overwrites it.
+#
+# Anything herdr itself writes to config.toml (e.g. `herdr config reset-keys`)
+# is likewise overwritten on the next toggle — make such changes here.
+#
+# Rule applied throughout: YOUR keys win. herdr's defaults that collided
+# (goto=prefix+g, next_tab=prefix+n, edit_scrollback=prefix+e, resize_mode=
+# prefix+r, toggle_sidebar=prefix+b, cycle_pane_next=prefix+tab, ...) were
+# moved off, not the other way round.
+
+[session]
+# Persistence is always on (session.json + scrollback history) — this is the
+# built-in equivalent of resurrect + continuum + capture-pane-contents.
+# resume_agents_on_restore = the `~claude->claude --continue` resurrect rule.
+resume_agents_on_restore = true
+
+[advanced]
+# tmux: set -g history-limit 50000. herdr counts bytes, not lines.
+scrollback_limit_bytes = 10000000
+
+[experimental]
+# tmux: allow-passthrough on — inline images (snacks.nvim) via kitty graphics.
+kitty_graphics = true
+
+[update]
+# install/herdr is the source of truth for which binary is on disk: it pins
+# VERSION + SHA256 and verifies the download. `herdr update` self-replaces the
+# binary out from under that pin, so the checksum no longer describes what is
+# installed. version_check only NOTIFIES (it does not self-update) — it is off
+# here so the nag never prompts an out-of-band update. Upgrade path stays:
+# bump VERSION + SHA256 in install/herdr, then `install/herdr --update`.
+version_check = false
+# Left on: this is the agent-detection manifest, not the binary. It keeps
+# state reporting working for agents released after the pinned version.
+manifest_check = true
+# Preview channel: picks up pre-release builds ahead of stable. With
+# version_check = false this only selects which channel an explicit
+# `herdr update` would pull — the installed binary still comes from the
+# install/herdr pin, so upgrading is still bump VERSION + SHA256 there
+# (preview tags look like `preview-YYYY-MM-DD-<sha>`).
+channel = "preview"
+
+[keys]
+prefix = "ctrl+space"
+
+# ─── structure (matches tmux binds) ──────────────────────────────────────────
+split_vertical   = "prefix+backslash"   # tmux: bind \  split -h (side by side)
+split_horizontal = "prefix+minus"       # tmux: bind -  split -v (stacked)
+new_tab          = "prefix+c"
+close_pane       = "prefix+x"
+close_tab        = "prefix+shift+x"
+zoom             = "prefix+z"
+rename_tab       = "prefix+comma"       # tmux: bind , rename-window
+copy_mode        = "prefix+["
+detach           = "prefix+shift+d"     # tmux: bind D detach-client
+reload_config    = "prefix+r"           # tmux: bind r source-file
+goto             = "prefix+o"           # tmux: bind o choose-tree -Zs
+
+# Workspaces: indexed switching parked on prefix (alt+1..4 belongs to harpoon,
+# matching tmux M-1..4). Tabs already default to prefix+1..9 like tmux windows.
+switch_workspace = "prefix+shift+1..9"
+
+# Agent jump — the workmux `C-. {1..5}` reflex, direct-addressed: with
+# agent_panel_sort = "priority" the sidebar is the attention queue, so
+# ctrl+alt+1 = the agent that most needs you. alt+N stays project harpoon.
+focus_agent = "ctrl+alt+1..9"
+
+# ─── displaced herdr defaults (parked off your keys) ─────────────────────────
+resize_mode      = "prefix+shift+r"     # was prefix+r  (yours: reload)
+# ctrl+period belongs to the fleet popup below (the workmux C-. reflex), so the
+# sidebar keeps only the prefix chord. The sidebar shows the same queue as a
+# side rail; the popup is the centered, preview-carrying version.
+toggle_sidebar   = "prefix+ctrl+b"      # was prefix+b (yours: btop)
+edit_scrollback  = "prefix+shift+e"     # was prefix+e  (yours: oil)
+next_tab         = "prefix+ctrl+n"      # was prefix+n  (yours: notes menu)
+previous_tab     = "prefix+ctrl+p"      # was prefix+p
+new_worktree     = "prefix+ctrl+g"      # was prefix+shift+g (yours: insitu)
+rename_pane      = "prefix+ctrl+shift+p" # was prefix+shift+p (yours: gh-dash)
+close_workspace  = "prefix+ctrl+d"      # was prefix+shift+d (yours: detach)
+cycle_pane_next  = "prefix+ctrl+tab"    # was prefix+tab (yours: harpoon menu)
+focus_pane_right = "prefix+ctrl+l"      # was prefix+l  (yours: lazydocker)
+
+# ─── smart splits — C-hjkl nav / M-hjkl resize across herdr<->nvim ───────────
+# herdr side of herdr-splits.nvim (install: herdr plugin install
+# lmilojevicc/herdr-splits.nvim; nvim side: lua/plugins/herdr-splits.lua,
+# gated on HERDR_ENV — smart-splits.nvim stays for tmux). This replaces the
+# tmux @pane-is-vim conditional forwarding.
+[[keys.command]]
+key = "ctrl+h"
+type = "plugin_action"
+command = "herdr-splits.nav-left"
+
+[[keys.command]]
+key = "ctrl+j"
+type = "plugin_action"
+command = "herdr-splits.nav-down"
+
+[[keys.command]]
+key = "ctrl+k"
+type = "plugin_action"
+command = "herdr-splits.nav-up"
+
+[[keys.command]]
+key = "ctrl+l"
+type = "plugin_action"
+command = "herdr-splits.nav-right"
+
+[[keys.command]]
+key = "alt+h"
+type = "plugin_action"
+command = "herdr-splits.resize-left"
+
+[[keys.command]]
+key = "alt+j"
+type = "plugin_action"
+command = "herdr-splits.resize-down"
+
+[[keys.command]]
+key = "alt+k"
+type = "plugin_action"
+command = "herdr-splits.resize-up"
+
+[[keys.command]]
+key = "alt+l"
+type = "plugin_action"
+command = "herdr-splits.resize-right"
+
+# ─── harpoon (scripts/.local/bin/herdr-harpoon; shares tmux-harpoon's list) ──
+[[keys.command]]
+key = "alt+1"
+command = "~/.local/bin/herdr-harpoon jump 1"
+type = "shell"
+
+[[keys.command]]
+key = "alt+2"
+command = "~/.local/bin/herdr-harpoon jump 2"
+type = "shell"
+
+[[keys.command]]
+key = "alt+3"
+command = "~/.local/bin/herdr-harpoon jump 3"
+type = "shell"
+
+[[keys.command]]
+key = "alt+4"
+command = "~/.local/bin/herdr-harpoon jump 4"
+type = "shell"
+
+[[keys.command]]
+key = "prefix+a"                        # pin current project/workspace
+command = "~/.local/bin/herdr-harpoon add"
+type = "shell"
+
+[[keys.command]]
+key = "prefix+tab"                      # edit/reorder slots
+command = "~/.local/bin/herdr-harpoon menu"
+type = "popup"
+width = "70%"
+height = "60%"
+
+# ─── popups — the display-popup fleet ────────────────────────────────────────
+# cwd is inherited from the focused pane automatically, so tmux-host-popup and
+# its #{client_name}/#{session_name}/#{pane_current_path} juggling are gone.
+
+# The primary git key, currently a lazygit TRIAL (neogit moved to alt+g —
+# prefix+ctrl+g is already new_worktree above, and prefix+shift+g is insitu).
+[[keys.command]]
+key = "prefix+g"                        # lazygit (trial)
+command = "lazygit"
+type = "popup"
+width = "100%"
+height = "100%"
+
+[[keys.command]]
+key = "prefix+alt+g"                    # neogit status (incumbent)
+command = "NEOGIT_POPUP=1 nvim -c 'Neogit' -c 'silent! only'"
+type = "popup"
+width = "100%"
+height = "100%"
+
+# The primary review key, currently a tuicr TRIAL (codediff moved to alt+d —
+# prefix+ctrl+d is already close_workspace above, and prefix+shift+d is detach).
+# Review state persists per checkout under ~/.local/share/tuicr/reviews.
+# No -w: unstaged-only has no CLI flag (-w is staged AND unstaged; -r takes
+# commit revspecs, not scopes). Scope is a commit-selector choice, and -w is
+# what skips that selector — so pick Unstaged there.
+[[keys.command]]
+key = "prefix+d"                        # tuicr review (trial)
+command = "tuicr"
+type = "popup"
+width = "100%"
+height = "100%"
+
+[[keys.command]]
+key = "prefix+alt+d"                    # codediff review (incumbent)
+command = "CODEDIFF_POPUP=1 nvim -c 'CodeDiffReview'"
+type = "popup"
+width = "100%"
+height = "100%"
+
+[[keys.command]]
+key = "prefix+shift+g"                  # insitu — first unreviewed hunk in-file
+command = "INSITU_POPUP=1 nvim -c 'InsituNext'"
+type = "popup"
+width = "100%"
+height = "100%"
+
+[[keys.command]]
+key = "prefix+e"                        # oil.nvim file explorer
+command = "OIL_POPUP=1 nvim -c 'Oil'"
+type = "popup"
+width = "100%"
+height = "100%"
+
+[[keys.command]]
+key = "prefix+shift+a"                  # diffask
+command = "~/.local/bin/diffask"
+type = "popup"
+width = "80%"
+height = "75%"
+
+[[keys.command]]
+key = "prefix+b"                        # btop
+command = "btop"
+type = "popup"
+width = "95%"
+height = "95%"
+
+[[keys.command]]
+key = "prefix+shift+p"                  # gh-dash
+command = "~/.local/bin/tmux-tui-popup 'gh dash' 'gh dash failed — run install/gh-dash (needs gh auth login).'"
+type = "popup"
+width = "100%"
+height = "100%"
+
+[[keys.command]]
+key = "prefix+l"                        # lazydocker
+command = "~/.local/bin/tmux-tui-popup lazydocker 'lazydocker failed — is it installed and the docker daemon running?'"
+type = "popup"
+width = "100%"
+height = "100%"
+
+[[keys.command]]
+key = "prefix+slash"                    # live grep -> nvim at line
+command = "fzf --disabled --ansi --delimiter=: --bind 'start:reload:rg --line-number --no-heading --color=always {q} || true' --bind 'change:reload:rg --line-number --no-heading --color=always {q} || true' --preview 'bat --color=always --highlight-line {2} {1}' --preview-window='up,60%' --bind 'enter:become(nvim +{2} {1})'"
+type = "popup"
+width = "95%"
+height = "95%"
+
+[[keys.command]]
+key = "prefix+space"                    # find files -> nvim
+command = "fd --type f --hidden --exclude .git | fzf --preview 'bat --color=always {}' --preview-window='up,60%' --bind 'enter:become(nvim {})'"
+type = "popup"
+width = "95%"
+height = "95%"
+
+[[keys.command]]
+key = "prefix+v"                        # obsidian vault search
+command = "fd -e md . ~/vault | fzf --header 'enter=read | ctrl-e=edit' --preview '~/.local/bin/glow-fit -s dark {}' --preview-window='right,60%' --bind 'enter:become(~/.local/bin/glow-fit -p {})' --bind 'ctrl-e:become(nvim {})'"
+type = "popup"
+width = "95%"
+height = "95%"
+
+[[keys.command]]
+key = "prefix+n"                        # notes menu (fzf replaces display-menu)
+command = "~/.local/bin/notes-menu"
+type = "popup"
+width = "70%"
+height = "60%"
+
+[[keys.command]]
+key = "prefix+f"                        # sessionizer (herdr-native workspace picker)
+command = "~/.local/bin/herdr-sessionizer"
+type = "popup"
+width = "60%"
+height = "60%"
+
+# ctrl+period — the workmux dashboard reflex, herdr-native. Agents sorted by
+# attention (blocked > idle > done > working), recent output in the preview,
+# Enter jumps. ghostty sends CSI-u for ctrl+.; prefix+ctrl+period is the
+# fallback for terminals that don't.
+[[keys.command]]
+key = ["ctrl+period", "prefix+ctrl+period"]
+command = "~/.local/bin/herdr-fleet"
+type = "popup"
+width = "85%"
+height = "80%"
+
+# ─── shell commands (no popup) ───────────────────────────────────────────────
+[[keys.command]]
+key = "prefix+t"                        # theme toggle (terminal/tmux/nvim side)
+command = "~/.local/bin/theme-mode toggle"
+type = "shell"
+
+# ─── theme (GENERATED — the marker below is replaced, don't hand-edit) ───────
+# theme-mode substitutes the marker line with the [theme] + [theme.custom] block
+# for the active family/mode. The palettes live in herdr_palette() in
+# scripts/.local/bin/theme-mode — edit them THERE, not here.
+#
+# The generated block pins auto_switch = false: it keys off the TERMINAL's
+# reported appearance, not ~/.cache/theme-mode, so it would fight the toggle.
+# __THEME_MODE_PALETTE__
+
+[ui]
+agent_panel_sort = "priority"
+
+# tmux `prefix c` creates a window immediately with a generated name; herdr
+# prompts for one by default. Off, so prefix+c keeps the tmux reflex —
+# rename after the fact with prefix+comma.
+prompt_new_tab_name = false
+
+show_agent_labels_on_pane_borders = true
+
+# Sidebar starts hidden (true zero-width, not the compact rail); toggle with
+# prefix+ctrl+b. sidebar_start_collapsed applies on NEXT LAUNCH, not reload.
+sidebar_start_collapsed = true
+sidebar_collapsed_mode = "hidden"
+sidebar_width = 20
+# terminal_title_stripped (see [ui.sidebar.agents] below) is the row most likely
+# to truncate at width 20; herdr auto-scales up to sidebar_max_width when
+# workspace names need it.
+sidebar_max_width = 36
+
+# Agent rows — this is what makes agent_panel_sort = "priority" readable: the
+# queue says WHAT each agent is doing, not just that it is working. Tokens:
+# state_icon, state_text, workspace, tab, pane, agent, terminal_title,
+# terminal_title_stripped, plus $name from pane metadata.
+[ui.sidebar.agents]
+row_gap = 0
+rows = [["state_icon", "workspace", "tab"], ["agent"]]
+
+# terminal_title_stripped is the agent's own reported status line. Only the
+# harnesses with an installed integration report it — `herdr integration status`.
+[ui.sidebar.agents.rows_by_agent]
+claude   = [["state_icon", "workspace", "tab"], ["terminal_title_stripped"], ["agent"]]
+opencode = [["state_icon", "workspace", "tab"], ["terminal_title_stripped"], ["agent"]]
+pi       = [["state_icon", "workspace", "tab"], ["terminal_title_stripped"], ["agent"]]
+
+# Space rows — branch + git_status per workspace, replacing the git segment the
+# tmux status line carried.
+[ui.sidebar.spaces]
+row_gap = 0
+rows = [["state_icon", "workspace"], ["branch", "git_status"]]
+
+[ui.toast]
+delivery = "herdr"
+
+# Sounds off — herdr exposes no volume control, only on/off and mp3 substitution
+# (path / done_path / request_path, relative to ~/.config/herdr/). Toasts still
+# fire; this mutes the audio only. To bring it back quieter, drop an attenuated
+# mp3 at herdr/.config/herdr/sounds/ and set done_path instead of flipping this.
+[ui.sound]
+enabled = false

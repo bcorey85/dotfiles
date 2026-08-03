@@ -1,0 +1,89 @@
+#!/bin/bash
+# Launch a coding layout for a project in a herdr workspace.
+# herdr analogue of ~/.local/bin/dev — same layout, herdr vocabulary
+# (tmux session -> workspace, tmux window -> tab).
+#
+# Usage: herdr-dev [directory] [workspace_id]
+#   directory     defaults to cwd; all panes open there.
+#   workspace_id  defaults to the workspace of the current pane (requires
+#                 running inside herdr). herdr-project-open passes it
+#                 explicitly so the layout lands in the workspace it just made.
+#
+# Layout:
+#   Tab 1 "code"     nvim (60%) | claude (40%). herdr auto-detects the claude
+#                    process and adopts the pane as a managed agent, so it gets
+#                    tab-bar status and `herdr agent read/prompt/wait` for free
+#                    — the tmux version could only ever be a dumb companion.
+#   Tab 2 "console"  three equal shells for git / tests / logs. If the project
+#                    has an mprocs config, pane 1 runs the service stack under
+#                    mprocs instead of a bare shell. Config lookup order:
+#                      1. <project>/mprocs.yaml
+#                      2. ~/.config/mprocs/projects/<basename>.yaml
+#
+# Two herdr-vs-tmux gotchas encoded below:
+#   * --ratio sizes the FIRST (existing) pane; tmux's -p sized the NEW one.
+#     nvim at 60% is `--ratio 0.6`, where tmux wrote `-p 40`.
+#   * send-text writes literal text without submitting; `send-keys enter` is
+#     the separate C-m. Hence the run() helper.
+
+set -euo pipefail
+export PATH="$HOME/.local/bin:$PATH"
+
+dir="${1:-.}"
+dir="$(cd "$dir" && pwd)" || { echo "herdr-dev: no such directory: ${1:-.}" >&2; exit 1; }
+ws="${2:-}"
+
+if [ -z "$ws" ]; then
+    ws=$(herdr pane current 2>/dev/null | jq -r '.result.pane.workspace_id // empty')
+fi
+if [ -z "$ws" ]; then
+    echo "herdr-dev: no workspace — pass one, or run inside herdr" >&2
+    exit 1
+fi
+
+# Type a command into a pane and submit it.
+run() {
+    herdr pane send-text "$1" "$2" >/dev/null
+    herdr pane send-keys "$1" enter >/dev/null
+}
+
+# Split $1 and echo the new pane's id.
+split() {
+    herdr pane split "$1" --direction right --ratio "$2" --cwd "$dir" --no-focus \
+        | jq -r '.result.pane.pane_id'
+}
+
+# ── Tab 1 "code": nvim (60%) | claude (40%) ─────────────────────────────────
+code_tab=$(herdr workspace get "$ws" | jq -r '.result.workspace.active_tab_id')
+editor=$(herdr pane list --workspace "$ws" \
+    | jq -r --arg t "$code_tab" '.result.panes[] | select(.tab_id == $t) | .pane_id' | head -1)
+
+herdr tab rename "$code_tab" code >/dev/null
+herdr pane rename "$editor" editor >/dev/null
+run "$editor" "nvim ."
+
+agent=$(split "$editor" 0.6)
+herdr pane rename "$agent" claude >/dev/null
+run "$agent" "claude"
+
+# ── Tab 2 "console": three equal shells ─────────────────────────────────────
+console=$(herdr tab create --workspace "$ws" --label console --cwd "$dir" --no-focus)
+c1=$(jq -r '.result.root_pane.pane_id' <<<"$console")
+# 1/3 then half of the remaining 2/3 => three equal columns.
+c2=$(split "$c1" 0.3334)
+split "$c2" 0.5 >/dev/null
+
+mprocs_cfg=""
+if [ -f "$dir/mprocs.yaml" ]; then
+    mprocs_cfg="$dir/mprocs.yaml"
+elif [ -f "$HOME/.config/mprocs/projects/$(basename "$dir").yaml" ]; then
+    mprocs_cfg="$HOME/.config/mprocs/projects/$(basename "$dir").yaml"
+fi
+if [ -n "$mprocs_cfg" ] && command -v mprocs &>/dev/null; then
+    run "$c1" "mprocs --config \"$mprocs_cfg\""
+fi
+
+# Land on the editor. `pane focus` is directional only — there is no
+# focus-this-id form — so aim left from the claude pane.
+herdr tab focus "$code_tab" >/dev/null
+herdr pane focus --direction left --pane "$agent" >/dev/null

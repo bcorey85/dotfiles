@@ -1,0 +1,17 @@
+#!/bin/bash
+# Fuzzy-find a project directory and switch to (or create) its herdr workspace.
+# Same scan list as tmux-sessionizer.
+
+export PATH="$HOME/.local/bin:$PATH"
+
+selected=$({
+    find "$HOME/dev" -mindepth 1 -maxdepth 1 -type d 2>/dev/null
+    echo "$HOME/vault"
+    echo "$HOME/dotfiles"
+} | sort -u | fzf --reverse --prompt="project> ")
+
+if [ -z "$selected" ]; then
+    exit 0
+fi
+
+herdr-project-open "$selected"

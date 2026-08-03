@@ -534,6 +534,56 @@ return {
       end,
     })
 
+    -- CLUE TRIGGERS ON THE DIFF PANES. Same root cause as the panel fixup
+    -- above — mini.clue installs its <Leader>/g/z triggers only in LISTED
+    -- buffers, and every codediff surface is an unlisted nofile buffer, so
+    -- leader maps die there. The FileType autocmd covers the sidebar only; the
+    -- diff panes inherit the source file's filetype and the help buffer isn't
+    -- in that pattern, so both ride the session autocmds instead. Guard is
+    -- "this tab has a codediff session AND the buffer is unlisted", which is
+    -- exactly the set clue skipped. vim.b marks the buffer so window churn
+    -- doesn't re-map on every enter; scheduled past codediff's nowait binds for
+    -- the same precedence reason as the panel fix.
+    local function ensure_clue(bufnr)
+      if not (bufnr and vim.api.nvim_buf_is_valid(bufnr)) or vim.b[bufnr].codediff_clue_ensured then
+        return
+      end
+      if vim.bo[bufnr].buflisted then
+        return
+      end
+      local ok_l, lc = pcall(require, "codediff.ui.lifecycle")
+      if not (ok_l and type(lc.get_layout) == "function") or lc.get_layout(vim.api.nvim_get_current_tabpage()) == nil then
+        return
+      end
+      vim.b[bufnr].codediff_clue_ensured = true
+      vim.schedule(function()
+        if not vim.api.nvim_buf_is_valid(bufnr) then
+          return
+        end
+        local ok, miniclue = pcall(require, "mini.clue")
+        if ok then
+          pcall(miniclue.ensure_buf_triggers, bufnr)
+        end
+      end)
+    end
+
+    local clue_group = vim.api.nvim_create_augroup("CodediffClueTriggers", { clear = true })
+    vim.api.nvim_create_autocmd({ "BufWinEnter", "BufEnter", "WinEnter" }, {
+      group = clue_group,
+      callback = function(args)
+        ensure_clue(args.buf or vim.api.nvim_get_current_buf())
+      end,
+    })
+    vim.api.nvim_create_autocmd("User", {
+      pattern = "CodeDiffOpen",
+      group = clue_group,
+      callback = function()
+        for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+          ensure_clue(vim.api.nvim_win_get_buf(win))
+        end
+      end,
+    })
+
     -- INLINE WRAP. codediff hardcodes `wrap = false` on every diff pane and has
     -- no option for it (v2.49.2) — it's re-asserted at each render (view/
     -- render.lua, view/inline_view.lua) AND from a lifecycle/session.lua

@@ -1,0 +1,21 @@
+# tuicr config TEMPLATE — this stowed file is NOT what tuicr reads.
+#
+# Same contract as starship and herdr: `theme-mode` regenerates the REAL
+# machine-local ~/.config/tuicr/config.toml from this file, swapping the
+# `appearance = ` line to the active dark/light mode, so a toggle never dirties
+# the tracked file. Edit the template, then re-run `theme-mode` to refresh the
+# live config — never edit ~/.config/tuicr/config.toml by hand.
+#
+# tuicr resolves the theme pair below BY appearance (precedence rule 3), so the
+# one substituted line is the whole mode axis. tuicr is short-lived — it reads
+# the config at launch, so there is no reload step and no auto_switch to
+# disable; the next `tuicr` opens in the current mode.
+#
+# The palettes themselves are stowed static files (themes/onedark-darker-*.toml)
+# because only the mode changes, never the hexes.
+
+theme_dark = "onedark-darker-dark"
+theme_light = "onedark-darker-light"
+appearance = "dark"
+
+diff_view = "side-by-side"

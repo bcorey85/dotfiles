@@ -1,0 +1,42 @@
+#!/bin/bash
+# fzf replacement for the tmux `prefix n` display-menu (notes lane). Runs
+# inside a popup in any multiplexer; the chosen entry execs in the same popup.
+# Same targets as the tmux menu: org capture via `todo`/`bookmark`/`ask`,
+# vault inbox processing, org-popup views, compiled daily note, vault sync.
+
+export PATH="$HOME/.local/bin:$PATH"
+
+sel=$(printf '%s\n' \
+    "Quick todo" \
+    "Bookmark" \
+    "Ask" \
+    "Process inbox" \
+    "Check off" \
+    "Edit todos" \
+    "Edit journal" \
+    "Today" \
+    "Sync vault" \
+    "Capture (org)" \
+    "Journal (org)" \
+    "Agenda (org)" \
+    "Todos (org)" \
+  | fzf --reverse --prompt="notes> " --header="enter=run | esc=close")
+
+case "$sel" in
+    "Quick todo")    exec todo -i ;;
+    "Bookmark")      exec bookmark -i ;;
+    "Ask")           exec ask -i ;;
+    "Process inbox") exec vault-inbox-next ;;
+    "Check off")     exec todo ;;
+    "Edit todos")    exec nvim ~/vault/org/inbox.org ;;
+    "Edit journal")  exec nvim + ~/vault/org/journal.org ;;
+    "Today")
+        f=~/vault/Daily/$(date +%F).md
+        if [ -f "$f" ]; then exec glow-fit -p "$f"; else echo "no daily note compiled yet"; sleep 2; fi
+        ;;
+    "Sync vault")    tmux-tui-popup vault-sync "vault-sync failed —" && sleep 1 ;;
+    "Capture (org)") exec org-popup capture t ;;
+    "Journal (org)") exec org-popup capture j ;;
+    "Agenda (org)")  exec org-popup agenda ;;
+    "Todos (org)")   exec org-popup todos ;;
+esac

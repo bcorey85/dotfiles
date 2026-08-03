@@ -30,6 +30,9 @@ end
 
 return {
   "mrjones2014/smart-splits.nvim",
+  -- Inside herdr, herdr-splits.lua owns C/M-hjkl; loading both would fight
+  -- over the same maps.
+  cond = vim.env.HERDR_ENV ~= "1",
   lazy = false,
   config = function()
     require("smart-splits").setup({

@@ -25,6 +25,17 @@
 #              its `auto` OSC 11 detection only samples at launch (and tmux mangles
 #              it). No supported live-flip lever exists (see anthropics/claude-code
 #              #33899); restart or run /theme by hand to see it in an open session.
+#   - herdr:   this script regenerates the REAL ~/.config/herdr/config.toml from
+#              the stowed ~/.config/herdr/config.toml.template (substituting the
+#              __THEME_MODE_PALETTE__ marker with herdr_palette() below), then
+#              runs `herdr server reload-config` so attached clients repaint
+#              live. Same template contract as starship: the generated config is
+#              machine-local, so a toggle never dirties the tracked file. herdr
+#              has no include mechanism, so the WHOLE file is regenerated —
+#              anything herdr writes to config.toml itself (e.g. `herdr config
+#              reset-keys`) is overwritten on the next toggle. herdr's own
+#              auto_switch is deliberately off: it keys off the terminal's
+#              reported appearance rather than ~/.cache/theme-mode.
 #   - starship: this script regenerates the REAL ~/.config/starship.toml (mode
 #              only) from the stowed ~/.config/starship.toml.template with the
 #              active `palette =` line swapped. Starship has no include but
@@ -33,6 +44,13 @@
 #              STARSHIP_CONFIG. The generated file is machine-local (not stowed),
 #              so the tracked template is never dirtied. Edit the template =>
 #              re-run theme-mode to refresh the live config.
+#   - tuicr:   this script regenerates the REAL ~/.config/tuicr/config.toml (mode
+#              only) from the stowed ~/.config/tuicr/config.toml.template with the
+#              `appearance = ` line swapped. The template names both palettes
+#              (theme_dark/theme_light, stowed under tuicr themes/) and tuicr
+#              picks between them by appearance, so that one line is the whole
+#              mode axis. No reload: tuicr is short-lived and reads its config at
+#              launch, so the next open is already in the new mode.
 #
 # Usage:
 #   theme-mode [dark|light|toggle]    flip mode, keep family (default: toggle)
@@ -40,11 +58,13 @@
 #   theme-mode list                   known families
 #   theme-mode status                 current family + mode
 #
-# Adding a family = four touchpoints, kept in sync by hand:
+# Adding a family = six touchpoints, kept in sync by hand:
 #   1. families() + ghostty_theme() below
 #   2. FAMILIES table in nvim lua/config/theme-sync.lua
 #   3. ~/.config/tmux/<family>-{dark,light}.conf
 #   4. a ghostty theme (builtin name, or custom file in ghostty/themes/)
+#   5. herdr_palette() below (herdr's [theme.custom] token block)
+#   6. tuicr themes/<family>-{dark,light}.toml + the pair in its config template
 set -euo pipefail
 
 MODE_FILE="$HOME/.cache/theme-mode"
@@ -64,6 +84,101 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # floored palette nvim's fixup computes.
     onedark-darker:*) echo "onedark-darker-$2" ;; # custom: ghostty/themes/
   esac
+}
+
+herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
+  # herdr's token namespace is catppuccin-derived; `name` picks the BASE theme
+  # and [theme.custom] overrides individual tokens on top of it. There is no
+  # one-light builtin, so light overrides the same token set rather than
+  # swapping the base — any token not listed here keeps its one-dark value.
+  local accent panel_bg surface_dim surface0 surface1 overlay0 overlay1
+  local text subtext0 green yellow red blue teal peach
+  case "$2" in
+    light)
+      # onedark light (stock "light" style — only dark drops to #1f2329).
+      # Muted is #696a71, onedark's grey darkened toward fg: the stock #a0a1a7
+      # is 2.26:1 on the #f0f0f0 panel (floor 4.5); this is 4.65:1. Same
+      # reasoning as tmux/.config/tmux/onedark-darker-light.conf.
+      accent="#a626a4" panel_bg="#f0f0f0" surface_dim="#e2e2e5"
+      surface0="#d3d3d7" surface1="#c4c4c9"
+      overlay0="#77787f" overlay1="#696a71"
+      text="#383a42" subtext0="#696a71"
+      green="#50a14f" yellow="#c18401" red="#e45649"
+      blue="#4078f2" teal="#0184bc" peach="#986801"
+      ;;
+    *)
+      # onedark "darker" (#1f2329) — matches tmux/nvim/ghostty hex-for-hex
+      # (values from tmux/.config/tmux/onedark-darker-dark.conf).
+      accent="#bf68d9" panel_bg="#181b20" surface_dim="#2f353f"
+      surface0="#3d4552" surface1="#454d5a"
+      overlay0="#626a78" overlay1="#858c9a"
+      text="#c3cad6" subtext0="#767e8c"
+      green="#8ebd6b" yellow="#e2b86b" red="#e55561"
+      blue="#4fa6ed" teal="#48b0bd" peach="#cc9057"
+      ;;
+  esac
+
+  # Sidebar focus contrast — deviations from the stock onedark values above:
+  #   surface_dim = the FOCUSED agent/workspace row's background bar. At the
+  #     stock canvas value it sat ~1.05:1 against panel_bg, so the focused row
+  #     read as unmarked. Both modes push it clear of panel_bg instead. It also
+  #     tints inactive pane borders, scrollbar tracks, and sidebar separators.
+  #   surface0 = nav-mode selection bg; kept a step above surface_dim so
+  #     selection still outranks focus. surface1 = drag.
+  #   text/subtext0 = focused vs unfocused agent name. Dark widens the gap;
+  #     light leaves subtext0 at the 4.5:1 floor documented above.
+  #   overlay0 = NOT a border color despite the name — herdr uses it as the
+  #     muted FOREGROUND for sidebar chrome (the "spaces"/"agents" headers, the
+  #     sort label, new/menu, the per-row agent name, inactive tab labels,
+  #     scrollbar thumbs), much of it DIM on top. So light needs it DARKER than
+  #     panel_bg, not lighter; a border-grey there erases the whole sidebar.
+  #     Keep it between overlay1/subtext0 and the backgrounds on both sides.
+  cat <<EOF
+[theme]
+name = "one-dark"
+auto_switch = false
+
+[theme.custom]
+accent      = "$accent"
+panel_bg    = "$panel_bg"
+surface_dim = "$surface_dim"
+surface0    = "$surface0"
+surface1    = "$surface1"
+overlay0    = "$overlay0"
+overlay1    = "$overlay1"
+text        = "$text"
+subtext0    = "$subtext0"
+mauve       = "$accent"
+green       = "$green"
+yellow      = "$yellow"
+red         = "$red"
+blue        = "$blue"
+teal        = "$teal"
+peach       = "$peach"
+EOF
+}
+
+herdr_apply() { # <family> <mode> — regenerate the live config, reload the server
+  local tmpl="$HOME/.config/herdr/config.toml.template"
+  local cfg="$HOME/.config/herdr/config.toml"
+  [ -f "$tmpl" ] || return 0
+
+  # Same contract as starship: the stowed file is the TEMPLATE and the real
+  # config is machine-local, so toggling never dirties the tracked file. herdr
+  # has no include mechanism, hence full regeneration rather than a fragment.
+  local tmp
+  tmp="$(mktemp)"
+  local palette
+  palette="$(herdr_palette "$1" "$2")"
+  # awk, not sed: the palette is multi-line and contains #/& which sed's
+  # replacement would mangle.
+  awk -v block="$palette" '
+    /^# __THEME_MODE_PALETTE__$/ { print block; next }
+    { print }
+  ' "$tmpl" >"$tmp" && mv "$tmp" "$cfg" || { rm -f "$tmp"; return 0; }
+
+  # No-op (non-zero, swallowed) when no server is running.
+  command -v herdr >/dev/null 2>&1 && herdr server reload-config >/dev/null 2>&1 || true
 }
 
 current_mode() { cat "$MODE_FILE" 2>/dev/null | tr -d '[:space:]'; }
@@ -137,6 +252,20 @@ apply() { # <family> <mode> — write state and repaint tmux + ghostty
   local starship_cfg="$HOME/.config/starship.toml"
   if [ -f "$starship_tmpl" ]; then
     sed "s/^palette = .*/palette = \"$mode\"/" "$starship_tmpl" >"$starship_cfg"
+  fi
+
+  # herdr: regenerate ~/.config/herdr/config.toml from the stowed template with
+  # the active palette, then reload the running server. No-op without herdr.
+  herdr_apply "$family" "$mode"
+
+  # tuicr: same template contract, minus the reload. Its config names BOTH
+  # themes (theme_dark / theme_light, stowed under themes/) and picks between
+  # them by `appearance`, so only that one line is substituted. tuicr is
+  # short-lived — the next launch reads the new value; nothing repaints live.
+  local tuicr_tmpl="$HOME/.config/tuicr/config.toml.template"
+  local tuicr_cfg="$HOME/.config/tuicr/config.toml"
+  if [ -f "$tuicr_tmpl" ]; then
+    sed "s/^appearance = .*/appearance = \"$mode\"/" "$tuicr_tmpl" >"$tuicr_cfg"
   fi
 
   # tmux: source-file is server-global, every attached client updates at once.

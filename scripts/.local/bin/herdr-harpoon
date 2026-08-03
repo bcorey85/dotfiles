@@ -1,0 +1,64 @@
+#!/bin/bash
+# harpoon-for-herdr: pin projects / workspaces to numbered slots, jump instantly.
+# Shares its slot list with tmux-harpoon so pins stay in sync across both
+# multiplexers during the migration trial.
+#
+# Slot entries:
+#   /abs/project/dir   PROJECT   — jump opens/creates its workspace (herdr-project-open)
+#   @label             AD-HOC    — jump focuses the workspace with that label;
+#                                  recreated (cwd $HOME) if it no longer exists.
+#
+# Subcommands: add | jump <N> | menu   (same contract as tmux-harpoon)
+
+set -euo pipefail
+export PATH="$HOME/.local/bin:$PATH"
+
+LIST="${XDG_DATA_HOME:-$HOME/.local/share}/tmux-harpoon/list"
+mkdir -p "$(dirname "$LIST")"
+touch "$LIST"
+
+snapshot() { herdr api snapshot 2>/dev/null; }
+
+cmd="${1:-menu}"
+
+case "$cmd" in
+    add)
+        snap=$(snapshot)
+        cwd=$(jq -r '.result.snapshot as $s | $s.panes[] | select(.pane_id == $s.focused_pane_id) | .cwd' <<<"$snap")
+        root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)
+        if [ -n "$root" ]; then
+            entry="$root"
+        else
+            # No git root — pin the focused workspace by label instead.
+            entry="@$(jq -r '.result.snapshot as $s | $s.workspaces[] | select(.workspace_id == $s.focused_workspace_id) | .label' <<<"$snap")"
+        fi
+        if ! grep -Fxq "$entry" "$LIST"; then
+            echo "$entry" >> "$LIST"
+        fi
+        ;;
+    jump)
+        n="${2:?harpoon: jump requires a slot number}"
+        entry=$(sed -n "${n}p" "$LIST")
+        [ -z "$entry" ] && exit 0
+        if [[ "$entry" == @* ]]; then
+            label="${entry#@}"
+            ws=$(herdr workspace list 2>/dev/null \
+              | jq -r --arg l "$label" '.result.workspaces[] | select(.label == $l) | .workspace_id' | head -1)
+            if [ -n "$ws" ]; then
+                herdr workspace focus "$ws" >/dev/null
+            else
+                herdr workspace create --cwd "$HOME" --label "$label" --focus >/dev/null
+            fi
+        else
+            herdr-project-open "$entry"
+        fi
+        ;;
+    menu)
+        # Runs inside a herdr popup — line N == slot N; reorder/dd to edit, q saves+closes.
+        exec nvim -c 'nnoremap <buffer> q <Cmd>wq<CR>' "$LIST"
+        ;;
+    *)
+        echo "usage: herdr-harpoon {add | jump <N> | menu}" >&2
+        exit 1
+        ;;
+esac

@@ -24,8 +24,29 @@ print_info() { echo -e "${YELLOW}→${NC} $1"; }
 
 VERSION="preview-2026-07-29-44b3adb12552"
 
+# Workflow plugins the herdr config's plugin_action binds depend on. Without
+# these installed the bound keys resolve to nothing and fail silently.
+#   herdr-splits.nvim — C-hjkl nav / M-hjkl resize across the herdr<->nvim
+#   boundary (nvim side: nvim/.config/nvim/lua/plugins/herdr-splits.lua).
+PLUGINS="lmilojevicc/herdr-splits.nvim"
+
+install_plugins() {
+  local repo name
+  for repo in $PLUGINS; do
+    name=$(basename "$repo" .nvim)
+    if "$HOME/.local/bin/herdr" plugin list 2>/dev/null | grep -q "^- ${name} "; then
+      print_success "herdr plugin ${name} already installed"
+    else
+      print_info "Installing herdr plugin ${name}..."
+      "$HOME/.local/bin/herdr" plugin install "$repo" --yes >/dev/null
+      print_success "herdr plugin ${name} installed"
+    fi
+  done
+}
+
 if command -v herdr &>/dev/null && [ "$1" != "--update" ]; then
   print_success "herdr already installed ($(herdr --version 2>/dev/null || true)) — use --update to upgrade"
+  install_plugins
   exit 0
 fi
 
@@ -67,3 +88,5 @@ fi
 mkdir -p "$HOME/.local/bin"
 install -m 755 "$TMP_DIR/herdr" "$HOME/.local/bin/herdr"
 print_success "herdr installed to ~/.local/bin ($("$HOME/.local/bin/herdr" --version 2>/dev/null || true))"
+
+install_plugins

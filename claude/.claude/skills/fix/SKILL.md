@@ -43,12 +43,12 @@ raise the modals it cannot.
    One line per distinct defect, no user prompt, do not pause:
 
    ```bash
-   bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=walkthrough gate_missed=<review|drift-gate|test-intent|stage|coder> class=<bug|smell|duplication|plan-drift|test-gap|other> severity=<high|medium|low> lane=<eng-spec|code|other> desc="<one line>" file=<path>
+   bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=walkthrough gate_missed=<review|drift-gate|test-intent|stage|coder> class=<bug|smell|duplication|plan-drift|test-gap|other> severity=<high|medium|low> lane=<eng-spec|code|other> guard=<...> desc="<one line>" file=<path>
    ```
 
-   Classify from the finding itself; when unsure, `class=other`. Infer `lane` from the branch's planning artifacts (eng-spec doc → `eng-spec`, direct dispatch → `code`); ask only when genuinely ambiguous. If the script fails, mention it and continue — telemetry never blocks a fix.
+   `guard` is the ratchet rung from `~/.claude/skills/_shared/escape-ratchet.md`. Pick it here without pausing; state the proposed guard in the packet (step 3) and apply it on approval there rather than prompting mid-log.
 
-   Then apply the **ratchet** (`/escape` step 3): propose the cheapest structural guard that would have caught this at the gate it escaped — type/lint/schema first, then a CLAUDE.md convention, then a skill gotcha, then an agent rule. On the user's approval, apply it and append `guard=type|convention|gotcha|rule|none` to the logged row. Recording the miss is bookkeeping; the guard is what closes the loop.
+   Classify from the finding itself; when unsure, `class=other`. Infer `lane` from the branch's planning artifacts (eng-spec doc → `eng-spec`, direct dispatch → `code`); ask only when genuinely ambiguous. If the script fails, mention it and continue — telemetry never blocks a fix.
 
 4. **Render the packet**: `### Findings by severity` from `fixed[]`; any issues the agent skipped, with its reasons; `medium.fix` applied and `medium.skip` with reasons; `perf[]` under its own heading with `Principle:` lines; `low[]` and notes inline. If any finding needs architectural rethinking, recommend `/eng-spec`.
 

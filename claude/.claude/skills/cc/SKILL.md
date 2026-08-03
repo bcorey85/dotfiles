@@ -61,8 +61,10 @@ One queue, one `/fix` handoff, one escape-log pass. The source only decides whic
 7. **Log escapes.** Every comment that resulted in a real fix is ground truth: the human caught something the automated gates blessed. For each entry resolved **with a fix applied** (not skipped-as-FP, not deferred), log one line:
 
    ```bash
-   bash ~/.claude/scripts/log-escape repo="$(basename "<repo-root>")" stage_found=cc gate_missed=review class=<bug|smell|duplication|plan-drift|test-gap|other> severity=<high|medium|low> lane=<eng-spec|code|other> desc="<comment gist>" file=<path>
+   bash ~/.claude/scripts/log-escape repo="$(basename "<repo-root>")" stage_found=cc gate_missed=review class=<bug|smell|duplication|plan-drift|test-gap|other> severity=<high|medium|low> lane=<eng-spec|code|other> guard=<...> desc="<comment gist>" file=<path>
    ```
+
+   `guard` is the ratchet rung from `~/.claude/skills/_shared/escape-ratchet.md` (batch by `class` across the resolved comments); surface the proposed guard in step 8's summary and apply it on approval.
 
    `stage_found=cc` for BOTH sources: same human-review stage, different reader. Splitting it would fragment the flywheel's per-gate rates across two buckets and make each look better than the gate is. Map tuicr's `comment_type` to `class` when the comment is typed; otherwise classify `class` from the comment body, and when unsure, `other`. `lane` is the planning lane that produced the work under comment — infer it from the conversation or the branch's planning artifacts (eng-spec doc → `eng-spec`, direct dispatch → `code`); ask the user only when genuinely ambiguous. Do NOT log comments that were new requirements or changed direction — a gate can't miss information it never had.
 

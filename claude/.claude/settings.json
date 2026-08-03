@@ -267,6 +267,15 @@
         ]
       },
       {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/test-blindness-gate.sh"
+          }
+        ]
+      },
+      {
         "matcher": "(Write|Edit|MultiEdit|NotebookEdit)",
         "hooks": [
           {
@@ -280,6 +289,14 @@
           {
             "type": "command",
             "command": "bash ~/.claude/scripts/acceptance-contract-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/test-ownership-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/test-edit-telemetry.sh"
           }
         ]
       },

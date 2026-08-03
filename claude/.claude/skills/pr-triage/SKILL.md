@@ -6,12 +6,12 @@ allowed-tools: [Agent, Bash, Read, Glob, Grep, LSP, Skill, AskUserQuestion]
 
 # PR Triage — allocate attention across a review queue
 
-You are reviewing other people's code, at volume, in systems you may not know. You cannot read it all closely. The only question this skill answers is **where the careful hours go** — and, just as importantly, where they *don't*.
+You are reviewing other people's code, at volume, in systems you may not know. You cannot read it all closely. The only question this skill answers is **where the careful hours go** — and, just as importantly, where they _don't_.
 
 ## The contract (non-negotiable — it is the whole point)
 
 1. **Nothing here approves anything.** No `gh pr review --approve`, no merges, no comments posted. The output is a reading order, not a decision.
-2. **Every PR still gets human eyes.** A NO-EVIDENCE tier buys a *fast* read, never a *skipped* one. If this skill ever lets a PR reach `merge` without you having looked at it, it has failed — the point is to reshape the hour, not delete it.
+2. **Every PR still gets human eyes.** A NO-EVIDENCE tier buys a _fast_ read, never a _skipped_ one. If this skill ever lets a PR reach `merge` without you having looked at it, it has failed — the point is to reshape the hour, not delete it.
 3. **The tier is a claim about the search, not about the code.** "No risk evidence surfaced" means the agent's six signals came back empty. It does not mean the code is correct, and you must not relay it to anyone as if it did.
 
 You are accountable for the approval. An agent cannot be the one who understood.
@@ -41,7 +41,7 @@ Dispatch `pr-triage` (omit `model`; its frontmatter pins sonnet) in parallel, at
 
 - the repo and PR number, and the diff scope — let it fetch its own diff via `gh pr diff <n> --repo <repo>`;
 - the PR body and linked ticket if one is resolvable from the branch/title/body;
-- the framing: *"Triage only. You are allocating a human's attention, not reviewing this code. You have no verdict and no approval to give."*
+- the framing: _"Triage only. You are allocating a human's attention, not reviewing this code. You have no verdict and no approval to give."_
 
 Do **not** pass it your own impressions of the PR, and do not tell it which ones you suspect — you'll anchor it into confirming you.
 
@@ -88,7 +88,7 @@ When a defect turns up in a PR this skill tiered NO-EVIDENCE or TARGETED (you fo
 
 ```bash
 REVIEW_ESCAPES_FILE=~/.claude/triage-misses.jsonl bash ~/.claude/scripts/log-escape \
-  repo=<repo> stage_found=pr-human|prod gate_missed=pr-triage \
+  repo=<repo> stage_found=pr-human|prod gate_missed=pr-triage guard=n-a \
   tiered=no-evidence|targeted class=bug|test-gap|other severity=high|medium|low \
   desc="<one line>" file=<path> signal_missed="<which of the six signals would have caught it>"
 ```

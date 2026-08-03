@@ -35,18 +35,18 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    - Do NOT dispatch all phases at once.
    - Identify the next un-executed phase by reading the plan's `## Phase Status` section: the first unchecked (`- [ ]`) entry is the phase to dispatch. This is the source of truth across `/clear` boundaries — do NOT scan git log or diff to figure out where you are. If the plan has no `## Phase Status` section (older plan format), fall back to `git status` + per-phase success criteria, but flag this to the user so they can backfill the section.
    - Dispatch the coder for THAT ONE PHASE ONLY. The coder must run the phase's "Automated Verification" gate (typically `npm run validate` or equivalent) before returning. **Re-read the phase's Phase Status line before dispatching** — its `(risk: …)` tag drives the phase-boundary decision (step 2) and its `(reviewers: …)` list is passed through to the review loop (step 6). Both are properties of the phase, not of the invocation, so they can differ from the previous phase's.
-   - After the coder completes and you summarize, auto-dispatch `/review` (step 6).
-   - **Vacuous-green pre-flight (YOU run this, with `Bash`, in this session)** — before any gate agent, when this phase touched a test file or the coder reported a test command as evidence. **Never dispatch an agent for it** — not `Explore`, not `general-purpose`, not a gate agent (`mechanical-check-gate` denies any `Agent` call whose description names a vacuity/pre-flight task, so the block is the reminder):
+   - After the coder completes, dispatch the `test-writer` (step 4b); after it returns and you summarize, auto-dispatch `/review` (step 6).
+   - **Vacuous-green pre-flight (YOU run this, with `Bash`, in this session)** — before any gate agent, when this phase touched a test file or the test-writer reported a test command as evidence. **Never dispatch an agent for it** — not `Explore`, not `general-purpose`, not a gate agent (`mechanical-check-gate` denies any `Agent` call whose description names a vacuity/pre-flight task, so the block is the reminder):
 
      ```bash
-     bash ~/.claude/scripts/vacuous-green-preflight.sh both '<the coder's test command>' <changed test files>
+     bash ~/.claude/scripts/vacuous-green-preflight.sh both '<the test-writer's tests-run command>' <changed test files>
      ```
 
      (Use `cmd` or `files` when only one applies.) It detects three shapes of test that pass without exercising anything: a `-run`/`-k`/`-t` filter selecting zero tests, a test whose body never calls the symbol it is named for (Go/Python test functions; TS/JS `describe()` blocks), and a guard asserting on a literal fragment of the source it guards. Exit 1 → treat every `SUSPECT` as an open finding and route it to `/fix` **before** the test-intent gate runs; an intent gate reading a vacuous suite is measuring nothing. Exit 0 → read the `what was actually checked` block, because a clean result on an unsupported language is a no-op, not a pass. **Exit 2 (usage error, or `rg` missing) → the check DID NOT RUN.** Say so and fix the invocation; never advance to the phase gate on it.
 
    - **No per-phase `plan-verifier`.** Plan↔diff reconciliation runs ONCE, at branch end, from `/verify`. Here, YOU check before marking the phase done: the phase's `#### Automated Verification` commands actually ran and passed (coder evidence), and its `#### Manual Verification` items go on the deferred list for `/verify`. A phase with no Success Criteria is a plan defect, not a pass — say so before advancing.
 
-   - **Test-intent gate (bug-pinning only)** — only when `git diff --name-only` for this phase hits a test file. Dispatch `test-intent-reviewer` (pinned; omit `model`) with the phase's `Success Criteria` and `Acceptance Stubs` as the intent oracle, scoped to **bug-pinning only**: does each changed assertion pin INTENDED behavior, or codify whatever the implementation happens to do? **The cull half (test spam, `COVERAGE-LOST`) does NOT run here** — both are cross-phase properties, so `/branch-recap` owns them at the Recap closing phase. `weak`/`bug-pinning` verdicts → `/fix`, then re-run the execution gate. Do NOT mark the phase done on an open verdict. Log the firing so yield stays computable (non-blocking; on failure mention and continue): `bash "$HOME/.claude/skills/review/log-review-metrics" repo=<repo> lane=phase-gate test_intent_ran=1 test_intent=<finding count>`.
+   - **Test-intent gate (bug-pinning only)** — only when `git diff --name-only` for this phase hits a test file. Dispatch `test-intent-reviewer` (pinned; omit `model`) with the phase's `Success Criteria` and `Acceptance Stubs` as the intent oracle, scoped to **bug-pinning only**: does each changed assertion pin INTENDED behavior, or codify whatever the implementation happens to do? **The cull half (test spam, `COVERAGE-LOST`) does NOT run here** — both are cross-phase properties, so `/branch-recap` owns them at the Recap closing phase. `weak`/`bug-pinning` verdicts → re-dispatch `test-writer` with the verdict (assertions are its scope, and it stays implementation-blind while rewriting them); route to `/fix` only when the finding implicates src. Then re-run the execution gate. Do NOT mark the phase done on an open verdict. Log the firing so yield stays computable (non-blocking; on failure mention and continue): `bash "$HOME/.claude/skills/review/log-review-metrics" repo=<repo> lane=phase-gate test_intent_ran=1 test_intent=<finding count>`.
    - After peer review passes AND the phase's Automated Verification is green, mark the phase done in the plan: `Edit` the `## Phase Status` section to flip `- [ ] Phase N: ...` → `- [x] Phase N: ...`. This single Edit is the durable record of progress — it survives `/clear` and lets in-session re-entry detect the next phase.
    - **Phase-boundary decision** — the phase is done; now decide stop vs. auto-advance, checking these in order (first match wins), then print the matching Phase-Complete Block:
      1. **Last phase** → STOP; print the completion footer (block C).
@@ -69,11 +69,20 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    For each coder:
    - Pass the full task description and any relevant context. **When the task is a phase of a multi-phase plan, name the phase explicitly** ("implement Phase 4 of `<plan-path>`") and tell the coder to read it phase-scoped (`coder-core`'s workflow step 1 carries the mechanics).
    - Instruct it to follow existing patterns in the codebase
-   - Tests follow the test budget in `~/.claude/skills/_shared/test-authoring.md` (coder-core points to it): flip acceptance stubs first; any further tests must trace to a plan criterion or named edge case — never exhaustive per-function coverage
+   - Coders write NO tests (coder-core's "Tests Are Not Yours") — stub flips and all test authorship happen in step 4b's `test-writer` dispatch
    - Flag any ambiguities or issues
    - If the task turns out to be architectural, have it report back and recommend `/eng-spec` instead
 
-5. **After coder(s) complete**, summarize for the user AND build a handoff block for downstream review.
+4b. **Dispatch the test-writer** (after every coder dispatch that implemented plan behavior): a single `test-writer` subagent (pinned; omit `model`). Skip ONLY when the task/phase has no Success Criteria behavior and no Acceptance Stubs (pure config or mechanical phases) — note the skip in the phase summary.
+
+Pass the plan path + phase number (it reads phase-scoped) and the stub file list when the plan names one. **Pass NOTHING from the coder** — the agent is implementation-blind by contract: no diff, no coder summary, no source file contents in its prompt. Its assertions must come from the plan alone; feeding it the implementation reintroduces the bug-pinning failure the split exists to remove.
+
+Route on its report:
+
+- `FAILING-TEST` lines → candidate implementation bugs, the split working as designed. Dispatch `/fix` scoped to make the named behaviors pass WITHOUT touching the failing tests' assertions, then re-run the test-writer's `tests-run` command yourself with Bash. Cap: 2 fix rounds; still red → STOP and surface to the user.
+- `UNDERSPECIFIED` lines → surface in the phase summary; a success criterion left untested by one blocks marking the phase done (plan gap — treat like a missing Success Criteria section, step 2).
+
+5. **After coder(s) and the test-writer complete**, summarize for the user AND build a handoff block for downstream review.
 
    **PLAN-IMPACT gate (before anything else in this step)**: scan the coder report for a `PLAN-IMPACT:` block (coder-core requires `PLAN-IMPACT: yes` as the report's last line when one exists). If present, present it via **AskUserQuestion** — assumed → found → what changes, options `Adopt plan change` / `Keep plan as written` / `Discuss` — BEFORE summarizing or auto-dispatching `/review`. Record the answer in the plan's `## Plan Deviations` section (create if absent) so `/verify` reconciles against the amended plan.
 
@@ -92,8 +101,8 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
          why:                        # from the coder's WHY: lines; omit if none
            - lines: <start>-<end>
              note: <why this block looks the way it does>
-     tests-run: <exact command + exit code, e.g. "npm run validate → exit 0"; or "none">
-     flagged: <issues the coder explicitly flagged, or "none">
+     tests-run: <from the test-writer's report: exact command + exit code; or "none">
+     flagged: <issues the coder or test-writer explicitly flagged, incl. UNDERSPECIFIED and resolved FAILING-TEST outcomes, or "none">
      plan_impact: <verbatim PLAN-IMPACT block + the user's decision, or "none">
      iter: 1
    ```

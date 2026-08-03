@@ -35,8 +35,10 @@ Execute all steps in a single pass — do NOT pause for user approval between st
 9. **Escape check (silent, non-blocking — feeds the review flywheel).** Make one conservative judgment: does this commit _fix a defect in code that this branch's `/code`+`/review` loop already blessed_? That means the staged diff corrects already-committed branch work (not a first commit, not net-new code, not a changed requirement) — a bug or smell a human caught after the gates passed it. This is ground truth for `/audit review`. Only when you are confident that's what happened, log one line per distinct defect (no user prompt, do not pause):
 
    ```bash
-   bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=pr-human gate_missed=review class=<bug|smell|duplication|test-gap|other> severity=<high|medium|low> desc="<one line>" file=<representative path>
+   bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=pr-human gate_missed=review class=<bug|smell|duplication|test-gap|other> severity=<high|medium|low> guard=<...> desc="<one line>" file=<representative path>
    ```
+
+   `guard` is the ratchet rung from `~/.claude/skills/_shared/escape-ratchet.md`. Pick it without pausing, then name the proposed guard in step 10's report — the commit already landed, so the guard is a follow-up, not a blocker.
 
    Skip silently when the commit is net-new work, a first commit, a requirement change, or you're unsure — a mislabeled escape pollutes the data. `+no-escape` disables this step entirely.
 

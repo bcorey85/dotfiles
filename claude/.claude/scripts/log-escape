@@ -21,6 +21,11 @@
 #       collapses, one-implementation indirection, unused configurability,
 #       guards a boundary check kills). Logged by /refactor simplify mode.
 #     severity=high|medium|low
+#     guard=type|convention|gotcha|rule|none|n-a   (REQUIRED — the ratchet rung
+#       applied so this class of defect cannot recur; see
+#       ~/.claude/skills/_shared/escape-ratchet.md. `none` = considered and
+#       rejected. `n-a` = this row is not review-flywheel data, e.g. the
+#       triage-misses log.)
 #     desc="one line"
 #     file=path
 #     lane=q-plan|eng-spec|code|other   (optional: planning lane that produced
@@ -45,6 +50,19 @@ for kv in "$@"; do
   v="${kv#*=}"
   json=$(jq -c --arg k "$k" --arg v "$v" '.[$k] = ($v | (tonumber? // .))' <<< "$json")
 done
+
+guard=$(jq -r '.guard // ""' <<< "$json")
+case "$guard" in
+  type|convention|gotcha|rule|none|n-a) ;;
+  "")
+    echo "refusing to log: guard= is required." >&2
+    echo "Run the ratchet (~/.claude/skills/_shared/escape-ratchet.md), then pass" >&2
+    echo "guard=type|convention|gotcha|rule|none (or guard=n-a for non-flywheel logs)." >&2
+    exit 1 ;;
+  *)
+    echo "refusing to log: guard=$guard is not one of type|convention|gotcha|rule|none|n-a" >&2
+    exit 1 ;;
+esac
 
 printf '%s\n' "$json" >> "$out"
 echo "logged → $out"

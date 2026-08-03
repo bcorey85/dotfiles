@@ -194,9 +194,11 @@ height = "100%"
 # No -w: unstaged-only has no CLI flag (-w is staged AND unstaged; -r takes
 # commit revspecs, not scopes). Scope is a commit-selector choice, and -w is
 # what skips that selector — so pick Unstaged there.
+# Absolute path: the herdr server inherits the login PATH, which has no
+# ~/.local/bin, so a bare `tuicr` resolves to nothing and the popup dies silently.
 [[keys.command]]
 key = "prefix+d"                        # tuicr review (trial)
-command = "tuicr"
+command = "~/.local/bin/tuicr"
 type = "popup"
 width = "100%"
 height = "100%"

@@ -59,8 +59,10 @@ one. The parts you consume downstream: the verdict table, the acceptance-stub re
 - **Gaps found (`partial`/`missing`/failing check)**: list them, and log each as an escape past the phase-level drift gates (ground truth for the loop's trustworthiness — see `/audit review`):
 
   ```bash
-  bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=verify gate_missed=drift-gate class=plan-drift severity=<high|medium> lane=eng-spec desc="<one line>" file=<path>
+  bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=verify gate_missed=drift-gate class=plan-drift severity=<high|medium> lane=eng-spec guard=<...> desc="<one line>" file=<path>
   ```
+
+  `guard` comes from the ratchet — run it per `~/.claude/skills/_shared/escape-ratchet.md`, using its batching rule across the gap list.
 
   Then offer to dispatch `/fix` (or `/code` for net-new work) to close them. Re-run verify after.
 

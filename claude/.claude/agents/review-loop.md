@@ -254,7 +254,7 @@ Dispatch the **fix** bucket ONCE to a coder in `no-review` mode (no reviewer res
 `${CLAUDE_SKILL_DIR}` does not resolve inside an agent. Use the absolute path:
 
 ```bash
-bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> spec_iter=<N> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> skipped_fp=<n> ask=<n> test_intent_ran=0 culled=<n> comment_noise=<n> smells=<n> specialists=<security,perf,smell|none> class_closed=<yes|no|none|n-a> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
+bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> spec_iter=<N> critical=<n> high=<n> medium=<n> low=<n> fixed=<n> fixed_classes=<comma-list> skipped_fp=<n> ask=<n> test_intent_ran=0 culled=<n> comment_noise=<n> smells=<n> specialists=<security,perf,smell|none> class_closed=<yes|no|none|n-a> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
 ```
 
 `class_closed` is the Step 6 stopping-rule receipt as an enum (the prose
@@ -262,6 +262,13 @@ enumeration goes in the packet, not the shell arg): `yes` = a class-shaped
 finding was closed by enumeration; `no` = one was open and you re-entered or
 returned `cap-reached`; `none` = nothing you fixed was class-shaped; `n-a` =
 `fixed[]` was empty. Never omit it.
+
+`fixed_classes` is one comma-separated list — the class of every finding in
+`fixed[]`, from the escape vocabulary
+(`bug|smell|duplication|complexity|plan-drift|test-gap|other`), deduped, in any
+order. `fixed_classes=none` when `fixed[]` was empty. Without it `class_closed`
+is unauditable: `/audit review` can only join a row to an escape by repo, which
+is a base rate, not evidence.
 
 `smells` = `[smell]` findings the smell specialist returned this run (0 when it didn't fire). `fixed`/`skipped_fp`/`ask` are the MEDIUM bucket counts when classification ran, else 0. `culled` = diff-added tests deleted this run; always 0 (kept for schema stability — the cull lives in `test-intent-reviewer`'s branch-exit half). `comment_noise` = `[comment-noise]` fixes applied. If the script fails, mention it and continue — telemetry never blocks.
 

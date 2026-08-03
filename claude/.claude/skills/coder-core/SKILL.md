@@ -58,13 +58,15 @@ This rule covers **inline logic, not just named artifacts** — a guard clause, 
 
 The 2-run cap on quality-check commands is defined in `~/.claude/CLAUDE.md` ("Quality Checks") and applies here verbatim: at most two runs per command per task, fix every failure in a single batch from `/tmp/check.log`, and STOP if the second run still fails. One coder-specific addition: do NOT vary the command (`| tail -5`, `| grep …`, `2>&1`) to dodge the cap — variants count as the same command.
 
-## Acceptance Stubs Are Requirements (HARD RULE)
+## Tests Are Not Yours (HARD RULE — coder/test-writer split)
 
-Todo-marked tests scaffolded from the ticket (see the plan's `Acceptance Stubs` section, when present) are the executable requirements list. You may do exactly ONE thing to them: flip a stub into a real test whose assertions come from the stub's behavior sentence and the plan's criteria — never from what your implementation happens to do. Never delete, reword, or skip-mark a stub; if one seems wrong, redundant, or unimplementable, stop and report. Deleting a stub to go green is the same offense as weakening a test to pass a refactor.
+Test authorship belongs to the `test-writer` agent, dispatched after you return. You write NO tests: never flip an acceptance stub, never add a test, and never add, change, or delete an assertion in an existing one. Test-file writes are hook-denied to you (`test-ownership-gate`): when a signature change breaks existing test callers (renamed import, new required arg), list the needed mechanical compile-fixes in your report — the test-writer applies them. If your implementation makes an existing test red for a behavioral reason, report it; do not adjust either side to green.
+
+Todo-marked stubs (the plan's `Acceptance Stubs` section) remain the executable requirements list — read them as spec. Never delete, reword, or skip-mark a stub; if one seems wrong, redundant, or unimplementable, stop and report.
 
 **Acceptance contracts are not yours — do not open them.** A test file whose head carries an `ACCEPTANCE-CONTRACT` marker was written by the user before your implementation existed; that is the only reason it can judge your work. Writing to one is hook-denied (`acceptance-contract-gate`), and reading one is prohibited here: work from the plan's behavior sentences and, when a contract fails, from the failing test NAME alone. Do not read the assertion to find out what shape would satisfy it — that converts the contract from an independent oracle into a spec you are copying, which is exactly the failure it exists to catch. If the name is not enough to tell you what behavior is missing, say so and stop; the plan is under-specified and that is a finding, not a reason to peek.
 
-**If this task adds or changes ANY test, read `~/.claude/skills/_shared/test-authoring.md` before writing it** — the test budget, the one-altitude rule, and the test value bar live there and are binding.
+(`~/.claude/skills/_shared/test-authoring.md` binds the `test-writer`, not you — you have no occasion to author under it.)
 
 ## Fixture Provenance (HARD RULE)
 
@@ -101,7 +103,7 @@ do that if the block is present verbatim.
 
 ## Pre-Submission Checklist (common to all scopes)
 
-- **Second-order effects**: if a change alters a signature, return type, or behavioral contract, update every caller in the same pass (controllers, other services, tests). If you can't find them all, say so.
+- **Second-order effects**: if a change alters a signature, return type, or behavioral contract, update every caller in the same pass (controllers, other services; in tests, mechanical compile fixes only — never assertions, per Tests Are Not Yours). If you can't find them all, say so.
 - **Dead-reference cleanup**: the mirror of the above — when a change removes or rewrites the last caller of a symbol, that symbol (function, export, import, constant, branch) may now be orphaned. The `export` keyword hides its death from the eye, so search: LSP find-references / `rg` by name across the workspace. Zero remaining consumers → delete it in the same pass. Removing consumers without removing the now-dead producer is the single most common structural escape past review.
 - **Copy propagation**: before changing or fixing any block of logic, check whether it exists in other copies (`rg` a distinctive fragment / LSP references) — formatters, guards, and mappers are commonly duplicated. Apply the change to EVERY copy, or better, use the moment to extract the shared helper (the bounded-touch exception above applies). A fix applied to two of three copies ships the bug in the third.
 - **No-op detection**: if an operation results in no state change, return early without side effects (no DB writes, no event broadcasts) and signal it to the caller.

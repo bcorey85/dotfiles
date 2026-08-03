@@ -44,8 +44,10 @@ tuicr exposes `review list`, `review add`, and `review comments` — no delete a
 6. **Log escapes — do this BEFORE the consume in step 7.** Every comment that produced a real fix is ground truth: the human caught what the automated gates blessed. For each comment **resolved with a fix applied** (not skipped-as-FP, not deferred):
 
    ```bash
-   bash ~/.claude/scripts/log-escape repo="$(basename "<repo-root>")" stage_found=cc gate_missed=review class=<bug|smell|duplication|complexity|plan-drift|test-gap|other> severity=<high|medium|low> lane=<eng-spec|code|other> desc="<comment gist>" file=<path>
+   bash ~/.claude/scripts/log-escape repo="$(basename "<repo-root>")" stage_found=cc gate_missed=review class=<bug|smell|duplication|complexity|plan-drift|test-gap|other> severity=<high|medium|low> lane=<eng-spec|code|other> guard=<...> desc="<comment gist>" file=<path>
    ```
+
+   `guard` is the ratchet rung from `~/.claude/skills/_shared/escape-ratchet.md` (batch by `class`); surface the proposed guard in step 8 and apply it on approval.
 
    `stage_found=cc` deliberately: this is the same human-review stage as `/cc`, on a different reader, and splitting it would fragment the flywheel's per-gate rates. Map `comment_type` to `class` when the comment is typed; otherwise classify from the body, `other` when unsure. Do NOT log comments that were new requirements or changed direction — a gate cannot miss information it never had.
 

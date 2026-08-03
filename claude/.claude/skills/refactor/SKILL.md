@@ -72,8 +72,10 @@ A refactor changes structure, not behavior — so the tests are the contract. **
    **Log escapes** (branch-audit mode): if the target is code produced by this branch's coding loop (`/code` + `/review` already blessed it), every finder finding fixed is by definition a cross-phase miss by the quality layer — derive the log lines from the finder's findings list, one per distinct smell (not per file), `class` straight off the finding (`duplication` for scope-item-1 findings, `smell` otherwise):
 
    ```bash
-   bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=refactor gate_missed=review class=<smell|duplication> severity=medium lane=<eng-spec|code|other> desc="<one line>" file=<representative path>
+   bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=refactor gate_missed=review class=<smell|duplication> severity=medium lane=<eng-spec|code|other> guard=<...> desc="<one line>" file=<representative path>
    ```
+
+   `guard` comes from the ratchet — run it per `~/.claude/skills/_shared/escape-ratchet.md`, using its batching rule (one guard per `class` group, not per row).
 
    `lane` is the planning lane that produced the branch's work — infer from the conversation or planning artifacts. Skip logging for mechanical-sweep matches (regex hits, not reviewer misses) and when the target is legacy code that never went through the loop — old debt is not an escape.
 

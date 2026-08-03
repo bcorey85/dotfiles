@@ -1,8 +1,8 @@
 #!/bin/bash
 # Fleet dashboard — the workmux `C-.` popup, herdr-native.
-# Lists every agent pane sorted by who needs you most, previews its recent
-# output, and jumps on Enter. herdr's sidebar covers the same data as a side
-# rail; this is the centered-popup reflex instead.
+# Lists every agent pane sorted by who needs you most and jumps on Enter.
+# herdr's sidebar covers the same data as a side rail; this is the
+# centered-popup reflex instead.
 #
 # Sort order mirrors herdr's own agent_panel_sort = "priority" so the numbers
 # here match the sidebar's: blocked > done > working > idle > unknown, ties
@@ -25,7 +25,28 @@ if [ -z "$agents" ]; then
     exit 1
 fi
 
-rows=$(printf '%s' "$agents" | jq -r '
+# Last activity: the herdr API carries no timestamps, so the age comes from the
+# mtime of the agent's own session transcript, found by the session id herdr
+# reports. Claude-specific by nature — any other agent just shows "-".
+session_age() {
+    local id=$1 f mt d
+    [ -z "$id" ] || [ "$id" = "null" ] && { echo "-"; return; }
+    for f in "$HOME"/.claude/projects/*/"$id".jsonl; do
+        [ -f "$f" ] && break
+        f=""
+    done
+    [ -z "$f" ] && { echo "-"; return; }
+    mt=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null)   # GNU || BSD
+    [ -z "$mt" ] && { echo "-"; return; }
+    d=$(( $(date +%s) - mt ))
+    if   [ "$d" -lt 60 ];    then echo "<1m"
+    elif [ "$d" -lt 3600 ];  then echo "$((d / 60))m"
+    elif [ "$d" -lt 86400 ]; then echo "$((d / 3600))h"
+    else                          echo "$((d / 86400))d"
+    fi
+}
+
+meta=$(printf '%s' "$agents" | jq -r '
   .result.agents
   # Ranks are herdr workspace_attention_priority() inverted (src/ui/sidebar.rs).
   # sort_by is stable and agent list already comes back in workspace/pane order,
@@ -41,16 +62,38 @@ rows=$(printf '%s' "$agents" | jq -r '
   # to_entries after the sort so the printed number IS the fzf row position
   # the digit binds jump to.
   | to_entries | .[]
-  # Field 1 is the target and stays hidden in fzf (--with-nth=2,3,4,5).
+  # Raw fields only — bash formats the display column, since branch and age
+  # need per-row shell-outs beyond jq.
+  # Repo is the cwd basename, except under a worktree root (~/.workmux/<project>/
+  # <branch> or .../worktrees/<branch>) where the leaf is a branch name and the
+  # parent carries the project — show "project/branch" there.
   | [ .value.pane_id
     , (.key + 1 | tostring)
-    , ((.value.agent_status + "       ")[0:7])
-    , ((( .value.workspace_id + " " + .value.tab_id) + "              ")[0:14])
+    , (if .value.focused then "●" else " " end)
+    , .value.agent_status
+    , ((.value.cwd // "") | split("/") | map(select(. != ""))
+        | if   length == 0 then "-"
+          elif length >= 3 and .[-3] == ".workmux"   then .[-2] + "/" + .[-1]
+          elif length >= 3 and .[-2] == "worktrees"  then .[-3] + "/" + .[-1]
+          else .[-1] end)
+    , (.value.cwd // "")
+    , (.value.agent_session.value // "")
     , (.value.terminal_title_stripped // .value.agent // "-")
     ] | @tsv
 ')
 
-if [ -z "$rows" ]; then
+# Field 1 is the jump target and stays hidden in fzf (--with-nth=2).
+rows=()
+while IFS=$'\t' read -r pane num mark status repo cwd session title; do
+    [ -z "$pane" ] && continue
+    branch=$(git -C "$cwd" branch --show-current 2>/dev/null)
+    [ -z "$branch" ] && branch=$(git -C "$cwd" rev-parse --short HEAD 2>/dev/null)
+    [ -z "$branch" ] && branch="-"
+    rows+=("$(printf '%s\t%s %s %-7.7s %-16.16s %-16.16s %4s  %s' \
+        "$pane" "$num" "$mark" "$status" "$repo" "$branch" "$(session_age "$session")" "$title")")
+done <<< "$meta"
+
+if [ ${#rows[@]} -eq 0 ]; then
     echo "No agent panes detected."
     read -r -n1 -p "press any key to close"
     exit 0
@@ -63,15 +106,13 @@ for n in 1 2 3 4 5 6 7 8 9; do
     digit_binds+=(--bind "$n:transform:[ -n {q} ] && echo 'put($n)' || echo 'pos($n)+accept'")
 done
 
-sel=$(printf '%s\n' "$rows" | fzf \
+sel=$(printf '%s\n' "${rows[@]}" | fzf \
     --reverse \
     --ansi \
     --delimiter='\t' \
-    --with-nth=2,3,4,5 \
+    --with-nth=2 \
     --prompt="agent> " \
-    --header="1-9=jump  enter=jump" \
-    --preview='herdr agent read {1} --source recent --lines 40 --format ansi' \
-    --preview-window='right,60%' \
+    --header="1-9=jump  enter=jump  ●=current" \
     "${digit_binds[@]}") || exit 0
 
 [ -n "$sel" ] && herdr agent focus "$(printf '%s' "$sel" | cut -f1)"

@@ -5,7 +5,7 @@
 When rules conflict: the user's current instruction > project CLAUDE.md > this file > skill/agent defaults. A project file may relax a global rule only through a mechanism this file names (e.g., direct-edit repos).
 
 ## Communication
-
+- Be extremely concise. Sacrifice grammar for the sake of concision. Stop. BE EXTREMELY CONCISE. YOU HAVE BEEN WARNED
 - Never paste secrets — give me the command to run.
 - Report by exception: never narrate what went as planned. Never restate file contents I can open — give the path.
 - Status and completion reports: ≤10 lines — headline + one supporting point per item, one `STATUS: <ok|blocked|plan-impact> — <one line>` per completed dispatch.

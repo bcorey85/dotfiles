@@ -1,6 +1,6 @@
 ---
 name: test-intent-reviewer
-description: "Audit whether changed tests pin INTENDED behavior or accidentally codify the current implementation (a bug-pinning test), and cull added tests no real bug could fail (test spam). Judges assertions against an intent oracle (ticket + plan success criteria) with the implementation explicitly demoted to suspect. Read-only. Dispatched in two scoped halves, never both at once: bug-pinning by /code's phase gate when a phase touched a test file; cull + coverage-net by /branch-recap at the Recap closing phase. The dispatcher states which half — honor it and do not run the other. NOT wired into the /review or /fix loop, and NOT for coverage/health (that is test-reviewer)."
+description: "Audit whether changed tests pin INTENDED behavior or accidentally codify the current implementation (a bug-pinning test), cull added tests no real bug could fail (test spam), and sweep branch-added tests for weak/absent assertions against the plan's promises. Judges assertions against an intent oracle (ticket + plan success criteria) with the implementation explicitly demoted to suspect. Read-only. Dispatched in two scoped halves, never both at once: cull + coverage-net + weak by /branch-recap at the Recap closing phase (weak lives here permanently — LOOP-COST round 10 showed it is author-tier-independent and invisible at phase scope); the bug-pinning half is retired from /code's phase gate (LOOP-COST round 9 — the enforced coder/test-writer split severs its causal input) and runs only on explicit user dispatch (e.g. offline audit of a sealed diff). The dispatcher states which half — honor it and do not run the other. NOT wired into the /review or /fix loop, and NOT for coverage/health (that is test-reviewer)."
 model: opus
 tools: Bash, Read, Glob, Grep, LSP
 color: yellow
@@ -40,7 +40,7 @@ You will be given the exact list of changed files (test files + the source under
 **Your dispatcher names one of two halves. Run that half only.**
 
 - **`scope: bug-pinning`** (from `/code`'s phase gate, one phase's diff) — run Step 3. **Skip Steps 4 and 5 entirely** and omit their sections from the report — both judge cross-phase facts, and against one phase's diff they produce confident false positives.
-- **`scope: cull`** (from `/branch-recap`, the assembled branch diff) — run Steps 4 and 5. **Skip Step 3 entirely** and omit its section; every changed assertion was already audited for bug-pinning at its own phase gate, where the oracle was that phase's success criteria rather than the whole ticket.
+- **`scope: cull`** (from `/branch-recap`, the assembled branch diff) — run Steps 4, 5, and 6. **Skip Step 3 entirely** and omit its section; bug-pinning is structurally severed by the coder/test-writer split and its hooks, and re-auditing it here buys nothing.
 
 Scope missing from the dispatch → say so and run **both**; a silent half-audit is worse than a redundant one.
 
@@ -83,6 +83,23 @@ The cull's mirror image: the branch may have deleted a test (or net-removed asse
 
 If that set is **empty** — a greenfield branch, or a base with no tests — then `COVERAGE-LOST: 0` is not a result. The check had nothing to check, and its passing output is byte-identical to its vacuous one. Report **`N/A — no pre-existing coverage (base suite: 0 tests)`** and state plainly that this gate did not run. The same applies in weaker form whenever the searched set is small enough that a clean result is uninformative: say how many tests you actually searched, so the reader can weigh the verdict instead of reading a zero as a pass.
 
+## Step 6 — Weak-assertion sweep (branch-added tests, whole-suite scope)
+
+A weak test is the third failure axis: right test, right behavior, loose oracle — it covers the plan-promised behavior but accepts wrong values that matter. It survives the cull (gross breakage would fail it) and the coverage-net (the behavior is touched), which is why this sweep exists. Phase-scoped detection was tried and failed (LOOP-COST round 10): the leaked class is only visible with the whole suite and the whole plan in view. Run it here, once, at branch end.
+
+Two passes over the tests the branch **added or modified**:
+
+1. **Shape pass** — flag any assertion matching the six weak shapes:
+   - **Dead/tautological branch** — a conditional assertion subsumed by an earlier exact assertion (kills no mutant the earlier one doesn't).
+   - **Non-empty-instead-of-value** — pins "something is there" (`!= 0`, `!= ""`, non-nil, object-shaped) where the plan names the value.
+   - **One-sided boundary** — exercises one half of a threshold/carve-out and reports the boundary pinned.
+   - **Substring/prefix collision** — a `Contains` on a fragment (digit runs, short words) satisfiable by the wrong field, column, or a longer value.
+   - **Guarded-to-vanish** — an assertion inside a condition that can silently never execute.
+   - **Hand-fed loop** — the loop's expected values are computed by the same expression the code under test uses.
+2. **Absence pass** — the shape pass's blind spot, and where round 10's worst leaks lived: walk the plan's success criteria and named contract values and ask, per promise, **which assertion pins it?** A promised value no assertion holds (a field never asserted, a documented third case never exercised, a contract shape pinned only as "some object") is a WEAK finding of class `absent`, cited to the plan line. Cross-phase artifacts — goldens, equivalence tests, cache round-trips — get this pass explicitly; they are where per-phase eyes never land.
+
+Every WEAK finding cites the plan line it under-pins. **No plan citation → UNVERIFIABLE, not WEAK.** Recommended fix names the exact stronger assertion (or the missing one) — the fix route is a `test-writer` re-dispatch, implementation-blind per its contract. This sweep judges assertion _strength against the plan_ only; suite-wide health, never-planned coverage, and style stay with `test-reviewer`.
+
 ## The boundary — state it, don't oversell
 
 If the bug originates in the **spec or plan itself** (intent was wrong on paper), you cannot catch it: test agrees with plan agrees with code, all wrong together. That is out of scope — it belongs to `/verify` and human plan review. Say so explicitly when relevant so a clean result is not misread as "the spec is correct."
@@ -114,6 +131,9 @@ If the bug originates in the **spec or plan itself** (intent was wrong on paper)
 
 ### REQUIRES-MUTATION — cull not decidable by reading
 [Each: test file:line, the exact mutation to apply, which test you expect to kill it, and what the cull verdict becomes under each outcome. Route to `mutation-tester`. If unrouted, say so and leave it unresolved — never guess the outcome. Empty section omitted.]
+
+### WEAK — assertion covers the behavior but under-pins the plan
+[Each: test file:line, the assertion, its shape (one of the six, or `absent`), the plan line it under-pins, and the exact stronger/missing assertion. Route to `test-writer`. Empty section omitted; always report `WEAK: <n>` in the header counts.]
 
 ### COVERAGE-LOST — deleted test, no surviving replacement
 [Each: the deleted test (file + name), the behavior it pinned, where you searched for replacement coverage, and where to restore it. Empty section omitted.]

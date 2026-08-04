@@ -11,8 +11,7 @@ allowed-tools: Read, Bash, Glob, Grep
 
 Check the arguments for flags:
 
-- `--keep`, `-k` → pass `--keep` to `workmux merge` (keeps the worktree and tmux window after merging)
-- `--no-verify`, `-n` → pass `--no-verify` to `workmux merge`
+- `--keep`, `-k` → keep the branch and its worktree after merging
 
 Strip all flags from arguments.
 
@@ -22,7 +21,7 @@ This command finishes work on the current branch by:
 
 1. Committing any staged changes
 2. Rebasing onto the base branch
-3. Running `workmux merge` to merge and clean up
+3. Merging into the base branch and cleaning up
 
 ## Step 1: Commit
 
@@ -30,13 +29,8 @@ If there are staged changes, commit them. Use lowercase, imperative mood, no con
 
 ## Step 2: Rebase
 
-Get the base branch from git config:
-
-```
-git config --local --get "branch.$(git branch --show-current).workmux-base"
-```
-
-If no base branch is configured, default to "main".
+The base branch is the local default branch — "main", or "master" when the repo
+has no "main".
 
 Rebase onto the local base branch (do NOT fetch from origin first):
 
@@ -60,10 +54,16 @@ If conflicts occur:
 
 ## Step 3: Merge
 
-Run: `workmux merge --rebase --notification [--keep] [--no-verify]`
+The rebase in step 2 makes this a fast-forward:
 
-Include `--keep` only if the `--keep` flag was passed in arguments.
-Include `--no-verify` only if the `--no-verify` flag was passed in arguments.
+```
+git checkout <base-branch>
+git merge --ff-only <branch>
+```
 
-This will merge the branch into the base branch and clean up the worktree and
-tmux window (unless `--keep` is used).
+Then clean up, unless `--keep` was passed:
+
+```
+git worktree remove <worktree-path>   # only if the branch had its own worktree
+git branch -d <branch>
+```

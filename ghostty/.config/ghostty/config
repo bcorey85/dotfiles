@@ -34,11 +34,6 @@ keybind = super+j=text:\x1bj
 keybind = super+k=text:\x1bk
 keybind = super+l=text:\x1bl
 keybind = super+semicolon=text:\x1b;
-# workmux sidebar next/prev (tmux M-n/M-p). super+n reclaims Cmd+N from
-# Ghostty's default new_window — deliberate, tmux owns window creation here.
-keybind = super+n=text:\x1bn
-keybind = super+p=text:\x1bp
-
 # Harpoon jumps: send tmux's M-1..4 as CSI-u (codepoint 49-52 + modifier 3=alt).
 # Mirrors kitty's `map cmd+N send_text \x1b[<cp>;3u`; tmux has extended-keys on
 # so it reads these as Alt+1..4. NOTE: the digit key is named `digit_N`, not
@@ -48,11 +43,6 @@ keybind = super+digit_1=csi:49;3u
 keybind = super+digit_2=csi:50;3u
 keybind = super+digit_3=csi:51;3u
 keybind = super+digit_4=csi:52;3u
-
-# Free ctrl+comma for tmux: Ghostty binds it to open_config by default and would
-# swallow the keystroke. Emit CSI-u C-, (codepoint 44 + modifier 5=ctrl) so tmux
-# reads it as C-, (workmux last-done). Config is still reachable via ctrl+shift+,.
-keybind = ctrl+,=csi:44;5u
 
 # Mouse
 link-url = true

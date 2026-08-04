@@ -7,8 +7,8 @@
 #   Window 1 "code"     nvim (60%) | claude (40%). The claude pane is a plain
 #                       companion, not a managed agent — stash/restore it with
 #                       C-' (claude-companion) when you want the width back;
-#                       the conversation survives. Background agents are
-#                       workmux's job, and they stay out of this window.
+#                       the conversation survives. Background agents live in
+#                       their own herdr worktree workspaces, not this window.
 #   Window 2 "console"  three equal shells for git / tests / logs. If the
 #                       project has an mprocs config, pane 1 runs the service
 #                       stack under mprocs instead of a bare shell — r restarts

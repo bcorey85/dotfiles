@@ -30,7 +30,7 @@
 -- Producers MUST append (>>), one finding per line, and keep the line short.
 -- Concurrent agents all write this one file; a single `>>` write under 4KB is
 -- atomic on a local filesystem, so short lines cannot interleave — a multi-
--- kilobyte `text` can. Set `repo` when the producer knows its root (workmux
+-- kilobyte `text` can. Set `repo` when the producer knows its root (git
 -- worktrees each have their own), so reads and clears scope correctly.
 
 local M = {}
@@ -83,8 +83,8 @@ local function entry_abs(e, repo_root)
 end
 
 -- True when `abs` belongs to the repo we're looking at. The queue file is
--- global and several agents append to it concurrently (each workmux worktree
--- is its own repo root), so every read and every write has to be scoped —
+-- global and several agents append to it concurrently (each git worktree is
+-- its own repo root), so every read and every write has to be scoped —
 -- otherwise one project's findings show up in another's list, or get destroyed
 -- by its clear.
 local function in_repo(abs, repo_root)

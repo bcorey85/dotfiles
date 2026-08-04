@@ -70,14 +70,14 @@ goto             = "prefix+o"           # tmux: bind o choose-tree -Zs
 # matching tmux M-1..4). Tabs already default to prefix+1..9 like tmux windows.
 switch_workspace = "prefix+shift+1..9"
 
-# Agent jump — the workmux `C-. {1..5}` reflex, direct-addressed: with
+# Agent jump, direct-addressed: with
 # agent_panel_sort = "priority" the sidebar is the attention queue, so
 # ctrl+alt+1 = the agent that most needs you. alt+N stays project harpoon.
 focus_agent = "ctrl+alt+1..9"
 
 # ─── displaced herdr defaults (parked off your keys) ─────────────────────────
 resize_mode      = "prefix+shift+r"     # was prefix+r  (yours: reload)
-# ctrl+period belongs to the fleet popup below (the workmux C-. reflex), so the
+# ctrl+period belongs to the fleet popup below, so the
 # sidebar keeps only the prefix chord. The sidebar shows the same queue as a
 # side rail; the popup is the centered, preview-carrying version.
 toggle_sidebar   = "prefix+ctrl+b"      # was prefix+b (yours: btop)
@@ -288,7 +288,7 @@ type = "popup"
 width = "60%"
 height = "60%"
 
-# ctrl+period — the workmux dashboard reflex, herdr-native. Agents sorted by
+# ctrl+period — the fleet dashboard. Agents sorted by
 # attention (blocked > idle > done > working), recent output in the preview,
 # Enter jumps. ghostty sends CSI-u for ctrl+.; prefix+ctrl+period is the
 # fallback for terminals that don't.

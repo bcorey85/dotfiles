@@ -3,9 +3,5 @@
 # For machine-and-tool-local files that shouldn't live in every repo's
 # .gitignore.
 
-# workmux per-project config (workmux only discovers it in-repo; ignoring it
-# globally keeps it out of git status without touching repo gitignores)
-.workmux.yaml
-
 # machine-local Claude Code settings
 **/.claude/settings.local.json

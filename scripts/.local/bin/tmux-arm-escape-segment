@@ -2,8 +2,7 @@
 # Prepend the escape-score segment to tmux status-right, idempotently.
 # Theme files own (and overwrite) status-right, so this must re-run after any
 # theme source — call sites: .tmux.conf startup (run-shell, queued after the
-# theme source) and theme-mode's apply(). Same contract as
-# tmux-arm-workmux-segment; both prepend, so whichever arms last sits leftmost.
+# theme source) and theme-mode's apply().
 # No-ops on machines with no escape log yet.
 
 export PATH="$HOME/.local/bin:$PATH"

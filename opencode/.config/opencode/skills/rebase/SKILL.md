@@ -13,9 +13,8 @@ Arguments: $ARGUMENTS
 
 Behavior:
 
-- No arguments: rebase on the current branch's workmux base branch
-  (`git config branch.<current>.workmux-base`), falling back to local main when
-  none is configured
+- No arguments: rebase on the local default branch ("main", or "master" when the
+  repo has no "main")
 - "origin": fetch origin, rebase on origin/main
 - "origin/branch": fetch origin, rebase on origin/branch
 - "branch": rebase on local branch (use "main" to force a rebase on local main)
@@ -23,9 +22,8 @@ Behavior:
 Steps:
 
 1. Parse arguments:
-   - No args → target is the current branch's workmux base branch
-     (`git config --get branch.$(git branch --show-current).workmux-base`); if
-     that is empty, target is "main". No fetch.
+   - No args → target is the local default branch ("main", or "master" when the
+     repo has no "main"). No fetch.
    - Contains "/" (e.g., "origin/develop") → split into remote and branch, fetch
      remote, target is remote/branch
    - Just "origin" → fetch origin, target is "origin/main"

@@ -10,9 +10,10 @@ The fourth and last closing phase, and the exit-side counterpart to `/eng-spec`.
 
 **It is not a gate.** By the time you reach it every gate has already fired, and fired
 where its oracle was sharpest: `/review` converged per phase, the drift gate reconciled
-each phase against its Success Criteria, per-phase test-intent caught bug-pinning while
-it was still phase-sized, `/verify` certified branch completeness, `/orient` rebuilt the
-system map. Re-running any of that here would be spend without signal.
+each phase against its Success Criteria, `/verify` certified branch completeness,
+`/orient` rebuilt the system map. Re-running any of that here would be spend without
+signal. The one audit that lives HERE by design is the test-intent recap half — cull,
+coverage-net, and the weak-assertion sweep are all cross-phase questions.
 
 What has _not_ happened is synthesis. You have seen five phases; you have not seen the
 branch. This skill's whole job is to hand you that one artifact.
@@ -23,8 +24,9 @@ never commits, never opens a PR.
 
 ## Step 1: Cross-phase test audit
 
-Dispatch `test-intent-reviewer` (pinned; omit `model`) — **cull + coverage-net scope only**.
-Per-phase bug-pinning already ran in `/code`'s phase gate; do not re-run it here.
+Dispatch `test-intent-reviewer` (pinned; omit `model`) — **cull + coverage-net + weak
+scope** (`scope: cull` in its contract). Bug-pinning is structurally severed by the
+coder/test-writer split and its hooks; do not run that half here.
 
 This half of the audit is inherently cross-phase and cannot be done phase-locally:
 
@@ -32,9 +34,14 @@ This half of the audit is inherently cross-phase and cannot be done phase-locall
   invisible from inside either phase.
 - **`COVERAGE-LOST`** — a test deleted in phase 1 and legitimately replaced in phase 3
   looks like lost coverage at phase 1, and only resolves when both are in view.
+- **`WEAK`** — under-pinned and absent assertions against the plan's promises; phase-scoped
+  detection was tried and failed (LOOP-COST round 10 — the leaked class is absent
+  assertions and cross-phase artifacts, visible only with the whole suite and whole plan
+  in view). WEAK findings route to a `test-writer` re-dispatch, not `/fix`.
 
 Hand it the branch diff (`git diff <base>...HEAD`) and the oracle (spec + acceptance
-criteria). Findings route through `/fix`, then re-run the loop's execution gate.
+criteria). Cull/coverage findings route through `/fix`; WEAK findings route to a
+`test-writer` re-dispatch (implementation-blind). Then re-run the loop's execution gate.
 Net-removed coverage goes to the top of the read-first queue.
 
 **`REQUIRES-MUTATION` findings route to `mutation-tester`, not to `/fix`.** The
@@ -63,14 +70,14 @@ is empty (greenfield branch, or a base with no tests) the check cannot fail, and
 pass is byte-identical to its no-op. Take the auditor's `Base suite at branch point`
 header verbatim.
 
-Receipt line: `test audit: <n> culled, <n> coverage-lost of <m> pre-existing tests searched | coverage-net N/A — base suite empty | clean | skipped — no test files`.
+Receipt line: `test audit: <n> culled, <n> coverage-lost of <m> pre-existing tests searched, <n> weak | coverage-net N/A — base suite empty | clean | skipped — no test files`.
 
 Log the firing to the review flywheel (non-blocking; on failure mention and continue; skip if the audit was skipped):
 
 ```bash
 bash "$HOME/.claude/skills/review/log-review-metrics" \
   repo="$(basename "$(git rev-parse --show-toplevel)")" lane=branch-recap \
-  test_intent_ran=1 test_intent=<n findings> culled=<n> coverage_lost=<n> \
+  test_intent_ran=1 test_intent=<n findings> culled=<n> coverage_lost=<n> weak=<n> \
   base_suite=<m pre-existing tests searched; 0 means the coverage-net gate did not run> \
   requires_mutation=<n> mutation_equivalent=<n of those the tester ruled EQUIVALENT> \
   mutation_open=<n still INDETERMINATE or unrouted> \
@@ -107,7 +114,7 @@ Spec: <task-dir>
 - <path> — <one-line change intent>   [phase <n>]
 
 ### Cross-phase test audit
-- <culled / COVERAGE-LOST findings, or "clean">
+- <culled / COVERAGE-LOST / WEAK findings, or "clean">
 - <denominator, always: "N of M pre-existing tests searched" or "coverage-net N/A — base suite had 0 tests, this gate did not run">
 - <any REQUIRES-MUTATION items with their KILLED/SURVIVED/EQUIVALENT/INDETERMINATE verdicts, or marked unrouted-and-open>
 

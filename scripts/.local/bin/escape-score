@@ -16,8 +16,8 @@
 # where a hidden segment only appears after you have already scored. Flip the
 # `[ "$count" -gt 0 ] ||` guard at the bottom if the zero starts nagging.
 #
-# Colors are ANSI palette names so they track the active terminal theme (same
-# reason as workmux-attention). Armed into status-right by
+# Colors are ANSI palette names so they track the active terminal theme.
+# Armed into status-right by
 # tmux-arm-escape-segment; no background because this is ambient score, not an
 # alert — backgrounds in this bar mean "something needs you now".
 

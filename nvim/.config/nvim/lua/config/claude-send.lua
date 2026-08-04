@@ -7,7 +7,7 @@
 -- Pane discovery matches the claude-companion / .tmux.conf convention
 -- (pane_current_command is "claude" or a bare version string — the native
 -- installer runs a versioned binary): current window first, then any window
--- in the session (catches the stashed _claude companion and workmux agents).
+-- in the session (catches the stashed _claude companion and worktree agents).
 
 local M = {}
 

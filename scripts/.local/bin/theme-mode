@@ -14,8 +14,6 @@
 #              (machine-local include, same pattern as local.conf), then
 #              SIGUSR2s the running ghostty to reload it (1.2+; ctrl+shift+,
 #              still works by hand). Only USR2 — any other signal crashes it.
-#   - workmux: this script sets the tmux-global $COLORFGBG (mode only, no
-#              family); the dashboard popup inherits it and picks light/dark.
 #   - claude:  this script writes .theme (mode only) into ~/.claude/settings.json
 #              via jq (correct key on Claude Code >= 2.1.119; older builds kept it
 #              in ~/.claude.json). This sets the theme for the NEXT session — a
@@ -281,12 +279,12 @@ apply() { # <family> <mode> — write state and repaint tmux + ghostty
     local cursor="#ffffff"
     [ "$mode" = "light" ] && cursor="#000000"
     tmux set-option -g cursor-colour "$cursor" 2>/dev/null || true
-    # workmux's dashboard (prefix W / C-.) auto-detects light/dark via an OSC 11
-    # background query. tmux popups don't answer that reliably, so it falls back
-    # to $COLORFGBG — unset by default, which lands it in dark mode on a light
-    # terminal. Publish COLORFGBG into the tmux global env: popups inherit it and
-    # the dashboard spawns fresh each open, so it tracks the mode. Convention is
-    # fg;bg by ANSI slot — bg 15 (light) => light theme, bg 0 (dark) => dark.
+    # TUIs that auto-detect light/dark via an OSC 11 background query get no
+    # reliable answer inside a tmux popup and fall back to $COLORFGBG — unset by
+    # default, which lands them in dark mode on a light terminal. Publish it into
+    # the tmux global env: popups inherit it and spawn fresh each open, so it
+    # tracks the mode. Convention is fg;bg by ANSI slot — bg 15 (light) => light
+    # theme, bg 0 (dark) => dark.
     local colorfgbg="15;0"
     [ "$mode" = "light" ] && colorfgbg="0;15"
     tmux set-environment -g COLORFGBG "$colorfgbg" 2>/dev/null || true
@@ -304,10 +302,8 @@ apply() { # <family> <mode> — write state and repaint tmux + ghostty
         *) tmux set-option -g status-right "#($cont_save)$sr" 2>/dev/null || true ;;
       esac
     fi
-    # Re-arm the workmux attention segment for the same reason as continuum:
-    # the theme file just rewrote status-right. No-op without workmux.
-    "$HOME/.local/bin/tmux-arm-workmux-segment" 2>/dev/null || true
-    # Same for the escape scoreboard.
+    # Re-arm the escape scoreboard for the same reason as continuum: the theme
+    # file just rewrote status-right.
     "$HOME/.local/bin/tmux-arm-escape-segment" 2>/dev/null || true
   fi
 

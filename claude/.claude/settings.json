@@ -372,16 +372,7 @@
     "pyright-lsp@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
-    "typescript-lsp@claude-plugins-official": true,
-    "workmux-status@workmux": true
-  },
-  "extraKnownMarketplaces": {
-    "workmux": {
-      "source": {
-        "source": "github",
-        "repo": "raine/workmux"
-      }
-    }
+    "typescript-lsp@claude-plugins-official": true
   },
   "effortLevel": "medium",
   "awaySummaryEnabled": false,

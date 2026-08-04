@@ -1,5 +1,5 @@
 #!/bin/bash
-# Fleet dashboard — the workmux `C-.` popup, herdr-native.
+# Fleet dashboard — the `C-.` agent popup, herdr-native.
 # Lists every agent pane sorted by who needs you most and jumps on Enter.
 # herdr's sidebar covers the same data as a side rail; this is the
 # centered-popup reflex instead.
@@ -64,16 +64,15 @@ meta=$(printf '%s' "$agents" | jq -r '
   | to_entries | .[]
   # Raw fields only — bash formats the display column, since branch and age
   # need per-row shell-outs beyond jq.
-  # Repo is the cwd basename, except under a worktree root (~/.workmux/<project>/
-  # <branch> or .../worktrees/<branch>) where the leaf is a branch name and the
-  # parent carries the project — show "project/branch" there.
+  # Repo is the cwd basename, except under a worktree root
+  # (.../worktrees/<branch>) where the leaf is a branch name and the parent
+  # carries the project — show "project/branch" there.
   | [ .value.pane_id
     , (.key + 1 | tostring)
     , (if .value.focused then "●" else " " end)
     , .value.agent_status
     , ((.value.cwd // "") | split("/") | map(select(. != ""))
         | if   length == 0 then "-"
-          elif length >= 3 and .[-3] == ".workmux"   then .[-2] + "/" + .[-1]
           elif length >= 3 and .[-2] == "worktrees"  then .[-3] + "/" + .[-1]
           else .[-1] end)
     , (.value.cwd // "")

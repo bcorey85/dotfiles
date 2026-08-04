@@ -218,7 +218,7 @@ hl.config({
             clickfinger_behavior = true,
             tap_to_click         = true,
             drag_lock            = false,
-            tap_and_drag         = false,
+            tap_and_drag         = true,
         },
     },
 })

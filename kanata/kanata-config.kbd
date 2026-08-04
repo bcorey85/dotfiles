@@ -37,51 +37,11 @@
   lctl lmet lalt           spc                 @ra  rmet rctl
 )
 
-(deflayer sturdy
+(deflayer transcend
   @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
-  tab       b    m    l    c    p    x    f    u    o    ;    [    ]    \
-  caps      s    t    r    d    y    k    n    e    a    i    '       ret
-  lsft      v    z    g    w    q    j    h    ,    .    /    rsft
-  lctl lmet lalt           spc                 ralt rmet rctl
-)
-
-(deflayer gallium
-  @grl      1    2    3    4    5    6    7    8    9    0    [    ]   bspc
-  tab       b    l    d    c    v    z    y    o    u    ,    -    =    \
-  caps      n    r    t    s    g    p    h    a    e    i    ;       ret
-  lsft      x    m    w    j    q    k    f    '    /    .    rsft
-  lctl lmet lalt           spc                 ralt rmet rctl
-)
-
-(deflayer nokwts
-  @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
-  tab       q    b    r    l    f    z    y    o    u    ;    [    ]    \
-  caps      n    t    h    s    m    c    d    e    i    a    ,       ret
-  lsft      x    j    w    k    v    p    g    /    .    '    rsft
-  lctl lmet lalt           spc                 ralt rmet rctl
-)
-
-(deflayer knight
-  @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
-  tab       b    f    r    l    v    z    g    o    u    ;    [    ]    \
-  caps      n    s    h    t    m    y    c    e    i    a    '       ret
-  lsft      x    j    d    k    q    p    w    ,    .    /    rsft
-  lctl lmet lalt           spc                 ralt rmet rctl
-)
-
-(deflayer silence
-  @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
-  tab       b    c    r    l    k    z    f    o    u    ;    [    ]    \
-  caps      n    s    h    t    m    y    d    e    i    a    '       ret
-  lsft      v    x    g    j    q    p    w    ,    .    /    rsft
-  lctl lmet lalt           spc                 ralt rmet rctl
-)
-
-(deflayer pine
-  @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
-  tab       q    l    c    m    k    '    f    u    o    y    [    ]    \
-  caps      n    r    s    t    g    p    h    e    a    i    ;       ret
-  lsft      x    v    w    j    z    b    d    ,    .    /    rsft
+  tab       v    p    c    m    q    ;    k    u    o    y    [    ]    \
+  caps      r    n    s    t    g    f    h    e    a    i    '       ret
+  lsft      b    w    d    z    x    j    l    ,    .    /    rsft
   lctl lmet lalt           spc                 @ra  rmet rctl
 )
 
@@ -114,22 +74,6 @@
     () , break)
 )
 
-(deflayer semimak
-  @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
-  tab       f    l    h    v    z    '    w    u    o    y    [    ]    \
-  caps      s    r    n    t    k    c    d    e    a    i    ;       ret
-  lsft      x    q    b    m    j    p    g    ,    .    /    rsft
-  lctl lmet lalt           spc                 ralt rmet rctl
-)
-
-(deflayer recurva
-  @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
-  tab       f    r    d    p    v    q    x    u    o    y    [    ]    \
-  caps      s    n    t    c    g    .    h    e    a    i    ,       ret
-  lsft      j    k    b    w    z    m    l    ;    '    /    rsft
-  lctl lmet lalt           spc                 ralt rmet rctl
-)
-
 
 (deflayer l1
   @grl      _    _    _    _    _    _    _    _    _    _    _    _    _
@@ -143,15 +87,8 @@
 (defalias
   ;; tap: backtick (grave), hold: toggle layer-switching layer while held
   grl (tap-hold-release 200 200 grv (layer-toggle layers))
-  str (layer-switch sturdy)
-  gal (layer-switch gallium)
   qwr (layer-switch qwerty)
-  nok (layer-switch nokwts)
-  pin (layer-switch pine)
-  sem (layer-switch semimak)
-  rec (layer-switch recurva)
-  kni (layer-switch knight)
-  sil (layer-switch silence)
+  tra (layer-switch transcend)
   la (layer-while-held l1)
   ra (tap-hold-release 200 200 ralt (layer-toggle ralt-layer))
 )
@@ -165,7 +102,7 @@
 )
 
 (deflayer layers
-_    @qwr @str @nok - @gal @nok @rec @sem _    _    _    _    _
+_    @qwr @tra _ - _ _ _ _ _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _

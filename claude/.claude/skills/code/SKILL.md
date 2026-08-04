@@ -63,8 +63,11 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
    **Frontend only** → Launch a single `frontend-coder` subagent
    **Backend only** → Launch a single `backend-coder` subagent
-   **Both** → Launch both in parallel using a single message with multiple Agent tool calls
-   **Neither** (non-web repo) → Launch a single `coder` subagent — the frontend/backend split only applies to web-fullstack codebases
+   **Both, or neither (non-web repo)** → Launch a single `coder` subagent — one owner for both ends of the wire
+   **Both, and the two halves are independent deliverables** → Launch `frontend-coder` + `backend-coder` in parallel using a single message with multiple Agent tool calls
+
+   Split only when the halves are separately shippable, not because a feature
+   happens to touch both.
 
    For each coder:
    - Pass the full task description and any relevant context. **When the task is a phase of a multi-phase plan, name the phase explicitly** ("implement Phase 4 of `<plan-path>`") and tell the coder to read it phase-scoped (`coder-core`'s workflow step 1 carries the mechanics).

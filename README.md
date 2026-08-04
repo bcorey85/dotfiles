@@ -8,7 +8,7 @@ Personal configuration files across WSL, Ubuntu, macOS, and Arch Linux.
 - **tmux** - tmux configuration with true color support
 - **zsh** - zsh configuration (manually cloned plugins, starship prompt)
 - **kanata** - Keyboard remapping
-- **claude** - Claude Code configuration
+- **claude** - Claude Code configuration ([why the agents are shaped this way](docs/agent-evals.md))
 - **scripts** - Utility scripts
 
 ## Quick Start

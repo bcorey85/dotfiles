@@ -213,7 +213,18 @@ citing any number above.
 2. **"Actioned" is not "correct."** The instrument proves an edit followed a
    finding. It cannot tell a good fix from compliant thrash. A 98% action rate
    may mean the findings are right — or that the loop obeys anything a reviewer
-   says. **There is no precision instrument at all.** Largest single hole.
+   says. Largest single hole, and **still open after a dedicated attempt**:
+   PREC-1 (2026-08-04, `ledger/prec-1.md`) blind-adjudicated a pre-registered
+   sample of 71 findings and **voided twice** on its own kill criterion —
+   INDETERMINATE 57.7% then 35.2% against a 30% ceiling. No precision number from
+   it may be quoted, and none is. What the attempt did establish is _why_ it
+   failed: a gate's own transcript is not sufficient evidence to adjudicate about
+   a third of that gate's findings. A successor must judge against a repo
+   checkout at the pre-fix commit, which needs a finding → commit mapping the
+   corpus does not carry. Sub-finding that survives the void, because it depends
+   on no verdict: **12 of 71 sampled findings (17%) name a file the gate never
+   opened** — concentrated in `test-intent-reviewer`, and shaped like "no test
+   covers X" without opening the test file.
 3. **No control arm.** Every number is retrospective on sessions run _under_ the
    toolkit being evaluated. No gate's marginal contribution is known.
 4. **Domain gates fired but were never graded.** On the fullstack corpus
@@ -230,8 +241,12 @@ citing any number above.
    latency-to-converged, and the two rank the gates differently. Session wall
    clocks are unusable — arms ran concurrently on one machine.
 7. **Single judge, demonstrated fallible.** One rater, scoring their own
-   harness, wrong at least twice in ways direct experience caught. No
-   inter-rater check exists.
+   harness, wrong at least twice in ways direct experience caught. The one
+   inter-rater check that exists is PREC-1's: 15 findings double-adjudicated
+   blind, 87% exact agreement and 100% on true-vs-false, both disagreements on
+   the material/trivial line. That check is about _raters_, not gates, so the
+   round's void does not reach it — but it covers one round of one instrument,
+   not the ledger's headline numbers, which remain single-judge.
 8. **Nothing measures the harness's cost to the human** — queue length,
    sign-offs requested, interruptions per phase. Those are the terms you
    actually pay in, and they're uninstrumented.

@@ -36,8 +36,8 @@ command -v jq >/dev/null 2>&1 || exit 0
 
 AGENT=$(printf '%s' "$INPUT" | jq -r '.agent_type // empty' 2>/dev/null)
 case "$AGENT" in
-  coder|backend-coder|frontend-coder|coder-deep|backend-coder-deep|frontend-coder-deep) ;;
-  *) exit 0 ;;
+coder | backend-coder | frontend-coder | coder-deep | backend-coder-deep | frontend-coder-deep | unified-coder | unified-coder-deep) ;;
+*) exit 0 ;;
 esac
 
 FILE=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' 2>/dev/null)
@@ -48,9 +48,9 @@ FILE=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebo
 # much as assertions; a coder authoring testdata/ was fail-open all round).
 # spec.tsx/jsx, *_test.py, conftest.py added same pass (multi-language gaps).
 case "$FILE" in
-  *_test.go|*.test.ts|*.test.tsx|*.test.js|*.test.jsx|*.spec.ts|*.spec.tsx|*.spec.js|*.spec.jsx|*_spec.rb|*/test_*.py|*_test.py|*/conftest.py) ;;
-  */tests/*|*/testdata/*|*/fixtures/*|*/__tests__/*|*/__mocks__/*) ;;
-  *) exit 0 ;;
+*_test.go | *.test.ts | *.test.tsx | *.test.js | *.test.jsx | *.spec.ts | *.spec.tsx | *.spec.js | *.spec.jsx | *_spec.rb | */test_*.py | *_test.py | */conftest.py) ;;
+*/tests/* | */testdata/* | */fixtures/* | */__tests__/* | */__mocks__/*) ;;
+*) exit 0 ;;
 esac
 
 REASON="test-ownership-gate: you are an implementing coder and $FILE is a test file — test authorship belongs to the test-writer agent, dispatched after you return (coder-core: Tests Are Not Yours). This includes mechanical compile-fixes a signature change forces on existing test callers: list each needed fix in your report (file, symbol, old→new) and the test-writer applies it. If your implementation makes an existing test red for a behavioral reason, report that too; never adjust either side to green. Do not route around this via shell writes — that is the same edit with a worse audit trail."

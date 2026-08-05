@@ -37,7 +37,11 @@ Insert these between `## Overview` and the shared closing trio (Out of Scope / R
 
 ## Reuse Map
 
-<existing helpers/services/utilities/patterns the coder must use, with file paths — search before listing; an empty map means you searched and found nothing, say so>
+<existing helpers/services/utilities/patterns the coder must use, with file paths — search before listing; an empty map means you searched and found nothing, say so.
+
+Seed it from `02-research.md`'s `## Reuse Inventory` when the research doc has one, THEN add what your own search found. That inventory is goal-blind, so it lists units your search will not think to look for — which is the point: the escape class this defends against is a helper that already existed and the author never knew about (a hand-rolled numeric parse next to `getConfigNumber`; a re-derived `normalizeDatabaseName`).
+
+Every NEW helper/service/util this plan introduces must appear here with one line on why no listed unit covers it. That justification line is the gate — a map with no new-helper lines is a map nobody checked against.>
 
 ## Implementation Steps
 

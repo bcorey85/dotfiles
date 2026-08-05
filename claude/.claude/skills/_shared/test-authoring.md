@@ -49,6 +49,28 @@ code; restate the implementation (`render` with no meaningful `expect`, a
 snapshot of trivial output); or re-hit a branch a sibling test already covers
 with only cosmetic input changes.
 
+## An existence check is not an assertion about content
+
+When the criterion says the output _says something specific_ — names the field,
+tells the operator why, reports the line number — an assertion that the value
+merely exists does not pin it. `!= ""`, `NotEmpty`, `toBeTruthy`, `toBeDefined`,
+`length > 0`, `not.toHaveLength(0)`: each passes on any wrong message, so it
+cannot fail for the reason the criterion exists. Assert the content the criterion
+names. Where the exact string is genuinely not fixed, assert the discriminating
+substring — the part that would differ if the behavior were wrong — not that
+there is a string.
+
+Same trap one level down: a case whose input satisfies **both** the correct and
+the incorrect rule cannot discriminate them (a "counts code points, not UTF-16"
+test whose input is under the cap either way), and a loose pattern that another
+value in the same output also matches (`/2/` for "the 1-based line number") is
+not pinning the value it names. Pick inputs where the rules disagree.
+
+This is the most durable defect the LOOP-COST program measured: present in 23 of
+24 sealed arms at 0–5.3 per 100 assertions, with no separation across four review
+configurations, two languages, or six rounds (`agent-evals/ledger/invariants.md`,
+INV-1). No gate catches it. It is caught here or not at all.
+
 This bar governs **tests you wrote this task** — it never licenses touching an
 acceptance stub or a pre-existing test, and one smoke test per unit is fine (it
 is the redundant 2nd+ that goes). When unsure whether a test you wrote this task

@@ -48,7 +48,11 @@ Insert these between `## Overview` and the shared closing trio (Out of Scope / R
 
 ## Reuse Map
 
-<existing components/patterns/styles to use, with file paths>
+<existing components/patterns/styles/hooks/utils to use, with file paths.
+
+Seed it from `02-research.md`'s `## Reuse Inventory` when the research doc has one, THEN add what your own search (point 1 above) found. That inventory is goal-blind, so it lists units your search will not think to look for — the escape class this defends against is a helper that already existed and the author never knew about (inline pluralization beside a shared `pluralize`; a mock config hand-built where a factory already produces that shape).
+
+Every NEW component/hook/util this plan introduces must appear here with one line on why no listed unit covers it. That justification line is the gate — a map with no new-unit lines is a map nobody checked against.>
 
 ## Implementation Steps
 

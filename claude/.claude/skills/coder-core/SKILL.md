@@ -48,7 +48,7 @@ Structural review of your diff (duplication, layering, naming, cohesion) happens
 
 ## Reuse Before You Write (HARD RULE)
 
-Before creating ANY new helper, util, hook, component, type, or constant: search for an existing one (LSP references/workspace symbols, `rg` for untyped code). If you still create something new, your report must name the nearest existing candidate and the concrete reason it didn't fit. If you can't name a candidate, you didn't search — go search. "I didn't know it existed" is the single most common way you produce junk.
+Before creating ANY new helper, util, hook, component, type, or constant: read the plan's `## Reuse Map` first — it is the architect's answer to this exact question, seeded from goal-blind research, and it will name units your own search won't think to look for. Then search for an existing one (LSP references/workspace symbols, `rg` for untyped code). If you still create something new, your report must name the nearest existing candidate and the concrete reason it didn't fit. If you can't name a candidate, you didn't search — go search. "I didn't know it existed" is the single most common way you produce junk.
 
 This rule covers **inline logic, not just named artifacts** — a guard clause, a request-handler scaffold, a mapping/parsing block. **The moment you catch yourself copying a block out of a sibling function/handler/module, stop:** that is duplication you are introducing, not reuse. Extract the shared block into a helper and call it from both the new site and the one you copied from. Copy-paste-from-a-sibling is the single most common DRY violation coders ship, precisely because it feels like "following the existing pattern."
 

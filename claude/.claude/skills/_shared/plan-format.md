@@ -162,7 +162,7 @@ Automated Verification must include the stub count command returning zero.
 
 - [ ] **Manual-verified**: [scenario] — "hit [endpoint/UI flow], confirm [expected behavior]"
 
-**All phases: `/verify` executes these at branch end, tagging each `agent-verified` (with evidence) or `human-only`. High-risk phases still take human sign-off at their boundary — from `/code`'s review queue.**
+**`/verify` executes these at branch end, tagging each `agent-verified` or `human-only`.**
 
 ---
 
@@ -170,7 +170,8 @@ Automated Verification must include the stub count command returning zero.
 
 ## Testing Strategy
 
-[Unit tests, E2E tests, manual steps]
+[Approach only. Naming a unit here doesn't test it — a unit that MUST be tested
+needs an acceptance stub in its phase.]
 
 ## Plan Deviations
 

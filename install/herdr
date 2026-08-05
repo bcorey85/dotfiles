@@ -11,18 +11,18 @@ print_success() { echo -e "${GREEN}✓${NC} $1"; }
 print_error() { echo -e "${RED}✗${NC} $1"; }
 print_info() { echo -e "${YELLOW}→${NC} $1"; }
 
-# herdr — agent-aware terminal multiplexer (https://github.com/ogulcancelik/herdr).
+# herdr — agent-aware terminal multiplexer (https://github.com/herdrdev/herdr).
 # No apt/pacman/brew package; upstream publishes raw release binaries with no
 # checksum asset, so this pins a version and verifies against a checksum
 # recorded here. Bump VERSION + SHA256 together to upgrade (--update forces a
 # reinstall at the pinned version). Checksums come from the release API:
-#   gh release view <TAG> --repo ogulcancelik/herdr --json assets \
+#   gh release view <TAG> --repo herdrdev/herdr --json assets \
 #     --jq '.assets[] | "\(.name) \(.digest)"'
 # VERSION takes a stable tag (vX.Y.Z) or a preview tag
 # (preview-YYYY-MM-DD-<sha>); keep it in step with `channel` in the herdr
 # package's config.toml.template.
 
-VERSION="preview-2026-07-29-44b3adb12552"
+VERSION="preview-2026-08-04-d78e3d3b5126"
 
 # Workflow plugins the herdr config's plugin_action binds depend on. Without
 # these installed the bound keys resolve to nothing and fail silently.
@@ -54,11 +54,11 @@ fi
 case "$(uname -s)-$(uname -m)" in
   Linux-x86_64)
     PLATFORM=linux-x86_64
-    SHA256="2d50d64ab849c3d0f5d0d53e0bebd00fa94d5ed120797532c8fcfd1a679ebc19"
+    SHA256="338afbfe03f0eb32efc52e30a5effc6c5ee772846bdb5e059f73d04b89b467d6"
     ;;
-  Linux-aarch64) PLATFORM=linux-aarch64 SHA256="2167fb9127d0a67c1dad368d54e6468fd7c2a3858b832922c7f0c264d012be13" ;;
-  Darwin-arm64) PLATFORM=macos-aarch64 SHA256="99941b4a40e852c8f21694c7ec1e96f85abd4f764d9f667757c65fae6e4b065b" ;;
-  Darwin-x86_64) PLATFORM=macos-x86_64 SHA256="b9316cdff4802f325f6b77b83ea36cd33deb8da4ef9efa8454423b0ce8de77fc" ;;
+  Linux-aarch64) PLATFORM=linux-aarch64 SHA256="f79f3ad5b24dd1b6ba49ebee1b26d69ab5dcbeaf15be4fd7f3357ab0d17f6096" ;;
+  Darwin-arm64) PLATFORM=macos-aarch64 SHA256="d02190962293ccf19186e0ea8a162d7f670ef49e61dfc10051bffd7da08a7ee4" ;;
+  Darwin-x86_64) PLATFORM=macos-x86_64 SHA256="384ee2f2a805260d24f3d398ba8169aa68b502452ab1457c5da40a8e4d9c975f" ;;
   *)
     print_error "Unsupported platform: $(uname -s)-$(uname -m)"
     exit 1
@@ -71,7 +71,7 @@ if [ -z "$SHA256" ]; then
 fi
 
 ASSET="herdr-${PLATFORM}"
-URL="https://github.com/ogulcancelik/herdr/releases/download/${VERSION}/${ASSET}"
+URL="https://github.com/herdrdev/herdr/releases/download/${VERSION}/${ASSET}"
 
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT

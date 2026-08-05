@@ -66,10 +66,14 @@ test whose input is under the cap either way), and a loose pattern that another
 value in the same output also matches (`/2/` for "the 1-based line number") is
 not pinning the value it names. Pick inputs where the rules disagree.
 
-This is the most durable defect the LOOP-COST program measured: present in 23 of
-24 sealed arms at 0–5.3 per 100 assertions, with no separation across four review
-configurations, two languages, or six rounds (`agent-evals/ledger/invariants.md`,
-INV-1). No gate catches it. It is caught here or not at all.
+## Diagnostics you write to stderr need a test that reads stderr
+
+When the criterion says the tool _warns_, _explains why it skipped_, or _rejects bad
+flags with a message_, capture stderr and assert on its content. A test that only
+checks the exit code, or only reads stdout, leaves every word of that diagnostic free
+to change. Happy-path output tends to be covered; warning, skip, and usage-error paths
+tend not to be exercised at all — check that the stream has a test before judging the
+assertion on it.
 
 This bar governs **tests you wrote this task** — it never licenses touching an
 acceptance stub or a pre-existing test, and one smoke test per unit is fine (it

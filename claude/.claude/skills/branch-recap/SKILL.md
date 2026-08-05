@@ -34,10 +34,10 @@ This half of the audit is inherently cross-phase and cannot be done phase-locall
   invisible from inside either phase.
 - **`COVERAGE-LOST`** — a test deleted in phase 1 and legitimately replaced in phase 3
   looks like lost coverage at phase 1, and only resolves when both are in view.
-- **`WEAK`** — under-pinned and absent assertions against the plan's promises; phase-scoped
-  detection was tried and failed (LOOP-COST round 10 — the leaked class is absent
-  assertions and cross-phase artifacts, visible only with the whole suite and whole plan
-  in view). WEAK findings route to a `test-writer` re-dispatch, not `/fix`.
+- **`WEAK`** — under-pinned and absent assertions against the plan's promises. Runs here
+  and not at phase scope: the class that leaks is absent assertions and cross-phase
+  artifacts, visible only with the whole suite and whole plan in view. WEAK findings
+  route to a `test-writer` re-dispatch, not `/fix`.
 
 Hand it the branch diff (`git diff <base>...HEAD`) and the oracle (spec + acceptance
 criteria). Cull/coverage findings route through `/fix`; WEAK findings route to a

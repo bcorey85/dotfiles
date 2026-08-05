@@ -39,9 +39,9 @@
 
 (deflayer transcend
   @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
-  tab       v    p    c    k    q    z    f    u    o    y    [    ]    \
+  tab       x    p    c    k    q    z    f    u    o    y    [    ]    \
   caps      r    n    s    t    g    m    l    e    a    i    ;       ret
-  lsft      b    w    d    '    x    j    h    ,    .    /    rsft
+  lsft      b    w    d    v    '    j    h    ,    .    /    rsft
   lctl lmet lalt           spc                 @ra  rmet rctl
 )
 
@@ -95,7 +95,7 @@
 
 (deflayer ralt-layer
   _    _    _    _    _    _    _    _    _    _    _    _    _    _
-  _    _    _    S-C-c _    _    _    _    _    _    _    _    _    _
+  _    S-C-x _    S-C-c _    _    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _    _
   _    _    S-C-v _    _    _    _    _    _    _    _    _
   _    _    _              _              _    _    _

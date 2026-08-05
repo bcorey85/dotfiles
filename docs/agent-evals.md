@@ -221,12 +221,28 @@ citing any number above.
    failed: a gate's own transcript is not sufficient evidence to adjudicate about
    a third of that gate's findings. A successor must judge against a repo
    checkout at the pre-fix commit, which needs a finding → commit mapping the
-   corpus does not carry. Sub-finding that survives the void, because it depends
-   on no verdict: **12 of 71 sampled findings (17%) name a file the gate never
-   opened** — concentrated in `test-intent-reviewer`, and shaped like "no test
-   covers X" without opening the test file.
+   corpus does not carry — and `ledger/prec-2-feasibility.md` then found that
+   mapping unrecoverable (1–5 commits per arm; transcript replay reaches only
+   60% fidelity because 726 Bash calls per arm mutate files invisibly). A
+   precision instrument now requires a **prospectively instrumented round**, not
+   more analysis of this corpus. Sub-finding that survives the void because it
+   depends on no verdict — and which was then censused over all 446 findings,
+   no sampling, no adjudication (`ledger/cite-census.md`): **one finding in four
+   (25.6%) names a file the gate never opened.** By gate: `test-intent-reviewer`
+   47.8%, `code-reviewer-deep` 35.0%, `code-reviewer` 30.3%,
+   `smell-reviewer-deep` 17.9% — a split by gate _role_, not by model tier.
+   Nearly a third of those unchecked citations are `spec.md` or `CLAUDE.md`: the
+   gate says "this deviates from the documented behavior" without opening the
+   document. This measures evidentiary discipline, **not** correctness — an
+   unchecked citation can still be a true finding.
 3. **No control arm.** Every number is retrospective on sessions run _under_ the
-   toolkit being evaluated. No gate's marginal contribution is known.
+   toolkit being evaluated. No gate's marginal contribution is known. CONTROL-1
+   is pre-registered against this (`control-sealed/PREREG.md`, sealed
+   2026-08-04) and **not yet run**: 6 arms × {full loop, `code-reviewer` only,
+   no gates}, graded by a held-out acceptance suite no arm ever sees — the only
+   tier-1 escape measurement in the plan. Nothing may be cited from it until it
+   runs. It also carries the per-dispatch tree snapshots that gap #2's successor
+   needs, which is why the two are one round.
 4. **Domain gates fired but were never graded.** On the fullstack corpus
    `security-reviewer` and `perf-reviewer` finally emitted findings (8 and 10
    across four arms) — but nothing checked those findings for precision, and no

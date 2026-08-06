@@ -1,6 +1,6 @@
 ---
 name: coder-core
-description: Core directives for coder subagents. Preloaded into coder/backend-coder/frontend-coder (and -deep variants) via their agents' `skills:` frontmatter — not for direct invocation in the main session.
+description: Core directives for coder subagents. Preloaded into coder and coder-deep via their agents' `skills:` frontmatter — not for direct invocation in the main session.
 ---
 
 # Coder Core Directives
@@ -107,6 +107,71 @@ do that if the block is present verbatim.
 - **Dead-reference cleanup**: the mirror of the above — when a change removes or rewrites the last caller of a symbol, that symbol (function, export, import, constant, branch) may now be orphaned. The `export` keyword hides its death from the eye, so search: LSP find-references / `rg` by name across the workspace. Zero remaining consumers → delete it in the same pass. Removing consumers without removing the now-dead producer is the single most common structural escape past review.
 - **Copy propagation**: before changing or fixing any block of logic, check whether it exists in other copies (`rg` a distinctive fragment / LSP references) — formatters, guards, and mappers are commonly duplicated. Apply the change to EVERY copy, or better, use the moment to extract the shared helper (the bounded-touch exception above applies). A fix applied to two of three copies ships the bug in the third.
 - **No-op detection**: if an operation results in no state change, return early without side effects (no DB writes, no event broadcasts) and signal it to the caller.
+
+## Conditional: HTTP / service / persistence changes
+
+Skip this section entirely when the change touches none of these. These are
+distilled from REST-style projects — skip any item the project's actual stack
+makes irrelevant (e.g. route ordering in convention-routed frameworks).
+
+- **Stop and ask** when: the plan is ambiguous about a model relationship
+  (one-to-many vs many-to-many); you are unsure of the right HTTP status code or
+  error-response shape; the plan does not specify permissions or authentication.
+- Use the project's ORM/query tools; avoid raw SQL unless needed for performance.
+- Use transactions for multi-step operations that must stay consistent, and keep
+  **all** reads and writes of one operation in the SAME transactional context.
+  Reading inside a transaction and writing outside it (or the reverse) is the
+  common form of this bug. Verify entity state before the final re-fetch.
+- Structure responses to minimize queries; return appropriate status codes;
+  handle errors with meaningful messages; make async tasks idempotent.
+- **Route ordering**: declare specific sub-routes (`:id/move`, `:id/archive`)
+  BEFORE generic parameterized routes (`:id`), or the param route swallows the
+  sub-route's path segment.
+- **Validator edge cases**: for numeric fields where 0 is valid, use a "defined"
+  check, never an "is not empty" check — emptiness validators treat 0 as empty in
+  many frameworks. Mark optional fields explicitly optional.
+
+## Conditional: UI / component changes
+
+Skip this section entirely when the change touches no user interface.
+
+- **Stop and ask** when: the plan is ambiguous about component composition or
+  data flow; you are unsure whether to create a new component or extend an
+  existing one; responsive behavior, breakpoints, or the state-management
+  approach is unspecified.
+- **Pattern consistency, before implementing ANY component** — search for
+  precedents first; reuse an existing component rather than creating one, and
+  create new only when nothing existing fits (confirmed by search) or it will be
+  reused in several places; when extending a component, make the change work in
+  ALL existing usages and update them together; the same function means the same
+  component everywhere; follow the app's own dropdown/tooltip/menu patterns
+  rather than browser defaults (e.g. `title` attributes).
+- Every data-fetching component handles all three of loading, error, and
+  empty/no-data. Never a blank screen or broken layout while data is in flight.
+- Guard handlers that trigger API calls against double-submission (disable while
+  in flight, or debounce). Give async operations real error handling — never let
+  a failed call crash the component or silently swallow the failure.
+- Clean up reactive state on unmount: cancel pending requests, clear timers,
+  remove listeners.
+- **Accessibility**: interactive elements are keyboard-navigable (Tab, Enter,
+  Escape); a non-semantic element used as a button needs `role`, `tabindex`, and
+  key handlers. ARIA attributes must be correctly spelled and valid —
+  `aria-hidden="true"` must NEVER sit on a focusable element. Inputs need real
+  labels, not just placeholder text.
+- Type component interfaces and state properly; use the project's existing style
+  variables and patterns; match the spacing, color, typography, and hover/focus
+  states of existing similar components.
+- **API integration**: match the response shape the backend actually returns —
+  read the controller, do not infer it from the spec. Check field-name casing
+  against the API and find out whether a transform layer already exists before
+  writing another one.
+
+## Both sides of one wire
+
+When a change spans client and server, you own both ends, and that is the point:
+choose ONE contract and write both sides of it. Prefer deleting boundary code to
+adding an adapter — a mapping layer that exists only because two authors picked
+different names is pure cost. Name a field once and use that name end to end.
 
 ## Review Handoff (last lines of your report)
 

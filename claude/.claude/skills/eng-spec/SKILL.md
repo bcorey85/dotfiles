@@ -348,9 +348,8 @@ works if it exists _before_ the talking starts (step 13).
       said no above — explain why), then invoke `/code` with the spec path.
       `/code`'s phase-boundary machinery keys off the plan's risk tags; a raw
       coder dispatch bypasses every gate the plan just defined.
-    - Yes, single-phase → dispatch coder(s) by scope: `backend-coder`,
-      `frontend-coder`, or BOTH in parallel for fullstack (frontend also gets the
-      API contract). **Always dispatch a coder. Never implement inline** — the
+    - Yes, single-phase → dispatch one `coder` with the whole spec, whatever
+      layers it spans. **Always dispatch a coder. Never implement inline** — the
       dispatch is what triggers the review chain.
     - Later → stop here.
 

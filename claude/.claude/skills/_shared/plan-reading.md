@@ -4,7 +4,7 @@ Consumer-side counterpart to `plan-format.md`, which owns the artifact's
 shape. This file owns how it is READ. Lives outside the guarded planning
 budget deliberately: it constrains agents, not the plan.
 
-Consumers: `/code` (step 2 orchestrator read, step 4 coder dispatch),
+Consumers: `/code` (step 2 orchestrator read, step 3 coder dispatch),
 `coder-core` (workflow step 1).
 
 ## The rule

@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# log-scan — append one JSONL line per deterministic-scan RUN.
+#
+# Why this exists: a scan that is never scored is unfalsifiable. The escape log
+# (~/.claude/review-escapes.jsonl) records what a HUMAN caught downstream; the
+# review metrics record what the review loop caught. Neither records whether a
+# scan fired, whether what it printed was real, or whether it ran at all. Without
+# this file, "we added a dead-code scan" can never be checked against "did it
+# ever catch anything," and a scan that produces nothing but noise looks exactly
+# like a scan that keeps the tree clean.
+#
+# The two numbers that matter, and they answer different questions:
+#   candidates → confirmed  is PRECISION. A scan whose confirmed/candidates
+#     ratio collapses is training its reader to skim, and should be tightened
+#     or retired. Log the dismissals honestly — a run with 12 candidates and 0
+#     confirmed is the single most valuable row in this file.
+#   escape rows with scan_flagged=no  is RECALL. When a human later catches a
+#     defect one of these scans is supposed to cover, that is a miss, and it is
+#     recorded on the escape side, not here.
+#
+# exit=2 means the scan DID NOT RUN. Log it. An unlogged non-run is
+# indistinguishable from a clean tree, which is how a broken scan survives.
+#
+# usage: log-scan key=value [key=value ...]
+#   required:
+#     repo=<basename>
+#     scan=dead-symbol|clone-block|drifted-copy|acceptance-stub|other
+#     stage=branch-recap|code-phase|refactor|manual
+#     exit=<the scan's actual exit code>
+#   required when exit=0:
+#     candidates=<rows the scan printed>
+#     confirmed=<rows you judged real after reading them>
+#   optional:
+#     fixed=<confirmed rows actually fixed this run>
+#     fp=<candidates dismissed as false positives>
+#     note="one line — what the confirmed ones were, or why all were dismissed"
+#     branch=<branch name>
+#
+# Output file: $SCAN_RUNS_FILE or ~/.claude/scan-runs.jsonl
+set -euo pipefail
+
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
+out="${SCAN_RUNS_FILE:-$HOME/.claude/scan-runs.jsonl}"
+
+json=$(jq -cn '{date: (now | todate)}')
+for kv in "$@"; do
+  case "$kv" in
+    *=*) ;;
+    *) echo "skipping malformed arg (want key=value): $kv" >&2; continue ;;
+  esac
+  k="${kv%%=*}"
+  v="${kv#*=}"
+  json=$(jq -c --arg k "$k" --arg v "$v" '.[$k] = ($v | (tonumber? // .))' <<< "$json")
+done
+
+need() {
+  local f; f=$(jq -r --arg k "$1" '.[$k] // ""' <<< "$json")
+  [ -n "$f" ] && return 0
+  echo "refusing to log: $1= is required." >&2
+  exit 1
+}
+need repo; need scan; need stage; need exit
+
+scan=$(jq -r '.scan' <<< "$json")
+case "$scan" in
+  dead-symbol|clone-block|drifted-copy|acceptance-stub|other) ;;
+  *) echo "refusing to log: scan=$scan is not one of dead-symbol|clone-block|drifted-copy|acceptance-stub|other" >&2; exit 1 ;;
+esac
+
+stage=$(jq -r '.stage' <<< "$json")
+case "$stage" in
+  branch-recap|code-phase|refactor|manual) ;;
+  *) echo "refusing to log: stage=$stage is not one of branch-recap|code-phase|refactor|manual" >&2; exit 1 ;;
+esac
+
+code=$(jq -r '.exit' <<< "$json")
+if [ "$code" = "0" ]; then
+  need candidates; need confirmed
+  c=$(jq -r '.candidates' <<< "$json"); f=$(jq -r '.confirmed' <<< "$json")
+  if [ "$f" -gt "$c" ] 2>/dev/null; then
+    echo "refusing to log: confirmed ($f) exceeds candidates ($c)." >&2
+    exit 1
+  fi
+fi
+
+printf '%s\n' "$json" >> "$out"
+echo "logged → $out"

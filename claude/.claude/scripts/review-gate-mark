@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# review-gate-mark <clean|dirty> — no-op carrier command for review-commit-gate.
+# review-gate-mark <clean|dirty|skip> — no-op carrier for review-commit-gate.
+#
+#   clean — a review-loop packet came back `converged`
+#   dirty — force-arm the gate
+#   skip  — one-shot override, consumed by the next `git commit`. For a
+#           USER-approved trivial diff only; never the model's own judgment.
 #
 # The real state write happens in review-commit-gate.sh's PreToolUse(Bash)
 # hook, which sees this command string PLUS the session_id this script cannot

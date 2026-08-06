@@ -6,10 +6,13 @@
 # Registered twice in settings.json:
 #   PostToolUse (matcher: Agent) — ARMS the gate:
 #       coder* dispatch      -> "dirty" (unreviewed coder work exists)
-#       review-loop dispatch -> "dirty" (a loop is in flight; outcome unknown)
 #   PreToolUse  (matcher: Bash)  — two jobs:
 #       blocks `git commit` while state is dirty
-#       records `review-gate-mark clean` — the ONLY clean transition
+#       records `review-gate-mark clean|skip` — the ONLY clean transitions
+#
+# review-loop dispatch deliberately does NOT arm. It only ever runs after a
+# coder that already armed, so arming on it bought nothing while stranding
+# standalone /review sessions (no coder ran, nothing to gate) as dirty.
 #
 # Why Agent events never write "clean": the harness launches subagents async
 # (even when dispatched with run_in_background: false), so PostToolUse fires at
@@ -31,7 +34,19 @@
 # self-authorize in a single command.
 #
 # One-shot override for a USER-approved trivial skip (consumed on use):
-#   touch ~/.claude/state/review-gate/<session_id>.skip
+#   bash ~/.claude/scripts/review-gate-mark skip
+#
+# THE HUMAN MUST RUN THIS, NOT THE MODEL — and not by convention: the auto-mode
+# classifier denies it from the agent regardless of how it is spelled. The old
+# override was a bare `touch` into ~/.claude/state/; replacing it with a mark
+# verb did NOT make it agent-reachable, because the classifier matches intent,
+# not path. Treat skip as a human-only capability and word the block message so
+# the model ASKS rather than attempts. (`clean` is not classifier-blocked, so
+# the weaker claim is the harder one to make — deliberate, if surprising.)
+#
+# The self-authorization guard is unaffected: the `git commit` block check runs
+# first and exits, so `review-gate-mark skip && git commit` still cannot work
+# in a single command.
 set -euo pipefail
 
 command -v jq >/dev/null || exit 0
@@ -52,7 +67,7 @@ case "$evt" in
   PostToolUse)
     agent=$(jq -r '.tool_input.subagent_type // ""' <<<"$input")
     case "$agent" in
-      coder|coder-deep|backend-coder|backend-coder-deep|frontend-coder|frontend-coder-deep|review-loop)
+      coder|coder-deep|backend-coder|backend-coder-deep|frontend-coder|frontend-coder-deep)
         echo dirty > "$state_file" ;;
     esac
     ;;
@@ -64,12 +79,16 @@ case "$evt" in
         rm -f "$skip_file"
         exit 0
       fi
-      echo "[review-commit-gate] A coder or review-loop dispatch ran this session and no converged review has been recorded since. Run /review — its wrapper records convergence via review-gate-mark. Only if the USER explicitly approved skipping review for a trivial diff, create the one-shot override and retry: touch $skip_file — never create it on your own judgment." >&2
+      echo "[review-commit-gate] Unreviewed coder work this session. Most common cause: a review DID converge and the mark was missed — if so, record it now: bash ~/.claude/scripts/review-gate-mark clean. Otherwise run /review. To skip review on a trivial diff, ASK THE USER to run 'bash ~/.claude/scripts/review-gate-mark skip' themselves and then retry — do not attempt it yourself, the classifier denies it from you by design." >&2
       exit 2
     fi
-    if grep -qE 'review-gate-mark[[:space:]]+(clean|dirty)\b' <<<"$cmd"; then
-      mark=$(grep -oE 'review-gate-mark[[:space:]]+(clean|dirty)' <<<"$cmd" | awk '{print $2}' | head -1)
-      echo "$mark" > "$state_file"
+    if grep -qE 'review-gate-mark[[:space:]]+(clean|dirty|skip)\b' <<<"$cmd"; then
+      mark=$(grep -oE 'review-gate-mark[[:space:]]+(clean|dirty|skip)' <<<"$cmd" | awk '{print $2}' | head -1)
+      if [[ "$mark" == skip ]]; then
+        : > "$skip_file"
+      else
+        echo "$mark" > "$state_file"
+      fi
     fi
     ;;
 esac

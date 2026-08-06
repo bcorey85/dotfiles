@@ -33,11 +33,25 @@ feature phase (feature ends at Phase 3 → these are 4–7).
      only fresh-eyes look at cross-phase interactions the phase-scoped per-loop
      reviews miss. Findings route through `/review`'s severity gating.
    - `/verify` — reconcile the shipped diff against the ticket/plan
-     (completeness, every Acceptance Stub flipped), run the plan's Automated
-     Verification commands, and emit the **human smoke-test checklist** (ACs
-     - all human-only Manual Verification items).
-       Success Criteria: deep review clean, reconciliation reports no missing
-       work, smoke-test checklist delivered.
+     (completeness), run the plan's Automated Verification commands, and emit the
+     **human smoke-test checklist** (all human-only Manual Verification items).
+   - **Acceptance-criteria reconciliation** — for every id in
+     `docs/plans/<slug>/acceptance-criteria.md`, name the test that covers it
+     (`file:line`) or report it MISSING. This is the only check that the criteria
+     written before implementation actually got implemented; nothing earlier in
+     the pipeline enforces it, because the criteria deliberately live outside the
+     test tree. A criterion under `## Manual only` is satisfied by appearing on
+     the smoke-test checklist, not by a test. MISSING is a phase failure, not a
+     note — either a test is owed or the user retires the criterion on the
+     record.
+
+     Match on **behavior, not on markers**: the tests carry ordinary names and
+     contain no criterion ids (`_shared/code-vocabulary.md`), so the mapping is
+     read and judged, never grepped.
+
+     Success Criteria: deep review clean, reconciliation reports no missing work,
+     every acceptance criterion mapped to a test or explicitly retired,
+     smoke-test checklist delivered.
 
 3. **Orient pass** (risk: low) — `/orient` to rebuild the mental map diff
    review misses: how the change connects to surrounding code, what it touches,

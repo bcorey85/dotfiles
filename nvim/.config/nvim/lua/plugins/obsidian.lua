@@ -53,7 +53,9 @@ return {
       note = {
         template = "Inbox.md",
       },
-      notes_subdir = "00. Inbox",
+      -- Vault is a cache hierarchy; new notes default to the "told it, did not
+      -- verify it" tier. Promote to cache/ by hand once it has been earned.
+      notes_subdir = "sources",
       note_id_func = function(title)
         if title then
           return title

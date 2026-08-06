@@ -157,10 +157,10 @@ export PATH="/opt/homebrew/opt/openssl@3/bin:$PATH"
 # default path) with the active light/dark palette, so every running shell flips
 # live on its next prompt — no STARSHIP_CONFIG, no reload. On a fresh machine
 # (before theme-mode has ever run) that file doesn't exist yet, so bootstrap it
-# from the stowed template with the dark palette baked in.
+# from the stowed template, whose committed palette line is already the default.
 if command -v starship &>/dev/null; then
   if [ ! -f "$HOME/.config/starship.toml" ] && [ -f "$HOME/.config/starship.toml.template" ]; then
-    sed 's/^palette = .*/palette = "dark"/' "$HOME/.config/starship.toml.template" >"$HOME/.config/starship.toml"
+    cp "$HOME/.config/starship.toml.template" "$HOME/.config/starship.toml"
   fi
   eval "$(starship init zsh)"
 fi

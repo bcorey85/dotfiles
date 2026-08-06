@@ -42,7 +42,7 @@ end, "Prev warning")
 
 -- Line diagnostics float lives in the <leader>l (lsp/diag/qf) group alongside the
 -- diagnostic→quickfix/loclist lists, not in <leader>c (code mutation). Document
--- symbols moved out entirely — <leader>ss (snacks search) already covers it.
+-- symbols moved out entirely — <leader>ss (snacks symbols) already covers it.
 dmap("<leader>ll", vim.diagnostic.open_float, "Line diagnostics (float)")
 
 -- Remove Neovim's built-in gr* LSP default keymaps (gra/gri/grn/grr/grt/grx,

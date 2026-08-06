@@ -1,21 +1,24 @@
 # Theme — owned by the `theme-mode` switcher. Starship has no include mechanism,
 # but it re-reads its whole config every prompt, so theme-mode regenerates the
 # REAL ~/.config/starship.toml (starship's default read path) from THIS template
-# with the `palette =` line below swapped to the active mode (dark|light). Because
-# it writes starship's default path, EVERY running shell flips on its next prompt
-# with no reload and no STARSHIP_CONFIG — the generated file is machine-local, so
-# this tracked template never gets dirtied. Same source-of-truth model as
-# ghostty/tmux.
+# with the `palette =` line below swapped to `<family>-<mode>`. Because it writes
+# starship's default path, EVERY running shell flips on its next prompt with no
+# reload and no STARSHIP_CONFIG — the generated file is machine-local, so this
+# tracked template never gets dirtied. Same source-of-truth model as ghostty/tmux.
 #
 # THIS is the template (stowed to ~/.config/starship.toml.template): if you edit
 # it, re-run `theme-mode` (any invocation) to regenerate the live config, or the
 # change won't show until the next theme switch.
 #
+# Palette names are `<family>-<mode>` (not bare `dark`/`light`) because the
+# active palette now has two axes, family x mode — theme-mode's sed swaps the
+# whole `<family>-<mode>` token, never just the mode half.
+#
 # NOTE: the root `palette`/`format` keys MUST come before any [palettes.*] table
 # header — any key after a table header belongs to that table. Placed below a
 # palette, `format` silently became palettes.<name>.format and starship fell
 # back to the default `$all` format (which pulls in $aws et al.).
-palette = "dark"
+palette = "kanagawa-dark"
 
 format = """
 $directory\
@@ -27,10 +30,11 @@ $cmd_duration\
 $line_break\
 $character"""
 
-# Dark — onedark "darker" (#1f2329 canvas), the same palette nvim/tmux/ghostty
-# paint. `grey` is the comment colour AFTER the contrast lift theme-sync applies
-# (stock #535965 is 2.24:1 on the canvas); everything else is stock.
-[palettes.dark]
+# onedark-darker dark — onedark "darker" (#1f2329 canvas), the same palette
+# nvim/tmux/ghostty paint. `grey` is the comment colour AFTER the contrast
+# lift theme-sync applies (stock #535965 is 2.24:1 on the canvas); everything
+# else is stock.
+[palettes.onedark-darker-dark]
 red = "#e55561"
 orange = "#e2b86b"
 yellow = "#e2b86b"
@@ -42,9 +46,10 @@ fg = "#a0a8b7"
 bg = "#1f2329"
 grey = "#858c9a"
 
-# Light — onedark's "light" style (#fafafa canvas). `grey` is again the lifted
-# comment (stock #a0a1a7 is 2.47:1); the accents are stock and all clear 4.5:1.
-[palettes.light]
+# onedark-darker light — onedark's "light" style (#fafafa canvas). `grey` is
+# again the lifted comment (stock #a0a1a7 is 2.47:1); the accents are stock
+# and all clear 4.5:1.
+[palettes.onedark-darker-light]
 red = "#e45649"
 orange = "#986801"
 yellow = "#986801"
@@ -55,6 +60,38 @@ purple = "#a626a4"
 fg = "#383a42"
 bg = "#fafafa"
 grey = "#6f7178"
+
+# kanagawa wave (dark, #1f1f28 canvas) — same palette nvim/tmux/ghostty paint.
+# `grey` is the comment colour after theme-sync's contrast lift (stock fujiGray
+# #727169 is 3.33:1 on the canvas; this is 4.53:1).
+[palettes.kanagawa-dark]
+red = "#e46876"
+orange = "#e6c384"
+yellow = "#e6c384"
+green = "#98bb6c"
+blue = "#7e9cd8"
+teal = "#7aa89f"
+purple = "#957fb8"
+fg = "#dcd7ba"
+bg = "#1f1f28"
+grey = "#89877b"
+
+# kanagawa lotus (light, #f2ecbc canvas). `grey` is the lifted comment (stock
+# lotusGray3 #8a8980 is 2.93:1). red/green/yellow/orange/teal are floored
+# toward fg the same way tmux/.config/tmux/kanagawa-light.conf documents —
+# stock lotus accents mostly sit under 4.5:1 on this canvas. blue/purple clear
+# the floor stock.
+[palettes.kanagawa-light]
+red = "#b44356"
+orange = "#8e6034"
+yellow = "#706b46"
+green = "#616e59"
+blue = "#4d699b"
+teal = "#576e70"
+purple = "#624c83"
+fg = "#545464"
+bg = "#f2ecbc"
+grey = "#6a696f"
 
 [directory]
 style = "bold teal"

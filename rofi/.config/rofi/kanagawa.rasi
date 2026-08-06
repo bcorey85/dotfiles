@@ -1,0 +1,109 @@
+/* kanagawa "wave" (#1f1f28) — dark-only, mirrors onedark-darker.rasi's shape.
+ * Same hexes as tmux/.config/tmux/kanagawa-dark.conf and ghostty's
+ * kanagawa-dark theme: canvas #1f1f28, inset #181820, surface (selection bg)
+ * #2a2a37, fg #dcd7ba, muted #89877b, blue #7e9cd8, green #98bb6c,
+ * red #e46876, purple #957fb8, orange/yellow #e6c384. */
+* {
+    bg:         #1f1f28;
+    bg-alt:     #181820;
+    bg-sel:     #2a2a37;
+    fg:         #dcd7ba;
+    fg-alt:     #89877b;
+    blue:       #7e9cd8;
+    green:      #98bb6c;
+    red:        #e46876;
+    purple:     #957fb8;
+    orange:     #e6c384;
+
+    background-color: transparent;
+    text-color: @fg;
+    font: "CommitMono Nerd Font Mono 13";
+
+    margin:  0;
+    padding: 0;
+    spacing: 0;
+}
+
+window {
+    location:         center;
+    width:            600;
+    border:           2px;
+    border-color:     @blue;
+    border-radius:    8px;
+    background-color: @bg;
+}
+
+mainbox {
+    children: [ inputbar, message, listview ];
+}
+
+inputbar {
+    children:         [ prompt, entry ];
+    background-color: @bg-alt;
+    padding:          14px;
+}
+
+prompt {
+    text-color:       @blue;
+    padding:          0 8px 0 0;
+}
+
+entry {
+    placeholder:       "Search...";
+    placeholder-color: @fg-alt;
+}
+
+message {
+    background-color: @bg-alt;
+    padding:          4px 14px;
+}
+
+textbox {
+    text-color: @orange;
+}
+
+listview {
+    lines:    8;
+    padding:  4px 0;
+    scrollbar: false;
+}
+
+element {
+    padding: 10px 14px;
+}
+
+element normal.normal {
+    background-color: @bg;
+}
+
+element normal.urgent {
+    text-color: @red;
+}
+
+element normal.active {
+    text-color: @green;
+}
+
+element selected.normal {
+    background-color: @bg-sel;
+    text-color:       @blue;
+}
+
+element selected.urgent {
+    background-color: @bg-sel;
+    text-color:       @red;
+}
+
+element selected.active {
+    background-color: @bg-sel;
+    text-color:       @green;
+}
+
+element-icon {
+    size: 24px;
+    padding: 0 8px 0 0;
+}
+
+element-text {
+    vertical-align: 0.5;
+}

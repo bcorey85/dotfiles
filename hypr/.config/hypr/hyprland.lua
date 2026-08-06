@@ -110,9 +110,9 @@ hl.config({
         border_size = 2,
 
         col = {
-            -- onedark "darker" palette (dark-only, no mode axis).
-            active_border   = "rgba(535965ee)",
-            inactive_border = "rgba(2d3139ee)",
+            -- kanagawa "wave" palette (dark-only, no mode axis).
+            active_border   = "rgba(727169ee)",
+            inactive_border = "rgba(2a2a37ee)",
         },
 
         resize_on_border = true,
@@ -133,7 +133,7 @@ hl.config({
             enabled      = true,
             range        = 4,
             render_power = 3,
-            color        = "rgba(181b20ee)",
+            color        = "rgba(181820ee)",
         },
 
         blur = {

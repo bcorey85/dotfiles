@@ -110,7 +110,7 @@ Never run this in suite-wide scopes — recommending deletion of pre-existing te
 - Restates the implementation with no behavioral oracle
 - Re-covers a branch a sibling test already owns with only cosmetic input changes
 
-Exemptions: acceptance-spec files (`*.spec.*` used as acceptance specs) and a plan's Acceptance Stubs are requirements — out of bounds. One smoke test per unit is legitimate; it's the redundant 2nd+ that culls. A test that targets genuinely new behavior but asserts it weakly is a weak-assertion finding (tighten), not a cull (delete).
+Exemptions: acceptance-spec files (`*.spec.*` used as acceptance specs) and any test covering an acceptance criterion are requirements — out of bounds. One smoke test per unit is legitimate; it's the redundant 2nd+ that culls. A test that targets genuinely new behavior but asserts it weakly is a weak-assertion finding (tighten), not a cull (delete).
 
 ## Output Format
 

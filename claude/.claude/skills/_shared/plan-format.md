@@ -110,25 +110,26 @@ don't exist.
 
 [Scope boundaries]
 
-## Acceptance Stubs
+## Acceptance Criteria
 
 <!-- Omit this section entirely if the ticket has no behavioral criteria.
 Written by the user with the main thread after the plan is final and BEFORE any
 coder is dispatched — never later, and never by the agent that will satisfy it.
 3-8 of them; if there are more, the ticket is two tickets. -->
 
-- **Spec file(s)**: `path or glob (feature-root spec file, or feature-local specs/ dir)`
-- **Primitive**: [the project runner's todo/pending marker]
-- **Count command**: `<exact command that prints the remaining-stub count>`
-- **Stubs** (one per ticket acceptance criterion; domain language, no ticket keys):
-  - "[behavior sentence]"
+The criteria live in `docs/plans/<slug>/acceptance-criteria.md` as prose with
+stable ids (`AC1`…`ACn`), written by `/eng-spec` Phase 7.5. This section names
+the file and nothing more — do not restate the criteria here, and do not copy
+their ids into any file under the source tree.
 
-Each spec file's head carries `ACCEPTANCE-CONTRACT` in its first 10 lines, which
-makes it immutable to every agent (`acceptance-contract-gate` denies the write).
-Assert at the criterion's boundary — the public entry point a user or caller
-reaches — never an internal function, or the contract pins today's structure and
-blocks the refactor it was supposed to survive. **No mocks or stubs inside a
-contract** — a mock pins how you assumed the code would be built.
+- **Criteria file**: `docs/plans/<slug>/acceptance-criteria.md`
+
+The closing Verify phase reconciles every id against the real test suite
+(`_shared/closing-phases.md`), matching on behavior rather than markers. Tests
+that cover a criterion assert at its boundary — the public entry point a user or
+caller reaches — never an internal function, or the test pins today's structure
+and blocks the refactor it was supposed to survive. **No mocks inside such a
+test** — a mock pins how you assumed the code would be built.
 
 ## Implementation Approach
 
@@ -149,8 +150,9 @@ contract** — a mock pins how you assumed the code would be built.
 
 ### Success Criteria
 
-Phases that flip acceptance stubs list which ones; the final phase's
-Automated Verification must include the stub count command returning zero.
+A phase that delivers an acceptance criterion states the behavior in its own
+words here — never the criterion's id. The closing Verify phase is what maps
+criteria to tests.
 
 #### Automated Verification:
 
@@ -171,7 +173,7 @@ Automated Verification must include the stub count command returning zero.
 ## Testing Strategy
 
 [Approach only. Naming a unit here doesn't test it — a unit that MUST be tested
-needs an acceptance stub in its phase.]
+needs a behavior in its phase's Success Criteria, or an acceptance criterion.]
 
 ## Plan Deviations
 

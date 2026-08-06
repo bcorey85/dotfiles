@@ -7,15 +7,17 @@ Lives outside `coder-core` deliberately: it applies only to dispatches that
 touch tests, while `coder-core` is preloaded into every coder dispatch —
 including fix coders and the review loop's MEDIUM bucket, which write no tests
 and paid for these rules on every spawn. The prohibitions that DO bind every
-coder (never delete or reword an acceptance stub; never open an
-`ACCEPTANCE-CONTRACT` file) stay in `coder-core` — only the authoring guidance
-moved here.
+coder (never reinterpret an acceptance criterion; never carry workflow
+vocabulary into committed code — `_shared/code-vocabulary.md`) stay in
+`coder-core` — only the authoring guidance moved here.
 
 Consumers: `coder-core` (pointer), `/code` step 3b (test-writer dispatch), `/audit review`.
 
 ## Test budget (the list comes before the tests)
 
-Tests you author beyond the acceptance stubs are derived from the plan/task,
+Tests are named and written as ordinary tests — a name describes the behavior,
+never a criterion id, phase number, or plan path (`_shared/code-vocabulary.md`).
+Tests you author beyond the acceptance criteria are derived from the plan/task,
 never from the code: list the behaviors from the success criteria (or the task
 description), then write one test per behavior plus the edge cases the plan
 names — that list is the whole budget. Extend existing test files and describe
@@ -76,7 +78,7 @@ tend not to be exercised at all — check that the stream has a test before judg
 assertion on it.
 
 This bar governs **tests you wrote this task** — it never licenses touching an
-acceptance stub or a pre-existing test, and one smoke test per unit is fine (it
+test that covers an acceptance criterion, or a pre-existing test, and one smoke test per unit is fine (it
 is the redundant 2nd+ that goes). When unsure whether a test you wrote this task
 earns its place, delete it — behavior that actually matters traces back to a
 criterion and can be re-added deliberately; elaborating an unsure test to

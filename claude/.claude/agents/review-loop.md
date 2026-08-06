@@ -165,7 +165,7 @@ Skip any finding that is a false positive, a stylistic preference, out of scope,
 
 **Execution gate (before declaring convergence)**: A reviewer PASS is an opinion; a passing check run is evidence. If the handoff's `tests-run` shows a real command with exit 0, accept it. If it is "none", missing, or has no exit code while code changed: run the project's quality-check command (from project CLAUDE.md) ONCE, redirected to `/tmp/review-gate.log`. Exit 0 → proceed. Non-zero → the failures are ground truth: treat them as CRITICAL findings and route into the severity gating above.
 
-**Exception**: failures in acceptance spec tests (the plan's `Acceptance Stubs` file(s), or `*.spec.*`) are critical BLOCKERS — never route them to auto-fix. Either the code is wrong or the intent changed, and only the user decides which; an auto-fixer's cheapest path to green is editing the spec.
+**Exception**: failures in acceptance spec tests (`*.spec.*`, or any test the plan's `Acceptance Criteria` file names as covering a criterion) are critical BLOCKERS — never route them to auto-fix. Either the code is wrong or the intent changed, and only the user decides which; an auto-fixer's cheapest path to green is editing the spec.
 
 Never skip this because the review "looked clean".
 
@@ -219,7 +219,7 @@ Runs ONCE the main loop passes the execution gate (Step 6), before MEDIUM classi
 3. **Dispatch eligible specialists** — `security-reviewer`, `perf-reviewer`, and/or **`smell-reviewer-deep`** (smell runs `-deep` by DEFAULT; `+fast` takes the cheap tier. The others take their `-deep` variant under `+deep`, omitting `model`; `model: "haiku"` under `+fast`). Launch multiple in a single message (parallel). Pass each ONLY the converged-diff file list as its scope — never let it re-discover — and the relevant `flagged` subset. Do NOT include a category checklist; each agent defines its own calibration (same rule as Step 3).
 
 4. **Fold findings into the existing packet** — do NOT open a parallel findings stream:
-   - `[perf]`-tagged findings → collect into `perf[]` with their `Principle:` line. On the domain's FIRST pass this loop only, append each to `~/vault/91. Areas/Backend Performance/Backend Perf - Findings Log.md` via Read + Edit (Write it with a `# Backend Perf - Findings Log` heading if absent). **This log is the only write you are permitted** (see the bottom fence). Format, one line per finding:
+   - `[perf]`-tagged findings → collect into `perf[]` with their `Principle:` line. On the domain's FIRST pass this loop only, append each to `~/vault/cache/Backend Perf - Findings Log.md` via Read + Edit (Write it with a `# Backend Perf - Findings Log` heading if absent). **This log is the only write you are permitted** (see the bottom fence). Format, one line per finding:
 
      ```
      - **<today's date>** `<repo>` `<file:line>` — <finding one-liner> → <fix applied or "reported">. *Principle: <principle>*
@@ -243,7 +243,7 @@ Runs after Step 6b — at FINAL convergence. If Step 6b re-entered the loop
 generalist and specialist MEDIUMs are classified together in ONE pass with ONE
 fix dispatch. Classify each MEDIUM (from any reviewer) as:
 
-- **fix** — clear win, safe to auto-apply. `[comment-noise]` and `[smell]` findings on diff-introduced code default to **fix** — the smell fixes are subtractive consolidations of the diff's own code (extract the helper, move the logic down a layer, delete the dead weight), the exact class the fix fence's "focused fix" language permits. **Guard**: NEVER auto-prune a test in an acceptance-spec file (`*.spec.*`) or the plan's Acceptance Stubs — route those to **ask**. A `[smell]` fix whose consolidation touches a pre-existing call site beyond the one being deduplicated → **ask**.
+- **fix** — clear win, safe to auto-apply. `[comment-noise]` and `[smell]` findings on diff-introduced code default to **fix** — the smell fixes are subtractive consolidations of the diff's own code (extract the helper, move the logic down a layer, delete the dead weight), the exact class the fix fence's "focused fix" language permits. **Guard**: NEVER auto-prune a test in an acceptance-spec file (`*.spec.*`) or one covering an acceptance criterion — route those to **ask**. A `[smell]` fix whose consolidation touches a pre-existing call site beyond the one being deduplicated → **ask**.
 - **skip** — false positive, intentional choice, stylistic noise, out of scope. Record a one-line reason.
 - **ask** — ambiguous, needs a design decision, or plausibly either. `[perf] [design-decision]` findings land here (per Step 6b).
 

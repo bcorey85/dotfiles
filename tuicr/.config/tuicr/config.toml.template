@@ -11,11 +11,16 @@
 # the config at launch, so there is no reload step and no auto_switch to
 # disable; the next `tuicr` opens in the current mode.
 #
-# The palettes themselves are stowed static files (themes/onedark-darker-*.toml)
-# because only the mode changes, never the hexes.
+# The palettes themselves are stowed static files (themes/<family>-*.toml)
+# because only the mode changes, never the hexes. tuicr has no family axis of
+# its own (theme-mode only ever substitutes `appearance`), so the pair below
+# is a fixed choice, not something a family switch changes at runtime — to
+# use the other family here, repoint theme_dark/theme_light and re-run
+# theme-mode. Currently kanagawa (DEFAULT_FAMILY in theme-mode); the onedark
+# palettes remain on disk at themes/onedark-darker-*.toml.
 
-theme_dark = "onedark-darker-dark"
-theme_light = "onedark-darker-light"
+theme_dark = "kanagawa-dark"
+theme_light = "kanagawa-light"
 appearance = "dark"
 
 diff_view = "side-by-side"

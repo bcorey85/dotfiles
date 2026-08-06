@@ -25,11 +25,6 @@ if [ -d ~/.config/nvim ] && [ ! -L ~/.config/nvim ]; then
     mv ~/.config/nvim ~/.config/nvim.backup.$(date +%Y%m%d_%H%M%S)
 fi
 
-if [ -f ~/.tmux.conf ] && [ ! -L ~/.tmux.conf ]; then
-    print_info "Backing up existing tmux config..."
-    mv ~/.tmux.conf ~/.tmux.conf.backup.$(date +%Y%m%d_%H%M%S)
-fi
-
 if [ -f ~/.zshrc ] && [ ! -L ~/.zshrc ]; then
     print_info "Backing up existing zshrc..."
     mv ~/.zshrc ~/.zshrc.backup.$(date +%Y%m%d_%H%M%S)
@@ -53,7 +48,7 @@ if [ "$PLATFORM" = "arch" ] && [ -d ~/.config/hypr ] && [ ! -L ~/.config/hypr ];
 fi
 
 # Stow configs — common packages for all platforms
-PACKAGES="nvim tmux scripts zsh claude opencode omp pi ghostty kanata starship git lazygit herdr tuicr"
+PACKAGES="nvim scripts zsh claude opencode omp pi ghostty kanata starship git lazygit herdr tuicr"
 
 # Arch-only packages
 if [ "$PLATFORM" = "arch" ]; then
@@ -79,10 +74,4 @@ if [ "$PLATFORM" = "mac" ] && [ -d "$HOME/Library/Application Support/com.mitche
         ln -s "$HOME/.config/ghostty/config" "$GHOSTTY_MAC"
         print_success "Ghostty macOS symlink created"
     fi
-fi
-
-# Source tmux config if tmux server is running (timeout prevents hanging)
-if command -v tmux &> /dev/null && tmux list-sessions &> /dev/null 2>&1; then
-    timeout 5 tmux source-file ~/.tmux.conf 2>/dev/null || true
-    print_success "Tmux config reloaded"
 fi

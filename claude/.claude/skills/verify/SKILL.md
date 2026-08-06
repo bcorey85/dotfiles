@@ -41,7 +41,7 @@ This is the one step that DOES read the plan in full (contrast `/adr`, which for
 
 1. Resolve the directory; locate ticket + plan.
 2. Determine the change set: everything on this branch (committed + uncommitted) vs its base branch. Default `BASE=$(git merge-base HEAD origin/master 2>/dev/null || git merge-base HEAD origin/main)`, then `git diff --stat "$BASE"...HEAD` plus working-tree changes; adjust the base if the branch was cut from a sprint branch.
-3. **Dispatch `plan-verifier`** (pinned; omit `model`) with `scope: branch` and three things: the ticket path, the plan path, and the diff scope. Nothing else — its contract (verdicting from the diff rather than the Phase Status checkboxes, the acceptance-stub count-then-sentences check, running the Automated Verification commands, deferring manual items as `needs-manual`, skipping `What We're NOT Doing`, and writing nothing but `Manual Verification` checkbox lines) lives in its agent file. This is the ONLY place it runs — nothing upstream has pre-verdicted a phase for you.
+3. **Dispatch `plan-verifier`** (pinned; omit `model`) with `scope: branch` and three things: the ticket path, the plan path, and the diff scope. Nothing else — its contract (verdicting from the diff rather than the Phase Status checkboxes, the acceptance-criteria coverage check, running the Automated Verification commands, deferring manual items as `needs-manual`, skipping `What We're NOT Doing`, and writing nothing but `Manual Verification` checkbox lines) lives in its agent file. This is the ONLY place it runs — nothing upstream has pre-verdicted a phase for you.
 
    **`N/A — no criteria in scope`** is not a pass. It means the plan gave the gate nothing to check; surface that to the user rather than reporting completeness.
 
@@ -51,7 +51,7 @@ This is the one step that DOES read the plan in full (contrast `/adr`, which for
 
 `plan-verifier`'s agent file owns the shape — present what it returns; do not restate its
 format here, or the two copies will drift and the one you paraphrase from will be the stale
-one. The parts you consume downstream: the verdict table, the acceptance-stub result, the
+one. The parts you consume downstream: the verdict table, the acceptance-criteria result, the
 `needs-manual` items (they become the smoke-test checklist), and the denominator.
 
 ## Routing

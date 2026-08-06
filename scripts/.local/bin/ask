@@ -2,7 +2,8 @@
 # ask — question capture for the learning lane (tmux prefix n ?). Logs the
 # question to ~/vault/org/questions.org, then a background headless claude
 # researches it and writes a Literature-template answer stub (Source + Key
-# Points filled) into <vault>/00. Inbox. Same shape as `bookmark` with the
+# Points filled) into <vault>/sources — a researched answer is told, not
+# verified, so it never lands in cache/. Same shape as `bookmark` with the
 # page fetch swapped for research; same rule — the synthesis sections stay
 # empty because writing "Explain It Back" is the part that teaches.
 #
@@ -25,7 +26,7 @@ else
   q="$*"
 fi
 
-# Org-side log for durability only — the answer stub in the Inbox is the
+# Org-side log for durability only — the answer stub in sources/ is the
 # artifact; this file just makes sure a question outlives a failed run.
 printf '* %s\n  [%s]\n' "$q" "$(date +'%Y-%m-%d %a')" >>"$QF"
 
@@ -37,11 +38,13 @@ fi
 
 prompt="Research and answer this question from a senior software engineer: $q
 
-Create exactly ONE new markdown file in '00. Inbox/' — filename: short kebab-case slug of the question, '.md' extension. Mirror the section structure of 'Templates/Literature.md' exactly, filled as follows:
+Create exactly ONE new markdown file in 'sources/' — filename: short kebab-case slug of the question, '.md' extension. Mirror the section structure of 'Templates/Literature.md' exactly, filled as follows:
 - Date: today's date
 - Source: 'question capture', plus links to any references actually used
 - Key Points: a direct, technically precise answer in 5-12 bullets — mechanisms, tradeoffs, and rules of thumb, not filler
 - Leave 'Quick Reactions', 'Explain It Back', 'Permanent Notes to Create', and 'Open Questions For Later' as empty scaffolding for the human to fill.
+
+End the note with at most ONE tag from this closed vocabulary — #backend #devops #architecture #llms — or no tag at all. Never invent another.
 
 Use WebSearch/WebFetch only when the answer benefits from sources or current information; answer from knowledge otherwise."
 
@@ -52,12 +55,12 @@ Use WebSearch/WebFetch only when the answer benefits from sources or current inf
 log="$LOG_DIR/$(date +%Y%m%d-%H%M%S)-ask.log"
 pf="$(mktemp "${TMPDIR:-/tmp}/ask-prompt.XXXXXX")"
 printf '%s' "$prompt" >"$pf"
-runner="cd $(printf %q "$VAULT") && $(printf %q "$(command -v claude)") -p --model sonnet --allowedTools WebFetch WebSearch $(printf %q 'Write(00.*/**)') <$(printf %q "$pf") >$(printf %q "$log") 2>&1; rm -f $(printf %q "$pf")"
+runner="cd $(printf %q "$VAULT") && $(printf %q "$(command -v claude)") -p --model sonnet --allowedTools WebFetch WebSearch $(printf %q 'Write(sources/**)') <$(printf %q "$pf") >$(printf %q "$log") 2>&1; rm -f $(printf %q "$pf")"
 if [ -n "${TMUX:-}" ]; then
   tmux run-shell -b "$runner"
 else
   nohup sh -c "$runner" >/dev/null 2>&1 &
   disown
 fi
-printf '✓ logged — answer stub landing in 00. Inbox (log: %s)\n' "${log/#$HOME/\~}"
+printf '✓ logged — answer stub landing in sources/ (log: %s)\n' "${log/#$HOME/\~}"
 sleep 1

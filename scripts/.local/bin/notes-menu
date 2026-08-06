@@ -31,7 +31,7 @@ case "$sel" in
     "Edit todos")    exec nvim ~/vault/org/inbox.org ;;
     "Edit journal")  exec nvim + ~/vault/org/journal.org ;;
     "Today")
-        f=~/vault/Daily/$(date +%F).md
+        f=~/vault/daily/$(date +%F).md
         if [ -f "$f" ]; then exec glow-fit -p "$f"; else echo "no daily note compiled yet"; sleep 2; fi
         ;;
     "Sync vault")    tmux-tui-popup vault-sync "vault-sync failed —" && sleep 1 ;;

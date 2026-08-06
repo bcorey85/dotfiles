@@ -20,7 +20,7 @@ if [ "${1:-}" = "today" ]; then
   # node AND the flat headings `note` appends), plus everything nested under
   # it until the next sibling-or-shallower heading — the same match daily-recap
   # gathers on.
-  DAILY="$VAULT/Daily/$TODAY.md"
+  DAILY="$VAULT/daily/$TODAY.md"
   if [ -f "$DAILY" ]; then
     exec "$HOME/.local/bin/glow-fit" -p "$DAILY"
   fi

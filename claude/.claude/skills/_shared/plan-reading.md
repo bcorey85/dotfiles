@@ -19,7 +19,7 @@ phase, so a scoped read is three `Read` calls:
 
 1. **Line 1 → end of `## Phase 0: Contracts`** — one range covering `Overview`,
    `Phase Status`, `Current State Analysis`, `Desired End State`, `What We're
-NOT Doing`, `Acceptance Stubs`, `Implementation Approach`, and the contracts.
+NOT Doing`, `Acceptance Criteria`, `Implementation Approach`, and the contracts.
    (No Phase 0 — a single-slice plan folds contracts into Phase 1 — then it is
    line 1 → the first `## Phase` heading.)
 2. **Your own `## Phase N:` section.**

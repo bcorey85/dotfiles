@@ -56,25 +56,26 @@
     skip_display = yes
     history_ignore = yes
 
-# onedark "darker" palette (dark-only, no mode axis). Low-urgency foreground is
-# the contrast-lifted comment grey, not the stock #535965.
+# kanagawa "wave" palette (dark-only, no mode axis). Low-urgency foreground is
+# the contrast-lifted comment grey (fujiGray #727169 lifted 22% -> #89877b,
+# 4.53:1 on the #181820 panel), not the stock fujiGray.
 [urgency_low]
-    background = "#181b20"
-    foreground = "#858c9a"
-    frame_color = "#3e4451"
-    highlight = "#4fa6ed"
+    background = "#181820"
+    foreground = "#89877b"
+    frame_color = "#2a2a37"
+    highlight = "#7e9cd8"
     timeout = 5
 
 [urgency_normal]
-    background = "#181b20"
-    foreground = "#a0a8b7"
-    frame_color = "#4fa6ed"
-    highlight = "#4fa6ed"
+    background = "#181820"
+    foreground = "#dcd7ba"
+    frame_color = "#7e9cd8"
+    highlight = "#7e9cd8"
     timeout = 10
 
 [urgency_critical]
-    background = "#181b20"
-    foreground = "#a0a8b7"
-    frame_color = "#e55561"
-    highlight = "#e55561"
+    background = "#181820"
+    foreground = "#dcd7ba"
+    frame_color = "#e46876"
+    highlight = "#e46876"
     timeout = 0

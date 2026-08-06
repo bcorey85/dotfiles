@@ -5,7 +5,7 @@ Personal configuration files across WSL, Ubuntu, macOS, and Arch Linux.
 ## What's Included
 
 - **nvim** - Neovim configuration (lazy.nvim, specs in `lua/plugins/`)
-- **tmux** - tmux configuration with true color support
+- **herdr** - agent-aware terminal multiplexer (config template; `theme-mode` generates the real config)
 - **zsh** - zsh configuration (manually cloned plugins, starship prompt)
 - **kanata** - Keyboard remapping
 - **claude** - Claude Code configuration ([why the agents are shaped this way](docs/agent-evals.md))
@@ -40,7 +40,7 @@ Each step can also be run independently from the `install/` directory:
 ```bash
 # Edit configs normally - they're symlinked
 nvim ~/.config/nvim/lua/plugins/theme.lua
-nvim ~/.tmux.conf
+nvim ~/.config/herdr/config.toml.template
 nvim ~/.zshrc
 
 # Commit and push changes
@@ -62,7 +62,7 @@ git pull
 
 ```bash
 cd ~/dotfiles
-stow -D nvim tmux zsh claude kanata scripts
+stow -D nvim herdr zsh claude kanata scripts
 ```
 
 ## Troubleshooting
@@ -75,7 +75,7 @@ stow -D nvim tmux zsh claude kanata scripts
 
 **Colors look wrong:**
 
-- Check `echo $TERM` (should be `tmux-256color` in tmux)
+- Check `echo $TERM` (should be `xterm-256color` under herdr)
 - Verify true color support: `:checkhealth` in Neovim
 
 **Neovim plugins not loading:**

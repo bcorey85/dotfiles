@@ -1,13 +1,12 @@
 #!/bin/bash
 # theme-mode — single source of truth for the theme FAMILY and light/dark MODE
-# across tmux + neovim + ghostty + claude code.
+# across herdr + neovim + ghostty + claude code.
 #
 # State files (read by every consumer):
 #   ~/.cache/theme-mode    dark|light
 #   ~/.cache/theme-family  family name (see families() below)
 #
 # Consumers:
-#   - tmux:    this script sources ~/.config/tmux/<family>-<mode>.conf
 #   - nvim:    lua/config/theme-sync.lua polls both files (~1s) and applies
 #              the family's colorscheme + overrides
 #   - ghostty: this script writes ~/.config/ghostty/theme-switch.conf
@@ -19,8 +18,8 @@
 #              in ~/.claude.json). This sets the theme for the NEXT session — a
 #              running session does NOT repaint live: Claude Code reloads the
 #              settings value but never re-renders the TUI on a theme change, and
-#              its `auto` OSC 11 detection only samples at launch (and tmux mangles
-#              it). No supported live-flip lever exists (see anthropics/claude-code
+#              its `auto` OSC 11 detection only samples at launch (and the
+#              multiplexer mangles it). No supported live-flip lever exists (see anthropics/claude-code
 #              #33899); restart or run /theme by hand to see it in an open session.
 #   - herdr:   this script regenerates the REAL ~/.config/herdr/config.toml from
 #              the stowed ~/.config/herdr/config.toml.template (substituting the
@@ -33,14 +32,15 @@
 #              reset-keys`) is overwritten on the next toggle. herdr's own
 #              auto_switch is deliberately off: it keys off the terminal's
 #              reported appearance rather than ~/.cache/theme-mode.
-#   - starship: this script regenerates the REAL ~/.config/starship.toml (mode
-#              only) from the stowed ~/.config/starship.toml.template with the
-#              active `palette =` line swapped. Starship has no include but
-#              re-reads its config every prompt from that default path, so EVERY
-#              running shell flips on its next prompt — no reload, no
-#              STARSHIP_CONFIG. The generated file is machine-local (not stowed),
-#              so the tracked template is never dirtied. Edit the template =>
-#              re-run theme-mode to refresh the live config.
+#   - starship: this script regenerates the REAL ~/.config/starship.toml from
+#              the stowed ~/.config/starship.toml.template with the active
+#              `palette =` line swapped to `<family>-<mode>` — a two-axis
+#              swap, not mode-only. Starship has no include but re-reads its
+#              config every prompt from that default path, so EVERY running
+#              shell flips on its next prompt — no reload, no STARSHIP_CONFIG.
+#              The generated file is machine-local (not stowed), so the
+#              tracked template is never dirtied. Edit the template => re-run
+#              theme-mode to refresh the live config.
 #   - tuicr:   this script regenerates the REAL ~/.config/tuicr/config.toml (mode
 #              only) from the stowed ~/.config/tuicr/config.toml.template with the
 #              `appearance = ` line swapped. The template names both palettes
@@ -55,24 +55,31 @@
 #   theme-mode list                   known families
 #   theme-mode status                 current family + mode
 #
-# Adding a family = six touchpoints, kept in sync by hand:
+# Adding a family = five touchpoints, kept in sync by hand:
 #   1. families() + ghostty_theme() below
 #   2. FAMILIES table in nvim lua/config/theme-sync.lua
-#   3. ~/.config/tmux/<family>-{dark,light}.conf
-#   4. a ghostty theme (builtin name, or custom file in ghostty/themes/)
-#   5. herdr_palette() below (herdr's [theme.custom] token block)
-#   6. tuicr themes/<family>-{dark,light}.toml + the pair in its config template
+#   3. a ghostty theme (builtin name, or custom file in ghostty/themes/)
+#   4. herdr_palette() below (herdr's [theme.custom] token block)
+#   5. tuicr themes/<family>-{dark,light}.toml + the pair in its config template
+#
+# Also needed, not part of the six but easy to miss:
+#   - starship.toml.template: add a `[palettes.<family>-dark]` /
+#     `[palettes.<family>-light]` pair for the new family
+#   - zsh/.zshrc: its fresh-machine bootstrap copies starship.toml.template
+#     verbatim, so it must stay in sync with the template's default palette
+#     name (this already caused one bug, fixed separately)
+#   - DEFAULT_FAMILY must be kept in sync across four sites: this script's own
+#     DEFAULT_FAMILY var, theme-sync.lua's default, starship.toml.template's
+#     root `palette =` line, and tuicr/.config/tuicr/config.toml.template's
+#     theme pair
 set -euo pipefail
 
 MODE_FILE="$HOME/.cache/theme-mode"
 FAMILY_FILE="$HOME/.cache/theme-family"
-TMUX_THEME_DIR="$HOME/.config/tmux"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
-DEFAULT_FAMILY="onedark-darker"
+DEFAULT_FAMILY="kanagawa"
 
-# One family. The two-axis machinery is kept because the mode axis still uses it
-# and re-adding a family is the four touchpoints listed above.
-families() { printf '%s\n' onedark-darker; }
+families() { printf '%s\n' onedark-darker kanagawa; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   case "$1:$2" in
@@ -80,6 +87,9 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # onelight's stock accents are under the contrast floor, so light is the
     # floored palette nvim's fixup computes.
     onedark-darker:*) echo "onedark-darker-$2" ;; # custom: ghostty/themes/
+    # Same reasoning: lotus's stock accents are under the floor too, so both
+    # sides are the floored custom files rather than a builtin.
+    kanagawa:*) echo "kanagawa-$2" ;; # custom: ghostty/themes/
   esac
 }
 
@@ -90,12 +100,11 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
   # swapping the base — any token not listed here keeps its one-dark value.
   local accent panel_bg surface_dim surface0 surface1 overlay0 overlay1
   local text subtext0 green yellow red blue teal peach
-  case "$2" in
-    light)
+  case "$1:$2" in
+    onedark-darker:light)
       # onedark light (stock "light" style — only dark drops to #1f2329).
       # Muted is #696a71, onedark's grey darkened toward fg: the stock #a0a1a7
-      # is 2.26:1 on the #f0f0f0 panel (floor 4.5); this is 4.65:1. Same
-      # reasoning as tmux/.config/tmux/onedark-darker-light.conf.
+      # is 2.26:1 on the #f0f0f0 panel (floor 4.5); this is 4.65:1.
       accent="#a626a4" panel_bg="#f0f0f0" surface_dim="#e2e2e5"
       surface0="#d3d3d7" surface1="#c4c4c9"
       overlay0="#77787f" overlay1="#696a71"
@@ -103,9 +112,8 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       green="#50a14f" yellow="#c18401" red="#e45649"
       blue="#4078f2" teal="#0184bc" peach="#986801"
       ;;
-    *)
-      # onedark "darker" (#1f2329) — matches tmux/nvim/ghostty hex-for-hex
-      # (values from tmux/.config/tmux/onedark-darker-dark.conf).
+    onedark-darker:*)
+      # onedark "darker" (#1f2329) — matches nvim/ghostty hex-for-hex.
       accent="#bf68d9" panel_bg="#181b20" surface_dim="#2f353f"
       surface0="#3d4552" surface1="#454d5a"
       overlay0="#626a78" overlay1="#858c9a"
@@ -113,9 +121,36 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       green="#8ebd6b" yellow="#e2b86b" red="#e55561"
       blue="#4fa6ed" teal="#48b0bd" peach="#cc9057"
       ;;
+    kanagawa:light)
+      # kanagawa "lotus" (#f2ecbc). Muted is #5f5f6a, lotusGray3 darkened
+      # toward fg: stock #8a8980 is 2.56:1 on the #e5ddb0 panel it's actually
+      # rendered on (floor 4.5); this is 4.59:1. red/green/yellow/teal/peach
+      # are floored for the same reason (stock lotus accents mostly sit under
+      # 4.5:1 on this canvas); accent/blue clear it stock.
+      accent="#624c83" panel_bg="#e5ddb0" surface_dim="#d8cf9f"
+      surface0="#cbc08e" surface1="#beb17e"
+      overlay0="#7c7a6a" overlay1="#5f5f6a"
+      text="#545464" subtext0="#5f5f6a"
+      green="#616e59" yellow="#706b46" red="#b44356"
+      blue="#4d699b" teal="#576e70" peach="#8e6034"
+      ;;
+    kanagawa:*)
+      # kanagawa "wave" (#1f1f28) — matches nvim/ghostty hex-for-hex.
+      #
+      # yellow and peach are deliberately the same hex (#e6c384, "carpYellow")
+      # — upstream kanagawa-wave has no distinct peach/orange swatch, so every
+      # consumer in this family collapses the two tokens together rather than
+      # inventing a peach kanagawa doesn't ship. Not a copy-paste slip.
+      accent="#957fb8" panel_bg="#181820" surface_dim="#282836"
+      surface0="#32323f" surface1="#3c3c48"
+      overlay0="#5a5a63" overlay1="#89877b"
+      text="#dcd7ba" subtext0="#89877b"
+      green="#98bb6c" yellow="#e6c384" red="#e46876"
+      blue="#7e9cd8" teal="#7aa89f" peach="#e6c384"
+      ;;
   esac
 
-  # Sidebar focus contrast — deviations from the stock onedark values above:
+  # Sidebar focus contrast — deviations from the stock family values above:
   #   surface_dim = the FOCUSED agent/workspace row's background bar. At the
   #     stock canvas value it sat ~1.05:1 against panel_bg, so the focused row
   #     read as unmarked. Both modes push it clear of panel_bg instead. It also
@@ -192,7 +227,7 @@ current_family() {
   families | grep -qx "$f" && echo "$f" || echo "$DEFAULT_FAMILY"
 }
 
-apply() { # <family> <mode> — write state and repaint tmux + ghostty
+apply() { # <family> <mode> — write state and repaint herdr + ghostty
   local family="$1" mode="$2"
   mkdir -p "$(dirname "$MODE_FILE")"
   printf '%s\n' "$mode" >"$MODE_FILE"     # nvim picks these up
@@ -232,7 +267,7 @@ apply() { # <family> <mode> — write state and repaint tmux + ghostty
   # opens in it. A running session does NOT repaint — Claude Code reloads the
   # settings value but never re-renders the TUI on a `theme` change (known gap,
   # anthropics/claude-code #33899), and its `auto` OSC 11 detection only samples
-  # at launch (and tmux mangles it), so a runtime flip never reaches an open
+  # at launch (and the multiplexer mangles it), so a flip never reaches an open
   # session. `light`/`dark` are valid theme values, so $mode drops straight in.
   # To see it live in an open session, run /theme by hand.
   local claude_settings="$HOME/.claude/settings.json"
@@ -249,13 +284,15 @@ apply() { # <family> <mode> — write state and repaint tmux + ghostty
   # Starship: no include mechanism, but it re-reads its whole config every prompt
   # from its default path ~/.config/starship.toml. Regenerate that REAL file (not
   # a symlink — it's machine-local) from the stowed template with the active
-  # `palette =` line swapped to $mode, so EVERY running shell flips on its next
-  # prompt with no reload. Only the top-level `palette = ` line matches the
-  # anchored sed — the [palettes.*] headers are untouched.
+  # `palette =` line swapped to `$family-$mode`, so EVERY running shell flips on
+  # its next prompt with no reload. Only the top-level `palette = ` line matches
+  # the anchored sed — the [palettes.*] headers are untouched. The palette names
+  # in the template are `<family>-<mode>` (e.g. kanagawa-dark), so this is a two-
+  # axis swap now, not mode-only.
   local starship_tmpl="$HOME/.config/starship.toml.template"
   local starship_cfg="$HOME/.config/starship.toml"
   if [ -f "$starship_tmpl" ]; then
-    sed "s/^palette = .*/palette = \"$mode\"/" "$starship_tmpl" >"$starship_cfg"
+    sed "s/^palette = .*/palette = \"$family-$mode\"/" "$starship_tmpl" >"$starship_cfg"
   fi
 
   # herdr: regenerate ~/.config/herdr/config.toml from the stowed template with
@@ -270,41 +307,6 @@ apply() { # <family> <mode> — write state and repaint tmux + ghostty
   local tuicr_cfg="$HOME/.config/tuicr/config.toml"
   if [ -f "$tuicr_tmpl" ]; then
     sed "s/^appearance = .*/appearance = \"$mode\"/" "$tuicr_tmpl" >"$tuicr_cfg"
-  fi
-
-  # tmux: source-file is server-global, every attached client updates at once.
-  if command -v tmux >/dev/null 2>&1 && tmux has-session >/dev/null 2>&1; then
-    tmux source-file -q "$TMUX_THEME_DIR/$family-$mode.conf" 2>/dev/null || true
-    # Cursor colour via tmux's built-in option (no escape sequences needed).
-    local cursor="#ffffff"
-    [ "$mode" = "light" ] && cursor="#000000"
-    tmux set-option -g cursor-colour "$cursor" 2>/dev/null || true
-    # TUIs that auto-detect light/dark via an OSC 11 background query get no
-    # reliable answer inside a tmux popup and fall back to $COLORFGBG — unset by
-    # default, which lands them in dark mode on a light terminal. Publish it into
-    # the tmux global env: popups inherit it and spawn fresh each open, so it
-    # tracks the mode. Convention is fg;bg by ANSI slot — bg 15 (light) => light
-    # theme, bg 0 (dark) => dark.
-    local colorfgbg="15;0"
-    [ "$mode" = "light" ] && colorfgbg="0;15"
-    tmux set-environment -g COLORFGBG "$colorfgbg" 2>/dev/null || true
-    # Re-arm tmux-continuum: its autosave trigger lives inside status-right,
-    # which the theme file we just sourced overwrote. Re-running continuum.tmux
-    # doesn't work here (its "another server running" heuristic misfires when
-    # invoked mid-session), so prepend the interpolation directly — same logic
-    # as continuum's add_resurrect_save_interpolation. No-op when not installed.
-    local cont_save="$HOME/.tmux/plugins/tmux-continuum/scripts/continuum_save.sh"
-    if [ -f "$cont_save" ]; then
-      local sr
-      sr="$(tmux show-option -gqv status-right 2>/dev/null || true)"
-      case "$sr" in
-        *continuum_save.sh*) : ;; # already armed
-        *) tmux set-option -g status-right "#($cont_save)$sr" 2>/dev/null || true ;;
-      esac
-    fi
-    # Re-arm the escape scoreboard for the same reason as continuum: the theme
-    # file just rewrote status-right.
-    "$HOME/.local/bin/tmux-arm-escape-segment" 2>/dev/null || true
   fi
 
   echo "$family $mode"

@@ -1,0 +1,28 @@
+# kanagawa "wave" (rebelot/kanagawa.nvim, #1f1f28 canvas) — hex-for-hex with
+# tmux/.config/tmux/kanagawa-dark.conf and nvim's theme-sync FAMILIES entry.
+# Regular/bright ANSI slots are collapsed to one value per hue (same
+# convention as onedark-darker-dark): a single accent reads identically
+# whether an app asks for the dim or bright slot.
+background = #1f1f28
+foreground = #dcd7ba
+cursor-color = #7e9cd8
+cursor-text = #1f1f28
+selection-background = #2a2a37
+selection-foreground = #dcd7ba
+split-divider-color = #727169
+palette = 0=#16161d
+palette = 1=#e46876
+palette = 2=#98bb6c
+palette = 3=#e6c384
+palette = 4=#7e9cd8
+palette = 5=#957fb8
+palette = 6=#7aa89f
+palette = 7=#dcd7ba
+palette = 8=#727169
+palette = 9=#e46876
+palette = 10=#98bb6c
+palette = 11=#e6c384
+palette = 12=#7e9cd8
+palette = 13=#957fb8
+palette = 14=#7aa89f
+palette = 15=#dcd7ba

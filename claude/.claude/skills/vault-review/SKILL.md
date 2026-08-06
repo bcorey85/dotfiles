@@ -6,7 +6,7 @@ allowed-tools: [Read, Glob, Grep, Bash, Write, Edit, AskUserQuestion, Skill]
 
 # Vault Review — make captures actionable
 
-The capture pipeline (org capture → `/daily-recap` → `Daily/`) organizes; this skill
+The capture pipeline (org capture → `/daily-recap` → `daily/`) organizes; this skill
 closes the loop. It prepares the review — the user makes every call. Never mark a
 todo done, promote, or delete anything without the user choosing it.
 
@@ -19,10 +19,10 @@ the notes actually contain.
   headlines. Closed = `DONE`/`CANCELLED`. Age from the inline capture date
   (`[YYYY-MM-DD Day]` under the headline), not from any note's filename.
 - **Journal**: `<vault>/org/journal.org` — a datetree of free-form entries.
-- **`Daily/*.md`**: compiled, point-in-time records. They are NOT the checklist —
+- **`daily/*.md`**: compiled, point-in-time records. They are NOT the checklist —
   their `Open todos` bullets are a snapshot of org as of that night, and older notes
   may carry `- [ ]` checkboxes from the pre-org system that nothing ever ticks.
-  **Never mine `Daily/` for open todos and never write todo state into it.** Read it
+  **Never mine `daily/` for open todos and never write todo state into it.** Read it
   in `week` mode only, for its Decisions / Roadblocks / My work structure.
 
 This is the one skill allowed to write todo state into org. `/daily-recap` and
@@ -47,7 +47,7 @@ This is the one skill allowed to write todo state into org. `/daily-recap` and
 3. **Ask** the user (plain reply, not one question per item): which 1–3 are today's
    focus, and whether any should be closed (done/dead) or promoted.
 4. **Write**:
-   - A `## Focus` section (the chosen items) at the top of `<vault>/Daily/<today>.md`
+   - A `## Focus` section (the chosen items) at the top of `<vault>/daily/<today>.md`
      — create the file with just that section if the nightly compile hasn't run yet.
      `/daily-recap` preserves this section verbatim.
    - Close user-chosen items **in org**: flip the keyword to `DONE` (or `CANCELLED`
@@ -85,6 +85,6 @@ overwrites everything it owns.
 ## Boundaries
 
 - Writes only under the vault; never touches a code repo.
-- Todo state changes go to org and nowhere else. Never tick a `- [ ]` in `Daily/`
+- Todo state changes go to org and nowhere else. Never tick a `- [ ]` in `daily/`
   to mean "done" — nothing reads it.
 - Suggest `vault-sync` at the end if the vault has uncommitted changes.

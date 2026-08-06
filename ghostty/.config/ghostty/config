@@ -44,6 +44,16 @@ keybind = super+digit_2=csi:50;3u
 keybind = super+digit_3=csi:51;3u
 keybind = super+digit_4=csi:52;3u
 
+# Free ctrl+comma for tmux: Ghostty binds it to open_config by default and would
+# swallow the keystroke. Emit CSI-u C-, (codepoint 44 + modifier 5=ctrl) so tmux
+# reads it as C-, (workmux last-done). Config is still reachable via ctrl+shift+,.
+keybind = ctrl+,=csi:44;5u
+
+# ctrl+period — the fleet dashboard reflex (herdr `ctrl+period`, workmux C-. under
+# tmux). Ctrl+punctuation has no legacy control code, so without this the
+# keystroke reaches the mux as nothing at all. Codepoint 46 + modifier 5=ctrl.
+keybind = ctrl+.=csi:46;5u
+
 # Mouse
 link-url = true
 

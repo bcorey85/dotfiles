@@ -60,7 +60,27 @@ if [ "$PLATFORM" = "mac" ]; then
     PACKAGES="$PACKAGES aerospace"
 fi
 
-stow -R $PACKAGES
+# One package at a time, NOT `stow -R $PACKAGES`: a single conflict makes stow
+# abort the WHOLE run ("All operations aborted"), so one stale real file where a
+# symlink belongs silently leaves every other package unlinked. Per-package, a
+# conflict costs only that package and gets named at the end.
+FAILED=""
+for pkg in $PACKAGES; do
+    if stow -R "$pkg" 2>/tmp/stow-$pkg.err; then
+        print_success "stowed $pkg"
+    else
+        FAILED="$FAILED $pkg"
+        print_error "stow $pkg failed:"
+        sed 's/^/    /' /tmp/stow-$pkg.err
+    fi
+    rm -f /tmp/stow-$pkg.err
+done
+
+if [ -n "$FAILED" ]; then
+    print_error "Unstowed packages:$FAILED"
+    print_info "Usually a real file where a symlink belongs — move it aside, then re-run."
+    exit 1
+fi
 print_success "Symlinks created"
 
 # macOS: Ghostty reads from Application Support, symlink to stow-managed config

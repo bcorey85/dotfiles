@@ -213,7 +213,7 @@ Plans the implementation. Consumes whatever context is already in the conversati
    - "Save to disk?" → writes to `eng-plan/PROJ-XX-description.md`
    - "Implement now?" → dispatches coder subagent(s)
 
-**If implementing:** Dispatches `backend-coder` and/or `frontend-coder`, then auto-invokes `/review`.
+**If implementing:** Dispatches the `coder`, then auto-invokes `/review`.
 
 **Key rule:** A well-written ticket is NOT a reason to skip the architect. Tickets describe the PM's approach; architects validate against real code.
 
@@ -221,20 +221,18 @@ Plans the implementation. Consumes whatever context is already in the conversati
 
 ### Step 4: `/code [modifiers] <task description>`
 
-Dispatches coder subagent(s) without architectural planning. Use for straightforward implementation where the plan is already clear.
+Dispatches a coder subagent without architectural planning. Use for straightforward implementation where the plan is already clear.
 
 **Modifiers:**
 
-- `be`/`fe`/`fs` — force scope
 - `+fast` — Haiku model (trivial changes)
 - `+deep` — Opus model (complex tasks)
 
 **What happens:**
 
-1. Determines scope (auto-detect or from modifier)
-2. Dispatches `backend-coder` and/or `frontend-coder` subagents
-3. Summarizes what was implemented
-4. **Auto-dispatches `/review`** (passes through `+fast`/`+deep` modifier)
+1. Dispatches the `coder` subagent
+2. Summarizes what was implemented
+3. **Auto-dispatches `/review`** (passes through `+fast`/`+deep` modifier)
 
 **When to use `/code` vs `/eng-plan`:** Use `/code` when the approach is clear. Use `/eng-plan` when design decisions are needed.
 
@@ -340,7 +338,7 @@ git checkout -b PROJ-XX-description
 
 ### Bug Fixing
 
-**`/fix [be/fe/fs] [+fast/+deep] <bug description>`** — Analyzes a bug, determines scope, dispatches coder(s) to fix it. Auto-invokes `/review`.
+**`/fix [+fast/+deep] <bug description>`** — Analyzes a bug and dispatches the coder to fix it. Auto-invokes `/review`.
 
 **`/refactor [+fast/+deep] <description>`** — Dispatches coder(s) for refactoring. Auto-invokes `/review`.
 

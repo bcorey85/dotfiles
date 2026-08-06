@@ -4,6 +4,7 @@ Analyze both sides of the flywheel:
 
 - **Catches** — what `/review` logs on every run (via `log-review-metrics`): repo, iter, severity counts, MEDIUM-triage buckets (`fixed`/`skipped_fp`/`ask`), `test_intent`, `culled`, `comment_noise`, `specialists`, `class_closed`, `fixed_classes`, `result`.
 - **Escapes** — what got PAST the gates (via `~/.claude/scripts/log-escape`, fed by `/cc`, `/refactor`, `/verify`, and manual `/escape`): `stage_found`, `gate_missed`, `class`, `severity`. This is the ground truth for which gates are trustable.
+- **Scans** — what the deterministic whole-tree scans found and how much of it was real (via `~/.claude/scripts/log-scan`, fed by `/branch-recap` and `/code`): `scan`, `stage`, `exit`, `candidates`, `confirmed`, `fixed`, `fp`. These are the only gates here that are not agent judgment, so they are the only ones whose precision can be computed rather than argued about.
 - **Second drafts** — **RETIRED 2026-07-16.** The coder self-sweep (and its `SECOND DRAFT:` receipt) was removed from `coder-core`; structure review moved to the fresh-context `smell-reviewer` specialist in `review-loop` Step 6b. `~/.claude/second-draft.jsonl` is historical data only — no new rows will appear. The replacement dial is the `smells` count and the `smell` value in `specialists` on review-metrics rows. Rationale: 546 runs showed an 89.6% clean self-sweep rate against 45/54 smell/duplication escapes — the author demonstrably can't audit their own structure.
 
 The metrics and escapes files accumulate counts/categories only; the second-draft file also carries the receipt text, but this lane aggregates its categories — read the raw file directly when you need the actual receipts.
@@ -11,6 +12,13 @@ The metrics and escapes files accumulate counts/categories only; the second-draf
 ## Instructions
 
 1. **Locate the files**: `${REVIEW_METRICS_FILE:-$HOME/.claude/review-metrics.jsonl}`, `${REVIEW_ESCAPES_FILE:-$HOME/.claude/review-escapes.jsonl}`, and `${SECOND_DRAFT_FILE:-$HOME/.claude/second-draft.jsonl}`. If the metrics file is missing or empty, say so and stop. The second-draft file is frozen historical data (retired 2026-07-16) — read it only if the user asks about the pre-retirement era. If only the escapes file is missing, analyze catches and note that no escapes have been logged yet — which is either great news or (more likely, early on) means the capture points haven't fired yet; don't interpret an empty escape log as proof of trustworthiness until catch volume is substantial.
+
+1b. **Scan precision and recall** — read `${SCAN_RUNS_FILE:-$HOME/.claude/scan-runs.jsonl}`. Skip this step with one line if the file is missing. Otherwise compute, per `scan`:
+
+- **Precision**: `sum(confirmed) / sum(candidates)`. A scan trending toward zero is training its reader to skim; say so and propose tightening its threshold or retiring it. Report the raw pair, never the ratio alone — 3/4 and 300/400 are not the same evidence.
+- **Did-not-run rate**: share of rows with `exit=2`. Any non-trivial rate means the scan is silently absent from runs that reported clean, and every clean report since is suspect.
+- **Recall**: count escape rows carrying `scan_flagged=no` — defects a scan covers and missed — against `scan_flagged=yes` rows, which are worse: the finding was printed and skipped. If a class shows repeated `yes`, the defect is in the triage step or the report's readability, not in the scan.
+- Report scan findings BESIDE the agent-gate numbers, never merged into them. These are deterministic checks; folding them into reviewer catch rates makes both unreadable.
 
 2. **Aggregate with jq/awk in a single pass** (redirect to a temp file if long). Compute:
    - **Run count** total and per repo. Rows with `lane=stage`, `lane=phase-gate`, or `lane=branch-recap` are non-loop telemetry (staging runs and test-intent firings) — exclude them from review-run counts, iteration distribution, severity averages, and FP/ask math; they feed only their own metrics below.

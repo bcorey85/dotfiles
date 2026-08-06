@@ -124,9 +124,9 @@ Severity gating has two tiers:
 
 ## Step 5: Fix dispatch (CRITICAL / HIGH only)
 
-Dispatch the scope-appropriate coder (`coder`, `backend-coder`, `frontend-coder`; `-deep` variants on `+deep`, omitting `model`) with the CRITICAL and HIGH findings only. **Never pass MEDIUM or LOW to the fix coder.**
+Dispatch a `coder` (`coder-deep` on `+deep`, omitting `model`) with the CRITICAL and HIGH findings only. **Never pass MEDIUM or LOW to the fix coder.**
 
-**Coder continuity (`iter >= 2`)**: when a fix coder from an earlier iteration of THIS loop is still addressable and owns the same scope, continue it via `SendMessage` with the new findings instead of spawning a fresh one. Spawn fresh only if no prior fix coder exists, the scope moved to a different coder's domain (frontend↔backend), or the depth modifier changed.
+**Coder continuity (`iter >= 2`)**: when a fix coder from an earlier iteration of THIS loop is still addressable, continue it via `SendMessage` with the new findings instead of spawning a fresh one. Spawn fresh only if no prior fix coder exists or the depth modifier changed.
 
 Continuity applies ONLY to coders you dispatched — you cannot reach `/code`'s implementation coder, which lives in another context. Gate-safe by construction: the session is already `dirty` from that first dispatch, and only your caller's `review-gate-mark clean` on a `converged` packet ever clears it, so continuing a coder can never produce a clean state the gate didn't see.
 
@@ -154,7 +154,7 @@ a. **`/cc` entries** — inline comments the user authored in Neovim (`path`, `l
 b. **A `/review` handoff** — the issues list in args.
 c. **The conversation** — findings discussed upstream, passed in args.
 
-Categorize by which coder owns the file (frontend vs backend, or a single `coder` in non-web repos), launch them in parallel in ONE message with multiple Agent tool calls, and include the same verbatim fence from step 5. Build `prior-issues` (`issue` / `status: fixed|skipped|partial` / `file`) so the verification reviewer checks "did these fixes take?" before scanning for new issues.
+Dispatch ONE `coder` for the findings, whatever files they touch — splitting a fix set by layer hands two agents partial views of the same contract. Split into parallel coders only when the findings fall into groups that share no file, type, or contract; then launch them in ONE message with multiple Agent tool calls. Include the same verbatim fence from step 5 in every coder prompt. Build `prior-issues` (`issue` / `status: fixed|skipped|partial` / `file`) so the verification reviewer checks "did these fixes take?" before scanning for new issues.
 
 **Coder-report post-processing (both sub-paths)**: after every fix-first coder dispatch — before entering the loop AND before returning under `no-review` — process each coder report exactly as step 5 does: record resolved findings into `fixed[]` and run the **PLAN-IMPACT pass-through** (scan for a `PLAN-IMPACT:` block; if present, return `status: plan-impact` with it verbatim and dispatch nothing further — do not enter the loop, do not return `converged`).
 **`no-review`**: when this flag is in args (the post-convergence MEDIUM bucket), dispatch the coder, run the coder-report post-processing above, run the execution gate as verification, and return `status: converged` WITHOUT dispatching a reviewer. Do not enter step 1.

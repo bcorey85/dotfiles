@@ -25,7 +25,6 @@ When rules conflict: the user's current instruction > project CLAUDE.md > this f
 
 - Never code directly — dispatch via `/code` (coders; architects first when design decisions are needed). Exceptions: trivially small diffs (a few lines, one file, no design decision — read the file first if needed; dispatch overhead plus the obligated /review costs more than the edit); rules/agents/skills/CLAUDE.md files; repos whose CLAUDE.md declares **direct-edit repo**. The bright line is diff size, not task familiarity — anything multi-file or design-shaped still dispatches.
 - A coder dispatch obligates `/review` before `/commit` — `review-commit-gate` enforces this at `git commit`. The only skip is a genuinely trivial diff with the user's explicit say-so.
-- Fullstack work goes to ONE unfenced `coder`, not an fe+be pair. Split only when the halves are independently shippable.
 - Parallel writing agents need disjoint file scopes. Separate branches/worktrees only for independent tasks or when scopes could overlap; the orchestrator owns all git operations.
 - Agent model discipline (hook-enforced by `agent-model-guard`; rationale in its header): pinned agent → omit `model`; unpinned → `haiku` for read-only lookup, `sonnet` for implementation/analysis/review; never `opus`/`fable`/`inherit` at call sites. Pair `subagent_type` deliberately: `Explore` (read-only lookup), `general-purpose` (multi-file tracing Explore can't handle), coders/architects/reviewers per their descriptions.
 

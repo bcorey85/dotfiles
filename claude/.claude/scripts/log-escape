@@ -31,6 +31,16 @@
 #     lane=q-plan|eng-spec|code|other   (optional: planning lane that produced
 #                                        the shipped work — enables lane-level
 #                                        escape attribution in /audit review)
+#     scan_flagged=yes|no|n-a   (RECALL side of the deterministic scans scored in
+#       ~/.claude/scan-runs.jsonl. Pass it whenever a scan covers this defect's
+#       class — duplication, and dead or orphaned code:
+#         no  = a scan covers this class and did NOT report it. A genuine miss,
+#               and the only evidence that will ever justify changing the scan.
+#         yes = the scan DID report it and it was dismissed or not acted on.
+#               Worse than a miss: the information was on screen and skipped.
+#         n-a = no scan covers this class.
+#       Guessing destroys the measurement. Re-run the scan and look — they are
+#       cheap, idempotent, and read-only.)
 #
 # Numeric-looking values are stored as numbers, everything else as strings.
 # A "date" field (UTC ISO 8601) is always added. Output file:

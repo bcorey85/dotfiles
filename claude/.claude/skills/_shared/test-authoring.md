@@ -11,7 +11,7 @@ coder (never delete or reword an acceptance stub; never open an
 `ACCEPTANCE-CONTRACT` file) stay in `coder-core` — only the authoring guidance
 moved here.
 
-Consumers: `coder-core` (pointer), `/code` step 5, `/audit review`.
+Consumers: `coder-core` (pointer), `/code` step 3b (test-writer dispatch), `/audit review`.
 
 ## Test budget (the list comes before the tests)
 

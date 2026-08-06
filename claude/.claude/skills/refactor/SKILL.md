@@ -56,13 +56,11 @@ A refactor changes structure, not behavior — so the tests are the contract. **
    - **Ask the deletion question before the extraction question.** Extracting a block into a helper RELOCATES complexity — the branching still exists, now behind a name. First ask whether a different data model, a different placement of the decision, or a stronger invariant makes the complexity unnecessary: push a check to a boundary so downstream code cannot be wrong, make an illegal state unrepresentable so its guard is dead, give a value one canonical owner so the code reconciling three copies gets deleted.
    - **Every proposed change must earn its keep**: state what it deletes or what class of bug it makes impossible. A change that only moves code to a new shape is not a refactor worth the diff — say so and drop it. If the answer is a redesign rather than a refactor, stop and recommend `/eng-spec` (step 5 covers the same exit from the coder side).
 
-5. **Dispatch the appropriate coder(s)** (branch-audit and targeted modes only — audit mode never dispatches coders):
+5. **Dispatch the coder** (branch-audit and targeted modes only — audit mode never dispatches coders):
 
-   Determine if the work is **frontend** (components, pages, stores, styles), **backend** (models, controllers/views, services, middleware, migrations), or **both**.
+   Launch a single `coder` for the whole work list, whatever layers it spans. A refactor is a shape change, and splitting one by layer means neither half can see the shape.
 
-   **Frontend only** → `frontend-coder` · **Backend only** → `backend-coder` · **Both** → both in parallel, single message · **Neither** (non-web repo) → `coder`
-
-   For each coder:
+   For the coder:
    - Pass the work list (with file paths per finding) or the targeted refactoring description, plus any context you gathered
    - **Pass the CRITICAL test rule above verbatim**: never modify/weaken/delete a test to make the refactor pass; if blocked, stop and report back rather than touching a test (moving a test verbatim to a new file is fine)
    - If the refactor turns out to need architectural redesign, have it report back and recommend `/eng-spec` instead

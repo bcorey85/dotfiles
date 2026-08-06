@@ -1,0 +1,32 @@
+# kanagawa "lotus" (rebelot/kanagawa.nvim, #f2ecbc canvas). Custom theme:
+# loaded by absolute path via config-file (see theme-mode apply()).
+#
+# lotus's stock accents mostly sit under the 4.5:1 floor on #f2ecbc — floored
+# toward fg #545464 the same way tmux/.config/tmux/kanagawa-light.conf
+# documents (red/green/yellow/orange/teal darkened until >=4.5:1; blue and
+# purple already clear it and are used stock). ANSI slot 0 reuses wave's
+# canvas #1f1f28 as a true near-black (matching upstream's own Kanagawa Lotus
+# ghostty theme), since lotus has no dark palette entry that low.
+background = #f2ecbc
+foreground = #545464
+cursor-color = #4d699b
+cursor-text = #f2ecbc
+selection-background = #dcd7ba
+selection-foreground = #545464
+split-divider-color = #8a8980
+palette = 0=#1f1f28
+palette = 1=#b44356
+palette = 2=#616e59
+palette = 3=#706b46
+palette = 4=#4d699b
+palette = 5=#624c83
+palette = 6=#576e70
+palette = 7=#545464
+palette = 8=#8a8980
+palette = 9=#b44356
+palette = 10=#616e59
+palette = 11=#706b46
+palette = 12=#4d699b
+palette = 13=#624c83
+palette = 14=#576e70
+palette = 15=#545464

@@ -31,31 +31,23 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    **If it's a multi-phase plan:**
    - Do NOT dispatch all phases at once.
    - Identify the next un-executed phase by reading the plan's `## Phase Status` section: the first unchecked (`- [ ]`) entry is the phase to dispatch. This is the source of truth across `/clear` boundaries — do NOT scan git log or diff to figure out where you are. If the plan has no `## Phase Status` section (older plan format), fall back to `git status` + per-phase success criteria, but flag this to the user so they can backfill the section.
-   - **Acceptance-stub gate (YOU run this, with `Bash`, before the phase's coder — every phase, it is idempotent):**
+   - **Acceptance-criteria check (YOU do this, by reading, before the phase's coder — every phase):** confirm `docs/plans/<slug>/acceptance-criteria.md` exists beside the plan and is non-empty.
 
-     ```bash
-     bash ~/.claude/scripts/acceptance-stub-gate.sh <plan-path>
-     ```
+     Missing, when the ticket plainly has behavioral criteria → **STOP and do not dispatch**; report it as a plan defect and hand it to the user. Never write the criteria yourself at this point and never dispatch an agent to: criteria authored after the implementation is planned, by anyone who will satisfy them, are a description rather than an oracle, and no later phase recovers that property. They are `/eng-spec` Phase 7.5's output, written with the user.
 
-     Exit 0 → proceed. **Exit 1 → STOP and do not dispatch.** The plan promises acceptance stubs that do not exist on disk or that lack the `ACCEPTANCE-CONTRACT` marker; report which and hand it to the user. Never create or fix the stubs yourself and never dispatch an agent to — a stub written after the implementation exists, or by anyone who will satisfy it, is not an oracle, and no later phase can recover the property. Exit 3 (no section) → proceed, but if the ticket plainly has behavioral criteria, say so: that is a plan defect. **Exit 2 → the check DID NOT RUN**; fix the invocation and run it again rather than advancing on it.
+     Missing on a task with no behavioral criteria (pure config, mechanical refactor) → proceed.
 
-     On any **non-zero** exit, score it before you do anything else (a PASS every phase is noise; a FAIL, a skipped section, or a check that never ran is the signal):
+     The criteria are prose and stay in the planning directory. Do not seed `tests/` with stub files from them, and never pass criterion ids into a dispatch prompt — that is how they leak into committed code (`_shared/code-vocabulary.md`). The closing Verify phase is what proves each one ended up with a test.
+
+     When the check fails — missing file, empty file, or criteria that plainly do not cover the ticket — score it before you do anything else (a pass every phase is noise; the failure is the signal):
 
      ```bash
      bash ~/.claude/scripts/log-scan repo=<basename> scan=acceptance-stub \
-       stage=code-phase exit=<1|2|3> note="<what was missing>"
+       stage=code-phase exit=1 note="<what was missing>"
      ```
 
    - Dispatch the coder for THAT ONE PHASE ONLY. The coder must run the phase's "Automated Verification" gate (typically `npm run validate` or equivalent) before returning. **Re-read the phase's Phase Status line before dispatching** — its `(risk: …)` tag drives the phase-boundary decision (step 2) and its `(reviewers: …)` list is passed through to the review loop (step 5). Both are properties of the phase, not of the invocation, so they can differ from the previous phase's.
    - After the coder completes, dispatch the `test-writer` (step 3b); after it returns and you summarize, auto-dispatch `/review` (step 5).
-   - **Vacuous-green pre-flight (YOU run this, with `Bash`, in this session)** — before any gate agent, when this phase touched a test file or the test-writer reported a test command as evidence. **Never dispatch an agent for it** — not `Explore`, not `general-purpose`, not a gate agent (`mechanical-check-gate` denies any `Agent` call whose description names a vacuity/pre-flight task, so the block is the reminder):
-
-     ```bash
-     bash ~/.claude/scripts/vacuous-green-preflight.sh both '<the test-writer's tests-run command>' <changed test files>
-     ```
-
-     (Use `cmd` or `files` when only one applies.) It detects three shapes of test that pass without exercising anything: a `-run`/`-k`/`-t` filter selecting zero tests, a test whose body never calls the symbol it is named for (Go/Python test functions; TS/JS `describe()` blocks), and a guard asserting on a literal fragment of the source it guards. Exit 1 → treat every `SUSPECT` as an open finding and route it to the `test-writer` (its scope) **before** marking the phase done; a phase gate reading a vacuous suite is measuring nothing. Exit 0 → read the `what was actually checked` block, because a clean result on an unsupported language is a no-op, not a pass. **Exit 2 (usage error, or `rg` missing) → the check DID NOT RUN.** Say so and fix the invocation; never advance to the phase gate on it.
-
    - **No per-phase `plan-verifier`.** Plan↔diff reconciliation runs ONCE, at branch end, from `/verify`. Here, YOU check before marking the phase done: the phase's `#### Automated Verification` commands actually ran and passed (coder evidence), and its `#### Manual Verification` items go on the deferred list for `/verify`. A phase with no Success Criteria is a plan defect, not a pass — say so before advancing.
 
    - **No per-phase test-intent audit.** The enforced coder/test-writer split already severs bug-pinning's cause, so the audit does not run here. The cull/coverage half runs at `/branch-recap`, and `/verify` reconciles plan↔diff at branch end; a `weak`/`bug-pinning` finding surfacing from ANY other gate still routes to `test-writer` re-dispatch (implementation-blind), `/fix` only when it implicates src.
@@ -65,7 +57,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
      2. **Phase 1**, any risk tier → STOP for **calibration** (block B). 3. **A gate needed an exception, a `/fix` loop hit its cap, or the coder flagged an ambiguity**, any tier → STOP (block B).
      3. **`(risk: high)`** — and an untagged phase counts as high → STOP for phase-level sign-off (block B).
      4. Otherwise — genuinely **`(risk: low)`** with all machine gates green → **AUTO-ADVANCE in-session** (block A): print the one-line advance notice, then re-enter step 2 for the next phase. Do NOT `/clear` and do NOT wait — the user can interrupt at any boundary.
-   - If the plan has only one phase or no phase headers, treat it as a single dispatch (skip the phase loop) — but still run the acceptance-stub gate above before dispatching. A one-phase plan promises its stubs the same way a nine-phase one does.
+   - If the plan has only one phase or no phase headers, treat it as a single dispatch (skip the phase loop) — but still run the acceptance-criteria check above before dispatching. A one-phase plan owes its criteria the same way a nine-phase one does.
 
 3. **Dispatch the coder**:
 
@@ -80,7 +72,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    - Flag any ambiguities or issues
    - If the task turns out to be architectural, have it report back and recommend `/eng-spec` instead
 
-3b. **Dispatch the test-writer** (after every coder dispatch that implemented plan behavior): a single `test-writer` subagent (pinned; omit `model`). Skip ONLY when the task/phase has no Success Criteria behavior and no Acceptance Stubs (pure config or mechanical phases) — note the skip in the phase summary.
+3b. **Dispatch the test-writer** (after every coder dispatch that implemented plan behavior): a single `test-writer` subagent (pinned; omit `model`). Skip ONLY when the task/phase has no Success Criteria behavior and no acceptance criteria (pure config or mechanical phases) — note the skip in the phase summary.
 
 Pass the plan path + phase number (it reads phase-scoped) and the stub file list when the plan names one. **Pass NOTHING from the coder** — the agent is implementation-blind by contract: no diff, no coder summary, no source file contents in its prompt. Its assertions must come from the plan alone; feeding it the implementation reintroduces the bug-pinning failure the split exists to remove.
 

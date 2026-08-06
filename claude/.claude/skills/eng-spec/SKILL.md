@@ -291,35 +291,51 @@ works if it exists _before_ the talking starts (step 13).
       Single-layer phases only when the work genuinely is (migration-only,
       infra-only).
 
-## Phase 7.5: Write the acceptance contract (with the user, before any coder)
+## Phase 7.5: Write the acceptance criteria (with the user, before any coder)
 
-17. **If the ticket has behavioral criteria, write them as tests now** — you and
-    the user, from the ticket's criteria and the plan's `Acceptance Stubs`
-    section. No implementation exists yet — that is the source of the contract's
-    authority.
+17. **If the ticket has behavioral criteria, write them down now** — you and the
+    user, from the ticket's criteria and the plan's `Acceptance Criteria` section.
+    No implementation exists yet; that is what makes them an oracle rather than a
+    description of whatever got built.
 
-    Put each criterion to the user as one sentence and get their words back: an
-    assertion you translate alone is your reading of the ticket, already baked
-    into the plan.
+    They go in **`docs/plans/<slug>/acceptance-criteria.md`** — a planning
+    document, never a file under `tests/` or `src/`. One criterion per entry,
+    each with a stable id (`AC1`, `AC2`, …), each a single sentence in the user's
+    words, written as observable behavior rather than as an assertion:
 
-    **Damage-path criteria are part of the contract.** Sweep the failure surface
-    before writing: every input read (unreadable, malformed, oversized, missing),
-    every destructive or preview/apply operation acting on an incomplete view.
-    Where the ticket is silent on what the feature must DO on such a path, put
-    the missing criterion to the user as its own one-sentence question —
-    damage-path policy is the ticket-owner's call, never defaulted. "Out of
-    scope" is an answer, logged under `## Direction & Constraints`; silence is
-    not.
+    ```markdown
+    # Acceptance Criteria — <slug>
 
-    Write the file with `ACCEPTANCE-CONTRACT` in its
-    first 10 lines — that marker makes it immutable to every agent, you included
-    (`acceptance-contract-gate`). Changing it afterward is the user's job, by hand.
+    > Written before implementation. The closing Verify phase reconciles these
+    > against the test suite.
 
-    Name the tests so the runner does NOT collect them yet (`contract_*` where
-    `test_*` is collected, or the project's equivalent). The phase implementing a
-    criterion renames its test into the collected form; that rename is the phase's
-    success criterion, and it is what keeps the suite green while the contract
-    stays written down.
+    - **AC1** — <one sentence: observable behavior, in the user's words>
+    - **AC2** — …
+
+    ## Manual only
+
+    - **AC7** — <criterion no automated test can cover, and why>
+    ```
+
+    Put each criterion to the user as one sentence and get their words back: a
+    criterion you phrase alone is your reading of the ticket, already baked into
+    the plan.
+
+    **Damage-path criteria belong here too.** Sweep the failure surface before
+    writing: every input read (unreadable, malformed, oversized, missing), every
+    destructive or preview/apply operation acting on an incomplete view. Where
+    the ticket is silent on what the feature must DO on such a path, put the
+    missing criterion to the user as its own one-sentence question — damage-path
+    policy is the ticket-owner's call, never defaulted. "Out of scope" is an
+    answer, logged under `## Direction & Constraints`; silence is not.
+
+    **The criteria file is prose, and it stays out of the shipped tree.** Do not
+    write it as test stubs, do not seed `tests/` with a placeholder file, and do
+    not carry ids, phase numbers, slugs, or plan paths into any committed test or
+    source file — see `_shared/code-vocabulary.md`. The tests that satisfy these
+    criteria are ordinary tests with ordinary names, written by `test-writer`
+    from the plan; the closing Verify phase is what proves each criterion has
+    one.
 
 ## Phase 8: User choice
 
@@ -447,8 +463,9 @@ hidden couplings) belong here too. "None" must be stated explicitly. -->
 with ONE deviation: its `## Phase Status` section lives at the TOP of this file
 (above ## Decisions), not here. Everything else is unchanged: vertical phases with
 (risk: low|high) tags, per-phase Changes Required + Success Criteria
-(Automated/Manual Verification with the project's real commands), Acceptance Stubs
-when the ticket has behavioral criteria. This is what /code's phase gates and
+(Automated/Manual Verification with the project's real commands), and an
+`Acceptance Criteria` section naming `acceptance-criteria.md` when the ticket has
+behavioral criteria. This is what /code's phase gates and
 /verify consume. Every spec ends with the four mandatory closing phases from
 ~/.claude/skills/_shared/closing-phases.md (Refactor → Verify → Orient → Recap;
 Recap = /branch-recap) — never omitted. -->

@@ -10,4 +10,8 @@ configuration {
     display-ssh: "SSH";
 }
 
-@theme "onedark-darker"
+# rofi has no mode/family axis of its own — @theme is a fixed choice, not
+# something theme-mode's toggle or family switch touches at runtime. To use
+# the other family here, repoint this line at "onedark-darker" by hand; that
+# palette remains on disk, just unused while this line says kanagawa.
+@theme "kanagawa"

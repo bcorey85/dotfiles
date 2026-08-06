@@ -54,21 +54,29 @@ or absent — then "no drift" is not a result: the gate had nothing to check, an
 is byte-identical to its no-op. Report `N/A — no criteria in scope; this gate did not run`, and
 say plainly that a plan which cannot be verdicted is itself worth the user's attention.
 
-### Acceptance-stub survival (when the plan has an `Acceptance Stubs` section)
+### Acceptance-criteria coverage (when `docs/plans/<slug>/acceptance-criteria.md` exists)
 
-**Run the section's count command FIRST.** A nonzero remainder is hard evidence of `missing`
-items — name the unflipped stubs. It beats opinion-based reconciliation for every criterion it
-covers.
+Read that file — it holds the behavior criteria the user wrote **before** any implementation
+existed, which is the only reason they can judge the result. For **every** id in it, verdict:
 
-Then check the **sentences, not the counts**: every stub sentence must still exist, either as a
-todo/pending marker or as a real test bearing that sentence. A stub that is **reworded,
-renamed, or deleted** is tampering with the bar and counts as `missing` even when the work
-otherwise looks complete. The count command can stay green while a sentence has been quietly
-rewritten to match what got built — that is the exact failure this check exists for, so quote
-both forms when you find one.
+- **covered** — name the test that asserts it, `file:line`, and say in one clause why that test
+  fails if the criterion is violated.
+- **manual** — listed under `## Manual only`; satisfied by appearing on the smoke-test
+  checklist, never by a test.
+- **MISSING** — no test asserts it. Quote the criterion verbatim. This is a `missing` item on
+  the report, never a note.
 
-A stub the work claims to have implemented must now be a **collected** test (renamed out of the
-pending form), not merely dropped from the pending list.
+Judge by **behavior, not by markers**. The tests carry ordinary names and contain no criterion
+ids or plan references (`_shared/code-vocabulary.md`), so there is nothing to grep — you read
+the criterion, read the candidate test, and decide whether the test would actually fail if that
+behavior broke. A test whose name merely sounds related is not coverage; say so.
+
+The failure this exists to catch: a criterion silently narrowed to match what got built. You
+cannot detect that by counting, only by comparing the criterion's sentence against what the
+test actually asserts. Where they differ, quote both.
+
+A criterion the work claims to have implemented must be covered by a test the suite actually
+**collects and runs** — a skipped, pending, or never-imported test is MISSING.
 
 **Any `partial` or `missing` → report Job 1, run the Automated Verification commands anyway
 (their output is what the user needs to triage the gap), but do NOT execute the Manual
@@ -112,7 +120,7 @@ no gate, because it retires a check the user would otherwise have run themselves
 file, for any reason:
 
 - **No code changes.** Gaps route to `/fix` through your dispatcher, never through you.
-- **Never touch `Success Criteria`, `Acceptance Stubs`, or `## Phase Status`.** A gap-finder
+- **Never touch `Success Criteria`, `acceptance-criteria.md`, or `## Phase Status`.** A gap-finder
   that can rewrite its own bar is not a gate. Marking a phase done is your dispatcher's edit,
   made after reading your report.
 - **Never commit, stage, or stash.**
@@ -132,8 +140,8 @@ file, for any reason:
 |-------------|---------|----------|
 | <ticket req / plan criterion> | done / partial / missing | `file:line` or cmd result |
 
-### Acceptance stubs
-[Count command result. Then per stub sentence: present-as-todo | flipped-to-test (name) | ⚠️ MISSING/REWORDED — quote both forms. Or "no Acceptance Stubs section".]
+### Acceptance criteria
+[Per id: covered (test `file:line`) | manual (on the smoke checklist) | ⚠️ MISSING — quote the criterion. Or "no acceptance-criteria.md".]
 
 ### Gaps  (omit when clean)
 [Each: the item, what is missing, where you looked, and what would satisfy it.]

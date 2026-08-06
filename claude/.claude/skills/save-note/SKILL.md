@@ -1,68 +1,93 @@
 ---
 name: save-note
-description: Save or update a note in the Obsidian vault at ~/vault. Use when the user says "save note", "save this to obsidian", "make a note", "write a note", or "/save-note". Handles folder selection, template matching, and wikilink conventions.
-allowed-tools: [Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion]
+description: Save or update a note in the Obsidian vault at ~/vault. Use when the user says "save note", "save this to obsidian", "make a note", "write a note", or "/save-note". Routes on whether the material was verified or merely told, then writes with the right tag and wikilinks.
+allowed-tools: [Read, Write, Edit, Glob, Grep, Bash]
 ---
 
 # Save Note to Obsidian Vault
 
-Save or update a Markdown note in the user's Obsidian vault. Vault root: `$VAULT_DIR` if set, else `~/vault` (matching `/orient`, `/daily-recap`, and `/vault-review`) — all paths below are relative to it.
+Save or update a Markdown note in the user's Obsidian vault. Vault root: `$VAULT_DIR`
+if set, else `~/vault` (matching `/orient`, `/daily-recap`, and `/vault-review`) —
+all paths below are relative to it.
 
-## Vault Structure
+## The vault is a cache hierarchy
 
-| Folder            | Purpose                                         | Template file                                                  |
-| ----------------- | ----------------------------------------------- | -------------------------------------------------------------- |
-| `00. Inbox/`      | Raw captures, quick thoughts, links             | `Templates/Inbox.md`                                           |
-| `01. Literature/` | Processed source notes (articles, PDFs, videos) | `Templates/Literature.md`                                      |
-| `02. Permanent/`  | Distilled standalone ideas with links           | `Templates/Permanent.md`                                       |
-| `90. Projects/`   | Active project notes                            | `Templates/Project Goal.md` or `Templates/Project Ideation.md` |
-| `92. Resources/`  | Reference material, cheat sheets                | `Templates/Resource.md`                                        |
-| `93. Archives/`   | Older archived notes                            | —                                                              |
+Three tiers, looked up in order when the user needs to do something:
 
-Extra templates: `Templates/Scratch Note.md` (brain dumps), `Templates/MOC.md` (maps of content).
+| Folder      | Holds                                              | Admission test                                    |
+| ----------- | -------------------------------------------------- | ------------------------------------------------- |
+| `cache/`    | distilled answers, earned by doing                 | Would I want a hit on this — and did I verify it? |
+| `sources/`  | material taken in without confirming it            | Was I told this rather than shown it?             |
+| `projects/` | `active/` and `done/` — where new entries get made | Am I working on this?                             |
+| `daily/`    | generated recap                                    | compiled by `/daily-recap`, never authored here   |
 
-## Note Conventions
+`cache/` entries are **derived and evictable** — a materialized view over
+`sources/` and `projects/done`. Nothing there is the only copy of anything.
 
-- **Title format**: `Topic - Title.md` (e.g., `AI - Transformer Architecture.md`, `DRF - Serializers.md`)
-- Permanent notes may use question or concept format
-- Internal links use `[[wikilink]]` syntax
-- Replace `{{date}}` with today's date in `M/D/YYYY hh:mm A` format
-- Fill in relevant template sections; remove unused optional ones
+## Step 1: Route on one question
 
-## Workflow
+> **Did the user verify it, or were they told it?**
 
-### Step 1: Determine content
+- Ran it, tested it, hit the failure, read the actual source → **`cache/`**
+- Told it, read it, sounded right, never checked → **`sources/`**
+- Working notes for something in flight → **`projects/active/<project>/`**
 
-Read the user's arguments. They may provide:
+Provenance is not the axis; verification is. An LLM is an other and a session is a
+source — a confident Claude Code answer the user never ran is `sources/`, not
+`cache/`.
 
-- A title and content directly
-- A reference to conversation context (e.g., "save the summary above")
-- A topic with minimal guidance
+**Do not ask which folder.** A modal at capture time is the friction this
+structure exists to remove. If genuinely torn, pick `sources/` — a wrong entry in
+`sources/` is a miss that routes onward, while a wrong entry in `cache/` is a bad
+hit that stops the lookup. That asymmetry is the whole reason the tier exists.
 
-### Step 2: Choose folder and template
+### Mixed notes
 
-Match content type to folder:
+One note routinely mixes tiers. Do not split it across folders — file it by its
+dominant claim and mark the unverified lines inline:
 
-- Quick thought, link, raw capture → `00. Inbox/` + Inbox template
-- Summary of article, PDF, video, external source → `01. Literature/` + Literature template
-- Distilled idea or concept → `02. Permanent/` + Permanent template
-- Reference material, cheat sheet, how-to → `92. Resources/` + Resource template
-- Brain dump, scratch work → `00. Inbox/` + Scratch Note template
+```markdown
+- Handlers run once, at the end of the play, in declaration order.
+- Handler ordering ignores notify order entirely. [unverified]
+```
 
-If uncertain, ask the user with AskUserQuestion.
+`[unverified]` is greppable and reads plainly in a terminal. It is what makes a
+claim legible as a claim on the day the hit lands.
 
-### Step 3: Check for duplicates
+## Step 2: Tag
 
-Use Glob to check if a note with a similar title exists. If found, ask whether to update or create new.
+**Exactly one tag, from exactly four values — or none:**
 
-### Step 4: Create or update
+```
+#backend   #devops   #architecture   #llms
+```
 
-1. Read the chosen template from `<vault>/Templates/`
-2. Fill in template sections with content
-3. Replace `{{date}}` with today's date (`M/D/YYYY hh:mm A`)
-4. If the content originated from a URL, web search, PDF, or any external source, include the source URL(s) in the note. Templates with a `Source:` field should use that; otherwise append a `### References` section at the bottom with source links.
-5. Write to the appropriate folder with topic-prefix filename
+Never invent a fifth. Everything else is full-text search: the filename convention
+(`Ansible - Building Inventory`, `OS - Kernel`) is already the topic taxonomy.
+Frontend, OS, and tooling notes legitimately carry no tag.
 
-### Step 5: Confirm
+## Step 3: Name and write
 
-Report: file path relative to vault root, template used, and any `[[wikilinks]]` added.
+- **Filename**: `Topic - Title.md` (`AI - Transformer Architecture.md`,
+  `DRF - Serializers.md`). The prefix is load-bearing — it is the taxonomy.
+- `sources/` and `cache/` are **flat**. Do not create subfolders in them.
+- Internal links use `[[wikilink]]` syntax, matched by note name, not path.
+- Templates in `Templates/` are optional scaffolding, not a requirement. Use one
+  only if it fits; `{{date}}` becomes today's date in `M/D/YYYY hh:mm A`.
+- If the content came from a URL, web search, or PDF, include the source link —
+  in a `Source:` field if the note has one, else a `### References` section.
+
+Before writing, Glob for a similar title. If one exists, update it rather than
+creating a near-duplicate.
+
+## Step 4: Confirm
+
+Report the path relative to vault root, the tier it landed in and why (verified vs
+told), the tag, and any `[[wikilinks]]` added.
+
+## Constraints
+
+No promotion ladder — a `sources/` note that never becomes a `cache/` entry is
+reference doing its job, not a backlog item. Never suggest a grooming pass, an
+inbox-zero sweep, or proactive distillation. Cache entries get written when a
+project wraps or a need arises, never on a schedule.

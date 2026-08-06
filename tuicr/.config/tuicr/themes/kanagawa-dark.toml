@@ -1,0 +1,65 @@
+# kanagawa "wave" — the family's dark side. Hex-for-hex with
+# tmux/.config/tmux/kanagawa-dark.conf and nvim's theme-sync FAMILIES entry:
+# canvas #1f1f28, status inset #181820, body fg #dcd7ba, muted #89877b,
+# comment/border #727169, purple #957fb8, blue #7e9cd8, red #e46876,
+# green #98bb6c, yellow #e6c384, cyan #7aa89f.
+#
+# syntax_theme is deliberately omitted: tuicr then picks its bundled DARK
+# syntax theme from panel_bg, which avoids shipping (and re-tuning) a .tmTheme.
+#
+# panel_bg only paints when `transparent_background = false`; it is set to the
+# terminal canvas so both settings look the same.
+
+panel_bg = "#1f1f28"
+bg_highlight = "#2a2a37"
+fg_primary = "#dcd7ba"
+fg_secondary = "#89877b"
+fg_dim = "#727169"
+
+# Diff backgrounds are a 12%-toward-canvas blend of the diff fg onto the
+# canvas, mirroring onedark-darker-dark's own diff.add / diff.delete tints.
+diff_add = "#98bb6c"
+diff_add_bg = "#2b3328"
+diff_del = "#e46876"
+diff_del_bg = "#3a2b2e"
+diff_context = "#dcd7ba"
+diff_hunk_header = "#7e9cd8"
+expanded_context_fg = "#727169"
+
+syntax_add_bg = "#2b3328"
+syntax_del_bg = "#3a2b2e"
+
+file_added = "#98bb6c"
+file_modified = "#e6c384"
+file_deleted = "#e46876"
+file_renamed = "#957fb8"
+
+reviewed = "#98bb6c"
+pending = "#e6c384"
+
+comment_note = "#7e9cd8"
+comment_suggestion = "#7aa89f"
+comment_issue = "#e46876"
+comment_praise = "#98bb6c"
+
+# Focused/unfocused borders mirror tmux's pane-active-border / pane-border.
+border_focused = "#957fb8"
+border_unfocused = "#727169"
+status_bar_bg = "#181820"
+cursor_color = "#ffffff"
+cursor_line_bg = "#2a2a37"
+branch_name = "#957fb8"
+help_indicator = "#89877b"
+
+message_info_fg = "#1f1f28"
+message_info_bg = "#7e9cd8"
+message_warning_fg = "#1f1f28"
+message_warning_bg = "#e6c384"
+message_error_fg = "#1f1f28"
+message_error_bg = "#e46876"
+update_badge_fg = "#1f1f28"
+update_badge_bg = "#e6c384"
+
+# Same inversion as tmux's mode-style.
+mode_fg = "#1f1f28"
+mode_bg = "#957fb8"

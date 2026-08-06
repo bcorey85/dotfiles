@@ -17,7 +17,7 @@ local M = {}
 
 local MODE_FILE = vim.env.HOME .. "/.cache/theme-mode"
 local FAMILY_FILE = vim.env.HOME .. "/.cache/theme-family"
-local DEFAULT_FAMILY = "onedark-darker"
+local DEFAULT_FAMILY = "kanagawa"
 
 -- alpha-blend two hex colours (a = share of c1).
 local function blend(c1, c2, a)
@@ -29,9 +29,9 @@ local function blend(c1, c2, a)
   return "#" .. table.concat(out)
 end
 
--- One family. The registry shape is kept because the mode axis, the fixup hook
--- and the state-file plumbing all key off it — adding a family back is a table
--- entry here plus theme-mode's two cases and the tmux/ghostty files.
+-- Registry shape: the mode axis, the fixup hook and the state-file plumbing
+-- all key off this table — adding a family is an entry here plus theme-mode's
+-- cases and the tmux/ghostty files.
 local FAMILIES = {
   ["onedark-darker"] = {
     -- navarasu/onedark.nvim, style "darker" (#1f2329) — the Atom One Dark
@@ -53,6 +53,30 @@ local FAMILIES = {
     -- nvim_set_hl replaces the whole group, so italic is restated.
     fixup = function(mode)
       local c = mode == "dark" and blend("#a0a8b7", "#535965", 0.65) or blend("#383a42", "#a0a1a7", 0.47)
+      vim.api.nvim_set_hl(0, "Comment", { fg = c, italic = true })
+    end,
+  },
+  ["kanagawa"] = {
+    -- rebelot/kanagawa.nvim. Unlike onedark, the plugin registers a SEPARATE
+    -- colorscheme command per variant (`:colorscheme kanagawa-wave` / `-lotus`),
+    -- so the variant is selected by scheme name alone — no `pre` hook needed to
+    -- set a style global first. Every variant's colors/*.vim calls
+    -- require("kanagawa").load(<variant>), which unconditionally sets
+    -- vim.g.colors_name = "kanagawa" regardless of which variant loaded — hence
+    -- colors_name below, the same guard-override case onedark doesn't need.
+    schemes = { dark = "kanagawa-wave", light = "kanagawa-lotus" },
+    colors_name = "kanagawa",
+    accents = {
+      dark = { heading1 = "#957fb8", heading = "#7e9cd8" }, -- oniViolet + crystalBlue
+      light = { heading1 = "#624c83", heading = "#4d699b" }, -- lotusViolet4 + lotusBlue4
+    },
+    -- Comment floor: wave's stock fujiGray #727169 is 3.33:1 on #1f1f28 and
+    -- lotus's stock lotusGray3 #8a8980 is 2.93:1 on #f2ecbc, against the 4.5
+    -- floor. Lift toward body fg — wave 22% (4.53:1), lotus 60% (4.53:1).
+    -- kanagawa ships italic comments; nvim_set_hl replaces the whole group,
+    -- so italic is restated.
+    fixup = function(mode)
+      local c = mode == "dark" and blend("#dcd7ba", "#727169", 0.22) or blend("#545464", "#8a8980", 0.60)
       vim.api.nvim_set_hl(0, "Comment", { fg = c, italic = true })
     end,
   },

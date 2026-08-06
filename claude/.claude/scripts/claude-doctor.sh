@@ -81,7 +81,7 @@ fi
 # --- 2b. expected hook registrations -----------------------------------------
 print_info "Expected hook registrations"
 reg_blob=$(cat "$SETTINGS" "$CLAUDE_DIR/settings.local.json" 2>/dev/null)
-for pair in "log-skill-use.sh:skill-usage telemetry" "stub-guard.sh:acceptance-stub guard"; do
+for pair in "log-skill-use.sh:skill-usage telemetry"; do
   script="${pair%%:*}"; label="${pair#*:}"
   [[ -f "$CLAUDE_DIR/scripts/$script" ]] || continue
   if grep -q "$script" <<<"$reg_blob"; then

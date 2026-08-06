@@ -37,7 +37,7 @@ require("lazy").setup({
   spec = { { import = "plugins" } },
   -- No defaults.lazy = true: an unconverted spec (no trigger) then loads eagerly
   -- like it did under vim.pack, rather than silently never loading.
-  install = { colorscheme = { "onedark" } },
+  install = { colorscheme = { "kanagawa-wave", "onedark" } },
   checker = { enabled = false }, -- no background update checks
   change_detection = { enabled = false }, -- don't watch/reload spec files
   ui = { border = "rounded" },
@@ -54,6 +54,16 @@ require("lazy").setup({
     },
   },
 })
+
+-- Bootstrap the active theme family+mode here, not in a plugin spec: both
+-- colorscheme families (plugins/onedark.lua, plugins/kanagawa.lua) are eager
+-- lazy=false/priority=1000 specs, so lazy.setup() above loads and requires
+-- them synchronously before returning — the colorscheme plugins are already
+-- on the rtp by this line. theme-sync.start() applies the colorscheme with
+-- force=true and must run exactly once; putting it here instead of inside
+-- either family's spec means deleting either family later can't silently
+-- break the default (whichever family stays is still just a plain spec).
+require("config.theme-sync").start()
 
 -- Convenience: keep muscle-memory for the old pack commands pointing at lazy.
 vim.api.nvim_create_user_command("PackUpdate", "Lazy update", { desc = "(compat) -> Lazy update" })

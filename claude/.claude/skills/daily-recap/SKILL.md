@@ -23,7 +23,7 @@ Vault root: `$VAULT_DIR` if set, else `~/vault`; org dir: `<vault>/org`. Today =
 
 ## Write
 
-Write `<vault>/Daily/<today>.md` (create the folder if needed). If the file already
+Write `<vault>/daily/<today>.md` (create the folder if needed). If the file already
 exists and has a `## Focus` section (written by `/vault-review today`), preserve it
 verbatim at the top — the compile owns every other section, never that one:
 
@@ -31,18 +31,23 @@ verbatim at the top — the compile owns every other section, never that one:
 # Daily Recap — <today>
 
 ## Decisions
+
 - <one line each; who/what/why when the journal says>
 
 ## Roadblocks
+
 - <owner and what unblocks it, when stated>
 
 ## My work
+
 - <org items completed today, PRs opened/merged/reviewed from gh, plus work items from journal entries>
 
 ## Open todos
+
 - <every open headline as a plain bullet, state-prefixed when not TODO (e.g. `WAITING — …`). The live checklist is the org file — this is a point-in-time record, so no checkboxes>
 
 ## Journal
+
 <today's journal entries verbatim (entry text only — drop the org heading/timestamp scaffolding)>
 ```
 
@@ -52,4 +57,4 @@ Classify journal entries by content, and only when confident — an unclassified
 
 ## Finish
 
-Output exactly one line: the note path plus counts, e.g. `~/vault/Daily/2026-07-09.md — 2 decisions, 1 roadblock, 3 completed, 6 open todos`.
+Output exactly one line: the note path plus counts, e.g. `~/vault/daily/2026-07-09.md — 2 decisions, 1 roadblock, 3 completed, 6 open todos`.

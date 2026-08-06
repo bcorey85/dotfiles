@@ -207,15 +207,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/scripts/stub-guard.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
             "command": "~/.claude/scripts/prettier-hook.sh"
           }
         ]
@@ -288,10 +279,6 @@
           },
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/acceptance-contract-gate.sh"
-          },
-          {
-            "type": "command",
             "command": "bash ~/.claude/scripts/test-ownership-gate.sh"
           },
           {
@@ -306,10 +293,6 @@
           {
             "type": "command",
             "command": "~/.claude/scripts/agent-model-guard.sh"
-          },
-          {
-            "type": "command",
-            "command": "bash ~/.claude/scripts/mechanical-check-gate.sh"
           }
         ]
       },

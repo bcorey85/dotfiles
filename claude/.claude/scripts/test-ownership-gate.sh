@@ -17,9 +17,9 @@
 #   - Mechanical compile-fixes to existing tests are NOT an exception any
 #     more: the coder reports them and the test-writer applies them
 #     (coder-core "Tests Are Not Yours" carries the wording).
-#   - acceptance-contract-gate is separate and stricter (marker-based,
-#     binds everyone incl. main session); this gate is pattern-based and
-#     agent-scoped. Both run; either deny stands.
+#   - Acceptance criteria are prose in docs/plans/<slug>/acceptance-criteria.md,
+#     outside the test tree entirely; nothing in tests/ is marker-protected.
+#     This gate is pattern-based and agent-scoped.
 #   - Shell writes (>, sed -i, tee) are write-edit-safety-gate's surface and
 #     the global "file changes go through Write/Edit" rule; displacement
 #     there is measured, not silently permitted.

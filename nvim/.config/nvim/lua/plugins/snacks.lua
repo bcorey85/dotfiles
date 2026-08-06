@@ -319,18 +319,15 @@ return {
       end)
     end
 
-    -- s s: search the current buffer (Doom `SPC s s`; <leader>sb is the alias).
+    -- s s / s S: document / workspace symbols.
     pmap("<leader>ss", function()
-      Snacks.picker.lines()
-    end, "Search in buffer")
-
-    -- s i / s I: document / workspace symbols (Doom `s i` imenu / `s I`).
-    pmap("<leader>si", function()
       Snacks.picker.lsp_symbols()
     end, "Symbols (document)")
 
-    pmap("<leader>sI", function()
-      Snacks.picker.lsp_workspace_symbols()
+    -- filter=true disables snacks' symbol-kind allowlist, which omits Variable
+    -- and Constant — the kinds pyright reports module-level constants as.
+    pmap("<leader>sS", function()
+      Snacks.picker.lsp_workspace_symbols({ filter = { default = true } })
     end, "Symbols (workspace)")
 
     -- s p: project grep (Doom `s p`); same target as <leader>/.
@@ -362,12 +359,7 @@ return {
       })
     end, "Search other project")
 
-    -- s S / s w: grep the symbol/word under the cursor (Doom `s S`). sw kept as
-    -- a no-Doom-counterpart extra so the old muscle memory still works.
-    pmap("<leader>sS", function()
-      Snacks.picker.grep_word(search_opts)
-    end, "Grep word under cursor")
-
+    -- s w: grep the symbol/word under the cursor.
     pmap("<leader>sw", function()
       Snacks.picker.grep_word(search_opts)
     end, "Grep word under cursor")
@@ -398,6 +390,7 @@ return {
       Snacks.picker.command_history()
     end, "Command history")
 
+    -- s b: search the current buffer.
     pmap("<leader>sb", function()
       Snacks.picker.lines()
     end, "Search in buffer")

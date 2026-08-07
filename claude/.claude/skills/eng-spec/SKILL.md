@@ -245,19 +245,19 @@ works if it exists _before_ the talking starts (step 13).
 ## Phase 7: Architect finalization
 
 15. **Continue each architect via `SendMessage`** — its exploration context is
-    intact, so send the path to `03-decisions.md` plus the instruction to produce
-    the full plan per its Output Format. Do NOT re-litigate resolved decisions;
-    they carry the user's authority. If the agent is no longer addressable,
-    re-dispatch fresh with its brief verbatim, `02-research.md`, and
-    `03-decisions.md` — the ledger makes that fallback lossless.
+    intact. Send `03-decisions.md` **by path only** (re-typing from context is
+    compaction-lossy) plus the instruction to produce the full plan per its Output
+    Format. Do NOT re-litigate resolved decisions; they carry the user's authority.
 
-    Send the ledger **by path only** — re-typing decisions from context is the
-    compaction-lossy move the ledger exists to prevent.
+    **Never assume an architect is unreachable — attempt the call.** Cold
+    re-dispatch re-reads the codebase, so guessing swings cost by multiples. Only
+    after `SendMessage` fails, re-dispatch fresh with its brief verbatim,
+    `02-research.md`, and `03-decisions.md`; the ledger makes that lossless.
 
     **Fullstack ordering**: finalize `backend-architect` first — its plan must
-    include a clearly defined **API contract** (endpoints, methods,
-    request/response shapes, status codes). Then finalize `frontend-architect`
-    _with_ that contract, so it designs against it rather than inventing one.
+    define the **API contract** (endpoints, methods, request/response shapes,
+    status codes). Then finalize `frontend-architect` _with_ that contract, so it
+    designs against it, not around it.
 
 16. **Synthesize the finalized plan(s).**
 

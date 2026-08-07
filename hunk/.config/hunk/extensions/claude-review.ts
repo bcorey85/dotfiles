@@ -279,6 +279,15 @@ function reloadWorkingTreeReview(
   );
 }
 
+/**
+ * Paths the loaded changeset contains, per repo.
+ *
+ * Marks outlive a changeset: a file can be staged, discarded, or deleted
+ * elsewhere and its mark stays behind. `git add` is atomic over its pathspec, so
+ * one such path makes the whole stage fail — staging is restricted to this set.
+ */
+const activePaths = new Map<string, Set<string>>();
+
 /** A mark is only live while the file still hashes to what it did when marked. */
 const patchHash = (file: DiffFile) => sha(file.patch, 16);
 const isViewed = (state: State, file: DiffFile) =>
@@ -393,14 +402,31 @@ export default function claudeReview(hunk: HunkApi): void {
     async (ctx) => {
       const state = withState(ctx);
       if (!state) return;
-      const paths = Object.keys(state.viewed).sort();
-      if (paths.length === 0) {
+      const marked = Object.keys(state.viewed).sort();
+      if (marked.length === 0) {
         ctx.notify("claude-review: nothing marked viewed", "warning");
         return;
       }
 
+      // Stage what this review shows, not every mark on file. A review can also
+      // be narrower than the whole working tree (a path-filtered diff), so the
+      // difference is skipped rather than pruned — those marks are still good.
+      const inReview = activePaths.get(state.repoRoot);
+      const paths = inReview
+        ? marked.filter((path) => inReview.has(path))
+        : marked;
+      const skipped = marked.length - paths.length;
+      const tail = skipped > 0 ? ` · ${skipped} not in this review` : "";
+      if (paths.length === 0) {
+        ctx.notify(
+          `claude-review: no viewed file is in this review — ${skipped} stale mark(s), X to clear`,
+          "warning",
+        );
+        return;
+      }
+
       const ok = await ctx.dialogs.confirm({
-        title: `git add ${paths.length} viewed file${paths.length === 1 ? "" : "s"}?`,
+        title: `git add ${paths.length} viewed file${paths.length === 1 ? "" : "s"}?${tail}`,
         body:
           paths.slice(0, 10).join("\n") +
           (paths.length > 10 ? `\n… and ${paths.length - 10} more` : ""),
@@ -412,17 +438,26 @@ export default function claudeReview(hunk: HunkApi): void {
           stdio: ["ignore", "ignore", "pipe"],
         });
       } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
+        // git's stderr says which pathspec failed; the Error message is the
+        // whole command line, which the notice bar truncates before reaching it.
+        const stderr = String((error as { stderr?: unknown }).stderr ?? "")
+          .split("\n")
+          .filter(
+            (line) => line.startsWith("fatal:") || line.startsWith("error:"),
+          )
+          .join(" ");
+        const detail =
+          stderr || (error instanceof Error ? error.message : String(error));
         ctx.notify(`claude-review: git add failed — ${detail}`, "error");
         return;
       }
 
       // Staged files leave the working-tree diff, so their marks have nothing
-      // left to describe.
-      state.viewed = {};
+      // left to describe. Marks outside this review keep theirs.
+      for (const path of paths) delete state.viewed[path];
       writeState(state);
       ctx.fileViews.select(null);
-      ctx.notify(`staged ${paths.length} file(s)`);
+      ctx.notify(`staged ${paths.length} file(s)${tail}`);
       reloadWorkingTreeReview(state.repoRoot, (message) =>
         ctx.notify(`claude-review: ${message}`, "warning"),
       );
@@ -454,6 +489,9 @@ export default function claudeReview(hunk: HunkApi): void {
     const root = rememberRepo(ctx);
     if (!root) return changeset;
     const state = readState(root, true);
+    // Recorded before any filtering: what `S` may stage is what the review was
+    // given, not what is left visible after viewed files are dropped.
+    activePaths.set(root, new Set(changeset.files.map((file) => file.path)));
 
     // Drop marks whose file is present but no longer hashes the same — the file
     // changed under the mark, so it needs reviewing again.
@@ -495,7 +533,7 @@ export default function claudeReview(hunk: HunkApi): void {
   // ── Inline notes → /cc queue ──────────────────────────────────────────────
   // Hunk's own notes (`c`) are the comment surface; this only mirrors them into
   // a queue the /cc skill lists and resolves. We own the file, so /cc gets a
-  // real resolve rather than tuicr's consumed-ids sidecar.
+  // real resolve rather than a consumed-ids sidecar.
   function readComments(repoRoot: string): any[] {
     try {
       return readFileSync(commentsPath(repoRoot), "utf8")

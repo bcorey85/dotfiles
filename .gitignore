@@ -5,7 +5,6 @@ nvim/.config/nvim/lazy-lock.json
 # theme-mode template contract: the stowed *.template is tracked, the generated
 # config next to it is machine-local. Stow folds these single-file dirs into a
 # directory symlink, so the generated file lands inside the working tree.
-tuicr/.config/tuicr/config.toml
 herdr/.config/herdr/config.toml
 starship/.config/starship.toml
 

@@ -5,6 +5,10 @@
 # Usage: notify "Title" "Message"
 #   or:  echo "message" | notify "Title"
 
+# herdr raises its own agent-state notification for these same events; a second
+# desktop toast is pure duplication. Outside herdr this script is the only one.
+[[ -n "$HERDR_ENV" ]] && exit 0
+
 title="${1:-Claude Code}"
 
 if [[ -n "$2" ]]; then

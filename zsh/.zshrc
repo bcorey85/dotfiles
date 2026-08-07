@@ -4,7 +4,7 @@
 # ~/.local/bin before ANYTHING below: the multiplexer autostart is next, and the
 # mux server it spawns hands its inherited PATH to every pane and popup command.
 # Exported here rather than with the other PATH lines further down so popups can
-# call hand-installed binaries (tuicr, herdr-*, dev scripts) by bare name — on
+# call hand-installed binaries (herdr-*, dev scripts) by bare name — on
 # Linux that prefix is where they live.
 export PATH="$HOME/.local/bin:$HOME:$PATH"
 

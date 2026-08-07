@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# hunk-comments-consume — deterministic reader for hunk review comments (used by
+# /cc). Second reader alongside claude-comments-consume, with the same
+# list/resolve contract.
+#
+# Source is the JSONL the claude-review hunk extension writes when hunk's own
+# inline notes (`c`) are created or edited:
+#   $XDG_STATE_HOME/hunk-claude/<basename>-<sha256(repoRoot)[0:12]>.comments.jsonl
+#   one object per line: {id, path, line, side, hunk_index, body, timestamp}
+#
+# Resolve is a true delete: we own the file, so a resolved comment is removed
+# outright. The note stays in hunk's own UI until cleared there, but nothing
+# re-lists it.
+#
+# Modes:
+#   list <repo-root>
+#       Print fresh (<=48h) comments for that checkout as a JSON array:
+#       [{id, path, line, side, hunk_index, timestamp, body}]
+#       `id` is hunk's note id and is the handle for resolve.
+#       Stale comments are counted on stderr and left in place.
+#   resolve <repo-root> <id>...
+#       Delete the given ids from the JSONL, removing the file when it empties.
+#       Idempotent; unknown ids are ignored.
+set -euo pipefail
+
+TTL_SECONDS=$((48 * 3600))
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/hunk-claude"
+
+mode="${1:-}"
+repo="${2:-}"
+case "$mode" in list | resolve) ;; *)
+  echo "usage: hunk-comments-consume list|resolve <repo-root> [id...]" >&2
+  exit 2
+  ;;
+esac
+[ -n "$repo" ] || {
+  echo "missing repo-root" >&2
+  exit 2
+}
+shift 2
+repo="${repo%/}"
+[ -d "$repo" ] || {
+  echo "no such repo-root: $repo" >&2
+  exit 2
+}
+
+command -v jq >/dev/null || {
+  echo "jq is required" >&2
+  exit 1
+}
+
+# Must reproduce the extension's slug byte for byte: sha256 of the repo root with
+# no trailing newline, first 12 hex chars, prefixed by the sanitized basename.
+sha256_of() {
+  if command -v sha256sum >/dev/null; then
+    printf '%s' "$1" | sha256sum | cut -d' ' -f1
+  else
+    printf '%s' "$1" | shasum -a 256 | cut -d' ' -f1
+  fi
+}
+name="$(basename "$repo")"
+slug="${name//[^A-Za-z0-9._-]/-}-$(sha256_of "$repo" | cut -c1-12)"
+FILE="$STATE_DIR/$slug.comments.jsonl"
+
+[ -f "$FILE" ] || {
+  # No hunk notes for this checkout (or no hunk on this machine) is not an error.
+  [ "$mode" = "list" ] && echo "[]"
+  exit 0
+}
+
+if [ "$mode" = "resolve" ]; then
+  [ "$#" -gt 0 ] || exit 0
+  ids="$(printf '%s\n' "$@" | jq -R -s 'split("\n") | map(select(length > 0))')"
+  tmp="$FILE.tmp.$$"
+  # Rewrite through a temp file so a crash cannot truncate the queue. hunk
+  # appends to this file from its own process, so a note written between the read
+  # and the rename is lost; the window is a few milliseconds and the alternative
+  # is a lock file the extension would also have to honor.
+  jq -c --argjson ids "$ids" 'select(.id as $i | ($ids | index($i)) | not)' \
+    <"$FILE" >"$tmp" || {
+    rm -f "$tmp"
+    exit 1
+  }
+  if [ -s "$tmp" ]; then
+    mv "$tmp" "$FILE"
+  else
+    rm -f "$tmp" "$FILE"
+  fi
+  exit 0
+fi
+
+# ── list ────────────────────────────────────────────────────────────────────
+now="$(date -u +%s)"
+# timestamp is a JS toISOString(): always UTC, always with a millisecond
+# fraction that jq's fromdate rejects — trim it before parsing.
+aged="$(jq -c -s --argjson now "$now" '
+  map(. + { _age: ($now - ((.timestamp | sub("\\.[0-9]+Z$"; "Z")) | fromdateiso8601)) })
+' <"$FILE")"
+
+stale="$(jq -r --argjson ttl "$TTL_SECONDS" '[.[] | select(._age > $ttl)] | length' <<<"$aged")"
+[ "$stale" -gt 0 ] && echo "$stale stale comment(s) (>48h) skipped" >&2
+
+jq --argjson ttl "$TTL_SECONDS" '
+  [ .[]
+    | select(._age <= $ttl)
+    | { id, path, line, side, hunk_index, timestamp, body }
+  ]
+' <<<"$aged"

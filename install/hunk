@@ -1,0 +1,41 @@
+#!/bin/bash
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_info() { echo -e "${YELLOW}→${NC} $1"; }
+
+# hunk (review-first terminal diff viewer; herdr prefix d, and the lazygit pager).
+# npm-global rather than apt/brew/pacman because it ships on npm only. Installed
+# through mise's node so it lands in mise's shim dir, which is what the herdr
+# binding puts on PATH.
+if ! command -v mise &>/dev/null; then
+  print_info "mise not installed — skipping (run install/deps, then install/mise)"
+  exit 0
+fi
+
+if ! mise which node &>/dev/null; then
+  print_info "no mise-managed node — skipping (run install/mise first)"
+  exit 0
+fi
+
+if mise which hunk &>/dev/null; then
+  print_success "hunk already installed ($(mise exec -- hunk --version 2>/dev/null || echo unknown))"
+else
+  print_info "Installing hunk via npm (mise node)..."
+  mise exec -- npm install -g hunkdiff
+  # The shim is what the herdr popup resolves; npm alone does not create it.
+  mise reshim &>/dev/null || true
+  print_success "hunk installed"
+fi
+
+# The claude-review extension is stowed (hunk package) and loads from
+# ~/.config/hunk/extensions/. Warn rather than fail: stow may not have run yet.
+[ -e "$HOME/.config/hunk/extensions/claude-review.ts" ] ||
+  print_info "claude-review extension not linked yet — run install/stow"

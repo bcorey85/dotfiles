@@ -1,12 +1,12 @@
 ---
 name: cc
-description: Read the inline code-review comments I left for you — from Neovim (`~/.claude/claude-comments.md` via `<leader>cc`) and from tuicr review sessions — present them, answer the questions, hand the change requests to `/fix`, then clear them. Triggers on "I have comments for you", "claude comments", "I left you comments", "read my comments", "check claude-comments.md", "check tuicr comments", "tuicr review comments", "/cc".
+description: Read the inline code-review comments I left for you — from Neovim (`~/.claude/claude-comments.md` via `<leader>cc`) and from hunk review sessions (`prefix d`) — present them, answer the questions, hand the change requests to `/fix`, then clear them. Triggers on "I have comments for you", "claude comments", "I left you comments", "read my comments", "check claude-comments.md", "check hunk comments", "hunk review comments", "/cc".
 allowed-tools: [Bash, Read, Glob, Grep, Skill]
 ---
 
 # Read & Apply Claude Comments
 
-The user authors inline comments in two readers — Neovim (`<leader>cc` → `:ClaudeReviewComment`, stored in `~/.claude/claude-comments.md`) and tuicr (`prefix d`, stored per-checkout under `~/.local/share/tuicr/reviews`). Both are explicit, user-written requests, the highest-priority kind of review feedback (not heuristic findings). This skill owns both lifecycles: it reads the in-scope entries from each, merges them into ONE queue, presents them, drives each to a terminal state, then clears the handled ones through whichever reader owns them.
+The user authors inline comments in two readers — Neovim (`<leader>cc` → `:ClaudeReviewComment`, stored in `~/.claude/claude-comments.md`) and hunk (`prefix d`, built-in inline notes on `c`, mirrored per-checkout to `$XDG_STATE_HOME/hunk-claude/<slug>.comments.jsonl` by the `claude-review` extension). Both are explicit, user-written requests, the highest-priority kind of review feedback (not heuristic findings). This skill owns both lifecycles: it reads the in-scope entries from each, merges them into ONE queue, presents them, drives each to a terminal state, then clears the handled ones through whichever reader owns them.
 
 One queue, one escape-log pass. The source only decides which script clears the entry.
 
@@ -23,20 +23,20 @@ One queue, one escape-log pass. The source only decides which script clears the 
 
 2. **Resolve the repo root.** Run `git rev-parse --show-toplevel`. **If it fails (not inside a git repo)**, tell the user `/cc` must be run from within a git repo (comments are scoped per-repo) and stop. Hold the root for the script calls below.
 
-3. **List in-scope entries from BOTH readers.** Use the bundled scripts for ALL reading — do NOT parse or rewrite `claude-comments.md`, and do NOT parse tuicr's session JSON, by hand:
+3. **List in-scope entries from BOTH readers.** Use the bundled scripts for ALL reading — do NOT parse or rewrite `claude-comments.md` or hunk's JSONL by hand:
 
    ```bash
    bash "${CLAUDE_SKILL_DIR}/claude-comments-consume" list "<repo-root>"
-   bash "${CLAUDE_SKILL_DIR}/tuicr-comments-consume" list "<repo-root>"
+   bash "${CLAUDE_SKILL_DIR}/hunk-comments-consume" list "<repo-root>"
    ```
 
-   Both return fresh (≤48h), current-repo entries as JSON with `id`, `path`, `line`, `timestamp`, `body`; tuicr adds `end_line`, `comment_type`, and `session`. Entries from other repos are never listed or touched. Stale in-scope entries (>48h) are counted on stderr by each — sum them for the summary. Either script is a no-op returning `[]` when its reader has nothing (or is not installed).
+   Both return fresh (≤48h), current-repo entries as JSON with `id`, `path`, `line`, `timestamp`, `body`; hunk adds `side` and `hunk_index`. Entries from other repos are never listed or touched. Stale in-scope entries (>48h) are counted on stderr by each — sum them for the summary. Either script is a no-op returning `[]` when its reader has nothing (or is not installed).
 
-   **Tag each entry with its source** (`nvim` or `tuicr`) and keep that tag on it through step 6 — it is what routes the resolve. Merge the two lists into one queue ordered by `timestamp`.
+   **Tag each entry with its source** (`nvim` or `hunk`) and keep that tag on it through step 6 — it is what routes the resolve. Merge the two lists into one queue ordered by `timestamp`.
 
    - **If the merged list is empty**, tell the user there are no fresh comments for this repo from either reader (mention the stale count if any) and stop. Do not invoke `/fix`.
 
-4. **Present the entries and triage each one.** Group by file, show each `path:line` with its comment body and its source, plus tuicr's `comment_type` when not `none`, so the user can see what is about to be acted on. **Record every entry `id` and source now** — you need this exact list for the mandatory resolve in step 6, and it must survive `/fix`'s (potentially long, multi-iteration) review loop.
+4. **Present the entries and triage each one.** Group by file, show each `path:line` with its comment body and its source, so the user can see what is about to be acted on. **Record every entry `id` and source now** — you need this exact list for the mandatory resolve in step 6, and it must survive `/fix`'s (potentially long, multi-iteration) review loop.
 
    Sort every entry into exactly one bucket. Do this as you present, so the user can correct a misread before any coder spawns:
 
@@ -68,16 +68,16 @@ Both step 5 and step 5a are conditional on their bucket being non-empty, and a r
 
    ```bash
    bash "${CLAUDE_SKILL_DIR}/claude-comments-consume" resolve "<repo-root>" <nvim-id>...
-   bash "${CLAUDE_SKILL_DIR}/tuicr-comments-consume" resolve "<repo-root>" <tuicr-id>...
+   bash "${CLAUDE_SKILL_DIR}/hunk-comments-consume" resolve "<repo-root>" <hunk-id>...
    ```
 
    Skip a call entirely when that source has no ids. Pass the `id` of every entry that was **fixed**, **answered**, or **skipped after triage** (note skip reasons in the summary). Do **NOT** pass ids of **deferred** entries — they stay in the queue for next time.
 
    `answered` is a first-class terminal state, not a lesser one. A question you answered is as done as a bug you fixed; leaving it queued re-presents it to the user as if you had ignored it.
 
-   The two differ in what "resolve" can mean, and the difference is user-visible:
-   - **nvim**: a true resolve. The script re-reads `claude-comments.md` at resolve time, so comments added by another nvim session in the meantime are preserved; it deletes the file when nothing remains.
-   - **tuicr**: a consume, not a resolve. tuicr exposes `review list`/`add`/`comments` but no delete or mark-resolved, so the comment stays visible in the tuicr TUI and only the sidecar (`~/.claude/tuicr-consumed.txt`) knows it was handled — which is what stops the next run from re-listing it and double-logging its escape. Step 8 must tell the user which tuicr comments to clear by hand. If tuicr ever ships a real resolve, delete the sidecar and call it instead.
+   Both are true resolves, and both re-read their store at resolve time so entries written since the list survive:
+   - **nvim**: rewrites `claude-comments.md` without the resolved ids, deleting the file when nothing remains.
+   - **hunk**: rewrites the mirrored JSONL without them, deleting the file when it empties. The note itself stays in hunk's own UI until cleared there, but nothing re-lists it — no by-hand step.
 
 7. **Log escapes.** Every comment that resulted in a real fix is ground truth: the human caught something the automated gates blessed. For each entry **fixed** (not answered, not skipped-as-FP, not deferred), log one line. A run with no `change` entries logs nothing here, and that is correct — a question is not an escape, because no gate failed to catch anything.
 
@@ -87,6 +87,6 @@ Both step 5 and step 5a are conditional on their bucket being non-empty, and a r
 
    `guard` is the ratchet rung from `~/.claude/skills/_shared/escape-ratchet.md` (batch by `class` across the resolved comments); surface the proposed guard in step 8's summary and apply it on approval.
 
-   `stage_found=cc` for BOTH sources: same human-review stage, different reader. Splitting it would fragment the flywheel's per-gate rates across two buckets and make each look better than the gate is. Map tuicr's `comment_type` to `class` when the comment is typed; otherwise classify `class` from the comment body, and when unsure, `other`. `lane` is the planning lane that produced the work under comment — infer it from the conversation or the branch's planning artifacts (eng-spec doc → `eng-spec`, direct dispatch → `code`); ask the user only when genuinely ambiguous. Do NOT log comments that were new requirements or changed direction — a gate can't miss information it never had.
+   `stage_found=cc` for BOTH sources: same human-review stage, different reader. Splitting it would fragment the flywheel's per-gate rates across two buckets and make each look better than the gate is. Classify `class` from the comment body, and when unsure, `other`. `lane` is the planning lane that produced the work under comment — infer it from the conversation or the branch's planning artifacts (eng-spec doc → `eng-spec`, direct dispatch → `code`); ask the user only when genuinely ambiguous. Do NOT log comments that were new requirements or changed direction — a gate can't miss information it never had.
 
-8. **Summarize** for the user: which comments were fixed, which were answered, which were skipped (with reasons), which were deferred and why, the stale-dropped count (if any), and — separately — the `path:line` list of tuicr comments to clear by hand in the TUI. State the resolve happened; a summary that lists outcomes without confirming the clear is how the previous failure went unnoticed.
+8. **Summarize** for the user: which comments were fixed, which were answered, which were skipped (with reasons), which were deferred and why, and the stale-dropped count (if any). State the resolve happened; a summary that lists outcomes without confirming the clear is how the previous failure went unnoticed.

@@ -319,16 +319,16 @@ return {
       end)
     end
 
-    -- s s / s S: document / workspace symbols.
-    pmap("<leader>ss", function()
-      Snacks.picker.lsp_symbols()
-    end, "Symbols (document)")
-
+    -- s s / s S: workspace / document symbols.
     -- filter=true disables snacks' symbol-kind allowlist, which omits Variable
     -- and Constant — the kinds pyright reports module-level constants as.
-    pmap("<leader>sS", function()
+    pmap("<leader>ss", function()
       Snacks.picker.lsp_workspace_symbols({ filter = { default = true } })
     end, "Symbols (workspace)")
+
+    pmap("<leader>sS", function()
+      Snacks.picker.lsp_symbols()
+    end, "Symbols (document)")
 
     -- s p: project grep (Doom `s p`); same target as <leader>/.
     pmap("<leader>sp", function()

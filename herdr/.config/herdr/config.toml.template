@@ -188,18 +188,19 @@ type = "popup"
 width = "100%"
 height = "100%"
 
-# The primary review key, currently a tuicr TRIAL (codediff moved to alt+d —
-# prefix+ctrl+d is already close_workspace above, and prefix+shift+d is detach).
-# Review state persists per checkout under ~/.local/share/tuicr/reviews.
-# No -w: unstaged-only has no CLI flag (-w is staged AND unstaged; -r takes
-# commit revspecs, not scopes). Scope is a commit-selector choice, and -w is
-# what skips that selector — so pick Unstaged there.
-# Bare `tuicr`, not an absolute path: the binary lives in a different prefix per
-# platform (brew's bin on macOS, ~/.local/bin on Linux) and both are on the login
-# PATH the herdr server inherits.
+# The primary review key (codediff moved to alt+d — prefix+ctrl+d is already
+# close_workspace above, and prefix+shift+d is detach).
+# `hunk diff`, not bare `hunk`: bare prints usage and exits. This is the plain
+# working-tree review, which is also the only form the claude-review extension
+# can reload in place after `S` stages the viewed set.
+# The mise shim directory has to be prepended by hand: hunk is a mise-global npm
+# package, and mise puts its shims on PATH through a shell hook in .zshrc, which
+# the herdr server (started from a login environment, not an interactive shell)
+# never runs. Without this the popup flash-closes on "command not found" — hence
+# tmux-tui-popup, which holds it open with a readable error instead.
 [[keys.command]]
-key = "prefix+d"                        # tuicr review (trial)
-command = "tuicr"
+key = "prefix+d"                        # hunk review
+command = "~/.local/bin/tmux-tui-popup 'PATH=\"${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims:$PATH\" hunk diff' 'hunk failed — run install/hunk'"
 type = "popup"
 width = "100%"
 height = "100%"

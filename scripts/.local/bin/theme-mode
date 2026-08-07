@@ -41,13 +41,6 @@
 #              The generated file is machine-local (not stowed), so the
 #              tracked template is never dirtied. Edit the template => re-run
 #              theme-mode to refresh the live config.
-#   - tuicr:   this script regenerates the REAL ~/.config/tuicr/config.toml (mode
-#              only) from the stowed ~/.config/tuicr/config.toml.template with the
-#              `appearance = ` line swapped. The template names both palettes
-#              (theme_dark/theme_light, stowed under tuicr themes/) and tuicr
-#              picks between them by appearance, so that one line is the whole
-#              mode axis. No reload: tuicr is short-lived and reads its config at
-#              launch, so the next open is already in the new mode.
 #
 # Usage:
 #   theme-mode [dark|light|toggle]    flip mode, keep family (default: toggle)
@@ -60,8 +53,8 @@
 #   2. FAMILIES table in nvim lua/config/theme-sync.lua
 #   3. a ghostty theme (builtin name, or custom file in ghostty/themes/)
 #   4. herdr_palette() below (herdr's [theme.custom] token block)
-#   5. tuicr themes/<family>-{dark,light}.toml (each pointing syntax_theme at a
-#      sibling <family>-{dark,light}.tmTheme) + the pair in its config template
+#   5. hunk_theme() below — pick the closest of hunk's builtins; a family with
+#      no good match maps to nothing and hunk keeps whatever it had
 #
 # Also needed, not part of the six but easy to miss:
 #   - starship.toml.template: add a `[palettes.<family>-dark]` /
@@ -69,10 +62,9 @@
 #   - zsh/.zshrc: its fresh-machine bootstrap copies starship.toml.template
 #     verbatim, so it must stay in sync with the template's default palette
 #     name (this already caused one bug, fixed separately)
-#   - DEFAULT_FAMILY must be kept in sync across four sites: this script's own
-#     DEFAULT_FAMILY var, theme-sync.lua's default, starship.toml.template's
-#     root `palette =` line, and tuicr/.config/tuicr/config.toml.template's
-#     theme pair
+#   - DEFAULT_FAMILY must be kept in sync across three sites: this script's own
+#     DEFAULT_FAMILY var, theme-sync.lua's default, and starship.toml.template's
+#     root `palette =` line
 set -euo pipefail
 
 MODE_FILE="$HOME/.cache/theme-mode"
@@ -92,6 +84,57 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # sides are the floored custom files rather than a builtin.
     kanagawa:*) echo "kanagawa-$2" ;; # custom: ghostty/themes/
   esac
+}
+
+hunk_theme() { # <family> <mode> -> a hunk builtin theme id
+  # hunk ships a fixed set of builtins and takes no custom palette, so this maps
+  # onto the closest shipped theme rather than reproducing our floored colors.
+  # `hunk diff --help` has no list; the ids live in the installed package's
+  # dist/npm/opentui/themes.d.ts.
+  case "$1:$2" in
+    kanagawa:dark) echo "kanagawa-wave" ;;
+    kanagawa:light) echo "kanagawa-lotus" ;;
+    onedark-darker:dark) echo "one-dark-pro" ;;
+    onedark-darker:light) echo "one-light" ;;
+  esac
+}
+
+hunk_set() { # <file> <key> <toml-value> — set a top-level key, preserving the rest
+  # Anchored so it only ever touches the top-level key, never a same-named key
+  # inside one of hunk's tables ([vcs], [pager], [custom_theme], ...). Those
+  # tables all sort after the bare keys hunk writes, so appending stays legal
+  # TOML: a new key added below a table header would silently join that table.
+  local file="$1" key="$2" value="$3"
+  if grep -q "^$key = " "$file" 2>/dev/null; then
+    sed -i.bak "s|^$key = .*|$key = $value|" "$file" && rm -f "$file.bak"
+  elif grep -q '^\[' "$file" 2>/dev/null; then
+    sed -i.bak "1i\\
+$key = $value" "$file" && rm -f "$file.bak"
+  else
+    printf '%s = %s\n' "$key" "$value" >>"$file"
+  fi
+}
+
+hunk_apply() { # <family> <mode> — point hunk's config at the mapped builtin
+  local theme cfg
+  theme="$(hunk_theme "$1" "$2")"
+  [ -n "$theme" ] || return 0
+  cfg="$HOME/.config/hunk/config.toml"
+  # No template here, unlike herdr/starship: hunk WRITES this file itself
+  # (the in-app View menu persists theme, wrap, line numbers and more), so
+  # regenerating it would silently drop the user's other preferences. Set only
+  # the keys this script owns, and create the file when there is none.
+  mkdir -p "$(dirname "$cfg")"
+  [ -f "$cfg" ] || : >"$cfg"
+  hunk_set "$cfg" theme "\"$theme\""
+  # Without this, hunk paints its chrome with the builtin's own background,
+  # which sits a step off the terminal's in dark mode and reads as a gray box
+  # inside the black. Letting the terminal show through matches whatever
+  # ghostty/herdr already painted, in both modes, with no second palette to
+  # keep in sync.
+  hunk_set "$cfg" transparent_background true
+  # No reload: hunk reads its config at launch, and the session daemon exposes
+  # no config command. Running reviews keep their colors; the next one flips.
 }
 
 herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
@@ -300,15 +343,9 @@ apply() { # <family> <mode> — write state and repaint herdr + ghostty
   # the active palette, then reload the running server. No-op without herdr.
   herdr_apply "$family" "$mode"
 
-  # tuicr: same template contract, minus the reload. Its config names BOTH
-  # themes (theme_dark / theme_light, stowed under themes/) and picks between
-  # them by `appearance`, so only that one line is substituted. tuicr is
-  # short-lived — the next launch reads the new value; nothing repaints live.
-  local tuicr_tmpl="$HOME/.config/tuicr/config.toml.template"
-  local tuicr_cfg="$HOME/.config/tuicr/config.toml"
-  if [ -f "$tuicr_tmpl" ]; then
-    sed "s/^appearance = .*/appearance = \"$mode\"/" "$tuicr_tmpl" >"$tuicr_cfg"
-  fi
+  # hunk: one builtin theme id per family x mode, edited in place. No-op for a
+  # family with no mapping.
+  hunk_apply "$family" "$mode"
 
   echo "$family $mode"
 }

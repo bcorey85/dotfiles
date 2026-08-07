@@ -3,7 +3,7 @@
 Single source of truth for the guard decision every `log-escape` call carries.
 Read this before logging an escape to the review flywheel.
 
-Consumers: `/escape`, `/cc`, `/tuicr-cc`, `/fix`, `/refactor`, `/verify`,
+Consumers: `/escape`, `/cc`, `/fix`, `/refactor`, `/verify`,
 `/commit`, `/audit review`.
 
 ## The decision

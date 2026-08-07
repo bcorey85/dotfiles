@@ -60,7 +60,8 @@
 #   2. FAMILIES table in nvim lua/config/theme-sync.lua
 #   3. a ghostty theme (builtin name, or custom file in ghostty/themes/)
 #   4. herdr_palette() below (herdr's [theme.custom] token block)
-#   5. tuicr themes/<family>-{dark,light}.toml + the pair in its config template
+#   5. tuicr themes/<family>-{dark,light}.toml (each pointing syntax_theme at a
+#      sibling <family>-{dark,light}.tmTheme) + the pair in its config template
 #
 # Also needed, not part of the six but easy to miss:
 #   - starship.toml.template: add a `[palettes.<family>-dark]` /

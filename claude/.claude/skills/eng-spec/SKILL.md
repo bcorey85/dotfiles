@@ -317,17 +317,34 @@ works if it exists _before_ the talking starts (step 13).
     - **AC7** — <criterion no automated test can cover, and why>
     ```
 
-    Put each criterion to the user as one sentence and get their words back: a
-    criterion you phrase alone is your reading of the ticket, already baked into
-    the plan.
+    **Who phrases them depends on what Phase 6 already settled.** The property
+    that matters is that the user has AUTHORITY over each criterion before any
+    coder runs — not that they typed it. Read the ledger and pick:
+
+    - **Every resolved decision cites a measurement or a user-confirmed
+      observation** → DRAFT the full list yourself from `03-decisions.md`,
+      present it, and ask for strikes and corrections. Asking the user to
+      re-say in prose what they just spent a long session deciding is
+      extraction, not elicitation, and it lands at the most fatigued point in
+      the lane.
+    - **Any decision resolved on reasoning alone**, or Phase 6 was thin/skipped
+      → author WITH the user, one sentence at a time, in their words. Here
+      nothing else pins "done," so a criterion you phrase alone is your reading
+      of the ticket already baked into the plan.
+
+    Either way the user must respond before Phase 8. A drafted list nobody
+    answered is not criteria; it is your summary of the plan.
 
     **Damage-path criteria belong here too.** Sweep the failure surface before
     writing: every input read (unreadable, malformed, oversized, missing), every
     destructive or preview/apply operation acting on an incomplete view. Where
     the ticket is silent on what the feature must DO on such a path, put the
-    missing criterion to the user as its own one-sentence question — damage-path
-    policy is the ticket-owner's call, never defaulted. "Out of scope" is an
-    answer, logged under `## Direction & Constraints`; silence is not.
+    missing criteria to the user as one-sentence questions — batched in a single
+    turn, not one per turn. Damage-path policy is the ticket-owner's call and is
+    never defaulted, INCLUDING on the drafting path above: an existing follow-up
+    ticket is a reason to propose "out of scope," not a reason to skip asking.
+    "Out of scope" is an answer, logged under `## Direction & Constraints`;
+    silence is not.
 
     **The criteria file is prose, and it stays out of the shipped tree.** Do not
     write it as test stubs, do not seed `tests/` with a placeholder file, and do

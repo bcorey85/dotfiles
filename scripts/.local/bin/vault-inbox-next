@@ -3,7 +3,7 @@
 #
 # The inbox used to be a folder of note stubs, processed oldest-first as a
 # morning ritual. The 2026-08 vault redesign deleted that folder and the ritual
-# with it: captures land directly in sources/, and nothing obliges you to
+# with it: captures land directly in notes/, and nothing obliges you to
 # promote them. What remains is org/inbox.org — a TODO list where an entry
 # means "process me", worked through deliberately, never swept to zero.
 set -euo pipefail

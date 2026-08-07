@@ -22,10 +22,12 @@ index, queryable. Read-only — never edit or create anything.
    carries its own inline capture date (`[YYYY-MM-DD Day]`) plus, once closed, a
    `CLOSED:` timestamp. Date an org hit from those, never from the file.
 3. **Read the hits** — the surrounding section, not just the matching line.
-   Distinguish source quality by tier: a `cache/` note was verified by doing and
-   outranks everything; a Decisions entry in a daily note outranks a `sources/`
-   note, which is only a claim the user was told. A line marked `[unverified]` is
-   a claim regardless of which file it sits in.
+   Distinguish source quality: a `cache/` note is a consolidated answer written at
+   project close and outranks everything; a Decisions entry in a daily note
+   outranks a `notes/` entry. **Do not read trust off the folder** — `notes/` holds
+   both what the user measured and what the user was told, and the only signal is
+   the line itself. A line marked `[unverified]` is a claim regardless of which
+   file it sits in; an unmarked line in `notes/` is presumed verified.
    **Org is the live state of any todo.** A headline's keyword is the answer to
    "is this still open": `TODO`/`NEXT`/`WAITING` = open, `DONE`/`CANCELLED` = closed
    (with the `CLOSED:` date). A `daily/` note's `Open todos` bullets are only a

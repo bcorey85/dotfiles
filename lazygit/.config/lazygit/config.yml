@@ -9,6 +9,12 @@
 # full-screen TUIs with nothing to read on exit.
 promptToReturnFromSubprocess: false
 
+os:
+  # Without this lazygit falls back to bare `vim`, which is not installed --
+  # nvim only. The failed subprocess then forces the return prompt above
+  # regardless of the setting, because a nonzero exit has output worth reading.
+  editPreset: nvim
+
 gui:
   # Reclaim horizontal space for the diff. The side panel is narrow while you
   # read a diff and only widens when you focus it.

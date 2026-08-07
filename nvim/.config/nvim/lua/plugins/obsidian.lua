@@ -53,9 +53,11 @@ return {
       note = {
         template = "Inbox.md",
       },
-      -- Vault is a cache hierarchy; new notes default to the "told it, did not
-      -- verify it" tier. Promote to cache/ by hand once it has been earned.
-      notes_subdir = "sources",
+      -- Vault is a cache hierarchy and notes/ is its only ingest tier: all raw
+      -- information lands here regardless of whether it was verified, since trust
+      -- is marked inline with [unverified] rather than by folder. cache/ is
+      -- written by hand at project close; projects/ holds plans, not facts.
+      notes_subdir = "notes",
       note_id_func = function(title)
         if title then
           return title

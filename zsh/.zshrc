@@ -124,6 +124,12 @@ alias brewARM="/opt/homebrew/bin/brew"
 export EDITOR='nvim'
 export VISUAL='nvim'
 bindkey -e  # use emacs keybindings (ctrl+a/e/u) despite EDITOR=nvim
+
+# psql's compiled-in default pager is `more`, which cannot scroll backward on a
+# pipe -- and psql always pipes. -S truncates wide result rows instead of
+# wrapping them, -F skips the pager when output fits one screen, -X leaves the
+# output on screen on exit. Scoped to psql so $PAGER stays unset elsewhere.
+export PSQL_PAGER='less -SFX'
 if command -v pyenv &>/dev/null; then
   export PYENV_ROOT="$HOME/.pyenv"
   export PATH="$PYENV_ROOT/bin:$PATH"

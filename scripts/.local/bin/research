@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# research — question capture for the learning lane (herdr prefix n r). Logs the
+# question to ~/vault/org/questions.org, then a background headless claude
+# researches it and writes a Note-template answer stub (Source + Key
+# Points filled) into <vault>/notes — the vault's single ingest tier for raw
+# information. Never cache/, which is synthesized by hand at project close.
+# Same shape as `bookmark` with the page fetch swapped for research; same rule
+# — the synthesis sections stay empty because writing "Explain It Back" is the
+# part that teaches.
+#
+# Named for the act, matching the `/research` skill (web search + synthesis).
+# The vault-side counterpart is `vault-ask`, which queries notes already held.
+#
+# Usage:
+#   research [-i]              interactive (popup)
+#   research <question...>     one-shot
+set -euo pipefail
+
+VAULT="${VAULT_DIR:-$HOME/vault}"
+ORG="$VAULT/org"
+QF="$ORG/questions.org"
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-bg"
+mkdir -p "$ORG" "$LOG_DIR"
+
+q=""
+if [ "${1:-}" = "-i" ] || [ $# -eq 0 ]; then
+  read -r -e -p "research> " q
+  [ -z "$q" ] && exit 0
+else
+  q="$*"
+fi
+
+# Org-side log for durability only — the answer stub in notes/ is the
+# artifact; this file just makes sure a question outlives a failed run.
+printf '* %s\n  [%s]\n' "$q" "$(date +'%Y-%m-%d %a')" >>"$QF"
+
+if ! command -v claude >/dev/null; then
+  printf '✓ logged to questions.org (claude not installed — no answer stub)\n'
+  sleep 1
+  exit 0
+fi
+
+# Filename taxonomy: same rule as `bookmark` — the topic prefix is the vault's
+# index, and the headless run can't list notes/ to learn the existing prefixes.
+prefixes="$(ls "$VAULT/notes" 2>/dev/null | sed -n 's/^\(.*\) - .*/\1/p' \
+  | sort | uniq -c | sort -rn | awk '$1 >= 2 { $1 = ""; sub(/^ /, ""); print }' | paste -sd '|' -)"
+
+prompt="Research and answer this question from a senior software engineer: $q
+
+Create exactly ONE new markdown file in 'notes/' (flat — never a subfolder). Filename: '<Topic> - <Descriptive Title>.md' — Title Case, spaces around the hyphen, never a kebab-case slug, and a statement of the answer rather than a restatement of the question. The topic prefix is the vault's taxonomy, so reuse one of these existing prefixes whenever one fits: $prefixes. Mint a new prefix only if none of those applies. Mirror the section structure of 'Templates/Note.md' exactly, filled as follows:
+- Date: today's date
+- Source: 'question capture', plus links to any references actually used
+- Key Points: a direct, technically precise answer in 5-12 bullets — mechanisms, tradeoffs, and rules of thumb, not filler
+- Leave 'Quick Reactions', 'Explain It Back', 'Related', and 'Open Questions For Later' as empty scaffolding for the human to fill.
+
+End the note with at most ONE tag from the vault's current vocabulary — #backend #devops #architecture #llms #linux — or no tag at all. The tag is a retrieval handle: pick the word that would be searched for, not the one that classifies correctly (#linux is Linux as a personal OS; #devops is infrastructure work). The vocabulary is open and grows, but this is an unattended capture, so do not add to it here — if nothing above fits, use no tag and the filename prefix will find it.
+
+Use WebSearch/WebFetch only when the answer benefits from sources or current information; answer from knowledge otherwise."
+
+# Same launch discipline as `bookmark`: prompt via stdin (the variadic
+# --allowedTools flag swallows a positional prompt), per-run scoped
+# permissions, and setsid so the run outlives the popup's process group.
+log="$LOG_DIR/$(date +%Y%m%d-%H%M%S)-research.log"
+pf="$(mktemp "${TMPDIR:-/tmp}/research-prompt.XXXXXX")"
+printf '%s' "$prompt" >"$pf"
+runner="cd $(printf %q "$VAULT") && $(printf %q "$(command -v claude)") -p --model sonnet --allowedTools WebFetch WebSearch $(printf %q 'Write(notes/**)') <$(printf %q "$pf") >$(printf %q "$log") 2>&1; rm -f $(printf %q "$pf")"
+setsid sh -c "$runner" >/dev/null 2>&1 &
+disown
+printf '✓ logged — answer stub landing in notes/ (log: %s)\n' "${log/#$HOME/\~}"
+sleep 1

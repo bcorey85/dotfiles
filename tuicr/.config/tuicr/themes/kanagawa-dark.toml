@@ -4,11 +4,15 @@
 # comment/border #727169, purple #957fb8, blue #7e9cd8, red #e46876,
 # green #98bb6c, yellow #e6c384, cyan #7aa89f.
 #
-# syntax_theme is deliberately omitted: tuicr then picks its bundled DARK
-# syntax theme from panel_bg, which avoids shipping (and re-tuning) a .tmTheme.
+# syntax_theme is the code pane itself — the largest surface in the diff — and
+# none of tuicr's bundled syntax themes are kanagawa, so it points at the
+# stowed kanagawa-dark.tmTheme beside this file. The path resolves against
+# THIS file's directory; keep it relative so it works on every platform.
 #
 # panel_bg only paints when `transparent_background = false`; it is set to the
 # terminal canvas so both settings look the same.
+
+syntax_theme = "kanagawa-dark.tmTheme"
 
 panel_bg = "#1f1f28"
 bg_highlight = "#2a2a37"

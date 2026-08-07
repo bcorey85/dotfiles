@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# vault-ask — ask a question of the notes you already hold (herdr prefix n ?).
+# Thin popup wrapper over the `/vault-ask` skill: prompts for the question, then
+# hands it to an INTERACTIVE claude in the vault so the answer (with note links
+# and dates) lands in front of you rather than in a file.
+#
+# The counterpart is `research`, which answers from the web and writes a note.
+# Read-only by construction — the skill never edits or creates anything.
+#
+# Usage:
+#   vault-ask [-i]              interactive (popup)
+#   vault-ask <question...>     one-shot
+set -euo pipefail
+
+VAULT="${VAULT_DIR:-$HOME/vault}"
+
+q=""
+if [ "${1:-}" = "-i" ] || [ $# -eq 0 ]; then
+  read -r -e -p "vault> " q
+  [ -z "$q" ] && exit 0
+else
+  q="$*"
+fi
+
+if ! command -v claude >/dev/null; then
+  echo "vault-ask: claude not installed" >&2
+  sleep 2
+  exit 1
+fi
+
+# Interactive, not -p: the answer is a conversation you may want to follow up on,
+# and the session's own permission prompts stay available for the reads it needs.
+cd "$VAULT"
+exec claude "/vault-ask $q"

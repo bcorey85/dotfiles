@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# bookmark — night-brain URL capture for the learning lane (tmux prefix n b).
+# bookmark — night-brain URL capture for the learning lane (herdr prefix n b).
 # Logs the link to ~/vault/org/bookmarks.org, then fires a background headless
-# claude that fetches the page and writes a Literature-template stub (Source +
-# Key Points filled) into <vault>/sources — a page you read is told, not
-# verified, so it never lands in cache/. You get a summary, not a raw tab. The synthesis sections (Explain It Back,
+# claude that fetches the page and writes a Note-template stub (Source +
+# Key Points filled) into <vault>/notes — the vault's single ingest tier for raw
+# information. Never cache/, which is synthesized by hand at project close. You
+# get a summary, not a raw tab. The synthesis sections (Explain It Back,
 # Permanent Notes to Create) are left empty on purpose: that part is the
 # learning — don't delegate it.
 #
 # The headless run gets per-invocation permissions (--allowedTools WebFetch +
-# Write scoped to sources/, cwd = vault) so the global allowlist stays closed.
+# Write scoped to notes/, cwd = vault) so the global allowlist stays closed.
 #
 # Usage:
-#   bookmark [-i]              interactive (tmux popup): URL prefilled from
+#   bookmark [-i]              interactive (popup): URL prefilled from
 #                              clipboard when it looks like one, optional note
 #   bookmark <url> [note...]   one-shot
 set -euo pipefail
@@ -59,7 +60,7 @@ case "$url" in
 esac
 
 # Org-side log only — daily-recap treats org files as read-only sources, and
-# the Literature stub (not this file) is the processing queue.
+# the notes/ stub (not this file) is the processing queue.
 {
   printf '* [[%s]]\n  [%s]\n' "$url" "$(date +'%Y-%m-%d %a')"
   if [ -n "$note" ]; then printf '  %s\n' "$note"; fi
@@ -71,32 +72,35 @@ if ! command -v claude >/dev/null; then
   exit 0
 fi
 
+# Filename taxonomy: the topic prefix IS the vault's index (see its CLAUDE.md),
+# so a capture has to reuse an existing prefix wherever one fits. The headless
+# run can't list notes/ — its allowlist is write-only — so the live prefix list
+# is computed here and interpolated into the prompt.
+prefixes="$(ls "$VAULT/notes" 2>/dev/null | sed -n 's/^\(.*\) - .*/\1/p' \
+  | sort | uniq -c | sort -rn | awk '$1 >= 2 { $1 = ""; sub(/^ /, ""); print }' | paste -sd '|' -)"
+
 prompt="Fetch this URL and distill it: $url
 
-Create exactly ONE new markdown file in 'sources/' — filename: short kebab-case slug of the page title, '.md' extension. Mirror the section structure of 'Templates/Literature.md' exactly, filled as follows:
+Create exactly ONE new markdown file in 'notes/' (flat — never a subfolder). Filename: '<Topic> - <Descriptive Title>.md' — Title Case, spaces around the hyphen, never a kebab-case slug. The topic prefix is the vault's taxonomy, so reuse one of these existing prefixes whenever one fits: $prefixes. Mint a new prefix only if none of those applies. Mirror the section structure of 'Templates/Note.md' exactly, filled as follows:
 - Date: today's date
 - Source: the URL, plus author/site when evident
 - Key Points: 5-10 bullets of the substantive claims and arguments — specific enough to be useful without reopening the page
-- Leave 'Quick Reactions', 'Explain It Back', 'Permanent Notes to Create', and 'Open Questions For Later' as empty scaffolding for the human to fill.${note:+
+- Leave 'Quick Reactions', 'Explain It Back', 'Related', and 'Open Questions For Later' as empty scaffolding for the human to fill.${note:+
 - Exception: under 'Quick Reactions' add this capture note from the reader: \"$note\"}
 
-End the note with at most ONE tag from this closed vocabulary — #backend #devops #architecture #llms — or no tag at all. Never invent another.
+End the note with at most ONE tag from the vault's current vocabulary — #backend #devops #architecture #llms #linux — or no tag at all. The tag is a retrieval handle: pick the word that would be searched for, not the one that classifies correctly (#linux is Linux as a personal OS; #devops is infrastructure work). The vocabulary is open and grows, but this is an unattended capture, so do not add to it here — if nothing above fits, use no tag and the filename prefix will find it.
 
 If the fetch fails, still create the file with Source filled and a single 'FETCH FAILED: <reason>' bullet under Key Points."
 
 # Prompt via stdin: --allowedTools is variadic and would swallow a positional
-# prompt. Inside tmux the launch is handed
-# to the server (run-shell -b): the popup's process group gets SIGHUP-killed
-# ~1s after capture, and nohup does not survive that.
+# prompt. setsid, not nohup: the popup's whole process group is torn down
+# shortly after capture, so the run needs its own session, not just SIGHUP
+# immunity.
 log="$LOG_DIR/$(date +%Y%m%d-%H%M%S)-bookmark.log"
 pf="$(mktemp "${TMPDIR:-/tmp}/bookmark-prompt.XXXXXX")"
 printf '%s' "$prompt" >"$pf"
-runner="cd $(printf %q "$VAULT") && $(printf %q "$(command -v claude)") -p --model sonnet --allowedTools WebFetch $(printf %q 'Write(sources/**)') <$(printf %q "$pf") >$(printf %q "$log") 2>&1; rm -f $(printf %q "$pf")"
-if [ -n "${TMUX:-}" ]; then
-  tmux run-shell -b "$runner"
-else
-  nohup sh -c "$runner" >/dev/null 2>&1 &
-  disown
-fi
-printf '✓ logged — source stub landing in sources/ (log: %s)\n' "${log/#$HOME/\~}"
+runner="cd $(printf %q "$VAULT") && $(printf %q "$(command -v claude)") -p --model sonnet --allowedTools WebFetch $(printf %q 'Write(notes/**)') <$(printf %q "$pf") >$(printf %q "$log") 2>&1; rm -f $(printf %q "$pf")"
+setsid sh -c "$runner" >/dev/null 2>&1 &
+disown
+printf '✓ logged — source stub landing in notes/ (log: %s)\n' "${log/#$HOME/\~}"
 sleep 1

@@ -198,9 +198,11 @@ height = "100%"
 # the herdr server (started from a login environment, not an interactive shell)
 # never runs. Without this the popup flash-closes on "command not found" — hence
 # tmux-tui-popup, which holds it open with a readable error instead.
+# EDITOR is set for the same reason — it is exported from .zshrc, so hunk's `e`
+# (open file in editor) sees it unset under the popup's non-interactive bash.
 [[keys.command]]
 key = "prefix+d"                        # hunk review
-command = "~/.local/bin/tmux-tui-popup 'PATH=\"${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims:$PATH\" hunk diff' 'hunk failed — run install/hunk'"
+command = "~/.local/bin/tmux-tui-popup 'PATH=\"${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims:$PATH\" EDITOR=\"${EDITOR:-nvim}\" hunk diff' 'hunk failed — run install/hunk'"
 type = "popup"
 width = "100%"
 height = "100%"
@@ -276,11 +278,11 @@ width = "95%"
 height = "95%"
 
 [[keys.command]]
-key = "prefix+n"                        # notes menu (fzf replaces display-menu)
+key = "prefix+n"                        # notes menu (single keypress, tmux display-menu semantics)
 command = "~/.local/bin/notes-menu"
 type = "popup"
-width = "70%"
-height = "60%"
+width = "90%"
+height = "90%"
 
 [[keys.command]]
 key = "prefix+f"                        # sessionizer (herdr-native workspace picker)

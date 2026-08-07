@@ -219,7 +219,7 @@ Runs ONCE the main loop passes the execution gate (Step 6), before MEDIUM classi
 3. **Dispatch eligible specialists** — `security-reviewer`, `perf-reviewer`, and/or **`smell-reviewer-deep`** (smell runs `-deep` by DEFAULT; `+fast` takes the cheap tier. The others take their `-deep` variant under `+deep`, omitting `model`; `model: "haiku"` under `+fast`). Launch multiple in a single message (parallel). Pass each ONLY the converged-diff file list as its scope — never let it re-discover — and the relevant `flagged` subset. Do NOT include a category checklist; each agent defines its own calibration (same rule as Step 3).
 
 4. **Fold findings into the existing packet** — do NOT open a parallel findings stream:
-   - `[perf]`-tagged findings → collect into `perf[]` with their `Principle:` line. On the domain's FIRST pass this loop only, append each to `~/vault/cache/Backend Perf - Findings Log.md` via Read + Edit (Write it with a `# Backend Perf - Findings Log` heading if absent). **This log is the only write you are permitted** (see the bottom fence). Format, one line per finding:
+   - `[perf]`-tagged findings → collect into `perf[]` with their `Principle:` line. On the domain's FIRST pass this loop only, append each to `~/.claude/backend-perf-findings.md` via Read + Edit (Write it with a `# Backend Perf - Findings Log` heading if absent). **This log is the only write you are permitted** (see the bottom fence). It is agent telemetry, not vault content — never write it into `~/vault/`, where an append-only log fails the `cache/` admission test. Format, one line per finding:
 
      ```
      - **<today's date>** `<repo>` `<file:line>` — <finding one-liner> → <fix applied or "reported">. *Principle: <principle>*
@@ -301,7 +301,7 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 ## What NOT to do
 
 - **Never raise a modal.** You have no `AskUserQuestion`. `ask` items and `blockers` go in the packet.
-- **Never write outside `~/vault/`.** Your `Write`/`Edit` tools exist for ONE purpose: the perf findings log in step 6b. Every source-file change — including to this file — goes through an `Agent` coder dispatch, never a direct edit. A direct edit changes code the gate never saw get reviewed.
+- **Never write any path but `~/.claude/backend-perf-findings.md`.** That one file is the ONLY purpose your `Write`/`Edit` tools have — the perf findings log in step 6b. This is a single-file allowlist, not a directory one: writing anywhere else, inside `~/vault/` or out, is out of bounds. Every source-file change — including to this file — goes through an `Agent` coder dispatch, never a direct edit. A direct edit changes code the gate never saw get reviewed.
 - **Never run `review-gate-mark`.** The clean mark belongs to your CALLER, after it renders your `converged` packet. Marking from inside the loop would clear the gate before the packet is routed.
 - **Never reorder the loop.** Cap check precedes the reviewer dispatch; plan-impact and blocker returns precede any coder dispatch.
 - **Never pass MEDIUM/LOW to the CRITICAL/HIGH fix coder.**

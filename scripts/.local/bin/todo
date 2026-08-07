@@ -1,15 +1,16 @@
 #!/bin/bash
 # todo — frictionless task capture + check-off for the org lane. Appends to
 # ~/vault/org/inbox.org, the same file nvim-orgmode's `t` capture template
-# targets, so everything lands in the agenda (prefix n a / n t). Complements
+# targets, so everything lands in the agenda (prefix n a / n e). Complements
 # `note` (diary lane → daily-recap): todos are things to DO, notes are things
 # that HAPPENED.
 #
 # Usage:
 #   todo <text>    append "* TODO <text>" to inbox.org
 #   todo           fzf over open TODO/NEXT/WAITING headlines across all org
-#                  files; enter checks off (tab = multi)
-#   todo -i        capture loop for the tmux popup (prefix n T): one todo per
+#                  files; enter checks off (tab = multi). Not on the notes menu
+#                  — check off from the agenda todos view (prefix n e)
+#   todo -i        capture loop for the notes-menu popup (prefix n t): one todo per
 #                  line, empty line (or Ctrl-C/Ctrl-D) closes
 set -e
 

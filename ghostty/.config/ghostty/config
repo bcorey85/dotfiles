@@ -57,6 +57,12 @@ keybind = ctrl+.=csi:46;5u
 # Mouse
 link-url = true
 
+# Copy-on-select. Ghostty's default (`true`) writes the selection to the PRIMARY
+# selection only, so a highlight is pastable with middle-click but ctrl+v still
+# returns whatever was last explicitly copied. `clipboard` writes both, which is
+# the behaviour every other terminal calls copy-on-select.
+copy-on-select = clipboard
+
 # Per-machine overrides (font-size on a hidpi laptop vs an external monitor,
 # etc.). Machine-local, not stowed. `?` = optional. config-file includes are
 # processed after this file finishes parsing, and this is the last one, so it

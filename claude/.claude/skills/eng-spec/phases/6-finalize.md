@@ -31,8 +31,8 @@
     - **Carry the counter-priming into `## Approaches Considered and Not Taken`**
       — the ruled-out approaches the architect actually named, each with its
       failure mode, and its own count where it named fewer than three. Never top
-      the list up: an approach invented here reads afterwards as one that was
-      genuinely considered and rejected.
+      the list up: an invented approach reads later as one genuinely considered
+      and rejected.
     - **Write `## Constraints` and `## External Contracts` yourself — nothing
       upstream produces them**, and both are mandatory. Their full rules live in
       those two sections' comments in the spec template; write them from the

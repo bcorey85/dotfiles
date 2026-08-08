@@ -1,6 +1,6 @@
 ---
 name: branch-recap
-description: The final closing phase — reassemble a gated branch into one thing you can hold in your head before the PR. Cross-phase test audit, closing-phase residue triage, and a recap receipt. Use for "recap", "branch recap", "wrap up the branch", "/branch-recap". Never stages semantic changes and never commits — the user reads the queue and stages, then /commit.
+description: The final closing phase — reassemble a gated branch into one thing you can hold in your head before the PR. Cross-phase test audit, closing-phase residue triage, and a recap receipt. Use for "recap", "branch recap", "wrap up the branch", "/branch-recap". Hands back a read queue — the staging and the commit stay the user's.
 allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion, Skill]
 ---
 
@@ -52,17 +52,18 @@ an unrouted `REQUIRES-MUTATION` stays open and is reported as open. With several
 settle, dispatch them SEQUENTIALLY — the mutation lock is global, so a second
 concurrent run aborts on the first one's lock even in a different repo.
 
-It returns one of four verdicts, and only two of them settle the cull:
+It returns one of four verdicts, defined with their preconditions in
+`~/.claude/agents/mutation-tester.md` — read them there rather than from a summary, and
+never restate them in a prompt that produces a verdict rather than reads one. Only two of
+the four settle the cull: KILLED means the test earns its place, SURVIVED means the cull
+argument stands. The other two are results, not failures to reach one, and each has a way
+of being misread here:
 
-- **KILLED** → the test earns its place. Not a cull.
-- **SURVIVED** → the test does not kill this mutant; the cull argument stands.
-- **EQUIVALENT** → the mutant is unobservable, so no test could ever kill it. The
-  cull question was malformed. Do **not** read this as a survivor and do **not**
-  commission coverage to chase it — a test written against an equivalent mutant
-  asserts nothing, which is how vacuous tests get added by a process meant to
-  remove them.
-- **INDETERMINATE** → still open (red baseline, mutation didn't apply, or the
-  expected test never executed). Report it open; do not downgrade it to a pass.
+- **EQUIVALENT** is not a survivor. The mutant is unobservable, so the cull question was
+  malformed and no test could ever settle it. Do **not** commission coverage to chase it —
+  a test written against an equivalent mutant asserts nothing, which is how vacuous tests
+  get added by a process meant to remove them.
+- **INDETERMINATE** is still open. Report it open; do not downgrade it to a pass.
 
 **Carry the denominator into the receipt — a bare `0` is not a result here.** The
 coverage-net check searches the tests that existed at the branch point; when that set
@@ -91,14 +92,16 @@ audit still logs its `kind=run` row.
 
 ## Step 2: Whole-tree scans
 
-Both scans answer questions a phase-bound review structurally cannot. A phase can kill code
-it never opens — phase 5 builds its own envelope and phase 2's wrapper loses its last caller.
-A phase can copy a block out of a file its diff never touches — the copy is new code under
-review and the original is invisible. Each diff is individually clean either way. This is the
-first point where the whole tree is final, so it is the first point either question can be
-asked at all.
+All three scans answer questions a phase-bound review structurally cannot. A phase can kill
+code it never opens — phase 5 builds its own envelope and phase 2's wrapper loses its last
+caller. A phase can copy a block out of a file its diff never touches — the copy is new code
+under review and the original is invisible. And a phase can edit one side of a pair an earlier
+phase copied, leaving the other side stale — the edit is right in its own diff, and the whole
+damage sits in the file it never opened. Each diff is individually clean in all three cases.
+This is the first point where the whole tree is final, so it is the first point any of the
+three can be asked at all.
 
-Run both yourself, with `Bash`, from the repo root:
+Run all three yourself, with `Bash`, from the repo root:
 
 ```bash
 bash ~/.claude/scripts/dead-symbol-scan.sh .
@@ -116,9 +119,9 @@ The drift scan is the clone scan's complement and the two must be read together.
 goes blind at the exact moment a copied pair becomes a bug: while the copies agree it reports
 them, and the edit that breaks them apart also deletes them from its output. So the drift scan
 carries the higher-severity half — a pair it reports has ALREADY diverged, and usually exactly
-one of the two sides is now wrong. Ask which. Its rows are line pairs, not blocks: about half
-are coincidentally-aligned declaration lines and cost two lines of reading to dismiss, so
-dismiss them out loud rather than silently.
+one of the two sides is now wrong. Ask which. Its rows are line pairs, not blocks, so a
+share of them are coincidentally-aligned declaration lines that cost two lines of reading to
+dismiss — dismiss those out loud rather than silently.
 
 **Report-only. Never delete on its say-so** — every row is a candidate, and the caveat block
 it prints lists the false-positive sources that apply. Read each row against the change map:
@@ -155,6 +158,14 @@ residue you still owe a read. Do not reclassify or promote its tiers — `stage.
 single source of truth, and only its deterministic SAFE tier is ever staged unread.
 
 Nothing unstaged → receipt line `residue: none — all phases staged clean`.
+
+**A classifier that could not answer did not return a clean tree.** The tiering reads the
+diff of each unstaged path; where there is no diff to read — an all-new file, a greenfield
+branch — it has nothing to classify, and its silence is byte-identical to a genuinely clean
+tree. Check `git status --porcelain` yourself before writing the line: untracked or unstaged
+paths that `/stage` returned no tier for go in the receipt as
+`residue: <n> unclassified — no diff to tier, read them all`, and into **Still unstaged**
+by name. Same rule as the denominator in step 1: a check that cannot fail has not passed.
 
 ## Step 3b: Deferred-findings queue
 
@@ -234,17 +245,12 @@ printf '{"ts":"%s","repo":"%s","branch":"%s","test_audit":"%s","residue":%d,"fil
 
 ## What NOT to do
 
-- **Never re-run a gate.** No second correctness pass, no re-verify, no re-orient. Each of
-  those already fired at a boundary where its oracle was sharper than it would be here.
-  Re-running them buys little, and their real function at this point is to shrink what you
-  read — which is the debt this skill exists to surface, not hide.
-- **Never `git add` a semantic file, never commit, never open a PR** — the residual read and
-  the stage are the user's; `/commit` is its own skill.
+- **Never re-run a gate** — no second correctness pass, no re-verify, no re-orient. Reason at
+  the top of this file. Re-running one hides the debt this skill exists to surface.
+- **Never `git add` a semantic file, never commit, never open a PR** — output contract above.
 - **Never edit code** — anything step 1 finds routes through `/fix`.
 - **Never run `/adr`** — it is the user's own step, sequenced after the recap and before the
   PR opens so the record ships in the same PR. The recap's Next line points to it.
-- **Never re-run quality checks the execution gate already evidenced** — the 2-run cap in
-  `~/.claude/CLAUDE.md` applies across the whole task.
 
 ## Arguments
 

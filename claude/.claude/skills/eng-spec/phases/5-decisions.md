@@ -1,7 +1,5 @@
 # Phase 5: Design resolution — in prose, one at a time, logged as it lands
 
-**This is the point of the skill.** Everything else is scaffolding around it.
-
 ## Open the ledger first (mechanical — no thinking, no asking)
 
 **Do this before the first design question leaves your mouth.**

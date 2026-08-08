@@ -34,6 +34,7 @@ Surface decision points the framing already settles too — marked "settled by f
 - **API endpoints**: URL, method, request/response shapes, validation rules, status codes, auth/permissions
 - **Async tasks** (if any): triggers, retry strategy, failure handling, idempotency
 - **Quality mechanics**: N+1 prevention (eager loading/joins), transaction boundaries for multi-step consistency, query encapsulation per the project's pattern, error handling with appropriate status codes
+- **Reuse Map**: existing services, utilities, and patterns to leverage — seed from `02-research.md`'s `## Reuse Inventory` if available
 - **Deviations** from existing patterns, each with the reason
 
 ## Output Format

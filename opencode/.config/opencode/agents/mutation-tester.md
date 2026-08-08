@@ -122,8 +122,19 @@ distinctions. `INDETERMINATE` and `EQUIVALENT` are real results, not failures to
 ## Step 4 — Restore. Non-negotiable, and it runs on every path
 
 This runs whether the suite passed, failed, errored, hung, or you decided to abort at Step 2.
-Restore from `backup_path` with **Write** — never `git checkout`, which would also destroy
-the real uncommitted work in that file.
+
+**Restore by copying the backup file. Never `git checkout`** — it would also destroy the
+real uncommitted work in that file. **Never `Write`, and never `Edit`** — both make you the
+author of the restored bytes, and an agent authoring a file it "knows" reconstructs it from
+memory rather than from the backup. That has happened, and only the hash check caught it.
+The restore path is a file copy and nothing else:
+
+```bash
+cp <backup_path> <target>                # the only sanctioned restore
+```
+
+The hash check below is a second line of defence, not the first. A restore that needs the
+hash to catch it has already gone wrong.
 
 Then verify by hash, not by eyeball:
 

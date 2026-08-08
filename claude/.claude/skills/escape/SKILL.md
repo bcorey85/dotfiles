@@ -11,8 +11,8 @@ One escape = one defect found downstream of the gate that should have caught it.
 ## Instructions
 
 1. **Extract the fields** from `$ARGUMENTS` and the conversation:
-   - `stage_found` — where the defect surfaced: `walkthrough` (you, reading `/stage`'s queue at a phase sign-off — inside the loop), `pr-human` (you, reading the diff after it left the gates), `prod`, `verify`, `other`
-   - `gate_missed` — which layer should have caught it: `review` (bugs/quality), `drift-gate` (plan drift), `test-intent` (bug-pinning tests), `stage` (bug in a mechanically-staged SAFE-tier file — the invariant failed), `coder` (should never have been written)
+   - `stage_found` — where the defect surfaced: `walkthrough` (you, reading `/stage`'s queue at a phase sign-off — inside the loop), `phase-gate` (a downstream agent caught it inside the phase loop, before you read anything), `pr-human` (you, reading the diff after it left the gates), `prod`, `verify`, `other`
+   - `gate_missed` — which layer should have caught it: `review` (bugs/quality), `drift-gate` (plan drift), `test-intent` (bug-pinning tests), `stage` (bug in a mechanically-staged SAFE-tier file — the invariant failed), `coder` (should never have been written), `eng-spec` (**the defect was in the plan** — an unrunnable criterion, a criterion contradicting the domain, a mandated primitive with unstated semantics. Use this whenever the implementation faithfully matched a wrong spec: no reviewer can catch that, because it checks the diff against the spec and finds them in agreement. Never file it under `coder`.)
    - `class` — `bug` | `smell` | `duplication` | `complexity` | `plan-drift` | `test-gap` | `other` (`complexity` = code that need not have existed, the `/refactor simplify` class)
    - `severity` — `high` | `medium` | `low`
    - `desc` — one line, specific enough to be legible in 3 months

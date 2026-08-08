@@ -18,16 +18,25 @@
 #     defect one of these scans is supposed to cover, that is a miss, and it is
 #     recorded on the escape side, not here.
 #
-# exit=2 means the scan DID NOT RUN. Log it. An unlogged non-run is
-# indistinguishable from a clean tree, which is how a broken scan survives.
+# The exit code answers "did it run", never "did it pass" — those came apart the
+# first time a grep-family scan was logged, because grep exits 1 on a clean tree:
+#   exit=0  ran, printed rows
+#   exit=1  ran, printed nothing — a PASS, and candidates=0 confirmed=0
+#   exit=2  DID NOT RUN. Log it. An unlogged non-run is indistinguishable from a
+#           clean tree, which is how a broken scan survives.
+# Both 0 and 1 therefore require the counts. A ran-and-found-nothing row with no
+# counts reads as an error row, which silently deletes the precision denominator.
 #
 # usage: log-scan key=value [key=value ...]
 #   required:
 #     repo=<basename>
-#     scan=dead-symbol|clone-block|drifted-copy|acceptance-stub|other
+#     scan=dead-symbol|clone-block|drifted-copy|acceptance-stub|prohibition|other
+#       prohibition = a banned pattern that must not appear at all (a plan's
+#       "git grep <X> returns zero hits" criterion). candidates is the hit
+#       count, so a passing run is exit=1 with candidates=0.
 #     stage=branch-recap|code-phase|refactor|manual
-#     exit=<the scan's actual exit code>
-#   required when exit=0:
+#     exit=<the scan's actual exit code — see above>
+#   required when the scan RAN (exit=0 or exit=1):
 #     candidates=<rows the scan printed>
 #     confirmed=<rows you judged real after reading them>
 #   optional:
@@ -63,8 +72,8 @@ need repo; need scan; need stage; need exit
 
 scan=$(jq -r '.scan' <<< "$json")
 case "$scan" in
-  dead-symbol|clone-block|drifted-copy|acceptance-stub|other) ;;
-  *) echo "refusing to log: scan=$scan is not one of dead-symbol|clone-block|drifted-copy|acceptance-stub|other" >&2; exit 1 ;;
+  dead-symbol|clone-block|drifted-copy|acceptance-stub|prohibition|other) ;;
+  *) echo "refusing to log: scan=$scan is not one of dead-symbol|clone-block|drifted-copy|acceptance-stub|prohibition|other" >&2; exit 1 ;;
 esac
 
 stage=$(jq -r '.stage' <<< "$json")
@@ -74,11 +83,16 @@ case "$stage" in
 esac
 
 code=$(jq -r '.exit' <<< "$json")
-if [ "$code" = "0" ]; then
+if [ "$code" = "0" ] || [ "$code" = "1" ]; then
   need candidates; need confirmed
   c=$(jq -r '.candidates' <<< "$json"); f=$(jq -r '.confirmed' <<< "$json")
   if [ "$f" -gt "$c" ] 2>/dev/null; then
     echo "refusing to log: confirmed ($f) exceeds candidates ($c)." >&2
+    exit 1
+  fi
+  if [ "$code" = "1" ] && [ "$c" != "0" ]; then
+    echo "refusing to log: exit=1 means the scan ran and printed nothing, so candidates must be 0 (got $c)." >&2
+    echo "If the scan errored rather than passing, log exit=2 — that is the did-not-run code." >&2
     exit 1
   fi
 fi

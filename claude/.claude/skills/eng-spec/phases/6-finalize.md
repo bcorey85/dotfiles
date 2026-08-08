@@ -7,7 +7,7 @@
 
     **Never assume an architect is unreachable — attempt the call.** Only after
     `SendMessage` fails, re-dispatch fresh with its brief verbatim,
-    `02-research.md`, and `03-decisions.md`; the ledger makes that lossless.
+    `02-research.md`, and `03-decisions.md`.
 
     **Fullstack ordering**: finalize `backend-architect` first — its plan must
     define the **API contract** (endpoints, methods, request/response shapes,
@@ -29,21 +29,14 @@
       UNDERSPECIFIED — resolve with the user like a `DESIGN GAP`, never left to
       the coder's reading.
     - **Carry the counter-priming into `## Approaches Considered and Not Taken`**
-      — the three ruled-out approaches, each with its failure mode.
-    - **Write `## Constraints` and `## External Contracts` — nothing upstream
-      produces them.** `## External Contracts` is mandatory: name each
-      provider/API/platform contract the change touches, the invariant it
-      imposes, and what breaks if violated — or state "None" explicitly. Where
-      the change alters what an external tool ACCEPTS or ENFORCES at runtime
-      (verifier, policy engine, admission controller, parser, migration runner),
-      each acceptance claim states its evidence class — `exercised` or
-      `declared-only`. Schema text and in-repo precedent describe intent, not
-      runtime behavior.
-
-      **`## Constraints` must stand alone.** Any probe-verified fact an
-      implementation step depends on belongs there with its evidence and the same
-      `exercised` / `declared-only` tag — not left behind in `03-decisions.md`.
-      The coder reads the spec, not the ledger.
+      — the ruled-out approaches the architect actually named, each with its
+      failure mode, and its own count where it named fewer than three. Never top
+      the list up: an approach invented here reads afterwards as one that was
+      genuinely considered and rejected.
+    - **Write `## Constraints` and `## External Contracts` yourself — nothing
+      upstream produces them**, and both are mandatory. Their full rules live in
+      those two sections' comments in the spec template; write them from the
+      template open in front of you, not from memory.
 
     - **Fullstack: weave, don't concatenate.** "Backend phases, then frontend
       phases" is the horizontal anti-pattern `plan-format.md` forbids — layer

@@ -126,7 +126,16 @@ if grep -qiE '\brm\b.*?\s-[a-zA-Z]*[rf]\b' <<< "$CMD"; then
     fi
 fi
 # Generic pipe-to-shell
-if grep -qiE '\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?(ba)?sh\b|\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?zsh\b|\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?dash\b|\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?ksh\b' <<< "$CMD"; then
+# A shell name inside a quoted span is an argument, not command position — the
+# pipe cannot execute it. Blank balanced quoted spans first so a search pattern
+# like rg 'foo|zsh' is not read as a pipe into zsh. Odd quote counts mean the
+# parse is ambiguous, so the raw command is tested instead.
+CMD_UNQUOTED="$CMD"
+if [[ $(( $(tr -cd "'" <<< "$CMD" | wc -c) % 2 )) -eq 0 && \
+      $(( $(tr -cd '"' <<< "$CMD" | wc -c) % 2 )) -eq 0 ]]; then
+    CMD_UNQUOTED=$(sed "s/'[^']*'/''/g; s/\"[^\"]*\"/\"\"/g" <<< "$CMD")
+fi
+if grep -qiE '\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?(ba)?sh\b|\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?zsh\b|\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?dash\b|\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?ksh\b' <<< "$CMD_UNQUOTED"; then
     block "[pipe_shell] [threat:7] Pipe-to-shell is not allowed — piping any command into a shell interpreter"
 fi
 if grep -qiE 'curl\b.*(--output\b|-o\b)|wget\b.*(-O\b|--output-document\b)' <<< "$CMD" && \

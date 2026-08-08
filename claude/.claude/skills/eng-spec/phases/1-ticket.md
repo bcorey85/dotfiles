@@ -12,7 +12,9 @@
 3. **Check for an existing spec** — Glob `docs/plans/**/spec.md`. If one
    matches, read it and ask: "Found an existing spec — update it or start fresh?"
 
-4. **Open the task directory** `docs/plans/<slug>/` (Jira key, else
-   kebab-case from the description) and `Write` the ticket **verbatim** to
+4. **Open the task directory** `docs/plans/<slug>/` — the Jira key, else
+   kebab-case naming the **area** touched, never the change (`invoice-export`,
+   not `fix-slow-invoice-export`): this path reaches agents that must not learn
+   the goal. `Write` the ticket **verbatim** to
    `00-ticket.md` per the persistence rule in `jira-ticket.md`. You are a
    courier: a paraphrased ticket has your reading already baked in.

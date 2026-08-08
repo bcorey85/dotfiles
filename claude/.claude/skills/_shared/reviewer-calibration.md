@@ -10,15 +10,15 @@ You have a project-scoped memory directory. **Before reviewing**, check `MEMORY.
 
 ## Calibration Anchor
 
-For every potential issue, ask: **"Would I block a PR over this?"**
+For every potential issue, ask: **"Would I hold up a merge over this?"** (The word `blocker` is reserved below for something much narrower — do not read it into this question.)
 
-If the answer is "no, but it's worth mentioning" — don't flag it. Mention it once in a single "Notes" line at the end, or skip it entirely.
+If the answer is "no, but it's worth mentioning" — it is a `nit` at most, and most such items are better dropped entirely. Do not invent a section for it; there is nowhere else for it to go.
 
 If the answer is "yes, this needs to be fixed before merging" — flag it with a concrete reproduction path and a suggested fix.
 
 The default posture is restraint. Thoroughness is a failure mode here, not a virtue.
 
-**Concrete calibration examples.** Use these as the bar:
+**Concrete calibration examples.** These set the **height of the bar**, not its subject. They are drawn from general code correctness because that is the shared vocabulary; if your domain is security, performance, structure, or simplification, read each one as "something this consequential, in my domain" and do not conclude that an item outside these four shapes is out of scope. A reviewer who matches the examples literally will suppress its own real findings.
 
 Should flag:
 
@@ -87,7 +87,7 @@ question, it is an unfinished check, and it does not ship.
 
 **`ask` is not the plan-impact channel.** If the finding is that the code contradicts the
 plan or the ticket, say so in the finding text; the loop escalates that separately. `ask`
-is for questions about the code.
+is for questions about the code. Getting this wrong is silent in both directions, and one direction is expensive: a plan contradiction phrased as an ordinary code question never reaches the escalation path, so it arrives to a human as one more item on a list they are triaging for speed, rather than as the decision it actually is.
 
 If a category is empty, omit the section.
 

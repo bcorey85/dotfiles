@@ -40,7 +40,8 @@
 
 12. **Present understanding FIRST**, before any decisions: current state, the
     patterns found (ask the user to confirm they are the RIGHT ones to follow),
-    constraints, and the architect's **three counter-primed approaches**. A wrong
+    constraints, and the architect's **counter-primed approaches** — three, or
+    however many it said it could name. A wrong
     pattern caught here does not propagate into every downstream decision.
     Whatever this exchange settles goes under `## Direction & Constraints` in the
     ledger _as it lands_, not later.
@@ -69,8 +70,7 @@
     - **then stop and wait.** Do not bundle the next question into the same turn.
 
     Expect a question back rather than a choice — that is the system working.
-    Follow it, log what it surfaces under `## Direction & Constraints`, and ask
-    follow-ups freely; there is no question quota.
+    Follow it and ask follow-ups freely; there is no question quota.
 
     **Never resolve a decision by recommending harder. Ask, and wait for words.**
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # log-review-finding — per-finding and per-run telemetry for every review gate.
 #
-# review-metrics.jsonl records one aggregate row per /review run: severity
+# review-metrics.jsonl records one aggregate row per /review run: disposition
 # counts, no per-finding detail. That answers "how loud was this run" and
 # nothing else. Two questions it cannot answer:
 #
@@ -44,7 +44,9 @@
 #     result=PASS|PASS WITH WARNINGS|NEEDS CHANGES   (optional)
 #
 #   kind=finding ONLY
-#     severity=critical|high|medium|low
+#     disposition=fix|ask|nit       what the reviewer said should happen
+#     blocker=yes|no                (optional, `fix` only) advancing with it
+#                                   in place ships the defect
 #     class=bug|smell|duplication|complexity|plan-drift|test-gap|weak-assertion
 #          |security|correctness|other        (same vocabulary as log-escape,
 #                                              so the two logs cross-tabulate)

@@ -178,9 +178,9 @@ route to `/escape` so it is not lost when this queue is filtered by branch).
 Empty queue → receipt line `deferred: none`. Otherwise
 `deferred: <n> fixed, <n> stale, <n> carried of <m>`.
 
-A deferred CRITICAL in this queue is a bug in the loop, not a work item: the
-one-round budget exempts CRITICAL from deferral. Say so explicitly if one
-appears.
+A deferred `blocker` in this queue is a bug in the loop, not a work item: the
+one-round budget exempts `blocker` findings from deferral. Say so explicitly if
+one appears.
 
 ## Step 4: The recap
 
@@ -210,12 +210,12 @@ Spec: <task-dir>
 - drifted copies: <pairs you judged real, naming which SIDE is stale for each; "clean", or "scan DID NOT RUN">
 
 ### Deferred findings             (one-round budget, read at branch bound)
-- <fixed / stale / carried, one line each, with the gate and severity each came from; or "none">
+- <fixed / stale / carried, one line each, with the gate and disposition each came from; or "none">
 
 ### Smoke-test checklist          (from the /verify closing phase)
 - <every human-only item, with steps>
 
-### Open items                    (medium.ask, low[], escapes — verbatim)
+### Open items                    (ask[], nit[], escapes — verbatim)
 
 ### Still unstaged                (from /stage, blast-radius order)
 - <path> — <classifier reason>

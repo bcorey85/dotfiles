@@ -20,7 +20,7 @@ C="repo=$(basename "$(git rev-parse --show-toplevel)") branch=$(git branch --sho
 bash "$L" kind=run $C gate=<agent name> n_findings=<n> diff_loc=<n> result=<...>
 
 # ONE finding row per finding that gate emitted.
-bash "$L" kind=finding $C gate=<agent name> severity=<critical|high|medium|low> \
+bash "$L" kind=finding $C gate=<agent name> disposition=<fix|ask|nit> [blocker=yes] \
   class=<bug|smell|duplication|complexity|plan-drift|test-gap|weak-assertion|security|correctness|other> \
   file=<path> line=<n> actioned=<fixed|skipped_fp|deferred|ask|none> desc="<one line>"
 ```

@@ -24,7 +24,7 @@ First action: Read `~/.claude/skills/_shared/reviewer-calibration.md` and adopt,
 - **Sequential awaits on independent I/O** — independent queries/HTTP calls awaited in series that could run concurrently.
 - **Per-item round-trips** — one DB/HTTP call per item where a single batched call would do (server- or client-side).
 
-**Severity by consequence**: HIGH on a request path over data that grows with usage (rows, tenants, events); MEDIUM when the collection is small today but unbounded. **Bounded by construction** (fixed-size config, a hard cap you verified) → not a finding.
+**Disposition by consequence**: `fix` on a request path over data that grows with usage (rows, tenants, events). When the collection is small today but unbounded, it is still `fix` if the correction is obvious, `ask` if the remedy is a design call. `blocker` is not yours to raise — a perf defect does not stop a phase. **Bounded by construction** (fixed-size config, a hard cap you verified) → not a finding.
 
 ## Format (required — this feeds a learning flywheel)
 
@@ -54,14 +54,14 @@ If you notice a clearly-shippable non-perf issue, mention it in a single closing
 **Files Reviewed**: [list]
 **Overall Assessment**: [PASS / PASS WITH WARNINGS / NEEDS CHANGES]
 
-### High Priority Issues
+### Fix
 [file:line — [perf] issue — fix — Principle: <one sentence>]
 
-### Medium Priority Issues (report-only)
-[file:line — [perf] issue — Principle: <one sentence>]
+### Ask
+[file:line — [perf] issue — the question the human has to answer — Principle: <one sentence>]
 
-### Notes
-[single line for any low-priority or out-of-domain observation; skip if none]
+### Nit
+[single line for any optional or out-of-domain observation; skip if none]
 ```
 
 - A perf fix that requires a **design decision** (denormalization, a caching layer, a schema change with migration cost) — mark it `[perf] [design-decision]` so review-loop surfaces it to the user rather than auto-fixing.

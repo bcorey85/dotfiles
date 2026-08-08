@@ -49,18 +49,45 @@ The most common false positive is not a calibration miss — it is a finding tha
 
 If you cannot verify the premise, the finding does not ship.
 
-## Severity Definitions
+## Disposition
 
-Use these severities. They are **strict** definitions about the issue itself, not requests for action:
+Every finding carries **exactly one disposition**. The disposition names what should
+happen to the finding — not how bad it sounds. There is no severity ladder: pick the
+action, and the action is the label.
 
-- **CRITICAL**: Should not be merged at all. Data loss, security breach, or production outage in normal use.
-- **HIGH**: Should not ship without fixing. A real bug or stated-convention violation that will cause problems for someone.
-- **MEDIUM**: Real issue, but the code could ship without fixing this. Does not trigger the auto-fix loop; it is classified after convergence into fix / skip / ask, so a MEDIUM still gets applied when it is a clear win.
-- **LOW**: Worth mentioning once. Single "Notes" line, no fix dispatch.
+- **`fix`** — repair it now, and the repair needs no human decision. You have named a
+  concrete defect and the correction follows from it. Routed straight to a fix coder.
+- **`ask`** — a human has to answer something before anything is done. Two shapes
+  qualify and only these two: (a) you believe there is a problem but cannot confirm the
+  premise, or (b) the problem is real and more than one correction is defensible, so
+  picking one is a design call. Never auto-fixed.
+- **`nit`** — real, optional, and cheap to ignore. Reported exactly once, never fixed,
+  never re-reviewed, never re-raised on a later pass.
 
-**CRITICAL and HIGH additionally require real-world likelihood, not just reachability.** This applies only after the reachability check passes — an unreachable path is not a finding at all; this rule grades paths that are real but unlikely. The failure path must be one realistic use will plausibly hit — real inputs, normal timing, state the system actually produces. A failure that needs contrived inputs, an improbable race, or state that doesn't occur in practice caps at MEDIUM, and the finding must name the precondition that has to hold for it to fire.
+Plus **one orthogonal flag**, valid only on `fix`:
 
-**Severity is a property of the issue, not a lever for whether auto-fix runs.** Do not inflate a MEDIUM to HIGH because you want it addressed. Do not deflate a HIGH to MEDIUM because you're worried about triggering another loop.
+- **`blocker`** — advancing with this in place ships the defect. Data loss, security
+  breach, or production outage in normal use. This is the only label that stops a phase,
+  so it is rare by construction; if you are reaching for it to add emphasis, it is a
+  plain `fix`.
+
+**`blocker` additionally requires real-world likelihood, not just reachability.** This
+applies only after the reachability check passes — an unreachable path is not a finding
+at all; this rule grades paths that are real but unlikely. The failure path must be one
+realistic use will plausibly hit: real inputs, normal timing, state the system actually
+produces. A failure that needs contrived inputs, an improbable race, or state that
+doesn't occur in practice cannot be `blocker`, and the finding must name the precondition
+that has to hold for it to fire.
+
+**The disposition is a claim about the work, not a lever for attention.** Do not mark a
+`nit` as `fix` because you want it addressed. Do not mark a real defect `nit` because
+you're worried about triggering another round. Do not use `ask` as a hedge on a finding
+you could have verified — an unverified premise you had the tools to check is not a
+question, it is an unfinished check, and it does not ship.
+
+**`ask` is not the plan-impact channel.** If the finding is that the code contradicts the
+plan or the ticket, say so in the finding text; the loop escalates that separately. `ask`
+is for questions about the code.
 
 If a category is empty, omit the section.
 
@@ -72,6 +99,6 @@ For each issue you're about to flag, run the calibration question one more time:
 2. Have I verified the bad path is actually reachable, not just theoretically possible?
 3. Is this a stated project convention, or my preference? If I'm citing a convention, did I re-read its exemption clause and confirm the code isn't exempt?
 4. Is the premise verified against ground truth — correct diff baseline (not pre-existing/intentional work), actual types/state, fresh typecheck (not a stale LSP/TS snapshot)?
-5. Could this be downgraded from HIGH to MEDIUM, or MEDIUM to a Note? In particular: does the failure need contrived inputs, unusual timing, or state real usage won't produce? That caps it at MEDIUM (Severity Definitions).
+5. Is the disposition the honest one? In particular: does the failure need contrived inputs, unusual timing, or state real usage won't produce? Then it is not a `blocker` (Disposition). And is this `ask` really a question, or a check I could have finished myself?
 
-If the answer to #1 is "no", remove it. If you can't answer #2 affirmatively, remove it. If #3 is "preference" or the code is inside the rule's exemption, remove it. If you can't answer #4 affirmatively, remove it. If #5 nudges you down, downgrade it.
+If the answer to #1 is "no", it is at most a `nit`. If you can't answer #2 affirmatively, remove it. If #3 is "preference" or the code is inside the rule's exemption, remove it. If you can't answer #4 affirmatively, remove it. If #5 nudges you down, take the lower disposition.

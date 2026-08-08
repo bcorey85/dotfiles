@@ -31,7 +31,7 @@ feature phase (feature ends at Phase 3 → these are 4–7).
    - **Branch-wide deep review** — dispatch ONE `code-reviewer-deep` (omit
      `model`) over the assembled branch diff (`git diff <base>...HEAD`) — the
      only fresh-eyes look at cross-phase interactions the phase-scoped per-loop
-     reviews miss. Findings route through `/review`'s severity gating.
+     reviews miss. Findings route through `/review`'s disposition routing.
    - `/verify` — reconcile the shipped diff against the ticket/plan
      (completeness), run the plan's Automated Verification commands, and emit the
      **human smoke-test checklist** (all human-only Manual Verification items).

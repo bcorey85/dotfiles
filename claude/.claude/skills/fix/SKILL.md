@@ -51,9 +51,9 @@ raise the modals it cannot.
 
    Classify from the finding itself; when unsure, `class=other`. Infer `lane` from the branch's planning artifacts (eng-spec doc → `eng-spec`, direct dispatch → `code`); ask only when genuinely ambiguous. If the script fails, mention it and continue — telemetry never blocks a fix.
 
-4. **Render the packet**: `### Findings by severity` from `fixed[]`; any issues the agent skipped, with its reasons; `medium.fix` applied and `medium.skip` with reasons; `perf[]` under its own heading with `Principle:` lines; `low[]` and notes inline. If any finding needs architectural rethinking, recommend `/eng-spec`.
+4. **Render the packet**: `### Fixed` from `fixed[]` with `blocker` items first and marked; `skipped_fp[]` with reasons; `perf[]` under its own heading with `Principle:` lines; `nit[]` inline. If any finding needs architectural rethinking, recommend `/eng-spec`.
 
-5. **Raise what the agent could not**. Present `medium.ask`; wait for direction. Never auto-fix an ambiguous item.
+5. **Raise what the agent could not**. Present `ask[]` with each question; wait for direction. Never auto-fix an ask item.
 
 ## Arguments
 

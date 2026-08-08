@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# log-perf-finding — append one line per [perf] finding to the perf findings log
+#
+# usage: log-perf-finding repo=<name> file_line=<file:line> finding=<one-liner> \
+#          principle=<principle> disposition=<"fixed"|"reported">
+#
+# Exists so review-loop does not need Write/Edit to keep this log. Appending is
+# the whole job, the format is fixed, and a script cannot improvise its way into
+# editing a source file.
+#
+# Output file: $BACKEND_PERF_FILE or ~/.claude/backend-perf-findings.md
+# Re-logging the same repo + file_line + finding on a re-verify pass is a no-op.
+set -euo pipefail
+
+out="${BACKEND_PERF_FILE:-$HOME/.claude/backend-perf-findings.md}"
+
+repo="" file_line="" finding="" principle="" disposition="reported"
+for kv in "$@"; do
+  case "$kv" in
+    out=*) out="${kv#out=}" ;;
+    repo=*) repo="${kv#repo=}" ;;
+    file_line=*) file_line="${kv#file_line=}" ;;
+    finding=*) finding="${kv#finding=}" ;;
+    principle=*) principle="${kv#principle=}" ;;
+    disposition=*) disposition="${kv#disposition=}" ;;
+    *) echo "skipping malformed arg (want key=value): $kv" >&2 ;;
+  esac
+done
+
+for required in repo file_line finding principle; do
+  if [ -z "${!required}" ]; then
+    echo "missing required arg: $required=" >&2
+    exit 1
+  fi
+done
+
+if [ ! -f "$out" ]; then
+  printf '# Backend Perf - Findings Log\n\n' > "$out"
+fi
+
+# Never double-log across re-verify passes: the finding text is the identity,
+# scoped to its repo and location.
+if grep -Fq "\`$repo\` \`$file_line\` — $finding " "$out" 2>/dev/null; then
+  echo "already logged, skipping → $out"
+  exit 0
+fi
+
+printf -- '- **%s** `%s` `%s` — %s → %s. *Principle: %s*\n' \
+  "$(date -u +%Y-%m-%d)" "$repo" "$file_line" "$finding" "$disposition" "$principle" >> "$out"
+echo "logged → $out"

@@ -8,27 +8,30 @@
 # prompt exists so you can read subprocess output; our subprocesses are
 # full-screen TUIs with nothing to read on exit.
 promptToReturnFromSubprocess: false
-
 os:
   # Without this lazygit falls back to bare `vim`, which is not installed --
   # nvim only. The failed subprocess then forces the return prompt above
   # regardless of the setting, because a nonzero exit has output worth reading.
   editPreset: nvim
-
 gui:
   # Reclaim horizontal space for the diff. The side panel is narrow while you
   # read a diff and only widens when you focus it.
   sidePanelWidth: 0.2
   expandFocusedSidePanel: true
-
   # Open with all panels visible. `+` (nextScreenMode) steps up through half
   # (file list dominant) and full (diff hidden entirely); `_` steps back down.
   screenMode: normal
-
 git:
   pagers:
-    # No --side-by-side here: lazygit's main panel is already narrow, and the
-    # global core.pager keeps side-by-side for full-width `git diff`.
-    - name: delta
-      colorArg: always
-      pager: delta --paging=never
+    # hunk detects lazygit's captured-pager host (no controlling terminal) and
+    # emits a static coloured diff instead of launching its TUI. That path
+    # honours ~/.config/hunk/config.toml for theme, line numbers and hunk
+    # headers -- which is the point: `theme-mode` writes that theme key, so the
+    # diff panel follows dark/light. Delta's own theme is hardcoded dark and
+    # never did.
+    #
+    # No --mode split: the static renderer parses the flag and ignores it,
+    # always building stacked rows (modem-dev/hunk#338). Passing it reads as a
+    # broken config rather than an upstream gap. Revisit when that lands.
+    - colorArg: always
+      pager: hunk pager

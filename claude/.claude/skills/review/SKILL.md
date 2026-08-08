@@ -30,7 +30,8 @@ raise the modals it cannot.
    - **`plan-impact`** → raise the modal (see below), then re-dispatch the loop with the user's decision and BOTH returned counters preserved (`iter` and `spec_iter`).
    - **`critical-blocker`** → STOP. Present `blockers` and wait for direction. Do NOT re-dispatch, do NOT `/fix`.
    - **`cap-reached`** → STOP. Report `findings_remaining`; the user decides. Do NOT `/fix`. The session is correctly left `dirty`, so `git commit` stays blocked.
-   - **`converged`** → render the packet (step 3), then record convergence: `bash ~/.claude/scripts/review-gate-mark clean`. Run the mark ONLY for a packet whose `status` is `converged` — the other three statuses leave the commit gate dirty by design.
+   - **`deferred`** → the one-round correctness budget was spent and the residue was logged for branch exit. A normal completion, not a stop: render the packet (step 3), add `findings_remaining` under `### Deferred to branch exit`, and record convergence as for `converged`. Do NOT re-dispatch the loop or `/fix` those items — the budget is the point, and `/branch-recap` reads them back.
+   - **`converged`** → render the packet (step 3), then record convergence: `bash ~/.claude/scripts/review-gate-mark clean`. Run the mark ONLY for a packet whose `status` is `converged` or `deferred` — the other three statuses leave the commit gate dirty by design.
 
 3. **Render the packet**, in this order:
 

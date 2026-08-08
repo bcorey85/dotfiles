@@ -84,6 +84,11 @@ bash "$HOME/.claude/skills/review/log-review-metrics" \
   result=<clean|findings>
 ```
 
+Then emit the per-gate and per-finding rows per
+`~/.claude/skills/_shared/finding-log.md` (read it) with
+`gate=test-intent-reviewer lane=branch-recap scope=branch-exit`. A zero-finding
+audit still logs its `kind=run` row.
+
 ## Step 2: Whole-tree scans
 
 Both scans answer questions a phase-bound review structurally cannot. A phase can kill code
@@ -151,6 +156,32 @@ single source of truth, and only its deterministic SAFE tier is ever staged unre
 
 Nothing unstaged → receipt line `residue: none — all phases staged clean`.
 
+## Step 3b: Deferred-findings queue
+
+The correctness loop gets one round per phase; a re-review's findings are
+deferred to here rather than fixed in place. This is where that debt comes due —
+if this step does not run, deferral was deletion.
+
+```bash
+jq -c --arg b "$(git branch --show-current)" \
+  'select(.kind=="finding" and .actioned=="deferred" and .branch==$b)' \
+  "${REVIEW_FINDINGS_FILE:-$HOME/.claude/review-findings.jsonl}"
+```
+
+Read the whole queue against the **branch** diff, not the phase each finding
+came from — that wider bound is the reason deferral is worth anything, and some
+findings die there because a later phase already resolved them.
+
+Triage each into: **fix now** (route through `/fix`), **stale** (a later phase
+resolved it — say which), or **carry** (real, out of scope for this branch —
+route to `/escape` so it is not lost when this queue is filtered by branch).
+Empty queue → receipt line `deferred: none`. Otherwise
+`deferred: <n> fixed, <n> stale, <n> carried of <m>`.
+
+A deferred CRITICAL in this queue is a bug in the loop, not a work item: the
+one-round budget exempts CRITICAL from deferral. Say so explicitly if one
+appears.
+
 ## Step 4: The recap
 
 Assemble from what this session already holds — the per-phase walkthroughs, the review-loop
@@ -177,6 +208,9 @@ Spec: <task-dir>
 - dead symbols: <UNREFERENCED / TEST-ONLY candidates you judged real, with the phase that orphaned each; "clean", or "scan DID NOT RUN">
 - clone blocks: <clusters you judged real, noting which have already drifted; "clean", or "scan DID NOT RUN">
 - drifted copies: <pairs you judged real, naming which SIDE is stale for each; "clean", or "scan DID NOT RUN">
+
+### Deferred findings             (one-round budget, read at branch bound)
+- <fixed / stale / carried, one line each, with the gate and severity each came from; or "none">
 
 ### Smoke-test checklist          (from the /verify closing phase)
 - <every human-only item, with steps>

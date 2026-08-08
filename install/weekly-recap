@@ -15,7 +15,7 @@ print_info() { echo -e "${YELLOW}→${NC} $1"; }
 # at 18:30, after Friday's daily-recap (18:00) has compiled. The skill
 # (claude/.claude/skills/weekly-recap) rolls the week's Daily notes into a
 # weekly review note (decisions, themes, open follow-ups carried forward) and
-# appends brag bullets to ~/vault/Brag/<year>.md.
+# appends achievement bullets to ~/vault/Achievements/<year>.md.
 #   macOS: LaunchAgent (~/Library/LaunchAgents/com.dotfiles.weekly-recap.plist);
 #          a run missed while asleep fires on next wake.
 #   Linux: systemd user timer with Persistent=true (missed runs fire on boot).

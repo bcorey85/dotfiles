@@ -15,9 +15,18 @@ the notes actually contain.
 
 ## Sources — which file is the truth
 
-- **Live todo state**: `<vault>/org/**/*.org`. Open = `TODO`/`NEXT`/`WAITING`
-  headlines. Closed = `DONE`/`CANCELLED`. Age from the inline capture date
-  (`[YYYY-MM-DD Day]` under the headline), not from any note's filename.
+- **Live todo state**: `<vault>/org/inbox.org` and `<vault>/org/projects/*.org`.
+  Open = `TODO`/`NEXT`/`WAITING` headlines. Closed = `DONE`/`CANCELLED`. Age from
+  the inline capture date (`[YYYY-MM-DD Day]` under the headline), not from any
+  note's filename.
+  **Those two files only — an allowlist, not all of `org/`.** Every other file
+  there is a lane with its own semantics and is never swept for todos:
+  `books.org` is a reading queue (its `TODO`/`WAITING` entries are books, not
+  work — never age them, never offer them as today's focus, never flag them
+  stale), `bookmarks.org` / `questions.org` / `notes.org` are capture lanes,
+  `journal.org` is the log below, `achievements.org` belongs to
+  `/weekly-recap`. Allowlist on purpose: a new queue file must not flood the
+  picker, and a new project file must be picked up without editing this skill.
 - **Journal**: `<vault>/org/journal.org` — a datetree of free-form entries.
 - **`daily/*.md`**: compiled, point-in-time records. They are NOT the checklist —
   their `Open todos` bullets are a snapshot of org as of that night, and older notes

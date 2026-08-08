@@ -5,7 +5,7 @@ before authoring or changing any test.
 
 Lives outside `coder-core` deliberately: it applies only to dispatches that
 touch tests, while `coder-core` is preloaded into every coder dispatch —
-including fix coders and the review loop's MEDIUM bucket, which write no tests
+including fix coders dispatched from the review loop, which write no tests
 and paid for these rules on every spawn. The prohibitions that DO bind every
 coder (never reinterpret an acceptance criterion; never carry workflow
 vocabulary into committed code — `_shared/code-vocabulary.md`) stay in

@@ -35,15 +35,15 @@ raise the modals it cannot.
 
 3. **Render the packet**, in this order:
 
-   - `### Findings by severity` — every `fixed[]` entry (`severity`, `finding`, `file_line`). The loop repaired these; the user must still learn what they were. An empty `fixed[]` on `iter > 1` is a bug in the agent, not a clean run.
-   - `### Perf findings` — its own heading, one entry per `perf[]` item with its `Principle:` line. These never scroll past silently, regardless of severity or auto-fix status; the user is deliberately building backend-performance intuition from them.
-   - `specialists` — one line naming which cross-cutting specialists ran (or that none matched / were suppressed). Security findings, if any, already appear in `fixed[]`/`blockers`/`medium`; this line is the audit trail that the deterministic trigger fired as expected.
+   - `### Fixed` — every `fixed[]` entry (`finding`, `file_line`), `blocker` ones first and marked. The loop repaired these; the user must still learn what they were. An empty `fixed[]` on `iter > 1` is a bug in the agent, not a clean run.
+   - `### Perf findings` — its own heading, one entry per `perf[]` item with its `Principle:` line. These never scroll past silently, regardless of disposition or auto-fix status; the user is deliberately building backend-performance intuition from them.
+   - `specialists` — one line naming which cross-cutting specialists ran (or that none matched / were suppressed). Security findings, if any, already appear in `fixed[]`/`blockers`/`ask[]`; this line is the audit trail that the deterministic trigger fired as expected.
    - `class_closure` — one line, ALWAYS, including when it reads `none` or `n/a`. This is the loop's stopping-rule receipt: it says whether convergence was earned by enumerating a failure class or by nobody having repaired a class-shaped finding. Suppressing it when it is boring is what makes it useless when it is not. A `converged` packet missing the line is a bug in the agent — say so rather than rendering the packet as clean.
    - `load_bearing_clean`, if present — one line.
-   - `medium.fix` — applied, one line each. `medium.skip` — inline with its reason.
-   - `low[]` and notes — inline.
+   - `skipped_fp[]` — inline, each with its reason.
+   - `nit[]` — inline, one combined line.
 
-4. **Raise what the agent could not**. Present `medium.ask`; wait for direction. Never auto-fix an ambiguous item — when the right call needs a design decision, auto-fixing is most wrong.
+4. **Raise what the agent could not**. Present `ask[]`, each with its question; wait for direction. Never auto-fix an ask item — when the right call needs a design decision, auto-fixing is most wrong.
 
 5. **If nothing is outstanding**: "No issues found that warrant auto-fix. Ready for `/commit`."
 
@@ -51,10 +51,10 @@ raise the modals it cannot.
 
 A finding that **invalidates a plan/design decision** — not a defect, but
 evidence the plan's assumption is wrong (missed contract/invariant, mis-tiered
-risk, ungated security surface) — is a `PLAN-IMPACT`, not a severity bucket.
+risk, ungated security surface) — is a `PLAN-IMPACT`, not a disposition.
 The agent returns `status: plan-impact` and dispatches no coder. Then:
 
-1. Never fold it into the findings summary or triage it as a MEDIUM.
+1. Never fold it into the findings summary or triage it as an `ask`.
 2. Present it via **AskUserQuestion** before any further dispatch: assumed →
    found → what changes, options `Adopt plan change` / `Keep plan as written` /
    `Discuss`. The modal blocks until answered — that is the point.

@@ -165,22 +165,26 @@ the clock. Genuinely two-sided work might move it.
 Every toolkit change below is traceable to a round. `judgment` means shipped on
 reasoning, not measurement — flagged so it can't masquerade as evidence.
 
-| Change                                                                | Evidence         | Result                                                            |
-| --------------------------------------------------------------------- | ---------------- | ----------------------------------------------------------------- |
-| `smell-reviewer` size trigger (≥40 added lines OR ≥1 new source file) | gate ranking     | Kept. 98%/91% action rates say it's calibrated                    |
-| Author self-sweep → fresh-eyes `smell-reviewer`                       | gate ranking     | Authors can't see their own duplication                           |
-| Per-phase `plan-verifier` retired → branch scope only                 | 71 runs, 0 fixes | **Retired on measurement.** The single informative zero           |
-| Dispatch attribution retired as a yield metric                        | metric audit     | Measures routing, not yield                                       |
-| `perf`/`security` triggers rewritten                                  | false positives  | Gates untouched; only their triggers were wrong                   |
-| `code-reviewer` removal                                               | VOID round       | **Not shippable** — the OFF cell can't be produced                |
-| Auto-`-deep`-on-high-risk cut                                         | cost profile     | Priced a whole plan at deep tier to buy one phase                 |
-| coder / test-writer split (hook-enforced)                             | 2 rounds         | Bug-pinning rate → ~0/run. Price: ~+35% spend. **Kept**           |
-| Per-phase bug-pinning audit retired                                   | removal round    | Redundant once the split is hook-enforced; saved ~$26–53/arm      |
-| Per-phase weak-assertion lens retired → recap boundary                | remedy round     | Phase scope structurally can't see _absent_ assertions            |
-| Opus in the test path                                                 | remedy round     | **Rejected** — author blindness is tier-independent               |
-| fe+be coder split → one unfenced `coder` for fullstack                | seam round       | +57% spend, +37% findings, no correctness gain, ~3% of wall clock |
-| Mechanical checks over instructed checks (hooks, not prose)           | judgment         | A stated rationale is not an instruction                          |
-| `/eng-spec` goal-blind research order                                 | clean result     | The one step in the system with unambiguous evidence behind it    |
+| Change                                                                     | Evidence         | Result                                                                                                                                       |
+| -------------------------------------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `smell-reviewer` size trigger (≥40 added lines OR ≥1 new source file)      | gate ranking     | Kept. 98%/91% action rates say it's calibrated                                                                                               |
+| Author self-sweep → fresh-eyes `smell-reviewer`                            | gate ranking     | Authors can't see their own duplication                                                                                                      |
+| Per-phase `plan-verifier` retired → branch scope only                      | 71 runs, 0 fixes | **Retired on measurement.** The single informative zero                                                                                      |
+| Dispatch attribution retired as a yield metric                             | metric audit     | Measures routing, not yield                                                                                                                  |
+| `perf`/`security` triggers rewritten                                       | false positives  | Gates untouched; only their triggers were wrong                                                                                              |
+| `code-reviewer` removal                                                    | VOID round       | **Not shippable** — the OFF cell can't be produced                                                                                           |
+| Auto-`-deep`-on-high-risk cut                                              | cost profile     | Priced a whole plan at deep tier to buy one phase                                                                                            |
+| coder / test-writer split (hook-enforced)                                  | 2 rounds         | Bug-pinning rate → ~0/run. Price: ~+35% spend. **Kept**                                                                                      |
+| Per-phase bug-pinning audit retired                                        | removal round    | Redundant once the split is hook-enforced; saved ~$26–53/arm                                                                                 |
+| Per-phase weak-assertion lens retired → recap boundary                     | remedy round     | Phase scope structurally can't see _absent_ assertions                                                                                       |
+| Opus in the test path                                                      | remedy round     | **Rejected** — author blindness is tier-independent                                                                                          |
+| fe+be coder split → one unfenced `coder` for fullstack                     | seam round       | +57% spend, +37% findings, no correctness gain, ~3% of wall clock                                                                            |
+| Mechanical checks over instructed checks (hooks, not prose)                | judgment         | A stated rationale is not an instruction                                                                                                     |
+| `/eng-spec` goal-blind research order                                      | clean result     | The one step in the system with unambiguous evidence behind it                                                                               |
+| Per-finding gate log (silent runs included)                                | metric audit     | Aggregate rows carry no `file:line` and no denominator — per-gate yield and marginal contribution were not computable                        |
+| Review loop capped at ONE correctness round; residue defers to branch exit | judgment         | Later iterations re-review settled code; a `blocker` is the only exemption                                                                   |
+| Severity tiers → `fix` / `ask` / `nit` + orthogonal `blocker` flag         | 629-run log      | `fixed` (331) > `critical+high` (138) — the tier predicted nothing the loop acted on. Matches Google eng-practices and Conventional Comments |
+| Post-convergence MEDIUM-classification pass deleted                        | follow-on        | Reviewers label disposition at the point of finding; the pass had nothing left to classify                                                   |
 
 ### Load-bearing — do not "improve" these
 

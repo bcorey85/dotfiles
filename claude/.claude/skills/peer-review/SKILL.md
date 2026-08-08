@@ -1,7 +1,19 @@
 ---
 name: peer-review
 description: Peer-review someone else's PR — orient first (intent, change map, risk surface), then a report-only tiered review (blocking / suggestions / nits) with per-finding drill-down. Never edits code, never enters the fix loop.
-allowed-tools: [Agent, Bash, Read, Write, Glob, Grep, LSP, Skill, AskUserQuestion, mcp__jira__getJiraIssue]
+allowed-tools:
+  [
+    Agent,
+    Bash,
+    Read,
+    Write,
+    Glob,
+    Grep,
+    LSP,
+    Skill,
+    AskUserQuestion,
+    mcp__jira__getJiraIssue,
+  ]
 ---
 
 # Peer Review
@@ -63,9 +75,9 @@ Then gate with **AskUserQuestion**: `Full review` / `Focus review on <area>` (us
 Dispatch `code-reviewer` (or `code-reviewer-deep` with `+deep`; otherwise `model: "sonnet"`) with:
 
 - The worktree path as the code root and the exact changed-file list (never let it rediscover scope). >5 files → split along the largest natural boundary, same heuristic as `/review` step 3, parallel dispatch.
-- The PR description — plus the Jira ticket summary and acceptance criteria when found — as intent context. (AC *reconciliation* stays with the main agent in step 4b; reviewers just get the intent.)
-- Existing review-thread locations from step 1, tagged: "already raised by another reviewer — do not re-report; note only if your severity assessment differs materially".
-- Framing: "Report-only peer review of a colleague's PR. Severity-tiered findings with concrete failure scenarios. For each CRITICAL/HIGH, state the precondition that must hold for the failure to fire — realistic inputs and state a real caller produces, or it isn't blocking. No fixes will be applied from this review." Do NOT include a category checklist — the agent defines its own calibration.
+- The PR description — plus the Jira ticket summary and acceptance criteria when found — as intent context. (AC _reconciliation_ stays with the main agent in step 4b; reviewers just get the intent.)
+- Existing review-thread locations from step 1, tagged: "already raised by another reviewer — do not re-report; note only if your disposition differs materially".
+- Framing: "Report-only peer review of a colleague's PR. Label each finding with its disposition (`blocker` / `ask` / `fix` / `nit`) and give concrete failure scenarios. For each `blocker`, state the precondition that must hold for the failure to fire — realistic inputs and state a real caller produces, or it isn't blocking. No fixes will be applied from this review." Do NOT include a category checklist — the agent defines its own calibration.
 
 ### 4b. Acceptance-criteria reconciliation (main agent, when a ticket was found)
 
@@ -76,7 +88,7 @@ While the reviewers run, reconcile each acceptance criterion against the full di
 - **Not addressed** — nothing in the diff touches it
 - **Not statically verifiable** — needs a runtime check or author confirmation; say which
 
-An unmet criterion is not automatically blocking — the PR may be a deliberate first slice. Present the verdict; let the user judge. But an AC the description *claims* is done and the diff doesn't deliver → surface prominently.
+An unmet criterion is not automatically blocking — the PR may be a deliberate first slice. Present the verdict; let the user judge. But an AC the description _claims_ is done and the diff doesn't deliver → surface prominently.
 
 ### 5. Present findings, tiered
 
@@ -86,13 +98,16 @@ An unmet criterion is not automatically blocking — the PR may be a deliberate 
 ### Acceptance criteria — <KEY> (when a ticket was found)
 | Criterion | Verdict | Evidence |
 
-### 🔴 Blocking (CRITICAL / HIGH)
+### 🔴 Blocking (`blocker`)
 | # | File:Line | Issue | Failure scenario | Fires when |
 
-### 🟡 Suggestions (MEDIUM)
+### 🟠 Questions (`ask`)
+| # | File:Line | Issue | The question the author has to answer |
+
+### 🟡 Suggestions (`fix`, non-blocking)
 | # | File:Line | Issue |
 
-### ⚪ Nits (LOW / style)
+### ⚪ Nits (`nit`)
 | # | File:Line | Issue |
 
 ### Already raised by others
@@ -114,13 +129,13 @@ A category-tiered review answers "is this line a bug?". This pass answers a diff
 Main-agent, over the diff and findings you already hold (no new dispatch). The frame is the gap between what the description leads a reader to expect and what the code operationally does — not more of the same category sweep. Look for:
 
 - **Hidden runtime dependencies** — a feature that silently hinges on something the description never mentions (a browser tab being open, a specific caller, an external timer).
-- **Silent / permanent failure modes** — paths where a transient error, a swallowed exception, or an ordering choice (e.g. state written *before* a best-effort side effect) loses data or work with no retry and no signal.
+- **Silent / permanent failure modes** — paths where a transient error, a swallowed exception, or an ordering choice (e.g. state written _before_ a best-effort side effect) loses data or work with no retry and no signal.
 - **Scope surprises** — a limit, cap, default, or deletion that's broader or narrower than the description implies.
 - **"Technically conforms but sharper than the ticket implies"** — edges that meet the acceptance criteria on paper while behaving in a way the author likely didn't intend a reviewer to discover.
 
 **Verify every candidate against the worktree before presenting it** — read the enclosing code, check for the scheduler/guard/retry the candidate assumes is absent, confirm the true scope of a cap or filter. This step is not optional: in the run this pass came from, verification scope-corrected one "blocker" candidate down to a non-issue. Presenting an unverified surprise as confirmed relays a false positive to a colleague, the exact failure this skill guards against.
 
-Merge survivors into the existing tiers, tagged `(surprise-lens)` so the user sees they came from this pass, not the category review. A survivor merged into Blocking (CRITICAL/HIGH) states the precondition that must hold for the failure to fire, same as step 4's findings, so it has content for the table's "Fires when" column. Drop refuted candidates silently (or note one line if the user would otherwise expect it). Then re-present the step-5 menu minus the audit.
+Merge survivors into the existing tiers, tagged `(surprise-lens)` so the user sees they came from this pass, not the category review. A survivor merged into Blocking states the precondition that must hold for the failure to fire, same as step 4's findings, so it has content for the table's "Fires when" column. Drop refuted candidates silently (or note one line if the user would otherwise expect it). Then re-present the step-5 menu minus the audit.
 
 ### 6. Drill-down (on "dig into N")
 

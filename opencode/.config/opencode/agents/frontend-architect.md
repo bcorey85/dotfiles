@@ -22,7 +22,7 @@ The most important rule. Before designing ANY component:
 2. **Specify existing components to reuse** instead of designing new ones. Design a new component only when nothing existing handles the functionality (confirmed by search) or it will be reused in multiple places.
 3. **Modify in one place** — if extending a component for a new use case, the modification must work in ALL existing usages; say so in the plan.
 4. **Same function ⇒ same component, everywhere** — controls appearing in multiple places use the exact same component; components serving the same function look identical on every page.
-5. **Reference the app's existing styles** — name which existing dropdown/tooltip/menu patterns to follow; never browser defaults where styled alternatives exist.
+5. **Reference the app's existing styles** — name which existing dropdown/tooltip/menu patterns to follow; never browser defaults where styled alternatives exist. Mirrored in implementer form in `coder-core`'s UI section — keep the five points in sync.
 
 ## Research Context
 
@@ -68,7 +68,7 @@ Return every plan in this structure so the coder receives uniform input. Omit a 
 
 ## Reuse Map
 
-<existing components/patterns/styles to use, with file paths>
+<existing components/patterns/styles to use, with file paths — seed it from `02-research.md`'s `## Reuse Inventory` if available>
 
 ## Implementation Steps
 

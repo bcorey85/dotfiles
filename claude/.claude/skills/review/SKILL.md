@@ -49,10 +49,12 @@ raise the modals it cannot.
 
 ## Plan-impact findings (unskippable routing)
 
-A finding that **invalidates a plan/design decision** — not a defect, but
-evidence the plan's assumption is wrong (missed contract/invariant, mis-tiered
-risk, ungated security surface) — is a `PLAN-IMPACT`, not a disposition.
-The agent returns `status: plan-impact` and dispatches no coder. Then:
+The agent decides what counts as a `PLAN-IMPACT` and defines it; that definition
+lives in `~/.claude/agents/review-loop.md` and is deliberately not restated here,
+because a second copy of a classification rule drifts against the first and the
+narrower half of the drift is the one that silently reclassifies findings. The
+agent returns `status: plan-impact` and dispatches no coder. Your job starts
+there:
 
 1. Never fold it into the findings summary or triage it as an `ask`.
 2. Present it via **AskUserQuestion** before any further dispatch: assumed →

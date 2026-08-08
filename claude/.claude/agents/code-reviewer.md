@@ -61,10 +61,10 @@ If no handoff was passed, run `git diff --name-only HEAD`, `git diff --cached --
 If `prior-issues` is in the handoff, your **primary job** is to verify each prior issue:
 
 - "fixed" — confirm the fix is correct and complete; flag if still broken
-- "skipped" — confirm the rationale is sound; do not re-flag
+- "skipped" — confirm the rationale is sound; do not re-flag. Say so explicitly if the rationale does NOT hold. A skip you silently re-raise makes the loop bill for the same argument every pass and never converge; a bad skip you silently accept ships the defect with a paper trail saying it was considered.
 - "partial" — flag what's still missing
 
-Only after verifying prior-issues do you scan the same files for new issues. Do not re-review files outside the handoff scope.
+Only after verifying prior-issues do you scan the same files for new issues.
 
 ### Step 2: Read the Changes
 

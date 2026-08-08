@@ -44,7 +44,7 @@ raise the modals it cannot.
    One line per distinct defect, no user prompt, do not pause:
 
    ```bash
-   bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=walkthrough gate_missed=<review|drift-gate|test-intent|stage|coder> class=<bug|smell|duplication|plan-drift|test-gap|other> severity=<high|medium|low> lane=<eng-spec|code|other> guard=<...> desc="<one line>" file=<path>
+   bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=walkthrough gate_missed=<review|drift-gate|test-intent|stage|coder|eng-spec> class=<bug|smell|duplication|plan-drift|test-gap|other> severity=<high|medium|low> lane=<eng-spec|code|other> guard=<...> desc="<one line>" file=<path>
    ```
 
    `guard` is the ratchet rung from `~/.claude/skills/_shared/escape-ratchet.md`. Pick it here without pausing; state the proposed guard in the packet (step 3) and apply it on approval there rather than prompting mid-log.

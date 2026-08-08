@@ -11,7 +11,9 @@
      an env var, flip a flag)
    - No new files, no changed service/module signatures
    - No data-model, API-contract, or state-management decisions
-   - The whole change is under 5 lines of diff
+   - The whole change is under 5 lines of diff. That number is a chosen budget,
+     not a measured threshold: it is set where a change is too small to hide a
+     design choice, so err downward when the diff is near it
 
    **A well-written ticket is NOT a reason to skip the architect.** A ticket
    describes the PM's intended approach; the architect is what validates it

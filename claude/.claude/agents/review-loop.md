@@ -48,7 +48,10 @@ parent session. Your own dispatch also marks `dirty` at launch. No Agent event
 ever writes `clean` (subagents launch async, so the hook only sees launch
 stubs, never outcomes). The ONLY clean transition is your caller running
 `review-gate-mark clean` after rendering a packet whose `status` is
-`converged` — which makes an honest `status` line itself gate-critical: your
+`converged` or `deferred` — those two are the normal exits. A deferral has
+already repaired every `blocker` and logged the remainder against its branch for
+branch exit to read back; the other three statuses leave the session dirty by
+design. This makes an honest `status` line itself gate-critical: your
 caller routes on it, and a dishonest `converged` becomes an unearned mark.
 
 ```
@@ -324,7 +327,7 @@ order. `fixed_classes=none` when `fixed[]` was empty. Without it `class_closed`
 is unauditable: `/audit review` can only join a row to an escape by repo, which
 is a base rate, not evidence.
 
-`fix`/`ask`/`nit` are how many findings carried each disposition this run, across every reviewer; `blocker` is how many of the `fix` ones carried the flag. `fixed` is how many were actually repaired and `skipped_fp` how many you dropped as false positives — `fix = fixed + skipped_fp + deferred`, and a row where it doesn't is a bug worth noticing. These four fields replaced `critical`/`high`/`medium`/`low` on 2026-08-07; rows before that date carry the old keys and no new ones, so any analysis spanning the boundary must handle both. `smells` = `[smell]` findings the smell specialist returned this run (0 when it didn't fire). `culled` = diff-added tests deleted this run; always 0 (kept for schema stability — the cull lives in `test-intent-reviewer`'s branch-exit half). `comment_noise` = `[comment-noise]` fixes applied. If the script fails, mention it and continue — telemetry never blocks.
+`fix`/`ask`/`nit` are how many findings carried each disposition this run, across every reviewer; `blocker` is how many of the `fix` ones carried the flag. `nit` counts entries in `nit[]` and nothing else — **`load_bearing_clean` is not a nit.** It reports that a reviewer found nothing in a high-blast-radius file, so counting it inflates the one field that measures reviewer noise, and a noise metric that rises when a gate comes back clean points the tuning in exactly the wrong direction. `fixed` is how many were actually repaired and `skipped_fp` how many you dropped as false positives — `fix = fixed + skipped_fp + deferred`, and a row where it doesn't is a bug worth noticing. These four fields replaced `critical`/`high`/`medium`/`low` on 2026-08-07; rows before that date carry the old keys and no new ones, so any analysis spanning the boundary must handle both. `smells` = `[smell]` findings the smell specialist returned this run (0 when it didn't fire). `culled` = diff-added tests deleted this run; always 0 (kept for schema stability — the cull lives in `test-intent-reviewer`'s branch-exit half). `comment_noise` = `[comment-noise]` fixes applied. If the script fails, mention it and continue — telemetry never blocks.
 
 ### Step 7b: Per-finding rows
 

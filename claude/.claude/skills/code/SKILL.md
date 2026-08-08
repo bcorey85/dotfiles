@@ -43,20 +43,33 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
      ```bash
      bash ~/.claude/scripts/log-scan repo=<basename> scan=acceptance-stub \
-       stage=code-phase exit=1 note="<what was missing>"
+       stage=code-phase exit=0 candidates=1 confirmed=1 note="<what was missing>"
      ```
+
+     `exit=` is the scan's own exit code and says only whether it RAN — `0` printed rows, `1` ran clean, `2` did not run. A found defect is `exit=0` with counts, never `exit=1`.
 
    - Dispatch the coder for THAT ONE PHASE ONLY. The coder must run the phase's "Automated Verification" gate (typically `npm run validate` or equivalent) before returning. **Re-read the phase's Phase Status line before dispatching** — its `(risk: …)` tag drives the phase-boundary decision (step 2) and its `(reviewers: …)` list is passed through to the review loop (step 5). Both are properties of the phase, not of the invocation, so they can differ from the previous phase's.
    - After the coder completes, dispatch the `test-writer` (step 3b); after it returns and you summarize, auto-dispatch `/review` (step 5).
-   - **No per-phase `plan-verifier`.** Plan↔diff reconciliation runs ONCE, at branch end, from `/verify`. Here, YOU check before marking the phase done: the phase's `#### Automated Verification` commands actually ran and passed (coder evidence), and its `#### Manual Verification` items go on the deferred list for `/verify`. A phase with no Success Criteria is a plan defect, not a pass — say so before advancing.
+   - **No per-phase `plan-verifier`.** Plan↔diff reconciliation runs ONCE, at branch end, from `/verify`. Run per phase it emitted findings that nothing ever acted on, which is what a reconciliation gate does when half the plan is not written yet: the gap it reports is the work still to come, not a defect. Here, YOU check before marking the phase done: the phase's `#### Automated Verification` commands actually ran and passed (coder evidence), and its `#### Manual Verification` items go on the deferred list for `/verify`. A phase with no Success Criteria is a plan defect, not a pass — say so before advancing.
+
+     **Run any prohibition criterion yourself and log the run.** A criterion of the form "`git grep <pattern>` returns zero hits" is a scan, not coder evidence — run it with Bash and score it, because a prohibition nobody re-ran is indistinguishable from one that never held:
+
+     ```bash
+     bash ~/.claude/scripts/log-scan repo=<basename> scan=prohibition \
+       stage=code-phase exit=<0|1> candidates=<hits> confirmed=<real hits> \
+       branch=<branch> note="<the command, and what the ban protects>"
+     ```
+
+     Grep exits 1 on a clean tree, so a passing run is `exit=1 candidates=0`.
 
    - **No per-phase test-intent audit.** The enforced coder/test-writer split already severs bug-pinning's cause, so the audit does not run here. The cull/coverage half runs at `/branch-recap`, and `/verify` reconciles plan↔diff at branch end; a `weak`/`bug-pinning` finding surfacing from ANY other gate still routes to `test-writer` re-dispatch (implementation-blind), `/fix` only when it implicates src.
    - After peer review passes AND the phase's Automated Verification is green, mark the phase done in the plan: `Edit` the `## Phase Status` section to flip `- [ ] Phase N: ...` → `- [x] Phase N: ...`. This single Edit is the durable record of progress — it survives `/clear` and lets in-session re-entry detect the next phase.
    - **Phase-boundary decision** — the phase is done; now decide stop vs. auto-advance, checking these in order (first match wins), then print the matching Phase-Complete Block:
      1. **Last phase** → STOP; print the completion footer (block C).
-     2. **Phase 1**, any risk tier → STOP for **calibration** (block B). 3. **A gate needed an exception, a `/fix` loop hit its cap, or the coder flagged an ambiguity**, any tier → STOP (block B).
-     3. **`(risk: high)`** — and an untagged phase counts as high → STOP for phase-level sign-off (block B).
-     4. Otherwise — genuinely **`(risk: low)`** with all machine gates green → **AUTO-ADVANCE in-session** (block A): print the one-line advance notice, then re-enter step 2 for the next phase. Do NOT `/clear` and do NOT wait — the user can interrupt at any boundary.
+     2. **Phase 1**, any risk tier → STOP for **calibration** (block B). This is the first contact between the plan and the actual repo, and a misreading here is not local: every later phase builds on the same misreading, and each one that auto-advances buys more work that has to be undone. One stop at the cheapest possible moment is the whole reason.
+     3. **A gate needed an exception, a `/fix` loop hit its cap, or the coder flagged an ambiguity**, any tier → STOP (block B).
+     4. **`(risk: high)`** — and an untagged phase counts as high → STOP for phase-level sign-off (block B).
+     5. Otherwise — genuinely **`(risk: low)`** with all machine gates green → **AUTO-ADVANCE in-session** (block A): print the one-line advance notice, then re-enter step 2 for the next phase. Do NOT `/clear` and do NOT wait — the user can interrupt at any boundary.
    - If the plan has only one phase or no phase headers, treat it as a single dispatch (skip the phase loop) — but still run the acceptance-criteria check above before dispatching. A one-phase plan owes its criteria the same way a nine-phase one does.
 
 3. **Dispatch the coder**:
@@ -78,8 +91,22 @@ Pass the plan path + phase number (it reads phase-scoped) and the stub file list
 
 Route on its report:
 
-- `FAILING-TEST` lines → candidate implementation bugs, the split working as designed. Dispatch `/fix` scoped to make the named behaviors pass WITHOUT touching the failing tests' assertions, then re-run the test-writer's `tests-run` command yourself with Bash. Cap: 2 fix rounds; still red → STOP and surface to the user.
+- `FAILING-TEST` lines → candidate implementation bugs, the split working as designed. Dispatch `/fix` scoped to make the named behaviors pass WITHOUT touching the failing tests' assertions, then re-run the test-writer's `tests-run` command yourself with Bash. Cap: 2 fix rounds; still red → STOP and surface to the user. Two is a chosen budget, not a measured one. What it prevents: a test that stays red after two honest attempts is usually disagreeing with the plan rather than with the code, and further rounds bill for that argument instead of putting it in front of the person who can settle it.
+
+  **First decide which side is wrong — the code or the plan.** A `FAILING-TEST` whose scenario cannot run as the plan describes it (the fixture cannot reach that state, the criterion contradicts the domain, two plan sections disagree) is a SPEC defect, and `/fix` is the wrong route: it would bend correct code to satisfy an impossible criterion. Route those to **AskUserQuestion** exactly as the PLAN-IMPACT gate does, record the outcome in the plan's `## Plan Deviations` section, then re-dispatch the `test-writer` to correct the test — never the coder.
+
 - `UNDERSPECIFIED` lines → surface in the phase summary; a success criterion left untested by one blocks marking the phase done (plan gap — treat like a missing Success Criteria section, step 2).
+
+**Log every spec defect resolved above as an escape, at the moment it resolves** — one row per defect, before advancing. The plan's `## Plan Deviations` entry records the decision; this row is the only thing that makes the failure _countable_, and `/audit review` cannot see a defect nobody logged:
+
+```bash
+bash ~/.claude/scripts/log-escape repo=<basename> stage_found=phase-gate \
+  gate_missed=eng-spec class=plan-drift severity=<high|medium|low> \
+  lane=eng-spec guard=<...> desc="<what the plan asserted, and why it could not hold>" \
+  file=<plan path>
+```
+
+`gate_missed=eng-spec`, never `coder` — the implementer did not miss this, and mislabelling it makes the coder's escape ratio unreadable. This is the one escape class no reviewer can ever catch: a reviewer checks the diff against the spec, so a wrong spec and a faithful diff agree with each other.
 
 4. **After the coder and the test-writer complete**, summarize for the user AND build a handoff block for downstream review.
 
@@ -180,7 +207,7 @@ Resolution rules:
 - `<N>` is the just-finished phase number; `<N+1>` the next.
 - `<plan-path>` is the absolute or repo-relative path the orchestrator was invoked with.
 - Verification items come from the just-finished phase's `#### Manual Verification:` section in the plan, split by the verifier agent's `agent-verified` / `human-only` tags. If that section is empty in block B, omit both lists and replace step 1 with: "Read the /stage queue."
-- **No risk tag (older plan format) → treat as high** (block B).
+- No risk tag (older plan format) → treat as high, per the phase-boundary decision list above. Stated there, not here.
 
 ### The walkthrough (blocks B and C)
 

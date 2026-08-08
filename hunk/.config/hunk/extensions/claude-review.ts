@@ -2,10 +2,11 @@
  * claude-review — GitHub-style "viewed" marks for hunk, plus the bridge into the
  * /cc skill.
  *
- * `v` marks the selected file viewed and collapses it in place to a single
- * summary row; `v` again reopens it. `V` also drops viewed files from the review
- * entirely, `S` stages them, `X` clears the marks. Inline review notes (built-in
- * `c`) are mirrored to a JSONL the /cc skill reads and resolves.
+ * `v` marks the selected file viewed, collapses it in place to a single summary
+ * row, and moves to the next unviewed file; `v` again reopens it. `V` also drops
+ * viewed files from the review entirely, `S` stages them, `X` clears the marks.
+ * Inline review notes (built-in `c`) are mirrored to a JSONL the /cc skill reads
+ * and resolves.
  *
  * Collapsing is a registered file view, selected per file through
  * `ctx.fileViews`, so it lands on the keypress. Hiding and staging both change
@@ -54,6 +55,17 @@ interface CommandCtx extends Ctx {
   readonly fileViews: {
     select(viewId: string | null): void;
     isActive(viewId: string): boolean;
+    /**
+     * Re-run `matches` and `layout` for every file presenting this view.
+     *
+     * Hunk reuses a prepared layout until the file, the width, or the
+     * registration changes, so a view whose matcher reads external state has no
+     * change to announce when that state moves under it.
+     */
+    refresh(viewId: string, options?: { fileId?: string }): void;
+  };
+  readonly navigation: {
+    selectFile(fileId: string): void;
   };
   readonly dialogs: {
     confirm(options: { title: string; body?: string }): Promise<boolean>;
@@ -78,6 +90,33 @@ interface ReviewNote {
   draft: boolean;
 }
 
+/** The subset of hunk's lifecycle events this extension listens to. */
+interface EventPayloads {
+  startup: { cwd: string };
+  note_created: { note: ReviewNote };
+  note_edited: { note: ReviewNote };
+}
+
+/** One mirrored note, as the /cc skill reads it back. */
+interface CommentEntry {
+  id: string;
+  path: string;
+  line: number;
+  side: "old" | "new";
+  hunk_index: number;
+  body: string;
+  timestamp: string;
+}
+
+/** One live review, as `hunk session list --json` reports it. */
+interface SessionInfo {
+  sessionId?: string;
+  pid?: number;
+  repoRoot?: string;
+  title?: string;
+  inputKind?: string;
+}
+
 interface HunkApi {
   registerCommand(
     command: { id: string; title: string; key?: string | readonly string[] },
@@ -90,7 +129,10 @@ interface HunkApi {
     layout(input: FileViewInput): unknown;
   }): void;
   transformChangeset(fn: (changeset: Changeset, ctx: Ctx) => Changeset): void;
-  on(event: string, handler: (payload: any, ctx: Ctx) => void): void;
+  on<Event extends keyof EventPayloads>(
+    event: Event,
+    handler: (payload: EventPayloads[Event], ctx: Ctx) => void,
+  ): void;
   log(message: string): void;
 }
 
@@ -232,7 +274,7 @@ function reloadWorkingTreeReview(
         onError(`could not reach the hunk session daemon — press r to reload`);
         return;
       }
-      let sessions: any[] = [];
+      let sessions: SessionInfo[] = [];
       try {
         sessions = JSON.parse(stdout).sessions ?? [];
       } catch {
@@ -248,7 +290,8 @@ function reloadWorkingTreeReview(
       const own =
         sessions.find((session) => session?.pid === process.pid) ??
         (inRepo.length === 1 ? inRepo[0] : undefined);
-      if (!own) {
+      // No id is the same dead end as no session: there is nothing to reload.
+      if (!own?.sessionId) {
         onError(
           inRepo.length > 1
             ? "several hunk sessions share this repo — press r to reload"
@@ -279,19 +322,51 @@ function reloadWorkingTreeReview(
   );
 }
 
+/** One file of the loaded review, as navigation and staging need it. */
+interface ReviewFile {
+  id: string;
+  path: string;
+  hash: string;
+}
+
 /**
- * Paths the loaded changeset contains, per repo.
+ * The loaded changeset, per repo.
  *
- * Marks outlive a changeset: a file can be staged, discarded, or deleted
- * elsewhere and its mark stays behind. `git add` is atomic over its pathspec, so
- * one such path makes the whole stage fail — staging is restricted to this set.
+ * `given` is every path the review was handed, before viewed files are dropped:
+ * marks outlive a changeset — a file can be staged, discarded, or deleted
+ * elsewhere and its mark stays behind — and `git add` is atomic over its
+ * pathspec, so one such path makes the whole stage fail. Staging is restricted
+ * to this set.
+ *
+ * `visible` is what the review ended up showing, in review order, and is what
+ * `v` walks to find the next unviewed file.
  */
-const activePaths = new Map<string, Set<string>>();
+interface LoadedReview {
+  given: Set<string>;
+  visible: ReviewFile[];
+}
+const loadedReviews = new Map<string, LoadedReview>();
 
 /** A mark is only live while the file still hashes to what it did when marked. */
 const patchHash = (file: DiffFile) => sha(file.patch, 16);
 const isViewed = (state: State, file: DiffFile) =>
   state.viewed[file.path] === patchHash(file);
+
+/**
+ * Where to land after marking a file viewed: the next file in review order that
+ * is not itself viewed, wrapping once so a sweep ends on the work that is left.
+ * Null when the review is exhausted, or when it is not the one we recorded.
+ */
+function nextUnviewed(state: State, fromPath: string): ReviewFile | null {
+  const files = loadedReviews.get(state.repoRoot)?.visible ?? [];
+  const from = files.findIndex((file) => file.path === fromPath);
+  if (from < 0) return null;
+  for (let step = 1; step < files.length; step++) {
+    const candidate = files[(from + step) % files.length];
+    if (state.viewed[candidate.path] !== candidate.hash) return candidate;
+  }
+  return null;
+}
 
 export default function claudeReview(hunk: HunkApi): void {
   /** Resolve repo + state, or explain why the command cannot run. */
@@ -366,10 +441,17 @@ export default function claudeReview(hunk: HunkApi): void {
 
       state.viewed[file.path] = patchHash(file);
       writeState(state);
-      // The mark is on disk first, so `matches` is already true here.
+      // The mark is on disk first, so `matches` is already true here. Select
+      // before navigating: it acts on whichever file is selected right now.
       ctx.fileViews.select(VIEW_ID);
       const count = Object.keys(state.viewed).length;
-      ctx.notify(`viewed ${file.path} · ${count} marked`);
+      const next = nextUnviewed(state, file.path);
+      if (next) ctx.navigation.selectFile(next.id);
+      ctx.notify(
+        next
+          ? `viewed ${file.path} · ${count} marked`
+          : `viewed ${file.path} · ${count} marked · nothing left unviewed`,
+      );
     },
   );
 
@@ -411,7 +493,7 @@ export default function claudeReview(hunk: HunkApi): void {
       // Stage what this review shows, not every mark on file. A review can also
       // be narrower than the whole working tree (a path-filtered diff), so the
       // difference is skipped rather than pruned — those marks are still good.
-      const inReview = activePaths.get(state.repoRoot);
+      const inReview = loadedReviews.get(state.repoRoot)?.given;
       const paths = inReview
         ? marked.filter((path) => inReview.has(path))
         : marked;
@@ -456,7 +538,9 @@ export default function claudeReview(hunk: HunkApi): void {
       // left to describe. Marks outside this review keep theirs.
       for (const path of paths) delete state.viewed[path];
       writeState(state);
-      ctx.fileViews.select(null);
+      // Not just the selected file: the reload below drops all of them, but a
+      // review that cannot reload would otherwise keep them collapsed unmarked.
+      ctx.fileViews.refresh(VIEW_ID);
       ctx.notify(`staged ${paths.length} file(s)${tail}`);
       reloadWorkingTreeReview(state.repoRoot, (message) =>
         ctx.notify(`claude-review: ${message}`, "warning"),
@@ -480,7 +564,10 @@ export default function claudeReview(hunk: HunkApi): void {
       if (!ok) return;
       state.viewed = {};
       writeState(state);
-      ctx.fileViews.select(null);
+      // `select` reaches only the selected file, and every other file already
+      // collapsed keeps its prepared rows — the matcher does not re-run on its
+      // own when the state behind it moves.
+      ctx.fileViews.refresh(VIEW_ID);
       ctx.notify(`cleared ${count} mark(s)`);
     },
   );
@@ -489,9 +576,20 @@ export default function claudeReview(hunk: HunkApi): void {
     const root = rememberRepo(ctx);
     if (!root) return changeset;
     const state = readState(root, true);
-    // Recorded before any filtering: what `S` may stage is what the review was
-    // given, not what is left visible after viewed files are dropped.
-    activePaths.set(root, new Set(changeset.files.map((file) => file.path)));
+    const given = new Set(changeset.files.map((file) => file.path));
+
+    /** Record what the review will show, in order, and hand it back. */
+    const show = (files: DiffFile[]): Changeset => {
+      loadedReviews.set(root, {
+        given,
+        visible: files.map((file) => ({
+          id: file.id,
+          path: file.path,
+          hash: patchHash(file),
+        })),
+      });
+      return files === changeset.files ? changeset : { ...changeset, files };
+    };
 
     // Drop marks whose file is present but no longer hashes the same — the file
     // changed under the mark, so it needs reviewing again.
@@ -508,13 +606,13 @@ export default function claudeReview(hunk: HunkApi): void {
     if (pruned) writeState(state);
 
     const marked = changeset.files.filter((file) => isViewed(state, file));
-    if (marked.length === 0) return changeset;
+    if (marked.length === 0) return show(changeset.files);
 
     if (!state.hideViewed) {
       ctx.notify(
         `claude-review: ${marked.length} viewed file(s) — select one and press v to reopen`,
       );
-      return changeset;
+      return show(changeset.files);
     }
 
     const visible = changeset.files.filter((file) => !isViewed(state, file));
@@ -524,17 +622,17 @@ export default function claudeReview(hunk: HunkApi): void {
       ctx.notify(
         "claude-review: every file is viewed — S to stage, X to clear",
       );
-      return changeset;
+      return show(changeset.files);
     }
     ctx.notify(`claude-review: ${marked.length} viewed file(s) dropped`);
-    return { ...changeset, files: visible };
+    return show(visible);
   });
 
   // ── Inline notes → /cc queue ──────────────────────────────────────────────
   // Hunk's own notes (`c`) are the comment surface; this only mirrors them into
   // a queue the /cc skill lists and resolves. We own the file, so /cc gets a
   // real resolve rather than a consumed-ids sidecar.
-  function readComments(repoRoot: string): any[] {
+  function readComments(repoRoot: string): CommentEntry[] {
     try {
       return readFileSync(commentsPath(repoRoot), "utf8")
         .split("\n")
@@ -545,7 +643,7 @@ export default function claudeReview(hunk: HunkApi): void {
     }
   }
 
-  function writeComments(repoRoot: string, entries: any[]): void {
+  function writeComments(repoRoot: string, entries: CommentEntry[]): void {
     mkdirSync(STATE_DIR, { recursive: true });
     writeFileSync(
       commentsPath(repoRoot),

@@ -1,6 +1,6 @@
 ---
 name: backend-architect
-description: "Design and plan backend features — data models, API contracts, database schemas, service architecture. Produces implementation plans for the coder. Read-only, no code changes. Validates approach against real codebase to catch coupling risks, stale assumptions, and edge cases. Skip only for pure configuration (adding an env var, enabling a flag) — not for endpoints, services, or anything involving data flow."
+description: "Design and plan backend features — data models, API contracts, database schemas, service architecture. Produces implementation plans for the coder. Read-only, no code changes. Validates approach against real codebase to catch coupling risks, stale assumptions, and edge cases. Looking like pure configuration (adding an env var, enabling a flag) is necessary but not sufficient to skip this agent — the whole skip test is the go-lean gate in the eng-spec skill's scope phase, and every condition in it must hold. Never skipped for endpoints, services, or anything involving data flow."
 model: opus
 tools: Bash, Read, Glob, Grep, LSP
 color: blue

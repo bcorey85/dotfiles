@@ -10,12 +10,28 @@
 # usage: log-escape key=value [key=value ...]
 #   canonical fields:
 #     repo=<basename>
-#     stage_found=cc|walkthrough|refactor|q-verify|verify|pr-human|prod|other
+#     stage_found=cc|walkthrough|refactor|q-verify|verify|pr-human|prod|
+#                 phase-gate|other
 #       walkthrough = caught reading /stage's queue at a phase sign-off, i.e.
 #       inside the loop. Distinct from pr-human (caught after the branch left
 #       the gates) because the remediation differs: a walkthrough catch means
 #       the reviewer missed something the human then found one step later.
-#     gate_missed=review|drift-gate|test-intent|stage|coder|q-verify
+#       phase-gate = caught by a downstream AGENT inside the phase loop, before
+#       a human read anything — a test-writer FAILING-TEST that resolves as a
+#       spec defect, a coder reporting the plan contradicts the code. Distinct
+#       from walkthrough because the loop caught this one itself; the
+#       remediation is upstream, not "the human reads harder".
+#     gate_missed=review|drift-gate|test-intent|stage|coder|eng-spec|
+#                 pr-triage|q-verify
+#       eng-spec = the defect was IN THE PLAN, not in code written against it:
+#       an unrunnable success criterion, a criterion that contradicts the
+#       domain, a mandated primitive whose semantics were never stated. No
+#       implementation gate can catch these — a reviewer checks the diff
+#       against the spec, so a wrong spec and a faithful diff agree with each
+#       other. Remediation is a check added to /eng-spec, never a stricter
+#       reviewer. Do NOT log these as gate_missed=coder: it attributes a
+#       planning failure to the implementer and makes the coder's escape
+#       ratio unreadable.
 #     class=bug|smell|duplication|complexity|plan-drift|test-gap|other
 #       complexity = code that need not have existed (branching a data model
 #       collapses, one-implementation indirection, unused configurability,

@@ -1,0 +1,67 @@
+#!/bin/bash
+# achievement — explicit capture of something *I* did. Appends to
+# ~/vault/org/achievements.org, which /weekly-recap reads verbatim into the
+# week's `## Achievements` section and the yearly ~/vault/Achievements/<year>.md.
+#
+# Why this exists as its own lane: nothing in the daily-note pipeline carries an
+# authorship axis. `## My work` implicitly attributes everything in a daily note
+# to me, and the weekly compile used to add agency verbs (Drove / Surfaced /
+# Unblocked) on top of captures that never claimed them — which put two of my
+# teammates' wins in my promo doc for W28. Even `done:` turned out to mean "this
+# task is finished", not "I finished it". So authorship is not inferred anywhere,
+# ever: if it is in this file, I typed it here on purpose. That is the whole
+# signal.
+#
+# Capture it in your own words. The compile does not rephrase — see
+# claude/.claude/skills/weekly-recap.
+#
+# Usage:
+#   achievement <text>    append one entry, stamped today
+#   achievement           print this week's entries (what the Friday compile will pick up)
+#   achievement -i        capture loop for the notes-menu popup (prefix n A): one
+#                         per line, empty line (or Ctrl-C/Ctrl-D) closes
+set -e
+
+VAULT="${VAULT_DIR:-$HOME/vault}"
+ORG="$VAULT/org"
+FILE="$ORG/achievements.org"
+
+add() {
+  printf '* %s\n  [%s]\n' "$1" "$(date +'%Y-%m-%d %a')" >>"$FILE"
+  printf '✓ %s\n' "$1"
+}
+
+mkdir -p "$ORG"
+
+if [ "${1:-}" = "-i" ]; then
+  while IFS= read -r -e -p "achievement> " line; do
+    [ -z "$line" ] && break
+    add "$line"
+  done
+  exit 0
+fi
+
+if [ $# -gt 0 ]; then
+  add "$*"
+  exit 0
+fi
+
+# No args: show the current ISO week's entries, so it is obvious what Friday
+# will compile — and obvious when the answer is nothing.
+[ -f "$FILE" ] || { echo "no achievements captured yet"; exit 0; }
+
+# ISO week: %u is 1..7 with Monday=1, so back up that many days minus one.
+# `date -d 'monday this week'` is wrong here — GNU date resolves it to the NEXT
+# Monday when today is already past Monday.
+back=$(( $(date +%u) - 1 ))
+mon="$(date -d "$back days ago" +%F 2>/dev/null || date -v-"${back}"d +%F)"
+sun="$(date -d "$mon + 6 days" +%F 2>/dev/null || date -v+6d -j -f %F "$mon" +%F)"
+
+awk -v mon="$mon" -v sun="$sun" '
+  /^\* / { text = substr($0, 3); next }
+  match($0, /\[[0-9]{4}-[0-9]{2}-[0-9]{2}/) {
+    d = substr($0, RSTART + 1, 10)
+    if (d >= mon && d <= sun && text != "") print "- " text
+    text = ""
+  }
+' "$FILE" | { grep . || echo "none captured this week ($mon – $sun)"; }

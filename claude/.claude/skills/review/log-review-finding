@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# log-review-finding — per-finding and per-run telemetry for every review gate.
+#
+# review-metrics.jsonl records one aggregate row per /review run: severity
+# counts, no per-finding detail. That answers "how loud was this run" and
+# nothing else. Two questions it cannot answer:
+#
+#   - What did a gate catch that no other gate caught? (needs file:line)
+#   - What is a gate's denominator? (needs the silent runs recorded too)
+#
+# This log carries both. Two row kinds, discriminated by `kind`:
+#
+#   kind=run      one per GATE DISPATCH, including dispatches that found
+#                 nothing. The silent runs are the denominator; a log that
+#                 only records findings makes every gate look perfect.
+#   kind=finding  one per finding that gate emitted, with file:line so rows
+#                 join against each other and against review-escapes.jsonl.
+#
+# usage: log-review-finding kind=run|finding key=value [key=value ...]
+#
+#   COMMON
+#     repo=<basename>
+#     branch=<git branch>
+#     lane=eng-spec|code|other|none
+#     scope=phase|branch-exit|standalone
+#       phase       gate ran at a /code phase boundary, on that phase's diff
+#       branch-exit gate ran in a closing phase, on the whole-branch diff
+#       standalone  direct invocation, no enclosing loop
+#     phase=<index|name>          ("-" when scope is not `phase`)
+#     iter=<N>                    review-loop iteration this dispatch belongs to
+#     gate=code-reviewer|code-reviewer-deep|smell-reviewer|smell-reviewer-deep
+#         |security-reviewer|security-reviewer-deep|perf-reviewer
+#         |perf-reviewer-deep|complexity-reviewer|complexity-reviewer-deep
+#         |test-intent-reviewer|test-reviewer|plan-verifier|drift-gate|stage
+#       The literal agent name dispatched, so the sonnet and opus tiers of the
+#       same reviewer stay separable. Never collapse them.
+#
+#   kind=run ONLY
+#     n_findings=<n>              0 for a silent run — the point of the row
+#     diff_loc=<n>                lines the gate actually read (git diff
+#       --shortstat on its scope, insertions+deletions). Review-defect-detection
+#       degrades with the size of the change under review, so a gate's yield is
+#       uninterpretable without it. Measure it; do not estimate it.
+#     result=PASS|PASS WITH WARNINGS|NEEDS CHANGES   (optional)
+#
+#   kind=finding ONLY
+#     severity=critical|high|medium|low
+#     class=bug|smell|duplication|complexity|plan-drift|test-gap|weak-assertion
+#          |security|correctness|other        (same vocabulary as log-escape,
+#                                              so the two logs cross-tabulate)
+#     file=<path>                 repo-relative
+#     line=<n>                    0 when the finding names no line
+#     actioned=fixed|skipped_fp|deferred|ask|none
+#       fixed      code changed because of this finding
+#       skipped_fp judged a false positive
+#       deferred   real, moved to the branch-exit triage queue
+#       ask        needs a human decision
+#       none       not yet dispositioned
+#     desc="one line"
+#     fix_induced=yes|no          (optional) the finding names code a previous
+#       fix in this loop introduced, not code the coder originally wrote
+#
+# Numeric-looking values are stored as numbers, everything else as strings.
+# A "date" field (UTC ISO 8601) is always added. Output file:
+#   $REVIEW_FINDINGS_FILE or ~/.claude/review-findings.jsonl
+set -euo pipefail
+
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
+out="${REVIEW_FINDINGS_FILE:-$HOME/.claude/review-findings.jsonl}"
+
+json=$(jq -cn '{date: (now | todate)}')
+for kv in "$@"; do
+  case "$kv" in
+    out=*) out="${kv#out=}"; continue ;;
+    *=*) ;;
+    *) echo "skipping malformed arg (want key=value): $kv" >&2; continue ;;
+  esac
+  k="${kv%%=*}"
+  v="${kv#*=}"
+  json=$(jq -c --arg k "$k" --arg v "$v" '.[$k] = ($v | (tonumber? // .))' <<< "$json")
+done
+
+kind=$(jq -r '.kind // ""' <<< "$json")
+gate=$(jq -r '.gate // ""' <<< "$json")
+
+case "$kind" in
+  run|finding) ;;
+  "") echo "refusing to log: kind=run|finding is required." >&2; exit 1 ;;
+  *)  echo "refusing to log: kind=$kind is not run|finding" >&2; exit 1 ;;
+esac
+
+[ -n "$gate" ] || { echo "refusing to log: gate=<agent name> is required." >&2; exit 1; }
+
+# A run row with no n_findings is the failure mode that silently destroys the
+# denominator: it looks logged and counts as nothing.
+if [ "$kind" = run ] && [ "$(jq -r '.n_findings // "MISSING"' <<< "$json")" = MISSING ]; then
+  echo "refusing to log: kind=run needs n_findings=<n> (0 for a silent run)." >&2
+  exit 1
+fi
+
+printf '%s\n' "$json" >> "$out"
+echo "logged → $out"

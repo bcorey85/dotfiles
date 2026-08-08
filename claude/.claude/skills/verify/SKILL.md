@@ -47,6 +47,13 @@ This is the one step that DOES read the plan in full (contrast `/adr`, which for
 
 4. Present the checklist. Route per the result.
 
+5. **Log the gate** per `~/.claude/skills/_shared/finding-log.md` (read it) with
+   `gate=plan-verifier lane=verify scope=branch-exit`. One `kind=run` row every
+   invocation — including a clean reconciliation, which is the row that gives
+   this gate a denominator — plus one `kind=finding` row per `partial` or
+   `missing` verdict (`class=plan-drift`, `file`/`line` from its evidence).
+   Non-blocking: on failure, mention it and continue.
+
 ## Reconciliation output
 
 `plan-verifier`'s agent file owns the shape — present what it returns; do not restate its

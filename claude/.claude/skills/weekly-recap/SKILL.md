@@ -1,7 +1,7 @@
 ---
 name: weekly-recap
 disable-model-invocation: true
-description: Roll the week's Daily notes into one weekly review note (decisions, themes, shipped work, current open todos) and append achievement-phrased bullets to the yearly brag doc. Designed for a headless Friday-evening run (launchd/systemd via install/weekly-recap); also invocable manually with a date inside any target week.
+description: Roll the week's Daily notes into one weekly review note (decisions, themes, shipped work, current open todos) and append achievement-phrased bullets to the yearly achievements doc. Designed for a headless Friday-evening run (launchd/systemd via install/weekly-recap); also invocable manually with a date inside any target week.
 ---
 
 # Weekly Recap
@@ -13,8 +13,20 @@ Vault root: `$VAULT_DIR` if set, else `~/vault`; org dir: `<vault>/org`. Target 
 ## Gather (read-only; skip any unavailable source gracefully — never fail the run)
 
 1. **Daily notes**: `<vault>/daily/<date>.md` for each day of the target week. Missing days are normal (weekends, PTO) — skip silently. Do not re-query GitHub (the dailies already carry that day's PR activity).
-2. **Open todos**: every `TODO`/`NEXT`/`WAITING` headline across `.org` files under `<vault>/org/`, read at compile time. The org files are the live list — no carry-forward bookkeeping; whatever is still open is still open.
-3. Never fabricate content. A section with no source material gets `- none captured`.
+2. **Open todos**: every `TODO`/`NEXT`/`WAITING` headline in the **swept files** (below), read at compile time. The org files are the live list — no carry-forward bookkeeping; whatever is still open is still open.
+
+   **Swept files — an allowlist, not the whole of `org/`**: `<vault>/org/inbox.org` and `<vault>/org/projects/*.org`. Those are the work checklist. Every other file in `org/` is a lane with its own semantics and is **never** swept for todos: `books.org` is a reading queue (its `TODO`/`WAITING` entries are books, not work — they do not "slip" and must not be aged), `bookmarks.org` / `questions.org` / `notes.org` are capture lanes, `journal.org` is a log, `achievements.org` is the authorship signal above. Allowlist on purpose: a new queue file must not silently flood the section, and a new project file must be picked up without editing this skill.
+
+3. **Achievements**: entries in `<vault>/org/achievements.org` whose inactive `[YYYY-MM-DD Day]` stamp falls in the target week. **This file is the only source for the Achievements section** — see the authorship rule below.
+4. Never fabricate content. A section with no source material gets `- none captured`.
+
+### The authorship rule — do not infer who did the work
+
+Nothing else in the pipeline carries an authorship axis. A daily note's `## My work` section implicitly attributes everything in it to the user, and its `## Decisions` / `## Roadblocks` sections routinely carry things a **teammate** did, tagged only by project (`cdc team - …`). `done:` in a capture means "this task is finished", not "I finished it".
+
+So: **never derive an achievement from a daily note, an org todo, or GitHub activity.** In W28 that inference put two teammates' wins in the user's promo doc — a decision the CDC team made and a bug the CDC team found, both rewritten as "Drove…" and "Surfaced…".
+
+`achievement` (`prefix n A`) is the whole signal: if the user typed it there, it is theirs. If they did not, it does not exist. An empty week is `- none captured`, and that is a correct answer, never a prompt to go looking in the dailies.
 
 ## Write
 
@@ -50,17 +62,19 @@ owns every other section, never those two:
   carries an inactive `[date]` stamp, its age (e.g. `WAITING — cdc - … (since
 Jul 2)`). Anything older than two weeks is a slipping item — say so>
 
-## Brag
+## Achievements
 
-- <2–5 bullets, outcome-phrased for a promo packet: "Shipped X", "Unblocked
-  team Y by Z", "Drove decision on W". Impact over activity>
+- <this week's `org/achievements.org` entries, **verbatim**. Never rephrase,
+  never add an agency verb, never merge two entries, never infer one from
+  another section of this file. Fixing a typo is the only edit allowed.
+  Nothing captured → `- none captured`>
 ```
 
 Preserve people's names and ticket/PR references exactly.
 
-## Brag doc
+## Achievements doc
 
-Append the `## Brag` bullets to `<vault>/Brag/<ISO year>.md` under a `## <ISO week>` heading (create file/folder if needed). If that heading already exists, replace its section instead of duplicating — the brag doc stays one section per week.
+Append the `## Achievements` bullets to `<vault>/Achievements/<ISO year>.md` under a `## <ISO week>` heading (create file/folder if needed). If that heading already exists, replace its section instead of duplicating — the achievements doc stays one section per week.
 
 ## Finish
 

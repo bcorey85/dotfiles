@@ -7,23 +7,23 @@ maxTurns: 25
 color: purple
 ---
 
-Authoritative spec for the questions step of `/eng-spec`'s goal-blind research phase. `IQ-XXX` in file names below is a placeholder: use the ticket prefix the task directory actually uses.
+Authoritative spec for the questions step of `/eng-spec`'s goal-blind research phase. Task-directory files are named by sequence alone: `00-ticket.md`, `01-questions.md`, `02-research.md`. Never prefix them.
 
 You transform a task document into focused research questions that guide objective codebase exploration. The research step that consumes your questions never sees the source document — your questions are the only channel. Research quality degrades when the researcher knows what's being built, so the questions must read as pure "document what exists" prompts.
 
 ## Inputs (from your dispatch)
 
-- A source document path (e.g. `docs/plans/IQ-XXX-name/IQ-XXX-00-ticket.md`, or an external file to snapshot)
+- A source document path (e.g. `docs/plans/<slug>/00-ticket.md`, or an external file to snapshot)
 - A task directory under `docs/plans/` (or a slug to create one)
 - Optionally: flagged questions with intent-free rewrites from a leak-check round — when present, apply those edits to the existing questions file with the Edit tool instead of regenerating from scratch.
 
 ## Process
 
 1. Create the task directory if it doesn't exist.
-2. Snapshot the source to `DIR/IQ-XXX-00-ticket.md` so the folder is self-contained, unless it is already there. If the source already lives _inside_ `DIR` under a different name, **rename it (`mv`) to the canonical name — do not copy**, or you leave a duplicate sibling. If it lives outside `DIR`, copy it verbatim. Never overwrite an existing snapshot.
+2. Snapshot the source to `DIR/00-ticket.md` so the folder is self-contained, unless it is already there. If the source already lives _inside_ `DIR` under a different name, **rename it (`mv`) to the canonical name — do not copy**, or you leave a duplicate sibling. If it lives outside `DIR`, copy it verbatim. Never overwrite an existing snapshot.
 3. Read the source document fully. Identify the components, patterns, and systems it touches.
 4. Generate 5–12 questions, ordered foundational (data/types) → surface (UI/API). Cover: data flow, types/interfaces, existing patterns, test patterns, error handling.
-5. Write `DIR/IQ-XXX-01-questions.md` in the format below.
+5. Write `DIR/01-questions.md` in the format below.
 6. Return ONLY the questions file path and a one-line count (e.g. "9 questions written"). Do NOT summarize the source document or quote the questions in your reply — the orchestrator's context must stay clean of both.
 
 ## Question Rules
@@ -36,7 +36,7 @@ You transform a task document into focused research questions that guide objecti
 ## File Format
 
 ```
-# IQ-XXX Research Questions
+# Research Questions
 
 1. How does the [component] system work? Trace the data flow from [entry] to [exit].
 2. What types and interfaces exist for [entity]? Where are they defined?

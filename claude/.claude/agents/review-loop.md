@@ -53,7 +53,8 @@ caller routes on it, and a dishonest `converged` becomes an unearned mark.
 
 ```
 each iteration:
-  1. check cap   → correctness round:  if iter >= 3:      return `cap-reached`
+  1. check cap   → correctness round:  if iter >= 2:      fix CRITICAL only, defer
+                                                          the rest → `deferred`
                    specialist re-entry: if spec_iter >= 2: return `cap-reached`
                    (whichever channel THIS round belongs to) WITHOUT dispatching a reviewer
   2. dispatch reviewer
@@ -66,7 +67,7 @@ each iteration:
 ## Step 1: Parse args
 
 - **Iteration counters — two channels, two budgets.** Both arrive in args and both are returned in the packet; a caller re-entering the loop passes back what it received.
-  - `iter=N` (default `iter=1`) — **correctness rounds**: code-reviewer findings and their fixes (Steps 3–5), including class-closure re-entries. **If `iter >= 3`, return `status: cap-reached` immediately** with `findings_remaining`. Dispatch nothing.
+  - `iter=N` (default `iter=1`) — **correctness rounds**: code-reviewer findings and their fixes (Steps 3–5), including class-closure re-entries. **The budget is ONE round.** If `iter >= 2`, do not re-review and do not dispatch: **defer** per Step 5c and return `status: deferred` with the deferred set in `findings_remaining`. The single exception is CRITICAL — see Step 5c.
   - `spec_iter=N` (default `spec_iter=0`) — **post-convergence specialist re-entries** only (Step 6b bullet 4: `[security]`, `[perf]`, `[smell]`). **If `spec_iter >= 2` when a specialist re-entry comes due, do not dispatch it** (two re-entries are the budget; the check runs before the dispatch, same as `iter`) — return `cap-reached` with those findings in `findings_remaining` instead. A specialist re-entry never increments `iter`, and a correctness round never increments `spec_iter`.
 
   **Global backstop**: `iter + spec_iter <= 4`. If a re-entry of either kind would breach it, return `cap-reached`. The per-channel caps are the working budget; this bound exists so a pathological phase cannot chain five reviewer dispatches by alternating channels.
@@ -161,6 +162,27 @@ Dispatch ONE `coder` for the findings, whatever files they touch — splitting a
 
 Skip any finding that is a false positive, a stylistic preference, out of scope, blocked by another unresolved issue, or architectural (recommend `/eng-spec`). Report each skip with its reason.
 
+## Step 5c: Deferral — the one-round budget
+
+The correctness loop gets ONE round. When `iter >= 2` (Step 1), the findings the
+re-review surfaced are not fixed here and not discarded: they move to the
+branch-exit queue, where they are read once, in one place, against the whole
+branch instead of one phase of it.
+
+**The CRITICAL carve-out.** A CRITICAL finding is fixed now regardless of `iter`
+— dispatch it per Step 5, then defer everything else. Nothing else is exempt:
+HIGH defers like the rest. A CRITICAL that survives to branch exit is a defect
+shipped through a gate that saw it, which is the one outcome this budget must
+not buy.
+
+**Defer** = log each finding per `~/.claude/skills/_shared/finding-log.md` with
+`actioned=deferred`, then return it in `findings_remaining`. The `branch` field
+is what makes the queue retrievable — never omit it. Deferred findings keep
+their original `gate` and `severity`; do not re-grade them on the way out.
+
+Then return `status: deferred`. Do not dispatch a reviewer, and do not
+`iter++` — the loop is over.
+
 ## Step 6: Convergence — the execution gate
 
 **Execution gate (before declaring convergence)**: A reviewer PASS is an opinion; a passing check run is evidence. If the handoff's `tests-run` shows a real command with exit 0, accept it. If it is "none", missing, or has no exit code while code changed: run the project's quality-check command (from project CLAUDE.md) ONCE, redirected to `/tmp/review-gate.log`. Exit 0 → proceed. Non-zero → the failures are ground truth: treat them as CRITICAL findings and route into the severity gating above.
@@ -243,7 +265,7 @@ Runs after Step 6b — at FINAL convergence. If Step 6b re-entered the loop
 generalist and specialist MEDIUMs are classified together in ONE pass with ONE
 fix dispatch. Classify each MEDIUM (from any reviewer) as:
 
-- **fix** — clear win, safe to auto-apply. `[comment-noise]` and `[smell]` findings on diff-introduced code default to **fix** — the smell fixes are subtractive consolidations of the diff's own code (extract the helper, move the logic down a layer, delete the dead weight), the exact class the fix fence's "focused fix" language permits. **Guard**: NEVER auto-prune a test in an acceptance-spec file (`*.spec.*`) or one covering an acceptance criterion — route those to **ask**. A `[smell]` fix whose consolidation touches a pre-existing call site beyond the one being deduplicated → **ask**.
+- **fix** — clear win, safe to auto-apply. `[comment-noise]` and `[smell]` findings on diff-introduced code default to **fix** — the smell fixes are subtractive consolidations of the diff's own code (extract the helper, move the logic down a layer, delete the dead weight), the exact class the fix fence's "focused fix" language permits. **Guard**: NEVER auto-prune a test in an acceptance-spec file (`*.spec.*`) or one covering an acceptance criterion — route those to **ask**. A `[smell]` consolidation stays **fix** even when it touches pre-existing call sites — reducing duplication is not a design question, and blast radius belongs in the fix's description, not in the `ask` bucket. Route it to **ask** only when the consolidation changes a public contract, weakens a guarantee (a short-circuit, an ordering, a laziness property), or forces an existing test assertion to change.
 - **skip** — false positive, intentional choice, stylistic noise, out of scope. Record a one-line reason.
 - **ask** — ambiguous, needs a design decision, or plausibly either. `[perf] [design-decision]` findings land here (per Step 6b).
 
@@ -272,17 +294,24 @@ is a base rate, not evidence.
 
 `smells` = `[smell]` findings the smell specialist returned this run (0 when it didn't fire). `fixed`/`skipped_fp`/`ask` are the MEDIUM bucket counts when classification ran, else 0. `culled` = diff-added tests deleted this run; always 0 (kept for schema stability — the cull lives in `test-intent-reviewer`'s branch-exit half). `comment_noise` = `[comment-noise]` fixes applied. If the script fails, mention it and continue — telemetry never blocks.
 
+### Step 7b: Per-finding rows
+
+Also emit the per-gate and per-finding rows per
+`~/.claude/skills/_shared/finding-log.md` (read it). Covers `code-reviewer`,
+its `-deep` tier, and **every** Step 6b specialist that ran — including any
+that returned nothing. Runs after Step 6c so `actioned` is real.
+
 ## Return packet (the ONLY thing the orchestrator pays for)
 
 Return exactly this, and nothing else of substance:
 
 ```
-status: converged | plan-impact | cap-reached | critical-blocker
-iter: <n>                                # correctness rounds consumed (cap 3)
+status: converged | plan-impact | deferred | cap-reached | critical-blocker
+iter: <n>                                # correctness rounds consumed (budget 1)
 spec_iter: <n>                           # specialist re-entries consumed (cap 2)
 fixed: [{severity, finding, file_line}]  # CRITICAL/HIGH you resolved — NEVER omit; a silent repair is a bug
 blockers: [<one line each>]              # status=critical-blocker
-findings_remaining: [<one line each>]    # status=cap-reached
+findings_remaining: [{severity, finding, file_line}]  # status=deferred | cap-reached
 plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
 medium: {fix: [<applied>], skip: [{item, reason}], ask: [<one line each>]}
 perf: [{finding, principle, file_line}]

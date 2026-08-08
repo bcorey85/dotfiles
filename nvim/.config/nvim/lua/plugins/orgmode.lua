@@ -25,7 +25,20 @@ return {
       --               refile/export — the `mappings.prefix` rebase below.
       -- (<leader>o is the snacks buffers picker, untouched.)
       require("orgmode").setup({
-        org_agenda_files = "~/vault/org/**/*",
+        -- An allowlist, not all of ~/vault/org — this one setting drives the
+        -- agenda, the global TODO list (<leader>ne), and refile targets.
+        -- inbox.org plus the project files ARE the work checklist; every other
+        -- file there is a lane with its own semantics and must never show up in
+        -- the todo view: books.org is a reading queue (its TODO/WAITING entries
+        -- are books, not work), bookmarks/questions/notes are capture lanes,
+        -- journal.org is a log, achievements.org is /weekly-recap's authorship
+        -- signal. Capture still writes those by explicit target path below —
+        -- being off the agenda list costs them nothing.
+        -- Allowlist on purpose, in both directions: a new queue file can't
+        -- flood the view, and a new projects/*.org is picked up for free.
+        -- (Same rule as the daily-recap / weekly-recap / vault-review skills —
+        -- change one, change all four.)
+        org_agenda_files = { "~/vault/org/inbox.org", "~/vault/org/projects/*.org" },
         org_default_notes_file = "~/vault/org/inbox.org",
 
         -- Richer-than-default workflow states (the bit people rave about).

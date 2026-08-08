@@ -35,6 +35,8 @@ First action: Read `~/.claude/skills/_shared/reviewer-calibration.md` and adopt,
 
 Prefix every finding with `[smell]`. A consolidation that needs restructuring beyond the diff (moving a public contract, a cross-module extraction with real blast radius) → mark it `[smell] [design-decision]` so review-loop routes it to the user instead of auto-fixing.
 
+**The `[design-decision]` threshold is a changed contract, a changed guarantee, or a test assertion that must change — never "the fix touches code the diff did not add."** Consolidating duplication behind an unchanged public surface is a fix, not a question, however many existing call sites it touches; blast radius is a fact to state in the finding, not a reason to escalate. When you would tag one, first look for the shape that removes the duplication while preserving every existing guarantee (a shared generator the old predicate short-circuits over, a helper the old signature delegates to). If that shape exists, the finding carries it and stays a fix. Tagging is expensive: it is the only thing in the packet that stops and waits for a human, and spending it on a finding the operating principles already decide trains the reader to skim the ones that genuinely need judgement.
+
 ## Explicitly NOT your scope
 
 Do NOT flag — re-flagging these is the duplicate noise this split exists to prevent:

@@ -30,12 +30,13 @@ raise the modals it cannot.
    - **`plan-impact`** → raise the modal (see `/review`'s "Plan-impact findings" section — same routing), then re-dispatch with the decision and BOTH returned counters preserved (`iter` and `spec_iter`).
    - **`critical-blocker`** → STOP. Present `blockers` and wait. Do NOT re-dispatch.
    - **`cap-reached`** → STOP. Report `findings_remaining`; the user decides. The session is correctly left `dirty`, so `git commit` stays blocked.
-   - **`converged`** → render the packet (step 3), then record convergence: `bash ~/.claude/scripts/review-gate-mark clean`. Run the mark ONLY for a packet whose `status` is `converged` — the other statuses leave the commit gate dirty by design.
+   - **`deferred`** → the one-round correctness budget was spent and the residue was logged for branch exit. A normal completion, not a stop: render the packet (step 3), add `findings_remaining` under `### Deferred to branch exit`, and record convergence as for `converged`. Do NOT re-dispatch to chase them; `/branch-recap` reads them back.
+   - **`converged`** → render the packet (step 3), then record convergence: `bash ~/.claude/scripts/review-gate-mark clean`. Run the mark ONLY for a packet whose `status` is `converged` or `deferred` — the other statuses leave the commit gate dirty by design.
 
 3. **Log walkthrough escapes — MANDATORY on `converged`, do not skip.** When the findings came from **the user, in conversation**, on code a prior `/review` already blessed, each one is ground truth: the human caught what the gates passed. This is the highest-volume escape source in the toolkit and the only one that fires without a dedicated skill invocation — treat it as a hard gate before rendering, not a trailing nicety.
 
    Fires only when ALL hold:
-   - `status: converged` and the fix was actually applied (not skipped as a false positive, not deferred)
+   - `status: converged` or `deferred`, and the fix was actually applied (not skipped as a false positive, not deferred)
    - the finding came from the **conversation** — NOT from a `/review` handoff block (those are the loop's own catches, already counted in `review-metrics.jsonl`; logging them again would double-count against the loop) and NOT from `/cc` (it logs `stage_found=cc` itself in its step 7 — logging here too would duplicate every comment)
    - the code under fix was already through `/review` on this branch — a first-pass fix on net-new code is not an escape
    - it is a defect, not a new requirement or a change of direction. A gate cannot miss information it never had.

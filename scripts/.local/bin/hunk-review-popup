@@ -1,0 +1,35 @@
+#!/bin/bash
+# hunk review with a one-key handoff into lazygit, for the herdr prefix+d popup.
+#
+# herdr popups are session-modal: while one is open no keybinding can open
+# another, so review -> git means quitting hunk and pressing the git key. This
+# wrapper collapses that into a single keypress by keeping BOTH tools inside the
+# one popup: the claude-review extension's `L` writes the tool it wants into
+# $HUNK_REVIEW_HANDOFF and quits hunk, and we exec that tool over ourselves.
+#
+# Env (PATH shims, EDITOR) is the caller's job — see the prefix+d binding.
+#
+# Usage: hunk-review-popup [hunk diff args...]
+
+set -u
+
+handoff="${TMPDIR:-/tmp}/hunk-review-handoff.$$"
+export HUNK_REVIEW_HANDOFF="$handoff"
+rm -f "$handoff"
+trap 'rm -f "$handoff"' EXIT
+
+hunk diff "$@" || exit $?
+
+# Absent or empty file: hunk was quit normally, nothing to hand off to.
+[ -s "$handoff" ] || exit 0
+target=$(head -n 1 "$handoff")
+rm -f "$handoff"
+
+case "$target" in
+    lazygit) exec lazygit ;;
+    *)
+        echo "hunk-review-popup: unknown handoff target '$target' — enter to close"
+        read -r _
+        exit 1
+        ;;
+esac

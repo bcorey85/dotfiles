@@ -5,8 +5,8 @@
  * `v` marks the selected file viewed, collapses it in place to a single summary
  * row, and moves to the next unviewed file; `v` again reopens it. `V` also drops
  * viewed files from the review entirely, `S` stages them, `X` clears the marks.
- * Inline review notes (built-in `c`) are mirrored to a JSONL the /cc skill reads
- * and resolves.
+ * `L` quits into lazygit in the same herdr popup. Inline review notes (built-in
+ * `c`) are mirrored to a JSONL the /cc skill reads and resolves.
  *
  * Collapsing is a registered file view, selected per file through
  * `ctx.fileViews`, so it lands on the keypress. Hiding and staging both change
@@ -569,6 +569,34 @@ export default function claudeReview(hunk: HunkApi): void {
       // own when the state behind it moves.
       ctx.fileViews.refresh(VIEW_ID);
       ctx.notify(`cleared ${count} mark(s)`);
+    },
+  );
+
+  // ── Handoff out of the review popup ───────────────────────────────────────
+  // herdr popups are session-modal, so review -> git costs a quit plus a prefix
+  // key. `hunk-review-popup` runs hunk and then whatever tool this writes into
+  // HUNK_REVIEW_HANDOFF, keeping both inside the one popup. SIGTERM is the same
+  // shutdown path as `q` — hunk installs it alongside SIGINT — so the terminal
+  // is restored exactly as on a normal quit before the wrapper takes over.
+  hunk.registerCommand(
+    { id: "handoffToLazygit", title: "Quit and open lazygit here", key: "L" },
+    (ctx) => {
+      const handoff = process.env.HUNK_REVIEW_HANDOFF;
+      if (!handoff) {
+        ctx.notify(
+          "claude-review: no handoff target — hunk was not started by hunk-review-popup",
+          "warning",
+        );
+        return;
+      }
+      try {
+        writeFileSync(handoff, "lazygit\n");
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        ctx.notify(`claude-review: handoff failed — ${detail}`, "error");
+        return;
+      }
+      process.kill(process.pid, "SIGTERM");
     },
   );
 

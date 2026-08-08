@@ -194,9 +194,12 @@ height = "100%"
 
 # The primary review key (codediff moved to alt+d — prefix+ctrl+d is already
 # close_workspace above, and prefix+shift+d is detach).
-# `hunk diff`, not bare `hunk`: bare prints usage and exits. This is the plain
-# working-tree review, which is also the only form the claude-review extension
-# can reload in place after `S` stages the viewed set.
+# hunk-review-popup runs `hunk diff` (bare `hunk` prints usage and exits) — the
+# plain working-tree review, which is also the only form the claude-review
+# extension can reload in place after `S` stages the viewed set — and then execs
+# whatever tool the extension's `L` handed off to. A popup is session-modal, so
+# prefix+g cannot reach herdr from in here; the handoff is how review reaches
+# lazygit without a quit plus a second key.
 # The mise shim directory has to be prepended by hand: hunk is a mise-global npm
 # package, and mise puts its shims on PATH through a shell hook in .zshrc, which
 # the herdr server (started from a login environment, not an interactive shell)
@@ -206,7 +209,7 @@ height = "100%"
 # (open file in editor) sees it unset under the popup's non-interactive bash.
 [[keys.command]]
 key = "prefix+d"                        # hunk review
-command = "~/.local/bin/tmux-tui-popup 'PATH=\"${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims:$PATH\" EDITOR=\"${EDITOR:-nvim}\" hunk diff' 'hunk failed — run install/hunk'"
+command = "~/.local/bin/tmux-tui-popup 'PATH=\"${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims:$PATH\" EDITOR=\"${EDITOR:-nvim}\" ~/.local/bin/hunk-review-popup' 'hunk failed — run install/hunk'"
 type = "popup"
 width = "100%"
 height = "100%"

@@ -1,7 +1,7 @@
 ---
 name: complexity-reviewer
 description: "Single-domain simplification reviewer. Answers ONE question over a whole module or feature — what could be DELETED if the code were shaped differently: branch thickets a data model collapses, indirection with one implementation, configurability nothing configures, guards a boundary check kills, values with more than one owner. Dispatched by /refactor simplify mode at module bounds; refuses diff bounds. Every finding must name what disappears and the invariant that lets it. Defers duplication, naming, and dead exports to smell-reviewer; correctness to code-reviewer."
-model: opencode-go/minimax-m3
+model: opencode-go/mimo-v2.5
 mode: subagent
 permission:
   edit: deny

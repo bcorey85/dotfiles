@@ -1,7 +1,7 @@
 ---
 name: review-loop
 description: "Runs the review→fix convergence loop. Dispatched by /review, /fix, /code."
-model: opencode-go/minimax-m3
+model: opencode-go/mimo-v2.5
 mode: subagent
 ---
 

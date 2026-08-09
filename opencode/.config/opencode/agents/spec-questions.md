@@ -1,7 +1,7 @@
 ---
 name: spec-questions
 description: "Generate objective codebase research questions from a source document. Reads only the document at the provided path, writes a numbered questions file with an exploration map into the task directory, and returns the file path. The questions never reference the source document's goals."
-model: opencode-go/deepseek-v4-pro
+model: opencode-go/mimo-v2.5
 mode: subagent
 permission:
   grep: deny

@@ -1,7 +1,7 @@
 ---
 name: code-reviewer-deep
 description: "Opus variant of code-reviewer for `+deep` dispatches — security-sensitive changes, complex logic, or architectural modifications. Same instructions as code-reviewer; the only difference is the model pin."
-model: opencode-go/glm-5.2
+model: opencode-go/mimo-v2.5-pro
 mode: subagent
 permission:
   edit: deny

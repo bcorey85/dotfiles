@@ -1,7 +1,7 @@
 ---
 name: test-reviewer
 description: "Analyze test suites against source code to identify coverage gaps, weak assertions, stale tests, and quality issues. Accepts a target scope (backend, frontend, specific module, or branch) as arguments. Branch scope reviews only tests the current branch added and includes the cull check for dead/low-value tests. Use when reviewing test quality, checking coverage before shipping, or evaluating test suite health."
-model: opencode-go/glm-5.2
+model: opencode-go/mimo-v2.5-pro
 mode: subagent
 permission:
   edit: deny

@@ -1,7 +1,7 @@
 ---
 name: coder-deep
 description: "Deep-reasoning variant of coder for `+deep` dispatches — any repo, any layer. Same instructions as coder; the only difference is the model pin."
-model: opencode-go/glm-5.2
+model: opencode-go/mimo-v2.5-pro
 mode: subagent
 color: "#eab923"
 ---

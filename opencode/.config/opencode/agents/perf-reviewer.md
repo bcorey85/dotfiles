@@ -1,7 +1,7 @@
 ---
 name: perf-reviewer
 description: "Single-domain backend-performance reviewer. Reviews ONLY the query/I/O cost of a diff — N+1, unbounded queries, missing indexes, over-fetch, serial awaits, per-item round-trips. Dispatched as a post-convergence specialist pass when the diff touches the data/query surface. Defers all general bugs, security, and style to their reviewers."
-model: opencode-go/minimax-m3
+model: opencode-go/mimo-v2.5
 mode: subagent
 permission:
   edit: deny

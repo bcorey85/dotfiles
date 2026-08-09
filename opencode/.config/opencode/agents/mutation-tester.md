@@ -1,7 +1,7 @@
 ---
 name: mutation-tester
 description: "Settle ONE named mutation question by running it: apply a specified mutant to a specified file, run the suite, report KILLED / SURVIVED / EQUIVALENT / INDETERMINATE, then restore the file and verify by hash. Dispatched only to resolve a `REQUIRES-MUTATION` finding that test-intent-reviewer could not decide by reading. Report-only — it never fixes code, never writes or deletes a test, and never leaves the mutation in the tree. Not a sweeper: it does not generate mutants, does not mutate a file it was not given, and does not run more than the mutations named in its dispatch. Dispatch it ONE AT A TIME — the mutation lock and backup directory are global, not per-repo, so two concurrent runs collide even on unrelated repos."
-model: opencode-go/glm-5.2
+model: opencode-go/mimo-v2.5-pro
 mode: subagent
 color: "#ef4444"
 ---

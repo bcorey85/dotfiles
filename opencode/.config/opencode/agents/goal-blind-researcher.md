@@ -1,7 +1,7 @@
 ---
 name: goal-blind-researcher
 description: "Runs eng-spec's Phase 2 to completion: spec-questions → spec-leak-check (bounded repair loop) → spec-research, and returns the artifact paths. Dispatched by /eng-spec. Never reads the ticket, never designs, never proposes, never summarizes findings."
-model: opencode-go/minimax-m3
+model: opencode-go/mimo-v2.5
 mode: subagent
 color: "#06b6d4"
 ---

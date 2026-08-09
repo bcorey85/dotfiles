@@ -1,7 +1,7 @@
 ---
 name: complexity-reviewer-deep
 description: "Deep-reasoning variant of complexity-reviewer for `+deep` dispatches. Same instructions as complexity-reviewer; the only difference is the model pin."
-model: opencode-go/glm-5.2
+model: opencode-go/mimo-v2.5-pro
 mode: subagent
 permission:
   edit: deny

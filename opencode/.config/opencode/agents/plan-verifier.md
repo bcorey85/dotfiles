@@ -1,7 +1,7 @@
 ---
 name: plan-verifier
 description: "Reconcile a plan's stated criteria against what the diff actually delivered, and verdict each done/partial/missing with file:line evidence. ONE scope: `scope: branch`, dispatched by /verify at branch end — the whole plan plus the ticket, running the Automated Verification commands and executing the Manual Verification items a terminal can drive. A dispatch saying `scope: phase` is stale; say so and stop. Never writes code, never browser-drives, never marks a phase done. Not a code reviewer (that is code-reviewer) and not a test auditor (that is test-intent-reviewer)."
-model: opencode-go/glm-5.2
+model: opencode-go/mimo-v2.5-pro
 mode: subagent
 color: "#06b6d4"
 ---

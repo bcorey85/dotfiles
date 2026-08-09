@@ -1,7 +1,7 @@
 ---
 name: backend-coder-deep
 description: "Deep-reasoning variant of backend-coder for `+deep` dispatches — complex implementations requiring deeper reasoning. Same instructions as backend-coder; the only difference is the model pin."
-model: opencode-go/glm-5.2
+model: opencode-go/mimo-v2.5-pro
 mode: subagent
 color: "#3b82f6"
 ---

@@ -1,7 +1,7 @@
 ---
 name: test-writer
 description: "Author phase tests AFTER the implementation coder returns — budgeted tests written from the plan's criteria, implementation-blind. Dispatched by /code per phase; also the fix route for bug-pinning/weak test-intent verdicts. Never edits src. Not a reviewer (that is test-intent-reviewer/test-reviewer) and not an implementer (that is the coder)."
-model: opencode-go/minimax-m3
+model: opencode-go/mimo-v2.5
 mode: subagent
 color: "#22c55e"
 ---

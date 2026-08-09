@@ -1,7 +1,7 @@
 ---
 name: coder
 description: "The implementer for any repo and any layer — CLI tools, scripts, libraries, infra, config, HTTP services, databases, and user interfaces, including features that span client and server. Use for all implementation work; there is no frontend/backend variant to choose between."
-model: opencode-go/minimax-m3
+model: opencode-go/mimo-v2.5
 mode: subagent
 color: "#eab923"
 ---

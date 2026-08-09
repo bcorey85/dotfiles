@@ -1,7 +1,7 @@
 ---
 name: security-reviewer-deep
 description: "Deep-reasoning variant of security-reviewer for `+deep` dispatches. Same instructions as security-reviewer; the only difference is the model pin."
-model: opencode-go/glm-5.2
+model: opencode-go/mimo-v2.5-pro
 mode: subagent
 permission:
   edit: deny

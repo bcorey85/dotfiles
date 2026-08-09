@@ -1,7 +1,7 @@
 ---
 name: smell-reviewer
 description: "Single-domain structure reviewer. Reviews ONLY the shape of a change — duplication (within the bound and against existing code), layer placement, naming, dead weight, cohesion. Dispatched as a post-convergence specialist pass on a diff-size trigger, and by /refactor at wider bounds (branch diff; audit mode's pre-existing-module scope). Fresh-eyes replacement for the retired coder self-sweep: the author demonstrably cannot see their own duplication. Defers correctness, security, perf, and test quality to their owners."
-model: opencode-go/minimax-m3
+model: opencode-go/mimo-v2.5
 mode: subagent
 permission:
   edit: deny

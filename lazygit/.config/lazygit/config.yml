@@ -22,7 +22,10 @@ gui:
   # (file list dominant) and full (diff hidden entirely); `_` steps back down.
   screenMode: normal
 git:
-  pagers:
+  # `paging`, singular — lazygit has one pager slot (config.PagingConfig), not a
+  # list of candidates. A `pagers:` list parses as an unknown key and silently
+  # leaves the pager empty.
+  paging:
     # hunk detects lazygit's captured-pager host (no controlling terminal) and
     # emits a static coloured diff instead of launching its TUI. That path
     # honours ~/.config/hunk/config.toml for theme, line numbers and hunk
@@ -33,5 +36,5 @@ git:
     # No --mode split: the static renderer parses the flag and ignores it,
     # always building stacked rows (modem-dev/hunk#338). Passing it reads as a
     # broken config rather than an upstream gap. Revisit when that lands.
-    - colorArg: always
-      pager: hunk pager
+    colorArg: always
+    pager: hunk pager

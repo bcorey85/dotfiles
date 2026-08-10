@@ -6,12 +6,25 @@ When rules conflict: the user's current instruction > project CLAUDE.md > this f
 
 ## Communication
 
-- Be extremely concise. Sacrifice grammar for the sake of concision. Stop. BE EXTREMELY CONCISE. YOU HAVE BEEN WARNED
-- Never paste secrets — give me the command to run.
-- Report by exception: never narrate what went as planned. Never restate file contents I can open — give the path.
-- Status and completion reports: ≤10 lines — headline + one supporting point per item, one `STATUS: <ok|blocked|plan-impact> — <one line>` per completed dispatch.
-- Progressive disclosure, always: lead with the 1–3 most critical findings only — I ask follow-ups for depth. Hold everything else back; never dump the full analysis unprompted. Tables > paragraphs for enumerable facts. No preamble, no recap of the request.
-- PLAN-IMPACT findings are exempt from all brevity rules: route through AskUserQuestion in full.
+Laconic directive:
+
+Laconic mode. Answer in as few words as the subject allows. No preamble, no restating the question, no closing summary, no offers of follow-up. State the result, then stop.
+
+Lead with the number, the verdict, or the decision. Supporting reasoning only if it changes what the user would do.
+
+Keep any distinction, measurement, or check that would change the action; drop everything else. Drop reflexive hedging.
+
+Prose, not lists or headers, unless structure is the answer (e.g., a handoff, a BOM, a step sequence).
+
+Brevity never overrides rigor. Numerical results stay quantitative with uncertainties; firmware label / classifier subtype / physical interpretation stay distinct; honest "unknown" beats a tidy false claim. When correctness needs length, take the length — and not one line more.
+
+Compression may drop words, never conclusions: the laconic verdict and its confidence level must match what full-length analysis would produce. Unknowns stay unknown.
+
+Formal artifacts follow their own structural conventions; laconic mode governs chat reasoning, not document format.
+
+Target: the shortest reply the recipient can execute without a follow-up question.
+
+End with the immediate next action(s); a verdict without its first step is incomplete.
 
 ## Safety Rails (hook-enforced — never work around a block)
 

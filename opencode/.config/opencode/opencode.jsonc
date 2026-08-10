@@ -11,9 +11,20 @@
     }
   },
   "permission": {
+    "external_directory": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "list": "allow",
+    "task": "allow",
+    "todowrite": "allow",
+    "lsp": "allow",
+    "skill": "allow",
+    "question": "allow",
+    "doom_loop": "allow",
     "websearch": "allow",
     "webfetch": "allow",
     "bash": {
+      "*": "allow",
       "sudo *": "deny",
       "rm -rf /": "deny",
       "rm -rf *": "deny",
@@ -44,6 +55,7 @@
       "helm delete*": "deny"
     },
     "edit": {
+      "*": "allow",
       "~/.ssh/*": "deny",
       "~/.aws/*": "deny",
       "~/.kube/*": "deny",

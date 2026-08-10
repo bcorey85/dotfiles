@@ -34,6 +34,7 @@ return {
     { "<leader>dt", desc = "Terminate" },
     { "<leader>du", desc = "Toggle DAP UI" },
     { "<leader>dn", desc = "Debug nearest test" },
+    { "<leader>dX", desc = "Clear all breakpoints" },
   },
   config = function()
     local configured = false
@@ -46,7 +47,7 @@ return {
 
       local dap = require("dap")
       local dapui = require("dapui")
-
+      dap.defaults.fallback.justMyCode = false
       -- dap-ui: plain defaults are fine; layout is configured inside dapui.
       dapui.setup({})
 
@@ -218,5 +219,9 @@ return {
         vim.notify("No test runner for " .. ft, vim.log.levels.WARN)
       end
     end, "Debug nearest test")
+
+    map("<leader>dX", function()
+      require("dap").clear_breakpoints()
+    end, "Clear all breakpoints")
   end,
 }

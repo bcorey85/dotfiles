@@ -95,3 +95,21 @@ if [ "$PLATFORM" = "mac" ] && [ -d "$HOME/Library/Application Support/com.mitche
         print_success "Ghostty macOS symlink created"
     fi
 fi
+
+# macOS: lazygit ignores ~/.config unless XDG_CONFIG_HOME is set, and reads
+# Application Support instead — so the stowed config (hunk pager, editPreset,
+# no subprocess return prompt) is invisible there. Symlink rather than export
+# XDG_CONFIG_HOME: lazygit is launched from the herdr server's login
+# environment, which never sources .zshrc.
+if [ "$PLATFORM" = "mac" ]; then
+    LAZYGIT_MAC="$HOME/Library/Application Support/lazygit/config.yml"
+    mkdir -p "$(dirname "$LAZYGIT_MAC")"
+    if [ -f "$LAZYGIT_MAC" ] && [ ! -L "$LAZYGIT_MAC" ]; then
+        print_info "Backing up existing macOS lazygit config..."
+        mv "$LAZYGIT_MAC" "$LAZYGIT_MAC.backup.$(date +%Y%m%d_%H%M%S)"
+    fi
+    if [ ! -L "$LAZYGIT_MAC" ]; then
+        ln -s "$HOME/.config/lazygit/config.yml" "$LAZYGIT_MAC"
+        print_success "lazygit macOS symlink created"
+    fi
+fi

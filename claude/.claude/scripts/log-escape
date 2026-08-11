@@ -10,8 +10,11 @@
 # usage: log-escape key=value [key=value ...]
 #   canonical fields:
 #     repo=<basename>
-#     stage_found=cc|walkthrough|refactor|q-verify|verify|pr-human|prod|
+#     stage_found=cc|walkthrough|refactor|q-verify|verify|pr-human|pr-bot|prod|
 #                 phase-gate|other
+#       pr-bot = a bot reviewer on the PR (Copilot, the Claude review bot)
+#       caught it, logged by /pr-comments. Distinct from pr-human because a
+#       bot's lens can be wired into the loop; a human's attention cannot.
 #       walkthrough = caught reading /stage's queue at a phase sign-off, i.e.
 #       inside the loop. Distinct from pr-human (caught after the branch left
 #       the gates) because the remediation differs: a walkthrough catch means

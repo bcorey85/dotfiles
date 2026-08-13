@@ -148,7 +148,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "opus",
+  "model": "claude-opus-4-8",
   "hooks": {
     "Notification": [
       {
@@ -334,7 +334,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash '/home/brandon/.claude/hooks/herdr-agent-state.sh' session",
+            "command": "bash ~/.claude/hooks/herdr-agent-state.sh session",
             "timeout": 10
           }
         ]
@@ -364,7 +364,23 @@
     "pyright-lsp@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
-    "typescript-lsp@claude-plugins-official": true
+    "typescript-lsp@claude-plugins-official": true,
+    "ponytail@ponytail": true,
+    "caveman@caveman": true
+  },
+  "extraKnownMarketplaces": {
+    "ponytail": {
+      "source": {
+        "source": "github",
+        "repo": "DietrichGebert/ponytail"
+      }
+    },
+    "caveman": {
+      "source": {
+        "source": "github",
+        "repo": "JuliusBrussee/caveman"
+      }
+    }
   },
   "effortLevel": "medium",
   "awaySummaryEnabled": false,

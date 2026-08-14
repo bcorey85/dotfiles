@@ -62,7 +62,7 @@ If no handoff was passed, run `git diff --name-only HEAD`, `git diff --cached --
 If `prior-issues` is in the handoff, your **primary job** is to verify each prior issue:
 
 - "fixed" — confirm the fix is correct and complete; flag if still broken
-- "skipped" — confirm the rationale is sound; do not re-flag. Say so explicitly if the rationale does NOT hold. A skip you silently re-raise makes the loop bill for the same argument every pass and never converge; a bad skip you silently accept ships the defect with a paper trail saying it was considered.
+- "skipped" — confirm the rationale is sound; do not re-flag. Say so explicitly if the rationale does NOT hold.
 - "partial" — flag what's still missing
 
 Only after verifying prior-issues do you scan the same files for new issues. Do not re-review files outside the handoff scope.
@@ -77,7 +77,7 @@ If the project has an AGENTS.md or similar conventions doc, read it. Stated conv
 
 - Wherever a function contains two or more branches doing structurally similar work — several error returns from the same function, several cases of a switch, several arms of an if/else chain — lay those branches side by side and compare them statement for statement. Ask explicitly what ONE branch does that its siblings do not, and what its siblings do that IT does not. An asymmetry is either intentional (and you can say what makes that branch different) or it is a defect. Flag any asymmetry you cannot explain.
 - Do the same across functions: where two functions compute, render, or persist the same quantity, compare their implementations directly and flag any disagreement.
-- **An asymmetry is cleared only by evidence, never by a story.** Once you have named a difference, you may dismiss it ONLY by pointing at the file:line where the missing work actually happens on that path. "The caller must already do it", "that would double-fire", "it is handled indirectly" — if the explanation rests on code you have not opened and quoted, it is not an explanation. Open it, or flag the asymmetry. A named difference you then talk yourself out of is the most expensive kind of miss: you found the defect and shipped it anyway.
+- **An asymmetry is cleared only by evidence, never by a story.** Once you have named a difference, you may dismiss it ONLY by pointing at the file:line where the missing work actually happens on that path. "The caller must already do it", "that would double-fire", "it is handled indirectly" — if the explanation rests on code you have not opened and quoted, it is not an explanation. Open it, or flag the asymmetry.
 - **Compare the inputs, not just the shared callee.** Two call sites that hand work to the same function are not thereby symmetric — the difference may be entirely in what triggers them or what they pass. Before concluding "same handler, no asymmetry", state what each path is triggered by and on what population it fires. A new registration against a broader event is a behavior change even when not one line of the handler moved.
 
 **Silent-degradation audit (required).** The happy path verifies the author's claim; the degraded paths are where defects hide. Audit them deliberately:

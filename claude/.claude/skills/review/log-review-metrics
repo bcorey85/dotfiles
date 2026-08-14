@@ -22,7 +22,13 @@ case " $* " in
   *" second_draft="*) out="${SECOND_DRAFT_FILE:-$HOME/.claude/second-draft.jsonl}" ;;
 esac
 
-json=$(jq -cn '{date: (now | todate)}')
+# schema_version marks the row's schema era. Bump ONLY on a breaking change —
+# a disposition/vocabulary swap, a field whose meaning changes, or a retirement.
+# Additive fields do NOT bump it (analysis null-coalesces them). /audit review
+# reads only the current version; older versions live in telemetry-archive/.
+# v1 = critical/high/medium/low severity era (pre-2026-08-08, archived).
+SCHEMA_VERSION=2
+json=$(jq -cn --argjson sv "$SCHEMA_VERSION" '{date: (now | todate), schema_version: $sv}')
 for kv in "$@"; do
   case "$kv" in
     out=*) out="${kv#out=}"; continue ;;

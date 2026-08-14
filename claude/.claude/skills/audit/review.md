@@ -4,10 +4,10 @@ Analyze both sides of the flywheel:
 
 - **Catches** — what `/review` logs on every run (via `log-review-metrics`): repo, iter, disposition counts (`fix`/`ask`/`nit`/`blocker`), outcome buckets (`fixed`/`skipped_fp`), `test_intent`, `culled`, `comment_noise`, `specialists`, `class_closed`, `fixed_classes`, `result`.
 - **Escapes** — what got PAST the gates (via `~/.claude/scripts/log-escape`, fed by `/cc`, `/refactor`, `/verify`, and manual `/escape`): `stage_found`, `gate_missed`, `class`, `severity`. This is the ground truth for which gates are trustable.
-- **Scans** — what the deterministic whole-tree scans found and how much of it was real (via `~/.claude/scripts/log-scan`, fed by `/code` prohibition scans): `scan`, `stage`, `exit`, `candidates`, `confirmed`, `fixed`, `fp`. dead-symbol, clone-block, and drifted-copy scans were retired (0 confirmed across 267 candidates). These are the only gates here that are not agent judgment, so they are the only ones whose precision can be computed rather than argued about.
+- **Scans** — what the deterministic whole-tree scans found and how much of it was real (via `~/.claude/scripts/log-scan`, fed by `/code` prohibition scans): `scan`, `stage`, `exit`, `candidates`, `confirmed`, `fixed`, `fp`. These are the only gates here that are not agent judgment, so they are the only ones whose precision can be computed rather than argued about.
 - **Per-finding rows** — the same catches at finding granularity (via `~/.claude/skills/review/log-review-finding`, fed by `/review`, `/refactor`, `/verify`, `/branch-recap`): `kind=run` rows carry `gate`, `scope`, `diff_loc`, `n_findings` including the silent runs; `kind=finding` rows carry `gate`, `disposition` (+ optional `blocker`), `class`, `file`, `line`, `actioned`. This is the only source with a per-gate denominator and a `file:line` join key, so it is the only one that can answer which gate contributes what.
 
-Pre-2026-08-08 telemetry (the `critical`/`high`/`medium`/`low` severity era and the retired coder self-sweep's `second-draft.jsonl`) is moved to `~/.claude/telemetry-archive/` and out of this lane's scope; the live files carry only the current disposition schema.
+Every live row carries `schema_version` (currently `2`); analyze only the current version. Older-schema rows (the `critical`/`high`/`medium`/`low` severity era, the retired `second-draft.jsonl`) are moved to `~/.claude/telemetry-archive/` and out of scope. A future breaking change bumps the version and archives the prior one, so `schema_version < current` is the archive filter — no date reasoning.
 
 ## Instructions
 
@@ -21,7 +21,7 @@ Pre-2026-08-08 telemetry (the `critical`/`high`/`medium`/`low` severity era and 
 - **Yield against `diff_loc`**: bucket runs by the size of the diff reviewed. Detection degrades as the reviewed change grows, so a gate that looks weak may be reading diffs too large to review rather than reviewing them badly. Report the buckets, never a single pooled rate.
 - Keep the `-deep` tiers separate from their base agents throughout. They are different instruments and pooling them destroys the only comparison worth having.
 
-1b. **Scan precision and recall** — read `${SCAN_RUNS_FILE:-$HOME/.claude/scan-runs.jsonl}`. Skip this step with one line if the file is missing. dead-symbol, clone-block, and drifted-copy scans were retired (0 confirmed across 267 candidates); only prohibition scans remain active. If the file has rows for retired scan types, note the historical data but do not compute metrics for them. For prohibition scans, compute:
+1b. **Scan precision and recall** — read `${SCAN_RUNS_FILE:-$HOME/.claude/scan-runs.jsonl}`. Skip this step with one line if the file is missing. Only prohibition scans are active; for each, compute:
 
 - **Precision**: `sum(confirmed) / sum(candidates)`. A scan trending toward zero is training its reader to skim; say so and propose tightening its threshold or retiring it. Report the raw pair, never the ratio alone — 3/4 and 300/400 are not the same evidence.
 - **Did-not-run rate**: share of rows with `exit=2`. Any non-trivial rate means the scan is silently absent from runs that reported clean, and every clean report since is suspect.

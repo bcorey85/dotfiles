@@ -30,7 +30,7 @@
 # usage: log-scan key=value [key=value ...]
 #   required:
 #     repo=<basename>
-#     scan=dead-symbol|clone-block|drifted-copy|acceptance-stub|prohibition|other
+#     scan=acceptance-stub|prohibition|other
 #       prohibition = a banned pattern that must not appear at all (a plan's
 #       "git grep <X> returns zero hits" criterion). candidates is the hit
 #       count, so a passing run is exit=1 with candidates=0.
@@ -72,8 +72,8 @@ need repo; need scan; need stage; need exit
 
 scan=$(jq -r '.scan' <<< "$json")
 case "$scan" in
-  dead-symbol|clone-block|drifted-copy|acceptance-stub|prohibition|other) ;;
-  *) echo "refusing to log: scan=$scan is not one of dead-symbol|clone-block|drifted-copy|acceptance-stub|prohibition|other" >&2; exit 1 ;;
+  acceptance-stub|prohibition|other) ;;
+  *) echo "refusing to log: scan=$scan is not one of acceptance-stub|prohibition|other" >&2; exit 1 ;;
 esac
 
 stage=$(jq -r '.stage' <<< "$json")

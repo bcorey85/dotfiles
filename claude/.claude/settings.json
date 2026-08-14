@@ -235,6 +235,10 @@
           {
             "type": "command",
             "command": "~/.claude/scripts/claudemd-linecount.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/dead-prose-gate.sh"
           }
         ]
       }

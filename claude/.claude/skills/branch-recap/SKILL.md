@@ -90,64 +90,7 @@ Then emit the per-gate and per-finding rows per
 `gate=test-intent-reviewer lane=branch-recap scope=branch-exit`. A zero-finding
 audit still logs its `kind=run` row.
 
-## Step 2: Whole-tree scans
-
-All three scans answer questions a phase-bound review structurally cannot. A phase can kill
-code it never opens — phase 5 builds its own envelope and phase 2's wrapper loses its last
-caller. A phase can copy a block out of a file its diff never touches — the copy is new code
-under review and the original is invisible. And a phase can edit one side of a pair an earlier
-phase copied, leaving the other side stale — the edit is right in its own diff, and the whole
-damage sits in the file it never opened. Each diff is individually clean in all three cases.
-This is the first point where the whole tree is final, so it is the first point any of the
-three can be asked at all.
-
-Run all three yourself, with `Bash`, from the repo root:
-
-```bash
-bash ~/.claude/scripts/dead-symbol-scan.sh .
-bash ~/.claude/scripts/clone-block-scan.sh .
-bash ~/.claude/scripts/drifted-copy-scan.sh .
-```
-
-For the clone scan, the triage order is on its own caveat block: **have the two copies already
-drifted**, then were they written by different phases, then is extracting worth it. Repeated
-test setup is often clearest left alone — say so rather than extracting reflexively. It finds
-verbatim copies only; two independent implementations of one rule never match it, so a clean
-clone scan is not "no duplication".
-
-The drift scan is the clone scan's complement and the two must be read together. A clone scan
-goes blind at the exact moment a copied pair becomes a bug: while the copies agree it reports
-them, and the edit that breaks them apart also deletes them from its output. So the drift scan
-carries the higher-severity half — a pair it reports has ALREADY diverged, and usually exactly
-one of the two sides is now wrong. Ask which. Its rows are line pairs, not blocks, so a
-share of them are coincidentally-aligned declaration lines that cost two lines of reading to
-dismiss — dismiss those out loud rather than silently.
-
-**Report-only. Never delete on its say-so** — every row is a candidate, and the caveat block
-it prints lists the false-positive sources that apply. Read each row against the change map:
-the ones that matter are symbols in files no recent phase opened, and TEST-ONLY symbols kept
-alive solely by the test written to cover them (no compiler and no unused-symbol tool reports
-those, because a test counts as a consumer).
-
-Exit 2 means it DID NOT RUN — say so in the recap rather than reporting a clean scan.
-
-Anything you judge real and do not fix goes in **Open items** verbatim, not silently dropped.
-
-**Score each scan — MANDATORY, one line per scan, even when it found nothing:**
-
-```bash
-bash ~/.claude/scripts/log-scan repo=<basename> scan=<dead-symbol|clone-block|drifted-copy> \
-  stage=branch-recap exit=<actual exit code> candidates=<rows printed> \
-  confirmed=<rows you judged real> fixed=<n> fp=<n dismissed> note="<one line>"
-```
-
-An unscored scan is unfalsifiable: a scan that prints nothing but noise reads exactly like a
-scan that keeps the tree clean. **Log the dismissals honestly** — a run with 12 candidates and
-0 confirmed is the most useful row in that file, because it is the one that argues for
-tightening or retiring the scan. `exit=2` means it did not run; log that too, or a broken
-scan survives forever looking clean.
-
-## Step 3: Residue triage — `/stage`
+## Step 2: Residue triage — `/stage`
 
 Phases stage as they go (`/code` block B invokes `/stage` at each sign-off), so by now the
 only unstaged work is what the closing phases themselves produced — the `/refactor` sweep's
@@ -167,7 +110,7 @@ paths that `/stage` returned no tier for go in the receipt as
 `residue: <n> unclassified — no diff to tier, read them all`, and into **Still unstaged**
 by name. Same rule as the denominator in step 1: a check that cannot fail has not passed.
 
-## Step 3b: Deferred-findings queue
+## Step 3: Deferred-findings queue
 
 The correctness loop gets one round per phase; a re-review's findings are
 deferred to here rather than fixed in place. This is where that debt comes due —
@@ -191,7 +134,9 @@ Empty queue → receipt line `deferred: none`. Otherwise
 
 A deferred `blocker` in this queue is a bug in the loop, not a work item: the
 one-round budget exempts `blocker` findings from deferral. Say so explicitly if
-one appears.
+one appears. A deferred `fix_induced=bug` is the same class — the loop diagnosed a
+regression it created and then failed to fix it. Escalate it as a loop bug, not a
+work item.
 
 ## Step 4: The recap
 
@@ -214,11 +159,6 @@ Spec: <task-dir>
 - <culled / COVERAGE-LOST / WEAK findings, or "clean">
 - <denominator, always: "N of M pre-existing tests searched" or "coverage-net N/A — base suite had 0 tests, this gate did not run">
 - <any REQUIRES-MUTATION items with their KILLED/SURVIVED/EQUIVALENT/INDETERMINATE verdicts, or marked unrouted-and-open>
-
-### Whole-tree scans
-- dead symbols: <UNREFERENCED / TEST-ONLY candidates you judged real, with the phase that orphaned each; "clean", or "scan DID NOT RUN">
-- clone blocks: <clusters you judged real, noting which have already drifted; "clean", or "scan DID NOT RUN">
-- drifted copies: <pairs you judged real, naming which SIDE is stale for each; "clean", or "scan DID NOT RUN">
 
 ### Deferred findings             (one-round budget, read at branch bound)
 - <fixed / stale / carried, one line each, with the gate and disposition each came from; or "none">

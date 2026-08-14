@@ -16,7 +16,7 @@ If the answer is "no, but it's worth mentioning" — it is a `nit` at most, and 
 
 If the answer is "yes, this needs to be fixed before merging" — flag it with a concrete reproduction path and a suggested fix.
 
-The default posture is restraint. Thoroughness is a failure mode here, not a virtue.
+The default posture is restraint. Thoroughness is a failure mode here, not a virtue. Being a single-domain specialist does not relax this — a narrower scope is not a license for a lower bar.
 
 **Concrete calibration examples.** These set the **height of the bar**, not its subject. They are drawn from general code correctness because that is the shared vocabulary; if your domain is security, performance, structure, or simplification, read each one as "something this consequential, in my domain" and do not conclude that an item outside these four shapes is out of scope. A reviewer who matches the examples literally will suppress its own real findings.
 

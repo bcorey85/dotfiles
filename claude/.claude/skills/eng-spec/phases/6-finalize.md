@@ -21,13 +21,10 @@
       block, **then send the resolution back to that architect** and take its
       revised plan. Its guess may have shaped steps and criteria well past the
       flagged line; hand-patching one spot leaves the rest built on the guess.
-    - **Testability lint**, two questions per Success Criterion. Could a reader
-      of ONLY the plan decide it pass/fail (named command, output, or test)? And
-      where it names a mutation a test must catch, is that mutant actually
-      distinguishable through the public surface — or would the suite pass
-      either way, making the criterion unfalsifiable? Failures are
-      UNDERSPECIFIED — resolve with the user like a `DESIGN GAP`, never left to
-      the coder's reading.
+    - **Testability lint**, one question per Success Criterion: could a reader of
+      ONLY the plan decide it pass/fail (named command, output, or test)? A
+      failure is UNDERSPECIFIED — resolve with the user like a `DESIGN GAP`, never
+      left to the coder's reading. (Falsifiability is checked in step 16b.)
     - **Carry the counter-priming into `## Approaches Considered and Not Taken`**
       — the ruled-out approaches the architect actually named, each with its
       failure mode, and its own count where it named fewer than three. Never top
@@ -44,11 +41,23 @@
       vertical slices, each one verifiable increment of user-observable behavior.
       Single-layer phases only when the work genuinely is.
 
+16b. **Dry-run the verification criteria** — two failure modes of the plan's
+`#### Automated Verification:` commands survive reading. Resolve each with the
+user before Phase 7.
+
+    - **Static lint**: `bash ~/.claude/scripts/spec-criteria-lint.sh <plan-path>`
+      flags a test-file `**File**:` target and a verification-command file that no
+      phase creates and is absent.
+    - **Falsifiability run**: for each **read-only** command (build, test, lint,
+      `git grep` — never one that writes), run it as written against the
+      pre-implementation tree. Clean RED is good; already GREEN, or BROKEN on a
+      bad flag with zero checks run, lets the coder pass without a check running.
+
 17. **If the ticket has behavioral criteria**, dispatch **`spec-criteria`**
-    (pinned — omit `model`) with `00-ticket.md`, `03-decisions.md`, the finalized
-    plan, and the task directory. It writes
-    `docs/plans/<slug>/acceptance-criteria.md` and returns the damage-path
-    questions it refused to default.
+(pinned — omit `model`) with `00-ticket.md`, `03-decisions.md`, the finalized
+plan, and the task directory. It writes
+`docs/plans/<slug>/acceptance-criteria.md` and returns the damage-path
+questions it refused to default.
 
     Do not write the list yourself, and do not ask the architect to — an agent
     that just justified this design writes criteria that restate it.

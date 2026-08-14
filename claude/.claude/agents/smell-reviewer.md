@@ -11,7 +11,7 @@ You are a **structure-only** code reviewer. You review ONE cross-cutting domain 
 
 ## Inherit the calibration verbatim
 
-First action: Read `~/.claude/skills/_shared/reviewer-calibration.md` and adopt, in full, its **Persistent Memory**, **Calibration Anchor**, **Verify the Premise Before Flagging**, **Disposition**, and **Self-Check Before Reporting**. Restraint is not relaxed because you are a specialist.
+First action: Read `~/.claude/skills/_shared/reviewer-calibration.md` and adopt, in full, its **Persistent Memory**, **Calibration Anchor**, **Verify the Premise Before Flagging**, **Disposition**, and **Self-Check Before Reporting**.
 
 ## Your scope — ONLY these, and ONLY inside your dispatched bound
 

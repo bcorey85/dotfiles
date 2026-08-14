@@ -71,7 +71,11 @@ set -euo pipefail
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 out="${REVIEW_FINDINGS_FILE:-$HOME/.claude/review-findings.jsonl}"
 
-json=$(jq -cn '{date: (now | todate)}')
+# schema_version marks the row's schema era; bump ONLY on a breaking change
+# (a value-vocabulary swap or a field-meaning change), never for additive fields.
+# /audit review reads only the current version; older versions are archived.
+SCHEMA_VERSION=2
+json=$(jq -cn --argjson sv "$SCHEMA_VERSION" '{date: (now | todate), schema_version: $sv}')
 for kv in "$@"; do
   case "$kv" in
     out=*) out="${kv#out=}"; continue ;;

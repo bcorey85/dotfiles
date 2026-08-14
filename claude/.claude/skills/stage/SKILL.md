@@ -5,9 +5,7 @@ description: Mechanically stage the invariant-verifiable slice of a working-tree
 
 # Stage
 
-The index is the trust boundary: **staged = mechanically provable, skip it; unstaged = your reading queue.** The classifier's job is to shrink the queue only by what a script can *prove* doesn't need human eyes — and to hand back the rest in blast-radius order so reading time lands where the risk is.
-
-Design decision (2026-07-11): the former verify/suppress tier — an Opus reviewer clearing low-risk semantic files for auto-staging — is removed. A model verdict that licenses the human to skip reading semantic changes trades comprehension for throughput, which is the exact debt the queue exists to surface. The model gets no vote on what you skip; only checkable invariants do.
+The index is the trust boundary: **staged = mechanically provable, skip it; unstaged = your reading queue.** The classifier's job is to shrink the queue only by what a script can _prove_ doesn't need human eyes — and to hand back the rest in blast-radius order so reading time lands where the risk is.
 
 ## Arguments
 
@@ -69,4 +67,4 @@ Any bug later found in a mechanically-staged file → `/escape` with `gate_misse
 
 ## Extending
 
-Per-repo tuning in `.stage.json` (`hotPaths`, `skim` regex arrays, merged with defaults). `hotPaths` *is* the high-risk gate — add contract/shared-types, data-deletion, and contract-freeze paths so they always land at the top of the queue. New SAFE classes are added in `scripts/stage.mjs` only — each needs a checkable invariant, not a filename pattern.
+Per-repo tuning in `.stage.json` (`hotPaths`, `skim` regex arrays, merged with defaults). `hotPaths` _is_ the high-risk gate — add contract/shared-types, data-deletion, and contract-freeze paths so they always land at the top of the queue. New SAFE classes are added in `scripts/stage.mjs` only — each needs a checkable invariant, not a filename pattern.

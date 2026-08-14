@@ -16,16 +16,9 @@ and the human skimming phases.
 
 ## Format rules (hard)
 
-- `## Phase Status` is mandatory — never delete it. Consumers
-  find it by HEADING, not position: in `/eng-spec`'s `spec.md` it is hoisted to
-  the top of the file (above the judgment layer) so a peek shows progress
-  immediately. In a standalone plan it sits where the template below puts it.
+- `## Phase Status` is mandatory — never delete it. Consumers find it by HEADING, not position: in `/eng-spec`'s `spec.md` it is hoisted to the top (above the judgment layer); in a standalone plan it sits where the template below puts it.
 - Every Phase Status line carries a `(risk: low|high)` tag.
-- A phase MAY add `(reviewers: security[, perf])` — the PRIMARY dispatch signal
-  for `security-reviewer`, which never infers a security surface from paths or
-  keywords. Declare it when the phase changes
-  authz/tenancy, opts out of a guard, or handles secrets. Additive only: omitting
-  it never suppresses a forced pass.
+- A phase MAY add `(reviewers: security[, perf])` — the PRIMARY dispatch signal for `security-reviewer`, which never infers a security surface from paths or keywords. Declare it when the phase changes authz/tenancy, opts out of a guard, or handles secrets. Additive only: omitting it never suppresses a forced pass.
 - Phases are VERTICAL slices (each independently verifiable end-to-end),
   never horizontal layers.
 - Keep each phase's diff signable in one sitting — past ~8–10 semantic files
@@ -38,13 +31,7 @@ and the human skimming phases.
   sketches) as committable content, not prose — then `Phase 1: Walking
 skeleton`, the thinnest end-to-end path exercising every Phase 0 contract
   (`/code` stops after Phase 1 for calibration). Remaining
-  slices follow in dependency order. Phase 0 is always `(risk: high)` — it IS
-  the public-contract tier — and is FROZEN at plan approval: implementers
-  changing Phase 0 content mid-plan is a stop-and-surface Plan Deviation,
-  never a silent edit. Parallel coder fan-out is allowed only after the
-  skeleton phase completes. Single-slice plans with no coordination surface may fold
-  contracts into Phase 1 — state so explicitly. Front-load only the surface
-  between slices; internal design stays inside its slice.
+  slices follow in dependency order. Phase 0 is always `(risk: high)` and FROZEN at plan approval: changing Phase 0 content mid-plan is a stop-and-surface Plan Deviation, never a silent edit. Parallel coder fan-out is allowed only after the skeleton phase completes. Single-slice plans with no coordination surface may fold contracts into Phase 1 — state so explicitly. Front-load only the surface between slices; internal design stays inside its slice.
 - A phase with no user-observable behavior (migration-only, infra-only — the
   one legitimate single-layer case) carries its FULL verification in
   Automated Verification and states `Manual Verification: N/A (infra-only)`
@@ -127,9 +114,9 @@ their ids into any file under the source tree.
 The closing Verify phase reconciles every id against the real test suite
 (`_shared/closing-phases.md`), matching on behavior rather than markers. Tests
 that cover a criterion assert at its boundary — the public entry point a user or
-caller reaches — never an internal function, or the test pins today's structure
-and blocks the refactor it was supposed to survive. **No mocks inside such a
-test** — a mock pins how you assumed the code would be built.
+caller reaches — never an internal function (an internal assertion pins today's
+structure and blocks the refactor it should survive). **No mocks inside such a
+test.**
 
 ## Implementation Approach
 

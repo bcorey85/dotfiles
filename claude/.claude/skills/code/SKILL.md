@@ -50,7 +50,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
    - Dispatch the coder for THAT ONE PHASE ONLY. The coder must run the phase's "Automated Verification" gate (typically `npm run validate` or equivalent) before returning. **Re-read the phase's Phase Status line before dispatching** — its `(risk: …)` tag drives the phase-boundary decision (step 2) and its `(reviewers: …)` list is passed through to the review loop (step 5). Both are properties of the phase, not of the invocation, so they can differ from the previous phase's.
    - After the coder completes, dispatch the `test-writer` (step 3b); after it returns and you summarize, auto-dispatch `/review` (step 5).
-   - **No per-phase `plan-verifier`.** Plan↔diff reconciliation runs ONCE, at branch end, from `/verify`. Run per phase it emitted findings that nothing ever acted on, which is what a reconciliation gate does when half the plan is not written yet: the gap it reports is the work still to come, not a defect. Here, YOU check before marking the phase done: the phase's `#### Automated Verification` commands actually ran and passed (coder evidence), and its `#### Manual Verification` items go on the deferred list for `/verify`. A phase with no Success Criteria is a plan defect, not a pass — say so before advancing.
+   - **No per-phase `plan-verifier`.** Plan↔diff reconciliation runs ONCE, at branch end, from `/verify` — run per phase it would report the unwritten phases as gaps. Here, YOU check before marking the phase done: the phase's `#### Automated Verification` commands actually ran and passed (coder evidence), and its `#### Manual Verification` items go on the deferred list for `/verify`. A phase with no Success Criteria is a plan defect, not a pass — say so before advancing.
 
      **Run any prohibition criterion yourself and log the run.** A criterion of the form "`git grep <pattern>` returns zero hits" is a scan, not coder evidence — run it with Bash and score it, because a prohibition nobody re-ran is indistinguishable from one that never held:
 
@@ -66,7 +66,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    - After peer review passes AND the phase's Automated Verification is green, mark the phase done in the plan: `Edit` the `## Phase Status` section to flip `- [ ] Phase N: ...` → `- [x] Phase N: ...`. This single Edit is the durable record of progress — it survives `/clear` and lets in-session re-entry detect the next phase.
    - **Phase-boundary decision** — the phase is done; now decide stop vs. auto-advance, checking these in order (first match wins), then print the matching Phase-Complete Block:
      1. **Last phase** → STOP; print the completion footer (block C).
-     2. **Phase 1**, any risk tier → STOP for **calibration** (block B). This is the first contact between the plan and the actual repo, and a misreading here is not local: every later phase builds on the same misreading, and each one that auto-advances buys more work that has to be undone. One stop at the cheapest possible moment is the whole reason.
+     2. **Phase 1**, any risk tier → STOP for **calibration** (block B) — first contact between plan and repo; a misreading here propagates into every later phase, so stop at the cheapest moment.
      3. **A gate needed an exception, a `/fix` loop hit its cap, or the coder flagged an ambiguity**, any tier → STOP (block B).
      4. **`(risk: high)`** — and an untagged phase counts as high → STOP for phase-level sign-off (block B).
      5. Otherwise — genuinely **`(risk: low)`** with all machine gates green → **AUTO-ADVANCE in-session** (block A): print the one-line advance notice, then re-enter step 2 for the next phase. Do NOT `/clear` and do NOT wait — the user can interrupt at any boundary.
@@ -76,7 +76,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
    Launch a single `coder` subagent, whatever the work touches — client, server, both, or neither. There is no scope variant to pick, so do not spend a step detecting one. One owner per phase, and therefore one owner for both ends of any wire it crosses.
 
-   Dispatch two coders in parallel ONLY when the work holds two genuinely independent deliverables that share no contract, type, or file — and then split by DELIVERABLE, never by client/server layer. Two coders on one feature is not a faster dispatch; it is two partial views of one contract that something downstream then has to reconcile.
+   Dispatch two coders in parallel ONLY when the work holds two genuinely independent deliverables that share no contract, type, or file — and then split by DELIVERABLE, never by client/server layer.
 
    For each coder:
    - Pass the full task description and any relevant context. **When the task is a phase of a multi-phase plan, name the phase explicitly** ("implement Phase 4 of `<plan-path>`") and tell the coder to read it phase-scoped (`coder-core`'s workflow step 1 carries the mechanics).
@@ -87,17 +87,17 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 3b. **Dispatch the test-writer** (after every coder dispatch that implemented plan behavior): a single `test-writer` subagent (pinned; omit `model`). Skip ONLY when the task/phase has no Success Criteria behavior and no acceptance criteria (pure config or mechanical phases) — note the skip in the phase summary.
 
-Pass the plan path + phase number (it reads phase-scoped) and the stub file list when the plan names one. **Pass NOTHING from the coder** — the agent is implementation-blind by contract: no diff, no coder summary, no source file contents in its prompt. Its assertions must come from the plan alone; feeding it the implementation reintroduces the bug-pinning failure the split exists to remove.
+Pass the plan path + phase number (it reads phase-scoped) and the stub file list when the plan names one. **Pass NOTHING from the coder** — the agent is implementation-blind by contract: no diff, no coder summary, no source file contents in its prompt. Its assertions must come from the plan alone.
 
 Route on its report:
 
-- `FAILING-TEST` lines → candidate implementation bugs, the split working as designed. Dispatch `/fix` scoped to make the named behaviors pass WITHOUT touching the failing tests' assertions, then re-run the test-writer's `tests-run` command yourself with Bash. Cap: 2 fix rounds; still red → STOP and surface to the user. Two is a chosen budget, not a measured one. What it prevents: a test that stays red after two honest attempts is usually disagreeing with the plan rather than with the code, and further rounds bill for that argument instead of putting it in front of the person who can settle it.
+- `FAILING-TEST` lines → candidate implementation bugs, the split working as designed. Dispatch `/fix` scoped to make the named behaviors pass WITHOUT touching the failing tests' assertions, then re-run the test-writer's `tests-run` command yourself with Bash. Cap: 2 fix rounds; still red → STOP and surface to the user (a test still red after two honest attempts usually disagrees with the plan, not the code — settle that with the user, don't keep fixing).
 
   **First decide which side is wrong — the code or the plan.** A `FAILING-TEST` whose scenario cannot run as the plan describes it (the fixture cannot reach that state, the criterion contradicts the domain, two plan sections disagree) is a SPEC defect, and `/fix` is the wrong route: it would bend correct code to satisfy an impossible criterion. Route those to **AskUserQuestion** exactly as the PLAN-IMPACT gate does, record the outcome in the plan's `## Plan Deviations` section, then re-dispatch the `test-writer` to correct the test — never the coder.
 
 - `UNDERSPECIFIED` lines → surface in the phase summary; a success criterion left untested by one blocks marking the phase done (plan gap — treat like a missing Success Criteria section, step 2).
 
-**Log every spec defect resolved above as an escape, at the moment it resolves** — one row per defect, before advancing. The plan's `## Plan Deviations` entry records the decision; this row is the only thing that makes the failure _countable_, and `/audit review` cannot see a defect nobody logged:
+**Log every spec defect resolved above as an escape, at the moment it resolves** — one row per defect, before advancing. The plan's `## Plan Deviations` entry records the decision; this row makes the failure countable:
 
 ```bash
 bash ~/.claude/scripts/log-escape repo=<basename> stage_found=phase-gate \
@@ -106,7 +106,7 @@ bash ~/.claude/scripts/log-escape repo=<basename> stage_found=phase-gate \
   file=<plan path>
 ```
 
-`gate_missed=eng-spec`, never `coder` — the implementer did not miss this, and mislabelling it makes the coder's escape ratio unreadable. This is the one escape class no reviewer can ever catch: a reviewer checks the diff against the spec, so a wrong spec and a faithful diff agree with each other.
+`gate_missed=eng-spec`, never `coder` — the implementer did not miss this. It is the one escape class no reviewer can catch: a reviewer checks the diff against the spec, so a wrong spec and a faithful diff agree.
 
 4. **After the coder and the test-writer complete**, summarize for the user AND build a handoff block for downstream review.
 

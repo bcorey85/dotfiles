@@ -4,7 +4,7 @@ Single source of truth for the boundary between the private workflow and the
 shipped tree. Read this before writing or editing any file under a project's
 source or test directories.
 
-Consumers: `coder-core`, `test-authoring.md`, `test-writer`, `eng-spec`,
+Consumers: `coder-core`, `code-reviewer`, `test-authoring.md`, `test-writer`, `eng-spec`,
 `/code`, `/refactor`, `/branch-recap`.
 
 ## The rule

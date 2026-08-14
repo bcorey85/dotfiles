@@ -25,7 +25,6 @@ claude/.claude/*
 !claude/.claude/rules/
 !claude/.claude/scripts/
 !claude/.claude/CLAUDE.md
-!claude/.claude/MCP_LOOP_README.md
 !claude/.claude/settings.json
 !claude/.claude/keybindings.json
 !claude/.claude/statusline-command.sh

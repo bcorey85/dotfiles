@@ -59,8 +59,9 @@
 #       ask        needs a human decision
 #       none       not yet dispositioned
 #     desc="one line"
-#     fix_induced=yes|no          (optional) the finding names code a previous
-#       fix in this loop introduced, not code the coder originally wrote
+#     fix_induced=yes|no|bug      (optional) the finding names code a previous
+#       fix in this loop introduced, not code the coder originally wrote.
+#       `bug` auto-promotes to blocker per _shared/finding-log.md.
 #
 # Numeric-looking values are stored as numbers, everything else as strings.
 # A "date" field (UTC ISO 8601) is always added. Output file:

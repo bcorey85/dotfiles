@@ -40,6 +40,10 @@ bash "$L" kind=finding $C gate=<agent name> disposition=<fix|ask|nit> [blocker=y
   it just cannot participate in overlap analysis.
 - **`fix_induced=yes`** when the finding names code an earlier fix in this loop
   introduced rather than code the author originally wrote.
+- **`fix_induced=bug` auto-promotes to `blocker`.** A bug the loop itself introduced
+  cannot be deferred — the loop owns it. Set `blocker=yes` and `actioned=fixed` (not
+  `deferred`). The finding was caught in the same session that created it; deferring
+  it to branch exit means the loop ships a crash it diagnosed.
 - `class=` uses the escape vocabulary so the caught and escaped sides
   cross-tabulate. Do not invent values.
 

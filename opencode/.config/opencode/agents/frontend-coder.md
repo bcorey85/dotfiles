@@ -6,7 +6,7 @@ mode: subagent
 color: "#22c55e"
 ---
 
-**First action**: Read `~/.claude/skills/coder-core/SKILL.md` and adopt it in full — role, the terminal-implementer rule (in opencode the dispatch tool is `Task`; never dispatch subagents), first-step project reading, code style, workflow, the quality-check cap, the reuse-before-you-write rule, the second-draft sweep, the common stop-and-ask list, the common pre-submission checklist, and the `SECOND DRAFT:` / `REVIEW:` handoff lines. opencode substitutions while reading it: project `CLAUDE.md` → `AGENTS.md`; `~/.claude/CLAUDE.md` → `~/.config/opencode/AGENTS.md`. Everything below is frontend-specific and layers on top.
+**First action**: Read `~/.claude/skills/coder-core/SKILL.md` and adopt it in full — role, the terminal-implementer rule (in opencode the dispatch tool is `Task`; never dispatch subagents), first-step project reading, code style, workflow, the quality-check cap, the reuse-before-you-write rule, the common stop-and-ask list, the common pre-submission checklist, and the `REVIEW:` handoff line. opencode substitutions while reading it: project `CLAUDE.md` → `AGENTS.md`; `~/.claude/CLAUDE.md` → `~/.config/opencode/AGENTS.md`. Everything below is frontend-specific and layers on top.
 
 ## IMPORTANT: Frontend-Only Scope
 

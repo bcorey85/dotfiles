@@ -45,7 +45,7 @@ case "$FILE" in
     */skills/eng-spec/*) ;;
     */agents/spec-questions.md|*/agents/spec-leak-check.md|*/agents/spec-research.md) ;;
     */agents/spec-criteria.md|*/agents/goal-blind-researcher.md) ;;
-    */skills/_shared/invariant-survey.md|*/skills/_shared/design-decision-format.md) ;;
+    */skills/_shared/design-decision-format.md) ;;
     */skills/_shared/plan-format.md|*/skills/_shared/closing-phases.md) ;;
     *) exit 0 ;;
 esac
@@ -82,7 +82,6 @@ GUARDED=$(find "$BASE/skills/eng-spec" -type f -not -path '*/templates/*' 2>/dev
 for f in "$BASE/agents/spec-questions.md" "$BASE/agents/spec-leak-check.md" \
          "$BASE/agents/spec-research.md" "$BASE/agents/spec-criteria.md" \
          "$BASE/agents/goal-blind-researcher.md" \
-         "$BASE/skills/_shared/invariant-survey.md" \
          "$BASE/skills/_shared/design-decision-format.md" \
          "$BASE/skills/_shared/plan-format.md" "$BASE/skills/_shared/closing-phases.md"; do
     [ -e "$f" ] && GUARDED="$GUARDED

@@ -58,7 +58,7 @@ A refactor changes structure, not behavior — so the tests are the contract. **
 
 5. **Dispatch the coder** (branch-audit and targeted modes only — audit mode never dispatches coders):
 
-   Launch a single `coder` for the whole work list, whatever layers it spans. A refactor is a shape change, and splitting one by layer means neither half can see the shape.
+   Launch a single `coder` for the whole work list, whatever layers it spans — a refactor is a shape change, so never split it by layer.
 
    For the coder:
    - Pass the work list (with file paths per finding) or the targeted refactoring description, plus any context you gathered
@@ -108,7 +108,7 @@ A refactor changes structure, not behavior — so the tests are the contract. **
 
    a. **Resolve the bound**: the named module, feature directory, or file set. Expand it to a concrete file list (`git ls-files <target>`) and pass that list — the finder must not rediscover scope. A bound bigger than roughly 25 source files: split it and say which slice you're running.
 
-   b. **Do NOT read the files yourself.** The finder holds the module; this context holds the decision. Reading it here defeats the fresh-eyes split and burns the context you need for the walkthrough.
+   b. **Do NOT read the files yourself.** The finder holds the module; this context holds the decision — reading it here defeats the fresh-eyes split.
 
    c. **Finder dispatch**: ONE `complexity-reviewer` (pinned; omit `model`; `-deep` variant per step 1) with:
    - the file list from (a) and the bound: "Simplify mode: your bound is the whole existing code of `<target>`. Pre-existing shape IS the target."

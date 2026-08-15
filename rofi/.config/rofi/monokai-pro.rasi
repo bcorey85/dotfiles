@@ -1,19 +1,18 @@
-/* kanagawa "wave" (#1f1f28) — dark-only, mirrors onedark-darker.rasi's shape.
- * Same hexes as tmux/.config/tmux/kanagawa-dark.conf and ghostty's
- * kanagawa-dark theme: canvas #1f1f28, inset #181820, surface (selection bg)
- * #2a2a37, fg #dcd7ba, muted #89877b, blue #7e9cd8, green #98bb6c,
- * red #e46876, purple #957fb8, orange/yellow #e6c384. */
+/* monokai-pro "pro" filter (#2d2a2e) — dark-only.
+ * Canvas #2d2a2e, panel #221f22, surface (selection bg) #363437,
+ * fg #fcfcfa, muted #949394, blue #78dce8, green #a9dc76,
+ * red #ff6188, purple #ab9df2, orange #fc9867. */
 * {
-    bg:         #1f1f28;
-    bg-alt:     #181820;
-    bg-sel:     #2a2a37;
-    fg:         #dcd7ba;
-    fg-alt:     #89877b;
-    blue:       #7e9cd8;
-    green:      #98bb6c;
-    red:        #e46876;
-    purple:     #957fb8;
-    orange:     #e6c384;
+    bg:         #2d2a2e;
+    bg-alt:     #221f22;
+    bg-sel:     #363437;
+    fg:         #fcfcfa;
+    fg-alt:     #949394;
+    blue:       #78dce8;
+    green:      #a9dc76;
+    red:        #ff6188;
+    purple:     #ab9df2;
+    orange:     #fc9867;
 
     background-color: transparent;
     text-color: @fg;

@@ -1,24 +1,24 @@
-/* kanagawa "wave" (#1f1f28) — the same palette nvim/tmux/ghostty paint.
-   Dark-only: waybar has no mode axis, so these are literal hexes, not
-   theme-mode state. #89877b is the contrast-lifted comment grey (stock
-   fujiGray #727169 is 3.33:1 on the bar, this is 4.53:1). */
+/* monokai-pro "pro" filter (#2d2a2e) — dark-only, no mode axis.
+   Canvas #2d2a2e, panel #221f22, border #403e41, fg #fcfcfa,
+   muted #949394, blue #78dce8, green #a9dc76, red #ff6188,
+   orange #fc9867, purple #ab9df2, yellow #ffd866. */
 * {
-  font-family: "CommitMono Nerd Font Mono";
+  font-family: "FiraCode Nerd Font Mono";
   font-size: 13px;
   min-height: 0;
 }
 
 window#waybar {
-  background-color: #1f1f28;
-  color: #dcd7ba;
-  border-bottom: 2px solid #2a2a37;
+  background-color: #2d2a2e;
+  color: #fcfcfa;
+  border-bottom: 2px solid #403e41;
 }
 
 tooltip {
-  background-color: #181820;
-  border: 1px solid #2a2a37;
+  background-color: #221f22;
+  border: 1px solid #403e41;
   border-radius: 8px;
-  color: #dcd7ba;
+  color: #fcfcfa;
   padding: 8px;
 }
 
@@ -28,66 +28,66 @@ tooltip label {
 
 #workspaces button {
   padding: 0 8px;
-  color: #89877b;
+  color: #949394;
   border: none;
   border-radius: 0;
   background: transparent;
 }
 
 #workspaces button.active {
-  color: #7e9cd8;
-  border-bottom: 2px solid #7e9cd8;
+  color: #78dce8;
+  border-bottom: 2px solid #78dce8;
 }
 
 #workspaces button.urgent {
-  color: #e46876;
+  color: #ff6188;
 }
 
 #workspaces button:hover {
-  background: #181820;
-  color: #dcd7ba;
+  background: #221f22;
+  color: #fcfcfa;
 }
 
 #window {
-  color: #89877b;
+  color: #949394;
   padding: 0 12px;
 }
 
 #clock {
-  color: #dcd7ba;
+  color: #fcfcfa;
   font-weight: bold;
 }
 
 #cpu {
-  color: #98bb6c;
+  color: #a9dc76;
 }
 
 #memory {
-  color: #e46876;
+  color: #ff6188;
 }
 
 #temperature {
-  color: #e6c384;
+  color: #fc9867;
 }
 
 #temperature.critical {
-  color: #e46876;
+  color: #ff6188;
 }
 
 #network {
-  color: #7e9cd8;
+  color: #78dce8;
 }
 
 #network.disconnected {
-  color: #e46876;
+  color: #ff6188;
 }
 
 #pulseaudio {
-  color: #e6c384;
+  color: #fc9867;
 }
 
 #pulseaudio.muted {
-  color: #89877b;
+  color: #949394;
 }
 
 #tray {
@@ -103,41 +103,41 @@ tooltip label {
 }
 
 #battery {
-  color: #98bb6c;
+  color: #a9dc76;
 }
 
 #battery.warning {
-  color: #e6c384;
+  color: #fc9867;
 }
 
 #battery.critical {
-  color: #e46876;
+  color: #ff6188;
 }
 
 #battery.charging,
 #battery.plugged {
-  color: #98bb6c;
+  color: #a9dc76;
 }
 
 #idle_inhibitor {
-  color: #e46876;
+  color: #ff6188;
 }
 
 #idle_inhibitor.activated {
-  color: #e46876;
+  color: #ff6188;
 }
 
 #bluetooth {
-  color: #7e9cd8;
+  color: #78dce8;
 }
 
 #bluetooth.connected {
-  color: #7e9cd8;
+  color: #78dce8;
 }
 
 #bluetooth.off,
 #bluetooth.disabled {
-  color: #89877b;
+  color: #949394;
 }
 
 #cpu,

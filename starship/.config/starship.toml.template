@@ -18,7 +18,7 @@
 # header — any key after a table header belongs to that table. Placed below a
 # palette, `format` silently became palettes.<name>.format and starship fell
 # back to the default `$all` format (which pulls in $aws et al.).
-palette = "kanagawa-dark"
+palette = "monokai-pro-dark"
 
 format = """
 $directory\
@@ -30,68 +30,35 @@ $cmd_duration\
 $line_break\
 $character"""
 
-# onedark-darker dark — onedark "darker" (#1f2329 canvas), the same palette
-# nvim/tmux/ghostty paint. `grey` is the comment colour AFTER the contrast
-# lift theme-sync applies (stock #535965 is 2.24:1 on the canvas); everything
-# else is stock.
-[palettes.onedark-darker-dark]
-red = "#e55561"
-orange = "#e2b86b"
-yellow = "#e2b86b"
-green = "#8ebd6b"
-blue = "#4fa6ed"
-teal = "#48b0bd"
-purple = "#bf68d9"
-fg = "#a0a8b7"
-bg = "#1f2329"
-grey = "#858c9a"
+# Monokai Pro, "pro" filter (dark, #2d2a2e canvas) — same palette nvim/ghostty
+# paint. `grey` is the comment colour after theme-sync's contrast lift (stock
+# #727072 is 2.89:1 on the canvas; this is ~4.6:1). Accents are stock.
+[palettes.monokai-pro-dark]
+red = "#ff6188"
+orange = "#fc9867"
+yellow = "#ffd866"
+green = "#a9dc76"
+blue = "#78dce8"
+teal = "#78dce8"
+purple = "#ab9df2"
+fg = "#fcfcfa"
+bg = "#2d2a2e"
+grey = "#949394"
 
-# onedark-darker light — onedark's "light" style (#fafafa canvas). `grey` is
-# again the lifted comment (stock #a0a1a7 is 2.47:1); the accents are stock
-# and all clear 4.5:1.
-[palettes.onedark-darker-light]
-red = "#e45649"
-orange = "#986801"
-yellow = "#986801"
-green = "#50a14f"
-blue = "#4078f2"
-teal = "#0184bc"
-purple = "#a626a4"
-fg = "#383a42"
-bg = "#fafafa"
-grey = "#6f7178"
-
-# kanagawa wave (dark, #1f1f28 canvas) — same palette nvim/tmux/ghostty paint.
-# `grey` is the comment colour after theme-sync's contrast lift (stock fujiGray
-# #727169 is 3.33:1 on the canvas; this is 4.53:1).
-[palettes.kanagawa-dark]
-red = "#e46876"
-orange = "#e6c384"
-yellow = "#e6c384"
-green = "#98bb6c"
-blue = "#7e9cd8"
-teal = "#7aa89f"
-purple = "#957fb8"
-fg = "#dcd7ba"
-bg = "#1f1f28"
-grey = "#89877b"
-
-# kanagawa lotus (light, #f2ecbc canvas). `grey` is the lifted comment (stock
-# lotusGray3 #8a8980 is 2.93:1). red/green/yellow/orange/teal are floored
-# toward fg the same way tmux/.config/tmux/kanagawa-light.conf documents —
-# stock lotus accents mostly sit under 4.5:1 on this canvas. blue/purple clear
-# the floor stock.
-[palettes.kanagawa-light]
-red = "#b44356"
-orange = "#8e6034"
-yellow = "#706b46"
-green = "#616e59"
-blue = "#4d699b"
-teal = "#576e70"
-purple = "#624c83"
-fg = "#545464"
-bg = "#f2ecbc"
-grey = "#6a696f"
+# Monokai Pro is dark-only, so light mode reuses the dark palette until a light
+# theme is chosen. Kept as a separate name so theme-mode's `<family>-<mode>`
+# swap always resolves.
+[palettes.monokai-pro-light]
+red = "#ff6188"
+orange = "#fc9867"
+yellow = "#ffd866"
+green = "#a9dc76"
+blue = "#78dce8"
+teal = "#78dce8"
+purple = "#ab9df2"
+fg = "#fcfcfa"
+bg = "#2d2a2e"
+grey = "#949394"
 
 [directory]
 style = "bold teal"

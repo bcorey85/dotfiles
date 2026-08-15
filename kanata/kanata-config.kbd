@@ -53,6 +53,14 @@
   lctl lmet lalt spc ralt rmet rctl
 )
 
+(deflayer gallium
+  @grl 1 2 3 4 5 6 7 8 9 0 - = bspc
+  tab b l d c v j f o u , [ ] \
+  caps n r t s g y h a e i / ret
+  lsft x q m w z k p ' ; . rsft
+  lctl lmet lalt spc ralt rmet rctl
+)
+
 (defalias
   ;; Home row mods - left hand (nsht) - GACS
   n (tap-hold-release 200 200 n lmet)
@@ -98,6 +106,7 @@
   qwr (layer-switch qwerty)
   tra (layer-switch transcend)
   sem (layer-switch semimak)
+  gal (layer-switch gallium)
   la (layer-while-held l1)
   ra (tap-hold-release 200 200 ralt (layer-toggle ralt-layer))
 )
@@ -111,7 +120,7 @@
 )
 
 (deflayer layers
-_    @qwr @tra @sem - _ _ _ _ _    _    _    _    _
+_    @qwr @gal @sem - _ _ _ _ _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _

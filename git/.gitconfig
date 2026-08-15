@@ -30,8 +30,8 @@
 	navigate = true
 	line-numbers = true
 	# Calm diffs: default delta is loud (Monokai Extended + saturated +/-).
-	# TwoDark is bat's Atom One Dark port — the same family nvim/tmux/ghostty
-	# paint. The washes are the onedark accent blended 15% into the #1f2329
+	# TwoDark is bat's Atom One Dark port — close enough to monokai-pro's
+	# dark canvas. The washes are muted accent blended into the #2d2a2e
 	# canvas, so terminal diffs stop "screaming". Values are quoted so the # in
 	# hex codes isn't parsed as a gitconfig comment.
 	syntax-theme = TwoDark

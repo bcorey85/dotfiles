@@ -56,24 +56,24 @@
     skip_display = yes
     history_ignore = yes
 
-# monokai-pro "pro" filter palette (dark-only, no mode axis).
+# flexoki dark (moon) palette (dark-only, no mode axis).
 [urgency_low]
-    background = "#221f22"
-    foreground = "#949394"
-    frame_color = "#403e41"
-    highlight = "#78dce8"
+    background = "#1c1b1a"
+    foreground = "#878580"
+    frame_color = "#403e3c"
+    highlight = "#4385be"
     timeout = 5
 
 [urgency_normal]
-    background = "#221f22"
-    foreground = "#fcfcfa"
-    frame_color = "#78dce8"
-    highlight = "#78dce8"
+    background = "#1c1b1a"
+    foreground = "#cecdc3"
+    frame_color = "#4385be"
+    highlight = "#4385be"
     timeout = 10
 
 [urgency_critical]
-    background = "#221f22"
-    foreground = "#fcfcfa"
-    frame_color = "#ff6188"
-    highlight = "#ff6188"
+    background = "#1c1b1a"
+    foreground = "#cecdc3"
+    frame_color = "#d14d41"
+    highlight = "#d14d41"
     timeout = 0

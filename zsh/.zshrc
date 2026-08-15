@@ -52,6 +52,17 @@ if [[ -n "$TMUX" && ! -t 0 && -t 1 && -r /dev/tty ]]; then
   exec </dev/tty
 fi
 
+# Undercurl in herdr panes. herdr hardcodes TERM=xterm-256color for its panes
+# (no config knob), and that terminfo has no Smulx/Setulc, so nvim can't emit a
+# coloured undercurl — LSP error squiggles render as flat underlines or nothing.
+# Under ghostty the real terminfo (xterm-ghostty) HAS those caps and is already
+# installed, and both markers survive into the pane, so upgrade TERM back to it.
+# Guarded on the terminfo existing so a machine without it just keeps 256color.
+if [ "$HERDR_ENV" = 1 ] && [ "$TERM" = xterm-256color ] &&
+  [ "$TERM_PROGRAM" = ghostty ] && infocmp xterm-ghostty >/dev/null 2>&1; then
+  export TERM=xterm-ghostty
+fi
+
 # Zsh plugins
 fpath=(~/.zsh/completions $fpath)
 autoload -Uz compinit && compinit

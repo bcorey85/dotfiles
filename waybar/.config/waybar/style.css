@@ -1,7 +1,7 @@
-/* monokai-pro "pro" filter (#2d2a2e) — dark-only, no mode axis.
-   Canvas #2d2a2e, panel #221f22, border #403e41, fg #fcfcfa,
-   muted #949394, blue #78dce8, green #a9dc76, red #ff6188,
-   orange #fc9867, purple #ab9df2, yellow #ffd866. */
+/* flexoki dark (moon) — dark-only, no mode axis.
+   Canvas #100f0f, panel #1c1b1a, border #403e3c, fg #cecdc3,
+   muted #878580, blue #4385be, green #879a39, red #d14d41,
+   orange #da702c, purple #8b7ec8, yellow #d0a215. */
 * {
   font-family: "FiraCode Nerd Font Mono";
   font-size: 13px;
@@ -9,16 +9,16 @@
 }
 
 window#waybar {
-  background-color: #2d2a2e;
-  color: #fcfcfa;
-  border-bottom: 2px solid #403e41;
+  background-color: #100f0f;
+  color: #cecdc3;
+  border-bottom: 2px solid #403e3c;
 }
 
 tooltip {
-  background-color: #221f22;
-  border: 1px solid #403e41;
+  background-color: #1c1b1a;
+  border: 1px solid #403e3c;
   border-radius: 8px;
-  color: #fcfcfa;
+  color: #cecdc3;
   padding: 8px;
 }
 
@@ -28,66 +28,66 @@ tooltip label {
 
 #workspaces button {
   padding: 0 8px;
-  color: #949394;
+  color: #878580;
   border: none;
   border-radius: 0;
   background: transparent;
 }
 
 #workspaces button.active {
-  color: #78dce8;
-  border-bottom: 2px solid #78dce8;
+  color: #4385be;
+  border-bottom: 2px solid #4385be;
 }
 
 #workspaces button.urgent {
-  color: #ff6188;
+  color: #d14d41;
 }
 
 #workspaces button:hover {
-  background: #221f22;
-  color: #fcfcfa;
+  background: #1c1b1a;
+  color: #cecdc3;
 }
 
 #window {
-  color: #949394;
+  color: #878580;
   padding: 0 12px;
 }
 
 #clock {
-  color: #fcfcfa;
+  color: #cecdc3;
   font-weight: bold;
 }
 
 #cpu {
-  color: #a9dc76;
+  color: #879a39;
 }
 
 #memory {
-  color: #ff6188;
+  color: #d14d41;
 }
 
 #temperature {
-  color: #fc9867;
+  color: #da702c;
 }
 
 #temperature.critical {
-  color: #ff6188;
+  color: #d14d41;
 }
 
 #network {
-  color: #78dce8;
+  color: #4385be;
 }
 
 #network.disconnected {
-  color: #ff6188;
+  color: #d14d41;
 }
 
 #pulseaudio {
-  color: #fc9867;
+  color: #da702c;
 }
 
 #pulseaudio.muted {
-  color: #949394;
+  color: #878580;
 }
 
 #tray {
@@ -103,41 +103,41 @@ tooltip label {
 }
 
 #battery {
-  color: #a9dc76;
+  color: #879a39;
 }
 
 #battery.warning {
-  color: #fc9867;
+  color: #da702c;
 }
 
 #battery.critical {
-  color: #ff6188;
+  color: #d14d41;
 }
 
 #battery.charging,
 #battery.plugged {
-  color: #a9dc76;
+  color: #879a39;
 }
 
 #idle_inhibitor {
-  color: #ff6188;
+  color: #d14d41;
 }
 
 #idle_inhibitor.activated {
-  color: #ff6188;
+  color: #d14d41;
 }
 
 #bluetooth {
-  color: #78dce8;
+  color: #4385be;
 }
 
 #bluetooth.connected {
-  color: #78dce8;
+  color: #4385be;
 }
 
 #bluetooth.off,
 #bluetooth.disabled {
-  color: #949394;
+  color: #878580;
 }
 
 #cpu,

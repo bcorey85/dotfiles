@@ -45,20 +45,48 @@ fg = "#fcfcfa"
 bg = "#2d2a2e"
 grey = "#949394"
 
-# Monokai Pro is dark-only, so light mode reuses the dark palette until a light
-# theme is chosen. Kept as a separate name so theme-mode's `<family>-<mode>`
-# swap always resolves.
+# Monokai Pro Light filter (#faf4f2 canvas) — same palette nvim/ghostty paint in
+# light mode. `grey` is dimmed1 #706b6e (~5:1 on the canvas, clears the floor).
 [palettes.monokai-pro-light]
-red = "#ff6188"
-orange = "#fc9867"
-yellow = "#ffd866"
-green = "#a9dc76"
-blue = "#78dce8"
-teal = "#78dce8"
-purple = "#ab9df2"
-fg = "#fcfcfa"
-bg = "#2d2a2e"
-grey = "#949394"
+red = "#e14775"
+orange = "#e16032"
+yellow = "#cc7a0a"
+green = "#269d69"
+blue = "#1c8ca8"
+teal = "#1c8ca8"
+purple = "#7058be"
+fg = "#29242a"
+bg = "#faf4f2"
+grey = "#706b6e"
+
+# Flexoki dark (moon, #100f0f canvas), accents at the 400 step — same palette
+# nvim/ghostty paint. `grey` is base-500 #878580 (~5.3:1 on the canvas; stock
+# comment base-700 #575653 is only ~2.5:1).
+[palettes.flexoki-dark]
+red = "#d14d41"
+orange = "#da702c"
+yellow = "#d0a215"
+green = "#879a39"
+blue = "#4385be"
+teal = "#4385be"
+purple = "#8b7ec8"
+fg = "#cecdc3"
+bg = "#100f0f"
+grey = "#878580"
+
+# Flexoki light (dawn, #fffcf0 canvas), accents at the 600 step. `grey` is
+# base-600 #6f6e69 (~4.9:1; stock comment base-300 #b7b5ac is only ~1.9:1).
+[palettes.flexoki-light]
+red = "#af3029"
+orange = "#bc5215"
+yellow = "#ad8301"
+green = "#66800b"
+blue = "#205ea6"
+teal = "#205ea6"
+purple = "#5e409d"
+fg = "#100f0f"
+bg = "#fffcf0"
+grey = "#6f6e69"
 
 [directory]
 style = "bold teal"

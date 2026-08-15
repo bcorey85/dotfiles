@@ -34,22 +34,46 @@ end
 -- cases and the tmux/ghostty files.
 local FAMILIES = {
   ["monokai-pro"] = {
-    -- loctvl842/monokai-pro.nvim, "pro" filter (#2d2a2e). Dark-only: no light
-    -- variant exists, so light maps to the same dark scheme until a light theme
-    -- is chosen — light mode still flips vim.o.background, but monokai-pro keys
-    -- off its filter, not background, so it stays dark. The plugin sets
-    -- vim.g.colors_name = "monokai-pro" for the base filter (the default set in
-    -- the plugin spec's opts), so no colors_name override is needed.
-    schemes = { dark = "monokai-pro", light = "monokai-pro" },
+    -- loctvl842/monokai-pro.nvim: "pro" filter dark (#2d2a2e), the official
+    -- "light" filter (#faf4f2) light. The two live in separate colorscheme
+    -- entries (colors/monokai-pro.lua force-sets the pro filter, colors/
+    -- monokai-pro-light.lua the light filter — background alone does NOT swap
+    -- them), but BOTH set vim.g.colors_name = "monokai-pro", so colors_name
+    -- below makes the apply_overrides guard fire for either.
+    schemes = { dark = "monokai-pro", light = "monokai-pro-light" },
+    colors_name = "monokai-pro",
     accents = {
       dark = { heading1 = "#ab9df2", heading = "#78dce8" }, -- violet + blue
-      light = { heading1 = "#ab9df2", heading = "#78dce8" },
+      light = { heading1 = "#7058be", heading = "#1c8ca8" }, -- violet + blue
     },
-    -- Comment floor: stock #727072 is 2.89:1 on #2d2a2e, under the 4.5 floor.
-    -- Lift toward body fg #fcfcfa (25%, ~4.6:1). Monokai Pro ships italic
-    -- comments; nvim_set_hl replaces the whole group, so italic is restated.
-    fixup = function()
-      vim.api.nvim_set_hl(0, "Comment", { fg = blend("#fcfcfa", "#727072", 0.25), italic = true })
+    -- Comment floor: stock comment fails the 4.5:1 floor in both modes (dark
+    -- #727072 is 2.89:1 on #2d2a2e; light #a59fa0 is ~2.4:1 on #faf4f2). Dark
+    -- lifts toward body fg #fcfcfa (25%, ~4.6:1); light uses dimmed1 #706b6e
+    -- (~5:1). nvim_set_hl replaces the whole group, so italic is restated.
+    fixup = function(mode)
+      local fg = mode == "light" and "#706b6e" or blend("#fcfcfa", "#727072", 0.25)
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
+    end,
+  },
+  ["flexoki"] = {
+    -- cpplain/flexoki.nvim: one "flexoki" colorscheme that reads vim.o.background
+    -- at load (dark #100f0f / light #fffcf0), so both modes use the same scheme
+    -- name and apply() just flips background first. colors_name = "flexoki" makes
+    -- the apply_overrides guard fire in either mode.
+    schemes = { dark = "flexoki", light = "flexoki" },
+    colors_name = "flexoki",
+    accents = {
+      dark = { heading1 = "#8b7ec8", heading = "#4385be" }, -- purple + blue (400)
+      light = { heading1 = "#5e409d", heading = "#205ea6" }, -- purple + blue (600)
+    },
+    -- Comment floor: flexoki's stock comment is deliberately faint and fails the
+    -- 4.5:1 floor in both modes (dark base-700 #575653 is ~2.5:1 on #100f0f;
+    -- light base-300 #b7b5ac is ~1.9:1 on #fffcf0). Lift to base-500 #878580
+    -- dark (~5.3:1) and base-600 #6f6e69 light (~4.9:1). Flexoki comments are not
+    -- italic, so this stays flat — nvim_set_hl replaces the whole group.
+    fixup = function(mode)
+      local fg = mode == "light" and "#6f6e69" or "#878580"
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg })
     end,
   },
 }

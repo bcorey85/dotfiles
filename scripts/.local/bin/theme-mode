@@ -72,14 +72,17 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="monokai-pro"
 
-families() { printf '%s\n' monokai-pro; }
+families() { printf '%s\n' monokai-pro flexoki; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
-  # "Monokai Pro" is a ghostty builtin (spaces and all), so no custom themes/
-  # file — apply() writes `theme = Monokai Pro`. Dark-only, so both modes map to
-  # the same builtin until a light theme is chosen.
+  # Both are ghostty builtins (spaces and all), so no custom themes/ file —
+  # apply() writes `theme = <name>`. "Monokai Pro Light" is the official light
+  # filter, matching nvim's light palette.
   case "$1:$2" in
-    monokai-pro:*) echo "Monokai Pro" ;;
+    monokai-pro:light) echo "Monokai Pro Light" ;;
+    monokai-pro:*)     echo "Monokai Pro" ;;
+    flexoki:light)     echo "Flexoki Light" ;;
+    flexoki:*)         echo "Flexoki Dark" ;;
   esac
 }
 
@@ -90,9 +93,16 @@ hunk_theme() { # <family> <mode> -> the hunk BUILTIN a custom theme inherits fro
   # syntax. hunk has no monokai-pro builtin, so classic `monokai` is the base
   # (its diff washes are replaced below). If a family sets no custom block, this
   # id is used directly as `theme =`. The ids live in the installed package's
-  # dist/npm/opentui/themes.d.ts (`hunk diff --help` has no list).
+  # dist/npm/opentui/themes.d.ts (`hunk diff --help` has no list). hunk ships no
+  # monokai light, so light borrows github-light for uncovered scopes/UI.
   case "$1:$2" in
-    monokai-pro:*) echo "monokai" ;;
+    monokai-pro:light) echo "github-light" ;;
+    monokai-pro:*)     echo "monokai" ;;
+    # hunk ships no flexoki; vitesse is the closest warm/muted base for the
+    # scopes hunk_custom_theme does not override (nearly none — it sets all 11
+    # syntax slots + all diff/chrome colours from flexoki's own palette).
+    flexoki:light)     echo "vitesse-light" ;;
+    flexoki:*)         echo "vitesse-dark" ;;
   esac
 }
 
@@ -103,71 +113,119 @@ HUNK_BLOCK_BEGIN="# >>> theme-mode custom_theme (do not edit inside markers)"
 HUNK_BLOCK_END="# <<< theme-mode custom_theme"
 
 hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, or nothing
-  # Overrides hunk's diff line/sign colours to the EXACT values nvim paints
-  # under this family, since no bundled hunk theme reproduces them. Diff
-  # backgrounds are the monokai-pro "pro" filter's diffEditor blends
-  # (accent 10% over dark1 #221f22): add #30322a, remove #38262c. `base` above
-  # supplies syntax; keys here (camelCase, matching hunk's CUSTOM_THEME_COLOR_KEYS)
-  # win over it. Both modes share the block — monokai-pro is dark-only.
+  # Overrides hunk's diff line/sign/syntax colours to the EXACT values nvim
+  # paints under this family, since no bundled hunk theme reproduces them. Diff
+  # backgrounds are the monokai-pro filter's diffEditor blends (accent 10% over
+  # dark1): dark add #30322a / remove #38262c over #221f22, light add #d9e0d9 /
+  # remove #ecd7da over #ede7e5. `base` above supplies uncovered scopes; keys
+  # here (camelCase, matching hunk's CUSTOM_THEME_COLOR_KEYS) win over it.
+  # comment is the same contrast-lifted grey nvim uses (dark #949394 ~4.6:1 on
+  # #2d2a2e; light #706b6e ~5.1:1 on #faf4f2). ceiling: hunk marks the named-slot
+  # `syntax` field deprecated in favour of TextMate selectors (syntaxScopes); if
+  # a major bump drops it, port these 11 slots to syntaxScopes.
+  local bg panel panelAlt border accent accentMuted text muted addedBg removedBg
+  local ctxBg sAdd sRem lnFg badgeAdd badgeRem badgeNeu fRename fMod fUntracked note
+  local kw str num fn typ punct op
   case "$1:$2" in
-    monokai-pro:*) ;;
+    monokai-pro:light)
+      bg="#faf4f2"; panel="#ede7e5"; panelAlt="#d3cdcc"; border="#d3cdcc"
+      accent="#7058be"; accentMuted="#bfb9ba"; text="#29242a"; muted="#706b6e"
+      addedBg="#d9e0d9"; removedBg="#ecd7da"; ctxBg="#faf4f2"
+      sAdd="#269d69"; sRem="#e14775"; lnFg="#bfb9ba"
+      badgeAdd="#269d69"; badgeRem="#e14775"; badgeNeu="#1c8ca8"
+      fRename="#7058be"; fMod="#cc7a0a"; fUntracked="#918c8e"; note="#ede7e5"
+      kw="#e14775"; str="#cc7a0a"; num="#7058be"; fn="#269d69"; typ="#1c8ca8"; punct="#706b6e"; op="#e14775"
+      ;;
+    monokai-pro:*)
+      bg="#2d2a2e"; panel="#221f22"; panelAlt="#19181a"; border="#403e41"
+      accent="#ab9df2"; accentMuted="#5b595c"; text="#fcfcfa"; muted="#949394"
+      addedBg="#30322a"; removedBg="#38262c"; ctxBg="#2d2a2e"
+      sAdd="#a9dc76"; sRem="#ff6188"; lnFg="#5b595c"
+      badgeAdd="#a9dc76"; badgeRem="#ff6188"; badgeNeu="#78dce8"
+      fRename="#ab9df2"; fMod="#ffd866"; fUntracked="#949394"; note="#221f22"
+      kw="#ff6188"; str="#ffd866"; num="#ab9df2"; fn="#a9dc76"; typ="#78dce8"; punct="#c1c0c0"; op="#ff6188"
+      ;;
+    flexoki:light)
+      # flexoki light (dawn): paper #fffcf0 canvas. Diff bgs are the accent
+      # blended ~12% over base-50 #f2f0e5 (subtle, readable full-line washes —
+      # not flexoki's solid-accent DiffAdd, which is a wall in a diff viewer).
+      # comment is the contrast-lifted grey nvim uses (base-600 #6f6e69 ~4.9:1).
+      bg="#fffcf0"; panel="#f2f0e5"; panelAlt="#e6e4d9"; border="#cecdc3"
+      accent="#5e409d"; accentMuted="#b7b5ac"; text="#403e3c"; muted="#6f6e69"
+      addedBg="#e1e2cb"; removedBg="#ead9ce"; ctxBg="#fffcf0"
+      sAdd="#66800b"; sRem="#af3029"; lnFg="#b7b5ac"
+      badgeAdd="#66800b"; badgeRem="#af3029"; badgeNeu="#205ea6"
+      fRename="#5e409d"; fMod="#ad8301"; fUntracked="#878580"; note="#f2f0e5"
+      # cpplain mapping: keyword magenta, string green, number orange, fn blue,
+      # type cyan; identifiers/operators stay neutral tx (#403e3c) — calm, not rainbow.
+      kw="#a02f6f"; str="#66800b"; num="#bc5215"; fn="#205ea6"; typ="#24837b"; punct="#878580"; op="#403e3c"
+      ;;
+    flexoki:*)
+      # flexoki dark (moon): black #100f0f canvas. Diff bgs are the accent
+      # blended ~12% over base-950 #1c1b1a. comment is base-500 #878580 (~5.3:1).
+      bg="#100f0f"; panel="#1c1b1a"; panelAlt="#282726"; border="#403e3c"
+      accent="#8b7ec8"; accentMuted="#575653"; text="#cecdc3"; muted="#878580"
+      addedBg="#292a1e"; removedBg="#32211f"; ctxBg="#100f0f"
+      sAdd="#879a39"; sRem="#d14d41"; lnFg="#575653"
+      badgeAdd="#879a39"; badgeRem="#d14d41"; badgeNeu="#4385be"
+      fRename="#8b7ec8"; fMod="#d0a215"; fUntracked="#878580"; note="#1c1b1a"
+      # cpplain mapping: keyword magenta, string green, number orange, fn blue,
+      # type cyan; identifiers/operators stay neutral tx (#cecdc3) — calm, not rainbow.
+      kw="#ce5d97"; str="#879a39"; num="#da702c"; fn="#4385be"; typ="#3aa99f"; punct="#878580"; op="#cecdc3"
+      ;;
     *) return 0 ;;
   esac
   cat <<EOF
 [custom_theme]
 base             = "$3"
-background       = "#2d2a2e"
-panel            = "#221f22"
-panelAlt         = "#19181a"
-border           = "#403e41"
-accent           = "#ab9df2"
-accentMuted      = "#5b595c"
-text             = "#fcfcfa"
-muted            = "#949394"
-addedBg          = "#30322a"
-removedBg        = "#38262c"
-movedAddedBg     = "#30322a"
-movedRemovedBg   = "#38262c"
-contextBg        = "#2d2a2e"
-addedContentBg   = "#30322a"
-removedContentBg = "#38262c"
-contextContentBg = "#2d2a2e"
-addedSignColor   = "#a9dc76"
-removedSignColor = "#ff6188"
-lineNumberBg     = "#2d2a2e"
-lineNumberFg     = "#5b595c"
-selectedHunk     = "#403e41"
-badgeAdded       = "#a9dc76"
-badgeRemoved     = "#ff6188"
-badgeNeutral     = "#78dce8"
-fileNew          = "#a9dc76"
-fileDeleted      = "#ff6188"
-fileRenamed      = "#ab9df2"
-fileModified     = "#ffd866"
-fileUntracked    = "#949394"
-noteBorder       = "#403e41"
-noteBackground   = "#221f22"
-noteTitleBackground = "#403e41"
-noteTitleText    = "#fcfcfa"
+background       = "$bg"
+panel            = "$panel"
+panelAlt         = "$panelAlt"
+border           = "$border"
+accent           = "$accent"
+accentMuted      = "$accentMuted"
+text             = "$text"
+muted            = "$muted"
+addedBg          = "$addedBg"
+removedBg        = "$removedBg"
+movedAddedBg     = "$addedBg"
+movedRemovedBg   = "$removedBg"
+contextBg        = "$ctxBg"
+addedContentBg   = "$addedBg"
+removedContentBg = "$removedBg"
+contextContentBg = "$ctxBg"
+addedSignColor   = "$sAdd"
+removedSignColor = "$sRem"
+lineNumberBg     = "$ctxBg"
+lineNumberFg     = "$lnFg"
+selectedHunk     = "$border"
+badgeAdded       = "$badgeAdd"
+badgeRemoved     = "$badgeRem"
+badgeNeutral     = "$badgeNeu"
+fileNew          = "$sAdd"
+fileDeleted      = "$sRem"
+fileRenamed      = "$fRename"
+fileModified     = "$fMod"
+fileUntracked    = "$fUntracked"
+noteBorder       = "$border"
+noteBackground   = "$note"
+noteTitleBackground = "$border"
+noteTitleText    = "$text"
 
-# Syntax slots — the monokai-pro "pro" filter palette, so hunk's code body
-# reads identically to nvim's, not the classic-monokai `base` above (which it
-# overrides). comment is the same contrast-lifted grey nvim uses (#949394,
-# ~4.6:1 on #2d2a2e). ceiling: hunk marks the named-slot `syntax` field
-# deprecated in favour of exact TextMate selectors (syntaxScopes); if a major
-# bump drops it, port these 11 slots to syntaxScopes.
+# Syntax slots — the active family's palette, so hunk's code body reads
+# identically to nvim's, not the base builtin above (which it overrides).
 [custom_theme.syntax]
-default     = "#fcfcfa"
-keyword     = "#ff6188"
-string      = "#ffd866"
-comment     = "#949394"
-number      = "#ab9df2"
-function    = "#a9dc76"
-property    = "#fcfcfa"
-type        = "#78dce8"
-variable    = "#fcfcfa"
-operator    = "#ff6188"
-punctuation = "#c1c0c0"
+default     = "$text"
+keyword     = "$kw"
+string      = "$str"
+comment     = "$muted"
+number      = "$num"
+function    = "$fn"
+property    = "$text"
+type        = "$typ"
+variable    = "$text"
+operator    = "$op"
+punctuation = "$punct"
 EOF
 }
 
@@ -241,26 +299,64 @@ hunk_apply() { # <family> <mode> — point hunk's config at the family's theme
 
 herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
   # herdr's token namespace is catppuccin-derived; `name` picks the BASE theme
-  # and [theme.custom] overrides individual tokens on top of it. There is no
-  # one-light builtin, so light overrides the same token set rather than
-  # swapping the base — any token not listed here keeps its one-dark value.
-  local accent panel_bg surface_dim surface0 surface1 overlay0 overlay1
+  # and [theme.custom] overrides individual tokens on top of it. Dark uses the
+  # one-dark base, light the one-light base, so any token not listed here keeps
+  # a sensible light/dark default rather than a fixed dark one.
+  local base_name accent panel_bg surface_dim surface0 surface1 overlay0 overlay1
   local text subtext0 green yellow red blue teal peach
   case "$1:$2" in
+    monokai-pro:light)
+      # Monokai Pro Light filter (#faf4f2 canvas) — matches nvim/ghostty.
+      # The muted greys collapse to dimmed1 #706b6e: on the light canvas that is
+      # ~5:1, so the unfocused agent name, sidebar chrome, and comment role all
+      # clear the 4.5:1 floor. overlay0 is a muted FOREGROUND (see below), so on
+      # light it is darker than the backgrounds, not lighter.
+      base_name="one-light"
+      accent="#7058be" panel_bg="#ede7e5" surface_dim="#d3cdcc"
+      surface0="#c4bdbc" surface1="#bab3b2"
+      overlay0="#706b6e" overlay1="#706b6e"
+      text="#29242a" subtext0="#706b6e"
+      green="#269d69" yellow="#cc7a0a" red="#e14775"
+      blue="#1c8ca8" teal="#1c8ca8" peach="#e16032"
+      ;;
     monokai-pro:*)
       # Monokai Pro, "pro" filter (#2d2a2e canvas) — matches nvim/ghostty.
-      # Dark-only: light mode reuses this block until a light theme is chosen.
       #
       # overlay1/subtext0 is the comment grey lifted to clear 4.5:1: stock
       # #727072 is 2.89:1 on the canvas; #949394 is ~4.6:1. yellow and peach
       # collapse to carpYellow's role — Monokai Pro ships a distinct orange
       # (#fc9867), so peach takes it rather than duplicating yellow.
+      base_name="one-dark"
       accent="#ab9df2" panel_bg="#221f22" surface_dim="#363437"
       surface0="#403e41" surface1="#4a484b"
       overlay0="#5b595c" overlay1="#949394"
       text="#fcfcfa" subtext0="#949394"
       green="#a9dc76" yellow="#ffd866" red="#ff6188"
       blue="#78dce8" teal="#78dce8" peach="#fc9867"
+      ;;
+    flexoki:light)
+      # flexoki light (dawn), paper #fffcf0 — matches nvim/ghostty. Muted greys
+      # collapse to base-600 #6f6e69 (~4.9:1 on paper); overlay0 is a muted
+      # FOREGROUND so it stays darker than the backgrounds. peach = orange-600.
+      base_name="one-light"
+      accent="#5e409d" panel_bg="#f2f0e5" surface_dim="#dad8ce"
+      surface0="#cecdc3" surface1="#b7b5ac"
+      overlay0="#6f6e69" overlay1="#6f6e69"
+      text="#100f0f" subtext0="#6f6e69"
+      green="#66800b" yellow="#ad8301" red="#af3029"
+      blue="#205ea6" teal="#205ea6" peach="#bc5215"
+      ;;
+    flexoki:*)
+      # flexoki dark (moon), black #100f0f — matches nvim/ghostty. overlay1/
+      # subtext0 is base-500 #878580 (comment lifted to ~5.3:1); peach = the
+      # distinct orange-400 rather than duplicating yellow.
+      base_name="one-dark"
+      accent="#8b7ec8" panel_bg="#1c1b1a" surface_dim="#343331"
+      surface0="#403e3c" surface1="#575653"
+      overlay0="#575653" overlay1="#878580"
+      text="#cecdc3" subtext0="#878580"
+      green="#879a39" yellow="#d0a215" red="#d14d41"
+      blue="#4385be" teal="#4385be" peach="#da702c"
       ;;
   esac
 
@@ -281,7 +377,7 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
   #     Keep it between overlay1/subtext0 and the backgrounds on both sides.
   cat <<EOF
 [theme]
-name = "one-dark"
+name = "$base_name"
 auto_switch = false
 
 [theme.custom]

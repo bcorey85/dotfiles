@@ -110,9 +110,9 @@ hl.config({
         border_size = 2,
 
         col = {
-            -- monokai-pro "pro" filter palette (dark-only, no mode axis).
-            active_border   = "rgba(403e41ee)",
-            inactive_border = "rgba(221f22ee)",
+            -- flexoki dark (moon) palette (dark-only, no mode axis).
+            active_border   = "rgba(4385beee)",
+            inactive_border = "rgba(1c1b1aee)",
         },
 
         resize_on_border = true,
@@ -133,7 +133,7 @@ hl.config({
             enabled      = true,
             range        = 4,
             render_power = 3,
-            color        = "rgba(221f22ee)",
+            color        = "rgba(1c1b1aee)",
         },
 
         blur = {

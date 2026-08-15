@@ -12,11 +12,13 @@ confirm-close-surface = false
 # include is processed after this file, so it wins. The line below is the
 # fallback when the switcher has never run. This is what Claude Code chat
 # renders in. Ghostty has no external reload — press ctrl+shift+, after
-# switching. Custom (non-builtin) themes live in ./themes/ and are pulled in as
-# config fragments, never by `theme = <name>` — that resolves against ghostty's
-# own config dir, which is not this one on macOS. A relative config-file path
-# resolves against THIS file's directory, so the fallback works on any platform.
-config-file = themes/onedark-darker-dark
+# switching. The fallback is Monokai Pro, a builtin — builtins load by `theme =
+# <name>` on every platform (they have no file on disk). Custom (non-builtin)
+# themes, if any are re-added, live in ./themes/ and are pulled in by a relative
+# `config-file = themes/<name>` path (resolved against THIS file's dir) rather
+# than `theme = <name>`, which resolves against ghostty's own config dir — not
+# this one on macOS.
+theme = Monokai Pro
 config-file = ?theme-switch.conf
 
 # Window

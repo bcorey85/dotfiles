@@ -70,33 +70,121 @@ set -euo pipefail
 MODE_FILE="$HOME/.cache/theme-mode"
 FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
-DEFAULT_FAMILY="kanagawa"
+DEFAULT_FAMILY="monokai-pro"
 
-families() { printf '%s\n' onedark-darker kanagawa; }
+families() { printf '%s\n' monokai-pro; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
+  # "Monokai Pro" is a ghostty builtin (spaces and all), so no custom themes/
+  # file — apply() writes `theme = Monokai Pro`. Dark-only, so both modes map to
+  # the same builtin until a light theme is chosen.
   case "$1:$2" in
-    # Both sides are files: no builtin sits on the "darker" style's #1f2329, and
-    # onelight's stock accents are under the contrast floor, so light is the
-    # floored palette nvim's fixup computes.
-    onedark-darker:*) echo "onedark-darker-$2" ;; # custom: ghostty/themes/
-    # Same reasoning: lotus's stock accents are under the floor too, so both
-    # sides are the floored custom files rather than a builtin.
-    kanagawa:*) echo "kanagawa-$2" ;; # custom: ghostty/themes/
+    monokai-pro:*) echo "Monokai Pro" ;;
   esac
 }
 
-hunk_theme() { # <family> <mode> -> a hunk builtin theme id
-  # hunk ships a fixed set of builtins and takes no custom palette, so this maps
-  # onto the closest shipped theme rather than reproducing our floored colors.
-  # `hunk diff --help` has no list; the ids live in the installed package's
-  # dist/npm/opentui/themes.d.ts.
+hunk_theme() { # <family> <mode> -> the hunk BUILTIN a custom theme inherits from
+  # hunk's [custom_theme] `base` inherits syntax (and any unset colours) from a
+  # bundled theme; hunk_custom_theme() then overrides the diff/chrome colours on
+  # top. This picks that base — the closest shipped theme for the family's
+  # syntax. hunk has no monokai-pro builtin, so classic `monokai` is the base
+  # (its diff washes are replaced below). If a family sets no custom block, this
+  # id is used directly as `theme =`. The ids live in the installed package's
+  # dist/npm/opentui/themes.d.ts (`hunk diff --help` has no list).
   case "$1:$2" in
-    kanagawa:dark) echo "kanagawa-wave" ;;
-    kanagawa:light) echo "kanagawa-lotus" ;;
-    onedark-darker:dark) echo "one-dark-pro" ;;
-    onedark-darker:light) echo "one-light" ;;
+    monokai-pro:*) echo "monokai" ;;
   esac
+}
+
+# theme-mode owns exactly this delimited block inside hunk's self-written
+# config.toml; hunk_set_block strips only what is between the markers, never
+# hunk's own keys/tables.
+HUNK_BLOCK_BEGIN="# >>> theme-mode custom_theme (do not edit inside markers)"
+HUNK_BLOCK_END="# <<< theme-mode custom_theme"
+
+hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, or nothing
+  # Overrides hunk's diff line/sign colours to the EXACT values nvim paints
+  # under this family, since no bundled hunk theme reproduces them. Diff
+  # backgrounds are the monokai-pro "pro" filter's diffEditor blends
+  # (accent 10% over dark1 #221f22): add #30322a, remove #38262c. `base` above
+  # supplies syntax; keys here (camelCase, matching hunk's CUSTOM_THEME_COLOR_KEYS)
+  # win over it. Both modes share the block — monokai-pro is dark-only.
+  case "$1:$2" in
+    monokai-pro:*) ;;
+    *) return 0 ;;
+  esac
+  cat <<EOF
+[custom_theme]
+base             = "$3"
+background       = "#2d2a2e"
+panel            = "#221f22"
+panelAlt         = "#19181a"
+border           = "#403e41"
+accent           = "#ab9df2"
+accentMuted      = "#5b595c"
+text             = "#fcfcfa"
+muted            = "#949394"
+addedBg          = "#30322a"
+removedBg        = "#38262c"
+movedAddedBg     = "#30322a"
+movedRemovedBg   = "#38262c"
+contextBg        = "#2d2a2e"
+addedContentBg   = "#30322a"
+removedContentBg = "#38262c"
+contextContentBg = "#2d2a2e"
+addedSignColor   = "#a9dc76"
+removedSignColor = "#ff6188"
+lineNumberBg     = "#2d2a2e"
+lineNumberFg     = "#5b595c"
+selectedHunk     = "#403e41"
+badgeAdded       = "#a9dc76"
+badgeRemoved     = "#ff6188"
+badgeNeutral     = "#78dce8"
+fileNew          = "#a9dc76"
+fileDeleted      = "#ff6188"
+fileRenamed      = "#ab9df2"
+fileModified     = "#ffd866"
+fileUntracked    = "#949394"
+noteBorder       = "#403e41"
+noteBackground   = "#221f22"
+noteTitleBackground = "#403e41"
+noteTitleText    = "#fcfcfa"
+
+# Syntax slots — the monokai-pro "pro" filter palette, so hunk's code body
+# reads identically to nvim's, not the classic-monokai `base` above (which it
+# overrides). comment is the same contrast-lifted grey nvim uses (#949394,
+# ~4.6:1 on #2d2a2e). ceiling: hunk marks the named-slot `syntax` field
+# deprecated in favour of exact TextMate selectors (syntaxScopes); if a major
+# bump drops it, port these 11 slots to syntaxScopes.
+[custom_theme.syntax]
+default     = "#fcfcfa"
+keyword     = "#ff6188"
+string      = "#ffd866"
+comment     = "#949394"
+number      = "#ab9df2"
+function    = "#a9dc76"
+property    = "#fcfcfa"
+type        = "#78dce8"
+variable    = "#fcfcfa"
+operator    = "#ff6188"
+punctuation = "#c1c0c0"
+EOF
+}
+
+hunk_set_block() { # <file> <block-or-empty> — replace theme-mode's marked block
+  # Drops any prior marked block (markers inclusive), then appends the fresh one
+  # at EOF. Empty content just clears it (the builtin path). The [custom_theme]
+  # table lands after hunk's bare keys, keeping the same "tables sort last"
+  # invariant hunk_set relies on.
+  local file="$1" content="$2" tmp
+  tmp="$(mktemp)"
+  awk -v b="$HUNK_BLOCK_BEGIN" -v e="$HUNK_BLOCK_END" '
+    $0 == b { skip = 1; next } $0 == e { skip = 0; next } !skip { print }
+  ' "$file" >"$tmp"
+  if [ -n "$content" ]; then
+    { echo "$HUNK_BLOCK_BEGIN"; printf '%s\n' "$content"; echo "$HUNK_BLOCK_END"; } >>"$tmp"
+  fi
+  mv "$tmp" "$file"
 }
 
 hunk_set() { # <file> <key> <toml-value> — set a top-level key, preserving the rest
@@ -115,10 +203,9 @@ $key = $value" "$file" && rm -f "$file.bak"
   fi
 }
 
-hunk_apply() { # <family> <mode> — point hunk's config at the mapped builtin
-  local theme cfg
-  theme="$(hunk_theme "$1" "$2")"
-  [ -n "$theme" ] || return 0
+hunk_apply() { # <family> <mode> — point hunk's config at the family's theme
+  local base custom cfg
+  base="$(hunk_theme "$1" "$2")"
   cfg="$HOME/.config/hunk/config.toml"
   # No template here, unlike herdr/starship: hunk WRITES this file itself
   # (the in-app View menu persists theme, wrap, line numbers and more), so
@@ -126,13 +213,28 @@ hunk_apply() { # <family> <mode> — point hunk's config at the mapped builtin
   # the keys this script owns, and create the file when there is none.
   mkdir -p "$(dirname "$cfg")"
   [ -f "$cfg" ] || : >"$cfg"
-  hunk_set "$cfg" theme "\"$theme\""
+
+  # A family with a custom block selects theme="custom" and inherits syntax from
+  # `base`; one without falls back to the plain builtin. Set the bare keys before
+  # appending the [custom_theme] table so they stay above it (bare keys first).
+  custom="$(hunk_custom_theme "$1" "$2" "$base")"
+  if [ -n "$custom" ]; then
+    hunk_set "$cfg" theme '"custom"'
+  elif [ -n "$base" ]; then
+    hunk_set "$cfg" theme "\"$base\""
+  else
+    return 0
+  fi
   # Without this, hunk paints its chrome with the builtin's own background,
   # which sits a step off the terminal's in dark mode and reads as a gray box
   # inside the black. Letting the terminal show through matches whatever
   # ghostty/herdr already painted, in both modes, with no second palette to
   # keep in sync.
   hunk_set "$cfg" transparent_background true
+  # Write (or clear, when empty) the [custom_theme] table so hunk's diff/syntax
+  # colors match nvim's exactly. The builtin monokai base is close on syntax but
+  # its diff bgs differ from Monokai Pro's, which this block overrides.
+  hunk_set_block "$cfg" "$custom"
   # No reload: hunk reads its config at launch, and the session daemon exposes
   # no config command. Running reviews keep their colors; the next one flips.
 }
@@ -145,52 +247,20 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
   local accent panel_bg surface_dim surface0 surface1 overlay0 overlay1
   local text subtext0 green yellow red blue teal peach
   case "$1:$2" in
-    onedark-darker:light)
-      # onedark light (stock "light" style — only dark drops to #1f2329).
-      # Muted is #696a71, onedark's grey darkened toward fg: the stock #a0a1a7
-      # is 2.26:1 on the #f0f0f0 panel (floor 4.5); this is 4.65:1.
-      accent="#a626a4" panel_bg="#f0f0f0" surface_dim="#e2e2e5"
-      surface0="#d3d3d7" surface1="#c4c4c9"
-      overlay0="#77787f" overlay1="#696a71"
-      text="#383a42" subtext0="#696a71"
-      green="#50a14f" yellow="#c18401" red="#e45649"
-      blue="#4078f2" teal="#0184bc" peach="#986801"
-      ;;
-    onedark-darker:*)
-      # onedark "darker" (#1f2329) — matches nvim/ghostty hex-for-hex.
-      accent="#bf68d9" panel_bg="#181b20" surface_dim="#2f353f"
-      surface0="#3d4552" surface1="#454d5a"
-      overlay0="#626a78" overlay1="#858c9a"
-      text="#c3cad6" subtext0="#767e8c"
-      green="#8ebd6b" yellow="#e2b86b" red="#e55561"
-      blue="#4fa6ed" teal="#48b0bd" peach="#cc9057"
-      ;;
-    kanagawa:light)
-      # kanagawa "lotus" (#f2ecbc). Muted is #5f5f6a, lotusGray3 darkened
-      # toward fg: stock #8a8980 is 2.56:1 on the #e5ddb0 panel it's actually
-      # rendered on (floor 4.5); this is 4.59:1. red/green/yellow/teal/peach
-      # are floored for the same reason (stock lotus accents mostly sit under
-      # 4.5:1 on this canvas); accent/blue clear it stock.
-      accent="#624c83" panel_bg="#e5ddb0" surface_dim="#d8cf9f"
-      surface0="#cbc08e" surface1="#beb17e"
-      overlay0="#7c7a6a" overlay1="#5f5f6a"
-      text="#545464" subtext0="#5f5f6a"
-      green="#616e59" yellow="#706b46" red="#b44356"
-      blue="#4d699b" teal="#576e70" peach="#8e6034"
-      ;;
-    kanagawa:*)
-      # kanagawa "wave" (#1f1f28) — matches nvim/ghostty hex-for-hex.
+    monokai-pro:*)
+      # Monokai Pro, "pro" filter (#2d2a2e canvas) — matches nvim/ghostty.
+      # Dark-only: light mode reuses this block until a light theme is chosen.
       #
-      # yellow and peach are deliberately the same hex (#e6c384, "carpYellow")
-      # — upstream kanagawa-wave has no distinct peach/orange swatch, so every
-      # consumer in this family collapses the two tokens together rather than
-      # inventing a peach kanagawa doesn't ship. Not a copy-paste slip.
-      accent="#957fb8" panel_bg="#181820" surface_dim="#282836"
-      surface0="#32323f" surface1="#3c3c48"
-      overlay0="#5a5a63" overlay1="#89877b"
-      text="#dcd7ba" subtext0="#89877b"
-      green="#98bb6c" yellow="#e6c384" red="#e46876"
-      blue="#7e9cd8" teal="#7aa89f" peach="#e6c384"
+      # overlay1/subtext0 is the comment grey lifted to clear 4.5:1: stock
+      # #727072 is 2.89:1 on the canvas; #949394 is ~4.6:1. yellow and peach
+      # collapse to carpYellow's role — Monokai Pro ships a distinct orange
+      # (#fc9867), so peach takes it rather than duplicating yellow.
+      accent="#ab9df2" panel_bg="#221f22" surface_dim="#363437"
+      surface0="#403e41" surface1="#4a484b"
+      overlay0="#5b595c" overlay1="#949394"
+      text="#fcfcfa" subtext0="#949394"
+      green="#a9dc76" yellow="#ffd866" red="#ff6188"
+      blue="#78dce8" teal="#78dce8" peach="#fc9867"
       ;;
   esac
 
@@ -331,7 +401,7 @@ apply() { # <family> <mode> — write state and repaint herdr + ghostty
   # `palette =` line swapped to `$family-$mode`, so EVERY running shell flips on
   # its next prompt with no reload. Only the top-level `palette = ` line matches
   # the anchored sed — the [palettes.*] headers are untouched. The palette names
-  # in the template are `<family>-<mode>` (e.g. kanagawa-dark), so this is a two-
+  # in the template are `<family>-<mode>` (e.g. monokai-pro-dark), so this is a two-
   # axis swap now, not mode-only.
   local starship_tmpl="$HOME/.config/starship.toml.template"
   local starship_cfg="$HOME/.config/starship.toml"

@@ -110,9 +110,9 @@ hl.config({
         border_size = 2,
 
         col = {
-            -- kanagawa "wave" palette (dark-only, no mode axis).
-            active_border   = "rgba(727169ee)",
-            inactive_border = "rgba(2a2a37ee)",
+            -- monokai-pro "pro" filter palette (dark-only, no mode axis).
+            active_border   = "rgba(403e41ee)",
+            inactive_border = "rgba(221f22ee)",
         },
 
         resize_on_border = true,
@@ -133,7 +133,7 @@ hl.config({
             enabled      = true,
             range        = 4,
             render_power = 3,
-            color        = "rgba(181820ee)",
+            color        = "rgba(221f22ee)",
         },
 
         blur = {

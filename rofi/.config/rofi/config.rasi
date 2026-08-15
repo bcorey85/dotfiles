@@ -10,6 +10,5 @@ configuration {
     display-ssh: "SSH";
 }
 
-/* rofi has no mode/family axis — @theme is fixed, untouched by theme-mode.
-   To switch family, repoint this line at "onedark-darker" by hand. */
-@theme "kanagawa"
+/* rofi has no mode/family axis — @theme is fixed, untouched by theme-mode. */
+@theme "monokai-pro"

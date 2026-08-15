@@ -17,7 +17,7 @@ local M = {}
 
 local MODE_FILE = vim.env.HOME .. "/.cache/theme-mode"
 local FAMILY_FILE = vim.env.HOME .. "/.cache/theme-family"
-local DEFAULT_FAMILY = "kanagawa"
+local DEFAULT_FAMILY = "monokai-pro"
 
 -- alpha-blend two hex colours (a = share of c1).
 local function blend(c1, c2, a)
@@ -33,51 +33,23 @@ end
 -- all key off this table — adding a family is an entry here plus theme-mode's
 -- cases and the tmux/ghostty files.
 local FAMILIES = {
-  ["onedark-darker"] = {
-    -- navarasu/onedark.nvim, style "darker" (#1f2329) — the Atom One Dark
-    -- palette a stop below the stock "dark" #282c34, with cooler syntax hues.
-    -- One scheme name for both modes; the variant comes from setup{style=...}
-    -- (set in pre), not vim.o.background. Diff* all ship real bg washes,
-    -- DiffText included, so set_word_diff finds a bg without help.
-    schemes = { dark = "onedark", light = "onedark" },
-    pre = function(mode)
-      require("onedark").setup({ style = mode == "dark" and "darker" or "light" })
-    end,
+  ["monokai-pro"] = {
+    -- loctvl842/monokai-pro.nvim, "pro" filter (#2d2a2e). Dark-only: no light
+    -- variant exists, so light maps to the same dark scheme until a light theme
+    -- is chosen — light mode still flips vim.o.background, but monokai-pro keys
+    -- off its filter, not background, so it stays dark. The plugin sets
+    -- vim.g.colors_name = "monokai-pro" for the base filter (the default set in
+    -- the plugin spec's opts), so no colors_name override is needed.
+    schemes = { dark = "monokai-pro", light = "monokai-pro" },
     accents = {
-      dark = { heading1 = "#bf68d9", heading = "#4fa6ed" }, -- purple + blue
-      light = { heading1 = "#a626a4", heading = "#4078f2" },
+      dark = { heading1 = "#ab9df2", heading = "#78dce8" }, -- violet + blue
+      light = { heading1 = "#ab9df2", heading = "#78dce8" },
     },
-    -- Comment floor: darker's #535965 is 2.24:1 on #1f2329 and light's #a0a1a7
-    -- is 2.47:1 on #fafafa, against the 4.5 floor. Lift toward body fg — dark
-    -- 65% (4.67:1), light 47% (4.60:1). onedark ships italic comments;
-    -- nvim_set_hl replaces the whole group, so italic is restated.
-    fixup = function(mode)
-      local c = mode == "dark" and blend("#a0a8b7", "#535965", 0.65) or blend("#383a42", "#a0a1a7", 0.47)
-      vim.api.nvim_set_hl(0, "Comment", { fg = c, italic = true })
-    end,
-  },
-  ["kanagawa"] = {
-    -- rebelot/kanagawa.nvim. Unlike onedark, the plugin registers a SEPARATE
-    -- colorscheme command per variant (`:colorscheme kanagawa-wave` / `-lotus`),
-    -- so the variant is selected by scheme name alone — no `pre` hook needed to
-    -- set a style global first. Every variant's colors/*.vim calls
-    -- require("kanagawa").load(<variant>), which unconditionally sets
-    -- vim.g.colors_name = "kanagawa" regardless of which variant loaded — hence
-    -- colors_name below, the same guard-override case onedark doesn't need.
-    schemes = { dark = "kanagawa-wave", light = "kanagawa-lotus" },
-    colors_name = "kanagawa",
-    accents = {
-      dark = { heading1 = "#957fb8", heading = "#7e9cd8" }, -- oniViolet + crystalBlue
-      light = { heading1 = "#624c83", heading = "#4d699b" }, -- lotusViolet4 + lotusBlue4
-    },
-    -- Comment floor: wave's stock fujiGray #727169 is 3.33:1 on #1f1f28 and
-    -- lotus's stock lotusGray3 #8a8980 is 2.93:1 on #f2ecbc, against the 4.5
-    -- floor. Lift toward body fg — wave 22% (4.53:1), lotus 60% (4.53:1).
-    -- kanagawa ships italic comments; nvim_set_hl replaces the whole group,
-    -- so italic is restated.
-    fixup = function(mode)
-      local c = mode == "dark" and blend("#dcd7ba", "#727169", 0.22) or blend("#545464", "#8a8980", 0.60)
-      vim.api.nvim_set_hl(0, "Comment", { fg = c, italic = true })
+    -- Comment floor: stock #727072 is 2.89:1 on #2d2a2e, under the 4.5 floor.
+    -- Lift toward body fg #fcfcfa (25%, ~4.6:1). Monokai Pro ships italic
+    -- comments; nvim_set_hl replaces the whole group, so italic is restated.
+    fixup = function()
+      vim.api.nvim_set_hl(0, "Comment", { fg = blend("#fcfcfa", "#727072", 0.25), italic = true })
     end,
   },
 }

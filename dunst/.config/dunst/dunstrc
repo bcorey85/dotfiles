@@ -56,26 +56,24 @@
     skip_display = yes
     history_ignore = yes
 
-# kanagawa "wave" palette (dark-only, no mode axis). Low-urgency foreground is
-# the contrast-lifted comment grey (fujiGray #727169 lifted 22% -> #89877b,
-# 4.53:1 on the #181820 panel), not the stock fujiGray.
+# monokai-pro "pro" filter palette (dark-only, no mode axis).
 [urgency_low]
-    background = "#181820"
-    foreground = "#89877b"
-    frame_color = "#2a2a37"
-    highlight = "#7e9cd8"
+    background = "#221f22"
+    foreground = "#949394"
+    frame_color = "#403e41"
+    highlight = "#78dce8"
     timeout = 5
 
 [urgency_normal]
-    background = "#181820"
-    foreground = "#dcd7ba"
-    frame_color = "#7e9cd8"
-    highlight = "#7e9cd8"
+    background = "#221f22"
+    foreground = "#fcfcfa"
+    frame_color = "#78dce8"
+    highlight = "#78dce8"
     timeout = 10
 
 [urgency_critical]
-    background = "#181820"
-    foreground = "#dcd7ba"
-    frame_color = "#e46876"
-    highlight = "#e46876"
+    background = "#221f22"
+    foreground = "#fcfcfa"
+    frame_color = "#ff6188"
+    highlight = "#ff6188"
     timeout = 0

@@ -11,4 +11,4 @@ configuration {
 }
 
 /* rofi has no mode/family axis — @theme is fixed, untouched by theme-mode. */
-@theme "flexoki"
+@theme "flume"

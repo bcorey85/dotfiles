@@ -110,9 +110,9 @@ hl.config({
         border_size = 2,
 
         col = {
-            -- flexoki dark (moon) palette (dark-only, no mode axis).
-            active_border   = "rgba(4385beee)",
-            inactive_border = "rgba(1c1b1aee)",
+            -- flume mira palette (dark-only, no mode axis).
+            active_border   = "rgba(72b5bfee)",
+            inactive_border = "rgba(292634ee)",
         },
 
         resize_on_border = true,
@@ -133,7 +133,7 @@ hl.config({
             enabled      = true,
             range        = 4,
             render_power = 3,
-            color        = "rgba(1c1b1aee)",
+            color        = "rgba(292634ee)",
         },
 
         blur = {

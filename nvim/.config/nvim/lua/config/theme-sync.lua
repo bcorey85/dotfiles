@@ -17,7 +17,7 @@ local M = {}
 
 local MODE_FILE = vim.env.HOME .. "/.cache/theme-mode"
 local FAMILY_FILE = vim.env.HOME .. "/.cache/theme-family"
-local DEFAULT_FAMILY = "monokai-pro"
+local DEFAULT_FAMILY = "flume"
 
 -- alpha-blend two hex colours (a = share of c1).
 local function blend(c1, c2, a)
@@ -33,28 +33,6 @@ end
 -- all key off this table — adding a family is an entry here plus theme-mode's
 -- cases and the tmux/ghostty files.
 local FAMILIES = {
-  ["monokai-pro"] = {
-    -- loctvl842/monokai-pro.nvim: "pro" filter dark (#2d2a2e), the official
-    -- "light" filter (#faf4f2) light. The two live in separate colorscheme
-    -- entries (colors/monokai-pro.lua force-sets the pro filter, colors/
-    -- monokai-pro-light.lua the light filter — background alone does NOT swap
-    -- them), but BOTH set vim.g.colors_name = "monokai-pro", so colors_name
-    -- below makes the apply_overrides guard fire for either.
-    schemes = { dark = "monokai-pro", light = "monokai-pro-light" },
-    colors_name = "monokai-pro",
-    accents = {
-      dark = { heading1 = "#ab9df2", heading = "#78dce8" }, -- violet + blue
-      light = { heading1 = "#7058be", heading = "#1c8ca8" }, -- violet + blue
-    },
-    -- Comment floor: stock comment fails the 4.5:1 floor in both modes (dark
-    -- #727072 is 2.89:1 on #2d2a2e; light #a59fa0 is ~2.4:1 on #faf4f2). Dark
-    -- lifts toward body fg #fcfcfa (25%, ~4.6:1); light uses dimmed1 #706b6e
-    -- (~5:1). nvim_set_hl replaces the whole group, so italic is restated.
-    fixup = function(mode)
-      local fg = mode == "light" and "#706b6e" or blend("#fcfcfa", "#727072", 0.25)
-      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
-    end,
-  },
   ["flexoki"] = {
     -- cpplain/flexoki.nvim: one "flexoki" colorscheme that reads vim.o.background
     -- at load (dark #100f0f / light #fffcf0), so both modes use the same scheme
@@ -74,6 +52,42 @@ local FAMILIES = {
     fixup = function(mode)
       local fg = mode == "light" and "#6f6e69" or "#878580"
       vim.api.nvim_set_hl(0, "Comment", { fg = fg })
+    end,
+  },
+  ["token"] = {
+    -- ThorstenRhau/token, default variant: warm cream #e8e4dc on warm near-black
+    -- #262624 dark / #2a2920 on cream #faf9f5 light. One colorscheme (colors/
+    -- token.lua) reads vim.o.background at load, so both modes share the name;
+    -- colors_name = "token" fires the guard in either mode.
+    schemes = { dark = "token", light = "token" },
+    colors_name = "token",
+    accents = {
+      dark = { heading1 = "#d97757", heading = "#7b9ebd" }, -- signature orange + blue
+      light = { heading1 = "#9a4929", heading = "#527594" },
+    },
+    -- token's comment already clears 4.5:1 (dark #938e87 ~4.7:1 on #262624;
+    -- light #6c675f ~5:1 on #faf9f5). Restate so italic survives nvim_set_hl's
+    -- whole-group replace.
+    fixup = function(mode)
+      local fg = mode == "light" and "#6c675f" or "#938e87"
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
+    end,
+  },
+  ["flume"] = {
+    -- mitander/flume.nvim: dark = "mira" (violet-charcoal #24212f, cyan accent
+    -- #72b5bf); light = "mesa" (warm cream #f3ede8). Two distinct colorschemes
+    -- flume-{mira,mesa}, each setting its own colors_name, so the guard resolves
+    -- schemes[mode] directly.
+    schemes = { dark = "flume-mira", light = "flume-mesa" },
+    accents = {
+      dark = { heading1 = "#72b5bf", heading = "#d8a36b" }, -- cyan accent + yellow
+      light = { heading1 = "#3f7180", heading = "#815f1d" },
+    },
+    -- Comment floor: mira's stock comment #918a9a is borderline (~4.7:1 on
+    -- #24212f), lift to #a29bb0 (~5.5:1); mesa's #706878 clears (~5:1 on cream).
+    fixup = function(mode)
+      local fg = mode == "light" and "#706878" or "#a29bb0"
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
     end,
   },
 }

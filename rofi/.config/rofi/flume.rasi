@@ -1,18 +1,18 @@
-/* flexoki dark (moon) — dark-only.
- * Canvas #100f0f, panel #1c1b1a, surface (selection bg) #282726,
- * fg #cecdc3, muted #878580, blue #4385be, green #879a39,
- * red #d14d41, purple #8b7ec8, orange #da702c. */
+/* flume mira — dark-only.
+ * Canvas #24212f, panel #292634, surface (selection bg) #353142,
+ * fg #d9d4df, muted #a29bb0, blue (cyan accent) #72b5bf, green #84b39f,
+ * red #dd789b, purple #b69bd2, orange #e49a7b. */
 * {
-    bg:         #100f0f;
-    bg-alt:     #1c1b1a;
-    bg-sel:     #282726;
-    fg:         #cecdc3;
-    fg-alt:     #878580;
-    blue:       #4385be;
-    green:      #879a39;
-    red:        #d14d41;
-    purple:     #8b7ec8;
-    orange:     #da702c;
+    bg:         #24212f;
+    bg-alt:     #292634;
+    bg-sel:     #353142;
+    fg:         #d9d4df;
+    fg-alt:     #a29bb0;
+    blue:       #72b5bf;
+    green:      #84b39f;
+    red:        #dd789b;
+    purple:     #b69bd2;
+    orange:     #e49a7b;
 
     background-color: transparent;
     text-color: @fg;

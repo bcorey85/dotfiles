@@ -18,7 +18,7 @@
 # header — any key after a table header belongs to that table. Placed below a
 # palette, `format` silently became palettes.<name>.format and starship fell
 # back to the default `$all` format (which pulls in $aws et al.).
-palette = "monokai-pro-dark"
+palette = "flume-dark"
 
 format = """
 $directory\
@@ -29,35 +29,6 @@ $nodejs\
 $cmd_duration\
 $line_break\
 $character"""
-
-# Monokai Pro, "pro" filter (dark, #2d2a2e canvas) — same palette nvim/ghostty
-# paint. `grey` is the comment colour after theme-sync's contrast lift (stock
-# #727072 is 2.89:1 on the canvas; this is ~4.6:1). Accents are stock.
-[palettes.monokai-pro-dark]
-red = "#ff6188"
-orange = "#fc9867"
-yellow = "#ffd866"
-green = "#a9dc76"
-blue = "#78dce8"
-teal = "#78dce8"
-purple = "#ab9df2"
-fg = "#fcfcfa"
-bg = "#2d2a2e"
-grey = "#949394"
-
-# Monokai Pro Light filter (#faf4f2 canvas) — same palette nvim/ghostty paint in
-# light mode. `grey` is dimmed1 #706b6e (~5:1 on the canvas, clears the floor).
-[palettes.monokai-pro-light]
-red = "#e14775"
-orange = "#e16032"
-yellow = "#cc7a0a"
-green = "#269d69"
-blue = "#1c8ca8"
-teal = "#1c8ca8"
-purple = "#7058be"
-fg = "#29242a"
-bg = "#faf4f2"
-grey = "#706b6e"
 
 # Flexoki dark (moon, #100f0f canvas), accents at the 400 step — same palette
 # nvim/ghostty paint. `grey` is base-500 #878580 (~5.3:1 on the canvas; stock
@@ -87,6 +58,62 @@ purple = "#5e409d"
 fg = "#100f0f"
 bg = "#fffcf0"
 grey = "#6f6e69"
+
+# token default dark (warm near-black #262624, signature orange) — same palette
+# nvim/ghostty paint. `grey` is comment #938e87 (~4.7:1).
+[palettes.token-dark]
+red = "#c67777"
+orange = "#d97757"
+yellow = "#c4a855"
+green = "#7da47a"
+blue = "#7b9ebd"
+teal = "#6ba8a8"
+purple = "#a68bbf"
+fg = "#e8e4dc"
+bg = "#262624"
+grey = "#938e87"
+
+# token default light (cream #faf9f5). `grey` is comment #6c675f (~5:1).
+[palettes.token-light]
+red = "#b05555"
+orange = "#9a4929"
+yellow = "#876032"
+green = "#3f643c"
+blue = "#527594"
+teal = "#2d6c6c"
+purple = "#7c619a"
+fg = "#2a2920"
+bg = "#faf9f5"
+grey = "#6c675f"
+
+# flume mira (violet-charcoal #24212f). `orange` is boolean #e49a7b (flume has
+# no distinct orange). `grey` is comment lifted to #a29bb0 (~5.5:1). Accent is
+# cyan #72b5bf.
+[palettes.flume-dark]
+red = "#dd789b"
+orange = "#e49a7b"
+yellow = "#d8a36b"
+green = "#84b39f"
+blue = "#72a8c7"
+teal = "#8ac8cf"
+purple = "#b69bd2"
+fg = "#cbc5d2"
+bg = "#24212f"
+grey = "#a29bb0"
+
+# flume mesa (warm cream #f3ede8) — the family's light half. `grey` is comment
+# #706878 (~5:1 on paper).
+[palettes.flume-light]
+red = "#934d5b"
+orange = "#9b5146"
+yellow = "#815f1d"
+green = "#557245"
+blue = "#3f7180"
+teal = "#356f80"
+purple = "#72518f"
+fg = "#413b49"
+bg = "#f3ede8"
+grey = "#706878"
 
 [directory]
 style = "bold teal"

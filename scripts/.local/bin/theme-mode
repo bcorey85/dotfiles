@@ -70,19 +70,24 @@ set -euo pipefail
 MODE_FILE="$HOME/.cache/theme-mode"
 FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
-DEFAULT_FAMILY="monokai-pro"
+DEFAULT_FAMILY="flume"
 
-families() { printf '%s\n' monokai-pro flexoki; }
+families() { printf '%s\n' flexoki token flume; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
-  # Both are ghostty builtins (spaces and all), so no custom themes/ file —
-  # apply() writes `theme = <name>`. "Monokai Pro Light" is the official light
-  # filter, matching nvim's light palette.
+  # flexoki's two are ghostty builtins (spaces and all), so no custom themes/
+  # file — apply() writes `theme = <name>`. "Flexoki Light"/"Flexoki Dark" match
+  # nvim's palette.
   case "$1:$2" in
-    monokai-pro:light) echo "Monokai Pro Light" ;;
-    monokai-pro:*)     echo "Monokai Pro" ;;
     flexoki:light)     echo "Flexoki Light" ;;
     flexoki:*)         echo "Flexoki Dark" ;;
+    # Not ghostty builtins — custom files in ghostty/themes/. apply() writes
+    # `config-file`.
+    token:light) echo "token-light" ;;
+    token:*)     echo "token-dark" ;;
+    # flume: mira dark / mesa light — custom files in ghostty/themes/.
+    flume:light)        echo "flume-mesa" ;;
+    flume:*)            echo "flume-mira" ;;
   esac
 }
 
@@ -90,19 +95,18 @@ hunk_theme() { # <family> <mode> -> the hunk BUILTIN a custom theme inherits fro
   # hunk's [custom_theme] `base` inherits syntax (and any unset colours) from a
   # bundled theme; hunk_custom_theme() then overrides the diff/chrome colours on
   # top. This picks that base — the closest shipped theme for the family's
-  # syntax. hunk has no monokai-pro builtin, so classic `monokai` is the base
-  # (its diff washes are replaced below). If a family sets no custom block, this
-  # id is used directly as `theme =`. The ids live in the installed package's
-  # dist/npm/opentui/themes.d.ts (`hunk diff --help` has no list). hunk ships no
-  # monokai light, so light borrows github-light for uncovered scopes/UI.
+  # syntax. If a family sets no custom block, this id is used directly as
+  # `theme =`. The ids live in the installed package's dist/npm/opentui/
+  # themes.d.ts (`hunk diff --help` has no list). vitesse is the closest
+  # warm/muted base for the scopes hunk_custom_theme does not override (nearly
+  # none — it sets all 11 syntax slots + all diff/chrome colours per family).
   case "$1:$2" in
-    monokai-pro:light) echo "github-light" ;;
-    monokai-pro:*)     echo "monokai" ;;
-    # hunk ships no flexoki; vitesse is the closest warm/muted base for the
-    # scopes hunk_custom_theme does not override (nearly none — it sets all 11
-    # syntax slots + all diff/chrome colours from flexoki's own palette).
     flexoki:light)     echo "vitesse-light" ;;
     flexoki:*)         echo "vitesse-dark" ;;
+    token:light)        echo "vitesse-light" ;;
+    token:*)            echo "vitesse-dark" ;;
+    flume:light)        echo "vitesse-light" ;;
+    flume:*)            echo "vitesse-dark" ;;
   esac
 }
 
@@ -115,36 +119,17 @@ HUNK_BLOCK_END="# <<< theme-mode custom_theme"
 hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, or nothing
   # Overrides hunk's diff line/sign/syntax colours to the EXACT values nvim
   # paints under this family, since no bundled hunk theme reproduces them. Diff
-  # backgrounds are the monokai-pro filter's diffEditor blends (accent 10% over
-  # dark1): dark add #30322a / remove #38262c over #221f22, light add #d9e0d9 /
-  # remove #ecd7da over #ede7e5. `base` above supplies uncovered scopes; keys
-  # here (camelCase, matching hunk's CUSTOM_THEME_COLOR_KEYS) win over it.
-  # comment is the same contrast-lifted grey nvim uses (dark #949394 ~4.6:1 on
-  # #2d2a2e; light #706b6e ~5.1:1 on #faf4f2). ceiling: hunk marks the named-slot
-  # `syntax` field deprecated in favour of TextMate selectors (syntaxScopes); if
-  # a major bump drops it, port these 11 slots to syntaxScopes.
+  # backgrounds are the family accent blended subtly over its panel bg (readable
+  # full-line washes, not a solid-accent wall). `base` above supplies uncovered
+  # scopes; keys here (camelCase, matching hunk's CUSTOM_THEME_COLOR_KEYS) win
+  # over it. comment is the same contrast-lifted grey nvim uses per family.
+  # ceiling: hunk marks the named-slot `syntax` field deprecated in favour of
+  # TextMate selectors (syntaxScopes); if a major bump drops it, port these 11
+  # slots to syntaxScopes.
   local bg panel panelAlt border accent accentMuted text muted addedBg removedBg
   local ctxBg sAdd sRem lnFg badgeAdd badgeRem badgeNeu fRename fMod fUntracked note
   local kw str num fn typ punct op
   case "$1:$2" in
-    monokai-pro:light)
-      bg="#faf4f2"; panel="#ede7e5"; panelAlt="#d3cdcc"; border="#d3cdcc"
-      accent="#7058be"; accentMuted="#bfb9ba"; text="#29242a"; muted="#706b6e"
-      addedBg="#d9e0d9"; removedBg="#ecd7da"; ctxBg="#faf4f2"
-      sAdd="#269d69"; sRem="#e14775"; lnFg="#bfb9ba"
-      badgeAdd="#269d69"; badgeRem="#e14775"; badgeNeu="#1c8ca8"
-      fRename="#7058be"; fMod="#cc7a0a"; fUntracked="#918c8e"; note="#ede7e5"
-      kw="#e14775"; str="#cc7a0a"; num="#7058be"; fn="#269d69"; typ="#1c8ca8"; punct="#706b6e"; op="#e14775"
-      ;;
-    monokai-pro:*)
-      bg="#2d2a2e"; panel="#221f22"; panelAlt="#19181a"; border="#403e41"
-      accent="#ab9df2"; accentMuted="#5b595c"; text="#fcfcfa"; muted="#949394"
-      addedBg="#30322a"; removedBg="#38262c"; ctxBg="#2d2a2e"
-      sAdd="#a9dc76"; sRem="#ff6188"; lnFg="#5b595c"
-      badgeAdd="#a9dc76"; badgeRem="#ff6188"; badgeNeu="#78dce8"
-      fRename="#ab9df2"; fMod="#ffd866"; fUntracked="#949394"; note="#221f22"
-      kw="#ff6188"; str="#ffd866"; num="#ab9df2"; fn="#a9dc76"; typ="#78dce8"; punct="#c1c0c0"; op="#ff6188"
-      ;;
     flexoki:light)
       # flexoki light (dawn): paper #fffcf0 canvas. Diff bgs are the accent
       # blended ~12% over base-50 #f2f0e5 (subtle, readable full-line washes —
@@ -172,6 +157,54 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # cpplain mapping: keyword magenta, string green, number orange, fn blue,
       # type cyan; identifiers/operators stay neutral tx (#cecdc3) — calm, not rainbow.
       kw="#ce5d97"; str="#879a39"; num="#da702c"; fn="#4385be"; typ="#3aa99f"; punct="#878580"; op="#cecdc3"
+      ;;
+    token:light)
+      # token default light (#faf9f5 cream). comment #6c675f (~5:1).
+      bg="#faf9f5"; panel="#efeee8"; panelAlt="#dddcd6"; border="#dddcd6"
+      accent="#9a4929"; accentMuted="#dddcd6"; text="#2a2920"; muted="#6c675f"
+      addedBg="#e4e7df"; removedBg="#f1e5e2"; ctxBg="#faf9f5"
+      sAdd="#3f643c"; sRem="#b05555"; lnFg="#b5b2ab"
+      badgeAdd="#3f643c"; badgeRem="#b05555"; badgeNeu="#527594"
+      fRename="#9a4929"; fMod="#876032"; fUntracked="#6c675f"; note="#efeee8"
+      # token roles: keyword tan, string green, number purple, fn signature
+      # orange, type blue, operator neutral fg.
+      kw="#876032"; str="#3f643c"; num="#7c619a"; fn="#9a4929"; typ="#527594"; punct="#6c675f"; op="#2a2920"
+      ;;
+    token:*)
+      # token default dark (#262624 warm near-black). comment #938e87 (~4.7:1).
+      bg="#262624"; panel="#1d1d1c"; panelAlt="#3a3a37"; border="#3a3a37"
+      accent="#d97757"; accentMuted="#5a5955"; text="#e8e4dc"; muted="#938e87"
+      addedBg="#30352e"; removedBg="#39302e"; ctxBg="#262624"
+      sAdd="#7da47a"; sRem="#c67777"; lnFg="#5a5955"
+      badgeAdd="#7da47a"; badgeRem="#c67777"; badgeNeu="#7b9ebd"
+      fRename="#d97757"; fMod="#c4a855"; fUntracked="#938e87"; note="#1d1d1c"
+      kw="#c4956a"; str="#7da47a"; num="#a68bbf"; fn="#d97757"; typ="#7b9ebd"; punct="#938e87"; op="#d4cfc6"
+      ;;
+    flume:light)
+      # flume mesa (warm cream #f3ede8) — the family's light half. comment
+      # #706878 (~5:1 on paper).
+      bg="#f3ede8"; panel="#ece5df"; panelAlt="#ddd6e0"; border="#c8c0ca"
+      accent="#3f7180"; accentMuted="#d3ccd5"; text="#413b49"; muted="#706878"
+      addedBg="#e0e8dc"; removedBg="#eadadd"; ctxBg="#f3ede8"
+      sAdd="#557245"; sRem="#934d5b"; lnFg="#a39ba8"
+      badgeAdd="#557245"; badgeRem="#934d5b"; badgeNeu="#3f7180"
+      fRename="#72518f"; fMod="#815f1d"; fUntracked="#706878"; note="#ece5df"
+      # flume roles: keyword purple, string green, number/boolean rust, fn teal,
+      # type yellow, operator neutral text.
+      kw="#72518f"; str="#557245"; num="#9b5146"; fn="#3f7180"; typ="#815f1d"; punct="#625b69"; op="#413b49"
+      ;;
+    flume:*)
+      # flume mira (violet-charcoal #24212f) — the family's dark half. comment
+      # lifted to #a29bb0 (~5.5:1; stock #918a9a ~4.7:1).
+      bg="#24212f"; panel="#292634"; panelAlt="#353142"; border="#4b485a"
+      accent="#72b5bf"; accentMuted="#596073"; text="#d9d4df"; muted="#a29bb0"
+      addedBg="#2a3735"; removedBg="#402a35"; ctxBg="#24212f"
+      sAdd="#84b39f"; sRem="#dd789b"; lnFg="#5b6070"
+      badgeAdd="#84b39f"; badgeRem="#dd789b"; badgeNeu="#72a8c7"
+      fRename="#b69bd2"; fMod="#d8a36b"; fUntracked="#a29bb0"; note="#292634"
+      # flume roles: keyword purple, string green, number/boolean rust, fn cyan
+      # accent, type yellow, operator neutral text.
+      kw="#b69bd2"; str="#84b39f"; num="#e49a7b"; fn="#72b5bf"; typ="#d8a36b"; punct="#9d96aa"; op="#d9d4df"
       ;;
     *) return 0 ;;
   esac
@@ -290,8 +323,8 @@ hunk_apply() { # <family> <mode> — point hunk's config at the family's theme
   # keep in sync.
   hunk_set "$cfg" transparent_background true
   # Write (or clear, when empty) the [custom_theme] table so hunk's diff/syntax
-  # colors match nvim's exactly. The builtin monokai base is close on syntax but
-  # its diff bgs differ from Monokai Pro's, which this block overrides.
+  # colors match nvim's exactly. The builtin vitesse base is close on syntax but
+  # its diff/chrome colors differ from the family's, which this block overrides.
   hunk_set_block "$cfg" "$custom"
   # No reload: hunk reads its config at launch, and the session daemon exposes
   # no config command. Running reviews keep their colors; the next one flips.
@@ -305,35 +338,6 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
   local base_name accent panel_bg surface_dim surface0 surface1 overlay0 overlay1
   local text subtext0 green yellow red blue teal peach
   case "$1:$2" in
-    monokai-pro:light)
-      # Monokai Pro Light filter (#faf4f2 canvas) — matches nvim/ghostty.
-      # The muted greys collapse to dimmed1 #706b6e: on the light canvas that is
-      # ~5:1, so the unfocused agent name, sidebar chrome, and comment role all
-      # clear the 4.5:1 floor. overlay0 is a muted FOREGROUND (see below), so on
-      # light it is darker than the backgrounds, not lighter.
-      base_name="one-light"
-      accent="#7058be" panel_bg="#ede7e5" surface_dim="#d3cdcc"
-      surface0="#c4bdbc" surface1="#bab3b2"
-      overlay0="#706b6e" overlay1="#706b6e"
-      text="#29242a" subtext0="#706b6e"
-      green="#269d69" yellow="#cc7a0a" red="#e14775"
-      blue="#1c8ca8" teal="#1c8ca8" peach="#e16032"
-      ;;
-    monokai-pro:*)
-      # Monokai Pro, "pro" filter (#2d2a2e canvas) — matches nvim/ghostty.
-      #
-      # overlay1/subtext0 is the comment grey lifted to clear 4.5:1: stock
-      # #727072 is 2.89:1 on the canvas; #949394 is ~4.6:1. yellow and peach
-      # collapse to carpYellow's role — Monokai Pro ships a distinct orange
-      # (#fc9867), so peach takes it rather than duplicating yellow.
-      base_name="one-dark"
-      accent="#ab9df2" panel_bg="#221f22" surface_dim="#363437"
-      surface0="#403e41" surface1="#4a484b"
-      overlay0="#5b595c" overlay1="#949394"
-      text="#fcfcfa" subtext0="#949394"
-      green="#a9dc76" yellow="#ffd866" red="#ff6188"
-      blue="#78dce8" teal="#78dce8" peach="#fc9867"
-      ;;
     flexoki:light)
       # flexoki light (dawn), paper #fffcf0 — matches nvim/ghostty. Muted greys
       # collapse to base-600 #6f6e69 (~4.9:1 on paper); overlay0 is a muted
@@ -357,6 +361,46 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#cecdc3" subtext0="#878580"
       green="#879a39" yellow="#d0a215" red="#d14d41"
       blue="#4385be" teal="#4385be" peach="#da702c"
+      ;;
+    token:light)
+      # token default light (#faf9f5 cream) — comment #6c675f (~5:1).
+      base_name="one-light"
+      accent="#9a4929" panel_bg="#efeee8" surface_dim="#e2e1da"
+      surface0="#dddcd6" surface1="#cfcec7"
+      overlay0="#6c675f" overlay1="#6c675f"
+      text="#2a2920" subtext0="#6c675f"
+      green="#3f643c" yellow="#876032" red="#b05555"
+      blue="#527594" teal="#2d6c6c" peach="#9a4929"
+      ;;
+    token:*)
+      # token default dark (#262624 warm near-black) — comment #938e87 (~4.7:1).
+      base_name="one-dark"
+      accent="#d97757" panel_bg="#1d1d1c" surface_dim="#30302d"
+      surface0="#3a3a37" surface1="#454540"
+      overlay0="#6a655e" overlay1="#938e87"
+      text="#e8e4dc" subtext0="#938e87"
+      green="#7da47a" yellow="#c4a855" red="#c67777"
+      blue="#7b9ebd" teal="#6ba8a8" peach="#d97757"
+      ;;
+    flume:light)
+      # flume mesa (warm cream #f3ede8) — comment #706878 (~5:1 on paper).
+      base_name="one-light"
+      accent="#3f7180" panel_bg="#ece5df" surface_dim="#ddd6e0"
+      surface0="#d0c8ce" surface1="#c8c0ca"
+      overlay0="#706878" overlay1="#706878"
+      text="#413b49" subtext0="#706878"
+      green="#557245" yellow="#815f1d" red="#934d5b"
+      blue="#3f7180" teal="#356f80" peach="#9b5146"
+      ;;
+    flume:*)
+      # flume mira (violet-charcoal #24212f) — comment lifted to #a29bb0.
+      base_name="one-dark"
+      accent="#72b5bf" panel_bg="#292634" surface_dim="#323043"
+      surface0="#353142" surface1="#4b485a"
+      overlay0="#5b6070" overlay1="#a29bb0"
+      text="#d9d4df" subtext0="#a29bb0"
+      green="#84b39f" yellow="#d8a36b" red="#dd789b"
+      blue="#72a8c7" teal="#8ac8cf" peach="#e49a7b"
       ;;
   esac
 
@@ -497,7 +541,7 @@ apply() { # <family> <mode> — write state and repaint herdr + ghostty
   # `palette =` line swapped to `$family-$mode`, so EVERY running shell flips on
   # its next prompt with no reload. Only the top-level `palette = ` line matches
   # the anchored sed — the [palettes.*] headers are untouched. The palette names
-  # in the template are `<family>-<mode>` (e.g. monokai-pro-dark), so this is a two-
+  # in the template are `<family>-<mode>` (e.g. flume-dark), so this is a two-
   # axis swap now, not mode-only.
   local starship_tmpl="$HOME/.config/starship.toml.template"
   local starship_cfg="$HOME/.config/starship.toml"

@@ -56,24 +56,24 @@
     skip_display = yes
     history_ignore = yes
 
-# flexoki dark (moon) palette (dark-only, no mode axis).
+# flume mira palette (dark-only, no mode axis).
 [urgency_low]
-    background = "#1c1b1a"
-    foreground = "#878580"
-    frame_color = "#403e3c"
-    highlight = "#4385be"
+    background = "#292634"
+    foreground = "#a29bb0"
+    frame_color = "#4b485a"
+    highlight = "#72b5bf"
     timeout = 5
 
 [urgency_normal]
-    background = "#1c1b1a"
-    foreground = "#cecdc3"
-    frame_color = "#4385be"
-    highlight = "#4385be"
+    background = "#292634"
+    foreground = "#d9d4df"
+    frame_color = "#72b5bf"
+    highlight = "#72b5bf"
     timeout = 10
 
 [urgency_critical]
-    background = "#1c1b1a"
-    foreground = "#cecdc3"
-    frame_color = "#d14d41"
-    highlight = "#d14d41"
+    background = "#292634"
+    foreground = "#d9d4df"
+    frame_color = "#dd789b"
+    highlight = "#dd789b"
     timeout = 0

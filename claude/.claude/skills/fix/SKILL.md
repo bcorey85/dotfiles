@@ -55,6 +55,22 @@ raise the modals it cannot.
 
 5. **Raise what the agent could not**. Present `ask[]` with each question; wait for direction. Never auto-fix an ask item.
 
+6. **Aikido PR-comment replies — post disposition back to the bot.** Fires only for findings that are Aikido PR comments: `author` is `aikido-pr-checks[bot]` (or the body carries `@AikidoSec` / `app.aikido.dev`) AND the finding carries a `comment_id` (emitted by `fetch-pr-comments` as `id`; `/pr-comments +fix` passes it through). Skip this step entirely when no such findings are present, or when no `comment_id` is available (nothing to reply to). Match packet entries to comments by `(path, line)`:
+
+   - **Fixed** (entry in `fixed[]`, fix actually applied) → reply `Fixed.` plus a one-line note of what changed.
+   - **Not relevant** (entry in `skipped_fp[]`, ruled a false positive) → reply `@AikidoSec ignore: <reason>` using the FP reason. This is the exact string Aikido recognizes to dismiss the issue — reproduce it verbatim.
+   - Anything else (deferred, nit, ask, cap-reached residue) → no auto-reply; leave for the human.
+
+   Post each reply to the review-comment thread:
+
+   ```bash
+   repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+   pr=$(gh pr view --json number --jq '.number')
+   gh api --method POST "repos/$repo/pulls/$pr/comments/<comment_id>/replies" -f body='<reply>'
+   ```
+
+   Best-effort: a failed reply (comment deleted, permissions) never blocks the fix or the commit gate — report it and continue. List posted replies under `### Aikido replies` in the packet.
+
 ## Arguments
 
 $ARGUMENTS

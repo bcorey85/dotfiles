@@ -65,7 +65,7 @@ Pull every review comment on the current branch's PR — inline and top-level, f
    `stage_found` splits by commenter: `pr-human` for a person, `pr-bot` for Copilot / the Claude review bot / any other automated reviewer — the remediation differs (a bot's lens can be wired into the loop; a human's cannot). `gate_missed=eng-spec` when the code faithfully matched a wrong plan, `test-intent` when the comment is about a test pinning current behavior, `review` otherwise. Infer `lane` from the branch's planning artifacts (eng-spec doc → `eng-spec`, direct dispatch → `code`); ask only when genuinely ambiguous. Surface the proposed guard with the triage table and apply it on approval.
 
 5. **If `+fix` modifier is present** and there are valid actionable items:
-   - Format the valid findings as review feedback (file paths, line numbers, issue descriptions, author for context)
+   - Format the valid findings as review feedback (file paths, line numbers, issue descriptions, author for context). For Aikido findings (`author` = `aikido-pr-checks[bot]`), also pass each comment's `comment_id` (the `id` field from the fetch output) so `/fix` step 6 can reply `Fixed.` / `@AikidoSec ignore: <reason>` on the thread.
    - Invoke `/fix` skill, passing through any `+fast` or `+deep` modifier
    - If no valid items found, tell the user there's nothing to fix
 

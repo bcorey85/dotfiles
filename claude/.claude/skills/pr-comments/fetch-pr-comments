@@ -27,7 +27,7 @@ inline=$(gh api "repos/$repo/pulls/$number/comments" --paginate | jq -s '
   add // []
   | [.[]
      | select(.in_reply_to_id == null)
-     | {path, line: (.line // .original_line), diff_hunk, body, user: .user.login, created_at}]
+     | {id, path, line: (.line // .original_line), diff_hunk, body, user: .user.login, created_at}]
   | group_by((.path // "") + "|" + ((.line // 0) | tostring) + "|" + .user)
   | map(max_by(.created_at))
   | sort_by(.path, .line)

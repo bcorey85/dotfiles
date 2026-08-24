@@ -83,6 +83,7 @@ After any code change, run the project's quality checks (whatever its CLAUDE.md 
 
 - Keep diffs focused: one logical change per task.
 - Commit-on-main, stash, amend, and force-push are hook-blocked; if one is genuinely needed, ask the user to run it.
+- Worktree branches: NEVER leave the auto-generated `worktree-` prefix in the branch name. Rename to the plain `TICKET-NUM-desc` (e.g. `IQ-1148-cube-cache-tuning-poc`) immediately after creating the worktree, then push it to remote (`git push -u origin <branch>`) first — before doing work — so the branch is tracked and backed up.
 
 ## Security
 

@@ -172,6 +172,9 @@ Then re-enter step 2 for Phase <N+1> in the same context — do not wait for the
 ```
 Phase <N> complete. Risk: <high | low — Phase 1 calibration | low — exception>. Phase-level sign-off requested.
 
+Behavior delta (what the system now does):
+- <1–3 lines: system now does X instead of Y; the one place that decides it is <path:line>>
+
 What changed:
 - <path> — <one-line change intent>
 
@@ -191,7 +194,8 @@ Human-only verification remaining:
 
 Next:
   1. Read the queue; spot-check the evidence lines; run the human-only items.
-  2. Stage what you've read, then confirm to continue to Phase <N+1> — in-session (no /clear needed; /clear only if context got heavy).
+  2. Before advancing, state in one line what this phase makes the system do. Can't → you have not read enough; go back to the queue.
+  3. Stage what you've read, then confirm to continue to Phase <N+1> — in-session (no /clear needed; /clear only if context got heavy).
 
 Or give feedback now for revisions to Phase <N>.
 ```
@@ -219,11 +223,16 @@ invariant-verified) and returns everything else as an ESCALATE / READ / SKIM que
 in blast-radius order. That queue **is** the "Read first" section — render it, never
 re-rank it, never promote a tier.
 
+- **Behavior delta** — 1–3 lines from the coder's handoff: what the system now does
+  differently, and the single `path:line` that decides it. A causal statement, not a
+  file list. Absent a handoff, derive it from the diff and mark it `derived from diff`.
 - **What changed** — one line per changed file: the path and what the phase did to
   it, in the coder's terms (from the handoff; absent one, `git diff --stat` and mark
   it `derived from diff`). Not a hunk summary.
 - **Read first** — `/stage`'s queue, verbatim, in its order. SAFE-tier files are
   already staged and do not appear.
+- **Active recall** — the "Next" block requires the user to state the behavior delta
+  in their own words before advancing. Render it, never answer it for them.
 
 Two fences:
 

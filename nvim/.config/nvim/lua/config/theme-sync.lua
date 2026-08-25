@@ -34,11 +34,10 @@ end
 -- cases and the tmux/ghostty files.
 local FAMILIES = {
   ["flexoki"] = {
-    -- cpplain/flexoki.nvim: one "flexoki" colorscheme that reads vim.o.background
-    -- at load (dark #100f0f / light #fffcf0), so both modes use the same scheme
-    -- name and apply() just flips background first. colors_name = "flexoki" makes
-    -- the apply_overrides guard fire in either mode.
-    schemes = { dark = "flexoki", light = "flexoki" },
+    -- kepano/flexoki-neovim: two distinct colorschemes flexoki-{dark,light}
+    -- (dark #100f0f / light #fffcf0), but both set the same colors_name
+    -- "flexoki" (!= schemes[mode]), so colors_name is set here to fire the guard.
+    schemes = { dark = "flexoki-dark", light = "flexoki-light" },
     colors_name = "flexoki",
     accents = {
       dark = { heading1 = "#8b7ec8", heading = "#4385be" }, -- purple + blue (400)

@@ -141,8 +141,8 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       sAdd="#66800b"; sRem="#af3029"; lnFg="#b7b5ac"
       badgeAdd="#66800b"; badgeRem="#af3029"; badgeNeu="#205ea6"
       fRename="#5e409d"; fMod="#ad8301"; fUntracked="#878580"; note="#f2f0e5"
-      # cpplain mapping: keyword magenta, string green, number orange, fn blue,
-      # type cyan; identifiers/operators stay neutral tx (#403e3c) — calm, not rainbow.
+      # flexoki accents: keyword magenta, string green, number orange, fn blue,
+      # type cyan; identifiers/operators stay neutral tx (#403e3c).
       kw="#a02f6f"; str="#66800b"; num="#bc5215"; fn="#205ea6"; typ="#24837b"; punct="#878580"; op="#403e3c"
       ;;
     flexoki:*)
@@ -154,8 +154,8 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       sAdd="#879a39"; sRem="#d14d41"; lnFg="#575653"
       badgeAdd="#879a39"; badgeRem="#d14d41"; badgeNeu="#4385be"
       fRename="#8b7ec8"; fMod="#d0a215"; fUntracked="#878580"; note="#1c1b1a"
-      # cpplain mapping: keyword magenta, string green, number orange, fn blue,
-      # type cyan; identifiers/operators stay neutral tx (#cecdc3) — calm, not rainbow.
+      # flexoki accents: keyword magenta, string green, number orange, fn blue,
+      # type cyan; identifiers/operators stay neutral tx (#cecdc3).
       kw="#ce5d97"; str="#879a39"; num="#da702c"; fn="#4385be"; typ="#3aa99f"; punct="#878580"; op="#cecdc3"
       ;;
     token:light)

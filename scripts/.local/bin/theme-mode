@@ -72,7 +72,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="flume"
 
-families() { printf '%s\n' flexoki token flume; }
+families() { printf '%s\n' flexoki token flume kanso; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   # flexoki's two are ghostty builtins (spaces and all), so no custom themes/
@@ -88,6 +88,9 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # flume: mira dark / mesa light — custom files in ghostty/themes/.
     flume:light)        echo "flume-mesa" ;;
     flume:*)            echo "flume-mira" ;;
+    # kanso: zen dark / pearl light — custom files in ghostty/themes/.
+    kanso:light)        echo "kanso-light" ;;
+    kanso:*)            echo "kanso-dark" ;;
   esac
 }
 
@@ -107,6 +110,8 @@ hunk_theme() { # <family> <mode> -> the hunk BUILTIN a custom theme inherits fro
     token:*)            echo "vitesse-dark" ;;
     flume:light)        echo "vitesse-light" ;;
     flume:*)            echo "vitesse-dark" ;;
+    kanso:light)        echo "vitesse-light" ;;
+    kanso:*)            echo "vitesse-dark" ;;
   esac
 }
 
@@ -205,6 +210,33 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # flume roles: keyword purple, string green, number/boolean rust, fn cyan
       # accent, type yellow, operator neutral text.
       kw="#b69bd2"; str="#84b39f"; num="#e49a7b"; fn="#72b5bf"; typ="#d8a36b"; punct="#9d96aa"; op="#d9d4df"
+      ;;
+    kanso:light)
+      # kanso pearl (light #f2f1ef). comment pearlBlack1 #545464 (~7:1). Diff bgs
+      # are washes over pearlWhite1; kanso's own light diff bgs are too saturated
+      # for full-line viewer washes.
+      bg="#f2f1ef"; panel="#e2e1df"; panelAlt="#dddddb"; border="#cacac7"
+      accent="#4d699b"; accentMuted="#cacac7"; text="#22262D"; muted="#545464"
+      addedBg="#e0e6d8"; removedBg="#f0dcdc"; ctxBg="#f2f1ef"
+      sAdd="#6f894e"; sRem="#c84053"; lnFg="#b3b3b0"
+      badgeAdd="#6f894e"; badgeRem="#c84053"; badgeNeu="#4d699b"
+      fRename="#4d699b"; fMod="#77713f"; fUntracked="#545464"; note="#e2e1df"
+      # kanso roles: keyword violet, string green, number orange, fn blue, type
+      # aqua, operator neutral fg.
+      kw="#766b90"; str="#6f894e"; num="#cc6d00"; fn="#4d699b"; typ="#597b75"; punct="#545464"; op="#22262D"
+      ;;
+    kanso:*)
+      # kanso zen (dark #090E13). comment lifted to gray3 #909398 (~5.9:1; stock
+      # gray #717C7C ~4.3:1). Diff bgs are kanso's own diffGreen/diffRed.
+      bg="#090E13"; panel="#1C1E25"; panelAlt="#22262D"; border="#393B44"
+      accent="#7FB4CA"; accentMuted="#5C6066"; text="#C5C9C7"; muted="#909398"
+      addedBg="#2B3328"; removedBg="#43242B"; ctxBg="#090E13"
+      sAdd="#98BB6C"; sRem="#C34043"; lnFg="#5C6066"
+      badgeAdd="#98BB6C"; badgeRem="#C34043"; badgeNeu="#7FB4CA"
+      fRename="#7FB4CA"; fMod="#DCA561"; fUntracked="#909398"; note="#1C1E25"
+      # kanso roles: keyword violet, string green, number orange, fn blue, type
+      # aqua, operator neutral fg.
+      kw="#938AA9"; str="#98BB6C"; num="#b6927b"; fn="#7FB4CA"; typ="#7AA89F"; punct="#909398"; op="#C5C9C7"
       ;;
     *) return 0 ;;
   esac
@@ -401,6 +433,26 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#d9d4df" subtext0="#a29bb0"
       green="#84b39f" yellow="#d8a36b" red="#dd789b"
       blue="#72a8c7" teal="#8ac8cf" peach="#e49a7b"
+      ;;
+    kanso:light)
+      # kanso pearl (light #f2f1ef) — comment pearlBlack1 #545464 (~7:1).
+      base_name="one-light"
+      accent="#4d699b" panel_bg="#e2e1df" surface_dim="#dddddb"
+      surface0="#cacac7" surface1="#bcbcb8"
+      overlay0="#545464" overlay1="#545464"
+      text="#22262D" subtext0="#545464"
+      green="#6f894e" yellow="#77713f" red="#c84053"
+      blue="#4d699b" teal="#597b75" peach="#cc6d00"
+      ;;
+    kanso:*)
+      # kanso zen (dark #090E13) — comment lifted to gray3 #909398 (~5.9:1).
+      base_name="one-dark"
+      accent="#7FB4CA" panel_bg="#1C1E25" surface_dim="#22262D"
+      surface0="#2E323A" surface1="#393B44"
+      overlay0="#5C6066" overlay1="#909398"
+      text="#C5C9C7" subtext0="#909398"
+      green="#98BB6C" yellow="#DCA561" red="#C34043"
+      blue="#7FB4CA" teal="#8ea4a2" peach="#b6927b"
       ;;
   esac
 

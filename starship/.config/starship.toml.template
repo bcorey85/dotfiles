@@ -115,6 +115,33 @@ fg = "#413b49"
 bg = "#f3ede8"
 grey = "#706878"
 
+# kanso zen (dark #090E13) — from webhooked/kanso.nvim. `grey` is the
+# contrast-lifted comment gray3 #909398 (~5.9:1).
+[palettes.kanso-dark]
+red = "#C34043"
+orange = "#b6927b"
+yellow = "#DCA561"
+green = "#98BB6C"
+blue = "#7FB4CA"
+teal = "#8ea4a2"
+purple = "#938AA9"
+fg = "#C5C9C7"
+bg = "#090E13"
+grey = "#909398"
+
+# kanso pearl (light #f2f1ef) — `grey` is comment pearlBlack1 #545464 (~7:1).
+[palettes.kanso-light]
+red = "#c84053"
+orange = "#cc6d00"
+yellow = "#77713f"
+green = "#6f894e"
+blue = "#4d699b"
+teal = "#597b75"
+purple = "#766b90"
+fg = "#22262D"
+bg = "#f2f1ef"
+grey = "#545464"
+
 [directory]
 style = "bold teal"
 truncation_length = 3

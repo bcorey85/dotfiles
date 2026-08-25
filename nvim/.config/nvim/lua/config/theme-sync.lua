@@ -89,6 +89,23 @@ local FAMILIES = {
       vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
     end,
   },
+  ["kanso"] = {
+    -- webhooked/kanso.nvim (kanagawa lineage): dark = "zen" (#090E13), light =
+    -- "pearl" (#f2f1ef). Two colorschemes kanso-{zen,pearl} that both set the
+    -- shared colors_name "kanso" (!= schemes[mode]), so pin colors_name here.
+    schemes = { dark = "kanso-zen", light = "kanso-pearl" },
+    colors_name = "kanso",
+    accents = {
+      dark = { heading1 = "#E6C384", heading = "#7FB4CA" }, -- waves-gold + blue
+      light = { heading1 = "#77713f", heading = "#4d699b" },
+    },
+    -- Comment floor: zen's stock gray #717C7C is borderline (~4.3:1 on #090E13),
+    -- lift to gray3 #909398 (~5.9:1); pearl's #545464 clears (~7:1 on #f2f1ef).
+    fixup = function(mode)
+      local fg = mode == "light" and "#545464" or "#909398"
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
+    end,
+  },
 }
 
 local applied ---@type string|nil  last family+mode we set, to skip redundant reloads

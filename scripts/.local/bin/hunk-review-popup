@@ -18,7 +18,8 @@ export HUNK_REVIEW_HANDOFF="$handoff"
 rm -f "$handoff"
 trap 'rm -f "$handoff"' EXIT
 
-hunk diff "$@" || exit $?
+# --sidebar first so it is the default, but a caller's --no-sidebar still wins.
+hunk diff --sidebar "$@" || exit $?
 
 # Absent or empty file: hunk was quit normally, nothing to hand off to.
 [ -s "$handoff" ] || exit 0

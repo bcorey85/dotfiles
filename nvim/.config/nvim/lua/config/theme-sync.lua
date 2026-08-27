@@ -53,25 +53,6 @@ local FAMILIES = {
       vim.api.nvim_set_hl(0, "Comment", { fg = fg })
     end,
   },
-  ["token"] = {
-    -- ThorstenRhau/token, default variant: warm cream #e8e4dc on warm near-black
-    -- #262624 dark / #2a2920 on cream #faf9f5 light. One colorscheme (colors/
-    -- token.lua) reads vim.o.background at load, so both modes share the name;
-    -- colors_name = "token" fires the guard in either mode.
-    schemes = { dark = "token", light = "token" },
-    colors_name = "token",
-    accents = {
-      dark = { heading1 = "#d97757", heading = "#7b9ebd" }, -- signature orange + blue
-      light = { heading1 = "#9a4929", heading = "#527594" },
-    },
-    -- token's comment already clears 4.5:1 (dark #938e87 ~4.7:1 on #262624;
-    -- light #6c675f ~5:1 on #faf9f5). Restate so italic survives nvim_set_hl's
-    -- whole-group replace.
-    fixup = function(mode)
-      local fg = mode == "light" and "#6c675f" or "#938e87"
-      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
-    end,
-  },
   ["flume"] = {
     -- mitander/flume.nvim: dark = "mira" (violet-charcoal #24212f, cyan accent
     -- #72b5bf); light = "mesa" (warm cream #f3ede8). Two distinct colorschemes
@@ -89,21 +70,73 @@ local FAMILIES = {
       vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
     end,
   },
-  ["kanso"] = {
-    -- webhooked/kanso.nvim (kanagawa lineage): dark = "zen" (#090E13), light =
-    -- "pearl" (#f2f1ef). Two colorschemes kanso-{zen,pearl} that both set the
-    -- shared colors_name "kanso" (!= schemes[mode]), so pin colors_name here.
-    schemes = { dark = "kanso-zen", light = "kanso-pearl" },
-    colors_name = "kanso",
+  ["sequoia"] = {
+    -- forest-nvim/sequoia.nvim: dark = "night" (neutral #141414), light = "rise"
+    -- (warm cream #ede9e4). Per-variant colors_name (sequoia-night/sequoia-rise
+    -- == schemes[mode]), so the guard resolves directly. Comments not italic.
+    schemes = { dark = "sequoia-night", light = "sequoia-rise" },
     accents = {
-      dark = { heading1 = "#E6C384", heading = "#7FB4CA" }, -- waves-gold + blue
-      light = { heading1 = "#77713f", heading = "#4d699b" },
+      dark = { heading1 = "#b080b0", heading = "#c09070" }, -- pink (lily) + orange
+      light = { heading1 = "#a85080", heading = "#a86828" },
     },
-    -- Comment floor: zen's stock gray #717C7C is borderline (~4.3:1 on #090E13),
-    -- lift to gray3 #909398 (~5.9:1); pearl's #545464 clears (~7:1 on #f2f1ef).
+    -- Comment floor: sequoia's stock subtle is far below 4.5:1 (night #5d5d5d
+    -- ~2.8:1, rise #8a8880 ~2.8:1); lift to night #808080 / rise #625f58 (~4.6:1).
     fixup = function(mode)
-      local fg = mode == "light" and "#545464" or "#909398"
-      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
+      local fg = mode == "light" and "#625f58" or "#808080"
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg })
+    end,
+  },
+  ["tempus"] = {
+    -- protesilaos/tempus-themes-vim: dark = "tempus_classic" (#232323), light =
+    -- "tempus_day" (warm-cream #f8f2e5). Per-variant colors_name (== schemes[mode]).
+    -- Prot's palettes are WCAG-tuned, so no comment-contrast fixup needed.
+    schemes = { dark = "tempus_classic", light = "tempus_day" },
+    accents = {
+      dark = { heading1 = "#d58888", heading = "#d0913d" }, -- pink + warm ochre
+      light = { heading1 = "#8050a7", heading = "#b24000" }, -- purple + rust
+    },
+    -- tempus bolds keyword/type/operator/etc. Strip bold from every group; runs
+    -- before set_headings, so markdown heading bold is re-applied after.
+    fixup = function()
+      for name, def in pairs(vim.api.nvim_get_hl(0, {})) do
+        if def.bold then
+          def.bold = nil
+          vim.api.nvim_set_hl(0, name, def)
+        end
+      end
+    end,
+  },
+  ["gruvbox"] = {
+    -- sainnhe/gruvbox-material, medium contrast + 'mix' palette. Dark #282828 /
+    -- fg #e2cca9; light #fbf1c7 / fg #514036. One colorscheme reads vim.g globals
+    -- + vim.o.background at load, so both modes share colors_name; pin it and set
+    -- the globals in pre(). Wired faithful — no fixup.
+    schemes = { dark = "gruvbox-material", light = "gruvbox-material" },
+    colors_name = "gruvbox-material",
+    pre = function()
+      vim.g.gruvbox_material_background = "medium"
+      vim.g.gruvbox_material_foreground = "mix"
+    end,
+    accents = {
+      dark = { heading1 = "#f2594b", heading = "#e9b143" }, -- red + yellow
+      light = { heading1 = "#af2528", heading = "#b4730e" },
+    },
+  },
+  ["horizon"] = {
+    -- akinsho/horizon.nvim: one colorscheme "horizon" reads vim.o.background at
+    -- load (dark #1c1e26 / light #fdf0ed), so both modes share colors_name; pin
+    -- it. Light's syntax palette is backfilled in the plugin spec's config.
+    schemes = { dark = "horizon", light = "horizon" },
+    colors_name = "horizon",
+    accents = {
+      dark = { heading1 = "#a86ec9", heading = "#f09483" }, -- purple + apricot
+      light = { heading1 = "#8a31b9", heading = "#f77d26" },
+    },
+    -- Comment floor: horizon's stock is below 4.5:1 (dark #4c4d53 ~2.5:1, light
+    -- #989290 ~2.7:1); lift to accentAlt #6c6f93 / #6e6664 (~4.6:1).
+    fixup = function(mode)
+      local fg = mode == "light" and "#6e6664" or "#6c6f93"
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg })
     end,
   },
 }

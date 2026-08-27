@@ -1,6 +1,8 @@
-# Flume Mira — from mitander/flume.nvim extras/ghostty/flume-mira verbatim.
+# Flume Mira — from mitander/flume.nvim extras/ghostty/flume-mira, foreground
+# dimmed #cbc5d2 -> #b4aebf (~9:1 -> ~7:1 vs bg) to cut halation on prose-heavy
+# terminal surfaces (Claude Code). Terminal-only: nvim's Normal overrides this.
 background = #24212f
-foreground = #cbc5d2
+foreground = #b4aebf
 selection-background = #4b485a
 selection-foreground = #cbc5d2
 cursor-color = #72b5bf

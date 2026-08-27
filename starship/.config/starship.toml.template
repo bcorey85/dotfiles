@@ -59,33 +59,6 @@ fg = "#100f0f"
 bg = "#fffcf0"
 grey = "#6f6e69"
 
-# token default dark (warm near-black #262624, signature orange) — same palette
-# nvim/ghostty paint. `grey` is comment #938e87 (~4.7:1).
-[palettes.token-dark]
-red = "#c67777"
-orange = "#d97757"
-yellow = "#c4a855"
-green = "#7da47a"
-blue = "#7b9ebd"
-teal = "#6ba8a8"
-purple = "#a68bbf"
-fg = "#e8e4dc"
-bg = "#262624"
-grey = "#938e87"
-
-# token default light (cream #faf9f5). `grey` is comment #6c675f (~5:1).
-[palettes.token-light]
-red = "#b05555"
-orange = "#9a4929"
-yellow = "#876032"
-green = "#3f643c"
-blue = "#527594"
-teal = "#2d6c6c"
-purple = "#7c619a"
-fg = "#2a2920"
-bg = "#faf9f5"
-grey = "#6c675f"
-
 # flume mira (violet-charcoal #24212f). `orange` is boolean #e49a7b (flume has
 # no distinct orange). `grey` is comment lifted to #a29bb0 (~5.5:1). Accent is
 # cyan #72b5bf.
@@ -115,32 +88,119 @@ fg = "#413b49"
 bg = "#f3ede8"
 grey = "#706878"
 
-# kanso zen (dark #090E13) — from webhooked/kanso.nvim. `grey` is the
-# contrast-lifted comment gray3 #909398 (~5.9:1).
-[palettes.kanso-dark]
-red = "#C34043"
-orange = "#b6927b"
-yellow = "#DCA561"
-green = "#98BB6C"
-blue = "#7FB4CA"
-teal = "#8ea4a2"
-purple = "#938AA9"
-fg = "#C5C9C7"
-bg = "#090E13"
-grey = "#909398"
+# sequoia night (dark #141414) — from forest-nvim/sequoia.nvim. red kept
+# unbrightened (saturated red reads rough). `grey` is comment #808080 (~5:1).
+[palettes.sequoia-dark]
+red = "#c05050"
+orange = "#c09070"
+yellow = "#bfa878"
+green = "#90a870"
+blue = "#6a9dcc"
+teal = "#6aab9a"
+purple = "#b080b0"
+fg = "#b0b0b5"
+bg = "#141414"
+grey = "#808080"
 
-# kanso pearl (light #f2f1ef) — `grey` is comment pearlBlack1 #545464 (~7:1).
-[palettes.kanso-light]
-red = "#c84053"
-orange = "#cc6d00"
-yellow = "#77713f"
-green = "#6f894e"
-blue = "#4d699b"
-teal = "#597b75"
-purple = "#766b90"
-fg = "#22262D"
-bg = "#f2f1ef"
-grey = "#545464"
+# sequoia rise (light warm cream #ede9e4). `grey` is comment #625f58 (~6:1).
+[palettes.sequoia-light]
+red = "#c03838"
+orange = "#a86828"
+yellow = "#9a7828"
+green = "#488828"
+blue = "#3868a8"
+teal = "#2a8868"
+purple = "#a85080"
+fg = "#2c2c2a"
+bg = "#ede9e4"
+grey = "#625f58"
+
+# tempus classic (dark #232323) — protesilaos/tempus, WCAG-tuned. `red`/`orange`
+# are warm ochre (classic has no bright saturated red); `purple` is the pink
+# keyword. `grey` is comment #949d9f (~5.6:1).
+[palettes.tempus-dark]
+red = "#d4823d"
+orange = "#d0913d"
+yellow = "#b1942b"
+green = "#8c9e3d"
+blue = "#6e9cb0"
+teal = "#6da280"
+purple = "#d58888"
+fg = "#aeadaf"
+bg = "#232323"
+grey = "#949d9f"
+
+# tempus day (warm-cream light #f8f2e5) — protesilaos/tempus, WCAG-tuned. `red`
+# softened to brick #a3352a (stock #c81000 is high-sat red); `purple` is the
+# keyword. `grey` is comment #68607d (~5:1).
+[palettes.tempus-light]
+red = "#a3352a"
+orange = "#b24000"
+yellow = "#806000"
+green = "#107410"
+blue = "#385dc4"
+teal = "#007070"
+purple = "#8050a7"
+fg = "#464340"
+bg = "#f8f2e5"
+grey = "#68607d"
+
+# gruvbox-material medium/mix dark (#282828) — verbatim upstream, keyword red
+# #f2594b kept. `grey` is comment #928374 (~4.1:1).
+[palettes.gruvbox-dark]
+red = "#f2594b"
+orange = "#e9b143"
+yellow = "#e9b143"
+green = "#b0b846"
+blue = "#80aa9e"
+teal = "#8bba7f"
+purple = "#d3869b"
+fg = "#e2cca9"
+bg = "#282828"
+grey = "#928374"
+
+# gruvbox-material medium/mix light (#fbf1c7) — verbatim upstream. `grey` is
+# comment #928374 (~4.5:1).
+[palettes.gruvbox-light]
+red = "#af2528"
+orange = "#b4730e"
+yellow = "#b4730e"
+green = "#72761e"
+blue = "#266b79"
+teal = "#477a5b"
+purple = "#924f79"
+fg = "#514036"
+bg = "#fbf1c7"
+grey = "#928374"
+
+# horizon.nvim dark (#1c1e26). `orange`/`peach` is apricot #f09483; `purple` is
+# keyword #a86ec9. `grey` is comment lifted to accentAlt #6c6f93 (~4.6:1).
+[palettes.horizon-dark]
+red = "#e95678"
+orange = "#f09483"
+yellow = "#fab795"
+green = "#29d398"
+blue = "#26bbd9"
+teal = "#59e1e3"
+purple = "#a86ec9"
+fg = "#bbbbbb"
+bg = "#1c1e26"
+grey = "#6c6f93"
+
+# horizon.nvim light (#fdf0ed). `grey` is comment lifted to #6e6664 (~5:1). red
+# is crimson #da103f, green darkened to #178f6a (light palette has no readable
+# green).
+[palettes.horizon-light]
+red = "#da103f"
+orange = "#f6661e"
+yellow = "#af5427"
+green = "#178f6a"
+blue = "#1d8991"
+teal = "#1eaeae"
+purple = "#8a31b9"
+fg = "#06060c"
+bg = "#fdf0ed"
+grey = "#6e6664"
 
 [directory]
 style = "bold teal"

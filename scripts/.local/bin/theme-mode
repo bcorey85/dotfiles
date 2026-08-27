@@ -72,7 +72,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="flume"
 
-families() { printf '%s\n' flexoki token flume kanso; }
+families() { printf '%s\n' flexoki flume sequoia tempus gruvbox horizon; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   # flexoki's two are ghostty builtins (spaces and all), so no custom themes/
@@ -83,14 +83,21 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     flexoki:*)         echo "Flexoki Dark" ;;
     # Not ghostty builtins — custom files in ghostty/themes/. apply() writes
     # `config-file`.
-    token:light) echo "token-light" ;;
-    token:*)     echo "token-dark" ;;
     # flume: mira dark / mesa light — custom files in ghostty/themes/.
     flume:light)        echo "flume-mesa" ;;
     flume:*)            echo "flume-mira" ;;
-    # kanso: zen dark / pearl light — custom files in ghostty/themes/.
-    kanso:light)        echo "kanso-light" ;;
-    kanso:*)            echo "kanso-dark" ;;
+    # sequoia: night dark / rise light — custom files in ghostty/themes/.
+    sequoia:light)      echo "sequoia-light" ;;
+    sequoia:*)          echo "sequoia-dark" ;;
+    # tempus: classic dark / day light — custom files in ghostty/themes/.
+    tempus:light)       echo "tempus-light" ;;
+    tempus:*)           echo "tempus-dark" ;;
+    # gruvbox: material medium/mix dark / light — custom files in ghostty/themes/.
+    gruvbox:light)      echo "gruvbox-light" ;;
+    gruvbox:*)          echo "gruvbox-dark" ;;
+    # horizon: dark #1c1e26 / light #fdf0ed — custom files in ghostty/themes/.
+    horizon:light)      echo "horizon-light" ;;
+    horizon:*)          echo "horizon-dark" ;;
   esac
 }
 
@@ -106,12 +113,16 @@ hunk_theme() { # <family> <mode> -> the hunk BUILTIN a custom theme inherits fro
   case "$1:$2" in
     flexoki:light)     echo "vitesse-light" ;;
     flexoki:*)         echo "vitesse-dark" ;;
-    token:light)        echo "vitesse-light" ;;
-    token:*)            echo "vitesse-dark" ;;
     flume:light)        echo "vitesse-light" ;;
     flume:*)            echo "vitesse-dark" ;;
-    kanso:light)        echo "vitesse-light" ;;
-    kanso:*)            echo "vitesse-dark" ;;
+    sequoia:light)      echo "vitesse-light" ;;
+    sequoia:*)          echo "vitesse-dark" ;;
+    tempus:light)       echo "vitesse-light" ;;
+    tempus:*)           echo "vitesse-dark" ;;
+    gruvbox:light)      echo "vitesse-light" ;;
+    gruvbox:*)          echo "vitesse-dark" ;;
+    horizon:light)      echo "vitesse-light" ;;
+    horizon:*)          echo "vitesse-dark" ;;
   esac
 }
 
@@ -128,9 +139,8 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
   # full-line washes, not a solid-accent wall). `base` above supplies uncovered
   # scopes; keys here (camelCase, matching hunk's CUSTOM_THEME_COLOR_KEYS) win
   # over it. comment is the same contrast-lifted grey nvim uses per family.
-  # ceiling: hunk marks the named-slot `syntax` field deprecated in favour of
-  # TextMate selectors (syntaxScopes); if a major bump drops it, port these 11
-  # slots to syntaxScopes.
+  # Syntax is emitted as [custom_theme.syntax_scopes] (TextMate selectors); the
+  # 11 named roles below expand to the scope sets in the table at the bottom.
   local bg panel panelAlt border accent accentMuted text muted addedBg removedBg
   local ctxBg sAdd sRem lnFg badgeAdd badgeRem badgeNeu fRename fMod fUntracked note
   local kw str num fn typ punct op
@@ -163,28 +173,6 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # type cyan; identifiers/operators stay neutral tx (#cecdc3).
       kw="#ce5d97"; str="#879a39"; num="#da702c"; fn="#4385be"; typ="#3aa99f"; punct="#878580"; op="#cecdc3"
       ;;
-    token:light)
-      # token default light (#faf9f5 cream). comment #6c675f (~5:1).
-      bg="#faf9f5"; panel="#efeee8"; panelAlt="#dddcd6"; border="#dddcd6"
-      accent="#9a4929"; accentMuted="#dddcd6"; text="#2a2920"; muted="#6c675f"
-      addedBg="#e4e7df"; removedBg="#f1e5e2"; ctxBg="#faf9f5"
-      sAdd="#3f643c"; sRem="#b05555"; lnFg="#b5b2ab"
-      badgeAdd="#3f643c"; badgeRem="#b05555"; badgeNeu="#527594"
-      fRename="#9a4929"; fMod="#876032"; fUntracked="#6c675f"; note="#efeee8"
-      # token roles: keyword tan, string green, number purple, fn signature
-      # orange, type blue, operator neutral fg.
-      kw="#876032"; str="#3f643c"; num="#7c619a"; fn="#9a4929"; typ="#527594"; punct="#6c675f"; op="#2a2920"
-      ;;
-    token:*)
-      # token default dark (#262624 warm near-black). comment #938e87 (~4.7:1).
-      bg="#262624"; panel="#1d1d1c"; panelAlt="#3a3a37"; border="#3a3a37"
-      accent="#d97757"; accentMuted="#5a5955"; text="#e8e4dc"; muted="#938e87"
-      addedBg="#30352e"; removedBg="#39302e"; ctxBg="#262624"
-      sAdd="#7da47a"; sRem="#c67777"; lnFg="#5a5955"
-      badgeAdd="#7da47a"; badgeRem="#c67777"; badgeNeu="#7b9ebd"
-      fRename="#d97757"; fMod="#c4a855"; fUntracked="#938e87"; note="#1d1d1c"
-      kw="#c4956a"; str="#7da47a"; num="#a68bbf"; fn="#d97757"; typ="#7b9ebd"; punct="#938e87"; op="#d4cfc6"
-      ;;
     flume:light)
       # flume mesa (warm cream #f3ede8) — the family's light half. comment
       # #706878 (~5:1 on paper).
@@ -211,32 +199,112 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # accent, type yellow, operator neutral text.
       kw="#b69bd2"; str="#84b39f"; num="#e49a7b"; fn="#72b5bf"; typ="#d8a36b"; punct="#9d96aa"; op="#d9d4df"
       ;;
-    kanso:light)
-      # kanso pearl (light #f2f1ef). comment pearlBlack1 #545464 (~7:1). Diff bgs
-      # are washes over pearlWhite1; kanso's own light diff bgs are too saturated
-      # for full-line viewer washes.
-      bg="#f2f1ef"; panel="#e2e1df"; panelAlt="#dddddb"; border="#cacac7"
-      accent="#4d699b"; accentMuted="#cacac7"; text="#22262D"; muted="#545464"
-      addedBg="#e0e6d8"; removedBg="#f0dcdc"; ctxBg="#f2f1ef"
-      sAdd="#6f894e"; sRem="#c84053"; lnFg="#b3b3b0"
-      badgeAdd="#6f894e"; badgeRem="#c84053"; badgeNeu="#4d699b"
-      fRename="#4d699b"; fMod="#77713f"; fUntracked="#545464"; note="#e2e1df"
-      # kanso roles: keyword violet, string green, number orange, fn blue, type
-      # aqua, operator neutral fg.
-      kw="#766b90"; str="#6f894e"; num="#cc6d00"; fn="#4d699b"; typ="#597b75"; punct="#545464"; op="#22262D"
+    sequoia:light)
+      # sequoia rise (warm cream #ede9e4). comment lifted from stock subtle
+      # #8a8880 (~2.8:1) to #625f58 (~4.6:1). red kept muted (no amplify).
+      bg="#ede9e4"; panel="#e3e0da"; panelAlt="#d5d2cc"; border="#cac7c1"
+      accent="#a85080"; accentMuted="#cac7c1"; text="#2c2c2a"; muted="#625f58"
+      addedBg="#dde6d5"; removedBg="#eeddd6"; ctxBg="#ede9e4"
+      sAdd="#488828"; sRem="#c03838"; lnFg="#b0ada6"
+      badgeAdd="#488828"; badgeRem="#c03838"; badgeNeu="#3868a8"
+      fRename="#a85080"; fMod="#9a7828"; fUntracked="#625f58"; note="#e3e0da"
+      # sequoia roles: keyword pink (lily), string green, number orange (honey),
+      # fn blue (denim), type teal (baja), operator neutral fg.
+      kw="#a85080"; str="#488828"; num="#a86828"; fn="#3868a8"; typ="#2a8868"; punct="#625f58"; op="#2c2c2a"
       ;;
-    kanso:*)
-      # kanso zen (dark #090E13). comment lifted to gray3 #909398 (~5.9:1; stock
-      # gray #717C7C ~4.3:1). Diff bgs are kanso's own diffGreen/diffRed.
-      bg="#090E13"; panel="#1C1E25"; panelAlt="#22262D"; border="#393B44"
-      accent="#7FB4CA"; accentMuted="#5C6066"; text="#C5C9C7"; muted="#909398"
-      addedBg="#2B3328"; removedBg="#43242B"; ctxBg="#090E13"
-      sAdd="#98BB6C"; sRem="#C34043"; lnFg="#5C6066"
-      badgeAdd="#98BB6C"; badgeRem="#C34043"; badgeNeu="#7FB4CA"
-      fRename="#7FB4CA"; fMod="#DCA561"; fUntracked="#909398"; note="#1C1E25"
-      # kanso roles: keyword violet, string green, number orange, fn blue, type
-      # aqua, operator neutral fg.
-      kw="#938AA9"; str="#98BB6C"; num="#b6927b"; fn="#7FB4CA"; typ="#7AA89F"; punct="#909398"; op="#C5C9C7"
+    sequoia:*)
+      # sequoia night (neutral #141414). comment lifted from stock subtle
+      # #5d5d5d (~2.8:1) to #808080 (~4.6:1). red #c05050 used as-is, not
+      # brightened — saturated red reads rough.
+      bg="#141414"; panel="#1a1a1a"; panelAlt="#242424"; border="#2d2d2d"
+      accent="#b080b0"; accentMuted="#5d5d5d"; text="#b0b0b5"; muted="#808080"
+      addedBg="#1a231a"; removedBg="#2a1c1c"; ctxBg="#141414"
+      sAdd="#90a870"; sRem="#c05050"; lnFg="#5d5d5d"
+      badgeAdd="#90a870"; badgeRem="#c05050"; badgeNeu="#6a9dcc"
+      fRename="#b080b0"; fMod="#c09070"; fUntracked="#808080"; note="#1a1a1a"
+      # sequoia roles: keyword pink (lily), string green, number orange (honey),
+      # fn blue (denim), type teal (baja), operator neutral fg.
+      kw="#b080b0"; str="#90a870"; num="#c09070"; fn="#6a9dcc"; typ="#6aab9a"; punct="#808080"; op="#b0b0b5"
+      ;;
+    tempus:light)
+      # tempus day (Prot's WCAG-tuned warm-cream light #f8f2e5). comment = fgalt
+      # #68607d. Diff bgs are washes over bgalt #e7e3d7. red softened to brick
+      # #a3352a (stock col1 #c81000 is high-saturation red).
+      bg="#f8f2e5"; panel="#e7e3d7"; panelAlt="#dcd7c9"; border="#d0cbba"
+      accent="#8050a7"; accentMuted="#d0cbba"; text="#464340"; muted="#68607d"
+      addedBg="#dde7cf"; removedBg="#f0e0cf"; ctxBg="#f8f2e5"
+      sAdd="#107410"; sRem="#a3352a"; lnFg="#b0a99a"
+      badgeAdd="#107410"; badgeRem="#a3352a"; badgeNeu="#385dc4"
+      fRename="#8050a7"; fMod="#806000"; fUntracked="#68607d"; note="#e7e3d7"
+      # tempus roles: keyword purple, string blue, number rust-orange, fn rose,
+      # type teal, operator neutral fg.
+      kw="#8050a7"; str="#0f64c4"; num="#b24000"; fn="#b63052"; typ="#007070"; punct="#68607d"; op="#464340"
+      ;;
+    tempus:*)
+      # tempus classic (Prot's WCAG-tuned dark #232323). Palette already legible;
+      # comment = fgalt #949d9f. Diff bgs are washes over bgalt #312e30.
+      bg="#232323"; panel="#312e30"; panelAlt="#3a3739"; border="#444142"
+      accent="#d58888"; accentMuted="#6b6868"; text="#aeadaf"; muted="#949d9f"
+      addedBg="#283026"; removedBg="#332a24"; ctxBg="#232323"
+      sAdd="#8c9e3d"; sRem="#d4823d"; lnFg="#6b6868"
+      badgeAdd="#8c9e3d"; badgeRem="#d4823d"; badgeNeu="#6e9cb0"
+      fRename="#d58888"; fMod="#b1942b"; fUntracked="#949d9f"; note="#312e30"
+      # tempus roles: keyword pink, string blue, number blue, fn warm-rose,
+      # type green, operator neutral fg.
+      kw="#d58888"; str="#8e9cc0"; num="#6e9cb0"; fn="#b58d88"; typ="#6da280"; punct="#949d9f"; op="#aeadaf"
+      ;;
+    gruvbox:light)
+      # gruvbox-material medium/mix light (#fbf1c7). Verbatim upstream — no mods.
+      # comment #928374. Diff washes over bg1 #eee0b7.
+      bg="#fbf1c7"; panel="#eee0b7"; panelAlt="#ddccab"; border="#ddcca0"
+      accent="#af2528"; accentMuted="#ddcca0"; text="#514036"; muted="#928374"
+      addedBg="#e6e6c0"; removedBg="#f2dcc0"; ctxBg="#fbf1c7"
+      sAdd="#72761e"; sRem="#af2528"; lnFg="#a89984"
+      badgeAdd="#72761e"; badgeRem="#af2528"; badgeNeu="#266b79"
+      fRename="#924f79"; fMod="#b4730e"; fUntracked="#928374"; note="#eee0b7"
+      # gruvbox roles: keyword red, string/fn green, number purple, type orange,
+      # const aqua, operator fg.
+      kw="#af2528"; str="#72761e"; num="#924f79"; fn="#72761e"; typ="#b4730e"; punct="#514036"; op="#514036"
+      ;;
+    gruvbox:*)
+      # gruvbox-material medium/mix dark (#282828). Verbatim upstream — no mods
+      # (keyword red #f2594b kept as authored). comment #928374. Diff washes
+      # over bg1 #32302f.
+      bg="#282828"; panel="#32302f"; panelAlt="#3c3836"; border="#45403d"
+      accent="#f2594b"; accentMuted="#504945"; text="#e2cca9"; muted="#928374"
+      addedBg="#282d1e"; removedBg="#32241f"; ctxBg="#282828"
+      sAdd="#b0b846"; sRem="#f2594b"; lnFg="#504945"
+      badgeAdd="#b0b846"; badgeRem="#f2594b"; badgeNeu="#80aa9e"
+      fRename="#d3869b"; fMod="#e9b143"; fUntracked="#928374"; note="#32302f"
+      # gruvbox roles: keyword red, string/fn green, number pink, type yellow,
+      # const aqua, operator fg.
+      kw="#f2594b"; str="#b0b846"; num="#d3869b"; fn="#b0b846"; typ="#e9b143"; punct="#e2cca9"; op="#e2cca9"
+      ;;
+    horizon:light)
+      # horizon.nvim light (#fdf0ed). comment lifted to #6e6664. Diff washes use
+      # the theme's own diff bgs.
+      bg="#fdf0ed"; panel="#fadad1"; panelAlt="#f9cbbe"; border="#f9cec3"
+      accent="#8a31b9"; accentMuted="#f9cec3"; text="#06060c"; muted="#6e6664"
+      addedBg="#e4eee3"; removedBg="#fcdedf"; ctxBg="#fdf0ed"
+      sAdd="#178f6a"; sRem="#da103f"; lnFg="#989290"
+      badgeAdd="#178f6a"; badgeRem="#da103f"; badgeNeu="#1d8991"
+      fRename="#8a31b9"; fMod="#af5427"; fUntracked="#1eb980"; note="#fadad1"
+      # horizon light roles: keyword amethyst, string tango, number thunderbird,
+      # func elm, type jaffa.
+      kw="#8a31b9"; str="#f6661e"; num="#dc3318"; fn="#1d8991"; typ="#f77d26"; punct="#333333"; op="#333333"
+      ;;
+    horizon:*)
+      # horizon.nvim dark (#1c1e26). comment lifted to #6c6f93. Diff washes use
+      # the theme's own diff bgs.
+      bg="#1c1e26"; panel="#232530"; panelAlt="#2e303e"; border="#1a1c23"
+      accent="#a86ec9"; accentMuted="#6c6f93"; text="#bbbbbb"; muted="#6c6f93"
+      addedBg="#1a3432"; removedBg="#4a2024"; ctxBg="#1c1e26"
+      sAdd="#0fb67b"; sRem="#b3344c"; lnFg="#4c4d53"
+      badgeAdd="#0fb67b"; badgeRem="#b3344c"; badgeNeu="#26bbd9"
+      fRename="#a86ec9"; fMod="#fab38e"; fUntracked="#27d797"; note="#232530"
+      # horizon dark roles: keyword purple, string tan, number apricot, func
+      # turquoise, type sand.
+      kw="#a86ec9"; str="#e4a88a"; num="#f09483"; fn="#24a1ad"; typ="#e4b28e"; punct="#bbbbbb"; op="#bbbbbb"
       ;;
     *) return 0 ;;
   esac
@@ -277,20 +345,29 @@ noteBackground   = "$note"
 noteTitleBackground = "$border"
 noteTitleText    = "$text"
 
-# Syntax slots — the active family's palette, so hunk's code body reads
+# Syntax scopes — the active family's palette, so hunk's code body reads
 # identically to nvim's, not the base builtin above (which it overrides).
-[custom_theme.syntax]
-default     = "$text"
-keyword     = "$kw"
-string      = "$str"
-comment     = "$muted"
-number      = "$num"
-function    = "$fn"
-property    = "$text"
-type        = "$typ"
-variable    = "$text"
-operator    = "$op"
-punctuation = "$punct"
+# TextMate selectors (the named-role [custom_theme.syntax] block is
+# deprecated); scope sets mirror hunk's own legacy role->scope translation.
+[custom_theme.syntax_scopes]
+"source"                            = "$text"
+"keyword"                           = "$kw"
+"keyword.operator"                  = "$op"
+"string"                            = "$str"
+"comment"                           = "$muted"
+"punctuation.definition.comment"    = "$muted"
+"constant.numeric"                  = "$num"
+"entity.name.function"              = "$fn"
+"support.function"                  = "$fn"
+"variable.function"                 = "$fn"
+"entity.name.type"                  = "$typ"
+"entity.name.class"                 = "$typ"
+"support.type"                      = "$typ"
+"support.class"                     = "$typ"
+"variable"                          = "$text"
+"variable.other.property"           = "$text"
+"support.variable.property"         = "$text"
+"punctuation"                       = "$punct"
 EOF
 }
 
@@ -394,26 +471,6 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       green="#879a39" yellow="#d0a215" red="#d14d41"
       blue="#4385be" teal="#4385be" peach="#da702c"
       ;;
-    token:light)
-      # token default light (#faf9f5 cream) — comment #6c675f (~5:1).
-      base_name="one-light"
-      accent="#9a4929" panel_bg="#efeee8" surface_dim="#e2e1da"
-      surface0="#dddcd6" surface1="#cfcec7"
-      overlay0="#6c675f" overlay1="#6c675f"
-      text="#2a2920" subtext0="#6c675f"
-      green="#3f643c" yellow="#876032" red="#b05555"
-      blue="#527594" teal="#2d6c6c" peach="#9a4929"
-      ;;
-    token:*)
-      # token default dark (#262624 warm near-black) — comment #938e87 (~4.7:1).
-      base_name="one-dark"
-      accent="#d97757" panel_bg="#1d1d1c" surface_dim="#30302d"
-      surface0="#3a3a37" surface1="#454540"
-      overlay0="#6a655e" overlay1="#938e87"
-      text="#e8e4dc" subtext0="#938e87"
-      green="#7da47a" yellow="#c4a855" red="#c67777"
-      blue="#7b9ebd" teal="#6ba8a8" peach="#d97757"
-      ;;
     flume:light)
       # flume mesa (warm cream #f3ede8) — comment #706878 (~5:1 on paper).
       base_name="one-light"
@@ -434,25 +491,86 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       green="#84b39f" yellow="#d8a36b" red="#dd789b"
       blue="#72a8c7" teal="#8ac8cf" peach="#e49a7b"
       ;;
-    kanso:light)
-      # kanso pearl (light #f2f1ef) — comment pearlBlack1 #545464 (~7:1).
+    sequoia:light)
+      # sequoia rise (warm cream #ede9e4) — comment lifted to #625f58 (~4.6:1).
       base_name="one-light"
-      accent="#4d699b" panel_bg="#e2e1df" surface_dim="#dddddb"
-      surface0="#cacac7" surface1="#bcbcb8"
-      overlay0="#545464" overlay1="#545464"
-      text="#22262D" subtext0="#545464"
-      green="#6f894e" yellow="#77713f" red="#c84053"
-      blue="#4d699b" teal="#597b75" peach="#cc6d00"
+      accent="#a85080" panel_bg="#e3e0da" surface_dim="#d5d2cc"
+      surface0="#cac7c1" surface1="#bcb9b3"
+      overlay0="#625f58" overlay1="#625f58"
+      text="#2c2c2a" subtext0="#625f58"
+      green="#488828" yellow="#9a7828" red="#c03838"
+      blue="#3868a8" teal="#2a8868" peach="#a86828"
       ;;
-    kanso:*)
-      # kanso zen (dark #090E13) — comment lifted to gray3 #909398 (~5.9:1).
+    sequoia:*)
+      # sequoia night (neutral #141414) — comment lifted to #808080 (~4.6:1).
       base_name="one-dark"
-      accent="#7FB4CA" panel_bg="#1C1E25" surface_dim="#22262D"
-      surface0="#2E323A" surface1="#393B44"
-      overlay0="#5C6066" overlay1="#909398"
-      text="#C5C9C7" subtext0="#909398"
-      green="#98BB6C" yellow="#DCA561" red="#C34043"
-      blue="#7FB4CA" teal="#8ea4a2" peach="#b6927b"
+      accent="#b080b0" panel_bg="#1a1a1a" surface_dim="#242424"
+      surface0="#2d2d2d" surface1="#383838"
+      overlay0="#5d5d5d" overlay1="#808080"
+      text="#b0b0b5" subtext0="#808080"
+      green="#90a870" yellow="#bfa878" red="#c05050"
+      blue="#6a9dcc" teal="#6aab9a" peach="#c09070"
+      ;;
+    tempus:light)
+      # tempus day (Prot WCAG-tuned warm-cream #f8f2e5) — comment = fgalt #68607d.
+      base_name="one-light"
+      accent="#8050a7" panel_bg="#e7e3d7" surface_dim="#dcd7c9"
+      surface0="#d0cbba" surface1="#c4bfae"
+      overlay0="#68607d" overlay1="#68607d"
+      text="#464340" subtext0="#68607d"
+      green="#107410" yellow="#806000" red="#a3352a"
+      blue="#385dc4" teal="#007070" peach="#b24000"
+      ;;
+    tempus:*)
+      # tempus classic (Prot WCAG-tuned dark #232323) — comment = fgalt #949d9f.
+      base_name="one-dark"
+      accent="#d58888" panel_bg="#312e30" surface_dim="#3a3739"
+      surface0="#444142" surface1="#4e4b4c"
+      overlay0="#6b6868" overlay1="#949d9f"
+      text="#aeadaf" subtext0="#949d9f"
+      green="#8c9e3d" yellow="#b1942b" red="#d4823d"
+      blue="#6e9cb0" teal="#6da280" peach="#d0913d"
+      ;;
+    gruvbox:light)
+      # gruvbox-material medium/mix light (#fbf1c7) — comment #928374. Verbatim.
+      base_name="one-light"
+      accent="#af2528" panel_bg="#eee0b7" surface_dim="#ddccab"
+      surface0="#e6d5a8" surface1="#ddcca0"
+      overlay0="#928374" overlay1="#928374"
+      text="#514036" subtext0="#928374"
+      green="#72761e" yellow="#b4730e" red="#af2528"
+      blue="#266b79" teal="#477a5b" peach="#b4730e"
+      ;;
+    gruvbox:*)
+      # gruvbox-material medium/mix dark (#282828) — comment #928374. Verbatim,
+      # keyword red #f2594b kept as authored.
+      base_name="one-dark"
+      accent="#f2594b" panel_bg="#32302f" surface_dim="#3c3836"
+      surface0="#45403d" surface1="#504945"
+      overlay0="#7c6f64" overlay1="#928374"
+      text="#e2cca9" subtext0="#928374"
+      green="#b0b846" yellow="#e9b143" red="#f2594b"
+      blue="#80aa9e" teal="#8bba7f" peach="#e9b143"
+      ;;
+    horizon:light)
+      # horizon.nvim light (#fdf0ed) — comment lifted to #6e6664.
+      base_name="one-light"
+      accent="#8a31b9" panel_bg="#fadad1" surface_dim="#f7d3c9"
+      surface0="#f9cbbe" surface1="#f4bdb0"
+      overlay0="#8e8886" overlay1="#6e6664"
+      text="#06060c" subtext0="#6e6664"
+      green="#178f6a" yellow="#af5427" red="#da103f"
+      blue="#1d8991" teal="#1eaeae" peach="#f6661e"
+      ;;
+    horizon:*)
+      # horizon.nvim dark (#1c1e26) — comment lifted to #6c6f93.
+      base_name="one-dark"
+      accent="#a86ec9" panel_bg="#232530" surface_dim="#2a2c38"
+      surface0="#2e303e" surface1="#3d3f52"
+      overlay0="#5b5f78" overlay1="#6c6f93"
+      text="#bbbbbb" subtext0="#6c6f93"
+      green="#29d398" yellow="#fab795" red="#e95678"
+      blue="#26bbd9" teal="#59e1e3" peach="#f09483"
       ;;
   esac
 

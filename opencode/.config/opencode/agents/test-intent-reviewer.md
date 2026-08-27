@@ -1,6 +1,6 @@
 ---
 name: test-intent-reviewer
-description: "Audit whether changed tests pin INTENDED behavior or accidentally codify the current implementation (a bug-pinning test), cull added tests no real bug could fail (test spam), and sweep branch-added tests for weak/absent assertions against the plan's promises. Judges assertions against an intent oracle (ticket + plan success criteria) with the implementation explicitly demoted to suspect. Read-only. Dispatched in two scoped halves, never both at once: cull + coverage-net + weak by /branch-recap at the Recap closing phase (weak belongs there permanently — it is invisible at phase scope regardless of who wrote the tests); the bug-pinning half does not run at /code's phase gate, where the enforced coder/test-writer split already severs its cause, and runs only on explicit user dispatch (e.g. offline audit of a sealed diff). The dispatcher states which half — honor it and do not run the other. NOT wired into the /review or /fix loop, and NOT for coverage/health (that is test-reviewer)."
+description: "Audit whether changed tests pin INTENDED behavior or accidentally codify the current implementation (a bug-pinning test), cull added tests no real bug could fail (test spam), and sweep branch-added tests for weak/absent assertions against the plan's promises. Judges assertions against an intent oracle (ticket + plan success criteria) with the implementation explicitly demoted to suspect. Read-only. Dispatched in two scoped halves, never both at once: cull + coverage-net + weak by /test-audit at the cross-phase test-gate closing phase (weak belongs there permanently — it is invisible at phase scope regardless of who wrote the tests); the bug-pinning half does not run at /code's phase gate, where the enforced coder/test-writer split already severs its cause, and runs only on explicit user dispatch (e.g. offline audit of a sealed diff). The dispatcher states which half — honor it and do not run the other. NOT wired into the /review or /fix loop, and NOT for coverage/health (that is test-reviewer)."
 model: opencode-go/mimo-v2.5-pro
 mode: subagent
 permission:
@@ -42,7 +42,7 @@ You will be given the exact list of changed files (test files + the source under
 **Your dispatcher names one of two halves. Run that half only.**
 
 - **`scope: bug-pinning`** (from `/code`'s phase gate, one phase's diff) — run Step 3. **Skip Steps 4, 5, and 6 entirely** and omit their sections from the report — both judge cross-phase facts, and against one phase's diff they produce confident false positives.
-- **`scope: cull`** (from `/branch-recap`, the assembled branch diff) — run Steps 4, 5, and 6. **Skip Step 3 entirely** and omit its section; bug-pinning is structurally severed by the coder/test-writer split and its hooks, and re-auditing it here buys nothing.
+- **`scope: cull`** (from `/test-audit`, the assembled branch diff) — run Steps 4, 5, and 6. **Skip Step 3 entirely** and omit its section; bug-pinning is structurally severed by the coder/test-writer split and its hooks, and re-auditing it here buys nothing.
 
 Scope missing from the dispatch → say so and run **both**; a silent half-audit is worse than a redundant one.
 

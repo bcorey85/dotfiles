@@ -62,7 +62,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
      Grep exits 1 on a clean tree, so a passing run is `exit=1 candidates=0`.
 
-   - **No per-phase test-intent audit.** The enforced coder/test-writer split already severs bug-pinning's cause, so the audit does not run here. The cull/coverage half runs at `/branch-recap`, and `/verify` reconciles plan↔diff at branch end; a `weak`/`bug-pinning` finding surfacing from ANY other gate still routes to `test-writer` re-dispatch (implementation-blind), `/fix` only when it implicates src.
+   - **No per-phase test-intent audit.** The enforced coder/test-writer split already severs bug-pinning's cause, so the audit does not run here. The cull/coverage/weak half runs at the `/test-audit` closing phase, and `/verify` reconciles plan↔diff at branch end; a `weak`/`bug-pinning` finding surfacing from ANY other gate still routes to `test-writer` re-dispatch (implementation-blind), `/fix` only when it implicates src.
    - After peer review passes AND the phase's Automated Verification is green, mark the phase done in the plan: `Edit` the `## Phase Status` section to flip `- [ ] Phase N: ...` → `- [x] Phase N: ...`. This single Edit is the durable record of progress — it survives `/clear` and lets in-session re-entry detect the next phase.
    - **Phase-boundary decision** — the phase is done; now decide stop vs. auto-advance, checking these in order (first match wins), then print the matching Phase-Complete Block:
      1. **Last phase** → STOP; print the completion footer (block C).
@@ -173,10 +173,7 @@ Then re-enter step 2 for Phase <N+1> in the same context — do not wait for the
 Phase <N> complete. Risk: <high | low — Phase 1 calibration | low — exception>. Phase-level sign-off requested.
 
 Behavior delta (what the system now does):
-- <1–3 lines: system now does X instead of Y; the one place that decides it is <path:line>>
-
-What changed:
-- <path> — <one-line change intent>
+- <1–3 lines: system now does X instead of Y. Narrative — no paths, no line numbers.>
 
 Read first (/stage queue, blast-radius order):
   ESCALATE:
@@ -224,11 +221,8 @@ in blast-radius order. That queue **is** the "Read first" section — render it,
 re-rank it, never promote a tier.
 
 - **Behavior delta** — 1–3 lines from the coder's handoff: what the system now does
-  differently, and the single `path:line` that decides it. A causal statement, not a
-  file list. Absent a handoff, derive it from the diff and mark it `derived from diff`.
-- **What changed** — one line per changed file: the path and what the phase did to
-  it, in the coder's terms (from the handoff; absent one, `git diff --stat` and mark
-  it `derived from diff`). Not a hunk summary.
+  differently. A causal narrative — no paths, no line numbers, no file list. Absent a
+  handoff, derive it from the diff and mark it `derived from diff`.
 - **Read first** — `/stage`'s queue, verbatim, in its order. SAFE-tier files are
   already staged and do not appear.
 - **Active recall** — the "Next" block requires the user to state the behavior delta
@@ -238,9 +232,9 @@ Two fences:
 
 - **Never feed this ordering into a reviewer dispatch.** It renders only after
   `review-loop` returns `converged`, and only to the user.
-- **This is not `/orient`.** It maps the phase's own diff so the user can read and
-  stage it. It does not open the unchanged neighbours, and it does not replace the
-  branch-wide Orient closing phase.
+- **This is not situating.** It maps the phase's own diff so the user can read and
+  stage it. It does not open the unchanged neighbours — situating the change in
+  the code that did not change is `/orient`, run on demand.
 
 For complex features requiring design decisions, use `/eng-spec` instead.
 

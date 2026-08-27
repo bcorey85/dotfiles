@@ -133,7 +133,7 @@ When a change spans client and server, you own both ends: choose ONE contract an
 ## Review Handoff (last lines of your report)
 
 Emit always — the comprehension channel:
-`BEHAVIOR: <what the system now does differently, and the single path:line that decides it>`, 1–3 lines, causal not a file list. `BEHAVIOR: none` only for a change with no observable effect (pure refactor, comment, config with no live consumer). The orchestrator renders this as the phase sign-off's behavior delta.
+`BEHAVIOR: <what the system now does differently>`, 1–3 lines, causal narrative — no paths, no line numbers, no file list. `BEHAVIOR: none` only for a change with no observable effect (pure refactor, comment, config with no live consumer). The orchestrator renders this as the phase sign-off's behavior delta.
 
 Emit, when applicable — the human-review channel:
 `WHY: <path> <startLine>-<endLine> — <why this block looks the way it does>`, one line per note, or `WHY: none`. The orchestrator turns these into Hunk annotations anchored to those lines while a human reads the diff.

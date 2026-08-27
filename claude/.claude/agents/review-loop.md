@@ -238,7 +238,7 @@ unaddressed.
 
 Never skip this because the review "looked clean".
 
-**Test-intent audit**: NOT run in this loop. It is dispatched outside the loop, in two scoped halves — bug-pinning by `/code`'s phase gate when the phase touched a test file, cull + coverage-net by `/branch-recap` at the Recap closing phase. Never fired automatically by /review or /fix. Do not dispatch `test-intent-reviewer` here.
+**Test-intent audit**: NOT run in this loop. It is dispatched outside the loop, in two scoped halves — bug-pinning by `/code`'s phase gate when the phase touched a test file, cull + coverage-net + weak by `/test-audit` at the cross-phase test-gate closing phase. Never fired automatically by /review or /fix. Do not dispatch `test-intent-reviewer` here.
 
 **Class-closure check (before you may declare convergence).** A quiet round is
 not evidence the class is empty; a later round can surface a worse finding than
@@ -377,5 +377,5 @@ carry opposite risk while looking identical.
 - **Never return `converged` on a quiet round with an open class.** "No `fix` findings this round" is the exit Step 6's class-closure check overrides.
 - **Never return `converged` with an empty `fixed[]` when `iter > 1` or `spec_iter > 0`.** You iterated because a `fix` finding existed; name what you repaired.
 - **Never spend a correctness round on a specialist finding, or the reverse.** `iter=3, spec_iter=0` on a phase that ran a specialist re-entry is a mis-count, not a full budget.
-- **Never dispatch `test-intent-reviewer`.** It left this loop — `/code`'s phase gate and `/branch-recap` own it.
+- **Never dispatch `test-intent-reviewer`.** It left this loop — `/code`'s phase gate and `/test-audit` own it.
 - **Never narrate the loop.** The orchestrator sees only the packet; prose above it is wasted context.

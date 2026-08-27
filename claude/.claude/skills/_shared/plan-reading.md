@@ -50,5 +50,5 @@ anyone else surfaces it to the user. Silently reading around it hides the
 authoring gap that caused it.
 
 **Whole-plan consumers are exempt** — `plan-verifier` at `scope: branch`,
-`/branch-recap`'s cross-phase audit, and anything else whose job IS the
+`/test-audit`'s cross-phase test gate, and anything else whose job IS the
 cross-phase view. Scoping applies to working a phase, not to auditing a plan.

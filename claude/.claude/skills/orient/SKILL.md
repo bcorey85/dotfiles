@@ -10,6 +10,12 @@ stayed the same — so reviewing diffs builds a model of _changes_, never a mode
 the _system_. This skill closes that gap. Run it after a coding phase, before
 committing, when you've read the diff but don't feel the structure.
 
+**On-demand, not a phase.** `/orient` reads the codebase to build a system map; it
+is not part of the closing chain and no gate runs it. `/branch-recap` — the closing
+phase — reads only the branch's own process residue and never builds this map; it
+consumes an orient map if you ran one, else it points back here. One reads code, the
+other reads process.
+
 ## Scope
 
 Default target depends on where you are:

@@ -53,17 +53,18 @@ feature phase (feature ends at Phase 3 → these are 4–7).
      every acceptance criterion mapped to a test or explicitly retired,
      smoke-test checklist delivered.
 
-3. **Orient pass** (risk: low) — `/orient` to rebuild the mental map diff
-   review misses: how the change connects to surrounding code, what it touches,
-   what a reader needs next. Success Criteria: orientation summary produced;
-   surprise coupling surfaced as a follow-up.
+3. **Test audit** (risk: high) — `/test-audit`, the cross-phase test gate: cull
+   test spam, catch net-removed coverage, sweep weak assertions against the plan —
+   the half of test-intent no phase judges locally. A gate; findings route to
+   `/fix` or a `test-writer` re-dispatch, and it hands a receipt to the Recap.
+   Success Criteria: audit run with its denominator stated; every finding routed.
 
 4. **Recap** (risk: low) — `/branch-recap` reassembles the branch into one
-   pre-PR artifact: the **cross-phase test audit** (cull + coverage-net — the
-   half of test-intent no phase judges locally), `/stage` triage of the closing
-   phases' residue, and the recap receipt. Runs no gates. Success
-   Criteria: recap produced; residue
-   queue handed to the user.
+   pre-PR handoff: `/stage` triage of residue, the deferred-findings queue, the
+   recap receipt. Reads the branch's own process, never the codebase. Situating
+   is `/orient`'s job, on demand, never a phase; recap consumes an orient map if
+   one exists. Runs no gates. Success Criteria: recap produced; residue queue
+   handed to user.
 
 Nothing after this is a phase. `/adr` runs **pre-PR**, shipping in the code's PR.
 
@@ -72,6 +73,6 @@ Nothing after this is a phase. `/adr` runs **pre-PR**, shipping in the code's PR
 ```markdown
 - [ ] Phase N: Refactor pass — /refactor +deep whole-branch sweep, root-cause gate (risk: low)
 - [ ] Phase N+1: Verify pass — branch-wide deep review + /verify (plan↔diff + smoke list) (risk: high)
-- [ ] Phase N+2: Orient pass — /orient situate the change (risk: low)
-- [ ] Phase N+3: Recap — /branch-recap synthesis + residue triage (risk: low)
+- [ ] Phase N+2: Test audit — /test-audit cross-phase test gate (risk: high)
+- [ ] Phase N+3: Recap — /branch-recap synthesis + residue triage, no gates (risk: low)
 ```

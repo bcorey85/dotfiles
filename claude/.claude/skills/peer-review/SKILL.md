@@ -31,7 +31,7 @@ Assist a human peer review of someone else's PR. Two hard differences from `/rev
 
 ## Persist orientation to vault (default — `+ephemeral` skips)
 
-After the step-3 gate is answered, save the orientation block (intent vs diff, ticket, change map, risk surface, state) to `<vault>/Orientations/<yyyy-mm-dd>-<repo>-pr<number>.md` (vault root: `$VAULT_DIR` if set, else `~/vault`) and append a capture line via `~/.local/bin/note "peer-review orientation: <repo>#<number> — [[<note filename without .md>]]"` so the daily recap links it. Re-reviewing the same PR same day overwrites the note. Findings are NOT saved to the vault — they belong to the PR thread and drill-down.
+After orientation is presented (step 3), save the orientation block (intent vs diff, ticket, change map, risk surface, state) to `<vault>/Orientations/<yyyy-mm-dd>-<repo>-pr<number>.md` (vault root: `$VAULT_DIR` if set, else `~/vault`) and append a capture line via `~/.local/bin/note "peer-review orientation: <repo>#<number> — [[<note filename without .md>]]"` so the daily recap links it. Re-reviewing the same PR same day overwrites the note. Findings are NOT saved to the vault — they belong to the PR thread and drill-down.
 
 ## Instructions
 
@@ -68,7 +68,7 @@ Present, in this order:
 - **Risk surface**: only what's present — migrations, auth/permissions, public API or contract changes, concurrency, deleted code/guards, dependency bumps, config defaults flipped.
 - **State**: CI status, draft/ready, who has already reviewed and how many open threads.
 
-Then gate with **AskUserQuestion**: `Full review` / `Focus review on <area>` (user supplies focus) / `Orientation only — stop here`. Do not dispatch reviewers until answered.
+Then proceed directly to the full review (step 4) — no gate, no prompt.
 
 ### 4. Dispatch the review
 
@@ -89,6 +89,21 @@ While the reviewers run, reconcile each acceptance criterion against the full di
 - **Not statically verifiable** — needs a runtime check or author confirmation; say which
 
 An unmet criterion is not automatically blocking — the PR may be a deliberate first slice. Present the verdict; let the user judge. But an AC the description _claims_ is done and the diff doesn't deliver → surface prominently.
+
+### 4c. Surprise audit (always, before presenting findings)
+
+A category-tiered review answers "is this line a bug?". This pass answers a different question — **"does this code do something a reviewer who trusted the PR/ticket description would not expect?"** — and it reliably surfaces blockers the category pass misses. Run it on every full review, without asking; it is part of the first pass, not an opt-in second look.
+
+Main-agent, over the diff and findings you already hold (no new dispatch). The frame is the gap between what the description leads a reader to expect and what the code operationally does — not more of the same category sweep. Look for:
+
+- **Hidden runtime dependencies** — a feature that silently hinges on something the description never mentions (a browser tab being open, a specific caller, an external timer).
+- **Silent / permanent failure modes** — paths where a transient error, a swallowed exception, or an ordering choice (e.g. state written _before_ a best-effort side effect) loses data or work with no retry and no signal.
+- **Scope surprises** — a limit, cap, default, or deletion that's broader or narrower than the description implies.
+- **"Technically conforms but sharper than the ticket implies"** — edges that meet the acceptance criteria on paper while behaving in a way the author likely didn't intend a reviewer to discover.
+
+**Verify every candidate against the worktree before presenting it** — read the enclosing code, check for the scheduler/guard/retry the candidate assumes is absent, confirm the true scope of a cap or filter. This step is not optional: presenting an unverified surprise as confirmed relays a false positive to a colleague, the exact failure this skill guards against.
+
+Merge survivors into the tiers presented in step 5, tagged `(surprise-lens)` so the user sees they came from this pass, not the category review. A survivor merged into Blocking states the precondition that must hold for the failure to fire, same as step 4's findings, so it has content for the table's "Fires when" column. Drop refuted candidates silently (or note one line if the user would otherwise expect it).
 
 ### 5. Present findings, tiered
 
@@ -114,28 +129,12 @@ An unmet criterion is not automatically blocking — the PR may be a deliberate 
 | Author | File:Line | Overlaps finding # |
 ```
 
-Number findings continuously across tiers. Then **actively offer the next step via AskUserQuestion** — do not rely on the user remembering a typed command. Options, in this order:
+Number findings continuously across tiers. Surprise-lens survivors from step 4c are already merged into the tiers, tagged `(surprise-lens)`. Then **actively offer the next step via AskUserQuestion** — do not rely on the user remembering a typed command. Options, in this order:
 
-- **Run surprise audit (Recommended)** — second pass on what the description doesn't prepare a reader for (step 5b). Recommend it by default: it reliably surfaces blockers the category pass misses.
 - **Dig into a finding** — user names the number(s); proceed to step 6.
 - **Done for now** — stop; the user acts on the findings as-is.
 
-(`+comment` stays a re-invocation modifier, not a menu option.) If the user picks the audit, run step 5b; after it, offer the same menu again minus the audit. The user can always type `dig into <#>` or `surprise audit` directly instead of using the menu.
-
-### 5b. Surprise audit (user accepts the offer, or types "surprise audit")
-
-A category-tiered review answers "is this line a bug?". This pass answers a different question — **"does this code do something a reviewer who trusted the PR/ticket description would not expect?"** — and it reliably surfaces blockers the first pass misses. Run it only when the user asks; it's a deliberate second look, not part of the default report.
-
-Main-agent, over the diff and findings you already hold (no new dispatch). The frame is the gap between what the description leads a reader to expect and what the code operationally does — not more of the same category sweep. Look for:
-
-- **Hidden runtime dependencies** — a feature that silently hinges on something the description never mentions (a browser tab being open, a specific caller, an external timer).
-- **Silent / permanent failure modes** — paths where a transient error, a swallowed exception, or an ordering choice (e.g. state written _before_ a best-effort side effect) loses data or work with no retry and no signal.
-- **Scope surprises** — a limit, cap, default, or deletion that's broader or narrower than the description implies.
-- **"Technically conforms but sharper than the ticket implies"** — edges that meet the acceptance criteria on paper while behaving in a way the author likely didn't intend a reviewer to discover.
-
-**Verify every candidate against the worktree before presenting it** — read the enclosing code, check for the scheduler/guard/retry the candidate assumes is absent, confirm the true scope of a cap or filter. This step is not optional: in the run this pass came from, verification scope-corrected one "blocker" candidate down to a non-issue. Presenting an unverified surprise as confirmed relays a false positive to a colleague, the exact failure this skill guards against.
-
-Merge survivors into the existing tiers, tagged `(surprise-lens)` so the user sees they came from this pass, not the category review. A survivor merged into Blocking states the precondition that must hold for the failure to fire, same as step 4's findings, so it has content for the table's "Fires when" column. Drop refuted candidates silently (or note one line if the user would otherwise expect it). Then re-present the step-5 menu minus the audit.
+(`+comment` stays a re-invocation modifier, not a menu option.) The user can always type `dig into <#>` directly instead of using the menu.
 
 ### 6. Drill-down (on "dig into N")
 

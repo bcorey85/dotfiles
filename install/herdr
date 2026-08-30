@@ -22,7 +22,7 @@ print_info() { echo -e "${YELLOW}→${NC} $1"; }
 # (preview-YYYY-MM-DD-<sha>); keep it in step with `channel` in the herdr
 # package's config.toml.template.
 
-VERSION="preview-2026-08-04-d78e3d3b5126"
+VERSION="v0.8.2"
 
 # Workflow plugins the herdr config's plugin_action binds depend on. Without
 # these installed the bound keys resolve to nothing and fail silently.
@@ -54,11 +54,11 @@ fi
 case "$(uname -s)-$(uname -m)" in
   Linux-x86_64)
     PLATFORM=linux-x86_64
-    SHA256="338afbfe03f0eb32efc52e30a5effc6c5ee772846bdb5e059f73d04b89b467d6"
+    SHA256="976150a14d490c94b243ea2e1a7eb2dfb67f12e36b182db90936f6728e6aecf4"
     ;;
-  Linux-aarch64) PLATFORM=linux-aarch64 SHA256="f79f3ad5b24dd1b6ba49ebee1b26d69ab5dcbeaf15be4fd7f3357ab0d17f6096" ;;
-  Darwin-arm64) PLATFORM=macos-aarch64 SHA256="d02190962293ccf19186e0ea8a162d7f670ef49e61dfc10051bffd7da08a7ee4" ;;
-  Darwin-x86_64) PLATFORM=macos-x86_64 SHA256="384ee2f2a805260d24f3d398ba8169aa68b502452ab1457c5da40a8e4d9c975f" ;;
+  Linux-aarch64) PLATFORM=linux-aarch64 SHA256="f55610658e1c2e0d2aaef730b4b2ab885f7f8ba00285ab372bfb14f2e3d5b40d" ;;
+  Darwin-arm64) PLATFORM=macos-aarch64 SHA256="a5d4f4d504d8b309c91f811050559300faba31258425f53c50852fc96f6ae574" ;;
+  Darwin-x86_64) PLATFORM=macos-x86_64 SHA256="ab50262c8190cd7aa9056d249d255c08c328c3e8716de9cfa29db4f131b8e2c1" ;;
   *)
     print_error "Unsupported platform: $(uname -s)-$(uname -m)"
     exit 1

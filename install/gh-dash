@@ -12,7 +12,7 @@ print_error() { echo -e "${RED}✗${NC} $1"; }
 print_info() { echo -e "${YELLOW}→${NC} $1"; }
 
 # gh-dash — PR/issue dashboard TUI, installed as a gh extension (per-machine
-# clone under ~/.local/share/gh/, same spirit as the zsh/tmux plugin clones).
+# clone under ~/.local/share/gh/, same spirit as the zsh plugin clones).
 # Extension install needs an authenticated gh, so this skips (not fails) on
 # fresh machines; re-run after `gh auth login`.
 if ! command -v gh &>/dev/null; then

@@ -14,7 +14,7 @@ vim.keymap.set({ "n", "x" }, "k", "v:count == 0 ? 'gk' : 'k'", { expr = true, si
 vim.keymap.set("n", "<C-d>", "10<C-d>zz", { desc = "Scroll down and center" })
 vim.keymap.set("n", "<C-u>", "10<C-u>zz", { desc = "Scroll up and center" })
 
--- Alternate file: toggle between the two most recent buffers (test ↔ impl). Mirrors tmux prefix-; alt-window.
+-- Alternate file: toggle between the two most recent buffers (test ↔ impl).
 vim.keymap.set("n", "<leader>;", "<C-^>", { desc = "Alternate file" })
 
 vim.keymap.set("n", "n", "nzzzv", { desc = "Next search result and center" })
@@ -221,10 +221,10 @@ end, { desc = "Yank line diagnostics" })
 
 -- ─── Tasks ────────────────────────────────────────────────────────────────────
 -- <leader>t is the tasks namespace (tt = terminal, in snacks.lua). tq/tQ close
--- the tests-in-tmux loop: pull failures from the test pane into quickfix.
+-- the tests-in-herdr loop: pull failures from the test pane into quickfix.
 vim.keymap.set("n", "<leader>tq", function()
   require("util.testqf").pull()
-end, { desc = "Test failures → quickfix (tmux pane)" })
+end, { desc = "Test failures → quickfix (herdr pane)" })
 vim.keymap.set("n", "<leader>tQ", function()
   require("util.testqf").repick()
 end, { desc = "Re-pick test pane, then failures → quickfix" })
@@ -273,16 +273,17 @@ vim.keymap.set("n", "<leader>Tf", "<cmd>tabfirst<cr>", { desc = "First Tab" })
 vim.keymap.set("n", "<leader>Tl", "<cmd>tablast<cr>", { desc = "Last Tab" })
 
 -- ─── UI toggles ───────────────────────────────────────────────────────────────
--- Toggle the active theme family dark ↔ light across tmux AND nvim. Shells out to
--- the shared `theme-mode` script (single source of truth: it writes
--- ~/.cache/theme-mode and re-sources tmux), then applies the new mode here
--- immediately rather than waiting on theme-sync's ~1s poll. theme-sync's own
--- ColorScheme autocmd re-applies markdown heading colours after.
+-- Toggle the active theme family dark ↔ light across the terminal AND nvim.
+-- Shells out to the shared `theme-mode` script (single source of truth: it
+-- writes ~/.cache/theme-mode and re-sources herdr/ghostty), then applies the
+-- new mode here immediately rather than waiting on theme-sync's ~1s poll.
+-- theme-sync's own ColorScheme autocmd re-applies markdown heading colours
+-- after.
 vim.keymap.set("n", "<leader>ut", function()
   vim.system({ vim.fn.expand("~/.local/bin/theme-mode"), "toggle" }, {}, vim.schedule_wrap(function()
     require("config.theme-sync").apply_from_file(true)
   end))
-end, { desc = "Toggle theme dark/light (tmux + nvim)" })
+end, { desc = "Toggle theme dark/light (terminal + nvim)" })
 vim.keymap.set("n", "<leader>uw", function()
   vim.wo.wrap = not vim.wo.wrap
 end, { desc = "Toggle wrap" })

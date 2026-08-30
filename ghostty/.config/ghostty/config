@@ -30,15 +30,15 @@ shell-integration = detect
 
 # macOS cmd key mappings. Option/Command are swapped in System Settings and
 # aerospace owns real Option, so the physical "Alt" key emits Command (super) —
-# these binds turn that back into the Alt sequences tmux/smart-splits expect.
+# these binds turn that back into the Alt sequences herdr/herdr-splits expect.
 keybind = super+h=text:\x1bh
 keybind = super+j=text:\x1bj
 keybind = super+k=text:\x1bk
 keybind = super+l=text:\x1bl
 keybind = super+semicolon=text:\x1b;
-# Harpoon jumps: send tmux's M-1..4 as CSI-u (codepoint 49-52 + modifier 3=alt).
-# Mirrors kitty's `map cmd+N send_text \x1b[<cp>;3u`; tmux has extended-keys on
-# so it reads these as Alt+1..4. NOTE: the digit key is named `digit_N`, not
+# Harpoon jumps: send Alt+1..4 as CSI-u (codepoint 49-52 + modifier 3=alt).
+# Mirrors kitty's `map cmd+N send_text \x1b[<cp>;3u`. NOTE: the digit key is
+# named `digit_N`, not
 # `one`/`1` — and Ghostty 1.2.0+ binds cmd+1..9 to goto_tab by default, so this
 # rebind is what reclaims them (a mismatched key name silently loses to that).
 keybind = super+digit_1=csi:49;3u
@@ -46,14 +46,15 @@ keybind = super+digit_2=csi:50;3u
 keybind = super+digit_3=csi:51;3u
 keybind = super+digit_4=csi:52;3u
 
-# Free ctrl+comma for tmux: Ghostty binds it to open_config by default and would
-# swallow the keystroke. Emit CSI-u C-, (codepoint 44 + modifier 5=ctrl) so tmux
-# reads it as C-, (workmux last-done). Config is still reachable via ctrl+shift+,.
+# Free ctrl+comma for herdr: Ghostty binds it to open_config by default and
+# would swallow the keystroke. Emit CSI-u C-, (codepoint 44 + modifier 5=ctrl)
+# so herdr reads it as C-, (last-done). Config is still reachable via
+# ctrl+shift+,.
 keybind = ctrl+,=csi:44;5u
 
-# ctrl+period — the fleet dashboard reflex (herdr `ctrl+period`, workmux C-. under
-# tmux). Ctrl+punctuation has no legacy control code, so without this the
-# keystroke reaches the mux as nothing at all. Codepoint 46 + modifier 5=ctrl.
+# ctrl+period — the fleet dashboard reflex (herdr `ctrl+period`).
+# Ctrl+punctuation has no legacy control code, so without this the keystroke
+# reaches the mux as nothing at all. Codepoint 46 + modifier 5=ctrl.
 keybind = ctrl+.=csi:46;5u
 
 # Mouse

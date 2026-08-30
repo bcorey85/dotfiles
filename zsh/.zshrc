@@ -8,14 +8,11 @@
 # Linux that prefix is where they live.
 export PATH="$HOME/.local/bin:$HOME:$PATH"
 
-# Auto-start a terminal multiplexer: herdr by default, tmux as the fallback on
-# machines where herdr isn't installed (manual binary — see install/herdr). Both
-# are attach-or-create: bare `herdr` restores its always-on persistent session;
-# `tmux -A` reattaches `main`.
-#   NO_MUX=1 (or legacy NO_TMUX=1)   escape hatch — bare terminal, no multiplexer
-#   HERDR_* / $TMUX                  already inside a mux → skip, so a pane's
+# Auto-start herdr (attach-or-create to its always-on persistent session).
+#   NO_MUX=1                         escape hatch — bare terminal, no multiplexer
+#   HERDR_*                          already inside herdr → skip, so a pane's
 #                                    $SHELL never nests another mux.
-if [ -z "$NO_MUX" ] && [ -z "$NO_TMUX" ] && [ -z "$TMUX" ] &&
+if [ -z "$NO_MUX" ] &&
   [ -z "${HERDR_TAB_ID}${HERDR_PANE_ID}${HERDR_SOCKET_PATH}" ]; then
   # herdr reads config.toml at server start, so the template must be rendered
   # BEFORE the launch below — not in the herdr block further down, which the
@@ -28,28 +25,7 @@ if [ -z "$NO_MUX" ] && [ -z "$NO_TMUX" ] && [ -z "$TMUX" ] &&
     "$HOME/.local/bin/herdr"
   elif command -v herdr &>/dev/null; then
     herdr
-  elif command -v tmux &>/dev/null; then
-    tmux new-session -A -s main
   fi
-fi
-
-# Repair a pane born with stdin detached from its pty. A tmux pane occasionally
-# spawns having inherited the SERVER's fd 0 (/dev/null) instead of its own pty,
-# while fd 1/2 wire up correctly. The prompt renders and tmux stays fully
-# responsive (prefix keys, popups, window switching) but no keystroke can ever
-# reach the shell — the window reads as frozen. /dev/tty is the controlling
-# terminal, so this reattaches stdin to the right pty.
-# Guarded on /dev/tty being readable: a failed exec redirect would leave every
-# shell erroring at startup, which is worse than the freeze it repairs.
-# Guarded on stdout being a tty because that is what separates the real failure
-# (fd 0 detached, fd 1/2 on the pane's pty) from a tool-spawned shell, which has
-# ALL THREE on pipes and is supposed to have no stdin. Without this the redirect
-# fires on every agent/CI/script shell and hands it the terminal's keyboard, so
-# anything reading stdin there silently eats the keystrokes you are typing.
-if [[ -n "$TMUX" && ! -t 0 && -t 1 && -r /dev/tty ]]; then
-  print -r -- "$(date -Iseconds) pane=$TMUX_PANE was=$(readlink /proc/$$/fd/0)" \
-    >>~/.cache/tmux-stdin-repair.log 2>/dev/null
-  exec </dev/tty
 fi
 
 # Undercurl in herdr panes. herdr hardcodes TERM=xterm-256color for its panes
@@ -201,7 +177,6 @@ alias vv='nvim .'
 alias vd='nvim +"cd ~/dotfiles" ~/dotfiles'
 alias vn='nvim +"cd ~/vault" ~/vault'
 alias nvim-old='NVIM_APPNAME=nvim-old nvim'
-alias tt="tmux"
 alias cc="claude"
 alias oc="opencode"
 
@@ -211,8 +186,8 @@ alias oc="opencode"
 # cw [name] — worktree + agent cockpit. Creates .claude/worktrees/<name> off
 # the current branch, copies untracked env files (.env*, .envrc — copied, never
 # symlinked, so an agent editing one can't poison the other trees), then opens
-# a dedicated tmux window running the nvim|claude dev split in the worktree.
-# Outside tmux, falls back to the old cd + claude in place. Clean up with cwc.
+# a dedicated herdr tab running the nvim|claude dev split in the worktree.
+# Outside herdr, falls back to cd + claude in place. Clean up with cwc.
 function cw() {
     emulate -L zsh
     setopt null_glob
@@ -236,14 +211,26 @@ function cw() {
     done
     [[ -f "$wt_dir/.envrc" ]] && command -v direnv &>/dev/null && direnv allow "$wt_dir"
 
-    if [[ -n "$TMUX" ]]; then
-        # One cockpit window per worktree: nvim (60%) | claude (40%), named
-        # after the worktree so the status line shows which agent lives where.
-        tmux new-window -n "$name" -c "$wt_dir"
-        tmux send-keys "nvim ." C-m
-        tmux split-window -h -p 40 -c "$wt_dir"
-        tmux send-keys "claude" C-m
-        tmux select-pane -L
+    if [[ -n "${HERDR_PANE_ID:-}" ]]; then
+        # One cockpit tab per worktree: nvim (60%) | claude (40%), named after
+        # the worktree so the tab bar shows which agent lives where.
+        local ws
+        ws=$(herdr pane current 2>/dev/null | jq -r '.result.pane.workspace_id // empty')
+        if [[ -n "$ws" ]]; then
+            local tab editor agent
+            tab=$(herdr tab create --workspace "$ws" --label "$name" --cwd "$wt_dir" --focus)
+            editor=$(jq -r '.result.root_pane.pane_id' <<<"$tab")
+            herdr pane rename "$editor" editor >/dev/null
+            herdr pane send-text "$editor" "nvim ." >/dev/null
+            herdr pane send-keys "$editor" enter >/dev/null
+            agent=$(herdr pane split "$editor" --direction right --ratio 0.6 --cwd "$wt_dir" --no-focus | jq -r '.result.pane.pane_id')
+            herdr pane rename "$agent" claude >/dev/null
+            herdr pane send-text "$agent" "claude" >/dev/null
+            herdr pane send-keys "$agent" enter >/dev/null
+            herdr pane focus --direction left --pane "$agent" >/dev/null
+        else
+            cd "$wt_dir" && claude
+        fi
     else
         cd "$wt_dir" && claude
     fi
@@ -323,7 +310,7 @@ export PATH=/home/brandon/.opencode/bin:$PATH
 
 # theme-mode wrapper: runs the real script (passing its output through), then
 # sends OSC 12 to update the cursor color in the current terminal (ghostty
-# reads this sequence; inside tmux the script sets cursor-colour itself).
+# reads this sequence; herdr passes it through).
 # Output's last word is the mode ("<family> <mode>" from apply/status).
 function theme-mode() {
   local out

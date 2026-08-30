@@ -19,20 +19,9 @@ fi
 
 : "${message:=Something needs your attention}"
 
-# Append tmux window info if running inside tmux
-# Use $TMUX_PANE with -t to resolve the correct window, not the focused one
-if [[ -n "$TMUX" && -n "$TMUX_PANE" ]]; then
-  session_name="$(tmux display-message -t "$TMUX_PANE" -p '#S' 2>/dev/null)"
-  window_index="$(tmux display-message -t "$TMUX_PANE" -p '#I' 2>/dev/null)"
-  window_name="$(tmux display-message -t "$TMUX_PANE" -p '#W' 2>/dev/null)"
-  if [[ -n "$session_name" && -n "$window_index" ]]; then
-    message="$message — tmux $session_name:$window_index ($window_name)"
-  fi
-fi
-
 if [[ "$(uname -s)" == "Darwin" ]]; then
-  # Escape backslashes and double quotes so arbitrary text (e.g. tmux window
-  # names) can't break out of the AppleScript string literal
+  # Escape backslashes and double quotes so arbitrary text can't break out of
+  # the AppleScript string literal
   esc_message=${message//\\/\\\\}; esc_message=${esc_message//\"/\\\"}
   esc_title=${title//\\/\\\\}; esc_title=${esc_title//\"/\\\"}
   osascript -e "display notification \"$esc_message\" with title \"$esc_title\""

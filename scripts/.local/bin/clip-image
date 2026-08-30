@@ -43,8 +43,10 @@ fi
 
 notify "Pasted $FILE"
 
-if [[ -n "${TMUX:-}" ]]; then
-  tmux send-keys -l -- "$FILE "
+# If invoked from a herdr keybinding, HERDR_PANE_ID points to the pane that
+# triggered it; send the path there so it can be pasted into a command.
+if [ -n "${HERDR_PANE_ID:-}" ]; then
+  herdr pane send-text "$HERDR_PANE_ID" "$FILE "
 else
   echo "$FILE"
 fi

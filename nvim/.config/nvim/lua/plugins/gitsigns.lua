@@ -247,8 +247,8 @@ return {
     -- gitsigns recalculates line numbers after each change. Re-run <leader>cq
     -- to rebuild it after a staging session.
     -- Body lives in a user command so it's reusable from outside a keymap: the
-    -- <leader>cq map calls it, and the `prefix s` tmux popup boots straight into
-    -- it via `nvim -c GitHunksQf`, skipping neogit's status buffer entirely.
+    -- <leader>cq map calls it, and the `prefix s` herdr popup boots straight
+    -- into it via `nvim -c GitHunksQf`, skipping neogit's status buffer entirely.
     vim.api.nvim_create_user_command("GitHunksQf", function()
       require("gitsigns").setqflist("all", {}, function()
         -- setqflist("all") is repo-wide and includes whole-file deletions
@@ -267,7 +267,7 @@ return {
         end, vim.fn.getqflist())
         vim.fn.setqflist({}, "r", { title = "Gitsigns Hunks", items = kept })
 
-        -- In the `prefix s` tmux popup, `q` in the qf window quits the throwaway
+        -- In the `prefix s` herdr popup, `q` in the qf window quits the throwaway
         -- nvim so the popup dismisses like lazygit. Set it here — after the qf
         -- window exists and quicker has run — via vim.schedule so this
         -- buffer-local map is the last writer and wins over quicker's `q`.

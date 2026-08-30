@@ -1,18 +1,18 @@
-/* flume mira — dark-only.
- * Canvas #24212f, panel #292634, surface (selection bg) #353142,
- * fg #d9d4df, muted #a29bb0, blue (cyan accent) #72b5bf, green #84b39f,
- * red #dd789b, purple #b69bd2, orange #e49a7b. */
+/* vitesse dark — dark-only.
+ * Canvas #121212, panel #181818, surface (selection bg) #252525,
+ * fg #c8c5b8, muted #83827d, blue (teal accent) #5eaab5, green #4d9375,
+ * red #cb7676, purple #d9739f, orange #d4976c. */
 * {
-    bg:         #24212f;
-    bg-alt:     #292634;
-    bg-sel:     #353142;
-    fg:         #d9d4df;
-    fg-alt:     #a29bb0;
-    blue:       #72b5bf;
-    green:      #84b39f;
-    red:        #dd789b;
-    purple:     #b69bd2;
-    orange:     #e49a7b;
+    bg:         #121212;
+    bg-alt:     #181818;
+    bg-sel:     #252525;
+    fg:         #c8c5b8;
+    fg-alt:     #83827d;
+    blue:       #5eaab5;
+    green:      #4d9375;
+    red:        #cb7676;
+    purple:     #d9739f;
+    orange:     #d4976c;
 
     background-color: transparent;
     text-color: @fg;

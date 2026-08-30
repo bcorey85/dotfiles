@@ -56,24 +56,24 @@
     skip_display = yes
     history_ignore = yes
 
-# flume mira palette (dark-only, no mode axis).
+# vitesse dark palette (dark-only, no mode axis).
 [urgency_low]
-    background = "#292634"
-    foreground = "#a29bb0"
-    frame_color = "#4b485a"
-    highlight = "#72b5bf"
+    background = "#181818"
+    foreground = "#83827d"
+    frame_color = "#393939"
+    highlight = "#5eaab5"
     timeout = 5
 
 [urgency_normal]
-    background = "#292634"
-    foreground = "#d9d4df"
-    frame_color = "#72b5bf"
-    highlight = "#72b5bf"
+    background = "#181818"
+    foreground = "#c8c5b8"
+    frame_color = "#5eaab5"
+    highlight = "#5eaab5"
     timeout = 10
 
 [urgency_critical]
-    background = "#292634"
-    foreground = "#d9d4df"
-    frame_color = "#dd789b"
-    highlight = "#dd789b"
+    background = "#181818"
+    foreground = "#c8c5b8"
+    frame_color = "#cb7676"
+    highlight = "#cb7676"
     timeout = 0

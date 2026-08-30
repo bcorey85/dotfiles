@@ -37,7 +37,7 @@ require("lazy").setup({
   spec = { { import = "plugins" } },
   -- No defaults.lazy = true: an unconverted spec (no trigger) then loads eagerly
   -- like it did under vim.pack, rather than silently never loading.
-  install = { colorscheme = { "flume-mira" } },
+  install = { colorscheme = { "vitesse" } },
   checker = { enabled = false }, -- no background update checks
   change_detection = { enabled = false }, -- don't watch/reload spec files
   ui = { border = "rounded" },
@@ -56,7 +56,7 @@ require("lazy").setup({
 })
 
 -- Bootstrap the active theme family+mode here, not in a plugin spec: the
--- colorscheme family (plugins/flume.lua) is an eager lazy=false/priority=1000
+-- colorscheme family (plugins/vitesse.lua) is an eager lazy=false/priority=1000
 -- spec, so lazy.setup() above loads and requires it synchronously before
 -- returning — the colorscheme plugin is already on the rtp by this line.
 -- theme-sync.start() applies the colorscheme with force=true and must run

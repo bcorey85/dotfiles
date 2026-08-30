@@ -27,6 +27,13 @@ jobs:
           OPENAI.KEY: ${{ secrets.OPENCODE_API_KEY }}
           OPENAI.API_BASE: https://opencode.ai/zen/go/v1
           CONFIG.CUSTOM_MODEL_MAX_TOKENS: "128000"
+          # Default is 32000 — this is the cap that actually prunes the diff.
+          CONFIG.MAX_MODEL_TOKENS: "120000"
+          CONFIG.FALLBACK_MODELS: '["openai/deepseek-v4-pro"]'
+
+          # Post findings on the diff lines instead of one summary table.
+          PR_REVIEWER.INLINE_KEY_ISSUES: "true"
+          PR_CODE_SUGGESTIONS.COMMITABLE_CODE_SUGGESTIONS: "true"
 
           GITHUB_ACTION_CONFIG.AUTO_REVIEW: "true"
           GITHUB_ACTION_CONFIG.AUTO_DESCRIBE: "false"

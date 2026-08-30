@@ -147,7 +147,8 @@ arch)
   # failed/flaky AUR build (set -e is on) from aborting the rest of setup.
   if command -v paru &>/dev/null; then
     print_info "Installing AUR packages via paru..."
-    paru -S --needed discord_arch_electron google-chrome plexamp-bin ||
+    paru -S --needed discord_arch_electron google-chrome plexamp-bin \
+      walker-bin elephant-bin elephant-desktopapplications-bin elephant-calc-bin elephant-runner-bin elephant-websearch-bin elephant-providerlist-bin ||
       print_error "some AUR packages failed to build — continuing"
     print_success "AUR packages installed"
   else
@@ -182,7 +183,7 @@ mac)
   fi
 
   print_info "Installing dependencies via Homebrew..."
-  brew install stow neovim git jq fzf zoxide direnv git-delta btop bat atuin eza tlrc glow fd ripgrep keychain rustup ansible just imagemagick kanata mise gh mprocs lazydocker tree-sitter-cli
+  brew install stow neovim git jq fzf zoxide direnv git-delta btop bat atuin eza tlrc glow fd ripgrep keychain rustup ansible just imagemagick mise gh mprocs lazydocker tree-sitter-cli
   brew install --cask nikitabobko/tap/aerospace
   print_success "Dependencies installed"
   ;;

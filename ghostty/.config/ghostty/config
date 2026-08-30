@@ -4,7 +4,9 @@
 font-family = FiraCode Nerd Font Mono
 font-style = Retina
 font-size = 13
-adjust-cell-height = 15%
+# Line spacing lifted for astigmatism (0.75x180, with-the-rule): the vertical
+# smear direction bleeds adjacent rows, so extra row gap buys legibility.
+adjust-cell-height = 20%
 confirm-close-surface = false
 
 # Theme — owned by the `theme-mode` switcher: it writes ?theme-switch.conf

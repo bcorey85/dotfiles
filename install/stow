@@ -48,11 +48,11 @@ if [ "$PLATFORM" = "arch" ] && [ -d ~/.config/hypr ] && [ ! -L ~/.config/hypr ];
 fi
 
 # Stow configs — common packages for all platforms
-PACKAGES="nvim scripts zsh claude opencode omp pi ghostty kanata starship git lazygit herdr hunk"
+PACKAGES="nvim scripts zsh claude opencode omp pi ghostty starship git lazygit herdr hunk"
 
 # Arch-only packages
 if [ "$PLATFORM" = "arch" ]; then
-    PACKAGES="$PACKAGES hypr rofi waybar gtk dunst qt"
+    PACKAGES="$PACKAGES hypr rofi walker waybar gtk dunst qt"
 fi
 
 # macOS-only packages

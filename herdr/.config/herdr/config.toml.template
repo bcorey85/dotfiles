@@ -43,12 +43,12 @@ version_check = false
 # Left on: this is the agent-detection manifest, not the binary. It keeps
 # state reporting working for agents released after the pinned version.
 manifest_check = true
-# Preview channel: picks up pre-release builds ahead of stable. With
-# version_check = false this only selects which channel an explicit
-# `herdr update` would pull — the installed binary still comes from the
-# install/herdr pin, so upgrading is still bump VERSION + SHA256 there
-# (preview tags look like `preview-YYYY-MM-DD-<sha>`).
-channel = "preview"
+# Update channel: with version_check = false this only selects which channel an
+# explicit `herdr update` would pull — the installed binary still comes from the
+# install/herdr pin, so upgrading is still bump VERSION + SHA256 there. Kept in
+# step with the pin: "stable" pairs with a vX.Y.Z tag, "preview" with a
+# preview-YYYY-MM-DD-<sha> tag.
+channel = "stable"
 
 [keys]
 prefix = "ctrl+space"

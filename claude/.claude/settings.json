@@ -401,5 +401,6 @@
   "theme": "dark",
   "editorMode": "normal",
   "inputNeededNotifEnabled": false,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "agentPushNotifEnabled": true
 }

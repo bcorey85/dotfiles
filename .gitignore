@@ -9,7 +9,6 @@ herdr/.config/herdr/config.toml
 starship/.config/starship.toml
 
 # Machine-specific hyprland config (created by install/hyprland)
-hypr/.config/hypr/hyprland.local.conf
 hypr/.config/hypr/machine.lua
 
 # === Claude Code (claude/.claude/) ===

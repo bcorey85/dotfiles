@@ -34,10 +34,10 @@ end
 -- cases and the ghostty/herdr files.
 local FAMILIES = {
   ["flexoki"] = {
-    -- kepano/flexoki-neovim: two distinct colorschemes flexoki-{dark,light}
-    -- (dark #100f0f / light #fffcf0), but both set the same colors_name
-    -- "flexoki" (!= schemes[mode]), so colors_name is set here to fire the guard.
-    schemes = { dark = "flexoki-dark", light = "flexoki-light" },
+    -- kepano/flexoki-neovim: one colorscheme "flexoki" switches via
+    -- vim.o.background (dark #100f0f / light #fffcf0), so both modes share
+    -- colors_name and the scheme name is pinned here.
+    schemes = { dark = "flexoki", light = "flexoki" },
     colors_name = "flexoki",
     accents = {
       dark = { heading1 = "#8b7ec8", heading = "#4385be" }, -- purple + blue (400)

@@ -53,8 +53,9 @@
 #   2. FAMILIES table in nvim lua/config/theme-sync.lua
 #   3. a ghostty theme (builtin name, or custom file in ghostty/themes/)
 #   4. herdr_palette() below (herdr's [theme.custom] token block)
-#   5. hunk_theme() below — pick the closest of hunk's builtins; a family with
-#      no good match maps to nothing and hunk keeps whatever it had
+#   5. hunk_theme() below — a hunk builtin used directly, or (when no builtin
+#      matches) the base a hunk_custom_theme() block inherits from; a family
+#      that maps to neither leaves hunk with whatever it had
 #
 # Also needed, not part of the six but easy to miss:
 #   - starship.toml.template: add a `[palettes.<family>-dark]` /
@@ -72,24 +73,38 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="vitesse"
 
-families() { printf '%s\n' vitesse; }
+families() { printf '%s\n' vitesse flexoki; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   # vitesse: our port, dark #121212 / light #ffffff — custom files in
   # ghostty/themes/. apply() writes `config-file` (not a ghostty builtin).
+  # flexoki: both halves are ghostty BUILTINS (spaces and all), so there is no
+  # file under ghostty/themes/ and apply() falls through to `theme = `.
   case "$1:$2" in
     vitesse:light)      echo "vitesse-light" ;;
     vitesse:*)          echo "vitesse-dark" ;;
+    flexoki:light)      echo "Flexoki Light" ;;
+    flexoki:*)          echo "Flexoki Dark" ;;
   esac
 }
 
-hunk_theme() { # <family> <mode> -> the hunk builtin id used directly as `theme =`
+hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom block builds on
   # vitesse IS a hunk builtin (both modes) — used directly, no custom_theme
   # frankenstein (hunk_custom_theme returns nothing, so this id becomes
   # `theme =`). Renders natively.
+  #
+  # flexoki has no hunk builtin, so it ships a full [custom_theme] and this id
+  # is only the BASE that block inherits from. The base still decides two things
+  # the config cannot override: any TextMate scope the block does not name, and
+  # `syntaxColors.default` (the fg of un-highlighted content). So pick by
+  # NEUTRALS: kanagawa-dragon is #c5c9c5 on warm black (flexoki dark is #cecdc3
+  # on #100f0f) and gruvbox-light-medium is #3c3836 on warm paper (flexoki light
+  # is #403e3c on #fffcf0) — near-identical text colors and the same warm cast.
   case "$1:$2" in
     vitesse:light)      echo "vitesse-light" ;;
     vitesse:*)          echo "vitesse-dark" ;;
+    flexoki:light)      echo "gruvbox-light-medium" ;;
+    flexoki:*)          echo "kanagawa-dragon" ;;
   esac
 }
 
@@ -106,7 +121,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
   # as the pattern for re-adding a family whose colors no bundled theme matches.
   local bg panel panelAlt border accent accentMuted text muted addedBg removedBg
   local ctxBg sAdd sRem lnFg badgeAdd badgeRem badgeNeu fRename fMod fUntracked note
-  local kw str num fn typ punct op
+  local kw str num fn typ punct op konst esc
   case "$1:$2" in
     flexoki:light)
       # flexoki light (dawn): paper #fffcf0 canvas. Diff bgs are the accent
@@ -119,9 +134,13 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       sAdd="#66800b"; sRem="#af3029"; lnFg="#b7b5ac"
       badgeAdd="#66800b"; badgeRem="#af3029"; badgeNeu="#205ea6"
       fRename="#5e409d"; fMod="#ad8301"; fUntracked="#878580"; note="#f2f0e5"
-      # flexoki accents: keyword magenta, string green, number orange, fn blue,
-      # type cyan; identifiers/operators stay neutral tx (#403e3c).
+      # flexoki roles, resolved from the colorscheme's own groups (600-level
+      # accents in light): Keyword magenta, String green, Number/Boolean/
+      # Character/Special orange, Function blue, Type/Include cyan, Constant
+      # yellow, Macro/@string.escape purple; Identifier/Operator stay tx
+      # (#403e3c) and punctuation/parameters tx2 (#878580).
       kw="#a02f6f"; str="#66800b"; num="#bc5215"; fn="#205ea6"; typ="#24837b"; punct="#878580"; op="#403e3c"
+      konst="#ad8301"; esc="#5e409d"
       ;;
     flexoki:*)
       # flexoki dark (moon): black #100f0f canvas. Diff bgs are the accent
@@ -132,9 +151,13 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       sAdd="#879a39"; sRem="#d14d41"; lnFg="#575653"
       badgeAdd="#879a39"; badgeRem="#d14d41"; badgeNeu="#4385be"
       fRename="#8b7ec8"; fMod="#d0a215"; fUntracked="#878580"; note="#1c1b1a"
-      # flexoki accents: keyword magenta, string green, number orange, fn blue,
-      # type cyan; identifiers/operators stay neutral tx (#cecdc3).
+      # flexoki roles, resolved from the colorscheme's own groups (400-level
+      # accents in dark): Keyword magenta, String green, Number/Boolean/
+      # Character/Special orange, Function blue, Type/Include cyan, Constant
+      # yellow, Macro/@string.escape purple; Identifier/Operator stay tx
+      # (#cecdc3) and punctuation/parameters tx2 (#878580).
       kw="#ce5d97"; str="#879a39"; num="#da702c"; fn="#4385be"; typ="#3aa99f"; punct="#878580"; op="#cecdc3"
+      konst="#d0a215"; esc="#8b7ec8"
       ;;
     flume:light)
       # flume mesa (warm cream #f3ede8) — the family's light half. comment
@@ -333,6 +356,9 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       ;;
     *) return 0 ;;
   esac
+  # Roles the retired families never set; default them so their (inert) branches
+  # still emit legal TOML.
+  konst="${konst:-$num}"; esc="${esc:-$str}"
   cat <<EOF
 [custom_theme]
 base             = "$3"
@@ -372,27 +398,102 @@ noteTitleText    = "$text"
 
 # Syntax scopes — the active family's palette, so hunk's code body reads
 # identically to nvim's, not the base builtin above (which it overrides).
-# TextMate selectors (the named-role [custom_theme.syntax] block is
-# deprecated); scope sets mirror hunk's own legacy role->scope translation.
+# TextMate selectors (the named-role [custom_theme.syntax] block is deprecated).
+# hunk appends these to the base Shiki theme's own settings, so a listed scope
+# always wins and anything unlisted falls through to the base theme; the list
+# covers every scope family a Shiki grammar emits, not just the seven roles
+# hunk's legacy role->scope table knew about.
 [custom_theme.syntax_scopes]
 "source"                            = "$text"
-"keyword"                           = "$kw"
-"keyword.operator"                  = "$op"
-"string"                            = "$str"
 "comment"                           = "$muted"
 "punctuation.definition.comment"    = "$muted"
+
+# Keywords. Plain \`keyword.operator\` is arithmetic/assignment punctuation in
+# most grammars (tx in nvim, via @operator), while the WORD operators are
+# @keyword.operator (kw) — hence the three narrower re-overrides.
+"keyword"                           = "$kw"
+"keyword.control"                   = "$kw"
+"keyword.other"                     = "$kw"
+"storage"                           = "$kw"
+"storage.type"                      = "$kw"
+"storage.modifier"                  = "$kw"
+"entity.name.label"                 = "$kw"
+"variable.language"                 = "$kw"
+"keyword.operator"                  = "$op"
+"keyword.operator.word"             = "$kw"
+"keyword.operator.new"              = "$kw"
+"keyword.operator.expression"       = "$kw"
+"keyword.control.import"            = "$typ"
+"keyword.control.export"            = "$typ"
+"keyword.control.from"              = "$typ"
+
+# Strings and escapes.
+"string"                            = "$str"
+"punctuation.definition.string"     = "$str"
+"constant.character.escape"         = "$esc"
+"string.regexp"                     = "$num"
+
+# Numbers and constants. Language literals (true/null) are Boolean-orange;
+# named constants are Constant-yellow.
 "constant.numeric"                  = "$num"
+"constant.character"                = "$num"
+"constant.language"                 = "$num"
+"constant.other"                    = "$konst"
+"variable.other.constant"           = "$konst"
+"variable.other.enummember"         = "$konst"
+
+# Functions. Builtins take the Macro colour.
 "entity.name.function"              = "$fn"
 "support.function"                  = "$fn"
 "variable.function"                 = "$fn"
+"meta.function-call"                = "$fn"
+"support.function.builtin"          = "$esc"
+"support.macro"                     = "$esc"
+
+# Types.
 "entity.name.type"                  = "$typ"
 "entity.name.class"                 = "$typ"
+"entity.name.namespace"             = "$typ"
+"entity.other.inherited-class"      = "$typ"
 "support.type"                      = "$typ"
 "support.class"                     = "$typ"
+"support.type.primitive"            = "$num"
+
+# Identifiers, members, parameters. nvim paints properties and members as plain
+# text; only parameters and attributes drop to the muted tx2.
 "variable"                          = "$text"
+"variable.other"                    = "$text"
 "variable.other.property"           = "$text"
+"variable.other.member"             = "$text"
 "support.variable.property"         = "$text"
+"variable.parameter"                = "$punct"
+"entity.other.attribute-name"       = "$punct"
+"meta.decorator"                    = "$punct"
+
+# Punctuation and delimiters.
 "punctuation"                       = "$punct"
+"punctuation.separator"             = "$punct"
+"punctuation.terminator"            = "$punct"
+"punctuation.accessor"              = "$punct"
+"punctuation.section"               = "$punct"
+"meta.brace"                        = "$punct"
+
+# Preprocessor / directives (PreProc) and markup tags (@tag = Function blue).
+"meta.preprocessor"                 = "$num"
+"keyword.control.directive"         = "$num"
+"entity.name.tag"                   = "$fn"
+"punctuation.definition.tag"        = "$punct"
+
+# Markdown bodies show up in diffs constantly; keep them on the same palette.
+"markup.heading"                    = "$text"
+"markup.list"                       = "$punct"
+"markup.inline.raw"                 = "$str"
+"markup.fenced_code"                = "$str"
+"markup.underline.link"             = "$typ"
+"markup.inserted"                   = "$sAdd"
+"markup.deleted"                    = "$sRem"
+"markup.changed"                    = "$konst"
+"invalid"                           = "$sRem"
 EOF
 }
 

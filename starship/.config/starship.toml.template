@@ -62,6 +62,37 @@ fg = "#393a34"
 bg = "#ffffff"
 grey = "#626e62"
 
+# flexoki dark (kepano's "moon", black #100f0f). 400-level accents, verbatim —
+# they clear 4.5:1 on the black. `grey` is base-500 #878580, the lifted comment
+# nvim/hunk use, not flexoki's stock base-700 (~2.5:1). teal doubles the blue:
+# flexoki's cyan-400 #3aa99f is a distinct hue but reads as a second green next
+# to green-400 in a prompt.
+[palettes.flexoki-dark]
+red = "#d14d41"
+orange = "#da702c"
+yellow = "#d0a215"
+green = "#879a39"
+blue = "#4385be"
+teal = "#4385be"
+purple = "#8b7ec8"
+fg = "#cecdc3"
+bg = "#100f0f"
+grey = "#878580"
+
+# flexoki light (kepano's "dawn", paper #fffcf0). 600-level accents, verbatim.
+# `grey` is base-600 #6f6e69 (~4.9:1 on paper).
+[palettes.flexoki-light]
+red = "#af3029"
+orange = "#bc5215"
+yellow = "#ad8301"
+green = "#66800b"
+blue = "#205ea6"
+teal = "#205ea6"
+purple = "#5e409d"
+fg = "#100f0f"
+bg = "#fffcf0"
+grey = "#6f6e69"
+
 [directory]
 style = "bold teal"
 truncation_length = 3

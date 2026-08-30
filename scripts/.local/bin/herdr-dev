@@ -1,7 +1,5 @@
 #!/bin/bash
 # Launch a coding layout for a project in a herdr workspace.
-# herdr analogue of ~/.local/bin/dev — same layout, herdr vocabulary
-# (tmux session -> workspace, tmux window -> tab).
 #
 # Usage: herdr-dev [directory] [workspace_id]
 #   directory     defaults to cwd; all panes open there.
@@ -12,19 +10,15 @@
 # Layout:
 #   Tab 1 "code"     nvim (60%) | claude (40%). herdr auto-detects the claude
 #                    process and adopts the pane as a managed agent, so it gets
-#                    tab-bar status and `herdr agent read/prompt/wait` for free
-#                    — the tmux version could only ever be a dumb companion.
+#                    tab-bar status and `herdr agent read/prompt/wait` for free.
 #   Tab 2 "console"  three equal shells for git / tests / logs. If the project
 #                    has an mprocs config, pane 1 runs the service stack under
 #                    mprocs instead of a bare shell. Config lookup order:
 #                      1. <project>/mprocs.yaml
 #                      2. ~/.config/mprocs/projects/<basename>.yaml
 #
-# Two herdr-vs-tmux gotchas encoded below:
-#   * --ratio sizes the FIRST (existing) pane; tmux's -p sized the NEW one.
-#     nvim at 60% is `--ratio 0.6`, where tmux wrote `-p 40`.
-#   * send-text writes literal text without submitting; `send-keys enter` is
-#     the separate C-m. Hence the run() helper.
+# send-text writes literal text without submitting; send-keys enter is the
+# separate submit. Hence the run() helper.
 
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"

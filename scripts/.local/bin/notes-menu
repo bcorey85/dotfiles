@@ -1,7 +1,6 @@
 #!/bin/bash
-# Single-keypress notes menu — the display-menu semantics tmux had (prefix n
-# then one mnemonic, no enter). Runs in a popup in any multiplexer; the chosen
-# entry execs in the same popup.
+# Single-keypress notes menu — prefix n then one mnemonic, no enter. Runs in a
+# herdr popup; the chosen entry execs in the same popup.
 # Targets: org capture via `todo`/`bookmark`/`research`/`achievement`,
 # `vault-ask` for the notes already held, org-popup views (todos is the single
 # entry point for reading AND checking off), the book queue, compiled daily
@@ -48,7 +47,7 @@ while :; do
             if [ -f "$f" ]; then exec glow-fit -p "$f"; else echo "no daily note compiled yet"; sleep 2; exit 0; fi
             ;;
         A) exec achievement -i ;;
-        s) tmux-tui-popup vault-sync "vault-sync failed —" && sleep 1; exit 0 ;;
+        s) vault-sync || { echo "vault-sync failed — press any key"; read -rsn1; }; exit 0 ;;
         c) exec org-popup capture t ;;
         j) exec org-popup capture j ;;
         a) exec org-popup agenda ;;

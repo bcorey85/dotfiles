@@ -1,9 +1,7 @@
--- herdr counterpart of smart-splits.lua — C/M-hjkl nav+resize across the
--- herdr<->nvim boundary. Pairs with the herdr-side plugin
--- (`herdr plugin install lmilojevicc/herdr-splits.nvim`) and the
--- plugin_action keybinds in herdr/.config/herdr/config.toml.
--- Loads only inside herdr; smart-splits.lua covers tmux (mutually exclusive
--- via HERDR_ENV).
+-- C/M-hjkl nav+resize across the herdr<->nvim boundary. Pairs with the
+-- herdr-side plugin (`herdr plugin install lmilojevicc/herdr-splits.nvim`) and
+-- the plugin_action keybinds in herdr/.config/herdr/config.toml.
+-- Loads only inside herdr.
 return {
   "lmilojevicc/herdr-splits.nvim",
   cond = vim.env.HERDR_ENV == "1",

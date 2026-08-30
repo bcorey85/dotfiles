@@ -3,15 +3,15 @@
 --   ~/.cache/theme-mode    "dark" | "light"
 --   ~/.cache/theme-family  family name (FAMILIES below)
 -- Both files are fs_poll'ed (~1s), so `theme-mode use one` or a prefix T
--- toggle from tmux flips every running instance with no sockets to manage.
--- <leader>ut shells out to the same script, so a toggle from nvim flips tmux
+-- toggle from herdr flips every running instance with no sockets to manage.
+-- <leader>ut shells out to the same script, so a toggle from nvim flips herdr
 -- and ghostty too — one source of truth, all ways.
 --
 -- This module also owns every theme-reactive highlight override (markdown
 -- headings, gitsigns word-diff, per-family fixups), re-applied on ColorScheme,
 -- so a family switch always lands with the right set. Plugin specs stay pure
 -- plugin declarations. Keep FAMILIES in sync with theme-mode's registry and
--- the ~/.config/tmux/<family>-<mode>.conf files.
+-- the ghostty/herdr theme files.
 
 local M = {}
 
@@ -31,7 +31,7 @@ end
 
 -- Registry shape: the mode axis, the fixup hook and the state-file plumbing
 -- all key off this table — adding a family is an entry here plus theme-mode's
--- cases and the tmux/ghostty files.
+-- cases and the ghostty/herdr files.
 local FAMILIES = {
   ["flexoki"] = {
     -- kepano/flexoki-neovim: two distinct colorschemes flexoki-{dark,light}

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Switch to (or create) the herdr workspace for a project directory.
-# herdr analogue of tmux-project-open: workspace label = project basename.
+# Workspace label is the project basename.
 
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
@@ -26,7 +26,7 @@ if [ -n "$ws" ]; then
 else
   ws=$(herdr workspace create --cwd "$dir" --label "$label" --focus \
         | jq -r '.result.workspace.workspace_id')
-  # Only fresh workspaces get the layout — same guard as tmux-project-open.
+  # Only fresh workspaces get the layout.
   if [[ "$dir" == "$HOME/dev/"* ]]; then
     herdr-dev "$dir" "$ws"
   fi

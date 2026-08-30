@@ -1,6 +1,6 @@
 #!/bin/bash
 # Ad-hoc questions about the current repo's diff, answered by a headless
-# LLM CLI — for the tmux popup bound to prefix A, so you can interrogate a
+# LLM CLI — for the herdr popup bound to prefix A, so you can interrogate a
 # change without leaving codediff (prefix d) or neogit (prefix g). Rides the
 # CLIs' own auth; no direct API keys.
 #
@@ -39,8 +39,8 @@ config="${XDG_CONFIG_HOME:-$HOME/.config}/diffask/config"
 [ -n "$env_backend" ] && DIFFASK_BACKEND="$env_backend"
 [ -n "$env_model" ] && DIFFASK_MODEL="$env_model"
 
-# opencode installs to ~/.opencode/bin, which popup/tmux-server environments
-# don't have on PATH — resolve it explicitly rather than trusting $PATH.
+# opencode installs to ~/.opencode/bin, which popup environments don't have on
+# PATH — resolve it explicitly rather than trusting $PATH.
 opencode_bin=$(command -v opencode || true)
 [ -z "$opencode_bin" ] && [ -x "$HOME/.opencode/bin/opencode" ] && opencode_bin="$HOME/.opencode/bin/opencode"
 

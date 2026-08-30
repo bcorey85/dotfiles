@@ -1,5 +1,5 @@
 onboarding = false
-# herdr config TEMPLATE — port of ~/dotfiles/tmux/.tmux.conf (stowed: herdr).
+# herdr config TEMPLATE (stowed: herdr).
 #
 # This file is the TEMPLATE, not the live config. theme-mode regenerates the
 # REAL ~/.config/herdr/config.toml from it (substituting the palette marker
@@ -25,11 +25,11 @@ onboarding = false
 resume_agents_on_restore = true
 
 [advanced]
-# tmux: set -g history-limit 50000. herdr counts bytes, not lines.
+# Scrollback limit. herdr counts bytes, not lines.
 scrollback_limit_bytes = 10000000
 
 [experimental]
-# tmux: allow-passthrough on — inline images (snacks.nvim) via kitty graphics.
+# Inline images (snacks.nvim) via Kitty Graphics Protocol passthrough.
 kitty_graphics = true
 
 [update]
@@ -53,21 +53,21 @@ channel = "preview"
 [keys]
 prefix = "ctrl+space"
 
-# ─── structure (matches tmux binds) ──────────────────────────────────────────
-split_vertical   = "prefix+backslash"   # tmux: bind \  split -h (side by side)
-split_horizontal = "prefix+minus"       # tmux: bind -  split -v (stacked)
+# ─── structure ───────────────────────────────────────────────────────────────
+split_vertical   = "prefix+backslash"
+split_horizontal = "prefix+minus"
 new_tab          = "prefix+c"
 close_pane       = "prefix+x"
 close_tab        = "prefix+shift+x"
 zoom             = "prefix+z"
-rename_tab       = "prefix+comma"       # tmux: bind , rename-window
+rename_tab       = "prefix+comma"
 copy_mode        = "prefix+["
-detach           = "prefix+shift+d"     # tmux: bind D detach-client
-reload_config    = "prefix+r"           # tmux: bind r source-file
-goto             = "prefix+o"           # tmux: bind o choose-tree -Zs
+detach           = "prefix+shift+d"
+reload_config    = "prefix+r"
+goto             = "prefix+o"
 
-# Workspaces: indexed switching parked on prefix (alt+1..4 belongs to harpoon,
-# matching tmux M-1..4). Tabs already default to prefix+1..9 like tmux windows.
+# Workspaces: indexed switching parked on prefix (alt+1..4 belongs to harpoon).
+# Tabs already default to prefix+1..9.
 switch_workspace = "prefix+shift+1..9"
 
 # Agent jump, direct-addressed: with
@@ -92,9 +92,8 @@ focus_pane_right = "prefix+ctrl+l"      # was prefix+l  (yours: lazydocker)
 
 # ─── smart splits — C-hjkl nav / M-hjkl resize across herdr<->nvim ───────────
 # herdr side of herdr-splits.nvim (install: herdr plugin install
-# lmilojevicc/herdr-splits.nvim; nvim side: lua/plugins/herdr-splits.lua,
-# gated on HERDR_ENV — smart-splits.nvim stays for tmux). This replaces the
-# tmux @pane-is-vim conditional forwarding.
+# lmilojevicc/herdr-splits.nvim; nvim side: lua/plugins/herdr-splits.lua).
+# Replaces the old @pane-is-vim conditional forwarding.
 [[keys.command]]
 key = "ctrl+h"
 type = "plugin_action"
@@ -135,7 +134,7 @@ key = "alt+l"
 type = "plugin_action"
 command = "herdr-splits.resize-right"
 
-# ─── harpoon (scripts/.local/bin/herdr-harpoon; shares tmux-harpoon's list) ──
+# ─── harpoon (scripts/.local/bin/herdr-harpoon) ──────────────────────────────
 [[keys.command]]
 key = "alt+1"
 command = "~/.local/bin/herdr-harpoon jump 1"
@@ -168,9 +167,8 @@ type = "popup"
 width = "70%"
 height = "60%"
 
-# ─── popups — the display-popup fleet ────────────────────────────────────────
-# cwd is inherited from the focused pane automatically, so tmux-host-popup and
-# its #{client_name}/#{session_name}/#{pane_current_path} juggling are gone.
+# ─── popups ──────────────────────────────────────────────────────────────────
+# cwd is inherited from the focused pane automatically.
 
 # The primary git key, currently a lazygit TRIAL (neogit moved to alt+g —
 # prefix+ctrl+g is already new_worktree above, and prefix+shift+g is insitu).
@@ -203,13 +201,12 @@ height = "100%"
 # The mise shim directory has to be prepended by hand: hunk is a mise-global npm
 # package, and mise puts its shims on PATH through a shell hook in .zshrc, which
 # the herdr server (started from a login environment, not an interactive shell)
-# never runs. Without this the popup flash-closes on "command not found" — hence
-# tmux-tui-popup, which holds it open with a readable error instead.
+# never runs. Without this the popup flash-closes on "command not found".
 # EDITOR is set for the same reason — it is exported from .zshrc, so hunk's `e`
 # (open file in editor) sees it unset under the popup's non-interactive bash.
 [[keys.command]]
 key = "prefix+d"                        # hunk review
-command = "~/.local/bin/tmux-tui-popup 'PATH=\"${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims:$PATH\" EDITOR=\"${EDITOR:-nvim}\" ~/.local/bin/hunk-review-popup' 'hunk failed — run install/hunk'"
+command = "PATH=\"${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims:$PATH\" EDITOR=\"${EDITOR:-nvim}\" ~/.local/bin/hunk-review-popup"
 type = "popup"
 width = "100%"
 height = "100%"
@@ -251,14 +248,14 @@ height = "95%"
 
 [[keys.command]]
 key = "prefix+shift+p"                  # gh-dash
-command = "~/.local/bin/tmux-tui-popup 'gh dash' 'gh dash failed — run install/gh-dash (needs gh auth login).'"
+command = "gh dash"
 type = "popup"
 width = "100%"
 height = "100%"
 
 [[keys.command]]
 key = "prefix+l"                        # lazydocker
-command = "~/.local/bin/tmux-tui-popup lazydocker 'lazydocker failed — is it installed and the docker daemon running?'"
+command = "lazydocker"
 type = "popup"
 width = "100%"
 height = "100%"
@@ -285,7 +282,7 @@ width = "95%"
 height = "95%"
 
 [[keys.command]]
-key = "prefix+n"                        # notes menu (single keypress, tmux display-menu semantics)
+key = "prefix+n"                        # notes menu
 command = "~/.local/bin/notes-menu"
 type = "popup"
 width = "90%"
@@ -311,7 +308,7 @@ height = "80%"
 
 # ─── shell commands (no popup) ───────────────────────────────────────────────
 [[keys.command]]
-key = "prefix+t"                        # theme toggle (terminal/tmux/nvim side)
+key = "prefix+t"                        # theme toggle (terminal/herdr/nvim side)
 command = "~/.local/bin/theme-mode toggle"
 type = "shell"
 
@@ -327,9 +324,8 @@ type = "shell"
 [ui]
 agent_panel_sort = "priority"
 
-# tmux `prefix c` creates a window immediately with a generated name; herdr
-# prompts for one by default. Off, so prefix+c keeps the tmux reflex —
-# rename after the fact with prefix+comma.
+# Don't prompt for a new tab name on prefix+c; rename after the fact with
+# prefix+comma.
 prompt_new_tab_name = false
 
 show_agent_labels_on_pane_borders = true
@@ -359,8 +355,7 @@ claude   = [["state_icon", "workspace", "tab"], ["terminal_title_stripped"], ["a
 opencode = [["state_icon", "workspace", "tab"], ["terminal_title_stripped"], ["agent"]]
 pi       = [["state_icon", "workspace", "tab"], ["terminal_title_stripped"], ["agent"]]
 
-# Space rows — branch + git_status per workspace, replacing the git segment the
-# tmux status line carried.
+# Space rows — branch + git_status per workspace.
 [ui.sidebar.spaces]
 row_gap = 0
 rows = [["state_icon", "workspace"], ["branch", "git_status"]]

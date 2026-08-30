@@ -14,8 +14,8 @@ return {
         ["<C-h>"] = false,
         ["<C-x>"] = { "actions.select", opts = { horizontal = true }, desc = "Open in horizontal split" },
         ["gr"] = { "actions.refresh", mode = "n", desc = "Refresh" },
-        -- tmux `prefix e` popup (see .tmux.conf): the whole nvim is disposable,
-        -- so q in the oil buffer quits it — the popup dismisses lazygit-style,
+        -- herdr `prefix e` popup: the whole nvim is disposable, so q in the oil
+        -- buffer quits it — the popup dismisses lazygit-style,
         -- like the NEOGIT_POPUP / CODEDIFF_POPUP siblings. Only oil's own q is
         -- remapped (not a global map like codediff's): files opened from the
         -- popup are editable, and a global q would eat macro recording. `qa`

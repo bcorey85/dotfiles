@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""herdr-balance — equalize the current tab's splits, like tmux select-layout
+even-*. Bound to prefix+= (see herdr config.toml.template).
+
+herdr has no even-layout action, but the socket API exposes the split tree
+(layout.export) and a per-split ratio setter (layout.set_split_ratio). Each
+internal split's ratio is set to leaves(first)/leaves(node), which makes every
+leaf pane the same size in both directions. set_split_ratio only moves a
+divider — it never respawns a pane, so running processes are untouched.
+
+python3 (not bash) because the API speaks newline-framed JSON over a unix
+socket and bash has no unix-socket client; python3 is guaranteed everywhere
+ansible runs. stdlib only, no dependency.
+"""
+import json
+import os
+import socket
+import sys
+
+SOCK = os.environ.get("HERDR_SOCKET_PATH") or os.path.expanduser(
+    "~/.config/herdr/herdr.sock"
+)
+
+
+def call(method, params, _id=[0]):
+    _id[0] += 1
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(3)
+    try:
+        s.connect(SOCK)
+        s.sendall(
+            (json.dumps({"id": str(_id[0]), "method": method, "params": params}) + "\n").encode()
+        )
+        buf = b""
+        while b"\n" not in buf:
+            chunk = s.recv(65536)
+            if not chunk:
+                break
+            buf += chunk
+    finally:
+        s.close()
+    reply = json.loads(buf.decode().strip())
+    if "error" in reply:
+        raise RuntimeError(f"{method}: {reply['error'].get('message', reply['error'])}")
+    return reply["result"]
+
+
+def leaves(node):
+    if node["type"] == "pane":
+        return 1
+    return leaves(node["first"]) + leaves(node["second"])
+
+
+def equal_ratios(node, tab_id, path):
+    """Set every split under `node` so its leaves end up equal-sized."""
+    if node["type"] == "pane":
+        return
+    ratio = leaves(node["first"]) / leaves(node)
+    call("layout.set_split_ratio", {"tab_id": tab_id, "path": path, "ratio": ratio})
+    equal_ratios(node["first"], tab_id, path + [False])
+    equal_ratios(node["second"], tab_id, path + [True])
+
+
+def main():
+    try:
+        layout = call("layout.export", {})["layout"]
+        equal_ratios(layout["root"], layout["tab_id"], [])
+    except (OSError, RuntimeError, ValueError, KeyError) as e:
+        print(f"herdr-balance: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

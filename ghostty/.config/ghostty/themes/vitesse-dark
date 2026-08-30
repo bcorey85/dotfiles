@@ -1,0 +1,25 @@
+# vitesse dark (antfu's Vitesse, off-black #121212) — ANSI from 2nthony/
+# vitesse.nvim's palette. Desaturated, low-halation. Selection is lowActiveBg.
+background = #121212
+foreground = #c8c5b8
+cursor-color = #c8c5b8
+cursor-text = #121212
+selection-background = #292929
+selection-foreground = #c8c5b8
+
+palette = 0=#181818
+palette = 1=#cb7676
+palette = 2=#4d9375
+palette = 3=#e6cc77
+palette = 4=#6394bf
+palette = 5=#d9739f
+palette = 6=#5eaab5
+palette = 7=#c8c5b8
+palette = 8=#5c6b5e
+palette = 9=#cb7676
+palette = 10=#4d9375
+palette = 11=#e6cc77
+palette = 12=#6394bf
+palette = 13=#d9739f
+palette = 14=#5eaab5
+palette = 15=#dbd7ca

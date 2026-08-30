@@ -17,7 +17,7 @@ local M = {}
 
 local MODE_FILE = vim.env.HOME .. "/.cache/theme-mode"
 local FAMILY_FILE = vim.env.HOME .. "/.cache/theme-family"
-local DEFAULT_FAMILY = "flume"
+local DEFAULT_FAMILY = "vitesse"
 
 -- alpha-blend two hex colours (a = share of c1).
 local function blend(c1, c2, a)
@@ -33,110 +33,21 @@ end
 -- all key off this table — adding a family is an entry here plus theme-mode's
 -- cases and the ghostty/herdr files.
 local FAMILIES = {
-  ["flexoki"] = {
-    -- kepano/flexoki-neovim: one colorscheme "flexoki" switches via
-    -- vim.o.background (dark #100f0f / light #fffcf0), so both modes share
-    -- colors_name and the scheme name is pinned here.
-    schemes = { dark = "flexoki", light = "flexoki" },
-    colors_name = "flexoki",
+  ["vitesse"] = {
+    -- bcorey85/vitesse.nvim: our own port of antfu's Vitesse, DARK + LIGHT. Off-
+    -- black #121212 / white #ffffff, desaturated low-halation accents. Single
+    -- colorscheme "vitesse" follows vim.o.background, so pin colors_name.
+    schemes = { dark = "vitesse", light = "vitesse" },
+    colors_name = "vitesse",
     accents = {
-      dark = { heading1 = "#8b7ec8", heading = "#4385be" }, -- purple + blue (400)
-      light = { heading1 = "#5e409d", heading = "#205ea6" }, -- purple + blue (600)
+      dark = { heading1 = "#d9739f", heading = "#e6cc77" }, -- magenta + yellow
+      light = { heading1 = "#a13865", heading = "#bda437" },
     },
-    -- Comment floor: flexoki's stock comment is deliberately faint and fails the
-    -- 4.5:1 floor in both modes (dark base-700 #575653 is ~2.5:1 on #100f0f;
-    -- light base-300 #b7b5ac is ~1.9:1 on #fffcf0). Lift to base-500 #878580
-    -- dark (~5.3:1) and base-600 #6f6e69 light (~4.9:1). Flexoki comments are not
-    -- italic, so this stays flat — nvim_set_hl replaces the whole group.
+    -- antfu's comments read low: #758575 ~3.9:1 on #121212, #a0ada0 ~2.3:1 on
+    -- #ffffff. Lift both to clear 4.5:1 (prose readability > authored hue).
     fixup = function(mode)
-      local fg = mode == "light" and "#6f6e69" or "#878580"
-      vim.api.nvim_set_hl(0, "Comment", { fg = fg })
-    end,
-  },
-  ["flume"] = {
-    -- mitander/flume.nvim: dark = "mira" (violet-charcoal #24212f, cyan accent
-    -- #72b5bf); light = "mesa" (warm cream #f3ede8). Two distinct colorschemes
-    -- flume-{mira,mesa}, each setting its own colors_name, so the guard resolves
-    -- schemes[mode] directly.
-    schemes = { dark = "flume-mira", light = "flume-mesa" },
-    accents = {
-      dark = { heading1 = "#72b5bf", heading = "#d8a36b" }, -- cyan accent + yellow
-      light = { heading1 = "#3f7180", heading = "#815f1d" },
-    },
-    -- Comment floor: mira's stock comment #918a9a is borderline (~4.7:1 on
-    -- #24212f), lift to #a29bb0 (~5.5:1); mesa's #706878 clears (~5:1 on cream).
-    fixup = function(mode)
-      local fg = mode == "light" and "#706878" or "#a29bb0"
+      local fg = mode == "light" and "#6b7a6b" or "#78877a"
       vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
-    end,
-  },
-  ["sequoia"] = {
-    -- forest-nvim/sequoia.nvim: dark = "night" (neutral #141414), light = "rise"
-    -- (warm cream #ede9e4). Per-variant colors_name (sequoia-night/sequoia-rise
-    -- == schemes[mode]), so the guard resolves directly. Comments not italic.
-    schemes = { dark = "sequoia-night", light = "sequoia-rise" },
-    accents = {
-      dark = { heading1 = "#b080b0", heading = "#c09070" }, -- pink (lily) + orange
-      light = { heading1 = "#a85080", heading = "#a86828" },
-    },
-    -- Comment floor: sequoia's stock subtle is far below 4.5:1 (night #5d5d5d
-    -- ~2.8:1, rise #8a8880 ~2.8:1); lift to night #808080 / rise #625f58 (~4.6:1).
-    fixup = function(mode)
-      local fg = mode == "light" and "#625f58" or "#808080"
-      vim.api.nvim_set_hl(0, "Comment", { fg = fg })
-    end,
-  },
-  ["tempus"] = {
-    -- protesilaos/tempus-themes-vim: dark = "tempus_classic" (#232323), light =
-    -- "tempus_day" (warm-cream #f8f2e5). Per-variant colors_name (== schemes[mode]).
-    -- Prot's palettes are WCAG-tuned, so no comment-contrast fixup needed.
-    schemes = { dark = "tempus_classic", light = "tempus_day" },
-    accents = {
-      dark = { heading1 = "#d58888", heading = "#d0913d" }, -- pink + warm ochre
-      light = { heading1 = "#8050a7", heading = "#b24000" }, -- purple + rust
-    },
-    -- tempus bolds keyword/type/operator/etc. Strip bold from every group; runs
-    -- before set_headings, so markdown heading bold is re-applied after.
-    fixup = function()
-      for name, def in pairs(vim.api.nvim_get_hl(0, {})) do
-        if def.bold then
-          def.bold = nil
-          vim.api.nvim_set_hl(0, name, def)
-        end
-      end
-    end,
-  },
-  ["gruvbox"] = {
-    -- sainnhe/gruvbox-material, medium contrast + 'mix' palette. Dark #282828 /
-    -- fg #e2cca9; light #fbf1c7 / fg #514036. One colorscheme reads vim.g globals
-    -- + vim.o.background at load, so both modes share colors_name; pin it and set
-    -- the globals in pre(). Wired faithful — no fixup.
-    schemes = { dark = "gruvbox-material", light = "gruvbox-material" },
-    colors_name = "gruvbox-material",
-    pre = function()
-      vim.g.gruvbox_material_background = "medium"
-      vim.g.gruvbox_material_foreground = "mix"
-    end,
-    accents = {
-      dark = { heading1 = "#f2594b", heading = "#e9b143" }, -- red + yellow
-      light = { heading1 = "#af2528", heading = "#b4730e" },
-    },
-  },
-  ["horizon"] = {
-    -- akinsho/horizon.nvim: one colorscheme "horizon" reads vim.o.background at
-    -- load (dark #1c1e26 / light #fdf0ed), so both modes share colors_name; pin
-    -- it. Light's syntax palette is backfilled in the plugin spec's config.
-    schemes = { dark = "horizon", light = "horizon" },
-    colors_name = "horizon",
-    accents = {
-      dark = { heading1 = "#a86ec9", heading = "#f09483" }, -- purple + apricot
-      light = { heading1 = "#8a31b9", heading = "#f77d26" },
-    },
-    -- Comment floor: horizon's stock is below 4.5:1 (dark #4c4d53 ~2.5:1, light
-    -- #989290 ~2.7:1); lift to accentAlt #6c6f93 / #6e6664 (~4.6:1).
-    fixup = function(mode)
-      local fg = mode == "light" and "#6e6664" or "#6c6f93"
-      vim.api.nvim_set_hl(0, "Comment", { fg = fg })
     end,
   },
 }

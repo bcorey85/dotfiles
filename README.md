@@ -7,7 +7,6 @@ Personal configuration files across WSL, Ubuntu, macOS, and Arch Linux.
 - **nvim** - Neovim configuration (lazy.nvim, specs in `lua/plugins/`)
 - **herdr** - agent-aware terminal multiplexer (config template; `theme-mode` generates the real config)
 - **zsh** - zsh configuration (manually cloned plugins, starship prompt)
-- **kanata** - Keyboard remapping
 - **claude** - Claude Code configuration ([why the agents are shaped this way](docs/agent-evals.md))
 - **scripts** - Utility scripts
 
@@ -62,7 +61,7 @@ git pull
 
 ```bash
 cd ~/dotfiles
-stow -D nvim herdr zsh claude kanata scripts
+stow -D nvim herdr zsh claude scripts
 ```
 
 ## Troubleshooting

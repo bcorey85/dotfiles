@@ -127,7 +127,20 @@ arch)
 
   # Hyprland desktop packages
   print_info "Installing Hyprland desktop packages..."
-  sudo pacman -S --needed hyprland hyprlock hypridle hyprsunset hyprpicker waybar rofi dunst awww xdg-desktop-portal-hyprland xdg-desktop-portal-gtk polkit-gnome wl-clipboard cliphist grim slurp pavucontrol thunar tumbler thunar-archive-plugin file-roller gvfs gvfs-mtp udisks2 pipewire-alsa qt5ct qt6ct gsimplecal batsignal blueman
+  # Steam (multilib). Pacman prompts for the 32-bit Vulkan driver — pick the
+  # one matching the machine's GPU (lib32-nvidia-utils / lib32-vulkan-radeon /
+  # lib32-vulkan-intel); it can't be pinned here since arch hosts differ.
+  if ! grep -q '^\[multilib\]' /etc/pacman.conf; then
+    print_info "Enabling multilib repo..."
+    sudo sed -i '/^#\[multilib\]/,/^#Include/ s/^#//' /etc/pacman.conf
+    sudo pacman -Sy
+  fi
+
+  print_info "Installing Steam..."
+  sudo pacman -S --needed steam
+  print_success "Steam installed"
+
+  sudo pacman -S --needed hyprland hyprlock hypridle hyprsunset hyprpicker rofi dunst awww xdg-desktop-portal-hyprland xdg-desktop-portal-gtk polkit-gnome wl-clipboard cliphist grim slurp pavucontrol thunar tumbler thunar-archive-plugin file-roller gvfs gvfs-mtp udisks2 pipewire-alsa qt5ct qt6ct gsimplecal batsignal blueman
   print_success "Hyprland desktop packages installed"
 
   # Install paru (AUR helper)
@@ -145,9 +158,14 @@ arch)
   # the upstream pvolok/mprocs -> pvolok/dekit rename; it's installed from the
   # release binary via install_mprocs below. `|| print_error` keeps a single
   # failed/flaky AUR build (set -e is on) from aborting the rest of setup.
+  #
+  # waybar-git, NOT repo waybar: the 0.15.0 GTK4 release ships broken
+  # hyprland/workspaces click-to-switch; only post-release git has the fix.
+  # waybar-git provides waybar, so listing `waybar` on the pacman line above
+  # silently downgrades it on every setup run — keep it out of there.
   if command -v paru &>/dev/null; then
     print_info "Installing AUR packages via paru..."
-    paru -S --needed discord_arch_electron google-chrome plexamp-bin \
+    paru -S --needed waybar-git discord_arch_electron google-chrome plexamp-bin \
       walker-bin elephant-bin elephant-desktopapplications-bin elephant-calc-bin elephant-runner-bin elephant-websearch-bin elephant-providerlist-bin ||
       print_error "some AUR packages failed to build — continuing"
     print_success "AUR packages installed"

@@ -5,6 +5,6 @@ My personal, hand-rolled Neovim configuration.
 - **Plugin manager:** lazy.nvim — bootstrap in `lua/config/lazy.lua`; use `:Lazy` (`:PackUpdate` / `:PackStatus` / `:PackClean` kept as compat aliases). Per-spec load triggers (`event`/`ft`/`cmd`/`keys`) in `lua/plugins/`
 - **Layout:** `lua/config/` for core settings (options, keymaps, autocmds, LSP); `lua/plugins/` with one spec file per plugin
 - **LSP:** native `vim.lsp.config` / `vim.lsp.enable`, servers installed via Mason
-- **Theme:** vitesse (bcorey85/vitesse.nvim, our port of antfu's Vitesse; dark / light); light/dark synced across nvim/ghostty by the `theme-mode` script; the family registry and its overrides live in `lua/config/theme-sync.lua`
+- **Theme:** vitesse (bcorey85/vitesse.nvim, our port of antfu's Vitesse; dark / light) or flexoki (cpplain/flexoki.nvim; dark / light), picked with `theme-mode use <family>`; light/dark synced across nvim/ghostty by the `theme-mode` script; the family registry and its overrides live in `lua/config/theme-sync.lua`
 
 Stow-managed as part of my dotfiles; symlinked to `~/.config/nvim/`.

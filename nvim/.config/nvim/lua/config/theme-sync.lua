@@ -50,6 +50,26 @@ local FAMILIES = {
       vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
     end,
   },
+  ["flexoki"] = {
+    -- kepano/flexoki-neovim: one colorscheme "flexoki" switches via
+    -- vim.o.background (dark #100f0f / light #fffcf0), so both modes share
+    -- colors_name and the scheme name is pinned here.
+    schemes = { dark = "flexoki", light = "flexoki" },
+    colors_name = "flexoki",
+    accents = {
+      dark = { heading1 = "#8b7ec8", heading = "#4385be" }, -- purple + blue (400)
+      light = { heading1 = "#5e409d", heading = "#205ea6" }, -- purple + blue (600)
+    },
+    -- Comment floor: flexoki's stock comment is deliberately faint and fails the
+    -- 4.5:1 floor in both modes (dark base-700 #575653 is ~2.5:1 on #100f0f;
+    -- light base-300 #b7b5ac is ~1.9:1 on #fffcf0). Lift to base-500 #878580
+    -- dark (~5.3:1) and base-600 #6f6e69 light (~4.9:1). Flexoki comments are not
+    -- italic, so this stays flat — nvim_set_hl replaces the whole group.
+    fixup = function(mode)
+      local fg = mode == "light" and "#6f6e69" or "#878580"
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg })
+    end,
+  },
 }
 
 local applied ---@type string|nil  last family+mode we set, to skip redundant reloads

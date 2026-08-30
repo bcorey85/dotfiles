@@ -1,5 +1,5 @@
--- Drives nvim-orgmode capture / agenda for the `org-popup` script (tmux
--- display-popup). Entry points: M.capture(shortcut?) and M.agenda(). Launched as
+-- Drives nvim-orgmode capture / agenda for the `org-popup` script (herdr popup).
+-- Entry points: M.capture(shortcut?) and M.agenda(). Launched as
 -- `nvim -c "lua require('util.org_popup').capture()"` in a throwaway nvim, so it
 -- owns the whole instance and quits it when you're done.
 local M = {}

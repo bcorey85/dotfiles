@@ -1,19 +1,17 @@
--- Send file/selection references to a running Claude Code tmux pane.
+-- Send file/selection references to a running Claude Code pane.
 -- The terminal-first replacement for claudecode.nvim's context bridge: no
--- in-process WebSocket server, just `tmux send-keys` of an @-mention into the
--- pane's prompt (VS Code extension format: @path or @path#L10-20). Nothing is
+-- in-process WebSocket server, just `herdr pane send-text` of an @-mention into
+-- the pane's prompt (VS Code extension format: @path or @path#L10-20). Nothing is
 -- submitted — you compose the prompt around the mention and hit Enter yourself.
 --
--- Pane discovery matches the claude-companion / .tmux.conf convention
--- (pane_current_command is "claude" or a bare version string — the native
--- installer runs a versioned binary): current window first, then any window
--- in the session (catches the stashed _claude companion and worktree agents).
+-- Pane discovery: current workspace first, then all workspaces. Matches panes
+-- whose agent is "claude" or whose process name looks like a claude binary.
 
 local M = {}
 
--- tmux, synchronously; returns trimmed stdout or nil on failure.
-local function tmux(args)
-  local cmd = { "tmux" }
+-- Run herdr, synchronously; returns trimmed stdout or nil on failure.
+local function herdr(args)
+  local cmd = { "herdr" }
   vim.list_extend(cmd, args)
   local res = vim.system(cmd, { text = true }):wait()
   if res.code ~= 0 or not res.stdout or res.stdout == "" then
@@ -22,21 +20,48 @@ local function tmux(args)
   return vim.trim(res.stdout)
 end
 
--- First pane running claude: current window, then session-wide. Returns
--- pane_id or nil.
+-- Run herdr and decode JSON; returns the `result` object or nil.
+local function herdr_json(args)
+  local out = herdr(args)
+  if not out then
+    return nil
+  end
+  local ok, data = pcall(vim.json.decode, out)
+  if not ok or not data or not data.result then
+    return nil
+  end
+  return data.result
+end
+
+-- First pane running claude: current workspace, then any workspace. Returns
+-- the pane object or nil.
 local function find_claude_pane()
-  for _, scope in ipairs({ {}, { "-s" } }) do
-    local args = { "list-panes" }
-    vim.list_extend(args, scope)
-    vim.list_extend(args, { "-F", "#{pane_id} #{pane_current_command}" })
-    local out = tmux(args)
-    for _, line in ipairs(out and vim.split(out, "\n") or {}) do
-      local id, command = line:match("^(%S+) (%S+)$")
-      if command == "claude" or (command or ""):match("^%d+%.%d+%.%d+$") then
-        return id
+  local current = herdr_json({ "pane", "current" })
+  local current_ws = current and current.pane and current.pane.workspace_id
+
+  local data = herdr_json({ "pane", "list" })
+  local panes = data and data.panes or {}
+
+  local function match(p)
+    local agent = p.agent
+    local cmd = p.process or p.command or p.pane_title or ""
+    return agent == "claude" or cmd:match("^claude") or cmd:match("^%d+%.%d+%.%d+$")
+  end
+
+  if current_ws then
+    for _, p in ipairs(panes) do
+      if p.workspace_id == current_ws and match(p) then
+        return p
       end
     end
   end
+
+  for _, p in ipairs(panes) do
+    if match(p) then
+      return p
+    end
+  end
+
   return nil
 end
 
@@ -58,7 +83,7 @@ local function mention(pane, line1, line2)
     vim.notify("Buffer has no file", vim.log.levels.WARN)
     return nil
   end
-  local pane_cwd = tmux({ "display-message", "-p", "-t", pane, "#{pane_current_path}" })
+  local pane_cwd = pane.cwd
   local path = abs
   if pane_cwd and abs:sub(1, #pane_cwd + 1) == pane_cwd .. "/" then
     path = abs:sub(#pane_cwd + 2)
@@ -71,24 +96,24 @@ local function mention(pane, line1, line2)
 end
 
 -- Send an @-mention (whole file, or line1-line2 when given) into the claude
--- pane's prompt. `-l --` = literal keys, so the text is typed, not interpreted.
+-- pane's prompt.
 function M.send(line1, line2)
-  if not vim.env.TMUX then
-    vim.notify("Not inside tmux", vim.log.levels.WARN)
+  if not vim.env.HERDR_PANE_ID then
+    vim.notify("Not inside herdr", vim.log.levels.WARN)
     return
   end
   local pane = find_claude_pane()
   if not pane then
-    vim.notify("No claude pane in this session (C-' spawns one)", vim.log.levels.WARN)
+    vim.notify("No claude pane found (C-' spawns one)", vim.log.levels.WARN)
     return
   end
   local ref = mention(pane, line1, line2)
   if not ref then
     return
   end
-  local res = vim.system({ "tmux", "send-keys", "-t", pane, "-l", "--", ref .. " " }):wait()
+  local res = vim.system({ "herdr", "pane", "send-text", pane.pane_id, ref .. " " }):wait()
   if res.code ~= 0 then
-    vim.notify("tmux send-keys failed: " .. (res.stderr or ""), vim.log.levels.ERROR)
+    vim.notify("herdr pane send-text failed: " .. (res.stderr or ""), vim.log.levels.ERROR)
     return
   end
   vim.notify("Sent " .. ref .. " to claude")

@@ -7,7 +7,7 @@ return {
   -- only useful inside ~/vault. cond is evaluated in config.pack — when false the
   -- spec (and its setup, keymaps, completion wiring) is skipped entirely. Loads
   -- when the cwd OR any file argument is under the vault, so popup launches
-  -- (tmux prefix n p / prefix v) get the <leader>N* commands without cd'ing —
+  -- (herdr prefix n p / prefix v) get the <leader>N* commands without cd'ing —
   -- a vault cwd would let persistence.nvim autosave over the real vault session.
   cond = function()
     local vault = vim.fs.normalize(vim.fn.expand("~/vault"))

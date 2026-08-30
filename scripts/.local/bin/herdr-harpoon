@@ -1,19 +1,17 @@
 #!/bin/bash
 # harpoon-for-herdr: pin projects / workspaces to numbered slots, jump instantly.
-# Shares its slot list with tmux-harpoon so pins stay in sync across both
-# multiplexers during the migration trial.
 #
 # Slot entries:
 #   /abs/project/dir   PROJECT   — jump opens/creates its workspace (herdr-project-open)
 #   @label             AD-HOC    — jump focuses the workspace with that label;
 #                                  recreated (cwd $HOME) if it no longer exists.
 #
-# Subcommands: add | jump <N> | menu   (same contract as tmux-harpoon)
+# Subcommands: add | jump <N> | menu
 
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 
-LIST="${XDG_DATA_HOME:-$HOME/.local/share}/tmux-harpoon/list"
+LIST="${XDG_DATA_HOME:-$HOME/.local/share}/herdr-harpoon/list"
 mkdir -p "$(dirname "$LIST")"
 touch "$LIST"
 

@@ -134,7 +134,7 @@ return {
       use_per_project_settings = true,
       ignored_settings = {},
       -- Filewatcher auto-refreshes the status buffer when the repo changes on
-      -- disk (e.g. a commit lands from another tmux pane). Neogit uses a real
+      -- disk (e.g. a commit lands from another herdr pane). Neogit uses a real
       -- inotify/FSEvents watcher (not a poll), so there is no interval to set —
       -- only the `enabled` flag matters.
       filewatcher = { enabled = true },
@@ -178,7 +178,7 @@ return {
       vim.cmd("Neogit")
     end, "Neogit status (jump to existing or open)")
 
-    -- In the tmux `prefix g` popup, `q` in the status buffer quits the
+    -- In the herdr `prefix g` popup, `q` in the status buffer quits the
     -- throwaway nvim so the popup dismisses like lazygit. Outside the popup
     -- the env var is unset, so neogit's own `q` (Close) keeps its normal
     -- meaning (close the status tab and return to the prior one).

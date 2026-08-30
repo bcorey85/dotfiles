@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # org-popup — drive nvim-orgmode capture / agenda from a throwaway nvim, meant to
-# run inside a tmux display-popup so org is reachable from ANY pane (mid-shell,
+# run inside a herdr popup so org is reachable from ANY pane (mid-shell,
 # not just when you're already in nvim).
 #
 # Usage:

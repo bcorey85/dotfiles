@@ -1,10 +1,10 @@
 -- Reading mode: zen + non-modifiable buffer + q to exit.
 -- <leader>z stays plain editable zen (writing mode).
--- This module is invoked by tmux prefix-m, which zooms the nvim pane first,
--- then calls toggle(). Pressing prefix-m again: tmux unzooms, toggle() closes
--- zen → on_close fires → cleanup(). cleanup() never touches tmux zoom because
--- the prefix-m exit already handles unzoom in the tmux binding itself —
--- calling resize-pane here would double-toggle.
+-- This module is invoked by a herdr keybinding that zooms the nvim pane first,
+-- then calls toggle(). Pressing the binding again: herdr unzooms, toggle() closes
+-- zen → on_close fires → cleanup(). cleanup() never touches herdr zoom because
+-- the keybinding exit already handles unzoom — calling zoom toggle here would
+-- double-toggle.
 
 local M = {}
 
@@ -18,7 +18,8 @@ local state = nil
 
 -- Restore buffer options and q map saved at open time. Idempotent: no-ops when
 -- not active. Called from zen's on_close so every exit path (q, <leader>z,
--- :q in the zen win, prefix-m second press) restores the buffer consistently.
+-- :q in the zen win, or the herdr keybinding second press) restores the buffer
+-- consistently.
 function M.cleanup()
   if state == nil then
     return
@@ -66,13 +67,13 @@ function M.toggle()
   vim.bo[bufnr].modifiable = false
 
   vim.keymap.set("n", "q", function()
-    -- When inside tmux zoom, unzoom first so the layout is restored before zen
-    -- collapses the window; otherwise tmux leaves the pane in a half-zoomed state.
-    if vim.env.TMUX ~= nil then
-      local result = vim.system({ "tmux", "display-message", "-p", "#{window_zoomed_flag}" }):wait()
-      local zoomed = vim.trim(result.stdout) == "1"
-      if zoomed then
-        vim.system({ "tmux", "resize-pane", "-Z" }):wait()
+    -- When inside a herdr zoom, unzoom first so the layout is restored before zen
+    -- collapses the window; otherwise herdr leaves the pane in a half-zoomed state.
+    if vim.env.HERDR_PANE_ID ~= nil then
+      local result = vim.system({ "herdr", "pane", "layout", "--current" }):wait()
+      local ok, layout = pcall(vim.json.decode, result.stdout or "{}")
+      if ok and layout and layout.result and layout.result.layout and layout.result.layout.zoomed then
+        vim.system({ "herdr", "pane", "zoom", "--current", "--toggle" }):wait()
       end
     end
     Snacks.zen()

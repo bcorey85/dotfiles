@@ -1,16 +1,17 @@
--- Pull test failures out of a tmux pane into the quickfix list.
+-- Pull test failures out of a herdr pane into the quickfix list.
 --
--- The return path of the tests-run-in-tmux workflow. The outbound path is
--- typing the test command in a tmux pane; after a failure, <leader>tq captures
--- that pane's scrollback, runs it through errorformat, and turns every
+-- The return path of the tests-run-in-herdr workflow. The outbound path is
+-- typing the test command in a herdr pane; after a failure, <leader>tq captures
+-- that pane's recent output, runs it through errorformat, and turns every
 -- file:line reference that resolves to a real project file into a quickfix
 -- entry — failures become ]q/[q jump targets (rendered by quicker.nvim) instead
 -- of text to read, remember, and retype.
 --
--- Pane selection: every pane in the current tmux session is a candidate except
--- this one and any other pane running nvim. One candidate → used directly;
--- several → vim.ui.select (snacks) prompts once and caches the choice for this
--- nvim session (<leader>tQ re-picks; a dead cached pane re-prompts on its own).
+-- Pane selection: every pane in the current herdr workspace is a candidate
+-- except this one and any other pane running nvim. One candidate → used
+-- directly; several → vim.ui.select (snacks) prompts once and caches the choice
+-- for this nvim session (<leader>tQ re-picks; a dead cached pane re-prompts on
+-- its own).
 --
 -- Parsing is errorformat-based (python tracebacks + pytest summaries, node/
 -- jest/vitest stacks, tsc, generic file:line:col). Precision comes from the
@@ -59,7 +60,7 @@ local function project_items(items)
   return kept
 end
 
--- Parse raw pane lines and fill the quickfix list. Public so a non-tmux
+-- Parse raw pane lines and fill the quickfix list. Public so a non-herdr
 -- source (e.g. a log file) can reuse the same parse+filter pipeline.
 function M.fill_from_lines(lines, label)
   -- getqflist({lines=…}) parses through efm WITHOUT touching the real list;
@@ -77,36 +78,65 @@ end
 
 local cached ---@type {id: string, label: string}|nil
 
+-- Run herdr, synchronously; returns trimmed stdout or nil on failure.
+local function herdr(args)
+  local cmd = { "herdr" }
+  vim.list_extend(cmd, args)
+  local res = vim.system(cmd, { text = true }):wait()
+  if res.code ~= 0 or not res.stdout or res.stdout == "" then
+    return nil
+  end
+  return vim.trim(res.stdout)
+end
+
+-- Decode herdr JSON output; returns the `result` object or nil.
+local function herdr_json(args)
+  local out = herdr(args)
+  if not out then
+    return nil
+  end
+  local ok, data = pcall(vim.json.decode, out)
+  if not ok or not data or not data.result then
+    return nil
+  end
+  return data.result
+end
+
 local function pane_alive(id)
-  vim.fn.system({ "tmux", "display-message", "-p", "-t", id, "" })
-  return vim.v.shell_error == 0
+  local data = herdr_json({ "pane", "list" })
+  for _, p in ipairs(data and data.panes or {}) do
+    if p.pane_id == id then
+      return true
+    end
+  end
+  return false
 end
 
 local function capture(pane)
-  -- -S -2000: last 2000 scrollback lines; plain text (no -e = escapes dropped).
-  local lines = vim.fn.systemlist({ "tmux", "capture-pane", "-p", "-t", pane.id, "-S", "-2000" })
+  local lines = vim.fn.systemlist({
+    "herdr", "pane", "read", pane.id,
+    "--source", "recent",
+    "--lines", "2000",
+  })
   if vim.v.shell_error ~= 0 then
     cached = nil
-    vim.notify("tmux capture-pane failed for " .. pane.label, vim.log.levels.ERROR)
+    vim.notify("herdr pane read failed for " .. pane.label, vim.log.levels.ERROR)
     return
   end
   M.fill_from_lines(lines, pane.label)
 end
 
 local function candidates()
-  local own = vim.env.TMUX_PANE
-  local raw = vim.fn.systemlist({
-    "tmux",
-    "list-panes",
-    "-s",
-    "-F",
-    "#{pane_id}\t#{window_name}\t#{pane_current_command}",
-  })
+  local own = vim.env.HERDR_PANE_ID
+  local data = herdr_json({ "pane", "list" })
   local out = {}
-  for _, l in ipairs(raw) do
-    local id, win, cmd = l:match("^([^\t]+)\t([^\t]*)\t(.*)$")
-    if id and id ~= own and cmd ~= "nvim" then
-      out[#out + 1] = { id = id, label = win .. " · " .. cmd .. " (" .. id .. ")" }
+  for _, p in ipairs(data and data.panes or {}) do
+    local cmd = p.process or p.command or p.pane_title or ""
+    if p.pane_id ~= own and not cmd:match("nvim") then
+      out[#out + 1] = {
+        id = p.pane_id,
+        label = (p.workspace_label or p.workspace_id or "?") .. " · " .. cmd .. " (" .. p.pane_id .. ")",
+      }
     end
   end
   return out
@@ -115,7 +145,7 @@ end
 local function choose_and_capture()
   local panes = candidates()
   if #panes == 0 then
-    vim.notify("No other tmux panes to capture", vim.log.levels.WARN)
+    vim.notify("No other herdr panes to capture", vim.log.levels.WARN)
     return
   end
   if #panes == 1 then
@@ -139,8 +169,8 @@ end
 
 -- <leader>tq — capture the (cached or auto/selected) test pane into quickfix.
 function M.pull()
-  if not vim.env.TMUX then
-    vim.notify("Not inside tmux", vim.log.levels.WARN)
+  if not vim.env.HERDR_PANE_ID then
+    vim.notify("Not inside herdr", vim.log.levels.WARN)
     return
   end
   if cached then
@@ -156,8 +186,8 @@ end
 -- <leader>tQ — drop the cached pane and re-pick (e.g. after moving the test
 -- pane or switching which window runs the suite).
 function M.repick()
-  if not vim.env.TMUX then
-    vim.notify("Not inside tmux", vim.log.levels.WARN)
+  if not vim.env.HERDR_PANE_ID then
+    vim.notify("Not inside herdr", vim.log.levels.WARN)
     return
   end
   cached = nil

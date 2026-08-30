@@ -1,6 +1,5 @@
 #!/bin/bash
 # Fuzzy-find a project directory and switch to (or create) its herdr workspace.
-# Same scan list as tmux-sessionizer.
 
 export PATH="$HOME/.local/bin:$PATH"
 

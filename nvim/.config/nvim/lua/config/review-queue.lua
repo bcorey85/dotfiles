@@ -40,8 +40,7 @@ local ns = vim.api.nvim_create_namespace("claude_review_queue")
 
 -- ESCALATE/READ/SKIM map onto quickfix's type field so quicker.nvim renders
 -- them with the signs and colours it already uses for E/W/I, and onto the
--- Diagnostic* highlight groups so the virtual text tracks the active theme
--- (same reasoning as the ANSI palette names in the tmux segment).
+-- Diagnostic* highlight groups so the virtual text tracks the active theme.
 local TIERS = {
   ESCALATE = { rank = 1, qftype = "E", hl = "DiagnosticVirtualTextError" },
   READ = { rank = 2, qftype = "W", hl = "DiagnosticVirtualTextWarn" },

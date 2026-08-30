@@ -2,7 +2,7 @@
 -- half of the workflow. setup() auto-registers a VimLeavePre autosave (per cwd
 -- AND per git branch — `branch=true` default), and the VimEnter hook below
 -- auto-restores the cwd session when nvim is launched with no file args. So
--- `tmux-sessionizer` dropping you into a project (or just `nvim` in a repo)
+-- `herdr-sessionizer` dropping you into a project (or just `nvim` in a repo)
 -- reopens buffers/splits/cursor exactly where you left off.
 --
 -- <leader>q is the "+quit/session" namespace (mini.clue) — mirrors Doom `SPC q`.
@@ -10,10 +10,10 @@
 
 -- Throwaway nvims must never save OR restore a session, or they'd clobber the
 -- real project session / dump a full layout into a popup:
---   • tmux popups: prefix g (neogit), prefix s (git hunk qf), prefix d
+--   • herdr popups: prefix g (neogit), prefix s (git hunk qf), prefix d
 --     (codediff review), prefix e (oil explorer), prefix C-c/C-a (org
 --     capture/agenda) — argc 0, so the no-args autoload would fire. Same env
---     flags the smart-splits spec guards on.
+--     flags the herdr-splits spec guards on.
 --   • headless nvim (CI / scripted checks): no UI ⇒ list_uis() is empty.
 -- (need=1 already blocks autosave for the buffer-less neogit popup, but the
 -- git-qf popup can open real files — so we also hard-stop saving below.)

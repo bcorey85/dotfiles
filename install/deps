@@ -97,7 +97,7 @@ wsl | ubuntu)
     print_success "gh already installed"
   fi
 
-  # lazydocker — docker dashboard TUI (tmux prefix l popup). Not packaged for
+  # lazydocker — docker dashboard TUI (herdr prefix l popup). Not packaged for
   # apt; GitHub release binary, same pattern as tlrc. Release tags are
   # v-prefixed but asset names are not, and assets say arm64, not aarch64.
   if ! command -v lazydocker &>/dev/null; then

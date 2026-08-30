@@ -4,7 +4,7 @@
 # with the `palette =` line below swapped to `<family>-<mode>`. Because it writes
 # starship's default path, EVERY running shell flips on its next prompt with no
 # reload and no STARSHIP_CONFIG — the generated file is machine-local, so this
-# tracked template never gets dirtied. Same source-of-truth model as ghostty/tmux.
+# tracked template never gets dirtied. Same source-of-truth model as ghostty/herdr.
 #
 # THIS is the template (stowed to ~/.config/starship.toml.template): if you edit
 # it, re-run `theme-mode` (any invocation) to regenerate the live config, or the

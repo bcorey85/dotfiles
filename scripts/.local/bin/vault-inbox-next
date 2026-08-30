@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# vault-inbox-next — open the inbox for processing (tmux prefix n p).
+# vault-inbox-next — open the inbox for processing (prefix n p).
 #
 # The inbox used to be a folder of note stubs, processed oldest-first as a
 # morning ritual. The 2026-08 vault redesign deleted that folder and the ritual

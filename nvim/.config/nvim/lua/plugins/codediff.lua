@@ -15,7 +15,7 @@
 return {
   "esmuellert/codediff.nvim",
   -- CodeDiffReview is ours (defined in config below); it's listed here so lazy
-  -- stubs it and loads the plugin on first call — the tmux `prefix d` popup
+  -- stubs it and loads the plugin on first call — the herdr `prefix d` popup
   -- launches with `-c CodeDiffReview`, before any keymap could trigger a load.
   cmd = { "CodeDiff", "CodeDiffReview" },
   keys = {
@@ -105,9 +105,9 @@ return {
     },
   },
   config = function(_, opts)
-    -- tmux `prefix d` popup (see .tmux.conf): the whole nvim is disposable,
-    -- so q anywhere quits it — the popup dismisses lazygit-style, like the
-    -- NEOGIT_POPUP / GIT_QF_POPUP siblings. codediff's own q (tab-close) is
+    -- herdr `prefix d` popup: the whole nvim is disposable, so q anywhere
+    -- quits it — the popup dismisses lazygit-style, like the NEOGIT_POPUP /
+    -- GIT_QF_POPUP siblings. codediff's own q (tab-close) is
     -- config-disabled so the global map has no buffer-local competition
     -- (codediff re-binds its keys per file-select, so out-binding it is a
     -- losing race — removing its binding is the reliable path). `qa` without
@@ -118,7 +118,7 @@ return {
       opts.keymaps.view.quit = false
       vim.keymap.set("n", "q", "<cmd>qa<cr>", { desc = "Close codediff popup" })
       -- A = ask-the-diff (scripts/.local/bin/diffask) in a floating terminal.
-      -- The popup is bare nvim — no tmux client inside — so the tmux
+      -- The popup is bare nvim — no herdr client inside — so the herdr
       -- `prefix A` binding can never fire here; this is its in-popup stand-in.
       -- `A` is free real estate in this nvim: every codediff buffer is
       -- non-modifiable, so append is dead anyway. Popup-gated to keep normal
@@ -151,8 +151,8 @@ return {
 
     require("codediff").setup(opts)
 
-    -- THE review entry point — used by <leader>gm and by the tmux `prefix d`
-    -- popup (.tmux.conf). Mid-merge it opens the conflict view for the current
+    -- THE review entry point — used by <leader>gm and by the herdr `prefix d`
+    -- popup. Mid-merge it opens the conflict view for the current
     -- file if that one is conflicted, else the first conflicted file (the old
     -- diffview <leader>gm auto-detect); otherwise the working-tree explorer.
     --

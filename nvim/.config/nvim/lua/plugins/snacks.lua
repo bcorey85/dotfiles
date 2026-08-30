@@ -15,8 +15,6 @@
 -- Terminals: kitty and ghostty support Kitty Graphics Protocol.
 -- WSL does NOT support it — images will not render there.
 --
--- tmux: requires `set -g allow-passthrough on` in .tmux.conf (see tmux/.tmux.conf).
---
 -- render-markdown.nvim coexists without conflict: it handles text decoration
 -- (headings, bullets, tables), snacks.image handles pixel-level graphics.
 -- No render-markdown options need changing.
@@ -79,9 +77,10 @@ return {
         },
       },
       -- notifier: routes vim.notify into a corner window with history.
-      -- Matters most in the throwaway popup nvims (prefix d/g/G/e): messages
-      -- there previously flashed on the last row and died with the popup, so
-      -- insitu's accept/reject/empty-queue notices were effectively invisible.
+      -- Matters most in the throwaway herdr popup nvims (prefix d/g/G/e):
+      -- messages there previously flashed on the last row and died with the
+      -- popup, so insitu's accept/reject/empty-queue notices were effectively
+      -- invisible.
       -- Snacks.notifier.show_history() gets them back.
       notifier = { enabled = true },
       -- No `indent` block: mini.indentscope owns indent guides (plugins/mini.lua).
@@ -90,7 +89,7 @@ return {
       -- dashboard: the Doom splash on an empty start. preset.header is the
       -- banner; "neovim?" rides underneath as a centered subtitle. Keys mirror
       -- the Doom-style picker layout already bound below.
-      -- Suppressed in the tmux popup nvims (prefix d/g/s/e, prefix n org menu):
+      -- Suppressed in the herdr popup nvims (prefix d/g/s/e, prefix n org menu):
       -- they launch straight into their own UI, and the splash frame reads as
       -- flicker there.
       dashboard = {
@@ -156,8 +155,8 @@ return {
           },
         },
       },
-      -- Terminal detection is pre-seeded below (see the vim.env.TMUX block after
-      -- setup) so the picker preview never runs snacks' blocking graphics probe.
+      -- Terminal detection is left to snacks; herdr passes the real terminal
+      -- (ghostty/kitty) through, so the blocking graphics probe is fine.
       image = {
         enabled = true,
         math = { enabled = false },
@@ -167,14 +166,15 @@ return {
         -- darkened — pane zoom already provides visual isolation.
         toggles = { dim = false },
         win = { style = "zen", width = 120 },
-        -- on_close: every exit path (q, <leader>z, :q, prefix-m) triggers this;
-        -- cleanup restores readonly/modifiable and removes the q map.
+        -- on_close: every exit path (q, <leader>z, :q, herdr zoom keybinding)
+        -- triggers this; cleanup restores readonly/modifiable and removes the
+        -- q map.
         on_close = function(_win)
           require("util.reading").cleanup()
         end,
       },
       -- terminal: toggleable bottom-split terminal keyed by cwd (one per
-      -- project). A split (not a float) so smart-splits <C-hjkl> can navigate
+      -- project). A split (not a float) so herdr-splits <C-hjkl> can navigate
       -- between it and your code windows — floats sit outside the split tree.
       terminal = {
         win = {
@@ -184,26 +184,7 @@ return {
       },
     })
 
-    -- snacks.image terminal auto-detect deadlocks under our tmux setup. We keep
-    -- tmux `extended-keys always` for the bare C-. / C-' / C-; binds, but snacks'
-    -- #2332 workaround (ask tmux for the terminal name) only fires when that
-    -- setting ends in " on" — `always` falls through to an escape-query that
-    -- never returns a TermResponse while extended-keys is on, freezing the picker
-    -- preview on first open (blocked, 0% CPU). So do the same thing snacks would:
-    -- read the terminal from tmux ourselves and pre-seed its detection cache, so
-    -- the blocking query is never issued. Outside tmux, snacks' own detection is
-    -- fine and this is skipped.
-    if vim.env.TMUX then
-      pcall(function()
-        local term = require("snacks.image.terminal")
-        local name = vim.trim(vim.fn.system({ "tmux", "display-message", "-p", "#{client_termname}" }))
-        -- snacks matches env by this .terminal string (e.g. "ghostty" -> supported
-        -- + placeholders); the tmux passthrough transform is layered on separately.
-        term._terminal = { terminal = name:gsub("^xterm%-", ""), version = "unknown" }
-      end)
-    end
-
-    -- Toggle zen mode: centered 120-col window, pairs with tmux prefix-m zoom.
+    -- Toggle zen mode: centered 120-col window, pairs with herdr zoom.
     vim.keymap.set("n", "<leader>z", function()
       Snacks.zen()
     end, { desc = "Zen mode (centered, width-capped)" })
@@ -223,8 +204,7 @@ return {
 
     -- Dismiss-from-inside uses a chord, not <leader>: in terminal mode <leader>
     -- (space) would intercept every space you type in the shell. <C-t> hides
-    -- the terminal split without leaving insert (C-/ is reserved for tmux's
-    -- claude session picker, see tmux/.tmux.conf).
+    -- the terminal split without leaving insert.
     vim.keymap.set("t", "<C-t>", function()
       Snacks.terminal()
     end, { desc = "Hide terminal" })
@@ -410,7 +390,7 @@ return {
     end, "Frecent files")
 
     -- <leader>pp: switch project (mirrors Doom `SPC p p`). In-editor switcher;
-    -- the OS-level equivalent is tmux-sessionizer (tmux `prefix f`).
+    -- the OS-level equivalent is herdr-sessionizer (herdr `prefix f`).
     pmap("<leader>pp", function()
       Snacks.picker.projects()
     end, "Switch project")

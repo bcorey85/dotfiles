@@ -312,6 +312,11 @@ key = "prefix+t"                        # theme toggle (terminal/herdr/nvim side
 command = "~/.local/bin/theme-mode toggle"
 type = "shell"
 
+[[keys.command]]
+key = "prefix+="                        # tmux: bind = select-layout even-* (equalize splits)
+command = "~/.local/bin/herdr-balance"
+type = "shell"
+
 # ─── theme (GENERATED — the marker below is replaced, don't hand-edit) ───────
 # theme-mode substitutes the marker line with the [theme] + [theme.custom] block
 # for the active family/mode. The palettes live in herdr_palette() in

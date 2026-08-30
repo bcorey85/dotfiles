@@ -70,59 +70,26 @@ set -euo pipefail
 MODE_FILE="$HOME/.cache/theme-mode"
 FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
-DEFAULT_FAMILY="flume"
+DEFAULT_FAMILY="vitesse"
 
-families() { printf '%s\n' flexoki flume sequoia tempus gruvbox horizon; }
+families() { printf '%s\n' vitesse; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
-  # flexoki's two are ghostty builtins (spaces and all), so no custom themes/
-  # file — apply() writes `theme = <name>`. "Flexoki Light"/"Flexoki Dark" match
-  # nvim's palette.
+  # vitesse: our port, dark #121212 / light #ffffff — custom files in
+  # ghostty/themes/. apply() writes `config-file` (not a ghostty builtin).
   case "$1:$2" in
-    flexoki:light)     echo "Flexoki Light" ;;
-    flexoki:*)         echo "Flexoki Dark" ;;
-    # Not ghostty builtins — custom files in ghostty/themes/. apply() writes
-    # `config-file`.
-    # flume: mira dark / mesa light — custom files in ghostty/themes/.
-    flume:light)        echo "flume-mesa" ;;
-    flume:*)            echo "flume-mira" ;;
-    # sequoia: night dark / rise light — custom files in ghostty/themes/.
-    sequoia:light)      echo "sequoia-light" ;;
-    sequoia:*)          echo "sequoia-dark" ;;
-    # tempus: classic dark / day light — custom files in ghostty/themes/.
-    tempus:light)       echo "tempus-light" ;;
-    tempus:*)           echo "tempus-dark" ;;
-    # gruvbox: material medium/mix dark / light — custom files in ghostty/themes/.
-    gruvbox:light)      echo "gruvbox-light" ;;
-    gruvbox:*)          echo "gruvbox-dark" ;;
-    # horizon: dark #1c1e26 / light #fdf0ed — custom files in ghostty/themes/.
-    horizon:light)      echo "horizon-light" ;;
-    horizon:*)          echo "horizon-dark" ;;
+    vitesse:light)      echo "vitesse-light" ;;
+    vitesse:*)          echo "vitesse-dark" ;;
   esac
 }
 
-hunk_theme() { # <family> <mode> -> the hunk BUILTIN a custom theme inherits from
-  # hunk's [custom_theme] `base` inherits syntax (and any unset colours) from a
-  # bundled theme; hunk_custom_theme() then overrides the diff/chrome colours on
-  # top. This picks that base — the closest shipped theme for the family's
-  # syntax. If a family sets no custom block, this id is used directly as
-  # `theme =`. The ids live in the installed package's dist/npm/opentui/
-  # themes.d.ts (`hunk diff --help` has no list). vitesse is the closest
-  # warm/muted base for the scopes hunk_custom_theme does not override (nearly
-  # none — it sets all 11 syntax slots + all diff/chrome colours per family).
+hunk_theme() { # <family> <mode> -> the hunk builtin id used directly as `theme =`
+  # vitesse IS a hunk builtin (both modes) — used directly, no custom_theme
+  # frankenstein (hunk_custom_theme returns nothing, so this id becomes
+  # `theme =`). Renders natively.
   case "$1:$2" in
-    flexoki:light)     echo "vitesse-light" ;;
-    flexoki:*)         echo "vitesse-dark" ;;
-    flume:light)        echo "vitesse-light" ;;
-    flume:*)            echo "vitesse-dark" ;;
-    sequoia:light)      echo "vitesse-light" ;;
-    sequoia:*)          echo "vitesse-dark" ;;
-    tempus:light)       echo "vitesse-light" ;;
-    tempus:*)           echo "vitesse-dark" ;;
-    gruvbox:light)      echo "vitesse-light" ;;
-    gruvbox:*)          echo "vitesse-dark" ;;
-    horizon:light)      echo "vitesse-light" ;;
-    horizon:*)          echo "vitesse-dark" ;;
+    vitesse:light)      echo "vitesse-light" ;;
+    vitesse:*)          echo "vitesse-dark" ;;
   esac
 }
 
@@ -133,14 +100,10 @@ HUNK_BLOCK_BEGIN="# >>> theme-mode custom_theme (do not edit inside markers)"
 HUNK_BLOCK_END="# <<< theme-mode custom_theme"
 
 hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, or nothing
-  # Overrides hunk's diff line/sign/syntax colours to the EXACT values nvim
-  # paints under this family, since no bundled hunk theme reproduces them. Diff
-  # backgrounds are the family accent blended subtly over its panel bg (readable
-  # full-line washes, not a solid-accent wall). `base` above supplies uncovered
-  # scopes; keys here (camelCase, matching hunk's CUSTOM_THEME_COLOR_KEYS) win
-  # over it. comment is the same contrast-lifted grey nvim uses per family.
-  # Syntax is emitted as [custom_theme.syntax_scopes] (TextMate selectors); the
-  # 11 named roles below expand to the scope sets in the table at the bottom.
+  # vitesse sets NO custom block — it renders via hunk's own builtin (hunk_theme
+  # returns it directly as `theme =`), so vitesse falls through to `*) return 0`.
+  # The per-family branches below are inert (their families are gone); retained
+  # as the pattern for re-adding a family whose colors no bundled theme matches.
   local bg panel panelAlt border accent accentMuted text muted addedBg removedBg
   local ctxBg sAdd sRem lnFg badgeAdd badgeRem badgeNeu fRename fMod fUntracked note
   local kw str num fn typ punct op
@@ -199,32 +162,29 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # accent, type yellow, operator neutral text.
       kw="#b69bd2"; str="#84b39f"; num="#e49a7b"; fn="#72b5bf"; typ="#d8a36b"; punct="#9d96aa"; op="#d9d4df"
       ;;
-    sequoia:light)
-      # sequoia rise (warm cream #ede9e4). comment lifted from stock subtle
-      # #8a8880 (~2.8:1) to #625f58 (~4.6:1). red kept muted (no amplify).
-      bg="#ede9e4"; panel="#e3e0da"; panelAlt="#d5d2cc"; border="#cac7c1"
-      accent="#a85080"; accentMuted="#cac7c1"; text="#2c2c2a"; muted="#625f58"
-      addedBg="#dde6d5"; removedBg="#eeddd6"; ctxBg="#ede9e4"
-      sAdd="#488828"; sRem="#c03838"; lnFg="#b0ada6"
-      badgeAdd="#488828"; badgeRem="#c03838"; badgeNeu="#3868a8"
-      fRename="#a85080"; fMod="#9a7828"; fUntracked="#625f58"; note="#e3e0da"
-      # sequoia roles: keyword pink (lily), string green, number orange (honey),
-      # fn blue (denim), type teal (baja), operator neutral fg.
-      kw="#a85080"; str="#488828"; num="#a86828"; fn="#3868a8"; typ="#2a8868"; punct="#625f58"; op="#2c2c2a"
+    zenbones:light)
+      # zenbones light (warm sand #f0edec). Chrome from the theme's own
+      # CursorLine/Pmenu. Comment grey lifted to #726a64 (stock #948985 ~3.0:1).
+      bg="#f0edec"; panel="#e9e4e2"; panelAlt="#dad3cf"; border="#cfc1ba"
+      accent="#a8334c"; accentMuted="#a4968f"; text="#2c363c"; muted="#726a64"
+      addedBg="#cbe5b8"; removedBg="#ebd8da"; ctxBg="#f0edec"
+      sAdd="#4f6c31"; sRem="#a8334c"; lnFg="#a4968f"
+      badgeAdd="#4f6c31"; badgeRem="#a8334c"; badgeNeu="#286486"
+      fRename="#a8334c"; fMod="#944927"; fUntracked="#4f6c31"; note="#e9e4e2"
+      # zenbones is low-color: keyword/fn use fg, only string/type/number tint.
+      kw="#2c363c"; str="#556570"; num="#556570"; fn="#2c363c"; typ="#6a5549"; punct="#2c363c"; op="#14161b"
       ;;
-    sequoia:*)
-      # sequoia night (neutral #141414). comment lifted from stock subtle
-      # #5d5d5d (~2.8:1) to #808080 (~4.6:1). red #c05050 used as-is, not
-      # brightened — saturated red reads rough.
-      bg="#141414"; panel="#1a1a1a"; panelAlt="#242424"; border="#2d2d2d"
-      accent="#b080b0"; accentMuted="#5d5d5d"; text="#b0b0b5"; muted="#808080"
-      addedBg="#1a231a"; removedBg="#2a1c1c"; ctxBg="#141414"
-      sAdd="#90a870"; sRem="#c05050"; lnFg="#5d5d5d"
-      badgeAdd="#90a870"; badgeRem="#c05050"; badgeNeu="#6a9dcc"
-      fRename="#b080b0"; fMod="#c09070"; fUntracked="#808080"; note="#1a1a1a"
-      # sequoia roles: keyword pink (lily), string green, number orange (honey),
-      # fn blue (denim), type teal (baja), operator neutral fg.
-      kw="#b080b0"; str="#90a870"; num="#c09070"; fn="#6a9dcc"; typ="#6aab9a"; punct="#808080"; op="#b0b0b5"
+    zenbones:*)
+      # zenbones dark (warm near-black #1c1917). Chrome from the theme's own
+      # CursorLine/Pmenu. Comment grey lifted to #8f857e (stock #6e6763 ~3.1:1).
+      bg="#1c1917"; panel="#25211f"; panelAlt="#302b29"; border="#403833"
+      accent="#de6e7c"; accentMuted="#685f5a"; text="#b4bdc3"; muted="#8f857e"
+      addedBg="#232d1a"; removedBg="#3e2225"; ctxBg="#1c1917"
+      sAdd="#819b69"; sRem="#de6e7c"; lnFg="#685f5a"
+      badgeAdd="#819b69"; badgeRem="#de6e7c"; badgeNeu="#6099c0"
+      fRename="#de6e7c"; fMod="#b77e64"; fUntracked="#819b69"; note="#25211f"
+      # zenbones is low-color: keyword/fn use fg, only string/type/number tint.
+      kw="#b4bdc3"; str="#868c91"; num="#868c91"; fn="#b4bdc3"; typ="#a1938c"; punct="#b4bdc3"; op="#e0e2ea"
       ;;
     tempus:light)
       # tempus day (Prot's WCAG-tuned warm-cream light #f8f2e5). comment = fgalt
@@ -280,31 +240,96 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # const aqua, operator fg.
       kw="#f2594b"; str="#b0b846"; num="#d3869b"; fn="#b0b846"; typ="#e9b143"; punct="#e2cca9"; op="#e2cca9"
       ;;
-    horizon:light)
-      # horizon.nvim light (#fdf0ed). comment lifted to #6e6664. Diff washes use
-      # the theme's own diff bgs.
-      bg="#fdf0ed"; panel="#fadad1"; panelAlt="#f9cbbe"; border="#f9cec3"
-      accent="#8a31b9"; accentMuted="#f9cec3"; text="#06060c"; muted="#6e6664"
-      addedBg="#e4eee3"; removedBg="#fcdedf"; ctxBg="#fdf0ed"
-      sAdd="#178f6a"; sRem="#da103f"; lnFg="#989290"
-      badgeAdd="#178f6a"; badgeRem="#da103f"; badgeNeu="#1d8991"
-      fRename="#8a31b9"; fMod="#af5427"; fUntracked="#1eb980"; note="#fadad1"
-      # horizon light roles: keyword amethyst, string tango, number thunderbird,
-      # func elm, type jaffa.
-      kw="#8a31b9"; str="#f6661e"; num="#dc3318"; fn="#1d8991"; typ="#f77d26"; punct="#333333"; op="#333333"
+    melange:light)
+      # melange light (#f1f1f1). Chrome + diff washes from the theme's own
+      # CursorLine/Visual/DiffAdd/DiffDelete. Comments clear 4.5:1 unmodified.
+      bg="#f1f1f1"; panel="#e9e1db"; panelAlt="#d9d3ce"; border="#d9d3ce"
+      accent="#bc5c00"; accentMuted="#a98a78"; text="#54433a"; muted="#7d6658"
+      addedBg="#d0e9d1"; removedBg="#f1dedf"; ctxBg="#f1f1f1"
+      sAdd="#6e9b72"; sRem="#bf0021"; lnFg="#a98a78"
+      badgeAdd="#6e9b72"; badgeRem="#bf0021"; badgeNeu="#465aa4"
+      fRename="#bc5c00"; fMod="#a06d00"; fUntracked="#6e9b72"; note="#e9e1db"
+      # melange light roles: keyword orange, string blue, number magenta, fn
+      # ochre, type teal, operator red.
+      kw="#bc5c00"; str="#465aa4"; num="#904180"; fn="#a06d00"; typ="#739797"; punct="#54433a"; op="#bf0021"
       ;;
-    horizon:*)
-      # horizon.nvim dark (#1c1e26). comment lifted to #6c6f93. Diff washes use
-      # the theme's own diff bgs.
-      bg="#1c1e26"; panel="#232530"; panelAlt="#2e303e"; border="#1a1c23"
-      accent="#a86ec9"; accentMuted="#6c6f93"; text="#bbbbbb"; muted="#6c6f93"
-      addedBg="#1a3432"; removedBg="#4a2024"; ctxBg="#1c1e26"
-      sAdd="#0fb67b"; sRem="#b3344c"; lnFg="#4c4d53"
-      badgeAdd="#0fb67b"; badgeRem="#b3344c"; badgeNeu="#26bbd9"
-      fRename="#a86ec9"; fMod="#fab38e"; fUntracked="#27d797"; note="#232530"
-      # horizon dark roles: keyword purple, string tan, number apricot, func
-      # turquoise, type sand.
-      kw="#a86ec9"; str="#e4a88a"; num="#f09483"; fn="#24a1ad"; typ="#e4b28e"; punct="#bbbbbb"; op="#bbbbbb"
+    melange:*)
+      # melange dark (warm brown-black #292522). Chrome from the theme's own
+      # CursorLine/Visual. removedBg dimmed from melange's loud stock DiffDelete
+      # (#7d2a2f wine) to a low-sat blend; addedBg is the theme's subtle DiffAdd
+      # as-is. Comments clear 4.5:1.
+      bg="#292522"; panel="#34302c"; panelAlt="#403a36"; border="#221f1c"
+      accent="#e49b5d"; accentMuted="#867462"; text="#ece1d7"; muted="#c1a78e"
+      addedBg="#233524"; removedBg="#3a2529"; ctxBg="#292522"
+      sAdd="#85b695"; sRem="#d47766"; lnFg="#867462"
+      badgeAdd="#85b695"; badgeRem="#d47766"; badgeNeu="#a3a9ce"
+      fRename="#e49b5d"; fMod="#ebc06d"; fUntracked="#85b695"; note="#34302c"
+      # melange dark roles: keyword orange, string blue, number magenta, fn
+      # yellow, type cyan, operator coral.
+      kw="#e49b5d"; str="#a3a9ce"; num="#cf9bc2"; fn="#ebc06d"; typ="#7b9695"; punct="#ece1d7"; op="#d47766"
+      ;;
+    bamboo:light)
+      # bamboo light (warm cream #fafae0). Chrome from the theme's own CursorLine/
+      # Visual. Diff washes dimmed from bamboo's loud stock DiffAdd/DiffDelete
+      # (#c0e3ab/#f9afb5) to a neogit-style low-sat blend — hunk fills whole lines
+      # at full opacity, so the raw hues read far brighter than in neogit. Comment
+      # grey lifted to #66695f.
+      bg="#fafae0"; panel="#eaead0"; panelAlt="#dadac2"; border="#dadac2"
+      accent="#8a4adf"; accentMuted="#a1a7a0"; text="#3a4238"; muted="#66695f"
+      addedBg="#e4eecb"; removedBg="#f2ddd8"; ctxBg="#fafae0"
+      sAdd="#27850b"; sRem="#c72a3c"; lnFg="#a1a7a0"
+      badgeAdd="#27850b"; badgeRem="#c72a3c"; badgeNeu="#1745d5"
+      fRename="#8a4adf"; fMod="#a77b00"; fUntracked="#27850b"; note="#eaead0"
+      # bamboo light roles: keyword purple, string green, number coral, fn blue,
+      # type ochre, operator muted-purple.
+      kw="#8a4adf"; str="#27850b"; num="#df5926"; fn="#1745d5"; typ="#a77b00"; punct="#3a4238"; op="#6c47a0"
+      ;;
+    bamboo:*)
+      # bamboo vulgaris dark (warm green-brown #252623). Chrome from the theme's
+      # own CursorLine/Visual. Diff washes dimmed from bamboo's loud stock
+      # DiffAdd/DiffDelete (#40531b/#893f45) to a neogit-style low-sat blend —
+      # hunk fills whole lines at full opacity, so the raw hues read far brighter
+      # than in neogit. Comment clears 4.5:1 unmodified.
+      bg="#252623"; panel="#2f312c"; panelAlt="#3a3d37"; border="#1c1e1b"
+      accent="#e75a7c"; accentMuted="#5b5e5a"; text="#f1e9d2"; muted="#838781"
+      addedBg="#2d3a1e"; removedBg="#3d2a2d"; ctxBg="#252623"
+      sAdd="#8fb573"; sRem="#e75a7c"; lnFg="#5b5e5a"
+      badgeAdd="#8fb573"; badgeRem="#e75a7c"; badgeNeu="#57a5e5"
+      fRename="#e75a7c"; fMod="#dbb651"; fUntracked="#8fb573"; note="#2f312c"
+      # bamboo dark roles: keyword lavender, string green, number coral, fn blue,
+      # type yellow, operator muted-lavender.
+      kw="#aaaaff"; str="#8fb573"; num="#ff9966"; fn="#57a5e5"; typ="#dbb651"; punct="#f1e9d2"; op="#c5c2ee"
+      ;;
+    kanagawa:light)
+      # kanagawa lotus (warm cream #f2ecbc). Chrome from the lotusWhite surfaces
+      # (theme's own Visual/Pmenu are cool #c9cbd1/#c7d7e0 — skipped for warm).
+      # Diff washes dimmed from lotus's mid-tone stock DiffAdd/DiffDelete
+      # (#b7d0ae/#d9a594) to a pale blend matching the other light families —
+      # hunk fills whole lines at full opacity. Comment grey lifted to #6a6a5e
+      # (stock #8a8980 ~3.1:1).
+      bg="#f2ecbc"; panel="#e5ddb0"; panelAlt="#dcd5ac"; border="#dcd7ba"
+      accent="#b35b79"; accentMuted="#a09cac"; text="#545464"; muted="#6a6a5e"
+      addedBg="#dde5c9"; removedBg="#ecd8cf"; ctxBg="#f2ecbc"
+      sAdd="#6e915f"; sRem="#c84053"; lnFg="#a09cac"
+      badgeAdd="#6e915f"; badgeRem="#c84053"; badgeNeu="#4d699b"
+      fRename="#b35b79"; fMod="#836f4a"; fUntracked="#6e915f"; note="#e5ddb0"
+      # lotus roles: keyword violet, string green, number pink, fn blue, type
+      # teal, operator brown.
+      kw="#624c83"; str="#6f894e"; num="#b35b79"; fn="#4d699b"; typ="#597b75"; punct="#545464"; op="#836f4a"
+      ;;
+    kanagawa:*)
+      # kanagawa dragon (warm charcoal #181616). Chrome from the warm dragonBlack
+      # surfaces (theme's own Visual/Pmenu are cool #223249 — skipped for warm).
+      # Comment grey lifted to #838a82 (stock #737c73 ~4.1:1).
+      bg="#181616"; panel="#1D1C19"; panelAlt="#282727"; border="#0d0c0c"
+      accent="#a292a3"; accentMuted="#625e5a"; text="#c5c9c5"; muted="#838a82"
+      addedBg="#2b3328"; removedBg="#43242b"; ctxBg="#181616"
+      sAdd="#87a987"; sRem="#c4746e"; lnFg="#625e5a"
+      badgeAdd="#87a987"; badgeRem="#c4746e"; badgeNeu="#7fb4ca"
+      fRename="#a292a3"; fMod="#c4b28a"; fUntracked="#87a987"; note="#1D1C19"
+      # dragon roles: keyword violet, string green, number mauve-pink, fn blue,
+      # type aqua, operator coral.
+      kw="#8992a7"; str="#8a9a7b"; num="#a292a3"; fn="#8ba4b0"; typ="#8ea4a2"; punct="#c5c9c5"; op="#c4746e"
       ;;
     *) return 0 ;;
   esac
@@ -491,25 +516,25 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       green="#84b39f" yellow="#d8a36b" red="#dd789b"
       blue="#72a8c7" teal="#8ac8cf" peach="#e49a7b"
       ;;
-    sequoia:light)
-      # sequoia rise (warm cream #ede9e4) — comment lifted to #625f58 (~4.6:1).
+    zenbones:light)
+      # zenbones light (warm sand #f0edec) — comment lifted to #726a64.
       base_name="one-light"
-      accent="#a85080" panel_bg="#e3e0da" surface_dim="#d5d2cc"
-      surface0="#cac7c1" surface1="#bcb9b3"
-      overlay0="#625f58" overlay1="#625f58"
-      text="#2c2c2a" subtext0="#625f58"
-      green="#488828" yellow="#9a7828" red="#c03838"
-      blue="#3868a8" teal="#2a8868" peach="#a86828"
+      accent="#a8334c" panel_bg="#e9e4e2" surface_dim="#ded7d3"
+      surface0="#d4cbc5" surface1="#c8bdb6"
+      overlay0="#a4968f" overlay1="#726a64"
+      text="#2c363c" subtext0="#726a64"
+      green="#4f6c31" yellow="#944927" red="#a8334c"
+      blue="#286486" teal="#3b8992" peach="#944927"
       ;;
-    sequoia:*)
-      # sequoia night (neutral #141414) — comment lifted to #808080 (~4.6:1).
+    zenbones:*)
+      # zenbones dark (warm near-black #1c1917) — comment lifted to #8f857e.
       base_name="one-dark"
-      accent="#b080b0" panel_bg="#1a1a1a" surface_dim="#242424"
-      surface0="#2d2d2d" surface1="#383838"
-      overlay0="#5d5d5d" overlay1="#808080"
-      text="#b0b0b5" subtext0="#808080"
-      green="#90a870" yellow="#bfa878" red="#c05050"
-      blue="#6a9dcc" teal="#6aab9a" peach="#c09070"
+      accent="#de6e7c" panel_bg="#25211f" surface_dim="#302b29"
+      surface0="#383330" surface1="#45403b"
+      overlay0="#685f5a" overlay1="#8f857e"
+      text="#b4bdc3" subtext0="#8f857e"
+      green="#819b69" yellow="#b77e64" red="#de6e7c"
+      blue="#6099c0" teal="#66a5ad" peach="#d68c67"
       ;;
     tempus:light)
       # tempus day (Prot WCAG-tuned warm-cream #f8f2e5) — comment = fgalt #68607d.
@@ -552,25 +577,91 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       green="#b0b846" yellow="#e9b143" red="#f2594b"
       blue="#80aa9e" teal="#8bba7f" peach="#e9b143"
       ;;
-    horizon:light)
-      # horizon.nvim light (#fdf0ed) — comment lifted to #6e6664.
+    melange:light)
+      # melange light (#f1f1f1) — comment #7d6658. Verbatim.
       base_name="one-light"
-      accent="#8a31b9" panel_bg="#fadad1" surface_dim="#f7d3c9"
-      surface0="#f9cbbe" surface1="#f4bdb0"
-      overlay0="#8e8886" overlay1="#6e6664"
-      text="#06060c" subtext0="#6e6664"
-      green="#178f6a" yellow="#af5427" red="#da103f"
-      blue="#1d8991" teal="#1eaeae" peach="#f6661e"
+      accent="#bc5c00" panel_bg="#e9e1db" surface_dim="#e2dad3"
+      surface0="#d9d3ce" surface1="#cfc7bf"
+      overlay0="#a98a78" overlay1="#7d6658"
+      text="#54433a" subtext0="#7d6658"
+      green="#6e9b72" yellow="#a06d00" red="#bf0021"
+      blue="#465aa4" teal="#739797" peach="#904180"
       ;;
-    horizon:*)
-      # horizon.nvim dark (#1c1e26) — comment lifted to #6c6f93.
+    melange:*)
+      # melange dark (warm brown-black #292522) — comment #c1a78e. Verbatim,
+      # keyword orange accent as authored.
       base_name="one-dark"
-      accent="#a86ec9" panel_bg="#232530" surface_dim="#2a2c38"
-      surface0="#2e303e" surface1="#3d3f52"
-      overlay0="#5b5f78" overlay1="#6c6f93"
-      text="#bbbbbb" subtext0="#6c6f93"
-      green="#29d398" yellow="#fab795" red="#e95678"
-      blue="#26bbd9" teal="#59e1e3" peach="#f09483"
+      accent="#e49b5d" panel_bg="#34302c" surface_dim="#3a352f"
+      surface0="#403a36" surface1="#4a443f"
+      overlay0="#867462" overlay1="#c1a78e"
+      text="#ece1d7" subtext0="#c1a78e"
+      green="#85b695" yellow="#ebc06d" red="#d47766"
+      blue="#a3a9ce" teal="#7b9695" peach="#cf9bc2"
+      ;;
+    bamboo:light)
+      # bamboo light (warm cream #fafae0) — comment lifted to #66695f.
+      base_name="one-light"
+      accent="#df5926" panel_bg="#eaead0" surface_dim="#e2e2c8"
+      surface0="#dadac2" surface1="#d0d0b8"
+      overlay0="#a1a7a0" overlay1="#66695f"
+      text="#3a4238" subtext0="#66695f"
+      green="#27850b" yellow="#a77b00" red="#c72a3c"
+      blue="#1745d5" teal="#188a9e" peach="#df5926"
+      ;;
+    bamboo:*)
+      # bamboo vulgaris dark (warm green-brown #252623) — comment #838781.
+      base_name="one-dark"
+      accent="#e75a7c" panel_bg="#2f312c" surface_dim="#363833"
+      surface0="#3a3d37" surface1="#454842"
+      overlay0="#5b5e5a" overlay1="#838781"
+      text="#f1e9d2" subtext0="#838781"
+      green="#8fb573" yellow="#dbb651" red="#e75a7c"
+      blue="#57a5e5" teal="#70c2be" peach="#ff9966"
+      ;;
+    kanagawa:light)
+      # kanagawa lotus (warm cream #f2ecbc) — comment lifted to #6a6a5e.
+      base_name="one-light"
+      accent="#b35b79" panel_bg="#e5ddb0" surface_dim="#e7dba0"
+      surface0="#dcd5ac" surface1="#d5cea3"
+      overlay0="#a09cac" overlay1="#6a6a5e"
+      text="#545464" subtext0="#716e61"
+      green="#6e915f" yellow="#836f4a" red="#c84053"
+      blue="#4d699b" teal="#597b75" peach="#cc6d00"
+      ;;
+    kanagawa:*)
+      # kanagawa dragon (warm charcoal #181616) — comment lifted to #838a82.
+      base_name="one-dark"
+      accent="#a292a3" panel_bg="#1D1C19" surface_dim="#232220"
+      surface0="#282727" surface1="#393836"
+      overlay0="#625e5a" overlay1="#838a82"
+      text="#c5c9c5" subtext0="#838a82"
+      green="#87a987" yellow="#c4b28a" red="#c4746e"
+      blue="#8ba4b0" teal="#8ea4a2" peach="#b6927b"
+      ;;
+    vitesse:light)
+      # vitesse light (white #ffffff). Chrome tokens are foreground-on-light, so
+      # the theme's ANSI is darkened where it misses 4.5:1 on panel_bg: yellow
+      # #bda437 (~2.6:1), teal #2993a3 (~3.2:1), red #ab5959 (~4.3:1). green and
+      # blue clear it as authored and stay verbatim. surface_dim is the theme's
+      # own selection #e9e9e7. accent = primary green, matching dark.
+      base_name="one-light"
+      accent="#1e754f" panel_bg="#f2f2f0" surface_dim="#e9e9e7"
+      surface0="#dededa" surface1="#d2d2ce"
+      overlay0="#8f9a8f" overlay1="#626e62"
+      text="#393a34" subtext0="#626e62"
+      green="#1e754f" yellow="#7d6a1e" red="#9e4d4d"
+      blue="#296aa3" teal="#1f7080" peach="#a15d28"
+      ;;
+    vitesse:*)
+      # vitesse dark (off-black #121212, desaturated).
+      # accent = primary green; comment #5c6b5e is overlay0.
+      base_name="one-dark"
+      accent="#4d9375" panel_bg="#181818" surface_dim="#222222"
+      surface0="#252525" surface1="#393939"
+      overlay0="#5c6b5e" overlay1="#83827d"
+      text="#c8c5b8" subtext0="#83827d"
+      green="#4d9375" yellow="#e6cc77" red="#cb7676"
+      blue="#6394bf" teal="#5eaab5" peach="#d4976c"
       ;;
   esac
 

@@ -29,7 +29,7 @@ hl.config({
 
 local terminal    = "ghostty"
 local fileManager = "thunar"
-local menu        = "rofi -show drun"
+local menu        = "walker"
 
 
 -------------------
@@ -44,6 +44,10 @@ hl.on("hyprland.start", function()
     -- (swww was renamed to awww upstream in 0.12; the Arch package followed.)
     hl.exec_cmd("awww-daemon")
     hl.exec_cmd("sleep 0.5 && hypr-wallpaper")
+
+    -- Launcher backend + frontend service (keybind `walker` connects instantly)
+    hl.exec_cmd("elephant")
+    hl.exec_cmd("walker --gapplication-service")
 
     -- Notification daemon
     hl.exec_cmd("dunst")
@@ -110,9 +114,9 @@ hl.config({
         border_size = 2,
 
         col = {
-            -- flume mira palette (dark-only, no mode axis).
-            active_border   = "rgba(72b5bfee)",
-            inactive_border = "rgba(292634ee)",
+            -- vitesse dark palette (dark-only, no mode axis).
+            active_border   = "rgba(5eaab5ee)",
+            inactive_border = "rgba(181818ee)",
         },
 
         resize_on_border = true,
@@ -133,7 +137,7 @@ hl.config({
             enabled      = true,
             range        = 4,
             render_power = 3,
-            color        = "rgba(292634ee)",
+            color        = "rgba(181818ee)",
         },
 
         blur = {
@@ -203,7 +207,7 @@ hl.config({
     input = {
         numlock_by_default = true,
         kb_layout  = "us,us",
-        kb_variant = "",
+        kb_variant = "colemak_dh,",
         kb_model   = "",
         kb_options = "ctrl:nocaps",
         kb_rules   = "",

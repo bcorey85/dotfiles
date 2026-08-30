@@ -18,7 +18,7 @@
 # header — any key after a table header belongs to that table. Placed below a
 # palette, `format` silently became palettes.<name>.format and starship fell
 # back to the default `$all` format (which pulls in $aws et al.).
-palette = "flume-dark"
+palette = "vitesse-dark"
 
 format = """
 $directory\
@@ -30,177 +30,37 @@ $cmd_duration\
 $line_break\
 $character"""
 
-# Flexoki dark (moon, #100f0f canvas), accents at the 400 step — same palette
-# nvim/ghostty paint. `grey` is base-500 #878580 (~5.3:1 on the canvas; stock
-# comment base-700 #575653 is only ~2.5:1).
-[palettes.flexoki-dark]
-red = "#d14d41"
-orange = "#da702c"
-yellow = "#d0a215"
-green = "#879a39"
-blue = "#4385be"
-teal = "#4385be"
-purple = "#8b7ec8"
-fg = "#cecdc3"
-bg = "#100f0f"
-grey = "#878580"
+# vitesse dark (antfu's Vitesse, off-black #121212). `orange`/`peach` is
+# vitesse orange #d4976c; `purple` is magenta #d9739f. `grey` is comment #5c6b5e.
+[palettes.vitesse-dark]
+red = "#cb7676"
+orange = "#d4976c"
+yellow = "#e6cc77"
+green = "#4d9375"
+blue = "#6394bf"
+teal = "#5eaab5"
+purple = "#d9739f"
+fg = "#c8c5b8"
+bg = "#121212"
+grey = "#5c6b5e"
 
-# Flexoki light (dawn, #fffcf0 canvas), accents at the 600 step. `grey` is
-# base-600 #6f6e69 (~4.9:1; stock comment base-300 #b7b5ac is only ~1.9:1).
-[palettes.flexoki-light]
-red = "#af3029"
-orange = "#bc5215"
-yellow = "#ad8301"
-green = "#66800b"
-blue = "#205ea6"
-teal = "#205ea6"
-purple = "#5e409d"
-fg = "#100f0f"
-bg = "#fffcf0"
-grey = "#6f6e69"
-
-# flume mira (violet-charcoal #24212f). `orange` is boolean #e49a7b (flume has
-# no distinct orange). `grey` is comment lifted to #a29bb0 (~5.5:1). Accent is
-# cyan #72b5bf.
-[palettes.flume-dark]
-red = "#dd789b"
-orange = "#e49a7b"
-yellow = "#d8a36b"
-green = "#84b39f"
-blue = "#72a8c7"
-teal = "#8ac8cf"
-purple = "#b69bd2"
-fg = "#cbc5d2"
-bg = "#24212f"
-grey = "#a29bb0"
-
-# flume mesa (warm cream #f3ede8) — the family's light half. `grey` is comment
-# #706878 (~5:1 on paper).
-[palettes.flume-light]
-red = "#934d5b"
-orange = "#9b5146"
-yellow = "#815f1d"
-green = "#557245"
-blue = "#3f7180"
-teal = "#356f80"
-purple = "#72518f"
-fg = "#413b49"
-bg = "#f3ede8"
-grey = "#706878"
-
-# sequoia night (dark #141414) — from forest-nvim/sequoia.nvim. red kept
-# unbrightened (saturated red reads rough). `grey` is comment #808080 (~5:1).
-[palettes.sequoia-dark]
-red = "#c05050"
-orange = "#c09070"
-yellow = "#bfa878"
-green = "#90a870"
-blue = "#6a9dcc"
-teal = "#6aab9a"
-purple = "#b080b0"
-fg = "#b0b0b5"
-bg = "#141414"
-grey = "#808080"
-
-# sequoia rise (light warm cream #ede9e4). `grey` is comment #625f58 (~6:1).
-[palettes.sequoia-light]
-red = "#c03838"
-orange = "#a86828"
-yellow = "#9a7828"
-green = "#488828"
-blue = "#3868a8"
-teal = "#2a8868"
-purple = "#a85080"
-fg = "#2c2c2a"
-bg = "#ede9e4"
-grey = "#625f58"
-
-# tempus classic (dark #232323) — protesilaos/tempus, WCAG-tuned. `red`/`orange`
-# are warm ochre (classic has no bright saturated red); `purple` is the pink
-# keyword. `grey` is comment #949d9f (~5.6:1).
-[palettes.tempus-dark]
-red = "#d4823d"
-orange = "#d0913d"
-yellow = "#b1942b"
-green = "#8c9e3d"
-blue = "#6e9cb0"
-teal = "#6da280"
-purple = "#d58888"
-fg = "#aeadaf"
-bg = "#232323"
-grey = "#949d9f"
-
-# tempus day (warm-cream light #f8f2e5) — protesilaos/tempus, WCAG-tuned. `red`
-# softened to brick #a3352a (stock #c81000 is high-sat red); `purple` is the
-# keyword. `grey` is comment #68607d (~5:1).
-[palettes.tempus-light]
-red = "#a3352a"
-orange = "#b24000"
-yellow = "#806000"
-green = "#107410"
-blue = "#385dc4"
-teal = "#007070"
-purple = "#8050a7"
-fg = "#464340"
-bg = "#f8f2e5"
-grey = "#68607d"
-
-# gruvbox-material medium/mix dark (#282828) — verbatim upstream, keyword red
-# #f2594b kept. `grey` is comment #928374 (~4.1:1).
-[palettes.gruvbox-dark]
-red = "#f2594b"
-orange = "#e9b143"
-yellow = "#e9b143"
-green = "#b0b846"
-blue = "#80aa9e"
-teal = "#8bba7f"
-purple = "#d3869b"
-fg = "#e2cca9"
-bg = "#282828"
-grey = "#928374"
-
-# gruvbox-material medium/mix light (#fbf1c7) — verbatim upstream. `grey` is
-# comment #928374 (~4.5:1).
-[palettes.gruvbox-light]
-red = "#af2528"
-orange = "#b4730e"
-yellow = "#b4730e"
-green = "#72761e"
-blue = "#266b79"
-teal = "#477a5b"
-purple = "#924f79"
-fg = "#514036"
-bg = "#fbf1c7"
-grey = "#928374"
-
-# horizon.nvim dark (#1c1e26). `orange`/`peach` is apricot #f09483; `purple` is
-# keyword #a86ec9. `grey` is comment lifted to accentAlt #6c6f93 (~4.6:1).
-[palettes.horizon-dark]
-red = "#e95678"
-orange = "#f09483"
-yellow = "#fab795"
-green = "#29d398"
-blue = "#26bbd9"
-teal = "#59e1e3"
-purple = "#a86ec9"
-fg = "#bbbbbb"
-bg = "#1c1e26"
-grey = "#6c6f93"
-
-# horizon.nvim light (#fdf0ed). `grey` is comment lifted to #6e6664 (~5:1). red
-# is crimson #da103f, green darkened to #178f6a (light palette has no readable
-# green).
-[palettes.horizon-light]
-red = "#da103f"
-orange = "#f6661e"
-yellow = "#af5427"
-green = "#178f6a"
-blue = "#1d8991"
-teal = "#1eaeae"
-purple = "#8a31b9"
-fg = "#06060c"
-bg = "#fdf0ed"
-grey = "#6e6664"
+# vitesse light (antfu's Vitesse light, white #ffffff). Prompt colors are
+# foreground-on-white, so the theme's own ANSI is the starting point but not the
+# whole answer: green/blue/purple clear 4.5:1 as authored and are verbatim,
+# while yellow #bda437 (~2.6:1), teal #2993a3 (~3.2:1) and red #ab5959 (~4.3:1)
+# do not and are darkened. `grey` is the comment, lifted to #626e62 (nvim's
+# light fixup #6b7a6b lands ~4.1:1 here, just under the floor).
+[palettes.vitesse-light]
+red = "#9e4d4d"
+orange = "#a15d28"
+yellow = "#7d6a1e"
+green = "#1e754f"
+blue = "#296aa3"
+teal = "#1f7080"
+purple = "#a13865"
+fg = "#393a34"
+bg = "#ffffff"
+grey = "#626e62"
 
 [directory]
 style = "bold teal"

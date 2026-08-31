@@ -29,7 +29,7 @@ hl.config({
 
 local terminal    = "ghostty"
 local fileManager = "thunar"
-local menu        = "walker"
+local menu        = "qs ipc call launcher toggle"
 
 
 -------------------
@@ -45,15 +45,8 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("awww-daemon")
     hl.exec_cmd("sleep 0.5 && hypr-wallpaper")
 
-    -- Launcher backend + frontend service (keybind `walker` connects instantly)
-    hl.exec_cmd("elephant")
-    hl.exec_cmd("walker --gapplication-service")
-
-    -- Notification daemon
-    hl.exec_cmd("dunst")
-
-    -- Status bar
-    hl.exec_cmd("waybar")
+    -- Desktop shell: status bar + notification daemon (replaced waybar + dunst)
+    hl.exec_cmd("qs -p ~/.config/quickshell")
 
     -- Idle daemon (auto-lock & screen off)
     hl.exec_cmd("hypridle")
@@ -331,7 +324,7 @@ hl.bind(mainMod .. " + CTRL + L",     hl.dsp.exec_cmd("hyprlock"),              
 hl.bind(mainMod .. " + CTRL + A",     hl.dsp.exec_cmd("pavucontrol"),                                                           { description = "Audio controls" })
 hl.bind(mainMod .. " + CTRL + K",     hl.dsp.exec_cmd("hyprctl switchxkblayout all next"),                                      { description = "Toggle keyboard layout" })
 hl.bind(mainMod .. " + CTRL + Space", hl.dsp.exec_cmd("bash ~/.local/bin/hypr-wallpaper"),                                      { description = "Cycle wallpaper" })
-hl.bind(mainMod .. " + CTRL + V",     hl.dsp.exec_cmd([[cliphist list | rofi -dmenu -p "Clipboard" | cliphist decode | wl-copy]]), { description = "Clipboard history" })
+hl.bind(mainMod .. " + CTRL + V",     hl.dsp.exec_cmd("qs ipc call launcher clipboard"),                                        { description = "Clipboard history" })
 hl.bind(mainMod .. " + slash",        hl.dsp.exec_cmd("bash ~/.local/bin/hypr-which-key"),                                      { description = "Show keybindings" })
 hl.bind(mainMod .. " + SHIFT + C",    hl.dsp.exec_cmd("hyprpicker -a"),                                                         { description = "Pick color to clipboard" })
 

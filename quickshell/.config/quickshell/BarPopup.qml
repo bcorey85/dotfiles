@@ -10,6 +10,12 @@ PopupWindow {
 
     property double lastHide: 0
 
+    // Set this instead of computing anchor.rect.x by hand: a module doesn't own
+    // the popup's width, and hardcoding it here drifts the moment implicitWidth
+    // changes. Left-aligned popups just leave it null and set anchor.rect.x.
+    property Item rightAlignTo: null
+    anchor.rect.x: rightAlignTo ? rightAlignTo.x + rightAlignTo.width - popup.implicitWidth : 0
+
     grabFocus: true
     color: "transparent"
     visible: false

@@ -93,6 +93,130 @@ fg = "#100f0f"
 bg = "#fffcf0"
 grey = "#6f6e69"
 
+# bamboo vulgaris (ribru17's dark, warm green-brown #252623). Accents verbatim
+# — they all clear 4.5:1 on the canvas. `grey` is light_grey #838781 lifted to
+# #8e938c, the same value nvim's comment fixup uses.
+[palettes.bamboo-dark]
+red = "#e75a7c"
+orange = "#ff9966"
+yellow = "#dbb651"
+green = "#8fb573"
+blue = "#57a5e5"
+teal = "#70c2be"
+purple = "#aaaaff"
+fg = "#f1e9d2"
+bg = "#252623"
+grey = "#8e938c"
+
+# bamboo light (warm cream #fafae0). Prompt colors are foreground-on-cream, so
+# the theme's own palette is the starting point but not the whole answer:
+# purple/blue/red clear 4.5:1 as authored and are verbatim, while orange #df5926
+# (~3.5:1), yellow #a77b00 (~3.6:1), teal/cyan #188a9e (~3.8:1) and green
+# #27850b (~4.5:1 borderline) are darkened. `grey` is #66695f, nvim's light
+# comment fixup (the theme's own grey #a1a7a0 is ~2.3:1).
+[palettes.bamboo-light]
+red = "#c72a3c"
+orange = "#be4c20"
+yellow = "#8e6900"
+green = "#23780a"
+blue = "#1745d5"
+teal = "#167c8e"
+purple = "#8a4adf"
+fg = "#3a4238"
+bg = "#fafae0"
+grey = "#66695f"
+
+# original gruvbox medium dark (#282828). Verbatim upstream, including red
+# #fb4934 (~4.5:1, borderline but as authored). `grey` is #9e8d7d, nvim's dark
+# comment fixup (the theme's own #928374 is ~4.0:1).
+[palettes.gruvbox-dark]
+red = "#fb4934"
+orange = "#fe8019"
+yellow = "#fabd2f"
+green = "#b8bb26"
+blue = "#83a598"
+teal = "#8ec07c"
+purple = "#d3869b"
+fg = "#ebdbb2"
+bg = "#282828"
+grey = "#9e8d7d"
+
+# original gruvbox medium light (cream #fbf1c7). Prompt colors are
+# foreground-on-cream: red/orange/blue/purple clear 4.5:1 as authored and are
+# verbatim, while yellow #b57614 (~3.9:1), green #79740e (~4.4:1) and teal/aqua
+# #427b58 (~4.4:1) are darkened. `grey` is #776a5e, nvim's light comment fixup.
+[palettes.gruvbox-light]
+red = "#9d0006"
+orange = "#af3a03"
+yellow = "#96610f"
+green = "#746f0d"
+blue = "#076678"
+teal = "#407755"
+purple = "#8f3f71"
+fg = "#3c3836"
+bg = "#fbf1c7"
+grey = "#776a5e"
+
+# melange dark (warm brown-black #292522). Verbatim upstream. `grey` is the
+# theme's own comment #c1a78e (~6.7:1) — melange needs no comment fixup.
+[palettes.melange-dark]
+red = "#d47766"
+orange = "#e49b5d"
+yellow = "#ebc06d"
+green = "#85b695"
+blue = "#a3a9ce"
+teal = "#7b9695"
+purple = "#cf9bc2"
+fg = "#ece1d7"
+bg = "#292522"
+grey = "#c1a78e"
+
+# melange light (neutral #f1f1f1 — the only non-cream light ground in the set).
+# red/blue/purple clear 4.5:1 as authored; orange #bc5c00 (~4.0:1), yellow
+# #a06d00 (~4.0:1), green #6e9b72 (~2.8:1) and teal #739797 (~2.8:1) are
+# darkened. `grey` is the theme's own comment #7d6658 (~4.8:1), unmodified.
+[palettes.melange-light]
+red = "#bf0021"
+orange = "#ac5400"
+yellow = "#936300"
+green = "#527556"
+blue = "#465aa4"
+teal = "#567171"
+purple = "#904180"
+fg = "#54433a"
+bg = "#f1f1f1"
+grey = "#7d6658"
+
+# kanagawa dragon (warm charcoal #181616). Verbatim upstream. `grey` is
+# #838a82, nvim's dark comment fixup (dragon's own #737c73 is ~4.2:1).
+[palettes.kanagawa-dark]
+red = "#c4746e"
+orange = "#b6927b"
+yellow = "#c4b28a"
+green = "#87a987"
+blue = "#8ba4b0"
+teal = "#8ea4a2"
+purple = "#8992a7"
+fg = "#c5c9c5"
+bg = "#181616"
+grey = "#838a82"
+
+# kanagawa lotus (warm cream #f2ecbc). The lightest ground in the set, so most
+# of lotus's own accents miss 4.5:1: only blue #4d699b (~4.6:1) and purple
+# #624c83 (~6.1:1) survive verbatim; red, orange, yellow, green and teal are all
+# darkened. `grey` is #6a6a5e, nvim's light comment fixup.
+[palettes.kanagawa-light]
+red = "#b93b4c"
+orange = "#a15400"
+yellow = "#796644"
+green = "#5a6f3e"
+blue = "#4d699b"
+teal = "#506e69"
+purple = "#624c83"
+fg = "#545464"
+bg = "#f2ecbc"
+grey = "#6a6a5e"
+
 [directory]
 style = "bold teal"
 truncation_length = 3

@@ -70,6 +70,81 @@ local FAMILIES = {
       vim.api.nvim_set_hl(0, "Comment", { fg = fg })
     end,
   },
+  ["bamboo"] = {
+    -- ribru17/bamboo.nvim: one colorscheme "bamboo" picks its style from
+    -- vim.o.background (light palette #fafae0 / vulgaris #252623) and always
+    -- sets colors_name to "bamboo", so both are pinned here.
+    schemes = { dark = "bamboo", light = "bamboo" },
+    colors_name = "bamboo",
+    -- bamboo paints markdown headings from its own rainbow blends: H1 =
+    -- blend(red, inverse, 0.25), H2 = blend(orange, inverse, 0.25).
+    accents = {
+      dark = { heading1 = "#ed839d", heading = "#ffb38c" },
+      light = { heading1 = "#95202d", heading = "#a7431d" },
+    },
+    -- Comment floor: the `Comment` group is light_grey #838781, which misses
+    -- 4.5:1 in both modes (~4.2:1 on #252623, ~3.5:1 on #fafae0). Lift to
+    -- #8e938c dark (~4.9:1) and #66695f light (~5.3:1). Treesitter's @comment
+    -- is a separate, already-legible colour (bg_yellow) and is left alone.
+    -- bamboo's comments are italic, so keep the slant (nvim_set_hl replaces
+    -- the whole group).
+    fixup = function(mode)
+      local fg = mode == "light" and "#66695f" or "#8e938c"
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
+    end,
+  },
+  ["gruvbox"] = {
+    -- ellisonleao/gruvbox.nvim: ORIGINAL gruvbox, medium contrast. One
+    -- colorscheme "gruvbox" follows vim.o.background (dark #282828 / light
+    -- cream #fbf1c7) and keeps that one colors_name in both, so it is pinned.
+    schemes = { dark = "gruvbox", light = "gruvbox" },
+    colors_name = "gruvbox",
+    accents = {
+      dark = { heading1 = "#fb4934", heading = "#fabd2f" }, -- red + yellow
+      light = { heading1 = "#9d0006", heading = "#b57614" },
+    },
+    -- Comment floor: the stock comment is grey #928374 in BOTH modes, which
+    -- misses 4.5:1 at each end (~4.0:1 on #282828, ~3.2:1 on #fbf1c7) — the one
+    -- colour has to move in opposite directions. Lift to #9e8d7d dark (~4.6:1)
+    -- and darken to #776a5e light (~4.6:1). gruvbox's comments are italic, so
+    -- keep the slant (nvim_set_hl replaces the whole group).
+    fixup = function(mode)
+      local fg = mode == "light" and "#776a5e" or "#9e8d7d"
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
+    end,
+  },
+  ["melange"] = {
+    -- savq/melange-nvim: one colorscheme "melange" follows vim.o.background
+    -- (warm brown-black #292522 / neutral #f1f1f1), sharing one colors_name.
+    schemes = { dark = "melange", light = "melange" },
+    colors_name = "melange",
+    accents = {
+      dark = { heading1 = "#e49b5d", heading = "#ebc06d" }, -- orange + yellow
+      light = { heading1 = "#bc5c00", heading = "#a06d00" },
+    },
+    -- No fixup: melange is the only family whose stock comments already clear
+    -- 4.5:1 at both ends (#c1a78e ~6.7:1 on #292522, #7d6658 ~4.8:1 on #f1f1f1).
+  },
+  ["kanagawa"] = {
+    -- rebelot/kanagawa.nvim. Unlike every other family, kanagawa ships one
+    -- colorscheme PER variant rather than switching on vim.o.background — so
+    -- the schemes differ by mode. Both still register colors_name "kanagawa",
+    -- so that is pinned for the override guard.
+    schemes = { dark = "kanagawa-dragon", light = "kanagawa-lotus" },
+    colors_name = "kanagawa",
+    accents = {
+      dark = { heading1 = "#a292a3", heading = "#c4b28a" }, -- mauve + yellow
+      light = { heading1 = "#b35b79", heading = "#836f4a" },
+    },
+    -- Comment floor: dragon's #737c73 is ~4.2:1 on #181616 and lotus's #8a8980
+    -- is ~2.9:1 on #f2ecbc. Lift to #838a82 (~5.1:1) and #6a6a5e (~4.6:1) — the
+    -- same two values the hunk and herdr kanagawa palettes already encode.
+    -- Kanagawa's comments are italic, so keep the slant.
+    fixup = function(mode)
+      local fg = mode == "light" and "#6a6a5e" or "#838a82"
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
+    end,
+  },
 }
 
 local applied ---@type string|nil  last family+mode we set, to skip redundant reloads

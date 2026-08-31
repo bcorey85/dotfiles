@@ -73,18 +73,31 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="vitesse"
 
-families() { printf '%s\n' vitesse flexoki; }
+families() { printf '%s\n' vitesse flexoki bamboo gruvbox melange kanagawa; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   # vitesse: our port, dark #121212 / light #ffffff — custom files in
   # ghostty/themes/. apply() writes `config-file` (not a ghostty builtin).
   # flexoki: both halves are ghostty BUILTINS (spaces and all), so there is no
   # file under ghostty/themes/ and apply() falls through to `theme = `.
+  # bamboo: no ghostty builtin — custom files in ghostty/themes/, ANSI straight
+  # from the theme's own terminal.lua mapping.
+  # gruvbox/melange/kanagawa: all ghostty BUILTINS (spaces and all), matching the
+  # exact variants the palettes below encode — original gruvbox medium, melange,
+  # kanagawa dragon/lotus. No files under ghostty/themes/.
   case "$1:$2" in
     vitesse:light)      echo "vitesse-light" ;;
     vitesse:*)          echo "vitesse-dark" ;;
     flexoki:light)      echo "Flexoki Light" ;;
     flexoki:*)          echo "Flexoki Dark" ;;
+    bamboo:light)       echo "bamboo-light" ;;
+    bamboo:*)           echo "bamboo-dark" ;;
+    gruvbox:light)      echo "Gruvbox Light" ;;
+    gruvbox:*)          echo "Gruvbox Dark" ;;
+    melange:light)      echo "Melange Light" ;;
+    melange:*)          echo "Melange Dark" ;;
+    kanagawa:light)     echo "Kanagawa Lotus" ;;
+    kanagawa:*)         echo "Kanagawa Dragon" ;;
   esac
 }
 
@@ -100,11 +113,35 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
   # NEUTRALS: kanagawa-dragon is #c5c9c5 on warm black (flexoki dark is #cecdc3
   # on #100f0f) and gruvbox-light-medium is #3c3836 on warm paper (flexoki light
   # is #403e3c on #fffcf0) — near-identical text colors and the same warm cast.
+  #
+  # bamboo has no hunk builtin either, so same deal — gruvbox medium is the
+  # neutral match at both ends: gruvbox-dark-medium is #ebdbb2 on #282828
+  # (bamboo vulgaris is #f1e9d2 on #252623) and gruvbox-light-medium is #3c3836
+  # on #fbf1c7 (bamboo light is #3a4238 on #fafae0) — same warm cream cast,
+  # near-identical text colors.
+  #
+  # gruvbox and kanagawa both have hunk builtins of the exact same variants
+  # (gruvbox-*-medium IS original gruvbox medium; kanagawa-dragon/lotus are the
+  # same palettes), so those are exact bases, not neutral approximations.
+  #
+  # melange has no hunk builtin. Dark takes gruvbox-dark-medium (#ebdbb2 on
+  # #282828 against melange's #ece1d7 on #292522 — same warm cream cast). Light
+  # takes vitesse-light: every gruvbox light builtin is a CREAM ground, and
+  # melange light is neutral #f1f1f1, so white is the closer ground even though
+  # the text cast differs.
   case "$1:$2" in
     vitesse:light)      echo "vitesse-light" ;;
     vitesse:*)          echo "vitesse-dark" ;;
     flexoki:light)      echo "gruvbox-light-medium" ;;
     flexoki:*)          echo "kanagawa-dragon" ;;
+    bamboo:light)       echo "gruvbox-light-medium" ;;
+    bamboo:*)           echo "gruvbox-dark-medium" ;;
+    gruvbox:light)      echo "gruvbox-light-medium" ;;
+    gruvbox:*)          echo "gruvbox-dark-medium" ;;
+    melange:light)      echo "vitesse-light" ;;
+    melange:*)          echo "gruvbox-dark-medium" ;;
+    kanagawa:light)     echo "kanagawa-lotus" ;;
+    kanagawa:*)         echo "kanagawa-dragon" ;;
   esac
 }
 
@@ -117,11 +154,16 @@ HUNK_BLOCK_END="# <<< theme-mode custom_theme"
 hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, or nothing
   # vitesse sets NO custom block — it renders via hunk's own builtin (hunk_theme
   # returns it directly as `theme =`), so vitesse falls through to `*) return 0`.
-  # The per-family branches below are inert (their families are gone); retained
-  # as the pattern for re-adding a family whose colors no bundled theme matches.
+  # flexoki and bamboo are live and ship full blocks. The other per-family
+  # branches below are inert (their families are gone); retained as the pattern
+  # for re-adding a family whose colors no bundled theme matches.
   local bg panel panelAlt border accent accentMuted text muted addedBg removedBg
   local ctxBg sAdd sRem lnFg badgeAdd badgeRem badgeNeu fRename fMod fUntracked note
   local kw str num fn typ punct op konst esc
+  # Secondary roles. Each one defaults (below the case) to the generic role a
+  # family that does not set it already used, so leaving them unset reproduces
+  # the previous output byte for byte.
+  local cmt mem param attr tag vbi imp pre prim ns mac bfn
   case "$1:$2" in
     flexoki:light)
       # flexoki light (dawn): paper #fffcf0 canvas. Diff bgs are the accent
@@ -237,31 +279,31 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       kw="#d58888"; str="#8e9cc0"; num="#6e9cb0"; fn="#b58d88"; typ="#6da280"; punct="#949d9f"; op="#aeadaf"
       ;;
     gruvbox:light)
-      # gruvbox-material medium/mix light (#fbf1c7). Verbatim upstream — no mods.
-      # comment #928374. Diff washes over bg1 #eee0b7.
-      bg="#fbf1c7"; panel="#eee0b7"; panelAlt="#ddccab"; border="#ddcca0"
-      accent="#af2528"; accentMuted="#ddcca0"; text="#514036"; muted="#928374"
+      # original gruvbox medium light (#fbf1c7). Chrome from the theme's own
+      # bg1 #ebdbb2 / bg2 #d5c4a1 / bg3 #bdae93. comment #928374.
+      bg="#fbf1c7"; panel="#ebdbb2"; panelAlt="#d5c4a1"; border="#bdae93"
+      accent="#9d0006"; accentMuted="#bdae93"; text="#3c3836"; muted="#928374"
       addedBg="#e6e6c0"; removedBg="#f2dcc0"; ctxBg="#fbf1c7"
-      sAdd="#72761e"; sRem="#af2528"; lnFg="#a89984"
-      badgeAdd="#72761e"; badgeRem="#af2528"; badgeNeu="#266b79"
-      fRename="#924f79"; fMod="#b4730e"; fUntracked="#928374"; note="#eee0b7"
-      # gruvbox roles: keyword red, string/fn green, number purple, type orange,
+      sAdd="#79740e"; sRem="#9d0006"; lnFg="#a89984"
+      badgeAdd="#79740e"; badgeRem="#9d0006"; badgeNeu="#076678"
+      fRename="#8f3f71"; fMod="#b57614"; fUntracked="#928374"; note="#ebdbb2"
+      # gruvbox roles: keyword red, string/fn green, number purple, type yellow,
       # const aqua, operator fg.
-      kw="#af2528"; str="#72761e"; num="#924f79"; fn="#72761e"; typ="#b4730e"; punct="#514036"; op="#514036"
+      kw="#9d0006"; str="#79740e"; num="#8f3f71"; fn="#79740e"; typ="#b57614"; punct="#3c3836"; op="#3c3836"
       ;;
     gruvbox:*)
-      # gruvbox-material medium/mix dark (#282828). Verbatim upstream — no mods
-      # (keyword red #f2594b kept as authored). comment #928374. Diff washes
-      # over bg1 #32302f.
-      bg="#282828"; panel="#32302f"; panelAlt="#3c3836"; border="#45403d"
-      accent="#f2594b"; accentMuted="#504945"; text="#e2cca9"; muted="#928374"
+      # original gruvbox medium dark (#282828). Verbatim upstream — no mods
+      # (keyword red #fb4934 kept as authored). comment #928374. Chrome from the
+      # theme's own bg1 #3c3836 / bg2 #504945 / bg3 #665c54.
+      bg="#282828"; panel="#3c3836"; panelAlt="#504945"; border="#665c54"
+      accent="#fb4934"; accentMuted="#504945"; text="#ebdbb2"; muted="#928374"
       addedBg="#282d1e"; removedBg="#32241f"; ctxBg="#282828"
-      sAdd="#b0b846"; sRem="#f2594b"; lnFg="#504945"
-      badgeAdd="#b0b846"; badgeRem="#f2594b"; badgeNeu="#80aa9e"
-      fRename="#d3869b"; fMod="#e9b143"; fUntracked="#928374"; note="#32302f"
+      sAdd="#b8bb26"; sRem="#fb4934"; lnFg="#504945"
+      badgeAdd="#b8bb26"; badgeRem="#fb4934"; badgeNeu="#83a598"
+      fRename="#d3869b"; fMod="#fabd2f"; fUntracked="#928374"; note="#3c3836"
       # gruvbox roles: keyword red, string/fn green, number pink, type yellow,
       # const aqua, operator fg.
-      kw="#f2594b"; str="#b0b846"; num="#d3869b"; fn="#b0b846"; typ="#e9b143"; punct="#e2cca9"; op="#e2cca9"
+      kw="#fb4934"; str="#b8bb26"; num="#d3869b"; fn="#b8bb26"; typ="#fabd2f"; punct="#ebdbb2"; op="#ebdbb2"
       ;;
     melange:light)
       # melange light (#f1f1f1). Chrome + diff washes from the theme's own
@@ -303,25 +345,46 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       sAdd="#27850b"; sRem="#c72a3c"; lnFg="#a1a7a0"
       badgeAdd="#27850b"; badgeRem="#c72a3c"; badgeNeu="#1745d5"
       fRename="#8a4adf"; fMod="#a77b00"; fUntracked="#27850b"; note="#eaead0"
-      # bamboo light roles: keyword purple, string green, number coral, fn blue,
-      # type ochre, operator muted-purple.
-      kw="#8a4adf"; str="#27850b"; num="#df5926"; fn="#1745d5"; typ="#a77b00"; punct="#3a4238"; op="#6c47a0"
+      # bamboo light roles, resolved from the colorscheme's own groups: Keyword/
+      # Statement/PreProc/Include/@tag purple, String green, Constant (and the
+      # Number/Boolean/Character/Float links) orange, Function blue, Type ochre,
+      # Macro bright-purple, @string.escape + @variable.parameter coral,
+      # @variable.member/@attribute cyan, @variable.builtin red, @module
+      # light-blue, @function.builtin orange, Delimiter light-grey, Operator the
+      # theme's own blend(purple, fg, 0.375) = #6c47a0. `cmt` is @comment
+      # (bg_yellow #6f4c05, ~7.3:1) — the group treesitter actually paints code
+      # comments with, NOT the dimmer Comment/light_grey nvim falls back to.
+      kw="#8a4adf"; str="#27850b"; num="#df5926"; fn="#1745d5"; typ="#a77b00"; punct="#838781"; op="#6c47a0"
+      konst="#df5926"; esc="#c05050"; cmt="#6f4c05"; mem="#188a9e"; param="#c05050"
+      attr="#188a9e"; tag="#8a4adf"; vbi="#c72a3c"; imp="#8a4adf"; pre="#8a4adf"
+      prim="#a77b00"; ns="#177fff"; mac="#c810d0"; bfn="#df5926"
       ;;
     bamboo:*)
       # bamboo vulgaris dark (warm green-brown #252623). Chrome from the theme's
       # own CursorLine/Visual. Diff washes dimmed from bamboo's loud stock
       # DiffAdd/DiffDelete (#40531b/#893f45) to a neogit-style low-sat blend —
       # hunk fills whole lines at full opacity, so the raw hues read far brighter
-      # than in neogit. Comment clears 4.5:1 unmodified.
+      # than in neogit. `muted` is chrome text, so light_grey #838781 (~4.2:1 on
+      # the canvas) is lifted to #8e938c (~4.9:1); code comments use `cmt` below.
       bg="#252623"; panel="#2f312c"; panelAlt="#3a3d37"; border="#1c1e1b"
-      accent="#e75a7c"; accentMuted="#5b5e5a"; text="#f1e9d2"; muted="#838781"
+      accent="#e75a7c"; accentMuted="#5b5e5a"; text="#f1e9d2"; muted="#8e938c"
       addedBg="#2d3a1e"; removedBg="#3d2a2d"; ctxBg="#252623"
       sAdd="#8fb573"; sRem="#e75a7c"; lnFg="#5b5e5a"
       badgeAdd="#8fb573"; badgeRem="#e75a7c"; badgeNeu="#57a5e5"
       fRename="#e75a7c"; fMod="#dbb651"; fUntracked="#8fb573"; note="#2f312c"
-      # bamboo dark roles: keyword lavender, string green, number coral, fn blue,
-      # type yellow, operator muted-lavender.
-      kw="#aaaaff"; str="#8fb573"; num="#ff9966"; fn="#57a5e5"; typ="#dbb651"; punct="#f1e9d2"; op="#c5c2ee"
+      # bamboo dark roles, resolved from the colorscheme's own groups: Keyword/
+      # Statement/PreProc/Include/@tag purple, String green, Constant (and the
+      # Number/Boolean/Character/Float links) orange, Function blue, Type yellow,
+      # Macro bright-purple, @string.escape + @variable.parameter coral,
+      # @variable.member/@attribute cyan, @variable.builtin red, @module
+      # light-blue, @function.builtin orange, Delimiter light-grey, Operator the
+      # theme's own blend(purple, fg, 0.375) = #c5c2ee. `cmt` is @comment
+      # (bg_yellow #e2c792, ~9.3:1) — the group treesitter actually paints code
+      # comments with, NOT the dimmer Comment/light_grey nvim falls back to.
+      kw="#aaaaff"; str="#8fb573"; num="#ff9966"; fn="#57a5e5"; typ="#dbb651"; punct="#838781"; op="#c5c2ee"
+      konst="#ff9966"; esc="#f08080"; cmt="#e2c792"; mem="#70c2be"; param="#f08080"
+      attr="#70c2be"; tag="#aaaaff"; vbi="#e75a7c"; imp="#aaaaff"; pre="#aaaaff"
+      prim="#dbb651"; ns="#96c7ef"; mac="#df73ff"; bfn="#ff9966"
       ;;
     kanagawa:light)
       # kanagawa lotus (warm cream #f2ecbc). Chrome from the lotusWhite surfaces
@@ -359,6 +422,12 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
   # Roles the retired families never set; default them so their (inert) branches
   # still emit legal TOML.
   konst="${konst:-$num}"; esc="${esc:-$str}"
+  # Secondary-role defaults — the generic role each scope used before these
+  # vars existed.
+  cmt="${cmt:-$muted}"; mem="${mem:-$text}"; param="${param:-$punct}"
+  attr="${attr:-$punct}"; tag="${tag:-$fn}"; vbi="${vbi:-$kw}"
+  imp="${imp:-$typ}"; pre="${pre:-$num}"; prim="${prim:-$num}"
+  ns="${ns:-$typ}"; mac="${mac:-$esc}"; bfn="${bfn:-$esc}"
   cat <<EOF
 [custom_theme]
 base             = "$3"
@@ -405,8 +474,8 @@ noteTitleText    = "$text"
 # hunk's legacy role->scope table knew about.
 [custom_theme.syntax_scopes]
 "source"                            = "$text"
-"comment"                           = "$muted"
-"punctuation.definition.comment"    = "$muted"
+"comment"                           = "$cmt"
+"punctuation.definition.comment"    = "$cmt"
 
 # Keywords. Plain \`keyword.operator\` is arithmetic/assignment punctuation in
 # most grammars (tx in nvim, via @operator), while the WORD operators are
@@ -418,14 +487,14 @@ noteTitleText    = "$text"
 "storage.type"                      = "$kw"
 "storage.modifier"                  = "$kw"
 "entity.name.label"                 = "$kw"
-"variable.language"                 = "$kw"
+"variable.language"                 = "$vbi"
 "keyword.operator"                  = "$op"
 "keyword.operator.word"             = "$kw"
 "keyword.operator.new"              = "$kw"
 "keyword.operator.expression"       = "$kw"
-"keyword.control.import"            = "$typ"
-"keyword.control.export"            = "$typ"
-"keyword.control.from"              = "$typ"
+"keyword.control.import"            = "$imp"
+"keyword.control.export"            = "$imp"
+"keyword.control.from"              = "$imp"
 
 # Strings and escapes.
 "string"                            = "$str"
@@ -447,28 +516,28 @@ noteTitleText    = "$text"
 "support.function"                  = "$fn"
 "variable.function"                 = "$fn"
 "meta.function-call"                = "$fn"
-"support.function.builtin"          = "$esc"
-"support.macro"                     = "$esc"
+"support.function.builtin"          = "$bfn"
+"support.macro"                     = "$mac"
 
 # Types.
 "entity.name.type"                  = "$typ"
 "entity.name.class"                 = "$typ"
-"entity.name.namespace"             = "$typ"
+"entity.name.namespace"             = "$ns"
 "entity.other.inherited-class"      = "$typ"
 "support.type"                      = "$typ"
 "support.class"                     = "$typ"
-"support.type.primitive"            = "$num"
+"support.type.primitive"            = "$prim"
 
 # Identifiers, members, parameters. nvim paints properties and members as plain
 # text; only parameters and attributes drop to the muted tx2.
 "variable"                          = "$text"
 "variable.other"                    = "$text"
-"variable.other.property"           = "$text"
-"variable.other.member"             = "$text"
-"support.variable.property"         = "$text"
-"variable.parameter"                = "$punct"
-"entity.other.attribute-name"       = "$punct"
-"meta.decorator"                    = "$punct"
+"variable.other.property"           = "$mem"
+"variable.other.member"             = "$mem"
+"support.variable.property"         = "$mem"
+"variable.parameter"                = "$param"
+"entity.other.attribute-name"       = "$attr"
+"meta.decorator"                    = "$attr"
 
 # Punctuation and delimiters.
 "punctuation"                       = "$punct"
@@ -479,9 +548,9 @@ noteTitleText    = "$text"
 "meta.brace"                        = "$punct"
 
 # Preprocessor / directives (PreProc) and markup tags (@tag = Function blue).
-"meta.preprocessor"                 = "$num"
-"keyword.control.directive"         = "$num"
-"entity.name.tag"                   = "$fn"
+"meta.preprocessor"                 = "$pre"
+"keyword.control.directive"         = "$pre"
+"entity.name.tag"                   = "$tag"
 "punctuation.definition.tag"        = "$punct"
 
 # Markdown bodies show up in diffs constantly; keep them on the same palette.
@@ -658,25 +727,25 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       blue="#6e9cb0" teal="#6da280" peach="#d0913d"
       ;;
     gruvbox:light)
-      # gruvbox-material medium/mix light (#fbf1c7) — comment #928374. Verbatim.
+      # original gruvbox medium light (#fbf1c7) — comment #928374. Verbatim.
       base_name="one-light"
-      accent="#af2528" panel_bg="#eee0b7" surface_dim="#ddccab"
-      surface0="#e6d5a8" surface1="#ddcca0"
+      accent="#9d0006" panel_bg="#ebdbb2" surface_dim="#d5c4a1"
+      surface0="#d5c4a1" surface1="#bdae93"
       overlay0="#928374" overlay1="#928374"
-      text="#514036" subtext0="#928374"
-      green="#72761e" yellow="#b4730e" red="#af2528"
-      blue="#266b79" teal="#477a5b" peach="#b4730e"
+      text="#3c3836" subtext0="#928374"
+      green="#79740e" yellow="#b57614" red="#9d0006"
+      blue="#076678" teal="#427b58" peach="#af3a03"
       ;;
     gruvbox:*)
-      # gruvbox-material medium/mix dark (#282828) — comment #928374. Verbatim,
-      # keyword red #f2594b kept as authored.
+      # original gruvbox medium dark (#282828) — comment #928374. Verbatim,
+      # keyword red #fb4934 kept as authored.
       base_name="one-dark"
-      accent="#f2594b" panel_bg="#32302f" surface_dim="#3c3836"
-      surface0="#45403d" surface1="#504945"
+      accent="#fb4934" panel_bg="#3c3836" surface_dim="#504945"
+      surface0="#504945" surface1="#665c54"
       overlay0="#7c6f64" overlay1="#928374"
-      text="#e2cca9" subtext0="#928374"
-      green="#b0b846" yellow="#e9b143" red="#f2594b"
-      blue="#80aa9e" teal="#8bba7f" peach="#e9b143"
+      text="#ebdbb2" subtext0="#928374"
+      green="#b8bb26" yellow="#fabd2f" red="#fb4934"
+      blue="#83a598" teal="#8ec07c" peach="#fe8019"
       ;;
     melange:light)
       # melange light (#f1f1f1) — comment #7d6658. Verbatim.
@@ -700,9 +769,11 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       blue="#a3a9ce" teal="#7b9695" peach="#cf9bc2"
       ;;
     bamboo:light)
-      # bamboo light (warm cream #fafae0) — comment lifted to #66695f.
+      # bamboo light (warm cream #fafae0) — comment lifted to #66695f. accent is
+      # the theme's purple, matching nvim/hunk; its orange #df5926 is only
+      # ~3.5:1 on the sidebar panel.
       base_name="one-light"
-      accent="#df5926" panel_bg="#eaead0" surface_dim="#e2e2c8"
+      accent="#8a4adf" panel_bg="#eaead0" surface_dim="#e2e2c8"
       surface0="#dadac2" surface1="#d0d0b8"
       overlay0="#a1a7a0" overlay1="#66695f"
       text="#3a4238" subtext0="#66695f"
@@ -710,12 +781,13 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       blue="#1745d5" teal="#188a9e" peach="#df5926"
       ;;
     bamboo:*)
-      # bamboo vulgaris dark (warm green-brown #252623) — comment #838781.
+      # bamboo vulgaris dark (warm green-brown #252623) — sidebar muted grey
+      # lifted from light_grey #838781 (~4.2:1) to #8e938c (~4.9:1).
       base_name="one-dark"
       accent="#e75a7c" panel_bg="#2f312c" surface_dim="#363833"
       surface0="#3a3d37" surface1="#454842"
-      overlay0="#5b5e5a" overlay1="#838781"
-      text="#f1e9d2" subtext0="#838781"
+      overlay0="#5b5e5a" overlay1="#8e938c"
+      text="#f1e9d2" subtext0="#8e938c"
       green="#8fb573" yellow="#dbb651" red="#e75a7c"
       blue="#57a5e5" teal="#70c2be" peach="#ff9966"
       ;;

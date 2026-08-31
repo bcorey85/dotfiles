@@ -24,9 +24,8 @@ The one planning lane. Phase 1 lists the inputs it accepts.
 
 ## How to run
 
-**Read the phase file when you enter the phase and follow it from the file** —
-never from memory, never two ahead. Compacted mid-phase → re-read it before
-anything else; that is what it is on disk for.
+**Read the phase file on entering the phase and follow it from disk** — never
+from memory, never two ahead. Compacted mid-phase → re-read before anything else.
 
 `~/.claude/skills/eng-spec/phases/<n>-<name>.md`: 1-ticket · 2-research ·
 3-scope · 4-explore · 5-decisions · 6-finalize · 7-choice
@@ -34,13 +33,12 @@ anything else; that is what it is on disk for.
 ## The two rules that outrank any phase
 
 **The task directory is the memory; the conversation is not.** Every phase lands
-its output on disk before the next one starts — `00-ticket.md`, `01-questions.md`,
-`02-research.md`, `03-decisions.md`, then `spec.md`. Write first, then continue;
-step 13 says why.
+its output on disk before the next starts — `00-ticket.md`, `01-questions.md`,
+`02-research.md`, `03-decisions.md`, then `spec.md`. Write first, then continue.
 
-**The order of the first two phases is the point of this skill.** Facts land on
-the table before a goal can shape which facts get looked for. Never reorder it,
-and never let the architect absorb the research.
+**The order of the first two phases is the point.** Facts land before a goal can
+shape which facts get looked for. Never reorder; never let the architect absorb
+the research.
 
 ## Arguments
 

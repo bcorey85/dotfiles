@@ -37,6 +37,56 @@ Singleton {
             fg: "#100f0f", muted: "#6f6e69",
             green: "#66800b", red: "#af3029", teal: "#24837b",
             orange: "#bc5215", yellow: "#ad8301", magenta: "#a02f6f"
+        },
+        "bamboo-dark": {
+            bg: "#252623", panel: "#2f312c", border: "#454842",
+            fg: "#f1e9d2", muted: "#8e938c",
+            green: "#8fb573", red: "#e75a7c", teal: "#70c2be",
+            orange: "#ff9966", yellow: "#dbb651", magenta: "#aaaaff"
+        },
+        "bamboo-light": {
+            bg: "#fafae0", panel: "#eaead0", border: "#d0d0b8",
+            fg: "#3a4238", muted: "#66695f",
+            green: "#27850b", red: "#c72a3c", teal: "#188a9e",
+            orange: "#df5926", yellow: "#a77b00", magenta: "#8a4adf"
+        },
+        "gruvbox-dark": {
+            bg: "#282828", panel: "#3c3836", border: "#665c54",
+            fg: "#ebdbb2", muted: "#9e8d7d",
+            green: "#b8bb26", red: "#fb4934", teal: "#8ec07c",
+            orange: "#fe8019", yellow: "#fabd2f", magenta: "#d3869b"
+        },
+        "gruvbox-light": {
+            bg: "#fbf1c7", panel: "#ebdbb2", border: "#bdae93",
+            fg: "#3c3836", muted: "#776a5e",
+            green: "#79740e", red: "#9d0006", teal: "#427b58",
+            orange: "#af3a03", yellow: "#b57614", magenta: "#8f3f71"
+        },
+        "melange-dark": {
+            bg: "#292522", panel: "#34302c", border: "#4a443f",
+            fg: "#ece1d7", muted: "#c1a78e",
+            green: "#85b695", red: "#d47766", teal: "#7b9695",
+            orange: "#e49b5d", yellow: "#ebc06d", magenta: "#cf9bc2"
+        },
+        "melange-light": {
+            bg: "#f1f1f1", panel: "#e9e1db", border: "#cfc7bf",
+            fg: "#54433a", muted: "#7d6658",
+            green: "#6e9b72", red: "#bf0021", teal: "#739797",
+            orange: "#bc5c00", yellow: "#a06d00", magenta: "#904180"
+        },
+        // dragon / lotus — the one family whose two modes are separate
+        // colorschemes upstream; here they are just two palettes like the rest.
+        "kanagawa-dark": {
+            bg: "#181616", panel: "#1d1c19", border: "#393836",
+            fg: "#c5c9c5", muted: "#838a82",
+            green: "#87a987", red: "#c4746e", teal: "#8ea4a2",
+            orange: "#b6927b", yellow: "#c4b28a", magenta: "#a292a3"
+        },
+        "kanagawa-light": {
+            bg: "#f2ecbc", panel: "#e5ddb0", border: "#d5cea3",
+            fg: "#545464", muted: "#6a6a5e",
+            green: "#6e915f", red: "#c84053", teal: "#597b75",
+            orange: "#cc6d00", yellow: "#836f4a", magenta: "#b35b79"
         }
     })
 

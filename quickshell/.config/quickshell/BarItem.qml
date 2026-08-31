@@ -18,6 +18,10 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: (root.clickable && mouse.containsMouse) ? Theme.panel : "transparent"
+
+        // Covers both the hover wash and a theme flip, which is why every
+        // color in this package animates rather than snapping.
+        Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
     }
 
     Text {
@@ -27,6 +31,8 @@ Item {
         color: root.color
         font.family: Theme.fontFamily
         font.pixelSize: Theme.fontSize
+
+        Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
     }
 
     MouseArea {

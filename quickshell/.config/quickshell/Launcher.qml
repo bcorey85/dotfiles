@@ -22,7 +22,21 @@ PanelWindow {
     readonly property string prefix: mode === "apps" ? query.slice(0, 1) : ""
     readonly property string term: prefix === "=" || prefix === ">" ? query.slice(1).trim() : query
 
+    // Power actions. `hl.dsp.exit()` is the lua dispatch form Hyprland 0.56
+    // wants; the bare `exit` after it is the fallback for a config that isn't
+    // lua. Lock goes through this shell's own session lock, not hyprlock.
+    readonly property var powerActions: [
+        { kind: "power", text: "Lock", sub: "lock the session", cmd: "" },
+        { kind: "power", text: "Suspend", sub: "systemctl suspend", cmd: "systemctl suspend" },
+        { kind: "power", text: "Reboot", sub: "systemctl reboot", cmd: "systemctl reboot" },
+        { kind: "power", text: "Shutdown", sub: "systemctl poweroff", cmd: "systemctl poweroff" },
+        { kind: "power", text: "Exit Hyprland", sub: "end the session", cmd: "hyprctl dispatch 'hl.dsp.exit()' || hyprctl dispatch exit" }
+    ]
+
     readonly property var results: {
+        // Unfiltered, the ranker would sort these by name length; a power menu
+        // wants its declared order (Lock first, Shutdown late).
+        if (mode === "power") return term === "" ? launcher.powerActions : filter(launcher.powerActions, a => a.text);
         if (mode === "clipboard") return filter(launcher.clips, c => c.text);
         if (prefix === "=") return calc(term);
         if (prefix === ">") return term === "" ? [] : [{ kind: "run", text: term, sub: "run command" }];
@@ -63,9 +77,13 @@ PanelWindow {
         }
 
         scored.sort((a, b) => b.score - a.score);
-        return scored.slice(0, 30).map(s => launcher.mode === "clipboard"
-            ? { kind: "clip", text: s.item.text, sub: "clipboard", clip: s.item }
-            : { kind: "app", text: s.name, sub: s.item.genericName ?? s.item.comment ?? "", entry: s.item });
+        return scored.slice(0, 30).map(function (s) {
+            if (launcher.mode === "power")
+                return s.item;
+            if (launcher.mode === "clipboard")
+                return { kind: "clip", text: s.item.text, sub: "clipboard", clip: s.item };
+            return { kind: "app", text: s.name, sub: s.item.genericName ?? s.item.comment ?? "", entry: s.item };
+        });
     }
 
     // Arithmetic only — anything else is not a sum and gets no result.
@@ -87,6 +105,7 @@ PanelWindow {
         if (newMode === "clipboard") clipProc.running = true;
         launcher.visible = true;
         input.forceActiveFocus();
+        boxIn.restart();
     }
 
     function close() {
@@ -108,6 +127,15 @@ PanelWindow {
             copyProc.exec(["sh", "-c", "printf %s " + JSON.stringify(r.text) + " | wl-copy"]);
         } else if (r.kind === "clip") {
             copyProc.exec(["sh", "-c", "cliphist decode " + JSON.stringify(r.clip.id) + " | wl-copy"]);
+        } else if (r.kind === "power") {
+            // Close before acting: the lock has to take the keyboard from us,
+            // and a suspend shouldn't come back to a stale overlay.
+            launcher.close();
+            if (r.cmd === "")
+                Lock.locked = true;
+            else
+                runProc.exec(["sh", "-c", r.cmd]);
+            return;
         }
 
         launcher.close();
@@ -124,6 +152,11 @@ PanelWindow {
         function clipboard(): void {
             if (launcher.visible && launcher.mode === "clipboard") launcher.close();
             else launcher.open("clipboard");
+        }
+
+        function power(): void {
+            if (launcher.visible && launcher.mode === "power") launcher.close();
+            else launcher.open("power");
         }
     }
 
@@ -198,6 +231,19 @@ PanelWindow {
         border.color: Theme.border
         border.width: 1
         radius: 10
+        transformOrigin: Item.Top
+
+        Behavior on color { ColorAnimation { duration: 140 } }
+        Behavior on border.color { ColorAnimation { duration: 140 } }
+
+        // The window appears with no transition, so the box does its own. Driven
+        // from open() rather than bound to `visible`, which is already true by
+        // the time a binding would evaluate.
+        ParallelAnimation {
+            id: boxIn
+            NumberAnimation { target: box; property: "opacity"; from: 0; to: 1; duration: 110; easing.type: Easing.OutCubic }
+            NumberAnimation { target: box; property: "scale"; from: 0.97; to: 1; duration: 110; easing.type: Easing.OutCubic }
+        }
 
         TextInput {
             id: input
@@ -217,7 +263,9 @@ PanelWindow {
             Text {
                 anchors.fill: parent
                 visible: input.text === ""
-                text: launcher.mode === "clipboard" ? "Clipboard history…" : "Search apps…   = calc   > run"
+                text: launcher.mode === "clipboard" ? "Clipboard history…"
+                    : launcher.mode === "power" ? "Power…"
+                    : "Search apps…   = calc   > run"
                 color: Theme.muted
                 font: input.font
             }

@@ -38,7 +38,7 @@ Item {
     BarPopup {
         id: popup
         anchor.window: QsWindow.window
-        anchor.rect.x: root.x - 320 + root.width
+        rightAlignTo: root
         anchor.rect.y: root.y + root.height
         implicitWidth: 380
         implicitHeight: Math.min(500, panel.implicitHeight)

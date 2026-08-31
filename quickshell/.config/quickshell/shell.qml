@@ -14,6 +14,12 @@ ShellRoot {
     // Media-key feedback: volume, mic mute, brightness.
     Osd {}
 
-    // Apps, clipboard and calc — opened over IPC from hyprland.lua.
+    // Apps, clipboard, calc and the power menu — opened over IPC from
+    // hyprland.lua.
     Launcher {}
+
+    // Singletons are created on first use, so the session lock has to be
+    // referenced here or its IpcHandler never registers and `qs ipc call lock`
+    // fails until something else happens to touch it.
+    readonly property var sessionLock: Lock
 }

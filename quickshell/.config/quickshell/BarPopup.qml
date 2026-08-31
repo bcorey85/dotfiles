@@ -1,4 +1,5 @@
 import Quickshell
+import QtQuick
 
 // Dropdown for a bar module. grabFocus is what dismisses it on an outside
 // click; the compositor swallows that click, so the bar item that opened the
@@ -13,7 +14,25 @@ PopupWindow {
     color: "transparent"
     visible: false
 
-    onVisibleChanged: if (!visible) lastHide = Date.now()
+    // The window itself pops in with no transition the compositor will animate,
+    // so the fade is applied to the content item — which every module fills
+    // with a single rounded panel, so one animation here covers all of them.
+    NumberAnimation {
+        id: fadeIn
+        target: popup.contentItem
+        property: "opacity"
+        from: 0
+        to: 1
+        duration: 120
+        easing.type: Easing.OutCubic
+    }
+
+    onVisibleChanged: {
+        if (visible)
+            fadeIn.restart();
+        else
+            lastHide = Date.now();
+    }
 
     function toggle() {
         if (Date.now() - lastHide < 150)

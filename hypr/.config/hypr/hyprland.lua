@@ -319,8 +319,8 @@ hl.bind(mainMod .. " + Print",     hl.dsp.exec_cmd("bash ~/.local/bin/hypr-scree
 ---- SYSTEM ----
 --------------------
 
-hl.bind(mainMod .. " + Escape",       hl.dsp.exec_cmd("bash ~/.local/bin/hypr-power-menu"),                                     { description = "Power menu" })
-hl.bind(mainMod .. " + CTRL + L",     hl.dsp.exec_cmd("hyprlock"),                                                              { description = "Lock screen" })
+hl.bind(mainMod .. " + Escape",       hl.dsp.exec_cmd("qs ipc call launcher power"),                                            { description = "Power menu" })
+hl.bind(mainMod .. " + CTRL + L",     hl.dsp.exec_cmd("qs ipc call lock lock"),                                                 { description = "Lock screen" })
 hl.bind(mainMod .. " + CTRL + A",     hl.dsp.exec_cmd("pavucontrol"),                                                           { description = "Audio controls" })
 hl.bind(mainMod .. " + CTRL + K",     hl.dsp.exec_cmd("hyprctl switchxkblayout all next"),                                      { description = "Toggle keyboard layout" })
 hl.bind(mainMod .. " + CTRL + Space", hl.dsp.exec_cmd("bash ~/.local/bin/hypr-wallpaper"),                                      { description = "Cycle wallpaper" })

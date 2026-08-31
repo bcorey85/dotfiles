@@ -52,7 +52,7 @@ PACKAGES="nvim scripts zsh claude opencode omp pi ghostty starship git lazygit h
 
 # Arch-only packages
 if [ "$PLATFORM" = "arch" ]; then
-    PACKAGES="$PACKAGES hypr rofi walker waybar gtk dunst qt"
+    PACKAGES="$PACKAGES hypr quickshell gtk qt"
 fi
 
 # macOS-only packages

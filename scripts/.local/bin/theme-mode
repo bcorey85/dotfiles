@@ -48,7 +48,7 @@
 #   theme-mode list                   known families
 #   theme-mode status                 current family + mode
 #
-# Adding a family = five touchpoints, kept in sync by hand:
+# Adding a family = six touchpoints, kept in sync by hand:
 #   1. families() + ghostty_theme() below
 #   2. FAMILIES table in nvim lua/config/theme-sync.lua
 #   3. a ghostty theme (builtin name, or custom file in ghostty/themes/)
@@ -56,6 +56,10 @@
 #   5. hunk_theme() below — a hunk builtin used directly, or (when no builtin
 #      matches) the base a hunk_custom_theme() block inherits from; a family
 #      that maps to neither leaves hunk with whatever it had
+#   6. palettes in quickshell/.config/quickshell/Theme.qml — this script writes
+#      nothing for quickshell; that singleton watches the two state files
+#      itself and repaints live. A missing family silently falls back to
+#      vitesse, so nothing breaks, it just doesn't follow.
 #
 # Also needed, not part of the six but easy to miss:
 #   - starship.toml.template: add a `[palettes.<family>-dark]` /

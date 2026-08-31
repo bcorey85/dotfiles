@@ -1,0 +1,265 @@
+#!/usr/bin/env python3
+# edid-icc — build an ICC display profile from a monitor's EDID.
+#
+# Wide-gamut panels with no sRGB clamp in their OSD (e.g. the Alienware
+# AW3821DW) render sRGB content oversaturated. Hyprland can correct that with a
+# per-monitor `icc` field, but nothing on a bare Wayland session generates the
+# profile: colord builds one only when a session colour daemon registers the
+# display, which is a GNOME/KDE job. This writes one directly.
+#
+# The profile is machine-local (it describes one physical panel), so it is
+# generated into ~/.local/share/icc rather than stowed.
+#
+# Usage:
+#   edid-icc                     profile every connected display
+#   edid-icc DP-4                profile one connector
+#   edid-icc --list              show connectors and their EDID model names
+#   edid-icc --check             run the self-check and exit
+#
+# Accuracy ceiling: EDID primaries are the manufacturer's nominal values for
+# the model, not a measurement of this unit, and carry no white-point or
+# gamma-tracking correction. A colorimeter profile supersedes this one.
+import glob
+import os
+import struct
+import sys
+import time
+
+D50 = (0.9642, 1.0000, 0.8249)
+
+BRADFORD = ((0.8951, 0.2664, -0.1614),
+            (-0.7502, 1.7135, 0.0367),
+            (0.0389, -0.0685, 1.0296))
+
+
+def matmul(a, b):
+    return tuple(tuple(sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3))
+                 for i in range(3))
+
+
+def matvec(m, v):
+    return tuple(sum(m[i][k] * v[k] for k in range(3)) for i in range(3))
+
+
+def inverse(m):
+    (a, b, c), (d, e, f), (g, h, i) = m
+    det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)
+    if abs(det) < 1e-12:
+        raise ValueError("singular primary matrix")
+    return tuple(tuple(x / det for x in row) for row in (
+        (e * i - f * h, c * h - b * i, b * f - c * e),
+        (f * g - d * i, a * i - c * g, c * d - a * f),
+        (d * h - e * g, b * g - a * h, a * e - b * d)))
+
+
+def parse_edid(blob):
+    """Return (primaries, gamma, model name) from the EDID base block."""
+    if blob[:8] != bytes([0, 255, 255, 255, 255, 255, 255, 0]):
+        raise ValueError("not an EDID blob")
+
+    # Chromaticity block: two bytes of packed low-order bits, then eight bytes
+    # of high-order bits, one per x/y coordinate. Each value is 10 bits / 1024.
+    b = blob[0x19:0x23]
+    rg, bw = b[0], b[1]
+
+    def q(hi, lo):
+        return ((hi << 2) | lo) / 1024.0
+
+    prim = {
+        "r": (q(b[2], (rg >> 6) & 3), q(b[3], (rg >> 4) & 3)),
+        "g": (q(b[4], (rg >> 2) & 3), q(b[5], rg & 3)),
+        "b": (q(b[6], (bw >> 6) & 3), q(b[7], (bw >> 4) & 3)),
+        "w": (q(b[8], (bw >> 2) & 3), q(b[9], bw & 3)),
+    }
+
+    gbyte = blob[0x17]
+    gamma = 2.2 if gbyte == 255 else (gbyte + 100) / 100.0
+
+    name = None
+    for off in (0x36, 0x48, 0x5A, 0x6C):
+        d = blob[off:off + 18]
+        if d[:5] == b"\x00\x00\x00\xfc\x00":  # display product name descriptor
+            name = d[5:].split(b"\n")[0].strip().decode("ascii", "replace")
+    return prim, gamma, name or "Display"
+
+
+def xy_to_XYZ_matrix(prim):
+    """Columns are the RGB primaries scaled so R+G+B reproduces the white point."""
+    def vec(xy):
+        x, y = xy
+        return (x / y, 1.0, (1.0 - x - y) / y)
+
+    cols = [vec(prim[c]) for c in "rgb"]
+    m = tuple(tuple(cols[j][i] for j in range(3)) for i in range(3))
+    wx, wy = prim["w"]
+    w = (wx / wy, 1.0, (1.0 - wx - wy) / wy)
+    s = matvec(inverse(m), w)
+    return tuple(tuple(m[i][j] * s[j] for j in range(3)) for i in range(3)), w
+
+
+def bradford(src, dst):
+    """Chromatic adaptation matrix taking white point src to dst."""
+    s = matvec(BRADFORD, src)
+    d = matvec(BRADFORD, dst)
+    scale = tuple(tuple((d[i] / s[i]) if i == j else 0.0 for j in range(3))
+                  for i in range(3))
+    return matmul(inverse(BRADFORD), matmul(scale, BRADFORD))
+
+
+def s15(v):
+    return struct.pack(">i", int(round(v * 65536.0)))
+
+
+def tag_XYZ(xyz):
+    return b"XYZ " + b"\0" * 4 + b"".join(s15(v) for v in xyz)
+
+
+def tag_curve(gamma):
+    return (b"curv" + b"\0" * 4 + struct.pack(">I", 1)
+            + struct.pack(">H", int(round(gamma * 256.0))))
+
+
+def tag_text(s):
+    return b"text" + b"\0" * 4 + s.encode("ascii", "replace") + b"\0"
+
+
+def tag_desc(s):
+    a = s.encode("ascii", "replace") + b"\0"
+    return (b"desc" + b"\0" * 4 + struct.pack(">I", len(a)) + a
+            + b"\0" * 4 + b"\0" * 8 + struct.pack(">HB", 0, 0) + b"\0" * 67)
+
+
+def tag_chad(m):
+    return b"sf32" + b"\0" * 4 + b"".join(s15(v) for row in m for v in row)
+
+
+def build(prim, gamma, name):
+    """Serialise an ICC v2 matrix-shaper display profile."""
+    m, w = xy_to_XYZ_matrix(prim)
+    chad = bradford(w, D50)
+    adapted = matmul(chad, m)
+
+    def col(j):
+        return tuple(adapted[i][j] for i in range(3))
+
+    tags = [
+        (b"desc", tag_desc(name)),
+        (b"cprt", tag_text("Generated from EDID; no license claimed.")),
+        (b"wtpt", tag_XYZ(D50)),
+        (b"chad", tag_chad(chad)),
+        (b"rXYZ", tag_XYZ(col(0))),
+        (b"gXYZ", tag_XYZ(col(1))),
+        (b"bXYZ", tag_XYZ(col(2))),
+        (b"rTRC", tag_curve(gamma)),
+        (b"gTRC", tag_curve(gamma)),
+        (b"bTRC", tag_curve(gamma)),
+    ]
+
+    table_size = 4 + 12 * len(tags)
+    offset = 128 + table_size
+    entries, body = [], b""
+    for sig, data in tags:
+        pad = (-len(data)) % 4
+        entries.append((sig, offset, len(data)))
+        body += data + b"\0" * pad
+        offset += len(data) + pad
+
+    t = time.gmtime()
+    header = (struct.pack(">I", 128 + table_size + len(body))  # profile size
+              + b"none"                                        # preferred CMM
+              + struct.pack(">I", 0x02400000)                  # version 2.4
+              + b"mntr" + b"RGB " + b"XYZ "        # class, colorspace, PCS
+              + struct.pack(">HHHHHH", t.tm_year, t.tm_mon, t.tm_mday,
+                            t.tm_hour, t.tm_min, t.tm_sec)
+              + b"acsp"                            # file signature
+              + b"\0" * 4                          # primary platform
+              + struct.pack(">I", 0)               # profile flags
+              + b"none"                            # device manufacturer
+              + b"\0" * 4                          # device model
+              + b"\0" * 8                          # device attributes
+              + struct.pack(">I", 0)               # rendering intent: perceptual
+              + b"".join(s15(v) for v in D50)      # PCS illuminant
+              + b"\0" * 4                          # profile creator
+              + b"\0" * 44)                        # profile id + reserved
+    assert len(header) == 128, len(header)
+
+    table = struct.pack(">I", len(tags)) + b"".join(
+        sig + struct.pack(">II", off, ln) for sig, off, ln in entries)
+    return header + table + body
+
+
+def connectors():
+    """Connected DRM outputs that expose a non-empty EDID, as (name, path)."""
+    found = []
+    for path in sorted(glob.glob("/sys/class/drm/card*/edid")):
+        conn = os.path.basename(os.path.dirname(path))
+        name = conn.split("-", 1)[1] if "-" in conn else conn
+        try:
+            with open(path, "rb") as fh:
+                if fh.read(8):
+                    found.append((name, path))
+        except OSError:
+            continue
+    return found
+
+
+def demo():
+    """sRGB primaries must reproduce the published sRGB D50 colorant matrix."""
+    prim = {"r": (0.64, 0.33), "g": (0.30, 0.60),
+            "b": (0.15, 0.06), "w": (0.3127, 0.3290)}
+    m, w = xy_to_XYZ_matrix(prim)
+    adapted = matmul(bradford(w, D50), m)
+    expected = ((0.4360, 0.3851, 0.1431),
+                (0.2225, 0.7169, 0.0606),
+                (0.0139, 0.0971, 0.7141))
+    for i in range(3):
+        for j in range(3):
+            assert abs(adapted[i][j] - expected[i][j]) < 0.001, (i, j, adapted[i][j])
+    assert abs(sum(adapted[1]) - 1.0) < 1e-6, "colorants must sum to Y=1"
+
+    icc = build(prim, 2.2, "Test")
+    assert icc[36:40] == b"acsp", "missing ICC file signature"
+    assert struct.unpack(">I", icc[:4])[0] == len(icc), "header size disagrees with body"
+    print("demo ok")
+
+
+def main(argv):
+    if "--check" in argv:
+        demo()
+        return 0
+
+    if "--list" in argv:
+        for name, path in connectors():
+            with open(path, "rb") as fh:
+                blob = fh.read()
+            try:
+                print(f"{name}\t{parse_edid(blob)[2]}")
+            except ValueError as e:
+                print(f"{name}\t<{e}>")
+        return 0
+
+    wanted = [a for a in argv if not a.startswith("-")]
+    targets = [(n, p) for n, p in connectors() if not wanted or n in wanted]
+    if not targets:
+        print("no connected display with a readable EDID", file=sys.stderr)
+        return 1
+
+    outdir = os.path.expanduser("~/.local/share/icc")
+    os.makedirs(outdir, exist_ok=True)
+    for name, path in targets:
+        with open(path, "rb") as fh:
+            blob = fh.read()
+        try:
+            prim, gamma, model = parse_edid(blob)
+        except ValueError as e:
+            print(f"{name}: skipped ({e})", file=sys.stderr)
+            continue
+        dest = os.path.join(outdir, f"{model.replace(' ', '-')}-edid.icc")
+        with open(dest, "wb") as fh:
+            fh.write(build(prim, gamma, model))
+        print(f"{name}: {model}, gamma {gamma} -> {dest}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

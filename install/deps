@@ -140,7 +140,10 @@ arch)
   sudo pacman -S --needed steam
   print_success "Steam installed"
 
-  sudo pacman -S --needed hyprland hyprlock hypridle hyprsunset hyprpicker rofi dunst awww xdg-desktop-portal-hyprland xdg-desktop-portal-gtk polkit-gnome wl-clipboard cliphist grim slurp pavucontrol thunar tumbler thunar-archive-plugin file-roller gvfs gvfs-mtp udisks2 pipewire-alsa qt5ct qt6ct gsimplecal batsignal blueman
+  # quickshell replaces waybar (bar), dunst (notifications), gsimplecal
+  # (calendar) and pavucontrol's daily use — the stowed `quickshell` package is
+  # the config. blueman stays for pairing; the bar only connects known devices.
+  sudo pacman -S --needed hyprland hyprlock hypridle hyprsunset hyprpicker quickshell awww xdg-desktop-portal-hyprland xdg-desktop-portal-gtk polkit-gnome wl-clipboard cliphist grim slurp pavucontrol thunar tumbler thunar-archive-plugin file-roller gvfs gvfs-mtp udisks2 pipewire-alsa qt5ct qt6ct batsignal blueman
   print_success "Hyprland desktop packages installed"
 
   # Install paru (AUR helper)
@@ -158,15 +161,9 @@ arch)
   # the upstream pvolok/mprocs -> pvolok/dekit rename; it's installed from the
   # release binary via install_mprocs below. `|| print_error` keeps a single
   # failed/flaky AUR build (set -e is on) from aborting the rest of setup.
-  #
-  # waybar-git, NOT repo waybar: the 0.15.0 GTK4 release ships broken
-  # hyprland/workspaces click-to-switch; only post-release git has the fix.
-  # waybar-git provides waybar, so listing `waybar` on the pacman line above
-  # silently downgrades it on every setup run — keep it out of there.
   if command -v paru &>/dev/null; then
     print_info "Installing AUR packages via paru..."
-    paru -S --needed waybar-git discord_arch_electron google-chrome plexamp-bin \
-      walker-bin elephant-bin elephant-desktopapplications-bin elephant-calc-bin elephant-runner-bin elephant-websearch-bin elephant-providerlist-bin ||
+    paru -S --needed discord_arch_electron google-chrome plexamp-bin ||
       print_error "some AUR packages failed to build — continuing"
     print_success "AUR packages installed"
   else

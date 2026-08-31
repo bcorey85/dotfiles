@@ -27,7 +27,9 @@ no-decision ADRs buries the load-bearing ones.
    reimplement the lookup.
 2. A legacy flat plan file (`docs/plans/<KEY>-*.md`, or the old `docs/eng-specs/`).
 3. The conversation — design decisions discussed and resolved above.
-4. The branch diff (merge-base vs default branch) — for `Patterns` `path:line` refs.
+4. The branch diff (merge-base vs default branch) — for what actually shipped and
+   for anti-patterns the work uncovered. Do not turn it into a tour of the new
+   code: the ADR explains the decision, eng-arch describes the code.
 5. The ticket, if one exists.
 
 ## Process

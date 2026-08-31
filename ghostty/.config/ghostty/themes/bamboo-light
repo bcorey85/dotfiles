@@ -1,0 +1,26 @@
+# bamboo light (ribru17/bamboo.nvim, warm cream #fafae0) — ANSI from the
+# theme's own terminal.lua mapping (0 = contrast, 7/15 = fg, 8 = grey).
+# Selection is the theme's Visual (bg3).
+background = #fafae0
+foreground = #3a4238
+cursor-color = #3a4238
+cursor-text = #fafae0
+selection-background = #dadac2
+selection-foreground = #3a4238
+
+palette = 0=#fff8f0
+palette = 1=#c72a3c
+palette = 2=#27850b
+palette = 3=#a77b00
+palette = 4=#1745d5
+palette = 5=#8a4adf
+palette = 6=#188a9e
+palette = 7=#3a4238
+palette = 8=#a1a7a0
+palette = 9=#c72a3c
+palette = 10=#27850b
+palette = 11=#a77b00
+palette = 12=#1745d5
+palette = 13=#8a4adf
+palette = 14=#188a9e
+palette = 15=#3a4238

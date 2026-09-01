@@ -84,6 +84,19 @@ for kv in "$@"; do
   esac
   k="${kv%%=*}"
   v="${kv#*=}"
+  # Only desc and result are free text. A space in any other value means the
+  # caller quoted too much and swallowed the following key=value pairs into this
+  # one — which is how repo= ends up holding branch, lane, scope, phase and
+  # iter, destroying every join key /audit review needs. Fail loud.
+  case "$k" in
+    desc|result) ;;
+    *)
+      if [ "$v" != "${v#* }" ]; then
+        echo "refusing to log: $k= contains a space: '$v'" >&2
+        echo "Quote each key=value separately; only desc= and result= may contain spaces." >&2
+        exit 1
+      fi ;;
+  esac
   json=$(jq -c --arg k "$k" --arg v "$v" '.[$k] = ($v | (tonumber? // .))' <<< "$json")
 done
 

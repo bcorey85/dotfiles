@@ -89,6 +89,21 @@ question, it is an unfinished check, and it does not ship.
 plan or the ticket, say so in the finding text; the loop escalates that separately. `ask`
 is for questions about the code. Getting this wrong is silent in both directions, and one direction is expensive: a plan contradiction phrased as an ordinary code question never reaches the escalation path, so it arrives to a human as one more item on a list they are triaging for speed, rather than as the decision it actually is.
 
+**So make the routing mechanical.** Whenever the finding's substance is that the code
+and a plan, ADR, or acceptance criterion disagree, decide which document is wrong and
+write one of two things — never a bare question:
+
+- The **code** is wrong → disposition `fix`, and name the plan clause it must match.
+  There is a decidable correction, so this is not an `ask`.
+- The **plan** is wrong → open the finding text with the literal string
+  `PLAN-IMPACT:` and name both sides (`file:line` and the clause it contradicts).
+  That prefix is what gets scanned for, and it stops the loop before a coder runs.
+  "PLAN-IMPACT candidate", "owner call needed", or a question mark do not scan.
+
+If you genuinely cannot tell which side is wrong, that itself is what the finding says,
+prefixed `PLAN-IMPACT:` — the plan's authority is the thing in doubt. A plan
+contradiction reported as a plain `ask` is a routing bug, not a disposition call.
+
 If a category is empty, omit the section.
 
 ## Self-Check Before Reporting

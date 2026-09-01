@@ -266,8 +266,13 @@ cap still bounds it). If the cap hits first, return
 
 **Report the denominator, always.** Put `class_closure` in the packet: either
 the enumeration you ran ("all 6 exits of `loadWithRowCount` re-read; every line
-lands in `entries` or `unparseable`"), or `none — no fixed finding was
-class-shaped`, or `n/a — fixed[] empty`.
+lands in `entries` or `unparseable`"), or `n/a — fixed[] empty`, or — when
+nothing you fixed was class-shaped — `none`, followed by each finding in
+`fixed[]` named with the reason it fits neither shape ("`none` — retry ceiling
+(single call site, no exit space); banner copy (no predicate)"). A bare `none`
+is not a receipt: it is the answer you give when you did not run the check, so
+it does not pass. If naming them is tedious, that is the check working — the
+enumeration you are avoiding is the same one the rule asks for.
 
 Gate passed and class closed → go to Step 6b.
 
@@ -311,21 +316,12 @@ disposition at the point of finding, so a specialist's `fix` re-enters the loop
 `${CLAUDE_SKILL_DIR}` does not resolve inside an agent. Use the absolute path:
 
 ```bash
-bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> spec_iter=<N> fix=<n> ask=<n> nit=<n> blocker=<n> fixed=<n> fixed_classes=<comma-list> skipped_fp=<n> test_intent_ran=0 culled=<n> comment_noise=<n> smells=<n> specialists=<security,perf,smell|none> class_closed=<yes|no|none|n-a> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
+bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> spec_iter=<N> fix=<n> ask=<n> nit=<n> blocker=<n> fixed=<n> skipped_fp=<n> test_intent_ran=0 culled=<n> comment_noise=<n> smells=<n> specialists=<security,perf,smell|none> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
 ```
 
-`class_closed` is the Step 6 stopping-rule receipt as an enum (the prose
-enumeration goes in the packet, not the shell arg): `yes` = a class-shaped
-finding was closed by enumeration; `no` = one was open and you re-entered or
-returned `cap-reached`; `none` = nothing you fixed was class-shaped; `n-a` =
-`fixed[]` was empty. Never omit it.
-
-`fixed_classes` is one comma-separated list — the class of every finding in
-`fixed[]`, from the escape vocabulary
-(`bug|smell|duplication|complexity|plan-drift|test-gap|other`), deduped, in any
-order. `fixed_classes=none` when `fixed[]` was empty. Without it `class_closed`
-is unauditable: `/audit review` can only join a row to an escape by repo, which
-is a base rate, not evidence.
+The Step 6 class-closure receipt is NOT logged here — it lives in the packet as
+prose, where the enumeration itself can be read. An enum for it cannot tell a
+check that ran from one that was answered by habit, so do not add one.
 
 `fix`/`ask`/`nit` are how many findings carried each disposition this run, across every reviewer; `blocker` is how many of the `fix` ones carried the flag. `nit` counts entries in `nit[]` and nothing else — **`load_bearing_clean` is not a nit.** It reports that a reviewer found nothing in a high-blast-radius file, so counting it inflates the one field that measures reviewer noise, and a noise metric that rises when a gate comes back clean points the tuning in exactly the wrong direction. `fixed` is how many were actually repaired and `skipped_fp` how many you dropped as false positives — `fix = fixed + skipped_fp + deferred`, and a row where it doesn't is a bug worth noticing. `smells` = `[smell]` findings the smell specialist returned this run (0 when it didn't fire). `culled` = diff-added tests deleted this run; always 0 (kept for schema stability — the cull lives in `test-intent-reviewer`'s branch-exit half). `comment_noise` = `[comment-noise]` fixes applied. If the script fails, mention it and continue — telemetry never blocks.
 
@@ -352,7 +348,7 @@ plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
 ask: [{finding, file_line, question}]    # never auto-fixed; the user answers these
 perf: [{finding, principle, file_line}]
 specialists: [security | perf | smell]   # Step 6b — which specialists ran (or "none (no match)" / "none (suppressed)"); same name as the Step 7 telemetry field
-class_closure: <the enumeration | none — no fixed finding was class-shaped | n/a — fixed[] empty>
+class_closure: <the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a — fixed[] empty>
 files_touched: [<path>]
 nit: [<one line each>]
 load_bearing_clean: <one line, or omitted>

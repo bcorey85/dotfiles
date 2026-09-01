@@ -14,13 +14,21 @@ predicted. Telemetry never blocks: if the script fails, mention it and continue.
 
 ```bash
 L="$HOME/.claude/skills/review/log-review-finding"
-C="repo=$(basename "$(git rev-parse --show-toplevel)") branch=$(git branch --show-current) lane=<lane> scope=<phase|branch-exit|standalone> phase=<index|-> iter=<N>"
+
+# An ARRAY, not a string. The context fields must arrive as separate arguments;
+# a quoted string collapses all of them into repo=, which destroys every join
+# key this log exists to provide. Always expand it as "${C[@]}".
+C=(
+  "repo=$(basename "$(git rev-parse --show-toplevel)")"
+  "branch=$(git branch --show-current)"
+  lane=<lane> scope=<phase|branch-exit|standalone> phase=<index|-> iter=<N>
+)
 
 # ONE run row per gate dispatched — INCLUDING gates that returned nothing.
-bash "$L" kind=run $C gate=<agent name> n_findings=<n> diff_loc=<n> result=<...>
+bash "$L" kind=run "${C[@]}" gate=<agent name> n_findings=<n> diff_loc=<n> result=<...>
 
 # ONE finding row per finding that gate emitted.
-bash "$L" kind=finding $C gate=<agent name> disposition=<fix|ask|nit> [blocker=yes] \
+bash "$L" kind=finding "${C[@]}" gate=<agent name> disposition=<fix|ask|nit> [blocker=yes] \
   class=<bug|smell|duplication|complexity|plan-drift|test-gap|weak-assertion|security|correctness|other> \
   file=<path> line=<n> actioned=<fixed|skipped_fp|deferred|ask|none> desc="<one line>"
 ```

@@ -48,8 +48,12 @@
 #     blocker=yes|no                (optional, `fix` only) advancing with it
 #                                   in place ships the defect
 #     class=bug|smell|duplication|complexity|plan-drift|test-gap|weak-assertion
-#          |security|correctness|other        (same vocabulary as log-escape,
+#          |security|perf|correctness|other   (same vocabulary as log-escape,
 #                                              so the two logs cross-tabulate)
+#       perf = query/IO cost (N+1, unbounded query, missing index, over-fetch,
+#       serial awaits, per-item round-trip). perf-reviewer's findings go here,
+#       never under `other` — under `other` they cannot be told apart from
+#       anyone else's and the gate's recall is uncomputable.
 #     file=<path>                 repo-relative
 #     line=<n>                    0 when the finding names no line
 #     actioned=fixed|skipped_fp|deferred|ask|none
@@ -110,6 +114,22 @@ case "$kind" in
 esac
 
 [ -n "$gate" ] || { echo "refusing to log: gate=<agent name> is required." >&2; exit 1; }
+
+# `result` is a three-value enum the audit reports as a distribution, and it was
+# collecting disposition words ("fix", "clean", "gaps", "actioned") instead —
+# each one a bucket of size 1 that reads as a verdict the reviewer never gave.
+# Free text belongs in desc=.
+if [ "$kind" = run ]; then
+  res=$(jq -r '.result // ""' <<< "$json")
+  case "$res" in
+    "" | PASS | "PASS WITH WARNINGS" | "NEEDS CHANGES") ;;
+    *)
+      echo "refusing to log: result=$res is not PASS|PASS WITH WARNINGS|NEEDS CHANGES" >&2
+      echo "It is the gate's verdict, not what happened to the findings. Omit it if" >&2
+      echo "the gate gave no verdict; put anything else in desc=." >&2
+      exit 1 ;;
+  esac
+fi
 
 # A run row with no n_findings is the failure mode that silently destroys the
 # denominator: it looks logged and counts as nothing.

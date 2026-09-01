@@ -53,6 +53,42 @@ user before Phase 7.
       pre-implementation tree. Clean RED is good; already GREEN, or BROKEN on a
       bad flag with zero checks run, lets the coder pass without a check running.
 
+16c. **Falsify the plan's factual claims against the tree.** Step 16b checks the
+verification commands; this checks the assertions the plan reasons FROM. Every
+one of them was captured during exploration, and the tree has moved since —
+including by earlier phases of this same plan. Run these before Phase 7 and
+resolve every miss with the user like a `DESIGN GAP`. A wrong premise here
+cannot be caught by any later reviewer: the code will match the plan exactly.
+
+    - **Counts and inventories** — every number the plan states about the tree
+      (files, collected tests, rows, entries, views, measures, indexes) gets the
+      command that produces it, run now. State the number the command returned
+      next to the one the plan claims.
+    - **Names, spellings, and paths** — every identifier, token, flag, config
+      key, and path the plan quotes gets one `rg` against the tree, or one
+      `--help` for a flag. In prose, the wrong spelling of a real thing and the
+      real name of a deleted thing read identically.
+    - **Tool and dependency behavior** — every claim about what a command, flag,
+      or library version does gets its `--help` or a one-line run. Repeated
+      flags, removed parameters, and silently-ignored options are the recurring
+      shape.
+    - **Internal agreement** — any quantity the plan states in more than one
+      place must agree in all of them, and a phase that freezes a literal must
+      match every later phase that asserts it. A coder trusting whichever copy
+      it read first ships the wrong one.
+    - **Work the hooks will deny** — `rg` the phase bodies and change lists, not
+      just `**File**:` lines, for test-file paths. A test edit assigned to the
+      implementing coder is denied outright; it routes to the test-writer from
+      the criteria. The same goes for any path under a directory this repo's
+      hooks protect.
+    - **Superseded deliverables** — for each phase, check whether what it builds
+      already landed on the base branch while the spec was being written. A
+      phase that re-builds shipped work is a plan defect, not a merge conflict.
+
+    Claims that are genuinely about the future (what a later phase will produce)
+    are out of scope here — they are 16b's problem, and step 16's testability
+    lint's.
+
 17. **If the ticket has behavioral criteria**, dispatch **`spec-criteria`**
 (pinned — omit `model`) with `00-ticket.md`, `03-decisions.md`, the finalized
 plan, and the task directory. It writes
@@ -68,3 +104,26 @@ questions it refused to default.
     them in ONE turn — policy there is the ticket-owner's call, never defaulted,
     and "out of scope" is an answer (log it under `## Direction & Constraints`).
     Silence is not. **The user must respond before Phase 7.**
+
+18. **Log the plan.** One row, once, when the plan is finalized:
+
+    ```bash
+    bash ~/.claude/scripts/log-spec-run \
+      repo="$(basename "$(git rev-parse --show-toplevel)")" \
+      slug=<task dir basename> ticket=<ID|none> verdict=finalized \
+      phases=<count> criteria=<count> decisions=<count> \
+      research_q=<count> gaps=<count> falsified=<count>
+    ```
+
+    Count them, do not estimate: `criteria` is every `Success Criteria` bullet
+    across all phases plus every id in `acceptance-criteria.md`; `gaps` is the
+    DESIGN GAP items raised and resolved during planning; `falsified` is how many
+    factual claims the sweep two steps up actually found wrong and repaired.
+    `falsified=0` is a real answer and must be logged as one.
+
+    Log a row with `verdict=abandoned` instead if the plan is dropped after
+    research — planning that produced no code is still planning that was paid for,
+    and leaving it out makes the lane look cheaper than it was.
+
+    Non-blocking: if the script fails, say so in one line and continue. Without
+    this row a later count of plan defects has no denominator and cannot be read.

@@ -45,14 +45,22 @@ This is the one step that DOES read the plan in full (contrast `/adr`, which for
 
    **`N/A — no criteria in scope`** is not a pass. It means the plan gave the gate nothing to check; surface that to the user rather than reporting completeness.
 
-4. Present the checklist. Route per the result.
-
-5. **Log the gate** per `~/.claude/skills/_shared/finding-log.md` (read it) with
+4. **Log the gate, before you present anything.** Per
+   `~/.claude/skills/_shared/finding-log.md` (read it), with
    `gate=plan-verifier lane=verify scope=branch-exit`. One `kind=run` row every
    invocation — including a clean reconciliation, which is the row that gives
    this gate a denominator — plus one `kind=finding` row per `partial` or
    `missing` verdict (`class=plan-drift`, `file`/`line` from its evidence).
    Non-blocking: on failure, mention it and continue.
+
+   **This step comes before the presentation and before routing, not after.**
+   Logging last is how it gets skipped: a run with gaps routes straight into the
+   fix path, a clean run routes straight into assembling the packet, and either
+   way the turn ends with the row unwritten. A missing row is indistinguishable
+   from a run that found nothing, so every one skipped makes this gate look
+   weaker than it is. Write the row while the reconciliation is in front of you.
+
+5. Present the checklist. Route per the result.
 
 ## Reconciliation output
 

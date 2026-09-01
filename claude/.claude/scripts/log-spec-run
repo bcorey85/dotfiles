@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# log-spec-run — one JSONL row per finalized plan, so the planning lane has a
+# denominator.
+#
+# The escape log already records plan defects (`gate_missed=eng-spec`): a
+# criterion that cannot be run, a mandated primitive whose semantics were never
+# stated, a plan that contradicts the tree. What it cannot record is how many
+# plans were written, or how big they were. Without that, a count of plan defects
+# is a number with no denominator — it rises when more planning happens and falls
+# when less does, and neither movement means anything.
+#
+# One row per plan that reaches finalization. The size fields exist so the rate
+# can be per plan AND per criterion: a plan with 40 criteria and 3 defects is not
+# worse than a plan with 4 criteria and 2.
+#
+# usage: log-spec-run key=value [key=value ...]
+#   canonical fields:
+#     repo=<basename>
+#     slug=<task dir basename>        the plan's identity; joins to docs/plans/<slug>
+#     ticket=<ID|none>
+#     verdict=finalized|abandoned     abandoned plans count too — a plan dropped
+#       after research is a planning cost that produced no code, and excluding
+#       them makes the lane look cheaper than it is.
+#     phases=<n>                      phases in the finalized plan
+#     criteria=<n>                    success criteria across all phases, plus
+#       acceptance-criteria.md ids when that file exists. The per-criterion
+#       denominator; count them, do not estimate.
+#     decisions=<n>                   entries in the decision ledger
+#     research_q=<n>                  questions the goal-blind research answered
+#     gaps=<n>                        DESIGN GAP items raised and resolved during
+#       planning — defects the lane caught itself, the numerator's other side
+#     falsified=<n>                   factual claims the finalization sweep found
+#       wrong against the tree and repaired before any coder ran. This is the one
+#       field that scores the sweep: it is the count of plan defects that did NOT
+#       become escapes.
+#
+# Numeric-looking values are stored as numbers, everything else as strings.
+# A "date" field (UTC ISO 8601) is always added. Output file:
+#   $SPEC_RUNS_FILE or ~/.claude/spec-runs.jsonl
+set -euo pipefail
+
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
+out="${SPEC_RUNS_FILE:-$HOME/.claude/spec-runs.jsonl}"
+
+# schema_version marks the row's schema era; bump ONLY on a breaking change
+# (a value-vocabulary swap or a field-meaning change), never for additive fields.
+SCHEMA_VERSION=1
+json=$(jq -cn --argjson sv "$SCHEMA_VERSION" '{date: (now | todate), schema_version: $sv}')
+for kv in "$@"; do
+  case "$kv" in
+    out=*) out="${kv#out=}"; continue ;;
+    *=*) ;;
+    *) echo "skipping malformed arg (want key=value): $kv" >&2; continue ;;
+  esac
+  k="${kv%%=*}"
+  v="${kv#*=}"
+  # No field here is free text. A space in any value means the caller quoted too
+  # much and swallowed the following key=value pairs into this one, which is how
+  # repo= ends up holding every other field and the row joins to nothing.
+  if [ "$v" != "${v#* }" ]; then
+    echo "refusing to log: $k= contains a space: '$v'" >&2
+    echo "Quote each key=value separately." >&2
+    exit 1
+  fi
+  json=$(jq -c --arg k "$k" --arg v "$v" '.[$k] = ($v | (tonumber? // .))' <<< "$json")
+done
+
+verdict=$(jq -r '.verdict // ""' <<< "$json")
+case "$verdict" in
+  finalized|abandoned) ;;
+  "") echo "refusing to log: verdict=finalized|abandoned is required." >&2; exit 1 ;;
+  *)  echo "refusing to log: verdict=$verdict is not finalized|abandoned" >&2; exit 1 ;;
+esac
+
+# criteria= is the per-criterion denominator. A row without it looks logged and
+# contributes nothing, which is the same failure a run row without n_findings has
+# in the review log.
+if [ "$(jq -r '.criteria // "MISSING"' <<< "$json")" = MISSING ]; then
+  echo "refusing to log: criteria=<n> is required (0 is a legitimate answer, and" >&2
+  echo "a plan with zero verdictable criteria is itself worth reporting)." >&2
+  exit 1
+fi
+
+[ -n "$(jq -r '.slug // ""' <<< "$json")" ] || {
+  echo "refusing to log: slug=<task dir basename> is required — it is the join key." >&2
+  exit 1; }
+
+printf '%s\n' "$json" >> "$out"
+echo "logged → $out"

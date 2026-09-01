@@ -9,14 +9,15 @@
 # ever catch anything," and a scan that produces nothing but noise looks exactly
 # like a scan that keeps the tree clean.
 #
-# The two numbers that matter, and they answer different questions:
+# The number that matters:
 #   candidates → confirmed  is PRECISION. A scan whose confirmed/candidates
 #     ratio collapses is training its reader to skim, and should be tightened
 #     or retired. Log the dismissals honestly — a run with 12 candidates and 0
 #     confirmed is the single most valuable row in this file.
-#   escape rows with scan_flagged=no  is RECALL. When a human later catches a
-#     defect one of these scans is supposed to cover, that is a miss, and it is
-#     recorded on the escape side, not here.
+#
+# There is no recall number. The escape-side field that was meant to carry it is
+# retired and was never populated, so a scan's misses are not measured anywhere.
+# Precision here can retire a noisy scan; it can never justify keeping one.
 #
 # The exit code answers "did it run", never "did it pass" — those came apart the
 # first time a grep-family scan was logged, because grep exits 1 on a clean tree:

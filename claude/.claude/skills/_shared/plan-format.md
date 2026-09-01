@@ -105,18 +105,17 @@ coder is dispatched — never later, and never by the agent that will satisfy it
 3-8 of them; if there are more, the ticket is two tickets. -->
 
 The criteria live in `docs/plans/<slug>/acceptance-criteria.md` as prose with
-stable ids (`AC1`…`ACn`), written by `/eng-spec` Phase 7.5. This section names
-the file and nothing more — do not restate the criteria here, and do not copy
-their ids into any file under the source tree.
+stable ids (`AC1`…`ACn`), written by `/eng-spec` Phase 7.5. Name the file here
+and nothing more — never restate the criteria, never copy their ids into the
+source tree.
 
 - **Criteria file**: `docs/plans/<slug>/acceptance-criteria.md`
 
-The closing Verify phase reconciles every id against the real test suite
-(`_shared/closing-phases.md`), matching on behavior rather than markers. Tests
-that cover a criterion assert at its boundary — the public entry point a user or
-caller reaches — never an internal function (an internal assertion pins today's
-structure and blocks the refactor it should survive). **No mocks inside such a
-test.**
+The closing Verify phase reconciles every id against the real suite
+(`_shared/closing-phases.md`), matching behavior, not markers. A covering test
+asserts at the public boundary a user or caller reaches, never an internal
+function (that pins today's structure and blocks the refactor it should
+survive). **No mocks inside such a test.**
 
 ## Implementation Approach
 
@@ -134,6 +133,10 @@ test.**
 
 **File**: `path/to/file.ts`
 **Changes**: [specific changes, with code blocks to add/modify]
+
+**Never list a test file here** — the coder writes no tests. `/code`'s
+implementation-blind `test-writer` takes its assertions from the plan. A test
+that must change goes in Success Criteria as a behavior.
 
 ### Success Criteria
 

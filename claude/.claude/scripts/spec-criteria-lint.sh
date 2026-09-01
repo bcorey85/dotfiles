@@ -104,6 +104,42 @@ while IFS= read -r line; do
   done
 done < "$plan"
 
+# ---- Check 3: test paths in phase BODIES, not just **File**: lines ----
+# Check 1's glob list is right but its scan surface is one line type, and a plan
+# assigns work in prose and change lists too ("update the tripwire in
+# foo_test.py", "sweep the 46 test files"). Those reach the implementing coder
+# and hit the same deny. Verification sections are exempt: naming a test file in
+# a command that RUNS it is correct, and so is a criterion the test-writer works
+# from. Report-only — a body may legitimately mention a test the test-writer owns.
+in_verif=0
+declare -A seen_body=()
+while IFS= read -r line; do
+  case "$line" in
+    '#### Automated Verification:'*|'#### Manual Verification:'*) in_verif=1; continue ;;
+    '####'*|'###'*|'## '*) in_verif=0 ;;
+    \*\*File\*\*:*) continue ;;   # literal `**File**:` line — check 1 owns these
+  esac
+  [ "$in_verif" -eq 0 ] || continue
+  # Two token shapes: a test FILE (has an extension) and a test DIRECTORY — a
+  # sweep assigned over `src/__tests__/` is the same deny, and carries no
+  # extension to match on.
+  toks=$(printf '%s' "$line" | grep -oE '[[:alnum:]_./-]+\.[[:alnum:]]{1,5}' || true)
+  dirs=$(printf '%s' "$line" | grep -oE '[[:alnum:]_./-]*(tests|__tests__|testdata|fixtures|__mocks__)/' || true)
+  for tok in $toks $dirs; do
+    case "$tok" in *'*'*|http*) continue ;; esac
+    is_test_path "$tok" || is_test_path "$tok/x" || continue
+    [ -n "${seen_body[$tok]:-}" ] && continue
+    seen_body[$tok]=1
+    if [ "$findings" -eq 0 ]; then echo "## spec-criteria-lint findings — $plan"; echo; fi
+    findings=$((findings + 1))
+    echo "- **test-path-in-phase-body**: \`$tok\` is a test path named in a phase body,"
+    echo "  outside any verification section. If a phase step assigns this edit, the"
+    echo "  implementing coder is denied Write on it (test-ownership-gate) and the phase"
+    echo "  stalls mid-flight. Route it to test-writer from the criteria, or confirm the"
+    echo "  mention is context only."
+  done
+done < "$plan"
+
 if [ "$findings" -eq 0 ]; then
   echo "spec-criteria-lint: clean — $plan"
   exit 0

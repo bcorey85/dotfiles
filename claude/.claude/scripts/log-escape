@@ -35,31 +35,37 @@
 #       reviewer. Do NOT log these as gate_missed=coder: it attributes a
 #       planning failure to the implementer and makes the coder's escape
 #       ratio unreadable.
-#     class=bug|smell|duplication|complexity|plan-drift|test-gap|other
+#     class=bug|smell|duplication|complexity|plan-drift|test-gap|weak-assertion
+#          |security|perf|correctness|other
+#       Same vocabulary as log-review-finding, so the caught and escaped sides
+#       cross-tabulate. Do not invent values — a one-off value is a row that
+#       joins to nothing.
+#       perf = query/IO cost: N+1, unbounded query, missing index, over-fetch,
+#       serial awaits, per-item round-trip. Use it instead of `other` for these,
+#       or the perf gate's misses stay indistinguishable from every other class's
+#       and its recall cannot be computed.
 #       complexity = code that need not have existed (branching a data model
 #       collapses, one-implementation indirection, unused configurability,
 #       guards a boundary check kills). Logged by /refactor simplify mode.
+#       Rows before 2026-08-11 also carry four retired values (dead-code,
+#       pattern-misalignment, stale-test, wrong-altitude) — 5 rows total. Report
+#       them as legacy; never remap them into the current vocabulary.
 #     severity=high|medium|low
-#     guard=type|convention|gotcha|rule|none|n-a   (REQUIRED — the ratchet rung
-#       applied so this class of defect cannot recur; see
-#       ~/.claude/skills/_shared/escape-ratchet.md. `none` = considered and
-#       rejected. `n-a` = this row is not review-flywheel data, e.g. the
-#       triage-misses log.)
+#     guard=type|convention|gotcha|rule|check|none|n-a   (REQUIRED — the ratchet
+#       rung applied so this class of defect cannot recur; see
+#       ~/.claude/skills/_shared/escape-ratchet.md. `check` is the plan-stage
+#       rung: a command added to the spec finalization sweep, or to
+#       spec-criteria-lint.sh. `none` = considered and rejected. `n-a` = this row
+#       is not review-flywheel data, e.g. the triage-misses log.)
 #     desc="one line"
 #     file=path
 #     lane=q-plan|eng-spec|code|other   (optional: planning lane that produced
 #                                        the shipped work — enables lane-level
 #                                        escape attribution in /audit review)
-#     scan_flagged=yes|no|n-a   (RECALL side of the deterministic scans scored in
-#       ~/.claude/scan-runs.jsonl. Pass it whenever a scan covers this defect's
-#       class — duplication, and dead or orphaned code:
-#         no  = a scan covers this class and did NOT report it. A genuine miss,
-#               and the only evidence that will ever justify changing the scan.
-#         yes = the scan DID report it and it was dismissed or not acted on.
-#               Worse than a miss: the information was on screen and skipped.
-#         n-a = no scan covers this class.
-#       Guessing destroys the measurement. Re-run the scan and look — they are
-#       cheap, idempotent, and read-only.)
+#     scan_flagged=  RETIRED — do not pass it. It scored the recall side of the
+#       whole-tree scans that no longer run (copied blocks, diverged copies,
+#       unreferenced symbols), was never populated on a single row, and nothing
+#       reads it. Historical rows keep it; the audit reports it nowhere.
 #
 # Numeric-looking values are stored as numbers, everything else as strings.
 # A "date" field (UTC ISO 8601) is always added. Output file:
@@ -95,14 +101,14 @@ done
 
 guard=$(jq -r '.guard // ""' <<< "$json")
 case "$guard" in
-  type|convention|gotcha|rule|none|n-a) ;;
+  type|convention|gotcha|rule|check|none|n-a) ;;
   "")
     echo "refusing to log: guard= is required." >&2
     echo "Run the ratchet (~/.claude/skills/_shared/escape-ratchet.md), then pass" >&2
-    echo "guard=type|convention|gotcha|rule|none (or guard=n-a for non-flywheel logs)." >&2
+    echo "guard=type|convention|gotcha|rule|check|none (or guard=n-a for non-flywheel logs)." >&2
     exit 1 ;;
   *)
-    echo "refusing to log: guard=$guard is not one of type|convention|gotcha|rule|none|n-a" >&2
+    echo "refusing to log: guard=$guard is not one of type|convention|gotcha|rule|check|none|n-a" >&2
     exit 1 ;;
 esac
 

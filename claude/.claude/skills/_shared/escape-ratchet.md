@@ -24,6 +24,21 @@ first rung that applies:
    spends prompt budget forever and relies on recall. Use only when 1–3 are
    impossible.
 
+**Plan-stage escapes take a different rung.** When the defect was in the plan —
+the code matched the spec exactly and no reviewer could have caught it — rungs
+1–4 mostly do not apply: there is no illegal state to type out, and a convention
+does not stop a spec from asserting a stale count. Take:
+
+5. **`check`** — one command added where finalization already runs commands: a
+   line in the spec finalization phase's falsification sweep, or a rule in
+   `~/.claude/scripts/spec-criteria-lint.sh` when the shape is mechanically
+   detectable. Prefer the lint when the defect is a pattern in the plan's text
+   (a path, a token, a target); prefer the sweep when it needs the tree to
+   answer (a count, a flag's real behavior, a deliverable that already landed).
+   This is the FIRST rung to try for a plan-stage escape, before considering
+   `none` — a plan defect that closes nothing recurs in the next spec, because
+   nothing about the next spec's authoring changed.
+
 `none` is a legal outcome — a one-off not worth guarding. It is a decision, not
 a default: reach it only after 1–4 have been considered and rejected.
 

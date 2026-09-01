@@ -156,7 +156,9 @@ bash ~/.claude/scripts/log-escape repo=<basename> stage_found=phase-gate \
 
 ## Phase-Complete Block
 
-After each phase + review + phase gates, the **Phase-boundary decision** (step 2) selects one of three blocks. Print the matching block verbatim with `<N>`, `<N+1>`, `<plan-path>`, and lists filled in.
+After each phase + review + phase gates, the **Phase-boundary decision** (step 2) selects one of three blocks.
+
+**Deliver every block through the `brief` skill's shape** (`~/.claude/skills/brief/SKILL.md`): Layer 0 is the verdict, the blockers, the one decision owed, and a menu naming what is held back — the block's queue, gate evidence, verification lists and corrections are Layer 1, emitted only when the user asks for that item. The blocks below define what must EXIST at the boundary (nothing may be skipped or left unrun); `brief` decides what gets printed unasked. A block printed in full, unprompted, is the anti-pattern that skill exists to stop.
 
 **A — Auto-advance** (decision rule 5: genuinely `(risk: low)`, all machine gates green, not Phase 1, not the last phase, no exception/cap/ambiguity). No sign-off is requested; do not stop:
 

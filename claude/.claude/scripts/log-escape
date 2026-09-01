@@ -82,6 +82,14 @@ for kv in "$@"; do
   esac
   k="${kv%%=*}"
   v="${kv#*=}"
+  # Only desc is free text. A space in any other value means the caller quoted
+  # too much and swallowed the following key=value pairs into this one, which
+  # silently destroys gate attribution — fail loud instead of logging the row.
+  if [ "$k" != "desc" ] && [ "$v" != "${v#* }" ]; then
+    echo "refusing to log: $k= contains a space: '$v'" >&2
+    echo "Quote each key=value separately; only desc= may contain spaces." >&2
+    exit 1
+  fi
   json=$(jq -c --arg k "$k" --arg v "$v" '.[$k] = ($v | (tonumber? // .))' <<< "$json")
 done
 

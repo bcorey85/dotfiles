@@ -14,17 +14,34 @@ feature phase (feature ends at Phase 3 → these are 4–7).
    a cast or `?? default` to paper over a fixable wide type or loose structure
    is a failed refactor; fix the source — `/review` bounces it.
 
-   **Concentration gate.** Group `git diff --numstat <base>...HEAD` by module;
-   if the largest module has **≥100 added lines**, also run
-   `/refactor simplify <that module>` — that module alone, after the branch
-   sweep. Otherwise skip it and report the largest count. Never widen to a
-   second module, never pass the branch diff (`complexity-reviewer` refuses a
-   diff bound). Simplify findings are opt-in per finding, the user's call;
-   accepting one makes this phase `risk: high` — the no-behavior-change
-   contract covers the DRY sweep only.
+   **Concentration gate.** Group `git diff --numstat <base>...HEAD` by module.
+   Run `/refactor simplify <one module>` — that module alone, after the branch
+   sweep — when EITHER holds:
+
+   1. **Concentrated**: the largest module has **≥100 added lines**. Dispatch
+      that module.
+   2. **Distributed**: the branch totals **≥300 added lines** across source
+      files (excluding lockfiles, generated files, and test-only files) even
+      though no single module reaches 100. Dispatch the largest module anyway.
+
+   Trigger 2 exists because unnecessary code spreads with its consumers: a
+   producer and the state field, routing branch, and prompt clause that exist
+   only to serve it land in four different modules, each under any per-module
+   floor, and the deletion is invisible until one of them is read as a whole.
+   A per-module maximum cannot see that shape at all.
+
+   Otherwise skip it and report both counts. Never widen to a second module,
+   never pass the branch diff (`complexity-reviewer` refuses a diff bound).
+   Under trigger 2 the largest module is a guess at where the cascade is
+   rooted; if its findings name a consumer in another module as the reason
+   something is deletable, say so in the report rather than dispatching again.
+   Simplify findings are opt-in per finding, the user's call; accepting one
+   makes this phase `risk: high` — the no-behavior-change contract covers the
+   DRY sweep only.
 
    Success Criteria: quality checks green, no new cast/fallback dodging a root
-   cause, concentration gate evaluated (module named, or largest count stated).
+   cause, concentration gate evaluated (module dispatched with the trigger
+   named, or both counts stated).
 
 2. **Verify pass** (risk: high) — confirm the work actually does what the plan
    called for. Two complementary checks, both required:

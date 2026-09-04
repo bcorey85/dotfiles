@@ -149,6 +149,27 @@
     "defaultMode": "auto"
   },
   "model": "opus",
+  "skillOverrides": {
+    "audit": "user-invocable-only",
+    "brainstorm": "user-invocable-only",
+    "brief": "user-invocable-only",
+    "calibrate": "user-invocable-only",
+    "commit": "user-invocable-only",
+    "daily-recap": "user-invocable-only",
+    "eng-arch": "user-invocable-only",
+    "falsify": "user-invocable-only",
+    "guide": "user-invocable-only",
+    "msg": "user-invocable-only",
+    "peer-review": "user-invocable-only",
+    "pr-comments": "user-invocable-only",
+    "pr-triage": "user-invocable-only",
+    "pull-design": "user-invocable-only",
+    "save-note": "user-invocable-only",
+    "vault-ask": "user-invocable-only",
+    "vault-progress": "user-invocable-only",
+    "vault-review": "user-invocable-only",
+    "weekly-recap": "user-invocable-only"
+  },
   "hooks": {
     "Notification": [
       {
@@ -362,27 +383,6 @@
     "type": "command",
     "command": "bash ~/.claude/statusline-command.sh"
   },
-  "skillOverrides": {
-    "audit": "user-invocable-only",
-    "brainstorm": "user-invocable-only",
-    "brief": "user-invocable-only",
-    "calibrate": "user-invocable-only",
-    "commit": "user-invocable-only",
-    "daily-recap": "user-invocable-only",
-    "eng-arch": "user-invocable-only",
-    "falsify": "user-invocable-only",
-    "guide": "user-invocable-only",
-    "msg": "user-invocable-only",
-    "peer-review": "user-invocable-only",
-    "pr-comments": "user-invocable-only",
-    "pr-triage": "user-invocable-only",
-    "pull-design": "user-invocable-only",
-    "save-note": "user-invocable-only",
-    "vault-ask": "user-invocable-only",
-    "vault-progress": "user-invocable-only",
-    "vault-review": "user-invocable-only",
-    "weekly-recap": "user-invocable-only"
-  },
   "enabledPlugins": {
     "context7@claude-plugins-official": true,
     "lua-lsp@claude-plugins-official": true,
@@ -422,6 +422,6 @@
   "theme": "dark",
   "editorMode": "normal",
   "inputNeededNotifEnabled": false,
-  "skipAutoPermissionPrompt": true,
-  "agentPushNotifEnabled": true
+  "agentPushNotifEnabled": true,
+  "skipAutoPermissionPrompt": true
 }

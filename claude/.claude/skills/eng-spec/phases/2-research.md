@@ -17,7 +17,7 @@
    direction, spawned decision): create `03-decisions.md` if needed; Phase 5
    appends. Propose nothing yet.
 
-   **Translate, don't transcribe.** Say plainly what each section _means_ in
-   everyday terms and why it matters to this fix — never a bare `file.py:func`/
-   line-number dump as the presentation. Those belong in the doc, not in what you
-   say to the user.
+   **Translate, don't transcribe.** Say what each section _means_ and why it
+   matters to this fix — never a bare `file.py:func`/line dump. Show the anchor
+   instead: `nvim-jump` the section's first `file:line` before presenting it, per
+   `~/.claude/skills/_shared/nvim-jump.md`.

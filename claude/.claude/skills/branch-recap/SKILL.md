@@ -38,7 +38,8 @@ diff, and anything `/fix` or a `test-writer` re-dispatch touched in the `/test-a
 
 Skill-invoke `/stage`. Its SAFE tier is staged; its ESCALATE / READ / SKIM queue is the
 residue you still owe a read. Do not reclassify or promote its tiers — `stage.mjs` is the
-single source of truth, and only its deterministic SAFE tier is ever staged unread.
+single source of truth, and only its deterministic SAFE tier is ever staged unread. When
+the user steps the queue, `nvim-jump` each entry per `~/.claude/skills/_shared/nvim-jump.md`.
 
 Nothing unstaged → receipt line `residue: none — all phases staged clean`.
 

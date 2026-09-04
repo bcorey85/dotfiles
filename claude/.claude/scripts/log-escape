@@ -24,8 +24,7 @@
 #       spec defect, a coder reporting the plan contradicts the code. Distinct
 #       from walkthrough because the loop caught this one itself; the
 #       remediation is upstream, not "the human reads harder".
-#     gate_missed=review|drift-gate|test-intent|stage|coder|eng-spec|
-#                 pr-triage|q-verify
+#     gate_missed=review|drift-gate|test-intent|stage|coder|eng-spec|q-verify
 #       eng-spec = the defect was IN THE PLAN, not in code written against it:
 #       an unrunnable success criterion, a criterion that contradicts the
 #       domain, a mandated primitive whose semantics were never stated. No
@@ -56,7 +55,7 @@
 #       ~/.claude/skills/_shared/escape-ratchet.md. `check` is the plan-stage
 #       rung: a command added to the spec finalization sweep, or to
 #       spec-criteria-lint.sh. `none` = considered and rejected. `n-a` = this row
-#       is not review-flywheel data, e.g. the triage-misses log.)
+#       is not review-flywheel data, i.e. a REVIEW_ESCAPES_FILE override log.)
 #     desc="one line"
 #     file=path
 #     lane=q-plan|eng-spec|code|other   (optional: planning lane that produced

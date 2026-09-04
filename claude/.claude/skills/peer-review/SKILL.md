@@ -1,6 +1,6 @@
 ---
 name: peer-review
-description: Peer-review someone else's PR — orient first (intent, change map, risk surface), then a report-only tiered review (blocking / suggestions / nits) with per-finding drill-down. Never edits code, never enters the fix loop.
+description: Peer-review someone else's PR — orient first (intent, change map, risk surface), then a report-only tiered review (blocking / suggestions / nits), then an optional one-at-a-time walkthrough with discussion. Never edits code, never enters the fix loop.
 allowed-tools:
   [
     Agent,
@@ -26,12 +26,12 @@ Assist a human peer review of someone else's PR. Two hard differences from `/rev
 ## Modifiers
 
 - `+deep` — dispatch `code-reviewer-deep` instead of `code-reviewer` (omit `model`; its frontmatter pins Opus). For security-sensitive, concurrent, or architecturally complex PRs.
-- `+comment` — after drill-down, draft GitHub review comments and post ONLY after the user approves the exact text. Without it, nothing ever leaves the terminal.
+- `+comment` — after the walkthrough, draft GitHub review comments and post ONLY after the user approves the exact text. Without it, nothing ever leaves the terminal.
 - `+ephemeral` — skip the vault save below.
 
 ## Persist orientation to vault (default — `+ephemeral` skips)
 
-After orientation is presented (step 3), save the orientation block (intent vs diff, ticket, change map, risk surface, state) to `<vault>/Orientations/<yyyy-mm-dd>-<repo>-pr<number>.md` (vault root: `$VAULT_DIR` if set, else `~/vault`) and append a capture line via `~/.local/bin/note "peer-review orientation: <repo>#<number> — [[<note filename without .md>]]"` so the daily recap links it. Re-reviewing the same PR same day overwrites the note. Findings are NOT saved to the vault — they belong to the PR thread and drill-down.
+After orientation is presented (step 3), save the orientation block (intent vs diff, ticket, change map, risk surface, state) to `<vault>/Orientations/<yyyy-mm-dd>-<repo>-pr<number>.md` (vault root: `$VAULT_DIR` if set, else `~/vault`) and append a capture line via `~/.local/bin/note "peer-review orientation: <repo>#<number> — [[<note filename without .md>]]"` so the daily recap links it. Re-reviewing the same PR same day overwrites the note. Findings are NOT saved to the vault — they belong to the PR thread and the walkthrough.
 
 ## Instructions
 
@@ -103,50 +103,66 @@ Main-agent, over the diff and findings you already hold (no new dispatch). The f
 
 **Verify every candidate against the worktree before presenting it** — read the enclosing code, check for the scheduler/guard/retry the candidate assumes is absent, confirm the true scope of a cap or filter. This step is not optional: presenting an unverified surprise as confirmed relays a false positive to a colleague, the exact failure this skill guards against.
 
-Merge survivors into the tiers presented in step 5, tagged `(surprise-lens)` so the user sees they came from this pass, not the category review. A survivor merged into Blocking states the precondition that must hold for the failure to fire, same as step 4's findings, so it has content for the table's "Fires when" column. Drop refuted candidates silently (or note one line if the user would otherwise expect it).
+Merge survivors into the tiers presented in step 5, tagged `(surprise-lens)` so the user sees they came from this pass, not the category review. A survivor merged into Blocking states the precondition that must hold for the failure to fire, same as step 4's findings. Drop refuted candidates silently (or note one line if the user would otherwise expect it).
 
 ### 5. Present findings, tiered
+
+**Never use a markdown table for a finding.** Output renders in a terminal, which collapses a wide table into an unreadable label stack. One finding = one short heading plus prose. Tables are allowed only where every cell is a few words (acceptance criteria, the others-raised list).
 
 ```
 ## Peer Review — PR #<n>: <title>
 
 ### Acceptance criteria — <KEY> (when a ticket was found)
-| Criterion | Verdict | Evidence |
+| Criterion | Verdict | Evidence |     <- short cells only
 
 ### 🔴 Blocking (`blocker`)
-| # | File:Line | Issue | Failure scenario | Fires when |
+
+**1. `path/file.ext:409-427` — <≤10-word title>**
+<1-3 sentences: what's wrong, the concrete failure it produces, and the precondition that makes it fire. Cite file:line inline.>
 
 ### 🟠 Questions (`ask`)
-| # | File:Line | Issue | The question the author has to answer |
+
+**2. `path/file.ext:146-159` — <title>**
+<1-2 sentences of context, then the question the author has to answer, as a question.>
 
 ### 🟡 Suggestions (`fix`, non-blocking)
-| # | File:Line | Issue |
+
+**3. `path/file.ext:88` — <title>** <one sentence.>
 
 ### ⚪ Nits (`nit`)
-| # | File:Line | Issue |
+
+**4. `path/file.ext:12` — <title>** <one clause.>
 
 ### Already raised by others
 | Author | File:Line | Overlaps finding # |
 ```
 
-Number findings continuously across tiers. Surprise-lens survivors from step 4c are already merged into the tiers, tagged `(surprise-lens)`. Then **actively offer the next step via AskUserQuestion** — do not rely on the user remembering a typed command. Options, in this order:
+Suggestions and nits are one line each, heading and text on the same line. Blocking and Questions get their own paragraph. No bold `Issue:` / `Failure scenario:` / `Fires when:` labels — that is the table in disguise; fold them into the prose.
 
-- **Dig into a finding** — user names the number(s); proceed to step 6.
+Number findings continuously across tiers. Surprise-lens survivors from step 4c are already merged into the tiers, tagged `(surprise-lens)`. Then **actively offer the next step via AskUserQuestion** — do not rely on the user remembering a typed command. Two options only:
+
+- **Walk through the findings** — one at a time, with discussion; proceed to step 6.
 - **Done for now** — stop; the user acts on the findings as-is.
 
-(`+comment` stays a re-invocation modifier, not a menu option.) The user can always type `dig into <#>` directly instead of using the menu.
+(`+comment` stays a re-invocation modifier, not a menu option.)
 
-### 6. Drill-down (on "dig into N")
+### 6. Walkthrough (on "walk through")
 
-Main-agent, read-only, in the worktree: read the enclosing function and its callers (LSP find-references; `rg` fallback — the worktree has no installed deps, so the language server may not resolve), check whether the failure path is guarded elsewhere, and construct a concrete failing input. Verdict:
+One finding per turn, in tier order, blocking first. **Never batch** — present one, then stop and wait. Before each finding, move the user's editor to its primary anchor per `~/.claude/skills/_shared/nvim-jump.md` (main-checkout path, not the worktree). The user's reply is a conversation, not a menu selection: they may push back, add repo knowledge you don't have, ask what a caller does, or say the author already knows. Answer it, and only then offer to move on.
 
-- **CONFIRMED** — evidence: the trace from input to wrong behavior, quoting lines.
-- **REFUTED** — quote the guard/invariant that makes it impossible. Note it so the user doesn't relay a false positive to a colleague.
-- **PLAUSIBLE** — reachable but depends on state you can't verify statically; say what to check (a test to run, a question to ask the author).
+Per finding, before presenting it: read the enclosing function and its callers in the worktree (LSP find-references; `rg` fallback — the worktree has no installed deps, so the language server may not resolve) and check whether the failure path is guarded elsewhere. Then give the finding, a concrete failing input, and a verdict:
+
+- **CONFIRMED** — the trace from input to wrong behavior, quoting lines.
+- **REFUTED** — quote the guard/invariant that makes it impossible. Say it plainly; the user was about to relay a false positive to a colleague.
+- **PLAUSIBLE** — reachable but depends on state you can't verify statically; say what would settle it (a test to run, a question to ask the author).
+
+End each finding by asking whether to continue to the next, drop it, or stop. Track which findings are done, which the user dismissed, and which they want commented on — step 7 needs that list. Findings the user dismisses are dropped, not re-argued.
+
+The user can also name numbers (`walk 1 3 5`) to walk a subset, or type `next` / `stop` at any point.
 
 ### 7. Wrap up
 
-- `+comment` present: draft one GitHub comment per user-selected finding (constructive reviewer tone — describe the failure scenario, suggest, don't command; phrase PLAUSIBLE items as questions). Show the full draft and post via `gh` only after explicit approval.
+- `+comment` present: draft one GitHub comment per finding the walkthrough marked for comment (never a dismissed one) (constructive reviewer tone — describe the failure scenario, suggest, don't command; phrase PLAUSIBLE items as questions). Show the full draft and post via `gh` only after explicit approval.
 - Always: `git worktree remove "${TMPDIR:-/tmp}/peer-review-<number>" --force` and confirm removal.
 
 ## Arguments

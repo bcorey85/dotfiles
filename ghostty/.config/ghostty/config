@@ -59,6 +59,24 @@ keybind = ctrl+,=csi:44;5u
 # reaches the mux as nothing at all. Codepoint 46 + modifier 5=ctrl.
 keybind = ctrl+.=csi:46;5u
 
+# Unbind Ghostty's own split actions — herdr owns splits/panes. With Option and
+# Command swapped, physical Alt emits super, so super+d and friends were
+# stealing herdr's split keys and cutting a Ghostty pane in half instead.
+keybind = super+d=unbind
+keybind = super+shift+d=unbind
+keybind = super+shift+enter=unbind
+keybind = super+[=unbind
+keybind = super+]=unbind
+keybind = super+alt+arrow_up=unbind
+keybind = super+alt+arrow_down=unbind
+keybind = super+alt+arrow_left=unbind
+keybind = super+alt+arrow_right=unbind
+keybind = super+ctrl+arrow_up=unbind
+keybind = super+ctrl+arrow_down=unbind
+keybind = super+ctrl+arrow_left=unbind
+keybind = super+ctrl+arrow_right=unbind
+keybind = super+ctrl+==unbind
+
 # Mouse
 link-url = true
 

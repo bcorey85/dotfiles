@@ -226,7 +226,8 @@ re-rank it, never promote a tier.
   differently. A causal narrative — no paths, no line numbers, no file list. Absent a
   handoff, derive it from the diff and mark it `derived from diff`.
 - **Read first** — `/stage`'s queue, verbatim, in its order. SAFE-tier files are
-  already staged and do not appear.
+  already staged and do not appear. When the user steps the queue ("next"), `nvim-jump`
+  each entry as it comes up, per `~/.claude/skills/_shared/nvim-jump.md`.
 - **Active recall** — the "Next" block requires the user to state the behavior delta
   in their own words before advancing. Render it, never answer it for them.
 

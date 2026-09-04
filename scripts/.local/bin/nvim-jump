@@ -1,0 +1,54 @@
+#!/bin/bash
+# Drive a running nvim from a Claude Code session: open FILE at LINE in the
+# instance whose cwd contains the file. Lets a skill walkthrough (peer-review
+# findings, eng-spec research, /stage read queue) move the editor to each
+# file:line as it is discussed instead of making the user type the path.
+#
+# Socket discovery: nvim ≥0.8 auto-listens on $TMPDIR/nvim.$USER/*/nvim.PID.0.
+# Among live instances, pick the one whose getcwd() is the longest prefix of
+# FILE's absolute path; NVIM_JUMP_SOCKET overrides. Read-only on the buffer —
+# only :edit and cursor motion, never text.
+#
+# Usage: nvim-jump FILE[:LINE] [LINE]
+#        nvim-jump --list                # live instances and their cwd
+#
+# Exit 0 on jump, 1 no instance owns the file, 2 nvim not running / bad args.
+
+set -euo pipefail
+
+sockets() {
+    local s pid
+    for s in "${TMPDIR:-/tmp}"/nvim."$USER"/*/nvim.*.0 /tmp/nvim."$USER"/*/nvim.*.0; do
+        [ -S "$s" ] || continue
+        pid=${s##*/nvim.}; pid=${pid%.0}
+        kill -0 "$pid" 2>/dev/null && echo "$s"
+    done | sort -u
+}
+
+cwd_of() { nvim --server "$1" --remote-expr 'getcwd()' 2>/dev/null; }
+
+if [ "${1:-}" = "--list" ]; then
+    while read -r s; do printf '%s\t%s\n' "$(cwd_of "$s")" "$s"; done < <(sockets)
+    exit 0
+fi
+
+[ $# -ge 1 ] || { sed -n '12,14p' "$0"; exit 2; }
+
+file=$1; line=${2:-}
+case "$file" in *:[0-9]*) line=${file##*:}; file=${file%:*} ;; esac
+line=${line:-1}
+file=$(cd "$(dirname "$file")" 2>/dev/null && pwd -P)/$(basename "$file") || { echo "no such file: $1" >&2; exit 1; }
+
+sock=${NVIM_JUMP_SOCKET:-}
+if [ -z "$sock" ]; then
+    best=-1
+    while read -r s; do
+        cwd=$(cwd_of "$s") || continue
+        case "$file" in "$cwd"/*) [ ${#cwd} -gt $best ] && { best=${#cwd}; sock=$s; } ;; esac
+    done < <(sockets)
+fi
+[ -n "$sock" ] || { echo "no nvim instance owns $file (nvim-jump --list)" >&2; exit 1; }
+
+# <C-\><C-n> exits any mode (insert/visual/cmdline) before the command.
+nvim --server "$sock" --remote-send "<C-\\><C-n>:edit +${line} $(printf '%q' "$file")<CR>zz"
+echo "$(cwd_of "$sock") -> ${file#"$(cwd_of "$sock")"/}:$line"

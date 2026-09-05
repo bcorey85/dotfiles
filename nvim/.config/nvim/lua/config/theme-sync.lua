@@ -113,6 +113,34 @@ local FAMILIES = {
       vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
     end,
   },
+  ["gruvbox-material"] = {
+    -- sainnhe/gruvbox-material, HARD background, foreground = "original" — the
+    -- ORIGINAL gruvbox accents (red #fb4934, fg #ebdbb2) over hard grounds
+    -- (#1d2021 dark / #f9f5d7 light, a stop past gruvbox's medium #282828 /
+    -- #fbf1c7) and material's own role table (Function green, Operator orange,
+    -- Constant aqua, PreProc purple). Kept next to the `gruvbox` family for
+    -- A/B. One colorscheme follows vim.o.background and sets colors_name
+    -- "gruvbox-material" in both modes.
+    schemes = { dark = "gruvbox-material", light = "gruvbox-material" },
+    colors_name = "gruvbox-material",
+    -- The variant globals are read at :colorscheme time, hence `pre`.
+    pre = function()
+      vim.g.gruvbox_material_background = "hard"
+      vim.g.gruvbox_material_foreground = "original"
+    end,
+    accents = {
+      dark = { heading1 = "#fb4934", heading = "#fabd2f" }, -- red + yellow
+      light = { heading1 = "#9d0006", heading = "#b57614" },
+    },
+    -- Same comment grey as gruvbox (#928374, grey1), and it still misses 4.5:1
+    -- at both hard ends (4.47:1 on #1d2021, ~3.3:1 on #f9f5d7), so the same
+    -- two-way fix applies: #9e8d7d dark (~5.1:1), #776a5e light (~4.8:1).
+    -- gruvbox-material italicizes comments by default; keep the slant.
+    fixup = function(mode)
+      local fg = mode == "light" and "#776a5e" or "#9e8d7d"
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
+    end,
+  },
   ["melange"] = {
     -- savq/melange-nvim: one colorscheme "melange" follows vim.o.background
     -- (warm brown-black #292522 / neutral #f1f1f1), sharing one colors_name.

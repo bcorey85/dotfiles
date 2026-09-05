@@ -157,6 +157,35 @@ fg = "#3c3836"
 bg = "#fbf1c7"
 grey = "#776a5e"
 
+# gruvbox-material HARD dark, foreground=original — accents are original
+# gruvbox's, the ground is a stop darker (#1d2021 vs medium's #282828). `grey`
+# is #9e8d7d, nvim's dark comment fixup (#928374 is 4.47:1 on #1d2021).
+[palettes.gruvbox-material-dark]
+red = "#fb4934"
+orange = "#fe8019"
+yellow = "#fabd2f"
+green = "#b8bb26"
+blue = "#83a598"
+teal = "#8ec07c"
+purple = "#d3869b"
+fg = "#ebdbb2"
+bg = "#1d2021"
+grey = "#9e8d7d"
+
+# gruvbox-material HARD light (#f9f5d7, lighter than gruvbox's medium cream).
+# Same darkened yellow/green/teal as gruvbox-light for 4.5:1.
+[palettes.gruvbox-material-light]
+red = "#9d0006"
+orange = "#af3a03"
+yellow = "#96610f"
+green = "#746f0d"
+blue = "#076678"
+teal = "#407755"
+purple = "#8f3f71"
+fg = "#3c3836"
+bg = "#f9f5d7"
+grey = "#776a5e"
+
 # melange dark (warm brown-black #292522). Verbatim upstream. `grey` is the
 # theme's own comment #c1a78e (~6.7:1) — melange needs no comment fixup.
 [palettes.melange-dark]

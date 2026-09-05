@@ -77,7 +77,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="vitesse"
 
-families() { printf '%s\n' vitesse flexoki bamboo gruvbox melange kanagawa; }
+families() { printf '%s\n' vitesse flexoki bamboo gruvbox gruvbox-material melange kanagawa; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   # vitesse: our port, dark #121212 / light #ffffff — custom files in
@@ -98,6 +98,13 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     bamboo:*)           echo "bamboo-dark" ;;
     gruvbox:light)      echo "Gruvbox Light" ;;
     gruvbox:*)          echo "Gruvbox Dark" ;;
+    # gruvbox-material runs background=hard, foreground=original, whose ANSI IS
+    # the original gruvbox palette over the hard grounds (#1d2021 / #f9f5d7) —
+    # so the Gruvbox *Hard* builtins are exact here. Ghostty's own "Gruvbox
+    # Material Dark/Light" builtins are medium ground AND the MATERIAL
+    # foreground (fg #d4be98, red #ea6962), so they match on neither axis.
+    gruvbox-material:light) echo "Gruvbox Light Hard" ;;
+    gruvbox-material:*)     echo "Gruvbox Dark Hard" ;;
     melange:light)      echo "Melange Light" ;;
     melange:*)          echo "Melange Dark" ;;
     kanagawa:light)     echo "Kanagawa Lotus" ;;
@@ -142,6 +149,8 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     bamboo:*)           echo "gruvbox-dark-medium" ;;
     gruvbox:light)      echo "gruvbox-light-medium" ;;
     gruvbox:*)          echo "gruvbox-dark-medium" ;;
+    gruvbox-material:light) echo "gruvbox-light-medium" ;;
+    gruvbox-material:*)     echo "gruvbox-dark-medium" ;;
     melange:light)      echo "vitesse-light" ;;
     melange:*)          echo "gruvbox-dark-medium" ;;
     kanagawa:light)     echo "kanagawa-lotus" ;;
@@ -308,6 +317,49 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # gruvbox roles: keyword red, string/fn green, number pink, type yellow,
       # const aqua, operator fg.
       kw="#fb4934"; str="#b8bb26"; num="#d3869b"; fn="#b8bb26"; typ="#fabd2f"; punct="#ebdbb2"; op="#ebdbb2"
+      ;;
+    gruvbox-material:light)
+      # gruvbox-material HARD light (#f9f5d7), foreground=original — the accent
+      # hexes are original gruvbox's, but the ground is a stop lighter than
+      # gruvbox's medium cream #fbf1c7, and the CHROME ladder is warmer and
+      # tighter (bg1 #f5edca / bg3 #f2e5bc / bg5 #ebdbb2). Diff washes are the
+      # theme's own bg_diff_green/red. Roles differ too — see below.
+      bg="#f9f5d7"; panel="#f5edca"; panelAlt="#f2e5bc"; border="#ebdbb2"
+      accent="#9d0006"; accentMuted="#ebdbb2"; text="#3c3836"; muted="#928374"
+      addedBg="#e4edc8"; removedBg="#f8e4c9"; ctxBg="#f9f5d7"
+      sAdd="#79740e"; sRem="#9d0006"; lnFg="#a89984"
+      badgeAdd="#79740e"; badgeRem="#9d0006"; badgeNeu="#076678"
+      fRename="#8f3f71"; fMod="#b57614"; fUntracked="#928374"; note="#f5edca"
+      # gruvbox-material roles (its own highlight table, NOT original gruvbox's):
+      # Keyword/Statement red, String/Function green, Number/Boolean purple,
+      # Type yellow, Constant/Macro aqua, Operator/StorageClass/Tag orange,
+      # Identifier/@variable.member blue, PreProc/Include/@attribute purple,
+      # @module yellow, Delimiter fg. cmt is the darkened comment (#928374 is
+      # ~3.3:1 on #f9f5d7), matching the nvim fixup.
+      kw="#9d0006"; str="#79740e"; num="#8f3f71"; fn="#79740e"; typ="#b57614"; punct="#3c3836"; op="#af3a03"
+      konst="#427b58"; esc="#79740e"; cmt="#776a5e"; mem="#076678"; param="#3c3836"
+      attr="#8f3f71"; tag="#af3a03"; vbi="#8f3f71"; imp="#8f3f71"; pre="#8f3f71"
+      prim="#b57614"; ns="#b57614"; mac="#427b58"; bfn="#79740e"
+      ;;
+    gruvbox-material:*)
+      # gruvbox-material HARD dark (#1d2021), foreground=original — the original
+      # bright accents over a ground a stop darker than gruvbox's medium
+      # #282828, with the chrome ladder shifted down to match (bg1 #282828 /
+      # bg3 #3c3836 / bg5 #504945). Diff washes are the theme's own
+      # bg_diff_green #32361a / bg_diff_red #3c1f1e.
+      bg="#1d2021"; panel="#282828"; panelAlt="#32302f"; border="#3c3836"
+      accent="#fb4934"; accentMuted="#504945"; text="#ebdbb2"; muted="#928374"
+      addedBg="#32361a"; removedBg="#3c1f1e"; ctxBg="#1d2021"
+      sAdd="#b8bb26"; sRem="#fb4934"; lnFg="#504945"
+      badgeAdd="#b8bb26"; badgeRem="#fb4934"; badgeNeu="#83a598"
+      fRename="#d3869b"; fMod="#fabd2f"; fUntracked="#928374"; note="#282828"
+      # Same role table as the light half above. cmt is the lifted comment grey
+      # (#928374 is 4.47:1 on #1d2021 — a hair under the floor), matching the
+      # nvim fixup.
+      kw="#fb4934"; str="#b8bb26"; num="#d3869b"; fn="#b8bb26"; typ="#fabd2f"; punct="#ebdbb2"; op="#fe8019"
+      konst="#8ec07c"; esc="#b8bb26"; cmt="#9e8d7d"; mem="#83a598"; param="#ebdbb2"
+      attr="#d3869b"; tag="#fe8019"; vbi="#d3869b"; imp="#d3869b"; pre="#d3869b"
+      prim="#fabd2f"; ns="#fabd2f"; mac="#8ec07c"; bfn="#b8bb26"
       ;;
     melange:light)
       # melange light (#f1f1f1). Chrome + diff washes from the theme's own
@@ -748,6 +800,32 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       surface0="#504945" surface1="#665c54"
       overlay0="#7c6f64" overlay1="#928374"
       text="#ebdbb2" subtext0="#928374"
+      green="#b8bb26" yellow="#fabd2f" red="#fb4934"
+      blue="#83a598" teal="#8ec07c" peach="#fe8019"
+      ;;
+    gruvbox-material:light)
+      # gruvbox-material HARD light (#f9f5d7), foreground=original — same
+      # accents as gruvbox over a lighter ground and a warmer/tighter chrome
+      # ladder. subtext0 is the darkened comment #776a5e (grey1 #928374 is
+      # ~3.3:1 on #f9f5d7).
+      base_name="one-light"
+      accent="#9d0006" panel_bg="#f5edca" surface_dim="#f2e5bc"
+      surface0="#eee0b7" surface1="#ebdbb2"
+      overlay0="#928374" overlay1="#776a5e"
+      text="#3c3836" subtext0="#776a5e"
+      green="#79740e" yellow="#b57614" red="#9d0006"
+      blue="#076678" teal="#427b58" peach="#af3a03"
+      ;;
+    gruvbox-material:*)
+      # gruvbox-material HARD dark (#1d2021), foreground=original — original
+      # gruvbox accents over a darker ground and the material chrome ladder.
+      # subtext0 is the lifted comment #9e8d7d (grey1 #928374 is 4.47:1 on
+      # #1d2021).
+      base_name="one-dark"
+      accent="#fb4934" panel_bg="#282828" surface_dim="#32302f"
+      surface0="#3c3836" surface1="#504945"
+      overlay0="#7c6f64" overlay1="#9e8d7d"
+      text="#ebdbb2" subtext0="#9e8d7d"
       green="#b8bb26" yellow="#fabd2f" red="#fb4934"
       blue="#83a598" teal="#8ec07c" peach="#fe8019"
       ;;

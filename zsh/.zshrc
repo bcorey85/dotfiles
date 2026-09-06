@@ -8,6 +8,29 @@
 # Linux that prefix is where they live.
 export PATH="$HOME/.local/bin:$HOME:$PATH"
 
+# Compositor env: shells that don't descend from Hyprland don't inherit it — a
+# TTY login, or a herdr server that outlived a Hyprland restart and hands every
+# new pane the old (or no) value. Without HYPRLAND_INSTANCE_SIGNATURE hyprctl
+# can't find the compositor; without WAYLAND_DISPLAY Qt/GTK apps launched from
+# such a shell fall back to xcb and die. Re-derive both from the newest live
+# socket. Runs before the herdr autostart below so the server and its panes
+# inherit correct values.
+if [[ -d "$XDG_RUNTIME_DIR/hypr" ]]; then
+  if [[ ! -S "$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket.sock" ]]; then
+    for _hypr_dir in "$XDG_RUNTIME_DIR"/hypr/*(Nom); do
+      [[ -S "$_hypr_dir/.socket.sock" ]] &&
+        export HYPRLAND_INSTANCE_SIGNATURE="${_hypr_dir:t}" && break
+    done
+    unset _hypr_dir
+  fi
+  if [[ ! -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]]; then
+    for _wl_sock in "$XDG_RUNTIME_DIR"/wayland-<->(Nom); do
+      export WAYLAND_DISPLAY="${_wl_sock:t}" && break
+    done
+    unset _wl_sock
+  fi
+fi
+
 # Auto-start herdr (attach-or-create to its always-on persistent session).
 #   NO_MUX=1                         escape hatch — bare terminal, no multiplexer
 #   HERDR_*                          already inside herdr → skip, so a pane's

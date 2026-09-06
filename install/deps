@@ -198,7 +198,7 @@ mac)
   fi
 
   print_info "Installing dependencies via Homebrew..."
-  brew install stow neovim git jq fzf zoxide direnv git-delta btop bat atuin eza tlrc glow fd ripgrep keychain rustup ansible just imagemagick mise gh mprocs lazydocker tree-sitter-cli
+  brew install stow neovim git jq fzf zoxide direnv git-delta btop bat atuin eza tlrc glow fd ripgrep keychain rustup ansible just imagemagick kanata mise gh mprocs lazydocker tree-sitter-cli
   brew install --cask nikitabobko/tap/aerospace
   print_success "Dependencies installed"
   ;;

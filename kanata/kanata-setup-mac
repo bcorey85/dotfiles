@@ -1,0 +1,236 @@
+#!/bin/bash
+
+# ==============================================================================
+# Set up Kanata on macOS as auto-starting LaunchDaemons.
+# macOS counterpart to ./kanata-setup (Linux/systemd).
+#
+# Unlike Linux, macOS CANNOT be fully automated: Apple's TCC/SIP require three
+# GUI approvals + a reboot at the end (printed when the script finishes). This
+# script does everything else — brew install, driver install + activate, the
+# three launchd plists, and bootstrapping them.
+#
+# On macOS kanata rides on Karabiner's DriverKit virtual HID driver (there is no
+# uinput). kanata's driver crate speaks a SPECIFIC Karabiner IPC protocol, so the
+# driver is version-pinned even though kanata itself tracks latest via brew.
+# ==============================================================================
+
+set -uo pipefail
+
+# CONFIGURATION
+KANATA_CONFIG_REL_PATH="kanata-config.kbd" # relative to the user's $HOME (stowed)
+
+# Karabiner driver version — must match what the current kanata release expects.
+# Bump this ONLY when a kanata update reports a driver-protocol mismatch.
+KARABINER_DRIVER_VERSION="6.2.0"
+KARABINER_PKG_URL="https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice/releases/download/v${KARABINER_DRIVER_VERSION}/Karabiner-DriverKit-VirtualHIDDevice-${KARABINER_DRIVER_VERSION}.pkg"
+
+# launchd
+LD_DIR="/Library/LaunchDaemons"
+KANATA_LABEL="dev.kanata.kanata"
+VHID_DAEMON_LABEL="org.pqrs.karabiner-vhiddaemon"
+VHID_MANAGER_LABEL="org.pqrs.karabiner-vhidmanager"
+
+# Karabiner binaries laid down by the pkg
+VHID_DAEMON_BIN="/Library/Application Support/org.pqrs/Karabiner-DriverKit-VirtualHIDDevice/Applications/Karabiner-VirtualHIDDevice-Daemon.app/Contents/MacOS/Karabiner-VirtualHIDDevice-Daemon"
+VHID_MANAGER_BIN="/Applications/.Karabiner-VirtualHIDDevice-Manager.app/Contents/MacOS/Karabiner-VirtualHIDDevice-Manager"
+
+echoinfo() { echo "[INFO] $1"; }
+echoerror() { echo "[ERROR] $1" >&2; }
+
+# ------------------------------------------------------------------------------
+# Pre-flight
+# ------------------------------------------------------------------------------
+if [ "$(uname -s)" != "Darwin" ]; then
+  echoerror "This is the macOS setup. On Linux use ./kanata-setup instead."
+  exit 1
+fi
+
+if [ "$(id -u)" -ne 0 ]; then
+  echoerror "Must run with sudo (pkg install, /Library/LaunchDaemons, driver activate):"
+  echoerror "  sudo ~/kanata-setup-mac"
+  exit 1
+fi
+
+# We need the invoking (non-root) user: Homebrew refuses to run as root, and the
+# stowed config lives in that user's home.
+if [ -z "${SUDO_USER:-}" ] || [ "$SUDO_USER" = "root" ]; then
+  echoerror "Run via sudo from your normal user (needed to invoke Homebrew)."
+  exit 1
+fi
+USER_HOME=$(dscl . -read "/Users/$SUDO_USER" NFSHomeDirectory | awk '{print $2}')
+run_as_user() { sudo -u "$SUDO_USER" "$@"; }
+
+# Locate the stowed config
+USER_KANATA_CONFIG_SRC="$USER_HOME/$KANATA_CONFIG_REL_PATH"
+if [ ! -f "$USER_KANATA_CONFIG_SRC" ]; then
+  echoerror "Kanata config not found at $USER_KANATA_CONFIG_SRC"
+  echoerror "Run install/stow first so ~/$KANATA_CONFIG_REL_PATH exists."
+  exit 1
+fi
+echoinfo "Using config: $USER_KANATA_CONFIG_SRC"
+
+# ------------------------------------------------------------------------------
+# STEP 1: kanata via Homebrew (latest), as the normal user
+# ------------------------------------------------------------------------------
+if ! run_as_user command -v brew >/dev/null 2>&1; then
+  echoerror "Homebrew not found for $SUDO_USER. Install it first (see install/deps)."
+  exit 1
+fi
+BREW_PREFIX=$(run_as_user brew --prefix)
+KANATA_BIN="$BREW_PREFIX/bin/kanata"
+
+echoinfo "Installing/upgrading kanata via Homebrew..."
+run_as_user brew install kanata 2>/dev/null || run_as_user brew upgrade kanata || true
+if [ ! -x "$KANATA_BIN" ]; then
+  echoerror "kanata not found at $KANATA_BIN after brew install."
+  exit 1
+fi
+echoinfo "kanata binary: $KANATA_BIN"
+
+# ------------------------------------------------------------------------------
+# STEP 2: Karabiner DriverKit VirtualHIDDevice (version-pinned to kanata)
+# ------------------------------------------------------------------------------
+if [ ! -e "$VHID_MANAGER_BIN" ]; then
+  TMP_PKG="/tmp/karabiner-vhid-${KARABINER_DRIVER_VERSION}.pkg"
+  echoinfo "Downloading Karabiner driver v${KARABINER_DRIVER_VERSION}..."
+  curl -fSL -o "$TMP_PKG" "$KARABINER_PKG_URL" || {
+    echoerror "Driver download failed: $KARABINER_PKG_URL"
+    exit 1
+  }
+  echoinfo "Installing Karabiner driver pkg..."
+  installer -pkg "$TMP_PKG" -target / || {
+    echoerror "Driver pkg install failed."
+    exit 1
+  }
+  rm -f "$TMP_PKG"
+else
+  echoinfo "Karabiner driver already installed — skipping download."
+fi
+
+echoinfo "Activating Karabiner virtual HID driver..."
+"$VHID_MANAGER_BIN" forceActivate ||
+  echoinfo "forceActivate non-zero — likely needs the Driver Extensions GUI toggle below first."
+
+# ------------------------------------------------------------------------------
+# STEP 3: LaunchDaemon plists
+# ------------------------------------------------------------------------------
+mkdir -p /Library/Logs/Kanata
+
+echoinfo "Writing $LD_DIR/$KANATA_LABEL.plist ..."
+cat <<EOF >"$LD_DIR/$KANATA_LABEL.plist"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$KANATA_LABEL</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$KANATA_BIN</string>
+        <string>--quiet</string>
+        <string>--cfg</string>
+        <string>$USER_KANATA_CONFIG_SRC</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Library/Logs/Kanata/kanata.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Library/Logs/Kanata/kanata.err.log</string>
+</dict>
+</plist>
+EOF
+
+echoinfo "Writing $LD_DIR/$VHID_DAEMON_LABEL.plist ..."
+cat <<EOF >"$LD_DIR/$VHID_DAEMON_LABEL.plist"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$VHID_DAEMON_LABEL</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$VHID_DAEMON_BIN</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+</dict>
+</plist>
+EOF
+
+echoinfo "Writing $LD_DIR/$VHID_MANAGER_LABEL.plist ..."
+cat <<EOF >"$LD_DIR/$VHID_MANAGER_LABEL.plist"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$VHID_MANAGER_LABEL</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$VHID_MANAGER_BIN</string>
+        <string>activate</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
+EOF
+
+# LaunchDaemons must be owned root:wheel with 644 or launchd refuses them.
+chown root:wheel \
+  "$LD_DIR/$KANATA_LABEL.plist" \
+  "$LD_DIR/$VHID_DAEMON_LABEL.plist" \
+  "$LD_DIR/$VHID_MANAGER_LABEL.plist"
+chmod 644 \
+  "$LD_DIR/$KANATA_LABEL.plist" \
+  "$LD_DIR/$VHID_DAEMON_LABEL.plist" \
+  "$LD_DIR/$VHID_MANAGER_LABEL.plist"
+
+# ------------------------------------------------------------------------------
+# STEP 4: (re)bootstrap the daemons — manager -> vhid daemon -> kanata
+# ------------------------------------------------------------------------------
+for label in "$VHID_MANAGER_LABEL" "$VHID_DAEMON_LABEL" "$KANATA_LABEL"; do
+  echoinfo "Bootstrapping $label ..."
+  launchctl bootout "system/$label" >/dev/null 2>&1 || true # idempotent re-run
+  launchctl bootstrap system "$LD_DIR/$label.plist" || echoinfo "  (bootstrap deferred — finish GUI approvals + reboot)"
+  launchctl enable "system/$label" >/dev/null 2>&1 || true
+done
+
+# ------------------------------------------------------------------------------
+# Manual steps that cannot be scripted (Apple TCC/SIP)
+# ------------------------------------------------------------------------------
+cat <<'MANUAL'
+
+-----------------------------------------------------------------------
+Kanata macOS setup finished the scriptable parts. Now do these by hand:
+
+1. ENABLE THE DRIVER EXTENSION
+   System Settings -> General -> Login Items & Extensions -> Driver
+   Extensions -> turn ON  "org.pqrs.Karabiner-DriverKit-VirtualHIDDevice"
+
+2. GRANT INPUT MONITORING
+   System Settings -> Privacy & Security -> Input Monitoring ->
+   add your kanata binary (the brew bin path printed above) and your terminal.
+
+3. GRANT ACCESSIBILITY
+   System Settings -> Privacy & Security -> Accessibility ->
+   add kanata and your terminal.
+
+4. REBOOT, then verify:
+     sudo launchctl list | grep -E 'kanata|pqrs'
+     tail -f /Library/Logs/Kanata/kanata.err.log
+
+NOTE: Do NOT also run Karabiner-Elements — only one process can own the
+virtual HID device at a time.
+-----------------------------------------------------------------------
+MANUAL
+
+exit 0

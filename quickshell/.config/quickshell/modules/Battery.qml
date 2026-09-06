@@ -6,7 +6,7 @@ import ".."
 BarItem {
     readonly property var dev: UPower.displayDevice
     readonly property bool present: dev?.isPresent ?? false
-    readonly property int pct: Math.round(dev?.percentage ?? 0)
+    readonly property int pct: Math.round((dev?.percentage ?? 0) * 100)
     readonly property bool charging: dev?.state === UPowerDeviceState.Charging
 
     text: !present ? "" : (charging ? " " : icon()) + " BAT " + pct + "%"

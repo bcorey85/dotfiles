@@ -199,8 +199,8 @@ hl.config({
 hl.config({
     input = {
         numlock_by_default = true,
-        kb_layout  = "us,us",
-        kb_variant = "colemak_dh,",
+        kb_layout  = "us",
+        kb_variant = "",
         kb_model   = "",
         kb_options = "ctrl:nocaps",
         kb_rules   = "",

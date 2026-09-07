@@ -1,12 +1,11 @@
 # Phase 2: Goal-blind research (before any design thinking)
 
-5. **Dispatch `goal-blind-researcher`** (pinned — omit `model`) with the path to
+5. **Dispatch `goal-blind-researcher`** with the path to
    `00-ticket.md` and the task directory. It runs the phase and returns paths:
    questions, leak check, `02-research.md`.
 
    **Pass the ticket by path, never inline**, and don't repeat what the feature
-   is — the agent's value is never learning the goal, so a leaked question's
-   repair happens outside your context. Don't hand-edit `01-questions.md`.
+   is. Don't hand-edit `01-questions.md`.
 
    Returns `UNRESOLVED after 2 cycles` → a question is entangled with the goal.
    Put it to the user and re-dispatch; don't wave it through.

@@ -50,8 +50,7 @@ skeleton`, the thinnest end-to-end path exercising every Phase 0 contract
 
 ## Reading a plan
 
-Consumers working ONE phase read it phase-scoped — shared sections plus their
-own phase, skipping siblings. Rule and mechanics: `plan-reading.md`.
+Rule and mechanics: `plan-reading.md`.
 
 ## Template
 
@@ -114,8 +113,7 @@ source tree.
 The closing Verify phase reconciles every id against the real suite
 (`_shared/closing-phases.md`), matching behavior, not markers. A covering test
 asserts at the public boundary a user or caller reaches, never an internal
-function (that pins today's structure and blocks the refactor it should
-survive). **No mocks inside such a test.**
+function. **No mocks inside such a test.**
 
 ## Implementation Approach
 

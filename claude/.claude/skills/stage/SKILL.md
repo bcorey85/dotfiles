@@ -5,7 +5,7 @@ description: Mechanically stage the invariant-verifiable slice of a working-tree
 
 # Stage
 
-The index is the trust boundary: **staged = mechanically provable, skip it; unstaged = your reading queue.** The classifier's job is to shrink the queue only by what a script can _prove_ doesn't need human eyes — and to hand back the rest in blast-radius order so reading time lands where the risk is.
+The index is the trust boundary: **staged = mechanically provable, skip it; unstaged = your reading queue.** Everything else comes back in blast-radius order.
 
 ## Arguments
 
@@ -47,7 +47,7 @@ Read (M), in blast-radius order:
 Staged mechanically (N) — invariant-verified, skip. `git diff --staged` to spot-check.
 ```
 
-If M is small, say so plainly. If M is large, that is information, not a problem to automate away — it means the diff carries that much semantic change.
+If M is small, say so plainly.
 
 ### Phase 4: Log the run (flywheel)
 

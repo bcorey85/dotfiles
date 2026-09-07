@@ -25,8 +25,7 @@ the notes actually contain.
   work — never age them, never offer them as today's focus, never flag them
   stale), `bookmarks.org` / `questions.org` / `notes.org` are capture lanes,
   `journal.org` is the log below, `achievements.org` belongs to
-  `/weekly-recap`. Allowlist on purpose: a new queue file must not flood the
-  picker, and a new project file must be picked up without editing this skill.
+  `/weekly-recap`.
 - **Journal**: `<vault>/org/journal.org` — a datetree of free-form entries.
 - **`daily/*.md`**: compiled, point-in-time records. They are NOT the checklist —
   their `Open todos` bullets are a snapshot of org as of that night, and older notes
@@ -43,8 +42,7 @@ This is the one skill allowed to write todo state into org. `/daily-recap` and
    - **Open todos**: every `TODO`/`NEXT`/`WAITING` headline, with its capture date.
      State-prefix anything that isn't `TODO` (e.g. `WAITING — …`).
    - **Unfiled captures**: headlines with NO state keyword, and headlines whose text
-     is empty. `/daily-recap` collects neither, so they are invisible to the whole
-     pipeline and rot silently. Surface them separately — they need a decision:
+     is empty. Surface them separately — they need a decision:
      make it a TODO, promote it, or delete it.
    - **Loose ends in the journal**: scan today's and yesterday's journal entries for
      an intent that has no matching org todo ("only feedback is X", "need to Y").

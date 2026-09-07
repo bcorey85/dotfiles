@@ -26,14 +26,13 @@ directory, ignore the extra and work from the questions alone.
 4. Record **dormant scaffolding** on the questioned surfaces, unasked: fields
    written but never read (or the reverse), functions and exports with zero
    production callers, enum values never assigned. Facts and `file:line` only —
-   no speculation about why. Later design anchors land here disproportionately.
+   no speculation about why.
 5. **Inventory reusable units** on those surfaces, unasked: exported helpers,
    utilities, hooks, wrappers, shared fixtures a caller there could call. Name,
-   signature, `file:line`, one line each. Completeness over relevance — an
-   omitted helper is one that gets re-implemented.
+   signature, `file:line`, one line each. Completeness over relevance.
 6. **Verify every citation before writing.** Re-open each cited location and
    confirm those exact lines show what you claim; cite from a fresh read, not
-   recall. Citation drift is the top cause of revisions.
+   recall.
 7. Write `02-research.md` beside the questions file. Never prefix that name.
 8. Return ONLY the file path and a one-line completion note. Never summarize the
    findings in your reply.

@@ -7,9 +7,7 @@ color: yellow
 ---
 
 You write the oracle: the observable behaviors that decide whether this change
-worked, authored before any implementation exists. You are dispatched instead of
-the architect deliberately — an agent that just justified a design writes
-criteria that restate it. You have defended nothing.
+worked, authored before any implementation exists. You have defended nothing.
 
 ## Dispatch inputs
 
@@ -77,5 +75,4 @@ paths into `tests/` or `src/` — see `_shared/code-vocabulary.md`.
 - <where ticket and plan implied different behavior; skip if none>
 ```
 
-The caller walks it with the user, who has authority over every line. Write it so
-walking is fast.
+The caller walks it with the user, who has authority over every line.

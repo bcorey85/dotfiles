@@ -28,7 +28,9 @@ The one planning lane. Phase 1 lists the inputs it accepts.
 from memory, never two ahead. Compacted mid-phase → re-read before anything else.
 
 `~/.claude/skills/eng-spec/phases/<n>-<name>.md`: 1-ticket · 2-research ·
-3-scope · 4-explore · 5-decisions · 6-finalize · 7-choice
+3-scope · 4-explore · 5-decisions · 6-finalize · 6b-review · 7-choice
+
+All agent dispatches are pinned — omit `model`; frontmatter pins it.
 
 ## The two rules that outrank any phase
 

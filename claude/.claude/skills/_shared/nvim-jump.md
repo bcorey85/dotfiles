@@ -2,7 +2,7 @@
 
 Any walkthrough that presents items anchored to a `file:line` — a review finding, a
 research section, a `/stage` read-queue entry — drives the user's editor to the anchor
-as each item is presented, so the user reads the code instead of retyping the path.
+as each item is presented.
 
 ```
 nvim-jump <path>:<line>        # opens in the nvim whose cwd contains <path>

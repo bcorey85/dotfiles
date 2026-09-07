@@ -6,9 +6,7 @@ allowed-tools: [Bash, Read, Glob, Grep, AskUserQuestion, Skill]
 
 # Brainstorm — vet a ticket before it costs a teammate rework
 
-A ticket crosses a person boundary and a time boundary. The implementer wasn't
-in this conversation and starts weeks later. Anything wrong in the ticket
-becomes their rework. This skill exists to make the ticket NOT WRONG — every
+This skill exists to make the ticket NOT WRONG — every
 factual claim verified, the approach feasible, the acceptance unambiguous.
 
 ## Steps
@@ -21,7 +19,7 @@ means the ticket goes to the backlog; that's fine, don't ask about it.
 
 ### 2. Verify the premise — before designing anything
 
-The #1 rework cause is a stale premise. Check the assumed facts against the
+Check the assumed facts against the
 actual repo: does the described behavior really happen, does the code still
 work the way the request assumes, does the thing being asked for already
 exist? Cite `file:line` for each load-bearing fact. If the premise is wrong,
@@ -34,8 +32,7 @@ approach) — not scoping. `/create-ticket` owns naming files in the ticket.
 
 **First question, always: the appetite.** How much is this problem worth —
 a quick fix, a couple of days, a week? An appetite starts with a number and
-ends with a design (not the reverse); it constrains every fork downstream
-and does more to prevent gold-plating than trimming scope at the end.
+ends with a design (not the reverse); it constrains every fork downstream.
 
 Then serial questions, multiple choice preferred: purpose, constraints, what
 done looks like. Stop when `## Work` and `## Acceptance` could be written
@@ -73,9 +70,7 @@ _recommendation_, rejected approaches + verification evidence →
 through if one was given.
 
 Pin the WHAT; recommend the HOW. Only promote the approach into `## Work`
-when deviating from it would violate a constraint you verified — a mandated
-approach turns the implementer's judgment off, and a flawed one gets
-followed instead of flagged.
+when deviating from it would violate a constraint you verified.
 
 If the work turned out to be multiple independent pieces, ask ONCE, offering
 three options: keep it one ticket (deferred pieces → `## Out of scope`);

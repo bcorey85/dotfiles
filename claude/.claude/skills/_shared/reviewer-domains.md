@@ -22,10 +22,7 @@ git diff HEAD -U0 | rg '^\+' | rg -E '<domain content regex>'   # -i only where 
 
 ## security
 
-The diff trigger is narrow by design: endpoints inherit auth from a global
-subsystem in every mainstream framework, so "forgot the auth check on a new
-endpoint" is not the live failure mode — **disabling the inherited protection
-is.** Declare `reviewers: security` in the plan for anything else.
+The diff trigger is narrow by design — **disabling inherited protection is the live failure mode, not a missing check.** Declare `reviewers: security` in the plan for anything else.
 
 - **Auth opt-out markers** (content, case-SENSITIVE — framework tokens, not prose):
   `@Public\(|AllowAny\b|permission_classes\s*=\s*\[\s*\]|@csrf_exempt|csrf_exempt\b|skip_before_action|permitAll\(|\[AllowAnonymous\]|@SkipAuth|@NoAuth|authenticate:\s*false|requiresAuth:\s*false|auth:\s*false`
@@ -57,22 +54,20 @@ ls -d migrations db/migrate prisma alembic 2>/dev/null
 - **Paths**: `**/*.sql`, `**/migrations/**`, `**/models/**`, `**/models*`,
   `**/managers*`, `**/repositor*/**`, `**/*repository*`, `**/*.query.*`,
   `**/*dao*`, `**/entities/**`, `**/schema*`
-- **Content, case-SENSITIVE** — SQL keywords. Matching these case-insensitively is
-  what made ordinary English fire the gate:
+- **Content, case-SENSITIVE** — SQL keywords:
   `\bSELECT\s|\bINSERT\s+INTO\b|\bUPDATE\s+\w+\s+SET\b|\bDELETE\s+FROM\b|\bJOIN\s+\w|\bGROUP\s+BY\b|\bORDER\s+BY\b|\bLIMIT\s+\d|\bOFFSET\s+\d`
 - **Content, case-insensitive** — ORM/driver constructs, each anchored to a real
   call site rather than a bare English word:
   `\.findMany\(|\.findAll\(|\.findOne\(|createQueryBuilder|select_related|prefetch_related|values_list\(|\.annotate\(|bulk_create|\.objects\.(all|filter|get|exclude)\(|\.Include\(|\.ThenInclude\(|ToListAsync|IQueryable|FromSql|SaveChanges|\.Preload\(|gorm\.|db\.(Query|QueryRow|Exec)\(|sqlx\.|pgx\.|forEach\([^)]*await|\.map\([^)]*await`
 
-Deliberately NOT triggers (each matched prose or non-DB code): bare `LIMIT`,
+Deliberately NOT triggers: bare `LIMIT`,
 `OFFSET`, `JOIN\s`, `eager`, `lazy`, `include:`, `\.count\(`, `\.find\(`,
 `\.query\(`, `objects\.`, `Promise\.all`, `await .*\bfor\b`, `rows\.Next`,
 unqualified `\.Exec\(`.
 
 ## smell
 
-Size trigger, not path/content — structure smells have no keyword signature, and
-volume is the risk proxy. Eligible when EITHER holds on the converged diff:
+Size trigger, not path/content. Eligible when EITHER holds on the converged diff:
 
 1. **≥ 40 added lines** across source files (sum of column 1 from
    `git diff HEAD --numstat`, excluding lockfiles and generated files).

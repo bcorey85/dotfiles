@@ -33,6 +33,20 @@
 #       wrong against the tree and repaired before any coder ran. This is the one
 #       field that scores the sweep: it is the count of plan defects that did NOT
 #       become escapes.
+#     plan_review_findings=<n>        BLOCKER + GAP items the fresh-eyes plan
+#       reader raised across all its rounds. Same role as `falsified` for a
+#       different instrument: plan defects caught before a coder ran. 0 is a real
+#       answer and must be logged as one, or the reader's cost has no yield.
+#     plan_review_rounds=<n>          how many fresh reads it took to reach a
+#       clean one. Rounds beyond the first are the evidence that one pass does
+#       not saturate; a lane that always converges in one round can drop the loop.
+#     plan_review_alts=<n>            alternative approaches the reader argued for
+#     plan_review_alts_taken=<n>      how many the ticket owner accepted
+#       Separate from plan_review_findings, and never logged as escapes: an
+#       alternative is not a defect, the plan worked. The pair is the only measure
+#       of whether arguing the design is worth its cost — raised with none ever
+#       taken is a reader talking past the owner, and the ratio is the number to
+#       read, not the count.
 #
 # Numeric-looking values are stored as numbers, everything else as strings.
 # A "date" field (UTC ISO 8601) is always added. Output file:

@@ -35,8 +35,7 @@ THEIRS
 
 Rules:
 
-- **One line each. No sub-bullets, no rationale, no evidence.** The reasoning is
-  already in the transcript; if the user wants it they will ask about that item.
+- **One line each. No sub-bullets, no rationale, no evidence.**
 - **Lead with the identifier** — ticket key, or `path:line`. It is what gets routed.
 - **The action is a verb the user could hand to someone.** "Measure whether an
   activities date fans the view" routes; "investigate the activity_count situation"
@@ -47,7 +46,7 @@ Rules:
   is not blocked, it is unstarted — put it in NOW.
 - **Omit empty groups.** Do not print a header to say nothing is under it.
 - **Cap: 12 items.** Past that, list the top 12 and end with
-  `+N more — ask to expand.` A list longer than a screen is not a decision aid.
+  `+N more — ask to expand.`
 
 ## Closing line
 

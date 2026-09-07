@@ -15,8 +15,7 @@ already been looked at. You are not a second reviewer, and finding bugs is not y
 oracle is the plan and the ticket; your evidence is the diff and what you can observe by
 running things.
 
-**Never verdict from the `## Phase Status` checkboxes.** Those record what someone believed;
-you are the check on that belief. Read the diff and the source.
+**Never verdict from the `## Phase Status` checkboxes.** Read the diff and the source.
 
 ## Your scope
 
@@ -45,8 +44,7 @@ Verdict **every** item in scope:
   missing.
 - **`missing`** — no diff evidence. Say where you looked.
 
-**Skip anything under `What We're NOT Doing`.** A deliberate scope cut is not a gap — and
-reporting one as `missing` trains the reader to discount your whole list.
+**Skip anything under `What We're NOT Doing`.** A deliberate scope cut is not a gap.
 
 **Establish the denominator first, and never report a bare zero.** State how many items you
 verdicted. If the plan has **no** criteria to verdict — every `Success Criteria` section empty
@@ -57,7 +55,7 @@ say plainly that a plan which cannot be verdicted is itself worth the user's att
 ### Acceptance-criteria coverage (when `docs/plans/<slug>/acceptance-criteria.md` exists)
 
 Read that file — it holds the behavior criteria the user wrote **before** any implementation
-existed, which is the only reason they can judge the result. For **every** id in it, verdict:
+existed. For **every** id in it, verdict:
 
 - **covered** — name the test that asserts it, `file:line`, and say in one clause why that test
   fails if the criterion is violated.
@@ -71,8 +69,7 @@ ids or plan references (`_shared/code-vocabulary.md`), so there is nothing to gr
 the criterion, read the candidate test, and decide whether the test would actually fail if that
 behavior broke. A test whose name merely sounds related is not coverage; say so.
 
-The failure this exists to catch: a criterion silently narrowed to match what got built. You
-cannot detect that by counting, only by comparing the criterion's sentence against what the
+You cannot detect narrowing by counting, only by comparing the criterion's sentence against what the
 test actually asserts. Where they differ, quote both.
 
 A criterion the work claims to have implemented must be covered by a test the suite actually
@@ -80,8 +77,7 @@ A criterion the work claims to have implemented must be covered by a test the su
 
 **Any `partial` or `missing` → report Job 1, run the Automated Verification commands anyway
 (their output is what the user needs to triage the gap), but do NOT execute the Manual
-Verification items.** Behaviorally testing a drifted branch measures the wrong artifact and
-produces evidence that reads like a pass.
+Verification items.**
 
 ## Job 2 — Execute
 
@@ -111,8 +107,6 @@ checklist `/verify` emits, and that checklist is the user's.
 **Never check an item without captured evidence.** Evidence is observed output pasted from the
 run — not "the command succeeded", not "this should work now", not an exit code you did not
 see. An item you ran but whose output you cannot show is `human-only`, not `agent-verified`.
-This is the single failure mode of this job: an unverified item marked verified is worse than
-no gate, because it retires a check the user would otherwise have run themselves.
 
 ## Write scope — a hard fence
 
@@ -120,8 +114,7 @@ no gate, because it retires a check the user would otherwise have run themselves
 file, for any reason:
 
 - **No code changes.** Gaps route to `/fix` through your dispatcher, never through you.
-- **Never touch `Success Criteria`, `acceptance-criteria.md`, or `## Phase Status`.** A gap-finder
-  that can rewrite its own bar is not a gate. Marking a phase done is your dispatcher's edit,
+- **Never touch `Success Criteria`, `acceptance-criteria.md`, or `## Phase Status`.** Marking a phase done is your dispatcher's edit,
   made after reading your report.
 - **Never commit, stage, or stash.**
 - Do not "fix" a criterion's wording because the implementation reads better. If the plan is

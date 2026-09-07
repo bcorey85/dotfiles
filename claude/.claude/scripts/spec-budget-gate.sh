@@ -30,8 +30,18 @@
 # make an edit fit. TOTAL has held at 7,500 since install (baseline 6,465 on
 # 2026-07-13) and the 2026-08 skill-sizing research found nothing that
 # contradicts it. Baseline at the phase-file split (2026-08-07): 850 resident.
-RESIDENT_CEILING=1200
-TOTAL_CEILING=7500
+#
+# RESIDENT raised 1200 -> 1500 on 2026-09-07 with the user's sign-off, to admit
+# the fresh-eyes plan-review phase. The lane was already 126 words over 1200
+# before that change, and the alternative was cutting the claim-check sweep in
+# finalization — which had never run once, so there was nothing to cut it on.
+#
+# TOTAL raised 7500 -> 8700 on 2026-09-07, same sign-off. The tree had already
+# grown past 7500 before that change, so the number was stale rather than the
+# tree over budget; the plan-review phase paid part of its own way by moving the
+# planning-lane log row out of finalization instead of duplicating it.
+RESIDENT_CEILING=1500
+TOTAL_CEILING=8700
 
 [ -n "${CLAUDE_SKIP_HOOKS:-}" ] && exit 0
 INPUT=$(cat)

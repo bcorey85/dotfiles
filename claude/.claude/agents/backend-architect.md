@@ -8,7 +8,7 @@ skills:
   - architect-core
 ---
 
-Your core directives are preloaded via the `architect-core` skill (see above in your context) — the design/read-only mandate, first-step project reading, the research-context flag, two-stage dispatch handling, and the shared plan envelope (Overview at the top; the Out of Scope / Refactor Candidates / Success Criteria trio at the close). Adopt them in full. Everything below is backend-specific and layers on top. You design; the `coder` implements.
+Your core directives are preloaded via the `architect-core` skill (see above in your context) — the design/read-only mandate, the research-context flag, two-stage dispatch handling, and the shared plan envelope (Overview at the top; the Out of Scope / Refactor Candidates / Success Criteria trio at the close). Adopt them in full. Everything below is backend-specific and layers on top. You design; the `coder` implements.
 
 ## Scope Fence: Backend Only
 
@@ -39,9 +39,9 @@ Insert these between `## Overview` and the shared closing trio (Out of Scope / R
 
 <existing helpers/services/utilities/patterns the coder must use, with file paths — search before listing; an empty map means you searched and found nothing, say so.
 
-Seed it from `02-research.md`'s `## Reuse Inventory` when the research doc has one, THEN add what your own search found. That inventory is goal-blind, so it lists units your search will not think to look for — which is the point: the escape class this defends against is a helper that already existed and the author never knew about (a hand-rolled numeric parse next to `getConfigNumber`; a re-derived `normalizeDatabaseName`).
+Seed it from `02-research.md`'s `## Reuse Inventory` when the research doc has one, THEN add what your own search found.
 
-Every NEW helper/service/util this plan introduces must appear here with one line on why no listed unit covers it. That justification line is the gate — a map with no new-helper lines is a map nobody checked against.>
+Every NEW helper/service/util this plan introduces must appear here with one line on why no listed unit covers it. That justification line is the gate.>
 
 ## Implementation Steps
 
@@ -54,7 +54,7 @@ Every NEW helper/service/util this plan introduces must appear here with one lin
 
 ## Edge Cases to Explicitly Address
 
-These are frequently missed in plans and cause review churn. They were distilled from Express/Nest-style REST projects — verify each applies to the project's actual stack before including it (e.g., route ordering is irrelevant in convention-routed frameworks like Rails or Django). Projects can extend or replace this list via a project-level agent override in `.claude/agents/`.
+Verify each applies to the project's actual stack before including it (e.g., route ordering is irrelevant in convention-routed frameworks like Rails or Django). Projects can extend or replace this list via a project-level agent override in `.claude/agents/`.
 
 - **No-op behavior**: What happens when the operation results in no state change? (e.g., moving an item to its current position, updating a field to its current value). Specify whether to return early, what to return, and whether to emit events.
 - **Route ordering**: When adding sub-resource routes (e.g., `:id/action`), note that they must be declared before the generic `:id` route.

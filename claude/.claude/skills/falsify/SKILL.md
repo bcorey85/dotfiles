@@ -20,8 +20,7 @@ matrix. **Find the counterexample.**
 - **Not a survey.** Do not enumerate bug classes or consult a checklist. Your
   target comes only from what the user actually said.
 - **Not a search of git history, PRs, or issues.** Read the **working tree**:
-  code, schema, config, tests, comments. Never `git log`, never `gh`. The
-  question is what the code does, not what someone once said about it.
+  code, schema, config, tests, comments. Never `git log`, never `gh`.
 
 ## 1. Restate the claim as a falsifiable proposition
 

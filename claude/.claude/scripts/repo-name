@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# repo-name — print the canonical repo name for telemetry rows.
+#
+# `basename "$(git rev-parse --show-toplevel)"` names the CHECKOUT, not the
+# repo. Inside a linked worktree that is the worktree directory, so one repo
+# logs under as many names as it has had worktrees — cb-semantic-layer,
+# cb-semantic-layer-IQ-1071, IQ-1208-measure-temporal-class — and every
+# per-repo rate splits silently across them.
+#
+# The common git dir always belongs to the MAIN worktree, so its parent is the
+# repo no matter which worktree the caller is standing in.
+set -euo pipefail
+
+common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || {
+  # Not in a repo. The caller's cwd is the best name available.
+  basename "$PWD"
+  exit 0
+}
+basename "$(dirname "$common")"

@@ -70,7 +70,7 @@ From the user's input figure out: project key, issue type, and parent (if any).
 
 Briefly explore the actual codebase (Glob/Grep/Read) so the ticket names real files, not guesses. This research is for _you_ — it informs tight bullets; it does not get dumped into the description.
 
-**Size check:** if scoping reveals the work can't plausibly land in a few days, flag it and confirm before filing — a small description can hide weeks of work, and oversized tickets are the strongest predictor of slow delivery. Don't refuse; the call is the user's.
+**Size check:** if scoping reveals the work can't plausibly land in a few days, flag it and confirm before filing. Don't refuse; the call is the user's.
 
 ### 3. Write it (honor the brevity contract)
 

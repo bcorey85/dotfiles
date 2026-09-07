@@ -5,8 +5,7 @@ description: Report a finished unit of work as a verdict plus the decision owed,
 
 # Brief — verdict first, detail on request
 
-A status report is not a transcript. The user reads it to decide one thing:
-what to do next. Every line that does not move that decision is spam, no
+Every line that does not move the user's next decision is spam, no
 matter how true it is.
 
 Default to this shape for any completion report. It is not a compression pass
@@ -36,8 +35,7 @@ full. Depth on request is not spam; depth unasked is.
   command names and pass counts. Name a gate only when it failed, was skipped,
   or its result is the decision.
 - **One ask at a time.** If two decisions are open, lead with the one that
-  blocks the other and say the second exists. Two questions in one report get
-  one answer and a re-ask.
+  blocks the other and say the second exists.
 - **Never paste an agent packet.** Sub-agent reports, review packets and tool
   output are inputs to your judgment, not deliverables. Relay the conclusion in
   your own words; the user cannot see them anyway.

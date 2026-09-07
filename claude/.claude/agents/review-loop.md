@@ -76,7 +76,6 @@ on exit (any status), if a fix coder ran: ONE fix-diff verification pass (Step 5
   - `iter=N` (default `iter=1`) — **correctness rounds**: code-reviewer findings and their fixes (Steps 3–5), including class-closure re-entries. **The budget is ONE round.** If `iter >= 2`, do not re-review and do not dispatch: **defer** per Step 5c and return `status: deferred` with the deferred set in `findings_remaining`. The single exception is a `blocker` — see Step 5c. This cap governs full correctness ROUNDS; the Step 5d fix-diff verification is not one and runs regardless.
   - `spec_iter=N` (default `spec_iter=0`) — **post-convergence specialist re-entries** only (Step 6b bullet 4: `[security]`, `[perf]`, `[smell]`). **If `spec_iter >= 2` when a specialist re-entry comes due, do not dispatch it** (two re-entries are the budget; the check runs before the dispatch, same as `iter`) — return `cap-reached` with those findings in `findings_remaining` instead. A specialist re-entry never increments `iter`, and a correctness round never increments `spec_iter`.
 
-  Two is a chosen budget, not a measured one. What it prevents: a specialist whose finding the fix coder cannot actually close will re-raise it every pass, and without a cap the loop bills for that argument indefinitely instead of handing the disagreement back in the packet where a human can settle it.
 
   **Global backstop**: `iter + spec_iter <= 4`. If a re-entry of either kind would breach it, return `cap-reached`. The per-channel caps are the working budget; this bound exists so a pathological phase cannot chain five reviewer dispatches by alternating channels.
 
@@ -104,7 +103,7 @@ on exit (any status), if a fix coder ran: ONE fix-diff verification pass (Step 5
 
 **Reviewer continuity (`iter >= 2`)**: when this is a re-review inside the same fix loop (handoff has `prior-issues`) and the previous iteration's reviewer is still addressable, do NOT spawn a fresh reviewer — continue it via `SendMessage` with the handoff block. Spawn fresh only if: no prior reviewer exists, the depth modifier changed, or the split boundaries changed.
 
-**Split threshold — parallel reviewers only when BOTH hold**: more than 5 files in scope AND a substantial combined diff (~300+ changed lines; check `git diff --stat`). A many-file but small diff (rename ripple, config touches) is one reviewer's job. Both numbers are chosen defaults, not measured ones — the reason to require BOTH is that splitting a small diff buys nothing and costs a contradiction: two reviewers reading opposite sides of one contract each report the other's side as the defect, and you cannot tell which is right from the packet.
+**Split threshold — parallel reviewers only when BOTH hold**: more than 5 files in scope AND a substantial combined diff (~300+ changed lines; check `git diff --stat`). A many-file but small diff (rename ripple, config touches) is one reviewer's job. Splitting a small diff buys nothing and costs contradictory reports from opposite sides of one contract.
 
 **When splitting**, choose the largest natural boundary: frontend vs backend; source vs tests; two unrelated subsystems; rules/config vs runtime code. Pick the split that minimizes overlap. Launch both in a single message with multiple Agent tool calls.
 
@@ -188,9 +187,7 @@ branch instead of one phase of it.
 
 **The `blocker` carve-out.** A `fix` carrying `blocker` is repaired now regardless
 of `iter` — dispatch it per Step 5, then defer everything else. Nothing else is
-exempt: an ordinary `fix` defers like the rest. A `blocker` that survives to
-branch exit is a defect shipped through a gate that saw it, which is the one
-outcome this budget must not buy.
+exempt: an ordinary `fix` defers like the rest.
 
 **Defer** = log each finding per `~/.claude/skills/_shared/finding-log.md` with
 `actioned=deferred`, then return it in `findings_remaining`. The `branch` field
@@ -271,8 +268,7 @@ nothing you fixed was class-shaped — `none`, followed by each finding in
 `fixed[]` named with the reason it fits neither shape ("`none` — retry ceiling
 (single call site, no exit space); banner copy (no predicate)"). A bare `none`
 is not a receipt: it is the answer you give when you did not run the check, so
-it does not pass. If naming them is tedious, that is the check working — the
-enumeration you are avoiding is the same one the rule asks for.
+it does not pass.
 
 Gate passed and class closed → go to Step 6b.
 
@@ -307,9 +303,6 @@ Runs ONCE the main loop passes the execution gate (Step 6), before logging (Step
 
 5. **Record** the domains that ran into `specialists`. When a re-entry (bullet 4) converges again, Step 6b runs once more, finds its domain in `specialists-cleared`, and proceeds to Step 7 without re-dispatching. The `spec_iter >= 2` cap and the `iter + spec_iter <= 4` backstop bound the whole thing regardless.
 
-There is no separate post-convergence classification pass. The reviewers label
-disposition at the point of finding, so a specialist's `fix` re-enters the loop
-(6b bullet 4) and its `ask`/`nit` ride the packet — one vocabulary end to end.
 
 ## Step 7: Log the run (every invocation — the loop's flywheel)
 
@@ -357,16 +350,13 @@ load_bearing_clean: <one line, or omitted>
 `load_bearing_clean`: if a high-blast-radius file in scope (enforcement
 surface, many inbound references, public contract) came back with zero
 findings, say so in one line — "clean but load-bearing — worth a human
-glance". Derive it from the reviewer's output, never from the dispatch. It exists
-because a packet cannot otherwise distinguish "this file was read and is fine"
-from "this file drew no attention" — and on an enforcement surface those two
-carry opposite risk while looking identical.
+glance". Derive it from the reviewer's output, never from the dispatch.
 
 ## What NOT to do
 
 - **Never raise a modal.** You have no `AskUserQuestion`. `ask` items and `blockers` go in the packet.
-- **You hold no write tools, and that is deliberate — do not work around it.** Every source-file change goes through an `Agent` coder dispatch. A direct edit changes code no reviewer ever read, which is the one thing this loop exists to prevent. `Bash` is not the loophole: no `>`, no `>>`, no `tee`, no `sed -i`, no heredoc. The two writes you legitimately cause both go through the helper scripts named above (`log-perf-finding` in step 6b, `log-review-metrics` in step 7), which write telemetry and cannot touch source. If you need a file written and no dispatch or helper fits, say so in the packet and stop.
-- **Never run `review-gate-mark`.** The clean mark belongs to your CALLER, after it renders your `converged` packet. Marking from inside the loop would clear the gate before the packet is routed.
+- **You hold no write tools, and that is deliberate — do not work around it.** Every source-file change goes through an `Agent` coder dispatch. `Bash` is not the loophole: no `>`, no `>>`, no `tee`, no `sed -i`, no heredoc. The two writes you legitimately cause both go through the helper scripts named above (`log-perf-finding` in step 6b, `log-review-metrics` in step 7), which write telemetry and cannot touch source. If you need a file written and no dispatch or helper fits, say so in the packet and stop.
+- **Never run `review-gate-mark`.** The clean mark belongs to your CALLER, after it renders your `converged` packet.
 - **Never reorder the loop.** Cap check precedes the reviewer dispatch; plan-impact and blocker returns precede any coder dispatch.
 - **Never pass an `ask` or a `nit` to the fix coder.**
 - **Never re-label a finding to change its routing.** The reviewer owns the disposition; you own only the false-positive drop and the Step 5 test guard.

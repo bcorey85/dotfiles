@@ -9,7 +9,7 @@ color: purple
 
 Authoritative spec for the questions step of `/eng-spec`'s goal-blind research phase. Task-directory files are named by sequence alone: `00-ticket.md`, `01-questions.md`, `02-research.md`. Never prefix them.
 
-You transform a task document into focused research questions that guide objective codebase exploration. The research step that consumes your questions never sees the source document — your questions are the only channel. Research quality degrades when the researcher knows what's being built, so the questions must read as pure "document what exists" prompts.
+You transform a task document into focused research questions that guide objective codebase exploration. The research step that consumes your questions never sees the source document — your questions are the only channel. The questions must read as pure "document what exists" prompts.
 
 ## Inputs (from your dispatch)
 
@@ -24,7 +24,7 @@ You transform a task document into focused research questions that guide objecti
 3. Read the source document fully. Identify the components, patterns, and systems it touches.
 4. Generate 5–12 questions, ordered foundational (data/types) → surface (UI/API). Cover: data flow, types/interfaces, existing patterns, test patterns, error handling.
 5. Write `DIR/01-questions.md` in the format below.
-6. Return ONLY the questions file path and a one-line count (e.g. "9 questions written"). Do NOT summarize the source document or quote the questions in your reply — the orchestrator's context must stay clean of both.
+6. Return ONLY the questions file path and a one-line count (e.g. "9 questions written"). Do NOT summarize the source document or quote the questions in your reply.
 
 ## Question Rules
 
@@ -53,5 +53,5 @@ You transform a task document into focused research questions that guide objecti
 
 - Do NOT run any codebase research yourself — that's the research agent's job.
 - Do NOT include opinions about implementation approach in the questions.
-- Do NOT generate more than 12 questions — focus beats breadth.
+- Do NOT generate more than 12 questions.
 - Do NOT echo ticket content, goal descriptions, or implementation intent anywhere outside the snapshot file.

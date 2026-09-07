@@ -12,14 +12,14 @@ One escape = one defect found downstream of the gate that should have caught it.
 
 1. **Extract the fields** from `$ARGUMENTS` and the conversation:
    - `stage_found` — where the defect surfaced: `walkthrough` (you, reading `/stage`'s queue at a phase sign-off — inside the loop), `phase-gate` (a downstream agent caught it inside the phase loop, before you read anything), `pr-human` (you, reading the diff after it left the gates), `prod`, `verify`, `other`
-   - `gate_missed` — which layer should have caught it: `review` (bugs/quality), `drift-gate` (plan drift), `test-intent` (bug-pinning tests), `stage` (bug in a mechanically-staged SAFE-tier file — the invariant failed), `coder` (should never have been written), `eng-spec` (**the defect was in the plan** — an unrunnable criterion, a criterion contradicting the domain, a mandated primitive with unstated semantics. Use this whenever the implementation faithfully matched a wrong spec: no reviewer can catch that, because it checks the diff against the spec and finds them in agreement. Never file it under `coder`.)
+   - `gate_missed` — which layer should have caught it: `review` (bugs/quality), `drift-gate` (plan drift), `test-intent` (bug-pinning tests), `stage` (bug in a mechanically-staged SAFE-tier file — the invariant failed), `coder` (should never have been written), `eng-spec` (**the defect was in the plan** — an unrunnable criterion, a criterion contradicting the domain, a mandated primitive with unstated semantics. Use this whenever the implementation faithfully matched a wrong spec. Never file it under `coder`.)
    - `class` — `bug` | `smell` | `duplication` | `complexity` | `plan-drift` | `test-gap` | `other` (`complexity` = code that need not have existed, the `/refactor simplify` class)
    - `severity` — `high` | `medium` | `low`
    - `desc` — one line, specific enough to be legible in 3 months
    - `file` — representative path, if known
    - `lane` — optional: planning lane that produced the work (`eng-spec` | `code` | `other`); ask if the conversation makes it ambiguous — this feeds the lane-level A/B evidence in /audit review
 
-   If the description is too vague to classify, ask ONE clarifying question — a mislabeled escape pollutes the very data this exists to produce. A new requirement or changed mind is NOT an escape; only log things a gate should have caught with the information it had.
+   If the description is too vague to classify, ask ONE clarifying question. A new requirement or changed mind is NOT an escape.
 
 2. **Ratchet** — run the guard decision per `~/.claude/skills/_shared/escape-ratchet.md` (including its ADR addendum) and carry the chosen rung into the log line below.
 
@@ -38,12 +38,11 @@ findings). Use it when a review whose only lens is unnecessary complexity has
 just printed a tagged finding list in this conversation — it converts that list
 into escape rows instead of asking you to retype each one.
 
-**Filter first — two thirds of a complexity list is usually not an escape:**
+**Filter first:**
 
 - Log ONLY findings against code this branch's coding loop produced and the
   review gates already blessed. Pre-existing debt that never went through the
-  loop is not an escape; logging it inflates every gate ratio /audit review
-  computes and there is no way to tell the two apart afterward.
+  loop is not an escape.
 - Skip anything already logged this branch by a structure or complexity finder
   — same file, same shape, one row.
 - A list that ends in nothing to cut logs nothing. Say so and stop.
@@ -63,8 +62,7 @@ unless the finding removes a whole file or a live code path. One row per
 distinct finding, not per file. Then run the ratchet once per `class` group per
 its batching rule, and emit the step-3 command per row.
 
-State the kept-vs-filtered count when you confirm — that ratio is the point of
-the mode.
+State the kept-vs-filtered count when you confirm.
 
 ## Arguments
 

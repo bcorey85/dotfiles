@@ -5,25 +5,17 @@ description: Explain how the current changes fit into the surrounding code that 
 
 # Orient — situate the change in its unchanged surroundings
 
-Diff review shows hunks. It cannot show how those hunks connect to the code that
-stayed the same — so reviewing diffs builds a model of _changes_, never a model of
-the _system_. This skill closes that gap. Run it after a coding phase, before
+Run it after a coding phase, before
 committing, when you've read the diff but don't feel the structure.
 
-**On-demand, not a phase.** `/orient` reads the codebase to build a system map; it
-is not part of the closing chain and no gate runs it. `/branch-recap` — the closing
-phase — reads only the branch's own process residue and never builds this map; it
-consumes an orient map if you ran one, else it points back here. One reads code, the
-other reads process.
+**On-demand, not a phase.** No gate runs it.
 
 ## Scope
 
 Default target depends on where you are:
 
 - **On a feature branch** — the WHOLE branch: merge-base diff vs the default branch,
-  which also covers the working tree. By orient time most phases are usually already
-  committed; `git diff HEAD` alone would silently orient around the last uncommitted
-  sliver.
+  which also covers the working tree.
 - **On the default branch** — working-tree changes (staged + unstaged) only.
 
 The user may instead pass a file, directory, symbol, or feature name in `$ARGUMENTS` — if so,
@@ -41,7 +33,7 @@ $ARGUMENTS
    working tree). On the default branch: `git diff --stat HEAD` then `git diff HEAD`.
    This is the only step that looks at the diff.
 
-2. **Now read the unchanged neighbors.** This is the whole point — open the actual
+2. **Now read the unchanged neighbors.** Open the actual
    files and read the changed symbols _in full, in place_, plus:
    - The callers of every new/changed function (who invokes it, with what assumptions).
    - The callees it newly depends on (what it now reaches into).
@@ -109,6 +101,4 @@ With `+ephemeral`, skip both writes.
 - **Read-only. Never edit.** This rebuilds understanding; it does not change code.
   (The default vault persist writes only under the vault — never in the repo.)
 - This is _not_ `/review` (correctness/bugs).
-  It answers one question: **how does this change relate to the code around it?**
-- Keep it tight. Refs over prose. The goal is to reload the user's mental map fast,
-  not to write an essay.
+- Keep it tight. Refs over prose.

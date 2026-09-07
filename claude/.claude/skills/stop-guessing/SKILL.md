@@ -5,7 +5,7 @@ description: Circuit breaker — stop guessing, research the actual solution. In
 
 # Stop Guessing
 
-The user has invoked this because you have been failing to fix something. Your current approach is not working.
+Your current approach is not working.
 
 ## Rules
 
@@ -26,7 +26,7 @@ The user has invoked this because you have been failing to fix something. Your c
 
 ## What NOT to do
 
-- Do NOT say "let me try one more thing" — that is the opposite of this skill's purpose
+- Do NOT say "let me try one more thing"
 - Do NOT skip the WebSearch step
 - Do NOT propose a fix based on reasoning alone — cite your source
 - Do NOT resume the previous approach unless the research confirms it was correct

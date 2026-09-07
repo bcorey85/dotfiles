@@ -41,19 +41,28 @@
 #       --shortstat on its scope, insertions+deletions). Review-defect-detection
 #       degrades with the size of the change under review, so a gate's yield is
 #       uninterpretable without it. Measure it; do not estimate it.
-#     result=PASS|PASS WITH WARNINGS|NEEDS CHANGES   (optional)
+#     result=PASS|PASS WITH WARNINGS|NEEDS CHANGES|NOT DISPATCHED   (optional)
+#       Case and -/_ spelling are normalized, and the words gates reach for when
+#       none of the four fit are folded in: clean and intent-aligned are PASS,
+#       findings, gaps and residue are NEEDS CHANGES. Anything else is refused.
 #
 #   kind=finding ONLY
 #     disposition=fix|ask|nit       what the reviewer said should happen
 #     blocker=yes|no                (optional, `fix` only) advancing with it
 #                                   in place ships the defect
 #     class=bug|smell|duplication|complexity|plan-drift|test-gap|weak-assertion
-#          |security|perf|correctness|other   (same vocabulary as log-escape,
-#                                              so the two logs cross-tabulate)
+#          |security|perf|correctness|docs|other  (same vocabulary as log-escape,
+#                                                  so the two logs cross-tabulate)
 #       perf = query/IO cost (N+1, unbounded query, missing index, over-fetch,
 #       serial awaits, per-item round-trip). perf-reviewer's findings go here,
 #       never under `other` — under `other` they cannot be told apart from
 #       anyone else's and the gate's recall is uncomputable.
+#       docs = the prose is wrong about the code: a stale or misleading comment,
+#       a rationale that cites the wrong quantity, a doc contradicting the
+#       behaviour it describes, comment volume against the file's own cap. The
+#       code may be correct — that is what separates it from `bug`.
+#       other = last resort, and it is read as one. A run whose findings are
+#       mostly `other` has told the analysis nothing about what the gate catches.
 #     file=<path>                 repo-relative
 #     line=<n>                    0 when the finding names no line
 #     actioned=fixed|skipped_fp|deferred|ask|none
@@ -115,18 +124,60 @@ esac
 
 [ -n "$gate" ] || { echo "refusing to log: gate=<agent name> is required." >&2; exit 1; }
 
-# `result` is a three-value enum the audit reports as a distribution, and it was
-# collecting disposition words ("fix", "clean", "gaps", "actioned") instead —
-# each one a bucket of size 1 that reads as a verdict the reviewer never gave.
-# Free text belongs in desc=.
+# The checkout is not the repo. In a linked worktree the caller's
+# `basename $(git rev-parse --show-toplevel)` is the worktree directory, so one
+# repo logs under as many names as it has had worktrees and every per-repo rate
+# splits across them. Derive it here instead of trusting the caller.
+if canonical=$("$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../scripts" && pwd)/repo-name" 2>/dev/null); then
+  json=$(jq -c --arg r "$canonical" '.repo = $r' <<< "$json")
+fi
+
+# `result` is the gate's verdict, reported as a distribution. It was collecting
+# disposition words ("fix", "clean", "gaps", "actioned") instead — each one a
+# bucket of size 1 reading as a verdict the reviewer never gave. Free text
+# belongs in desc=.
+#
+# Rejecting outright loses the row, because telemetry never blocks the caller:
+# the gates with no natural PASS/NEEDS CHANGES vocabulary (plan-verifier,
+# test-intent-reviewer, test-reviewer) then log no run row at all and lose their
+# denominator. So spelling and the known synonyms are folded in, and only a
+# genuinely unmappable value is refused.
 if [ "$kind" = run ]; then
   res=$(jq -r '.result // ""' <<< "$json")
-  case "$res" in
-    "" | PASS | "PASS WITH WARNINGS" | "NEEDS CHANGES") ;;
+  norm=$(printf '%s' "$res" | tr '[:lower:]' '[:upper:]' | tr '_-' '  ')
+  case "$norm" in
+    "") mapped="" ;;
+    "PASS WITH WARNINGS"* | "PASS (NITS ONLY)") mapped="PASS WITH WARNINGS" ;;
+    PASS | CLEAN* | "INTENT ALIGNED") mapped="PASS" ;;
+    "NEEDS CHANGES"* | FINDINGS | GAPS | "GAPS FOUND" | RESIDUE) mapped="NEEDS CHANGES" ;;
+    "NOT DISPATCHED"*) mapped="NOT DISPATCHED" ;;
     *)
-      echo "refusing to log: result=$res is not PASS|PASS WITH WARNINGS|NEEDS CHANGES" >&2
+      echo "refusing to log: result=$res is not PASS|PASS WITH WARNINGS|NEEDS CHANGES|NOT DISPATCHED" >&2
       echo "It is the gate's verdict, not what happened to the findings. Omit it if" >&2
       echo "the gate gave no verdict; put anything else in desc=." >&2
+      exit 1 ;;
+  esac
+  if [ "$mapped" != "$res" ]; then
+    [ -z "$mapped" ] || echo "note: result=$res logged as $mapped" >&2
+    json=$(jq -c --arg r "$mapped" '.result = $r' <<< "$json")
+  fi
+fi
+
+# `class` is the join key against review-escapes.jsonl. An unknown value cannot
+# be cross-tabulated, and `other` is a legal answer that costs the analysis a
+# bucket every time it is used as a shrug — nearly half of all findings landed
+# there, dominated by stale comments and wrong documented rationale, which is
+# what `docs` now exists for.
+if [ "$kind" = finding ]; then
+  cls=$(jq -r '.class // ""' <<< "$json")
+  case "$cls" in
+    "" | bug | smell | duplication | complexity | plan-drift | test-gap \
+      | weak-assertion | security | perf | correctness | docs | other) ;;
+    *)
+      echo "refusing to log: class=$cls is not one of bug|smell|duplication|complexity|" >&2
+      echo "plan-drift|test-gap|weak-assertion|security|perf|correctness|docs|other." >&2
+      echo "The vocabulary is shared with log-escape so the caught and escaped sides" >&2
+      echo "cross-tabulate; do not invent values." >&2
       exit 1 ;;
   esac
 fi

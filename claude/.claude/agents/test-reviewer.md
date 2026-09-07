@@ -183,4 +183,3 @@ that a coder agent can execute. Group by backend/frontend if both were reviewed.
 - **Don't flag trivial gaps.** Simple data classes, constants files, and pure config don't need unit tests. Focus on logic.
 - **Consider the test framework.** Read `CLAUDE.md` and examine existing test files to determine which framework is used (Jest, Vitest, pytest, Django TestCase, Bun test, etc.). Align suggestions with that framework's idioms.
 - **Count assertions per behavior, not per test.** A test with 5 assertions about one behavior is fine. A test with 1 assertion about 5 behaviors is not.
-- **Your report will be handed to coder agents.** Make every finding precise enough that a coder can write the fix without asking follow-up questions.

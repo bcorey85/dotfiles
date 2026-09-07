@@ -1,11 +1,7 @@
 # Per-Finding Gate Log
 
 Canonical instruction for every gate that emits findings. Skills and agents
-point here instead of restating it, so the schema has one owner.
-
-`review-metrics.jsonl` records one aggregate row per run. It cannot say which
-gate caught what, and it cannot say how a gate does on diffs where it finds
-nothing. This log carries both.
+point here instead of restating it.
 
 ## Emit
 
@@ -25,24 +21,23 @@ C=(
 )
 
 # ONE run row per gate dispatched — INCLUDING gates that returned nothing.
-bash "$L" kind=run "${C[@]}" gate=<agent name> n_findings=<n> diff_loc=<n> result=<...>
+bash "$L" kind=run "${C[@]}" gate=<agent name> n_findings=<n> diff_loc=<n> \
+  result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES|NOT DISPATCHED>
 
 # ONE finding row per finding that gate emitted.
 bash "$L" kind=finding "${C[@]}" gate=<agent name> disposition=<fix|ask|nit> [blocker=yes] \
-  class=<bug|smell|duplication|complexity|plan-drift|test-gap|weak-assertion|security|correctness|other> \
+  class=<bug|smell|duplication|complexity|plan-drift|test-gap|weak-assertion|security|perf|correctness|docs|other> \
   file=<path> line=<n> actioned=<fixed|skipped_fp|deferred|ask|none> desc="<one line>"
 ```
 
 ## Rules that make the data usable
 
 - **Log the silent runs.** A gate that found nothing still gets its `kind=run`
-  row with `n_findings=0`. Those rows are the denominator; a log holding only
-  findings makes every gate look perfect and answers no question worth asking.
+  row with `n_findings=0`. Those rows are the denominator.
 - **`gate=` is the literal agent name dispatched.** Never collapse a `-deep`
   tier into its base name — the two tiers are different instruments.
 - **`diff_loc` is measured, not estimated.** `git diff --shortstat` over that
-  gate's scope, insertions + deletions. Detection degrades as the reviewed
-  change grows, so yield without size is uninterpretable.
+  gate's scope, insertions + deletions.
 - **`file`/`line` is the join key** — across gates, and against
   `review-escapes.jsonl`. A finding naming no line logs `line=0`; it counts,
   it just cannot participate in overlap analysis.
@@ -51,8 +46,18 @@ bash "$L" kind=finding "${C[@]}" gate=<agent name> disposition=<fix|ask|nit> [bl
 - **`fix_induced=bug` auto-promotes to `blocker`.** A bug the loop itself introduced
   cannot be deferred — the loop owns it. Set `blocker=yes` and `actioned=fixed` (not
   `deferred`). The finding was caught in the same session that created it; deferring
-  it to branch exit means the loop ships a crash it diagnosed.
+  it to branch exit.
 - `class=` uses the escape vocabulary so the caught and escaped sides
-  cross-tabulate. Do not invent values.
+  cross-tabulate. Do not invent values — unknown ones are refused.
+- **`other` is a last resort and is read as one.** Reach for `docs` when the
+  prose is wrong about the code (stale or misleading comment, rationale citing
+  the wrong quantity, doc contradicting the behaviour, comment volume over the
+  file's cap) — the code may be correct, which is what separates it from `bug`.
+  A gate whose findings are mostly `other` has said nothing about what it catches.
+- **`result=` is the gate's verdict, not what happened to its findings.** Gates
+  with no natural pass/fail vocabulary still owe one: a clean or intent-aligned
+  read is `PASS`, a read that found gaps or residue is `NEEDS CHANGES`, and a
+  gate that was skipped because nothing matched its surface is `NOT DISPATCHED`.
+  Omit it only when the gate genuinely gave no verdict.
 
 Full field reference lives in the script's header.

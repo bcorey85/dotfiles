@@ -3,8 +3,7 @@
 18. **HARD STOP — no spec write, no coder dispatch, until the user answers.**
 
     Ask both questions in ONE **AskUserQuestion** call ("Save to disk?" and
-    "Implement now?") — the blocking modal is what makes this stop unskippable,
-    and it is the **ONLY legal `AskUserQuestion` in the skill**. Presenting the
+    "Implement now?") — the **ONLY legal `AskUserQuestion` in the skill**. Presenting the
     plan in conversation is fine; writing or dispatching before the answers is not.
 
     **Save to disk?**
@@ -19,21 +18,12 @@
     **Implement now?**
     - Yes, **more than one phase** → the spec must be saved (save it even if they
       said no above — explain why), then invoke `/code` with the spec path.
-      `/code`'s phase-boundary machinery keys off the plan's risk tags; a raw
-      coder dispatch bypasses every gate the plan just defined.
     - Yes, single-phase → dispatch one `coder` with the whole spec, whatever
-      layers it spans. **Always dispatch a coder. Never implement inline** — the
-      dispatch is what triggers the review chain. If the spec calls for tests,
+      layers it spans. **Always dispatch a coder. Never implement inline**. If the spec calls for tests,
       dispatch `test-writer` **after** the coder returns, from the plan's
-      criteria — never the same agent for both. An implementation's author
-      writes tests that pin what it does, not what was asked for.
+      criteria — never the same agent for both.
     - Later → stop here.
 
-19. **Present summary**: key decisions, file written (if saved), what was
-    implemented (if coded). Remind the user to check Figma if frontend work is
-    involved.
-
-    **If any code changed this session**, say: "Auto-dispatching `/review` to
+19. **If any code changed this session**, say: "Auto-dispatching `/review` to
     check the implementation before committing," then invoke `/review`. The
-    review is triggered by code changing, not by how it changed — never skip it
-    because no coder was dispatched.
+    review is triggered by code changing, not by how it changed.

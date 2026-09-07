@@ -174,7 +174,7 @@ esac
 [[ "$RESOLVED" == ""$H"/.local/share/systemd/user/"* ]] && block "[systemd_user] [threat:7] Writing to user systemd units is not allowed"
 [[ "$FILE" == ""$H"/.local/share/systemd/user/"* ]] && block "[systemd_user] [threat:7] Writing to user systemd units is not allowed"
 # Fast path: if nothing in the input can match any rule, allow immediately
-if ! grep -qiE '((^|/)\.env(rc|(\.[a-zA-Z0-9]+)*)?$)|((^|/)\.mcp\.json$)|(\.claude/settings(\.local)?\.json$)|((^|/)\.git/hooks/)|(\.github/workflows/|\.gitlab-ci\.yml$|Jenkinsfile$|azure-pipelines\.yml$|\.travis\.yml$|bitbucket-pipelines\.yml$|\.buildkite/|\.circleci/)' <<< "$RESOLVED"; then
+if ! grep -qiE '((^|/)\.env(rc|(\.[a-zA-Z0-9]+)*)?$)|((^|/)\.mcp\.json$)|(\.claude/settings(\.local)?\.json$)|((^|/)\.git/hooks/)' <<< "$RESOLVED"; then
     exit 0
 fi
 if grep -qiE '(^|/)\.env(rc|(\.[a-zA-Z0-9]+)*)?$' <<< "$RESOLVED"; then
@@ -191,9 +191,5 @@ fi
 # Git hook scripts — persistence mechanism within repositories
 if grep -qiE '(^|/)\.git/hooks/' <<< "$RESOLVED"; then
     block "[git_hooks_dir] [threat:6] Writing to .git/hooks/ is not allowed — git hooks execute automatically and persist in the repository"
-fi
-# CI/CD pipeline files
-if grep -qiE '\.github/workflows/|\.gitlab-ci\.yml$|Jenkinsfile$|azure-pipelines\.yml$|\.travis\.yml$|bitbucket-pipelines\.yml$|\.buildkite/|\.circleci/' <<< "$RESOLVED"; then
-    block "[cicd_files] [threat:6] Writing to CI/CD pipeline files requires manual review"
 fi
 shopt -u nocasematch

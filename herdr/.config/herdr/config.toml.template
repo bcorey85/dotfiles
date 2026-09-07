@@ -65,6 +65,10 @@ copy_mode        = "prefix+["
 detach           = "prefix+shift+d"
 reload_config    = "prefix+r"
 goto             = "prefix+o"
+# tmux prefix+; (last-pane), promoted to a direct chord. herdr leaves last_pane
+# unset by default; unlike tmux it is GLOBAL back-and-forth, not within-tab.
+# ctrl+; needs kitty keyboard protocol — fine on ghostty, breaks on legacy terms.
+last_pane        = "ctrl+;"
 
 # Workspaces: indexed switching parked on prefix (alt+1..4 belongs to harpoon).
 # Tabs already default to prefix+1..9.
@@ -338,7 +342,7 @@ show_agent_labels_on_pane_borders = true
 # Sidebar starts hidden (true zero-width, not the compact rail); toggle with
 # prefix+ctrl+b. sidebar_start_collapsed applies on NEXT LAUNCH, not reload.
 sidebar_start_collapsed = true
-sidebar_collapsed_mode = "hidden"
+sidebar_collapsed_mode = "compact"
 sidebar_width = 20
 # terminal_title_stripped (see [ui.sidebar.agents] below) is the row most likely
 # to truncate at width 20; herdr auto-scales up to sidebar_max_width when

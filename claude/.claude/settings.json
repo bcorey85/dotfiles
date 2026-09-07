@@ -137,7 +137,9 @@
       "Bash(brew list *)",
       "Bash(brew info *)",
       "Bash(open .)",
-      "Bash(open -R *)"
+      "Bash(open -R *)",
+      "Bash(curl *)",
+      "Bash(wget *)"
     ],
     "deny": [
       "Bash(sudo *)",

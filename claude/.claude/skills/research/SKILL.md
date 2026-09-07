@@ -33,7 +33,26 @@ WebFetch the top 2-3 results (never snippets alone).
 
 ### Phase 4: Synthesize and Present
 
-Present findings in this structure:
+**Default: the recommendation and nothing else.** Two or three sentences, the
+sources that carry it, and a question back. They asked a question, not for a
+document — and the research already cost them the wait.
+
+Emit the full structure below ONLY when they ask for it, when the answer is a
+real multi-way choice they have to make, or when it is going into a doc.
+Otherwise the headings and the table are the wall this skill keeps generating.
+
+**Shorten the output, not the synthesis.** Do the full comparison — contrasting
+the approaches against each other is where the recommendation actually gets
+sharp, and skipping it yields a confident sentence with nothing under it. Do it
+in thinking, then ship the conclusion. A short answer that was never compared is
+the failure this note exists to prevent.
+
+Corollary: the raw sources live in this session's context, not in what was
+emitted, and a compaction drops them before it drops your prose. So state the
+load-bearing number, version, or constraint in the answer itself — anything you
+leave only in the tool results is gone the moment the context is summarized.
+
+Full structure:
 
 ```
 ## Research: <topic>

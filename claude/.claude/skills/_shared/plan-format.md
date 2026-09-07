@@ -1,41 +1,27 @@
 # Shared Plan Format (single source of truth)
 
-The implementation-plan artifact contract. Producer: `/eng-spec`. Consumers:
-`/code` (phase-boundary gates key off `## Phase Status` risk tags and
-`#### Manual Verification` sections), `/verify` (plan↔diff reconciliation),
-and the human skimming phases.
+The implementation-plan artifact contract. Producer `/eng-spec`; consumers `/code` (phase gates), `/verify` (reconciliation), humans.
 
 ## Risk tiers (assigned per phase, recorded on its Phase Status line)
 
 - `high`: touches migrations or data mutation, auth/security surface, public
   API contracts, irreversible operations, or cross-service boundaries.
 - `low`: internal logic, UI, tests, easily-reverted config.
-- When in doubt, `high`. `/code` gives `low` a mechanical resume (machine
-  gates only) and `high` a human sign-off with manual verification. An
-  UNTAGGED phase is treated as high.
+- When in doubt, `high`; untagged = high. `low` resumes mechanically, `high` needs human sign-off.
 
 ## Format rules (hard)
 
-- `## Phase Status` is mandatory — never delete it. Consumers find it by HEADING, not position: in `/eng-spec`'s `spec.md` it is hoisted to the top (above the judgment layer); in a standalone plan it sits where the template below puts it.
+- `## Phase Status` is mandatory — never delete it. Consumers find it by HEADING, not position (hoisted to top in `spec.md`).
 - Every Phase Status line carries a `(risk: low|high)` tag.
-- A phase MAY add `(reviewers: security[, perf])` — the PRIMARY dispatch signal for `security-reviewer`, which never infers a security surface from paths or keywords. Declare it when the phase changes authz/tenancy, opts out of a guard, or handles secrets. Additive only: omitting it never suppresses a forced pass.
+- A phase MAY add `(reviewers: security[, perf])` — the PRIMARY dispatch signal for `security-reviewer`, which never infers from paths. Declare on authz/tenancy changes, guard opt-outs, secrets. Additive only: omitting it never suppresses a forced pass.
 - Phases are VERTICAL slices (each independently verifiable end-to-end),
   never horizontal layers.
-- Keep each phase's diff signable in one sitting — past ~8–10 semantic files
-  (generated/lockfile/rename churn excluded), split on a natural seam into
-  dependency-ordered slices, unless it can't without losing end-to-end
-  verifiability (walking skeleton, broad rename); then append
-  `— atomic: <why>` to its Phase Status line.
+- Keep each phase signable in one sitting — past ~8–10 semantic files (churn excluded), split on a natural seam into dependency-ordered slices, unless splitting loses end-to-end verifiability; then append `— atomic: <why>`.
 - Multi-phase plans open with `Phase 0: Contracts` — the coordination surface
   between slices/streams (shared types, schemas, API shapes, migration
   sketches) as committable content, not prose — then `Phase 1: Walking
-skeleton`, the thinnest end-to-end path exercising every Phase 0 contract
-  (`/code` stops after Phase 1 for calibration). Remaining
-  slices follow in dependency order. Phase 0 is always `(risk: high)` and FROZEN at plan approval: changing Phase 0 content mid-plan is a stop-and-surface Plan Deviation, never a silent edit. Parallel coder fan-out is allowed only after the skeleton phase completes. Single-slice plans with no coordination surface may fold contracts into Phase 1 — state so explicitly. Front-load only the surface between slices; internal design stays inside its slice.
-- A phase with no user-observable behavior (migration-only, infra-only — the
-  one legitimate single-layer case) carries its FULL verification in
-  Automated Verification and states `Manual Verification: N/A (infra-only)`
-  explicitly — an empty section is an authoring gap, not a skip.
+skeleton`, the thinnest end-to-end path (`/code` stops after it for calibration). Phase 0 is `(risk: high)` and FROZEN at approval — mid-plan changes are stop-and-surface Plan Deviations, never silent edits. No parallel fan-out before the skeleton lands. Single-slice plans may fold contracts into Phase 1 (state so). Front-load only the inter-slice surface.
+- A behaviorless phase (migration/infra-only — the one legitimate single-layer case) carries FULL verification in Automated Verification and states `Manual Verification: N/A (infra-only)` — an empty section is an authoring gap.
 - Success Criteria are TESTABLE assertions — each specifies HOW to verify
   with the project's real commands (from project CLAUDE.md / package
   scripts), never generic placeholders.
@@ -54,9 +40,7 @@ Rule and mechanics: `plan-reading.md`.
 
 ## Template
 
-Header links: include whichever upstream artifacts exist under the eng-spec
-task dir (ticket/research/spec paths). Do not invent links to artifacts that
-don't exist.
+Header links: whichever upstream artifacts exist. Do not invent links.
 
 ```markdown
 # [Feature Name] Implementation Plan
@@ -71,7 +55,7 @@ don't exist.
 
 ## Phase Status
 
-<!-- Updated by /code after each phase completes + review passes. Source of truth for "which phase is next" across /clear boundaries. Do not delete. -->
+<!-- /code updates per phase. Source of truth for "which phase is next". Do not delete. -->
 
 - [ ] Phase 0: Contracts — frozen at plan approval (risk: high)
 - [ ] Phase 1: Walking skeleton — thinnest path through every Phase 0 contract (risk: low|high)
@@ -98,15 +82,9 @@ don't exist.
 
 ## Acceptance Criteria
 
-<!-- Omit this section entirely if the ticket has no behavioral criteria.
-Written by the user with the main thread after the plan is final and BEFORE any
-coder is dispatched — never later, and never by the agent that will satisfy it.
-3-8 of them; if there are more, the ticket is two tickets. -->
+<!-- Omit when the ticket has no behavioral criteria. Written by user + main thread after final, BEFORE any coder — never later, never by the satisfying agent. 3-8; more = two tickets. -->
 
-The criteria live in `docs/plans/<slug>/acceptance-criteria.md` as prose with
-stable ids (`AC1`…`ACn`), written by `/eng-spec` Phase 7.5. Name the file here
-and nothing more — never restate the criteria, never copy their ids into the
-source tree.
+The criteria live in `docs/plans/<slug>/acceptance-criteria.md` as prose with stable ids, written by Phase 7.5. Name the file here and nothing more — never restate the criteria, never copy their ids into code.
 
 - **Criteria file**: `docs/plans/<slug>/acceptance-criteria.md`
 
@@ -132,9 +110,7 @@ function. **No mocks inside such a test.**
 **File**: `path/to/file.ts`
 **Changes**: [specific changes, with code blocks to add/modify]
 
-**Never list a test file here** — the coder writes no tests. `/code`'s
-implementation-blind `test-writer` takes its assertions from the plan. A test
-that must change goes in Success Criteria as a behavior.
+**Never list a test file here** — the coder writes no tests; the `test-writer` takes assertions from the plan. A test that must change goes in Success Criteria as a behavior.
 
 ### Success Criteria
 
@@ -160,15 +136,11 @@ criteria to tests.
 
 ## Testing Strategy
 
-[Approach only. Naming a unit here doesn't test it — a unit that MUST be tested
-needs a behavior in its phase's Success Criteria, or an acceptance criterion.]
+[Approach only. A unit that MUST be tested needs a behavior in Success Criteria or an acceptance criterion.]
 
 ## Plan Deviations
 
-<!-- Created on first deviation; absent until then. One dated entry per
-PLAN-IMPACT finding resolved via user question during implementation:
-finding (assumed → found), decision, owner. /verify reconciles the diff
-against the plan AS AMENDED here; the ADR inherits this record. -->
+<!-- Created on first deviation; absent until then. One dated entry per resolved PLAN-IMPACT (assumed → found, decision, owner). `/verify` reconciles against the plan AS AMENDED here. -->
 
 ## References
 

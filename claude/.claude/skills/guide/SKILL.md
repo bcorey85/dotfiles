@@ -11,13 +11,7 @@ through it. You read the answers back as JSON.
 
 **Write ~40 lines of JSON per card, never HTML.**
 
-## When to reach for this
-
-- More than ~5 judgment calls that need a human.
-- Each one needs evidence attached (rows, a diff, two candidate answers).
-- You can carry on doing something else while they answer.
-
-For one quick question, just ask in chat. This is for volume.
+**Reach for this** past ~5 human judgment calls with evidence attached, while you do other work. One quick question → ask in chat.
 
 ## The commands
 
@@ -190,66 +184,18 @@ when every `required: true` field has a value.
 }
 ```
 
-**An A/B comparison** — `compare` knows it is picking between `columns` panes,
-so the winning pane gets highlighted.
+**An A/B comparison** — `compare` picks between `columns` panes and highlights the winner. Same envelope as above; only the response differs — a `compare` field whose `options` name the pane labels:
 
 ```jsonc
-{
-  "id": "7",
-  "title": "Which summary is better?",
-  "blocks": [
-    {
-      "type": "columns",
-      "columns": [
-        {
-          "label": "A",
-          "blocks": [{ "type": "text", "format": "pre", "text": "…" }],
-        },
-        {
-          "label": "B",
-          "blocks": [{ "type": "text", "format": "pre", "text": "…" }],
-        },
-      ],
-    },
-  ],
-  "response": {
-    "fields": [
-      {
-        "id": "winner",
-        "type": "compare",
-        "required": true,
-        "options": [
-          { "value": "A", "label": "A is better", "key": "a" },
-          { "value": "B", "label": "B is better", "key": "b" },
-          { "value": "tie", "label": "Tie", "key": "t" },
-        ],
-      },
-    ],
-  },
-}
+{ "id": "winner", "type": "compare", "required": true,
+  "options": [
+    { "value": "A", "label": "A is better", "key": "a" },
+    { "value": "B", "label": "B is better", "key": "b" },
+    { "value": "tie", "label": "Tie", "key": "t" },
+  ] }
 ```
 
-**A rating.**
-
-```jsonc
-{
-  "id": "12",
-  "title": "How usable is this error message?",
-  "blocks": [{ "type": "code", "language": "text", "code": "Error: EINVAL" }],
-  "response": {
-    "fields": [
-      {
-        "id": "score",
-        "type": "rating",
-        "required": true,
-        "min": 1,
-        "max": 5,
-        "labels": ["useless", "perfect"],
-      },
-    ],
-  },
-}
-```
+**A rating** — same envelope; the response is one `rating` field: `{ "id": "score", "type": "rating", "required": true, "min": 1, "max": 5, "labels": ["useless", "perfect"] }`.
 
 ## Rules
 
@@ -287,9 +233,4 @@ so the winning pane gets highlighted.
 }
 ```
 
-If `degraded` is `true`, the human answered at least one card while looking at
-content the viewer could not fully draw. Those `card_id`s are in
-`degraded_cards`; discount those answers or re-ask after updating GUIde.
-
-Otherwise: `values` keyed by field id, with `title` and `meta` echoed so you do
-not need the original batch in context.
+If `degraded` is `true`, discount those `card_id`s or re-ask after updating GUIde. Otherwise `values` keyed by field id, `title`/`meta` echoed — no need to keep the batch in context.

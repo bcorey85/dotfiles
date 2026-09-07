@@ -11,7 +11,7 @@ The global WebSearch-before-config rule applies in full here — this skill is i
 
 ### 1. Establish versions (one lookup, trust it)
 
-Current version from the lockfile/manifest. Target from the request, or the registry (`npm view <pkg> version` or ecosystem equivalent) if "latest".
+Current from lockfile/manifest; target from request or registry. One lookup, trust it.
 
 ### 2. MANDATORY research — before touching anything
 
@@ -20,19 +20,19 @@ For every major-version step between current and target:
 1. Official changelog / release notes / migration guide.
 2. GitHub issues for known breakage with the project's stack.
 
-Then grep the codebase for each documented breaking API to determine which actually apply here. A breaking change that touches zero files is a footnote, not a blocker.
+Then grep the codebase per breaking API — zero-file hits are footnotes, not blockers.
 
 ### 3. Plan
 
-Present: version path, breaking changes that apply (with the files they touch), code changes needed, and rollback (revert manifest + lockfile). If any breaking change applies → wait for the user's go-ahead. Patch/minor with nothing applicable → proceed.
+Present version path, applicable breaks (plus files), code changes, rollback (manifest plus lockfile revert). Applicable break means wait for go-ahead; clean patch or minor means proceed.
 
 ### 4. Apply
 
-Bump the manifest and install (manifest and lockfile change together; never hand-edit the lockfile). Required code changes go through a coder dispatch per the delegation rule — pass the migration notes as context and instruct: only changes the migration requires, no opportunistic refactoring.
+Bump manifest plus install together (never hand-edit lockfile). Code changes via coder dispatch with migration notes: migration-required only, no opportunistic refactoring.
 
 ### 5. Verify
 
-Run the project's quality checks (global 2-run cap applies). A clean install plus green checks is the done signal — do not add ad-hoc spot checks on top.
+Quality checks (2-run cap). Clean install plus green means done; no ad-hoc spot checks.
 
 ### 6. Report
 
@@ -41,7 +41,7 @@ Old → new, code changed (files), anything intentionally deferred, residual ris
 ## Rules
 
 - One upgrade per task — never batch unrelated bumps into one diff.
-- System-level deps (CLI tools, runtimes) follow the platform rule: apt / brew / pacman only, added to `install/deps` for all platforms in dotfiles-managed environments.
+- System-level deps: apt, brew, or pacman only, added to install/deps for all platforms.
 - If research surfaces an unresolved blocker (open regression, missing peer support), report it and stop — don't upgrade into a known hole.
 
 ## Arguments

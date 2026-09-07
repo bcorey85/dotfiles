@@ -6,15 +6,15 @@ allowed-tools: [Bash, Read, Glob, Grep, Skill]
 
 # Read & Apply Claude Comments
 
-The user authors inline comments in two readers — Neovim (`<leader>cc` → `:ClaudeReviewComment`, stored in `~/.claude/claude-comments.md`) and hunk (`prefix d`, built-in inline notes on `c`, mirrored per-checkout to `$XDG_STATE_HOME/hunk-claude/<slug>.comments.jsonl` by the `claude-review` extension). Both are explicit, user-written requests, the highest-priority kind of review feedback (not heuristic findings). This skill owns both lifecycles: it reads the in-scope entries from each, merges them into ONE queue, presents them, drives each to a terminal state, then clears the handled ones through whichever reader owns them.
+The user authors inline comments in two readers — Neovim (`<leader>cc` → `:ClaudeReviewComment`, stored in `~/.claude/claude-comments.md`) and hunk (`prefix d`, built-in inline notes on `c`, mirrored per-checkout to `$XDG_STATE_HOME/hunk-claude/<slug>.comments.jsonl` by the `claude-review` extension). Both are explicit user-written requests (highest-priority feedback, not heuristic findings). This skill merges them into ONE queue, drives each to a terminal state, then clears handled ones through their owning reader.
 
 One queue, one escape-log pass. The source only decides which script clears the entry.
 
-**Not every comment asks for a diff.** A comment can be a question ("what is `monkeypatch`?", "why are we yielding here?") as legitimately as it can be a change request. Answering one IS handling it. `/fix` runs only for the entries that actually ask for a change.
+**Not every comment asks for a diff** — a question is as legitimate as a change request, and answering one IS handling it. `/fix` runs only for entries asking for a change.
 
 ## Modifiers
 
-- `+fast` / `+deep` — semantics defined in `~/.claude/skills/_shared/modifiers.md`; pass through to `/fix` unchanged. `+fast` when the comments are trivial (typos, simple style); `+deep` when a comment needs deep reasoning to address correctly.
+- `+fast` / `+deep` — semantics defined in `~/.claude/skills/_shared/modifiers.md`; pass through to `/fix` unchanged. `+fast` for trivial comments; `+deep` when a comment needs deep reasoning.
 - `+show` — read and present the comments, then **stop**. Do not hand off to `/fix` and do not resolve anything. Use when you just want to see what you flagged without acting on it. (The editor-side equivalent is `<leader>cp` in Neovim.)
 
 ## Instructions
@@ -30,13 +30,13 @@ One queue, one escape-log pass. The source only decides which script clears the 
    bash "${CLAUDE_SKILL_DIR}/hunk-comments-consume" list "<repo-root>"
    ```
 
-   Both return fresh (≤48h), current-repo entries as JSON with `id`, `path`, `line`, `timestamp`, `body`; hunk adds `side` and `hunk_index`. Entries from other repos are never listed or touched. Stale in-scope entries (>48h) are counted on stderr by each — sum them for the summary. Either script is a no-op returning `[]` when its reader has nothing (or is not installed).
+   Both return fresh (≤48h) current-repo JSON (`id`, `path`, `line`, `timestamp`, `body`; hunk adds `side`, `hunk_index`). Stale entries are counted on stderr — sum for the summary. An empty reader returns `[]`.
 
-   **Tag each entry with its source** (`nvim` or `hunk`) and keep that tag on it through step 6 — it is what routes the resolve. Merge the two lists into one queue ordered by `timestamp`.
+   **Tag each entry with its source** (`nvim`/`hunk`) — it routes the resolve. Merge into one queue ordered by `timestamp`.
 
    - **If the merged list is empty**, tell the user there are no fresh comments for this repo from either reader (mention the stale count if any) and stop. Do not invoke `/fix`.
 
-4. **Present the entries and triage each one.** Group by file, show each `path:line` with its comment body and its source, so the user can see what is about to be acted on. **Record every entry `id` and source now** — you need this exact list for the mandatory resolve in step 6, and it must survive `/fix`'s (potentially long, multi-iteration) review loop.
+4. **Present the entries and triage each one.** Group by file, show each `path:line` with its comment body and its source, so the user can see what is about to be acted on. **Record every `id` + source now** — step 6's resolve needs the exact list, surviving `/fix`'s loop.
 
    Sort every entry into exactly one bucket. Do this as you present, so the user can correct a misread before any coder spawns:
 
@@ -51,20 +51,19 @@ One queue, one escape-log pass. The source only decides which script clears the 
 
    - **If `+show` was passed**, stop here. Do not answer, do not hand off to `/fix`, do not resolve.
 
-5. **Hand off the `change` entries to `/fix`.** Skip this step entirely when the bucket is empty — an all-questions queue does not invoke `/fix`, and that is not a degraded run. Invoke the `/fix` skill via the Skill tool (`skill: "fix"`) with `args` containing:
+5. **Hand off the `change` entries to `/fix`.** Skip when the bucket is empty — an all-questions queue never invokes `/fix`. Invoke the `/fix` skill via the Skill tool (`skill: "fix"`) with `args` containing:
    - The `change` entries as the issue source — each with `path`, `line`, `body`, and its `id`. Never pass a `question` entry to `/fix`; a coder handed a question will answer it with a diff.
-   - A note that these are **user-authored review comments** (highest priority, not heuristic findings) so coders treat them as explicit requests, not optional suggestions. The source is bookkeeping — never pass it to `/fix` or let it rank the work.
+   - Note these are **user-authored review comments** (explicit requests, not suggestions). Never pass source to `/fix` or let it rank work.
    - Any `+fast` / `+deep` modifier parsed in step 1.
 
    Let `/fix` run its full pipeline.
 
-5a. **Answer the `question` entries in conversation.** Answer each properly, at the depth the question asks for — where the thing comes from, what it does, why it is there. An answer that sends the user to read the docs themselves has not handled the comment. This is the whole handling for those entries; nothing is dispatched and no file changes.
+5a. **Answer the `question` entries in conversation.** Answer at the depth asked. An answer that sends the user to the docs has not handled the comment. This is the whole handling for those entries; nothing is dispatched and no file changes.
 
-Both step 5 and step 5a are conditional on their bucket being non-empty, and a run may legitimately do one, the other, both, or neither.
 
-6. **Resolve handled entries — MANDATORY, do not skip.** Fire this when **every entry has reached a terminal state** — `change` fixed, `question` answered, `skip` triaged — **even if `/review` is still running or you've lost track of it**, and even if `/fix` never ran at all. Do NOT wait on a `/fix` handoff as the trigger: an all-questions queue never has one.
+6. **Resolve handled entries — MANDATORY, do not skip.** Fire when **every entry is terminal** (`change` fixed, `question` answered, `skip` triaged) — even if `/review` still runs, even if `/fix` never ran. Never wait on a `/fix` handoff.
 
-   Treat this as a hard gate before you consider `/cc` done. Using the ids and sources recorded in step 4, call each script with ONLY its own source's ids:
+   Using the ids and sources recorded in step 4, call each script with ONLY its own source's ids:
 
    ```bash
    bash "${CLAUDE_SKILL_DIR}/claude-comments-consume" resolve "<repo-root>" <nvim-id>...
@@ -73,9 +72,7 @@ Both step 5 and step 5a are conditional on their bucket being non-empty, and a r
 
    Skip a call entirely when that source has no ids. Pass the `id` of every entry that was **fixed**, **answered**, or **skipped after triage** (note skip reasons in the summary). Do **NOT** pass ids of **deferred** entries — they stay in the queue for next time.
 
-   `answered` is a first-class terminal state, not a lesser one.
-
-   Both are true resolves, and both re-read their store at resolve time so entries written since the list survive:
+   Both re-read at resolve time, so entries written since the list survive:
    - **nvim**: rewrites `claude-comments.md` without the resolved ids, deleting the file when nothing remains.
    - **hunk**: rewrites the mirrored JSONL without them, deleting the file when it empties. The note itself stays in hunk's own UI until cleared there, but nothing re-lists it — no by-hand step.
 
@@ -87,6 +84,6 @@ Both step 5 and step 5a are conditional on their bucket being non-empty, and a r
 
    `guard` is the ratchet rung from `~/.claude/skills/_shared/escape-ratchet.md` (batch by `class` across the resolved comments); surface the proposed guard in step 8's summary and apply it on approval.
 
-   `stage_found=cc` for BOTH sources: same human-review stage, different reader. Splitting it would fragment the flywheel's per-gate rates across two buckets and make each look better than the gate is. Classify `class` from the comment body, and when unsure, `other`. `lane` is the planning lane that produced the work under comment — infer it from the conversation or the branch's planning artifacts (eng-spec doc → `eng-spec`, direct dispatch → `code`); ask the user only when genuinely ambiguous. Do NOT log comments that were new requirements or changed direction — a gate can't miss information it never had.
+   `stage_found=cc` for BOTH sources — same stage, different reader. Classify `class` from the comment body, and when unsure, `other`. `lane` from planning artifacts (eng-spec doc → `eng-spec`, else `code`); ask only when genuinely ambiguous. Do NOT log comments that were new requirements or changed direction — a gate can't miss information it never had.
 
 8. **Summarize** for the user: which comments were fixed, which were answered, which were skipped (with reasons), which were deferred and why, and the stale-dropped count (if any). State that the resolve happened.

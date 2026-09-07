@@ -30,11 +30,9 @@ If the Figma MCP tools aren't available in this session, say so and stop — don
    - If found, use it directly. Skip to Phase 2.
 
 2. **If no URL in arguments**, check the current Jira ticket:
-   - Resolve the key and fetch the ticket per `~/.claude/skills/_shared/jira-ticket.md` (read it). This skill is an **optional-ticket caller**: no key resolvable or Jira MCP unavailable → skip straight to asking the user for the Figma frame URL.
-   - Scan the ticket description for `figma.com` URLs. Note: `getJiraIssue` may not include comments by default. If no URL found in the description, proceed to asking the user rather than silently missing URLs in comments.
-   - If one URL found: use it, tell the user where you found it
-   - If multiple URLs found: list them and ask which frame to pull
-   - If no URL found: ask the user to paste the Figma frame URL
+   - Resolve + fetch per `jira-ticket.md` (read it) — **optional-ticket caller**: no key/MCP → skip to asking the user for the URL.
+   - Scan the description for `figma.com` URLs (`getJiraIssue` may exclude comments — don't silently miss those; ask the user instead).
+   - One URL → use it (say where found); several → list and ask; none → ask the user to paste it
 
 ### Phase 2: Parse the URL
 
@@ -46,21 +44,15 @@ If the Figma MCP tools aren't available in this session, say so and stop — don
 
 ### Phase 3: Check for Cached Design Tokens
 
-5. **Check for `docs/architecture/design-tokens.md`**. If it exists, read it — this is a previously cached design system. This changes how Phase 6 works:
-   - **Cache exists**: You already have the full design system (colors, typography, spacing, component inventory). Do NOT re-extract or re-document these. Phase 6 becomes a lightweight diff — only report what's NEW or CHANGED in this frame vs the cache.
-   - **No cache**: Full extraction mode (original behavior).
+5. **Read `docs/architecture/design-tokens.md` if present** (cached design system). Cache exists → Phase 6 is a NEW/CHANGED-only diff, never re-extraction. No cache → full extraction.
 
 ### Phase 4: Pull Design Context
 
-6. **Call `get_design_context`** with the fileKey and nodeId. In your prompt to the tool, include project-specific conventions:
-   - Read CLAUDE.md to determine the project's frontend framework, styling approach, and component patterns
-   - Tell the tool to describe structure and measurements, NOT to generate production code
-   - Reference the project's design token system (CSS variables, theme file, etc.) if one exists
-   - Before calling the tool, scan the codebase for the existing component directory (glob for the frontend components folder). Include a list of existing component names in your annotation so the tool can reference them when describing the design.
+6. **Call `get_design_context`** with fileKey + nodeId. In the tool prompt: project conventions from CLAUDE.md (framework, styling, patterns); describe structure + measurements, NOT production code; reference the project's token system if any; include existing component names (glob the components folder first) so the tool can reference them.
 
 7. **Call `get_variable_defs`** with the same fileKey and nodeId to extract design tokens.
 
-8. **If the `get_design_context` response is truncated or very large**: call `get_metadata` to get sub-node IDs, then call `get_design_context` on each section separately. Present results grouped by section.
+8. **Truncated/huge response** → `get_metadata` for sub-node IDs, `get_design_context` per section, results grouped by section.
 
 ### Phase 5: Check for Eng Plan
 
@@ -68,91 +60,47 @@ If the Figma MCP tools aren't available in this session, say so and stop — don
 
 ### Phase 6: Present the Design Brief
 
-**If cached tokens exist** — present a lightweight brief:
+**Cache exists → lightweight diff brief.** Frame-specific measurements (only NEW/CHANGED vs cache), New Elements ("NEW — not in cached tokens"), Token Conflicts, then the shared sections below.
 
-**Frame-Specific Measurements**
+**No cache → full brief:**
 
-- Dimensions, layout, and spacing unique to THIS frame (e.g., modal width/height, field grid layout)
-- Only include values that differ from or aren't covered by the cached tokens
+**Measurements**
 
-**New Elements** (not in cache)
+- Frame dimensions, column widths, gap values, padding, border radius — exact values
 
-- NEW components, colors, or patterns that appear in this frame but aren't in `design-tokens.md`
-- Flag these clearly: "NEW — not in cached tokens"
+**Design Tokens**
 
-**Token Conflicts** (if any)
+- Colors (map Figma variables to project tokens; flag unmatched), Typography (family, sizes, weights, line heights), Spacing (padding, gap, margin)
 
-- Values in this frame that DIFFER from the cached tokens (e.g., a color used differently)
+**Component Inventory**
+
+- Figma components in this frame; per component, matching code component exists or NEW
+
+**Shared sections (both modes)**
+
+**Data-model gaps**
+
+- Figma elements referencing data outside the current data model (from cache or freshly detected)
 
 **Visual Decisions**
 
-- Interactive states shown in Figma (hover, active, disabled, focus)
-- UI states (empty, loading, error) if present as separate frames
-- Any visual detail NOT covered by the Jira ticket AC — flag these: "Figma shows [X], ticket is silent — implementing as shown unless you say otherwise"
-
-**Data Model Gaps**
-
-- Figma elements that reference data NOT in the current data model (from cache or freshly detected)
+- Interactive states (hover, active, disabled, focus); UI states (empty, loading, error) if separate frames
+- Details NOT covered by ticket AC — "Figma shows [X], ticket is silent — implementing as shown unless you say otherwise"
 
 **Gaps & Conflicts** (only if eng plan exists)
 
-- Discrepancies between Figma and the eng plan
-- Recommend precedence: ticket AC > Figma for behavior; Figma > ticket for visual measurements
-- Figma elements the eng plan intentionally omits (with rationale if noted in the plan)
+- Figma/plan discrepancies; precedence ticket-AC-for-behavior, Figma-for-visuals; plan omissions (with rationale if noted)
 
 **Next Step**
 "Design context loaded. Ready for `/code` with these measurements as reference."
 
 ### Phase 7: Auto-Update Cache (only if cache existed in Phase 3)
 
-10. **If the diff found NEW tokens, colors, typography, spacing, shadows, or components**: automatically append them to `docs/architecture/design-tokens.md` using the Edit tool.
-    - Add new colors to the appropriate Colors sub-table (Text, Backgrounds, Borders, etc.)
-    - Add new typography entries to the Typography table
-    - Add new spacing tokens to the Spacing table
-    - Add new shadows to the Shadows table
-    - Add new border-radius values to the Border Radius table
-    - Add new components to the Component Inventory table
-    - Update the `Frames:` line in the header to include the new frame name and node-id
-    - Do NOT remove or modify existing entries — only append new ones
-    - If a token CONFLICTS (same semantic role, different value), add the new variant with a distinguishing name (e.g., `bg-tag` for cards vs `bg-modal-tag` for modal)
+10. **Append NEW tokens to the cache** (`docs/architecture/design-tokens.md`): new entries into each relevant sub-table (Colors, Typography, Spacing, Shadows, Border Radius, Component Inventory) + the `Frames:` header line. Append-only — never modify existing entries. CONFLICTS (same role, different value) get a distinguishing name (`bg-tag` vs `bg-modal-tag`).
 
 11. **Briefly note** what was added: "Updated cache with N new tokens from [frame name]."
 
 ---
-
-**If NO cached tokens** — present the full brief:
-
-**Measurements**
-
-- Frame dimensions, column widths, gap values, padding, border radius
-- Exact values from the design
-
-**Design Tokens**
-
-- Colors: map Figma variable names to the project's existing token system. Flag any colors in the design that don't have a matching project token.
-- Typography: font family, sizes, weights, line heights
-- Spacing: padding, gap, margin values
-
-**Component Inventory**
-
-- List Figma components visible in this frame
-- For each, note whether a matching code component already exists (check the codebase) or is NEW
-- Flag Figma elements that reference data the current data model doesn't have (e.g., "Figma shows assignee avatar — not in our data model")
-
-**Visual Decisions**
-
-- Interactive states shown in Figma (hover, active, disabled, focus)
-- UI states (empty, loading, error) if present as separate frames
-- Any visual detail NOT covered by the Jira ticket AC — flag these: "Figma shows [X], ticket is silent — implementing as shown unless you say otherwise"
-
-**Gaps & Conflicts** (only if eng plan exists)
-
-- Discrepancies between Figma and the eng plan
-- Recommend precedence: ticket AC > Figma for behavior; Figma > ticket for visual measurements
-- Figma elements the eng plan intentionally omits (with rationale if noted in the plan)
-
-**Next Step**
-"Design context loaded. Ready for `/code` with these measurements as reference."
 
 ## Modifiers
 
@@ -160,7 +108,7 @@ If the Figma MCP tools aren't available in this session, say so and stop — don
 
 ## Tips
 
-- **Select one frame at a time.** If the design has multiple sections, run `/pull-design` once per section or let the skill chunk automatically.
+- **One frame at a time** — chunk multi-section designs.
 - **Figma shows the WHAT, not the HOW.** Don't let Figma output override architectural decisions from the eng plan.
 
 ## Arguments

@@ -1,53 +1,27 @@
 # Reading a Plan (phase-scoped — binds every single-phase consumer)
 
-Consumer-side counterpart to `plan-format.md`, which owns the artifact's
-shape. This file owns how it is READ.
+How a plan is READ (`plan-format.md` owns the shape).
 
 Consumers: `/code` (step 2 orchestrator read, step 3 coder dispatch),
 `coder-core` (workflow step 1).
 
 ## The rule
 
-A plan is written to be read one slice at a time. Anyone working a SINGLE
-phase reads the shared sections plus their own phase, and skips every sibling
-`## Phase N:` section.
+Single-phase work reads shared sections + own phase; skips sibling sections.
 
-**It is THREE contiguous ranges, not ten sections.** The format orders every
-shared section BEFORE Phase 0 and every cross-cutting section AFTER the last
-phase, so a scoped read is three `Read` calls:
+**THREE contiguous ranges, not ten sections** — shared sections sit BEFORE Phase 0, cross-cutting AFTER the last phase:
 
-1. **Line 1 → end of `## Phase 0: Contracts`** — one range covering `Overview`,
-   `Phase Status`, `Current State Analysis`, `Desired End State`, `What We're
-NOT Doing`, `Acceptance Criteria`, `Implementation Approach`, and the contracts.
-   (No Phase 0 — a single-slice plan folds contracts into Phase 1 — then it is
-   line 1 → the first `## Phase` heading.)
+1. **Line 1 → end of `## Phase 0: Contracts`** — Overview through contracts. (No Phase 0 → line 1 → first `## Phase` heading.)
 2. **Your own `## Phase N:` section.**
 3. **`## Testing Strategy` → EOF** — also carries `Plan Deviations` and
    `References`.
 
-Everything skipped is a sibling `## Phase N:` section.
+**Mechanics**: `rg -n '^## ' <plan>` gives every section line number (and answers multi-phase) in one call. Subtract adjacents for the three ranges, `Read` with `offset`/`limit`. Whole-file-read-plus-mental-skip saves nothing.
 
-**Mechanics**: `rg -n '^## ' <plan>` returns every section's line number in one
-call — it also answers "is this multi-phase?" without a Read. Subtract adjacent
-line numbers to get the three ranges, then `Read` with `offset`/`limit`.
-Reading the whole file and mentally skipping saves nothing; the cost is the
-read, not the attention.
-
-## Why this is the format's own rule, not an optimization
-
-`Phase 0: Contracts` IS the coordination surface between slices, and
-`plan-format.md` states it directly: "front-load only the surface between
-slices; internal design stays inside its slice." A sibling phase's internals
-are therefore, by construction, not your input.
+Sibling internals are, by construction, not your input — Phase 0 IS the coordination surface.
 
 ## The two fences
 
-**A dependency on a sibling's internals is a finding, not a license to widen
-the read.** It means Phase 0 is missing a contract, or the phases are not the
-vertical slices the format requires. A coder reports it as `PLAN-IMPACT`;
-anyone else surfaces it to the user. Silently reading around it hides the
-authoring gap that caused it.
+**Depending on sibling internals is a finding, not a license to widen.** Missing Phase-0 contract or non-vertical slices — coders report `PLAN-IMPACT`, others surface it. Silent workarounds hide the authoring gap.
 
-**Whole-plan consumers are exempt** — `plan-verifier` at `scope: branch`,
-`/test-audit`'s cross-phase test gate, and anything else whose job IS the
-cross-phase view. Scoping applies to working a phase, not to auditing a plan.
+**Whole-plan consumers exempt** (`plan-verifier` branch scope, `/test-audit`, any cross-phase auditor).

@@ -8,50 +8,25 @@ allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion, Skill]
 
 The fourth and last closing phase, and the exit-side counterpart to `/eng-spec`.
 
-**It runs no gates.** By the time you reach it every gate has already fired, and fired
-where its oracle was sharpest: `/review` converged per phase, the drift gate reconciled
-each phase against its Success Criteria, `/verify` certified branch completeness, and
-`/test-audit` ran the cross-phase test gate.
+**No gates run here.** Every gate already fired at its sharpest oracle: per-phase `/review` convergence, drift-gate reconciliation, `/verify` completeness, `/test-audit` test gate.
 
-**This is not `/orient`.** The line between them is what each one reads. `/orient` reads
-the **codebase** — callers, callees, siblings of the changed symbols — to answer "how does
-this fit the code that did not change?"; run it any time, any scope. This skill reads only
-the **branch's own process residue** — the per-phase walkthroughs, the review-loop packets,
-the `/verify` and `/test-audit` receipts, `git status` — to answer "what do I still need to
-read and do before I open the PR?" It never re-reads the codebase to build a system map. If
-the recap needs that map, it consumes one a prior `/orient` produced this session, or the
-Next line points the user to run `/orient` — it does not do that analysis itself.
+**Not `/orient`.** `/orient` reads the **codebase** (how the change fits); this reads only the **branch's process residue** (walkthroughs, packets, receipts, `git status`) — "what remains before the PR?" Never re-reads code for a system map; consumes a prior `/orient` map or points the user to run one.
 
-Output contract: ONE human-facing **recap**, plus a machine copy appended to
-`~/.claude/branch-recap-receipts.jsonl`. It never runs `git add` on semantic files,
-never commits, never opens a PR.
+Output: ONE human **recap** + a machine row in `branch-recap-receipts.jsonl`. Never `git add` semantic files, commit, or open a PR.
 
 ## Step 1: Residue triage — `/stage`
 
-Phases stage as they go (`/code` block B invokes `/stage` at each sign-off), so by now the
-only unstaged work is what the closing phases themselves produced — the `/refactor` sweep's
-diff, and anything `/fix` or a `test-writer` re-dispatch touched in the `/test-audit` phase.
+Phases stage as they go, so the only unstaged work is what the closing phases produced (`/refactor` diff, `/fix` or `test-writer` touches in `/test-audit`).
 
-Skill-invoke `/stage`. Its SAFE tier is staged; its ESCALATE / READ / SKIM queue is the
-residue you still owe a read. Do not reclassify or promote its tiers — `stage.mjs` is the
-single source of truth, and only its deterministic SAFE tier is ever staged unread. When
-the user steps the queue, `nvim-jump` each entry per `~/.claude/skills/_shared/nvim-jump.md`.
+Skill-invoke `/stage`: SAFE staged; ESCALATE/READ/SKIM queue is the residue you owe a read. Never reclassify tiers. On queue-stepping, `nvim-jump` each entry (`~/.claude/skills/_shared/nvim-jump.md`).
 
 Nothing unstaged → receipt line `residue: none — all phases staged clean`.
 
-**A classifier that could not answer did not return a clean tree.** The tiering reads the
-diff of each unstaged path; where there is no diff to read — an all-new file, a greenfield
-branch — it has nothing to classify, and its silence is byte-identical to a genuinely clean
-tree. Check `git status --porcelain` yourself before writing the line: untracked or unstaged
-paths that `/stage` returned no tier for go in the receipt as
-`residue: <n> unclassified — no diff to tier, read them all`, and into **Still unstaged**
-by name. Same rule as the `/test-audit` denominator: a check that cannot fail has not passed.
+**An unanswering classifier is not a clean tree.** All-new files / greenfield branches have no diff to tier — silence is byte-identical to clean. Check `git status --porcelain` yourself: untiered paths go in the receipt as `residue: <n> unclassified — read them all` and into **Still unstaged** by name.
 
 ## Step 2: Deferred-findings queue
 
-The correctness loop gets one round per phase; a re-review's findings are
-deferred to here rather than fixed in place. This is where that debt comes due —
-if this step does not run, deferral was deletion.
+One-round-per-phase residue comes due here — skip this step and deferral was deletion.
 
 ```bash
 jq -c --arg b "$(git branch --show-current)" \
@@ -59,28 +34,15 @@ jq -c --arg b "$(git branch --show-current)" \
   "${REVIEW_FINDINGS_FILE:-$HOME/.claude/review-findings.jsonl}"
 ```
 
-Read the whole queue against the **branch** diff, not the phase each finding
-came from — and some
-findings die there because a later phase already resolved them.
+Read the queue against the **branch** diff — some findings died when a later phase resolved them.
 
-Triage each into: **fix now** (route through `/fix`), **stale** (a later phase
-resolved it — say which), or **carry** (real, out of scope for this branch —
-route to `/escape` so it is not lost when this queue is filtered by branch).
-Empty queue → receipt line `deferred: none`. Otherwise
-`deferred: <n> fixed, <n> stale, <n> carried of <m>`.
+Triage: **fix now** (`/fix`), **stale** (later phase resolved — say which), **carry** (real but out-of-scope — `/escape` so branch-filtering doesn't lose it). Empty → `deferred: none`, else `deferred: <n> fixed, <n> stale, <n> carried of <m>`.
 
-A deferred `blocker` in this queue is a bug in the loop, not a work item.
-Say so explicitly if one appears. A deferred `fix_induced=bug` is the same class. Escalate it as a loop bug, not a
-work item.
+A deferred `blocker` (or `fix_induced=bug`) is a loop bug, not a work item — escalate as such.
 
 ## Step 3: The recap
 
-Assemble from what this session already holds — the per-phase walkthroughs, the review-loop
-packets, the `/verify` packet, the `/test-audit` receipt, `git status`.
-**Never dispatch an agent to reconstruct prose, and never re-read the codebase to build a
-system map — that is `/orient`'s job, not this one.** Absent a handoff (fresh session),
-derive the change map from `git diff --stat <base>...HEAD` and mark it
-`derived from diff — no handoff in context`.
+Assemble from session holdings (walkthroughs, packets, receipts, `git status`). **Never dispatch an agent for prose, never re-read code for a system map** (`/orient`'s job). No handoff (fresh session) → change map from `git diff --stat`, marked `derived from diff`.
 
 ```
 ## Branch recap — <repo> @ <branch>
@@ -125,16 +87,11 @@ printf '{"ts":"%s","repo":"%s","branch":"%s","test_audit":"%s","residue":%d,"fil
 
 ## What NOT to do
 
-- **Never re-run a gate** — no second correctness pass, no re-verify, no re-run of the
-  `/test-audit` test gate. Reason at the top of this file.
-- **Never re-read the codebase to situate** — no callers/callees/siblings sweep, no LSP
-  reference walk to build a system map. That is `/orient`. This skill consumes an orient map
-  if one exists and otherwise says "not situated"; it never produces one.
-- **Never `git add` a semantic file, never commit, never open a PR** — output contract above.
-- **Never edit code** — deferred findings that need a fix route through `/fix`; this skill
-  only triages and synthesises.
-- **Never run `/adr`** — it is the user's own step, sequenced after the recap and before the
-  PR opens so the record ships in the same PR. The recap's Next line points to it.
+- **Never re-run a gate** (no second correctness pass, re-verify, or test-gate re-run).
+- **Never re-read code to situate** (no callers/siblings/LSP map — that's `/orient`; consume or say "not situated").
+- **Never `git add` semantic files, commit, or open a PR.**
+- **Never edit code** — fixes route through `/fix`.
+- **Never run `/adr`** — the user's step after recap, before the PR, so the record ships in it.
 
 ## Arguments
 

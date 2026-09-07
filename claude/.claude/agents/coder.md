@@ -8,7 +8,7 @@ skills:
   - coder-core
 ---
 
-Your core directives are preloaded via the `coder-core` skill (see above in your context) — role, the terminal-implementer rule (never dispatch agents), code style, workflow, the quality-check cap, the stop-and-ask list, the pre-submission checklist, the conditional service/UI sections, and the `REVIEW:` handoff line. Adopt them in full.
+Your core directives are preloaded via `coder-core` — adopt them in full.
 
-You have no scope fence. You work across whatever the repo contains, and when a feature crosses the wire you own both ends of it.
+No scope fence — you own both ends of any wire you cross.
 

@@ -6,57 +6,32 @@ allowed-tools: [Bash, Read, Glob, Grep, Agent, Skill]
 
 # Test audit — the cross-phase test gate
 
-The third closing phase, and a gate. It runs the one test question no phase can
-answer locally: whether the branch's tests, taken as a whole, pin intended behavior
-without spam, without lost coverage, and without loose oracles.
+The third closing phase — the one test question no phase answers locally: do the branch's tests, taken whole, pin intent without spam, lost coverage, or loose oracles? Bug-pinning is severed by the coder/test-writer split; not run here. Cull + coverage-net + weak only.
 
-Bug-pinning is structurally severed by the coder/test-writer split and its hooks; it
-does not run here. This phase is cull + coverage-net + weak only.
-
-Output: findings routed to `/fix` (cull/coverage) or a `test-writer` re-dispatch
-(weak), a machine log to the review flywheel, and a receipt line the `/branch-recap`
-synthesis consumes.
+Output: findings to `/fix` (cull/coverage) or `test-writer` re-dispatch (weak), a flywheel log row, a receipt line for `/branch-recap`.
 
 ## The audit
 
 Dispatch `test-intent-reviewer` (pinned; omit `model`) — **cull + coverage-net + weak
 scope** (`scope: cull` in its contract).
 
-Hand it the branch diff (`git diff <base>...HEAD`) and the oracle (spec + acceptance
-criteria). Cull/coverage findings route through `/fix`; WEAK findings route to a
-`test-writer` re-dispatch (implementation-blind). Then re-run the loop's execution gate.
-Net-removed coverage goes to the top of the read-first queue the recap will assemble.
+Hand it branch diff + oracle (spec + AC). Cull/coverage → `/fix`; WEAK → `test-writer` re-dispatch (implementation-blind). Then re-run the execution gate. Net-removed coverage tops the recap's read-first queue.
 
-**`REQUIRES-MUTATION` findings route to `mutation-tester`, not to `/fix`.** The
-auditor is read-only and will return this class whenever a cull decision cannot be
-settled by reading. Dispatch `mutation-tester` (pinned; omit `model`) with the named
-mutation, and only then resolve the cull. Never resolve one of these by judgement —
-an unrouted `REQUIRES-MUTATION` stays open and is reported as open. With several to
-settle, dispatch them SEQUENTIALLY — the mutation lock is global, so a second
-concurrent run aborts on the first one's lock even in a different repo.
+**`REQUIRES-MUTATION` → `mutation-tester`, not `/fix`.** Dispatch with the named mutation (pinned; omit `model`); resolve the cull only after. Never resolve by judgement — unrouted stays open and reported open. Several → dispatch SEQUENTIALLY (global lock; concurrent runs abort).
 
-It returns one of four verdicts, defined with their preconditions in
-`~/.claude/agents/mutation-tester.md` — read them there rather than from a summary, and
-never restate them in a prompt that produces a verdict rather than reads one. Only two of
-the four settle the cull: KILLED means the test earns its place, SURVIVED means the cull
-argument stands. The other two are results, not failures to reach one, and each has a way
-of being misread here:
+Verdicts are defined in `mutation-tester.md` — read them there, never restate. Only KILLED (test earns its place) and SURVIVED (cull stands) settle the cull. The other two misread as:
 
 - **EQUIVALENT** is not a survivor. The mutant is unobservable, so the cull question was
   malformed and no test could ever settle it. Do **not** commission coverage to chase it.
 - **INDETERMINATE** is still open. Report it open; do not downgrade it to a pass.
 
-**Carry the denominator into the receipt — a bare `0` is not a result here.** The
-coverage-net check searches the tests that existed at the branch point; when that set
-is empty (greenfield branch, or a base with no tests) the check cannot fail, and its
-pass is byte-identical to its no-op. Take the auditor's `Base suite at branch point`
-header verbatim.
+**Denominator into the receipt — bare `0` is not a result.** Empty branch-point set (greenfield, testless base) can't fail; its pass is byte-identical to no-op. Take the auditor's `Base suite at branch point` header verbatim.
 
 Receipt line (hand to `/branch-recap`): `test audit: <n> culled, <n> coverage-lost of <m> pre-existing tests searched, <n> weak | coverage-net N/A — base suite empty | clean | skipped — no test files`.
 
 ## Logging
 
-Log the firing to the review flywheel (non-blocking; on failure mention and continue; skip if the audit was skipped):
+Log the firing (non-blocking; skip if audit skipped):
 
 ```bash
 bash "$HOME/.claude/skills/review/log-review-metrics" \
@@ -68,19 +43,13 @@ bash "$HOME/.claude/skills/review/log-review-metrics" \
   result=<clean|findings>
 ```
 
-Then emit the per-gate and per-finding rows per
-`~/.claude/skills/_shared/finding-log.md` (read it) with
-`gate=test-intent-reviewer lane=test-audit scope=branch-exit`. A zero-finding
-audit still logs its `kind=run` row.
+Then per-finding rows per `~/.claude/skills/_shared/finding-log.md` (read it): `gate=test-intent-reviewer lane=test-audit scope=branch-exit`. Zero-finding audits still log `kind=run`.
 
 ## What NOT to do
 
-- **Never edit code, never edit a test** — cull/coverage findings route through `/fix`,
-  weak findings route to a `test-writer` re-dispatch. This phase dispatches; it does not
-  author.
-- **Never `git add`, never commit, never open a PR** — residue staging and the recap are
-  `/branch-recap`'s job, the phase after this one.
-- **Do not run the bug-pinning half** — `scope: cull` only, per the reviewer's contract.
+- **Never edit code or tests** — findings route to `/fix` / `test-writer`; this phase dispatches.
+- **Never `git add`, commit, or open a PR** — residue + recap are `/branch-recap`'s.
+- **No bug-pinning half** — `scope: cull` only.
 
 ## Arguments
 

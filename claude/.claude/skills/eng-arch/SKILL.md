@@ -6,46 +6,33 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion]
 
 # Engineering Architecture
 
-Generate or update cross-cutting architecture documentation in `docs/architecture/`. Scans the codebase, dispatches architect agents, and produces structured docs that capture how the system works — not how to build a single feature (that's `/eng-spec`).
+Generate or update cross-cutting architecture docs in `docs/architecture/` — how the system works, not how to build one feature (that's `/eng-spec`).
 
 ## Modifiers
 
 Parse modifiers from `$ARGUMENTS`:
 
-| Modifier            | Effect                                                                                                                                            |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `be` or `backend`   | Backend scope only                                                                                                                                |
-| `fe` or `frontend`  | Frontend scope only                                                                                                                               |
-| `fs` or `fullstack` | Fullstack (explicit — default if no scope given)                                                                                                  |
-| `+quick`            | Overview doc only, skip deep-dives                                                                                                                |
-| `+deep`             | Overview + all deep-dives                                                                                                                         |
-| `<topic>`           | Regenerate a single deep-dive (e.g., `/eng-arch data-model`)                                                                                      |
-| `<adr-path>`        | ADR-driven mode — read an ADR (any `docs/decisions/*.md` file), update or create the matching deep-dive without scanning the rest of the codebase |
+| Modifier | Effect |
+| --- | --- |
+| `be` / `backend` | Backend scope only |
+| `fe` / `frontend` | Frontend scope only |
+| `fs` / `fullstack` | Fullstack (explicit — default with no scope) |
+| `+quick` | Overview only, skip deep-dives |
+| `+deep` | Overview + all deep-dives |
+| `<topic>` | Regenerate one deep-dive (e.g. `/eng-arch data-model`) |
+| `<adr-path>` | ADR-driven mode — update/create the matching deep-dive from an ADR, no codebase sweep |
 
-If a bare topic name is passed (not `be`/`fe`/`fs`/`+quick`/`+deep`), treat it as a single deep-dive request. If a path ending in `.md` under `docs/decisions/` is passed, enter **ADR-driven mode** (see below).
+A bare topic name = single deep-dive request. A `.md` path under `docs/decisions/` = **ADR-driven mode** (below).
 
 ## ADR-Driven Mode
 
-Triggered when `$ARGUMENTS` is a path to a `.md` file under `docs/decisions/` (any ticket prefix). Skips Phase 2 (no plan presentation), replaces Phase 3 (no codebase sweep). Uses Phases 4–6 as written.
-
-| Step | Action                                                                                                                                                                                                     |
-| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | Read ADR FULLY                                                                                                                                                                                             |
-| 2    | `ls docs/architecture/*.md` — filenames only                                                                                                                                                               |
-| 3    | Identify target from ADR's `Decision` + `Patterns to follow`. Existing match → propose update. No match → propose new kebab-case filename. AskUserQuestion: `Update <file>` / `Create <new-file>` / `Edit` |
-| 4    | If updating, read the existing deep-dive FULLY                                                                                                                                                             |
-| 5    | Dispatch scoped `frontend-architect` or `backend-architect`, omitting `model` — their frontmatter pins Opus. See prompt below                                                                              |
-| 6    | Diff/merge per-section if updating (Phase 4 flow)                                                                                                                                                          |
-| 7    | Write to target path                                                                                                                                                                                       |
-| 8    | Summary: ADR path, deep-dive path, file-path drift the architect surfaced                                                                                                                                  |
+Triggered by an `$ARGUMENTS` path under `docs/decisions/`. Skips Phase 2, replaces Phase 3 (no sweep); Phases 4–6 as written. Read ADR fully → `ls docs/architecture/` → identify target (AskUserQuestion: `Update <file>` / `Create <new-file>` / `Edit`) → read existing deep-dive if updating → dispatch scoped architect (prompt below) → diff/merge → write → summarize (ADR path, deep-dive path, drift).
 
 ### Architect prompt — required fields
 
-- Full ADR content (ground truth)
-- Target deep-dive path
-- Existing deep-dive content (if updating)
-- **Content instructions**: Use the ADR as source of truth for the decision. Verify cited file paths against the codebase on the current branch (ADR may be stale). Produce durable architecture — current-state, patterns, interfaces, limitations. Do NOT recap migration story, alternatives, or implementation phases — those belong in the ADR. Return content as text; do not write files.
-- **Format directive**: Read `~/.claude/skills/_shared/skimmable-writing.md` (single source of truth for the skimmability rules) and pass its contents to the architect verbatim, plus this deep-dive addendum:
+- ADR content (ground truth), target path, existing deep-dive content if updating
+- **Content instructions**: ADR is source of truth; verify cited paths against the branch (ADRs go stale). Durable architecture only (current-state, patterns, interfaces, limitations) — no migration story/alternatives/phases. Return text; don't write files.
+- **Format directive**: pass `~/.claude/skills/_shared/skimmable-writing.md` contents verbatim, plus this addendum:
 
   > **One Diátaxis mode**: deep-dives are **reference** (_how_ the subsystem currently works). Do NOT recap migration, alternatives, or decision rationale — those live in the ADR. Cross-link.
 
@@ -53,72 +40,28 @@ Triggered when `$ARGUMENTS` is a path to a `.md` file under `docs/decisions/` (a
 
 ### Phase 1: Gather Context
 
-1. **Read foundational files.** In parallel:
-   - `CLAUDE.md` — project structure, conventions, stack
-   - Glob `docs/architecture/*.md` — existing architecture docs
-   - Glob `docs/plans/*.md` — recent implementation plans (scan for recurring patterns)
+1. **Read foundations, in parallel**: `CLAUDE.md` + glob `docs/architecture/*.md` + glob `docs/plans/*.md` (scan plans for recurring patterns)
 
 2. **Determine what exists.** Categorize:
    - **Fresh run** — `docs/architecture/` is empty or doesn't exist
    - **Update run** — `docs/architecture/` has existing docs
    - **Single topic** — user requested a specific deep-dive topic
 
-3. **Read key source files** based on scope. Use Glob + Read to scan:
-   - **Backend:** entry points, modules, controllers, services, entities, gateway files
-   - **Frontend:** main app file, router, stores, key components, shared utilities
-   - **Shared:** package.json files, config files, database schema
+3. **Scan key sources** per scope: backend (entry points, modules, controllers, services, entities), frontend (app, router, stores, components, utilities), shared (package.json, configs, schema)
 
 ### Phase 2: Scope & Plan
 
 4. **Apply scope modifier** (or default to fullstack).
 
-5. **Auto-detect deep-dive topics** by scanning the codebase for distinct subsystems. Common examples:
-   - `data-model` — entities, relationships, constraints, migrations
-   - `api-contracts` — REST endpoints, request/response shapes, status codes
-   - `websocket-events` — event types, payloads, connection lifecycle
-   - `mcp-protocol` — MCP transport, tools, resources, server setup
-   - `auth` — authentication/authorization patterns
-   - `state-management` — frontend state architecture
-   - `build-deploy` — build pipeline, environment config
+5. **Auto-detect deep-dive topics** by scanning for distinct subsystems (e.g. `data-model`, `api-contracts`, `websocket-events`, `mcp-protocol`, `auth`, `state-management`, `build-deploy`). Only where the codebase has meaningful content.
 
-   Only propose topics where the codebase has meaningful content.
-
-6. **Present plan to user:**
-   - "Here's what I found. I'll generate:"
-   - List: overview doc + proposed deep-dives (or just overview if `+quick`)
-   - If `+quick`: skip deep-dives entirely
-   - If `+deep`: propose all detected topics
-   - If single topic: confirm the topic and proceed
-   - Ask: "Want to adjust the list before I start?"
+6. **Present plan**: overview + proposed deep-dives (`+quick`: overview only; `+deep`: all detected; single topic: confirm it). Ask before starting.
 
 ### Phase 3: Architect Analysis
 
-7. **Launch architect agents** via the Agent tool based on scope:
+7. **Launch architects** by scope (`backend-architect` / `frontend-architect`; parallel for fullstack, then synthesize): explore thoroughly, document per their briefs, read existing `docs/architecture/` as context, return analysis as text (do NOT write files). Omit `model` — frontmatter pins Opus (call-site `opus` is hook-blocked, `sonnet` silently downgrades).
 
-   **Backend scope:**
-   - Launch `backend-architect` (`subagent_type: backend-architect`). Instruct it to:
-     - Explore the backend codebase thoroughly
-     - Document: data model (entities, relationships, constraints), API surface (all endpoints with shapes), async patterns (queues, workers), error handling conventions, coding patterns
-     - Read existing `docs/architecture/` docs as context to understand what's already documented
-     - Return structured analysis as text (do NOT write files)
-
-   **Frontend scope:**
-   - Launch `frontend-architect` (`subagent_type: frontend-architect`). Instruct it to:
-     - Explore the frontend codebase thoroughly
-     - Document: component architecture, state management, routing, API integration patterns, styling conventions, shared utilities
-     - Read existing `docs/architecture/` docs as context
-     - Return structured analysis as text (do NOT write files)
-
-   **Fullstack (both):**
-   - Launch both agents in parallel (single message, two Agent tool calls)
-   - After both complete, synthesize into a unified system view
-
-   Omit `model` on architect dispatches — their frontmatter pins Opus. Call-site `model: "opus"` is hook-blocked, and a call-site `"sonnet"` would silently downgrade them.
-
-8. **Scan `docs/plans/` for patterns** to promote. Look for:
-   - Decisions that recur across multiple plans
-   - Patterns that started as one-off choices but became conventions
-   - Mention these as candidates for the architecture docs
+8. **Scan `docs/plans/`** for recurring decisions and one-offs-become-conventions; mention as doc candidates.
 
 ### Phase 4: Diff+Merge (Update Runs Only)
 
@@ -140,37 +83,23 @@ Triggered when `$ARGUMENTS` is a path to a `.md` file under `docs/decisions/` (a
    - Ask: "Accept proposed change, keep existing, or edit?"
    - Use AskUserQuestion with options: `Accept`, `Keep existing`, `Edit` (user provides custom text)
 
-10. **For new sections** not in the existing doc:
-    - Show the proposed content
-    - Ask: "Add this new section?"
-
-11. **For sections that haven't changed** — preserve as-is, no user prompt needed.
+10. **New sections**: show + ask "Add?". **Unchanged sections**: preserve silently.
 
 ### Phase 5: Write Docs
 
-12. **Write the overview doc** to `docs/architecture/00-system-overview.md` using the template below.
-
-13. **Write deep-dive docs** (unless `+quick`) to `docs/architecture/<topic>.md` using the deep-dive template.
-
-14. **For single topic requests**, only write the requested topic file.
+12–14. **Write docs**: overview to `00-system-overview.md` + deep-dives to `<topic>.md` (unless `+quick`; single-topic writes only its file).
 
 ### Phase 6: Summary & Next Steps
 
-15. **Present summary:**
-    - Files written/updated (with paths)
-    - Key architectural patterns documented
-    - Any drift detected (code differs from previously documented patterns)
-    - Patterns promoted from `docs/plans/` (if any)
-
-16. **Flag drift** if detected: "These areas of code have diverged from the documented architecture: [list]. Consider updating the code or the docs."
+15–16. **Summarize**: files written, patterns documented, drift detected, plans-promoted patterns. Flag drift as code-diverged-from-docs with the list.
 
 ## Overview Template
 
-Write to `docs/architecture/00-system-overview.md`. Sections: System Map (packages + communication flows), Data Model (entities + relationships), API Surface (REST endpoints, WebSocket events, MCP tools as applicable), Coding Conventions (naming, patterns, error handling), Key Architectural Decisions (context, decision, rationale, consequences). Include a header with generation date and scope.
+Overview (`00-system-overview.md`): System Map, Data Model, API Surface, Coding Conventions, Key Decisions + generation-date/scope header.
 
 ## Deep-Dive Template
 
-Write deep-dives to `docs/architecture/<topic>.md`. Sections: Overview, Current Implementation (with file/line references), Patterns & Conventions, Interfaces, Known Limitations.
+Deep-dive (`<topic>.md`): Overview, Current Implementation (file:line refs), Patterns & Conventions, Interfaces, Known Limitations.
 
 ## Arguments
 

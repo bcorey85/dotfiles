@@ -10,13 +10,9 @@ The user is deciding and routing, not reading. Output is a queue, not a report.
 
 ## Sources
 
-The conversation, in priority order: work explicitly deferred, tickets filed but
-unstarted, defects found and not fixed, handoffs to other sessions. Add `git status`
-and `git log --oneline -5` only when the session's state is stale or unclear.
+The conversation, in priority order: deferred work, unstarted filed tickets, unfixed defects, session handoffs. Add `git status`/`git log --oneline -5` only when session state is stale or unclear.
 
-Do NOT go looking for work. No repo scans, no ticket queries, no subagents. If it
-wasn't established in this conversation, it isn't a todo — this skill reports what
-is already known, and costs one turn.
+Do NOT go looking — no scans, queries, or subagents. Unestablished-in-conversation means not a todo.
 
 ## Format
 
@@ -37,21 +33,17 @@ Rules:
 
 - **One line each. No sub-bullets, no rationale, no evidence.**
 - **Lead with the identifier** — ticket key, or `path:line`. It is what gets routed.
-- **The action is a verb the user could hand to someone.** "Measure whether an
-  activities date fans the view" routes; "investigate the activity_count situation"
-  does not.
+- **The action is a hand-off-able verb** — executable sight unseen.
 - **`→ route`** names the lane: a skill (`/code`, `/eng-spec`, `/debug`, `/triage`),
   a person, or `drop`. Omit it only when genuinely unknown, and say so.
-- **BLOCKED names the unblocking event and its owner.** A blocked item with no owner
-  is not blocked, it is unstarted — put it in NOW.
-- **Omit empty groups.** Do not print a header to say nothing is under it.
+- **BLOCKED names event plus owner.** Ownerless means unstarted — put it in NOW.
+- **Omit empty groups.**
 - **Cap: 12 items.** Past that, list the top 12 and end with
   `+N more — ask to expand.`
 
 ## Closing line
 
-One line, only if something is genuinely time-sensitive or ordering-dependent
-(a blocker draining, a decision gating two items). Otherwise stop after the list.
+One closing line only for time-sensitive or ordering-dependent items; else stop at the list.
 
-Never append a summary, a status paragraph, an offer to start any of it, or a
-recap of what shipped this session. Shipped work is not a todo.
+Never append summaries, offers to start, or shipped-work recaps.
+

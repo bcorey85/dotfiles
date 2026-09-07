@@ -6,14 +6,9 @@ allowed-tools: [Agent, Bash, Read, Write, Edit, Glob, Grep]
 
 # Calibrate
 
-`review-metrics.jsonl` records what the reviewer FOUND. It cannot record what
-the reviewer MISSED — so a 30% zero-finding rate is unreadable: it is either a
-clean pipeline or a blind reviewer, and those look identical from the inside.
-This skill supplies the missing denominator.
+Metrics record what the reviewer FOUND, never what it MISSED — a 30% zero-finding rate is unreadable without the denominator this skill supplies.
 
-Method: seed one realistic defect into a real diff, dispatch the real reviewer
-blind, record caught/missed. Ten runs gives a recall number. That number is the
-prior on every future clean review.
+Seed one realistic defect, dispatch the reviewer blind, record caught/missed. Ten runs = a recall number: the prior on every future clean review.
 
 **The tree is mutated.** Everything below exists to guarantee it is put back.
 
@@ -25,45 +20,33 @@ git rev-parse --show-toplevel && git status --porcelain
 
 - Not a git repo → stop.
 - **Lock file exists** (`~/.claude/calibration-lock.json`) → STOP. A previous
-  run mutated a file and never restored it. Restore from the lock's
-  `backup_path` first (step 5), then delete the lock — and if a gate blocks that
-  deletion, report it and stop rather than reaching for another mechanism. Never seed on top of an
-  unrestored seed. The lock is shared with `mutation-tester` (distinguished by
-  `.kind`) on purpose — neither may seed over the other's stranded mutation.
+  run mutated and never restored. Restore from `backup_path` first (step 5), then delete the lock — a gate blocking deletion means report-and-stop, never another mechanism. Never seed over an unrestored seed; the lock is shared with `mutation-tester` (by `.kind`) on purpose.
 - Empty diff → stop: "nothing to calibrate; run this on a converged branch
   before you read it."
 
-Run this on a CONVERGED diff — after the loop passed, before you read it. A
-defect seeded into already-broken code measures nothing.
+Run on a CONVERGED diff — post-loop, pre-read. Seeding into broken code measures nothing.
 
 ## Step 1: Pick the target
 
-From `git diff --name-only` AND `git ls-files --others --exclude-standard`,
-choose ONE changed file with real logic (skip docs, lockfiles, pure config).
-Untracked files count and are often the BEST target: a new module is code the
-loop reviewed as a whole, with no prior version to diff against, which is where
-a reviewer is most likely to miss something. Prefer a file the loop passed clean
-— that is exactly the population whose clean verdict you are testing.
+From `git diff --name-only` AND untracked files, choose ONE changed file with real logic (skip docs, lockfiles, pure config). Prefer untracked files (no prior version to diff against — where reviewers most likely miss) and files the loop passed clean (the population under test).
 
 ## Step 2: Seed one defect
 
-Read the file. Choose a defect class that is PLAUSIBLE for this code — the
-mutation must look like something a coder agent would actually emit, not like
-sabotage.
+Read the file. Choose a PLAUSIBLE defect class — something a coder agent would actually emit, not sabotage.
 
 Defect classes (pick one; vary across runs, never repeat the same class twice
 in a row — a reviewer can be good at one class and blind to another):
 
-| Class            | Mutation                                                                                 |
-| ---------------- | ---------------------------------------------------------------------------------------- |
-| boundary         | `<` → `<=`, `i < n` → `i <= n`, off-by-one on a slice/index                              |
-| inverted-guard   | drop a `!`, flip an early-return condition                                               |
-| dropped-async    | remove an `await`, drop a `.catch`, fire-and-forget a promise                            |
-| swapped-args     | transpose two same-typed params at a call site                                           |
-| removed-check    | delete a null/undefined/empty guard that the code below relies on                        |
-| wrong-error-path | swallow an error, return a default where it should throw                                 |
-| stale-state      | read a value before the write that should precede it; drop a dependency from a hook/memo |
-| resource-leak    | remove a cleanup/close/unsubscribe on one path                                           |
+| Class | Mutation |
+| --- | --- |
+| boundary | `<` → `<=`, `i < n` → `i <= n`, off-by-one on a slice/index |
+| inverted-guard | drop a `!`, flip an early-return condition |
+| dropped-async | remove an `await`, drop a `.catch`, fire-and-forget a promise |
+| swapped-args | transpose two same-typed params at a call site |
+| removed-check | delete a null/undefined/empty guard that the code below relies on |
+| wrong-error-path | swallow an error, return a default where it should throw |
+| stale-state | read a value before the write that should precede it; drop a dependency from a hook/memo |
+| resource-leak | remove a cleanup/close/unsubscribe on one path |
 
 **Record before mutating**, then write the lock:
 
@@ -73,9 +56,7 @@ cp <target> ~/.claude/calibration/$(basename <target>).bak
 sha256sum <target> | cut -c1-16   # pre-mutation hash of the FILE
 ```
 
-Hash the file's CONTENT, never `git diff -- <target>`: for an untracked file the
-diff is empty both before and after seeding, so a diff hash matches itself and
-"verified restored" would be reported over a file still carrying the seed.
+Hash the file's CONTENT, never `git diff`: for an untracked file the diff is empty before AND after, so a diff hash "verifies" a file still carrying the seed.
 
 ```bash
 jq -n --arg f "<target>" --arg b "$HOME/.claude/calibration/$(basename <target>).bak" \
@@ -85,9 +66,7 @@ jq -n --arg f "<target>" --arg b "$HOME/.claude/calibration/$(basename <target>)
   > ~/.claude/calibration-lock.json
 ```
 
-The lock is the safety net: `calibration-guard.sh` (SessionStart) shouts if a
-session ever starts with one present. Apply the mutation with **Edit** — one
-line, minimal, no comment marking it.
+The lock is the safety net (`calibration-guard.sh` shouts on sessions starting with one present). Apply with **Edit** — one line, minimal, unmarked.
 
 ## Step 3: Run the reviewer blind
 
@@ -99,8 +78,7 @@ transfers: `Agent`, `subagent_type: "code-reviewer"`, `model: "sonnet"`.
 - `+deep` variant → dispatch `code-reviewer-deep` (pinned; omit `model`) and
   record `reviewer=deep`. Calibrate the tier you actually run.
 - This is NOT `review-loop` — the loop would dispatch a coder and fix the seed,
-  destroying the measurement (and putting an agent-authored fix in your tree).
-  Never route calibration through the loop.
+  destroying the measurement. Never route calibration through the loop.
 
 ## Step 4: Score
 
@@ -123,15 +101,8 @@ Then VERIFY the tree is back, by hash, not by eyeball:
 sha256sum <target> | cut -c1-16   # must equal pre_hash
 ```
 
-- Matches → `rm ~/.claude/calibration-lock.json`. **If a safety gate blocks that
-  removal, you are done: the tree is already restored, so report the result, say
-  the lock removal was blocked, and print the command for the user. Never retry it
-  by another mechanism — not `unlink`, not python, not a rewritten flag set.** The
-  lock is bookkeeping; the tree is already safe without it.
-- **Does not match** → STOP and tell the user, loudly, with the backup path and
-  the target path. Do not delete the lock. Do not continue. A mismatch means
-  their working tree is not what they think it is, and that outranks every
-  other thing this skill does.
+- Matches → `rm ~/.claude/calibration-lock.json`. **Gate-blocked removal = done**: report the result, state the block, print the user command. Never retry by another mechanism.
+- **Does not match** → STOP, loudly, with both paths. Keep the lock. A mismatched tree outranks everything else this skill does.
 
 ## Step 6: Log
 
@@ -152,25 +123,14 @@ jq -s 'group_by(.reviewer)[] | {reviewer: .[0].reviewer, n: length,
   caught: (map(select(.result=="caught")) | length)}' ~/.claude/review-calibration.jsonl
 ```
 
-State the recall as a fraction with its N — `3/5 caught (sonnet)` — never as a
-percentage until N ≥ 10. And say plainly what it licenses:
-
-- **Recall is high** → your zero-finding runs are real. The loop is cheap
-  insurance; trust it and read less.
-- **Recall is low** → every clean review in `review-metrics.jsonl` is
-  uninformative, and the 30% null rate is the instrument failing, not the code
-  passing. The reviewer tier, not your reading, is what needs to change.
-
-Below N=10, report the fraction and say it's provisional.
+State recall as a fraction with N (`3/5 caught (sonnet)`) — never a percentage below N=10 (provisional). What it licenses: **high** → zero-finding runs are real, trust the loop and read less; **low** → every clean review is uninformative, change the reviewer tier, not your reading.
 
 ## What NOT to do
 
 - **Never commit with a seed in the tree.** If `git commit` is even discussed
   while the lock exists, stop and restore first.
 - **Never tell the reviewer it's a drill**.
-- **Never seed more than one defect per run.** Two seeds make caught/missed
-  ambiguous and double the restore risk.
-- **Never route through `review-loop`** — it fixes, which destroys the measurement.
+- **Never seed more than one defect** — two seeds make caught/missed ambiguous and double restore risk.
 - **Never seed into an acceptance-spec file or a migration.** If the restore
   ever fails there, the blast radius is real data.
 

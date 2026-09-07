@@ -13,38 +13,23 @@ factual claim verified, the approach feasible, the acceptance unambiguous.
 
 ### 1. Gather intent
 
-Take the problem as described. If an epic link/key is given, hold it — it
-passes straight through to `/create-ticket` (which handles `parent`). No epic
-means the ticket goes to the backlog; that's fine, don't ask about it.
+Take the problem as described. Epic link/key passes straight to `/create-ticket` (`parent`); no epic means backlog ticket, do not ask.
 
 ### 2. Verify the premise — before designing anything
 
-Check the assumed facts against the
-actual repo: does the described behavior really happen, does the code still
-work the way the request assumes, does the thing being asked for already
-exist? Cite `file:line` for each load-bearing fact. If the premise is wrong,
-say so — a killed ticket is a success, not a failure.
+Check assumed facts against the repo (behavior really happens? code still works that way? thing already exists?). Cite `file:line` per load-bearing fact. Wrong premise means say so; a killed ticket is a success.
 
-This reading is for **verification** (what's true, what constrains the
-approach) — not scoping. `/create-ticket` owns naming files in the ticket.
+This reading is **verification**, not scoping — `/create-ticket` owns file-naming.
 
 ### 3. Clarify — one question at a time
 
-**First question, always: the appetite.** How much is this problem worth —
-a quick fix, a couple of days, a week? An appetite starts with a number and
-ends with a design (not the reverse); it constrains every fork downstream.
+**First question, always: appetite** (quick fix? days? week?). Appetite starts with a number and ends with a design — it constrains every fork.
 
-Then serial questions, multiple choice preferred: purpose, constraints, what
-done looks like. Stop when `## Work` and `## Acceptance` could be written
-without hedging — that's the completeness test, not "the conversation feels
-done."
+Then serial multiple-choice questions (purpose, constraints, done). Stop when Work plus Acceptance write without hedging.
 
 ### 4. Resolve the approach
 
-Where a real fork exists, propose 2–3 approaches with trade-offs and a
-recommendation; apply YAGNI ruthlessly. Skip the ceremony when there's
-genuinely one way. Ecosystem/library questions go to `/research` — its
-Alternatives Considered table drops into the ticket's Technical Notes.
+Real forks mean 2–3 approaches plus trade-offs plus recommendation, YAGNI ruthlessly. One way means skip ceremony. Ecosystem questions go to `/research` (its Alternatives table drops into Technical Notes).
 
 ### 5. Vet gate — the point of the skill
 
@@ -55,32 +40,21 @@ Walk the draft before filing. Every item must pass:
 - [ ] Acceptance criteria are testable by someone who wasn't in this conversation
 - [ ] No unanswered question is buried as an assumption — each goes to `## Open Questions` with a named owner
 - [ ] YAGNI pass: nothing in scope that the stated purpose doesn't require
-- [ ] The work fits the appetite — plausibly lands in days, not weeks. If scoping ballooned past it, split or renegotiate the appetite; never file a ticket bigger than what the problem is worth
+- [ ] Fits the appetite — ballooned past it means split or renegotiate; never file bigger than the problem is worth
 
 Anything failing → back to steps 2–4, don't file around it.
 
 ### 6. File via /create-ticket
 
-Hand off a structured brief: **outcome + verified constraints** → `## Work`
-(with the appetite as one line, e.g. `Appetite: ~2 days` — the timebox is
-what pushes the implementer to decide core vs peripheral), done-criteria →
-`## Acceptance`, the resolved approach → `## Technical Notes` as a
-_recommendation_, rejected approaches + verification evidence →
-`## Technical Notes`, unknowns → `## Open Questions`. Pass the epic link
-through if one was given.
+Hand off: outcome plus verified constraints go to `## Work` (appetite as one line, e.g. `Appetite: ~2 days`), done-criteria go to `## Acceptance`, resolved approach goes to Technical Notes as recommendation, rejected plus evidence go to Technical Notes, unknowns go to Open Questions. Pass epic through.
 
 Pin the WHAT; recommend the HOW. Only promote the approach into `## Work`
 when deviating from it would violate a constraint you verified.
 
-If the work turned out to be multiple independent pieces, ask ONCE, offering
-three options: keep it one ticket (deferred pieces → `## Out of scope`);
-one `/create-ticket` per piece under the same epic — each piece a vertical
-slice, observably valuable on its own, never split by layer; or, when the
-problem is genuinely uncertain, file only the first slice — building it will
-rewrite the design for the rest. Nothing else — no linking, no sequencing.
+Multiple independent pieces means ask ONCE: one ticket (deferred go to Out of scope); one ticket per piece under the epic (vertical slices, never by layer); or file only the first slice when genuinely uncertain (building rewrites the rest).
 
 ## Boundaries
 
-- Produces tickets; never plans implementation, never dispatches coders, never invokes `/eng-spec`.
+- Produces tickets only — never plans, coders, or `/eng-spec`.
 - Read-only against the repo.
 - If Jira/`/create-ticket` is unavailable, deliver the vetted brief inline for manual filing.

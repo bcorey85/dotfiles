@@ -6,17 +6,12 @@ allowed-tools: [Read, Glob, Grep, Bash, Write, Edit, AskUserQuestion]
 
 # Vault Progress — did the gap move?
 
-The learning-arc counterpart to `/weekly-recap`. That skill compiles the **work**
-week (dailies → decisions, shipped, achievements). This one compiles the **capability**
-week: what the vault gained, which named gap it landed on, and what comes next.
-They share nothing and must not duplicate each other — never write work decisions,
-PR activity, or achievement bullets here.
+The capability-week counterpart to `/weekly-recap`'s work week. They share nothing — never write work decisions, PR activity, or achievements here.
 
 Vault root: `$VAULT_DIR` if set, else `~/vault`. Target week: the ISO week (Mon–Sun)
 containing the argument date if one was given, else today. Label with `date +%G-W%V`.
 
-Idempotent: re-running for the same week rewrites that week's row and entry from the
-same sources. The user's answers in an existing entry are preserved verbatim.
+Idempotent per week — but preserve existing `Direction` answers verbatim.
 
 ## The measurement contract — read this before counting anything
 
@@ -26,16 +21,10 @@ same sources. The user's answers in an existing entry are preserved verbatim.
 > of them is understanding. Read the table as "what I have been near," never as
 > "what I can do."
 
-So the chart is an **exposure** chart, labeled as one. Never write "progress on X" from a count alone; write the
-count, then ask the question the count cannot answer.
+So: an **exposure** chart, labeled as one. Never "progress on X" from a count alone.
 
-Two standing rules follow:
-
-- **Never call a gap closed from the chart.** Only the user closes a gap, against the
-  done criteria written under its capability.
-- **Zero is a real reading.** A week with no new notes is information about what got
-  worked on. Say so
-  plainly; never phrase it as a miss.
+- **Never call a gap closed from the chart** — only the user closes gaps.
+- **Zero is a real reading** — say so plainly, never as a miss.
 
 ## Gather (read-only; skip any unavailable source gracefully — never fail the run)
 
@@ -51,39 +40,24 @@ git ls-tree -r --name-only HEAD -- notes/   | sed 's#.*/##' | sort -u > /tmp/vp-
 comm -13 /tmp/vp-old.txt /tmp/vp-new.txt
 ```
 
-A note is new only if its **basename existed nowhere in the vault** at the window
-start. Moves, renames into `notes/`, and folder churn all correctly report zero.
-(Compare `$BASE` against the whole tree, not just `notes/` — that is what makes a
-move invisible.)
-
-Substantially-revised notes are a separate, weaker signal: existing basenames whose
-content changed in the window. Report the count only, never itemize.
+New = basename existed nowhere at window start (compare `$BASE` against the whole tree — that's what makes moves invisible). Substantially-revised notes (existing basenames, changed content): count only, never itemize.
 
 ### 2. The capability chart — count by filename prefix
 
-**Filename prefix is the taxonomy** (`CLAUDE.md`), and `trajectory.md`'s own "Where I
-actually am" table is built this way — `Linux`/`Unix` notes, `DRF` notes, Database
-notes. Match that method.
+**Filename prefix is the taxonomy** — match `trajectory.md`'s own method.
 
 ```bash
 find notes -name '*.md' -printf '%f\n' | sed 's/ - .*//; s/\.md$//' | sort | uniq -c | sort -rn
 ```
 
-Frontmatter `tags:` are a **cross-check only, never the chart**. The declared
-vocabulary and the real one have diverged: `CLAUDE.md` names six one-per-note tags,
-while `notes/` carries its own divergent tag set. If a cross-check contradicts the
-prefix count, report the disagreement rather than picking a winner.
+Frontmatter `tags:` are a **cross-check only, never the chart** — on disagreement, report it rather than picking a winner.
 
 Bucket prefixes into the rows below. **Record which prefixes went into each bucket in
 the week's entry** — the bucketing is a judgment call.
 
 Rows are read from `trajectory.md` at run time, not hardcoded here:
 
-- The four arc capabilities in its tag table (`#backend`, `#devops`, `#architecture`,
-  `#llms`).
-- The rows of its **Named gaps** table — currently Database internals, Concurrency,
-  Algorithms/complexity. These are the closable items, so they are the columns that
-  earn their place. Skip any gap marked **not closing**.
+- Its tag-table capabilities plus its **Named gaps** rows (the closable items; skip **not closing**).
 
 If `trajectory.md`'s capabilities or gap table have changed since the last chart row,
 say so and use the new set going forward. Do not retroactively rewrite old rows.
@@ -94,31 +68,17 @@ Count new notes carrying `[unverified]`. Report it as a ratio of the week's new 
 
 ### 4. Project movement
 
-Read the `## Where I am` block at the top of each plan file in
-`projects/active/*/`. Report `next` and `blocked-on` verbatim, plus any step heading
-that gained a `✓` / `**Done <date>**` line in the window. Never infer status from
-which notes exist.
+Per `projects/active/*/` plan file: `next`/`blocked-on` verbatim + steps newly `✓`/`Done`. Never infer status from notes.
 
 Never fabricate. A section with no source material gets `- none`.
 
 ## Distill
 
-Three to six bullets, and they must be about **content**, not counts. What are the
-week's new notes actually about, grouped by the thing they were learning. Name the
-gap each group lands on, or say plainly that it lands on none of them — a week spent
-off the named gaps is the single most useful thing this skill can report.
-
-Then one line of direction: **which gap moved, which did not, and which was displaced
-by what.** `trajectory.md` warns that `#llms` crowds out `#backend` and that a good
-evening on the reps lane is not progress on the gap — check for exactly that and say
-it when it happened.
+Three to six bullets on **content**, not counts — what the week's notes are actually about, grouped by learning; name the landed gap or plainly none (off-gap weeks are the most useful report). Then one line: **which gap moved, which didn't, what displaced it** — check `#llms`-crowds-`#backend` specifically.
 
 ## Participate — the user steers, the skill never grooms
 
-`trajectory.md` says revision is **event-driven only. Not on a schedule. Not a weekly
-review.** This skill does not violate that, on one condition that is not negotiable:
-**it never edits `trajectory.md` on its own.** The user's decision is the event; the
-skill's job is to put the evidence in front of him and then do what he says.
+`trajectory.md` revision is **event-driven only** — this skill **never edits it on its own**. Evidence first, then do what the user says.
 
 1. Present the chart, the delta, and the distillation. Lead with the 1–3 findings that
    would change a decision.
@@ -130,14 +90,9 @@ skill's job is to put the evidence in front of him and then do what he says.
      Re-order the queue, or is the gap wrong?"
    - "This landed as reading, not a build. Does it need a build attached, or is it
      reference that has already done its job?"
-3. **Apply nothing without an explicit yes.** When an answer implies a
-   `trajectory.md` revision — a gap's state moved, a queue item promoted or dropped, a
-   capability's done criteria met — draft the **exact edit**, show it, and apply it
-   only on approval. If he declines, record the decision in the week's entry and leave
-   `trajectory.md` untouched.
+3. **Apply nothing without explicit yes**: draft the **exact edit**, show it, apply on approval only. Declined → record in the week's entry, leave `trajectory.md` untouched.
 4. Offer `/save-note` for anything surfaced in the conversation that is a fact, and
-   `/create-ticket` for anything that is work. Do not inline them into the chart file —
-   the chart is derived and evictable, and an only-copy must never live there.
+   `/create-ticket` for anything that is work — never inline into the chart file (derived, evictable; only-copies forbidden).
 
 ## Write
 
@@ -177,15 +132,13 @@ year, matching the `Achievements/<year>.md` precedent.
 proposed `trajectory.md` edit and whether it was applied or declined.>
 ```
 
-Preserve the `**Direction**` block of any existing week entry verbatim on a re-run —
-it is the only human-authored content in the file and the compile does not own it.
+Preserve existing `**Direction**` blocks verbatim on re-runs — the compile doesn't own human-authored content.
 
 ## Boundaries
 
 - Writes `<vault>/progress/` and nothing else, except a `trajectory.md` edit the user
   explicitly approved in-session.
-- **Never writes `cache/`.** `progress/` is derived and regenerable from git —
-  and nothing in it may be the only copy of anything.
+- **Never writes `cache/`.** Nothing here may be the only copy of anything.
 - Never writes `notes/`. A fact surfaced in the conversation goes through `/save-note`.
 - Never touches org files, `Weekly/`, or `Achievements/` — those belong to `/vault-review` and
   `/weekly-recap`.

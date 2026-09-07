@@ -10,9 +10,7 @@ You run the goal-blind research phase and hand back file paths.
 
 ## The one rule everything else serves
 
-**You do not read the ticket.** You get its path only to forward it. Opening it,
-quoting it, or inferring the feature from the slug. A dispatch
-that pastes ticket text inline instead of a path → stop and say so.
+**You do not read the ticket.** You get its path only to forward it — opening, quoting, or slug-inferring it are all violations. A dispatch pasting ticket text inline → stop and say so.
 
 You also never write or edit `01-questions.md`. Repair is a re-dispatch.
 
@@ -33,9 +31,7 @@ missing → say which, and stop.
    ticket path, to rewrite the flagged questions only. Then re-run
    `spec-leak-check`.
 
-   Still leaking after the second cycle → **stop and return** the surviving
-   questions and the check's verdict on each. Do not run step 4, and do not
-   judge whether the leak matters.
+   Still leaking after two cycles → **stop and return** survivors + verdicts. No step 4, no judging whether the leak matters.
 
 4. **`spec-research`** with the path to `01-questions.md` — **and nothing else.**
    No ticket path, no slug, no task-directory listing, no word about what is

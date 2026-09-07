@@ -6,15 +6,12 @@ allowed-tools: [Agent, Bash, Read, Edit, AskUserQuestion]
 
 # Code Review
 
-Thin wrapper. The review→fix convergence loop lives in the `review-loop` agent
-(`~/.claude/agents/review-loop.md`) so its instructions never enter this
-context. Your job is to dispatch it, then render the packet it returns and
-raise the modals it cannot.
+Thin wrapper over the `review-loop` agent (its instructions never enter this context): dispatch it, render the returned packet, raise the modals it cannot.
 
 ## Modifiers
 
 - `+fast` / `+deep` — semantics in `~/.claude/skills/_shared/modifiers.md` (read it when either is present). Pass through to the agent verbatim; it maps them to the reviewer variant and model.
-- `+sec` / `+perf` / `+smell` — force that cross-cutting specialist pass even when the loop's deterministic trigger wouldn't fire it. `no-specialist` — suppress the specialist pass entirely. All four pass through verbatim (step 1).
+- `+sec` / `+perf` / `+smell` — force that specialist pass; `no-specialist` — suppress it. All four pass through verbatim (step 1).
 
 ## Instructions
 
@@ -30,15 +27,15 @@ raise the modals it cannot.
    - **`plan-impact`** → raise the modal (see below), then re-dispatch the loop with the user's decision and BOTH returned counters preserved (`iter` and `spec_iter`).
    - **`critical-blocker`** → STOP. Present `blockers` and wait for direction. Do NOT re-dispatch, do NOT `/fix`.
    - **`cap-reached`** → STOP. Report `findings_remaining`; the user decides. Do NOT `/fix`. The session is correctly left `dirty`, so `git commit` stays blocked.
-   - **`deferred`** → the one-round correctness budget was spent and the residue was logged for branch exit. A normal completion, not a stop: render the packet (step 3), add `findings_remaining` under `### Deferred to branch exit`, and record convergence as for `converged`. Do NOT re-dispatch the loop or `/fix` those items — the budget is the point, and `/branch-recap` reads them back.
-   - **`converged`** → render the packet (step 3), then record convergence: `bash ~/.claude/scripts/review-gate-mark clean`. Run the mark ONLY for a packet whose `status` is `converged` or `deferred` — the other three statuses leave the commit gate dirty by design.
+   - **`deferred`** → one-round budget spent, residue logged for branch exit. A normal completion: render the packet (step 3), add `findings_remaining` under `### Deferred to branch exit`, record convergence as for `converged`. Do NOT re-dispatch or `/fix` those items; `/branch-recap` reads them back.
+   - **`converged`** → render the packet (step 3), then `bash ~/.claude/scripts/review-gate-mark clean`. Mark ONLY on `converged` or `deferred` — other statuses leave the gate dirty by design.
 
 3. **Render the packet**, in this order:
 
    - `### Fixed` — every `fixed[]` entry (`finding`, `file_line`), `blocker` ones first and marked. An empty `fixed[]` on `iter > 1` is a bug in the agent, not a clean run.
    - `### Perf findings` — its own heading, one entry per `perf[]` item with its `Principle:` line. Render every entry regardless of disposition or auto-fix status.
    - `specialists` — one line naming which cross-cutting specialists ran (or that none matched / were suppressed). Security findings, if any, already appear in `fixed[]`/`blockers`/`ask[]`.
-   - `class_closure` — one line, ALWAYS, including when it reads `none` or `n/a`. This is the loop's stopping-rule receipt: it says whether convergence was earned by enumerating a failure class or by nobody having repaired a class-shaped finding. Suppressing it when it is boring is what makes it useless when it is not. A `converged` packet missing the line is a bug in the agent — say so rather than rendering the packet as clean. So is a bare `none`: that word alone is also what the answer looks like when the check was never run, so a `none` that does not name each repaired finding it covers gets reported as an unrun check rather than rendered as a receipt.
+   - `class_closure` — one line, ALWAYS, even `none` or `n/a`: the loop's stopping-rule receipt. A `converged` packet missing it is an agent bug — say so, don't render as clean. A bare `none` that names no repaired finding is an unrun check, not a receipt.
    - `load_bearing_clean`, if present — one line.
    - `skipped_fp[]` — inline, each with its reason.
    - `nit[]` — inline, one combined line.
@@ -49,10 +46,7 @@ raise the modals it cannot.
 
 ## Plan-impact findings (unskippable routing)
 
-The agent decides what counts as a `PLAN-IMPACT` and defines it; that definition
-lives in `~/.claude/agents/review-loop.md` and is deliberately not restated here. The
-agent returns `status: plan-impact` and dispatches no coder. Your job starts
-there:
+The agent defines `PLAN-IMPACT` (see `~/.claude/agents/review-loop.md`) and dispatches no coder on it. Your job starts there:
 
 1. Never fold it into the findings summary or triage it as an `ask`.
 2. Present it via **AskUserQuestion** before any further dispatch: assumed →

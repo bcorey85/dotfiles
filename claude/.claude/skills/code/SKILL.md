@@ -46,7 +46,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
        stage=code-phase exit=0 candidates=1 confirmed=1 note="<what was missing>"
      ```
 
-     `exit=` is the scan's own exit code and says only whether it RAN — `0` printed rows, `1` ran clean, `2` did not run. A found defect is `exit=0` with counts, never `exit=1`.
+     `exit=` says only whether the scan RAN (`0` printed rows, `1` clean, `2` did not run) — a found defect is `exit=0` with counts.
 
    - Dispatch the coder for THAT ONE PHASE ONLY. The coder must run the phase's "Automated Verification" gate (typically `npm run validate` or equivalent) before returning. **Re-read the phase's Phase Status line before dispatching** — its `(risk: …)` tag drives the phase-boundary decision (step 2) and its `(reviewers: …)` list is passed through to the review loop (step 5).
    - After the coder completes, dispatch the `test-writer` (step 3b); after it returns and you summarize, auto-dispatch `/review` (step 5).
@@ -91,11 +91,11 @@ Route on its report:
 
 - `FAILING-TEST` lines → candidate implementation bugs, the split working as designed. Dispatch `/fix` scoped to make the named behaviors pass WITHOUT touching the failing tests' assertions, then re-run the test-writer's `tests-run` command yourself with Bash. Cap: 2 fix rounds; still red → STOP and surface to the user.
 
-  **First decide which side is wrong — the code or the plan.** A `FAILING-TEST` whose scenario cannot run as the plan describes it (the fixture cannot reach that state, the criterion contradicts the domain, two plan sections disagree) is a SPEC defect, and `/fix` is the wrong route. Route those to **AskUserQuestion** exactly as the PLAN-IMPACT gate does, record the outcome in the plan's `## Plan Deviations` section, then re-dispatch the `test-writer` to correct the test — never the coder.
+  **First decide which side is wrong.** A `FAILING-TEST` whose scenario cannot run as planned (unreachable fixture, contradicting criterion, disagreeing sections) is a SPEC defect: route to **AskUserQuestion** as the PLAN-IMPACT gate does, record in `## Plan Deviations`, then re-dispatch the `test-writer` — never the coder.
 
 - `UNDERSPECIFIED` lines → surface in the phase summary; a success criterion left untested by one blocks marking the phase done (plan gap — treat like a missing Success Criteria section, step 2).
 
-**Log every spec defect resolved above as an escape, at the moment it resolves** — one row per defect, before advancing. The plan's `## Plan Deviations` entry records the decision; this row makes the failure countable:
+**Log every spec defect resolved above as an escape, at the moment it resolves** — one row per defect, before advancing (the Deviations entry records the decision; this row makes it countable):
 
 ```bash
 bash ~/.claude/scripts/log-escape repo=<basename> stage_found=phase-gate \
@@ -139,14 +139,14 @@ bash ~/.claude/scripts/log-escape repo=<basename> stage_found=phase-gate \
 
    **Pass `reviewers: <domains>` verbatim from this phase's Phase Status line** (`plan-format.md`), when it has one. The loop's Step 6b unions plan-declared ∪ force flag (`+sec`/`+perf`/`+smell`) ∪ diff trigger; `no-specialist` suppresses the pass.
 
-   Do NOT `Skill`-invoke `/review` here — that re-injects its body into this context once per phase. `/review` remains the user-facing entry point for manual review and dispatches the same agent.
+   Do NOT `Skill`-invoke `/review` here — that re-injects its body into this context once per phase; it stays the user-facing entry for manual review.
 
    **Route on the returned `status`** — first match wins:
-   - **`plan-impact`** → raise the **AskUserQuestion** modal (assumed → found → what changes; `Adopt plan change` / `Keep plan as written` / `Discuss`), record the answer in the plan's `## Plan Deviations` section, then re-dispatch `review-loop` with the decision and BOTH returned counters preserved (`iter` and `spec_iter`). The agent cannot raise a modal; this routing is why.
+   - **`plan-impact`** → raise the modal exactly as step 4's PLAN-IMPACT gate (record in `## Plan Deviations`), then re-dispatch `review-loop` with the decision and BOTH counters preserved (`iter` and `spec_iter`).
    - **`critical-blocker`** → STOP. Present `blockers`, do NOT mark the phase done, do NOT advance.
    - **`cap-reached`** → STOP. Report `findings_remaining`. Do NOT mark the phase done. The session is correctly left `dirty`, so `git commit` stays blocked.
-   - **`deferred`** → the correctness budget (one round) was spent and the residue was logged for branch exit. This is a NORMAL completion, not a stop: render the packet exactly as for `converged`, then additionally print `findings_remaining` under `### Deferred to branch exit` so the residue is visible now rather than only at `/branch-recap`. Record convergence and proceed to the phase gates as below. Do NOT re-dispatch the loop to chase them — that is the budget this status exists to enforce.
-   - **`converged`** → render the packet — `### Fixed` from `fixed[]` (`blocker` items first and marked), then `perf[]` under its own heading, then `skipped_fp[]` and `nit[]`. Present `ask[]` to the user and wait; never auto-fix an ask item. Then record convergence — `bash ~/.claude/scripts/review-gate-mark clean` (only ever on a `converged` packet) — and proceed to the phase gates.
+   - **`deferred`** → one-round budget spent, residue logged for branch exit. A NORMAL completion: render as `converged`, plus `findings_remaining` under `### Deferred to branch exit`. Record convergence and proceed. Do NOT re-dispatch to chase them.
+   - **`converged`** → render the packet (`### Fixed` from `fixed[]`, blockers first and marked; `perf[]` under its own heading; `skipped_fp[]`, `nit[]`). Present `ask[]` and wait — never auto-fix. Then `bash ~/.claude/scripts/review-gate-mark clean` and proceed to the phase gates.
 
 6. **Multi-phase plans only — apply the phase-boundary decision**: If step 2 detected a multi-phase plan, after `review-loop` returns `converged` (or `deferred`, which advances the same way) and the phase gates are clean, run the **Phase-boundary decision** (step 2) to choose stop vs. auto-advance. Any other status (`plan-impact`, `critical-blocker`, `cap-reached`) is a STOP — never advance a phase on an unconverged loop. On a STOP, print the matching phase-complete block with all placeholders resolved and wait; when the user confirms (in-session by default — `/clear` only if context genuinely got heavy), re-enter step 2 for the next phase, using the `## Phase Status` section (fallback: `git status` + success criteria) to detect what's already done. On an AUTO-ADVANCE, print the one-line advance notice and re-enter step 2 immediately for the next phase in the same context.
 
@@ -154,9 +154,9 @@ bash ~/.claude/scripts/log-escape repo=<basename> stage_found=phase-gate \
 
 After each phase + review + phase gates, the **Phase-boundary decision** (step 2) selects one of three blocks.
 
-**Deliver every block through the `brief` skill's shape** (`~/.claude/skills/brief/SKILL.md`): Layer 0 is the verdict, the blockers, the one decision owed, and a menu naming what is held back — the block's queue, gate evidence, verification lists and corrections are Layer 1, emitted only when the user asks for that item. The blocks below define what must EXIST at the boundary (nothing may be skipped or left unrun); `brief` decides what gets printed unasked.
+**Deliver every block through the `brief` skill's shape** (`~/.claude/skills/brief/SKILL.md`): verdict + blockers + one decision owed up front; queue, gate evidence, and verification lists held back until asked. The blocks below define what must EXIST at the boundary; `brief` decides what prints unasked.
 
-**A — Auto-advance** (decision rule 5: genuinely `(risk: low)`, all machine gates green, not Phase 1, not the last phase, no exception/cap/ambiguity). No sign-off is requested; do not stop:
+**A — Auto-advance** (decision rule 5). No sign-off is requested; do not stop:
 
 ```
 Phase <N> complete — machine gates green (review ✓, execution ✓, automated-verification ✓). Risk: low. Manual verification: <n> agent-verified, <m> human-only deferred to the /verify packet.
@@ -165,7 +165,7 @@ Phase <N> complete — machine gates green (review ✓, execution ✓, automated
 
 Then re-enter step 2 for Phase <N+1> in the same context — do not wait for the user.
 
-**B — Stop for sign-off** (decision rules 2–4: `(risk: high)` or untagged; OR Phase 1 calibration regardless of tier; OR any tier where a gate needed an exception, a fix loop hit its cap, or the coder flagged an ambiguity):
+**B — Stop for sign-off** (decision rules 2–4):
 
 ```
 Phase <N> complete. Risk: <high | low — Phase 1 calibration | low — exception>. Phase-level sign-off requested.
@@ -210,22 +210,16 @@ Resolution rules:
 
 ### The walkthrough (blocks B and C)
 
-This is what the user reads to sign off on the phase and decide what to stage.
-**Skill-invoke `/stage` to build it** — do not rank files yourself.
+**Skill-invoke `/stage` to build the sign-off walkthrough** — do not rank files yourself.
 
 `/stage` runs the deterministic classifier: it stages the SAFE tier (mechanical,
 invariant-verified) and returns everything else as an ESCALATE / READ / SKIM queue
 in blast-radius order. That queue **is** the "Read first" section — render it, never
 re-rank it, never promote a tier.
 
-- **Behavior delta** — 1–3 lines from the coder's handoff: what the system now does
-  differently. A causal narrative — no paths, no line numbers, no file list. Absent a
-  handoff, derive it from the diff and mark it `derived from diff`.
-- **Read first** — `/stage`'s queue, verbatim, in its order. SAFE-tier files are
-  already staged and do not appear. When the user steps the queue ("next"), `nvim-jump`
-  each entry as it comes up, per `~/.claude/skills/_shared/nvim-jump.md`.
-- **Active recall** — the "Next" block requires the user to state the behavior delta
-  in their own words before advancing. Render it, never answer it for them.
+- **Behavior delta** — from the coder's handoff (absent one, derive from the diff and mark `derived from diff`).
+- **Read first** — `/stage`'s queue, verbatim, in its order. When the user steps the queue ("next"), `nvim-jump` each entry per `~/.claude/skills/_shared/nvim-jump.md`.
+- **Active recall** — render the "Next" block's recall prompt, never answer it for the user.
 
 Two fences:
 

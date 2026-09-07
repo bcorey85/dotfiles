@@ -20,8 +20,8 @@ allowed-tools:
 
 Assist a human peer review of someone else's PR. Two hard differences from `/review`:
 
-1. **Report-only.** The deliverable is understanding + findings for the user to act on as a reviewer. NEVER dispatch `/fix`, never edit files, never run the iter/convergence loop, never log to `~/.claude/review-metrics.jsonl` (that flywheel measures OUR loop; peer findings would pollute it).
-2. **Orientation before judgment.** The user reads the PR through this skill — present what changed and why before any finding is surfaced.
+1. **Report-only.** NEVER dispatch `/fix`, never edit files, never run the convergence loop, never log to `review-metrics.jsonl` (that flywheel measures OUR loop).
+2. **Orientation before judgment** — what changed and why, before any finding.
 
 ## Modifiers
 
@@ -31,7 +31,7 @@ Assist a human peer review of someone else's PR. Two hard differences from `/rev
 
 ## Persist orientation to vault (default — `+ephemeral` skips)
 
-After orientation is presented (step 3), save the orientation block (intent vs diff, ticket, change map, risk surface, state) to `<vault>/Orientations/<yyyy-mm-dd>-<repo>-pr<number>.md` (vault root: `$VAULT_DIR` if set, else `~/vault`) and append a capture line via `~/.local/bin/note "peer-review orientation: <repo>#<number> — [[<note filename without .md>]]"` so the daily recap links it. Re-reviewing the same PR same day overwrites the note. Findings are NOT saved to the vault — they belong to the PR thread and the walkthrough.
+After step 3, save the orientation block to `<vault>/Orientations/<yyyy-mm-dd>-<repo>-pr<number>.md` (`$VAULT_DIR` else `~/vault`) + capture line via `~/.local/bin/note`. Same-day re-review overwrites. Findings are NOT saved — they belong to the PR thread.
 
 ## Instructions
 
@@ -45,7 +45,7 @@ Fetch existing review activity (for dedup in step 4):
 bash "$(dirname "$CLAUDE_SKILL_DIR")/pr-comments/fetch-pr-comments" <number>
 ```
 
-Then fetch the Jira ticket per `~/.claude/skills/_shared/jira-ticket.md` (read it). This skill is an **optional-ticket caller**: resolve the key from the PR's head branch, then title, then body; no key or no Jira MCP → note "reviewing without ticket context" and continue. When found, keep the acceptance criteria verbatim — they drive step 4b and the AC section of the report.
+Then fetch the Jira ticket per `~/.claude/skills/_shared/jira-ticket.md` (read it) — **optional-ticket caller**: key from head branch, then title, then body; no key/MCP → note "reviewing without ticket context" and continue. Keep acceptance criteria verbatim (drives 4b).
 
 ### 2. Materialize the head without touching the working tree
 
@@ -62,9 +62,9 @@ All file reads during review happen in the worktree. Compute the diff with `git 
 
 Present, in this order:
 
-- **Intent vs diff**: what the PR description and Jira ticket claim, one line — then whether the diff actually matches that scope. Flag drift ("description says X, but the diff also touches Y") as an observation, not a finding.
-- **Ticket**: key, status, and the acceptance criteria verbatim (or "no ticket context" and why). If the ticket status is already Done, say so — the PR may be follow-up work or the ticket may be mislinked.
-- **Change map**: files grouped by purpose, one line each, in **suggested reading order** — core logic first, then callers, then tests/config/generated. Note the 1–3 files where the real change lives.
+- **Intent vs diff**: PR + ticket claim, one line — then whether the diff matches. Drift is an observation, not a finding.
+- **Ticket**: key, status, acceptance criteria verbatim (or "no ticket context" + why). Already-Done ticket → say so (follow-up or mislink).
+- **Change map**: files by purpose, one line each, in **reading order** (core → callers → tests/config). Note the 1–3 files where the real change lives.
 - **Risk surface**: only what's present — migrations, auth/permissions, public API or contract changes, concurrency, deleted code/guards, dependency bumps, config defaults flipped.
 - **State**: CI status, draft/ready, who has already reviewed and how many open threads.
 
@@ -74,10 +74,10 @@ Then proceed directly to the full review (step 4) — no gate, no prompt.
 
 Dispatch `code-reviewer` (or `code-reviewer-deep` with `+deep`; otherwise `model: "sonnet"`) with:
 
-- The worktree path as the code root and the exact changed-file list (never let it rediscover scope). >5 files → split along the largest natural boundary, same heuristic as `/review` step 3, parallel dispatch.
-- The PR description — plus the Jira ticket summary and acceptance criteria when found — as intent context. (AC _reconciliation_ stays with the main agent in step 4b; reviewers just get the intent.)
+- The worktree path as code root + exact changed-file list (never rediscover scope). >5 files → split on the largest natural boundary (`review-loop` Step 3 heuristic), parallel dispatch.
+- PR description + ticket summary/AC when found, as intent context. (AC _reconciliation_ stays in 4b.)
 - Existing review-thread locations from step 1, tagged: "already raised by another reviewer — do not re-report; note only if your disposition differs materially".
-- Framing: "Report-only peer review of a colleague's PR. Label each finding with its disposition (`blocker` / `ask` / `fix` / `nit`) and give concrete failure scenarios. For each `blocker`, state the precondition that must hold for the failure to fire — realistic inputs and state a real caller produces, or it isn't blocking. No fixes will be applied from this review." Do NOT include a category checklist — the agent defines its own calibration.
+- Framing: "Report-only peer review of a colleague's PR. Label each finding `blocker`/`ask`/`fix`/`nit` with concrete failure scenarios; each `blocker` states its firing precondition (realistic inputs/state, else not blocking). No fixes follow." Do NOT include a category checklist — the agent defines its own calibration.
 
 ### 4b. Acceptance-criteria reconciliation (main agent, when a ticket was found)
 
@@ -88,26 +88,26 @@ While the reviewers run, reconcile each acceptance criterion against the full di
 - **Not addressed** — nothing in the diff touches it
 - **Not statically verifiable** — needs a runtime check or author confirmation; say which
 
-An unmet criterion is not automatically blocking — the PR may be a deliberate first slice. Present the verdict; let the user judge. But an AC the description _claims_ is done and the diff doesn't deliver → surface prominently.
+Unmet ≠ automatically blocking (may be a deliberate first slice) — but an AC the description _claims_ done and the diff doesn't deliver → surface prominently.
 
 ### 4c. Surprise audit (always, before presenting findings)
 
-A category-tiered review answers "is this line a bug?". This pass answers a different question — **"does this code do something a reviewer who trusted the PR/ticket description would not expect?"** — run it on every full review, without asking; it is part of the first pass, not an opt-in second look.
+This pass answers a different question — **"does this code do something a description-trusting reviewer would not expect?"** Runs on every full review, unasked; part of the first pass.
 
-Main-agent, over the diff and findings you already hold (no new dispatch). The frame is the gap between what the description leads a reader to expect and what the code operationally does — not more of the same category sweep. Look for:
+Main-agent, over the held diff + findings (no new dispatch). The frame is description-vs-operation, not more category sweep:
 
 - **Hidden runtime dependencies** — a feature that silently hinges on something the description never mentions (a browser tab being open, a specific caller, an external timer).
 - **Silent / permanent failure modes** — paths where a transient error, a swallowed exception, or an ordering choice (e.g. state written _before_ a best-effort side effect) loses data or work with no retry and no signal.
 - **Scope surprises** — a limit, cap, default, or deletion that's broader or narrower than the description implies.
-- **"Technically conforms but sharper than the ticket implies"** — edges that meet the acceptance criteria on paper while behaving in a way the author likely didn't intend a reviewer to discover.
+- **"Technically conforms but sharper than implied"** — edges meeting AC on paper while behaving in ways the author likely didn't intend discovered.
 
-**Verify every candidate against the worktree before presenting it** — read the enclosing code, check for the scheduler/guard/retry the candidate assumes is absent, confirm the true scope of a cap or filter. This step is not optional.
+**Verify every candidate against the worktree first** — read enclosing code, check for the assumed-absent guard/retry, confirm cap scope. Not optional.
 
-Merge survivors into the tiers presented in step 5, tagged `(surprise-lens)` so the user sees they came from this pass, not the category review. A survivor merged into Blocking states the precondition that must hold for the failure to fire, same as step 4's findings. Drop refuted candidates silently (or note one line if the user would otherwise expect it).
+Merge survivors into step 5's tiers tagged `(surprise-lens)` (Blocking ones state preconditions, as in step 4). Drop refuted candidates silently.
 
 ### 5. Present findings, tiered
 
-**Never use a markdown table for a finding.** Output renders in a terminal, which collapses a wide table into an unreadable label stack. One finding = one short heading plus prose. Tables are allowed only where every cell is a few words (acceptance criteria, the others-raised list).
+**Never a markdown table for a finding** — terminals collapse wide tables. One finding = short heading + prose. Tables only where every cell is a few words.
 
 ```
 ## Peer Review — PR #<n>: <title>
@@ -137,9 +137,9 @@ Merge survivors into the tiers presented in step 5, tagged `(surprise-lens)` so 
 | Author | File:Line | Overlaps finding # |
 ```
 
-Suggestions and nits are one line each, heading and text on the same line. Blocking and Questions get their own paragraph. No bold `Issue:` / `Failure scenario:` / `Fires when:` labels — that is the table in disguise; fold them into the prose.
+Suggestions/nits: one line each. No `Issue:`/`Failure scenario:` labels — the table in disguise; fold into prose.
 
-Number findings continuously across tiers. Surprise-lens survivors from step 4c are already merged into the tiers, tagged `(surprise-lens)`. Then **actively offer the next step via AskUserQuestion**. Two options only:
+Number continuously across tiers. Then **offer the next step via AskUserQuestion** (two options):
 
 - **Walk through the findings** — one at a time, with discussion; proceed to step 6.
 - **Done for now** — stop; the user acts on the findings as-is.
@@ -148,21 +148,21 @@ Number findings continuously across tiers. Surprise-lens survivors from step 4c 
 
 ### 6. Walkthrough (on "walk through")
 
-One finding per turn, in tier order, blocking first. **Never batch** — present one, then stop and wait. Before each finding, move the user's editor to its primary anchor per `~/.claude/skills/_shared/nvim-jump.md` (main-checkout path, not the worktree). The user's reply is a conversation, not a menu selection: Answer pushback, and only then offer to move on.
+One finding per turn, tier order, blocking first. **Never batch.** Before each, jump the user's editor to its anchor (`~/.claude/skills/_shared/nvim-jump.md`; main-checkout path, not worktree). Replies are conversation, not menu selection.
 
-Per finding, before presenting it: read the enclosing function and its callers in the worktree (LSP find-references; `rg` fallback — the worktree has no installed deps, so the language server may not resolve) and check whether the failure path is guarded elsewhere. Then give the finding, a concrete failing input, and a verdict:
+Before presenting each: read enclosing function + callers in the worktree (LSP; `rg` fallback — no installed deps there) and check for an elsewhere-guard. Then finding + concrete failing input + verdict:
 
 - **CONFIRMED** — the trace from input to wrong behavior, quoting lines.
 - **REFUTED** — quote the guard/invariant that makes it impossible. Say it plainly.
 - **PLAUSIBLE** — reachable but depends on state you can't verify statically; say what would settle it (a test to run, a question to ask the author).
 
-End each finding by asking whether to continue to the next, drop it, or stop. Track which findings are done, which the user dismissed, and which they want commented on — step 7 needs that list. Findings the user dismisses are dropped, not re-argued.
+End each by asking: continue, drop, or stop. Track done/dismissed/comment-wanted for step 7. Dismissed = dropped, not re-argued.
 
 The user can also name numbers (`walk 1 3 5`) to walk a subset, or type `next` / `stop` at any point.
 
 ### 7. Wrap up
 
-- `+comment` present: draft one GitHub comment per finding the walkthrough marked for comment (never a dismissed one) (constructive reviewer tone — describe the failure scenario, suggest, don't command; phrase PLAUSIBLE items as questions). Show the full draft and post via `gh` only after explicit approval.
+- `+comment`: draft one GitHub comment per comment-marked finding (never dismissed; constructive tone — describe, suggest, don't command; PLAUSIBLE as questions). Show full draft; post via `gh` only after explicit approval.
 - Always: `git worktree remove "${TMPDIR:-/tmp}/peer-review-<number>" --force` and confirm removal.
 
 ## Arguments

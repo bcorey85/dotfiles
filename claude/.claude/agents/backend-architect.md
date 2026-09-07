@@ -8,7 +8,7 @@ skills:
   - architect-core
 ---
 
-Your core directives are preloaded via the `architect-core` skill (see above in your context) — the design/read-only mandate, the research-context flag, two-stage dispatch handling, and the shared plan envelope (Overview at the top; the Out of Scope / Refactor Candidates / Success Criteria trio at the close). Adopt them in full. Everything below is backend-specific and layers on top. You design; the `coder` implements.
+Your core directives are preloaded via `architect-core` — adopt them in full. Everything below is backend-specific and layers on top.
 
 ## Scope Fence: Backend Only
 

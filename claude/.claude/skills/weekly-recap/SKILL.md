@@ -6,34 +6,30 @@ description: Roll the week's Daily notes into one weekly review note (decisions,
 
 # Weekly Recap
 
-Compile one week of Daily notes into a weekly review. Idempotent: re-running for the same week rewrites that week's note from the same sources. The org files are read-only sources — never modify them.
+Compile one week of Daily notes into a weekly review. Idempotent per week. Org files read-only — never modify.
 
-Vault root: `$VAULT_DIR` if set, else `~/vault`; org dir: `<vault>/org`. Target week: the ISO week (Mon–Sun) containing the argument date if one was given, else today. Derive the label with `date +%G-W%V` (ISO year, not calendar year).
+Vault `$VAULT_DIR` else `~/vault`; org `<vault>/org`. Target week = ISO week (Mon–Sun) of argument date else today (`date +%G-W%V`, ISO year).
 
 ## Gather (read-only; skip any unavailable source gracefully — never fail the run)
 
-1. **Daily notes**: `<vault>/daily/<date>.md` for each day of the target week. Missing days are normal (weekends, PTO) — skip silently. Do not re-query GitHub (the dailies already carry that day's PR activity).
-2. **Open todos**: every `TODO`/`NEXT`/`WAITING` headline in the **swept files** (below), read at compile time. The org files are the live list — no carry-forward bookkeeping; whatever is still open is still open.
+1. **Daily notes** for each target-week day. Missing days normal — skip silently. Never re-query GitHub (dailies carry PR activity).
+2. **Open todos**: every `TODO`/`NEXT`/`WAITING` in the **swept files**, read at compile time (live list — no carry-forward).
 
-   **Swept files — an allowlist, not the whole of `org/`**: `<vault>/org/inbox.org` and `<vault>/org/projects/*.org`. Those are the work checklist. Every other file in `org/` is a lane with its own semantics and is **never** swept for todos: `books.org` is a reading queue (its `TODO`/`WAITING` entries are books, not work — they do not "slip" and must not be aged), `bookmarks.org` / `questions.org` / `notes.org` are capture lanes, `journal.org` is a log, `achievements.org` is the authorship signal above.
+   **Allowlist, not all of `org/`** (`inbox.org` plus `projects/*.org`). Never swept: `books.org` (reading queue — entries do not slip, never age), `bookmarks`/`questions`/`notes` (capture lanes), `journal.org` (log), `achievements.org` (authorship, below).
 
-3. **Achievements**: entries in `<vault>/org/achievements.org` whose inactive `[YYYY-MM-DD Day]` stamp falls in the target week. **This file is the only source for the Achievements section** — see the authorship rule below.
+3. **Achievements**: `achievements.org` entries stamped in-week. **Only source for the Achievements section** (authorship rule below).
 4. Never fabricate content. A section with no source material gets `- none captured`.
 
 ### The authorship rule — do not infer who did the work
 
-Nothing else in the pipeline carries an authorship axis. A daily note's `## My work` section implicitly attributes everything in it to the user, and its `## Decisions` / `## Roadblocks` sections routinely carry things a **teammate** did, tagged only by project (`cdc team - …`). `done:` in a capture means "this task is finished", not "I finished it".
-
+Nothing else carries authorship: daily `My work` implies the user, but Decisions/Roadblocks routinely carry work a teammate did; `done:` means finished, not the user finished it.
 So: **never derive an achievement from a daily note, an org todo, or GitHub activity.**
 
-`achievement` (`prefix n A`) is the whole signal: if the user typed it there, it is theirs. If they did not, it does not exist. An empty week is `- none captured`, and that is a correct answer, never a prompt to go looking in the dailies.
+`achievement` (`prefix n A`) is the whole signal — untyped means nonexistent. Empty week means `- none captured`, never a prompt to go looking.
 
 ## Write
 
-Write `<vault>/Weekly/<ISO week>.md` (create the folder if needed). If the file
-already exists and has a `## Focus` or `## Reflection` section, preserve each one
-verbatim at the top — those are human-authored (`/vault-review`), and the compile
-owns every other section, never those two:
+Write `<vault>/Weekly/<ISO week>.md`, preserving existing `## Focus`/`## Reflection` verbatim at top (human-authored; compile owns the rest):
 
 ```markdown
 # Weekly Recap — <ISO week> (<Mon date> – <Fri date>)
@@ -74,7 +70,7 @@ Preserve people's names and ticket/PR references exactly.
 
 ## Achievements doc
 
-Append the `## Achievements` bullets to `<vault>/Achievements/<ISO year>.md` under a `## <ISO week>` heading (create file/folder if needed). If that heading already exists, replace its section instead of duplicating — the achievements doc stays one section per week.
+Append `## Achievements` bullets to `<vault>/Achievements/<ISO year>.md` under `## <ISO week>` (create as needed; existing heading means replace section, one section per week).
 
 ## Finish
 

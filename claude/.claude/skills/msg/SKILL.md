@@ -21,4 +21,4 @@ Verbs:
 - `peek [repo]` — print inbox without consuming
 - `list` — list all inboxes that have pending mail
 
-After a `read` or `peek`, act on any messages received: answer questions, produce requested output, or note that the inbox was empty.
+After `read` or `peek`, act on messages: answer, produce, or note empty inbox.

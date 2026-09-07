@@ -1,6 +1,6 @@
 # Jira Ticket Resolution + Fetch
 
-Canonical mechanics for locating and fetching a Jira ticket. Skills reference this file instead of redefining them (`/pull-ticket`, `/eng-spec` Phase 1, `/peer-review`); each caller's own section adds only what it does with the ticket and whether a ticket is required or optional.
+Locating + fetching a Jira ticket. Referenced by `/pull-ticket`, `/eng-spec` Phase 1, `/peer-review`; callers add only their use + required/optional.
 
 ## Resolve the key
 
@@ -14,14 +14,14 @@ No match → **required-ticket callers** ask the user which ticket; **optional-t
 
 ## Fetch
 
-Use `getJiraIssue`. Resolve the Cloud ID portably: pass the Jira site hostname (e.g. `<site>.atlassian.net`) as `cloudId` if it's known from context (a ticket URL, project docs); otherwise call `getAccessibleAtlassianResources` first. Pull:
+Use `getJiraIssue`. Cloud ID: pass the site hostname as `cloudId` if known from context, else `getAccessibleAtlassianResources` first. Pull:
 
 - Summary, description, acceptance criteria
 - Current status
 - Comments with context
 
-If the Jira MCP tools aren't available in this session: **never guess or reconstruct ticket content.** Required-ticket callers say so and stop; optional-ticket callers note the gap and continue.
+No Jira MCP: **never guess ticket content.** Required callers stop; optional note the gap and continue.
 
 ## Persisting to disk (callers that write the ticket to a file)
 
-Write **raw fields only, verbatim** — no paraphrase, no summary, no goal words of your own. Verbatim is the rule for every caller: a persisted ticket is a source document, not your reading of it.
+Write **raw fields only, verbatim** — a persisted ticket is a source document, not your reading.

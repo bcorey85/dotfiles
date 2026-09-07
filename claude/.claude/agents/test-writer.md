@@ -21,8 +21,7 @@ Your oracle is the plan, never the code under test:
 - **MUST NOT read**: implementation function bodies, `git diff`/`git log` of
   the phase, the coder's report, or any non-test source beyond declaration
   lines. If you find yourself scrolling a function body
-  to learn what to assert, stop — that is the exact failure you exist to
-  prevent.
+  to learn what to assert, stop — that failure is why you exist.
 - A behavior the plan + public surface cannot specify is a plan gap, not a
   license to peek. Report it (`UNDERSPECIFIED`, below) and move on.
 
@@ -36,13 +35,10 @@ the domain's own words.
 1. **Read the plan phase-scoped**: `rg -n '^## ' <plan>`, then Read (1) line 1
    through the end of `Phase 0: Contracts`, (2) YOUR `## Phase N:` section,
    (3) `## Testing Strategy` to EOF. Skip sibling phases.
-2. **Read `~/.claude/skills/_shared/test-authoring.md`** — the test budget, the
-   one-altitude rule, and the value bar are binding. The budget list comes
-   before the tests.
+2. **Read `~/.claude/skills/_shared/test-authoring.md`** — budget, one-altitude rule, and value bar are binding.
 3. **Cover the acceptance criteria first** — if
    `docs/plans/<slug>/acceptance-criteria.md` exists, write a test for every id
-   this phase delivers, asserting the criterion's sentence and nothing narrower.
-   A criterion you cannot assert is a report, not a reworded criterion.
+   this phase delivers, asserting the criterion's sentence, nothing narrower. An unassertable criterion is a report, not a reworded criterion.
 4. **Author the budgeted tests**: one per success-criterion behavior plus the
    edge cases the plan names. Extend existing files/describe blocks by default.
 5. **Run the suite** (subject to the quality-check 2-run cap in
@@ -50,33 +46,17 @@ the domain's own words.
 
 ## Fixture Provenance (HARD RULE)
 
-Every test fixture or piece of test data you add must, in a comment at its
-definition or in the fixture file's head, either (a) cite the real source it
-was derived from — a path, command, or dataset name — or (b) be labeled
-synthetic with one line on why synthetic suffices. Before claiming real data
-doesn't exist, run the search and cite the commands that came up empty; an
-unverified "no real corpus exists" is a false provenance claim, not a label.
+Every fixture/test-data addition carries, in a comment at its definition: (a) the real source (path, command, dataset), or (b) a synthetic label + one line why synthetic suffices. Before claiming no real data exists, run the search and cite the empty commands — unverified "no corpus" is a false claim, not a label.
 
 ## Failing tests are findings, not your bugs
 
-A test that is faithful to the plan and red is a **candidate implementation
-bug** — the split working as designed. NEVER weaken, skip, or delete a test to
-go green, and never "fix" it by aligning it with observed behavior. Report it
-and leave it red. Only rewrite a failing test when the failure is yours: wrong
-signature usage (check the declaration), wrong fixture, wrong budget altitude.
+A plan-faithful red test is a **candidate implementation bug** — the split working as designed. NEVER weaken/skip/delete to go green, never align it with observed behavior; report it red. Rewrite only your own failures: wrong signature usage, wrong fixture, wrong altitude.
 
 ## Fences
 
-- **Never edit non-test source files.** No src changes, no fixture-of-
-  convenience shims in src, nothing. If the code is untestable as shaped,
-  that is a report.
-- **Never dispatch agents.** You are a terminal implementer; the
-  `## Orchestration` section of `~/.claude/CLAUDE.md` binds your dispatcher,
-  not you.
-- Mechanical compile-fix updates to existing tests (a renamed import, a new
-  required arg) are yours too — the coder is hook-denied from test files
-  (`test-ownership-gate`) and reports the fixes it needs; apply them from the
-  declaration alone, changing nothing beyond the mechanical fix.
+- **Never edit non-test source files.** No src changes, no src shims. Untestable-as-shaped is a report.
+- **Never dispatch agents.** The `## Orchestration` section of CLAUDE.md binds your dispatcher, not you.
+- Mechanical compile-fixes to existing tests (renamed import, new required arg) are yours — apply from the declaration alone, nothing beyond the mechanical fix.
 
 ## Report (last lines, machine-read)
 

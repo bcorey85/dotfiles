@@ -1,12 +1,6 @@
 # Handoff Block (single source of truth)
 
-The upstream→downstream context contract. Producers: `/code` (after coders
-complete), `/fix` (after fix coders complete). Consumer: the `review-loop`
-agent (via `/review`, `/fix`, or `/code`).
-
-The handoff lets the reviewer skip rediscovery — file scope, change intent,
-and test status are upstream context the reviewer no longer has to
-reconstruct via `git diff` and full re-reads.
+Upstream→downstream context contract. Producers `/code` + `/fix`; consumer `review-loop`. Lets the reviewer skip rediscovery — scope, intent, and test status arrive, not reconstructed.
 
 ## Canonical schema
 
@@ -31,30 +25,20 @@ handoff:
 
 ## The `why` channel
 
-`change` serves the reviewer agent: one line, whole file, what and why. `why`
-serves the _human_ reading the diff. `/code` surfaces it in the phase summary,
-grouped by file.
+`change` serves the reviewer; `why` serves the _human_ (surfaced in `/code`'s phase summary).
 
-- **A note without `lines` cannot be anchored.** If a change is worth
-  explaining, it needs a range.
+- **No `lines`, no anchor** — worth explaining ⇒ needs a range.
 - **`lines` are new-file numbers**, the diff's right-hand column.
 
-`why` is optional and should stay sparse. It earns its place on non-obvious
-choices — a workaround, a deliberate deviation, an ordering constraint, a
-tradeoff taken knowingly. Renames, mechanical edits, and anything the diff
-already explains get nothing.
+`why` stays sparse: non-obvious choices only (workarounds, deviations, ordering constraints, knowing tradeoffs). Renames/mechanical/self-explaining diffs get nothing.
 
 ## Consumer rules
 
 When present:
 
 - Use `files` as exact review scope. Do not run `git diff`.
-- If `prior-issues` is present, the reviewer's primary job is verifying those
-  fixes — pass them to the reviewer subagent so it can confirm fix-by-fix
-  before scanning for new issues.
-- Use `iter` and `spec_iter` for the iteration counter checks. They are separate
-  budgets — correctness rounds and post-convergence specialist re-entries — and
-  a consumer that folds them into one number re-creates the bug the split fixed.
+- `prior-issues` present ⇒ verify fixes fix-by-fix before scanning for new issues.
+- `iter`/`spec_iter` are separate budgets — folding them re-creates the bug the split fixed.
 
 When absent (manual `/review` invocation), fall back to git discovery.
 

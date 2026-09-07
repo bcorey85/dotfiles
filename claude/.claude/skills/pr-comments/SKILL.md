@@ -6,17 +6,16 @@ allowed-tools: [Bash, Read, Glob, Grep, Skill]
 
 # PR Comments
 
-Pull every review comment on the current branch's PR — inline and top-level, from any author (humans, Copilot, Claude bot, etc.) — triage each one, and present actionable findings.
+Pull every review comment on the branch PR (inline plus top-level, any author), triage, present actionable findings.
 
 ## Modifiers
 
-- `+fix` — After triage, auto-dispatch `/fix` with the valid findings to fix them.
-- `+fast` — Passed through to `/fix` if `+fix` is also present.
-- `+deep` — Passed through to `/fix` if `+fix` is also present.
+- `+fix` means auto-dispatch the /fix skill with valid findings after triage.
+- `+fast` and `+deep` pass through to the fix skill, with `+fix` only.
 
 ## Instructions
 
-0. **Check for prior triage**: If the current conversation already contains a "PR Comments Triage" table with "Valid (Actionable)" findings from an earlier `/pr-comments` run, skip steps 1-4 and reuse those findings. Go directly to step 5.
+0. **Prior triage table with Valid findings already in conversation means skip to step 5 and reuse them.**
 
 1. **Fetch + dedup via the bundled script**:
 
@@ -24,15 +23,15 @@ Pull every review comment on the current branch's PR — inline and top-level, f
    bash "${CLAUDE_SKILL_DIR}/fetch-pr-comments"
    ```
 
-   Outputs `{pr, url, inline, reviews}` JSON. Inline comments are already deduplicated — replies dropped, only the most recent comment per `(path, line, author)` kept — and top-level review bodies are filtered to non-empty. If the script exits non-zero with "no PR", tell the user and stop. Do NOT re-fetch or re-dedup by hand.
+   Outputs pr, url, inline, reviews JSON, deduped to latest per file-line-author with non-empty bodies. A no-PR exit means tell the user and stop. Never re-fetch or re-dedup by hand.
 
 2. **Triage each comment** by reading the file at the referenced path and line:
-   - **Already fixed** — the code no longer matches what the comment flagged (likely addressed in a later commit)
-   - **Valid** — the issue still exists in the current code
-   - **Invalid / Wrong** — the commenter misunderstood the code, API, or convention
-   - **Low priority** — technically valid but not worth fixing now (cosmetic, stylistic, or pre-existing)
+   - **Already fixed** (code moved past it)
+   - **Valid** (still present)
+   - **Invalid** (commenter misunderstood)
+   - **Low priority** (valid but not worth it now)
 
-3. **Present findings** as a table, with an Author column so the user can weight bot vs human input:
+3. **Present findings** as tables (Author column weights bot vs human):
 
    ```
    ## PR Comments Triage — PR #{number}
@@ -54,21 +53,19 @@ Pull every review comment on the current branch's PR — inline and top-level, f
    | ...    | ...  | ...  | ...   | ...    |
    ```
 
-4. **Log escapes** — one line per **Valid (Actionable)** finding, before any fix runs. Nothing else in the triage logs: `Already Fixed` never escaped a gate, `Invalid / Wrong` is not a defect, and `Low Priority` is a judgment call the gates were calibrated to suppress. A comment that is a new requirement or a change of direction is not an escape either — a gate cannot miss information it never had.
+4. **Log escapes** — one line per **Valid (Actionable)** finding, before any fix. Nothing else logs: Already Fixed never escaped, Invalid is not a defect, Low Priority is calibrated suppression, new-requirement comments are not escapes.
 
-   Run the ratchet first (`~/.claude/skills/_shared/escape-ratchet.md`, including its ADR addendum), batching by `class` across the actionable set, then per finding:
+   Ratchet per `~/.claude/skills/_shared/escape-ratchet.md` including ADR addendum, batched by class; then per finding:
 
    ```bash
    bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=<pr-human|pr-bot> gate_missed=<review|test-intent|eng-spec> class=<bug|smell|duplication|complexity|plan-drift|test-gap|other> severity=<high|medium|low> lane=<eng-spec|code|other> guard=<...> desc="<comment gist>" file=<path>
    ```
 
-   `stage_found` splits by commenter: `pr-human` for a person, `pr-bot` for Copilot / the Claude review bot / any other automated reviewer. `gate_missed=eng-spec` when the code faithfully matched a wrong plan, `test-intent` when the comment is about a test pinning current behavior, `review` otherwise. Infer `lane` from the branch's planning artifacts (eng-spec doc → `eng-spec`, direct dispatch → `code`); ask only when genuinely ambiguous. Surface the proposed guard with the triage table and apply it on approval.
+   `stage_found`: human commenter means pr-human, automated reviewer means pr-bot. `gate_missed`: faithful-to-wrong-plan means eng-spec, test-pinning-behavior means test-intent, else review. `lane` from planning artifacts; ask when ambiguous. Surface proposed guard with the table; apply on approval.
 
 5. **If `+fix` modifier is present** and there are valid actionable items:
-   - Format the valid findings as review feedback (file paths, line numbers, issue descriptions, author for context). For Aikido findings (`author` = `aikido-pr-checks[bot]`), also pass each comment's `comment_id` (the `id` field from the fetch output) so `/fix` step 6 can reply `Fixed.` / `@AikidoSec ignore: <reason>` on the thread.
-   - Invoke `/fix` skill, passing through any `+fast` or `+deep` modifier
-   - If no valid items found, tell the user there's nothing to fix
-
+   - Format valid findings as review feedback (paths, lines, issues, author). Aikido findings also pass each comment's `id` from the fetch output as `comment_id` for thread replies in the fix skill.
+   - Invoke the fix skill, passing through +fast or +deep; nothing valid means say so.
 6. **If `+fix` is NOT present**, end with:
    > Run `/pr-comments +fix` to auto-fix the valid items, or `/fix` manually after reviewing.
 

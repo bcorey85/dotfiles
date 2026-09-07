@@ -21,7 +21,7 @@ Run the classifier from the repo being staged:
 node <skill-base-dir>/scripts/stage.mjs --json
 ```
 
-Single source of truth for tier + risk. Do not reclassify, promote into SAFE, or soften an ESCALATE — if you disagree, say so in the report but leave tiers as emitted. If it errors, report and stop. (The output's `hash`, `cachedClean`, `cacheFile`, and `review` fields are legacy from the removed verify pass — ignore them; do not write the verdict cache.)
+Single source of truth for tier + risk — never reclassify, promote to SAFE, or soften ESCALATE (disagreements go in the report). Errors → report and stop. (Ignore legacy `hash`/`cachedClean`/`cacheFile`/`review` fields.)
 
 - **ESCALATE** = high-risk. Hot paths (auth, payments, migrations, CI, infra), enforcement-config edits, and tripwires (test skip/only added, assertions/test cases removed net, suppressions added, lockfile drift, deleted tests, deleted/renamed module still imported). **Read first — never staged.**
 - **READ / SKIM** = semantic but lower blast radius. Read, in that order.
@@ -51,7 +51,7 @@ If M is small, say so plainly.
 
 ### Phase 4: Log the run (flywheel)
 
-Every invocation, append one row to the shared review flywheel:
+Every invocation appends one flywheel row:
 
 ```bash
 bash "$HOME/.claude/skills/review/log-review-metrics" \
@@ -59,12 +59,12 @@ bash "$HOME/.claude/skills/review/log-review-metrics" \
   suppressed=<N staged> queue=<M left to read> result=<clean|residue>
 ```
 
-`result=clean` when the queue is empty, else `residue`. If the script fails, mention it and continue — telemetry never blocks.
+`result=clean` on empty queue, else `residue`. Telemetry never blocks.
 
 ### Phase 5: Calibration hook
 
-Any bug later found in a mechanically-staged file → `/escape` with `gate_missed=stage` (plus the usual `stage_found`/`class`/`severity` fields). That is ground truth on whether a SAFE class's invariant actually holds. On any such escape: the class comes out of `stage.mjs` until the invariant is fixed — mechanical tiers tighten on evidence, never loosen without it.
+Bug later found in a mechanically-staged file → `/escape` (`gate_missed=stage`): ground truth on the SAFE invariant. On escape, the class leaves `stage.mjs` until fixed — tiers tighten on evidence, never loosen without it.
 
 ## Extending
 
-Per-repo tuning in `.stage.json` (`hotPaths`, `skim` regex arrays, merged with defaults). `hotPaths` _is_ the high-risk gate — add contract/shared-types, data-deletion, and contract-freeze paths so they always land at the top of the queue. New SAFE classes are added in `scripts/stage.mjs` only — each needs a checkable invariant, not a filename pattern.
+Per-repo tuning in `.stage.json` (`hotPaths` = the high-risk gate: add contract/data-deletion/freeze paths; `skim` regexes). New SAFE classes live in `scripts/stage.mjs` — each needs a checkable invariant, not a filename pattern.

@@ -25,10 +25,7 @@
 
     ## Direction & Constraints
 
-    <!-- Anything the conversation established that is NOT a decision: a
-    constraint the user named, a direction ruled out, a premise of the ticket
-    they corrected. These are the first casualties of compaction and nothing
-    else captures them. -->
+    <!-- NOT-a-decision context: user constraints, ruled-out directions, corrected ticket premises. Compaction's first casualties, captured nowhere else. -->
     ```
 
     Items are ADD-ONLY: a decision that surfaces mid-conversation gets appended to
@@ -36,47 +33,32 @@
 
 ## Then resolve
 
-12. **Present understanding FIRST**, before any decisions: current state, the
-    patterns found (ask the user to confirm they are the RIGHT ones to follow),
-    constraints, and the architect's **counter-primed approaches** — three, or
-    however many it said it could name.
-    Whatever this exchange settles goes under `## Direction & Constraints` in the
-    ledger _as it lands_, not later.
+12. **Present understanding FIRST**: current state, patterns (confirm they're the RIGHT ones), constraints, counter-primed approaches.
+    Whatever settles goes under `## Direction & Constraints` _as it lands_.
 
 13. **Write the answer down before you ask the next question.** The moment a
     decision resolves, `Edit` `03-decisions.md`: append the full four-field block
-    (`~/.claude/skills/_shared/design-decision-format.md`) under `## Resolved`,
-    tick its queue line, bump the `Status:` count. Not a note-to-self, not a
-    one-liner — the finished block: Phase 6 architects and the saved spec read
-    this file.
+    (format: `~/.claude/skills/_shared/design-decision-format.md`) under `## Resolved`,
+    tick its queue line, bump `Status:`. The finished block — Phase 6 reads this file.
 
     Compacted, or unsure what is settled → re-read `02-research.md` and
     `03-decisions.md`. **Never reconstruct a resolved decision from memory, and
     never re-ask one that is already ticked.**
 
-14. **Resolve decision points ONE AT A TIME, in prose. Never `AskUserQuestion`
-    here.** The decision points ARE the
-    interview. Walk the ledger's queue, each as written English:
+14. **Resolve ONE AT A TIME, in prose. Never `AskUserQuestion` here** — the decision points ARE the interview:
 
     - what the decision is, and why it is live (what in the research forces it)
     - the options with their real costs — **all of them**, and what each one makes
       worse
-    - your recommendation, stated last and stated as a recommendation
+    - your recommendation, stated last
     - **then stop and wait.** Do not bundle the next question into the same turn.
 
-    Expect a question back rather than a choice.
-    Follow it and ask follow-ups freely; there is no question quota.
+    Expect a question back, not a choice; follow it freely — no question quota.
 
-    **Split the check out of the decision.** A claim shaped like _"we know X
-    because we looked at Y"_ — does this record exist? is this the same user? is
-    this value unique? — is its own decision. Ask it as its own question, never as
-    a subordinate clause.
+    **Split the check out of the decision.** A claim shaped like _"we know X because we looked at Y"_ is its own decision — ask it separately, never as a subordinate clause.
 
     **Scope gate (blocking).** A decision that would add a migration, index,
     table, endpoint, or dependency the ticket did not imply: **stop and say so,
     with the cost.** Scope is the ticket-owner's call.
 
-    Do NOT write the spec and do NOT dispatch finalization until every decision
-    point and open question is resolved. **The completeness test is mechanical:
-    every queue line in `03-decisions.md` ticked.** Not "the conversation feels
-    finished" — read the ledger and check.
+    No spec, no finalization until every queue line in `03-decisions.md` is ticked — the completeness test is mechanical, not "feels finished".

@@ -6,30 +6,18 @@ allowed-tools: [Bash, Read, Glob, Grep, Write, Edit, AskUserQuestion]
 
 # ADR
 
-The one decision-record tool. It covers `/eng-spec` features and small changes
-where a real decision was made but no spec exists.
+Covers `/eng-spec` features and small changes with a real decision but no spec.
 
 ## Gate: is there a decision here?
 
-An ADR records a DECISION WITH ALTERNATIVES. The test: can you name at least one
-alternative a reasonable engineer might have picked? If the work involved no real
-choice (mechanical change, single obvious approach), say so and stop — a trail of
-no-decision ADRs buries the load-bearing ones.
+An ADR records a DECISION WITH ALTERNATIVES — name one a reasonable engineer might have picked, or stop. No-decision ADRs bury the load-bearing ones.
 
 ## Sources (best-first)
 
-1. An `/eng-spec` task directory (`docs/plans/<slug>/`) passed in
-   `$ARGUMENTS` or matching the branch/ticket key. Its `spec.md` holds the
-   decisions; `03-decisions.md` is the ledger they were logged into as they were
-   resolved (richer than the spec — it carries the `## Direction & Constraints`
-   the conversation established); `02-research.md` holds the facts they were made
-   against. Resolve it with `~/.claude/scripts/resolve-task-dir.sh` — do NOT
-   reimplement the lookup.
+1. An `/eng-spec` task dir (`docs/plans/<slug>/`, from `$ARGUMENTS` or branch/ticket key): `spec.md` (decisions), `03-decisions.md` (richer ledger plus Direction and Constraints), `02-research.md` (facts). Resolve via `resolve-task-dir.sh` — never reimplement.
 2. A legacy flat plan file (`docs/plans/<KEY>-*.md`, or the old `docs/eng-specs/`).
 3. The conversation — design decisions discussed and resolved above.
-4. The branch diff (merge-base vs default branch) — for what actually shipped and
-   for anti-patterns the work uncovered. Do not turn it into a tour of the new
-   code: the ADR explains the decision, eng-arch describes the code.
+4. The branch diff — what shipped plus uncovered anti-patterns. Not a code tour: ADR explains the decision, eng-arch the code.
 5. The ticket, if one exists.
 
 ## Process
@@ -37,21 +25,12 @@ no-decision ADRs buries the load-bearing ones.
 1. Apply the gate above.
 2. Read `~/.claude/skills/_shared/adr-template.md` and follow it in full —
    structure, section line caps, skimmability, mutation discipline.
-3. Detect the PR: `gh pr view --json url,number,title` on the current branch;
-   else `gh pr list --search "<KEY>" --state all`; else `(pending)`. `(pending)` is
-   the NORMAL case — this runs before the PR opens. Do not wait for a PR, and do
-   not invent a URL; the header is mutable metadata, fill it in once the PR exists.
-4. Draft the ADR. Where a section's source material is thin (common for small
-   features), keep it honest and short rather than padding — but
-   `Alternatives rejected` and `Assumptions` must be real. If you cannot fill them
-   from the sources, **ask the user rather than inventing.**
+3. Detect the PR (`gh pr view`, else `gh pr list --search`, else `(pending)` — the NORMAL pre-PR case). Never wait, never invent a URL; fill the mutable header once it exists.
+4. Draft honestly and short where sources are thin — but `Alternatives rejected` plus `Assumptions` must be real; unfillable means **ask, never invent.**
 5. Write to `docs/decisions/<KEY>-<slug>.md` (ticket key if any, else the
    `feature/<slug>` branch slug). ADRs never share a directory with plans.
-6. **If a task directory was the source, delete it — all of it, no ask.** Never offer to keep the
-   research doc or any other file. Anything worth surviving belongs IN the ADR —
-   if a research fact is load-bearing, fold it into the record before deleting.
-7. Spot-check offer: `Drafted → <path>. Anything to adjust?` Apply edits,
-   re-offer. Then `/commit` picks it up.
+6. **Task dir was the source means delete all of it, no ask.** Worth-surviving content goes IN the ADR first.
+7. Spot-check (`Drafted to <path>. Adjust?`), re-offer. `/commit` picks it up.
 
 ## Arguments
 

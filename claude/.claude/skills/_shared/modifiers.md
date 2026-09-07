@@ -1,17 +1,17 @@
 # Dispatch Modifiers (+fast / +deep)
 
-Canonical semantics for the `+fast` and `+deep` modifiers accepted by the dispatching skills (`/code`, `/fix`, `/refactor`, `/review`, `/cc`, `/pr-comments`). Skills reference this file instead of redefining the mechanics; each skill's own Modifiers section adds only its when-to-use guidance and any skill-specific modifiers (like `/cc`'s `+show`).
+Semantics for `+fast` / `+deep` (dispatching skills reference this). Skills add only when-to-use + skill-specific modifiers.
 
 ## `+fast`
 
-Pass `model: "haiku"` on every coder/reviewer dispatch the skill makes. This is a deliberate call-site downgrade of a sonnet-pinned agent — the agent-model-guard hook allows it. Use for trivial work: renames, typos, simple one-line changes, quick sanity checks.
+Pass `model: "haiku"` on every dispatch (deliberate downgrade; the agent-model-guard hook allows it). Trivial work only.
 
 ## `+deep`
 
-Dispatch the `-deep` variant of each agent (`coder-deep`, `code-reviewer-deep`, `security-reviewer-deep`, `perf-reviewer-deep`, `smell-reviewer-deep`, `complexity-reviewer-deep`) and **omit `model`** — the variant's frontmatter pins Opus. Never pass `model: "opus"` at the call site; the agent-model-guard hook blocks it. Use for complex work requiring deeper reasoning: intertwined systems, security-sensitive changes, subtle migrations.
+Dispatch the `-deep` variant of each agent (coder, code-reviewer, security, perf, smell, complexity) and **omit `model`** (frontmatter pins Opus; call-site `opus` is hook-blocked). Complex work only.
 
 ## Handling rules (all skills)
 
 1. Parse modifiers from args first; at most one of `+fast`/`+deep` applies (if both appear, `+deep` wins — say so).
 2. **Strip modifiers from the prompt** passed to subagents — they are dispatch instructions, not task content.
-3. When a skill chains to another skill (`/code` → `/review`, `/cc` → `/fix`, `/fix` → `/review`, `/pr-comments` → `/fix`), pass the modifier through in the chained skill's args so the whole pipeline runs at the same depth.
+3. When chaining skills, pass the modifier through so the pipeline runs at one depth.

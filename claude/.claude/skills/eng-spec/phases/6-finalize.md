@@ -4,9 +4,7 @@
     intact. Send `03-decisions.md` **by path only** plus the instruction to produce the full plan per its Output
     Format.
 
-    **Never assume an architect is unreachable — attempt the call.** Only after
-    `SendMessage` fails, re-dispatch fresh with its brief verbatim,
-    `02-research.md`, and `03-decisions.md`.
+    Attempt `SendMessage` first — never assume unreachable. Only on failure, re-dispatch fresh with brief verbatim + `02-research.md` + `03-decisions.md`.
 
     **Fullstack ordering**: finalize `backend-architect` first — its plan must
     define the **API contract** (endpoints, methods, request/response shapes,
@@ -27,57 +25,40 @@
       — the ruled-out approaches the architect actually named, each with its
       failure mode, and its own count where it named fewer than three. Never top
       the list up.
-    - **Write `## Constraints` and `## External Contracts` yourself — nothing
-      upstream produces them**, and both are mandatory. Their full rules live in
-      those two sections' comments in the spec template; write them from the
-      template open in front of you, not from memory.
+    - **Write `## Constraints` and `## External Contracts` yourself — both are mandatory.** Rules live in those sections' comments in the spec template; write with the template open, not from memory.
 
     - **Fullstack: weave, don't concatenate.** "Backend phases, then frontend
       phases" is the horizontal anti-pattern `plan-format.md` forbids — layer
-      phases give `/code`'s gates no end-to-end pass/fail signal. Interleave
+      phases give `/code`'s gates no end-to-end signal. Interleave
       vertical slices, each one verifiable increment of user-observable behavior.
       Single-layer phases only when the work genuinely is.
 
 16b. **Dry-run the verification criteria** — two failure modes of the plan's
-`#### Automated Verification:` commands survive reading. Resolve each with the
-user before Phase 7.
+`#### Automated Verification:` commands survive reading. Resolve each with the user before Phase 7.
 
     - **Static lint**: `bash ~/.claude/scripts/spec-criteria-lint.sh <plan-path>`
       flags a test-file `**File**:` target and a verification-command file that no
       phase creates and is absent.
     - **Falsifiability run**: for each **read-only** command (build, test, lint,
-      `git grep` — never one that writes), run it as written against the
-      pre-implementation tree. Clean RED is good; already GREEN, or BROKEN on a
-      bad flag with zero checks run, lets the coder pass without a check running.
+      `git grep` — never one that writes), run it as written against the pre-implementation tree. Clean RED is good; already-GREEN or BROKEN-on-bad-flag lets the coder pass with no check running.
 
 16c. **Falsify the plan's factual claims against the tree.** Step 16b checks the
 verification commands; this checks the assertions the plan reasons FROM. Run
 these before Phase 7 and resolve every miss with the user like a `DESIGN GAP`.
 
     - **Counts and inventories** — every number the plan states about the tree
-      (files, collected tests, rows, entries, views, measures, indexes) gets the
-      command that produces it, run now. State the number the command returned
-      next to the one the plan claims.
+      (files, tests, rows, entries, views, measures, indexes) gets its producing command, run now; state returned vs claimed side by side.
     - **Names, spellings, and paths** — every identifier, token, flag, config
       key, and path the plan quotes gets one `rg` against the tree, or one
       `--help` for a flag.
     - **Tool and dependency behavior** — every claim about what a command, flag,
       or library version does gets its `--help` or a one-line run.
     - **Internal agreement** — any quantity the plan states in more than one
-      place must agree in all of them, and a phase that freezes a literal must
-      match every later phase that asserts it.
-    - **Work the hooks will deny** — `rg` the phase bodies and change lists, not
-      just `**File**:` lines, for test-file paths. A test edit assigned to the
-      implementing coder is denied outright; it routes to the test-writer from
-      the criteria. The same goes for any path under a directory this repo's
-      hooks protect.
-    - **Superseded deliverables** — for each phase, check whether what it builds
-      already landed on the base branch while the spec was being written. A
-      phase that re-builds shipped work is a plan defect, not a merge conflict.
+      place must agree everywhere, and a frozen literal must match every later assertion.
+    - **Work the hooks will deny** — `rg` phase bodies and change lists (not just `**File**:` lines) for test-file paths. A test edit assigned to the coder is denied outright and routes to the test-writer. Same for hook-protected directories.
+    - **Superseded deliverables** — check whether each phase's deliverable already landed on base while the spec was written. Re-building shipped work is a plan defect, not a merge conflict.
 
-    Claims that are genuinely about the future (what a later phase will produce)
-    are out of scope here — they are 16b's problem, and step 16's testability
-    lint's.
+    Future claims (what a later phase produces) are 16b's and the testability lint's problem, not this step's.
 
 17. **If the ticket has behavioral criteria**, dispatch **`spec-criteria`**
 with `00-ticket.md`, `03-decisions.md`, the finalized
@@ -88,11 +69,6 @@ questions it refused to default.
     Do not write the list yourself, and do not ask the architect to.
 
     **Then walk the draft with the user and take strikes and corrections.** They
-    hold authority over every line. Put the returned damage-path questions to
-    them in ONE turn — policy there is the ticket-owner's call, never defaulted,
-    and "out of scope" is an answer (log it under `## Direction & Constraints`).
-    Silence is not. **The user must respond before Phase 7.**
+    hold authority over every line: put damage-path questions to them in ONE turn — policy is the ticket-owner's call, never defaulted; "out of scope" is an answer (log under `## Direction & Constraints`); silence is not. **No Phase 7 before they respond.**
 
-The plan is now final. Go to Phase 6.5, which reviews it with fresh eyes and
-writes the planning-lane log row — including the counts this phase produced
-(`gaps`, `falsified`), so carry them forward.
+Plan final. Go to Phase 6.5 (fresh-eyes review + planning-lane log row) — carry `gaps` and `falsified` forward.

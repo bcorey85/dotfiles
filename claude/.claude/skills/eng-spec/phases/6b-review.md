@@ -1,34 +1,21 @@
 # Phase 6.5: Fresh-eyes plan review
 
 19. **Dispatch `plan-reviewer` with paths only**: the
-    finalized plan, `00-ticket.md`, and `acceptance-criteria.md` when step 17
-    wrote one. Never the decision ledger, the research file, or a summary of the
-    conversation — a plan that only parses with those open is a plan the coder
-    cannot execute, and sending them hides the defect this phase exists to find.
+    finalized plan, `00-ticket.md`, and `acceptance-criteria.md` when step 17 wrote one. Never the ledger, research, or a conversation summary — a plan needing those open is one the coder cannot execute.
 
 20. **Loop until a read returns `VERDICT: CLEAN`, max 3 rounds.** Each round is a
     NEW dispatch, never a `SendMessage` continuation. Expect a second read to surface items the first did not.
 
-    `BLOCKER` and `GAP` resolve like a `DESIGN GAP`: with the user, appended to
-    `03-decisions.md`, then sent back to the owning architect for a revised plan
-    rather than hand-patched. `NIT` is yours to fix or drop.
+    `BLOCKER` and `GAP` resolve like a `DESIGN GAP`: with the user, appended to `03-decisions.md`, then back to the owning architect for a revised plan — never hand-patched. `NIT` is yours to fix or drop.
 
-    **`ALT` goes to the user, always, and you never rule on it yourself**. Put it to them with the
-    reviewer's three parts intact (what changes, what disappears, what it costs); never pre-filter. Accepted, it is a decision block and a re-finalization
-    like any other. Declined, it is a decision block too — the alternative was
-    considered and rejected, which is exactly what `## Approaches Considered and
-Not Taken` is for.
+    **`ALT` goes to the user, always.** Put it with the reviewer's three parts intact; never pre-filter. Accepted or declined, it becomes a decision block (declined = considered-and-rejected for `## Approaches Considered and Not Taken`).
 
     A finding the user rules out of scope is resolved — log it, do not re-raise
     it next round.
 
-    Still `NEEDS CHANGES` after the third round: stop, hand the user what is
-    outstanding, and let them decide whether to proceed. Do not spend a fourth.
+    Still `NEEDS CHANGES` after round three: stop, hand over what's outstanding. No fourth round.
 
-20b. **Log every real BLOCKER and GAP** — one `log-escape` line each,
-`stage_found=plan-review gate_missed=eng-spec`, classed as it would have been had
-it reached a phase gate. Not a NIT, not a finding ruled out of scope, and **never an
-`ALT`**. `ALT`s are counted on the row below.
+20b. **Log every real BLOCKER and GAP** — one `log-escape` line each (`stage_found=plan-review gate_missed=eng-spec`). Not a NIT, not out-of-scope, **never an `ALT`** (counted on the row below).
 
 21. **Log the plan.** One row, once, now that the plan is final:
 

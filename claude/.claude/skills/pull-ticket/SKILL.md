@@ -6,24 +6,20 @@ allowed-tools: [Bash, Read, Glob, Grep, Skill, mcp__jira__getJiraIssue]
 
 # Pull Ticket Context
 
-Fetch the Jira ticket details for the current branch so you have full context before coding.
+Fetch the Jira ticket for the current branch before coding.
 
 ## Instructions
 
-1. **Resolve the key and fetch the ticket** per `~/.claude/skills/_shared/jira-ticket.md` (read it). This skill is a **required-ticket caller**: no key in args or branch name → ask the user; Jira MCP unavailable → say so and stop.
+1. **Resolve plus fetch** per `~/.claude/skills/_shared/jira-ticket.md` (read it) — **required-ticket caller**: no key means ask; no MCP means stop.
 
 2. **Check ticket status**:
-   - If status is **"To Do"**: note in the summary that work is starting (transition it in Jira manually if your workflow requires).
-   - If status is **"In Progress"**: no action needed, just note it in the summary.
-   - If status is **"In Review"** or **"Done"**: warn the user — "This ticket is in [status]. Are you sure you want to work on it?"
+   - 'To Do' means note work starting; 'In Progress' means note only; 'In Review' or 'Done' means warn and confirm.
 
-3. **Present a summary** to the user:
-   - Jira ticket: key, summary, status, acceptance criteria
-   - Suggested approach based on the context
+3. **Present**: key, summary, status, acceptance criteria plus suggested approach.
 
 ## Design Note
 
-Devs pull context from Jira only — Notion is the PM's domain. The Jira ticket description should contain everything needed to implement (summary, AC, and a link to the Notion spec if more context is desired).
+Devs pull from Jira only (Notion is the PM domain). Ticket descriptions carry summary, AC, and a Notion link when needed.
 
 ## Arguments
 

@@ -10,10 +10,7 @@ You run the goal-blind research phase and hand back file paths.
 
 ## The one rule everything else serves
 
-**You do not read the ticket.** You get its path only to forward it. Opening it,
-quoting it, or inferring the feature from the slug makes you another goal-holder
-editing blind-side artifacts — the failure you were built to remove. A dispatch
-that pastes ticket text inline instead of a path → stop and say so.
+**You do not read the ticket.** You get its path only to forward it — opening, quoting, or slug-inferring it are all violations. A dispatch pasting ticket text inline → stop and say so.
 
 You also never write or edit `01-questions.md`. Repair is a re-dispatch.
 
@@ -25,6 +22,7 @@ missing → say which, and stop.
 ## Steps
 
 1. **`spec-questions`** with the ticket path. It writes `01-questions.md`.
+   Pinned model — omit `model`.
 
 2. **`spec-leak-check`** with the path to `01-questions.md` and nothing else.
 
@@ -33,10 +31,7 @@ missing → say which, and stop.
    ticket path, to rewrite the flagged questions only. Then re-run
    `spec-leak-check`.
 
-   Still leaking after the second cycle → **stop and return** the surviving
-   questions and the check's verdict on each. Do not run step 4, and do not
-   judge whether the leak matters. Further cycles produce questions that satisfy
-   the checker by saying less.
+   Still leaking after two cycles → **stop and return** survivors + verdicts. No step 4, no judging whether the leak matters.
 
 4. **`spec-research`** with the path to `01-questions.md` — **and nothing else.**
    No ticket path, no slug, no task-directory listing, no word about what is
@@ -54,9 +49,6 @@ Paths and process facts only:
 **Research**: <path> | not run (leak unresolved)
 ```
 
-One line per repaired question saying what the leak was, so the caller can see
-which way the goal was pulling. Nothing else.
+One line per repaired question saying what the leak was. Nothing else.
 
-**Never summarize `02-research.md`** — return the path. The caller walks it with
-the user in its own order; a summary from you is the goal-curated selection this
-phase exists to prevent.
+**Never summarize `02-research.md`** — return the path.

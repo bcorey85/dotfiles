@@ -21,14 +21,14 @@ If the task is too large for one agent, say so in your report and stop — do no
 
 - Comment the non-obvious **why**, never the what. Don't narrate code or restate a signature. Add a brief comment only where intent isn't recoverable from names alone: an invariant that must stay true, a non-obvious contract, units, a gotcha, or why-not-the-obvious-approach. Follow the project's existing comment/JSDoc convention.
 - **Comment density cap (HARD RULE):** comments never exceed ~10% of lines in any file you write or edit. Before adding one, ask whether a rename or shorter function makes it unnecessary. Never add comments to bring an existing file under the cap; if it's already over, flag it as a `REFACTOR CANDIDATE` and leave it.
-- **Plain language only (HARD RULE).** Names, comments, and log messages use widely-understood English. No obscure infra jargon (`sidecar`, `hedwig`, `strangler`, `canary`), no acronym soup (`OOM`, `GC` without context), no framework slang (`middleware` fine, `interceptor-pipeline` not). Test: would a competent developer unfamiliar with the pattern understand the name on first read? If not, rename — `proxy` over `sidecar`, `cleanup` over `janitor`, `retry` over `hedwig`. A genuinely needed domain term gets defined once in a top-of-file comment, then the short name everywhere.
+- **Plain language only (HARD RULE).** Names, comments, and log messages use widely-understood English. No obscure infra jargon (`sidecar`, `hedwig`, `strangler`, `canary`), no acronym soup (`OOM`, `GC` without context), no framework slang (`middleware` fine, `interceptor-pipeline` not). Test: would a competent developer unfamiliar with the pattern understand the name on first read? If not, rename. A genuinely needed domain term gets defined once in a top-of-file comment, then the short name everywhere.
 - **NEVER put a ticket, branch, PR, issue number, spec/plan decision ID, or plan-phase reference in a code comment** (`# IQ-833`, `// FOO-12 fix`, `// see PR #456`, `// (D8: critical always red)`, `// written by the poller (Phase 4)`). Zero exceptions. Write the reason standalone: `// critical always reads red`, `// written by the poller, not read on this path yet`. Keep the rationale, drop the pointer.
 - Save all Playwright/browser screenshots to `/tmp/`, never inside the repo.
-- Prefer named intermediate variables and guard clauses over dense expressions. A single simple ternary is fine; the moment it nests (`a ? b : c ? d : e`), a boolean has 3+ operands, or a value is computed conditionally-in-place (`x = x === null ? y : Math.max(x, y)`), extract into named `const`s or explicit `if`/`else`.
+- Prefer named intermediate variables and guard clauses over dense expressions. A single simple ternary is fine; the moment it nests, a boolean has 3+ operands, or a value is computed conditionally-in-place, extract into named `const`s or explicit `if`/`else`.
 
 ## Performance Defaults (any code touching a DB or network)
 
-Structural rules, not optimization — the reviewer flags violations as `[perf]`:
+Structural rules (the reviewer flags violations as `[perf]`):
 
 - Never query inside a loop/map over a prior query's results — use a join, `IN` batch, or the ORM's relation loader (N+1).
 - Every list query gets a LIMIT/pagination. Never load a whole table to filter or sort in app code.
@@ -48,9 +48,9 @@ Do not self-audit a "second draft" pass — get the structure right at write tim
 
 Before creating ANY new helper, util, hook, component, type, or constant: read the plan's `## Reuse Map` first — it names units your own search won't. Then search for an existing one (LSP references/workspace symbols, `rg` for untyped code). If you still create something new, your report must name the nearest existing candidate and the concrete reason it didn't fit. If you can't name a candidate, go search.
 
-This covers **inline logic, not just named artifacts** — a guard clause, a request-handler scaffold, a mapping/parsing block. **The moment you catch yourself copying a block out of a sibling function/handler/module, stop** — extract the shared block into a helper and call it from both the new site and the one you copied from.
+This covers **inline logic, not just named artifacts**. The moment you catch yourself copying a block out of a sibling, stop — extract a shared helper and call it from both sites.
 
-**One deliberate exception to "don't touch outside your diff"** (referenced by Reuse Before You Write and Copy Propagation): when your new code would duplicate a substantive, must-stay-in-sync block in a sibling, extracting a shared helper and updating that one pre-existing call site IS the fix — required consolidation, not churn. This does not license speculative restructuring. Two similar blocks with genuinely different reasons-to-change stay separate.
+**One exception to "don't touch outside your diff"**: when new code would duplicate a must-stay-in-sync sibling block, extract the helper and update that one call site — required consolidation, not churn. Blocks with genuinely different reasons-to-change stay separate.
 
 ## Quality Check Cap (HARD RULE)
 
@@ -108,7 +108,7 @@ Skip entirely when the change touches none of these. Distilled from REST-style p
 - **Stop and ask** when: the plan is ambiguous about a model relationship (one-to-many vs many-to-many); you're unsure of the right HTTP status code or error-response shape; the plan doesn't specify permissions or authentication.
 - Use the project's ORM/query tools; avoid raw SQL unless needed for performance.
 - Use transactions for multi-step operations that must stay consistent, and keep **all** reads and writes of one operation in the SAME transactional context (reading inside a transaction and writing outside it is the common bug). Verify entity state before the final re-fetch.
-- Structure responses to minimize queries; return appropriate status codes; handle errors with meaningful messages; make async tasks idempotent.
+- Structure responses to minimize queries; handle errors with meaningful messages; make async tasks idempotent.
 - **Route ordering**: declare specific sub-routes (`:id/move`, `:id/archive`) BEFORE generic parameterized routes (`:id`), or the param route swallows the sub-route.
 - **Validator edge cases**: for numeric fields where 0 is valid, use a "defined" check, never an "is not empty" check — emptiness validators treat 0 as empty in many frameworks. Mark optional fields explicitly optional.
 
@@ -127,7 +127,7 @@ Skip entirely when the change touches no user interface.
 
 ## Both sides of one wire
 
-When a change spans client and server, you own both ends: choose ONE contract and write both sides of it. Prefer deleting boundary code to adding an adapter. Name a field once and use that name end to end.
+When a change spans client and server, own both ends of ONE contract. Prefer deleting boundary code to adding an adapter; name a field once, end to end.
 
 ## Review Handoff (last lines of your report)
 

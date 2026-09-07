@@ -18,21 +18,14 @@
    >    change how tokens/data are classified, and lifecycle/liveness
    >    discriminators (for every entity the change will reclaim, expire, evict,
    >    revoke, or invalidate: what does "gone" mean for it, per the system that
-   >    owns it?). These categories are examples, not the checklist. So also apply the generative rule:
-   >    for each entity a destructive or irreversible action will target,
-   >    enumerate that entity's FULL state machine (every state it can occupy,
-   >    including dormant/suspended/resumable ones) and record what the action's
-   >    trigger does in each state. When evaluating a candidate trigger signal,
+   >    owns it?). Categories are examples, not the checklist — also apply the generative rule:
+   >    for each entity a destructive action targets, enumerate its FULL state machine
+   >    and what the trigger does in each state. When evaluating a candidate trigger signal,
    >    check it BOTH ways — states where it fails to fire (leak) and states where
    >    it fires but shouldn't (false destruction) — and say which cost is worse.
-   >    For liveness questions, "gone" is defined by the owning system's own
-   >    registry/listing — an entity still listed or resumable there is ALIVE
-   >    regardless of process death, terminal state, or lifecycle events having
-   >    fired; and EVERY teardown path (eager/fast-path included) must satisfy the
-   >    same gone-condition as the slow path, never a cheaper proxy signal. Emit
-   >    one line per category above — an explicit "none found: <what was checked>"
-   >    is a valid entry; a silently skipped category is not. Each with
-   >    `file:line`.
+   >    For liveness, "gone" = the owning system's own registry/listing — still listed or resumable = ALIVE.
+   >    EVERY teardown path (fast-path included) must satisfy the same gone-condition, never a cheaper proxy. Emit
+   >    one line per category — explicit "none found: <checked>" is valid; silently skipped is not. Each with `file:line`.
    > 3. **Patterns** — to follow and to avoid, with refs
    > 4. **Constraints** — technical and convention constraints you found
    > 5. **Counter-priming** — three implementation approaches you considered and

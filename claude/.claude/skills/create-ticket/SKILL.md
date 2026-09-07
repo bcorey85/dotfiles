@@ -26,12 +26,12 @@ The whole point of this skill. A ticket is a pointer to work, not a design doc.
 
 - **Hard cap: the description fits on one screen (~150 words / ~15 lines).** If it doesn't, cut — don't scroll.
 - **Bullets, not paragraphs. One line per bullet.** No multi-sentence bullets, no sub-bullets unless truly needed.
-- **Definitions are terse.** Name the thing, point to the file (`path:line`), move on. Do NOT explain what a tool/config does, re-derive rationale, or teach the reader the domain.
+- **Definitions are terse:** name the thing, `path:line`, move on. No tool explanations, no domain teaching.
 - **Say each thing once.** Don't repeat a point across Why / Scope / Acceptance.
-- **Acceptance bullets are testable.** Each `## Acceptance` bullet is an observable outcome someone outside this conversation could check — a command to run, a behavior to see, a repro that no longer reproduces. "Works correctly" doesn't qualify. If you can't write the check, the ticket isn't clear yet — fix the ticket, not the wording.
+- **Acceptance bullets are testable:** observable outcomes (command, behavior, dead repro) — "works correctly" doesn't qualify. Can't write the check → the ticket isn't clear; fix the ticket.
 - **Why = 1–3 bullets max.** If the motivation needs a paragraph, it's a doc, not a ticket.
 - **Default sections: just `## Work` and `## Acceptance`.** Add `## Why` only if non-obvious, `## Out of scope` only to head off scope creep, `## Open Questions` whenever the work is gated on an unanswered question (see below).
-- **Link, don't transcribe.** Reference repo files/PRs instead of pasting their contents or summarizing them at length.
+- **Link, don't transcribe** — reference files/PRs, never paste.
 
 If you catch yourself writing prose to sound thorough in the main body: stop, delete it, move it to Technical Notes or cut it.
 
@@ -39,15 +39,15 @@ If you catch yourself writing prose to sound thorough in the main body: stop, de
 
 The contract kills _padding_, not _content_. Some things are terse AND essential; they stay in the body, never cut, never buried in Technical Notes:
 
-- **Open questions / blocking dependencies** → `## Open Questions` in the body. Anything awaiting an answer from a named person or team (e.g. "for Amik: which schema name is correct?"), or an external dependency that gates the work. These are action items, not discovery. Preserve every one; attribute who owns the answer.
-- **Load-bearing examples** → keep in the body (a `## Example` block, or inline). A concrete sample that _pins_ the requirement — a representative input/output, a sample payload, a canonical query — is part of the definition, not verbosity. Reproduce it faithfully (code fences intact). Only illustrative-but-skippable examples go to Technical Notes.
-- **Verbatim stakeholder asks** → preserve the exact quote + attribution (who, when, where). Paraphrasing loses the source of truth; park the quote in Technical Notes if it's long, but never reword or drop it.
+- **Open questions / blocking dependencies** → `## Open Questions` in the body. Anything awaiting a named owner or gating dependency — action items, not discovery; preserve every one with its owner.
+- **Load-bearing examples** → keep in the body. A sample that _pins_ the requirement (input/output, payload, canonical query) is definition, not verbosity — reproduce faithfully. Skippable illustrations → Technical Notes.
+- **Verbatim stakeholder asks** → exact quote + attribution. Never reword or drop (park long ones in Technical Notes).
 
 Litmus test before cutting a line: _is this padding, or is it a specific the implementer/reviewer can't reconstruct?_ Padding goes. Specifics relocate at most — they never disappear.
 
 ### The verbosity escape valve: `## Technical Notes`
 
-Discovery findings, file-by-file detail, gotchas, rejected approaches, the long "why" — they go in a **`## Technical Notes`** section at the **very bottom**, under a `---` rule that separates it from the problem definition. This is the ONE place verbosity is allowed.
+Discovery, file detail, gotchas, rejected approaches, the long "why" → **`## Technical Notes`** at the **very bottom** under a `---`. The ONE place verbosity is allowed.
 
 - The contract above governs everything **above** the `---`. Technical Notes is below it.
 - Omit the section entirely when there's nothing worth logging — don't pad it.
@@ -61,21 +61,21 @@ If the Jira MCP tools aren't available in this session, say so and stop — offe
 
 From the user's input figure out: project key, issue type, and parent (if any).
 
-- **Jira URL/key given** (`https://<site>.atlassian.net/browse/ABC-123` or `ABC-123`) — that's usually the **parent epic** to file under, or context. Fetch it with `getJiraIssue` to confirm what it is before assuming.
+- **Jira URL/key given** (`https://<site>.atlassian.net/browse/ABC-123` or `ABC-123`) — usually the **parent epic** or context; confirm with getJiraIssue before assuming.
 - **Cloud ID:** pass the site hostname (e.g. `<site>.atlassian.net`) straight to the jira tools as `cloudId`. Only if that fails, call `getAccessibleAtlassianResources`.
 - **Issue type:** default **Task**. Use `getJiraProjectIssueTypesMetadata` if unsure which types exist. File under an epic via the `parent` field.
 - If you'd be **overwriting** an existing ticket's description, stop and confirm — don't clobber.
 
 ### 2. Scope against the repo
 
-Briefly explore the actual codebase (Glob/Grep/Read) so the ticket names real files, not guesses. This research is for _you_ — it informs tight bullets; it does not get dumped into the description.
+Explore the codebase (Glob/Grep/Read) so the ticket names real files. Research is for _you_ — informs bullets, never lands in the description.
 
 **Size check:** if scoping reveals the work can't plausibly land in a few days, flag it and confirm before filing. Don't refuse; the call is the user's.
 
 ### 3. Write it (honor the brevity contract)
 
 - **Summary:** imperative, specific, no ticket-key prefix (Jira adds it).
-- **Description:** plain markdown string (the MCP converts to ADF — never pass ADF JSON). Tight body — `## Work` + `## Acceptance` (+ `## Why` / `## Out of scope` if earned). Then, only if there's discovery worth keeping, a `---` followed by `## Technical Notes` where verbosity is allowed.
+- **Description:** plain markdown (MCP converts to ADF — never ADF JSON). Tight body + optional `---` + `## Technical Notes`.
 - Surface genuine forks/risks as a single line in the body; the supporting detail goes in Technical Notes.
 
 ### 4. Create + report

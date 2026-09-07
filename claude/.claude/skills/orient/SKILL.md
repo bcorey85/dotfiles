@@ -5,21 +5,16 @@ description: Explain how the current changes fit into the surrounding code that 
 
 # Orient — situate the change in its unchanged surroundings
 
-Run it after a coding phase, before
-committing, when you've read the diff but don't feel the structure.
-
-**On-demand, not a phase.** No gate runs it.
+Run after a coding phase, before committing, when the diff doesn't convey structure. **On-demand, never a phase — no gate runs it.**
 
 ## Scope
 
 Default target depends on where you are:
 
-- **On a feature branch** — the WHOLE branch: merge-base diff vs the default branch,
-  which also covers the working tree.
-- **On the default branch** — working-tree changes (staged + unstaged) only.
+- **Feature branch** — the WHOLE branch (merge-base vs default, covers worktree).
+- **Default branch** — worktree changes only.
 
-The user may instead pass a file, directory, symbol, or feature name in `$ARGUMENTS` — if so,
-orient around that instead of the diff.
+Or orient around `$ARGUMENTS` (file/dir/symbol/feature) instead of the diff.
 
 ```
 $ARGUMENTS
@@ -29,76 +24,57 @@ $ARGUMENTS
 
 1. **Get the changed surface.** On a feature branch:
    `BASE=$(git merge-base HEAD origin/master 2>/dev/null || git merge-base HEAD origin/main)`,
-   then `git diff --stat "$BASE"` and `git diff "$BASE"` (covers committed phases AND the
-   working tree). On the default branch: `git diff --stat HEAD` then `git diff HEAD`.
+   then `git diff --stat "$BASE"`/`git diff "$BASE"` (committed phases AND worktree). Default branch: same against HEAD.
    This is the only step that looks at the diff.
 
-2. **Now read the unchanged neighbors.** Open the actual
-   files and read the changed symbols _in full, in place_, plus:
-   - The callers of every new/changed function (who invokes it, with what assumptions).
-   - The callees it newly depends on (what it now reaches into).
-   - Sibling code in the same module/file it sits beside but didn't touch.
-   - Any existing helper/abstraction it _should_ have reused.
-     Use LSP (references / definition / hover) when the language has a server; fall back
-     to `rg` for plain text. Read whole functions, not hunks.
+2. **Now read the unchanged neighbors** — changed symbols _in full, in place_, plus:
+   - Callers (who invokes, with what assumptions).
+   - New callees (what it now reaches into).
+   - Untouched siblings in the same module.
+   - Helpers it _should_ have reused.
+     LSP where available, else `rg`. Whole functions, not hunks.
 
 3. **Build the map**, then report it concisely:
 
    ### Where it sits
 
-   One short paragraph: what module/layer this change lives in and what role it plays
-   in the existing structure.
+   One paragraph: module/layer + role in the existing structure.
 
    ### Wiring (changed ↔ unchanged)
 
-   A short list of the real connections — `caller → changed symbol → callee`, with
-   `file_path:line` refs. Show how the new code is reached and what it reaches.
+   Real connections (`caller → changed → callee`, `file:line`): how it's reached, what it reaches.
 
    ### Reused vs. new
 
-   What existing abstractions it correctly reused, and what it introduced fresh.
-   Flag anything new that duplicates something that already exists.
+   Reused abstractions vs fresh introductions; flag new-that-duplicates.
 
    ### Structural risks (the diff can't show these)
 
-   Call out, only if real:
-   - New code that **duplicates** logic an existing helper already provides.
-   - A change at the **wrong layer** (logic in a handler that belongs in a service, etc.).
-   - A **broken assumption / invariant** in an unchanged neighbor two files away.
-   - An **inconsistent pattern** vs. how siblings do the same thing.
-     If there are none, say so plainly — don't manufacture findings.
+   Only if real:
+   - Duplication an existing helper covers.
+   - Wrong layer (handler logic belonging in a service).
+   - Broken invariant in an unchanged neighbor.
+   - Inconsistent pattern vs siblings.
+     None → say so; don't manufacture.
 
    ### Attention map (where to spend review time)
 
-   The changed files, ordered by blast radius — derived from the wiring above,
-   never from diff size. One line per file: `path — rank rationale`. Rank by:
+   Changed files by blast radius (from wiring, never diff size). One line per file: `path — rank rationale`. Rank by:
 
-   - **Inbound references** — how many unchanged callers reach it (LSP count).
-   - **Enforcement surface** — hooks, gates, auth, anything running with
-     elevated privileges or writing outside the repo/home.
-   - **Contract exposure** — exported/public symbols vs. leaf/internal code.
-   - **Reversibility** — a bad alias is fixed in seconds; a bad system config
-     write is not.
+   - **Inbound references** (LSP count of unchanged callers).
+   - **Enforcement surface** (hooks, gates, auth, privileged/outside-repo writes).
+   - **Contract exposure** (exported/public vs leaf/internal).
+   - **Reversibility** (alias fix vs system-config write).
 
-   Tests, docs, and lockfiles sort to the bottom unless the wiring says
-   otherwise. This ranks the USER's review attention only — never feed it into
-   reviewer dispatches (pre-labeling files "low priority" anchors the reviewer
-   into skimming exactly where quiet bugs survive).
+   Tests/docs/lockfiles sink unless wiring says otherwise. USER attention only — never into reviewer dispatches (pre-labels anchor skimming where quiet bugs survive).
 
 ## Persist to vault (default — `+ephemeral` skips)
 
-After presenting the report, persist it to the vault (root: `$VAULT_DIR` if set, else
-`~/vault`): write the full orientation to
-`<vault>/Orientations/<yyyy-mm-dd>-<repo>-<branch-or-scope>.md`, headed by repo,
-branch, merge-base sha, and date. Then append a capture line so tonight's
-/daily-recap links it:
-`~/.local/bin/note "orientation: <repo>/<branch> — [[<note filename without .md>]]"`.
-Re-orienting the same repo+branch same day overwrites the note (latest map wins).
-With `+ephemeral`, skip both writes.
+After presenting, persist to `<vault>/Orientations/<yyyy-mm-dd>-<repo>-<branch-or-scope>.md` (`$VAULT_DIR` else `~/vault`), headed by repo/branch/merge-base/date, + capture line for `/daily-recap`:
+`~/.local/bin/note "orientation: <repo>/<branch> — [[<note filename without .md>]]"`. Same-day re-orient overwrites. `+ephemeral` skips.
 
 ## Boundaries
 
-- **Read-only. Never edit.** This rebuilds understanding; it does not change code.
-  (The default vault persist writes only under the vault — never in the repo.)
+- **Read-only — never edits** (vault persist writes vault-only, never repo).
 - This is _not_ `/review` (correctness/bugs).
 - Keep it tight. Refs over prose.

@@ -1,8 +1,6 @@
 # Cross-Cutting Reviewer Domains (dispatch triggers)
 
-Canonical trigger definitions for the single-domain specialist reviewers
-(`security-reviewer`, `perf-reviewer`, `smell-reviewer`). `review-loop` reads this
-file to decide whether a converged diff warrants a specialist pass.
+Trigger definitions for the specialist reviewers. `review-loop` reads this to decide on a specialist pass.
 
 ## Eligibility = union of three signals
 
@@ -31,8 +29,7 @@ The diff trigger is narrow by design — **disabling inherited protection is the
   `**/*rbac*`, `**/*crypto*`, `**/*.env*`, `**/secrets*`
 
 Endpoint/route/controller/handler/api/serializer/migration paths are NOT triggers.
-A codebase with a hand-rolled authz layer reinstates pattern dispatch for itself
-via the per-repo extension below.
+Hand-rolled authz layers extend via the per-repo block below.
 
 ## perf
 
@@ -56,8 +53,7 @@ ls -d migrations db/migrate prisma alembic 2>/dev/null
   `**/*dao*`, `**/entities/**`, `**/schema*`
 - **Content, case-SENSITIVE** — SQL keywords:
   `\bSELECT\s|\bINSERT\s+INTO\b|\bUPDATE\s+\w+\s+SET\b|\bDELETE\s+FROM\b|\bJOIN\s+\w|\bGROUP\s+BY\b|\bORDER\s+BY\b|\bLIMIT\s+\d|\bOFFSET\s+\d`
-- **Content, case-insensitive** — ORM/driver constructs, each anchored to a real
-  call site rather than a bare English word:
+- **Content, case-insensitive** — ORM/driver constructs (anchored to call sites, not bare words):
   `\.findMany\(|\.findAll\(|\.findOne\(|createQueryBuilder|select_related|prefetch_related|values_list\(|\.annotate\(|bulk_create|\.objects\.(all|filter|get|exclude)\(|\.Include\(|\.ThenInclude\(|ToListAsync|IQueryable|FromSql|SaveChanges|\.Preload\(|gorm\.|db\.(Query|QueryRow|Exec)\(|sqlx\.|pgx\.|forEach\([^)]*await|\.map\([^)]*await`
 
 Deliberately NOT triggers: bare `LIMIT`,
@@ -67,7 +63,7 @@ unqualified `\.Exec\(`.
 
 ## smell
 
-Size trigger, not path/content. Eligible when EITHER holds on the converged diff:
+Size trigger — EITHER holds on the converged diff:
 
 1. **≥ 40 added lines** across source files (sum of column 1 from
    `git diff HEAD --numstat`, excluding lockfiles and generated files).
@@ -79,14 +75,11 @@ Size trigger, not path/content. Eligible when EITHER holds on the converged diff
 git diff HEAD --numstat | rg -v 'lock|generated|snapshot' | awk '{s+=$1} END {print s}'
 ```
 
-Test-only diffs (every changed file a test file) are NOT eligible — test structure
-belongs to the test-intent gates. Force with `+smell`; suppressed by
-`no-specialist`.
+Test-only diffs are NOT eligible (test structure belongs to test-intent). Force with `+smell`; suppressed by `no-specialist`.
 
 ## Per-repo extension
 
-A repo may add to (never replace) the defaults with `.claude/reviewer-triggers.json`
-at its root:
+A repo may add to (never replace) the defaults with `.claude/reviewer-triggers.json`:
 
 ```json
 {
@@ -103,4 +96,3 @@ at its root:
 }
 ```
 
-`review-loop` merges these additively.

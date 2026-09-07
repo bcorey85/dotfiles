@@ -1,77 +1,33 @@
 # Mandatory Closing Phases (single source of truth)
 
-Every `/eng-spec` plan ends with these FOUR phases, in this exact order after
-the last feature phase — **not negotiable, never omitted**. They are real
-`## Phase Status` entries with full Phase sections; reaching one, `/code`
-invokes the named skill instead of dispatching a coder. Number them continuing from the last
-feature phase (feature ends at Phase 3 → these are 4–7).
+Every `/eng-spec` plan ends with these FOUR phases, in order after the last feature phase — **not negotiable, never omitted**. Real `## Phase Status` entries with full sections; `/code` invokes the named skill instead of a coder. Numbered continuing from the last feature phase.
 
 ## The four phases
 
-1. **Refactor pass** (risk: low) — `/refactor +deep` over the **whole branch
-   diff**, backend **and** frontend in one sweep. DRY duplication, delete dead
-   scaffolding, tighten names — no behavior change. **Root-cause gate:** adding
-   a cast or `?? default` to paper over a fixable wide type or loose structure
-   is a failed refactor; fix the source — `/review` bounces it.
+1. **Refactor pass** (risk: low) — `/refactor +deep` over the **whole branch diff** (backend + frontend, one sweep): DRY duplication, dead scaffolding, names — no behavior change. **Root-cause gate:** a cast/`?? default` papering a fixable wide type or loose structure fails; fix the source.
 
-   **Concentration gate.** Group `git diff --numstat <base>...HEAD` by module.
-   Run `/refactor simplify <one module>` — that module alone, after the branch
-   sweep — when EITHER holds:
-
-   1. **Concentrated**: the largest module has **≥100 added lines**. Dispatch
-      that module.
-   2. **Distributed**: the branch totals **≥300 added lines** across source
-      files (excluding lockfiles, generated files, and test-only files) even
-      though no single module reaches 100. Dispatch the largest module anyway.
-
-   Otherwise skip it and report both counts. Never widen to a second module,
-   never pass the branch diff (`complexity-reviewer` refuses a diff bound).
-   If its findings name a consumer in another module as the reason
-   something is deletable, say so in the report rather than dispatching again.
-   Simplify findings are opt-in per finding, the user's call; accepting one
-   makes this phase `risk: high` — the no-behavior-change contract covers the
-   DRY sweep only.
+   **Concentration gate.** Group `git diff --numstat <base>...HEAD` by module; run `/refactor simplify <one module>` when EITHER: 1. **Concentrated**: largest module **≥100 added lines**. 2. **Distributed**: branch **≥300 added lines** (excluding lockfiles, generated files, and test-only files) with no module at 100 — dispatch the largest anyway. Else skip, report both counts. Never a second module, never the branch diff (`complexity-reviewer` refuses diff bounds). Cross-module deletability reasons go in the report, not a re-dispatch. Simplify findings are opt-in; accepting one makes this phase `risk: high` — the no-behavior-change contract covers the DRY sweep only.
 
    Success Criteria: quality checks green, no new cast/fallback dodging a root
    cause, concentration gate evaluated (module dispatched with the trigger
    named, or both counts stated).
 
-2. **Verify pass** (risk: high) — confirm the work actually does what the plan
-   called for. Two complementary checks, both required:
-   - **Branch-wide deep review** — dispatch ONE `code-reviewer-deep` (omit
-     `model`) over the assembled branch diff (`git diff <base>...HEAD`) — the
-     only fresh-eyes look at cross-phase interactions the phase-scoped per-loop
-     reviews miss. Findings route through `/review`'s disposition routing.
+2. **Verify pass** (risk: high) — two complementary checks, both required:
+   - **Branch-wide deep review** — ONE `code-reviewer-deep` (omit `model`) over the branch diff: the only fresh-eyes look at cross-phase interactions. Findings via `/review` routing.
    - `/verify` — reconcile the shipped diff against the ticket/plan
      (completeness), run the plan's Automated Verification commands, and emit the
      **human smoke-test checklist** (all human-only Manual Verification items).
-   - **Acceptance-criteria reconciliation** — for every id in
-     `docs/plans/<slug>/acceptance-criteria.md`, name the test that covers it
-     (`file:line`) or report it MISSING. A criterion under `## Manual only` is satisfied by appearing on
-     the smoke-test checklist, not by a test. MISSING is a phase failure, not a
-     note — either a test is owed or the user retires the criterion on the
-     record.
+   - **Acceptance-criteria reconciliation** — per id: name the covering test (`file:line`) or MISSING. `## Manual only` items are satisfied via the smoke-test checklist. MISSING fails the phase — a test is owed or the user retires the criterion on record.
 
-     Match on **behavior, not on markers**: the tests carry ordinary names and
-     contain no criterion ids (`_shared/code-vocabulary.md`), so the mapping is
-     read and judged, never grepped.
+     Match on **behavior, not markers** — no ids to grep; read and judged.
 
      Success Criteria: deep review clean, reconciliation reports no missing work,
      every acceptance criterion mapped to a test or explicitly retired,
      smoke-test checklist delivered.
 
-3. **Test audit** (risk: high) — `/test-audit`, the cross-phase test gate: cull
-   test spam, catch net-removed coverage, sweep weak assertions against the plan —
-   the half of test-intent no phase judges locally. A gate; findings route to
-   `/fix` or a `test-writer` re-dispatch, and it hands a receipt to the Recap.
-   Success Criteria: audit run with its denominator stated; every finding routed.
+3. **Test audit** (risk: high) — `/test-audit`: cull spam, catch net-removed coverage, sweep weak assertions — the half of test-intent no phase judges. Findings → `/fix` / `test-writer`; receipt → Recap. Success Criteria: denominator stated, every finding routed.
 
-4. **Recap** (risk: low) — `/branch-recap` reassembles the branch into one
-   pre-PR handoff: `/stage` triage of residue, the deferred-findings queue, the
-   recap receipt. Reads the branch's own process, never the codebase. Situating
-   is `/orient`'s job, on demand, never a phase; recap consumes an orient map if
-   one exists. Runs no gates. Success Criteria: recap produced; residue queue
-   handed to user.
+4. **Recap** (risk: low) — `/branch-recap`: `/stage` triage, deferred queue, recap receipt — from the branch's own process, never the codebase (`/orient` on demand). No gates. Success Criteria: recap produced, residue handed over.
 
 Nothing after this is a phase. `/adr` runs **pre-PR**, shipping in the code's PR.
 

@@ -11,39 +11,11 @@ set, else `~/vault`). Read-only — never edit or create anything.
 
 ## Method
 
-1. **Expand the question into search terms**: the literal phrase, plus synonyms,
-   people/team/system names, and obvious misspellings (captures are typed fast —
-   "arvo" for Avro). 2–4 `rg -i -l` passes over `*.md` and `*.org`, excluding
-   `.git/` and `Templates/`.
-2. **Establish the timeline**: `daily/`, `Weekly/`, and `Orientations/`
-   filenames carry dates — sort hits chronologically before reading. Org files
-   under `<vault>/org/` do NOT: they are flat and append-only, and each headline
-   carries its own inline capture date (`[YYYY-MM-DD Day]`) plus, once closed, a
-   `CLOSED:` timestamp. Date an org hit from those, never from the file.
-3. **Read the hits** — the surrounding section, not just the matching line.
-   Distinguish source quality: a `cache/` note is a consolidated answer written at
-   project close and outranks everything; a Decisions entry in a daily note
-   outranks a `notes/` entry. **Do not read trust off the folder** — `notes/` holds
-   both what the user measured and what the user was told, and the only signal is
-   the line itself. A line marked `[unverified]` is a claim regardless of which
-   file it sits in; an unmarked line in `notes/` is presumed verified.
-   **Org is the live state of any todo.** A headline's keyword is the answer to
-   "is this still open": `TODO`/`NEXT`/`WAITING` = open, `DONE`/`CANCELLED` = closed
-   (with the `CLOSED:` date). A `daily/` note's `Open todos` bullets are only a
-   snapshot of org as of that night, and pre-org daily notes carry `- [ ]`
-   checkboxes that nothing ever ticks — neither is evidence that something is still
-   open. Always report a todo's state, and never present a closed item as a live
-   concern on the strength of a stale daily note.
-4. **Answer**:
-   - Direct answer first, one or two sentences, with the date(s).
-   - Then evidence: `date — quote or tight paraphrase — [[note name]]` (or path),
-     chronological. If the position _changed_ over time, show the progression.
-   - Related-but-not-asked findings: one line at most, only if genuinely adjacent.
-5. **When the vault is silent, say so plainly** — "nothing captured about X" —
-   and name the nearest terms that DO appear, so the user can re-ask. Never pad
-   an empty result with general knowledge: if the answer isn't from a note, it
-   isn't an answer here. General knowledge is allowed only to interpret what a
-   note means, never to substitute for one.
+1. **Expand to search terms** (literal + synonyms + names + likely misspellings). 2–4 `rg -i -l` passes over `*.md`/`*.org`, excluding `.git/`, `Templates/`.
+2. **Establish the timeline**: `daily/`/`Weekly/`/`Orientations/` filenames carry dates — sort chronologically. Org files do NOT (flat, append-only): date from the headline `[YYYY-MM-DD Day]` / `CLOSED:`, never the file.
+3. **Read surrounding sections**, not just matching lines. Source quality: `cache/` notes outrank; daily Decisions outrank `notes/`. **Trust lives in the line, not the folder** — `[unverified]` = claim anywhere; unmarked `notes/` = presumed verified. **Org is the live todo state** (`TODO`/`NEXT`/`WAITING` open, `DONE`/`CANCELLED` closed + date) — daily `Open todos` and pre-org checkboxes are stale snapshots, never live evidence. Always report todo state.
+4. **Answer**: direct first (1–2 sentences + dates), then chronological evidence (`date — quote/paraphrase — [[note]]`; show progression when positions changed). Related-but-unasked: one line max, only if adjacent.
+5. **Vault silent → say so** ("nothing captured about X") + nearest terms for re-asking. Never pad with general knowledge — it interprets notes, never substitutes.
 
 ## Boundaries
 

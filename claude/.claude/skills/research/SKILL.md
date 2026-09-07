@@ -9,42 +9,27 @@ Investigate a technical question using web search and synthesize a concise, acti
 
 ## Arguments
 
-`<question>` — the topic or question to research. May be a full question ("how should I handle SSR with PrimeVue?") or a keyword topic ("vitest coverage v8 vs istanbul").
+`<question>` — full question or keyword topic.
 
 ## Instructions
 
 ### Phase 1: Parse the Question
 
-Extract the core question from `<question>`. Identify:
+Extract subject (tool or concept), context (project constraints — CLAUDE.md and package.json if relevant), goal (what the user decides).
 
-- **Subject**: the tool, library, or concept being asked about
-- **Context**: any constraints from the current project (check CLAUDE.md and package.json if relevant)
-- **Goal**: what the user wants to achieve or decide
-
-If the question is vague, infer context from the current project before searching. For example, if the user asks "best testing approach" and the project uses Vitest + Vue, scope searches accordingly.
+Vague question means infer context from the project before searching.
 
 ### Phase 2: Search Strategy
 
-Run 3-5 WebSearch queries in parallel, varying the angle:
+Run 3-5 WebSearch queries in parallel: official docs angle, best-practices angle, community angle, comparisons if deciding, known-issues if troubleshooting.
 
-1. **Official docs**: `"<subject> official documentation <specific topic>"`
-2. **Best practices**: `"<subject> best practices <year>" OR "<subject> recommended approach"`
-3. **Community consensus**: `"<subject> <topic> site:github.com OR site:stackoverflow.com"`
-4. **Comparisons** (if deciding between options): `"<option A> vs <option B> <context>"`
-5. **Known issues** (if troubleshooting): `"<subject> <symptom> site:github.com/issues"`
-
-Prioritize results from the current year. Discard results older than 2 years unless they're canonical references (RFCs, spec documents, foundational blog posts).
+Prefer current-year results; pre-2-year only if canonical (RFCs, specs).
 
 ### Phase 3: Deep Dive
 
-For the top 2-3 most promising results, use WebFetch to read the actual page content. Don't rely on search snippets alone.
+WebFetch the top 2-3 results (never snippets alone).
 
-Look for:
-
-- Version-specific guidance (does the answer change between v3 and v4?)
-- Official recommendations vs community workarounds
-- Known gotchas or deprecation warnings
-- Performance or security implications
+- Version-specific guidance, official-vs-workaround, gotchas and deprecations, perf and security implications.
 
 ### Phase 4: Synthesize and Present
 
@@ -75,9 +60,9 @@ Present findings in this structure:
 
 ### Guidelines
 
-- **Be opinionated.** The user wants a recommendation, not a balanced essay. Pick the best approach and say why. Mention alternatives briefly.
+- **Be opinionated** — recommend, do not essay.
 - **Flag uncertainty.** If sources conflict or the answer is genuinely "it depends", say so and explain what it depends on.
-- **Include version context.** "As of PrimeVue 4.x..." or "This changed in Node 22..." — the user needs to know if the advice has a shelf life.
+- **Include version context** (advice shelf life).
 - **Prefer official sources.** Weight: official docs > maintainer comments on issues > high-score SO answers > blog posts > forum comments.
 - **Skip the obvious.** Don't explain what the tool is or provide installation instructions unless the user specifically asked.
-- **No code changes.** This skill is read-only. If the research reveals something actionable, tell the user what to do — don't do it. They can follow up with `/fix`, `/code`, or manual changes.
+- **No code changes** — read-only. Actionable findings go to the user, not into the tree.

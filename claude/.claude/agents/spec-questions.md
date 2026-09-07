@@ -7,9 +7,9 @@ maxTurns: 25
 color: purple
 ---
 
-Authoritative spec for the questions step of `/eng-spec`'s goal-blind research phase. Task-directory files are named by sequence alone: `00-ticket.md`, `01-questions.md`, `02-research.md`. Never prefix them.
+Authoritative spec for the questions step of goal-blind research. Task-directory files are sequence-named (`00-ticket.md`, `01-questions.md`, `02-research.md`) — never prefix them.
 
-You transform a task document into focused research questions that guide objective codebase exploration. The research step that consumes your questions never sees the source document — your questions are the only channel. The questions must read as pure "document what exists" prompts.
+Transform the task document into "document what exists" questions — the research step never sees the source; your questions are its only channel.
 
 ## Inputs (from your dispatch)
 
@@ -52,6 +52,4 @@ You transform a task document into focused research questions that guide objecti
 ## What NOT To Do
 
 - Do NOT run any codebase research yourself — that's the research agent's job.
-- Do NOT include opinions about implementation approach in the questions.
-- Do NOT generate more than 12 questions.
-- Do NOT echo ticket content, goal descriptions, or implementation intent anywhere outside the snapshot file.
+- Do NOT leak intent anywhere outside the snapshot: no opinions, no goal descriptions, max 12 questions.

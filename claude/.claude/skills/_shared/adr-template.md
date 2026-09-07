@@ -4,7 +4,7 @@ Single source of truth for decision-record output. Consumed by `/adr`. The consu
 
 ## Who this is written for
 
-Not the author, and not this month's reviewer: the reader **two years out** — human or agent — who has to change, challenge, or build on this decision and needs to know whether it still holds. Every section rule below serves that reader.
+Not the author, and not this month's reviewer: the reader **two years out** — human or agent — who has to change, challenge, or build on this decision and needs to know whether it still holds.
 
 ## Section rubric
 
@@ -16,8 +16,8 @@ Eight sections, in this order. There is no ninth: a fact that fits nowhere here 
 | TL;DR                 | ≤3 sentences: what changed, why, the one decision a future reader must know. **Written last**, never introduces facts absent from the body. Doubles as peer-review orientation and the retrieval chunk agents see first |
 | Problem               | 1–2 paras, technical only (strip story framing)                                                                                                                                                                         |
 | Decision              | 1–2 paras, what we built                                                                                                                                                                                                |
-| Alternatives rejected | Load-bearing, and placed high because it answers the returning reader's first question — has someone already tried the thing I am about to propose? One option not taken + 1–3 sentences why                            |
-| Assumptions           | The conditions the decision depends on, each stated so it can be **checked later** ("valid while …", "revisit if …"). This is what makes staleness detectable instead of discovered                                     |
+| Alternatives rejected | Load-bearing. One option not taken + 1–3 sentences why                            |
+| Assumptions           | The conditions the decision depends on, each stated so it can be **checked later** ("valid while …", "revisit if …")                                     |
 | Watch out for         | Every limit on the decision in one list: risks accepted, drift, hidden coupling, what the code deliberately does NOT do, and any anti-pattern the work uncovered. Do NOT manufacture downsides                          |
 | Addenda               | Dated, append-only outcome trail. Omit at creation; the first addendum adds the section                                                                                                                                 |
 | Related               | Eng-arch links — only if eng-arch was updated; else omit                                                                                                                                                                |
@@ -27,16 +27,16 @@ Eight sections, in this order. There is no ninth: a fact that fits nowhere here 
 ## Discipline
 
 - **Status**: `Accepted` default. `Deprecated` when no longer in force. `Superseded by IQ-YYY` (with link) when replaced — and the replacement carries `Supersedes: IQ-XXX`, so the chain reads in both directions.
-- **The body freezes at Accepted; the header does not.** Everything from `## TL;DR` down is frozen. The header bullets are mutable metadata — `Status`, `Supersedes`, and `PR` get filled in or flipped as the record's world changes (`PR` is `(pending)` at creation, since `/adr` runs before the PR opens). Changing a header bullet is bookkeeping, not a rewrite of the decision.
+- **The body freezes at Accepted; the header does not.** Everything from `## TL;DR` down is frozen. The header bullets are mutable metadata — `Status`, `Supersedes`, and `PR` get filled in or flipped as the record's world changes. Changing a header bullet is bookkeeping, not a rewrite of the decision.
 - **Two legal mutations to the body after Accepted, nothing else**:
   1. **Addendum** — a dated line appended under `## Addenda`: outcomes, escapes traced back to this decision, an assumption observed broken. Never alters anything above it.
   2. **Supersession** — a changed decision gets a NEW record that supersedes this one. Flip this record's `Status` to `Superseded by IQ-YYY` (header bookkeeping, per above) and leave the body untouched.
      Silent edits destroy the audit chain; the trail is only trustworthy if readers can rely on Accepted body text being frozen.
 - **Addendum format** — one line, ISO date, newest last (append-only): `- **YYYY-MM-DD** — [what happened]`. Tag the kind inline when it has one: `assumption broken:`, `escape IQ-XXX:`, `outcome:`.
 - **Assumptions are testable or they're filler**: "we assume reasonable scale" records nothing; "valid while single-region" can be checked in 30 seconds by the reader who wonders if this still applies.
-- **Reversibility is one line**: `two-way door` (cheap to undo) or `one-way door` (migration, published API, data model) plus one clause on why. Tells the future reader how much evidence they need before re-litigating.
-- **No manufactured downsides**: trust `Alternatives rejected` to carry the trade-off load. Thin filler is worse than asymmetry.
-- **Claimed wins go in `Addenda`, not the body.** "This made X faster" written on the day of the change is a prediction wearing a result's clothes. If it was measured, the number belongs in Problem or Decision as evidence; if it was not, wait and add a dated addendum.
+- **Reversibility is one line**: `two-way door` (cheap to undo) or `one-way door` (migration, published API, data model) plus one clause on why.
+- **No manufactured downsides**: trust `Alternatives rejected` to carry the trade-off load.
+- **Claimed wins go in `Addenda`, not the body.** If it was measured, the number belongs in Problem or Decision as evidence; if it was not, wait and add a dated addendum.
 
 ## Write for skimmability
 

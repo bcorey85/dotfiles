@@ -10,11 +10,11 @@ Independently reconcile what shipped on this branch against the ticket's require
 
 ## Why
 
-`/review` (chained after `/code`) checks code **quality** — bugs, anti-patterns, security. Nothing in the flow checks **completeness**: did the diff actually satisfy every plan phase + ticket requirement? Those are different audits. The plan's `## Phase Status` checkboxes are self-reported by `/code`; verify does NOT trust them — it verifies against the real diff. Finding a gap here is cheap; finding it in `/adr` (which seals the work) or after the PR opens is not.
+`/review` (chained after `/code`) checks code **quality** — bugs, anti-patterns, security. Nothing in the flow checks **completeness**: did the diff actually satisfy every plan phase + ticket requirement? The plan's `## Phase Status` checkboxes are self-reported by `/code`; verify does NOT trust them — it verifies against the real diff.
 
 ## When it runs
 
-After `/code` (and its auto `/review`) report done, **before the user opens the PR**. Not a behavioral check — terminal-drivable behavioral verification runs per-phase via `/code`'s agent verifier (evidence recorded in the plan). verify is static reconciliation of plan ↔ diff, and on a clean result it assembles the **review packet**, whose centerpiece is the **human smoke-test checklist** — UI/browser-level verification is deliberately the user's job; agents never drive a browser.
+After `/code` (and its auto `/review`) report done, **before the user opens the PR**. Not a behavioral check — terminal-drivable behavioral verification runs per-phase via `/code`'s agent verifier (evidence recorded in the plan). verify is static reconciliation of plan ↔ diff, and on a clean result it assembles the **review packet**, whose centerpiece is the **human smoke-test checklist**.
 
 ## Resolve the task directory
 
@@ -41,7 +41,7 @@ This is the one step that DOES read the plan in full (contrast `/adr`, which for
 
 1. Resolve the directory; locate ticket + plan.
 2. Determine the change set: everything on this branch (committed + uncommitted) vs its base branch. Default `BASE=$(git merge-base HEAD origin/master 2>/dev/null || git merge-base HEAD origin/main)`, then `git diff --stat "$BASE"...HEAD` plus working-tree changes; adjust the base if the branch was cut from a sprint branch.
-3. **Dispatch `plan-verifier`** (pinned; omit `model`) with `scope: branch` and three things: the ticket path, the plan path, and the diff scope. Nothing else — its contract (verdicting from the diff rather than the Phase Status checkboxes, the acceptance-criteria coverage check, running the Automated Verification commands, deferring manual items as `needs-manual`, skipping `What We're NOT Doing`, and writing nothing but `Manual Verification` checkbox lines) lives in its agent file. This is the ONLY place it runs — nothing upstream has pre-verdicted a phase for you.
+3. **Dispatch `plan-verifier`** (pinned; omit `model`) with `scope: branch` and three things: the ticket path, the plan path, and the diff scope. Nothing else — its contract lives in its agent file. This is the ONLY place it runs — nothing upstream has pre-verdicted a phase for you.
 
    **`N/A — no criteria in scope`** is not a pass. It means the plan gave the gate nothing to check; surface that to the user rather than reporting completeness.
 
@@ -53,20 +53,13 @@ This is the one step that DOES read the plan in full (contrast `/adr`, which for
    `missing` verdict (`class=plan-drift`, `file`/`line` from its evidence).
    Non-blocking: on failure, mention it and continue.
 
-   **This step comes before the presentation and before routing, not after.**
-   Logging last is how it gets skipped: a run with gaps routes straight into the
-   fix path, a clean run routes straight into assembling the packet, and either
-   way the turn ends with the row unwritten. A missing row is indistinguishable
-   from a run that found nothing, so every one skipped makes this gate look
-   weaker than it is. Write the row while the reconciliation is in front of you.
+   **This step comes before the presentation and before routing, not after.** Write the row while the reconciliation is in front of you.
 
 5. Present the checklist. Route per the result.
 
 ## Reconciliation output
 
-`plan-verifier`'s agent file owns the shape — present what it returns; do not restate its
-format here, or the two copies will drift and the one you paraphrase from will be the stale
-one. The parts you consume downstream: the verdict table, the acceptance-criteria result, the
+`plan-verifier`'s agent file owns the shape — present what it returns. The parts you consume downstream: the verdict table, the acceptance-criteria result, the
 `needs-manual` items (they become the smoke-test checklist), and the denominator.
 
 ## Routing
@@ -81,7 +74,7 @@ one. The parts you consume downstream: the verdict table, the acceptance-criteri
 
   Then offer to dispatch `/fix` (or `/code` for net-new work) to close them. Re-run verify after.
 
-- **Clean**: first, the **branch-final smell sweep gate** — confirm a bare `/refactor` (full branch-diff sweep) has run on this branch since the last code change. If it hasn't, run it now (Skill tool) and let its loop converge before assembling the packet. Rationale: escape telemetry (`/audit review`) shows smell/duplication defects dominate what survives `/review` — its calibration suppresses them by design — and the sweep only catches them when it actually runs. The sweep is `/refactor`'s job; verify stays read-only and simply refuses to hand over the packet without it. Then build the **review packet** — the single artifact for the human bulk review:
+- **Clean**: first, the **branch-final smell sweep gate** — confirm a bare `/refactor` (full branch-diff sweep) has run on this branch since the last code change. If it hasn't, run it now (Skill tool) and let its loop converge before assembling the packet. The sweep is `/refactor`'s job; verify stays read-only and simply refuses to hand over the packet without it. Then build the **review packet** — the single artifact for the human bulk review:
   1. Assemble one output, in this order: (a) the completeness table above; (b) **smoke-test checklist** — every acceptance criterion restated as a user-observable check, every `human-only` item from the plan's Manual Verification sections, and anything `needs-manual` from the reconciliation, each with concrete steps to exercise it; (c) **diff hotspots** — the 3–5 files the completeness evidence marks as heaviest/most load-bearing, listed as "read these first, skim the rest"; (d) a one-line pointer to the agent-verified evidence in the plan for spot-checking. Do NOT situate the change here — situating is `/orient`'s job, run on demand, not a verify or recap step; doing it inside verify doubles the spend for the same map.
   2. Point forward: run the smoke-test checklist, then open the PR yourself — agents never open PRs. After the PR exists, `/adr`.
 

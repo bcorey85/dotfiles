@@ -111,7 +111,6 @@ Triggered when `$ARGUMENTS` is a path to a `.md` file under `docs/decisions/` (a
 
    **Fullstack (both):**
    - Launch both agents in parallel (single message, two Agent tool calls)
-   - Backend architect produces its analysis first conceptually, but both run concurrently
    - After both complete, synthesize into a unified system view
 
    Omit `model` on architect dispatches — their frontmatter pins Opus. Call-site `model: "opus"` is hook-blocked, and a call-site `"sonnet"` would silently downgrade them.

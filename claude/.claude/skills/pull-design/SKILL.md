@@ -160,8 +160,7 @@ If the Figma MCP tools aren't available in this session, say so and stop — don
 
 ## Tips
 
-- **Select one frame at a time.** Full pages produce truncated or noisy output. If the design has multiple sections, run `/pull-design` once per section or let the skill chunk automatically.
-- **Run before `/eng-spec`.** This gives the architect design context (measurements, tokens, gaps) to inform the implementation plan.
+- **Select one frame at a time.** If the design has multiple sections, run `/pull-design` once per section or let the skill chunk automatically.
 - **Figma shows the WHAT, not the HOW.** Don't let Figma output override architectural decisions from the eng plan.
 
 ## Arguments

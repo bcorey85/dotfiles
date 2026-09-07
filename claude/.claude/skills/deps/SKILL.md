@@ -5,7 +5,7 @@ description: Upgrade a dependency safely — mandatory breaking-change research 
 
 # Deps
 
-Version migrations are the highest-risk config-adjacent change: failures surface at build/run time, sometimes only in CI. The global WebSearch-before-config rule applies in full here — this skill is its workflow.
+The global WebSearch-before-config rule applies in full here — this skill is its workflow.
 
 ## Process
 

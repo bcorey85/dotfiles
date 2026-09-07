@@ -10,15 +10,14 @@ description: Systematic debugging — find the root cause before proposing any f
 > **NO FIX BEFORE ROOT CAUSE.**
 
 A change at the point the error surfaces, made without knowing why the bad value or
-state got there, is a symptom patch. It moves the bug; it does not remove it. Every
-fix you have tried that didn't hold is the signal that you skipped this.
+state got there, is a symptom patch. It moves the bug; it does not remove it.
 
 ## When
 
 Use for ANY technical failure: test failure, crash, wrong output, performance
 regression, flaky test, build break, integration break. **Especially** under time
 pressure, when the bug "looks simple," or when a previous fix didn't take — simple
-bugs have root causes too, and rushing guarantees rework.
+bugs have root causes too
 
 Not this skill:
 
@@ -36,8 +35,6 @@ Not this skill:
 - Listing several fixes at once ("here are the main problems: …") without a confirmed cause
 - "I don't fully understand it but this might work"
 - "One more attempt" — when you have already tried two (see phase 4's architecture rule)
-
-Each of these is the thought that precedes a symptom patch. Naming it is how you stop it.
 
 ## The four phases — complete each before starting the next
 
@@ -119,8 +116,7 @@ guess re-enters phase 2; it does not proceed to a fix.
 
 - Never propose a fix you have not traced to an origin AND confirmed. "Probably" = not done.
 - Read-and-trace here; the repair goes through the normal fix path so nothing skips review.
-- A truly environmental/external cause is a valid finding — but 95% of "no root cause"
-  is incomplete investigation. Prove it's external before concluding it.
+- A truly environmental/external cause is a valid finding. Prove it's external before concluding it.
 - Phase 2 dead-ending on a cause outside our code is the hand-off to /stop-guessing;
   3+ failed fixes is the hand-off to the user as an architecture question. Neither is a
   licence to keep guessing.

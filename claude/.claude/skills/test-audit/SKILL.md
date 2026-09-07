@@ -22,17 +22,6 @@ synthesis consumes.
 Dispatch `test-intent-reviewer` (pinned; omit `model`) — **cull + coverage-net + weak
 scope** (`scope: cull` in its contract).
 
-This half of the audit is inherently cross-phase and cannot be done phase-locally:
-
-- **Test spam** — phase 2 and phase 4 each adding a test for the same behavior is
-  invisible from inside either phase.
-- **`COVERAGE-LOST`** — a test deleted in phase 1 and legitimately replaced in phase 3
-  looks like lost coverage at phase 1, and only resolves when both are in view.
-- **`WEAK`** — under-pinned and absent assertions against the plan's promises. Runs here
-  and not at phase scope: the class that leaks is absent assertions and cross-phase
-  artifacts, visible only with the whole suite and whole plan in view. WEAK findings
-  route to a `test-writer` re-dispatch, not `/fix`.
-
 Hand it the branch diff (`git diff <base>...HEAD`) and the oracle (spec + acceptance
 criteria). Cull/coverage findings route through `/fix`; WEAK findings route to a
 `test-writer` re-dispatch (implementation-blind). Then re-run the loop's execution gate.
@@ -54,9 +43,7 @@ argument stands. The other two are results, not failures to reach one, and each 
 of being misread here:
 
 - **EQUIVALENT** is not a survivor. The mutant is unobservable, so the cull question was
-  malformed and no test could ever settle it. Do **not** commission coverage to chase it —
-  a test written against an equivalent mutant asserts nothing, which is how vacuous tests
-  get added by a process meant to remove them.
+  malformed and no test could ever settle it. Do **not** commission coverage to chase it.
 - **INDETERMINATE** is still open. Report it open; do not downgrade it to a pass.
 
 **Carry the denominator into the receipt — a bare `0` is not a result here.** The

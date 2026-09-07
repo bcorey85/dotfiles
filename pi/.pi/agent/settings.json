@@ -5,8 +5,8 @@
   "lastChangelogVersion": "0.82.0",
   "theme": "dark",
   "defaultProvider": "opencode-go",
-  "defaultModel": "kimi-k3",
-  "defaultThinkingLevel": "high",
+  "defaultModel": "muse-spark-1.3-contributor",
+  "defaultThinkingLevel": "xhigh",
   "hideThinkingBlock": true,
   "packages": [
     "npm:pi-spark",

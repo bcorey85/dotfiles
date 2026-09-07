@@ -36,7 +36,7 @@ Distill the current conversation into a structured idea document at `docs/backlo
 
    What we discussed — the approach, key decisions, and any constraints identified.
    Use bullet points. Include specific technical details from the conversation
-   (component names, token values, API shapes, etc.) — these are easy to lose.
+   (component names, token values, API shapes, etc.).
 
    ## Open questions
 

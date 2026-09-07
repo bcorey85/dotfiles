@@ -24,16 +24,9 @@ feature phase (feature ends at Phase 3 → these are 4–7).
       files (excluding lockfiles, generated files, and test-only files) even
       though no single module reaches 100. Dispatch the largest module anyway.
 
-   Trigger 2 exists because unnecessary code spreads with its consumers: a
-   producer and the state field, routing branch, and prompt clause that exist
-   only to serve it land in four different modules, each under any per-module
-   floor, and the deletion is invisible until one of them is read as a whole.
-   A per-module maximum cannot see that shape at all.
-
    Otherwise skip it and report both counts. Never widen to a second module,
    never pass the branch diff (`complexity-reviewer` refuses a diff bound).
-   Under trigger 2 the largest module is a guess at where the cascade is
-   rooted; if its findings name a consumer in another module as the reason
+   If its findings name a consumer in another module as the reason
    something is deletable, say so in the report rather than dispatching again.
    Simplify findings are opt-in per finding, the user's call; accepting one
    makes this phase `risk: high` — the no-behavior-change contract covers the
@@ -54,10 +47,7 @@ feature phase (feature ends at Phase 3 → these are 4–7).
      **human smoke-test checklist** (all human-only Manual Verification items).
    - **Acceptance-criteria reconciliation** — for every id in
      `docs/plans/<slug>/acceptance-criteria.md`, name the test that covers it
-     (`file:line`) or report it MISSING. This is the only check that the criteria
-     written before implementation actually got implemented; nothing earlier in
-     the pipeline enforces it, because the criteria deliberately live outside the
-     test tree. A criterion under `## Manual only` is satisfied by appearing on
+     (`file:line`) or report it MISSING. A criterion under `## Manual only` is satisfied by appearing on
      the smoke-test checklist, not by a test. MISSING is a phase failure, not a
      note — either a test is owed or the user retires the criterion on the
      record.

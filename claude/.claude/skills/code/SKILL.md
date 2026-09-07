@@ -33,13 +33,13 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    - Identify the next un-executed phase by reading the plan's `## Phase Status` section: the first unchecked (`- [ ]`) entry is the phase to dispatch. This is the source of truth across `/clear` boundaries — do NOT scan git log or diff to figure out where you are. If the plan has no `## Phase Status` section (older plan format), fall back to `git status` + per-phase success criteria, but flag this to the user so they can backfill the section.
    - **Acceptance-criteria check (YOU do this, by reading, before the phase's coder — every phase):** confirm `docs/plans/<slug>/acceptance-criteria.md` exists beside the plan and is non-empty.
 
-     Missing, when the ticket plainly has behavioral criteria → **STOP and do not dispatch**; report it as a plan defect and hand it to the user. Never write the criteria yourself at this point and never dispatch an agent to: criteria authored after the implementation is planned, by anyone who will satisfy them, are a description rather than an oracle, and no later phase recovers that property. They are `/eng-spec` Phase 7.5's output, written with the user.
+     Missing, when the ticket plainly has behavioral criteria → **STOP and do not dispatch**; report it as a plan defect and hand it to the user. Never write the criteria yourself at this point and never dispatch an agent to do it. They are `/eng-spec` Phase 7.5's output, written with the user.
 
      Missing on a task with no behavioral criteria (pure config, mechanical refactor) → proceed.
 
      The criteria are prose and stay in the planning directory. Do not seed `tests/` with stub files from them, and never pass criterion ids into a dispatch prompt — that is how they leak into committed code (`_shared/code-vocabulary.md`). The closing Verify phase is what proves each one ended up with a test.
 
-     When the check fails — missing file, empty file, or criteria that plainly do not cover the ticket — score it before you do anything else (a pass every phase is noise; the failure is the signal):
+     When the check fails — missing file, empty file, or criteria that plainly do not cover the ticket — score it before you do anything else:
 
      ```bash
      bash ~/.claude/scripts/log-scan repo=<basename> scan=acceptance-stub \
@@ -48,9 +48,9 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
      `exit=` is the scan's own exit code and says only whether it RAN — `0` printed rows, `1` ran clean, `2` did not run. A found defect is `exit=0` with counts, never `exit=1`.
 
-   - Dispatch the coder for THAT ONE PHASE ONLY. The coder must run the phase's "Automated Verification" gate (typically `npm run validate` or equivalent) before returning. **Re-read the phase's Phase Status line before dispatching** — its `(risk: …)` tag drives the phase-boundary decision (step 2) and its `(reviewers: …)` list is passed through to the review loop (step 5). Both are properties of the phase, not of the invocation, so they can differ from the previous phase's.
+   - Dispatch the coder for THAT ONE PHASE ONLY. The coder must run the phase's "Automated Verification" gate (typically `npm run validate` or equivalent) before returning. **Re-read the phase's Phase Status line before dispatching** — its `(risk: …)` tag drives the phase-boundary decision (step 2) and its `(reviewers: …)` list is passed through to the review loop (step 5).
    - After the coder completes, dispatch the `test-writer` (step 3b); after it returns and you summarize, auto-dispatch `/review` (step 5).
-   - **No per-phase `plan-verifier`.** Plan↔diff reconciliation runs ONCE, at branch end, from `/verify` — run per phase it would report the unwritten phases as gaps. Here, YOU check before marking the phase done: the phase's `#### Automated Verification` commands actually ran and passed (coder evidence), and its `#### Manual Verification` items go on the deferred list for `/verify`. A phase with no Success Criteria is a plan defect, not a pass — say so before advancing.
+   - **No per-phase `plan-verifier`.** Plan↔diff reconciliation runs ONCE, at branch end, from `/verify`. Here, YOU check before marking the phase done: the phase's `#### Automated Verification` commands actually ran and passed (coder evidence), and its `#### Manual Verification` items go on the deferred list for `/verify`. A phase with no Success Criteria is a plan defect, not a pass — say so before advancing.
 
      **Run any prohibition criterion yourself and log the run.** A criterion of the form "`git grep <pattern>` returns zero hits" is a scan, not coder evidence — run it with Bash and score it, because a prohibition nobody re-ran is indistinguishable from one that never held:
 
@@ -63,10 +63,10 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
      Grep exits 1 on a clean tree, so a passing run is `exit=1 candidates=0`.
 
    - **No per-phase test-intent audit.** The enforced coder/test-writer split already severs bug-pinning's cause, so the audit does not run here. The cull/coverage/weak half runs at the `/test-audit` closing phase, and `/verify` reconciles plan↔diff at branch end; a `weak`/`bug-pinning` finding surfacing from ANY other gate still routes to `test-writer` re-dispatch (implementation-blind), `/fix` only when it implicates src.
-   - After peer review passes AND the phase's Automated Verification is green, mark the phase done in the plan: `Edit` the `## Phase Status` section to flip `- [ ] Phase N: ...` → `- [x] Phase N: ...`. This single Edit is the durable record of progress — it survives `/clear` and lets in-session re-entry detect the next phase.
+   - After the review loop returns `converged` or `deferred` AND the phase's Automated Verification is green, mark the phase done in the plan: `Edit` the `## Phase Status` section to flip `- [ ] Phase N: ...` → `- [x] Phase N: ...`. This single Edit is the durable record of progress — it survives `/clear` and lets in-session re-entry detect the next phase.
    - **Phase-boundary decision** — the phase is done; now decide stop vs. auto-advance, checking these in order (first match wins), then print the matching Phase-Complete Block:
      1. **Last phase** → STOP; print the completion footer (block C).
-     2. **Phase 1**, any risk tier → STOP for **calibration** (block B) — first contact between plan and repo; a misreading here propagates into every later phase, so stop at the cheapest moment.
+     2. **Phase 1**, any risk tier → STOP for **calibration** (block B) — first contact between plan and repo.
      3. **A gate needed an exception, a `/fix` loop hit its cap, or the coder flagged an ambiguity**, any tier → STOP (block B).
      4. **`(risk: high)`** — and an untagged phase counts as high → STOP for phase-level sign-off (block B).
      5. Otherwise — genuinely **`(risk: low)`** with all machine gates green → **AUTO-ADVANCE in-session** (block A): print the one-line advance notice, then re-enter step 2 for the next phase. Do NOT `/clear` and do NOT wait — the user can interrupt at any boundary.
@@ -79,10 +79,8 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    Dispatch two coders in parallel ONLY when the work holds two genuinely independent deliverables that share no contract, type, or file — and then split by DELIVERABLE, never by client/server layer.
 
    For each coder:
-   - Pass the full task description and any relevant context. **When the task is a phase of a multi-phase plan, name the phase explicitly** ("implement Phase 4 of `<plan-path>`") and tell the coder to read it phase-scoped (`coder-core`'s workflow step 1 carries the mechanics).
-   - Instruct it to follow existing patterns in the codebase
+   - **When the task is a phase of a multi-phase plan, name the phase explicitly** ("implement Phase 4 of `<plan-path>`") and tell the coder to read it phase-scoped (`coder-core`'s workflow step 1 carries the mechanics).
    - Coders write NO tests (coder-core's "Tests Are Not Yours") — stub flips and all test authorship happen in step 3b's `test-writer` dispatch
-   - Flag any ambiguities or issues
    - If the task turns out to be architectural, have it report back and recommend `/eng-spec` instead
 
 3b. **Dispatch the test-writer** (after every coder dispatch that implemented plan behavior): a single `test-writer` subagent (pinned; omit `model`). Skip ONLY when the task/phase has no Success Criteria behavior and no acceptance criteria (pure config or mechanical phases) — note the skip in the phase summary.
@@ -91,9 +89,9 @@ Pass the plan path + phase number (it reads phase-scoped) and the stub file list
 
 Route on its report:
 
-- `FAILING-TEST` lines → candidate implementation bugs, the split working as designed. Dispatch `/fix` scoped to make the named behaviors pass WITHOUT touching the failing tests' assertions, then re-run the test-writer's `tests-run` command yourself with Bash. Cap: 2 fix rounds; still red → STOP and surface to the user (a test still red after two honest attempts usually disagrees with the plan, not the code — settle that with the user, don't keep fixing).
+- `FAILING-TEST` lines → candidate implementation bugs, the split working as designed. Dispatch `/fix` scoped to make the named behaviors pass WITHOUT touching the failing tests' assertions, then re-run the test-writer's `tests-run` command yourself with Bash. Cap: 2 fix rounds; still red → STOP and surface to the user.
 
-  **First decide which side is wrong — the code or the plan.** A `FAILING-TEST` whose scenario cannot run as the plan describes it (the fixture cannot reach that state, the criterion contradicts the domain, two plan sections disagree) is a SPEC defect, and `/fix` is the wrong route: it would bend correct code to satisfy an impossible criterion. Route those to **AskUserQuestion** exactly as the PLAN-IMPACT gate does, record the outcome in the plan's `## Plan Deviations` section, then re-dispatch the `test-writer` to correct the test — never the coder.
+  **First decide which side is wrong — the code or the plan.** A `FAILING-TEST` whose scenario cannot run as the plan describes it (the fixture cannot reach that state, the criterion contradicts the domain, two plan sections disagree) is a SPEC defect, and `/fix` is the wrong route. Route those to **AskUserQuestion** exactly as the PLAN-IMPACT gate does, record the outcome in the plan's `## Plan Deviations` section, then re-dispatch the `test-writer` to correct the test — never the coder.
 
 - `UNDERSPECIFIED` lines → surface in the phase summary; a success criterion left untested by one blocks marking the phase done (plan gap — treat like a missing Success Criteria section, step 2).
 
@@ -106,7 +104,7 @@ bash ~/.claude/scripts/log-escape repo=<basename> stage_found=phase-gate \
   file=<plan path>
 ```
 
-`gate_missed=eng-spec`, never `coder` — the implementer did not miss this. It is the one escape class no reviewer can catch: a reviewer checks the diff against the spec, so a wrong spec and a faithful diff agree.
+`gate_missed=eng-spec`, never `coder` — the implementer did not miss this.
 
 4. **After the coder and the test-writer complete**, summarize for the user AND build a handoff block for downstream review.
 
@@ -137,13 +135,11 @@ bash ~/.claude/scripts/log-escape repo=<basename> stage_found=phase-gate \
 
    This is a one-way channel to the human, not an input to review. Do NOT put review-relevant caveats here and nowhere else — anything the reviewer needs belongs in `flagged`.
 
-5. **Auto-dispatch peer review**: After summarizing the coder output, tell the user: "Auto-dispatching review to check the implementation before committing." Then dispatch the loop directly — `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"` (unpinned), passing `mode: review-first`, `caller: code`, `lane: <lane>` (from step 2), the handoff block from step 4, and any `+fast`/`+deep` modifier plus any specialist flag (`+sec`/`+perf`/`+smell`/`no-specialist`).
+5. **Auto-dispatch review**: After summarizing the coder output, tell the user: "Auto-dispatching review to check the implementation before committing." Then dispatch the loop directly — `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"` (unpinned), passing `mode: review-first`, `caller: code`, `lane: <lane>` (from step 2), the handoff block from step 4, and any `+fast`/`+deep` modifier plus any specialist flag (`+sec`/`+perf`/`+smell`/`no-specialist`).
 
-   **Pass `reviewers: <domains>` verbatim from this phase's Phase Status line** (`plan-format.md`), when it has one. This is the PRIMARY dispatch signal for `security-reviewer` — its diff trigger is deliberately narrow. The loop's Step 6b unions plan-declared ∪ force flag (`+sec`/`+perf`/`+smell`) ∪ diff trigger; `no-specialist` suppresses the pass.
+   **Pass `reviewers: <domains>` verbatim from this phase's Phase Status line** (`plan-format.md`), when it has one. The loop's Step 6b unions plan-declared ∪ force flag (`+sec`/`+perf`/`+smell`) ∪ diff trigger; `no-specialist` suppresses the pass.
 
    Do NOT `Skill`-invoke `/review` here — that re-injects its body into this context once per phase. `/review` remains the user-facing entry point for manual review and dispatches the same agent.
-
-   This runs AFTER the coder (and, on a rare two-deliverable split, both coders) has completed and the summary is presented.
 
    **Route on the returned `status`** — first match wins:
    - **`plan-impact`** → raise the **AskUserQuestion** modal (assumed → found → what changes; `Adopt plan change` / `Keep plan as written` / `Discuss`), record the answer in the plan's `## Plan Deviations` section, then re-dispatch `review-loop` with the decision and BOTH returned counters preserved (`iter` and `spec_iter`). The agent cannot raise a modal; this routing is why.
@@ -158,7 +154,7 @@ bash ~/.claude/scripts/log-escape repo=<basename> stage_found=phase-gate \
 
 After each phase + review + phase gates, the **Phase-boundary decision** (step 2) selects one of three blocks.
 
-**Deliver every block through the `brief` skill's shape** (`~/.claude/skills/brief/SKILL.md`): Layer 0 is the verdict, the blockers, the one decision owed, and a menu naming what is held back — the block's queue, gate evidence, verification lists and corrections are Layer 1, emitted only when the user asks for that item. The blocks below define what must EXIST at the boundary (nothing may be skipped or left unrun); `brief` decides what gets printed unasked. A block printed in full, unprompted, is the anti-pattern that skill exists to stop.
+**Deliver every block through the `brief` skill's shape** (`~/.claude/skills/brief/SKILL.md`): Layer 0 is the verdict, the blockers, the one decision owed, and a menu naming what is held back — the block's queue, gate evidence, verification lists and corrections are Layer 1, emitted only when the user asks for that item. The blocks below define what must EXIST at the boundary (nothing may be skipped or left unrun); `brief` decides what gets printed unasked.
 
 **A — Auto-advance** (decision rule 5: genuinely `(risk: low)`, all machine gates green, not Phase 1, not the last phase, no exception/cap/ambiguity). No sign-off is requested; do not stop:
 

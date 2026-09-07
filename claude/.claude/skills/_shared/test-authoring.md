@@ -4,9 +4,7 @@ Single source of truth for how a coder decides WHICH tests to write. Read this
 before authoring or changing any test.
 
 Lives outside `coder-core` deliberately: it applies only to dispatches that
-touch tests, while `coder-core` is preloaded into every coder dispatch —
-including fix coders dispatched from the review loop, which write no tests
-and paid for these rules on every spawn. The prohibitions that DO bind every
+touch tests. The prohibitions that DO bind every
 coder (never reinterpret an acceptance criterion; never carry workflow
 vocabulary into committed code — `_shared/code-vocabulary.md`) stay in
 `coder-core` — only the authoring guidance moved here.
@@ -24,9 +22,7 @@ names — that list is the whole budget. Extend existing test files and describe
 blocks by default; a new test file needs a stated reason. Don't unit-test what
 a stub, feature spec, or higher-level test already exercises — unit tests cover
 the internals those can't see. A test you can't trace to a criterion, a named
-edge case, or a real internal invariant doesn't get written: test volume is
-diff noise, not rigor, and it does not make the implementation more likely to
-be correct.
+edge case, or a real internal invariant doesn't get written.
 
 ## One altitude per behavior
 
@@ -43,8 +39,7 @@ the wrong altitude.
 ## Test value bar (apply before submitting)
 
 Every test you add must be able to fail for a reason a user cares about —
-otherwise it is diff noise, not coverage, and it taxes every future reader of an
-already-noisy diff. Before you keep a test you wrote this task, confirm it
+otherwise it is diff noise, not coverage. Before you keep a test you wrote this task, confirm it
 exercises real behavior; drop the ones that only: assert a mock/spy was called
 with the args you just passed it; exercise the framework/library rather than our
 code; restate the implementation (`render` with no meaningful `expect`, a
@@ -77,9 +72,8 @@ to change. Happy-path output tends to be covered; warning, skip, and usage-error
 tend not to be exercised at all — check that the stream has a test before judging the
 assertion on it.
 
-This bar governs **tests you wrote this task** — it never licenses touching an
+This bar governs **tests you wrote this task** — it never licenses touching a
 test that covers an acceptance criterion, or a pre-existing test, and one smoke test per unit is fine (it
 is the redundant 2nd+ that goes). When unsure whether a test you wrote this task
 earns its place, delete it — behavior that actually matters traces back to a
-criterion and can be re-added deliberately; elaborating an unsure test to
-justify keeping it is how suites rot.
+criterion and can be re-added deliberately.

@@ -49,7 +49,7 @@ a reviewer is most likely to miss something. Prefer a file the loop passed clean
 
 Read the file. Choose a defect class that is PLAUSIBLE for this code — the
 mutation must look like something a coder agent would actually emit, not like
-sabotage. A reviewer catching `x = null; x.foo()` proves nothing.
+sabotage.
 
 Defect classes (pick one; vary across runs, never repeat the same class twice
 in a row — a reviewer can be good at one class and blind to another):
@@ -95,8 +95,7 @@ Dispatch the SAME reviewer the loop's first iteration uses, so the number
 transfers: `Agent`, `subagent_type: "code-reviewer"`, `model: "sonnet"`.
 
 - Dispatch it as a normal review of the working diff. **Never mention
-  calibration, seeding, or that a defect exists** — a primed reviewer is not
-  the reviewer you run in production, and its recall number is worthless.
+  calibration, seeding, or that a defect exists**.
 - `+deep` variant → dispatch `code-reviewer-deep` (pinned; omit `model`) and
   record `reviewer=deep`. Calibrate the tier you actually run.
 - This is NOT `review-loop` — the loop would dispatch a coder and fix the seed,
@@ -162,15 +161,13 @@ percentage until N ≥ 10. And say plainly what it licenses:
   uninformative, and the 30% null rate is the instrument failing, not the code
   passing. The reviewer tier, not your reading, is what needs to change.
 
-Below N=10, report the fraction and say it's provisional. Resist the urge to
-conclude from three runs.
+Below N=10, report the fraction and say it's provisional.
 
 ## What NOT to do
 
 - **Never commit with a seed in the tree.** If `git commit` is even discussed
   while the lock exists, stop and restore first.
-- **Never tell the reviewer it's a drill** — that measures a reviewer you don't
-  have.
+- **Never tell the reviewer it's a drill**.
 - **Never seed more than one defect per run.** Two seeds make caught/missed
   ambiguous and double the restore risk.
 - **Never route through `review-loop`** — it fixes, which destroys the measurement.

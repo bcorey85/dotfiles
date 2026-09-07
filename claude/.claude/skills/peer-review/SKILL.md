@@ -92,7 +92,7 @@ An unmet criterion is not automatically blocking — the PR may be a deliberate 
 
 ### 4c. Surprise audit (always, before presenting findings)
 
-A category-tiered review answers "is this line a bug?". This pass answers a different question — **"does this code do something a reviewer who trusted the PR/ticket description would not expect?"** — and it reliably surfaces blockers the category pass misses. Run it on every full review, without asking; it is part of the first pass, not an opt-in second look.
+A category-tiered review answers "is this line a bug?". This pass answers a different question — **"does this code do something a reviewer who trusted the PR/ticket description would not expect?"** — run it on every full review, without asking; it is part of the first pass, not an opt-in second look.
 
 Main-agent, over the diff and findings you already hold (no new dispatch). The frame is the gap between what the description leads a reader to expect and what the code operationally does — not more of the same category sweep. Look for:
 
@@ -101,7 +101,7 @@ Main-agent, over the diff and findings you already hold (no new dispatch). The f
 - **Scope surprises** — a limit, cap, default, or deletion that's broader or narrower than the description implies.
 - **"Technically conforms but sharper than the ticket implies"** — edges that meet the acceptance criteria on paper while behaving in a way the author likely didn't intend a reviewer to discover.
 
-**Verify every candidate against the worktree before presenting it** — read the enclosing code, check for the scheduler/guard/retry the candidate assumes is absent, confirm the true scope of a cap or filter. This step is not optional: presenting an unverified surprise as confirmed relays a false positive to a colleague, the exact failure this skill guards against.
+**Verify every candidate against the worktree before presenting it** — read the enclosing code, check for the scheduler/guard/retry the candidate assumes is absent, confirm the true scope of a cap or filter. This step is not optional.
 
 Merge survivors into the tiers presented in step 5, tagged `(surprise-lens)` so the user sees they came from this pass, not the category review. A survivor merged into Blocking states the precondition that must hold for the failure to fire, same as step 4's findings. Drop refuted candidates silently (or note one line if the user would otherwise expect it).
 
@@ -139,7 +139,7 @@ Merge survivors into the tiers presented in step 5, tagged `(surprise-lens)` so 
 
 Suggestions and nits are one line each, heading and text on the same line. Blocking and Questions get their own paragraph. No bold `Issue:` / `Failure scenario:` / `Fires when:` labels — that is the table in disguise; fold them into the prose.
 
-Number findings continuously across tiers. Surprise-lens survivors from step 4c are already merged into the tiers, tagged `(surprise-lens)`. Then **actively offer the next step via AskUserQuestion** — do not rely on the user remembering a typed command. Two options only:
+Number findings continuously across tiers. Surprise-lens survivors from step 4c are already merged into the tiers, tagged `(surprise-lens)`. Then **actively offer the next step via AskUserQuestion**. Two options only:
 
 - **Walk through the findings** — one at a time, with discussion; proceed to step 6.
 - **Done for now** — stop; the user acts on the findings as-is.
@@ -148,12 +148,12 @@ Number findings continuously across tiers. Surprise-lens survivors from step 4c 
 
 ### 6. Walkthrough (on "walk through")
 
-One finding per turn, in tier order, blocking first. **Never batch** — present one, then stop and wait. Before each finding, move the user's editor to its primary anchor per `~/.claude/skills/_shared/nvim-jump.md` (main-checkout path, not the worktree). The user's reply is a conversation, not a menu selection: they may push back, add repo knowledge you don't have, ask what a caller does, or say the author already knows. Answer it, and only then offer to move on.
+One finding per turn, in tier order, blocking first. **Never batch** — present one, then stop and wait. Before each finding, move the user's editor to its primary anchor per `~/.claude/skills/_shared/nvim-jump.md` (main-checkout path, not the worktree). The user's reply is a conversation, not a menu selection: Answer pushback, and only then offer to move on.
 
 Per finding, before presenting it: read the enclosing function and its callers in the worktree (LSP find-references; `rg` fallback — the worktree has no installed deps, so the language server may not resolve) and check whether the failure path is guarded elsewhere. Then give the finding, a concrete failing input, and a verdict:
 
 - **CONFIRMED** — the trace from input to wrong behavior, quoting lines.
-- **REFUTED** — quote the guard/invariant that makes it impossible. Say it plainly; the user was about to relay a false positive to a colleague.
+- **REFUTED** — quote the guard/invariant that makes it impossible. Say it plainly.
 - **PLAUSIBLE** — reachable but depends on state you can't verify statically; say what would settle it (a test to run, a question to ask the author).
 
 End each finding by asking whether to continue to the next, drop it, or stop. Track which findings are done, which the user dismissed, and which they want commented on — step 7 needs that list. Findings the user dismisses are dropped, not re-argued.

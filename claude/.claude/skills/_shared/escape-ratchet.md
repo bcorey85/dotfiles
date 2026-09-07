@@ -14,15 +14,14 @@ first rung that applies:
 
 1. **`type`** — type / lint / schema change that makes the illegal state
    unrepresentable (e.g. a design-token union type turns `xxs` vs `2xs` into a
-   compile error). Always prefer this rung.
+   compile error).
 2. **`convention`** — one line in the project's CLAUDE.md or conventions doc,
    where coders and reviewers already look.
 3. **`gotcha`** — when the defect traces to a workflow a skill owns (not a code
    convention), one dated line appended to that SKILL.md's `## Gotchas` section
    (create it if absent).
-4. **`rule`** — a calibration line in the relevant agent file. Weakest rung: it
-   spends prompt budget forever and relies on recall. Use only when 1–3 are
-   impossible.
+4. **`rule`** — a calibration line in the relevant agent file. Weakest rung —
+   use only when 1–3 are impossible.
 
 **Plan-stage escapes take a different rung.** When the defect was in the plan —
 the code matched the spec exactly and no reviewer could have caught it — rungs
@@ -36,8 +35,7 @@ does not stop a spec from asserting a stale count. Take:
    (a path, a token, a target); prefer the sweep when it needs the tree to
    answer (a count, a flag's real behavior, a deliverable that already landed).
    This is the FIRST rung to try for a plan-stage escape, before considering
-   `none` — a plan defect that closes nothing recurs in the next spec, because
-   nothing about the next spec's authoring changed.
+   `none`.
 
 `none` is a legal outcome — a one-off not worth guarding. It is a decision, not
 a default: reach it only after 1–4 have been considered and rejected.

@@ -11,11 +11,7 @@ The fourth and last closing phase, and the exit-side counterpart to `/eng-spec`.
 **It runs no gates.** By the time you reach it every gate has already fired, and fired
 where its oracle was sharpest: `/review` converged per phase, the drift gate reconciled
 each phase against its Success Criteria, `/verify` certified branch completeness, and
-`/test-audit` ran the cross-phase test gate. Re-running any of that here would be spend
-without signal.
-
-What has _not_ happened is synthesis. You have seen the phases; you have not seen the
-branch. This skill's whole job is to hand you that one artifact.
+`/test-audit` ran the cross-phase test gate.
 
 **This is not `/orient`.** The line between them is what each one reads. `/orient` reads
 the **codebase** — callers, callees, siblings of the changed symbols — to answer "how does
@@ -64,7 +60,7 @@ jq -c --arg b "$(git branch --show-current)" \
 ```
 
 Read the whole queue against the **branch** diff, not the phase each finding
-came from — that wider bound is the reason deferral is worth anything, and some
+came from — and some
 findings die there because a later phase already resolved them.
 
 Triage each into: **fix now** (route through `/fix`), **stale** (a later phase
@@ -73,10 +69,8 @@ route to `/escape` so it is not lost when this queue is filtered by branch).
 Empty queue → receipt line `deferred: none`. Otherwise
 `deferred: <n> fixed, <n> stale, <n> carried of <m>`.
 
-A deferred `blocker` in this queue is a bug in the loop, not a work item: the
-one-round budget exempts `blocker` findings from deferral. Say so explicitly if
-one appears. A deferred `fix_induced=bug` is the same class — the loop diagnosed a
-regression it created and then failed to fix it. Escalate it as a loop bug, not a
+A deferred `blocker` in this queue is a bug in the loop, not a work item.
+Say so explicitly if one appears. A deferred `fix_induced=bug` is the same class. Escalate it as a loop bug, not a
 work item.
 
 ## Step 3: The recap
@@ -132,8 +126,7 @@ printf '{"ts":"%s","repo":"%s","branch":"%s","test_audit":"%s","residue":%d,"fil
 ## What NOT to do
 
 - **Never re-run a gate** — no second correctness pass, no re-verify, no re-run of the
-  `/test-audit` test gate. Reason at the top of this file. Re-running one hides the debt
-  this skill exists to surface.
+  `/test-audit` test gate. Reason at the top of this file.
 - **Never re-read the codebase to situate** — no callers/callees/siblings sweep, no LSP
   reference walk to build a system map. That is `/orient`. This skill consumes an orient map
   if one exists and otherwise says "not situated"; it never produces one.

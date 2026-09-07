@@ -10,7 +10,7 @@ The user authors inline comments in two readers — Neovim (`<leader>cc` → `:C
 
 One queue, one escape-log pass. The source only decides which script clears the entry.
 
-**Not every comment asks for a diff.** A comment can be a question ("what is `monkeypatch`?", "why are we yielding here?") as legitimately as it can be a change request. Answering one IS handling it. `/fix` runs only for the entries that actually ask for a change, and a queue containing none is a complete, successful run — not an unhandled one.
+**Not every comment asks for a diff.** A comment can be a question ("what is `monkeypatch`?", "why are we yielding here?") as legitimately as it can be a change request. Answering one IS handling it. `/fix` runs only for the entries that actually ask for a change.
 
 ## Modifiers
 
@@ -56,13 +56,13 @@ One queue, one escape-log pass. The source only decides which script clears the 
    - A note that these are **user-authored review comments** (highest priority, not heuristic findings) so coders treat them as explicit requests, not optional suggestions. The source is bookkeeping — never pass it to `/fix` or let it rank the work.
    - Any `+fast` / `+deep` modifier parsed in step 1.
 
-   `/fix` categorizes by owning coder, dispatches the coders in parallel, then auto-runs `/review`. Let it run its full pipeline.
+   Let `/fix` run its full pipeline.
 
 5a. **Answer the `question` entries in conversation.** Answer each properly, at the depth the question asks for — where the thing comes from, what it does, why it is there. An answer that sends the user to read the docs themselves has not handled the comment. This is the whole handling for those entries; nothing is dispatched and no file changes.
 
 Both step 5 and step 5a are conditional on their bucket being non-empty, and a run may legitimately do one, the other, both, or neither.
 
-6. **Resolve handled entries — MANDATORY, do not skip.** Fire this when **every entry has reached a terminal state** — `change` fixed, `question` answered, `skip` triaged — **even if `/review` is still running or you've lost track of it**, and even if `/fix` never ran at all. Do NOT wait on a `/fix` handoff as the trigger: an all-questions queue never has one, and hanging the resolve off it is what caused runs to answer comments correctly and clear none of them, so the next run re-listed them as fresh.
+6. **Resolve handled entries — MANDATORY, do not skip.** Fire this when **every entry has reached a terminal state** — `change` fixed, `question` answered, `skip` triaged — **even if `/review` is still running or you've lost track of it**, and even if `/fix` never ran at all. Do NOT wait on a `/fix` handoff as the trigger: an all-questions queue never has one.
 
    Treat this as a hard gate before you consider `/cc` done. Using the ids and sources recorded in step 4, call each script with ONLY its own source's ids:
 
@@ -73,13 +73,13 @@ Both step 5 and step 5a are conditional on their bucket being non-empty, and a r
 
    Skip a call entirely when that source has no ids. Pass the `id` of every entry that was **fixed**, **answered**, or **skipped after triage** (note skip reasons in the summary). Do **NOT** pass ids of **deferred** entries — they stay in the queue for next time.
 
-   `answered` is a first-class terminal state, not a lesser one. A question you answered is as done as a bug you fixed; leaving it queued re-presents it to the user as if you had ignored it.
+   `answered` is a first-class terminal state, not a lesser one.
 
    Both are true resolves, and both re-read their store at resolve time so entries written since the list survive:
    - **nvim**: rewrites `claude-comments.md` without the resolved ids, deleting the file when nothing remains.
    - **hunk**: rewrites the mirrored JSONL without them, deleting the file when it empties. The note itself stays in hunk's own UI until cleared there, but nothing re-lists it — no by-hand step.
 
-7. **Log escapes.** Every comment that resulted in a real fix is ground truth: the human caught something the automated gates blessed. For each entry **fixed** (not answered, not skipped-as-FP, not deferred), log one line. A run with no `change` entries logs nothing here, and that is correct — a question is not an escape, because no gate failed to catch anything.
+7. **Log escapes.** Every comment that resulted in a real fix is ground truth: the human caught something the automated gates blessed. For each entry **fixed** (not answered, not skipped-as-FP, not deferred), log one line. A run with no `change` entries logs nothing here.
 
    ```bash
    bash ~/.claude/scripts/log-escape repo="$(basename "<repo-root>")" stage_found=cc gate_missed=review class=<bug|smell|duplication|plan-drift|test-gap|other> severity=<high|medium|low> lane=<eng-spec|code|other> guard=<...> desc="<comment gist>" file=<path>
@@ -89,4 +89,4 @@ Both step 5 and step 5a are conditional on their bucket being non-empty, and a r
 
    `stage_found=cc` for BOTH sources: same human-review stage, different reader. Splitting it would fragment the flywheel's per-gate rates across two buckets and make each look better than the gate is. Classify `class` from the comment body, and when unsure, `other`. `lane` is the planning lane that produced the work under comment — infer it from the conversation or the branch's planning artifacts (eng-spec doc → `eng-spec`, direct dispatch → `code`); ask the user only when genuinely ambiguous. Do NOT log comments that were new requirements or changed direction — a gate can't miss information it never had.
 
-8. **Summarize** for the user: which comments were fixed, which were answered, which were skipped (with reasons), which were deferred and why, and the stale-dropped count (if any). State the resolve happened; a summary that lists outcomes without confirming the clear is how the previous failure went unnoticed.
+8. **Summarize** for the user: which comments were fixed, which were answered, which were skipped (with reasons), which were deferred and why, and the stale-dropped count (if any). State that the resolve happened.

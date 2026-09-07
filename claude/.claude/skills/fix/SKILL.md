@@ -33,7 +33,7 @@ raise the modals it cannot.
    - **`deferred`** → the one-round correctness budget was spent and the residue was logged for branch exit. A normal completion, not a stop: render the packet (step 3), add `findings_remaining` under `### Deferred to branch exit`, and record convergence as for `converged`. Do NOT re-dispatch to chase them; `/branch-recap` reads them back.
    - **`converged`** → render the packet (step 3), then record convergence: `bash ~/.claude/scripts/review-gate-mark clean`. Run the mark ONLY for a packet whose `status` is `converged` or `deferred` — the other statuses leave the commit gate dirty by design.
 
-3. **Log walkthrough escapes — MANDATORY on `converged`, do not skip.** When the findings came from **the user, in conversation**, on code a prior `/review` already blessed, each one is ground truth: the human caught what the gates passed. This is the highest-volume escape source in the toolkit and the only one that fires without a dedicated skill invocation — treat it as a hard gate before rendering, not a trailing nicety.
+3. **Log walkthrough escapes — MANDATORY on `converged`, do not skip.** When the findings came from **the user, in conversation**, on code a prior `/review` already blessed, each one is ground truth: the human caught what the gates passed.
 
    Fires only when ALL hold:
    - `status: converged` or `deferred`, and the fix was actually applied (not skipped as a false positive, not deferred)

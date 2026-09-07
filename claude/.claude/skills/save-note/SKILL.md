@@ -26,13 +26,8 @@ never a project folder, under any circumstance — however thoroughly verified t
 material is, however confident the user sounds, and however clearly it came out of
 a project they are mid-way through.
 
-Two rules produce that, and both were arrived at by getting it wrong:
-
 **Information always goes to `notes/`, even when a project is what surfaced it.**
-A page count measured in step 1 of a seven-step learning path is a fact about
-Postgres, not a fact about the project. Filed in the project folder it becomes
-unfindable — six months on, the lookup is "what did I learn about pages," not
-"which project was I doing at the time." Projects are an **orchestration layer**:
+Projects are an **orchestration layer**:
 goals, roadmaps, decisions, status. They _link_ to notes with `[[wikilinks]]`;
 they do not contain them. If the material feels project-specific, it is still a
 note — write the project link into it.
@@ -44,18 +39,16 @@ confidence levels:
   Cheap, frequent, done without breaking flow.
 - **Synthesis** — what makes a cache entry. A project wrapped, or a need arose, and
   one consolidated answer gets written deliberately from the material that
-  accumulated in `notes/`. Rare, and never a side effect of learning something.
-
+  accumulated in `notes/`.
 If the user explicitly asks for a `cache/` entry, say that `save-note` doesn't
 write there and that a cache entry is a synthesis pass over the relevant notes —
 then do that as ordinary work, not through this skill.
 
-**Never ask which folder.** A modal at capture time is the friction this structure
-exists to remove, and there is nothing to ask: the answer is always `notes/`.
+**Never ask which folder** — there is nothing to ask: the answer is always `notes/`.
 
 ### Verification is marked, not filed
 
-Trust is a property of a claim, not of a location. Nothing is split across folders
+Nothing is split across folders
 by how well it was confirmed — write the note, and mark the lines that were told
 rather than shown:
 
@@ -64,8 +57,7 @@ rather than shown:
 - Handler ordering ignores notify order entirely. [unverified]
 ```
 
-`[unverified]` is greppable and reads plainly in a terminal. It is what makes a
-claim legible as a claim on the day the hit lands.
+`[unverified]` is greppable and reads plainly in a terminal.
 
 ## Step 2: Tag
 
@@ -87,17 +79,13 @@ infrastructure work and is the wrong answer for those. Never reach for the tag t
 reads correct over the one that would be searched.
 
 **You may add a tag** without asking, when it is the word that would be searched.
-Add it to `CLAUDE.md`'s list in the same turn — an undeclared tag is how drift
-starts. There is **no minimum note count** to earn a tag: that would be a guess
-about the note's future company, made at the one moment it cannot be answered.
+Add it to `CLAUDE.md`'s list in the same turn. There is **no minimum note count** to earn a tag.
 Singletons get culled later, when the evidence exists.
 
 **Never introduce a synonym of an existing tag.** Two handles for one interest
-means half the notes miss on either query — that is the actual failure mode, not a
-long list. `unix` was merged into `#linux`, `mcp` and `llm` into `#llms`.
+means half the notes miss on either query.
 
-Do not propose a grooming pass on the tag list. Culling singletons and merging
-synonyms is retrospective and user-initiated, like everything else in `cache/`.
+Do not propose a grooming pass on the tag list.
 
 ## Step 3: Name and write
 
@@ -127,12 +115,10 @@ There is no tier to justify — the destination is always `notes/`.
 If the note genuinely did not seem to belong in `notes/`, or a rule here fought
 the capture, append one line to
 `projects/active/vault-redesign/friction.md` — what happened, what was ambiguous.
-That file is where design defects get collected instead of being absorbed
-silently. Do not redesign the hierarchy in the moment; record and move on.
+Do not redesign the hierarchy in the moment; record and move on.
 
 ## Constraints
 
-No promotion ladder — a `notes/` entry that never becomes a `cache/` entry is
-reference doing its job, not a backlog item. Never suggest a grooming pass, an
+No promotion ladder — never suggest a grooming pass, an
 inbox-zero sweep, or proactive distillation. Cache entries get written when a
 project wraps or a need arises, never on a schedule.

@@ -15,7 +15,7 @@ Vault root: `$VAULT_DIR` if set, else `~/vault`; org dir: `<vault>/org`. Target 
 1. **Daily notes**: `<vault>/daily/<date>.md` for each day of the target week. Missing days are normal (weekends, PTO) — skip silently. Do not re-query GitHub (the dailies already carry that day's PR activity).
 2. **Open todos**: every `TODO`/`NEXT`/`WAITING` headline in the **swept files** (below), read at compile time. The org files are the live list — no carry-forward bookkeeping; whatever is still open is still open.
 
-   **Swept files — an allowlist, not the whole of `org/`**: `<vault>/org/inbox.org` and `<vault>/org/projects/*.org`. Those are the work checklist. Every other file in `org/` is a lane with its own semantics and is **never** swept for todos: `books.org` is a reading queue (its `TODO`/`WAITING` entries are books, not work — they do not "slip" and must not be aged), `bookmarks.org` / `questions.org` / `notes.org` are capture lanes, `journal.org` is a log, `achievements.org` is the authorship signal above. Allowlist on purpose: a new queue file must not silently flood the section, and a new project file must be picked up without editing this skill.
+   **Swept files — an allowlist, not the whole of `org/`**: `<vault>/org/inbox.org` and `<vault>/org/projects/*.org`. Those are the work checklist. Every other file in `org/` is a lane with its own semantics and is **never** swept for todos: `books.org` is a reading queue (its `TODO`/`WAITING` entries are books, not work — they do not "slip" and must not be aged), `bookmarks.org` / `questions.org` / `notes.org` are capture lanes, `journal.org` is a log, `achievements.org` is the authorship signal above.
 
 3. **Achievements**: entries in `<vault>/org/achievements.org` whose inactive `[YYYY-MM-DD Day]` stamp falls in the target week. **This file is the only source for the Achievements section** — see the authorship rule below.
 4. Never fabricate content. A section with no source material gets `- none captured`.
@@ -24,7 +24,7 @@ Vault root: `$VAULT_DIR` if set, else `~/vault`; org dir: `<vault>/org`. Target 
 
 Nothing else in the pipeline carries an authorship axis. A daily note's `## My work` section implicitly attributes everything in it to the user, and its `## Decisions` / `## Roadblocks` sections routinely carry things a **teammate** did, tagged only by project (`cdc team - …`). `done:` in a capture means "this task is finished", not "I finished it".
 
-So: **never derive an achievement from a daily note, an org todo, or GitHub activity.** In W28 that inference put two teammates' wins in the user's promo doc — a decision the CDC team made and a bug the CDC team found, both rewritten as "Drove…" and "Surfaced…".
+So: **never derive an achievement from a daily note, an org todo, or GitHub activity.**
 
 `achievement` (`prefix n A`) is the whole signal: if the user typed it there, it is theirs. If they did not, it does not exist. An empty week is `- none captured`, and that is a correct answer, never a prompt to go looking in the dailies.
 

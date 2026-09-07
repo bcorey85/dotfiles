@@ -5,7 +5,6 @@ model: opencode-go/mimo-v2.5-pro
 mode: subagent
 permission:
   edit: deny
-  bash: deny
   lsp: deny
 color: "#ef4444"
 ---

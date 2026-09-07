@@ -26,26 +26,22 @@ same sources. The user's answers in an existing entry are preserved verbatim.
 > of them is understanding. Read the table as "what I have been near," never as
 > "what I can do."
 
-So the chart is an **exposure** chart, labeled as one. It is honest about volume and
-silent about competence. Never write "progress on X" from a count alone; write the
-count, then ask the question the count cannot answer. If the chart ever reads as a
-score, it has become the thing trajectory.md warns about.
+So the chart is an **exposure** chart, labeled as one. Never write "progress on X" from a count alone; write the
+count, then ask the question the count cannot answer.
 
 Two standing rules follow:
 
 - **Never call a gap closed from the chart.** Only the user closes a gap, against the
   done criteria written under its capability.
 - **Zero is a real reading.** A week with no new notes is information about what got
-  worked on — commonly a build week, which is the mode that actually teaches. Say so
+  worked on. Say so
   plainly; never phrase it as a miss.
 
 ## Gather (read-only; skip any unavailable source gracefully — never fail the run)
 
 ### 1. New notes this week — use the basename set-diff, not `--diff-filter=A`
 
-The vault gets reorganized. A bulk move makes `git log --diff-filter=A` report every
-file in the vault as new — the 2026-08 redesign produced 421 false "new notes" in a
-7-day window. Rename detection does not rescue it. Diff the **basename sets** instead:
+Vault reorganization defeats `--diff-filter=A` (moves report as new). Diff the **basename sets** instead:
 
 ```bash
 cd "$VAULT"
@@ -61,15 +57,13 @@ start. Moves, renames into `notes/`, and folder churn all correctly report zero.
 move invisible.)
 
 Substantially-revised notes are a separate, weaker signal: existing basenames whose
-content changed in the window. Report the count only, never itemize — a sync commit
-touches files for reasons that are not learning.
+content changed in the window. Report the count only, never itemize.
 
 ### 2. The capability chart — count by filename prefix
 
 **Filename prefix is the taxonomy** (`CLAUDE.md`), and `trajectory.md`'s own "Where I
 actually am" table is built this way — `Linux`/`Unix` notes, `DRF` notes, Database
-notes. Match that method so the chart is comparable to the baseline already written
-down there.
+notes. Match that method.
 
 ```bash
 find notes -name '*.md' -printf '%f\n' | sed 's/ - .*//; s/\.md$//' | sort | uniq -c | sort -rn
@@ -77,14 +71,11 @@ find notes -name '*.md' -printf '%f\n' | sed 's/ - .*//; s/\.md$//' | sort | uni
 
 Frontmatter `tags:` are a **cross-check only, never the chart**. The declared
 vocabulary and the real one have diverged: `CLAUDE.md` names six one-per-note tags,
-while `notes/` carries ~40 YAML list tags, and `backend`/`architecture` — two of the
-four arc capabilities — barely appear as tags at all. Counting capabilities by tag
-would report near-zero for the two that matter most. If a cross-check contradicts the
+while `notes/` carries its own divergent tag set. If a cross-check contradicts the
 prefix count, report the disagreement rather than picking a winner.
 
 Bucket prefixes into the rows below. **Record which prefixes went into each bucket in
-the week's entry** — the bucketing is a judgment call, and writing it down is what
-keeps it auditable instead of silently drifting.
+the week's entry** — the bucketing is a judgment call.
 
 Rows are read from `trajectory.md` at run time, not hardcoded here:
 
@@ -99,16 +90,14 @@ say so and use the new set going forward. Do not retroactively rewrite old rows.
 
 ### 3. The trust signal
 
-Count new notes carrying `[unverified]`. It is the only trust marker in the vault and
-no folder carries it anymore, so a week of unmarked hearsay is invisible unless the
-chart looks. Report it as a ratio of the week's new notes.
+Count new notes carrying `[unverified]`. Report it as a ratio of the week's new notes.
 
 ### 4. Project movement
 
 Read the `## Where I am` block at the top of each plan file in
 `projects/active/*/`. Report `next` and `blocked-on` verbatim, plus any step heading
 that gained a `✓` / `**Done <date>**` line in the window. Never infer status from
-which notes exist — that inversion is the exact failure `trajectory.md` records.
+which notes exist.
 
 Never fabricate. A section with no source material gets `- none`.
 
@@ -117,8 +106,7 @@ Never fabricate. A section with no source material gets `- none`.
 Three to six bullets, and they must be about **content**, not counts. What are the
 week's new notes actually about, grouped by the thing they were learning. Name the
 gap each group lands on, or say plainly that it lands on none of them — a week spent
-off the named gaps is the single most useful thing this skill can report, and burying
-it under a tidy chart is the failure mode to avoid.
+off the named gaps is the single most useful thing this skill can report.
 
 Then one line of direction: **which gap moved, which did not, and which was displaced
 by what.** `trajectory.md` warns that `#llms` crowds out `#backend` and that a good
@@ -146,7 +134,7 @@ skill's job is to put the evidence in front of him and then do what he says.
    `trajectory.md` revision — a gap's state moved, a queue item promoted or dropped, a
    capability's done criteria met — draft the **exact edit**, show it, and apply it
    only on approval. If he declines, record the decision in the week's entry and leave
-   `trajectory.md` untouched; a declined edit is a real answer, not a loose end.
+   `trajectory.md` untouched.
 4. Offer `/save-note` for anything surfaced in the conversation that is a fact, and
    `/create-ticket` for anything that is work. Do not inline them into the chart file —
    the chart is derived and evictable, and an only-copy must never live there.
@@ -196,9 +184,8 @@ it is the only human-authored content in the file and the compile does not own i
 
 - Writes `<vault>/progress/` and nothing else, except a `trajectory.md` edit the user
   explicitly approved in-session.
-- **Never writes `cache/`.** A weekly entry is a log arriving by installment, which is
-  precisely what `cache/` rejects. `progress/` is derived and regenerable from git —
-  same status as `daily/` — and nothing in it may be the only copy of anything.
+- **Never writes `cache/`.** `progress/` is derived and regenerable from git —
+  and nothing in it may be the only copy of anything.
 - Never writes `notes/`. A fact surfaced in the conversation goes through `/save-note`.
 - Never touches org files, `Weekly/`, or `Achievements/` — those belong to `/vault-review` and
   `/weekly-recap`.

@@ -17,7 +17,7 @@ Vault root: `$VAULT_DIR` if set, else `~/vault`; org dir: `<vault>/org`. Today =
    - **Completed today**: `DONE` headlines whose `CLOSED:` timestamp is today → My work. Ignore `CANCELLED`.
    - **Open**: every `TODO`/`NEXT`/`WAITING` headline → Open todos.
 
-   **The sweep is an allowlist, not all of `org/`.** Those two are the work checklist. Every other file in `org/` is a lane with its own semantics and is never swept for todos: `books.org` is a reading queue (its `TODO`/`WAITING` entries are books, not work), `bookmarks.org` / `questions.org` / `notes.org` are capture lanes, `journal.org` is the log read in step 1, `achievements.org` belongs to `/weekly-recap`. Allowlist on purpose: a new queue file must not silently flood Open todos, and a new project file must be picked up without editing this skill.
+   **The sweep is an allowlist, not all of `org/`.** Those two are the work checklist. Every other file in `org/` is a lane with its own semantics and is never swept for todos: `books.org` is a reading queue (its `TODO`/`WAITING` entries are books, not work), `bookmarks.org` / `questions.org` / `notes.org` are capture lanes, `journal.org` is the log read in step 1, `achievements.org` belongs to `/weekly-recap`.
 
 3. **GitHub activity** (skip silently if `gh` is missing or unauthenticated):
    - PRs I opened or updated today: `gh search prs --author @me --updated <today>`

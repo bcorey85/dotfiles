@@ -5,7 +5,6 @@ model: opencode-go/mimo-v2.5
 mode: subagent
 permission:
   edit: deny
-  bash: deny
   glob: deny
   grep: deny
   lsp: deny

@@ -6,8 +6,7 @@ agent (via `/review`, `/fix`, or `/code`).
 
 The handoff lets the reviewer skip rediscovery — file scope, change intent,
 and test status are upstream context the reviewer no longer has to
-reconstruct via `git diff` and full re-reads. Coders already know all of
-this; pass it forward instead of forcing re-discovery.
+reconstruct via `git diff` and full re-reads.
 
 ## Canonical schema
 
@@ -43,8 +42,7 @@ grouped by file.
 `why` is optional and should stay sparse. It earns its place on non-obvious
 choices — a workaround, a deliberate deviation, an ordering constraint, a
 tradeoff taken knowingly. Renames, mechanical edits, and anything the diff
-already explains get nothing. A note per hunk trains the reader to skip them
-all, which costs more than writing none.
+already explains get nothing.
 
 ## Consumer rules
 

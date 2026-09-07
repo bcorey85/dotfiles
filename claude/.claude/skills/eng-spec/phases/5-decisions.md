@@ -39,8 +39,7 @@
 12. **Present understanding FIRST**, before any decisions: current state, the
     patterns found (ask the user to confirm they are the RIGHT ones to follow),
     constraints, and the architect's **counter-primed approaches** — three, or
-    however many it said it could name. A wrong
-    pattern caught here does not propagate into every downstream decision.
+    however many it said it could name.
     Whatever this exchange settles goes under `## Direction & Constraints` in the
     ledger _as it lands_, not later.
 
@@ -56,9 +55,7 @@
     never re-ask one that is already ticked.**
 
 14. **Resolve decision points ONE AT A TIME, in prose. Never `AskUserQuestion`
-    here.** A modal with a recommendation pre-selected invites a click, not a
-    conversation — and the questions the user asks back, carrying constraints
-    that live only in their head, never get asked. The decision points ARE the
+    here.** The decision points ARE the
     interview. Walk the ledger's queue, each as written English:
 
     - what the decision is, and why it is live (what in the research forces it)
@@ -67,10 +64,8 @@
     - your recommendation, stated last and stated as a recommendation
     - **then stop and wait.** Do not bundle the next question into the same turn.
 
-    Expect a question back rather than a choice — that is the system working.
+    Expect a question back rather than a choice.
     Follow it and ask follow-ups freely; there is no question quota.
-
-    **Never resolve a decision by recommending harder. Ask, and wait for words.**
 
     **Split the check out of the decision.** A claim shaped like _"we know X
     because we looked at Y"_ — does this record exist? is this the same user? is

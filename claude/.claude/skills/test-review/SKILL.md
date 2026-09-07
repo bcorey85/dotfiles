@@ -35,7 +35,7 @@ Any remaining text after the modifier is passed as a focus area (e.g., `/test-re
    - Include focus area if provided
 
    **Backend only:**
-   - Launch `test-reviewer` (omit `model` — its frontmatter pins Opus; call-site `model: "opus"` is hook-blocked) with scope `backend`
+   - Launch `test-reviewer` with scope `backend`
    - Include focus area if provided
 
    **Fullstack:**

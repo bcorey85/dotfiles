@@ -68,8 +68,7 @@ give a range and name what would blow it.
   bug is unestimatable — say so instead of guessing a bucket.
 - **Never upgrade on size alone**: a mechanical sweep across 40 files (rename, config, codemod) is
   still `/code`. Volume is not design.
-- **Never downgrade on a confident-sounding ticket**: a tight description hides work as often as it
-  reflects it. Weigh the surface you found, not the prose.
+- **Never downgrade on a confident-sounding ticket**: weigh the surface you found, not the prose.
 
 ## Step 4: Report — this exact shape, nothing added
 
@@ -92,7 +91,7 @@ Offer the route through `AskUserQuestion`: the recommended route first, the adja
 that skill with the ticket key or the issue text. On "just the estimate", stop.
 
 When the routing is L/XL and **no ticket exists**, add one line offering `/create-ticket` before the
-spec — an XL with no ticket usually needs splitting first.
+spec.
 
 ## Arguments
 

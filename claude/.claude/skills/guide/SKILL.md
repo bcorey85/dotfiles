@@ -9,9 +9,7 @@ You write a JSON file of questions with the evidence needed to answer them. It
 appears in the human's browser as a page of cards with buttons. They click
 through it. You read the answers back as JSON.
 
-**Write ~40 lines of JSON per card, never HTML.** The renderer is a fixed asset
-that is already correct; every token you spend on markup is a token spent on a
-chance to break the page.
+**Write ~40 lines of JSON per card, never HTML.**
 
 ## When to reach for this
 
@@ -261,8 +259,7 @@ so the winning pane gets highlighted.
    scannable; detail is one click away.
 3. **Declare the response once** in `defaults.response` when every card asks the
    same thing. Do not repeat it 200 times.
-4. **Say why the question exists.** A `callout` explaining the check is what
-   makes a card answerable by someone who did not build the checker.
+4. **Say why the question exists** — a `callout` naming the check.
 5. **Everything you want back goes in `meta`.** Run ids, file paths, case keys.
    It returns verbatim and saves you a re-lookup.
 6. **Never fabricate evidence.** If a value is not in the source data, it does

@@ -10,9 +10,7 @@ Consumers: `coder-core`, `code-reviewer`, `test-authoring.md`, `test-writer`, `e
 ## The rule
 
 The planning pipeline — phases, decision ledgers, specs, friction logs, review
-loops — is **the operator's private workflow**. It is not part of the product,
-it is not visible to the team that reviews this code, and it means nothing to
-the person who opens the file in two years. None of its vocabulary belongs in a
+loops — is **the operator's private workflow**. None of its vocabulary belongs in a
 committed source or test file.
 
 Banned in `src/`, `tests/`, and every other committed code path — in comments,
@@ -50,9 +48,7 @@ Say the thing, not where the decision was recorded:
 ```
 
 The rationale, the alternatives, and who decided still matter — they live in
-`docs/plans/` and the ADR, which are not shipped code. Prose that teaches
-belongs in the conversation, where it lands once, rather than in a file, where
-it rots and every future reader pays for it.
+`docs/plans/` and the ADR, which are not shipped code.
 
 ## Sweep before handing back
 

@@ -23,34 +23,26 @@ technical demerits; a rejection that names no failure mode is unsupported]
 - Never batch decisions into a table with one-line rationales — the Alternatives
   and Trade-off fields are where hollow choices get exposed.
 - The failure-mode requirement is what forces the invariant into the open: a
-  correct choice justified only by adjacent reasons (portability, reuse,
-  reboot-survival) leaves the real constraint unstated, and the next reader
-  "simplifies" back to the rejected option.
+  correct choice justified only by adjacent reasons leaves the real constraint unstated.
 - **A decision with no real alternative is a constraint, not a decision** —
   record it under Constraints instead. If you cannot name an option that a
   constraint killed, no fork ever existed.
 - **Split the check out of the decision.** When a decision contains a claim
   shaped like _"we know X because we looked at Y"_ — does this record exist? is
   this the same user? is this process still alive? is this value unique? — that
-  check is its own decision and gets its own block. Every regression this system
-  has shipped lost it as a subordinate clause inside a decision about something
-  else.
+  check is its own decision and gets its own block.
 - **Credentials past user intent — never default this.** When a decision's chosen
   behavior or accepted trade-off leaves credentials, secrets, or user data alive
   past a user's explicit removal/revocation/disconnect intent, the block must
   state that consequence in security terms ("after the user asks to disconnect, X
   remains on disk / remains usable"), and the decision requires explicit user
   sign-off — it may not be resolved by a default or by accepting a recommended
-  option. The security framing is what the human at the gate needs in order to
-  weigh retention against hygiene; a scope-argument framing hides the stakes.
+  option.
 - **Scope-only rejections require the user's answer.** When an alternative is
   rejected SOLELY on scope grounds ("not requested", "out of ticket scope",
   "scope creep") rather than on a technical failure mode, the decision requires
   explicit user sign-off — it may not be resolved by a default or by accepting
-  the recommendation on the user's behalf. Rationale: in the eval program both
-  lanes reliably SURFACED the correct alternative and then declined it on scope
-  discipline; twice that reproduced the exact regression the maintainer shipped
-  and reverted. **Scope is the ticket-owner's call, not the artifact's.**
+  the recommendation on the user's behalf. **Scope is the ticket-owner's call, not the artifact's.**
 
 ## External Contracts rule (mandatory section in every spec)
 

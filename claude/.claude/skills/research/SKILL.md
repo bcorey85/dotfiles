@@ -37,7 +37,7 @@ Prioritize results from the current year. Discard results older than 2 years unl
 
 ### Phase 3: Deep Dive
 
-For the top 2-3 most promising results, use WebFetch to read the actual page content. Don't rely on search snippets alone — they often lack critical nuance, version constraints, or caveats.
+For the top 2-3 most promising results, use WebFetch to read the actual page content. Don't rely on search snippets alone.
 
 Look for:
 

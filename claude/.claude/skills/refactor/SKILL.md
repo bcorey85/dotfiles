@@ -33,14 +33,14 @@ A refactor changes structure, not behavior — so the tests are the contract. **
 
    a. **Scope**: `git diff --name-only main...HEAD` (fall back to `master` if no `main`). Empty diff → say so and stop.
 
-   b. **Mechanical sweep (deterministic, zero agent cost)** — comment rot and scaffolding are regexable; catch them without a dispatch:
+   b. **Mechanical sweep (deterministic, zero agent cost)**:
 
    ```bash
    git diff main...HEAD -U0 | rg '^\+' | rg -n 'TODO|FIXME|XXX|HACK|console\.(log|debug)|debugger\b|binding\.pry|print\('
    git diff main...HEAD -U0 | rg -n '^\+\s*(//|#)\s*(if |for |while |return |const |let |var |def |function |import )'
    ```
 
-   First = leftover debug/TODO litter; second = commented-out code. Matches go straight onto the work list (adapt patterns to the repo's language). Most were already caught per-phase by `[comment-noise]` — expect this to be small or empty.
+   First = leftover debug/TODO litter; second = commented-out code. Matches go straight onto the work list (adapt patterns to the repo's language).
 
    c. **Finder dispatch**: ONE `smell-reviewer` (pinned; omit `model`; variants per step 1) with:
    - the changed-file list from (a) — never let it rediscover scope
@@ -53,12 +53,12 @@ A refactor changes structure, not behavior — so the tests are the contract. **
 4. **Targeted mode** — when `$ARGUMENTS` names specific code or a specific goal:
    - Read the referenced files to understand the current code
    - Identify the refactoring goal: structure, readability, performance, maintainability, pattern alignment
-   - **Ask the deletion question before the extraction question.** Extracting a block into a helper RELOCATES complexity — the branching still exists, now behind a name. First ask whether a different data model, a different placement of the decision, or a stronger invariant makes the complexity unnecessary: push a check to a boundary so downstream code cannot be wrong, make an illegal state unrepresentable so its guard is dead, give a value one canonical owner so the code reconciling three copies gets deleted.
+   - **Ask the deletion question before the extraction question.** First ask whether a different data model, a different placement of the decision, or a stronger invariant makes the complexity unnecessary: push a check to a boundary so downstream code cannot be wrong, make an illegal state unrepresentable so its guard is dead, give a value one canonical owner so the code reconciling three copies gets deleted.
    - **Every proposed change must earn its keep**: state what it deletes or what class of bug it makes impossible. A change that only moves code to a new shape is not a refactor worth the diff — say so and drop it. If the answer is a redesign rather than a refactor, stop and recommend `/eng-spec` (step 5 covers the same exit from the coder side).
 
 5. **Dispatch the coder** (branch-audit and targeted modes only — audit mode never dispatches coders):
 
-   Launch a single `coder` for the whole work list, whatever layers it spans — a refactor is a shape change, so never split it by layer.
+   Launch a single `coder` for the whole work list, whatever layers it spans — never split it by layer.
 
    For the coder:
    - Pass the work list (with file paths per finding) or the targeted refactoring description, plus any context you gathered
@@ -67,7 +67,7 @@ A refactor changes structure, not behavior — so the tests are the contract. **
 
    **After coder(s) complete**, summarize: what was refactored and why, what changed structurally, any concerns or follow-ups.
 
-   **Log escapes** (branch-audit mode): if the target is code produced by this branch's coding loop (`/code` + `/review` already blessed it), every finder finding fixed is by definition a cross-phase miss by the quality layer — derive the log lines from the finder's findings list, one per distinct smell (not per file), `class` straight off the finding (`duplication` for scope-item-1 findings, `smell` otherwise):
+   **Log escapes** (branch-audit mode): if the target is code produced by this branch's coding loop (`/code` + `/review` already blessed it), derive the log lines from the finder's findings list, one per distinct smell (not per file), `class` straight off the finding (`duplication` for scope-item-1 findings, `smell` otherwise):
 
    ```bash
    bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=refactor gate_missed=review class=<smell|duplication> severity=medium lane=<eng-spec|code|other> guard=<...> desc="<one line>" file=<representative path>
@@ -81,13 +81,13 @@ A refactor changes structure, not behavior — so the tests are the contract. **
 
    **Test audit (conditional)**: dispatch a `test-reviewer` subagent (`model: "sonnet"`) when the refactor could have changed what the tests guarantee — logic moved/split/merged across units, a behavior-adjacent path changed, any test file touched, or a coder flagged uncertainty. SKIP it (and say so) for purely mechanical refactors with green quality checks. When it runs: pass the refactor scope and the changed-file list; surface its findings in the summary. If it flags weakened assertions or tests altered to accommodate the refactor, treat that as a violation of the CRITICAL rule — stop and alert the user.
 
-   **Auto-dispatch peer review**: tell the user "Auto-dispatching `/review` to check the refactored code before committing." Build a handoff block from the coder output (schema: `~/.claude/skills/_shared/handoff-block.md` — `files` with per-file change lines, `tests-run`, `flagged`, `plan_impact`, `iter: 1`) and invoke the `/review` skill via the Skill tool with it as args, prepending any `+fast`/`+deep` modifier. Runs AFTER all coders complete and the summary is presented.
+   **Auto-dispatch review**: tell the user "Auto-dispatching `/review` to check the refactored code before committing." Build a handoff block from the coder output (schema: `~/.claude/skills/_shared/handoff-block.md` — `files` with per-file change lines, `tests-run`, `flagged`, `plan_impact`, `iter: 1`) and invoke the `/review` skill via the Skill tool with it as args, prepending any `+fast`/`+deep` modifier.
 
 6. **Audit mode — global DRY / pattern sweep of pre-existing code. Report-only: no coders, no `/review`, no code changes.**
 
    This is the one lane that deliberately looks at UNCHANGED code. Natural trigger: `/audit review` showing recurring `class=duplication` escapes in a module.
 
-   a. **Mechanical clone detection first** (detector finds, agent judges — neither does the other's job). If node is available, verify syntax then run jscpd via npx (no global install — keeps the cross-platform rule):
+   a. **Mechanical clone detection first** (detector finds, agent judges — neither does the other's job). If node is available, verify syntax then run jscpd via npx:
 
    ```bash
    npx --yes jscpd --help >/dev/null 2>&1 && npx --yes jscpd <target-dir> --min-tokens 70 --reporters consoleFull > /tmp/jscpd.log; # then read the log
@@ -108,7 +108,7 @@ A refactor changes structure, not behavior — so the tests are the contract. **
 
    a. **Resolve the bound**: the named module, feature directory, or file set. Expand it to a concrete file list (`git ls-files <target>`) and pass that list — the finder must not rediscover scope. A bound bigger than roughly 25 source files: split it and say which slice you're running.
 
-   b. **Do NOT read the files yourself.** The finder holds the module; this context holds the decision — reading it here defeats the fresh-eyes split.
+   b. **Do NOT read the files yourself.** The finder holds the module; this context holds the decision.
 
    c. **Finder dispatch**: ONE `complexity-reviewer` (pinned; omit `model`; `-deep` variant per step 1) with:
    - the file list from (a) and the bound: "Simplify mode: your bound is the whole existing code of `<target>`. Pre-existing shape IS the target."
@@ -118,7 +118,7 @@ A refactor changes structure, not behavior — so the tests are the contract. **
 
    d. **Triage the findings yourself before offering any of them.** Drop findings that fail the oracle, sit under the magnitude floor, or propose collapsing irreducible domain complexity into something unreadable. `[design-decision]` findings — public contracts, cross-module moves, migrations, anything needing a test assertion changed — go to the user via AskUserQuestion and never onto a coder list.
 
-   e. **Present the surviving list and let the user choose which to take.** Each entry: the sites, what disappears (quantified), the enabling change, and the cost clause. This is the one mode that asks rather than states — a simplification is a behavior-adjacent restructure, and which risk is worth taking is the user's call. Nothing found → say the module is already as simple as its problem and stop.
+   e. **Present the surviving list and let the user choose which to take.** Each entry: the sites, what disappears (quantified), the enabling change, and the cost clause. Nothing found → say the module is already as simple as its problem and stop.
 
    f. **Dispatch the chosen findings** through step 5 with two changes: the test audit is **mandatory, not conditional** (every finding here is behavior-adjacent by construction), and escape logging uses `class=complexity` — and only for code this branch's `/code` loop produced. Pre-existing debt is not an escape.
 

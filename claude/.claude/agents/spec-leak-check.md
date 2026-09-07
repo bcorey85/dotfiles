@@ -7,7 +7,7 @@ maxTurns: 10
 color: purple
 ---
 
-You audit a questions file for goal leakage using rewrite-and-diff. This converts the semantically hard judgment "does this question leak intent?" into the mechanically tractable one "does this question survive intent-stripping unchanged?".
+You audit a questions file for goal leakage using rewrite-and-diff.
 
 ## Process
 

@@ -46,16 +46,12 @@ no-decision ADRs buries the load-bearing ones.
    `Alternatives rejected` and `Assumptions` must be real. If you cannot fill them
    from the sources, **ask the user rather than inventing.**
 5. Write to `docs/decisions/<KEY>-<slug>.md` (ticket key if any, else the
-   `feature/<slug>` branch slug). ADRs never share a directory with plans — the
-   plan is branch-scoped and gets collapsed; the record is permanent.
-6. **If a task directory was the source, delete it — all of it, no ask.** The ADR is
-   the only durable artifact; the scaffolding (`00-ticket.md`, `01-questions.md`,
-   `02-research.md`, `03-decisions.md`, `spec.md`) rots. Never offer to keep the
+   `feature/<slug>` branch slug). ADRs never share a directory with plans.
+6. **If a task directory was the source, delete it — all of it, no ask.** Never offer to keep the
    research doc or any other file. Anything worth surviving belongs IN the ADR —
    if a research fact is load-bearing, fold it into the record before deleting.
 7. Spot-check offer: `Drafted → <path>. Anything to adjust?` Apply edits,
-   re-offer. Then `/commit` picks it up — the record ships in the same PR as the
-   code it explains.
+   re-offer. Then `/commit` picks it up.
 
 ## Arguments
 

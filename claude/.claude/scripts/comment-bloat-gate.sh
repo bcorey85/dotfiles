@@ -21,7 +21,9 @@ case "/$SURFACE" in */.claude/*) exit 0 ;; esac
 NEW=$(echo "$INPUT" | jq -r '.tool_input.content // .tool_input.new_string // empty')
 [ -z "$NEW" ] && exit 0
 
-CRE='^[[:space:]]*(//|#|\*|--|;|/\*|"""|<!--)'
+# The bare `*` alternative is a JSDoc continuation line, so it requires a space or
+# line end after it — `**unpacking` and `*args` are code.
+CRE='^[[:space:]]*(//|#|\*([[:space:]]|$)|--|;|/\*|"""|<!--)'
 
 # Numbered against the file, not the comment-only stream, so the reported line is
 # the real one. Uppercase-anchored markers (ticket keys, decision and criterion

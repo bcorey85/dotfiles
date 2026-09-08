@@ -76,7 +76,7 @@ Form ONE hypothesis, prove with evidence not reasoning (failing assertion at ori
 
 - **Root cause** — one sentence, with the origin `file:line`.
 - **Evidence** — what confirmed it (phase 3), not what you suspect.
-- **Fix location and shape** — where, and what change, ready to hand to /fix.
+- **Fix location and shape** — `path:line` plus what change, ready to hand to /fix.
 - **Blast radius** — other call paths that reach the same origin and share the bug.
 
 ## Boundaries

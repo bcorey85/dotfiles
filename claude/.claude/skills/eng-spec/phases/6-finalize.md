@@ -58,6 +58,8 @@ these before Phase 7 and resolve every miss with the user like a `DESIGN GAP`.
     - **Work the hooks will deny** — `rg` phase bodies and change lists (not just `**File**:` lines) for test-file paths. A test edit assigned to the coder is denied outright and routes to the test-writer. Same for hook-protected directories.
     - **Superseded deliverables** — check whether each phase's deliverable already landed on base while the spec was written. Re-building shipped work is a plan defect, not a merge conflict.
 
+    STANDARD path: counts + names only; the rest run only on surfaces the architect flagged.
+
     Future claims (what a later phase produces) are 16b's and the testability lint's problem, not this step's.
 
 17. **If the ticket has behavioral criteria**, dispatch **`spec-criteria`**

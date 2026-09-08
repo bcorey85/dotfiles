@@ -77,7 +77,7 @@ Dispatch `code-reviewer` (or `code-reviewer-deep` with `+deep`; otherwise `model
 - The worktree path as code root + exact changed-file list (never rediscover scope). >5 files → split on the largest natural boundary (`review-loop` Step 3 heuristic), parallel dispatch.
 - PR description + ticket summary/AC when found, as intent context. (AC _reconciliation_ stays in 4b.)
 - Existing review-thread locations from step 1, tagged: "already raised by another reviewer — do not re-report; note only if your disposition differs materially".
-- Framing: "Report-only peer review of a colleague's PR. Label each finding `blocker`/`ask`/`fix`/`nit` with concrete failure scenarios; each `blocker` states its firing precondition (realistic inputs/state, else not blocking). No fixes follow." Do NOT include a category checklist — the agent defines its own calibration.
+- Framing: "Report-only peer review of a colleague's PR. Label each finding `blocker`/`ask`/`fix`/`nit` with concrete failure scenarios; each `blocker` states its firing precondition (realistic inputs/state, else not blocking) and its reproduction (exact input, command, or sequence). No fixes follow." Do NOT include a category checklist — the agent defines its own calibration.
 
 ### 4b. Acceptance-criteria reconciliation (main agent, when a ticket was found)
 

@@ -1,6 +1,6 @@
 ---
 name: stage
-description: Mechanically stage the invariant-verifiable slice of a working-tree diff and tier the rest into an ordered reading queue. A deterministic classifier (no model verdicts) auto-stages only the SAFE tier — mechanical changes with a checkable invariant (re-export barrels, lockfile+manifest drift) — and orders everything else by blast radius. Use when the user says "stage", "/stage", "triage", "/triage", "what should I read", or is facing a large agent-written diff. Nothing semantic is ever auto-staged; there is no reviewer pass here.
+description: Mechanically stage the invariant-verifiable slice of a working-tree diff and tier the rest into an ordered reading queue. A deterministic classifier (no model verdicts) auto-stages only the SAFE tier — mechanical changes with a checkable invariant (re-export barrels, lockfile+manifest drift) — and orders everything else by blast radius. Use when the user says "stage", "/stage", "what should I read", or is facing a large agent-written diff. Sizing triage (`/triage`) belongs to the triage skill. Nothing semantic is ever auto-staged; there is no reviewer pass here.
 ---
 
 # Stage

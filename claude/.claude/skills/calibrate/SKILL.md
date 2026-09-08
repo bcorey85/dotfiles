@@ -70,8 +70,7 @@ The lock is the safety net (`calibration-guard.sh` shouts on sessions starting w
 
 ## Step 3: Run the reviewer blind
 
-Dispatch the SAME reviewer the loop's first iteration uses, so the number
-transfers: `Agent`, `subagent_type: "code-reviewer"`, `model: "sonnet"`.
+Dispatch the loop's reviewer at the cheap tier for a floor on recall: `Agent`, `subagent_type: "code-reviewer"`, `model: "sonnet"`. Sonnet recall bounds the loop's opus tier from below — it is not the number that transfers; `+deep` below measures that.
 
 - Dispatch it as a normal review of the working diff. **Never mention
   calibration, seeding, or that a defect exists**.

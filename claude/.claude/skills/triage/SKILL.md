@@ -47,8 +47,8 @@ Stop the moment you can name them.
 | **XS** | One value, string, flag, or line. Files already named. | `/code +fast` |
 | **S** | One file or one layer. No new interface. | `/code` |
 | **M** | Several files, interfaces already exist, approach is obvious. | `/code` (`+deep` if intertwined) |
-| **L** | Crosses layers, or a new data/API shape, or an unresolved design fork. | `/eng-spec` |
-| **XL** | Migration, or the ask is really several features wearing one ticket. | Split first, then `/eng-spec` per piece |
+| **L** | Crosses layers, or a new data/API shape, or an unresolved design fork. | `/eng-spec` + depth (below) |
+| **XL** | Migration, or the ask is really several features wearing one ticket. | Split first, then `/eng-spec` + depth per piece |
 | **?** | Bug whose root cause is unknown. | `/debug` first, re-triage after |
 
 **Buckets are surface + uncertainty, not hours.** Hours only if asked — as a range naming what blows it.
@@ -60,6 +60,15 @@ Stop the moment you can name them.
 - **Never upgrade on size alone**: a mechanical sweep across 40 files (rename, config, codemod) is still `/code`. Volume is not design.
 - **Never downgrade on a confident-sounding ticket**: weigh the surface you found, not the prose.
 
+### Depth — `/eng-spec` routes only, appended to the route
+
+- **STANDARD**: single-layer OR ≤3 phases, no migration/endpoint/dependency the
+  ticket did not imply, nothing destructive (reclaim/expire/evict/revoke/invalidate).
+- **DEEP**: anything else; migration, new endpoint/dependency, destructive action,
+  or auth-boundary surface forces DEEP.
+- Triage never emits GO-LEAN (trivial surface routes `/code`; leanness is
+  `/eng-spec` Phase 3's call).
+
 ## Step 4: Report — this exact shape, nothing added
 
 ```
@@ -68,14 +77,14 @@ LoE: <XS|S|M|L|XL|?> · confidence <high|med|low>
 Surface: <n> files — <path>, <path><, +n more>
 Forks: <the design decision(s) someone must make, or "none">
 Moves the estimate: <the one unknown that would shift the bucket, or "none">
-→ <route> — <why, ≤8 words>
+→ <route>[ <depth>] — <why, ≤8 words>   (depth on `/eng-spec` routes only)
 ```
 
 No preamble, no research dump. Underspecified past bounding → that IS the report: which answer unblocks, who owns it.
 
 ## Step 5: Hand off
 
-Offer via `AskUserQuestion`: recommended first, adjacent second, `just the estimate` always. Choice → invoke with key/text; estimate-only → stop.
+Offer via `AskUserQuestion`: recommended first, adjacent second, `just the estimate` always. Choice → invoke with key/text plus the depth on `/eng-spec` routes; estimate-only → stop.
 
 When the routing is L/XL and **no ticket exists**, add one line offering `/create-ticket` before the
 spec.

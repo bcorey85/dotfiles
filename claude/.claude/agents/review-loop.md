@@ -114,7 +114,7 @@ not re-derive it. Route on the label:
 
 - **`fix`** → auto-fix loop (counts toward `iter`). Its `blocker` flag does not change the
   routing here; it changes only what survives the budget (Step 5c) and what stops a phase.
-- **`ask`** → never dispatched. Collected and surfaced to the user in the packet.
+- **`ask`** → never dispatched. Collected and surfaced to the user in the packet, each entry carrying its emitting `gate` and `class`.
 - **`nit`** → report-only, never auto-handled, never re-raised on a later pass.
 
 **Do not re-label.** If a `fix` looks like a false positive, drop it and count it in
@@ -315,7 +315,7 @@ skipped_fp: [{item, reason}]             # `fix` findings dropped as false posit
 blockers: [<one line each>]              # status=critical-blocker
 findings_remaining: [{disposition, finding, file_line}]  # status=deferred | cap-reached
 plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
-ask: [{finding, file_line, question}]    # never auto-fixed; the user answers these
+ask: [{finding, file_line, question, gate, class}]  # never auto-fixed; the user answers these; gate/class ride along so the caller can log the outcome
 perf: [{finding, principle, file_line}]
 specialists: [security | perf | smell]   # Step 6b — which specialists ran (or "none (no match)" / "none (suppressed)"); same name as the Step 7 telemetry field
 class_closure: <the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a — fixed[] empty>

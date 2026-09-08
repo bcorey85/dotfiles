@@ -146,7 +146,17 @@ bash ~/.claude/scripts/log-escape repo=<basename> stage_found=phase-gate \
    - **`critical-blocker`** → STOP. Present `blockers`, do NOT mark the phase done, do NOT advance.
    - **`cap-reached`** → STOP. Report `findings_remaining`. Do NOT mark the phase done. The session is correctly left `dirty`, so `git commit` stays blocked.
    - **`deferred`** → one-round budget spent, residue logged for branch exit. A NORMAL completion: render as `converged`, plus `findings_remaining` under `### Deferred to branch exit`. Record convergence and proceed. Do NOT re-dispatch to chase them.
-   - **`converged`** → render the packet (`### Fixed` from `fixed[]`, blockers first and marked; `perf[]` under its own heading; `skipped_fp[]`, `nit[]`). Present `ask[]` and wait — never auto-fix. Then `bash ~/.claude/scripts/review-gate-mark clean` and proceed to the phase gates.
+   - **`converged`** → render the packet (`### Fixed` from `fixed[]`, blockers first and marked; `perf[]` under its own heading; `skipped_fp[]`, `nit[]`). Present `ask[]` and wait — never auto-fix. After the user answers, log one row per ask (PLAN-IMPACT asks excluded — the Deviations entry is their record); telemetry never blocks:
+
+     ```bash
+     bash "$HOME/.claude/skills/review/log-review-finding" kind=finding \
+       repo="$(basename "$(git rev-parse --show-toplevel)")" branch="$(git branch --show-current)" \
+       lane=<lane> scope=phase phase=<N> iter=<handoff iter> \
+       gate=<entry gate> disposition=ask class=<entry class> file=<path> line=<n> \
+       actioned=ask ask_outcome=<accepted|rejected|modified> desc="ask resolved: <one line>"
+     ```
+
+     Rows carrying `ask_outcome` are resolutions, not new findings — excluded from yield counts (see `/audit review`). Then `bash ~/.claude/scripts/review-gate-mark clean` and proceed to the phase gates.
 
 6. **Multi-phase plans only — apply the phase-boundary decision**: If step 2 detected a multi-phase plan, after `review-loop` returns `converged` (or `deferred`, which advances the same way) and the phase gates are clean, run the **Phase-boundary decision** (step 2) to choose stop vs. auto-advance. Any other status (`plan-impact`, `critical-blocker`, `cap-reached`) is a STOP — never advance a phase on an unconverged loop. On a STOP, print the matching phase-complete block with all placeholders resolved and wait; when the user confirms (in-session by default — `/clear` only if context genuinely got heavy), re-enter step 2 for the next phase, using the `## Phase Status` section (fallback: `git status` + success criteria) to detect what's already done. On an AUTO-ADVANCE, print the one-line advance notice and re-enter step 2 immediately for the next phase in the same context.
 

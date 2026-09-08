@@ -42,6 +42,18 @@ Thin wrapper over the `review-loop` agent (its instructions never enter this con
 
 4. **Raise what the agent could not**. Present `ask[]`, each with its question; wait for direction. Never auto-fix an ask item — when the right call needs a design decision, auto-fixing is most wrong.
 
+   **Log each ask outcome** (PLAN-IMPACT asks excluded — the Deviations entry is their record). After the user answers, one row per ask; telemetry never blocks:
+
+   ```bash
+   bash "$HOME/.claude/skills/review/log-review-finding" kind=finding \
+     repo="$(basename "$(git rev-parse --show-toplevel)")" branch="$(git branch --show-current)" \
+     lane=none scope=standalone phase=- iter=<iter from args, default 1> \
+     gate=<entry gate> disposition=ask class=<entry class> file=<path> line=<n> \
+     actioned=ask ask_outcome=<accepted|rejected|modified> desc="ask resolved: <one line>"
+   ```
+
+   Rows carrying `ask_outcome` are resolutions, not new findings — excluded from yield counts (see `/audit review`).
+
 5. **If nothing is outstanding**: "No issues found that warrant auto-fix. Ready for `/commit`."
 
 ## Plan-impact findings (unskippable routing)

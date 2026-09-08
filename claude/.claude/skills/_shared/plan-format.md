@@ -29,8 +29,8 @@ skeleton`, the thinnest end-to-end path (`/code` stops after it for calibration)
   or interaction plus expected result. Items only a human can judge (visual
   polish, UX feel) must say so explicitly so they route to the human-only
   list.
-- Every plan ends with the four mandatory closing phases (Refactor → Verify →
-  Test audit → Recap) from `~/.claude/skills/_shared/closing-phases.md`, appended
+- Every plan ends with the four mandatory closing phases (Refactor →
+  Test audit → Verify → Recap) from `~/.claude/skills/_shared/closing-phases.md`, appended
   after the last feature phase and numbered continuously — in `## Phase Status`
   and as full Phase sections.
 
@@ -64,8 +64,8 @@ Header links: whichever upstream artifacts exist. Do not invent links.
 <!-- Mandatory closing phases (closing-phases.md), renumbered after the last feature phase: -->
 
 - [ ] Phase N: Refactor pass — /refactor cleanup sweep (risk: low)
-- [ ] Phase N+1: Verify pass — branch-wide deep review + /verify (plan↔diff + smoke list) (risk: high)
-- [ ] Phase N+2: Test audit — /test-audit cross-phase test gate (risk: high)
+- [ ] Phase N+1: Test audit — /test-audit cross-phase test gate (risk: high)
+- [ ] Phase N+2: Verify pass — branch-wide deep review + /verify (plan↔diff + smoke list) (risk: high)
 - [ ] Phase N+3: Recap — /branch-recap synthesis + residue triage, no gates (risk: low)
 
 ## Current State Analysis

@@ -53,7 +53,7 @@ Headline = the LOWEST-recall class a reviewer owns. Never propose retiring a gat
    - **Specialist re-entry distribution**: runs at `spec_iter=0`, `1`, `2`, split by `specialists` — BESIDE the iteration distribution, never summed in. A fat tail at 2 means recurring post-convergence findings; fix upstream in the coder, not a bigger budget.
    - **Disposition totals and per-run averages**: `fix` / `ask` / `nit`, plus `blocker` as a share of `fix`.
    - **False-positive rate**: `sum(skipped_fp) / sum(fixed + skipped_fp + ask)` across runs where triage ran. This is the key calibration signal.
-   - **Ask rate**: `sum(ask)` over the same denominator — high means findings are chronically arriving without a decidable correction.
+   - **Ask rate**: `sum(ask)` over the same denominator — high means findings are chronically arriving without a decidable correction. Exclude rows carrying `ask_outcome` from every yield denominator here (they are resolutions of an earlier `ask`, not new findings); report their split (`accepted`/`rejected`/`modified`) beside the ask rate instead — rejected-heavy means the gate cries wolf.
    - **Test-intent yield**: firings = rows with `test_intent_ran=1`; findings = sum(`test_intent`). Findings-per-firing, split by `lane` (`phase-gate` = bug-pinning half, `test-audit` = cull + coverage-net + weak half, whose rows also carry `coverage_lost`).
    - **Cull volume**: sum(`culled`) and per-run average — diff-added tests the loop had to delete (`[test-cull]`).
    - **Comment-noise volume**: sum(`comment_noise`) and per-run average — diff-added narration comments the loop deleted.

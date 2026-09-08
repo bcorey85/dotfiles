@@ -52,6 +52,18 @@ Thin wrapper over the `review-loop` agent (`mode: fix-first`): hand it the findi
 
 5. **Raise what the agent could not**. Present `ask[]` with each question; wait for direction. Never auto-fix an ask item.
 
+   **Log each ask outcome** (PLAN-IMPACT asks excluded — the Deviations entry is their record). After the user answers, one row per ask; telemetry never blocks:
+
+   ```bash
+   bash "$HOME/.claude/skills/review/log-review-finding" kind=finding \
+     repo="$(basename "$(git rev-parse --show-toplevel)")" branch="$(git branch --show-current)" \
+     lane=<eng-spec|code|other, per step 3> scope=standalone phase=- iter=<returned iter> \
+     gate=<entry gate> disposition=ask class=<entry class> file=<path> line=<n> \
+     actioned=ask ask_outcome=<accepted|rejected|modified> desc="ask resolved: <one line>"
+   ```
+
+   Rows carrying `ask_outcome` are resolutions, not new findings — excluded from yield counts (see `/audit review`).
+
 6. **Aikido PR-comment replies — post disposition back to the bot.** Fires only for findings that are Aikido PR comments: `author` is `aikido-pr-checks[bot]` (or the body carries `@AikidoSec` / `app.aikido.dev`) AND the finding carries a `comment_id` (emitted by `fetch-pr-comments` as `id`; `/pr-comments +fix` passes it through). Skip this step entirely when no such findings are present, or when no `comment_id` is available (nothing to reply to). Match packet entries to comments by `(path, line)`:
 
    - **Fixed** (entry in `fixed[]`, fix actually applied) → reply `Fixed.` plus a one-line note of what changed.

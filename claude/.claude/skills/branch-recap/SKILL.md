@@ -8,7 +8,7 @@ allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion, Skill]
 
 The fourth and last closing phase, and the exit-side counterpart to `/eng-spec`.
 
-**No gates run here.** Every gate already fired at its sharpest oracle: per-phase `/review` convergence, drift-gate reconciliation, `/verify` completeness, `/test-audit` test gate.
+**No gates run here.** Every gate already fired at its sharpest oracle: per-phase `/review` convergence, drift-gate reconciliation, `/test-audit` test gate, `/verify` completeness.
 
 **Not `/orient`.** `/orient` reads the **codebase** (how the change fits); this reads only the **branch's process residue** (walkthroughs, packets, receipts, `git status`) — "what remains before the PR?" Never re-reads code for a system map; consumes a prior `/orient` map or points the user to run one.
 
@@ -16,7 +16,7 @@ Output: ONE human **recap** + a machine row in `branch-recap-receipts.jsonl`. Ne
 
 ## Step 1: Residue triage — `/stage`
 
-Phases stage as they go, so the only unstaged work is what the closing phases produced (`/refactor` diff, `/fix` or `test-writer` touches in `/test-audit`).
+Phases stage as they go, so the only unstaged work is what the closing phases produced (`/refactor` diff, `/fix` or `test-writer` touches in `/test-audit`, `/fix` touches from the Verify pass).
 
 Skill-invoke `/stage`: SAFE staged; ESCALATE/READ/SKIM queue is the residue you owe a read. Never reclassify tiers. On queue-stepping, `nvim-jump` each entry (`~/.claude/skills/_shared/nvim-jump.md`).
 

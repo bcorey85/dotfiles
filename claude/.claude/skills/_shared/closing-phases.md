@@ -12,7 +12,9 @@ Every `/eng-spec` plan ends with these FOUR phases, in order after the last feat
    cause, concentration gate evaluated (module dispatched with the trigger
    named, or both counts stated).
 
-2. **Verify pass** (risk: high) — two complementary checks, both required:
+2. **Test audit** (risk: high) — `/test-audit`: cull spam, catch net-removed coverage, sweep weak assertions — the half of test-intent no phase judges. Findings → `/fix` / `test-writer`; receipt → Recap. Success Criteria: denominator stated, every finding routed.
+
+3. **Verify pass** (risk: high) — two complementary checks, both required:
    - **Branch-wide deep review** — ONE `code-reviewer-deep` (omit `model`) over the branch diff: the only fresh-eyes look at cross-phase interactions. Findings via `/review` routing.
    - `/verify` — reconcile the shipped diff against the ticket/plan
      (completeness), run the plan's Automated Verification commands, and emit the
@@ -25,8 +27,6 @@ Every `/eng-spec` plan ends with these FOUR phases, in order after the last feat
      every acceptance criterion mapped to a test or explicitly retired,
      smoke-test checklist delivered.
 
-3. **Test audit** (risk: high) — `/test-audit`: cull spam, catch net-removed coverage, sweep weak assertions — the half of test-intent no phase judges. Findings → `/fix` / `test-writer`; receipt → Recap. Success Criteria: denominator stated, every finding routed.
-
 4. **Recap** (risk: low) — `/branch-recap`: `/stage` triage, deferred queue, recap receipt — from the branch's own process, never the codebase (`/orient` on demand). No gates. Success Criteria: recap produced, residue handed over.
 
 Nothing after this is a phase. `/adr` runs **pre-PR**, shipping in the code's PR.
@@ -35,7 +35,7 @@ Nothing after this is a phase. `/adr` runs **pre-PR**, shipping in the code's PR
 
 ```markdown
 - [ ] Phase N: Refactor pass — /refactor +deep whole-branch sweep, root-cause gate (risk: low)
-- [ ] Phase N+1: Verify pass — branch-wide deep review + /verify (plan↔diff + smoke list) (risk: high)
-- [ ] Phase N+2: Test audit — /test-audit cross-phase test gate (risk: high)
+- [ ] Phase N+1: Test audit — /test-audit cross-phase test gate (risk: high)
+- [ ] Phase N+2: Verify pass — branch-wide deep review + /verify (plan↔diff + smoke list) (risk: high)
 - [ ] Phase N+3: Recap — /branch-recap synthesis + residue triage, no gates (risk: low)
 ```

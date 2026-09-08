@@ -97,7 +97,7 @@ If a category is empty, omit the section.
 For each issue you're about to flag, run the calibration question one more time:
 
 1. Would I block a PR over this?
-2. Have I verified the bad path is actually reachable, not just theoretically possible?
+2. Have I verified the bad path is actually reachable, not just theoretically possible? A `blocker` names its reproduction — the exact input, command, or sequence that exhibits it — or it ships without the flag.
 3. Is this a stated project convention, or my preference? If I'm citing a convention, did I re-read its exemption clause and confirm the code isn't exempt?
 4. Is the premise verified — right diff baseline, actual types/state, fresh typecheck?
 5. Is the disposition the honest one? In particular: does the failure need contrived inputs, unusual timing, or state real usage won't produce? Then it is not a `blocker` (Disposition). And is this `ask` really a question, or a check I could have finished myself?

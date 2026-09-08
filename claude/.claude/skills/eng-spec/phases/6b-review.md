@@ -3,17 +3,29 @@
 19. **Dispatch `plan-reviewer` with paths only**: the
     finalized plan, `00-ticket.md`, and `acceptance-criteria.md` when step 17 wrote one. Never the ledger, research, or a conversation summary — a plan needing those open is one the coder cannot execute.
 
-20. **Loop until a read returns `VERDICT: CLEAN`, max 3 rounds.** Each round is a
-    NEW dispatch, never a `SendMessage` continuation. Expect a second read to surface items the first did not.
+20. **Review rounds: STANDARD max 1, DEEP max 2.** Round 1 is a NEW dispatch,
+    never a `SendMessage` continuation. A DEEP round 2 is a NEW dispatch carrying
+    the prior findings plus the repair diff — a verification pass scoped to the
+    diff and what it touches, not a fresh read.
+
+    Only BLOCKER and GAP re-dispatch. An ALT never triggers another round.
+    `VERDICT: CLEAN` (no BLOCKER or GAP — a lone ALT still reads CLEAN) ends the
+    loop. After the last round, outstanding BLOCKER/GAP go to the user as-is. No
+    third round.
+
+    **Report the delta after round 1**: findings, and how many the previous
+    repair created.
 
     `BLOCKER` and `GAP` resolve like a `DESIGN GAP`: with the user, appended to `03-decisions.md`, then back to the owning architect for a revised plan — never hand-patched. `NIT` is yours to fix or drop.
 
-    **`ALT` goes to the user, always.** Put it with the reviewer's three parts intact; never pre-filter. Accepted or declined, it becomes a decision block (declined = considered-and-rejected for `## Approaches Considered and Not Taken`).
+    **`ALT` goes to the user once.** Put it with the reviewer's three parts intact; never pre-filter. Accepted or declined, it becomes a decision block (declined = considered-and-rejected for `## Approaches Considered and Not Taken`). An ALT alone never triggers another round.
 
     A finding the user rules out of scope is resolved — log it, do not re-raise
     it next round.
 
-    Still `NEEDS CHANGES` after round three: stop, hand over what's outstanding. No fourth round.
+    Before re-dispatching, re-check every count, `file:line` citation, and
+    cross-reference the repair touched — a stale pointer left by a repair returns
+    as the next round's finding.
 
 20b. **Log every real BLOCKER and GAP** — one `log-escape` line each (`stage_found=plan-review gate_missed=eng-spec`). Not a NIT, not out-of-scope, **never an `ALT`** (counted on the row below).
 

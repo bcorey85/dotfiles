@@ -77,7 +77,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="vitesse"
 
-families() { printf '%s\n' vitesse flexoki bamboo gruvbox gruvbox-material melange kanagawa; }
+families() { printf '%s\n' vitesse flexoki bamboo gruvbox gruvbox-material melange kanagawa thorn ember token-meridian spore; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   # vitesse: our port, dark #121212 / light #ffffff — custom files in
@@ -109,6 +109,22 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     melange:*)          echo "Melange Dark" ;;
     kanagawa:light)     echo "Kanagawa Lotus" ;;
     kanagawa:*)         echo "Kanagawa Dragon" ;;
+    # thorn / ember / token-meridian: no ghostty builtin for any of them, so all
+    # six halves are custom files in ghostty/themes/. thorn's are the upstream
+    # extras/ghostty pair and token-meridian's the upstream contrib/ghostty pair,
+    # copied verbatim; ember ships no terminal extras, so its file is written
+    # from the theme's own term[] ANSI mapping (with the light half taking the
+    # panel above the canvas for slot 0, since ember maps slot 0 to base1 = the
+    # light canvas itself, which reads as invisible black in a terminal).
+    thorn:light)            echo "thorn-light" ;;
+    thorn:*)                echo "thorn-dark" ;;
+    ember:light)            echo "ember-light" ;;
+    ember:*)                echo "ember-dark" ;;
+    token-meridian:light)   echo "token-meridian-light" ;;
+    token-meridian:*)       echo "token-meridian-dark" ;;
+    # spore is DARK-ONLY (upstream ships no light variant), so both modes get
+    # the one file — also hand-written, since it has no terminal extras either.
+    spore:*)                echo "spore-dark" ;;
   esac
 }
 
@@ -155,6 +171,21 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     melange:*)          echo "gruvbox-dark-medium" ;;
     kanagawa:light)     echo "kanagawa-lotus" ;;
     kanagawa:*)         echo "kanagawa-dragon" ;;
+    # thorn, ember and token-meridian have no hunk builtin; each ships a full
+    # [custom_theme] over a base picked for NEUTRALS. gruvbox medium's warm
+    # cream fg matches thorn forest (#dbd2c7), ember dark (#d8d0c0) and
+    # meridian dark (#c9c0b1), and its light cream ground matches thorn field
+    # and ember's parchment. Meridian light is a near-white ground with a cool
+    # fg, so vitesse-light is the closer base there.
+    thorn:light)            echo "gruvbox-light-medium" ;;
+    thorn:*)                echo "gruvbox-dark-medium" ;;
+    ember:light)            echo "gruvbox-light-medium" ;;
+    ember:*)                echo "gruvbox-dark-medium" ;;
+    # spore is dark-only; gruvbox-dark-medium's warm fg is the nearest neutral
+    # to its olive #968a6a in both modes.
+    spore:*)                echo "gruvbox-dark-medium" ;;
+    token-meridian:light)   echo "vitesse-light" ;;
+    token-meridian:*)       echo "gruvbox-dark-medium" ;;
   esac
 }
 
@@ -472,6 +503,137 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # dragon roles: keyword violet, string green, number mauve-pink, fn blue,
       # type aqua, operator coral.
       kw="#8992a7"; str="#8a9a7b"; num="#a292a3"; fn="#8ba4b0"; typ="#8ea4a2"; punct="#c5c9c5"; op="#c4746e"
+      ;;
+    thorn:light)
+      # thorn field (cream-lime #f9fdce). Chrome + diff washes from the theme's
+      # own statusbar/cursorline/diff table. Field's accents are authored very
+      # light for a cream ground, so every role that misses 4.5:1 on the canvas
+      # is darkened along its own hue (green_3 -> green_4, orange #cf7859 ->
+      # #a04b28, yellow #dca838 -> #8a6a1e, blue #4c8a80 -> #366660, red
+      # #c5524d -> #b0453f); comment matches the nvim fixup.
+      bg="#f9fdce"; panel="#eff5bd"; panelAlt="#e9f1bd"; border="#cfd69e"
+      accent="#516f21"; accentMuted="#ccd0a1"; text="#3d4a2b"; muted="#74694e"
+      addedBg="#e3eeb5"; removedBg="#f0d4cc"; ctxBg="#f9fdce"
+      sAdd="#516f21"; sRem="#b0453f"; lnFg="#9a9f75"
+      badgeAdd="#516f21"; badgeRem="#b0453f"; badgeNeu="#366660"
+      fRename="#a04b28"; fMod="#8a6a1e"; fUntracked="#74694e"; note="#eff5bd"
+      # thorn roles: Keyword/Statement/Include orange, String green_3,
+      # Constant/Number yellow, Function blue, Type/@module green_2, Delimiter/
+      # Identifier/@variable.member green_0, Operator red, @string.escape
+      # green_6, PreProc/Special/@attribute green_1.
+      kw="#a04b28"; str="#516f21"; num="#8a6a1e"; fn="#366660"; typ="#4d7030"; punct="#5b7049"; op="#b0453f"
+      konst="#8a6a1e"; esc="#2a7342"; cmt="#6f7452"; mem="#5b7049"; param="#3d4a2b"
+      attr="#4d7030"; tag="#b0453f"; vbi="#8a6a1e"; imp="#a04b28"; pre="#4d7030"
+      prim="#4d7030"; ns="#4d7030"; mac="#366660"; bfn="#366660"
+      ;;
+    thorn:*)
+      # thorn forest (green-black #172526). Chrome + diff washes from the
+      # theme's own bg_float/cursorline/diff table, all already low-key. Only
+      # the comment moves (green_5 #568270 is ~3.6:1), matching the nvim fixup.
+      bg="#172526"; panel="#131f20"; panelAlt="#1d3334"; border="#233935"
+      accent="#6fa791"; accentMuted="#568270"; text="#dbd2c7"; muted="#9b9a8c"
+      addedBg="#1f3329"; removedBg="#33232a"; ctxBg="#172526"
+      sAdd="#94c68b"; sRem="#d8464b"; lnFg="#568270"
+      badgeAdd="#94c68b"; badgeRem="#d8464b"; badgeNeu="#6daae3"
+      fRename="#f2a597"; fMod="#ffd7aa"; fUntracked="#9b9a8c"; note="#131f20"
+      # Same role table as the light half above.
+      kw="#f2a597"; str="#9ec59b"; num="#ffd7aa"; fn="#91c4c0"; typ="#88b497"; punct="#b8cdb6"; op="#d2696c"
+      konst="#ffd7aa"; esc="#87cbb1"; cmt="#6e9a8a"; mem="#b8cdb6"; param="#dbd2c7"
+      attr="#9ebb9c"; tag="#d2696c"; vbi="#ffd7aa"; imp="#f2a597"; pre="#9ebb9c"
+      prim="#88b497"; ns="#88b497"; mac="#91c4c0"; bfn="#91c4c0"
+      ;;
+    ember:light)
+      # ember-light (parchment #e6dac4) — the WARMEST of ember's two light
+      # variants (ember-lighter is a cooler ivory). Chrome is the theme's own
+      # base2/base3/base4 ramp; diff washes are olive/rose blended 25% into the
+      # canvas (ember's own 15% blends are invisible as full-line fills).
+      # coral/rose/mauve are darkened to clear 4.5:1 on parchment.
+      bg="#e6dac4"; panel="#d8ccb0"; panelAlt="#cec2a8"; border="#b8ac96"
+      accent="#a44024"; accentMuted="#989080"; text="#282418"; muted="#605848"
+      addedBg="#bfbe9f"; removedBg="#d0b8a7"; ctxBg="#e6dac4"
+      sAdd="#4a6830"; sRem="#874a4a"; lnFg="#989080"
+      badgeAdd="#4a6830"; badgeRem="#874a4a"; badgeNeu="#3a6080"
+      fRename="#665766"; fMod="#6b5a18"; fUntracked="#605848"; note="#d8ccb0"
+      # ember roles: Keyword/PreProc/builtins coral (the hero accent), String
+      # olive, Constant/Number orange, Function/Type gold, method sage,
+      # properties/parameters fg_alt, Operator base7.
+      kw="#a44024"; str="#4a6830"; num="#7d5028"; fn="#6b5a18"; typ="#6b5a18"; punct="#605848"; op="#605848"
+      konst="#7d5028"; esc="#7d5028"; cmt="#605848"; mem="#585040"; param="#585040"
+      attr="#386858"; tag="#a44024"; vbi="#a44024"; imp="#a44024"; pre="#a44024"
+      prim="#6b5a18"; ns="#6b5a18"; mac="#a44024"; bfn="#a44024"
+      ;;
+    ember:*)
+      # ember (graphite #1c1b19) — the DARKEST of ember's two dark variants
+      # (ember-soft is a lifted #242320). Chrome is the theme's own base2/base3/
+      # base4 ramp; diff washes are olive/rose blended 25% into the canvas.
+      # comment moves base6 -> base7, matching the nvim fixup.
+      bg="#1c1b19"; panel="#252422"; panelAlt="#2e2d2a"; border="#3e3c38"
+      accent="#e08060"; accentMuted="#585550"; text="#d8d0c0"; muted="#908a7e"
+      addedBg="#383a2d"; removedBg="#413231"; ctxBg="#1c1b19"
+      sAdd="#8a9868"; sRem="#b07878"; lnFg="#585550"
+      badgeAdd="#8a9868"; badgeRem="#b07878"; badgeNeu="#7890a0"
+      fRename="#988090"; fMod="#c8b468"; fUntracked="#908a7e"; note="#252422"
+      # Same role table as the light half above.
+      kw="#e08060"; str="#8a9868"; num="#c09058"; fn="#c8b468"; typ="#c8b468"; punct="#908a7e"; op="#908a7e"
+      konst="#c09058"; esc="#c09058"; cmt="#908a7e"; mem="#b0a898"; param="#b0a898"
+      attr="#80a090"; tag="#e08060"; vbi="#e08060"; imp="#e08060"; pre="#e08060"
+      prim="#c8b468"; ns="#c8b468"; mac="#e08060"; bfn="#e08060"
+      ;;
+    token-meridian:light)
+      # token meridian light (#fbf9f4 = the palette's bg3, which is Normal's bg).
+      # Chrome is bg4/bg5/sel; diff washes and sign colours are the palette's own
+      # diff_add/diff_del and gsign_* entries. Comments clear 4.5:1 unmodified.
+      bg="#fbf9f4"; panel="#f0ede6"; panelAlt="#eae9e5"; border="#dedbd3"
+      accent="#0048b3"; accentMuted="#b5b2ab"; text="#28323a"; muted="#524b42"
+      addedBg="#daf6d5"; removedBg="#ffdada"; ctxBg="#fbf9f4"
+      sAdd="#24831f"; sRem="#c82a2a"; lnFg="#b5b2ab"
+      badgeAdd="#24831f"; badgeRem="#c82a2a"; badgeNeu="#0048b3"
+      fRename="#7a1f7a"; fMod="#9d6600"; fUntracked="#524b42"; note="#f0ede6"
+      # meridian roles (the appearance's own semantic table): control blue,
+      # literal green, definition/call purple, number cyan, type/builtin/
+      # attribute accent2, property orange, operator/punctuation/parameter fg1,
+      # comment fg2.
+      kw="#0048b3"; str="#005f2f"; num="#095b62"; fn="#7a1f7a"; typ="#843900"; punct="#46535f"; op="#46535f"
+      konst="#095b62"; esc="#7a1f7a"; cmt="#524b42"; mem="#4b1fa3"; param="#46535f"
+      attr="#843900"; tag="#0048b3"; vbi="#843900"; imp="#0048b3"; pre="#7a1f7a"
+      prim="#843900"; ns="#843900"; mac="#7a1f7a"; bfn="#843900"
+      ;;
+    token-meridian:*)
+      # token meridian dark (#272724 = bg3, Normal's bg — not bg0). Chrome is
+      # bg4/bg5/sel; diff washes and sign colours are the palette's own.
+      bg="#272724"; panel="#30302c"; panelAlt="#383835"; border="#444039"
+      accent="#e89a49"; accentMuted="#585855"; text="#c9c0b1"; muted="#a69c91"
+      addedBg="#1e3524"; removedBg="#3c2024"; ctxBg="#272724"
+      sAdd="#7da47a"; sRem="#c67777"; lnFg="#585855"
+      badgeAdd="#7da47a"; badgeRem="#c67777"; badgeNeu="#66abc6"
+      fRename="#b991db"; fMod="#c4a855"; fUntracked="#a69c91"; note="#30302c"
+      # Same role table as the light half; dark swaps number to yellow and
+      # type/builtin/attribute to cyan.
+      kw="#66abc6"; str="#8cbb62"; num="#d99148"; fn="#b991db"; typ="#d9a86e"; punct="#aba195"; op="#aba195"
+      konst="#d99148"; esc="#b991db"; cmt="#a69c91"; mem="#de88a6"; param="#aba195"
+      attr="#d9a86e"; tag="#66abc6"; vbi="#d9a86e"; imp="#66abc6"; pre="#b991db"
+      prim="#d9a86e"; ns="#d9a86e"; mac="#b991db"; bfn="#d9a86e"
+      ;;
+    spore:*)
+      # spore, "softest" profile (mossy #101d1a). DARK-ONLY — one branch serves
+      # both modes because upstream ships no light variant. The profile flattens
+      # every colour toward the canvas by design, so contrast is left as authored
+      # except the comment (bark #59584b is ~2.4:1), lifted to the 4.5 floor to
+      # match the nvim fixup. Chrome is float_bg/focus_bg/shade; diff washes are
+      # the theme's own diff_add_bg/diff_delete_bg.
+      bg="#101d1a"; panel="#18231e"; panelAlt="#1c2822"; border="#3c3d34"
+      accent="#6f714e"; accentMuted="#59584b"; text="#968a6a"; muted="#84836f"
+      addedBg="#262f23"; removedBg="#302a23"; ctxBg="#101d1a"
+      sAdd="#6f714e"; sRem="#8e6747"; lnFg="#59584b"
+      badgeAdd="#6f714e"; badgeRem="#8e6747"; badgeNeu="#6d735c"
+      fRename="#8e6747"; fMod="#978255"; fUntracked="#84836f"; note="#18231e"
+      # spore roles: Keyword/Statement/PreProc tree, String rock, Number/Operator
+      # seed, Function/Type grass, Boolean sand, Special (escapes, builtins,
+      # constructors, tags) clay, Delimiter moss, Identifier/Constant fg.
+      kw="#5a6e53"; str="#6b5d49"; num="#7c7150"; fn="#6f714e"; typ="#6f714e"; punct="#6d735c"; op="#7c7150"
+      konst="#968a6a"; esc="#8e6747"; cmt="#84836f"; mem="#968a6a"; param="#968a6a"
+      attr="#5a6e53"; tag="#8e6747"; vbi="#8e6747"; imp="#5a6e53"; pre="#5a6e53"
+      prim="#8e6747"; ns="#6f714e"; mac="#5a6e53"; bfn="#8e6747"
       ;;
     *) return 0 ;;
   esac
@@ -892,6 +1054,86 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#c5c9c5" subtext0="#838a82"
       green="#87a987" yellow="#c4b28a" red="#c4746e"
       blue="#8ba4b0" teal="#8ea4a2" peach="#b6927b"
+      ;;
+    thorn:light)
+      # thorn field (cream-lime #f9fdce) — comment darkened to #6f7452. The
+      # sidebar accents are the darkened role hues (see hunk above); field's
+      # authored yellow/green/blue all miss 4.5:1 on the panel.
+      base_name="one-light"
+      accent="#516f21" panel_bg="#eff5bd" surface_dim="#e9f1bd"
+      surface0="#d8e4af" surface1="#cfd69e"
+      overlay0="#74694e" overlay1="#74694e"
+      text="#3d4a2b" subtext0="#74694e"
+      green="#516f21" yellow="#8a6a1e" red="#b0453f"
+      blue="#366660" teal="#2a7342" peach="#a04b28"
+      ;;
+    thorn:*)
+      # thorn forest (green-black #172526) — comment lifted to #6e9a8a.
+      base_name="one-dark"
+      accent="#6fa791" panel_bg="#131f20" surface_dim="#1d3334"
+      surface0="#233935" surface1="#26403e"
+      overlay0="#568270" overlay1="#9b9a8c"
+      text="#dbd2c7" subtext0="#9b9a8c"
+      green="#94c68b" yellow="#ffd7aa" red="#d2696c"
+      blue="#91c4c0" teal="#87cbb1" peach="#f2a597"
+      ;;
+    ember:light)
+      # ember-light (parchment #e6dac4), the warmest light variant — comment
+      # base7 #605848. coral/rose/mauve darkened to clear 4.5:1 on the panel.
+      base_name="one-light"
+      accent="#a44024" panel_bg="#d8ccb0" surface_dim="#cec2a8"
+      surface0="#c4b8a0" surface1="#b8ac96"
+      overlay0="#605848" overlay1="#605848"
+      text="#282418" subtext0="#605848"
+      green="#4a6830" yellow="#6b5a18" red="#874a4a"
+      blue="#3a6080" teal="#386858" peach="#7d5028"
+      ;;
+    ember:*)
+      # ember (graphite #1c1b19), the darkest dark variant — comment base7
+      # #908a7e. accent is the theme's one hero coral.
+      base_name="one-dark"
+      accent="#e08060" panel_bg="#252422" surface_dim="#2e2d2a"
+      surface0="#3e3c38" surface1="#585550"
+      overlay0="#706c61" overlay1="#908a7e"
+      text="#d8d0c0" subtext0="#908a7e"
+      green="#8a9868" yellow="#c8b468" red="#b07878"
+      blue="#7890a0" teal="#80a090" peach="#c09058"
+      ;;
+    token-meridian:light)
+      # token meridian light (#fbf9f4 canvas, #ecebe7 panel). Values are the
+      # theme's own herdr contrib, except overlay0 — contrib's #bbbebf is a
+      # BORDER grey, and herdr uses this token as a muted foreground.
+      base_name="one-light"
+      accent="#2663bd" panel_bg="#ecebe7" surface_dim="#fbf9f4"
+      surface0="#f0ede6" surface1="#dedbd3"
+      overlay0="#6f685e" overlay1="#524b42"
+      text="#28323a" subtext0="#46535f"
+      green="#005f2f" yellow="#2f75c6" red="#286fc0"
+      blue="#0048b3" teal="#095b62" peach="#4b1fa3"
+      ;;
+    token-meridian:*)
+      # token meridian dark (#272724 canvas, #1d1d1c panel). The theme's own
+      # herdr contrib, with surface_dim raised to its active-row #272724 so the
+      # focused sidebar row reads.
+      base_name="one-dark"
+      accent="#ae783e" panel_bg="#1d1d1c" surface_dim="#272724"
+      surface0="#30302c" surface1="#383835"
+      overlay0="#57534c" overlay1="#a69c91"
+      text="#c9c0b1" subtext0="#aba195"
+      green="#8cbb62" yellow="#d99148" red="#db8935"
+      blue="#66abc6" teal="#d9a86e" peach="#de88a6"
+      ;;
+    spore:*)
+      # spore "softest" — dark-only, so one branch serves both modes. overlay1
+      # and subtext0 take the lifted comment value; the profile's own bark is
+      # too flat to read as a sidebar foreground.
+      base_name="one-dark"
+      accent="#6f714e" panel_bg="#18231e" surface_dim="#1c2822"
+      surface0="#24302b" surface1="#3c3d34"
+      overlay0="#59584b" overlay1="#84836f"
+      text="#968a6a" subtext0="#84836f"
+      green="#6f714e" yellow="#978255" red="#8e6747"
+      blue="#6d735c" teal="#5a6e53" peach="#7c7150"
       ;;
     vitesse:light)
       # vitesse light (white #ffffff). Chrome tokens are foreground-on-light, so

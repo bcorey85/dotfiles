@@ -1,0 +1,31 @@
+# spore "softest" (linhusp/spore.nvim, mossy #101d1a) — DARK-ONLY; theme-mode
+# maps both modes to this one file. Upstream ships no terminal extras and the
+# palette has no blue or magenta, so ANSI is hand-mapped from lua/spore/palette
+# run through the softest desaturation profile: 1 clay, 2 grass, 3 sand,
+# 4 moss, 5 seed, 6 tree, 7/15 fg, 0 float_bg, 8 bark. The profile flattens
+# everything toward the canvas on purpose, so the bright slots repeat the
+# normals rather than inventing lifted colours the theme does not have.
+# Selection is the theme's Visual (tree on the canvas).
+background = #101d1a
+foreground = #968a6a
+cursor-color = #968a6a
+cursor-text = #101d1a
+selection-background = #5a6e53
+selection-foreground = #101d1a
+
+palette = 0=#18231e
+palette = 1=#8e6747
+palette = 2=#6f714e
+palette = 3=#978255
+palette = 4=#6d735c
+palette = 5=#7c7150
+palette = 6=#5a6e53
+palette = 7=#968a6a
+palette = 8=#59584b
+palette = 9=#8e6747
+palette = 10=#6f714e
+palette = 11=#978255
+palette = 12=#6d735c
+palette = 13=#7c7150
+palette = 14=#5a6e53
+palette = 15=#968a6a

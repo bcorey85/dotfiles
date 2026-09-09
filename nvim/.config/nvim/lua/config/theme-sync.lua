@@ -153,6 +153,55 @@ local FAMILIES = {
     -- No fixup: melange is the only family whose stock comments already clear
     -- 4.5:1 at both ends (#c1a78e ~6.7:1 on #292522, #7d6658 ~4.8:1 on #f1f1f1).
   },
+  ["thorn"] = {
+    -- jpwol/thorn.nvim: minimal green, one colorscheme per style.
+    schemes = { dark = "thorn-forest", light = "thorn-field" },
+    accents = {
+      dark = { heading1 = "#b8cdb6", heading = "#9ebb9c" },
+      light = { heading1 = "#8dae5a", heading = "#92ac3f" },
+    },
+    -- green_5 comment is ~3.6:1 on #172526, ~2.6:1 on #f9fdce; italic.
+    fixup = function(mode)
+      local fg = mode == "light" and "#6f7452" or "#6e9a8a"
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
+    end,
+  },
+  ["ember"] = {
+    -- ember-theme/nvim: darkest variant dark, warmest light.
+    schemes = { dark = "ember", light = "ember-light" },
+    accents = {
+      dark = { heading1 = "#e08060", heading = "#c09058" },
+      light = { heading1 = "#b84c30", heading = "#946030" },
+    },
+    -- base6 comment is ~3.3:1 / ~3.5:1; both move to base7. Italic.
+    fixup = function(mode)
+      local fg = mode == "light" and "#605848" or "#908a7e"
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
+    end,
+  },
+  ["token-meridian"] = {
+    -- ThorstenRhau/token, "token-meridian" appearance. No fixup: fg2 comments
+    -- clear 4.5:1 in both modes.
+    schemes = { dark = "token-meridian", light = "token-meridian" },
+    colors_name = "token-meridian",
+    accents = {
+      dark = { heading1 = "#f8c88f", heading = "#f2b26c" },
+      light = { heading1 = "#1c4470", heading = "#20538a" },
+    },
+  },
+  ["spore"] = {
+    -- linhusp/spore.nvim, "softest" profile. DARK-ONLY: no light variant
+    -- exists, so light reuses the same scheme (spore forces background=dark).
+    schemes = { dark = "spore-softest", light = "spore-softest" },
+    accents = {
+      dark = { heading1 = "#978255", heading = "#8e6747" },
+      light = { heading1 = "#978255", heading = "#8e6747" },
+    },
+    -- softest flattens bark to ~2.4:1; lift to the 4.5 floor, italic.
+    fixup = function()
+      vim.api.nvim_set_hl(0, "Comment", { fg = "#84836f", italic = true })
+    end,
+  },
   ["kanagawa"] = {
     -- rebelot/kanagawa.nvim. Unlike every other family, kanagawa ships one
     -- colorscheme PER variant rather than switching on vim.o.background — so

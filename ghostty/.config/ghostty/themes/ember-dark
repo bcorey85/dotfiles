@@ -1,0 +1,29 @@
+# ember dark (ember-theme/nvim, graphite #1c1b19) — the DARKEST of ember's two
+# dark variants (ember-soft is a lifted #242320). Upstream ships no terminal
+# extras, so ANSI is resolved by hand from lua/ember/theme.lua's `term` map:
+# 0/8 = base1/base4, 1 rose, 2 olive, 3 gold, 4 steel, 5 mauve, 6 sage,
+# 7/15 = fg. Bright slots repeat the normals, as upstream's map does.
+# Selection is the theme's Visual (base3).
+background = #1c1b19
+foreground = #d8d0c0
+cursor-color = #d8d0c0
+cursor-text = #1c1b19
+selection-background = #3e3c38
+selection-foreground = #d8d0c0
+
+palette = 0=#252422
+palette = 1=#b07878
+palette = 2=#8a9868
+palette = 3=#c8b468
+palette = 4=#7890a0
+palette = 5=#988090
+palette = 6=#80a090
+palette = 7=#d8d0c0
+palette = 8=#585550
+palette = 9=#b07878
+palette = 10=#8a9868
+palette = 11=#c8b468
+palette = 12=#7890a0
+palette = 13=#988090
+palette = 14=#80a090
+palette = 15=#d8d0c0

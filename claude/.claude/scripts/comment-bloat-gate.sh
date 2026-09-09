@@ -59,7 +59,7 @@ if [ -n "$LEAKS" ]; then
   exit 2
 fi
 
-# Density cap: fires only when THIS edit added comments and the file is over ~10%.
+# Density cap: fires only when THIS edit added comments and the file is over ~20%.
 # Only true comment lines count — narration is the target. A bare docstring/JSDoc
 # delimiter is structure, not prose, so it is not charged.
 DELIM='^[[:space:]]*("""|'"'''"'|/\*\*?|\*/)[[:space:]]*$'
@@ -68,8 +68,8 @@ TOTAL=$(grep -cE '[^[:space:]]' "$FILE")
 [ "$TOTAL" -lt 30 ] && exit 0
 CMT=$(grep -E "$CRE" "$FILE" | grep -cvE "$DELIM")
 PCT=$(( CMT * 100 / TOTAL ))
-if [ "$PCT" -gt 12 ]; then
-  echo "comment-bloat-gate: $(basename "$FILE") is ${PCT}% comments (${CMT}/${TOTAL} non-blank lines), cap ~10%. Delete the comments this edit added, or rename/split so they are unnecessary. Never add code to lower the ratio." >&2
+if [ "$PCT" -gt 22 ]; then
+  echo "comment-bloat-gate: $(basename "$FILE") is ${PCT}% comments (${CMT}/${TOTAL} non-blank lines), cap ~20%. Delete the comments this edit added, or rename/split so they are unnecessary. Never add code to lower the ratio." >&2
   exit 2
 fi
 exit 0

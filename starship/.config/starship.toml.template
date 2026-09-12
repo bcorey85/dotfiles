@@ -356,6 +356,172 @@ fg = "#968a6a"
 bg = "#101d1a"
 grey = "#84836f"
 
+# material darker (neutral #212121, vivid). Verbatim palette; grey is the
+# lifted comment value.
+[palettes.material-dark]
+red = "#F07178"
+orange = "#F78C6C"
+yellow = "#FFCB6B"
+green = "#C3E88D"
+blue = "#82AAFF"
+teal = "#89DDFF"
+purple = "#C792EA"
+fg = "#B0BEC5"
+bg = "#212121"
+grey = "#848b93"
+
+# material lighter (#FAFAFA). Neon darkened along hue to clear 4.5:1; grey is
+# the darkened comment value.
+[palettes.material-light]
+red = "#B20602"
+orange = "#b23a12"
+yellow = "#8a5a00"
+green = "#4e6f1f"
+blue = "#3a5b9b"
+teal = "#056a72"
+purple = "#7C4DFF"
+fg = "#546E7A"
+bg = "#FAFAFA"
+grey = "#5d6d77"
+
+# github dark (primer gray canvas #30363d, vivid primer). Accents verbatim;
+# grey is #8b949e lifted to #9aa4ae (~4.8:1) on this lighter ground.
+[palettes.github-dark]
+red = "#ff7b72"
+orange = "#ffa657"
+yellow = "#d29922"
+green = "#3fb950"
+blue = "#58a6ff"
+teal = "#76e3ea"
+purple = "#bc8cff"
+fg = "#e6edf3"
+bg = "#30363d"
+grey = "#9aa4ae"
+
+# github light default (white #ffffff). Verbatim primer; grey is the stock
+# comment value, which clears unmodified.
+[palettes.github-light]
+red = "#d1242f"
+orange = "#bc4c00"
+yellow = "#9a6700"
+green = "#1a7f37"
+blue = "#0969da"
+teal = "#1b7f8b"
+purple = "#8250df"
+fg = "#1f2328"
+bg = "#ffffff"
+grey = "#57606a"
+
+# edge aura dark (dimmed style, bg #2b2d37). Accents identical across
+# styles, so only bg moves; grey is the lifted comment value.
+[palettes.edge-dark]
+red = "#ec7279"
+orange = "#deb974"
+yellow = "#deb974"
+green = "#a0c980"
+blue = "#6cb6eb"
+teal = "#5dbbc1"
+purple = "#d38aea"
+fg = "#c5cdd9"
+bg = "#2b2d37"
+grey = "#9199a9"
+
+# edge neon light (#fafafa). Accents darkened along hue to clear 4.5:1.
+[palettes.edge-light]
+red = "#c93f3f"
+orange = "#9a6604"
+yellow = "#9a6604"
+green = "#537a2b"
+blue = "#4570b9"
+teal = "#337b75"
+purple = "#a545c5"
+fg = "#4b505b"
+bg = "#fafafa"
+grey = "#677182"
+
+# edge aura dark with dim_foreground — accents verbatim, fg dimmed to
+# #97a4b5; grey is the comment #677287 lifted to #8a95a8 (~4.5:1).
+[palettes.edge-dim-dark]
+red = "#ec7279"
+orange = "#deb974"
+yellow = "#deb974"
+green = "#a0c980"
+blue = "#6cb6eb"
+teal = "#5dbbc1"
+purple = "#d38aea"
+fg = "#97a4b5"
+bg = "#2b2d37"
+grey = "#8a95a8"
+
+# edge has no light dim upstream; a verbatim copy of edge-light, since the
+# lookup keys on <family>-<mode>.
+[palettes.edge-dim-light]
+red = "#c93f3f"
+orange = "#9a6604"
+yellow = "#9a6604"
+green = "#537a2b"
+blue = "#4570b9"
+teal = "#337b75"
+purple = "#a545c5"
+fg = "#4b505b"
+bg = "#fafafa"
+grey = "#677182"
+
+# material oceanic (teal-slate #25363B, vivid). Red lifted along hue to
+# clear 4.5:1; grey is the lifted comment value.
+[palettes.oceanic-dark]
+red = "#f47f88"
+orange = "#F78C6C"
+yellow = "#FFCB6B"
+green = "#C3E88D"
+blue = "#82AAFF"
+teal = "#89DDFF"
+purple = "#C792EA"
+fg = "#B0BEC5"
+bg = "#25363B"
+grey = "#93a3ae"
+
+# material lighter (shared verbatim with the material family).
+[palettes.oceanic-light]
+red = "#B20602"
+orange = "#b23a12"
+yellow = "#8a5a00"
+green = "#4e6f1f"
+blue = "#3a5b9b"
+teal = "#056a72"
+purple = "#7C4DFF"
+fg = "#546E7A"
+bg = "#FAFAFA"
+grey = "#5d6d77"
+
+# aura dark soft = the dimmed variant (bg #15141b, soft-text accents).
+# DARK-ONLY, so the light palette below is a verbatim copy; the family name
+# still needs both keys because theme-mode selects `<family>-<mode>`. No
+# yellow slot: orange doubles. Grey is the lifted comment value.
+[palettes.aura-dark]
+red = "#c55858"
+orange = "#c7a06f"
+yellow = "#c7a06f"
+green = "#54c59f"
+blue = "#6cb2c7"
+teal = "#6cb2c7"
+purple = "#8464c6"
+fg = "#bdbdbd"
+bg = "#15141b"
+grey = "#8e8e8e"
+
+[palettes.aura-light]
+red = "#c55858"
+orange = "#c7a06f"
+yellow = "#c7a06f"
+green = "#54c59f"
+blue = "#6cb2c7"
+teal = "#6cb2c7"
+purple = "#8464c6"
+fg = "#bdbdbd"
+bg = "#15141b"
+grey = "#8e8e8e"
+
 [directory]
 style = "bold teal"
 truncation_length = 3

@@ -1,0 +1,26 @@
+# material oceanic (upstream load_terminal mapping, shared mains) — teal-slate
+# #25363B canvas, cool-gray fg, vivid accents. Cursor/selection from the
+# oceanic editor table.
+background = #25363B
+foreground = #B0BEC5
+cursor-color = #FFCC00
+cursor-text = #25363B
+selection-background = #395B65
+selection-foreground = #B0BEC5
+
+palette = 0=#000000
+palette = 1=#DC6068
+palette = 2=#ABCF76
+palette = 3=#E6B455
+palette = 4=#6E98EB
+palette = 5=#B480D6
+palette = 6=#71C6E7
+palette = 7=#EEFFFF
+palette = 8=#474747
+palette = 9=#F07178
+palette = 10=#C3E88D
+palette = 11=#FFCB6B
+palette = 12=#82AAFF
+palette = 13=#C792EA
+palette = 14=#89DDFF
+palette = 15=#EEFFFF

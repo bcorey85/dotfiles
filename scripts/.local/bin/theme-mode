@@ -77,7 +77,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="vitesse"
 
-families() { printf '%s\n' vitesse flexoki bamboo gruvbox gruvbox-material melange kanagawa thorn ember token-meridian spore; }
+families() { printf '%s\n' vitesse flexoki bamboo gruvbox gruvbox-material melange kanagawa thorn ember token-meridian spore material github edge edge-dim oceanic; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   # vitesse: our port, dark #121212 / light #ffffff — custom files in
@@ -124,6 +124,26 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     token-meridian:*)       echo "token-meridian-dark" ;;
     # spore is DARK-ONLY (upstream ships no light variant), so both modes get
     # the one file — also hand-written, since it has no terminal extras either.
+    # material is not a ghostty builtin — custom files in ghostty/themes/,
+    # hand-mapped from the theme's own load_terminal ANSI (darker + lighter).
+    material:light)         echo "material-light" ;;
+    material:*)             echo "material-dark" ;;
+    # github is not a ghostty builtin — custom files in ghostty/themes/,
+    # mapped from the primer scale (brights duplicate hues).
+    github:light)           echo "github-light" ;;
+    github:*)               echo "github-dark" ;;
+    # edge is not a ghostty builtin — custom files in ghostty/themes/,
+    # mapped from the aura-style ramp (the dimmed style, bg0 #2b2d37).
+    edge:light)             echo "edge-light" ;;
+    edge:*)                 echo "edge-dark" ;;
+    # edge-dim is the same aura ramp with dim_foreground on — only the fg
+    # tokens move, so the light half is edge-light verbatim.
+    edge-dim:light)         echo "edge-light" ;;
+    edge-dim:*)             echo "edge-dim-dark" ;;
+    # oceanic is not a ghostty builtin — custom files in ghostty/themes/
+    # (dark hand-mapped; light shared verbatim with material-light).
+    oceanic:light)          echo "oceanic-light" ;;
+    oceanic:*)              echo "oceanic-dark" ;;
     spore:*)                echo "spore-dark" ;;
   esac
 }
@@ -183,6 +203,20 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     ember:*)                echo "gruvbox-dark-medium" ;;
     # spore is dark-only; gruvbox-dark-medium's warm fg is the nearest neutral
     # to its olive #968a6a in both modes.
+    # material has no hunk builtin either; same neutral vitesse pair (darker
+    # #B0BEC5 on #212121; near-white lighter, like vitesse-light).
+    material:light)         echo "vitesse-light" ;;
+    material:*)             echo "vitesse-dark" ;;
+    # github has no hunk builtin either; same neutral vitesse pair.
+    github:light)           echo "vitesse-light" ;;
+    github:*)               echo "vitesse-dark" ;;
+    # edge has no hunk builtin either; same neutral vitesse pair (blue-gray
+    # dark; near-white light, like vitesse-light).
+    edge:light|edge-dim:light) echo "vitesse-light" ;;
+    edge:*|edge-dim:*)      echo "vitesse-dark" ;;
+    # oceanic has no hunk builtin either; same neutral vitesse pair.
+    oceanic:light)          echo "vitesse-light" ;;
+    oceanic:*)              echo "vitesse-dark" ;;
     spore:*)                echo "gruvbox-dark-medium" ;;
     token-meridian:light)   echo "vitesse-light" ;;
     token-meridian:*)       echo "gruvbox-dark-medium" ;;
@@ -634,6 +668,136 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       konst="#968a6a"; esc="#8e6747"; cmt="#84836f"; mem="#968a6a"; param="#968a6a"
       attr="#5a6e53"; tag="#8e6747"; vbi="#8e6747"; imp="#5a6e53"; pre="#5a6e53"
       prim="#8e6747"; ns="#6f714e"; mac="#5a6e53"; bfn="#8e6747"
+      ;;
+    oceanic:light|material:light)
+      # material lighter (#FAFAFA, shared verbatim with the material family).
+      # Chrome from bg_alt/active/border. Diff
+      # washes are the theme's own DiffAdd/DiffDelete verbatim. Comment
+      # #AABFC9 is ~1.8:1, darkened to #5d6d77 (~5.1:1) to match the nvim
+      # fixup. Roles darken along hue where the authored neon misses 4.5:1.
+      bg="#FAFAFA"; panel="#E7E7E8"; panelAlt="#FFFFFF"; border="#D3E1E8"
+      accent="#00BCD4"; accentMuted="#D2D4D5"; text="#546E7A"; muted="#5d6d77"
+      addedBg="#e5edda"; removedBg="#f6d3d3"; ctxBg="#FAFAFA"
+      sAdd="#4e6f1f"; sRem="#B20602"; lnFg="#CFD8DC"
+      badgeAdd="#4e6f1f"; badgeRem="#B20602"; badgeNeu="#3a5b9b"
+      fRename="#7C4DFF"; fMod="#8a5a00"; fUntracked="#5d6d77"; note="#E7E7E8"
+      # lighter roles (theme's own syntax table): keyword/type purple, string
+      # green, number orange, fn blue, operator cyan, parameter paleblue.
+      kw="#7C4DFF"; str="#4e6f1f"; num="#b23a12"; fn="#3a5b9b"; typ="#7C4DFF"; punct="#546E7A"; op="#056a72"
+      cmt="#5d6d77"
+      ;;
+    oceanic:*)
+      # material oceanic (teal-slate #25363B). Chrome from bg_alt/active/
+      # border/highlight (= CursorLine/StatusLine/Pmenu). Diff washes are the
+      # theme's own DiffAdd/DiffDelete verbatim. Comment #546E7A is ~2.3:1,
+      # lifted to #93a3ae (~4.8:1) to match the nvim fixup. Roles are the
+      # shared mains — red lifted to clear 4.5:1 on the canvas, rest verbatim.
+      bg="#25363B"; panel="#314549"; panelAlt="#354A51"; border="#355058"
+      accent="#11bba3"; accentMuted="#355058"; text="#B0BEC5"; muted="#93a3ae"
+      addedBg="#455a4b"; removedBg="#4e4247"; ctxBg="#25363B"
+      sAdd="#C3E88D"; sRem="#f47f88"; lnFg="#7b8b99"
+      badgeAdd="#C3E88D"; badgeRem="#f47f88"; badgeNeu="#82AAFF"
+      fRename="#C792EA"; fMod="#FFCB6B"; fUntracked="#93a3ae"; note="#314549"
+      # oceanic roles (theme's own syntax table): keyword/type purple, string
+      # green, number/value orange, fn blue, operator cyan, parameter paleblue,
+      # punctuation muted.
+      kw="#C792EA"; str="#C3E88D"; num="#F78C6C"; fn="#82AAFF"; typ="#C792EA"; punct="#93a3ae"; op="#89DDFF"
+      cmt="#93a3ae"; mem="#B0BEC5"; param="#B0C9FF"
+      ;;
+    material:*)
+      # material darker (neutral #212121). Chrome from bg_alt/active/border
+      # (= CursorLine/StatusLine/Pmenu). Diff washes are the theme's own
+      # DiffAdd/DiffDelete verbatim. Comment #515151 is ~2.0:1, lifted to
+      # #848b93 (~4.7:1) to match the nvim fixup. Roles verbatim — the whole
+      # neon set clears 4.5:1 on the canvas.
+      bg="#212121"; panel="#323232"; panelAlt="#3F3F3F"; border="#343434"
+      accent="#FF9800"; accentMuted="#474747"; text="#B0BEC5"; muted="#848b93"
+      addedBg="#414937"; removedBg="#4a3132"; ctxBg="#212121"
+      sAdd="#C3E88D"; sRem="#F07178"; lnFg="#424242"
+      badgeAdd="#C3E88D"; badgeRem="#F07178"; badgeNeu="#82AAFF"
+      fRename="#C792EA"; fMod="#FFCB6B"; fUntracked="#848b93"; note="#323232"
+      # darker roles (theme's own syntax table): keyword/type purple, string
+      # green, number/value orange, fn blue, operator cyan, parameter paleblue,
+      # punctuation muted.
+      kw="#C792EA"; str="#C3E88D"; num="#F78C6C"; fn="#82AAFF"; typ="#C792EA"; punct="#848b93"; op="#89DDFF"
+      cmt="#848b93"; mem="#B0BEC5"; param="#B0C9FF"
+      ;;
+    github:light)
+      # github light default (white #ffffff, soft-black fg). Chrome from
+      # CursorLine/Pmenu/primer border. Diff washes dimmed from the loud
+      # stock (#b8d0bf/#e4b7be) to pale blends — hunk fills whole lines at
+      # full opacity. Comment #57606a clears 6.4:1 unmodified, no fixup.
+      bg="#ffffff"; panel="#e7eaf0"; panelAlt="#dbe2ec"; border="#d0d7de"
+      accent="#0969da"; accentMuted="#d0d7de"; text="#1f2328"; muted="#57606a"
+      addedBg="#d9e8df"; removedBg="#f1dbde"; ctxBg="#ffffff"
+      sAdd="#1a7f37"; sRem="#d1242f"; lnFg="#6e7781"
+      badgeAdd="#1a7f37"; badgeRem="#d1242f"; badgeNeu="#0969da"
+      fRename="#6639ba"; fMod="#9a6700"; fUntracked="#57606a"; note="#e7eaf0"
+      # github-light roles: keyword red, string navy, number blue, fn purple,
+      # type dark-orange, punctuation muted, operator fg.
+      kw="#cf222e"; str="#0a3069"; num="#0550ae"; fn="#6639ba"; typ="#953800"; punct="#57606a"; op="#1f2328"
+      cmt="#57606a"
+      ;;
+    github:*)
+      # github dark (primer gray canvas #30363d). Chrome from the theme's own
+      # bg0/bg2/bg3. Diff washes are the theme's own, sign fgs likewise.
+      # Comment #8b949e is ~4.0:1 on this lighter ground, lifted to #9aa4ae
+      # (~4.8:1) to match the nvim fixup. Roles verbatim primer.
+      bg="#30363d"; panel="#363c44"; panelAlt="#252a31"; border="#484f58"
+      accent="#58a6ff"; accentMuted="#484f58"; text="#e6edf3"; muted="#9aa4ae"
+      addedBg="#2e423c"; removedBg="#4a363c"; ctxBg="#30363d"
+      sAdd="#3fb950"; sRem="#f85149"; lnFg="#6e7681"
+      badgeAdd="#3fb950"; badgeRem="#f85149"; badgeNeu="#58a6ff"
+      fRename="#d2a8ff"; fMod="#d29922"; fUntracked="#9aa4ae"; note="#363c44"
+      # github roles: keyword red, string light-blue, number/operator blue,
+      # fn lavender, type orange, punctuation muted.
+      kw="#ff7b72"; str="#a5d6ff"; num="#79c0ff"; fn="#d2a8ff"; typ="#ffa657"; punct="#9aa4ae"; op="#79c0ff"
+      cmt="#9aa4ae"
+      ;;
+    edge:light|edge-dim:light)
+      # edge neon light (#fafafa). Chrome from CursorLine/Visual. Diff washes
+      # verbatim. Comment #8790a0 is ~3.1:1, darkened to #677182 (~4.7:1) to
+      # match the nvim fixup. Roles darken along hue to clear 4.5:1.
+      bg="#fafafa"; panel="#eef1f4"; panelAlt="#e8ebf0"; border="#ccd3db"
+      accent="#d05858"; accentMuted="#ccd3db"; text="#4b505b"; muted="#677182"
+      addedBg="#e5eee4"; removedBg="#f6e4e4"; ctxBg="#fafafa"
+      sAdd="#537a2b"; sRem="#c93f3f"; lnFg="#bac3cb"
+      badgeAdd="#537a2b"; badgeRem="#c93f3f"; badgeNeu="#4570b9"
+      fRename="#a545c5"; fMod="#9a6604"; fUntracked="#677182"; note="#eef1f4"
+      # edge-light roles: keyword red, string green, number yellow, fn blue,
+      # type purple, punctuation muted, operator fg.
+      kw="#c93f3f"; str="#537a2b"; num="#9a6604"; fn="#4570b9"; typ="#a545c5"; punct="#677182"; op="#4b505b"
+      cmt="#677182"
+      ;;
+    edge:*)
+      # edge aura dark (dimmed style, bg #2b2d37). Chrome from the aura ramp/
+      # Pmenu. Diff washes verbatim. Comment #758094 is ~3.4:1, lifted to
+      # #9199a9 (~4.7:1) to match the nvim fixup. Keyword is purple
+      # in-theme (not red), number follows string green.
+      bg="#2b2d37"; panel="#333644"; panelAlt="#3a3e4e"; border="#454b60"
+      accent="#ec7279"; accentMuted="#454b60"; text="#c5cdd9"; muted="#9199a9"
+      addedBg="#394634"; removedBg="#55393d"; ctxBg="#2c2e34"
+      sAdd="#a0c980"; sRem="#ec7279"; lnFg="#535c6a"
+      badgeAdd="#a0c980"; badgeRem="#ec7279"; badgeNeu="#6cb6eb"
+      fRename="#d38aea"; fMod="#deb974"; fUntracked="#9199a9"; note="#333644"
+      # edge roles: keyword purple, string/number green, fn blue, type
+      # yellow, punctuation muted, operator fg.
+      kw="#d38aea"; str="#a0c980"; num="#a0c980"; fn="#6cb6eb"; typ="#deb974"; punct="#9199a9"; op="#c5cdd9"
+      cmt="#9199a9"
+      ;;
+    edge-dim:*)
+      # edge aura dark with g:edge_dim_foreground — same ramp and accents as
+      # edge:*, only the three fg tokens move (fg #97a4b5, grey #677287,
+      # grey_dim #4f5868). Comment #677287 is ~2.8:1, lifted to #8a95a8
+      # (~4.5:1) to match the nvim fixup.
+      bg="#2b2d37"; panel="#333644"; panelAlt="#3a3e4e"; border="#454b60"
+      accent="#ec7279"; accentMuted="#454b60"; text="#97a4b5"; muted="#8a95a8"
+      addedBg="#394634"; removedBg="#55393d"; ctxBg="#2c2e34"
+      sAdd="#a0c980"; sRem="#ec7279"; lnFg="#4f5868"
+      badgeAdd="#a0c980"; badgeRem="#ec7279"; badgeNeu="#6cb6eb"
+      fRename="#d38aea"; fMod="#deb974"; fUntracked="#8a95a8"; note="#333644"
+      kw="#d38aea"; str="#a0c980"; num="#a0c980"; fn="#6cb6eb"; typ="#deb974"; punct="#8a95a8"; op="#97a4b5"
+      cmt="#8a95a8"
       ;;
     *) return 0 ;;
   esac
@@ -1134,6 +1298,96 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#968a6a" subtext0="#84836f"
       green="#6f714e" yellow="#978255" red="#8e6747"
       blue="#6d735c" teal="#5a6e53" peach="#7c7150"
+      ;;
+    oceanic:light|material:light)
+      # material lighter (#FAFAFA, shared verbatim with the material family).
+      # Comment darkened to #5d6d77. Sidebar
+      # hues darken the neon that misses 4.5:1 on the panel.
+      base_name="one-light"
+      accent="#00BCD4" panel_bg="#E7E7E8" surface_dim="#dcdcdc"
+      surface0="#d0d0d2" surface1="#bdbdc0"
+      overlay0="#7e8b96" overlay1="#5d6d77"
+      text="#546E7A" subtext0="#55636c"
+      green="#4e6f1f" yellow="#8a5a00" red="#B20602"
+      blue="#3a5b9b" teal="#056a72" peach="#b23a12"
+      ;;
+    oceanic:*)
+      # material oceanic (teal-slate #25363B) — comment lifted to #93a3ae.
+      # Chrome from bg_alt/active/highlight/selection/disabled; hero accent
+      # is teal. Sidebar hues clear 4.5:1 on the panel (red/blue/peach
+      # lifted along hue).
+      base_name="one-dark"
+      accent="#11bba3" panel_bg="#314549" surface_dim="#354A51"
+      surface0="#395B65" surface1="#3E5F64"
+      overlay0="#788c99" overlay1="#93a3ae"
+      text="#B0BEC5" subtext0="#a7b6c2"
+      green="#C3E88D" yellow="#FFCB6B" red="#f79aa1"
+      blue="#8fb2ff" teal="#89DDFF" peach="#f89a7b"
+      ;;
+    material:*)
+      # material darker (neutral #212121) — comment lifted to #848b93. Chrome
+      # from bg_alt/active; accents verbatim neon; hero accent is orange.
+      base_name="one-dark"
+      accent="#FF9800" panel_bg="#323232" surface_dim="#3F3F3F"
+      surface0="#474747" surface1="#4f5258"
+      overlay0="#6b7683" overlay1="#848b93"
+      text="#B0BEC5" subtext0="#9aa7b0"
+      green="#C3E88D" yellow="#FFCB6B" red="#F07178"
+      blue="#82AAFF" teal="#89DDFF" peach="#F78C6C"
+      ;;
+    github:light)
+      # github light default (white #ffffff) — comment clears unmodified.
+      base_name="one-light"
+      accent="#0969da" panel_bg="#e7eaf0" surface_dim="#dbe2ec"
+      surface0="#d0d7de" surface1="#c2cad3"
+      overlay0="#8c959f" overlay1="#57606a"
+      text="#1f2328" subtext0="#57606a"
+      green="#1a7f37" yellow="#9a6700" red="#d1242f"
+      blue="#0969da" teal="#1b7f8b" peach="#a84300"
+      ;;
+    github:*)
+      # github dark (primer gray #30363d) — comment lifted to #9aa4ae.
+      # Sidebar hues are verbatim primer; all clear 4.5:1 on the panel.
+      base_name="one-dark"
+      accent="#58a6ff" panel_bg="#363c44" surface_dim="#252a31"
+      surface0="#484f58" surface1="#545c66"
+      overlay0="#8b949e" overlay1="#9aa4ae"
+      text="#e6edf3" subtext0="#b1bac4"
+      green="#3fb950" yellow="#d29922" red="#ff7b72"
+      blue="#58a6ff" teal="#76e3ea" peach="#ffa657"
+      ;;
+    edge:light|edge-dim:light)
+      # edge neon light (#fafafa) — comment darkened to #677182. Sidebar hues
+      # darken the neon to clear 4.5:1 on the panel.
+      base_name="one-light"
+      accent="#d05858" panel_bg="#eef1f4" surface_dim="#e8ebf0"
+      surface0="#dde3ea" surface1="#ccd3db"
+      overlay0="#8790a0" overlay1="#677182"
+      text="#4b505b" subtext0="#626b7c"
+      green="#4f7429" yellow="#926104" red="#c23737"
+      blue="#416aaf" teal="#31756f" peach="#926104"
+      ;;
+    edge:*)
+      # edge aura dark (dimmed style, bg #2b2d37) — comment lifted to #9199a9. No
+      # orange slot in the palette, so yellow doubles for peach.
+      base_name="one-dark"
+      accent="#ec7279" panel_bg="#333644" surface_dim="#3a3e4e"
+      surface0="#454b60" surface1="#525868"
+      overlay0="#758094" overlay1="#9199a9"
+      text="#c5cdd9" subtext0="#9ca4b2"
+      green="#a0c980" yellow="#deb974" red="#ee848a"
+      blue="#6cb6eb" teal="#5dbbc1" peach="#deb974"
+      ;;
+    edge-dim:*)
+      # edge aura dark, dim_foreground on — text drops to #97a4b5 and the
+      # comment #677287 lifts to #8a95a8. Accents are identical to edge:*.
+      base_name="one-dark"
+      accent="#ec7279" panel_bg="#333644" surface_dim="#3a3e4e"
+      surface0="#454b60" surface1="#525868"
+      overlay0="#677287" overlay1="#8a95a8"
+      text="#97a4b5" subtext0="#7f8a9c"
+      green="#a0c980" yellow="#deb974" red="#ee848a"
+      blue="#6cb6eb" teal="#5dbbc1" peach="#deb974"
       ;;
     vitesse:light)
       # vitesse light (white #ffffff). Chrome tokens are foreground-on-light, so

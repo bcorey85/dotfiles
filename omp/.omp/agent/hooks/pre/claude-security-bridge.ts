@@ -2,40 +2,35 @@
  * claude-security-bridge.ts — omp hook that delegates tool-call gating to the
  * Claude Code security hooks in ~/.claude/scripts/.
  *
- * Why a bridge instead of a port: the CB Security Hooks (bash-safety-gate,
- * block-credential-read, write-edit-safety-gate) are GENERATED and versioned —
- * any re-implementation drifts silently (see the stale ~/.pi/agent/extensions/
- * protected-paths.ts, which omp doesn't even read). Shelling out keeps the
- * bash scripts as the single source of truth for both harnesses.
+ * The CB gates are generated and versioned, so a port drifts silently; the
+ * bash scripts stay the single source of truth for both harnesses.
  *
  * Covered gates (the "Safety Rails" set from the global CLAUDE.md):
- *   PreToolUse(Bash)        bash-safety-gate.sh, git-discipline-gate.sh, review-commit-gate.sh
+ *   PreToolUse(Bash)        bash-safety-gate.sh, git-discipline-gate.sh, review-commit-gate.sh, shell-write-gate.sh, quality-check-cap.sh
  *   PreToolUse(Read|Grep)   block-credential-read.sh        (also mapped: glob)
  *   PreToolUse(Write|Edit)  write-edit-safety-gate.sh       (also mapped: ast_edit)
  *   PostToolUse(Agent)      review-commit-gate.sh           (arms on coder dispatch; omp task tool)
+ *   PostToolUse(Bash)       quality-check-cap.sh            (records a check that ran, failing or not)
+ *   PostToolUse(Write|Edit) quality-check-cap.sh            (marks an edit that landed; also ast_edit)
  *
- * Deliberately skipped:
- *   agent-model-guard.sh — resolves agent files under ~/.claude/agents and
- *     denies unpinned call-site models; meaningless against omp's bundled
- *     agents and would deny every dispatch.
- *   mechanical-check-gate.sh — PreToolUse(Agent); denies delegating /code's
- *     vacuous-green pre-flight to a subagent. Not security, and it keys off
- *     Claude's `description` field, which omp's task tool does not mirror.
- *     Consequence: under omp that pre-flight is prose-enforced only.
- *   spec-budget-gate / stub-guard / log-* / notify / formatters — not security.
+ * Deliberately skipped: agent-model-guard.sh (would deny every omp dispatch —
+ * it resolves ~/.claude/agents); spec-budget-gate / log-* / notify /
+ * formatters (not security).
  *
  * Output conventions handled:
  *   CB hooks  — stdout JSON line {"hookSpecificOutput":{"permissionDecision":"deny",...}}, exit 0
- *   custom    — stderr message + exit 2
+ *   custom    — stderr message + exit 2; no bridged gate uses it today
  *
- * Session id: a per-session UUID. review-commit-gate keys its dirty/clean
- * state to it; the /review skill's `review-gate-mark clean` bash command runs
- * through this same bridge in the same session, so the mark lands correctly.
- * One-shot user override (unchanged): touch ~/.claude/state/review-gate/<uuid>.skip
+ * Session id: a per-session UUID that review-commit-gate keys its dirty/clean
+ * state to; `review-gate-mark clean` runs through this bridge in the same
+ * session. Override: touch ~/.claude/state/review-gate/<uuid>.skip
  *
  * Known gaps (inherent to bridging, not fixable here):
  *   - omp's eval tool executes arbitrary JS/Python with no bash string to
  *     inspect — no Claude equivalent exists, so no gate covers it.
+ *   - omp's event carries no agent_type, so shell-write-gate's test-ownership
+ *     half (and test-ownership-gate itself) is inert here, as under any
+ *     harness that does not name the dispatched agent.
  *   - xd:// device tools (ast_edit etc.) are gated IF they surface under
  *     their own tool name; if one ever surfaces as a generic write with an
  *     xd:// path, its inner target paths are not inspected.
@@ -59,6 +54,8 @@ const PRE_TOOL_GATES: Record<string, { tool: string; gates: string[] }> = {
       "bash-safety-gate.sh",
       "git-discipline-gate.sh",
       "review-commit-gate.sh",
+      "shell-write-gate.sh",
+      "quality-check-cap.sh",
     ],
   },
   read: { tool: "Read", gates: ["block-credential-read.sh"] },
@@ -67,6 +64,12 @@ const PRE_TOOL_GATES: Record<string, { tool: string; gates: string[] }> = {
   write: { tool: "Write", gates: ["write-edit-safety-gate.sh"] },
   edit: { tool: "Edit", gates: ["write-edit-safety-gate.sh"] },
   ast_edit: { tool: "Edit", gates: ["write-edit-safety-gate.sh"] },
+};
+
+const EDIT_TOOLS: Record<string, string> = {
+  write: "Write",
+  edit: "Edit",
+  ast_edit: "Edit",
 };
 
 interface GateResult {
@@ -259,11 +262,39 @@ export default function bridge(pi: HookPi): void {
   // omp's task tool returns launch stubs (jobs settle later) — same semantics
   // as Claude's PostToolUse(Agent), which is exactly what the gate expects.
   pi.on("tool_result", async (event, ctx) => {
+    const cwd = ctx?.cwd ?? process.cwd();
+    if (event.toolName === "bash") {
+      await runGate(
+        "quality-check-cap.sh",
+        {
+          hook_event_name: "PostToolUse",
+          session_id: SESSION_ID,
+          tool_name: "Bash",
+          tool_input: { command: event.input?.command ?? "" },
+        },
+        cwd,
+      );
+      return undefined;
+    }
+
+    if (!event.isError && EDIT_TOOLS[event.toolName]) {
+      await runGate(
+        "quality-check-cap.sh",
+        {
+          hook_event_name: "PostToolUse",
+          session_id: SESSION_ID,
+          tool_name: EDIT_TOOLS[event.toolName],
+          tool_input: {},
+        },
+        cwd,
+      );
+      return undefined;
+    }
+
     if (event.toolName !== "task" || event.isError) return undefined;
     const agents = taskAgents(event.input ?? {});
     if (agents.length === 0) return undefined;
 
-    const cwd = ctx?.cwd ?? process.cwd();
     await Promise.all(
       agents.map((agent) =>
         runGate(

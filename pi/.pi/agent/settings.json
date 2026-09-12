@@ -75,14 +75,6 @@
           },
           {
             "type": "command",
-            "command": "~/.claude/scripts/prettier-hook.sh"
-          },
-          {
-            "type": "command",
-            "command": "~/.claude/scripts/eslint-hook.sh"
-          },
-          {
-            "type": "command",
             "command": "~/.claude/scripts/claudemd-linecount.sh"
           }
         ]

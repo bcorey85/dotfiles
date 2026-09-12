@@ -8,7 +8,7 @@ Analyze both sides of the flywheel:
 - **Plans** — one row per finalized (or abandoned) plan (via `~/.claude/scripts/log-spec-run`, fed by `/eng-spec`): `slug`, `verdict`, `phases`, `criteria`, `decisions`, `research_q`, `gaps`, `falsified`.
 - **Per-finding rows** — the same catches at finding granularity (via `~/.claude/skills/review/log-review-finding`, fed by `/review`, `/refactor`, `/verify`, `/branch-recap`): `kind=run` rows carry `gate`, `scope`, `diff_loc`, `n_findings` including the silent runs; `kind=finding` rows carry `gate`, `disposition` (+ optional `blocker`), `class`, `file`, `line`, `actioned`. This is the only source with a per-gate denominator and a `file:line` join key.
 
-Every live row carries `schema_version` (currently `2`); analyze only the current version. Older-schema rows are moved to `~/.claude/telemetry-archive/` and out of scope — `schema_version < current` is the archive filter, no date reasoning.
+Every live row carries a `schema_version`, and the current version differs by source — check the writing script rather than assuming one number across the logs. Analyze only the current version. Older-schema rows are moved to `~/.claude/telemetry-archive/` and out of scope — `schema_version < current` is the archive filter, no date reasoning.
 
 ## Instructions
 

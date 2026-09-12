@@ -5,7 +5,11 @@
 #   1. settings JSON files parse (jq)
 #   2. every hook command path referenced in settings.json exists and is executable
 #   3. every file in hooks/ is registered in settings.json (orphan detection)
-#   4. agent frontmatter: name matches filename, model value is legal (sonnet|haiku|opus)
+#   4. agent frontmatter: name matches filename, model value is legal (sonnet|haiku|opus),
+#      -deep variants delegate to their base agent
+#   4b. rules/ structure: frontmatter, a paths: key, a non-empty body
+#   4c. orchestration.md exists and emit-orchestration.sh is registered
+#   4d. at least one reviewer agent still references reviewer-calibration.md
 #   5. skill frontmatter: name matches directory, allowed-tools contains no unknown tool names
 #   6. opencode sync: agent filename diff, CLAUDE.md vs AGENTS.md mtime drift
 #   7. shellcheck over scripts/ and hooks/ (if installed)
@@ -81,7 +85,11 @@ fi
 # --- 2b. expected hook registrations -----------------------------------------
 print_info "Expected hook registrations"
 reg_blob=$(cat "$SETTINGS" "$CLAUDE_DIR/settings.local.json" 2>/dev/null)
-for pair in "log-skill-use.sh:skill-usage telemetry"; do
+for pair in \
+  "log-skill-use.sh:skill-usage telemetry" \
+  "emit-orchestration.sh:orchestration context injection" \
+  "shell-write-gate.sh:shell-write bypass gate" \
+  "quality-check-cap.sh:quality-check repeat-run cap"; do
   script="${pair%%:*}"; label="${pair#*:}"
   [[ -f "$CLAUDE_DIR/scripts/$script" ]] || continue
   if grep -q "$script" <<<"$reg_blob"; then
@@ -150,8 +158,62 @@ for f in "$CLAUDE_DIR"/agents/*.md; do
   if [[ -n "$mt" && ! "$mt" =~ ^[0-9]+$ ]]; then
     print_error "agents/$base.md: maxTurns '$mt' is not a number"
   fi
+  # A -deep variant inherits by reading its base agent. A long body instead of
+  # that Read means the two have forked.
+  if [[ "$base" == *-deep ]]; then
+    body=$(awk '/^---$/{n++; next} n>=2' "$f" | grep -c '[^[:space:]]')
+    if (( body > 15 )) && ! grep -qE 'Read .*\.claude/agents/' "$f"; then
+      print_warn "agents/$base.md: deep variant body is $body lines and does not delegate — bodies over 15 lines must Read their base agent"
+    fi
+  fi
 done
 print_success "agent frontmatter scan complete ($(ls "$CLAUDE_DIR"/agents/*.md 2>/dev/null | wc -l) files)"
+
+# --- 4b. rules/ structure ---------------------------------------------------
+# Structure only: frontmatter present, a paths: key, a non-empty body. Content
+# is not linted here.
+print_info "rules/ structure"
+if [[ -d "$CLAUDE_DIR/rules" ]]; then
+  for f in "$CLAUDE_DIR"/rules/*.md; do
+    [[ -f "$f" ]] || continue
+    base=$(basename "$f")
+    if [[ "$(head -n1 "$f")" != "---" ]]; then
+      print_error "rules/$base: no frontmatter block"
+      continue
+    fi
+    fm=$(awk '/^---$/{n++; next} n==1{print} n>=2{exit}' "$f")
+    if ! grep -qE '^paths:' <<<"$fm"; then
+      print_error "rules/$base: frontmatter has no 'paths:' key"
+    fi
+    if ! awk '/^---$/{n++; next} n>=2' "$f" | grep -q '[^[:space:]]'; then
+      print_error "rules/$base: body is empty"
+    fi
+  done
+  print_success "rules/ scan complete ($(ls "$CLAUDE_DIR"/rules/*.md 2>/dev/null | wc -l) files)"
+else
+  print_info "no rules/ directory — skipping"
+fi
+
+# --- 4c. orchestration wiring -----------------------------------------------
+print_info "Orchestration wiring"
+if [[ -f "$CLAUDE_DIR/orchestration.md" ]] && grep -q "emit-orchestration.sh" <<<"$reg_blob"; then
+  print_success "orchestration.md is wired to SessionStart"
+else
+  print_warn "orchestration rules are not wired — the main session will silently have no routing rules"
+fi
+
+# --- 4d. reviewer calibration reachability ----------------------------------
+# Whole-tree, not per-file: seven reviewer agents legitimately carry no
+# reference. Zero across all of them means calibration-refs-guard.sh has nothing
+# left to guard.
+print_info "Reviewer calibration reachability"
+if ls "$CLAUDE_DIR"/agents/*reviewer*.md >/dev/null 2>&1; then
+  if grep -q "reviewer-calibration.md" "$CLAUDE_DIR"/agents/*reviewer*.md 2>/dev/null; then
+    print_success "reviewer-calibration.md is referenced"
+  else
+    print_warn "no reviewer agent references reviewer-calibration.md — calibration-refs-guard.sh is now a no-op"
+  fi
+fi
 
 # --- 5. skill frontmatter ---------------------------------------------------
 print_info "Skill frontmatter"

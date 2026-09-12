@@ -3,10 +3,31 @@
 19. **Dispatch `plan-reviewer` with paths only**: the
     finalized plan, `00-ticket.md`, and `acceptance-criteria.md` when step 17 wrote one. Never the ledger, research, or a conversation summary — a plan needing those open is one the coder cannot execute.
 
+19b. **Shard above 400 lines.** `wc -l` the plan. At or under, one dispatch at
+the whole file. Over, three parallel dispatches, each a `sed`-derived extract
+written to the task directory — the plan itself is never split:
+
+    - **A** — front matter + phases up to the boundary nearest the midpoint + back matter
+    - **B** — front matter + the remaining phases + back matter
+    - **seam** — front matter + back matter + every `**File**:` line and
+      `#### Automated|Manual Verification` heading grouped under its phase
+      heading, **no phase bodies**
+
+    Front matter is everything above `## Implementation Steps`; back matter is
+    everything from `## Constraints` down.
+
+    Tell the seam reviewer its view is lossy: a phase's prose is absent, so a
+    contradiction it reads between two phases' `**File**:` lines is **provisional**
+    — report it as a GAP naming the two phases, never a BLOCKER. Only a claim it
+    verified against the repo or against front/back matter may be a BLOCKER.
+
+    Dedup the three reports by (section, claim) before step 20. A finding only
+    one shard raised still counts.
+
 20. **Review rounds: STANDARD max 1, DEEP max 2.** Round 1 is a NEW dispatch,
-    never a `SendMessage` continuation. A DEEP round 2 is a NEW dispatch carrying
-    the prior findings plus the repair diff — a verification pass scoped to the
-    diff and what it touches, not a fresh read.
+never a `SendMessage` continuation. A DEEP round 2 is a NEW dispatch carrying
+the prior findings plus the repair diff — a verification pass scoped to the
+diff and what it touches, not a fresh read.
 
     Only BLOCKER and GAP re-dispatch. An ALT never triggers another round.
     `VERDICT: CLEAN` (no BLOCKER or GAP — a lone ALT still reads CLEAN) ends the

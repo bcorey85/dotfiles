@@ -4,62 +4,23 @@
 
 When rules conflict: the user's current instruction > project CLAUDE.md > this file > skill/agent defaults. A project file may relax a global rule only through a mechanism this file names (e.g., direct-edit repos).
 
-## Communication
-
-Laconic directive:
-
-Laconic mode. Answer in as few words as the subject allows. No preamble, no restating the question, no closing summary, no offers of follow-up. State the result, then stop.
-
-Lead with the number, the verdict, or the decision. Supporting reasoning only if it changes what the user would do.
-
-Keep any distinction, measurement, or check that would change the action; drop everything else. Drop reflexive hedging.
-
-Prose, not lists or headers, unless structure is the answer (e.g., a handoff, a BOM, a step sequence).
-
-Brevity never overrides rigor. Numerical results stay quantitative with uncertainties; firmware label / classifier subtype / physical interpretation stay distinct; honest "unknown" beats a tidy false claim. When correctness needs length, take the length — and not one line more.
-
-Compression may drop words, never conclusions: the laconic verdict and its confidence level must match what full-length analysis would produce. Unknowns stay unknown.
-
-Formal artifacts follow their own structural conventions; laconic mode governs chat reasoning, not document format.
-
-Target: the shortest reply the recipient can execute without a follow-up question.
-
-That target applies to a task with an answer. It does NOT apply to an open subject — an analysis, a review, options, a decision not yet made. There, one claim per turn, capped at six lines, ending in a question or fork, and let the next turn be decided by what they say. Never pre-announce an outline; earn each beat. Exempt: code, commands, diffs, error text, and safety warnings, which arrive whole. A skill's own output template does not override this — degrade the template, not the conversation.
-
-End with the immediate next action(s); a verdict without its first step is incomplete.
-
-Never refer to a decision or phase by number or shorthand alone ("D3", "Phase 4") — the user does not hold these in working memory. Use the full title, or restate the substance.
-
 ## Safety Rails (hook-enforced — never work around a block)
 
-`bash-safety-gate`, `git-discipline-gate`, `review-commit-gate`, `block-credential-read`, and `write-edit-safety-gate` deterministically block: SSH/scp/rsync, credential reads, sudo, force-push, commit/push on main (exempt: direct-edit repos), `git stash`, `git commit --amend`, destructive resets, pipe-to-shell, and `git commit` after an unreviewed coder dispatch. omp (Oh My Pi) consumes these same scripts via the `omp` stow package's `claude-security-bridge.ts` — preserve their stdin/stdout contract (hook JSON in; `permissionDecision` JSON or exit-2 out) when editing or regenerating. When a gate blocks you: report it to the user and stop — never rephrase a command to slip past. The gates regex the full command string, so false positives happen; a block is a report, not a retry puzzle.
+`bash-safety-gate`, `git-discipline-gate`, `review-commit-gate`, `shell-write-gate`, `block-credential-read`, and `write-edit-safety-gate` deterministically block: SSH/scp/rsync, credential reads, sudo, force-push, commit/push on main (exempt: direct-edit repos), `git stash`, `git commit --amend`, destructive resets, pipe-to-shell, shell writes to tracked files or (for coders) test files, and `git commit` after an unreviewed coder dispatch. omp (Oh My Pi) consumes these same scripts via the `omp` stow package's `claude-security-bridge.ts` — preserve their stdin/stdout contract (hook JSON in; `permissionDecision` JSON or exit-2 out) when editing or regenerating. When a gate blocks you: report it to the user and stop — never rephrase a command to slip past. The gates regex the full command string, so false positives happen; a block is a report, not a retry puzzle.
 
-## Orchestration (main session only)
+Workflow gates (advisory, not rails — their deny message says what to do next, and each has a narrow escape you append to the command as a comment, on the user's say-so): shell-write-gate (`#skip-shell-write-gate`; never disarms its test-ownership check), quality-check-cap (`#skip-quality-cap`).
 
-**Subagents: this entire section binds the main-session orchestrator that dispatched you — skip it. Your agent file and preloaded skill are your contract.**
+## Where the rest lives
 
-### Delegation
+Orchestration and workflow routing live in `~/.claude/orchestration.md`, injected at session start. Main session only — subagents never receive them.
 
-- Never code directly — dispatch via `/code` (coders; architects first when design decisions are needed). Exceptions: trivially small diffs (a few lines, one file, no design decision — read the file first if needed; dispatch overhead plus the obligated /review costs more than the edit); rules/agents/skills/CLAUDE.md files; repos whose CLAUDE.md declares **direct-edit repo**. The bright line is diff size, not task familiarity — anything multi-file or design-shaped still dispatches.
-- A coder dispatch obligates `/review` before `/commit` — `review-commit-gate` enforces this at `git commit`. The only skip is a genuinely trivial diff with the user's explicit say-so.
-- Parallel writing agents need disjoint file scopes. Separate branches/worktrees only for independent tasks or when scopes could overlap; the orchestrator owns all git operations.
-- Agent model discipline (hook-enforced by `agent-model-guard`; rationale in its header): pinned agent → omit `model`; unpinned → `haiku` for read-only lookup, `sonnet` for implementation/analysis/review; never `opus`/`fable`/`inherit` at call sites. Pair `subagent_type` deliberately: `Explore` (read-only lookup), `general-purpose` (multi-file tracing Explore can't handle), coders/architects/reviewers per their descriptions.
+Prose style lives in the `Laconic` output style (`~/.claude/output-styles/laconic.md`). Main session only.
 
-### Workflow Routing (built-in vs custom — fixed, don't mix per-task)
-
-- Inner-loop review → custom `/review`. Built-in `/code-review` is not in the loop; `/code-review ultra` is an optional pre-PR pass on large branches.
-- Others' PRs → `/peer-review <n>`. Never `/review` on code we don't own (its fix loop and metrics assume ownership).
-- Security audit → built-in `/security-review`.
-- Cleanup → `smell-reviewer` specialist pass (post-convergence, size-triggered) + `/refactor` (branch/targeted); pre-existing repo debt → `/refactor audit <dir>` (report-only work list, routes to targeted `/refactor` or `/eng-spec`); never built-in `/simplify` on loop output. **Over-complexity is a separate lens from DRY** — "this need not exist" (branch thickets, one-implementation indirection, unused configurability) is `/refactor simplify <module>` via `complexity-reviewer`, module-bound and never diff-bound, fixes opt-in per finding. I invoke it directly; the only automatic firing is the Refactor closing phase's concentration gate (one module, ≥100 added lines).
-- Verification → custom `/verify` only (plan↔diff completeness + human smoke-test checklist). The BUILT-IN skill of the same name is retired from the loop — never dispatch it. Agents never browser-drive — UI smoke tests are mine, from the checklist.
-- Gates fire per phase, not at branch exit — that is where the oracle is sharpest and the fix cheapest. `/code`'s phase boundary runs `/review` → drift gate → test-intent (bug-pinning half, when tests changed) → `/stage`, and hands me its queue as the sign-off walkthrough. Branch exit runs one cross-phase gate then synthesis: `/test-audit` (cull + coverage-net + weak — the test question no phase judges locally) gates, then `/branch-recap` is the last closing phase (`/stage` residue → deferred queue → recap, no gates; it reads the branch's own process, never the codebase — situating is `/orient`, on demand). No agent ever clears a semantic file for me to skip: only `/stage`'s deterministic SAFE tier is staged unread. I read the queue and stage, then `/commit`; `/adr` runs before the PR opens and ships in the same PR as the code.
-- Sizing → `/triage` on an incoming ticket or issue when I don't yet know whether it needs a spec. Read-only: LoE bucket + surface + the route (`/eng-spec` | `/code` | `/debug`). It decides how the work ENTERS a lane; it is not a lane and never designs.
-- Planning → `/eng-spec`. **One lane, no router.** It runs goal-blind research FIRST (`spec-questions` → `spec-leak-check` → `spec-research`, which never sees the ticket), then architect exploration, then decisions resolved with me one at a time. The research-before-design order is the whole point — never let a goal word reach the research agent, and never reorder it. Tag escapes with `/escape`; review via `/audit review`.
-- Falsification → `/falsify`, and **only when I invoke it**, on one claim I name. Never a gate, never automatic, never a phase in another skill. It finds counterexamples that are _written down in the repo_; UNREFUTED means "not on disk," not "true".
+Git conventions — branch and commit naming, focused diffs, worktree branches, stacked PRs — live in `~/.claude/rules/git.md`.
 
 ## Tools
 
-- File changes go through Write/Edit — shell writes (redirection, heredocs, `sed`/`awk -i`) bypass the Write/Edit hook pipeline (formatters, stub-guard, safety gate) and leave no reviewable diff.
+- Creating a NEW file from the shell (heredoc, redirection) bypasses the Write/Edit hook pipeline — use Write. shell-write-gate denies redirection or `tee` onto a git-tracked file, and in-place editing (`sed -i`, `perl -pi`, `awk -i inplace`) of ANY file, tracked or not.
 - Prefer LSP over grep+Read in typed code (references, definitions, hover, diagnostics). Fall back to `rg` for plain text or unindexed file types.
 - Verify CLI syntax with `--help` before guessing.
 - WebSearch before writing config, CI, infra, or library-integration code wherever the feedback loop is slow or remote: official docs, then GitHub issues, then write. Local configs verifiable in seconds are exempt — just test them. If research would take >5 minutes, say so and ask.
@@ -68,8 +29,7 @@ Never refer to a decision or phase by number or shorthand alone ("D3", "Phase 4"
 
 After any code change, run the project's quality checks (whatever its CLAUDE.md specifies) before declaring done; if unknown, check there or ask.
 
-- Any single quality-check command: max TWO runs per task. Non-zero exit → redirect to `/tmp/check.log`, read the full log, fix every failure in one batch, re-run once. Still failing → stop, document, ask. Never enter fix-rerun loops.
-- Everything else: max 3 attempts per failing approach, then stop and ask. The 2-run cap is the specific rule and wins where both apply.
+- Any other failing approach: max 3 attempts, then stop and ask.
 
 ## Tool Use Efficiency
 
@@ -82,12 +42,6 @@ After any code change, run the project's quality checks (whatever its CLAUDE.md 
 1. **Match complexity to the problem.** Before non-trivial work, state the approach in 1–2 lines and what it makes harder later. No speculative flexibility; no painting into corners.
 2. **Running unattended**: pick the most reasonable interpretation, proceed, and record the assumption — don't stall.
 3. **Suggest a better way when you see one** — but interrupt only for material tradeoffs (irreversible work, security, data loss, broad refactors, hours of wasted debugging), not style preferences.
-
-## Git
-
-- Keep diffs focused: one logical change per task.
-- Commit-on-main, stash, amend, and force-push are hook-blocked; if one is genuinely needed, ask the user to run it.
-- Worktrees: **never call `EnterWorktree` with `name`** — it hardcodes `.claude/worktrees/`, which pollutes repo-wide grep and orphans Docker bind-mounts when the tree is cleaned up. Create the worktree as a repo sibling first — `git worktree add ~/dev/<repo>-TICKET-NUM -b TICKET-NUM-desc` (plain branch name, no `worktree-` prefix) — then enter it with `EnterWorktree { path }`, and push it (`git push -u origin <branch>`) before doing any work so the branch is tracked and backed up.
 
 ## Security
 

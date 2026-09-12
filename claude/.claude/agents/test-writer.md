@@ -41,8 +41,7 @@ the domain's own words.
    this phase delivers, asserting the criterion's sentence, nothing narrower. An unassertable criterion is a report, not a reworded criterion.
 4. **Author the budgeted tests**: one per success-criterion behavior plus the
    edge cases the plan names. Extend existing files/describe blocks by default.
-5. **Run the suite** (subject to the quality-check 2-run cap in
-   `~/.claude/CLAUDE.md`) and read the failures.
+5. **Run the suite** and read the failures.
 
 ## Fixture Provenance (HARD RULE)
 
@@ -55,7 +54,7 @@ A plan-faithful red test is a **candidate implementation bug** — the split wor
 ## Fences
 
 - **Never edit non-test source files.** No src changes, no src shims. Untestable-as-shaped is a report.
-- **Never dispatch agents.** The `## Orchestration` section of CLAUDE.md binds your dispatcher, not you.
+- **Never dispatch agents.**
 - Mechanical compile-fixes to existing tests (renamed import, new required arg) are yours — apply from the declaration alone, nothing beyond the mechanical fix.
 
 ## Report (last lines, machine-read)

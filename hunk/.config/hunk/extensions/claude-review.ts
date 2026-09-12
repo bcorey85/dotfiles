@@ -4,7 +4,8 @@
  *
  * `v` marks the selected file viewed, collapses it in place to a single summary
  * row, and moves to the next unviewed file; `v` again reopens it. `V` also drops
- * viewed files from the review entirely, `S` stages them, `X` clears the marks.
+ * viewed files from the review entirely, `S` stages them, `C` clears the marks,
+ * `X` discards the selected file's working-tree changes behind a confirm.
  * `L` quits into lazygit in the same herdr popup. Inline review notes (built-in
  * `c`) are mirrored to a JSONL the /cc skill reads and resolves.
  *
@@ -21,7 +22,7 @@
 
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -37,6 +38,7 @@ interface DiffFile {
   id: string;
   path: string;
   patch: string;
+  isUntracked?: boolean;
   stats: { additions: number; deletions: number };
   hunks?: readonly DiffHunk[];
 }
@@ -95,6 +97,12 @@ interface EventPayloads {
   startup: { cwd: string };
   note_created: { note: ReviewNote };
   note_edited: { note: ReviewNote };
+  session_reload: { changeset: Changeset };
+}
+
+/** A context that can move the review: command and event contexts both can. */
+interface Navigator {
+  readonly navigation: { selectFile(fileId: string): void };
 }
 
 /** One mirrored note, as the /cc skill reads it back. */
@@ -131,7 +139,7 @@ interface HunkApi {
   transformChangeset(fn: (changeset: Changeset, ctx: Ctx) => Changeset): void;
   on<Event extends keyof EventPayloads>(
     event: Event,
-    handler: (payload: EventPayloads[Event], ctx: Ctx) => void,
+    handler: (payload: EventPayloads[Event], ctx: Ctx & Navigator) => void,
   ): void;
   log(message: string): void;
 }
@@ -322,6 +330,18 @@ function reloadWorkingTreeReview(
   );
 }
 
+/**
+ * Why a git command failed, in one line the notice bar can hold: its stderr
+ * names the pathspec, while the Error message is the whole command line.
+ */
+function gitFailure(error: unknown): string {
+  const stderr = String((error as { stderr?: unknown }).stderr ?? "")
+    .split("\n")
+    .filter((line) => line.startsWith("fatal:") || line.startsWith("error:"))
+    .join(" ");
+  return stderr || (error instanceof Error ? error.message : String(error));
+}
+
 /** One file of the loaded review, as navigation and staging need it. */
 interface ReviewFile {
   id: string;
@@ -366,6 +386,40 @@ function nextUnviewed(state: State, fromPath: string): ReviewFile | null {
     if (state.viewed[candidate.path] !== candidate.hash) return candidate;
   }
   return null;
+}
+
+/**
+ * Jump only once a just-selected collapse has landed. `select` prepares its
+ * layout asynchronously while `selectFile` scrolls to an offset read from the
+ * layout on screen and stops correcting once that scroll settles, so jumping in
+ * the same tick aims at the file's full height and the one-row layout then
+ * shifts the stream up under a viewport nothing re-reveals. Fixed delay: the
+ * host resolves no layout callback. `navigation` is live, not a snapshot.
+ */
+const COLLAPSE_SETTLE_MS = 50;
+let pendingJump: ReturnType<typeof setTimeout> | null = null;
+function jumpAfterCollapse(ctx: Navigator, fileId: string): void {
+  if (pendingJump) clearTimeout(pendingJump);
+  pendingJump = setTimeout(() => {
+    pendingJump = null;
+    ctx.navigation.selectFile(fileId);
+  }, COLLAPSE_SETTLE_MS);
+}
+
+/**
+ * Where to land once a requested reload lands. A reload rebuilds the review
+ * from scratch and selection falls back to the first file, so record the way
+ * back before asking for one — in order of preference, since the reason for
+ * the reload is usually that some of these paths no longer exist.
+ */
+let landingPaths: string[] = [];
+function landAfterReload(state: State, fromPath: string, keep: boolean): void {
+  const files = loadedReviews.get(state.repoRoot)?.visible ?? [];
+  const from = files.findIndex((file) => file.path === fromPath);
+  landingPaths = keep ? [fromPath] : [];
+  if (from >= 0) {
+    landingPaths.push(...files.slice(from + 1).map((file) => file.path));
+  }
 }
 
 export default function claudeReview(hunk: HunkApi): void {
@@ -446,7 +500,7 @@ export default function claudeReview(hunk: HunkApi): void {
       ctx.fileViews.select(VIEW_ID);
       const count = Object.keys(state.viewed).length;
       const next = nextUnviewed(state, file.path);
-      if (next) ctx.navigation.selectFile(next.id);
+      if (next) jumpAfterCollapse(ctx, next.id);
       ctx.notify(
         next
           ? `viewed ${file.path} · ${count} marked`
@@ -472,6 +526,9 @@ export default function claudeReview(hunk: HunkApi): void {
           ? `dropping ${count} viewed file(s) from the review`
           : "viewed files will stay in the review, collapsed",
       );
+      if (ctx.selection.file) {
+        landAfterReload(state, ctx.selection.file.path, true);
+      }
       // The filter itself only runs at changeset load, so ask for one.
       reloadWorkingTreeReview(state.repoRoot, (message) =>
         ctx.notify(`claude-review: ${message}`, "warning"),
@@ -520,17 +577,10 @@ export default function claudeReview(hunk: HunkApi): void {
           stdio: ["ignore", "ignore", "pipe"],
         });
       } catch (error) {
-        // git's stderr says which pathspec failed; the Error message is the
-        // whole command line, which the notice bar truncates before reaching it.
-        const stderr = String((error as { stderr?: unknown }).stderr ?? "")
-          .split("\n")
-          .filter(
-            (line) => line.startsWith("fatal:") || line.startsWith("error:"),
-          )
-          .join(" ");
-        const detail =
-          stderr || (error instanceof Error ? error.message : String(error));
-        ctx.notify(`claude-review: git add failed — ${detail}`, "error");
+        ctx.notify(
+          `claude-review: git add failed — ${gitFailure(error)}`,
+          "error",
+        );
         return;
       }
 
@@ -542,6 +592,9 @@ export default function claudeReview(hunk: HunkApi): void {
       // review that cannot reload would otherwise keep them collapsed unmarked.
       ctx.fileViews.refresh(VIEW_ID);
       ctx.notify(`staged ${paths.length} file(s)${tail}`);
+      if (ctx.selection.file) {
+        landAfterReload(state, ctx.selection.file.path, true);
+      }
       reloadWorkingTreeReview(state.repoRoot, (message) =>
         ctx.notify(`claude-review: ${message}`, "warning"),
       );
@@ -549,7 +602,63 @@ export default function claudeReview(hunk: HunkApi): void {
   );
 
   hunk.registerCommand(
-    { id: "clearViewed", title: "Clear every viewed mark", key: "X" },
+    {
+      id: "discardFile",
+      title: "Discard the selected file's working-tree changes",
+      key: "X",
+    },
+    async (ctx) => {
+      const file = ctx.selection.file;
+      if (!file) {
+        ctx.notify("claude-review: no file selected", "warning");
+        return;
+      }
+      const state = withState(ctx);
+      if (!state) return;
+
+      const { additions, deletions } = file.stats;
+      const ok = await ctx.dialogs.confirm({
+        title: file.isUntracked
+          ? `Delete untracked file ${file.path}?`
+          : `Discard working-tree changes to ${file.path}?`,
+        body: file.isUntracked
+          ? `${additions} line(s) are lost permanently — git holds no copy of this file to restore.`
+          : `+${additions} -${deletions} are lost permanently. Anything already staged is kept.`,
+      });
+      if (!ok) return;
+
+      try {
+        if (file.isUntracked) {
+          rmSync(join(state.repoRoot, file.path), { force: true });
+        } else {
+          execFileSync(
+            "git",
+            ["-C", state.repoRoot, "checkout", "--", file.path],
+            { stdio: ["ignore", "ignore", "pipe"] },
+          );
+        }
+      } catch (error) {
+        ctx.notify(
+          `claude-review: discarding ${file.path} failed — ${gitFailure(error)}`,
+          "error",
+        );
+        return;
+      }
+
+      delete state.viewed[file.path];
+      writeState(state);
+      ctx.notify(
+        file.isUntracked ? `deleted ${file.path}` : `discarded ${file.path}`,
+      );
+      landAfterReload(state, file.path, false);
+      reloadWorkingTreeReview(state.repoRoot, (message) =>
+        ctx.notify(`claude-review: ${message}`, "warning"),
+      );
+    },
+  );
+
+  hunk.registerCommand(
+    { id: "clearViewed", title: "Clear every viewed mark", key: "C" },
     async (ctx) => {
       const state = withState(ctx);
       if (!state) return;
@@ -707,4 +816,15 @@ export default function claudeReview(hunk: HunkApi): void {
   hunk.on("startup", (_payload, ctx) => rememberRepo(ctx));
   hunk.on("note_created", ({ note }, ctx) => recordNote(note, ctx));
   hunk.on("note_edited", ({ note }, ctx) => recordNote(note, ctx));
+  hunk.on("session_reload", ({ changeset }, ctx) => {
+    const paths = landingPaths;
+    landingPaths = [];
+    for (const path of paths) {
+      const file = changeset.files.find((candidate) => candidate.path === path);
+      if (file) {
+        jumpAfterCollapse(ctx, file.id);
+        return;
+      }
+    }
+  });
 }

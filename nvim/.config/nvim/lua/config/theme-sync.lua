@@ -222,6 +222,98 @@ local FAMILIES = {
       vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
     end,
   },
+  ["edge"] = {
+    -- sainnhe/edge, AURA style (the dimmed style): dimmed chrome #2b2d37
+    -- dark / #fafafa light (light has no styles). One colorscheme follows
+    -- vim.o.background and sets colors_name "edge" in both, so it is pinned.
+    -- The style global is read at :colorscheme time, hence `pre`: the
+    -- ghostty/hunk/herdr/starship palettes all encode aura-style chrome.
+    schemes = { dark = "edge", light = "edge" },
+    colors_name = "edge",
+    pre = function()
+      vim.g.edge_style = "aura"
+      vim.g.edge_dim_foreground = 0
+    end,
+    accents = {
+      dark = { heading1 = "#ec7279", heading = "#deb974" }, -- red + yellow
+      light = { heading1 = "#c93f3f", heading = "#9a6604" },
+    },
+    -- Comment floor: grey #758094 is ~3.4:1 on #2c2e34 and #8790a0 is ~3.1:1
+    -- on #fafafa. Lift to #9199a9 / darken to #677182, the values theme-mode's
+    -- edge blocks already carry. edge italicizes comments unless
+    -- disable_italic_comment is set, so keep the slant. @comment links through
+    -- TSComment to Comment, so the one group covers treesitter too.
+    fixup = function(mode)
+      local fg = mode == "light" and "#677182" or "#9199a9"
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
+    end,
+  },
+  ["edge-dim"] = {
+    schemes = { dark = "edge", light = "edge" },
+    colors_name = "edge",
+    pre = function()
+      vim.g.edge_style = "aura"
+      vim.g.edge_dim_foreground = 1
+    end,
+    accents = {
+      dark = { heading1 = "#ec7279", heading = "#deb974" },
+      light = { heading1 = "#c93f3f", heading = "#9a6604" },
+    },
+    fixup = function(mode)
+      local fg = mode == "light" and "#677182" or "#8a95a8"
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
+    end,
+  },
+  ["material"] = {
+    -- marko-cerovac/material.nvim, "darker" #212121 / "lighter" #FAFAFA. One
+    -- colorscheme PER style, so the schemes differ by mode, but every style
+    -- registers colors_name "material" — pinned, the kanagawa pattern. The
+    -- style files set vim.g.material_style themselves, so no pre() hook.
+    schemes = { dark = "material-darker", light = "material-lighter" },
+    colors_name = "material",
+    accents = {
+      dark = { heading1 = "#F07178", heading = "#FFCB6B" }, -- red + yellow
+      light = { heading1 = "#B20602", heading = "#8a5a00" },
+    },
+    -- The faintest comments in the set: #515151 is ~2.0:1 on #212121 and
+    -- #AABFC9 is ~1.8:1 on #FAFAFA. Lift to #848b93 / darken to #5d6d77, the
+    -- values theme-mode's material blocks already carry. material's comments
+    -- are flat unless styles.comments asks otherwise.
+    fixup = function(mode)
+      local fg = mode == "light" and "#5d6d77" or "#848b93"
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg })
+    end,
+  },
+  ["oceanic"] = {
+    -- material.nvim's "oceanic" style (teal-slate #25363B) as its own family,
+    -- sharing the "lighter" light half with `material` — upstream ships no
+    -- light oceanic. Same vehicle, so colors_name is still "material".
+    schemes = { dark = "material-oceanic", light = "material-lighter" },
+    colors_name = "material",
+    accents = {
+      dark = { heading1 = "#f47f88", heading = "#FFCB6B" }, -- red + yellow
+      light = { heading1 = "#B20602", heading = "#8a5a00" },
+    },
+    -- Comment #546E7A is ~2.3:1 on #25363B, lifted to #93a3ae (~4.8:1); the
+    -- light half is the material fixup verbatim. Flat, as material ships them.
+    fixup = function(mode)
+      local fg = mode == "light" and "#5d6d77" or "#93a3ae"
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg })
+    end,
+  },
+  ["github"] = {
+    schemes = { dark = "github_dark", light = "github_light" },
+    accents = {
+      dark = { heading1 = "#ff7b72", heading = "#d29922" },
+      light = { heading1 = "#d1242f", heading = "#9a6700" },
+    },
+    fixup = function(mode)
+      if mode == "light" then
+        return
+      end
+      vim.api.nvim_set_hl(0, "Comment", { fg = "#9aa4ae" })
+    end,
+  },
 }
 
 local applied ---@type string|nil  last family+mode we set, to skip redundant reloads

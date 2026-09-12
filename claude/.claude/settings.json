@@ -1,4 +1,5 @@
 {
+  "outputStyle": "Laconic",
   "env": {
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "210000",
     "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1",
@@ -213,6 +214,24 @@
         ]
       },
       {
+        "matcher": "(Write|Edit|MultiEdit|NotebookEdit)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/quality-check-cap.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/quality-check-cap.sh"
+          }
+        ]
+      },
+      {
         "matcher": "Skill",
         "hooks": [
           {
@@ -239,24 +258,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/scripts/prettier-hook.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/scripts/eslint-hook.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
             "command": "~/.claude/scripts/claudemd-linecount.sh"
           },
           {
@@ -266,6 +267,21 @@
           {
             "type": "command",
             "command": "bash ~/.claude/scripts/comment-bloat-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/stale-citation-gate.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/quality-check-cap.sh"
           }
         ]
       }
@@ -285,6 +301,14 @@
           {
             "type": "command",
             "command": "bash ~/.claude/scripts/review-commit-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/shell-write-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/quality-check-cap.sh"
           }
         ]
       },
@@ -348,6 +372,15 @@
     ],
     "SessionStart": [
       {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/emit-orchestration.sh"
+          }
+        ]
+      },
+      {
         "matcher": "",
         "hooks": [
           {
@@ -371,12 +404,26 @@
         ]
       }
     ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/format-changed.sh"
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
             "command": "~/.claude/scripts/log-skill-use.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/format-changed.sh"
           }
         ]
       }
@@ -397,7 +444,6 @@
     "skill-creator@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": true,
     "ponytail@ponytail": true,
-    "caveman@caveman": true,
     "simple-english@simple-english": true
   },
   "extraKnownMarketplaces": {
@@ -405,12 +451,6 @@
       "source": {
         "source": "github",
         "repo": "DietrichGebert/ponytail"
-      }
-    },
-    "caveman": {
-      "source": {
-        "source": "github",
-        "repo": "JuliusBrussee/caveman"
       }
     },
     "simple-english": {

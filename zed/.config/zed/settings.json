@@ -80,6 +80,23 @@
 
   "toolbar": { "breadcrumbs": true, "quick_actions": false },
 
+  // Per-language indent. nvim gets this from vim-sleuth, which detects width
+  // from the file itself; Zed has no equivalent, so the 2-space languages are
+  // listed explicitly. Without it the global tab_size of 4 reaches prettier and
+  // format-on-save silently reindents every YAML/JSON/Lua file it touches.
+  "languages": {
+    "YAML": { "tab_size": 2 },
+    "JSON": { "tab_size": 2 },
+    "JSONC": { "tab_size": 2 },
+    "Lua": { "tab_size": 2 },
+    "Markdown": { "tab_size": 2 },
+    "HTML": { "tab_size": 2 },
+    "CSS": { "tab_size": 2 },
+    "JavaScript": { "tab_size": 2 },
+    "TypeScript": { "tab_size": 2 },
+    "TSX": { "tab_size": 2 }
+  },
+
   "telemetry": { "diagnostics": false, "metrics": false },
   "features": { "edit_prediction_provider": "none" }
 }

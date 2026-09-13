@@ -24,6 +24,7 @@ Read the dispatched paths (plan, ticket, acceptance criteria when present) from 
 - Three directions, each a finding. The assertion names something the tree does not contain. The tree contains it and contradicts the assertion — a constraint calling a symbol dead that has callers, a verification naming members of the wrong file, a stated count that is some other number. Or the document contradicts itself: one half corrected and the other left standing, two clauses that cannot both be satisfied, the same quantity stated differently in two places.
 - **Citations decay.** Resolve every `file:line`, rule or phase number, section heading, and cross-document path against the tree as it is now — not as the citing document assumed. A renumber, rename, or deletion elsewhere silently falsifies them.
 - A claim whose subject is outside the tree — a vendor's behavior, production data, a generated fixture's rates, timing — you can doubt but cannot settle. Say which of the two it is rather than asserting it.
+- **Batch the checks.** Every turn re-reads everything already in your context, so this pass costs turns, not commands. List the claims first, then settle every check that does not depend on another's result in the same turn: parallel tool calls, or one Bash call chaining several commands with `echo` separators. Take a new turn only for a check whose command depends on what the last one returned.
 
 **Dangling dependencies.** A phase that uses a module, function, table, endpoint,
 flag, or fixture that no earlier phase creates and that does not already exist in

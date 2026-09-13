@@ -78,5 +78,4 @@ More: the read queue (6 files) · gate evidence · what I corrected · Phase 4 s
 ## Boundaries
 
 Governs completion and status reports — not comments, commits, ADRs, specs.
-Composes with Caveman (which compresses wording); this skill decides what exists
-at all.
+This skill decides what exists at all, not how it is worded.

@@ -37,7 +37,7 @@ bash "$L" kind=finding "${C[@]}" gate=<agent name> disposition=<fix|ask|nit> [bl
   `review-escapes.jsonl`. A finding naming no line logs `line=0`; it counts,
   it just cannot participate in overlap analysis.
 - **`fix_induced=yes`** for code an earlier fix in this loop introduced.
-- **`fix_induced=bug` auto-promotes to `blocker`.** A loop-introduced bug cannot defer — set `blocker=yes`, `actioned=fixed`.
+- **`fix_induced=bug`** — the tool sets `blocker=yes`; a loop-introduced bug cannot defer. Set `actioned=fixed`.
 - `class=` uses the escape vocabulary so the caught and escaped sides
   cross-tabulate. Do not invent values — unknown ones are refused.
 - **`other` is a last resort, read as one.** Reach for `docs` when the prose is wrong about the code (stale comment, wrong quantity, contradicting doc, over-cap volume). Mostly-`other` findings say nothing about what the gate catches.

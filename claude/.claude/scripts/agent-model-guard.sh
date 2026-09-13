@@ -22,7 +22,7 @@
 #      orchestrator's model, fanning out Opus when dispatched from an Opus
 #      orchestrator.
 #
-# See ~/.claude/CLAUDE.md — "Never spawn Opus subagents."
+# See ~/.claude/orchestration.md — "Agent model discipline".
 
 set -euo pipefail
 

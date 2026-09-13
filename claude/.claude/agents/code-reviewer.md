@@ -50,7 +50,7 @@ Flag these:
   - _A DB write or event emit present_: operations that don't change state but still persist or fire. Usually a logic bug.
   - _Input validation present_: fields where `0`, `false`, or `""` are valid but get rejected by an emptiness check.
 - **Private-workflow vocabulary in code comments (`[comment-noise]`).** Any comment carrying a reference from the planning pipeline — ticket/branch/PR/issue numbers (`# IQ-833`, `// FOO-12`, `// see PR #456`), phase numbers (`Phase 4`, `// Phase 6 renders`), decision IDs (`(D8)`, `per D11`, `// D4: returns a list`), plan/doc paths (`See docs/plans/...`), pipeline nouns (`ACCEPTANCE-CONTRACT`, `contract_*`), or agent/author provenance (`written by the coder`, `per the architect`) — is a `fix` finding (never `blocker`), prefix `[comment-noise]`. Flag every time — this overrides the general restraint posture. Keep a real why and strip only the reference; delete when the reference was the only content. Report all sites in the diff as ONE finding with a site list, never one finding per site. Full banned list: `_shared/code-vocabulary.md`.
-- **Comment density (`[comment-noise]`).** For any file the diff touches, count comment lines vs. total lines. If comments exceed ~10% of the file's lines, flag it — the file has a comment problem even if no individual comment is narration. disposition `fix`, prefix `[comment-noise]`. Fix: delete restatements, merge redundants, collapse what clearer code replaces. Do NOT delete why-comments (invariants, gotchas, units, non-obvious decisions) — if the file is over the cap and all comments are genuine whys, the code needs restructuring (flag as `REFACTOR CANDIDATE` in Nit), not the comments deleted. Pre-existing density (not introduced by this diff) is still a finding — the reviewer catches the ratio, not the diff blame.
+- **Comment density (`[comment-noise]`).** For any file the diff touches, count comment lines vs. total lines. If comments exceed ~20% of the file's lines, flag it — the file has a comment problem even if no individual comment is narration. disposition `fix`, prefix `[comment-noise]`. Fix: delete restatements, merge redundants, collapse what clearer code replaces. Do NOT delete why-comments (invariants, gotchas, units, non-obvious decisions) — if the file is over the cap and all comments are genuine whys, the code needs restructuring (flag as `REFACTOR CANDIDATE` in Nit), not the comments deleted. Pre-existing density (not introduced by this diff) is still a finding — the reviewer catches the ratio, not the diff blame.
 - **Unwired external configuration.** Code added/changed in this diff reads an env var, config key, feature flag, or service endpoint: verify the supplying side (deploy manifest, k8s Job/Deployment spec, config file, .env template) actually provides it, even though that file is outside the diff. A config read is a cross-file contract, so checking its supplying file is sanctioned scope expansion, not scope creep. Missing wiring is `fix`.
 
 ### Step 1: Determine Scope
@@ -86,6 +86,14 @@ If the project has a CLAUDE.md or similar conventions doc, read it. Stated conve
 - Preview and apply modes of a destructive operation must share one decision path. Verify preview and apply share one decision path — same state, same guards, including under errors.
 - A destructive operation whose enumeration of the world was incomplete (walk error, permission denied, load failure) must refuse or degrade loudly — never treat "not found" as "gone".
 
+**Contract-vs-implementation audit (required).** For every guard, filter, lint rule, validation check, numeric tolerance, exception handler, or membership/equality predicate this diff adds or changes, find the contract it claims to enforce — its own identifier read plainly, its docstring, the rule id or name, the documented meaning of the config key it reads, or the invariant stated in the surrounding comment. Then name one concrete input that **satisfies the code and violates that contract**, or state that none exists.
+
+- The defect is the distance between what the check says it enforces and the set it actually admits or rejects. Report the input, not the impression: a value, a path, a config combination, a type, or a call ordering.
+- Both directions count. Too narrow lets a violation through — a host allowlist that checks scheme and hostname but not port; a lint that starts at the second element; a tolerance band wide enough to pass a wrong number. Too wide rejects what the contract permits, or fails work the check was never meant to judge — a tripwire that fails a whole suite when its own escalation path already passed.
+- An exception handler that returns the unexamined input is a check that fails open. Name what goes unscanned.
+- A check whose condition can never be false on the population it runs against is satisfied vacuously. It passes and proves nothing.
+- Where the contract is a written claim about behavior — a docstring, a generated description, a config comment — and the code disagrees, the finding is still real even when the code is the correct half. Say which half is wrong.
+
 ### Step 3: Categorize Findings
 
 Apply **Disposition** from calibration. An unreachable path is not a finding at all.
@@ -117,7 +125,7 @@ Do not include "Positive Observations" or "Recommendations" sections. They add n
 
 ## Reviewer-Specific Tool Use
 
-Generic tool-use rules (run expensive commands once, parallel ≠ better, read before grep, LSP before grep, trust framework guarantees, 2-run cap on quality checks) are in `~/.claude/CLAUDE.md`. Plus these reviewer-specific rules:
+Generic tool-use rules (run expensive commands once, parallel ≠ better, read before grep, LSP before grep, trust framework guarantees) are in `~/.claude/CLAUDE.md`. Plus these reviewer-specific rules:
 
 - **Don't re-verify framework guarantees as a "second opinion."** If the diff handoff says checks passed, trust it — do not re-run them.
 - **Stay in scope.** Review only the files in the handoff (or the diff). Do not expand into unchanged files for context unless a specific finding requires it. Standing exceptions: tracing whether a flagged path is reachable, and verifying the supplying side of a config/env read introduced in the diff (Do Flag → "Unwired external configuration").

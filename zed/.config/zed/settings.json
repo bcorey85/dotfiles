@@ -1,0 +1,102 @@
+{
+  // Mirrors nvim/lua/config/options.lua core
+  "diff_view_style": "split",
+  "session": {
+    "trust_all_worktrees": true
+  },
+  "agent_servers": {
+    "claude-acp": {
+      "default_config_options": {
+        "model": "opus"
+      },
+      "type": "registry"
+    }
+  },
+  "vim_mode": true,
+  "relative_line_numbers": true,
+  "vertical_scroll_margin": 4,
+  "tab_size": 4,
+  "hard_tabs": false,
+  "soft_wrap": "editor_width",
+  "show_whitespaces": "selection",
+  "autosave": "on_focus_change",
+  "format_on_save": "on",
+  "cursor_blink": false,
+  "confirm_quit": true,
+  "inlay_hints": { "enabled": true },
+  "indent_guides": { "enabled": true },
+
+  // Ghostty match: FiraCode Nerd Font Mono Retina 13 + 20% cell height.
+  // 450 is the Retina weight; without it Zed picks Regular.
+  "buffer_font_family": "FiraCode Nerd Font Mono",
+  "buffer_font_size": 13,
+  "buffer_font_weight": 450,
+  "buffer_line_height": { "custom": 1.2 },
+  "ui_font_family": "FiraCode Nerd Font Mono",
+  "ui_font_size": 14,
+
+  // herdr one-dark custom -> closest stock Zed theme. Change in UI after.
+  // Zed ships no `edge` port and does not read ~/.cache/theme-mode, so this
+  // axis is manual — the only surface off the theme-mode switcher.
+  "theme": {
+    "mode": "dark",
+    "dark": "One Dark",
+    "light": "One Light"
+  },
+
+  "search": {
+    "smart_case": true
+  },
+
+  // Keep center-ish like your zz recentering habit
+  "scroll_beyond_last_line": "one_page",
+  "centered_layout": {
+    "left_padding": 0.05,
+    "right_padding": 0.05
+  },
+
+  // gitsigns parity: signs yes, virtual blame no (nvim has it off too).
+  "git": {
+    "inline_blame": { "enabled": false }
+  },
+
+  "terminal": {
+    "font_family": "FiraCode Nerd Font Mono",
+    "font_size": 13,
+    "dock": "bottom"
+  },
+
+  "project_panel": {
+    "dock": "left",
+    "git_status": true
+  },
+
+  "outline_panel": { "dock": "right" },
+
+  "tabs": {
+    "git_status": true,
+    "file_icons": true
+  },
+
+  "toolbar": { "breadcrumbs": true, "quick_actions": false },
+
+  // Per-language indent. nvim gets this from vim-sleuth, which detects width
+  // from the file itself; Zed has no equivalent, so the 2-space languages are
+  // listed explicitly. Without it the global tab_size of 4 reaches prettier and
+  // format-on-save silently reindents every YAML/JSON/Lua file it touches.
+  "languages": {
+    "YAML": { "tab_size": 2 },
+    "JSON": { "tab_size": 2 },
+    "JSONC": { "tab_size": 2 },
+    "Lua": { "tab_size": 2 },
+    "Markdown": { "tab_size": 2 },
+    "HTML": { "tab_size": 2 },
+    "CSS": { "tab_size": 2 },
+    "JavaScript": { "tab_size": 2 },
+    "TypeScript": { "tab_size": 2 },
+    "TSX": { "tab_size": 2 }
+  },
+
+  "telemetry": { "diagnostics": false, "metrics": false },
+  "features": { "edit_prediction_provider": "none" }
+}

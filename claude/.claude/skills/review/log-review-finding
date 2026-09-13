@@ -49,7 +49,8 @@
 #   kind=finding ONLY
 #     disposition=fix|ask|nit       what the reviewer said should happen
 #     blocker=yes|no                (optional, `fix` only) advancing with it
-#                                   in place ships the defect
+#                                   in place ships the defect — set
+#                                   automatically when fix_induced=bug
 #     class=bug|smell|duplication|complexity|plan-drift|test-gap|weak-assertion
 #          |security|perf|correctness|docs|other  (same vocabulary as log-escape,
 #                                                  so the two logs cross-tabulate)
@@ -74,7 +75,7 @@
 #     desc="one line"
 #     fix_induced=yes|no|bug      (optional) the finding names code a previous
 #       fix in this loop introduced, not code the coder originally wrote.
-#       `bug` auto-promotes to blocker per _shared/finding-log.md.
+#       `bug` sets blocker=yes.
 #
 # Numeric-looking values are stored as numbers, everything else as strings.
 # A "date" field (UTC ISO 8601) is always added. Output file:
@@ -87,7 +88,7 @@ out="${REVIEW_FINDINGS_FILE:-$HOME/.claude/review-findings.jsonl}"
 # schema_version marks the row's schema era; bump ONLY on a breaking change
 # (a value-vocabulary swap or a field-meaning change), never for additive fields.
 # /audit review reads only the current version; older versions are archived.
-SCHEMA_VERSION=2
+SCHEMA_VERSION=3
 json=$(jq -cn --argjson sv "$SCHEMA_VERSION" '{date: (now | todate), schema_version: $sv}')
 for kv in "$@"; do
   case "$kv" in
@@ -178,6 +179,15 @@ if [ "$kind" = finding ]; then
       echo "plan-drift|test-gap|weak-assertion|security|perf|correctness|docs|other." >&2
       echo "The vocabulary is shared with log-escape so the caught and escaped sides" >&2
       echo "cross-tabulate; do not invent values." >&2
+      exit 1 ;;
+  esac
+  fi_val=$(jq -r '.fix_induced // ""' <<< "$json")
+  case "$fi_val" in
+    "" | yes | no) ;;
+    bug) json=$(jq -c '.blocker = "yes"' <<< "$json") ;;
+    *)
+      echo "refusing to log: fix_induced=$fi_val is not yes|no|bug." >&2
+      echo "Only the literal 'bug' promotes the row to blocker=yes." >&2
       exit 1 ;;
   esac
 fi

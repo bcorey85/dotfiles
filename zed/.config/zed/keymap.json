@@ -117,13 +117,13 @@
   // has to exist here too. Deliberately asymmetric: outside it reveals, inside
   // it closes, which is oil's open-then-`q` round trip on one key.
   {
-    "context": "ProjectPanel",
+    "context": "ProjectPanel && not_editing",
     "bindings": {
       "space e": "project_panel::Toggle"
     }
   },
   {
-    "context": "OutlinePanel",
+    "context": "OutlinePanel && not_editing",
     "bindings": {
       "space u o": "outline_panel::Toggle"
     }

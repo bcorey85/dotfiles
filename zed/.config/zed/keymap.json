@@ -4,7 +4,7 @@
     "context": "Editor && vim_mode == insert",
     "bindings": {
       "k k": "vim::NormalBefore",
-      "ctrl-s": "editor::Save"
+      "ctrl-s": "workspace::Save"
     }
   },
   // VimControl = "in normal mode, anywhere in the window".
@@ -17,7 +17,9 @@
       // Finder lives on `space space` instead.
       "space f": null,
       // files — mirrors Doom SPC f s / Doom SPC p
-      "space f s": "editor::Save",
+      "space f s": "workspace::Save",
+      // nvim binds <C-s> in i/x/n/s; the insert half is its own block below.
+      "ctrl-s": "workspace::Save",
       "space f n": "workspace::NewFile",
       "space f p": "projects::OpenRecent",
       "space p": "projects::OpenRecent",
@@ -162,6 +164,22 @@
       "ctrl-j": "workspace::ActivatePaneDown",
       "ctrl-k": "workspace::ActivatePaneUp",
       "ctrl-l": "workspace::ActivatePaneRight"
+    }
+  },
+  // The agent thread is not an Editor, so vim's ctrl-d/ctrl-u never reach it —
+  // it has its own scroll actions. Page is the closest available; there is no
+  // half-page or count-aware variant, so this is coarser than nvim's 10-line
+  // <C-d>. ctrl-d/ctrl-u are deliberately NOT bound in Terminal, where they are
+  // EOF and kill-line.
+  {
+    "context": "AgentPanel",
+    "bindings": {
+      "ctrl-d": "agent::ScrollOutputPageDown",
+      "ctrl-u": "agent::ScrollOutputPageUp",
+      "g g": "agent::ScrollOutputToTop",
+      "shift-g": "agent::ScrollOutputToBottom",
+      "] ]": "agent::ScrollOutputToNextMessage",
+      "[ [": "agent::ScrollOutputToPreviousMessage"
     }
   },
   {

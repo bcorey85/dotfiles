@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# handoff-path — where this checkout + this terminal keeps its handoff file
+# (used by /handoff). Nothing is written inside the repo.
+#
+#   $XDG_STATE_HOME/claude-handoff/<basename>-<sha256(root)[0:12]>/<tty>.md
+#
+# The slug is the same as hunk-comments-consume's, so one checkout has one key
+# across readers. The tty is the pty of the nearest ancestor that has one — the
+# tool shell has none, the claude process does. It separates parallel sessions
+# in the same checkout, and it survives /clear and a restart in the same pane.
+#
+# Modes:
+#   (none)   print the path for this checkout and terminal
+#   list     print every handoff file for this checkout, newest first
+set -euo pipefail
+
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-handoff"
+
+sha256_of() {
+  if command -v sha256sum >/dev/null; then
+    printf '%s' "$1" | sha256sum | cut -d' ' -f1
+  else
+    printf '%s' "$1" | shasum -a 256 | cut -d' ' -f1
+  fi
+}
+
+tty_key() {
+  local pid=$$ ppid tty
+  while [ "$pid" -gt 1 ]; do
+    read -r ppid tty < <(ps -o ppid=,tty= -p "$pid" 2>/dev/null) || break
+    case "$tty" in "" | \?* | -) pid="$ppid" ;; *)
+      printf '%s' "${tty//\//-}"
+      return
+      ;;
+    esac
+  done
+  printf 'no-tty'
+}
+
+root="$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)"
+root="${root%/}"
+name="$(basename "$root")"
+slug="${name//[^A-Za-z0-9._-]/-}-$(sha256_of "$root" | cut -c1-12)"
+dir="$STATE_DIR/$slug"
+
+case "${1:-}" in
+"") printf '%s\n' "$dir/$(tty_key).md" ;;
+list) [ -d "$dir" ] && ls -t "$dir"/*.md 2>/dev/null || true ;;
+*)
+  echo "usage: handoff-path [list]" >&2
+  exit 2
+  ;;
+esac

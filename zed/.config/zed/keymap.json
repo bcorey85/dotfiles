@@ -1,0 +1,188 @@
+[
+  // ── insert escape (your `kk`) ──
+  {
+    "context": "Editor && vim_mode == insert",
+    "bindings": {
+      "k k": "vim::NormalBefore",
+      "ctrl-s": "editor::Save"
+    }
+  },
+  // VimControl = "in normal mode, anywhere in the window".
+  // NOTE: no binding may be a prefix of another — Zed fires the short one
+  // immediately instead of waiting (that's why `space f` ate `space f p`).
+  {
+    "context": "VimControl",
+    "bindings": {
+      // Kill Zed's default `space f` (file finder) so `space f s/n/p` can exist.
+      // Finder lives on `space space` instead.
+      "space f": null,
+      // files — mirrors Doom SPC f s / Doom SPC p
+      "space f s": "editor::Save",
+      "space f n": "workspace::NewFile",
+      "space f p": "projects::OpenRecent",
+      "space p": "projects::OpenRecent",
+      "space space": "file_finder::Toggle",
+      "space /": "workspace::NewSearch",
+      "space :": "command_palette::Toggle",
+      "space ,": "tab_switcher::Toggle",
+      "space o": "tab_switcher::Toggle",
+      // space e is oil.nvim: open the CURRENT FILE'S parent dir with the cursor
+      // on that file. Reveal is the only Zed action with that behaviour — a
+      // bare panel toggle opens the tree wherever it was last left. Zed has no
+      // editable-directory-buffer, so the panel is as close as this gets; it
+      // does at least do oil's inline rename/create/delete. Not a toggle, which
+      // matches oil (it opens a buffer; `space e` inside the panel closes it).
+      "space e": "pane::RevealInProjectPanel",
+      // PANEL toggle, not a dock toggle: it opens AND closes (unlike
+      // ToggleFocus) and follows the panel if it gets re-docked, which a
+      // Toggle*Dock cannot.
+      "space u o": "outline_panel::Toggle",
+      // ── file harpoon (replaces nvim harpoon2 leader+a / leader+tab / leader+1..4) ──
+      // Pin tab = harpoon slot. Pinned tabs sort first, so slot N = tab index N-1.
+      // `space a` owns the key — agent binds live under `space t`, not `space a`.
+      "space a": "pane::TogglePinTab",
+      "space tab": "tab_switcher::Toggle",
+      "space 1": ["pane::ActivateItem", 0],
+      "space 2": ["pane::ActivateItem", 1],
+      "space 3": ["pane::ActivateItem", 2],
+      "space 4": ["pane::ActivateItem", 3],
+      // herdr muscle memory: alt+1..4 jumps slots (Zed-local, not global)
+      "alt-1": ["pane::ActivateItem", 0],
+      "alt-2": ["pane::ActivateItem", 1],
+      "alt-3": ["pane::ActivateItem", 2],
+      "alt-4": ["pane::ActivateItem", 3],
+      // buffers/tabs
+      "space b d": "pane::CloseActiveItem",
+      "space w w": "workspace::ActivateNextPane",
+      "space T ]": "pane::ActivateNextItem",
+      "space T [": "pane::ActivatePrevItem",
+      "space q q": "workspace::CloseWindow",
+      // ── windows (nvim <leader>w) ──
+      "space w v": "pane::SplitRight",
+      "space w s": "pane::SplitDown",
+      "space w |": "pane::SplitRight",
+      "space w -": "pane::SplitDown",
+      "space w d": "pane::CloseActiveItem",
+      "space w m": "workspace::ToggleZoom",
+      // ── search namespace (nvim <leader>s) ──
+      "space s s": "project_symbols::Toggle",
+      "space s S": "outline::Toggle",
+      "space s p": "workspace::NewSearch",
+      "space s b": "buffer_search::Deploy",
+      "space s w": "editor::FindAllReferences",
+      // ── LSP namespace (nvim <leader>l) ──
+      "space l r": "editor::Rename",
+      "space l a": "editor::ToggleCodeActions",
+      "space l f": "editor::Format",
+      "space l l": "editor::Hover",
+      "space l p": "diagnostics::Deploy",
+      // ── yank paths (nvim <leader>y) ──
+      "space y f": "editor::CopyRelativePath",
+      "space y F": "editor::CopyPath",
+      "space y l": "editor::CopyFileLocation",
+      "space y g": "editor::CopyPermalinkToLine",
+      // ── git ──
+      "space g g": "git_panel::ToggleFocus",
+      "space g o": "editor::OpenPermalinkToLine",
+      // ── UI toggles (nvim <leader>u; space u o is the outline dock above) ──
+      "space u i": "editor::ToggleInlayHints",
+      "space u w": "editor::ToggleSoftWrap",
+      "space u l": "editor::ToggleRelativeLineNumbers",
+      "space u d": "editor::ToggleInlineDiagnostics",
+      // ── fleet: agent threads (under space t so they never collide with space a) ──
+      "space t t": "agent::NewThread",
+      "space t a": "agent::ToggleFocus"
+    }
+  },
+  // ── motions: hunks, diagnostics, LSP jumps. Normal mode only so `=` does not
+  //    shadow visual-mode reindent.
+  {
+    "context": "Editor && vim_mode == normal",
+    "bindings": {
+      "] c": "editor::GoToHunk",
+      "[ c": "editor::GoToPreviousHunk",
+      "] h": "editor::GoToHunk",
+      "[ h": "editor::GoToPreviousHunk",
+      "] d": "editor::GoToDiagnostic",
+      "[ d": "editor::GoToPreviousDiagnostic",
+      // `=` toggles the inline diff overlay — same role as the gitsigns overlay.
+      "=": "editor::ToggleSelectedDiffHunks",
+      "g y": "editor::GoToTypeDefinition",
+      "g I": "editor::GoToImplementation",
+      "g r": "editor::FindAllReferences",
+      "g K": "editor::ShowSignatureHelp"
+    }
+  },
+  // Close from INSIDE the panel — panel focus eats VimControl binds, so the key
+  // has to exist here too. Deliberately asymmetric: outside it reveals, inside
+  // it closes, which is oil's open-then-`q` round trip on one key.
+  {
+    "context": "ProjectPanel",
+    "bindings": {
+      "space e": "project_panel::Toggle"
+    }
+  },
+  {
+    "context": "OutlinePanel",
+    "bindings": {
+      "space u o": "outline_panel::Toggle"
+    }
+  },
+  // same leader when visual (separate context, so space a here is safe)
+  {
+    "context": "Editor && vim_mode == visual",
+    "bindings": {
+      "space a": "agent::AddSelectionToThread",
+      "space l a": "editor::ToggleCodeActions",
+      "space l f": "editor::FormatSelections",
+      "space g o": "editor::OpenPermalinkToLine",
+      "space y g": "editor::CopyPermalinkToLine"
+    }
+  },
+  // ── pane nav (herdr-splits C-hjkl) ────────────────────────────────────────
+  // Zed picks the binding whose context matches DEEPEST in the focus tree, so a
+  // `Workspace` binding always loses to Zed's own defaults on these keys
+  // (editor::Backspace, editor::JoinLines, editor::ScrollCursorCenter,
+  // pane::Split*). They have to be re-declared at each leaf context to win.
+  // Normal/visual and terminal only — matching herdr-splits, which binds n and
+  // t but not i, so ctrl-h stays backspace while typing.
+  {
+    "context": "VimControl && !menu",
+    "bindings": {
+      "ctrl-h": "workspace::ActivatePaneLeft",
+      "ctrl-j": "workspace::ActivatePaneDown",
+      "ctrl-k": "workspace::ActivatePaneUp",
+      "ctrl-l": "workspace::ActivatePaneRight"
+    }
+  },
+  {
+    "context": "Terminal",
+    "bindings": {
+      "ctrl-h": "workspace::ActivatePaneLeft",
+      "ctrl-j": "workspace::ActivatePaneDown",
+      "ctrl-k": "workspace::ActivatePaneUp",
+      "ctrl-l": "workspace::ActivatePaneRight"
+    }
+  },
+  {
+    "context": "ProjectPanel || OutlinePanel || GitPanel || AgentPanel",
+    "bindings": {
+      "ctrl-h": "workspace::ActivatePaneLeft",
+      "ctrl-j": "workspace::ActivatePaneDown",
+      "ctrl-k": "workspace::ActivatePaneUp",
+      "ctrl-l": "workspace::ActivatePaneRight"
+    }
+  },
+  // Fallback for anything without a more specific binding above.
+  {
+    "context": "Workspace",
+    "bindings": {
+      // ctrl+. = your herdr fleet reflex, now toggles Zed agent panel
+      "ctrl-.": "agent::ToggleFocus",
+      "ctrl-h": "workspace::ActivatePaneLeft",
+      "ctrl-j": "workspace::ActivatePaneDown",
+      "ctrl-k": "workspace::ActivatePaneUp",
+      "ctrl-l": "workspace::ActivatePaneRight"
+    }
+  }
+]

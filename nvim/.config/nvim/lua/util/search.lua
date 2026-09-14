@@ -22,6 +22,7 @@ M.excluded_dirs = {
   ".pytest_cache",
   ".mypy_cache",
   ".ruff_cache",
+  ".complexipy_cache",
   "htmlcov",
   "COMPRESS_CACHE",
 }
@@ -54,5 +55,14 @@ function M.exclude_patterns()
   end
   return pats
 end
+
+M.test_patterns = {
+  "**/tests/**",
+  "**/__tests__/**",
+  "**/test_*.py",
+  "**/*_test.*",
+  "**/*.test.*",
+  "**/*.spec.*",
+}
 
 return M

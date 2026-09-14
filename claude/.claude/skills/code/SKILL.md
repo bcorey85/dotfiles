@@ -80,7 +80,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
    For each coder:
    - **When the task is a phase of a multi-phase plan, name the phase explicitly** ("implement Phase 4 of `<plan-path>`") and tell the coder to read it phase-scoped (`coder-core`'s workflow step 1 carries the mechanics).
-   - Coders write NO tests (coder-core's "Tests Are Not Yours") — stub flips and all test authorship happen in step 3b's `test-writer` dispatch
+   - Coders write NO tests (coder-core's "Tests are not yours") — stub flips and all test authorship happen in step 3b's `test-writer` dispatch
    - If the task turns out to be architectural, have it report back and recommend `/eng-spec` instead
 
 3b. **Dispatch the test-writer** (after every coder dispatch that implemented plan behavior): a single `test-writer` subagent (pinned; omit `model`). Skip ONLY when the task/phase has no Success Criteria behavior and no acceptance criteria (pure config or mechanical phases) — note the skip in the phase summary.

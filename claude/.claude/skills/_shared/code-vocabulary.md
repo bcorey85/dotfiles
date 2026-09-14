@@ -2,8 +2,7 @@
 
 The boundary between private workflow and shipped tree. Read before writing or editing any project source or test file.
 
-Consumers: `coder-core`, `code-reviewer`, `test-authoring.md`, `test-writer`, `eng-spec`,
-`/code`, `/refactor`, `/branch-recap`.
+Consumers: `coder-core`, `spec-criteria`, `eng-spec`, `/code`, `/refactor`, `/branch-recap`.
 
 ## The rule
 

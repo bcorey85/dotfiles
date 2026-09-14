@@ -180,8 +180,8 @@ Then re-enter step 2 for Phase <N+1> in the same context — do not wait for the
 ```
 Phase <N> complete. Risk: <high | low — Phase 1 calibration | low — exception>. Phase-level sign-off requested.
 
-Behavior delta (what the system now does):
-- <1–3 lines: system now does X instead of Y. Narrative — no paths, no line numbers.>
+Behavior delta (observable change + its proof, max 3 — no internals, no paths):
+- <before → after, user-visible>. See it: <test name / command / UI flow>.
 
 Read first (/stage queue, blast-radius order):
   ESCALATE:
@@ -199,8 +199,7 @@ Human-only verification remaining:
 
 Next:
   1. Read the queue; spot-check the evidence lines; run the human-only items.
-  2. Before advancing, state in one line what this phase makes the system do. Can't → you have not read enough; go back to the queue.
-  3. Stage what you've read, then confirm to continue to Phase <N+1> — in-session (no /clear needed; /clear only if context got heavy).
+  2. Stage what you've read, then confirm to continue to Phase <N+1> — in-session (no /clear needed; /clear only if context got heavy).
 
 Or give feedback now for revisions to Phase <N>.
 ```
@@ -229,7 +228,6 @@ re-rank it, never promote a tier.
 
 - **Behavior delta** — from the coder's handoff (absent one, derive from the diff and mark `derived from diff`).
 - **Read first** — `/stage`'s queue, verbatim, in its order. When the user steps the queue ("next"), `nvim-jump` each entry per `~/.claude/skills/_shared/nvim-jump.md`.
-- **Active recall** — render the "Next" block's recall prompt, never answer it for the user.
 
 Two fences:
 

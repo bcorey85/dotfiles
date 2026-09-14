@@ -1,6 +1,6 @@
 # Reviewer Calibration (single source of truth)
 
-Shared by every reviewer agent — `code-reviewer`, `security-reviewer`, `perf-reviewer`, `smell-reviewer`, `complexity-reviewer`, and their `-deep` variants. Each reads THIS file and adopts the sections its own agent file names. **Load-bearing headings**: the five `##` headings below are referenced BY NAME from every reviewer agent (and their opencode ports). Renaming one requires updating all of them.
+Shared by the specialist reviewers — `security-reviewer`, `perf-reviewer`, `smell-reviewer`, `complexity-reviewer`, and their `-deep` variants. Each reads THIS file and adopts the sections its own agent file names. **Load-bearing headings**: the five `##` headings below are referenced BY NAME from every adopting agent (and their opencode ports). Renaming one requires updating all of them.
 
 ## Persistent Memory
 
@@ -58,7 +58,13 @@ Every finding carries **exactly one disposition**. The disposition names what sh
   premise, or (b) the problem is real and more than one correction is defensible, so
   picking one is a design call. Never auto-fixed.
 - **`nit`** — real, optional, and cheap to ignore. Reported exactly once, never fixed,
-  never re-reviewed, never re-raised on a later pass.
+  never re-reviewed, never re-raised on a later pass. **Budget: at most two per run,
+  and none at all in a run that reports any `fix`.** A nit costs the reader the same
+  attention as a defect and almost never changes the code, so it earns its place only
+  when there is nothing more important in the report. Over budget, keep the two that
+  would most change how the next file gets written and drop the rest — dropping is the
+  expected outcome, not a failure to report. Never promote a dropped nit to `fix` to
+  keep it: that is the up-labelling the disposition rule forbids.
 
 Plus **one orthogonal flag**, valid only on `fix`:
 

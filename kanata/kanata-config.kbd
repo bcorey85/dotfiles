@@ -43,9 +43,9 @@
 ;;   - / and ; swapped
 (deflayer sturdy
   @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
-  tab       v    m    l    c    p    x    f    o    u    q    [    ]    \
+  tab       v    m    l    c    p    x    f    o    u    z    [    ]    \
   caps      s    t    r    d    y    .    n    a    e    i    ;       ret
-  lsft      k    j    g    w    z    b    h    '    /    ,    rsft
+  lsft      k    j    g    w    q    b    h    '    /    ,    rsft
   lctl lmet lalt           spc                 @ra  rmet rctl
 )
 

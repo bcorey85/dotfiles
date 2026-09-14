@@ -105,7 +105,7 @@ on exit (any status), if a fix coder ran: ONE fix-diff verification pass (Step 5
 
 Pass each reviewer: the exact file list it owns (never let it rediscover scope), and the relevant subsets of `prior-issues` and `flagged`.
 
-Do NOT include a category checklist in the dispatch prompt. The `code-reviewer` agent file defines its own calibration. Pass only scope and context the agent cannot discover itself.
+Do NOT include a category checklist in the dispatch prompt. Pass only scope and context the agent cannot discover itself.
 
 ## Step 4: Classify the reviewer output
 
@@ -293,7 +293,7 @@ bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git re
 The Step 6 class-closure receipt is NOT logged here — it lives in the packet as
 prose. Do not add an enum for it.
 
-`fix`/`ask`/`nit` are how many findings carried each disposition this run, across every reviewer; `blocker` is how many of the `fix` ones carried the flag. `nit` counts `nit[]` entries only — **`load_bearing_clean` is not a nit** (it would inflate the noise metric when a gate comes back clean). `fix = fixed + skipped_fp + deferred`; a row where it doesn't is a logging bug. `smells` = `[smell]` findings the smell specialist returned this run (0 when it didn't fire). `culled` = diff-added tests deleted this run; always 0 (kept for schema stability). `comment_noise` = `[comment-noise]` fixes applied. If the script fails, mention it and continue — telemetry never blocks.
+`fix`/`ask`/`nit` are how many findings carried each disposition this run, across every reviewer; `blocker` is how many of the `fix` ones carried the flag. `nit` counts `nit[]` entries only — **`load_bearing_clean` is not a nit** (it would inflate the noise metric when a gate comes back clean). `fix = fixed + skipped_fp + deferred`; a row where it doesn't is a logging bug. `smells` = `[smell]` findings the smell specialist returned this run (0 when it didn't fire). `culled` = diff-added tests deleted this run; always 0 (kept for schema stability). `comment_noise` = always 0 (kept for schema stability). If the script fails, mention it and continue — telemetry never blocks.
 
 ### Step 7b: Per-finding rows
 

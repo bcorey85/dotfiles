@@ -44,7 +44,7 @@ Do NOT flag:
 - Correctness bugs, second-order effects, contract breaks — `code-reviewer`.
 - Security, even when structural — `security-reviewer`.
 - Query/I/O cost — `perf-reviewer`.
-- Narration comments — `code-reviewer`'s `[comment-noise]`; test fluff — `test-intent-reviewer`'s cull.
+- Narration comments — `code-reviewer`; test fluff — `test-intent-reviewer`'s cull.
 
 A clearly-shippable out-of-domain issue gets a single closing `Note:` line, never a findings entry.
 

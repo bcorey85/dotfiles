@@ -60,8 +60,6 @@ The plan's acceptance criteria (`docs/plans/<slug>/acceptance-criteria.md`) are 
 
 **The private workflow never reaches committed code.** Phase numbers, decision ids (`D4`, `AC2`), plan paths, pipeline nouns, and agent provenance are banned from every file you write under `src/` or `tests/`, including filenames. Read `_shared/code-vocabulary.md` before commenting anything, and sweep your diff against it before you report.
 
-(`~/.claude/skills/_shared/test-authoring.md` binds the `test-writer`, not you.)
-
 ## Fixture Provenance (HARD RULE)
 
 Test fixtures and `testdata/` are the test-writer's surface — writes there are hook-denied to you (`test-ownership-gate`). If implementation code itself needs embedded sample data (a doc example, seed constant, default config), the provenance rule applies: in a comment at the definition, either (a) cite the real source it was derived from — path, command, or dataset name — or (b) label it synthetic with one line on why synthetic suffices. An unverified "no real data exists" is a false provenance claim.

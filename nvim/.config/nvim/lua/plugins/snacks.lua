@@ -315,6 +315,11 @@ return {
       Snacks.picker.grep(search_opts)
     end, "Search project")
 
+    pmap("<leader>st", function()
+      local no_tests = vim.list_extend(vim.deepcopy(exclude), require("util.search").test_patterns)
+      Snacks.picker.grep(vim.tbl_extend("force", search_opts, { exclude = no_tests }))
+    end, "Search project (skip tests)")
+
     -- s d / s D: grep the current file's dir / a chosen dir (Doom `s d` / `s D`).
     pmap("<leader>sd", function()
       Snacks.picker.grep(vim.tbl_extend("force", search_opts, { cwd = vim.fn.expand("%:p:h") }))

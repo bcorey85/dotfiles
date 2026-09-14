@@ -77,7 +77,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="vitesse"
 
-families() { printf '%s\n' vitesse flexoki bamboo gruvbox gruvbox-material melange kanagawa thorn ember token-meridian spore material github edge edge-dim oceanic; }
+families() { printf '%s\n' vitesse flexoki bamboo gruvbox gruvbox-material melange kanagawa thorn ember token-meridian spore material github edge edge-dim oceanic catppuccin; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   # vitesse: our port, dark #121212 / light #ffffff — custom files in
@@ -88,7 +88,7 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
   # from the theme's own terminal.lua mapping.
   # gruvbox/melange/kanagawa: all ghostty BUILTINS (spaces and all), matching the
   # exact variants the palettes below encode — original gruvbox medium, melange,
-  # kanagawa dragon/lotus. No files under ghostty/themes/.
+  # kanagawa wave/lotus. No files under ghostty/themes/.
   case "$1:$2" in
     vitesse:light)      echo "vitesse-light" ;;
     vitesse:*)          echo "vitesse-dark" ;;
@@ -108,7 +108,7 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     melange:light)      echo "Melange Light" ;;
     melange:*)          echo "Melange Dark" ;;
     kanagawa:light)     echo "Kanagawa Lotus" ;;
-    kanagawa:*)         echo "Kanagawa Dragon" ;;
+    kanagawa:*)         echo "Kanagawa Wave" ;;
     # thorn / ember / token-meridian: no ghostty builtin for any of them, so all
     # six halves are custom files in ghostty/themes/. thorn's are the upstream
     # extras/ghostty pair and token-meridian's the upstream contrib/ghostty pair,
@@ -144,6 +144,9 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # (dark hand-mapped; light shared verbatim with material-light).
     oceanic:light)          echo "oceanic-light" ;;
     oceanic:*)              echo "oceanic-dark" ;;
+    # catppuccin: ghostty BUILTINS — frappe dark, latte light.
+    catppuccin:light)       echo "Catppuccin Latte" ;;
+    catppuccin:*)           echo "Catppuccin Frappe" ;;
     spore:*)                echo "spore-dark" ;;
   esac
 }
@@ -168,8 +171,9 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
   # near-identical text colors.
   #
   # gruvbox and kanagawa both have hunk builtins of the exact same variants
-  # (gruvbox-*-medium IS original gruvbox medium; kanagawa-dragon/lotus are the
+  # (gruvbox-*-medium IS original gruvbox medium; kanagawa-wave/lotus are the
   # same palettes), so those are exact bases, not neutral approximations.
+  # kanagawa dark ships no custom block, so wave renders natively.
   #
   # melange has no hunk builtin. Dark takes gruvbox-dark-medium (#ebdbb2 on
   # #282828 against melange's #ece1d7 on #292522 — same warm cream cast). Light
@@ -190,7 +194,7 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     melange:light)      echo "vitesse-light" ;;
     melange:*)          echo "gruvbox-dark-medium" ;;
     kanagawa:light)     echo "kanagawa-lotus" ;;
-    kanagawa:*)         echo "kanagawa-dragon" ;;
+    kanagawa:*)         echo "kanagawa-wave" ;;
     # thorn, ember and token-meridian have no hunk builtin; each ships a full
     # [custom_theme] over a base picked for NEUTRALS. gruvbox medium's warm
     # cream fg matches thorn forest (#dbd2c7), ember dark (#d8d0c0) and
@@ -217,6 +221,9 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # oceanic has no hunk builtin either; same neutral vitesse pair.
     oceanic:light)          echo "vitesse-light" ;;
     oceanic:*)              echo "vitesse-dark" ;;
+    # catppuccin IS a hunk builtin (both flavours) — used directly.
+    catppuccin:light)       echo "catppuccin-latte" ;;
+    catppuccin:*)           echo "catppuccin-frappe" ;;
     spore:*)                echo "gruvbox-dark-medium" ;;
     token-meridian:light)   echo "vitesse-light" ;;
     token-meridian:*)       echo "gruvbox-dark-medium" ;;
@@ -523,20 +530,6 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # lotus roles: keyword violet, string green, number pink, fn blue, type
       # teal, operator brown.
       kw="#624c83"; str="#6f894e"; num="#b35b79"; fn="#4d699b"; typ="#597b75"; punct="#545464"; op="#836f4a"
-      ;;
-    kanagawa:*)
-      # kanagawa dragon (warm charcoal #181616). Chrome from the warm dragonBlack
-      # surfaces (theme's own Visual/Pmenu are cool #223249 — skipped for warm).
-      # Comment grey lifted to #838a82 (stock #737c73 ~4.1:1).
-      bg="#181616"; panel="#1D1C19"; panelAlt="#282727"; border="#0d0c0c"
-      accent="#a292a3"; accentMuted="#625e5a"; text="#c5c9c5"; muted="#838a82"
-      addedBg="#2b3328"; removedBg="#43242b"; ctxBg="#181616"
-      sAdd="#87a987"; sRem="#c4746e"; lnFg="#625e5a"
-      badgeAdd="#87a987"; badgeRem="#c4746e"; badgeNeu="#7fb4ca"
-      fRename="#a292a3"; fMod="#c4b28a"; fUntracked="#87a987"; note="#1D1C19"
-      # dragon roles: keyword violet, string green, number mauve-pink, fn blue,
-      # type aqua, operator coral.
-      kw="#8992a7"; str="#8a9a7b"; num="#a292a3"; fn="#8ba4b0"; typ="#8ea4a2"; punct="#c5c9c5"; op="#c4746e"
       ;;
     thorn:light)
       # thorn field (cream-lime #f9fdce). Chrome + diff washes from the theme's
@@ -1210,14 +1203,14 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       blue="#4d699b" teal="#597b75" peach="#cc6d00"
       ;;
     kanagawa:*)
-      # kanagawa dragon (warm charcoal #181616) — comment lifted to #838a82.
+      # kanagawa wave (blue-ink #1f1f28) — comment lifted to #908f85.
       base_name="one-dark"
-      accent="#a292a3" panel_bg="#1D1C19" surface_dim="#232220"
-      surface0="#282727" surface1="#393836"
-      overlay0="#625e5a" overlay1="#838a82"
-      text="#c5c9c5" subtext0="#838a82"
-      green="#87a987" yellow="#c4b28a" red="#c4746e"
-      blue="#8ba4b0" teal="#8ea4a2" peach="#b6927b"
+      accent="#957fb8" panel_bg="#2a2a37" surface_dim="#363646"
+      surface0="#223249" surface1="#2d4f67"
+      overlay0="#54546d" overlay1="#908f85"
+      text="#dcd7ba" subtext0="#908f85"
+      green="#98bb6c" yellow="#e6c384" red="#e46876"
+      blue="#7e9cd8" teal="#7aa89f" peach="#ffa066"
       ;;
     thorn:light)
       # thorn field (cream-lime #f9fdce) — comment darkened to #6f7452. The
@@ -1323,6 +1316,29 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#B0BEC5" subtext0="#a7b6c2"
       green="#C3E88D" yellow="#FFCB6B" red="#f79aa1"
       blue="#8fb2ff" teal="#89DDFF" peach="#f89a7b"
+      ;;
+    catppuccin:light)
+      # catppuccin latte (#eff1f5, mantle panel) — herdr's token names ARE
+      # catppuccin's, so values are verbatim except green/yellow/teal/peach,
+      # darkened along hue to clear 4.5:1 on the panel.
+      base_name="one-light"
+      accent="#8839ef" panel_bg="#e6e9ef" surface_dim="#ccd0da"
+      surface0="#bcc0cc" surface1="#acb0be"
+      overlay0="#7c7f93" overlay1="#6c6f85"
+      text="#4c4f69" subtext0="#6c6f85"
+      green="#2f7a1f" yellow="#9a6200" red="#d20f39"
+      blue="#1e66f5" teal="#10727a" peach="#b84700"
+      ;;
+    catppuccin:*)
+      # catppuccin frappe (#303446, mantle panel) — verbatim; surface_dim is
+      # surface0 so the focused row clears the panel.
+      base_name="one-dark"
+      accent="#ca9ee6" panel_bg="#292c3c" surface_dim="#414559"
+      surface0="#51576d" surface1="#626880"
+      overlay0="#838ba7" overlay1="#949cbb"
+      text="#c6d0f5" subtext0="#a5adce"
+      green="#a6d189" yellow="#e5c890" red="#e78284"
+      blue="#8caaee" teal="#81c8be" peach="#ef9f76"
       ;;
     material:*)
       # material darker (neutral #212121) — comment lifted to #848b93. Chrome

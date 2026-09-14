@@ -1,5 +1,4 @@
 {
-  "outputStyle": "Laconic",
   "env": {
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "210000",
     "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1",
@@ -147,7 +146,10 @@
       "Bash(rm -rf /)",
       "Bash(chmod 777 *)",
       "Bash(gh pr create:*)",
-      "Bash(gh pr merge:*)"
+      "Bash(gh pr merge:*)",
+      "Artifact",
+      "SendFeedback",
+      "AskUserQuestion"
     ],
     "defaultMode": "auto"
   },
@@ -424,6 +426,10 @@
           {
             "type": "command",
             "command": "bash ~/.claude/scripts/format-changed.sh"
+          },
+          {
+            "type": "command",
+            "command": "echo 'Style: verdict in sentence one. Under 100 words unless I ask for detail. Plain words, short sentences, no should/may/might, no recap.'"
           }
         ]
       }
@@ -460,6 +466,7 @@
       }
     }
   },
+  "outputStyle": "Laconic",
   "effortLevel": "medium",
   "awaySummaryEnabled": false,
   "tui": "fullscreen",
@@ -469,5 +476,10 @@
   "editorMode": "normal",
   "inputNeededNotifEnabled": false,
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "modelSettings": {
+    "claude-opus-5": {
+      "effortLevel": "medium"
+    }
+  }
 }

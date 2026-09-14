@@ -1,5 +1,19 @@
 {
   // Mirrors nvim/lua/config/options.lua core
+  "collaboration_panel": {
+    "dock": "right"
+  },
+  "agent": {
+    "dock": "left",
+    "favorite_models": [],
+    "model_parameters": [],
+    // Terminal threads run the real claude TUI, so every built-in slash command
+    // works. The ACP thread only gets the subset the Agent SDK exposes.
+    "terminal_init_command": "claude"
+  },
+  "git_panel": {
+    "dock": "right"
+  },
   "diff_view_style": "split",
   "session": {
     "trust_all_worktrees": true
@@ -13,7 +27,7 @@
     }
   },
   "vim_mode": true,
-  "relative_line_numbers": true,
+  "relative_line_numbers": "enabled",
   "vertical_scroll_margin": 4,
   "tab_size": 4,
   "hard_tabs": false,
@@ -40,7 +54,7 @@
   // axis is manual — the only surface off the theme-mode switcher.
   "theme": {
     "mode": "dark",
-    "dark": "One Dark",
+    "dark": "Catppuccin Frappé",
     "light": "One Light"
   },
 
@@ -67,7 +81,7 @@
   },
 
   "project_panel": {
-    "dock": "left",
+    "dock": "right",
     "git_status": true
   },
 

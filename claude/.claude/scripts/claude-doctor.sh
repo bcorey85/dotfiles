@@ -10,6 +10,7 @@
 #   4b. rules/ structure: frontmatter, a paths: key, a non-empty body
 #   4c. orchestration.md exists and emit-orchestration.sh is registered
 #   4d. at least one reviewer agent still references reviewer-calibration.md
+#   4e. every heading block of an anchored prompt file has a docs/rule-anchors.md row
 #   5. skill frontmatter: name matches directory, allowed-tools contains no unknown tool names
 #   6. opencode sync: agent filename diff, CLAUDE.md vs AGENTS.md mtime drift
 #   7. shellcheck over scripts/ and hooks/ (if installed)
@@ -212,6 +213,18 @@ if ls "$CLAUDE_DIR"/agents/*reviewer*.md >/dev/null 2>&1; then
     print_success "reviewer-calibration.md is referenced"
   else
     print_warn "no reviewer agent references reviewer-calibration.md — calibration-refs-guard.sh is now a no-op"
+  fi
+fi
+
+# --- 4e. rule anchors --------------------------------------------------------
+# Every heading block of a prompt file named in docs/rule-anchors.md has a row
+# there with the evidence behind it. Whitespace-only edits do not move a hash.
+print_info "Rule anchors"
+if [[ -x "$CLAUDE_DIR/scripts/rule-anchors.sh" ]]; then
+  if ra_out=$("$CLAUDE_DIR/scripts/rule-anchors.sh" check 2>&1); then
+    print_success "every anchored block has a row and every row has a block"
+  else
+    while IFS= read -r line; do print_error "rule anchor: $line"; done <<<"$ra_out"
   fi
 fi
 

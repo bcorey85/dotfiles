@@ -40,4 +40,5 @@
    > prepended.
 
 10. If every architect returns a full plan (zero decision points, zero open
-    questions), skip Phase 5 and the step-15 finalization; go to Phase 7.
+    questions), skip Phase 5 and step 15; enter Phase 6 at step 16 for
+    persistence, checks, and review.

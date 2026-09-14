@@ -3,6 +3,9 @@
 # dispatch obligates /review before /commit". The prose version of this rule
 # needed three restatements and still leaked; this hook makes it deterministic.
 #
+# Contract (shared with omp's claude-security-bridge.ts): hook JSON on stdin,
+# a single-line `permissionDecision` JSON verdict on stdout, exit 0.
+#
 # Registered twice in settings.json:
 #   PostToolUse (matcher: Agent) — ARMS the gate:
 #       coder* dispatch      -> "dirty" (unreviewed coder work exists)
@@ -47,7 +50,31 @@
 # The self-authorization guard is unaffected: the `git commit` block check runs
 # first and exits, so `review-gate-mark skip && git commit` still cannot work
 # in a single command.
-set -euo pipefail
+# fail_closed returns early on PostToolUse: that event has no deny semantics
+# and a PreToolUse-shaped decision must never be emitted there. evt is declared
+# before the parse, so a failure during `input=$(cat)` on a PostToolUse
+# invocation still takes the deny branch — harmless, PostToolUse ignores
+# permissionDecision and the exit is 0.
+set -Eeuo pipefail
+
+[[ -n "${CLAUDE_SKIP_HOOKS:-}" ]] && exit 0
+
+emitted=0
+evt=""
+deny() {
+  emitted=1
+  jq -cn --arg r "$1" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
+  exit 0
+}
+fail_closed() {
+  local rc=$?
+  [[ "$evt" == PostToolUse ]] && return 0
+  if (( rc != 0 && emitted == 0 )); then
+    deny "[review-commit-gate] internal error (exit $rc) — failing closed. Report this to the user."
+  fi
+  return 0
+}
+trap fail_closed EXIT
 
 command -v jq >/dev/null || exit 0
 input=$(cat)
@@ -79,8 +106,7 @@ case "$evt" in
         rm -f "$skip_file"
         exit 0
       fi
-      echo "[review-commit-gate] Unreviewed coder work this session. Most common cause: a review DID converge and the mark was missed — if so, record it now: bash ~/.claude/scripts/review-gate-mark clean. Otherwise run /review. To skip review on a trivial diff, ASK THE USER to run 'bash ~/.claude/scripts/review-gate-mark skip' themselves and then retry — do not attempt it yourself, the classifier denies it from you by design." >&2
-      exit 2
+      deny "[review-commit-gate] Unreviewed coder work this session. Most common cause: a review DID converge and the mark was missed — if so, record it now: bash ~/.claude/scripts/review-gate-mark clean. Otherwise run /review. To skip review on a trivial diff, ASK THE USER to run 'bash ~/.claude/scripts/review-gate-mark skip' themselves and then retry — do not attempt it yourself, the classifier denies it from you by design."
     fi
     if grep -qE 'review-gate-mark[[:space:]]+(clean|dirty|skip)\b' <<<"$cmd"; then
       mark=$(grep -oE 'review-gate-mark[[:space:]]+(clean|dirty|skip)' <<<"$cmd" | awk '{print $2}' | head -1)

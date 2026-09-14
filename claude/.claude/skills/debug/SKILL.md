@@ -47,10 +47,10 @@ Get a deterministic repro, read the EXACT failure (full error, stack, exit code 
 **Multi-component system** (CI → build → sign, API → service → DB, anything crossing a
 process/network/env boundary) → you can't read the chain — **instrument the boundaries**: log in/out + env/config/secrets propagation per boundary. Run **once** to find WHERE it breaks, then investigate only that component.
 
-**Pattern check (both paths):** find a *working* sibling — similar code in the same
+**Pattern check (both paths):** find a _working_ sibling — similar code in the same
 codebase that behaves correctly — and list every difference, however small. "That can't matter" is where causes hide.
 
-State the result in one sentence: *"X fails because Y introduces Z at `file:line`."* If
+State the result in one sentence: _"X fails because Y introduces Z at `file:line`."_ If
 you can't write that sentence, you are not done tracing.
 
 ### 3. Confirm before fixing
@@ -61,7 +61,7 @@ Form ONE hypothesis, prove with evidence not reasoning (failing assertion at ori
 
 - **One change, at the original trigger** — never at the symptom because it's closer, and
   no "while I'm here" refactoring bundled in.
-- **Defense in depth** for bad values crossing layers — a check per passed boundary so the *class* becomes impossible:
+- **Defense in depth** for bad values crossing layers — a check per passed boundary so the _class_ becomes impossible:
   - **Entry** — reject invalid input at the API boundary (empty, missing, wrong type).
   - **Business logic** — reject data that doesn't make sense for this operation (mocks
     and alternate code paths bypass entry validation).
@@ -70,7 +70,7 @@ Form ONE hypothesis, prove with evidence not reasoning (failing assertion at ori
   - **Instrumentation** — log context before the dangerous operation for next time.
 - **Route the edit normally**: `/debug` **diagnoses**, `/fix` **repairs** — keep them on their rails so the review gate runs.
 - **If the fix doesn't work: count your attempts.** Under 3 → return to phase 1 with the
-  new information, form a NEW hypothesis (don't stack fixes). **At 3+, STOP — usually wrong *architecture*, not hypothesis** (tell: each fix reveals fresh coupling). Raise as a design question before fix #4.
+  new information, form a NEW hypothesis (don't stack fixes). **At 3+, STOP — usually wrong _architecture_, not hypothesis** (tell: each fix reveals fresh coupling). Raise as a design question before fix #4.
 
 ## Output
 

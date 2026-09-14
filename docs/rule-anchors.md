@@ -1,0 +1,39 @@
+# Rule anchors
+
+Every heading block of the prompt files listed below has a content hash and the
+reason it exists. `claude-doctor` recomputes the hashes and reports two faults: a
+block with no row, and a row whose block no longer exists. Whitespace does not move
+a hash.
+
+The prompt files never carry this provenance. It lives here, and the change ledger
+(`agent-evals.md`) holds the full story behind each evidence kind.
+
+To change an anchored block:
+
+1. Edit the prompt file.
+2. Run `~/.claude/scripts/rule-anchors.sh list <file>` and copy the new hash.
+3. Replace the row's hash. Set `evidence` and `reason` to what backs the new text.
+4. Run `claude-doctor`. Git history keeps the old rows.
+
+Evidence kinds: `gate ranking`, `census`, `removal round`, `seeded round`,
+`controlled replay`, `judgment` (nobody measured it), `unproven` (never exercised).
+
+| hash     | file                                   | section                                                     | evidence                    | reason                                                                                                                                                                               |
+| -------- | -------------------------------------- | ----------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 6b04ae9b | agents/code-reviewer.md                | (preamble)                                                  | seeded round, removal round | Dispatch contract: name, description, tools, project memory, and the one-line role. The opus pin stays because sonnet at this gate missed planted defects that the same prompt caught on opus. The role line's restraint clause went with the judgment text: two replicates at opus found the reviewer without it equal on recall and on false findings. |
+| b4ab6a17 | agents/code-reviewer.md                | ## Persistent Memory                                        | unproven                    | Project memory of known patterns, copied from the shared calibration file when the diff reviewer stopped loading that file. Never exercised: every review round dispatches without a memory directory. |
+| fbc646b2 | agents/code-reviewer.md                | ## Specialist Scope                                         | removal round               | The four specialist-ownership bullets, kept verbatim in the contract-only text that matched the full prompt in two replicates at opus. Not themselves varied. The suppression list they sat in is gone: inert on recall and on false findings. |
+| 9411a7fc | agents/code-reviewer.md                | ### Step 1: Determine Scope                                 | removal round               | How the reviewer finds the diff: the handoff block first, else the git working state. Kept verbatim in the contract-only text that matched the full prompt in two replicates at opus. Not itself varied. |
+| 8aac1ba9 | agents/code-reviewer.md                | ### Step 2: Read the Changes                                | removal round               | Read every file in scope and the project conventions file. The three required audits and the two guard sentences that followed them are gone: two replicates at opus found the reviewer without them equal on recall and on false findings, at about seven tenths of the tokens. |
+| 8b91a12b | agents/code-reviewer.md                | ## Output Format                                            | removal round, judgment     | The report template the dispatcher parses: summary headings, prior issues, Fix/Ask/Nit. Kept verbatim in the contract-only text that matched the full prompt in two replicates at opus, plus one sentence added by judgment: the plan-impact prefix that the review loop scans for. That prefix used to live in the removed disposition text, and no bench exercises it. |
+| 1abfce31 | agents/code-reviewer.md                | ## Reviewer-Specific Tool Use                               | removal round               | What remains after the removal: trust the handoff's checks, and stay in scope with two standing exceptions. Kept in the contract-only text that matched the full prompt in two replicates at opus. |
+| 9c8ab1a0 | skills/_shared/reviewer-calibration.md | # Reviewer Calibration (single source of truth)             | census                      | Names the four specialist adopters and warns that a renamed section breaks them. The warning failed once, which is why the doctor now checks the references. The diff reviewer is no longer an adopter. |
+| b4ab6a17 | skills/_shared/reviewer-calibration.md | ## Persistent Memory                                        | unproven                    | Project memory of known patterns. Never exercised: every review round dispatches without a memory directory. The diff reviewer carries its own copy of this paragraph. |
+| 0d9c6962 | skills/_shared/reviewer-calibration.md | ## Calibration Anchor                                       | census                      | The merge-blocking question and the examples that set the bar's height. Adopted by the four specialist reviewers, untested there. The diff reviewer no longer loads it: two replicates at opus found it inert on recall and on false findings for that reviewer. |
+| e79a8d75 | skills/_shared/reviewer-calibration.md | ## Verify the Premise Before Flagging                       | judgment                    | Check the code, the rule, and the diff before a finding ships. Adopted by the four specialist reviewers, untested there. The diff reviewer no longer loads it, for the same reason as the block above. |
+| a20c02f1 | skills/_shared/reviewer-calibration.md | ## Disposition                                              | census                      | One disposition per finding, the blocker flag, and the plan-impact routing. Adopted by the four specialist reviewers, untested there. The diff reviewer no longer loads it and carries the plan-impact prefix in its own report template instead. |
+| 5b08c8b2 | skills/_shared/reviewer-calibration.md | ## Self-Check Before Reporting                              | judgment                    | The calibration question run once more per finding. Adopted by the four specialist reviewers, untested there. The diff reviewer no longer loads it, for the same reason as the anchor block. |
+| 8fdd8aff | skills/_shared/code-vocabulary.md      | # Code Vocabulary (what may never appear in committed code) | judgment                    | The boundary between the private operator workflow and the shipped tree. Referenced by the coder skill, the test writer, and the criteria author. The diff reviewer no longer loads it: two replicates at opus found the reviewer without it equal on recall and on false findings. |
+| e616ade4 | skills/_shared/code-vocabulary.md      | ## The rule                                                 | judgment                    | Bans pipeline vocabulary (phase numbers, decision ids, plan paths, process narration) from committed code.                                                                           |
+| f9f922c6 | skills/_shared/code-vocabulary.md      | ## What to write instead                                    | judgment                    | A comment says what the code cannot say, not where the decision was made.                                                                                                            |
+| 32b8f59e | skills/_shared/code-vocabulary.md      | ## Sweep before handing back                                | judgment                    | Diff-check against the banned table before reporting. Binds the coders. The diff reviewer no longer loads this file.                                                                  |

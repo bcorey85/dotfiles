@@ -32,7 +32,7 @@ Bump manifest plus install together (never hand-edit lockfile). Code changes via
 
 ### 5. Verify
 
-Quality checks (2-run cap). Clean install plus green means done; no ad-hoc spot checks.
+Quality checks. Clean install plus green means done; no ad-hoc spot checks.
 
 ### 6. Report
 

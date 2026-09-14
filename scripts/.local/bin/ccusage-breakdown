@@ -120,6 +120,13 @@ def human(n):
     if n >= 1e3: return f'{n/1e3:.0f}k'
     return str(n)
 
+# Each API response (message.id) may appear across multiple JSONL content
+# blocks and multiple candidate files for the same session.  Deduplicate by
+# id so every response is counted exactly once.  Missing or empty ids each get
+# a unique synthetic key so unrelated records never collapse together.
+seen = {}                # message_id -> [day, model, new_in, cr, out, who]
+_missing_seq = 0
+
 for path in sys.stdin:
     path = path.strip()
     if not path: continue
@@ -142,11 +149,26 @@ for path in sys.stdin:
             if not (start <= day <= end): continue
             new_in = (u.get('input_tokens') or 0) + (u.get('cache_creation_input_tokens') or 0)
             cr = u.get('cache_read_input_tokens') or 0
-            out = u.get('output_tokens') or 0
-            row = agg[(day, short(model))]
-            row[0] += 1; row[1] += new_in; row[2] += cr; row[3] += out
-            if j.get('isSidechain'): who = 'agent'
-            split[who][0] += new_in; split[who][1] += out
+            out = (u.get('output_tokens') or 0)
+            rec_who = 'agent' if j.get('isSidechain') else who
+            mid = m.get('id')
+            if not mid or (isinstance(mid, str) and not mid.strip()):
+                # Tuple key can never equal a real string id.
+                _missing_seq += 1
+                mid = ('__noid__', _missing_seq)
+            if mid in seen:
+                prev = seen[mid]
+                # Keep first input/cache snapshot; take MAX output_tokens.
+                prev[4] = max(prev[4], out)
+            else:
+                seen[mid] = [day, short(model), new_in, cr, out, rec_who]
+
+# Collapse deduplicated responses into aggregation buckets.
+for rec in seen.values():
+    day, model, new_in, cr, out, rec_who = rec
+    row = agg[(day, model)]
+    row[0] += 1; row[1] += new_in; row[2] += cr; row[3] += out
+    split[rec_who][0] += new_in; split[rec_who][1] += out
 
 if not agg:
     print('  (no usage records in range)')

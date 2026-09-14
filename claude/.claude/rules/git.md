@@ -6,6 +6,8 @@ paths: []
 
 - With ticket: branch `TICKET-NUM-desc`, commit `TICKET-NUM: desc`, PR title `TICKET-NUM: desc`.
 - Without ticket: branch `feature/desc` or `fix/desc`.
+- Keep diffs focused: one logical change per task.
+- Worktree branches: NEVER leave the auto-generated `worktree-` prefix in the branch name. Rename to the plain `TICKET-NUM-desc` (e.g. `IQ-1148-cube-cache-tuning-poc`) immediately after creating the worktree, then push it to remote (`git push -u origin <branch>`) first — before doing work — so the branch is tracked and backed up.
 
 ## Stacked PRs (`gh stack`, github/gh-stack)
 

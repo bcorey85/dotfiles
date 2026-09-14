@@ -105,6 +105,32 @@ return {
     },
   },
   config = function(_, opts)
+    -- UPSTREAM RENAMED get_explorer (v4.x turned lifecycle.lua into a
+    -- lifecycle/ package exposing get_panel_view instead; the explorer
+    -- object itself is unchanged — same tree/git_root/current_file_path/
+    -- on_file_select fields). Every explorer access in this file funnels
+    -- through here. Warns once on further drift; silent when there is
+    -- simply no session. Self-contained (no glue_broke dependency) so it
+    -- can sit above everything that uses it.
+    local explorer_api_warned = false
+    local function session_explorer(tabpage)
+      local ok, lc = pcall(require, "codediff.ui.lifecycle")
+      if not ok then
+        return nil
+      end
+      if type(lc.get_panel_view) ~= "function" then
+        if not explorer_api_warned then
+          explorer_api_warned = true
+          vim.notify("codediff review glue: explorer accessor changed again (update?); explorer features disabled, see plugins/codediff.lua", vim.log.levels.WARN)
+        end
+        return nil
+      end
+      local ok2, view = pcall(lc.get_panel_view, tabpage or vim.api.nvim_get_current_tabpage())
+      if not (ok2 and type(view) == "table" and view.tree) then
+        return nil
+      end
+      return view
+    end
     -- herdr `prefix d` popup: the whole nvim is disposable, so q anywhere
     -- quits it — the popup dismisses lazygit-style, like the NEOGIT_POPUP /
     -- GIT_QF_POPUP siblings. codediff's own q (tab-close) is
@@ -135,8 +161,7 @@ return {
         -- no focus context, asks still work. setenv so the :terminal child
         -- inherits it; this nvim is a disposable popup, the env leak is
         -- contained.
-        local ok, lifecycle = pcall(require, "codediff.ui.lifecycle")
-        local ex = ok and lifecycle.get_explorer(vim.api.nvim_get_current_tabpage()) or nil
+        local ex = session_explorer(vim.api.nvim_get_current_tabpage())
         vim.fn.setenv("DIFFASK_FILE", ex and ex.current_file_path or nil)
         -- Plain :terminal, deliberately NOT Snacks.terminal: snacks keys
         -- terminals by command and reattaches, so after a diffask exits you
@@ -248,7 +273,7 @@ return {
           end
           return
         end
-        local ex = lifecycle.get_explorer(vim.api.nvim_get_current_tabpage())
+        local ex = session_explorer(vim.api.nvim_get_current_tabpage())
         if ex then
           pcall(rf.refresh, ex)
         end
@@ -261,7 +286,7 @@ return {
         if not ok then
           return
         end
-        local ex = lifecycle.get_explorer(vim.api.nvim_get_current_tabpage())
+        local ex = session_explorer(vim.api.nvim_get_current_tabpage())
         if not (ex and ex.tree and ex.git_root) then
           return
         end
@@ -349,7 +374,7 @@ return {
       -- partial case).
       local ok, lifecycle = pcall(require, "codediff.ui.lifecycle")
       if ok then
-        local ex = lifecycle.get_explorer(vim.api.nvim_get_current_tabpage())
+        local ex = session_explorer(vim.api.nvim_get_current_tabpage())
         if ex and ex.current_file_path then
           advance_after(ex.current_file_path)
         end
@@ -358,6 +383,175 @@ return {
 
     if #missing > 0 then
       glue_broke("core.git." .. table.concat(missing, "/") .. " not found; their sugar is disabled")
+    end
+
+    -- REVIEWED MARKS (hunk-style touring + stage-the-set). Marks live outside
+    -- codediff state: reviewed[root][rel] = worktree hash at mark time, so a
+    -- file edited after marking reads stale and rejoins the tour on its own.
+    -- `v` toggles the current file (re-marks stale entries instead of
+    -- unmarking them), `]r`/`[r` tour unreviewed files, `S` stages every
+    -- marked file that still has unstaged changes, then tours on.
+    -- Deliberately NOT covered: hunk's `V` (drop-viewed filter — the tour
+    -- already skips fresh marks and fully-staged files, so there is nothing
+    -- to filter) and `X` (marks are cheap; `v` unmarks). `v` shadows visual
+    -- mode in the explorer/history panels only (hunk parity wins; the diff
+    -- panes are untouched). Bound in the panel FileType autocmd below — these
+    -- lhs are codediff-free, so unlike the <Tab> aliases there is no rebind
+    -- race to ride. No new private-API surface: git CLI plus the explorer
+    -- accessors the glue above already uses.
+    local reviewed = {}
+    local function marks_root(ex)
+      local root = ex and ex.git_root
+      if not root or root == "" then
+        root = vim.fn.systemlist({ "git", "rev-parse", "--show-toplevel" })[1]
+      end
+      if not root or root == "" then
+        return nil, nil
+      end
+      reviewed[root] = reviewed[root] or {}
+      return root, reviewed[root]
+    end
+    -- Batch worktree hashes (one subprocess for the whole set, not per file).
+    local function work_hashes(root, rels)
+      local map = {}
+      if #rels == 0 then
+        return map
+      end
+      local args = { "git", "-C", root, "hash-object", "--" }
+      for _, r in ipairs(rels) do
+        table.insert(args, r)
+      end
+      local out = vim.fn.systemlist(args)
+      if vim.v.shell_error ~= 0 then
+        return map
+      end
+      for i, r in ipairs(rels) do
+        map[r] = out[i]
+      end
+      return map
+    end
+    -- Repo-relative paths with working-tree changes: unstaged UNION untracked
+    -- (plain `git diff --name-only` misses new files, which need review most).
+    local function changed_set(root)
+      local set = {}
+      for _, cmd in ipairs({
+        { "git", "-C", root, "diff", "--name-only" },
+        { "git", "-C", root, "ls-files", "--others", "--exclude-standard" },
+      }) do
+        for _, p in ipairs(vim.fn.systemlist(cmd)) do
+          if p ~= "" then
+            set[p] = true
+          end
+        end
+      end
+      return set
+    end
+    local function tour_candidates(ex, root, marks)
+      local ok, rf = pcall(require, "codediff.ui.explorer.refresh")
+      if not (ok and ex and ex.tree and type(rf.get_all_files) == "function") then
+        return {}
+      end
+      local ok2, all = pcall(rf.get_all_files, ex.tree)
+      if not (ok2 and all) then
+        return {}
+      end
+      local changed = changed_set(root)
+      local rels = {}
+      for _, f in ipairs(all) do
+        if f.data and (f.data.group == "unstaged" or f.data.group == "conflicts") and changed[f.data.path] then
+          table.insert(rels, f.data.path)
+        end
+      end
+      local hashes = work_hashes(root, rels)
+      local cands = {}
+      for _, f in ipairs(all) do
+        local rel = f.data and f.data.path
+        if rel and (f.data.group == "unstaged" or f.data.group == "conflicts")
+          and changed[rel] and marks[rel] ~= hashes[rel] then
+          table.insert(cands, f)
+        end
+      end
+      return cands
+    end
+    local function tour(dir)
+      local ex = session_explorer()
+      local root, marks = marks_root(ex)
+      if not (ex and root and marks) then
+        return
+      end
+      local cands = tour_candidates(ex, root, marks)
+      if #cands == 0 then
+        vim.notify("Everything reviewed", vim.log.levels.INFO)
+        return
+      end
+      local cur = ex.current_file_path
+      local idx = 0
+      for i, f in ipairs(cands) do
+        if f.data.path == cur then
+          idx = i
+          break
+        end
+      end
+      local n = #cands
+      local pick
+      if idx == 0 then
+        -- Current file not among the candidates (reviewed or staged): dir=1
+        -- starts at the top, dir=-1 at the bottom.
+        pick = dir > 0 and cands[1] or cands[n]
+      else
+        pick = cands[((idx - 1 + dir) % n) + 1]
+      end
+      if ex.on_file_select then
+        ex.on_file_select(pick.data)
+      end
+    end
+    local function toggle_mark()
+      local ex = session_explorer()
+      local root, marks = marks_root(ex)
+      local rel = ex and ex.current_file_path or nil
+      if not (root and marks and rel and rel ~= "") then
+        return
+      end
+      if marks[rel] ~= nil and work_hashes(root, { rel })[rel] == marks[rel] then
+        marks[rel] = nil
+        vim.notify("Unmarked " .. rel, vim.log.levels.INFO)
+        return
+      end
+      local h = work_hashes(root, { rel })[rel]
+      if not h then
+        vim.notify("Cannot hash " .. rel, vim.log.levels.WARN)
+        return
+      end
+      marks[rel] = h
+      vim.notify("Marked reviewed: " .. rel, vim.log.levels.INFO)
+    end
+    local function stage_marked()
+      local ex = session_explorer()
+      local root, marks = marks_root(ex)
+      if not (root and marks) then
+        return
+      end
+      local changed = changed_set(root)
+      local targets = {}
+      for rel in pairs(marks) do
+        if changed[rel] then
+          table.insert(targets, rel)
+        end
+      end
+      if #targets == 0 then
+        vim.notify("Nothing marked to stage", vim.log.levels.INFO)
+        return
+      end
+      table.sort(targets)
+      local out = vim.fn.system({ "git", "-C", root, "add", "--", unpack(targets) })
+      if vim.v.shell_error ~= 0 then
+        vim.notify("Stage failed: " .. tostring(out):sub(1, 120), vim.log.levels.ERROR)
+      else
+        vim.notify(("Staged %d marked file(s)"):format(#targets), vim.log.levels.INFO)
+      end
+      explorer_refresh()
+      neogit_refresh()
+      advance_after(targets[#targets])
     end
 
     -- <Tab>/<S-Tab> = next/prev file (diffview muscle memory), as ALIASES of
@@ -402,7 +596,7 @@ return {
           stock_set(tabpage, mode, aliases[lhs], rhs, kopts)
         end
         if mode == "n" and hunk_keys[lhs] and jump_hunk then
-          local ex = lifecycle.get_explorer and lifecycle.get_explorer(tabpage)
+          local ex = session_explorer(tabpage)
           if ex and ex.bufnr and vim.api.nvim_buf_is_valid(ex.bufnr) then
             vim.keymap.set("n", lhs, jump_hunk(lhs), { buffer = ex.bufnr, nowait = true, silent = true, desc = hunk_keys[lhs] })
           end
@@ -514,6 +708,13 @@ return {
       callback = function(args)
         vim.keymap.set("n", "<C-d>", scroll_diff("<C-d>"), { buffer = args.buf, desc = "Scroll the diff down" })
         vim.keymap.set("n", "<C-u>", scroll_diff("<C-u>"), { buffer = args.buf, desc = "Scroll the diff up" })
+        -- Reviewed marks (see the section above): explorer/history panels
+        -- only, so the diff panes keep native `v`s`/`S` (substitute in the
+        -- editable Result pane) and stock `]`/`[` nav.
+        vim.keymap.set("n", "v", toggle_mark, { buffer = args.buf, nowait = true, silent = true, desc = "Toggle reviewed mark" })
+        vim.keymap.set("n", "S", stage_marked, { buffer = args.buf, nowait = true, silent = true, desc = "Stage all marked files" })
+        vim.keymap.set("n", "]r", function() tour(1) end, { buffer = args.buf, nowait = true, silent = true, desc = "Next unreviewed file" })
+        vim.keymap.set("n", "[r", function() tour(-1) end, { buffer = args.buf, nowait = true, silent = true, desc = "Prev unreviewed file" })
         vim.schedule(function()
           if not vim.api.nvim_buf_is_valid(args.buf) then
             return

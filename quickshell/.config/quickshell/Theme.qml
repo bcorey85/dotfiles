@@ -74,13 +74,13 @@ Singleton {
             green: "#6e9b72", red: "#bf0021", teal: "#739797",
             orange: "#bc5c00", yellow: "#a06d00", magenta: "#904180"
         },
-        // dragon / lotus — the one family whose two modes are separate
+        // wave / lotus — the one family whose two modes are separate
         // colorschemes upstream; here they are just two palettes like the rest.
         "kanagawa-dark": {
-            bg: "#181616", panel: "#1d1c19", border: "#393836",
-            fg: "#c5c9c5", muted: "#838a82",
-            green: "#87a987", red: "#c4746e", teal: "#8ea4a2",
-            orange: "#b6927b", yellow: "#c4b28a", magenta: "#a292a3"
+            bg: "#1f1f28", panel: "#2a2a37", border: "#363646",
+            fg: "#dcd7ba", muted: "#908f85",
+            green: "#98bb6c", red: "#e46876", teal: "#7aa89f",
+            orange: "#ffa066", yellow: "#e6c384", magenta: "#957fb8"
         },
         "kanagawa-light": {
             bg: "#f2ecbc", panel: "#e5ddb0", border: "#d5cea3",
@@ -143,6 +143,91 @@ Singleton {
             fg: "#968a6a", muted: "#84836f",
             green: "#6f714e", red: "#8e6747", teal: "#5a6e53",
             orange: "#7c7150", yellow: "#978255", magenta: "#6b5d49"
+        },
+        "material-dark": {
+            bg: "#212121", panel: "#323232", border: "#343434",
+            fg: "#B0BEC5", muted: "#848b93",
+            green: "#C3E88D", red: "#F07178", teal: "#89DDFF",
+            orange: "#F78C6C", yellow: "#FFCB6B", magenta: "#C792EA"
+        },
+        "material-light": {
+            bg: "#FAFAFA", panel: "#E7E7E8", border: "#D3E1E8",
+            fg: "#546E7A", muted: "#5d6d77",
+            green: "#4e6f1f", red: "#B20602", teal: "#056a72",
+            orange: "#b23a12", yellow: "#8a5a00", magenta: "#7C4DFF"
+        },
+        "github-dark": {
+            bg: "#30363d", panel: "#363c44", border: "#484f58",
+            fg: "#e6edf3", muted: "#9aa4ae",
+            green: "#3fb950", red: "#ff7b72", teal: "#76e3ea",
+            orange: "#ffa657", yellow: "#d29922", magenta: "#bc8cff"
+        },
+        "github-light": {
+            bg: "#ffffff", panel: "#e7eaf0", border: "#d0d7de",
+            fg: "#1f2328", muted: "#57606a",
+            green: "#1a7f37", red: "#d1242f", teal: "#1b7f8b",
+            orange: "#bc4c00", yellow: "#9a6700", magenta: "#8250df"
+        },
+        "edge-dark": {
+            bg: "#2b2d37", panel: "#333644", border: "#454b60",
+            fg: "#c5cdd9", muted: "#9199a9",
+            green: "#a0c980", red: "#ec7279", teal: "#5dbbc1",
+            orange: "#deb974", yellow: "#deb974", magenta: "#d38aea"
+        },
+        "edge-light": {
+            bg: "#fafafa", panel: "#eef1f4", border: "#ccd3db",
+            fg: "#4b505b", muted: "#677182",
+            green: "#537a2b", red: "#c93f3f", teal: "#337b75",
+            orange: "#9a6604", yellow: "#9a6604", magenta: "#a545c5"
+        },
+        // edge aura with dim_foreground — same accents, dimmed fg/muted.
+        "edge-dim-dark": {
+            bg: "#2b2d37", panel: "#333644", border: "#454b60",
+            fg: "#97a4b5", muted: "#8a95a8",
+            green: "#a0c980", red: "#ec7279", teal: "#5dbbc1",
+            orange: "#deb974", yellow: "#deb974", magenta: "#d38aea"
+        },
+        "edge-dim-light": {
+            bg: "#fafafa", panel: "#eef1f4", border: "#ccd3db",
+            fg: "#4b505b", muted: "#677182",
+            green: "#537a2b", red: "#c93f3f", teal: "#337b75",
+            orange: "#9a6604", yellow: "#9a6604", magenta: "#a545c5"
+        },
+        "oceanic-dark": {
+            bg: "#25363B", panel: "#314549", border: "#355058",
+            fg: "#B0BEC5", muted: "#93a3ae",
+            green: "#C3E88D", red: "#f47f88", teal: "#89DDFF",
+            orange: "#F78C6C", yellow: "#FFCB6B", magenta: "#C792EA"
+        },
+        "oceanic-light": {
+            bg: "#FAFAFA", panel: "#E7E7E8", border: "#D3E1E8",
+            fg: "#546E7A", muted: "#5d6d77",
+            green: "#4e6f1f", red: "#B20602", teal: "#056a72",
+            orange: "#b23a12", yellow: "#8a5a00", magenta: "#7C4DFF"
+        },
+        "catppuccin-dark": {
+            bg: "#303446", panel: "#292c3c", border: "#51576d",
+            fg: "#c6d0f5", muted: "#949cbb",
+            green: "#a6d189", red: "#e78284", teal: "#81c8be",
+            orange: "#ef9f76", yellow: "#e5c890", magenta: "#ca9ee6"
+        },
+        "catppuccin-light": {
+            bg: "#eff1f5", panel: "#e6e9ef", border: "#bcc0cc",
+            fg: "#4c4f69", muted: "#6c6f85",
+            green: "#2f7a1f", red: "#d20f39", teal: "#10727a",
+            orange: "#b84700", yellow: "#9a6200", magenta: "#8839ef"
+        },
+        "aura-dark": {
+            bg: "#15141b", panel: "#1e1c28", border: "#3b3557",
+            fg: "#bdbdbd", muted: "#8e8e8e",
+            green: "#54c59f", red: "#c55858", teal: "#6cb2c7",
+            orange: "#c7a06f", yellow: "#c7a06f", magenta: "#8464c6"
+        },
+        "aura-light": {
+            bg: "#15141b", panel: "#1e1c28", border: "#3b3557",
+            fg: "#bdbdbd", muted: "#8e8e8e",
+            green: "#54c59f", red: "#c55858", teal: "#6cb2c7",
+            orange: "#c7a06f", yellow: "#c7a06f", magenta: "#8464c6"
         }
     })
 

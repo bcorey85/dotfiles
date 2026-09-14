@@ -1,0 +1,25 @@
+# material darker (upstream load_terminal mapping) — neutral #212121 canvas,
+# cool-gray fg, vivid accents. Cursor/selection from the palette.
+background = #212121
+foreground = #B0BEC5
+cursor-color = #FFCC00
+cursor-text = #212121
+selection-background = #404040
+selection-foreground = #B0BEC5
+
+palette = 0=#000000
+palette = 1=#DC6068
+palette = 2=#ABCF76
+palette = 3=#E6B455
+palette = 4=#6E98EB
+palette = 5=#B480D6
+palette = 6=#71C6E7
+palette = 7=#EEFFFF
+palette = 8=#474747
+palette = 9=#F07178
+palette = 10=#C3E88D
+palette = 11=#FFCB6B
+palette = 12=#82AAFF
+palette = 13=#C792EA
+palette = 14=#89DDFF
+palette = 15=#EEFFFF

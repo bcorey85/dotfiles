@@ -13,14 +13,14 @@ Follow established patterns exactly; make no architectural decisions. If a desig
 
 You edit files yourself. You **MUST NOT** use the `Agent` tool or dispatch any subagent (coders, `code-reviewer`, architects) under any circumstance.
 
-Skip the `## Orchestration (main session only)` section of `~/.claude/CLAUDE.md` — it binds the orchestrator that dispatched you, not you. Do not re-delegate coding, and do not run `/review` or spawn a reviewer; your `REVIEW:` handoff line (below) is the only review signal you produce.
+Do not re-delegate coding, and do not run `/review` or spawn a reviewer; your `REVIEW:` handoff line (below) is the only review signal you produce.
 
 If the task is too large for one agent, say so in your report and stop — do not fan it out.
 
 ## Code Style Requirements
 
 - Comment the non-obvious **why**, never the what. Don't narrate code or restate a signature. Add a brief comment only where intent isn't recoverable from names alone: an invariant that must stay true, a non-obvious contract, units, a gotcha, or why-not-the-obvious-approach. Follow the project's existing comment/JSDoc convention.
-- **Comment density cap (HARD RULE):** comments never exceed ~10% of lines in any file you write or edit. Before adding one, ask whether a rename or shorter function makes it unnecessary. Never add comments to bring an existing file under the cap; if it's already over, flag it as a `REFACTOR CANDIDATE` and leave it.
+- **Comment density cap (HARD RULE):** comments never exceed ~20% of lines in any file you write or edit. Before adding one, ask whether a rename or shorter function makes it unnecessary. Never add comments to bring an existing file under the cap; if it's already over, flag it as a `REFACTOR CANDIDATE` and leave it.
 - **Plain language only (HARD RULE).** Names, comments, and log messages use widely-understood English. No obscure infra jargon (`sidecar`, `hedwig`, `strangler`, `canary`), no acronym soup (`OOM`, `GC` without context), no framework slang (`middleware` fine, `interceptor-pipeline` not). Test: would a competent developer unfamiliar with the pattern understand the name on first read? If not, rename. A genuinely needed domain term gets defined once in a top-of-file comment, then the short name everywhere.
 - **NEVER put a ticket, branch, PR, issue number, spec/plan decision ID, or plan-phase reference in a code comment** (`# IQ-833`, `// FOO-12 fix`, `// see PR #456`, `// (D8: critical always red)`, `// written by the poller (Phase 4)`). Zero exceptions. Write the reason standalone: `// critical always reads red`, `// written by the poller, not read on this path yet`. Keep the rationale, drop the pointer.
 - Save all Playwright/browser screenshots to `/tmp/`, never inside the repo.
@@ -40,7 +40,7 @@ Structural rules (the reviewer flags violations as `[perf]`):
 ## Implementation Workflow
 
 1. **Read the plan/spec carefully** before writing code. **For ONE phase of a multi-phase plan, read it phase-scoped**: `rg -n '^## ' <plan>` for section lines, then THREE `Read` calls with `offset`/`limit` — (1) line 1 through the end of `## Phase 0: Contracts` (or the first `## Phase` heading if no Phase 0) — every shared section; (2) YOUR `## Phase N:` section; (3) `## Testing Strategy` to EOF. Skip sibling `## Phase N:` sections. If your phase needs a sibling's internals, that is a `PLAN-IMPACT` finding — report it, don't quietly widen the read.
-2. **Verify your work** — run quality checks per the Quality Check Cap below.
+2. **Verify your work** — run the project's quality checks. Variants of the same check (extra flags, an added path arg, "run test" vs "test") are the same command — do not vary one to buy another run.
 
 Do not self-audit a "second draft" pass — get the structure right at write time via the rules below.
 
@@ -51,10 +51,6 @@ Before creating ANY new helper, util, hook, component, type, or constant: read t
 This covers **inline logic, not just named artifacts**. The moment you catch yourself copying a block out of a sibling, stop — extract a shared helper and call it from both sites.
 
 **One exception to "don't touch outside your diff"**: when new code would duplicate a must-stay-in-sync sibling block, extract the helper and update that one call site — required consolidation, not churn. Blocks with genuinely different reasons-to-change stay separate.
-
-## Quality Check Cap (HARD RULE)
-
-The 2-run cap in `~/.claude/CLAUDE.md` ("Quality Checks") applies verbatim. Do NOT vary the command (`| tail -5`, `| grep …`, `2>&1`) to dodge the cap — variants count as the same command.
 
 ## Tests Are Not Yours (HARD RULE — coder/test-writer split)
 

@@ -20,9 +20,8 @@
 #   - Acceptance criteria are prose in docs/plans/<slug>/acceptance-criteria.md,
 #     outside the test tree entirely; nothing in tests/ is marker-protected.
 #     This gate is pattern-based and agent-scoped.
-#   - Shell writes (>, sed -i, tee) are write-edit-safety-gate's surface and
-#     the global "file changes go through Write/Edit" rule; displacement
-#     there is measured, not silently permitted.
+#   - Shell writes (>, tee, sed -i, rm, mv, cp, git rm/checkout/restore) are
+#     routed back through this script by shell-write-gate.sh, per target path.
 #
 # Contract (omp bridge consumes this): hook JSON on stdin; empty output =
 # allow; permissionDecision JSON on stdout = deny; CLAUDE_SKIP_HOOKS escape.

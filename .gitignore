@@ -44,4 +44,7 @@ opencode/.config/opencode/package.json
 opencode/.config/opencode/package-lock.json
 opencode/.config/opencode/bun.lock
 
+# Child-run transcripts, handoffs, and worktree manifests. Runtime only.
+.pi-subagents/
+
 .DS_store

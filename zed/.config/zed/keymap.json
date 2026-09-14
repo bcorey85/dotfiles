@@ -93,6 +93,7 @@
       "space u d": "editor::ToggleInlineDiagnostics",
       // ── fleet: agent threads (under space t so they never collide with space a) ──
       "space t t": "agent::NewThread",
+      "space t c": "agent::NewTerminalThread",
       "space t a": "agent::ToggleFocus"
     }
   },
@@ -195,12 +196,21 @@
   {
     "context": "Workspace",
     "bindings": {
-      // ctrl+. = your herdr fleet reflex, now toggles Zed agent panel
-      "ctrl-.": "agent::ToggleFocus",
+      // ctrl+. = herdr fleet reflex: pick a thread. `space t a` focuses the panel.
+      "ctrl-.": "agents_sidebar::ToggleThreadSwitcher",
       "ctrl-h": "workspace::ActivatePaneLeft",
       "ctrl-j": "workspace::ActivatePaneDown",
       "ctrl-k": "workspace::ActivatePaneUp",
       "ctrl-l": "workspace::ActivatePaneRight"
+    }
+  },
+  // Zed's default binds ctrl-. to editor::ToggleCodeActions in the Editor
+  // context, which outranks the Workspace fallback above. Code actions keep
+  // `space l a`.
+  {
+    "context": "Editor",
+    "bindings": {
+      "ctrl-.": "agents_sidebar::ToggleThreadSwitcher"
     }
   }
 ]

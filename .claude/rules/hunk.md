@@ -1,0 +1,23 @@
+---
+paths:
+  - "hunk/**"
+  - "scripts/.local/bin/hunk-review-popup"
+  - "install/hunk"
+  - "claude/.claude/skills/cc/hunk-comments-consume"
+---
+
+# hunk
+
+`extensions/claude-review.ts` — single-file hunk extension (id `claude-review`; hunk loads every file directly under `extensions/`). Its extension API is `apiVersion 2` and documented-experimental: re-read `dist/npm/extension/extension-api/types.d.ts` in the installed package before changing the extension.
+
+GitHub-style viewed marks: `v` toggle viewed, `V` drop viewed files from the review entirely, `S` `git add` the viewed set, `C` clear the marks, `X` discard the selected file's working-tree changes (`git checkout --`, behind a confirm; an untracked file is deleted outright behind its own confirm). `L` hands the popup off to lazygit.
+
+Marks are **file-level** — `transformChangeset` may filter `files`, but a file's hunks live in opaque `metadata` the renderer owns, so a single hunk cannot be dropped. `v` collapses the file in place through a registered file view (`registerFileView` + `ctx.fileViews.select`) — the only viewed indicator hunk's UI can show — then jumps to the next unviewed file via `ctx.navigation.selectFile`, wrapping once. Collapse does NOT survive a load: hunk never auto-selects a matching view, and `ExtensionEventContext` carries no `fileViews`, so a previously-marked file opens raw. Hunk reuses a prepared layout until the file, width, or registration changes, so clearing marks under an already-collapsed file needs `ctx.fileViews.refresh(VIEW_ID)` — `select(null)` reaches only the selected file (`C` and `S` both refresh).
+
+`V` and `S` change what the changeset contains, which `transformChangeset` and the git index only reflect at load, so both drive a live reload by shelling out to `hunk session reload <id> -- diff` (async and detached — the RPC comes back into this same process, so blocking on it deadlocks the UI; the session is found by pid, falling back to the sole session matching the repo root). Reload only applies to plain working-tree reviews: `--staged`/ref diffs would have their spec silently swapped, and the lazygit pager path (`inputKind: "patch"`) has no source to re-read — both fall back to a toast. A reload resets selection to the first file, so `V`, `S` and `X` record a preference-ordered list of paths to land on and re-select the first survivor from the `session_reload` event (`ExtensionEventContext` does carry `navigation`), deferred the same 50ms as `v`'s jump.
+
+Theming is `~/.config/hunk/config.toml`, set by `theme-mode`'s `hunk_apply()`: `theme =` maps to a **builtin** per family x mode via `hunk_theme()` (each family → `vitesse-{dark,light}`), plus `transparent_background = true` so hunk's chrome inherits the terminal background. (`theme = "custom"` + a `[custom_theme]` table of 33 hex keys is also supported.) That file is **not** stowed and has no template: hunk writes it itself (the View menu persists theme, wrap, line numbers), so `theme-mode` sets only the keys it owns via `hunk_set()` — anchored to top-level keys and inserted above the first table header, since a key appended below one would silently join that table. No live repaint — hunk reads config at launch.
+
+State is machine-local under `$XDG_STATE_HOME/hunk-claude/<repo-slug>.json`, keyed by a hash of each file's patch so editing a marked file un-marks it. Marks outlive a changeset, and `git add` is atomic over its pathspec — one dead path fails the whole stage — so `S` intersects the marks with the paths `transformChangeset` saw and skips the rest instead of pruning them. Built-in inline notes (`c`) are mirrored to `<repo-slug>.comments.jsonl`, read by `claude/.claude/skills/cc/hunk-comments-consume` (`list`/`resolve`). The slug is `<basename>-<sha256(repoRoot)[0:12]>` and is duplicated in the extension and that script — change one, change both. Resolve is a **true** delete.
+
+hunk is a Node app installed by `install/hunk` (npm-global through mise). `hunk` is NOT resolvable from the herdr server's login environment — the `prefix d` binding prepends `${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims` itself; herdr popups hold on error instead of flash-closing. Inside that it runs `scripts/.local/bin/hunk-review-popup`, which runs `hunk diff` and then execs whatever tool the extension's `L` wrote into `$HUNK_REVIEW_HANDOFF` (currently only `lazygit`) — herdr popups are session-modal, so both tools share the one popup shell. `L` quits by `process.kill(process.pid, "SIGTERM")`: hunk's TUI installs SIGINT/SIGTERM on the same shutdown path as `q`, so the terminal is restored before the wrapper execs.

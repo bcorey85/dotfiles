@@ -37,6 +37,10 @@ After any code change, run the project's quality checks (whatever its CLAUDE.md 
 - One source of truth per fact — don't cross-check the same fact through multiple tools.
 - Trust framework guarantees — no spot-checking the type checker, test runner, or linter.
 
+## Compact instructions
+
+When you compact, keep decisions with their reasons, every measured number, open items in order, commit hashes, file paths, and the rules that bind the next step. Drop tool output and narrative.
+
 ## Engineering Judgment
 
 1. **Match complexity to the problem.** Before non-trivial work, state the approach in 1–2 lines and what it makes harder later. No speculative flexibility; no painting into corners.

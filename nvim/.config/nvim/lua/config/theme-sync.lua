@@ -207,18 +207,14 @@ local FAMILIES = {
     -- colorscheme PER variant rather than switching on vim.o.background — so
     -- the schemes differ by mode. Both still register colors_name "kanagawa",
     -- so that is pinned for the override guard.
-    schemes = { dark = "kanagawa-dragon", light = "kanagawa-lotus" },
+    schemes = { dark = "kanagawa-wave", light = "kanagawa-lotus" },
     colors_name = "kanagawa",
     accents = {
-      dark = { heading1 = "#a292a3", heading = "#c4b28a" }, -- mauve + yellow
+      dark = { heading1 = "#e46876", heading = "#e6c384" }, -- red + yellow
       light = { heading1 = "#b35b79", heading = "#836f4a" },
     },
-    -- Comment floor: dragon's #737c73 is ~4.2:1 on #181616 and lotus's #8a8980
-    -- is ~2.9:1 on #f2ecbc. Lift to #838a82 (~5.1:1) and #6a6a5e (~4.6:1) — the
-    -- same two values the hunk and herdr kanagawa palettes already encode.
-    -- Kanagawa's comments are italic, so keep the slant.
     fixup = function(mode)
-      local fg = mode == "light" and "#6a6a5e" or "#838a82"
+      local fg = mode == "light" and "#6a6a5e" or "#908f85"
       vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
     end,
   },
@@ -299,6 +295,18 @@ local FAMILIES = {
     fixup = function(mode)
       local fg = mode == "light" and "#5d6d77" or "#93a3ae"
       vim.api.nvim_set_hl(0, "Comment", { fg = fg })
+    end,
+  },
+  ["catppuccin"] = {
+    schemes = { dark = "catppuccin-frappe", light = "catppuccin-latte" },
+    accents = {
+      dark = { heading1 = "#e78284", heading = "#e5c890" },
+      light = { heading1 = "#d20f39", heading = "#9a6200" },
+    },
+    fixup = function(mode)
+      if mode == "light" then
+        vim.api.nvim_set_hl(0, "Comment", { fg = "#6c6f85", italic = true })
+      end
     end,
   },
   ["github"] = {

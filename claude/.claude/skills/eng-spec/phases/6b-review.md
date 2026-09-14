@@ -1,7 +1,8 @@
 # Phase 6.5: Fresh-eyes plan review
 
-19. **Dispatch `plan-reviewer` with paths only**: the
-    finalized plan, `00-ticket.md`, and `acceptance-criteria.md` when step 17 wrote one. Never the ledger, research, or a conversation summary — a plan needing those open is one the coder cannot execute.
+19. **Dispatch `plan-reviewer` with paths only**: the saved `spec.md`,
+    `00-ticket.md`, and `acceptance-criteria.md` when step 17 wrote one. Never
+    the ledger, research, or a conversation summary.
 
 19b. **Shard above 400 lines.** `wc -l` the plan. At or under, one dispatch at
 the whole file. Over, three parallel dispatches, each a `sed`-derived extract
@@ -13,8 +14,9 @@ written to the task directory — the plan itself is never split:
       `#### Automated|Manual Verification` heading grouped under its phase
       heading, **no phase bodies**
 
-    Front matter is everything above `## Implementation Steps`; back matter is
-    everything from `## Constraints` down.
+    Front matter is everything before the first `## Phase <number>:` heading.
+    Each phase ends at the next level-2 heading; back matter starts after the
+    final phase's section. Neither front nor back matter includes phase bodies.
 
     Tell the seam reviewer its view is lossy: a phase's prose is absent, so a
     contradiction it reads between two phases' `**File**:` lines is **provisional**
@@ -44,6 +46,7 @@ diff and what it touches, not a fresh read.
     A finding the user rules out of scope is resolved — log it, do not re-raise
     it next round.
 
+    Persist the revised plan in `spec.md` before re-checking or handing off.
     Before re-dispatching, re-check every count, `file:line` citation, and
     cross-reference the repair touched — a stale pointer left by a repair returns
     as the next round's finding.
@@ -73,3 +76,5 @@ diff and what it touches, not a fresh read.
     Log `verdict=abandoned` instead if the plan is dropped after research.
 
     Non-blocking: if the script fails, say so in one line and continue.
+
+Continue to Phase 7 (`7-handoff.md`).

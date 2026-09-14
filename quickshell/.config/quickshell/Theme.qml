@@ -74,13 +74,13 @@ Singleton {
             green: "#6e9b72", red: "#bf0021", teal: "#739797",
             orange: "#bc5c00", yellow: "#a06d00", magenta: "#904180"
         },
-        // dragon / lotus — the one family whose two modes are separate
+        // wave / lotus — the one family whose two modes are separate
         // colorschemes upstream; here they are just two palettes like the rest.
         "kanagawa-dark": {
-            bg: "#181616", panel: "#1d1c19", border: "#393836",
-            fg: "#c5c9c5", muted: "#838a82",
-            green: "#87a987", red: "#c4746e", teal: "#8ea4a2",
-            orange: "#b6927b", yellow: "#c4b28a", magenta: "#a292a3"
+            bg: "#1f1f28", panel: "#2a2a37", border: "#363646",
+            fg: "#dcd7ba", muted: "#908f85",
+            green: "#98bb6c", red: "#e46876", teal: "#7aa89f",
+            orange: "#ffa066", yellow: "#e6c384", magenta: "#957fb8"
         },
         "kanagawa-light": {
             bg: "#f2ecbc", panel: "#e5ddb0", border: "#d5cea3",
@@ -204,6 +204,18 @@ Singleton {
             fg: "#546E7A", muted: "#5d6d77",
             green: "#4e6f1f", red: "#B20602", teal: "#056a72",
             orange: "#b23a12", yellow: "#8a5a00", magenta: "#7C4DFF"
+        },
+        "catppuccin-dark": {
+            bg: "#303446", panel: "#292c3c", border: "#51576d",
+            fg: "#c6d0f5", muted: "#949cbb",
+            green: "#a6d189", red: "#e78284", teal: "#81c8be",
+            orange: "#ef9f76", yellow: "#e5c890", magenta: "#ca9ee6"
+        },
+        "catppuccin-light": {
+            bg: "#eff1f5", panel: "#e6e9ef", border: "#bcc0cc",
+            fg: "#4c4f69", muted: "#6c6f85",
+            green: "#2f7a1f", red: "#d20f39", teal: "#10727a",
+            orange: "#b84700", yellow: "#9a6200", magenta: "#8839ef"
         },
         "aura-dark": {
             bg: "#15141b", panel: "#1e1c28", border: "#3b3557",

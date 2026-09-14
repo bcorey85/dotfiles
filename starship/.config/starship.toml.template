@@ -216,19 +216,19 @@ fg = "#54433a"
 bg = "#f1f1f1"
 grey = "#7d6658"
 
-# kanagawa dragon (warm charcoal #181616). Verbatim upstream. `grey` is
-# #838a82, nvim's dark comment fixup (dragon's own #737c73 is ~4.2:1).
+# kanagawa wave (blue-ink #1f1f28). Verbatim upstream. `grey` is
+# #908f85, nvim's dark comment fixup (wave's own #727169 is ~3.3:1).
 [palettes.kanagawa-dark]
-red = "#c4746e"
-orange = "#b6927b"
-yellow = "#c4b28a"
-green = "#87a987"
-blue = "#8ba4b0"
-teal = "#8ea4a2"
-purple = "#8992a7"
-fg = "#c5c9c5"
-bg = "#181616"
-grey = "#838a82"
+red = "#e46876"
+orange = "#ffa066"
+yellow = "#e6c384"
+green = "#98bb6c"
+blue = "#7e9cd8"
+teal = "#7aa89f"
+purple = "#957fb8"
+fg = "#dcd7ba"
+bg = "#1f1f28"
+grey = "#908f85"
 
 # kanagawa lotus (warm cream #f2ecbc). The lightest ground in the set, so most
 # of lotus's own accents miss 4.5:1: only blue #4d699b (~4.6:1) and purple
@@ -493,6 +493,32 @@ purple = "#7C4DFF"
 fg = "#546E7A"
 bg = "#FAFAFA"
 grey = "#5d6d77"
+
+# catppuccin frappe, verbatim.
+[palettes.catppuccin-dark]
+red = "#e78284"
+orange = "#ef9f76"
+yellow = "#e5c890"
+green = "#a6d189"
+blue = "#8caaee"
+teal = "#81c8be"
+purple = "#ca9ee6"
+fg = "#c6d0f5"
+bg = "#303446"
+grey = "#949cbb"
+
+# catppuccin latte — green/yellow/teal/orange darkened to clear 4.5:1.
+[palettes.catppuccin-light]
+red = "#d20f39"
+orange = "#b84700"
+yellow = "#9a6200"
+green = "#2f7a1f"
+blue = "#1e66f5"
+teal = "#10727a"
+purple = "#8839ef"
+fg = "#4c4f69"
+bg = "#eff1f5"
+grey = "#6c6f85"
 
 # aura dark soft = the dimmed variant (bg #15141b, soft-text accents).
 # DARK-ONLY, so the light palette below is a verbatim copy; the family name

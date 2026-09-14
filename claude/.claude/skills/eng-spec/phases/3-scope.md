@@ -1,13 +1,13 @@
 # Phase 3: Scope
 
 7. **Determine scope** (frontend / backend / fullstack) from the ticket, the
-   research, and the codebase. If genuinely ambiguous, ask. Then state it: "This
-   is [scope]. I'll spin up [architects]. Sound right?"
+   research, and the codebase. If genuinely ambiguous, ask. State the scope and
+   which architects will run.
 
 8. **Pick the depth.** Default is STANDARD. State it in one line; confirm with
    the user when not obvious.
 
-   - GO-LEAN: skip Phases 4–6 only if ALL of these hold:
+   - GO-LEAN: skip Phases 4–5 and step 15 only if ALL of these hold:
      - Pure configuration with zero implementation choices (install a package, add
        an env var, flip a flag)
      - No new files, no changed service/module signatures
@@ -21,14 +21,13 @@
 
    Upgrade mid-run: queue >5 decisions or any scope-gate trip → DEEP, say so.
 
-   **A well-written ticket is NOT a reason to go lean.** An "Approach" section is
-   context FOR an architect, not a replacement.
+   A well-written ticket does not qualify for GO-LEAN. Apply every condition
+   above, regardless of whether the ticket supplies an approach.
 
-   Go-lean handling: confirm with the user, write the plan from existing patterns,
-   and **still dispatch a coder in Phase 7** if they implement. In the saved spec,
-   `## Decisions` reads `None — pure configuration; the constraints that forced it
-are under Constraints.` and `## Approaches Considered and Not Taken` reads
-   `N/A — go-lean path (no architect ran)`.
+   Go-lean handling: confirm the depth with the user, draft the plan from existing
+   patterns, then enter Phase 6 at step 16 for persistence, checks, and review.
+   Use STANDARD's check depth and review-round cap. `## Decisions` reads
+   `None — pure configuration; see Constraints.` and
+   `## Approaches Considered and Not Taken` reads `N/A — go-lean path (no architect ran)`.
 
-   **Wanting to write a real decision block means the lean call was wrong.**
-   Back out and dispatch the architect.
+   Any real design decision invalidates GO-LEAN: dispatch the architect.

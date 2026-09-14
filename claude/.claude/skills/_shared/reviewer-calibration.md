@@ -1,6 +1,6 @@
 # Reviewer Calibration (single source of truth)
 
-Shared by every reviewer agent — `code-reviewer`, `security-reviewer`, `perf-reviewer`, `smell-reviewer`, `complexity-reviewer`, and their `-deep` variants. Each reads THIS file and adopts the sections its own agent file names. **Load-bearing headings**: the five `##` headings below are referenced BY NAME from every reviewer agent (and their opencode ports). Renaming one requires updating all of them.
+Shared by the specialist reviewers — `security-reviewer`, `perf-reviewer`, `smell-reviewer`, `complexity-reviewer`, and their `-deep` variants. Each reads THIS file and adopts the sections its own agent file names. **Load-bearing headings**: the five `##` headings below are referenced BY NAME from every adopting agent (and their opencode ports). Renaming one requires updating all of them.
 
 ## Persistent Memory
 

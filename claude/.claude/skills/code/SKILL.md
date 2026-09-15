@@ -10,49 +10,29 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 ## Modifiers
 
-- `+fast` / `+deep` — semantics defined in `~/.claude/skills/_shared/modifiers.md` (read it when either is present). `+fast` for trivial tasks (renames, typos, one-liners); `+deep` for complex tasks requiring deeper reasoning.
+`+fast` / `+deep` per `~/.claude/skills/_shared/modifiers.md` (read it when either is present).
 
 ## Instructions
 
-0. **Resolve task input when no arguments were given**: If `$ARGUMENTS` is empty (after stripping any bare modifiers like `+fast`/`+deep`), run `bash ~/.claude/scripts/resolve-task-dir.sh` (it infers the ticket from the branch name):
-   - Exit 0 (eng-spec task directory) → the task input is its `spec.md`. Exit 5 (legacy flat eng-spec plan file) → the printed file is the task input. Either way, tell the user what resolved; step 2's multi-phase detection then applies.
-   - Exit 3 (multiple matches) → ask which via AskUserQuestion. Exit 4 (nothing resolvable) → ask the user what to implement. Do not guess a task.
+0. **No arguments** (after stripping modifiers): run `bash ~/.claude/scripts/resolve-task-dir.sh`. Exit 0 → the task directory's `spec.md` is the task input; exit 5 → the printed plan file. Say what resolved. Exit 3 → ask which via AskUserQuestion. Exit 4 → ask the user what to implement.
 
-1. **Check for modifiers**: If `+deep` is present, dispatch `coder-deep` instead of `coder` and omit `model`. If `+fast` is present, pass `model: "haiku"`. Strip modifiers from the prompt passed to coders.
+1. **Modifiers**: `+deep` → dispatch `coder-deep` and omit `model`. `+fast` → pass `model: "haiku"`. Strip modifiers from the prompt passed to coders.
 
-   **Coder tier is the caller's call, not the risk tag's** — a `(risk: high)` phase does NOT auto-select the `-deep` coder. Use `+deep` deliberately on a phase you judge dangerous.
+2. **Plan file or pasted plan**: `rg -n '^## ' <plan>` lists every section; the plan is multi-phase when more than one `## Phase N:` section exists. Read it phase-scoped per `~/.claude/skills/_shared/plan-reading.md`. `lane=eng-spec` when step 0 resolved the task input, `lane=code` otherwise; carry it into the review-loop dispatch.
 
-2. **Detect multi-phase plans (MANDATORY check)**: If the task input is a path to a plan file (e.g., `*-plan.md` under `docs/plans/`) or pasted plan content, check whether it contains multiple `## Phase N:` sections.
+   Multi-phase plan:
 
-   **Detect and read by section, never by whole file.** `rg -n '^## ' <plan>` answers the multi-phase question AND gives you every section's line number in one call — do not `Read` the plan to count headings. From there, read phase-scoped per `~/.claude/skills/_shared/plan-reading.md`. Pasted plan content is already in context; scoping applies only to paths.
-
-   **Lane provenance (for telemetry, one-time)**: `lane=eng-spec` when the task input came from step 0's resolver (task directory `spec.md`, or a legacy flat plan file); `lane=code` otherwise (direct dispatch, no plan). Carry this value into the `review-loop` dispatch (step 6).
-
-   **If it's a multi-phase plan:**
-   - Do NOT dispatch all phases at once.
-   - Identify the next un-executed phase by reading the plan's `## Phase Status` section: the first unchecked (`- [ ]`) entry is the phase to dispatch. This is the source of truth across `/clear` boundaries — do NOT scan git log or diff to figure out where you are. If the plan has no `## Phase Status` section (older plan format), fall back to `git status` + per-phase success criteria, but flag this to the user so they can backfill the section.
-   - **Acceptance-criteria check (YOU do this, by reading, before the phase's coder — every phase):** confirm `docs/plans/<slug>/acceptance-criteria.md` exists beside the plan and is non-empty.
-
-     Missing, when the ticket plainly has behavioral criteria → **STOP and do not dispatch**; report it as a plan defect and hand it to the user. Never write the criteria yourself at this point and never dispatch an agent to do it. They are `/eng-spec` Phase 7.5's output, written with the user.
-
-     Missing on a task with no behavioral criteria (pure config, mechanical refactor) → proceed.
-
-     The criteria are prose and stay in the planning directory. Do not seed `tests/` with stub files from them, and never pass criterion ids into a dispatch prompt — that is how they leak into committed code (`_shared/code-vocabulary.md`). The closing Verify phase is what proves each one ended up with a test.
-
-     When the check fails — missing file, empty file, or criteria that plainly do not cover the ticket — score it before you do anything else:
+   - The next phase is the first unchecked `- [ ]` entry under `## Phase Status`. Without that section, fall back to `git status` plus per-phase success criteria and tell the user to backfill it.
+   - Before every phase's coder, confirm `docs/plans/<slug>/acceptance-criteria.md` exists beside the plan and is non-empty. Missing on a task with behavioral criteria → STOP, do not dispatch, report a plan defect to the user; never write the criteria and never dispatch an agent to. Missing on pure config or mechanical work → proceed. Never pass criterion ids into a dispatch prompt. Log a failed check first:
 
      ```bash
      bash ~/.claude/scripts/log-scan repo=<basename> scan=acceptance-stub \
        stage=code-phase exit=0 candidates=1 confirmed=1 note="<what was missing>"
      ```
 
-     `exit=` says only whether the scan RAN (`0` printed rows, `1` clean, `2` did not run) — a found defect is `exit=0` with counts.
-
-   - Dispatch the coder for THAT ONE PHASE ONLY. The coder must run the phase's "Automated Verification" gate (typically `npm run validate` or equivalent) before returning. **Re-read the phase's Phase Status line before dispatching** — its `(risk: …)` tag drives the phase-boundary decision (step 2) and its `(reviewers: …)` list is passed through to the review loop (step 5).
-   - After the coder completes, dispatch the `test-writer` (step 3b); after it returns and you summarize, auto-dispatch `/review` (step 5).
-   - **No per-phase `plan-verifier`.** Plan↔diff reconciliation runs ONCE, at branch end, from `/verify`. Here, YOU check before marking the phase done: the phase's `#### Automated Verification` commands actually ran and passed (coder evidence), and its `#### Manual Verification` items go on the deferred list for `/verify`. A phase with no Success Criteria is a plan defect, not a pass — say so before advancing.
-
-     **Run any prohibition criterion yourself and log the run.** A criterion of the form "`git grep <pattern>` returns zero hits" is a scan, not coder evidence — run it with Bash and score it, because a prohibition nobody re-ran is indistinguishable from one that never held:
+   - Dispatch the coder for that one phase only, with the phase's Automated Verification gate in its instructions. Re-read the phase's Phase Status line first: `(risk: …)` drives the boundary decision and `(reviewers: …)` passes to the review loop.
+   - After the coder returns, dispatch the test-writer (3b); after it returns and you summarize, dispatch the review loop (5).
+   - Before marking the phase done, check that the phase's `#### Automated Verification` commands ran and passed (coder evidence); its `#### Manual Verification` items go on the deferred list for `/verify`. A phase with no Success Criteria is a plan defect; say so before advancing. A prohibition criterion (`git grep <pattern>` returns zero hits) is yours to run with Bash and log:
 
      ```bash
      bash ~/.claude/scripts/log-scan repo=<basename> scan=prohibition \
@@ -60,93 +40,43 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
        branch=<branch> note="<the command, and what the ban protects>"
      ```
 
-     Grep exits 1 on a clean tree, so a passing run is `exit=1 candidates=0`.
+   - After the review loop returns `converged` or `deferred` and Automated Verification is green, `Edit` the phase's `## Phase Status` line from `- [ ] Phase N: ...` to `- [x] Phase N: ...`.
+   - **Phase-boundary decision**, first match wins, then print the matching Phase-Complete Block:
+     1. Last phase → STOP, block C.
+     2. Phase 1, any risk tier → STOP, block B.
+     3. A gate needed an exception, a `/fix` loop hit its cap, or the coder flagged an ambiguity → STOP, block B.
+     4. `(risk: high)`, or no risk tag → STOP, block B.
+     5. `(risk: low)` with all machine gates green → AUTO-ADVANCE, block A, then re-enter step 2 for the next phase in-session.
+   - One phase or no phase headers → a single dispatch, still after the acceptance-criteria check.
 
-   - **No per-phase test-intent audit.** The enforced coder/test-writer split already severs bug-pinning's cause, so the audit does not run here. The cull/coverage/weak half runs at the `/test-audit` closing phase, and `/verify` reconciles plan↔diff at branch end; a `weak`/`bug-pinning` finding surfacing from ANY other gate still routes to `test-writer` re-dispatch (implementation-blind), `/fix` only when it implicates src.
-   - After the review loop returns `converged` or `deferred` AND the phase's Automated Verification is green, mark the phase done in the plan: `Edit` the `## Phase Status` section to flip `- [ ] Phase N: ...` → `- [x] Phase N: ...`. This single Edit is the durable record of progress — it survives `/clear` and lets in-session re-entry detect the next phase.
-   - **Phase-boundary decision** — the phase is done; now decide stop vs. auto-advance, checking these in order (first match wins), then print the matching Phase-Complete Block:
-     1. **Last phase** → STOP; print the completion footer (block C).
-     2. **Phase 1**, any risk tier → STOP for **calibration** (block B) — first contact between plan and repo.
-     3. **A gate needed an exception, a `/fix` loop hit its cap, or the coder flagged an ambiguity**, any tier → STOP (block B).
-     4. **`(risk: high)`** — and an untagged phase counts as high → STOP for phase-level sign-off (block B).
-     5. Otherwise — genuinely **`(risk: low)`** with all machine gates green → **AUTO-ADVANCE in-session** (block A): print the one-line advance notice, then re-enter step 2 for the next phase. Do NOT `/clear` and do NOT wait — the user can interrupt at any boundary.
-   - If the plan has only one phase or no phase headers, treat it as a single dispatch (skip the phase loop) — but still run the acceptance-criteria check above before dispatching. A one-phase plan owes its criteria the same way a nine-phase one does.
+3. **Dispatch the coder**: one `coder` subagent for the whole phase, whatever layers it touches. Two coders in parallel only for two deliverables that share no contract, type, or file, split by deliverable. Name the phase ("implement Phase N of `<plan-path>`") and tell the coder to read it phase-scoped. Coders write no tests. If the task turns out architectural, have the coder report back and recommend `/eng-spec`.
 
-3. **Dispatch the coder**:
-
-   Launch a single `coder` subagent, whatever the work touches — client, server, both, or neither. There is no scope variant to pick, so do not spend a step detecting one. One owner per phase, and therefore one owner for both ends of any wire it crosses.
-
-   Dispatch two coders in parallel ONLY when the work holds two genuinely independent deliverables that share no contract, type, or file — and then split by DELIVERABLE, never by client/server layer.
-
-   For each coder:
-   - **When the task is a phase of a multi-phase plan, name the phase explicitly** ("implement Phase 4 of `<plan-path>`") and tell the coder to read it phase-scoped (`coder-core`'s workflow step 1 carries the mechanics).
-   - Coders write NO tests (coder-core's "Tests are not yours") — stub flips and all test authorship happen in step 3b's `test-writer` dispatch
-   - If the task turns out to be architectural, have it report back and recommend `/eng-spec` instead
-
-3b. **Dispatch the test-writer** (after every coder dispatch that implemented plan behavior): a single `test-writer` subagent (pinned; omit `model`). Skip ONLY when the task/phase has no Success Criteria behavior and no acceptance criteria (pure config or mechanical phases) — note the skip in the phase summary.
-
-Pass the plan path + phase number (it reads phase-scoped) and the stub file list when the plan names one. **Pass NOTHING from the coder** — the agent is implementation-blind by contract: no diff, no coder summary, no source file contents in its prompt. Its assertions must come from the plan alone.
+3b. **Dispatch the test-writer** after every coder dispatch that implemented plan behavior: one `test-writer` subagent, omit `model`. Skip only when the phase has no Success Criteria behavior and no acceptance criteria (pure config or mechanical), and note the skip in the phase summary. Pass the plan path, the phase number, and the stub file list when the plan names one. Pass nothing from the coder: no diff, no summary, no source contents.
 
 Route on its report:
 
-- `FAILING-TEST` lines → candidate implementation bugs, the split working as designed. Dispatch `/fix` scoped to make the named behaviors pass WITHOUT touching the failing tests' assertions, then re-run the test-writer's `tests-run` command yourself with Bash. Cap: 2 fix rounds; still red → STOP and surface to the user.
+- `FAILING-TEST` lines → dispatch `/fix` scoped to make the named behaviors pass without touching the failing tests' assertions, then re-run the test-writer's `tests-run` command with Bash. Cap 2 fix rounds; still red → STOP and surface to the user. A `FAILING-TEST` whose scenario cannot run as planned is a spec defect: AskUserQuestion as in step 4, record it under `## Plan Deviations`, re-dispatch the `test-writer`.
+- `UNDERSPECIFIED` lines → surface in the phase summary; a success criterion left untested blocks marking the phase done.
+- Log each spec defect resolved above, one row each, before advancing:
 
-  **First decide which side is wrong.** A `FAILING-TEST` whose scenario cannot run as planned (unreachable fixture, contradicting criterion, disagreeing sections) is a SPEC defect: route to **AskUserQuestion** as the PLAN-IMPACT gate does, record in `## Plan Deviations`, then re-dispatch the `test-writer` — never the coder.
+  ```bash
+  bash ~/.claude/scripts/log-escape repo=<basename> stage_found=phase-gate \
+    gate_missed=eng-spec class=plan-drift severity=<high|medium|low> \
+    lane=eng-spec guard=<...> desc="<what the plan asserted, and why it could not hold>" \
+    file=<plan path>
+  ```
 
-- `UNDERSPECIFIED` lines → surface in the phase summary; a success criterion left untested by one blocks marking the phase done (plan gap — treat like a missing Success Criteria section, step 2).
+4. **After the coder and the test-writer complete**: if the coder report carries a `PLAN-IMPACT:` block, raise it via AskUserQuestion (assumed → found → what changes; options `Adopt plan change` / `Keep plan as written` / `Discuss`) before anything else, and record the answer under the plan's `## Plan Deviations` (create if absent). Then summarize for the user: what was implemented, issues flagged, follow-up items, and the coder's `WHY:` lines grouped by file as `path:start-end — <note>` (omit when every coder reported `WHY: none`). Build the handoff block per `~/.claude/skills/_shared/handoff-block.md`: `files` (path, one-line change, `why` from the coder's WHY lines), `tests-run` from the test-writer's report, `flagged` (incl. UNDERSPECIFIED and resolved FAILING-TEST outcomes, or `none`), `plan_impact` (the block plus the user's decision, or `none`), `iter: 1`.
 
-**Log every spec defect resolved above as an escape, at the moment it resolves** — one row per defect, before advancing (the Deviations entry records the decision; this row makes it countable):
+5. **Dispatch review**: tell the user "Auto-dispatching review to check the implementation before committing." Then `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"`, passing `mode: review-first`, `caller: code`, `lane: <lane>`, `reviewers: <domains>` verbatim from the phase's Phase Status line when it has one, the handoff block, and any `+fast`/`+deep` modifier plus any specialist flag (`+sec`/`+perf`/`+smell`/`no-specialist`).
 
-```bash
-bash ~/.claude/scripts/log-escape repo=<basename> stage_found=phase-gate \
-  gate_missed=eng-spec class=plan-drift severity=<high|medium|low> \
-  lane=eng-spec guard=<...> desc="<what the plan asserted, and why it could not hold>" \
-  file=<plan path>
-```
+   Route on the returned `status`, first match wins:
 
-`gate_missed=eng-spec`, never `coder` — the implementer did not miss this.
-
-4. **After the coder and the test-writer complete**, summarize for the user AND build a handoff block for downstream review.
-
-   **PLAN-IMPACT gate (before anything else in this step)**: scan the coder report for a `PLAN-IMPACT:` block (coder-core requires `PLAN-IMPACT: yes` as the report's last line when one exists). If present, present it via **AskUserQuestion** — assumed → found → what changes, options `Adopt plan change` / `Keep plan as written` / `Discuss` — BEFORE summarizing or auto-dispatching `/review`. Record the answer in the plan's `## Plan Deviations` section (create if absent) so `/verify` reconciles against the amended plan.
-
-   User summary:
-   - What was implemented
-   - Any issues flagged
-   - Any follow-up items
-
-   Handoff block (passed as args to `/review` in step 5). Schema is defined in `~/.claude/skills/_shared/handoff-block.md`. Required fields:
-
-   ```
-   handoff:
-     files:
-       - path: <relative path>
-         change: <one line: what changed and why>
-         why:                        # from the coder's WHY: lines; omit if none
-           - lines: <start>-<end>
-             note: <why this block looks the way it does>
-     tests-run: <from the test-writer's report: exact command + exit code; or "none">
-     flagged: <issues the coder or test-writer explicitly flagged, incl. UNDERSPECIFIED and resolved FAILING-TEST outcomes, or "none">
-     plan_impact: <verbatim PLAN-IMPACT block + the user's decision, or "none">
-     iter: 1
-   ```
-
-   **Then surface the `WHY:` lines to the human** (skip entirely when every coder reported `WHY: none`). They go in the phase summary, grouped by file as `path:start-end — <note>`.
-
-   This is a one-way channel to the human, not an input to review. Do NOT put review-relevant caveats here and nowhere else — anything the reviewer needs belongs in `flagged`.
-
-5. **Auto-dispatch review**: After summarizing the coder output, tell the user: "Auto-dispatching review to check the implementation before committing." Then dispatch the loop directly — `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"` (unpinned), passing `mode: review-first`, `caller: code`, `lane: <lane>` (from step 2), the handoff block from step 4, and any `+fast`/`+deep` modifier plus any specialist flag (`+sec`/`+perf`/`+smell`/`no-specialist`).
-
-   **Pass `reviewers: <domains>` verbatim from this phase's Phase Status line** (`plan-format.md`), when it has one. The loop's Step 6b unions plan-declared ∪ force flag (`+sec`/`+perf`/`+smell`) ∪ diff trigger; `no-specialist` suppresses the pass.
-
-   Do NOT `Skill`-invoke `/review` here — that re-injects its body into this context once per phase; it stays the user-facing entry for manual review.
-
-   **Route on the returned `status`** — first match wins:
-   - **`plan-impact`** → raise the modal exactly as step 4's PLAN-IMPACT gate (record in `## Plan Deviations`), then re-dispatch `review-loop` with the decision and BOTH counters preserved (`iter` and `spec_iter`).
-   - **`critical-blocker`** → STOP. Present `blockers`, do NOT mark the phase done, do NOT advance.
-   - **`cap-reached`** → STOP. Report `findings_remaining`. Do NOT mark the phase done. The session is correctly left `dirty`, so `git commit` stays blocked.
-   - **`deferred`** → one-round budget spent, residue logged for branch exit. A NORMAL completion: render as `converged`, plus `findings_remaining` under `### Deferred to branch exit`. Record convergence and proceed. Do NOT re-dispatch to chase them.
-   - **`converged`** → render the packet (`### Fixed` from `fixed[]`, blockers first and marked; `perf[]` under its own heading; `skipped_fp[]`, `nit[]`). Present `ask[]` and wait — never auto-fix. After the user answers, log one row per ask (PLAN-IMPACT asks excluded — the Deviations entry is their record); telemetry never blocks:
+   - `plan-impact` → the step-4 modal, record under `## Plan Deviations`, re-dispatch `review-loop` with the decision and both counters (`iter`, `spec_iter`) preserved.
+   - `critical-blocker` → STOP. Present `blockers`; do not mark the phase done.
+   - `cap-reached` → STOP. Report `findings_remaining`; do not mark the phase done. The session is correctly left `dirty`, so `git commit` stays blocked.
+   - `deferred` → render as `converged`, plus `findings_remaining` under `### Deferred to branch exit`; proceed.
+   - `converged` → run `bash ~/.claude/scripts/review-gate-mark clean` first. Then render the packet (`### Fixed` from `fixed[]`, blockers first and marked; `perf[]` under its own heading; `skipped_fp[]`, `nit[]`). Present `ask[]` and wait; when `ask[]` is empty, proceed to the phase gates at once. After the user answers, log one row per ask (PLAN-IMPACT asks excluded):
 
      ```bash
      bash "$HOME/.claude/skills/review/log-review-finding" kind=finding \
@@ -156,24 +86,20 @@ bash ~/.claude/scripts/log-escape repo=<basename> stage_found=phase-gate \
        actioned=ask ask_outcome=<accepted|rejected|modified> desc="ask resolved: <one line>"
      ```
 
-     Rows carrying `ask_outcome` are resolutions, not new findings — excluded from yield counts (see `/audit review`). Then `bash ~/.claude/scripts/review-gate-mark clean` and proceed to the phase gates.
+     Then proceed to the phase gates.
 
-6. **Multi-phase plans only — apply the phase-boundary decision**: If step 2 detected a multi-phase plan, after `review-loop` returns `converged` (or `deferred`, which advances the same way) and the phase gates are clean, run the **Phase-boundary decision** (step 2) to choose stop vs. auto-advance. Any other status (`plan-impact`, `critical-blocker`, `cap-reached`) is a STOP — never advance a phase on an unconverged loop. On a STOP, print the matching phase-complete block with all placeholders resolved and wait; when the user confirms (in-session by default — `/clear` only if context genuinely got heavy), re-enter step 2 for the next phase, using the `## Phase Status` section (fallback: `git status` + success criteria) to detect what's already done. On an AUTO-ADVANCE, print the one-line advance notice and re-enter step 2 immediately for the next phase in the same context.
+6. **Multi-phase plans**: after `converged` or `deferred`, run the phase-boundary decision (step 2). Any other status is a STOP. On a STOP, print the block with every placeholder resolved and wait; when the user confirms, re-enter step 2 for the next phase using `## Phase Status`. On an AUTO-ADVANCE, print block A and re-enter step 2 at once for the next phase in the same context.
 
 ## Phase-Complete Block
 
-After each phase + review + phase gates, the **Phase-boundary decision** (step 2) selects one of three blocks.
+Deliver every block through the `brief` skill's shape (`~/.claude/skills/brief/SKILL.md`).
 
-**Deliver every block through the `brief` skill's shape** (`~/.claude/skills/brief/SKILL.md`): verdict + blockers + one decision owed up front; queue, gate evidence, and verification lists held back until asked. The blocks below define what must EXIST at the boundary; `brief` decides what prints unasked.
-
-**A — Auto-advance** (decision rule 5). No sign-off is requested; do not stop:
+**A — Auto-advance** (decision rule 5):
 
 ```
 Phase <N> complete — machine gates green (review ✓, execution ✓, automated-verification ✓). Risk: low. Manual verification: <n> agent-verified, <m> human-only deferred to the /verify packet.
 → Auto-advancing to Phase <N+1> in-session (no /clear; interrupt anytime).
 ```
-
-Then re-enter step 2 for Phase <N+1> in the same context — do not wait for the user.
 
 **B — Stop for sign-off** (decision rules 2–4):
 
@@ -194,50 +120,24 @@ Agent-verified (evidence in the plan):
 - <item — one-line evidence summary>
 
 Human-only verification remaining:
-- <item 1>
-- <...>
+- <item>
 
 Next:
   1. Read the queue; spot-check the evidence lines; run the human-only items.
-  2. Stage what you've read, then confirm to continue to Phase <N+1> — in-session (no /clear needed; /clear only if context got heavy).
+  2. Stage what you've read, then confirm to continue to Phase <N+1>.
 
 Or give feedback now for revisions to Phase <N>.
 ```
 
-**C — Last phase** (decision rule 1): print block B's walkthrough and verification lists, then replace its "Next" block with:
+**C — Last phase** (decision rule 1): block B's walkthrough and verification lists, with the "Next" block replaced by:
 
 ```
 All phases complete. Next: /verify (completeness + review packet; includes the remaining human-only checks), then you open the PR.
 ```
 
-Resolution rules:
+Verification items come from the just-finished phase's `#### Manual Verification:` section, split by the `agent-verified` / `human-only` tags. When that section is empty, omit both lists and replace step 1 with "Read the /stage queue."
 
-- `<N>` is the just-finished phase number; `<N+1>` the next.
-- `<plan-path>` is the absolute or repo-relative path the orchestrator was invoked with.
-- Verification items come from the just-finished phase's `#### Manual Verification:` section in the plan, split by the verifier agent's `agent-verified` / `human-only` tags. If that section is empty in block B, omit both lists and replace step 1 with: "Read the /stage queue."
-- No risk tag (older plan format) → treat as high, per the phase-boundary decision list above. Stated there, not here.
-
-### The walkthrough (blocks B and C)
-
-**Skill-invoke `/stage` to build the sign-off walkthrough** — do not rank files yourself.
-
-`/stage` runs the deterministic classifier: it stages the SAFE tier (mechanical,
-invariant-verified) and returns everything else as an ESCALATE / READ / SKIM queue
-in blast-radius order. That queue **is** the "Read first" section — render it, never
-re-rank it, never promote a tier.
-
-- **Behavior delta** — from the coder's handoff (absent one, derive from the diff and mark `derived from diff`).
-- **Read first** — `/stage`'s queue, verbatim, in its order. When the user steps the queue ("next"), `nvim-jump` each entry per `~/.claude/skills/_shared/nvim-jump.md`.
-
-Two fences:
-
-- **Never feed this ordering into a reviewer dispatch.** It renders only after
-  `review-loop` returns `converged`, and only to the user.
-- **This is not situating.** It maps the phase's own diff so the user can read and
-  stage it. It does not open the unchanged neighbours — situating the change in
-  the code that did not change is `/orient`, run on demand.
-
-For complex features requiring design decisions, use `/eng-spec` instead.
+Skill-invoke `/stage` to build the "Read first" queue and render it verbatim, in its order. The behavior delta comes from the coder's handoff (absent one, derive it from the diff and mark `derived from diff`). When the user steps the queue, `nvim-jump` each entry per `~/.claude/skills/_shared/nvim-jump.md`.
 
 ## Task
 

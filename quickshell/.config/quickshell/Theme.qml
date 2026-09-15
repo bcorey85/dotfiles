@@ -50,30 +50,6 @@ Singleton {
             green: "#27850b", red: "#c72a3c", teal: "#188a9e",
             orange: "#df5926", yellow: "#a77b00", magenta: "#8a4adf"
         },
-        "gruvbox-dark": {
-            bg: "#282828", panel: "#3c3836", border: "#665c54",
-            fg: "#ebdbb2", muted: "#9e8d7d",
-            green: "#b8bb26", red: "#fb4934", teal: "#8ec07c",
-            orange: "#fe8019", yellow: "#fabd2f", magenta: "#d3869b"
-        },
-        "gruvbox-light": {
-            bg: "#fbf1c7", panel: "#ebdbb2", border: "#bdae93",
-            fg: "#3c3836", muted: "#776a5e",
-            green: "#79740e", red: "#9d0006", teal: "#427b58",
-            orange: "#af3a03", yellow: "#b57614", magenta: "#8f3f71"
-        },
-        "melange-dark": {
-            bg: "#292522", panel: "#34302c", border: "#4a443f",
-            fg: "#ece1d7", muted: "#c1a78e",
-            green: "#85b695", red: "#d47766", teal: "#7b9695",
-            orange: "#e49b5d", yellow: "#ebc06d", magenta: "#cf9bc2"
-        },
-        "melange-light": {
-            bg: "#f1f1f1", panel: "#e9e1db", border: "#cfc7bf",
-            fg: "#54433a", muted: "#7d6658",
-            green: "#6e9b72", red: "#bf0021", teal: "#739797",
-            orange: "#bc5c00", yellow: "#a06d00", magenta: "#904180"
-        },
         // wave / lotus — the one family whose two modes are separate
         // colorschemes upstream; here they are just two palettes like the rest.
         "kanagawa-dark": {
@@ -116,34 +92,6 @@ Singleton {
             green: "#4a6830", red: "#874a4a", teal: "#386858",
             orange: "#a44024", yellow: "#6b5a18", magenta: "#665766"
         },
-        // token's "meridian" appearance; bg is its bg3 (Normal's ground).
-        "token-meridian-dark": {
-            bg: "#272724", panel: "#30302c", border: "#444039",
-            fg: "#c9c0b1", muted: "#a69c91",
-            green: "#8cbb62", red: "#c67777", teal: "#66abc6",
-            orange: "#e89a49", yellow: "#d99148", magenta: "#b991db"
-        },
-        "token-meridian-light": {
-            bg: "#fbf9f4", panel: "#f0ede6", border: "#dedbd3",
-            fg: "#28323a", muted: "#524b42",
-            green: "#005f2f", red: "#c82a2a", teal: "#0048b3",
-            orange: "#843900", yellow: "#9d6600", magenta: "#7a1f7a"
-        },
-        // spore "softest" — dark-only, so both keys are the same palette (the
-        // lookup is family + "-" + mode either way). muted is the lifted
-        // comment value; the theme's own bark is too flat to read on the bar.
-        "spore-dark": {
-            bg: "#101d1a", panel: "#18231e", border: "#3c3d34",
-            fg: "#968a6a", muted: "#84836f",
-            green: "#6f714e", red: "#8e6747", teal: "#5a6e53",
-            orange: "#7c7150", yellow: "#978255", magenta: "#6b5d49"
-        },
-        "spore-light": {
-            bg: "#101d1a", panel: "#18231e", border: "#3c3d34",
-            fg: "#968a6a", muted: "#84836f",
-            green: "#6f714e", red: "#8e6747", teal: "#5a6e53",
-            orange: "#7c7150", yellow: "#978255", magenta: "#6b5d49"
-        },
         "material-dark": {
             bg: "#212121", panel: "#323232", border: "#343434",
             fg: "#B0BEC5", muted: "#848b93",
@@ -175,19 +123,6 @@ Singleton {
             orange: "#deb974", yellow: "#deb974", magenta: "#d38aea"
         },
         "edge-light": {
-            bg: "#fafafa", panel: "#eef1f4", border: "#ccd3db",
-            fg: "#4b505b", muted: "#677182",
-            green: "#537a2b", red: "#c93f3f", teal: "#337b75",
-            orange: "#9a6604", yellow: "#9a6604", magenta: "#a545c5"
-        },
-        // edge aura with dim_foreground — same accents, dimmed fg/muted.
-        "edge-dim-dark": {
-            bg: "#2b2d37", panel: "#333644", border: "#454b60",
-            fg: "#97a4b5", muted: "#8a95a8",
-            green: "#a0c980", red: "#ec7279", teal: "#5dbbc1",
-            orange: "#deb974", yellow: "#deb974", magenta: "#d38aea"
-        },
-        "edge-dim-light": {
             bg: "#fafafa", panel: "#eef1f4", border: "#ccd3db",
             fg: "#4b505b", muted: "#677182",
             green: "#537a2b", red: "#c93f3f", teal: "#337b75",

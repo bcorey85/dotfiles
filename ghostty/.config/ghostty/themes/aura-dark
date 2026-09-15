@@ -1,6 +1,6 @@
 # aura dark soft = the dimmed variant (official Dark Soft tokens): bg #15141b,
 # soft-text fg #bdbdbd, muted accents. Upstream ships no light variant, so
-# theme-mode maps both modes to this one file (the spore pattern). Brights
+# theme-mode maps both modes to this one file. Brights
 # duplicate hues (the edge-dark pattern); slot 15 keeps full white for the
 # brightest. Selection is the theme's solid selection token accent38 #29263c.
 # Slot 0 is the theme's darkest ground accent21 #110f18.

@@ -77,7 +77,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="vitesse"
 
-families() { printf '%s\n' vitesse flexoki bamboo gruvbox gruvbox-material melange kanagawa thorn ember token-meridian spore material github edge edge-dim oceanic catppuccin; }
+families() { printf '%s\n' vitesse flexoki bamboo gruvbox-material kanagawa thorn ember material github edge oceanic catppuccin; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   # vitesse: our port, dark #121212 / light #ffffff — custom files in
@@ -86,9 +86,7 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
   # file under ghostty/themes/ and apply() falls through to `theme = `.
   # bamboo: no ghostty builtin — custom files in ghostty/themes/, ANSI straight
   # from the theme's own terminal.lua mapping.
-  # gruvbox/melange/kanagawa: all ghostty BUILTINS (spaces and all), matching the
-  # exact variants the palettes below encode — original gruvbox medium, melange,
-  # kanagawa wave/lotus. No files under ghostty/themes/.
+  # kanagawa: ghostty BUILTINS (spaces and all), matching wave/lotus exactly.
   case "$1:$2" in
     vitesse:light)      echo "vitesse-light" ;;
     vitesse:*)          echo "vitesse-dark" ;;
@@ -96,8 +94,6 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     flexoki:*)          echo "Flexoki Dark" ;;
     bamboo:light)       echo "bamboo-light" ;;
     bamboo:*)           echo "bamboo-dark" ;;
-    gruvbox:light)      echo "Gruvbox Light" ;;
-    gruvbox:*)          echo "Gruvbox Dark" ;;
     # gruvbox-material runs background=hard, foreground=original, whose ANSI IS
     # the original gruvbox palette over the hard grounds (#1d2021 / #f9f5d7) —
     # so the Gruvbox *Hard* builtins are exact here. Ghostty's own "Gruvbox
@@ -105,14 +101,11 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # foreground (fg #d4be98, red #ea6962), so they match on neither axis.
     gruvbox-material:light) echo "Gruvbox Light Hard" ;;
     gruvbox-material:*)     echo "Gruvbox Dark Hard" ;;
-    melange:light)      echo "Melange Light" ;;
-    melange:*)          echo "Melange Dark" ;;
     kanagawa:light)     echo "Kanagawa Lotus" ;;
     kanagawa:*)         echo "Kanagawa Wave" ;;
-    # thorn / ember / token-meridian: no ghostty builtin for any of them, so all
-    # six halves are custom files in ghostty/themes/. thorn's are the upstream
-    # extras/ghostty pair and token-meridian's the upstream contrib/ghostty pair,
-    # copied verbatim; ember ships no terminal extras, so its file is written
+    # thorn / ember: no ghostty builtin for either, so all four halves are
+    # custom files in ghostty/themes/. thorn's are the upstream extras/ghostty
+    # pair, copied verbatim; ember ships no terminal extras, so its file is written
     # from the theme's own term[] ANSI mapping (with the light half taking the
     # panel above the canvas for slot 0, since ember maps slot 0 to base1 = the
     # light canvas itself, which reads as invisible black in a terminal).
@@ -120,10 +113,6 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     thorn:*)                echo "thorn-dark" ;;
     ember:light)            echo "ember-light" ;;
     ember:*)                echo "ember-dark" ;;
-    token-meridian:light)   echo "token-meridian-light" ;;
-    token-meridian:*)       echo "token-meridian-dark" ;;
-    # spore is DARK-ONLY (upstream ships no light variant), so both modes get
-    # the one file — also hand-written, since it has no terminal extras either.
     # material is not a ghostty builtin — custom files in ghostty/themes/,
     # hand-mapped from the theme's own load_terminal ANSI (darker + lighter).
     material:light)         echo "material-light" ;;
@@ -136,10 +125,6 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # mapped from the aura-style ramp (the dimmed style, bg0 #2b2d37).
     edge:light)             echo "edge-light" ;;
     edge:*)                 echo "edge-dark" ;;
-    # edge-dim is the same aura ramp with dim_foreground on — only the fg
-    # tokens move, so the light half is edge-light verbatim.
-    edge-dim:light)         echo "edge-light" ;;
-    edge-dim:*)             echo "edge-dim-dark" ;;
     # oceanic is not a ghostty builtin — custom files in ghostty/themes/
     # (dark hand-mapped; light shared verbatim with material-light).
     oceanic:light)          echo "oceanic-light" ;;
@@ -147,7 +132,6 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # catppuccin: ghostty BUILTINS — frappe dark, latte light.
     catppuccin:light)       echo "Catppuccin Latte" ;;
     catppuccin:*)           echo "Catppuccin Frappe" ;;
-    spore:*)                echo "spore-dark" ;;
   esac
 }
 
@@ -170,16 +154,9 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
   # on #fbf1c7 (bamboo light is #3a4238 on #fafae0) — same warm cream cast,
   # near-identical text colors.
   #
-  # gruvbox and kanagawa both have hunk builtins of the exact same variants
-  # (gruvbox-*-medium IS original gruvbox medium; kanagawa-wave/lotus are the
-  # same palettes), so those are exact bases, not neutral approximations.
+  # kanagawa has hunk builtins of the exact same variants (kanagawa-wave/lotus
+  # are the same palettes), so those are exact bases, not neutral approximations.
   # kanagawa dark ships no custom block, so wave renders natively.
-  #
-  # melange has no hunk builtin. Dark takes gruvbox-dark-medium (#ebdbb2 on
-  # #282828 against melange's #ece1d7 on #292522 — same warm cream cast). Light
-  # takes vitesse-light: every gruvbox light builtin is a CREAM ground, and
-  # melange light is neutral #f1f1f1, so white is the closer ground even though
-  # the text cast differs.
   case "$1:$2" in
     vitesse:light)      echo "vitesse-light" ;;
     vitesse:*)          echo "vitesse-dark" ;;
@@ -187,26 +164,18 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     flexoki:*)          echo "kanagawa-dragon" ;;
     bamboo:light)       echo "gruvbox-light-medium" ;;
     bamboo:*)           echo "gruvbox-dark-medium" ;;
-    gruvbox:light)      echo "gruvbox-light-medium" ;;
-    gruvbox:*)          echo "gruvbox-dark-medium" ;;
     gruvbox-material:light) echo "gruvbox-light-medium" ;;
     gruvbox-material:*)     echo "gruvbox-dark-medium" ;;
-    melange:light)      echo "vitesse-light" ;;
-    melange:*)          echo "gruvbox-dark-medium" ;;
     kanagawa:light)     echo "kanagawa-lotus" ;;
     kanagawa:*)         echo "kanagawa-wave" ;;
-    # thorn, ember and token-meridian have no hunk builtin; each ships a full
-    # [custom_theme] over a base picked for NEUTRALS. gruvbox medium's warm
-    # cream fg matches thorn forest (#dbd2c7), ember dark (#d8d0c0) and
-    # meridian dark (#c9c0b1), and its light cream ground matches thorn field
-    # and ember's parchment. Meridian light is a near-white ground with a cool
-    # fg, so vitesse-light is the closer base there.
+    # thorn and ember have no hunk builtin; each ships a full [custom_theme]
+    # over a base picked for NEUTRALS. gruvbox medium's warm cream fg matches
+    # thorn forest (#dbd2c7) and ember dark (#d8d0c0), and its light cream
+    # ground matches thorn field and ember's parchment.
     thorn:light)            echo "gruvbox-light-medium" ;;
     thorn:*)                echo "gruvbox-dark-medium" ;;
     ember:light)            echo "gruvbox-light-medium" ;;
     ember:*)                echo "gruvbox-dark-medium" ;;
-    # spore is dark-only; gruvbox-dark-medium's warm fg is the nearest neutral
-    # to its olive #968a6a in both modes.
     # material has no hunk builtin either; same neutral vitesse pair (darker
     # #B0BEC5 on #212121; near-white lighter, like vitesse-light).
     material:light)         echo "vitesse-light" ;;
@@ -216,17 +185,14 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     github:*)               echo "vitesse-dark" ;;
     # edge has no hunk builtin either; same neutral vitesse pair (blue-gray
     # dark; near-white light, like vitesse-light).
-    edge:light|edge-dim:light) echo "vitesse-light" ;;
-    edge:*|edge-dim:*)      echo "vitesse-dark" ;;
+    edge:light)             echo "vitesse-light" ;;
+    edge:*)                 echo "vitesse-dark" ;;
     # oceanic has no hunk builtin either; same neutral vitesse pair.
     oceanic:light)          echo "vitesse-light" ;;
     oceanic:*)              echo "vitesse-dark" ;;
     # catppuccin IS a hunk builtin (both flavours) — used directly.
     catppuccin:light)       echo "catppuccin-latte" ;;
     catppuccin:*)           echo "catppuccin-frappe" ;;
-    spore:*)                echo "gruvbox-dark-medium" ;;
-    token-meridian:light)   echo "vitesse-light" ;;
-    token-meridian:*)       echo "gruvbox-dark-medium" ;;
   esac
 }
 
@@ -363,33 +329,6 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # type green, operator neutral fg.
       kw="#d58888"; str="#8e9cc0"; num="#6e9cb0"; fn="#b58d88"; typ="#6da280"; punct="#949d9f"; op="#aeadaf"
       ;;
-    gruvbox:light)
-      # original gruvbox medium light (#fbf1c7). Chrome from the theme's own
-      # bg1 #ebdbb2 / bg2 #d5c4a1 / bg3 #bdae93. comment #928374.
-      bg="#fbf1c7"; panel="#ebdbb2"; panelAlt="#d5c4a1"; border="#bdae93"
-      accent="#9d0006"; accentMuted="#bdae93"; text="#3c3836"; muted="#928374"
-      addedBg="#e6e6c0"; removedBg="#f2dcc0"; ctxBg="#fbf1c7"
-      sAdd="#79740e"; sRem="#9d0006"; lnFg="#a89984"
-      badgeAdd="#79740e"; badgeRem="#9d0006"; badgeNeu="#076678"
-      fRename="#8f3f71"; fMod="#b57614"; fUntracked="#928374"; note="#ebdbb2"
-      # gruvbox roles: keyword red, string/fn green, number purple, type yellow,
-      # const aqua, operator fg.
-      kw="#9d0006"; str="#79740e"; num="#8f3f71"; fn="#79740e"; typ="#b57614"; punct="#3c3836"; op="#3c3836"
-      ;;
-    gruvbox:*)
-      # original gruvbox medium dark (#282828). Verbatim upstream — no mods
-      # (keyword red #fb4934 kept as authored). comment #928374. Chrome from the
-      # theme's own bg1 #3c3836 / bg2 #504945 / bg3 #665c54.
-      bg="#282828"; panel="#3c3836"; panelAlt="#504945"; border="#665c54"
-      accent="#fb4934"; accentMuted="#504945"; text="#ebdbb2"; muted="#928374"
-      addedBg="#282d1e"; removedBg="#32241f"; ctxBg="#282828"
-      sAdd="#b8bb26"; sRem="#fb4934"; lnFg="#504945"
-      badgeAdd="#b8bb26"; badgeRem="#fb4934"; badgeNeu="#83a598"
-      fRename="#d3869b"; fMod="#fabd2f"; fUntracked="#928374"; note="#3c3836"
-      # gruvbox roles: keyword red, string/fn green, number pink, type yellow,
-      # const aqua, operator fg.
-      kw="#fb4934"; str="#b8bb26"; num="#d3869b"; fn="#b8bb26"; typ="#fabd2f"; punct="#ebdbb2"; op="#ebdbb2"
-      ;;
     gruvbox-material:light)
       # gruvbox-material HARD light (#f9f5d7), foreground=original — the accent
       # hexes are original gruvbox's, but the ground is a stop lighter than
@@ -432,34 +371,6 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       konst="#8ec07c"; esc="#b8bb26"; cmt="#9e8d7d"; mem="#83a598"; param="#ebdbb2"
       attr="#d3869b"; tag="#fe8019"; vbi="#d3869b"; imp="#d3869b"; pre="#d3869b"
       prim="#fabd2f"; ns="#fabd2f"; mac="#8ec07c"; bfn="#b8bb26"
-      ;;
-    melange:light)
-      # melange light (#f1f1f1). Chrome + diff washes from the theme's own
-      # CursorLine/Visual/DiffAdd/DiffDelete. Comments clear 4.5:1 unmodified.
-      bg="#f1f1f1"; panel="#e9e1db"; panelAlt="#d9d3ce"; border="#d9d3ce"
-      accent="#bc5c00"; accentMuted="#a98a78"; text="#54433a"; muted="#7d6658"
-      addedBg="#d0e9d1"; removedBg="#f1dedf"; ctxBg="#f1f1f1"
-      sAdd="#6e9b72"; sRem="#bf0021"; lnFg="#a98a78"
-      badgeAdd="#6e9b72"; badgeRem="#bf0021"; badgeNeu="#465aa4"
-      fRename="#bc5c00"; fMod="#a06d00"; fUntracked="#6e9b72"; note="#e9e1db"
-      # melange light roles: keyword orange, string blue, number magenta, fn
-      # ochre, type teal, operator red.
-      kw="#bc5c00"; str="#465aa4"; num="#904180"; fn="#a06d00"; typ="#739797"; punct="#54433a"; op="#bf0021"
-      ;;
-    melange:*)
-      # melange dark (warm brown-black #292522). Chrome from the theme's own
-      # CursorLine/Visual. removedBg dimmed from melange's loud stock DiffDelete
-      # (#7d2a2f wine) to a low-sat blend; addedBg is the theme's subtle DiffAdd
-      # as-is. Comments clear 4.5:1.
-      bg="#292522"; panel="#34302c"; panelAlt="#403a36"; border="#221f1c"
-      accent="#e49b5d"; accentMuted="#867462"; text="#ece1d7"; muted="#c1a78e"
-      addedBg="#233524"; removedBg="#3a2529"; ctxBg="#292522"
-      sAdd="#85b695"; sRem="#d47766"; lnFg="#867462"
-      badgeAdd="#85b695"; badgeRem="#d47766"; badgeNeu="#a3a9ce"
-      fRename="#e49b5d"; fMod="#ebc06d"; fUntracked="#85b695"; note="#34302c"
-      # melange dark roles: keyword orange, string blue, number magenta, fn
-      # yellow, type cyan, operator coral.
-      kw="#e49b5d"; str="#a3a9ce"; num="#cf9bc2"; fn="#ebc06d"; typ="#7b9695"; punct="#ece1d7"; op="#d47766"
       ;;
     bamboo:light)
       # bamboo light (warm cream #fafae0). Chrome from the theme's own CursorLine/
@@ -606,62 +517,6 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       attr="#80a090"; tag="#e08060"; vbi="#e08060"; imp="#e08060"; pre="#e08060"
       prim="#c8b468"; ns="#c8b468"; mac="#e08060"; bfn="#e08060"
       ;;
-    token-meridian:light)
-      # token meridian light (#fbf9f4 = the palette's bg3, which is Normal's bg).
-      # Chrome is bg4/bg5/sel; diff washes and sign colours are the palette's own
-      # diff_add/diff_del and gsign_* entries. Comments clear 4.5:1 unmodified.
-      bg="#fbf9f4"; panel="#f0ede6"; panelAlt="#eae9e5"; border="#dedbd3"
-      accent="#0048b3"; accentMuted="#b5b2ab"; text="#28323a"; muted="#524b42"
-      addedBg="#daf6d5"; removedBg="#ffdada"; ctxBg="#fbf9f4"
-      sAdd="#24831f"; sRem="#c82a2a"; lnFg="#b5b2ab"
-      badgeAdd="#24831f"; badgeRem="#c82a2a"; badgeNeu="#0048b3"
-      fRename="#7a1f7a"; fMod="#9d6600"; fUntracked="#524b42"; note="#f0ede6"
-      # meridian roles (the appearance's own semantic table): control blue,
-      # literal green, definition/call purple, number cyan, type/builtin/
-      # attribute accent2, property orange, operator/punctuation/parameter fg1,
-      # comment fg2.
-      kw="#0048b3"; str="#005f2f"; num="#095b62"; fn="#7a1f7a"; typ="#843900"; punct="#46535f"; op="#46535f"
-      konst="#095b62"; esc="#7a1f7a"; cmt="#524b42"; mem="#4b1fa3"; param="#46535f"
-      attr="#843900"; tag="#0048b3"; vbi="#843900"; imp="#0048b3"; pre="#7a1f7a"
-      prim="#843900"; ns="#843900"; mac="#7a1f7a"; bfn="#843900"
-      ;;
-    token-meridian:*)
-      # token meridian dark (#272724 = bg3, Normal's bg — not bg0). Chrome is
-      # bg4/bg5/sel; diff washes and sign colours are the palette's own.
-      bg="#272724"; panel="#30302c"; panelAlt="#383835"; border="#444039"
-      accent="#e89a49"; accentMuted="#585855"; text="#c9c0b1"; muted="#a69c91"
-      addedBg="#1e3524"; removedBg="#3c2024"; ctxBg="#272724"
-      sAdd="#7da47a"; sRem="#c67777"; lnFg="#585855"
-      badgeAdd="#7da47a"; badgeRem="#c67777"; badgeNeu="#66abc6"
-      fRename="#b991db"; fMod="#c4a855"; fUntracked="#a69c91"; note="#30302c"
-      # Same role table as the light half; dark swaps number to yellow and
-      # type/builtin/attribute to cyan.
-      kw="#66abc6"; str="#8cbb62"; num="#d99148"; fn="#b991db"; typ="#d9a86e"; punct="#aba195"; op="#aba195"
-      konst="#d99148"; esc="#b991db"; cmt="#a69c91"; mem="#de88a6"; param="#aba195"
-      attr="#d9a86e"; tag="#66abc6"; vbi="#d9a86e"; imp="#66abc6"; pre="#b991db"
-      prim="#d9a86e"; ns="#d9a86e"; mac="#b991db"; bfn="#d9a86e"
-      ;;
-    spore:*)
-      # spore, "softest" profile (mossy #101d1a). DARK-ONLY — one branch serves
-      # both modes because upstream ships no light variant. The profile flattens
-      # every colour toward the canvas by design, so contrast is left as authored
-      # except the comment (bark #59584b is ~2.4:1), lifted to the 4.5 floor to
-      # match the nvim fixup. Chrome is float_bg/focus_bg/shade; diff washes are
-      # the theme's own diff_add_bg/diff_delete_bg.
-      bg="#101d1a"; panel="#18231e"; panelAlt="#1c2822"; border="#3c3d34"
-      accent="#6f714e"; accentMuted="#59584b"; text="#968a6a"; muted="#84836f"
-      addedBg="#262f23"; removedBg="#302a23"; ctxBg="#101d1a"
-      sAdd="#6f714e"; sRem="#8e6747"; lnFg="#59584b"
-      badgeAdd="#6f714e"; badgeRem="#8e6747"; badgeNeu="#6d735c"
-      fRename="#8e6747"; fMod="#978255"; fUntracked="#84836f"; note="#18231e"
-      # spore roles: Keyword/Statement/PreProc tree, String rock, Number/Operator
-      # seed, Function/Type grass, Boolean sand, Special (escapes, builtins,
-      # constructors, tags) clay, Delimiter moss, Identifier/Constant fg.
-      kw="#5a6e53"; str="#6b5d49"; num="#7c7150"; fn="#6f714e"; typ="#6f714e"; punct="#6d735c"; op="#7c7150"
-      konst="#968a6a"; esc="#8e6747"; cmt="#84836f"; mem="#968a6a"; param="#968a6a"
-      attr="#5a6e53"; tag="#8e6747"; vbi="#8e6747"; imp="#5a6e53"; pre="#5a6e53"
-      prim="#8e6747"; ns="#6f714e"; mac="#5a6e53"; bfn="#8e6747"
-      ;;
     oceanic:light|material:light)
       # material lighter (#FAFAFA, shared verbatim with the material family).
       # Chrome from bg_alt/active/border. Diff
@@ -747,7 +602,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       kw="#ff7b72"; str="#a5d6ff"; num="#79c0ff"; fn="#d2a8ff"; typ="#ffa657"; punct="#9aa4ae"; op="#79c0ff"
       cmt="#9aa4ae"
       ;;
-    edge:light|edge-dim:light)
+    edge:light)
       # edge neon light (#fafafa). Chrome from CursorLine/Visual. Diff washes
       # verbatim. Comment #8790a0 is ~3.1:1, darkened to #677182 (~4.7:1) to
       # match the nvim fixup. Roles darken along hue to clear 4.5:1.
@@ -777,20 +632,6 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # yellow, punctuation muted, operator fg.
       kw="#d38aea"; str="#a0c980"; num="#a0c980"; fn="#6cb6eb"; typ="#deb974"; punct="#9199a9"; op="#c5cdd9"
       cmt="#9199a9"
-      ;;
-    edge-dim:*)
-      # edge aura dark with g:edge_dim_foreground — same ramp and accents as
-      # edge:*, only the three fg tokens move (fg #97a4b5, grey #677287,
-      # grey_dim #4f5868). Comment #677287 is ~2.8:1, lifted to #8a95a8
-      # (~4.5:1) to match the nvim fixup.
-      bg="#2b2d37"; panel="#333644"; panelAlt="#3a3e4e"; border="#454b60"
-      accent="#ec7279"; accentMuted="#454b60"; text="#97a4b5"; muted="#8a95a8"
-      addedBg="#394634"; removedBg="#55393d"; ctxBg="#2c2e34"
-      sAdd="#a0c980"; sRem="#ec7279"; lnFg="#4f5868"
-      badgeAdd="#a0c980"; badgeRem="#ec7279"; badgeNeu="#6cb6eb"
-      fRename="#d38aea"; fMod="#deb974"; fUntracked="#8a95a8"; note="#333644"
-      kw="#d38aea"; str="#a0c980"; num="#a0c980"; fn="#6cb6eb"; typ="#deb974"; punct="#8a95a8"; op="#97a4b5"
-      cmt="#8a95a8"
       ;;
     *) return 0 ;;
   esac
@@ -1101,30 +942,9 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       green="#8c9e3d" yellow="#b1942b" red="#d4823d"
       blue="#6e9cb0" teal="#6da280" peach="#d0913d"
       ;;
-    gruvbox:light)
-      # original gruvbox medium light (#fbf1c7) — comment #928374. Verbatim.
-      base_name="one-light"
-      accent="#9d0006" panel_bg="#ebdbb2" surface_dim="#d5c4a1"
-      surface0="#d5c4a1" surface1="#bdae93"
-      overlay0="#928374" overlay1="#928374"
-      text="#3c3836" subtext0="#928374"
-      green="#79740e" yellow="#b57614" red="#9d0006"
-      blue="#076678" teal="#427b58" peach="#af3a03"
-      ;;
-    gruvbox:*)
-      # original gruvbox medium dark (#282828) — comment #928374. Verbatim,
-      # keyword red #fb4934 kept as authored.
-      base_name="one-dark"
-      accent="#fb4934" panel_bg="#3c3836" surface_dim="#504945"
-      surface0="#504945" surface1="#665c54"
-      overlay0="#7c6f64" overlay1="#928374"
-      text="#ebdbb2" subtext0="#928374"
-      green="#b8bb26" yellow="#fabd2f" red="#fb4934"
-      blue="#83a598" teal="#8ec07c" peach="#fe8019"
-      ;;
     gruvbox-material:light)
-      # gruvbox-material HARD light (#f9f5d7), foreground=original — same
-      # accents as gruvbox over a lighter ground and a warmer/tighter chrome
+      # gruvbox-material HARD light (#f9f5d7), foreground=original — original
+      # gruvbox accents over a lighter ground and a warmer/tighter chrome
       # ladder. subtext0 is the darkened comment #776a5e (grey1 #928374 is
       # ~3.3:1 on #f9f5d7).
       base_name="one-light"
@@ -1147,27 +967,6 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#ebdbb2" subtext0="#9e8d7d"
       green="#b8bb26" yellow="#fabd2f" red="#fb4934"
       blue="#83a598" teal="#8ec07c" peach="#fe8019"
-      ;;
-    melange:light)
-      # melange light (#f1f1f1) — comment #7d6658. Verbatim.
-      base_name="one-light"
-      accent="#bc5c00" panel_bg="#e9e1db" surface_dim="#e2dad3"
-      surface0="#d9d3ce" surface1="#cfc7bf"
-      overlay0="#a98a78" overlay1="#7d6658"
-      text="#54433a" subtext0="#7d6658"
-      green="#6e9b72" yellow="#a06d00" red="#bf0021"
-      blue="#465aa4" teal="#739797" peach="#904180"
-      ;;
-    melange:*)
-      # melange dark (warm brown-black #292522) — comment #c1a78e. Verbatim,
-      # keyword orange accent as authored.
-      base_name="one-dark"
-      accent="#e49b5d" panel_bg="#34302c" surface_dim="#3a352f"
-      surface0="#403a36" surface1="#4a443f"
-      overlay0="#867462" overlay1="#c1a78e"
-      text="#ece1d7" subtext0="#c1a78e"
-      green="#85b695" yellow="#ebc06d" red="#d47766"
-      blue="#a3a9ce" teal="#7b9695" peach="#cf9bc2"
       ;;
     bamboo:light)
       # bamboo light (warm cream #fafae0) — comment lifted to #66695f. accent is
@@ -1256,42 +1055,6 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       green="#8a9868" yellow="#c8b468" red="#b07878"
       blue="#7890a0" teal="#80a090" peach="#c09058"
       ;;
-    token-meridian:light)
-      # token meridian light (#fbf9f4 canvas, #ecebe7 panel). Values are the
-      # theme's own herdr contrib, except overlay0 — contrib's #bbbebf is a
-      # BORDER grey, and herdr uses this token as a muted foreground.
-      base_name="one-light"
-      accent="#2663bd" panel_bg="#ecebe7" surface_dim="#fbf9f4"
-      surface0="#f0ede6" surface1="#dedbd3"
-      overlay0="#6f685e" overlay1="#524b42"
-      text="#28323a" subtext0="#46535f"
-      green="#005f2f" yellow="#2f75c6" red="#286fc0"
-      blue="#0048b3" teal="#095b62" peach="#4b1fa3"
-      ;;
-    token-meridian:*)
-      # token meridian dark (#272724 canvas, #1d1d1c panel). The theme's own
-      # herdr contrib, with surface_dim raised to its active-row #272724 so the
-      # focused sidebar row reads.
-      base_name="one-dark"
-      accent="#ae783e" panel_bg="#1d1d1c" surface_dim="#272724"
-      surface0="#30302c" surface1="#383835"
-      overlay0="#57534c" overlay1="#a69c91"
-      text="#c9c0b1" subtext0="#aba195"
-      green="#8cbb62" yellow="#d99148" red="#db8935"
-      blue="#66abc6" teal="#d9a86e" peach="#de88a6"
-      ;;
-    spore:*)
-      # spore "softest" — dark-only, so one branch serves both modes. overlay1
-      # and subtext0 take the lifted comment value; the profile's own bark is
-      # too flat to read as a sidebar foreground.
-      base_name="one-dark"
-      accent="#6f714e" panel_bg="#18231e" surface_dim="#1c2822"
-      surface0="#24302b" surface1="#3c3d34"
-      overlay0="#59584b" overlay1="#84836f"
-      text="#968a6a" subtext0="#84836f"
-      green="#6f714e" yellow="#978255" red="#8e6747"
-      blue="#6d735c" teal="#5a6e53" peach="#7c7150"
-      ;;
     oceanic:light|material:light)
       # material lighter (#FAFAFA, shared verbatim with the material family).
       # Comment darkened to #5d6d77. Sidebar
@@ -1372,7 +1135,7 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       green="#3fb950" yellow="#d29922" red="#ff7b72"
       blue="#58a6ff" teal="#76e3ea" peach="#ffa657"
       ;;
-    edge:light|edge-dim:light)
+    edge:light)
       # edge neon light (#fafafa) — comment darkened to #677182. Sidebar hues
       # darken the neon to clear 4.5:1 on the panel.
       base_name="one-light"
@@ -1391,17 +1154,6 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       surface0="#454b60" surface1="#525868"
       overlay0="#758094" overlay1="#9199a9"
       text="#c5cdd9" subtext0="#9ca4b2"
-      green="#a0c980" yellow="#deb974" red="#ee848a"
-      blue="#6cb6eb" teal="#5dbbc1" peach="#deb974"
-      ;;
-    edge-dim:*)
-      # edge aura dark, dim_foreground on — text drops to #97a4b5 and the
-      # comment #677287 lifts to #8a95a8. Accents are identical to edge:*.
-      base_name="one-dark"
-      accent="#ec7279" panel_bg="#333644" surface_dim="#3a3e4e"
-      surface0="#454b60" surface1="#525868"
-      overlay0="#677287" overlay1="#8a95a8"
-      text="#97a4b5" subtext0="#7f8a9c"
       green="#a0c980" yellow="#deb974" red="#ee848a"
       blue="#6cb6eb" teal="#5dbbc1" peach="#deb974"
       ;;

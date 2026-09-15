@@ -359,6 +359,10 @@
           {
             "type": "command",
             "command": "~/.claude/scripts/agent-model-guard.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/agent-foreground.sh"
           }
         ]
       },

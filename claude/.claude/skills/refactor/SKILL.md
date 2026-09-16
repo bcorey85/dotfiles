@@ -78,7 +78,7 @@ A refactor changes structure, not behavior — tests are the contract. **Never e
 
    **Log the finder** (every mode, even empty-handed) per `~/.claude/skills/_shared/finding-log.md` (read it): `gate=` the dispatched finder, `scope=branch-exit` (branch-audit) or `standalone`. Fires on pre-existing code too. Non-blocking.
 
-   **Test audit (conditional)**: dispatch `test-reviewer` (`model: "sonnet"`) when the refactor could change test guarantees (moved/split/merged logic, behavior-adjacent paths, touched test files, coder uncertainty). SKIP for purely mechanical refactors with green checks. Weakened/altered tests flagged → CRITICAL-rule violation: stop, alert the user.
+   **Test audit (conditional)**: dispatch `test-reviewer` (pinned; omit `model`) when the refactor could change test guarantees (moved/split/merged logic, behavior-adjacent paths, touched test files, coder uncertainty). SKIP for purely mechanical refactors with green checks. Weakened/altered tests flagged → CRITICAL-rule violation: stop, alert the user.
 
    **Auto-dispatch review**: tell the user you're auto-dispatching `/review`. Build a handoff block (`~/.claude/skills/_shared/handoff-block.md`: `files`, `tests-run`, `flagged`, `plan_impact`, `iter: 1`) and Skill-invoke `/review` with it + any modifier.
 

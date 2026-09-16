@@ -376,6 +376,32 @@ fg = "#4c4f69"
 bg = "#eff1f5"
 grey = "#6c6f85"
 
+# tokyonight storm, verbatim; grey is the lifted comment.
+[palettes.tokyonight-dark]
+red = "#f7768e"
+orange = "#ff9e64"
+yellow = "#e0af68"
+green = "#9ece6a"
+blue = "#7aa2f7"
+teal = "#1abc9c"
+purple = "#bb9af7"
+fg = "#c0caf5"
+bg = "#24283b"
+grey = "#8289a8"
+
+# tokyonight day — hues darkened to clear 4.5:1.
+[palettes.tokyonight-light]
+red = "#b01e49"
+orange = "#8f4b00"
+yellow = "#715732"
+green = "#4b6330"
+blue = "#225baa"
+teal = "#0d6957"
+purple = "#7440b7"
+fg = "#3760bf"
+bg = "#e1e2e7"
+grey = "#565b76"
+
 # aura dark soft = the dimmed variant (bg #15141b, soft-text accents).
 # DARK-ONLY, so the light palette below is a verbatim copy; the family name
 # still needs both keys because theme-mode selects `<family>-<mode>`. No

@@ -234,6 +234,20 @@ local FAMILIES = {
       end
     end,
   },
+  ["tokyonight"] = {
+    -- folke/tokyonight.nvim storm #24283b / day #e1e2e7.
+    schemes = { dark = "tokyonight-storm", light = "tokyonight-day" },
+    accents = {
+      dark = { heading1 = "#f7768e", heading = "#e0af68" },
+      light = { heading1 = "#b01e49", heading = "#715732" },
+    },
+    -- Comments are ~2.4:1 (storm) and ~2.5:1 (day). Lift to the values the
+    -- theme-mode tokyonight blocks carry.
+    fixup = function(mode)
+      local fg = mode == "light" and "#565b76" or "#8289a8"
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
+    end,
+  },
   ["github"] = {
     schemes = { dark = "github_dark", light = "github_light" },
     accents = {

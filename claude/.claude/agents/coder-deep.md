@@ -3,7 +3,7 @@ name: coder-deep
 description: "Opus-pinned coder — any repo, any layer. Dispatched by /code on `+deep`."
 model: opus
 color: yellow
-disallowedTools: Agent
+tools: Bash, Read, Edit, Write, LSP
 skills:
   - coder-core
 ---

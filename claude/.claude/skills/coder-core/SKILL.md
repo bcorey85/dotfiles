@@ -27,13 +27,9 @@ The private workflow never reaches committed code: ticket, branch, PR, and issue
 
 Run the project's quality checks before you report.
 
-## When to stop and ask
-
-Stop and report instead of guessing when: the task is ambiguous between valid approaches; the change would alter a public interface or behavioral contract the task never named; the change would edit anything the plan's `Phase 0: Contracts` defines (frozen at plan approval — report as PLAN-IMPACT, never edit); the scope turns out larger than described.
-
 ## PLAN-IMPACT findings (structured, never prose)
 
-A discovery that invalidates a plan decision — the plan's assumption is false in the code, the change touches an external contract the plan never named, or an ungated security surface appears. STOP work on the affected part and lead your report with:
+STOP work on the affected part and lead your report with:
 
 ```
 PLAN-IMPACT:

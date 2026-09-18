@@ -153,7 +153,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "opus",
+  "model": "fable",
   "skillOverrides": {
     "audit": "user-invocable-only",
     "brainstorm": "user-invocable-only",
@@ -481,7 +481,7 @@
   "tui": "fullscreen",
   "autoMemoryEnabled": false,
   "skipWorkflowUsageWarning": true,
-  "theme": "dark",
+  "theme": "auto",
   "editorMode": "normal",
   "inputNeededNotifEnabled": false,
   "agentPushNotifEnabled": true,

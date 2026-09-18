@@ -15,6 +15,10 @@ You edit files yourself. Never use the `Agent` tool, dispatch a subagent, run `/
 
 For one phase of a multi-phase plan, read the shared sections before the first phase, your own `## Phase N:` section, and `## Testing Strategy`. Skip sibling phases. If your phase needs a sibling's internals, that is a `PLAN-IMPACT` finding — report it, do not widen the read.
 
+## Check the plan against the code it names
+
+Before you use an existing type, function, or field that the plan describes, open its definition — never rely on the plan's summary of it. Where your code depends on what a value holds (you match, parse, or compute on it), also read the code that sets it. If the code differs from the plan — a field's meaning, a signature, a stored format — that is a `PLAN-IMPACT` finding even when you can work around it: report the block, and build only what the difference does not touch. Never adapt silently to either side.
+
 ## Tests are not yours (HARD RULE — coder/test-writer split)
 
 Test authorship belongs to the `test-writer` agent, dispatched after you return. You write NO tests and NO fixtures: never add one, never add, change, or delete an assertion in an existing one. When a signature change breaks existing test callers, list the needed mechanical compile-fixes in your report — the test-writer applies them. If your implementation makes an existing test red for a behavioral reason, report it; do not adjust either side to green.

@@ -7,8 +7,8 @@
 #
 # usage: resolve-task-dir.sh [<path-or-ticket>]
 #   <path>    existing directory -> used directly
-#   <ticket>  e.g. IQ-400 (case-insensitive) -> glob docs/plans/IQ-400-*/
-#             (task dir), else docs/plans/IQ-400*.md (legacy flat plan)
+#   <ticket>  e.g. ABC-400 (case-insensitive) -> glob docs/plans/ABC-400-*/
+#             (task dir), else docs/plans/ABC-400*.md (legacy flat plan)
 #   (empty)   infer ticket from the current branch name (TICKET-NUM-prefix)
 #
 # exit 0: exactly one task DIRECTORY match, printed on stdout. The plan inside

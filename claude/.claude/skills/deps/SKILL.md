@@ -5,7 +5,7 @@ description: Upgrade a dependency safely — mandatory breaking-change research 
 
 # Deps
 
-The global WebSearch-before-config rule applies in full here — this skill is its workflow.
+The orchestrator's WebSearch-before-config rule applies in full here — this skill is its workflow.
 
 ## Process
 

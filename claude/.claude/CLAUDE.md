@@ -23,7 +23,6 @@ Git conventions — branch and commit naming, focused diffs, worktree branches, 
 - Creating a NEW file from the shell (heredoc, redirection) bypasses the Write/Edit hook pipeline — use Write. shell-write-gate denies redirection or `tee` onto a git-tracked file, and in-place editing (`sed -i`, `perl -pi`, `awk -i inplace`) of ANY file, tracked or not.
 - Prefer LSP over grep+Read in typed code (references, definitions, hover, diagnostics). Fall back to `rg` for plain text or unindexed file types.
 - Verify CLI syntax with `--help` before guessing.
-- WebSearch before writing config, CI, infra, or library-integration code wherever the feedback loop is slow or remote: official docs, then GitHub issues, then write. Local configs verifiable in seconds are exempt — just test them. If research would take >5 minutes, say so and ask.
 
 ## Quality Checks & Failure Budget
 

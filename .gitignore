@@ -20,6 +20,8 @@ claude/.claude/*
 # Authored config shared across machines:
 !claude/.claude/agents/
 !claude/.claude/skills/
+# Stock skills the CLI syncs from the claude.ai account; regenerated, never authored.
+claude/.claude/skills/synced/
 !claude/.claude/hooks/
 !claude/.claude/rules/
 !claude/.claude/scripts/

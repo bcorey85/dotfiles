@@ -25,10 +25,9 @@ You run at branch end, after `/review` converged every phase — correctness is 
 | Manual Verification    | **you execute** what a terminal can drive; everything else is human |
 | Write access           | `Manual Verification` checkbox lines ONLY                           |
 
-**A dispatch naming `scope: phase <N>` is stale** — that gate is retired. Say so and stop; do
-not improvise a phase-scoped run.
+**A dispatch naming `scope: phase <N>` is stale** — say so and stop; do not improvise a phase-scoped run.
 
-Read plan + ticket in full — cross-phase reconciliation is your job, so `plan-reading.md`'s phase-scoping does not apply.
+Read plan + ticket in full.
 
 ## Job 1 — Reconcile
 
@@ -39,13 +38,13 @@ Verdict **every** item in scope:
   missing.
 - **`missing`** — no diff evidence. Say where you looked.
 
-**Skip anything under `What We're NOT Doing`.** A deliberate scope cut is not a gap.
+**Skip anything under `What We're NOT Doing`.**
 
-**Denominator first, never a bare zero.** State how many items you verdicted. No criteria at all → "no drift" is not a result; report `N/A — no criteria in scope; this gate did not run` — an unverdictable plan is itself worth the user's attention.
+**Denominator first, never a bare zero.** State how many items you verdicted. No criteria at all → report `N/A — no criteria in scope; this gate did not run`.
 
 ### Acceptance-criteria coverage (when `docs/plans/<slug>/acceptance-criteria.md` exists)
 
-Read that file — user-written behavior criteria, predating implementation. For **every** id in it, verdict:
+Read that file. For **every** id in it, verdict:
 
 - **covered** — name the test that asserts it, `file:line`, and say in one clause why that test
   fails if the criterion is violated.
@@ -54,17 +53,13 @@ Read that file — user-written behavior criteria, predating implementation. For
 - **MISSING** — no test asserts it. Quote the criterion verbatim. This is a `missing` item on
   the report, never a note.
 
-Judge by **behavior, not markers**: tests carry no ids to grep — read criterion, read candidate, decide whether it would actually fail if the behavior broke. A related-sounding name is not coverage.
-
-You cannot detect narrowing by counting, only by comparing the criterion's sentence against what the
-test actually asserts. Where they differ, quote both.
+Judge by **behavior, not markers**: tests carry no ids to grep — read criterion, read candidate, decide whether it would actually fail if the behavior broke. Where the criterion's sentence and the test's assertion differ, quote both.
 
 A criterion the work claims to have implemented must be covered by a test the suite actually
 **collects and runs** — a skipped, pending, or never-imported test is MISSING.
 
-**Any `partial` or `missing` → report Job 1, run the Automated Verification commands anyway
-(their output is what the user needs to triage the gap), but do NOT execute the Manual
-Verification items.**
+**Any `partial` or `missing` → report Job 1, run the Automated Verification commands anyway,
+but do NOT execute the Manual Verification items.**
 
 ## Job 2 — Execute
 
@@ -75,7 +70,7 @@ output. Do not fix anything that fails.
 
 ### Manual Verification — drive what a terminal can, tag the rest
 
-Runs only on clean Job 1. No Manual Verification items → say so and stop — that is not "behaviorally verified".
+Runs only on clean Job 1. No Manual Verification items → say so and stop.
 
 Execute what a terminal can drive and record by editing the item's line **in the plan**:
 
@@ -84,13 +79,13 @@ Execute what a terminal can drive and record by editing the item's line **in the
 - [ ] human-only: <item> — <why it cannot be driven from a terminal>
 ```
 
-**NO browser driving of any kind** — UI-level items are `human-only`, full stop; they accumulate into `/verify`'s smoke-test checklist.
+**NO browser driving of any kind** — UI-level items are `human-only`, full stop.
 
 **Never check an item without captured evidence** — observed output pasted from the run. An item you ran but can't show output for is `human-only`.
 
 ## Write scope — a hard fence
 
-**Your ONLY permitted edit is a `Manual Verification` checkbox line** — no code changes (gaps route to `/fix`), never `Success Criteria` / `acceptance-criteria.md` / `## Phase Status` (phase-done is your dispatcher's edit), never commit/stage/stash. Do not "fix" a criterion's wording — a wrong plan is a finding for the user.
+**Your ONLY permitted edit is a `Manual Verification` checkbox line** — no code changes, never `Success Criteria` / `acceptance-criteria.md` / `## Phase Status`, never commit/stage/stash. Do not "fix" a criterion's wording.
 
 ## Output Format
 
@@ -125,6 +120,6 @@ Execute what a terminal can drive and record by editing the item's line **in the
 
 ## What this is not
 
-- **Not a code review** — `/review` converged; a noticed bug gets one line under Gaps.
+- **Not a code review** — a noticed bug gets one line under Gaps.
 - **Not test-intent** — pinning is `test-intent-reviewer`'s question.
 - **Not plan judgment** — check delivery against plan-as-written (+ Deviations); a wrong plan is a user finding, not your rewrite.

@@ -26,10 +26,10 @@ Eight sections, in order. A fact fitting nowhere belongs in eng-arch or code.
 
 ## Discipline
 
-- **Status**: `Accepted` default. `Deprecated` when no longer in force. `Superseded by IQ-YYY` (with link) when replaced — and the replacement carries `Supersedes: IQ-XXX`, so the chain reads in both directions.
+- **Status**: `Accepted` default. `Deprecated` when no longer in force. `Superseded by ABC-YYY` (with link) when replaced — and the replacement carries `Supersedes: ABC-XXX`, so the chain reads in both directions.
 - **Body freezes at Accepted; header doesn't.** `Status`/`Supersedes`/`PR` stay mutable bookkeeping.
 - **Two legal post-Accepted body mutations**: 1. **Addendum** (dated line under `## Addenda`; never alters above). 2. **Supersession** (NEW record; flip `Status` here, leave body). Silent edits destroy the audit chain.
-- **Addendum format** — one line, ISO date, newest last (append-only): `- **YYYY-MM-DD** — [what happened]`. Tag the kind inline when it has one: `assumption broken:`, `escape IQ-XXX:`, `outcome:`.
+- **Addendum format** — one line, ISO date, newest last (append-only): `- **YYYY-MM-DD** — [what happened]`. Tag the kind inline when it has one: `assumption broken:`, `escape ABC-XXX:`, `outcome:`.
 - **Assumptions are testable or filler** — "valid while single-region" beats "reasonable scale".
 - **Reversibility is one line**: `two-way door` (cheap to undo) or `one-way door` (migration, published API, data model) plus one clause on why.
 - **No manufactured downsides**: trust `Alternatives rejected` to carry the trade-off load.
@@ -47,11 +47,11 @@ Apply `~/.claude/skills/_shared/skimmable-writing.md` in full, plus:
 ## Template
 
 ```markdown
-# IQ-XXX: [Feature name from ticket]
+# ABC-XXX: [Feature name from ticket]
 
 - **Status**: Accepted
-- **Supersedes**: [IQ-YYY](link) — omit if none
-- **Ticket**: [IQ-XXX](jira-url) — from `**URL:**` in the ticket; if no URL is recorded, use the key as plain text (do NOT invent a tracker URL)
+- **Supersedes**: [ABC-YYY](link) — omit if none
+- **Ticket**: [ABC-XXX](jira-url) — from `**URL:**` in the ticket; if no URL is recorded, use the key as plain text (do NOT invent a tracker URL)
 - **PR**: `(pending)` — normal at creation; becomes [repo#NNN](pr-url) once the PR opens
 - **Date**: YYYY-MM-DD
 - **Reversibility**: two-way door — [one clause] | one-way door — [one clause]
@@ -83,7 +83,7 @@ Apply `~/.claude/skills/_shared/skimmable-writing.md` in full, plus:
 <!-- ## Addenda — OMIT at creation. The first addendum adds the section. Append-only, newest last:
 - **YYYY-MM-DD** — outcome: [what happened]
 - **YYYY-MM-DD** — assumption broken: [which one, what changed]
-- **YYYY-MM-DD** — escape IQ-XXX: [defect traced back to this decision]
+- **YYYY-MM-DD** — escape ABC-XXX: [defect traced back to this decision]
 -->
 
 ## Related

@@ -3,8 +3,8 @@
 #
 # `basename "$(git rev-parse --show-toplevel)"` names the CHECKOUT, not the
 # repo. Inside a linked worktree that is the worktree directory, so one repo
-# logs under as many names as it has had worktrees — cb-semantic-layer,
-# cb-semantic-layer-IQ-1071, IQ-1208-measure-temporal-class — and every
+# logs under as many names as it has had worktrees — my-repo,
+# my-repo-ABC-123, ABC-456-some-feature — and every
 # per-repo rate splits silently across them.
 #
 # The common git dir always belongs to the MAIN worktree, so its parent is the

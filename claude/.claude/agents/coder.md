@@ -3,7 +3,7 @@ name: coder
 description: "The implementer for any repo and any layer — CLI tools, scripts, libraries, infra, config, HTTP services, databases, and user interfaces, including features that span client and server. Use for all implementation work; there is no frontend/backend variant to choose between."
 model: sonnet
 color: yellow
-disallowedTools: Agent
+tools: Bash, Read, Edit, Write, LSP
 skills:
   - coder-core
 ---

@@ -27,6 +27,7 @@ claude/.claude/skills/synced/
 !claude/.claude/scripts/
 !claude/.claude/output-styles/
 !claude/.claude/CLAUDE.md
+!claude/.claude/README.md
 !claude/.claude/orchestration.md
 !claude/.claude/settings.json
 !claude/.claude/keybindings.json

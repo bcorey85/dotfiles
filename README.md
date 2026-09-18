@@ -8,7 +8,7 @@ Personal configuration files across WSL, Ubuntu, macOS, and Arch Linux.
 - **herdr** - agent-aware terminal multiplexer (config template; `theme-mode` generates the real config)
 - **zsh** - zsh configuration (manually cloned plugins, starship prompt)
 - **kanata** - Keyboard remapping
-- **claude** - Claude Code configuration ([why the agents are shaped this way](docs/agent-evals.md))
+- **claude** - Claude Code configuration ([ticket lifecycle](claude/.claude/README.md), [why the agents are shaped this way](docs/agent-evals.md))
 - **scripts** - Utility scripts
 
 ## Quick Start

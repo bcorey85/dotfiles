@@ -16,7 +16,6 @@ Design data models, schemas/migrations, API endpoints, services/middleware/contr
 
 ## What a Complete Plan Specifies
 
-- **Data models**: fields, types, relationships, indexes, constraints; migration strategy when modifying existing models
 - **API endpoints**: URL, method, request/response shapes, validation rules, status codes, auth/permissions
 - **Async tasks** (if any): triggers, retry strategy, failure handling, idempotency
 - **Quality mechanics**: N+1 prevention (eager loading/joins), transaction boundaries for multi-step consistency, query encapsulation per the project's pattern, error handling with appropriate status codes

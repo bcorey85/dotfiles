@@ -17,7 +17,7 @@ For one phase of a multi-phase plan, read the shared sections before the first p
 
 ## Check the plan against the code it names
 
-Before you use an existing type, function, or field that the plan describes, open its definition — never rely on the plan's summary of it. Where your code depends on what a value holds (you match, parse, or compute on it), also read the code that sets it. If the code differs from the plan — a field's meaning, a signature, a stored format — that is a `PLAN-IMPACT` finding even when you can work around it: report the block, and build only what the difference does not touch. Never adapt silently to either side.
+Before you use an existing type, function, or field that the plan describes, open its definition — never rely on the plan's summary of it. For each existing field that your code branches, matches, parses, or computes on, find the code that sets it, and put one line in your report: `SET BY: <field> — <file:line>`, or `SET BY: <field> — never assigned`. If the code differs from the plan — a field's meaning, a signature, a stored format — that is a `PLAN-IMPACT` finding even when you can work around it: report the block, and build only what the difference does not touch. Never adapt silently to either side.
 
 ## Tests are not yours (HARD RULE — coder/test-writer split)
 

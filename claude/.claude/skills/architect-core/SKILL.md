@@ -36,7 +36,7 @@ Return every plan in this envelope (omit only genuinely-empty sections, saying s
 
 ## Refactor Candidates (proactive — surfaced for `/refactor`, NOT part of this plan)
 
-<While mapping the touched surface, flag PRE-EXISTING areas past a real smell threshold (duplication, god-file/function, layering violation, hand-rolled stdlib, dead patterns): location, smell, resolving refactor, blast radius. Proactive surfacing for `/refactor` — NOT plan work. Stated conventions beat generic best practice; ranked, capped, substantive-only. None-crossed is normal — never manufacture.>
+<pre-existing areas worth a separate refactor, or none>
 
 ## Success Criteria
 

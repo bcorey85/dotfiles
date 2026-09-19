@@ -481,7 +481,7 @@
   "tui": "fullscreen",
   "autoMemoryEnabled": false,
   "skipWorkflowUsageWarning": true,
-  "theme": "auto",
+  "theme": "dark",
   "editorMode": "normal",
   "inputNeededNotifEnabled": false,
   "agentPushNotifEnabled": true,

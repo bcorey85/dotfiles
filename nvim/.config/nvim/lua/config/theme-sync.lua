@@ -248,6 +248,19 @@ local FAMILIES = {
       vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
     end,
   },
+  ["rose-pine"] = {
+    schemes = { dark = "rose-pine-moon", light = "rose-pine-dawn" },
+    colors_name = "rose-pine",
+    accents = {
+      dark = { heading1 = "#eb6f92", heading = "#f6c177" },
+      light = { heading1 = "#995468", heading = "#8f6020" },
+    },
+    fixup = function(mode)
+      if mode == "light" then
+        vim.api.nvim_set_hl(0, "Comment", { fg = "#6a6781", italic = true })
+      end
+    end,
+  },
   ["github"] = {
     schemes = { dark = "github_dark", light = "github_light" },
     accents = {

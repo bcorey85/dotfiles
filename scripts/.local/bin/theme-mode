@@ -77,7 +77,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="vitesse"
 
-families() { printf '%s\n' vitesse flexoki bamboo gruvbox-material kanagawa thorn ember material github edge oceanic catppuccin tokyonight; }
+families() { printf '%s\n' vitesse flexoki bamboo gruvbox-material kanagawa thorn ember material github edge oceanic catppuccin tokyonight rose-pine; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   # vitesse: our port, dark #121212 / light #ffffff — custom files in
@@ -135,6 +135,9 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # tokyonight: ghostty BUILTINS — storm dark, day light.
     tokyonight:light)       echo "TokyoNight Day" ;;
     tokyonight:*)           echo "TokyoNight Storm" ;;
+    # rose-pine: ghostty BUILTINS — moon dark, dawn light.
+    rose-pine:light)        echo "Rose Pine Dawn" ;;
+    rose-pine:*)            echo "Rose Pine Moon" ;;
   esac
 }
 
@@ -200,6 +203,9 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # takes the neutral vitesse base.
     tokyonight:light)       echo "vitesse-light" ;;
     tokyonight:*)           echo "tokyo-night" ;;
+    # rose-pine IS a hunk builtin (moon + dawn) — used directly.
+    rose-pine:light)        echo "rose-pine-dawn" ;;
+    rose-pine:*)            echo "rose-pine-moon" ;;
   esac
 }
 
@@ -1131,6 +1137,32 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#c0caf5" subtext0="#a9b1d6"
       green="#9ece6a" yellow="#e0af68" red="#f7768e"
       blue="#7aa2f7" teal="#1abc9c" peach="#ff9e64"
+      ;;
+    rose-pine:light)
+      # rose pine dawn (#faf4ed, overlay panel) — every hue but pine, and the
+      # muted greys, darkened along hue to clear 4.5:1 on the panel. The
+      # palette has no green/orange: slots follow its ANSI (green = pine,
+      # blue = foam, cyan = rose), and rose doubles for peach.
+      base_name="one-light"
+      accent="#736287" panel_bg="#f2e9e1" surface_dim="#dfdad9"
+      surface0="#cecacd" surface1="#b3aeb9"
+      overlay0="#6c6875" overlay1="#6a6781"
+      text="#575279" subtext0="#6a6781"
+      green="#286983" yellow="#8f6020" red="#995468"
+      blue="#417079" teal="#945a57" peach="#945a57"
+      ;;
+    rose-pine:*)
+      # rose pine moon (#232136, surface panel) — verbatim except pine
+      # (#3e8fb0 is ~3.9:1), subtle and muted, lifted to clear 4.5:1 on the
+      # panel. Chrome is the highlight med/high ramp so the focused row
+      # clears it.
+      base_name="one-dark"
+      accent="#c4a7e7" panel_bg="#2a273f" surface_dim="#44415a"
+      surface0="#56526e" surface1="#6e6a86"
+      overlay0="#918ea3" overlay1="#918dab"
+      text="#e0def4" subtext0="#918dab"
+      green="#4f99b7" yellow="#f6c177" red="#eb6f92"
+      blue="#9ccfd8" teal="#ea9a97" peach="#ea9a97"
       ;;
     material:*)
       # material darker (neutral #212121) — comment lifted to #848b93. Chrome

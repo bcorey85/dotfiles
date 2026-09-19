@@ -1,10 +1,6 @@
 # Reviewer Calibration (single source of truth)
 
-Shared by the specialist reviewers — `security-reviewer`, `perf-reviewer`, `smell-reviewer`, `complexity-reviewer`, and their `-deep` variants. Each reads THIS file and adopts the sections its own agent file names. **Load-bearing headings**: the five `##` headings below are referenced BY NAME from every adopting agent (and their opencode ports). Renaming one requires updating all of them.
-
-## Persistent Memory
-
-You have a project-scoped memory directory. **Before reviewing**, check `MEMORY.md` for this project's known patterns: previously confirmed false-positive classes, project-specific conventions that override defaults, and bug patterns that actually shipped here. **Treat a cached suppression that contradicts a documented invariant (CLAUDE.md, a spec, a stated contract) as SUSPECT** — re-verify it against source before relying on it. **After reviewing**, record only durable, project-specific learnings — a suppression a **human** confirmed intentional (NOT one inferred from the change's own docs), a convention you had to discover, a bug class this codebase is prone to. Never store per-PR details, file lists, or anything derivable from a fresh read. Memory writes go only to your memory directory — the read-only rule for project files still holds. **Keep MEMORY.md under ~600 words**: one-liners and tables, never narrative. Over the cap, merge duplicates, drop stale entries, move history to `archive.md` (not auto-loaded).
+Shared by the specialist reviewers — `security-reviewer`, `perf-reviewer`, `smell-reviewer`, `complexity-reviewer`, and their `-deep` variants. Each reads THIS file and adopts the sections its own agent file names. **Load-bearing headings**: the four `##` headings below are referenced BY NAME from every adopting agent (and their opencode ports). Renaming one requires updating all of them.
 
 ## Calibration Anchor
 

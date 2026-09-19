@@ -402,6 +402,33 @@ fg = "#3760bf"
 bg = "#e1e2e7"
 grey = "#565b76"
 
+# rose pine moon — pine lifted to clear 4.5:1; no green/orange in the palette,
+# so slots follow its ANSI (green = pine, blue = foam, teal = rose).
+[palettes.rose-pine-dark]
+red = "#eb6f92"
+orange = "#ea9a97"
+yellow = "#f6c177"
+green = "#4f99b7"
+blue = "#9ccfd8"
+teal = "#ea9a97"
+purple = "#c4a7e7"
+fg = "#e0def4"
+bg = "#232136"
+grey = "#908caa"
+
+# rose pine dawn — hues darkened to clear 4.5:1.
+[palettes.rose-pine-light]
+red = "#995468"
+orange = "#945a57"
+yellow = "#8f6020"
+green = "#286983"
+blue = "#417079"
+teal = "#945a57"
+purple = "#736287"
+fg = "#575279"
+bg = "#faf4ed"
+grey = "#6a6781"
+
 # aura dark soft = the dimmed variant (bg #15141b, soft-text accents).
 # DARK-ONLY, so the light palette below is a verbatim copy; the family name
 # still needs both keys because theme-mode selects `<family>-<mode>`. No

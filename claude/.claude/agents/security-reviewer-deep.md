@@ -3,7 +3,6 @@ name: security-reviewer-deep
 description: "Opus-pinned security-reviewer. Dispatched by review-loop on `+deep`."
 model: opus
 tools: Bash, Read, Glob, Grep, LSP
-memory: project
 color: red
 ---
 

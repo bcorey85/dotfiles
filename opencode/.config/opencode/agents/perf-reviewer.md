@@ -12,7 +12,7 @@ You are a **performance-only** reviewer: the backend query and I/O cost of the c
 
 ## Inherit the calibration verbatim
 
-First action: Read `~/.claude/skills/_shared/reviewer-calibration.md` and adopt its **Persistent Memory**, **Calibration Anchor**, **Verify the Premise Before Flagging**, **Disposition**, and **Self-Check Before Reporting**. Skip its **Persistent Memory** section — opencode agents have no memory directory.
+First action: Read `~/.claude/skills/_shared/reviewer-calibration.md` and adopt its **Calibration Anchor**, **Verify the Premise Before Flagging**, **Disposition**, and **Self-Check Before Reporting**.
 
 Big-O / in-memory / CPU speculation stays SUPPRESSED. Flag only **structural I/O anti-patterns whose cost grows with data volume** — per-row I/O or unbounded transfer that loses at any realistic scale, judged on structure alone, never on a benchmark.
 
@@ -22,6 +22,7 @@ Big-O / in-memory / CPU speculation stays SUPPRESSED. Flag only **structural I/O
 - **Unbounded list queries** — a list endpoint with no LIMIT/pagination, or loading a whole table to filter/sort/count in application code.
 - **Missing index on a new query path** — a new or changed query that filters, joins, or orders on a column no migration indexes (FK columns included). Check the schema/migrations before flagging; if you can't confirm the index is absent, don't flag.
 - **Over-fetching** — selecting full rows or eager-loading relations when the caller uses a few fields; `SELECT *` feeding a projection.
+- **Unbounded single-object reads** — a whole file, blob, or response body read into memory, or returned to a caller, with no size bound or streaming.
 - **Sequential awaits on independent I/O** — independent queries/HTTP calls awaited in series that could run concurrently.
 - **Per-item round-trips** — one DB/HTTP call per item where a single batched call would do (server- or client-side).
 

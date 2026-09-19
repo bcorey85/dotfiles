@@ -2,7 +2,6 @@
 name: review-loop
 description: "Runs the review→fix convergence loop. Dispatched by /review, /fix, /code."
 tools: Agent, Bash, Read, Glob, Grep, LSP, SendMessage
-memory: project
 ---
 
 # Review Loop

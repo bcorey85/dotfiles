@@ -3,7 +3,6 @@ name: perf-reviewer-deep
 description: "Opus-pinned perf-reviewer. Dispatched by review-loop on `+deep`."
 model: opus
 tools: Bash, Read, Glob, Grep, LSP
-memory: project
 color: yellow
 ---
 

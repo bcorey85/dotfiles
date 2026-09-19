@@ -16,9 +16,6 @@ Design data models, schemas/migrations, API endpoints, services/middleware/contr
 
 ## What a Complete Plan Specifies
 
-- **API endpoints**: URL, method, request/response shapes, validation rules, status codes, auth/permissions
-- **Async tasks** (if any): triggers, retry strategy, failure handling, idempotency
-- **Quality mechanics**: N+1 prevention (eager loading/joins), transaction boundaries for multi-step consistency, query encapsulation per the project's pattern, error handling with appropriate status codes
 - **Deviations** from existing patterns, each with the reason
 
 ## Plan Body Sections (backend)
@@ -53,9 +50,7 @@ Every NEW helper/service/util this plan introduces must appear here with one lin
 
 ## Edge Cases to Explicitly Address
 
-Verify each applies to the project's actual stack before including it (e.g., route ordering is irrelevant in convention-routed frameworks like Rails or Django). Projects can extend or replace this list via a project-level agent override in `.claude/agents/`.
+Verify each applies to the project's actual stack before including it. Projects can extend or replace this list via a project-level agent override in `.claude/agents/`.
 
 - **No-op behavior**: What happens when the operation results in no state change? (e.g., moving an item to its current position, updating a field to its current value). Specify whether to return early, what to return, and whether to emit events.
-- **Route ordering**: When adding sub-resource routes (e.g., `:id/action`), note that they must be declared before the generic `:id` route.
-- **Validator precision**: For numeric or boolean fields where falsy values (0, false) are valid, specify the correct validation strategy to avoid rejecting legitimate input.
 - **Return type for conditional operations**: If some code paths have side effects and others don't (no-op), design the return type to communicate this to the caller (e.g., `{ entity, changed: boolean }`).

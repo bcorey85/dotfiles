@@ -3,7 +3,6 @@ name: code-reviewer-deep
 description: "Opus-pinned code-reviewer. Dispatched by /review on `+deep`."
 model: opus
 tools: Bash, Read, Glob, Grep, LSP
-memory: project
 color: cyan
 ---
 

@@ -164,6 +164,18 @@ Singleton {
             green: "#4b6330", red: "#b01e49", teal: "#0d6957",
             orange: "#8f4b00", yellow: "#715732", magenta: "#7440b7"
         },
+        "rose-pine-dark": {
+            bg: "#232136", panel: "#2a273f", border: "#44415a",
+            fg: "#e0def4", muted: "#918dab",
+            green: "#4f99b7", red: "#eb6f92", teal: "#ea9a97",
+            orange: "#ea9a97", yellow: "#f6c177", magenta: "#c4a7e7"
+        },
+        "rose-pine-light": {
+            bg: "#faf4ed", panel: "#f2e9e1", border: "#cecacd",
+            fg: "#575279", muted: "#6a6781",
+            green: "#286983", red: "#995468", teal: "#945a57",
+            orange: "#945a57", yellow: "#8f6020", magenta: "#736287"
+        },
         "aura-dark": {
             bg: "#15141b", panel: "#1e1c28", border: "#3b3557",
             fg: "#bdbdbd", muted: "#8e8e8e",

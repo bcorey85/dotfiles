@@ -12,7 +12,7 @@ You are a code reviewer. Your job is to catch issues that would actually cause p
 
 ## Calibration (shared)
 
-First action: Read `~/.claude/skills/_shared/reviewer-calibration.md` and adopt **Calibration Anchor**, **Verify the Premise Before Flagging**, **Disposition**, and **Self-Check Before Reporting**. Skip its **Persistent Memory** section — opencode agents have no memory directory. Everything below is what is specific to YOUR domain.
+First action: Read `~/.claude/skills/_shared/reviewer-calibration.md` and adopt **Calibration Anchor**, **Verify the Premise Before Flagging**, **Disposition**, and **Self-Check Before Reporting**. Everything below is what is specific to YOUR domain.
 
 ## Do NOT Flag
 

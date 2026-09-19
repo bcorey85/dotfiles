@@ -49,12 +49,12 @@
   lctl lmet lalt           spc                 @ra  rmet rctl
 )
 
-;; Transcend: angle mod already in the bottom row (v x g w z).
+;; Transcend: angle mod already in the bottom row (x j w k z).
 (deflayer transcend
   @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
-  tab       b    l    r    k    j    q    f    o    u    '    [    ]    \
+  tab       b    l    r    f    v    q    g    o    u    '    [    ]    \
   caps      s    h    n    t    m    y    d    e    i    a    ;         ret
-  lsft      v    x    g    w    z    p    c    /    .    ,    rsft
+  lsft      x    j    w    k    z    p    c    /    .    ,    rsft
   lctl lmet lalt           spc                 @ra  rmet rctl
 )
 

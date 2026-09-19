@@ -19,6 +19,10 @@ For one phase of a multi-phase plan, read the shared sections before the first p
 
 Before you use an existing type, function, or field that the plan describes, open its definition — never rely on the plan's summary of it. For each existing field that your code branches, matches, parses, or computes on, find the code that sets it, and put one line in your report: `SET BY: <field> — <file:line>`, or `SET BY: <field> — never assigned`. If the code differs from the plan — a field's meaning, a signature, a stored format — that is a `PLAN-IMPACT` finding even when you can work around it: report the block, and build only what the difference does not touch. Never adapt silently to either side.
 
+## Copy import paths, never guess them
+
+Before your first import of one of the repo's own packages, copy the import path from an existing import or the module manifest.
+
 ## Tests are not yours (HARD RULE — coder/test-writer split)
 
 Test authorship belongs to the `test-writer` agent, dispatched after you return. You write NO tests and NO fixtures: never add one, never add, change, or delete an assertion in an existing one. When a signature change breaks existing test callers, list the needed mechanical compile-fixes in your report — the test-writer applies them. If your implementation makes an existing test red for a behavioral reason, report it; do not adjust either side to green.

@@ -49,6 +49,15 @@
   lctl lmet lalt           spc                 @ra  rmet rctl
 )
 
+;; Transcend: angle mod already in the bottom row (v x g w z).
+(deflayer transcend
+  @grl      1    2    3    4    5    6    7    8    9    0    -    =   bspc
+  tab       b    l    r    k    j    q    f    o    u    '    [    ]    \
+  caps      s    h    n    t    m    y    d    e    i    a    ;         ret
+  lsft      v    x    g    w    z    p    c    /    .    ,    rsft
+  lctl lmet lalt           spc                 @ra  rmet rctl
+)
+
 (defalias
   ;; Home row mods - left hand (nsht) - GACS
   n (tap-hold-release 200 200 n lmet)
@@ -93,6 +102,7 @@
   grl (tap-hold-release 200 200 grv (layer-toggle layers))
   qwr (layer-switch qwerty)
   stu (layer-switch sturdy)
+  trn (layer-switch transcend)
   la (layer-while-held l1)
   ra (tap-hold-release 200 200 ralt (layer-toggle ralt-layer))
 )
@@ -106,7 +116,7 @@
 )
 
 (deflayer layers
-_    @qwr @stu _    _    _    _    _    _    _    _    _    _    _
+_    @qwr @trn @stu _    _  _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _    _
   _    _    _    _    _    _    _    _    _    _    _    _

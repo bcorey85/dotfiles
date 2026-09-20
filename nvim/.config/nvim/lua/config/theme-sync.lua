@@ -8,7 +8,7 @@
 -- and ghostty too — one source of truth, all ways.
 --
 -- This module also owns every theme-reactive highlight override (markdown
--- headings, gitsigns word-diff, per-family fixups), re-applied on ColorScheme,
+-- headings, gitsigns word-diff), re-applied on ColorScheme,
 -- so a family switch always lands with the right set. Plugin specs stay pure
 -- plugin declarations. Keep FAMILIES in sync with theme-mode's registry and
 -- the ghostty/herdr theme files.
@@ -17,7 +17,7 @@ local M = {}
 
 local MODE_FILE = vim.env.HOME .. "/.cache/theme-mode"
 local FAMILY_FILE = vim.env.HOME .. "/.cache/theme-family"
-local DEFAULT_FAMILY = "vitesse"
+local DEFAULT_FAMILY = "flexoki"
 
 -- alpha-blend two hex colours (a = share of c1).
 local function blend(c1, c2, a)
@@ -29,27 +29,9 @@ local function blend(c1, c2, a)
   return "#" .. table.concat(out)
 end
 
--- Registry shape: the mode axis, the fixup hook and the state-file plumbing
--- all key off this table — adding a family is an entry here plus theme-mode's
+-- Registry shape: the mode axis and the state-file plumbing both key off this table — adding a family is an entry here plus theme-mode's
 -- cases and the ghostty/herdr files.
 local FAMILIES = {
-  ["vitesse"] = {
-    -- bcorey85/vitesse.nvim: our own port of antfu's Vitesse, DARK + LIGHT. Off-
-    -- black #121212 / white #ffffff, desaturated low-halation accents. Single
-    -- colorscheme "vitesse" follows vim.o.background, so pin colors_name.
-    schemes = { dark = "vitesse", light = "vitesse" },
-    colors_name = "vitesse",
-    accents = {
-      dark = { heading1 = "#d9739f", heading = "#e6cc77" }, -- magenta + yellow
-      light = { heading1 = "#a13865", heading = "#bda437" },
-    },
-    -- antfu's comments read low: #758575 ~3.9:1 on #121212, #a0ada0 ~2.3:1 on
-    -- #ffffff. Lift both to clear 4.5:1 (prose readability > authored hue).
-    fixup = function(mode)
-      local fg = mode == "light" and "#6b7a6b" or "#78877a"
-      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
-    end,
-  },
   ["flexoki"] = {
     -- kepano/flexoki-neovim: one colorscheme "flexoki" switches via
     -- vim.o.background (dark #100f0f / light #fffcf0), so both modes share
@@ -60,15 +42,6 @@ local FAMILIES = {
       dark = { heading1 = "#8b7ec8", heading = "#4385be" }, -- purple + blue (400)
       light = { heading1 = "#5e409d", heading = "#205ea6" }, -- purple + blue (600)
     },
-    -- Comment floor: flexoki's stock comment is deliberately faint and fails the
-    -- 4.5:1 floor in both modes (dark base-700 #575653 is ~2.5:1 on #100f0f;
-    -- light base-300 #b7b5ac is ~1.9:1 on #fffcf0). Lift to base-500 #878580
-    -- dark (~5.3:1) and base-600 #6f6e69 light (~4.9:1). Flexoki comments are not
-    -- italic, so this stays flat — nvim_set_hl replaces the whole group.
-    fixup = function(mode)
-      local fg = mode == "light" and "#6f6e69" or "#878580"
-      vim.api.nvim_set_hl(0, "Comment", { fg = fg })
-    end,
   },
   ["bamboo"] = {
     -- ribru17/bamboo.nvim: one colorscheme "bamboo" picks its style from
@@ -82,16 +55,6 @@ local FAMILIES = {
       dark = { heading1 = "#ed839d", heading = "#ffb38c" },
       light = { heading1 = "#95202d", heading = "#a7431d" },
     },
-    -- Comment floor: the `Comment` group is light_grey #838781, which misses
-    -- 4.5:1 in both modes (~4.2:1 on #252623, ~3.5:1 on #fafae0). Lift to
-    -- #8e938c dark (~4.9:1) and #66695f light (~5.3:1). Treesitter's @comment
-    -- is a separate, already-legible colour (bg_yellow) and is left alone.
-    -- bamboo's comments are italic, so keep the slant (nvim_set_hl replaces
-    -- the whole group).
-    fixup = function(mode)
-      local fg = mode == "light" and "#66695f" or "#8e938c"
-      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
-    end,
   },
   ["gruvbox-material"] = {
     -- sainnhe/gruvbox-material, HARD background, foreground = "original" — the
@@ -111,168 +74,45 @@ local FAMILIES = {
       dark = { heading1 = "#fb4934", heading = "#fabd2f" }, -- red + yellow
       light = { heading1 = "#9d0006", heading = "#b57614" },
     },
-    -- Comment #928374 misses 4.5:1 on both hard grounds.
-    -- gruvbox-material italicizes comments by default; keep the slant.
-    fixup = function(mode)
-      local fg = mode == "light" and "#776a5e" or "#9e8d7d"
-      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
-    end,
-  },
-  ["thorn"] = {
-    -- jpwol/thorn.nvim: minimal green, one colorscheme per style.
-    schemes = { dark = "thorn-forest", light = "thorn-field" },
-    accents = {
-      dark = { heading1 = "#b8cdb6", heading = "#9ebb9c" },
-      light = { heading1 = "#8dae5a", heading = "#92ac3f" },
-    },
-    -- green_5 comment is ~3.6:1 on #172526, ~2.6:1 on #f9fdce; italic.
-    fixup = function(mode)
-      local fg = mode == "light" and "#6f7452" or "#6e9a8a"
-      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
-    end,
-  },
-  ["ember"] = {
-    -- ember-theme/nvim: darkest variant dark, warmest light.
-    schemes = { dark = "ember", light = "ember-light" },
-    accents = {
-      dark = { heading1 = "#e08060", heading = "#c09058" },
-      light = { heading1 = "#b84c30", heading = "#946030" },
-    },
-    -- base6 comment is ~3.3:1 / ~3.5:1; both move to base7. Italic.
-    fixup = function(mode)
-      local fg = mode == "light" and "#605848" or "#908a7e"
-      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
-    end,
-  },
-  ["kanagawa"] = {
-    -- rebelot/kanagawa.nvim. Unlike every other family, kanagawa ships one
-    -- colorscheme PER variant rather than switching on vim.o.background — so
-    -- the schemes differ by mode. Both still register colors_name "kanagawa",
-    -- so that is pinned for the override guard.
-    schemes = { dark = "kanagawa-wave", light = "kanagawa-lotus" },
-    colors_name = "kanagawa",
-    accents = {
-      dark = { heading1 = "#e46876", heading = "#e6c384" }, -- red + yellow
-      light = { heading1 = "#b35b79", heading = "#836f4a" },
-    },
-    fixup = function(mode)
-      local fg = mode == "light" and "#6a6a5e" or "#908f85"
-      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
-    end,
-  },
-  ["edge"] = {
-    -- sainnhe/edge, AURA style (the dimmed style): dimmed chrome #2b2d37
-    -- dark / #fafafa light (light has no styles). One colorscheme follows
-    -- vim.o.background and sets colors_name "edge" in both, so it is pinned.
-    -- The style global is read at :colorscheme time, hence `pre`: the
-    -- ghostty/hunk/herdr/starship palettes all encode aura-style chrome.
-    schemes = { dark = "edge", light = "edge" },
-    colors_name = "edge",
-    pre = function()
-      vim.g.edge_style = "aura"
-    end,
-    accents = {
-      dark = { heading1 = "#ec7279", heading = "#deb974" }, -- red + yellow
-      light = { heading1 = "#c93f3f", heading = "#9a6604" },
-    },
-    -- Comment floor: grey #758094 is ~3.4:1 on #2c2e34 and #8790a0 is ~3.1:1
-    -- on #fafafa. Lift to #9199a9 / darken to #677182, the values theme-mode's
-    -- edge blocks already carry. edge italicizes comments unless
-    -- disable_italic_comment is set, so keep the slant. @comment links through
-    -- TSComment to Comment, so the one group covers treesitter too.
-    fixup = function(mode)
-      local fg = mode == "light" and "#677182" or "#9199a9"
-      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
-    end,
-  },
-  ["material"] = {
-    -- marko-cerovac/material.nvim, "darker" #212121 / "lighter" #FAFAFA. One
-    -- colorscheme PER style, so the schemes differ by mode, but every style
-    -- registers colors_name "material" — pinned, the kanagawa pattern. The
-    -- style files set vim.g.material_style themselves, so no pre() hook.
-    schemes = { dark = "material-darker", light = "material-lighter" },
-    colors_name = "material",
-    accents = {
-      dark = { heading1 = "#F07178", heading = "#FFCB6B" }, -- red + yellow
-      light = { heading1 = "#B20602", heading = "#8a5a00" },
-    },
-    -- The faintest comments in the set: #515151 is ~2.0:1 on #212121 and
-    -- #AABFC9 is ~1.8:1 on #FAFAFA. Lift to #848b93 / darken to #5d6d77, the
-    -- values theme-mode's material blocks already carry. material's comments
-    -- are flat unless styles.comments asks otherwise.
-    fixup = function(mode)
-      local fg = mode == "light" and "#5d6d77" or "#848b93"
-      vim.api.nvim_set_hl(0, "Comment", { fg = fg })
-    end,
-  },
-  ["oceanic"] = {
-    -- material.nvim's "oceanic" style (teal-slate #25363B) as its own family,
-    -- sharing the "lighter" light half with `material` — upstream ships no
-    -- light oceanic. Same vehicle, so colors_name is still "material".
-    schemes = { dark = "material-oceanic", light = "material-lighter" },
-    colors_name = "material",
-    accents = {
-      dark = { heading1 = "#f47f88", heading = "#FFCB6B" }, -- red + yellow
-      light = { heading1 = "#B20602", heading = "#8a5a00" },
-    },
-    -- Comment #546E7A is ~2.3:1 on #25363B, lifted to #93a3ae (~4.8:1); the
-    -- light half is the material fixup verbatim. Flat, as material ships them.
-    fixup = function(mode)
-      local fg = mode == "light" and "#5d6d77" or "#93a3ae"
-      vim.api.nvim_set_hl(0, "Comment", { fg = fg })
-    end,
-  },
-  ["catppuccin"] = {
-    schemes = { dark = "catppuccin-frappe", light = "catppuccin-latte" },
-    accents = {
-      dark = { heading1 = "#e78284", heading = "#e5c890" },
-      light = { heading1 = "#d20f39", heading = "#9a6200" },
-    },
-    fixup = function(mode)
-      if mode == "light" then
-        vim.api.nvim_set_hl(0, "Comment", { fg = "#6c6f85", italic = true })
-      end
-    end,
   },
   ["tokyonight"] = {
     -- folke/tokyonight.nvim storm #24283b / day #e1e2e7.
     schemes = { dark = "tokyonight-storm", light = "tokyonight-day" },
     accents = {
       dark = { heading1 = "#f7768e", heading = "#e0af68" },
-      light = { heading1 = "#b01e49", heading = "#715732" },
+      light = { heading1 = "#f52a65", heading = "#8c6c3e" },
     },
-    -- Comments are ~2.4:1 (storm) and ~2.5:1 (day). Lift to the values the
-    -- theme-mode tokyonight blocks carry.
-    fixup = function(mode)
-      local fg = mode == "light" and "#565b76" or "#8289a8"
-      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
-    end,
   },
-  ["rose-pine"] = {
-    schemes = { dark = "rose-pine-moon", light = "rose-pine-dawn" },
-    colors_name = "rose-pine",
+  ["onedark"] = {
+    schemes = { dark = "onedark", light = "onedark" },
+    pre = function(mode)
+      require("onedark").setup({ style = mode })
+    end,
+    accents = {
+      dark = { heading1 = "#e86671", heading = "#e5c07b" },
+      light = { heading1 = "#e45649", heading = "#986801" },
+    },
+  },
+  ["dracula"] = {
+    schemes = { dark = "dracula", light = "alucard" },
+    accents = {
+      dark = { heading1 = "#FF79C6", heading = "#BD93F9" },
+      light = { heading1 = "#A3144D", heading = "#644AC9" },
+    },
+  },
+  ["nightfox"] = {
+    schemes = { dark = "nightfox", light = "dayfox" },
+    accents = {
+      dark = { heading1 = "#c94f6d", heading = "#dbc074" },
+      light = { heading1 = "#a5222f", heading = "#AC5402" },
+    },
+  },
+  ["duskfox"] = {
+    schemes = { dark = "duskfox", light = "dawnfox" },
     accents = {
       dark = { heading1 = "#eb6f92", heading = "#f6c177" },
-      light = { heading1 = "#995468", heading = "#8f6020" },
+      light = { heading1 = "#b4637a", heading = "#ea9d34" },
     },
-    fixup = function(mode)
-      if mode == "light" then
-        vim.api.nvim_set_hl(0, "Comment", { fg = "#6a6781", italic = true })
-      end
-    end,
-  },
-  ["github"] = {
-    schemes = { dark = "github_dark", light = "github_light" },
-    accents = {
-      dark = { heading1 = "#ff7b72", heading = "#d29922" },
-      light = { heading1 = "#d1242f", heading = "#9a6700" },
-    },
-    fixup = function(mode)
-      if mode == "light" then
-        return
-      end
-      vim.api.nvim_set_hl(0, "Comment", { fg = "#9aa4ae" })
-    end,
   },
 }
 
@@ -394,7 +234,7 @@ local function set_org_agenda()
 end
 
 -- Runs on every ColorScheme. A manual :colorscheme (theme audition) won't
--- match the active family's scheme — skip its fixup/accents and apply only
+-- match the active family's scheme — skip its accents and apply only
 -- the theme-agnostic word-diff glue, so auditions aren't painted over.
 local function apply_overrides()
   local family, mode = M.read_state()
@@ -403,9 +243,6 @@ local function apply_overrides()
   -- register ONE shared colors_name (!= schemes[mode]); set fam.colors_name to
   -- it so this match still fires.
   if vim.g.colors_name == (fam.colors_name or fam.schemes[mode]) then
-    if fam.fixup then
-      fam.fixup(mode) -- before word-diff: it reads the Diff* bgs set here
-    end
     set_headings(fam.accents[mode])
   end
   set_word_diff()

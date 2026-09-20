@@ -18,7 +18,7 @@
 # header — any key after a table header belongs to that table. Placed below a
 # palette, `format` silently became palettes.<name>.format and starship fell
 # back to the default `$all` format (which pulls in $aws et al.).
-palette = "vitesse-dark"
+palette = "flexoki-dark"
 
 format = """
 $directory\
@@ -30,41 +30,8 @@ $cmd_duration\
 $line_break\
 $character"""
 
-# vitesse dark (antfu's Vitesse, off-black #121212). `orange`/`peach` is
-# vitesse orange #d4976c; `purple` is magenta #d9739f. `grey` is comment #5c6b5e.
-[palettes.vitesse-dark]
-red = "#cb7676"
-orange = "#d4976c"
-yellow = "#e6cc77"
-green = "#4d9375"
-blue = "#6394bf"
-teal = "#5eaab5"
-purple = "#d9739f"
-fg = "#c8c5b8"
-bg = "#121212"
-grey = "#5c6b5e"
-
-# vitesse light (antfu's Vitesse light, white #ffffff). Prompt colors are
-# foreground-on-white, so the theme's own ANSI is the starting point but not the
-# whole answer: green/blue/purple clear 4.5:1 as authored and are verbatim,
-# while yellow #bda437 (~2.6:1), teal #2993a3 (~3.2:1) and red #ab5959 (~4.3:1)
-# do not and are darkened. `grey` is the comment, lifted to #626e62 (nvim's
-# light fixup #6b7a6b lands ~4.1:1 here, just under the floor).
-[palettes.vitesse-light]
-red = "#9e4d4d"
-orange = "#a15d28"
-yellow = "#7d6a1e"
-green = "#1e754f"
-blue = "#296aa3"
-teal = "#1f7080"
-purple = "#a13865"
-fg = "#393a34"
-bg = "#ffffff"
-grey = "#626e62"
-
-# flexoki dark (kepano's "moon", black #100f0f). 400-level accents, verbatim —
-# they clear 4.5:1 on the black. `grey` is base-500 #878580, the lifted comment
-# nvim/hunk use, not flexoki's stock base-700 (~2.5:1). teal doubles the blue:
+# flexoki dark (kepano's "moon", black #100f0f). 400-level accents, verbatim.
+# `grey` is base-700, the stock comment. teal doubles the blue:
 # flexoki's cyan-400 #3aa99f is a distinct hue but reads as a second green next
 # to green-400 in a prompt.
 [palettes.flexoki-dark]
@@ -77,10 +44,10 @@ teal = "#4385be"
 purple = "#8b7ec8"
 fg = "#cecdc3"
 bg = "#100f0f"
-grey = "#878580"
+grey = "#575653"
 
 # flexoki light (kepano's "dawn", paper #fffcf0). 600-level accents, verbatim.
-# `grey` is base-600 #6f6e69 (~4.9:1 on paper).
+# `grey` is base-300, the stock comment.
 [palettes.flexoki-light]
 red = "#af3029"
 orange = "#bc5215"
@@ -91,11 +58,10 @@ teal = "#205ea6"
 purple = "#5e409d"
 fg = "#100f0f"
 bg = "#fffcf0"
-grey = "#6f6e69"
+grey = "#b7b5ac"
 
-# bamboo vulgaris (ribru17's dark, warm green-brown #252623). Accents verbatim
-# — they all clear 4.5:1 on the canvas. `grey` is light_grey #838781 lifted to
-# #8e938c, the same value nvim's comment fixup uses.
+# bamboo vulgaris (ribru17's dark, warm green-brown #252623), verbatim.
+# `grey` is light_grey.
 [palettes.bamboo-dark]
 red = "#e75a7c"
 orange = "#ff9966"
@@ -106,29 +72,23 @@ teal = "#70c2be"
 purple = "#aaaaff"
 fg = "#f1e9d2"
 bg = "#252623"
-grey = "#8e938c"
+grey = "#838781"
 
-# bamboo light (warm cream #fafae0). Prompt colors are foreground-on-cream, so
-# the theme's own palette is the starting point but not the whole answer:
-# purple/blue/red clear 4.5:1 as authored and are verbatim, while orange #df5926
-# (~3.5:1), yellow #a77b00 (~3.6:1), teal/cyan #188a9e (~3.8:1) and green
-# #27850b (~4.5:1 borderline) are darkened. `grey` is #66695f, nvim's light
-# comment fixup (the theme's own grey #a1a7a0 is ~2.3:1).
+# bamboo light (warm cream #fafae0), verbatim.
 [palettes.bamboo-light]
 red = "#c72a3c"
-orange = "#be4c20"
-yellow = "#8e6900"
-green = "#23780a"
+orange = "#df5926"
+yellow = "#a77b00"
+green = "#27850b"
 blue = "#1745d5"
-teal = "#167c8e"
+teal = "#188a9e"
 purple = "#8a4adf"
 fg = "#3a4238"
 bg = "#fafae0"
-grey = "#66695f"
+grey = "#838781"
 
 # gruvbox-material HARD dark, foreground=original — accents are original
-# gruvbox's, the ground is a stop darker (#1d2021 vs medium's #282828). `grey`
-# is #9e8d7d, nvim's dark comment fixup (#928374 is 4.47:1 on #1d2021).
+# gruvbox's, the ground is a stop darker (#1d2021 vs medium's #282828).
 [palettes.gruvbox-material-dark]
 red = "#fb4934"
 orange = "#fe8019"
@@ -139,244 +99,22 @@ teal = "#8ec07c"
 purple = "#d3869b"
 fg = "#ebdbb2"
 bg = "#1d2021"
-grey = "#9e8d7d"
+grey = "#928374"
 
 # gruvbox-material HARD light (#f9f5d7, lighter than gruvbox's medium cream).
-# yellow/green/teal darkened for 4.5:1.
 [palettes.gruvbox-material-light]
 red = "#9d0006"
 orange = "#af3a03"
-yellow = "#96610f"
-green = "#746f0d"
+yellow = "#b57614"
+green = "#79740e"
 blue = "#076678"
-teal = "#407755"
+teal = "#427b58"
 purple = "#8f3f71"
 fg = "#3c3836"
 bg = "#f9f5d7"
-grey = "#776a5e"
+grey = "#928374"
 
-# kanagawa wave (blue-ink #1f1f28). Verbatim upstream. `grey` is
-# #908f85, nvim's dark comment fixup (wave's own #727169 is ~3.3:1).
-[palettes.kanagawa-dark]
-red = "#e46876"
-orange = "#ffa066"
-yellow = "#e6c384"
-green = "#98bb6c"
-blue = "#7e9cd8"
-teal = "#7aa89f"
-purple = "#957fb8"
-fg = "#dcd7ba"
-bg = "#1f1f28"
-grey = "#908f85"
-
-# kanagawa lotus (warm cream #f2ecbc). The lightest ground in the set, so most
-# of lotus's own accents miss 4.5:1: only blue #4d699b (~4.6:1) and purple
-# #624c83 (~6.1:1) survive verbatim; red, orange, yellow, green and teal are all
-# darkened. `grey` is #6a6a5e, nvim's light comment fixup.
-[palettes.kanagawa-light]
-red = "#b93b4c"
-orange = "#a15400"
-yellow = "#796644"
-green = "#5a6f3e"
-blue = "#4d699b"
-teal = "#506e69"
-purple = "#624c83"
-fg = "#545464"
-bg = "#f2ecbc"
-grey = "#6a6a5e"
-
-# thorn forest — the theme's own ANSI slots (see ghostty/themes/thorn-dark).
-# It has no purple, so peach stands in.
-[palettes.thorn-dark]
-red = "#d2696c"
-orange = "#f2a597"
-yellow = "#ffd7aa"
-green = "#94c68b"
-blue = "#91c4c0"
-teal = "#87cbb1"
-purple = "#f2a597"
-fg = "#dbd2c7"
-bg = "#172526"
-grey = "#9b9a8c"
-
-# thorn field. Its authored light hues sit at 2.5-4:1 on the cream ground, so
-# every slot here is darkened along its own hue to clear 4.5:1.
-[palettes.thorn-light]
-red = "#b0453f"
-orange = "#a04b28"
-yellow = "#8a6a1e"
-green = "#516f21"
-blue = "#366660"
-teal = "#2a7342"
-purple = "#a04b28"
-fg = "#3d4a2b"
-bg = "#f9fdce"
-grey = "#74694e"
-
-# ember (darkest variant). Rose/olive/gold/steel/sage/mauve from the theme's
-# own term map; orange is the hero coral.
-[palettes.ember-dark]
-red = "#b07878"
-orange = "#e08060"
-yellow = "#c8b468"
-green = "#8a9868"
-blue = "#7890a0"
-teal = "#80a090"
-purple = "#988090"
-fg = "#d8d0c0"
-bg = "#1c1b19"
-grey = "#908a7e"
-
-# ember-light (warmest variant), darkened to clear 4.5:1 on parchment.
-[palettes.ember-light]
-red = "#874a4a"
-orange = "#a44024"
-yellow = "#6b5a18"
-green = "#4a6830"
-blue = "#3a6080"
-teal = "#386858"
-purple = "#665766"
-fg = "#282418"
-bg = "#e6dac4"
-grey = "#605848"
-
-# material darker (neutral #212121, vivid). Verbatim palette; grey is the
-# lifted comment value.
-[palettes.material-dark]
-red = "#F07178"
-orange = "#F78C6C"
-yellow = "#FFCB6B"
-green = "#C3E88D"
-blue = "#82AAFF"
-teal = "#89DDFF"
-purple = "#C792EA"
-fg = "#B0BEC5"
-bg = "#212121"
-grey = "#848b93"
-
-# material lighter (#FAFAFA). Neon darkened along hue to clear 4.5:1; grey is
-# the darkened comment value.
-[palettes.material-light]
-red = "#B20602"
-orange = "#b23a12"
-yellow = "#8a5a00"
-green = "#4e6f1f"
-blue = "#3a5b9b"
-teal = "#056a72"
-purple = "#7C4DFF"
-fg = "#546E7A"
-bg = "#FAFAFA"
-grey = "#5d6d77"
-
-# github dark (primer gray canvas #30363d, vivid primer). Accents verbatim;
-# grey is #8b949e lifted to #9aa4ae (~4.8:1) on this lighter ground.
-[palettes.github-dark]
-red = "#ff7b72"
-orange = "#ffa657"
-yellow = "#d29922"
-green = "#3fb950"
-blue = "#58a6ff"
-teal = "#76e3ea"
-purple = "#bc8cff"
-fg = "#e6edf3"
-bg = "#30363d"
-grey = "#9aa4ae"
-
-# github light default (white #ffffff). Verbatim primer; grey is the stock
-# comment value, which clears unmodified.
-[palettes.github-light]
-red = "#d1242f"
-orange = "#bc4c00"
-yellow = "#9a6700"
-green = "#1a7f37"
-blue = "#0969da"
-teal = "#1b7f8b"
-purple = "#8250df"
-fg = "#1f2328"
-bg = "#ffffff"
-grey = "#57606a"
-
-# edge aura dark (dimmed style, bg #2b2d37). Accents identical across
-# styles, so only bg moves; grey is the lifted comment value.
-[palettes.edge-dark]
-red = "#ec7279"
-orange = "#deb974"
-yellow = "#deb974"
-green = "#a0c980"
-blue = "#6cb6eb"
-teal = "#5dbbc1"
-purple = "#d38aea"
-fg = "#c5cdd9"
-bg = "#2b2d37"
-grey = "#9199a9"
-
-# edge neon light (#fafafa). Accents darkened along hue to clear 4.5:1.
-[palettes.edge-light]
-red = "#c93f3f"
-orange = "#9a6604"
-yellow = "#9a6604"
-green = "#537a2b"
-blue = "#4570b9"
-teal = "#337b75"
-purple = "#a545c5"
-fg = "#4b505b"
-bg = "#fafafa"
-grey = "#677182"
-
-# material oceanic (teal-slate #25363B, vivid). Red lifted along hue to
-# clear 4.5:1; grey is the lifted comment value.
-[palettes.oceanic-dark]
-red = "#f47f88"
-orange = "#F78C6C"
-yellow = "#FFCB6B"
-green = "#C3E88D"
-blue = "#82AAFF"
-teal = "#89DDFF"
-purple = "#C792EA"
-fg = "#B0BEC5"
-bg = "#25363B"
-grey = "#93a3ae"
-
-# material lighter (shared verbatim with the material family).
-[palettes.oceanic-light]
-red = "#B20602"
-orange = "#b23a12"
-yellow = "#8a5a00"
-green = "#4e6f1f"
-blue = "#3a5b9b"
-teal = "#056a72"
-purple = "#7C4DFF"
-fg = "#546E7A"
-bg = "#FAFAFA"
-grey = "#5d6d77"
-
-# catppuccin frappe, verbatim.
-[palettes.catppuccin-dark]
-red = "#e78284"
-orange = "#ef9f76"
-yellow = "#e5c890"
-green = "#a6d189"
-blue = "#8caaee"
-teal = "#81c8be"
-purple = "#ca9ee6"
-fg = "#c6d0f5"
-bg = "#303446"
-grey = "#949cbb"
-
-# catppuccin latte — green/yellow/teal/orange darkened to clear 4.5:1.
-[palettes.catppuccin-light]
-red = "#d20f39"
-orange = "#b84700"
-yellow = "#9a6200"
-green = "#2f7a1f"
-blue = "#1e66f5"
-teal = "#10727a"
-purple = "#8839ef"
-fg = "#4c4f69"
-bg = "#eff1f5"
-grey = "#6c6f85"
-
-# tokyonight storm, verbatim; grey is the lifted comment.
+# tokyonight storm, verbatim.
 [palettes.tokyonight-dark]
 red = "#f7768e"
 orange = "#ff9e64"
@@ -387,47 +125,124 @@ teal = "#1abc9c"
 purple = "#bb9af7"
 fg = "#c0caf5"
 bg = "#24283b"
-grey = "#8289a8"
+grey = "#565f89"
 
-# tokyonight day — hues darkened to clear 4.5:1.
+# tokyonight day, verbatim.
 [palettes.tokyonight-light]
-red = "#b01e49"
-orange = "#8f4b00"
-yellow = "#715732"
-green = "#4b6330"
-blue = "#225baa"
-teal = "#0d6957"
-purple = "#7440b7"
+red = "#f52a65"
+orange = "#b15c00"
+yellow = "#8c6c3e"
+green = "#587539"
+blue = "#2e7de9"
+teal = "#118c74"
+purple = "#9854f1"
 fg = "#3760bf"
 bg = "#e1e2e7"
-grey = "#565b76"
+grey = "#848cb5"
 
-# rose pine moon — pine lifted to clear 4.5:1; no green/orange in the palette,
-# so slots follow its ANSI (green = pine, blue = foam, teal = rose).
-[palettes.rose-pine-dark]
+# onedark dark (navarasu/onedark.nvim), verbatim.
+[palettes.onedark-dark]
+red = "#e86671"
+orange = "#d19a66"
+yellow = "#e5c07b"
+green = "#98c379"
+blue = "#61afef"
+teal = "#56b6c2"
+purple = "#c678dd"
+fg = "#abb2bf"
+bg = "#282c34"
+grey = "#5c6370"
+
+# onedark light, verbatim.
+[palettes.onedark-light]
+red = "#e45649"
+orange = "#c18401"
+yellow = "#986801"
+green = "#50a14f"
+blue = "#4078f2"
+teal = "#0184bc"
+purple = "#a626a4"
+fg = "#383a42"
+bg = "#fafafa"
+grey = "#a0a1a7"
+
+# dracula dark (dracula/vim), verbatim. No blue upstream; cyan stands in.
+[palettes.dracula-dark]
+red = "#FF5555"
+orange = "#FFB86C"
+yellow = "#F1FA8C"
+green = "#50FA7B"
+blue = "#8BE9FD"
+teal = "#8BE9FD"
+purple = "#BD93F9"
+fg = "#F8F8F2"
+bg = "#282A36"
+grey = "#6272A4"
+
+# dracula light (alucard), verbatim. No blue upstream; cyan stands in.
+[palettes.dracula-light]
+red = "#CB3A2A"
+orange = "#A34D14"
+yellow = "#846E15"
+green = "#14710A"
+blue = "#036A96"
+teal = "#036A96"
+purple = "#644AC9"
+fg = "#1F1F1F"
+bg = "#FFFBEB"
+grey = "#6C664B"
+
+# nightfox (EdenEast/nightfox.nvim), verbatim.
+[palettes.nightfox-dark]
+red = "#c94f6d"
+orange = "#f4a261"
+yellow = "#dbc074"
+green = "#81b29a"
+blue = "#719cd6"
+teal = "#63cdcf"
+purple = "#9d79d6"
+fg = "#cdcecf"
+bg = "#192330"
+grey = "#738091"
+
+# dayfox, verbatim.
+[palettes.nightfox-light]
+red = "#a5222f"
+orange = "#955f61"
+yellow = "#AC5402"
+green = "#396847"
+blue = "#2848a9"
+teal = "#287980"
+purple = "#6e33ce"
+fg = "#3d2b5a"
+bg = "#f6f2ee"
+grey = "#837a72"
+
+# duskfox, verbatim.
+[palettes.duskfox-dark]
 red = "#eb6f92"
 orange = "#ea9a97"
 yellow = "#f6c177"
-green = "#4f99b7"
-blue = "#9ccfd8"
-teal = "#ea9a97"
+green = "#a3be8c"
+blue = "#569fba"
+teal = "#9ccfd8"
 purple = "#c4a7e7"
 fg = "#e0def4"
 bg = "#232136"
-grey = "#908caa"
+grey = "#817c9c"
 
-# rose pine dawn — hues darkened to clear 4.5:1.
-[palettes.rose-pine-light]
-red = "#995468"
-orange = "#945a57"
-yellow = "#8f6020"
-green = "#286983"
-blue = "#417079"
-teal = "#945a57"
-purple = "#736287"
+# dawnfox, verbatim.
+[palettes.duskfox-light]
+red = "#b4637a"
+orange = "#d7827e"
+yellow = "#ea9d34"
+green = "#618774"
+blue = "#286983"
+teal = "#56949f"
+purple = "#907aa9"
 fg = "#575279"
 bg = "#faf4ed"
-grey = "#6a6781"
+grey = "#9893a5"
 
 # aura dark soft = the dimmed variant (bg #15141b, soft-text accents).
 # DARK-ONLY, so the light palette below is a verbatim copy; the family name

@@ -3,11 +3,6 @@
 -- image: renders markdown image links and ```mermaid fences inline via the
 -- Kitty Graphics Protocol. Degrades gracefully when dependencies are absent.
 --
--- zen: centered floating window for focused reading. Width is 120 (the zen
--- default) — fits most markdown tables; render-markdown tables shatter when
--- soft-wrap splits a row, so wider matters more than ideal prose measure.
--- Revert to 100 if prose comfort wins.
---
 -- Runtime binary deps (image):
 --   ImageMagick — installed via install/deps on all platforms
 --   mermaid-cli — npm-only, manual install: npm i -g @mermaid-js/mermaid-cli (mmdc binary)
@@ -165,7 +160,12 @@ return {
         -- dim is off: we don't need the dim module and don't want other windows
         -- darkened — pane zoom already provides visual isolation.
         toggles = { dim = false },
-        win = { style = "zen", width = 120 },
+        win = {
+          style = "zen",
+          width = 100,
+          backdrop = { transparent = false, blend = 99 },
+          wo = { number = false, relativenumber = false },
+        },
         -- on_close: every exit path (q, <leader>z, :q, herdr zoom keybinding)
         -- triggers this; cleanup restores readonly/modifiable and removes the
         -- q map.
@@ -184,7 +184,6 @@ return {
       },
     })
 
-    -- Toggle zen mode: centered 120-col window, pairs with herdr zoom.
     vim.keymap.set("n", "<leader>z", function()
       Snacks.zen()
     end, { desc = "Zen mode (centered, width-capped)" })

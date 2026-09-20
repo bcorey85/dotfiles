@@ -14,6 +14,8 @@ os:
   # regardless of the setting, because a nonzero exit has output worth reading.
   editPreset: nvim
 gui:
+  # <C-d>/<C-u> main-panel scroll step (default 2); 10 matches the nvim binds.
+  scrollHeight: 10
   # Reclaim horizontal space for the diff. The side panel is narrow while you
   # read a diff and only widens when you focus it.
   sidePanelWidth: 0.2

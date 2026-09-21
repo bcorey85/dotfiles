@@ -1,6 +1,6 @@
 ---
 name: refactor
-description: Smart refactorer — specialist finds, coders fix, `/review` gates. Four modes. Branch audit (default, no/generic args) sweeps the branch diff via a smell-reviewer finder dispatch. Targeted ("refactor X") refactors named code. Audit (`audit <dir|module>`) sweeps PRE-EXISTING code for global DRY violations and pattern drift — mechanical clone detection + smell-reviewer judgment, report-only work list, no coders. Simplify (`simplify <dir|module>`) asks what could be DELETED if a module were shaped differently — branch thickets, one-implementation indirection, unused configurability, guards a boundary kills — via complexity-reviewer. Use for "refactor X", "clean up X", "second pass", end-of-branch cleanup, "DRY audit / debt audit of <module>", or "simplify X / this is too complex / reduce the complexity in X".
+description: Smart refactorer — specialist finds, coders fix, `/review` gates. Four modes, by args: branch audit (default, sweeps the branch diff), targeted ("refactor X"), `audit <dir|module>` (pre-existing DRY violations and pattern drift, report-only), `simplify <dir|module>` (what a module could DELETE if reshaped, via complexity-reviewer). Use for "refactor X", "clean up X", "second pass", end-of-branch cleanup, "DRY audit of <module>", "simplify X / this is too complex".
 allowed-tools: [Agent, Bash, Read, Glob, Grep, Skill]
 ---
 

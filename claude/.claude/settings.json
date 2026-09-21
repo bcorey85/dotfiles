@@ -173,7 +173,21 @@
     "vault-ask": "user-invocable-only",
     "vault-progress": "user-invocable-only",
     "vault-review": "user-invocable-only",
-    "weekly-recap": "user-invocable-only"
+    "weekly-recap": "user-invocable-only",
+    "docs": "off",
+    "docx": "off",
+    "pdf": "off",
+    "pptx": "off",
+    "xlsx": "off",
+    "morning": "off",
+    "import-memory": "off",
+    "anthropic-skills:docs": "off",
+    "anthropic-skills:docx": "off",
+    "anthropic-skills:pdf": "off",
+    "anthropic-skills:pptx": "off",
+    "anthropic-skills:xlsx": "off",
+    "anthropic-skills:morning": "off",
+    "anthropic-skills:import-memory": "off"
   },
   "hooks": {
     "Notification": [
@@ -455,7 +469,13 @@
     "typescript-lsp@claude-plugins-official": true,
     "ponytail@ponytail": false,
     "simple-english@simple-english": false,
-    "gopls-lsp@claude-plugins-official": true
+    "gopls-lsp@claude-plugins-official": false,
+    "chrome-devtools-mcp@chrome-devtools-plugins": false,
+    "figma@claude-plugins-official": false,
+    "playwright@claude-plugins-official": false,
+    "frontend-design@claude-plugins-official": false,
+    "ralph-loop@claude-plugins-official": false,
+    "sonarqube-agent-plugins@claude-plugins-official": false
   },
   "extraKnownMarketplaces": {
     "ponytail": {

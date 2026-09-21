@@ -64,6 +64,21 @@ local FAMILIES = {
       light = { heading1 = "#9d0006", heading = "#b57614" },
     },
   },
+  ["edge"] = {
+    schemes = { dark = "edge", light = "edge" },
+    colors_name = "edge",
+    pre = function()
+      vim.g.edge_style = "aura"
+    end,
+    accents = {
+      dark = { heading1 = "#ec7279", heading = "#deb974" },
+      light = { heading1 = "#c93f3f", heading = "#9a6604" },
+    },
+    fixup = function(mode)
+      local fg = mode == "light" and "#677182" or "#9199a9"
+      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
+    end,
+  },
   ["tokyonight"] = {
     -- folke/tokyonight.nvim storm #24283b / day #e1e2e7.
     schemes = { dark = "tokyonight-storm", light = "tokyonight-day" },
@@ -230,6 +245,9 @@ local function apply_overrides()
   -- it so this match still fires.
   if vim.g.colors_name == (fam.colors_name or fam.schemes[mode]) then
     set_headings(fam.accents[mode])
+    if fam.fixup then
+      fam.fixup(mode)
+    end
   end
   set_word_diff()
   set_org_agenda()

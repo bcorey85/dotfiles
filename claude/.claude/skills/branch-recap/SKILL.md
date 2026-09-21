@@ -26,7 +26,7 @@ Nothing unstaged → receipt line `residue: none — all phases staged clean`.
 
 ## Step 2: Deferred-findings queue
 
-One-round-per-phase residue comes due here — skip this step and deferral was deletion.
+Per-phase residue of the review round budget comes due here — skip this step and deferral was deletion.
 
 ```bash
 jq -c --arg b "$(git branch --show-current)" \
@@ -62,7 +62,7 @@ Spec: <task-dir>
 - <denominator, always: "N of M pre-existing tests searched" or "coverage-net N/A — base suite had 0 tests, this gate did not run">
 - <any REQUIRES-MUTATION items with their KILLED/SURVIVED/EQUIVALENT/INDETERMINATE verdicts, or marked unrouted-and-open>
 
-### Deferred findings             (one-round budget, read at branch bound)
+### Deferred findings             (round budget, read at branch bound)
 - <fixed / stale / carried, one line each, with the gate and disposition each came from; or "none">
 
 ### Smoke-test checklist          (from the /verify closing phase)

@@ -136,6 +136,33 @@ fg = "#6a6a6a"
 bg = "#fafafa"
 grey = "#bebebe"
 
+# edge aura dark (dimmed style, bg #2b2d37). Accents identical across
+# styles, so only bg moves; grey is the lifted comment value.
+[palettes.edge-dark]
+red = "#ec7279"
+orange = "#deb974"
+yellow = "#deb974"
+green = "#a0c980"
+blue = "#6cb6eb"
+teal = "#5dbbc1"
+purple = "#d38aea"
+fg = "#c5cdd9"
+bg = "#2b2d37"
+grey = "#9199a9"
+
+# edge neon light (#fafafa). Accents darkened along hue to clear 4.5:1.
+[palettes.edge-light]
+red = "#c93f3f"
+orange = "#9a6604"
+yellow = "#9a6604"
+green = "#537a2b"
+blue = "#4570b9"
+teal = "#337b75"
+purple = "#a545c5"
+fg = "#4b505b"
+bg = "#fafafa"
+grey = "#677182"
+
 # dracula dark (dracula/vim), verbatim. No blue upstream; cyan stands in.
 [palettes.dracula-dark]
 red = "#FF5555"

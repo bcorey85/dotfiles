@@ -77,7 +77,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="onedarkpro"
 
-families() { printf '%s\n' onedarkpro bamboo gruvbox-material tokyonight dracula nightfox duskfox; }
+families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   # A family whose halves are ghostty BUILTINS (spaces and all) needs no file
@@ -101,6 +101,10 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # custom files in ghostty/themes/.
     onedarkpro:light)       echo "onedarkpro-light" ;;
     onedarkpro:*)           echo "onedarkpro-dark" ;;
+    # edge is not a ghostty builtin — custom files in ghostty/themes/, aura
+    # style dark and the darkened-along-hue neon light.
+    edge:light)             echo "edge-light" ;;
+    edge:*)                 echo "edge-dark" ;;
     # dracula: BUILTIN matches dracula/vim's terminal map; alucard is custom.
     dracula:light)          echo "dracula-light" ;;
     dracula:*)              echo "Dracula" ;;
@@ -137,6 +141,11 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # one-dark-pro and one-light are Binaryify's palettes, not olimorris's.
     onedarkpro:light)       echo "one-light" ;;
     onedarkpro:*)           echo "one-dark-pro" ;;
+    # edge has no hunk builtin — the vitesse pair is the neutral base (blue-gray
+    # dark, plain-white light). Both halves are only the BASE of a
+    # [custom_theme].
+    edge:light)             echo "vitesse-light" ;;
+    edge:*)                 echo "vitesse-dark" ;;
     # hunk has no alucard; light takes the neutral vitesse base.
     dracula:light)          echo "vitesse-light" ;;
     dracula:*)              echo "dracula" ;;
@@ -373,6 +382,37 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       konst="#d19a66"; esc="#56b6c2"; cmt="#7f848e"; mem="#e06c75"; param="#e06c75"
       attr="#c678dd"; tag="#e06c75"; vbi="#e5c07b"; imp="#c678dd"; pre="#e5c07b"
       prim="#e5c07b"; ns="#e5c07b"; mac="#61afef"; bfn="#e5c07b"
+      ;;
+    edge:light)
+      # edge neon light (#fafafa). Chrome from CursorLine/Visual. Diff washes
+      # verbatim. Comment #8790a0 is ~3.1:1, darkened to #677182 (~4.7:1) to
+      # match the nvim fixup. Roles darken along hue to clear 4.5:1.
+      bg="#fafafa"; panel="#eef1f4"; panelAlt="#e8ebf0"; border="#ccd3db"
+      accent="#d05858"; accentMuted="#ccd3db"; text="#4b505b"; muted="#677182"
+      addedBg="#e5eee4"; removedBg="#f6e4e4"; ctxBg="#fafafa"
+      sAdd="#537a2b"; sRem="#c93f3f"; lnFg="#bac3cb"
+      badgeAdd="#537a2b"; badgeRem="#c93f3f"; badgeNeu="#4570b9"
+      fRename="#a545c5"; fMod="#9a6604"; fUntracked="#677182"; note="#eef1f4"
+      # edge-light roles: keyword red, string green, number yellow, fn blue,
+      # type purple, punctuation muted, operator fg.
+      kw="#c93f3f"; str="#537a2b"; num="#9a6604"; fn="#4570b9"; typ="#a545c5"; punct="#677182"; op="#4b505b"
+      cmt="#677182"
+      ;;
+    edge:*)
+      # edge aura dark (dimmed style, bg #2b2d37). Chrome from the aura ramp/
+      # Pmenu. Diff washes verbatim. Comment #758094 is ~3.4:1, lifted to
+      # #9199a9 (~4.7:1) to match the nvim fixup. Keyword is purple
+      # in-theme (not red), number follows string green.
+      bg="#2b2d37"; panel="#333644"; panelAlt="#3a3e4e"; border="#454b60"
+      accent="#ec7279"; accentMuted="#454b60"; text="#c5cdd9"; muted="#9199a9"
+      addedBg="#394634"; removedBg="#55393d"; ctxBg="#2c2e34"
+      sAdd="#a0c980"; sRem="#ec7279"; lnFg="#535c6a"
+      badgeAdd="#a0c980"; badgeRem="#ec7279"; badgeNeu="#6cb6eb"
+      fRename="#d38aea"; fMod="#deb974"; fUntracked="#9199a9"; note="#333644"
+      # edge roles: keyword purple, string/number green, fn blue, type
+      # yellow, punctuation muted, operator fg.
+      kw="#d38aea"; str="#a0c980"; num="#a0c980"; fn="#6cb6eb"; typ="#deb974"; punct="#9199a9"; op="#c5cdd9"
+      cmt="#9199a9"
       ;;
     # nightfox.nvim, all four verbatim from the plugin's own spec: chrome is
     # bg0/bg2/bg3, diff washes are spec.diff.add/delete, roles are spec.syntax
@@ -794,6 +834,28 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#abb2bf" subtext0="#7f848e"
       green="#98c379" yellow="#e5c07b" red="#e06c75"
       blue="#61afef" teal="#56b6c2" peach="#d19a66"
+      ;;
+    edge:light)
+      # edge neon light (#fafafa) — comment darkened to #677182. Sidebar hues
+      # darken the neon to clear 4.5:1 on the panel.
+      base_name="one-light"
+      accent="#d05858" panel_bg="#eef1f4" surface_dim="#e8ebf0"
+      surface0="#dde3ea" surface1="#ccd3db"
+      overlay0="#8790a0" overlay1="#677182"
+      text="#4b505b" subtext0="#626b7c"
+      green="#4f7429" yellow="#926104" red="#c23737"
+      blue="#416aaf" teal="#31756f" peach="#926104"
+      ;;
+    edge:*)
+      # edge aura dark (dimmed style, bg #2b2d37) — comment lifted to #9199a9. No
+      # orange slot in the palette, so yellow doubles for peach.
+      base_name="one-dark"
+      accent="#ec7279" panel_bg="#333644" surface_dim="#3a3e4e"
+      surface0="#454b60" surface1="#525868"
+      overlay0="#758094" overlay1="#9199a9"
+      text="#c5cdd9" subtext0="#9ca4b2"
+      green="#a0c980" yellow="#deb974" red="#ee848a"
+      blue="#6cb6eb" teal="#5dbbc1" peach="#deb974"
       ;;
     dracula:light)
       # alucard (#fffbeb, bglighter panel) — verbatim. No blue upstream; purple

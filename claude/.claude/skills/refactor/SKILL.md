@@ -80,7 +80,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
    **Test audit (conditional)**: dispatch `test-reviewer` (pinned; omit `model`) when the refactor could change test guarantees (moved/split/merged logic, behavior-adjacent paths, touched test files, coder uncertainty). SKIP for purely mechanical refactors with green checks. Weakened/altered tests flagged → CRITICAL-rule violation: stop, alert the user.
 
-   **Auto-dispatch review**: tell the user you're auto-dispatching `/review`. Build a handoff block (`~/.claude/skills/_shared/handoff-block.md`: `files`, `tests-run`, `flagged`, `plan_impact`, `iter: 1`) and Skill-invoke `/review` with it + any modifier.
+   **Auto-dispatch review**: tell the user you're auto-dispatching `/review`. Build a handoff block (`~/.claude/skills/_shared/handoff-block.md`: `files`, `tests-run`, `flagged`, `plan_impact`, `iter: 0`) and Skill-invoke `/review` with it + any modifier.
 
 6. **Audit mode — global DRY / pattern sweep of pre-existing code. Report-only: no coders, no `/review`, no code changes.**
 

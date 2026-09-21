@@ -47,7 +47,7 @@ Thin wrapper over the `review-loop` agent: dispatch it, render the returned pack
    ```bash
    bash "$HOME/.claude/skills/review/log-review-finding" kind=finding \
      repo="$(basename "$(git rev-parse --show-toplevel)")" branch="$(git branch --show-current)" \
-     lane=none scope=standalone phase=- iter=<iter from args, default 1> \
+     lane=none scope=standalone phase=- iter=<returned iter> \
      gate=<entry gate> disposition=ask class=<entry class> file=<path> line=<n> \
      actioned=ask ask_outcome=<accepted|rejected|modified> desc="ask resolved: <one line>"
    ```

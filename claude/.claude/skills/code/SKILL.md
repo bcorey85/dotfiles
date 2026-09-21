@@ -68,7 +68,7 @@ Route on its report:
 
 4. **After the coder and the test-writer complete**: if the coder report carries a `PLAN-IMPACT:` block, raise it via AskUserQuestion (assumed → found → what changes; options `Adopt plan change` / `Keep plan as written` / `Discuss`) before anything else, and record the answer under the plan's `## Plan Deviations` (create if absent). Then summarize for the user: what was implemented, issues flagged, follow-up items, and the coder's `WHY:` lines grouped by file as `path:start-end — <note>` (omit when every coder reported `WHY: none`).
 
-5. **Dispatch review**: first build the handoff block per `~/.claude/skills/_shared/handoff-block.md`: `files` (path, one-line change, `why` from the coder's WHY lines), `tests-run` from the test-writer's report, `flagged` (incl. UNDERSPECIFIED and resolved FAILING-TEST outcomes, or `none`), `plan_impact` (the block plus the user's decision, or `none`), `iter: 1`. Never dispatch without it. Then tell the user "Auto-dispatching review to check the implementation before committing." Then `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"`, passing `mode: review-first`, `caller: code`, `lane: <lane>`, `plan: <path>` and `phase: <N>` for the phase under review (omit `phase` when the plan file holds one phase or none, omit both when the plan was pasted), `reviewers: <domains>` verbatim from the phase's Phase Status line when it has one (omit when the tag reads `none`), the handoff block, and any `+fast`/`+deep` modifier plus any specialist flag (`+sec`/`+perf`/`+smell`/`no-specialist`).
+5. **Dispatch review**: first build the handoff block per `~/.claude/skills/_shared/handoff-block.md`: `files` (path, one-line change, `why` from the coder's WHY lines), `tests-run` from the test-writer's report, `flagged` (incl. UNDERSPECIFIED and resolved FAILING-TEST outcomes, or `none`), `plan_impact` (the block plus the user's decision, or `none`), `iter: 0`. Never dispatch without it. Then tell the user "Auto-dispatching review to check the implementation before committing." Then `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"`, passing `mode: review-first`, `caller: code`, `lane: <lane>`, `plan: <path>` and `phase: <N>` for the phase under review (omit `phase` when the plan file holds one phase or none, omit both when the plan was pasted), `reviewers: <domains>` verbatim from the phase's Phase Status line when it has one (omit when the tag reads `none`), the handoff block, and any `+fast`/`+deep` modifier plus any specialist flag (`+sec`/`+perf`/`+smell`/`no-specialist`).
 
    Route on the returned `status`, first match wins:
 
@@ -81,7 +81,7 @@ Route on its report:
      ```bash
      bash "$HOME/.claude/skills/review/log-review-finding" kind=finding \
        repo="$(basename "$(git rev-parse --show-toplevel)")" branch="$(git branch --show-current)" \
-       lane=<lane> scope=phase phase=<N> iter=<handoff iter> \
+       lane=<lane> scope=phase phase=<N> iter=<returned iter> \
        gate=<entry gate> disposition=ask class=<entry class> file=<path> line=<n> \
        actioned=ask ask_outcome=<accepted|rejected|modified> desc="ask resolved: <one line>"
      ```

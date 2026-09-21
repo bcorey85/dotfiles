@@ -74,10 +74,6 @@ local FAMILIES = {
       dark = { heading1 = "#ec7279", heading = "#deb974" },
       light = { heading1 = "#c93f3f", heading = "#9a6604" },
     },
-    fixup = function(mode)
-      local fg = mode == "light" and "#677182" or "#9199a9"
-      vim.api.nvim_set_hl(0, "Comment", { fg = fg, italic = true })
-    end,
   },
   ["tokyonight"] = {
     -- folke/tokyonight.nvim storm #24283b / day #e1e2e7.
@@ -216,6 +212,61 @@ local function set_word_diff()
   hl(0, "GitSignsDeleteLnInline", { fg = fg, bg = bg_of("DiffDelete"), bold = true })
 end
 
+local function luminance(c)
+  local l = {}
+  for i = 2, 6, 2 do
+    local v = tonumber(c:sub(i, i + 1), 16) / 255
+    l[#l + 1] = v <= 0.03928 and v / 12.92 or ((v + 0.055) / 1.055) ^ 2.4
+  end
+  return 0.2126 * l[1] + 0.7152 * l[2] + 0.0722 * l[3]
+end
+
+local function contrast(a, b)
+  local la, lb = luminance(a), luminance(b)
+  return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05)
+end
+
+local function set_comment_floor()
+  local function get(name, link)
+    return vim.api.nvim_get_hl(0, { name = name, link = link })
+  end
+  local function hex(n)
+    return n and string.format("#%06x", n)
+  end
+  local fg = hex(get("Normal", false).fg)
+  local grounds = {}
+  for _, name in ipairs({ "Normal", "DiffAdd", "DiffDelete", "DiffChange" }) do
+    grounds[#grounds + 1] = hex(get(name, false).bg)
+  end
+  if not (fg and grounds[1]) then
+    return
+  end
+  local function worst(c)
+    local w = math.huge
+    for _, g in ipairs(grounds) do
+      w = math.min(w, contrast(c, g))
+    end
+    return w
+  end
+  local done = {}
+  for _, name in ipairs({ "Comment", "@comment", "@comment.documentation", "SpecialComment" }) do
+    local spec = get(name, true)
+    while spec.link and spec.link:lower():find("comment") do
+      name, spec = spec.link, get(spec.link, true)
+    end
+    local c = hex(spec.fg)
+    if c and not spec.link and not done[name] then
+      done[name] = true
+      local t = 0
+      while t < 1 and worst(blend(fg, c, t)) < 4.5 do
+        t = t + 0.01
+      end
+      spec.fg = blend(fg, c, math.min(t, 1))
+      vim.api.nvim_set_hl(0, name, spec)
+    end
+  end
+end
+
 -- nvim-orgmode agenda readability (prefix n a / n t popups). The plugin
 -- samples its @org.agenda.* colors from whatever the active theme defines,
 -- which under minimal, low-colour families lands scheduled-item text
@@ -245,11 +296,9 @@ local function apply_overrides()
   -- it so this match still fires.
   if vim.g.colors_name == (fam.colors_name or fam.schemes[mode]) then
     set_headings(fam.accents[mode])
-    if fam.fixup then
-      fam.fixup(mode)
-    end
   end
   set_word_diff()
+  set_comment_floor()
   set_org_agenda()
   set_prose()
 end

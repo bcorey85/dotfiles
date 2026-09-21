@@ -165,8 +165,20 @@ HUNK_BLOCK_BEGIN="# >>> theme-mode custom_theme (do not edit inside markers)"
 HUNK_BLOCK_END="# <<< theme-mode custom_theme"
 
 hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, or nothing
-  # A family with NO custom block renders via hunk's own builtin (hunk_theme
-  # returns it directly as `theme =`) and falls through to `*) return 0`.
+  # A family that renders via a hunk builtin gets a comment-only block: hunk
+  # inherits every unset key from `base`. Each `cmt` in this function is the
+  # stock comment blended toward `text` until it clears 4.5:1 on the ground
+  # and both row washes (hunk's builtin washes come from its buildShikiTheme).
+  local cmt=""
+  case "$1:$2" in
+    tokyonight:light|dracula:light) cmt="#666d64" ;;
+    tokyonight:*)                   cmt="#9098bd" ;;
+    dracula:*)                      cmt="#b0b8cd" ;;
+  esac
+  if [ -n "$cmt" ]; then
+    printf '[custom_theme]\nbase = "%s"\n\n[custom_theme.syntax_scopes]\n"comment" = "%s"\n"punctuation.definition.comment" = "%s"\n' "$3" "$cmt" "$cmt"
+    return 0
+  fi
   # Some per-family branches below are inert (their families are gone);
   # retained as the pattern for re-adding a family whose colors no bundled
   # theme matches.
@@ -176,7 +188,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
   # Secondary roles. Each one defaults (below the case) to the generic role a
   # family that does not set it already used, so leaving them unset reproduces
   # the previous output byte for byte.
-  local cmt mem param attr tag vbi imp pre prim ns mac bfn
+  local mem param attr tag vbi imp pre prim ns mac bfn
   case "$1:$2" in
     flume:light)
       # flume mesa (warm cream #f3ede8) — the family's light half. comment
@@ -273,7 +285,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # Identifier/@variable.member blue, PreProc/Include/@attribute purple,
       # @module yellow, Delimiter fg.
       kw="#9d0006"; str="#79740e"; num="#8f3f71"; fn="#79740e"; typ="#b57614"; punct="#3c3836"; op="#af3a03"
-      konst="#427b58"; esc="#79740e"; cmt="#928374"; mem="#076678"; param="#3c3836"
+      konst="#427b58"; esc="#79740e"; cmt="#70665c"; mem="#076678"; param="#3c3836"
       attr="#8f3f71"; tag="#af3a03"; vbi="#8f3f71"; imp="#8f3f71"; pre="#8f3f71"
       prim="#b57614"; ns="#b57614"; mac="#427b58"; bfn="#79740e"
       ;;
@@ -291,7 +303,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       fRename="#d3869b"; fMod="#fabd2f"; fUntracked="#928374"; note="#282828"
       # Same role table as the light half above.
       kw="#fb4934"; str="#b8bb26"; num="#d3869b"; fn="#b8bb26"; typ="#fabd2f"; punct="#ebdbb2"; op="#fe8019"
-      konst="#8ec07c"; esc="#b8bb26"; cmt="#928374"; mem="#83a598"; param="#ebdbb2"
+      konst="#8ec07c"; esc="#b8bb26"; cmt="#a89984"; mem="#83a598"; param="#ebdbb2"
       attr="#d3869b"; tag="#fe8019"; vbi="#d3869b"; imp="#d3869b"; pre="#d3869b"
       prim="#fabd2f"; ns="#fabd2f"; mac="#8ec07c"; bfn="#b8bb26"
       ;;
@@ -358,7 +370,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
     # yellow, Operator + @string.escape cyan, @variable.member/@tag/
     # @variable.parameter red, Delimiter fg.
     onedarkpro:light)
-      # onelight (#fafafa). `cmt` and `muted` are the theme's comment color.
+      # onelight (#fafafa). `muted` is the theme's comment color.
       bg="#fafafa"; panel="#efefef"; panelAlt="#f2f2f2"; border="#e7e7e7"
       accent="#118dc3"; accentMuted="#bebebe"; text="#6a6a6a"; muted="#9b9fa6"
       addedBg="#dcebef"; removedBg="#fbe6e7"; ctxBg="#fafafa"
@@ -366,7 +378,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       badgeAdd="#1da912"; badgeRem="#e05661"; badgeNeu="#118dc3"
       fRename="#9a77cf"; fMod="#eea825"; fUntracked="#1da912"; note="#efefef"
       kw="#9a77cf"; str="#1da912"; num="#ee9025"; fn="#118dc3"; typ="#eea825"; punct="#6a6a6a"; op="#56b6c2"
-      konst="#ee9025"; esc="#56b6c2"; cmt="#9b9fa6"; mem="#e05661"; param="#e05661"
+      konst="#ee9025"; esc="#56b6c2"; cmt="#6a6a6a"; mem="#e05661"; param="#e05661"
       attr="#9a77cf"; tag="#e05661"; vbi="#eea825"; imp="#9a77cf"; pre="#eea825"
       prim="#eea825"; ns="#eea825"; mac="#118dc3"; bfn="#eea825"
       ;;
@@ -379,14 +391,13 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       badgeAdd="#98c379"; badgeRem="#e06c75"; badgeNeu="#61afef"
       fRename="#c678dd"; fMod="#e5c07b"; fUntracked="#98c379"; note="#21252b"
       kw="#c678dd"; str="#98c379"; num="#d19a66"; fn="#61afef"; typ="#e5c07b"; punct="#abb2bf"; op="#56b6c2"
-      konst="#d19a66"; esc="#56b6c2"; cmt="#7f848e"; mem="#e06c75"; param="#e06c75"
+      konst="#d19a66"; esc="#56b6c2"; cmt="#9ca3af"; mem="#e06c75"; param="#e06c75"
       attr="#c678dd"; tag="#e06c75"; vbi="#e5c07b"; imp="#c678dd"; pre="#e5c07b"
       prim="#e5c07b"; ns="#e5c07b"; mac="#61afef"; bfn="#e5c07b"
       ;;
     edge:light)
       # edge neon light (#fafafa). Chrome from CursorLine/Visual. Diff washes
-      # verbatim. Comment #8790a0 is ~3.1:1, darkened to #677182 (~4.7:1) to
-      # match the nvim fixup. Roles darken along hue to clear 4.5:1.
+      # verbatim. Roles darken along hue to clear 4.5:1.
       bg="#fafafa"; panel="#eef1f4"; panelAlt="#e8ebf0"; border="#ccd3db"
       accent="#d05858"; accentMuted="#ccd3db"; text="#4b505b"; muted="#677182"
       addedBg="#e5eee4"; removedBg="#f6e4e4"; ctxBg="#fafafa"
@@ -396,13 +407,12 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # edge-light roles: keyword red, string green, number yellow, fn blue,
       # type purple, punctuation muted, operator fg.
       kw="#c93f3f"; str="#537a2b"; num="#9a6604"; fn="#4570b9"; typ="#a545c5"; punct="#677182"; op="#4b505b"
-      cmt="#677182"
+      cmt="#616979"
       ;;
     edge:*)
       # edge aura dark (dimmed style, bg #2b2d37). Chrome from the aura ramp/
-      # Pmenu. Diff washes verbatim. Comment #758094 is ~3.4:1, lifted to
-      # #9199a9 (~4.7:1) to match the nvim fixup. Keyword is purple
-      # in-theme (not red), number follows string green.
+      # Pmenu. Diff washes verbatim. Keyword is purple in-theme (not red),
+      # number follows string green.
       bg="#2b2d37"; panel="#333644"; panelAlt="#3a3e4e"; border="#454b60"
       accent="#ec7279"; accentMuted="#454b60"; text="#c5cdd9"; muted="#9199a9"
       addedBg="#394634"; removedBg="#55393d"; ctxBg="#2c2e34"
@@ -412,7 +422,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # edge roles: keyword purple, string/number green, fn blue, type
       # yellow, punctuation muted, operator fg.
       kw="#d38aea"; str="#a0c980"; num="#a0c980"; fn="#6cb6eb"; typ="#deb974"; punct="#9199a9"; op="#c5cdd9"
-      cmt="#9199a9"
+      cmt="#a7afbd"
       ;;
     # nightfox.nvim, all four verbatim from the plugin's own spec: chrome is
     # bg0/bg2/bg3, diff washes are spec.diff.add/delete, roles are spec.syntax
@@ -425,7 +435,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       badgeAdd="#396847"; badgeRem="#a5222f"; badgeNeu="#2848a9"
       fRename="#6e33ce"; fMod="#ac5402"; fUntracked="#396847"; note="#e4dcd4"
       kw="#6e33ce"; str="#396847"; num="#955f61"; fn="#223d90"; typ="#ac5402"; punct="#643f61"; op="#643f61"
-      konst="#7f5152"; esc="#924702"; cmt="#837a72"; mem="#2848a9"; param="#22676d"
+      konst="#7f5152"; esc="#924702"; cmt="#615466"; mem="#2848a9"; param="#22676d"
       attr="#7f5152"; tag="#6e33ce"; vbi="#a5222f"; imp="#8b369a"; pre="#8b369a"
       prim="#22676d"; ns="#22676d"; mac="#8b369a"; bfn="#a5222f"
       ;;
@@ -437,7 +447,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       badgeAdd="#81b29a"; badgeRem="#c94f6d"; badgeNeu="#719cd6"
       fRename="#9d79d6"; fMod="#dbc074"; fUntracked="#81b29a"; note="#131a24"
       kw="#9d79d6"; str="#81b29a"; num="#f4a261"; fn="#86abdc"; typ="#dbc074"; punct="#aeafb0"; op="#aeafb0"
-      konst="#f6b079"; esc="#e0c989"; cmt="#738091"; mem="#719cd6"; param="#7ad5d6"
+      konst="#f6b079"; esc="#e0c989"; cmt="#929ba6"; mem="#719cd6"; param="#7ad5d6"
       attr="#f6b079"; tag="#9d79d6"; vbi="#c94f6d"; imp="#dc8ed9"; pre="#dc8ed9"
       prim="#7ad5d6"; ns="#7ad5d6"; mac="#dc8ed9"; bfn="#c94f6d"
       ;;
@@ -449,7 +459,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       badgeAdd="#618774"; badgeRem="#b4637a"; badgeNeu="#286983"
       fRename="#907aa9"; fMod="#ea9d34"; fUntracked="#618774"; note="#ebe5df"
       kw="#907aa9"; str="#618774"; num="#d7827e"; fn="#295e73"; typ="#ea9d34"; punct="#625c87"; op="#625c87"
-      konst="#ca6e69"; esc="#dd9024"; cmt="#9893a5"; mem="#286983"; param="#50848c"
+      konst="#ca6e69"; esc="#dd9024"; cmt="#615c80"; mem="#286983"; param="#50848c"
       attr="#ca6e69"; tag="#907aa9"; vbi="#b4637a"; imp="#c9709e"; pre="#c9709e"
       prim="#50848c"; ns="#50848c"; mac="#c9709e"; bfn="#b4637a"
       ;;
@@ -461,7 +471,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       badgeAdd="#a3be8c"; badgeRem="#eb6f92"; badgeNeu="#569fba"
       fRename="#c4a7e7"; fMod="#f6c177"; fUntracked="#a3be8c"; note="#191726"
       kw="#c4a7e7"; str="#a3be8c"; num="#ea9a97"; fn="#65b1cd"; typ="#f6c177"; punct="#cdcbe0"; op="#cdcbe0"
-      konst="#f0a4a2"; esc="#f9cb8c"; cmt="#817c9c"; mem="#569fba"; param="#a6dae3"
+      konst="#f0a4a2"; esc="#f9cb8c"; cmt="#aca8c4"; mem="#569fba"; param="#a6dae3"
       attr="#f0a4a2"; tag="#c4a7e7"; vbi="#eb6f92"; imp="#f0a6cc"; pre="#f0a6cc"
       prim="#a6dae3"; ns="#a6dae3"; mac="#f0a6cc"; bfn="#eb6f92"
       ;;

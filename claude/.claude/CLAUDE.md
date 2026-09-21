@@ -36,6 +36,7 @@ After any code change, run the project's quality checks (whatever its CLAUDE.md 
 - Run expensive commands once: long output → `/tmp/<name>.log`, then grep the file. Never re-run with different filters.
 - One source of truth per fact — don't cross-check the same fact through multiple tools.
 - Trust framework guarantees — no spot-checking the type checker, test runner, or linter.
+- Chain independent shell commands in one call; never one round trip per command.
 
 ## Compact instructions
 

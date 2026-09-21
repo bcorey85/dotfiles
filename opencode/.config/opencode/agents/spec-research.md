@@ -1,6 +1,6 @@
 ---
 name: spec-research
-description: "Answer a numbered list of codebase questions with strictly factual documentation — what exists, how it works, where it lives, with file:line references. Sees only the questions file, declines any other context, writes the findings document into the task directory and returns its path."
+description: "Answers a numbered list of codebase questions with file:line facts. Dispatched by goal-blind-researcher with the questions file only."
 model: opencode-go/mimo-v2.5
 mode: subagent
 color: "#a855f7"

@@ -1,6 +1,6 @@
 ---
 name: perf-reviewer
-description: "Single-domain backend-performance reviewer. Reviews ONLY the query/I/O cost of a diff — N+1, unbounded queries, missing indexes, over-fetch, serial awaits, per-item round-trips. Dispatched by review-loop as a post-convergence pass when the diff touches the data/query surface. Defers all general bugs, security, and style to their reviewers."
+description: "Reviews only the query and I/O cost of a diff. Dispatched by review-loop after convergence on data-surface diffs."
 model: sonnet
 tools: Bash, Read, Glob, Grep, LSP
 color: yellow

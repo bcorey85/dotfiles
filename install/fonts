@@ -18,65 +18,64 @@ if [[ ! "$PLATFORM" =~ ^(wsl|ubuntu|mac|arch)$ ]]; then
     exit 1
 fi
 
+# install_nerd_font <release-asset> <sentinel-face> <label> <face>...
+# Pulls only the named faces out of a Nerd Fonts release tarball. Skips the
+# download when the sentinel face is already on disk.
+install_nerd_font() {
+    local asset=$1 sentinel=$2 label=$3
+    shift 3
+
+    if [ -f "$HOME/.local/share/fonts/$sentinel" ]; then
+        print_success "$label already installed"
+        return
+    fi
+
+    curl -fLo "/tmp/$asset" \
+        "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/$asset"
+    tar xf "/tmp/$asset" -C "$HOME/.local/share/fonts" "$@"
+    rm "/tmp/$asset"
+    print_success "$label installed"
+}
+
 case $PLATFORM in
     wsl)
         print_info "WSL detected - Fonts must be installed on Windows"
         echo ""
         echo "  1. Download: https://github.com/ryanoasis/nerd-fonts/releases"
-        echo "  2. Install FiraCode Nerd Font"
-        echo "  3. Windows Terminal → Settings → Font face → 'FiraCode Nerd Font Mono'"
+        echo "  2. Install IntelOneMono and FiraCode Nerd Fonts"
+        echo "  3. Windows Terminal → Settings → Font face → 'IntoneMono Nerd Font Mono'"
         echo ""
         print_info "Press Enter when fonts are installed..."
         read || true
         ;;
-    ubuntu)
+    ubuntu|arch)
         print_info "Installing Nerd Fonts..."
         mkdir -p ~/.local/share/fonts
-        cd ~/.local/share/fonts
 
-        # Fira Code ships no italic, so there is no -Italic/-BoldItalic to pull.
-        # Retina is not optional: ghostty's config selects `font-style = Retina`.
-        # The rest come along so the weight stays adjustable there.
-        if [ ! -f "FiraCodeNerdFontMono-Regular.ttf" ]; then
-            curl -fLo /tmp/FiraCode.tar.xz \
-                https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz
-            tar xf /tmp/FiraCode.tar.xz -C ~/.local/share/fonts \
-                FiraCodeNerdFontMono-Regular.ttf FiraCodeNerdFontMono-Bold.ttf \
-                FiraCodeNerdFontMono-Light.ttf FiraCodeNerdFontMono-Retina.ttf \
-                FiraCodeNerdFontMono-Medium.ttf FiraCodeNerdFontMono-SemiBold.ttf
-            rm /tmp/FiraCode.tar.xz
-            print_success "FiraCode Nerd Font installed"
-        else
-            print_success "FiraCode Nerd Font already installed"
-        fi
+        # Intel One Mono — the terminal face. The patcher renames it IntoneMono,
+        # which is the name ghostty's config asks for. Italics are real faces,
+        # so each weight pulls its italic too.
+        install_nerd_font IntelOneMono.tar.xz IntoneMonoNerdFontMono-Regular.ttf \
+            "IntoneMono Nerd Font" \
+            IntoneMonoNerdFontMono-Regular.ttf IntoneMonoNerdFontMono-Italic.ttf \
+            IntoneMonoNerdFontMono-Bold.ttf IntoneMonoNerdFontMono-BoldItalic.ttf \
+            IntoneMonoNerdFontMono-Light.ttf IntoneMonoNerdFontMono-LightItalic.ttf \
+            IntoneMonoNerdFontMono-Medium.ttf IntoneMonoNerdFontMono-MediumItalic.ttf
 
-        fc-cache -fv
-        ;;
-    arch)
-        print_info "Installing Nerd Fonts..."
-        mkdir -p ~/.local/share/fonts
-        cd ~/.local/share/fonts
-
-        # Fira Code ships no italic, so there is no -Italic/-BoldItalic to pull.
-        # Retina is not optional: ghostty's config selects `font-style = Retina`.
-        # The rest come along so the weight stays adjustable there.
-        if [ ! -f "FiraCodeNerdFontMono-Regular.ttf" ]; then
-            curl -fLo /tmp/FiraCode.tar.xz \
-                https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz
-            tar xf /tmp/FiraCode.tar.xz -C ~/.local/share/fonts \
-                FiraCodeNerdFontMono-Regular.ttf FiraCodeNerdFontMono-Bold.ttf \
-                FiraCodeNerdFontMono-Light.ttf FiraCodeNerdFontMono-Retina.ttf \
-                FiraCodeNerdFontMono-Medium.ttf FiraCodeNerdFontMono-SemiBold.ttf
-            rm /tmp/FiraCode.tar.xz
-            print_success "FiraCode Nerd Font installed"
-        else
-            print_success "FiraCode Nerd Font already installed"
-        fi
+        # Fira Code — no longer the terminal face, but still named by nvim,
+        # quickshell, hyprlock and zed. Ships no italic, so there is no
+        # -Italic/-BoldItalic to pull.
+        install_nerd_font FiraCode.tar.xz FiraCodeNerdFontMono-Regular.ttf \
+            "FiraCode Nerd Font" \
+            FiraCodeNerdFontMono-Regular.ttf FiraCodeNerdFontMono-Bold.ttf \
+            FiraCodeNerdFontMono-Light.ttf FiraCodeNerdFontMono-Retina.ttf \
+            FiraCodeNerdFontMono-Medium.ttf FiraCodeNerdFontMono-SemiBold.ttf
 
         fc-cache -fv
         ;;
     mac)
         print_info "Installing Nerd Fonts..."
+        brew install --cask font-intone-mono-nerd-font 2>/dev/null || print_success "IntoneMono Nerd Font already installed"
         brew install --cask font-fira-code-nerd-font 2>/dev/null || print_success "FiraCode Nerd Font already installed"
         print_success "Nerd Fonts installed"
         ;;

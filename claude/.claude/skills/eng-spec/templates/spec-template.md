@@ -27,9 +27,9 @@ One paragraph on what this accomplishes.
 
 <!-- Hoisted from below so the first screen answers "where are the agents?". The one section that changes after writing (/code ticks it) — source of truth for "which phase is next". Do not move it back down. -->
 
-- [ ] Phase 0: Contracts — frozen at plan approval (risk: high)
-- [ ] Phase 1: Walking skeleton (risk: low|high)
-- [ ] Phase 2: [name] (risk: low|high)
+- [ ] Phase 0: Contracts — frozen at plan approval (risk: high) (reviewers: security|perf|smell|none)
+- [ ] Phase 1: Walking skeleton (risk: low|high) (reviewers: security|perf|smell|none)
+- [ ] Phase 2: [name] (risk: low|high) (reviewers: security|perf|smell|none)
 - [ ] Phase N..N+3: Refactor → Test audit → Verify → Recap (closing-phases.md)
 
 ## Decisions

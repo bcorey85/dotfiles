@@ -59,7 +59,7 @@
 #   6. palettes in quickshell/.config/quickshell/Theme.qml — this script writes
 #      nothing for quickshell; that singleton watches the two state files
 #      itself and repaints live. A missing family silently falls back to
-#      flexoki, so nothing breaks, it just doesn't follow.
+#      onedarkpro, so nothing breaks, it just doesn't follow.
 #
 # Also needed, not part of the six but easy to miss:
 #   - starship.toml.template: add a `[palettes.<family>-dark]` /
@@ -75,18 +75,16 @@ set -euo pipefail
 MODE_FILE="$HOME/.cache/theme-mode"
 FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
-DEFAULT_FAMILY="flexoki"
+DEFAULT_FAMILY="onedarkpro"
 
-families() { printf '%s\n' flexoki bamboo gruvbox-material tokyonight onedark dracula nightfox duskfox; }
+families() { printf '%s\n' onedarkpro bamboo gruvbox-material tokyonight dracula nightfox duskfox; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
-  # flexoki: both halves are ghostty BUILTINS (spaces and all), so there is no
-  # file under ghostty/themes/ and apply() falls through to `theme = `.
+  # A family whose halves are ghostty BUILTINS (spaces and all) needs no file
+  # under ghostty/themes/ and apply() falls through to `theme = `.
   # bamboo: no ghostty builtin — custom files in ghostty/themes/, ANSI straight
   # from the theme's own terminal.lua mapping.
   case "$1:$2" in
-    flexoki:light)      echo "Flexoki Light" ;;
-    flexoki:*)          echo "Flexoki Dark" ;;
     bamboo:light)       echo "bamboo-light" ;;
     bamboo:*)           echo "bamboo-dark" ;;
     # gruvbox-material runs background=hard, foreground=original, whose ANSI IS
@@ -99,10 +97,10 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # tokyonight: ghostty BUILTINS — storm dark, day light.
     tokyonight:light)       echo "TokyoNight Day" ;;
     tokyonight:*)           echo "TokyoNight Storm" ;;
-    # onedark: ghostty's Atom One builtins differ from onedark.nvim — custom
-    # files in ghostty/themes/.
-    onedark:light)          echo "onedark-light" ;;
-    onedark:*)              echo "onedark-dark" ;;
+    # onedarkpro: ghostty's Atom One builtins differ from onedarkpro.nvim —
+    # custom files in ghostty/themes/.
+    onedarkpro:light)       echo "onedarkpro-light" ;;
+    onedarkpro:*)           echo "onedarkpro-dark" ;;
     # dracula: BUILTIN matches dracula/vim's terminal map; alucard is custom.
     dracula:light)          echo "dracula-light" ;;
     dracula:*)              echo "Dracula" ;;
@@ -115,22 +113,18 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
 }
 
 hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom block builds on
-  # flexoki has no hunk builtin, so it ships a full [custom_theme] and this id
-  # is only the BASE that block inherits from. The base still decides two things
+  # A family with no hunk builtin ships a full [custom_theme] and this id is
+  # only the BASE that block inherits from. The base still decides two things
   # the config cannot override: any TextMate scope the block does not name, and
   # `syntaxColors.default` (the fg of un-highlighted content). So pick by
-  # NEUTRALS: kanagawa-dragon is #c5c9c5 on warm black (flexoki dark is #cecdc3
-  # on #100f0f) and gruvbox-light-medium is #3c3836 on warm paper (flexoki light
-  # is #403e3c on #fffcf0) — near-identical text colors and the same warm cast.
+  # NEUTRALS.
   #
-  # bamboo has no hunk builtin either, so same deal — gruvbox medium is the
+  # bamboo has no hunk builtin — gruvbox medium is the
   # neutral match at both ends: gruvbox-dark-medium is #ebdbb2 on #282828
   # (bamboo vulgaris is #f1e9d2 on #252623) and gruvbox-light-medium is #3c3836
   # on #fbf1c7 (bamboo light is #3a4238 on #fafae0) — same warm cream cast,
   # near-identical text colors.
   case "$1:$2" in
-    flexoki:light)      echo "gruvbox-light-medium" ;;
-    flexoki:*)          echo "kanagawa-dragon" ;;
     bamboo:light)       echo "gruvbox-light-medium" ;;
     bamboo:*)           echo "gruvbox-dark-medium" ;;
     gruvbox-material:light) echo "gruvbox-light-medium" ;;
@@ -139,10 +133,10 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # takes the neutral vitesse base.
     tokyonight:light)       echo "vitesse-light" ;;
     tokyonight:*)           echo "tokyo-night" ;;
-    # onedark: one-light is used directly; one-dark-pro is only the BASE of the
-    # dark [custom_theme] (navarasu's hues differ from Binaryify's).
-    onedark:light)          echo "one-light" ;;
-    onedark:*)              echo "one-dark-pro" ;;
+    # onedarkpro: both halves are only the BASE of a [custom_theme] — hunk's
+    # one-dark-pro and one-light are Binaryify's palettes, not olimorris's.
+    onedarkpro:light)       echo "one-light" ;;
+    onedarkpro:*)           echo "one-dark-pro" ;;
     # hunk has no alucard; light takes the neutral vitesse base.
     dracula:light)          echo "vitesse-light" ;;
     dracula:*)              echo "dracula" ;;
@@ -164,9 +158,9 @@ HUNK_BLOCK_END="# <<< theme-mode custom_theme"
 hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, or nothing
   # A family with NO custom block renders via hunk's own builtin (hunk_theme
   # returns it directly as `theme =`) and falls through to `*) return 0`.
-  # flexoki and bamboo are live and ship full blocks. The other per-family
-  # branches below are inert (their families are gone); retained as the pattern
-  # for re-adding a family whose colors no bundled theme matches.
+  # Some per-family branches below are inert (their families are gone);
+  # retained as the pattern for re-adding a family whose colors no bundled
+  # theme matches.
   local bg panel panelAlt border accent accentMuted text muted addedBg removedBg
   local ctxBg sAdd sRem lnFg badgeAdd badgeRem badgeNeu fRename fMod fUntracked note
   local kw str num fn typ punct op konst esc
@@ -175,41 +169,6 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
   # the previous output byte for byte.
   local cmt mem param attr tag vbi imp pre prim ns mac bfn
   case "$1:$2" in
-    flexoki:light)
-      # flexoki light (dawn): paper #fffcf0 canvas. Diff bgs are the accent
-      # blended ~12% over base-50 #f2f0e5 (subtle, readable full-line washes —
-      # not flexoki's solid-accent DiffAdd, which is a wall in a diff viewer).
-      bg="#fffcf0"; panel="#f2f0e5"; panelAlt="#e6e4d9"; border="#cecdc3"
-      accent="#5e409d"; accentMuted="#b7b5ac"; text="#403e3c"; muted="#b7b5ac"
-      addedBg="#e1e2cb"; removedBg="#ead9ce"; ctxBg="#fffcf0"
-      sAdd="#66800b"; sRem="#af3029"; lnFg="#b7b5ac"
-      badgeAdd="#66800b"; badgeRem="#af3029"; badgeNeu="#205ea6"
-      fRename="#5e409d"; fMod="#ad8301"; fUntracked="#878580"; note="#f2f0e5"
-      # flexoki roles, resolved from the colorscheme's own groups (600-level
-      # accents in light): Keyword magenta, String green, Number/Boolean/
-      # Character/Special orange, Function blue, Type/Include cyan, Constant
-      # yellow, Macro/@string.escape purple; Identifier/Operator stay tx
-      # (#403e3c) and punctuation/parameters tx2 (#878580).
-      kw="#a02f6f"; str="#66800b"; num="#bc5215"; fn="#205ea6"; typ="#24837b"; punct="#878580"; op="#403e3c"
-      konst="#ad8301"; esc="#5e409d"
-      ;;
-    flexoki:*)
-      # flexoki dark (moon): black #100f0f canvas. Diff bgs are the accent
-      # blended ~12% over base-950 #1c1b1a.
-      bg="#100f0f"; panel="#1c1b1a"; panelAlt="#282726"; border="#403e3c"
-      accent="#8b7ec8"; accentMuted="#575653"; text="#cecdc3"; muted="#575653"
-      addedBg="#292a1e"; removedBg="#32211f"; ctxBg="#100f0f"
-      sAdd="#879a39"; sRem="#d14d41"; lnFg="#575653"
-      badgeAdd="#879a39"; badgeRem="#d14d41"; badgeNeu="#4385be"
-      fRename="#8b7ec8"; fMod="#d0a215"; fUntracked="#878580"; note="#1c1b1a"
-      # flexoki roles, resolved from the colorscheme's own groups (400-level
-      # accents in dark): Keyword magenta, String green, Number/Boolean/
-      # Character/Special orange, Function blue, Type/Include cyan, Constant
-      # yellow, Macro/@string.escape purple; Identifier/Operator stay tx
-      # (#cecdc3) and punctuation/parameters tx2 (#878580).
-      kw="#ce5d97"; str="#879a39"; num="#da702c"; fn="#4385be"; typ="#3aa99f"; punct="#878580"; op="#cecdc3"
-      konst="#d0a215"; esc="#8b7ec8"
-      ;;
     flume:light)
       # flume mesa (warm cream #f3ede8) — the family's light half. comment
       # #706878 (~5:1 on paper).
@@ -378,22 +337,42 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       attr="#70c2be"; tag="#aaaaff"; vbi="#e75a7c"; imp="#aaaaff"; pre="#aaaaff"
       prim="#dbb651"; ns="#96c7ef"; mac="#df73ff"; bfn="#ff9966"
       ;;
-    onedark:light) return 0 ;;
-    onedark:*)
-      # navarasu onedark dark (#282c34), verbatim — hunk's one-dark-pro builtin
-      # is Binaryify's palette, not this one. Chrome is bg1/bg2/bg3; diff washes
-      # are the theme's own diff_add/diff_delete. Roles from its treesitter
-      # table.
-      bg="#282c34"; panel="#31353f"; panelAlt="#393f4a"; border="#3b3f4c"
-      accent="#61afef"; accentMuted="#5c6370"; text="#abb2bf"; muted="#848b98"
-      addedBg="#31392b"; removedBg="#382b2c"; ctxBg="#282c34"
-      sAdd="#98c379"; sRem="#e86671"; lnFg="#5c6370"
-      badgeAdd="#98c379"; badgeRem="#e86671"; badgeNeu="#61afef"
-      fRename="#c678dd"; fMod="#e5c07b"; fUntracked="#98c379"; note="#31353f"
-      kw="#c678dd"; str="#98c379"; num="#d19a66"; fn="#61afef"; typ="#e5c07b"; punct="#848b98"; op="#abb2bf"
-      konst="#d19a66"; esc="#e86671"; cmt="#5c6370"; mem="#56b6c2"; param="#e86671"
-      attr="#56b6c2"; tag="#c678dd"; vbi="#e86671"; imp="#c678dd"; pre="#c678dd"
-      prim="#d19a66"; ns="#e5c07b"; mac="#56b6c2"; bfn="#56b6c2"
+    # onedarkpro (olimorris), both halves verbatim — hunk's one-dark-pro and
+    # one-light builtins are Binaryify's palettes, not these. Chrome is the
+    # theme's float_bg/fold/indentline. Diff washes are NOT the colorscheme's
+    # own (its blend(bg, green|red, 0.12) is olive and lands add/remove at the
+    # same lightness) — they are the cool washes hunk's one-dark-pro and
+    # one-light builtins paint, read off their own rendered output.
+    # Roles from its syntax + treesitter tables:
+    # Keyword/Include/@attribute purple, String green, Constant/Number orange,
+    # Function blue, Type/PreProc/@module/@variable.builtin/@function.builtin
+    # yellow, Operator + @string.escape cyan, @variable.member/@tag/
+    # @variable.parameter red, Delimiter fg.
+    onedarkpro:light)
+      # onelight (#fafafa). `cmt` and `muted` are the theme's comment color.
+      bg="#fafafa"; panel="#efefef"; panelAlt="#f2f2f2"; border="#e7e7e7"
+      accent="#118dc3"; accentMuted="#bebebe"; text="#6a6a6a"; muted="#9b9fa6"
+      addedBg="#dcebef"; removedBg="#fbe6e7"; ctxBg="#fafafa"
+      sAdd="#1da912"; sRem="#e05661"; lnFg="#cccccc"
+      badgeAdd="#1da912"; badgeRem="#e05661"; badgeNeu="#118dc3"
+      fRename="#9a77cf"; fMod="#eea825"; fUntracked="#1da912"; note="#efefef"
+      kw="#9a77cf"; str="#1da912"; num="#ee9025"; fn="#118dc3"; typ="#eea825"; punct="#6a6a6a"; op="#56b6c2"
+      konst="#ee9025"; esc="#56b6c2"; cmt="#9b9fa6"; mem="#e05661"; param="#e05661"
+      attr="#9a77cf"; tag="#e05661"; vbi="#eea825"; imp="#9a77cf"; pre="#eea825"
+      prim="#eea825"; ns="#eea825"; mac="#118dc3"; bfn="#eea825"
+      ;;
+    onedarkpro:*)
+      # onedark (#282c34).
+      bg="#282c34"; panel="#21252b"; panelAlt="#30333d"; border="#3b4048"
+      accent="#61afef"; accentMuted="#5c6370"; text="#abb2bf"; muted="#7f848e"
+      addedBg="#25393a"; removedBg="#49333c"; ctxBg="#282c34"
+      sAdd="#98c379"; sRem="#e06c75"; lnFg="#495162"
+      badgeAdd="#98c379"; badgeRem="#e06c75"; badgeNeu="#61afef"
+      fRename="#c678dd"; fMod="#e5c07b"; fUntracked="#98c379"; note="#21252b"
+      kw="#c678dd"; str="#98c379"; num="#d19a66"; fn="#61afef"; typ="#e5c07b"; punct="#abb2bf"; op="#56b6c2"
+      konst="#d19a66"; esc="#56b6c2"; cmt="#7f848e"; mem="#e06c75"; param="#e06c75"
+      attr="#c678dd"; tag="#e06c75"; vbi="#e5c07b"; imp="#c678dd"; pre="#e5c07b"
+      prim="#e5c07b"; ns="#e5c07b"; mac="#61afef"; bfn="#e5c07b"
       ;;
     # nightfox.nvim, all four verbatim from the plugin's own spec: chrome is
     # bg0/bg2/bg3, diff washes are spec.diff.add/delete, roles are spec.syntax
@@ -671,28 +650,6 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
   local base_name accent panel_bg surface_dim surface0 surface1 overlay0 overlay1
   local text subtext0 green yellow red blue teal peach
   case "$1:$2" in
-    flexoki:light)
-      # flexoki light (dawn), paper #fffcf0 — matches nvim/ghostty. Muted greys
-      # are base-300, the stock comment. peach = orange-600.
-      base_name="one-light"
-      accent="#5e409d" panel_bg="#f2f0e5" surface_dim="#dad8ce"
-      surface0="#cecdc3" surface1="#b7b5ac"
-      overlay0="#b7b5ac" overlay1="#b7b5ac"
-      text="#100f0f" subtext0="#b7b5ac"
-      green="#66800b" yellow="#ad8301" red="#af3029"
-      blue="#205ea6" teal="#205ea6" peach="#bc5215"
-      ;;
-    flexoki:*)
-      # flexoki dark (moon), black #100f0f — matches nvim/ghostty. peach = the
-      # distinct orange-400 rather than duplicating yellow.
-      base_name="one-dark"
-      accent="#8b7ec8" panel_bg="#1c1b1a" surface_dim="#343331"
-      surface0="#403e3c" surface1="#575653"
-      overlay0="#575653" overlay1="#575653"
-      text="#cecdc3" subtext0="#575653"
-      green="#879a39" yellow="#d0a215" red="#d14d41"
-      blue="#4385be" teal="#4385be" peach="#da702c"
-      ;;
     flume:light)
       # flume mesa (warm cream #f3ede8) — comment #706878 (~5:1 on paper).
       base_name="one-light"
@@ -818,24 +775,24 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       green="#9ece6a" yellow="#e0af68" red="#f7768e"
       blue="#7aa2f7" teal="#1abc9c" peach="#ff9e64"
       ;;
-    onedark:light)
-      # onedark light (#fafafa, bg1 panel) — verbatim.
+    onedarkpro:light)
+      # onelight (#fafafa, float_bg panel) — verbatim.
       base_name="one-light"
-      accent="#4078f2" panel_bg="#f0f0f0" surface_dim="#e6e6e6"
-      surface0="#dcdcdc" surface1="#c9c9c9"
-      overlay0="#a0a1a7" overlay1="#818387"
-      text="#383a42" subtext0="#818387"
-      green="#50a14f" yellow="#986801" red="#e45649"
-      blue="#4078f2" teal="#0184bc" peach="#c18401"
+      accent="#118dc3" panel_bg="#efefef" surface_dim="#e9e9e9"
+      surface0="#e7e7e7" surface1="#e1e1e1"
+      overlay0="#bebebe" overlay1="#9b9fa6"
+      text="#6a6a6a" subtext0="#9b9fa6"
+      green="#1da912" yellow="#eea825" red="#e05661"
+      blue="#118dc3" teal="#56b6c2" peach="#ee9025"
       ;;
-    onedark:*)
-      # onedark dark (#282c34, bg_d panel) — verbatim.
+    onedarkpro:*)
+      # onedark (#282c34, float_bg panel) — verbatim.
       base_name="one-dark"
-      accent="#61afef" panel_bg="#21252b" surface_dim="#31353f"
-      surface0="#393f4a" surface1="#3b3f4c"
-      overlay0="#5c6370" overlay1="#848b98"
-      text="#abb2bf" subtext0="#848b98"
-      green="#98c379" yellow="#e5c07b" red="#e86671"
+      accent="#61afef" panel_bg="#21252b" surface_dim="#2d313b"
+      surface0="#30333d" surface1="#3b4048"
+      overlay0="#5c6370" overlay1="#7f848e"
+      text="#abb2bf" subtext0="#7f848e"
+      green="#98c379" yellow="#e5c07b" red="#e06c75"
       blue="#61afef" teal="#56b6c2" peach="#d19a66"
       ;;
     dracula:light)

@@ -18,7 +18,7 @@
 # header — any key after a table header belongs to that table. Placed below a
 # palette, `format` silently became palettes.<name>.format and starship fell
 # back to the default `$all` format (which pulls in $aws et al.).
-palette = "flexoki-dark"
+palette = "onedarkpro-dark"
 
 format = """
 $directory\
@@ -29,36 +29,6 @@ $nodejs\
 $cmd_duration\
 $line_break\
 $character"""
-
-# flexoki dark (kepano's "moon", black #100f0f). 400-level accents, verbatim.
-# `grey` is base-700, the stock comment. teal doubles the blue:
-# flexoki's cyan-400 #3aa99f is a distinct hue but reads as a second green next
-# to green-400 in a prompt.
-[palettes.flexoki-dark]
-red = "#d14d41"
-orange = "#da702c"
-yellow = "#d0a215"
-green = "#879a39"
-blue = "#4385be"
-teal = "#4385be"
-purple = "#8b7ec8"
-fg = "#cecdc3"
-bg = "#100f0f"
-grey = "#575653"
-
-# flexoki light (kepano's "dawn", paper #fffcf0). 600-level accents, verbatim.
-# `grey` is base-300, the stock comment.
-[palettes.flexoki-light]
-red = "#af3029"
-orange = "#bc5215"
-yellow = "#ad8301"
-green = "#66800b"
-blue = "#205ea6"
-teal = "#205ea6"
-purple = "#5e409d"
-fg = "#100f0f"
-bg = "#fffcf0"
-grey = "#b7b5ac"
 
 # bamboo vulgaris (ribru17's dark, warm green-brown #252623), verbatim.
 # `grey` is light_grey.
@@ -140,9 +110,9 @@ fg = "#3760bf"
 bg = "#e1e2e7"
 grey = "#848cb5"
 
-# onedark dark (navarasu/onedark.nvim), verbatim.
-[palettes.onedark-dark]
-red = "#e86671"
+# onedarkpro onedark (olimorris/onedarkpro.nvim), verbatim.
+[palettes.onedarkpro-dark]
+red = "#e06c75"
 orange = "#d19a66"
 yellow = "#e5c07b"
 green = "#98c379"
@@ -153,18 +123,18 @@ fg = "#abb2bf"
 bg = "#282c34"
 grey = "#5c6370"
 
-# onedark light, verbatim.
-[palettes.onedark-light]
-red = "#e45649"
-orange = "#c18401"
-yellow = "#986801"
-green = "#50a14f"
-blue = "#4078f2"
-teal = "#0184bc"
-purple = "#a626a4"
-fg = "#383a42"
+# onedarkpro onelight, verbatim.
+[palettes.onedarkpro-light]
+red = "#e05661"
+orange = "#ee9025"
+yellow = "#eea825"
+green = "#1da912"
+blue = "#118dc3"
+teal = "#56b6c2"
+purple = "#9a77cf"
+fg = "#6a6a6a"
 bg = "#fafafa"
-grey = "#a0a1a7"
+grey = "#bebebe"
 
 # dracula dark (dracula/vim), verbatim. No blue upstream; cyan stands in.
 [palettes.dracula-dark]

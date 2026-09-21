@@ -28,7 +28,13 @@ esac
 # reads only the current version; older versions live in telemetry-archive/.
 # v1 = critical/high/medium/low severity era (pre-2026-08-08, archived).
 SCHEMA_VERSION=2
-json=$(jq -cn --argjson sv "$SCHEMA_VERSION" '{date: (now | todate), schema_version: $sv}')
+# session and branch are the join keys across the three review logs. Both are
+# read here, never trusted to the caller; a caller's own branch= still wins.
+json=$(jq -cn --argjson sv "$SCHEMA_VERSION" \
+  --arg s "${CLAUDE_CODE_SESSION_ID:-}" --arg b "$(git branch --show-current 2>/dev/null || true)" \
+  '{date: (now | todate), schema_version: $sv}
+   + (if $s != "" then {session: $s} else {} end)
+   + (if $b != "" then {branch: $b} else {} end)')
 for kv in "$@"; do
   case "$kv" in
     out=*) out="${kv#out=}"; continue ;;

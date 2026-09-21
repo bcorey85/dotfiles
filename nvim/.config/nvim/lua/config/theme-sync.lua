@@ -17,7 +17,7 @@ local M = {}
 
 local MODE_FILE = vim.env.HOME .. "/.cache/theme-mode"
 local FAMILY_FILE = vim.env.HOME .. "/.cache/theme-family"
-local DEFAULT_FAMILY = "flexoki"
+local DEFAULT_FAMILY = "onedarkpro"
 
 -- alpha-blend two hex colours (a = share of c1).
 local function blend(c1, c2, a)
@@ -32,17 +32,6 @@ end
 -- Registry shape: the mode axis and the state-file plumbing both key off this table — adding a family is an entry here plus theme-mode's
 -- cases and the ghostty/herdr files.
 local FAMILIES = {
-  ["flexoki"] = {
-    -- kepano/flexoki-neovim: one colorscheme "flexoki" switches via
-    -- vim.o.background (dark #100f0f / light #fffcf0), so both modes share
-    -- colors_name and the scheme name is pinned here.
-    schemes = { dark = "flexoki", light = "flexoki" },
-    colors_name = "flexoki",
-    accents = {
-      dark = { heading1 = "#8b7ec8", heading = "#4385be" }, -- purple + blue (400)
-      light = { heading1 = "#5e409d", heading = "#205ea6" }, -- purple + blue (600)
-    },
-  },
   ["bamboo"] = {
     -- ribru17/bamboo.nvim: one colorscheme "bamboo" picks its style from
     -- vim.o.background (light palette #fafae0 / vulgaris #252623) and always
@@ -83,14 +72,11 @@ local FAMILIES = {
       light = { heading1 = "#f52a65", heading = "#8c6c3e" },
     },
   },
-  ["onedark"] = {
-    schemes = { dark = "onedark", light = "onedark" },
-    pre = function(mode)
-      require("onedark").setup({ style = mode })
-    end,
+  ["onedarkpro"] = {
+    schemes = { dark = "onedark", light = "onelight" },
     accents = {
-      dark = { heading1 = "#e86671", heading = "#e5c07b" },
-      light = { heading1 = "#e45649", heading = "#986801" },
+      dark = { heading1 = "#e06c75", heading = "#e5c07b" },
+      light = { heading1 = "#e05661", heading = "#eea825" },
     },
   },
   ["dracula"] = {

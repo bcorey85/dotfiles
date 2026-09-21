@@ -1,6 +1,6 @@
 ---
 name: spec-criteria
-description: "Draft docs/plans/<slug>/acceptance-criteria.md from the ticket, decision ledger, and finalized plan, then return it with the damage-path questions only the ticket-owner can answer. Dispatched by /eng-spec after finalization, before any coder — fresh-eyes author, never the architect that produced the plan. Writes one planning document: no tests, no source, no plan edits."
+description: "Drafts the acceptance-criteria file from ticket, decision ledger and finalized plan. Dispatched by /eng-spec after finalization, before any coder."
 model: sonnet
 tools: Read, Glob, Grep, Write
 color: yellow

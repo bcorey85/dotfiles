@@ -1,12 +1,18 @@
-# Font — Fira Code. No space in "FiraCode": that is the family name the Nerd
-# Fonts patcher registers, and `Fira Code Nerd Font Mono` silently falls back.
-# The family ships no italic, so italics are synthesised (oblique) by ghostty.
-font-family = FiraCode Nerd Font Mono
-font-style = Retina
+# Font — Intel One Mono. Nerd Fonts patches it under the name IntoneMono, NOT
+# Intel: `Intel One Mono Nerd Font Mono` silently falls back. `NFM` is the
+# strict-monospace cut; the plain and Propo cuts break TUI column alignment.
+# Light/Regular/Medium/Bold, each with a true italic.
+font-family = IntoneMono Nerd Font Mono
+font-style = Regular
+# font-style covers the upright only, so the italic needs its own line or it
+# falls back a weight. This family names the Regular italic just "Italic".
+font-style-italic = Italic
 font-size = 13
-# Line spacing lifted for astigmatism (0.75x180, with-the-rule): the vertical
-# smear direction bleeds adjacent rows, so extra row gap buys legibility.
-adjust-cell-height = 20%
+# Leading is the lever for line-tracking, not glyph shape: the white band
+# between lines shrinks even at equal metric line height on short-extender
+# faces. Also buys legibility against astigmatism (0.75x180, with-the-rule),
+# whose vertical smear bleeds adjacent rows.
+adjust-cell-height = 8%
 confirm-close-surface = false
 
 # Theme — owned by the `theme-mode` switcher: it writes ?theme-switch.conf

@@ -4,7 +4,7 @@ Data-driven monthly audit of `~/.claude/skills/`. The guidance this implements: 
 
 ## Inputs
 
-1. **Telemetry**: `${SKILL_USAGE_FILE:-$HOME/.claude/skill-usage.jsonl}` — written by the `log-skill-use.sh` hooks (`{ts, skill, via, repo}`; `via` is `user` for typed slash commands, `model` for Skill-tool invocations). If the file is missing or empty, say the telemetry hooks haven't fired yet (check they're registered in settings.json), and still run the static checks below.
+1. **Telemetry**: `${SKILL_USAGE_FILE:-$HOME/.claude/skill-usage.jsonl}` — written by the `log-skill-use.sh` hooks and by the review loop's scope script (`{ts, skill, via, repo}`, plus `caller` from the script; `via` is `user` for typed slash commands, `model` for Skill-tool invocations). If the file is missing or empty, say the telemetry hooks haven't fired yet (check they're registered in settings.json), and still run the static checks below.
 2. **Inventory**: every `~/.claude/skills/*/SKILL.md` — name, description, body line count.
 
 ## Exempt list (never flag)

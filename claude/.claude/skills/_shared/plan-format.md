@@ -13,7 +13,7 @@ The implementation-plan artifact contract. Producer `/eng-spec`; consumers `/cod
 
 - `## Phase Status` is mandatory — never delete it. Consumers find it by HEADING, not position (hoisted to top in `spec.md`).
 - Every Phase Status line carries a `(risk: low|high)` tag.
-- A phase MAY add `(reviewers: security[, perf])` — the PRIMARY dispatch signal for `security-reviewer`, which never infers from paths. Declare on authz/tenancy changes, guard opt-outs, secrets. Additive only: omitting it never suppresses a forced pass.
+- Every Phase Status line carries a `(reviewers: …)` tag. The legal values are `security`, `perf`, and `smell`, alone or comma-separated, or `none` when no domain applies. Declare `security` on authz/tenancy changes, guard opt-outs, and secrets. The tag is additive only: `none` declares no domain and never suppresses a diff trigger or a forced pass.
 - Phases are VERTICAL slices (each independently verifiable end-to-end),
   never horizontal layers.
 - Keep each phase signable in one sitting — past ~8–10 semantic files (churn excluded), split on a natural seam into dependency-ordered slices, unless splitting loses end-to-end verifiability; then append `— atomic: <why>`.
@@ -57,16 +57,16 @@ Header links: whichever upstream artifacts exist. Do not invent links.
 
 <!-- /code updates per phase. Source of truth for "which phase is next". Do not delete. -->
 
-- [ ] Phase 0: Contracts — frozen at plan approval (risk: high)
-- [ ] Phase 1: Walking skeleton — thinnest path through every Phase 0 contract (risk: low|high)
-- [ ] Phase 2: [name] (risk: low|high) (reviewers: security)
+- [ ] Phase 0: Contracts — frozen at plan approval (risk: high) (reviewers: security|perf|smell|none)
+- [ ] Phase 1: Walking skeleton — thinnest path through every Phase 0 contract (risk: low|high) (reviewers: security|perf|smell|none)
+- [ ] Phase 2: [name] (risk: low|high) (reviewers: security|perf|smell|none)
 
 <!-- Mandatory closing phases (closing-phases.md), renumbered after the last feature phase: -->
 
-- [ ] Phase N: Refactor pass — /refactor cleanup sweep (risk: low)
-- [ ] Phase N+1: Test audit — /test-audit cross-phase test gate (risk: high)
-- [ ] Phase N+2: Verify pass — branch-wide deep review + /verify (plan↔diff + smoke list) (risk: high)
-- [ ] Phase N+3: Recap — /branch-recap synthesis + residue triage, no gates (risk: low)
+- [ ] Phase N: Refactor pass — /refactor cleanup sweep (risk: low) (reviewers: none)
+- [ ] Phase N+1: Test audit — /test-audit cross-phase test gate (risk: high) (reviewers: none)
+- [ ] Phase N+2: Verify pass — branch-wide deep review + /verify (plan↔diff + smoke list) (risk: high) (reviewers: none)
+- [ ] Phase N+3: Recap — /branch-recap synthesis + residue triage, no gates (risk: low) (reviewers: none)
 
 ## Current State Analysis
 

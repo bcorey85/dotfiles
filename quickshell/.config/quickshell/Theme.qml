@@ -10,22 +10,10 @@ import QtQuick
 Singleton {
     id: root
 
-    property string family: "flexoki"
+    property string family: "onedarkpro"
     property string mode: "dark"
 
     readonly property var palettes: ({
-        "flexoki-dark": {
-            bg: "#100f0f", panel: "#1c1b1a", border: "#403e3c",
-            fg: "#cecdc3", muted: "#575653",
-            green: "#879a39", red: "#d14d41", teal: "#3aa99f",
-            orange: "#da702c", yellow: "#d0a215", magenta: "#ce5d97"
-        },
-        "flexoki-light": {
-            bg: "#fffcf0", panel: "#f2f0e5", border: "#dad8ce",
-            fg: "#100f0f", muted: "#b7b5ac",
-            green: "#66800b", red: "#af3029", teal: "#24837b",
-            orange: "#bc5215", yellow: "#ad8301", magenta: "#a02f6f"
-        },
         "bamboo-dark": {
             bg: "#252623", panel: "#2f312c", border: "#454842",
             fg: "#f1e9d2", muted: "#838781",
@@ -50,17 +38,17 @@ Singleton {
             green: "#587539", red: "#f52a65", teal: "#118c74",
             orange: "#b15c00", yellow: "#8c6c3e", magenta: "#9854f1"
         },
-        "onedark-dark": {
-            bg: "#282c34", panel: "#31353f", border: "#3b3f4c",
-            fg: "#abb2bf", muted: "#5c6370",
-            green: "#98c379", red: "#e86671", teal: "#56b6c2",
+        "onedarkpro-dark": {
+            bg: "#282c34", panel: "#21252b", border: "#3b4048",
+            fg: "#abb2bf", muted: "#7f848e",
+            green: "#98c379", red: "#e06c75", teal: "#56b6c2",
             orange: "#d19a66", yellow: "#e5c07b", magenta: "#c678dd"
         },
-        "onedark-light": {
-            bg: "#fafafa", panel: "#f0f0f0", border: "#dcdcdc",
-            fg: "#383a42", muted: "#a0a1a7",
-            green: "#50a14f", red: "#e45649", teal: "#0184bc",
-            orange: "#c18401", yellow: "#986801", magenta: "#a626a4"
+        "onedarkpro-light": {
+            bg: "#fafafa", panel: "#efefef", border: "#e7e7e7",
+            fg: "#6a6a6a", muted: "#9b9fa6",
+            green: "#1da912", red: "#e05661", teal: "#56b6c2",
+            orange: "#ee9025", yellow: "#eea825", magenta: "#9a77cf"
         },
         "dracula-dark": {
             bg: "#282A36", panel: "#21222C", border: "#44475A",
@@ -112,8 +100,8 @@ Singleton {
         }
     })
 
-    // Unknown family falls back to flexoki rather than leaving the bar unpainted.
-    readonly property var p: palettes[family + "-" + mode] ?? palettes["flexoki-" + mode] ?? palettes["flexoki-dark"]
+    // Unknown family falls back to onedarkpro rather than leaving the bar unpainted.
+    readonly property var p: palettes[family + "-" + mode] ?? palettes["onedarkpro-" + mode] ?? palettes["onedarkpro-dark"]
 
     readonly property color bg: p.bg
     readonly property color panel: p.panel

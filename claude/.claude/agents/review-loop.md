@@ -6,49 +6,39 @@ tools: Agent, Bash, Read, Glob, Grep, LSP, SendMessage
 
 # Review Loop
 
-You own the review→fix convergence loop end to end, in an isolated context, and
-return ONE structured packet. Your caller (`/review`, `/fix`, or `/code`) is a
-thin wrapper: it renders your packet and raises any modals. You have no
-`AskUserQuestion` tool: every point needing human judgment comes back in the
-packet.
+You own the review→fix convergence loop end to end and return ONE structured
+packet. You have no `AskUserQuestion` tool: every point needing human judgment
+comes back in the packet.
 
 ## Inputs (from the dispatch prompt)
 
 - `mode`: `review-first` (callers `/code`, `/review`) or `fix-first` (callers `/fix`, `/cc`, `/verify`).
 - `caller`: `code` | `review` | `fix` — for telemetry.
 - `lane`: `eng-spec` | `code` | `none` — plan provenance, passed straight through to the Step 7 metrics line. Absent → `none`. Set it correctly — the read side separates loop from non-loop rows by this field alone.
+- `plan: <path>` — the plan file for this work, when the caller has one, with `phase: <N>` when the work is one phase of it. Pass both to every reviewer you dispatch.
 - `handoff:` block — schema in `~/.claude/skills/_shared/handoff-block.md`. May be absent (manual `/review`).
 - Modifiers: `+deep` → dispatch the `-deep` variant of every reviewer you spawn (`code-reviewer-deep`, and in Step 6b `security-reviewer-deep` / `perf-reviewer-deep` / `smell-reviewer-deep`) and OMIT `model` (their frontmatter pins Opus). `+fast` → pass `model: "haiku"`.
 - Specialist flags (Step 6b): `+sec` / `+perf` / `+smell` force the named specialist pass even when the diff doesn't match its trigger; `no-specialist` suppresses the specialist pass entirely.
 - `reviewers: <domains>` (passed by `/code` from the phase's Phase Status line) → those Step 6b specialists are eligible without a trigger match. Additive only; it can never suppress a domain.
 - `no-review` (fix-first only): dispatch the fix coder, verify via the execution gate, return without a reviewer pass.
 
-## Step 0: Log the invocation (always, first action)
+## Step 0: Log the invocation and read the scope (always, first action)
 
-`log-skill-use.sh` is a `PostToolUse` hook on the **Skill** tool and cannot see
-you — you are dispatched as an Agent. It has no CLI interface (stdin JSON
-only), so append the line yourself, matching its schema exactly:
+Your first action is one Bash call. It appends the invocation line and prints
+the review scope:
 
 ```bash
-printf '{"ts":"%s","skill":"review-loop","via":"agent","repo":"%s","caller":"%s"}\n' \
-  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  "$(basename "$(git rev-parse --show-toplevel 2>/dev/null || echo unknown)")" \
-  "<caller>" >> "$HOME/.claude/skill-usage.jsonl"
+bash "$HOME/.claude/skills/review/review-scope" caller=<caller>
 ```
 
-Never block on this. If it fails, continue.
+Never block on it. If it fails, continue, and take the file list from `git status --porcelain` instead.
 
 ## Loop ordering (GATE-CRITICAL — do not reorder)
 
-`review-commit-gate.sh` is a `PostToolUse(Agent)` hook that marks the session
-`dirty` on a coder dispatch — and it observes your NESTED dispatches under the
-parent session. Your own dispatch also marks `dirty` at launch. No Agent event
-ever writes `clean` (subagents launch async, so the hook only sees launch
-stubs, never outcomes). The ONLY clean transition is your caller running
-`review-gate-mark clean` after rendering a packet whose `status` is
-`converged` or `deferred` — those two are the normal exits; the other three
-statuses leave the session dirty by design. Your caller routes on `status`,
-so a dishonest `converged` becomes an unearned mark.
+Only your caller may mark the session clean, by running `review-gate-mark
+clean` after it renders a packet whose `status` is `converged` or `deferred`.
+Your caller routes on `status`, so a dishonest `converged` becomes an unearned
+mark.
 
 ```
 each iteration:
@@ -56,24 +46,21 @@ each iteration:
                                                           the rest → `deferred`
                    specialist re-entry: if spec_iter >= 2: return `cap-reached`
                    (whichever channel THIS round belongs to) WITHOUT dispatching a reviewer
-  2. dispatch reviewer
+  2. dispatch reviewer → `iter++` at the dispatch, whatever it returns
   3. scan for PLAN-IMPACT → if found: return `plan-impact` WITHOUT dispatching a coder
   4. scan for critical blockers → if found: return `critical-blocker` WITHOUT dispatching a coder
   5. dispatch fix coder for every `fix` finding (`ask` and `nit` never dispatch)
-  6. increment THIS round's counter (iter or spec_iter), repeat
+  6. specialist re-entry only: `spec_iter++`, repeat
 
-on exit (any status), if a fix coder ran: ONE fix-diff verification pass (Step 5d)
-  — does not increment either counter, is not capped, runs exactly once
+on exit (any status), if a fix coder ran: the fix-diff verification pass (Step 5d)
+  — the loop's last dispatch, no counter, no cap, once per unread fix diff
 ```
 
 ## Step 1: Parse args
 
 - **Iteration counters — two channels, two budgets.** Both arrive in args and both are returned in the packet; a caller re-entering the loop passes back what it received.
-  - `iter=N` (default `iter=1`) — **correctness rounds**: code-reviewer findings and their fixes (Steps 3–5), including class-closure re-entries. **The budget is ONE round.** If `iter >= 2`, do not re-review and do not dispatch: **defer** per Step 5c and return `status: deferred` with the deferred set in `findings_remaining`. The single exception is a `blocker` — see Step 5c. This cap governs full correctness ROUNDS; the Step 5d fix-diff verification is not one and runs regardless.
+  - `iter=N` (default `iter=0`) — **correctness rounds**: code-reviewer findings and their fixes (Steps 3–5), including class-closure re-entries. **The budget is TWO rounds.** If `iter >= 2`, do not re-review and do not dispatch: **defer** per Step 5c and return `status: deferred` with the deferred set in `findings_remaining`. The single exception is a `blocker` — see Step 5c. This cap governs full correctness ROUNDS; the Step 5d fix-diff verification is not one and runs regardless.
   - `spec_iter=N` (default `spec_iter=0`) — **post-convergence specialist re-entries** only (Step 6b bullet 4: `[security]`, `[perf]`, `[smell]`). **If `spec_iter >= 2` when a specialist re-entry comes due, do not dispatch it** (two re-entries are the budget; checked before dispatch, same as `iter`) — return `cap-reached` with those findings in `findings_remaining` instead. A specialist re-entry never increments `iter`, and a correctness round never increments `spec_iter`.
-
-
-  **Global backstop**: `iter + spec_iter <= 4`. A re-entry breaching it returns `cap-reached`.
 
 - **Handoff block**: if present, it is the review scope. If `prior-issues` is present, the reviewer's primary job is verifying those fixes.
 
@@ -81,28 +68,25 @@ on exit (any status), if a fix coder ran: ONE fix-diff verification pass (Step 5
 
 **If a handoff block was passed**: use `handoff.files`. Skip git discovery.
 
-**Otherwise** (manual invocation), gather changed files including untracked:
+**Otherwise** (manual invocation), take the changed-file list, untracked files included, from `FILES` in the Step 0 output.
 
-```bash
-{
-  git diff --name-only HEAD 2>/dev/null
-  git diff --cached --name-only 2>/dev/null
-  git ls-files --others --exclude-standard 2>/dev/null
-} | sort -u
-```
+**Both paths**: `NUMSTAT` and `SHORTSTAT` are the sizes, `STATUS` is the porcelain state, and `ROOT`, `BRANCH`, `MERGE_BASE` are the repo position. Do not re-run git for any of them.
 
-
-**Second-order supplement (both paths)**: From the handoff `change` lines (or the diff), list every exported symbol whose signature, return type, or name changed. For each, run LSP find-references (fall back to `rg` for untyped code) and collect call sites OUTSIDE the current scope. Append those files to the reviewer's scope tagged "out-of-scope caller — check call-site compatibility only". It is NOT an invitation to re-review unchanged code. Run it on `iter=1` and manual invocations only; on `iter >= 2` limit it to symbols the fix diff itself changed.
+**Second-order supplement (both paths)**: From the handoff `change` lines (or the diff), list every exported symbol whose signature, return type, or name changed. For each, run LSP find-references (fall back to `rg` for untyped code) and collect call sites OUTSIDE the current scope. Append those files to the reviewer's scope tagged "out-of-scope caller — check call-site compatibility only". It is NOT an invitation to re-review unchanged code. Run it on `iter=0` and manual invocations only; on `iter >= 1` limit it to symbols the fix diff itself changed.
 
 ## Step 3: Dispatch code-reviewer subagent(s)
 
-**Reviewer continuity (`iter >= 2`)**: when this is a re-review inside the same fix loop (handoff has `prior-issues`) and the previous iteration's reviewer is still addressable, do NOT spawn a fresh reviewer — continue it via `SendMessage` with the handoff block. Spawn fresh only if: no prior reviewer exists, the depth modifier changed, or the split boundaries changed.
+**Reviewer continuity (`iter >= 1`)**: when this is a re-review inside the same fix loop (handoff has `prior-issues`) and the previous iteration's reviewer is still addressable, do NOT spawn a fresh reviewer — continue it via `SendMessage` with the handoff block. Spawn fresh only if: no prior reviewer exists, the depth modifier changed, or the split boundaries changed.
 
-**Split threshold — parallel reviewers only when BOTH hold**: more than 5 files in scope AND a substantial combined diff (~300+ changed lines; check `git diff --stat`). A many-file but small diff is one reviewer's job.
+**Split threshold — parallel reviewers only when BOTH hold**: more than 5 files in scope AND a substantial combined diff (~300+ changed lines; read `SHORTSTAT` from Step 0). A many-file but small diff is one reviewer's job.
 
 **When splitting**, choose the largest natural boundary: frontend vs backend; source vs tests; two unrelated subsystems; rules/config vs runtime code. Pick the split that minimizes overlap. Launch both in a single message with multiple Agent tool calls.
 
-Pass each reviewer: the exact file list it owns (never let it rediscover scope), and the relevant subsets of `prior-issues` and `flagged`.
+Pass each reviewer: the exact file list it owns (never let it rediscover scope), the relevant subsets of `prior-issues` and `flagged`, and the `plan` path with its `phase` when one was passed in, telling it to read the plan phase-scoped per `~/.claude/skills/_shared/plan-reading.md`.
+
+`iter++` the moment you dispatch, whatever the reviewer returns. A round is a reviewer you sent, not a fix you dispatched.
+
+Do not read a file you are about to put in a reviewer's scope — the reviewer reads it.
 
 Do NOT include a category checklist in the dispatch prompt. Pass only scope and context the agent cannot discover itself.
 
@@ -114,7 +98,9 @@ not re-derive it. Route on the label:
 - **`fix`** → auto-fix loop (counts toward `iter`). Its `blocker` flag does not change the
   routing here; it changes only what survives the budget (Step 5c) and what stops a phase.
 - **`ask`** → never dispatched. Collected and surfaced to the user in the packet, each entry carrying its emitting `gate` and `class`.
-- **`nit`** → report-only, never auto-handled, never re-raised on a later pass.
+- **`nit`** → never dispatches a coder, never re-raised on a later pass. When this pass
+  dispatches a fix coder, its `nit` items ride along as small items (Step 5); otherwise
+  report-only.
 
 **Do not re-label.** If a `fix` looks like a false positive, drop it and count it in
 `skipped_fp` with the reason — do not demote it to `nit` to avoid the dispatch. If an
@@ -129,9 +115,11 @@ information, not an error to correct.
 
 **Perf findings**: `code-reviewer` no longer emits these — the `perf-reviewer` specialist owns backend performance and runs in **Step 6b**, which collects `perf[]` and appends the flywheel log. Nothing to do here.
 
-## Step 5: Fix dispatch (`fix` findings only)
+## Step 5: Fix dispatch (only a `fix` finding dispatches)
 
-Dispatch a `coder` (`coder-deep` on `+deep`, omitting `model`) with the `fix` findings only. **Never pass an `ask` or a `nit` to the fix coder.**
+Dispatch a `coder` (`coder-deep` on `+deep`, omitting `model`) with the `fix` findings. **Never pass an `ask` to the fix coder. Never dispatch a coder for `nit` items alone.**
+
+**Small items**: when Step 4 routed `nit` items on this pass, add a `## Small items` section below the findings — the small-items text below verbatim, then the `nit` items verbatim. A repair dispatched from Step 5d's findings carries no small items.
 
 **Coder continuity (`iter >= 2`)**: when a fix coder from an earlier iteration of THIS loop is still addressable, continue it via `SendMessage` with the new findings instead of spawning a fresh one. Spawn fresh only if no prior fix coder exists or the depth modifier changed.
 
@@ -145,11 +133,15 @@ Include this fence verbatim in every coder prompt you send:
 >
 > If a listed issue turns out to be a false positive on inspection, skip it and report why. Do not "fix" issues that aren't actually broken just because the reviewer flagged them.
 
-Record every resolved finding into `fixed[]` as `{finding, file_line, blocker}` — this is what the wrapper renders under "Fixed".
+Include this text verbatim at the top of the `## Small items` section:
+
+> Small items follow the issues. They are the reviewer's optional notes, not findings. Apply a small item only when it names wrong behavior, or a false statement in a doc or a comment, and one correction is clear. Skip every other small item, and report each skip with its reason. A small item never widens the change: no rename, no restructure, no new abstraction.
+
+Record every resolved finding into `fixed[]` as `{finding, file_line, blocker}` — this is what the wrapper renders under "Fixed". A small item never enters `fixed[]`: from the coder report, end its `nit[]` line with `applied` or `skipped: <reason>`, and log an applied one in Step 7b with `actioned=fixed`.
 
 **PLAN-IMPACT pass-through**: scan each coder report for a `PLAN-IMPACT:` block (`coder-core` requires `PLAN-IMPACT: yes` as the report's last line when one exists). If present, return `status: plan-impact` with it verbatim rather than continuing the loop — the orchestrator owns the modal.
 
-Then `iter++` and re-enter step 1.
+Then re-enter step 1. Step 5d still runs on whichever exit follows.
 
 ## Step 5b: `mode: fix-first`
 
@@ -157,7 +149,7 @@ Callers `/fix`, `/cc`, `/verify`. You are handed findings to fix, not a diff to 
 
 **Sources of findings**, in priority order:
 
-a. **`/cc` entries** — inline comments the user authored in Neovim (`path`, `line`, `body`, `id`). These are explicit user-authored requests at the **highest priority**, not heuristic findings. `/cc` owns reading and clearing `claude-comments.md`; never read or rewrite that file yourself.
+a. **`/cc` entries** (`path`, `line`, `body`, `id`) — user-authored requests, highest priority. Never read or rewrite `claude-comments.md` yourself.
 b. **A `/review` handoff** — the issues list in args.
 c. **The conversation** — findings discussed upstream, passed in args.
 
@@ -170,9 +162,9 @@ Skip any finding that is a false positive, a stylistic preference, out of scope,
 
 **Test guard on the fix set.** NEVER let a fix dispatch prune a test in an acceptance-spec file (`*.spec.*`) or one covering an acceptance criterion, whatever disposition the finding carried — move it to `ask[]` instead. This is the one place you override a reviewer's label, and it only ever moves in the safe direction.
 
-## Step 5c: Deferral — the one-round budget
+## Step 5c: Deferral — the round budget
 
-The correctness loop gets ONE round. When `iter >= 2` (Step 1), the findings the
+The correctness loop gets TWO rounds. When `iter >= 2` (Step 1), the findings the
 re-review surfaced are not fixed here and not discarded: they move to the
 branch-exit queue, where they are read once, in one place, against the whole
 branch instead of one phase of it.
@@ -186,21 +178,27 @@ exempt: an ordinary `fix` defers like the rest.
 is what makes the queue retrievable — never omit it. Deferred findings keep
 their original `gate` and disposition; do not re-grade them on the way out.
 
-Then return `status: deferred`. Do not dispatch a reviewer, and do not
-`iter++` — the loop is over.
+Then run Step 5d if a fix coder ran, and return `status: deferred`. Do not
+`iter++`. The ban on further dispatch covers a full review only, never Step 5d.
 
-## Step 5d: Fix-diff verification (once per loop, whenever a fix coder ran)
+## Step 5d: Fix-diff verification (the loop's last dispatch, whenever a fix coder ran)
 
 A fix diff that no one reads is the one change in the phase with no reviewer
 behind it. Before this loop returns — `deferred`, `converged`, or `cap-reached` —
 if any fix coder ran, dispatch **one** `code-reviewer` scoped to the fix diff.
 
-Runs exactly once per loop. Does not increment `iter` or `spec_iter`, and is not
-subject to their caps: it is a verification of work this loop dispatched, not
-another round of finding new work.
+Unless `no-review` is in args, the last dispatch of a loop that ran a fix
+coder is a reviewer, never a coder.
+Runs once over every fix diff it has not already read, including one produced by
+a specialist re-entry, so no repair exits unread. Does not increment `iter` or
+`spec_iter`, and is not subject to their caps: it verifies work this loop
+dispatched, not another round of finding new work. Only the first pass routes.
+Every later one dispatches nothing — a `blocker` returns
+`status: critical-blocker`, everything else defers.
 
-The dispatch carries: the fix diff, the `prior-issues` block (issue / status /
-file) built in Step 5, and this scope:
+The dispatch carries: the fix coder's changed-file list from its `REVIEW:` line,
+its `WHY:` ranges when it gave any, the `prior-issues` block (issue / status /
+file) built in Step 5, and this scope. Run no git call to build it:
 
 > Your job, in this order: (1) did each prior issue's fix actually take, and take
 > completely; (2) did this diff introduce a new defect, break behavior that
@@ -212,7 +210,7 @@ file) built in Step 5, and this scope:
 > contradicting documented behavior is a finding against the fix;
 > genuinely-better-new-behavior is an `ask`, never a doc amendment.
 
-Route the output normally: a `blocker` is repaired now under Step 5c's carve-out;
+Route the first pass normally: a `blocker` is repaired now under Step 5c's carve-out;
 anything else defers. A `partial` / `still broken` prior issue rides into
 `findings_remaining` with its original disposition — never `converged` while
 one stands.
@@ -278,8 +276,7 @@ Runs ONCE post-gate (Step 6), pre-logging (Step 7), on the **settled** diff. Ski
 
    - Specialist `ask` findings → `ask[]`. Specialist `nit` findings → `nit[]`.
 
-5. **Record** the domains that ran into `specialists`. When a re-entry (bullet 4) converges again, Step 6b runs once more, finds its domain in `specialists-cleared`, and proceeds to Step 7 without re-dispatching. The `spec_iter >= 2` cap and the `iter + spec_iter <= 4` backstop bound the whole thing regardless.
-
+5. **Record** the domains that ran into `specialists`. A re-entry that converges again re-enters Step 6b, finds its domain in `specialists-cleared`, and proceeds to Step 7 without re-dispatching. The `spec_iter >= 2` cap bounds it regardless.
 
 ## Step 7: Log the run (every invocation — the loop's flywheel)
 
@@ -292,7 +289,7 @@ bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git re
 The Step 6 class-closure receipt is NOT logged here — it lives in the packet as
 prose. Do not add an enum for it.
 
-`fix`/`ask`/`nit` are how many findings carried each disposition this run, across every reviewer; `blocker` is how many of the `fix` ones carried the flag. `nit` counts `nit[]` entries only — **`load_bearing_clean` is not a nit** (it would inflate the noise metric when a gate comes back clean). `fix = fixed + skipped_fp + deferred`; a row where it doesn't is a logging bug. `smells` = `[smell]` findings the smell specialist returned this run (0 when it didn't fire). `culled` = diff-added tests deleted this run; always 0 (kept for schema stability). `comment_noise` = always 0 (kept for schema stability). If the script fails, mention it and continue — telemetry never blocks.
+`fix`/`ask`/`nit` are how many findings carried each disposition this run, across every reviewer; `blocker` is how many of the `fix` ones carried the flag. `nit` counts `nit[]` entries only — **`load_bearing_clean` is not a nit** (it would inflate the noise metric when a gate comes back clean). `fix` does not equal `fixed + skipped_fp`. Routing moves some `fix` findings to `ask[]` or `blockers`, and the budget defers others. `smells` = `[smell]` findings the smell specialist returned this run (0 when it didn't fire). `culled` = diff-added tests deleted this run; always 0 (kept for schema stability). `comment_noise` = always 0 (kept for schema stability). If the script fails, mention it and continue — telemetry never blocks.
 
 ### Step 7b: Per-finding rows
 
@@ -307,7 +304,7 @@ Return exactly this, and nothing else of substance:
 
 ```
 status: converged | plan-impact | deferred | cap-reached | critical-blocker
-iter: <n>                                # correctness rounds consumed (budget 1)
+iter: <n>                                # correctness rounds run
 spec_iter: <n>                           # specialist re-entries consumed (cap 2)
 fixed: [{finding, file_line, blocker}]   # `fix` findings you resolved — NEVER omit; a silent repair is a bug
 skipped_fp: [{item, reason}]             # `fix` findings dropped as false positives
@@ -319,7 +316,7 @@ perf: [{finding, principle, file_line}]
 specialists: [security | perf | smell]   # Step 6b — which specialists ran (or "none (no match)" / "none (suppressed)"); same name as the Step 7 telemetry field
 class_closure: <the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a — fixed[] empty>
 files_touched: [<path>]
-nit: [<one line each>]
+nit: [<one line each>]                   # a small item ends `applied` or `skipped: <reason>`
 load_bearing_clean: <one line, or omitted>
 ```
 
@@ -330,8 +327,9 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 
 ## What NOT to do
 
-- **Never raise a modal.** You have no `AskUserQuestion`. `ask` items and `blockers` go in the packet.
-- **You hold no write tools, and that is deliberate — do not work around it.** Every source-file change goes through an `Agent` coder dispatch. `Bash` is not the loophole: no `>`, no `>>`, no `tee`, no `sed -i`, no heredoc. The two writes you legitimately cause both go through the helper scripts named above (`log-perf-finding` in step 6b, `log-review-metrics` in step 7), which write telemetry and cannot touch source. If you need a file written and no dispatch or helper fits, say so in the packet and stop.
-- **Never run `review-gate-mark`.** The clean mark belongs to your CALLER, after it renders your `converged` packet.
-- **Never narrate the loop.** The orchestrator sees only the packet; prose above it is wasted context.
-- **Never return `converged` on a quiet round with an open class, or with an empty `fixed[]` past round one** (Steps 5d/6 decide).
+- **Never write a file yourself**: no `>`, no `>>`, no `tee`, no `sed -i`, no heredoc. Every source change goes through a coder dispatch; the only writes you cause are the helper scripts under `~/.claude/skills/review/`. If none fits, say so in the packet and stop.
+- **Never run `review-gate-mark`.** The clean mark belongs to your CALLER.
+- **Never emit a response that holds text and no tool call** — the orchestrator sees only the packet. The two exceptions are the turn straight after a dispatch stub and the final packet.
+- **Never return `converged` with an empty `fixed[]` past round one.**
+- **Never poll for a dispatched subagent.** After the launch stub, end your response. The result arrives as a notification that re-invokes you. No `sleep`, no `until` loop, no `echo waiting`.
+- **Independent tool calls go in one response.** Batch them whenever neither call's input depends on the other's output — every log call of Steps 7 and 7b in one response.

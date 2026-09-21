@@ -1,6 +1,6 @@
 ---
 name: plan-reviewer
-description: "Fresh-eyes review of a finalized plan BEFORE any code. Reads plan + ticket + acceptance criteria cold — never the producing conversation — and reports where the plan can't execute as written. Adversarial about the design: argues the shape, rubber-ducks each phase, every alternative names what changes/disappears/costs. Dispatched by /eng-spec at finalization end, re-dispatched once scoped to the repair diff after fixes. Read-only."
+description: "Fresh-eyes review of a finalized plan: where it cannot execute as written. Dispatched by /eng-spec at finalization, with paths only."
 model: opus
 tools: Bash, Read, Glob, Grep, LSP
 color: yellow

@@ -1,6 +1,6 @@
 ---
 name: smell-reviewer
-description: "Single-domain structure reviewer. Reviews ONLY the shape of a change — duplication (within the bound and against existing code), layer placement, naming, dead weight, cohesion. Dispatched by review-loop as a post-convergence pass on a diff-size trigger, and by /refactor at wider bounds (branch diff; audit mode's pre-existing-module scope). Fresh-eyes check: the author cannot see their own duplication. Defers correctness, security, perf, and test quality to their owners."
+description: "Structure reviewer: duplication, layer placement, naming, dead weight, cohesion. Dispatched by review-loop after convergence on large diffs, and by /refactor."
 model: sonnet
 tools: Bash, Read, Glob, Grep, LSP
 color: magenta

@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# review-scope-check — no-model check for review-scope
+#
+# usage: review-scope-check [tmpdir]
+#   Builds one throwaway fixture repo per mode family under tmpdir (default:
+#   $TMPDIR or /tmp), runs review-scope against each, and asserts the expected
+#   sections. Prints one line per case and exits non-zero on the first failure.
+set -uo pipefail
+
+here=$(cd "$(dirname "$0")" && pwd)
+scope="$here/review-scope"
+work=$(mktemp -d "${1:-${TMPDIR:-/tmp}}/review-scope-check.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+fails=0
+
+pass() { printf 'ok    %s\n' "$1"; }
+fail() { printf 'FAIL  %s\n     %s\n' "$1" "$2"; fails=$((fails + 1)); }
+
+assert() { # name haystack needle
+  case "$2" in
+    *"$3"*) pass "$1" ;;
+    *) fail "$1" "missing: $3" ;;
+  esac
+}
+
+refute() { # name haystack needle
+  case "$2" in
+    *"$3"*) fail "$1" "unexpected: $3" ;;
+    *) pass "$1" ;;
+  esac
+}
+
+newrepo() { # dir
+  mkdir -p "$1" && git -C "$1" init -q -b main
+  git -C "$1" config user.email check@example.invalid
+  git -C "$1" config user.name check
+  printf 'one\n' >"$1/kept.txt"
+  git -C "$1" add -A && git -C "$1" commit -qm base
+}
+
+# --- family 1: not a git repo -------------------------------------------------
+mkdir -p "$work/plain"
+out=$("$scope" root="$work/plain")
+assert "not-a-repo: empty ROOT" "$out" "ROOT="
+assert "not-a-repo: all sections present" "$out" "UNTRACKED="
+[ "$(printf '%s\n' "$out" | wc -l)" = 8 ] && pass "not-a-repo: 8 lines" \
+  || fail "not-a-repo: 8 lines" "got $(printf '%s\n' "$out" | wc -l)"
+
+# --- family 2: worktree (unstaged + staged + untracked) -----------------------
+newrepo "$work/wt"
+printf 'one\ntwo\n' >"$work/wt/kept.txt"          # unstaged edit
+printf 'x\n' >"$work/wt/staged.txt" && git -C "$work/wt" add staged.txt
+printf 'y\n' >"$work/wt/new.txt"                  # untracked
+out=$("$scope" root="$work/wt")
+assert "worktree: repo root"      "$out" "ROOT=$work/wt"
+assert "worktree: branch"         "$out" "BRANCH=main"
+assert "worktree: unstaged file"  "$out" "kept.txt"
+assert "worktree: staged file"    "$out" "staged.txt"
+assert "worktree: untracked file" "$out" "new.txt"
+assert "worktree: numstat row"    "$out" "1	0	kept.txt"
+assert "worktree: shortstat"      "$out" "2 files changed"
+refute "worktree: no diff text"   "$out" "@@"
+refute "worktree: no added lines" "$out" "+two"
+
+# --- family 3: staged only ----------------------------------------------------
+out=$("$scope" root="$work/wt" mode=staged)
+assert "staged: staged file"        "$out" "staged.txt"
+files=${out#*FILES=}; files=${files%%NUMSTAT=*}
+refute "staged: FILES holds only the staged file" "$files" "kept.txt"
+refute "staged: no diff text"       "$out" "@@"
+
+# --- family 4: path filter ----------------------------------------------------
+newrepo "$work/pf"
+mkdir -p "$work/pf/a" "$work/pf/b"
+printf '1\n' >"$work/pf/a/f.txt"
+printf '1\n' >"$work/pf/b/f.txt"
+git -C "$work/pf" add -A && git -C "$work/pf" commit -qm two
+printf '2\n' >>"$work/pf/a/f.txt"
+printf '2\n' >>"$work/pf/b/f.txt"
+out=$("$scope" root="$work/pf" paths=a)
+assert "paths: included dir" "$out" "a/f.txt"
+refute "paths: excluded dir" "$out" "b/f.txt"
+
+# --- family 5: bad input ------------------------------------------------------
+"$scope" mode=bogus >/dev/null 2>&1 && fail "bad mode: exit 2" "exited 0" || pass "bad mode: exit 2"
+"$scope" nonsense=1 >/dev/null 2>&1 && fail "bad key: exit 2" "exited 0" || pass "bad key: exit 2"
+
+# --- family 6: invocation log -------------------------------------------------
+hook="$HOME/.claude/scripts/log-skill-use.sh"
+log="$work/usage.jsonl"
+
+out=$(SKILL_USAGE_FILE="$log" "$scope" root="$work/wt" caller=review)
+refute "log: nothing on stdout"  "$out" '"skill"'
+assert "log: scope still printed" "$out" "SHORTSTAT="
+[ "$(wc -l <"$log")" = 1 ] && pass "log: exactly one line" \
+  || fail "log: exactly one line" "got $(wc -l <"$log")"
+line=$(cat "$log")
+assert "log: via is agent" "$line" '"via":"agent"'
+assert "log: caller rides along" "$line" '"caller":"review"'
+assert "log: repo is the basename" "$line" '"repo":"wt"'
+
+# the line must carry the hook's own first four keys, in the hook's own order
+if [ -x "$hook" ] && command -v jq >/dev/null 2>&1; then
+  ref="$work/ref.jsonl"
+  printf '{"hook_event_name":"PostToolUse","tool_input":{"skill":"review-loop"}}' \
+    | SKILL_USAGE_FILE="$ref" CLAUDE_PROJECT_DIR="$work/wt" bash "$hook" >/dev/null 2>&1
+  want=$(jq -r 'keys_unsorted | join(",")' "$ref" 2>/dev/null)
+  got=$(jq -r 'keys_unsorted | del(.[-1:][]) | join(",")' "$log" 2>/dev/null)
+  [ -n "$want" ] && [ "$want" = "$got" ] && pass "log: key order matches the hook" \
+    || fail "log: key order matches the hook" "hook=$want scope=$got"
+  jq -e 'has("caller") and (.ts | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T.*Z$"))' "$log" >/dev/null \
+    && pass "log: caller added last, ts is RFC3339 Z" \
+    || fail "log: caller added last, ts is RFC3339 Z" "see $log"
+else
+  printf 'skip  hook or jq not available\n'
+fi
+
+: >"$log"
+out=$("$scope" root="$work/wt" >/dev/null; SKILL_USAGE_FILE="$log" "$scope" root="$work/wt" >/dev/null; wc -l <"$log")
+[ "$out" = 0 ] && pass "log: no caller, no line" || fail "log: no caller, no line" "got $out"
+
+if command -v shellcheck >/dev/null 2>&1; then
+  shellcheck -S warning "$scope" && pass "shellcheck clean" || fail "shellcheck clean" "see output"
+else
+  printf 'skip  shellcheck not installed\n'
+fi
+
+printf '\n%s failure(s)\n' "$fails"
+[ "$fails" -eq 0 ]

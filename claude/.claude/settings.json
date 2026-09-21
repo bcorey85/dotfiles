@@ -454,7 +454,8 @@
     "skill-creator@claude-plugins-official": false,
     "typescript-lsp@claude-plugins-official": true,
     "ponytail@ponytail": false,
-    "simple-english@simple-english": false
+    "simple-english@simple-english": false,
+    "gopls-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "ponytail": {

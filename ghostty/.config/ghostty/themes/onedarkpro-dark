@@ -1,0 +1,25 @@
+# onedarkpro onedark (olimorris/onedarkpro.nvim, #282c34) — ANSI from the
+# theme's own terminal.lua map, verbatim: brights are brighten(hue, 15).
+background = #282c34
+foreground = #abb2bf
+cursor-color = #abb2bf
+cursor-text = #282c34
+selection-background = #414858
+selection-foreground = #abb2bf
+
+palette = 0=#282c34
+palette = 1=#e06c75
+palette = 2=#98c379
+palette = 3=#e5c07b
+palette = 4=#61afef
+palette = 5=#c678dd
+palette = 6=#56b6c2
+palette = 7=#abb2bf
+palette = 8=#5c6370
+palette = 9=#ff7b85
+palette = 10=#b6e991
+palette = 11=#ffd689
+palette = 12=#67bbff
+palette = 13=#e48aff
+palette = 14=#67dae8
+palette = 15=#abb2bf

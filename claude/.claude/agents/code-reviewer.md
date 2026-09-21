@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: "Review code changes for bugs, anti-patterns, architectural violations, and security issues. Use proactively after completing a feature, fixing a bug, or before any push operation. Analyzes the git working state (staged and unstaged changes)."
+description: "Reviews code changes for bugs, anti-patterns, architectural violations and security issues. Dispatched by review-loop, /peer-review and /calibrate."
 model: opus
 tools: Bash, Read, Glob, Grep, LSP
 color: cyan
@@ -68,5 +68,5 @@ Do not include "Positive Observations" or "Recommendations" sections. They add n
 
 Generic tool-use rules (run expensive commands once, parallel ≠ better, read before grep, LSP before grep, trust framework guarantees) are in `~/.claude/CLAUDE.md`. Plus these reviewer-specific rules:
 
-- **Don't re-verify framework guarantees as a "second opinion."** If the diff handoff says checks passed, trust it — do not re-run them.
+- **Trust a reported check.** If the diff handoff says checks passed, do not re-run them.
 - **Stay in scope.** Review only the files in the handoff (or the diff). Do not expand into unchanged files for context unless a specific finding requires it. Standing exceptions: tracing whether a flagged path is reachable, and verifying the supplying side of a config/env read introduced in the diff.

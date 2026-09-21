@@ -1,6 +1,6 @@
 ---
 name: test-reviewer
-description: "Analyze test suites against source code to identify coverage gaps, weak assertions, stale tests, and quality issues. Accepts a target scope (backend, frontend, specific module, or branch) as arguments. Branch scope reviews only tests the current branch added and includes the cull check for dead/low-value tests. Use when reviewing test quality, checking coverage before shipping, or evaluating test suite health."
+description: "Reviews a test suite for coverage gaps, weak assertions and stale tests. Dispatched by /test-review and /refactor."
 model: opus
 tools: Bash, Read, Glob, Grep, LSP
 color: yellow

@@ -1,6 +1,6 @@
 ---
 name: security-reviewer
-description: "Single-domain security reviewer. Reviews ONLY the security posture of a diff — authn/authz, tenant isolation, injection, secret handling, trust boundaries, crypto/session/CORS. Dispatched by review-loop as a post-convergence pass when the diff touches the security surface. Defers all general bugs, perf, and style to code-reviewer."
+description: "Reviews only the security posture of a diff. Dispatched by review-loop after convergence on security-surface diffs."
 model: opencode-go/mimo-v2.5
 mode: subagent
 permission:

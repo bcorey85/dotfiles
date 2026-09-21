@@ -68,7 +68,7 @@ Spec: <task-dir>
 ### Smoke-test checklist          (from the /verify closing phase)
 - <every human-only item, with steps>
 
-### Open items                    (ask[], nit[], escapes — verbatim)
+### Open items                    (ask[], nit[] lines not ending `applied`, escapes — verbatim)
 
 ### Still unstaged                (from /stage, blast-radius order)
 - <path> — <classifier reason>

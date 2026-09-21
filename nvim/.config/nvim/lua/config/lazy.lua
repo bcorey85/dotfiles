@@ -1,21 +1,9 @@
--- lazy.nvim bootstrap — replaces the native vim.pack loader (was config.pack).
+-- lazy.nvim bootstrap.
 --
--- Migration notes (from vim.pack):
---   * Each lua/plugins/<name>.lua now returns a lazy.nvim spec: the repo is the
---     first positional string (was `src`), `setup` became `config`, `deps`
---     became `dependencies`, and load triggers (event/ft/cmd/keys) were added
---     per plugin so most plugins no longer load at startup.
---   * A plugin with NO trigger and no `lazy = true` loads eagerly at startup
---     (same as vim.pack did) — that's the safe fallback for anything unconverted.
---   * lazy installs to ~/.local/share/nvim/lazy/ (NOT the old vim.pack dir at
---     site/pack/core/opt). The first launch re-clones everything; the old dir is
---     orphaned and can be deleted once this is confirmed working.
---   * Revisions pin to lazy-lock.json now (was nvim-pack-lock.json).
---
--- LSP: config.lsp calls vim.lsp.config()/enable() and reads
--- vim.lsp.config.eslint.root_dir, so it REQUIRES nvim-lspconfig on the rtp. It is
--- invoked from the lspconfig spec's config() (plugins/lspconfig.lua), gated on
--- BufReadPre — not here — so servers still activate lazily on file open.
+-- LSP: config.lsp reads vim.lsp.config.eslint.root_dir, so it REQUIRES
+-- nvim-lspconfig on the rtp. It runs from the lspconfig spec's config()
+-- (plugins/lspconfig.lua), gated on BufReadPre — not here — so servers still
+-- activate lazily on file open.
 
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 if not (vim.uv or vim.loop).fs_stat(lazypath) then
@@ -35,9 +23,7 @@ vim.opt.rtp:prepend(lazypath)
 
 require("lazy").setup({
   spec = { { import = "plugins" } },
-  -- No defaults.lazy = true: an unconverted spec (no trigger) then loads eagerly
-  -- like it did under vim.pack, rather than silently never loading.
-  install = { colorscheme = { "flexoki" } },
+  install = { colorscheme = { "onedark" } },
   checker = { enabled = false }, -- no background update checks
   change_detection = { enabled = false }, -- don't watch/reload spec files
   ui = { border = "rounded" },
@@ -55,13 +41,8 @@ require("lazy").setup({
   },
 })
 
--- Bootstrap the active theme family+mode here, not in a plugin spec: the
--- colorscheme family (plugins/flexoki.lua) is an eager lazy=false/priority=1000
--- spec, so lazy.setup() above loads and requires it synchronously before
--- returning — the colorscheme plugin is already on the rtp by this line.
--- theme-sync.start() applies the colorscheme with force=true and must run
--- exactly once; putting it here instead of inside the spec means the default
--- can't silently break if the spec is ever moved.
+-- Must stay here, not in a plugin spec: the eager colorscheme spec is already
+-- on the rtp by this line, and start() must run exactly once.
 require("config.theme-sync").start()
 
 -- Convenience: keep muscle-memory for the old pack commands pointing at lazy.

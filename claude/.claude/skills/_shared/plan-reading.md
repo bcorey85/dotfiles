@@ -3,7 +3,7 @@
 How a plan is READ (`plan-format.md` owns the shape).
 
 Consumers: `/code` (step 2 orchestrator read, step 3 coder dispatch),
-`coder-core` (workflow step 1).
+`coder-core` (workflow step 1), `code-reviewer` (via a review-loop dispatch).
 
 ## The rule
 

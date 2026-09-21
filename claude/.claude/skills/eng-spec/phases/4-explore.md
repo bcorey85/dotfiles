@@ -1,7 +1,8 @@
 # Phase 4: Architect exploration (explore only — no design yet)
 
-9. **Launch architect agent(s)** by scope (both in parallel for fullstack —
-   exploration has no contract dependency). Give each the ticket and **`02-research.md`**:
+9. **Launch architect agent(s)** by scope (`backend-architect` /
+   `frontend-architect`; both in parallel for fullstack — exploration has no
+   contract dependency). Give each the ticket and **`02-research.md`**:
 
    > Explore only — do NOT produce an implementation plan yet. The research
    > document you were given was produced without sight of the ticket; treat it

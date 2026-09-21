@@ -34,8 +34,8 @@ Nothing after this is a phase. `/adr` runs **pre-PR**, shipping in the code's PR
 ## Phase Status lines (copy verbatim, renumbering)
 
 ```markdown
-- [ ] Phase N: Refactor pass — /refactor +deep whole-branch sweep, root-cause gate (risk: low)
-- [ ] Phase N+1: Test audit — /test-audit cross-phase test gate (risk: high)
-- [ ] Phase N+2: Verify pass — branch-wide deep review + /verify (plan↔diff + smoke list) (risk: high)
-- [ ] Phase N+3: Recap — /branch-recap synthesis + residue triage, no gates (risk: low)
+- [ ] Phase N: Refactor pass — /refactor +deep whole-branch sweep, root-cause gate (risk: low) (reviewers: none)
+- [ ] Phase N+1: Test audit — /test-audit cross-phase test gate (risk: high) (reviewers: none)
+- [ ] Phase N+2: Verify pass — branch-wide deep review + /verify (plan↔diff + smoke list) (risk: high) (reviewers: none)
+- [ ] Phase N+3: Recap — /branch-recap synthesis + residue triage, no gates (risk: low) (reviewers: none)
 ```

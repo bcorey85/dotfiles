@@ -1,6 +1,6 @@
 ---
 name: coder
-description: "The implementer for any repo and any layer — CLI tools, scripts, libraries, infra, config, HTTP services, databases, and user interfaces, including features that span client and server. Use for all implementation work; there is no frontend/backend variant to choose between."
+description: "The implementer for any repo and any layer; no frontend or backend variant. Dispatched by /code, /refactor, /deps and review-loop."
 model: sonnet
 color: yellow
 tools: Bash, Read, Edit, Write, LSP

@@ -28,19 +28,17 @@ bash "$L" kind=finding "${C[@]}" gate=<agent name> disposition=<fix|ask|nit> [bl
 
 ## Rules that make the data usable
 
-- **Log silent runs:** `kind=run` with `n_findings=0` — those rows are the denominator.
+- **Log silent runs:** `kind=run` with `n_findings=0`.
 - **`gate=` is the literal agent name dispatched.** Never collapse a `-deep`
-  tier into its base name — the two tiers are different instruments.
+  tier into its base name.
 - **`diff_loc` is measured, not estimated.** `git diff --shortstat` over that
   gate's scope, insertions + deletions.
-- **`file`/`line` is the join key** — across gates, and against
-  `review-escapes.jsonl`. A finding naming no line logs `line=0`; it counts,
-  it just cannot participate in overlap analysis.
+- **`file`/`line` is the join key.** A finding naming no line logs `line=0`.
 - **`fix_induced=yes`** for code an earlier fix in this loop introduced.
 - **`fix_induced=bug`** — the tool sets `blocker=yes`; a loop-introduced bug cannot defer. Set `actioned=fixed`.
 - `class=` uses the escape vocabulary so the caught and escaped sides
   cross-tabulate. Do not invent values — unknown ones are refused.
-- **`other` is a last resort, read as one.** Reach for `docs` when the prose is wrong about the code (stale comment, wrong quantity, contradicting doc, over-cap volume). Mostly-`other` findings say nothing about what the gate catches.
+- **`other` is a last resort.** Reach for `docs` when the prose is wrong about the code (stale comment, wrong quantity, contradicting doc, over-cap volume).
 - **`result=` is the gate's verdict.** Gates with no pass/fail vocabulary still owe one (`PASS` clean/intent-aligned, `NEEDS CHANGES` gaps/residue, `NOT DISPATCHED` surface-unmatched). Omit only with genuinely no verdict.
 
 Full field reference lives in the script's header.

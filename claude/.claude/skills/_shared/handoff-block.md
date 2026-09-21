@@ -1,6 +1,6 @@
 # Handoff Block (single source of truth)
 
-Upstream→downstream context contract. Producers `/code` + `/fix`; consumer `review-loop`. Lets the reviewer skip rediscovery — scope, intent, and test status arrive, not reconstructed.
+Upstream→downstream context contract. Producers `/code` + `/fix`; consumer `review-loop`.
 
 ## Canonical schema
 
@@ -19,18 +19,17 @@ handoff:
     - issue: <one line>
       status: fixed | skipped | partial
       file: <path>
-  iter: <integer>         # correctness rounds consumed (default 1)
+  iter: <integer>         # correctness rounds run (default 0)
   spec_iter: <integer>    # post-convergence specialist re-entries consumed (default 0; omit on a first dispatch)
 ```
 
 ## The `why` channel
 
-`change` serves the reviewer; `why` serves the _human_ (surfaced in `/code`'s phase summary).
+`change` serves the reviewer; `why` serves the human.
 
-- **No `lines`, no anchor** — worth explaining ⇒ needs a range.
+- **No `lines`, no anchor.**
 - **`lines` are new-file numbers**, the diff's right-hand column.
-
-`why` stays sparse: non-obvious choices only (workarounds, deviations, ordering constraints, knowing tradeoffs). Renames/mechanical/self-explaining diffs get nothing.
+- Non-obvious choices only: workarounds, deviations, ordering constraints, knowing tradeoffs. Renames and mechanical diffs get nothing.
 
 ## Consumer rules
 
@@ -38,10 +37,9 @@ When present:
 
 - Use `files` as exact review scope. Do not run `git diff`.
 - `prior-issues` present ⇒ verify fixes fix-by-fix before scanning for new issues.
-- `iter`/`spec_iter` are separate budgets — folding them re-creates the bug the split fixed.
+- `iter`/`spec_iter` are separate budgets. Never fold them.
 
 When absent (manual `/review` invocation), fall back to git discovery.
 
-Treat the schema as a versioned interface — if a producer skill needs
-additional fields, add them here first and update both producers and
-consumers in the same change.
+A producer needing a new field adds it here first, and updates both sides in
+the same change.

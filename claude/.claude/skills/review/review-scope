@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# review-scope — print the whole review scope of a repo in one call
+#
+# usage: review-scope [key=value ...]
+#   mode=worktree   (default) unstaged + staged + untracked, against base
+#   mode=staged     staged only, against base
+#   base=HEAD       (default) the ref every count is taken against
+#   merge_base=<ref>  compare-to ref for the MERGE_BASE line; default: the
+#                     upstream of the current branch, else origin/HEAD, else
+#                     the first of main/master that exists, else empty
+#   paths=<a:b:c>   colon-separated pathspec filter applied to every git call
+#   root=<dir>      run in this directory instead of the current one
+#   caller=<name>   also append one invocation line to the skill-usage log
+#   skill=<name>    skill name on that line (default: review-loop)
+#
+# Prints eight labelled sections and no diff text:
+#   ROOT, BRANCH, MERGE_BASE, STATUS, FILES, NUMSTAT, SHORTSTAT, UNTRACKED
+#
+# With caller=, appends {ts, skill, via, repo, caller} to $SKILL_USAGE_FILE
+# (default ~/.claude/skill-usage.jsonl) — the same first four keys, in the same
+# order, as the skill-usage hook writes. The append never fails the caller and
+# never touches stdout.
+#
+# Exit 0 with ROOT= empty when the directory is not a git repo. Never fails the
+# caller: every git call that errors prints an empty section.
+set -uo pipefail
+
+mode=worktree base=HEAD merge_base="" paths="" root="" caller="" skill=review-loop
+for kv in "$@"; do
+  case "$kv" in
+    mode=*) mode="${kv#mode=}" ;;
+    base=*) base="${kv#base=}" ;;
+    merge_base=*) merge_base="${kv#merge_base=}" ;;
+    paths=*) paths="${kv#paths=}" ;;
+    root=*) root="${kv#root=}" ;;
+    caller=*) caller="${kv#caller=}" ;;
+    skill=*) skill="${kv#skill=}" ;;
+    *) echo "review-scope: unknown argument: $kv" >&2; exit 2 ;;
+  esac
+done
+
+case "$mode" in
+  worktree|staged) ;;
+  *) echo "review-scope: mode must be worktree or staged" >&2; exit 2 ;;
+esac
+
+if [ -n "$root" ]; then
+  cd "$root" 2>/dev/null || { echo "review-scope: cannot enter $root" >&2; exit 2; }
+fi
+
+IFS=':' read -r -a pathspec <<<"$paths"
+if [ -z "$paths" ]; then pathspec=(); fi
+
+top=$(git rev-parse --show-toplevel 2>/dev/null || true)
+
+if [ -n "$caller" ]; then
+  log="${SKILL_USAGE_FILE:-$HOME/.claude/skill-usage.jsonl}"
+  repo=$(basename "${top:-$PWD}")
+  if command -v jq >/dev/null 2>&1; then
+    jq -cn --arg skill "$skill" --arg repo "$repo" --arg caller "$caller" \
+      '{ts: (now | todate), skill: $skill, via: "agent", repo: $repo, caller: $caller}' \
+      >>"$log" 2>/dev/null || true
+  else
+    printf '{"ts":"%s","skill":"%s","via":"agent","repo":"%s","caller":"%s"}\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$skill" "$repo" "$caller" >>"$log" 2>/dev/null || true
+  fi
+fi
+
+echo "ROOT=$top"
+if [ -z "$top" ]; then
+  for s in BRANCH MERGE_BASE STATUS FILES NUMSTAT SHORTSTAT UNTRACKED; do echo "$s="; done
+  exit 0
+fi
+
+echo "BRANCH=$(git branch --show-current 2>/dev/null || true)"
+
+if [ -z "$merge_base" ]; then
+  merge_base=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)
+fi
+if [ -z "$merge_base" ]; then
+  merge_base=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)
+fi
+if [ -z "$merge_base" ]; then
+  for c in main master; do
+    git rev-parse --verify --quiet "$c" >/dev/null 2>&1 && { merge_base="$c"; break; }
+  done
+fi
+if [ -n "$merge_base" ]; then
+  echo "MERGE_BASE=$(git merge-base HEAD "$merge_base" 2>/dev/null || true)"
+else
+  echo "MERGE_BASE="
+fi
+
+cached=()
+[ "$mode" = staged ] && cached=(--cached)
+
+echo "STATUS="
+git status --porcelain ${pathspec:+-- "${pathspec[@]}"} 2>/dev/null || true
+
+echo "FILES="
+{
+  if [ "$mode" = staged ]; then
+    git diff --cached --name-only "$base" ${pathspec:+-- "${pathspec[@]}"} 2>/dev/null
+  else
+    git diff --name-only "$base" ${pathspec:+-- "${pathspec[@]}"} 2>/dev/null
+    git diff --cached --name-only "$base" ${pathspec:+-- "${pathspec[@]}"} 2>/dev/null
+    git ls-files --others --exclude-standard ${pathspec:+-- "${pathspec[@]}"} 2>/dev/null
+  fi
+} | sort -u
+
+echo "NUMSTAT="
+git diff "${cached[@]+"${cached[@]}"}" --numstat "$base" ${pathspec:+-- "${pathspec[@]}"} 2>/dev/null || true
+
+echo "SHORTSTAT="
+git diff "${cached[@]+"${cached[@]}"}" --shortstat "$base" ${pathspec:+-- "${pathspec[@]}"} 2>/dev/null || true
+
+echo "UNTRACKED="
+git ls-files --others --exclude-standard ${pathspec:+-- "${pathspec[@]}"} 2>/dev/null || true

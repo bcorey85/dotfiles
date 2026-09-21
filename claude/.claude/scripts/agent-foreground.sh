@@ -11,8 +11,8 @@
 #
 # Logic:
 #   1. CLAUDE_SKIP_HOOKS set to any non-empty value -> exit 0 (documented bypass).
-#   2. Nested caller = hook input carries `agent_id` (present only inside a subagent call).
-#      No agent_id -> exit 0, call runs unchanged.
+#   2. Nested caller = hook input carries `agent_id` or `agent_type` (present only inside a
+#      subagent call). Neither field -> exit 0, call runs unchanged.
 #   3. Otherwise answer allow + updatedInput = the call's input plus run_in_background:false.
 #   4. Never blocks: on any failure exit 0 with no output.
 set -uo pipefail
@@ -20,5 +20,5 @@ set -uo pipefail
 command -v jq >/dev/null || exit 0
 input=$(cat)
 [[ $(jq -r '.tool_name // ""' <<<"$input" 2>/dev/null) == Agent ]] || exit 0
-[[ -n $(jq -r '.agent_id // ""' <<<"$input" 2>/dev/null) ]] || exit 0
+[[ -n $(jq -r '.agent_id // .agent_type // ""' <<<"$input" 2>/dev/null) ]] || exit 0
 jq -c '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"allow",updatedInput:(.tool_input + {run_in_background:false})}}' <<<"$input" 2>/dev/null || exit 0

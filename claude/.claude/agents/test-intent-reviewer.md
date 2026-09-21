@@ -1,6 +1,6 @@
 ---
 name: test-intent-reviewer
-description: "Audit whether changed tests pin INTENDED behavior or codify the implementation (bug-pinning), cull test spam, sweep weak/absent assertions against plan promises. Judges assertions against an intent oracle (ticket + success criteria); the implementation is demoted to suspect. Read-only. Dispatched in two scoped halves (Step 2) — run only the half the dispatcher names. NOT wired into /review or /fix; NOT coverage/health (test-reviewer)."
+description: "Audits whether changed tests pin intent or implementation. Dispatched by /test-audit or directly; name `scope: cull` or `scope: bug-pinning`."
 model: opus
 tools: Bash, Read, Glob, Grep, LSP
 color: yellow

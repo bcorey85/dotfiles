@@ -1,4 +1,4 @@
--- dredge — personal theme-mode family. Dark only. Prose first, diffs second:
+-- dredge — personal theme-mode family, dark and light. Prose first, diffs second:
 -- warm charcoal ground, neutral grey fg ~9:1, syntax flat at OKLCH L 0.75
 -- (~7.2-7.7:1) so diff tints carry the signal. Roles: keyword purple, function
 -- teal, string green, constant yellow, type orange, builtin pink (None/true/self);
@@ -7,7 +7,9 @@
 -- do). Teal is the accent; purple marks changed. The palette below is the source of truth; the
 -- ghostty/herdr/hunk/starship/quickshell/claude-theme copies mirror it by hand.
 
-local c = {
+local palettes = {}
+
+palettes.dark = {
   bg = "#211f1c",
   bg_dark = "#1b1917",
   bg_line = "#282623",
@@ -38,18 +40,71 @@ local c = {
   type = "#e09c79",
   builtin = "#f289a1",
 
-  diff_add = "#252937",
-  diff_delete = "#3a282b",
-  diff_change = "#312839",
-  diff_text = "#4b3859",
+  diff_add = "#232630",
+  diff_delete = "#332527",
+  diff_change = "#2c2532",
+  diff_text = "#41324d",
   search = "#50421a",
+
+  term = {
+    "#1b1917", "#f77972", "#82d395", "#ebc75b", "#7abff9", "#e091d8", "#79cfcf", "#c4c4c4",
+    "#7a7a7a", "#ff9790", "#a6e7b3", "#fdde8c", "#a0d4ff", "#efade8", "#a7e1e0", "#dddddd",
+  },
 }
+
+-- Light: dimmed warm paper (OKLCH L 0.945), fg ~10:1, syntax flat at
+-- OKLCH L 0.50 (~4.7-5.5:1). Same hues and roles as dark.
+palettes.light = {
+  bg = "#efece8",
+  bg_dark = "#eae6e1",
+  bg_line = "#e7e2dd",
+  bg_sel = "#d8d3cd",
+  bg_visual = "#cdd4ec",
+  border = "#c5c1b9",
+  nontext = "#c4c2c1",
+  linenr = "#93928f",
+  muted = "#7b7a78",
+  comment = "#626262",
+  punct = "#717171",
+  fg = "#383838",
+  fg_bright = "#1b1b1b",
+
+  purple = "#7750b1",
+  red = "#ba3535",
+  amber = "#bb5d00",
+  yellow = "#9d7200",
+  green = "#1d7d3e",
+  teal = "#007475",
+  blue = "#116bb5",
+  magenta = "#993f94",
+
+  kw = "#714ca6",
+  fn = "#007570",
+  str = "#137738",
+  const = "#865900",
+  type = "#9c470d",
+  builtin = "#a53456",
+
+  diff_add = "#d9dff4",
+  diff_delete = "#f6d7dc",
+  diff_change = "#e9dff0",
+  diff_text = "#d7c5e6",
+  search = "#ead499",
+
+  term = {
+    "#383838", "#ba3535", "#1d7d3e", "#9d7200", "#116bb5", "#993f94", "#007475", "#7b7a78",
+    "#5c5c5c", "#d74745", "#2a904b", "#b08505", "#2b7ec9", "#ad51a7", "#008c8d", "#93928f",
+  },
+}
+
+local mode = vim.o.background == "light" and "light" or "dark"
+local c = palettes[mode]
 
 vim.cmd("highlight clear")
 if vim.fn.exists("syntax_on") == 1 then
   vim.cmd("syntax reset")
 end
-vim.o.background = "dark"
+vim.o.background = mode
 vim.g.colors_name = "dredge"
 
 local groups = {
@@ -294,10 +349,6 @@ for name, spec in pairs(groups) do
   vim.api.nvim_set_hl(0, name, spec)
 end
 
-local term = {
-  c.bg_dark, c.red, c.green, c.yellow, c.blue, c.magenta, c.teal, c.fg,
-  "#7a7a7a", "#ff9790", "#a6e7b3", "#fdde8c", "#a0d4ff", "#efade8", "#a7e1e0", c.fg_bright,
-}
-for i, color in ipairs(term) do
+for i, color in ipairs(c.term) do
   vim.g["terminal_color_" .. (i - 1)] = color
 end

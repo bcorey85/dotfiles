@@ -43,7 +43,7 @@ palettes.dark = {
   diff_add = "#202227",
   diff_delete = "#2c2224",
   diff_change = "#27222b",
-  diff_text = "#4b3859",
+  diff_text = "#413149",
   search = "#50421a",
 
   term = {

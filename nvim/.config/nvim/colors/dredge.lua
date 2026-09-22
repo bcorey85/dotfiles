@@ -29,10 +29,10 @@ local c = {
   blue = "#7abff9",
   magenta = "#e091d8",
 
-  kw = "#ed9a6f",
-  fn = "#a5a1ea",
+  kw = "#f09d72",
+  fn = "#b59ce3",
   str = "#91c392",
-  const = "#d2bd70",
+  const = "#c8b467",
   type = "#6ec3b7",
 
   diff_add = "#212b34",

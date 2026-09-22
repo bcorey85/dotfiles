@@ -19,7 +19,7 @@ rm -f "$handoff"
 trap 'rm -f "$handoff"' EXIT
 
 # --sidebar first so it is the default, but a caller's --no-sidebar still wins.
-hunk diff --sidebar "$@" || exit $?
+hunk diff --sidebar --no-hunk-headers "$@" || exit $?
 
 # Absent or empty file: hunk was quit normally, nothing to hand off to.
 [ -s "$handoff" ] || exit 0

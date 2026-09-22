@@ -33,8 +33,9 @@ domain's own words.
 ## What you do
 
 If `docs/plans/<slug>/acceptance-criteria.md` exists, write a test for every id this phase
-delivers, asserting the criterion's sentence. Then write the phase's tests, run the suite,
-and read the failures.
+delivers, asserting the criterion's sentence. Then write the phase's tests, run only the
+new and changed test files, and read the failures. Never run the full suite: the review loop
+runs it once, at the end of the phase.
 
 ## Failing tests are findings, not your bugs
 

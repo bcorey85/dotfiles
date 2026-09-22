@@ -203,6 +203,19 @@ alias nvim-old='NVIM_APPNAME=nvim-old nvim'
 alias cc="claude"
 alias oc="opencode"
 
+# hunk persists view toggles back into its own config, so the flags below are
+# forced per run. Review subcommands only — other subcommands reject them.
+hunk() {
+  case "$1" in
+    diff|show|patch|pager|difftool)
+      command hunk "$1" --no-hunk-headers "${@:2}" ;;
+    stash)
+      command hunk stash "$2" --no-hunk-headers "${@:3}" ;;
+    *)
+      command hunk "$@" ;;
+  esac
+}
+
 # Machine-local overrides (secrets, paths, etc.)
 [[ -f ~/.zshrc.local ]] && source ~/.zshrc.local
 

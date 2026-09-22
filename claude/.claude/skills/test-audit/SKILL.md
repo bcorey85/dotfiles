@@ -15,7 +15,7 @@ Output: findings to `/fix` (cull/coverage) or `test-writer` re-dispatch (weak), 
 Dispatch `test-intent-reviewer` (pinned; omit `model`) — **cull + coverage-net + weak
 scope** (`scope: cull` in its contract).
 
-Hand it branch diff + oracle (spec + AC). Cull/coverage → `/fix`; WEAK → `test-writer` re-dispatch (implementation-blind). Then re-run the execution gate. Net-removed coverage tops the recap's read-first queue.
+Hand it branch diff + oracle (spec + AC). Cull/coverage → `/fix`; WEAK → `test-writer` re-dispatch (implementation-blind). Then run the execution gate once, after the last change, unless that change came through `/fix`: its loop already ran the gate. Net-removed coverage tops the recap's read-first queue.
 
 **`REQUIRES-MUTATION` → `mutation-tester`, not `/fix`.** Dispatch with the named mutation (pinned; omit `model`); resolve the cull only after. Never resolve by judgement — unrouted stays open and reported open. Several → dispatch SEQUENTIALLY (global lock; concurrent runs abort).
 

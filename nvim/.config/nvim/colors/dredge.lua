@@ -21,7 +21,7 @@ palettes.dark = {
   muted = "#808080",
   comment = "#939393",
   punct = "#8c8c8c",
-  fg = "#d1d1d1",
+  fg = "#c8c8c8",
   fg_bright = "#e6e6e6",
 
   purple = "#b191ea",
@@ -42,12 +42,12 @@ palettes.dark = {
 
   diff_add = "#19272b",
   diff_delete = "#271f20",
-  diff_change = "#27222b",
-  diff_text = "#413149",
+  diff_change = "#19272b",
+  diff_text = "#083039",
   search = "#524028",
 
   term = {
-    "#171a1d", "#f77972", "#82d395", "#ebc75b", "#7abff9", "#e091d8", "#79cfcf", "#d1d1d1",
+    "#171a1d", "#f77972", "#82d395", "#ebc75b", "#7abff9", "#e091d8", "#79cfcf", "#c8c8c8",
     "#7a7a7a", "#ff9790", "#a6e7b3", "#fdde8c", "#a0d4ff", "#efade8", "#a7e1e0", "#e6e6e6",
   },
 }
@@ -87,8 +87,8 @@ palettes.light = {
 
   diff_add = "#cdd8dc",
   diff_delete = "#ded4d5",
-  diff_change = "#d6ccdd",
-  diff_text = "#c4b2d3",
+  diff_change = "#cdd8dc",
+  diff_text = "#a9cbd4",
   search = "#dfbc8c",
 
   term = {

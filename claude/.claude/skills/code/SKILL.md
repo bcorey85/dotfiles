@@ -32,7 +32,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
    - Dispatch the coder for that one phase only, with the phase's Automated Verification gate in its instructions. Re-read the phase's Phase Status line first: `(risk: …)` drives the boundary decision and `(reviewers: …)` passes to the review loop.
    - After the coder returns, dispatch the test-writer (3b); after it returns and you summarize, dispatch the review loop (5).
-   - Before marking the phase done, check that the phase's `#### Automated Verification` commands ran and passed (coder evidence); its `#### Manual Verification` items go on the deferred list for `/verify`. A phase with no Success Criteria is a plan defect; say so before advancing. A prohibition criterion (`git grep <pattern>` returns zero hits) is yours to run with Bash and log:
+   - Before marking the phase done, check that the phase's `#### Automated Verification` commands passed: the review loop's execution gate is the full suite; run any other listed command once, after the loop returns; its `#### Manual Verification` items go on the deferred list for `/verify`. A phase with no Success Criteria is a plan defect; say so before advancing. A prohibition criterion (`git grep <pattern>` returns zero hits) is yours to run with Bash and log:
 
      ```bash
      bash ~/.claude/scripts/log-scan repo=<basename> scan=prohibition \

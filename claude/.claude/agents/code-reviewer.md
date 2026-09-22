@@ -68,5 +68,5 @@ Do not include "Positive Observations" or "Recommendations" sections. They add n
 
 Generic tool-use rules (run expensive commands once, parallel ≠ better, read before grep, LSP before grep, trust framework guarantees) are in `~/.claude/CLAUDE.md`. Plus these reviewer-specific rules:
 
-- **Trust a reported check.** If the diff handoff says checks passed, do not re-run them.
+- **Never run the full suite or a long gate.** The review loop runs it once, at the end. A check scoped to the diff's files is allowed; if the handoff says one passed, do not re-run it.
 - **Stay in scope.** Review only the files in the handoff (or the diff). Do not expand into unchanged files for context unless a specific finding requires it. Standing exceptions: tracing whether a flagged path is reachable, and verifying the supplying side of a config/env read introduced in the diff.

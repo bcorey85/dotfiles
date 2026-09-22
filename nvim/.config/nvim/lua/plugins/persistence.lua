@@ -12,8 +12,8 @@
 -- real project session / dump a full layout into a popup:
 --   • herdr popups: prefix g (neogit), prefix s (git hunk qf), prefix d
 --     (codediff review), prefix e (oil explorer), prefix C-c/C-a (org
---     capture/agenda) — argc 0, so the no-args autoload would fire. Same env
---     flags the herdr-splits spec guards on.
+--     capture/agenda), prefix space / v (FIND_POPUP), hunk's e (REVIEW_POPUP). Same env flags the
+--     herdr-splits spec guards on.
 --   • headless nvim (CI / scripted checks): no UI ⇒ list_uis() is empty.
 -- (need=1 already blocks autosave for the buffer-less neogit popup, but the
 -- git-qf popup can open real files — so we also hard-stop saving below.)
@@ -23,6 +23,8 @@ local disabled = vim.env.NEOGIT_POPUP ~= nil
   or vim.env.OIL_POPUP ~= nil
   or vim.env.ORG_POPUP ~= nil
   or vim.env.INSITU_POPUP ~= nil
+  or vim.env.FIND_POPUP ~= nil
+  or vim.env.REVIEW_POPUP ~= nil
   or #vim.api.nvim_list_uis() == 0
 
 return {

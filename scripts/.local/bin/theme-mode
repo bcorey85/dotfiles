@@ -485,16 +485,16 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       ;;
     # dredge (nvim colors/dredge.lua). Both modes share the scope table below.
     dredge:*)
-      bg="#211f1c"; panel="#1b1917"; panelAlt="#282623"; border="#413d39"
-      accent="#79cfcf"; accentMuted="#413d39"; text="#d1d1d1"; muted="#929292"
+      bg="#1c2023"; panel="#171a1d"; panelAlt="#24272a"; border="#3a3e44"
+      accent="#79cfcf"; accentMuted="#3a3e44"; text="#d1d1d1"; muted="#929292"
       # Words must stay >= RGB distance 28 from the line wash, or hunk
       # replaces them with its own blend of the sign colour.
-      addWord="#1e2543"; remWord="#411c1f"
-      addedBg="#202227"; removedBg="#2c2224"; ctxBg="#211f1c"
+      addWord="#1e2547"; remWord="#411c1f"
+      addedBg="#1d222d"; removedBg="#2d2124"; ctxBg="#1c2023"
       # hunk also colours line numbers and rails with the sign colour — dimmed.
       sAdd="#6191be"; sRem="#bb6d68"; lnFg="#636363"
       badgeAdd="#7abff9"; badgeRem="#f77972"; badgeNeu="#b191ea"
-      fRename="#b191ea"; fMod="#b191ea"; fUntracked="#7abff9"; note="#1b1917"
+      fRename="#b191ea"; fMod="#b191ea"; fUntracked="#7abff9"; note="#171a1d"
       kw="#b89fe7"; str="#79c289"; num="#cea94b"; fn="#5cc1bb"; typ="#e09c79"; punct="#8c8c8c"; op="#8c8c8c"
       konst="#cea94b"; esc="#cea94b"; cmt="#939393"; mem="#d1d1d1"; param="#d1d1d1"
       attr="#cea94b"; tag="#e09c79"; vbi="#f289a1"; lang="#f289a1"; imp="#b89fe7"; pre="#b89fe7"
@@ -504,17 +504,17 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # bright = markdown bold; hunk's scope table carries colour only, no weight.
       local h1="#79cfcf" h2="#80aace" bright="#e6e6e6"
       if [ "$2" = light ]; then
-        bg="#efece8"; panel="#eae6e1"; panelAlt="#e7e2dd"; border="#c5c1b9"
-        accent="#007475"; accentMuted="#c5c1b9"; text="#383838"; muted="#7b7a78"
-        addWord="#c5d0f3"; remWord="#f4c4cc"
-        addedBg="#d9dff4"; removedBg="#f6d7dc"; ctxBg="#efece8"
+        bg="#dcd8d4"; panel="#d7d3ce"; panelAlt="#d4cfca"; border="#b2aea6"
+        accent="#007475"; accentMuted="#b2aea6"; text="#383838"; muted="#7b7a78"
+        addWord="#bfcbef"; remWord="#f0bec6"
+        addedBg="#cfd2df"; removedBg="#e0cdd0"; ctxBg="#dcd8d4"
         sAdd="#116bb5"; sRem="#ba3535"; lnFg="#93928f"
         badgeAdd="#116bb5"; badgeRem="#ba3535"; badgeNeu="#7750b1"
-        fRename="#7750b1"; fMod="#7750b1"; fUntracked="#116bb5"; note="#eae6e1"
-        kw="#714ca6"; str="#137738"; num="#865900"; fn="#007570"; typ="#9c470d"; punct="#717171"; op="#717171"
-        konst="#865900"; esc="#865900"; cmt="#626262"; mem="#383838"; param="#383838"
-        attr="#865900"; tag="#9c470d"; vbi="#a53456"; lang="#a53456"; imp="#714ca6"; pre="#714ca6"
-        prim="#9c470d"; ns="#9c470d"; mac="#007570"; bfn="#007570"; var="#383838"; key="#383838"
+        fRename="#7750b1"; fMod="#7750b1"; fUntracked="#116bb5"; note="#d7d3ce"
+        kw="#643f98"; str="#006a2b"; num="#784c00"; fn="#006661"; typ="#8e3a00"; punct="#717171"; op="#717171"
+        konst="#784c00"; esc="#784c00"; cmt="#565656"; mem="#383838"; param="#383838"
+        attr="#784c00"; tag="#8e3a00"; vbi="#96254a"; lang="#96254a"; imp="#643f98"; pre="#643f98"
+        prim="#8e3a00"; ns="#8e3a00"; mac="#006661"; bfn="#006661"; var="#383838"; key="#383838"
         h1="#007475" h2="#39688e" bright="#1b1b1b"
       fi
       extra=$(cat <<EOF
@@ -1170,8 +1170,8 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:light)
       base_name="one-light"
-      accent="#007475" panel_bg="#eae6e1" surface_dim="#d8d3cd"
-      surface0="#cfcac3" surface1="#c5c1b9"
+      accent="#007475" panel_bg="#d7d3ce" surface_dim="#c5c0ba"
+      surface0="#bcb7b0" surface1="#b2aea6"
       overlay0="#7b7a78" overlay1="#686868"
       text="#383838" subtext0="#686868"
       green="#1d7d3e" yellow="#9d7200" red="#ba3535"
@@ -1179,8 +1179,8 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:*)
       base_name="one-dark"
-      accent="#79cfcf" panel_bg="#1b1917" surface_dim="#282623"
-      surface0="#35312b" surface1="#413d39"
+      accent="#79cfcf" panel_bg="#171a1d" surface_dim="#24272a"
+      surface0="#2c3239" surface1="#3a3e44"
       overlay0="#808080" overlay1="#929292"
       text="#d1d1d1" subtext0="#929292"
       green="#82d395" yellow="#ebc75b" red="#f77972"

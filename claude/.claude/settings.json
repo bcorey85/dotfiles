@@ -376,6 +376,10 @@
           {
             "type": "command",
             "command": "~/.claude/scripts/agent-foreground.sh"
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/scripts/review-loop-gate.py"
           }
         ]
       },
@@ -419,6 +423,17 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/herdr-agent-state.sh session",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "review-loop",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/scripts/review-loop-gate.py"
           }
         ]
       }
@@ -504,7 +519,7 @@
   "tui": "fullscreen",
   "autoMemoryEnabled": false,
   "skipWorkflowUsageWarning": true,
-  "theme": "light",
+  "theme": "dark",
   "editorMode": "normal",
   "inputNeededNotifEnabled": false,
   "agentPushNotifEnabled": true,

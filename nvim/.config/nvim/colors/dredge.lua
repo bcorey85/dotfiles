@@ -40,8 +40,8 @@ palettes.dark = {
   type = "#e09c79",
   builtin = "#f289a1",
 
-  diff_add = "#1d222d",
-  diff_delete = "#2d2124",
+  diff_add = "#19272b",
+  diff_delete = "#271f20",
   diff_change = "#27222b",
   diff_text = "#413149",
   search = "#524028",
@@ -85,8 +85,8 @@ palettes.light = {
   type = "#8e3a00",
   builtin = "#96254a",
 
-  diff_add = "#cfd2df",
-  diff_delete = "#e0cdd0",
+  diff_add = "#cdd8dc",
+  diff_delete = "#ded4d5",
   diff_change = "#d6ccdd",
   diff_text = "#c4b2d3",
   search = "#dfbc8c",

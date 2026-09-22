@@ -489,8 +489,8 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       accent="#79cfcf"; accentMuted="#3a3e44"; text="#d1d1d1"; muted="#929292"
       # Words must stay >= RGB distance 28 from the line wash, or hunk
       # replaces them with its own blend of the sign colour.
-      addWord="#1e2547"; remWord="#411c1f"
-      addedBg="#1d222d"; removedBg="#2d2124"; ctxBg="#1c2023"
+      addWord="#083039"; remWord="#3c2326"
+      addedBg="#19272b"; removedBg="#271f20"; ctxBg="#1c2023"
       # hunk also colours line numbers and rails with the sign colour — dimmed.
       sAdd="#6191be"; sRem="#bb6d68"; lnFg="#636363"
       badgeAdd="#7abff9"; badgeRem="#f77972"; badgeNeu="#b191ea"
@@ -506,8 +506,8 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       if [ "$2" = light ]; then
         bg="#dcd8d4"; panel="#d7d3ce"; panelAlt="#d4cfca"; border="#b2aea6"
         accent="#007475"; accentMuted="#b2aea6"; text="#383838"; muted="#7b7a78"
-        addWord="#bfcbef"; remWord="#f0bec6"
-        addedBg="#cfd2df"; removedBg="#e0cdd0"; ctxBg="#dcd8d4"
+        addWord="#a9cbd4"; remWord="#ddbec2"
+        addedBg="#cdd8dc"; removedBg="#ded4d5"; ctxBg="#dcd8d4"
         sAdd="#116bb5"; sRem="#ba3535"; lnFg="#93928f"
         badgeAdd="#116bb5"; badgeRem="#ba3535"; badgeNeu="#7750b1"
         fRename="#7750b1"; fMod="#7750b1"; fUntracked="#116bb5"; note="#d7d3ce"

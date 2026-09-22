@@ -210,7 +210,7 @@ height = "100%"
 # (open file in editor) sees it unset under the popup's non-interactive bash.
 [[keys.command]]
 key = "prefix+d"                        # hunk review
-command = "PATH=\"${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims:$PATH\" EDITOR=\"${EDITOR:-nvim}\" ~/.local/bin/hunk-review-popup"
+command = "PATH=\"${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims:$PATH\" EDITOR=\"${EDITOR:-nvim}\" REVIEW_POPUP=1 ~/.local/bin/hunk-review-popup"
 type = "popup"
 width = "100%"
 height = "100%"
@@ -266,21 +266,21 @@ height = "100%"
 
 [[keys.command]]
 key = "prefix+slash"                    # live grep -> nvim at line
-command = "fzf --disabled --ansi --delimiter=: --bind 'start:reload:rg --line-number --no-heading --color=always {q} || true' --bind 'change:reload:rg --line-number --no-heading --color=always {q} || true' --preview 'bat --color=always --highlight-line {2} {1}' --preview-window='up,60%' --bind 'enter:become(nvim +{2} {1})'"
+command = "fzf --disabled --ansi --delimiter=: --bind 'start:reload:rg --line-number --no-heading --color=always {q} || true' --bind 'change:reload:rg --line-number --no-heading --color=always {q} || true' --preview 'bat --color=always --highlight-line {2} {1}' --preview-window='up,60%' --bind 'enter:become(FIND_POPUP=1 nvim +{2} {1})'"
 type = "popup"
 width = "95%"
 height = "95%"
 
 [[keys.command]]
 key = "prefix+space"                    # find files -> nvim
-command = "fd --type f --hidden --exclude .git | fzf --preview 'bat --color=always {}' --preview-window='up,60%' --bind 'enter:become(nvim {})'"
+command = "fd --type f --hidden --exclude .git | fzf --preview 'bat --color=always {}' --preview-window='up,60%' --bind 'enter:become(FIND_POPUP=1 nvim {})'"
 type = "popup"
 width = "95%"
 height = "95%"
 
 [[keys.command]]
 key = "prefix+v"                        # obsidian vault search
-command = "fd -e md . ~/vault | fzf --header 'enter=read | ctrl-e=edit' --preview '~/.local/bin/glow-fit -s dark {}' --preview-window='right,60%' --bind 'enter:become(~/.local/bin/glow-fit -p {})' --bind 'ctrl-e:become(nvim {})'"
+command = "fd -e md . ~/vault | fzf --header 'enter=read | ctrl-e=edit' --preview '~/.local/bin/glow-fit -s dark {}' --preview-window='right,60%' --bind 'enter:become(~/.local/bin/glow-fit -p {})' --bind 'ctrl-e:become(FIND_POPUP=1 nvim {})'"
 type = "popup"
 width = "95%"
 height = "95%"

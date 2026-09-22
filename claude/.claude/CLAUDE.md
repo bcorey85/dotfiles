@@ -27,7 +27,7 @@ Git conventions — branch and commit naming, focused diffs, worktree branches, 
 
 ## Quality Checks & Failure Budget
 
-After any code change, run the project's quality checks (whatever its CLAUDE.md specifies) before declaring done; if unknown, check there or ask.
+After a code change, run only the tests and fast checks for the files you changed. Run the full suite and long quality gates (whatever the project's CLAUDE.md specifies) once per phase, at the end of review — never after each edit, and never inside a coder, test-writer or reviewer dispatch. Outside a review loop, run them once before declaring done. If the checks are unknown, look in the project's CLAUDE.md or ask.
 
 - Any other failing approach: max 3 attempts, then stop and ask.
 

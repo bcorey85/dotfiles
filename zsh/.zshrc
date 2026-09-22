@@ -288,7 +288,7 @@ function cwc() {
 }
 alias headroom-stats="grep 'Pipeline complete' /tmp/headroom.err | sed 's/.*: \([0-9,]*\) -> \([0-9,]*\) tokens.*/\1 \2/' | tr -d ',' | awk 'function fmt(v) {if(v>=1000000) return sprintf(\"%.1fM\",v/1000000); if(v>=1000) return sprintf(\"%.1fk\",v/1000); return v+0} {o+=\$1; c+=\$2; n++} END {s=o-c; pct=(o>0?s/o*100:0); printf \"requests:    %d\noriginal:    %s tokens\ncompressed:  %s tokens\nsaved:       %s tokens (%d%%)\n\n* Totals are cumulative per-request — the same\n  context is re-compressed each turn, so saved\n  tokens reflect total API billing reduction,\n  not unique content compressed.\n\", n, fmt(o), fmt(c), fmt(s), pct}'"
 alias cat="bat --plain"
-alias ls="eza --icons"
+alias ls="eza --icons=auto"
 alias ll="eza --icons -lha"
 alias lt="eza --icons --tree --level=2"
 command -v fd &>/dev/null || { command -v fdfind &>/dev/null && alias fd="fdfind"; }

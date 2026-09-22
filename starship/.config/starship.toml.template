@@ -241,6 +241,31 @@ fg = "#575279"
 bg = "#faf4ed"
 grey = "#9893a5"
 
+# dredge (nvim colors/dredge.lua). Dark only — light is a verbatim copy.
+[palettes.dredge-dark]
+red = "#f77972"
+orange = "#f5ac61"
+yellow = "#ebc75b"
+green = "#82d395"
+blue = "#7abff9"
+teal = "#79cfcf"
+purple = "#9a99f3"
+fg = "#c4c4c4"
+bg = "#211f1c"
+grey = "#929292"
+
+[palettes.dredge-light]
+red = "#f77972"
+orange = "#f5ac61"
+yellow = "#ebc75b"
+green = "#82d395"
+blue = "#7abff9"
+teal = "#79cfcf"
+purple = "#9a99f3"
+fg = "#c4c4c4"
+bg = "#211f1c"
+grey = "#929292"
+
 # aura dark soft = the dimmed variant (bg #15141b, soft-text accents).
 # DARK-ONLY, so the light palette below is a verbatim copy; the family name
 # still needs both keys because theme-mode selects `<family>-<mode>`. No

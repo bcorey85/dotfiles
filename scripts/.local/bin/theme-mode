@@ -486,10 +486,10 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       sAdd="#7abff9"; sRem="#f77972"; lnFg="#636363"
       badgeAdd="#7abff9"; badgeRem="#f77972"; badgeNeu="#9a99f3"
       fRename="#9a99f3"; fMod="#ebc75b"; fUntracked="#7abff9"; note="#1b1917"
-      kw="#ed9a6f"; str="#91c392"; num="#d2bd70"; fn="#a5a1ea"; typ="#6ec3b7"; punct="#8c8c8c"; op="#8c8c8c"
-      konst="#d2bd70"; esc="#d2bd70"; cmt="#929292"; mem="#c4c4c4"; param="#c4c4c4"
-      attr="#d2bd70"; tag="#6ec3b7"; vbi="#ed9a6f"; imp="#ed9a6f"; pre="#ed9a6f"
-      prim="#6ec3b7"; ns="#6ec3b7"; mac="#a5a1ea"; bfn="#a5a1ea"; var="#c4c4c4"; key="#c4c4c4"
+      kw="#f09d72"; str="#91c392"; num="#c8b467"; fn="#b59ce3"; typ="#6ec3b7"; punct="#8c8c8c"; op="#8c8c8c"
+      konst="#c8b467"; esc="#c8b467"; cmt="#929292"; mem="#c4c4c4"; param="#c4c4c4"
+      attr="#c8b467"; tag="#6ec3b7"; vbi="#f09d72"; imp="#f09d72"; pre="#f09d72"
+      prim="#6ec3b7"; ns="#6ec3b7"; mac="#b59ce3"; bfn="#b59ce3"; var="#c4c4c4"; key="#c4c4c4"
       ;;
     *) return 0 ;;
   esac

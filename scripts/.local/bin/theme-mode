@@ -487,9 +487,12 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
     dredge:*)
       bg="#211f1c"; panel="#1b1917"; panelAlt="#282623"; border="#413d39"
       accent="#79cfcf"; accentMuted="#413d39"; text="#c4c4c4"; muted="#929292"
-      addWord="#272e46"; remWord="#46282a"
-      addedBg="#232630"; removedBg="#332527"; ctxBg="#211f1c"
-      sAdd="#7abff9"; sRem="#f77972"; lnFg="#636363"
+      # Words sit just past hunk's minimum separation (RGB distance 28) from the
+      # line wash; closer, hunk replaces them with a louder blend of the sign.
+      addWord="#262b3b"; remWord="#3e292a"
+      addedBg="#21232a"; removedBg="#2c2224"; ctxBg="#211f1c"
+      # hunk also colours line numbers and rails with the sign colour — dimmed.
+      sAdd="#6191be"; sRem="#bb6d68"; lnFg="#636363"
       badgeAdd="#7abff9"; badgeRem="#f77972"; badgeNeu="#b191ea"
       fRename="#b191ea"; fMod="#b191ea"; fUntracked="#7abff9"; note="#1b1917"
       kw="#b89fe7"; str="#79c289"; num="#cea94b"; fn="#5cc1bb"; typ="#e09c79"; punct="#8c8c8c"; op="#8c8c8c"
@@ -502,7 +505,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       if [ "$2" = light ]; then
         bg="#efece8"; panel="#eae6e1"; panelAlt="#e7e2dd"; border="#c5c1b9"
         accent="#007475"; accentMuted="#c5c1b9"; text="#383838"; muted="#7b7a78"
-        addWord="#ccd7f6"; remWord="#f6cad2"
+        addWord="#c5d0f3"; remWord="#f4c4cc"
         addedBg="#d9dff4"; removedBg="#f6d7dc"; ctxBg="#efece8"
         sAdd="#116bb5"; sRem="#ba3535"; lnFg="#93928f"
         badgeAdd="#116bb5"; badgeRem="#ba3535"; badgeNeu="#7750b1"

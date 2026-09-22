@@ -40,10 +40,10 @@ palettes.dark = {
   type = "#e09c79",
   builtin = "#f289a1",
 
-  diff_add = "#232630",
-  diff_delete = "#332527",
-  diff_change = "#2c2532",
-  diff_text = "#41324d",
+  diff_add = "#21232a",
+  diff_delete = "#2c2224",
+  diff_change = "#27222b",
+  diff_text = "#382c41",
   search = "#50421a",
 
   term = {

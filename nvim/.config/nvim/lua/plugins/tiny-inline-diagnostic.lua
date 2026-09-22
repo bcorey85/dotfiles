@@ -12,6 +12,7 @@ return {
   config = function()
     require("tiny-inline-diagnostic").setup({
       preset = "modern",
+      blend = { factor = 0.12 },
       options = {
         show_source = { enabled = true, if_many = true },
         multilines = { enabled = true, always_show = false },

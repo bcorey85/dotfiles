@@ -77,7 +77,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="onedarkpro"
 
-families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox; }
+families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge; }
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   # A family whose halves are ghostty BUILTINS (spaces and all) needs no file
@@ -113,6 +113,7 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     nightfox:*)             echo "Nightfox" ;;
     duskfox:light)          echo "Dawnfox" ;;
     duskfox:*)              echo "Duskfox" ;;
+    dredge:*)            echo "dredge" ;;
   esac
 }
 
@@ -155,6 +156,7 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     nightfox:*)             echo "night-owl" ;;
     duskfox:light)          echo "rose-pine-dawn" ;;
     duskfox:*)              echo "rose-pine-moon" ;;
+    dredge:*)            echo "one-dark-pro" ;;
   esac
 }
 
@@ -188,7 +190,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
   # Secondary roles. Each one defaults (below the case) to the generic role a
   # family that does not set it already used, so leaving them unset reproduces
   # the previous output byte for byte.
-  local mem param attr tag vbi imp pre prim ns mac bfn
+  local mem param attr tag vbi imp pre prim ns mac bfn var
   case "$1:$2" in
     flume:light)
       # flume mesa (warm cream #f3ede8) — the family's light half. comment
@@ -475,6 +477,20 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       attr="#f0a4a2"; tag="#c4a7e7"; vbi="#eb6f92"; imp="#f0a6cc"; pre="#f0a6cc"
       prim="#a6dae3"; ns="#a6dae3"; mac="#f0a6cc"; bfn="#eb6f92"
       ;;
+    # dredge (nvim colors/dredge.lua), dark only — light reuses it.
+    dredge:*)
+      bg="#211f1c"; panel="#1b1917"; panelAlt="#282623"; border="#413d39"
+      accent="#9a99f3"; accentMuted="#413d39"; text="#c4c4c4"; muted="#929292"
+      addWord="#154867"; remWord="#653236"
+      addedBg="#212b34"; removedBg="#3a282b"; ctxBg="#211f1c"
+      sAdd="#7abff9"; sRem="#f77972"; lnFg="#636363"
+      badgeAdd="#7abff9"; badgeRem="#f77972"; badgeNeu="#9a99f3"
+      fRename="#9a99f3"; fMod="#ebc75b"; fUntracked="#7abff9"; note="#1b1917"
+      kw="#ed9a6f"; str="#91c392"; num="#d2bd70"; fn="#a5a1ea"; typ="#6ec3b7"; punct="#8c8c8c"; op="#8c8c8c"
+      konst="#d2bd70"; esc="#d2bd70"; cmt="#929292"; mem="#c4c4c4"; param="#c4c4c4"
+      attr="#d2bd70"; tag="#6ec3b7"; vbi="#ed9a6f"; imp="#ed9a6f"; pre="#ed9a6f"
+      prim="#6ec3b7"; ns="#6ec3b7"; mac="#a5a1ea"; bfn="#a5a1ea"; var="#c4c4c4"; key="#c4c4c4"
+      ;;
     *) return 0 ;;
   esac
   # Roles the retired families never set; default them so their (inert) branches
@@ -485,7 +501,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
   cmt="${cmt:-$muted}"; mem="${mem:-$text}"; param="${param:-$punct}"
   attr="${attr:-$punct}"; tag="${tag:-$fn}"; vbi="${vbi:-$kw}"
   imp="${imp:-$typ}"; pre="${pre:-$num}"; prim="${prim:-$num}"
-  ns="${ns:-$typ}"; mac="${mac:-$esc}"; bfn="${bfn:-$esc}"
+  ns="${ns:-$typ}"; mac="${mac:-$esc}"; bfn="${bfn:-$esc}"; var="${var:-$text}"
   cat <<EOF
 [custom_theme]
 base             = "$3"
@@ -502,8 +518,8 @@ removedBg        = "$removedBg"
 movedAddedBg     = "$addedBg"
 movedRemovedBg   = "$removedBg"
 contextBg        = "$ctxBg"
-addedContentBg   = "$addedBg"
-removedContentBg = "$removedBg"
+addedContentBg   = "${addWord:-$addedBg}"
+removedContentBg = "${remWord:-$removedBg}"
 contextContentBg = "$ctxBg"
 addedSignColor   = "$sAdd"
 removedSignColor = "$sRem"
@@ -588,8 +604,8 @@ noteTitleText    = "$text"
 
 # Identifiers, members, parameters. nvim paints properties and members as plain
 # text; only parameters and attributes drop to the muted tx2.
-"variable"                          = "$text"
-"variable.other"                    = "$text"
+"variable"                          = "$var"
+"variable.other"                    = "$var"
 "variable.other.property"           = "$mem"
 "variable.other.member"             = "$mem"
 "support.variable.property"         = "$mem"
@@ -622,6 +638,66 @@ noteTitleText    = "$text"
 "markup.changed"                    = "$konst"
 "invalid"                           = "$sRem"
 EOF
+  # Families that set `key` keep the diff's added-blue and removed-red out of
+  # syntax: these are the base theme's blue and red scopes that out-rank the
+  # generic selectors above.
+  if [ -n "${key:-}" ]; then
+    cat <<EOF
+"meta.object-literal.key"           = "$key"
+"meta.property.object"              = "$key"
+"support.type.property-name"        = "$key"
+"support.type.property-name.json"   = "$key"
+"support.type.property-name.toml"   = "$key"
+"support.type.property-name.table.toml" = "$key"
+"support.type.property-name.array.toml" = "$key"
+"source.json meta.structure.dictionary.json > string.quoted.json" = "$key"
+"source.json meta.structure.dictionary.json > string.quoted.json > punctuation.string" = "$key"
+"variable.other.readwrite"          = "$var"
+"variable.other.constant.property"  = "$konst"
+"variable.parameter.function.js"    = "$param"
+"variable.interpolation"            = "$var"
+"variable.language.rust"            = "$vbi"
+"entity.name.variable.field.cs"     = "$mem"
+"entity.name.variable.local.cs"     = "$var"
+"meta.definition.variable.name.java" = "$var"
+"support.variable.dom"              = "$var"
+"support.variable.object.node"      = "$typ"
+"support.variable.object.process"   = "$typ"
+"support.type.object.console"       = "$typ"
+"support.variable.magic.python"     = "$vbi"
+"entity.name.section.markdown"      = "$text"
+"punctuation.definition.heading.markdown" = "$punct"
+"punctuation.definition.list.begin.markdown" = "$punct"
+"beginning.punctuation.definition.list.markdown" = "$punct"
+"punctuation.definition.metadata.markdown" = "$punct"
+"punctuation.definition.string.begin.markdown" = "$punct"
+"punctuation.definition.string.end.markdown" = "$punct"
+"punctuation.section.embedded"      = "$esc"
+"constant.other.character-class.regexp" = "$esc"
+"constant.character.entity"         = "$esc"
+"keyword.other.unit"                = "$num"
+"meta.function.c"                   = "$text"
+"meta.function.cpp"                 = "$text"
+"text.variable"                     = "$var"
+"support.function.any-method"       = "$fn"
+"support.function.console"          = "$fn"
+"support.function.std.rust"         = "$fn"
+"meta.require"                      = "$fn"
+"keyword.other.special-method"      = "$fn"
+"meta.function-call.generic.python" = "$fn"
+"meta.function-call.php"            = "$fn"
+"meta.function.decorator.python"    = "$fn"
+"meta.method.java"                  = "$fn"
+"meta.method.groovy"                = "$fn"
+"keyword.operator.expression.import" = "$kw"
+"entity.other.attribute-name.id"    = "$attr"
+"entity.name.section"               = "$text"
+"entity.name.goto-label.php"        = "$text"
+"string.other.link.title.markdown"  = "$typ"
+"string.other.link.description.markdown" = "$typ"
+"support.type.type.flowtype"        = "$typ"
+EOF
+  fi
 }
 
 hunk_set_block() { # <file> <block-or-empty> — replace theme-mode's marked block
@@ -924,6 +1000,15 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#e0def4" subtext0="#817c9c"
       green="#a3be8c" yellow="#f6c177" red="#eb6f92"
       blue="#569fba" teal="#9ccfd8" peach="#ea9a97"
+      ;;
+    dredge:*)
+      base_name="one-dark"
+      accent="#9a99f3" panel_bg="#1b1917" surface_dim="#282623"
+      surface0="#35312b" surface1="#413d39"
+      overlay0="#808080" overlay1="#929292"
+      text="#c4c4c4" subtext0="#929292"
+      green="#82d395" yellow="#ebc75b" red="#f77972"
+      blue="#7abff9" teal="#79cfcf" peach="#f5ac61"
       ;;
   esac
 

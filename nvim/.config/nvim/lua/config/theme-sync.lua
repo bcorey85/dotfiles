@@ -111,6 +111,14 @@ local FAMILIES = {
       light = { heading1 = "#b4637a", heading = "#ea9d34" },
     },
   },
+  ["dredge"] = {
+    schemes = { dark = "dredge", light = "dredge" },
+    colors_name = "dredge",
+    accents = {
+      dark = { heading1 = "#9a99f3", heading = "#86beee" },
+      light = { heading1 = "#9a99f3", heading = "#86beee" },
+    },
+  },
 }
 
 local applied ---@type string|nil  last family+mode we set, to skip redundant reloads

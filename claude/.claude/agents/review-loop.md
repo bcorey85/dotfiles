@@ -42,8 +42,7 @@ mark.
 
 ```
 each iteration:
-  1. check cap   → correctness round:  if iter >= 2:      fix `blocker` only, defer
-                                                          the rest → `deferred`
+  1. check cap   → correctness round:  if iter >= 2:      no full review → the cap exit (Step 5c)
                    specialist re-entry: if spec_iter >= 2: return `cap-reached`
                    (whichever channel THIS round belongs to) WITHOUT dispatching a reviewer
   2. dispatch reviewer → `iter++` at the dispatch, whatever it returns
@@ -52,14 +51,14 @@ each iteration:
   5. dispatch fix coder for every `fix` finding (`ask` and `nit` never dispatch)
   6. specialist re-entry only: `spec_iter++`, repeat
 
-on exit (any status), if a fix coder ran: the fix-diff verification pass (Step 5d)
-  — the loop's last dispatch, no counter, no cap, once per unread fix diff
+on exit (any status), if a fix diff is unread: the fix-diff verification pass (Step 5d)
+  — no counter, no cap, once per unread fix diff
 ```
 
 ## Step 1: Parse args
 
 - **Iteration counters — two channels, two budgets.** Both arrive in args and both are returned in the packet; a caller re-entering the loop passes back what it received.
-  - `iter=N` (default `iter=0`) — **correctness rounds**: code-reviewer findings and their fixes (Steps 3–5), including class-closure re-entries. **The budget is TWO rounds.** If `iter >= 2`, do not re-review and do not dispatch: **defer** per Step 5c and return `status: deferred` with the deferred set in `findings_remaining`. The single exception is a `blocker` — see Step 5c. This cap governs full correctness ROUNDS; the Step 5d fix-diff verification is not one and runs regardless.
+  - `iter=N` (default `iter=0`) — **correctness rounds**: code-reviewer findings and their fixes (Steps 3–5), including class-closure re-entries. **The budget is TWO rounds.** If `iter >= 2` when a full review comes due, do not dispatch it: take the cap exit (Step 5c). This cap governs full correctness ROUNDS; the Step 5d fix-diff verification is not one.
   - `spec_iter=N` (default `spec_iter=0`) — **post-convergence specialist re-entries** only (Step 6b bullet 4: `[security]`, `[perf]`, `[smell]`). **If `spec_iter >= 2` when a specialist re-entry comes due, do not dispatch it** (two re-entries are the budget; checked before dispatch, same as `iter`) — return `cap-reached` with those findings in `findings_remaining` instead. A specialist re-entry never increments `iter`, and a correctness round never increments `spec_iter`.
 
 - **Handoff block**: if present, it is the review scope. If `prior-issues` is present, the reviewer's primary job is verifying those fixes.
@@ -95,7 +94,7 @@ Do NOT include a category checklist in the dispatch prompt. Pass only scope and 
 Every finding arrives already carrying its disposition — the reviewer decided it, you do
 not re-derive it. Route on the label:
 
-- **`fix`** → auto-fix loop (counts toward `iter`). Its `blocker` flag does not change the
+- **`fix`** → auto-fix loop. Its `blocker` flag does not change the
   routing here; it changes only what survives the budget (Step 5c) and what stops a phase.
 - **`ask`** → never dispatched. Collected and surfaced to the user in the packet, each entry carrying its emitting `gate` and `class`.
 - **`nit`** → never dispatches a coder, never re-raised on a later pass. When this pass
@@ -141,7 +140,7 @@ Record every resolved finding into `fixed[]` as `{finding, file_line, blocker}` 
 
 **PLAN-IMPACT pass-through**: scan each coder report for a `PLAN-IMPACT:` block (`coder-core` requires `PLAN-IMPACT: yes` as the report's last line when one exists). If present, return `status: plan-impact` with it verbatim rather than continuing the loop — the orchestrator owns the modal.
 
-Then re-enter step 1. Step 5d still runs on whichever exit follows.
+Build `prior-issues` from the coder report as Step 5b does, add the coder's changed files to the next review's scope, then re-enter step 1. If no full review follows, Step 5d reads this fix diff before the loop returns.
 
 ## Step 5b: `mode: fix-first`
 
@@ -153,7 +152,7 @@ a. **`/cc` entries** (`path`, `line`, `body`, `id`) — user-authored requests, 
 b. **A `/review` handoff** — the issues list in args.
 c. **The conversation** — findings discussed upstream, passed in args.
 
-Dispatch ONE `coder` for the findings. Split into parallel coders only when the findings fall into groups that share no file, type, or contract; then launch them in ONE message with multiple Agent tool calls. Include the same verbatim fence from step 5 in every coder prompt. Build `prior-issues` (`issue` / `status: fixed|skipped|partial` / `file`) so the verification reviewer checks "did these fixes take?" before scanning for new issues.
+Dispatch ONE `coder` for the findings. Split into parallel coders only when the findings fall into groups that share no file, type, or contract; then launch them in ONE message with multiple Agent tool calls. Include the same verbatim fence from step 5 in every coder prompt. Build `prior-issues` (`issue` / `status: fixed|skipped|partial` / `file`) and add the coders' changed files to the review scope, so the verification reviewer checks "did these fixes take?" before scanning for new issues.
 
 **Coder-report post-processing (both sub-paths)**: after every fix-first coder dispatch — before entering the loop AND before returning under `no-review` — process each coder report exactly as step 5 does: record resolved findings into `fixed[]` and run the **PLAN-IMPACT pass-through** (scan for a `PLAN-IMPACT:` block; if present, return `status: plan-impact` with it verbatim and dispatch nothing further — do not enter the loop, do not return `converged`).
 **`no-review`**: when this flag is in args, dispatch the coder, run the coder-report post-processing above, run the execution gate as verification, and return `status: converged` WITHOUT dispatching a reviewer. Do not enter step 1.
@@ -164,33 +163,41 @@ Skip any finding that is a false positive, a stylistic preference, out of scope,
 
 ## Step 5c: Deferral — the round budget
 
-The correctness loop gets TWO rounds. When `iter >= 2` (Step 1), the findings the
-re-review surfaced are not fixed here and not discarded: they move to the
-branch-exit queue, where they are read once, in one place, against the whole
-branch instead of one phase of it.
+The correctness loop gets TWO rounds: every `fix` finding of each full review
+gets a coder. The cap stops a third full review and nothing else. A deferred
+finding is not discarded: it moves to the branch-exit queue, where it is read
+once, in one place, against the whole branch instead of one phase of it.
 
-**The `blocker` carve-out.** A `fix` carrying `blocker` is repaired now regardless
-of `iter` — dispatch it per Step 5, then defer everything else. Nothing else is
-exempt: an ordinary `fix` defers like the rest.
+**The `blocker` carve-out.** A `fix` finding from a Step 5d pass or from the
+execution gate gets a coder (Step 5) only if it carries `blocker`, regardless of
+`iter`; without `blocker` it defers. Class members that Step 6 finds open at
+`iter >= 2` get no coder; Step 6 returns `cap-reached`.
 
 **Defer** = log each finding per `~/.claude/skills/_shared/finding-log.md` with
 `actioned=deferred`, then return it in `findings_remaining`. The `branch` field
 is what makes the queue retrievable — never omit it. Deferred findings keep
 their original `gate` and disposition; do not re-grade them on the way out.
 
-Then run Step 5d if a fix coder ran, and return `status: deferred`. Do not
-`iter++`. The ban on further dispatch covers a full review only, never Step 5d.
+**The cap exit.** Dispatch no full review and do not `iter++`. Run Step 5d if a
+fix diff is unread, then Step 6, Step 6b, and Steps 7 and 7b. Unless one of those
+returns first, return `status: deferred` if `findings_remaining` holds a finding,
+else `status: converged`. At `iter >= 2` the `fix` findings of a gate failure get
+one coder per invocation: after the repair and its pass, run the gate once more;
+a second failure returns `status: critical-blocker`.
 
-## Step 5d: Fix-diff verification (the loop's last dispatch, whenever a fix coder ran)
+## Step 5d: Fix-diff verification (once per unread fix diff)
 
 A fix diff that no one reads is the one change in the phase with no reviewer
 behind it. Before this loop returns — `deferred`, `converged`, or `cap-reached` —
-if any fix coder ran, dispatch **one** `code-reviewer` scoped to the fix diff.
+if a fix diff is unread, dispatch **one** `code-reviewer` scoped to every
+unread fix diff.
 
 Unless `no-review` is in args, the last dispatch of a loop that ran a fix
 coder is a reviewer, never a coder.
-Runs once over every fix diff it has not already read, including one produced by
-a specialist re-entry, so no repair exits unread. Does not increment `iter` or
+A fix diff is read once a pass read it, or once a later full review of this loop
+(Step 3) had all its files in scope; a clean second review that covered the first
+repair gets no pass. Every other fix diff is unread, a specialist-driven one
+included, and no repair exits unread. The pass does not increment `iter` or
 `spec_iter`, and is not subject to their caps: it verifies work this loop
 dispatched, not another round of finding new work. Only the first pass routes.
 Every later one dispatches nothing — a `blocker` returns
@@ -330,6 +337,6 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 - **Never write a file yourself**: no `>`, no `>>`, no `tee`, no `sed -i`, no heredoc. Every source change goes through a coder dispatch; the only writes you cause are the helper scripts under `~/.claude/skills/review/`. If none fits, say so in the packet and stop.
 - **Never run `review-gate-mark`.** The clean mark belongs to your CALLER.
 - **Never emit a response that holds text and no tool call** — the orchestrator sees only the packet. The two exceptions are the turn straight after a dispatch stub and the final packet.
-- **Never return `converged` with an empty `fixed[]` past round one.**
+- **Never return `converged` with an empty `fixed[]` when a fix coder of this invocation repaired a finding.**
 - **Never poll for a dispatched subagent.** After the launch stub, end your response. The result arrives as a notification that re-invokes you. No `sleep`, no `until` loop, no `echo waiting`.
 - **Independent tool calls go in one response.** Batch them whenever neither call's input depends on the other's output — every log call of Steps 7 and 7b in one response.

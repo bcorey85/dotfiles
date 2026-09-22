@@ -100,7 +100,7 @@ Singleton {
         },
         "dredge-dark": {
             bg: "#211f1c", panel: "#1b1917", border: "#413d39",
-            fg: "#c4c4c4", muted: "#929292",
+            fg: "#d1d1d1", muted: "#929292",
             green: "#82d395", red: "#f77972", teal: "#79cfcf",
             orange: "#ffa475", yellow: "#ebc75b", magenta: "#e091d8"
         },

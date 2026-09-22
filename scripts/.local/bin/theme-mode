@@ -486,7 +486,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
     # dredge (nvim colors/dredge.lua). Both modes share the scope table below.
     dredge:*)
       bg="#211f1c"; panel="#1b1917"; panelAlt="#282623"; border="#413d39"
-      accent="#79cfcf"; accentMuted="#413d39"; text="#c4c4c4"; muted="#929292"
+      accent="#79cfcf"; accentMuted="#413d39"; text="#d1d1d1"; muted="#929292"
       # Words must stay >= RGB distance 28 from the line wash, or hunk
       # replaces them with its own blend of the sign colour.
       addWord="#2a314d"; remWord="#4a292b"
@@ -496,9 +496,9 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       badgeAdd="#7abff9"; badgeRem="#f77972"; badgeNeu="#b191ea"
       fRename="#b191ea"; fMod="#b191ea"; fUntracked="#7abff9"; note="#1b1917"
       kw="#b89fe7"; str="#79c289"; num="#cea94b"; fn="#5cc1bb"; typ="#e09c79"; punct="#8c8c8c"; op="#8c8c8c"
-      konst="#cea94b"; esc="#cea94b"; cmt="#939393"; mem="#c4c4c4"; param="#c4c4c4"
+      konst="#cea94b"; esc="#cea94b"; cmt="#939393"; mem="#d1d1d1"; param="#d1d1d1"
       attr="#cea94b"; tag="#e09c79"; vbi="#f289a1"; lang="#f289a1"; imp="#b89fe7"; pre="#b89fe7"
-      prim="#e09c79"; ns="#e09c79"; mac="#5cc1bb"; bfn="#5cc1bb"; var="#c4c4c4"; key="#c4c4c4"
+      prim="#e09c79"; ns="#e09c79"; mac="#5cc1bb"; bfn="#5cc1bb"; var="#d1d1d1"; key="#d1d1d1"
       # Match nvim's tree-sitter colours where one-dark-pro's own selectors
       # out-rank the generic table. h1/h2 mirror theme-sync's markdown headings.
       local h1="#79cfcf" h2="#80aace"
@@ -1181,7 +1181,7 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       accent="#79cfcf" panel_bg="#1b1917" surface_dim="#282623"
       surface0="#35312b" surface1="#413d39"
       overlay0="#808080" overlay1="#929292"
-      text="#c4c4c4" subtext0="#929292"
+      text="#d1d1d1" subtext0="#929292"
       green="#82d395" yellow="#ebc75b" red="#f77972"
       blue="#7abff9" teal="#79cfcf" peach="#ffa475"
       ;;

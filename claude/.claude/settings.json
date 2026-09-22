@@ -153,7 +153,6 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "opus",
   "skillOverrides": {
     "audit": "user-invocable-only",
     "brainstorm": "user-invocable-only",

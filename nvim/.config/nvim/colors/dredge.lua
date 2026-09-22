@@ -1,5 +1,5 @@
 -- dredge — personal theme-mode family, dark and light. Prose first, diffs second:
--- warm charcoal ground, neutral grey fg ~9:1, syntax flat at OKLCH L 0.75
+-- warm charcoal ground, neutral grey fg ~10.8:1, syntax flat at OKLCH L 0.75
 -- (~7.2-7.7:1) so diff tints carry the signal. Roles: keyword purple, function
 -- teal, string green, constant yellow, type orange, builtin pink (None/true/self);
 -- members stay fg. Diffs: added = blue signs on an indigo wash, removed = rose,
@@ -21,8 +21,8 @@ palettes.dark = {
   muted = "#808080",
   comment = "#939393",
   punct = "#8c8c8c",
-  fg = "#c4c4c4",
-  fg_bright = "#dddddd",
+  fg = "#d1d1d1",
+  fg_bright = "#e6e6e6",
 
   purple = "#b191ea",
   red = "#f77972",
@@ -47,8 +47,8 @@ palettes.dark = {
   search = "#50421a",
 
   term = {
-    "#1b1917", "#f77972", "#82d395", "#ebc75b", "#7abff9", "#e091d8", "#79cfcf", "#c4c4c4",
-    "#7a7a7a", "#ff9790", "#a6e7b3", "#fdde8c", "#a0d4ff", "#efade8", "#a7e1e0", "#dddddd",
+    "#1b1917", "#f77972", "#82d395", "#ebc75b", "#7abff9", "#e091d8", "#79cfcf", "#d1d1d1",
+    "#7a7a7a", "#ff9790", "#a6e7b3", "#fdde8c", "#a0d4ff", "#efade8", "#a7e1e0", "#e6e6e6",
   },
 }
 

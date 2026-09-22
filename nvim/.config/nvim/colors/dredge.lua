@@ -1,9 +1,10 @@
 -- dredge — personal theme-mode family. Dark only. Prose first, diffs second:
 -- warm charcoal ground, neutral grey fg ~9:1, syntax flat at OKLCH L 0.75
 -- (~7.2-7.7:1) so diff tints carry the signal. Roles: keyword purple, function
--- teal, string green, constant yellow, type orange; members stay fg. Diffs: added = blue, removed = rose, equal lightness.
--- Syntax never uses blue or rose hues, so those two mean only added/removed.
--- Teal is the accent; purple marks changed. The palette below is the source of truth; the
+-- teal, string green, constant yellow, type orange, builtin pink (None/true/self);
+-- members stay fg. Diffs: added = blue signs on an indigo wash, removed = rose,
+-- equal lightness. Code syntax never uses blue or rose hues (markdown headings
+-- do). Teal is the accent; purple marks changed. The palette below is the source of truth; the
 -- ghostty/herdr/hunk/starship/quickshell/claude-theme copies mirror it by hand.
 
 local c = {
@@ -16,7 +17,7 @@ local c = {
   nontext = "#424242",
   linenr = "#636363",
   muted = "#808080",
-  comment = "#929292",
+  comment = "#939393",
   punct = "#8c8c8c",
   fg = "#c4c4c4",
   fg_bright = "#dddddd",
@@ -31,12 +32,13 @@ local c = {
   magenta = "#e091d8",
 
   kw = "#b89fe7",
-  fn = "#67bfc1",
+  fn = "#5cc1bb",
   str = "#8bbd8c",
   const = "#cea94b",
   type = "#e09c79",
+  builtin = "#f289a1",
 
-  diff_add = "#212b34",
+  diff_add = "#252937",
   diff_delete = "#3a282b",
   diff_change = "#2b2a3c",
   diff_text = "#3d3d60",
@@ -114,7 +116,7 @@ local groups = {
   String = { fg = c.str },
   Character = { fg = c.str },
   Number = { fg = c.const },
-  Boolean = { fg = c.const },
+  Boolean = { fg = c.builtin },
   Float = { fg = c.const },
   Identifier = { fg = c.fg },
   Function = { fg = c.fn },
@@ -146,12 +148,12 @@ local groups = {
 
   -- treesitter
   ["@variable"] = { fg = c.fg },
-  ["@variable.builtin"] = { fg = c.kw, italic = true },
+  ["@variable.builtin"] = { fg = c.builtin },
   ["@variable.parameter"] = { fg = c.fg },
   ["@variable.member"] = { fg = c.fg },
   ["@property"] = { fg = c.fg },
   ["@constant"] = { fg = c.const },
-  ["@constant.builtin"] = { fg = c.const },
+  ["@constant.builtin"] = { fg = c.builtin },
   ["@constant.macro"] = { fg = c.const },
   ["@module"] = { fg = c.type },
   ["@module.builtin"] = { fg = c.type },
@@ -161,11 +163,12 @@ local groups = {
   ["@string.escape"] = { fg = c.const },
   ["@string.regexp"] = { fg = c.const },
   ["@string.special"] = { fg = c.const },
+  ["@string.plain"] = { fg = c.const },
   ["@string.special.url"] = { fg = c.type, underline = true },
   ["@character"] = { fg = c.str },
   ["@character.special"] = { fg = c.const },
   ["@number"] = { fg = c.const },
-  ["@boolean"] = { fg = c.const },
+  ["@boolean"] = { fg = c.builtin },
   ["@type"] = { fg = c.type },
   ["@type.builtin"] = { fg = c.type },
   ["@type.definition"] = { fg = c.type },

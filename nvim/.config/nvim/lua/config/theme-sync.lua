@@ -115,8 +115,8 @@ local FAMILIES = {
     schemes = { dark = "dredge", light = "dredge" },
     colors_name = "dredge",
     accents = {
-      dark = { heading1 = "#79cfcf", heading = "#86beee" },
-      light = { heading1 = "#79cfcf", heading = "#86beee" },
+      dark = { heading1 = "#79cfcf", heading = "#80aace" },
+      light = { heading1 = "#79cfcf", heading = "#80aace" },
     },
   },
 }

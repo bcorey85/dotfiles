@@ -4,9 +4,11 @@
   SubagentStop (review-loop): blocks once, with every reason that holds, when
     - a fix coder ran after the last code-reviewer read — a fresh dispatch, or a SendMessage to a
       code-reviewer it dispatched. `no-review` in the loop prompt exempts this check only.
-    - a coder step ran — a dispatch, or a SendMessage to a coder it dispatched — the loop prompt's
-      `tests-run` is not a command with exit 0, and no check ran after the last coder step: a shell
-      call that runs a project checker or redirects into the review-gate log.
+    - no full check ran after the last code change: a shell call that runs a project checker, or
+      redirects into the review-gate log, with no file, directory or test-name filter. The last
+      coder step — a dispatch, or a SendMessage to a coder it dispatched — is the last code change;
+      with none, the loop start is, since the phase changed code before the loop ran. A handoff
+      `tests-run` never exempts it. A loop returning `status: plan-impact` owes no check.
       A second stop in a row passes (stop_hook_active), so a stuck loop cannot spin. The block
       reason reaches the loop as context and it keeps working. Register with matcher
       `review-loop`; the agent_type check below still guards an unscoped entry.
@@ -30,9 +32,11 @@ AGENT_ID = re.compile(r"agentId:\s*([A-Za-z0-9-]+)")
 CALLER_CODE = re.compile(r"(?i)(?<![\w-])caller[`*]*\s*[:=]\s*[`\"']?code\b")
 HANDOFF = re.compile(r"(?im)^[ \t]*handoff[ \t]*:")
 NO_REVIEW = re.compile(r"(?<![\w-])no-review(?![\w-])")
-TESTS_RUN = re.compile(r"(?im)^([ \t>*`-]*)tests[-_ ]run[`*]*[ \t]*:[ \t]*(.*)$")
-EXIT_CODE = re.compile(r"\b(?:exit(?:ed)?(?:\s+with)?(?:\s*code)?|status)\s*[:=]?\s*(\d+)\b"
-                       r"|(?:→|->|=>)\s*(\d+)\b(?!\s*[a-z])|\((\d+)\)", re.I)
+PLAN_IMPACT = re.compile(r"(?im)^[ \t>*`-]*status[`*]*[ \t]*:[ \t`*]*plan-impact\b")
+REDIRECT = re.compile(r"\d*>>?\s*&?\S+|&>\s*\S+")
+SEGMENT_END = re.compile(r"&&|\|\||[;|\n]")
+SCOPED = re.compile(r"(?:^|\s)(?:-k|-t|-m|-run|--testNamePattern|--grep|--findRelatedTests|--onlyChanged|--changedSince"
+                    r"|--related)(?=[\s=]|$)|(?:^|\s)(?!\./\.\.\.(?:\s|$))[^\s-]\S*(?:/|::|\.(?:[cm]?[jt]sx?|py|go|rb|rs|php|vue|svelte)\b)")
 GATE_LOG = re.compile(r"(?:>\s*|\btee\s+(?:-a\s+)?)\S*review-gate[\w.-]*\.log")
 CHECKER = re.compile(r"(?:\A|[;&|(]\s*|\n\s*)(?:cd\s+\S+\s*&&\s*)?(?:[A-Za-z_]\w*=\S+\s+)*"
                      r"(?:(?:time|npx|bunx|uv\s+run|poetry\s+run|python3?\s+-m|bundle\s+exec)\s+)*"
@@ -45,8 +49,8 @@ CHECKER = re.compile(r"(?:\A|[;&|(]\s*|\n\s*)(?:cd\s+\S+\s*&&\s*)?(?:[A-Za-z_]\w
 PASS_REASON = ("A fix coder ran after the last code-reviewer read of this loop, so its fix diff is unread. "
                "Run Step 5d now: dispatch one code-reviewer scoped to every unread fix diff, route its "
                "findings, then return the packet.")
-GATE_REASON = ("A coder changed code in this loop, the handoff's tests-run is not a command with exit 0, and "
-               "no check ran after the last coder step. Run the Step 6 execution gate now: the project's "
+GATE_REASON = ("No full check ran after the last code change in this phase. A scoped run, including the "
+               "handoff's tests-run, does not count. Run the Step 6 execution gate now: the project's full "
                "quality-check command once, redirected to /tmp/review-gate.log. Route any failure as Step 6 "
                "says, then return the packet.")
 HANDOFF_REASON = ("A review-loop dispatch from /code carries no handoff block. Build it per "
@@ -59,29 +63,22 @@ def text_of(content):
     return " ".join(b.get("text", "") for b in content or [] if isinstance(b, dict))
 
 
-def tests_passed(prompt):
-    """True when the prompt's tests-run field reports exit codes and all of them are 0. A field with an empty first
-    line takes the deeper lines under it."""
-    m = TESTS_RUN.search(prompt or "")
-    if not m:
-        return False
-    val, depth = m.group(2), len(m.group(1))
-    if not val.strip():
-        under = []
-        for line in prompt[m.end():].split("\n")[1:]:
-            if not line.strip() or len(line) - len(line.lstrip(" \t")) <= depth:
-                break
-            under.append(line)
-        val = " ; ".join(under)
-    codes = [int(a or b or c) for a, b, c in EXIT_CODE.findall(val)]
-    return bool(codes) and not any(codes)
+def full_check(cmd):
+    """True when the command runs a checker, or writes the review-gate log, and no checker in it is filtered to
+    files, directories or test names."""
+    hits = list(CHECKER.finditer(cmd))
+    for m in hits:
+        rest = SEGMENT_END.split(cmd[m.end():], 1)[0]
+        if SCOPED.search(REDIRECT.sub(" ", rest)):
+            return False
+    return bool(hits) or bool(GATE_LOG.search(cmd))
 
 
-def scan(path):
-    """(a coder ran after the last reviewer read, no check ran after the last coder step when one was owed,
-    the loop prompt holds no-review)."""
+def scan(path, final=None):
+    """(a coder ran after the last reviewer read, no full check ran after the last code change, the loop prompt
+    holds no-review). final is the loop's last message; the transcript's last text stands in when it is None."""
     kinds, reviewer_ids, coder_ids = {}, set(), set()
-    last_coder, last_step, last_read, last_check, prompt = -1, -1, -1, -1, None
+    last_coder, last_step, last_read, last_full, prompt, last_text = -1, 0, -1, -1, None, ""
     with open(path, encoding="utf-8") as fh:
         for n, line in enumerate(fh):
             rec = json.loads(line)
@@ -92,7 +89,9 @@ def scan(path):
             for b in content if isinstance(content, list) else []:
                 if not isinstance(b, dict):
                     continue
-                if b.get("type") == "tool_use":
+                if b.get("type") == "text" and rec.get("type") == "assistant" and b.get("text", "").strip():
+                    last_text = b["text"]
+                elif b.get("type") == "tool_use":
                     inp = b.get("input") or {}
                     if b.get("name") in ("Agent", "Task"):
                         kind = inp.get("subagent_type") or ""
@@ -106,20 +105,19 @@ def scan(path):
                     elif b.get("name") == "SendMessage" and inp.get("to") in coder_ids:
                         last_step = n
                     elif b.get("name") == "Bash":
-                        cmd = str(inp.get("command") or "")
-                        if GATE_LOG.search(cmd) or CHECKER.search(cmd):
-                            last_check = n
+                        if full_check(str(inp.get("command") or "")):
+                            last_full = n
                 elif b.get("type") == "tool_result":
                     kind = kinds.get(b.get("tool_use_id"), "")
                     ids = reviewer_ids if REVIEWERS.match(kind) else coder_ids if CODERS.match(kind) else None
                     if ids is not None:
                         ids.update(AGENT_ID.findall(text_of(b.get("content"))))
-    ungated = last_step >= 0 and last_check < last_step and not tests_passed(prompt)
+    ungated = last_full < last_step and not PLAN_IMPACT.search(last_text if final is None else final)
     return last_coder > last_read, ungated, bool(NO_REVIEW.search(prompt or ""))
 
 
-def reasons(path):
-    unread, ungated, exempt = scan(path)
+def reasons(path, final=None):
+    unread, ungated, exempt = scan(path, final)
     return [r for r, hit in ((PASS_REASON, unread and not exempt), (GATE_REASON, ungated)) if hit]
 
 
@@ -147,7 +145,7 @@ def main():
     if len(sys.argv) == 3 and sys.argv[1] == "--check":
         unread, ungated, exempt = scan(sys.argv[2])
         print(", ".join([("unread, no-review" if exempt else "unread") if unread else "read"]
-                        + (["no check after the last coder step"] if ungated else [])))
+                        + (["no full check after the last code change"] if ungated else [])))
         return
     if os.environ.get("CLAUDE_SKIP_HOOKS"):
         return
@@ -165,7 +163,7 @@ def main():
             return
         if not path or not os.path.exists(path):
             raise FileNotFoundError("no loop transcript for agent %s" % hook.get("agent_id"))
-        why = reasons(path)
+        why = reasons(path, hook.get("last_assistant_message"))
         if why:
             print(json.dumps({"decision": "block", "reason": " ".join(why)}))
 

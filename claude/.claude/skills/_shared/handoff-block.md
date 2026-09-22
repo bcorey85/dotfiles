@@ -12,7 +12,7 @@ handoff:
       why:                # optional; the human-review channel, see below
         - lines: <start>-<end>    # NEW-file line numbers (the diff's right column)
           note: <why this specific block looks the way it does>
-  tests-run: <exact command + exit code, e.g. "npm run validate → exit 0"; or "none">
+  tests-run: <exact command + exit code, e.g. "npx jest src/orders.test.ts → exit 0"; scoped to the changed files; or "none">
   flagged: <issues the upstream coder explicitly flagged, or "none">
   plan_impact: <verbatim PLAN-IMPACT block + the user's decision, or "none">
   prior-issues:           # only present on fix → review

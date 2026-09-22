@@ -33,7 +33,7 @@ The private workflow never reaches committed code: ticket, branch, PR, and issue
 
 ## Verify before you report
 
-Run the project's quality checks before you report.
+Run only the tests and fast checks for the files you changed. Never run the full suite or a long gate: the review loop runs it once, at the end of the phase. Report each command you ran and its exit code.
 
 ## PLAN-IMPACT findings (structured, never prose)
 

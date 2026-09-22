@@ -31,6 +31,10 @@ claude/.claude/skills/synced/
 !claude/.claude/orchestration.md
 !claude/.claude/settings.json
 !claude/.claude/keybindings.json
+# Custom themes: only the authored dredge theme, not other local ones.
+!claude/.claude/themes/
+claude/.claude/themes/*
+!claude/.claude/themes/dredge.json
 !claude/.claude/statusline-command.sh
 !claude/.claude/policy-limits.json
 !claude/.claude/.security-level

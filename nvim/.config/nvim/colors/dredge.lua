@@ -33,15 +33,15 @@ local c = {
 
   kw = "#b89fe7",
   fn = "#5cc1bb",
-  str = "#8bbd8c",
+  str = "#79c289",
   const = "#cea94b",
   type = "#e09c79",
   builtin = "#f289a1",
 
   diff_add = "#252937",
   diff_delete = "#3a282b",
-  diff_change = "#2b2a3c",
-  diff_text = "#3d3d60",
+  diff_change = "#312839",
+  diff_text = "#4b3859",
   search = "#50421a",
 }
 
@@ -180,6 +180,8 @@ local groups = {
   ["@function.method"] = { fg = c.fn },
   ["@function.method.call"] = { fg = c.fn },
   ["@constructor"] = { fg = c.type },
+  -- Lua captures table braces as @constructor.
+  ["@constructor.lua"] = { link = "@punctuation.bracket" },
   ["@operator"] = { fg = c.punct },
   ["@keyword"] = { fg = c.kw },
   ["@keyword.function"] = { fg = c.kw },
@@ -227,10 +229,12 @@ local groups = {
   ["@lsp.type.decorator"] = { link = "@attribute" },
   ["@lsp.type.enum"] = { link = "@type" },
   ["@lsp.type.enumMember"] = { link = "@constant" },
-  ["@lsp.type.function"] = { link = "@function" },
+  -- Cleared: LSP marks function-valued variables and properties as functions.
+  -- Tree-sitter colours only definitions and calls, the same as hunk.
+  ["@lsp.type.function"] = {},
   ["@lsp.type.interface"] = { link = "@type" },
   ["@lsp.type.macro"] = { link = "@function.macro" },
-  ["@lsp.type.method"] = { link = "@function.method" },
+  ["@lsp.type.method"] = {},
   ["@lsp.type.namespace"] = { link = "@module" },
   ["@lsp.type.parameter"] = { link = "@variable.parameter" },
   ["@lsp.type.property"] = { link = "@property" },
@@ -276,6 +280,9 @@ local groups = {
   GitSignsAdd = { fg = c.blue },
   GitSignsChange = { fg = c.purple },
   GitSignsDelete = { fg = c.red },
+  -- Inline overlay shows the old line in rose above, so changed lines take the
+  -- added wash. Purple stays in the sign column and in side-by-side diffs.
+  GitSignsChangeLn = { link = "DiffAdd" },
 
   -- plugins
   SnacksPickerDir = { fg = c.comment },

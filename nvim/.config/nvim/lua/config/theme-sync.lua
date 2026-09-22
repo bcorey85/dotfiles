@@ -215,7 +215,10 @@ local function set_word_diff()
   local fg = vim.api.nvim_get_hl(0, { name = "Normal", link = false }).fg
   -- DiffText (word-emphasis) sits a shade lighter than DiffChange (the
   -- line bg), so the changed word still pops out of its own changed line.
-  hl(0, "GitSignsChangeLnInline", { fg = fg, bg = bg_of("DiffText"), bold = true })
+  -- A theme that paints changed lines with the added wash gets added-word
+  -- treatment for their words too.
+  local change_bg = bg_of("GitSignsChangeLn") == bg_of("DiffAdd") and bg_of("DiffAdd") or bg_of("DiffText")
+  hl(0, "GitSignsChangeLnInline", { fg = fg, bg = change_bg, bold = true })
   hl(0, "GitSignsAddLnInline", { fg = fg, bg = bg_of("DiffAdd"), bold = true })
   hl(0, "GitSignsDeleteLnInline", { fg = fg, bg = bg_of("DiffDelete"), bold = true })
 end

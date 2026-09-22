@@ -35,6 +35,7 @@ claude/.claude/skills/synced/
 !claude/.claude/themes/
 claude/.claude/themes/*
 !claude/.claude/themes/dredge.json
+!claude/.claude/themes/dredge-light.json
 !claude/.claude/statusline-command.sh
 !claude/.claude/policy-limits.json
 !claude/.claude/.security-level

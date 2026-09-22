@@ -1,4 +1,4 @@
-# dredge — personal family, dark only (nvim colors/dredge.lua).
+# dredge dark — personal family (nvim colors/dredge.lua).
 palette = 0=#1b1917
 palette = 1=#f77972
 palette = 2=#82d395

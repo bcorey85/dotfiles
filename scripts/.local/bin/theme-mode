@@ -113,7 +113,8 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     nightfox:*)             echo "Nightfox" ;;
     duskfox:light)          echo "Dawnfox" ;;
     duskfox:*)              echo "Duskfox" ;;
-    dredge:*)            echo "dredge" ;;
+    dredge:light)           echo "dredge-light" ;;
+    dredge:*)               echo "dredge" ;;
   esac
 }
 
@@ -156,7 +157,10 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     nightfox:*)             echo "night-owl" ;;
     duskfox:light)          echo "rose-pine-dawn" ;;
     duskfox:*)              echo "rose-pine-moon" ;;
-    dredge:*)            echo "one-dark-pro" ;;
+    # dredge light: github-light leaks the fewest scopes past the dark-tuned
+    # table; one-light leaks its red variables and blue operators.
+    dredge:light)           echo "github-light" ;;
+    dredge:*)               echo "one-dark-pro" ;;
   esac
 }
 
@@ -479,12 +483,12 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       attr="#f0a4a2"; tag="#c4a7e7"; vbi="#eb6f92"; imp="#f0a6cc"; pre="#f0a6cc"
       prim="#a6dae3"; ns="#a6dae3"; mac="#f0a6cc"; bfn="#eb6f92"
       ;;
-    # dredge (nvim colors/dredge.lua), dark only — light reuses it.
+    # dredge (nvim colors/dredge.lua). Both modes share the scope table below.
     dredge:*)
       bg="#211f1c"; panel="#1b1917"; panelAlt="#282623"; border="#413d39"
       accent="#79cfcf"; accentMuted="#413d39"; text="#c4c4c4"; muted="#929292"
-      addWord="#2a314d"; remWord="#4a292b"
-      addedBg="#252937"; removedBg="#3a282b"; ctxBg="#211f1c"
+      addWord="#272e46"; remWord="#46282a"
+      addedBg="#232630"; removedBg="#332527"; ctxBg="#211f1c"
       sAdd="#7abff9"; sRem="#f77972"; lnFg="#636363"
       badgeAdd="#7abff9"; badgeRem="#f77972"; badgeNeu="#b191ea"
       fRename="#b191ea"; fMod="#b191ea"; fUntracked="#7abff9"; note="#1b1917"
@@ -495,6 +499,20 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # Match nvim's tree-sitter colours where one-dark-pro's own selectors
       # out-rank the generic table. h1/h2 mirror theme-sync's markdown headings.
       local h1="#79cfcf" h2="#80aace"
+      if [ "$2" = light ]; then
+        bg="#efece8"; panel="#eae6e1"; panelAlt="#e7e2dd"; border="#c5c1b9"
+        accent="#007475"; accentMuted="#c5c1b9"; text="#383838"; muted="#7b7a78"
+        addWord="#ccd7f6"; remWord="#f6cad2"
+        addedBg="#d9dff4"; removedBg="#f6d7dc"; ctxBg="#efece8"
+        sAdd="#116bb5"; sRem="#ba3535"; lnFg="#93928f"
+        badgeAdd="#116bb5"; badgeRem="#ba3535"; badgeNeu="#7750b1"
+        fRename="#7750b1"; fMod="#7750b1"; fUntracked="#116bb5"; note="#eae6e1"
+        kw="#714ca6"; str="#137738"; num="#865900"; fn="#007570"; typ="#9c470d"; punct="#717171"; op="#717171"
+        konst="#865900"; esc="#865900"; cmt="#626262"; mem="#383838"; param="#383838"
+        attr="#865900"; tag="#9c470d"; vbi="#a53456"; lang="#a53456"; imp="#714ca6"; pre="#714ca6"
+        prim="#9c470d"; ns="#9c470d"; mac="#007570"; bfn="#007570"; var="#383838"; key="#383838"
+        h1="#007475" h2="#39688e"
+      fi
       extra=$(cat <<EOF
 "punctuation.separator.key-value"   = "$punct"
 "punctuation.separator.key-value.mapping.yaml" = "$punct"
@@ -529,6 +547,9 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
 "keyword.operator.expression.typeof" = "$kw"
 "keyword.operator.optional"         = "$punct"
 "keyword.operator.definiteassignment" = "$punct"
+"support.constant.media.css"        = "$var"
+"entity.other.attribute.lua"        = "$var"
+"entity.name.command.shell"         = "$fn"
 "keyword.operator.quantifier.regexp" = "$punct"
 "storage.type.function.arrow"       = "$punct"
 "string.regexp keyword.other"       = "$konst"
@@ -1142,6 +1163,15 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#e0def4" subtext0="#817c9c"
       green="#a3be8c" yellow="#f6c177" red="#eb6f92"
       blue="#569fba" teal="#9ccfd8" peach="#ea9a97"
+      ;;
+    dredge:light)
+      base_name="one-light"
+      accent="#007475" panel_bg="#eae6e1" surface_dim="#d8d3cd"
+      surface0="#cfcac3" surface1="#c5c1b9"
+      overlay0="#7b7a78" overlay1="#686868"
+      text="#383838" subtext0="#686868"
+      green="#1d7d3e" yellow="#9d7200" red="#ba3535"
+      blue="#116bb5" teal="#007475" peach="#bb5d00"
       ;;
     dredge:*)
       base_name="one-dark"

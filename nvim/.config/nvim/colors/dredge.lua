@@ -1,5 +1,5 @@
 -- dredge — personal theme-mode family, dark and light. Prose first, diffs second:
--- warm charcoal ground, neutral grey fg ~10.8:1, syntax flat at OKLCH L 0.75
+-- cool charcoal ground (OKLCH h 250), neutral grey fg ~10.8:1, syntax flat at OKLCH L 0.75
 -- (~7.2-7.7:1) so diff tints carry the signal. Roles: keyword purple, function
 -- teal, string green, constant yellow, type orange, builtin pink (None/true/self);
 -- members stay fg. Diffs: added = blue signs on an indigo wash, removed = rose,
@@ -10,12 +10,12 @@
 local palettes = {}
 
 palettes.dark = {
-  bg = "#211f1c",
-  bg_dark = "#1b1917",
-  bg_line = "#282623",
-  bg_sel = "#35312b",
+  bg = "#1c2023",
+  bg_dark = "#171a1d",
+  bg_line = "#24272a",
+  bg_sel = "#2c3239",
   bg_visual = "#333849",
-  border = "#413d39",
+  border = "#3a3e44",
   nontext = "#424242",
   linenr = "#636363",
   muted = "#808080",
@@ -40,31 +40,31 @@ palettes.dark = {
   type = "#e09c79",
   builtin = "#f289a1",
 
-  diff_add = "#202227",
-  diff_delete = "#2c2224",
+  diff_add = "#1d222d",
+  diff_delete = "#2d2124",
   diff_change = "#27222b",
   diff_text = "#413149",
-  search = "#50421a",
+  search = "#524028",
 
   term = {
-    "#1b1917", "#f77972", "#82d395", "#ebc75b", "#7abff9", "#e091d8", "#79cfcf", "#d1d1d1",
+    "#171a1d", "#f77972", "#82d395", "#ebc75b", "#7abff9", "#e091d8", "#79cfcf", "#d1d1d1",
     "#7a7a7a", "#ff9790", "#a6e7b3", "#fdde8c", "#a0d4ff", "#efade8", "#a7e1e0", "#e6e6e6",
   },
 }
 
--- Light: dimmed warm paper (OKLCH L 0.945), fg ~10:1, syntax flat at
--- OKLCH L 0.50 (~4.7-5.5:1). Same hues and roles as dark.
+-- Light: dimmed warm paper (OKLCH L 0.885), fg ~8.3:1, syntax flat at
+-- OKLCH L 0.455 (~4.8-5.6:1). Same hues and roles as dark.
 palettes.light = {
-  bg = "#efece8",
-  bg_dark = "#eae6e1",
-  bg_line = "#e7e2dd",
-  bg_sel = "#d8d3cd",
-  bg_visual = "#cdd4ec",
-  border = "#c5c1b9",
-  nontext = "#c4c2c1",
+  bg = "#dcd8d4",
+  bg_dark = "#d7d3ce",
+  bg_line = "#d4cfca",
+  bg_sel = "#c5c0ba",
+  bg_visual = "#c1c8e0",
+  border = "#b2aea6",
+  nontext = "#b8b6b5",
   linenr = "#93928f",
   muted = "#7b7a78",
-  comment = "#626262",
+  comment = "#565656",
   punct = "#717171",
   fg = "#383838",
   fg_bright = "#1b1b1b",
@@ -78,18 +78,18 @@ palettes.light = {
   blue = "#116bb5",
   magenta = "#993f94",
 
-  kw = "#714ca6",
-  fn = "#007570",
-  str = "#137738",
-  const = "#865900",
-  type = "#9c470d",
-  builtin = "#a53456",
+  kw = "#643f98",
+  fn = "#006661",
+  str = "#006a2b",
+  const = "#784c00",
+  type = "#8e3a00",
+  builtin = "#96254a",
 
-  diff_add = "#d9dff4",
-  diff_delete = "#f6d7dc",
-  diff_change = "#e9dff0",
-  diff_text = "#d7c5e6",
-  search = "#ead499",
+  diff_add = "#cfd2df",
+  diff_delete = "#e0cdd0",
+  diff_change = "#d6ccdd",
+  diff_text = "#c4b2d3",
+  search = "#dfbc8c",
 
   term = {
     "#383838", "#ba3535", "#1d7d3e", "#9d7200", "#116bb5", "#993f94", "#007475", "#7b7a78",

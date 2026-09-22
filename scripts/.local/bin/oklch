@@ -10,7 +10,7 @@ bg defaults to the dredge ground. Out-of-gamut lch values are clipped to sRGB.
 import math
 import sys
 
-DEFAULT_BG = "#211f1c"
+DEFAULT_BG = "#1c2023"
 
 
 def oklch_to_hex(L, C, h):

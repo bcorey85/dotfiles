@@ -489,7 +489,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       accent="#79cfcf"; accentMuted="#413d39"; text="#d1d1d1"; muted="#929292"
       # Words must stay >= RGB distance 28 from the line wash, or hunk
       # replaces them with its own blend of the sign colour.
-      addWord="#272d44"; remWord="#442729"
+      addWord="#1e2543"; remWord="#411c1f"
       addedBg="#202227"; removedBg="#2c2224"; ctxBg="#211f1c"
       # hunk also colours line numbers and rails with the sign colour — dimmed.
       sAdd="#6191be"; sRem="#bb6d68"; lnFg="#636363"

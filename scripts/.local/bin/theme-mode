@@ -487,10 +487,10 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
     dredge:*)
       bg="#211f1c"; panel="#1b1917"; panelAlt="#282623"; border="#413d39"
       accent="#79cfcf"; accentMuted="#413d39"; text="#c4c4c4"; muted="#929292"
-      # Words sit just past hunk's minimum separation (RGB distance 28) from the
-      # line wash; closer, hunk replaces them with a louder blend of the sign.
-      addWord="#262b3b"; remWord="#3e292a"
-      addedBg="#21232a"; removedBg="#2c2224"; ctxBg="#211f1c"
+      # Words must stay >= RGB distance 28 from the line wash, or hunk
+      # replaces them with its own blend of the sign colour.
+      addWord="#2a314d"; remWord="#4a292b"
+      addedBg="#202227"; removedBg="#2c2224"; ctxBg="#211f1c"
       # hunk also colours line numbers and rails with the sign colour — dimmed.
       sAdd="#6191be"; sRem="#bb6d68"; lnFg="#636363"
       badgeAdd="#7abff9"; badgeRem="#f77972"; badgeNeu="#b191ea"

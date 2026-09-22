@@ -1,8 +1,9 @@
 -- dredge — personal theme-mode family. Dark only. Prose first, diffs second:
--- warm charcoal ground, neutral grey fg ~9:1, syntax at ~7-9:1 so diff tints
--- carry the signal. Diffs: added = blue, removed = rose, equal lightness.
+-- warm charcoal ground, neutral grey fg ~9:1, syntax flat at OKLCH L 0.75
+-- (~7.2-7.7:1) so diff tints carry the signal. Roles: keyword purple, function
+-- teal, string green, constant yellow, type orange; members stay fg. Diffs: added = blue, removed = rose, equal lightness.
 -- Syntax never uses blue or rose hues, so those two mean only added/removed.
--- Blurple is the accent. The palette below is the source of truth; the
+-- Teal is the accent; purple marks changed. The palette below is the source of truth; the
 -- ghostty/herdr/hunk/starship/quickshell/claude-theme copies mirror it by hand.
 
 local c = {
@@ -20,20 +21,20 @@ local c = {
   fg = "#c4c4c4",
   fg_bright = "#dddddd",
 
-  blurple = "#9a99f3",
+  purple = "#b191ea",
   red = "#f77972",
-  amber = "#f5ac61",
+  amber = "#ffa475",
   yellow = "#ebc75b",
   green = "#82d395",
   teal = "#79cfcf",
   blue = "#7abff9",
   magenta = "#e091d8",
 
-  kw = "#f09d72",
-  fn = "#b59ce3",
-  str = "#91c392",
-  const = "#c8b467",
-  type = "#6ec3b7",
+  kw = "#b89fe7",
+  fn = "#67bfc1",
+  str = "#8bbd8c",
+  const = "#cea94b",
+  type = "#e09c79",
 
   diff_add = "#212b34",
   diff_delete = "#3a282b",
@@ -55,12 +56,12 @@ local groups = {
   NormalNC = { link = "Normal" },
   NormalFloat = { fg = c.fg, bg = c.bg_dark },
   FloatBorder = { fg = c.border, bg = c.bg_dark },
-  FloatTitle = { fg = c.blurple, bg = c.bg_dark, bold = true },
-  Cursor = { fg = c.bg, bg = c.blurple },
+  FloatTitle = { fg = c.teal, bg = c.bg_dark, bold = true },
+  Cursor = { fg = c.bg, bg = c.teal },
   CursorLine = { bg = c.bg_line },
   CursorColumn = { link = "CursorLine" },
   ColorColumn = { bg = c.bg_line },
-  CursorLineNr = { fg = c.blurple, bold = true },
+  CursorLineNr = { fg = c.teal, bold = true },
   LineNr = { fg = c.linenr },
   SignColumn = { fg = c.linenr },
   FoldColumn = { fg = c.linenr },
@@ -76,26 +77,26 @@ local groups = {
   TabLineSel = { fg = c.fg_bright, bg = c.bg, bold = true },
   Pmenu = { fg = c.fg, bg = c.bg_dark },
   PmenuSel = { bg = c.bg_sel, bold = true },
-  PmenuKind = { fg = c.blurple, bg = c.bg_dark },
+  PmenuKind = { fg = c.teal, bg = c.bg_dark },
   PmenuExtra = { fg = c.muted, bg = c.bg_dark },
   PmenuSbar = { bg = c.bg_line },
   PmenuThumb = { bg = c.border },
-  PmenuMatch = { fg = c.blurple, bold = true },
+  PmenuMatch = { fg = c.teal, bold = true },
   WildMenu = { link = "PmenuSel" },
   Visual = { bg = c.bg_visual },
   VisualNOS = { link = "Visual" },
   Search = { fg = c.fg_bright, bg = c.search },
-  IncSearch = { fg = c.bg, bg = c.blurple },
+  IncSearch = { fg = c.bg, bg = c.teal },
   CurSearch = { link = "IncSearch" },
   Substitute = { fg = c.bg, bg = c.red },
-  MatchParen = { fg = c.blurple, bg = c.bg_visual, bold = true },
+  MatchParen = { fg = c.teal, bg = c.bg_visual, bold = true },
   NonText = { fg = c.nontext },
   Whitespace = { fg = c.nontext },
   EndOfBuffer = { fg = c.bg },
   SpecialKey = { fg = c.nontext },
   Conceal = { fg = c.muted },
   Directory = { fg = c.blue },
-  Title = { fg = c.blurple, bold = true },
+  Title = { fg = c.teal, bold = true },
   ErrorMsg = { fg = c.red },
   WarningMsg = { fg = c.yellow },
   MoreMsg = { fg = c.green },
@@ -193,7 +194,7 @@ local groups = {
   ["@comment"] = { link = "Comment" },
   ["@comment.error"] = { fg = c.red, bold = true },
   ["@comment.warning"] = { fg = c.yellow, bold = true },
-  ["@comment.note"] = { fg = c.blurple, bold = true },
+  ["@comment.note"] = { fg = c.teal, bold = true },
   ["@comment.todo"] = { link = "Todo" },
   ["@tag"] = { fg = c.type },
   ["@tag.builtin"] = { fg = c.type },
@@ -203,19 +204,19 @@ local groups = {
   ["@markup.italic"] = { italic = true },
   ["@markup.strikethrough"] = { strikethrough = true },
   ["@markup.underline"] = { underline = true },
-  ["@markup.heading"] = { fg = c.blurple, bold = true },
+  ["@markup.heading"] = { fg = c.teal, bold = true },
   ["@markup.quote"] = { fg = c.comment, italic = true },
   ["@markup.math"] = { fg = c.const },
   ["@markup.link"] = { fg = c.type },
   ["@markup.link.label"] = { fg = c.type },
   ["@markup.link.url"] = { fg = c.type, underline = true },
   ["@markup.raw"] = { fg = c.str },
-  ["@markup.list"] = { fg = c.blurple },
+  ["@markup.list"] = { fg = c.teal },
   ["@markup.list.checked"] = { fg = c.green },
   ["@markup.list.unchecked"] = { fg = c.muted },
   ["@diff.plus"] = { fg = c.blue },
   ["@diff.minus"] = { fg = c.red },
-  ["@diff.delta"] = { fg = c.blurple },
+  ["@diff.delta"] = { fg = c.purple },
 
   -- lsp semantic tokens
   ["@lsp.type.class"] = { link = "@type" },
@@ -240,7 +241,7 @@ local groups = {
   LspReferenceRead = { bg = c.bg_sel },
   LspReferenceWrite = { bg = c.bg_sel, bold = true },
   LspInlayHint = { fg = c.muted, bg = c.bg_line },
-  LspSignatureActiveParameter = { fg = c.blurple, bold = true },
+  LspSignatureActiveParameter = { fg = c.teal, bold = true },
 
   -- diagnostics
   DiagnosticError = { fg = c.red },
@@ -262,20 +263,20 @@ local groups = {
   DiffChange = { bg = c.diff_change },
   DiffText = { bg = c.diff_text, bold = true },
   Added = { fg = c.blue },
-  Changed = { fg = c.blurple },
+  Changed = { fg = c.purple },
   Removed = { fg = c.red },
   diffAdded = { fg = c.blue },
   diffRemoved = { fg = c.red },
-  diffChanged = { fg = c.blurple },
+  diffChanged = { fg = c.purple },
   diffFile = { fg = c.type },
   diffLine = { fg = c.muted },
   GitSignsAdd = { fg = c.blue },
-  GitSignsChange = { fg = c.blurple },
+  GitSignsChange = { fg = c.purple },
   GitSignsDelete = { fg = c.red },
 
   -- plugins
   SnacksPickerDir = { fg = c.comment },
-  MiniClueDescGroup = { fg = c.blurple },
+  MiniClueDescGroup = { fg = c.teal },
   MiniClueSeparator = { fg = c.border },
 }
 

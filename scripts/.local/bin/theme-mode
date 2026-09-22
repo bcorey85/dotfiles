@@ -480,16 +480,16 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
     # dredge (nvim colors/dredge.lua), dark only — light reuses it.
     dredge:*)
       bg="#211f1c"; panel="#1b1917"; panelAlt="#282623"; border="#413d39"
-      accent="#9a99f3"; accentMuted="#413d39"; text="#c4c4c4"; muted="#929292"
-      addWord="#154867"; remWord="#653236"
+      accent="#79cfcf"; accentMuted="#413d39"; text="#c4c4c4"; muted="#929292"
+      addWord="#18364a"; remWord="#4a292b"
       addedBg="#212b34"; removedBg="#3a282b"; ctxBg="#211f1c"
       sAdd="#7abff9"; sRem="#f77972"; lnFg="#636363"
-      badgeAdd="#7abff9"; badgeRem="#f77972"; badgeNeu="#9a99f3"
-      fRename="#9a99f3"; fMod="#ebc75b"; fUntracked="#7abff9"; note="#1b1917"
-      kw="#f09d72"; str="#91c392"; num="#c8b467"; fn="#b59ce3"; typ="#6ec3b7"; punct="#8c8c8c"; op="#8c8c8c"
-      konst="#c8b467"; esc="#c8b467"; cmt="#929292"; mem="#c4c4c4"; param="#c4c4c4"
-      attr="#c8b467"; tag="#6ec3b7"; vbi="#f09d72"; imp="#f09d72"; pre="#f09d72"
-      prim="#6ec3b7"; ns="#6ec3b7"; mac="#b59ce3"; bfn="#b59ce3"; var="#c4c4c4"; key="#c4c4c4"
+      badgeAdd="#7abff9"; badgeRem="#f77972"; badgeNeu="#b191ea"
+      fRename="#b191ea"; fMod="#ebc75b"; fUntracked="#7abff9"; note="#1b1917"
+      kw="#b89fe7"; str="#8bbd8c"; num="#cea94b"; fn="#67bfc1"; typ="#e09c79"; punct="#8c8c8c"; op="#8c8c8c"
+      konst="#cea94b"; esc="#cea94b"; cmt="#929292"; mem="#c4c4c4"; param="#c4c4c4"
+      attr="#cea94b"; tag="#e09c79"; vbi="#b89fe7"; imp="#b89fe7"; pre="#b89fe7"
+      prim="#e09c79"; ns="#e09c79"; mac="#67bfc1"; bfn="#67bfc1"; var="#c4c4c4"; key="#c4c4c4"
       ;;
     *) return 0 ;;
   esac
@@ -1003,12 +1003,12 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:*)
       base_name="one-dark"
-      accent="#9a99f3" panel_bg="#1b1917" surface_dim="#282623"
+      accent="#79cfcf" panel_bg="#1b1917" surface_dim="#282623"
       surface0="#35312b" surface1="#413d39"
       overlay0="#808080" overlay1="#929292"
       text="#c4c4c4" subtext0="#929292"
       green="#82d395" yellow="#ebc75b" red="#f77972"
-      blue="#7abff9" teal="#79cfcf" peach="#f5ac61"
+      blue="#7abff9" teal="#79cfcf" peach="#ffa475"
       ;;
   esac
 

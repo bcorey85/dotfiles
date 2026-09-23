@@ -1,5 +1,6 @@
 *.log
 *.local.yml
+__pycache__/
 nvim/.config/nvim/lazy-lock.json
 
 # theme-mode template contract: the stowed *.template is tracked, the generated

@@ -496,7 +496,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       badgeAdd="#69c7de"; badgeRem="#f77972"; badgeNeu="#b191ea"
       fRename="#b191ea"; fMod="#b191ea"; fUntracked="#7abff9"; note="#171a1d"
       kw="#b89fe7"; str="#79c289"; num="#cea94b"; fn="#5cc1bb"; typ="#e09c79"; punct="#8c8c8c"; op="#8c8c8c"
-      konst="#cea94b"; esc="#cea94b"; cmt="#939393"; mem="#c8c8c8"; param="#c8c8c8"
+      konst="#cea94b"; esc="#cea94b"; cmt="#a1a1a1"; mem="#c8c8c8"; param="#c8c8c8"
       attr="#cea94b"; tag="#e09c79"; vbi="#f289a1"; lang="#f289a1"; imp="#b89fe7"; pre="#b89fe7"
       prim="#e09c79"; ns="#e09c79"; mac="#5cc1bb"; bfn="#5cc1bb"; var="#c8c8c8"; key="#c8c8c8"
       # Match nvim's tree-sitter colours where one-dark-pro's own selectors

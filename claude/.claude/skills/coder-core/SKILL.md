@@ -1,6 +1,6 @@
 ---
 name: coder-core
-description: Core directives for coder subagents. Preloaded into coder and coder-deep via their agents' `skills:` frontmatter — not for direct invocation in the main session.
+description: Core directives for coder subagents. Preloaded into coder via its agent's `skills:` frontmatter — not for direct invocation in the main session.
 ---
 
 # Coder Core Directives

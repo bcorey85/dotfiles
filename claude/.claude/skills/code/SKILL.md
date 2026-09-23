@@ -16,7 +16,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 0. **No arguments** (after stripping modifiers): run `bash ~/.claude/scripts/resolve-task-dir.sh`. Exit 0 → the task directory's `spec.md` is the task input; exit 5 → the printed plan file. Say what resolved. Exit 3 → ask which via AskUserQuestion. Exit 4 → ask the user what to implement.
 
-1. **Modifiers**: `+deep` → dispatch `coder-deep` and omit `model`. `+fast` → pass `model: "haiku"`. Strip modifiers from the prompt passed to coders.
+1. **Modifiers**: `+deep` → dispatch `coder` and omit `model` (it pins Opus). `+fast` → pass `model: "haiku"`. Strip modifiers from the prompt passed to coders.
 
 2. **Plan file or pasted plan**: `rg -n '^## ' <plan>` lists every section; the plan is multi-phase when more than one `## Phase N:` section exists. Read it phase-scoped per `~/.claude/skills/_shared/plan-reading.md`. `lane=eng-spec` when step 0 resolved the task input, `lane=code` otherwise; carry it into the review-loop dispatch.
 

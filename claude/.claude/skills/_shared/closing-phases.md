@@ -15,7 +15,7 @@ Every `/eng-spec` plan ends with these FOUR phases, in order after the last feat
 2. **Test audit** (risk: high) — `/test-audit`: cull spam, catch net-removed coverage, sweep weak assertions — the half of test-intent no phase judges. Findings → `/fix` / `test-writer`; receipt → Recap. Success Criteria: denominator stated, every finding routed.
 
 3. **Verify pass** (risk: high) — two complementary checks, both required:
-   - **Branch-wide deep review** — ONE `code-reviewer-deep` (omit `model`) over the branch diff: the only fresh-eyes look at cross-phase interactions. Findings via `/review` routing.
+   - **Branch-wide deep review** — ONE `code-reviewer` (omit `model`) over the branch diff: the only fresh-eyes look at cross-phase interactions. Findings via `/review` routing.
    - `/verify` — reconcile the shipped diff against the ticket/plan
      (completeness), run the plan's Automated Verification commands, and emit the
      **human smoke-test checklist** (all human-only Manual Verification items).

@@ -25,7 +25,7 @@ Assist a human peer review of someone else's PR. Two hard differences from `/rev
 
 ## Modifiers
 
-- `+deep` — dispatch `code-reviewer-deep` instead of `code-reviewer` (omit `model`; its frontmatter pins Opus). For security-sensitive, concurrent, or architecturally complex PRs.
+- `+deep` — dispatch `code-reviewer` with no `model`, so its frontmatter's Opus pin applies. For security-sensitive, concurrent, or architecturally complex PRs.
 - `+comment` — after the walkthrough, draft GitHub review comments and post ONLY after the user approves the exact text. Without it, nothing ever leaves the terminal.
 - `+ephemeral` — skip the vault save below.
 
@@ -72,7 +72,7 @@ Then proceed directly to the full review (step 4) — no gate, no prompt.
 
 ### 4. Dispatch the review
 
-Dispatch `code-reviewer` (or `code-reviewer-deep` with `+deep`; otherwise `model: "sonnet"`) with:
+Dispatch `code-reviewer` (no `model` with `+deep`; otherwise `model: "sonnet"`) with:
 
 - The worktree path as code root + exact changed-file list (never rediscover scope). >5 files → split on the largest natural boundary (`review-loop` Step 3 heuristic), parallel dispatch.
 - PR description + ticket summary/AC when found, as intent context. (AC _reconciliation_ stays in 4b.)

@@ -17,7 +17,7 @@ comes back in the packet.
 - `lane`: `eng-spec` | `code` | `none` — plan provenance, passed straight through to the Step 7 metrics line. Absent → `none`. Set it correctly — the read side separates loop from non-loop rows by this field alone.
 - `plan: <path>` — the plan file for this work, when the caller has one, with `phase: <N>` when the work is one phase of it. Pass both to every reviewer you dispatch.
 - `handoff:` block — schema in `~/.claude/skills/_shared/handoff-block.md`. May be absent (manual `/review`).
-- Modifiers: `+deep` → dispatch the `-deep` variant of every reviewer you spawn (`code-reviewer-deep`, and in Step 6b `security-reviewer-deep` / `perf-reviewer-deep` / `smell-reviewer-deep`) and OMIT `model` (their frontmatter pins Opus). `+fast` → pass `model: "haiku"`.
+- Modifiers: `+deep` → dispatch the `-deep` variant of every Step 6b specialist you spawn (`security-reviewer-deep` / `perf-reviewer-deep` / `smell-reviewer-deep`) and OMIT `model` (their frontmatter pins Opus). `code-reviewer` and `coder` already pin Opus and run as is. `+fast` → pass `model: "haiku"`.
 - Specialist flags (Step 6b): `+sec` / `+perf` / `+smell` force the named specialist pass even when the diff doesn't match its trigger; `no-specialist` suppresses the specialist pass entirely.
 - `reviewers: <domains>` (passed by `/code` from the phase's Phase Status line) → those Step 6b specialists are eligible without a trigger match. Additive only; it can never suppress a domain.
 - `no-review` (fix-first only): dispatch the fix coder, verify via the execution gate, return without a reviewer pass.
@@ -116,7 +116,7 @@ information, not an error to correct.
 
 ## Step 5: Fix dispatch (only a `fix` finding dispatches)
 
-Dispatch a `coder` (`coder-deep` on `+deep`, omitting `model`) with the `fix` findings. **Never pass an `ask` to the fix coder. Never dispatch a coder for `nit` items alone.**
+Dispatch a `coder` with the `fix` findings. **Never pass an `ask` to the fix coder. Never dispatch a coder for `nit` items alone.**
 
 **Small items**: when Step 4 routed `nit` items on this pass, add a `## Small items` section below the findings — the small-items text below verbatim, then the `nit` items verbatim. A repair dispatched from Step 5d's findings carries no small items.
 

@@ -44,7 +44,7 @@ Commit the plan directory here if you want it on the branch before code starts.
 
 Each phase runs this sequence:
 
-1. `coder` implements the phase (`coder-deep` on `+deep`). Coders write no tests.
+1. `coder` implements the phase. Coders write no tests.
 2. `test-writer` writes tests from the plan criteria. It never sees the coder diff.
 3. `review-loop` runs review → fix until it converges: `code-reviewer`, plus
    `security-reviewer`, `perf-reviewer`, and `smell-reviewer` when the diff

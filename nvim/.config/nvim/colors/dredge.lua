@@ -1,10 +1,13 @@
 -- dredge — personal theme-mode family, dark and light. Prose first, diffs second:
--- cool charcoal ground (OKLCH h 250), neutral grey fg ~10.8:1, syntax flat at OKLCH L 0.75
--- (~7.2-7.7:1) so diff tints carry the signal. Roles: keyword purple, function
--- teal, string green, constant yellow, type orange, builtin pink (None/true/self);
--- members stay fg. Diffs: added = blue signs on an indigo wash, removed = rose,
--- equal lightness. Code syntax never uses blue or rose hues (markdown headings
--- do). Teal is the accent; purple marks changed. The palette below is the source of truth; the
+-- cool charcoal ground (OKLCH h 250), fg and greys tinted to the ground hue (C 0.025),
+-- fg ~9.8:1. Syntax ranks by lightness, hue names the role, and the more often a token
+-- appears the lower it ranks. Functions (teal) sit at L 0.78 with extra chroma, since
+-- anything near fg lightness needs chroma to separate from prose. Types (orange) and
+-- literals (string green, constant yellow, builtin pink) sit at L 0.75. Plumbing
+-- (keyword blue-violet, module = dim type orange) recedes to L 0.67. Members stay fg.
+-- Diffs: added = cyan signs on an indigo wash, removed = rose, equal lightness. Code
+-- syntax never uses blue or rose hues (markdown headings do). Teal is the accent;
+-- purple marks changed. The palette below is the source of truth; the
 -- ghostty/herdr/hunk/starship/quickshell/claude-theme copies mirror it by hand.
 
 local palettes = {}
@@ -16,13 +19,13 @@ palettes.dark = {
   bg_sel = "#2c3239",
   bg_visual = "#333849",
   border = "#3a3e44",
-  nontext = "#424242",
-  linenr = "#636363",
-  muted = "#808080",
-  comment = "#a1a1a1",
-  punct = "#8c8c8c",
-  fg = "#c8c8c8",
-  fg_bright = "#e6e6e6",
+  nontext = "#3d4348",
+  linenr = "#5c646d",
+  muted = "#89939e",
+  comment = "#96a3b1",
+  punct = "#818e9b",
+  fg = "#bdcad8",
+  fg_bright = "#dfe7f0",
 
   purple = "#b191ea",
   red = "#f77972",
@@ -33,13 +36,15 @@ palettes.dark = {
   blue = "#7abff9",
   magenta = "#e091d8",
 
-  kw = "#b89fe7",
-  fn = "#5cc1bb",
+  kw = "#898dd7",
+  fn = "#48cfc8",
   str = "#79c289",
   const = "#cea94b",
   type = "#e09c79",
-  builtin = "#f289a1",
+  module = "#c38464",
+  builtin = "#eb8ab9",
 
+  added = "#69c7de",
   diff_add = "#19272b",
   diff_delete = "#271f20",
   diff_change = "#19272b",
@@ -47,13 +52,13 @@ palettes.dark = {
   search = "#524028",
 
   term = {
-    "#171a1d", "#f77972", "#82d395", "#ebc75b", "#7abff9", "#e091d8", "#79cfcf", "#c8c8c8",
-    "#7a7a7a", "#ff9790", "#a6e7b3", "#fdde8c", "#a0d4ff", "#efade8", "#a7e1e0", "#e6e6e6",
+    "#171a1d", "#f77972", "#82d395", "#ebc75b", "#7abff9", "#e091d8", "#79cfcf", "#bdcad8",
+    "#727c86", "#ff9790", "#a6e7b3", "#fdde8c", "#a0d4ff", "#efade8", "#a7e1e0", "#dfe7f0",
   },
 }
 
--- Light: dimmed warm paper (OKLCH L 0.885), fg ~8.3:1, syntax flat at
--- OKLCH L 0.455 (~4.8-5.6:1). Same hues and roles as dark.
+-- Light: dimmed warm paper (OKLCH L 0.885), greys tinted warm (h 70), fg ~8.3:1. Same
+-- hues, roles and ranks as dark, inverted: functions L 0.42, types and literals L 0.455, plumbing L 0.48.
 palettes.light = {
   bg = "#dcd8d4",
   bg_dark = "#d7d3ce",
@@ -61,39 +66,41 @@ palettes.light = {
   bg_sel = "#c5c0ba",
   bg_visual = "#c1c8e0",
   border = "#b2aea6",
-  nontext = "#b8b6b5",
-  linenr = "#93928f",
-  muted = "#7b7a78",
-  comment = "#565656",
-  punct = "#717171",
-  fg = "#383838",
-  fg_bright = "#1b1b1b",
+  nontext = "#bcb6af",
+  linenr = "#999188",
+  muted = "#80776e",
+  comment = "#5e5449",
+  punct = "#796f65",
+  fg = "#40362c",
+  fg_bright = "#1e1a15",
 
   purple = "#7750b1",
   red = "#ba3535",
   amber = "#bb5d00",
-  yellow = "#9d7200",
+  yellow = "#886100",
   green = "#1d7d3e",
   teal = "#007475",
   blue = "#116bb5",
   magenta = "#993f94",
 
-  kw = "#643f98",
-  fn = "#006661",
+  kw = "#5150aa",
+  fn = "#005c57",
   str = "#006a2b",
-  const = "#784c00",
+  const = "#6c5307",
   type = "#8e3a00",
-  builtin = "#96254a",
+  module = "#8f4721",
+  builtin = "#8f2862",
 
+  added = "#007a85",
   diff_add = "#cdd8dc",
-  diff_delete = "#ded4d5",
+  diff_delete = "#e2cfd1",
   diff_change = "#cdd8dc",
   diff_text = "#a9cbd4",
   search = "#dfbc8c",
 
   term = {
-    "#383838", "#ba3535", "#1d7d3e", "#9d7200", "#116bb5", "#993f94", "#007475", "#7b7a78",
-    "#5c5c5c", "#d74745", "#2a904b", "#b08505", "#2b7ec9", "#ad51a7", "#008c8d", "#93928f",
+    "#40362c", "#ba3535", "#1d7d3e", "#886100", "#116bb5", "#993f94", "#007475", "#655c51",
+    "#645a50", "#d74745", "#2a904b", "#b08505", "#2b7ec9", "#ad51a7", "#008c8d", "#40362c",
   },
 }
 
@@ -143,9 +150,9 @@ local groups = {
   Visual = { bg = c.bg_visual },
   VisualNOS = { link = "Visual" },
   Search = { fg = c.fg_bright, bg = c.search },
-  IncSearch = { fg = c.bg, bg = c.teal },
+  IncSearch = { fg = c.bg, bg = c.fn },
   CurSearch = { link = "IncSearch" },
-  Substitute = { fg = c.bg, bg = c.red },
+  Substitute = { fg = c.bg, bg = c.builtin },
   MatchParen = { fg = c.teal, bg = c.bg_visual, bold = true },
   NonText = { fg = c.nontext },
   Whitespace = { fg = c.nontext },
@@ -199,7 +206,7 @@ local groups = {
   Debug = { fg = c.red },
   Underlined = { underline = true },
   Error = { fg = c.red },
-  Todo = { fg = c.bg, bg = c.yellow, bold = true },
+  Todo = { fg = c.bg, bg = c.const, bold = true },
 
   -- treesitter
   ["@variable"] = { fg = c.fg },
@@ -210,8 +217,8 @@ local groups = {
   ["@constant"] = { fg = c.const },
   ["@constant.builtin"] = { fg = c.builtin },
   ["@constant.macro"] = { fg = c.const },
-  ["@module"] = { fg = c.type },
-  ["@module.builtin"] = { fg = c.type },
+  ["@module"] = { fg = c.module },
+  ["@module.builtin"] = { fg = c.module },
   ["@label"] = { fg = c.kw },
   ["@string"] = { fg = c.str },
   ["@string.documentation"] = { fg = c.comment, italic = true },
@@ -274,7 +281,7 @@ local groups = {
   ["@markup.list"] = { fg = c.teal },
   ["@markup.list.checked"] = { fg = c.green },
   ["@markup.list.unchecked"] = { fg = c.muted },
-  ["@diff.plus"] = { fg = c.blue },
+  ["@diff.plus"] = { fg = c.added },
   ["@diff.minus"] = { fg = c.red },
   ["@diff.delta"] = { fg = c.purple },
 
@@ -324,15 +331,15 @@ local groups = {
   DiffDelete = { bg = c.diff_delete },
   DiffChange = { bg = c.diff_change },
   DiffText = { bg = c.diff_text, bold = true },
-  Added = { fg = c.blue },
+  Added = { fg = c.added },
   Changed = { fg = c.purple },
   Removed = { fg = c.red },
-  diffAdded = { fg = c.blue },
+  diffAdded = { fg = c.added },
   diffRemoved = { fg = c.red },
   diffChanged = { fg = c.purple },
   diffFile = { fg = c.type },
   diffLine = { fg = c.muted },
-  GitSignsAdd = { fg = c.blue },
+  GitSignsAdd = { fg = c.added },
   GitSignsChange = { fg = c.purple },
   GitSignsDelete = { fg = c.red },
   -- Inline overlay shows the old line in rose above, so changed lines take the
@@ -343,6 +350,7 @@ local groups = {
   SnacksPickerDir = { fg = c.comment },
   MiniClueDescGroup = { fg = c.teal },
   MiniClueSeparator = { fg = c.border },
+  MiniIndentscopeSymbol = { fg = c.linenr },
 }
 
 for name, spec in pairs(groups) do

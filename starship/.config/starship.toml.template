@@ -250,21 +250,21 @@ green = "#82d395"
 blue = "#7abff9"
 teal = "#79cfcf"
 purple = "#b191ea"
-fg = "#c8c8c8"
+fg = "#bdcad8"
 bg = "#1c2023"
-grey = "#929292"
+grey = "#89939e"
 
 [palettes.dredge-light]
 red = "#ba3535"
 orange = "#bb5d00"
-yellow = "#9d7200"
+yellow = "#886100"
 green = "#1d7d3e"
 blue = "#116bb5"
 teal = "#007475"
 purple = "#7750b1"
-fg = "#383838"
+fg = "#40362c"
 bg = "#dcd8d4"
-grey = "#7b7a78"
+grey = "#80776e"
 
 # aura dark soft = the dimmed variant (bg #15141b, soft-text accents).
 # DARK-ONLY, so the light palette below is a verbatim copy; the family name

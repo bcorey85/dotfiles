@@ -100,15 +100,15 @@ Singleton {
         },
         "dredge-dark": {
             bg: "#1c2023", panel: "#171a1d", border: "#3a3e44",
-            fg: "#c8c8c8", muted: "#929292",
+            fg: "#bdcad8", muted: "#89939e",
             green: "#82d395", red: "#f77972", teal: "#79cfcf",
             orange: "#ffa475", yellow: "#ebc75b", magenta: "#e091d8"
         },
         "dredge-light": {
             bg: "#dcd8d4", panel: "#d7d3ce", border: "#b2aea6",
-            fg: "#383838", muted: "#7b7a78",
+            fg: "#40362c", muted: "#80776e",
             green: "#1d7d3e", red: "#ba3535", teal: "#007475",
-            orange: "#bb5d00", yellow: "#9d7200", magenta: "#993f94"
+            orange: "#bb5d00", yellow: "#886100", magenta: "#993f94"
         },
         "aura-dark": {
             bg: "#15141b", panel: "#1e1c28", border: "#3b3557",

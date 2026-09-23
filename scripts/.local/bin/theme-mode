@@ -486,36 +486,37 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
     # dredge (nvim colors/dredge.lua). Both modes share the scope table below.
     dredge:*)
       bg="#1c2023"; panel="#171a1d"; panelAlt="#24272a"; border="#3a3e44"
-      accent="#79cfcf"; accentMuted="#3a3e44"; text="#c8c8c8"; muted="#929292"
+      accent="#79cfcf"; accentMuted="#3a3e44"; text="#bdcad8"; muted="#89939e"
       # Words must stay >= RGB distance 28 from the line wash, or hunk
       # replaces them with its own blend of the sign colour.
       addWord="#083039"; remWord="#3c2326"
       addedBg="#19272b"; removedBg="#271f20"; ctxBg="#1c2023"
-      # hunk also colours line numbers and rails with the sign colour — dimmed.
-      sAdd="#459aae"; sRem="#bb6d68"; lnFg="#636363"
+      # hunk also colours line numbers and rails with the sign colour — full
+      # strength, so the thin edge carries the signal and the wash stays muted.
+      sAdd="#69c7de"; sRem="#f77972"; lnFg="#5c646d"
       badgeAdd="#69c7de"; badgeRem="#f77972"; badgeNeu="#b191ea"
       fRename="#b191ea"; fMod="#b191ea"; fUntracked="#7abff9"; note="#171a1d"
-      kw="#b89fe7"; str="#79c289"; num="#cea94b"; fn="#5cc1bb"; typ="#e09c79"; punct="#8c8c8c"; op="#8c8c8c"
-      konst="#cea94b"; esc="#cea94b"; cmt="#a1a1a1"; mem="#c8c8c8"; param="#c8c8c8"
-      attr="#cea94b"; tag="#e09c79"; vbi="#f289a1"; lang="#f289a1"; imp="#b89fe7"; pre="#b89fe7"
-      prim="#e09c79"; ns="#e09c79"; mac="#5cc1bb"; bfn="#5cc1bb"; var="#c8c8c8"; key="#c8c8c8"
+      kw="#898dd7"; str="#79c289"; num="#cea94b"; fn="#48cfc8"; typ="#e09c79"; punct="#818e9b"; op="#818e9b"
+      konst="#cea94b"; esc="#cea94b"; cmt="#96a3b1"; mem="#bdcad8"; param="#bdcad8"
+      attr="#cea94b"; tag="#e09c79"; vbi="#eb8ab9"; lang="#eb8ab9"; imp="#898dd7"; pre="#898dd7"
+      prim="#e09c79"; ns="#c38464"; mac="#48cfc8"; bfn="#48cfc8"; var="#bdcad8"; key="#bdcad8"
       # Match nvim's tree-sitter colours where one-dark-pro's own selectors
       # out-rank the generic table. h1/h2 mirror theme-sync's markdown headings.
       # bright = markdown bold; hunk's scope table carries colour only, no weight.
-      local h1="#79cfcf" h2="#80aace" bright="#e6e6e6"
+      local h1="#79cfcf" h2="#80aace" bright="#dfe7f0"
       if [ "$2" = light ]; then
         bg="#dcd8d4"; panel="#d7d3ce"; panelAlt="#d4cfca"; border="#b2aea6"
-        accent="#007475"; accentMuted="#b2aea6"; text="#383838"; muted="#7b7a78"
-        addWord="#a9cbd4"; remWord="#ddbec2"
-        addedBg="#cdd8dc"; removedBg="#ded4d5"; ctxBg="#dcd8d4"
-        sAdd="#007791"; sRem="#ba3535"; lnFg="#93928f"
-        badgeAdd="#007791"; badgeRem="#ba3535"; badgeNeu="#7750b1"
+        accent="#007475"; accentMuted="#b2aea6"; text="#40362c"; muted="#80776e"
+        addWord="#a9cbd4"; remWord="#dbb8bd"
+        addedBg="#cdd8dc"; removedBg="#e2cfd1"; ctxBg="#dcd8d4"
+        sAdd="#007a85"; sRem="#ba3535"; lnFg="#999188"
+        badgeAdd="#007a85"; badgeRem="#ba3535"; badgeNeu="#7750b1"
         fRename="#7750b1"; fMod="#7750b1"; fUntracked="#116bb5"; note="#d7d3ce"
-        kw="#643f98"; str="#006a2b"; num="#784c00"; fn="#006661"; typ="#8e3a00"; punct="#717171"; op="#717171"
-        konst="#784c00"; esc="#784c00"; cmt="#565656"; mem="#383838"; param="#383838"
-        attr="#784c00"; tag="#8e3a00"; vbi="#96254a"; lang="#96254a"; imp="#643f98"; pre="#643f98"
-        prim="#8e3a00"; ns="#8e3a00"; mac="#006661"; bfn="#006661"; var="#383838"; key="#383838"
-        h1="#007475" h2="#39688e" bright="#1b1b1b"
+        kw="#5150aa"; str="#006a2b"; num="#6c5307"; fn="#005c57"; typ="#8e3a00"; punct="#796f65"; op="#796f65"
+        konst="#6c5307"; esc="#6c5307"; cmt="#5e5449"; mem="#40362c"; param="#40362c"
+        attr="#6c5307"; tag="#8e3a00"; vbi="#8f2862"; lang="#8f2862"; imp="#5150aa"; pre="#5150aa"
+        prim="#8e3a00"; ns="#8f4721"; mac="#005c57"; bfn="#005c57"; var="#40362c"; key="#40362c"
+        h1="#007475" h2="#39688e" bright="#1e1a15"
       fi
       extra=$(cat <<EOF
 "punctuation.separator.key-value"   = "$punct"
@@ -1172,17 +1173,17 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       base_name="one-light"
       accent="#007475" panel_bg="#d7d3ce" surface_dim="#c5c0ba"
       surface0="#bcb7b0" surface1="#b2aea6"
-      overlay0="#7b7a78" overlay1="#686868"
-      text="#383838" subtext0="#686868"
-      green="#1d7d3e" yellow="#9d7200" red="#ba3535"
+      overlay0="#80776e" overlay1="#70665c"
+      text="#40362c" subtext0="#70665c"
+      green="#1d7d3e" yellow="#886100" red="#ba3535"
       blue="#116bb5" teal="#007475" peach="#bb5d00"
       ;;
     dredge:*)
       base_name="one-dark"
       accent="#79cfcf" panel_bg="#171a1d" surface_dim="#24272a"
       surface0="#2c3239" surface1="#3a3e44"
-      overlay0="#808080" overlay1="#929292"
-      text="#c8c8c8" subtext0="#929292"
+      overlay0="#77818c" overlay1="#89939e"
+      text="#bdcad8" subtext0="#89939e"
       green="#82d395" yellow="#ebc75b" red="#f77972"
       blue="#7abff9" teal="#79cfcf" peach="#ffa475"
       ;;

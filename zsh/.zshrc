@@ -187,10 +187,14 @@ if command -v herdr &>/dev/null; then
   # herdr-automatic-rename shell hook: renames the tab the instant a command
   # starts. Without it naming waits for the next focus/tab event. No-op outside
   # a herdr pane; glob is (N) so a machine without the plugin skips silently.
-  for _f in "$HOME"/.config/herdr/plugins/github/herdr-automatic-rename-*/shell/hook.zsh(N); do
-    source "$_f"
-    break
-  done
+  # The glob runs under emulate -L zsh: a plugin loaded before an `rl` re-source
+  # can leave bare_glob_qual off, and then (N) is a literal and errors.
+  () {
+    emulate -L zsh
+    typeset -ga _herdr_hook=("$HOME"/.config/herdr/plugins/github/herdr-automatic-rename-*/shell/hook.zsh(N))
+  }
+  (( $#_herdr_hook )) && source "$_herdr_hook[1]"
+  unset _herdr_hook
 fi
 
 

@@ -18,6 +18,8 @@ Prose style lives in the `Laconic` output style (`~/.claude/output-styles/laconi
 
 Git conventions — branch and commit naming, focused diffs, worktree branches, stacked PRs — live in `~/.claude/rules/git.md`.
 
+Never add attribution or session trailers to commits or PRs.
+
 ## Tools
 
 - Creating a NEW file from the shell (heredoc, redirection) bypasses the Write/Edit hook pipeline — use Write. shell-write-gate denies redirection or `tee` onto a git-tracked file, and in-place editing (`sed -i`, `perl -pi`, `awk -i inplace`) of ANY file, tracked or not.

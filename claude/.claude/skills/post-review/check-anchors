@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# check-anchors — validate a PR review payload before it is posted
+#
+# Usage: check-anchors <PR_NUMBER> <REVIEW_JSON>
+# REVIEW_JSON is the body for POST /repos/{owner}/{repo}/pulls/{n}/reviews:
+#   {"commit_id": "...", "event": "COMMENT", "body": "...",
+#    "comments": [{"path", "line", "side"?, "start_line"?, "start_side"?, "body"}]}
+#
+# GitHub rejects the whole review (422) if any inline comment anchors outside a
+# diff hunk, so every anchor is checked against `gh pr diff` first:
+#   - RIGHT anchors must be an added or context line (new-file numbering)
+#   - LEFT anchors must be a deleted or context line (old-file numbering)
+# Also checks commit_id is still the PR head — a push since drafting shifts lines.
+#
+# Read-only: only GETs. stdout lists every problem; exit 0 = safe to post.
+set -euo pipefail
+
+command -v gh >/dev/null || { echo "gh is required" >&2; exit 1; }
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
+[ $# -eq 2 ] || { echo "usage: check-anchors <PR_NUMBER> <REVIEW_JSON>" >&2; exit 1; }
+
+pr="$1"
+payload="$2"
+jq -e . "$payload" >/dev/null || { echo "invalid JSON: $payload" >&2; exit 1; }
+
+problems=0
+
+head_sha=$(gh pr view "$pr" --json headRefOid --jq .headRefOid)
+commit_id=$(jq -r '.commit_id // empty' "$payload")
+if [ -z "$commit_id" ]; then
+    echo "commit_id missing — set it to the PR head ($head_sha)"
+    problems=$((problems + 1))
+elif [ "$commit_id" != "$head_sha" ]; then
+    echo "commit_id $commit_id is not the PR head $head_sha — PR was pushed since drafting; re-check line numbers"
+    problems=$((problems + 1))
+fi
+
+event=$(jq -r '.event // "COMMENT"' "$payload")
+case "$event" in
+    COMMENT | APPROVE | REQUEST_CHANGES) ;;
+    *) echo "event '$event' is not COMMENT, APPROVE or REQUEST_CHANGES"; problems=$((problems + 1)) ;;
+esac
+
+valid=$(mktemp)
+trap 'rm -f "$valid"' EXIT
+
+gh pr diff "$pr" | awk '
+    function hunk_len(spec,   parts) { return split(spec, parts, ",") > 1 ? parts[2] + 0 : 1 }
+    /^diff --git / { in_hunk = 0; old_path = ""; new_path = ""; next }
+    !in_hunk && /^--- / { old_path = substr($0, 5); sub(/^a\//, "", old_path); next }
+    !in_hunk && /^\+\+\+ / { new_path = substr($0, 5); sub(/^b\//, "", new_path); next }
+    /^@@ / {
+        split($2, o, ","); split($3, n, ",")
+        old_line = substr(o[1], 2) + 0; old_left = hunk_len(substr($2, 2))
+        new_line = substr(n[1], 2) + 0; new_left = hunk_len(substr($3, 2))
+        in_hunk = 1; next
+    }
+    in_hunk {
+        c = substr($0, 1, 1)
+        if (c == "\\") next
+        if (c == "+") { print "RIGHT\t" new_path "\t" new_line; new_line++; new_left-- }
+        else if (c == "-") { print "LEFT\t" old_path "\t" old_line; old_line++; old_left-- }
+        else {
+            print "RIGHT\t" new_path "\t" new_line; print "LEFT\t" old_path "\t" old_line
+            new_line++; old_line++; new_left--; old_left--
+        }
+        if (old_left <= 0 && new_left <= 0) in_hunk = 0
+    }
+' > "$valid"
+
+while IFS=$'\t' read -r idx side path line; do
+    if ! grep -qFx "$(printf '%s\t%s\t%s' "$side" "$path" "$line")" "$valid"; then
+        echo "comment[$idx] $side $path:$line is not on a diff line — GitHub will reject the review"
+        problems=$((problems + 1))
+    fi
+done < <(jq -r '
+    (.comments // []) | to_entries[] | .key as $i | .value as $c
+    | ([$c.line, ($c.side // "RIGHT")], (if $c.start_line then [$c.start_line, ($c.start_side // $c.side // "RIGHT")] else empty end))
+    | [$i, .[1], $c.path, .[0]] | @tsv
+' "$payload")
+
+count=$(jq '(.comments // []) | length' "$payload")
+if [ "$problems" -eq 0 ]; then
+    echo "ok — $count inline comment(s), event $event, commit_id matches PR head"
+fi
+exit $((problems > 0))

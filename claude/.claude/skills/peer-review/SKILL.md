@@ -162,7 +162,7 @@ The user can also name numbers (`walk 1 3 5`) to walk a subset, or type `next` /
 
 ### 7. Wrap up
 
-- `+comment`: draft one GitHub comment per comment-marked finding (never dismissed; constructive tone — describe, suggest, don't command; PLAUSIBLE as questions). Show full draft; post via `gh` only after explicit approval.
+- `+comment`: draft one GitHub comment per comment-marked finding (never dismissed; constructive tone — describe, suggest, don't command; PLAUSIBLE as questions). Show full draft; after explicit approval, post via the `post-review` skill (validates anchors, hands the user the post command — the agent never posts).
 - Always: `git worktree remove "${TMPDIR:-/tmp}/peer-review-<number>" --force` and confirm removal.
 
 ## Arguments

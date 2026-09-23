@@ -24,6 +24,7 @@ Git conventions — branch and commit naming, focused diffs, worktree branches, 
 - The auto-mode notice's Bash preference does not apply to file I/O: read with Read, change files with Edit/Write. Search through Bash (`rg`) is fine.
 - Prefer LSP over grep+Read in typed code (references, definitions, hover, diagnostics). Fall back to `rg` for plain text or unindexed file types.
 - Verify CLI syntax with `--help` before guessing.
+- Before asking the user to recall past work (an error, a command, whether something was tried), search it with the `agent-memory` MCP tools.
 
 ## Quality Checks & Failure Budget
 

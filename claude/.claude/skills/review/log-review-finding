@@ -28,7 +28,7 @@
 #       standalone  direct invocation, no enclosing loop
 #     phase=<index|name>          ("-" when scope is not `phase`)
 #     iter=<N>                    review-loop iteration this dispatch belongs to
-#     gate=code-reviewer|code-reviewer-deep|smell-reviewer|smell-reviewer-deep
+#     gate=code-reviewer|smell-reviewer|smell-reviewer-deep
 #         |security-reviewer|security-reviewer-deep|perf-reviewer
 #         |perf-reviewer-deep|complexity-reviewer|complexity-reviewer-deep
 #         |test-intent-reviewer|test-reviewer|plan-verifier|drift-gate|stage

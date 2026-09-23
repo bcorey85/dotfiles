@@ -74,8 +74,8 @@ Dispatch the loop's reviewer at the cheap tier for a floor on recall: `Agent`, `
 
 - Dispatch it as a normal review of the working diff. **Never mention
   calibration, seeding, or that a defect exists**.
-- `+deep` variant → dispatch `code-reviewer-deep` (pinned; omit `model`) and
-  record `reviewer=deep`. Calibrate the tier you actually run.
+- `+deep` variant → dispatch `code-reviewer` with no `model` (its pinned Opus
+  tier) and record `reviewer=deep`. Calibrate the tier you actually run.
 - This is NOT `review-loop` — the loop would dispatch a coder and fix the seed,
   destroying the measurement. Never route calibration through the loop.
 

@@ -288,6 +288,16 @@
             "command": "bash ~/.claude/scripts/stale-citation-gate.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash|Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/batch-reads-nudge.sh",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PostToolUseFailure": [

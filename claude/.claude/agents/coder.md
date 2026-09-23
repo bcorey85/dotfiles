@@ -1,7 +1,7 @@
 ---
 name: coder
 description: "The implementer for any repo and any layer; no frontend or backend variant. Dispatched by /code, /refactor, /deps and review-loop."
-model: sonnet
+model: opus
 color: yellow
 tools: Bash, Read, Edit, Write, LSP
 skills:

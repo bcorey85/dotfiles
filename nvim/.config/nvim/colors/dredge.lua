@@ -30,7 +30,6 @@ palettes.dark = {
   fg = "#c9d4e0",
   fg_bright = "#dfe7f0",
 
-  purple = "#b191ea",
   red = "#f77972",
   amber = "#ffa475",
   yellow = "#ebc75b",
@@ -78,7 +77,6 @@ palettes.light = {
   fg = "#40362c",
   fg_bright = "#1e1a15",
 
-  purple = "#7750b1",
   red = "#ba3535",
   amber = "#bb5d00",
   yellow = "#886100",
@@ -97,7 +95,7 @@ palettes.light = {
   diff_add = "#e8edf7",
   diff_delete = "#f8e9e8",
   diff_change = "#e8edf7",
-  diff_text = "#d8e5fd",
+  diff_text = "#ccdfff",
   search = "#f4cd99",
 
   term = {

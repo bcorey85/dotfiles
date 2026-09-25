@@ -1,7 +1,7 @@
 ---
 name: test-writer
 description: "Writes phase tests from the plan's criteria, after the coder. Dispatched by /code per phase and by /test-audit's fix route."
-model: sonnet
+model: opus
 color: green
 tools: Bash, Read, Edit, Write, LSP
 ---

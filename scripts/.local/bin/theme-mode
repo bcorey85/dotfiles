@@ -509,7 +509,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       if [ "$2" = light ]; then
         bg="#f3efeb"; panel="#efeae5"; panelAlt="#ebe6e1"; border="#c9c4bd"
         accent="#007475"; accentMuted="#c9c4bd"; text="#40362c"; muted="#8f857b"
-        addWord="#d8e5fd"; remWord="#fadada"
+        addWord="#ccdfff"; remWord="#fed2d0"
         addedBg="#e8edf7"; removedBg="#f8e9e8"; ctxBg="#f3efeb"
         sAdd="#3d3dff"; sRem="#e00000"; lnFg="#b6ada5"
         badgeAdd="#007a85"; badgeRem="#ba3535"; badgeNeu="#886100"

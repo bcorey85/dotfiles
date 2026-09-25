@@ -1,13 +1,16 @@
 -- dredge — personal theme-mode family, dark and light. Prose first, diffs second:
 -- cool charcoal ground (OKLCH h 250), fg and greys tinted to the ground hue (C 0.025),
 -- fg ~10.9:1. Contrast is tuned in APCA Lc, not WCAG ratios, which overrate
--- light-on-dark: each dark token's Lc is its light counterpart's x 0.88 (the fg
--- ratio), so both modes share one ladder. Syntax ranks by Lc, hue names the role, and
--- the more often a token appears the lower it ranks: functions (teal h 208) Lc 64,
--- strings (green h 152; below h 145 it turns pea green) 63, types (purple h 290)
--- 62, constants (pink h 350, C 0.09; builtins, booleans and self fold in) 60,
--- keywords (blue h 250, C 0.08, midway between teal and purple) 60, comments 56,
--- punctuation 51. Members and modules stay fg. Yellow and orange stay out of syntax.
+-- light-on-dark. Syntax tokens all sit at Lc 75 in both modes (APCA's body-text
+-- minimum; >= 72 dark and >= 64 light on the diff washes), just under fg (77.6 dark,
+-- 87.9 light), so hue alone names the role: functions (teal h 208), strings (green
+-- h 152; below h 145 it turns pea green), types (purple h 290; the gamut caps dark
+-- chroma at 0.075), constants (pink h 350, C 0.09; builtins, booleans and self fold
+-- in), keywords (blue h 250, C 0.08-0.09, midway between teal and purple). Keywords
+-- share fg's hue, so only chroma parts them from fg (dE 0.058 dark). Comments and
+-- punctuation sit lower, on one ladder for both modes (each dark Lc is the light
+-- one's x 0.88, the fg ratio): comments 56/63, punctuation 51/58. Members and
+-- modules stay fg. Yellow and orange stay out of syntax.
 -- Diffs: added = indigo signs on an indigo wash, removed = red, same washes as
 -- hunk. Changed words separate by chroma, not lightness: fg holds >= 9:1.
 -- Teal is the accent; yellow marks changed. The palette below is the source of truth; the
@@ -41,11 +44,11 @@ palettes.dark = {
   blue = "#7abff9",
   magenta = "#e091d8",
 
-  kw = "#8db9e6",
-  fn = "#66cad8",
-  str = "#84c997",
-  const = "#e5a1c0",
-  type = "#b8aff5",
+  kw = "#a7d3ff",
+  fn = "#79ddeb",
+  str = "#98deab",
+  const = "#ffbbd9",
+  type = "#cfc9ff",
 
   added = "#69c7de",
   diff_add = "#1e232c",
@@ -61,10 +64,8 @@ palettes.dark = {
 }
 
 -- Light: warm off-white (OKLCH L 0.955), greys tinted warm (h 70), fg ~10.3:1. Same
--- hues and ranks as dark: functions L 0.49 (5.3:1), string L 0.48 (5.4:1, >= 4.5:1 on
--- every diff wash), constants and types L 0.52-0.53 near max in-gamut chroma
--- (4.7-5.1:1), then comment L 0.56
--- (4.1:1) and keyword L 0.57 (4.1:1, C 0.10), punctuation L 0.60 (3.5:1).
+-- hues as dark: syntax tokens at L 0.45-0.47 (>= 6.1:1, >= 5.1:1 on every diff wash),
+-- then comment L 0.56 (4.1:1) and punctuation L 0.60 (3.5:1).
 palettes.light = {
   bg = "#f3efeb",
   bg_dark = "#efeae5",
@@ -88,11 +89,11 @@ palettes.light = {
   blue = "#116bb5",
   magenta = "#993f94",
 
-  kw = "#3e6c9b",
-  fn = "#006d79",
-  str = "#1f6f3d",
-  const = "#965877",
-  type = "#675c9c",
+  kw = "#2e5b89",
+  fn = "#00616c",
+  str = "#116534",
+  const = "#814564",
+  type = "#5b508f",
 
   added = "#007a85",
   diff_add = "#e8edf7",

@@ -13,7 +13,8 @@
 #              (machine-local include, same pattern as local.conf), then
 #              SIGUSR2s the running ghostty to reload it (1.2+; ctrl+shift+,
 #              still works by hand). Only USR2 — any other signal crashes it.
-#   - claude:  this script writes .theme (mode only) into ~/.claude/settings.json
+#   - claude:  this script writes .theme (claude_theme(): a family's custom theme
+#              slug where one ships, else the bare mode) into ~/.claude/settings.json
 #              via jq (correct key on Claude Code >= 2.1.119; older builds kept it
 #              in ~/.claude.json). This sets the theme for the NEXT session — a
 #              running session does NOT repaint live: Claude Code reloads the
@@ -49,7 +50,7 @@
 #   theme-mode status                 current family + mode
 #
 # Adding a family = six touchpoints, kept in sync by hand:
-#   1. families() + ghostty_theme() below
+#   1. families() + ghostty_theme() + claude_theme() below
 #   2. FAMILIES table in nvim lua/config/theme-sync.lua
 #   3. a ghostty theme (builtin name, or custom file in ghostty/themes/)
 #   4. herdr_palette() below (herdr's [theme.custom] token block)
@@ -78,6 +79,19 @@ GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="onedarkpro"
 
 families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge; }
+
+claude_theme() { # <family> <mode> -> the value for Claude Code's `theme` setting
+  # A family that ships claude/.claude/themes/<slug>.json selects it as
+  # `custom:<slug>`. Every other family gets the bare mode, which Claude Code
+  # renders with its builtin dark/light theme (Monokai diff scopes, its own
+  # washes) — the ghostty palette only reaches it through a custom theme whose
+  # `base` is dark-ansi/light-ansi.
+  case "$1:$2" in
+    dredge:light) echo "custom:dredge-light" ;;
+    dredge:*)     echo "custom:dredge" ;;
+    *)            echo "$2" ;;
+  esac
+}
 
 ghostty_theme() { # <family> <mode> -> ghostty theme name
   # A family whose halves are ghostty BUILTINS (spaces and all) needs no file
@@ -490,7 +504,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # Words must stay >= RGB distance 28 from the line wash, or hunk
       # replaces them with its own blend of the sign colour. Words separate by
       # chroma, not lightness, so fg holds >= 8.9:1 on every diff surface.
-      addWord="#212f48"; remWord="#4a161b"
+      addWord="#212f48"; remWord="#442323"
       addedBg="#1e232c"; removedBg="#271f1f"; ctxBg="#1c2023"
       # hunk also colours line numbers and rails with the sign colour, and dims
       # unselected rails to 35% of it — saturated, so the rail carries the
@@ -1308,13 +1322,13 @@ apply() { # <family> <mode> — write state and repaint herdr + ghostty
   # settings value but never re-renders the TUI on a `theme` change (known gap,
   # anthropics/claude-code #33899), and its `auto` OSC 11 detection only samples
   # at launch (and the multiplexer mangles it), so a flip never reaches an open
-  # session. `light`/`dark` are valid theme values, so $mode drops straight in.
-  # To see it live in an open session, run /theme by hand.
+  # session. claude_theme() picks the family's custom theme slug where one
+  # ships, else the bare mode. To see it live in an open session, run /theme.
   local claude_settings="$HOME/.claude/settings.json"
   if command -v jq >/dev/null 2>&1 && [ -f "$claude_settings" ]; then
     local claude_tmp
     claude_tmp="$(mktemp)"
-    if jq --arg t "$mode" '.theme = $t' "$claude_settings" >"$claude_tmp" 2>/dev/null; then
+    if jq --arg t "$(claude_theme "$family" "$mode")" '.theme = $t' "$claude_settings" >"$claude_tmp" 2>/dev/null; then
       mv "$claude_tmp" "$claude_settings"
     else
       rm -f "$claude_tmp"

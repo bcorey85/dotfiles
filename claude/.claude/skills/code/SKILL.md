@@ -124,7 +124,7 @@ Human-only verification remaining:
 
 Next:
   1. Read the queue; spot-check the evidence lines; run the human-only items.
-  2. Stage what you've read, then confirm to continue to Phase <N+1>.
+  2. Stage what you've read, then run /clear and /code to start Phase <N+1> fresh. To keep this context, confirm here.
 
 Or give feedback now for revisions to Phase <N>.
 ```

@@ -174,6 +174,9 @@ return {
       vim.api.nvim_set_hl(0, "Dash", { link = "Comment" })
       local headlines = require("headlines")
       headlines.setup()
+      headlines.config.markdown = nil
+      headlines.config.rmd = nil
+      headlines.config.norg = nil
 
       -- headlines.nvim is unmaintained. Its Syntax-triggered refresh can fire
       -- mid treesitter-highlighter-init, iterating a partially-parsed tree where

@@ -1,5 +1,5 @@
 -- ─── Disabled keys ────────────────────────────────────────────────────────────
-vim.keymap.set("n", "q", "<nop>", { desc = "Disabled (was: record macro)" })
+vim.keymap.set({ "n", "x" }, "q", "<nop>",{ desc = "Disabled (was: record macro)" })
 vim.keymap.set("n", "Q", "q", { desc = "Record macro (Qq starts, Q stops; @q replays)" })
 
 -- ─── Insert-mode escape ───────────────────────────────────────────────────────
@@ -318,7 +318,7 @@ vim.keymap.set("n", "<leader>uh", function()
 end, { desc = "Toggle semantic tokens" })
 
 -- ─── Quit ─────────────────────────────────────────────────────────────────────
-vim.keymap.set("n", "<leader>qq", "<cmd>qa<cr>", { desc = "Quit all" })
+vim.keymap.set({ "n", "x" }, "<leader>qq","<cmd>qa<cr>", { desc = "Quit all" })
 
 -- ─── Misc ─────────────────────────────────────────────────────────────────────
 -- Plugin manager (lazy.nvim). Lives on <leader>P so <leader>p is free for the

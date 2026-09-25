@@ -12,7 +12,9 @@ return {
   config = function()
     require("tiny-inline-diagnostic").setup({
       preset = "modern",
-      blend = { factor = 0.12 },
+      -- A `signs` table makes the preset merge keep ours; without it the preset forces blend back to 0.22.
+      signs = {},
+      blend = { factor = 0.07 },
       options = {
         show_source = { enabled = true, if_many = true },
         multilines = { enabled = true, always_show = false },

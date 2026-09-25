@@ -61,10 +61,6 @@ vim.api.nvim_create_autocmd("FileType", {
     vim.opt_local.wrap = true
     vim.opt_local.linebreak = true
     vim.opt_local.spell = true
-    -- touchup.nvim silently disables its marker/link rendering when
-    -- conceallevel > 0 (concealing desyncs its extmark columns). The global
-    -- default is 2, so drop it to 0 here. Harmless for text/gitcommit.
-    vim.opt_local.conceallevel = 0
   end,
 })
 
@@ -102,12 +98,8 @@ vim.api.nvim_create_autocmd("BufReadPost", {
 -- Suppress LSP diagnostics and treesitter highlighting in buffers with
 -- unresolved git conflict markers.
 --
--- (Markdown rendering: the old markview pass drew heading icons/colours and
--- per-char virt-text garbage over conflict markers and had a per-buffer
--- disable command we called here. touchup has neither — no heading rendering,
--- and no per-buffer disable hook — so there's nothing to toggle. Its remaining
--- bullet/checkbox overlays on a conflicted markdown buffer are cosmetically
--- minor and left alone.)
+-- Markdown rendering: render-markdown draws heading/table overlays over the
+-- mis-parsed markers, so it is disabled per buffer alongside treesitter.
 --
 -- Diagnostics: language servers (lua_ls especially) parse `<<<<<<<` /
 -- `=======` / `>>>>>>>` as code and spam syntax errors (`<<` reads as a
@@ -150,12 +142,18 @@ vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost" }, {
       vim.schedule(function()
         if vim.api.nvim_buf_is_valid(buf) then
           pcall(vim.treesitter.stop, buf)
+          if package.loaded["render-markdown"] then
+            vim.api.nvim_buf_call(buf, require("render-markdown").buf_disable)
+          end
         end
       end)
       conflict_disabled[buf] = true
     elseif conflict_disabled[buf] then
       vim.diagnostic.enable(true, { bufnr = buf })
       pcall(vim.treesitter.start, buf)
+      if package.loaded["render-markdown"] then
+        vim.api.nvim_buf_call(buf, require("render-markdown").buf_enable)
+      end
       conflict_disabled[buf] = nil
     end
   end,

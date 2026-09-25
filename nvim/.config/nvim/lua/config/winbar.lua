@@ -30,12 +30,10 @@ end
 -- Thin powerline chevron (U+E0B1) as the breadcrumb separator.
 local SEP = " \xEE\x82\xB1 "
 
--- bg = NONE so segments inherit the window's Winbar/Normal background.
-local C = require("util.palette")
 require("util.hl").register("WinbarHighlights", {
-  WinbarPath = { fg = C.overlay0, bg = "NONE" },
-  WinbarFile = { fg = C.text, bg = "NONE", bold = true },
-  WinbarModified = { fg = C.red, bg = "NONE", bold = true },
+  WinbarPath = { link = "WinBarNC" },
+  WinbarFile = { link = "WinBar" },
+  WinbarModified = { link = "DiagnosticError" },
 })
 
 -- Escape `%` so filenames/dirs containing it aren't read as winbar items.

@@ -115,8 +115,9 @@ local FAMILIES = {
     schemes = { dark = "dredge", light = "dredge" },
     colors_name = "dredge",
     accents = {
-      dark = { heading1 = "#79cfcf", heading = "#80aace" },
-      light = { heading1 = "#007475", heading = "#39688e" },
+      -- H1 sits level with fg in APCA Lc; H2+ yellow sits just below it.
+      dark = { heading1 = "#84e3e3", heading = "#e1c98e", bullet = "#a2afbd" },
+      light = { heading1 = "#004344", heading = "#6e551d", bullet = "#7d7267" },
     },
   },
 }
@@ -146,21 +147,23 @@ function M.read_state()
   return normalize_family(read_state(FAMILY_FILE)), normalize_mode(read_state(MODE_FILE))
 end
 
--- Markdown heading + bullet colours. touchup.nvim renders no heading icons and
--- defines no heading hl of its own, so headings fall back to native treesitter
--- highlighting — we paint @markup.heading.N.markdown directly (most specific,
--- so it wins over the family scheme and over touchup's default underline). H1
--- gets the accent, H2–H6 the muted heading colour, matching the old MdHeading*.
--- Bullets: touchup keys bullet hl by marker char, so tint all three groups.
+-- Markdown heading + bullet colours. We paint @markup.heading.N.markdown
+-- directly (most specific, so it wins over the family scheme);
+-- render-markdown's RenderMarkdownH1..H6 link to these. H1 gets the accent,
+-- H2–H6 the muted heading colour. Heading backgrounds are the heading colour
+-- blended faintly into Normal bg instead of render-markdown's Diff* defaults.
 local function set_headings(a)
   local hl = vim.api.nvim_set_hl
-  hl(0, "@markup.heading.1.markdown", { fg = a.heading1, bold = true })
-  for i = 2, 6 do
-    hl(0, "@markup.heading." .. i .. ".markdown", { fg = a.heading, bold = true })
+  local n = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
+  local bg = n.bg and string.format("#%06x", n.bg)
+  for i = 1, 6 do
+    local fg = i == 1 and a.heading1 or a.heading
+    hl(0, "@markup.heading." .. i .. ".markdown", { fg = fg, bold = true })
+    if bg then
+      hl(0, "RenderMarkdownH" .. i .. "Bg", { bg = blend(fg, bg, 0.12) })
+    end
   end
-  for _, g in ipairs({ "TouchupBulletDash", "TouchupBulletPlus", "TouchupBulletStar" }) do
-    hl(0, g, { fg = a.heading })
-  end
+  hl(0, "RenderMarkdownBullet", { fg = a.bullet or a.heading })
 end
 
 -- Prose reading calm. Treesitter's markdown_inline/markdown parsers paint each
@@ -194,6 +197,8 @@ local function set_prose()
   }
   if fg and bg then
     rules["@markup.raw.markdown_inline"] = { fg = fg, bg = blend(fg, bg, 0.12) }
+    rules.RenderMarkdownCodeInline = { link = "@markup.raw.markdown_inline" }
+    rules.RenderMarkdownCode = { bg = blend(fg, bg, 0.07) }
   end
   for group, spec in pairs(rules) do
     hl(0, group, spec)

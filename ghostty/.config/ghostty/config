@@ -7,6 +7,8 @@ font-style = Regular
 # font-style covers the upright only, so the italic needs its own line or it
 # falls back a weight. This family names the Regular italic just "Italic".
 font-style-italic = Italic
+font-style-bold = Medium
+font-style-bold-italic = Medium Italic
 font-size = 13
 # Leading is the lever for line-tracking, not glyph shape: the white band
 # between lines shrinks even at equal metric line height on short-extender

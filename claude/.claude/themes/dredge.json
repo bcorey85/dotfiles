@@ -4,7 +4,7 @@
   "overrides": {
     "claude": "#79cfcf",
     "claudeShimmer": "#a7e1e0",
-    "text": "#bdcad8",
+    "text": "#c9d4e0",
     "inverseText": "#1c2023",
     "inactive": "#8f9aa4",
     "inactiveShimmer": "#a5b0bb",
@@ -23,16 +23,16 @@
     "planMode": "#79cfcf",
     "autoAccept": "#e091d8",
     "bashBorder": "#ffa475",
-    "diffAdded": "#19272b",
-    "diffRemoved": "#271f20",
-    "diffAddedDimmed": "#1b2427",
-    "diffRemovedDimmed": "#241f20",
-    "diffAddedWord": "#083039",
-    "diffRemovedWord": "#3c2326",
+    "diffAdded": "#1e232c",
+    "diffRemoved": "#271f1f",
+    "diffAddedDimmed": "#1d2228",
+    "diffRemovedDimmed": "#1f2022",
+    "diffAddedWord": "#212f48",
+    "diffRemovedWord": "#4a161b",
     "userMessageBackground": "#26292c",
     "userMessageBackgroundHover": "#2b2f34",
     "bashMessageBackgroundColor": "#26292c",
     "memoryBackgroundColor": "#26292c",
-    "selectionBg": "#333849"
+    "selectionBg": "#33393e"
   }
 }

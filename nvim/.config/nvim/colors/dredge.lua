@@ -12,6 +12,9 @@
 -- hunk. Changed words separate by chroma, not lightness: fg holds >= 9:1.
 -- Teal is the accent; yellow marks changed. The palette below is the source of truth; the
 -- ghostty/herdr/hunk/starship/quickshell/claude-theme copies mirror it by hand.
+-- Editing: one value at a time, judged on a real file in nvim and hunk before the
+-- mirrors are touched. The Lc/dE numbers rule candidates out; they never pick one.
+-- Body text never rises above fg; fg_bright is emphasis only.
 
 local palettes = {}
 

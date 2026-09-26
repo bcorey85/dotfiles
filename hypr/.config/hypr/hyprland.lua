@@ -396,7 +396,7 @@ hl.window_rule({
 
 hl.window_rule({
     name  = "wow-fullscreen",
-    match = { class = "steam_app_default" },
+    match = { class = "steam_app_default", title = "^World of Warcraft$" },
 
     fullscreen     = true,
     suppress_event = "fullscreen activate activatefocus",

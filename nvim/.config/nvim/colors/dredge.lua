@@ -1,18 +1,21 @@
 -- dredge — personal theme-mode family, dark and light. Prose first, diffs second:
--- cool charcoal ground (OKLCH h 250), fg and greys tinted to the ground hue (C 0.025),
--- fg ~10.9:1. Contrast is tuned in APCA Lc, not WCAG ratios, which overrate
--- light-on-dark. Syntax tokens all sit at Lc 75 in both modes (APCA's body-text
--- minimum; >= 72 dark and >= 64 light on the diff washes), just under fg (77.6 dark,
--- 87.9 light), so hue alone names the role: functions (teal h 208), strings (green
--- h 152; below h 145 it turns pea green), types (purple h 290; the gamut caps dark
--- chroma at 0.075), constants (pink h 350, C 0.09; builtins, booleans and self fold
--- in), keywords (blue h 250, C 0.08-0.09, midway between teal and purple). Keywords
--- share fg's hue, so only chroma parts them from fg (dE 0.058 dark). Comments and
--- punctuation sit lower, on one ladder for both modes (each dark Lc is the light
--- one's x 0.88, the fg ratio): comments 56/63, punctuation 51/58. Members and
--- modules stay fg. Yellow and orange stay out of syntax.
+-- cool charcoal ground (OKLCH L 0.265, h 250), fg and greys tinted to the ground hue
+-- (C 0.025). Contrast is tuned in APCA Lc, not WCAG ratios, which overrate
+-- light-on-dark. Dark is deliberately dim against halation: fg Lc 70 (~9.2:1),
+-- comments 47, punctuation 46. Light: fg Lc 88. At Lc 75 on cream the gamut leaves
+-- no chroma, and every token reads as black. Lc is a floor, not a target: coloured
+-- token pairs also keep OKLab dE >= 0.09 in light, >= 0.085 in dark.
+-- Loudness follows what the reader traces (go-to-definition, * search), not syntax.
+-- Loud, at fg lightness: variables (fg), functions (teal h 197-202), parameters
+-- and named constants (pink h 5). Middle: types (purple h 302-305), then literals
+-- and builtins (green h 148-150, C 0.09-0.095, half a step above strings; None,
+-- numbers, booleans, self; below h 145 it turns pea green). Quiet: strings (fg's
+-- own blue h 246-250, C 0.09-0.10), keywords and builtin types
+-- (grey italic, half a step above comments; italic carries the split, the
+-- colours sit near dE 0.03-0.04). Members and modules stay fg.
 -- Diffs: added = indigo signs on an indigo wash, removed = red, same washes as
--- hunk. Changed words separate by chroma, not lightness: fg holds >= 9:1.
+-- hunk. Changed words separate by chroma, not lightness. Red reads louder than indigo,
+-- so the removed wash carries less chroma and its word a touch more lift.
 -- Teal is the accent; yellow marks changed. The palette below is the source of truth; the
 -- ghostty/herdr/hunk/starship/quickshell/claude-theme copies mirror it by hand.
 -- Editing: one value at a time, judged on a real file in nvim and hunk before the
@@ -22,19 +25,19 @@
 local palettes = {}
 
 palettes.dark = {
-  bg = "#1c2023",
-  bg_dark = "#171a1d",
-  bg_line = "#24272a",
-  bg_sel = "#2c3239",
-  bg_visual = "#33393e",
-  border = "#3a3e44",
-  nontext = "#3d4348",
+  bg = "#202427",
+  bg_dark = "#1a1d21",
+  bg_line = "#282b2e",
+  bg_sel = "#30363d",
+  bg_visual = "#373d42",
+  border = "#3e4248",
+  nontext = "#41474c",
   linenr = "#747c83",
   muted = "#95a0ab",
-  comment = "#a2afbd",
-  punct = "#99a6b3",
-  fg = "#c9d4e0",
-  fg_bright = "#dfe7f0",
+  comment = "#929fac",
+  punct = "#929eab",
+  fg = "#bdc8d3",
+  fg_bright = "#d3dbe3",
 
   red = "#f77972",
   amber = "#ffa475",
@@ -44,28 +47,28 @@ palettes.dark = {
   blue = "#7abff9",
   magenta = "#e091d8",
 
-  kw = "#a7d3ff",
-  fn = "#79ddeb",
-  str = "#98deab",
-  const = "#ffbbd9",
-  type = "#cfc9ff",
+  kw = "#9ca9b6",
+  fn = "#63d3dc",
+  str = "#7cb3e3",
+  const = "#8ec695",
+  type = "#c7aaea",
+  param = "#e898aa",
 
   added = "#69c7de",
-  diff_add = "#1e232c",
-  diff_delete = "#271f1f",
-  diff_change = "#1e232c",
-  diff_text = "#212f48",
-  search = "#524028",
+  diff_add = "#222730",
+  diff_delete = "#2a2323",
+  diff_change = "#222730",
+  diff_text = "#25334c",
+  search = "#56442c",
 
   term = {
-    "#171a1d", "#f77972", "#82d395", "#ebc75b", "#7abff9", "#e091d8", "#79cfcf", "#c9d4e0",
-    "#727c86", "#ff9790", "#a6e7b3", "#fdde8c", "#a0d4ff", "#efade8", "#a7e1e0", "#dfe7f0",
+    "#1a1d21", "#f77972", "#82d395", "#ebc75b", "#7abff9", "#e091d8", "#79cfcf", "#bdc8d3",
+    "#727c86", "#ff9790", "#a6e7b3", "#fdde8c", "#a0d4ff", "#efade8", "#a7e1e0", "#d3dbe3",
   },
 }
 
--- Light: warm off-white (OKLCH L 0.955), greys tinted warm (h 70), fg ~10.3:1. Same
--- hues as dark: syntax tokens at L 0.45-0.47 (>= 6.1:1, >= 5.1:1 on every diff wash),
--- then comment L 0.56 (4.1:1) and punctuation L 0.60 (3.5:1).
+-- Light: warm off-white (OKLCH L 0.955), greys tinted warm (h 70), fg ~10.3:1.
+-- Comment and punctuation L 0.60 (Lc 58).
 palettes.light = {
   bg = "#f3efeb",
   bg_dark = "#efeae5",
@@ -76,7 +79,7 @@ palettes.light = {
   nontext = "#d3cdc5",
   linenr = "#b6ada5",
   muted = "#8f857b",
-  comment = "#7d7267",
+  comment = "#897e73",
   punct = "#897e74",
   fg = "#40362c",
   fg_bright = "#1e1a15",
@@ -89,11 +92,12 @@ palettes.light = {
   blue = "#116bb5",
   magenta = "#993f94",
 
-  kw = "#2e5b89",
-  fn = "#00616c",
-  str = "#116534",
-  const = "#814564",
-  type = "#5b508f",
+  kw = "#7c7166",
+  fn = "#1b595b",
+  str = "#477cb1",
+  const = "#397548",
+  param = "#af556d",
+  type = "#73539f",
 
   added = "#007a85",
   diff_add = "#e8edf7",
@@ -186,20 +190,20 @@ local groups = {
   Float = { fg = c.const },
   Identifier = { fg = c.fg },
   Function = { fg = c.fn },
-  Statement = { fg = c.kw },
-  Conditional = { fg = c.kw },
-  Repeat = { fg = c.kw },
-  Label = { fg = c.kw },
+  Statement = { fg = c.kw, italic = true },
+  Conditional = { fg = c.kw, italic = true },
+  Repeat = { fg = c.kw, italic = true },
+  Label = { fg = c.kw, italic = true },
   Operator = { fg = c.punct },
-  Keyword = { fg = c.kw },
-  Exception = { fg = c.kw },
-  PreProc = { fg = c.kw },
-  Include = { fg = c.kw },
-  Define = { fg = c.kw },
+  Keyword = { fg = c.kw, italic = true },
+  Exception = { fg = c.kw, italic = true },
+  PreProc = { fg = c.kw, italic = true },
+  Include = { fg = c.kw, italic = true },
+  Define = { fg = c.kw, italic = true },
   Macro = { fg = c.fn },
-  PreCondit = { fg = c.kw },
+  PreCondit = { fg = c.kw, italic = true },
   Type = { fg = c.type },
-  StorageClass = { fg = c.kw },
+  StorageClass = { fg = c.kw, italic = true },
   Structure = { fg = c.type },
   Typedef = { fg = c.type },
   Special = { fg = c.const },
@@ -215,15 +219,16 @@ local groups = {
   -- treesitter
   ["@variable"] = { fg = c.fg },
   ["@variable.builtin"] = { fg = c.const },
-  ["@variable.parameter"] = { fg = c.fg },
+  ["@variable.parameter"] = { fg = c.param },
   ["@variable.member"] = { fg = c.fg },
   ["@property"] = { fg = c.fg },
-  ["@constant"] = { fg = c.const },
+  -- Named constants are traced like parameters; literals and builtins stay c.const.
+  ["@constant"] = { fg = c.param },
   ["@constant.builtin"] = { fg = c.const },
-  ["@constant.macro"] = { fg = c.const },
+  ["@constant.macro"] = { fg = c.param },
   ["@module"] = { fg = c.fg },
   ["@module.builtin"] = { fg = c.fg },
-  ["@label"] = { fg = c.kw },
+  ["@label"] = { fg = c.kw, italic = true },
   ["@string"] = { fg = c.str },
   ["@string.documentation"] = { fg = c.comment },
   ["@string.escape"] = { fg = c.const },
@@ -236,7 +241,7 @@ local groups = {
   ["@number"] = { fg = c.const },
   ["@boolean"] = { fg = c.const },
   ["@type"] = { fg = c.type },
-  ["@type.builtin"] = { fg = c.type },
+  ["@type.builtin"] = { fg = c.kw, italic = true },
   ["@type.definition"] = { fg = c.type },
   ["@attribute"] = { fg = c.const },
   ["@function"] = { fg = c.fn },
@@ -249,16 +254,16 @@ local groups = {
   -- Lua captures table braces as @constructor.
   ["@constructor.lua"] = { link = "@punctuation.bracket" },
   ["@operator"] = { fg = c.punct },
-  ["@keyword"] = { fg = c.kw },
-  ["@keyword.function"] = { fg = c.kw },
-  ["@keyword.operator"] = { fg = c.kw },
-  ["@keyword.import"] = { fg = c.kw },
-  ["@keyword.return"] = { fg = c.kw },
-  ["@keyword.exception"] = { fg = c.kw },
-  ["@keyword.conditional"] = { fg = c.kw },
-  ["@keyword.repeat"] = { fg = c.kw },
-  ["@keyword.coroutine"] = { fg = c.kw },
-  ["@keyword.directive"] = { fg = c.kw },
+  ["@keyword"] = { fg = c.kw, italic = true },
+  ["@keyword.function"] = { fg = c.kw, italic = true },
+  ["@keyword.operator"] = { fg = c.kw, italic = true },
+  ["@keyword.import"] = { fg = c.kw, italic = true },
+  ["@keyword.return"] = { fg = c.kw, italic = true },
+  ["@keyword.exception"] = { fg = c.kw, italic = true },
+  ["@keyword.conditional"] = { fg = c.kw, italic = true },
+  ["@keyword.repeat"] = { fg = c.kw, italic = true },
+  ["@keyword.coroutine"] = { fg = c.kw, italic = true },
+  ["@keyword.directive"] = { fg = c.kw, italic = true },
   ["@punctuation.delimiter"] = { fg = c.punct },
   ["@punctuation.bracket"] = { fg = c.punct },
   ["@punctuation.special"] = { fg = c.const },
@@ -310,6 +315,9 @@ local groups = {
   ["@lsp.type.variable"] = { link = "@variable" },
   ["@lsp.typemod.variable.defaultLibrary"] = { link = "@variable.builtin" },
   ["@lsp.typemod.function.defaultLibrary"] = { link = "@function.builtin" },
+  ["@lsp.typemod.class.defaultLibrary"] = { link = "@type.builtin" },
+  -- basedpyright marks UPPER_CASE names readonly. Python only: TS marks every const.
+  ["@lsp.typemod.variable.readonly.python"] = { link = "@constant" },
   LspReferenceText = { bg = c.bg_sel },
   LspReferenceRead = { bg = c.bg_sel },
   LspReferenceWrite = { bg = c.bg_sel, bold = true },

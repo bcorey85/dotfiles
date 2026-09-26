@@ -6,7 +6,7 @@ return {
   "vue_ls",
   "eslint",
   "lua_ls",
-  "pyright",
+  "basedpyright",
   "ruff",
   "cssls",
   "html",

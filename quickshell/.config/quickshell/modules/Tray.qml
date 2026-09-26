@@ -6,6 +6,8 @@ import QtQuick.Layouts
 
 RowLayout {
     spacing: 8
+    // A nested layout defaults to fillWidth; empty, it would soak up the bar's slack.
+    Layout.fillWidth: false
 
     Repeater {
         model: SystemTray.items

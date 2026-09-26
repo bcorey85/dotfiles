@@ -513,10 +513,10 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       sAdd="#767ad4"; sRem="#d9635d"; lnFg="#747c83"
       badgeAdd="#69c7de"; badgeRem="#f77972"; badgeNeu="#ebc75b"
       fRename="#ebc75b"; fMod="#ebc75b"; fUntracked="#7abff9"; note="#1a1d21"
-      kw="#9ca9b6"; str="#7cb3e3"; num="#8ec695"; fn="#63d3dc"; typ="#c7aaea"; punct="#929eab"; op="#929eab"
-      konst="#e898aa"; esc="#8ec695"; cmt="#929fac"; mem="#bdc8d3"; param="#e898aa"
-      attr="#8ec695"; tag="#c7aaea"; vbi="#8ec695"; lang="#8ec695"; imp="#9ca9b6"; pre="#9ca9b6"
-      prim="#9ca9b6"; ns="#bdc8d3"; mac="#63d3dc"; bfn="#63d3dc"; var="#bdc8d3"; key="#bdc8d3"
+      kw="#a1aebb"; str="#bdc8d3"; num="#86be8d"; fn="#abb2ff"; typ="#74aada"; punct="#929eab"; op="#929eab"
+      konst="#e39190"; esc="#86be8d"; cmt="#929fac"; mem="#bdc8d3"; param="#e39190"
+      attr="#86be8d"; tag="#74aada"; vbi="#86be8d"; lang="#86be8d"; imp="#a1aebb"; pre="#a1aebb"
+      prim="#a1aebb"; ns="#bdc8d3"; mac="#abb2ff"; bfn="#abb2ff"; var="#6ac5cc"; key="#bdc8d3"
       # Match nvim's tree-sitter colours where one-dark-pro's own selectors
       # out-rank the generic table. h1/h2 mirror theme-sync's markdown headings.
       # bright = markdown bold; hunk's scope table carries colour only, no weight.
@@ -529,10 +529,10 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
         sAdd="#3d3dff"; sRem="#e00000"; lnFg="#b6ada5"
         badgeAdd="#007a85"; badgeRem="#ba3535"; badgeNeu="#886100"
         fRename="#886100"; fMod="#886100"; fUntracked="#116bb5"; note="#efeae5"
-        kw="#7c7166"; str="#477cb1"; num="#397548"; fn="#1b595b"; typ="#73539f"; punct="#897e74"; op="#897e74"
-        konst="#af556d"; esc="#397548"; cmt="#897e73"; mem="#40362c"; param="#af556d"
-        attr="#397548"; tag="#73539f"; vbi="#397548"; lang="#397548"; imp="#7c7166"; pre="#7c7166"
-        prim="#7c7166"; ns="#40362c"; mac="#1b595b"; bfn="#1b595b"; var="#40362c"; key="#40362c"
+        kw="#776c61"; str="#40362c"; num="#407c4f"; fn="#3d3c86"; typ="#1873ac"; punct="#897e74"; op="#897e74"
+        konst="#ba5d5f"; esc="#407c4f"; cmt="#897e73"; mem="#40362c"; param="#ba5d5f"
+        attr="#407c4f"; tag="#1873ac"; vbi="#407c4f"; lang="#407c4f"; imp="#776c61"; pre="#776c61"
+        prim="#776c61"; ns="#40362c"; mac="#3d3c86"; bfn="#3d3c86"; var="#316466"; key="#40362c"
         h1="#004344" h2="#85491b" bright="#1e1a15"
       fi
       extra=$(cat <<EOF
@@ -563,6 +563,9 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
 "keyword.operator.comparison"       = "$op"
 "keyword.operator.logical"          = "$op"
 "keyword.operator.logical.python"   = "$kw"
+"source.python"                     = "$var"
+"meta.function-call.arguments.python" = "$var"
+"meta.item-access.arguments.python" = "$var"
 "keyword.operator.logical.lua"      = "$kw"
 "keyword.operator.logical.and.media.css" = "$kw"
 "keyword.operator.expression.of"    = "$kw"

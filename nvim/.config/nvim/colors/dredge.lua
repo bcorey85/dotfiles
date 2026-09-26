@@ -6,13 +6,11 @@
 -- no chroma, and every token reads as black. Lc is a floor, not a target: coloured
 -- token pairs also keep OKLab dE >= 0.09 in light, >= 0.085 in dark.
 -- Loudness follows what the reader traces (go-to-definition, * search), not syntax.
--- Loud, at fg lightness: variables (fg), functions (teal h 197-202), parameters
--- and named constants (pink h 5). Middle: types (purple h 302-305), then literals
--- and builtins (green h 148-150, C 0.09-0.095, half a step above strings; None,
--- numbers, booleans, self; below h 145 it turns pea green). Quiet: strings (fg's
--- own blue h 246-250, C 0.09-0.10), keywords and builtin types
--- (grey italic, half a step above comments; italic carries the split, the
--- colours sit near dE 0.03-0.04). Members and modules stay fg.
+-- Loud, a step below fg lightness: variables (teal h 197-202), functions (periwinkle h 280, C 0.12), parameters
+-- and named constants (rose h 20). Middle: types (blue h 243-246), then literals
+-- and builtins (green h 148-150, C 0.09-0.095; None, numbers, booleans, self;
+-- below h 145 it turns pea green). Strings are fg. Quiet: keywords
+-- and builtin types (the ground's grey, italic, half a step above comments). Members and modules stay fg.
 -- Diffs: added = indigo signs on an indigo wash, removed = red, same washes as
 -- hunk. Changed words separate by chroma, not lightness. Red reads louder than indigo,
 -- so the removed wash carries less chroma and its word a touch more lift.
@@ -47,12 +45,13 @@ palettes.dark = {
   blue = "#7abff9",
   magenta = "#e091d8",
 
-  kw = "#9ca9b6",
-  fn = "#63d3dc",
-  str = "#7cb3e3",
-  const = "#8ec695",
-  type = "#c7aaea",
-  param = "#e898aa",
+  kw = "#a1aebb",
+  var = "#6ac5cc",
+  fn = "#abb2ff",
+  str = "#bdc8d3",
+  const = "#86be8d",
+  type = "#74aada",
+  param = "#e39190",
 
   added = "#69c7de",
   diff_add = "#222730",
@@ -92,12 +91,13 @@ palettes.light = {
   blue = "#116bb5",
   magenta = "#993f94",
 
-  kw = "#7c7166",
-  fn = "#1b595b",
-  str = "#477cb1",
-  const = "#397548",
-  param = "#af556d",
-  type = "#73539f",
+  kw = "#776c61",
+  var = "#316466",
+  fn = "#3d3c86",
+  str = "#40362c",
+  const = "#407c4f",
+  param = "#ba5d5f",
+  type = "#1873ac",
 
   added = "#007a85",
   diff_add = "#e8edf7",
@@ -188,7 +188,7 @@ local groups = {
   Number = { fg = c.const },
   Boolean = { fg = c.const },
   Float = { fg = c.const },
-  Identifier = { fg = c.fg },
+  Identifier = { fg = c.var },
   Function = { fg = c.fn },
   Statement = { fg = c.kw, italic = true },
   Conditional = { fg = c.kw, italic = true },
@@ -217,7 +217,7 @@ local groups = {
   Todo = { fg = c.bg, bg = c.const, bold = true },
 
   -- treesitter
-  ["@variable"] = { fg = c.fg },
+  ["@variable"] = { fg = c.var },
   ["@variable.builtin"] = { fg = c.const },
   ["@variable.parameter"] = { fg = c.param },
   ["@variable.member"] = { fg = c.fg },
@@ -372,3 +372,39 @@ end
 for i, color in ipairs(c.term) do
   vim.g["terminal_color_" .. (i - 1)] = color
 end
+
+-- Assignment target directly in a Python class body (class attribute definition).
+local function class_attr_def(buf, line, col)
+  local ok, node = pcall(vim.treesitter.get_node, { bufnr = buf, pos = { line, col } })
+  if not ok or not node or node:type() ~= "identifier" then
+    return false
+  end
+  local assign = node:parent()
+  local stmt = assign and assign:parent()
+  local block = stmt and stmt:parent()
+  local class = block and block:parent()
+  return assign:type() == "assignment"
+    and assign:field("left")[1] == node
+    and stmt:type() == "expression_statement"
+    and class ~= nil
+    and class:type() == "class_definition"
+end
+
+-- LSP marks UPPER_CASE class attributes as properties and TS consts as variables.
+-- An all-caps name is a named constant in every language, so colour it as one.
+-- A class attribute at its definition is traced like a variable, not a member.
+vim.api.nvim_create_autocmd("LspTokenUpdate", {
+  group = vim.api.nvim_create_augroup("dredge_constants", { clear = true }),
+  callback = function(ev)
+    local t = ev.data.token
+    if vim.g.colors_name ~= "dredge" or (t.type ~= "variable" and t.type ~= "property") then
+      return
+    end
+    local text = vim.api.nvim_buf_get_text(ev.buf, t.line, t.start_col, t.line, t.end_col, {})[1]
+    if text and text:match("^_*%u[%u%d_]+$") then
+      vim.lsp.semantic_tokens.highlight_token(t, ev.buf, ev.data.client_id, "@constant")
+    elseif t.type == "property" and class_attr_def(ev.buf, t.line, t.start_col) then
+      vim.lsp.semantic_tokens.highlight_token(t, ev.buf, ev.data.client_id, "@variable")
+    end
+  end,
+})

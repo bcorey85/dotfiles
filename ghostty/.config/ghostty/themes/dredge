@@ -1,12 +1,12 @@
 # dredge dark — personal family (nvim colors/dredge.lua).
-palette = 0=#171a1d
+palette = 0=#1a1d21
 palette = 1=#f77972
 palette = 2=#82d395
 palette = 3=#ebc75b
 palette = 4=#7abff9
 palette = 5=#e091d8
 palette = 6=#79cfcf
-palette = 7=#c9d4e0
+palette = 7=#bdc8d3
 palette = 8=#727c86
 palette = 9=#ff9790
 palette = 10=#a6e7b3
@@ -14,10 +14,10 @@ palette = 11=#fdde8c
 palette = 12=#a0d4ff
 palette = 13=#efade8
 palette = 14=#a7e1e0
-palette = 15=#dfe7f0
-background = #1c2023
-foreground = #c9d4e0
+palette = 15=#d3dbe3
+background = #202427
+foreground = #bdc8d3
 cursor-color = #79cfcf
-cursor-text = #1c2023
-selection-background = #33393e
-selection-foreground = #dfe7f0
+cursor-text = #202427
+selection-background = #373d42
+selection-foreground = #d3dbe3

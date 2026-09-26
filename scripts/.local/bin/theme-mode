@@ -499,27 +499,28 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       ;;
     # dredge (nvim colors/dredge.lua). Both modes share the scope table below.
     dredge:*)
-      bg="#1c2023"; panel="#171a1d"; panelAlt="#24272a"; border="#3a3e44"
-      accent="#79cfcf"; accentMuted="#3a3e44"; text="#c9d4e0"; muted="#95a0ab"
+      bg="#202427"; panel="#1a1d21"; panelAlt="#282b2e"; border="#3e4248"
+      accent="#79cfcf"; accentMuted="#3e4248"; text="#bdc8d3"; muted="#95a0ab"
       # Words must stay >= RGB distance 28 from the line wash, or hunk
       # replaces them with its own blend of the sign colour. Words separate by
-      # chroma, not lightness, so fg holds >= 8.9:1 on every diff surface.
-      addWord="#212f48"; remWord="#442323"
-      addedBg="#1e232c"; removedBg="#271f1f"; ctxBg="#1c2023"
+      # chroma, not lightness. Red reads louder than indigo, so the removed wash
+      # carries less chroma and its word a touch more lift.
+      addWord="#25334c"; remWord="#4b2929"
+      addedBg="#222730"; removedBg="#2a2323"; ctxBg="#202427"
       # hunk also colours line numbers and rails with the sign colour, and dims
-      # unselected rails to 35% of it — saturated, so the rail carries the
-      # signal and the wash stays a whisper.
-      sAdd="#7a7aff"; sRem="#ff4d4d"; lnFg="#747c83"
+      # unselected rails to 35% of it. The rail carries the signal and the wash
+      # stays a whisper, at moderate chroma so the gutter does not glare.
+      sAdd="#767ad4"; sRem="#d9635d"; lnFg="#747c83"
       badgeAdd="#69c7de"; badgeRem="#f77972"; badgeNeu="#ebc75b"
-      fRename="#ebc75b"; fMod="#ebc75b"; fUntracked="#7abff9"; note="#171a1d"
-      kw="#a7d3ff"; str="#98deab"; num="#ffbbd9"; fn="#79ddeb"; typ="#cfc9ff"; punct="#99a6b3"; op="#99a6b3"
-      konst="#ffbbd9"; esc="#ffbbd9"; cmt="#a2afbd"; mem="#c9d4e0"; param="#c9d4e0"
-      attr="#ffbbd9"; tag="#cfc9ff"; vbi="#ffbbd9"; lang="#ffbbd9"; imp="#a7d3ff"; pre="#a7d3ff"
-      prim="#cfc9ff"; ns="#c9d4e0"; mac="#79ddeb"; bfn="#79ddeb"; var="#c9d4e0"; key="#c9d4e0"
+      fRename="#ebc75b"; fMod="#ebc75b"; fUntracked="#7abff9"; note="#1a1d21"
+      kw="#9ca9b6"; str="#7cb3e3"; num="#8ec695"; fn="#63d3dc"; typ="#c7aaea"; punct="#929eab"; op="#929eab"
+      konst="#e898aa"; esc="#8ec695"; cmt="#929fac"; mem="#bdc8d3"; param="#e898aa"
+      attr="#8ec695"; tag="#c7aaea"; vbi="#8ec695"; lang="#8ec695"; imp="#9ca9b6"; pre="#9ca9b6"
+      prim="#9ca9b6"; ns="#bdc8d3"; mac="#63d3dc"; bfn="#63d3dc"; var="#bdc8d3"; key="#bdc8d3"
       # Match nvim's tree-sitter colours where one-dark-pro's own selectors
       # out-rank the generic table. h1/h2 mirror theme-sync's markdown headings.
       # bright = markdown bold; hunk's scope table carries colour only, no weight.
-      local h1="#84e3e3" h2="#e1c98e" bright="#dfe7f0"
+      local h1="#84e3e3" h2="#ffbd90" bright="#d3dbe3"
       if [ "$2" = light ]; then
         bg="#f3efeb"; panel="#efeae5"; panelAlt="#ebe6e1"; border="#c9c4bd"
         accent="#007475"; accentMuted="#c9c4bd"; text="#40362c"; muted="#8f857b"
@@ -528,11 +529,11 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
         sAdd="#3d3dff"; sRem="#e00000"; lnFg="#b6ada5"
         badgeAdd="#007a85"; badgeRem="#ba3535"; badgeNeu="#886100"
         fRename="#886100"; fMod="#886100"; fUntracked="#116bb5"; note="#efeae5"
-        kw="#2e5b89"; str="#116534"; num="#814564"; fn="#00616c"; typ="#5b508f"; punct="#897e74"; op="#897e74"
-        konst="#814564"; esc="#814564"; cmt="#7d7267"; mem="#40362c"; param="#40362c"
-        attr="#814564"; tag="#5b508f"; vbi="#814564"; lang="#814564"; imp="#2e5b89"; pre="#2e5b89"
-        prim="#5b508f"; ns="#40362c"; mac="#00616c"; bfn="#00616c"; var="#40362c"; key="#40362c"
-        h1="#004344" h2="#6e551d" bright="#1e1a15"
+        kw="#7c7166"; str="#477cb1"; num="#397548"; fn="#1b595b"; typ="#73539f"; punct="#897e74"; op="#897e74"
+        konst="#af556d"; esc="#397548"; cmt="#897e73"; mem="#40362c"; param="#af556d"
+        attr="#397548"; tag="#73539f"; vbi="#397548"; lang="#397548"; imp="#7c7166"; pre="#7c7166"
+        prim="#7c7166"; ns="#40362c"; mac="#1b595b"; bfn="#1b595b"; var="#40362c"; key="#40362c"
+        h1="#004344" h2="#85491b" bright="#1e1a15"
       fi
       extra=$(cat <<EOF
 "punctuation.separator.key-value"   = "$punct"
@@ -581,8 +582,8 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
 "punctuation.section.embedded.end.tsx" = "$punct"
 "punctuation.section.embedded.begin.jsx" = "$punct"
 "punctuation.section.embedded.end.jsx" = "$punct"
-"support.type.primitive.ts"         = "$typ"
-"support.type.primitive.tsx"        = "$typ"
+"support.type.primitive.ts"         = "$prim"
+"support.type.primitive.tsx"        = "$prim"
 "support.type.builtin.ts"           = "$vbi"
 "support.type.builtin.tsx"          = "$vbi"
 "variable.other.constant.ts"        = "$var"
@@ -608,7 +609,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
 "storage.type.format.python"        = "$fn"
 "storage.type.number.python"        = "$konst"
 "storage.type.string.python"        = "$str"
-"support.type.python"               = "$typ"
+"support.type.python"               = "$prim"
 "variable.parameter.function.language.python" = "$param"
 "variable.parameter.function.language.special.self.python" = "$vbi"
 "variable.parameter.function.language.special.cls.python" = "$vbi"
@@ -1196,10 +1197,10 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:*)
       base_name="one-dark"
-      accent="#79cfcf" panel_bg="#171a1d" surface_dim="#24272a"
-      surface0="#2c3239" surface1="#3a3e44"
+      accent="#58afaf" panel_bg="#1a1d21" surface_dim="#282b2e"
+      surface0="#30363d" surface1="#3e4248"
       overlay0="#77818c" overlay1="#95a0ab"
-      text="#c9d4e0" subtext0="#95a0ab"
+      text="#bdc8d3" subtext0="#95a0ab"
       green="#82d395" yellow="#ebc75b" red="#f77972"
       blue="#7abff9" teal="#79cfcf" peach="#ffa475"
       ;;

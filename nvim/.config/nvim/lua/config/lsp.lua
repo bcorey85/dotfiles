@@ -203,18 +203,16 @@ vim.lsp.config("lua_ls", {
   },
 })
 
--- pyright + ruff division of labour: ruff owns all lint diagnostics (faster,
--- project-aware), so pyright's analysis diagnostics are silenced via
--- python.analysis.ignore = { "*" } to avoid duplicate/conflicting reports.
--- pyright is kept alive for hover, completion, go-to-definition, and rename —
--- the things ruff doesn't provide. Pairing with ruff's hoverProvider = false
--- (below) ensures K always resolves through pyright, not ruff's bare-bones hover.
-vim.lsp.config("pyright", {
+-- basedpyright + ruff division of labour: ruff owns all lint diagnostics (faster,
+-- project-aware), so type checking is off to avoid duplicate/conflicting reports.
+-- basedpyright is kept for hover, completion, go-to-definition, rename, and the
+-- semantic tokens pyright lacks (parameter references inside a body colour as
+-- parameters). Pairing with ruff's hoverProvider = false (below) ensures K always
+-- resolves through basedpyright, not ruff's bare-bones hover.
+vim.lsp.config("basedpyright", {
   settings = {
-    pyright = {
+    basedpyright = {
       disableOrganizeImports = true,
-    },
-    python = {
       analysis = {
         typeCheckingMode = "off",
         diagnosticMode = "workspace",

@@ -34,6 +34,10 @@ config-file = ?theme-switch.conf
 # Window
 window-padding-x = 4
 window-padding-y = 4
+# AeroSpace tiles each native macOS tab as its own window (gaps/overlaps);
+# tabs live in herdr instead.
+keybind = super+t=unbind
+macos-titlebar-style = hidden
 
 # Shell integration
 shell-integration = detect

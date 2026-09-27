@@ -7,5 +7,5 @@ f="$HOME/.claude/orchestration.md"
 if [[ -r "$f" ]]; then
   jq -Rs '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:.}}' "$f"
 else
-  jq -cn '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:"WARNING: ~/.claude/orchestration.md is missing or unreadable. Workflow-routing rules are NOT loaded this session. Tell the user before routing any work."}}'
+  jq -cn '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:"WARNING: ~/.claude/orchestration.md is missing or unreadable. Delegation rules are NOT loaded this session. Tell the user before coding or dispatching any work."}}'
 fi

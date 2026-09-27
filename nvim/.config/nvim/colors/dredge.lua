@@ -6,11 +6,14 @@
 -- no chroma, and every token reads as black. Lc is a floor, not a target: coloured
 -- token pairs also keep OKLab dE >= 0.09 in light, >= 0.085 in dark.
 -- Loudness follows what the reader traces (go-to-definition, * search), not syntax.
--- Loud, a step below fg lightness: variables (teal h 197-202), functions (periwinkle h 280, C 0.12), parameters
--- and named constants (rose h 20). Middle: types (blue h 243-246), then literals
--- and builtins (green h 148-150, C 0.09-0.095; None, numbers, booleans, self;
--- below h 145 it turns pea green). Strings are fg. Quiet: keywords
--- and builtin types (the ground's grey, italic, half a step above comments). Members and modules stay fg.
+-- Loud, a step below fg lightness: variables, object keys and member access (teal
+-- h 194-202; dark sits lighter than blue to part them), functions and classes
+-- (periwinkle h 280, C 0.12), parameters and named constants (rose h 20).
+-- Middle: interfaces, type aliases and generics (blue h 243-246). No green.
+-- Literals and builtins are muted orange (h 57-58, C 0.06-0.065, lighter than rose in dark;
+-- above h 75 it reads yellow; None, numbers, booleans, self). Strings
+-- are fg. Quiet: keywords and builtin types (the ground's grey, italic, half a step above
+-- comments), and markup tags in the same grey, upright. Modules stay fg.
 -- Diffs: added = indigo signs on an indigo wash, removed = red, same washes as
 -- hunk. Changed words separate by chroma, not lightness. Red reads louder than indigo,
 -- so the removed wash carries less chroma and its word a touch more lift.
@@ -46,12 +49,14 @@ palettes.dark = {
   magenta = "#e091d8",
 
   kw = "#a1aebb",
-  var = "#6ac5cc",
-  fn = "#abb2ff",
+  var = "#73cac9",
+  fn = "#a7adf3",
   str = "#bdc8d3",
-  const = "#86be8d",
+  const = "#cea891",
+  key = "#73cac9",
   type = "#74aada",
-  param = "#e39190",
+  param = "#db9190",
+  heading = "#86be8d",
 
   added = "#69c7de",
   diff_add = "#222730",
@@ -92,12 +97,14 @@ palettes.light = {
   magenta = "#993f94",
 
   kw = "#776c61",
-  var = "#316466",
-  fn = "#3d3c86",
+  var = "#10777c",
+  fn = "#534dae",
   str = "#40362c",
-  const = "#407c4f",
+  const = "#ad7040",
+  key = "#10777c",
   param = "#ba5d5f",
-  type = "#1873ac",
+  heading = "#407c4f",
+  type = "#1f6cb0",
 
   added = "#007a85",
   diff_add = "#e8edf7",
@@ -208,7 +215,7 @@ local groups = {
   Typedef = { fg = c.type },
   Special = { fg = c.const },
   SpecialChar = { fg = c.const },
-  Tag = { fg = c.type },
+  Tag = { fg = c.kw },
   Delimiter = { fg = c.punct },
   SpecialComment = { fg = c.comment },
   Debug = { fg = c.red },
@@ -220,8 +227,11 @@ local groups = {
   ["@variable"] = { fg = c.var },
   ["@variable.builtin"] = { fg = c.const },
   ["@variable.parameter"] = { fg = c.param },
-  ["@variable.member"] = { fg = c.fg },
-  ["@property"] = { fg = c.fg },
+  ["@variable.member"] = { fg = c.key },
+  ["@property"] = { fg = c.key },
+  ["@variable.member.key"] = { fg = c.key },
+  -- Python keyword-argument names, grey so name=value pairs split.
+  ["@variable.member.key.python"] = { fg = c.kw },
   -- Named constants are traced like parameters; literals and builtins stay c.const.
   ["@constant"] = { fg = c.param },
   ["@constant.builtin"] = { fg = c.const },
@@ -234,7 +244,7 @@ local groups = {
   ["@string.escape"] = { fg = c.const },
   ["@string.regexp"] = { fg = c.const },
   ["@string.special"] = { fg = c.const },
-  ["@string.plain"] = { fg = c.const },
+  ["@string.plain"] = { fg = c.str },
   ["@string.special.url"] = { fg = c.type, underline = true },
   ["@character"] = { fg = c.str },
   ["@character.special"] = { fg = c.const },
@@ -250,7 +260,11 @@ local groups = {
   ["@function.macro"] = { fg = c.fn },
   ["@function.method"] = { fg = c.fn },
   ["@function.method.call"] = { fg = c.fn },
-  ["@constructor"] = { fg = c.type },
+  -- Classes are callables: purple. Green is left for interfaces, aliases and generics.
+  ["@constructor"] = { fg = c.fn },
+  -- Python has no pure types; tree-sitter captures capitalised names as @type.
+  ["@type.python"] = { fg = c.fn },
+  ["@type.definition.python"] = { fg = c.fn },
   -- Lua captures table braces as @constructor.
   ["@constructor.lua"] = { link = "@punctuation.bracket" },
   ["@operator"] = { fg = c.punct },
@@ -266,21 +280,21 @@ local groups = {
   ["@keyword.directive"] = { fg = c.kw, italic = true },
   ["@punctuation.delimiter"] = { fg = c.punct },
   ["@punctuation.bracket"] = { fg = c.punct },
-  ["@punctuation.special"] = { fg = c.const },
+  ["@punctuation.special"] = { fg = c.punct },
   ["@comment"] = { link = "Comment" },
   ["@comment.error"] = { fg = c.red, bold = true },
   ["@comment.warning"] = { fg = c.yellow, bold = true },
   ["@comment.note"] = { fg = c.teal, bold = true },
   ["@comment.todo"] = { link = "Todo" },
-  ["@tag"] = { fg = c.type },
-  ["@tag.builtin"] = { fg = c.type },
+  ["@tag"] = { fg = c.kw },
+  ["@tag.builtin"] = { fg = c.kw },
   ["@tag.attribute"] = { fg = c.fn },
   ["@tag.delimiter"] = { fg = c.punct },
   ["@markup.strong"] = { bold = true },
   ["@markup.italic"] = { italic = true },
   ["@markup.strikethrough"] = { strikethrough = true },
   ["@markup.underline"] = { underline = true },
-  ["@markup.heading"] = { fg = c.teal, bold = true },
+  ["@markup.heading"] = { fg = c.heading, bold = true },
   ["@markup.quote"] = { fg = c.comment, italic = true },
   ["@markup.math"] = { fg = c.const },
   ["@markup.link"] = { fg = c.type },
@@ -295,7 +309,7 @@ local groups = {
   ["@diff.delta"] = { fg = c.yellow },
 
   -- lsp semantic tokens
-  ["@lsp.type.class"] = { link = "@type" },
+  ["@lsp.type.class"] = { link = "@constructor" },
   ["@lsp.type.comment"] = {},
   ["@lsp.type.decorator"] = { link = "@attribute" },
   ["@lsp.type.enum"] = { link = "@type" },
@@ -390,21 +404,71 @@ local function class_attr_def(buf, line, col)
     and class:type() == "class_definition"
 end
 
+-- Key of an object literal or object type at its definition.
+local function object_key_def(buf, line, col)
+  local ok, node = pcall(vim.treesitter.get_node, { bufnr = buf, pos = { line, col } })
+  if not ok or not node then
+    return false
+  end
+  if node:type() == "shorthand_property_identifier" then
+    return true
+  elseif node:type() ~= "property_identifier" then
+    return false
+  end
+  local parent = node:parent()
+  return (parent:type() == "pair" and parent:field("key")[1] == node)
+    or (parent:type() == "property_signature" and parent:field("name")[1] == node)
+end
+
+-- Keyword-argument name at a Python call site.
+local function kwarg_name(buf, line, col)
+  local ok, node = pcall(vim.treesitter.get_node, { bufnr = buf, pos = { line, col } })
+  if not ok or not node or node:type() ~= "identifier" then
+    return false
+  end
+  local parent = node:parent()
+  return parent:type() == "keyword_argument" and parent:field("name")[1] == node
+end
+
+-- Tree-sitter parses a value name as `identifier` and a type name as `type_identifier`.
+local function value_name(buf, line, col)
+  local ok, node = pcall(vim.treesitter.get_node, { bufnr = buf, pos = { line, col } })
+  return ok and node ~= nil and node:type() == "identifier"
+end
+
 -- LSP marks UPPER_CASE class attributes as properties and TS consts as variables.
 -- An all-caps name is a named constant in every language, so colour it as one.
--- A class attribute at its definition is traced like a variable, not a member.
+-- A class attribute at its definition takes the member colour of its accesses.
+-- A keyword-argument name takes the keyword grey, not the parameter rose.
+-- tsserver tags every use of a name that is both a const and a type as a type;
+-- its value uses take the variable colour.
 vim.api.nvim_create_autocmd("LspTokenUpdate", {
   group = vim.api.nvim_create_augroup("dredge_constants", { clear = true }),
   callback = function(ev)
     local t = ev.data.token
-    if vim.g.colors_name ~= "dredge" or (t.type ~= "variable" and t.type ~= "property") then
+    if vim.g.colors_name ~= "dredge" then
+      return
+    end
+    if t.type == "type" then
+      if value_name(ev.buf, t.line, t.start_col) then
+        vim.lsp.semantic_tokens.highlight_token(t, ev.buf, ev.data.client_id, "@variable")
+      end
+      return
+    elseif t.type == "parameter" then
+      if kwarg_name(ev.buf, t.line, t.start_col) then
+        vim.lsp.semantic_tokens.highlight_token(t, ev.buf, ev.data.client_id, "@variable.member.key.python")
+      end
+      return
+    elseif t.type ~= "variable" and t.type ~= "property" then
       return
     end
     local text = vim.api.nvim_buf_get_text(ev.buf, t.line, t.start_col, t.line, t.end_col, {})[1]
     if text and text:match("^_*%u[%u%d_]+$") then
       vim.lsp.semantic_tokens.highlight_token(t, ev.buf, ev.data.client_id, "@constant")
-    elseif t.type == "property" and class_attr_def(ev.buf, t.line, t.start_col) then
-      vim.lsp.semantic_tokens.highlight_token(t, ev.buf, ev.data.client_id, "@variable")
+    elseif class_attr_def(ev.buf, t.line, t.start_col) then
+      vim.lsp.semantic_tokens.highlight_token(t, ev.buf, ev.data.client_id, "@variable.member")
+    elseif object_key_def(ev.buf, t.line, t.start_col) then
+      vim.lsp.semantic_tokens.highlight_token(t, ev.buf, ev.data.client_id, "@variable.member.key")
     end
   end,
 })

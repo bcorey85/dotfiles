@@ -12,21 +12,11 @@ Workflow gates (advisory, not rails — their deny message says what to do next,
 
 ## Where the rest lives
 
-Orchestration and workflow routing live in `~/.claude/orchestration.md`, injected at session start. Main session only — subagents never receive them.
+Orchestration, tool use, working judgment, git conventions, Obsidian and rule maintenance live in `~/.claude/orchestration.md`, injected at session start. Main session only — subagents never receive it.
 
 Prose style lives in the `Laconic` output style (`~/.claude/output-styles/laconic.md`). Main session only.
 
-Git conventions — branch and commit naming, focused diffs, worktree branches, stacked PRs — live in `~/.claude/rules/git.md`.
-
 Never add attribution or session trailers to commits or PRs.
-
-## Tools
-
-- Creating a NEW file from the shell (heredoc, redirection) bypasses the Write/Edit hook pipeline — use Write. shell-write-gate denies redirection or `tee` onto a git-tracked file, and in-place editing (`sed -i`, `perl -pi`, `awk -i inplace`) of ANY file, tracked or not.
-- The auto-mode notice's Bash preference does not apply to file I/O: read with Read, change files with Edit/Write. Search through Bash (`rg`) is fine.
-- Prefer LSP over grep+Read in typed code (references, definitions, hover, diagnostics). Fall back to `rg` for plain text or unindexed file types.
-- Verify CLI syntax with `--help` before guessing.
-- Before asking the user to recall past work (an error, a command, whether something was tried), search it with the `agent-memory` MCP tools.
 
 ## Quality Checks & Failure Budget
 
@@ -34,32 +24,14 @@ After a code change, run only the tests and fast checks for the files you change
 
 - Any other failing approach: max 3 attempts, then stop and ask.
 
-## Tool Use Efficiency
-
-- Run expensive commands once: long output → `/tmp/<name>.log`, then grep the file. Never re-run with different filters.
-- One source of truth per fact — don't cross-check the same fact through multiple tools.
-- Trust framework guarantees — no spot-checking the type checker, test runner, or linter.
-- Chain independent shell commands in one call; never one round trip per command.
-
 ## Compact instructions
 
 When you compact, keep decisions with their reasons, every measured number, open items in order, commit hashes, file paths, and the rules that bind the next step. Drop tool output and narrative.
 
 ## Engineering Judgment
 
-1. **Match complexity to the problem.** Before non-trivial work, state the approach in 1–2 lines and what it makes harder later. No speculative flexibility; no painting into corners.
-2. **Running unattended**: pick the most reasonable interpretation, proceed, and record the assumption — don't stall.
-3. **Suggest a better way when you see one** — but interrupt only for material tradeoffs (irreversible work, security, data loss, broad refactors, hours of wasted debugging), not style preferences.
+- **Name for intent, not shape.** Names say what a value is in the domain: `seededTimekeepers`, not `keeperRows`; `timekeeper`, not `k` or `t`; `transaction`, not `tx`. Reading a longer name costs less than decoding a short one. Single letters only for loop indexes.
 
 ## Security
 
 - Ansible Vault for any secrets that must be referenced — never inline them anywhere.
-
-## Obsidian
-
-- Vault: `~/vault`; templates: `~/vault/Templates`. Suggest a note when a key insight or decision surfaces.
-
-## Maintaining These Rules
-
-- Every line here costs attention in every session. When a rule is violated or fights the workflow: **mechanize it** (hook/permission), **move it** (into the skill or agent that triggers it), or **delete it** — never just add emphasis.
-- Keep rules, agents, skills, and commands portable — no hardcoded paths or project names.

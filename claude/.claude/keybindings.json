@@ -13,7 +13,9 @@
       "context": "Scroll",
       "bindings": {
         "ctrl+end": null,
-        "ctrl+g": "scroll:bottom"
+        "ctrl+g": "scroll:bottom",
+        "ctrl+alt+d": "scroll:halfPageDown",
+        "ctrl+alt+u": "scroll:halfPageUp"
       }
     }
   ]

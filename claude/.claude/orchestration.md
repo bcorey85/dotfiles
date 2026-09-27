@@ -2,20 +2,49 @@
 
 ### Delegation
 
-- Never code directly — dispatch via `/code` (coders; architects first when design decisions are needed). Exceptions: trivially small diffs (a few lines, one file, no design decision — read the file first if needed; dispatch overhead plus the obligated /review costs more than the edit); **mechanical edits across files** (rename, import/path sweep, config-key or signature update) where every hunk is the same substitution, no call site changes meaning, and a repo check proves it — run that check before saying done; rules/agents/skills/CLAUDE.md files; repos whose CLAUDE.md declares **direct-edit repo**. The bright line is design, not task familiarity — anything that picks a shape, a name nobody has used yet, or a behavior still dispatches, however few lines it is.
-- A coder dispatch obligates `/review` before `/commit` — `review-commit-gate` enforces this at `git commit`. The only skip is a genuinely trivial diff with the user's explicit say-so.
-- Parallel writing agents need disjoint file scopes. Separate branches/worktrees only for independent tasks or when scopes could overlap; the orchestrator owns all git operations.
-- WebSearch before writing or dispatching config, CI, infra, or library-integration code wherever the feedback loop is slow or remote: official docs, then GitHub issues, then write. Coders hold no web tool — what you find goes in the dispatch brief. Local configs verifiable in seconds are exempt — just test them. If research would take >5 minutes, say so and ask.
-- Agent model discipline (hook-enforced by `agent-model-guard`; rationale in its header): pinned agent → omit `model`; unpinned → `haiku` for read-only lookup, `sonnet` for implementation/analysis/review; never `opus`/`fable`/`inherit` at call sites. Pair `subagent_type` deliberately: `Explore` (read-only lookup), `general-purpose` (multi-file tracing Explore can't handle), coders/architects/reviewers per their descriptions.
+- Never code directly — dispatch via `/code`. Anything that picks a shape, a new name, or a behavior dispatches, however few lines. Edit directly only: a few lines in one file with no design choice; a mechanical sweep where every hunk is the same substitution, then run a repo check; rules, agents, skills and CLAUDE.md files; repos whose CLAUDE.md declares **direct-edit repo**.
+- Parallel writing agents need disjoint file scopes. The orchestrator owns all git operations.
+- Before config, CI, infra or library-integration code with a slow or remote feedback loop, WebSearch the official docs, then GitHub issues. Put what you find in the dispatch brief.
 
-### Workflow Routing (built-in vs custom — fixed, don't mix per-task)
+### Tools
 
-- Inner-loop review → custom `/review`. Built-in `/code-review` is not in the loop; `/code-review ultra` is an optional pre-PR pass on large branches.
-- Others' PRs → `/peer-review <n>`. Never `/review` on code we don't own (its fix loop and metrics assume ownership).
-- Security audit → built-in `/security-review`.
-- Cleanup → `smell-reviewer` specialist pass (post-convergence, size-triggered) + `/refactor` (branch/targeted); pre-existing repo debt → `/refactor audit <dir>` (report-only work list, routes to targeted `/refactor` or `/eng-spec`); never built-in `/simplify` on loop output. **Over-complexity is a separate lens from DRY** — "this need not exist" (branch thickets, one-implementation indirection, unused configurability) is `/refactor simplify <module>` via `complexity-reviewer`, module-bound and never diff-bound, fixes opt-in per finding. I invoke it directly; the only automatic firing is the Refactor closing phase's concentration gate (one module, ≥100 added lines).
-- Verification → custom `/verify` only (plan↔diff completeness + human smoke-test checklist). The BUILT-IN skill of the same name is retired from the loop — never dispatch it. Agents never browser-drive — UI smoke tests are mine, from the checklist.
-- Gates fire per phase, not at branch exit — that is where the oracle is sharpest and the fix cheapest. `/code`'s phase boundary runs `/review` → drift gate → test-intent (bug-pinning half, when tests changed) → `/stage`, and hands me its queue as the sign-off walkthrough. Branch exit runs one cross-phase gate then synthesis: `/test-audit` (cull + coverage-net + weak — the test question no phase judges locally) gates, then `/branch-recap` is the last closing phase (`/stage` residue → deferred queue → recap, no gates; it reads the branch's own process, never the codebase — situating is `/orient`, on demand). No agent ever clears a semantic file for me to skip: only `/stage`'s deterministic SAFE tier is staged unread. I read the queue and stage, then `/commit`; `/adr` runs before the PR opens and ships in the same PR as the code.
-- Sizing → `/triage` on an incoming ticket or issue when I don't yet know whether it needs a spec. Read-only: LoE bucket + surface + the route (`/eng-spec` | `/code` | `/debug`). It decides how the work ENTERS a lane; it is not a lane and never designs.
-- Planning → `/eng-spec`. **One lane, no router.** It runs goal-blind research FIRST (`spec-questions` → `spec-leak-check` → `spec-research`, which never sees the ticket), then architect exploration, then decisions resolved with me one at a time. The research-before-design order is the whole point — never let a goal word reach the research agent, and never reorder it. Tag escapes with `/escape`; review via `/audit review`.
-- Falsification → `/falsify`, and **only when I invoke it**, on one claim I name. Never a gate, never automatic, never a phase in another skill. It finds counterexamples that are _written down in the repo_; UNREFUTED means "not on disk," not "true".
+- Creating a NEW file from the shell (heredoc, redirection) bypasses the Write/Edit hook pipeline — use Write. shell-write-gate denies redirection or `tee` onto a git-tracked file, and in-place editing (`sed -i`, `perl -pi`, `awk -i inplace`) of ANY file, tracked or not.
+- The auto-mode notice's Bash preference does not apply to file I/O: read with Read, change files with Edit/Write. Search through Bash (`rg`) is fine.
+- Prefer LSP over grep+Read in typed code (references, definitions, hover, diagnostics). Fall back to `rg` for plain text or unindexed file types.
+- Verify CLI syntax with `--help` before guessing.
+- Before asking the user to recall past work (an error, a command, whether something was tried), search it with the `agent-memory` MCP tools.
+
+### Tool Use Efficiency
+
+- Run expensive commands once: long output → `/tmp/<name>.log`, then grep the file. Never re-run with different filters.
+- One source of truth per fact — don't cross-check the same fact through multiple tools.
+- Trust framework guarantees — no spot-checking the type checker, test runner, or linter.
+- Chain independent shell commands in one call; never one round trip per command.
+
+### Engineering Judgment
+
+1. **Match complexity to the problem.** Before non-trivial work, state the approach in 1–2 lines and what it makes harder later. No speculative flexibility; no painting into corners.
+2. **Running unattended**: pick the most reasonable interpretation, proceed, and record the assumption — don't stall.
+3. **Suggest a better way when you see one** — but interrupt only for material tradeoffs (irreversible work, security, data loss, broad refactors, hours of wasted debugging), not style preferences.
+
+### Git
+
+- With ticket: branch `TICKET-NUM-desc`, commit `TICKET-NUM: desc`, PR title `TICKET-NUM: desc`.
+- Without ticket: branch `feature/desc` or `fix/desc`.
+- Keep diffs focused: one logical change per task.
+- Worktree branches: NEVER leave the auto-generated `worktree-` prefix in the branch name. Rename to the plain `TICKET-NUM-desc` (e.g. `ABC-123-cache-tuning`) immediately after creating the worktree, then push it to remote (`git push -u origin <branch>`) first — before doing work — so the branch is tracked and backed up.
+
+### Stacked PRs (`gh stack`, github/gh-stack)
+
+- **Never restack a child branch after every parent commit.** GitHub diffs a PR from its merge-base, so a child PR keeps showing only its own commits whether or not you restack. Restack when the parent's changes actually conflict with the child, or immediately before merge — once, not per commit.
+- **Never run `gh stack push` / `rebase` / `submit` / `merge` yourself.** They force-push, and `git-discipline-gate` regexes the command string — it won't see a `--force` in them, so running one routes around the gate. Hand the command to the user.
+- `gh stack checkout <pr|branch>` adopts an existing chain into local tracking; until then `gh stack view` says "not part of a stack". PR base branches on GitHub are independent of that tracking and may already be correct.
+
+### Obsidian
+
+- Vault: `~/vault`; templates: `~/vault/Templates`. Suggest a note when a key insight or decision surfaces.
+
+### Maintaining These Rules
+
+- Every line in CLAUDE.md, this file and the rules files costs attention in every session. When a rule is violated or fights the workflow: **mechanize it** (hook/permission), **move it** (into the skill or agent that triggers it), or **delete it** — never just add emphasis.
+- Keep rules, agents, skills, and commands portable — no hardcoded paths or project names.

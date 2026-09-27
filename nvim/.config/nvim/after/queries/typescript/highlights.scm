@@ -11,3 +11,18 @@
   (public_field_definition ["?" "!"] @punctuation.delimiter)
 ]
   (#set! priority 101))
+
+; Keys of object types and interfaces, like object-literal keys.
+(property_signature
+  name: (property_identifier) @variable.member.key)
+
+; Keep function-typed keys as methods; the last matching pattern wins.
+(property_signature
+  name: (property_identifier) @function.method
+  type: (type_annotation
+    [
+      (union_type
+        (parenthesized_type
+          (function_type)))
+      (function_type)
+    ]))

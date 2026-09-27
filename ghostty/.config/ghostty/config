@@ -1,14 +1,14 @@
-# Font — Intel One Mono. Nerd Fonts patches it under the name IntoneMono, NOT
-# Intel: `Intel One Mono Nerd Font Mono` silently falls back. `NFM` is the
-# strict-monospace cut; the plain and Propo cuts break TUI column alignment.
-# Light/Regular/Medium/Bold, each with a true italic.
-font-family = IntoneMono Nerd Font Mono
+# Font — Aporetic Sans Mono (Protesilaos's Iosevka build; plain "Aporetic Sans"
+# is proportional). Unpatched, so FiraCode Nerd Font Mono carries every Nerd
+# glyph. Ships Regular and Bold only, each with a true italic.
+font-family = Aporetic Sans Mono
+font-family = FiraCode Nerd Font Mono
 font-style = Regular
 # font-style covers the upright only, so the italic needs its own line or it
-# falls back a weight. This family names the Regular italic just "Italic".
+# falls back a weight.
 font-style-italic = Italic
-font-style-bold = Medium
-font-style-bold-italic = Medium Italic
+font-style-bold = Bold
+font-style-bold-italic = Bold Italic
 font-size = 13
 # Leading is the lever for line-tracking, not glyph shape: the white band
 # between lines shrinks even at equal metric line height on short-extender

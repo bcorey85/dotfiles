@@ -94,6 +94,25 @@ vim.api.nvim_create_autocmd("LspAttach", {
         callback = vim.lsp.buf.clear_references,
       })
     end
+
+    -- gd on a library symbol lands in its .d.ts. tsserver's source-definition
+    -- request resolves the .js implementation in node_modules instead.
+    if client and client.name == "vtsls" then
+      map("n", "gS", function()
+        local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
+        client:exec_cmd({
+          title = "Go to source definition",
+          command = "typescript.goToSourceDefinition",
+          arguments = { params.textDocument.uri, params.position },
+        }, { bufnr = bufnr }, function(err, result)
+          if err or not result or vim.tbl_isempty(result) then
+            vim.notify("No source definition found", vim.log.levels.INFO)
+            return
+          end
+          vim.lsp.util.show_document(result[1], client.offset_encoding, { focus = true })
+        end)
+      end, "Go to source definition")
+    end
   end,
 })
 
@@ -138,6 +157,8 @@ local vue_plugin = {
 vim.lsp.config("vtsls", {
   settings = {
     vtsls = {
+      -- Use the project's node_modules/typescript, so the editor and tsc agree.
+      autoUseWorkspaceTsdk = true,
       tsserver = {
         globalPlugins = { vue_plugin },
       },

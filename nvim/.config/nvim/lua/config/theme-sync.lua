@@ -115,9 +115,9 @@ local FAMILIES = {
     schemes = { dark = "dredge", light = "dredge" },
     colors_name = "dredge",
     accents = {
-      -- H1 sits level with fg in APCA Lc; H2+ orange sits just below it.
-      dark = { heading1 = "#84e3e3", heading = "#ffbd90", bullet = "#9ba8b5" },
-      light = { heading1 = "#004344", heading = "#85491b", bullet = "#7d7267" },
+      -- Headings are green, a hue code never uses. H1 is the lighter step.
+      dark = { heading1 = "#a1e4ae", heading = "#86be8d", bullet = "#9ba8b5" },
+      light = { heading1 = "#265331", heading = "#407c4f", bullet = "#7d7267" },
     },
   },
 }

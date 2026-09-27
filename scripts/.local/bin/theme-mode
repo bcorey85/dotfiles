@@ -513,14 +513,14 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       sAdd="#767ad4"; sRem="#d9635d"; lnFg="#747c83"
       badgeAdd="#69c7de"; badgeRem="#f77972"; badgeNeu="#ebc75b"
       fRename="#ebc75b"; fMod="#ebc75b"; fUntracked="#7abff9"; note="#1a1d21"
-      kw="#a1aebb"; str="#bdc8d3"; num="#86be8d"; fn="#abb2ff"; typ="#74aada"; punct="#929eab"; op="#929eab"
-      konst="#e39190"; esc="#86be8d"; cmt="#929fac"; mem="#bdc8d3"; param="#e39190"
-      attr="#86be8d"; tag="#74aada"; vbi="#86be8d"; lang="#86be8d"; imp="#a1aebb"; pre="#a1aebb"
-      prim="#a1aebb"; ns="#bdc8d3"; mac="#abb2ff"; bfn="#abb2ff"; var="#6ac5cc"; key="#bdc8d3"
+      kw="#a1aebb"; str="#bdc8d3"; num="#cea891"; fn="#a7adf3"; typ="#74aada"; punct="#929eab"; op="#929eab"
+      konst="#db9190"; esc="#cea891"; cmt="#929fac"; mem="#73cac9"; param="#db9190"
+      attr="#cea891"; tag="#a1aebb"; vbi="#cea891"; lang="#cea891"; imp="#a1aebb"; pre="#a1aebb"
+      prim="#a1aebb"; ns="#bdc8d3"; mac="#a7adf3"; bfn="#a7adf3"; var="#73cac9"; key="#73cac9"; cls="#a7adf3"
       # Match nvim's tree-sitter colours where one-dark-pro's own selectors
       # out-rank the generic table. h1/h2 mirror theme-sync's markdown headings.
       # bright = markdown bold; hunk's scope table carries colour only, no weight.
-      local h1="#84e3e3" h2="#ffbd90" bright="#d3dbe3"
+      local h1="#a1e4ae" h2="#86be8d" bright="#d3dbe3"
       if [ "$2" = light ]; then
         bg="#f3efeb"; panel="#efeae5"; panelAlt="#ebe6e1"; border="#c9c4bd"
         accent="#007475"; accentMuted="#c9c4bd"; text="#40362c"; muted="#8f857b"
@@ -529,11 +529,11 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
         sAdd="#3d3dff"; sRem="#e00000"; lnFg="#b6ada5"
         badgeAdd="#007a85"; badgeRem="#ba3535"; badgeNeu="#886100"
         fRename="#886100"; fMod="#886100"; fUntracked="#116bb5"; note="#efeae5"
-        kw="#776c61"; str="#40362c"; num="#407c4f"; fn="#3d3c86"; typ="#1873ac"; punct="#897e74"; op="#897e74"
-        konst="#ba5d5f"; esc="#407c4f"; cmt="#897e73"; mem="#40362c"; param="#ba5d5f"
-        attr="#407c4f"; tag="#1873ac"; vbi="#407c4f"; lang="#407c4f"; imp="#776c61"; pre="#776c61"
-        prim="#776c61"; ns="#40362c"; mac="#3d3c86"; bfn="#3d3c86"; var="#316466"; key="#40362c"
-        h1="#004344" h2="#85491b" bright="#1e1a15"
+        kw="#776c61"; str="#40362c"; num="#ad7040"; fn="#534dae"; typ="#1f6cb0"; punct="#897e74"; op="#897e74"
+        konst="#ba5d5f"; esc="#ad7040"; cmt="#897e73"; mem="#10777c"; param="#ba5d5f"
+        attr="#ad7040"; tag="#776c61"; vbi="#ad7040"; lang="#ad7040"; imp="#776c61"; pre="#776c61"
+        prim="#776c61"; ns="#40362c"; mac="#534dae"; bfn="#534dae"; var="#10777c"; key="#10777c"; cls="#534dae"
+        h1="#265331" h2="#407c4f" bright="#1e1a15"
       fi
       extra=$(cat <<EOF
 "punctuation.separator.key-value"   = "$punct"
@@ -564,7 +564,9 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
 "keyword.operator.logical"          = "$op"
 "keyword.operator.logical.python"   = "$kw"
 "source.python"                     = "$var"
+"variable.object.property"          = "$key"
 "meta.function-call.arguments.python" = "$var"
+"variable.parameter.function-call.python" = "$kw"
 "meta.item-access.arguments.python" = "$var"
 "keyword.operator.logical.lua"      = "$kw"
 "keyword.operator.logical.and.media.css" = "$kw"
@@ -595,8 +597,8 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
 "variable.other.enummember.tsx"     = "$var"
 "variable.other.object"             = "$var"
 "variable.other.object.property"    = "$mem"
-"new.expr entity.name.function"     = "$typ"
-"entity.name.type.class"            = "$typ"
+"new.expr entity.name.function"     = "$fn"
+"entity.name.type.class"            = "$fn"
 "entity.other.attribute-name.tsx"   = "$fn"
 "entity.other.attribute-name.jsx"   = "$fn"
 "entity.other.attribute-name.html"  = "$fn"
@@ -647,8 +649,9 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
 "source.css.scss keyword.other.unit" = "$str"
 "punctuation.definition.keyword.css" = "$kw"
 "punctuation.definition.keyword.scss" = "$kw"
-"support.constant.property-value.css" = "$konst"
-"support.constant.property-value.scss" = "$konst"
+"support.constant.property-value.css" = "$str"
+"support.constant.property-value.scss" = "$str"
+"punctuation.definition.interpolation" = "$punct"
 "variable.argument.css"             = "$konst"
 "support.constant.font-name"        = "$konst"
 "entity.name.tag.reference.scss"    = "$konst"
@@ -686,7 +689,7 @@ EOF
   attr="${attr:-$punct}"; tag="${tag:-$fn}"; vbi="${vbi:-$kw}"
   imp="${imp:-$typ}"; pre="${pre:-$num}"; prim="${prim:-$num}"
   ns="${ns:-$typ}"; mac="${mac:-$esc}"; bfn="${bfn:-$esc}"; var="${var:-$text}"
-  lang="${lang:-$num}"
+  lang="${lang:-$num}"; cls="${cls:-$typ}"
   cat <<EOF
 [custom_theme]
 base             = "$3"
@@ -780,11 +783,11 @@ noteTitleText    = "$text"
 
 # Types.
 "entity.name.type"                  = "$typ"
-"entity.name.class"                 = "$typ"
+"entity.name.class"                 = "$cls"
 "entity.name.namespace"             = "$ns"
-"entity.other.inherited-class"      = "$typ"
+"entity.other.inherited-class"      = "$cls"
 "support.type"                      = "$typ"
-"support.class"                     = "$typ"
+"support.class"                     = "$cls"
 "support.type.primitive"            = "$prim"
 
 # Identifiers, members, parameters. nvim paints properties and members as plain

@@ -37,13 +37,32 @@ install_nerd_font() {
     print_success "$label installed"
 }
 
+# install_aporetic_sans_mono <dir>
+# Aporetic ships no release asset and no apt/pacman package: pull the four
+# Sans Mono TTFs from the pinned tag. Skips when the Regular face is on disk.
+APORETIC_TAG=1.2.0
+install_aporetic_sans_mono() {
+    local dir=$1 face
+    if [ -f "$dir/aporetic-sans-mono-normalregularupright.ttf" ]; then
+        print_success "Aporetic Sans Mono already installed"
+        return
+    fi
+    mkdir -p "$dir"
+    for face in regularupright regularitalic boldupright bolditalic; do
+        curl -fLo "$dir/aporetic-sans-mono-normal$face.ttf" \
+            "https://raw.githubusercontent.com/protesilaos/aporetic/$APORETIC_TAG/aporetic-sans-mono/TTF/aporetic-sans-mono-normal$face.ttf"
+    done
+    print_success "Aporetic Sans Mono installed"
+}
+
 case $PLATFORM in
     wsl)
         print_info "WSL detected - Fonts must be installed on Windows"
         echo ""
         echo "  1. Download: https://github.com/ryanoasis/nerd-fonts/releases"
-        echo "  2. Install IntelOneMono and FiraCode Nerd Fonts"
-        echo "  3. Windows Terminal → Settings → Font face → 'IntoneMono Nerd Font Mono'"
+        echo "  2. Install the FiraCode Nerd Font"
+        echo "  3. Download the aporetic-sans-mono TTFs: https://github.com/protesilaos/aporetic/tree/$APORETIC_TAG/aporetic-sans-mono/TTF"
+        echo "  4. Windows Terminal → Settings → Font face → 'Aporetic Sans Mono, FiraCode Nerd Font Mono'"
         echo ""
         print_info "Press Enter when fonts are installed..."
         read || true
@@ -52,17 +71,10 @@ case $PLATFORM in
         print_info "Installing Nerd Fonts..."
         mkdir -p ~/.local/share/fonts
 
-        # Intel One Mono — the terminal face. The patcher renames it IntoneMono,
-        # which is the name ghostty's config asks for. Italics are real faces,
-        # so each weight pulls its italic too.
-        install_nerd_font IntelOneMono.tar.xz IntoneMonoNerdFontMono-Regular.ttf \
-            "IntoneMono Nerd Font" \
-            IntoneMonoNerdFontMono-Regular.ttf IntoneMonoNerdFontMono-Italic.ttf \
-            IntoneMonoNerdFontMono-Bold.ttf IntoneMonoNerdFontMono-BoldItalic.ttf \
-            IntoneMonoNerdFontMono-Light.ttf IntoneMonoNerdFontMono-LightItalic.ttf \
-            IntoneMonoNerdFontMono-Medium.ttf IntoneMonoNerdFontMono-MediumItalic.ttf
+        # Aporetic Sans Mono — the terminal face.
+        install_aporetic_sans_mono "$HOME/.local/share/fonts/aporetic"
 
-        # Fira Code — no longer the terminal face, but still named by nvim,
+        # Fira Code — ghostty's Nerd-glyph fallback, and the face named by nvim,
         # quickshell, hyprlock and zed. Ships no italic, so there is no
         # -Italic/-BoldItalic to pull.
         install_nerd_font FiraCode.tar.xz FiraCodeNerdFontMono-Regular.ttf \
@@ -75,7 +87,7 @@ case $PLATFORM in
         ;;
     mac)
         print_info "Installing Nerd Fonts..."
-        brew install --cask font-intone-mono-nerd-font 2>/dev/null || print_success "IntoneMono Nerd Font already installed"
+        brew install --cask font-aporetic 2>/dev/null || print_success "Aporetic already installed"
         brew install --cask font-fira-code-nerd-font 2>/dev/null || print_success "FiraCode Nerd Font already installed"
         print_success "Nerd Fonts installed"
         ;;

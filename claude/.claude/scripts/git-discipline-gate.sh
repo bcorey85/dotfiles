@@ -48,6 +48,11 @@ if grep -qiE '\bgit\s+commit\b' <<<"$cmd" && \
   deny "[git-discipline-gate] git commit --amend is blocked: never rewrite history unless the user explicitly asked. Make a new commit, or ask the user."
 fi
 
+if grep -qiE '\bgit\s+commit\b|\bgh\s+pr\s+(create|edit)\b' <<<"$cmd" && \
+   grep -qiE 'Claude-Session:|claude\.ai/code/session_|Co-Authored-By:\s*Claude' <<<"$cmd"; then
+  deny "[git-discipline-gate] Commit and PR text must carry no attribution or session trailer. Remove it and retry."
+fi
+
 if grep -qiE '\bgit\s+(commit|push)\b' <<<"$cmd" && [[ "$branch" == worktree-* ]]; then
   deny "[git-discipline-gate] branch '$branch' still carries the auto-generated worktree- prefix. Rename it to the plain TICKET-NUM-desc form and push it with -u first, then retry."
 fi

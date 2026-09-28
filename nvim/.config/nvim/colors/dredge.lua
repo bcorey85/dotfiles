@@ -5,18 +5,17 @@
 -- comments 47, punctuation 46. Light: fg Lc 88. At Lc 75 on cream the gamut leaves
 -- no chroma, and every token reads as black. Lc is a floor, not a target: coloured
 -- token pairs also keep OKLab dE >= 0.09 in light, >= 0.085 in dark.
--- Loudness follows what the reader traces (go-to-definition, * search), not syntax.
--- Loud, a step below fg lightness: variables, object keys and member access (teal
--- h 194-202; dark sits lighter than blue to part them), functions and classes
--- (periwinkle h 280, C 0.12), parameters and named constants (rose h 20).
--- Middle: interfaces, type aliases and generics (blue h 243-246). No green.
--- Literals and builtins are muted orange (h 57-58, C 0.06-0.065, lighter than rose in dark;
--- above h 75 it reads yellow; None, numbers, booleans, self). Strings
--- are fg. Quiet: keywords and builtin types (the ground's grey, italic, half a step above
--- comments), and markup tags in the same grey, upright. Modules stay fg.
--- Diffs: added = indigo signs on an indigo wash, removed = red, same washes as
--- hunk. Changed words separate by chroma, not lightness. Red reads louder than indigo,
--- so the removed wash carries less chroma and its word a touch more lift.
+-- The more often a token appears, the calmer its colour. Variables, parameters and
+-- named constants are teal (h 194-202). Object keys and member access are blue
+-- (h 248), the dimmest role in both modes. Functions and classes are periwinkle
+-- (h 280-284). Literals and builtins are rose (h 0; None, numbers, booleans, self,
+-- JSON). No green in code. Light mirrors dark's hues and relative weights.
+-- Strings are fg. Keywords are the ground's grey, italic, half a step above
+-- comments; types share the grey, upright, and so do markup tags. Modules stay fg.
+-- Markdown headings are orange.
+-- Diffs: added = green signs on a green wash (green is free: code never uses it),
+-- removed = red, same washes as hunk. Changed words separate by chroma, not
+-- lightness. Red reads louder than green, so the removed wash carries less chroma.
 -- Teal is the accent; yellow marks changed. The palette below is the source of truth; the
 -- ghostty/herdr/hunk/starship/quickshell/claude-theme copies mirror it by hand.
 -- Editing: one value at a time, judged on a real file in nvim and hunk before the
@@ -35,8 +34,8 @@ palettes.dark = {
   nontext = "#41474c",
   linenr = "#747c83",
   muted = "#95a0ab",
-  comment = "#929fac",
-  punct = "#929eab",
+  comment = "#a1aebb",
+  punct = "#808c99",
   fg = "#bdc8d3",
   fg_bright = "#d3dbe3",
 
@@ -48,21 +47,22 @@ palettes.dark = {
   blue = "#7abff9",
   magenta = "#e091d8",
 
-  kw = "#a1aebb",
-  var = "#73cac9",
-  fn = "#a7adf3",
+  kw = "#808c99",
+  type_name = "#a1aebb",
+  var = "#72cacb",
+  fn = "#abb1fd",
   str = "#bdc8d3",
-  const = "#cea891",
-  key = "#73cac9",
-  type = "#74aada",
-  param = "#db9190",
-  heading = "#86be8d",
+  const = "#e390aa",
+  key = "#75afe3",
+  type = "#75afe3",
+  param = "#72cacb",
+  heading = "#d5ac93",
 
-  added = "#69c7de",
-  diff_add = "#222730",
+  added = "#82d395",
+  diff_add = "#1a2d27",
   diff_delete = "#2a2323",
-  diff_change = "#222730",
-  diff_text = "#25334c",
+  diff_change = "#1a2d27",
+  diff_text = "#17463b",
   search = "#56442c",
 
   term = {
@@ -71,22 +71,22 @@ palettes.dark = {
   },
 }
 
--- Light: warm off-white (OKLCH L 0.955), greys tinted warm (h 70), fg ~10.3:1.
--- Comment and punctuation L 0.60 (Lc 58).
+-- Light: cool light grey (OKLCH L 0.82), greys on dark's hue (h 248). Accents sit
+-- light, around L 0.56-0.64; luminance over contrast.
 palettes.light = {
-  bg = "#f3efeb",
-  bg_dark = "#efeae5",
-  bg_line = "#ebe6e1",
-  bg_sel = "#dcd7d1",
-  bg_visual = "#d8dff7",
-  border = "#c9c4bd",
-  nontext = "#d3cdc5",
-  linenr = "#b6ada5",
-  muted = "#8f857b",
-  comment = "#897e73",
-  punct = "#897e74",
-  fg = "#40362c",
-  fg_bright = "#1e1a15",
+  bg = "#bac6d1",
+  bg_dark = "#b5c1cd",
+  bg_line = "#b1bdc8",
+  bg_sel = "#a3b0bc",
+  bg_visual = "#a4afca",
+  border = "#919da9",
+  nontext = "#9aa6b2",
+  linenr = "#77828c",
+  muted = "#6f7a85",
+  comment = "#596571",
+  punct = "#697480",
+  fg = "#2d3740",
+  fg_bright = "#1f252a",
 
   red = "#ba3535",
   amber = "#bb5d00",
@@ -96,26 +96,27 @@ palettes.light = {
   blue = "#116bb5",
   magenta = "#993f94",
 
-  kw = "#776c61",
-  var = "#10777c",
-  fn = "#534dae",
-  str = "#40362c",
-  const = "#ad7040",
-  key = "#10777c",
-  param = "#ba5d5f",
-  heading = "#407c4f",
-  type = "#1f6cb0",
+  kw = "#697480",
+  type_name = "#596571",
+  var = "#007e82",
+  fn = "#5e56c3",
+  str = "#2d3740",
+  const = "#b94571",
+  key = "#0d6db2",
+  param = "#007e82",
+  heading = "#ba7c4d",
+  type = "#0d6db2",
 
-  added = "#007a85",
-  diff_add = "#e8edf7",
-  diff_delete = "#f8e9e8",
-  diff_change = "#e8edf7",
-  diff_text = "#ccdfff",
-  search = "#f4cd99",
+  added = "#1d7d3e",
+  diff_add = "#adcbd0",
+  diff_delete = "#c4c3cd",
+  diff_change = "#adcbd0",
+  diff_text = "#95c5c6",
+  search = "#d5ac76",
 
   term = {
-    "#40362c", "#ba3535", "#1d7d3e", "#886100", "#116bb5", "#993f94", "#007475", "#655c51",
-    "#645a50", "#d74745", "#2a904b", "#b08505", "#2b7ec9", "#ad51a7", "#008c8d", "#40362c",
+    "#2d3740", "#ba3535", "#1d7d3e", "#886100", "#116bb5", "#993f94", "#007475", "#555f69",
+    "#535d67", "#d74745", "#2a904b", "#b08505", "#2b7ec9", "#ad51a7", "#008c8d", "#2d3740",
   },
 }
 
@@ -188,7 +189,7 @@ local groups = {
   SpellRare = { sp = c.magenta, undercurl = true },
 
   -- syntax
-  Comment = { fg = c.comment },
+  Comment = { fg = c.comment, italic = true },
   Constant = { fg = c.const },
   String = { fg = c.str },
   Character = { fg = c.str },
@@ -209,15 +210,15 @@ local groups = {
   Define = { fg = c.kw, italic = true },
   Macro = { fg = c.fn },
   PreCondit = { fg = c.kw, italic = true },
-  Type = { fg = c.type },
+  Type = { fg = c.type_name },
   StorageClass = { fg = c.kw, italic = true },
-  Structure = { fg = c.type },
-  Typedef = { fg = c.type },
+  Structure = { fg = c.type_name },
+  Typedef = { fg = c.type_name },
   Special = { fg = c.const },
   SpecialChar = { fg = c.const },
   Tag = { fg = c.kw },
   Delimiter = { fg = c.punct },
-  SpecialComment = { fg = c.comment },
+  SpecialComment = { fg = c.comment, italic = true },
   Debug = { fg = c.red },
   Underlined = { underline = true },
   Error = { fg = c.red },
@@ -230,17 +231,15 @@ local groups = {
   ["@variable.member"] = { fg = c.key },
   ["@property"] = { fg = c.key },
   ["@variable.member.key"] = { fg = c.key },
-  -- Python keyword-argument names, grey so name=value pairs split.
-  ["@variable.member.key.python"] = { fg = c.kw },
-  -- Named constants are traced like parameters; literals and builtins stay c.const.
-  ["@constant"] = { fg = c.param },
+  -- Named constants read as variables; literals and builtins stay c.const.
+  ["@constant"] = { fg = c.var },
   ["@constant.builtin"] = { fg = c.const },
   ["@constant.macro"] = { fg = c.param },
   ["@module"] = { fg = c.fg },
   ["@module.builtin"] = { fg = c.fg },
   ["@label"] = { fg = c.kw, italic = true },
   ["@string"] = { fg = c.str },
-  ["@string.documentation"] = { fg = c.comment },
+  ["@string.documentation"] = { fg = c.comment, italic = true },
   ["@string.escape"] = { fg = c.const },
   ["@string.regexp"] = { fg = c.const },
   ["@string.special"] = { fg = c.const },
@@ -250,17 +249,16 @@ local groups = {
   ["@character.special"] = { fg = c.const },
   ["@number"] = { fg = c.const },
   ["@boolean"] = { fg = c.const },
-  ["@type"] = { fg = c.type },
-  ["@type.builtin"] = { fg = c.kw, italic = true },
-  ["@type.definition"] = { fg = c.type },
-  ["@attribute"] = { fg = c.const },
+  ["@type"] = { fg = c.type_name },
+  ["@type.builtin"] = { fg = c.type_name },
+  ["@type.definition"] = { fg = c.type_name },  ["@attribute"] = { fg = c.const },
   ["@function"] = { fg = c.fn },
   ["@function.builtin"] = { fg = c.fn },
   ["@function.call"] = { fg = c.fn },
   ["@function.macro"] = { fg = c.fn },
   ["@function.method"] = { fg = c.fn },
   ["@function.method.call"] = { fg = c.fn },
-  -- Classes are callables: purple. Green is left for interfaces, aliases and generics.
+  -- Classes are callables: purple.
   ["@constructor"] = { fg = c.fn },
   -- Python has no pure types; tree-sitter captures capitalised names as @type.
   ["@type.python"] = { fg = c.fn },
@@ -317,19 +315,18 @@ local groups = {
   -- Cleared: LSP marks function-valued variables and properties as functions.
   -- Tree-sitter colours only definitions and calls, the same as hunk.
   ["@lsp.type.function"] = {},
-  ["@lsp.type.interface"] = { link = "@type" },
+  ["@lsp.type.interface"] = { link = "@type.definition" },
   ["@lsp.type.macro"] = { link = "@function.macro" },
   ["@lsp.type.method"] = {},
   ["@lsp.type.namespace"] = { link = "@module" },
   ["@lsp.type.parameter"] = { link = "@variable.parameter" },
   ["@lsp.type.property"] = { link = "@property" },
-  ["@lsp.type.struct"] = { link = "@type" },
+  ["@lsp.type.struct"] = { link = "@type.definition" },
   ["@lsp.type.type"] = { link = "@type" },
-  ["@lsp.type.typeParameter"] = { link = "@type" },
+  ["@lsp.type.typeParameter"] = { link = "@type.definition" },
   ["@lsp.type.variable"] = { link = "@variable" },
   ["@lsp.typemod.variable.defaultLibrary"] = { link = "@variable.builtin" },
   ["@lsp.typemod.function.defaultLibrary"] = { link = "@function.builtin" },
-  ["@lsp.typemod.class.defaultLibrary"] = { link = "@type.builtin" },
   -- basedpyright marks UPPER_CASE names readonly. Python only: TS marks every const.
   ["@lsp.typemod.variable.readonly.python"] = { link = "@constant" },
   LspReferenceText = { bg = c.bg_sel },
@@ -369,7 +366,7 @@ local groups = {
   GitSignsChange = { fg = c.yellow },
   GitSignsDelete = { fg = c.red },
   -- Inline overlay shows the old line in rose above, so changed lines take the
-  -- added wash. Purple stays in the sign column and in side-by-side diffs.
+  -- added wash.
   GitSignsChangeLn = { link = "DiffAdd" },
 
   -- plugins
@@ -439,7 +436,8 @@ end
 -- LSP marks UPPER_CASE class attributes as properties and TS consts as variables.
 -- An all-caps name is a named constant in every language, so colour it as one.
 -- A class attribute at its definition takes the member colour of its accesses.
--- A keyword-argument name takes the keyword grey, not the parameter rose.
+-- A keyword-argument name takes the keyword grey, not the parameter teal.
+-- Library globals (JSON) stay builtins.
 -- tsserver tags every use of a name that is both a const and a type as a type;
 -- its value uses take the variable colour.
 vim.api.nvim_create_autocmd("LspTokenUpdate", {
@@ -460,6 +458,8 @@ vim.api.nvim_create_autocmd("LspTokenUpdate", {
       end
       return
     elseif t.type ~= "variable" and t.type ~= "property" then
+      return
+    elseif t.modifiers.defaultLibrary then
       return
     end
     local text = vim.api.nvim_buf_get_text(ev.buf, t.line, t.start_col, t.line, t.end_col, {})[1]

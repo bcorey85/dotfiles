@@ -174,6 +174,16 @@
     "vault-progress": "user-invocable-only",
     "vault-review": "user-invocable-only",
     "weekly-recap": "user-invocable-only",
+    "dataviz": "user-invocable-only",
+    "claude-api": "user-invocable-only",
+    "code-review": "user-invocable-only",
+    "update-config": "user-invocable-only",
+    "schedule": "user-invocable-only",
+    "run": "user-invocable-only",
+    "loop": "user-invocable-only",
+    "keybindings-help": "user-invocable-only",
+    "fewer-permission-prompts": "user-invocable-only",
+    "simplify": "user-invocable-only",
     "docs": "off",
     "docx": "off",
     "pdf": "off",
@@ -516,7 +526,6 @@
       }
     }
   },
-  "outputStyle": "Laconic",
   "effortLevel": "medium",
   "modelSettings": {
     "claude-opus-5": {
@@ -529,6 +538,7 @@
   "awaySummaryEnabled": false,
   "tui": "fullscreen",
   "autoMemoryEnabled": false,
+  "skillListingBudgetFraction": 0.0001,
   "skipWorkflowUsageWarning": true,
   "theme": "custom:dredge",
   "editorMode": "normal",

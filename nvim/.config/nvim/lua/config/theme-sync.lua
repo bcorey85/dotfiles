@@ -115,9 +115,9 @@ local FAMILIES = {
     schemes = { dark = "dredge", light = "dredge" },
     colors_name = "dredge",
     accents = {
-      -- Headings are green, a hue code never uses. H1 is the lighter step.
-      dark = { heading1 = "#a1e4ae", heading = "#86be8d", bullet = "#9ba8b5" },
-      light = { heading1 = "#265331", heading = "#407c4f", bullet = "#7d7267" },
+      -- Headings are orange: H1 the terminal amber, the rest the palette tan.
+      dark = { heading1 = "#ffa475", heading = "#d5ac93", bullet = "#9ba8b5" },
+      light = { heading1 = "#c96819", heading = "#ba7c4d", bullet = "#6f7a85" },
     },
   },
 }

@@ -11,3 +11,13 @@
 (pair
   key: (property_identifier) @function.method
   value: [(function_expression) (arrow_function)])
+
+; The LSP sends no token for import names; lowercase named imports are
+; almost always functions or hooks.
+(import_specifier
+  name: (identifier) @function
+  (#lua-match? @function "^%l"))
+
+; All-caps globals are builtins, not named constants.
+((identifier) @variable.builtin
+  (#any-of? @variable.builtin "JSON" "Intl" "Reflect" "Atomics" "globalThis"))

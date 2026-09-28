@@ -1,20 +1,20 @@
-# Font — Aporetic Sans Mono (Protesilaos's Iosevka build; plain "Aporetic Sans"
-# is proportional). Unpatched, so FiraCode Nerd Font Mono carries every Nerd
-# glyph. Ships Regular and Bold only, each with a true italic.
-font-family = Aporetic Sans Mono
+# Font — JuliaMono. The Nerd build lacks Light, so this is the plain build and
+# FiraCode Nerd Font Mono carries every Nerd glyph. Light body; bold is
+# SemiBold because Regular sits too close to Light to read as bold.
+font-family = JuliaMono
 font-family = FiraCode Nerd Font Mono
-font-style = Regular
+font-style = Light
 # font-style covers the upright only, so the italic needs its own line or it
 # falls back a weight.
-font-style-italic = Italic
-font-style-bold = Bold
-font-style-bold-italic = Bold Italic
-font-size = 13
+font-style-italic = LightItalic
+font-style-bold = SemiBold
+font-style-bold-italic = SemiBoldItalic
+font-size = 11
 # Leading is the lever for line-tracking, not glyph shape: the white band
 # between lines shrinks even at equal metric line height on short-extender
 # faces. Also buys legibility against astigmatism (0.75x180, with-the-rule),
 # whose vertical smear bleeds adjacent rows.
-adjust-cell-height = 8%
+adjust-cell-height = 18%
 confirm-close-surface = false
 
 # Theme — owned by the `theme-mode` switcher: it writes ?theme-switch.conf

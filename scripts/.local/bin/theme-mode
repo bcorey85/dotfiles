@@ -13,15 +13,15 @@
 #              (machine-local include, same pattern as local.conf), then
 #              SIGUSR2s the running ghostty to reload it (1.2+; ctrl+shift+,
 #              still works by hand). Only USR2 — any other signal crashes it.
-#   - claude:  this script writes .theme (claude_theme(): a family's custom theme
-#              slug where one ships, else the bare mode) into ~/.claude/settings.json
-#              via jq (correct key on Claude Code >= 2.1.119; older builds kept it
-#              in ~/.claude.json). This sets the theme for the NEXT session — a
-#              running session does NOT repaint live: Claude Code reloads the
-#              settings value but never re-renders the TUI on a theme change, and
-#              its `auto` OSC 11 detection only samples at launch (and the
-#              multiplexer mangles it). No supported live-flip lever exists (see anthropics/claude-code
-#              #33899); restart or run /theme by hand to see it in an open session.
+#   - claude:  this script rewrites ~/.claude/themes/active.json (machine-local,
+#              gitignored) with the active half — a copy of the family's authored
+#              theme (claude_theme_file()) where one ships, else a bare
+#              `base: <mode>` — and pins .theme = "custom:active" in
+#              ~/.claude/settings.json. Claude Code watches ~/.claude/themes/ and
+#              repaints running sessions when a theme file changes; a settings.json
+#              .theme change never repaints an open session (anthropics/claude-code
+#              #98161). A session started before the first switch onto
+#              custom:active needs one restart.
 #   - herdr:   this script regenerates the REAL ~/.config/herdr/config.toml from
 #              the stowed ~/.config/herdr/config.toml.template (substituting the
 #              __THEME_MODE_PALETTE__ marker with herdr_palette() below), then
@@ -50,7 +50,7 @@
 #   theme-mode status                 current family + mode
 #
 # Adding a family = six touchpoints, kept in sync by hand:
-#   1. families() + ghostty_theme() + claude_theme() below
+#   1. families() + ghostty_theme() + claude_theme_file() below
 #   2. FAMILIES table in nvim lua/config/theme-sync.lua
 #   3. a ghostty theme (builtin name, or custom file in ghostty/themes/)
 #   4. herdr_palette() below (herdr's [theme.custom] token block)
@@ -80,16 +80,15 @@ DEFAULT_FAMILY="onedarkpro"
 
 families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge; }
 
-claude_theme() { # <family> <mode> -> the value for Claude Code's `theme` setting
-  # A family that ships claude/.claude/themes/<slug>.json selects it as
-  # `custom:<slug>`. Every other family gets the bare mode, which Claude Code
+claude_theme_file() { # <family> <mode> -> the authored Claude Code theme JSON, empty if none
+  # A family that ships claude/.claude/themes/<slug>.json gets it copied into
+  # active.json. Every other family gets a bare `base: <mode>`, which Claude Code
   # renders with its builtin dark/light theme (Monokai diff scopes, its own
   # washes) — the ghostty palette only reaches it through a custom theme whose
   # `base` is dark-ansi/light-ansi.
   case "$1:$2" in
-    dredge:light) echo "custom:dredge-light" ;;
-    dredge:*)     echo "custom:dredge" ;;
-    *)            echo "$2" ;;
+    dredge:light) echo "$HOME/.claude/themes/dredge-light.json" ;;
+    dredge:*)     echo "$HOME/.claude/themes/dredge.json" ;;
   esac
 }
 
@@ -522,18 +521,18 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # bright = markdown bold; hunk's scope table carries colour only, no weight.
       local h1="#ffa475" h2="#d5ac93" bright="#d3dbe3"
       if [ "$2" = light ]; then
-        bg="#bec5cc"; panel="#b9c0c8"; panelAlt="#b5bcc3"; border="#959ca4"
-        accent="#007475"; accentMuted="#959ca4"; text="#31363c"; muted="#737980"
-        addWord="#9ac4c1"; remWord="#c8b5ba"
-        addedBg="#b1cacb"; removedBg="#c8c2c8"; ctxBg="#bec5cc"
-        sAdd="#1d7d3e"; sRem="#e00000"; lnFg="#7b8187"
+        bg="#c1c5c9"; panel="#bcc0c4"; panelAlt="#b8bcc0"; border="#989ca0"
+        accent="#007475"; accentMuted="#989ca0"; text="#26292c"; muted="#666a6e"
+        addWord="#a9c0bd"; remWord="#c4b7b9"
+        addedBg="#bbc8c7"; removedBg="#c8c3c5"; ctxBg="#c1c5c9"
+        sAdd="#1d7d3e"; sRem="#e00000"; lnFg="#6e7275"
         badgeAdd="#1d7d3e"; badgeRem="#ba3535"; badgeNeu="#886100"
-        fRename="#886100"; fMod="#886100"; fUntracked="#116bb5"; note="#b9c0c8"
-        kw="#6d737b"; str="#31363c"; num="#b04f72"; fn="#5f5bb6"; typ="#5d646c"; punct="#6d737b"; op="#6d737b"
-        konst="#b04f72"; esc="#b04f72"; cmt="#5d646c"; mem="#286da7"; param="#297c7f"
-        attr="#b04f72"; tag="#6d737b"; vbi="#b04f72"; lang="#b04f72"; imp="#6d737b"; pre="#6d737b"
-        prim="#5d646c"; ns="#31363c"; mac="#5f5bb6"; bfn="#5f5bb6"; var="#297c7f"; key="#286da7"; cls="#5f5bb6"
-        h1="#c96819" h2="#ba7c4d" bright="#212528"
+        fRename="#886100"; fMod="#886100"; fUntracked="#116bb5"; note="#bcc0c4"
+        kw="#606468"; str="#26292c"; num="#9f4063"; fn="#524ca6"; typ="#52565a"; punct="#606468"; op="#606468"
+        konst="#9f4063"; esc="#9f4063"; cmt="#52565a"; mem="#155e97"; param="#146d70"
+        attr="#9f4063"; tag="#606468"; vbi="#9f4063"; lang="#9f4063"; imp="#606468"; pre="#606468"
+        prim="#52565a"; ns="#26292c"; mac="#524ca6"; bfn="#524ca6"; var="#146d70"; key="#155e97"; cls="#524ca6"
+        h1="#c96819" h2="#aa6d3e" bright="#16181a"
       fi
       extra=$(cat <<EOF
 "punctuation.separator.key-value"   = "$punct"
@@ -1194,10 +1193,10 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:light)
       base_name="one-light"
-      accent="#007475" panel_bg="#b9c0c8" surface_dim="#a7afb6"
-      surface0="#9ea5ad" surface1="#959ca4"
-      overlay0="#737980" overlay1="#62686e"
-      text="#31363c" subtext0="#62686e"
+      accent="#007475" panel_bg="#bcc0c4" surface_dim="#aaafb3"
+      surface0="#a1a5a9" surface1="#989ca0"
+      overlay0="#666a6e" overlay1="#575a5d"
+      text="#26292c" subtext0="#575a5d"
       green="#1d7d3e" yellow="#886100" red="#ba3535"
       blue="#116bb5" teal="#007475" peach="#bb5d00"
       ;;
@@ -1324,18 +1323,25 @@ apply() { # <family> <mode> — write state and repaint herdr + ghostty
     pkill -USR2 -x ghostty 2>/dev/null || true
   fi
 
-  # Claude Code: push the mode into ~/.claude/settings.json so the NEXT session
-  # opens in it. A running session does NOT repaint — Claude Code reloads the
-  # settings value but never re-renders the TUI on a `theme` change (known gap,
-  # anthropics/claude-code #33899), and its `auto` OSC 11 detection only samples
-  # at launch (and the multiplexer mangles it), so a flip never reaches an open
-  # session. claude_theme() picks the family's custom theme slug where one
-  # ships, else the bare mode. To see it live in an open session, run /theme.
+  # Claude Code: rewrite the watched active.json so every open session on
+  # custom:active repaints, then pin custom:active for sessions not on it yet.
   local claude_settings="$HOME/.claude/settings.json"
   if command -v jq >/dev/null 2>&1 && [ -f "$claude_settings" ]; then
-    local claude_tmp
+    local claude_active="$HOME/.claude/themes/active.json"
+    local claude_source claude_tmp
+    claude_source="$(claude_theme_file "$family" "$mode")"
+    mkdir -p "$HOME/.claude/themes"
     claude_tmp="$(mktemp)"
-    if jq --arg t "$(claude_theme "$family" "$mode")" '.theme = $t' "$claude_settings" >"$claude_tmp" 2>/dev/null; then
+    if { [ -n "$claude_source" ] && [ -f "$claude_source" ] &&
+      jq --arg n "Active ($family $mode)" '.name = $n' "$claude_source" >"$claude_tmp"; } ||
+      jq -n --arg n "Active ($family $mode)" --arg b "$mode" '{name: $n, base: $b}' >"$claude_tmp"; then
+      mv "$claude_tmp" "$claude_active"
+    else
+      rm -f "$claude_tmp"
+    fi
+
+    claude_tmp="$(mktemp)"
+    if jq '.theme = "custom:active"' "$claude_settings" >"$claude_tmp" 2>/dev/null; then
       mv "$claude_tmp" "$claude_settings"
     else
       rm -f "$claude_tmp"

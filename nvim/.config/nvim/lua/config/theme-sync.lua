@@ -117,7 +117,7 @@ local FAMILIES = {
     accents = {
       -- Headings are orange: H1 the terminal amber, the rest the palette tan.
       dark = { heading1 = "#ffa475", heading = "#d5ac93", bullet = "#9ba8b5" },
-      light = { heading1 = "#c96819", heading = "#ba7c4d", bullet = "#737980" },
+      light = { heading1 = "#c96819", heading = "#aa6d3e", bullet = "#666a6e" },
     },
   },
 }

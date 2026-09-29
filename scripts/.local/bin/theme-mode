@@ -522,18 +522,18 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # bright = markdown bold; hunk's scope table carries colour only, no weight.
       local h1="#ffa475" h2="#d5ac93" bright="#d3dbe3"
       if [ "$2" = light ]; then
-        bg="#bac6d1"; panel="#b5c1cd"; panelAlt="#b1bdc8"; border="#919da9"
-        accent="#007475"; accentMuted="#919da9"; text="#2d3740"; muted="#6f7a85"
-        addWord="#95c5c6"; remWord="#c4b6bf"
-        addedBg="#adcbd0"; removedBg="#c4c3cd"; ctxBg="#bac6d1"
-        sAdd="#1d7d3e"; sRem="#e00000"; lnFg="#77828c"
+        bg="#bec5cc"; panel="#b9c0c8"; panelAlt="#b5bcc3"; border="#959ca4"
+        accent="#007475"; accentMuted="#959ca4"; text="#31363c"; muted="#737980"
+        addWord="#9ac4c1"; remWord="#c8b5ba"
+        addedBg="#b1cacb"; removedBg="#c8c2c8"; ctxBg="#bec5cc"
+        sAdd="#1d7d3e"; sRem="#e00000"; lnFg="#7b8187"
         badgeAdd="#1d7d3e"; badgeRem="#ba3535"; badgeNeu="#886100"
-        fRename="#886100"; fMod="#886100"; fUntracked="#116bb5"; note="#b5c1cd"
-        kw="#697480"; str="#2d3740"; num="#b04f72"; fn="#5f5bb6"; typ="#596571"; punct="#697480"; op="#697480"
-        konst="#b04f72"; esc="#b04f72"; cmt="#596571"; mem="#286da7"; param="#297c7f"
-        attr="#b04f72"; tag="#697480"; vbi="#b04f72"; lang="#b04f72"; imp="#697480"; pre="#697480"
-        prim="#596571"; ns="#2d3740"; mac="#5f5bb6"; bfn="#5f5bb6"; var="#297c7f"; key="#286da7"; cls="#5f5bb6"
-        h1="#c96819" h2="#ba7c4d" bright="#1f252a"
+        fRename="#886100"; fMod="#886100"; fUntracked="#116bb5"; note="#b9c0c8"
+        kw="#6d737b"; str="#31363c"; num="#b04f72"; fn="#5f5bb6"; typ="#5d646c"; punct="#6d737b"; op="#6d737b"
+        konst="#b04f72"; esc="#b04f72"; cmt="#5d646c"; mem="#286da7"; param="#297c7f"
+        attr="#b04f72"; tag="#6d737b"; vbi="#b04f72"; lang="#b04f72"; imp="#6d737b"; pre="#6d737b"
+        prim="#5d646c"; ns="#31363c"; mac="#5f5bb6"; bfn="#5f5bb6"; var="#297c7f"; key="#286da7"; cls="#5f5bb6"
+        h1="#c96819" h2="#ba7c4d" bright="#212528"
       fi
       extra=$(cat <<EOF
 "punctuation.separator.key-value"   = "$punct"
@@ -1194,10 +1194,10 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:light)
       base_name="one-light"
-      accent="#007475" panel_bg="#b5c1cd" surface_dim="#a3b0bc"
-      surface0="#9aa6b2" surface1="#919da9"
-      overlay0="#6f7a85" overlay1="#5f6973"
-      text="#2d3740" subtext0="#5f6973"
+      accent="#007475" panel_bg="#b9c0c8" surface_dim="#a7afb6"
+      surface0="#9ea5ad" surface1="#959ca4"
+      overlay0="#737980" overlay1="#62686e"
+      text="#31363c" subtext0="#62686e"
       green="#1d7d3e" yellow="#886100" red="#ba3535"
       blue="#116bb5" teal="#007475" peach="#bb5d00"
       ;;

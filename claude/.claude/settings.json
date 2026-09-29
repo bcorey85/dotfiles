@@ -540,7 +540,7 @@
   "autoMemoryEnabled": false,
   "skillListingBudgetFraction": 0.0001,
   "skipWorkflowUsageWarning": true,
-  "theme": "custom:dredge",
+  "theme": "custom:dredge-light",
   "editorMode": "normal",
   "inputNeededNotifEnabled": false,
   "agentPushNotifEnabled": true,

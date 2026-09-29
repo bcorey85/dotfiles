@@ -93,11 +93,15 @@ out="${REVIEW_ESCAPES_FILE:-$HOME/.claude/review-escapes.jsonl}"
 SCHEMA_VERSION=2
 # session and branch are the join keys across the three review logs. Both are
 # read here, never trusted to the caller; a caller's own branch= still wins.
+# head is the commit the escape was logged against. Pass line=<n> and
+# commit=<sha> when the finding names them.
 json=$(jq -cn --argjson sv "$SCHEMA_VERSION" \
   --arg s "${CLAUDE_CODE_SESSION_ID:-}" --arg b "$(git branch --show-current 2>/dev/null || true)" \
+  --arg h "$(git rev-parse HEAD 2>/dev/null || true)" \
   '{date: (now | todate), schema_version: $sv}
    + (if $s != "" then {session: $s} else {} end)
-   + (if $b != "" then {branch: $b} else {} end)')
+   + (if $b != "" then {branch: $b} else {} end)
+   + (if $h != "" then {head: $h} else {} end)')
 for kv in "$@"; do
   case "$kv" in
     *=*) ;;

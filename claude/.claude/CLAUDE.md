@@ -10,6 +10,10 @@ Coders run only the tests for the files they changed. The full suite runs once, 
 
 - Any failing approach: max 3 attempts, then stop and ask.
 
+## Messages to Other Sessions
+
+Keep a `SendMessage` to a peer Claude session under 150 words. Messages to and from your own subagents are exempt. Include the verdict, the numbers the receiver acts on, and what it must do next. If the detail already lives in a file, send the path, not the content. Do not make a file only to hold a message.
+
 ## Compact instructions
 
 When you compact, keep decisions with their reasons, every measured number, open items in order, commit hashes, file paths, and the rules that bind the next step. Drop tool output and narrative.

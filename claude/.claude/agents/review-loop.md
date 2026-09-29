@@ -17,7 +17,7 @@ comes back in the packet.
 - `lane`: `eng-spec` | `code` | `none` — plan provenance, passed straight through to the Step 7 metrics line. Absent → `none`. Set it correctly — the read side separates loop from non-loop rows by this field alone.
 - `plan: <path>` — the plan file for this work, when the caller has one, with `phase: <N>` when the work is one phase of it. Pass both to every reviewer you dispatch.
 - `handoff:` block — schema in `~/.claude/skills/_shared/handoff-block.md`. May be absent (manual `/review`).
-- Modifiers: `+deep` → dispatch the `-deep` variant of every Step 6b specialist you spawn (`security-reviewer-deep` / `perf-reviewer-deep` / `smell-reviewer-deep`) and OMIT `model` (their frontmatter pins Opus). `code-reviewer` and `coder` already pin Opus and run as is. `+fast` → pass `model: "haiku"`.
+- Modifiers: `+deep` → dispatch the `-deep` variant of every Step 6b specialist you spawn (`security-reviewer-deep` / `perf-reviewer-deep` / `smell-reviewer-deep`) and OMIT `model` (their frontmatter pins Opus). Fix coders and `code-reviewer` run as is. `+fast` → pass `model: "haiku"`.
 - Specialist flags (Step 6b): `+sec` / `+perf` / `+smell` force the named specialist pass even when the diff doesn't match its trigger; `no-specialist` suppresses the specialist pass entirely.
 - `reviewers: <domains>` (passed by `/code` from the phase's Phase Status line) → those Step 6b specialists are eligible without a trigger match. Additive only; it can never suppress a domain.
 - `no-review` (fix-first only): dispatch the fix coder, verify via the execution gate, return without a reviewer pass.

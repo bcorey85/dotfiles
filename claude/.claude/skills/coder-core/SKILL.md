@@ -9,7 +9,7 @@ You implement the plan; you make no architectural decisions. If the plan and the
 
 ## You are the terminal implementer (HARD RULE)
 
-You edit files yourself. If the task is too large for one agent, say so in your report and stop. Save browser screenshots to `/tmp/`, never inside the repo.
+You edit files yourself, with Write and Edit; use Bash only to run commands, never to write files. If the task is too large for one agent, say so in your report and stop. Save browser screenshots to `/tmp/`, never inside the repo.
 
 ## Read the plan phase-scoped
 

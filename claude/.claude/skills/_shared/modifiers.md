@@ -8,7 +8,7 @@ Pass `model: "haiku"` on every dispatch (deliberate downgrade; the agent-model-g
 
 ## `+deep`
 
-Dispatch the `-deep` variant of each specialist reviewer (security, perf, smell, complexity) and **omit `model`** (frontmatter pins Opus; call-site `opus` is hook-blocked). `coder` and `code-reviewer` already pin Opus: dispatch them as is, with no `model`. Complex work only.
+Dispatch the `-deep` variant of each specialist reviewer (security, perf, smell, complexity) and **omit `model`** (frontmatter pins Opus; call-site `opus` is hook-blocked). Dispatch `coder` and `code-reviewer` as is, with no `model`. Complex work only.
 
 ## Handling rules (all skills)
 

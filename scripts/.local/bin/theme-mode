@@ -513,10 +513,10 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       sAdd="#82d395"; sRem="#d9635d"; lnFg="#747c83"
       badgeAdd="#82d395"; badgeRem="#f77972"; badgeNeu="#ebc75b"
       fRename="#ebc75b"; fMod="#ebc75b"; fUntracked="#7abff9"; note="#1a1d21"
-      kw="#808c99"; str="#bdc8d3"; num="#e390aa"; fn="#abb1fd"; typ="#a1aebb"; punct="#808c99"; op="#808c99"
-      konst="#e390aa"; esc="#e390aa"; cmt="#a1aebb"; mem="#75afe3"; param="#72cacb"
-      attr="#e390aa"; tag="#808c99"; vbi="#e390aa"; lang="#e390aa"; imp="#808c99"; pre="#808c99"
-      prim="#a1aebb"; ns="#bdc8d3"; mac="#abb1fd"; bfn="#abb1fd"; var="#72cacb"; key="#75afe3"; cls="#abb1fd"
+      kw="#808c99"; str="#bdc8d3"; num="#dc95aa"; fn="#adb3f3"; typ="#a1aebb"; punct="#808c99"; op="#808c99"
+      konst="#dc95aa"; esc="#dc95aa"; cmt="#a1aebb"; mem="#7eaedb"; param="#7fc8c8"
+      attr="#dc95aa"; tag="#808c99"; vbi="#dc95aa"; lang="#dc95aa"; imp="#808c99"; pre="#808c99"
+      prim="#a1aebb"; ns="#bdc8d3"; mac="#adb3f3"; bfn="#adb3f3"; var="#7fc8c8"; key="#7eaedb"; cls="#adb3f3"
       # Match nvim's tree-sitter colours where one-dark-pro's own selectors
       # out-rank the generic table. h1/h2 mirror theme-sync's markdown headings.
       # bright = markdown bold; hunk's scope table carries colour only, no weight.
@@ -529,10 +529,10 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
         sAdd="#1d7d3e"; sRem="#e00000"; lnFg="#77828c"
         badgeAdd="#1d7d3e"; badgeRem="#ba3535"; badgeNeu="#886100"
         fRename="#886100"; fMod="#886100"; fUntracked="#116bb5"; note="#b5c1cd"
-        kw="#697480"; str="#2d3740"; num="#b94571"; fn="#5e56c3"; typ="#596571"; punct="#697480"; op="#697480"
-        konst="#b94571"; esc="#b94571"; cmt="#596571"; mem="#0d6db2"; param="#007e82"
-        attr="#b94571"; tag="#697480"; vbi="#b94571"; lang="#b94571"; imp="#697480"; pre="#697480"
-        prim="#596571"; ns="#2d3740"; mac="#5e56c3"; bfn="#5e56c3"; var="#007e82"; key="#0d6db2"; cls="#5e56c3"
+        kw="#697480"; str="#2d3740"; num="#b04f72"; fn="#5f5bb6"; typ="#596571"; punct="#697480"; op="#697480"
+        konst="#b04f72"; esc="#b04f72"; cmt="#596571"; mem="#286da7"; param="#297c7f"
+        attr="#b04f72"; tag="#697480"; vbi="#b04f72"; lang="#b04f72"; imp="#697480"; pre="#697480"
+        prim="#596571"; ns="#2d3740"; mac="#5f5bb6"; bfn="#5f5bb6"; var="#297c7f"; key="#286da7"; cls="#5f5bb6"
         h1="#c96819" h2="#ba7c4d" bright="#1f252a"
       fi
       extra=$(cat <<EOF

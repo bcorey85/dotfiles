@@ -4,6 +4,14 @@
 (keyword_argument
   name: (identifier) @variable.member.key)
 
+; Function and class names at their definition.
+(function_definition
+  name: (identifier) @declaration.function
+  (#set! priority 130))
+
+(class_definition
+  name: (identifier) @declaration)
+
 ; Class attributes at their definition, the same colour as their accesses.
 (class_definition
   body: (block

@@ -12,6 +12,19 @@
 ]
   (#set! priority 101))
 
+; Type names at their definition.
+(interface_declaration
+  name: (_) @declaration)
+
+(type_alias_declaration
+  name: (_) @declaration)
+
+(enum_declaration
+  name: (_) @declaration)
+
+(abstract_class_declaration
+  name: (_) @declaration)
+
 ; Keys of object types and interfaces, like object-literal keys.
 (property_signature
   name: (property_identifier) @variable.member.key)

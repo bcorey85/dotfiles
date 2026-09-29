@@ -105,8 +105,8 @@ Singleton {
             orange: "#ffa475", yellow: "#ebc75b", magenta: "#e091d8"
         },
         "dredge-light": {
-            bg: "#bac6d1", panel: "#b5c1cd", border: "#919da9",
-            fg: "#2d3740", muted: "#6f7a85",
+            bg: "#bec5cc", panel: "#b9c0c8", border: "#959ca4",
+            fg: "#31363c", muted: "#737980",
             green: "#1d7d3e", red: "#ba3535", teal: "#007475",
             orange: "#bb5d00", yellow: "#886100", magenta: "#993f94"
         },

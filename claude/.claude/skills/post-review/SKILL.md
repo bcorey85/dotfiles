@@ -6,7 +6,7 @@ allowed-tools: [Bash, Read, Write]
 
 # Post Review
 
-Turns already-approved comment text into one GitHub review. This skill does not draft or judge findings — the caller (usually `/peer-review` step 7) owns that.
+Turns already-approved comment text into one GitHub review. This skill does not draft or judge findings — the caller (usually `/peer-review` step 7) owns that. When it drafts anyway (e.g. invoked directly), the same no-niceties rule applies: no thanks, greetings, praise, or sign-offs. Lead with substance.
 
 **The agent never posts.** `bash-safety-gate` blocks every mutating `gh api` call (`gh_api_mutate`), and `gh pr review` cannot attach inline comments. Posting is always the user's `!` command. Never wrap the call in a script, alias, or other form that slips past the gate.
 

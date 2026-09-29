@@ -18,6 +18,22 @@
   name: (identifier) @function
   (#lua-match? @function "^%l"))
 
+; Function, class and method names at their definition.
+(function_declaration
+  name: (_) @declaration.function
+  (#set! priority 130))
+
+(generator_function_declaration
+  name: (_) @declaration.function
+  (#set! priority 130))
+
+(method_definition
+  name: (_) @declaration.function
+  (#set! priority 130))
+
+(class_declaration
+  name: (_) @declaration)
+
 ; All-caps globals are builtins, not named constants.
 ((identifier) @variable.builtin
   (#any-of? @variable.builtin "JSON" "Intl" "Reflect" "Atomics" "globalThis"))

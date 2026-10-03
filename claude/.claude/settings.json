@@ -148,7 +148,6 @@
       "Bash(chmod 777 *)",
       "Bash(gh pr create:*)",
       "Bash(gh pr merge:*)",
-      "Artifact",
       "SendFeedback",
       "AskUserQuestion"
     ],
@@ -156,6 +155,9 @@
   },
   "model": "opus",
   "skillOverrides": {
+    "artifact-capabilities": "user-invocable-only",
+    "artifact-design": "user-invocable-only",
+    "artifact-diagramming": "user-invocable-only",
     "audit": "user-invocable-only",
     "brainstorm": "user-invocable-only",
     "brief": "user-invocable-only",

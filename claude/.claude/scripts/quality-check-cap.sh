@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # quality-check-cap.sh — cap a quality check at one re-run per edit.
 # PostToolUse(Write|Edit|...) touches `edits`; PreToolUse(Bash) denies a check
-# whose last run is newer than `edits`; PostToolUse and PostToolUseFailure
-# (Bash) record the run, so a denied, rejected or abandoned attempt — an edit
-# as much as a check — never moves either marker. Key: normalized
-# command + effective cwd. Escape: a trailing `#skip-quality-cap`.
+# whose last run is newer than `edits`, unless a file in the repo was changed
+# by means the Write/Edit hook never sees (shell redirection, a script) more
+# recently than that run — then it allows. PostToolUse records the run;
+# PostToolUseFailure does too, except when the failure was a timeout or an
+# interrupt, since no check actually ran then. A denied, rejected or
+# abandoned attempt — an edit as much as a check — never moves either
+# marker. Key: normalized command + effective cwd. Escape: a trailing
+# `#skip-quality-cap`.
 # Fails closed only on the PreToolUse Bash path; state errors fail open.
 set -Eeuo pipefail
 
@@ -49,6 +53,16 @@ case "$tool" in
   *) exit 0 ;;
 esac
 
+# A timeout or an interrupt means no check actually ran; record nothing.
+if [[ "$evt" == PostToolUseFailure ]]; then
+  err_type=$(jq -r '.tool_error.error_type // ""' <<<"$input")
+  case "$err_type" in
+    timeout|interrupted) exit 0 ;;
+  esac
+  err_text=$(jq -r '.error // ""' <<<"$input")
+  [[ "$err_text" == *"Command timed out after"* ]] && exit 0
+fi
+
 cmd=$(jq -r '.tool_input.command // ""' <<<"$input")
 if [[ -z "$cmd" ]]; then exit 0; fi
 if [[ "$evt" == PreToolUse ]] && grep -qF '#skip-quality-cap' <<<"$cmd"; then exit 0; fi
@@ -85,7 +99,20 @@ while IFS= read -r seg; do
   fi
 
   if [[ "$dir/run-$key" -nt "$dir/edits" ]]; then
-    deny "[quality-check-cap] '$norm' already ran this session and nothing has been edited since. Re-running unchanged code cannot produce a different result. Redirect the failing run to /tmp/check.log, read the WHOLE log, fix every failure in one batch, then run it once more. If it still fails after that batch fix, stop and ask the user. If this deny is wrong, re-run the command with a trailing #skip-quality-cap comment — it disarms this gate for that one command."
+    # A changed file may never reach Write/Edit (redirection, a script) --
+    # check the repo itself before denying.
+    changed_since_run=0
+    if top=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null); then
+      while IFS= read -r -d '' f; do
+        if [[ "$top/$f" -nt "$dir/run-$key" ]]; then
+          changed_since_run=1
+          break
+        fi
+      done < <(git -C "$top" ls-files -z --modified --others --exclude-standard 2>/dev/null)
+    fi
+    if (( ! changed_since_run )); then
+      deny "[quality-check-cap] '$norm' already ran this session and nothing has been edited since. Re-running unchanged code cannot produce a different result. Redirect the failing run to /tmp/check.log, read the WHOLE log, fix every failure in one batch, then run it once more. If it still fails after that batch fix, stop and ask the user. If this deny is wrong, re-run the command with a trailing #skip-quality-cap comment — it disarms this gate for that one command."
+    fi
   fi
 done <<<"$segments"
 

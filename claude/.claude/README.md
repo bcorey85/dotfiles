@@ -44,14 +44,13 @@ Commit the plan directory here if you want it on the branch before code starts.
 
 Each phase runs this sequence:
 
-1. `coder` implements the phase. Coders write no tests.
-2. `test-writer` writes tests from the plan criteria. It never sees the coder diff.
-3. `review-loop` runs review → fix until it converges: `code-reviewer`, plus
+1. `coder` implements the phase and writes its tests.
+2. `review-loop` runs review → fix until it converges: `code-reviewer`, plus
    `security-reviewer`, `perf-reviewer`, and `smell-reviewer` when the diff
    touches their surface.
-4. Phase gates: drift gate, then `test-intent-reviewer` (when tests changed).
-5. `/stage` stages the mechanical SAFE tier and orders the rest as a read queue.
-6. The phase line in `## Phase Status` is checked off.
+3. Phase gates: drift gate, then `test-intent-reviewer` (when tests changed).
+4. `/stage` stages the mechanical SAFE tier and orders the rest as a read queue.
+5. The phase line in `## Phase Status` is checked off.
 
 Then the phase boundary:
 
@@ -71,7 +70,7 @@ coder dispatch is unreviewed.
 | ----- | --------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | 1     | `/refactor`     | Branch-wide structure pass                                             | `smell-reviewer` (`complexity-reviewer` if one module grew ≥100 lines) |
 | 2     | `/verify`       | Plan ↔ diff completeness, smoke-test checklist                         | `plan-verifier`                                                        |
-| 3     | `/test-audit`   | Cross-phase test gate: cull, lost coverage, weak assertions            | `test-intent-reviewer`, fixes via `/fix` and `test-writer`             |
+| 3     | `/test-audit`   | Cross-phase test gate: cull, weak assertions                           | `test-intent-reviewer`, fixes via `/fix`                               |
 | 4     | `/branch-recap` | One pre-PR sheet: `/stage` residue, deferred findings, recap. No gates | —                                                                      |
 
 Read the residue queue, stage it, then `/commit`.

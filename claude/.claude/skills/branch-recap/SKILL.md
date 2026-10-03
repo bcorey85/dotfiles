@@ -16,7 +16,7 @@ Output: ONE human **recap** + a machine row in `branch-recap-receipts.jsonl`. Ne
 
 ## Step 1: Residue triage — `/stage`
 
-Phases stage as they go, so the only unstaged work is what the closing phases produced (`/refactor` diff, `/fix` or `test-writer` touches in `/test-audit`, `/fix` touches from the Verify pass).
+Phases stage as they go, so the only unstaged work is what the closing phases produced (`/refactor` diff, `/fix` touches in `/test-audit`, `/fix` touches from the Verify pass).
 
 Skill-invoke `/stage`: SAFE staged; ESCALATE/READ/SKIM queue is the residue you owe a read. Never reclassify tiers. On queue-stepping, `nvim-jump` each entry (`~/.claude/skills/_shared/nvim-jump.md`).
 
@@ -58,8 +58,8 @@ Spec: <task-dir>
 - <the map that /orient produced, consumed verbatim; never rebuilt here>
 
 ### Cross-phase test audit         (from the /test-audit phase receipt)
-- <culled / COVERAGE-LOST / WEAK findings, or "clean">
-- <denominator, always: "N of M pre-existing tests searched" or "coverage-net N/A — base suite had 0 tests, this gate did not run">
+- <culled / WEAK findings, or "clean">
+- <denominator, always: "N plan promises walked">
 - <any REQUIRES-MUTATION items with their KILLED/SURVIVED/EQUIVALENT/INDETERMINATE verdicts, or marked unrouted-and-open>
 
 ### Deferred findings             (round budget, read at branch bound)
@@ -81,7 +81,7 @@ Persist (non-blocking; on failure mention and continue):
 ```bash
 printf '{"ts":"%s","repo":"%s","branch":"%s","test_audit":"%s","residue":%d,"files":%d}\n' \
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(basename "$(git rev-parse --show-toplevel)")" \
-  "$(git rev-parse --abbrev-ref HEAD)" "<clean|n culled|n coverage-lost>" \
+  "$(git rev-parse --abbrev-ref HEAD)" "<clean|n culled|n weak>" \
   <unstaged count> <changed-file count> >> "$HOME/.claude/branch-recap-receipts.jsonl"
 ```
 

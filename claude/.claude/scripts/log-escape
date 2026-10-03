@@ -29,7 +29,7 @@
 #       the gates) because the remediation differs: a walkthrough catch means
 #       the reviewer missed something the human then found one step later.
 #       phase-gate = caught by a downstream AGENT inside the phase loop, before
-#       a human read anything — a test-writer FAILING-TEST that resolves as a
+#       a human read anything — a coder FAILING-TEST that resolves as a
 #       spec defect, a coder reporting the plan contradicts the code. Distinct
 #       from walkthrough because the loop caught this one itself; the
 #       remediation is upstream, not "the human reads harder".

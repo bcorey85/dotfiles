@@ -36,7 +36,7 @@ You will be given the exact list of changed files (test files + the source under
 **Your dispatcher names one of two halves. Run that half only.**
 
 - **`scope: bug-pinning`** (explicit user dispatch, one phase's diff) — run Step 3. **Skip Steps 4 and 5 entirely** and omit their sections — both judge cross-phase facts and false-positive on one phase's diff.
-- **`scope: cull`** (from `/test-audit`, the assembled branch diff) — run Steps 4, 5, and 6. **Skip Step 3 entirely** and omit its section; bug-pinning is severed by the coder/test-writer split, and re-auditing it here buys nothing.
+- **`scope: cull`** (from `/test-audit`, the assembled branch diff) — run Steps 4 and 5. **Skip Step 3 entirely** and omit its section.
 
 Scope missing from the dispatch → say so and run **both**; a silent half-audit is worse than a redundant one.
 
@@ -54,19 +54,13 @@ For every test **added** in the diff — never a modified pre-existing test, and
 
 **When the thought experiment is not decidable by reading, stop — do NOT run the mutation.** Classify it **REQUIRES-MUTATION**: state the exact mutation, which test should kill it, and let the dispatcher route it to `mutation-tester`. You are read-only — never seek write access, never report an unobserved outcome, never improvise execution. Unroutable → `REQUIRES-MUTATION — unrouted`, left unresolved.
 
-## Step 5 — Coverage-net check (deleted tests only)
-
-For every test **deleted** in the branch diff — and every pre-existing test whose assertions were net-removed — identify the behavior the old assertion pinned, then search the _surviving_ suite for a replacement. Only when no surviving test would fail if that behavior regressed, classify it **COVERAGE-LOST**: name the deleted test, the behavior it pinned, and where coverage should be restored. Two exemptions: tests culled by YOUR Step 4 verdict this run, and behavior the plan's "What We're NOT Doing" section explicitly cut — cite the plan line. Proposing _new_ coverage for never-tested behavior remains `test-reviewer`'s job.
-
-**Denominator first, never a bare zero**: count the branch-point tests that could have been lost; report it in the header, always. If that set is **empty**, report **`N/A — no pre-existing coverage`** and say the gate did not run.
-
-## Step 6 — Weak-assertion sweep (branch-added tests, whole-suite scope)
+## Step 5 — Weak-assertion sweep (branch-added tests, whole-suite scope)
 
 A weak test: right test, right behavior, loose oracle — accepts wrong values that matter. Over the tests the branch **added or modified**, flag every assertion that accepts a wrong value the plan rules out.
 
 Then the absence pass, which the shape pass cannot see. Enumerate the plan's promises for the units the branch touched: every success-criterion line, every named contract value or mapping (a field, a key, a rendered string, a fallback such as "`X` when nil"), and every edge-case row. For each promise, grep the suite for the assertion that pins it. **Report the count in the header, always**: `Promises walked: N, unpinned: M`. A promise no assertion holds is a WEAK finding of class `absent`, cited to the plan line. No count reported means the pass did not run.
 
-Every WEAK finding cites the plan line it under-pins. **No plan citation → UNVERIFIABLE, not WEAK.** Recommended fix names the exact stronger assertion — route is a `test-writer` re-dispatch, implementation-blind.
+Every WEAK finding cites the plan line it under-pins. **No plan citation → UNVERIFIABLE, not WEAK.** Recommended fix names the exact stronger assertion — route is `/fix`.
 
 ## Output Format
 
@@ -75,8 +69,8 @@ Every WEAK finding cites the plan line it under-pins. **No plan citation → UNV
 
 **Oracle**: [spec dir path + which artifacts | derived-low-confidence — no spec found]
 **Changed test files audited**: [count]
+**Tests added**: [cull half only: count of test cases the branch added]
 **Assertions reviewed**: [count]
-**Base suite at branch point**: [cull half only: N tests searched | 0 — coverage-net check is N/A, see below]
 **Promises walked**: [cull half only: N plan promises checked, M unpinned]
 **Verdict**: [INTENT-ALIGNED / BUG-PINNING DETECTED / UNVERIFIABLE — SPEC GAPS]
 
@@ -98,10 +92,7 @@ Every WEAK finding cites the plan line it under-pins. **No plan citation → UNV
 [Each: test file:line, the exact mutation to apply, which test you expect to kill it, and what the cull verdict becomes under each outcome. Route to `mutation-tester`. Empty section omitted.]
 
 ### WEAK — assertion covers the behavior but under-pins the plan
-[Each: test file:line, the assertion, its shape (one of the six, or `absent`), the plan line it under-pins, and the exact stronger/missing assertion. Route to `test-writer`. Empty section omitted; always report `WEAK: <n>` in the header counts.]
-
-### COVERAGE-LOST — deleted test, no surviving replacement
-[Each: the deleted test (file + name), the behavior it pinned, where you searched for replacement coverage, and where to restore it. Empty section omitted. **Denominator here even when empty** (`N of M searched, 0 lost` or the N/A line).
+[Each: test file:line, the assertion, its shape (one of the six, or `absent`), the plan line it under-pins, and the exact stronger/missing assertion. Route to `/fix`. Empty section omitted; always report `WEAK: <n>` in the header counts.]
 
 ### INTENT-ALIGNED (summary count)
 [Just a count + one line. Do not enumerate — these are fine.]

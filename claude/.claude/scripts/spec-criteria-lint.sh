@@ -3,20 +3,12 @@
 # criteria, run at eng-spec finalization BEFORE any coder is dispatched.
 #
 # Why this exists: a plan's `#### Automated Verification:` commands are authored
-# at plan time and not executed until branch end (plan-verifier). Two failure
-# shapes are invisible to a human READING the plan and cost a whole branch built
-# against a broken oracle:
-#
-#   1. A phase's `**File**:` target is a test file. The implementing coder is
-#      denied Write on it by test-ownership-gate — test authorship routes to the
-#      test-writer, from criteria, and never appears as a plan File target. So a
-#      test path in a **File**: line is always the anti-pattern: the plan assigns
-#      the implementer work its own hook forbids. Caught here, not when the coder
-#      hits the deny mid-phase.
-#
-#   2. A verification command names a concrete file that does not exist and that
-#      no phase creates — a criterion pointing at an artifact a later decision
-#      retired. Report-only: a path created at runtime is a legitimate miss.
+# at plan time and not executed until branch end (plan-verifier). One failure
+# shape is invisible to a human READING the plan and costs a whole branch built
+# against a broken oracle: a verification command names a concrete file that
+# does not exist and that no phase creates — a criterion pointing at an artifact
+# a later decision retired. Report-only: a path created at runtime is a
+# legitimate miss.
 #
 # This script is STATIC ONLY. It never executes a verification command — those
 # can be migrations or destructive ops. The falsifiability dry-run (run the
@@ -31,36 +23,9 @@ plan="${1:-}"
 [ -z "$plan" ] && { echo "usage: spec-criteria-lint.sh <plan.md>" >&2; exit 2; }
 [ -f "$plan" ] || { echo "no such plan file: $plan" >&2; exit 2; }
 
-# Test-file globs — MIRROR of test-ownership-gate.sh's deny case. Kept in sync by
-# hand as that gate mirrors test-blindness-gate; if you change one, change all.
-is_test_path() {
-  case "$1" in
-    *_test.go | *.test.ts | *.test.tsx | *.test.js | *.test.jsx \
-      | *.spec.ts | *.spec.tsx | *.spec.js | *.spec.jsx | *_spec.rb \
-      | */test_*.py | *_test.py | */conftest.py) return 0 ;;
-    */tests/* | */testdata/* | */fixtures/* | */__tests__/* | */__mocks__/*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
 findings=0
 
-# ---- Check 1: **File**: targets that are test files (coder would be denied) ----
-# Extract the path from `**File**: `path`` or `**File**: path`, first token,
-# strip backticks/whitespace.
-while IFS= read -r raw; do
-  p=$(printf '%s' "$raw" | sed -E 's/^\*\*File\*\*:[[:space:]]*//; s/`//g' | awk '{print $1}')
-  [ -z "$p" ] && continue
-  if is_test_path "$p"; then
-    if [ "$findings" -eq 0 ]; then echo "## spec-criteria-lint findings — $plan"; echo; fi
-    findings=$((findings + 1))
-    echo "- **test-work-assigned-to-coder**: \`$p\` is a **File** target, but it is a test file."
-    echo "  The phase's implementing coder is denied Write here (test-ownership-gate)."
-    echo "  Test authorship routes to test-writer from the criteria — drop it as a File target."
-  fi
-done < <(grep -E '^\*\*File\*\*:' "$plan" || true)
-
-# ---- Check 2: concrete verification-command paths that exist nowhere ----
+# ---- Concrete verification-command paths that exist nowhere ----
 # Collect every **File** target (paths a phase creates), then scan Automated
 # Verification command backticks for concrete file paths (contain '/', end in a
 # known extension, no glob/wildcard). Flag those absent from disk and from the
@@ -101,42 +66,6 @@ while IFS= read -r line; do
     echo "- **orphan-verification-path**: \`$tok\` is named in a verification command,"
     echo "  but it exists nowhere on disk and no phase's **File** creates it."
     echo "  Confirm a later decision did not retire it (or it is a runtime path — then ignore)."
-  done
-done < "$plan"
-
-# ---- Check 3: test paths in phase BODIES, not just **File**: lines ----
-# Check 1's glob list is right but its scan surface is one line type, and a plan
-# assigns work in prose and change lists too ("update the tripwire in
-# foo_test.py", "sweep the 46 test files"). Those reach the implementing coder
-# and hit the same deny. Verification sections are exempt: naming a test file in
-# a command that RUNS it is correct, and so is a criterion the test-writer works
-# from. Report-only — a body may legitimately mention a test the test-writer owns.
-in_verif=0
-declare -A seen_body=()
-while IFS= read -r line; do
-  case "$line" in
-    '#### Automated Verification:'*|'#### Manual Verification:'*) in_verif=1; continue ;;
-    '####'*|'###'*|'## '*) in_verif=0 ;;
-    \*\*File\*\*:*) continue ;;   # literal `**File**:` line — check 1 owns these
-  esac
-  [ "$in_verif" -eq 0 ] || continue
-  # Two token shapes: a test FILE (has an extension) and a test DIRECTORY — a
-  # sweep assigned over `src/__tests__/` is the same deny, and carries no
-  # extension to match on.
-  toks=$(printf '%s' "$line" | grep -oE '[[:alnum:]_./-]+\.[[:alnum:]]{1,5}' || true)
-  dirs=$(printf '%s' "$line" | grep -oE '[[:alnum:]_./-]*(tests|__tests__|testdata|fixtures|__mocks__)/' || true)
-  for tok in $toks $dirs; do
-    case "$tok" in *'*'*|http*) continue ;; esac
-    is_test_path "$tok" || is_test_path "$tok/x" || continue
-    [ -n "${seen_body[$tok]:-}" ] && continue
-    seen_body[$tok]=1
-    if [ "$findings" -eq 0 ]; then echo "## spec-criteria-lint findings — $plan"; echo; fi
-    findings=$((findings + 1))
-    echo "- **test-path-in-phase-body**: \`$tok\` is a test path named in a phase body,"
-    echo "  outside any verification section. If a phase step assigns this edit, the"
-    echo "  implementing coder is denied Write on it (test-ownership-gate) and the phase"
-    echo "  stalls mid-flight. Route it to test-writer from the criteria, or confirm the"
-    echo "  mention is context only."
   done
 done < "$plan"
 

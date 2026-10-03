@@ -12,7 +12,7 @@ Every `/eng-spec` plan ends with these FOUR phases, in order after the last feat
    cause, concentration gate evaluated (module dispatched with the trigger
    named, or both counts stated).
 
-2. **Test audit** (risk: high) — `/test-audit`: cull spam, catch net-removed coverage, sweep weak assertions — the half of test-intent no phase judges. Findings → `/fix` / `test-writer`; receipt → Recap. Success Criteria: denominator stated, every finding routed.
+2. **Test audit** (risk: high) — `/test-audit`: cull spam, sweep weak assertions — the half of test-intent no phase judges. Findings → `/fix`; receipt → Recap. Success Criteria: denominator stated, every finding routed.
 
 3. **Verify pass** (risk: high) — two complementary checks, both required:
    - **Branch-wide deep review** — ONE `code-reviewer` (omit `model`) over the branch diff: the only fresh-eyes look at cross-phase interactions. Findings via `/review` routing. Log it per `~/.claude/skills/_shared/finding-log.md` with `scope=branch-exit`.

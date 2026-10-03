@@ -31,7 +31,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
      ```
 
    - Dispatch the coder for that one phase only, with the phase's Automated Verification gate in its instructions. Re-read the phase's Phase Status line first: `(risk: …)` drives the boundary decision and `(reviewers: …)` passes to the review loop.
-   - After the coder returns, dispatch the test-writer (3b); after it returns and you summarize, dispatch the review loop (5).
+   - After the coder returns and you summarize, dispatch the review loop (5).
    - Before marking the phase done, check that the phase's `#### Automated Verification` commands passed: the review loop's execution gate is the full suite; run any other listed command once, after the loop returns; its `#### Manual Verification` items go on the deferred list for `/verify`. A phase with no Success Criteria is a plan defect; say so before advancing. A prohibition criterion (`git grep <pattern>` returns zero hits) is yours to run with Bash and log:
 
      ```bash
@@ -49,26 +49,11 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
      5. `(risk: low)` with all machine gates green → AUTO-ADVANCE, block A, then re-enter step 2 for the next phase in-session.
    - One phase or no phase headers → a single dispatch, still after the acceptance-criteria check.
 
-3. **Dispatch the coder**: one `coder` subagent for the whole phase, whatever layers it touches. Two coders in parallel only for two deliverables that share no contract, type, or file, split by deliverable. Name the phase ("implement Phase N of `<plan-path>`") and tell the coder to read it phase-scoped. Coders write no tests. If the task turns out architectural, have the coder report back and recommend `/eng-spec`.
+3. **Dispatch the coder**: one `coder` subagent for the whole phase, whatever layers it touches. Two coders in parallel only for two deliverables that share no contract, type, or file, split by deliverable. Name the phase ("implement Phase N of `<plan-path>`") and tell the coder to read it phase-scoped. The coder writes the phase's tests. If the task turns out architectural, have the coder report back and recommend `/eng-spec`.
 
-3b. **Dispatch the test-writer** after every coder dispatch that implemented plan behavior: one `test-writer` subagent, omit `model`. Skip only when the phase has no Success Criteria behavior and no acceptance criteria (pure config or mechanical), and note the skip in the phase summary. Pass the plan path, the phase number, and the stub file list when the plan names one. Pass nothing from the coder: no diff, no summary, no source contents.
+4. **After the coder completes**: if the coder report carries a `PLAN-IMPACT:` block, raise it via AskUserQuestion (assumed → found → what changes; options `Adopt plan change` / `Keep plan as written` / `Discuss`) before anything else, and record the answer under the plan's `## Plan Deviations` (create if absent). Then summarize for the user: what was implemented, issues flagged, follow-up items, and the coder's `WHY:` lines grouped by file as `path:start-end — <note>` (omit when every coder reported `WHY: none`).
 
-Route on its report:
-
-- `FAILING-TEST` lines → dispatch `/fix` scoped to make the named behaviors pass without touching the failing tests' assertions, then re-run the test-writer's `tests-run` command with Bash. Cap 2 fix rounds; still red → STOP and surface to the user. A `FAILING-TEST` whose scenario cannot run as planned is a spec defect: AskUserQuestion as in step 4, record it under `## Plan Deviations`, re-dispatch the `test-writer`.
-- `UNDERSPECIFIED` lines → surface in the phase summary; a success criterion left untested blocks marking the phase done.
-- Log each spec defect resolved above, one row each, before advancing:
-
-  ```bash
-  bash ~/.claude/scripts/log-escape repo=<basename> stage_found=phase-gate \
-    gate_missed=eng-spec class=plan-drift severity=<high|medium|low> \
-    lane=eng-spec guard=<...> desc="<what the plan asserted, and why it could not hold>" \
-    file=<plan path>
-  ```
-
-4. **After the coder and the test-writer complete**: if the coder report carries a `PLAN-IMPACT:` block, raise it via AskUserQuestion (assumed → found → what changes; options `Adopt plan change` / `Keep plan as written` / `Discuss`) before anything else, and record the answer under the plan's `## Plan Deviations` (create if absent). Then summarize for the user: what was implemented, issues flagged, follow-up items, and the coder's `WHY:` lines grouped by file as `path:start-end — <note>` (omit when every coder reported `WHY: none`).
-
-5. **Dispatch review**: first build the handoff block per `~/.claude/skills/_shared/handoff-block.md`: `files` (path, one-line change, `why` from the coder's WHY lines), `tests-run` from the test-writer's report, `flagged` (incl. UNDERSPECIFIED and resolved FAILING-TEST outcomes, or `none`), `plan_impact` (the block plus the user's decision, or `none`), `iter: 0`. Never dispatch without it. Then tell the user "Auto-dispatching review to check the implementation before committing." Then `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"`, passing `mode: review-first`, `caller: code`, `lane: <lane>`, `plan: <path>` and `phase: <N>` for the phase under review (omit `phase` when the plan file holds one phase or none, omit both when the plan was pasted), `reviewers: <domains>` verbatim from the phase's Phase Status line when it has one (omit when the tag reads `none`), the handoff block, and any `+fast`/`+deep` modifier plus any specialist flag (`+sec`/`+perf`/`+smell`/`no-specialist`).
+5. **Dispatch review**: first build the handoff block per `~/.claude/skills/_shared/handoff-block.md`: `files` (path, one-line change, `why` from the coder's WHY lines), `tests-run` from the coder's report, `flagged` (or `none`), `plan_impact` (the block plus the user's decision, or `none`), `iter: 0`. Never dispatch without it. Then tell the user "Auto-dispatching review to check the implementation before committing." Then `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"`, passing `mode: review-first`, `caller: code`, `lane: <lane>`, `plan: <path>` and `phase: <N>` for the phase under review (omit `phase` when the plan file holds one phase or none, omit both when the plan was pasted), `reviewers: <domains>` verbatim from the phase's Phase Status line when it has one (omit when the tag reads `none`), the handoff block, and any `+fast`/`+deep` modifier plus any specialist flag (`+sec`/`+perf`/`+smell`/`no-specialist`).
 
    Route on the returned `status`, first match wins:
 

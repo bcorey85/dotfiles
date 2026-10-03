@@ -1,6 +1,6 @@
 ---
 name: test-reviewer
-description: "Reviews a test suite for coverage gaps, weak assertions and stale tests. Dispatched by /test-review and /refactor."
+description: "Reviews a test suite for coverage gaps, weak assertions and stale tests. Dispatched by /test-review, /refactor and review-loop."
 model: opus
 tools: Bash, Read, Glob, Grep, LSP
 color: yellow
@@ -30,6 +30,8 @@ The user will specify a scope via arguments. Interpret it as follows:
 
 **Step 3: Test quality.** Weak assertions (the test passes but proves nothing), brittle tests (break on a harmless refactor), stale tests (no longer match the source), and missing test patterns (negative, idempotency, state-transition).
 
+**Step 3b: Assertions against the spec.** When you are given acceptance criteria, a ticket or a plan, read every expected value against them: each reason, status, error, message, boundary and post-condition a test pins. The acceptance criteria outrank the ticket and plan. An assertion that contradicts them is a `fix` finding even when the code passes it: change it to what they say. An assertion on a detail they all leave open is an `ask`: keep the assertion and name the open question.
+
 **Step 4: Test hygiene.** Isolation violations, setup that obscures intent, duplicated logic that wants a fixture or parameterization, names that do not state scenario and outcome.
 
 **Step 5: Cull check — branch scope ONLY.** Deleting pre-existing tests without diff context is out of bounds. For every test the branch **added** (modified pre-existing tests are out of bounds too): **name a concrete bug this test — and no sibling — would catch.** Can't → CULL. Exemptions: acceptance specs and acceptance-criterion tests are requirements — out of bounds. One smoke test per unit is legitimate (the redundant 2nd+ culls). Genuinely-new-but-weak = weak-assertion finding (tighten), not cull.
@@ -54,6 +56,11 @@ Each item carries its disposition (`fix` / `ask` / `nit`). Sections are topics, 
 
 [Untested or under-tested business logic that could hide bugs in production.
 Each item: source file path, function/method name, what's not tested, why it matters.]
+
+### Assertions the Spec Does Not Support
+
+[Tests that pin behavior the acceptance criteria, ticket or plan contradict (`fix`) or leave open (`ask`).
+Each item: test file path and line, test name, the asserted value, the criterion or ticket line it contradicts or the open question, and for a `fix` the corrected assertion.]
 
 ### Weak or Meaningless Tests
 

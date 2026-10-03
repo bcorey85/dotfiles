@@ -359,15 +359,6 @@
         ]
       },
       {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ~/.claude/scripts/test-blindness-gate.sh"
-          }
-        ]
-      },
-      {
         "matcher": "(Write|Edit|MultiEdit|NotebookEdit)",
         "hooks": [
           {

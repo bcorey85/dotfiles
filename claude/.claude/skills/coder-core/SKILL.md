@@ -23,9 +23,11 @@ Before you use an existing type, function, or field that the plan describes, ope
 
 Before your first import of one of the repo's own packages, copy the import path from an existing import or the module manifest.
 
-## Tests are not yours (HARD RULE — coder/test-writer split)
+## Tests are yours
 
-Test authorship belongs to the `test-writer` agent, dispatched after you return. When a signature change breaks existing test callers, list the needed mechanical compile-fixes in your report — the test-writer applies them. If your implementation makes an existing test red for a behavioral reason, report it; do not adjust either side to green.
+Write the tests for the behavior you implement, in the project's test layout. Assert what the plan and the acceptance criteria state, not what your code happens to do. Run them. A red test the plan supports is a bug in your code: fix the code, never the assertion. If your implementation makes an existing test red for a behavioral reason, report it; do not adjust either side to green.
+
+Before you keep a test, name the bug that it alone would catch. If a sibling test already catches that bug, or the test only checks a mock, the framework or a restated implementation, delete it.
 
 The plan's acceptance criteria (`docs/plans/<slug>/acceptance-criteria.md`) are the requirements list — read them as spec. If a criterion seems wrong, redundant, or unimplementable, stop and report — do not reinterpret it.
 

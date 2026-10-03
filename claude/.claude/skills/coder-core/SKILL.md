@@ -11,6 +11,18 @@ You implement the plan; you make no architectural decisions. If the plan and the
 
 You edit files yourself, with Write and Edit; use Bash only to run commands, never to write files. If the task is too large for one agent, say so in your report and stop. Save browser screenshots to `/tmp/`, never inside the repo.
 
+## Shell commands the hooks block (HARD RULE)
+
+A hook denies the whole compound command, so one banned fragment stops everything else in it. Never put any of these in a Bash call:
+
+- a file write of any kind: `>`, `>>`, `tee`, a `cat <<EOF` heredoc, `sed -i`, `perl -pi` or `awk -i inplace`. Use Write or Edit, including to append.
+- `sh -c` or `bash -c`. Run the command directly, for example `docker compose exec -T cube node <script>`.
+- inline interpreters such as `python3 -c` or `node -e`. Write a script under `scratch/scripts/` and run it.
+- `rm -r` or `rm -f`, `xargs`, `find -exec`, `sudo`, pipe-to-shell, `git stash`, or any git write.
+- a no-op or filler fragment such as `true`, `sed ... /dev/null` or a trailing `; true`. Every fragment has to do real work.
+
+Before you send a Bash call, check each fragment against this list. After a block, keep working. Redo the same step once through its approved path: Write or Edit for a file write, the command run directly instead of through `sh -c`, a script file instead of `-e`, or the call with its filler fragment removed. List every block in your report. Stop only when no approved path does the step, for example a git write or a destructive delete. Never retry a blocked form in disguise, such as `printf >` in place of a heredoc.
+
 ## Read the plan phase-scoped
 
 For one phase of a multi-phase plan, read the shared sections before the first phase, your own `## Phase N:` section, and `## Testing Strategy`. Skip sibling phases. If your phase needs a sibling's internals, that is a `PLAN-IMPACT` finding — report it, do not widen the read.

@@ -1,57 +1,45 @@
 #!/usr/bin/env bash
 # PreToolUse hook (Write|Edit|MultiEdit|NotebookEdit): test-ownership-gate —
-# implementing coders never write test files.
+# denies test-file writes to the agent types in BOUND_AGENTS.
 #
-# Why this exists: under the coder/test-writer split, test authorship belongs
-# to the implementation-blind test-writer. As a prose rule ("Tests Are Not
-# Yours") coders still edited *_test.go 25 times in LOOP-COST round 5.
-# Authority lives in enforcement (cross-round law), so the rule now lives
-# here. PreToolUse input carries agent_type for subagent calls (verified
-# 2026-08-03), so the deny can target exactly the coder agent types.
+# The list is empty: implementing coders write their own tests, and every
+# agent passes through. Add an agent type to re-arm the deny for it.
 #
-# Scope, stated honestly:
-#   - Binds ONLY the implementing coder types listed below (which includes
-#     review-loop's fix coders — a fix that must change a test routes through
-#     the test-writer instead, per /code's test-intent routing). Main session,
-#     the test-writer, reviewers, and every other agent pass through.
-#   - Mechanical compile-fixes to existing tests are NOT an exception any
-#     more: the coder reports them and the test-writer applies them
-#     (coder-core "Tests Are Not Yours" carries the wording).
-#   - Acceptance criteria are prose in docs/plans/<slug>/acceptance-criteria.md,
-#     outside the test tree entirely; nothing in tests/ is marker-protected.
-#     This gate is pattern-based and agent-scoped.
+#   - Pattern-based and agent-scoped. Main session always passes.
 #   - Shell writes (>, tee, sed -i, rm, mv, cp, git rm/checkout/restore) are
 #     routed back through this script by shell-write-gate.sh, per target path.
 #
 # Contract (omp bridge consumes this): hook JSON on stdin; empty output =
 # allow; permissionDecision JSON on stdout = deny; CLAUDE_SKIP_HOOKS escape.
 
-[ -n "${CLAUDE_SKIP_HOOKS:-}" ] && exit 0
-
+# Read stdin before any exit: a caller piping the hook JSON in fails on a
+# closed pipe when this script exits unread.
 INPUT=$(cat)
+[ -n "${CLAUDE_SKIP_HOOKS:-}" ] && exit 0
 [ -z "$INPUT" ] && exit 0
+
+BOUND_AGENTS=""
+[ -z "$BOUND_AGENTS" ] && exit 0
 
 command -v jq >/dev/null 2>&1 || exit 0
 
 AGENT=$(printf '%s' "$INPUT" | jq -r '.agent_type // empty' 2>/dev/null)
-case "$AGENT" in
-coder | backend-coder | frontend-coder | coder-deep | backend-coder-deep | frontend-coder-deep | unified-coder | unified-coder-deep) ;;
+[ -z "$AGENT" ] && exit 0
+case " $BOUND_AGENTS " in
+*" $AGENT "*) ;;
 *) exit 0 ;;
 esac
 
 FILE=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' 2>/dev/null)
 [ -z "$FILE" ] && exit 0
 
-# Test-file patterns + fixture dirs (mirror test-blindness-gate.sh allow list).
-# Fixture dirs added post-round-8 (graded gap: fixtures shape test outcomes as
-# much as assertions; a coder authoring testdata/ was fail-open all round).
-# spec.tsx/jsx, *_test.py, conftest.py added same pass (multi-language gaps).
+# Test-file patterns + fixture dirs.
 case "$FILE" in
 *_test.go | *.test.ts | *.test.tsx | *.test.js | *.test.jsx | *.spec.ts | *.spec.tsx | *.spec.js | *.spec.jsx | *_spec.rb | */test_*.py | *_test.py | */conftest.py) ;;
 */tests/* | */testdata/* | */fixtures/* | */__tests__/* | */__mocks__/*) ;;
 *) exit 0 ;;
 esac
 
-REASON="test-ownership-gate: you are an implementing coder and $FILE is a test file — test authorship belongs to the test-writer agent, dispatched after you return (coder-core: Tests Are Not Yours). This includes mechanical compile-fixes a signature change forces on existing test callers: list each needed fix in your report (file, symbol, old→new) and the test-writer applies it. If your implementation makes an existing test red for a behavioral reason, report that too; never adjust either side to green. Do not route around this via shell writes — that is the same edit with a worse audit trail."
+REASON="test-ownership-gate: agent $AGENT may not write test files and $FILE is one. Report the test change you need instead. Do not route around this via shell writes — that is the same edit with a worse audit trail."
 printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$REASON"
 exit 0

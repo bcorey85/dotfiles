@@ -110,7 +110,7 @@ function. **No mocks inside such a test.**
 **File**: `path/to/file.ts`
 **Changes**: [specific changes, with code blocks to add/modify]
 
-**Never list a test file here** — the coder writes no tests; the `test-writer` takes assertions from the plan. A test that must change goes in Success Criteria as a behavior.
+List the test files the phase adds or changes too — the coder writes the phase's tests and asserts what Success Criteria and the acceptance criteria state.
 
 ### Success Criteria
 

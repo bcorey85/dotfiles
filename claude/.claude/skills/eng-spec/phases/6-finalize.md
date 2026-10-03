@@ -72,7 +72,7 @@ these before Phase 7 and resolve every miss with the user like a `DESIGN GAP`.
       deny-sweep + superseded-deliverables in the other. Same `echo CHECK <n>
       rc=$?` markers and `|| true` guards as step 16b; one ambiguous result
       re-runs solo, never the whole batch.
-    - **Work the hooks will deny** — `rg` phase bodies and change lists (not just `**File**:` lines) for test-file paths. A test edit assigned to the coder is denied outright and routes to the test-writer. Same for hook-protected directories.
+    - **Work the hooks will deny** — `rg` phase bodies and change lists (not just `**File**:` lines) for hook-protected directories.
     - **Superseded deliverables** — check whether each phase's deliverable already landed on base while the spec was written. Re-building shipped work is a plan defect, not a merge conflict.
 
     STANDARD path: counts + names only; the rest run only on surfaces the architect flagged.

@@ -1,6 +1,6 @@
 ---
 name: smell-reviewer
-description: "Structure reviewer: duplication, layer placement, naming, dead weight, cohesion. Dispatched by review-loop after convergence on large diffs, and by /refactor."
+description: "Structure reviewer: duplication, layer placement, naming, dead weight, cohesion. Dispatched by /refactor, and as smell-reviewer-deep by review-loop on large diffs."
 model: sonnet
 tools: Bash, Read, Glob, Grep, LSP
 color: magenta
@@ -28,7 +28,7 @@ First action: Read `~/.claude/skills/_shared/reviewer-calibration.md` and adopt 
 
 **The anti-churn line binds you**: _must-stay-in-sync_ (flag) vs _looks-a-bit-similar_ (suppress). Three similar lines, a repeated two-line guard, parallel test-setup blocks — never demand an abstraction for incidental similarity. The line is drawn by consequence, not by length: if the copies diverging would change what the program outputs, it is must-stay-in-sync at any size.
 
-**Bounded by the dispatch**: the dispatcher states your review bound — a converged phase diff (review-loop), the whole branch diff (`/refactor` branch audit), or a named module of PRE-EXISTING code (`/refactor` audit mode, the one bound where old smells ARE the target; it may hand you mechanical clone-candidate pairs to judge against the anti-churn line). Honor the stated bound exactly; absent one, default to the converged diff and never audit pre-existing smells in surrounding code. The one sanctioned reach outside any bound: naming the existing helper or sibling copy a finding consolidates against.
+**Bounded by the dispatch**: the dispatcher states your review bound — the diff under first review (review-loop), the whole branch diff (`/refactor` branch audit), or a named module of PRE-EXISTING code (`/refactor` audit mode, the one bound where old smells ARE the target; it may hand you mechanical clone-candidate pairs to judge against the anti-churn line). Honor the stated bound exactly; absent one, default to the diff under review and never audit pre-existing smells in surrounding code. The one sanctioned reach outside any bound: naming the existing helper or sibling copy a finding consolidates against.
 
 ## Format (required)
 

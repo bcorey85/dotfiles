@@ -240,7 +240,9 @@ return {
     -- exclude globs come from util.search (shared with grepprg in options.lua).
     -- <C-q> → send to quickfix is a snacks built-in; no custom action needed.
     local exclude = require("util.search").exclude_patterns()
-    local search_opts = { hidden = true, ignored = true, exclude = exclude }
+    local function search_opts(overrides)
+      return vim.tbl_extend("force", { hidden = true, ignored = true, exclude = exclude }, overrides or {})
+    end
 
     local pmap = function(lhs, fn, desc)
       vim.keymap.set("n", lhs, fn, { desc = desc })
@@ -248,7 +250,7 @@ return {
 
     -- <leader>/: project-wide live grep over file CONTENTS.
     pmap("<leader>/", function()
-      Snacks.picker.grep(search_opts)
+      Snacks.picker.grep(search_opts())
     end, "Live grep")
 
     -- <leader><space>: file finder. `smart` (not `files`) — it merges open
@@ -259,7 +261,7 @@ return {
     -- here, where the candidate list is small enough for that to be cheap.
     -- <leader>. (dir-scoped) stays on plain `files` — buffers/recent ignore cwd.
     pmap("<leader><space>", function()
-      Snacks.picker.smart(search_opts)
+      Snacks.picker.smart(search_opts())
     end, "Find files")
 
     pmap("<leader>o", function()
@@ -274,7 +276,7 @@ return {
     -- <leader>.: find file from the CURRENT buffer's directory (Doom `SPC .`),
     -- vs <leader><space> which is project-wide. Resume moved to <leader>'.
     pmap("<leader>.", function()
-      Snacks.picker.files(vim.tbl_extend("force", search_opts, {
+      Snacks.picker.files(search_opts({
         cwd = vim.fn.expand("%:p:h"),
       }))
     end, "Find file (current dir)")
@@ -294,7 +296,7 @@ return {
         if not dir or dir == "" then
           return
         end
-        Snacks.picker.grep(vim.tbl_extend("force", search_opts, { cwd = vim.fn.expand(dir) }))
+        Snacks.picker.grep(search_opts({ cwd = vim.fn.expand(dir) }))
       end)
     end
 
@@ -311,17 +313,17 @@ return {
 
     -- s p: project grep (Doom `s p`); same target as <leader>/.
     pmap("<leader>sp", function()
-      Snacks.picker.grep(search_opts)
+      Snacks.picker.grep(search_opts())
     end, "Search project")
 
     pmap("<leader>st", function()
       local no_tests = vim.list_extend(vim.deepcopy(exclude), require("util.search").test_patterns)
-      Snacks.picker.grep(vim.tbl_extend("force", search_opts, { exclude = no_tests }))
+      Snacks.picker.grep(search_opts({ exclude = no_tests }))
     end, "Search project (skip tests)")
 
     -- s d / s D: grep the current file's dir / a chosen dir (Doom `s d` / `s D`).
     pmap("<leader>sd", function()
-      Snacks.picker.grep(vim.tbl_extend("force", search_opts, { cwd = vim.fn.expand("%:p:h") }))
+      Snacks.picker.grep(search_opts({ cwd = vim.fn.expand("%:p:h") }))
     end, "Search current dir")
 
     pmap("<leader>sD", function()
@@ -337,7 +339,7 @@ return {
         confirm = function(picker, item)
           picker:close()
           if item then
-            Snacks.picker.grep(vim.tbl_extend("force", search_opts, { cwd = item.file }))
+            Snacks.picker.grep(search_opts({ cwd = item.file }))
           end
         end,
       })
@@ -345,7 +347,7 @@ return {
 
     -- s w: grep the symbol/word under the cursor.
     pmap("<leader>sw", function()
-      Snacks.picker.grep_word(search_opts)
+      Snacks.picker.grep_word(search_opts())
     end, "Grep word under cursor")
 
     -- s j / s m: jumplist / marks (Doom `s j` evil-show-jumps / `s r` show-marks;

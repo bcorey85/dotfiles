@@ -15,7 +15,7 @@ You edit files yourself, with Write and Edit; use Bash only to run commands, nev
 
 A hook denies the whole compound command, so one banned fragment stops everything else in it. Never put any of these in a Bash call:
 
-- a file write of any kind: `>`, `>>`, `tee`, a `cat <<EOF` heredoc, `sed -i`, `perl -pi` or `awk -i inplace`. Use Write or Edit, including to append.
+- a file write of any kind: `>`, `>>`, `tee`, a `cat <<EOF` heredoc, `sed -i`, `perl -pi` or `awk -i inplace`. Use Write or Edit, including to append. The one exception is a check log under `/tmp/` (see "Verify before you report").
 - `sh -c` or `bash -c`. Run the command directly, for example `docker compose exec -T cube node <script>`.
 - inline interpreters such as `python3 -c` or `node -e`. Write a script under `scratch/scripts/` and run it.
 - `rm -r` or `rm -f`, `xargs`, `find -exec`, `sudo`, pipe-to-shell, `git stash`, or any git write.
@@ -50,6 +50,8 @@ The plan's acceptance criteria (`docs/plans/<slug>/acceptance-criteria.md`) are 
 The private workflow never reaches committed code: branch, PR, and issue numbers, phase numbers, decision ids (`D4`, `AC2`), plan paths, pipeline nouns, and agent provenance are banned from every file you write, including comments and filenames. Write the reason standalone.
 
 ## Verify before you report
+
+Run each test, lint, typecheck or build command with its full output in a log: `<check> > /tmp/<name>.log 2>&1`. Then read the log with Read or `rg`. Never pipe a check into `head`, `tail` or `grep`. A hook denies a second run of the same check until you edit a file, so output you cut off is lost.
 
 Report each command you ran and its exit code.
 

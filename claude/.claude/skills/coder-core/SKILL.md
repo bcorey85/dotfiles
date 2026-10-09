@@ -35,6 +35,10 @@ Before you use an existing type, function, or field that the plan describes, ope
 
 Before your first import of one of the repo's own packages, copy the import path from an existing import or the module manifest.
 
+## Extend, never copy
+
+Before you write a new helper, constant, type, or block of logic, search the repo for code that does the same job — by what it does, not only by its name. If it fits, call it. If it is a line or two off, extend it: add a parameter or an option that your caller sets, and keep what every existing caller gets today. Existing tests keep their expected values; change an existing call only to pass today's behavior explicitly. That is in scope, not a `PLAN-IMPACT`. Never copy it and change a line.
+
 ## Tests are yours
 
 Write the tests for the behavior you implement, in the project's test layout. Assert what the plan and the acceptance criteria state, not what your code happens to do. Run them. A red test the plan supports is a bug in your code: fix the code, never the assertion. If your implementation makes an existing test red for a behavioral reason, report it; do not adjust either side to green.

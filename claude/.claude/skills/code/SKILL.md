@@ -30,7 +30,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
        stage=code-phase exit=0 candidates=1 confirmed=1 note="<what was missing>"
      ```
 
-   - Dispatch the coder for that one phase only, with the phase's Automated Verification gate in its instructions. Re-read the phase's Phase Status line first: `(risk: …)` drives the boundary decision and `(reviewers: …)` passes to the review loop.
+   - Dispatch the coder for that one phase only, with the phase's Automated Verification gate in its instructions. Re-read the phase's Phase Status line first: `(risk: …)` drives the boundary decision.
    - After the coder returns and you summarize, dispatch the review loop (5).
    - Before marking the phase done, check that the phase's `#### Automated Verification` commands passed: the review loop's execution gate is the full suite; run any other listed command once, after the loop returns; its `#### Manual Verification` items go on the deferred list for `/verify`. A phase with no Success Criteria is a plan defect; say so before advancing. A prohibition criterion (`git grep <pattern>` returns zero hits) is yours to run with Bash and log:
 
@@ -53,7 +53,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 4. **After the coder completes**: if the coder report carries a `PLAN-IMPACT:` block, raise it via AskUserQuestion (assumed → found → what changes; options `Adopt plan change` / `Keep plan as written` / `Discuss`) before anything else, and record the answer under the plan's `## Plan Deviations` (create if absent). Then summarize for the user: what was implemented, issues flagged, follow-up items, and the coder's `WHY:` lines grouped by file as `path:start-end — <note>` (omit when every coder reported `WHY: none`).
 
-5. **Dispatch review**: first build the handoff block per `~/.claude/skills/_shared/handoff-block.md`: `files` (path, one-line change, `why` from the coder's WHY lines), `tests-run` from the coder's report, `flagged` (or `none`), `plan_impact` (the block plus the user's decision, or `none`), `iter: 0`. Never dispatch without it. Then tell the user "Auto-dispatching review to check the implementation before committing." Then `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"`, passing `mode: review-first`, `caller: code`, `lane: <lane>`, `plan: <path>` and `phase: <N>` for the phase under review (omit `phase` when the plan file holds one phase or none, omit both when the plan was pasted), `reviewers: <domains>` verbatim from the phase's Phase Status line when it has one (omit when the tag reads `none`), the handoff block, and any `+fast`/`+deep` modifier plus any specialist flag (`+sec`/`+perf`/`+smell`/`no-specialist`).
+5. **Dispatch review**: first build the handoff block per `~/.claude/skills/_shared/handoff-block.md`: `files` (path, one-line change, `why` from the coder's WHY lines), `tests-run` from the coder's report, `flagged` (or `none`), `plan_impact` (the block plus the user's decision, or `none`), `iter: 0`. Never dispatch without it. Then tell the user "Auto-dispatching review to check the implementation before committing." Then `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"`, passing `mode: review-first`, `caller: code`, `lane: <lane>`, `plan: <path>` and `phase: <N>` for the phase under review (omit `phase` when the plan file holds one phase or none, omit both when the plan was pasted), the handoff block, and any `+fast`/`+deep` modifier.
 
    Route on the returned `status`, first match wins:
 

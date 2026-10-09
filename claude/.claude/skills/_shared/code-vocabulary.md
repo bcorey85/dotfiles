@@ -19,7 +19,6 @@ docstrings, test names, section banners, fixture names, and **filenames**:
 | Pipeline nouns | `ACCEPTANCE-CONTRACT`, `acceptance stub`, `contract_*` |
 | Process narration | `Authored before implementation`, `this file is immutable` |
 | Agent/author provenance | `written by the coder`, `per the architect`, `the assistant` |
-| Ticket keys, unless the project itself uses them in code | `PROJ-142: skip empty` |
 
 The test: **would a corporate-team reviewer with no knowledge of this workflow accept this line?**
 

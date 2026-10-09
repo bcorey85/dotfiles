@@ -37,7 +37,7 @@ window-padding-y = 4
 # AeroSpace tiles each native macOS tab as its own window (gaps/overlaps);
 # tabs live in herdr instead.
 keybind = super+t=unbind
-macos-titlebar-style = hidden
+macos-titlebar-style = transparent
 
 # Shell integration
 shell-integration = detect

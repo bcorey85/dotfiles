@@ -89,4 +89,6 @@ questions it refused to default.
     **Then walk the draft with the user and take strikes and corrections.** They
     hold authority over every line: put damage-path questions to them in ONE turn — policy is the ticket-owner's call, never defaulted; "out of scope" is an answer (log under `## Direction & Constraints`); silence is not. **No Phase 7 before they respond.**
 
+    **Coverage sweep, after the user signs off the list.** For each behavioral criterion, name the phase whose `#### Automated Verification:` will produce a test for it. Prose text the LLM reads counts as behavior. A criterion that only a `rg` check, a manual step or nothing covers gets one of two fixes: add a test-verified line to the owning phase, or move the criterion to `## Manual only` with its reason. Report it as `coverage: <n> mapped, <m> fixed of <total>`. (Escape 2026-10-03, IQ-1416: two LLM-text criteria shipped with no test, and only branch-exit `/verify` caught them.)
+
 Plan saved. Go to Phase 6.5 (fresh-eyes review + planning-lane log row) — carry `gaps` and `falsified` forward.

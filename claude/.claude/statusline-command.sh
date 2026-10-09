@@ -13,7 +13,9 @@ eval "$(echo "$input" | jq -r '
   @sh "total_out=\(.context_window.total_output_tokens // 0)",
   @sh "over_200k=\(.exceeds_200k_tokens // false)",
   @sh "five_hour_pct=\(.rate_limits.five_hour.used_percentage // empty)",
-  @sh "five_hour_resets_at=\(.rate_limits.five_hour.resets_at // empty)"
+  @sh "five_hour_resets_at=\(.rate_limits.five_hour.resets_at // empty)",
+  @sh "seven_day_pct=\(.rate_limits.seven_day.used_percentage // empty)",
+  @sh "seven_day_resets_at=\(.rate_limits.seven_day.resets_at // empty)"
 ')"
 
 # Change to the working directory
@@ -96,20 +98,22 @@ else
     token_info=""
 fi
 
-# 5-hour rate-limit window
-five_hour_info=""
-if [ -n "$five_hour_pct" ] && [ -n "$five_hour_resets_at" ]; then
+# Rate-limit window segment: rate_limit_info <label> <used_pct> <resets_at_epoch>
+rate_limit_info() {
+    local label=$1 pct=$2 resets_at=$3
+    [ -n "$pct" ] && [ -n "$resets_at" ] || return
+
     # Round used % to integer
-    five_h_int=$(printf '%.0f' "$five_hour_pct")
+    local pct_int
+    pct_int=$(printf '%.0f' "$pct")
 
     # Time until reset
-    now=$(date +%s)
-    secs_left=$(( five_hour_resets_at - now ))
+    local secs_left=$(( resets_at - $(date +%s) )) reset_display
     if [ "$secs_left" -lt 0 ]; then secs_left=0; fi
-    if [ "$secs_left" -ge 3600 ]; then
-        h=$(( secs_left / 3600 ))
-        m=$(( (secs_left % 3600) / 60 ))
-        reset_display="${h}h${m}m"
+    if [ "$secs_left" -ge 86400 ]; then
+        reset_display="$(( secs_left / 86400 ))d$(( (secs_left % 86400) / 3600 ))h"
+    elif [ "$secs_left" -ge 3600 ]; then
+        reset_display="$(( secs_left / 3600 ))h$(( (secs_left % 3600) / 60 ))m"
     elif [ "$secs_left" -ge 60 ]; then
         reset_display="$(( secs_left / 60 ))m"
     else
@@ -117,16 +121,20 @@ if [ -n "$five_hour_pct" ] && [ -n "$five_hour_resets_at" ]; then
     fi
 
     # Color-code by usage
-    if [ "$five_h_int" -ge 90 ]; then
-        five_color=$RED
-    elif [ "$five_h_int" -ge 70 ]; then
-        five_color=$YELLOW
+    local color
+    if [ "$pct_int" -ge 90 ]; then
+        color=$RED
+    elif [ "$pct_int" -ge 70 ]; then
+        color=$YELLOW
     else
-        five_color=$GREEN
+        color=$GREEN
     fi
 
-    five_hour_info=$(printf " ${DIM}[${RESET}${five_color}%s%%${RESET} ${DIM}resets in${RESET} %s${DIM}]${RESET}" "$five_h_int" "$reset_display")
-fi
+    printf " ${DIM}[%s${RESET} ${color}%s%%${RESET} ${DIM}resets in${RESET} %s${DIM}]${RESET}" "$label" "$pct_int" "$reset_display"
+}
 
-# Two lines: model + branch/dir on top; context + rate limit below.
-printf "${GREEN}➜${RESET} ${DIM}[${RESET}%s${DIM}]${RESET} ${CYAN}%s${RESET}%s\n%s%s" "$model_name" "$dir_name" "$git_info" "$token_info" "$five_hour_info"
+five_hour_info=$(rate_limit_info "5h" "$five_hour_pct" "$five_hour_resets_at")
+seven_day_info=$(rate_limit_info "wk" "$seven_day_pct" "$seven_day_resets_at")
+
+# Two lines: model + branch/dir on top; context + rate limits below.
+printf "${GREEN}➜${RESET} ${DIM}[${RESET}%s${DIM}]${RESET} ${CYAN}%s${RESET}%s\n%s%s%s" "$model_name" "$dir_name" "$git_info" "$token_info" "$five_hour_info" "$seven_day_info"

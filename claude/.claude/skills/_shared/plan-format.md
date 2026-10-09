@@ -57,16 +57,16 @@ Header links: whichever upstream artifacts exist. Do not invent links.
 
 <!-- /code updates per phase. Source of truth for "which phase is next". Do not delete. -->
 
-- [ ] Phase 0: Contracts — frozen at plan approval (risk: high) (reviewers: security|perf|smell|none)
-- [ ] Phase 1: Walking skeleton — thinnest path through every Phase 0 contract (risk: low|high) (reviewers: security|perf|smell|none)
-- [ ] Phase 2: [name] (risk: low|high) (reviewers: security|perf|smell|none)
+- [ ] Phase 0: Contracts — frozen at plan approval (risk: high)
+- [ ] Phase 1: Walking skeleton — thinnest path through every Phase 0 contract (risk: low|high)
+- [ ] Phase 2: [name] (risk: low|high)
 
 <!-- Mandatory closing phases (closing-phases.md), renumbered after the last feature phase: -->
 
-- [ ] Phase N: Refactor pass — /refactor cleanup sweep (risk: low) (reviewers: none)
-- [ ] Phase N+1: Test audit — /test-audit cross-phase test gate (risk: high) (reviewers: none)
-- [ ] Phase N+2: Verify pass — branch-wide deep review + /verify (plan↔diff + smoke list) (risk: high) (reviewers: none)
-- [ ] Phase N+3: Recap — /branch-recap synthesis + residue triage, no gates (risk: low) (reviewers: none)
+- [ ] Phase N: Refactor pass — /refactor cleanup sweep (risk: low)
+- [ ] Phase N+1: Test audit — /test-audit cross-phase test gate (risk: high)
+- [ ] Phase N+2: Verify pass — branch-wide deep review + /verify (plan↔diff + smoke list) (risk: high)
+- [ ] Phase N+3: Recap — /branch-recap synthesis + residue triage, no gates (risk: low)
 
 ## Current State Analysis
 

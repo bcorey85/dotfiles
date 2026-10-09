@@ -17,11 +17,11 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
 ## Modifiers
 
-- `+fast` / `+deep` — semantics defined in `~/.claude/skills/_shared/modifiers.md` (read it when either is present). They apply to the finder dispatch too: `+deep` → `smell-reviewer-deep` / `complexity-reviewer-deep` (omit `model`); `+fast` → `model: "haiku"`. Never `+fast` in simplify.
+- `+fast` / `+deep` — semantics defined in `~/.claude/skills/_shared/modifiers.md` (read it when either is present). `+fast` applies to the finder dispatch too (`model: "haiku"`). Never `+fast` in simplify.
 
 ## Instructions
 
-1. **Check for modifiers**: `+deep` → swap each agent for its `-deep` variant, omit `model`. `+fast` → `model: "haiku"`. Strip modifiers from subagent prompts.
+1. **Check for modifiers**: `+fast` → `model: "haiku"`. Strip modifiers from subagent prompts.
 
 2. **Determine the mode** — first match wins:
    - `$ARGUMENTS` starts with `simplify`, or names a target plus a complexity complaint ("this is too complex", "reduce the complexity in X", "why is this so convoluted") → **Simplify mode** (step 7). Bare `simplify` with no target: list top-level source dirs and ask — never the whole repo in one dispatch.
@@ -42,7 +42,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
    Matches go straight onto the work list (adapt patterns to the repo's language).
 
-   c. **Finder dispatch**: ONE `smell-reviewer` (pinned; omit `model`; variants per step 1) with:
+   c. **Finder dispatch**: ONE `smell-reviewer` (pinned; omit `model` unless `+fast`) with:
    - the changed-file list from (a)
    - the bound: "Your review bound for this run is the whole branch diff (`git diff main...HEAD`), not a phase diff."
    - the priority: "Prioritize cross-phase smells — things no single-phase view could see (multi-task duplication, drifted naming, orphaned dead code, idiom divergence from unchanged siblings)."
@@ -92,7 +92,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
    No node / detector fails → skip it, note "no mechanical detection — agent prior-art search only" in the report, and rely on (b).
 
-   b. **Judgment dispatch**: ONE `smell-reviewer` (variants per step 1) with:
+   b. **Judgment dispatch**: ONE `smell-reviewer` (omit `model` unless `+fast`) with:
    - the bound: "Audit mode: your bound is the existing code of `<target>` — pre-existing smells ARE the target this run, per your audit-bound clause."
    - the candidate clone pairs from (a), if any: "Judge each candidate against the anti-churn line — must-stay-in-sync (flag, name the extraction) vs looks-a-bit-similar (suppress)."
    - the ask: duplication across files, pattern/idiom drift between sibling modules, wrong-altitude code — each finding with both `file:line` sites and the consolidation it proposes. Cross-module consolidations or anything moving a public contract → `[design-decision]`.
@@ -107,7 +107,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
    b. **Do NOT read the files yourself.**
 
-   c. **Finder dispatch**: ONE `complexity-reviewer` (pinned; omit `model`; `-deep` variant per step 1) with:
+   c. **Finder dispatch**: ONE `complexity-reviewer` (pinned; omit `model`) with:
    - the file list from (a) and the bound: "Simplify mode: your bound is the whole existing code of `<target>`. Pre-existing shape IS the target."
    - the ask, verbatim from its scope: branching a data model collapses, indirection with one implementation, configurability nothing configures, guards a stronger invariant kills, values with more than one owner.
    - its oracle + magnitude floor are hard gates (quantified disappearance, enabling change, unreachability proof, cost clause).

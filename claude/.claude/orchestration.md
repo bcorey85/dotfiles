@@ -3,6 +3,7 @@
 ### Delegation
 
 - Never code directly — dispatch via `/code`. Anything that picks a shape, a new name, or a behavior dispatches, however few lines. Edit directly only: a few lines in one file with no design choice; a mechanical sweep where every hunk is the same substitution, then run a repo check; rules, agents, skills and CLAUDE.md files; repos whose CLAUDE.md declares **direct-edit repo**.
+- Send a read-only lookup (find where something lives, what calls it, what a file does) to `Explore` with `model: "haiku"`, not to `general-purpose`. Use `general-purpose` only when the agent must edit, run a build or test, or judge a design.
 - Parallel writing agents need disjoint file scopes. The orchestrator owns all git operations.
 - Before config, CI, infra or library-integration code with a slow or remote feedback loop, WebSearch the official docs, then GitHub issues. Put what you find in the dispatch brief.
 

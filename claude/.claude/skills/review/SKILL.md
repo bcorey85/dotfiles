@@ -19,7 +19,6 @@ Thin wrapper over the `review-loop` agent: dispatch it, render the returned pack
    - `mode: review-first`, `caller: review`
    - any `handoff:` block from `$ARGUMENTS` (schema: `~/.claude/skills/_shared/handoff-block.md`)
    - any `+fast` / `+deep` modifier and `iter=N`
-   - any specialist flag from `$ARGUMENTS`: `+sec` / `+perf` / `+smell` or `no-specialist`
    - if `$ARGUMENTS` names a file path and no handoff block was given, scope the review to that file only
 
 2. **Route on the returned `status`** — first match wins:
@@ -33,12 +32,11 @@ Thin wrapper over the `review-loop` agent: dispatch it, render the returned pack
 3. **Render the packet**, in this order:
 
    - `### Fixed` — every `fixed[]` entry (`finding`, `file_line`), `blocker` ones first and marked.
-   - `### Perf findings` — its own heading, one entry per `perf[]` item with its `Principle:` line, regardless of disposition or auto-fix status.
-   - `specialists` — one line naming which cross-cutting specialists ran (or that none matched / were suppressed).
    - `class_closure` — one line, ALWAYS, even `none` or `n/a`. If a `converged` packet lacks it, or it is a bare `none` that names no repaired finding, say the receipt is missing and do not render the run as clean.
    - `load_bearing_clean`, if present — one line.
    - `skipped_fp[]` — inline, each with its reason.
    - `nit[]` — inline, one combined line.
+   - `### Perf findings` — its own heading, one entry per `perf[]` item with its `Principle:` line, regardless of disposition or auto-fix status.
 
 4. **Raise what the agent could not**. Present `ask[]`, each with its question; wait for direction. Never auto-fix an ask item.
 

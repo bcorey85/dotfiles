@@ -92,7 +92,7 @@ On the first review of this loop (`iter=0` on entry, not `fix-first`), measure t
 1. **≥ 40 added lines**: the sum of column 1 of `NUMSTAT`, without lockfiles, generated files and snapshots.
 2. **≥ 1 new source file**: a non-test file marked `??` or `A` in `STATUS`.
 
-A large diff: in the same message as the code-reviewer, dispatch `smell-reviewer-deep` (omit `model`) with the diff's whole file list as its scope, the bound "the diff under first review", and the `plan`/`phase` args.
+A large diff: in the same message as the code-reviewer, dispatch `smell-reviewer` (omit `model`) with the diff's whole file list as its scope, the bound "the diff under first review", and the `plan`/`phase` args.
 
 A large diff with test files: leave the test files out of the code-reviewer's file list. In the same message, dispatch `test-reviewer` with the diff's test files as its scope (every file marked added or modified), plus the `plan`/`phase` args and the diff's non-test files as the source under test.
 
@@ -277,7 +277,7 @@ bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git re
 The Step 6 class-closure receipt is NOT logged here — it lives in the packet as
 prose. Do not add an enum for it.
 
-`fix`/`ask`/`nit` are how many findings carried each disposition this run, across every reviewer; `blocker` is how many of the `fix` ones carried the flag. `nit` counts `nit[]` entries only — **`load_bearing_clean` is not a nit** (it would inflate the noise metric when a gate comes back clean). `fix` does not equal `fixed + skipped_fp`. Routing moves some `fix` findings to `ask[]` or `blockers`, and the budget defers others. `smells` = `[smell]` findings the code-reviewer's structure step and `smell-reviewer-deep` returned this run. `culled` = diff-added tests deleted this run; always 0 (kept for schema stability). `comment_noise` = always 0 (kept for schema stability). If the script fails, mention it and continue — telemetry never blocks.
+`fix`/`ask`/`nit` are how many findings carried each disposition this run, across every reviewer; `blocker` is how many of the `fix` ones carried the flag. `nit` counts `nit[]` entries only — **`load_bearing_clean` is not a nit** (it would inflate the noise metric when a gate comes back clean). `fix` does not equal `fixed + skipped_fp`. Routing moves some `fix` findings to `ask[]` or `blockers`, and the budget defers others. `smells` = `[smell]` findings the code-reviewer's structure step and `smell-reviewer` returned this run. `culled` = diff-added tests deleted this run; always 0 (kept for schema stability). `comment_noise` = always 0 (kept for schema stability). If the script fails, mention it and continue — telemetry never blocks.
 
 ### Step 7b: Per-finding rows
 

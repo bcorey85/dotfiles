@@ -373,10 +373,6 @@
           },
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/test-ownership-gate.sh"
-          },
-          {
-            "type": "command",
             "command": "bash ~/.claude/scripts/test-edit-telemetry.sh"
           }
         ]

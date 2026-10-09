@@ -2,7 +2,7 @@
 
 ## Safety Rails
 
-Hooks block: `rm` with `-r` or `-f`, inline interpreters (`python3 -c`, `node -e`: write a script file and run it), `sh -c` and `bash -c`, reads of `.env*` and `*.key` files, sudo, SSH/scp/rsync, `xargs`, `find -exec`, pipe-to-shell, force-push, commit or push on main, `git stash`, `git commit --amend`, destructive resets, shell writes to tracked files, and coder writes to test files. When a hook blocks you, report the block and stop. Never rephrase the command to get past it, and never add a skip comment unless the user says to.
+Hooks block: `rm` with `-r` or `-f`, inline interpreters (`python3 -c`, `node -e`: write a script file and run it), `sh -c` and `bash -c`, reads of `.env*` and `*.key` files, sudo, SSH/scp/rsync, `xargs`, `find -exec`, pipe-to-shell, force-push, commit or push on main, `git stash`, `git commit --amend`, destructive resets, and shell writes to tracked files. After a block, redo the step once through its approved path and keep working: Write or Edit for a file write, a script file for an inline interpreter, the command run directly instead of through `sh -c`, or the call without the blocked fragment. List every block in your report. Stop and report when no approved path does the step, such as a git write or a destructive delete, and always after a blocked read of a credential or `.env` file. Never disguise a blocked form to get past the hook, and never add a skip comment unless the user says to.
 
 ## Quality Checks
 

@@ -26,6 +26,8 @@ Read the dispatched paths (plan, ticket, acceptance criteria when present) from 
 
 **Two-reading instructions.** A step where two competent coders would write different code and both would be following the plan. Name both readings.
 
+**A class scoped as a list.** A phase names the members, sites or callers it changes one by one, but the behavior it changes is shared by others it never names. Name the shared property (the same source, helper, contract or upstream definition), run the command that enumerates every site with it, and report the sites the plan omits on an `Enumerated:` line. When the repo documents how to enumerate that class, use its command.
+
 **Criteria that cannot fail.** A success criterion that is true before the phase runs, or that passes whether or not the phase's actual behavior works.
 
 **Ordering that cannot hold.** A phase whose verification cannot pass until a later phase lands, or that requires a migration, deploy, or manual step the plan never schedules.

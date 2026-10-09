@@ -5,7 +5,7 @@ INPUT=$(cat)
 FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 [ -z "$FILE" ] && exit 0
 [ -f "$FILE" ] || exit 0
-echo "$FILE" | grep -qE '\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|rb|java|kt|swift|php|c|h|cc|cpp|hpp|lua|qml|sh|bash|zsh)$' || exit 0
+echo "$FILE" | grep -qE '\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|rb|java|kt|swift|php|c|h|cc|cpp|hpp|lua|qml|sh|bash|zsh|yml|yaml|json|sql)$' || exit 0
 # Agent/skill/hook surfaces have their own gates and carry header prose by design.
 # A repo checked out under .claude/worktrees/ is ordinary code, so the worktree
 # prefix is stripped before the exemption is tested.
@@ -25,10 +25,12 @@ NEW=$(echo "$INPUT" | jq -r '.tool_input.content // .tool_input.new_string // em
 # line end after it — `**unpacking` and `*args` are code.
 CRE='^[[:space:]]*(//|#|\*([[:space:]]|$)|--|;|/\*|"""|<!--)'
 
-# Numbered against the file, not the comment-only stream, so the reported line is
-# the real one. Uppercase-anchored markers (ticket keys, decision and criterion
-# ids) match case-sensitively — under -i they hit ordinary lowercase prose.
-MARKED=$( { CAND=$(grep -nE "$CRE" "$FILE")
+# Every line is a candidate, not just comments: markers leak through strings,
+# YAML descriptions and SQL as often as through comments. Uppercase-anchored
+# markers (decision and criterion ids) match case-sensitively — under -i they
+# hit ordinary lowercase prose. Ticket keys are not checked: repo lint can
+# require them (e.g. in remove_when).
+MARKED=$( { CAND=$(grep -nE '[^[:space:]]' "$FILE")
   printf '%s\n' "$CAND" | grep -Ei \
     -e '\bphases?[[:space:]]*[0-9]' \
     -e 'docs/plans/' \
@@ -36,13 +38,15 @@ MARKED=$( { CAND=$(grep -nE "$CRE" "$FILE")
     -e 'per the (architect|plan|spec|ledger)' \
     -e 'written by the (coder|architect|poller|assistant|agent)' \
     -e 'decision ledger|acceptance criteri|acceptance contract' \
-    -e 'plan[ -]?impact'
+    -e 'plan[ -]?impact' \
+    -e 'user ruling' \
+    -e 'end-of-branch'
   printf '%s\n' "$CAND" | grep -E \
     -e '\(D[0-9]+[):]' \
     -e '\bD[0-9]+:' \
-    -e '\bAC[0-9]+\b' \
-    -e '\b[A-Z]{2,6}-[0-9]{1,5}\b'
-  } | grep -viE 'utf-8|sha-[0-9]|iso-[0-9]|rfc-[0-9]|aes-[0-9]|http-[0-9]|base-[0-9]' \
+    -e '\bPD[0-9]+\b' \
+    -e '(^|[^#[:alnum:]_])AC[0-9]+\b'
+  } | grep -viE 'utf-8|sha-[0-9]|iso-[0-9]|rfc-[0-9]|aes-[0-9]|http-[0-9]|base-[0-9]|dp-[0-9]|hdmi-[0-9]|dvi-[0-9]|usb-[0-9]' \
     | sort -t: -k1,1n -u)
 
 # Only lines this edit contributed are charged.
@@ -54,7 +58,7 @@ if [ -n "$MARKED" ]; then
 fi
 
 if [ -n "$LEAKS" ]; then
-  echo "comment-bloat-gate: private-workflow marker in a code comment ($(basename "$FILE")). Zero exceptions — keep the reason, drop the pointer (_shared/code-vocabulary.md):" >&2
+  echo "comment-bloat-gate: private-workflow marker in an added line ($(basename "$FILE")). Zero exceptions — keep the reason, drop the pointer (_shared/code-vocabulary.md):" >&2
   printf '%s' "$LEAKS" | sed 's/^/  /' >&2
   exit 2
 fi

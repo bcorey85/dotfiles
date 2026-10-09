@@ -12,12 +12,6 @@
   key: (property_identifier) @function.method
   value: [(function_expression) (arrow_function)])
 
-; The LSP sends no token for import names; lowercase named imports are
-; almost always functions or hooks.
-(import_specifier
-  name: (identifier) @function
-  (#lua-match? @function "^%l"))
-
 ; Function, class and method names at their definition.
 (function_declaration
   name: (_) @declaration.function

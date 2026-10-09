@@ -14,6 +14,8 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 ## Instructions
 
+**End the turn only at a STOP below.** Everywhere else, take the next reversible step that follows from the task (a dispatch, a re-run, a read, an edit in scope) and report it afterward. Never end the turn to ask leave for such a step or only to report progress. Ask only before a step that cannot be undone or that leaves this machine, or when two paths are both defensible.
+
 0. **No arguments** (after stripping modifiers): run `bash ~/.claude/scripts/resolve-task-dir.sh`. Exit 0 → the task directory's `spec.md` is the task input; exit 5 → the printed plan file. Say what resolved. Exit 3 → ask which via AskUserQuestion. Exit 4 → ask the user what to implement.
 
 1. **Modifiers**: `+deep` → dispatch `coder` as is and omit `model`. `+fast` → pass `model: "haiku"`. Strip modifiers from the prompt passed to coders.

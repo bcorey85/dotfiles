@@ -19,6 +19,8 @@ One queue, one escape-log pass. The source only decides which script clears the 
 
 ## Instructions
 
+**End the turn only where a step below says stop.** Everywhere else, take the next reversible step that follows from the comments (a hand-off to `/fix`, a re-run, a read, an edit in scope) and report it afterward. Never end the turn to ask leave for such a step or only to report progress. Ask only before a step that cannot be undone or that leaves this machine, or when two readings of a comment are both defensible.
+
 1. **Parse modifiers** (`+fast` / `+deep` / `+show`). Strip them from the prompt; hold `+fast`/`+deep` to pass through to `/fix` in step 5.
 
 2. **Resolve the repo root.** Run `git rev-parse --show-toplevel`. **If it fails (not inside a git repo)**, tell the user `/cc` must be run from within a git repo (comments are scoped per-repo) and stop. Hold the root for the script calls below.

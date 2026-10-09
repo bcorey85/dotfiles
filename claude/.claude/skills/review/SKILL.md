@@ -11,9 +11,10 @@ Thin wrapper over the `review-loop` agent: dispatch it, render the returned pack
 ## Modifiers
 
 - `+fast` / `+deep` — semantics in `~/.claude/skills/_shared/modifiers.md` (read it when either is present). Pass through to the agent verbatim.
-- `+sec` / `+perf` / `+smell` — force that specialist pass; `no-specialist` — suppress it. All four pass through verbatim (step 1).
 
 ## Instructions
+
+**End the turn only at a STOP or a wait below.** Everywhere else, take the next reversible step that follows from the task (a dispatch, a re-run, a read, an edit in scope) and report it afterward. Never end the turn to ask leave for such a step or only to report progress. Ask only before a step that cannot be undone or that leaves this machine, or when two paths are both defensible.
 
 1. **Dispatch the loop**. `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"`. Pass, verbatim:
    - `mode: review-first`, `caller: review`

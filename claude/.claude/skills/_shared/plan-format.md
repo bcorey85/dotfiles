@@ -13,7 +13,6 @@ The implementation-plan artifact contract. Producer `/eng-spec`; consumers `/cod
 
 - `## Phase Status` is mandatory — never delete it. Consumers find it by HEADING, not position (hoisted to top in `spec.md`).
 - Every Phase Status line carries a `(risk: low|high)` tag.
-- Every Phase Status line carries a `(reviewers: …)` tag. The legal values are `security`, `perf`, and `smell`, alone or comma-separated, or `none` when no domain applies. Declare `security` on authz/tenancy changes, guard opt-outs, and secrets. The tag is additive only: `none` declares no domain and never suppresses a diff trigger or a forced pass.
 - Phases are VERTICAL slices (each independently verifiable end-to-end),
   never horizontal layers.
 - Keep each phase signable in one sitting — past ~8–10 semantic files (churn excluded), split on a natural seam into dependency-ordered slices, unless splitting loses end-to-end verifiability; then append `— atomic: <why>`.

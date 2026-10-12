@@ -16,4 +16,5 @@ return {
   "ansiblels",
   "oxlint",
   "taplo",
+  "postgres_lsp",
 }

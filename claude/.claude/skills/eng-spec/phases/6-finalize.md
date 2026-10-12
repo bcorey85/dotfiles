@@ -59,6 +59,12 @@
       followed by `echo CHECK <n> rc=$?` and guarded with `|| true`, so one
       failure cannot abort the batch. A command that writes never enters a
       batch — it stays out entirely, not queued for later.
+    - **Criteria that read a file or a diff**: open the file and confirm it holds
+      what the criterion looks for, and that the container or path is the one the
+      phase changes. An `rg` over prose uses `-U` and `\s+`, or a wrapped phrase
+      passes unseen. (Escape 2026-10-09, IQ-1432: four criteria read description
+      changes from a snapshot that stores no prose; one log check read the wrong
+      container; a line-based `rg` missed 2 of 4 sites.)
 
 16c. **Falsify the plan's factual claims against the tree.** Step 16b checks the
 verification commands; this checks the assertions the plan reasons FROM. Run
@@ -78,6 +84,17 @@ these before Phase 7 and resolve every miss with the user like a `DESIGN GAP`.
       deny-sweep + superseded-deliverables in the other. Same `echo CHECK <n>
       rc=$?` markers and `|| true` guards as step 16b; one ambiguous result
       re-runs solo, never the whole batch.
+    - **Consumers of every changed member** — for each member, helper or rule
+      whose SQL, name or wording the plan changes, `rg` its name across the whole
+      repo (model, views, tools, tests, oracles, docs). Every hit is named in a
+      phase or ruled out in one line. Count view-level description overrides:
+      they restate or hide cube text. (Escape 2026-10-09, IQ-1432: 9 findings —
+      stale oracles, a TS mirror, a second test file, view overrides, doc sites.)
+    - **Predicates on nullable flags** — `rg` the plan's SQL for `= false`,
+      `= true` and a bare `NOT` before a helper call. Each one on a warehouse
+      boolean is written `IS [NOT] TRUE` or wrapped in `COALESCE`, since a CDC
+      flag can be NULL where the source says false. (Escape 2026-10-09, IQ-1432:
+      `is_posted = false` dropped every unposted bill; `NOT <NULL>` dropped more.)
     - **Work the hooks will deny** — `rg` phase bodies and change lists (not just `**File**:` lines) for hook-protected directories.
     - **Superseded deliverables** — check whether each phase's deliverable already landed on base while the spec was written. Re-building shipped work is a plan defect, not a merge conflict.
 

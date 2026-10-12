@@ -263,8 +263,30 @@ vim.lsp.config("yamlls", {
       schemaStore = {
         enable = true,
       },
+      -- Cube.dev publishes no JSON Schema (not in SchemaStore, not on docs.cube.dev),
+      -- so schemas/cube.schema.json is hand-written from the data-model reference.
+      -- Keyed by file:// URI because the file lives in this config, not on the web.
+      -- It catches misspelled keys and bad type/relationship enums; Jinja values
+      -- (`{{ ... }}`, rendered by Cube before YAML parsing) are accepted as strings.
+      schemas = {
+        ["file://" .. vim.fn.stdpath("config") .. "/schemas/cube.schema.json"] = {
+          "**/model/cubes/*.yml",
+          "**/model/cubes/*.yaml",
+          "**/model/views/*.yml",
+          "**/model/views/*.yaml",
+        },
+      },
     },
   },
+})
+
+-- postgres_lsp ships with root_markers = { 'postgres-language-server.jsonc' } and
+-- workspace_required = true, so a bare .sql file in any repo never attached. Adding
+-- .git lets every repo get syntax diagnostics with no config file. The database
+-- connection stays opt-in: it only exists if that jsonc is present (no credentials
+-- are configured here), so without it the server only parses, never queries.
+vim.lsp.config("postgres_lsp", {
+  root_markers = { "postgres-language-server.jsonc", ".git" },
 })
 
 -- cssls, html, bashls, taplo, ansiblels, and oxlint need no extra config —

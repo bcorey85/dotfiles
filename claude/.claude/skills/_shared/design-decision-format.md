@@ -1,6 +1,6 @@
 # Shared Design-Decision Format
 
-The structure every recorded design decision follows (`/eng-spec` `## Decisions`) — the judgment surface humans gate on and `/adr` distills.
+The structure every recorded design decision follows (`/eng-spec` `03-decisions.md`, which the spec's `## Decisions` indexes one line each) — the judgment surface humans gate on and `/adr` distills.
 
 
 ## Decision block (all four fields, every decision)

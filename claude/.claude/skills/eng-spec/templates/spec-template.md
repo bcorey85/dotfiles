@@ -34,7 +34,7 @@ One paragraph on what this accomplishes.
 
 ## Decisions
 
-<!-- Copied verbatim from 03-decisions.md's ## Resolved. Four-field block per decision (Choice / Reasoning / Alternatives rejected / Trade-off accepted) — never a one-line-rationale table. -->
+<!-- One line per block in 03-decisions.md's ## Resolved: `N. [Topic] — [Choice]`, plus `Trade-off: …` only where it changes code. Reasoning and alternatives stay in the ledger's four-field blocks. -->
 
 ## Approaches Considered and Not Taken
 

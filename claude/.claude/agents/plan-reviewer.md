@@ -30,6 +30,8 @@ Read the dispatched paths (plan, ticket, acceptance criteria when present) from 
 
 **Criteria that cannot fail.** A success criterion that is true before the phase runs, or that passes whether or not the phase's actual behavior works.
 
+**Phase shape.** A phase past about 10 files with no `— atomic:` reason. A walking-skeleton phase that never runs a Phase 0 contract end to end.
+
 **Ordering that cannot hold.** A phase whose verification cannot pass until a later phase lands, or that requires a migration, deploy, or manual step the plan never schedules.
 
 **An approach that cannot work.** It cannot satisfy what the ticket asks for, contradicts a stated constraint or external contract, assumes a property that does not hold, or collapses at a case the ticket names. Name the case.

@@ -81,7 +81,7 @@ Header links: whichever upstream artifacts exist. Do not invent links.
 
 ## Acceptance Criteria
 
-<!-- Omit when the ticket has no behavioral criteria. Written by user + main thread after final, BEFORE any coder — never later, never by the satisfying agent. 3-8; more = two tickets. -->
+<!-- Omit when the ticket has no behavioral criteria. Written by user + main thread after final, BEFORE any coder — never later, never by the satisfying agent. -->
 
 The criteria live in `docs/plans/<slug>/acceptance-criteria.md` as prose with stable ids, written by Phase 7.5. Name the file here and nothing more — never restate the criteria, never copy their ids into code.
 

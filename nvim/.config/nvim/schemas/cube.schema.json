@@ -1,0 +1,435 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://localhost/schemas/cube.schema.json",
+  "title": "Cube.dev data model (YAML)",
+  "description": "Local JSON Schema for Cube cube/view YAML files. No public schema exists (not in SchemaStore or docs.cube.dev), so this is hand-derived from https://docs.cube.dev/reference/data-modeling/{cube,view,measures,dimensions,joins,segments,hierarchies,pre-aggregations,data-access-policies}. Purpose: catch misspelled keys and bad type/relationship enum values. Cube renders Jinja BEFORE parsing YAML, so every enum and scalar also accepts a string containing a Jinja delimiter, and every key that may hold a Jinja expression accepts a string or an object (an unquoted `{{ x | safe }}` parses as a nested flow mapping). `meta` is free-form.",
+  "type": ["object", "null"],
+  "additionalProperties": false,
+  "properties": {
+    "cubes": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/cube" }
+    },
+    "views": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/view" }
+    }
+  },
+  "definitions": {
+    "jinjaString": {
+      "description": "A string holding a Jinja expression or statement; rendered before YAML parsing, so it can stand in for any value.",
+      "type": "string",
+      "pattern": "\\{\\{|\\{%"
+    },
+    "text": {
+      "description": "Free text or SQL. Object accepted because an unquoted Jinja call parses as a flow mapping.",
+      "type": ["string", "object"]
+    },
+    "flag": {
+      "description": "Boolean, or a Jinja string that renders to one.",
+      "anyOf": [{ "type": "boolean" }, { "$ref": "#/definitions/jinjaString" }]
+    },
+    "meta": {
+      "description": "Free-form metadata. Object accepted for unquoted Jinja (parsed as a flow mapping); anything else is passed through.",
+      "type": ["object", "string", "null"]
+    },
+    "memberName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "memberNameList": {
+      "description": "A list of member names; a bare string covers `*` and Jinja.",
+      "anyOf": [
+        { "type": "array", "items": { "type": ["string", "object"] } },
+        { "type": ["string", "object"] }
+      ]
+    },
+    "format": {
+      "description": "Named format (number, percent, currency, abbr, accounting, each with optional _N suffix), a d3-format or strftime string, link/imageUrl for dimensions, or an object (link form).",
+      "type": ["string", "object"]
+    },
+    "cube": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/definitions/memberName" },
+        "sql_alias": { "type": "string" },
+        "extends": { "type": ["string", "object"] },
+        "data_source": { "type": "string" },
+        "sql": { "$ref": "#/definitions/text" },
+        "sql_table": { "$ref": "#/definitions/text" },
+        "title": { "$ref": "#/definitions/text" },
+        "description": { "$ref": "#/definitions/text" },
+        "public": { "$ref": "#/definitions/flag" },
+        "shown": { "$ref": "#/definitions/flag" },
+        "calendar": { "$ref": "#/definitions/flag" },
+        "refresh_key": { "$ref": "#/definitions/refreshKey" },
+        "meta": { "$ref": "#/definitions/meta" },
+        "pre_aggregations": {
+          "description": "Left permissive: pre-aggregations are blocked in this project and the key set is large.",
+          "type": ["array", "string", "object"]
+        },
+        "joins": { "type": ["array", "null"], "items": { "$ref": "#/definitions/join" } },
+        "dimensions": { "type": ["array", "null"], "items": { "$ref": "#/definitions/dimension" } },
+        "measures": { "type": ["array", "null"], "items": { "$ref": "#/definitions/measure" } },
+        "segments": { "type": ["array", "null"], "items": { "$ref": "#/definitions/segment" } },
+        "hierarchies": { "type": ["array", "null"], "items": { "$ref": "#/definitions/hierarchy" } },
+        "access_policy": { "$ref": "#/definitions/accessPolicy" }
+      }
+    },
+    "refreshKey": {
+      "type": ["object", "string"],
+      "properties": {
+        "every": { "type": ["string", "integer"] },
+        "sql": { "$ref": "#/definitions/text" },
+        "timezone": { "type": "string" },
+        "incremental": { "$ref": "#/definitions/flag" },
+        "update_window": { "type": "string" }
+      }
+    },
+    "join": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "relationship"],
+      "properties": {
+        "name": { "$ref": "#/definitions/memberName" },
+        "relationship": {
+          "anyOf": [
+            { "enum": ["one_to_one", "one_to_many", "many_to_one"] },
+            { "$ref": "#/definitions/jinjaString" }
+          ]
+        },
+        "sql": { "$ref": "#/definitions/text" }
+      }
+    },
+    "segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/definitions/memberName" },
+        "sql": { "$ref": "#/definitions/text" },
+        "description": { "$ref": "#/definitions/text" },
+        "title": { "$ref": "#/definitions/text" },
+        "public": { "$ref": "#/definitions/flag" },
+        "shown": { "$ref": "#/definitions/flag" },
+        "meta": { "$ref": "#/definitions/meta" }
+      }
+    },
+    "hierarchy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/definitions/memberName" },
+        "title": { "$ref": "#/definitions/text" },
+        "description": { "$ref": "#/definitions/text" },
+        "levels": { "$ref": "#/definitions/memberNameList" },
+        "public": { "$ref": "#/definitions/flag" },
+        "meta": { "$ref": "#/definitions/meta" }
+      }
+    },
+    "measureFilter": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sql": { "$ref": "#/definitions/text" }
+      }
+    },
+    "measure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/definitions/memberName" },
+        "title": { "$ref": "#/definitions/text" },
+        "description": { "$ref": "#/definitions/text" },
+        "public": { "$ref": "#/definitions/flag" },
+        "shown": { "$ref": "#/definitions/flag" },
+        "meta": { "$ref": "#/definitions/meta" },
+        "sql": { "$ref": "#/definitions/text" },
+        "mask": { "type": ["string", "number", "boolean", "object"] },
+        "filters": {
+          "anyOf": [
+            { "type": "array", "items": { "anyOf": [{ "$ref": "#/definitions/measureFilter" }, { "type": "string" }] } },
+            { "type": ["string", "object"] }
+          ]
+        },
+        "type": {
+          "anyOf": [
+            {
+              "enum": [
+                "count",
+                "count_distinct",
+                "count_distinct_approx",
+                "sum",
+                "avg",
+                "min",
+                "max",
+                "number",
+                "number_agg",
+                "string",
+                "time",
+                "boolean",
+                "running_total"
+              ]
+            },
+            { "$ref": "#/definitions/jinjaString" }
+          ]
+        },
+        "rolling_window": {
+          "type": ["object", "string"],
+          "properties": {
+            "type": {
+              "anyOf": [
+                { "enum": ["fixed", "to_date", "year_to_date", "quarter_to_date", "month_to_date"] },
+                { "$ref": "#/definitions/jinjaString" }
+              ]
+            },
+            "granularity": { "type": "string" },
+            "trailing": { "type": ["string", "integer"] },
+            "leading": { "type": ["string", "integer"] },
+            "offset": {
+              "anyOf": [{ "enum": ["start", "end"] }, { "$ref": "#/definitions/jinjaString" }]
+            }
+          },
+          "additionalProperties": false
+        },
+        "multi_stage": { "$ref": "#/definitions/flag" },
+        "grain": {
+          "type": ["object", "string"],
+          "properties": {
+            "keep_only": { "$ref": "#/definitions/memberNameList" },
+            "exclude": { "$ref": "#/definitions/memberNameList" },
+            "include": { "$ref": "#/definitions/memberNameList" }
+          },
+          "additionalProperties": false
+        },
+        "group_by": { "$ref": "#/definitions/memberNameList" },
+        "reduce_by": { "$ref": "#/definitions/memberNameList" },
+        "add_group_by": { "$ref": "#/definitions/memberNameList" },
+        "filter": {
+          "type": ["object", "string"],
+          "properties": {
+            "exclude": { "$ref": "#/definitions/memberNameList" },
+            "keep_only": { "$ref": "#/definitions/memberNameList" },
+            "include": { "type": ["array", "object", "string"] },
+            "mode": {
+              "anyOf": [{ "enum": ["relative", "fixed"] }, { "$ref": "#/definitions/jinjaString" }]
+            }
+          },
+          "additionalProperties": false
+        },
+        "time_shift": { "$ref": "#/definitions/timeShift" },
+        "case": {
+          "type": ["object", "string"],
+          "properties": {
+            "switch": { "$ref": "#/definitions/text" },
+            "when": { "type": ["array", "string"] },
+            "else": { "type": ["object", "string"] }
+          },
+          "additionalProperties": false
+        },
+        "format": { "$ref": "#/definitions/format" },
+        "currency": { "type": "string" },
+        "drill_members": { "$ref": "#/definitions/memberNameList" }
+      }
+    },
+    "timeShift": {
+      "description": "A list of shifts, or a single object / Jinja string.",
+      "anyOf": [
+        { "type": "array", "items": { "$ref": "#/definitions/timeShiftEntry" } },
+        { "$ref": "#/definitions/timeShiftEntry" },
+        { "type": "string" }
+      ]
+    },
+    "timeShiftEntry": {
+      "type": ["object", "string"],
+      "properties": {
+        "time_dimension": { "type": "string" },
+        "interval": { "type": "string" },
+        "type": {
+          "anyOf": [{ "enum": ["prior", "next"] }, { "$ref": "#/definitions/jinjaString" }]
+        },
+        "name": { "type": "string" },
+        "sql": { "$ref": "#/definitions/text" }
+      },
+      "additionalProperties": false
+    },
+    "granularity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "title": { "type": "string" },
+        "interval": { "type": "string" },
+        "offset": { "type": "string" },
+        "origin": { "type": ["string", "object"] },
+        "sql": { "$ref": "#/definitions/text" }
+      }
+    },
+    "dimension": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/definitions/memberName" },
+        "title": { "$ref": "#/definitions/text" },
+        "description": { "$ref": "#/definitions/text" },
+        "public": { "$ref": "#/definitions/flag" },
+        "shown": { "$ref": "#/definitions/flag" },
+        "meta": { "$ref": "#/definitions/meta" },
+        "sql": { "$ref": "#/definitions/text" },
+        "mask": { "type": ["string", "number", "boolean", "object"] },
+        "type": {
+          "anyOf": [
+            { "enum": ["time", "string", "number", "boolean", "switch", "geo"] },
+            { "$ref": "#/definitions/jinjaString" }
+          ]
+        },
+        "case": {
+          "type": ["object", "string"],
+          "properties": {
+            "when": { "type": ["array", "string"] },
+            "else": { "type": ["object", "string"] }
+          },
+          "additionalProperties": false
+        },
+        "format": { "$ref": "#/definitions/format" },
+        "currency": { "type": "string" },
+        "links": { "type": ["array", "string"] },
+        "order": {
+          "anyOf": [{ "enum": ["asc", "desc"] }, { "$ref": "#/definitions/jinjaString" }]
+        },
+        "primary_key": { "$ref": "#/definitions/flag" },
+        "sub_query": { "$ref": "#/definitions/flag" },
+        "propagate_filters_to_sub_query": { "$ref": "#/definitions/flag" },
+        "synthetic": { "$ref": "#/definitions/flag" },
+        "granularities": {
+          "type": ["array", "string"],
+          "items": { "$ref": "#/definitions/granularity" }
+        },
+        "time_shift": { "$ref": "#/definitions/timeShift" },
+        "values": { "type": ["array", "string"] },
+        "latitude": { "type": ["object", "string"] },
+        "longitude": { "type": ["object", "string"] }
+      }
+    },
+    "includeEntry": {
+      "description": "A bare member name, or an object that renames/retitles one included member.",
+      "anyOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "alias": { "type": "string" },
+            "title": { "$ref": "#/definitions/text" },
+            "description": { "$ref": "#/definitions/text" },
+            "format": { "$ref": "#/definitions/format" },
+            "meta": { "$ref": "#/definitions/meta" }
+          }
+        }
+      ]
+    },
+    "viewCube": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["join_path"],
+      "properties": {
+        "join_path": { "type": "string", "minLength": 1 },
+        "includes": {
+          "anyOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "$ref": "#/definitions/includeEntry" } }
+          ]
+        },
+        "excludes": { "$ref": "#/definitions/memberNameList" },
+        "prefix": { "$ref": "#/definitions/flag" },
+        "alias": { "type": "string" }
+      }
+    },
+    "folder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "includes": {
+          "anyOf": [
+            { "type": "string" },
+            {
+              "type": "array",
+              "items": { "anyOf": [{ "type": "string" }, { "$ref": "#/definitions/folder" }] }
+            }
+          ]
+        }
+      }
+    },
+    "defaultFilter": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "member": { "type": "string" },
+        "operator": { "type": "string" },
+        "values": { "type": ["array", "string"] },
+        "unless": { "type": ["array", "object", "string"] }
+      }
+    },
+    "view": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/definitions/memberName" },
+        "extends": { "type": ["string", "object"] },
+        "sql_alias": { "type": "string" },
+        "title": { "$ref": "#/definitions/text" },
+        "description": { "$ref": "#/definitions/text" },
+        "public": { "$ref": "#/definitions/flag" },
+        "meta": { "$ref": "#/definitions/meta" },
+        "cubes": { "type": "array", "items": { "$ref": "#/definitions/viewCube" } },
+        "measures": { "type": ["array", "null"], "items": { "$ref": "#/definitions/measure" } },
+        "dimensions": { "type": ["array", "null"], "items": { "$ref": "#/definitions/dimension" } },
+        "segments": { "type": ["array", "null"], "items": { "$ref": "#/definitions/segment" } },
+        "folders": { "type": "array", "items": { "$ref": "#/definitions/folder" } },
+        "default_filters": { "type": "array", "items": { "$ref": "#/definitions/defaultFilter" } },
+        "access_policy": { "$ref": "#/definitions/accessPolicy" }
+      }
+    },
+    "memberLevel": {
+      "type": ["object", "string"],
+      "properties": {
+        "includes": { "$ref": "#/definitions/memberNameList" },
+        "excludes": { "$ref": "#/definitions/memberNameList" }
+      },
+      "additionalProperties": false
+    },
+    "accessPolicy": {
+      "type": ["array", "string"],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "group": { "type": "string" },
+          "groups": { "type": ["array", "string"], "items": { "type": "string" } },
+          "role": { "type": "string" },
+          "conditions": { "type": ["array", "string"] },
+          "member_level": { "$ref": "#/definitions/memberLevel" },
+          "member_masking": { "$ref": "#/definitions/memberLevel" },
+          "row_level": {
+            "type": ["object", "string"],
+            "properties": {
+              "filters": { "type": ["array", "string"] },
+              "allow_all": { "$ref": "#/definitions/flag" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  }
+}

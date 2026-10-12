@@ -28,7 +28,7 @@ Only after verifying prior-issues do you scan the same files for new issues.
 
 Read each file in scope.
 
-If the project has a CLAUDE.md or similar conventions doc, read it.
+If the project has a CLAUDE.md or similar conventions doc, read it and every doc it names for rules. Then check each added line against each written rule there and in the CLAUDE.md files loaded in your context. A line that breaks a written rule is a `fix` that quotes the rule, whatever its size; never a `nit`.
 
 ### Step 3: Structure
 
@@ -44,7 +44,7 @@ After the correctness pass, review the shape of the change, inside the same scop
 4. **Dead weight** — unused params, imports, branches; speculative flexibility nothing uses. **Defensive scaffolding**: a try/catch, null guard, or fallback default wrapping a path that cannot produce the failure it handles. Name why it can't arrive — no throw site in the callee, a non-nullable type, validation upstream — or it stays. **Dead exports need a reference search, not an eyeball:** for each export the diff adds, and each symbol whose in-diff caller(s) the diff removed, run LSP find-references (fall back to `rg` by name) across the workspace — zero consumers outside its own definition is a dead-export finding, stating the reference count. No search, no dead-export verdict.
 5. **Cohesion** — a new function doing three jobs; three new fragments that are one idea.
 
-Prefix every structure finding with `[smell]`. **Disposition by consequence**: `fix` for duplication whose copies diverging would cause a bug, and for any consolidation that is a mechanical extraction. `ask` when the right shape is a design call. Naming and dead weight that don't obscure intent → `nit`. A structure finding is never a `blocker`.
+Prefix every structure finding with `[smell]`. **Disposition by consequence**: `fix` for duplication whose copies diverging would cause a bug, and for any consolidation that is a mechanical extraction. `ask` when the right shape is a design call. Naming and dead weight that don't obscure intent and break no written rule → `nit`. A structure finding is never a `blocker`.
 
 **Anti-churn**: _must-stay-in-sync_ (flag) vs _looks-a-bit-similar_ (suppress). Three similar lines, a repeated two-line guard, parallel test-setup blocks — never demand an abstraction for incidental similarity. If the copies diverging would change what the program outputs, it is must-stay-in-sync at any size.
 

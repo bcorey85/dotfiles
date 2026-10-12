@@ -5,25 +5,17 @@
     the ledger, research, or a conversation summary.
 
 19b. **Shard above 400 lines.** `wc -l` the plan. At or under, one dispatch at
-the whole file. Over, three parallel dispatches, each a `sed`-derived extract
+the whole file. Over, two parallel dispatches, each a `sed`-derived extract
 written to the task directory — the plan itself is never split:
 
     - **A** — front matter + phases up to the boundary nearest the midpoint + back matter
     - **B** — front matter + the remaining phases + back matter
-    - **seam** — front matter + back matter + every `**File**:` line and
-      `#### Automated|Manual Verification` heading grouped under its phase
-      heading, **no phase bodies**
 
     Front matter is everything before the first `## Phase <number>:` heading.
     Each phase ends at the next level-2 heading; back matter starts after the
     final phase's section. Neither front nor back matter includes phase bodies.
 
-    Tell the seam reviewer its view is lossy: a phase's prose is absent, so a
-    contradiction it reads between two phases' `**File**:` lines is **provisional**
-    — report it as a GAP naming the two phases, never a BLOCKER. Only a claim it
-    verified against the repo or against front/back matter may be a BLOCKER.
-
-    Dedup the three reports by (section, claim) before step 20. A finding only
+    Dedup the two reports by (section, claim) before step 20. A finding only
     one shard raised still counts.
 
 20. **Review rounds: STANDARD max 1, DEEP max 2.** Round 1 is a NEW dispatch,

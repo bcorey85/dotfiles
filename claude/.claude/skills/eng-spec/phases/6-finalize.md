@@ -26,9 +26,15 @@
       — the ruled-out approaches the architect actually named, each with its
       failure mode, and its own count where it named fewer than three. Never top
       the list up.
-    - **Copy `## Decisions` from `03-decisions.md`'s resolved blocks verbatim.**
-      If none exist, state why. Its `## Direction & Constraints` feeds
-      `## Constraints`. Keep the ledger and research beside the spec.
+    - **Write `## Decisions` as one line per resolved block in `03-decisions.md`**:
+      its number, the Choice, and the Trade-off only where it changes code. The
+      full block stays in the ledger. If none exist, state why. Its
+      `## Direction & Constraints` feeds `## Constraints`. Keep the ledger and
+      research beside the spec.
+    - **State each fact once.** A fact that a coder needs goes in one section,
+      and other sections point to it. An edge case that a phase handles lives in
+      that phase, not in a second list. A fact that only the user needs at the
+      gate stays in its sibling file, named by path.
     - **Write `## Constraints` and `## External Contracts` yourself — both are mandatory.** Rules live in those sections' comments in the spec template; write with the template open, not from memory.
     - **Fullstack: weave, don't concatenate.** "Backend phases, then frontend
       phases" is the horizontal anti-pattern `plan-format.md` forbids — layer
@@ -85,6 +91,12 @@ It writes `docs/plans/<slug>/acceptance-criteria.md` and returns the damage-path
 questions it refused to default.
 
     Do not write the list yourself, and do not ask the architect to.
+
+    **Open the walk with a read-back.** In 15 lines or fewer, say what the
+    system will do after this ticket, in the ticket owner's words: what goes in,
+    what comes out, the rules that decide it, and what happens to data that
+    already exists. Leave out files, phases and code terms. A correction
+    resolves like a `DESIGN GAP`.
 
     **Then walk the draft with the user and take strikes and corrections.** They
     hold authority over every line: put damage-path questions to them in ONE turn — policy is the ticket-owner's call, never defaulted; "out of scope" is an answer (log under `## Direction & Constraints`); silence is not. **No Phase 7 before they respond.**

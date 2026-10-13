@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""PostToolUse hook: after three main-session responses in a row that each made one read, tell the model to batch.
+"""PostToolUse hook: after three responses in a row that each made one read, tell the model to batch.
 
-Reads the hook input on stdin and the last 512 KB of the transcript. Keeps no state: it fires when the run of
+Fires in the main session and in coder subagents; other subagents are skipped. Reads the hook input on stdin and the
+last 512 KB of the transcript of whichever of the two made the call. Keeps no state: it fires when the run of
 single-read responses, the running call's response included, is exactly 3, so it fires once per run. Any error
 exits 0 with no output.
 """
@@ -59,12 +60,13 @@ def tail_records(path):
     return [json.loads(x) for x in lines if x.strip()]
 
 
-def responses(records):
-    """The main session's turns in order: a list of tool calls (name, input, id) per assistant response, grouped by
-    message id, since each parallel call is its own record; None for a human prompt, which ends any run."""
+def responses(records, subagent=False):
+    """The session's turns in order: a list of tool calls (name, input, id) per assistant response, grouped by
+    message id, since each parallel call is its own record; None for a human prompt, which ends any run. Every record
+    of a subagent's own transcript is a sidechain record, so the main-session filter applies only to the main one."""
     out, at = [], {}
     for d in records:
-        if d.get("isSidechain"):
+        if d.get("isSidechain") and not subagent:
             continue
         m = d.get("message") or {}
         if d.get("type") == "assistant":
@@ -98,12 +100,18 @@ def run_length(turns, current):
 
 def decide(payload):
     """The additionalContext to emit, or None."""
-    if not isinstance(payload, dict) or payload.get("agent_id") or payload.get("hook_event_name") != "PostToolUse":
+    if not isinstance(payload, dict) or payload.get("hook_event_name") != "PostToolUse":
+        return None
+    agent_id = payload.get("agent_id")
+    if agent_id and payload.get("agent_type") != "coder":
         return None
     current = (payload.get("tool_name"), payload.get("tool_input"), payload.get("tool_use_id"))
     if not is_read(current[0], current[1]):
         return None
-    return TEXT if run_length(responses(tail_records(payload["transcript_path"])), current) == RUN else None
+    transcript = payload["transcript_path"]
+    if agent_id:
+        transcript = os.path.join(transcript[:-len(".jsonl")], "subagents", f"agent-{agent_id}.jsonl")
+    return TEXT if run_length(responses(tail_records(transcript), subagent=bool(agent_id)), current) == RUN else None
 
 
 def main():

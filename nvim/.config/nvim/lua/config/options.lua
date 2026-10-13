@@ -116,3 +116,5 @@ do
 end
 
 vim.opt.showtabline = 0
+
+vim.filetype.add({ filename = { ["pyrightconfig.json"] = "jsonc" } })

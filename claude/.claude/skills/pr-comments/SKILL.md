@@ -63,6 +63,22 @@ Pull every review comment on the branch PR (inline plus top-level, any author), 
 
    `stage_found`: human commenter means pr-human, automated reviewer means pr-bot. `gate_missed`: faithful-to-wrong-plan means eng-spec, test-pinning-behavior means test-intent, else review. `lane` from planning artifacts; ask when ambiguous. Surface proposed guard with the table; apply on approval.
 
+   **Reply to every Aikido comment, always, with or without `+fix`.** An Aikido comment has author `aikido-pr-checks[bot]` (or its body carries `@AikidoSec` / `app.aikido.dev`). Every one gets exactly one reply, by its `id` from the fetch output. Post the triage replies right after this step:
+
+   - **Already Fixed** → `Fixed.` plus a one-line note naming what changed.
+   - **Invalid** → `@AikidoSec ignore: <the Why Invalid reason>`.
+   - **Low Priority** → `@AikidoSec ignore: low priority — <the Reason>`.
+   - **Valid** → no triage reply. The fix skill replies after the fix (`+fix`, or a later `/fix` given the `comment_id`). When `+fix` is absent, pass the `comment_id`s in the step-6 line so a later `/fix` carries them.
+
+   Run from the PR's checkout (the worktree, when the branch lives in one):
+
+   ```bash
+   repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+   gh api --method POST "repos/$repo/pulls/<pr>/comments/<id>/replies" -f body='<reply>'
+   ```
+
+   Best-effort: a failed reply never blocks the triage or the fix. List posted replies under `### Aikido replies`.
+
 5. **If `+fix` modifier is present** and there are valid actionable items:
    - Format valid findings as review feedback (paths, lines, issues, author). Aikido findings also pass each comment's `id` from the fetch output as `comment_id` for thread replies in the fix skill.
    - Invoke the fix skill, passing through +fast or +deep; nothing valid means say so.

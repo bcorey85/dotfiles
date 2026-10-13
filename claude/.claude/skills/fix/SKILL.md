@@ -66,7 +66,7 @@ Thin wrapper over the `review-loop` agent (`mode: fix-first`): hand it the findi
 
    - **Fixed** (entry in `fixed[]`, fix actually applied) → reply `Fixed.` plus a one-line note of what changed.
    - **Not relevant** (entry in `skipped_fp[]`, ruled a false positive) → reply `@AikidoSec ignore: <reason>` using the FP reason, verbatim in that form.
-   - Anything else (deferred, nit, ask, cap-reached residue) → no auto-reply; leave for the human.
+   - Anything else (deferred, nit, ask, cap-reached residue) → reply `Not fixed in this pass: <status> — <reason or open question>`. No `ignore`; the finding stays open. Every Aikido finding gets exactly one reply.
 
    Post each reply to the review-comment thread:
 

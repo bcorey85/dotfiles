@@ -39,16 +39,6 @@ return {
     }
     require("nvim-treesitter").install(langs)
 
-    -- `jinja_sql` is the jinja parser registered under a second name. Cube `sql:`
-    -- values mix SQL and `{{ }}` tags, so they need Jinja outside and SQL injected
-    -- into its plain text (queries/jinja_sql/). A separate language name keeps
-    -- description prose, which uses plain `jinja`, from being parsed as SQL. The
-    -- parser file only exists once :TSInstall has built it, so a miss must not throw.
-    local jinja_parser = vim.api.nvim_get_runtime_file("parser/jinja.so", false)[1]
-    if jinja_parser then
-      pcall(vim.treesitter.language.add, "jinja_sql", { path = jinja_parser, symbol_name = "jinja" })
-    end
-
     -- Derive the FileType pattern from the install list so the two can never
     -- drift. vim.treesitter.language.get_filetypes() maps parser → real ft names
     -- (e.g. tsx → typescriptreact, bash → sh, vimdoc → help).

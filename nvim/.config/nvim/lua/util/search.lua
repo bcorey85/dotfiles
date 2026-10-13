@@ -25,6 +25,7 @@ M.excluded_dirs = {
   ".complexipy_cache",
   "htmlcov",
   "COMPRESS_CACHE",
+  ".claude/worktrees",
 }
 
 -- Junk dirs excluded only at the REPO ROOT. Names like static/ and media/ are

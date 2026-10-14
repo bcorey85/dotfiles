@@ -335,6 +335,10 @@
           },
           {
             "type": "command",
+            "command": "python3 ~/.claude/scripts/inline-interpreter-hint.py"
+          },
+          {
+            "type": "command",
             "command": "bash ~/.claude/scripts/git-discipline-gate.sh"
           },
           {

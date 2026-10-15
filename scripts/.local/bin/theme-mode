@@ -509,8 +509,8 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # hunk also colours line numbers and rails with the sign colour, and dims
       # unselected rails to 35% of it. The rail carries the signal and the wash
       # stays a whisper, at moderate chroma so the gutter does not glare.
-      sAdd="#54ab8f"; sRem="#cb6e68"; lnFg="#747c83"
-      badgeAdd="#54ab8f"; badgeRem="#cb6e68"; badgeNeu="#ebc75b"
+      sAdd="#599b85"; sRem="#cb6e68"; lnFg="#747c83"
+      badgeAdd="#599b85"; badgeRem="#cb6e68"; badgeNeu="#ebc75b"
       fRename="#ebc75b"; fMod="#ebc75b"; fUntracked="#7abff9"; note="#1a1d21"
       kw="#808c99"; str="#7fc8c8"; num="#dc95aa"; fn="#adb3f3"; typ="#a1aebb"; punct="#808c99"; op="#808c99"
       konst="#dc95aa"; esc="#dc95aa"; cmt="#b3b0a6"; mem="#7eaedb"; param="#bdc8d3"
@@ -527,8 +527,8 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
         accent="#007475"; accentMuted="#989ca0"; text="#26292c"; muted="#666a6e"
         addWord="#a5beb4"; remWord="#c9b4ba"
         addedBg="#bcc8c3"; removedBg="#cdc1c4"; ctxBg="#c1c5c9"
-        sAdd="#00805d"; sRem="#e00000"; lnFg="#6e7275"
-        badgeAdd="#00805d"; badgeRem="#ba3535"; badgeNeu="#886100"
+        sAdd="#388970"; sRem="#ba524d"; lnFg="#6e7275"
+        badgeAdd="#388970"; badgeRem="#ba524d"; badgeNeu="#886100"
         fRename="#886100"; fMod="#886100"; fUntracked="#116bb5"; note="#bcc0c4"
         kw="#606468"; str="#146d70"; num="#9f4063"; fn="#524ca6"; typ="#52565a"; punct="#606468"; op="#606468"
         konst="#9f4063"; esc="#9f4063"; cmt="#403d31"; mem="#155e97"; param="#26292c"

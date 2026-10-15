@@ -59,7 +59,7 @@ palettes.dark = {
   param = "#bdc8d3",
   heading = "#c5b98c",
 
-  added = "#54ab8f",
+  added = "#599b85",
   removed = "#cb6e68",
   diff_add = "#1b2421",
   diff_delete = "#2c2527",
@@ -111,8 +111,8 @@ palettes.light = {
   heading = "#6b6032",
   type = "#155e97",
 
-  added = "#00805d",
-  removed = "#ba3535",
+  added = "#388970",
+  removed = "#ba524d",
   diff_add = "#bcc8c3",
   diff_delete = "#cdc1c4",
   diff_change = "#bcc8c3",

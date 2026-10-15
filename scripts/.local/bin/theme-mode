@@ -498,44 +498,44 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       ;;
     # dredge (nvim colors/dredge.lua). Both modes share the scope table below.
     dredge:*)
-      bg="#202427"; panel="#1a1d21"; panelAlt="#282b2e"; border="#3e4248"
-      accent="#79cfcf"; accentMuted="#3e4248"; text="#bdc8d3"; muted="#95a0ab"
+      bg="#1a1e21"; panel="#14171b"; panelAlt="#282b2e"; border="#3e4248"
+      accent="#79cfcf"; accentMuted="#3e4248"; text="#c3cfda"; muted="#95a0ab"
       # Words must stay >= RGB distance 28 from the line wash, or hunk
       # replaces them with its own blend of the sign colour. Words separate by
       # chroma, not lightness. The washes share one lightness. Red reads
       # louder, so it carries less chroma, and its words sit a step darker.
-      addWord="#174235"; remWord="#442e35"
-      addedBg="#1c2b25"; removedBg="#2c2527"; ctxBg="#202427"
+      addWord="#25442c"; remWord="#442e35"
+      addedBg="#1f2a21"; removedBg="#2c2527"; ctxBg="#1a1e21"
       # hunk also colours line numbers and rails with the sign colour, and dims
       # unselected rails to 35% of it. The rail carries the signal and the wash
       # stays a whisper, at moderate chroma so the gutter does not glare.
-      sAdd="#599b85"; sRem="#cb6e68"; lnFg="#747c83"
-      badgeAdd="#599b85"; badgeRem="#cb6e68"; badgeNeu="#ebc75b"
-      fRename="#ebc75b"; fMod="#ebc75b"; fUntracked="#7abff9"; note="#1a1d21"
-      kw="#808c99"; str="#7fc8c8"; num="#dc95aa"; fn="#adb3f3"; typ="#a1aebb"; punct="#808c99"; op="#808c99"
-      konst="#dc95aa"; esc="#dc95aa"; cmt="#dbb597"; mem="#7eaedb"; param="#bdc8d3"
-      attr="#dc95aa"; tag="#808c99"; vbi="#bdc8d3"; lang="#dc95aa"; imp="#808c99"; pre="#808c99"
-      prim="#a1aebb"; ns="#bdc8d3"; mac="#adb3f3"; bfn="#bdc8d3"; var="#adb3f3"; key="#adb3f3"; cls="#adb3f3"
+      sAdd="#8ec899"; sRem="#df9993"; lnFg="#747c83"
+      badgeAdd="#8ec899"; badgeRem="#df9993"; badgeNeu="#ebc75b"
+      fRename="#ebc75b"; fMod="#ebc75b"; fUntracked="#7abff9"; note="#14171b"
+      kw="#8995a2"; str="#7fc8c8"; num="#dc95aa"; fn="#adb3f3"; typ="#c3cfda"; punct="#8995a2"; op="#8995a2"
+      konst="#dc95aa"; esc="#dc95aa"; cmt="#c6bf93"; param="#c3cfda"
+      attr="#dc95aa"; tag="#8995a2"; vbi="#c3cfda"; lang="#dc95aa"; imp="#8995a2"; pre="#8995a2"
+      prim="#c3cfda"; ns="#c3cfda"; mac="#adb3f3"; bfn="#c3cfda"; var="#adb3f3"; key="#c3cfda"; cls="#adb3f3"
       # Colour marks definitions. Builtins, uses, calls and members are plain text.
-      use="#bdc8d3"; call="#bdc8d3"; mem="#bdc8d3"
+      use="#c3cfda"; call="#c3cfda"; mem="#c3cfda"
       # Match nvim's tree-sitter colours where one-dark-pro's own selectors
-      # out-rank the generic table. h1/h2/bullet mirror theme-sync's markdown.
+      # out-rank the generic table. Headings ($fn) and bullet mirror theme-sync's markdown.
       # bright = markdown bold; hunk's scope table carries colour only, no weight.
-      local h1="#ebc75b" h2="#c5b98c" bright="#d3dbe3" quote="#a1aebb" bullet="#9ba8b5"
+      local bright="#d3dbe3" quote="#a1aebb" bullet="#9ba8b5"
       if [ "$2" = light ]; then
         bg="#c1c5c9"; panel="#bcc0c4"; panelAlt="#b8bcc0"; border="#989ca0"
         accent="#007475"; accentMuted="#989ca0"; text="#26292c"; muted="#666a6e"
-        addWord="#9fc0b3"; remWord="#c1acb2"
-        addedBg="#b8cac2"; removedBg="#cdc1c4"; ctxBg="#c1c5c9"
-        sAdd="#388970"; sRem="#ba524d"; lnFg="#6e7275"
-        badgeAdd="#388970"; badgeRem="#ba524d"; badgeNeu="#886100"
+        addWord="#a6bfaa"; remWord="#c1acb2"
+        addedBg="#bbc9bd"; removedBg="#cdc1c4"; ctxBg="#c1c5c9"
+        sAdd="#397247"; sRem="#9f4d48"; lnFg="#6e7275"
+        badgeAdd="#397247"; badgeRem="#9f4d48"; badgeNeu="#886100"
         fRename="#886100"; fMod="#886100"; fUntracked="#116bb5"; note="#bcc0c4"
-        kw="#606468"; str="#146d70"; num="#9f4063"; fn="#524ca6"; typ="#52565a"; punct="#606468"; op="#606468"
-        konst="#9f4063"; esc="#9f4063"; cmt="#65452a"; mem="#155e97"; param="#26292c"
+        kw="#606468"; str="#146d70"; num="#9f4063"; fn="#524ca6"; typ="#26292c"; punct="#606468"; op="#606468"
+        konst="#9f4063"; esc="#9f4063"; cmt="#554e25"; param="#26292c"
         attr="#9f4063"; tag="#606468"; vbi="#26292c"; lang="#9f4063"; imp="#606468"; pre="#606468"
-        prim="#52565a"; ns="#26292c"; mac="#524ca6"; bfn="#26292c"; var="#524ca6"; key="#524ca6"; cls="#524ca6"
+        prim="#26292c"; ns="#26292c"; mac="#524ca6"; bfn="#26292c"; var="#524ca6"; key="#26292c"; cls="#524ca6"
         use="#26292c"; call="#26292c"; mem="#26292c"
-        h1="#886100" h2="#6b6032" bright="#16181a" quote="#52565a" bullet="#666a6e"
+        bright="#16181a" quote="#52565a" bullet="#666a6e"
       fi
       extra=$(cat <<EOF
 "punctuation.separator.key-value"   = "$punct"
@@ -616,6 +616,9 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
 "variable.other.object.property"    = "$text"
 "new.expr entity.name.function"     = "$text"
 "entity.name.type.class"            = "$fn"
+"entity.name.type.interface"        = "$fn"
+"entity.name.type.alias"            = "$fn"
+"entity.name.type.enum"             = "$fn"
 "entity.other.attribute-name.tsx"   = "$fn"
 "entity.other.attribute-name.jsx"   = "$fn"
 "entity.other.attribute-name.html"  = "$fn"
@@ -637,18 +640,18 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
 "variable.parameter.function.language.special.cls.python" = "$vbi"
 "variable.parameter.function.lua"   = "$param"
 "meta.parameter.lua"                = "$param"
-"markup.heading entity.name.section.markdown" = "$h2"
-"markup.heading punctuation.definition.heading.markdown" = "$h2"
-"heading.1.markdown entity.name.section.markdown" = "$h1"
-"heading.1.markdown punctuation.definition.heading.markdown" = "$h1"
+"markup.heading entity.name.section.markdown" = "$fn"
+"markup.heading punctuation.definition.heading.markdown" = "$fn"
+"heading.1.markdown entity.name.section.markdown" = "$fn"
+"heading.1.markdown punctuation.definition.heading.markdown" = "$fn"
 "markup.bold"                       = "$bright"
 "punctuation.definition.bold.markdown" = "$punct"
 "markup.italic"                     = "$text"
 "punctuation.definition.italic"     = "$punct"
 "markup.inline.raw.string.markdown" = "$str"
 "punctuation.definition.raw.markdown" = "$punct"
-"markup.underline.link.markdown"    = "$key"
-"text.html.markdown string.other.link.title.markdown" = "$key"
+"markup.underline.link.markdown"    = "$fn"
+"text.html.markdown string.other.link.title.markdown" = "$fn"
 "punctuation.definition.link.title" = "$punct"
 "text.html.markdown punctuation.definition.metadata.markdown" = "$punct"
 "markup.list meta.paragraph"        = "$text"
@@ -1222,10 +1225,10 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:*)
       base_name="one-dark"
-      accent="#58afaf" panel_bg="#1a1d21" surface_dim="#282b2e"
+      accent="#58afaf" panel_bg="#14171b" surface_dim="#282b2e"
       surface0="#30363d" surface1="#3e4248"
       overlay0="#77818c" overlay1="#95a0ab"
-      text="#bdc8d3" subtext0="#95a0ab"
+      text="#c3cfda" subtext0="#95a0ab"
       green="#82d395" yellow="#ebc75b" red="#f77972"
       blue="#7abff9" teal="#79cfcf" peach="#ffa475"
       ;;

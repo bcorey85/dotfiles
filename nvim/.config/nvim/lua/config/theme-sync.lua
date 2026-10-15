@@ -115,9 +115,9 @@ local FAMILIES = {
     schemes = { dark = "dredge", light = "dredge" },
     colors_name = "dredge",
     accents = {
-      -- Headings are yellow: H1 the terminal yellow, the rest the muted palette yellow.
-      dark = { heading1 = "#ebc75b", heading = "#c5b98c", bullet = "#9ba8b5" },
-      light = { heading1 = "#886100", heading = "#6b6032", bullet = "#666a6e" },
+      -- Headings are periwinkle at every level: a heading defines a section.
+      dark = { heading = "#adb3f3", bullet = "#9ba8b5" },
+      light = { heading = "#524ca6", bullet = "#666a6e" },
     },
   },
 }

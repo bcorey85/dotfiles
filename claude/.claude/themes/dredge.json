@@ -4,8 +4,8 @@
   "overrides": {
     "claude": "#79cfcf",
     "claudeShimmer": "#a7e1e0",
-    "text": "#bdc8d3",
-    "inverseText": "#202427",
+    "text": "#c3cfda",
+    "inverseText": "#1a1e21",
     "inactive": "#8f9aa4",
     "inactiveShimmer": "#a5b0bb",
     "subtle": "#77818c",

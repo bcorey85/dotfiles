@@ -103,14 +103,14 @@ local function color_value(buf, text, start_row, start_col)
     return start_row + line - 1, col
   end
 
-  local function mark(first, last, group)
+  local function mark(first, last, group, priority)
     local row, col = position(first)
     local end_row, end_col = position(last + 1)
     vim.api.nvim_buf_set_extmark(buf, ns, row, col, {
       end_row = end_row,
       end_col = end_col,
       hl_group = group,
-      priority = PRIORITY,
+      priority = priority or PRIORITY,
     })
   end
 
@@ -136,6 +136,25 @@ local function color_value(buf, text, start_row, start_col)
       mark(ref_first, ref_last, "CubeSqlRef")
       from = ref_last + 1
     end
+  end
+
+  -- SQL text outside tags is plain, not the yaml string colour; tags keep jinja's.
+  local plain_start = 1
+  local k = 1
+  while k <= #text do
+    local tag_close = tag_end(k)
+    if tag_close then
+      if k > plain_start then
+        mark(plain_start, k - 1, "@variable", PRIORITY - 1)
+      end
+      plain_start = tag_close + 1
+      k = tag_close + 1
+    else
+      k = k + 1
+    end
+  end
+  if plain_start <= #text then
+    mark(plain_start, #text, "@variable", PRIORITY - 1)
   end
 
   local i = 1
@@ -239,6 +258,12 @@ function M.refresh(buf)
       if node_type == "double_quote_scalar" or node_type == "single_quote_scalar" then
         start_col = start_col + 1
         end_col = end_col - 1
+      end
+      -- A block scalar at end of file ends one row past the last line.
+      local line_count = vim.api.nvim_buf_line_count(buf)
+      if end_row >= line_count then
+        end_row = line_count - 1
+        end_col = #vim.api.nvim_buf_get_lines(buf, end_row, end_row + 1, false)[1]
       end
       local lines = vim.api.nvim_buf_get_text(buf, start_row, start_col, end_row, end_col, {})
       color_value(buf, table.concat(lines, "\n"), start_row, start_col)

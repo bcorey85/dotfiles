@@ -5,11 +5,10 @@
 -- comments 47, punctuation 46. Light: fg Lc 88. At Lc 75 on cream the gamut leaves
 -- no chroma, and every token reads as black. Lc is a floor, not a target: coloured
 -- token pairs also keep OKLab dE >= 0.09 in light, >= 0.085 in dark.
--- Colour marks definitions; uses and calls are fg. Variables and parameters at
--- their definition are teal (h 194-202). Keys and class attributes at their
--- definition are blue (h 248). Functions at their definition are periwinkle
--- (h 280-284). Named constants and builtins (self, JSON) are fg. Literals are
--- rose (h 0; None, numbers, booleans). Strings are muted green; comments are dim white gold (h 95, C 0.015).
+-- Colour marks definitions; uses and calls are fg. Every definition is
+-- periwinkle (h 280-284): variables and named constants, keys, class
+-- attributes and functions. Parameters and builtins (self, JSON) are fg. Literals are rose (h 0; None, numbers, booleans). Strings are
+-- teal (h 196); comments are muted green (h 150).
 -- Light mirrors dark's hues and relative weights. Keywords are
 -- the ground's grey, italic; types share the grey, upright, and so do markup tags.
 -- Modules stay fg. Markdown headings are yellow.
@@ -49,15 +48,15 @@ palettes.dark = {
 
   kw = "#808c99",
   type_name = "#a1aebb",
-  var = "#7fc8c8",
+  var = "#adb3f3",
   fn = "#adb3f3",
-  remark = "#b3b0a6",
+  remark = "#a3c3a8",
   fn_lib = "#b3b6d7",
-  str = "#9dc5a4",
+  str = "#7fc8c8",
   const = "#dc95aa",
-  key = "#7eaedb",
+  key = "#adb3f3",
   type = "#7eaedb",
-  param = "#7fc8c8",
+  param = "#bdc8d3",
   heading = "#c5b98c",
 
   added = "#82d395",
@@ -100,14 +99,14 @@ palettes.light = {
 
   kw = "#606468",
   type_name = "#52565a",
-  var = "#146d70",
+  var = "#524ca6",
   fn = "#524ca6",
-  remark = "#403d31",
+  remark = "#4a6950",
   fn_lib = "#555681",
-  str = "#446b4c",
+  str = "#146d70",
   const = "#9f4063",
-  key = "#155e97",
-  param = "#146d70",
+  key = "#524ca6",
+  param = "#26292c",
   heading = "#6b6032",
   type = "#155e97",
 
@@ -229,14 +228,14 @@ local groups = {
   Todo = { fg = c.bg, bg = c.const, bold = true },
 
   -- treesitter
-  -- Variables are plain at use; teal marks their definition.
+  -- Variables are plain at use; periwinkle marks their definition.
   ["@variable"] = { fg = c.fg },
   ["@variable.builtin"] = { fg = c.fg },
   ["@variable.parameter"] = { fg = c.param },
   -- Shell arguments, flags and $VAR uses are uses: plain.
   ["@variable.parameter.bash"] = { fg = c.fg },
   ["@constant.bash"] = { fg = c.fg },
-  -- Member access is plain; blue marks keys and attributes at their definition.
+  -- Member access is plain; periwinkle marks keys and attributes at their definition.
   ["@variable.member"] = { fg = c.fg },
   ["@property"] = { fg = c.fg },
   ["@variable.member.key"] = { fg = c.key },

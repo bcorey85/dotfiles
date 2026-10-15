@@ -250,8 +250,8 @@ green = "#82d395"
 blue = "#7abff9"
 teal = "#79cfcf"
 purple = "#b191ea"
-fg = "#bdc8d3"
-bg = "#202427"
+fg = "#c3cfda"
+bg = "#1a1e21"
 grey = "#95a0ab"
 
 [palettes.dredge-light]

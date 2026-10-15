@@ -1,17 +1,17 @@
 -- dredge — personal theme-mode family, dark and light. Prose first, diffs second:
--- cool charcoal ground (OKLCH L 0.265, h 250), fg and greys tinted to the ground hue
+-- cool charcoal ground (OKLCH L 0.232, h 240), fg and greys tinted to the ground hue
 -- (C 0.025). Contrast is tuned in APCA Lc, not WCAG ratios, which overrate
--- light-on-dark. Dark is deliberately dim against halation: fg Lc 70 (~9.2:1),
--- comments 47, punctuation 46. Light: fg Lc 88. At Lc 75 on cream the gamut leaves
--- no chroma, and every token reads as black. Lc is a floor, not a target: coloured
+-- light-on-dark. Dark is deliberately dim against halation: fg Lc 75,
+-- comments 66, punctuation 43. Light: fg Lc 68. Lc is a floor, not a target: coloured
 -- token pairs also keep OKLab dE >= 0.09 in light, >= 0.085 in dark.
 -- Colour marks definitions; uses and calls are fg. Every definition is
--- periwinkle (h 280-284): top-level variables and constants, keys, class
--- attributes and functions. Parameters and builtins (self, JSON) are fg. Literals are rose (h 0; None, numbers, booleans). Strings are
--- teal (h 196); comments are apricot (h 60).
+-- periwinkle (h 280-284): top-level variables and constants, functions and
+-- classes. Keys, fields, attributes, parameters and builtins (self, JSON) are
+-- fg. Literals are rose (h 0; None, numbers, booleans). Strings are
+-- teal (h 196); comments are yellow sand (h 100).
 -- Light mirrors dark's hues and relative weights. Keywords are
--- the ground's grey, italic; types share the grey, upright, and so do markup tags.
--- Modules stay fg. Markdown headings are yellow.
+-- the ground's grey, and so are markup tags. Types are fg.
+-- Modules stay fg. Markdown headings are periwinkle, like definitions.
 -- Diffs: added = green signs on a green wash (green is free: code never uses it),
 -- removed = red, same washes as hunk. Changed words separate by chroma, not
 -- lightness. Red reads louder than green, so the removed wash carries less chroma.
@@ -24,8 +24,8 @@
 local palettes = {}
 
 palettes.dark = {
-  bg = "#202427",
-  bg_dark = "#1a1d21",
+  bg = "#1a1e21",
+  bg_dark = "#14171b",
   bg_line = "#282b2e",
   bg_sel = "#30363d",
   bg_visual = "#373d42",
@@ -34,8 +34,8 @@ palettes.dark = {
   linenr = "#747c83",
   muted = "#95a0ab",
   comment = "#a1aebb",
-  punct = "#808c99",
-  fg = "#bdc8d3",
+  punct = "#8995a2",
+  fg = "#c3cfda",
   fg_bright = "#d3dbe3",
 
   red = "#f77972",
@@ -46,29 +46,22 @@ palettes.dark = {
   blue = "#7abff9",
   magenta = "#e091d8",
 
-  kw = "#808c99",
-  type_name = "#a1aebb",
-  var = "#adb3f3",
+  kw = "#8995a2",
   fn = "#adb3f3",
-  remark = "#dbb597",
-  fn_lib = "#b3b6d7",
+  remark = "#c6bf93",
   str = "#7fc8c8",
   const = "#dc95aa",
-  key = "#adb3f3",
-  type = "#7eaedb",
-  param = "#bdc8d3",
-  heading = "#c5b98c",
 
-  added = "#599b85",
-  removed = "#cb6e68",
-  diff_add = "#1c2b25",
+  added = "#8ec899",
+  removed = "#df9993",
+  diff_add = "#1f2a21",
   diff_delete = "#2c2527",
-  diff_change = "#1c2b25",
-  diff_text = "#174235",
+  diff_change = "#1f2a21",
+  diff_text = "#25442c",
   search = "#56442c",
 
   term = {
-    "#1a1d21", "#f77972", "#82d395", "#ebc75b", "#7abff9", "#e091d8", "#79cfcf", "#bdc8d3",
+    "#14171b", "#f77972", "#82d395", "#ebc75b", "#7abff9", "#e091d8", "#79cfcf", "#c3cfda",
     "#727c86", "#ff9790", "#a6e7b3", "#fdde8c", "#a0d4ff", "#efade8", "#a7e1e0", "#d3dbe3",
   },
 }
@@ -99,24 +92,17 @@ palettes.light = {
   magenta = "#993f94",
 
   kw = "#606468",
-  type_name = "#52565a",
-  var = "#524ca6",
   fn = "#524ca6",
-  remark = "#65452a",
-  fn_lib = "#555681",
+  remark = "#554e25",
   str = "#146d70",
   const = "#9f4063",
-  key = "#524ca6",
-  param = "#26292c",
-  heading = "#6b6032",
-  type = "#155e97",
 
-  added = "#388970",
-  removed = "#ba524d",
-  diff_add = "#b8cac2",
+  added = "#397247",
+  removed = "#9f4d48",
+  diff_add = "#bbc9bd",
   diff_delete = "#cdc1c4",
-  diff_change = "#b8cac2",
-  diff_text = "#9fc0b3",
+  diff_change = "#bbc9bd",
+  diff_text = "#a6bfaa",
   search = "#dbaa6b",
 
   term = {
@@ -203,22 +189,22 @@ local groups = {
   Float = { fg = c.const },
   Identifier = { fg = c.fg },
   Function = { fg = c.fn },
-  Statement = { fg = c.kw, italic = true },
-  Conditional = { fg = c.kw, italic = true },
-  Repeat = { fg = c.kw, italic = true },
-  Label = { fg = c.kw, italic = true },
+  Statement = { fg = c.kw },
+  Conditional = { fg = c.kw },
+  Repeat = { fg = c.kw },
+  Label = { fg = c.kw },
   Operator = { fg = c.punct },
-  Keyword = { fg = c.kw, italic = true },
-  Exception = { fg = c.kw, italic = true },
-  PreProc = { fg = c.kw, italic = true },
-  Include = { fg = c.kw, italic = true },
-  Define = { fg = c.kw, italic = true },
+  Keyword = { fg = c.kw },
+  Exception = { fg = c.kw },
+  PreProc = { fg = c.kw },
+  Include = { fg = c.kw },
+  Define = { fg = c.kw },
   Macro = { fg = c.fn },
-  PreCondit = { fg = c.kw, italic = true },
-  Type = { fg = c.type_name },
-  StorageClass = { fg = c.kw, italic = true },
-  Structure = { fg = c.type_name },
-  Typedef = { fg = c.type_name },
+  PreCondit = { fg = c.kw },
+  Type = { fg = c.fg },
+  StorageClass = { fg = c.kw },
+  Structure = { fg = c.fg },
+  Typedef = { fg = c.fg },
   Special = { fg = c.const },
   SpecialChar = { fg = c.const },
   Tag = { fg = c.kw },
@@ -233,41 +219,44 @@ local groups = {
   -- Variables are plain at use; periwinkle marks their top-level definition.
   ["@variable"] = { fg = c.fg },
   ["@variable.builtin"] = { fg = c.fg },
-  ["@variable.parameter"] = { fg = c.param },
+  ["@variable.parameter"] = { fg = c.fg },
   -- Shell arguments, flags and $VAR uses are uses: plain.
   ["@variable.parameter.bash"] = { fg = c.fg },
   ["@constant.bash"] = { fg = c.fg },
-  -- Member access is plain; periwinkle marks keys and attributes at their definition.
+  -- Members are plain, at use and at definition (keys, fields, attributes).
   ["@variable.member"] = { fg = c.fg },
   ["@property"] = { fg = c.fg },
-  ["@variable.member.key"] = { fg = c.key },
-  ["@variable.member.attr"] = { fg = c.key },
+  ["@variable.member.key"] = { fg = c.fg },
+  ["@variable.member.attr"] = { fg = c.fg },
   -- Named constants are plain at use; literals stay c.const.
   ["@constant"] = { fg = c.fg },
   ["@constant.builtin"] = { fg = c.const },
   ["@constant.macro"] = { fg = c.fg },
   ["@module"] = { fg = c.fg },
   ["@module.builtin"] = { fg = c.fg },
-  ["@label"] = { fg = c.kw, italic = true },
+  ["@label"] = { fg = c.kw },
   ["@string"] = { fg = c.str },
   ["@string.documentation"] = { fg = c.remark },
   ["@string.escape"] = { fg = c.const },
   ["@string.regexp"] = { fg = c.const },
   ["@string.special"] = { fg = c.const },
   ["@string.plain"] = { fg = c.str },
-  ["@string.special.url"] = { fg = c.type, underline = true },
+  ["@string.special.url"] = { fg = c.fn, underline = true },
   ["@character"] = { fg = c.str },
   ["@character.special"] = { fg = c.const },
   -- Names at their definition (after/queries); colour comes from the other captures.
   ["@declaration"] = {},
   ["@declaration.function"] = { fg = c.fn },
   ["@declaration.class"] = { fg = c.fn },
-  ["@declaration.variable"] = { fg = c.var },
+  ["@declaration.type"] = { fg = c.fn },
+  ["@declaration.variable"] = { fg = c.fn },
   ["@number"] = { fg = c.const },
   ["@boolean"] = { fg = c.const },
-  ["@type"] = { fg = c.type_name },
-  ["@type.builtin"] = { fg = c.type_name },
-  ["@type.definition"] = { fg = c.type_name },  ["@attribute"] = { fg = c.const },
+  -- Types are plain; periwinkle marks them at their definition.
+  ["@type"] = { fg = c.fg },
+  ["@type.builtin"] = { fg = c.fg },
+  ["@type.definition"] = { fg = c.fg },
+  ["@attribute"] = { fg = c.const },
   ["@function"] = { fg = c.fn },
   -- Calls are plain; purple marks functions at their definition.
   ["@function.builtin"] = { fg = c.fg },
@@ -282,16 +271,16 @@ local groups = {
   -- Lua captures table braces as @constructor.
   ["@constructor.lua"] = { link = "@punctuation.bracket" },
   ["@operator"] = { fg = c.punct },
-  ["@keyword"] = { fg = c.kw, italic = true },
-  ["@keyword.function"] = { fg = c.kw, italic = true },
-  ["@keyword.operator"] = { fg = c.kw, italic = true },
-  ["@keyword.import"] = { fg = c.kw, italic = true },
-  ["@keyword.return"] = { fg = c.kw, italic = true },
-  ["@keyword.exception"] = { fg = c.kw, italic = true },
-  ["@keyword.conditional"] = { fg = c.kw, italic = true },
-  ["@keyword.repeat"] = { fg = c.kw, italic = true },
-  ["@keyword.coroutine"] = { fg = c.kw, italic = true },
-  ["@keyword.directive"] = { fg = c.kw, italic = true },
+  ["@keyword"] = { fg = c.kw },
+  ["@keyword.function"] = { fg = c.kw },
+  ["@keyword.operator"] = { fg = c.kw },
+  ["@keyword.import"] = { fg = c.kw },
+  ["@keyword.return"] = { fg = c.kw },
+  ["@keyword.exception"] = { fg = c.kw },
+  ["@keyword.conditional"] = { fg = c.kw },
+  ["@keyword.repeat"] = { fg = c.kw },
+  ["@keyword.coroutine"] = { fg = c.kw },
+  ["@keyword.directive"] = { fg = c.kw },
   ["@punctuation.delimiter"] = { fg = c.punct },
   ["@punctuation.bracket"] = { fg = c.punct },
   ["@punctuation.special"] = { fg = c.punct },
@@ -308,12 +297,12 @@ local groups = {
   ["@markup.italic"] = { italic = true },
   ["@markup.strikethrough"] = { strikethrough = true },
   ["@markup.underline"] = { underline = true },
-  ["@markup.heading"] = { fg = c.heading, bold = true },
+  ["@markup.heading"] = { fg = c.fn, bold = true },
   ["@markup.quote"] = { fg = c.comment, italic = true },
   ["@markup.math"] = { fg = c.const },
-  ["@markup.link"] = { fg = c.type },
-  ["@markup.link.label"] = { fg = c.type },
-  ["@markup.link.url"] = { fg = c.type, underline = true },
+  ["@markup.link"] = { fg = c.fn },
+  ["@markup.link.label"] = { fg = c.fn },
+  ["@markup.link.url"] = { fg = c.fn, underline = true },
   ["@markup.raw"] = { fg = c.str },
   ["@markup.list"] = { fg = c.punct },
   ["@markup.list.checked"] = { fg = c.green },
@@ -378,7 +367,7 @@ local groups = {
   diffAdded = { fg = c.added },
   diffRemoved = { fg = c.removed },
   diffChanged = { fg = c.yellow },
-  diffFile = { fg = c.type },
+  diffFile = { fg = c.fn },
   diffLine = { fg = c.muted },
   GitSignsAdd = { fg = c.added },
   GitSignsChange = { fg = c.yellow },

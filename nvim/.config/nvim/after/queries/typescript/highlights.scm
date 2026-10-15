@@ -14,13 +14,16 @@
 
 ; Type names at their definition.
 (interface_declaration
-  name: (_) @declaration)
+  name: (_) @declaration.type
+  (#set! priority 130))
 
 (type_alias_declaration
-  name: (_) @declaration)
+  name: (_) @declaration.type
+  (#set! priority 130))
 
 (enum_declaration
-  name: (_) @declaration)
+  name: (_) @declaration.type
+  (#set! priority 130))
 
 (abstract_class_declaration
   name: (_) @declaration.class

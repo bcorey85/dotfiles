@@ -6,7 +6,7 @@
 -- no chroma, and every token reads as black. Lc is a floor, not a target: coloured
 -- token pairs also keep OKLab dE >= 0.09 in light, >= 0.085 in dark.
 -- Colour marks definitions; uses and calls are fg. Every definition is
--- periwinkle (h 280-284): variables and named constants, keys, class
+-- periwinkle (h 280-284): top-level variables and constants, keys, class
 -- attributes and functions. Parameters and builtins (self, JSON) are fg. Literals are rose (h 0; None, numbers, booleans). Strings are
 -- teal (h 196); comments are pale gold.
 -- Light mirrors dark's hues and relative weights. Keywords are
@@ -59,11 +59,12 @@ palettes.dark = {
   param = "#bdc8d3",
   heading = "#c5b98c",
 
-  added = "#82d395",
-  diff_add = "#1a2d27",
-  diff_delete = "#2a2323",
-  diff_change = "#1a2d27",
-  diff_text = "#17463b",
+  added = "#54ab8f",
+  removed = "#cb6e68",
+  diff_add = "#1b2421",
+  diff_delete = "#2c2527",
+  diff_change = "#1b2421",
+  diff_text = "#123d30",
   search = "#56442c",
 
   term = {
@@ -110,11 +111,12 @@ palettes.light = {
   heading = "#6b6032",
   type = "#155e97",
 
-  added = "#1d7d3e",
-  diff_add = "#bbc8c7",
-  diff_delete = "#c8c3c5",
-  diff_change = "#bbc8c7",
-  diff_text = "#a9c0bd",
+  added = "#00805d",
+  removed = "#ba3535",
+  diff_add = "#bcc8c3",
+  diff_delete = "#cdc1c4",
+  diff_change = "#bcc8c3",
+  diff_text = "#a5beb4",
   search = "#dbaa6b",
 
   term = {
@@ -228,7 +230,7 @@ local groups = {
   Todo = { fg = c.bg, bg = c.const, bold = true },
 
   -- treesitter
-  -- Variables are plain at use; periwinkle marks their definition.
+  -- Variables are plain at use; periwinkle marks their top-level definition.
   ["@variable"] = { fg = c.fg },
   ["@variable.builtin"] = { fg = c.fg },
   ["@variable.parameter"] = { fg = c.param },
@@ -317,7 +319,7 @@ local groups = {
   ["@markup.list.checked"] = { fg = c.green },
   ["@markup.list.unchecked"] = { fg = c.muted },
   ["@diff.plus"] = { fg = c.added },
-  ["@diff.minus"] = { fg = c.red },
+  ["@diff.minus"] = { fg = c.removed },
   ["@diff.delta"] = { fg = c.yellow },
 
   -- lsp semantic tokens
@@ -340,7 +342,7 @@ local groups = {
   ["@lsp.type.type"] = { link = "@type" },
   ["@lsp.type.typeParameter"] = { link = "@type.definition" },
   ["@lsp.type.variable"] = { link = "@variable" },
-  ["@lsp.typemod.variable.declaration"] = { fg = c.var },
+  ["@lsp.typemod.variable.declaration"] = {},
   ["@lsp.typemod.variable.defaultLibrary"] = { link = "@variable.builtin" },
   ["@lsp.typemod.function.defaultLibrary"] = { link = "@function.builtin" },
   -- basedpyright marks UPPER_CASE names readonly. Python only: TS marks every const.
@@ -372,15 +374,15 @@ local groups = {
   DiffText = { bg = c.diff_text },
   Added = { fg = c.added },
   Changed = { fg = c.yellow },
-  Removed = { fg = c.red },
+  Removed = { fg = c.removed },
   diffAdded = { fg = c.added },
-  diffRemoved = { fg = c.red },
+  diffRemoved = { fg = c.removed },
   diffChanged = { fg = c.yellow },
   diffFile = { fg = c.type },
   diffLine = { fg = c.muted },
   GitSignsAdd = { fg = c.added },
   GitSignsChange = { fg = c.yellow },
-  GitSignsDelete = { fg = c.red },
+  GitSignsDelete = { fg = c.removed },
   -- Inline overlay shows the old line in rose above, so changed lines take the
   -- added wash.
   GitSignsChangeLn = { link = "DiffAdd" },

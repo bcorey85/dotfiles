@@ -29,25 +29,44 @@
   name: (_) @declaration.class
   (#set! priority 130))
 
-; Variable names at their definition; uses stay plain. Priority beats the LSP variable token.
-(variable_declarator
-  name: (identifier) @declaration.variable
+; Top-level variable names at their definition; locals and uses stay plain.
+(program
+  [
+    (lexical_declaration
+      (variable_declarator
+        name: (identifier) @declaration.variable))
+    (variable_declaration
+      (variable_declarator
+        name: (identifier) @declaration.variable))
+    (export_statement
+      declaration: (lexical_declaration
+        (variable_declarator
+          name: (identifier) @declaration.variable)))
+  ]
   (#set! priority 130))
 
-(for_in_statement
-  left: (identifier) @declaration.variable
-  (#set! priority 130))
-
-(array_pattern
-  (identifier) @declaration.variable
-  (#set! priority 130))
-
-(object_pattern
-  (shorthand_property_identifier_pattern) @declaration.variable
-  (#set! priority 130))
-
-(pair_pattern
-  value: (identifier) @declaration.variable
+(program
+  [
+    (lexical_declaration
+      (variable_declarator
+        name: [
+          (array_pattern
+            (identifier) @declaration.variable)
+          (object_pattern
+            (shorthand_property_identifier_pattern) @declaration.variable)
+          (object_pattern
+            (pair_pattern
+              value: (identifier) @declaration.variable))
+        ]))
+    (variable_declaration
+      (variable_declarator
+        name: [
+          (array_pattern
+            (identifier) @declaration.variable)
+          (object_pattern
+            (shorthand_property_identifier_pattern) @declaration.variable)
+        ]))
+  ]
   (#set! priority 130))
 
 (variable_declarator

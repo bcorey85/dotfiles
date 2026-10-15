@@ -23,7 +23,8 @@
   name: (_) @declaration)
 
 (abstract_class_declaration
-  name: (_) @declaration)
+  name: (_) @declaration.class
+  (#set! priority 130))
 
 ; Keys of object types and interfaces, like object-literal keys.
 (property_signature

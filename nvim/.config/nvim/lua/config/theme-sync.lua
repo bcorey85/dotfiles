@@ -115,9 +115,9 @@ local FAMILIES = {
     schemes = { dark = "dredge", light = "dredge" },
     colors_name = "dredge",
     accents = {
-      -- Headings are orange: H1 the terminal amber, the rest the palette tan.
-      dark = { heading1 = "#ffa475", heading = "#d5ac93", bullet = "#9ba8b5" },
-      light = { heading1 = "#c96819", heading = "#aa6d3e", bullet = "#666a6e" },
+      -- Headings are yellow: H1 the terminal yellow, the rest the muted palette yellow.
+      dark = { heading1 = "#ebc75b", heading = "#c5b98c", bullet = "#9ba8b5" },
+      light = { heading1 = "#886100", heading = "#6b6032", bullet = "#666a6e" },
     },
   },
 }

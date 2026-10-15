@@ -207,7 +207,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
   # Secondary roles. Each one defaults (below the case) to the generic role a
   # family that does not set it already used, so leaving them unset reproduces
   # the previous output byte for byte.
-  local mem param attr tag vbi imp pre prim ns mac bfn var lang
+  local mem param attr tag vbi imp pre prim ns mac bfn var lang use call
   # Extra TOML scope lines appended last, so they out-rank the base theme.
   local extra
   case "$1:$2" in
@@ -502,24 +502,26 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       accent="#79cfcf"; accentMuted="#3e4248"; text="#bdc8d3"; muted="#95a0ab"
       # Words must stay >= RGB distance 28 from the line wash, or hunk
       # replaces them with its own blend of the sign colour. Words separate by
-      # chroma, not lightness. Added is green (free: code never uses it). Red
-      # reads louder than green, so the removed wash carries less chroma.
-      addWord="#17463b"; remWord="#4b2929"
-      addedBg="#1a2d27"; removedBg="#2a2323"; ctxBg="#202427"
+      # chroma, not lightness. The washes share one lightness. Red reads
+      # louder, so it carries less chroma, and its words sit a step darker.
+      addWord="#1b4138"; remWord="#4d2e2d"
+      addedBg="#1c2a26"; removedBg="#2f2424"; ctxBg="#202427"
       # hunk also colours line numbers and rails with the sign colour, and dims
       # unselected rails to 35% of it. The rail carries the signal and the wash
       # stays a whisper, at moderate chroma so the gutter does not glare.
       sAdd="#82d395"; sRem="#d9635d"; lnFg="#747c83"
       badgeAdd="#82d395"; badgeRem="#f77972"; badgeNeu="#ebc75b"
       fRename="#ebc75b"; fMod="#ebc75b"; fUntracked="#7abff9"; note="#1a1d21"
-      kw="#808c99"; str="#bdc8d3"; num="#dc95aa"; fn="#adb3f3"; typ="#a1aebb"; punct="#808c99"; op="#808c99"
-      konst="#dc95aa"; esc="#dc95aa"; cmt="#a1aebb"; mem="#7eaedb"; param="#7fc8c8"
-      attr="#dc95aa"; tag="#808c99"; vbi="#dc95aa"; lang="#dc95aa"; imp="#808c99"; pre="#808c99"
-      prim="#a1aebb"; ns="#bdc8d3"; mac="#adb3f3"; bfn="#adb3f3"; var="#7fc8c8"; key="#7eaedb"; cls="#adb3f3"
+      kw="#808c99"; str="#9dc5a4"; num="#dc95aa"; fn="#adb3f3"; typ="#a1aebb"; punct="#808c99"; op="#808c99"
+      konst="#dc95aa"; esc="#dc95aa"; cmt="#b3b0a6"; mem="#7eaedb"; param="#7fc8c8"
+      attr="#dc95aa"; tag="#808c99"; vbi="#bdc8d3"; lang="#dc95aa"; imp="#808c99"; pre="#808c99"
+      prim="#a1aebb"; ns="#bdc8d3"; mac="#adb3f3"; bfn="#bdc8d3"; var="#7fc8c8"; key="#7eaedb"; cls="#adb3f3"
+      # Colour marks definitions. Builtins, uses, calls and members are plain text.
+      use="#bdc8d3"; call="#bdc8d3"; mem="#bdc8d3"
       # Match nvim's tree-sitter colours where one-dark-pro's own selectors
-      # out-rank the generic table. h1/h2 mirror theme-sync's markdown headings.
+      # out-rank the generic table. h1/h2/bullet mirror theme-sync's markdown.
       # bright = markdown bold; hunk's scope table carries colour only, no weight.
-      local h1="#ffa475" h2="#d5ac93" bright="#d3dbe3"
+      local h1="#ebc75b" h2="#c5b98c" bright="#d3dbe3" quote="#a1aebb" bullet="#9ba8b5"
       if [ "$2" = light ]; then
         bg="#c1c5c9"; panel="#bcc0c4"; panelAlt="#b8bcc0"; border="#989ca0"
         accent="#007475"; accentMuted="#989ca0"; text="#26292c"; muted="#666a6e"
@@ -528,11 +530,12 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
         sAdd="#1d7d3e"; sRem="#e00000"; lnFg="#6e7275"
         badgeAdd="#1d7d3e"; badgeRem="#ba3535"; badgeNeu="#886100"
         fRename="#886100"; fMod="#886100"; fUntracked="#116bb5"; note="#bcc0c4"
-        kw="#606468"; str="#26292c"; num="#9f4063"; fn="#524ca6"; typ="#52565a"; punct="#606468"; op="#606468"
-        konst="#9f4063"; esc="#9f4063"; cmt="#52565a"; mem="#155e97"; param="#146d70"
-        attr="#9f4063"; tag="#606468"; vbi="#9f4063"; lang="#9f4063"; imp="#606468"; pre="#606468"
-        prim="#52565a"; ns="#26292c"; mac="#524ca6"; bfn="#524ca6"; var="#146d70"; key="#155e97"; cls="#524ca6"
-        h1="#c96819" h2="#aa6d3e" bright="#16181a"
+        kw="#606468"; str="#446b4c"; num="#9f4063"; fn="#524ca6"; typ="#52565a"; punct="#606468"; op="#606468"
+        konst="#9f4063"; esc="#9f4063"; cmt="#403d31"; mem="#155e97"; param="#146d70"
+        attr="#9f4063"; tag="#606468"; vbi="#26292c"; lang="#9f4063"; imp="#606468"; pre="#606468"
+        prim="#52565a"; ns="#26292c"; mac="#524ca6"; bfn="#26292c"; var="#146d70"; key="#155e97"; cls="#524ca6"
+        use="#26292c"; call="#26292c"; mem="#26292c"
+        h1="#886100" h2="#6b6032" bright="#16181a" quote="#52565a" bullet="#666a6e"
       fi
       extra=$(cat <<EOF
 "punctuation.separator.key-value"   = "$punct"
@@ -562,11 +565,18 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
 "keyword.operator.comparison"       = "$op"
 "keyword.operator.logical"          = "$op"
 "keyword.operator.logical.python"   = "$kw"
-"source.python"                     = "$var"
+"source.python"                     = "$text"
 "variable.object.property"          = "$key"
-"meta.function-call.arguments.python" = "$var"
-"variable.parameter.function-call.python" = "$kw"
-"meta.item-access.arguments.python" = "$var"
+"meta.function-call.arguments.python" = "$text"
+"variable.parameter.function-call.python" = "$text"
+"meta.item-access.arguments.python" = "$text"
+"constant.other.caps"               = "$text"
+"meta.definition.variable variable.other" = "$var"
+"meta.object-binding-pattern-variable variable.other" = "$var"
+"meta.array-binding-pattern-variable variable.other" = "$var"
+"meta.function-call entity.name.function" = "$text"
+"new.expr entity.name.type"         = "$text"
+"support.constant.json"             = "$vbi"
 "keyword.operator.logical.lua"      = "$kw"
 "keyword.operator.logical.and.media.css" = "$kw"
 "keyword.operator.expression.of"    = "$kw"
@@ -574,8 +584,8 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
 "keyword.operator.optional"         = "$punct"
 "keyword.operator.definiteassignment" = "$punct"
 "support.constant.media.css"        = "$var"
-"entity.other.attribute.lua"        = "$var"
-"entity.name.command.shell"         = "$fn"
+"entity.other.attribute.lua"        = "$text"
+"entity.name.command.shell"         = "$text"
 "keyword.operator.quantifier.regexp" = "$punct"
 "storage.type.function.arrow"       = "$punct"
 "string.regexp keyword.other"       = "$konst"
@@ -590,13 +600,15 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
 "support.type.primitive.tsx"        = "$prim"
 "support.type.builtin.ts"           = "$vbi"
 "support.type.builtin.tsx"          = "$vbi"
-"variable.other.constant.ts"        = "$var"
-"variable.other.constant.tsx"       = "$var"
-"variable.other.enummember.ts"      = "$var"
-"variable.other.enummember.tsx"     = "$var"
-"variable.other.object"             = "$var"
-"variable.other.object.property"    = "$mem"
-"new.expr entity.name.function"     = "$fn"
+"variable.other.constant.ts"        = "$text"
+"variable.other.constant.tsx"       = "$text"
+"meta.definition.variable variable.other.constant.ts" = "$var"
+"meta.definition.variable variable.other.constant.tsx" = "$var"
+"variable.other.enummember.ts"      = "$text"
+"variable.other.enummember.tsx"     = "$text"
+"variable.other.object"             = "$text"
+"variable.other.object.property"    = "$text"
+"new.expr entity.name.function"     = "$text"
 "entity.name.type.class"            = "$fn"
 "entity.other.attribute-name.tsx"   = "$fn"
 "entity.other.attribute-name.jsx"   = "$fn"
@@ -605,9 +617,9 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
 "constant.character.format.placeholder.other.python" = "$konst"
 "entity.name.function.decorator"    = "$konst"
 "punctuation.definition.decorator"  = "$konst"
-"meta.attribute.python"             = "$mem"
-"meta.function-call.arguments"      = "$var"
-"meta.fstring.python"               = "$var"
+"meta.attribute.python"             = "$text"
+"meta.function-call.arguments"      = "$text"
+"meta.fstring.python"               = "$text"
 "string.quoted.docstring"           = "$cmt"
 "string.quoted.docstring punctuation.definition.string" = "$cmt"
 "storage.type.format.python"        = "$fn"
@@ -634,8 +646,8 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
 "punctuation.definition.link.title" = "$punct"
 "text.html.markdown punctuation.definition.metadata.markdown" = "$punct"
 "markup.list meta.paragraph"        = "$text"
-"markup.list punctuation.definition.list.begin.markdown" = "$cmt"
-"markup.quote.markdown"             = "$cmt"
+"markup.list punctuation.definition.list.begin.markdown" = "$bullet"
+"markup.quote.markdown"             = "$quote"
 "punctuation.definition.quote.begin.markdown" = "$konst"
 "punctuation.definition.markdown"   = "$str"
 "fenced_code.block.language"        = "$kw"
@@ -657,16 +669,17 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
 "punctuation.access.module.scss"    = "$konst"
 "support.function.misc.scss"        = "$konst"
 "punctuation.support.type.property-name" = "$key"
-"constant.other.option"             = "$var"
+"constant.other.option"             = "$text"
 "keyword.control.return.shell"      = "$fn"
 "meta.shebang"                      = "$kw"
 "punctuation.definition.comment.shebang" = "$kw"
 "punctuation.definition.subshell"   = "$konst"
 "keyword.operator.expansion.shell"  = "$konst"
-"string.unquoted.argument.shell"    = "$var"
-"string.unquoted.shell"             = "$var"
-"string.regexp.unquoted.shell"      = "$var"
-"variable.parameter.positional"     = "$param"
+"string.unquoted.argument.shell"    = "$text"
+"string.unquoted.shell"             = "$text"
+"string.regexp.unquoted.shell"      = "$text"
+"variable.parameter.positional"     = "$text"
+"variable.other.assignment.shell"   = "$var"
 "entity.name.tag.yaml"              = "$key"
 "entity.name.type.anchor.yaml"      = "$kw"
 "variable.other.alias.yaml"         = "$kw"
@@ -688,7 +701,7 @@ EOF
   attr="${attr:-$punct}"; tag="${tag:-$fn}"; vbi="${vbi:-$kw}"
   imp="${imp:-$typ}"; pre="${pre:-$num}"; prim="${prim:-$num}"
   ns="${ns:-$typ}"; mac="${mac:-$esc}"; bfn="${bfn:-$esc}"; var="${var:-$text}"
-  lang="${lang:-$num}"; cls="${cls:-$typ}"
+  lang="${lang:-$num}"; cls="${cls:-$typ}"; use="${use:-$var}"; call="${call:-$fn}"
   cat <<EOF
 [custom_theme]
 base             = "$3"
@@ -774,9 +787,9 @@ noteTitleText    = "$text"
 
 # Functions. Builtins take the Macro colour.
 "entity.name.function"              = "$fn"
-"support.function"                  = "$fn"
-"variable.function"                 = "$fn"
-"meta.function-call"                = "$fn"
+"support.function"                  = "$call"
+"variable.function"                 = "$call"
+"meta.function-call"                = "$call"
 "support.function.builtin"          = "$bfn"
 "support.macro"                     = "$mac"
 
@@ -791,8 +804,8 @@ noteTitleText    = "$text"
 
 # Identifiers, members, parameters. nvim paints properties and members as plain
 # text; only parameters and attributes drop to the muted tx2.
-"variable"                          = "$var"
-"variable.other"                    = "$var"
+"variable"                          = "$use"
+"variable.other"                    = "$use"
 "variable.other.property"           = "$mem"
 "variable.other.member"             = "$mem"
 "support.variable.property"         = "$mem"
@@ -839,7 +852,7 @@ EOF
 "support.type.property-name.array.toml" = "$key"
 "source.json meta.structure.dictionary.json > string.quoted.json" = "$key"
 "source.json meta.structure.dictionary.json > string.quoted.json > punctuation.string" = "$key"
-"variable.other.readwrite"          = "$var"
+"variable.other.readwrite"          = "$use"
 "variable.other.constant.property"  = "$konst"
 "variable.parameter.function.js"    = "$param"
 "variable.interpolation"            = "$var"
@@ -866,12 +879,12 @@ EOF
 "meta.function.c"                   = "$text"
 "meta.function.cpp"                 = "$text"
 "text.variable"                     = "$var"
-"support.function.any-method"       = "$fn"
-"support.function.console"          = "$fn"
+"support.function.any-method"       = "$call"
+"support.function.console"          = "$call"
 "support.function.std.rust"         = "$fn"
 "meta.require"                      = "$fn"
 "keyword.other.special-method"      = "$fn"
-"meta.function-call.generic.python" = "$fn"
+"meta.function-call.generic.python" = "$call"
 "meta.function-call.php"            = "$fn"
 "meta.function.decorator.python"    = "$fn"
 "meta.method.java"                  = "$fn"

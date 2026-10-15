@@ -5,14 +5,14 @@
 -- comments 47, punctuation 46. Light: fg Lc 88. At Lc 75 on cream the gamut leaves
 -- no chroma, and every token reads as black. Lc is a floor, not a target: coloured
 -- token pairs also keep OKLab dE >= 0.09 in light, >= 0.085 in dark.
--- The more often a token appears, the calmer its colour. Variables, parameters and
--- named constants are teal (h 194-202). Object keys and member access are blue
--- (h 248), the dimmest role in both modes. Functions and classes are periwinkle
--- (h 280-284). Literals and builtins are rose (h 0; None, numbers, booleans, self,
--- JSON). No green in code. Light mirrors dark's hues and relative weights.
--- Strings are fg. Keywords are the ground's grey, italic, half a step above
--- comments; types share the grey, upright, and so do markup tags. Modules stay fg.
--- Markdown headings are orange.
+-- Colour marks definitions; uses and calls are fg. Variables and parameters at
+-- their definition are teal (h 194-202). Keys and class attributes at their
+-- definition are blue (h 248). Functions at their definition are periwinkle
+-- (h 280-284). Named constants and builtins (self, JSON) are fg. Literals are
+-- rose (h 0; None, numbers, booleans). Strings are muted green; comments are dim white gold (h 95, C 0.015).
+-- Light mirrors dark's hues and relative weights. Keywords are
+-- the ground's grey, italic; types share the grey, upright, and so do markup tags.
+-- Modules stay fg. Markdown headings are yellow.
 -- Diffs: added = green signs on a green wash (green is free: code never uses it),
 -- removed = red, same washes as hunk. Changed words separate by chroma, not
 -- lightness. Red reads louder than green, so the removed wash carries less chroma.
@@ -51,13 +51,14 @@ palettes.dark = {
   type_name = "#a1aebb",
   var = "#7fc8c8",
   fn = "#adb3f3",
-  fn_decl = "#9ea3e2",
-  str = "#bdc8d3",
+  remark = "#b3b0a6",
+  fn_lib = "#b3b6d7",
+  str = "#9dc5a4",
   const = "#dc95aa",
   key = "#7eaedb",
   type = "#7eaedb",
   param = "#7fc8c8",
-  heading = "#d5ac93",
+  heading = "#c5b98c",
 
   added = "#82d395",
   diff_add = "#1a2d27",
@@ -101,12 +102,13 @@ palettes.light = {
   type_name = "#52565a",
   var = "#146d70",
   fn = "#524ca6",
-  fn_decl = "#605bb6",
-  str = "#26292c",
+  remark = "#403d31",
+  fn_lib = "#555681",
+  str = "#446b4c",
   const = "#9f4063",
   key = "#155e97",
   param = "#146d70",
-  heading = "#aa6d3e",
+  heading = "#6b6032",
   type = "#155e97",
 
   added = "#1d7d3e",
@@ -191,14 +193,14 @@ local groups = {
   SpellRare = { sp = c.magenta, undercurl = true },
 
   -- syntax
-  Comment = { fg = c.comment, italic = true },
+  Comment = { fg = c.remark },
   Constant = { fg = c.const },
   String = { fg = c.str },
   Character = { fg = c.str },
   Number = { fg = c.const },
-  Boolean = { fg = c.const, italic = true },
+  Boolean = { fg = c.const },
   Float = { fg = c.const },
-  Identifier = { fg = c.var },
+  Identifier = { fg = c.fg },
   Function = { fg = c.fn },
   Statement = { fg = c.kw, italic = true },
   Conditional = { fg = c.kw, italic = true },
@@ -220,28 +222,34 @@ local groups = {
   SpecialChar = { fg = c.const },
   Tag = { fg = c.kw },
   Delimiter = { fg = c.punct },
-  SpecialComment = { fg = c.comment, italic = true },
+  SpecialComment = { fg = c.remark },
   Debug = { fg = c.red },
   Underlined = { underline = true },
   Error = { fg = c.red },
   Todo = { fg = c.bg, bg = c.const, bold = true },
 
   -- treesitter
-  ["@variable"] = { fg = c.var },
-  ["@variable.builtin"] = { fg = c.const },
+  -- Variables are plain at use; teal marks their definition.
+  ["@variable"] = { fg = c.fg },
+  ["@variable.builtin"] = { fg = c.fg },
   ["@variable.parameter"] = { fg = c.param },
-  ["@variable.member"] = { fg = c.key },
-  ["@property"] = { fg = c.key },
+  -- Shell arguments, flags and $VAR uses are uses: plain.
+  ["@variable.parameter.bash"] = { fg = c.fg },
+  ["@constant.bash"] = { fg = c.fg },
+  -- Member access is plain; blue marks keys and attributes at their definition.
+  ["@variable.member"] = { fg = c.fg },
+  ["@property"] = { fg = c.fg },
   ["@variable.member.key"] = { fg = c.key },
-  -- Named constants read as variables; literals and builtins stay c.const.
-  ["@constant"] = { fg = c.var },
-  ["@constant.builtin"] = { fg = c.const, italic = true },
-  ["@constant.macro"] = { fg = c.param },
+  ["@variable.member.attr"] = { fg = c.key },
+  -- Named constants are plain at use; literals stay c.const.
+  ["@constant"] = { fg = c.fg },
+  ["@constant.builtin"] = { fg = c.const },
+  ["@constant.macro"] = { fg = c.fg },
   ["@module"] = { fg = c.fg },
   ["@module.builtin"] = { fg = c.fg },
   ["@label"] = { fg = c.kw, italic = true },
   ["@string"] = { fg = c.str },
-  ["@string.documentation"] = { fg = c.comment, italic = true },
+  ["@string.documentation"] = { fg = c.remark },
   ["@string.escape"] = { fg = c.const },
   ["@string.regexp"] = { fg = c.const },
   ["@string.special"] = { fg = c.const },
@@ -250,24 +258,25 @@ local groups = {
   ["@character"] = { fg = c.str },
   ["@character.special"] = { fg = c.const },
   -- Names at their definition (after/queries); colour comes from the other captures.
-  ["@declaration"] = { bold = true },
-  -- Bold reads brighter, so function names step down a shade.
-  ["@declaration.function"] = { fg = c.fn_decl, bold = true },
+  ["@declaration"] = {},
+  ["@declaration.function"] = { fg = c.fn },
+  ["@declaration.class"] = { fg = c.fn },
+  ["@declaration.variable"] = { fg = c.var },
   ["@number"] = { fg = c.const },
-  ["@boolean"] = { fg = c.const, italic = true },
+  ["@boolean"] = { fg = c.const },
   ["@type"] = { fg = c.type_name },
   ["@type.builtin"] = { fg = c.type_name },
   ["@type.definition"] = { fg = c.type_name },  ["@attribute"] = { fg = c.const },
   ["@function"] = { fg = c.fn },
-  ["@function.builtin"] = { fg = c.fn },
-  ["@function.call"] = { fg = c.fn },
+  -- Calls are plain; purple marks functions at their definition.
+  ["@function.builtin"] = { fg = c.fg },
+  ["@function.call"] = { fg = c.fg },
   ["@function.macro"] = { fg = c.fn },
   ["@function.method"] = { fg = c.fn },
-  ["@function.method.call"] = { fg = c.fn },
-  -- Classes are callables: purple.
-  ["@constructor"] = { fg = c.fn },
+  ["@function.method.call"] = { fg = c.fg },
+  ["@constructor"] = { fg = c.fg },
   -- Python has no pure types; tree-sitter captures capitalised names as @type.
-  ["@type.python"] = { fg = c.fn },
+  ["@type.python"] = { fg = c.fg },
   ["@type.definition.python"] = { fg = c.fn },
   -- Lua captures table braces as @constructor.
   ["@constructor.lua"] = { link = "@punctuation.bracket" },
@@ -325,12 +334,14 @@ local groups = {
   ["@lsp.type.macro"] = { link = "@function.macro" },
   ["@lsp.type.method"] = {},
   ["@lsp.type.namespace"] = { link = "@module" },
-  ["@lsp.type.parameter"] = { link = "@variable.parameter" },
+  -- Cleared: tree-sitter marks parameters only at their definition.
+  ["@lsp.type.parameter"] = {},
   ["@lsp.type.property"] = { link = "@property" },
   ["@lsp.type.struct"] = { link = "@type.definition" },
   ["@lsp.type.type"] = { link = "@type" },
   ["@lsp.type.typeParameter"] = { link = "@type.definition" },
   ["@lsp.type.variable"] = { link = "@variable" },
+  ["@lsp.typemod.variable.declaration"] = { fg = c.var },
   ["@lsp.typemod.variable.defaultLibrary"] = { link = "@variable.builtin" },
   ["@lsp.typemod.function.defaultLibrary"] = { link = "@function.builtin" },
   -- basedpyright marks UPPER_CASE names readonly. Python only: TS marks every const.
@@ -441,8 +452,8 @@ end
 
 -- LSP marks UPPER_CASE class attributes as properties and TS consts as variables.
 -- An all-caps name is a named constant in every language, so colour it as one.
--- A class attribute at its definition takes the member colour of its accesses.
--- A keyword-argument name takes the keyword grey, not the parameter teal.
+-- A class attribute at its definition takes the key colour.
+-- A keyword-argument name is a use: plain, not the parameter teal.
 -- Library globals (JSON) stay builtins.
 -- tsserver tags every use of a name that is both a const and a type as a type;
 -- its value uses take the variable colour.
@@ -460,7 +471,7 @@ vim.api.nvim_create_autocmd("LspTokenUpdate", {
       return
     elseif t.type == "parameter" then
       if kwarg_name(ev.buf, t.line, t.start_col) then
-        vim.lsp.semantic_tokens.highlight_token(t, ev.buf, ev.data.client_id, "@variable.member.key.python")
+        vim.lsp.semantic_tokens.highlight_token(t, ev.buf, ev.data.client_id, "@variable")
       end
       return
     elseif t.type ~= "variable" and t.type ~= "property" then
@@ -472,7 +483,7 @@ vim.api.nvim_create_autocmd("LspTokenUpdate", {
     if text and text:match("^_*%u[%u%d_]+$") then
       vim.lsp.semantic_tokens.highlight_token(t, ev.buf, ev.data.client_id, "@constant")
     elseif class_attr_def(ev.buf, t.line, t.start_col) then
-      vim.lsp.semantic_tokens.highlight_token(t, ev.buf, ev.data.client_id, "@variable.member")
+      vim.lsp.semantic_tokens.highlight_token(t, ev.buf, ev.data.client_id, "@variable.member.key")
     elseif object_key_def(ev.buf, t.line, t.start_col) then
       vim.lsp.semantic_tokens.highlight_token(t, ev.buf, ev.data.client_id, "@variable.member.key")
     end

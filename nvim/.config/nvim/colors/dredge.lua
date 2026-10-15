@@ -8,7 +8,7 @@
 -- Colour marks definitions; uses and calls are fg. Every definition is
 -- periwinkle (h 280-284): top-level variables and constants, keys, class
 -- attributes and functions. Parameters and builtins (self, JSON) are fg. Literals are rose (h 0; None, numbers, booleans). Strings are
--- teal (h 196); comments are pale gold.
+-- teal (h 196); comments are neutral grey, which reads warm on the cool bg.
 -- Light mirrors dark's hues and relative weights. Keywords are
 -- the ground's grey, italic; types share the grey, upright, and so do markup tags.
 -- Modules stay fg. Markdown headings are yellow.
@@ -50,7 +50,7 @@ palettes.dark = {
   type_name = "#a1aebb",
   var = "#adb3f3",
   fn = "#adb3f3",
-  remark = "#b3b0a6",
+  remark = "#b2b2b2",
   fn_lib = "#b3b6d7",
   str = "#7fc8c8",
   const = "#dc95aa",
@@ -61,10 +61,10 @@ palettes.dark = {
 
   added = "#599b85",
   removed = "#cb6e68",
-  diff_add = "#1b2421",
+  diff_add = "#1c2b25",
   diff_delete = "#2c2527",
-  diff_change = "#1b2421",
-  diff_text = "#123d30",
+  diff_change = "#1c2b25",
+  diff_text = "#174235",
   search = "#56442c",
 
   term = {
@@ -102,7 +102,7 @@ palettes.light = {
   type_name = "#52565a",
   var = "#524ca6",
   fn = "#524ca6",
-  remark = "#403d31",
+  remark = "#484848",
   fn_lib = "#555681",
   str = "#146d70",
   const = "#9f4063",
@@ -113,10 +113,10 @@ palettes.light = {
 
   added = "#388970",
   removed = "#ba524d",
-  diff_add = "#bcc8c3",
+  diff_add = "#b8cac2",
   diff_delete = "#cdc1c4",
-  diff_change = "#bcc8c3",
-  diff_text = "#a5beb4",
+  diff_change = "#b8cac2",
+  diff_text = "#9fc0b3",
   search = "#dbaa6b",
 
   term = {

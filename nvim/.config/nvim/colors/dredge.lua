@@ -8,7 +8,7 @@
 -- Colour marks definitions; uses and calls are fg. Every definition is
 -- periwinkle (h 280-284): top-level variables and constants, keys, class
 -- attributes and functions. Parameters and builtins (self, JSON) are fg. Literals are rose (h 0; None, numbers, booleans). Strings are
--- teal (h 196); comments are neutral grey, which reads warm on the cool bg.
+-- teal (h 196); comments are pale gold.
 -- Light mirrors dark's hues and relative weights. Keywords are
 -- the ground's grey, italic; types share the grey, upright, and so do markup tags.
 -- Modules stay fg. Markdown headings are yellow.
@@ -50,7 +50,7 @@ palettes.dark = {
   type_name = "#a1aebb",
   var = "#adb3f3",
   fn = "#adb3f3",
-  remark = "#b2b2b2",
+  remark = "#b3b0a6",
   fn_lib = "#b3b6d7",
   str = "#7fc8c8",
   const = "#dc95aa",
@@ -102,7 +102,7 @@ palettes.light = {
   type_name = "#52565a",
   var = "#524ca6",
   fn = "#524ca6",
-  remark = "#484848",
+  remark = "#4b483c",
   fn_lib = "#555681",
   str = "#146d70",
   const = "#9f4063",

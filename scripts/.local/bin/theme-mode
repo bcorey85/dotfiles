@@ -513,7 +513,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       badgeAdd="#599b85"; badgeRem="#cb6e68"; badgeNeu="#ebc75b"
       fRename="#ebc75b"; fMod="#ebc75b"; fUntracked="#7abff9"; note="#1a1d21"
       kw="#808c99"; str="#7fc8c8"; num="#dc95aa"; fn="#adb3f3"; typ="#a1aebb"; punct="#808c99"; op="#808c99"
-      konst="#dc95aa"; esc="#dc95aa"; cmt="#b2b2b2"; mem="#7eaedb"; param="#bdc8d3"
+      konst="#dc95aa"; esc="#dc95aa"; cmt="#b3b0a6"; mem="#7eaedb"; param="#bdc8d3"
       attr="#dc95aa"; tag="#808c99"; vbi="#bdc8d3"; lang="#dc95aa"; imp="#808c99"; pre="#808c99"
       prim="#a1aebb"; ns="#bdc8d3"; mac="#adb3f3"; bfn="#bdc8d3"; var="#adb3f3"; key="#adb3f3"; cls="#adb3f3"
       # Colour marks definitions. Builtins, uses, calls and members are plain text.
@@ -531,7 +531,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
         badgeAdd="#388970"; badgeRem="#ba524d"; badgeNeu="#886100"
         fRename="#886100"; fMod="#886100"; fUntracked="#116bb5"; note="#bcc0c4"
         kw="#606468"; str="#146d70"; num="#9f4063"; fn="#524ca6"; typ="#52565a"; punct="#606468"; op="#606468"
-        konst="#9f4063"; esc="#9f4063"; cmt="#484848"; mem="#155e97"; param="#26292c"
+        konst="#9f4063"; esc="#9f4063"; cmt="#4b483c"; mem="#155e97"; param="#26292c"
         attr="#9f4063"; tag="#606468"; vbi="#26292c"; lang="#9f4063"; imp="#606468"; pre="#606468"
         prim="#52565a"; ns="#26292c"; mac="#524ca6"; bfn="#26292c"; var="#524ca6"; key="#524ca6"; cls="#524ca6"
         use="#26292c"; call="#26292c"; mem="#26292c"

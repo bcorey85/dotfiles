@@ -45,6 +45,7 @@
     (double_quote_scalar) @injection.content
     (#match? @injection.content "\\{\\{")
     (#set! injection.language "jinja")
+    (#set! injection.include-children)
     (#offset! @injection.content 0 1 0 -1)))
 
 (block_mapping_pair
@@ -62,4 +63,5 @@
   value: (flow_node
     (flow_mapping) @injection.content
     (#match? @injection.content "^\\{\\{")
-    (#set! injection.language "jinja")))
+    (#set! injection.language "jinja")
+    (#set! injection.include-children)))

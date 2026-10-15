@@ -28,6 +28,7 @@
 - Without ticket: branch `feature/desc` or `fix/desc`.
 - Keep diffs focused: one logical change per task.
 - Worktree branches: NEVER leave the auto-generated `worktree-` prefix in the branch name. Rename to the plain `TICKET-NUM-desc` (e.g. `ABC-123-cache-tuning`) immediately after creating the worktree, then push it to remote (`git push -u origin <branch>`) first — before doing work — so the branch is tracked and backed up.
+- Worktree location: create every worktree as a sibling of the repo, `../<repo>-<TICKET-NUM>` (e.g. `~/dev/cb-semantic-layer-IQ-1371`), with `git worktree add`, then enter it with `EnterWorktree` `path`. Never create one inside `.claude/worktrees/`, which is `EnterWorktree` `name`'s default.
 
 ### Stacked PRs (`gh stack`, github/gh-stack)
 

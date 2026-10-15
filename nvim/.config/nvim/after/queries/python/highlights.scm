@@ -13,24 +13,19 @@
   name: (identifier) @declaration.class
   (#set! priority 130))
 
-; Variable names at their definition; uses stay plain. Priority beats the LSP variable token.
-(assignment
-  left: (identifier) @declaration.variable
-  (#set! priority 130))
+; Module-level variable names at their definition; locals and uses stay plain.
+(module
+  (expression_statement
+    (assignment
+      left: (identifier) @declaration.variable
+      (#set! priority 130))))
 
-(assignment
-  left: (pattern_list
-    (identifier) @declaration.variable)
-  (#set! priority 130))
-
-(for_statement
-  left: (identifier) @declaration.variable
-  (#set! priority 130))
-
-(for_statement
-  left: (pattern_list
-    (identifier) @declaration.variable)
-  (#set! priority 130))
+(module
+  (expression_statement
+    (assignment
+      left: (pattern_list
+        (identifier) @declaration.variable)
+      (#set! priority 130))))
 
 ; Class attributes at their definition.
 (class_definition

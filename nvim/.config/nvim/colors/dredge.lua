@@ -2,19 +2,24 @@
 -- cool charcoal ground (OKLCH L 0.232, h 240), fg and greys tinted to the ground hue
 -- (C 0.025). Contrast is tuned in APCA Lc, not WCAG ratios, which overrate
 -- light-on-dark. Dark is deliberately dim against halation: fg Lc 75,
--- comments 66, punctuation 43. Light: fg Lc 68. Lc is a floor, not a target: coloured
+-- comments 49, punctuation 43. Light: fg Lc 64. Lc is a floor, not a target: coloured
 -- token pairs also keep OKLab dE >= 0.09 in light, >= 0.085 in dark.
 -- Colour marks definitions; uses and calls are fg. Every definition is
 -- periwinkle (h 280-284): top-level variables and constants, functions and
 -- classes. Keys, fields, attributes, parameters and builtins (self, JSON) are
 -- fg. Literals are rose (h 0; None, numbers, booleans). Strings are
--- teal (h 196); comments are yellow sand (h 100).
--- Light mirrors dark's hues and relative weights. Keywords are
+-- teal (h 190-196); comments are blue (h 240). No italics: hunk can't render
+-- them, and the two must match.
+-- Light mirrors dark's hues. Its code accents (not comments) keep OKLab
+-- dE >= 0.25 from the near-black fg, or thin strokes read as black; teal is
+-- chroma-capped in sRGB, so it gets there by lightness. Keywords are
 -- the ground's grey, and so are markup tags. Types are fg.
 -- Modules stay fg. Markdown headings are periwinkle, like definitions.
 -- Diffs: added = green signs on a green wash (green is free: code never uses it),
--- removed = red, same washes as hunk. Changed words separate by chroma, not
--- lightness. Red reads louder than green, so the removed wash carries less chroma.
+-- removed = orange-red (h 44) on sign, rail and wash alike, clear of the rose
+-- literals and the yellow change sign; same washes as hunk. Changed words
+-- separate by chroma, not lightness. Red reads louder than green, so the
+-- removed wash carries less chroma.
 -- Teal is the accent; yellow marks changed. The palette below is the source of truth; the
 -- ghostty/herdr/hunk/starship/quickshell/claude-theme copies mirror it by hand.
 -- Editing: one value at a time, judged on a real file in nvim and hunk before the
@@ -48,14 +53,14 @@ palettes.dark = {
 
   kw = "#8995a2",
   fn = "#adb3f3",
-  remark = "#c6bf93",
+  remark = "#6fa5cb",
   str = "#7fc8c8",
   const = "#dc95aa",
 
-  added = "#8ec899",
-  removed = "#df9993",
+  added = "#82d395",
+  removed = "#f97b40",
   diff_add = "#1f2a21",
-  diff_delete = "#2c2527",
+  diff_delete = "#2f2420",
   diff_change = "#1f2a21",
   diff_text = "#25442c",
   search = "#56442c",
@@ -80,7 +85,7 @@ palettes.light = {
   muted = "#666a6e",
   comment = "#52565a",
   punct = "#606468",
-  fg = "#26292c",
+  fg = "#333639",
   fg_bright = "#16181a",
 
   red = "#ba3535",
@@ -92,15 +97,15 @@ palettes.light = {
   magenta = "#993f94",
 
   kw = "#606468",
-  fn = "#524ca6",
-  remark = "#554e25",
-  str = "#146d70",
+  fn = "#5143bb",
+  remark = "#085f96",
+  str = "#0d7974",
   const = "#9f4063",
 
-  added = "#397247",
-  removed = "#9f4d48",
+  added = "#1d7d3e",
+  removed = "#af470a",
   diff_add = "#bbc9bd",
-  diff_delete = "#cdc1c4",
+  diff_delete = "#cfc1bb",
   diff_change = "#bbc9bd",
   diff_text = "#a6bfaa",
   search = "#dbaa6b",

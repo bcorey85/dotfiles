@@ -2,8 +2,9 @@
  * claude-review — GitHub-style "viewed" marks for hunk, plus the bridge into the
  * /cc skill.
  *
- * `v` marks the selected file viewed, collapses it in place to a single summary
- * row, and moves to the next unviewed file; `v` again reopens it. `V` also drops
+ * `o` marks the selected file viewed, collapses it in place to a single summary
+ * row, and moves to the next unviewed file; `o` again reopens it (hunk owns `v`,
+ * visual selection). `V` also drops
  * viewed files from the review entirely, `S` stages them, `C` clears the marks,
  * `X` discards the selected file's working-tree changes behind a confirm.
  * `L` quits into lazygit in the same herdr popup. Inline review notes (built-in
@@ -359,7 +360,7 @@ interface ReviewFile {
  * to this set.
  *
  * `visible` is what the review ended up showing, in review order, and is what
- * `v` walks to find the next unviewed file.
+ * `o` walks to find the next unviewed file.
  */
 interface LoadedReview {
   given: Set<string>;
@@ -473,7 +474,7 @@ export default function claudeReview(hunk: HunkApi): void {
     {
       id: "toggleViewed",
       title: "Toggle viewed on the selected file",
-      key: "v",
+      key: "o",
     },
     (ctx) => {
       const file = ctx.selection.file;

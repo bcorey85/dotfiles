@@ -113,7 +113,8 @@ return {
       local ok, gs = pcall(require, "gitsigns")
       if ok and not vim.wo.diff then
         local row = vim.fn.line(".")
-        for _, h in ipairs(gs.get_hunks() or {}) do
+        local hunks = gs.get_hunks()
+        for _, h in ipairs(hunks or {}) do
           local s = h.added.start
           local e = s + math.max(h.added.count, 1) - 1
           if row >= s and row <= e then
@@ -145,17 +146,13 @@ return {
 
         -- No unstaged hunk under the cursor. If gitsigns isn't attached to this
         -- buffer at all, the file may be UNTRACKED -- gitsigns skips those
-        -- (attach_to_untracked defaults off), so get_hunks() above found
-        -- nothing to find and the native motion below would silently win,
+        -- (attach_to_untracked defaults off), so get_hunks() above returned
+        -- nil and the native motion below would silently win,
         -- leaving a brand new file stuck in insitu's queue forever. insitu
         -- accepts it with `git add`, which is synchronous, so unlike the
         -- staged path there's no async index write to race: advance inline
         -- instead of waiting on GitSignsUpdate.
-        -- b:gitsigns_status_dict is documented public API (`:h
-        -- b:gitsigns_status_dict`), set on attach and cleared on detach — so
-        -- nil means "gitsigns isn't watching this buffer" without reaching
-        -- into gitsigns.cache, which is internal and free to change shape.
-        if vim.b.gitsigns_status_dict == nil then
+        if hunks == nil then
           local ok2, insitu = pcall(require, "insitu")
           if ok2 and insitu.is_untracked() then
             insitu.accept()

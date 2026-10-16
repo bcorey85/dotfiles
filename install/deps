@@ -82,7 +82,7 @@ wsl | ubuntu)
     print_success "mise already installed"
   fi
 
-  # gh — GitHub CLI (octo.nvim + gh-dash depend on it; official repo is
+  # gh — GitHub CLI (gh-dash depends on it; official repo is
   # codename-neutral so one source file covers every Ubuntu/Debian release)
   if ! command -v gh &>/dev/null; then
     print_info "Installing gh..."

@@ -28,19 +28,19 @@
       "space :": "command_palette::Toggle",
       "space ,": "tab_switcher::Toggle",
       "space o": "tab_switcher::Toggle",
-      // space e is oil.nvim: open the CURRENT FILE'S parent dir with the cursor
-      // on that file. Reveal is the only Zed action with that behaviour — a
-      // bare panel toggle opens the tree wherever it was last left. Zed has no
+      // space e is nvim's fyler sidebar: a tree with the cursor on the CURRENT
+      // FILE. Reveal is the only Zed action with that behaviour — a bare panel
+      // toggle opens the tree wherever it was last left. Zed has no
       // editable-directory-buffer, so the panel is as close as this gets; it
-      // does at least do oil's inline rename/create/delete. Not a toggle, which
-      // matches oil (it opens a buffer; `space e` inside the panel closes it).
+      // does at least do fyler's inline rename/create/delete. `space e` inside
+      // the panel closes it, so the key toggles like fyler's.
       "space e": "pane::RevealInProjectPanel",
       // PANEL toggle, not a dock toggle: it opens AND closes (unlike
       // ToggleFocus) and follows the panel if it gets re-docked, which a
       // Toggle*Dock cannot.
       "space u o": "outline_panel::Toggle",
-      // ── file harpoon (replaces nvim harpoon2 leader+a / leader+tab / leader+1..4) ──
-      // Pin tab = harpoon slot. Pinned tabs sort first, so slot N = tab index N-1.
+      // ── buffer slots (nvim buffer_manager: leader+. list, leader+1..4 jump) ──
+      // Tab order = list order, so slot N = tab index N-1. Pinned tabs sort first.
       // `space a` owns the key — agent binds live under `space t`, not `space a`.
       "space a": "pane::TogglePinTab",
       "space tab": "tab_switcher::Toggle",
@@ -55,6 +55,8 @@
       "alt-4": ["pane::ActivateItem", 3],
       // buffers/tabs
       "space b d": "pane::CloseActiveItem",
+      "space b o": "pane::CloseOtherItems",
+      "space b a": "pane::CloseAllItems",
       "space w w": "workspace::ActivateNextPane",
       "space T ]": "pane::ActivateNextItem",
       "space T [": "pane::ActivatePrevItem",
@@ -118,7 +120,7 @@
   },
   // Close from INSIDE the panel — panel focus eats VimControl binds, so the key
   // has to exist here too. Deliberately asymmetric: outside it reveals, inside
-  // it closes, which is oil's open-then-`q` round trip on one key.
+  // it closes, which is fyler's <leader>e toggle.
   {
     "context": "ProjectPanel && not_editing",
     "bindings": {

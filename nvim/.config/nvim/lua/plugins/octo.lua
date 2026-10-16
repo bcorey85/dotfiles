@@ -1,6 +1,6 @@
 -- octo.nvim — GitHub issues & PRs as editable buffers (the nvim port of Emacs
 -- forge). Uses the Snacks picker (matches the rest of the config) and the gh
--- CLI (already authenticated for <leader>gr). plenary is shared with harpoon;
+-- CLI (already authenticated for <leader>gr). plenary is shared with buffer_manager;
 -- nvim-web-devicons is satisfied by mini.icons' mock (see mini-icons.lua).
 --
 -- Keymaps mirror Doom's forge layout under SPC g:

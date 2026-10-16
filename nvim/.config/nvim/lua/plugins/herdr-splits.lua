@@ -5,7 +5,7 @@
 -- on the pane behind the modal popup, so edge nav moves focus out from under it
 -- and locks input.
 local popup = vim.env.NEOGIT_POPUP or vim.env.GIT_QF_POPUP or vim.env.CODEDIFF_POPUP
-  or vim.env.OIL_POPUP or vim.env.ORG_POPUP or vim.env.INSITU_POPUP or vim.env.FIND_POPUP or vim.env.REVIEW_POPUP
+  or vim.env.FYLER_POPUP or vim.env.ORG_POPUP or vim.env.INSITU_POPUP or vim.env.FIND_POPUP or vim.env.REVIEW_POPUP
 
 return {
   "lmilojevicc/herdr-splits.nvim",

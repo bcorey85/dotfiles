@@ -504,16 +504,16 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # replaces them with its own blend of the sign colour. Words separate by
       # chroma, not lightness. The washes share one lightness. Red reads
       # louder, so it carries less chroma, and its words sit a step darker.
-      addWord="#25442c"; remWord="#442e35"
-      addedBg="#1f2a21"; removedBg="#2c2527"; ctxBg="#1a1e21"
+      addWord="#25442c"; remWord="#4b2d20"
+      addedBg="#1f2a21"; removedBg="#2f2420"; ctxBg="#1a1e21"
       # hunk also colours line numbers and rails with the sign colour, and dims
       # unselected rails to 35% of it. The rail carries the signal and the wash
       # stays a whisper, at moderate chroma so the gutter does not glare.
-      sAdd="#8ec899"; sRem="#df9993"; lnFg="#747c83"
-      badgeAdd="#8ec899"; badgeRem="#df9993"; badgeNeu="#ebc75b"
+      sAdd="#82d395"; sRem="#f97b40"; lnFg="#747c83"
+      badgeAdd="#82d395"; badgeRem="#f97b40"; badgeNeu="#ebc75b"
       fRename="#ebc75b"; fMod="#ebc75b"; fUntracked="#7abff9"; note="#14171b"
       kw="#8995a2"; str="#7fc8c8"; num="#dc95aa"; fn="#adb3f3"; typ="#c3cfda"; punct="#8995a2"; op="#8995a2"
-      konst="#dc95aa"; esc="#dc95aa"; cmt="#c6bf93"; param="#c3cfda"
+      konst="#dc95aa"; esc="#dc95aa"; cmt="#6fa5cb"; param="#c3cfda"
       attr="#dc95aa"; tag="#8995a2"; vbi="#c3cfda"; lang="#dc95aa"; imp="#8995a2"; pre="#8995a2"
       prim="#c3cfda"; ns="#c3cfda"; mac="#adb3f3"; bfn="#c3cfda"; var="#adb3f3"; key="#c3cfda"; cls="#adb3f3"
       # Colour marks definitions. Builtins, uses, calls and members are plain text.
@@ -524,17 +524,17 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       local bright="#d3dbe3" quote="#a1aebb" bullet="#9ba8b5"
       if [ "$2" = light ]; then
         bg="#c1c5c9"; panel="#bcc0c4"; panelAlt="#b8bcc0"; border="#989ca0"
-        accent="#007475"; accentMuted="#989ca0"; text="#26292c"; muted="#666a6e"
-        addWord="#a6bfaa"; remWord="#c1acb2"
-        addedBg="#bbc9bd"; removedBg="#cdc1c4"; ctxBg="#c1c5c9"
-        sAdd="#397247"; sRem="#9f4d48"; lnFg="#6e7275"
-        badgeAdd="#397247"; badgeRem="#9f4d48"; badgeNeu="#886100"
+        accent="#007475"; accentMuted="#989ca0"; text="#333639"; muted="#666a6e"
+        addWord="#a6bfaa"; remWord="#c7aca1"
+        addedBg="#bbc9bd"; removedBg="#cfc1bb"; ctxBg="#c1c5c9"
+        sAdd="#1d7d3e"; sRem="#af470a"; lnFg="#6e7275"
+        badgeAdd="#1d7d3e"; badgeRem="#af470a"; badgeNeu="#886100"
         fRename="#886100"; fMod="#886100"; fUntracked="#116bb5"; note="#bcc0c4"
-        kw="#606468"; str="#146d70"; num="#9f4063"; fn="#524ca6"; typ="#26292c"; punct="#606468"; op="#606468"
-        konst="#9f4063"; esc="#9f4063"; cmt="#554e25"; param="#26292c"
-        attr="#9f4063"; tag="#606468"; vbi="#26292c"; lang="#9f4063"; imp="#606468"; pre="#606468"
-        prim="#26292c"; ns="#26292c"; mac="#524ca6"; bfn="#26292c"; var="#524ca6"; key="#26292c"; cls="#524ca6"
-        use="#26292c"; call="#26292c"; mem="#26292c"
+        kw="#606468"; str="#0d7974"; num="#9f4063"; fn="#5143bb"; typ="#333639"; punct="#606468"; op="#606468"
+        konst="#9f4063"; esc="#9f4063"; cmt="#085f96"; param="#333639"
+        attr="#9f4063"; tag="#606468"; vbi="#333639"; lang="#9f4063"; imp="#606468"; pre="#606468"
+        prim="#333639"; ns="#333639"; mac="#5143bb"; bfn="#333639"; var="#5143bb"; key="#333639"; cls="#5143bb"
+        use="#333639"; call="#333639"; mem="#333639"
         bright="#16181a" quote="#52565a" bullet="#666a6e"
       fi
       extra=$(cat <<EOF
@@ -967,12 +967,16 @@ hunk_apply() { # <family> <mode> — point hunk's config at the family's theme
   else
     return 0
   fi
-  # Without this, hunk paints its chrome with the builtin's own background,
-  # which sits a step off the terminal's in dark mode and reads as a gray box
-  # inside the black. Letting the terminal show through matches whatever
-  # ghostty/herdr already painted, in both modes, with no second palette to
-  # keep in sync.
-  hunk_set "$cfg" transparent_background true
+  # A builtin (or a syntax-only custom block) paints its own background, a step
+  # off the terminal's, so let the terminal show through. A full custom block
+  # already carries the terminal's background, and transparency there turns
+  # popup panels see-through: hunk 0.23 leaves the diff text visible in the
+  # spaces of the selection and note popups.
+  if [[ "$custom" == *$'\n'"background "* ]]; then
+    hunk_set "$cfg" transparent_background false
+  else
+    hunk_set "$cfg" transparent_background true
+  fi
   # Write (or clear, when empty) the [custom_theme] table so hunk's diff/syntax
   # colors match nvim's exactly. The builtin base is close on syntax but
   # its diff/chrome colors differ from the family's, which this block overrides.
@@ -1219,7 +1223,7 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       accent="#007475" panel_bg="#bcc0c4" surface_dim="#aaafb3"
       surface0="#a1a5a9" surface1="#989ca0"
       overlay0="#666a6e" overlay1="#575a5d"
-      text="#26292c" subtext0="#575a5d"
+      text="#333639" subtext0="#575a5d"
       green="#1d7d3e" yellow="#886100" red="#ba3535"
       blue="#116bb5" teal="#007475" peach="#bb5d00"
       ;;

@@ -388,17 +388,15 @@ return {
     -- REVIEWED MARKS (hunk-style touring + stage-the-set). Marks live outside
     -- codediff state: reviewed[root][rel] = worktree hash at mark time, so a
     -- file edited after marking reads stale and rejoins the tour on its own.
-    -- `v` toggles the current file (re-marks stale entries instead of
+    -- `o` toggles the current file (re-marks stale entries instead of
     -- unmarking them), `]r`/`[r` tour unreviewed files, `S` stages every
     -- marked file that still has unstaged changes, then tours on.
     -- Deliberately NOT covered: hunk's `V` (drop-viewed filter — the tour
     -- already skips fresh marks and fully-staged files, so there is nothing
-    -- to filter) and `X` (marks are cheap; `v` unmarks). `v` shadows visual
-    -- mode in the explorer/history panels only (hunk parity wins; the diff
-    -- panes are untouched). Bound in the panel FileType autocmd below — these
-    -- lhs are codediff-free, so unlike the <Tab> aliases there is no rebind
-    -- race to ride. No new private-API surface: git CLI plus the explorer
-    -- accessors the glue above already uses.
+    -- to filter) and `X` (marks are cheap; `o` unmarks). Bound in the panel
+    -- FileType autocmd below — these lhs are codediff-free, so unlike the
+    -- <Tab> aliases there is no rebind race to ride. No new private-API
+    -- surface: git CLI plus the explorer accessors the glue above already uses.
     local reviewed = {}
     local function marks_root(ex)
       local root = ex and ex.git_root
@@ -709,9 +707,9 @@ return {
         vim.keymap.set("n", "<C-d>", scroll_diff("<C-d>"), { buffer = args.buf, desc = "Scroll the diff down" })
         vim.keymap.set("n", "<C-u>", scroll_diff("<C-u>"), { buffer = args.buf, desc = "Scroll the diff up" })
         -- Reviewed marks (see the section above): explorer/history panels
-        -- only, so the diff panes keep native `v`s`/`S` (substitute in the
+        -- only, so the diff panes keep native `o`/`S` (substitute in the
         -- editable Result pane) and stock `]`/`[` nav.
-        vim.keymap.set("n", "v", toggle_mark, { buffer = args.buf, nowait = true, silent = true, desc = "Toggle reviewed mark" })
+        vim.keymap.set("n", "o", toggle_mark, { buffer = args.buf, nowait = true, silent = true, desc = "Toggle reviewed mark" })
         vim.keymap.set("n", "S", stage_marked, { buffer = args.buf, nowait = true, silent = true, desc = "Stage all marked files" })
         vim.keymap.set("n", "]r", function() tour(1) end, { buffer = args.buf, nowait = true, silent = true, desc = "Next unreviewed file" })
         vim.keymap.set("n", "[r", function() tour(-1) end, { buffer = args.buf, nowait = true, silent = true, desc = "Prev unreviewed file" })

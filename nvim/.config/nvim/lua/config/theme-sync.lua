@@ -114,10 +114,13 @@ local FAMILIES = {
   ["dredge"] = {
     schemes = { dark = "dredge", light = "dredge" },
     colors_name = "dredge",
+    -- Comments are tuned in APCA and mirrored in hunk; the WCAG floor would
+    -- split them from docstrings and from hunk.
+    own_comment_contrast = true,
     accents = {
       -- Headings are periwinkle at every level: a heading defines a section.
       dark = { heading = "#adb3f3", bullet = "#9ba8b5" },
-      light = { heading = "#524ca6", bullet = "#666a6e" },
+      light = { heading = "#5143bb", bullet = "#666a6e" },
     },
   },
 }
@@ -310,11 +313,14 @@ local function apply_overrides()
   -- colors_name: guard override for a family whose light/dark variants both
   -- register ONE shared colors_name (!= schemes[mode]); set fam.colors_name to
   -- it so this match still fires.
-  if vim.g.colors_name == (fam.colors_name or fam.schemes[mode]) then
+  local own_scheme = vim.g.colors_name == (fam.colors_name or fam.schemes[mode])
+  if own_scheme then
     set_headings(fam.accents[mode])
   end
   set_word_diff()
-  set_comment_floor()
+  if not (own_scheme and fam.own_comment_contrast) then
+    set_comment_floor()
+  end
   set_org_agenda()
   set_prose()
 end

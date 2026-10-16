@@ -398,6 +398,10 @@ return {
       Snacks.picker.marks()
     end, "Marks")
 
+    pmap("<leader>su", function()
+      Snacks.picker.undo()
+    end, "Undo history")
+
     pmap("<leader>sk", function()
       Snacks.picker.keymaps()
     end, "Keymaps")

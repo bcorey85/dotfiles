@@ -23,7 +23,7 @@ return {
     config = function()
       -- ── mini.icons ─────────────────────────────────────────────────────────
       -- Shared icon provider; the mock lets plugins that require
-      -- "nvim-web-devicons" (winbar, octo) get mini.icons transparently.
+      -- "nvim-web-devicons" (winbar) get mini.icons transparently.
       require("mini.icons").setup()
       MiniIcons.mock_nvim_web_devicons()
 
@@ -134,7 +134,6 @@ return {
           { mode = { "n", "x" }, keys = "<Leader>c", desc = "+changes" },
           { mode = { "n", "x" }, keys = "<Leader>f", desc = "+file/find" },
           { mode = { "n", "x" }, keys = "<Leader>g", desc = "+git" },
-          { mode = { "n", "x" }, keys = "<Leader>gl", desc = "+list (forge)" },
           { mode = { "n", "x" }, keys = "<Leader>l", desc = "+lsp/quickfix" },
           { mode = { "n", "x" }, keys = "<Leader>n", desc = "+org" },
           { mode = { "n", "x" }, keys = "<Leader>N", desc = "+notes (obsidian)" },

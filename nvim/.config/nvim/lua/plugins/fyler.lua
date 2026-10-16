@@ -89,6 +89,7 @@ return {
       n = {
         ["zM"] = { action = collapse_all, desc = "Collapse all directories" },
         ["gO"] = { action = open_in_file_manager, desc = "Open in file manager" },
+        ["<A-o>"] = { action = open_in_file_manager, desc = "Open in file manager" },
         -- herdr `prefix e` popup: the whole nvim is disposable, so q quits it.
         -- Only fyler's own q is remapped: files opened from the popup are
         -- editable, and a global q would eat macro recording. `qa` without

@@ -140,17 +140,28 @@ return {
         -- scroll; preview scroll lives on <C-f>/<C-b>). Override per-window so
         -- they hit the preview whether focus is in the input or the list — snacks
         -- merges these key-by-key, so every other default binding is preserved.
+        actions = {
+          reveal_in_file_manager = function(picker, item)
+            local path = Snacks.picker.util.path(item)
+            if path then
+              picker:close()
+              require("util.file_manager").reveal(path)
+            end
+          end,
+        },
         win = {
           input = {
             keys = {
               ["<c-d>"] = { "preview_scroll_down", mode = { "i", "n" } },
               ["<c-u>"] = { "preview_scroll_up", mode = { "i", "n" } },
+              ["<a-o>"] = { "reveal_in_file_manager", mode = { "i", "n" } },
             },
           },
           list = {
             keys = {
               ["<c-d>"] = "preview_scroll_down",
               ["<c-u>"] = "preview_scroll_up",
+              ["<a-o>"] = "reveal_in_file_manager",
             },
           },
         },

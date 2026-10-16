@@ -23,7 +23,7 @@ return {
       --               below (+ org_agenda/org_capture via mappings.global).
       --   <leader>m = org-buffer localleader (Doom SPC m): todo/schedule/clock/
       --               refile/export — the `mappings.prefix` rebase below.
-      -- (<leader>o is the snacks buffers picker, untouched.)
+      -- (<leader>o is the snacks current-dir file picker, untouched.)
       require("orgmode").setup({
         -- An allowlist, not all of ~/vault/org — this one setting drives the
         -- agenda, the global TODO list (<leader>ne), and refile targets.

@@ -49,7 +49,7 @@ return {
       callback = function()
         -- Only run linters whose binary is actually installed, so a missing
         -- tool (e.g. before mason finishes installing) can't throw ENOENT
-        -- inside BufReadPost and break buffer loads / harpoon jumps.
+        -- inside BufReadPost and break buffer loads.
         local names = lint.linters_by_ft[vim.bo.filetype] or {}
         local available = {}
         for _, name in ipairs(names) do

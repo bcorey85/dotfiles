@@ -40,7 +40,7 @@ require("util.hl").register("WinbarHighlights", {
 local esc = require("util.str").escape_pct
 
 -- A window gets a winbar only if it's a normal, non-floating window holding a
--- real file buffer. Special buffers (oil, snacks.picker, quickfix, help,
+-- real file buffer. Special buffers (fyler, snacks.picker, quickfix, help,
 -- terminals) and floats stay bare.
 local function eligible(win)
   if vim.api.nvim_win_get_config(win).relative ~= "" then

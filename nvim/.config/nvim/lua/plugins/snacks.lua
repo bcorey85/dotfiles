@@ -84,16 +84,17 @@ return {
       -- dashboard: the Doom splash on an empty start. preset.header is the
       -- banner; "neovim?" rides underneath as a centered subtitle. Keys mirror
       -- the Doom-style picker layout already bound below.
-      -- Suppressed in the herdr popup nvims (prefix d/g/s/e, prefix n org menu):
-      -- they launch straight into their own UI, and the splash frame reads as
-      -- flicker there.
+      -- Suppressed in the herdr popup nvims (prefix d/g/s/e, prefix / and space,
+      -- prefix n org menu): they launch straight into their own UI, and the
+      -- splash frame reads as flicker there.
       dashboard = {
         enabled = vim.env.CODEDIFF_POPUP == nil
           and vim.env.NEOGIT_POPUP == nil
           and vim.env.GIT_QF_POPUP == nil
-          and vim.env.OIL_POPUP == nil
+          and vim.env.FYLER_POPUP == nil
           and vim.env.ORG_POPUP == nil
-          and vim.env.INSITU_POPUP == nil,
+          and vim.env.INSITU_POPUP == nil
+          and vim.env.FIND_POPUP == nil,
         preset = {
           header = doom_banner,
           keys = {
@@ -116,7 +117,7 @@ return {
       -- Telescope-style layout — narrow result list + preview pane — so grep
       -- hits show the matched line, not just long monorepo paths. ui_select
       -- defaults to true: enabling the picker also routes vim.ui.select through
-      -- it (code-action / rename / obsidian / oil prompts), replacing the old
+      -- it (code-action / rename / obsidian prompts), replacing the old
       -- MiniPick.ui_select wiring. Keymaps live below.
       picker = {
         ui_select = true,
@@ -194,6 +195,12 @@ return {
     vim.keymap.set("n", "<leader>bd", function()
       Snacks.bufdelete()
     end, { desc = "Delete buffer" })
+    vim.keymap.set("n", "<leader>bo", function()
+      Snacks.bufdelete.other()
+    end, { desc = "Delete other buffers" })
+    vim.keymap.set("n", "<leader>ba", function()
+      Snacks.bufdelete.all()
+    end, { desc = "Delete all buffers" })
 
     -- Terminal toggle, keyed by cwd (one float per project). Lives in the
     -- <leader>t tasks namespace as <leader>tt — "tasks → terminal".
@@ -211,8 +218,7 @@ return {
     -- scratch: persistent per-project scratch buffers, keyed by cwd + branch +
     -- filetype (stored in stdpath("data")/scratch). The scratch inherits the
     -- current buffer's filetype (markdown fallback); lua scratches get <cr> to
-    -- source the buffer. <leader>. is taken by picker-resume, so toggle lives
-    -- on <leader>S. (Scratch.select is unbound — <leader>fs is save, Doom-style.)
+    -- source the buffer. (Scratch.select is unbound — <leader>fs is save, Doom-style.)
     vim.keymap.set("n", "<leader>S", function()
       Snacks.scratch()
     end, { desc = "Toggle scratch buffer" })
@@ -259,23 +265,37 @@ return {
     -- ranks above one you've never opened. It also sets sort_empty, which the
     -- global matcher deliberately doesn't: ranking applies with an empty query
     -- here, where the candidate list is small enough for that to be cheap.
-    -- <leader>. (dir-scoped) stays on plain `files` — buffers/recent ignore cwd.
+    -- <leader>o (dir-scoped) stays on plain `files` — buffers/recent ignore cwd.
     pmap("<leader><space>", function()
       Snacks.picker.smart(search_opts())
     end, "Find files")
 
-    pmap("<leader>o", function()
-      Snacks.picker.buffers()
-    end, "Buffers")
+    local popup_picker = vim.env.FIND_POPUP
+    if popup_picker == "grep" or popup_picker == "smart" then
+      vim.api.nvim_create_autocmd("VimEnter", {
+        once = true,
+        callback = function()
+          Snacks.picker[popup_picker](search_opts({
+            on_close = function()
+              vim.schedule(function()
+                if vim.bo.buftype == "" and vim.api.nvim_buf_get_name(0) == "" then
+                  vim.cmd("qa")
+                end
+              end)
+            end,
+          }))
+        end,
+      })
+    end
 
-    -- <leader>,: switch buffer (mirrors Doom `SPC ,`); same picker as <leader>o.
+    -- <leader>,: switch buffer (mirrors Doom `SPC ,`).
     pmap("<leader>,", function()
       Snacks.picker.buffers()
     end, "Switch buffer")
 
-    -- <leader>.: find file from the CURRENT buffer's directory (Doom `SPC .`),
-    -- vs <leader><space> which is project-wide. Resume moved to <leader>'.
-    pmap("<leader>.", function()
+    -- <leader>o: find file from the CURRENT buffer's directory, vs
+    -- <leader><space> which is project-wide. <leader>. is buffer_manager.
+    pmap("<leader>o", function()
       Snacks.picker.files(search_opts({
         cwd = vim.fn.expand("%:p:h"),
       }))

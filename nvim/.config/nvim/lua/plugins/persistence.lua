@@ -11,7 +11,7 @@
 -- Throwaway nvims must never save OR restore a session, or they'd clobber the
 -- real project session / dump a full layout into a popup:
 --   • herdr popups: prefix g (neogit), prefix s (git hunk qf), prefix d
---     (codediff review), prefix e (oil explorer), prefix C-c/C-a (org
+--     (codediff review), prefix e (fyler explorer), prefix C-c/C-a (org
 --     capture/agenda), prefix space / v (FIND_POPUP), hunk's e (REVIEW_POPUP). Same env flags the
 --     herdr-splits spec guards on.
 --   • headless nvim (CI / scripted checks): no UI ⇒ list_uis() is empty.
@@ -20,7 +20,7 @@
 local disabled = vim.env.NEOGIT_POPUP ~= nil
   or vim.env.GIT_QF_POPUP ~= nil
   or vim.env.CODEDIFF_POPUP ~= nil
-  or vim.env.OIL_POPUP ~= nil
+  or vim.env.FYLER_POPUP ~= nil
   or vim.env.ORG_POPUP ~= nil
   or vim.env.INSITU_POPUP ~= nil
   or vim.env.FIND_POPUP ~= nil
@@ -61,7 +61,7 @@ return {
 
     -- Before each save, wipe special / non-file buffers so mksession never
     -- badd's them into the session (they restore as garbage): terminals,
-    -- quickfix, help, oil:// dir listings, NeogitStatus, [No Name] scratch,
+    -- quickfix, help, fyler dir listings, NeogitStatus, [No Name] scratch,
     -- and stray fs junk like .DS_Store. `need`'s own filter only decides IF we
     -- save, not WHICH buffers land in the session — this controls the latter.
     -- Runs on VimLeavePre (via SavePre), so wiping the current buffer is safe.
@@ -73,10 +73,9 @@ return {
           if vim.api.nvim_buf_is_valid(b) then
             local name = vim.api.nvim_buf_get_name(b)
             local special = vim.bo[b].buftype ~= "" -- terminal/nofile/acwrite/help/qf/prompt
-              or vim.bo[b].filetype == "oil"
               or vim.bo[b].filetype:match("^Neogit") ~= nil
               or name == "" -- [No Name] / blank
-              or name:match("^%w+://") ~= nil -- oil://, fugitive://, etc.
+              or name:match("^%w+://") ~= nil -- fugitive://, etc.
               or name:match("%.DS_Store$") ~= nil
             if special then
               -- Must delete, not just unlist: `buffers` in sessionoptions makes

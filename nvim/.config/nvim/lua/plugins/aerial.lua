@@ -1,5 +1,5 @@
 -- aerial.nvim — code outline / symbol tree as a sidebar buffer.
--- Same author as oil/conform/quicker, so it slots into the buffer-native
+-- Same author as conform/quicker, so it slots into the buffer-native
 -- workflow. Backends fall back treesitter → lsp → markdown, so it works in
 -- plain markdown buffers too (no LSP required). Placed after treesitter and
 -- lspconfig in plugin_order since both back the symbol queries.

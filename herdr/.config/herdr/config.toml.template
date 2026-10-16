@@ -85,7 +85,7 @@ resize_mode      = "prefix+shift+r"     # was prefix+r  (yours: reload)
 # sidebar keeps only the prefix chord. The sidebar shows the same queue as a
 # side rail; the popup is the centered, preview-carrying version.
 toggle_sidebar   = "prefix+ctrl+b"      # was prefix+b (yours: btop)
-edit_scrollback  = "prefix+shift+e"     # was prefix+e  (yours: oil)
+edit_scrollback  = "prefix+shift+e"     # was prefix+e  (yours: fyler)
 next_tab         = "prefix+ctrl+n"      # was prefix+n  (yours: notes menu)
 previous_tab     = "prefix+ctrl+p"      # was prefix+p
 new_worktree     = "prefix+ctrl+g"      # was prefix+shift+g (yours: insitu)
@@ -230,8 +230,8 @@ width = "100%"
 height = "100%"
 
 [[keys.command]]
-key = "prefix+e"                        # oil.nvim file explorer
-command = "OIL_POPUP=1 nvim -c 'Oil'"
+key = "prefix+e"                        # fyler.nvim file explorer
+command = "FYLER_POPUP=1 nvim -c 'Fyler'"
 type = "popup"
 width = "100%"
 height = "100%"
@@ -265,15 +265,15 @@ width = "100%"
 height = "100%"
 
 [[keys.command]]
-key = "prefix+slash"                    # live grep -> nvim at line
-command = "fzf --disabled --ansi --delimiter=: --bind 'start:reload:rg --line-number --no-heading --color=always {q} || true' --bind 'change:reload:rg --line-number --no-heading --color=always {q} || true' --preview 'bat --color=always --highlight-line {2} {1}' --preview-window='up,60%' --bind 'enter:become(FIND_POPUP=1 nvim +{2} {1})'"
+key = "prefix+slash"                    # live grep: nvim snacks grep (<leader>/)
+command = "FIND_POPUP=grep nvim"
 type = "popup"
 width = "95%"
 height = "95%"
 
 [[keys.command]]
-key = "prefix+space"                    # find files -> nvim
-command = "fd --type f --hidden --exclude .git | fzf --preview 'bat --color=always {}' --preview-window='up,60%' --bind 'enter:become(FIND_POPUP=1 nvim {})'"
+key = "prefix+space"                    # find files: nvim snacks smart (<leader><space>)
+command = "FIND_POPUP=smart nvim"
 type = "popup"
 width = "95%"
 height = "95%"

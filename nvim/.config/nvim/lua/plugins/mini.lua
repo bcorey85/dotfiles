@@ -8,7 +8,7 @@
 --
 -- LOADED EAGERLY (priority 100, below the colorscheme's 1000 but above snacks):
 -- mini.icons installs the nvim-web-devicons mock that eager consumers (snacks,
--- winbar, oil) expect, so it must run before them. The other modules are cheap.
+-- winbar) expect, so it must run before them. The other modules are cheap.
 -- nvim-ts-autotag (separate repo) rides along below on a file event.
 return {
   {
@@ -23,7 +23,7 @@ return {
     config = function()
       -- ── mini.icons ─────────────────────────────────────────────────────────
       -- Shared icon provider; the mock lets plugins that require
-      -- "nvim-web-devicons" (winbar, oil) get mini.icons transparently.
+      -- "nvim-web-devicons" (winbar, octo) get mini.icons transparently.
       require("mini.icons").setup()
       MiniIcons.mock_nvim_web_devicons()
 
@@ -95,7 +95,7 @@ return {
           "help",
           "lspinfo",
           "mason",
-          "oil",
+          "fyler_finder",
           "qf",
           "undotree",
         },

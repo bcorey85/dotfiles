@@ -1,0 +1,424 @@
+-- snacks.nvim — image, zen, scratch, terminal, and gitbrowse keymaps.
+--
+-- image: renders markdown image links and ```mermaid fences inline via the
+-- Kitty Graphics Protocol. Degrades gracefully when dependencies are absent.
+--
+-- Runtime binary deps (image):
+--   ImageMagick — installed via install/deps on all platforms
+--   mermaid-cli — npm-only, manual install: npm i -g @mermaid-js/mermaid-cli (mmdc binary)
+--
+-- Terminals: kitty and ghostty support Kitty Graphics Protocol.
+-- WSL does NOT support it — images will not render there.
+--
+-- render-markdown.nvim coexists without conflict: it handles text decoration
+-- (headings, bullets, tables), snacks.image handles pixel-level graphics.
+-- No render-markdown options need changing.
+--
+-- Math/LaTeX rendering is disabled (math.enabled = false) — requires tectonic
+-- or pdflatex which are not part of this setup.
+return {
+  "folke/snacks.nvim",
+  lazy = false,
+  priority = 90,
+  config = function()
+    local doom_banner = [[
+=================     ===============     ===============   ========  ========
+\\ . . . . . . .\\   //. . . . . . .\\   //. . . . . . .\\  \\. . .\\// . . //
+||. . ._____. . .|| ||. . ._____. . .|| ||. . ._____. . .|| || . . .\/ . . .||
+|| . .||   ||. . || || . .||   ||. . || || . .||   ||. . || ||. . . . . . . ||
+||. . ||   || . .|| ||. . ||   || . .|| ||. . ||   || . .|| || . | . . . . .||
+|| . .||   ||. _-|| ||-_ .||   ||. . || || . .||   ||. _-|| ||-_.|\ . . . . ||
+||. . ||   ||-'  || ||  `-||   || . .|| ||. . ||   ||-'  || ||  `|\_ . .|. .||
+|| . _||   ||    || ||    ||   ||_ . || || . _||   ||    || ||   |\ `-_/| . ||
+||_-' ||  .|/    || ||    \|.  || `-_|| ||_-' ||  .|/    || ||   | \  / |-_.||
+||    ||_-'      || ||      `-_||    || ||    ||_-'      || ||   | \  / |  `||
+||    `'         || ||         `'    || ||    `'         || ||   | \  / |   ||
+||            .===' `===.         .==='.`===.         .===' /==. |  \/  |   ||
+||         .=='   \_|-_ `===. .==='   _|_   `===. .===' _-|/   `==  \/  |   ||
+||      .=='    _-'    `-_  `='    _-'   `-_    `='  _-'   `-_  /|  \/  |   ||
+||   .=='    _-'          '-__\._-'         '-_./__-'         `' |. /|  |   ||
+||.=='    _-'                                                     `' |  /==.||
+=='    _-'                       N E O V I M ?                        \/   `==
+\   _-'                                                                `-_   /
+ `''                                                                      ``']]
+
+    require("snacks").setup({
+      -- bigfile: above ~1.5MB, disable the expensive per-buffer machinery
+      -- (treesitter highlight + foldexpr folds, LSP attach, etc.) so opening a
+      -- minified bundle, a huge lockfile, or a generated dump doesn't freeze the
+      -- editor. No-op on normal files.
+      bigfile = { enabled = true },
+      -- input: replaces the hand-rolled vim.ui.input in config/ui-input.lua.
+      -- The Esc semantics that file documented as unusual are snacks' defaults:
+      -- insert <Esc> stops insert (so vim motions work on the text), normal
+      -- <Esc>/q cancels, <CR> confirms in both modes. Free on top: prompt
+      -- history on <Up>/<Down> and the opts.completion support ui-input.lua
+      -- listed as a known omission.
+      --
+      -- The `input` style defaults to row=2/width=60 (top of screen). These two
+      -- restore ui-input.lua's centered geometry, which was deliberately kept in
+      -- sync with tiny-cmdline's geometry() — same clamp, same row math. Keep
+      -- them in sync when either changes (plugins/tiny-cmdline.lua).
+      -- col is omitted: snacks centers on the axis when the value is unset.
+      input = {
+        enabled = true,
+        win = {
+          row = function()
+            return math.floor((vim.o.lines - 1) / 2)
+          end,
+          width = function()
+            return math.max(40, math.min(140, math.floor(vim.o.columns * 0.80)))
+          end,
+        },
+      },
+      -- notifier: routes vim.notify into a corner window with history.
+      -- Matters most in the throwaway herdr popup nvims (prefix d/g/G/e):
+      -- messages there previously flashed on the last row and died with the
+      -- popup, so insitu's accept/reject/empty-queue notices were effectively
+      -- invisible.
+      -- Snacks.notifier.show_history() gets them back.
+      notifier = { enabled = true },
+      -- No `indent` block: mini.indentscope owns indent guides (plugins/mini.lua).
+      -- snacks.indent draws more (every guide, not just the scope) but has no
+      -- animation, which is the reason mini is kept. Don't enable both.
+      -- dashboard: the Doom splash on an empty start. preset.header is the
+      -- banner; "neovim?" rides underneath as a centered subtitle. Keys mirror
+      -- the Doom-style picker layout already bound below.
+      -- Suppressed in the herdr popup nvims (prefix d/g/s/e, prefix / and space,
+      -- prefix n org menu): they launch straight into their own UI, and the
+      -- splash frame reads as flicker there.
+      dashboard = {
+        enabled = vim.env.CODEDIFF_POPUP == nil
+          and vim.env.NEOGIT_POPUP == nil
+          and vim.env.GIT_QF_POPUP == nil
+          and vim.env.FYLER_POPUP == nil
+          and vim.env.ORG_POPUP == nil
+          and vim.env.INSITU_POPUP == nil
+          and vim.env.FIND_POPUP == nil,
+        preset = {
+          header = doom_banner,
+          keys = {
+            { icon = " ", key = "f", desc = "Find File", action = ":lua Snacks.dashboard.pick('files')" },
+            { icon = " ", key = "r", desc = "Recent Files", action = ":lua Snacks.dashboard.pick('oldfiles')" },
+            { icon = " ", key = "g", desc = "Find Text", action = ":lua Snacks.dashboard.pick('live_grep')" },
+            { icon = " ", key = "p", desc = "Projects", action = ":lua Snacks.picker.projects()" },
+            { icon = " ", key = "c", desc = "Config", action = ":e $MYVIMRC" },
+            { icon = " ", key = "q", desc = "Quit", action = ":qa" },
+          },
+        },
+        sections = {
+          { section = "header" },
+          { section = "keys", gap = 1, padding = 1 },
+          -- NB: no { section = "startup" } — that section pulls in lazy.stats,
+          -- which doesn't exist under vim.pack and throws, aborting the render.
+        },
+      },
+      -- picker: fuzzy finder (replaced mini.pick + mini.extra + mini.visits).
+      -- Telescope-style layout — narrow result list + preview pane — so grep
+      -- hits show the matched line, not just long monorepo paths. ui_select
+      -- defaults to true: enabling the picker also routes vim.ui.select through
+      -- it (code-action / rename / obsidian prompts), replacing the old
+      -- MiniPick.ui_select wiring. Keymaps live below.
+      picker = {
+        ui_select = true,
+        -- Ranking, not just matching. All three default to FALSE upstream, which
+        -- leaves the picker as a pure fuzzy filter — files you open twenty times
+        -- a day rank no higher than ones you've never touched. frecency is the
+        -- one that matters (visit count + recency, persisted across sessions);
+        -- cwd_bonus keeps a monorepo's other packages from outranking the
+        -- subtree you're actually in. history_bonus stays off: it weights raw
+        -- chronological order, which fights frecency's scoring on the same list.
+        matcher = {
+          frecency = true,
+          cwd_bonus = true,
+        },
+        -- <C-d>/<C-u> scroll the PREVIEW (snacks defaults them to list half-page
+        -- scroll; preview scroll lives on <C-f>/<C-b>). Override per-window so
+        -- they hit the preview whether focus is in the input or the list — snacks
+        -- merges these key-by-key, so every other default binding is preserved.
+        win = {
+          input = {
+            keys = {
+              ["<c-d>"] = { "preview_scroll_down", mode = { "i", "n" } },
+              ["<c-u>"] = { "preview_scroll_up", mode = { "i", "n" } },
+            },
+          },
+          list = {
+            keys = {
+              ["<c-d>"] = "preview_scroll_down",
+              ["<c-u>"] = "preview_scroll_up",
+            },
+          },
+        },
+      },
+      -- Terminal detection is left to snacks; herdr passes the real terminal
+      -- (ghostty/kitty) through, so the blocking graphics probe is fine.
+      image = {
+        enabled = true,
+        math = { enabled = false },
+      },
+      zen = {
+        -- dim is off: we don't need the dim module and don't want other windows
+        -- darkened — pane zoom already provides visual isolation.
+        toggles = { dim = false },
+        win = {
+          style = "zen",
+          width = 100,
+          backdrop = { transparent = false, blend = 99 },
+          wo = { number = false, relativenumber = false },
+        },
+        -- on_close: every exit path (q, <leader>z, :q, herdr zoom keybinding)
+        -- triggers this; cleanup restores readonly/modifiable and removes the
+        -- q map.
+        on_close = function(_win)
+          require("util.reading").cleanup()
+        end,
+      },
+      -- terminal: toggleable bottom-split terminal keyed by cwd (one per
+      -- project). A split (not a float) so herdr-splits <C-hjkl> can navigate
+      -- between it and your code windows — floats sit outside the split tree.
+      terminal = {
+        win = {
+          position = "bottom",
+          height = 0.3,
+        },
+      },
+    })
+
+    vim.keymap.set("n", "<leader>z", function()
+      Snacks.zen()
+    end, { desc = "Zen mode (centered, width-capped)" })
+
+    -- Delete the current buffer without disturbing the window layout. Snacks owns
+    -- this now (replaced mini.bufremove); a modified buffer prompts rather than
+    -- silently discarding.
+    vim.keymap.set("n", "<leader>bd", function()
+      Snacks.bufdelete()
+    end, { desc = "Delete buffer" })
+    vim.keymap.set("n", "<leader>bo", function()
+      Snacks.bufdelete.other()
+    end, { desc = "Delete other buffers" })
+    vim.keymap.set("n", "<leader>ba", function()
+      Snacks.bufdelete.all()
+    end, { desc = "Delete all buffers" })
+
+    -- Terminal toggle, keyed by cwd (one float per project). Lives in the
+    -- <leader>t tasks namespace as <leader>tt — "tasks → terminal".
+    vim.keymap.set("n", "<leader>tt", function()
+      Snacks.terminal()
+    end, { desc = "Toggle terminal (cwd)" })
+
+    -- Dismiss-from-inside uses a chord, not <leader>: in terminal mode <leader>
+    -- (space) would intercept every space you type in the shell. <C-t> hides
+    -- the terminal split without leaving insert.
+    vim.keymap.set("t", "<C-t>", function()
+      Snacks.terminal()
+    end, { desc = "Hide terminal" })
+
+    -- scratch: persistent per-project scratch buffers, keyed by cwd + branch +
+    -- filetype (stored in stdpath("data")/scratch). The scratch inherits the
+    -- current buffer's filetype (markdown fallback); lua scratches get <cr> to
+    -- source the buffer. (Scratch.select is unbound — <leader>fs is save, Doom-style.)
+    vim.keymap.set("n", "<leader>S", function()
+      Snacks.scratch()
+    end, { desc = "Toggle scratch buffer" })
+
+    -- gitbrowse keymaps — replaced gitlinker.nvim.
+    -- gitbrowse defaults to what = "commit" (commit-pinned permalink URLs),
+    -- matching the permalink behavior gitlinker provided.
+    vim.keymap.set({ "n", "v" }, "<leader>go", function()
+      Snacks.gitbrowse()
+    end, { desc = "Open git permalink in browser" })
+
+    vim.keymap.set({ "n", "v" }, "<leader>yg", function()
+      Snacks.gitbrowse({
+        open = function(url)
+          vim.fn.setreg("+", url)
+          vim.notify("Copied: " .. url)
+        end,
+        notify = false,
+      })
+    end, { desc = "Yank git permalink" })
+
+    -- ── picker keymaps (ported 1:1 from the old mini.pick layout) ──────────────
+    -- Show hidden files + gitignored dotfiles (.env, .env.local) but exclude junk
+    -- dirs (node_modules, dist, caches…). hidden → --hidden, ignored → --no-ignore;
+    -- exclude globs come from util.search (shared with grepprg in options.lua).
+    -- <C-q> → send to quickfix is a snacks built-in; no custom action needed.
+    local exclude = require("util.search").exclude_patterns()
+    local function search_opts(overrides)
+      return vim.tbl_extend("force", { hidden = true, ignored = true, exclude = exclude }, overrides or {})
+    end
+
+    local pmap = function(lhs, fn, desc)
+      vim.keymap.set("n", lhs, fn, { desc = desc })
+    end
+
+    -- <leader>/: project-wide live grep over file CONTENTS.
+    pmap("<leader>/", function()
+      Snacks.picker.grep(search_opts())
+    end, "Live grep")
+
+    -- <leader><space>: file finder. `smart` (not `files`) — it merges open
+    -- buffers + recent files + the file walk into one frecency-ranked list and
+    -- dedupes them (transform = "unique_file"), so the file you were just in
+    -- ranks above one you've never opened. It also sets sort_empty, which the
+    -- global matcher deliberately doesn't: ranking applies with an empty query
+    -- here, where the candidate list is small enough for that to be cheap.
+    -- <leader>o (dir-scoped) stays on plain `files` — buffers/recent ignore cwd.
+    pmap("<leader><space>", function()
+      Snacks.picker.smart(search_opts())
+    end, "Find files")
+
+    local popup_picker = vim.env.FIND_POPUP
+    if popup_picker == "grep" or popup_picker == "smart" then
+      vim.api.nvim_create_autocmd("VimEnter", {
+        once = true,
+        callback = function()
+          Snacks.picker[popup_picker](search_opts({
+            on_close = function()
+              vim.schedule(function()
+                if vim.bo.buftype == "" and vim.api.nvim_buf_get_name(0) == "" then
+                  vim.cmd("qa")
+                end
+              end)
+            end,
+          }))
+        end,
+      })
+    end
+
+    -- <leader>,: switch buffer (mirrors Doom `SPC ,`).
+    pmap("<leader>,", function()
+      Snacks.picker.buffers()
+    end, "Switch buffer")
+
+    -- <leader>o: find file from the CURRENT buffer's directory, vs
+    -- <leader><space> which is project-wide. <leader>. is buffer_manager.
+    pmap("<leader>o", function()
+      Snacks.picker.files(search_opts({
+        cwd = vim.fn.expand("%:p:h"),
+      }))
+    end, "Find file (current dir)")
+
+    -- <leader>': resume last picker (Doom `SPC '` / vertico-repeat).
+    pmap("<leader>'", function()
+      Snacks.picker.resume()
+    end, "Resume last picker")
+
+    -- Search namespace aligned to Doom `SPC s`. Doom uses s s / s b for buffer
+    -- search and s i / s I for symbols (nvim historically had these swapped).
+
+    -- Grep a directory typed at the prompt (used by sD — the escape hatch for
+    -- dirs zoxide has never visited).
+    local function grep_dir(prompt)
+      vim.ui.input({ prompt = prompt, completion = "dir" }, function(dir)
+        if not dir or dir == "" then
+          return
+        end
+        Snacks.picker.grep(search_opts({ cwd = vim.fn.expand(dir) }))
+      end)
+    end
+
+    -- s s / s S: workspace / document symbols.
+    -- filter=true disables snacks' symbol-kind allowlist, which omits Variable
+    -- and Constant — the kinds pyright reports module-level constants as.
+    pmap("<leader>ss", function()
+      Snacks.picker.lsp_workspace_symbols({ filter = { default = true } })
+    end, "Symbols (workspace)")
+
+    pmap("<leader>sS", function()
+      Snacks.picker.lsp_symbols()
+    end, "Symbols (document)")
+
+    -- s p: project grep (Doom `s p`); same target as <leader>/.
+    pmap("<leader>sp", function()
+      Snacks.picker.grep(search_opts())
+    end, "Search project")
+
+    pmap("<leader>st", function()
+      local no_tests = vim.list_extend(vim.deepcopy(exclude), require("util.search").test_patterns)
+      Snacks.picker.grep(search_opts({ exclude = no_tests }))
+    end, "Search project (skip tests)")
+
+    -- s d / s D: grep the current file's dir / a chosen dir (Doom `s d` / `s D`).
+    pmap("<leader>sd", function()
+      Snacks.picker.grep(search_opts({ cwd = vim.fn.expand("%:p:h") }))
+    end, "Search current dir")
+
+    pmap("<leader>sD", function()
+      grep_dir("Search dir: ")
+    end, "Search other dir")
+
+    -- s P: grep another project (Doom `s P`). nvim has no project registry like
+    -- Doom's projectile, so zoxide's frecency-ranked dirs stand in for it: pick
+    -- a directory, then grep it. Overrides the source's default confirm
+    -- ("load_session") — we want a grep, not a session switch.
+    pmap("<leader>sP", function()
+      Snacks.picker.zoxide({
+        confirm = function(picker, item)
+          picker:close()
+          if item then
+            Snacks.picker.grep(search_opts({ cwd = item.file }))
+          end
+        end,
+      })
+    end, "Search other project")
+
+    -- s w: grep the symbol/word under the cursor.
+    pmap("<leader>sw", function()
+      Snacks.picker.grep_word(search_opts())
+    end, "Grep word under cursor")
+
+    -- s j / s m: jumplist / marks (Doom `s j` evil-show-jumps / `s r` show-marks;
+    -- `s r` ceded to grug-far for search-and-replace).
+    pmap("<leader>sj", function()
+      Snacks.picker.jumps()
+    end, "Jumps")
+
+    pmap("<leader>sm", function()
+      Snacks.picker.marks()
+    end, "Marks")
+
+    pmap("<leader>sk", function()
+      Snacks.picker.keymaps()
+    end, "Keymaps")
+
+    -- <leader>: — the Emacs M-x: fuzzy-search and run any Ex command by name,
+    -- the "I don't remember the binding, just find the command" escape hatch.
+    -- Pairs with <leader>sk (keymaps) for full command discoverability. Mnemonic:
+    -- mirrors the `:` cmdline. <leader>s: gives the command HISTORY (M-x repeat).
+    pmap("<leader>:", function()
+      Snacks.picker.commands()
+    end, "Commands (M-x)")
+
+    pmap("<leader>s:", function()
+      Snacks.picker.command_history()
+    end, "Command history")
+
+    -- s b: search the current buffer.
+    pmap("<leader>sb", function()
+      Snacks.picker.lines()
+    end, "Search in buffer")
+
+    pmap("<leader>sh", function()
+      Snacks.picker.help()
+    end, "Help tags")
+
+    pmap("<leader>fr", function()
+      Snacks.picker.recent()
+    end, "Recent files")
+
+    -- <leader>fv: frecency-ranked smart picker (buffers + recent + files),
+    -- replacing the old mini.visits visit_paths finder.
+    pmap("<leader>fv", function()
+      Snacks.picker.smart()
+    end, "Frecent files")
+
+    -- <leader>pp: switch project (mirrors Doom `SPC p p`). In-editor switcher;
+    -- the OS-level equivalent is herdr-sessionizer (herdr `prefix f`).
+    pmap("<leader>pp", function()
+      Snacks.picker.projects()
+    end, "Switch project")
+  end,
+}

@@ -1,6 +1,22 @@
 -- Editable file-system buffer drawn as a tree: a left sidebar on <leader>e, and
 -- full-window in the herdr `prefix e` popup (FYLER_POPUP).
 
+-- fyler's follow_current_file skips files directly under the root, which is
+-- always where the current file sits here. Top-level lines read "<icon> /<id> <name>".
+local function put_cursor_on_entry(finder, file)
+  local entry_pattern = "^%S+ /%d+ " .. vim.pesc(vim.fs.basename(file)) .. "$"
+  finder:refresh({
+    callback = function()
+      for lnum, line in ipairs(vim.api.nvim_buf_get_lines(finder.buf_id, 0, -1, false)) do
+        if line:match(entry_pattern) and vim.api.nvim_win_is_valid(finder.win_id) then
+          vim.api.nvim_win_set_cursor(finder.win_id, { lnum, 0 })
+          return
+        end
+      end
+    end,
+  })
+end
+
 -- Opens rooted at the current file's directory every time. A reused finder
 -- keeps whatever root `-`/`.` left it at, so visit resets it.
 local function toggle_at_current_file()
@@ -11,12 +27,16 @@ local function toggle_at_current_file()
   end
 
   local file = vim.api.nvim_buf_get_name(0)
-  local dir = (vim.bo.buftype == "" and file ~= "") and vim.fs.dirname(file) or vim.fn.getcwd()
+  local has_file = vim.bo.buftype == "" and file ~= ""
+  local dir = has_file and vim.fs.dirname(file) or vim.fn.getcwd()
   fyler.open({ kind = "split_left_most", root_path = dir })
 
   local finder = require("fyler.finder").instance_get_or_nil()
   if finder then
     finder:visit({ path = dir })
+    if has_file then
+      put_cursor_on_entry(finder, file)
+    end
   end
 end
 
@@ -31,19 +51,10 @@ local function collapse_all(finder)
 end
 
 -- Opens the entry under the cursor (the root on a blank line) in the OS file
--- manager. On macOS a file is revealed in its folder (`open -R`).
+-- manager.
 local function open_in_file_manager(finder)
   local entry = require("fyler.finder").parse_cursor_line(finder)
-  local target = entry and entry.path or finder.state.pseudo_root_path
-  local is_dir = not entry or entry.type == "directory"
-
-  local cmd
-  if vim.fn.has("mac") == 1 then
-    cmd = is_dir and { "open", target } or { "open", "-R", target }
-  else
-    cmd = { "thunar", target }
-  end
-  vim.fn.jobstart(cmd, { detach = true })
+  require("util.file_manager").reveal(entry and entry.path or finder.state.pseudo_root_path)
 end
 
 return {

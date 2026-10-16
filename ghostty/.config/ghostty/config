@@ -44,12 +44,14 @@ shell-integration = detect
 
 # macOS cmd key mappings. Option/Command are swapped in System Settings and
 # aerospace owns real Option, so the physical "Alt" key emits Command (super) —
-# these binds turn that back into the Alt sequences herdr/herdr-splits expect.
+# these binds turn that back into the Alt sequences herdr/herdr-splits and the
+# snacks pickers' alt+o (reveal in Finder) expect.
 keybind = super+h=text:\x1bh
 keybind = super+j=text:\x1bj
 keybind = super+k=text:\x1bk
 keybind = super+l=text:\x1bl
 keybind = super+semicolon=text:\x1b;
+keybind = super+o=text:\x1bo
 # Harpoon jumps: send Alt+1..4 as CSI-u (codepoint 49-52 + modifier 3=alt).
 # Mirrors kitty's `map cmd+N send_text \x1b[<cp>;3u`. NOTE: the digit key is
 # named `digit_N`, not

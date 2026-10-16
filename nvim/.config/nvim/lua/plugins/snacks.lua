@@ -132,6 +132,10 @@ return {
           frecency = true,
           cwd_bonus = true,
         },
+        layouts = {
+          default = { fullscreen = true },
+          vertical = { fullscreen = true },
+        },
         -- <C-d>/<C-u> scroll the PREVIEW (snacks defaults them to list half-page
         -- scroll; preview scroll lives on <C-f>/<C-b>). Override per-window so
         -- they hit the preview whether focus is in the input or the list — snacks
@@ -278,8 +282,11 @@ return {
           Snacks.picker[popup_picker](search_opts({
             on_close = function()
               vim.schedule(function()
-                if vim.bo.buftype == "" and vim.api.nvim_buf_get_name(0) == "" then
-                  vim.cmd("qa")
+                local has_file_buffer = vim.iter(vim.fn.getbufinfo({ buflisted = 1 })):any(function(buffer)
+                  return buffer.name ~= ""
+                end)
+                if vim.bo.buftype == "" and not has_file_buffer then
+                  vim.cmd("qa!")
                 end
               end)
             end,

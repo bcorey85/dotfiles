@@ -7,7 +7,7 @@
  * visual selection). `V` also drops
  * viewed files from the review entirely, `O` stages them, `C` clears the marks,
  * `X` discards the selected file's working-tree changes behind a confirm.
- * `L` quits into lazygit in the same herdr popup. Inline review notes (built-in
+ * `G` quits into lazygit in the same herdr popup. Inline review notes (built-in
  * `c`) are mirrored to a JSONL the /cc skill reads and resolves.
  *
  * Collapsing is a registered file view, selected per file through
@@ -689,7 +689,9 @@ export default function claudeReview(hunk: HunkApi): void {
   // shutdown path as `q` — hunk installs it alongside SIGINT — so the terminal
   // is restored exactly as on a normal quit before the wrapper takes over.
   hunk.registerCommand(
-    { id: "handoffToLazygit", title: "Quit and open lazygit here", key: "L" },
+    // hunk's own "Jump to end" also defaults to G, so ~/.config/hunk/config.toml
+    // claims G for this command in [keybindings]; End still jumps to the end.
+    { id: "handoffToLazygit", title: "Quit and open lazygit here", key: "G" },
     (ctx) => {
       const handoff = process.env.HUNK_REVIEW_HANDOFF;
       if (!handoff) {

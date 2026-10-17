@@ -77,6 +77,13 @@ vim.keymap.set("n", "=", function()
   gs.toggle_word_diff(on)
 end, { desc = "Toggle whole-file inline diff overlay" })
 
+vim.keymap.set("n", "]k", function()
+  require("util.jump_note").step(1)
+end, { desc = "Next nvim-jump location" })
+vim.keymap.set("n", "[k", function()
+  require("util.jump_note").step(-1)
+end, { desc = "Previous nvim-jump location" })
+
 -- ─── Editing ──────────────────────────────────────────────────────────────────
 
 -- Insert-mode undo break-points

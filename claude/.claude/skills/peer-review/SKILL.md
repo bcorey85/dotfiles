@@ -148,7 +148,7 @@ Number continuously across tiers. Then **offer the next step via AskUserQuestion
 
 ### 6. Walkthrough (on "walk through")
 
-One finding per turn, tier order, blocking first. **Never batch.** Before each, jump the user's editor to its anchor (`~/.claude/skills/_shared/nvim-jump.md`; main-checkout path, not worktree). Replies are conversation, not menu selection.
+One finding per turn, tier order, blocking first. **Never batch.** Before each, jump the user's editor to its anchors (`~/.claude/skills/_shared/nvim-jump.md`; main-checkout path, not worktree). Replies are conversation, not menu selection.
 
 Before presenting each: read enclosing function + callers in the worktree (LSP; `rg` fallback — no installed deps there) and check for an elsewhere-guard. Then finding + concrete failing input + verdict:
 

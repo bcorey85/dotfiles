@@ -50,7 +50,7 @@ Thin wrapper over the `review-loop` agent (`mode: fix-first`): hand it the findi
 
 4. **Render the packet**: `### Fixed` from `fixed[]` with `blocker` items first and marked; `skipped_fp[]` with reasons; `perf[]` under its own heading with `Principle:` lines; `nit[]` inline. If any finding needs architectural rethinking, recommend `/eng-spec`.
 
-5. **Raise what the agent could not**. Present `ask[]` with each question; wait for direction. Never auto-fix an ask item.
+5. **Raise what the agent could not**. `nvim-jump` `ask[]` per `~/.claude/skills/_shared/nvim-jump.md` (each at its `file_line`, `--note` = its question), then present each with its question; wait for direction. Never auto-fix an ask item.
 
    **Log each ask outcome** (PLAN-IMPACT asks excluded). After the user answers, one row per ask; telemetry never blocks:
 

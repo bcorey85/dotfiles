@@ -18,7 +18,7 @@ Output: ONE human **recap** + a machine row in `branch-recap-receipts.jsonl`. Ne
 
 Phases stage as they go, so the only unstaged work is what the closing phases produced (`/refactor` diff, `/fix` touches in `/test-audit`, `/fix` touches from the Verify pass).
 
-Skill-invoke `/stage`: SAFE staged; ESCALATE/READ/SKIM queue is the residue you owe a read. Never reclassify tiers. On queue-stepping, `nvim-jump` each entry (`~/.claude/skills/_shared/nvim-jump.md`).
+Skill-invoke `/stage`: SAFE staged; ESCALATE/READ/SKIM queue is the residue you owe a read. Never reclassify tiers.
 
 Nothing unstaged → receipt line `residue: none — all phases staged clean`.
 

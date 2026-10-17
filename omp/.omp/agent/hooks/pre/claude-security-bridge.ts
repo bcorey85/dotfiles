@@ -18,12 +18,12 @@
  * formatters (not security).
  *
  * Output conventions handled:
- *   CB hooks  — stdout JSON line {"hookSpecificOutput":{"permissionDecision":"deny",...}}, exit 0
+ *   CB hooks  — stdout JSON line {"hookSpecificOutput":{"permissionDecision":"deny"|"ask",...}}, exit 0
  *   custom    — stderr message + exit 2; no bridged gate uses it today
  *
  * Session id: a per-session UUID that review-commit-gate keys its dirty/clean
  * state to; `review-gate-mark clean` runs through this bridge in the same
- * session. Override: touch ~/.claude/state/review-gate/<uuid>.skip
+ * session.
  *
  * Known gaps (inherent to bridging, not fixable here):
  *   - omp's eval tool executes arbitrary JS/Python with no bash string to
@@ -172,15 +172,17 @@ function runGate(
       if (!t.startsWith("{")) continue;
       try {
         const parsed: unknown = JSON.parse(t);
+        const verdict = isHookVerdict(parsed)
+          ? parsed.hookSpecificOutput
+          : undefined;
+        // omp has no confirm prompt, so "ask" stops the call like "deny".
         if (
-          isHookVerdict(parsed) &&
-          parsed.hookSpecificOutput?.permissionDecision === "deny"
+          verdict?.permissionDecision === "deny" ||
+          verdict?.permissionDecision === "ask"
         ) {
           return finish({
             denied: true,
-            reason:
-              parsed.hookSpecificOutput.permissionDecisionReason ??
-              `${script} denied`,
+            reason: verdict.permissionDecisionReason ?? `${script} denied`,
           });
         }
       } catch {

@@ -30,10 +30,10 @@ No plan found anywhere → stop: _"/verify needs a plan (an eng-spec task dir un
 
 ## Inputs
 
-| File | Read for |
-| --- | --- |
-| `00-ticket.md` | Acceptance criteria / requirements |
-| `spec.md` | `Phase Status`, each phase's `Success Criteria`, and `What We're NOT Doing` |
+| File           | Read for                                                                    |
+| -------------- | --------------------------------------------------------------------------- |
+| `00-ticket.md` | Acceptance criteria / requirements                                          |
+| `spec.md`      | `Phase Status`, each phase's `Success Criteria`, and `What We're NOT Doing` |
 
 This is the one step that DOES read the plan in full (contrast `/adr`, which forbids it).
 
@@ -67,7 +67,8 @@ Present what it returns. Downstream you consume: verdict table, AC result, `need
 
 - **Clean**: first the **branch-final smell gate** — a bare `/refactor` must have run since the last code change; if not, run it now and let it converge. verify stays read-only and withholds the packet without it. Then build the **review packet**:
   1. Assemble in order: (a) completeness table; (b) **smoke-test checklist** — every AC restated as a user-observable check + every `human-only` Manual Verification item + `needs-manual` reconciliation items, each with concrete steps; (c) **diff hotspots** — the 3–5 heaviest files ("read these first, skim the rest"); (d) pointer to agent-verified evidence for spot-checking. Do NOT situate here — that's `/orient`, on demand.
-  2. Point forward: run the smoke-test checklist, then open the PR yourself — agents never open PRs. After the PR exists, `/adr`.
+  2. Before presenting the packet, `nvim-jump` its evidence per `~/.claude/skills/_shared/nvim-jump.md`: each completeness-table `file:line` in table order with `--note "<criterion>: <what the line proves>"`, then each covering test's `file:line` with `--note "<AC id>: <what it asserts>"`.
+  3. Point forward: run the smoke-test checklist, then open the PR yourself — agents never open PRs. After the PR exists, `/adr`.
 
 ## What NOT to do
 

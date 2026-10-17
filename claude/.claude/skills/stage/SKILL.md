@@ -49,6 +49,8 @@ Staged mechanically (N) — invariant-verified, skip. `git diff --staged` to spo
 
 If M is small, say so plainly.
 
+Before the report, `nvim-jump` the queue as one list per `~/.claude/skills/_shared/nvim-jump.md`: queue order, each entry at its `line` with `--note "<TIER>: <what changed and why, one line, from the diff and the coder's handoff>"`. ESCALATE notes lead with the classifier reason. Entries without a `line` (deleted files) stay out.
+
 ### Phase 4: Log the run (flywheel)
 
 Every invocation appends one flywheel row:

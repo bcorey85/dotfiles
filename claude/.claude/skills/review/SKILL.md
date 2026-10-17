@@ -39,7 +39,7 @@ Thin wrapper over the `review-loop` agent: dispatch it, render the returned pack
    - `nit[]` — inline, one combined line.
    - `### Perf findings` — its own heading, one entry per `perf[]` item with its `Principle:` line, regardless of disposition or auto-fix status.
 
-4. **Raise what the agent could not**. Present `ask[]`, each with its question; wait for direction. Never auto-fix an ask item.
+4. **Raise what the agent could not**. `nvim-jump` `ask[]` per `~/.claude/skills/_shared/nvim-jump.md` (each at its `file_line`, `--note` = its question), then present each with its question; wait for direction. Never auto-fix an ask item.
 
    **Log each ask outcome** (PLAN-IMPACT asks excluded). After the user answers, one row per ask; telemetry never blocks:
 

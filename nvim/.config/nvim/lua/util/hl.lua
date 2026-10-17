@@ -5,10 +5,11 @@
 local M = {}
 
 -- augroup: unique augroup name for the ColorScheme autocmd.
--- groups:  { [name] = { fg=, bg=, bold=, ... }, ... } as passed to nvim_set_hl.
+-- groups:  { [name] = { fg=, bg=, bold=, ... }, ... } as passed to nvim_set_hl,
+--          or a function returning that table, re-run on every apply.
 function M.register(augroup, groups)
   local function apply()
-    for name, spec in pairs(groups) do
+    for name, spec in pairs(type(groups) == "function" and groups() or groups) do
       vim.api.nvim_set_hl(0, name, spec)
     end
   end

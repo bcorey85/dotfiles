@@ -198,7 +198,7 @@ function diffLines(path, meta) {
   if (meta.untracked) {
     try {
       const body = readFileSync(join(root, path), "utf8");
-      return { added: body.split("\n"), removed: [], raw: body };
+      return { added: body.split("\n"), removed: [], raw: body, firstLine: 1 };
     } catch {
       return { added: [], removed: [], binary: true };
     }
@@ -206,12 +206,19 @@ function diffLines(path, meta) {
   const out = git(["diff", "HEAD", "--", path], { cwd: root });
   if (/^Binary files /m.test(out)) return { added: [], removed: [], binary: true, raw: out };
   const added = [], removed = [];
+  // New-file line number of the first changed line, for the nvim-jump queue.
+  let newLine = 0, firstLine;
   for (const l of out.split("\n")) {
     if (l.startsWith("+++") || l.startsWith("---")) continue;
-    if (l.startsWith("+")) added.push(l.slice(1));
-    else if (l.startsWith("-")) removed.push(l.slice(1));
+    const hunk = l.match(/^@@ -\d+(?:,\d+)? \+(\d+)/);
+    if (hunk) newLine = Number(hunk[1]);
+    else if (l.startsWith("+") || l.startsWith("-")) {
+      firstLine ??= Math.max(newLine, 1);
+      if (l.startsWith("+")) { added.push(l.slice(1)); newLine++; }
+      else removed.push(l.slice(1));
+    } else if (l.startsWith(" ")) newLine++;
   }
-  return { added, removed, raw: out };
+  return { added, removed, raw: out, firstLine };
 }
 
 // Verdict cache: <git-dir>/stage-verdicts.json, keyed path -> { hash, verdict }.
@@ -324,6 +331,7 @@ for (const [path, meta] of changed) {
   // re-review on a re-run (e.g. after /fix touched other files). Never
   // overrides a tier: an ESCALATE file that is cachedClean is still ESCALATE.
   entry.hash = hashChange(meta.status, lines);
+  if (lines?.firstLine && meta.status !== "D") entry.line = lines.firstLine;
   const cached = cache[path];
   if (cached && cached.hash === entry.hash && cached.verdict === "clean")
     entry.cachedClean = true;

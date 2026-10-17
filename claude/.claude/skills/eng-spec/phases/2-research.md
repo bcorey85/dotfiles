@@ -18,5 +18,5 @@
 
    **Translate, don't transcribe.** Say what each section _means_ and why it
    matters to this fix — never a bare `file.py:func`/line dump. Show the anchor
-   instead: `nvim-jump` the section's first `file:line` before presenting it, per
+   instead: `nvim-jump` the section's anchors before presenting it, per
    `~/.claude/skills/_shared/nvim-jump.md`.

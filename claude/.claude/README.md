@@ -60,8 +60,8 @@ Then the phase boundary:
   next stop.
 
 `/commit` drafts the message from the staged diff, scans for secrets, commits,
-and pushes. It never stages. `review-commit-gate` blocks `git commit` while a
-coder dispatch is unreviewed.
+and pushes. It never stages. `review-commit-gate` makes you confirm a
+`git commit` while a coder dispatch is unreviewed.
 
 ### 4. Closing phases — after the last `/code` phase
 

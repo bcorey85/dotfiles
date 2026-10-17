@@ -84,7 +84,7 @@ resize_mode      = "prefix+shift+r"     # was prefix+r  (yours: reload)
 # ctrl+period belongs to the fleet popup below, so the
 # sidebar keeps only the prefix chord. The sidebar shows the same queue as a
 # side rail; the popup is the centered, preview-carrying version.
-toggle_sidebar   = "prefix+ctrl+b"      # was prefix+b (yours: btop)
+toggle_sidebar   = "prefix+ctrl+b"      # was prefix+b (yours: htop)
 edit_scrollback  = "prefix+shift+e"     # was prefix+e  (yours: fyler)
 next_tab         = "prefix+ctrl+n"      # was prefix+n  (yours: notes menu)
 previous_tab     = "prefix+ctrl+p"      # was prefix+p
@@ -244,8 +244,8 @@ width = "80%"
 height = "75%"
 
 [[keys.command]]
-key = "prefix+b"                        # btop
-command = "btop"
+key = "prefix+b"                        # htop
+command = "htop"
 type = "popup"
 width = "95%"
 height = "95%"

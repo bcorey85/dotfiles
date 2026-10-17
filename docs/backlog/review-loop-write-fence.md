@@ -10,7 +10,7 @@
 thing: appending to the perf findings log under `~/vault/`. Nothing fences
 those writes to that path.
 
-`scripts/review-commit-gate.sh:38-43` marks a session `dirty` only when a
+`scripts/review-commit-gate.sh:44-49` marks a session `dirty` only when a
 `coder*` `subagent_type` is dispatched via the `Agent` tool. A direct `Edit` of
 a source file changes code while the gate still reads `clean` — so `git commit`
 sails through unreviewed work.
@@ -29,8 +29,8 @@ forbids. It is a stopgap, not the fix.
 ## Why this wasn't fixed inline
 
 1. **Feasibility is unverified.** No hook script reads a calling-agent
-   identity. `review-commit-gate.sh:37` reads `.tool_input.subagent_type`,
-   which identifies *who is being dispatched* — available only because that
+   identity. `review-commit-gate.sh:45` reads `.tool_input.subagent_type`,
+   which identifies _who is being dispatched_ — available only because that
    tool call is `Agent`. A `Write`/`Edit` tool call carries no equivalent
    field. Whether the hook payload exposes any discriminator for "this write
    originated inside subagent X" is **unknown and must be spiked first**.
@@ -48,6 +48,7 @@ that rejects any path outside `~/vault/` when the originating agent is
 `settings.json:227-254`.
 
 If no discriminator exists, the alternatives are:
+
 - Strip `Write`/`Edit` from `review-loop` entirely and make the perf log a
   `printf >>` append via `Bash`. Enforced by the tool list rather than by
   prose. Costs the Read+Edit idempotence of the current vault-log instruction
@@ -58,6 +59,6 @@ If no discriminator exists, the alternatives are:
 
 ## Related
 
-The same asymmetry means the gate's real guarantee is *"a coder ran without a
-reviewer"*, not *"code changed without a reviewer"*. Worth deciding whether the
+The same asymmetry means the gate's real guarantee is _"a coder ran without a
+reviewer"_, not _"code changed without a reviewer"_. Worth deciding whether the
 narrower promise is the intended one before widening anything.

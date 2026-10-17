@@ -63,7 +63,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    - `critical-blocker` → STOP. Present `blockers`; do not mark the phase done.
    - `cap-reached` → STOP. Report `findings_remaining`; do not mark the phase done. The session is correctly left `dirty`, so `git commit` stays blocked.
    - `deferred` → render as `converged`, plus `findings_remaining` under `### Deferred to branch exit`; proceed.
-   - `converged` → run `bash ~/.claude/scripts/review-gate-mark clean` first. Then render the packet (`### Fixed` from `fixed[]`, blockers first and marked; `perf[]` under its own heading; `skipped_fp[]`, `nit[]`). Present `ask[]` and wait; when `ask[]` is empty, proceed to the phase gates at once. After the user answers, log one row per ask (PLAN-IMPACT asks excluded):
+   - `converged` → run `bash ~/.claude/scripts/review-gate-mark clean` first. Then render the packet (`### Fixed` from `fixed[]`, blockers first and marked; `perf[]` under its own heading; `skipped_fp[]`, `nit[]`). `nvim-jump` `ask[]` per `~/.claude/skills/_shared/nvim-jump.md` (each at its `file_line`, `--note` = its question), then present it and wait; when `ask[]` is empty, proceed to the phase gates at once. After the user answers, log one row per ask (PLAN-IMPACT asks excluded):
 
      ```bash
      bash "$HOME/.claude/skills/review/log-review-finding" kind=finding \
@@ -110,7 +110,7 @@ Human-only verification remaining:
 - <item>
 
 Next:
-  1. Read the queue; spot-check the evidence lines; run the human-only items.
+  1. Read the queue (`]k`/`[k` in nvim); spot-check the evidence lines; run the human-only items.
   2. Stage what you've read, then run /clear and /code to start Phase <N+1> fresh. To keep this context, confirm here.
 
 Or give feedback now for revisions to Phase <N>.
@@ -124,7 +124,7 @@ All phases complete. Next: /verify (completeness + review packet; includes the r
 
 Verification items come from the just-finished phase's `#### Manual Verification:` section, split by the `agent-verified` / `human-only` tags. When that section is empty, omit both lists and replace step 1 with "Read the /stage queue."
 
-Skill-invoke `/stage` to build the "Read first" queue and render it verbatim, in its order. The behavior delta comes from the coder's handoff (absent one, derive it from the diff and mark `derived from diff`). When the user steps the queue, `nvim-jump` each entry per `~/.claude/skills/_shared/nvim-jump.md`.
+Skill-invoke `/stage` to build the "Read first" queue and render it verbatim, in its order. The behavior delta comes from the coder's handoff (absent one, derive it from the diff and mark `derived from diff`).
 
 ## Task
 

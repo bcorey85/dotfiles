@@ -44,9 +44,26 @@ install_plugins() {
   done
 }
 
+# herdr's own agent skill (`herdr --skill`), rewritten on every run so it
+# matches the installed binary. It lands in the stowed claude skills dir
+# (gitignored there, like skills/synced/), where opencode also auto-loads it.
+# Skipped until install/stow has linked ~/.claude/skills: creating that dir
+# here would leave a real directory where stow needs to place its symlink.
+install_skill() {
+  local claude_skills_dir="$HOME/.claude/skills"
+  if [ ! -d "$claude_skills_dir" ]; then
+    print_info "~/.claude/skills not stowed — skipping herdr skill (re-run after install/stow)"
+    return
+  fi
+  mkdir -p "$claude_skills_dir/herdr"
+  "$HOME/.local/bin/herdr" --skill > "$claude_skills_dir/herdr/SKILL.md"
+  print_success "herdr skill written to ~/.claude/skills/herdr"
+}
+
 if command -v herdr &>/dev/null && [ "$1" != "--update" ]; then
   print_success "herdr already installed ($(herdr --version 2>/dev/null || true)) — use --update to upgrade"
   install_plugins
+  install_skill
   exit 0
 fi
 
@@ -90,3 +107,4 @@ install -m 755 "$TMP_DIR/herdr" "$HOME/.local/bin/herdr"
 print_success "herdr installed to ~/.local/bin ($("$HOME/.local/bin/herdr" --version 2>/dev/null || true))"
 
 install_plugins
+install_skill

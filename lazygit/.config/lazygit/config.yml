@@ -40,3 +40,9 @@ git:
       # broken config rather than an upstream gap. Revisit when that lands.
       colorArg: always
       command: hunk pager
+customCommands:
+  - key: I
+    context: global
+    command: HUNK_REVIEW_HANDOFF=/dev/null hunk diff --sidebar --no-hunk-headers
+    output: terminal
+    description: Review the working tree in hunk

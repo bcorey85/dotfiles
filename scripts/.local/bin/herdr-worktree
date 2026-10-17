@@ -25,7 +25,12 @@ if [ "${1:-}" = "--fork" ]; then
 fi
 branch="${1:-}"
 if [ -z "$branch" ]; then
-    read -rp "branch: " branch
+    # fzf as a one-line prompt: Enter returns the typed text (exit 1, since
+    # there is no list to match), Esc cancels (exit 130).
+    fzf_status=0
+    branch=$(fzf --reverse --print-query --info=hidden --prompt="branch> " </dev/null) \
+        || fzf_status=$?
+    [ "$fzf_status" -le 1 ] || exit 0
 fi
 [ -n "$branch" ] || { echo "herdr-worktree: no branch given" >&2; exit 1; }
 

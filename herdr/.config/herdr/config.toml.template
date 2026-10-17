@@ -307,7 +307,7 @@ key = "prefix+ctrl+w"                   # new worktree workspace (herdr-worktree
 command = "~/.local/bin/herdr-worktree"
 type = "popup"
 width = "60%"
-height = "30%"
+height = 3                              # cells: border + the one prompt line
 
 # ctrl+period — the fleet dashboard. Agents sorted by
 # attention (blocked > idle > done > working), recent output in the preview,

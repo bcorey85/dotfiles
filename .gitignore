@@ -23,6 +23,8 @@ claude/.claude/*
 !claude/.claude/skills/
 # Stock skills the CLI syncs from the claude.ai account; regenerated, never authored.
 claude/.claude/skills/synced/
+# herdr's agent skill, regenerated from `herdr --skill` by install/herdr.
+claude/.claude/skills/herdr/
 !claude/.claude/hooks/
 !claude/.claude/rules/
 !claude/.claude/scripts/

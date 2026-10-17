@@ -21,6 +21,10 @@ Some orchestrators dispatch twice: Stage 1 means **exploration brief** (state, p
 
 **In Stage 2, do not settle NEW decisions silently:** forced choices with user-visible consequences get your best call plus inline DESIGN GAP marker plus a `DESIGN GAPS` section (options, call, breakage). Tactical detail (imports, test placement, names, wording) is yours — do not flag. `DESIGN GAPS: none` is normal; state it.
 
+## Placement
+
+Place new logic by what it knows, not by how many callers it has today. A function or inline block that would work unchanged on another module's data, because it takes plain values or any record and reads no module table or rule, goes in the repo's shared utility directory now: generic types, named for what it does, exported and tested there. If one step mixes generic work with a module rule, split it: the generic part goes to shared, the rule stays in the module.
+
 ## Output Format
 
 Return every plan in this envelope (omit only genuinely-empty sections, saying so):

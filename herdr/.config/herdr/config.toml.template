@@ -65,6 +65,7 @@ copy_mode        = "prefix+["
 detach           = "prefix+shift+d"
 reload_config    = "prefix+r"
 goto             = "prefix+o"
+open_notification_target = "prefix+i"   # was prefix+o (yours: goto)
 # tmux prefix+; (last-pane), promoted to a direct chord. herdr leaves last_pane
 # unset by default; unlike tmux it is GLOBAL back-and-forth, not within-tab.
 # ctrl+; needs kitty keyboard protocol — fine on ghostty, breaks on legacy terms.

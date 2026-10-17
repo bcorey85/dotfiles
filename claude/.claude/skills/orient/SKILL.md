@@ -70,7 +70,7 @@ $ARGUMENTS
 
 ## Persist to vault (default — `+ephemeral` skips)
 
-After presenting, persist to `<vault>/Orientations/<yyyy-mm-dd>-<repo>-<branch-or-scope>.md` (`$VAULT_DIR` else `~/vault`), headed by repo/branch/merge-base/date, + capture line for `/daily-recap`:
+After presenting, persist to `<vault>/orientations/<yyyy-mm-dd>-<repo>-<branch-or-scope>.md` (`$VAULT_DIR` else `~/vault`), headed by repo/branch/merge-base/date, + capture line for `/daily-recap`:
 `~/.local/bin/note "orientation: <repo>/<branch> — [[<note filename without .md>]]"`. Same-day re-orient overwrites. `+ephemeral` skips.
 
 ## Boundaries

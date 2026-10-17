@@ -1,6 +1,8 @@
 -- `nvim-jump --note`: shade the jumped-to lines and show the agent's note above
 -- them as virtual lines, re-wrapped when the window resizes. nvim-jump sends a
 -- list of locations; ]k/[k step through it, and the next nvim-jump replaces it.
+-- `nvim-jump --push` nests its list inside the current one instead; [K drops
+-- back to the outer list at the stop it was left from.
 -- One note at a time; <Esc> in that buffer dismisses it. nvim-jump calls show()
 -- over RPC right after its :edit, so the first location is the current buffer.
 local M = {}
@@ -8,6 +10,8 @@ local M = {}
 local ns = vim.api.nvim_create_namespace("nvim_jump_note")
 local jumps ---@type { file: string, first: integer, last: integer, note: string }[]|nil
 local position = 0
+-- Outer lists a push left, innermost last, each with the stop it was left at.
+local outer_walks = {} ---@type { jumps: table[], position: integer }[]
 local shown ---@type { buf: integer, first: integer, last: integer, label: string|nil, note: string }|nil
 
 -- Mix two 0xRRGGBB colors; alpha is fg's share.
@@ -112,11 +116,13 @@ function M.clear()
 end
 
 -- Shade and annotate jumps[position] in the current buffer; a list labels its
--- note with the position. Returns "" when done, else why nothing was shown.
+-- note with the position, one ↳ per nesting level. Returns "" when done, else
+-- why nothing was shown.
 local function show_current()
   M.clear()
   local jump = jumps[position]
-  local label = #jumps > 1 and ("%d/%d"):format(position, #jumps) or nil
+  local nesting = #outer_walks > 0 and string.rep("↳", #outer_walks) .. " " or ""
+  local label = (#jumps > 1 or nesting ~= "") and ("%s%d/%d"):format(nesting, position, #jumps) or nil
   local note = vim.trim(jump.note)
   if not label and note == "" then
     return ""
@@ -137,10 +143,28 @@ local function show_current()
 end
 
 -- new_jumps: the { file, first, last, note } list from nvim-jump, which has
--- already opened the first. Returns "" when done, else why no note was shown.
-function M.show(new_jumps)
+-- already opened the first. push keeps the current list to return to; without
+-- it every outer list is dropped. Returns "" when done, else why no note was shown.
+function M.show(new_jumps, push)
+  if not push then
+    outer_walks = {}
+  elseif jumps then
+    table.insert(outer_walks, { jumps = jumps, position = position })
+  end
   jumps, position = new_jumps, 1
   return show_current()
+end
+
+-- Open jumps[position] and show its note.
+local function open_current()
+  local jump = jumps[position]
+  vim.cmd("normal! m'")
+  if not is_current_file(jump.file) then
+    vim.cmd("edit " .. vim.fn.fnameescape(jump.file))
+  end
+  vim.api.nvim_win_set_cursor(0, { math.min(jump.first, vim.api.nvim_buf_line_count(0)), 0 })
+  vim.cmd("normal! zz")
+  show_current()
 end
 
 -- Open the location `delta` steps along the list and show its note.
@@ -155,14 +179,18 @@ function M.step(delta)
     return
   end
   position = target
-  local jump = jumps[position]
-  vim.cmd("normal! m'")
-  if not is_current_file(jump.file) then
-    vim.cmd("edit " .. vim.fn.fnameescape(jump.file))
+  open_current()
+end
+
+-- Drop the current list and return to the stop the outer one was left at.
+function M.pop()
+  local outer_walk = table.remove(outer_walks)
+  if not outer_walk then
+    vim.notify("nvim-jump: no outer walk", vim.log.levels.INFO)
+    return
   end
-  vim.api.nvim_win_set_cursor(0, { math.min(jump.first, vim.api.nvim_buf_line_count(0)), 0 })
-  vim.cmd("normal! zz")
-  show_current()
+  jumps, position = outer_walk.jumps, outer_walk.position
+  open_current()
 end
 
 return M

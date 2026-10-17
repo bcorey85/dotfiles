@@ -47,7 +47,7 @@ prefixes="$(ls "$VAULT/notes" 2>/dev/null | sed -n 's/^\(.*\) - .*/\1/p' \
 
 prompt="Research and answer this question from a senior software engineer: $q
 
-Create exactly ONE new markdown file in 'notes/' (flat — never a subfolder). Filename: '<Topic> - <Descriptive Title>.md' — Title Case, spaces around the hyphen, never a kebab-case slug, and a statement of the answer rather than a restatement of the question. The topic prefix is the vault's taxonomy, so reuse one of these existing prefixes whenever one fits: $prefixes. Mint a new prefix only if none of those applies. Mirror the section structure of 'Templates/Note.md' exactly, filled as follows:
+Create exactly ONE new markdown file in 'notes/' (flat — never a subfolder). Filename: '<Topic> - <Descriptive Title>.md' — Title Case, spaces around the hyphen, never a kebab-case slug, and a statement of the answer rather than a restatement of the question. The topic prefix is the vault's taxonomy, so reuse one of these existing prefixes whenever one fits: $prefixes. Mint a new prefix only if none of those applies. Mirror the section structure of 'templates/Note.md' exactly, filled as follows:
 - Date: today's date
 - Source: 'question capture', plus links to any references actually used
 - Key Points: a direct, technically precise answer in 5-12 bullets — mechanisms, tradeoffs, and rules of thumb, not filler

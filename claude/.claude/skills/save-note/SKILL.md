@@ -67,7 +67,7 @@ Do not propose a grooming pass on the tag list.
 - **If a project surfaced this, link the project from the note** — a
   `[[Goal - Agent Memory]]` or `[[Postgres Foundations - Learning Path]]` line. That
   link is what replaces filing it in the project folder, so it is not optional.
-- Templates in `Templates/` optional; use if fitting. `{{date}}` = today in `M/D/YYYY hh:mm A`.
+- Templates in `templates/` optional; use if fitting. `{{date}}` = today in `M/D/YYYY hh:mm A`.
 - If the content came from a URL, web search, or PDF, include the source link —
   in a `Source:` field if the note has one, else a `### References` section.
 

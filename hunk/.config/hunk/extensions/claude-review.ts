@@ -389,6 +389,34 @@ function nextUnviewed(state: State, fromPath: string): ReviewFile | null {
   return null;
 }
 
+/** Paths `o` marked in this process, per repo, newest last: what `p` walks back. */
+const markHistory = new Map<string, string[]>();
+
+/**
+ * Where `p` lands: the newest history entry that still holds a live mark on a
+ * visible file, else the nearest viewed file before `fromPath` in review order,
+ * wrapping once. Consumes the history it skips past.
+ */
+function popLastMarked(
+  state: State,
+  fromPath: string | undefined,
+): ReviewFile | null {
+  const files = loadedReviews.get(state.repoRoot)?.visible ?? [];
+  const isMarked = (file: ReviewFile) => state.viewed[file.path] === file.hash;
+  const history = markHistory.get(state.repoRoot) ?? [];
+  for (let path = history.pop(); path !== undefined; path = history.pop()) {
+    const file = files.find((candidate) => candidate.path === path);
+    if (file && isMarked(file)) return file;
+  }
+  const from = files.findIndex((file) => file.path === fromPath);
+  if (from < 0) return null;
+  for (let step = 1; step < files.length; step++) {
+    const candidate = files[(from - step + files.length) % files.length];
+    if (isMarked(candidate)) return candidate;
+  }
+  return null;
+}
+
 /**
  * Jump only once a just-selected collapse has landed. `select` prepares its
  * layout asynchronously while `selectFile` scrolls to an offset read from the
@@ -496,6 +524,9 @@ export default function claudeReview(hunk: HunkApi): void {
 
       state.viewed[file.path] = patchHash(file);
       writeState(state);
+      const history = markHistory.get(state.repoRoot) ?? [];
+      history.push(file.path);
+      markHistory.set(state.repoRoot, history);
       // The mark is on disk first, so `matches` is already true here. Select
       // before navigating: it acts on whichever file is selected right now.
       ctx.fileViews.select(VIEW_ID);
@@ -506,6 +537,32 @@ export default function claudeReview(hunk: HunkApi): void {
         next
           ? `viewed ${file.path} · ${count} marked`
           : `viewed ${file.path} · ${count} marked · nothing left unviewed`,
+      );
+    },
+  );
+
+  hunk.registerCommand(
+    {
+      id: "undoViewed",
+      title: "Reopen the last file marked viewed and jump back to it",
+      key: "p",
+    },
+    (ctx) => {
+      const state = withState(ctx);
+      if (!state) return;
+      const file = popLastMarked(state, ctx.selection.file?.path);
+      if (!file) {
+        ctx.notify("claude-review: no viewed file to reopen", "warning");
+        return;
+      }
+      delete state.viewed[file.path];
+      writeState(state);
+      // The target is rarely the selected file, which is all `select(null)`
+      // reaches. Jumping through the settle also cancels a jump `o` left pending.
+      ctx.fileViews.refresh(VIEW_ID, { fileId: file.id });
+      jumpAfterCollapse(ctx, file.id);
+      ctx.notify(
+        `reopened ${file.path} · ${Object.keys(state.viewed).length} marked`,
       );
     },
   );

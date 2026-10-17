@@ -31,7 +31,7 @@ Assist a human peer review of someone else's PR. Two hard differences from `/rev
 
 ## Persist orientation to vault (default — `+ephemeral` skips)
 
-After step 3, save the orientation block to `<vault>/Orientations/<yyyy-mm-dd>-<repo>-pr<number>.md` (`$VAULT_DIR` else `~/vault`) + capture line via `~/.local/bin/note`. Same-day re-review overwrites. Findings are NOT saved — they belong to the PR thread.
+After step 3, save the orientation block to `<vault>/orientations/<yyyy-mm-dd>-<repo>-pr<number>.md` (`$VAULT_DIR` else `~/vault`) + capture line via `~/.local/bin/note`. Same-day re-review overwrites. Findings are NOT saved — they belong to the PR thread.
 
 ## Instructions
 

@@ -29,7 +29,7 @@ So: **never derive an achievement from a daily note, an org todo, or GitHub acti
 
 ## Write
 
-Write `<vault>/Weekly/<ISO week>.md`, preserving existing `## Focus`/`## Reflection` verbatim at top (human-authored; compile owns the rest):
+Write `<vault>/weekly/<ISO week>.md`, preserving existing `## Focus`/`## Reflection` verbatim at top (human-authored; compile owns the rest):
 
 ```markdown
 # Weekly Recap — <ISO week> (<Mon date> – <Fri date>)
@@ -70,8 +70,8 @@ Preserve people's names and ticket/PR references exactly.
 
 ## Achievements doc
 
-Append `## Achievements` bullets to `<vault>/Achievements/<ISO year>.md` under `## <ISO week>` (create as needed; existing heading means replace section, one section per week).
+Append `## Achievements` bullets to `<vault>/achievements/<ISO year>.md` under `## <ISO week>` (create as needed; existing heading means replace section, one section per week).
 
 ## Finish
 
-Output exactly one line: the weekly note path plus counts, e.g. `~/vault/Weekly/2026-W28.md — 4 decisions, 2 themes, 6 shipped, 7 open todos`.
+Output exactly one line: the weekly note path plus counts, e.g. `~/vault/weekly/2026-W28.md — 4 decisions, 2 themes, 6 shipped, 7 open todos`.

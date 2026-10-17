@@ -1,0 +1,62 @@
+#!/bin/bash
+# Create a git worktree as its own herdr workspace, laid out by herdr-dev.
+#
+# Usage: herdr-worktree [--fork] [branch]
+#   branch  prompted for when omitted (the prefix+ctrl+w popup).
+#   --fork  carry the Claude conversation running in this pane into the new
+#           workspace's claude pane, as a forked session.
+#
+# The worktree branches off the current checkout's HEAD and lands beside the
+# main checkout: <repo>-<TICKET-NUM> for a TICKET-NUM-desc branch, otherwise
+# <repo>-<desc> (feature/ and fix/ dropped, remaining slashes as dashes).
+# The branch is pushed to origin when that remote exists.
+#
+# Every pane in the new workspace starts in the worktree, so popups that
+# inherit the pane cwd (prefix+d, prefix+g, prefix+space, ...) see it too.
+
+set -euo pipefail
+export PATH="$HOME/.local/bin:$PATH"
+bin_dir="$(cd "$(dirname "$0")" && pwd)"
+
+fork=""
+if [ "${1:-}" = "--fork" ]; then
+    fork=1
+    shift
+fi
+branch="${1:-}"
+if [ -z "$branch" ]; then
+    read -rp "branch: " branch
+fi
+[ -n "$branch" ] || { echo "herdr-worktree: no branch given" >&2; exit 1; }
+
+checkout=$(git rev-parse --show-toplevel 2>/dev/null) \
+    || { echo "herdr-worktree: not inside a git repo" >&2; exit 1; }
+main_checkout=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+
+if [[ "$branch" =~ ^([A-Z]+-[0-9]+) ]]; then
+    suffix="${BASH_REMATCH[1]}"
+else
+    suffix="${branch#feature/}"
+    suffix="${suffix#fix/}"
+    suffix="${suffix//\//-}"
+fi
+worktree="$(dirname "$main_checkout")/$(basename "$main_checkout")-$suffix"
+
+claude_session=""
+if [ -n "$fork" ]; then
+    claude_session=$(herdr pane current \
+        | jq -r 'select(.result.pane.agent == "claude") | .result.pane.agent_session.value // empty')
+    [ -n "$claude_session" ] || { echo "herdr-worktree: --fork needs a claude pane" >&2; exit 1; }
+fi
+
+created=$(herdr worktree create --cwd "$checkout" --branch "$branch" --path "$worktree" \
+    --label "$(basename "$worktree")" --focus) \
+    || { echo "herdr-worktree: $created" >&2; exit 1; }
+ws=$(jq -r '.result.workspace.workspace_id' <<<"$created")
+
+"$bin_dir/herdr-dev" "$worktree" "$ws" "$claude_session"
+
+if git -C "$worktree" remote get-url origin &>/dev/null; then
+    git -C "$worktree" push -u origin "$branch" \
+        || echo "herdr-worktree: push failed; run git push -u origin $branch" >&2
+fi

@@ -1,11 +1,13 @@
 #!/bin/bash
 # Launch a coding layout for a project in a herdr workspace.
 #
-# Usage: herdr-dev [directory] [workspace_id]
-#   directory     defaults to cwd; all panes open there.
-#   workspace_id  defaults to the workspace of the current pane (requires
-#                 running inside herdr). herdr-project-open passes it
-#                 explicitly so the layout lands in the workspace it just made.
+# Usage: herdr-dev [directory] [workspace_id] [claude_session]
+#   directory       defaults to cwd; all panes open there.
+#   workspace_id    defaults to the workspace of the current pane (requires
+#                   running inside herdr). herdr-project-open passes it
+#                   explicitly so the layout lands in the workspace it just made.
+#   claude_session  a Claude session id; the claude pane opens a fork of that
+#                   conversation instead of a fresh one (herdr-worktree --fork).
 #
 # Layout:
 #   Tab 1 "code"     nvim (60%) | claude (40%). herdr auto-detects the claude
@@ -26,6 +28,7 @@ export PATH="$HOME/.local/bin:$PATH"
 dir="${1:-.}"
 dir="$(cd "$dir" && pwd)" || { echo "herdr-dev: no such directory: ${1:-.}" >&2; exit 1; }
 ws="${2:-}"
+claude_session="${3:-}"
 
 if [ -z "$ws" ]; then
     ws=$(herdr pane current 2>/dev/null | jq -r '.result.pane.workspace_id // empty')
@@ -58,7 +61,7 @@ run "$editor" "nvim ."
 
 agent=$(split "$editor" 0.6)
 herdr pane rename "$agent" claude >/dev/null
-run "$agent" "claude"
+run "$agent" "claude${claude_session:+ --resume $claude_session --fork-session}"
 
 # ── Tab 2 "console": three equal shells ─────────────────────────────────────
 console=$(herdr tab create --workspace "$ws" --label console --cwd "$dir" --no-focus)

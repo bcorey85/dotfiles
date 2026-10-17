@@ -5,7 +5,7 @@
  * `o` marks the selected file viewed, collapses it in place to a single summary
  * row, and moves to the next unviewed file; `o` again reopens it (hunk owns `v`,
  * visual selection). `V` also drops
- * viewed files from the review entirely, `S` stages them, `C` clears the marks,
+ * viewed files from the review entirely, `O` stages them, `C` clears the marks,
  * `X` discards the selected file's working-tree changes behind a confirm.
  * `L` quits into lazygit in the same herdr popup. Inline review notes (built-in
  * `c`) are mirrored to a JSONL the /cc skill reads and resolves.
@@ -538,7 +538,7 @@ export default function claudeReview(hunk: HunkApi): void {
   );
 
   hunk.registerCommand(
-    { id: "stageViewed", title: "Stage every viewed file", key: "S" },
+    { id: "stageViewed", title: "Stage every viewed file", key: "O" },
     async (ctx) => {
       const state = withState(ctx);
       if (!state) return;
@@ -758,7 +758,7 @@ export default function claudeReview(hunk: HunkApi): void {
       // Hiding everything leaves nothing to review and no way back from inside
       // the stream; show the changeset and let the user stage or clear.
       ctx.notify(
-        "claude-review: every file is viewed — S to stage, X to clear",
+        "claude-review: every file is viewed — O to stage, X to clear",
       );
       return show(changeset.files);
     }

@@ -4,7 +4,7 @@
 # herdr popups are session-modal: while one is open no keybinding can open
 # another, so review -> git means quitting hunk and pressing the git key. This
 # wrapper collapses that into a single keypress by keeping BOTH tools inside the
-# one popup: the claude-review extension's `G` writes the tool it wants into
+# one popup: the claude-review extension's `C` writes the tool it wants into
 # $HUNK_REVIEW_HANDOFF and quits hunk, and we exec that tool over ourselves.
 #
 # Env (PATH shims, EDITOR) is the caller's job — see the prefix+d binding.

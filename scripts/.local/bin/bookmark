@@ -81,7 +81,7 @@ prefixes="$(ls "$VAULT/notes" 2>/dev/null | sed -n 's/^\(.*\) - .*/\1/p' \
 
 prompt="Fetch this URL and distill it: $url
 
-Create exactly ONE new markdown file in 'notes/' (flat — never a subfolder). Filename: '<Topic> - <Descriptive Title>.md' — Title Case, spaces around the hyphen, never a kebab-case slug. The topic prefix is the vault's taxonomy, so reuse one of these existing prefixes whenever one fits: $prefixes. Mint a new prefix only if none of those applies. Mirror the section structure of 'Templates/Note.md' exactly, filled as follows:
+Create exactly ONE new markdown file in 'notes/' (flat — never a subfolder). Filename: '<Topic> - <Descriptive Title>.md' — Title Case, spaces around the hyphen, never a kebab-case slug. The topic prefix is the vault's taxonomy, so reuse one of these existing prefixes whenever one fits: $prefixes. Mint a new prefix only if none of those applies. Mirror the section structure of 'templates/Note.md' exactly, filled as follows:
 - Date: today's date
 - Source: the URL, plus author/site when evident
 - Key Points: 5-10 bullets of the substantive claims and arguments — specific enough to be useful without reopening the page

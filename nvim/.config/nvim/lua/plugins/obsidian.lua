@@ -44,7 +44,7 @@ return {
         return ws
       end)(),
       templates = {
-        folder = "Templates",
+        folder = "templates",
         date_format = "%m/%d/%Y %I:%M %p",
       },
       completion = {
@@ -113,7 +113,7 @@ return {
       local function scan(dir)
         local entries = vim.fn.readdir(dir)
         for _, name in ipairs(entries) do
-          if name:sub(1, 1) ~= "." and name ~= "Templates" then
+          if name:sub(1, 1) ~= "." and name ~= "templates" then
             local full = dir .. "/" .. name
             if vim.fn.isdirectory(full) == 1 then
               local rel = full:sub(#vault_root + 2)

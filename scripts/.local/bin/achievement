@@ -1,7 +1,7 @@
 #!/bin/bash
 # achievement — explicit capture of something *I* did. Appends to
 # ~/vault/org/achievements.org, which /weekly-recap reads verbatim into the
-# week's `## Achievements` section and the yearly ~/vault/Achievements/<year>.md.
+# week's `## Achievements` section and the yearly ~/vault/achievements/<year>.md.
 #
 # Why this exists as its own lane: nothing in the daily-note pipeline carries an
 # authorship axis. `## My work` implicitly attributes everything in a daily note

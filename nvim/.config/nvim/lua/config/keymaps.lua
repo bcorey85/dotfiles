@@ -83,6 +83,9 @@ end, { desc = "Next nvim-jump location" })
 vim.keymap.set("n", "[k", function()
   require("util.jump_note").step(-1)
 end, { desc = "Previous nvim-jump location" })
+vim.keymap.set("n", "[K", function()
+  require("util.jump_note").pop()
+end, { desc = "Back to the outer nvim-jump walk" })
 
 -- ─── Editing ──────────────────────────────────────────────────────────────────
 

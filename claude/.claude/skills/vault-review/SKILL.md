@@ -43,7 +43,7 @@ This is the one skill allowed to write todo state into org. `/daily-recap` and
 
 `/weekly-recap` (cron Fridays 18:30) solely **compiles** the weekly note (Decisions/Themes/Shipped/Open todos); this mode is the **reflection** half — interrogate with the user, write back only answers. Never re-compile.
 
-1. **Read** `<vault>/Weekly/<ISO week>.md` (`date +%G-W%V`); missing means dispatch `/weekly-recap` to compile first. One compiler, always.
+1. **Read** `<vault>/weekly/<ISO week>.md` (`date +%G-W%V`); missing means dispatch `/weekly-recap` to compile first. One compiler, always.
 2. **Deepen** with journal entries in-window plus org todo flow (opened = capture date in window; closed = `CLOSED:` in window). Lead with **recurring roadblocks** (2+ days = delegate/escalate signal).
 3. **Reflect**: 2–3 pointed, note-cited questions (never generic prompts) with evidence presented first.
 4. **Write** Q+A to a top `## Reflection` section (`/weekly-recap` preserves it). Touch nothing else. Same promotions as `today`.

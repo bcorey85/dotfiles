@@ -27,7 +27,7 @@ Whole-repo walk: top-level layout (one stop per major dir's anchor file), the ce
 
 ## Save (default — `+ephemeral` skips)
 
-After presenting, write `<vault>/Walks/<repo>-<slug>.md` (`$VAULT_DIR` else `~/vault`; slug from the focus). Same name overwrites.
+After presenting, write `<vault>/walks/<repo>-<slug>.md` (`$VAULT_DIR` else `~/vault`; slug from the focus). Same name overwrites.
 
 ```
 # <focus>
@@ -40,9 +40,13 @@ After presenting, write `<vault>/Walks/<repo>-<slug>.md` (`$VAULT_DIR` else `~/v
    anchor: `<first line of the range, trimmed>`
 ```
 
+## Nest — `/walk here [focus]`
+
+A deeper walk inside the current one. No focus → start at the line under the nvim cursor (`nvim-jump --where`) and trace only what it calls, nothing before it. Pass `--push` to the nvim-jump call, and end the chat with "`[K` returns to the outer walk".
+
 ## Replay — `/walk replay [name]`
 
-No name → list `<vault>/Walks/<repo>-*.md`. Otherwise, per saved stop: `rg -n -F` the anchor in its path, take the match nearest the saved line, and shift the range by the same offset. File or anchor gone → stale. Present as above with the saved notes, skipping stale stops; then name the stale ones and offer to re-walk them and re-save.
+No name → list `<vault>/walks/<repo>-*.md`. Otherwise, per saved stop: `rg -n -F` the anchor in its path, take the match nearest the saved line, and shift the range by the same offset. File or anchor gone → stale. Present as above with the saved notes, skipping stale stops; then name the stale ones and offer to re-walk them and re-save.
 
 ## Boundaries
 

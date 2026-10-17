@@ -13,17 +13,19 @@
 # --note shades LINE..END and shows TEXT above it (nvim's util/jump_note.lua);
 # each --note belongs to the location after it. Several locations make a list:
 # nvim opens the first, ]k/[k step through it, and the next jump replaces it.
-# <Esc> in nvim dismisses the note.
+# --push nests the new list inside the current one instead; [K in nvim drops
+# back to the outer list. <Esc> in nvim dismisses the note.
 #
-# Usage: nvim-jump [--note TEXT] FILE[:LINE[-END]] [LINE]
-#        nvim-jump [--note TEXT] FILE:LINE [--note TEXT] FILE:LINE ...
+# Usage: nvim-jump [--push] [--note TEXT] FILE[:LINE[-END]] [LINE]
+#        nvim-jump [--push] [--note TEXT] FILE:LINE [--note TEXT] FILE:LINE ...
+#        nvim-jump --where               # file:line under the cursor
 #        nvim-jump --list                # live instances and their cwd
 #
 # Exit 0 on jump, 1 no instance owns the file, 2 nvim not running / bad args.
 
 set -euo pipefail
 
-usage() { sed -n '18,20p' "$0"; exit 2; }
+usage() { sed -n '19,22p' "$0"; exit 2; }
 
 sockets() {
     local s pid
@@ -43,8 +45,28 @@ vim_str() {
     printf '"%s"' "${s//$'\n'/\\n}"
 }
 
+# The live instance whose cwd is the longest prefix of path $1.
+owner_of() {
+    local s cwd owner=${NVIM_JUMP_SOCKET:-} best=-1
+    if [ -z "$owner" ]; then
+        while read -r s; do
+            cwd=$(cwd_of "$s") || continue
+            case "$1" in "$cwd"/*) [ ${#cwd} -gt $best ] && { best=${#cwd}; owner=$s; } ;; esac
+        done < <(sockets)
+    fi
+    echo "$owner"
+}
+
 if [ "${1:-}" = "--list" ]; then
     while read -r s; do printf '%s\t%s\n' "$(cwd_of "$s")" "$s"; done < <(sockets)
+    exit 0
+fi
+
+if [ "${1:-}" = "--where" ]; then
+    sock=$(owner_of "$(pwd -P)/")
+    [ -n "$sock" ] || { echo "no nvim instance owns $(pwd -P) (nvim-jump --list)" >&2; exit 1; }
+    nvim --server "$sock" --remote-expr 'expand("%:p") . ":" . line(".")'
+    echo
     exit 0
 fi
 
@@ -52,7 +74,11 @@ fi
 # location's line; a trailing --note goes to the last location.
 files=(); lines=(); notes=()
 pending_note=
+push=v:false
 while [ $# -gt 0 ]; do
+    if [ "$1" = --push ]; then
+        push=v:true; shift; continue
+    fi
     if [ "$1" = --note ]; then
         [ $# -ge 2 ] || usage
         pending_note=$2; shift 2; continue
@@ -81,20 +107,14 @@ for i in "${!files[@]}"; do
 done
 file=${files[0]}; line=${lines[0]}
 
-sock=${NVIM_JUMP_SOCKET:-}
-if [ -z "$sock" ]; then
-    best=-1
-    while read -r s; do
-        cwd=$(cwd_of "$s") || continue
-        case "$file" in "$cwd"/*) [ ${#cwd} -gt $best ] && { best=${#cwd}; sock=$s; } ;; esac
-    done < <(sockets)
-fi
+sock=$(owner_of "$file")
 [ -n "$sock" ] || { echo "no nvim instance owns $file (nvim-jump --list)" >&2; exit 1; }
 
 # <C-\><C-n> exits any mode (insert/visual/cmdline) before the command.
 nvim --server "$sock" --remote-send "<C-\\><C-n>:edit +${line%-*} $(printf '%q' "$file")<CR>zz"
-# Every jump replaces the last list; one location with no --note only clears it.
-note_error=$(nvim --server "$sock" --remote-expr "luaeval('select(2, pcall(function(a) return require(\"util.jump_note\").show(a) end, _A))', [$jumps])" 2>&1) || true
+# Every jump replaces the last list unless --push; one location with no --note
+# and no --push only clears it.
+note_error=$(nvim --server "$sock" --remote-expr "luaeval('select(2, pcall(function(a) return require(\"util.jump_note\").show(a.jumps, a.push) end, _A))', {'jumps': [$jumps], 'push': $push})" 2>&1) || true
 list_hint=
 [ ${#files[@]} -eq 1 ] || list_hint=" (1/${#files[@]}, ]k/[k for the rest)"
 [ -z "$list_hint${notes[0]}" ] || [ -z "$note_error" ] || echo "note not shown: $note_error" >&2

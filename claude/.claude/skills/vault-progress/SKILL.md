@@ -97,7 +97,7 @@ Three to six bullets on **content**, not counts — what the week's notes are ac
 ## Write
 
 Write `<vault>/progress/<ISO year>.md` (create the folder if needed) — one file per
-year, matching the `Achievements/<year>.md` precedent.
+year, matching the `achievements/<year>.md` precedent.
 
 ```markdown
 # Progress — <ISO year>
@@ -140,7 +140,7 @@ Preserve existing `**Direction**` blocks verbatim on re-runs — the compile doe
   explicitly approved in-session.
 - **Never writes `cache/`.** Nothing here may be the only copy of anything.
 - Never writes `notes/`. A fact surfaced in the conversation goes through `/save-note`.
-- Never touches org files, `Weekly/`, or `Achievements/` — those belong to `/vault-review` and
+- Never touches org files, `weekly/`, or `achievements/` — those belong to `/vault-review` and
   `/weekly-recap`.
 - Log a rule that fights an actual capture to
   `projects/active/vault-redesign/friction.md`. Never redesign the hierarchy mid-run.

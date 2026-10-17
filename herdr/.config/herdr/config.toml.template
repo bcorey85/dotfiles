@@ -300,6 +300,15 @@ type = "popup"
 width = "60%"
 height = "60%"
 
+# The native new_worktree (prefix+ctrl+g) makes a bare workspace; this one adds
+# the herdr-dev layout and pushes the branch.
+[[keys.command]]
+key = "prefix+ctrl+w"                   # new worktree workspace (herdr-worktree)
+command = "~/.local/bin/herdr-worktree"
+type = "popup"
+width = "60%"
+height = "30%"
+
 # ctrl+period — the fleet dashboard. Agents sorted by
 # attention (blocked > idle > done > working), recent output in the preview,
 # Enter jumps. ghostty sends CSI-u for ctrl+.; prefix+ctrl+period is the

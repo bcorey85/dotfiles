@@ -48,6 +48,8 @@
 #   theme-mode use <family> [mode]    switch family, keep mode unless given
 #   theme-mode list                   known families
 #   theme-mode status                 current family + mode
+#   theme-mode herdr                  rebuild herdr's config from its template
+#                                     and reload it, theme unchanged (prefix+r)
 #
 # Adding a family = six touchpoints, kept in sync by hand:
 #   1. families() + ghostty_theme() + claude_theme_file() below
@@ -1419,8 +1421,9 @@ case "$arg" in
     ;;
   list) families ;;
   status) echo "$(current_family) $(current_mode)" ;;
+  herdr) herdr_apply "$(current_family)" "$(current_mode)" ;;
   *)
-    echo "usage: theme-mode [dark|light|toggle] | use <family> [mode] | list | status" >&2
+    echo "usage: theme-mode [dark|light|toggle] | use <family> [mode] | list | status | herdr" >&2
     exit 2
     ;;
 esac

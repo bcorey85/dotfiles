@@ -63,7 +63,7 @@ zoom             = "prefix+z"
 rename_tab       = "prefix+comma"
 copy_mode        = "prefix+["
 detach           = "prefix+shift+d"
-reload_config    = "prefix+r"
+reload_config    = "prefix+ctrl+r"      # was prefix+r (yours: rebuild from template + reload)
 goto             = "prefix+o"
 open_notification_target = "prefix+i"   # was prefix+o (yours: goto)
 # tmux prefix+; (last-pane), promoted to a direct chord. herdr leaves last_pane
@@ -324,6 +324,13 @@ height = "80%"
 [[keys.command]]
 key = "prefix+t"                        # theme toggle (terminal/herdr/nvim side)
 command = "~/.local/bin/theme-mode toggle"
+type = "shell"
+
+# The native reload_config re-reads the GENERATED config.toml, so template
+# edits never reach it. This rebuilds config.toml from the template first.
+[[keys.command]]
+key = "prefix+r"                        # rebuild config from template + reload
+command = "~/.local/bin/theme-mode herdr"
 type = "shell"
 
 [[keys.command]]

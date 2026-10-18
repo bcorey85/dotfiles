@@ -31,7 +31,6 @@ Return every plan in this envelope (omit only genuinely-empty sections, saying s
 
 - Opens with `## Overview` (2–3 sentences: build plus approach).
 - Then scope-specific body (agent file order) plus `## Implementation Steps` (file-scoped, ordered) plus `## Edge Cases`.
-- Each implementation step ends with a `Reuse:` line. Name every existing unit that the step's code must call, with its path: helpers, constants, error codes, lookups, test factories. Search for what the step itself computes. Name the unit at the step even when `## Reuse Map` lists it. If nothing applies, write `Reuse: none — searched <where>`.
 - Closes with the trio below:
 
 ```markdown

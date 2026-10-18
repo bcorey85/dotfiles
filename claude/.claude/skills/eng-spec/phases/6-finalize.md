@@ -62,9 +62,7 @@
     - **Criteria that read a file or a diff**: open the file and confirm it holds
       what the criterion looks for, and that the container or path is the one the
       phase changes. An `rg` over prose uses `-U` and `\s+`, or a wrapped phrase
-      passes unseen. (Escape 2026-10-09, IQ-1432: four criteria read description
-      changes from a snapshot that stores no prose; one log check read the wrong
-      container; a line-based `rg` missed 2 of 4 sites.)
+      passes unseen.
 
 16c. **Falsify the plan's factual claims against the tree.** Step 16b checks the
 verification commands; this checks the assertions the plan reasons FROM. Run
@@ -88,13 +86,11 @@ these before Phase 7 and resolve every miss with the user like a `DESIGN GAP`.
       whose SQL, name or wording the plan changes, `rg` its name across the whole
       repo (model, views, tools, tests, oracles, docs). Every hit is named in a
       phase or ruled out in one line. Count view-level description overrides:
-      they restate or hide cube text. (Escape 2026-10-09, IQ-1432: 9 findings —
-      stale oracles, a TS mirror, a second test file, view overrides, doc sites.)
+      they restate or hide cube text.
     - **Predicates on nullable flags** — `rg` the plan's SQL for `= false`,
       `= true` and a bare `NOT` before a helper call. Each one on a warehouse
       boolean is written `IS [NOT] TRUE` or wrapped in `COALESCE`, since a CDC
-      flag can be NULL where the source says false. (Escape 2026-10-09, IQ-1432:
-      `is_posted = false` dropped every unposted bill; `NOT <NULL>` dropped more.)
+      flag can be NULL where the source says false.
     - **Work the hooks will deny** — `rg` phase bodies and change lists (not just `**File**:` lines) for hook-protected directories.
     - **Superseded deliverables** — check whether each phase's deliverable already landed on base while the spec was written. Re-building shipped work is a plan defect, not a merge conflict.
 
@@ -118,6 +114,6 @@ questions it refused to default.
     **Then walk the draft with the user and take strikes and corrections.** They
     hold authority over every line: put damage-path questions to them in ONE turn — policy is the ticket-owner's call, never defaulted; "out of scope" is an answer (log under `## Direction & Constraints`); silence is not. **No Phase 7 before they respond.**
 
-    **Coverage sweep, after the user signs off the list.** For each behavioral criterion, name the phase whose `#### Automated Verification:` will produce a test for it. Prose text the LLM reads counts as behavior. A criterion that only a `rg` check, a manual step or nothing covers gets one of two fixes: add a test-verified line to the owning phase, or move the criterion to `## Manual only` with its reason. Report it as `coverage: <n> mapped, <m> fixed of <total>`. (Escape 2026-10-03, IQ-1416: two LLM-text criteria shipped with no test, and only branch-exit `/verify` caught them.)
+    **Coverage sweep, after the user signs off the list.** For each behavioral criterion, name the phase whose `#### Automated Verification:` will produce a test for it. Prose text the LLM reads counts as behavior. A criterion that only a `rg` check, a manual step or nothing covers gets one of two fixes: add a test-verified line to the owning phase, or move the criterion to `## Manual only` with its reason. Report it as `coverage: <n> mapped, <m> fixed of <total>`.
 
 Plan saved. Go to Phase 6.5 (fresh-eyes review + planning-lane log row) — carry `gaps` and `falsified` forward.

@@ -10,7 +10,7 @@
 # FILE's absolute path; NVIM_JUMP_SOCKET overrides. Read-only on the buffer —
 # only :edit, cursor motion and highlights, never text.
 #
-# --note shades LINE..END and shows TEXT above it (nvim's util/jump_note.lua);
+# --note colors LINE..END's line numbers and shows TEXT above them (nvim's util/jump_note.lua);
 # each --note belongs to the location after it. Several locations make a list:
 # nvim opens the first, ]k/[k step through it, and the next jump replaces it.
 # --push nests the new list inside the current one instead; [K in nvim drops

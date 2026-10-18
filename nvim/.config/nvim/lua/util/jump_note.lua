@@ -1,4 +1,4 @@
--- `nvim-jump --note`: shade the jumped-to lines and show the agent's note above
+-- `nvim-jump --note`: color the jumped-to line numbers and show the agent's note above
 -- them as virtual lines, re-wrapped when the window resizes. nvim-jump sends a
 -- list of locations; ]k/[k step through it, and the next nvim-jump replaces it.
 -- `nvim-jump --push` nests its list inside the current one instead; [K drops
@@ -26,14 +26,17 @@ end
 
 -- The note is a fixed orange, a hue no syntax group uses: orange text on an
 -- orange-tinted band in dark mode, dark text on solid orange in light mode.
+-- The range's line numbers turn orange, darker in light mode.
 local orange = 0xe9a066
+local dark_orange = 0x9a4700
 require("util.hl").register("NvimJumpNoteHl", function()
   local normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
-  local note = vim.o.background == "light" and { fg = normal.fg or 0x000000, bg = orange }
+  local light = vim.o.background == "light"
+  local note = light and { fg = normal.fg or 0x000000, bg = orange }
     or { fg = orange, bg = blend(orange, normal.bg or 0x000000, 0.2) }
   note.bold = true
   return {
-    NvimJumpRange = { link = "LspReferenceText" },
+    NvimJumpRange = { fg = light and dark_orange or orange, bold = true },
     NvimJumpNote = note,
   }
 end)
@@ -64,7 +67,7 @@ local function render()
   end
   vim.api.nvim_buf_clear_namespace(shown.buf, ns, 0, -1)
   for row = shown.first - 1, shown.last - 1 do
-    vim.api.nvim_buf_set_extmark(shown.buf, ns, row, 0, { line_hl_group = "NvimJumpRange" })
+    vim.api.nvim_buf_set_extmark(shown.buf, ns, row, 0, { number_hl_group = "NvimJumpRange" })
   end
   local indent = vim.api.nvim_buf_call(shown.buf, function()
     return vim.fn.indent(shown.first)

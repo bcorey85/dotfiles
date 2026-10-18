@@ -1,6 +1,6 @@
 ---
 name: walk
-description: Walk the user through a feature, area, or whole repo as an ordered editor walkthrough — each stop a file:line with a one-line note, stepped in nvim. Use for "walk", "walk me through", "show me how X works", "where does X live", "/walk <area>". Not for the current diff (that is /orient).
+description: Walk the user through a feature, area, or whole repo as an ordered editor walkthrough — each stop a file:line with a short note, stepped in nvim. Use for "walk", "walk me through", "show me how X works", "where does X live", "/walk <area>". Not for the current diff (that is /orient).
 ---
 
 # Walk — an ordered nvim-jump walkthrough
@@ -22,8 +22,8 @@ Whole-repo walk: top-level layout (one stop per major dir's anchor file), the ce
 
 ## Present
 
-1. One `nvim-jump` call with every stop in walk order, per `~/.claude/skills/_shared/nvim-jump.md`. Each `--note` says what the spot does and what it hands to the next stop.
-2. Then in chat: one sentence naming the flow, the numbered stops as `path:line — note` in the same order, and "`]k`/`[k` steps the walk".
+1. One `nvim-jump` call with every stop in walk order, per `~/.claude/skills/_shared/nvim-jump.md`. Each `--note` is 2–3 sentences, not the shared one-line note: what the spot does, why it works that way, and what it hands to the next stop.
+2. Then in chat: one sentence naming the flow, the numbered stops as `path:line — <the note's first sentence>` in the same order, and "`]k`/`[k` steps the walk".
 
 ## Save (default — `+ephemeral` skips)
 

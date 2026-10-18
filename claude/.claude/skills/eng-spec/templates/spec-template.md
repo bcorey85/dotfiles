@@ -64,5 +64,5 @@ Self-sufficient: probe-verified facts an implementation step needs go here with 
 
 ## Implementation Plan
 
-<!-- From here down, plan-format.md IN FULL, with ONE deviation: `## Phase Status` lives at the TOP of this file, not here. Vertical phases with risk tags, Changes Required + Success Criteria (Automated/Manual Verification, real commands), `Acceptance Criteria` naming `acceptance-criteria.md` when behavioral. Ends with the four closing phases (closing-phases.md) — never omitted. -->
+<!-- From here down, plan-format.md IN FULL, with ONE deviation: `## Phase Status` lives at the TOP of this file, not here. Vertical phases with risk tags, Changes Required + Success Criteria (Automated/Manual Verification, real commands), `Acceptance Criteria` naming `acceptance-criteria.md` when behavioral. Ends with the four closing phases (closing-phases.md) — never omitted. Each phase's Changes Required keeps the architects' `Reuse:` line on every step it takes from them. -->
 ```

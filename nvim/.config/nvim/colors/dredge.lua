@@ -7,7 +7,7 @@
 -- Colour marks definitions; uses and calls are fg. Every definition is
 -- periwinkle (h 280-284): top-level variables and constants, functions and
 -- classes. Keys, fields, attributes, parameters and builtins (self, JSON) are
--- fg. Literals are rose (h 0; None, numbers, booleans). Strings are
+-- fg. Literals are rose (h 0; None, numbers, booleans, symbols, escapes, regex). Strings are
 -- teal (h 190-196); comments are blue (h 240). No italics: hunk can't render
 -- them, and the two must match.
 -- Light mirrors dark's hues. Its code accents (not comments) keep OKLab
@@ -16,10 +16,11 @@
 -- the ground's grey, and so are markup tags. Types are fg.
 -- Modules stay fg. Markdown headings are periwinkle, like definitions.
 -- Diffs: added = green signs on a green wash (green is free: code never uses it),
--- removed = orange-red (h 44) on sign, rail and wash alike, clear of the rose
+-- removed = orange-red (h 38) on sign, rail and wash alike, clear of the rose
 -- literals and the yellow change sign; same washes as hunk. Changed words
 -- separate by chroma, not lightness. Red reads louder than green, so the
--- removed wash carries less chroma.
+-- removed wash carries less chroma. Signs (added, removed, changed) fade toward
+-- the ground, 25% dark and 15% light, so the gutter sits under the text.
 -- Teal is the accent; yellow marks changed. The palette below is the source of truth; the
 -- ghostty/herdr/hunk/starship/quickshell/claude-theme copies mirror it by hand.
 -- Editing: one value at a time, judged on a real file in nvim and hunk before the
@@ -57,12 +58,13 @@ palettes.dark = {
   str = "#7fc8c8",
   const = "#dc95aa",
 
-  added = "#82d395",
-  removed = "#f97b40",
-  diff_add = "#1f2a21",
-  diff_delete = "#2f2420",
-  diff_change = "#1f2a21",
-  diff_text = "#25442c",
+  added = "#5da37e",
+  removed = "#be6146",
+  changed = "#b19950",
+  diff_add = "#1d2622",
+  diff_delete = "#292221",
+  diff_change = "#1d2622",
+  diff_text = "#204530",
   search = "#284f4f",
 
   term = {
@@ -102,12 +104,13 @@ palettes.light = {
   str = "#0d7974",
   const = "#9f4063",
 
-  added = "#1d7d3e",
-  removed = "#af470a",
-  diff_add = "#bbc9bd",
-  diff_delete = "#cfc1bb",
-  diff_change = "#bbc9bd",
-  diff_text = "#a6bfaa",
+  added = "#36885f",
+  removed = "#b65a3e",
+  changed = "#917031",
+  diff_add = "#bbc8c1",
+  diff_delete = "#ccc2bf",
+  diff_change = "#bbc8c1",
+  diff_text = "#a3c0ae",
   search = "#dbaa6b",
 
   term = {
@@ -228,6 +231,7 @@ local groups = {
   -- Shell arguments, flags and $VAR uses are uses: plain.
   ["@variable.parameter.bash"] = { fg = c.fg },
   ["@constant.bash"] = { fg = c.fg },
+  ["@string.special.path.bash"] = { fg = c.fg },
   -- Members are plain, at use and at definition (keys, fields, attributes).
   ["@variable.member"] = { fg = c.fg },
   ["@property"] = { fg = c.fg },
@@ -244,11 +248,12 @@ local groups = {
   ["@string.documentation"] = { fg = c.remark },
   ["@string.escape"] = { fg = c.const },
   ["@string.regexp"] = { fg = c.const },
-  ["@string.special"] = { fg = c.const },
+  ["@string.special"] = { fg = c.str },
+  ["@string.special.symbol"] = { fg = c.const },
   ["@string.plain"] = { fg = c.str },
   ["@string.special.url"] = { fg = c.fn, underline = true },
   ["@character"] = { fg = c.str },
-  ["@character.special"] = { fg = c.const },
+  ["@character.special"] = { fg = c.punct },
   -- Names at their definition (after/queries); colour comes from the other captures.
   ["@declaration"] = {},
   ["@declaration.function"] = { fg = c.fn },
@@ -261,7 +266,7 @@ local groups = {
   ["@type"] = { fg = c.fg },
   ["@type.builtin"] = { fg = c.fg },
   ["@type.definition"] = { fg = c.fg },
-  ["@attribute"] = { fg = c.const },
+  ["@attribute"] = { fg = c.fg },
   ["@function"] = { fg = c.fn },
   -- Calls are plain; purple marks functions at their definition.
   ["@function.builtin"] = { fg = c.fg },
@@ -304,7 +309,7 @@ local groups = {
   ["@markup.underline"] = { underline = true },
   ["@markup.heading"] = { fg = c.fn, bold = true },
   ["@markup.quote"] = { fg = c.comment, italic = true },
-  ["@markup.math"] = { fg = c.const },
+  ["@markup.math"] = { fg = c.str },
   ["@markup.link"] = { fg = c.fn },
   ["@markup.link.label"] = { fg = c.fn },
   ["@markup.link.url"] = { fg = c.fn, underline = true },
@@ -314,7 +319,7 @@ local groups = {
   ["@markup.list.unchecked"] = { fg = c.muted },
   ["@diff.plus"] = { fg = c.added },
   ["@diff.minus"] = { fg = c.removed },
-  ["@diff.delta"] = { fg = c.yellow },
+  ["@diff.delta"] = { fg = c.changed },
 
   -- lsp semantic tokens
   ["@lsp.type.class"] = { link = "@constructor" },
@@ -367,15 +372,15 @@ local groups = {
   DiffChange = { bg = c.diff_change },
   DiffText = { bg = c.diff_text },
   Added = { fg = c.added },
-  Changed = { fg = c.yellow },
+  Changed = { fg = c.changed },
   Removed = { fg = c.removed },
   diffAdded = { fg = c.added },
   diffRemoved = { fg = c.removed },
-  diffChanged = { fg = c.yellow },
+  diffChanged = { fg = c.changed },
   diffFile = { fg = c.fn },
   diffLine = { fg = c.muted },
   GitSignsAdd = { fg = c.added },
-  GitSignsChange = { fg = c.yellow },
+  GitSignsChange = { fg = c.changed },
   GitSignsDelete = { fg = c.removed },
   -- Inline overlay shows the old line in rose above, so changed lines take the
   -- added wash.

@@ -119,8 +119,8 @@ local FAMILIES = {
     own_comment_contrast = true,
     accents = {
       -- Headings are periwinkle at every level: a heading defines a section.
-      dark = { heading = "#adb3f3", bullet = "#9ba8b5" },
-      light = { heading = "#5143bb", bullet = "#666a6e" },
+      dark = { heading = "#9c9ae3", bullet = "#a2a7ae" },
+      light = { heading = "#574fa0", bullet = "#666a71" },
     },
   },
 }

@@ -29,26 +29,14 @@
 [delta]
 	navigate = true
 	line-numbers = true
-	# Calm diffs: default delta is loud (Monokai Extended + saturated +/-).
-	# TwoDark is bat's Atom One Dark port — close enough to monokai-pro's
-	# dark canvas. The washes are muted accent blended into the #2d2a2e
-	# canvas, so terminal diffs stop "screaming". Values are quoted so the # in
-	# hex codes isn't parsed as a gitconfig comment.
-	syntax-theme = TwoDark
-	minus-style = "syntax #3d2a31"
-	plus-style = "syntax #303a33"
-	# Moved code (diff.colorMoved below): git emits bold magenta for moved-from
-	# and bold cyan for moved-to. Delta passes those through RAW unless mapped —
-	# loud, unwashed, syntax highlighting stripped. Map them to washes dimmer
-	# than plus/minus so a moved block recedes instead of reading as new logic.
-	map-styles = "bold purple => syntax #312b3c, bold cyan => syntax #243239"
-	# Word-level emphasis is deliberately DISABLED (emph = base style): delta's
-	# within-line diff turns reworded/rewrapped prose into confetti (scattered
-	# per-token highlights), and dotfiles diffs are mostly prose. Line washes +
-	# syntax already localize small code edits. To re-enable, set the emph
-	# styles one step brighter than their base styles.
-	minus-emph-style = "syntax #3a2b30"
-	plus-emph-style = "syntax #28332b"
+	# Code stays the terminal's fg: the washes and changed words carry the diff.
+	syntax-theme = none
+
+# theme-mode writes this machine-local include: dark/light, the washes, changed
+# words, moved code, line numbers and headers, from the family's hunk palette.
+# It comes after [delta] so its values win. git skips it until theme-mode runs.
+[include]
+	path = ~/.config/delta/theme.gitconfig
 
 [pull]
 	rebase = true

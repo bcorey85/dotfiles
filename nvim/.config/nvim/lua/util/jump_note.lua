@@ -24,19 +24,20 @@ local function blend(fg, bg, alpha)
   return mixed
 end
 
--- The note is a fixed orange, a hue no syntax group uses: orange text on an
--- orange-tinted band in dark mode, dark text on solid orange in light mode.
--- The range's line numbers turn orange, darker in light mode.
-local orange = 0xe9a066
-local dark_orange = 0x9a4700
+-- The note is a fixed calm sky blue: blue text on a blue-tinted band in dark
+-- mode, deep blue text on solid blue in light mode.
+-- The range's line numbers turn blue, darker in light mode.
+local blue = 0x83bae1
+local dark_blue = 0x306792
+local deep_blue = 0x1d5680
 require("util.hl").register("NvimJumpNoteHl", function()
   local normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
   local light = vim.o.background == "light"
-  local note = light and { fg = normal.fg or 0x000000, bg = orange }
-    or { fg = orange, bg = blend(orange, normal.bg or 0x000000, 0.2) }
+  local note = light and { fg = deep_blue, bg = blue }
+    or { fg = blue, bg = blend(blue, normal.bg or 0x000000, 0.2) }
   note.bold = true
   return {
-    NvimJumpRange = { fg = light and dark_orange or orange, bold = true },
+    NvimJumpRange = { fg = light and dark_blue or blue, bold = true },
     NvimJumpNote = note,
   }
 end)

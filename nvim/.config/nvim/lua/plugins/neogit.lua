@@ -28,7 +28,7 @@ return {
     { "<leader>gt", desc = "Git push + set upstream tracking (prompt)" },
     { "<leader>gs", desc = "Stage safe file classes (index barrels)" },
   },
-  dependencies = { "nvim-lua/plenary.nvim", "esmuellert/codediff.nvim", "barrettruth/diffs.nvim" },
+  dependencies = { "nvim-lua/plenary.nvim", "esmuellert/codediff.nvim", "diffs.nvim" },
   config = function()
     -- ]f / [f — jump to next / previous FILE in the status list (magit ]]/[[ feel).
     -- neogit's built-ins don't cover this: }/{ walk hunk headers (and dive INTO a

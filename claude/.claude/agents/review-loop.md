@@ -41,16 +41,17 @@ mark.
 ```
 each iteration:
   1. check cap   → if iter >= 2: no full review → the cap exit (Step 5c), WITHOUT dispatching a reviewer
+     the cap stops a reviewer, never a coder: a second-round `fix` finding got its coder in step 5 before this check
   2. dispatch reviewer → `iter++` at the dispatch, whatever it returns
      first round only: on a large diff, the structure reviewer and the test-reviewer go out in the SAME message (Step 3a)
      later rounds: re-review by every reviewer that filed a `fix` last round
   3. scan for PLAN-IMPACT → if found: return `plan-impact` WITHOUT dispatching a coder
   4. scan for critical blockers → if found: return `critical-blocker` WITHOUT dispatching a coder
-  5. dispatch ONE fix coder for every `fix` finding, test gaps included (Step 5); `ask` and `nit` never dispatch
+  5. dispatch ONE fix coder for every `fix` finding, test gaps included, at every `iter` (Step 5); `ask` and `nit` never dispatch
   6. repeat
 
 on exit (any status), if a fix diff is unread: the fix-diff verification pass (Step 5d)
-  — no counter, no cap, once per unread fix diff
+  — no counter, no cap, once per unread fix diff. The first pass sends every `fix` finding it files to a coder
 ```
 
 ## Step 1: Parse args
@@ -108,7 +109,7 @@ Every finding arrives already carrying its disposition — the reviewer decided 
 not re-derive it. Route on the label:
 
 - **`fix`** → auto-fix loop. Its `blocker` flag does not change the
-  routing here; it changes only what survives the budget (Step 5c) and what stops a phase.
+  routing here. It changes only what the second fix-diff pass does (Step 5d) and what stops a phase.
 - **`ask`** → never dispatched. Collected and surfaced to the user in the packet, each entry carrying its emitting `gate` and `class`.
 - **`nit`** → never dispatches a coder, never re-raised on a later pass. When this pass
   dispatches a fix coder, its `nit` items ride along as small items (Step 5); otherwise
@@ -179,10 +180,15 @@ gets a coder. The cap stops a third full review and nothing else. A deferred
 finding is not discarded: it moves to the branch-exit queue, where it is read
 once, in one place, against the whole branch instead of one phase of it.
 
-**The `blocker` carve-out.** A `fix` finding from a Step 5d pass or from the
-execution gate gets a coder (Step 5) only if it carries `blocker`, regardless of
-`iter`; without `blocker` it defers. Class members that Step 6 finds open at
-`iter >= 2` get no coder; Step 6 returns `cap-reached`.
+**What may defer.** Only two kinds of `fix` finding defer:
+
+- `last-pass`: a finding without `blocker` from the second fix-diff pass (Step 5d).
+- `class`: a class member that Step 6 finds open at `iter >= 2`. Step 6 returns `cap-reached`.
+
+Every other `fix` finding gets a coder (Step 5) at any `iter`: each full review's
+(`round`), the first fix-diff pass's (`fix-diff`) and the execution gate's (`gate`).
+Log each `fix` finding with its source word (Step 7b). The logger refuses a
+deferred row with any other source.
 
 **Defer** = log each finding per `~/.claude/skills/_shared/finding-log.md` with
 `actioned=deferred`, then return it in `findings_remaining`. The `branch` field
@@ -228,10 +234,12 @@ file) built in Step 5, and this scope. Run no git call to build it:
 > contradicting documented behavior is a finding against the fix;
 > genuinely-better-new-behavior is an `ask`, never a doc amendment.
 
-Route the first pass normally: a `blocker` is repaired now under Step 5c's carve-out;
-anything else defers. A `partial` / `still broken` prior issue rides into
-`findings_remaining` with its original disposition — never `converged` while
-one stands.
+Route the first pass like a full review: one coder (Step 5) for every `fix`
+finding it files, `blocker` or not, and for every `partial` / `still broken`
+prior issue. The second pass reads that coder's diff, unless the coder applied
+only `docs` findings. On the second pass, a `partial` / `still broken` prior
+issue rides into `findings_remaining` with its original disposition — never
+`converged` while one stands.
 
 ## Step 6: Convergence — the execution gate
 

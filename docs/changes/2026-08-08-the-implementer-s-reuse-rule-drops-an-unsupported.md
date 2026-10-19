@@ -1,0 +1,30 @@
+---
+type: "Change"
+title: "The implementer's reuse rule drops an unsupported superlative, its no-self-audit rule gains a reason"
+description: "The implementer's reuse rule drops an unsupported superlative, its no-self-audit rule gains a reason, and one duplicated instruction is cut."
+generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
+seq: 12
+components: ["agent/coder"]
+evidence: ["census"]
+watches: []
+---
+
+## Change
+
+The implementer's reuse rule drops an unsupported superlative, its no-self-audit rule gains a reason, and one duplicated instruction is cut
+
+## Evidence
+
+census
+
+## Result
+
+Two independently dispatched readings of the implementer's directives both ranked the same claim first — that ignorance of an existing artifact is the most common way junk gets produced, which nothing measures and the nearest result declines to support. The rule keeps its full force and now states the cost it actually imposes
+
+## Watch
+
+—
+
+## Back-out
+
+—

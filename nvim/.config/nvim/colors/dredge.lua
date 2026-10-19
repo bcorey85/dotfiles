@@ -396,6 +396,13 @@ local groups = {
   GitSignsAdd = { fg = c.added },
   GitSignsChange = { fg = c.changed },
   GitSignsDelete = { fg = c.removed },
+  -- Staged hunks are done: grey, so only unstaged work carries colour.
+  GitSignsStagedAdd = { fg = c.linenr },
+  GitSignsStagedChange = { fg = c.linenr },
+  GitSignsStagedChangedelete = { fg = c.linenr },
+  GitSignsStagedDelete = { fg = c.linenr },
+  GitSignsStagedTopdelete = { fg = c.linenr },
+  GitSignsStagedUntracked = { fg = c.linenr },
   -- Inline overlay shows the old line in rose above, so changed lines take the
   -- added wash.
   GitSignsChangeLn = { link = "DiffAdd" },

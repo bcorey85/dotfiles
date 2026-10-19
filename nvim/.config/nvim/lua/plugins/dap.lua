@@ -56,15 +56,22 @@ return {
       require("nvim-dap-virtual-text").setup({})
 
       -- Signs: the stock "B" breakpoint marker is near-invisible against a
-      -- dark gutter. Use a bold filled dot in high-contrast colors
-      -- so breakpoints actually read at a glance. Highlights are set explicitly
-      -- (not linked) so they survive colorscheme reloads.
-      vim.api.nvim_set_hl(0, "DapBreakpoint", { fg = "#ff5f59" }) -- red
-      vim.api.nvim_set_hl(0, "DapBreakpointCondition", { fg = "#db7b5f" }) -- orange
-      vim.api.nvim_set_hl(0, "DapBreakpointRejected", { fg = "#6e768a" }) -- muted
-      vim.api.nvim_set_hl(0, "DapLogPoint", { fg = "#2fafff" }) -- blue
-      vim.api.nvim_set_hl(0, "DapStopped", { fg = "#44bc44" }) -- green
-      vim.api.nvim_set_hl(0, "DapStoppedLine", { bg = "#303030" }) -- alt
+      -- dark gutter, so each sign is a filled dot. Colours link to the
+      -- scheme's diagnostics, re-linked on every ColorScheme because
+      -- :colorscheme clears groups the scheme doesn't define.
+      local function link_sign_colors()
+        vim.api.nvim_set_hl(0, "DapBreakpoint", { link = "DiagnosticError", default = true })
+        vim.api.nvim_set_hl(0, "DapBreakpointCondition", { link = "DiagnosticWarn", default = true })
+        vim.api.nvim_set_hl(0, "DapBreakpointRejected", { link = "LineNr", default = true })
+        vim.api.nvim_set_hl(0, "DapLogPoint", { link = "DiagnosticInfo", default = true })
+        vim.api.nvim_set_hl(0, "DapStopped", { link = "DiagnosticOk", default = true })
+        vim.api.nvim_set_hl(0, "DapStoppedLine", { link = "QuickFixLine", default = true })
+      end
+      link_sign_colors()
+      vim.api.nvim_create_autocmd("ColorScheme", {
+        group = vim.api.nvim_create_augroup("DapSignColors", { clear = true }),
+        callback = link_sign_colors,
+      })
 
       vim.fn.sign_define("DapBreakpoint", { text = "●", texthl = "DapBreakpoint" })
       vim.fn.sign_define("DapBreakpointCondition", { text = "●", texthl = "DapBreakpointCondition" })

@@ -14,7 +14,8 @@ end
 -- built from live groups so it holds up across the light/dark toggle.
 local function badge_color()
   local bg = hl_fg("DiagnosticError", "#ff0000").fg
-  local fg = hl_fg("Normal", "#000000").bg or "#000000"
+  local normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
+  local fg = normal.bg and string.format("#%06x", normal.bg) or "#000000"
   return { fg = fg, bg = bg, gui = "bold" }
 end
 

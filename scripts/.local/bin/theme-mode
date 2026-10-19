@@ -526,7 +526,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # Match nvim's tree-sitter colours where one-dark-pro's own selectors
       # out-rank the generic table. Headings ($fn) and bullet mirror theme-sync's markdown.
       # bright = markdown bold; hunk's scope table carries colour only, no weight.
-      local bright="#d4dbe5" quote="#a8adb4" bullet="#a2a7ae"
+      local bright="#d4dbe5" quote="#a8adb4" bullet="#9b9fa6"
       if [ "$2" = light ]; then
         bg="#c3c5c8"; panel="#bec0c3"; panelAlt="#babcbf"; border="#9a9c9d"
         accent="#18796d"; accentMuted="#9a9c9d"; text="#30363f"; muted="#666a71"

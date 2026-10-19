@@ -217,11 +217,12 @@ class CodeStepTest(unittest.TestCase):
         out = self.coder_round(report)
         self.assertIn("ACTION: ask-user", out)
         self.assertIn("## Question for the user", self.said())
-        for option in ("Adopt plan change", "Keep plan as written", "Discuss", "`decide adopt`", "`decide keep`"):
+        for option in ("Adopt plan change", "Keep plan as written", "Discuss",
+                       "`decide adopt --ruling \"<the user's answer>\"`", "`decide keep --ruling \"<the user's answer>\"`"):
             self.assertIn(option, self.said())
         self.assertNotIn("AskUserQuestion", out + self.said())
         self.assertNotIn("AGENT: review-loop", out)
-        out = self.step("decide", "keep")
+        out = self.step("decide", "keep", "--ruling", "keep it, the importer is right")
         self.assertIn("AGENT: review-loop", out)
         self.assertIn("Decision: Keep plan as written", out)
         self.assertNotIn("## Question for the user", self.said())
@@ -243,7 +244,7 @@ class CodeStepTest(unittest.TestCase):
     def test_adopt_rewrites_the_plan_before_the_review(self):
         report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
         self.coder_round(report)
-        out = self.step("decide", "adopt")
+        out = self.step("decide", "adopt", "--ruling", "adopt it, drop the header")
         self.assertIn("AGENT: coder", out)
         self.assertNotIn("AGENT: review-loop", out)
         self.assertEqual("plan-coder", self.state()["stage"])
@@ -251,7 +252,7 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("after-plan-edit")
         self.assertIn("AGENT: review-loop", out)
         self.assertIn("flagged: none", out)
-        self.assertIn("now states the adopted change", self.said())
+        self.assertIn("now states the ruling", self.said())
 
     def test_review_packet_block_scalar_reaches_the_question_without_its_indicator(self):
         self.coder_round()
@@ -598,7 +599,7 @@ class CodeStepTest(unittest.TestCase):
     def test_missing_plan_at_decide_stops(self):
         self.coder_round("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes")
         (self.repo / self.plan).unlink()
-        self.assertIn("ACTION: stop", self.step("decide", "keep"))
+        self.assertIn("ACTION: stop", self.step("decide", "keep", "--ruling", "keep it"))
 
     def test_unreadable_state_file_stops_with_its_name(self):
         self.start_phase_one()

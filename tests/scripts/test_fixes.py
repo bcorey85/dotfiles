@@ -46,6 +46,9 @@ The loop stopped on a plan question.
 """
 
 
+RULING = "the importer is right, so drop the header row"
+
+
 def git(repo, *args):
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
 
@@ -121,7 +124,7 @@ class PlanImpactFlowTest(unittest.TestCase):
         self.assertIn("ACTION: ask-user", output)
         self.assertNotIn("AskUserQuestion", output + say_text(repo))
         self.assertIn("## Question for the user", say_text(repo))
-        self.assertIn("`decide adopt`", say_text(repo))
+        self.assertIn("`decide adopt --ruling \"<the user's answer>\"`", say_text(repo))
         self.assertNotIn("|", read_state(repo)["impact"])
 
     def test_resume_verb_clears_old_say_text(self):
@@ -131,7 +134,7 @@ class PlanImpactFlowTest(unittest.TestCase):
         write_state(repo, state)
         (repo / ".git" / "code-step" / "say.md").write_text("Implemented: old summary\n\n")
 
-        run(repo, "decide", "keep")
+        run(repo, "decide", "keep", "--ruling", RULING)
 
         self.assertNotIn("old summary", say_text(repo))
         self.assertEqual(say_text(repo).count("Implemented:"), 1)
@@ -155,7 +158,7 @@ class PlanImpactFlowTest(unittest.TestCase):
         write_state(repo, state)
         (repo / "a.py").write_text("a = 2\n")
 
-        adoptOutput = run(repo, "decide", "adopt")
+        adoptOutput = run(repo, "decide", "adopt", "--ruling", RULING)
         stateAfterAdopt = read_state(repo)
         (repo / "plan.md").write_text((repo / "plan.md").read_text().replace("with a header row", "with no header row"))
         reviewOutput = run(repo, "after-plan-edit")
@@ -178,7 +181,7 @@ class PlanImpactFlowTest(unittest.TestCase):
         state.update({"stage": "impact-review", "impact": "PLAN-IMPACT:\n  found: no header row"})
         write_state(repo, state)
 
-        run(repo, "decide", "adopt")
+        run(repo, "decide", "adopt", "--ruling", RULING)
         (repo / "b.py").write_text("b = 2\n")
         run(repo, "after-plan-edit")
         stateAfterEdit = read_state(repo)
@@ -192,10 +195,53 @@ class PlanImpactFlowTest(unittest.TestCase):
         state.update({"stage": "impact-coder", "impact": "PLAN-IMPACT:\n  found: no header row"})
         write_state(repo, state)
 
-        output = run(repo, "decide", "keep")
+        output = run(repo, "decide", "keep", "--ruling", RULING)
 
         self.assertIn("AGENT: review-loop", output)
         self.assertEqual(read_state(repo)["stage"], "review")
+
+    def test_ruling_words_reach_the_plan_deviation(self):
+        repo = make_repo()
+        state = coder_state(repo, ["a.py"])
+        state.update({"stage": "impact-review", "impact": "PLAN-IMPACT:\n  found: no header row"})
+        write_state(repo, state)
+
+        run(repo, "decide", "adopt", "--ruling", RULING)
+
+        planText = (repo / "plan.md").read_text()
+        self.assertIn("## Plan Deviations", planText)
+        self.assertIn("The user's words:", planText)
+        self.assertIn("  > " + RULING, planText)
+        self.assertIn("Ruled by t at", planText)
+        self.assertEqual(read_state(repo)["ruling"]["words"], RULING)
+
+    def test_review_dispatch_after_decide_carries_the_resolved_block(self):
+        repo = make_repo()
+        state = coder_state(repo, ["a.py"])
+        state.update({"stage": "impact-coder", "impact": "PLAN-IMPACT:\n  found: no header row"})
+        write_state(repo, state)
+
+        output = run(repo, "decide", "keep", "--ruling", RULING)
+
+        self.assertIn("AGENT: review-loop", output)
+        self.assertIn("RESOLVED: the user ruled on this disagreement", output)
+        self.assertIn("Decision: Keep plan as written", output)
+        self.assertIn(RULING, output)
+        self.assertIn("found: no header row", output)
+
+    def test_decide_without_a_ruling_stops_and_changes_nothing(self):
+        repo = make_repo()
+        state = coder_state(repo, ["a.py"])
+        state.update({"stage": "impact-review", "impact": "PLAN-IMPACT:\n  found: no header row"})
+        write_state(repo, state)
+
+        output = run(repo, "decide", "adopt")
+
+        self.assertIn("ACTION: stop", output)
+        self.assertIn("--ruling", output)
+        self.assertNotIn("AGENT:", output)
+        self.assertEqual(read_state(repo)["stage"], "impact-review")
+        self.assertNotIn("## Plan Deviations", (repo / "plan.md").read_text())
 
 
 class ChangeFallbackTest(unittest.TestCase):
@@ -205,7 +251,7 @@ class ChangeFallbackTest(unittest.TestCase):
         state.update({"stage": "impact-coder", "impact": "PLAN-IMPACT:\n  found: x"})
         write_state(repo, state)
 
-        output = run(repo, "decide", "keep")
+        output = run(repo, "decide", "keep", "--ruling", RULING)
 
         self.assertNotIn("change: writes the CSV export", output)
         self.assertEqual(output.count("change: changed by the coder"), 2)
@@ -216,9 +262,41 @@ class ChangeFallbackTest(unittest.TestCase):
         state.update({"stage": "impact-coder", "impact": "PLAN-IMPACT:\n  found: x"})
         write_state(repo, state)
 
-        output = run(repo, "decide", "keep")
+        output = run(repo, "decide", "keep", "--ruling", RULING)
 
         self.assertIn("change: writes the CSV export", output)
+
+
+class ReviewReportEdgeTest(unittest.TestCase):
+    # Defect: after-review re-reads the old packet when the reviewer saved no new one.
+    @unittest.expectedFailure
+    def test_after_review_refuses_a_packet_older_than_the_review_dispatch(self):
+        repo = make_repo()
+        write_state(repo, coder_state(repo, ["a.py"]))
+        save_report(repo, "review-loop", "review", REVIEW_PACKET)
+        firstOutput = run(repo, "after-review")
+        run(repo, "decide", "keep", "--ruling", RULING)
+
+        output = run(repo, "after-review")
+
+        self.assertIn("ACTION: ask-user", firstOutput)
+        self.assertIn("ACTION: stop", output)
+        self.assertNotIn("ACTION: ask-user", output)
+        self.assertIn("review-loop", say_text(repo))
+
+    # Defect: an ask with a non-string field crashes after-review with a TypeError.
+    @unittest.expectedFailure
+    def test_ask_with_a_non_string_field_stops_without_a_crash(self):
+        repo = make_repo()
+        write_state(repo, coder_state(repo, ["a.py"]))
+        save_report(repo, "review-loop", "review",
+                    'status: converged\niter: 1\nfixed: []\nask: {"file_line": ["a.py:1"], "question": "keep it?"}\n')
+
+        output = run(repo, "after-review")
+
+        self.assertNotIn("Traceback", output)
+        self.assertIn("ACTION: stop", output)
+        self.assertIn("ask", say_text(repo))
 
 
 if __name__ == "__main__":

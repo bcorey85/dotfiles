@@ -516,7 +516,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # the ground (light: one step under it), so a changed row reads as a band.
       sAdd="#5da37e"; sRem="#be6146"; lnFg="#777b82"
       badgeAdd="#74d5a1"; badgeRem="#fb784f"; badgeNeu="#d7bb70"
-      fRename="#d7bb70"; fMod="#d7bb70"; fUntracked="#85beef"; note="#151719"
+      fRename="#5da37e"; fMod="#5da37e"; fUntracked="#5da37e"; note="#151719"
       kw="#7c8187"; str="#85c2b7"; num="#c88191"; fn="#9c9ae3"; typ="#c1c8d2"; punct="#7c8187"; op="#7c8187"
       konst="#c88191"; esc="#c88191"; cmt="#a79d8d"; param="#c1c8d2"
       attr="#c1c8d2"; tag="#7c8187"; vbi="#c1c8d2"; lang="#c88191"; imp="#7c8187"; pre="#7c8187"
@@ -528,13 +528,13 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # bright = markdown bold; hunk's scope table carries colour only, no weight.
       local bright="#d4dbe5" quote="#a8adb4" bullet="#9b9fa6"
       if [ "$2" = light ]; then
-        bg="#c3c5c8"; panel="#bec0c3"; panelAlt="#babcbf"; border="#9a9c9d"
-        accent="#18796d"; accentMuted="#9a9c9d"; text="#30363f"; muted="#666a71"
+        bg="#c3c5c8"; panel="#bec0c3"; panelAlt="#babcbf"; border="#9a9c9f"
+        accent="#18796d"; accentMuted="#9a9c9f"; text="#30363f"; muted="#666a71"
         addWord="#99bfa7"; remWord="#caa59b"
         addedBg="#b4c5bc"; removedBg="#cabdba"; ctxBg="#c3c5c8"
         sAdd="#36885f"; sRem="#b65a3e"; lnFg="#81868d"
         badgeAdd="#037d4d"; badgeRem="#b14420"; badgeNeu="#846322"
-        fRename="#846322"; fMod="#846322"; fUntracked="#296caa"; note="#bec0c3"
+        fRename="#36885f"; fMod="#36885f"; fUntracked="#36885f"; note="#bec0c3"
         kw="#7c8189"; str="#18796d"; num="#9d3a67"; fn="#574fa0"; typ="#30363f"; punct="#7c8189"; op="#7c8189"
         konst="#9d3a67"; esc="#9d3a67"; cmt="#6a5e4a"; param="#30363f"
         attr="#30363f"; tag="#7c8189"; vbi="#30363f"; lang="#9d3a67"; imp="#7c8189"; pre="#7c8189"
@@ -1282,11 +1282,11 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
     dredge:light)
       base_name="one-light"
       accent="#18796d" panel_bg="#bec0c3" surface_dim="#adaeb0"
-      surface0="#a3a5a6" surface1="#9a9c9d"
+      surface0="#a3a5a8" surface1="#9a9c9f"
       overlay0="#666a71" overlay1="#565a61"
       text="#30363f" subtext0="#565a61"
       green="#317a46" yellow="#846322" red="#b0423f"
-      blue="#296caa" teal="#18796d" peach="#b26328"
+      blue="#296caa" teal="#18796d" peach="#9e510f"
       ;;
     dredge:*)
       base_name="one-dark"

@@ -105,10 +105,10 @@ Singleton {
             orange: "#f6a981", yellow: "#d7bb70", magenta: "#c799c9"
         },
         "dredge-light": {
-            bg: "#c3c5c8", panel: "#bec0c3", border: "#9a9c9d",
+            bg: "#c3c5c8", panel: "#bec0c3", border: "#9a9c9f",
             fg: "#30363f", muted: "#666a71",
             green: "#317a46", red: "#b0423f", teal: "#18796d",
-            orange: "#b26328", yellow: "#846322", magenta: "#79437c"
+            orange: "#9e510f", yellow: "#846322", magenta: "#79437c"
         },
         "aura-dark": {
             bg: "#15141b", panel: "#1e1c28", border: "#3b3557",

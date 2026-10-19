@@ -52,7 +52,7 @@ palettes.dark = {
   amber = "#f6a981",
   yellow = "#d7bb70",
   green = "#8dd09b",
-  teal = "#86cdcc",
+  teal = "#85c2b7",
   blue = "#85beef",
   magenta = "#c799c9",
 
@@ -69,11 +69,11 @@ palettes.dark = {
   diff_delete = "#2d2423",
   diff_change = "#1e2a24",
   diff_text = "#154b2f",
-  search = "#284f4f",
+  search = "#2a4f49",
 
   term = {
-    "#151719", "#ec817a", "#8dd09b", "#d7bb70", "#85beef", "#c799c9", "#86cdcc", "#c1c8d2",
-    "#777b81", "#f69d96", "#aee4b8", "#e9d296", "#a7d3f8", "#d8b1d9", "#afdfde", "#d4dbe5",
+    "#151719", "#ec817a", "#8dd09b", "#d7bb70", "#85beef", "#c799c9", "#85c2b7", "#c1c8d2",
+    "#777b81", "#f69d96", "#aee4b8", "#e9d296", "#a7d3f8", "#d8b1d9", "#b1dfd6", "#d4dbe5",
   },
 }
 
@@ -100,7 +100,7 @@ palettes.light = {
   amber = "#b26328",
   yellow = "#846322",
   green = "#317a46",
-  teal = "#257273",
+  teal = "#18796d",
   blue = "#296caa",
   magenta = "#79437c",
 
@@ -117,11 +117,11 @@ palettes.light = {
   diff_delete = "#cabdba",
   diff_change = "#b4c5bc",
   diff_text = "#99bfa7",
-  search = "#7eb8b8",
+  search = "#81b9af",
 
   term = {
-    "#25292f", "#b0423f", "#317a46", "#846322", "#296caa", "#79437c", "#257273", "#4d5158",
-    "#4b4f56", "#cc544f", "#3e8d53", "#ab8731", "#3d7ebe", "#8b538f", "#2e8a8a", "#25292f",
+    "#25292f", "#b0423f", "#317a46", "#846322", "#296caa", "#79437c", "#18796d", "#4d5158",
+    "#4b4f56", "#cc544f", "#3e8d53", "#ab8731", "#3d7ebe", "#8b538f", "#348b7f", "#25292f",
   },
 }
 
@@ -141,7 +141,8 @@ local groups = {
   NormalNC = { link = "Normal" },
   NormalFloat = { fg = c.fg, bg = c.bg_dark },
   FloatBorder = { fg = c.border, bg = c.bg_dark },
-  FloatTitle = { fg = c.teal, bg = c.bg_dark, bold = true },
+  -- Chrome is grey and fg; teal marks only what matches a query and the keys to press.
+  FloatTitle = { fg = c.fg, bg = c.bg_dark, bold = true },
   Cursor = { fg = c.bg, bg = c.teal },
   -- The cursor band sits half bg_line's step off the ground; the number is fg, not an accent.
   CursorLine = { bg = c.bg_cursor },
@@ -163,7 +164,7 @@ local groups = {
   TabLineSel = { fg = c.fg_bright, bg = c.bg, bold = true },
   Pmenu = { fg = c.fg, bg = c.bg_dark },
   PmenuSel = { bg = c.bg_sel, bold = true },
-  PmenuKind = { fg = c.teal, bg = c.bg_dark },
+  PmenuKind = { fg = c.muted, bg = c.bg_dark },
   PmenuExtra = { fg = c.muted, bg = c.bg_dark },
   PmenuSbar = { bg = c.bg_line },
   PmenuThumb = { bg = c.border },
@@ -182,7 +183,7 @@ local groups = {
   EndOfBuffer = { fg = c.bg },
   SpecialKey = { fg = c.nontext },
   Conceal = { fg = c.muted },
-  Directory = { fg = c.blue },
+  Directory = { fg = c.fg, bold = true },
   Title = { fg = c.teal, bold = true },
   ErrorMsg = { fg = c.red },
   WarningMsg = { fg = c.yellow },
@@ -395,8 +396,26 @@ local groups = {
   GitSignsChangeLn = { link = "DiffAdd" },
 
   -- plugins
+  -- flash dims the buffer while it waits for a label; grey, not the sand comment.
+  FlashBackdrop = { fg = c.kw },
+  -- No blocks: the typed letters turn bright; the jump label is amber, underlined to part it from them.
+  FlashMatch = { fg = c.fg_bright },
+  FlashCurrent = { link = "FlashMatch" },
+  FlashLabel = { fg = c.amber, bold = true, underline = true },
   SnacksPickerDir = { fg = c.comment },
-  MiniClueDescGroup = { fg = c.teal },
+  SnacksPickerMatch = { fg = c.teal, bold = true },
+  SnacksPickerPrompt = { fg = c.muted },
+  -- fyler copies Directory's fg without bold, and ships One Dark git colours.
+  FylerDirectoryName = { link = "Directory" },
+  FylerDirectoryIcon = { link = "Directory" },
+  -- Every change is green and the mark after the name says which; only a conflict is red.
+  FylerGitModified = { fg = c.added },
+  FylerGitRenamed = { fg = c.added },
+  FylerGitStaged = { fg = c.added },
+  FylerGitDeleted = { fg = c.added },
+  FylerGitUntracked = { fg = c.added },
+  FylerGitConflict = { fg = c.removed },
+  MiniClueDescGroup = { fg = c.muted },
   MiniClueSeparator = { fg = c.border },
   MiniIndentscopeSymbol = { fg = c.linenr },
 }

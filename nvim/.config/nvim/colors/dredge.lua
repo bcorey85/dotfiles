@@ -1,20 +1,23 @@
 -- dredge — personal theme-mode family, dark and light. Prose first, diffs second:
--- cool charcoal ground (OKLCH L 0.232, h 240), fg and greys tinted to the ground hue
--- (C 0.025). Contrast is tuned in APCA Lc, not WCAG ratios, which overrate
--- light-on-dark. Dark is deliberately dim against halation: fg Lc 75,
--- comments 49, punctuation 43. Light: fg Lc 64. Lc is a floor, not a target: coloured
+-- charcoal ground (OKLCH L 0.232) with a whisper of blue (h 258, C 0.005). fg and fg_bright
+-- carry more (C 0.016; light C 0.018) so they don't read warm. The text greys (keywords,
+-- punctuation, line numbers, muted, quotes, ANSI greys) carry two thirds of it (C 0.011; light C 0.012).
+-- Contrast is tuned in APCA Lc, not WCAG ratios, which overrate
+-- light-on-dark. Dark is deliberately dim against halation: fg Lc 71,
+-- definitions 50, comments 48, punctuation 33. Light: fg Lc 64, definitions 50, comments 48, punctuation 33. Lc is a floor, not a target: coloured
 -- token pairs also keep OKLab dE >= 0.09 in light, >= 0.085 in dark.
 -- Colour marks definitions; uses and calls are fg. Every definition is
--- periwinkle (h 280-284): top-level variables and constants, functions and
+-- indigo (h 285, leaning violet): top-level variables and constants, functions and
 -- classes. Keys, fields, attributes, parameters and builtins (self, JSON) are
--- fg. Literals are rose (h 0; None, numbers, booleans, symbols, escapes, regex). Strings are
--- teal (h 190-196); comments are blue (h 240). No italics: hunk can't render
+-- fg. Literals are dusty rose (h 5; light is pinker, h 355 C 0.14; None, numbers, booleans,
+-- symbols, escapes, regex).
+-- Strings are sea teal (h 182); comments are sand (h 80, C 0.025; light C 0.034). No italics: hunk can't render
 -- them, and the two must match.
--- Light mirrors dark's hues. Its code accents (not comments) keep OKLab
--- dE >= 0.25 from the near-black fg, or thin strokes read as black; teal is
--- chroma-capped in sRGB, so it gets there by lightness. Keywords are
+-- Light mirrors dark's hues and order: comments sit between fg and the
+-- keywords. Code accents keep OKLab dE >= 0.17 from the near-black fg, or thin
+-- strokes read as black; teal is chroma-capped in sRGB, so it gets there by lightness. Keywords are
 -- the ground's grey, and so are markup tags. Types are fg.
--- Modules stay fg. Markdown headings are periwinkle, like definitions.
+-- Modules stay fg. Markdown headings are indigo, like definitions.
 -- Diffs: added = green signs on a green wash (green is free: code never uses it),
 -- removed = orange-red (h 38) on sign, rail and wash alike, clear of the rose
 -- literals and the yellow change sign; same washes as hunk. Changed words
@@ -30,92 +33,95 @@
 local palettes = {}
 
 palettes.dark = {
-  bg = "#1a1e21",
-  bg_dark = "#14171b",
-  bg_line = "#282b2e",
-  bg_sel = "#30363d",
-  bg_visual = "#373d42",
-  border = "#3e4248",
-  nontext = "#41474c",
-  linenr = "#747c83",
-  muted = "#95a0ab",
-  comment = "#a1aebb",
-  punct = "#8995a2",
-  fg = "#c3cfda",
-  fg_bright = "#d3dbe3",
+  bg = "#1c1e20",
+  bg_dark = "#151719",
+  bg_line = "#292b2d",
+  bg_cursor = "#222426",
+  bg_sel = "#343638",
+  bg_visual = "#3b3c3e",
+  border = "#414244",
+  nontext = "#454648",
+  linenr = "#777b82",
+  muted = "#9b9fa6",
+  comment = "#a8adb4",
+  punct = "#7c8187",
+  fg = "#c1c8d2",
+  fg_bright = "#d4dbe5",
 
-  red = "#f77972",
-  amber = "#ffa475",
-  yellow = "#ebc75b",
-  green = "#82d395",
-  teal = "#79cfcf",
-  blue = "#7abff9",
-  magenta = "#e091d8",
+  red = "#ec817a",
+  amber = "#f6a981",
+  yellow = "#d7bb70",
+  green = "#8dd09b",
+  teal = "#86cdcc",
+  blue = "#85beef",
+  magenta = "#c799c9",
 
-  kw = "#8995a2",
-  fn = "#adb3f3",
-  remark = "#6fa5cb",
-  str = "#7fc8c8",
-  const = "#dc95aa",
+  kw = "#7c8187",
+  fn = "#9c9ae3",
+  remark = "#a79d8d",
+  str = "#85c2b7",
+  const = "#c88191",
 
   added = "#5da37e",
   removed = "#be6146",
   changed = "#b19950",
-  diff_add = "#1d2622",
-  diff_delete = "#292221",
-  diff_change = "#1d2622",
-  diff_text = "#204530",
+  diff_add = "#1e2a24",
+  diff_delete = "#2d2423",
+  diff_change = "#1e2a24",
+  diff_text = "#154b2f",
   search = "#284f4f",
 
   term = {
-    "#14171b", "#f77972", "#82d395", "#ebc75b", "#7abff9", "#e091d8", "#79cfcf", "#c3cfda",
-    "#727c86", "#ff9790", "#a6e7b3", "#fdde8c", "#a0d4ff", "#efade8", "#a7e1e0", "#d3dbe3",
+    "#151719", "#ec817a", "#8dd09b", "#d7bb70", "#85beef", "#c799c9", "#86cdcc", "#c1c8d2",
+    "#777b81", "#f69d96", "#aee4b8", "#e9d296", "#a7d3f8", "#d8b1d9", "#afdfde", "#d4dbe5",
   },
 }
 
--- Light: near-neutral light grey (OKLCH L 0.82, C 0.007), greys on dark's hue
--- (h 248). Accents sit around L 0.47-0.52; luminance over contrast.
+-- Light: light grey (OKLCH L 0.82) with the same whisper of blue (C 0.005). Accents sit around
+-- L 0.47-0.52; luminance over contrast. Strings keep full chroma (C 0.087), or
+-- they sit too close to the grey keywords.
 palettes.light = {
-  bg = "#c1c5c9",
-  bg_dark = "#bcc0c4",
-  bg_line = "#b8bcc0",
-  bg_sel = "#aaafb3",
-  bg_visual = "#aaaec2",
-  border = "#989ca0",
-  nontext = "#a1a5a9",
-  linenr = "#6e7275",
-  muted = "#666a6e",
-  comment = "#52565a",
-  punct = "#606468",
-  fg = "#333639",
-  fg_bright = "#16181a",
+  bg = "#c3c5c8",
+  bg_dark = "#bec0c3",
+  bg_line = "#babcbf",
+  bg_cursor = "#bec0c3",
+  bg_sel = "#adaeb0",
+  bg_visual = "#abaebf",
+  border = "#9a9c9d",
+  nontext = "#a3a5a6",
+  linenr = "#81868d",
+  muted = "#666a71",
+  comment = "#52565d",
+  punct = "#7c8189",
+  fg = "#30363f",
+  fg_bright = "#131820",
 
-  red = "#ba3535",
-  amber = "#bb5d00",
-  yellow = "#886100",
-  green = "#1d7d3e",
-  teal = "#007475",
-  blue = "#116bb5",
-  magenta = "#993f94",
+  red = "#b0423f",
+  amber = "#b26328",
+  yellow = "#846322",
+  green = "#317a46",
+  teal = "#257273",
+  blue = "#296caa",
+  magenta = "#79437c",
 
-  kw = "#606468",
-  fn = "#5143bb",
-  remark = "#085f96",
-  str = "#0d7974",
-  const = "#9f4063",
+  kw = "#7c8189",
+  fn = "#574fa0",
+  remark = "#6a5e4a",
+  str = "#18796d",
+  const = "#9d3a67",
 
   added = "#36885f",
   removed = "#b65a3e",
   changed = "#917031",
-  diff_add = "#bbc8c1",
-  diff_delete = "#ccc2bf",
-  diff_change = "#bbc8c1",
-  diff_text = "#a3c0ae",
-  search = "#dbaa6b",
+  diff_add = "#b4c5bc",
+  diff_delete = "#cabdba",
+  diff_change = "#b4c5bc",
+  diff_text = "#99bfa7",
+  search = "#7eb8b8",
 
   term = {
-    "#26292c", "#ba3535", "#1d7d3e", "#886100", "#116bb5", "#993f94", "#007475", "#4e5154",
-    "#4c4f52", "#d74745", "#2a904b", "#b08505", "#2b7ec9", "#ad51a7", "#008c8d", "#26292c",
+    "#25292f", "#b0423f", "#317a46", "#846322", "#296caa", "#79437c", "#257273", "#4d5158",
+    "#4b4f56", "#cc544f", "#3e8d53", "#ab8731", "#3d7ebe", "#8b538f", "#2e8a8a", "#25292f",
   },
 }
 
@@ -137,10 +143,11 @@ local groups = {
   FloatBorder = { fg = c.border, bg = c.bg_dark },
   FloatTitle = { fg = c.teal, bg = c.bg_dark, bold = true },
   Cursor = { fg = c.bg, bg = c.teal },
-  CursorLine = { bg = c.bg_line },
+  -- The cursor band sits half bg_line's step off the ground; the number is fg, not an accent.
+  CursorLine = { bg = c.bg_cursor },
   CursorColumn = { link = "CursorLine" },
   ColorColumn = { bg = c.bg_line },
-  CursorLineNr = { fg = c.teal, bold = true },
+  CursorLineNr = { fg = c.fg, bold = true },
   LineNr = { fg = c.linenr },
   SignColumn = { fg = c.linenr },
   FoldColumn = { fg = c.linenr },
@@ -165,7 +172,8 @@ local groups = {
   Visual = { bg = c.bg_visual },
   VisualNOS = { link = "Visual" },
   Search = { fg = c.fg_bright, bg = c.search },
-  IncSearch = { fg = c.bg, bg = c.fn },
+  -- Matches and the current match are one teal family: a wash, then solid teal.
+  IncSearch = { fg = c.bg, bg = c.teal, bold = true },
   CurSearch = { link = "IncSearch" },
   Substitute = { fg = c.bg, bg = c.magenta },
   MatchParen = { fg = c.teal, bg = c.bg_visual, bold = true },
@@ -224,7 +232,7 @@ local groups = {
   Todo = { fg = c.bg, bg = c.const, bold = true },
 
   -- treesitter
-  -- Variables are plain at use; periwinkle marks their top-level definition.
+  -- Variables are plain at use; indigo marks their top-level definition.
   ["@variable"] = { fg = c.fg },
   ["@variable.builtin"] = { fg = c.fg },
   ["@variable.parameter"] = { fg = c.fg },
@@ -262,7 +270,7 @@ local groups = {
   ["@declaration.variable"] = { fg = c.fn },
   ["@number"] = { fg = c.const },
   ["@boolean"] = { fg = c.const },
-  -- Types are plain; periwinkle marks them at their definition.
+  -- Types are plain; indigo marks them at their definition.
   ["@type"] = { fg = c.fg },
   ["@type.builtin"] = { fg = c.fg },
   ["@type.definition"] = { fg = c.fg },

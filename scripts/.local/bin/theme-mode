@@ -42,6 +42,9 @@
 #              The generated file is machine-local (not stowed), so the
 #              tracked template is never dirtied. Edit the template => re-run
 #              theme-mode to refresh the live config.
+#   - delta:   this script writes ~/.config/delta/theme.gitconfig (machine-local,
+#              included by the stowed .gitconfig) from the family's hunk diff
+#              palette. git reads it on every run, so the next diff flips.
 #
 # Usage:
 #   theme-mode [dark|light|toggle]    flip mode, keep family (default: toggle)
@@ -500,44 +503,44 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       ;;
     # dredge (nvim colors/dredge.lua). Both modes share the scope table below.
     dredge:*)
-      bg="#1a1e21"; panel="#14171b"; panelAlt="#282b2e"; border="#3e4248"
-      accent="#79cfcf"; accentMuted="#3e4248"; text="#c3cfda"; muted="#95a0ab"
+      bg="#1c1e20"; panel="#151719"; panelAlt="#292b2d"; border="#414244"
+      accent="#86cdcc"; accentMuted="#414244"; text="#c1c8d2"; muted="#9b9fa6"
       # Words must stay >= RGB distance 28 from the line wash, or hunk
       # replaces them with its own blend of the sign colour. Words separate by
       # chroma, not lightness. The washes share one lightness. Red reads
       # louder, so it carries less chroma, and its words sit a step darker.
-      addWord="#204530"; remWord="#4c2c23"
-      addedBg="#1d2622"; removedBg="#292221"; ctxBg="#1a1e21"
+      addWord="#154b2f"; remWord="#552b20"
+      addedBg="#1e2a24"; removedBg="#2d2423"; ctxBg="#1c1e20"
       # hunk also colours line numbers and rails with the sign colour, and dims
-      # unselected rails to 35% of it. The rail carries the signal and the wash
-      # stays a whisper, at moderate chroma so the gutter does not glare.
-      sAdd="#5da37e"; sRem="#be6146"; lnFg="#747c83"
-      badgeAdd="#74d5a1"; badgeRem="#fb784f"; badgeNeu="#ebc75b"
-      fRename="#ebc75b"; fMod="#ebc75b"; fUntracked="#7abff9"; note="#14171b"
-      kw="#8995a2"; str="#7fc8c8"; num="#dc95aa"; fn="#adb3f3"; typ="#c3cfda"; punct="#8995a2"; op="#8995a2"
-      konst="#dc95aa"; esc="#dc95aa"; cmt="#6fa5cb"; param="#c3cfda"
-      attr="#c3cfda"; tag="#8995a2"; vbi="#c3cfda"; lang="#dc95aa"; imp="#8995a2"; pre="#8995a2"
-      prim="#c3cfda"; ns="#c3cfda"; mac="#adb3f3"; bfn="#c3cfda"; var="#adb3f3"; key="#c3cfda"; cls="#adb3f3"
+      # unselected rails to 35% of it. The washes sit one lightness step off
+      # the ground (light: one step under it), so a changed row reads as a band.
+      sAdd="#5da37e"; sRem="#be6146"; lnFg="#777b82"
+      badgeAdd="#74d5a1"; badgeRem="#fb784f"; badgeNeu="#d7bb70"
+      fRename="#d7bb70"; fMod="#d7bb70"; fUntracked="#85beef"; note="#151719"
+      kw="#7c8187"; str="#85c2b7"; num="#c88191"; fn="#9c9ae3"; typ="#c1c8d2"; punct="#7c8187"; op="#7c8187"
+      konst="#c88191"; esc="#c88191"; cmt="#a79d8d"; param="#c1c8d2"
+      attr="#c1c8d2"; tag="#7c8187"; vbi="#c1c8d2"; lang="#c88191"; imp="#7c8187"; pre="#7c8187"
+      prim="#c1c8d2"; ns="#c1c8d2"; mac="#9c9ae3"; bfn="#c1c8d2"; var="#9c9ae3"; key="#c1c8d2"; cls="#9c9ae3"
       # Colour marks definitions. Builtins, uses, calls and members are plain text.
-      use="#c3cfda"; call="#c3cfda"; mem="#c3cfda"
+      use="#c1c8d2"; call="#c1c8d2"; mem="#c1c8d2"
       # Match nvim's tree-sitter colours where one-dark-pro's own selectors
       # out-rank the generic table. Headings ($fn) and bullet mirror theme-sync's markdown.
       # bright = markdown bold; hunk's scope table carries colour only, no weight.
-      local bright="#d3dbe3" quote="#a1aebb" bullet="#9ba8b5"
+      local bright="#d4dbe5" quote="#a8adb4" bullet="#a2a7ae"
       if [ "$2" = light ]; then
-        bg="#c1c5c9"; panel="#bcc0c4"; panelAlt="#b8bcc0"; border="#989ca0"
-        accent="#007475"; accentMuted="#989ca0"; text="#333639"; muted="#666a6e"
-        addWord="#a3c0ae"; remWord="#c8aba3"
-        addedBg="#bbc8c1"; removedBg="#ccc2bf"; ctxBg="#c1c5c9"
-        sAdd="#36885f"; sRem="#b65a3e"; lnFg="#6e7275"
-        badgeAdd="#037d4d"; badgeRem="#b14420"; badgeNeu="#886100"
-        fRename="#886100"; fMod="#886100"; fUntracked="#116bb5"; note="#bcc0c4"
-        kw="#606468"; str="#0d7974"; num="#9f4063"; fn="#5143bb"; typ="#333639"; punct="#606468"; op="#606468"
-        konst="#9f4063"; esc="#9f4063"; cmt="#085f96"; param="#333639"
-        attr="#333639"; tag="#606468"; vbi="#333639"; lang="#9f4063"; imp="#606468"; pre="#606468"
-        prim="#333639"; ns="#333639"; mac="#5143bb"; bfn="#333639"; var="#5143bb"; key="#333639"; cls="#5143bb"
-        use="#333639"; call="#333639"; mem="#333639"
-        bright="#16181a" quote="#52565a" bullet="#666a6e"
+        bg="#c3c5c8"; panel="#bec0c3"; panelAlt="#babcbf"; border="#9a9c9d"
+        accent="#257273"; accentMuted="#9a9c9d"; text="#30363f"; muted="#666a71"
+        addWord="#99bfa7"; remWord="#caa59b"
+        addedBg="#b4c5bc"; removedBg="#cabdba"; ctxBg="#c3c5c8"
+        sAdd="#36885f"; sRem="#b65a3e"; lnFg="#81868d"
+        badgeAdd="#037d4d"; badgeRem="#b14420"; badgeNeu="#846322"
+        fRename="#846322"; fMod="#846322"; fUntracked="#296caa"; note="#bec0c3"
+        kw="#7c8189"; str="#18796d"; num="#9d3a67"; fn="#574fa0"; typ="#30363f"; punct="#7c8189"; op="#7c8189"
+        konst="#9d3a67"; esc="#9d3a67"; cmt="#6a5e4a"; param="#30363f"
+        attr="#30363f"; tag="#7c8189"; vbi="#30363f"; lang="#9d3a67"; imp="#7c8189"; pre="#7c8189"
+        prim="#30363f"; ns="#30363f"; mac="#574fa0"; bfn="#30363f"; var="#574fa0"; key="#30363f"; cls="#574fa0"
+        use="#30363f"; call="#30363f"; mem="#30363f"
+        bright="#131820" quote="#52565d" bullet="#666a71"
       fi
       extra=$(cat <<EOF
 "punctuation.separator.key-value"   = "$punct"
@@ -987,6 +990,62 @@ hunk_apply() { # <family> <mode> — point hunk's config at the family's theme
   # no config command. Running reviews keep their colors; the next one flips.
 }
 
+DELTA_THEME="$HOME/.config/delta/theme.gitconfig"
+
+toml_string() { # <toml> <key> -> the top-level key's string value, empty when absent
+  printf '%s\n' "$1" | sed -n "s/^$2 *= \"\(.*\)\"\$/\1/p"
+}
+
+delta_apply() { # <family> <mode> — write delta's include from the hunk diff palette
+  local base custom
+  base="$(hunk_theme "$1" "$2")"
+  custom="$(hunk_custom_theme "$1" "$2" "$base")"
+
+  local added_bg removed_bg added_word removed_word moved_added moved_removed
+  local added_sign removed_sign line_number border text
+  added_bg="$(toml_string "$custom" addedBg)"
+  removed_bg="$(toml_string "$custom" removedBg)"
+  added_word="$(toml_string "$custom" addedContentBg)"
+  removed_word="$(toml_string "$custom" removedContentBg)"
+  moved_added="$(toml_string "$custom" movedAddedBg)"
+  moved_removed="$(toml_string "$custom" movedRemovedBg)"
+  added_sign="$(toml_string "$custom" addedSignColor)"
+  removed_sign="$(toml_string "$custom" removedSignColor)"
+  line_number="$(toml_string "$custom" lineNumberFg)"
+  border="$(toml_string "$custom" border)"
+  text="$(toml_string "$custom" text)"
+
+  mkdir -p "$(dirname "$DELTA_THEME")"
+  cat >"$DELTA_THEME" <<EOF
+# Written by theme-mode — do not edit. Colours are quoted: a bare # starts a comment.
+[delta]
+	$2 = true
+EOF
+
+  # A family whose hunk block is syntax-only keeps delta's own colours for the mode.
+  if [ -z "$added_bg" ]; then
+    return 0
+  fi
+
+  # git marks moved code bold magenta (from) and bold cyan (to); delta passes
+  # those through raw unless mapped.
+  cat >>"$DELTA_THEME" <<EOF
+	minus-style = "syntax $removed_bg"
+	minus-emph-style = "syntax $removed_word"
+	plus-style = "syntax $added_bg"
+	plus-emph-style = "syntax $added_word"
+	map-styles = "bold purple => syntax $moved_removed, bold cyan => syntax $moved_added"
+	line-numbers-minus-style = "$removed_sign"
+	line-numbers-plus-style = "$added_sign"
+	line-numbers-zero-style = "$line_number"
+	line-numbers-left-style = "$border"
+	line-numbers-right-style = "$border"
+	file-style = "bold $text"
+	file-decoration-style = "$border ul"
+	hunk-header-decoration-style = "$border ul"
+EOF
+}
+
 herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
   # herdr's token namespace is catppuccin-derived; `name` picks the BASE theme
   # and [theme.custom] overrides individual tokens on top of it. Dark uses the
@@ -1222,21 +1281,21 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:light)
       base_name="one-light"
-      accent="#007475" panel_bg="#bcc0c4" surface_dim="#aaafb3"
-      surface0="#a1a5a9" surface1="#989ca0"
-      overlay0="#666a6e" overlay1="#575a5d"
-      text="#333639" subtext0="#575a5d"
-      green="#1d7d3e" yellow="#886100" red="#ba3535"
-      blue="#116bb5" teal="#007475" peach="#bb5d00"
+      accent="#257273" panel_bg="#bec0c3" surface_dim="#adaeb0"
+      surface0="#a3a5a6" surface1="#9a9c9d"
+      overlay0="#666a71" overlay1="#565a61"
+      text="#30363f" subtext0="#565a61"
+      green="#317a46" yellow="#846322" red="#b0423f"
+      blue="#296caa" teal="#257273" peach="#b26328"
       ;;
     dredge:*)
       base_name="one-dark"
-      accent="#58afaf" panel_bg="#14171b" surface_dim="#282b2e"
-      surface0="#30363d" surface1="#3e4248"
-      overlay0="#77818c" overlay1="#95a0ab"
-      text="#c3cfda" subtext0="#95a0ab"
-      green="#82d395" yellow="#ebc75b" red="#f77972"
-      blue="#7abff9" teal="#79cfcf" peach="#ffa475"
+      accent="#66adad" panel_bg="#151719" surface_dim="#292b2d"
+      surface0="#343638" surface1="#414244"
+      overlay0="#7c8086" overlay1="#9b9fa6"
+      text="#c1c8d2" subtext0="#9b9fa6"
+      green="#8dd09b" yellow="#d7bb70" red="#ec817a"
+      blue="#85beef" teal="#86cdcc" peach="#f6a981"
       ;;
   esac
 
@@ -1398,6 +1457,9 @@ apply() { # <family> <mode> — write state and repaint herdr + ghostty
   # hunk: one builtin theme id per family x mode, edited in place. No-op for a
   # family with no mapping.
   hunk_apply "$family" "$mode"
+
+  # delta: git reads its include on every run, so the next diff flips.
+  delta_apply "$family" "$mode"
 
   echo "$family $mode"
 }

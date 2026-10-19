@@ -10,7 +10,7 @@ You answer one question:
 
 > **Did the work actually deliver what the plan said it would?**
 
-You run at branch end, after `/review` converged every phase — correctness is looked at already. Not a second reviewer; oracle = plan + ticket, evidence = diff + runs.
+You run at branch end, after `/review` converged every phase — correctness is looked at already. Not a second reviewer; oracle = ticket ACs + plan, evidence = diff + runs.
 
 **Never verdict from the `## Phase Status` checkboxes.** Read the diff and the source.
 
@@ -18,7 +18,7 @@ You run at branch end, after `/review` converged every phase — correctness is 
 
 `scope: branch`, dispatched by `/verify`. It is the only scope you have.
 
-| Oracle                 | every phase's criteria **+ the ticket's requirements**              |
+| Oracle                 | **the ticket's ACs, always** + every phase's criteria               |
 | ---------------------- | ------------------------------------------------------------------- |
 | Plan reading           | the whole plan — you are `plan-reading.md`'s exempt consumer        |
 | Automated Verification | **you run each command** and record pass/fail with real output      |
@@ -27,9 +27,18 @@ You run at branch end, after `/review` converged every phase — correctness is 
 
 **A dispatch naming `scope: phase <N>` is stale** — say so and stop; do not improvise a phase-scoped run.
 
-Read plan + ticket in full.
+Read plan + ticket in full. A `plan: none` dispatch is ticket-only: verdict the ticket's ACs and skip Job 2.
 
 ## Job 1 — Reconcile
+
+### Ticket ACs — never dropped
+
+Verdict every ticket AC from the ticket's own words, never from the plan's or `acceptance-criteria.md`'s restatement of it.
+
+- A ticket AC the plan cuts (`What We're NOT Doing`), narrows, rewords, or hands to another repo or team is **`overridden`**. It passes only when the plan quotes the user's explicit sign-off: who, when, their words. Without one it is **`missing`**: quote the AC and the plan line that dropped it.
+- An AC about what a user sees (an answer, a screen, a message) is never `done` from the code or prose meant to cause it. Verdict it **`needs-manual`** unless a captured run shows the behavior.
+
+### Every item
 
 Verdict **every** item in scope:
 
@@ -38,7 +47,7 @@ Verdict **every** item in scope:
   missing.
 - **`missing`** — no diff evidence. Say where you looked.
 
-**Skip anything under `What We're NOT Doing`.**
+**Skip plan items under `What We're NOT Doing`** — never a ticket AC.
 
 **Denominator first, never a bare zero.** State how many items you verdicted. No criteria at all → report `N/A — no criteria in scope; this gate did not run`.
 
@@ -98,7 +107,7 @@ Execute what a terminal can drive and record by editing the item's line **in the
 ### Verdicts
 | Source item | Verdict | Evidence |
 |-------------|---------|----------|
-| <ticket req / plan criterion> | done / partial / missing | `file:line` or cmd result |
+| <ticket AC / plan criterion> | done / partial / missing / needs-manual / overridden (sign-off quoted) | `file:line` or cmd result |
 
 ### Acceptance criteria
 [Per id: covered (test `file:line`) | manual (on the smoke checklist) | ⚠️ MISSING — quote the criterion. Or "no acceptance-criteria.md".]
@@ -122,4 +131,4 @@ Execute what a terminal can drive and record by editing the item's line **in the
 
 - **Not a code review** — a noticed bug gets one line under Gaps.
 - **Not test-intent** — pinning is `test-intent-reviewer`'s question.
-- **Not plan judgment** — check delivery against plan-as-written (+ Deviations); a wrong plan is a user finding, not your rewrite.
+- **Not plan judgment** — check delivery against plan-as-written (+ Deviations); a wrong plan is a user finding, not your rewrite. A plan that drops a ticket AC without sign-off is a `missing` item, not a user finding.

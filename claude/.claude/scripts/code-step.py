@@ -5,7 +5,8 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
   code-step.py start [<plan>] [+fast|+deep]   next phase of the plan: checks, gate, packet, the exact coder dispatch
   code-step.py start --task "<text>"           planless work: the coder dispatch without gate or packet
   code-step.py after-coder                      clear the gate, find PLAN-IMPACT, build the exact review-loop dispatch
-  code-step.py decide <adopt|keep|discuss>      record the user's answer when the code and the plan disagree
+  code-step.py decide <adopt|keep|discuss> [--ruling "<the user's words>"]
+                                                record the user's ruling when the code and the plan disagree
   code-step.py after-plan-edit                  the coder rewrote the plan to an adopted change: build the review dispatch
   code-step.py after-review                    route on the loop packet; on converged/deferred also run the phase gates
   code-step.py asks-done <outcome>...           log the user's answer to each ask[] entry, then run the phase gates
@@ -762,20 +763,27 @@ def emit_plan_impact_modal(impact, repoRoot):
     word = preset_decision(repoRoot)
     if word:
         print(f"PLAN-IMPACT answered by the pre-set decision '{word}'. No question to the user.")
-        return command_decide([word])
+        return command_decide([word, "--ruling", f"pre-set decision '{word}'; no user was asked"],
+                              rulingBy="the pre-set decision")
     ask_user(repoRoot, "the code and the plan disagree. Ask the user this question in plain text and wait for the "
-             "answer. Then invoke Skill code with the args after the option the user chose.",
+             "answer. Then invoke Skill code with the args after the option the user chose, with the user's whole "
+             "answer, in their words, as the --ruling text.",
              impact, "",
-             f"1. {PLAN_IMPACT_OPTIONS[0]} (a coder rewrites the plan steps to match the code): `decide adopt`",
-             f"2. {PLAN_IMPACT_OPTIONS[1]}: `decide keep`",
-             f"3. {PLAN_IMPACT_OPTIONS[2]}: talk it through here, then invoke Skill code with `decide adopt` or "
-             "`decide keep`")
+             f"1. {PLAN_IMPACT_OPTIONS[0]} (a coder rewrites the plan steps to match the ruling): "
+             "`decide adopt --ruling \"<the user's answer>\"`",
+             f"2. {PLAN_IMPACT_OPTIONS[1]}: `decide keep --ruling \"<the user's answer>\"`",
+             f"3. {PLAN_IMPACT_OPTIONS[2]}: talk it through here, then invoke Skill code with "
+             "`decide adopt --ruling \"<the user's answer>\"` or `decide keep --ruling \"<the user's answer>\"`")
 
 
-def record_deviation(repoRoot, state, decision):
+def record_deviation(repoRoot, state):
+    ruling = state["ruling"]
     planPath = repoRoot / state["plan"]
     lines = planPath.read_text().split("\n")
-    entry = [f"- {time.strftime('%Y-%m-%d')} (Phase {state['phase']}): {decision}.", ""]
+    entry = [f"- {time.strftime('%Y-%m-%d')} (Phase {state['phase']}): {ruling['decision']}. "
+             f"Ruled by {ruling['by']} at {ruling['at']}.", "", "  The user's words:"]
+    entry += ["  > " + line for line in ruling["words"].splitlines()]
+    entry += ["", "  The disagreement:"]
     entry += ["  " + line for line in state["impact"].splitlines()]
     sections = [i for i, line in enumerate(lines) if line.startswith("## ")]
     existing = next((i for i in sections if lines[i].strip() == "## Plan Deviations"), None)
@@ -788,53 +796,113 @@ def record_deviation(repoRoot, state, decision):
     planPath.write_text("\n".join(lines))
 
 
-def command_decide(args):
+def split_decide_args(args):
+    # The decision word, then the user's words after `--ruling`, joined when the caller left them unquoted.
+    word = args[0].lower() if args else ""
+    if "--ruling" not in args:
+        return word, ""
+    rulingWords = " ".join(args[args.index("--ruling") + 1:])
+    return word, rulingWords.strip()
+
+
+def resolved_plan_impact(state):
+    # review-loop reads a block that starts RESOLVED as settled, so it reviews against the ruling instead of
+    # returning the question again.
+    ruling = state["ruling"]
+    lines = ["RESOLVED: the user ruled on this disagreement. Review the code against the ruling. It is not an open "
+             "question.",
+             f"Decision: {ruling['decision']}",
+             f"Ruled by: {ruling['by']}, at {ruling['at']}",
+             "Ruling, in the user's words:"]
+    lines += ["  " + line for line in ruling["words"].splitlines()]
+    lines.append("The disagreement it settles:")
+    lines += ["  " + line for line in state["impact"].splitlines()]
+    return "\n".join(lines)
+
+
+def command_decide(args, rulingBy=None):
     repoRoot = repo_root()
     os.chdir(repoRoot)
     state = load_state(repoRoot)
-    if state is None or state["stage"] not in ("impact-coder", "impact-review") or not args:
+    word, rulingWords = split_decide_args(args)
+    if state is None or state["stage"] not in ("impact-coder", "impact-review") or not word:
         return emit("stop", "decide needs a pending PLAN-IMPACT and one word: adopt, keep or discuss.")
-    decision = DECISION_WORDS.get(args[0].lower())
+    decision = DECISION_WORDS.get(word)
     if decision is None:
         return emit("stop", "decide takes adopt, keep or discuss.")
     if decision == "Discuss":
         return ask_user(repoRoot, "discuss this disagreement between the code and the plan with the user in plain "
-                        "words. When the user chooses, invoke Skill code with `decide adopt` or `decide keep`.",
-                        state["impact"])
+                        "words. When the user chooses, invoke Skill code with `decide adopt --ruling \"<the user's "
+                        "answer>\"` or `decide keep --ruling \"<the user's answer>\"`.", state["impact"])
+    if not rulingWords:
+        return emit("stop", f"decide {word} needs the user's answer, in their words: "
+                    f"`decide {word} --ruling \"<the user's answer>\"`. Hand back and ask the main session for it.")
 
     if state.get("plan") and not (repoRoot / state["plan"]).is_file():
         return emit("stop", f"The plan file {state['plan']} is missing (a branch switch?). Tell the user.")
+    rulingAt = time.strftime("%Y-%m-%d %H:%M")
+    state["ruling"] = {"decision": decision, "words": rulingWords, "by": rulingBy or git_user_name(repoRoot),
+                       "at": rulingAt}
     if state.get("plan"):
-        record_deviation(repoRoot, state, decision)
-    state["planImpact"] = state["impact"] + f"\nDecision: {decision}"
+        record_deviation(repoRoot, state)
+    state["planImpact"] = resolved_plan_impact(state)
+    # A ruling opens a new review: the round cap of the review that raised the question does not carry over.
+    state["iter"] = 0
 
     if decision == PLAN_IMPACT_OPTIONS[0] and state.get("plan"):
         return emit_plan_edit_dispatch(repoRoot, state)
     emit_review_dispatch(repoRoot, state)
 
 
-def plan_edit_prompt(state):
-    return "\n".join([
-        f"Edit only the plan file {state['plan']}. In Phase {state['phase']}, the user adopted this change to the plan:",
+def git_user_name(repoRoot):
+    return git_output(repoRoot, "config", "user.name") or "the user"
+
+
+def criteria_file(repoRoot, state):
+    # The plan's acceptance criteria live beside it. None when the plan has no criteria file.
+    criteriaRel = str(pathlib.PurePath(state["plan"]).parent / "acceptance-criteria.md")
+    if not (repoRoot / criteriaRel).is_file():
+        return None
+    return criteriaRel
+
+
+def plan_edit_prompt(state, criteriaRel):
+    ruling = state["ruling"]
+    editScope = f"the plan file {state['plan']}" + (f" and its acceptance criteria file {criteriaRel}" if criteriaRel else "")
+    lines = [
+        f"Edit only {editScope}. In Phase {state['phase']}, the code and the plan disagreed:",
         "",
         state["impact"],
         "",
-        "Rewrite each step, Automated Verification command and Success Criteria line of the plan that this change "
-        "contradicts, so that the plan states the adopted change. Keep every other line as it is. Leave the "
-        "`## Plan Deviations` section as it is. Edit no code and no test, and run no check.",
+        f"The user ruled ({ruling['by']}, {ruling['at']}). The ruling, in the user's words:",
         "",
-        "Report each plan line you changed as `<line number>: <new text>`.",
-    ])
+        ruling["words"],
+        "",
+        "Rewrite each step, Automated Verification command and Success Criteria line of the plan that the ruling "
+        "contradicts, so that the plan states the ruling. Keep every other line as it is. Leave the "
+        "`## Plan Deviations` section as it is. Edit no code and no test, and run no check.",
+    ]
+    if criteriaRel:
+        lines += ["",
+                  f"Rewrite each criterion in {criteriaRel} that the ruling changes, so that it states the ruling. Under "
+                  f"each one you rewrite, add `Signed off by {ruling['by']}, {ruling['at']}: \"<the user's words on "
+                  "this criterion>\"`. Keep every other criterion as it is."]
+    lines += ["", "Report each line you changed as `<file>:<line number>: <new text>`."]
+    return "\n".join(lines)
 
 
 def emit_plan_edit_dispatch(repoRoot, state):
     # An adopted change stays only in Plan Deviations unless the steps that contradict it change too, and the
     # reviewer then reads the old step and raises the same disagreement again.
+    criteriaRel = criteria_file(repoRoot, state)
     state.update({"stage": "plan-coder", "planEditBaseline": file_hashes(repoRoot)})
     save_state(repoRoot, state)
-    emit("dispatch", "The user adopted the plan change. Dispatch a coder to rewrite the plan steps it contradicts.",
+
+    prompt = plan_edit_prompt(state, criteriaRel)
+    emit("dispatch", "The user adopted the plan change. Dispatch a coder to rewrite the plan steps and acceptance "
+         "criteria it contradicts.",
          "NEXT: when the coder returns, run `python3 ~/.claude/scripts/code-step.py after-plan-edit`.",
-         prompt=plan_edit_prompt(state), agent="coder")
+         prompt=prompt, agent="coder")
 
 
 def command_after_plan_edit(args):
@@ -846,13 +914,18 @@ def command_after_plan_edit(args):
 
     baseline = state.pop("planEditBaseline")
     changedNow = file_hashes(repoRoot)
-    strayFiles = [name for name, digest in changedNow.items() if name != state["plan"] and baseline.get(name) != digest]
+    editedFiles = [name for name, digest in changedNow.items() if baseline.get(name) != digest]
+    criteriaRel = criteria_file(repoRoot, state)
+    strayFiles = [name for name in editedFiles if name not in (state["plan"], criteriaRel)]
     if strayFiles:
         state["files"] += [name for name in strayFiles if name not in state["files"]]
         state["flagged"].append("the plan-edit coder also changed " + ", ".join(strayFiles))
         state["exception"] = True
 
-    say(repoRoot, f"The plan {state['plan']} now states the adopted change.")
+    planNote = f"The plan {state['plan']} now states the ruling."
+    if criteriaRel in editedFiles:
+        planNote += f" The acceptance criteria in {criteriaRel} changed too: read them before you stage."
+    say(repoRoot, planNote)
     emit_review_dispatch(repoRoot, state)
 
 

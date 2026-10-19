@@ -37,7 +37,9 @@ The subagent runs the routing script and does what each ACTION line says. Every 
 
 Bench plan run on the old script: one plan disagreement was asked 2 times. The end state was green, with 310 tests. The run found 6 script defects: the `|` indicator in the question, an AskUserQuestion instruction that the skill forbids, no say.md text on one question path, say.md never cleared, the contradicting plan step left in place, and one behavior sentence on every file.
 
-The patched script passes 10 of 10 new checks, and the original fails 7 of them, at least one per defect. The standing suite, updated for the new question path, passes 66 of 66. The fix has no live run yet.
+The patched script passes 10 of 10 new checks, and the original fails 7 of them, at least one per defect. The standing suite, updated for the new question path, passes 66 of 66.
+
+A live bench rerun on the fixed script asked the conflict once. A coder made 4 edits to the plan and to no other file before the review. Full review loops fell from 3 to 2, and main-session wall-clock fell from 3,680 s to 2,540 s. Opus reviewer cache read stayed about the same, 8.54M against 8.34M, because the second review came from an accepted review ask. The end state was green, with 307 tests.
 
 ## Watch
 

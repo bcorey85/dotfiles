@@ -5,8 +5,9 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
   code-step.py start [<plan>] [+fast|+deep]   next phase of the plan: checks, gate, packet, the exact coder dispatch
   code-step.py start --task "<text>"           planless work: the coder dispatch without gate or packet
   code-step.py after-coder                      clear the gate, find PLAN-IMPACT, build the exact review-loop dispatch
-  code-step.py decide <adopt|keep|discuss>      record the user's answer to a PLAN-IMPACT modal, then continue
-  code-step.py after-review                     route on the loop packet; on converged/deferred also run the phase gates
+  code-step.py decide <adopt|keep|discuss>      record the user's answer when the code and the plan disagree
+  code-step.py after-plan-edit                  the coder rewrote the plan to an adopted change: build the review dispatch
+  code-step.py after-review                    route on the loop packet; on converged/deferred also run the phase gates
   code-step.py asks-done <outcome>...           log the user's answer to each ask[] entry, then run the phase gates
   code-step.py skill-done <pass|fail>          a closing phase's skill returned: mark it done (pass) or stop (fail)
   code-step.py verify                           re-run the phase gates after a failed Automated Verification was fixed
@@ -25,6 +26,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import textwrap
 import time
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("CODE_STEP_CLAUDE_DIR", pathlib.Path.home() / ".claude"))
@@ -188,6 +190,12 @@ def clear_say(repoRoot):
     directory = state_dir(repoRoot)
     if directory is not None and (directory / "say.md").exists():
         (directory / "say.md").write_text("")
+
+
+def ask_user(repoRoot, instruction, *questionLines):
+    # The /code subagent cannot ask the user: the question goes in say.md for the main session to ask.
+    say(repoRoot, "\n".join(["## Question for the user", "", "Main session: " + instruction, "", *questionLines]))
+    emit("ask-user", "The question for the user is in say.md. Hand back.")
 
 
 def emit(action, *lines, prompt=None, agent=None, model=None):
@@ -361,10 +369,11 @@ def resolve_plan(repoRoot, argument=None):
     if code == 5:
         return output, "eng-spec"
     if code == 3:
-        emit("ask-user", "Several tasks match. Ask which with AskUserQuestion, then run start with the chosen plan path.",
-             output)
+        ask_user(repoRoot, "several tasks match. Ask the user which one to implement. Then invoke Skill code with "
+                 "the chosen plan path.", output)
     else:
-        emit("ask-user", "Nothing resolves. Ask the user what to implement, then run start with a plan path or --task.")
+        ask_user(repoRoot, "no task or plan resolves. Ask the user what to implement. Then invoke Skill code with a "
+                 "plan path or the task text.")
     return None, None
 
 
@@ -432,11 +441,13 @@ def command_start(args):
 
     planPath = pathlib.Path(planArg)
     if not planPath.is_file():
-        return emit("ask-user", f"No plan file at {planArg}. Ask the user for the path.")
+        return ask_user(repoRoot, f"no plan file is at {planArg}. Ask the user for the path. Then invoke Skill code "
+                        "with that path.")
     try:
         planRel = str(planPath.resolve().relative_to(repoRoot))
     except ValueError:
-        return emit("ask-user", f"The plan {planArg} is outside the repo {repoRoot}. Ask the user for a plan inside the repo.")
+        return ask_user(repoRoot, f"the plan {planArg} is outside the repo {repoRoot}. Ask the user for a plan inside "
+                        "the repo. Then invoke Skill code with that path.")
     planLines = planPath.read_text().splitlines()
 
     entries = phase_status_entries(planLines)
@@ -747,14 +758,18 @@ def preset_decision(repoRoot):
     return word if word in ("adopt", "keep") else None
 
 
-def emit_plan_impact_modal(impact, repoRoot=None):
-    word = preset_decision(repoRoot) if repoRoot else None
+def emit_plan_impact_modal(impact, repoRoot):
+    word = preset_decision(repoRoot)
     if word:
         print(f"PLAN-IMPACT answered by the pre-set decision '{word}'. No question to the user.")
         return command_decide([word])
-    emit("ask-user", "Call AskUserQuestion with this question and exactly these three options: "
-         + " / ".join(PLAN_IMPACT_OPTIONS) + ".", "Question text:", impact,
-         "Then run `python3 ~/.claude/scripts/code-step.py decide <adopt|keep|discuss>` with the user's answer.")
+    ask_user(repoRoot, "the code and the plan disagree. Ask the user this question in plain text and wait for the "
+             "answer. Then invoke Skill code with the args after the option the user chose.",
+             impact, "",
+             f"1. {PLAN_IMPACT_OPTIONS[0]} (a coder rewrites the plan steps to match the code): `decide adopt`",
+             f"2. {PLAN_IMPACT_OPTIONS[1]}: `decide keep`",
+             f"3. {PLAN_IMPACT_OPTIONS[2]}: talk it through here, then invoke Skill code with `decide adopt` or "
+             "`decide keep`")
 
 
 def record_deviation(repoRoot, state, decision):
@@ -783,20 +798,62 @@ def command_decide(args):
     if decision is None:
         return emit("stop", "decide takes adopt, keep or discuss.")
     if decision == "Discuss":
-        return emit("discuss", "Discuss the impact with the user in plain words. When they choose, run "
-                    "`code-step.py decide adopt` or `decide keep`.")
+        return ask_user(repoRoot, "discuss this disagreement between the code and the plan with the user in plain "
+                        "words. When the user chooses, invoke Skill code with `decide adopt` or `decide keep`.",
+                        state["impact"])
 
     if state.get("plan") and not (repoRoot / state["plan"]).is_file():
         return emit("stop", f"The plan file {state['plan']} is missing (a branch switch?). Tell the user.")
     if state.get("plan"):
         record_deviation(repoRoot, state, decision)
     state["planImpact"] = state["impact"] + f"\nDecision: {decision}"
-    if state["stage"] == "impact-coder":
-        save_state(repoRoot, state)
-        return emit_review_dispatch(repoRoot, state)
-    state["stage"] = "review"
+
+    if decision == PLAN_IMPACT_OPTIONS[0] and state.get("plan"):
+        return emit_plan_edit_dispatch(repoRoot, state)
+    emit_review_dispatch(repoRoot, state)
+
+
+def plan_edit_prompt(state):
+    return "\n".join([
+        f"Edit only the plan file {state['plan']}. In Phase {state['phase']}, the user adopted this change to the plan:",
+        "",
+        state["impact"],
+        "",
+        "Rewrite each step, Automated Verification command and Success Criteria line of the plan that this change "
+        "contradicts, so that the plan states the adopted change. Keep every other line as it is. Leave the "
+        "`## Plan Deviations` section as it is. Edit no code and no test, and run no check.",
+        "",
+        "Report each plan line you changed as `<line number>: <new text>`.",
+    ])
+
+
+def emit_plan_edit_dispatch(repoRoot, state):
+    # An adopted change stays only in Plan Deviations unless the steps that contradict it change too, and the
+    # reviewer then reads the old step and raises the same disagreement again.
+    state.update({"stage": "plan-coder", "planEditBaseline": file_hashes(repoRoot)})
     save_state(repoRoot, state)
-    emit_review_dispatch(repoRoot, state, redispatch=True)
+    emit("dispatch", "The user adopted the plan change. Dispatch a coder to rewrite the plan steps it contradicts.",
+         "NEXT: when the coder returns, run `python3 ~/.claude/scripts/code-step.py after-plan-edit`.",
+         prompt=plan_edit_prompt(state), agent="coder")
+
+
+def command_after_plan_edit(args):
+    repoRoot = repo_root()
+    os.chdir(repoRoot)
+    state = load_state(repoRoot)
+    if state is None or state["stage"] != "plan-coder":
+        return emit("stop", "after-plan-edit ran with no plan edit pending. Run `start` first.")
+
+    baseline = state.pop("planEditBaseline")
+    changedNow = file_hashes(repoRoot)
+    strayFiles = [name for name, digest in changedNow.items() if name != state["plan"] and baseline.get(name) != digest]
+    if strayFiles:
+        state["files"] += [name for name in strayFiles if name not in state["files"]]
+        state["flagged"].append("the plan-edit coder also changed " + ", ".join(strayFiles))
+        state["exception"] = True
+
+    say(repoRoot, f"The plan {state['plan']} now states the adopted change.")
+    emit_review_dispatch(repoRoot, state)
 
 
 def handoff_block(state):
@@ -832,13 +889,15 @@ def handoff_block(state):
     return "\n".join(lines)
 
 
-def emit_review_dispatch(repoRoot, state, redispatch=False):
+def emit_review_dispatch(repoRoot, state):
     coderStages = ["coder"] + (["asks-coder"] if state.get("coderStage") == "asks-coder" else [])
     reports = [report for stage in coderStages for report in saved_messages(repoRoot, "coder", stage)]
     report = "\n\n".join(reports)
     untrackedText = git_output(repoRoot, "ls-files", "--others", "--exclude-standard") or ""
     untrackedFiles = set(untrackedText.split("\n"))
-    behaviorFallback = state["behavior"][0] if state["behavior"] else None
+    # One behavior sentence describes one file. Across several files it tells the reviewer the wrong change.
+    isOneFile = len(state["files"]) == 1
+    behaviorFallback = state["behavior"][0] if state["behavior"] and isOneFile else None
     state["changes"] = {path: change_line(report, path, state["files"], behaviorFallback, path in untrackedFiles)
                         for path in state["files"]}
     header = ["mode: review-first", "caller: code", f"lane: {state['lane']}"]
@@ -897,12 +956,26 @@ def ends_packet_value(key, valueLines, line):
     # unindented prose line after them is the loop's closing note, not another item.
     if key in SCALAR_PACKET_KEYS:
         return True
+    if is_block_scalar(valueLines):
+        return line[:1] not in (" ", "\t")
     isList = valueLines[0] == "" and len(valueLines) > 1 and valueLines[1].lstrip().startswith("-")
     isEmptyListKey = key in LIST_KEYS and valueLines == [""]
     return (isList or isEmptyListKey) and line[:1] not in (" ", "-", "[", "{", "]", "}", "\t")
 
 
 SCALAR_PACKET_KEYS = ("status", "iter", "spec_iter", "load_bearing_clean")
+BLOCK_INDICATOR = re.compile(r"^[|>][+-]?$")
+
+
+def is_block_scalar(valueLines):
+    return BLOCK_INDICATOR.match(valueLines[0].strip()) is not None
+
+
+def packet_value(valueLines):
+    # A `key: |` block keeps its text indented under the key: drop the indicator line and the indent.
+    if is_block_scalar(valueLines):
+        return textwrap.dedent("\n".join(valueLines[1:])).strip()
+    return "\n".join(valueLines).strip()
 
 
 def parse_packet(message):
@@ -919,6 +992,8 @@ def parse_packet(message):
         elif isPacketKey:
             key = None
             trailer.append(line)
+        elif key and not line.strip() and is_block_scalar(fields[key]):
+            fields[key].append("")
         elif key and not line.strip():
             if key in LIST_KEYS and fields[key][0] == "":
                 continue
@@ -931,7 +1006,7 @@ def parse_packet(message):
             fields[key].append(line)
         else:
             trailer.append(line)
-    packet = {name: "\n".join(value).strip() for name, value in fields.items()}
+    packet = {name: packet_value(value) for name, value in fields.items()}
     packet["trailer"] = "\n".join(trailer).strip()
     return packet
 
@@ -1107,11 +1182,14 @@ def present_asks(repoRoot, state, asks):
 def ask_the_user(repoRoot, state, asks):
     state["stage"] = "asks"
     save_state(repoRoot, state)
-    emit("present-asks-and-wait", "Present these questions to the user and wait for answers. Do not continue before they answer.",
-         *[f"{n + 1}. {item_text(item, 'finding', 'question')}" for n, item in enumerate(asks)],
-         f"Then run `code-step.py asks-done` with {len(asks)} outcome word(s), in order, each accepted, rejected or modified. "
-         "After a modified outcome, add `--change \"<the user's change text>\"`.",
-         "ALSO: run `bash ~/.claude/scripts/review-gate-mark clean` as its own Bash command now.")
+    say(repoRoot, "\n".join([
+        "## Question for the user", "",
+        f"Main session: ask the user about each review ask below in plain text and wait for the answers. Each answer "
+        f"is accepted, rejected or modified. Then invoke Skill code with the args `asks-done` and {len(asks)} outcome "
+        "word(s), in order. After a modified outcome, add `--change \"<the user's change text>\"`.", "",
+        *[f"{n + 1}. {item_text(item, 'finding', 'question')}" for n, item in enumerate(asks)]]))
+    emit("ask-user", "The question for the user is in say.md.",
+         "Run `bash ~/.claude/scripts/review-gate-mark clean` as its own Bash command now. Then hand back.")
 
 
 def log_ask_outcomes(repoRoot, state, outcomes):
@@ -1398,8 +1476,10 @@ def main():
     verb = sys.argv[1] if len(sys.argv) > 1 else ""
     args = sys.argv[2:]
     verbs = {"start": command_start, "after-coder": command_after_coder, "decide": command_decide,
-             "after-review": command_after_review, "asks-done": command_asks_done, "skill-done": command_skill_done,
-             "verify": command_verify}
+             "after-plan-edit": command_after_plan_edit, "after-review": command_after_review,
+             "asks-done": command_asks_done, "skill-done": command_skill_done, "verify": command_verify}
+    # These verbs open a new /code run after the user answered. The last run's say.md text was already handed back.
+    resumeVerbs = ("decide", "asks-done", "verify")
     if verb == "hook":
         return command_hook()
     if verb == "say-hook":
@@ -1410,7 +1490,10 @@ def main():
         except StateFileError as error:
             return print(error)
     if verb not in verbs:
-        sys.exit("usage: code-step.py start|after-coder|decide|after-review|asks-done|skill-done|verify|hook|status")
+        sys.exit("usage: code-step.py start|after-coder|decide|after-plan-edit|after-review|asks-done|skill-done|verify"
+                 "|hook|status")
+    if verb in resumeVerbs:
+        clear_say(repo_root())
     try:
         verbs[verb](args)
     except StateFileError as error:

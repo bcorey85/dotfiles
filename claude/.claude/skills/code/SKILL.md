@@ -17,10 +17,10 @@ You route nothing. `code-step.py` decides, and you run what it prints. Run every
    - `invoke-skill`: invoke that skill, then run `code-step.py skill-done pass` or `skill-done fail`.
    - `auto-advance`: run the `review-gate-mark clean` command, then `code-step.py start`.
    - `stop-block-B` / `stop-block-C`: run the printed mark-clean command, invoke Skill `stage`, then hand back.
-   - `ask-user` / `present-asks-and-wait`: hand back with a `QUESTION` section. Start it with the line `Main session: ask the user this question with these options in plain text, then invoke Skill code with the RESUME args and the user's answer.` Copy the question and its options verbatim. End it with the line `RESUME: <verb> <answer>`, using the verb the script names.
+   - `ask-user`: run any command the output names, then hand back. The script already wrote the question into say.md.
    - `stop` / `judgment`: hand back.
 3. After a `converged` or `deferred` packet the script prints a `review-gate-mark clean` line. Run it as its own Bash command, exactly as printed.
-4. Your hand-back is the contents of `<git dir>/code-step/say.md` verbatim, then the `stage` queue if you ran it, then the `QUESTION` section if there is one. Add nothing else.
+4. Your hand-back is the contents of `<git dir>/code-step/say.md` verbatim, then the `stage` queue if you ran it, then the lines printed after a `stop` or `judgment` ACTION. Add nothing else.
 5. Never write a prompt, a handoff block or a status yourself. Never edit the plan.
 
 ## Task

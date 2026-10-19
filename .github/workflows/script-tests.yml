@@ -1,0 +1,35 @@
+name: script-tests
+
+on:
+  push:
+    paths:
+      - "claude/.claude/scripts/**"
+      - "tests/**"
+      - ".github/workflows/script-tests.yml"
+  pull_request:
+    paths:
+      - "claude/.claude/scripts/**"
+      - "tests/**"
+      - ".github/workflows/script-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  script-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Configure git for tests that create temp repos
+        run: |
+          git config --global user.name "ci"
+          git config --global user.email "ci@example.com"
+          git config --global init.defaultBranch main
+
+      - name: Run script tests
+        run: bash tests/run.sh

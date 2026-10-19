@@ -65,6 +65,8 @@ on exit (any status), if a fix diff is unread: the fix-diff verification pass (S
 
 - **Handoff block**: if present, it is the review scope. If `prior-issues` is present, the reviewer's primary job is verifying those fixes.
 
+- **Resolved `plan_impact`**: a handoff `plan_impact` that starts `RESOLVED` is the user's ruling. Pass it to every reviewer as the standard the code must meet. Never return it as `plan-impact`; return `plan-impact` only for a disagreement the ruling does not settle.
+
 ## Step 2: Determine review scope
 
 **If a handoff block was passed**: use `handoff.files`. Skip git discovery.
@@ -72,7 +74,6 @@ on exit (any status), if a fix diff is unread: the fix-diff verification pass (S
 **Otherwise** (manual invocation), take the changed-file list, untracked files included, from `FILES` in the Step 0 output.
 
 **Both paths**: `NUMSTAT` and `SHORTSTAT` are the sizes, `STATUS` is the porcelain state, and `ROOT`, `BRANCH`, `MERGE_BASE` are the repo position. Do not re-run git for any of them.
-
 
 **Second-order supplement (both paths)**: From the handoff `change` lines (or the diff), list every exported symbol whose signature, return type, or name changed. For each, run LSP find-references (fall back to `rg` for untyped code) and collect call sites OUTSIDE the current scope. Append those files to the reviewer's scope tagged "out-of-scope caller — check call-site compatibility only". It is NOT an invitation to re-review unchanged code. Run it on `iter=0` and manual invocations only; on `iter >= 1` limit it to symbols the fix diff itself changed.
 
@@ -287,7 +288,6 @@ Runs ONCE post-gate (Step 6), pre-logging (Step 7), on the **settled** diff. Ski
    - Specialist `ask` findings → `ask[]`. Specialist `nit` findings → `nit[]`.
 
 5. **Record** the domains that ran into `specialists`. A re-entry that converges again re-enters Step 6b, finds its domain in `specialists-cleared`, and proceeds to Step 7 without re-dispatching. The `spec_iter >= 2` cap bounds it regardless.
-
 
 ## Step 7: Log the run (every invocation — the loop's flywheel)
 

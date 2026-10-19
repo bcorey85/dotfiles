@@ -1,14 +1,17 @@
 #!/bin/bash
 # Create a git worktree as its own herdr workspace, laid out by herdr-dev.
 #
-# Usage: herdr-worktree [--fork] [branch]
+# Usage: herdr-worktree [--fork] [--base <ref>] [branch]
 #   branch  prompted for when omitted (the prefix+ctrl+w popup).
 #   --fork  carry the Claude conversation running in this pane into the new
 #           workspace's claude pane, as a forked session.
+#   --base  the ref to branch off. Defaults to origin's default branch, fetched
+#           first, or HEAD when the repo has no origin.
 #
-# The worktree branches off the current checkout's HEAD and lands beside the
-# main checkout: <repo>-<TICKET-NUM> for a TICKET-NUM-desc branch, otherwise
-# <repo>-<desc> (feature/ and fix/ dropped, remaining slashes as dashes).
+# The worktree lands beside the main checkout: <repo>-<TICKET-NUM> for a
+# TICKET-NUM-desc branch, otherwise <repo>-<desc> (feature/ and fix/ dropped,
+# remaining slashes as dashes). When that folder is taken, as by a second
+# branch for one ticket, it is <repo>-<branch> instead.
 # The branch is pushed to origin when that remote exists.
 #
 # Every pane in the new workspace starts in the worktree, so popups that
@@ -18,12 +21,29 @@ set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 bin_dir="$(cd "$(dirname "$0")" && pwd)"
 
+usage() { sed -n '2,/^$/s/^# \{0,1\}//p' "$0"; }
+
 fork=""
-if [ "${1:-}" = "--fork" ]; then
-    fork=1
+base=""
+branch=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -h|--help) usage; exit 0 ;;
+        --fork) fork=1 ;;
+        --base)
+            [ $# -ge 2 ] || { echo "herdr-worktree: --base needs a ref" >&2; exit 1; }
+            base="$2"
+            shift
+            ;;
+        -*) echo "herdr-worktree: unknown option: $1" >&2; usage >&2; exit 1 ;;
+        *)
+            [ -z "$branch" ] || { echo "herdr-worktree: one branch only" >&2; exit 1; }
+            branch="$1"
+            ;;
+    esac
     shift
-fi
-branch="${1:-}"
+done
+
 if [ -z "$branch" ]; then
     # fzf as a one-line prompt: Enter returns the typed text (exit 1, since
     # there is no list to match), Esc cancels (exit 130).
@@ -38,6 +58,21 @@ checkout=$(git rev-parse --show-toplevel 2>/dev/null) \
     || { echo "herdr-worktree: not inside a git repo" >&2; exit 1; }
 main_checkout=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
 
+if [ -z "$base" ]; then
+    base=HEAD
+    if git remote get-url origin &>/dev/null; then
+        default_branch=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD) \
+            || default_branch=""
+        if [ -n "$default_branch" ]; then
+            base="$default_branch"
+            git fetch --quiet origin "${default_branch#origin/}" \
+                || echo "herdr-worktree: fetch failed; branching off the local $base" >&2
+        else
+            echo "herdr-worktree: origin/HEAD unset; branching off HEAD (git remote set-head origin --auto fixes it)" >&2
+        fi
+    fi
+fi
+
 if [[ "$branch" =~ ^([A-Z]+-[0-9]+) ]]; then
     suffix="${BASH_REMATCH[1]}"
 else
@@ -45,7 +80,11 @@ else
     suffix="${suffix#fix/}"
     suffix="${suffix//\//-}"
 fi
-worktree="$(dirname "$main_checkout")/$(basename "$main_checkout")-$suffix"
+worktree_parent=$(dirname "$main_checkout")
+repo=$(basename "$main_checkout")
+worktree="$worktree_parent/$repo-$suffix"
+[ ! -e "$worktree" ] || worktree="$worktree_parent/$repo-${branch//\//-}"
+[ ! -e "$worktree" ] || { echo "herdr-worktree: $worktree already exists" >&2; exit 1; }
 
 claude_session=""
 if [ -n "$fork" ]; then
@@ -54,9 +93,10 @@ if [ -n "$fork" ]; then
     [ -n "$claude_session" ] || { echo "herdr-worktree: --fork needs a claude pane" >&2; exit 1; }
 fi
 
-created=$(herdr worktree create --cwd "$checkout" --branch "$branch" --path "$worktree" \
-    --label "$(basename "$worktree")" --focus) \
-    || { echo "herdr-worktree: $created" >&2; exit 1; }
+# herdr prints its own error to stderr, so only name the step that failed.
+created=$(herdr worktree create --cwd "$checkout" --branch "$branch" --base "$base" \
+    --path "$worktree" --label "$(basename "$worktree")" --focus) \
+    || { echo "herdr-worktree: herdr worktree create failed" >&2; exit 1; }
 ws=$(jq -r '.result.workspace.workspace_id' <<<"$created")
 
 "$bin_dir/herdr-dev" "$worktree" "$ws" "$claude_session"

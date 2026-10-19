@@ -24,15 +24,15 @@ Shared resolver (do NOT reimplement):
 bash ~/.claude/scripts/resolve-task-dir.sh "$ARGUMENTS"
 ```
 
-Exit 0 → an `/eng-spec` task directory: the ticket is `DIR/00-ticket.md`, the plan is `DIR/spec.md`. Exit 5 → a legacy flat eng-spec file: it is both ticket (requirements/ACs section) and plan. Exit 3 → ask which match. Exit 4 → ask for a path.
+Exit 0 → an `/eng-spec` task directory: the ticket is `DIR/00-ticket.md`, the plan is `DIR/spec.md`. Exit 5 → a legacy flat eng-spec file: it is both ticket (requirements/ACs section) and plan. Exit 3 → ask which match. Exit 4 → no plan; run ticket-only.
 
-No plan found anywhere → stop: _"/verify needs a plan (an eng-spec task dir under docs/plans). Run /eng-spec first, or verify manually."_
+**The ticket's ACs are always in scope, plan or no plan.** Ticket-only: fetch the ticket per `~/.claude/skills/_shared/jira-ticket.md` (required-ticket caller), write its raw fields to `<scratchpad>/<KEY>-ticket.md`, and dispatch `plan-verifier` with that ticket path and `plan: none`. Never check the ACs yourself in place of the gate.
 
 ## Inputs
 
 | File           | Read for                                                                    |
 | -------------- | --------------------------------------------------------------------------- |
-| `00-ticket.md` | Acceptance criteria / requirements                                          |
+| `00-ticket.md` | Acceptance criteria / requirements — always in scope, verbatim              |
 | `spec.md`      | `Phase Status`, each phase's `Success Criteria`, and `What We're NOT Doing` |
 
 This is the one step that DOES read the plan in full (contrast `/adr`, which forbids it).
@@ -55,7 +55,7 @@ Present what it returns. Downstream you consume: verdict table, AC result, `need
 
 ## Routing
 
-- **Gaps found (`partial`/`missing`/failing check)**: list them, log each as a drift-gate escape:
+- **Gaps found (`partial`/`missing`/failing check, or a ticket AC overridden without the user's quoted sign-off)**: list them, log each as a drift-gate escape:
 
   ```bash
   bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=verify gate_missed=drift-gate class=plan-drift severity=<high|medium> lane=eng-spec guard=<...> desc="<one line>" file=<path>
@@ -76,7 +76,7 @@ Present what it returns. Downstream you consume: verdict table, AC result, `need
 - **Don't drive a browser or run the app** — smoke testing is the user's via the checklist; your scope is Automated Verification commands only.
 - **Don't edit code or tests** — read-only; report and route.
 - **Don't trust `Phase Status` checkboxes** — verify the diff.
-- **Don't flag `What We're NOT Doing`** — deliberate cuts, not omissions.
+- **Don't flag plan items in `What We're NOT Doing`** — deliberate cuts, not omissions. A ticket AC there is the exception: only the user's explicit sign-off cuts one.
 
 ## Arguments
 

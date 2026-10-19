@@ -10,7 +10,7 @@
 #                   conversation instead of a fresh one (herdr-worktree --fork).
 #
 # Layout:
-#   Tab 1 "code"     nvim (60%) | claude (40%). herdr auto-detects the claude
+#   Tab 1 "code"     claude (40%) | nvim (60%). herdr auto-detects the claude
 #                    process and adopts the pane as a managed agent, so it gets
 #                    tab-bar status and `herdr agent read/prompt/wait` for free.
 #   Tab 2 "console"  three equal shells for git / tests / logs. If the project
@@ -50,18 +50,18 @@ split() {
         | jq -r '.result.pane.pane_id'
 }
 
-# ── Tab 1 "code": nvim (60%) | claude (40%) ─────────────────────────────────
+# ── Tab 1 "code": claude (40%) | nvim (60%) ─────────────────────────────────
 code_tab=$(herdr workspace get "$ws" | jq -r '.result.workspace.active_tab_id')
-editor=$(herdr pane list --workspace "$ws" \
+agent=$(herdr pane list --workspace "$ws" \
     | jq -r --arg t "$code_tab" '.result.panes[] | select(.tab_id == $t) | .pane_id' | head -1)
 
 herdr tab rename "$code_tab" code >/dev/null
-herdr pane rename "$editor" editor >/dev/null
-run "$editor" "nvim ."
-
-agent=$(split "$editor" 0.6)
 herdr pane rename "$agent" claude >/dev/null
 run "$agent" "claude${claude_session:+ --resume $claude_session --fork-session}"
+
+editor=$(split "$agent" 0.4)
+herdr pane rename "$editor" editor >/dev/null
+run "$editor" "nvim ."
 
 # ── Tab 2 "console": three equal shells ─────────────────────────────────────
 console=$(herdr tab create --workspace "$ws" --label console --cwd "$dir" --no-focus)
@@ -81,6 +81,6 @@ if [ -n "$mprocs_cfg" ] && command -v mprocs &>/dev/null; then
 fi
 
 # Land on the editor. `pane focus` is directional only — there is no
-# focus-this-id form — so aim left from the claude pane.
+# focus-this-id form — so aim right from the claude pane.
 herdr tab focus "$code_tab" >/dev/null
-herdr pane focus --direction left --pane "$agent" >/dev/null
+herdr pane focus --direction right --pane "$agent" >/dev/null

@@ -12,6 +12,10 @@ Coders run only the tests for the files they changed. The full suite runs once, 
 
 - Any failing approach: max 3 attempts, then stop and ask.
 
+## Ticket Acceptance Criteria
+
+The ticket's ACs are the contract. Only the user's explicit sign-off overrides one. A plan, ADR, criteria file or agent never cuts, narrows or hands an AC to another repo or team on its own. Record each sign-off with who, when and their words. A run that shows an AC failing is a failing AC: report it as failing, never as someone else's job.
+
 ## Messages to Other Sessions
 
 Keep a `SendMessage` to a peer Claude session under 150 words. Messages to and from your own subagents are exempt. Include the verdict, the numbers the receiver acts on, and what it must do next. If the detail already lives in a file, send the path, not the content. Do not make a file only to hold a message.

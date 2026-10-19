@@ -60,6 +60,8 @@ on exit (any status), if a fix diff is unread: the fix-diff verification pass (S
 
 - **Handoff block**: if present, it is the review scope. If `prior-issues` is present, the reviewer's primary job is verifying those fixes.
 
+- **Resolved `plan_impact`**: a handoff `plan_impact` that starts `RESOLVED` is the user's ruling. Pass it to every reviewer as the standard the code must meet. Never return it as `plan-impact`; return `plan-impact` only for a disagreement the ruling does not settle.
+
 ## Step 2: Determine review scope
 
 **If a handoff block was passed**: use `handoff.files`. Skip git discovery.

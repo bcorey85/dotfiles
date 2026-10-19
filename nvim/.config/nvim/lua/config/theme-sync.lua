@@ -304,6 +304,14 @@ local function set_org_agenda()
   end
 end
 
+-- Snacks dashboard shortcuts in the family's purple, their text in plain fg.
+local function set_dashboard()
+  local links = { Key = "Function", Icon = "Function", Desc = "Normal", File = "Normal" }
+  for group, target in pairs(links) do
+    vim.api.nvim_set_hl(0, "SnacksDashboard" .. group, { link = target })
+  end
+end
+
 -- Runs on every ColorScheme. A manual :colorscheme (theme audition) won't
 -- match the active family's scheme — skip its accents and apply only
 -- the theme-agnostic word-diff glue, so auditions aren't painted over.
@@ -322,6 +330,7 @@ local function apply_overrides()
     set_comment_floor()
   end
   set_org_agenda()
+  set_dashboard()
   set_prose()
 end
 

@@ -25,7 +25,7 @@ Before you send a Bash call, check each fragment against this list. After a bloc
 
 ## Read the plan phase-scoped
 
-For one phase of a multi-phase plan, read the shared sections before the first phase, your own `## Phase N:` section, and `## Testing Strategy`. Skip sibling phases. If your phase needs a sibling's internals, that is a `PLAN-IMPACT` finding — report it, do not widen the read.
+For one phase of a multi-phase plan, read the shared sections before the first phase, your own `## Phase N:` section, and `## Testing Strategy`. Skip sibling phases. If your phase needs a sibling's internals, that is a `PLAN-IMPACT` finding — report it, do not widen the read. If your brief carries a packet, read what it lists in place of this read, and follow its rules.
 
 ## Check the plan against the code it names
 
@@ -41,7 +41,7 @@ Before you write a new helper, constant, type, or block of logic, search the rep
 
 ## Tests are yours
 
-Write the tests for the behavior you implement, in the project's test layout. Assert what the plan and the acceptance criteria state, not what your code happens to do. Run them. A red test the plan supports is a bug in your code: fix the code, never the assertion. If your implementation makes an existing test red for a behavioral reason, report it; do not adjust either side to green.
+Write the tests for the behavior you implement, in the project's test layout. Assert what the plan and the acceptance criteria state, not what your code happens to do. A red test the plan supports is a bug in your code: fix the code, never the assertion. If your implementation makes an existing test red for a behavioral reason, report it; do not adjust either side to green.
 
 Before you keep a test, name the bug that it alone would catch. If a sibling test already catches that bug, or the test only checks a mock, the framework or a restated implementation, delete it.
 
@@ -51,7 +51,7 @@ The private workflow never reaches committed code: branch, PR, and issue numbers
 
 ## Verify before you report
 
-Run each test, lint, typecheck or build command with its full output in a log: `<check> > /tmp/<name>.log 2>&1`. Then read the log with Read or `rg`. Never pipe a check into `head`, `tail` or `grep`. A hook denies a second run of the same check until you edit a file, so output you cut off is lost.
+If your brief says a hook runs the checks when you call SubagentHandback, do not run them yourself. Fix what the hook returns, then call SubagentHandback again. Otherwise, run the typecheck, and lint and tests for only the files you changed. Never run a whole test suite, a whole-package lint or a build: the review loop runs the full check once, at its end. Run each check with its full output in a log: `<check> > /tmp/<name>.log 2>&1`. Then read the log with Read or `rg`. Never pipe a check into `head`, `tail` or `grep`. A hook denies a second run of the same check until you edit a file, so output you cut off is lost.
 
 Report each command you ran and its exit code.
 

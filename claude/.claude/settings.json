@@ -352,6 +352,10 @@
           {
             "type": "command",
             "command": "bash ~/.claude/scripts/quality-check-cap.sh"
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/scripts/coder-gate.py bash-hook"
           }
         ]
       },
@@ -404,6 +408,20 @@
           {
             "type": "command",
             "command": "~/.claude/scripts/notify 'Claude Code' 'Question for you'"
+          }
+        ]
+      },
+      {
+        "matcher": "SubagentHandback",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/scripts/coder-gate.py hook",
+            "timeout": 3600
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/scripts/code-step.py hook"
           }
         ]
       }

@@ -6,6 +6,7 @@
 - Send a read-only lookup (find where something lives, what calls it, what a file does) to `Explore` with `model: "haiku"`, not to `general-purpose`. Use `general-purpose` only when the agent must edit, run a build or test, or judge a design.
 - Do not read a file in main only to hand it to a subagent that will read it. Send its path and what to look for. Read it in main only when its content decides what to dispatch.
 - Parallel writing agents need disjoint file scopes. The orchestrator owns all git operations.
+- When an agent's completion notice says it still runs background work, read its report. If the report says the job is done and names no work it waits on, stop the agent with TaskStop: a finished agent with an open shell stays in the agent panel and looks like live work. If the report names work it waits on, leave the agent: it resumes and reports again when that work ends.
 - Before config, CI, infra or library-integration code with a slow or remote feedback loop, WebSearch the official docs, then GitHub issues. Put what you find in the dispatch brief.
 
 ### Tools

@@ -1,8 +1,7 @@
 # Font — JuliaMono. The Nerd build lacks Light, so this is the plain build and
-# FiraCode Nerd Font Mono carries every Nerd glyph. Light body; bold is
-# SemiBold because Regular sits too close to Light to read as bold.
+# ghostty's built-in Nerd symbols draw the icons, a cell and a half wide. Light
+# body; bold is SemiBold because Regular sits too close to Light to read as bold.
 font-family = JuliaMono
-font-family = FiraCode Nerd Font Mono
 font-style = Light
 # font-style covers the upright only, so the italic needs its own line or it
 # falls back a weight.

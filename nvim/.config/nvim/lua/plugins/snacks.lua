@@ -21,26 +21,7 @@ return {
   lazy = false,
   priority = 90,
   config = function()
-    local doom_banner = [[
-=================     ===============     ===============   ========  ========
-\\ . . . . . . .\\   //. . . . . . .\\   //. . . . . . .\\  \\. . .\\// . . //
-||. . ._____. . .|| ||. . ._____. . .|| ||. . ._____. . .|| || . . .\/ . . .||
-|| . .||   ||. . || || . .||   ||. . || || . .||   ||. . || ||. . . . . . . ||
-||. . ||   || . .|| ||. . ||   || . .|| ||. . ||   || . .|| || . | . . . . .||
-|| . .||   ||. _-|| ||-_ .||   ||. . || || . .||   ||. _-|| ||-_.|\ . . . . ||
-||. . ||   ||-'  || ||  `-||   || . .|| ||. . ||   ||-'  || ||  `|\_ . .|. .||
-|| . _||   ||    || ||    ||   ||_ . || || . _||   ||    || ||   |\ `-_/| . ||
-||_-' ||  .|/    || ||    \|.  || `-_|| ||_-' ||  .|/    || ||   | \  / |-_.||
-||    ||_-'      || ||      `-_||    || ||    ||_-'      || ||   | \  / |  `||
-||    `'         || ||         `'    || ||    `'         || ||   | \  / |   ||
-||            .===' `===.         .==='.`===.         .===' /==. |  \/  |   ||
-||         .=='   \_|-_ `===. .==='   _|_   `===. .===' _-|/   `==  \/  |   ||
-||      .=='    _-'    `-_  `='    _-'   `-_    `='  _-'   `-_  /|  \/  |   ||
-||   .=='    _-'          '-__\._-'         '-_./__-'         `' |. /|  |   ||
-||.=='    _-'                                                     `' |  /==.||
-=='    _-'                       N E O V I M ?                        \/   `==
-\   _-'                                                                `-_   /
- `''                                                                      ``']]
+    local dashboard_sections = require("util.dashboard")
 
     require("snacks").setup({
       -- bigfile: above ~1.5MB, disable the expensive per-buffer machinery
@@ -81,9 +62,9 @@ return {
       -- No `indent` block: mini.indentscope owns indent guides (plugins/mini.lua).
       -- snacks.indent draws more (every guide, not just the scope) but has no
       -- animation, which is the reason mini is kept. Don't enable both.
-      -- dashboard: the Doom splash on an empty start. preset.header is the
-      -- banner; "neovim?" rides underneath as a centered subtitle. Keys mirror
-      -- the Doom-style picker layout already bound below.
+      -- dashboard: two panes on an empty start. Left, an animated milli.nvim
+      -- splash. Right, the keys two per row, the recent projects (1-5) and the
+      -- open org todos (6-0). Narrower than 128 columns, the panes stack.
       -- Suppressed in the herdr popup nvims (prefix d/g/s/e, prefix / and space,
       -- prefix n org menu): they launch straight into their own UI, and the
       -- splash frame reads as flicker there.
@@ -95,22 +76,35 @@ return {
           and vim.env.ORG_POPUP == nil
           and vim.env.INSITU_POPUP == nil
           and vim.env.FIND_POPUP == nil,
-        preset = {
-          header = doom_banner,
-          keys = {
-            { icon = " ", key = "f", desc = "Find File", action = ":lua Snacks.dashboard.pick('files')" },
-            { icon = " ", key = "r", desc = "Recent Files", action = ":lua Snacks.dashboard.pick('oldfiles')" },
-            { icon = " ", key = "g", desc = "Find Text", action = ":lua Snacks.dashboard.pick('live_grep')" },
-            { icon = " ", key = "p", desc = "Projects", action = ":lua Snacks.picker.projects()" },
-            { icon = " ", key = "c", desc = "Config", action = ":e $MYVIMRC" },
-            { icon = " ", key = "q", desc = "Quit", action = ":qa" },
-          },
+        width = 60,
+        pane_gap = 8,
+        formats = {
+          icon = function(item)
+            return { item.key or "", width = 2, hl = "key" }
+          end,
+          key = function()
+            return {}
+          end,
         },
         sections = {
-          { section = "header" },
-          { section = "keys", gap = 1, padding = 1 },
-          -- NB: no { section = "startup" } — that section pulls in lazy.stats,
-          -- which doesn't exist under vim.pack and throws, aborting the render.
+          dashboard_sections.splash("spinner"),
+          {
+            pane = 2,
+            gap = 1,
+            padding = 1,
+            dashboard_sections.key_grid({
+              { key = "f", desc = "Find file", action = ":lua Snacks.dashboard.pick('files')" },
+              { key = "g", desc = "Grep text", action = ":lua Snacks.dashboard.pick('live_grep')" },
+              { key = "r", desc = "Recent files", action = ":lua Snacks.dashboard.pick('oldfiles')" },
+              { key = "p", desc = "Projects", action = ":lua Snacks.picker.projects()" },
+              { key = "s", desc = "Last session", action = ":lua require('persistence').load({ last = true })" },
+              { key = "c", desc = "Config", action = ":e $MYVIMRC" },
+              { key = "L", desc = "Lazy", action = ":Lazy" },
+              { key = "q", desc = "Quit", action = ":qa" },
+            }),
+          },
+          { pane = 2, section = "projects", title = "Projects", limit = 5, padding = 1 },
+          { pane = 2, title = "TODO List", dashboard_sections.todos(5) },
         },
       },
       -- picker: fuzzy finder (replaced mini.pick + mini.extra + mini.visits).

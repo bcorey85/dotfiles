@@ -1,7 +1,7 @@
 ---
 name: review-loop
 description: "Runs the review→fix convergence loop. Dispatched by /review, /fix, /code."
-tools: Agent, Bash, Read, Glob, Grep, LSP, SendMessage
+tools: Agent, Bash, Read, Glob, Grep, LSP
 ---
 
 # Review Loop
@@ -71,7 +71,7 @@ on exit (any status), if a fix diff is unread: the fix-diff verification pass (S
 
 ## Step 3: Dispatch code-reviewer subagent(s)
 
-**Reviewer continuity (`iter >= 1`)**: when this is a re-review inside the same fix loop (handoff has `prior-issues`) and the previous iteration's reviewer is still addressable, do NOT spawn a fresh reviewer — continue it via `SendMessage` with the handoff block. Spawn fresh only if: no prior reviewer exists, the depth modifier changed, or the split boundaries changed.
+**Re-review (`iter >= 1`)**: when the handoff has `prior-issues`, dispatch a fresh reviewer with the Agent tool and pass it the handoff block. Never continue an earlier reviewer or coder. A continued agent does not keep your run open, so the harness ends your run before its result arrives.
 
 **Split threshold — parallel reviewers only when BOTH hold**: more than 5 files in scope AND a substantial combined diff (~300+ changed lines; read `SHORTSTAT` from Step 0). A many-file but small diff is one reviewer's job.
 
@@ -99,7 +99,7 @@ A large diff with test files: leave the test files out of the code-reviewer's fi
 Any other diff: the code-reviewer keeps the whole list and runs alone.
 
 - Fold every reviewer's output into ONE classification (Step 4) and ONE fix coder (Step 5). Tag each finding with the reviewer that filed it. A `[smell] [design-decision]` finding joins `ask[]`.
-- Re-review (`iter >= 1`): continue, via `SendMessage`, every reviewer that filed a `fix` the last round, each with its own `prior-issues`. One dispatch message, one `iter++` for the round.
+- Re-review (`iter >= 1`): dispatch a fresh reviewer of the same type for every reviewer that filed a `fix` the last round, each with its own `prior-issues`. One dispatch message, one `iter++` for the round.
 - A structure reviewer or test-reviewer that filed only `ask`/`nit` is done after its first pass.
 
 ## Step 4: Classify the reviewer output
@@ -132,10 +132,6 @@ information, not an error to correct.
 Dispatch a `coder` with the `fix` findings. **Never pass an `ask` to the fix coder. Never dispatch a coder for `nit` items alone.**
 
 **Small items**: when Step 4 routed `nit` items on this pass, add a `## Small items` section below the findings — the small-items text below verbatim, then the `nit` items verbatim. A repair dispatched from Step 5d's findings carries no small items.
-
-**Coder continuity (`iter >= 2`)**: when a fix coder from an earlier iteration of THIS loop is still addressable, continue it via `SendMessage` with the new findings instead of spawning a fresh one. Spawn fresh only if no prior fix coder exists or the depth modifier changed.
-
-Continuity covers only coders you dispatched — `/code`'s implementation coder lives in another context and is unreachable.
 
 Include this fence verbatim in every coder prompt you send:
 

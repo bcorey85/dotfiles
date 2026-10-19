@@ -69,7 +69,7 @@
 #
 # Also needed, not part of the six but easy to miss:
 #   - starship.toml.template: add a `[palettes.<family>-dark]` /
-#     `[palettes.<family>-light]` pair for the new family
+#     `[palettes.<family>-light]` pair for the new family, `branch` key included
 #   - zsh/.zshrc: its fresh-machine bootstrap copies starship.toml.template
 #     verbatim, so it must stay in sync with the template's default palette
 #     name (this already caused one bug, fixed separately)
@@ -504,7 +504,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
     # dredge (nvim colors/dredge.lua). Both modes share the scope table below.
     dredge:*)
       bg="#1c1e20"; panel="#151719"; panelAlt="#292b2d"; border="#414244"
-      accent="#86cdcc"; accentMuted="#414244"; text="#c1c8d2"; muted="#9b9fa6"
+      accent="#85c2b7"; accentMuted="#414244"; text="#c1c8d2"; muted="#9b9fa6"
       # Words must stay >= RGB distance 28 from the line wash, or hunk
       # replaces them with its own blend of the sign colour. Words separate by
       # chroma, not lightness. The washes share one lightness. Red reads
@@ -529,7 +529,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       local bright="#d4dbe5" quote="#a8adb4" bullet="#a2a7ae"
       if [ "$2" = light ]; then
         bg="#c3c5c8"; panel="#bec0c3"; panelAlt="#babcbf"; border="#9a9c9d"
-        accent="#257273"; accentMuted="#9a9c9d"; text="#30363f"; muted="#666a71"
+        accent="#18796d"; accentMuted="#9a9c9d"; text="#30363f"; muted="#666a71"
         addWord="#99bfa7"; remWord="#caa59b"
         addedBg="#b4c5bc"; removedBg="#cabdba"; ctxBg="#c3c5c8"
         sAdd="#36885f"; sRem="#b65a3e"; lnFg="#81868d"
@@ -1281,21 +1281,21 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:light)
       base_name="one-light"
-      accent="#257273" panel_bg="#bec0c3" surface_dim="#adaeb0"
+      accent="#18796d" panel_bg="#bec0c3" surface_dim="#adaeb0"
       surface0="#a3a5a6" surface1="#9a9c9d"
       overlay0="#666a71" overlay1="#565a61"
       text="#30363f" subtext0="#565a61"
       green="#317a46" yellow="#846322" red="#b0423f"
-      blue="#296caa" teal="#257273" peach="#b26328"
+      blue="#296caa" teal="#18796d" peach="#b26328"
       ;;
     dredge:*)
       base_name="one-dark"
-      accent="#66adad" panel_bg="#151719" surface_dim="#292b2d"
+      accent="#6aaea2" panel_bg="#151719" surface_dim="#292b2d"
       surface0="#343638" surface1="#414244"
       overlay0="#7c8086" overlay1="#9b9fa6"
       text="#c1c8d2" subtext0="#9b9fa6"
       green="#8dd09b" yellow="#d7bb70" red="#ec817a"
-      blue="#85beef" teal="#86cdcc" peach="#f6a981"
+      blue="#85beef" teal="#85c2b7" peach="#f6a981"
       ;;
   esac
 

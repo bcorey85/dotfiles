@@ -24,7 +24,7 @@ return {
       -- ── mini.icons ─────────────────────────────────────────────────────────
       -- Shared icon provider; the mock lets plugins that require
       -- "nvim-web-devicons" (winbar) get mini.icons transparently.
-      require("mini.icons").setup()
+      require("mini.icons").setup({ default = { directory = { hl = "MiniIconsCyan" } } })
       MiniIcons.mock_nvim_web_devicons()
 
       -- ── mini.ai ────────────────────────────────────────────────────────────

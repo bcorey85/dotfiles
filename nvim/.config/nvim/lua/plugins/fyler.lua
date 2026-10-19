@@ -1,4 +1,4 @@
--- Editable file-system buffer drawn as a tree: a left sidebar on <leader>e, and
+-- Editable file-system buffer drawn as a tree: a right sidebar on <leader>e, and
 -- full-window in the herdr `prefix e` popup (FYLER_POPUP).
 
 -- fyler's follow_current_file skips files directly under the root, which is
@@ -29,7 +29,7 @@ local function toggle_at_current_file()
   local file = vim.api.nvim_buf_get_name(0)
   local has_file = vim.bo.buftype == "" and file ~= ""
   local dir = has_file and vim.fs.dirname(file) or vim.fn.getcwd()
-  fyler.open({ kind = "split_left_most", root_path = dir })
+  fyler.open({ kind = "split_right_most", root_path = dir })
 
   local finder = require("fyler.finder").instance_get_or_nil()
   if finder then

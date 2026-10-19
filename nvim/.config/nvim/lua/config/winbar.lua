@@ -10,11 +10,8 @@
 -- via autocmds. (The `%` chars in the result still get winbar-interpreted, so
 -- path segments are escaped below.)
 
--- Resolve nvim-web-devicons lazily: at the time this module is sourced (before
--- pack.setup runs) the plugin isn't on the runtimepath yet, so a top-level
--- require would fail and cache a permanent miss. Retry on each call until it
--- loads, then cache the module. (The "nvim-web-devicons" require is satisfied
--- by MiniIcons.mock_nvim_web_devicons(), called in mini-icons.lua's setup().)
+-- nvim-web-devicons (the mini.icons mock, set up in mini.lua) isn't on the rtp
+-- when this module is sourced, so retry the require until it loads.
 local _devicons
 local function get_devicons()
   if _devicons then
@@ -34,13 +31,14 @@ require("util.hl").register("WinbarHighlights", {
   WinbarPath = { link = "WinBarNC" },
   WinbarFile = { link = "WinBar" },
   WinbarModified = { link = "DiagnosticError" },
+  WinbarParent = { link = "Directory" },
 })
 
 -- Escape `%` so filenames/dirs containing it aren't read as winbar items.
 local esc = require("util.str").escape_pct
 
 -- A window gets a winbar only if it's a normal, non-floating window holding a
--- real file buffer. Special buffers (fyler, snacks.picker, quickfix, help,
+-- real file buffer. Other special buffers (snacks.picker, quickfix, help,
 -- terminals) and floats stay bare.
 local function eligible(win)
   if vim.api.nvim_win_get_config(win).relative ~= "" then
@@ -82,8 +80,24 @@ local function render()
   return " " .. table.concat(segments, "%#WinbarPath#" .. SEP .. "%*")
 end
 
+function _G.winbar_fyler_up(_, _, button)
+  if button ~= "l" then
+    return
+  end
+  local finder = require("fyler.finder").instance_get_or_nil()
+  if finder then
+    finder:visit({ parent = true })
+  end
+end
+
+local FYLER_WINBAR = "%@v:lua.winbar_fyler_up@%#WinbarParent# .. %*%X"
+
 local function update()
   local win = vim.api.nvim_get_current_win()
+  if vim.bo.filetype == "fyler_finder" then
+    vim.wo[win].winbar = FYLER_WINBAR
+    return
+  end
   vim.wo[win].winbar = eligible(win) and render() or ""
 end
 

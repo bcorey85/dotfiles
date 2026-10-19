@@ -76,6 +76,11 @@
 #     fix_induced=yes|no|bug      (optional) the finding names code a previous
 #       fix in this loop introduced, not code the coder originally wrote.
 #       `bug` sets blocker=yes.
+#     source=round|fix-diff|last-pass|class|gate   (review-loop `fix` rows) where
+#       the finding came from: a full review, the first or the second fix-diff
+#       pass, an open class member at the round cap, or the execution gate. Only
+#       last-pass and class may defer. A code-reviewer `fix` row with
+#       actioned=deferred at scope phase or standalone is refused without one.
 #
 # Numeric-looking values are stored as numbers, everything else as strings.
 # A "date" field (UTC ISO 8601) is always added. Output file:
@@ -202,6 +207,32 @@ if [ "$kind" = finding ]; then
       echo "Only the literal 'bug' promotes the row to blocker=yes." >&2
       exit 1 ;;
   esac
+
+  # The review loop sends every `fix` finding to a coder except two kinds. A
+  # deferred row goes to a branch-exit queue that most branches never read, so
+  # a wrong deferral drops the finding.
+  source=$(jq -r '.source // ""' <<< "$json")
+  case "$source" in
+    "" | round | fix-diff | last-pass | class | gate) ;;
+    *)
+      echo "refusing to log: source=$source is not round|fix-diff|last-pass|class|gate." >&2
+      exit 1 ;;
+  esac
+  disposition=$(jq -r '.disposition // ""' <<< "$json")
+  actioned=$(jq -r '.actioned // ""' <<< "$json")
+  scope=$(jq -r '.scope // ""' <<< "$json")
+  if [ "$disposition" = fix ] && [ "$actioned" = deferred ]; then
+    loop_row=no
+    [ "$gate" = code-reviewer ] && { [ "$scope" = phase ] || [ "$scope" = standalone ]; } && loop_row=yes
+    if [ -n "$source" ] && [ "$source" != last-pass ] && [ "$source" != class ] \
+      || { [ -z "$source" ] && [ "$loop_row" = yes ]; }; then
+      echo "refusing to log: a review-loop fix finding defers only from the second fix-diff pass" >&2
+      echo "(source=last-pass) or as an open class member at the round cap (source=class)." >&2
+      echo "A full review's, the first fix-diff pass's and the execution gate's fix findings get" >&2
+      echo "a coder at any iter. Dispatch one, read its diff, then log the row with actioned=fixed." >&2
+      exit 1
+    fi
+  fi
 fi
 
 # A run row with no n_findings is the failure mode that silently destroys the

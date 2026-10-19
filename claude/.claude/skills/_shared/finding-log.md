@@ -23,7 +23,8 @@ bash "$L" kind=run "${C[@]}" gate=<agent name> n_findings=<n> diff_loc=<n> \
 # ONE finding row per finding that gate emitted.
 bash "$L" kind=finding "${C[@]}" gate=<agent name> disposition=<fix|ask|nit> [blocker=yes] \
   class=<bug|smell|duplication|complexity|plan-drift|test-gap|weak-assertion|security|perf|correctness|docs|other> \
-  file=<path> line=<n> actioned=<fixed|skipped_fp|deferred|ask|none> desc="<one line>"
+  file=<path> line=<n> actioned=<fixed|skipped_fp|deferred|ask|none> [source=<round|fix-diff|last-pass|class|gate>] \
+  desc="<one line>"
 ```
 
 ## Rules that make the data usable
@@ -36,6 +37,10 @@ bash "$L" kind=finding "${C[@]}" gate=<agent name> disposition=<fix|ask|nit> [bl
 - **`file`/`line` is the join key.** A finding naming no line logs `line=0`.
 - **`fix_induced=yes`** for code an earlier fix in this loop introduced.
 - **`fix_induced=bug`** — the tool sets `blocker=yes`; a loop-introduced bug cannot defer. Set `actioned=fixed`.
+- **`source=`** — review-loop only, on every `fix` row: `round` (a full review), `fix-diff` (the first fix-diff
+  pass), `last-pass` (the second fix-diff pass), `class` (an open class member at the cap), `gate` (the execution
+  gate). A `code-reviewer` `fix` row with `actioned=deferred` needs `source=last-pass` or `source=class`. The tool
+  refuses any other: that finding gets a coder.
 - `class=` uses the escape vocabulary so the caught and escaped sides
   cross-tabulate. Do not invent values — unknown ones are refused.
 - **`other` is a last resort.** Reach for `docs` when the prose is wrong about the code (stale comment, wrong quantity, contradicting doc, over-cap volume).

@@ -306,6 +306,15 @@ end, { desc = "Toggle rel numbers" })
 vim.keymap.set("n", "<leader>ud", function()
   vim.diagnostic.enable(not vim.diagnostic.is_enabled())
 end, { desc = "Toggle diagnostics" })
+vim.keymap.set("n", "<leader>uu", function()
+  local undotree_loaded = pcall(vim.cmd.packadd, "nvim.undotree")
+  if not undotree_loaded then
+    vim.notify("The undo tree needs nvim 0.12+", vim.log.levels.WARN)
+    return
+  end
+
+  require("undotree").open()
+end, { desc = "Toggle undo tree" })
 -- Toggle LSP semantic tokens for this buffer. Off = no async "white→color flip"
 -- (tree-sitter only); on = type-accurate recoloring once the server responds.
 vim.keymap.set("n", "<leader>uh", function()

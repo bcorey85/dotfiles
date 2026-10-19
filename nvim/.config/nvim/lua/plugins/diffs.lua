@@ -56,7 +56,7 @@ vim.g.diffs = {
 }
 
 return {
-  "barrettruth/diffs.nvim",
+  "https://forge.barrettruth.com/barrettruth/diffs.nvim",
   event = "VeryLazy",
   config = function()
     -- The 'vscode' intra algorithm needs libvscode_diff (prebuilt FFI lib,

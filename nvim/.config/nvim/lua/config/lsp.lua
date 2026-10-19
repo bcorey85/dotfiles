@@ -82,17 +82,13 @@ vim.api.nvim_create_autocmd("LspAttach", {
 
     local client = vim.lsp.get_client_by_id(args.data.client_id)
     if client and client:supports_method("textDocument/documentHighlight") then
-      local hl_group = vim.api.nvim_create_augroup("lsp_document_highlight_" .. bufnr, { clear = true })
-      vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
-        group = hl_group,
-        buffer = bufnr,
-        callback = vim.lsp.buf.document_highlight,
-      })
-      vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
-        group = hl_group,
-        buffer = bufnr,
-        callback = vim.lsp.buf.clear_references,
-      })
+      -- Per buffer, so these beat the python and sql ftplugins' own ]] and [[.
+      map("n", "]]", function()
+        Snacks.words.jump(vim.v.count1)
+      end, "Next reference")
+      map("n", "[[", function()
+        Snacks.words.jump(-vim.v.count1)
+      end, "Previous reference")
     end
 
     -- gd on a library symbol lands in its .d.ts. tsserver's source-definition
@@ -112,29 +108,6 @@ vim.api.nvim_create_autocmd("LspAttach", {
           vim.lsp.util.show_document(result[1], client.offset_encoding, { focus = true })
         end)
       end, "Go to source definition")
-    end
-  end,
-})
-
--- Clean up per-buffer document-highlight augroups on detach. Augroups created
--- in LspAttach are named per-buffer but are never auto-deleted — they leak for
--- the session lifetime. Only tear down when the LAST client that supports
--- textDocument/documentHighlight leaves the buffer; if another highlight-capable
--- client is still attached, the group (and its autocmds) must remain.
-vim.api.nvim_create_autocmd("LspDetach", {
-  callback = function(args)
-    local bufnr = args.buf
-    local detaching_id = args.data.client_id
-
-    local remaining = vim.tbl_filter(function(c)
-      return c.id ~= detaching_id and c:supports_method("textDocument/documentHighlight")
-    end, vim.lsp.get_clients({ bufnr = bufnr }))
-
-    if #remaining == 0 then
-      pcall(vim.api.nvim_del_augroup_by_name, "lsp_document_highlight_" .. bufnr)
-      -- buf_clear_references targets bufnr explicitly; LspDetach can fire for a
-      -- background buffer, where clear_references() would hit the wrong one.
-      vim.lsp.util.buf_clear_references(bufnr)
     end
   end,
 })

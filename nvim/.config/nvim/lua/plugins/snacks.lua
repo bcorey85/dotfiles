@@ -59,6 +59,7 @@ return {
       -- invisible.
       -- Snacks.notifier.show_history() gets them back.
       notifier = { enabled = true },
+      words = { enabled = true },
       -- No `indent` block: mini.indentscope owns indent guides (plugins/mini.lua).
       -- snacks.indent draws more (every guide, not just the scope) but has no
       -- animation, which is the reason mini is kept. Don't enable both.

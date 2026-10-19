@@ -53,15 +53,14 @@ case $PLATFORM in
         print_info "Installing Nerd Fonts..."
         mkdir -p ~/.local/share/fonts
 
-        # JuliaMono — the terminal face (unpatched; FiraCode carries Nerd glyphs).
+        # JuliaMono — the terminal face (unpatched; ghostty draws Nerd glyphs itself).
         if [ "$PLATFORM" = arch ]; then
             sudo pacman -S --needed --noconfirm ttf-juliamono
         else
             sudo apt install -y fonts-juliamono
         fi
 
-        # Fira Code — ghostty's Nerd-glyph fallback, and the face named by nvim,
-        # quickshell, hyprlock and zed. Ships no italic, so there is no
+        # Fira Code — the face named by nvim, quickshell, hyprlock and zed. Ships no italic, so there is no
         # -Italic/-BoldItalic to pull.
         install_nerd_font FiraCode.tar.xz FiraCodeNerdFontMono-Regular.ttf \
             "FiraCode Nerd Font" \

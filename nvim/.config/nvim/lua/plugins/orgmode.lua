@@ -38,7 +38,7 @@ return {
         -- flood the view, and a new projects/*.org is picked up for free.
         -- (Same rule as the daily-recap / weekly-recap / vault-review skills —
         -- change one, change all four.)
-        org_agenda_files = { "~/vault/org/inbox.org", "~/vault/org/projects/*.org" },
+        org_agenda_files = require("util.org_agenda").files,
         org_default_notes_file = "~/vault/org/inbox.org",
 
         -- Richer-than-default workflow states (the bit people rave about).

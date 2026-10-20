@@ -34,11 +34,11 @@
           },
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/git-discipline-gate.sh"
+            "command": "python3 ~/.claude/scripts/git-discipline-gate.py"
           },
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/review-commit-gate.sh"
+            "command": "python3 ~/.claude/scripts/review-commit-gate.py"
           }
         ]
       },
@@ -60,7 +60,7 @@
           },
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/spec-budget-gate.sh"
+            "command": "python3 ~/.claude/scripts/spec-budget-gate.py"
           }
         ]
       }
@@ -71,7 +71,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/scripts/claudemd-linecount.sh"
+            "command": "python3 ~/.claude/scripts/claudemd-linecount.py"
           }
         ]
       }
@@ -81,7 +81,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/scripts/log-skill-use.sh"
+            "command": "python3 ~/.claude/scripts/log-skill-use.py"
           }
         ]
       }
@@ -92,11 +92,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/scripts/warn-skip-hooks.sh"
+            "command": "python3 ~/.claude/scripts/warn-skip-hooks.py"
           },
           {
             "type": "command",
-            "command": "~/.claude/scripts/calibration-guard.sh"
+            "command": "python3 ~/.claude/scripts/calibration-guard.py"
           }
         ]
       },
@@ -105,11 +105,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/scripts/warn-skip-hooks.sh"
+            "command": "python3 ~/.claude/scripts/warn-skip-hooks.py"
           },
           {
             "type": "command",
-            "command": "~/.claude/scripts/calibration-guard.sh"
+            "command": "python3 ~/.claude/scripts/calibration-guard.py"
           }
         ]
       },
@@ -118,11 +118,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/scripts/warn-skip-hooks.sh"
+            "command": "python3 ~/.claude/scripts/warn-skip-hooks.py"
           },
           {
             "type": "command",
-            "command": "~/.claude/scripts/calibration-guard.sh"
+            "command": "python3 ~/.claude/scripts/calibration-guard.py"
           }
         ]
       }

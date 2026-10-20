@@ -12,11 +12,13 @@ entry verb, so loops that only close through a user answer are not counted as st
 """
 import collections
 import contextlib
+import atexit
 import importlib.util
 import io
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -48,9 +50,13 @@ for stubName in ("scripts/log-scan", "skills/review/log-review-finding"):
 GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
            "CODE_STEP_CLAUDE_DIR": str(CLAUDE_STUB)}
 
+# code-step.py reads CODE_STEP_CLAUDE_DIR once, at import. Set it only while the module loads, so the real log
+# scripts and the live ~/.claude files are never reached and other test modules keep their environment.
+atexit.register(shutil.rmtree, TMP_ROOT, ignore_errors=True)
 moduleSpec = importlib.util.spec_from_file_location("code_step_under_test", SCRIPT)
 codeStep = importlib.util.module_from_spec(moduleSpec)
-moduleSpec.loader.exec_module(codeStep)
+with mock.patch.dict(os.environ, {"CODE_STEP_CLAUDE_DIR": str(CLAUDE_STUB)}):
+    moduleSpec.loader.exec_module(codeStep)
 
 PLAN_DIR = "docs/plans/ORD-1-orders"
 PLAN_A = f"{PLAN_DIR}/spec.md"
@@ -260,9 +266,15 @@ def plan_progress(repo):
 IGNORED_STATE_KEYS = ("startedAt", "baseline", "planEditBaseline", "asksBaseline", "sessionId")
 
 
+MINUTE_STAMP = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}")
+
+
 def state_signature(repo):
+    # The script stamps each ruling with the wall-clock minute. Two visits to one state a minute apart must still
+    # compare equal, or whether a loop is caught depends on when the run happens to cross a minute.
     state = {key: value for key, value in load_saved_state(repo).items() if key not in IGNORED_STATE_KEYS}
-    return json.dumps(state, sort_keys=True) + "#" + plan_progress(repo)
+    stateText = MINUTE_STAMP.sub("<minute>", json.dumps(state, sort_keys=True))
+    return stateText + "#" + plan_progress(repo)
 
 
 # ---------- the explorer ----------

@@ -120,13 +120,14 @@ def save_state(cwd, state):
     (directory / "state.json").write_text(json.dumps(state, indent=1))
 
 
-def saved_messages(cwd, agentType, stage):
-    # The last message per agent id of this type saved while the state was in this stage.
+def saved_messages(cwd, agentType, stage, skipRows=0):
+    # The last message per agent id of this type saved while the state was in this stage, ignoring the first
+    # skipRows rows of the file.
     reportsFile = state_dir(cwd) / "reports.jsonl"
     if not reportsFile.exists():
         return []
     lastPerAgent = {}
-    for line in reportsFile.read_text().splitlines():
+    for line in reportsFile.read_text().splitlines()[skipRows:]:
         try:
             row = json.loads(line)
         except ValueError:
@@ -982,6 +983,9 @@ def emit_review_dispatch(repoRoot, state):
         header.append(state["modifier"])
     prompt = "\n".join(header) + "\n\n" + handoff_block(state)
     state["stage"] = "review"
+    # after-review reads only reports saved after this dispatch, so a report already acted on is not read again.
+    reportsFile = state_dir(repoRoot) / "reports.jsonl"
+    state["reviewReportsFloor"] = len(reportsFile.read_text().splitlines()) if reportsFile.exists() else 0
     state["lastReviewPrompt"] = prompt
     save_state(repoRoot, state)
 
@@ -1172,7 +1176,7 @@ def command_after_review(args):
     state = load_state(repoRoot)
     if state is None or state["stage"] != "review":
         return emit("stop", "after-review ran with no review pending. Run `start` first.")
-    messages = saved_messages(repoRoot, "review-loop", "review")
+    messages = saved_messages(repoRoot, "review-loop", "review", state.get("reviewReportsFloor", 0))
     if not messages:
         return emit("stop", "No review-loop packet was saved. The SubagentHandback hook is not installed. Tell the user.")
     packet = parse_packet(messages[-1])

@@ -7,7 +7,7 @@ Why the agents have this shape: [docs/agent-evals.md](../../docs/agent-evals.md)
 
 ```
 /triage → /eng-spec → /clear → /code (per phase: read queue → stage → /commit)
-        → /refactor → /verify → /test-audit → /branch-recap → /adr → /commit → PR
+        → /refactor → /verify-branch → /test-audit → /branch-recap → /adr → /commit → PR
 ```
 
 Small work skips the spec: `/triage` routes XS–M tickets directly to `/code`.
@@ -68,7 +68,7 @@ and pushes. It never stages. `review-commit-gate` makes you confirm a
 | Order | Skill           | Job                                                                    | Agents                                                                 |
 | ----- | --------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | 1     | `/refactor`     | Branch-wide structure pass                                             | `smell-reviewer` (`complexity-reviewer` if one module grew ≥100 lines) |
-| 2     | `/verify`       | Plan ↔ diff completeness, smoke-test checklist                         | `plan-verifier`                                                        |
+| 2     | `/verify-branch` | Plan ↔ diff completeness, smoke-test checklist                         | `plan-verifier`                                                        |
 | 3     | `/test-audit`   | Cross-phase test gate: cull, weak assertions                           | `test-intent-reviewer`, fixes via `/fix`                               |
 | 4     | `/branch-recap` | One pre-PR sheet: `/stage` residue, deferred findings, recap. No gates | —                                                                      |
 

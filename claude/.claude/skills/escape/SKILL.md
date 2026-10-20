@@ -6,7 +6,7 @@ allowed-tools: [Bash, Read, Glob, Grep, Edit]
 
 # Log an Escape
 
-One escape = one defect found downstream of its gate. `/cc`/`/fix`/`/refactor`/`/verify` log their own automatically; this is the manual channel for everything else (PR reads, prod bugs, late-noticed smells).
+One escape = one defect found downstream of its gate. `/cc`/`/fix`/`/refactor`/`/verify-branch` log their own automatically; this is the manual channel for everything else (PR reads, prod bugs, late-noticed smells).
 
 ## Instructions
 

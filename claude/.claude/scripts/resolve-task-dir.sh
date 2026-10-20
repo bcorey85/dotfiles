@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # resolve-task-dir.sh — resolve the /eng-spec task directory under docs/plans/
-# Shared by /verify, /branch-recap, /code, and /adr. Do NOT reimplement inline.
+# Shared by /verify-branch, /branch-recap, /code, and /adr. Do NOT reimplement inline.
 #
 # docs/eng-specs/ is the pre-rename root; both are searched so repos that have
 # not migrated keep resolving. Drop the legacy root once none remain.

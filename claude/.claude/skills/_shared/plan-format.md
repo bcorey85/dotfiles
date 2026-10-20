@@ -1,6 +1,6 @@
 # Shared Plan Format (single source of truth)
 
-The implementation-plan artifact contract. Producer `/eng-spec`; consumers `/code` (phase gates), `/verify` (reconciliation), humans.
+The implementation-plan artifact contract. Producer `/eng-spec`; consumers `/code` (phase gates), `/verify-branch` (reconciliation), humans.
 
 ## Risk tiers (assigned per phase, recorded on its Phase Status line)
 
@@ -64,7 +64,7 @@ Header links: whichever upstream artifacts exist. Do not invent links.
 
 - [ ] Phase N: Refactor pass — /refactor cleanup sweep (risk: low)
 - [ ] Phase N+1: Test audit — /test-audit cross-phase test gate (risk: high)
-- [ ] Phase N+2: Verify pass — branch-wide deep review + /verify (plan↔diff + smoke list) (risk: high)
+- [ ] Phase N+2: Verify pass — branch-wide deep review + /verify-branch (plan↔diff + smoke list) (risk: high)
 - [ ] Phase N+3: Recap — /branch-recap synthesis + residue triage, no gates (risk: low)
 
 ## Current State Analysis
@@ -127,7 +127,7 @@ criteria to tests.
 
 - [ ] **Manual-verified**: [scenario] — "hit [endpoint/UI flow], confirm [expected behavior]"
 
-**`/verify` executes these at branch end, tagging each `agent-verified` or `human-only`.**
+**`/verify-branch` executes these at branch end, tagging each `agent-verified` or `human-only`.**
 
 ---
 
@@ -139,7 +139,7 @@ criteria to tests.
 
 ## Plan Deviations
 
-<!-- Created on first deviation; absent until then. One dated entry per resolved PLAN-IMPACT (assumed → found, decision, owner). `/verify` reconciles against the plan AS AMENDED here. -->
+<!-- Created on first deviation; absent until then. One dated entry per resolved PLAN-IMPACT (assumed → found, decision, owner). `/verify-branch` reconciles against the plan AS AMENDED here. -->
 
 ## References
 

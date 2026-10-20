@@ -1,6 +1,6 @@
 ---
 name: plan-verifier
-description: "Checks each plan criterion against the branch diff: done, partial or missing, with evidence. Dispatched by /verify at branch end."
+description: "Checks each plan criterion against the branch diff: done, partial or missing, with evidence. Dispatched by /verify-branch at branch end."
 model: sonnet
 tools: Bash, Read, Edit, Glob, Grep, LSP
 color: cyan
@@ -16,7 +16,7 @@ You run at branch end, after `/review` converged every phase — correctness is 
 
 ## Your scope
 
-`scope: branch`, dispatched by `/verify`. It is the only scope you have.
+`scope: branch`, dispatched by `/verify-branch`. It is the only scope you have.
 
 | Oracle                 | **the ticket's ACs, always** + every phase's criteria               |
 | ---------------------- | ------------------------------------------------------------------- |

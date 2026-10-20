@@ -16,7 +16,7 @@ Every `/eng-spec` plan ends with these FOUR phases, in order after the last feat
 
 3. **Verify pass** (risk: high) — two complementary checks, both required:
    - **Branch-wide deep review** — ONE `code-reviewer` (omit `model`) over the branch diff: the only fresh-eyes look at cross-phase interactions. Findings via `/review` routing. Log it per `~/.claude/skills/_shared/finding-log.md` with `scope=branch-exit`.
-   - `/verify` — reconcile the shipped diff against the ticket/plan
+   - `/verify-branch` — reconcile the shipped diff against the ticket/plan
      (completeness), run the plan's Automated Verification commands, and emit the
      **human smoke-test checklist** (all human-only Manual Verification items).
    - **Acceptance-criteria reconciliation** — per id: name the covering test (`file:line`) or MISSING. `## Manual only` items are satisfied via the smoke-test checklist. MISSING fails the phase — a test is owed or the user retires the criterion on record.
@@ -36,6 +36,6 @@ Nothing after this is a phase. `/adr` runs **pre-PR**, shipping in the code's PR
 ```markdown
 - [ ] Phase N: Refactor pass — /refactor +deep whole-branch sweep, root-cause gate (risk: low)
 - [ ] Phase N+1: Test audit — /test-audit cross-phase test gate (risk: high)
-- [ ] Phase N+2: Verify pass — branch-wide deep review + /verify (plan↔diff + smoke list) (risk: high)
+- [ ] Phase N+2: Verify pass — branch-wide deep review + /verify-branch (plan↔diff + smoke list) (risk: high)
 - [ ] Phase N+3: Recap — /branch-recap synthesis + residue triage, no gates (risk: low)
 ```

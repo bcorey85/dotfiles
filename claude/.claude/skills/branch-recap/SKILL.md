@@ -8,7 +8,7 @@ allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion, Skill]
 
 The fourth and last closing phase, and the exit-side counterpart to `/eng-spec`.
 
-**No gates run here.** Every gate already fired at its sharpest oracle: per-phase `/review` convergence, drift-gate reconciliation, `/test-audit` test gate, `/verify` completeness.
+**No gates run here.** Every gate already fired at its sharpest oracle: per-phase `/review` convergence, drift-gate reconciliation, `/test-audit` test gate, `/verify-branch` completeness.
 
 **Not `/orient`.** `/orient` reads the **codebase** (how the change fits); this reads only the **branch's process residue** (walkthroughs, packets, receipts, `git status`) — "what remains before the PR?" Never re-reads code for a system map; consumes a prior `/orient` map or points the user to run one.
 
@@ -65,7 +65,7 @@ Spec: <task-dir>
 ### Deferred findings             (round budget, read at branch bound)
 - <fixed / stale / carried, one line each, with the gate and disposition each came from; or "none">
 
-### Smoke-test checklist          (from the /verify closing phase)
+### Smoke-test checklist          (from the /verify-branch closing phase)
 - <every human-only item, with steps>
 
 ### Open items                    (ask[], nit[] lines not ending `applied`, escapes — verbatim)

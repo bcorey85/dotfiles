@@ -2,7 +2,7 @@
 
 The guard decision every `log-escape` call carries. Read before logging.
 
-Consumers: `/escape`, `/cc`, `/fix`, `/refactor`, `/verify`,
+Consumers: `/escape`, `/cc`, `/fix`, `/refactor`, `/verify-branch`,
 `/commit`, `/audit review`.
 
 ## The decision

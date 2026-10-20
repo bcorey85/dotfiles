@@ -11,7 +11,7 @@ import unittest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 REAL_CLAUDE = REPO_ROOT / "claude" / ".claude"
-SCRIPT = REAL_CLAUDE / "scripts" / "code-step.py"
+SCRIPT = pathlib.Path(os.environ.get("CODE_STEP_SCRIPT") or REAL_CLAUDE / "scripts" / "code-step.py")
 moduleSpec = importlib.util.spec_from_file_location("code_step", SCRIPT)
 code_step = importlib.util.module_from_spec(moduleSpec)
 moduleSpec.loader.exec_module(code_step)
@@ -694,6 +694,40 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("AGENT: review-loop", out)
         self.assertIn("iter: 0", out)
         self.assertNotIn("iter: 2", out)
+
+    def test_re_review_after_the_asks_coder_covers_only_the_files_it_changed(self):
+        self.begin_coder()
+        (self.repo / "backend/src/extra.ts").write_text("export const e = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist")
+        self.step("after-coder")
+        self.hook("review-loop", self.ASK.replace("iter: 1", "iter: 2"))
+        self.step("after-review")
+        self.step("asks-done", "accepted")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: applied the ask")
+        out = self.step("after-coder")
+        self.assertIn("AGENT: review-loop", out)
+        self.assertIn("path: backend/src/orders.ts", out)
+        self.assertNotIn("backend/src/extra.ts", out)
+        self.assertIn("prior-issues:", out)
+
+    def test_asks_coder_that_changed_only_docs_sends_no_review_and_finishes_the_phase(self):
+        self.apply_first_ask()
+        (self.repo / "backend/README.md").write_text("orders\n")
+        self.hook("coder", "BEHAVIOR: documented the ask")
+        out = self.step("after-coder")
+        self.assertNotIn("AGENT: review-loop", out)
+        self.assertIn("Phase 1 marked done", out)
+        self.assertIn("review-gate-mark clean", out)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+
+    def test_first_coder_run_lists_every_file_the_phase_changed(self):
+        self.begin_coder()
+        (self.repo / "backend/src/extra.ts").write_text("export const e = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist")
+        out = self.step("after-coder")
+        self.assertIn("path: backend/src/orders.ts", out)
+        self.assertIn("path: backend/src/extra.ts", out)
 
     def test_asks_coder_that_changed_nothing_stops_instead_of_reviewing(self):
         self.apply_first_ask()

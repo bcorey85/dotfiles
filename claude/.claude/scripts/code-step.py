@@ -682,6 +682,15 @@ def tests_run_text(gate, state):
     return "; ".join(parts)
 
 
+DOCS_SUFFIXES = (".md", ".mdx", ".rst", ".txt")
+
+
+def asks_coder_changed_files(changedNow, asksBaseline):
+    # The files whose hash differs between the snapshot taken at the asks-coder dispatch and now, new and deleted included.
+    names = set(changedNow) | set(asksBaseline)
+    return sorted(name for name in names if changedNow.get(name) != asksBaseline.get(name))
+
+
 def command_after_coder(args):
     repoRoot = repo_root()
     os.chdir(repoRoot)
@@ -717,13 +726,26 @@ def command_after_coder(args):
         return emit("stop", "The coder produced no reviewable change, or recommended /eng-spec. Do not dispatch a "
                     "review. Do not mark the phase done. Relay the coder's report to the user:", report)
 
+    asksBaseline = state.get("asksBaseline")
+    if isAskFix and asksBaseline is not None:
+        # The review after an asks-coder covers only what the asks-coder changed. A state from before asksBaseline
+        # existed keeps the whole-phase scope.
+        changedFiles = asks_coder_changed_files(changedNow, asksBaseline)
+        if all(name.lower().endswith(DOCS_SUFFIXES) for name in changedFiles):
+            state.update({"files": changedFiles, "coderStage": coderStage})
+            state["stage"] = "review"
+            save_state(repoRoot, state)
+            say(repoRoot, "The asks coder changed only docs files. No review runs on them.")
+            return finish_phase(repoRoot, state)
+
     behavior = behavior_lines(report)
     whyGroups = resolve_report_paths(why_by_file(report), changedFiles)
     testsRun = tests_run_text(gate, state)
     if isAskFix:
         behavior = list(state.get("behavior", [])) + behavior
         for path, notes in state["why"].items():
-            whyGroups[path] = notes + whyGroups.get(path, [])
+            if path in changedFiles:
+                whyGroups[path] = notes + whyGroups.get(path, [])
         testsRun = state["testsRun"] + "; ask-fix coder -> ran its own checks"
         state.update({"iter": 0, "spec_iter": 0, "priorIssues": prior_issues(state["acceptedAsks"])})
     state.update({"gateLines": gateLines, "flagged": flagged, "behavior": behavior, "exception": bool(flagged),
@@ -1297,7 +1319,8 @@ def asks_coder_prompt(acceptedAsks):
 
 
 def apply_asks_or_finish(repoRoot, state, outcomes, changeTexts, clean_marked):
-    # An accepted or modified ask is owed work: a coder applies it and a fresh review runs before the phase can finish.
+    # An accepted or modified ask is owed work: a coder applies it, then a review of that coder's diff runs (none when
+    # the diff is docs only) before the phase can finish.
     acceptedAsks = [[item, outcome, changeText] for item, outcome, changeText in zip(state["asks"], outcomes, changeTexts)
                     if outcome != "rejected"]
     if not acceptedAsks:
@@ -1309,8 +1332,8 @@ def apply_asks_or_finish(repoRoot, state, outcomes, changeTexts, clean_marked):
                   "asksBaseline": file_hashes(repoRoot)})
     save_state(repoRoot, state)
     model = "haiku" if state.get("modifier") == "+fast" else None
-    emit("dispatch", "The user accepted review asks. Dispatch a coder to apply them. A fresh review runs after it "
-         "and before the phase can finish.",
+    emit("dispatch", "The user accepted review asks. Dispatch a coder to apply them. A review of that coder's "
+         "diff runs after it (none when the diff is docs only) before the phase can finish.",
          "NEXT: when the coder returns, run `python3 ~/.claude/scripts/code-step.py after-coder`.",
          prompt=asks_coder_prompt(acceptedAsks), agent="coder", model=model)
 

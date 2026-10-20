@@ -356,6 +356,10 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/scripts/coder-gate.py bash-hook"
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/scripts/wait-loop-gate.py"
           }
         ]
       },

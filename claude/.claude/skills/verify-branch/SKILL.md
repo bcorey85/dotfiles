@@ -1,5 +1,5 @@
 ---
-name: verify
+name: verify-branch
 description: Reconcile the shipped changes against the eng-spec ticket + plan to confirm everything was actually built, BEFORE the PR opens. A completeness gate, not a code review — checks "did we build what the plan called for", not code quality. Runs after /code (+/review); the user opens the PR.
 allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion, Skill]
 ---
@@ -10,7 +10,7 @@ Independently reconcile what shipped on this branch against the ticket's require
 
 ## Why
 
-Nothing in the flow checks **completeness** (did the diff satisfy every phase + ticket requirement?). `/code`'s `## Phase Status` checkboxes are self-reported — verify checks the real diff instead.
+Nothing in the flow checks **completeness** (did the diff satisfy every phase + ticket requirement?). `/code`'s `## Phase Status` checkboxes are self-reported — `/verify-branch` checks the real diff instead.
 
 ## When it runs
 
@@ -63,9 +63,9 @@ Present what it returns. Downstream you consume: verdict table, AC result, `need
 
   `guard` comes from the ratchet — run it per `~/.claude/skills/_shared/escape-ratchet.md`, using its batching rule across the gap list.
 
-  Then offer to dispatch `/fix` (or `/code` for net-new work) to close them. Re-run verify after.
+  Then offer to dispatch `/fix` (or `/code` for net-new work) to close them. Re-run `/verify-branch` after.
 
-- **Clean**: first the **branch-final smell gate** — a bare `/refactor` must have run since the last code change; if not, run it now and let it converge. verify stays read-only and withholds the packet without it. Then build the **review packet**:
+- **Clean**: first the **branch-final smell gate** — a bare `/refactor` must have run since the last code change; if not, run it now and let it converge. `/verify-branch` stays read-only and withholds the packet without it. Then build the **review packet**:
   1. Assemble in order: (a) completeness table; (b) **smoke-test checklist** — every AC restated as a user-observable check + every `human-only` Manual Verification item + `needs-manual` reconciliation items, each with concrete steps; (c) **diff hotspots** — the 3–5 heaviest files ("read these first, skim the rest"); (d) pointer to agent-verified evidence for spot-checking. Do NOT situate here — that's `/orient`, on demand.
   2. Before presenting the packet, `nvim-jump` its evidence per `~/.claude/skills/_shared/nvim-jump.md`: each completeness-table `file:line` in table order with `--note "<criterion>: <what the line proves>"`, then each covering test's `file:line` with `--note "<AC id>: <what it asserts>"`.
   3. Point forward: run the smoke-test checklist, then open the PR yourself — agents never open PRs. After the PR exists, `/adr`.

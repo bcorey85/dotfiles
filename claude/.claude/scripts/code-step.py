@@ -40,7 +40,7 @@ CLOSING_TITLE_END = r"\b(?:\s*[—–:-]|\s*\(risk|\s*$)"
 CLOSING_PHASES = [
     (re.compile(r"^Refactor pass" + CLOSING_TITLE_END, re.I), "/refactor +deep"),
     (re.compile(r"^Test audit" + CLOSING_TITLE_END, re.I), "/test-audit"),
-    (re.compile(r"^Verify pass" + CLOSING_TITLE_END, re.I), "/verify"),
+    (re.compile(r"^Verify pass" + CLOSING_TITLE_END, re.I), "/verify-branch"),
     (re.compile(r"^Recap" + CLOSING_TITLE_END, re.I), "/branch-recap"),
 ]
 VERIFY_TIMEOUT_SECONDS = 600
@@ -525,14 +525,14 @@ def start_closing_phase(repoRoot, planRel, lane, modifier, entry, skill, section
                    "hold, or `skill-done fail` when they do not (for the Verify pass, any MISSING criterion fails it)")
     sectionLines = ["The phase's own plan section follows. Follow its steps and gates; the skill alone is not the phase:",
                     section]
-    if skill == "/verify":
+    if skill == "/verify-branch":
         prompt = ("Branch-wide deep review: review the whole branch diff against its base branch (git diff "
                   "<base>...HEAD), backend and frontend together. This is the only review of cross-phase interactions. "
                   "Report findings with file:line and severity.")
         return emit("dispatch", f"Phase {entry['number']} ({entry['title']}) is a closing phase. Step 1 of 2: the "
                     "branch-wide deep review.", *sectionLines,
                     "NEXT: route the findings with /review and log them with scope=branch-exit. Then invoke the Skill "
-                    "tool with `/verify` and reconcile every acceptance criterion (the covering test as file:line, or "
+                    "tool with `/verify-branch` and reconcile every acceptance criterion (the covering test as file:line, or "
                     f"MISSING). Then {verdictStep}.", prompt=prompt, agent="code-reviewer")
     emit("invoke-skill", f"Phase {entry['number']} ({entry['title']}) is a closing phase. Invoke the Skill tool with "
          f"`{skill}`; a coder is not dispatched.", *sectionLines, f"The skill needs judgment. When it returns, {verdictStep}.")
@@ -1516,7 +1516,7 @@ def finish_phase(repoRoot, state, clean_marked=False, skipVerification=False):
 def block_a(number, riskLabel, agentCount, humanCount, nextNumber):
     return (f"Phase {number} complete - machine gates green (review ✓, execution ✓, automated-verification ✓). "
             f"Risk: low. Manual verification: {agentCount} agent-verified, {humanCount} human-only deferred to the "
-            f"/verify packet.\n-> Auto-advancing to Phase {nextNumber} in-session (no /clear; interrupt anytime).")
+            f"/verify-branch packet.\n-> Auto-advancing to Phase {nextNumber} in-session (no /clear; interrupt anytime).")
 
 
 def block_b_or_c(block, number, riskLabel, state, agentVerified, humanOnly, nextNumber):
@@ -1539,7 +1539,7 @@ def block_b_or_c(block, number, riskLabel, state, agentVerified, humanOnly, next
                   f"  2. Stage what you've read, then run /clear and /code to start Phase {nextNumber} fresh. "
                   "To keep this context, confirm here.", "", "Or give feedback now for revisions to Phase " + number + "."]
     else:
-        parts += ["All phases complete. Next: /verify (completeness + review packet; includes the remaining "
+        parts += ["All phases complete. Next: /verify-branch (completeness + review packet; includes the remaining "
                   "human-only checks), then you open the PR."]
     return "\n".join(parts)
 

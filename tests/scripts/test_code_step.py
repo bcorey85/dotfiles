@@ -496,7 +496,7 @@ class CodeStepTest(unittest.TestCase):
     def test_closing_phase_titles_must_be_the_closing_phase(self):
         titles = {"Refactor password hashing to argon2 (risk: high)": None, "Verify password reset tokens": None,
                   "Weekly recap email": None, "Refactor pass — /refactor +deep whole-branch sweep (risk: low)":
-                  "/refactor +deep", "Verify pass (risk: high)": "/verify", "Recap": "/branch-recap",
+                  "/refactor +deep", "Verify pass (risk: high)": "/verify-branch", "Recap": "/branch-recap",
                   "Test audit — /test-audit cross-phase test gate (risk: high)": "/test-audit"}
         for title, expected in titles.items():
             found = next((skill for pattern, skill in code_step.CLOSING_PHASES if pattern.search(title)), None)
@@ -511,11 +511,11 @@ class CodeStepTest(unittest.TestCase):
     def test_verify_pass_dispatches_the_branch_wide_reviewer_first(self):
         self.mark_phases_done(1, 2, 3)
         (self.repo / self.plan).write_text(self.plan_text().replace("Refactor pass - /refactor cleanup sweep",
-                                                                    "Verify pass — deep review + /verify"))
+                                                                    "Verify pass — deep review + /verify-branch"))
         out = self.step("start", self.plan)
         self.assertIn("AGENT: code-reviewer", out)
         self.assertIn("MODEL: omit the model argument", out)
-        self.assertIn("`/verify`", out)
+        self.assertIn("`/verify-branch`", out)
 
     def mark_phases_done(self, *numbers):
         text = self.plan_text()

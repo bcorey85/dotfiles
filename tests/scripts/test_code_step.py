@@ -174,6 +174,21 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("npx vitest run src/orders.test.ts", joined)
         self.assertEqual(self.state()["stage"], "coder")
 
+    def test_gate_skips_a_package_in_a_sibling_repo(self):
+        sibling = self.tmp / "sibling/evals"
+        (sibling / "truth").mkdir(parents=True)
+        (sibling / "package.json").write_text(json.dumps({"devDependencies": {"vitest": "1"}}))
+        (sibling / "tsconfig.json").write_text("{}")
+        siblingFile = "**File**: `backend/src/orders.test.ts`\n**File**: `../sibling/evals/truth/context.json`"
+        (self.repo / self.plan).write_text(self.plan_text().replace("**File**: `backend/src/orders.test.ts`", siblingFile))
+
+        self.start_phase_one()
+
+        gate = json.loads((self.repo / ".git/coder-gate.json").read_text())
+        joined = " | ".join(gate["commands"])
+        self.assertNotIn("sibling", joined)
+        self.assertIn("cd backend && npm run typecheck", joined)
+
     def test_fast_modifier_sets_haiku(self):
         self.assertIn("MODEL: haiku", self.start_phase_one("+fast"))
 

@@ -86,7 +86,7 @@ refute "paths: excluded dir" "$out" "b/f.txt"
 "$scope" nonsense=1 >/dev/null 2>&1 && fail "bad key: exit 2" "exited 0" || pass "bad key: exit 2"
 
 # --- family 6: invocation log -------------------------------------------------
-hook="$HOME/.claude/scripts/log-skill-use.sh"
+hook="$HOME/.claude/scripts/log-skill-use.py"
 log="$work/usage.jsonl"
 
 out=$(SKILL_USAGE_FILE="$log" "$scope" root="$work/wt" caller=review)
@@ -103,7 +103,7 @@ assert "log: repo is the basename" "$line" '"repo":"wt"'
 if [ -x "$hook" ] && command -v jq >/dev/null 2>&1; then
   ref="$work/ref.jsonl"
   printf '{"hook_event_name":"PostToolUse","tool_input":{"skill":"review-loop"}}' \
-    | SKILL_USAGE_FILE="$ref" CLAUDE_PROJECT_DIR="$work/wt" bash "$hook" >/dev/null 2>&1
+    | SKILL_USAGE_FILE="$ref" CLAUDE_PROJECT_DIR="$work/wt" python3 "$hook" >/dev/null 2>&1
   want=$(jq -r 'keys_unsorted | join(",")' "$ref" 2>/dev/null)
   got=$(jq -r 'keys_unsorted | del(.[-1:][]) | join(",")' "$log" 2>/dev/null)
   [ -n "$want" ] && [ "$want" = "$got" ] && pass "log: key order matches the hook" \

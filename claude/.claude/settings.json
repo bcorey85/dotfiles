@@ -238,7 +238,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/calibration-refs-guard.sh"
+            "command": "python3 ~/.claude/scripts/calibration-refs-guard.py"
           }
         ]
       },
@@ -247,7 +247,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/quality-check-cap.sh"
+            "command": "python3 ~/.claude/scripts/quality-check-cap.py"
           }
         ]
       },
@@ -256,7 +256,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/quality-check-cap.sh"
+            "command": "python3 ~/.claude/scripts/quality-check-cap.py"
           }
         ]
       },
@@ -265,7 +265,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/scripts/log-skill-use.sh"
+            "command": "python3 ~/.claude/scripts/log-skill-use.py"
           }
         ]
       },
@@ -274,11 +274,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/review-commit-gate.sh"
+            "command": "python3 ~/.claude/scripts/review-commit-gate.py"
           },
           {
             "type": "command",
-            "command": "~/.claude/scripts/log-agent-usage.sh"
+            "command": "python3 ~/.claude/scripts/log-agent-usage.py"
           }
         ]
       },
@@ -287,19 +287,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/scripts/claudemd-linecount.sh"
+            "command": "python3 ~/.claude/scripts/claudemd-linecount.py"
           },
           {
             "type": "command",
-            "command": "~/.claude/scripts/dead-prose-gate.sh"
+            "command": "python3 ~/.claude/scripts/dead-prose-gate.py"
           },
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/comment-bloat-gate.sh"
+            "command": "python3 ~/.claude/scripts/comment-bloat-gate.py"
           },
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/stale-citation-gate.sh"
+            "command": "python3 ~/.claude/scripts/stale-citation-gate.py"
           }
         ]
       },
@@ -308,7 +308,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/scripts/batch-reads-nudge.sh",
+            "command": "python3 ~/.claude/scripts/batch-reads-nudge.py",
             "timeout": 5
           }
         ]
@@ -320,7 +320,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/quality-check-cap.sh"
+            "command": "python3 ~/.claude/scripts/quality-check-cap.py"
           }
         ]
       }
@@ -339,19 +339,19 @@
           },
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/git-discipline-gate.sh"
+            "command": "python3 ~/.claude/scripts/git-discipline-gate.py"
           },
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/review-commit-gate.sh"
+            "command": "python3 ~/.claude/scripts/review-commit-gate.py"
           },
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/shell-write-gate.sh"
+            "command": "python3 ~/.claude/scripts/shell-write-gate.py"
           },
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/quality-check-cap.sh"
+            "command": "python3 ~/.claude/scripts/quality-check-cap.py"
           },
           {
             "type": "command",
@@ -381,11 +381,11 @@
           },
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/spec-budget-gate.sh"
+            "command": "python3 ~/.claude/scripts/spec-budget-gate.py"
           },
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/test-edit-telemetry.sh"
+            "command": "python3 ~/.claude/scripts/test-edit-telemetry.py"
           }
         ]
       },
@@ -394,11 +394,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/scripts/agent-model-guard.sh"
+            "command": "python3 ~/.claude/scripts/agent-model-guard.py"
           },
           {
             "type": "command",
-            "command": "~/.claude/scripts/agent-foreground.sh"
+            "command": "python3 ~/.claude/scripts/agent-foreground.py"
           },
           {
             "type": "command",
@@ -436,7 +436,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/emit-orchestration.sh"
+            "command": "python3 ~/.claude/scripts/emit-orchestration.py"
           }
         ]
       },
@@ -445,11 +445,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/scripts/warn-skip-hooks.sh"
+            "command": "python3 ~/.claude/scripts/warn-skip-hooks.py"
           },
           {
             "type": "command",
-            "command": "~/.claude/scripts/calibration-guard.sh"
+            "command": "python3 ~/.claude/scripts/calibration-guard.py"
           }
         ]
       },
@@ -480,7 +480,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/format-changed.sh"
+            "command": "python3 ~/.claude/scripts/format-changed.py"
           }
         ]
       }
@@ -490,11 +490,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/scripts/log-skill-use.sh"
+            "command": "python3 ~/.claude/scripts/log-skill-use.py"
           },
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/format-changed.sh"
+            "command": "python3 ~/.claude/scripts/format-changed.py"
           },
           {
             "type": "command",
@@ -553,6 +553,7 @@
   },
   "awaySummaryEnabled": false,
   "tui": "fullscreen",
+  "viewMode": "focus",
   "autoMemoryEnabled": false,
   "skipWorkflowUsageWarning": true,
   "theme": "custom:active",

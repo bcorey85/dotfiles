@@ -8,7 +8,7 @@
 #   4. agent frontmatter: name matches filename, model value is legal (sonnet|haiku|opus),
 #      -deep variants delegate to their base agent
 #   4b. rules/ structure: frontmatter, a paths: key, a non-empty body
-#   4c. orchestration.md exists and emit-orchestration.sh is registered
+#   4c. orchestration.md exists and emit-orchestration.py is registered
 #   4d. at least one reviewer agent still references reviewer-calibration.md
 #   4e. every heading block of an anchored prompt file has a docs/rule-anchors.md row
 #   5. skill frontmatter: name matches directory, allowed-tools contains no unknown tool names
@@ -87,10 +87,10 @@ fi
 print_info "Expected hook registrations"
 reg_blob=$(cat "$SETTINGS" "$CLAUDE_DIR/settings.local.json" 2>/dev/null)
 for pair in \
-  "log-skill-use.sh:skill-usage telemetry" \
-  "emit-orchestration.sh:orchestration context injection" \
-  "shell-write-gate.sh:shell-write bypass gate" \
-  "quality-check-cap.sh:quality-check repeat-run cap"; do
+  "log-skill-use.py:skill-usage telemetry" \
+  "emit-orchestration.py:orchestration context injection" \
+  "shell-write-gate.py:shell-write bypass gate" \
+  "quality-check-cap.py:quality-check repeat-run cap"; do
   script="${pair%%:*}"; label="${pair#*:}"
   [[ -f "$CLAUDE_DIR/scripts/$script" ]] || continue
   if grep -q "$script" <<<"$reg_blob"; then
@@ -99,9 +99,9 @@ for pair in \
     print_warn "scripts/$script exists but is not registered in settings.json — $label inactive"
   fi
 done
-if [[ -f "$CLAUDE_DIR/scripts/log-skill-use.sh" ]] && grep -q "log-skill-use.sh" <<<"$reg_blob"; then
+if [[ -f "$CLAUDE_DIR/scripts/log-skill-use.py" ]] && grep -q "log-skill-use.py" <<<"$reg_blob"; then
   if ! jq -r '.hooks.UserPromptSubmit // [] | tostring' "$SETTINGS" 2>/dev/null | grep -q "log-skill-use"; then
-    print_warn "log-skill-use.sh not wired to UserPromptSubmit — user-typed /commands won't be counted"
+    print_warn "log-skill-use.py not wired to UserPromptSubmit — user-typed /commands won't be counted"
   fi
 fi
 
@@ -197,7 +197,7 @@ fi
 
 # --- 4c. orchestration wiring -----------------------------------------------
 print_info "Orchestration wiring"
-if [[ -f "$CLAUDE_DIR/orchestration.md" ]] && grep -q "emit-orchestration.sh" <<<"$reg_blob"; then
+if [[ -f "$CLAUDE_DIR/orchestration.md" ]] && grep -q "emit-orchestration.py" <<<"$reg_blob"; then
   print_success "orchestration.md is wired to SessionStart"
 else
   print_warn "orchestration rules are not wired — the main session will silently have no routing rules"

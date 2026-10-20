@@ -52,10 +52,10 @@ const PRE_TOOL_GATES: Record<string, { tool: string; gates: string[] }> = {
     tool: "Bash",
     gates: [
       "bash-safety-gate.sh",
-      "git-discipline-gate.sh",
-      "review-commit-gate.sh",
-      "shell-write-gate.sh",
-      "quality-check-cap.sh",
+      "git-discipline-gate.py",
+      "review-commit-gate.py",
+      "shell-write-gate.py",
+      "quality-check-cap.py",
     ],
   },
   read: { tool: "Read", gates: ["block-credential-read.sh"] },
@@ -139,7 +139,8 @@ function runGate(
 
   let child: ChildProcess;
   try {
-    child = spawn("bash", [join(SCRIPTS_DIR, script)], {
+    const interpreter = script.endsWith(".py") ? "python3" : "bash";
+    child = spawn(interpreter, [join(SCRIPTS_DIR, script)], {
       cwd,
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -267,7 +268,7 @@ export default function bridge(pi: HookPi): void {
     const cwd = ctx?.cwd ?? process.cwd();
     if (event.toolName === "bash") {
       await runGate(
-        "quality-check-cap.sh",
+        "quality-check-cap.py",
         {
           hook_event_name: "PostToolUse",
           session_id: SESSION_ID,
@@ -281,7 +282,7 @@ export default function bridge(pi: HookPi): void {
 
     if (!event.isError && EDIT_TOOLS[event.toolName]) {
       await runGate(
-        "quality-check-cap.sh",
+        "quality-check-cap.py",
         {
           hook_event_name: "PostToolUse",
           session_id: SESSION_ID,
@@ -300,7 +301,7 @@ export default function bridge(pi: HookPi): void {
     await Promise.all(
       agents.map((agent) =>
         runGate(
-          "review-commit-gate.sh",
+          "review-commit-gate.py",
           {
             hook_event_name: "PostToolUse",
             session_id: SESSION_ID,

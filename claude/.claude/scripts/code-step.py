@@ -263,6 +263,10 @@ def verification_items(phaseSection, heading):
 # ---------- gate derivation ----------
 
 def nearest_package(repoRoot, relPath):
+    # The walk below compares path text, which a `../` path passes; resolve first so a sibling repo stays out.
+    if repoRoot.resolve() not in (repoRoot / relPath).resolve().parents:
+        return None
+
     directory = (repoRoot / relPath).parent
     while True:
         if (directory / "package.json").is_file():

@@ -30,7 +30,8 @@ from unittest import mock
 
 HERE = pathlib.Path(__file__).parent
 REPO_SCRIPT = HERE.parent.parent / "claude" / ".claude" / "scripts" / "code-step.py"
-SCRIPT = HERE / "code-step.py" if (HERE / "code-step.py").exists() else REPO_SCRIPT
+SCRIPT = pathlib.Path(os.environ["CODE_STEP_SCRIPT"]) if os.environ.get("CODE_STEP_SCRIPT") else \
+    HERE / "code-step.py" if (HERE / "code-step.py").exists() else REPO_SCRIPT
 REAL_CLAUDE = SCRIPT.parent.parent if (SCRIPT.parent / "coder-gate.py").exists() else pathlib.Path.home() / ".claude"
 STEP_LIMIT = 30
 MAX_HANDBACKS = 3

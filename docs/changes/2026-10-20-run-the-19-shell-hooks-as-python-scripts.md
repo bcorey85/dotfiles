@@ -58,7 +58,18 @@ Parity on real hook inputs from this machine, with the same decision, stdout and
 
 354 port tests pass against the new scripts.
 
-Predicted at work: the hooks before a Bash call drop from 425 ms to about 120–150 ms. `bash-safety-gate.sh` (114–123 ms) then sets the floor. The hooks after the call drop from 338 ms to about 30–60 ms. The work result is not in yet.
+Predicted at work: the hooks before a Bash call drop from 425 ms to about 120–150 ms. `bash-safety-gate.sh` (114–123 ms) then sets the floor. The hooks after the call drop from 338 ms to about 30–60 ms.
+
+Work hook timing census, 2026-10-20, against 2026-10-19 (10 runs each, payload `ls`, parallel hook group):
+
+| Hook group | Before | After |
+|---|---|---|
+| Before a Bash call, median | 425 ms | 139 ms |
+| Before a Bash call, max | 566 ms | 184 ms |
+| After a Bash call, median | 338 ms | 39 ms |
+| Main session, sum of medians before a call | 1396 ms | 420 ms |
+
+Both groups match the prediction and stay under 200 ms. `bash-safety-gate.sh` is now the slowest hook at work, 158–179 ms. Live hook durations at work run 10 to 20 times the census values: `batch-reads-nudge` took 1.3–2.2 s per run on 2026-10-19 and 2026-10-20. The work machine showed a load average of 17.6–20.6.
 
 ## Watch
 

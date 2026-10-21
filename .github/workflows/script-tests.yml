@@ -31,5 +31,8 @@ jobs:
           git config --global user.email "ci@example.com"
           git config --global init.defaultBranch main
 
+      - name: Link ~/.claude to the repo config, as install does
+        run: ln -s "$GITHUB_WORKSPACE/claude/.claude" "$HOME/.claude"
+
       - name: Run script tests
         run: bash tests/run.sh

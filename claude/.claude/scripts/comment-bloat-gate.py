@@ -87,11 +87,15 @@ def surface_of(file_path):
     return file_path
 
 
-def marker_rows(file_lines):
-    """Numbered non-blank lines carrying a workflow marker, ordered by line number."""
+def marker_rows(file_lines, comments_only=False):
+    """Numbered non-blank lines carrying a workflow marker, ordered by line number.
+
+    comments_only limits the scan to comment lines, for formats whose values are data, not prose."""
     rows = []
     for number, line in enumerate(file_lines, 1):
         if not NONBLANK.search(line):
+            continue
+        if comments_only and not COMMENT_LINE.match(line):
             continue
         row = "%d:%s" % (number, line)
         hit = any(p.search(row) for p in CASE_INSENSITIVE_MARKERS) or any(p.search(row) for p in CASE_SENSITIVE_MARKERS)
@@ -123,7 +127,9 @@ def check(raw):
     name = os.path.basename(file_path)
 
     added_lines = set(new_lines)
-    leaks = ["  %d:%s\n" % (number, line) for number, line in marker_rows(file_lines) if line in added_lines]
+    data_only = file_path.endswith(".json")
+    leaks = ["  %d:%s\n" % (number, line) for number, line in marker_rows(file_lines, data_only)
+             if line in added_lines]
     if leaks:
         emit_stderr("comment-bloat-gate: private-workflow marker in an added line (%s). Zero exceptions — keep the "
                     "reason, drop the pointer (_shared/code-vocabulary.md):\n" % name + "".join(leaks))

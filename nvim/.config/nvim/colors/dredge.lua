@@ -11,12 +11,12 @@
 -- classes. Keys, fields, attributes, parameters and builtins (self, JSON) are
 -- fg. Literals are dusty rose (h 5; light is pinker, h 355 C 0.14; None, numbers, booleans,
 -- symbols, escapes, regex).
--- Strings are sea teal (h 182); comments are sand (h 80, C 0.025; light C 0.034). No italics: hunk can't render
+-- Strings are sea teal (h 182, dark C 0.080); comments are sand (h 80, C 0.025; light C 0.034). No italics: hunk can't render
 -- them, and the two must match.
 -- Light mirrors dark's hues and order: comments sit between fg and the
 -- keywords. Code accents keep OKLab dE >= 0.17 from the near-black fg, or thin
 -- strokes read as black; teal is chroma-capped in sRGB, so it gets there by lightness. Keywords are
--- the ground's grey, and so are markup tags. Types are fg.
+-- the ground's grey, a step above punctuation, and so are markup tags. Types are fg.
 -- Modules stay fg. Markdown headings are indigo, like definitions.
 -- Diffs: added = green signs on a green wash (green is free: code never uses it),
 -- removed = orange-red (h 38) on sign, rail and wash alike, clear of the rose
@@ -52,14 +52,14 @@ palettes.dark = {
   amber = "#f6a981",
   yellow = "#d7bb70",
   green = "#8dd09b",
-  teal = "#85c2b7",
+  teal = "#74c2b5",
   blue = "#85beef",
   magenta = "#c799c9",
 
-  kw = "#7c8187",
+  kw = "#858990",
   fn = "#9c9ae3",
   remark = "#b4a999",
-  str = "#85c2b7",
+  str = "#74c2b5",
   const = "#c88191",
 
   added = "#5da37e",
@@ -73,7 +73,7 @@ palettes.dark = {
   search = "#5b4032",
 
   term = {
-    "#151719", "#ec817a", "#8dd09b", "#d7bb70", "#85beef", "#c799c9", "#85c2b7", "#c1c8d2",
+    "#151719", "#ec817a", "#8dd09b", "#d7bb70", "#85beef", "#c799c9", "#74c2b5", "#c1c8d2",
     "#777b81", "#f69d96", "#aee4b8", "#e9d296", "#a7d3f8", "#d8b1d9", "#b1dfd6", "#d4dbe5",
   },
 }
@@ -105,7 +105,7 @@ palettes.light = {
   blue = "#296caa",
   magenta = "#79437c",
 
-  kw = "#7c8189",
+  kw = "#6d7279",
   fn = "#574fa0",
   remark = "#6a5e4a",
   str = "#18796d",

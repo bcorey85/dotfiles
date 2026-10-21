@@ -11,8 +11,10 @@ return {
     local langs = {
       "bash",
       "c",
+      "c_sharp",
       "css",
       "diff",
+      "go",
       "html",
       "javascript",
       "jinja",
@@ -26,6 +28,7 @@ return {
       "python",
       "query",
       "regex",
+      "rust",
       "scss",
       "sql",
       "toml",

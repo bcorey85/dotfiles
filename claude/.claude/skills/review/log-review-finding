@@ -36,7 +36,9 @@
 #       same reviewer stay separable. Never collapse them.
 #
 #   kind=run ONLY
-#     n_findings=<n>              0 for a silent run — the point of the row
+#     n_findings=<n>              0 for a silent run — the point of the row.
+#       n_findings=null stores JSON null: the dispatch ran and its report
+#       could not be counted. Never write 0 for a report that was not counted.
 #     diff_loc=<n>                lines the gate actually read (git diff
 #       --shortstat on its scope, insertions+deletions). Review-defect-detection
 #       degrades with the size of the change under review, so a gate's yield is
@@ -141,6 +143,10 @@ for kv in "$@"; do
         exit 1
       fi ;;
   esac
+  if [ "$k" = n_findings ] && [ "$v" = null ]; then
+    json=$(jq -c '.n_findings = null' <<< "$json")
+    continue
+  fi
   json=$(jq -c --arg k "$k" --arg v "$v" '.[$k] = ($v | (tonumber? // .))' <<< "$json")
 done
 
@@ -250,8 +256,8 @@ fi
 
 # A run row with no n_findings is the failure mode that silently destroys the
 # denominator: it looks logged and counts as nothing.
-if [ "$kind" = run ] && [ "$(jq -r '.n_findings // "MISSING"' <<< "$json")" = MISSING ]; then
-  echo "refusing to log: kind=run needs n_findings=<n> (0 for a silent run)." >&2
+if [ "$kind" = run ] && [ "$(jq -r 'has("n_findings")' <<< "$json")" != true ]; then
+  echo "refusing to log: kind=run needs n_findings=<n> (0 for a silent run, null for an uncounted report)." >&2
   exit 1
 fi
 

@@ -136,5 +136,68 @@ class LastChangeNsTest(unittest.TestCase):
         self.assertEqual(path.stat().st_mtime_ns, script_utils.last_change_ns(path))
 
 
+class TextAndFileHelpersTest(unittest.TestCase):
+    def test_one_line_collapses_whitespace_and_cuts(self):
+        self.assertEqual(script_utils.one_line("a \n  b\t c"), "a b c")
+        self.assertEqual(script_utils.one_line("abcdef", 3), "abc")
+
+    def test_unquote_strips_one_matching_pair_only(self):
+        self.assertEqual(script_utils.unquote(' "x" '), "x")
+        self.assertEqual(script_utils.unquote("'x'"), "x")
+        self.assertEqual(script_utils.unquote("\"x'"), "\"x'")
+        self.assertEqual(script_utils.unquote('""x""'), '"x"')
+
+    def test_first_number(self):
+        self.assertEqual(script_utils.first_number("2 of 3"), 2)
+        self.assertIsNone(script_utils.first_number("two"))
+        self.assertIsNone(script_utils.first_number(None))
+
+    def test_unquoted_mask_blanks_quoted_spans(self):
+        masked = script_utils.unquoted_mask('a: "b: c" d')
+        self.assertNotIn("b: c", masked)
+        self.assertEqual(len(masked), len('a: "b: c" d'))
+
+    def test_top_level_braces_splits_flow_lists_and_ignores_quoted_braces(self):
+        groups = script_utils.top_level_braces('{a: 1}, {b: {c: 2}}, {d: "}"}')
+        self.assertEqual(groups, ["{a: 1}", "{b: {c: 2}}", '{d: "}"}'])
+
+    def test_normalize_path_strips_ticks_dot_slash_and_line_suffix(self):
+        self.assertEqual(script_utils.normalize_path("`./src/a.ts:12-20`"), "src/a.ts")
+        self.assertEqual(script_utils.normalize_path("a.ts:1, b.ts:2"), "a.ts")
+        self.assertEqual(script_utils.normalize_path("src/a.ts"), "src/a.ts")
+
+    def test_split_location_returns_path_and_first_line(self):
+        self.assertEqual(script_utils.split_location("a.ts:12-20, b.ts:3"), ("a.ts", 12))
+        self.assertEqual(script_utils.split_location("a.ts"), ("a.ts", 0))
+        self.assertEqual(script_utils.split_location("a.ts:x"), ("a.ts", 0))
+
+    def test_paths_named_collects_the_first_path_and_every_path_line_token_once(self):
+        paths = script_utils.paths_named("./a.ts:1", "see b.ts:2 and `c.ts:3-4` and a.ts:9", None)
+        self.assertEqual(paths, ["a.ts", "b.ts", "c.ts"])
+
+    def test_append_jsonl_and_read_jsonl_round_trip_and_skip_torn_lines(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = pathlib.Path(directory.name) / "deep" / "rows.jsonl"
+        script_utils.append_jsonl(path, {"n": 1})
+        script_utils.append_jsonl(path, {"n": 2})
+        with open(str(path), "a") as handle:
+            handle.write('{"torn": \n[1]\n')
+        self.assertEqual(script_utils.read_jsonl(path), [{"n": 1}, {"n": 2}])
+        self.assertEqual(script_utils.read_jsonl(path.parent / "missing.jsonl"), [])
+
+    def test_concurrent_appends_never_interleave_inside_a_row(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = pathlib.Path(directory.name) / "rows.jsonl"
+        threads = [threading.Thread(target=lambda n=n: [script_utils.append_jsonl(path, {"n": n, "pad": "x" * 500})
+                                                          for _ in range(20)]) for n in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(len(script_utils.read_jsonl(path)), 160)
+
+
 if __name__ == "__main__":
     unittest.main()

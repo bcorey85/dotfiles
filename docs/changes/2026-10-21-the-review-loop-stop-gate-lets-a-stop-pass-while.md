@@ -25,7 +25,7 @@ Work logs: the 9 long loops that the phase-time report details had 49 gate block
 
 ## Result
 
-Drafted in `~/dev/evals/gatewait/`. Not installed yet.
+Installed 2026-10-21. Before the install, a replay of the new check over 210 review-loop transcripts from this machine found no final stop that it lets through by mistake. The 6 new tests pass.
 
 ## Watch
 

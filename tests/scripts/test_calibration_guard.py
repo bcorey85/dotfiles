@@ -11,7 +11,7 @@ import unittest
 
 SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts") / "calibration-guard.py"
 
-LOCK = "home/.claude/calibration-lock.json"
+LOCK = "home/.local/state/claude-calibration/lock.json"
 FULL_LOCK = json.dumps({"file": "src/a.ts", "backup_path": "/tmp/a.ts.bak", "class": "off-by-one",
                         "ts": "2026-10-01T10:00:00Z", "kind": "calibrate"})
 
@@ -42,16 +42,28 @@ PARITY_CASES = [
 TYPICAL = {"name": "typical", "stdin": "", "files": {LOCK: FULL_LOCK}}
 
 
-def run_hook(lock_text=None):
+def run_hook(lock_text=None, old_lock_text=None, state_home=None):
+    """Lock text goes to the state-dir lock (under state_home when given, else $HOME/.local/state);
+    old_lock_text goes to the pre-move lock under ~/.claude."""
     with tempfile.TemporaryDirectory() as scratch:
         home = pathlib.Path(scratch) / "home"
         (home / ".claude").mkdir(parents=True)
+        environment = {key: value for key, value in os.environ.items() if key != "XDG_STATE_HOME"}
+        environment.update(HOME=str(home), TMPDIR=scratch)
+        state_root = home / ".local" / "state"
+        if state_home is not None:
+            state_root = pathlib.Path(scratch) / state_home
+            environment["XDG_STATE_HOME"] = str(state_root)
+        lock_path = state_root / "claude-calibration" / "lock.json"
+        old_lock_path = home / ".claude" / "calibration-lock.json"
         if lock_text is not None:
-            (home / ".claude" / "calibration-lock.json").write_text(lock_text)
-        environment = dict(os.environ, HOME=str(home), TMPDIR=scratch)
+            lock_path.parent.mkdir(parents=True)
+            lock_path.write_text(lock_text)
+        if old_lock_text is not None:
+            old_lock_path.write_text(old_lock_text)
         finished = subprocess.run([sys.executable, str(SCRIPT)], capture_output=True, env=environment)
-        lock_path = str(home / ".claude" / "calibration-lock.json")
-        return finished, finished.stdout.decode("utf-8").replace(lock_path, "<LOCK>")
+        text = finished.stdout.decode("utf-8").replace(str(lock_path), "<LOCK>").replace(str(old_lock_path), "<OLD-LOCK>")
+        return finished, text
 
 
 class CalibrationGuardTest(unittest.TestCase):
@@ -141,10 +153,40 @@ class CalibrationGuardTest(unittest.TestCase):
 
     def test_directory_at_lock_path_is_not_a_lock(self):
         with tempfile.TemporaryDirectory() as scratch:
+            (pathlib.Path(scratch) / ".local" / "state" / "claude-calibration" / "lock.json").mkdir(parents=True)
             (pathlib.Path(scratch) / ".claude" / "calibration-lock.json").mkdir(parents=True)
-            finished = subprocess.run([sys.executable, str(SCRIPT)], capture_output=True,
-                                      env=dict(os.environ, HOME=scratch))
+            environment = {key: value for key, value in os.environ.items() if key != "XDG_STATE_HOME"}
+            environment["HOME"] = scratch
+            finished = subprocess.run([sys.executable, str(SCRIPT)], capture_output=True, env=environment)
             self.assertEqual((finished.returncode, finished.stdout), (0, b""))
+
+    def test_lock_under_xdg_state_home_is_reported(self):
+        finished, text = run_hook(FULL_LOCK, state_home="custom-state")
+        self.assertEqual(finished.returncode, 0)
+        self.assertIn("CALIBRATION SEED", text)
+        self.assertIn('  rm "<LOCK>"\n', text)
+
+    def test_xdg_state_home_lock_is_the_only_one_read_when_set(self):
+        # With XDG_STATE_HOME set, the default $HOME/.local/state lock is not consulted.
+        with tempfile.TemporaryDirectory() as scratch:
+            home = pathlib.Path(scratch) / "home"
+            default_lock = home / ".local" / "state" / "claude-calibration" / "lock.json"
+            default_lock.parent.mkdir(parents=True)
+            default_lock.write_text(FULL_LOCK)
+            environment = dict(os.environ, HOME=str(home), XDG_STATE_HOME=str(pathlib.Path(scratch) / "elsewhere"))
+            finished = subprocess.run([sys.executable, str(SCRIPT)], capture_output=True, env=environment)
+            self.assertEqual((finished.returncode, finished.stdout), (0, b""))
+
+    def test_lock_left_at_the_old_path_is_still_reported(self):
+        finished, text = run_hook(old_lock_text=FULL_LOCK)
+        self.assertEqual(finished.returncode, 0)
+        self.assertIn("CALIBRATION SEED", text)
+        self.assertIn('  rm "<OLD-LOCK>"\n', text)
+
+    def test_new_path_lock_wins_over_the_old_one(self):
+        _, text = run_hook(json.dumps({"file": "new.ts"}), old_lock_text=json.dumps({"file": "old.ts"}))
+        self.assertIn("new.ts", text)
+        self.assertNotIn("old.ts", text)
 
 
 if __name__ == "__main__":

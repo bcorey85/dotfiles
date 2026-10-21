@@ -247,7 +247,7 @@ issue rides into `findings_remaining` with its original disposition — never
 
 ## Step 6: Convergence — the execution gate
 
-**Execution gate (before declaring convergence)**: the phase's one full run. Code changed in the phase whenever this loop runs, so always run the project's full quality-check command (from project CLAUDE.md) ONCE, after the last code change, redirected to `/tmp/review-gate.log`, with a trailing `#skip-quality-cap` comment. This run is the gate, so the cap on repeated checks must not deny it. A handoff `tests-run` never exempts it: that run covered only the changed files. Exit 0 → proceed. Non-zero → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above.
+**Execution gate (before declaring convergence)**: the phase's one full run. Code changed in the phase whenever this loop runs, so always run the project's full quality-check command (from project CLAUDE.md) ONCE, after the last code change, redirected to `/tmp/review-gate.log`. A handoff `tests-run` never exempts it: that run covered only the changed files. Exit 0 → proceed. Non-zero → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above.
 
 **Exception**: failures in acceptance spec tests (`*.spec.*`, or any test the plan's `Acceptance Criteria` file names as covering a criterion) are critical BLOCKERS — never route them to auto-fix. Either the code is wrong or the intent changed, and only the user decides which; an auto-fixer's cheapest path to green is editing the spec.
 
@@ -289,10 +289,9 @@ prose. Do not add an enum for it.
 
 ### Step 7b: Per-finding rows
 
-Also emit the per-gate and per-finding rows per
-`~/.claude/skills/_shared/finding-log.md` (read it). Covers **every** reviewer
-this loop dispatched, including any that returned nothing. Run it last, so
-`actioned` is real.
+Also emit the per-finding rows per
+`~/.claude/skills/_shared/finding-log.md` (read it). Skip its `kind=run` block;
+the stop hook writes those. Run it last, so `actioned` is real.
 
 ## Return packet (the ONLY thing the orchestrator pays for)
 

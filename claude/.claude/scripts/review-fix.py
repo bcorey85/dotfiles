@@ -39,9 +39,9 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import handback  # noqa: E402
-import text_utils  # noqa: E402
+import script_utils  # noqa: E402
 from handback import CLASSES, PacketError, item_field, item_text  # noqa: E402
-from text_utils import one_line, split_location  # noqa: E402
+from script_utils import one_line, split_location  # noqa: E402
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR", pathlib.Path.home() / ".claude"))
 SEVERITIES = ["high", "medium", "low"]
@@ -320,7 +320,7 @@ def log_escapes(state, escapes, lane):
     notes = []
     logged = state.setdefault("escapes_logged", [])
     for fields in escapes:
-        file = text_utils.normalize_path(fields["file"])
+        file = script_utils.normalize_path(fields["file"])
         if file in logged:
             notes.append(f"escape for {file} already logged: skipped.")
             continue
@@ -342,7 +342,7 @@ def log_escapes(state, escapes, lane):
 
 
 def aikido_reply(target, packet):
-    where = (text_utils.normalize_path(target["path"]), target["line"])
+    where = (script_utils.normalize_path(target["path"]), target["line"])
     named = f"{where[0]}:{where[1]}"
     for item in packet["fixed"]:
         if where in handback.entry_locations(item):

@@ -58,7 +58,7 @@ Spec: <task-dir>
 - <the map that /orient produced, consumed verbatim; never rebuilt here>
 
 ### Cross-phase test audit         (from the /test-audit phase receipt)
-- <culled / WEAK findings, or "clean">
+- <culled / WEAK findings, or "clean"; "no receipt" when no /test-audit receipt is in context — never "clean" without one>
 - <denominator, always: "N plan promises walked">
 - <any REQUIRES-MUTATION items with their KILLED/SURVIVED/EQUIVALENT/INDETERMINATE verdicts, or marked unrouted-and-open>
 
@@ -82,7 +82,7 @@ Persist (non-blocking; on failure mention and continue):
 if "$HOME/.claude/scripts/telemetry_enabled.sh" 2>/dev/null; then
   printf '{"ts":"%s","repo":"%s","branch":"%s","test_audit":"%s","residue":%d,"files":%d}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(basename "$(git rev-parse --show-toplevel)")" \
-    "$(git rev-parse --abbrev-ref HEAD)" "<clean|n culled|n weak>" \
+    "$(git rev-parse --abbrev-ref HEAD)" "<clean|n culled|n weak|no receipt>" \
     <unstaged count> <changed-file count> >> "$HOME/.claude/branch-recap-receipts.jsonl"
 fi
 ```

@@ -22,8 +22,8 @@ import textwrap
 import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import text_utils  # noqa: E402
-from text_utils import first_number, one_line, unquote  # noqa: E402
+import script_utils  # noqa: E402
+from script_utils import first_number, one_line, unquote  # noqa: E402
 
 STATUSES = ["converged", "deferred", "plan-impact", "critical-blocker", "cap-reached"]
 CLEAN_STATUSES = ("converged", "deferred")
@@ -143,7 +143,7 @@ def parse_flow_mapping(chunk):
 def parse_inline_pairs(body):
     # A key starts a field at the start of the body, after a newline, or after `, ` `. ` `; ` `| ` `? ` `! ` `) `.
     # A key word after a bare space is part of the previous value.
-    maskedBody = text_utils.unquoted_mask(body)
+    maskedBody = script_utils.unquoted_mask(body)
     matches = list(INLINE_KEY_AT.finditer(maskedBody))
     if not matches:
         return None
@@ -201,7 +201,7 @@ def read_list(raw):
         pass
     bracketed = raw.startswith("[") and raw.endswith("]") and raw.count("{") > 0
     if bracketed:
-        return "", [flow_item(chunk) for chunk in text_utils.top_level_braces(raw[1:-1])]
+        return "", [flow_item(chunk) for chunk in script_utils.top_level_braces(raw[1:-1])]
     chunks = split_top_level_items(indented)
     lead = ""
     if len(chunks) > 1:
@@ -246,24 +246,24 @@ def item_field(item, key, default=""):
 def entry_paths(item):
     """Every normalized path that a list entry names: its file_line plus each path:line in its finding text."""
     if not isinstance(item, dict):
-        return text_utils.paths_named(item)
-    return text_utils.paths_named(item.get("file_line"), item.get("finding"), item.get("item"))
+        return script_utils.paths_named(item)
+    return script_utils.paths_named(item.get("file_line"), item.get("finding"), item.get("item"))
 
 
 def entry_locations(item):
     """Every (path, line) that a list entry names."""
     if not isinstance(item, dict):
-        return [text_utils.split_location(hit) for hit in text_utils.PATH_LINE.findall(str(item))]
+        return [script_utils.split_location(hit) for hit in script_utils.PATH_LINE.findall(str(item))]
     findingText = str(item.get("finding") or "")
     itemText = str(item.get("item") or "")
-    texts = [str(item.get("file_line") or ""), *text_utils.PATH_LINE.findall(findingText),
-             *text_utils.PATH_LINE.findall(itemText)]
-    return [text_utils.split_location(text) for text in texts if text.strip()]
+    texts = [str(item.get("file_line") or ""), *script_utils.PATH_LINE.findall(findingText),
+             *script_utils.PATH_LINE.findall(itemText)]
+    return [script_utils.split_location(text) for text in texts if text.strip()]
 
 
 def entry_from_text(text, textKey):
     """A plain-text list entry (`- text | path:line | blocker: no`) as the mapping the loop's flow style gives."""
-    found = text_utils.PATH_LINE.search(text)
+    found = script_utils.PATH_LINE.search(text)
     entry = {textKey: text, "blocker": "yes" if BLOCKER_TEXT.search(text) else "no", "from_text": True}
     if found:
         entry["file_line"] = found.group(1)
@@ -440,7 +440,7 @@ def record(sessionId, kind, **fields):
     """Append one row to the session's own file. Other sessions' files are never touched."""
     row = {"kind": kind, "ts": time.time(), "session_id": sessionId, **fields}
     prune_stale()
-    text_utils.append_jsonl(session_file(sessionId), row)
+    script_utils.append_jsonl(session_file(sessionId), row)
     return row
 
 
@@ -454,7 +454,7 @@ def latest(sessionId):
     if not sessionId:
         return standing
     try:
-        storedRows = text_utils.read_jsonl(session_file(sessionId))
+        storedRows = script_utils.read_jsonl(session_file(sessionId))
     except ValueError:
         return standing
     for row in storedRows:
@@ -505,7 +505,7 @@ def false_clean_reason(sessionId):
 
 
 def was_rejected(sessionId, agentId):
-    storedRows = text_utils.read_jsonl(session_file(sessionId))
+    storedRows = script_utils.read_jsonl(session_file(sessionId))
     return any(row.get("kind") == "rejected" and row.get("agent_id") == agentId for row in storedRows)
 
 

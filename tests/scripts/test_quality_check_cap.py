@@ -89,7 +89,23 @@ class QualityCheckCapTest(unittest.TestCase):
         reason = self.assert_denied(self.pre("pytest -q"))
         self.assertTrue(reason.startswith(DENY_START + "pytest -q' already ran this session and nothing has been "
                                           "edited since."), reason)
-        self.assertIn("#skip-quality-cap", reason)
+        self.assertNotIn("#skip-quality-cap", reason)
+
+    def test_review_loop_gate_run_writing_the_gate_log_is_exempt(self):
+        gate = "cargo test --all-targets > /tmp/review-gate.log 2>&1"
+        self.post(gate)
+        self.assert_allowed(self.pre(gate, agent_type="review-loop", agent_id="a1"))
+        self.assert_denied(self.pre(gate, agent_type="coder", agent_id="a2"))
+        self.assert_denied(self.pre(gate))
+        self.post("cargo test > /tmp/other.log 2>&1")
+        self.assert_denied(self.pre("cargo test > /tmp/other.log 2>&1", agent_type="review-loop"))
+
+    def test_edit_after_a_passing_cargo_test_allows_it_again(self):
+        for agent in ({}, {"agent_id": "sub-1", "agent_type": "coder"}):
+            self.post("cargo test")
+            self.assert_denied(self.pre("cargo test"))
+            self.assert_allowed(self.edit(**agent))
+            self.assert_allowed(self.pre("cargo test"))
 
     def test_run_state_file_is_named_by_cksum_of_command_and_cwd(self):
         module = self.load_module()
@@ -192,6 +208,145 @@ class QualityCheckCapTest(unittest.TestCase):
         self.fire("PostToolUseFailure", command="pytest", error="Command timed out after 120s")
         self.assert_allowed(self.pre("pytest"))
 
+    # only a check that ran is counted
+
+    GATE = ("cargo fmt && (cargo fmt --check && cargo clippy --all-targets -- -D warnings && "
+            "cargo test --all-targets --no-fail-fast && python3 -m unittest x) > log")
+
+    def test_check_behind_a_failed_and_chain_is_not_counted(self):
+        self.fire("PostToolUseFailure", command=self.GATE, error="Exit code 1")
+        self.assert_allowed(self.pre("cargo clippy --all-targets -- -D warnings"))
+        self.assert_allowed(self.pre("cargo test --all-targets --no-fail-fast"))
+
+    def test_first_check_of_a_failed_chain_is_counted(self):
+        self.fire("PostToolUseFailure", command="pytest -q && eslint .", error="Exit code 1")
+        self.assert_denied(self.pre("pytest -q"))
+        self.assert_allowed(self.pre("eslint ."))
+
+    def test_failed_check_after_cd_or_source_or_assignment_is_counted(self):
+        for command in ("cd %s && pytest -q" % self.work, "source .venv/bin/activate && pytest -q",
+                        ". .venv/bin/activate && pytest -q", "FOO=1 && pytest -q",
+                        "cd %s && source .venv/bin/activate && pytest -q" % self.work):
+            self.fire("PostToolUseFailure", command=command, error="Exit code 1")
+            self.assert_denied(self.pre(command))
+            self.assert_allowed(self.edit())
+
+    def test_failed_check_behind_a_real_command_is_still_not_counted(self):
+        self.fire("PostToolUseFailure", command="cd /x && make build && pytest -q", error="Exit code 1")
+        self.assert_allowed(self.pre("pytest -q"))
+
+    def test_formatter_after_a_check_does_not_exempt_the_check(self):
+        self.post("npm test; prettier --write x")
+        self.assert_denied(self.pre("npm test; prettier --write x"))
+        self.assert_denied(self.pre("npm test"))
+        self.assert_allowed(self.pre("prettier --write x; npm test"))
+
+    def test_checks_of_a_passing_and_chain_are_all_counted(self):
+        self.post("pytest -q && eslint . && mypy src")
+        for command in ("pytest -q", "eslint .", "mypy src"):
+            self.assert_denied(self.pre(command))
+
+    def test_passing_gate_in_a_subshell_counts_its_checks_with_clean_keys(self):
+        self.post(self.GATE)
+        reason = self.assert_denied(self.pre("cargo clippy --all-targets -- -D warnings"))
+        self.assertTrue(reason.startswith(DENY_START + "cargo clippy --all-targets -- -D warnings' already ran"))
+        self.assert_denied(self.pre("cargo test --all-targets --no-fail-fast"))
+
+    def test_check_behind_or_is_not_counted_after_success(self):
+        self.post("pytest -q || eslint .")
+        self.assert_denied(self.pre("pytest -q"))
+        self.assert_allowed(self.pre("eslint ."))
+
+    def test_checks_joined_by_semicolon_and_pipe_are_counted_after_failure(self):
+        self.fire("PostToolUseFailure", command="pytest -q; eslint . | tail -3", error="Exit code 1")
+        self.assert_denied(self.pre("pytest -q"))
+        self.assert_denied(self.pre("eslint ."))
+
+    # changes made by git itself
+
+    def git(self, repo, *args):
+        subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", *args], check=True,
+                       capture_output=True)
+
+    def make_committed_repo(self):
+        repo = self.make_repo()
+        self.git(repo, "commit", "-q", "-m", "first")
+        return repo
+
+    def test_commit_made_by_git_between_runs_allows_a_rerun(self):
+        repo = self.make_committed_repo()
+        self.post("cargo test", cwd=repo)
+        self.assert_denied(self.pre("cargo test", cwd=repo))
+        time.sleep(0.05)
+        (repo / "tracked.py").write_text("merged\n")
+        self.git(repo, "commit", "-q", "-am", "merge-like change")
+        self.assert_allowed(self.pre("cargo test", cwd=repo))
+
+    def test_branch_switch_between_runs_allows_a_rerun(self):
+        repo = self.make_committed_repo()
+        self.git(repo, "checkout", "-q", "-b", "other")
+        (repo / "tracked.py").write_text("other\n")
+        self.git(repo, "commit", "-q", "-am", "other")
+        self.git(repo, "checkout", "-q", "-")
+        self.post("cargo test", cwd=repo)
+        time.sleep(0.05)
+        self.git(repo, "merge", "-q", "--no-ff", "-m", "merge", "other")
+        self.assert_allowed(self.pre("cargo test", cwd=repo))
+
+    def test_same_tree_in_a_committed_repo_is_still_a_repeat(self):
+        repo = self.make_committed_repo()
+        (repo / "tracked.py").write_text("dirty\n")
+        (repo / "new.py").write_text("n\n")
+        self.post("cargo test", cwd=repo)
+        self.assert_denied(self.pre("cargo test", cwd=repo))
+        self.assert_denied(self.pre("cargo test", cwd=repo))
+
+    def test_git_failure_after_a_recorded_fingerprint_allows(self):
+        repo = self.make_committed_repo()
+        self.post("cargo test", cwd=repo)
+        self.assert_denied(self.pre("cargo test", cwd=repo))
+        shutil.rmtree(repo / ".git")
+        self.assert_allowed(self.pre("cargo test", cwd=repo))
+
+    def test_edit_by_a_subagent_of_the_same_session_resets_the_cap(self):
+        self.post("cargo clippy")
+        self.assert_denied(self.pre("cargo clippy"))
+        self.assert_allowed(self.edit(agent_id="sub-1", agent_type="coder"))
+        self.assert_allowed(self.pre("cargo clippy"))
+
+    def test_subagent_shell_edits_after_the_run_allow_a_rerun(self):
+        repo = self.make_repo()
+        self.post("cargo clippy", cwd=repo)
+        time.sleep(0.05)
+        for name in ("a.rs", "b.rs"):
+            (repo / name).write_text("x\n")
+        self.assert_allowed(self.pre("cargo clippy", cwd=repo))
+
+    # formatters that write
+
+    def test_command_with_a_writing_formatter_is_never_a_repeat(self):
+        self.post("cargo clippy && cargo test")
+        for command in ("cargo fmt && cargo clippy", "prettier --write . && eslint .; cargo test",
+                        "ruff format . && cargo test", "cargo fmt\ncargo clippy"):
+            self.assert_allowed(self.pre(command))
+
+    def test_read_only_formatter_run_is_still_a_repeat(self):
+        self.post("cargo clippy")
+        self.assert_denied(self.pre("cargo fmt --check && cargo clippy"))
+        self.assert_denied(self.pre("prettier --check . && cargo clippy"))
+        self.assert_denied(self.pre("ruff format --check . && cargo clippy"))
+
+    def test_formatter_run_resets_the_cap_for_other_checks_but_not_its_own_checks(self):
+        self.post("pytest")
+        self.post("cargo fmt && cargo clippy")
+        self.assert_allowed(self.pre("pytest"))
+        self.assert_denied(self.pre("cargo clippy"))
+
+    def test_full_gate_after_formatter_and_failed_run_is_allowed(self):
+        self.post("cargo clippy --all-targets -- -D warnings")
+        self.fire("PostToolUseFailure", command=self.GATE, error="Exit code 1")
+        self.assert_allowed(self.pre(self.GATE))
+
     # changes the Write/Edit hook never saw
 
     def make_repo(self):
@@ -224,12 +379,12 @@ class QualityCheckCapTest(unittest.TestCase):
         self.post("pytest", cwd=repo)
         self.assert_denied(self.pre("pytest", cwd=repo))
 
-    def test_deleted_tracked_file_does_not_allow(self):
+    def test_deleted_tracked_file_changes_the_tree_and_allows(self):
         repo = self.make_repo()
         self.post("pytest", cwd=repo)
         time.sleep(0.05)
         (repo / "tracked.py").unlink()
-        self.assert_denied(self.pre("pytest", cwd=repo))
+        self.assert_allowed(self.pre("pytest", cwd=repo))
 
     # environment and robustness
 

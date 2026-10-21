@@ -172,6 +172,41 @@ def saved_messages(cwd, agentType, stage, skipRows=0):
     return list(lastPerAgent.values())
 
 
+def latest_coder_row(repoRoot, stage, since=None):
+    # The saved row of the coder dispatched last: the newest row of this stage that the hand-back gate let through.
+    # Rows of earlier coders of the same stage are not part of it, and with `since` (the dispatch time) neither is a
+    # row saved before that dispatch. None when no such row exists.
+    reportsFile = state_dir(repoRoot) / "reports.jsonl"
+    if not reportsFile.exists():
+        return None
+    latest = None
+    for line in reportsFile.read_text().splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(row, dict) or row.get("agent_type") != CODER or row.get("stage") != stage:
+            continue
+        if since is not None and not (isinstance(row.get("ts"), (int, float)) and row["ts"] > since):
+            continue
+        if coder_gate_allows(repoRoot, row.get("agent_id") or "unknown"):
+            latest = row
+    return latest
+
+
+def latest_coder_message(repoRoot, stage, since=None):
+    row = latest_coder_row(repoRoot, stage, since)
+    return None if row is None else row.get("message", "")
+
+
+def with_earlier_report(state, latestReport):
+    # An addendum coder of the same phase run reports on top of the coder before it: both reports describe the change.
+    # None when there is no latest report, so a missing hand-back still reads as missing.
+    if latestReport is None:
+        return None
+    return "\n\n".join(filter(None, [state.get("earlierCoderReport"), latestReport]))
+
+
 def all_saved_messages(cwd, agentType, stage):
     reportsFile = state_dir(cwd) / "reports.jsonl"
     if not reportsFile.exists():
@@ -190,6 +225,19 @@ def all_saved_messages(cwd, agentType, stage):
 def session_pin():
     # The id of the session that runs /code. The fork sees its parent's id here, and hook events carry the same id.
     return os.environ.get("CLAUDE_CODE_SESSION_ID") or None
+
+
+def head_commit(repoRoot):
+    head = git_output(repoRoot, "rev-parse", "HEAD")
+    return head.strip() if head else None
+
+
+def committed_since(repoRoot, baseHead):
+    # Files the coder committed itself since the phase started. A commit leaves no dirty file behind, so the dirty
+    # list alone would call the phase empty.
+    if not baseHead or head_commit(repoRoot) in (None, baseHead):
+        return []
+    return git_names(repoRoot, "diff", "--name-only", baseHead, "HEAD")
 
 
 def uncommitted_files(repoRoot, previous):
@@ -409,6 +457,7 @@ def parse_plan(planLines):
     entries, sections, failures = [], {}, []
     inStatus = False
     firstLines = {}
+    openLevel = None
     fenced = script_utils.fenced_line_indexes(planLines)
     for index, line in enumerate(planLines):
         if index in fenced:
@@ -417,9 +466,16 @@ def parse_plan(planLines):
         if heading:
             inStatus = heading.group(2).strip() == "Phase Status"
             phaseHeading = PHASE_HEADING.match(line)
+            if openLevel is not None and len(heading.group(1)) <= openLevel:
+                openLevel = None
             if not phaseHeading:
                 continue
             sectionId = phaseHeading.group(2)
+            # A heading of an id that already has a section, deeper than the section it sits in (`#### Phase 6 record`
+            # under `## Phase 6`), is a note inside that section, not a second section.
+            if openLevel is not None and len(phaseHeading.group(1)) > openLevel and sectionId in sections:
+                continue
+            openLevel = len(phaseHeading.group(1))
             if sectionId in sections:
                 failures.append({"line": index + 1, "kind": "duplicate-id", "detail": f"Phase {sectionId} has two "
                                  f"sections, on line {sections[sectionId]['start'] + 1} and line {index + 1}. Give "
@@ -447,9 +503,10 @@ def parse_plan(planLines):
                         "risk": risk.group(1).lower() if risk else "high", "closing": closing})
     headingRows = [(i, len(h.group(1))) for i, line in enumerate(planLines)
                    if i not in fenced and (h := HEADING.match(line))]
+    sectionStarts = {section["start"] for section in sections.values()}
     for number, section in sections.items():
         section["end"] = next((i for i, level in headingRows if i > section["start"]
-                               and (level <= section["level"] or PHASE_HEADING.match(planLines[i]))), len(planLines))
+                               and (level <= section["level"] or i in sectionStarts)), len(planLines))
     for entry in entries:
         # A closing phase is defined by its skill, so its Phase Status line needs no section of its own.
         if entry["number"] not in sections and not entry["closing"]:
@@ -917,6 +974,9 @@ def command_start(args):
             listed = ", ".join(e["number"] for e in entries) or "none"
             return emit("stop", f"Phase {phaseId} is not in the Phase Status of {planRel}. Listed phases: {listed}. "
                         "Tell the user.")
+        if entry["done"]:
+            return emit("stop", f"Phase {phaseId} is already marked done in {planRel}. No coder was dispatched. Tell "
+                        "the user; to run it again, they uncheck it in Phase Status first.")
     elif entries and not pending:
         return emit("stop", "Every phase in the plan is checked. Tell the user the plan is complete.")
     else:
@@ -928,7 +988,8 @@ def command_start(args):
     if entry:
         closingSkill = next((skill for pattern, skill in CLOSING_PHASES if pattern.search(entry["title"])), None)
         if closingSkill:
-            return start_closing_phase(repoRoot, planRel, lane, modifier, entry, closingSkill, section, branch)
+            return start_closing_phase(repoRoot, planRel, lane, modifier, entry, closingSkill, section, branch,
+                                       phaseId)
 
     if not check_acceptance_criteria(repoRoot, planLines, planRel):
         return
@@ -944,14 +1005,16 @@ def command_start(args):
     isSameUnfinishedPhase = (previous.get("plan") == planRel and previous.get("phase") == statePhase
                              and previous.get("stage") not in (None, "done") and previous.get("baseline") is not None)
     baseline = previous["baseline"] if isSameUnfinishedPhase else file_hashes(repoRoot)
+    baseHead = previous.get("baseHead") if isSameUnfinishedPhase and previous.get("baseHead") else head_commit(repoRoot)
 
     phaseLabel = f"Phase {number} of `{planRel}`" if entry and hasPhases else f"`{planRel}`"
     prompt = (f"Implement {phaseLabel}. Read the plan phase-scoped.\n"
               "If the task turns out architectural, report back and recommend /eng-spec.\n\n" + packetText).rstrip()
     state = {"stage": "coder", "plan": planRel, "lane": lane, "phase": statePhase, "branch": branch,
              "modifier": modifier, "risk": entry["risk"] if entry else "high", "title": entry["title"] if entry else "",
-             "gateCommands": commands, "baseline": baseline, "startedAt": time.time(),
-             "phaseText": section if entry and hasPhases else None, "sessionId": session_pin()}
+             "gateCommands": commands, "baseline": baseline, "baseHead": baseHead, "startedAt": time.time(),
+             "phaseText": section if entry and hasPhases else None, "onlyPhase": phaseId,
+             "sessionId": session_pin()}
     open_dispatch(state)
     save_state(repoRoot, state)
     model = "haiku" if modifier == "+fast" else None
@@ -973,10 +1036,10 @@ def start_planless(repoRoot, modifier, taskText, branch="-"):
     emit("dispatch", next_after("after-coder"), prompt=prompt, agent="coder", model=model)
 
 
-def start_closing_phase(repoRoot, planRel, lane, modifier, entry, skill, section, branch):
+def start_closing_phase(repoRoot, planRel, lane, modifier, entry, skill, section, branch, onlyPhase=None):
     state = {"stage": "skill", "plan": planRel, "lane": lane, "phase": entry["number"], "branch": branch,
              "modifier": modifier, "risk": entry["risk"], "title": entry["title"], "gateCommands": [], "behavior": [],
-             "sessionId": session_pin()}
+             "baseline": file_hashes(repoRoot), "onlyPhase": onlyPhase, "sessionId": session_pin()}
     save_state(repoRoot, state)
     verdictStep = ("run `python3 ~/.claude/scripts/code-step.py skill-done pass` when the phase's Success Criteria "
                    "hold, or `skill-done fail` when they do not (for the Verify pass, any MISSING criterion fails it)")
@@ -1033,10 +1096,31 @@ def coder_flags(report):
     return flagged
 
 
+PLAN_IMPACT_HEADER = re.compile(r"^[ \t>*`_-]*PLAN-IMPACT[*`_]*:?[*`_]*[ \t]*$")
+PLAN_IMPACT_KEY = re.compile(r"^[ \t>*`_-]*(?:assumed|found|changes)[*`_]*:", re.I)
+
+
 def plan_impact_block(report):
-    match = re.search(r"^PLAN-IMPACT:[ \t]*\n((?:[ \t]+\S.*\n?)+)", report, re.M)
-    if match:
-        return "PLAN-IMPACT:\n" + match.group(1).rstrip()
+    # The block is the header line `PLAN-IMPACT:` (bold or backticked is fine) and the lines under it: indented lines,
+    # or lines that start with one of the three keys. Blank lines may sit between the header and the first line.
+    lines = report.splitlines()
+    for index, line in enumerate(lines):
+        if not PLAN_IMPACT_HEADER.match(line):
+            continue
+        body = []
+        for later in lines[index + 1:]:
+            if not later.strip():
+                if body:
+                    break
+                continue
+            if later[0] in " \t":
+                body.append(later.rstrip())
+            elif PLAN_IMPACT_KEY.match(later):
+                body.append("  " + later.strip())
+            else:
+                break
+        if body:
+            return "PLAN-IMPACT:\n" + "\n".join(body)
     if re.search(r"^PLAN-IMPACT:\s*yes\s*$", report, re.M):
         return "PLAN-IMPACT: yes (block not found in the report; read the report)"
     return None
@@ -1155,6 +1239,9 @@ def command_after_coder(args):
     addendum = None if isAskFix else added_phase_lines(repoRoot, state)
     if addendum:
         state["phaseText"] = addendum["text"]
+        firstReport = with_earlier_report(state, latest_coder_message(repoRoot, coderStage, state.get("dispatchAt")))
+        if firstReport is not None:
+            state["earlierCoderReport"] = firstReport
         open_dispatch(state)
         save_state(repoRoot, state)
         prompt = (f"Phase {state['phase']} of `{state['plan']}` gained lines after the first coder was dispatched. "
@@ -1167,11 +1254,13 @@ def command_after_coder(args):
     gateLines = state.get("gateLines", "")
     if not isAskFix:
         code, gateLines = run_command(["python3", str(SCRIPTS_DIR / "coder-gate.py"), "clear"], repoRoot)
-    reports = saved_messages(repoRoot, "coder", coderStage)
-    if not reports:
+    latestRow = latest_coder_row(repoRoot, coderStage, state.get("dispatchAt"))
+    if latestRow is None:
         return emit("stop", "No coder report was saved. The SubagentHandback hook (code-step.py hook) is not "
                     "installed or the coder never handed back. Tell the user.")
-    report = "\n\n".join(reports)
+    report = latestRow.get("message", "")
+    if not isAskFix:
+        report = with_earlier_report(state, report)
 
     capped = [coder for coder in (gate or {"coders": {}})["coders"].values() if coder["result"] == "cap"]
     flagged = list(state.get("flagged", [])) if isAskFix else []
@@ -1182,15 +1271,22 @@ def command_after_coder(args):
     changedNow = file_hashes(repoRoot)
     baseline = state["baseline"]
     changedFiles = [name for name, digest in changedNow.items() if name not in baseline or baseline[name] != digest]
+    changedFiles += [name for name in committed_since(repoRoot, state.get("baseHead")) if name not in changedFiles]
     asksCoderChangedNothing = isAskFix and changedNow == state.get("asksBaseline")
     if not changedFiles or asksCoderChangedNothing or "/eng-spec" in report:
         state["stage"] = "stopped"
+        state["resumableCoderAt"] = time.time()
+        state["resumableCoderId"] = latestRow.get("agent_id") or "unknown"
+        state.pop("dispatchAt", None)
         save_state(repoRoot, state)
         tickText = (f" If the user says Phase {state['phase']} is already done, invoke Skill code with `tick "
                     f"{state['phase']}`; do that only on the user's word." if state.get("plan") and state.get("phase")
                     else "")
+        resumeText = (" If the user answers the coder's blocker, resume that coder with SendMessage, then run "
+                      f"{timed_command('after-coder')}.")
         return emit("stop", "The coder produced no reviewable change, or recommended /eng-spec. Do not dispatch a "
-                    "review. Do not mark the phase done." + tickText + " Relay the coder's report to the user:", report)
+                    "review. Do not mark the phase done." + tickText + resumeText
+                    + " Relay the coder's report to the user:", report)
 
     asksBaseline = state.get("asksBaseline")
     if isAskFix and asksBaseline is not None:
@@ -1687,8 +1783,11 @@ def follow_up_is_small(before, after):
 
 def emit_review_dispatch(repoRoot, state):
     coderStages = ["coder"] + (["asks-coder"] if state.get("coderStage") == "asks-coder" else [])
-    reports = [report for stage in coderStages for report in saved_messages(repoRoot, "coder", stage)]
-    report = "\n\n".join(reports)
+    stageReports = []
+    for stage in coderStages:
+        stageReport = latest_coder_message(repoRoot, stage)
+        stageReports.append(with_earlier_report(state, stageReport) if stage == "coder" else stageReport)
+    report = "\n\n".join(stageReport for stageReport in stageReports if stageReport is not None)
     untrackedText = git_output(repoRoot, "ls-files", "--others", "--exclude-standard") or ""
     untrackedFiles = set(untrackedText.split("\n"))
     # One behavior sentence describes one file. Across several files it tells the reviewer the wrong change.
@@ -1797,12 +1896,23 @@ def command_hook():
             return
         cwd = event.get("cwd") or "."
         state = load_state(cwd)
-        if state is None or state["stage"] not in HOOK_STAGES:
+        isResumedCoder = (state is not None and state["stage"] == "stopped" and agentType == CODER
+                          and state.get("resumableCoderAt") is not None
+                          and state.get("resumableCoderId") == (event.get("agent_id") or "unknown"))
+        if state is None or (state["stage"] not in HOOK_STAGES and not isResumedCoder):
             return
         sessionId = event.get("session_id")
         pinnedSession = state.get("sessionId")
         if sessionId and pinnedSession and sessionId != pinnedSession:
             return
+        if isResumedCoder:
+            # A coder resumed after the run stopped on its report is the same coder: its next hand-back goes to review.
+            state["stage"] = "coder"
+            state["dispatchAt"] = state.pop("resumableCoderAt")
+            state.pop("resumableCoderId", None)
+            state.pop("forkDenied", None)
+            state.pop("forkStopBlocks", None)
+            save_state(cwd, state)
         if agentType == FORK_AGENT_TYPE:
             if is_pinned_fork_event(event, state):
                 deny_early_fork_handback(cwd, state)
@@ -2064,13 +2174,13 @@ def command_tick(args):
         say(repoRoot, criteriaMessage)
 
     mark_phase_done(planPath, number)
-    append_deviation(planPath, [f"- {time.strftime('%Y-%m-%d')} (Phase {number}): marked done by the user, outside "
-                                "/code. No review ran and no gate ran."])
+    append_deviation(planPath, [f"- {time.strftime('%Y-%m-%d')} (Phase {number}): marked done with `tick`, outside "
+                                "the coder, review and verification steps of /code."])
     state.update({"stage": "done", "phase": number, "autoAdvance": False, "commitFiles": [], "commitLine": ""})
     state.pop("dispatchAt", None)
     save_state(repoRoot, state)
-    emit("stop", f"Phase {number} is marked done in {state['plan']} on the user's word. Run `start` for the next "
-         "phase when the user asks.")
+    emit("stop", f"Phase {number} is marked done in {state['plan']}. Run `start` for the next phase when the user "
+         "asks.")
 
 
 def command_verify(args):
@@ -2082,7 +2192,13 @@ def command_verify(args):
     finish_phase(repoRoot, state)
 
 
-COMMAND_START = re.compile(r"^(cd |npm |npx |pnpm |yarn |git |node |python3? |pytest|ruff |bash |curl |make )")
+COMMAND_START = re.compile(r"^(cd |npm |npx |pnpm |yarn |git |node |python3? |pytest|ruff |bash |curl |make "
+                           r"|cargo |go |deno |bun |uv |poetry |tsc\b|eslint |vitest|jest|mvn |gradle |\./"
+                           r"|dotnet |docker |just |rake |bundle |ruby |php |composer |mix |swift |sbt |bazel |tox\b"
+                           r"|mypy |pyright|sh )")
+
+# An Automated Verification item that says there is nothing to run: "- [ ] N/A — docs only", "- [ ] none".
+NO_AUTOMATED_CHECK = re.compile(r"^- \[[ x]\]\s*[*_`]*\s*(?:n/a|none)\b", re.IGNORECASE)
 
 
 def verification_command(line):
@@ -2115,10 +2231,14 @@ def check_prohibition(repoRoot, command, code, output):
 def run_verification_commands(repoRoot, phaseSection):
     results = []
     skipped = []
+    unparsed = []
     timeout = int(os.environ.get("CODE_STEP_VERIFY_TIMEOUT", VERIFY_TIMEOUT_SECONDS))
     for line in automated_verification_items(phaseSection):
+        if NO_AUTOMATED_CHECK.match(line):
+            continue
         command = verification_command(line)
         if command is None:
+            unparsed.append(line.strip())
             continue
         if WHOLE_SUITE.match(command):
             skipped.append(command)
@@ -2128,7 +2248,7 @@ def run_verification_commands(repoRoot, phaseSection):
             results.append(check_prohibition(repoRoot, command, code, output))
             continue
         results.append((command, code, output))
-    return results, skipped
+    return results, skipped, unparsed
 
 
 def mark_phase_done(planPath, number):
@@ -2140,7 +2260,8 @@ def mark_phase_done(planPath, number):
 
 
 def boundary_decision(state, entries, number):
-    isLast = not [e for e in entries if not e["done"] and e["number"] != number]
+    # A run started with --phase N ends after phase N, whatever other phases are still open.
+    isLast = state.get("onlyPhase") == number or not [e for e in entries if not e["done"] and e["number"] != number]
     if isLast:
         return "C", "last phase"
     if number == "1":
@@ -2191,6 +2312,19 @@ def diff_stat_rows(repoRoot, files):
     return rows
 
 
+TICKET_IN_NAME = re.compile(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]+-\d+)(?![A-Za-z0-9])")
+
+
+def ticket_prefix(state):
+    # The ticket id the plan folder or the branch carries, as the commit subject's prefix; "" when neither has one.
+    planFolder = pathlib.PurePosixPath(state["plan"]).parent.name if state.get("plan") else ""
+    for name in (planFolder, state.get("branch") or ""):
+        found = TICKET_IN_NAME.search(name)
+        if found:
+            return found.group(1) + ": "
+    return ""
+
+
 def phase_commit(repoRoot, state):
     # The phase's own changed files: dirty now, and not dirty before the phase started. Files that were dirty before
     # stay out of the command. The commit names its files after `--`, so it takes only those files from the index and
@@ -2204,6 +2338,9 @@ def phase_commit(repoRoot, state):
         return "", "", []
     behaviorLines = state.get("behavior") or []
     message = behaviorLines[0] if behaviorLines else (state.get("title") or "phase work")
+    prefix = ticket_prefix(state)
+    if prefix and not message.lower().startswith(prefix.lower()):
+        message = prefix + message
     quotedFiles = " ".join(shlex.quote(name) for name in ownFiles)
     commitLine = f"git add -- {quotedFiles} && git commit -m {shlex.quote(message)} -- {quotedFiles}"
     lines = ["Files changed by this phase:", *diff_stat_rows(repoRoot, ownFiles), ""]
@@ -2237,9 +2374,21 @@ def finish_phase(repoRoot, state, skipVerification=False):
     number = state["phase"]
     section = phase_text(planLines, number) if number is not None else "\n".join(planLines)
     section = section or ""
-    verifyResults, skipped = ([], [])
+    verifyResults, skipped, unparsed = ([], [], [])
     if not skipVerification:
-        verifyResults, skipped = run_verification_commands(repoRoot, section)
+        verifyResults, skipped, unparsed = run_verification_commands(repoRoot, section)
+    # A section that lists items while none yields a command means the parse missed them: the phase is not verified.
+    if unparsed and not verifyResults and not skipped:
+        state.update({"stage": "stopped", "stopReason": "verification"})
+        save_state(repoRoot, state)
+        tickText = (f" For a check that cannot be automated, the user can confirm it; on the user's word only, invoke "
+                    f"Skill code with `tick {state['phase']}` to mark the phase done." if state.get("phase") else
+                    " For a check that cannot be automated, the user can confirm it and mark the phase done with `tick`.")
+        return emit("stop", "The phase has an Automated Verification section but no command could be read from it, so "
+                    "nothing was run. Do not mark the phase done. Report to the user; the lines are:",
+                    *[f"- {line}" for line in unparsed],
+                    "Each item needs a backticked command that starts with a known program (npm, cargo, go, pytest, "
+                    "git, bash, sh, ./script ...)." + tickText + " " + RESUME_LINE.format(noun="section", verb="verify"))
     failed = [(command, code, output) for command, code, output in verifyResults if code != 0]
     if failed:
         state.update({"stage": "stopped", "stopReason": "verification"})
@@ -2319,6 +2468,9 @@ def block_a(number, riskLabel, manualGroups, nextNumber):
 def block_b_or_c(block, number, riskLabel, state, manualGroups, nextNumber):
     behavior = state.get("behavior") or []
     lastText = f"Phase {number} complete (last phase)." if number is not None else "The plan is complete."
+    isOnlyPhase = number is not None and state.get("onlyPhase") == number
+    if isOnlyPhase:
+        lastText = f"Phase {number} complete (the phase this run was started for)."
     parts = [f"Phase {number} complete. Risk: {riskLabel}. Phase-level sign-off requested." if block == "B"
              else lastText, ""]
     if behavior:
@@ -2343,6 +2495,9 @@ def block_b_or_c(block, number, riskLabel, state, manualGroups, nextNumber):
         parts += ["Next:", f"  1. {step1}",
                   f"  2. Stage what you've read, then run /clear and /code to start Phase {nextNumber} fresh. "
                   "To keep this context, confirm here.", "", "Or give feedback now for revisions to Phase " + number + "."]
+    elif isOnlyPhase:
+        parts += ["This run was started for this phase only. Other phases may be open; run `start` when the user "
+                  "asks for the next one."]
     else:
         parts += ["All phases complete. Next: /verify-branch (completeness + review packet; includes the remaining "
                   "human-only checks), then you open the PR."]

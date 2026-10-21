@@ -33,6 +33,10 @@ REPO_SCRIPT = HERE.parent.parent / "claude" / ".claude" / "scripts" / "code-step
 SCRIPT = pathlib.Path(os.environ["CODE_STEP_SCRIPT"]) if os.environ.get("CODE_STEP_SCRIPT") else \
     HERE / "code-step.py" if (HERE / "code-step.py").exists() else REPO_SCRIPT
 REAL_CLAUDE = SCRIPT.parent.parent if (SCRIPT.parent / "coder-gate.py").exists() else pathlib.Path.home() / ".claude"
+HANDBACK_SCRIPT = pathlib.Path(os.environ.get("HANDBACK_SCRIPT") or REAL_CLAUDE / "scripts" / "handback.py")
+sys.path.insert(0, str(HANDBACK_SCRIPT.parent))
+sys.path.insert(0, str(SCRIPT.parent))
+import handback
 STEP_LIMIT = 30
 MAX_HANDBACKS = 3
 NODE_BUDGET = 5000
@@ -49,7 +53,9 @@ for stubName in ("scripts/log-scan", "skills/review/log-review-finding"):
     stubFile.write_text("#!/usr/bin/env bash\nexit 0\n")
     stubFile.chmod(0o755)
 GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
-           "CODE_STEP_CLAUDE_DIR": str(CLAUDE_STUB)}
+           "CODE_STEP_CLAUDE_DIR": str(CLAUDE_STUB), "CODE_STEP_WAIT_SECONDS": "0", "HOME": str(TMP_ROOT / "home"),
+           "CLAUDE_CODE_SESSION_ID": "sess-termination"}
+NO_ROW_YET_PRESETS = {"CODE_STEP_WAIT_SECONDS": "0.2", "CODE_STEP_POLL_SECONDS": "0.05"}
 
 # code-step.py reads CODE_STEP_CLAUDE_DIR once, at import. Set it only while the module loads, so the real log
 # scripts and the live ~/.claude files are never reached and other test modules keep their environment.
@@ -174,7 +180,20 @@ def apply_coder_outcome(repo, name, uniqueText):
     return report
 
 
+def store_review_loop_report(repo, message):
+    # The shared hand-back store records a review-loop dispatch and its hand-back. A packet that does not parse is
+    # refused once and recorded when the agent hands back again, as the real hook does.
+    event = {"session_id": GIT_ENV["CLAUDE_CODE_SESSION_ID"], "agent_type": "review-loop", "agent_id": "a1",
+             "tool_input": {"message": message}}
+    with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(repo / ".git/handback-store")}):
+        handback.handle_hook({**event, "tool_input": {"subagent_type": "review-loop"}}, "dispatch")
+        for _ in range(2):
+            handback.handle_hook(event, "handback")
+
+
 def save_report(repo, agentType, message):
+    if agentType == "review-loop":
+        store_review_loop_report(repo, message)
     stateFile = repo / ".git/code-step/state.json"
     stage = json.loads(stateFile.read_text())["stage"]
     row = {"ts": time.time(), "agent_type": agentType, "agent_id": "a1", "stage": stage, "message": message}
@@ -214,6 +233,7 @@ def call_script(repo, presets, argv):
     scriptEnv = {name: value for name, value in os.environ.items()
                  if name not in ("CODE_STEP_IMPACT_DECISION", "CODE_STEP_ASKS_OUTCOME")}
     scriptEnv.update(GIT_ENV)
+    scriptEnv["HANDBACK_STORE_DIR"] = str(repo / ".git/handback-store")
     scriptEnv.update(presets)
     previousDirectory = os.getcwd()
     previousArgv = sys.argv
@@ -264,7 +284,8 @@ def plan_progress(repo):
     return "|".join(progress)
 
 
-IGNORED_STATE_KEYS = ("startedAt", "baseline", "planEditBaseline", "asksBaseline", "sessionId")
+IGNORED_STATE_KEYS = ("startedAt", "baseline", "planEditBaseline", "asksBaseline", "sessionId", "dispatchAt", "forkDenied",
+                      "forkStopBlocks")
 
 
 MINUTE_STAMP = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}")
@@ -319,11 +340,18 @@ def user_answers(repo):
         answers += [("asks-done all accepted", ["asks-done"] + ["accepted"] * count, None),
                     ("asks-done all rejected", ["asks-done"] + ["rejected"] * count, None),
                     ("asks-done all modified", ["asks-done"] + sum([["modified", "--change", "use X"]] * count, []), None)]
-    if stage == "stopped" and state.get("stopReason") == "verification":
+    if stage == "stopped" and state.get("stopReason") == "invalid-packet":
+        answers += [("review-again", ["review-again"], None)]
+    if stage == "stopped" and state.get("stopReason") in ("verification", "plan-format"):
         answers += [("verify (still failing)", ["verify"], None),
                     ("verify (fixed)", ["verify"], lambda repo: write_text(repo, "verify.flag", "ok\n"))]
     answers += [("start", ["start"], None)]
     return answers
+
+
+def commit_everything(repo):
+    for command in (["git", "add", "-A"], ["git", "commit", "-qm", "phase"]):
+        subprocess.run(command, cwd=repo, check=True, capture_output=True, env={**os.environ, **GIT_ENV})
 
 
 def children_of(node):
@@ -331,18 +359,25 @@ def children_of(node):
     state = load_saved_state(node.repo)
     stage = state.get("stage")
     children = []
+    waitingOn = None
+    if node.action == "wait":
+        waitingOn = "coder" if stage in ("coder", "asks-coder") else "review-loop"
+    if node.action == "dispatch" and node.agent in ("coder", "review-loop") and stage != "plan-coder":
+        # The agent has not handed back when the verb that follows the dispatch runs: the verb says to run it again.
+        verb = "after-coder" if node.agent == "coder" else "after-review"
+        children.append(("[no report yet]", lambda repo: None, [verb], NO_ROW_YET_PRESETS))
     if node.action == "dispatch" and node.agent == "coder" and stage == "plan-coder":
         for name in PLAN_EDIT_OUTCOMES:
             children.append((f"[plan-edit coder: {name}]", lambda repo, name=name: apply_plan_edit_outcome(repo, name, state["plan"]),
                              ["after-plan-edit"]))
-    elif node.action == "dispatch" and node.agent == "coder":
+    elif waitingOn == "coder" or (node.action == "dispatch" and node.agent == "coder"):
         for name in CODER_OUTCOMES:
             def setup(repo, name=name):
                 report = apply_coder_outcome(repo, name, f"v{len(node.history)}")
                 if report is not None:
                     save_report(repo, "coder", report)
             children.append((f"[coder: {name}]", setup, ["after-coder"]))
-    elif node.action == "dispatch" and node.agent == "review-loop":
+    elif waitingOn == "review-loop" or (node.action == "dispatch" and node.agent == "review-loop"):
         isAnswered = state.get("planImpact", "none") != "none"
         for name, message in REVIEW_OUTCOMES.items():
             # A reviewer re-raises an answered question unless the dispatch tells it the question is resolved.
@@ -357,7 +392,9 @@ def children_of(node):
             children.append((f"[skill result: {verdict}]", lambda repo: None, ["skill-done", verdict]))
     elif node.action == "auto-advance":
         modifier = state.get("modifier")
-        children.append(("[auto-advance]", lambda repo: None, ["start"] + ([modifier] if modifier else [])))
+        startVerb = ["start"] + ([modifier] if modifier else [])
+        children.append(("[auto-advance, commit not run]", lambda repo: None, startVerb))
+        children.append(("[auto-advance, commit run first]", commit_everything, startVerb))
     return children
 
 
@@ -378,7 +415,7 @@ class Explorer:
         shutil.copytree(self.template, target, symlinks=True)
         return target
 
-    def run_step(self, parent, repo, label, argv, presets, newSegment, nodeId):
+    def run_step(self, parent, repo, label, argv, presets, newSegment, nodeId, callPresets=None):
         # Run one verb on the copied repo. Returns the new node, or None when the path ended (pass or fail).
         verbText = " ".join(argv)
         history = parent.history + [f"{label} {verbText}"] if parent else [f"{verbText}"]
@@ -395,7 +432,7 @@ class Explorer:
             self.failures.append(Failure(f"over the {STEP_LIMIT}-step limit", history, "", history[-6:]))
             return "fail"
 
-        output, crash = call_script(repo, presets, argv)
+        output, crash = call_script(repo, {**presets, **(callPresets or {})}, argv)
         action, agent = parse_action(output)
         if crash:
             self.failures.append(Failure("crash", history, crash.strip().splitlines()[-1], history[-2:]))
@@ -469,10 +506,10 @@ class Explorer:
             for label, argv, setup in user_answers(node.repo):
                 self.step_child(node, nodeId, f"[user: {label}]", argv, setup, True)
             return
-        for label, setup, argv in children_of(node):
-            self.step_child(node, nodeId, label, argv, setup, False)
+        for label, setup, argv, *callPresets in children_of(node):
+            self.step_child(node, nodeId, label, argv, setup, False, callPresets[0] if callPresets else {})
 
-    def step_child(self, node, nodeId, label, argv, setup, newSegment):
+    def step_child(self, node, nodeId, label, argv, setup, newSegment, callPresets=None):
         if self.nodeCount > NODE_BUDGET:
             self.budgetHit = True
             return
@@ -481,7 +518,7 @@ class Explorer:
         shutil.copytree(node.repo, repo, symlinks=True)
         if setup:
             setup(repo)
-        result = self.run_step(node, repo, label, argv, node.presets, newSegment, nodeId)
+        result = self.run_step(node, repo, label, argv, node.presets, newSegment, nodeId, callPresets or {})
         if result == "fail":
             shutil.rmtree(repo, ignore_errors=True)
             self.edges[nodeId].append("LEAF")

@@ -26,7 +26,7 @@ One escape = one defect found downstream of its gate. `/cc`/`/fix`/`/refactor`/`
 3. **Log it**:
 
    ```bash
-   bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")" stage_found=<...> gate_missed=<...> class=<...> severity=<...> lane=<...> guard=<...> desc="<...>" file=<...>
+   ~/.claude/scripts/log-escape stage_found=<...> gate_missed=<...> class=<...> severity=<...> lane=<...> guard=<...> desc="<...>" file=<...>
    ```
 
 4. **Confirm** by echoing the logged fields plus guard, then stop. Never fixes — route through `/fix`.

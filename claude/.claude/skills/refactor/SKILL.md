@@ -69,7 +69,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
    **Log escapes** (branch-audit mode, branch-loop code only): one line per distinct smell (not per file), `class` off the finding (`duplication` for scope-item-1, `smell` otherwise):
 
    ```bash
-   bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=refactor gate_missed=review class=<smell|duplication> severity=medium lane=<eng-spec|code|other> guard=<...> desc="<one line>" file=<representative path>
+   ~/.claude/scripts/log-escape stage_found=refactor gate_missed=review class=<smell|duplication> severity=medium lane=<eng-spec|code|other> guard=<...> desc="<one line>" file=<representative path>
    ```
 
    `guard` comes from the ratchet — run it per `~/.claude/skills/_shared/escape-ratchet.md`, using its batching rule (one guard per `class` group, not per row).

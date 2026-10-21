@@ -20,6 +20,7 @@ class HookRunTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.home = pathlib.Path(self.tmp.name) / "home"
         (self.home / ".claude").mkdir(parents=True)
+        (self.home / ".claude" / "toolkit-telemetry").touch()
         self.work = pathlib.Path(self.tmp.name) / "work"
         self.work.mkdir()
 
@@ -264,11 +265,11 @@ class OpenErrorLineTest(HookRunTest):
         self.assertEqual(text, "log-agent-usage: cannot open %s: No such file or directory\n" % missing)
 
     def test_test_edit_telemetry(self):
-        shutil.rmtree(str(self.home / ".claude"))
         log = self.home / ".claude" / "test-edit-telemetry.jsonl"
+        log.mkdir()
         text = self.check("test-edit-telemetry", json.dumps({"tool_name": "Edit",
                                                              "tool_input": {"file_path": "/r/a_test.py"}}))
-        self.assertEqual(text, "test-edit-telemetry: cannot open %s: No such file or directory\n" % log)
+        self.assertEqual(text, "test-edit-telemetry: cannot open %s: Is a directory\n" % log)
 
     def test_claudemd_linecount(self):
         missing = str(self.work / "gone" / "CLAUDE.md")

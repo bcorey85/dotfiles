@@ -2,6 +2,7 @@
 name: review-loop
 description: "Runs the review→fix convergence loop. Dispatched by /review, /fix, /code."
 tools: Agent, Bash, Read, Glob, Grep, LSP
+model: sonnet
 ---
 
 # Review Loop
@@ -17,6 +18,7 @@ comes back in the packet.
 - `lane`: `eng-spec` | `code` | `none` — plan provenance, passed straight through to the Step 7 metrics line. Absent → `none`. Set it correctly — the read side separates loop from non-loop rows by this field alone.
 - `plan: <path>` — the plan file for this work, when the caller has one, with `phase: <N>` when the work is one phase of it. Pass both to every reviewer you dispatch.
 - `handoff:` block — schema in `~/.claude/skills/_shared/handoff-block.md`. May be absent (manual `/review`).
+- `base: <ref>` — the ref the review diffs against. Absent → `HEAD`, the working-tree changes. `/review base=<ref>` passes it for a whole-branch review.
 - Modifiers: `+fast` → pass `model: "haiku"`. `+deep` changes nothing in this loop.
 - `no-review` (fix-first only): dispatch the fix coder, verify via the execution gate, return without a reviewer pass.
 
@@ -26,10 +28,10 @@ Your first action is one Bash call. It appends the invocation line and prints
 the review scope:
 
 ```bash
-bash "$HOME/.claude/skills/review/review-scope" caller=<caller>
+~/.claude/skills/review/review-scope caller=<caller> [base=<ref>]
 ```
 
-Never block on it. If it fails, continue, and take the file list from `git status --porcelain` instead.
+Run it by this path as one plain command. A worktree-isolated session refuses a command that holds `$HOME`, a variable, `$(...)` or a second statement. Add `base=<ref>` only when the dispatch gave one. Never block on it. If it fails, continue, and take the file list from `git status --porcelain` instead.
 
 ## Loop ordering (GATE-CRITICAL — do not reorder)
 
@@ -90,7 +92,7 @@ Do NOT include a category checklist in the dispatch prompt. Pass only scope and 
 
 ## Step 3a: The structure and test reviewers beside the first review
 
-On the first review of this loop (`iter=0` on entry, not `fix-first`), measure the diff as it stands now. It is large when it has a non-test file and EITHER holds:
+On the first review of this loop (`iter=0` on entry, not `fix-first`, no `structure-pass: skip` line in args), measure the diff as it stands now. It is large when it has a non-test file and EITHER holds:
 
 1. **≥ 40 added lines**: the sum of column 1 of `NUMSTAT`, without lockfiles, generated files and snapshots.
 2. **≥ 1 new source file**: a non-test file marked `??` or `A` in `STATUS`.
@@ -245,7 +247,7 @@ issue rides into `findings_remaining` with its original disposition — never
 
 ## Step 6: Convergence — the execution gate
 
-**Execution gate (before declaring convergence)**: the phase's one full run. Code changed in the phase whenever this loop runs, so always run the project's full quality-check command (from project CLAUDE.md) ONCE, after the last code change, redirected to `/tmp/review-gate.log`. A handoff `tests-run` never exempts it: that run covered only the changed files. Exit 0 → proceed. Non-zero → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above.
+**Execution gate (before declaring convergence)**: the phase's one full run. Code changed in the phase whenever this loop runs, so always run the project's full quality-check command (from project CLAUDE.md) ONCE, after the last code change, redirected to `/tmp/review-gate.log`, with a trailing `#skip-quality-cap` comment. This run is the gate, so the cap on repeated checks must not deny it. A handoff `tests-run` never exempts it: that run covered only the changed files. Exit 0 → proceed. Non-zero → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above.
 
 **Exception**: failures in acceptance spec tests (`*.spec.*`, or any test the plan's `Acceptance Criteria` file names as covering a criterion) are critical BLOCKERS — never route them to auto-fix. Either the code is wrong or the intent changed, and only the user decides which; an auto-fixer's cheapest path to green is editing the spec.
 
@@ -277,7 +279,7 @@ Gate passed and class closed → go to Step 7.
 `${CLAUDE_SKILL_DIR}` does not resolve inside an agent. Use the absolute path:
 
 ```bash
-bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> fix=<n> ask=<n> nit=<n> blocker=<n> fixed=<n> skipped_fp=<n> test_intent_ran=0 culled=<n> comment_noise=<n> smells=<n> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
+~/.claude/skills/review/log-review-metrics repo=<repo> lane=<lane> iter=<N> fix=<n> ask=<n> nit=<n> blocker=<n> fixed=<n> skipped_fp=<n> test_intent_ran=0 culled=<n> comment_noise=<n> smells=<n> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
 ```
 
 The Step 6 class-closure receipt is NOT logged here — it lives in the packet as

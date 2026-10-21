@@ -13,60 +13,36 @@ None required. `no-stage` — classify and report only; stage nothing.
 
 ## Instructions
 
-### Phase 1: Classify (deterministic risk gate)
+### Phase 1: Run
 
-Run the classifier from the repo being staged:
+Run once from the repo being staged:
 
 ```bash
-node <skill-base-dir>/scripts/stage.mjs --json
+node <skill-base-dir>/scripts/stage.mjs --run
 ```
 
-Single source of truth for tier + risk — never reclassify, promote to SAFE, or soften ESCALATE (disagreements go in the report). Errors → report and stop. (Ignore legacy `hash`/`cachedClean`/`cacheFile`/`review` fields.)
+Add `--no-stage` when the argument `no-stage` was given. One call classifies, stages the SAFE tier, counts N staged and M left to read, logs the flywheel row (a logging failure only prints a warning), and prints the finished `## Stage` report plus a `jump-queue` block.
 
-- **ESCALATE** = high-risk. Hot paths (auth, payments, migrations, CI, infra), enforcement-config edits, and tripwires (test skip/only added, assertions/test cases removed net, suppressions added, lockfile drift, deleted tests, deleted/renamed module still imported). **Read first — never staged.**
+The classifier is the single source of truth for tier + risk — never reclassify, promote to SAFE, or soften ESCALATE (disagreements go in the report). A non-zero exit means nothing was staged by this run: report the message and stop.
+
+- **ESCALATE** = high-risk (hot paths, enforcement-config edits, tripwires). **Read first — never staged.**
 - **READ / SKIM** = semantic but lower blast radius. Read, in that order.
-- **SAFE** = mechanical, invariant-verified (re-export barrels, lockfile+manifest). Staged without reading — the only tier that is.
+- **SAFE** = mechanical, invariant-verified. Staged without reading — the only tier that is.
 
-### Phase 2: Stage the SAFE tier
+### Phase 2: Jump list
 
-Unless `no-stage`, re-run with `--stage`. Deterministic and reversible (`git restore --staged`).
+The `jump-queue` block holds one JSON row per queue entry that has a `line` (`tier`, `path`, `line`, `reason`), in reading order. Entries without a `line` (deleted files) are not in it.
+
+Read `~/.claude/skills/_shared/nvim-jump.md`, then make one `nvim-jump` call for the whole list: each row at its `line` with `--note "<TIER>: <what changed and why, one line, from the diff and the coder's handoff>"`. ESCALATE notes lead with the row's `reason`.
 
 ### Phase 3: Report
 
-Lead with the queue in reading order — that IS the product:
+Print the `## Stage` report from the script as is, leading the reply. Add one line per disagreement with a tier. If M is small, say so plainly. Do not recompute N, M or the log row.
 
-```
-## Stage
-
-Read (M), in blast-radius order:
-  ESCALATE:
-  - `path` — <classifier reason>
-  READ / SKIM:
-  - `path`
-
-Staged mechanically (N) — invariant-verified, skip. `git diff --staged` to spot-check.
-```
-
-If M is small, say so plainly.
-
-Before the report, `nvim-jump` the queue as one list per `~/.claude/skills/_shared/nvim-jump.md`: queue order, each entry at its `line` with `--note "<TIER>: <what changed and why, one line, from the diff and the coder's handoff>"`. ESCALATE notes lead with the classifier reason. Entries without a `line` (deleted files) stay out.
-
-### Phase 4: Log the run (flywheel)
-
-Every invocation appends one flywheel row:
-
-```bash
-bash "$HOME/.claude/skills/review/log-review-metrics" \
-  repo="$(basename "$(git rev-parse --show-toplevel)")" lane=stage \
-  suppressed=<N staged> queue=<M left to read> result=<clean|residue>
-```
-
-`result=clean` on empty queue, else `residue`. Telemetry never blocks.
-
-### Phase 5: Calibration hook
+### Phase 4: Calibration hook
 
 Bug later found in a mechanically-staged file → `/escape` (`gate_missed=stage`): ground truth on the SAFE invariant. On escape, the class leaves `stage.mjs` until fixed — tiers tighten on evidence, never loosen without it.
 
 ## Extending
 
-Per-repo tuning in `.stage.json` (`hotPaths` = the high-risk gate: add contract/data-deletion/freeze paths; `skim` regexes). New SAFE classes live in `scripts/stage.mjs` — each needs a checkable invariant, not a filename pattern.
+Per-repo tuning in `.stage.json` (`hotPaths` = the high-risk gate: add contract/data-deletion/freeze paths; `skim` regexes). New SAFE classes live in `scripts/stage.mjs` — each needs a checkable invariant, not a filename pattern. `--json` and `--stage` still work alone for ad-hoc use.

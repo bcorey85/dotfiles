@@ -1,0 +1,77 @@
+{
+ "entries": [
+  {
+   "line": 23,
+   "done": true,
+   "number": "1",
+   "title": "Telemetry contract record \u2014 contracts folded in (risk: high)",
+   "risk": "high",
+   "closing": null
+  },
+  {
+   "line": 24,
+   "done": true,
+   "number": "2",
+   "title": "Refactor pass \u2014 /refactor +deep whole-branch sweep, root-cause gate (risk: low)",
+   "risk": "low",
+   "closing": "/refactor +deep"
+  },
+  {
+   "line": 25,
+   "done": true,
+   "number": "3",
+   "title": "Test audit \u2014 /test-audit cross-phase test gate (risk: high)",
+   "risk": "high",
+   "closing": "/test-audit"
+  },
+  {
+   "line": 26,
+   "done": true,
+   "number": "4",
+   "title": "Verify pass \u2014 branch-wide deep review + /verify-branch (plan\u2194diff + smoke list) (risk: high)",
+   "risk": "high",
+   "closing": "/verify-branch"
+  },
+  {
+   "line": 27,
+   "done": true,
+   "number": "5",
+   "title": "Recap \u2014 /branch-recap synthesis + residue triage, no gates (risk: low)",
+   "risk": "low",
+   "closing": "/branch-recap"
+  }
+ ],
+ "sections": {
+  "1": {
+   "start": 125,
+   "level": 2,
+   "title": "Telemetry contract record",
+   "end": 216
+  },
+  "2": {
+   "start": 216,
+   "level": 2,
+   "title": "Refactor pass",
+   "end": 231
+  },
+  "3": {
+   "start": 231,
+   "level": 2,
+   "title": "Test audit",
+   "end": 245
+  },
+  "4": {
+   "start": 245,
+   "level": 2,
+   "title": "Verify pass",
+   "end": 264
+  },
+  "5": {
+   "start": 264,
+   "level": 2,
+   "title": "Recap",
+   "end": 276
+  }
+ },
+ "failures": []
+}

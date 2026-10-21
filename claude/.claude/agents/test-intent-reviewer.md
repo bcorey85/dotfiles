@@ -17,7 +17,7 @@ A test "pins a bug" when its expected value snapshots today's output rather than
 Run the task resolver to find the spec directory for the current branch:
 
 ```bash
-bash ~/.claude/scripts/resolve-task-dir.sh
+~/.claude/scripts/resolve-task-dir.sh
 ```
 
 - **Exit 0** (one match): the oracle is, in priority order:

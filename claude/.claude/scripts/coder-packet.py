@@ -10,6 +10,10 @@ import re
 import subprocess
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import plan_format
+import script_utils
+
 MAX_IMPORTED_FILES = 15
 PATH_IN_BACKTICKS = re.compile(r"`([\w.@-]+(?:/[\w.@\[\]()-]+)+\.\w+)(?::\d+(?:-\d+)?)?`")
 SCRIPT_IMPORT = re.compile(r"""(?:from|import)\s*\(?\s*['"]([^'"]+)['"]""")
@@ -25,14 +29,14 @@ def git_output(cwd, *args):
 
 
 def phase_bounds(planLines, phaseNumber):
-    headings = [index for index, line in enumerate(planLines) if line.startswith("## ")]
-    phaseStart = next((index for index in headings if re.match(rf"## Phase {phaseNumber}\b", planLines[index])), None)
-    if phaseStart is None:
-        sys.exit(f"coder-packet: no '## Phase {phaseNumber}' heading in the plan")
+    section = plan_format.phase_section(planLines, phaseNumber)
+    if section is None:
+        sys.exit(f"coder-packet: no Phase {phaseNumber} heading in the plan")
 
-    phaseEnd = next((index for index in headings if index > phaseStart), len(planLines))
-    firstPhase = next(index for index in headings if re.match(r"## Phase \d", planLines[index]))
-    return headings, phaseStart, phaseEnd, firstPhase
+    headings = [index for index, line in enumerate(planLines) if line.startswith("## ")]
+    spans, _ = plan_format.phase_spans(planLines)
+    firstPhase = min(span["start"] for _, span in spans)
+    return headings, section["start"], section["end"], firstPhase
 
 
 def cited_sections(planLines, headings, firstPhase, phaseText):
@@ -84,19 +88,10 @@ def sibling_of(newFile):
     return None
 
 
-def nearest_file(start, name, repoRoot):
-    for directory in [start, *start.parents]:
-        if (directory / name).is_file():
-            return directory / name
-        if directory == repoRoot:
-            return None
-    return None
-
-
 def alias_targets(sourceFile, repoRoot):
     """Import prefix → directory, from the nearest package.json `imports` and tsconfig.json `paths` that end in `*`."""
     aliases = {}
-    packageFile = nearest_file(sourceFile.parent, "package.json", repoRoot)
+    packageFile = script_utils.nearest_file_upward(sourceFile.parent, "package.json", repoRoot)
     if packageFile is not None:
         try:
             subpathImports = json.loads(packageFile.read_text()).get("imports", {})
@@ -108,7 +103,7 @@ def alias_targets(sourceFile, repoRoot):
             if isinstance(target, str) and pattern.endswith("*") and target.endswith("*"):
                 aliases[pattern[:-1]] = packageFile.parent / target[:-1]
 
-    configFile = nearest_file(sourceFile.parent, "tsconfig.json", repoRoot)
+    configFile = script_utils.nearest_file_upward(sourceFile.parent, "tsconfig.json", repoRoot)
     if configFile is not None:
         try:
             compilerOptions = json.loads(configFile.read_text()).get("compilerOptions", {})

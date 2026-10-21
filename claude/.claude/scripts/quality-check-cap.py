@@ -7,9 +7,13 @@ redirection, a script) more recently than that run, then it allows. PostToolUse(
 PostToolUseFailure(Bash) does too, except when the failure was a timeout or an interrupt. A check is recorded only
 when it surely ran: after a failure, a check behind `&&` or `||` may never have started, so it is not recorded; after
 a success, a check behind `||` is not. A command with a formatter that rewrites files (`cargo fmt`, `prettier
---write`, `ruff format`...) is never denied, and resets the cap like an edit. Key: normalized command +
-effective cwd (POSIX cksum). Escape: a trailing `#skip-quality-cap`. Fails closed only on the PreToolUse Bash path;
-state errors fail open. State lives in ~/.claude/state/quality-check/<session>/.
+--write`, `ruff format`...) is never denied when every check in it runs only after the formatter succeeded (joined
+to it by `&&`, pipes allowed), and resets the cap like an edit. Key: normalized command + effective cwd (POSIX cksum) + the agent
+that ran it: a run is capped only against an earlier run by the same agent, so a subagent's first run of a check is
+always allowed. The agent is the hook input's `agent_id` (set only inside a subagent); the main thread has none.
+Edits are shared by every agent of the session, because they change the tree all of them see. Escape: a trailing
+`#skip-quality-cap`. Fails closed only on the PreToolUse Bash path; state errors fail open. State lives in
+~/.claude/state/quality-check/<session>/.
 """
 import json
 import os
@@ -22,7 +26,7 @@ import hashlib
 
 import hook_input
 from hook_input import JqError, cksum, jq_get, jq_str, truthy
-from shell_command import split_command_steps, step_surely_ran
+from shell_command import runs_only_after_success, split_command_steps, step_surely_ran
 
 WS ="[ \t\n\r\f\v]"
 SP = " \t\n\r\f\v"
@@ -43,7 +47,6 @@ DENY_TEXT = ("' already ran this session and nothing has been edited since. Re-r
              "produce a different result. Redirect the failing run to /tmp/check.log, read the WHOLE log, fix every "
              "failure in one batch, then run it once more. If it still fails after that batch fix, stop and ask "
              "the user. If you believe this deny is wrong, stop and tell the user what you were about to run.")
-REVIEW_GATE_LOG = re.compile(r">[ \t]*/tmp/review-gate\.log")
 
 
 class Deny(Exception):
@@ -217,6 +220,20 @@ def state_dir_for(root, session):
     return root + "/" + session
 
 
+def follows_a_formatter(steps, format_indexes, check_index):
+    """True when some formatter step is one the check at `check_index` runs only after."""
+    return any(runs_only_after_success(steps, format_index, check_index) for format_index in format_indexes)
+
+
+def run_file_for(state_dir, key, agent_id):
+    """The run record of one check. The main thread has no agent_id and keeps the bare name; an agent's name ends
+    in a hash of its id, so no id can name a path."""
+    if not agent_id:
+        return state_dir + "/run-" + key
+    agent_digest = hashlib.sha256(agent_id.encode("utf-8", "surrogateescape")).hexdigest()
+    return state_dir + "/run-" + key + "-" + agent_digest[:16]
+
+
 def run(raw, state):
     if raw.strip() == "":
         root_json = EMPTY
@@ -231,6 +248,7 @@ def run(raw, state):
     state["event"] = event
     session = field(root_json, "session_id", default="unknown")
     cwd = field(root_json, "cwd") or os.getcwd()
+    agent_id = field(root_json, "agent_id")
 
     home = os.environ["HOME"]
     root = home + "/.claude/state/quality-check"
@@ -262,14 +280,12 @@ def run(raw, state):
         return
     if event == "PreToolUse" and "#skip-quality-cap" in command:
         return
-    if event == "PreToolUse" and field(root_json, "agent_type") == "review-loop" and REVIEW_GATE_LOG.search(command):
-        return
     command = command.replace("#skip-quality-cap", "")
 
     steps = split_command_steps(command)
     succeeded = event == "PostToolUse"
     checks = []
-    format_index = None
+    format_indexes = []
     for index, (_, segment) in enumerate(steps):
         segment = re.sub("^" + WS + "+", "", segment)
         segment = re.sub(WS + "+$", "", segment)
@@ -287,19 +303,18 @@ def run(raw, state):
                 break
             segment = stripped
         if writes_files(segment):
-            if format_index is None:
-                format_index = index
+            format_indexes.append(index)
             continue
         if not CHECK_START.search(segment):
             continue
 
         norm = normalize(segment)
         key = str(cksum((norm + "\n" + cwd).encode("utf-8", "surrogateescape")))
-        run_file = state_dir + "/run-" + key
+        run_file = run_file_for(state_dir, key, agent_id)
         checks.append((index, norm, run_file, cwd))
 
     if event in ("PostToolUse", "PostToolUseFailure"):
-        if format_index is not None:
+        if format_indexes:
             try:
                 touch(state_dir + "/edits")
             except OSError:
@@ -315,8 +330,11 @@ def run(raw, state):
                 raise Exit(0)
         return
 
-    if format_index is not None and all(index > format_index for index, _, _, _ in checks):
-        return
+    if format_indexes:
+        every_check_follows_a_formatter = all(follows_a_formatter(steps, format_indexes, check_index)
+                                              for check_index, _, _, _ in checks)
+        if every_check_follows_a_formatter:
+            return
     for _, norm, run_file, check_cwd in checks:
         if newer(run_file, state_dir + "/edits"):
             if not changed_since_run(check_cwd, run_file) and not tree_changed_since_run(check_cwd, run_file):

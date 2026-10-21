@@ -40,7 +40,6 @@ import time
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import plan_format
 import script_utils
-from plan_format import HEADING, PHASE_HEADING, PHASE_ID
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("CODE_STEP_CLAUDE_DIR", pathlib.Path.home() / ".claude"))
 SCRIPTS_DIR = CLAUDE_DIR / "scripts"
@@ -71,8 +70,26 @@ START_USAGE = ('usage: code-step.py start [<plan>] [+fast|+deep] [--phase <id>]\
                'known. --take-over starts over a run that another live session left open in this checkout.')
 OTHER_SESSION_LIVE_SECONDS = 2 * 60 * 60
 WAITING_STAGES = ("asks", "impact-coder", "impact-review", "skill", "plan-coder")
-VERIFY_STOP_REASONS = ("verification", "plan-format")
-RESUMABLE_STOP_REASONS = VERIFY_STOP_REASONS + ("invalid-packet",)
+ASKS_DONE_USAGE = ("asks-done needs one outcome per ask: accepted, rejected or modified. Each modified ask needs the "
+                   "user's change after it as `--change \"<text>\"`.")
+# The state each verb needs: the stages it may run at, the stop reasons it accepts when the stage is "stopped", and the
+# stop text when the state is anything else. `start` and `tick` run at any stage and are not in the table.
+STAGE_GUARDS = {
+    "after-coder": {"stages": ("coder", "asks-coder"),
+                    "message": "after-coder ran with no coder dispatch pending. Run `start` first."},
+    "decide": {"stages": ("impact-coder", "impact-review"),
+               "message": "decide needs a pending PLAN-IMPACT and one word: adopt, keep or discuss."},
+    "review-again": {"stages": ("stopped",), "stopReasons": ("invalid-packet",),
+                     "message": "review-again ran with no unreadable review packet pending."},
+    "after-plan-edit": {"stages": ("plan-coder",),
+                        "message": "after-plan-edit ran with no plan edit pending. Run `start` first."},
+    "after-review": {"stages": ("review",), "message": "after-review ran with no review pending. Run `start` first."},
+    "asks-done": {"stages": ("asks",), "message": ASKS_DONE_USAGE},
+    "skill-done": {"stages": ("skill",), "message": "skill-done ran with no closing-phase skill pending."},
+    "verify": {"stages": ("stopped",), "stopReasons": ("verification", "plan-format"),
+               "message": "verify ran with no failed Automated Verification or unparsed Manual Verification pending."},
+}
+RESUMABLE_STOP_REASONS = STAGE_GUARDS["verify"]["stopReasons"] + STAGE_GUARDS["review-again"]["stopReasons"]
 RESUME_LINE = "When the {noun} is fixed, run `python3 ~/.claude/scripts/code-step.py {verb}`."
 VERIFY_TIMEOUT_SECONDS = 600
 TIMEOUT_EXIT_CODE = 124
@@ -80,10 +97,12 @@ HOOK_STAGES = ("coder", "review", "asks-coder", "plan-coder")
 FORK_AGENT_TYPE = "general-purpose"
 SAY_MAX_AGE_SECONDS = 6 * 3600
 TICKET_ID = re.compile(r"^[A-Za-z]+-\d+$")
+CARGO_CLIPPY = "cargo clippy --all-targets -- -D warnings"
 TYPECHECK_SCRIPTS = ["typecheck", "type-check", "check-types", "tsc"]
 SCRIPT_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".mts", ".mjs")
 TEST_SUFFIXES = ".test.ts,.test.tsx,.spec.ts,.spec.tsx,.test.js,.test.jsx"
 TEST_FILE = re.compile(r"\.(test|spec)\.|(^|/)test_[^/]*\.py$|_test\.py$")
+BARE_CARGO_MANIFEST = re.compile(r"`(Cargo\.toml)`")
 PATH_IN_BACKTICKS = re.compile(r"`([\w.@-]+(?:/[\w.@\[\]()-]+)+\.\w+)(?::\d+(?:-\d+)?)?`")
 WHOLE_SUITE = re.compile(r"^(?:(?:cd \S+ && )?(?:npm|pnpm|yarn) (?:run )?(?:test|lint)"
                          r"|(?:cd \S+ && )?npx (?:vitest|jest)(?: run)?|(?:python3 -m )?pytest|ruff check)$")
@@ -450,77 +469,12 @@ def emit(action, *lines, prompt=None, agent=None, model=None):
 
 # ---------- plan parsing ----------
 
-PHASE_STATUS_LINE = re.compile(rf"^[-*]\s+\[( |x|X)\]\s+Phase\s+({PHASE_ID})\s*[:.—–-]\s*(.*)$")
+def closing_skill(title):
+    return next((skill for pattern, skill in CLOSING_PHASES if pattern.search(title)), None)
 
 
 def parse_plan(planLines):
-    entries, sections, failures = [], {}, []
-    inStatus = False
-    firstLines = {}
-    openLevel = None
-    fenced = script_utils.fenced_line_indexes(planLines)
-    for index, line in enumerate(planLines):
-        if index in fenced:
-            continue
-        heading = HEADING.match(line)
-        if heading:
-            inStatus = heading.group(2).strip() == "Phase Status"
-            phaseHeading = PHASE_HEADING.match(line)
-            if openLevel is not None and len(heading.group(1)) <= openLevel:
-                openLevel = None
-            if not phaseHeading:
-                continue
-            sectionId = phaseHeading.group(2)
-            # A heading of an id that already has a section, deeper than the section it sits in (`#### Phase 6 record`
-            # under `## Phase 6`), is a note inside that section, not a second section.
-            if openLevel is not None and len(phaseHeading.group(1)) > openLevel and sectionId in sections:
-                continue
-            openLevel = len(phaseHeading.group(1))
-            if sectionId in sections:
-                failures.append({"line": index + 1, "kind": "duplicate-id", "detail": f"Phase {sectionId} has two "
-                                 f"sections, on line {sections[sectionId]['start'] + 1} and line {index + 1}. Give "
-                                 "each phase its own id."})
-                continue
-            sections[sectionId] = {"start": index, "level": len(phaseHeading.group(1)),
-                                   "title": line[phaseHeading.end():].lstrip(" :.—–-")}
-            continue
-        if not inStatus or not re.match(r"^[-*]\s+\[", line):
-            continue
-        match = PHASE_STATUS_LINE.match(line)
-        if not match:
-            failures.append({"line": index + 1, "kind": "unparsed-line", "detail": f"{line.strip()!r}. Rewrite it as "
-                             "`- [ ] Phase <id>: <title>`, or move it out of the section."})
-            continue
-        number = match.group(2)
-        if number in firstLines:
-            failures.append({"line": index + 1, "kind": "duplicate-id", "detail": f"Phase {number} twice, on line "
-                             f"{firstLines[number] + 1} and line {index + 1}. Give each phase its own id."})
-            continue
-        firstLines[number] = index
-        risk = re.search(r"\(risk:\s*(low|high)\)", match.group(3), re.I)
-        closing = next((skill for pattern, skill in CLOSING_PHASES if pattern.search(match.group(3))), None)
-        entries.append({"line": index, "done": match.group(1) != " ", "number": number, "title": match.group(3),
-                        "risk": risk.group(1).lower() if risk else "high", "closing": closing})
-    headingRows = [(i, len(h.group(1))) for i, line in enumerate(planLines)
-                   if i not in fenced and (h := HEADING.match(line))]
-    sectionStarts = {section["start"] for section in sections.values()}
-    for number, section in sections.items():
-        section["end"] = next((i for i, level in headingRows if i > section["start"]
-                               and (level <= section["level"] or i in sectionStarts)), len(planLines))
-    for entry in entries:
-        # A closing phase is defined by its skill, so its Phase Status line needs no section of its own.
-        if entry["number"] not in sections and not entry["closing"]:
-            failures.append({"line": entry["line"] + 1, "kind": "missing-section", "detail": f"Phase "
-                             f"{entry['number']} is in Phase Status but the plan has no '## Phase {entry['number']}' "
-                             "section."})
-    statusIds = {entry["number"] for entry in entries}
-    for number, section in sections.items():
-        if entries and number not in statusIds:
-            failures.append({"line": section["start"] + 1, "kind": "section-without-status", "detail": f"Phase "
-                             f"{number} has a section but no Phase Status entry. Add `- [ ] Phase {number}: "
-                             f"{section['title']}` to the Phase Status list."})
-    failures.sort(key=lambda failure: failure["line"])
-    return {"entries": entries, "sections": sections, "failures": failures}
+    return plan_format.parse_plan(planLines, closing_skill)
 
 
 def ordered_pending(entries):
@@ -612,12 +566,8 @@ def manual_format_failure(planLines, planName, resumeLine=""):
     return None
 
 
-def phase_status_entries(planLines):
-    return parse_plan(planLines)["entries"]
-
-
 def phase_text(planLines, number):
-    section = parse_plan(planLines)["sections"].get(number)
+    section = plan_format.phase_section(planLines, number)
     if section is None:
         return None
     return "\n".join(planLines[section["start"]:section["end"]])
@@ -654,18 +604,9 @@ def automated_verification_items(phaseSection):
 
 # ---------- gate derivation ----------
 
-def nearest_package(repoRoot, relPath):
-    # The walk below compares path text, which a `../` path passes; resolve first so a sibling repo stays out.
-    if repoRoot.resolve() not in (repoRoot / relPath).resolve().parents:
-        return None
-
-    directory = (repoRoot / relPath).parent
-    while True:
-        if (directory / "package.json").is_file():
-            return directory
-        if directory == repoRoot or repoRoot not in directory.parents:
-            return None
-        directory = directory.parent
+def nearest_directory_with(repoRoot, relPath, manifestName):
+    manifest = script_utils.nearest_file_upward((repoRoot / relPath).parent, manifestName, repoRoot)
+    return manifest.parent if manifest else None
 
 
 def in_directory(command, packageRel):
@@ -676,7 +617,7 @@ def script_package_commands(repoRoot, packageDir, paths):
     packageJson = json.loads((packageDir / "package.json").read_text())
     scripts = packageJson.get("scripts", {})
     dependencies = {**packageJson.get("dependencies", {}), **packageJson.get("devDependencies", {})}
-    packageRel = str(packageDir.relative_to(repoRoot)) if packageDir != repoRoot else ""
+    packageRel = script_utils.directory_relative_to(repoRoot, packageDir)
     relativePaths = [str((repoRoot / path).relative_to(packageDir)) for path in paths]
     commands = []
 
@@ -717,6 +658,23 @@ def python_commands(repoRoot, paths):
     return commands
 
 
+def cargo_commands(repoRoot, paths):
+    crateDirs = []
+    for path in paths:
+        if not (path.endswith(".rs") or pathlib.PurePosixPath(path).name == "Cargo.toml"):
+            continue
+
+        crateDir = nearest_directory_with(repoRoot, path, "Cargo.toml")
+        if crateDir is not None and crateDir not in crateDirs:
+            crateDirs.append(crateDir)
+
+    commands = []
+    for crateDir in crateDirs:
+        crateRel = script_utils.directory_relative_to(repoRoot, crateDir)
+        commands.append(in_directory(CARGO_CLIPPY, crateRel))
+    return commands
+
+
 def derive_gate_commands(repoRoot, phaseSection):
     paths = []
     for match in PATH_IN_BACKTICKS.finditer(phaseSection):
@@ -725,13 +683,15 @@ def derive_gate_commands(repoRoot, phaseSection):
 
     byPackage = {}
     for path in paths:
-        packageDir = nearest_package(repoRoot, path)
+        packageDir = nearest_directory_with(repoRoot, path, "package.json")
         if packageDir is not None:
             byPackage.setdefault(packageDir, []).append(path)
 
     commands = []
     for packageDir, packagePaths in byPackage.items():
         commands += script_package_commands(repoRoot, packageDir, packagePaths)
+    rootManifests = BARE_CARGO_MANIFEST.findall(phaseSection)
+    commands += cargo_commands(repoRoot, paths + rootManifests)
     commands += python_commands(repoRoot, paths)
     return commands
 
@@ -1224,12 +1184,7 @@ def asks_coder_changed_files(changedNow, asksBaseline):
     return sorted(name for name in names if changedNow.get(name) != asksBaseline.get(name))
 
 
-def command_after_coder(args):
-    repoRoot = repo_root()
-    os.chdir(repoRoot)
-    state = load_state(repoRoot)
-    if state is None or state["stage"] not in ("coder", "asks-coder"):
-        return emit("stop", "after-coder ran with no coder dispatch pending. Run `start` first.")
+def command_after_coder(repoRoot, state, args):
     if not wait_for_handback(repoRoot, state, "after-coder", longChecksFollow=state["stage"] == "asks-coder"):
         return
     state = load_state(repoRoot)
@@ -1356,7 +1311,9 @@ def emit_plan_impact_modal(impact, repoRoot):
     word = preset_decision(repoRoot)
     if word:
         print(f"PLAN-IMPACT answered by the pre-set decision '{word}'. No question to the user.")
-        return command_decide([word, "--by", "session", "--ruling", f"pre-set decision '{word}'; no user was asked"],
+        state = load_state(repoRoot)
+        return command_decide(repoRoot, state, [word, "--by", "session", "--ruling",
+                                                f"pre-set decision '{word}'; no user was asked"],
                               rulingBy="the pre-set decision")
     ask_user(repoRoot, "the code and the plan disagree. Ask the user this question in plain text and wait for the "
              "answer. Then invoke Skill code with the args after the option the user chose, with the user's whole "
@@ -1429,13 +1386,10 @@ def resolved_plan_impact(state):
 DECIDE_USAGE = 'decide <adopt|keep> --by <user|session> --ruling "<the user\'s answer>"'
 
 
-def command_decide(args, rulingBy=None):
-    repoRoot = repo_root()
-    os.chdir(repoRoot)
-    state = load_state(repoRoot)
+def command_decide(repoRoot, state, args, rulingBy=None):
     word, by, rulingWords = split_decide_args(args)
-    if state is None or state["stage"] not in ("impact-coder", "impact-review") or not word:
-        return emit("stop", "decide needs a pending PLAN-IMPACT and one word: adopt, keep or discuss.")
+    if not word:
+        return emit("stop", STAGE_GUARDS["decide"]["message"])
     decision = DECISION_WORDS.get(word)
     if decision is None:
         return emit("stop", "decide takes adopt, keep or discuss.")
@@ -1617,12 +1571,7 @@ def emit_plan_edit_dispatch(repoRoot, state):
          next_after("after-plan-edit"), prompt=prompt, agent="coder")
 
 
-def command_review_again(args):
-    repoRoot = repo_root()
-    os.chdir(repoRoot)
-    state = load_state(repoRoot)
-    if state is None or state["stage"] != "stopped" or state.get("stopReason") != "invalid-packet":
-        return emit("stop", "review-again ran with no unreadable review packet pending.")
+def command_review_again(repoRoot, state, args):
     state.pop("stopReason")
     # A failed review that ran the structure pass runs it again; one that skipped it skips it again.
     if not state.get("structurePassSkipped"):
@@ -1630,13 +1579,7 @@ def command_review_again(args):
     emit_review_dispatch(repoRoot, state)
 
 
-def command_after_plan_edit(args):
-    repoRoot = repo_root()
-    os.chdir(repoRoot)
-    state = load_state(repoRoot)
-    if state is None or state["stage"] != "plan-coder":
-        return emit("stop", "after-plan-edit ran with no plan edit pending. Run `start` first.")
-
+def command_after_plan_edit(repoRoot, state, args):
     if not wait_for_handback(repoRoot, state, "after-plan-edit"):
         return
     state = load_state(repoRoot)
@@ -1930,12 +1873,7 @@ def command_hook():
 
 # ---------- after-review ----------
 
-def command_after_review(args):
-    repoRoot = repo_root()
-    os.chdir(repoRoot)
-    state = load_state(repoRoot)
-    if state is None or state["stage"] != "review":
-        return emit("stop", "after-review ran with no review pending. Run `start` first.")
+def command_after_review(repoRoot, state, args):
     if not wait_for_handback(repoRoot, state, "after-review", longChecksFollow=True):
         return
     state = load_state(repoRoot)
@@ -2107,17 +2045,12 @@ def split_asks_done_args(args):
     return outcomes, changeTexts
 
 
-def command_asks_done(args):
-    repoRoot = repo_root()
-    os.chdir(repoRoot)
-    state = load_state(repoRoot)
+def command_asks_done(repoRoot, state, args):
     outcomes, givenChanges = split_asks_done_args(args)
-    usage = ("asks-done needs one outcome per ask: accepted, rejected or modified. Each modified ask needs the user's "
-             "change after it as `--change \"<text>\"`.")
-    if state is None or state["stage"] != "asks" or len(outcomes) != len(state["asks"]) \
+    if len(outcomes) != len(state["asks"]) \
             or any(outcome not in ASK_OUTCOMES for outcome in outcomes) or givenChanges is None \
             or len(givenChanges) != outcomes.count("modified"):
-        return emit("stop", usage)
+        return emit("stop", ASKS_DONE_USAGE)
 
     remainingChanges = iter(givenChanges)
     changeTexts = [next(remainingChanges) if outcome == "modified" else None for outcome in outcomes]
@@ -2127,12 +2060,7 @@ def command_asks_done(args):
 
 # ---------- phase gates and boundary ----------
 
-def command_skill_done(args):
-    repoRoot = repo_root()
-    os.chdir(repoRoot)
-    state = load_state(repoRoot)
-    if state is None or state["stage"] != "skill":
-        return emit("stop", "skill-done ran with no closing-phase skill pending.")
+def command_skill_done(repoRoot, state, args):
     verdict = args[0].lower() if args else "pass"
     if verdict not in ("pass", "fail"):
         return emit("stop", "skill-done takes pass or fail.")
@@ -2183,16 +2111,13 @@ def command_tick(args):
          "asks.")
 
 
-def command_verify(args):
-    repoRoot = repo_root()
-    os.chdir(repoRoot)
-    state = load_state(repoRoot)
-    if state is None or state["stage"] != "stopped" or state.get("stopReason") not in VERIFY_STOP_REASONS:
-        return emit("stop", "verify ran with no failed Automated Verification or unparsed Manual Verification pending.")
+def command_verify(repoRoot, state, args):
     finish_phase(repoRoot, state)
 
 
-COMMAND_START = re.compile(r"^(cd |npm |npx |pnpm |yarn |git |node |python3? |pytest|ruff |bash |curl |make "
+ENV_ASSIGNMENTS = re.compile(r"""(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s"']*)\s+)+""")
+COMMAND_START = re.compile(r"^(?:" + ENV_ASSIGNMENTS.pattern + r")?"
+                           r"(cd |npm |npx |pnpm |yarn |git |node |python3? |pytest|ruff |bash |curl |make "
                            r"|cargo |go |deno |bun |uv |poetry |tsc\b|eslint |vitest|jest|mvn |gradle |\./"
                            r"|dotnet |docker |just |rake |bundle |ruby |php |composer |mix |swift |sbt |bazel |tox\b"
                            r"|mypy |pyright|sh )")
@@ -2202,7 +2127,8 @@ NO_AUTOMATED_CHECK = re.compile(r"^- \[[ x]\]\s*[*_`]*\s*(?:n/a|none)\b", re.IGN
 
 
 def verification_command(line):
-    # The first backticked span that starts like a shell command; the line may continue after it ("`npm run build` exits 0.").
+    # The first backticked span that starts like a shell command, after any leading NAME=value assignments, which the
+    # shell passes to the command; the line may continue after it ("`npm run build` exits 0.").
     for span in re.findall(r"`([^`]+)`", line):
         if COMMAND_START.match(span):
             return span
@@ -2240,7 +2166,7 @@ def run_verification_commands(repoRoot, phaseSection):
         if command is None:
             unparsed.append(line.strip())
             continue
-        if WHOLE_SUITE.match(command):
+        if WHOLE_SUITE.match(ENV_ASSIGNMENTS.sub("", command, count=1)):
             skipped.append(command)
             continue
         code, output = run_command(command, repoRoot, timeout=timeout)
@@ -2327,13 +2253,17 @@ def ticket_prefix(state):
 
 def phase_commit(repoRoot, state):
     # The phase's own changed files: dirty now, and not dirty before the phase started. Files that were dirty before
-    # stay out of the command. The commit names its files after `--`, so it takes only those files from the index and
-    # leaves anything the user staged by hand staged and uncommitted.
+    # stay out of the command, except the plan: the script ticks the phase in it, so the commit carries it even when it
+    # held other uncommitted edits before the phase. The commit names its files after `--`, so it takes only those
+    # files from the index and leaves anything the user staged by hand staged and uncommitted.
     # Returns (text for the user, the commit command line, the files it commits); the text and line are "" with no files.
     baseline = state.get("baseline") or {}
     dirtyNow = file_hashes(repoRoot)
-    ownFiles = [name for name in dirtyNow if name not in baseline]
-    leftOut = [name for name in dirtyNow if name in baseline and dirtyNow[name] != baseline[name]]
+    planName = state.get("plan")
+    changedSince = [name for name in dirtyNow if name in baseline and dirtyNow[name] != baseline[name]]
+    planHadEarlierEdits = planName in changedSince
+    ownFiles = [name for name in dirtyNow if name not in baseline or (name == planName and planHadEarlierEdits)]
+    leftOut = [name for name in changedSince if name != planName]
     if not ownFiles:
         return "", "", []
     behaviorLines = state.get("behavior") or []
@@ -2344,6 +2274,8 @@ def phase_commit(repoRoot, state):
     quotedFiles = " ".join(shlex.quote(name) for name in ownFiles)
     commitLine = f"git add -- {quotedFiles} && git commit -m {shlex.quote(message)} -- {quotedFiles}"
     lines = ["Files changed by this phase:", *diff_stat_rows(repoRoot, ownFiles), ""]
+    if planHadEarlierEdits:
+        lines += [f"{planName} had uncommitted edits before the phase. The commit includes them with the phase tick.", ""]
     if leftOut:
         lines += ["Dirty before the phase and left out of the commit: " + ", ".join(leftOut), ""]
     lines += ["Commit command (not run by the script):", commitLine]
@@ -2413,7 +2345,7 @@ def finish_phase(repoRoot, state, skipVerification=False):
         isClosing = any(e["number"] == number and e["closing"] for e in plan["entries"])
         mark_phase_done(planPath, number)
         reopened = [] if isClosing else reopen_closing_phases(planPath)
-    entries = phase_status_entries(planPath.read_text().splitlines())
+    entries = parse_plan(planPath.read_text().splitlines())["entries"]
     block, riskLabel = boundary_decision(state, entries, number)
     nextPending = ordered_pending(entries)
     commitText, commitLine, commitFiles = phase_commit(repoRoot, state)
@@ -2504,6 +2436,18 @@ def block_b_or_c(block, number, riskLabel, state, manualGroups, nextNumber):
     return "\n".join(parts)
 
 
+def run_guarded_verb(verb, handler, args):
+    guard = STAGE_GUARDS[verb]
+    repoRoot = repo_root()
+    os.chdir(repoRoot)
+    state = load_state(repoRoot)
+    atStage = state is not None and state["stage"] in guard["stages"]
+    reasonAllowed = "stopReasons" not in guard or (state or {}).get("stopReason") in guard["stopReasons"]
+    if not atStage or not reasonAllowed:
+        return emit("stop", guard["message"])
+    handler(repoRoot, state, args)
+
+
 def command_status():
     state = load_state(repo_root())
     print(json.dumps(state, indent=1) if state else "no code-step state")
@@ -2539,7 +2483,10 @@ def main():
     if verb in resumeVerbs:
         clear_say(repo_root())
     try:
-        verbs[verb](args)
+        if verb in STAGE_GUARDS:
+            run_guarded_verb(verb, verbs[verb], args)
+        else:
+            verbs[verb](args)
     except StateFileError as error:
         emit("stop", f"{error}. Tell the user to delete that file, then run `start`.")
 

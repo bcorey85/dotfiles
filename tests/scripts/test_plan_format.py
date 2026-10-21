@@ -137,6 +137,58 @@ class SectionShapeTest(unittest.TestCase):
         self.assertIsNone(items[0]["phase"])
 
 
+class PhaseSectionsTest(unittest.TestCase):
+    ONE = "6"
+    DOTTED = "6.1"
+    TWO = "7"
+
+    def spans(self, *lines):
+        return plan_format.phase_spans(list(lines))
+
+    def test_a_phase_is_found_by_its_exact_id_when_a_dotted_id_with_the_same_prefix_comes_first(self):
+        lines = [f"## Phase {self.DOTTED}: dotted", "a", f"## Phase {self.ONE}: whole", "b"]
+        section = plan_format.phase_section(lines, self.ONE)
+        self.assertEqual((2, 4), (section["start"], section["end"]))
+        self.assertIsNone(plan_format.phase_section(lines[:2], self.ONE))
+
+    def test_a_second_section_of_one_id_is_a_failure_and_still_gets_its_span(self):
+        spans, failures = self.spans(f"## Phase {self.ONE}: a", "x", f"## Phase {self.ONE}: again", "y")
+        self.assertEqual([(self.ONE, 0, 2), (self.ONE, 2, 4)], [(i, s["start"], s["end"]) for i, s in spans])
+        self.assertEqual([("duplicate-id", 3)], [(f["kind"], f["line"]) for f in failures])
+
+    def test_a_deeper_heading_of_an_id_that_has_a_section_is_a_note_inside_it(self):
+        spans, failures = self.spans(f"## Phase {self.ONE}: a", f"#### Phase {self.ONE} record", "x", "## Other")
+        self.assertEqual([(self.ONE, 0, 3)], [(i, s["start"], s["end"]) for i, s in spans])
+        self.assertEqual([], failures)
+
+    def test_a_deeper_heading_of_a_new_id_ends_the_section_it_sits_in(self):
+        spans, _ = self.spans(f"## Phase {self.ONE}: a", f"### Phase {self.TWO}: b", "x")
+        self.assertEqual([(self.ONE, 0, 1), (self.TWO, 1, 3)], [(i, s["start"], s["end"]) for i, s in spans])
+
+    def test_a_section_stays_open_across_its_own_level_success_groups_and_ends_at_the_next_other_heading(self):
+        spans, _ = self.spans(f"### Phase {self.ONE}: a", "### Automated Verification", "x", "### Manual Verification",
+                              "y", "### Notes", "z")
+        self.assertEqual([(self.ONE, 0, 5)], [(i, s["start"], s["end"]) for i, s in spans])
+
+    def test_a_heading_inside_a_fenced_block_starts_no_section(self):
+        spans, _ = self.spans(f"## Phase {self.ONE}: a", "```", f"## Phase {self.TWO}: fake", "```", "x")
+        self.assertEqual([(self.ONE, 0, 5)], [(i, s["start"], s["end"]) for i, s in spans])
+
+    def test_parse_plan_fails_a_status_entry_with_no_section_unless_it_is_a_closing_phase(self):
+        lines = ["## Phase Status", f"- [ ] Phase {self.ONE}: build", f"- [ ] Phase {self.TWO}: Recap", ""]
+        closing = lambda title: "/branch-recap" if title.startswith("Recap") else None
+        plan = plan_format.parse_plan(lines, closing)
+        self.assertEqual([(1, "missing-section")], [(f["line"] - 1, f["kind"]) for f in plan["failures"]])
+        self.assertEqual([None, "/branch-recap"], [e["closing"] for e in plan["entries"]])
+
+    def test_parse_plan_fails_a_section_the_status_list_does_not_name(self):
+        lines = ["## Phase Status", f"- [ ] Phase {self.ONE}: build", f"## Phase {self.ONE}: build",
+                 f"## Phase {self.TWO}: extra"]
+        plan = plan_format.parse_plan(lines)
+        self.assertEqual(["section-without-status"], [f["kind"] for f in plan["failures"]])
+        self.assertEqual(4, plan["failures"][0]["line"])
+
+
 class LoudFailureTest(unittest.TestCase):
     def assert_fails_at(self, text, lineNumber):
         with self.assertRaises(plan_format.PlanFormatError) as caught:

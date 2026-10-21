@@ -36,6 +36,7 @@ REAL_CLAUDE = SCRIPT.parent.parent if (SCRIPT.parent / "coder-gate.py").exists()
 HANDBACK_SCRIPT = pathlib.Path(os.environ.get("HANDBACK_SCRIPT") or REAL_CLAUDE / "scripts" / "handback.py")
 sys.path.insert(0, str(HANDBACK_SCRIPT.parent))
 sys.path.insert(0, str(SCRIPT.parent))
+import script_utils  # noqa: F401  (loaded before handback, so handback and code-step share the script directory's copy)
 import handback
 STEP_LIMIT = 30
 MAX_HANDBACKS = 3
@@ -46,7 +47,7 @@ TMP_ROOT = pathlib.Path(tempfile.mkdtemp(prefix="termination-"))
 CLAUDE_STUB = TMP_ROOT / "claude"
 (CLAUDE_STUB / "scripts").mkdir(parents=True)
 (CLAUDE_STUB / "skills/review").mkdir(parents=True)
-for scriptName in ("coder-gate.py", "coder-packet.py", "resolve-task-dir.sh"):
+for scriptName in ("coder-gate.py", "coder-packet.py", "plan_format.py", "script_utils.py", "resolve-task-dir.sh"):
     shutil.copy(SCRIPT.parent / scriptName if (SCRIPT.parent / scriptName).exists() else pathlib.Path.home() / ".claude/scripts" / scriptName, CLAUDE_STUB / "scripts" / scriptName)
 for stubName in ("scripts/log-scan", "skills/review/log-review-finding"):
     stubFile = CLAUDE_STUB / stubName

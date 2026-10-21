@@ -22,6 +22,8 @@ Work incident: the auto-mode classifier reads a trailing skip comment as an atte
 
 Edited 2026-10-21. Until the hook exemption installs, a gate run that repeats an earlier full run with no edit between them can still get the repeat-check deny. That case costs one rerun after the next edit, not a skipped gate.
 
+The exemption installed 2026-10-21. The second script fix batch replaces it with a per-agent run record, so the loop's gate run is its own first run.
+
 ## Watch
 
 None. The intake counts hook blocks by rule in `review-queue.txt`, but classifier denials are not hook blocks and no intake script counts them.

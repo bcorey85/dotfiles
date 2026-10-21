@@ -10,6 +10,9 @@ import unittest
 SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts")
 SCRIPT = SCRIPTS_DIR / "comment-bloat-gate.py"
 
+# Split so this file does not itself carry the plan-path marker the gate looks for.
+MARKER_LINE = 'SPEC = "dev/agent-ledger-LED-7/docs/' + 'plans/LED-7-watch-metrics/spec.md"'
+
 FILLER = "\n".join("value_%d = %d" % (index, index) for index in range(40)) + "\n"
 
 
@@ -17,11 +20,21 @@ class CommentBloatGateTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
+        subprocess.run(["git", "init", "-q", self.tmp.name], check=True)
         self.home = pathlib.Path(self.tmp.name) / "home"
         self.home.mkdir()
 
     def source(self, relative, content):
         path = pathlib.Path(self.tmp.name) / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+        return str(path)
+
+    def scratch_source(self, relative, content):
+        """A file in a folder that is not inside any git work tree."""
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        path = pathlib.Path(scratch.name) / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
         return str(path)
@@ -52,6 +65,28 @@ class CommentBloatGateTest(unittest.TestCase):
         self.assert_allowed(self.run_hook(""))
         self.assert_allowed(self.run_hook(json.dumps({"tool_input": {}})))
         self.assert_allowed(self.run_hook(json.dumps({"tool_input": {"file_path": "/nonexistent/a.py"}})))
+
+    def test_scratch_file_outside_any_repo_passes(self):
+        path = self.scratch_source("probe/check.py", MARKER_LINE + "\n")
+        self.assert_allowed(self.edit(path, MARKER_LINE, tool="Write"))
+
+    def test_same_text_in_a_repo_file_is_still_flagged(self):
+        path = self.source("repo/probe/check.py", MARKER_LINE + "\n")
+        stderr = self.assert_blocked(self.edit(path, MARKER_LINE, tool="Write"))
+        self.assertIn("  1:" + MARKER_LINE + "\n", stderr)
+
+    def test_symlink_from_outside_a_repo_into_a_repo_file_is_checked(self):
+        target = self.source("repo/probe/check.py", MARKER_LINE + "\n")
+        link = pathlib.Path(self.scratch_source("keep.txt", "x\n")).parent / "link.py"
+        link.symlink_to(target)
+        self.assert_blocked(self.edit(str(link), MARKER_LINE, tool="Write"))
+
+    def test_without_git_a_repo_file_is_checked_and_a_scratch_file_passes(self):
+        without_git = {"PATH": self.tmp.name}
+        repo_path = self.source("repo/a.py", MARKER_LINE + "\n")
+        self.assert_blocked(self.edit(repo_path, MARKER_LINE, env=without_git))
+        scratch_path = self.scratch_source("b.py", MARKER_LINE + "\n")
+        self.assert_allowed(self.edit(scratch_path, MARKER_LINE, env=without_git))
 
     def test_non_code_extension_passes(self):
         path = self.source("notes.md", "# phase 2 per the plan\n")

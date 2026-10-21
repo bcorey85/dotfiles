@@ -7,6 +7,7 @@ import json
 import os
 import pathlib
 import re
+import subprocess
 import time
 
 FENCE_OPEN = re.compile(r"^\s*(`{3,}|~{3,})")
@@ -204,6 +205,56 @@ def paths_named(*texts):
     return paths
 
 
+def _nearest_existing_folder(path):
+    """The path itself when it is a folder, else the nearest parent that exists, so a file not yet written still
+    has a folder to look from. Symlinks are resolved first, so a link points the search at its target."""
+    folder = os.path.realpath(path)
+    if os.path.isdir(folder):
+        return folder
+    folder = os.path.dirname(folder)
+    while not os.path.isdir(folder):
+        parent = os.path.dirname(folder)
+        if parent == folder:
+            break
+        folder = parent
+    return folder
+
+
+def inside_git_work_tree(path, timeoutSeconds=2):
+    """True when path (a file or folder, which may not exist yet) lies inside a git work tree, False when it does
+    not. A symlink is followed to its target. The inside of a .git folder and a bare repo are not a work tree.
+    Asks `git rev-parse --is-inside-work-tree` from the nearest existing folder. When git cannot run, does not
+    answer in time or exits with an error, looks for a .git entry in that folder or a parent instead."""
+    folder = _nearest_existing_folder(path)
+    try:
+        done = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=folder, stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True, timeout=timeoutSeconds)
+    except (OSError, subprocess.SubprocessError):
+        return _has_git_entry_above(folder)
+    if done.returncode != 0:
+        return _has_git_entry_above(folder)
+    return done.stdout.strip() == "true"
+
+
+def _is_bare_repo(folder):
+    return (os.path.isfile(os.path.join(folder, "HEAD")) and os.path.isdir(os.path.join(folder, "objects"))
+            and os.path.isdir(os.path.join(folder, "refs")))
+
+
+def _has_git_entry_above(folder):
+    if ".git" in pathlib.PurePath(folder).parts:
+        return False
+    while True:
+        if os.path.exists(os.path.join(folder, ".git")):
+            return True
+        if _is_bare_repo(folder):
+            return False
+        parent = os.path.dirname(folder)
+        if parent == folder:
+            return False
+        folder = parent
+
+
 def append_jsonl(path, row):
     """Append one JSON row as one write, so concurrent appenders cannot interleave inside a row."""
     path = pathlib.Path(path)
@@ -230,3 +281,27 @@ def read_jsonl(path):
         if isinstance(row, dict):
             objectRows.append(row)
     return objectRows
+
+
+def nearest_file_upward(startDirectory, fileName, stopDirectory):
+    """The nearest file called fileName in startDirectory or a parent of it, looking no higher than stopDirectory,
+    or None. A startDirectory that is not inside stopDirectory finds nothing, `..` segments included. Both are
+    pathlib.Path."""
+    resolvedStart = startDirectory.resolve()
+    if stopDirectory.resolve() not in (resolvedStart, *resolvedStart.parents):
+        return None
+
+    directory = startDirectory
+    while True:
+        candidate = directory / fileName
+        if candidate.is_file():
+            return candidate
+        if directory == stopDirectory or stopDirectory not in directory.parents:
+            return None
+        directory = directory.parent
+
+
+def directory_relative_to(rootDirectory, directory):
+    """The directory's path under rootDirectory as text, or "" when it is rootDirectory itself. Both are
+    pathlib.Path."""
+    return str(directory.relative_to(rootDirectory)) if directory != rootDirectory else ""

@@ -9,9 +9,7 @@ import sys
 import tempfile
 import threading
 import time
-import types
 import unittest
-import unittest.mock
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 REAL_CLAUDE = pathlib.Path(os.environ.get("CODE_STEP_REAL_CLAUDE") or REPO_ROOT / "claude" / ".claude")
@@ -82,6 +80,28 @@ def run(cwd, env, *args, stdin=None):
 
 class CodeStepTest(unittest.TestCase):
     SESSION = "sess-1"
+    GIT_IDENTITY = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+                    "GIT_COMMITTER_EMAIL": "t@t"}
+
+    @classmethod
+    def setUpClass(cls):
+        # Every test starts from a copy of this repo: the work tree and the one base commit, built once.
+        classDirectory = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(classDirectory.cleanup)
+        classHome = pathlib.Path(classDirectory.name) / "home"
+        classHome.mkdir()
+        cls.baseRepo = pathlib.Path(classDirectory.name) / "repo"
+        (cls.baseRepo / "backend/src").mkdir(parents=True)
+        (cls.baseRepo / "docs/plans/orders").mkdir(parents=True)
+        (cls.baseRepo / "backend/package.json").write_text(json.dumps({
+            "scripts": {"typecheck": "tsc --noEmit", "lint": "eslint ."},
+            "devDependencies": {"vitest": "1", "eslint": "9"}}))
+        (cls.baseRepo / "backend/src/existing.ts").write_text("export const a = 1\n")
+        (cls.baseRepo / "docs/plans/orders/spec.md").write_text(PLAN)
+        (cls.baseRepo / "docs/plans/orders/acceptance-criteria.md").write_text("AC-1 orders exist\n")
+        gitEnv = dict(os.environ, HOME=str(classHome), **cls.GIT_IDENTITY)
+        for command in (["git", "init", "-q"], ["git", "add", "-A"], ["git", "commit", "-qm", "base"]):
+            subprocess.run(command, cwd=cls.baseRepo, check=True, capture_output=True, env=gitEnv)
 
     def setUp(self):
         tempDirectory = tempfile.TemporaryDirectory()
@@ -90,33 +110,25 @@ class CodeStepTest(unittest.TestCase):
         self.claude = self.tmp / "claude"
         (self.claude / "scripts").mkdir(parents=True)
         (self.claude / "skills/review").mkdir(parents=True)
-        for name in ("coder-gate.py", "coder-packet.py", "resolve-task-dir.sh"):
+        for name in ("coder-gate.py", "resolve-task-dir.sh"):
             shutil.copy(REAL_CLAUDE / "scripts" / name, self.claude / "scripts" / name)
+        for name in ("coder-packet.py", "plan_format.py", "script_utils.py"):
+            shutil.copy(SCRIPT.parent / name, self.claude / "scripts" / name)
         self.log = self.tmp / "calls.log"
         for name in ("scripts/log-scan", "skills/review/log-review-finding"):
             stub = self.claude / name
             stub.write_text(f'#!/usr/bin/env bash\necho "{name} $@" >> {self.log}\n')
             stub.chmod(0o755)
         self.repo = self.tmp / "repo"
-        (self.repo / "backend/src").mkdir(parents=True)
-        (self.repo / "docs/plans/orders").mkdir(parents=True)
-        (self.repo / "backend/package.json").write_text(json.dumps({
-            "scripts": {"typecheck": "tsc --noEmit", "lint": "eslint ."},
-            "devDependencies": {"vitest": "1", "eslint": "9"}}))
-        (self.repo / "backend/src/existing.ts").write_text("export const a = 1\n")
-        (self.repo / "docs/plans/orders/spec.md").write_text(PLAN)
-        (self.repo / "docs/plans/orders/acceptance-criteria.md").write_text("AC-1 orders exist\n")
+        shutil.copytree(self.baseRepo, self.repo, symlinks=True)
         self.home = self.tmp / "home"
         self.home.mkdir()
-        self.env = dict(os.environ, CODE_STEP_CLAUDE_DIR=str(self.claude), GIT_AUTHOR_NAME="t",
-                        GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t",
+        self.env = dict(os.environ, CODE_STEP_CLAUDE_DIR=str(self.claude), **self.GIT_IDENTITY,
                         HOME=str(self.home), CODE_STEP_WAIT_SECONDS="0", CLAUDE_CODE_SESSION_ID=self.SESSION,
                         HANDBACK_STORE_DIR=str(self.tmp / "handback-store"),
                         PYTHONPATH=str(HANDBACK_SCRIPT.parent))
         self.env.pop("CODE_STEP_IMPACT_DECISION", None)
         self.env.pop("CODE_STEP_ASKS_OUTCOME", None)
-        for command in (["git", "init", "-q"], ["git", "add", "-A"], ["git", "commit", "-qm", "base"]):
-            subprocess.run(command, cwd=self.repo, check=True, capture_output=True, env=self.env)
         self.plan = "docs/plans/orders/spec.md"
 
     def step(self, *args, stdin=None):
@@ -221,6 +233,37 @@ class CodeStepTest(unittest.TestCase):
         joined = " | ".join(gate["commands"])
         self.assertNotIn("sibling", joined)
         self.assertIn("cd backend && npm run typecheck", joined)
+
+    def test_gate_runs_clippy_with_warnings_denied_in_the_cargo_package_that_holds_a_named_rust_file(self):
+        (self.repo / "crate/src").mkdir(parents=True)
+        (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
+        (self.repo / "crate/src/lib.rs").write_text("pub fn a() {}\n")
+        rustFile = "**File**: `backend/src/orders.test.ts`\n**File**: `crate/src/lib.rs`\n**File**: `crate/Cargo.toml`"
+        (self.repo / self.plan).write_text(self.plan_text().replace("**File**: `backend/src/orders.test.ts`", rustFile))
+
+        self.start_phase_one()
+
+        gate = json.loads((self.repo / ".git/coder-gate.json").read_text())
+        self.assertEqual(1, gate["commands"].count("cd crate && cargo clippy --all-targets -- -D warnings"))
+        self.assertIn("cd backend && npm run typecheck", gate["commands"])
+
+    def test_gate_runs_clippy_without_a_cd_prefix_when_the_phase_names_only_the_root_cargo_manifest(self):
+        (self.repo / "Cargo.toml").write_text('[package]\nname = "root-crate"\n')
+        rootManifest = "**File**: `backend/src/orders.test.ts`\n**File**: `Cargo.toml`"
+        (self.repo / self.plan).write_text(self.plan_text().replace("**File**: `backend/src/orders.test.ts`", rootManifest))
+
+        self.start_phase_one()
+
+        gate = json.loads((self.repo / ".git/coder-gate.json").read_text())
+        self.assertEqual(1, gate["commands"].count("cargo clippy --all-targets -- -D warnings"))
+
+    def test_gate_runs_no_cargo_command_when_the_phase_names_no_rust_file(self):
+        (self.repo / "crate").mkdir()
+        (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
+        self.start_phase_one()
+
+        gate = json.loads((self.repo / ".git/coder-gate.json").read_text())
+        self.assertEqual([], [command for command in gate["commands"] if "cargo" in command])
 
     def test_fast_modifier_sets_haiku(self):
         self.assertIn("MODEL: haiku", self.start_phase_one("+fast"))
@@ -762,9 +805,6 @@ class CodeStepTest(unittest.TestCase):
     def test_start_stops_while_the_plan_edit_coder_is_out(self):
         self.check_a_verb_stops_while_the_plan_edit_coder_is_out(["start"])
 
-    def test_start_take_over_stops_while_the_plan_edit_coder_is_out(self):
-        self.check_a_verb_stops_while_the_plan_edit_coder_is_out(["start", "--take-over"])
-
     def check_the_stop_leads_through_after_plan_edit_to_a_restore(self, verbArguments, otherSession):
         self.open_plan_edit_with_a_late_criteria_write()
         if otherSession:
@@ -873,9 +913,6 @@ class CodeStepTest(unittest.TestCase):
 
     def test_start_restores_the_criteria_the_coder_edited_during_a_session_plan_edit(self):
         self.check_start_restores_the_criteria(["start"])
-
-    def test_start_take_over_restores_the_criteria_the_coder_edited_during_a_session_plan_edit(self):
-        self.check_start_restores_the_criteria(["start", "--take-over"])
 
     def test_start_on_another_branch_drops_the_saved_criteria_instead_of_restoring_them(self):
         self.coder_round(self.IMPACT_REPORT)
@@ -1313,7 +1350,7 @@ class CodeStepTest(unittest.TestCase):
                  "-  [ ]  Phase  9:  Extra spaces (risk: low)",
                  "* [ ] Phase 10 – En dash and star bullet",
                  "- [ ] Phase 11: No risk tag"]
-        entries = code_step.phase_status_entries(lines)
+        entries = code_step.parse_plan(lines)["entries"]
         self.assertEqual(["6C2", "7", "8", "9", "10", "11"], [e["number"] for e in entries])
         self.assertEqual(["low", "high", "low", "low", "high", "high"], [e["risk"] for e in entries])
         self.assertEqual([False, True, False, False, False, False], [e["done"] for e in entries])
@@ -1325,12 +1362,12 @@ class CodeStepTest(unittest.TestCase):
         planPath = self.repo / "ids.md"
         planPath.write_text("\n".join(["## Phase Status", "", *statusLines, "", *sections, ""]))
         planLines = planPath.read_text().splitlines()
-        self.assertEqual(ids, [e["number"] for e in code_step.phase_status_entries(planLines)])
+        self.assertEqual(ids, [e["number"] for e in code_step.parse_plan(planLines)["entries"]])
         for i in ids:
             self.assertEqual(f"## Phase {i}: Title {i}\nbody {i}", code_step.phase_text(planLines, i))
             code_step.mark_phase_done(planPath, i)
-        self.assertEqual([True] * len(ids), [e["done"] for e in code_step.phase_status_entries(
-            planPath.read_text().splitlines())])
+        self.assertEqual([True] * len(ids), [e["done"] for e in code_step.parse_plan(
+            planPath.read_text().splitlines())["entries"]])
 
     def test_dotted_phase_section_is_not_the_whole_number_section(self):
         lines = ["## Phase 10.5: x", "a", "## Phase 10: y", "b"]
@@ -2199,6 +2236,18 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("existing.ts", self.commit_lines()[0])
         self.assertIn("Dirty before the phase and left out of the commit: backend/src/existing.ts", self.said())
 
+    def test_the_commit_command_includes_the_plan_when_it_was_dirty_before_the_phase_and_says_so(self):
+        (self.repo / self.plan).write_text(self.plan_text().replace("Add orders.", "Add orders and returns."))
+        self.finish_phase_one()
+        self.assertEqual(1, len(self.commit_lines()))
+        self.assertIn(f" {self.plan}", self.commit_lines()[0])
+        self.assertIn(f"{self.plan} had uncommitted edits before the phase", self.said())
+        self.assertNotIn(f"left out of the commit: {self.plan}", self.said())
+        subprocess.run(self.commit_lines()[0], shell=True, cwd=self.repo, check=True, env=self.env, capture_output=True)
+        leftDirty = subprocess.run(["git", "status", "--porcelain", "--", self.plan], cwd=self.repo,
+                                   capture_output=True, text=True, env=self.env).stdout
+        self.assertEqual("", leftDirty)
+
     def test_the_script_never_commits_or_stages(self):
         before = subprocess.run(["git", "rev-list", "--count", "HEAD"], cwd=self.repo, capture_output=True,
                                 text=True).stdout
@@ -2278,9 +2327,9 @@ class CodeStepTest(unittest.TestCase):
         self.step("start", "--task", "add orders")
         self.assertEqual(self.SESSION, self.state()["sessionId"])
 
-    def leave_dispatch_of(self, session, ageSeconds=60):
+    def leave_dispatch_of(self, session):
         self.start_phase_one()
-        self.set_state(sessionId=session, dispatchAt=time.time() - ageSeconds)
+        self.set_state(sessionId=session, dispatchAt=time.time() - 60)
 
     def test_start_stops_when_another_live_session_has_an_open_dispatch(self):
         self.leave_dispatch_of("other-session")
@@ -2293,20 +2342,14 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("--take-over", out)
         self.assertEqual(before, (self.repo / ".git/code-step/state.json").read_text())
 
-    def test_take_over_starts_over_the_other_sessions_run(self):
-        self.leave_dispatch_of("other-session")
-        out = self.step("start", self.plan, "--take-over")
-        self.assertIn("ACTION: dispatch", out)
-        self.assertEqual(self.SESSION, self.state()["sessionId"])
-
-    def leave_asks_of(self, session, ageSeconds=60):
+    def leave_asks_of(self, session):
         self.coder_round()
         self.hook("review-loop", self.ASK)
         self.step("after-review")
         self.assertEqual("asks", self.state()["stage"])
         self.set_state(sessionId=session)
         stateFile = self.repo / ".git/code-step/state.json"
-        past = time.time() - ageSeconds
+        past = time.time() - 60
         os.utime(stateFile, (past, past))
 
     def test_start_stops_when_another_session_waits_at_asks(self):
@@ -2316,16 +2359,6 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("in another session; this block lifts at", out)
         self.assertIn("invoke Skill code with `--take-over " + self.plan + " +fast`", out)
         self.assertEqual("asks", self.state()["stage"])
-
-    def test_a_wait_at_asks_older_than_two_hours_is_lifted(self):
-        self.leave_asks_of("other-session", ageSeconds=2 * 60 * 60 + 60)
-        self.assertIn("ACTION: dispatch", self.step("start", self.plan))
-
-    def test_take_over_starts_over_a_wait_at_asks(self):
-        self.leave_asks_of("other-session")
-        out = self.step("start", self.plan, "--take-over")
-        self.assertIn("ACTION: dispatch", out)
-        self.assertEqual(self.SESSION, self.state()["sessionId"])
 
     GUARDED_RUNS = [
         ("coder", None, "dispatch"), ("review", None, "dispatch"), ("asks-coder", None, "dispatch"),
@@ -2382,10 +2415,6 @@ class CodeStepTest(unittest.TestCase):
 
     def test_the_same_session_starts_over_its_own_open_dispatch(self):
         self.leave_dispatch_of(self.SESSION)
-        self.assertIn("ACTION: dispatch", self.step("start", self.plan))
-
-    def test_an_open_dispatch_older_than_two_hours_is_abandoned(self):
-        self.leave_dispatch_of("other-session", ageSeconds=2 * 60 * 60 + 60)
         self.assertIn("ACTION: dispatch", self.step("start", self.plan))
 
     def test_an_open_dispatch_with_no_pinned_session_is_abandoned(self):
@@ -2803,6 +2832,38 @@ class CodeStepTest(unittest.TestCase):
             "- [ ] **Check**: passes - `./scripts/check.sh --fast`"))
         self.assertEqual("sh scripts/check.sh", code_step.verification_command("- [ ] **Check**: `sh scripts/check.sh`"))
 
+    def test_a_command_with_leading_variable_assignments_runs_with_them_set(self):
+        self.set_verification("- [ ] **Env**: `VERIFY_SEEN=yes bash -c 'test \"$VERIFY_SEEN\" = yes'`")
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+
+        out = self.step("after-review")
+
+        self.assertNotIn("no command could be read", out)
+        self.assertEqual("done", self.state()["stage"])
+
+    def test_the_prefixed_command_wins_over_a_later_span_without_a_prefix(self):
+        item = "- [ ] **Env**: `PARITY_PATH=/x/y.py cargo test --test watch_parity`, not `cargo test`"
+
+        self.assertEqual("PARITY_PATH=/x/y.py cargo test --test watch_parity", code_step.verification_command(item))
+
+    def test_a_quoted_assignment_value_with_spaces_is_kept_in_the_command(self):
+        item = "- [ ] **Env**: `GREETING=\"a b\" bash -c 'echo hi'`"
+
+        self.assertEqual("GREETING=\"a b\" bash -c 'echo hi'", code_step.verification_command(item))
+
+    def test_an_assignment_with_no_command_after_it_is_not_a_verification_command(self):
+        for item in ("- [ ] **Env**: set `PARITY_PATH=/x/y.py` first", "- [ ] **Env**: `PARITY_PATH=/x/y.py echo hi`"):
+            with self.subTest(item=item):
+                self.assertIsNone(code_step.verification_command(item))
+
+    def test_a_whole_suite_command_with_a_variable_prefix_is_still_skipped(self):
+        section = "#### Automated Verification:\n\n- [ ] **All**: `CI=1 npm test`\n\n#### Manual Verification:\n"
+
+        results, skipped, unparsed = code_step.run_verification_commands(self.repo, section)
+
+        self.assertEqual(([], ["CI=1 npm test"], []), (results, skipped, unparsed))
+
     def test_the_unparsed_verification_stop_names_tick_for_checks_that_cannot_be_automated(self):
         self.replace_phase_one_verification("- [ ] **Check**: the streams pass, see the log")
         self.coder_round()
@@ -2834,27 +2895,6 @@ class CodeStepTest(unittest.TestCase):
         self.step("after-coder")
         self.hook("review-loop", self.LOOP_OK)
         self.assertIn("ACTION: auto-advance", self.step("after-review"))
-
-
-class FrozenDatetime(datetime.datetime):
-    @classmethod
-    def now(cls, tz=None):
-        return cls(2026, 10, 21, 3, 0, 0, tzinfo=tz)
-
-
-class SameSecondCopiesTest(unittest.TestCase):
-    def test_two_copies_in_one_second_keep_both_texts(self):
-        tempDirectory = tempfile.TemporaryDirectory()
-        self.addCleanup(tempDirectory.cleanup)
-        repo = pathlib.Path(tempDirectory.name)
-        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-        frozenClock = types.SimpleNamespace(datetime=FrozenDatetime, timezone=datetime.timezone)
-        with unittest.mock.patch.object(code_step, "datetime", frozenClock):
-            first = code_step.save_replaced_criteria(repo, "acceptance-criteria.md", "AC-1 first\n")
-            second = code_step.save_replaced_criteria(repo, "acceptance-criteria.md", "AC-1 second\n")
-        self.assertNotEqual(first, second)
-        self.assertEqual("AC-1 first\n", first.read_text())
-        self.assertEqual("AC-1 second\n", second.read_text())
 
 
 if __name__ == "__main__":

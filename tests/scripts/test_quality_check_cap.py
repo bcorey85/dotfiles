@@ -10,8 +10,10 @@ import tempfile
 import time
 import unittest
 
-SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR")
-                      or pathlib.Path.home() / ".claude" / "scripts") / "quality-check-cap.py"
+HERE = pathlib.Path(__file__).resolve().parent
+LIVE_SCRIPTS_DIR = pathlib.Path.home() / ".claude" / "scripts"
+SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or (HERE if (HERE / "quality-check-cap.py").exists()
+                                                             else LIVE_SCRIPTS_DIR)) / "quality-check-cap.py"
 DENY_START = "[quality-check-cap] '"
 TICK = 0.03
 
@@ -91,14 +93,49 @@ class QualityCheckCapTest(unittest.TestCase):
                                           "edited since."), reason)
         self.assertNotIn("#skip-quality-cap", reason)
 
-    def test_review_loop_gate_run_writing_the_gate_log_is_exempt(self):
-        gate = "cargo test --all-targets > /tmp/review-gate.log 2>&1"
-        self.post(gate)
-        self.assert_allowed(self.pre(gate, agent_type="review-loop", agent_id="a1"))
-        self.assert_denied(self.pre(gate, agent_type="coder", agent_id="a2"))
-        self.assert_denied(self.pre(gate))
-        self.post("cargo test > /tmp/other.log 2>&1")
-        self.assert_denied(self.pre("cargo test > /tmp/other.log 2>&1", agent_type="review-loop"))
+    def test_a_subagents_first_run_is_allowed_after_another_agents_run_on_the_same_tree(self):
+        self.post("cargo test", agent_id="coder-1", agent_type="coder")
+        self.assert_denied(self.pre("cargo test", agent_id="coder-1", agent_type="coder"))
+        self.assert_allowed(self.pre("cargo test", agent_id="reviewer-1", agent_type="test-reviewer"))
+        self.assert_allowed(self.pre("cargo test"))
+        self.assert_allowed(self.pre("cargo test", agent_id="reviewer-2", agent_type="test-reviewer"))
+
+    def test_a_repeat_is_capped_against_the_same_agents_earlier_run_only(self):
+        self.post("cargo test", agent_id="coder-1")
+        self.post("cargo test", agent_id="reviewer-1")
+        self.assert_denied(self.pre("cargo test", agent_id="reviewer-1"))
+        self.assert_denied(self.pre("cargo test", agent_id="coder-1"))
+        self.assert_allowed(self.pre("cargo test"))
+        self.post("cargo test")
+        self.assert_denied(self.pre("cargo test"))
+        self.assert_allowed(self.pre("cargo test", agent_id="reviewer-2"))
+
+    def test_the_main_thread_runs_a_check_a_subagent_already_ran(self):
+        self.post("pytest -q", agent_id="coder-1")
+        self.assert_allowed(self.pre("pytest -q"))
+        self.post("pytest -q")
+        self.assert_denied(self.pre("pytest -q"))
+        self.assert_denied(self.pre("pytest -q", agent_id="coder-1"))
+
+    def test_an_edit_by_any_agent_resets_the_cap_for_every_agent(self):
+        self.post("cargo test", agent_id="coder-1")
+        self.post("cargo test", agent_id="reviewer-1")
+        self.assert_allowed(self.edit(agent_id="coder-2"))
+        self.assert_allowed(self.pre("cargo test", agent_id="coder-1"))
+        self.assert_allowed(self.pre("cargo test", agent_id="reviewer-1"))
+
+    def test_an_agent_id_cannot_name_a_path_outside_the_session_state(self):
+        self.post("cargo test", agent_id="../../escape/x y")
+        self.assert_denied(self.pre("cargo test", agent_id="../../escape/x y"))
+        self.assertFalse((self.state_root.parent / "escape").exists())
+        files = self.state_files()
+        self.assertEqual(len(files), 1)
+        self.assertRegex(files[0], r"^run-\d+-[0-9a-f]{16}$")
+
+    def test_agent_ids_that_differ_only_in_characters_unsafe_for_a_file_name_are_separate_agents(self):
+        self.post("cargo test", agent_id="coder/1")
+        self.assert_allowed(self.pre("cargo test", agent_id="coder_1"))
+        self.assert_denied(self.pre("cargo test", agent_id="coder/1"))
 
     def test_edit_after_a_passing_cargo_test_allows_it_again(self):
         for agent in ({}, {"agent_id": "sub-1", "agent_type": "coder"}):
@@ -239,7 +276,64 @@ class QualityCheckCapTest(unittest.TestCase):
         self.post("npm test; prettier --write x")
         self.assert_denied(self.pre("npm test; prettier --write x"))
         self.assert_denied(self.pre("npm test"))
-        self.assert_allowed(self.pre("prettier --write x; npm test"))
+        self.assert_allowed(self.pre("prettier --write x && npm test"))
+
+    def test_formatter_not_joined_to_the_check_by_and_does_not_exempt_it(self):
+        self.post("npm test")
+        for command in ("prettier --write x; npm test", "prettier --write x\nnpm test",
+                        "prettier --write x || npm test", "prettier --write x && echo done; npm test",
+                        "cargo fmt && cargo clippy; npm test"):
+            self.assert_denied(self.pre(command))
+
+    def test_a_pipe_inside_an_and_chain_keeps_the_checks_behind_the_formatter(self):
+        self.post("cargo clippy && cargo test")
+        self.assert_allowed(self.pre("cargo fmt && cargo clippy 2>&1 | tail -50 && cargo test 2>&1 | tail -50"))
+        self.assert_denied(self.pre("cargo fmt | cat && cargo clippy"))
+        self.assert_denied(self.pre("cargo fmt && cargo clippy | tail -5; cargo test"))
+        self.post("npm test")
+        self.assert_denied(self.pre("prettier --write x | cat && npm test"))
+        self.assert_denied(self.pre("prettier --write x | npm test"))
+
+    def test_any_formatter_before_the_check_exempts_it(self):
+        self.post("npm test")
+        self.assert_allowed(self.pre("cargo fmt; prettier --write . && npm test"))
+        self.assert_allowed(self.pre("prettier --write . && cargo fmt; prettier --write . && npm test"))
+        self.assert_denied(self.pre("cargo fmt && prettier --write .; npm test"))
+
+    def test_a_group_entered_through_and_keeps_its_checks_behind_the_formatter(self):
+        self.post("cargo clippy && cargo test")
+        self.assert_allowed(self.pre("cargo fmt && { cargo clippy; cargo test; }"))
+        self.assert_allowed(self.pre("cargo fmt && (cargo clippy; cargo test)"))
+        self.assert_denied(self.pre("cargo fmt && { cargo clippy; }; cargo test"))
+        self.assert_denied(self.pre("cargo fmt; { cargo clippy; cargo test; }"))
+
+    def test_a_formatter_that_an_or_can_skip_does_not_exempt_the_check(self):
+        self.post("npm test")
+        self.assert_denied(self.pre("true || prettier --write . && npm test"))
+        self.assert_denied(self.pre("make build && echo x || prettier --write . && npm test"))
+        self.assert_allowed(self.pre("true || echo x; prettier --write . && npm test"))
+        self.assert_allowed(self.pre("true || echo x\nprettier --write . && npm test"))
+
+    def test_a_lone_ampersand_does_not_join_the_formatter_to_the_check(self):
+        self.post("npm test")
+        self.assert_denied(self.pre("prettier --write x & npm test"))
+        self.assert_denied(self.pre("prettier --write x && echo x & npm test"))
+
+    def test_a_check_sent_to_the_background_is_not_recorded(self):
+        self.post("npm test &")
+        self.assert_allowed(self.pre("npm test"))
+        self.post("pytest -q && eslint . &")
+        self.assert_allowed(self.pre("pytest -q"))
+        self.post("pytest -q & eslint .")
+        self.assert_allowed(self.pre("pytest -q"))
+        self.assert_denied(self.pre("eslint ."))
+
+    def test_stderr_redirects_and_pipe_stderr_are_not_a_lone_ampersand(self):
+        self.post("pytest -q 2>&1 | tail -5")
+        self.assert_denied(self.pre("pytest -q"))
+        for command in ("eslint . &> /tmp/c.log", "mypy src |& tail -5"):
+            self.post(command)
+            self.assert_denied(self.pre(command))
 
     def test_checks_of_a_passing_and_chain_are_all_counted(self):
         self.post("pytest -q && eslint . && mypy src")
@@ -326,8 +420,8 @@ class QualityCheckCapTest(unittest.TestCase):
 
     def test_command_with_a_writing_formatter_is_never_a_repeat(self):
         self.post("cargo clippy && cargo test")
-        for command in ("cargo fmt && cargo clippy", "prettier --write . && eslint .; cargo test",
-                        "ruff format . && cargo test", "cargo fmt\ncargo clippy"):
+        for command in ("cargo fmt && cargo clippy", "prettier --write . && eslint . && cargo test",
+                        "ruff format . && cargo test", "cargo fmt && cargo clippy && cargo test"):
             self.assert_allowed(self.pre(command))
 
     def test_read_only_formatter_run_is_still_a_repeat(self):

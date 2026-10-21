@@ -1,4 +1,5 @@
-"""plan_format.py: the one reader of a plan's `#### Manual Verification` sections.
+"""plan_format.py: the one reader of a plan's phase sections, its Phase Status list and its `#### Manual Verification`
+sections.
 
 Installed beside the scripts that import it, like script_utils.py. A plan file is text a person or a model wrote, so the
 reader stops on any line it does not know and names the file and the line.
@@ -33,8 +34,144 @@ HUMAN_ONLY_MARK = "human-only"
 AGENT_VERIFIED_MARK = "agent-verified"
 
 
+PHASE_STATUS_LINE = re.compile(rf"^[-*]\s+\[( |x|X)\]\s+Phase\s+({PHASE_ID})\s*[:.—–-]\s*(.*)$")
+STATUS_ITEM_START = re.compile(r"^[-*]\s+\[")
+RISK_MARK = re.compile(r"\(risk:\s*(low|high)\)", re.I)
+
+
 class PlanFormatError(Exception):
     """A line the grammar does not parse. The message starts with `name:line:`."""
+
+
+def phase_spans(lines):
+    """Every `Phase <id>` section of the plan in file order, as (id, {"start", "level", "title", "end"}) with 0-based
+    line indexes, `end` exclusive, and the failures for ids that have two sections.
+
+    A section runs to the next heading of its own level or a higher one, or to the next section. Its Success Criteria,
+    Automated Verification and Manual Verification headings do not end it, whatever their level. A heading of an id
+    that already has a section, deeper than the section it sits in (a `#### Phase <id> record` under `## Phase <id>`),
+    is a note inside that section, not a second section. A second section of one id is a failure and is still
+    returned."""
+    fenced = script_utils.fenced_line_indexes(lines)
+    spans = []
+    failures = []
+    firstLines = {}
+    current = None
+
+    for index, line in enumerate(lines):
+        if index in fenced:
+            continue
+        heading = HEADING.match(line)
+        if not heading:
+            continue
+
+        level = len(heading.group(1))
+        if current is not None and level <= current["level"] and not SUCCESS_GROUP_HEADING.match(line):
+            current["end"] = index
+            current = None
+
+        phaseHeading = PHASE_HEADING.match(line)
+        if not phaseHeading:
+            continue
+
+        sectionId = phaseHeading.group(2)
+        if current is not None and level > current["level"] and sectionId in firstLines:
+            continue
+
+        if current is not None:
+            current["end"] = index
+        current = {"start": index, "level": level, "title": line[phaseHeading.end():].lstrip(" :.—–-"),
+                   "end": len(lines)}
+        spans.append((sectionId, current))
+        if sectionId in firstLines:
+            failures.append({"line": index + 1, "kind": "duplicate-id", "detail": f"Phase {sectionId} has two "
+                             f"sections, on line {firstLines[sectionId] + 1} and line {index + 1}. Give "
+                             "each phase its own id."})
+            continue
+        firstLines[sectionId] = index
+    return spans, failures
+
+
+def phase_section(lines, phaseId):
+    """The first section of the phase with this exact id as {"start", "level", "title", "end"}, or None."""
+    spans, _ = phase_spans(lines)
+    return next((section for sectionId, section in spans if sectionId == phaseId), None)
+
+
+def phase_status_entries(lines, closing_skill):
+    """The `- [ ] Phase <id>: <title>` lines under the `Phase Status` heading, in file order, and the failures for a
+    list line that does not parse or an id listed twice. `closing_skill(title)` names the skill a closing phase runs,
+    or None. Each entry is {"line", "done", "number", "title", "risk", "closing"}."""
+    fenced = script_utils.fenced_line_indexes(lines)
+    entries = []
+    failures = []
+    firstLines = {}
+    inStatus = False
+
+    for index, line in enumerate(lines):
+        if index in fenced:
+            continue
+        heading = HEADING.match(line)
+        if heading:
+            inStatus = heading.group(2).strip() == "Phase Status"
+            continue
+        if not inStatus or not STATUS_ITEM_START.match(line):
+            continue
+
+        match = PHASE_STATUS_LINE.match(line)
+        if not match:
+            failures.append({"line": index + 1, "kind": "unparsed-line", "detail": f"{line.strip()!r}. Rewrite it as "
+                             "`- [ ] Phase <id>: <title>`, or move it out of the section."})
+            continue
+
+        number = match.group(2)
+        if number in firstLines:
+            failures.append({"line": index + 1, "kind": "duplicate-id", "detail": f"Phase {number} twice, on line "
+                             f"{firstLines[number] + 1} and line {index + 1}. Give each phase its own id."})
+            continue
+
+        firstLines[number] = index
+        title = match.group(3)
+        risk = RISK_MARK.search(title)
+        closing = closing_skill(title)
+        entries.append({"line": index, "done": match.group(1) != " ", "number": number, "title": title,
+                        "risk": risk.group(1).lower() if risk else "high", "closing": closing})
+    return entries, failures
+
+
+def parse_plan(lines, closing_skill=lambda title: None):
+    """The plan's Phase Status entries and phase sections, with every failure sorted by line: {"entries", "sections"
+    (id to the first section of that id), "failures"}. A Phase Status entry with no section is a failure unless it is
+    a closing phase, and a section with no Phase Status entry is a failure when the plan lists any phase."""
+    entries, failures = phase_status_entries(lines, closing_skill)
+    spans, sectionFailures = phase_spans(lines)
+    failures += sectionFailures
+
+    sections = {}
+    for sectionId, section in spans:
+        sections.setdefault(sectionId, section)
+
+    for entry in entries:
+        # A closing phase is defined by its skill, so its Phase Status line needs no section of its own.
+        if entry["number"] not in sections and not entry["closing"]:
+            failures.append({"line": entry["line"] + 1, "kind": "missing-section", "detail": f"Phase "
+                             f"{entry['number']} is in Phase Status but the plan has no '## Phase {entry['number']}' "
+                             "section."})
+
+    statusIds = {entry["number"] for entry in entries}
+    for number, section in sections.items():
+        if entries and number not in statusIds:
+            failures.append({"line": section["start"] + 1, "kind": "section-without-status", "detail": f"Phase "
+                             f"{number} has a section but no Phase Status entry. Add `- [ ] Phase {number}: "
+                             f"{section['title']}` to the Phase Status list."})
+
+    failures.sort(key=lambda failure: failure["line"])
+    return {"entries": entries, "sections": sections, "failures": failures}
+
+
+def phase_at(spans, index):
+    """The id of the phase section that holds this 0-based line index, or None."""
+    return next((sectionId for sectionId, section in spans if section["start"] <= index < section["end"]), None)
 
 
 def manual_verification(text, name="plan"):
@@ -50,9 +187,8 @@ def manual_verification(text, name="plan"):
     grammar does not parse."""
     lines = text.splitlines()
     fenced = script_utils.fenced_line_indexes(lines)
+    spans, _ = phase_spans(lines)
     items = []
-    phase = None
-    phaseLevel = 0
     inSection = False
     sectionLevel = 0
     deeperHeading = None
@@ -70,15 +206,6 @@ def manual_verification(text, name="plan"):
         if heading:
             level = len(heading.group(1))
             last = None
-            phaseMatch = PHASE_HEADING.match(line)
-            if phaseMatch and level > phaseLevel and phaseMatch.group(2) == phase:
-                phaseMatch = None
-            if phaseMatch:
-                phase = phaseMatch.group(2)
-                phaseLevel = level
-            elif level <= phaseLevel and not SUCCESS_GROUP_HEADING.match(line):
-                phase = None
-                phaseLevel = 0
             manual = MANUAL_HEADING.match(line)
             if manual:
                 if level not in SECTION_LEVELS:
@@ -118,8 +245,8 @@ def manual_verification(text, name="plan"):
                                   f"heading's level or a higher one, otherwise move the item above it: "
                                   f"{line.strip()[:80]}")
         if entry and (entry.group(1) is not None or not NOT_APPLICABLE.match(line)):
-            last = {"phase": phase, "text": entry.group(2).strip(), "checked": (entry.group(1) or "").lower() == "x",
-                    "line": number, "heading": qualifier}
+            last = {"phase": phase_at(spans, index), "text": entry.group(2).strip(),
+                    "checked": (entry.group(1) or "").lower() == "x", "line": number, "heading": qualifier}
             items.append(last)
             continue
 

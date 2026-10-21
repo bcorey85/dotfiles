@@ -122,7 +122,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         return {**os.environ, **GIT_ENV, "REVIEW_FINDINGS_FILE": str(self.findingsFile),
                 "REVIEW_ESCAPES_FILE": str(self.escapesFile), "REVIEW_FIX_NVIM_JUMP": str(self.fakeJump),
                 "REVIEW_FIX_GH": str(self.fakeGh), "REVIEW_FIX_CLAUDE_DIR": str(CLAUDE_DIR),
-                "HANDBACK_STORE_DIR": str(self.storeDir), "CLAUDE_CODE_SESSION_ID": SESSION, **extra}
+                "HANDBACK_STORE_DIR": str(self.storeDir), "CLAUDE_CODE_SESSION_ID": SESSION,
+                "CLAUDE_TOOLKIT_TELEMETRY": "1", **extra}
 
     def git(self, *args):
         subprocess.run(["git", *args], cwd=self.repo, env={**os.environ, **GIT_ENV}, check=True, capture_output=True)

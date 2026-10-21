@@ -1,10 +1,12 @@
 import importlib.util
 import os
 import pathlib
+import subprocess
 import tempfile
 import threading
 import time
 import unittest
+import unittest.mock
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = pathlib.Path(os.environ.get("SCRIPT_UTILS_SCRIPT")
@@ -197,6 +199,138 @@ class TextAndFileHelpersTest(unittest.TestCase):
         for thread in threads:
             thread.join()
         self.assertEqual(len(script_utils.read_jsonl(path)), 160)
+
+
+class NearestFileUpwardTest(unittest.TestCase):
+    def setUp(self):
+        tempDir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempDir.cleanup)
+        self.root = pathlib.Path(tempDir.name) / "repo"
+        (self.root / "pkg/src/deep").mkdir(parents=True)
+        (self.root / "pkg/package.json").write_text("{}")
+
+    def test_the_nearest_file_above_the_start_is_found(self):
+        found = script_utils.nearest_file_upward(self.root / "pkg/src/deep", "package.json", self.root)
+
+        self.assertEqual(self.root / "pkg/package.json", found)
+
+    def test_a_file_in_the_stop_directory_itself_is_found(self):
+        (self.root / "Cargo.toml").write_text("")
+
+        found = script_utils.nearest_file_upward(self.root / "other", "Cargo.toml", self.root)
+
+        self.assertEqual(self.root / "Cargo.toml", found)
+
+    def test_the_search_stops_at_the_stop_directory(self):
+        found = script_utils.nearest_file_upward(self.root / "pkg/src", "package.json", self.root / "pkg/src")
+
+        self.assertIsNone(found)
+
+    def test_a_start_that_climbs_out_through_dot_dot_finds_nothing_in_the_sibling_tree(self):
+        sibling = self.root.parent / "sibling"
+        sibling.mkdir()
+        (sibling / "package.json").write_text("{}")
+
+        found = script_utils.nearest_file_upward(self.root / "../sibling", "package.json", self.root)
+
+        self.assertIsNone(found)
+
+
+class DirectoryRelativeToTest(unittest.TestCase):
+    def test_a_directory_under_the_root_reads_as_its_relative_path(self):
+        root = pathlib.Path("/work/repo")
+
+        self.assertEqual("crates/api", script_utils.directory_relative_to(root, root / "crates/api"))
+
+    def test_the_root_itself_reads_as_empty_text(self):
+        root = pathlib.Path("/work/repo")
+
+        self.assertEqual("", script_utils.directory_relative_to(root, root))
+
+
+class InsideGitWorkTreeTest(unittest.TestCase):
+    def folder(self):
+        tempDir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempDir.cleanup)
+        return pathlib.Path(tempDir.name)
+
+    def test_a_file_in_a_repo_is_inside_and_a_file_outside_any_repo_is_not(self):
+        repo = self.folder()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        (repo / "a.py").write_text("x\n")
+        elsewhere = self.folder()
+        (elsewhere / "b.py").write_text("x\n")
+
+        self.assertTrue(script_utils.inside_git_work_tree(str(repo / "a.py")))
+        self.assertFalse(script_utils.inside_git_work_tree(str(elsewhere / "b.py")))
+
+    def test_a_path_in_folders_that_do_not_exist_yet_is_judged_from_the_nearest_existing_parent(self):
+        repo = self.folder()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        elsewhere = self.folder()
+
+        self.assertTrue(script_utils.inside_git_work_tree(str(repo / "new" / "deeper" / "a.py")))
+        self.assertFalse(script_utils.inside_git_work_tree(str(elsewhere / "new" / "deeper" / "b.py")))
+
+    def test_when_git_cannot_run_a_dot_git_entry_in_a_parent_decides(self):
+        repo = self.folder()
+        (repo / ".git").mkdir()
+        (repo / "src").mkdir()
+        elsewhere = self.folder()
+
+        with unittest.mock.patch.dict(os.environ, {"PATH": str(self.folder())}):
+            self.assertTrue(script_utils.inside_git_work_tree(str(repo / "src" / "a.py")))
+            self.assertFalse(script_utils.inside_git_work_tree(str(elsewhere / "b.py")))
+
+    def test_a_file_symlink_from_outside_a_repo_into_a_repo_is_inside(self):
+        repo = self.folder()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        (repo / "a.py").write_text("x\n")
+        elsewhere = self.folder()
+        link = elsewhere / "link.py"
+        link.symlink_to(repo / "a.py")
+
+        self.assertTrue(script_utils.inside_git_work_tree(str(link)))
+
+    def test_a_repo_root_folder_passed_in_is_inside(self):
+        repo = self.folder()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+
+        self.assertTrue(script_utils.inside_git_work_tree(str(repo)))
+
+    def test_when_git_refuses_the_folder_a_dot_git_entry_in_a_parent_decides(self):
+        repo = self.folder()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        (repo / "a.py").write_text("x\n")
+        elsewhere = self.folder()
+        (elsewhere / "b.py").write_text("x\n")
+
+        with unittest.mock.patch.dict(os.environ, {"GIT_TEST_ASSUME_DIFFERENT_OWNER": "1"}):
+            refused = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=str(repo),
+                                     capture_output=True)
+            self.assertNotEqual(0, refused.returncode)
+            self.assertTrue(script_utils.inside_git_work_tree(str(repo / "a.py")))
+            self.assertFalse(script_utils.inside_git_work_tree(str(elsewhere / "b.py")))
+
+    def test_the_inside_of_a_dot_git_folder_is_not_a_work_tree_with_or_without_git(self):
+        repo = self.folder()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        hook = repo / ".git" / "hooks" / "x.sh"
+        hook.write_text("x\n")
+
+        self.assertFalse(script_utils.inside_git_work_tree(str(hook)))
+        with unittest.mock.patch.dict(os.environ, {"PATH": str(self.folder())}):
+            self.assertFalse(script_utils.inside_git_work_tree(str(hook)))
+
+    def test_the_inside_of_a_bare_repo_is_not_a_work_tree_with_or_without_git(self):
+        bare = self.folder()
+        subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+        hook = bare / "hooks" / "x.sh"
+        hook.write_text("x\n")
+
+        self.assertFalse(script_utils.inside_git_work_tree(str(hook)))
+        with unittest.mock.patch.dict(os.environ, {"PATH": str(self.folder())}):
+            self.assertFalse(script_utils.inside_git_work_tree(str(hook)))
 
 
 if __name__ == "__main__":

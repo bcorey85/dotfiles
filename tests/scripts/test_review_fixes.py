@@ -146,6 +146,7 @@ class InvalidUtf8StdinTest(HookRunTest):
 
     def test_comment_bloat_gate_still_blocks_a_dense_file_next_to_invalid_utf8(self):
         # finding 6
+        subprocess.run(["git", "init", "-q", str(self.work)], check=True)
         source = self.work / "a.py"
         lines = ["value_%d = %d" % (number, number) for number in range(20)]
         lines += ["# note %d" % number for number in range(15)]
@@ -201,6 +202,7 @@ class SpecBudgetWordCountTest(HookRunTest):
 class IdeographicSpaceTest(HookRunTest):
     def test_comment_bloat_gate_reads_an_ideographic_space_as_indent(self):
         # finding 8: `[[:space:]]*` before the comment marker matches U+3000
+        subprocess.run(["git", "init", "-q", str(self.work)], check=True)
         source = self.work / "a.py"
         lines = ["value_%d = %d" % (number, number) for number in range(8)]
         lines += ["　# note %d" % number for number in range(10)]

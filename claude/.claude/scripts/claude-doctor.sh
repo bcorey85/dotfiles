@@ -87,7 +87,6 @@ fi
 print_info "Expected hook registrations"
 reg_blob=$(cat "$SETTINGS" "$CLAUDE_DIR/settings.local.json" 2>/dev/null)
 for pair in \
-  "log-skill-use.py:skill-usage telemetry" \
   "emit-orchestration.py:orchestration context injection" \
   "shell-write-gate.py:shell-write bypass gate" \
   "quality-check-cap.py:quality-check repeat-run cap"; do
@@ -99,9 +98,11 @@ for pair in \
     print_warn "scripts/$script exists but is not registered in settings.json — $label inactive"
   fi
 done
-if [[ -f "$CLAUDE_DIR/scripts/log-skill-use.py" ]] && grep -q "log-skill-use.py" <<<"$reg_blob"; then
-  if ! jq -r '.hooks.UserPromptSubmit // [] | tostring' "$SETTINGS" 2>/dev/null | grep -q "log-skill-use"; then
-    print_warn "log-skill-use.py not wired to UserPromptSubmit — user-typed /commands won't be counted"
+if grep -Eq 'ledger hook (skill-use|test-edit)' <<<"$reg_blob"; then
+  if ! command -v ledger >/dev/null 2>&1; then
+    print_warn "ledger hooks registered but ledger is not on PATH: skill_use and test_edit rows are not captured"
+  else
+    print_success "ledger hooks registered, ledger on PATH"
   fi
 fi
 

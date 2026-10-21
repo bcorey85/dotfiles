@@ -265,7 +265,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/log-skill-use.py"
+            "command": "command -v ledger >/dev/null 2>&1 && ledger hook skill-use; exit 0"
           }
         ]
       },
@@ -394,7 +394,7 @@
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/test-edit-telemetry.py"
+            "command": "command -v ledger >/dev/null 2>&1 && ledger hook test-edit; exit 0"
           }
         ]
       },
@@ -554,7 +554,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/log-skill-use.py"
+            "command": "command -v ledger >/dev/null 2>&1 && ledger hook skill-use; exit 0"
           },
           {
             "type": "command",

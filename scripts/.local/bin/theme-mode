@@ -518,7 +518,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       badgeAdd="#74d5a1"; badgeRem="#fb784f"; badgeNeu="#d7bb70"
       fRename="#5da37e"; fMod="#5da37e"; fUntracked="#5da37e"; note="#151719"
       kw="#7c8187"; str="#85c2b7"; num="#c88191"; fn="#9c9ae3"; typ="#c1c8d2"; punct="#7c8187"; op="#7c8187"
-      konst="#c88191"; esc="#c88191"; cmt="#a79d8d"; param="#c1c8d2"
+      konst="#c88191"; esc="#c88191"; cmt="#b4a999"; param="#c1c8d2"
       attr="#c1c8d2"; tag="#7c8187"; vbi="#c1c8d2"; lang="#c88191"; imp="#7c8187"; pre="#7c8187"
       prim="#c1c8d2"; ns="#c1c8d2"; mac="#9c9ae3"; bfn="#c1c8d2"; var="#9c9ae3"; key="#c1c8d2"; cls="#9c9ae3"
       # Colour marks definitions. Builtins, uses, calls and members are plain text.

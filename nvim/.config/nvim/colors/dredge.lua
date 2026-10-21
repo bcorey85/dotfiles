@@ -4,7 +4,7 @@
 -- punctuation, line numbers, muted, quotes, ANSI greys) carry two thirds of it (C 0.011; light C 0.012).
 -- Contrast is tuned in APCA Lc, not WCAG ratios, which overrate
 -- light-on-dark. Dark is deliberately dim against halation: fg Lc 71,
--- definitions 50, comments 48, punctuation 33. Light: fg Lc 64, definitions 50, comments 48, punctuation 33. Lc is a floor, not a target: coloured
+-- definitions 50, comments 55, punctuation 33. Light: fg Lc 64, definitions 50, comments 48, punctuation 33. Lc is a floor, not a target: coloured
 -- token pairs also keep OKLab dE >= 0.09 in light, >= 0.085 in dark.
 -- Colour marks definitions; uses and calls are fg. Every definition is
 -- indigo (h 285, leaning violet): top-level variables and constants, functions and
@@ -58,7 +58,7 @@ palettes.dark = {
 
   kw = "#7c8187",
   fn = "#9c9ae3",
-  remark = "#a79d8d",
+  remark = "#b4a999",
   str = "#85c2b7",
   const = "#c88191",
 

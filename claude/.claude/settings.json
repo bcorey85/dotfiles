@@ -497,6 +497,16 @@
         ]
       }
     ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v ledger >/dev/null 2>&1 && ledger hook session-end; exit 0"
+          }
+        ]
+      }
+    ],
     "SubagentStop": [
       {
         "matcher": "review-loop",

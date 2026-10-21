@@ -3,6 +3,9 @@
 
 UserPromptSubmit snapshots the dirty set with content hashes. Stop formats files new
 to that set or whose hash moved, so untouched hand edits are left alone. Silent and always exits 0.
+Stop formats nothing while a merge, squash merge, cherry-pick, revert or rebase is unfinished: the files the other
+side brought in are in the dirty set, and reformatting them leaves unstaged edits behind the commit.
+A commit or reset deletes the message files git leaves for a squash merge or `cherry-pick -n`, so formatting resumes then.
 CLAUDE_SKIP_HOOKS set to any non-empty value exits 0. Snapshots live in ~/.claude/state/format-changed and
 snapshots older than 2 days are deleted on every run.
 """
@@ -16,6 +19,8 @@ import time
 
 LINT_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".vue")
 FORMAT_ONLY_SUFFIXES = (".json", ".css", ".scss", ".md")
+OPERATION_MARKERS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply",
+                     "SQUASH_MSG", "MERGE_MSG")
 
 
 def build_crc_table():
@@ -159,6 +164,11 @@ def tool_available(name):
     return os.path.exists(local) and os.access(local, os.X_OK)
 
 
+def operation_in_progress(git_dir):
+    """True while the repo's git dir holds a merge, cherry-pick, revert or rebase marker."""
+    return any(os.path.lexists(os.path.join(git_dir, marker)) for marker in OPERATION_MARKERS)
+
+
 def snapshot_difference(snapshot_lines):
     known = set(snapshot_lines)
     paths = []
@@ -191,13 +201,13 @@ def main():
         pass
 
     try:
-        finished = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"], stdin=subprocess.DEVNULL,
-                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        finished = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel", "--absolute-git-dir"],
+                                  stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     except OSError:
         return 0
     if finished.returncode != 0:
         return 0
-    root = finished.stdout.decode("utf-8", "surrogateescape").rstrip("\n")
+    root, _, git_dir = finished.stdout.decode("utf-8", "surrogateescape").rstrip("\n").rpartition("\n")
     try:
         os.chdir(root)
     except OSError:
@@ -220,6 +230,9 @@ def main():
             pass
         return 0
     if event != "Stop":
+        return 0
+
+    if operation_in_progress(git_dir):
         return 0
 
     if not os.path.isfile(snapshot):

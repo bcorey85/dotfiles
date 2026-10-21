@@ -134,8 +134,9 @@ class Repo:
         self.git("add", "-A")
         self.git("commit", "-q", "-m", "seed")
 
-    def git(self, *arguments):
-        subprocess.run(["git"] + list(arguments), cwd=str(self.repo), env=self.environment, capture_output=True)
+    def git(self, *arguments, cwd=None):
+        return subprocess.run(["git"] + list(arguments), cwd=str(self.repo if cwd is None else cwd), env=self.environment,
+                              capture_output=True)
 
     def put(self, relative, content):
         target = self.repo / relative
@@ -168,6 +169,15 @@ class Repo:
         directory = self.home / ".claude" / "state" / "format-changed"
         return sorted(path.name for path in directory.iterdir()) if directory.exists() else []
 
+    def commit_branch_files(self, branch, files):
+        """Commit `files` on a new `branch` cut from main, then return to main."""
+        self.git("checkout", "-q", "-b", branch)
+        for name, content in files.items():
+            self.put(name, content)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", branch)
+        self.git("checkout", "-q", "main")
+
 
 class FormatChangedTest(unittest.TestCase):
     def setUp(self):
@@ -179,6 +189,17 @@ class FormatChangedTest(unittest.TestCase):
         for name, content in files.items():
             self.repo.put(name, content)
         return self.repo.hook("Stop", session)
+
+    def stop_with_marker(self, marker, as_directory):
+        """Prompt, dirty a formattable file, leave `marker` in the git dir, then Stop."""
+        self.repo.hook("UserPromptSubmit")
+        self.repo.put("a.ts", "1")
+        target = self.repo.repo / ".git" / marker
+        if as_directory:
+            target.mkdir()
+        else:
+            target.write_text("0" * 40 + "\n")
+        return self.repo.hook("Stop")
 
     def test_new_files_are_formatted_with_prettier_when_no_oxfmt(self):
         finished = self.turn({"a.ts": "1", "b.json": "1", "c.txt": "1"})
@@ -363,6 +384,89 @@ class FormatChangedTest(unittest.TestCase):
         self.repo.hook("UserPromptSubmit", cwd=str(fresh))
         self.repo.hook("Stop", cwd=str(fresh))
         self.assertEqual(self.repo.calls(), [])
+
+    def test_unfinished_merge_marker_blocks_formatting(self):
+        finished = self.stop_with_marker("MERGE_HEAD", as_directory=False)
+        self.assertEqual((finished.returncode, finished.stdout, self.repo.calls()), (0, b"", []))
+
+    def test_unfinished_cherry_pick_marker_blocks_formatting(self):
+        finished = self.stop_with_marker("CHERRY_PICK_HEAD", as_directory=False)
+        self.assertEqual((finished.returncode, finished.stdout, self.repo.calls()), (0, b"", []))
+
+    def test_unfinished_revert_marker_blocks_formatting(self):
+        finished = self.stop_with_marker("REVERT_HEAD", as_directory=False)
+        self.assertEqual((finished.returncode, finished.stdout, self.repo.calls()), (0, b"", []))
+
+    def test_rebase_merge_directory_blocks_formatting(self):
+        finished = self.stop_with_marker("rebase-merge", as_directory=True)
+        self.assertEqual((finished.returncode, finished.stdout, self.repo.calls()), (0, b"", []))
+
+    def test_rebase_apply_directory_blocks_formatting(self):
+        finished = self.stop_with_marker("rebase-apply", as_directory=True)
+        self.assertEqual((finished.returncode, finished.stdout, self.repo.calls()), (0, b"", []))
+
+    def test_files_brought_in_by_an_uncommitted_merge_are_not_formatted(self):
+        self.repo.commit_branch_files("other", {"theirs.md": "* item\n", "theirs.ts": "1"})
+        self.repo.hook("UserPromptSubmit")
+        self.repo.git("merge", "--no-ff", "--no-commit", "other")
+        self.assertTrue((self.repo.repo / ".git" / "MERGE_HEAD").exists())
+        self.repo.hook("Stop")
+        self.assertEqual(self.repo.calls(), [])
+
+    def test_uncommitted_merge_in_a_linked_worktree_blocks_formatting(self):
+        self.repo.commit_branch_files("other", {"theirs.md": "* item\n", "theirs.ts": "1"})
+        worktree = self.repo.repo.parent / "linked"
+        self.repo.git("worktree", "add", "-q", "-b", "feature", str(worktree), "main")
+        self.repo.hook("UserPromptSubmit", cwd=str(worktree))
+        self.repo.git("merge", "--no-ff", "--no-commit", "other", cwd=worktree)
+        self.assertTrue((worktree / "theirs.md").exists())
+        self.assertFalse((worktree / ".git").is_dir())
+        self.repo.hook("Stop", cwd=str(worktree))
+        self.assertEqual(self.repo.calls(), [])
+
+    def test_formatting_resumes_once_the_merge_is_committed(self):
+        self.repo.commit_branch_files("other", {"theirs.ts": "1"})
+        merged = self.repo.git("merge", "--no-ff", "--no-commit", "other")
+        self.assertEqual(merged.returncode, 0, merged.stderr)
+        committed = self.repo.git("commit", "-q", "-m", "merge")
+        self.assertEqual(committed.returncode, 0, committed.stderr)
+        second_parent = self.repo.git("rev-parse", "HEAD^2")
+        self.assertEqual(second_parent.returncode, 0, second_parent.stderr)
+        self.assertFalse((self.repo.repo / ".git" / "MERGE_HEAD").exists())
+        self.turn({"mine.ts": "1"})
+        self.assertEqual(self.repo.calls(), [("npx", ["--yes", "prettier", "--write", "mine.ts"])])
+
+    def test_files_brought_in_by_an_uncommitted_squash_merge_are_not_formatted(self):
+        self.repo.commit_branch_files("other", {"theirs.md": "* item\n", "theirs.ts": "1"})
+        self.repo.hook("UserPromptSubmit")
+        squashed = self.repo.git("merge", "--squash", "other")
+        self.assertEqual(squashed.returncode, 0, squashed.stderr)
+        git_dir = self.repo.repo / ".git"
+        self.assertTrue((git_dir / "SQUASH_MSG").exists())
+        self.assertFalse((git_dir / "MERGE_HEAD").exists())
+        self.repo.hook("Stop")
+        self.assertEqual(self.repo.calls(), [])
+
+    def test_files_brought_in_by_an_uncommitted_cherry_pick_are_not_formatted(self):
+        self.repo.commit_branch_files("other", {"theirs.md": "* item\n", "theirs.ts": "1"})
+        self.repo.hook("UserPromptSubmit")
+        picked = self.repo.git("cherry-pick", "-n", "other")
+        self.assertEqual(picked.returncode, 0, picked.stderr)
+        git_dir = self.repo.repo / ".git"
+        self.assertTrue((git_dir / "MERGE_MSG").exists())
+        self.assertFalse((git_dir / "CHERRY_PICK_HEAD").exists())
+        self.repo.hook("Stop")
+        self.assertEqual(self.repo.calls(), [])
+
+    def test_formatting_resumes_once_the_squash_merge_is_committed(self):
+        self.repo.commit_branch_files("other", {"theirs.ts": "1"})
+        squashed = self.repo.git("merge", "--squash", "other")
+        self.assertEqual(squashed.returncode, 0, squashed.stderr)
+        committed = self.repo.git("commit", "-q", "-m", "squash")
+        self.assertEqual(committed.returncode, 0, committed.stderr)
+        self.assertFalse((self.repo.repo / ".git" / "SQUASH_MSG").exists())
+        self.turn({"mine.ts": "1"})
+        self.assertEqual(self.repo.calls(), [("npx", ["--yes", "prettier", "--write", "mine.ts"])])
 
 
 if __name__ == "__main__":

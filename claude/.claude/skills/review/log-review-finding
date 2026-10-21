@@ -122,6 +122,7 @@ json=$(jq -cn --argjson sv "$SCHEMA_VERSION" \
    + (if $s != "" then {session: $s} else {} end)
    + (if $b != "" then {branch: $b} else {} end)
    + (if $h != "" then {head: $h, dirty: $d} else {} end)')
+swallowed_pair=$'[ \t\n\r\f\v][A-Za-z_][A-Za-z0-9_]*='
 for kv in "$@"; do
   case "$kv" in
     out=*) out="${kv#out=}"; redirected=1; continue ;;
@@ -134,12 +135,20 @@ for kv in "$@"; do
   # caller quoted too much and swallowed the following key=value pairs into this
   # one — which is how repo= ends up holding branch, lane, scope, phase and
   # iter, destroying every join key /audit review needs. Fail loud.
+  # A file path may hold spaces. It is refused when it holds a line break, or
+  # whitespace followed by name= (the shape of a swallowed pair).
   case "$k" in
     desc|result) ;;
+    file)
+      if [[ $v == *$'\n'* || $v == *$'\r'* || $v =~ $swallowed_pair ]]; then
+        echo "refusing to log: file= holds a line break or whitespace then a name=: '$v'" >&2
+        echo "Quote each key=value separately; only desc= and result= (and a file= path with no line break and no whitespace then name=) may contain spaces." >&2
+        exit 1
+      fi ;;
     *)
       if [ "$v" != "${v#* }" ]; then
         echo "refusing to log: $k= contains a space: '$v'" >&2
-        echo "Quote each key=value separately; only desc= and result= may contain spaces." >&2
+        echo "Quote each key=value separately; only desc= and result= (and a file= path with no line break and no whitespace then name=) may contain spaces." >&2
         exit 1
       fi ;;
   esac

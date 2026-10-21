@@ -455,6 +455,16 @@
         ]
       },
       {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v ledger >/dev/null 2>&1 && ledger hook doctor; exit 0",
+            "timeout": 5
+          }
+        ]
+      },
+      {
         "matcher": "startup|resume|clear|compact",
         "hooks": [
           {

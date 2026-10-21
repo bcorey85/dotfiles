@@ -13,6 +13,7 @@ The implementation-plan artifact contract. Producer `/eng-spec`; consumers `/cod
 
 - `## Phase Status` is mandatory — never delete it. Consumers find it by HEADING, not position (hoisted to top in `spec.md`).
 - Every Phase Status line carries a `(risk: low|high)` tag.
+- A phase that cannot start until an outside event (another branch merged, a flag turned on) appends `— gate: <condition>` to its Phase Status line. `/code` skips a gated phase unless it is named with `--phase N`.
 - Phases are VERTICAL slices (each independently verifiable end-to-end),
   never horizontal layers.
 - Keep each phase signable in one sitting — past ~8–10 semantic files (churn excluded), split on a natural seam into dependency-ordered slices, unless splitting loses end-to-end verifiability; then append `— atomic: <why>`.

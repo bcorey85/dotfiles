@@ -20,7 +20,7 @@ Work incident: the gate flagged scratch probe files that the orchestrator and wo
 
 ## Result
 
-Staged 2026-10-21 in the second script fix batch. 72 tests pass.
+Staged 2026-10-21 in the second script fix batch. 78 tests pass. Installed 2026-10-21.
 
 ## Watch
 

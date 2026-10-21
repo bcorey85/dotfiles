@@ -25,7 +25,7 @@ A code review of the staged change found that a root `Cargo.toml` added no clipp
 
 ## Result
 
-Staged 2026-10-21 in the second script fix batch. 292 code-step, plan-format and coder-packet tests pass. The state-machine walk explored 564,470 paths with 0 failures. Install it with the comment-bloat change, because both scripts use the new `script_utils.py` functions.
+Staged 2026-10-21 in the second script fix batch. 292 code-step, plan-format and coder-packet tests pass. The state-machine walk explored 564,470 paths with 0 failures. Installed 2026-10-21 with the comment-bloat change, because both scripts use the new `script_utils.py` functions.
 
 ## Watch
 

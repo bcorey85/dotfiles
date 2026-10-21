@@ -37,6 +37,18 @@ AGENT_VERIFIED_MARK = "agent-verified"
 PHASE_STATUS_LINE = re.compile(rf"^[-*]\s+\[( |x|X)\]\s+Phase\s+({PHASE_ID})\s*[:.—–-]\s*(.*)$")
 STATUS_ITEM_START = re.compile(r"^[-*]\s+\[")
 RISK_MARK = re.compile(r"\(risk:\s*(low|high)\)", re.I)
+GATE_CLAUSE = re.compile(r"(?:^|\s)[—–-]\s*gate:\s*(.*)$", re.I)
+UNSTATED_GATE = "(no condition written)"
+
+
+def gate_condition(title):
+    """The text of a `gate: <condition>` clause in a Phase Status title, or None when the title has no clause. The risk
+    mark is not part of the condition. A clause with no text gives UNSTATED_GATE. The reader only reports the text: it
+    never judges whether the condition holds."""
+    clause = GATE_CLAUSE.search(title)
+    if not clause:
+        return None
+    return RISK_MARK.sub("", clause.group(1)).strip() or UNSTATED_GATE
 
 
 class PlanFormatError(Exception):
@@ -101,7 +113,8 @@ def phase_section(lines, phaseId):
 def phase_status_entries(lines, closing_skill):
     """The `- [ ] Phase <id>: <title>` lines under the `Phase Status` heading, in file order, and the failures for a
     list line that does not parse or an id listed twice. `closing_skill(title)` names the skill a closing phase runs,
-    or None. Each entry is {"line", "done", "number", "title", "risk", "closing"}."""
+    or None. Each entry is {"line", "done", "number", "title", "risk", "closing", "gate"}; "gate" is the text of a
+    `gate: <condition>` clause in the title, or None."""
     fenced = script_utils.fenced_line_indexes(lines)
     entries = []
     failures = []
@@ -135,7 +148,8 @@ def phase_status_entries(lines, closing_skill):
         risk = RISK_MARK.search(title)
         closing = closing_skill(title)
         entries.append({"line": index, "done": match.group(1) != " ", "number": number, "title": title,
-                        "risk": risk.group(1).lower() if risk else "high", "closing": closing})
+                        "risk": risk.group(1).lower() if risk else "high", "closing": closing,
+                        "gate": gate_condition(title)})
     return entries, failures
 
 

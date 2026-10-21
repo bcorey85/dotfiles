@@ -17,6 +17,13 @@
   PreToolUse (Agent): a review-loop dispatch whose prompt says `caller: code` must carry a
       `handoff:` line.
 
+  SubagentStop (review-loop), when the stop passes and no background dispatch is open: writes one
+    `kind=run` row per reviewer dispatch (`*-reviewer`, `*-reviewer-deep`) through log-review-finding,
+    with `n_findings` counted from that reviewer's own report. A report that cannot be counted,
+    because it has no known layout or a findings section holds text and no entry, gets a row with
+    `n_findings` null, never a guessed count. Each dispatch (tool_use_id) is written once per session, so a repeat stop adds nothing. The
+    logger applies the telemetry switch; a logging failure never blocks a stop.
+
 Hook JSON on stdin; on a violation, a decision JSON on stdout; exit 0 always. Any parse
 failure passes (fail open) and says why on stderr: this gate adds a check, it must never
 stop the loop on its own error.
@@ -25,7 +32,9 @@ Dry run for a saved transcript:  review-loop-gate.py --check <loop transcript.js
 """
 import json
 import os
+import pathlib
 import re
+import subprocess
 import sys
 
 CODERS = re.compile(r"^(backend-|frontend-)?coder(-deep)?$")
@@ -49,6 +58,33 @@ CHECKER = re.compile(r"(?:\A|[;&|(]\s*|\n\s*)(?:cd\s+\S+\s*&&\s*)?(?:[A-Za-z_]\w
                      r"|jest|vitest|pytest|tsc|vue-tsc|svelte-check|eslint|oxlint|ruff|mypy|pyright|golangci-lint"
                      r"|go\s+(?:test|vet)|cargo\s+(?:test|clippy|check)|make\s+[\w-]*(?:test|lint|check)[\w-]*"
                      r"|\S*quality-check|bats|shellcheck|rspec|phpunit|dotnet\s+test)(?![\w-])")
+
+RUN_GATES = re.compile(r"-reviewer(-deep)?$")
+AGENT_MESSAGE = re.compile(r"<agent-message\s+from=\"([\w-]+)\">(.*?)(?=</agent-message>|<agent-message\s|\Z)", re.S)
+NOTIFICATION_RESULT = re.compile(r"<tool-use-id>\s*([\w-]+)\s*</tool-use-id>(?:(?!</task-notification>).)*?"
+                                 r"<result>((?:(?!</task-notification>).)*?)</result>", re.S)
+NIT_SECTION = re.compile(r"(?mi)^\s*#{2,4}\s*[*_`]*Nits?\b")
+FENCE =re.compile(r"^(```|~~~)")
+HEADING_MARKUP = re.compile(r"[*_`:]")
+SECTION_HEADING = re.compile(r"^(#{2,4})\s*(.*)")
+LIST_MARKER = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
+PATH_TOKEN = r"`?[\w@~+./-]*[./][\w@~+./-]*"
+ENTRY_START = re.compile(r"^(?:\*{0,2}\[blocker\]\*{0,2}\s*)?\*{0,2}(?:%s:\d[\d,\u2013-]*`?(?!\w)|%s`?\s+[\u2014\u2013-])"
+                         % (PATH_TOKEN, PATH_TOKEN))
+NO_ENTRIES = re.compile(r"^[\[(*_`]*(none|n/a|nothing|-|\u2014|\u2013)[\])*_`.!]*$", re.I)
+INTENT_SECTIONS = re.compile(r"(BUG-PINNING|UNVERIFIABLE|CULL|REQUIRES-MUTATION|WEAK)\b")
+# (report heading, does a section of this report hold findings: (heading level, title) -> bool)
+LAYOUTS = (
+    (re.compile(r"(?m)^\s*#{1,4}\s.*(?:Review Summary|Simplification Review)"),
+     lambda level, title: title.split(" ")[0] in ("Fix", "Fixes", "Ask", "Findings")),
+    (re.compile(r"(?m)^\s*#{1,4}\s.*Test Review Report"),
+     lambda level, title: level >= 3 and not title.startswith("Summary of Recommended Actions")),
+    (re.compile(r"(?m)^\s*#{1,4}\s.*Test-Intent Audit"),
+     lambda level, title: bool(INTENT_SECTIONS.match(title))),
+)
+ASSESSMENT = re.compile(r"Overall Assessment\*{0,2}:?\s*\**(PASS WITH WARNINGS|PASS|NEEDS CHANGES)")
+PROMPT_LANE = re.compile(r"(?im)^[ \t>*`-]*lane[`*]*[ \t]*:[ \t`*]*(eng-spec|code|other|none)\b")
+PROMPT_PHASE = re.compile(r"(?im)^[ \t>*`-]*phase[`*]*[ \t]*:[ \t`*]*([\w.-]+)")
 
 PASS_REASON = ("A fix coder ran after the last code-reviewer read of this loop, so its fix diff is unread. "
                "Run Step 5d now: dispatch one code-reviewer scoped to every unread fix diff, route its "
@@ -132,11 +168,153 @@ def scan(path, final=None):
     return last_coder > last_read, ungated, bool(NO_REVIEW.search(prompt or "")), open_dispatches
 
 
-def reasons(path, final=None):
-    unread, ungated, exempt, open_dispatches = scan(path, final)
+def reasons_for(scanned):
+    unread, ungated, exempt, open_dispatches = scanned
     if open_dispatches:
         return []
     return [r for r, hit in ((PASS_REASON, unread and not exempt), (GATE_REASON, ungated)) if hit]
+
+
+def reasons(path, final=None):
+    return reasons_for(scan(path, final))
+
+
+def section_findings(lines):
+    """The findings in one report section: its top-level list items, or entry lines that open with a path. Prose
+    before, between or after the entries is not counted. 0 when the section opens with a line that is only a none
+    marker; None when the section has text and no entry to count."""
+    content = [raw for raw in lines if raw.strip()]
+    if not content:
+        return 0
+    if NO_ENTRIES.match(LIST_MARKER.sub("", content[0].strip())):
+        return 0
+    indents = [len(raw) - len(raw.lstrip()) for raw in content if LIST_MARKER.match(raw.strip()) or ENTRY_START.match(raw.strip())]
+    if not indents:
+        return None
+    return indents.count(min(indents))
+
+
+def count_findings(report):
+    """The number of findings in a reviewer report, or None when the count would be a guess: the text is no
+    review report, or a section that holds findings has text and no entry in it."""
+    holds_findings = next((counts for heading, counts in LAYOUTS if heading.search(report)), None)
+    if holds_findings is None:
+        return None
+    sections, current, level, fenced = [], None, 0, False
+    for raw in report.splitlines():
+        line = raw.strip()
+        if FENCE.match(line):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
+        heading = SECTION_HEADING.match(line)
+        if heading and not (current is not None and len(heading.group(1)) > level):
+            level = len(heading.group(1))
+            title = HEADING_MARKUP.sub("", heading.group(2)).strip()
+            current = [] if holds_findings(level, title) else None
+            if current is not None:
+                sections.append(current)
+        elif current is not None:
+            current.append(raw)
+    total = 0
+    for lines in sections:
+        found = section_findings(lines)
+        if found is None:
+            return None
+        total += found
+    assessment = ASSESSMENT.search(report)
+    if total == 0 and assessment and assessment.group(1) == "NEEDS CHANGES":
+        return None
+    if total == 0 and assessment and assessment.group(1) == "PASS WITH WARNINGS" and not NIT_SECTION.search(report):
+        return None
+    return total
+
+
+def reviewer_runs(path):
+    """([{tool_use_id, gate, n_findings, result}], lane, phase) for every reviewer dispatch of the loop. The report
+    is the dispatch's tool_result, the result of its task notification, or an agent message from the agent that
+    the dispatch launched; the first one that counts is used. n_findings is None when none of them counts."""
+    kinds, agent_of, foreground = {}, {}, {}
+    by_tool_use, by_agent, prompt = {}, {}, None
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            rec = json.loads(line)
+            content = (rec.get("message") or {}).get("content")
+            if prompt is None and rec.get("type") == "user":
+                prompt = text_of(content)
+            carrier = text_of(content) if rec.get("type") == "user" else ""
+            carrier += " " + str((rec.get("attachment") or {}).get("prompt") or "")
+            for tool_use_id, report in NOTIFICATION_RESULT.findall(carrier):
+                by_tool_use.setdefault(tool_use_id, []).append(report)
+            for agent_id, report in AGENT_MESSAGE.findall(carrier):
+                by_agent.setdefault(agent_id, []).append(report)
+            for b in content if isinstance(content, list) else []:
+                if not isinstance(b, dict):
+                    continue
+                if b.get("type") == "tool_use" and b.get("name") in ("Agent", "Task"):
+                    kinds[b.get("id")] = (b.get("input") or {}).get("subagent_type") or ""
+                elif b.get("type") == "tool_result" and b.get("tool_use_id") in kinds:
+                    result_text = text_of(b.get("content"))
+                    foreground[b["tool_use_id"]] = result_text
+                    launched = AGENT_ID.findall(result_text)
+                    agent_of[b["tool_use_id"]] = launched[0] if launched else None
+    runs = []
+    for tool_use_id, gate in kinds.items():
+        if not RUN_GATES.search(gate):
+            continue
+        texts = [foreground.get(tool_use_id, "")] + by_tool_use.get(tool_use_id, []) + by_agent.get(agent_of.get(tool_use_id), [])
+        counted = [(count_findings(text), text) for text in texts]
+        count, report = next(((c, t) for c, t in counted if c is not None), (None, ""))
+        assessment = ASSESSMENT.search(report)
+        runs.append({"tool_use_id": tool_use_id, "gate": gate, "n_findings": count, "texts": texts,
+                     "result": assessment.group(1) if assessment else ""})
+    lane = PROMPT_LANE.search(prompt or "")
+    phase = PROMPT_PHASE.search(prompt or "")
+    return runs, lane.group(1) if lane else "none", phase.group(1) if phase else "-"
+
+
+def write_run_row(hook, run, lane, phase):
+    """True when log-review-finding wrote the row. It writes nothing while the telemetry switch is off."""
+    claude_dir = pathlib.Path(os.environ.get("REVIEW_LOOP_GATE_CLAUDE_DIR") or pathlib.Path.home() / ".claude")
+    out = os.environ.get("REVIEW_FINDINGS_FILE") or str(pathlib.Path.home() / ".claude" / "review-findings.jsonl")
+    command = ["bash", str(claude_dir / "skills" / "review" / "log-review-finding"), "kind=run", "gate=" + run["gate"],
+               "n_findings=%s" % ("null" if run["n_findings"] is None else run["n_findings"]), "lane=" + lane, "phase=" + phase, "out=" + out]
+    if run["result"]:
+        command.append("result=" + run["result"])
+    env = {**os.environ, "CLAUDE_CODE_SESSION_ID": hook["session_id"]}
+    done = subprocess.run(command, env=env, cwd=hook.get("cwd") or None, capture_output=True, text=True, timeout=30)
+    if done.returncode:
+        print("review-loop-gate: run row for %s not written: %s" % (run["gate"], done.stderr.strip()), file=sys.stderr)
+    return done.returncode == 0 and "logged" in done.stdout
+
+
+def log_run_rows(hook, path):
+    """Write the run rows that this session has not written yet. Never raises: a logging failure must not stop the
+    loop."""
+    try:
+        session_id = hook.get("session_id")
+        if not session_id:
+            return
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+        import script_utils
+        runs, lane, phase = reviewer_runs(path)
+        state_dir = pathlib.Path(os.environ.get("REVIEW_LOOP_GATE_STATE_DIR")
+                                 or pathlib.Path.home() / ".claude" / "state" / "review-loop-gate")
+        state_file = state_dir / (re.sub(r"[^\w.-]", "_", str(session_id)) + ".jsonl")
+        marks = {}
+        for row in script_utils.read_jsonl(state_file):
+            marks[row.get("tool_use_id")] = not row.get("undone")
+        for run in runs:
+            if marks.get(run["tool_use_id"]):
+                continue
+            # The mark goes first: when it cannot be saved the row is not written, so a repeat stop never
+            # duplicates it. A row the logger did not write (switch off, logger error) takes its mark back.
+            script_utils.append_jsonl(state_file, {"tool_use_id": run["tool_use_id"]})
+            if not write_run_row(hook, run, lane, phase):
+                script_utils.append_jsonl(state_file, {"tool_use_id": run["tool_use_id"], "undone": True})
+    except Exception as e:
+        print("review-loop-gate: run rows skipped, %s: %s" % (type(e).__name__, e), file=sys.stderr)
 
 
 def loop_transcript(hook):
@@ -176,15 +354,18 @@ def main():
         if inp.get("subagent_type") == "review-loop" and CALLER_CODE.search(prompt) and not HANDOFF.search(prompt):
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                                      "permissionDecisionReason": HANDOFF_REASON}}))
-    elif event == "SubagentStop" and not hook.get("stop_hook_active"):
+    elif event == "SubagentStop":
         path = loop_transcript(hook)
         if agent_type(hook, path) != "review-loop":
             return
         if not path or not os.path.exists(path):
             raise FileNotFoundError("no loop transcript for agent %s" % hook.get("agent_id"))
-        why = reasons(path, hook.get("last_assistant_message"))
+        scanned = scan(path, hook.get("last_assistant_message"))
+        why = [] if hook.get("stop_hook_active") else reasons_for(scanned)
         if why:
             print(json.dumps({"decision": "block", "reason": " ".join(why)}))
+        elif not scanned[3]:
+            log_run_rows(hook, path)
 
 
 if __name__ == "__main__":

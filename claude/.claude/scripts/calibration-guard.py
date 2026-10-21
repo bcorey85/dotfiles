@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """SessionStart hook: report an unrestored calibration or mutation seed.
 
-/calibrate and mutation-tester share one lock, ~/.claude/calibration-lock.json
-(fields file, backup_path, class, ts, kind). The lock is deleted only after the restore is verified, so a lock
+/calibrate and mutation-tester share one lock,
+${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration/lock.json; the old ~/.claude/calibration-lock.json
+is read as a fallback (fields file, backup_path, class, ts, kind). The lock is deleted only after the restore is verified, so a lock
 that survives into a new session means the restore never happened. This hook prints the paths needed to fix it.
 No lock: no output. Always exits 0.
 """
@@ -38,7 +39,12 @@ def lock_field(text, key, default, fallback):
 
 
 def main():
-    lock = os.path.join(os.environ.get("HOME", ""), ".claude", "calibration-lock.json")
+    home = os.environ.get("HOME", "")
+    state_home = os.environ.get("XDG_STATE_HOME") or os.path.join(home, ".local", "state")
+    lock = os.path.join(state_home, "claude-calibration", "lock.json")
+    if not os.path.isfile(lock):
+        # A lock left by a run from before the lock moved out of ~/.claude still has to be reported.
+        lock = os.path.join(home, ".claude", "calibration-lock.json")
     if not os.path.isfile(lock):
         return 0
     try:

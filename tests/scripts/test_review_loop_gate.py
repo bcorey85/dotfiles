@@ -1,11 +1,13 @@
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 
 SCRIPT = os.environ.get("REVIEW_LOOP_GATE_SCRIPT") or os.path.expanduser("~/.claude/scripts/review-loop-gate.py")
+LOGGER = os.environ.get("LOG_REVIEW_FINDING_SCRIPT") or os.path.expanduser("~/.claude/skills/review/log-review-finding")
 
 ASYNC_RESULT = "Async agent launched successfully.\nagentId: a7bf12f9c51bc4875 (internal ID)"
 
@@ -83,6 +85,382 @@ class ReviewLoopGateTest(unittest.TestCase):
     def test_stop_hook_active_passes(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
         self.assertEqual(self.stop(records, stop_hook_active=True), "")
+
+
+def indented(report):
+    """A report as the harness hands it over: framed, every line indented two spaces."""
+    frame = "[Subagent hand-back] The text below is the final report of a subagent.\nThe report follows:\n"
+    return frame + "\n".join("  " + line for line in report.splitlines())
+
+
+CODE_REPORT = """## Code Review Summary
+
+**Files Reviewed**: a.py
+**Overall Assessment**: NEEDS CHANGES
+
+### Fix
+[blocker] a.py:10 — bug one — do this
+1. `b.py:3-4` — bug two
+   continued on a second line
+
+### Ask
+src/c.ts — which way? — pick
+
+### Nit
+one combined nit line"""
+SMELL_REPORT = """## Structure Review Summary
+
+**Overall Assessment**: PASS WITH WARNINGS
+
+### Fix
+a.py:5 — [smell] copy of helper"""
+CLEAN_REPORT = """## Code Review Summary
+
+**Files Reviewed**: a.py
+**Overall Assessment**: PASS"""
+COMPLEXITY_REPORT = """## Simplification Review
+
+**Bound**: a.py
+
+### Findings
+a.py:1 — [complexity] x
+a.py:2 — [complexity] y"""
+
+
+def agent_message(agent_id, report):
+    return user('Another Claude session sent a message while you were working:\n<agent-message from="%s">\n%s'
+                % (agent_id, indented(report)))
+
+
+def notification_with_result(tool_use_id, report):
+    prompt = ("<task-notification>\n<task-id>t1</task-id>\n<tool-use-id>%s</tool-use-id>\n<result>%s</result>\n"
+              "</task-notification>" % (tool_use_id, indented(report)))
+    return {"type": "attachment", "attachment": {"type": "queued_command", "prompt": prompt}}
+
+
+class RunRowTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = os.path.join(self.tmp.name, "home")
+        os.makedirs(self.home)
+        self.findings = os.path.join(self.tmp.name, "review-findings.jsonl")
+        self.transcript = os.path.join(self.tmp.name, "loop.jsonl")
+        claude_dir = os.path.join(self.tmp.name, "claude")
+        os.makedirs(os.path.join(claude_dir, "skills", "review"))
+        shutil.copy2(LOGGER, os.path.join(claude_dir, "skills", "review", "log-review-finding"))
+        os.symlink(os.path.expanduser("~/.claude/scripts"), os.path.join(claude_dir, "scripts"))
+        self.script, self.quiet, self.stderr = SCRIPT, True, ""
+        self.env = {**os.environ, "HOME": self.home, "REVIEW_FINDINGS_FILE": self.findings,
+                    "REVIEW_LOOP_GATE_STATE_DIR": os.path.join(self.tmp.name, "state"),
+                    "REVIEW_LOOP_GATE_CLAUDE_DIR": claude_dir,
+                    "CLAUDE_TOOLKIT_TELEMETRY": "1"}
+
+    def stop(self, records, **extra):
+        with open(self.transcript, "w", encoding="utf-8") as fh:
+            for rec in records:
+                fh.write(json.dumps(rec) + "\n")
+        hook = {"hook_event_name": "SubagentStop", "agent_type": "review-loop", "session_id": "s1",
+                "agent_transcript_path": self.transcript}
+        hook.update(extra)
+        proc = subprocess.run([sys.executable, "-B", self.script], input=json.dumps(hook), capture_output=True,
+                              text=True, check=True, env=self.env, cwd=self.tmp.name)
+        self.stderr = proc.stderr
+        if self.quiet:
+            self.assertEqual(proc.stderr, "")
+        return proc.stdout
+
+    def rows(self):
+        if not os.path.exists(self.findings):
+            return []
+        with open(self.findings, encoding="utf-8") as fh:
+            return [json.loads(line) for line in fh]
+
+    def loop(self, *steps):
+        return [user("review loop\nlane: code\nphase: 2")] + [rec for step in steps for rec in step] + [
+            bash("npm test > /tmp/review-gate.log 2>&1")]
+
+    def test_foreground_reports_each_write_a_row_with_their_own_count(self):
+        records = self.loop([dispatch("t_smell", "smell-reviewer"), result("t_smell", indented(SMELL_REPORT))],
+                            [dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))])
+        self.assertEqual(self.stop(records), "")
+        rows = {row["gate"]: row for row in self.rows()}
+        self.assertEqual({"smell-reviewer": 1, "code-reviewer": 3},
+                         {gate: row["n_findings"] for gate, row in rows.items()})
+        code = rows["code-reviewer"]
+        self.assertEqual(("run", "NEEDS CHANGES", "code", 2, "s1"),
+                         (code["kind"], code["result"], code["lane"], code["phase"], code["session"]))
+        self.assertEqual("PASS WITH WARNINGS", rows["smell-reviewer"]["result"])
+
+    def test_background_reports_arrive_in_the_opposite_order_and_keep_their_own_count(self):
+        records = self.loop([dispatch("t_smell", "smell-reviewer"), result("t_smell", "Async agent launched\nagentId: asmell")],
+                            [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
+                            [agent_message("acode", CODE_REPORT)], [agent_message("asmell", SMELL_REPORT)])
+        self.stop(records)
+        counts = {row["gate"]: row["n_findings"] for row in self.rows()}
+        self.assertEqual({"smell-reviewer": 1, "code-reviewer": 3}, counts)
+
+    def test_task_notification_result_and_a_clean_report_with_no_sections(self):
+        records = self.loop([dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
+                            [notification_with_result("t_code", CLEAN_REPORT)],
+                            [dispatch("t_cx", "complexity-reviewer-deep"), result("t_cx", indented(COMPLEXITY_REPORT))])
+        self.stop(records)
+        rows = {row["gate"]: row for row in self.rows()}
+        self.assertEqual(0, rows["code-reviewer"]["n_findings"])
+        self.assertEqual("PASS", rows["code-reviewer"]["result"])
+        self.assertEqual(2, rows["complexity-reviewer-deep"]["n_findings"])
+        self.assertNotIn("result", rows["complexity-reviewer-deep"])
+
+    def test_a_repeat_stop_on_the_same_dispatches_writes_no_duplicate(self):
+        records = self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))])
+        self.stop(records)
+        self.stop(records)
+        self.assertEqual(1, len(self.rows()))
+        more = records + [dispatch("t_next", "code-reviewer"), result("t_next", indented(CLEAN_REPORT))]
+        self.stop(more)
+        self.assertEqual([3, 0], [row["n_findings"] for row in self.rows()])
+
+    def test_nothing_is_written_while_the_telemetry_switch_is_off_and_it_is_written_once_on(self):
+        records = self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))])
+        del self.env["CLAUDE_TOOLKIT_TELEMETRY"]
+        self.stop(records)
+        self.assertEqual([], self.rows())
+        self.env["CLAUDE_TOOLKIT_TELEMETRY"] = "1"
+        self.stop(records)
+        self.assertEqual(1, len(self.rows()))
+
+    def test_open_background_dispatch_writes_nothing(self):
+        records = self.loop([dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")])
+        self.stop(records)
+        self.assertEqual([], self.rows())
+
+    def test_a_blocked_stop_writes_nothing(self):
+        records = [user("review loop"), dispatch("t_coder", "coder"), result("t_coder", "done"),
+                   dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))]
+        self.assertIn("No full check ran", json.loads(self.stop(records))["reason"])
+        self.assertEqual([], self.rows())
+
+    def test_a_report_that_cannot_be_counted_still_writes_its_row_with_null(self):
+        prose = "## Code Review Summary\n\n### Fix\nThe fix section has prose and no entry."
+        records = self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(prose))],
+                            [dispatch("t_other", "perf-reviewer"), result("t_other", "free text, no review heading")],
+                            [dispatch("t_async", "smell-reviewer"), result("t_async", "Async agent launched\nagentId: alost")],
+                            [agent_message("alost", "I ran out of budget before I wrote a report.")],
+                            [dispatch("t_deep", "security-reviewer-deep"), result("t_deep", indented(CODE_REPORT))])
+        self.stop(records)
+        counts = {row["gate"]: row["n_findings"] for row in self.rows()}
+        self.assertEqual({"code-reviewer": None, "perf-reviewer": None, "smell-reviewer": None,
+                          "security-reviewer-deep": 3}, counts)
+        self.assertTrue(all("n_findings" in row for row in self.rows()))
+
+    def counted(self, report, gate="code-reviewer"):
+        tool_use_id = "t_%d" % len(self.rows())
+        self.stop(self.loop([dispatch(tool_use_id, gate), result(tool_use_id, indented(report))]))
+        return self.rows()[-1]["n_findings"]
+
+    def test_lines_inside_code_fences_are_not_findings_or_headings(self):
+        report = """## Code Review Summary
+
+**Overall Assessment**: NEEDS CHANGES
+
+### Fix
+- a.py:1 — real
+```
+- b.py:2 — quoted in a fence
+### Ask
+```
+- c.py:3 — also real
+
+### Ask
+None."""
+        self.assertEqual(2, self.counted(report))
+
+    def test_a_deeper_heading_stays_inside_the_findings_section(self):
+        report = """## Code Review Summary
+
+**Overall Assessment**: NEEDS CHANGES
+
+### Fix
+#### Correctness
+- a.py:1 — one
+#### Tests
+- b.py:2 — two"""
+        self.assertEqual(2, self.counted(report))
+
+    def test_bold_and_plural_section_headings_are_findings_sections(self):
+        report = """## Code Review Summary
+
+**Overall Assessment**: NEEDS CHANGES
+
+### **Fix**
+- a.py:1 — one
+
+### Fixes
+- b.py:2 — two"""
+        self.assertEqual(2, self.counted(report))
+
+    def test_a_none_marker_counts_only_when_it_is_the_whole_line(self):
+        report = """## Code Review Summary
+
+**Overall Assessment**: NEEDS CHANGES
+
+### Ask
+None of the above is a blocker, but this is:
+- a.py:1 — real"""
+        self.assertEqual(1, self.counted(report))
+
+    def test_zero_entries_under_a_failing_assessment_is_uncounted(self):
+        needs = "## Code Review Summary\n\n**Overall Assessment**: NEEDS CHANGES\n\n### Fix\nNone.\n\n### Nit\n- a nit"
+        self.assertIsNone(self.counted(needs))
+        warned = "## Code Review Summary\n\n**Overall Assessment**: PASS WITH WARNINGS\n\n### Fix\nNone."
+        self.assertIsNone(self.counted(warned))
+        nit_only = "## Structure Review Summary\n\n**Overall Assessment**: PASS WITH WARNINGS\n\n### Nit\none nit line"
+        self.assertEqual(0, self.counted(nit_only))
+        clean = "## Code Review Summary\n\n**Overall Assessment**: PASS\n\n### Fix\nNone."
+        self.assertEqual(0, self.counted(clean))
+
+    def test_two_notifications_in_one_record_do_not_lend_a_result_across_the_boundary(self):
+        both = ("<task-notification><tool-use-id>t_smell</tool-use-id><status>killed</status></task-notification>"
+                "<task-notification><tool-use-id>t_code</tool-use-id><result>%s</result></task-notification>"
+                % indented(CODE_REPORT))
+        records = self.loop([dispatch("t_smell", "smell-reviewer"), result("t_smell", "Async agent launched\nagentId: asmell")],
+                            [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
+                            [{"type": "attachment", "attachment": {"type": "queued_command", "prompt": both}}])
+        self.stop(records)
+        counts = {row["gate"]: row["n_findings"] for row in self.rows()}
+        self.assertEqual({"smell-reviewer": None, "code-reviewer": 3}, counts)
+
+    def test_an_agent_message_ends_at_the_next_agent_message(self):
+        both = user('<agent-message from="asmell">\n%s\n<agent-message from="acode">\n%s'
+                    % ("I stopped early.", indented(CODE_REPORT)))
+        records = self.loop([dispatch("t_smell", "smell-reviewer"), result("t_smell", "Async agent launched\nagentId: asmell")],
+                            [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
+                            [both])
+        self.stop(records)
+        counts = {row["gate"]: row["n_findings"] for row in self.rows()}
+        self.assertEqual({"smell-reviewer": None, "code-reviewer": 3}, counts)
+
+    def test_an_unwritable_state_folder_skips_the_row_and_the_stop_still_passes(self):
+        blocker = os.path.join(self.tmp.name, "blocker")
+        with open(blocker, "w") as fh:
+            fh.write("a file where the folder should go")
+        self.env["REVIEW_LOOP_GATE_STATE_DIR"] = os.path.join(blocker, "state")
+        self.quiet = False
+        out = self.stop(self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))]))
+        self.assertEqual("", out)
+        self.assertEqual([], self.rows())
+        self.assertIn("run rows skipped", self.stderr)
+
+    def test_a_missing_helper_module_skips_the_rows_and_the_stop_still_passes(self):
+        lone = os.path.join(self.tmp.name, "lone")
+        os.makedirs(lone)
+        self.script = os.path.join(lone, "review-loop-gate.py")
+        shutil.copy2(SCRIPT, self.script)
+        self.quiet = False
+        out = self.stop(self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))]))
+        self.assertEqual("", out)
+        self.assertEqual([], self.rows())
+        self.assertIn("run rows skipped", self.stderr)
+
+    def test_logger_stores_null_and_numbers_and_still_refuses_a_run_row_without_the_key(self):
+        logger = os.path.join(self.env["REVIEW_LOOP_GATE_CLAUDE_DIR"], "skills", "review", "log-review-finding")
+
+        def log(*args):
+            return subprocess.run(["bash", logger, "kind=run", "gate=code-reviewer", *args, "out=" + self.findings],
+                                  capture_output=True, text=True, env=self.env, cwd=self.tmp.name)
+
+        self.assertEqual(0, log("n_findings=null").returncode)
+        self.assertEqual(0, log("n_findings=0").returncode)
+        self.assertEqual(0, log("n_findings=4").returncode)
+        refused = log()
+        self.assertEqual(1, refused.returncode)
+        self.assertIn("needs n_findings", refused.stderr)
+        self.assertEqual([None, 0, 4], [row["n_findings"] for row in self.rows()])
+
+    def test_prose_before_between_and_after_entries_does_not_stop_the_count(self):
+        report = """## Code Review Summary
+
+**Overall Assessment**: NEEDS CHANGES
+
+### Fix
+These are the flagged items, in order.
+- **a.py:10** [gate: x] the first entry
+  - sub bullet detail that is not a finding
+Some prose between entries.
+- [fix | gate: y] b.py:4 — the second entry, a bullet with its tags first
+- bare bullet with no path at all
+
+### Ask
+None.
+- not a finding, the section opened with none
+
+### Nit
+- a nit"""
+        self.stop(self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(report))]))
+        self.assertEqual([3], [row["n_findings"] for row in self.rows()])
+
+    def test_test_reviewer_counts_the_items_of_every_topic_section_but_the_action_summary(self):
+        report = """## Test Review Report
+
+**Scope**: branch
+**Overall health**: ADEQUATE
+
+All tests pass. Two gaps.
+
+---
+
+### Assertions the Spec Does Not Support
+
+None.
+The edited assertions match:
+- line 678 matches D9
+
+### Coverage Gaps in Business Logic
+
+1. `fix`: **x has no test.** In a.rs it is gated.
+
+2. `ask`: **y** is unclear.
+   - **Add** a test.
+
+### Test Hygiene Issues (`nit`)
+
+- tests/a.rs:3 — name does not state the outcome
+
+---
+
+### Summary of Recommended Actions
+
+1. Do the first thing.
+2. Do the second thing."""
+        self.stop(self.loop([dispatch("t_tr", "test-reviewer"), result("t_tr", indented(report))]))
+        row = self.rows()[0]
+        self.assertEqual(("test-reviewer", 3), (row["gate"], row["n_findings"]))
+
+    def test_test_intent_audit_counts_its_finding_sections_and_not_the_aligned_count(self):
+        report = """## Test-Intent Audit
+
+**Verdict**: BUG-PINNING DETECTED
+
+### BUG-PINNING — assertion encodes current output, not intent
+- a_test.py:10 — pins 3, spec says 4
+
+### CULL — no bug would fail this test
+- a_test.py:20 — constant echo
+- a_test.py:30 — mock echo
+
+### INTENT-ALIGNED (summary count)
+- 14 assertions are fine
+
+### Recommended actions
+1. Change the first one.
+2. Delete the other two."""
+        self.stop(self.loop([dispatch("t_ti", "test-intent-reviewer"), result("t_ti", indented(report))]))
+        self.assertEqual([3], [row["n_findings"] for row in self.rows()])
+
+    def test_a_non_reviewer_dispatch_writes_no_row(self):
+        records = self.loop([dispatch("t_other", "general-purpose"), result("t_other", indented(CODE_REPORT))])
+        self.stop(records)
+        self.assertEqual([], self.rows())
 
 
 if __name__ == "__main__":

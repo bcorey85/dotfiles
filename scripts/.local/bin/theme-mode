@@ -504,7 +504,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
     # dredge (nvim colors/dredge.lua). Both modes share the scope table below.
     dredge:*)
       bg="#1c1e20"; panel="#151719"; panelAlt="#292b2d"; border="#414244"
-      accent="#85c2b7"; accentMuted="#414244"; text="#c1c8d2"; muted="#9b9fa6"
+      accent="#74c2b5"; accentMuted="#414244"; text="#c1c8d2"; muted="#9b9fa6"
       # Words must stay >= RGB distance 28 from the line wash, or hunk
       # replaces them with its own blend of the sign colour. Words separate by
       # chroma, not lightness. The washes share one lightness. Red reads
@@ -517,9 +517,9 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       sAdd="#5da37e"; sRem="#be6146"; lnFg="#777b82"
       badgeAdd="#74d5a1"; badgeRem="#fb784f"; badgeNeu="#d7bb70"
       fRename="#5da37e"; fMod="#5da37e"; fUntracked="#5da37e"; note="#151719"
-      kw="#7c8187"; str="#85c2b7"; num="#c88191"; fn="#9c9ae3"; typ="#c1c8d2"; punct="#7c8187"; op="#7c8187"
+      kw="#858990"; str="#74c2b5"; num="#c88191"; fn="#9c9ae3"; typ="#c1c8d2"; punct="#7c8187"; op="#7c8187"
       konst="#c88191"; esc="#c88191"; cmt="#b4a999"; param="#c1c8d2"
-      attr="#c1c8d2"; tag="#7c8187"; vbi="#c1c8d2"; lang="#c88191"; imp="#7c8187"; pre="#7c8187"
+      attr="#c1c8d2"; tag="#858990"; vbi="#c1c8d2"; lang="#c88191"; imp="#858990"; pre="#858990"
       prim="#c1c8d2"; ns="#c1c8d2"; mac="#9c9ae3"; bfn="#c1c8d2"; var="#9c9ae3"; key="#c1c8d2"; cls="#9c9ae3"
       # Colour marks definitions. Builtins, uses, calls and members are plain text.
       use="#c1c8d2"; call="#c1c8d2"; mem="#c1c8d2"
@@ -535,9 +535,9 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
         sAdd="#36885f"; sRem="#b65a3e"; lnFg="#81868d"
         badgeAdd="#037d4d"; badgeRem="#b14420"; badgeNeu="#846322"
         fRename="#36885f"; fMod="#36885f"; fUntracked="#36885f"; note="#bec0c3"
-        kw="#7c8189"; str="#18796d"; num="#9d3a67"; fn="#574fa0"; typ="#30363f"; punct="#7c8189"; op="#7c8189"
+        kw="#6d7279"; str="#18796d"; num="#9d3a67"; fn="#574fa0"; typ="#30363f"; punct="#7c8189"; op="#7c8189"
         konst="#9d3a67"; esc="#9d3a67"; cmt="#6a5e4a"; param="#30363f"
-        attr="#30363f"; tag="#7c8189"; vbi="#30363f"; lang="#9d3a67"; imp="#7c8189"; pre="#7c8189"
+        attr="#30363f"; tag="#6d7279"; vbi="#30363f"; lang="#9d3a67"; imp="#6d7279"; pre="#6d7279"
         prim="#30363f"; ns="#30363f"; mac="#574fa0"; bfn="#30363f"; var="#574fa0"; key="#30363f"; cls="#574fa0"
         use="#30363f"; call="#30363f"; mem="#30363f"
         bright="#131820" quote="#52565d" bullet="#666a71"
@@ -1295,7 +1295,7 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       overlay0="#7c8086" overlay1="#9b9fa6"
       text="#c1c8d2" subtext0="#9b9fa6"
       green="#8dd09b" yellow="#d7bb70" red="#ec817a"
-      blue="#85beef" teal="#85c2b7" peach="#f6a981"
+      blue="#85beef" teal="#74c2b5" peach="#f6a981"
       ;;
   esac
 

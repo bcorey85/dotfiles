@@ -71,6 +71,8 @@ def manual_verification(text, name="plan"):
             level = len(heading.group(1))
             last = None
             phaseMatch = PHASE_HEADING.match(line)
+            if phaseMatch and level > phaseLevel and phaseMatch.group(2) == phase:
+                phaseMatch = None
             if phaseMatch:
                 phase = phaseMatch.group(2)
                 phaseLevel = level

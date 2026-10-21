@@ -11,7 +11,7 @@ import unittest
 
 SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts")
 INSTALLED_DIR = pathlib.Path.home() / ".claude" / "scripts"
-STAGED_FILES = ("review-commit-gate.py", "handback.py", "text_utils.py", "hook_input.py")
+STAGED_FILES = ("review-commit-gate.py", "handback.py", "script_utils.py", "hook_input.py")
 ASK = ("[review-commit-gate] Coder work from this session has no converged /review. Allow to commit anyway, or "
        "deny and run /review.")
 

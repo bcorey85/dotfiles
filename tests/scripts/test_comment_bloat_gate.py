@@ -133,6 +133,13 @@ class CommentBloatGateTest(unittest.TestCase):
                 path = self.source("a." + extension, "# phase 2\n")
                 self.assert_blocked(self.edit(path, "# phase 2"))
 
+    def test_json_path_values_are_data_not_comments(self):
+        content = ('{\n  "branch": "x",\n  "files": [\n    {\n      "file": '
+                   '"docs/plans/LED-5-yield-view/dotfiles-writer-switch.patch",\n      "path": '
+                   '"docs/plans/LED-5-yield-view/dotfiles-writer-switch.patch"\n    }\n  ]\n}\n')
+        path = self.source("refactor-flow-6ff1271d5972.json", content)
+        self.assert_allowed(self.edit(path, content, tool="Write"))
+
     def test_skip_variable_does_not_disable_gate(self):
         path = self.source("a.py", "# phase 2\n")
         self.assert_blocked(self.edit(path, "# phase 2", env={"CLAUDE_SKIP_HOOKS": "1"}))

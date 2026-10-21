@@ -407,10 +407,6 @@
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/agent-foreground.py"
-          },
-          {
-            "type": "command",
             "command": "python3 ~/.claude/scripts/review-loop-gate.py"
           },
           {
@@ -589,7 +585,7 @@
       "effortLevel": "medium"
     },
     "claude-opus-5-5": {
-      "effortLevel": "medium"
+      "effortLevel": "high"
     }
   },
   "awaySummaryEnabled": false,

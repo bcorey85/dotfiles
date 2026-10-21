@@ -127,7 +127,8 @@ class CalibrationGuardFindingsTest(HookRunTest):
     @unittest.skipIf(os.geteuid() == 0, "root reads any file")
     def test_unreadable_lock_prints_question_marks(self):
         # finding 5: `jq ... lock 2>/dev/null || echo '?'`
-        lock = self.home / ".claude" / "calibration-lock.json"
+        lock = self.home / ".local" / "state" / "claude-calibration" / "lock.json"
+        lock.parent.mkdir(parents=True)
         lock.write_text('{"file":"a.ts"}')
         lock.chmod(0)
         self.addCleanup(lock.chmod, stat.S_IRUSR | stat.S_IWUSR)
@@ -293,7 +294,7 @@ class GitDisciplineAmendTest(HookRunTest):
 
 
 class RunGateTest(HookRunTest):
-    PORTED = ("agent-foreground", "agent-model-guard", "calibration-guard", "calibration-refs-guard",
+    PORTED = ("agent-model-guard","calibration-guard", "calibration-refs-guard",
               "claudemd-linecount", "comment-bloat-gate", "dead-prose-gate", "emit-orchestration", "format-changed",
               "git-discipline-gate", "log-agent-usage", "log-skill-use", "quality-check-cap", "review-commit-gate",
               "shell-write-gate", "spec-budget-gate", "stale-citation-gate", "test-edit-telemetry", "warn-skip-hooks")

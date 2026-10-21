@@ -19,7 +19,7 @@ git rev-parse --show-toplevel && git status --porcelain
 ```
 
 - Not a git repo → stop.
-- **Lock file exists** (`~/.claude/calibration-lock.json`) → STOP. A previous
+- **Lock file exists** (`${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration/lock.json`, or the old `~/.claude/calibration-lock.json`) → STOP. A previous
   run mutated and never restored. Restore from `backup_path` first (step 5), then delete the lock — a gate blocking deletion means report-and-stop, never another mechanism. Never seed over an unrestored seed; the lock is shared with `mutation-tester` (by `.kind`) on purpose.
 - Empty diff → stop: "nothing to calibrate; run this on a converged branch
   before you read it."
@@ -51,19 +51,19 @@ in a row — a reviewer can be good at one class and blind to another):
 **Record before mutating**, then write the lock:
 
 ```bash
-mkdir -p ~/.claude/calibration
-cp <target> ~/.claude/calibration/$(basename <target>).bak
+mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration"/backups
+cp <target> "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration"/backups/$(basename <target>).bak
 sha256sum <target> | cut -c1-16   # pre-mutation hash of the FILE
 ```
 
 Hash the file's CONTENT, never `git diff`: for an untracked file the diff is empty before AND after, so a diff hash "verifies" a file still carrying the seed.
 
 ```bash
-jq -n --arg f "<target>" --arg b "$HOME/.claude/calibration/$(basename <target>).bak" \
+jq -n --arg f "<target>" --arg b "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration/backups/$(basename <target>).bak" \
       --arg h "<pre-mutation hash>" --arg c "<class>" --arg l "<line>" \
       '{ts: (now|todate), kind: "calibrate", file: $f, backup_path: $b,
         pre_hash: $h, class: $c, line: $l}' \
-  > ~/.claude/calibration-lock.json
+  > "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration"/lock.json
 ```
 
 The lock is the safety net (`calibration-guard.py` shouts on sessions starting with one present). Apply with **Edit** — one line, minimal, unmarked.
@@ -100,7 +100,7 @@ Then VERIFY the tree is back, by hash, not by eyeball:
 sha256sum <target> | cut -c1-16   # must equal pre_hash
 ```
 
-- Matches → `rm ~/.claude/calibration-lock.json`. **Gate-blocked removal = done**: report the result, state the block, print the user command. Never retry by another mechanism.
+- Matches → `rm "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration"/lock.json`. **Gate-blocked removal = done**: report the result, state the block, print the user command. Never retry by another mechanism.
 - **Does not match** → STOP, loudly, with both paths. Keep the lock. A mismatched tree outranks everything else this skill does.
 
 ## Step 6: Log

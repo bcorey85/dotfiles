@@ -2498,7 +2498,7 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("tick", "1")
         self.assertIn("ACTION: stop", out)
         self.assertIn("- [x] Phase 1:", self.plan_text())
-        self.assertIn("marked done by the user", self.plan_text())
+        self.assertIn("(Phase 1): marked done with `tick`", self.plan_text())
         self.assertEqual("done", self.state()["stage"])
 
     def test_tick_refuses_an_unknown_phase_a_done_phase_and_a_missing_state(self):
@@ -2595,6 +2595,245 @@ class CodeStepTest(unittest.TestCase):
         self.set_state(sessionId="a-stale-pin")
         self.step("after-review")
         self.assertEqual("clean\n", self.gate_mark(self.SESSION))
+
+    # ---------- reported defects ----------
+
+    def replace_phase_one_verification(self, lines):
+        text = self.plan_text()
+        start = text.index("- [ ] **Test-verified**")
+        end = text.index("#### Manual Verification:")
+        (self.repo / self.plan).write_text(text[:start] + lines + "\n\n" + text[end:])
+
+    def test_a_cargo_verification_item_is_read_as_a_command(self):
+        item = "- [ ] **Tests**: the streams pass - `cargo test --test side_streams && cargo clippy -- -D warnings`"
+        self.assertEqual("cargo test --test side_streams && cargo clippy -- -D warnings",
+                         code_step.verification_command(item))
+
+    def test_a_phase_whose_verification_items_yield_no_command_is_not_marked_done(self):
+        self.replace_phase_one_verification("- [ ] **Check**: the streams pass, see the log")
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        out = self.step("after-review")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("no command could be read", out)
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+        self.assertEqual("stopped", self.state()["stage"])
+
+    def test_the_review_prompt_is_built_from_the_latest_coder_only(self):
+        self.begin_coder()
+        self.hook("coder", "BEHAVIOR: stale change\nWHY: backend/src/stale.ts 1-2 — stale reason", agentId="a0")
+        self.hook("coder", "BEHAVIOR: orders exist\nWHY: backend/src/orders.ts 3-5 — order matters", agentId="a1")
+        out = self.step("after-coder")
+        self.assertIn("AGENT: review-loop", out)
+        self.assertIn("order matters", out)
+        self.assertNotIn("stale", out)
+        self.assertNotIn("stale", self.said())
+        self.assertEqual(["orders exist"], self.state()["behavior"])
+
+    def stop_the_coder_on_a_blocked_report(self):
+        self.start_phase_one()
+        self.hook("coder", "BEHAVIOR: none\nblocked on two steps")
+        out = self.step("after-coder")
+        self.assertIn("ACTION: stop", out)
+        self.assertEqual("stopped", self.state()["stage"])
+
+    def test_a_coder_resumed_after_a_stop_goes_to_review_even_when_it_committed(self):
+        self.stop_the_coder_on_a_blocked_report()
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.commit_all()
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+        out = self.step("after-coder")
+        self.assertNotIn("no coder dispatch pending", out)
+        self.assertIn("AGENT: review-loop", out)
+        self.assertIn("- path: backend/src/orders.ts", out)
+        self.assertEqual("review", self.state()["stage"])
+
+    def test_a_resumed_coder_that_changed_nothing_stops_again(self):
+        self.stop_the_coder_on_a_blocked_report()
+        self.hook("coder", "BEHAVIOR: none\nstill blocked")
+        out = self.step("after-coder")
+        self.assertIn("ACTION: stop", out)
+        self.assertNotIn("AGENT: review-loop", out)
+
+    def test_start_phase_on_a_done_phase_dispatches_no_coder(self):
+        self.mark_phases_done(2)
+        out = self.step("start", self.plan, "--phase", "2")
+        self.assertIn("ACTION: stop", out)
+        self.assertNotIn("AGENT: coder", out)
+        self.assertIn("already marked done", out)
+        self.assertNotIn('"stage": "coder"', self.step("status"))
+
+    def test_tick_claims_neither_the_users_word_nor_a_missing_review(self):
+        self.start_phase_one()
+        out = self.step("tick", "1")
+        self.assertNotIn("user's word", out)
+        deviation = [line for line in self.plan_text().splitlines() if "(Phase 1): marked done" in line]
+        self.assertEqual(1, len(deviation))
+        self.assertNotIn("by the user", deviation[0])
+        self.assertNotIn("No review ran", deviation[0])
+        self.assertNotIn("no gate ran", deviation[0])
+
+    def test_a_deeper_phase_heading_inside_a_phase_is_a_note_not_a_section(self):
+        record = "\n#### Phase 2 record (2026-10-21):\n\nDone by hand.\n"
+        (self.repo / self.plan).write_text(self.plan_text().replace(
+            "**File**: `backend/src/totals.ts`\n", "**File**: `backend/src/totals.ts`\n" + record))
+        plan = code_step.parse_plan(self.plan_text().splitlines())
+        self.assertEqual([], plan["failures"])
+        self.assertEqual({"1", "2", "3", "4"}, set(plan["sections"]))
+        self.assertIn("Done by hand.", code_step.phase_text(self.plan_text().splitlines(), "2"))
+        event = {"cwd": str(self.repo), "tool_input": {"file_path": str(self.repo / self.plan)}}
+        self.assertEqual(0, run(self.repo, self.env, "plan-hook", stdin=json.dumps(event)).returncode)
+
+    def test_the_closing_phase_commit_line_names_only_the_files_the_phase_changed(self):
+        self.mark_phases_done(1, 2, 3)
+        self.commit_all()
+        (self.repo / "docs/plans/other").mkdir()
+        (self.repo / "docs/plans/other/spec.md").write_text("another ticket's plan\n")
+        self.step("start", self.plan)
+        self.step("skill-done", "pass")
+        commitLine = self.state()["commitLine"]
+        self.assertNotIn("other", commitLine)
+        self.assertIn("docs/plans/orders/spec.md", commitLine)
+
+    def test_the_commit_subject_carries_the_ticket_id_of_the_plan_folder_or_branch(self):
+        self.assertEqual("LED-15: ", code_step.ticket_prefix({"plan": "docs/plans/LED-15-recap/spec.md"}))
+        self.assertEqual("LED-15: ", code_step.ticket_prefix({"plan": "docs/plans/orders/spec.md",
+                                                               "branch": "brandon/LED-15-recap"}))
+        self.assertEqual("", code_step.ticket_prefix({"plan": "docs/plans/orders/spec.md", "branch": "main"}))
+        self.assertEqual("", code_step.ticket_prefix({"plan": None, "branch": "main"}))
+
+    def test_a_phase_flag_run_ends_after_that_phase_even_with_an_earlier_phase_open(self):
+        self.step("start", self.plan, "--phase", "2")
+        (self.repo / "backend/src/totals.ts").write_text("export const t = 1\n")
+        self.hook("coder", "BEHAVIOR: totals add up\nREVIEW: recommended")
+        self.step("after-coder")
+        self.hook("review-loop", self.LOOP_OK)
+        out = self.step("after-review")
+        self.assertNotIn("ACTION: auto-advance", out)
+        self.assertNotIn("start +fast", out)
+        self.assertFalse(self.state()["autoAdvance"])
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+        self.assertIn("- [x] Phase 2:", self.plan_text())
+
+    def test_a_hand_back_saved_before_the_latest_dispatch_is_not_read(self):
+        self.start_phase_one()
+        dispatchAt = self.state()["dispatchAt"]
+        staleRow = {"ts": dispatchAt - 100, "agent_type": "coder", "agent_id": "old", "stage": "coder",
+                    "message": "PLAN-IMPACT: yes\nBEHAVIOR: stale"}
+        (self.repo / ".git/code-step/reports.jsonl").write_text(json.dumps(staleRow) + "\n")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        out = self.step("after-coder")
+        self.assertIn("No coder report was saved", out)
+        self.assertNotIn("ask-user", out)
+
+    def allow_coder_at_the_gate(self, agentId):
+        gatePath = self.repo / ".git/coder-gate.json"
+        gate = json.loads(gatePath.read_text())
+        gate["coders"][agentId] = {"runs": 1, "denies": 0, "failed": [], "skipped": [], "result": "pass"}
+        gatePath.write_text(json.dumps(gate))
+
+    def add_a_line_to_phase_one(self):
+        (self.repo / self.plan).write_text(self.plan_text().replace(
+            "**File**: `backend/src/orders.test.ts`\n", "**File**: `backend/src/orders.test.ts`\nAlso total the orders.\n", 1))
+
+    def test_an_addendum_coders_report_joins_the_first_coders_report(self):
+        self.begin_coder()
+        self.hook("coder", "BEHAVIOR: orders exist\nWHY: backend/src/orders.ts 3-5 — order matters", agentId="a1")
+        self.add_a_line_to_phase_one()
+        out = self.step("after-coder")
+        self.assertIn("gained lines", out)
+        self.assertIn("AGENT: coder", out)
+        self.allow_coder_at_the_gate("a2")
+        self.hook("coder", "BEHAVIOR: totals added\nWHY: backend/src/orders.ts 8-9 — totals line", agentId="a2")
+        out = self.step("after-coder")
+        self.assertIn("AGENT: review-loop", out)
+        self.assertIn("order matters", out)
+        self.assertIn("totals line", out)
+        self.assertEqual(["orders exist", "totals added"], self.state()["behavior"])
+
+    def test_an_addendum_coder_that_recommends_eng_spec_stops_with_both_reports(self):
+        self.begin_coder()
+        self.hook("coder", "BEHAVIOR: orders exist", agentId="a1")
+        self.add_a_line_to_phase_one()
+        self.step("after-coder")
+        self.allow_coder_at_the_gate("a2")
+        self.hook("coder", "BEHAVIOR: none\nthe totals need /eng-spec", agentId="a2")
+        out = self.step("after-coder")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("orders exist", out)
+        self.assertIn("the totals need /eng-spec", out)
+
+    def test_a_coder_that_is_not_the_stopped_one_does_not_revive_the_run(self):
+        self.stop_the_coder_on_a_blocked_report()
+        self.hook("coder", "BEHAVIOR: another coder\nREVIEW: recommended", agentId="other")
+        self.assertEqual("stopped", self.state()["stage"])
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended", agentId="a1")
+        self.assertEqual("coder", self.state()["stage"])
+
+    def test_the_stop_on_a_blocked_coder_says_to_resume_it_with_send_message_then_run_after_coder(self):
+        self.start_phase_one()
+        self.hook("coder", "BEHAVIOR: none\nblocked on two steps")
+        out = self.step("after-coder")
+        self.assertIn("SendMessage", out)
+        self.assertIn(self.own_command("after-coder"), out)
+
+    def test_a_word_dash_number_in_a_plan_folder_or_branch_is_not_a_ticket_id(self):
+        for name in ("upgrade-node-20", "oauth-2", "fix-1", "phase-2", "python-3", "led-15"):
+            with self.subTest(name=name):
+                self.assertEqual("", code_step.ticket_prefix({"plan": f"work/{name}/spec.md", "branch": name}))
+        self.assertEqual("ABC2-7: ", code_step.ticket_prefix({"plan": "work/upgrade-node-20/spec.md",
+                                                               "branch": "brandon/ABC2-7-upgrade"}))
+
+    def test_an_automated_verification_section_of_only_not_applicable_items_is_empty(self):
+        for item in ("- [ ] N/A — docs only", "- [ ] **N/A**: nothing to run", "- [x] none"):
+            with self.subTest(item=item):
+                self.assertEqual(([], [], []), code_step.run_verification_commands(
+                    self.repo, f"#### Automated Verification:\n\n{item}\n\n#### Manual Verification:\n"))
+
+    def test_a_phase_with_only_a_not_applicable_automated_item_is_marked_done(self):
+        self.replace_phase_one_verification("- [ ] N/A — docs only")
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        out = self.step("after-review")
+        self.assertNotIn("no command could be read", out)
+        self.assertEqual("done", self.state()["stage"])
+
+    def test_a_script_path_or_sh_command_is_read_as_a_verification_command(self):
+        self.assertEqual("./scripts/check.sh --fast", code_step.verification_command(
+            "- [ ] **Check**: passes - `./scripts/check.sh --fast`"))
+        self.assertEqual("sh scripts/check.sh", code_step.verification_command("- [ ] **Check**: `sh scripts/check.sh`"))
+
+    def test_the_unparsed_verification_stop_names_tick_for_checks_that_cannot_be_automated(self):
+        self.replace_phase_one_verification("- [ ] **Check**: the streams pass, see the log")
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        out = self.step("after-review")
+        self.assertIn("`tick 1`", out)
+
+    def test_a_plan_impact_block_is_found_in_each_shape_a_report_writes_it(self):
+        block = "assumed: the table has a key\nfound: it has none\nchanges: add a migration"
+        shapes = {
+            "indented": "BEHAVIOR: none\nPLAN-IMPACT:\n  " + block.replace("\n", "\n  ") + "\nPLAN-IMPACT: yes",
+            "keys at column 0": "BEHAVIOR: none\nPLAN-IMPACT:\n" + block + "\nPLAN-IMPACT: yes",
+            "bold header and a blank line": "PLAN-IMPACT:**\n\n  " + block.replace("\n", "\n  "),
+            "bold keys": "**PLAN-IMPACT:**\n- **assumed:** a\n- **found:** b\n- **changes:** c",
+        }
+        for name, report in shapes.items():
+            with self.subTest(name):
+                found = code_step.plan_impact_block(report)
+                self.assertIsNotNone(found)
+                self.assertNotIn("block not found", found)
+                self.assertIn("assumed", found)
+                self.assertIn("changes", found)
+
+    def test_a_run_without_the_phase_flag_still_advances(self):
+        self.mark_phases_done(1)
+        self.step("start", self.plan)
+        (self.repo / "backend/src/totals.ts").write_text("export const t = 1\n")
+        self.hook("coder", "BEHAVIOR: totals add up\nREVIEW: recommended")
+        self.step("after-coder")
+        self.hook("review-loop", self.LOOP_OK)
+        self.assertIn("ACTION: auto-advance", self.step("after-review"))
 
 
 class FrozenDatetime(datetime.datetime):

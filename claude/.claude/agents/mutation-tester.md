@@ -28,7 +28,7 @@ git rev-parse --show-toplevel && git status --porcelain
 
 - The dispatch does not state a test command → stop and say so. Never infer one from the repo.
 - Not a git repo → stop.
-- **Lock file exists** (`~/.claude/calibration-lock.json`) → **STOP**. A previous
+- **Lock file exists** (`${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration/lock.json`, or the old `~/.claude/calibration-lock.json`) → **STOP**. A previous
   `mutation-tester` or `/calibrate` run mutated a file and never restored it. Report the
   lock's `file` and `backup_path` and stop. Never mutate on top of an unrestored mutation.
   Stop either way; never clear someone else's lock.
@@ -42,24 +42,24 @@ Capture from the baseline run the number of tests that actually **executed**.
 ## Step 1 — Back up, hash, lock
 
 ```bash
-mkdir -p ~/.claude/calibration
-cp <target> ~/.claude/calibration/$(basename <target>).bak
+mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration"/backups
+cp <target> "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration"/backups/$(basename <target>).bak
 sha256sum <target> | cut -c1-16          # pre-mutation CONTENT hash
 ```
 
 Hash the **file's contents**, not `git diff`.
 
 ```bash
-jq -n --arg f "<target>" --arg b "$HOME/.claude/calibration/$(basename <target>).bak" \
+jq -n --arg f "<target>" --arg b "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration/backups/$(basename <target>).bak" \
       --arg h "<pre-mutation hash>" --arg c "mutant: <one-line description>" --arg l "<line>" \
       '{ts: (now|todate), kind: "mutation-test", file: $f, backup_path: $b,
         pre_hash: $h, class: $c, line: $l}' \
-  > ~/.claude/calibration-lock.json
+  > "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration"/lock.json
 ```
 
 ## Step 2 — Apply the mutation
 
-Use **Edit**. Exactly the mutation you were given, one minimal change, **no comment marking
+Use **Edit**. Never `sed -i`; a hook blocks it. Exactly the mutation you were given, one minimal change, **no comment marking
 it** and no other edits to the file. If the specified mutation does not apply cleanly (the
 code has moved, the line reads differently than the dispatcher believed), restore per Step 4
 immediately and report `INDETERMINATE — mutation does not apply`, quoting what is actually
@@ -106,7 +106,7 @@ Then verify by hash, not by eyeball:
 sha256sum <target> | cut -c1-16          # must equal pre_hash
 ```
 
-- Matches → `rm ~/.claude/calibration-lock.json`, and say in your report that the restore
+- Matches → `rm "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration"/lock.json`, and say in your report that the restore
   was hash-verified. **If a safety gate blocks that removal, you are done: report the verdict, state the block, and print the exact command for the user to run. Never retry by another mechanism.**
 - **Does not match** → **STOP and say so loudly**, with the target path and the backup path,
   at the very top of your report. Do not delete the lock. Do not report a verdict as though

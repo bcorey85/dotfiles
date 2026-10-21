@@ -28,7 +28,7 @@ Trade: a `MERGE_MSG` or `SQUASH_MSG` left by an abandoned operation stops format
 
 ## Result
 
-Staged 2026-10-21 in the fourth script fix batch. 40 tests pass on the staged copies. The new squash and cherry-pick tests and the older merge-marker tests fail against the installed script. Installed 2026-10-21.
+Staged 2026-10-21 in the fourth script fix batch. 40 tests pass on the staged copies. The new squash and cherry-pick tests and the older merge-marker tests fail against the installed script. Installed 2026-10-21. The full suite ran 1,481 tests in 39 files. One file failed, on a real plan that the criteria parser refuses, which this batch did not touch.
 
 ## Watch
 

@@ -310,6 +310,32 @@ class PrepTest(VerifyBranchBase):
             common.criteria_file("- **AC1** — fine.\n- **AC9** no dash here\n")
         self.assertIn(":2:", str(caught.exception))
 
+    def test_criteria_file_skips_a_bold_id_in_the_middle_of_a_line(self):
+        common = load_common()
+        text = ("- **AC3** — first.\n"
+                "  **Status: OPEN, waiting on LED-5.** Prose that says **AC4's main-skill part is OPEN** and more.\n"
+                "- **AC4** — second.\n")
+        entries, manual = common.criteria_file(text)
+        self.assertEqual([e["id"] for e in entries], ["AC3", "AC4"])
+        self.assertEqual(manual, [])
+
+    def test_criteria_file_fails_on_a_miswritten_criterion_line_whatever_the_line_start(self):
+        common = load_common()
+        malformed = ["**AC5** text with no dash", "- **AC5**: colon in place of a dash", "  - **AC5** no dash, indented",
+                     "1. **AC5** numbered, but the grammar takes only - or * markers", "* [ ] **AC5** checkbox, unsupported",
+                     "| **AC5** | text |", "Criterion **AC5** — text", "> **AC5** — text",
+                     "- *(new)* **AC5** — text", "- ~~**AC5**~~ — x", "-**AC5** — x"]
+        for line in malformed:
+            with self.subTest(line=line):
+                with self.assertRaises(common.Fail) as caught:
+                    common.criteria_file(f"- **AC1** — fine.\n{line}\n")
+                self.assertIn(":2:", str(caught.exception))
+
+    def test_criteria_file_parses_indented_and_starred_criterion_lines(self):
+        common = load_common()
+        entries, _ = common.criteria_file("  - **AC1** — indented.\n* **AC2** — starred.\n")
+        self.assertEqual([(e["id"], e["text"]) for e in entries], [("AC1", "indented."), ("AC2", "starred.")])
+
     def test_zero_criteria_fails_loudly(self):
         for ticket in ("# T\n\n## Work\n\n- a\n", "# T\n\n## Acceptance\n\n---\n- late bullet\n"):
             self.task_dir(ticket=ticket, criteria=None)

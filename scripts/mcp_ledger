@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Register `ledger mcp` as the user-scope `agent-memory` MCP server.
+# Safe to run repeatedly. Bash 3.2 compatible (macOS).
+
+server_name="agent-memory"
+
+ledger_bin="$(command -v ledger)" || exit 0
+
+# Print the value after "<label>:" on the first line that has it.
+field_value() {
+  printf '%s\n' "$1" | sed -n "s/^[[:space:]]*$2:[[:space:]]*//p" | sed -n '1s/[[:space:]]*$//p'
+}
+
+# Succeeds when the `claude mcp get` text in $1 is a user-scope entry for `ledger mcp`.
+is_ledger_entry() {
+  local scope command_value args_value
+  scope="$(field_value "$1" "Scope")"
+  command_value="$(field_value "$1" "Command")"
+  args_value="$(field_value "$1" "Args")"
+  case "$scope" in
+    "User config"*) ;;
+    *) return 1 ;;
+  esac
+  [ "$command_value" = "$ledger_bin" ] && [ "$args_value" = "mcp" ]
+}
+
+existing="$(claude mcp get "$server_name" 2>&1)"
+get_status=$?
+
+needs_remove=0
+case "$get_status:$existing" in
+  1:"No MCP server named \"$server_name\""*) ;;
+  0:*)
+    scope="$(field_value "$existing" "Scope")"
+    case "$scope" in
+      "User config"*) ;;
+      *)
+        scope_word="$(printf '%s' "${scope%% *}" | tr '[:upper:]' '[:lower:]')"
+        scope_word="${scope_word:-unknown}"
+        echo "mcp_ledger: $server_name is registered in $scope_word scope"
+        exit 1
+        ;;
+    esac
+    if is_ledger_entry "$existing"; then
+      echo "mcp_ledger: already registered"
+      exit 0
+    fi
+    needs_remove=1
+    ;;
+  *)
+    echo "mcp_ledger: claude mcp get failed"
+    exit 1
+    ;;
+esac
+
+if [ "$needs_remove" = 1 ]; then
+  claude mcp remove "$server_name" --scope user || exit 1
+fi
+
+claude mcp add "$server_name" --scope user -- "$ledger_bin" mcp || exit 1
+
+registered="$(claude mcp get "$server_name" 2>&1)" || {
+  echo "mcp_ledger: $server_name is not registered after add"
+  exit 1
+}
+if ! is_ledger_entry "$registered"; then
+  echo "mcp_ledger: $server_name does not point at $ledger_bin mcp after add"
+  exit 1
+fi

@@ -12,6 +12,8 @@
       A second stop in a row passes (stop_hook_active), so a stuck loop cannot spin. The block
       reason reaches the loop as context and it keeps working. Register with matcher
       `review-loop`; the agent_type check below still guards an unscoped entry.
+    A stop while a background dispatch (`Async agent launched`) has not yet reported back, by task
+      notification or agent message, passes: the loop is waiting, not done.
   PreToolUse (Agent): a review-loop dispatch whose prompt says `caller: code` must carry a
       `handoff:` line.
 
@@ -29,6 +31,8 @@ import sys
 CODERS = re.compile(r"^(backend-|frontend-)?coder(-deep)?$")
 REVIEWERS = re.compile(r"^code-reviewer(-deep)?$")
 AGENT_ID = re.compile(r"agentId:\s*([A-Za-z0-9-]+)")
+REPORTED_TOOL_USE = re.compile(r"<tool-use-id>\s*([\w-]+)\s*</tool-use-id>")
+REPORTED_AGENT = re.compile(r"<agent-message\s+from=\"([\w-]+)\"")
 CALLER_CODE = re.compile(r"(?i)(?<![\w-])caller[`*]*\s*[:=]\s*[`\"']?code\b")
 HANDOFF = re.compile(r"(?im)^[ \t]*handoff[ \t]*:")
 NO_REVIEW = re.compile(r"(?<![\w-])no-review(?![\w-])")
@@ -76,8 +80,10 @@ def full_check(cmd):
 
 def scan(path, final=None):
     """(a coder ran after the last reviewer read, no full check ran after the last code change, the loop prompt
-    holds no-review). final is the loop's last message; the transcript's last text stands in when it is None."""
+    holds no-review, the count of background dispatches that have not reported). final is the loop's last message;
+    the transcript's last text stands in when it is None."""
     kinds, reviewer_ids, coder_ids = {}, set(), set()
+    background, reported_tool_uses, reported_agents = {}, set(), set()
     last_coder, last_step, last_read, last_full, prompt, last_text = -1, 0, -1, -1, None, ""
     with open(path, encoding="utf-8") as fh:
         for n, line in enumerate(fh):
@@ -86,6 +92,10 @@ def scan(path, final=None):
             content = msg.get("content")
             if prompt is None and rec.get("type") == "user":
                 prompt = text_of(content)
+            report_text = text_of(content) if rec.get("type") == "user" else ""
+            report_text += " " + str((rec.get("attachment") or {}).get("prompt") or "")
+            reported_tool_uses.update(REPORTED_TOOL_USE.findall(report_text))
+            reported_agents.update(REPORTED_AGENT.findall(report_text))
             for b in content if isinstance(content, list) else []:
                 if not isinstance(b, dict):
                     continue
@@ -108,16 +118,24 @@ def scan(path, final=None):
                         if full_check(str(inp.get("command") or "")):
                             last_full = n
                 elif b.get("type") == "tool_result":
+                    result_text = text_of(b.get("content"))
+                    if b.get("tool_use_id") in kinds and "Async agent launched" in result_text:
+                        launched = AGENT_ID.findall(result_text)
+                        background[b.get("tool_use_id")] = launched[0] if launched else None
                     kind = kinds.get(b.get("tool_use_id"), "")
                     ids = reviewer_ids if REVIEWERS.match(kind) else coder_ids if CODERS.match(kind) else None
                     if ids is not None:
-                        ids.update(AGENT_ID.findall(text_of(b.get("content"))))
+                        ids.update(AGENT_ID.findall(result_text))
     ungated = last_full < last_step and not PLAN_IMPACT.search(last_text if final is None else final)
-    return last_coder > last_read, ungated, bool(NO_REVIEW.search(prompt or ""))
+    open_dispatches = sum(1 for tool_use_id, agent_id in background.items()
+                          if tool_use_id not in reported_tool_uses and agent_id not in reported_agents)
+    return last_coder > last_read, ungated, bool(NO_REVIEW.search(prompt or "")), open_dispatches
 
 
 def reasons(path, final=None):
-    unread, ungated, exempt = scan(path, final)
+    unread, ungated, exempt, open_dispatches = scan(path, final)
+    if open_dispatches:
+        return []
     return [r for r, hit in ((PASS_REASON, unread and not exempt), (GATE_REASON, ungated)) if hit]
 
 
@@ -143,9 +161,10 @@ def agent_type(hook, path):
 
 def main():
     if len(sys.argv) == 3 and sys.argv[1] == "--check":
-        unread, ungated, exempt = scan(sys.argv[2])
+        unread, ungated, exempt, open_dispatches = scan(sys.argv[2])
         print(", ".join([("unread, no-review" if exempt else "unread") if unread else "read"]
-                        + (["no full check after the last code change"] if ungated else [])))
+                        + (["no full check after the last code change"] if ungated else [])
+                        + (["waiting on %d background dispatches" % open_dispatches] if open_dispatches else [])))
         return
     if os.environ.get("CLAUDE_SKIP_HOOKS"):
         return

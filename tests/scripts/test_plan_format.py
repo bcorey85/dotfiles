@@ -189,6 +189,38 @@ class PhaseSectionsTest(unittest.TestCase):
         self.assertEqual(4, plan["failures"][0]["line"])
 
 
+class PhaseGateClauseTest(unittest.TestCase):
+    def gates(self, *statusLines):
+        entries, failures = plan_format.phase_status_entries(["## Phase Status", *statusLines], lambda title: None)
+        self.assertEqual([], failures)
+        return [entry["gate"] for entry in entries]
+
+    def test_a_status_title_with_a_gate_clause_carries_the_condition_text(self):
+        self.assertEqual(["LED-5 merged"], self.gates("- [ ] Phase 8: Review family — gate: LED-5 merged"))
+
+    def test_a_status_title_with_no_gate_clause_has_no_gate(self):
+        self.assertEqual([None], self.gates("- [ ] Phase 8: Review family (risk: low)"))
+
+    def test_the_risk_mark_after_a_gate_clause_is_not_part_of_the_condition(self):
+        self.assertEqual(["LED-5 merged"], self.gates("- [ ] Phase 8: Family - gate: LED-5 merged (risk: low)"))
+
+    def test_a_gate_clause_with_no_text_is_still_a_gate(self):
+        self.assertEqual([plan_format.UNSTATED_GATE], self.gates("- [ ] Phase 8: Family — gate:"))
+
+    def test_the_word_gate_inside_a_title_without_a_colon_is_not_a_clause(self):
+        self.assertEqual([None, None], self.gates("- [ ] Phase 8: Tighten the gate checks",
+                                                  "- [ ] Phase 9: Slicegate: x"))
+
+    def test_gate_with_a_colon_in_plain_title_text_is_not_a_clause(self):
+        self.assertEqual([None, None], self.gates("- [ ] Phase 8: Add the review gate: deny drafts",
+                                                  "- [ ] Phase 9: Fix the gate:keeper flow"))
+
+    def test_a_dash_joined_gate_clause_after_title_text_is_a_clause(self):
+        self.assertEqual(["LED-5 merged", "LED-6 merged"],
+                         self.gates("- [ ] Phase 8: Add the review gate - gate: LED-5 merged",
+                                    "- [ ] Phase 9: Fix the flow – gate: LED-6 merged"))
+
+
 class LoudFailureTest(unittest.TestCase):
     def assert_fails_at(self, text, lineNumber):
         with self.assertRaises(plan_format.PlanFormatError) as caught:

@@ -2896,6 +2896,380 @@ class CodeStepTest(unittest.TestCase):
         self.hook("review-loop", self.LOOP_OK)
         self.assertIn("ACTION: auto-advance", self.step("after-review"))
 
+    # ---------- after-coder never reads a report before the dispatched coder's final hand-back ----------
+
+    def set_coder_gate_result(self, result, agentId):
+        gatePath = self.repo / ".git/coder-gate.json"
+        gate = json.loads(gatePath.read_text())
+        gate["coders"][agentId] = {"runs": 1, "denies": 0, "failed": [], "skipped": [], "result": result}
+        gatePath.write_text(json.dumps(gate))
+
+    def test_after_coder_stops_when_the_state_has_no_dispatch_time_and_says_to_start_the_phase_again(self):
+        self.begin_coder()
+        self.set_state(dispatchAt=None)
+        self.wait_env(1, "0.2")
+        out = self.step("after-coder")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("records no dispatch time", out)
+        self.assertIn("start --phase 1", out)
+        self.assertNotIn("ACTION: ask-user", out)
+        self.assertNotIn("AGENT: review-loop", out)
+        self.assertEqual("coder", self.state()["stage"])
+
+    def test_after_coder_with_no_dispatch_time_does_not_read_an_old_row_as_the_report(self):
+        self.begin_coder()
+        self.hook("coder", "BEHAVIOR: none\nPLAN-IMPACT: yes")
+        self.set_state(dispatchAt=None)
+        self.wait_env(1, "0.2")
+        out = self.step("after-coder")
+        self.assertNotIn("ACTION: ask-user", out)
+        self.assertIn("records no dispatch time", out)
+
+    def test_a_plan_impact_in_the_row_of_a_coder_the_gate_has_not_passed_is_not_raised(self):
+        self.begin_coder()
+        self.set_coder_gate_result("deny", "a0")
+        self.hook("coder", "BEHAVIOR: still working\nPLAN-IMPACT: yes", agentId="a0")
+        self.hook("coder", self.CODER_REPORT)
+        out = self.step("after-coder")
+        self.assertNotIn("ACTION: ask-user", out)
+        self.assertIn("AGENT: review-loop", out)
+
+    def test_a_final_report_that_names_a_plan_impact_still_asks_the_user(self):
+        self.begin_coder()
+        self.hook("coder", "BEHAVIOR: orders exist\nPLAN-IMPACT: yes")
+        self.assertIn("ACTION: ask-user", self.step("after-coder"))
+
+    def test_after_coder_waits_for_a_coder_resumed_after_a_stop_instead_of_saying_to_start(self):
+        self.stop_the_coder_on_a_blocked_report()
+        self.wait_env(1, "0.2")
+        out = self.step("after-coder")
+        self.assertIn("ACTION: wait", out)
+        self.assertNotIn("Run `start` first", out)
+        self.assertEqual("stopped", self.state()["stage"])
+
+    def test_the_wait_cap_for_a_resumed_coder_counts_from_the_first_wait_not_from_the_old_stop(self):
+        self.stop_the_coder_on_a_blocked_report()
+        self.set_state(resumableCoderAt=time.time() - 100)
+        (self.repo / ".git/code-step/reports.jsonl").write_text("")
+        self.wait_env(1, "0.2")
+        out = self.step("after-coder")
+        self.assertIn("ACTION: wait", out)
+        self.assertNotIn("has not handed back in", out)
+        self.assertIsNotNone(self.state().get("resumeWaitAt"))
+
+    def test_repeated_waits_on_a_resumed_coder_end_in_the_cap_stop(self):
+        self.stop_the_coder_on_a_blocked_report()
+        self.wait_env(1, "0.2")
+        self.step("after-coder")
+        self.set_state(resumeWaitAt=time.time() - 100)
+        out = self.step("after-coder")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("has not handed back in", out)
+
+    def test_the_first_wait_time_of_a_resumed_coder_is_saved_once(self):
+        self.stop_the_coder_on_a_blocked_report()
+        self.wait_env(1, "0.2")
+        self.step("after-coder")
+        firstWaitAt = self.state()["resumeWaitAt"]
+        self.step("after-coder")
+        self.assertEqual(firstWaitAt, self.state()["resumeWaitAt"])
+
+    def test_the_hand_back_of_a_resumed_coder_clears_the_saved_first_wait_time(self):
+        self.stop_the_coder_on_a_blocked_report()
+        self.wait_env(1, "0.2")
+        self.step("after-coder")
+        self.hook("coder", "BEHAVIOR: orders exist")
+        self.assertNotIn("resumeWaitAt", self.state())
+
+    def test_after_coder_says_the_resumed_coder_has_not_handed_back_when_it_runs_with_no_wait(self):
+        self.stop_the_coder_on_a_blocked_report()
+        out = self.step("after-coder")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("resumed coder has not handed back yet", out)
+        self.assertNotIn("Run `start` first", out)
+
+    def test_a_plan_impact_of_a_coder_that_stopped_on_no_reviewable_change_is_raised_after_the_resume(self):
+        self.start_phase_one()
+        self.hook("coder", "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes")
+        self.assertIn("ACTION: stop", self.step("after-coder"))
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+        out = self.step("after-coder")
+        self.assertIn("ACTION: ask-user", out)
+        self.assertNotIn("stoppedCoderReport", self.state())
+
+    def test_after_coder_goes_to_review_when_the_resumed_coder_hands_back_while_it_waits(self):
+        self.stop_the_coder_on_a_blocked_report()
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.wait_env(20)
+        self.late_hook(1, "coder", self.CODER_REPORT)
+        out = self.step("after-coder")
+        self.assertIn("AGENT: review-loop", out)
+        self.assertEqual("review", self.state()["stage"])
+
+    def adopt_plan_change_with_the_plan_coder_out(self):
+        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
+        self.coder_round(report)
+        out = self.step("decide", "adopt", "--by", "user", "--ruling", "adopt it, drop the header")
+        self.assertIn("AGENT: coder", out)
+        self.assertEqual("plan-coder", self.state()["stage"])
+
+    def test_after_plan_edit_stops_when_the_state_has_no_dispatch_time_instead_of_dispatching_the_review(self):
+        self.adopt_plan_change_with_the_plan_coder_out()
+        self.set_state(dispatchAt=None)
+        (self.repo / self.plan).write_text(self.plan_text() + "\nadopted step\n")
+        self.wait_env(1, "0.2")
+        out = self.step("after-plan-edit")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("records no dispatch time", out)
+        self.assertIn("start --phase 1", out)
+        self.assertNotIn("AGENT: review-loop", out)
+        self.assertEqual("plan-coder", self.state()["stage"])
+
+    def test_after_plan_edit_with_a_dispatch_waits_for_the_plan_coder_row_before_the_review(self):
+        self.adopt_plan_change_with_the_plan_coder_out()
+        (self.repo / self.plan).write_text(self.plan_text() + "\nadopted step\n")
+        self.wait_env(1, "0.2")
+        self.assertIn("ACTION: wait", self.step("after-plan-edit"))
+        self.hook("coder", "BEHAVIOR: plan rewritten", agentId="plan-edit")
+        self.assertIn("AGENT: review-loop", self.step("after-plan-edit"))
+
+    # ---------- a review-loop resumed after the wait cap is the pending review ----------
+
+    def stop_the_review_at_the_wait_cap(self):
+        self.coder_round()
+        self.set_state(dispatchAt=time.time() - 100)
+        self.wait_env(1, "0.2")
+        out = self.step("after-review")
+        self.assertIn("ACTION: stop", out)
+        self.assertEqual("stopped", self.state()["stage"])
+        return out
+
+    def test_the_stop_at_the_review_wait_cap_says_to_run_after_review_when_the_loop_is_resumed(self):
+        out = self.stop_the_review_at_the_wait_cap()
+        self.assertIn("SendMessage", out)
+        self.assertIn(self.own_command("after-review"), out)
+
+    def test_after_review_waits_for_a_review_loop_resumed_after_the_cap(self):
+        self.stop_the_review_at_the_wait_cap()
+        out = self.step("after-review")
+        self.assertIn("ACTION: wait", out)
+        self.assertNotIn("no review pending", out)
+        self.assertEqual("stopped", self.state()["stage"])
+
+    def test_repeated_waits_on_a_review_loop_resumed_after_the_cap_end_in_the_cap_stop(self):
+        self.stop_the_review_at_the_wait_cap()
+        self.assertIn("ACTION: wait", self.step("after-review"))
+        firstWaitAt = self.state()["resumeWaitAt"]
+        self.assertIn("ACTION: wait", self.step("after-review"))
+        self.assertEqual(firstWaitAt, self.state()["resumeWaitAt"])
+        self.set_state(resumeWaitAt=time.time() - 100)
+        out = self.step("after-review")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("has not handed back in", out)
+
+    def test_after_review_says_the_resumed_review_loop_has_not_handed_back_when_it_runs_with_no_wait(self):
+        self.stop_the_review_at_the_wait_cap()
+        self.wait_env(0)
+        out = self.step("after-review")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("resumed review-loop has not handed back yet", out)
+        self.assertNotIn("no review pending", out)
+        self.assertNotIn("Run `start` first", out)
+
+    def test_the_hand_back_of_a_review_loop_resumed_after_the_cap_puts_the_stage_back_to_review(self):
+        self.stop_the_review_at_the_wait_cap()
+        self.step("after-review")
+        self.hook("review-loop", self.LOOP_OK)
+        state = self.state()
+        self.assertEqual("review", state["stage"])
+        self.assertNotIn("resumableReview", state)
+        self.assertNotIn("resumeWaitAt", state)
+
+    def test_a_review_loop_resumed_after_the_cap_that_hands_back_is_the_pending_review(self):
+        self.stop_the_review_at_the_wait_cap()
+        self.hook("review-loop", self.LOOP_OK)
+        out = self.step("after-review")
+        self.assertNotIn("no review pending", out)
+        self.assertIn("Phase 1 marked done", out)
+        self.assertNotEqual("stopped", self.state()["stage"])
+
+    # ---------- start on a finished plan names the follow-up command ----------
+
+    def test_start_on_a_plan_with_every_phase_done_names_the_task_command_for_a_follow_up(self):
+        self.mark_phases_done(1, 2, 3, 4)
+        out = self.step("start", self.plan)
+        self.assertIn("ACTION: stop", out)
+        self.assertNotIn("AGENT: coder", out)
+        self.assertIn('start --task "<text>"', out)
+
+    def test_bare_start_on_a_finished_single_phase_plan_names_the_task_command_for_a_follow_up(self):
+        subprocess.run(["git", "checkout", "-q", "-b", "ABC-1-x"], cwd=self.repo, check=True, env=self.env)
+        self.plan = "docs/plans/ABC-1-x/spec.md"
+        (self.repo / "docs/plans/ABC-1-x").mkdir()
+        (self.repo / self.plan).write_text(self.SINGLE_PLAN)
+        for command in (["git", "add", "-A"], ["git", "commit", "-qm", "plan"]):
+            subprocess.run(command, cwd=self.repo, check=True, capture_output=True, env=self.env)
+        self.finish_phase_one()
+        out = self.step("start")
+        self.assertNotIn("AGENT: coder", out)
+        self.assertIn('start --task "<text>"', out)
+
+    # ---------- start skips an open phase whose status line carries a gate clause ----------
+
+    def gate_phases(self, *numbers, condition="LED-5 merged"):
+        text = self.plan_text()
+        for number in numbers:
+            line = next(line for line in text.splitlines() if line.startswith(f"- [ ] Phase {number}:"))
+            text = text.replace(line, f"{line} — gate: {condition}")
+        (self.repo / self.plan).write_text(text)
+
+    def test_start_skips_a_gated_open_phase_and_names_it_and_its_gate(self):
+        self.gate_phases(1)
+        out = self.step("start", self.plan)
+        self.assertIn("AGENT: coder", out)
+        self.assertIn("Phase 1 (gate: LED-5 merged)", out)
+        self.assertEqual("2", self.state()["phase"])
+
+    def test_start_with_a_phase_id_runs_a_gated_phase(self):
+        self.gate_phases(1)
+        out = self.step("start", self.plan, "--phase", "1")
+        self.assertIn("AGENT: coder", out)
+        self.assertNotIn("Skipped", out)
+        self.assertEqual("1", self.state()["phase"])
+
+    def test_start_names_only_the_gated_phases_it_passed_over(self):
+        self.gate_phases(1, 3)
+        out = self.step("start", self.plan)
+        self.assertIn("Phase 1 (gate: LED-5 merged)", out)
+        self.assertNotIn("Phase 3 (gate", out)
+        self.assertEqual("2", self.state()["phase"])
+
+    def test_start_stops_and_opens_no_dispatch_when_every_open_phase_is_gated(self):
+        self.start_phase_one()
+        self.gate_phases(1, 2, 3, 4, condition="the data team signs off")
+        out = self.step("start", self.plan)
+        self.assertIn("ACTION: stop", out)
+        self.assertNotIn("AGENT:", out)
+        for number in (1, 2, 3, 4):
+            self.assertIn(f"Phase {number} (gate: the data team signs off)", out)
+        state = self.state()
+        self.assertNotIn("dispatchAt", state)
+        self.assertEqual("stopped", state["stage"])
+
+    def test_a_gated_phase_that_is_done_is_not_named_when_start_skips_the_open_ones(self):
+        self.mark_phases_done(1)
+        self.gate_phases(2)
+        out = self.step("start", self.plan)
+        self.assertNotIn("Phase 1 (gate", out)
+        self.assertIn("Phase 2 (gate: LED-5 merged)", out)
+        self.assertEqual("3", self.state()["phase"])
+
+    # ---------- the phase a run advances to is never a gated one ----------
+
+    def test_auto_advance_names_the_next_ungated_phase_and_the_gated_one_it_skips(self):
+        self.finish_phase_one()
+        self.gate_phases(3)
+        self.step("start", self.plan)
+        (self.repo / "backend/src/totals.ts").write_text("export const t = 1\n")
+        self.hook("coder", "BEHAVIOR: totals")
+        self.step("after-coder")
+        self.hook("review-loop", self.LOOP_OK)
+        out = self.step("after-review")
+        self.assertIn("ACTION: auto-advance", out)
+        self.assertIn("for Phase 4.", out)
+        self.assertNotIn("for Phase 3", out)
+        self.assertIn("Auto-advancing to Phase 4", self.said())
+        self.assertIn("Phase 3 (gate: LED-5 merged)", self.said())
+
+    def test_the_boundary_does_not_auto_advance_when_every_open_phase_is_gated(self):
+        self.finish_phase_one()
+        self.gate_phases(3, 4, condition="the data team signs off")
+        self.step("start", self.plan)
+        (self.repo / "backend/src/totals.ts").write_text("export const t = 1\n")
+        self.hook("coder", "BEHAVIOR: totals")
+        self.step("after-coder")
+        self.hook("review-loop", self.LOOP_OK)
+        out = self.step("after-review")
+        self.assertNotIn("ACTION: auto-advance", out)
+        self.assertFalse(self.state()["autoAdvance"])
+        said = self.said()
+        self.assertNotIn("Auto-advancing", said)
+        self.assertNotIn("All phases complete", said)
+        self.assertIn("Phase 3 (gate: the data team signs off)", said)
+        self.assertIn("Phase 4 (gate: the data team signs off)", said)
+
+    def test_a_sign_off_block_starts_the_next_ungated_phase_and_names_the_gated_one_it_skips(self):
+        self.gate_phases(2)
+        self.finish_phase_one()
+        said = self.said()
+        self.assertIn("start Phase 3 fresh", said)
+        self.assertIn("Phase 2 (gate: LED-5 merged)", said)
+
+    # ---------- a spent wait cap does not make the next wait stop at once ----------
+
+    def test_the_wait_after_a_cap_stop_on_a_resumed_coder_waits_again(self):
+        self.stop_the_coder_on_a_blocked_report()
+        self.wait_env(1, "0.2")
+        self.step("after-coder")
+        self.set_state(resumeWaitAt=time.time() - 100)
+        self.assertIn("has not handed back in", self.step("after-coder"))
+        self.assertNotIn("resumeWaitAt", self.state())
+        out = self.step("after-coder")
+        self.assertIn("ACTION: wait", out)
+        self.assertNotIn("has not handed back in", out)
+
+    def test_the_wait_after_a_cap_stop_on_a_resumed_review_loop_waits_again(self):
+        self.stop_the_review_at_the_wait_cap()
+        self.step("after-review")
+        self.set_state(resumeWaitAt=time.time() - 100)
+        self.assertIn("has not handed back in", self.step("after-review"))
+        self.assertNotIn("resumeWaitAt", self.state())
+        out = self.step("after-review")
+        self.assertIn("ACTION: wait", out)
+        self.assertNotIn("has not handed back in", out)
+
+    # ---------- a stale save that undid the hook's flip does not lose the resumed coder's report ----------
+
+    def test_after_coder_goes_to_review_when_a_stale_save_overwrote_the_hook_flip(self):
+        self.stop_the_coder_on_a_blocked_report()
+        stateFile = self.repo / ".git/code-step/state.json"
+        staleState = stateFile.read_text()
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", self.CODER_REPORT)
+        self.assertEqual("coder", self.state()["stage"])
+        stateFile.write_text(staleState)
+        self.assertEqual("stopped", self.state()["stage"])
+        self.wait_env(1, "0.2")
+        out = self.step("after-coder")
+        self.assertIn("AGENT: review-loop", out)
+        self.assertEqual("review", self.state()["stage"])
+        self.assertNotIn("resumableCoderAt", self.state())
+
+    def test_after_coder_still_waits_when_the_resumed_coder_has_saved_no_row(self):
+        self.stop_the_coder_on_a_blocked_report()
+        self.wait_env(1, "0.2")
+        out = self.step("after-coder")
+        self.assertIn("ACTION: wait", out)
+        self.assertEqual("stopped", self.state()["stage"])
+        self.assertIn("resumableCoderAt", self.state())
+
+    # ---------- a second no-reviewable-change stop keeps the first one's PLAN-IMPACT ----------
+
+    def test_a_second_stop_on_no_reviewable_change_keeps_the_plan_impact_of_the_first(self):
+        self.start_phase_one()
+        self.hook("coder", "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes")
+        self.assertIn("ACTION: stop", self.step("after-coder"))
+        self.hook("coder", "BEHAVIOR: none\nstill blocked")
+        out = self.step("after-coder")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("PLAN-IMPACT:", self.state()["stoppedCoderReport"])
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+        out = self.step("after-coder")
+        self.assertIn("ACTION: ask-user", out)
+        self.assertNotIn("stoppedCoderReport", self.state())
+
 
 if __name__ == "__main__":
     unittest.main()

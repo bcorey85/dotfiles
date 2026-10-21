@@ -23,7 +23,7 @@ Trade: each new agent gets one free run of each check, even when the tree did no
 
 ## Result
 
-Staged 2026-10-21 in the second script fix batch. 80 tests pass. Against the installed hook, 12 of the new tests fail.
+Staged 2026-10-21 in the second script fix batch. 80 tests pass. Against the installed hook, 12 of the new tests fail. Installed 2026-10-21.
 
 ## Watch
 

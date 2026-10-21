@@ -68,6 +68,8 @@ START_USAGE = ('usage: code-step.py start [<plan>] [+fast|+deep] [--phase <id>]\
                '--phase <id> starts the named phase. Text that follows the plan (or comes first, when there is no '
                'plan file, ticket id or directory) is the task text. A flag before it, or after a plan, must be '
                'known. --take-over starts over a run that another live session left open in this checkout.')
+FOLLOW_UP_HINT = ("A follow-up change to a finished plan needs the task text: invoke Skill code with "
+                  "`start --task \"<text>\"`.")
 OTHER_SESSION_LIVE_SECONDS = 2 * 60 * 60
 WAITING_STAGES = ("asks", "impact-coder", "impact-review", "skill", "plan-coder")
 ASKS_DONE_USAGE = ("asks-done needs one outcome per ask: accepted, rejected or modified. Each modified ask needs the "
@@ -191,26 +193,59 @@ def saved_messages(cwd, agentType, stage, skipRows=0):
     return list(lastPerAgent.values())
 
 
-def latest_coder_row(repoRoot, stage, since=None):
-    # The saved row of the coder dispatched last: the newest row of this stage that the hand-back gate let through.
-    # Rows of earlier coders of the same stage are not part of it, and with `since` (the dispatch time) neither is a
-    # row saved before that dispatch. None when no such row exists.
+def report_rows(repoRoot, agentType):
+    # Every saved hook row of this agent type, oldest first. Lines that are not JSON objects are skipped.
     reportsFile = state_dir(repoRoot) / "reports.jsonl"
     if not reportsFile.exists():
-        return None
-    latest = None
+        return []
+    rows = []
     for line in reportsFile.read_text().splitlines():
         try:
             row = json.loads(line)
         except ValueError:
             continue
-        if not isinstance(row, dict) or row.get("agent_type") != CODER or row.get("stage") != stage:
+        if isinstance(row, dict) and row.get("agent_type") == agentType:
+            rows.append(row)
+    return rows
+
+
+def is_after(row, since):
+    # A row without a numeric timestamp is old.
+    return isinstance(row.get("ts"), (int, float)) and row["ts"] > since
+
+
+def coder_rows(repoRoot, stage, since=None):
+    # The saved rows of this stage that the hand-back gate let through, oldest first. The rows of a coder whose latest
+    # gate result is not pass or cap are left out: that coder is a draft or still running, so its row is not a report.
+    # With `since` (the dispatch time) a row saved before that dispatch is left out.
+    rows = []
+    for row in report_rows(repoRoot, CODER):
+        if row.get("stage") != stage:
             continue
-        if since is not None and not (isinstance(row.get("ts"), (int, float)) and row["ts"] > since):
+        if since is not None and not is_after(row, since):
             continue
         if coder_gate_allows(repoRoot, row.get("agent_id") or "unknown"):
-            latest = row
-    return latest
+            rows.append(row)
+    return rows
+
+
+def resumed_coder_row(repoRoot, state):
+    # The row the resumed coder saved after the stop, whatever its stage or gate result: the hook saves the flipped
+    # state before it writes the row, so a row of that coder while the stage still reads stopped means a stale save
+    # overwrote the flip. None when the state awaits no resumed coder or the coder has not handed back.
+    if not awaits_resumed_coder(state) or not state.get("resumableCoderId"):
+        return None
+    for row in reversed(report_rows(repoRoot, CODER)):
+        if row.get("agent_id") == state["resumableCoderId"] and is_after(row, state["resumableCoderAt"]):
+            return row
+    return None
+
+
+def latest_coder_row(repoRoot, stage, since=None):
+    # The saved row of the coder dispatched last: the newest row of coder_rows. Rows of earlier coders of the same
+    # stage are not part of it. None when no such row exists.
+    rows = coder_rows(repoRoot, stage, since)
+    return rows[-1] if rows else None
 
 
 def latest_coder_message(repoRoot, stage, since=None):
@@ -224,21 +259,6 @@ def with_earlier_report(state, latestReport):
     if latestReport is None:
         return None
     return "\n\n".join(filter(None, [state.get("earlierCoderReport"), latestReport]))
-
-
-def all_saved_messages(cwd, agentType, stage):
-    reportsFile = state_dir(cwd) / "reports.jsonl"
-    if not reportsFile.exists():
-        return []
-    messages = []
-    for line in reportsFile.read_text().splitlines():
-        try:
-            row = json.loads(line)
-        except ValueError:
-            continue
-        if row["agent_type"] == agentType and row["stage"] == stage:
-            messages.append(row["message"])
-    return messages
 
 
 def session_pin():
@@ -294,7 +314,7 @@ def next_after(verb):
 
 
 def expected_agent(state):
-    return REVIEW_LOOP if state.get("stage") == "review" else CODER
+    return REVIEW_LOOP if state.get("stage") == "review" or awaits_resumed_review(state) else CODER
 
 
 def ask_text(item):
@@ -341,21 +361,12 @@ def latest_handback_row(repoRoot, state, agentType, since):
     # A row without a timestamp is old. A state with no pinned session claims no hand-backs.
     if not state.get("sessionId"):
         return None
-    rows = []
-    reportsFile = state_dir(repoRoot) / "reports.jsonl"
-    if reportsFile.exists():
-        for line in reportsFile.read_text().splitlines():
-            try:
-                row = json.loads(line)
-            except ValueError:
-                continue
-            if isinstance(row, dict) and row.get("agent_type") == agentType:
-                rows.append(row)
+    rows = report_rows(repoRoot, agentType)
     if agentType == REVIEW_LOOP:
         storeRow = handback_store_row(state)
         if isinstance(storeRow, dict):
             rows.append(storeRow)
-    fresh = [row for row in rows if isinstance(row.get("ts"), (int, float)) and row["ts"] > since]
+    fresh = [row for row in rows if is_after(row, since)]
     if agentType == CODER:
         fresh = [row for row in fresh if coder_gate_allows(repoRoot, row.get("agent_id") or "unknown")]
     return max(fresh, key=lambda row: row["ts"]) if fresh else None
@@ -365,20 +376,88 @@ def dispatch_time_text(since):
     return datetime.datetime.fromtimestamp(since).isoformat(timespec="seconds")
 
 
+def awaits_resumed_coder(state):
+    # The run stopped on a coder's report and the user answered: that coder, resumed with SendMessage, has no dispatch
+    # of its own. Its hook puts the stage back to coder when it hands back.
+    return state.get("stage") == "stopped" and state.get("resumableCoderAt") is not None
+
+
+def awaits_resumed_review(state):
+    # The wait for a review-loop gave up at the cap and stopped the run. The user may resume that review-loop with
+    # SendMessage: its hand-back, still after dispatchAt, then counts as the pending review.
+    return state.get("stage") == "stopped" and bool(state.get("resumableReview"))
+
+
+def dispatch_since(state):
+    # The time the agent that the next verb waits for was dispatched, or None when the state records none. A coder
+    # resumed after a stop counts from the stop.
+    if state.get("dispatchAt") is not None:
+        return state["dispatchAt"]
+    if awaits_resumed_coder(state):
+        return state["resumableCoderAt"]
+    return None
+
+
+def put_resumed_coder_back(repoRoot, state):
+    # A coder resumed after the run stopped on its report is the same coder: its next hand-back goes to review. Its
+    # dispatch time is the stop.
+    state["stage"] = "coder"
+    state["dispatchAt"] = state.pop("resumableCoderAt")
+    state.pop("resumableCoderId", None)
+    state.pop("resumeWaitAt", None)
+    state.pop("forkDenied", None)
+    state.pop("forkStopBlocks", None)
+    save_state(repoRoot, state)
+
+
+def resumed_agent_pending_stop(agentType, verb):
+    # The stop text for a verb that ran while the agent the user resumed has not handed back yet.
+    return (f"The resumed {agentType} has not handed back yet. Do not dispatch again and do not run `start`. Once it "
+            f"has handed back, run the same verb again: {timed_command(verb)}.")
+
+
+def missing_dispatch_time_stop(state):
+    # The stop text for a state in a hook stage that records no dispatch time: no hand-back can be told from an earlier
+    # one, so the phase has to start again.
+    phaseWords = f"start --phase {state['phase']}" if state.get("phase") else "start"
+    return (f"The run state is in stage {state.get('stage')} but records no dispatch time, so a hand-back cannot be "
+            f"told from an earlier one. Do not dispatch again. Run `{INSTALLED_COMMAND} {phaseWords}` again to start "
+            "the phase over. Tell the user.")
+
+
 def wait_for_handback(repoRoot, state, verb, longChecksFollow=False):
     # Nested Agent calls return at once, so the verb that follows a dispatch waits here for the hand-back row.
     # CODE_STEP_WAIT_SECONDS=0 skips the wait. Returns False after emitting the line that says to run the verb again,
     # or a stop once the dispatch is older than HANDBACK_TOTAL_WAIT_MULTIPLE waits. longChecksFollow: when the wait
     # took longer than FRESH_CALL_AFTER_SECONDS, return False so the checks after it start in a call of their own.
     limit = float(os.environ.get("CODE_STEP_WAIT_SECONDS", HANDBACK_WAIT_SECONDS))
-    since = state.get("dispatchAt")
-    if limit <= 0 or since is None:
+    if limit <= 0:
+        return True
+    since = dispatch_since(state)
+    if since is None:
+        if state.get("stage") in HOOK_STAGES:
+            emit("stop", missing_dispatch_time_stop(state))
+            return False
         return True
     interval = float(os.environ.get("CODE_STEP_POLL_SECONDS", HANDBACK_POLL_SECONDS))
     agentType = expected_agent(state)
     totalCap = limit * HANDBACK_TOTAL_WAIT_MULTIPLE
-    isPastCap = time.time() - since > totalCap
     waitStarted = time.time()
+    if awaits_resumed_coder(state) or awaits_resumed_review(state):
+        # A resumed agent's dispatch time is the stop that came before the user's answer, so the cap counts from the
+        # first wait on it. The first wait is saved once; the hook that sees the resumed hand-back clears it.
+        if state.get("resumeWaitAt") is None:
+            # The hook may have put the stage back since this state was read: save onto the newest state, and only
+            # while the agent is still awaited, so the save never overwrites that flip.
+            newest = load_state(repoRoot) or state
+            if awaits_resumed_coder(newest) or awaits_resumed_review(newest):
+                newest["resumeWaitAt"] = waitStarted
+                save_state(repoRoot, newest)
+            state["resumeWaitAt"] = waitStarted
+        clockStart = state["resumeWaitAt"]
+    else:
+        clockStart = since
+    isPastCap = waitStarted - clockStart > totalCap
     # The state is read again on each poll: a hook may pin the session while the wait runs.
     found = script_utils.wait_for(lambda: latest_handback_row(repoRoot, load_state(repoRoot) or state, agentType, since),
                                   0 if isPastCap else limit, interval)
@@ -390,12 +469,18 @@ def wait_for_handback(repoRoot, state, verb, longChecksFollow=False):
                  f"after it start in a call of their own: {timed_command(verb)}.")
             return False
         return True
-    if time.time() - since > totalCap:
+    if time.time() - clockStart > totalCap:
+        resumeText = ""
+        if agentType == REVIEW_LOOP:
+            state["resumableReview"] = True
+            resumeText = f" If the user resumes it with SendMessage, run {timed_command(verb)}."
         state["stage"] = "stopped"
+        # The cap is spent: a wait after the user resumes the agent again counts from its own first wait.
+        state.pop("resumeWaitAt", None)
         save_state(repoRoot, state)
-        emit("stop", f"The {agentType} dispatched at {dispatch_time_text(since)} has not handed back in "
-             f"{time.time() - since:.0f} seconds (the cap is {totalCap:g}). It may have died or been stopped. Do not "
-             "dispatch it again and do not wait longer. Tell the user.")
+        emit("stop", f"The {agentType} dispatched at {dispatch_time_text(clockStart)} has not handed back in "
+             f"{time.time() - clockStart:.0f} seconds (the cap is {totalCap:g}). It may have died or been stopped. Do not "
+             "dispatch it again and do not wait longer. Tell the user." + resumeText)
         return False
     emit("wait", f"The dispatched agent has not handed back after {limit:g} seconds. Do not dispatch it again and do "
          f"not hand back. To keep waiting, run the same command again: `{INSTALLED_COMMAND} {verb}` (Bash timeout "
@@ -475,6 +560,10 @@ def closing_skill(title):
 
 def parse_plan(planLines):
     return plan_format.parse_plan(planLines, closing_skill)
+
+
+def gated_phase_text(entries):
+    return "; ".join(f"Phase {entry['number']} (gate: {entry['gate']})" for entry in entries)
 
 
 def ordered_pending(entries):
@@ -898,7 +987,8 @@ def command_start(args):
         if planArg is None:
             return
         if is_finished_single_phase_plan(repoRoot, previous, branch, planArg):
-            return emit("stop", f"The plan {previous['plan']} is complete. Tell the user the plan is complete.")
+            return emit("stop", f"The plan {previous['plan']} is complete. Tell the user the plan is complete. "
+                        + FOLLOW_UP_HINT)
         print(f"Resolved the task input: {planArg} (lane {lane}).")
     elif previous.get("plan") != planArg:
         lane = "code"
@@ -938,9 +1028,18 @@ def command_start(args):
             return emit("stop", f"Phase {phaseId} is already marked done in {planRel}. No coder was dispatched. Tell "
                         "the user; to run it again, they uncheck it in Phase Status first.")
     elif entries and not pending:
-        return emit("stop", "Every phase in the plan is checked. Tell the user the plan is complete.")
+        return emit("stop", "Every phase in the plan is checked. Tell the user the plan is complete. " + FOLLOW_UP_HINT)
     else:
-        entry = pending[0] if pending else None
+        ungated = [e for e in pending if not e["gate"]]
+        if pending and not ungated:
+            return emit("stop", "Every open phase in the plan carries a gate clause, so none was started: "
+                        + gated_phase_text(pending) + ". The script does not judge a gate. Tell the user. To run one "
+                        "anyway, start it by id with `start --phase <id>`.")
+        entry = ungated[0] if pending else None
+        skipped = pending[:pending.index(entry)] if entry else []
+        if skipped:
+            print("Skipped the open phases with a gate clause: " + gated_phase_text(skipped)
+                  + ". `start --phase <id>` runs one anyway.")
 
     number = entry["number"] if entry else None
     section = phase_text(planLines, number) if entry else "\n".join(planLines)
@@ -1188,6 +1287,15 @@ def command_after_coder(repoRoot, state, args):
     if not wait_for_handback(repoRoot, state, "after-coder", longChecksFollow=state["stage"] == "asks-coder"):
         return
     state = load_state(repoRoot)
+    if awaits_resumed_coder(state):
+        # A resumed coder's hook puts the stage back when it hands back. A row of that coder while the stage still reads
+        # stopped means a stale save overwrote the hook's flip: flip here, the way after-review does. With no row, no
+        # report came.
+        if resumed_coder_row(repoRoot, state) is None:
+            return emit("stop", resumed_agent_pending_stop(CODER, "after-coder"))
+        put_resumed_coder_back(repoRoot, state)
+    if state["stage"] not in STAGE_GUARDS["after-coder"]["stages"]:
+        return emit("stop", STAGE_GUARDS["after-coder"]["message"])
 
     coderStage = state["stage"]
     isAskFix = coderStage == "asks-coder"
@@ -1206,10 +1314,15 @@ def command_after_coder(repoRoot, state, args):
                     "before the review.",
                     next_after("after-coder"), prompt=prompt, agent="coder")
     gate = None if isAskFix else gate_results(repoRoot)
+    # Read before `clear` deletes the gate: with no gate every row counts, so a draft or a still-running coder's row
+    # would read as a report.
+    dispatchedRows = coder_rows(repoRoot, coderStage, state.get("dispatchAt"))
     gateLines = state.get("gateLines", "")
     if not isAskFix:
         code, gateLines = run_command(["python3", str(SCRIPTS_DIR / "coder-gate.py"), "clear"], repoRoot)
-    latestRow = latest_coder_row(repoRoot, coderStage, state.get("dispatchAt"))
+    # The rows read before `clear` name the report when the gate let one through; after the clear the rows of a coder
+    # with no gate result count again, so that read is the fallback.
+    latestRow = dispatchedRows[-1] if dispatchedRows else latest_coder_row(repoRoot, coderStage, state.get("dispatchAt"))
     if latestRow is None:
         return emit("stop", "No coder report was saved. The SubagentHandback hook (code-step.py hook) is not "
                     "installed or the coder never handed back. Tell the user.")
@@ -1232,6 +1345,10 @@ def command_after_coder(repoRoot, state, args):
         state["stage"] = "stopped"
         state["resumableCoderAt"] = time.time()
         state["resumableCoderId"] = latestRow.get("agent_id") or "unknown"
+        if not isAskFix:
+            # The resumed coder's report is the only row after the stop, so this one keeps its PLAN-IMPACT. A report of
+            # an earlier stop is kept too: a second stop must not drop the first one's PLAN-IMPACT.
+            state["stoppedCoderReport"] = "\n\n".join(filter(None, [state.get("stoppedCoderReport"), report]))
         state.pop("dispatchAt", None)
         save_state(repoRoot, state)
         tickText = (f" If the user says Phase {state['phase']} is already done, invoke Skill code with `tick "
@@ -1268,7 +1385,10 @@ def command_after_coder(repoRoot, state, args):
     state.update({"gateLines": gateLines, "flagged": flagged, "behavior": behavior, "exception": bool(flagged),
                   "files": changedFiles, "why": whyGroups, "testsRun": testsRun, "coderStage": coderStage})
 
-    impact = first_plan_impact(all_saved_messages(repoRoot, "coder", coderStage))
+    dispatchedReports = [row.get("message", "") for row in dispatchedRows]
+    stoppedReport = state.pop("stoppedCoderReport", None)
+    earlierReports = [] if isAskFix else list(filter(None, [state.get("earlierCoderReport"), stoppedReport]))
+    impact = first_plan_impact(earlierReports + dispatchedReports)
     if impact:
         state.update({"stage": "impact-coder", "impact": impact})
         save_state(repoRoot, state)
@@ -1842,17 +1962,21 @@ def command_hook():
         isResumedCoder = (state is not None and state["stage"] == "stopped" and agentType == CODER
                           and state.get("resumableCoderAt") is not None
                           and state.get("resumableCoderId") == (event.get("agent_id") or "unknown"))
-        if state is None or (state["stage"] not in HOOK_STAGES and not isResumedCoder):
+        isResumedReview = state is not None and agentType == REVIEW_LOOP and awaits_resumed_review(state)
+        if state is None or (state["stage"] not in HOOK_STAGES and not isResumedCoder and not isResumedReview):
             return
         sessionId = event.get("session_id")
         pinnedSession = state.get("sessionId")
         if sessionId and pinnedSession and sessionId != pinnedSession:
             return
         if isResumedCoder:
-            # A coder resumed after the run stopped on its report is the same coder: its next hand-back goes to review.
-            state["stage"] = "coder"
-            state["dispatchAt"] = state.pop("resumableCoderAt")
-            state.pop("resumableCoderId", None)
+            put_resumed_coder_back(cwd, state)
+        if isResumedReview:
+            # A review-loop resumed after the wait cap is the pending review again: its hand-back goes to after-review.
+            # It keeps the dispatch time of the loop that went past the cap.
+            state["stage"] = "review"
+            state.pop("resumableReview", None)
+            state.pop("resumeWaitAt", None)
             state.pop("forkDenied", None)
             state.pop("forkStopBlocks", None)
             save_state(cwd, state)
@@ -1877,11 +2001,20 @@ def command_after_review(repoRoot, state, args):
     if not wait_for_handback(repoRoot, state, "after-review", longChecksFollow=True):
         return
     state = load_state(repoRoot)
+    if awaits_resumed_review(state):
+        # The run stopped at the wait cap. The hook puts the stage back when the resumed review-loop hands back; the
+        # shared store row, which can come first, does the same here.
+        if latest_handback_row(repoRoot, state, REVIEW_LOOP, state.get("dispatchAt") or 0) is None:
+            return emit("stop", resumed_agent_pending_stop(REVIEW_LOOP, "after-review"))
+        state.pop("resumableReview")
+        state.pop("resumeWaitAt", None)
+        state["stage"] = "review"
+        save_state(repoRoot, state)
     messages = saved_messages(repoRoot, "review-loop", "review", state.get("reviewReportsFloor", 0))
     if not messages:
         # The shared store can see the hand-back before this script's own hook has written its row.
         storeRow = handback_store_row(state)
-        if isinstance(storeRow, dict) and storeRow.get("ts", 0) > state.get("dispatchAt", 0) and storeRow.get("message"):
+        if isinstance(storeRow, dict) and storeRow.get("ts", 0) > (state.get("dispatchAt") or 0) and storeRow.get("message"):
             messages = [storeRow["message"]]
     if not messages:
         return emit("stop", "No review-loop packet was saved. The SubagentHandback hook is not installed. Tell the user.")
@@ -2186,8 +2319,10 @@ def mark_phase_done(planPath, number):
 
 
 def boundary_decision(state, entries, number):
-    # A run started with --phase N ends after phase N, whatever other phases are still open.
-    isLast = state.get("onlyPhase") == number or not [e for e in entries if not e["done"] and e["number"] != number]
+    # A run started with --phase N ends after phase N, whatever other phases are still open. A phase with a gate clause
+    # is never the next phase of a run, so when only gated phases are open this is the last phase the run can do.
+    startableOthers = [e for e in entries if not e["done"] and not e["gate"] and e["number"] != number]
+    isLast = state.get("onlyPhase") == number or not startableOthers
     if isLast:
         return "C", "last phase"
     if number == "1":
@@ -2348,6 +2483,11 @@ def finish_phase(repoRoot, state, skipVerification=False):
     entries = parse_plan(planPath.read_text().splitlines())["entries"]
     block, riskLabel = boundary_decision(state, entries, number)
     nextPending = ordered_pending(entries)
+    startable = [e for e in nextPending if not e["gate"]]
+    nextNumber = startable[0]["number"] if startable else None
+    # The gated phases ahead of the next one are skipped by `start`; with nothing startable, every open phase is gated.
+    gatedAhead = nextPending[:nextPending.index(startable[0])] if startable else nextPending
+    gatedText = gated_phase_text(gatedAhead)
     commitText, commitLine, commitFiles = phase_commit(repoRoot, state)
     state["stage"] = "done"
     state["autoAdvance"] = block == "A"
@@ -2371,13 +2511,12 @@ def finish_phase(repoRoot, state, skipVerification=False):
 
     if block == "A":
         nextStart = f"{INSTALLED_COMMAND} start" + (f" {state['modifier']}" if state.get("modifier") else "")
-        say(repoRoot, block_a(number, riskLabel, manualGroups, nextPending[0]["number"]))
+        say(repoRoot, block_a(number, riskLabel, manualGroups, nextNumber, gatedText))
         commitStep = (f"First run this commit command as a Bash call: {commitLine}\nThen " if commitLine else "")
         emit("auto-advance", "The user sees block A at the end of the turn. "
-             + f"{commitStep}in the same response run `{nextStart}` for Phase " + nextPending[0]["number"] + ".")
+             + f"{commitStep}in the same response run `{nextStart}` for Phase " + nextNumber + ".")
         return
-    blockText = block_b_or_c(block, number, riskLabel, state, manualGroups,
-                             nextPending[0]["number"] if nextPending else None)
+    blockText = block_b_or_c(block, number, riskLabel, state, manualGroups, nextNumber, gatedText)
     say(repoRoot, blockText.replace("<<STAGE QUEUE>>", "(the /stage queue is printed above in this turn)"))
     emit("stop-block-" + block,
          "Invoke the Skill tool with `stage` and print its queue verbatim. The user sees the rest of the phase-complete "
@@ -2389,15 +2528,20 @@ def manual_item_line(item):
     return f"- [{'x' if item['checked'] else ' '}] {item['text']}"
 
 
-def block_a(number, riskLabel, manualGroups, nextNumber):
+def skipped_gate_line(gatedText):
+    return f" Skipped, gate clause: {gatedText}. `start --phase <id>` runs one anyway." if gatedText else ""
+
+
+def block_a(number, riskLabel, manualGroups, nextNumber, gatedText=""):
     verifiedCount, notRunCount, humanCount = (len(manualGroups[name]) for name in ("verified", "notRun", "humanOnly"))
     return (f"Phase {number} complete - machine gates green (review ✓, execution ✓, automated-verification ✓). "
             f"Risk: low. Manual verification: {verifiedCount} verified, {notRunCount} agent-run items not yet run "
             f"(/verify-branch runs them at the end of the branch), {humanCount} human-only deferred to the "
-            f"/verify-branch packet.\n-> Auto-advancing to Phase {nextNumber} in-session (no /clear; interrupt anytime).")
+            f"/verify-branch packet.\n-> Auto-advancing to Phase {nextNumber} in-session (no /clear; interrupt anytime)."
+            + skipped_gate_line(gatedText))
 
 
-def block_b_or_c(block, number, riskLabel, state, manualGroups, nextNumber):
+def block_b_or_c(block, number, riskLabel, state, manualGroups, nextNumber, gatedText=""):
     behavior = state.get("behavior") or []
     lastText = f"Phase {number} complete (last phase)." if number is not None else "The plan is complete."
     isOnlyPhase = number is not None and state.get("onlyPhase") == number
@@ -2427,9 +2571,14 @@ def block_b_or_c(block, number, riskLabel, state, manualGroups, nextNumber):
         parts += ["Next:", f"  1. {step1}",
                   f"  2. Stage what you've read, then run /clear and /code to start Phase {nextNumber} fresh. "
                   "To keep this context, confirm here.", "", "Or give feedback now for revisions to Phase " + number + "."]
+        if gatedText:
+            parts += [skipped_gate_line(gatedText).strip()]
     elif isOnlyPhase:
         parts += ["This run was started for this phase only. Other phases may be open; run `start` when the user "
                   "asks for the next one."]
+    elif gatedText:
+        parts += ["No phase starts on its own: every open phase carries a gate clause and the script does not judge a "
+                  f"gate: {gatedText}. Tell the user. `start --phase <id>` runs one anyway. The plan is not complete."]
     else:
         parts += ["All phases complete. Next: /verify-branch (completeness + review packet; includes the remaining "
                   "human-only checks), then you open the PR."]
@@ -2441,7 +2590,9 @@ def run_guarded_verb(verb, handler, args):
     repoRoot = repo_root()
     os.chdir(repoRoot)
     state = load_state(repoRoot)
-    atStage = state is not None and state["stage"] in guard["stages"]
+    atStage = state is not None and (state["stage"] in guard["stages"]
+                                     or (verb == "after-coder" and awaits_resumed_coder(state))
+                                     or (verb == "after-review" and awaits_resumed_review(state)))
     reasonAllowed = "stopReasons" not in guard or (state or {}).get("stopReason") in guard["stopReasons"]
     if not atStage or not reasonAllowed:
         return emit("stop", guard["message"])

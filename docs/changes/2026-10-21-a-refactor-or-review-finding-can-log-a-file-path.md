@@ -25,7 +25,7 @@ Trade: a real path such as `docs/notes v=2.md` is refused, because it has the sh
 
 ## Result
 
-Staged 2026-10-21 in the fourth script fix batch. 83 tests pass on the staged copies. The new tests fail against the installed scripts. Installed 2026-10-21.
+Staged 2026-10-21 in the fourth script fix batch. 83 tests pass on the staged copies. The new tests fail against the installed scripts. Installed 2026-10-21. The full suite ran 1,481 tests in 39 files. One file failed, on a real plan that the criteria parser refuses, which this batch did not touch.
 
 ## Watch
 

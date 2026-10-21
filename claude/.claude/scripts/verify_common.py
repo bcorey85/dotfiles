@@ -18,7 +18,12 @@ LISTITEM = re.compile(r"^(\s*)(?:[-*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?(.*)$")
 # Accepted id spans: a plain id, an id followed by a parenthetical, an id with a qualifier inside the bold,
 # or several comma-separated ids inside one bold span.
 ID_LINE = re.compile(r"^\s*[-*]\s+\*\*(AC\d+[^*]*)\*\*\s*(?:\([^)]*\))?\s*[—–-]+\s*(.*)$")
-ID_START = re.compile(r"\*\*AC\d+")
+# A line opens an id span at its start (after indent and an optional list marker). A bold `**ACn` later in a line
+# that never closes (a status note saying `**AC4's part is OPEN**`) is prose.
+ID_START = re.compile(r"^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\[[ xX]\]\s+)?\*\*AC\d+")
+# A closed bold id span anywhere in a line (a table cell, a quote, a prefix, a strikethrough) also marks a criterion
+# line, so one that is written wrong fails instead of dropping out. Prose such as `**AC4's ...**` does not close.
+ID_SPAN = re.compile(r"\*\*AC\d+(?:\s*\([^)]*\))?(?:,\s*AC\d+(?:\s*\([^)]*\))?)*\*\*")
 AC_ID = re.compile(r"AC\d+")
 
 
@@ -115,8 +120,9 @@ def ticket_criteria(ticketText, name="ticket"):
 def criteria_file(text, name="acceptance-criteria.md"):
     """(entries, manualEntries) from acceptance-criteria.md, one {id, text} per id.
 
-    Lines are `- **ACn** — text`; the id span may carry a parenthetical or several ids. Any line that opens
-    a `**ACn` bold span but does not match raises Fail."""
+    Lines are `- **ACn** — text`; the id span may carry a parenthetical or several ids. Any line that starts
+    with a `**ACn` bold span (after indent and an optional list marker), or holds a closed bold id span anywhere,
+    but does not match raises Fail; an unclosed `**ACn's ...` later in a line is prose and is skipped."""
     entries = []
     manualEntries = []
     inManual = False
@@ -124,9 +130,9 @@ def criteria_file(text, name="acceptance-criteria.md"):
         if heading_level(line):
             inManual = bool(re.match(r"^#+\s+manual only", line, re.I))
             continue
-        if not ID_START.search(line):
-            continue
         match = ID_LINE.match(line)
+        if not match and not (ID_START.search(line) or ID_SPAN.search(line)):
+            continue
         if not match:
             raise Fail(f"{name}:{number}: line names an acceptance id but does not match "
                        f"`- **ACn** — text`: {line.strip()[:80]}")

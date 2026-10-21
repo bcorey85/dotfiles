@@ -25,7 +25,7 @@ A code review found the change clean. One false line remains: `skill-done` on a 
 
 ## Result
 
-Staged 2026-10-21 in the fourth script fix batch. 335 code-step and plan-format tests pass. The state-machine walk found 0 failing paths. Two of the four new tests fail against the installed script. Installed 2026-10-21.
+Staged 2026-10-21 in the fourth script fix batch. 335 code-step and plan-format tests pass. The state-machine walk found 0 failing paths. Two of the four new tests fail against the installed script. Installed 2026-10-21. The full suite ran 1,481 tests in 39 files. One file failed, on a real plan that the criteria parser refuses, which this batch did not touch.
 
 ## Watch
 

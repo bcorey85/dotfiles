@@ -504,6 +504,15 @@
             "command": "python3 ~/.claude/scripts/code-step.py stop-hook"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v ledger >/dev/null 2>&1 && ledger hook subagent-stop; exit 0",
+            "async": true
+          }
+        ]
       }
     ],
     "Stop": [
@@ -516,6 +525,26 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/scripts/code-step.py say-hook"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v ledger >/dev/null 2>&1 && ledger hook stop; exit 0",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v ledger >/dev/null 2>&1 && ledger hook stop-failure; exit 0",
+            "async": true
           }
         ]
       }

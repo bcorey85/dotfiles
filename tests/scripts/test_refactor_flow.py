@@ -746,7 +746,7 @@ class RefactorFlowTest(unittest.TestCase):
 
     def test_log_rejects_bad_shapes_and_writes_nothing(self):
         self.branchWith({"a.py": "x = 1\n"})
-        bad_findings = ({"class": ""}, {"file": "a b.py"}, {"desc": "two\nlines"}, {"line": "3"}, {"line": True},
+        bad_findings = ({"class": ""}, {"desc": "two\nlines"}, {"line": "3"}, {"line": True},
                         {"severity": None})
         for override in bad_findings:
             payload = {"finder": "smell-reviewer", "lane": "code", "guards": {"duplication": "none"},
@@ -757,6 +757,78 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertEqual(self.log("branch", missing_lane).returncode, 1)
         self.assertEqual(self.rows(self.findings), [])
         self.assertEqual(self.rows(self.escapes), [])
+
+    def test_log_writes_a_file_path_with_spaces_whole_into_both_logs(self):
+        self.branchWith({"a.py": "x = 1\n"})
+        spaced = "src/my dir/a b.py"
+        payload = {"finder": "smell-reviewer", "lane": "code", "guards": {"duplication": "none"},
+                   "findings": [self.finding(file=spaced)]}
+        done = self.log("branch", payload)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual([row["file"] for row in self.rows(self.escapes)], [spaced])
+        finding_files = [row["file"] for row in self.rows(self.findings) if row["kind"] == "finding"]
+        self.assertEqual(finding_files, [spaced])
+
+    def test_log_refuses_a_file_path_that_would_swallow_a_second_field(self):
+        self.branchWith({"a.py": "x = 1\n"})
+        swallowing = ("a.py lane=code", "a.py\tlane=code", "a b.py severity=high")
+        for file in swallowing:
+            payload = {"finder": "smell-reviewer", "lane": "code", "guards": {"duplication": "none"},
+                       "findings": [self.finding(file=file)]}
+            done = self.log("branch", payload)
+            self.assertEqual(done.returncode, 1, file)
+            self.assertIn("`file` must not contain a space followed by `name=`", done.stderr)
+        self.assertEqual(self.rows(self.escapes), [])
+        self.assertEqual(self.rows(self.findings), [])
+
+    def test_log_refuses_a_file_path_with_a_line_break(self):
+        self.branchWith({"a.py": "x = 1\n"})
+        for file in ("a.py\nb.py", "a.py\rb.py"):
+            payload = {"finder": "smell-reviewer", "lane": "code", "guards": {"duplication": "none"},
+                       "findings": [self.finding(file=file)]}
+            done = self.log("branch", payload)
+            self.assertEqual(done.returncode, 1, repr(file))
+            self.assertIn("`file` must be one line", done.stderr)
+        self.assertEqual(self.rows(self.escapes), [])
+        self.assertEqual(self.rows(self.findings), [])
+
+    def logWriters(self):
+        """Each log writer as (name, run(*extra), logged rows), so one rule is asserted against both."""
+        escape_writer = os.environ.get("REFACTOR_LOG_ESCAPE") or str(pathlib.Path(REAL_CLAUDE_DIR) / "scripts" / "log-escape")
+        finding_writer = os.environ.get("REFACTOR_LOG_FINDING") or str(
+            pathlib.Path(REAL_CLAUDE_DIR) / "skills" / "review" / "log-review-finding")
+        env = {**os.environ, "HOME": str(self.home), "REVIEW_ESCAPES_FILE": str(self.escapes),
+               "REVIEW_FINDINGS_FILE": str(self.findings)}
+        escape_base = ["stage_found=refactor", "gate_missed=review", "class=smell", "severity=low", "guard=none"]
+        finding_base = ["kind=finding", "gate=smell-reviewer", "lane=code", "scope=standalone", "phase=-", "iter=0",
+                        "disposition=fix", "class=smell", "line=1", "actioned=none"]
+
+        def runner(writer, base):
+            def run(*extra):
+                return subprocess.run(["bash", writer, *base, *extra], env=env, cwd=self.repo,
+                                      capture_output=True, text=True)
+            return run
+
+        return [("log-escape", runner(escape_writer, escape_base), lambda: self.rows(self.escapes)),
+                ("log-review-finding", runner(finding_writer, finding_base), lambda: self.rows(self.findings))]
+
+    def test_log_writers_refuse_a_space_in_any_value_but_free_text_and_a_clean_file_path(self):
+        for name, run, rows in self.logWriters():
+            for pair in ("lane=two words", "severity=very high", "file=a.py lane=code"):
+                self.assertEqual(run(pair).returncode, 1, f"{name} {pair}")
+            self.assertEqual(rows(), [], name)
+            done = run("file=a b.py", "desc=free text, with spaces")
+            self.assertEqual(done.returncode, 0, f"{name} {done.stderr}")
+            self.assertEqual(rows()[0]["file"], "a b.py", name)
+
+    def test_log_writers_refuse_a_file_path_with_whitespace_then_a_name_or_a_line_break(self):
+        swallowing = ("a.py\tlane=code", "a.py\nlane=code", "a.py\rb.py", "a.py\nb.py", "a.py \tlane=code")
+        for name, run, rows in self.logWriters():
+            for file in swallowing:
+                done = run(f"file={file}", "desc=x")
+                self.assertEqual(done.returncode, 1, f"{name} {file!r}")
+                self.assertIn("file= holds a line break or whitespace then a name=", done.stderr, f"{name} {file!r}")
+            self.assertEqual(rows(), [], name)
 
     def test_log_vocabulary_belongs_to_the_writers_and_a_rerun_writes_only_the_missing_rows(self):
         self.branchWith({"a.py": "x = 1\n"})

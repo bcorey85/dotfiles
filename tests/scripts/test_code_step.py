@@ -3199,6 +3199,47 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("Phase 3 (gate: the data team signs off)", said)
         self.assertIn("Phase 4 (gate: the data team signs off)", said)
 
+    # ---------- the phase-done line and the last-phase wording ----------
+
+    def finish_phase_two(self):
+        self.step("start", self.plan)
+        (self.repo / "backend/src/totals.ts").write_text("export const t = 1\n")
+        self.hook("coder", "BEHAVIOR: totals")
+        self.step("after-coder")
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("after-review")
+
+    def test_a_phase_that_lists_no_verification_commands_says_so_instead_of_zero_green(self):
+        self.finish_phase_one()
+        self.finish_phase_two()
+        done = next(line for line in self.said().splitlines() if line.startswith("Phase 2 marked done"))
+        self.assertIn("lists no verification commands", done)
+        self.assertNotIn("0 command(s) green", done)
+
+    def test_a_phase_that_lists_commands_keeps_the_green_count_in_the_done_line(self):
+        self.finish_phase_one()
+        done = next(line for line in self.said().splitlines() if line.startswith("Phase 1 marked done"))
+        self.assertIn("Verification run: 1 command(s) green (git grep -n --untracked console.log", done)
+        self.assertIn("skipped as covered by the review loop: 1.", done)
+        self.assertNotIn("lists no verification commands", done)
+
+    def test_the_last_open_phase_is_called_the_last_phase_when_no_gated_phase_remains(self):
+        self.mark_phases_done(1, 3)
+        statusLine = "- [ ] Phase 4: Refactor pass - /refactor cleanup sweep (risk: low)\n"
+        closingSection = "## Phase 4: Refactor pass\n\nSweep.\n\n"
+        (self.repo / self.plan).write_text(self.plan_text().replace(statusLine, "").replace(closingSection, ""))
+        self.finish_phase_two()
+        self.assertIn("Phase 2 complete (last phase).", self.said())
+
+    def test_a_phase_is_not_called_the_last_when_only_gated_phases_remain(self):
+        self.finish_phase_one()
+        self.gate_phases(3, 4, condition="the data team signs off")
+        self.finish_phase_two()
+        said = self.said()
+        self.assertIn("Phase 2 complete.", said)
+        self.assertNotIn("(last phase)", said)
+        self.assertIn("The plan is not complete.", said)
+
     def test_a_sign_off_block_starts_the_next_ungated_phase_and_names_the_gated_one_it_skips(self):
         self.gate_phases(2)
         self.finish_phase_one()

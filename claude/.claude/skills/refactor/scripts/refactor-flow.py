@@ -525,9 +525,16 @@ def single_line(container, key, where):
     return value.strip()
 
 
-def no_space(value, key, where):
-    if " " in value:
-        raise Fail(f"{where}: `{key}` must not contain a space (got {value!r})")
+SWALLOWED_PAIR = re.compile(r"[ \t\n\r\f\v][A-Za-z_][A-Za-z0-9_]*=")
+
+
+def one_line_path(value, key, where):
+    """A path may hold spaces: the writers get it as one argument. It must not hold a line break, or a
+    ` name=` that the writers read as a second field swallowed into this one."""
+    if "\n" in value or "\r" in value:
+        raise Fail(f"{where}: `{key}` must be one line")
+    if SWALLOWED_PAIR.search(value):
+        raise Fail(f"{where}: `{key}` must not contain a space followed by `name=` (got {value!r})")
 
 
 def validate_finding(finding, index, mode):
@@ -537,7 +544,7 @@ def validate_finding(finding, index, mode):
 
     for key in ("class", "disposition", "actioned", "file"):
         require_text(finding, key, where)
-    no_space(finding["file"], "file", where)
+    one_line_path(finding["file"], "file", where)
 
     line = finding.get("line")
     if isinstance(line, bool) or not isinstance(line, int):

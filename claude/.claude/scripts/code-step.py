@@ -410,6 +410,15 @@ def put_resumed_coder_back(repoRoot, state):
     save_state(repoRoot, state)
 
 
+def put_resumed_review_back(repoRoot, state):
+    # A review-loop resumed after the wait cap is the pending review again: its hand-back goes to after-review. It
+    # keeps the dispatch time of the loop that went past the cap.
+    state["stage"] = "review"
+    state.pop("resumableReview")
+    state.pop("resumeWaitAt", None)
+    save_state(repoRoot, state)
+
+
 def resumed_agent_pending_stop(agentType, verb):
     # The stop text for a verb that ran while the agent the user resumed has not handed back yet.
     return (f"The resumed {agentType} has not handed back yet. Do not dispatch again and do not run `start`. Once it "
@@ -1972,14 +1981,9 @@ def command_hook():
         if isResumedCoder:
             put_resumed_coder_back(cwd, state)
         if isResumedReview:
-            # A review-loop resumed after the wait cap is the pending review again: its hand-back goes to after-review.
-            # It keeps the dispatch time of the loop that went past the cap.
-            state["stage"] = "review"
-            state.pop("resumableReview", None)
-            state.pop("resumeWaitAt", None)
             state.pop("forkDenied", None)
             state.pop("forkStopBlocks", None)
-            save_state(cwd, state)
+            put_resumed_review_back(cwd, state)
         if agentType == FORK_AGENT_TYPE:
             if is_pinned_fork_event(event, state):
                 deny_early_fork_handback(cwd, state)
@@ -2006,10 +2010,7 @@ def command_after_review(repoRoot, state, args):
         # shared store row, which can come first, does the same here.
         if latest_handback_row(repoRoot, state, REVIEW_LOOP, state.get("dispatchAt") or 0) is None:
             return emit("stop", resumed_agent_pending_stop(REVIEW_LOOP, "after-review"))
-        state.pop("resumableReview")
-        state.pop("resumeWaitAt", None)
-        state["stage"] = "review"
-        save_state(repoRoot, state)
+        put_resumed_review_back(repoRoot, state)
     messages = saved_messages(repoRoot, "review-loop", "review", state.get("reviewReportsFloor", 0))
     if not messages:
         # The shared store can see the hand-back before this script's own hook has written its row.
@@ -2498,9 +2499,13 @@ def finish_phase(repoRoot, state, skipVerification=False):
 
     doneText = f"Phase {number} marked done in {state['plan']}." if number is not None \
         else f"The plan {state['plan']} is finished."
-    doneLine = (f"{doneText} Verification run: "
-                f"{len(verifyResults)} command(s) green ({'; '.join(c for c, _, _ in verifyResults) or 'none'}); "
-                f"skipped as covered by the review loop: {len(skipped)}.")
+    listedItems = [line for line in automated_verification_items(section) if not NO_AUTOMATED_CHECK.match(line)]
+    if not verifyResults and not skipped and not listedItems:
+        doneLine = f"{doneText} The phase lists no verification commands, so none were run."
+    else:
+        doneLine = (f"{doneText} Verification run: "
+                    f"{len(verifyResults)} command(s) green ({'; '.join(c for c, _, _ in verifyResults) or 'none'}); "
+                    f"skipped as covered by the review loop: {len(skipped)}.")
     if reopened:
         doneLine += (f" Closing phase(s) {', '.join(reopened)} were checked and are unchecked again, so they run on "
                      "the new code.")
@@ -2544,6 +2549,9 @@ def block_a(number, riskLabel, manualGroups, nextNumber, gatedText=""):
 def block_b_or_c(block, number, riskLabel, state, manualGroups, nextNumber, gatedText=""):
     behavior = state.get("behavior") or []
     lastText = f"Phase {number} complete (last phase)." if number is not None else "The plan is complete."
+    if number is not None and gatedText:
+        # Open gated phases mean the plan is not complete, so this phase is not the last one.
+        lastText = f"Phase {number} complete."
     isOnlyPhase = number is not None and state.get("onlyPhase") == number
     if isOnlyPhase:
         lastText = f"Phase {number} complete (the phase this run was started for)."

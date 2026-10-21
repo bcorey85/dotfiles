@@ -19,6 +19,10 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
 - `+fast` / `+deep` — semantics defined in `~/.claude/skills/_shared/modifiers.md` (read it when either is present). `+fast` applies to the finder dispatch too (`model: "haiku"`). Never `+fast` in simplify.
 
+## Script
+
+`python3 ~/.claude/skills/refactor/scripts/refactor-flow.py <verb>`. Each verb prints its report and ends with a `NEXT:` line (what you still do) or a `STOP:` line (say why and stop; a repository with no commits ends in `STOP:` too). Exit 1 = bad input: fix the input and re-run; nothing was written.
+
 ## Instructions
 
 1. **Check for modifiers**: `+fast` → `model: "haiku"`. Strip modifiers from subagent prompts.
@@ -31,24 +35,11 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
 3. **Branch audit (default)**: target = entire branch diff. Do NOT ask focus, do NOT read changed files.
 
-   a. **Scope**: `git diff --name-only main...HEAD` (fall back to `master` if no `main`). Empty diff → say so and stop.
+   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor-flow.py branch-prep` and read `~/.claude/skills/_shared/escape-ratchet.md` in the same response. It prints the base it chose (the `branch-base` helper picks it; pass `--base REF` to override), the mechanical-sweep matches, and the finder prompt with the changed-file list (deleted, renamed and binary files marked). `STOP:` on an empty diff, a base with no shared history, or no base found.
 
-   b. **Mechanical sweep**:
+   b. **Finder dispatch**: ONE `smell-reviewer` (pinned; omit `model` unless `+fast`) with the prompt the script printed. Every finding must carry `file:line` (and the sibling/prior-art `file:line` for duplication).
 
-   ```bash
-   git diff main...HEAD -U0 | rg '^\+' | rg -n 'TODO|FIXME|XXX|HACK|console\.(log|debug)|debugger\b|binding\.pry|print\('
-   git diff main...HEAD -U0 | rg -n '^\+\s*(//|#)\s*(if |for |while |return |const |let |var |def |function |import )'
-   ```
-
-   Matches go straight onto the work list (adapt patterns to the repo's language).
-
-   c. **Finder dispatch**: ONE `smell-reviewer` (pinned; omit `model` unless `+fast`) with:
-   - the changed-file list from (a)
-   - the bound: "Your review bound for this run is the whole branch diff (`git diff main...HEAD`), not a phase diff."
-   - the priority: "Prioritize cross-phase smells — things no single-phase view could see (multi-task duplication, drifted naming, orphaned dead code, idiom divergence from unchanged siblings)."
-   - Every finding must carry `file:line` (and the sibling/prior-art `file:line` for duplication).
-
-   d. **Work list** = finder findings + mechanical matches; present as a statement, not a question. `[design-decision]` → user, never coder list. Nothing found → say so and stop.
+   c. **Work list** = finder findings + the sweep matches; present as a statement, not a question. `[design-decision]` → user, never coder list. Nothing found → say so, run step 5's `log` (empty-handed), and stop.
 
 4. **Targeted mode** — when `$ARGUMENTS` names specific code or a specific goal:
    - Read the referenced files; name the goal (structure, readability, perf, maintainability, pattern alignment)
@@ -66,58 +57,41 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
    **After coders complete**, summarize: what, why, structural changes, concerns.
 
-   **Log escapes** (branch-audit mode, branch-loop code only): one line per distinct smell (not per file), `class` off the finding (`duplication` for scope-item-1, `smell` otherwise):
-
-   ```bash
-   ~/.claude/scripts/log-escape stage_found=refactor gate_missed=review class=<smell|duplication> severity=medium lane=<eng-spec|code|other> guard=<...> desc="<one line>" file=<representative path>
-   ```
-
-   `guard` comes from the ratchet — run it per `~/.claude/skills/_shared/escape-ratchet.md`, using its batching rule (one guard per `class` group, not per row).
-
-   `lane` from conversation/planning artifacts. Skip mechanical-sweep matches and legacy targets — old debt is not an escape.
-
-   **Log the finder** (every mode, even empty-handed) per `~/.claude/skills/_shared/finding-log.md` (read it): `gate=` the dispatched finder, `scope=branch-exit` (branch-audit) or `standalone`. Fires on pre-existing code too. Non-blocking.
-
    **Test audit (conditional)**: dispatch `test-reviewer` (pinned; omit `model`) when the refactor could change test guarantees (moved/split/merged logic, behavior-adjacent paths, touched test files, coder uncertainty). SKIP for purely mechanical refactors with green checks. Weakened/altered tests flagged → CRITICAL-rule violation: stop, alert the user.
 
-   **Auto-dispatch review**: tell the user you're auto-dispatching `/review`. Build a handoff block (`~/.claude/skills/_shared/handoff-block.md`: `files`, `tests-run`, `flagged`, `plan_impact`, `iter: 0`) and Skill-invoke `/review` with it + any modifier.
+   **Log and hand off — one call.** Write the JSON file at the path the prep script's `NEXT:` line named (a fresh path for each invocation), and run `python3 ~/.claude/skills/refactor/scripts/refactor-flow.py log --mode <branch|targeted|simplify> --input <file> [--base REF]`. Use one input file per /refactor invocation; re-run `log` on that file (the script skips rows already written for it). In branch mode pass `--base` with the base `branch-prep` printed in its `NEXT:` line. It writes the escape rows, the finder rows and prints the `/review` handoff block. You supply:
+   - `finder` (the dispatched agent; omit in targeted mode), `lane` (required whenever there is a finder; from conversation/planning artifacts), `result` (optional).
+   - `findings`: one entry per finder finding, each `{class, disposition, actioned, file, line, desc}` (`line` 0 when none; `desc` one line). Add `escape: true` plus `severity` for each distinct smell in branch-loop code (branch-audit: `duplication` for scope-item-1, `smell` otherwise; simplify: `complexity`). One entry per smell, not per file. Never `escape` mechanical-sweep matches or legacy targets — old debt is not an escape.
+   - `guards`: one guard per escape `class` group, from the ratchet (`escape-ratchet.md`, read in step 3a; read it now in simplify mode). The script refuses an escape class with no guard.
+   - `handoff`: `files` (`{path, change}`, one line each), `tests_run` (exact command + exit code, or `none`), `flagged`, optional `plan_impact` (may span lines). Add `modifier` if one was given.
+
+   If it prints no handoff and code changed, add `handoff` to the file and run `python3 ~/.claude/skills/refactor/scripts/refactor-flow.py handoff --input <file>`; that prints the block and writes nothing. If `log` exits 2 (a writer refused a row), still follow its `NEXT:` and tell the user which row failed.
+
+   **Auto-dispatch review**: tell the user you're auto-dispatching `/review`, then Skill-invoke `/review` with the handoff block the script printed + any modifier.
 
 6. **Audit mode — global DRY / pattern sweep of pre-existing code. Report-only: no coders, no `/review`, no code changes.**
 
-   a. **Mechanical clone detection first**. If node is available, verify syntax then run jscpd via npx:
+   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor-flow.py audit-prep <target-dir>`. It runs jscpd (or prints "no mechanical detection — agent prior-art search only") and prints the finder prompt, with the candidate clone pairs when there are any.
 
-   ```bash
-   npx --yes jscpd --help >/dev/null 2>&1 && npx --yes jscpd <target-dir> --min-tokens 70 --reporters consoleFull > /tmp/jscpd.log; # then read the log
-   ```
-
-   No node / detector fails → skip it, note "no mechanical detection — agent prior-art search only" in the report, and rely on (b).
-
-   b. **Judgment dispatch**: ONE `smell-reviewer` (omit `model` unless `+fast`) with:
-   - the bound: "Audit mode: your bound is the existing code of `<target>` — pre-existing smells ARE the target this run, per your audit-bound clause."
-   - the candidate clone pairs from (a), if any: "Judge each candidate against the anti-churn line — must-stay-in-sync (flag, name the extraction) vs looks-a-bit-similar (suppress)."
-   - the ask: duplication across files, pattern/idiom drift between sibling modules, wrong-altitude code — each finding with both `file:line` sites and the consolidation it proposes. Cross-module consolidations or anything moving a public contract → `[design-decision]`.
+   b. **Judgment dispatch**: ONE `smell-reviewer` (omit `model` unless `+fast`) with the printed prompt.
 
    c. **Report the work list.** For each surviving finding: the sites, the proposed consolidation, and its route — small single-module extraction → a follow-up **targeted `/refactor`** invocation; `[design-decision]` / cross-module / public-contract → **`/eng-spec`**.
 
-   d. **No escape logging.**
+   d. **No escape logging.** Log the finder with `log --mode audit` (JSON as in step 5, with `target`: `["<target-dir>"]`, no `escape`, no `handoff`).
 
 7. **Simplify mode — what could be DELETED if this module were shaped differently.** Fixes are opt-in per finding, never wholesale.
 
-   a. **Resolve the bound**: the named module, directory, or file set. Expand to a concrete file list (`git ls-files <target>`). Over ~25 source files: split, say which slice runs.
+   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor-flow.py simplify-prep <target...>`. It expands the target with `git ls-files`; over 25 files it splits and runs slice 1 — tell the user which slice runs (`--slice N` for the others).
 
    b. **Do NOT read the files yourself.**
 
-   c. **Finder dispatch**: ONE `complexity-reviewer` (pinned; omit `model`) with:
-   - the file list from (a) and the bound: "Simplify mode: your bound is the whole existing code of `<target>`. Pre-existing shape IS the target."
-   - the ask, verbatim from its scope: branching a data model collapses, indirection with one implementation, configurability nothing configures, guards a stronger invariant kills, values with more than one owner.
-   - its oracle + magnitude floor are hard gates (quantified disappearance, enabling change, unreachability proof, cost clause).
-   - any project constraint you already know that makes a shape mandatory (a required layer, a framework seam, a public contract).
+   c. **Finder dispatch**: ONE `complexity-reviewer` (pinned; omit `model`) with the printed prompt. Add any project constraint you already know that makes a shape mandatory (a required layer, a framework seam, a public contract).
 
    d. **Triage before offering**: drop oracle-failures, under-floor, and irreducible-complexity collapses. `[design-decision]` (contracts, cross-module, migrations, test-assertion changes) → user via AskUserQuestion, never a coder list.
 
-   e. **Present survivors for the user to choose** (sites, quantified disappearance, enabling change, cost). Nothing found → say so and stop.
+   e. **Present survivors for the user to choose** (sites, quantified disappearance, enabling change, cost). Nothing found → say so, run `log --mode simplify` (empty-handed, with `target`), and stop. The user picks none → log every finder finding anyway (declined survivors `actioned=none`, triage drops `actioned=skipped_fp`) with `target`, and stop. Empty-handed means the finder returned nothing.
 
-   f. **Dispatch chosen findings** via step 5 with two changes: test audit **mandatory**, escape `class=complexity` for branch-loop code only.
+   f. **Dispatch chosen findings** via step 5 with two changes: test audit **mandatory**, escape `class=complexity` for branch-loop code only. The `log` call in step 5 carries `--mode simplify` and `target` = the files listed in the printed prompt (the slice that ran).
 
 ## Code to refactor
 

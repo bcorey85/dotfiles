@@ -2,10 +2,12 @@
 # log-review-metrics — append one JSONL line per /review run to the metrics log
 #
 # usage: log-review-metrics key=value [key=value ...]
-#   e.g. log-review-metrics repo=myapp iter=2 critical=0 high=1 medium=3 low=0 \
+#   e.g. log-review-metrics iter=2 critical=0 high=1 medium=3 low=0 \
 #          fixed=2 skipped_fp=1 ask=0 result=PASS
 #
 # Numeric-looking values are stored as numbers, everything else as strings.
+# A "repo" field is added from scripts/repo-name (the canonical repo, not the
+# worktree directory); a caller-passed repo= is kept only if repo-name fails.
 # A "date" field (UTC ISO 8601) is always added. Output file:
 #   $REVIEW_METRICS_FILE or ~/.claude/review-metrics.jsonl
 # The reserved key out=<path> redirects output to a different JSONL (it is
@@ -45,6 +47,25 @@ for kv in "$@"; do
   v="${kv#*=}"
   json=$(jq -c --arg k "$k" --arg v "$v" '.[$k] = ($v | (tonumber? // .))' <<< "$json")
 done
+
+# The checkout is not the repo: in a linked worktree a caller's
+# `basename $(git rev-parse --show-toplevel)` is the worktree directory, and the
+# session guard refuses command text that holds a substitution. Derive the
+# canonical name here.
+script_dir=$(dirname -- "${BASH_SOURCE[0]}")
+repo_name_script="$script_dir/../../scripts/repo-name"
+if canonical=$("$repo_name_script" 2>/dev/null); then
+  json=$(jq -c --arg r "$canonical" '.repo = $r' <<< "$json")
+fi
+
+# The caller's shell may leave ~ after = unexpanded (zsh does), so expand a
+# bare ~ or a leading ~/ here (~user is left alone).
+case "$out" in
+  "~") out="$HOME" ;;
+  "~/"*) out="$HOME/${out#"~/"}" ;;
+esac
+
+"$script_dir/../../scripts/telemetry_enabled.sh" 2>/dev/null || exit 0
 
 printf '%s\n' "$json" >> "$out"
 echo "logged → $out"

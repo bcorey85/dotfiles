@@ -63,8 +63,6 @@ jq -n --arg f "<target>" --arg b "$HOME/.claude/calibration/$(basename <target>)
   > ~/.claude/calibration-lock.json
 ```
 
-The lock is the safety net: `calibration-guard.sh` (SessionStart) shouts if a future session starts with one present.
-
 ## Step 2 — Apply the mutation
 
 Use **Edit**. Exactly the mutation you were given, one minimal change, **no comment marking

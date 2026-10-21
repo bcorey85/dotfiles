@@ -11,7 +11,7 @@ watches: []
 
 ## Change
 
-`scripts/code-step.py` (draft, not yet installed):
+`scripts/code-step.py`:
 
 - `parse_plan` is the one reader of a plan's Phase Status list and phase sections. A phase id is letters and digits joined by `.` or `-`, and it holds at least one digit (`10.5`, `8.6b`, `P4`, `6A`). Section headings at levels 2 to 4 match.
 - A plan that the grammar cannot read stops the run with the file, the line and the expected form. The failure kinds are an unparsed status line, a duplicate id, a coding phase with no section, and a section with no status line. A closing phase needs no section.
@@ -19,7 +19,7 @@ watches: []
 - Closing phases (Refactor pass, Test audit, Verify pass, Recap) match by their place in the status list, not by title. They run only after every coding phase is done. When a coding phase is added or reopened after a closing phase ran, the closing phases are unchecked and run again. Lines added to a phase during a run go to an addendum coder.
 - The plan census in the intake prints one line and exits 0 when the installed code-step has no `parse_plan`.
 
-Settings entry the user adds (PostToolUse): `{"matcher":"Write|Edit","hooks":[{"type":"command","command":"python3 ~/.claude/scripts/code-step.py plan-hook"}]}`.
+Settings entry (PostToolUse): `{"matcher":"Write|Edit","hooks":[{"type":"command","command":"python3 ~/.claude/scripts/code-step.py plan-hook"}]}`.
 
 ## Evidence
 
@@ -31,7 +31,7 @@ Tests: 99 pass against the draft, with a walk over every state and verb (288,788
 
 ## Result
 
-Not installed. The intake's plan census counts the id and heading shapes at work.
+Installed 2026-10-20 with the `plan-hook` settings entry. The intake's plan census counts the id and heading shapes at work.
 
 ## Watch
 

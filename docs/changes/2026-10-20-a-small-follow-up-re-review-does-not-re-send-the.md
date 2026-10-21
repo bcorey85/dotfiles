@@ -12,7 +12,7 @@ watches: ["structure-pass-skip-escapes"]
 ## Change
 
 - `agents/review-loop.md` Step 3a: the structure and test reviewers go out beside the first review only when the args hold no `structure-pass: skip` line.
-- `scripts/code-step.py` (draft, not yet installed): the review dispatch after an asks coder or a ruling adds `structure-pass: skip` when a review already ran in the phase and the follow-up coder added under 40 non-test lines and no new non-test source file. A ruling with no coder gets the line. A first review never gets it. The round cap reset is unchanged.
+- `scripts/code-step.py`: the review dispatch after an asks coder or a ruling adds `structure-pass: skip` when a review already ran in the phase and the follow-up coder added under 40 non-test lines and no new non-test source file. A ruling with no coder gets the line. A first review never gets it. The round cap reset is unchanged.
 
 The code reviewer still reads every follow-up change, with its own structure step.
 
@@ -24,7 +24,7 @@ Work logs, excluding the dotfiles and agent-evals repos, on re-reviews at round 
 
 ## Result
 
-The review-loop line is live. It has no effect until the code-step draft is installed.
+Installed 2026-10-20. The review-loop line and the code-step header are both live.
 
 ## Watch
 

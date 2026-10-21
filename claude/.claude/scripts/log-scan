@@ -49,6 +49,8 @@
 # Output file: $SCAN_RUNS_FILE or ~/.claude/scan-runs.jsonl
 set -euo pipefail
 
+script_dir=$(dirname -- "${BASH_SOURCE[0]}")
+
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 out="${SCAN_RUNS_FILE:-$HOME/.claude/scan-runs.jsonl}"
 
@@ -101,6 +103,8 @@ if [ "$code" = "0" ] || [ "$code" = "1" ]; then
     exit 1
   fi
 fi
+
+"$script_dir/telemetry_enabled.sh" 2>/dev/null || exit 0
 
 printf '%s\n' "$json" >> "$out"
 echo "logged → $out"

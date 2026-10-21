@@ -4,79 +4,73 @@ description: Reconcile the shipped changes against the eng-spec ticket + plan to
 allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion, Skill]
 ---
 
-# Verify Completeness
+# Verify Branch
 
-Independently reconcile what shipped on this branch against the ticket's requirements and the plan's per-phase success criteria. Report unbuilt or partial items before the PR opens.
+Two checks, in order, on every path to branch end: a branch-wide correctness review, then a completeness reconciliation (did we build what the ticket and plan called for). Direct calls and `/code`'s Verify pass run the same thing.
 
-## Why
+`/code`'s `## Phase Status` checkboxes are self-reported. This skill checks the real diff.
 
-Nothing in the flow checks **completeness** (did the diff satisfy every phase + ticket requirement?). `/code`'s `## Phase Status` checkboxes are self-reported — `/verify-branch` checks the real diff instead.
-
-## When it runs
-
-After `/code`+`/review` report done, **before the PR opens**. Static plan↔diff reconciliation only (behavioral verification already ran per-phase); on clean, assembles the **review packet** centered on the **human smoke-test checklist**.
-
-## Resolve the task directory
-
-Shared resolver (do NOT reimplement):
+## Step 0: prep
 
 ```bash
-~/.claude/scripts/resolve-task-dir.sh "$ARGUMENTS"
+~/.claude/scripts/verify-prep $ARGUMENTS
 ```
 
-Exit 0 → an `/eng-spec` task directory: the ticket is `DIR/00-ticket.md`, the plan is `DIR/spec.md`. Exit 5 → a legacy flat eng-spec file: it is both ticket (requirements/ACs section) and plan. Exit 3 → ask which match. Exit 4 → no plan; run ticket-only.
+It resolves the task dir, reads the criteria, measures the diff, checks whether a branch-wide review ran since the last change, and prints the dispatches. Do the steps it prints, in order. Do not re-derive any of it.
 
-**The ticket's ACs are always in scope, plan or no plan.** Ticket-only: fetch the ticket per `~/.claude/skills/_shared/jira-ticket.md` (required-ticket caller), write its raw fields to `<scratchpad>/<KEY>-ticket.md`, and dispatch `plan-verifier` with that ticket path and `plan: none`. Never check the ACs yourself in place of the gate.
+| Exit | Meaning                                                                                            | Do                                                                                                                                                                                 |
+| ---- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | ready                                                                                              | follow the printed steps                                                                                                                                                           |
+| 2    | loud failure (no criteria found, missing file, no base, empty diff, detached HEAD, unknown option) | report the message to the user; never treat it as a pass                                                                                                                           |
+| 3    | several task dirs                                                                                  | ask which; rerun with the answer                                                                                                                                                   |
+| 4    | no plan                                                                                            | ticket-only: fetch the ticket per `~/.claude/skills/_shared/jira-ticket.md`, write its raw fields to `<scratchpad>/<KEY>-ticket.md`, rerun `verify-prep --ticket-file <that path>` |
 
-## Inputs
+For a sprint-branch cut pass `--base <ref>`. The ticket's ACs are always in scope, plan or no plan. Never check them yourself in place of the gate.
 
-| File           | Read for                                                                    |
-| -------------- | --------------------------------------------------------------------------- |
-| `00-ticket.md` | Acceptance criteria / requirements — always in scope, verbatim              |
-| `spec.md`      | `Phase Status`, each phase's `Success Criteria`, and `What We're NOT Doing` |
+## Step 1: branch-wide review (only when prep says it has not run)
 
-This is the one step that DOES read the plan in full (contrast `/adr`, which forbids it).
+1. Dispatch `code-reviewer` with the exact prompt prep prints.
+2. Route its findings with `/review` and fix them.
+3. After the fixes, log the review with every finding the reviewer reported, one entry each (`[]` when none): `~/.claude/scripts/verify-log review --result <PASS|PASS WITH WARNINGS|NEEDS CHANGES> --rows <file|->`. Each entry is `{"desc": "<one line>", "file": "<path>", "line": 0, "class": "<bug|smell|...>", "actioned": "<fixed|skipped_fp|deferred|ask|none>"}`. `actioned` is required, and a `fix` finding (the default disposition) cannot have `actioned` `none`. `class` and `disposition` are optional.
+4. Rerun `verify-prep`. It must now report the review as ran. Do not continue until it does.
 
-## Process
+The log row records the content of the tree, apart from the task dir. Any later change to the diff or to an untracked file (an edit, a deletion, a rename, a new file) makes the review stale: prep says so and asks for the review again. `verify-log` exits 2 with "rerun verify-prep" when the tree changed since prep or no logged review covers it, and logs nothing. Only a review logged by `verify-log review` counts.
 
-1. Resolve the directory; locate ticket + plan.
-2. Determine the change set: everything on this branch (committed + uncommitted) vs its base branch. Default base is merge-base against origin master or main, then triple-dot diff plus working-tree changes; adjust the base for sprint-branch cuts.
-3. **Dispatch `plan-verifier`** (pinned; omit `model`) with `scope: branch`, ticket path, plan path, diff scope — nothing else. Its ONLY run site.
+## Step 2: plan-verifier
 
-   **`N/A — no criteria in scope`** is not a pass. It means the plan gave the gate nothing to check; surface that to the user rather than reporting completeness.
+Dispatch `plan-verifier` (pinned; omit `model`) with the exact payload prep prints. It is the only run site. Nothing else goes in the prompt.
 
-4. **Log the gate BEFORE presenting.** Per `~/.claude/skills/_shared/finding-log.md` (read it): `gate=plan-verifier lane=verify scope=branch-exit`. One `kind=run` row every invocation (clean rows give the denominator) + one `kind=finding` row per `partial`/`missing` (`class=plan-drift`). Non-blocking — write the row while the reconciliation is in front of you.
+`N/A — no criteria in scope` is not a pass. The plan gave the gate nothing to check; surface it to the user. Log it with `verify-log --rows - --result NA` and `[]` as the rows.
 
-5. Present the checklist. Route per the result.
+## Step 3: log
 
-## Reconciliation output
+Convert the verifier's verdict table to a JSON list and pipe it in:
 
-Present what it returns. Downstream you consume: verdict table, AC result, `needs-manual` items (→ smoke-test checklist), denominator.
+```bash
+~/.claude/scripts/verify-log --rows - <<'JSON'
+[{"item": "<criterion>", "verdict": "done|partial|missing|failed-check|needs-manual|overridden",
+  "file": "<path>", "line": 0, "evidence": "<one line>", "signoff": "<who, when, their words; overridden only>"}]
+JSON
+```
+
+One row per verdicted item, verbatim, plus one `failed-check` row for each ✗ automated check in the verifier's Job 2 table (`item` is the command, `evidence` its failure). Add a `missing` row for each id the verifier marks ⚠️ MISSING; name the id at the start of `item` (`AC3: ...`). An id from the criteria file with no row at all is logged as `missing` by the script. `line` is a number or a range such as `12-20`. The script writes the run row and a `plan-drift` finding row per gap, and prints the result. A `partial`, a `missing`, a `failed-check`, and an `overridden` row without a quoted sign-off are gaps. An N/A verdict exits 3: tell the user, do not report completeness. Empty rows without `--result NA` exit 2.
 
 ## Routing
 
-- **Gaps found (`partial`/`missing`/failing check, or a ticket AC overridden without the user's quoted sign-off)**: list them, log each as a drift-gate escape:
-
-  ```bash
-  ~/.claude/scripts/log-escape stage_found=verify gate_missed=drift-gate class=plan-drift severity=<high|medium> lane=eng-spec guard=<...> desc="<one line>" file=<path>
-  ```
-
-  `guard` comes from the ratchet — run it per `~/.claude/skills/_shared/escape-ratchet.md`, using its batching rule across the gap list.
-
-  Then offer to dispatch `/fix` (or `/code` for net-new work) to close them. Re-run `/verify-branch` after.
-
-- **Clean**: first the **branch-final smell gate** — a bare `/refactor` must have run since the last code change; if not, run it now and let it converge. `/verify-branch` stays read-only and withholds the packet without it. Then build the **review packet**:
-  1. Assemble in order: (a) completeness table; (b) **smoke-test checklist** — every AC restated as a user-observable check + every `human-only` Manual Verification item + `needs-manual` reconciliation items, each with concrete steps; (c) **diff hotspots** — the 3–5 heaviest files ("read these first, skim the rest"); (d) pointer to agent-verified evidence for spot-checking. Do NOT situate here — that's `/orient`, on demand.
-  2. Before presenting the packet, `nvim-jump` its evidence per `~/.claude/skills/_shared/nvim-jump.md`: each completeness-table `file:line` in table order with `--note "<criterion>: <what the line proves>"`, then each covering test's `file:line` with `--note "<AC id>: <what it asserts>"`.
-  3. Point forward: run the smoke-test checklist, then open the PR yourself — agents never open PRs. After the PR exists, `/adr`.
+- **Gaps**: list them. Pick the guard rung per `~/.claude/skills/_shared/escape-ratchet.md` (batching rule across the list), add `"guard": "<rung>"` and `"severity": "<high|medium|low>"` to those rows, then rerun the same command with `--escapes-only` to log the drift-gate escapes. An escape already logged is not logged twice, and `--escapes-only` prints only the escapes it logged. Offer `/fix` (or `/code` for net-new work). Re-run `/verify-branch` after.
+- **Clean**: the **branch-final smell gate** first. Run a bare `/refactor` now and let it converge, unless you can show one ran since the last code change. Then build the **review packet** from the checklist skeleton `verify-log` printed:
+  1. (a) the completeness table; (b) the smoke-test checklist: fill the `steps:` of every line with concrete steps; (c) the diff hotspots it listed ("read these first, skim the rest"); (d) a pointer to agent-verified evidence. Do NOT situate here (`/orient`, on demand).
+  2. Before presenting, `nvim-jump` the evidence per `~/.claude/skills/_shared/nvim-jump.md`: each completeness-table `file:line` in table order with `--note "<criterion>: <what the line proves>"`, then each covering test's `file:line` with `--note "<AC id>: <what it asserts>"`.
+  3. Point forward: run the smoke-test checklist, then open the PR yourself. Agents never open PRs. After the PR exists, `/adr`.
 
 ## What NOT to do
 
-- **Don't review quality** — that's `/review`; stay on "is it built".
-- **Don't drive a browser or run the app** — smoke testing is the user's via the checklist; your scope is Automated Verification commands only.
-- **Don't edit code or tests** — read-only; report and route.
-- **Don't trust `Phase Status` checkboxes** — verify the diff.
-- **Don't flag plan items in `What We're NOT Doing`** — deliberate cuts, not omissions. A ticket AC there is the exception: only the user's explicit sign-off cuts one.
+- Don't review quality yourself; the code-reviewer dispatch in Step 1 does.
+- Don't drive a browser or run the app. Smoke testing is the user's via the checklist.
+- Don't edit code or tests in this skill. Fixes go through `/review`, `/fix` or `/code`.
+- Don't trust `Phase Status` checkboxes.
+- Don't flag plan items in `What We're NOT Doing`. A ticket AC there is the exception: only the user's explicit sign-off cuts one.
+- Don't skip Step 1 because the phases were reviewed. Only prep's "ran" report skips it.
 
 ## Arguments
 

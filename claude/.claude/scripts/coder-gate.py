@@ -26,6 +26,12 @@ import subprocess
 import sys
 import time
 
+try:
+    from telemetry_enabled import telemetry_enabled
+except ImportError:
+    def telemetry_enabled():
+        return False
+
 MAX_DENIES = 3
 MAX_GATE_AGE_SECONDS = 6 * 3600
 COMMAND_TIMEOUT_SECONDS = 1200
@@ -252,12 +258,19 @@ def stamped_handback(toolInput, coder):
                                    "updatedInput": stampedInput}}
 
 
+def append_gate_log(row):
+    if not telemetry_enabled():
+        return
+
+    with GATE_LOG.open("a") as logFile:
+        logFile.write(json.dumps(row) + "\n")
+
+
 def log_gate_run(gate, coder, seconds, failedCount):
     repoName = pathlib.Path(gate["repoRoot"]).name
     row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "repo": repoName, "result": coder["result"],
            "run": coder["runs"], "seconds": seconds, "failed": failedCount}
-    with GATE_LOG.open("a") as logFile:
-        logFile.write(json.dumps(row) + "\n")
+    append_gate_log(row)
 
 
 def run_hook():
@@ -317,8 +330,7 @@ def run_bash_hook():
 
     repoName = pathlib.Path(event.get("cwd") or ".").name
     row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "repo": repoName, "result": "whole-package-deny"}
-    with GATE_LOG.open("a") as logFile:
-        logFile.write(json.dumps(row) + "\n")
+    append_gate_log(row)
 
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                              "permissionDecisionReason": WHOLE_PACKAGE_REASON}}))

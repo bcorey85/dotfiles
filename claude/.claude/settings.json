@@ -312,6 +312,15 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/scripts/code-step.py plan-hook"
+          }
+        ]
       }
     ],
     "PostToolUseFailure": [
@@ -403,6 +412,10 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/scripts/review-loop-gate.py"
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/scripts/handback.py hook dispatch"
           }
         ]
       },
@@ -426,6 +439,10 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/scripts/code-step.py hook"
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/scripts/handback.py hook handback"
           }
         ]
       }
@@ -483,6 +500,14 @@
             "command": "python3 ~/.claude/scripts/review-loop-gate.py"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/scripts/code-step.py stop-hook"
+          }
+        ]
       }
     ],
     "Stop": [
@@ -491,6 +516,10 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/scripts/format-changed.py"
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/scripts/code-step.py say-hook"
           }
         ]
       }

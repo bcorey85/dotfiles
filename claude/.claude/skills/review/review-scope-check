@@ -13,6 +13,10 @@ work=$(mktemp -d "${1:-${TMPDIR:-/tmp}}/review-scope-check.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 fails=0
 
+if [ -z "${BRANCH_BASE_SCRIPT:-}" ] && [ -x "$here/branch-base" ]; then
+  export BRANCH_BASE_SCRIPT="$here/branch-base"
+fi
+
 pass() { printf 'ok    %s\n' "$1"; }
 fail() { printf 'FAIL  %s\n     %s\n' "$1" "$2"; fails=$((fails + 1)); }
 
@@ -30,8 +34,8 @@ refute() { # name haystack needle
   esac
 }
 
-newrepo() { # dir
-  mkdir -p "$1" && git -C "$1" init -q -b main
+newrepo() { # dir [branch]
+  mkdir -p "$1" && git -C "$1" init -q -b "${2:-main}"
   git -C "$1" config user.email check@example.invalid
   git -C "$1" config user.name check
   printf 'one\n' >"$1/kept.txt"
@@ -86,10 +90,20 @@ refute "paths: excluded dir" "$out" "b/f.txt"
 "$scope" nonsense=1 >/dev/null 2>&1 && fail "bad key: exit 2" "exited 0" || pass "bad key: exit 2"
 
 # --- family 6: invocation log -------------------------------------------------
+unset CLAUDE_TOOLKIT_TELEMETRY  # a session that exports it would turn the switch on for "switch absent" below
 hook="$HOME/.claude/scripts/log-skill-use.py"
 log="$work/usage.jsonl"
+fakehome="$work/home"
+mkdir -p "$fakehome/.claude"
+[ -x "$here/../../scripts/telemetry_enabled.sh" ] || fail "helper missing" "$here/../../scripts/telemetry_enabled.sh"
 
-out=$(SKILL_USAGE_FILE="$log" "$scope" root="$work/wt" caller=review)
+# switch absent: no caller line
+: >"$log"
+HOME="$fakehome" SKILL_USAGE_FILE="$log" "$scope" root="$work/wt" caller=review >/dev/null
+[ ! -s "$log" ] && pass "log: switch absent, no line" || fail "log: switch absent, no line" "got $(wc -l <"$log")"
+touch "$fakehome/.claude/toolkit-telemetry"
+
+out=$(HOME="$fakehome" SKILL_USAGE_FILE="$log" "$scope" root="$work/wt" caller=review)
 refute "log: nothing on stdout"  "$out" '"skill"'
 assert "log: scope still printed" "$out" "SHORTSTAT="
 [ "$(wc -l <"$log")" = 1 ] && pass "log: exactly one line" \
@@ -103,7 +117,7 @@ assert "log: repo is the basename" "$line" '"repo":"wt"'
 if [ -x "$hook" ] && command -v jq >/dev/null 2>&1; then
   ref="$work/ref.jsonl"
   printf '{"hook_event_name":"PostToolUse","tool_input":{"skill":"review-loop"}}' \
-    | SKILL_USAGE_FILE="$ref" CLAUDE_PROJECT_DIR="$work/wt" python3 "$hook" >/dev/null 2>&1
+    | HOME="$fakehome" SKILL_USAGE_FILE="$ref" CLAUDE_PROJECT_DIR="$work/wt" python3 "$hook" >/dev/null 2>&1
   want=$(jq -r 'keys_unsorted | join(",")' "$ref" 2>/dev/null)
   got=$(jq -r 'keys_unsorted | del(.[-1:][]) | join(",")' "$log" 2>/dev/null)
   [ -n "$want" ] && [ "$want" = "$got" ] && pass "log: key order matches the hook" \
@@ -116,8 +130,54 @@ else
 fi
 
 : >"$log"
-out=$("$scope" root="$work/wt" >/dev/null; SKILL_USAGE_FILE="$log" "$scope" root="$work/wt" >/dev/null; wc -l <"$log")
+out=$(HOME="$fakehome" "$scope" root="$work/wt" >/dev/null; HOME="$fakehome" SKILL_USAGE_FILE="$log" "$scope" root="$work/wt" >/dev/null; wc -l <"$log")
 [ "$out" = 0 ] && pass "log: no caller, no line" || fail "log: no caller, no line" "got $out"
+
+# --- family 7: pushed feature branch --------------------------------------------
+# push -u makes origin/feature the upstream; MERGE_BASE must still be the fork point
+git init -q --bare -b main "$work/origin.git"
+git clone -q "$work/origin.git" "$work/pushed" 2>/dev/null
+git -C "$work/pushed" config user.email check@example.invalid
+git -C "$work/pushed" config user.name check
+git -C "$work/pushed" checkout -q -b main 2>/dev/null
+printf 'one\n' >"$work/pushed/kept.txt"
+git -C "$work/pushed" add -A && git -C "$work/pushed" commit -qm base
+git -C "$work/pushed" push -q -u origin main
+git -C "$work/pushed" remote set-head origin main >/dev/null 2>&1
+fork=$(git -C "$work/pushed" rev-parse origin/main)
+git -C "$work/pushed" checkout -q -b feature
+printf 'f1\n' >"$work/pushed/f1.txt" && git -C "$work/pushed" add -A && git -C "$work/pushed" commit -qm f1
+git -C "$work/pushed" push -q -u origin feature
+printf 'f2\n' >"$work/pushed/f2.txt" && git -C "$work/pushed" add -A && git -C "$work/pushed" commit -qm f2
+git -C "$work/pushed" push -q
+tip=$(git -C "$work/pushed" rev-parse origin/feature)
+out=$("$scope" root="$work/pushed")
+assert "pushed branch: MERGE_BASE is the origin/main fork point" "$out" "MERGE_BASE=$fork"
+refute "pushed branch: MERGE_BASE is not the origin/feature tip" "$out" "MERGE_BASE=$tip"
+
+# --- family 8: default branch with an unpushed commit ---------------------------
+git -C "$work/pushed" checkout -q main
+printf 'm2\n' >"$work/pushed/m2.txt" && git -C "$work/pushed" add -A && git -C "$work/pushed" commit -qm m2
+out=$("$scope" root="$work/pushed")
+assert "default branch: MERGE_BASE is the pushed tip" "$out" "MERGE_BASE=$fork"
+
+# --- family 9: branch-base missing or failing --------------------------------------
+out=$(BRANCH_BASE_SCRIPT=/nonexistent "$scope" root="$work/pushed" 2>"$work/err.txt")
+assert "no branch-base: MERGE_BASE empty" "$out" "MERGE_BASE=
+"
+assert "no branch-base: other sections still printed" "$out" "SHORTSTAT="
+assert "no branch-base: reason on stderr" "$(cat "$work/err.txt")" "MERGE_BASE empty: not executable at /nonexistent"
+out=$(BRANCH_BASE_SCRIPT=/bin/false "$scope" root="$work/pushed" 2>"$work/err.txt")
+assert "failing branch-base: exit code on stderr" "$(cat "$work/err.txt")" "MERGE_BASE empty: branch-base exit 1"
+
+newrepo "$work/nobase" trunk
+git -C "$work/nobase" checkout -q -b topic
+out=$("$scope" root="$work/nobase" 2>"$work/err.txt")
+assert "no base found: MERGE_BASE empty" "$out" "MERGE_BASE=
+"
+assert "no base found: reason on stderr" "$(cat "$work/err.txt")" "MERGE_BASE empty: branch-base exit 1: no base found for topic"
+refute "no base found: no instruction to ask the user" "$(cat "$work/err.txt")" "ask the user"
+refute "no base found: no STOP prefix" "$(cat "$work/err.txt")" "STOP:"
 
 if command -v shellcheck >/dev/null 2>&1; then
   shellcheck -S warning "$scope" && pass "shellcheck clean" || fail "shellcheck clean" "see output"

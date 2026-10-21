@@ -2,17 +2,25 @@
 """code-step.py: the routing of /code as a script. The forked Sonnet subagent of /code runs one verb, reads its
 ACTION lines, does exactly that, and runs the next verb. The script builds every prompt and every argument.
 
-  code-step.py start [<plan>] [+fast|+deep]   next phase of the plan: checks, gate, packet, the exact coder dispatch
+  code-step.py start [<plan>] [+fast|+deep] [--phase <id>]
+                                                next phase of the plan (or the named one): checks, gate, packet, the
+                                                exact coder dispatch. `start --help` prints usage.
   code-step.py start --task "<text>"           planless work: the coder dispatch without gate or packet
-  code-step.py after-coder                      clear the gate, find PLAN-IMPACT, build the exact review-loop dispatch
-  code-step.py decide <adopt|keep|discuss> [--ruling "<the user's words>"]
-                                                record the user's ruling when the code and the plan disagree
+  code-step.py after-coder                      wait for the coder's hand-back, clear the gate, build the exact
+                                                review-loop dispatch (or the plan-disagreement modal)
+  code-step.py decide <adopt|keep> --by <user|session> --ruling "<the words>"
+                                                only --by user is the user's own word: a session ruling never changes a criterion
+  code-step.py decide discuss                   ask the user how to rule when the code and the plan disagree; records nothing
   code-step.py after-plan-edit                  the coder rewrote the plan to an adopted change: build the review dispatch
   code-step.py after-review                    route on the loop packet; on converged/deferred also run the phase gates
   code-step.py asks-done <outcome>...           log the user's answer to each ask[] entry, then run the phase gates
   code-step.py skill-done <pass|fail>          a closing phase's skill returned: mark it done (pass) or stop (fail)
   code-step.py verify                           re-run the phase gates after a failed Automated Verification was fixed
+  code-step.py review-again                     dispatch the review loop again on the same diff, after its packet did not parse
+  code-step.py tick <phase id>                  mark a phase done that the user finished outside /code
   code-step.py hook                             PreToolUse hook on SubagentHandback: save coder and review-loop messages
+  code-step.py stop-hook                        SubagentStop hook: keep the /code fork from stopping while a dispatch is open
+  code-step.py plan-hook                        PostToolUse hook on Edit|Write: reject a plan edit that does not parse
   code-step.py status                           print the saved state
 
 One coder runs per phase. The current skill's two parallel coders for deliverables that share no file are dropped by design.
@@ -27,8 +35,12 @@ import shutil
 import signal
 import subprocess
 import sys
-import textwrap
 import time
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import plan_format
+import script_utils
+from plan_format import HEADING, PHASE_HEADING, PHASE_ID
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("CODE_STEP_CLAUDE_DIR", pathlib.Path.home() / ".claude"))
 SCRIPTS_DIR = CLAUDE_DIR / "scripts"
@@ -36,21 +48,38 @@ SELF_COMMAND = "python3 " + str(pathlib.Path(__file__).resolve())
 INSTALLED_COMMAND = "python3 ~/.claude/scripts/code-step.py"
 PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
 DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
-CLOSING_TITLE_END = r"\b(?:\s*[—–:-]|\s*\(risk|\s*$)"
+CLOSING_TITLE_END = r"\b(?!\s*\w)"
 CLOSING_PHASES = [
     (re.compile(r"^Refactor pass" + CLOSING_TITLE_END, re.I), "/refactor +deep"),
     (re.compile(r"^Test audit" + CLOSING_TITLE_END, re.I), "/test-audit"),
     (re.compile(r"^Verify pass" + CLOSING_TITLE_END, re.I), "/verify-branch"),
     (re.compile(r"^Recap" + CLOSING_TITLE_END, re.I), "/branch-recap"),
 ]
+HANDBACK_WAIT_SECONDS = 570
+HANDBACK_POLL_SECONDS = 2
+HANDBACK_TOTAL_WAIT_MULTIPLE = 3
+FRESH_CALL_AFTER_SECONDS = 60
+FORK_STOP_BLOCK_LIMIT = 2
+BASH_TIMEOUT_MS = 600000
+CODER = "coder"
+REVIEW_LOOP = "review-loop"
+GATE_RESULTS_THAT_END_THE_WAIT = ("pass", "cap")
+START_USAGE = ('usage: code-step.py start [<plan>] [+fast|+deep] [--phase <id>]\n'
+               '       code-step.py start --task "<task text>"\n'
+               '--phase <id> starts the named phase. Text that follows the plan (or comes first, when there is no '
+               'plan file, ticket id or directory) is the task text. A flag before it, or after a plan, must be '
+               'known. --take-over starts over a run that another live session left open in this checkout.')
+OTHER_SESSION_LIVE_SECONDS = 2 * 60 * 60
+WAITING_STAGES = ("asks", "impact-coder", "impact-review", "skill", "plan-coder")
+VERIFY_STOP_REASONS = ("verification", "plan-format")
+RESUMABLE_STOP_REASONS = VERIFY_STOP_REASONS + ("invalid-packet",)
+RESUME_LINE = "When the {noun} is fixed, run `python3 ~/.claude/scripts/code-step.py {verb}`."
 VERIFY_TIMEOUT_SECONDS = 600
 TIMEOUT_EXIT_CODE = 124
-HOOK_STAGES = ("coder", "review", "asks-coder")
+HOOK_STAGES = ("coder", "review", "asks-coder", "plan-coder")
+FORK_AGENT_TYPE = "general-purpose"
 SAY_MAX_AGE_SECONDS = 6 * 3600
 TICKET_ID = re.compile(r"^[A-Za-z]+-\d+$")
-PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers", "findings_remaining", "plan_impact",
-               "ask", "class_closure", "files_touched", "nit", "load_bearing_clean"]
-LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit"]
 TYPECHECK_SCRIPTS = ["typecheck", "type-check", "check-types", "tsc"]
 SCRIPT_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".mts", ".mjs")
 TEST_SUFFIXES = ".test.ts,.test.tsx,.spec.ts,.spec.tsx,.test.js,.test.jsx"
@@ -58,7 +87,6 @@ TEST_FILE = re.compile(r"\.(test|spec)\.|(^|/)test_[^/]*\.py$|_test\.py$")
 PATH_IN_BACKTICKS = re.compile(r"`([\w.@-]+(?:/[\w.@\[\]()-]+)+\.\w+)(?::\d+(?:-\d+)?)?`")
 WHOLE_SUITE = re.compile(r"^(?:(?:cd \S+ && )?(?:npm|pnpm|yarn) (?:run )?(?:test|lint)"
                          r"|(?:cd \S+ && )?npx (?:vitest|jest)(?: run)?|(?:python3 -m )?pytest|ruff check)$")
-NONE_VALUE = re.compile(r"^\[\s*\]|^\(?\s*(none|n/a|null)\b", re.I)
 
 
 def run_command(command, cwd, stdin=None, timeout=None):
@@ -77,8 +105,14 @@ def run_command(command, cwd, stdin=None, timeout=None):
 
 
 def git_output(cwd, *args):
-    code, output = run_command(["git", *args], cwd)
+    code, output = run_command(["git", "-c", "core.quotepath=false", *args], cwd)
     return output if code == 0 else None
+
+
+def git_names(cwd, *args):
+    # Names from a git command that takes -z: a name with a non-ASCII or special character comes back as it is.
+    output = git_output(cwd, *args, "-z")
+    return [name for name in (output or "").split("\0") if name]
 
 
 def repo_root():
@@ -153,6 +187,155 @@ def all_saved_messages(cwd, agentType, stage):
     return messages
 
 
+def session_pin():
+    # The id of the session that runs /code. The fork sees its parent's id here, and hook events carry the same id.
+    return os.environ.get("CLAUDE_CODE_SESSION_ID") or None
+
+
+def uncommitted_files(repoRoot, previous):
+    # The files of the previous phase's commit line that are still dirty.
+    files = previous.get("commitFiles") or []
+    if not files:
+        return []
+    return git_names(repoRoot, "status", "--porcelain", "--", *files)
+
+
+def abandon_open_dispatch(repoRoot, previous):
+    # A run that starts over leaves no open dispatch behind: the stage becomes stopped and dispatchAt goes. The
+    # baseline stays, so a restart of the same phase keeps its own-files record.
+    if previous.get("dispatchAt") is None or previous.get("stage") not in HOOK_STAGES:
+        return
+    abandoned = dict(previous)
+    abandoned.pop("dispatchAt")
+    abandoned["stage"] = "stopped"
+    save_state(repoRoot, abandoned)
+
+
+def open_dispatch(state):
+    # A dispatch is open from here until the dispatched agent's hand-back row is newer than dispatchAt.
+    state["dispatchAt"] = time.time()
+    state.pop("forkDenied", None)
+    state.pop("forkStopBlocks", None)
+
+
+def timed_command(verb):
+    return f"`{INSTALLED_COMMAND} {verb}` as a Bash call with timeout {BASH_TIMEOUT_MS}"
+
+
+def next_after(verb):
+    return f"NEXT: right after the Agent call, run {timed_command(verb)}."
+
+
+def expected_agent(state):
+    return REVIEW_LOOP if state.get("stage") == "review" else CODER
+
+
+def ask_text(item):
+    # The shared reader copies a finding into the question (and the reverse) when only one is given: show it once.
+    return script_utils.joined_distinct([str(item.get("finding") or ""), str(item.get("question") or "")])
+
+
+def load_handback():
+    # The shared hand-back reader is imported where it is used. When it is missing the caller reports that and stops.
+    try:
+        import handback
+    except ImportError as error:
+        return None, f"handback.py could not be imported ({error}); install it beside code-step.py"
+    return handback, None
+
+
+def handback_store_row(state):
+    # The review-loop hand-back the shared store holds for the pinned session, or None.
+    sessionId = state.get("sessionId")
+    module, _ = load_handback()
+    if module is None or not sessionId:
+        return None
+    try:
+        return module.latest(sessionId)["handback"]
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def coder_gate_allows(repoRoot, agentId):
+    # The coder's hand-back counts once the hand-back gate let it through (pass) or gave up (cap). With no gate set
+    # there is nothing to wait for. A deny sends the coder back to work, so its row is not the report.
+    try:
+        gate = gate_results(repoRoot)
+    except ValueError:
+        return True
+    if gate is None:
+        return True
+    result = (gate.get("coders") or {}).get(agentId, {}).get("result")
+    return result in GATE_RESULTS_THAT_END_THE_WAIT
+
+
+def latest_handback_row(repoRoot, state, agentType, since):
+    # The one source of the wait and of the fork denial: the newest hand-back row of this agent type after `since`.
+    # A row without a timestamp is old. A state with no pinned session claims no hand-backs.
+    if not state.get("sessionId"):
+        return None
+    rows = []
+    reportsFile = state_dir(repoRoot) / "reports.jsonl"
+    if reportsFile.exists():
+        for line in reportsFile.read_text().splitlines():
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(row, dict) and row.get("agent_type") == agentType:
+                rows.append(row)
+    if agentType == REVIEW_LOOP:
+        storeRow = handback_store_row(state)
+        if isinstance(storeRow, dict):
+            rows.append(storeRow)
+    fresh = [row for row in rows if isinstance(row.get("ts"), (int, float)) and row["ts"] > since]
+    if agentType == CODER:
+        fresh = [row for row in fresh if coder_gate_allows(repoRoot, row.get("agent_id") or "unknown")]
+    return max(fresh, key=lambda row: row["ts"]) if fresh else None
+
+
+def dispatch_time_text(since):
+    return datetime.datetime.fromtimestamp(since).isoformat(timespec="seconds")
+
+
+def wait_for_handback(repoRoot, state, verb, longChecksFollow=False):
+    # Nested Agent calls return at once, so the verb that follows a dispatch waits here for the hand-back row.
+    # CODE_STEP_WAIT_SECONDS=0 skips the wait. Returns False after emitting the line that says to run the verb again,
+    # or a stop once the dispatch is older than HANDBACK_TOTAL_WAIT_MULTIPLE waits. longChecksFollow: when the wait
+    # took longer than FRESH_CALL_AFTER_SECONDS, return False so the checks after it start in a call of their own.
+    limit = float(os.environ.get("CODE_STEP_WAIT_SECONDS", HANDBACK_WAIT_SECONDS))
+    since = state.get("dispatchAt")
+    if limit <= 0 or since is None:
+        return True
+    interval = float(os.environ.get("CODE_STEP_POLL_SECONDS", HANDBACK_POLL_SECONDS))
+    agentType = expected_agent(state)
+    totalCap = limit * HANDBACK_TOTAL_WAIT_MULTIPLE
+    isPastCap = time.time() - since > totalCap
+    waitStarted = time.time()
+    # The state is read again on each poll: a hook may pin the session while the wait runs.
+    found = script_utils.wait_for(lambda: latest_handback_row(repoRoot, load_state(repoRoot) or state, agentType, since),
+                                  0 if isPastCap else limit, interval)
+    if found:
+        waited = time.time() - waitStarted
+        threshold = float(os.environ.get("CODE_STEP_FRESH_CALL_SECONDS", FRESH_CALL_AFTER_SECONDS))
+        if longChecksFollow and waited > threshold:
+            emit("wait", f"The report arrived after {waited:.0f} seconds; run the same command again so the checks "
+                 f"after it start in a call of their own: {timed_command(verb)}.")
+            return False
+        return True
+    if time.time() - since > totalCap:
+        state["stage"] = "stopped"
+        save_state(repoRoot, state)
+        emit("stop", f"The {agentType} dispatched at {dispatch_time_text(since)} has not handed back in "
+             f"{time.time() - since:.0f} seconds (the cap is {totalCap:g}). It may have died or been stopped. Do not "
+             "dispatch it again and do not wait longer. Tell the user.")
+        return False
+    emit("wait", f"The dispatched agent has not handed back after {limit:g} seconds. Do not dispatch it again and do "
+         f"not hand back. To keep waiting, run the same command again: `{INSTALLED_COMMAND} {verb}` (Bash timeout "
+         f"{BASH_TIMEOUT_MS}).")
+    return False
+
+
 def own_path(text):
     # Printed commands name this file by its real path, so they work from a bench copy as well as from ~/.claude/scripts.
     return text.replace(INSTALLED_COMMAND, SELF_COMMAND)
@@ -206,7 +389,8 @@ def emit(action, *lines, prompt=None, agent=None, model=None):
     if agent:
         print(f"AGENT: {agent}")
         print(f"MODEL: {model or 'omit the model argument'}")
-        print("BACKGROUND: no. Never set run_in_background.")
+        print("BACKGROUND: no. Never set run_in_background. The Agent call returns at once: do not wait for its "
+              "result; the NEXT verb waits for the report.")
     for line in lines:
         print(line)
     if prompt is not None:
@@ -218,42 +402,193 @@ def emit(action, *lines, prompt=None, agent=None, model=None):
 
 # ---------- plan parsing ----------
 
-def plan_sections(planLines):
-    return [index for index, line in enumerate(planLines) if line.startswith("## ")]
+PHASE_STATUS_LINE = re.compile(rf"^[-*]\s+\[( |x|X)\]\s+Phase\s+({PHASE_ID})\s*[:.—–-]\s*(.*)$")
+
+
+def parse_plan(planLines):
+    entries, sections, failures = [], {}, []
+    inStatus = False
+    firstLines = {}
+    fenced = script_utils.fenced_line_indexes(planLines)
+    for index, line in enumerate(planLines):
+        if index in fenced:
+            continue
+        heading = HEADING.match(line)
+        if heading:
+            inStatus = heading.group(2).strip() == "Phase Status"
+            phaseHeading = PHASE_HEADING.match(line)
+            if not phaseHeading:
+                continue
+            sectionId = phaseHeading.group(2)
+            if sectionId in sections:
+                failures.append({"line": index + 1, "kind": "duplicate-id", "detail": f"Phase {sectionId} has two "
+                                 f"sections, on line {sections[sectionId]['start'] + 1} and line {index + 1}. Give "
+                                 "each phase its own id."})
+                continue
+            sections[sectionId] = {"start": index, "level": len(phaseHeading.group(1)),
+                                   "title": line[phaseHeading.end():].lstrip(" :.—–-")}
+            continue
+        if not inStatus or not re.match(r"^[-*]\s+\[", line):
+            continue
+        match = PHASE_STATUS_LINE.match(line)
+        if not match:
+            failures.append({"line": index + 1, "kind": "unparsed-line", "detail": f"{line.strip()!r}. Rewrite it as "
+                             "`- [ ] Phase <id>: <title>`, or move it out of the section."})
+            continue
+        number = match.group(2)
+        if number in firstLines:
+            failures.append({"line": index + 1, "kind": "duplicate-id", "detail": f"Phase {number} twice, on line "
+                             f"{firstLines[number] + 1} and line {index + 1}. Give each phase its own id."})
+            continue
+        firstLines[number] = index
+        risk = re.search(r"\(risk:\s*(low|high)\)", match.group(3), re.I)
+        closing = next((skill for pattern, skill in CLOSING_PHASES if pattern.search(match.group(3))), None)
+        entries.append({"line": index, "done": match.group(1) != " ", "number": number, "title": match.group(3),
+                        "risk": risk.group(1).lower() if risk else "high", "closing": closing})
+    headingRows = [(i, len(h.group(1))) for i, line in enumerate(planLines)
+                   if i not in fenced and (h := HEADING.match(line))]
+    for number, section in sections.items():
+        section["end"] = next((i for i, level in headingRows if i > section["start"]
+                               and (level <= section["level"] or PHASE_HEADING.match(planLines[i]))), len(planLines))
+    for entry in entries:
+        # A closing phase is defined by its skill, so its Phase Status line needs no section of its own.
+        if entry["number"] not in sections and not entry["closing"]:
+            failures.append({"line": entry["line"] + 1, "kind": "missing-section", "detail": f"Phase "
+                             f"{entry['number']} is in Phase Status but the plan has no '## Phase {entry['number']}' "
+                             "section."})
+    statusIds = {entry["number"] for entry in entries}
+    for number, section in sections.items():
+        if entries and number not in statusIds:
+            failures.append({"line": section["start"] + 1, "kind": "section-without-status", "detail": f"Phase "
+                             f"{number} has a section but no Phase Status entry. Add `- [ ] Phase {number}: "
+                             f"{section['title']}` to the Phase Status list."})
+    failures.sort(key=lambda failure: failure["line"])
+    return {"entries": entries, "sections": sections, "failures": failures}
+
+
+def ordered_pending(entries):
+    pending = [entry for entry in entries if not entry["done"]]
+    return [e for e in pending if not e["closing"]] + [e for e in pending if e["closing"]]
+
+
+def reopen_closing_phases(planPath):
+    planLines = planPath.read_text().split("\n")
+    reopened = [e for e in parse_plan(planLines)["entries"] if e["closing"] and e["done"]]
+    for entry in reopened:
+        planLines[entry["line"]] = re.sub(r"\[[xX]\]", "[ ]", planLines[entry["line"]], count=1)
+    planPath.write_text("\n".join(planLines))
+    return [entry["number"] for entry in reopened]
+
+
+def added_phase_lines(repoRoot, state):
+    before = state.get("phaseText")
+    if before is None or not state.get("plan"):
+        return None
+    planLines = (repoRoot / state["plan"]).read_text().splitlines()
+    after = phase_text(planLines, state["phase"])
+    if after is None or after == before:
+        return None
+    added = script_utils.lines_added(before.splitlines(), after.splitlines())
+    return {"text": after, "added": added} if added else None
+
+
+def command_plan_hook():
+    try:
+        event = json.load(sys.stdin)
+        if not isinstance(event, dict):
+            return
+        cwd = event.get("cwd") or "."
+        toolInput = event.get("tool_input") or {}
+        editedPath = toolInput.get("file_path") if isinstance(toolInput, dict) else None
+        if not isinstance(cwd, str) or not isinstance(editedPath, str) or not editedPath:
+            return
+        state = load_state(cwd)
+        if state is None or not state.get("plan"):
+            return
+        planPath = pathlib.Path(cwd) / state["plan"]
+        if pathlib.Path(editedPath).resolve() != planPath.resolve():
+            return
+        planLines = planPath.read_text().splitlines()
+        plan = parse_plan(planLines)
+        if plan["failures"]:
+            print(plan_failure_message(plan, state["plan"]), file=sys.stderr)
+            sys.exit(2)
+        manualFailure = manual_format_failure(planLines, state["plan"])
+        if manualFailure:
+            print(manualFailure, file=sys.stderr)
+            sys.exit(2)
+    except ValueError:
+        return
+    except (OSError, StateFileError) as error:
+        print(f"code-step plan-hook: {error}", file=sys.stderr)
+
+
+def plan_failure_rows(plan, planName):
+    return [f"{planName}:{f['line']}: {f['kind']}: {f['detail']}" for f in plan["failures"]]
+
+
+def plan_failure_message(plan, planName):
+    rows = plan_failure_rows(plan, planName)
+    return "The plan's Phase Status does not parse. Report each line to the user and stop:\n" + "\n".join(rows)
+
+
+def phase_manual_items(planLines, number, planName):
+    # The grammar reads the whole plan, so a PlanFormatError names the line in the file. A phase keeps its own items.
+    items = plan_format.manual_verification("\n".join(planLines), planName)
+    if number is None:
+        return items
+    return [item for item in items if item["phase"] == str(number)]
+
+
+def manual_format_message(error, resumeLine=""):
+    message = ("The plan's Manual Verification section does not parse. Do not mark the phase done. Report to the "
+               f"user and stop:\n{error}")
+    return message + ("\n" + resumeLine if resumeLine else "")
+
+
+def manual_format_failure(planLines, planName, resumeLine=""):
+    # The stop message for a Manual Verification section the grammar does not parse, or None when all parse.
+    try:
+        plan_format.manual_verification("\n".join(planLines), planName)
+    except plan_format.PlanFormatError as error:
+        return manual_format_message(error, resumeLine)
+    return None
 
 
 def phase_status_entries(planLines):
-    entries = []
-    inStatus = False
-    for index, line in enumerate(planLines):
-        if line.startswith("## "):
-            inStatus = line.strip() == "## Phase Status"
-            continue
-        match = re.match(r"^- \[( |x)\] Phase (\d+):\s*(.*)$", line) if inStatus else None
-        if match:
-            risk = re.search(r"\(risk:\s*(low|high)\)", match.group(3))
-            entries.append({"line": index, "done": match.group(1) == "x", "number": match.group(2),
-                            "title": match.group(3), "risk": risk.group(1) if risk else "high"})
-    return entries
+    return parse_plan(planLines)["entries"]
 
 
 def phase_text(planLines, number):
-    sections = plan_sections(planLines)
-    start = next((i for i in sections if re.match(rf"## Phase {number}\b", planLines[i])), None)
-    if start is None:
+    section = parse_plan(planLines)["sections"].get(number)
+    if section is None:
         return None
-    end = next((i for i in sections if i > start), len(planLines))
-    return "\n".join(planLines[start:end])
+    return "\n".join(planLines[section["start"]:section["end"]])
 
 
-def verification_items(phaseSection, heading):
+def command_plan(args):
+    if len(args) < 2 or args[0] not in ("check", "parse"):
+        sys.exit("usage: code-step.py plan check|parse <path>")
+    planLines = pathlib.Path(args[1]).read_text().splitlines()
+    plan = parse_plan(planLines)
+    if args[0] == "parse":
+        return print(json.dumps(plan, indent=1))
+    for row in plan_failure_rows(plan, args[1]):
+        print(row)
+    manualFailure = manual_format_failure(planLines, args[1])
+    if manualFailure:
+        print(manualFailure)
+    sys.exit(1 if plan["failures"] or manualFailure else 0)
+
+
+def automated_verification_items(phaseSection):
     items = []
     inside = False
     for line in phaseSection.splitlines():
         if line.startswith("#### "):
-            inside = line.startswith(f"#### {heading}")
+            inside = line.startswith("#### Automated Verification")
             continue
-        if line.startswith("## ") or line.strip() == "---":
+        if re.match(r"#{1,3} ", line) or line.strip() == "---":
             inside = False
         if inside and re.match(r"^- \[[ x]\]", line):
             items.append(line)
@@ -347,24 +682,89 @@ def derive_gate_commands(repoRoot, phaseSection):
 # ---------- start ----------
 
 def file_hashes(repoRoot):
-    tracked = git_output(repoRoot, "diff", "--name-only", "HEAD") or ""
-    untracked = git_output(repoRoot, "ls-files", "--others", "--exclude-standard") or ""
+    tracked = git_names(repoRoot, "diff", "--name-only", "HEAD")
+    untracked = git_names(repoRoot, "ls-files", "--others", "--exclude-standard")
     hashes = {}
-    for name in sorted({n for n in (tracked + "\n" + untracked).split("\n") if n}):
+    for name in sorted(set(tracked + untracked)):
         # A deleted file has no content to hash: its hash is None, which still differs from a baseline that had it.
         hashes[name] = git_output(repoRoot, "hash-object", name) if (repoRoot / name).exists() else None
     return hashes
 
 
+def usage_error(message):
+    print(f"code-step.py start: {message}\n{START_USAGE}", file=sys.stderr)
+    sys.exit(2)
+
+
 def parse_start_args(args):
-    modifiers = [a for a in args if a in ("+fast", "+deep")]
-    rest = [a for a in args if a not in ("+fast", "+deep")]
-    modifier = "+deep" if "+deep" in modifiers else "+fast" if modifiers else None
+    # Flags are read left to right up to the first word that is not a plan file, ticket id or directory: that word
+    # and everything after it is task text, as is everything after --task. --help prints usage and exits 0 before
+    # any state is touched; an unknown flag, and --phase without an id, exits 2.
+    modifiers = []
+    planArgs = []
     taskText = None
-    if "--task" in rest:
-        taskText = " ".join(rest[rest.index("--task") + 1:])
-        rest = rest[:rest.index("--task")]
-    return modifier, rest, taskText
+    phaseId = None
+    takeOver = False
+    position = 0
+    while position < len(args):
+        word = args[position]
+        if word == "--take-over":
+            takeOver = True
+        elif word == "--task":
+            taskText = " ".join(args[position + 1:])
+            break
+        elif word in ("+fast", "+deep"):
+            modifiers.append(word)
+        elif word in ("--help", "-h"):
+            print(START_USAGE)
+            sys.exit(0)
+        elif word == "--phase":
+            if position + 1 >= len(args) or args[position + 1].startswith("-"):
+                usage_error("--phase needs a phase id")
+            phaseId = args[position + 1]
+            position += 1
+        elif word.startswith("-") and len(word) > 1:
+            usage_error(f"unknown flag {word}")
+        elif looks_like_plan_argument(word):
+            planArgs.append(word)
+        else:
+            taskText = " ".join(args[position:])
+            break
+        position += 1
+    if taskText is not None and planArgs and "--task" not in args:
+        usage_error("task text after a plan. Put the task text after --task, or leave the plan out")
+    modifier = "+deep" if "+deep" in modifiers else "+fast" if modifiers else None
+    return modifier, planArgs, taskText, phaseId, takeOver
+
+
+def state_file_age_seconds(repoRoot):
+    try:
+        return time.time() - (state_dir(repoRoot) / "state.json").stat().st_mtime
+    except OSError:
+        return None
+
+
+def other_session_run_age(repoRoot, previous):
+    # Seconds since the last sign of life of a run that a different, pinned session owns, or None when no such run
+    # is open. A run with an open dispatch (the coder, the plan-edit coder or the review-loop) ages from the dispatch.
+    # A run that waits (for the user, for a closing skill, or stopped on a fix the user makes) ages from the last
+    # change of the state file.
+    # A run older than OTHER_SESSION_LIVE_SECONDS is abandoned by the caller.
+    owner = previous.get("sessionId")
+    if not owner or owner == session_pin():
+        return None
+    stage = previous.get("stage")
+    if previous.get("dispatchAt") is not None and stage in HOOK_STAGES:
+        return time.time() - previous["dispatchAt"]
+    isStoppedForFix = stage == "stopped" and previous.get("stopReason") in RESUMABLE_STOP_REASONS
+    if stage in WAITING_STAGES or isStoppedForFix:
+        return state_file_age_seconds(repoRoot)
+    return None
+
+
+def looks_like_plan_argument(word):
+    path = pathlib.Path(word)
+    return looks_like_plan_path(word) or TICKET_ID.match(word) is not None or path.is_file() or path.is_dir()
 
 
 def resolve_plan(repoRoot, argument=None):
@@ -409,15 +809,59 @@ def is_finished_single_phase_plan(repoRoot, previous, branch, resolvedPlan):
     return resolvedRel == previous["plan"]
 
 
+def stop_while_plan_edit_coder_is_out(repoRoot, state, verbText):
+    # A restore or a drop of the saved criteria while the plan-edit coder is still out would leave its later write
+    # unchecked. Returns True after printing the stop, with no state changed.
+    if state.get("stage") != "plan-coder" or not is_dispatch_open(repoRoot, state):
+        return False
+    emit("stop", "The plan-edit coder has not reported yet, so the saved acceptance criteria stay as they are. Run "
+         "`! python3 ~/.claude/scripts/code-step.py after-plan-edit` from the repo root first: it waits for the "
+         f"report and restores the criteria. Then run `{verbText}` again. Tell the user.")
+    return True
+
+
 def command_start(args):
+    modifier, planArgs, taskText, phaseId, takeOver = parse_start_args(args)
     repoRoot = repo_root()
     os.chdir(repoRoot)
-    modifier, planArgs, taskText = parse_start_args(args)
     previous = load_state(repoRoot) or {}
     branch = current_branch(repoRoot)
+    ageSeconds = other_session_run_age(repoRoot, previous)
+    if not takeOver and ageSeconds is not None and ageSeconds < OTHER_SESSION_LIVE_SECONDS:
+        phaseName = f"Phase {previous['phase']} of " if previous.get("phase") is not None else ""
+        lastActive = datetime.datetime.fromtimestamp(time.time() - ageSeconds).strftime("%H:%M")
+        liftsAt = datetime.datetime.fromtimestamp(time.time() - ageSeconds + OTHER_SESSION_LIVE_SECONDS)
+        takeOverArgs = " ".join(["--take-over", *args])
+        return emit("stop", f"Another Claude session has a /code run open in this checkout: {phaseName}"
+                    f"{previous.get('plan') or 'a task with no plan'}. Starting here would cancel it. Tell the user to "
+                    "run this work in a git worktree. "
+                    f"Last active {lastActive}, {int(ageSeconds // 60)} min ago in another session; this block lifts "
+                    f"at {liftsAt.strftime('%H:%M')}. If the user says that session has ended, invoke Skill code with "
+                    f"`{takeOverArgs}`.")
+
+    if stop_while_plan_edit_coder_is_out(repoRoot, previous, " ".join(["start", *args])):
+        return
+
+    # The owner check above runs first: a restore never touches a state that another live session owns.
+    # The state is saved only when a saved copy was restored or dropped, and then under this session.
+    criteriaMessage = None
+    if previous.get("criteriaGuard") is not None:
+        criteriaMessage = settle_criteria_guard(repoRoot, previous, branch)
+        previous["sessionId"] = session_pin()
+        save_state(repoRoot, previous)
+
     isAutoAdvanceTextPending = previous.get("stage") == "done" and previous.get("autoAdvance")
-    if previous.get("stage") is not None and not isAutoAdvanceTextPending:
+    isOldTextStale = previous.get("stage") is not None and not isAutoAdvanceTextPending
+    if isOldTextStale or taskText is not None:
         clear_say(repoRoot)
+
+    if criteriaMessage:
+        say(repoRoot, criteriaMessage)
+
+    if isAutoAdvanceTextPending and uncommitted_files(repoRoot, previous):
+        return emit("stop", "The previous phase's files are not committed yet, so the next phase would take them as "
+                    "its own. Run the commit line, then run `start` again:", previous.get("commitLine", ""))
+    abandon_open_dispatch(repoRoot, previous)
 
     if taskText is not None:
         return start_planless(repoRoot, modifier, taskText, branch)
@@ -425,9 +869,6 @@ def command_start(args):
     planArg = planArgs[0] if planArgs else None
     lane = previous.get("lane", "code")
     isUnknownArg = planArg is not None and not pathlib.Path(planArg).is_file()
-    if isUnknownArg and not looks_like_plan_path(planArg) and not TICKET_ID.match(planArg) \
-            and not pathlib.Path(planArg).is_dir():
-        return start_planless(repoRoot, modifier, " ".join(planArgs), branch)
     if isUnknownArg and (TICKET_ID.match(planArg) or pathlib.Path(planArg).is_dir()):
         planArg, lane = resolve_plan(repoRoot, planArg)
         if planArg is None:
@@ -456,29 +897,40 @@ def command_start(args):
                         "the repo. Then invoke Skill code with that path.")
     planLines = planPath.read_text().splitlines()
 
-    entries = phase_status_entries(planLines)
-    hasPhases = any(re.match(r"## Phase \d", line) for line in planLines)
+    plan = parse_plan(planLines)
+    if plan["failures"]:
+        return emit("stop", plan_failure_message(plan, planRel))
+    manualFailure = manual_format_failure(planLines, planRel, RESUME_LINE.format(noun="section", verb="start"))
+    if manualFailure:
+        return emit("stop", manualFailure)
+
+    entries = plan["entries"]
+    hasPhases = bool(plan["sections"])
     if not entries and hasPhases:
         return emit("judgment", "The plan has phases but no '## Phase Status' section. Use `git status` and each "
                     "phase's success criteria to pick the next phase, tell the user to backfill the section, then "
                     "run `code-step.py start` again after adding it.")
-    pending = [entry for entry in entries if not entry["done"]]
-    if entries and not pending:
+    pending = ordered_pending(entries)
+    if phaseId is not None:
+        entry = next((e for e in entries if e["number"] == phaseId), None)
+        if entry is None:
+            listed = ", ".join(e["number"] for e in entries) or "none"
+            return emit("stop", f"Phase {phaseId} is not in the Phase Status of {planRel}. Listed phases: {listed}. "
+                        "Tell the user.")
+    elif entries and not pending:
         return emit("stop", "Every phase in the plan is checked. Tell the user the plan is complete.")
-    entry = pending[0] if pending else None
+    else:
+        entry = pending[0] if pending else None
 
     number = entry["number"] if entry else None
     section = phase_text(planLines, number) if entry else "\n".join(planLines)
-    if entry and section is None:
-        return emit("stop", f"Phase Status lists Phase {number} but the plan has no '## Phase {number}' section. "
-                    "Report a plan defect to the user.")
 
     if entry:
         closingSkill = next((skill for pattern, skill in CLOSING_PHASES if pattern.search(entry["title"])), None)
         if closingSkill:
             return start_closing_phase(repoRoot, planRel, lane, modifier, entry, closingSkill, section, branch)
 
-    if not check_acceptance_criteria(repoRoot, planPath, planLines, planRel, number):
+    if not check_acceptance_criteria(repoRoot, planLines, planRel):
         return
 
     commands = derive_gate_commands(repoRoot, section) if entry else []
@@ -498,59 +950,52 @@ def command_start(args):
               "If the task turns out architectural, report back and recommend /eng-spec.\n\n" + packetText).rstrip()
     state = {"stage": "coder", "plan": planRel, "lane": lane, "phase": statePhase, "branch": branch,
              "modifier": modifier, "risk": entry["risk"] if entry else "high", "title": entry["title"] if entry else "",
-             "gateCommands": commands, "baseline": baseline, "startedAt": time.time()}
+             "gateCommands": commands, "baseline": baseline, "startedAt": time.time(),
+             "phaseText": section if entry and hasPhases else None, "sessionId": session_pin()}
+    open_dispatch(state)
     save_state(repoRoot, state)
     model = "haiku" if modifier == "+fast" else None
-    emit("dispatch", gateNote, "NEXT: when the coder returns, run `python3 ~/.claude/scripts/code-step.py after-coder`.",
-         prompt=prompt, agent="coder", model=model)
+    emit("dispatch", gateNote, next_after("after-coder"), prompt=prompt, agent="coder", model=model)
 
 
 def start_planless(repoRoot, modifier, taskText, branch="-"):
     state = {"stage": "coder", "plan": None, "lane": "code", "phase": None, "branch": branch, "modifier": modifier,
              "risk": "high", "title": "", "gateCommands": [], "baseline": file_hashes(repoRoot),
-             "startedAt": time.time()}
+             "startedAt": time.time(), "sessionId": session_pin()}
+    open_dispatch(state)
     directory = state_dir(repoRoot)
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "reports.jsonl").unlink(missing_ok=True)
-    clear_say(repoRoot)
     save_state(repoRoot, state)
     prompt = (f"Implement: {taskText}\nRun the typecheck, and lint and tests for only the files you changed, once, "
               "after all edits. If the task turns out architectural, report back and recommend /eng-spec.")
     model = "haiku" if modifier == "+fast" else None
-    emit("dispatch", "NEXT: when the coder returns, run `python3 ~/.claude/scripts/code-step.py after-coder`.",
-         prompt=prompt, agent="coder", model=model)
+    emit("dispatch", next_after("after-coder"), prompt=prompt, agent="coder", model=model)
 
 
 def start_closing_phase(repoRoot, planRel, lane, modifier, entry, skill, section, branch):
     state = {"stage": "skill", "plan": planRel, "lane": lane, "phase": entry["number"], "branch": branch,
-             "modifier": modifier, "risk": entry["risk"], "title": entry["title"], "gateCommands": [], "behavior": []}
+             "modifier": modifier, "risk": entry["risk"], "title": entry["title"], "gateCommands": [], "behavior": [],
+             "sessionId": session_pin()}
     save_state(repoRoot, state)
     verdictStep = ("run `python3 ~/.claude/scripts/code-step.py skill-done pass` when the phase's Success Criteria "
                    "hold, or `skill-done fail` when they do not (for the Verify pass, any MISSING criterion fails it)")
     sectionLines = ["The phase's own plan section follows. Follow its steps and gates; the skill alone is not the phase:",
-                    section]
-    if skill == "/verify-branch":
-        prompt = ("Branch-wide deep review: review the whole branch diff against its base branch (git diff "
-                  "<base>...HEAD), backend and frontend together. This is the only review of cross-phase interactions. "
-                  "Report findings with file:line and severity.")
-        return emit("dispatch", f"Phase {entry['number']} ({entry['title']}) is a closing phase. Step 1 of 2: the "
-                    "branch-wide deep review.", *sectionLines,
-                    "NEXT: route the findings with /review and log them with scope=branch-exit. Then invoke the Skill "
-                    "tool with `/verify-branch` and reconcile every acceptance criterion (the covering test as file:line, or "
-                    f"MISSING). Then {verdictStep}.", prompt=prompt, agent="code-reviewer")
+                    section] if section else []
     emit("invoke-skill", f"Phase {entry['number']} ({entry['title']}) is a closing phase. Invoke the Skill tool with "
          f"`{skill}`; a coder is not dispatched.", *sectionLines, f"The skill needs judgment. When it returns, {verdictStep}.")
 
 
-def check_acceptance_criteria(repoRoot, planPath, planLines, planRel, number):
+def check_acceptance_criteria(repoRoot, planLines, planRel):
     hasCriteriaSection = any(line.strip() == "## Acceptance Criteria" for line in planLines)
     if not hasCriteriaSection:
         return True
-    criteria = planPath.resolve().parent / "acceptance-criteria.md"
+    criteriaRel = criteria_rel(planRel)
+    criteria = repoRoot / criteriaRel
     if criteria.is_file() and criteria.read_text().strip():
         return True
 
-    note = f"{criteria.relative_to(repoRoot)} is missing or empty"
+    note = f"{criteriaRel} is missing or empty"
     run_command(["bash", str(SCRIPTS_DIR / "log-scan"), f"repo={repoRoot.name}", "scan=acceptance-stub",
                  "stage=code-phase", "exit=0", "candidates=1", "confirmed=1", f"note={note}"], repoRoot)
     emit("stop", f"Plan defect: {note}, and the plan has an Acceptance Criteria section.",
@@ -701,9 +1146,23 @@ def command_after_coder(args):
     state = load_state(repoRoot)
     if state is None or state["stage"] not in ("coder", "asks-coder"):
         return emit("stop", "after-coder ran with no coder dispatch pending. Run `start` first.")
+    if not wait_for_handback(repoRoot, state, "after-coder", longChecksFollow=state["stage"] == "asks-coder"):
+        return
+    state = load_state(repoRoot)
 
     coderStage = state["stage"]
     isAskFix = coderStage == "asks-coder"
+    addendum = None if isAskFix else added_phase_lines(repoRoot, state)
+    if addendum:
+        state["phaseText"] = addendum["text"]
+        open_dispatch(state)
+        save_state(repoRoot, state)
+        prompt = (f"Phase {state['phase']} of `{state['plan']}` gained lines after the first coder was dispatched. "
+                  "Implement only these added or changed lines. Do not redo the rest of the phase:\n\n"
+                  + "\n".join(addendum["added"]))
+        return emit("dispatch", "The plan phase changed while the coder ran. Dispatch a coder for the added lines "
+                    "before the review.",
+                    next_after("after-coder"), prompt=prompt, agent="coder")
     gate = None if isAskFix else gate_results(repoRoot)
     gateLines = state.get("gateLines", "")
     if not isAskFix:
@@ -727,8 +1186,11 @@ def command_after_coder(args):
     if not changedFiles or asksCoderChangedNothing or "/eng-spec" in report:
         state["stage"] = "stopped"
         save_state(repoRoot, state)
+        tickText = (f" If the user says Phase {state['phase']} is already done, invoke Skill code with `tick "
+                    f"{state['phase']}`; do that only on the user's word." if state.get("plan") and state.get("phase")
+                    else "")
         return emit("stop", "The coder produced no reviewable change, or recommended /eng-spec. Do not dispatch a "
-                    "review. Do not mark the phase done. Relay the coder's report to the user:", report)
+                    "review. Do not mark the phase done." + tickText + " Relay the coder's report to the user:", report)
 
     asksBaseline = state.get("asksBaseline")
     if isAskFix and asksBaseline is not None:
@@ -769,8 +1231,8 @@ def command_after_coder(args):
 def prior_issues(acceptedAsks):
     issues = []
     for item, outcome, changeText in acceptedAsks:
-        fileLine = item.get("file_line", "") if isinstance(item, dict) else ""
-        issueText = item_text(item, "finding", "question")
+        fileLine = item.get("file_line", "")
+        issueText = ask_text(item)
         if changeText:
             issueText += f" (user's change: {changeText})"
         issues.append({"issue": issueText, "file": fileLine.partition(":")[0]})
@@ -786,32 +1248,46 @@ def preset_decision(repoRoot):
     return word if word in ("adopt", "keep") else None
 
 
+def decide_call(word):
+    return f"`decide {word} --by user --ruling \"<the user's answer>\"`"
+
+
+DECIDE_BY_NOTE = ("If the user told you to make the call yourself, or you rule without asking, pass `--by session` in "
+                  "place of `--by user`. A session ruling never changes the acceptance criteria.")
+
+
 def emit_plan_impact_modal(impact, repoRoot):
     word = preset_decision(repoRoot)
     if word:
         print(f"PLAN-IMPACT answered by the pre-set decision '{word}'. No question to the user.")
-        return command_decide([word, "--ruling", f"pre-set decision '{word}'; no user was asked"],
+        return command_decide([word, "--by", "session", "--ruling", f"pre-set decision '{word}'; no user was asked"],
                               rulingBy="the pre-set decision")
     ask_user(repoRoot, "the code and the plan disagree. Ask the user this question in plain text and wait for the "
              "answer. Then invoke Skill code with the args after the option the user chose, with the user's whole "
              "answer, in their words, as the --ruling text.",
              impact, "",
              f"1. {PLAN_IMPACT_OPTIONS[0]} (a coder rewrites the plan steps to match the ruling): "
-             "`decide adopt --ruling \"<the user's answer>\"`",
-             f"2. {PLAN_IMPACT_OPTIONS[1]}: `decide keep --ruling \"<the user's answer>\"`",
+             f"{decide_call('adopt')}",
+             f"2. {PLAN_IMPACT_OPTIONS[1]}: {decide_call('keep')}",
              f"3. {PLAN_IMPACT_OPTIONS[2]}: talk it through here, then invoke Skill code with "
-             "`decide adopt --ruling \"<the user's answer>\"` or `decide keep --ruling \"<the user's answer>\"`")
+             f"{decide_call('adopt')} or {decide_call('keep')}",
+             DECIDE_BY_NOTE)
 
 
 def record_deviation(repoRoot, state):
     ruling = state["ruling"]
-    planPath = repoRoot / state["plan"]
-    lines = planPath.read_text().split("\n")
     entry = [f"- {time.strftime('%Y-%m-%d')} (Phase {state['phase']}): {ruling['decision']}. "
-             f"Ruled by {ruling['by']} at {ruling['at']}.", "", "  The user's words:"]
+             f"Ruled by {ruling['by']} at {ruling['at']}.", "",
+             "  The user's words:" if ruling["byUser"] else "  The ruling's words:"]
     entry += ["  > " + line for line in ruling["words"].splitlines()]
     entry += ["", "  The disagreement:"]
     entry += ["  " + line for line in state["impact"].splitlines()]
+    append_deviation(repoRoot / state["plan"], entry)
+
+
+def append_deviation(planPath, entry):
+    # Add the entry lines at the end of the plan's `## Plan Deviations` section, creating it before `## References`.
+    lines = planPath.read_text().split("\n")
     sections = [i for i, line in enumerate(lines) if line.startswith("## ")]
     existing = next((i for i in sections if lines[i].strip() == "## Plan Deviations"), None)
     if existing is not None:
@@ -824,34 +1300,44 @@ def record_deviation(repoRoot, state):
 
 
 def split_decide_args(args):
-    # The decision word, then the user's words after `--ruling`, joined when the caller left them unquoted.
+    # The decision word, who ruled (`--by user|session`, None when missing), then the words after `--ruling`,
+    # joined when the caller left them unquoted.
     word = args[0].lower() if args else ""
-    if "--ruling" not in args:
-        return word, ""
-    rulingWords = " ".join(args[args.index("--ruling") + 1:])
-    return word, rulingWords.strip()
+    rulingAt = args.index("--ruling") if "--ruling" in args else len(args)
+    byWords = args[:rulingAt]
+    by = byWords[byWords.index("--by") + 1] if "--by" in byWords[:-1] else None
+    rulingWords = " ".join(args[rulingAt + 1:])
+    return word, by, rulingWords.strip()
 
 
 def resolved_plan_impact(state):
     # review-loop reads a block that starts RESOLVED as settled, so it reviews against the ruling instead of
     # returning the question again.
     ruling = state["ruling"]
-    lines = ["RESOLVED: the user ruled on this disagreement. Review the code against the ruling. It is not an open "
-             "question.",
+    if ruling["byUser"]:
+        resolved, wordsLabel = "the user ruled on this disagreement", "Ruling, in the user's words:"
+    elif ruling["by"] == "the pre-set decision":
+        resolved, wordsLabel = "the pre-set decision ruled on this disagreement, not the user", "The ruling's words:"
+    else:
+        resolved, wordsLabel = "the session ruled on this disagreement, not the user", "The ruling's words:"
+    lines = [f"RESOLVED: {resolved}. Review the code against the ruling. It is not an open question.",
              f"Decision: {ruling['decision']}",
              f"Ruled by: {ruling['by']}, at {ruling['at']}",
-             "Ruling, in the user's words:"]
+             wordsLabel]
     lines += ["  " + line for line in ruling["words"].splitlines()]
     lines.append("The disagreement it settles:")
     lines += ["  " + line for line in state["impact"].splitlines()]
     return "\n".join(lines)
 
 
+DECIDE_USAGE = 'decide <adopt|keep> --by <user|session> --ruling "<the user\'s answer>"'
+
+
 def command_decide(args, rulingBy=None):
     repoRoot = repo_root()
     os.chdir(repoRoot)
     state = load_state(repoRoot)
-    word, rulingWords = split_decide_args(args)
+    word, by, rulingWords = split_decide_args(args)
     if state is None or state["stage"] not in ("impact-coder", "impact-review") or not word:
         return emit("stop", "decide needs a pending PLAN-IMPACT and one word: adopt, keep or discuss.")
     decision = DECISION_WORDS.get(word)
@@ -859,17 +1345,29 @@ def command_decide(args, rulingBy=None):
         return emit("stop", "decide takes adopt, keep or discuss.")
     if decision == "Discuss":
         return ask_user(repoRoot, "discuss this disagreement between the code and the plan with the user in plain "
-                        "words. When the user chooses, invoke Skill code with `decide adopt --ruling \"<the user's "
-                        "answer>\"` or `decide keep --ruling \"<the user's answer>\"`.", state["impact"])
+                        f"words. When the user chooses, invoke Skill code with {decide_call('adopt')} or "
+                        f"{decide_call('keep')}. {DECIDE_BY_NOTE}", state["impact"])
+    if by not in ("user", "session"):
+        return emit("stop", f"decide {word} needs --by user or --by session. Usage: `{DECIDE_USAGE}`. {DECIDE_BY_NOTE}")
     if not rulingWords:
-        return emit("stop", f"decide {word} needs the user's answer, in their words: "
-                    f"`decide {word} --ruling \"<the user's answer>\"`. Hand back and ask the main session for it.")
+        return emit("stop", f"decide {word} needs the ruling's words: {decide_call(word)}. {DECIDE_BY_NOTE} "
+                    "Hand back and ask the main session for them.")
 
     if state.get("plan") and not (repoRoot / state["plan"]).is_file():
         return emit("stop", f"The plan file {state['plan']} is missing (a branch switch?). Tell the user.")
     rulingAt = time.strftime("%Y-%m-%d %H:%M")
-    state["ruling"] = {"decision": decision, "words": rulingWords, "by": rulingBy or git_user_name(repoRoot),
+    byUser = by == "user" and not rulingBy
+    if rulingBy:
+        rulingName = rulingBy
+    elif byUser:
+        rulingName = git_user_name(repoRoot)
+    else:
+        rulingName = "the session, not the user"
+    state["ruling"] = {"decision": decision, "words": rulingWords, "by": rulingName, "byUser": byUser,
                        "at": rulingAt}
+    if not byUser and state.get("plan") and criteria_file(repoRoot, state):
+        print("The acceptance criteria stay as written: verify-branch reports any criterion the code now fails as "
+              "failing.")
     if state.get("plan"):
         record_deviation(repoRoot, state)
     state["planImpact"] = resolved_plan_impact(state)
@@ -885,23 +1383,101 @@ def git_user_name(repoRoot):
     return git_output(repoRoot, "config", "user.name") or "the user"
 
 
+def criteria_rel(planRel):
+    # The plan's acceptance criteria live beside it.
+    return str(pathlib.PurePath(planRel).parent / "acceptance-criteria.md")
+
+
 def criteria_file(repoRoot, state):
-    # The plan's acceptance criteria live beside it. None when the plan has no criteria file.
-    criteriaRel = str(pathlib.PurePath(state["plan"]).parent / "acceptance-criteria.md")
+    # None when the plan has no criteria file.
+    criteriaRel = criteria_rel(state["plan"])
     if not (repoRoot / criteriaRel).is_file():
         return None
     return criteriaRel
 
 
+def save_criteria_guard(repoRoot, state):
+    # Before a plan edit that the user did not rule: remember the criteria file's path and text, or None for "no
+    # file", so that restore_criteria can put it back.
+    criteriaRel = criteria_rel(state["plan"])
+    criteriaPath = repoRoot / criteriaRel
+    criteriaText = criteriaPath.read_text() if criteriaPath.is_file() else None
+    state["criteriaGuard"] = {"path": criteriaRel, "text": criteriaText}
+
+
+def save_replaced_criteria(repoRoot, criteriaName, text):
+    # Keep the text a restore replaces in the git dir, outside the worktree, one new file per restore.
+    found = git_output(repoRoot, "rev-parse", "--path-format=absolute", "--git-path", "code-step-replaced-criteria")
+    folder = pathlib.Path(found)
+    folder.mkdir(parents=True, exist_ok=True)
+
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    counter = 1
+    while True:
+        target = folder / f"{stamp}-{counter:02d}-{criteriaName}"
+        try:
+            with open(target, "x") as handle:
+                handle.write(text)
+            return target
+        except FileExistsError:
+            counter += 1
+
+
+def settle_criteria_guard(repoRoot, state, branch):
+    # Resolve the saved criteria copy of a plan edit that the user did not rule. Returns the message for the user,
+    # or None when there was nothing to do. The caller saves the state: the guard is popped here.
+    if state.get("criteriaGuard") is None:
+        return None
+    if state.get("branch") != branch:
+        state.pop("criteriaGuard")
+        return ("The saved acceptance criteria belong to a plan edit on another branch, so the script dropped them "
+                "and restored nothing.")
+    return restore_criteria(repoRoot, state)
+
+
+def restore_criteria(repoRoot, state):
+    # Put the folder back as it was at the save. The text of a file that differs, or that did not exist at the save,
+    # goes to a copy under the git dir first. Returns the message for the user, or None when nothing changed.
+    guard = state.pop("criteriaGuard")
+    criteriaPath = repoRoot / guard["path"]
+    if not criteriaPath.parent.is_dir():
+        return (f"The saved acceptance criteria belong to {guard['path']}, whose folder is gone, so the script "
+                "dropped them and restored nothing.")
+
+    if guard["text"] is None:
+        if not criteriaPath.is_file():
+            return None
+        kept = save_replaced_criteria(repoRoot, criteriaPath.name, criteriaPath.read_text())
+        criteriaPath.unlink()
+        return (f"No acceptance criteria file existed before a ruling the user did not make, and {guard['path']} "
+                f"appeared after it, so the script deleted it. The text it deleted is in {kept}.")
+
+    changedNote = ""
+    if criteriaPath.is_file():
+        currentText = criteriaPath.read_text()
+        if currentText == guard["text"]:
+            return None
+        kept = save_replaced_criteria(repoRoot, criteriaPath.name, currentText)
+        changedNote = f" The text it replaced is in {kept}."
+
+    criteriaPath.write_text(guard["text"])
+    return (f"The acceptance criteria in {guard['path']} changed after a ruling the user did not make, and the "
+            f"script restored them.{changedNote}")
+
+
 def plan_edit_prompt(state, criteriaRel):
     ruling = state["ruling"]
-    editScope = f"the plan file {state['plan']}" + (f" and its acceptance criteria file {criteriaRel}" if criteriaRel else "")
+    userRuled = ruling["byUser"]
+    editScope = f"the plan file {state['plan']}"
+    if criteriaRel and userRuled:
+        editScope += f" and its acceptance criteria file {criteriaRel}"
     lines = [
         f"Edit only {editScope}. In Phase {state['phase']}, the code and the plan disagreed:",
         "",
         state["impact"],
         "",
-        f"The user ruled ({ruling['by']}, {ruling['at']}). The ruling, in the user's words:",
+        (f"The user ruled ({ruling['by']}, {ruling['at']}). The ruling, in the user's words:" if userRuled
+         else f"The ruling ({ruling['by']}, {ruling['at']}). The ruling's words:"),
         "",
         ruling["words"],
         "",
@@ -909,7 +1485,9 @@ def plan_edit_prompt(state, criteriaRel):
         "contradicts, so that the plan states the ruling. Keep every other line as it is. Leave the "
         "`## Plan Deviations` section as it is. Edit no code and no test, and run no check.",
     ]
-    if criteriaRel:
+    if criteriaRel and not userRuled:
+        lines += ["", f"Do not edit {criteriaRel}. Only the user's own sign-off changes an acceptance criterion."]
+    if criteriaRel and userRuled:
         lines += ["",
                   f"Rewrite each criterion in {criteriaRel} that the ruling changes, so that it states the ruling. Under "
                   f"each one you rewrite, add `Signed off by {ruling['by']}, {ruling['at']}: \"<the user's words on "
@@ -922,14 +1500,38 @@ def emit_plan_edit_dispatch(repoRoot, state):
     # An adopted change stays only in Plan Deviations unless the steps that contradict it change too, and the
     # reviewer then reads the old step and raises the same disagreement again.
     criteriaRel = criteria_file(repoRoot, state)
-    state.update({"stage": "plan-coder", "planEditBaseline": file_hashes(repoRoot)})
+    ruling = state["ruling"]
+    if not ruling["byUser"]:
+        save_criteria_guard(repoRoot, state)
+    state.update({"stage": "plan-coder", "planEditBaseline": file_hashes(repoRoot),
+                  "followUpBefore": change_snapshot(repoRoot)})
+    open_dispatch(state)
     save_state(repoRoot, state)
 
     prompt = plan_edit_prompt(state, criteriaRel)
-    emit("dispatch", "The user adopted the plan change. Dispatch a coder to rewrite the plan steps and acceptance "
-         "criteria it contradicts.",
-         "NEXT: when the coder returns, run `python3 ~/.claude/scripts/code-step.py after-plan-edit`.",
-         prompt=prompt, agent="coder")
+    if ruling["byUser"]:
+        criteriaClause = " and acceptance criteria" if criteriaRel else ""
+        headline = (f"The user adopted the plan change. Dispatch a coder to rewrite the plan steps{criteriaClause} "
+                    "it contradicts.")
+    else:
+        unchangedClause = " The acceptance criteria do not change." if criteriaRel else ""
+        headline = (f"The plan change was adopted by {ruling['by']}. Dispatch a coder to rewrite the plan steps it "
+                    f"contradicts.{unchangedClause}")
+    emit("dispatch", headline,
+         next_after("after-plan-edit"), prompt=prompt, agent="coder")
+
+
+def command_review_again(args):
+    repoRoot = repo_root()
+    os.chdir(repoRoot)
+    state = load_state(repoRoot)
+    if state is None or state["stage"] != "stopped" or state.get("stopReason") != "invalid-packet":
+        return emit("stop", "review-again ran with no unreadable review packet pending.")
+    state.pop("stopReason")
+    # A failed review that ran the structure pass runs it again; one that skipped it skips it again.
+    if not state.get("structurePassSkipped"):
+        state.pop("reviewRan", None)
+    emit_review_dispatch(repoRoot, state)
 
 
 def command_after_plan_edit(args):
@@ -939,20 +1541,56 @@ def command_after_plan_edit(args):
     if state is None or state["stage"] != "plan-coder":
         return emit("stop", "after-plan-edit ran with no plan edit pending. Run `start` first.")
 
+    if not wait_for_handback(repoRoot, state, "after-plan-edit"):
+        return
+    state = load_state(repoRoot)
+    state["sessionId"] = session_pin() or state.get("sessionId")
+
+    # Nothing below changes state until the run is on the plan's branch with the plan in place: the saved criteria
+    # and the baseline wait for it. /code sends only decide, asks-done, verify, review-again and tick on as verbs, and
+    # none of them resumes a plan edit, so the user runs the verb by hand.
+    startBranch = state.get("branch")
+    if "branch" in state and current_branch(repoRoot) != startBranch:
+        where = (f"Switch back to branch {startBranch}" if startBranch not in (None, "-")
+                 else "Check out the branch or commit where the plan edit started")
+        return emit("stop", f"after-plan-edit ran on a different branch from the plan edit. {where}, then run "
+                    "`! python3 ~/.claude/scripts/code-step.py after-plan-edit` from the repo root, and tell the "
+                    "session to follow its ACTION line. Tell the user.")
+
+    if not (repoRoot / state["plan"]).is_file():
+        return emit("stop", f"The plan {state['plan']} is missing from this checkout, so the plan edit cannot be "
+                    f"read. Restore {state['plan']}, then run "
+                    "`! python3 ~/.claude/scripts/code-step.py after-plan-edit` from the repo root, and tell the "
+                    "session to follow its ACTION line. Tell the user.")
+
+    hadCriteriaGuard = state.get("criteriaGuard") is not None
+    criteriaMessage = settle_criteria_guard(repoRoot, state, current_branch(repoRoot))
+    if criteriaMessage:
+        say(repoRoot, criteriaMessage)
+
+    if hadCriteriaGuard:
+        save_state(repoRoot, state)
+
     baseline = state.pop("planEditBaseline")
     changedNow = file_hashes(repoRoot)
     editedFiles = [name for name, digest in changedNow.items() if baseline.get(name) != digest]
+
     criteriaRel = criteria_file(repoRoot, state)
-    strayFiles = [name for name in editedFiles if name not in (state["plan"], criteriaRel)]
+    allowedFiles = (state["plan"], criteriaRel) if state["ruling"]["byUser"] else (state["plan"],)
+    strayFiles = [name for name in editedFiles if name not in allowedFiles]
     if strayFiles:
         state["files"] += [name for name in strayFiles if name not in state["files"]]
         state["flagged"].append("the plan-edit coder also changed " + ", ".join(strayFiles))
         state["exception"] = True
 
+    planLines = (repoRoot / state["plan"]).read_text().splitlines()
+    state["phaseText"] = phase_text(planLines, state["phase"])
+
     planNote = f"The plan {state['plan']} now states the ruling."
-    if criteriaRel in editedFiles:
+    if criteriaRel and criteriaRel in editedFiles and state["ruling"]["byUser"]:
         planNote += f" The acceptance criteria in {criteriaRel} changed too: read them before you stage."
     say(repoRoot, planNote)
+
     emit_review_dispatch(repoRoot, state)
 
 
@@ -989,6 +1627,64 @@ def handoff_block(state):
     return "\n".join(lines)
 
 
+SMALL_FOLLOW_UP_LINES = 40
+LOCKFILE_NAMES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "uv.lock", "Cargo.lock",
+                  "Gemfile.lock", "composer.lock", "go.sum", "bun.lockb"}
+
+
+def is_test_path(path):
+    lowered = path.lower()
+    name = lowered.rsplit("/", 1)[-1]
+    parts = lowered.split("/")[:-1]
+    return (any(part in ("test", "tests", "__tests__", "spec", "specs") for part in parts)
+            or name.startswith("test_") or ".test." in name or ".spec." in name or "_test." in name)
+
+
+def is_uncounted_path(path):
+    lowered = path.lower()
+    name = lowered.rsplit("/", 1)[-1]
+    return (path.rsplit("/", 1)[-1] in LOCKFILE_NAMES or name.endswith(".lock") or "__snapshots__" in lowered
+            or name.endswith(".snap") or "generated" in lowered or ".generated." in name or ".gen." in name
+            or name.endswith(".min.js"))
+
+
+def is_counted_source(path):
+    return not is_test_path(path) and not is_uncounted_path(path)
+
+
+def change_snapshot(repoRoot):
+    # Added lines per file (tracked diff against HEAD, and the line count of each untracked file) and the files that
+    # are new, so the change a coder makes is the difference between two snapshots.
+    added = {}
+    newFiles = set()
+    for row in (git_output(repoRoot, "diff", "--numstat", "HEAD") or "").split("\n"):
+        columns = row.split("\t")
+        if len(columns) == 3:
+            added[columns[2]] = int(columns[0]) if columns[0].isdigit() else 0
+    for row in (git_output(repoRoot, "diff", "--name-status", "HEAD") or "").split("\n"):
+        columns = row.split("\t")
+        if len(columns) == 2 and columns[0] == "A":
+            newFiles.add(columns[1])
+    untracked = (git_output(repoRoot, "ls-files", "--others", "--exclude-standard") or "").split("\n")
+    for name in untracked:
+        if not name:
+            continue
+        newFiles.add(name)
+        path = repoRoot / name
+        added[name] = path.read_bytes().count(b"\n") if path.is_file() else 0
+    return {"added": added, "newFiles": sorted(newFiles)}
+
+
+def follow_up_is_small(before, after):
+    # True when the coder that ran between the two snapshots added under SMALL_FOLLOW_UP_LINES lines to counted
+    # non-test files and created no new non-test source file.
+    addedLines = sum(max(count - before["added"].get(name, 0), 0) for name, count in after["added"].items()
+                     if is_counted_source(name))
+    createdSource = [name for name in after["newFiles"] if name not in before["newFiles"]
+                     and name not in before["added"] and is_counted_source(name)]
+    return addedLines < SMALL_FOLLOW_UP_LINES and not createdSource
+
+
 def emit_review_dispatch(repoRoot, state):
     coderStages = ["coder"] + (["asks-coder"] if state.get("coderStage") == "asks-coder" else [])
     reports = [report for stage in coderStages for report in saved_messages(repoRoot, "coder", stage)]
@@ -1007,8 +1703,17 @@ def emit_review_dispatch(repoRoot, state):
             header.append(f"phase: {state['phase']}")
     if state.get("modifier"):
         header.append(state["modifier"])
+    # The structure pass runs on the first review of a phase. A re-review after a ruling, or after a follow-up coder
+    # whose own change is small, skips it. The review-loop round count (iter) is a separate matter.
+    followUpBefore = state.pop("followUpBefore", None)
+    isSmallFollowUp = followUpBefore is None or follow_up_is_small(followUpBefore, change_snapshot(repoRoot))
+    state["structurePassSkipped"] = bool(state.get("reviewRan") and isSmallFollowUp)
+    if state["structurePassSkipped"]:
+        header.append("structure-pass: skip")
+    state["reviewRan"] = True
     prompt = "\n".join(header) + "\n\n" + handoff_block(state)
     state["stage"] = "review"
+    open_dispatch(state)
     # after-review reads only reports saved after this dispatch, so a report already acted on is not read again.
     reportsFile = state_dir(repoRoot) / "reports.jsonl"
     state["reviewReportsFloor"] = len(reportsFile.read_text().splitlines()) if reportsFile.exists() else 0
@@ -1021,17 +1726,74 @@ def emit_review_dispatch(repoRoot, state):
         summary += [f"  {path}:{note['lines']} - {note['note']}" for note in notes]
     summary.append("Auto-dispatching review to check the implementation before committing.")
     say(repoRoot, "\n".join(summary))
-    emit("dispatch", "NEXT: when review-loop returns, run `python3 ~/.claude/scripts/code-step.py after-review`.",
-         prompt=prompt, agent="review-loop", model="sonnet")
+    emit("dispatch", next_after("after-review"), prompt=prompt, agent="review-loop", model="sonnet")
 
 
 # ---------- hook ----------
+
+def is_pinned_fork_event(event, state):
+    # The /code fork is the one general-purpose agent in the session that /code pinned. A general-purpose agent of
+    # another session, or of a session /code did not pin, is not touched. The agent type is the only thing a hook
+    # event records about the fork (its description is not in the event).
+    sessionId = event.get("session_id")
+    pinnedSession = state.get("sessionId")
+    return event.get("agent_type") == FORK_AGENT_TYPE and bool(sessionId) and sessionId == pinnedSession
+
+
+def open_dispatch_verb(state):
+    verbs = {"review": "after-review", "plan-coder": "after-plan-edit"}
+    return verbs.get(state["stage"], "after-coder")
+
+
+def is_dispatch_open(cwd, state):
+    # A dispatch is open while the dispatched agent has no hand-back row after dispatchAt.
+    since = state.get("dispatchAt")
+    if since is None or time.time() - since > SAY_MAX_AGE_SECONDS:
+        return False
+    return latest_handback_row(cwd, state, expected_agent(state), since) is None
+
+
+def deny_early_fork_handback(cwd, state):
+    # The fork's hand-back while a coder or review-loop is still out leaves that agent's report with nobody to read
+    # it. Deny it once per dispatch and name the command that waits.
+    if state.get("forkDenied") == state.get("dispatchAt") or not is_dispatch_open(cwd, state):
+        return
+    state["forkDenied"] = state["dispatchAt"]
+    save_state(cwd, state)
+    reason = (f"A dispatched agent has not handed back yet. Do not hand back. Run `{own_path(INSTALLED_COMMAND)} "
+              f"{open_dispatch_verb(state)}` with Bash timeout {BASH_TIMEOUT_MS}: it waits for the hand-back and "
+              "prints the next action.")
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                             "permissionDecisionReason": reason}}))
+
+
+def command_stop_hook():
+    # SubagentStop: the fork ends its turn while a dispatch is open (it answered the Agent call's immediate return
+    # instead of waiting). Block that stop and name the waiting command, at most FORK_STOP_BLOCK_LIMIT times per dispatch.
+    try:
+        event = json.load(sys.stdin)
+        cwd = event.get("cwd") or "."
+        state = load_state(cwd)
+        if state is None or state["stage"] not in HOOK_STAGES or not is_pinned_fork_event(event, state):
+            return
+        blocks = state.get("forkStopBlocks", 0)
+        if blocks >= FORK_STOP_BLOCK_LIMIT or not is_dispatch_open(cwd, state):
+            return
+        state["forkStopBlocks"] = blocks + 1
+        save_state(cwd, state)
+        reason = (f"The dispatched {expected_agent(state)} has not handed back. Do not stop. Run "
+                  f"`{own_path(INSTALLED_COMMAND)} {open_dispatch_verb(state)}` with Bash timeout {BASH_TIMEOUT_MS}: "
+                  "it waits for the hand-back and prints the next action.")
+        print(json.dumps({"decision": "block", "reason": reason}))
+    except Exception as error:
+        print(f"code-step stop-hook: {error}", file=sys.stderr)
+
 
 def command_hook():
     try:
         event = json.load(sys.stdin)
         agentType = event.get("agent_type")
-        if agentType not in ("coder", "review-loop"):
+        if agentType not in ("coder", "review-loop", FORK_AGENT_TYPE):
             return
         cwd = event.get("cwd") or "."
         state = load_state(cwd)
@@ -1040,6 +1802,10 @@ def command_hook():
         sessionId = event.get("session_id")
         pinnedSession = state.get("sessionId")
         if sessionId and pinnedSession and sessionId != pinnedSession:
+            return
+        if agentType == FORK_AGENT_TYPE:
+            if is_pinned_fork_event(event, state):
+                deny_early_fork_handback(cwd, state)
             return
         if sessionId and not pinnedSession and state["stage"] == "coder":
             state["sessionId"] = sessionId
@@ -1054,191 +1820,60 @@ def command_hook():
 
 # ---------- after-review ----------
 
-def ends_packet_value(key, valueLines, line):
-    # A scalar key owns one line. A list key owns its dash lines and their indented continuations; the first
-    # unindented prose line after them is the loop's closing note, not another item.
-    if key in SCALAR_PACKET_KEYS:
-        return True
-    if is_block_scalar(valueLines):
-        return line[:1] not in (" ", "\t")
-    isList = valueLines[0] == "" and len(valueLines) > 1 and valueLines[1].lstrip().startswith("-")
-    isEmptyListKey = key in LIST_KEYS and valueLines == [""]
-    return (isList or isEmptyListKey) and line[:1] not in (" ", "-", "[", "{", "]", "}", "\t")
-
-
-SCALAR_PACKET_KEYS = ("status", "iter", "spec_iter", "load_bearing_clean")
-BLOCK_INDICATOR = re.compile(r"^[|>][+-]?$")
-
-
-def is_block_scalar(valueLines):
-    return BLOCK_INDICATOR.match(valueLines[0].strip()) is not None
-
-
-def packet_value(valueLines):
-    # A `key: |` block keeps its text indented under the key: drop the indicator line and the indent.
-    if is_block_scalar(valueLines):
-        return textwrap.dedent("\n".join(valueLines[1:])).strip()
-    return "\n".join(valueLines).strip()
-
-
-def parse_packet(message):
-    text = "\n".join(line for line in message.splitlines() if not line.strip().startswith("```"))
-    fields = {}
-    trailer = []
-    key = None
-    for line in text.splitlines():
-        match = re.match(r"^([a-z_]+):[ \t]*(.*)$", line)
-        isPacketKey = match is not None and match.group(1) in PACKET_KEYS
-        if isPacketKey and match.group(1) not in fields:
-            key = match.group(1)
-            fields[key] = [match.group(2)]
-        elif isPacketKey:
-            key = None
-            trailer.append(line)
-        elif key and not line.strip() and is_block_scalar(fields[key]):
-            fields[key].append("")
-        elif key and not line.strip():
-            if key in LIST_KEYS and fields[key][0] == "":
-                continue
-            key = None
-            trailer.append("")
-        elif key and ends_packet_value(key, fields[key], line):
-            key = None
-            trailer.append(line)
-        elif key:
-            fields[key].append(line)
-        else:
-            trailer.append(line)
-    packet = {name: packet_value(value) for name, value in fields.items()}
-    packet["trailer"] = "\n".join(trailer).strip()
-    return packet
-
-
-FLOW_KEYS = ["disposition", "finding", "file_line", "blocker", "question", "gate", "class", "reason", "item", "phase"]
-FLOW_KEY_AT = re.compile(r"(?:^|,\s*)(" + "|".join(FLOW_KEYS) + r")\s*:\s*")
-
-
-def unquote(text):
-    text = text.strip()
-    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
-        return text[1:-1]
-    return text
-
-
-def parse_flow_mapping(chunk):
-    # The loop writes items as `{finding: "...", file_line: a.ts:1, blocker: false}`: YAML flow style, not JSON.
-    body = chunk.strip()[1:-1]
-    matches = list(FLOW_KEY_AT.finditer(body))
-    if not matches:
-        return None
-    fields = {}
-    for position, match in enumerate(matches):
-        end = matches[position + 1].start() if position + 1 < len(matches) else len(body)
-        fields[match.group(1)] = unquote(body[match.end():end])
-    return fields
-
-
-def list_items(raw):
-    raw = raw.strip()
-    hasItems = re.search(r"^\s*-\s|\{", raw, re.M) is not None
-    if raw == "" or (not hasItems and NONE_VALUE.match(raw)):
-        return []
-    try:
-        loaded = json.loads(raw)
-        return loaded if isinstance(loaded, list) else [loaded]
-    except ValueError:
-        pass
-    items = []
-    for chunk in re.split(r"^\s*-\s+", raw, flags=re.M):
-        chunk = chunk.strip()
-        if not chunk:
-            continue
-        flowFields = parse_flow_mapping(chunk) if chunk.startswith("{") and chunk.endswith("}") else None
-        if flowFields:
-            items.append(flowFields)
-            continue
-        pairs = dict(re.findall(r"^\s*(\w+):\s*(.+)$", chunk, re.M))
-        items.append(pairs if pairs and all(name in FLOW_KEYS for name in pairs) else unquote(chunk))
-    return items
-
-
-def first_number(value):
-    found = re.search(r"\d+", value or "")
-    return int(found.group()) if found else 0
-
-
-def item_text(item, *keys):
-    if isinstance(item, dict):
-        return " - ".join(str(item[key]) for key in keys if item.get(key))
-    return str(item)
-
-
-def render_packet(packet):
-    lines = ["### Fixed"]
-    fixed = list_items(packet.get("fixed", ""))
-    fixed.sort(key=lambda item: not (isinstance(item, dict) and str(item.get("blocker", "")).lower() in ("true", "yes")))
-    for item in fixed:
-        isBlocker = isinstance(item, dict) and str(item.get("blocker", "")).lower() in ("true", "yes")
-        lines.append(f"- {'[blocker] ' if isBlocker else ''}{item_text(item, 'finding', 'file_line')}")
-    if not fixed:
-        lines.append("- none")
-    for heading, key in (("### Skipped as false positives", "skipped_fp"), ("### Nits", "nit"),
-                         ("### Deferred to branch exit", "findings_remaining")):
-        items = list_items(packet.get(key, ""))
-        if items:
-            lines.append(heading)
-            lines += [f"- {item_text(item, 'finding', 'item', 'file_line', 'reason')}" for item in items]
-    loadBearing = packet.get("load_bearing_clean", "")
-    if loadBearing and loadBearing.lower() not in ("none", "omitted"):
-        lines.append("Note: " + loadBearing)
-    if packet.get("trailer"):
-        lines.append(packet["trailer"])
-    return "\n".join(lines)
-
-
 def command_after_review(args):
     repoRoot = repo_root()
     os.chdir(repoRoot)
     state = load_state(repoRoot)
     if state is None or state["stage"] != "review":
         return emit("stop", "after-review ran with no review pending. Run `start` first.")
+    if not wait_for_handback(repoRoot, state, "after-review", longChecksFollow=True):
+        return
+    state = load_state(repoRoot)
     messages = saved_messages(repoRoot, "review-loop", "review", state.get("reviewReportsFloor", 0))
     if not messages:
+        # The shared store can see the hand-back before this script's own hook has written its row.
+        storeRow = handback_store_row(state)
+        if isinstance(storeRow, dict) and storeRow.get("ts", 0) > state.get("dispatchAt", 0) and storeRow.get("message"):
+            messages = [storeRow["message"]]
+    if not messages:
         return emit("stop", "No review-loop packet was saved. The SubagentHandback hook is not installed. Tell the user.")
-    packet = parse_packet(messages[-1])
-    status = packet.get("status", "").split()[0] if packet.get("status") else ""
-    state["iter"] = first_number(packet.get("iter"))
-    if packet.get("spec_iter"):
-        state["spec_iter"] = first_number(packet["spec_iter"])
+    module, importError = load_handback()
+    if module is None:
+        return emit("stop", f"Cannot read the review-loop packet: {importError}. Tell the user.")
+    try:
+        packet = module.load(messages[-1])
+    except module.PacketError as error:
+        state.update({"stage": "stopped", "stopReason": "invalid-packet"})
+        save_state(repoRoot, state)
+        return emit("stop", "The review-loop packet does not parse. Show the user the raw packet. Problems: "
+                    + "; ".join(error.problems), messages[-1],
+                    "To review the same diff again, invoke Skill code with `review-again`.")
+    status = packet["status"]
+    state["iter"] = packet["iter"]
+    if packet["spec_iter"] is not None:
+        state["spec_iter"] = packet["spec_iter"]
     state["packet"] = packet
 
-    if status == "plan-impact" and not packet.get("plan_impact"):
-        return emit("stop", "The review-loop reported plan-impact with no description. Show the user the raw packet.",
-                    messages[-1])
     if status == "plan-impact":
-        state.update({"stage": "impact-review", "impact": packet.get("plan_impact", "")})
+        state.update({"stage": "impact-review", "impact": packet["plan_impact"]})
         save_state(repoRoot, state)
         return emit_plan_impact_modal(state["impact"], repoRoot)
     if status == "critical-blocker":
         state["stage"] = "stopped"
         save_state(repoRoot, state)
         return emit("stop", "Review found a critical blocker. Present these to the user. Do not mark the phase done.",
-                    *["- " + str(item) for item in list_items(packet.get("blockers", ""))])
+                    *["- " + module.item_text(item, "finding", "file_line") for item in packet["blockers"]])
     if status == "cap-reached":
         state["stage"] = "stopped"
         save_state(repoRoot, state)
         return emit("stop", "The review cap was reached. Report these findings to the user. Do not mark the phase "
                     "done. The session stays dirty, so git commit stays blocked.",
-                    *["- " + item_text(item, "finding", "file_line") for item in
-                      list_items(packet.get("findings_remaining", ""))])
-    if status not in ("converged", "deferred"):
-        return emit("stop", "The review-loop packet has no readable status. Show the user the raw packet.",
-                    messages[-1])
+                    *["- " + module.item_text(item, "finding", "file_line") for item in packet["findings_remaining"]])
 
     save_state(repoRoot, state)
-    say(repoRoot, render_packet(packet))
+    say(repoRoot, module.render(packet, "code"))
     print("The review packet was saved for the user. Do not repeat it.")
-    asks = list_items(packet.get("ask", ""))
+    asks = packet["ask"]
     if asks:
         return present_asks(repoRoot, state, asks)
     finish_phase(repoRoot, state)
@@ -1259,8 +1894,8 @@ def preset_ask_outcome(repoRoot):
 def present_asks(repoRoot, state, asks):
     anchors = []
     for item in asks:
-        fileLine = item.get("file_line", "") if isinstance(item, dict) else ""
-        question = item.get("question", "") if isinstance(item, dict) else str(item)
+        fileLine = item.get("file_line", "")
+        question = item.get("question", "")
         isSingleAnchor = re.match(r"^[^\s,;]+:\d+(-\d+)?$", fileLine) is not None
         if isSingleAnchor and shutil.which("nvim-jump"):
             anchors += ["--note", question[:120], fileLine]
@@ -1276,13 +1911,17 @@ def present_asks(repoRoot, state, asks):
     if presetOutcome:
         print(f"{len(asks)} review ask(s) answered by the pre-set outcome '{presetOutcome}'. No question to the user:")
         say(repoRoot, "Review asks, answered by the pre-set outcome:\n" + "\n".join(
-            f"{n + 1}. {item_text(item, 'finding', 'question')}" for n, item in enumerate(asks)))
+            f"{n + 1}. {ask_text(item)}" for n, item in enumerate(asks)))
         log_ask_outcomes(repoRoot, state, [presetOutcome] * len(asks))
-        return apply_asks_or_finish(repoRoot, state, [presetOutcome] * len(asks), [None] * len(asks), clean_marked=False)
+        return apply_asks_or_finish(repoRoot, state, [presetOutcome] * len(asks), [None] * len(asks))
     ask_the_user(repoRoot, state, asks)
 
 
 def ask_the_user(repoRoot, state, asks):
+    if not mark_review_gate_clean(repoRoot, state):
+        state["stage"] = "stopped"
+        save_state(repoRoot, state)
+        return
     state["stage"] = "asks"
     save_state(repoRoot, state)
     say(repoRoot, "\n".join([
@@ -1290,30 +1929,29 @@ def ask_the_user(repoRoot, state, asks):
         f"Main session: ask the user about each review ask below in plain text and wait for the answers. Each answer "
         f"is accepted, rejected or modified. Then invoke Skill code with the args `asks-done` and {len(asks)} outcome "
         "word(s), in order. After a modified outcome, add `--change \"<the user's change text>\"`.", "",
-        *[f"{n + 1}. {item_text(item, 'finding', 'question')}" for n, item in enumerate(asks)]]))
-    emit("ask-user", "The question for the user is in say.md.",
-         "Run `bash ~/.claude/scripts/review-gate-mark clean` as its own Bash command now. Then hand back.")
+        *[f"{n + 1}. {ask_text(item)}" for n, item in enumerate(asks)]]))
+    emit("ask-user", "The question for the user is in say.md. Hand back.")
 
 
 def log_ask_outcomes(repoRoot, state, outcomes):
     branch = git_output(repoRoot, "branch", "--show-current") or "-"
     for item, outcome in zip(state["asks"], outcomes):
-        fields = item if isinstance(item, dict) else {}
-        fileLine = fields.get("file_line", "-:0")
+        fileLine = item.get("file_line", "-:0")
         path, _, line = fileLine.partition(":")
         run_command(["bash", str(CLAUDE_DIR / "skills/review/log-review-finding"), "kind=finding",
                      f"repo={repoRoot.name}", f"branch={branch}", f"lane={state['lane']}", "scope=phase",
-                     f"phase={state.get('phase') or '-'}", f"iter={state['iter']}", f"gate={fields.get('gate', 'code-reviewer')}",
-                     "disposition=ask", f"class={fields.get('class', 'other')}", f"file={path}",
+                     f"phase={state.get('phase') or '-'}", f"iter={state['iter']}",
+                     f"gate={item.get('gate', 'code-reviewer')}",
+                     "disposition=ask", f"class={item.get('class', 'other')}", f"file={path}",
                      f"line={re.sub(r'[^0-9].*', '', line) or '0'}", "actioned=ask", f"ask_outcome={outcome}",
-                     f"desc=ask resolved: {fields.get('question', '')[:100]}"], repoRoot)
+                     f"desc=ask resolved: {item.get('question', '')[:100]}"], repoRoot)
 
 
 def asks_coder_prompt(acceptedAsks):
     lines = ["Apply these review asks. The user accepted them. Change only what they name.", ""]
     for number, (item, outcome, changeText) in enumerate(acceptedAsks, 1):
-        location = item.get("file_line", "") if isinstance(item, dict) else ""
-        lines.append(f"{number}. [{outcome}] {item_text(item, 'finding', 'question')}"
+        location = item.get("file_line", "")
+        lines.append(f"{number}. [{outcome}] {ask_text(item)}"
                      + (f" ({location})" if location else ""))
         if changeText:
             lines.append(f"   The user's change: {changeText}")
@@ -1322,7 +1960,7 @@ def asks_coder_prompt(acceptedAsks):
     return "\n".join(lines)
 
 
-def apply_asks_or_finish(repoRoot, state, outcomes, changeTexts, clean_marked):
+def apply_asks_or_finish(repoRoot, state, outcomes, changeTexts):
     # An accepted or modified ask is owed work: a coder applies it, then a review of that coder's diff runs (none when
     # the diff is docs only) before the phase can finish.
     acceptedAsks = [[item, outcome, changeText] for item, outcome, changeText in zip(state["asks"], outcomes, changeTexts)
@@ -1330,16 +1968,16 @@ def apply_asks_or_finish(repoRoot, state, outcomes, changeTexts, clean_marked):
     if not acceptedAsks:
         state["stage"] = "review"
         save_state(repoRoot, state)
-        return finish_phase(repoRoot, state, clean_marked=clean_marked)
+        return finish_phase(repoRoot, state)
 
     state.update({"stage": "asks-coder", "acceptedAsks": acceptedAsks, "asksApplied": True,
-                  "asksBaseline": file_hashes(repoRoot)})
+                  "asksBaseline": file_hashes(repoRoot), "followUpBefore": change_snapshot(repoRoot)})
+    open_dispatch(state)
     save_state(repoRoot, state)
     model = "haiku" if state.get("modifier") == "+fast" else None
     emit("dispatch", "The user accepted review asks. Dispatch a coder to apply them. A review of that coder's "
          "diff runs after it (none when the diff is docs only) before the phase can finish.",
-         "NEXT: when the coder returns, run `python3 ~/.claude/scripts/code-step.py after-coder`.",
-         prompt=asks_coder_prompt(acceptedAsks), agent="coder", model=model)
+         next_after("after-coder"), prompt=asks_coder_prompt(acceptedAsks), agent="coder", model=model)
 
 
 def split_asks_done_args(args):
@@ -1374,7 +2012,7 @@ def command_asks_done(args):
     remainingChanges = iter(givenChanges)
     changeTexts = [next(remainingChanges) if outcome == "modified" else None for outcome in outcomes]
     log_ask_outcomes(repoRoot, state, outcomes)
-    apply_asks_or_finish(repoRoot, state, outcomes, changeTexts, clean_marked=True)
+    apply_asks_or_finish(repoRoot, state, outcomes, changeTexts)
 
 
 # ---------- phase gates and boundary ----------
@@ -1396,13 +2034,52 @@ def command_skill_done(args):
     finish_phase(repoRoot, state, skipVerification=True)
 
 
+def command_tick(args):
+    # The user finished a phase outside /code. The main session runs this only on the user's word.
+    repoRoot = repo_root()
+    os.chdir(repoRoot)
+    state = load_state(repoRoot)
+    if len(args) != 1:
+        return emit("stop", "usage: code-step.py tick <phase id>")
+    if state is None or not state.get("plan"):
+        return emit("stop", "tick needs a plan run: there is no saved plan state. Run `start <plan>` first.")
+    if stop_while_plan_edit_coder_is_out(repoRoot, state, "tick " + " ".join(args)):
+        return
+    planPath = repoRoot / state["plan"]
+    if not planPath.is_file():
+        return emit("stop", f"The plan file {state['plan']} is missing (a branch switch?). Tell the user.")
+    plan = parse_plan(planPath.read_text().splitlines())
+    if plan["failures"]:
+        return emit("stop", plan_failure_message(plan, state["plan"]))
+    number = args[0]
+    entry = next((e for e in plan["entries"] if e["number"] == number), None)
+    if entry is None:
+        listed = ", ".join(e["number"] for e in plan["entries"]) or "none"
+        return emit("stop", f"Phase {number} is not in the Phase Status of {state['plan']}. Listed phases: {listed}.")
+    if entry["done"]:
+        return emit("stop", f"Phase {number} is already marked done in {state['plan']}.")
+
+    criteriaMessage = settle_criteria_guard(repoRoot, state, current_branch(repoRoot))
+    if criteriaMessage:
+        say(repoRoot, criteriaMessage)
+
+    mark_phase_done(planPath, number)
+    append_deviation(planPath, [f"- {time.strftime('%Y-%m-%d')} (Phase {number}): marked done by the user, outside "
+                                "/code. No review ran and no gate ran."])
+    state.update({"stage": "done", "phase": number, "autoAdvance": False, "commitFiles": [], "commitLine": ""})
+    state.pop("dispatchAt", None)
+    save_state(repoRoot, state)
+    emit("stop", f"Phase {number} is marked done in {state['plan']} on the user's word. Run `start` for the next "
+         "phase when the user asks.")
+
+
 def command_verify(args):
     repoRoot = repo_root()
     os.chdir(repoRoot)
     state = load_state(repoRoot)
-    if state is None or state["stage"] != "stopped" or state.get("stopReason") != "verification":
-        return emit("stop", "verify ran with no failed Automated Verification pending.")
-    finish_phase(repoRoot, state, clean_marked=True)
+    if state is None or state["stage"] != "stopped" or state.get("stopReason") not in VERIFY_STOP_REASONS:
+        return emit("stop", "verify ran with no failed Automated Verification or unparsed Manual Verification pending.")
+    finish_phase(repoRoot, state)
 
 
 COMMAND_START = re.compile(r"^(cd |npm |npx |pnpm |yarn |git |node |python3? |pytest|ruff |bash |curl |make )")
@@ -1439,7 +2116,7 @@ def run_verification_commands(repoRoot, phaseSection):
     results = []
     skipped = []
     timeout = int(os.environ.get("CODE_STEP_VERIFY_TIMEOUT", VERIFY_TIMEOUT_SECONDS))
-    for line in verification_items(phaseSection, "Automated Verification"):
+    for line in automated_verification_items(phaseSection):
         command = verification_command(line)
         if command is None:
             continue
@@ -1455,9 +2132,11 @@ def run_verification_commands(repoRoot, phaseSection):
 
 
 def mark_phase_done(planPath, number):
-    text = planPath.read_text()
-    updated = re.sub(rf"^- \[ \] (Phase {number}:)", r"- [x] \1", text, count=1, flags=re.M)
-    planPath.write_text(updated)
+    planLines = planPath.read_text().split("\n")
+    entry = next((e for e in parse_plan(planLines)["entries"] if e["number"] == number and not e["done"]), None)
+    if entry:
+        planLines[entry["line"]] = planLines[entry["line"]].replace("[ ]", "[x]", 1)
+    planPath.write_text("\n".join(planLines))
 
 
 def boundary_decision(state, entries, number):
@@ -1473,22 +2152,88 @@ def boundary_decision(state, entries, number):
     return "B", "high"
 
 
-def finish_phase(repoRoot, state, clean_marked=False, skipVerification=False):
-    gateActions = []
-    if not clean_marked and not skipVerification:
-        gateActions.append("run `bash ~/.claude/scripts/review-gate-mark clean` as its own Bash command")
+def mark_review_gate_clean(repoRoot, state):
+    # The review-commit-gate hook reads this file: the review loop ended clean, so the session may commit.
+    # Returns False after emitting a stop when the hand-back record shows the loop did not end clean, or when the
+    # shared hand-back reader is not installed. Nothing is written then.
+    module, importError = load_handback()
+    if module is None:
+        emit("stop", f"Cannot confirm the review loop ended clean: {importError}. The review gate is not marked "
+             "clean. Tell the user.")
+        return False
+    reason = module.false_clean_reason(os.environ.get("CLAUDE_CODE_SESSION_ID"))
+    if reason:
+        emit("stop", f"The review gate is not marked clean: {reason}. Tell the user.")
+        return False
+    gateDir = pathlib.Path.home() / ".claude" / "state" / "review-gate"
+    gateDir.mkdir(parents=True, exist_ok=True)
+    (gateDir / (session_pin() or state.get("sessionId") or "unknown")).write_text("clean\n")
+    return True
+
+
+def count_lines(path):
+    try:
+        return len(path.read_text(errors="replace").splitlines())
+    except OSError:
+        return 0
+
+
+def diff_stat_rows(repoRoot, files):
+    # One "path | +added -deleted" row per file: git's numstat for tracked files, the line count for new ones.
+    numstat = {}
+    for row in (git_output(repoRoot, "diff", "--numstat", "HEAD", "--", *files) or "").splitlines():
+        added, deleted, name = row.split("\t", 2)
+        numstat[name] = (added, deleted)
+    rows = []
+    for name in files:
+        added, deleted = numstat.get(name) or (str(count_lines(repoRoot / name)), "0")
+        rows.append(f"{name} | +{added} -{deleted}")
+    return rows
+
+
+def phase_commit(repoRoot, state):
+    # The phase's own changed files: dirty now, and not dirty before the phase started. Files that were dirty before
+    # stay out of the command. The commit names its files after `--`, so it takes only those files from the index and
+    # leaves anything the user staged by hand staged and uncommitted.
+    # Returns (text for the user, the commit command line, the files it commits); the text and line are "" with no files.
+    baseline = state.get("baseline") or {}
+    dirtyNow = file_hashes(repoRoot)
+    ownFiles = [name for name in dirtyNow if name not in baseline]
+    leftOut = [name for name in dirtyNow if name in baseline and dirtyNow[name] != baseline[name]]
+    if not ownFiles:
+        return "", "", []
+    behaviorLines = state.get("behavior") or []
+    message = behaviorLines[0] if behaviorLines else (state.get("title") or "phase work")
+    quotedFiles = " ".join(shlex.quote(name) for name in ownFiles)
+    commitLine = f"git add -- {quotedFiles} && git commit -m {shlex.quote(message)} -- {quotedFiles}"
+    lines = ["Files changed by this phase:", *diff_stat_rows(repoRoot, ownFiles), ""]
+    if leftOut:
+        lines += ["Dirty before the phase and left out of the commit: " + ", ".join(leftOut), ""]
+    lines += ["Commit command (not run by the script):", commitLine]
+    return "\n".join(lines), commitLine, ownFiles
+
+
+def finish_phase(repoRoot, state, skipVerification=False):
+    if not skipVerification and not mark_review_gate_clean(repoRoot, state):
+        return
 
     if not state.get("plan"):
         state["stage"] = "done"
         save_state(repoRoot, state)
-        return emit("stop", "Planless task reviewed. Tell the user the result.", *[f"Then {a}." for a in gateActions])
+        commitText, _, _ = phase_commit(repoRoot, state)
+        if commitText:
+            say(repoRoot, commitText)
+        return emit("stop", "Planless task reviewed. Tell the user the result.")
 
     planPath = repoRoot / state["plan"]
     if not planPath.is_file():
-        return emit("stop", f"The plan file {state['plan']} is missing (a branch switch?). Tell the user.",
-                    *[f"Also {a}." for a in gateActions])
+        return emit("stop", f"The plan file {state['plan']} is missing (a branch switch?). Tell the user.")
 
     planLines = planPath.read_text().splitlines()
+    plan = parse_plan(planLines)
+    if plan["failures"]:
+        return emit("stop", plan_failure_message(plan, state["plan"]))
+
     number = state["phase"]
     section = phase_text(planLines, number) if number is not None else "\n".join(planLines)
     section = section or ""
@@ -1501,19 +2246,32 @@ def finish_phase(repoRoot, state, clean_marked=False, skipVerification=False):
         save_state(repoRoot, state)
         return emit("stop", "Automated Verification failed. Do not mark the phase done. Report to the user:",
                     *[f"- `{command}` exit {code}: {output[-400:]}" for command, code, output in failed],
-                    "When the failure is fixed, run `python3 ~/.claude/scripts/code-step.py verify`.",
-                    *[f"Also {a}." for a in gateActions])
+                    RESUME_LINE.format(noun="failure", verb="verify"))
 
-    manualItems = verification_items(section, "Manual Verification")
-    agentVerified = [i for i in manualItems if "agent-verified" in i]
-    humanOnly = [i for i in manualItems if i not in agentVerified]
+    try:
+        manualItems = phase_manual_items(planLines, number, state["plan"])
+    except plan_format.PlanFormatError as error:
+        state.update({"stage": "stopped", "stopReason": "plan-format"})
+        save_state(repoRoot, state)
+        return emit("stop", manual_format_message(error, RESUME_LINE.format(noun="section", verb="verify")))
+
+    manualGroups = {
+        "verified": [manual_item_line(i) for i in manualItems if i["verified"]],
+        "notRun": [manual_item_line(i) for i in manualItems if not i["humanOnly"] and not i["verified"]],
+        "humanOnly": [manual_item_line(i) for i in manualItems if i["humanOnly"] and not i["checked"]]}
+    reopened = []
     if number is not None:
+        isClosing = any(e["number"] == number and e["closing"] for e in plan["entries"])
         mark_phase_done(planPath, number)
+        reopened = [] if isClosing else reopen_closing_phases(planPath)
     entries = phase_status_entries(planPath.read_text().splitlines())
     block, riskLabel = boundary_decision(state, entries, number)
-    nextPending = [e for e in entries if not e["done"]]
+    nextPending = ordered_pending(entries)
+    commitText, commitLine, commitFiles = phase_commit(repoRoot, state)
     state["stage"] = "done"
     state["autoAdvance"] = block == "A"
+    state["commitFiles"] = commitFiles
+    state["commitLine"] = commitLine
     state.pop("stopReason", None)
     save_state(repoRoot, state)
 
@@ -1522,31 +2280,43 @@ def finish_phase(repoRoot, state, clean_marked=False, skipVerification=False):
     doneLine = (f"{doneText} Verification run: "
                 f"{len(verifyResults)} command(s) green ({'; '.join(c for c, _, _ in verifyResults) or 'none'}); "
                 f"skipped as covered by the review loop: {len(skipped)}.")
+    if reopened:
+        doneLine += (f" Closing phase(s) {', '.join(reopened)} were checked and are unchecked again, so they run on "
+                     "the new code.")
     print(doneLine)
     say(repoRoot, doneLine)
+    if commitText:
+        say(repoRoot, commitText)
 
     if block == "A":
-        nextStart = "python3 ~/.claude/scripts/code-step.py start" + (f" {state['modifier']}" if state.get("modifier") else "")
-        say(repoRoot, block_a(number, riskLabel, len(agentVerified), len(humanOnly), nextPending[0]["number"]))
-        emit("auto-advance", "The user sees block A at the end of the turn. " + "; ".join(gateActions + [
-             f"in the same response run `{nextStart}` for Phase " + nextPending[0]["number"]]) + ".")
+        nextStart = f"{INSTALLED_COMMAND} start" + (f" {state['modifier']}" if state.get("modifier") else "")
+        say(repoRoot, block_a(number, riskLabel, manualGroups, nextPending[0]["number"]))
+        commitStep = (f"First run this commit command as a Bash call: {commitLine}\nThen " if commitLine else "")
+        emit("auto-advance", "The user sees block A at the end of the turn. "
+             + f"{commitStep}in the same response run `{nextStart}` for Phase " + nextPending[0]["number"] + ".")
         return
-    blockText = block_b_or_c(block, number, riskLabel, state, agentVerified, humanOnly,
+    blockText = block_b_or_c(block, number, riskLabel, state, manualGroups,
                              nextPending[0]["number"] if nextPending else None)
     say(repoRoot, blockText.replace("<<STAGE QUEUE>>", "(the /stage queue is printed above in this turn)"))
-    emit("stop-block-" + block, *[f"First {a}." for a in gateActions],
+    emit("stop-block-" + block,
          "Invoke the Skill tool with `stage` and print its queue verbatim. The user sees the rest of the phase-complete "
          "block at the end of the turn: do not write it. Then wait for the user. When they say continue, run "
          "`code-step.py start`.")
 
 
-def block_a(number, riskLabel, agentCount, humanCount, nextNumber):
+def manual_item_line(item):
+    return f"- [{'x' if item['checked'] else ' '}] {item['text']}"
+
+
+def block_a(number, riskLabel, manualGroups, nextNumber):
+    verifiedCount, notRunCount, humanCount = (len(manualGroups[name]) for name in ("verified", "notRun", "humanOnly"))
     return (f"Phase {number} complete - machine gates green (review ✓, execution ✓, automated-verification ✓). "
-            f"Risk: low. Manual verification: {agentCount} agent-verified, {humanCount} human-only deferred to the "
+            f"Risk: low. Manual verification: {verifiedCount} verified, {notRunCount} agent-run items not yet run "
+            f"(/verify-branch runs them at the end of the branch), {humanCount} human-only deferred to the "
             f"/verify-branch packet.\n-> Auto-advancing to Phase {nextNumber} in-session (no /clear; interrupt anytime).")
 
 
-def block_b_or_c(block, number, riskLabel, state, agentVerified, humanOnly, nextNumber):
+def block_b_or_c(block, number, riskLabel, state, manualGroups, nextNumber):
     behavior = state.get("behavior") or []
     lastText = f"Phase {number} complete (last phase)." if number is not None else "The plan is complete."
     parts = [f"Phase {number} complete. Risk: {riskLabel}. Phase-level sign-off requested." if block == "B"
@@ -1555,13 +2325,21 @@ def block_b_or_c(block, number, riskLabel, state, agentVerified, humanOnly, next
         parts += ["Behavior delta (observable change + its proof, max 3 - no internals, no paths):",
                   *[f"- {line}" for line in behavior[:3]], ""]
     parts += ["Read first (/stage queue, blast-radius order):", "<<STAGE QUEUE>>", ""]
-    if agentVerified:
-        parts += ["Agent-verified (evidence in the plan):", *agentVerified, ""]
-    if humanOnly:
-        parts += ["Human-only verification remaining:", *humanOnly, ""]
+    if manualGroups["verified"]:
+        parts += ["Verified (checked, or marked agent-verified in the plan):", *manualGroups["verified"], ""]
+    if manualGroups["notRun"]:
+        parts += ["Agent-run, not yet run (/verify-branch runs these at the end of the branch):",
+                  *manualGroups["notRun"], ""]
+    if manualGroups["humanOnly"]:
+        parts += ["Human-only verification remaining:", *manualGroups["humanOnly"], ""]
     if block == "B":
-        step1 = "Read the queue (`]k`/`[k` in nvim); spot-check the evidence lines; run the human-only items." \
-            if (agentVerified or humanOnly) else "Read the /stage queue."
+        queueSteps = ["Read the queue (`]k`/`[k` in nvim)"] if manualGroups["verified"] or manualGroups["humanOnly"] \
+            else ["Read the /stage queue"]
+        if manualGroups["verified"]:
+            queueSteps.append("spot-check the verified items")
+        if manualGroups["humanOnly"]:
+            queueSteps.append("run the human-only items")
+        step1 = "; ".join(queueSteps) + "."
         parts += ["Next:", f"  1. {step1}",
                   f"  2. Stage what you've read, then run /clear and /code to start Phase {nextNumber} fresh. "
                   "To keep this context, confirm here.", "", "Or give feedback now for revisions to Phase " + number + "."]
@@ -1581,11 +2359,18 @@ def main():
     args = sys.argv[2:]
     verbs = {"start": command_start, "after-coder": command_after_coder, "decide": command_decide,
              "after-plan-edit": command_after_plan_edit, "after-review": command_after_review,
-             "asks-done": command_asks_done, "skill-done": command_skill_done, "verify": command_verify}
+             "asks-done": command_asks_done, "skill-done": command_skill_done, "verify": command_verify,
+             "tick": command_tick, "review-again": command_review_again}
     # These verbs open a new /code run after the user answered. The last run's say.md text was already handed back.
-    resumeVerbs = ("decide", "asks-done", "verify")
+    resumeVerbs = ("decide", "asks-done", "verify", "review-again")
     if verb == "hook":
         return command_hook()
+    if verb == "plan-hook":
+        return command_plan_hook()
+    if verb == "stop-hook":
+        return command_stop_hook()
+    if verb == "plan":
+        return command_plan(args)
     if verb == "say-hook":
         return command_say_hook()
     if verb == "status":
@@ -1595,7 +2380,7 @@ def main():
             return print(error)
     if verb not in verbs:
         sys.exit("usage: code-step.py start|after-coder|decide|after-plan-edit|after-review|asks-done|skill-done|verify"
-                 "|hook|status")
+                 "|review-again|tick|hook|stop-hook|say-hook|status|plan|plan-hook")
     if verb in resumeVerbs:
         clear_say(repo_root())
     try:

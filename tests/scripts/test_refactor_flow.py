@@ -58,6 +58,8 @@ class RefactorFlowTest(unittest.TestCase):
         self.findings = self.tempRoot / "findings.jsonl"
         self.logInputDir = self.tempRoot / "log-inputs"
         self.logInputDir.mkdir()
+        (self.home / ".claude").mkdir(parents=True)
+        (self.home / ".claude" / "toolkit-telemetry").touch()
         self.repo = self.makeRepo("myrepo")
 
     def makeRepo(self, name):
@@ -95,8 +97,9 @@ class RefactorFlowTest(unittest.TestCase):
         self.commitAll("work")
 
     def flow(self, *args, extraEnv=None, cwd=None):
+        callerEnv = {key: value for key, value in os.environ.items() if key != "CLAUDE_TOOLKIT_TELEMETRY"}
         env = {
-            **os.environ,
+            **callerEnv,
             **GIT_ENV,
             "HOME": str(self.home),
             "REFACTOR_CLAUDE_DIR": REAL_CLAUDE_DIR,
@@ -703,6 +706,16 @@ class RefactorFlowTest(unittest.TestCase):
         done = self.log("branch", payload)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertNotIn("line", self.rows(self.escapes)[0])
+
+    def test_log_writes_no_escape_row_while_the_telemetry_switch_is_off(self):
+        self.branchWith({"a.py": "x = 1\n"})
+        (self.home / ".claude" / "toolkit-telemetry").unlink()
+        payload = {"finder": "smell-reviewer", "lane": "code", "guards": {"duplication": "none"},
+                   "findings": [self.finding()]}
+        done = self.log("branch", payload)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual([row["kind"] for row in self.rows(self.findings)], ["run", "finding"])
+        self.assertEqual(self.rows(self.escapes), [])
 
     def test_log_empty_handed_still_writes_run_row(self):
         self.branchWith({"a.py": "x = 1\n"})

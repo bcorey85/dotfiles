@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """PostToolUse hook on Agent: per-dispatch token telemetry.
 
-Port of log-agent-usage.sh. Appends one line per completed subagent dispatch to AGENT_USAGE_FILE
+Appends one line per completed subagent dispatch to AGENT_USAGE_FILE
 (default ~/.claude/agent-usage.jsonl):
   {ts, repo, agent, model, desc, tokens, toolUses, durationMs, reportChars, noResult, respKeys}
 
 The token fields probe several candidate paths because the Agent tool_response schema is not contractual;
 respKeys is the self-diagnostic. reportChars and noResult are null on the async schema (no inline content).
-Never emits hook output. Exits 0, except 5 on a payload that is not valid JSON or not an object, as the
+Writes nothing while the metrics switch is off (CLAUDE_TOOLKIT_TELEMETRY=1, or the file ~/.claude/toolkit-telemetry). Never emits hook output. Exits 0, except 5 on a payload that is not valid JSON or not an object, as the
 bash original did through jq.
 """
 import json
@@ -19,6 +19,12 @@ import time
 import hook_input
 from hook_input import (JqError, bash_basename, current_directory, first_truthy, index, jq_type, parse_documents,
                         raw_text, report_open_failure, truthy)
+
+try:
+    from telemetry_enabled import telemetry_enabled
+except ImportError:
+    def telemetry_enabled():
+        return False
 
 NO_RESULT = re.compile(
     "no results|not found|no matches|could not find|couldn.t find|nothing (found|to report)|no relevant|no such|"
@@ -117,6 +123,9 @@ def main():
             return 5
     event = "\n".join(events).rstrip("\n")
     if event != "PostToolUse":
+        return 0
+
+    if not telemetry_enabled():
         return 0
 
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR", "")

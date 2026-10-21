@@ -79,10 +79,12 @@ Next: read the residue → run the smoke checklist → /adr → stage → /commi
 Persist (non-blocking; on failure mention and continue):
 
 ```bash
-printf '{"ts":"%s","repo":"%s","branch":"%s","test_audit":"%s","residue":%d,"files":%d}\n' \
-  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(basename "$(git rev-parse --show-toplevel)")" \
-  "$(git rev-parse --abbrev-ref HEAD)" "<clean|n culled|n weak>" \
-  <unstaged count> <changed-file count> >> "$HOME/.claude/branch-recap-receipts.jsonl"
+if "$HOME/.claude/scripts/telemetry_enabled.sh" 2>/dev/null; then
+  printf '{"ts":"%s","repo":"%s","branch":"%s","test_audit":"%s","residue":%d,"files":%d}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(basename "$(git rev-parse --show-toplevel)")" \
+    "$(git rev-parse --abbrev-ref HEAD)" "<clean|n culled|n weak>" \
+    <unstaged count> <changed-file count> >> "$HOME/.claude/branch-recap-receipts.jsonl"
+fi
 ```
 
 ## What NOT to do

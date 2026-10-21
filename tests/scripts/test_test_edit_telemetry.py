@@ -8,6 +8,8 @@ import sys
 import tempfile
 import unittest
 
+os.environ.pop("CLAUDE_TOOLKIT_TELEMETRY", None)  # the switch file alone decides in these tests
+
 SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts")
 SCRIPT = SCRIPTS_DIR / "test-edit-telemetry.py"
 
@@ -21,6 +23,7 @@ class TestEditTelemetryTest(unittest.TestCase):
         self.root = pathlib.Path(self.tmp.name).resolve()
         self.home = self.root / "home"
         (self.home / ".claude").mkdir(parents=True)
+        (self.home / ".claude" / "toolkit-telemetry").touch()
         self.log = self.home / ".claude" / "test-edit-telemetry.jsonl"
 
     def run_hook(self, payload, env=None, cwd=None, stderr=""):
@@ -111,12 +114,15 @@ class TestEditTelemetryTest(unittest.TestCase):
                       env={"CLAUDE_SKIP_HOOKS": "1"})
         self.assertFalse(self.log.exists())
 
-    def test_missing_log_directory_is_ignored(self):
+    def test_unopenable_log_is_ignored(self):
+        self.log.mkdir()
+        shell_message = "test-edit-telemetry: cannot open %s: Is a directory\n" % self.log
+        self.edit("/r/a_test.py", stderr=shell_message)
+
+    def test_missing_claude_directory_means_switch_off(self):
         self.home = self.root / "nohome"
         self.home.mkdir()
-        log = self.home / ".claude" / "test-edit-telemetry.jsonl"
-        shell_message = "test-edit-telemetry: cannot open %s: No such file or directory\n" % log
-        self.edit("/r/a_test.py", stderr=shell_message)
+        self.edit("/r/a_test.py")
         self.assertFalse((self.home / ".claude").exists())
 
     def test_control_characters_are_escaped_like_jq(self):

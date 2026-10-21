@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stop and UserPromptSubmit hook: format only the files a turn changed, once, at turn end.
 
-Port of format-changed.sh. UserPromptSubmit snapshots the dirty set with content hashes. Stop formats files new
+UserPromptSubmit snapshots the dirty set with content hashes. Stop formats files new
 to that set or whose hash moved, so untouched hand edits are left alone. Silent and always exits 0.
 CLAUDE_SKIP_HOOKS set to any non-empty value exits 0. Snapshots live in ~/.claude/state/format-changed and
 snapshots older than 2 days are deleted on every run.

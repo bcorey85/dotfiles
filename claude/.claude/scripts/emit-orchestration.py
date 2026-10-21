@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SessionStart hook: inject ~/.claude/orchestration.md as additionalContext.
 
-Port of emit-orchestration.sh. Main session only; subagents never see it. A readable file is emitted as
+Main session only; subagents never see it. A readable file is emitted as
 pretty-printed JSON (two-space indent, as `jq -Rs` printed it). A missing or unreadable file emits a compact
 one-line warning. Always exits 0.
 """

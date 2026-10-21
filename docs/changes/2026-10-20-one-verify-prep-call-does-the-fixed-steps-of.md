@@ -11,10 +11,10 @@ watches: ["verify-branch-one-call", "verify-branch-one-call-escapes"]
 
 ## Change
 
-- New scripts `scripts/verify-prep`, `scripts/verify-log` and `scripts/verify_common.py` (drafts, not yet installed).
-- `skills/verify-branch/SKILL.md` (draft): Step 0 runs `verify-prep` and follows its printed steps. Step 1 sends one `code-reviewer` over the branch diff unless prep reports a branch-wide review since the last change, routes its findings through `/review`, logs the review with `verify-log review`, and reruns prep. Step 2 sends `plan-verifier` with the payload prep prints. Step 3 pipes the verdict rows to `verify-log`, which writes the run row and one drift row per gap.
-- `scripts/code-step.py` (draft): the Verify pass invokes `/verify-branch` and no longer sends its own `code-reviewer`. The skill runs the review on every path, direct or from `/code`.
-- `skills/_shared/closing-phases.md`: the Verify pass text says that `/verify-branch` runs both checks. The live edit was refused, so the new text is a draft beside the scripts.
+- New scripts `scripts/verify-prep`, `scripts/verify-log` and `scripts/verify_common.py`.
+- `skills/verify-branch/SKILL.md`: Step 0 runs `verify-prep` and follows its printed steps. Step 1 sends one `code-reviewer` over the branch diff unless prep reports a branch-wide review since the last change, routes its findings through `/review`, logs the review with `verify-log review`, and reruns prep. Step 2 sends `plan-verifier` with the payload prep prints. Step 3 pipes the verdict rows to `verify-log`, which writes the run row and one drift row per gap.
+- `scripts/code-step.py`: the Verify pass invokes `/verify-branch` and no longer sends its own `code-reviewer`. The skill runs the review on every path, direct or from `/code`.
+- `skills/_shared/closing-phases.md`: the Verify pass text says that `/verify-branch` runs both checks.
 
 Review coverage is the same: a branch-wide review runs at branch end unless one already ran on the same diff.
 
@@ -26,7 +26,7 @@ Tests: 24 pass against the drafts. `verify-prep` ran on 27 of 27 real task dirs 
 
 ## Result
 
-Not installed.
+Installed 2026-10-20. The `verify-branch` front matter kept its live description. No work-log reading yet.
 
 ## Watch
 

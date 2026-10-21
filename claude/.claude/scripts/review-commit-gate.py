@@ -3,7 +3,8 @@
 
   PostToolUse(Agent): a coder dispatch marks the session dirty.
   PreToolUse(Bash):   `git commit` while dirty asks the user to confirm; `review-gate-mark clean|dirty` records
-                      that state.
+                      that state. `clean` is denied unless this session's latest stored review-loop hand-back
+                      (handback.py) is converged or deferred.
 
 State: ~/.claude/state/review-gate/<session>. Hook JSON in, one permissionDecision line out, exit 0. On an internal
 error PreToolUse asks; PostToolUse stays silent.
@@ -14,6 +15,7 @@ import re
 import sys
 import time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import hook_input
 from hook_input import JqError, jq_get, jq_str, truthy
 
@@ -23,6 +25,10 @@ MARK = re.compile(r"review-gate-mark[ \t\n\r\f\v]+(clean|dirty)")
 
 
 class Ask(Exception):
+    pass
+
+
+class Deny(Exception):
     pass
 
 
@@ -96,6 +102,15 @@ def run(raw, state):
                       "commit anyway, or deny and run /review.")
         marked = MARK.search(command)
         if marked:
+            reason = None
+            if marked.group(1) == "clean":
+                # Imported here, not at load: a missing module is an internal error on a `clean` mark only, and the
+                # commit check and the dirty mark keep working.
+                import handback
+                reason = handback.false_clean_reason(session)
+            if reason:
+                raise Deny("[review-commit-gate] Gate not marked clean: %s. Only a converged or deferred review "
+                           "hand-back from this session allows clean." % reason)
             with open(state_file, "w") as handle:
                 handle.write(marked.group(1) + "\n")
 
@@ -136,6 +151,8 @@ def main():
         run(sys.stdin.buffer.read().decode("utf-8", "replace"), state)
     except Ask as asked:
         emit_ask(str(asked))
+    except Deny as denied:
+        hook_input.emit_decision("deny", str(denied))
     except JqError as error:
         rc = error.rc
     except Exception:

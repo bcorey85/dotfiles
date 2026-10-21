@@ -28,7 +28,7 @@ Thin wrapper over the `review-loop` agent (`mode: fix-first`): hand it the findi
    - **`critical-blocker`** → STOP. Present `blockers` and wait. Do NOT re-dispatch.
    - **`cap-reached`** → STOP. Report `findings_remaining`; the user decides. The session is correctly left `dirty`, so `git commit` stays blocked.
    - **`deferred`** → render the packet (step 3), add `findings_remaining` under `### Deferred to branch exit`, record convergence as for `converged`. Do NOT re-dispatch.
-   - **`converged`** → render the packet (step 3), then `bash ~/.claude/scripts/review-gate-mark clean`. Mark ONLY on `converged` or `deferred`.
+   - **`converged`** → render the packet (step 3), then `~/.claude/scripts/review-gate-mark clean`. Mark ONLY on `converged` or `deferred`.
 
 3. **Log walkthrough escapes — MANDATORY on `converged`, do not skip.** When the findings came from **the user, in conversation**, on code a prior `/review` already blessed, log each one.
 
@@ -41,7 +41,7 @@ Thin wrapper over the `review-loop` agent (`mode: fix-first`): hand it the findi
    One line per distinct defect, no user prompt, do not pause:
 
    ```bash
-   bash ~/.claude/scripts/log-escape repo="$(basename "$(git rev-parse --show-toplevel)")" stage_found=walkthrough gate_missed=<review|drift-gate|test-intent|stage|coder|eng-spec> class=<bug|smell|duplication|plan-drift|test-gap|other> severity=<high|medium|low> lane=<eng-spec|code|other> guard=<...> desc="<one line>" file=<path>
+   ~/.claude/scripts/log-escape stage_found=walkthrough gate_missed=<review|drift-gate|test-intent|stage|coder|eng-spec> class=<bug|smell|duplication|plan-drift|test-gap|other> severity=<high|medium|low> lane=<eng-spec|code|other> guard=<...> desc="<one line>" file=<path>
    ```
 
    `guard` is the ratchet rung from `~/.claude/skills/_shared/escape-ratchet.md`. Pick it here without pausing; state the proposed guard in the packet (step 3) and apply it on approval there.
@@ -55,8 +55,7 @@ Thin wrapper over the `review-loop` agent (`mode: fix-first`): hand it the findi
    **Log each ask outcome** (PLAN-IMPACT asks excluded). After the user answers, one row per ask; telemetry never blocks:
 
    ```bash
-   bash "$HOME/.claude/skills/review/log-review-finding" kind=finding \
-     repo="$(basename "$(git rev-parse --show-toplevel)")" branch="$(git branch --show-current)" \
+   ~/.claude/skills/review/log-review-finding kind=finding \
      lane=<eng-spec|code|other, per step 3> scope=standalone phase=- iter=<returned iter> \
      gate=<entry gate> disposition=ask class=<entry class> file=<path> line=<n> \
      actioned=ask ask_outcome=<accepted|rejected|modified> desc="ask resolved: <one line>"

@@ -48,8 +48,8 @@ diff and what it touches, not a fresh read.
 21. **Log the plan.** One row, once, now that the plan is final:
 
     ```bash
-    bash ~/.claude/scripts/log-spec-run \
-      repo="$(basename "$(git rev-parse --show-toplevel)")" \
+    ~/.claude/scripts/log-spec-run \
+      repo=<repo> \
       slug=<task dir basename> ticket=<ID|none> verdict=finalized \
       phases=<count> criteria=<count> decisions=<count> \
       research_q=<count> gaps=<count> falsified=<count> \

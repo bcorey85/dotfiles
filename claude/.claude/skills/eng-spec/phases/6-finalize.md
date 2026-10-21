@@ -49,7 +49,7 @@
 16b. **Dry-run the verification criteria** — two failure modes of the plan's
 `#### Automated Verification:` commands survive reading. Resolve each with the user before Phase 7.
 
-    - **Static lint**: `bash ~/.claude/scripts/spec-criteria-lint.sh <plan-path>`
+    - **Static lint**: `~/.claude/scripts/spec-criteria-lint.sh <plan-path>`
       flags a test-file `**File**:` target and a verification-command file that no
       phase creates and is absent.
     - **Falsifiability run**: for each **read-only** command (build, test, lint,

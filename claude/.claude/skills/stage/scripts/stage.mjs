@@ -15,7 +15,7 @@
 //   SKIM     — cheap, high-signal-per-line reads (types, styles, docs).
 //   SAFE     — invariant-verified mechanical changes; --stage stages them.
 //
-// Usage: stage.mjs [--json] [--stage]
+// Usage: stage.mjs [--json] [--stage] [--run [--no-stage]]
 // Config: optional .stage.json at repo root:
 //   { "hotPaths": ["regex", ...], "skim": ["regex", ...] }
 // Cache: reads <git-dir>/stage-verdicts.json (path -> { hash, verdict }); each
@@ -26,12 +26,23 @@
 
 import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, basename } from "node:path";
+import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 
 const argv = process.argv.slice(2);
 const asJson = argv.includes("--json");
-const doStage = argv.includes("--stage");
+const runMode = argv.includes("--run");
+const noStage = argv.includes("--no-stage");
+const doStage = argv.includes("--stage") || (runMode && !noStage);
+
+if (runMode) {
+  process.on("uncaughtException", (err) => {
+    const detail = (err?.stderr ? String(err.stderr).trim() : "") || err?.message || String(err);
+    console.error(`stage: --run failed, nothing staged by this run: ${detail}`);
+    process.exit(2);
+  });
+}
 
 function git(args, opts = {}) {
   return execFileSync("git", args, {
@@ -183,7 +194,7 @@ for (const p of git(["ls-files", "-o", "--exclude-standard", "-z"], { cwd: root 
   changed.set(p, { status: "A", untracked: true });
 }
 
-if (changed.size === 0) {
+if (changed.size === 0 && !runMode) {
   if (asJson) console.log(JSON.stringify({ escalate: [], read: [], skim: [], safe: [], staged: [] }, null, 2));
   else console.log("stage: working tree clean vs HEAD — nothing to stage");
   process.exit(0);
@@ -402,6 +413,66 @@ let staged = [];
 if (doStage && tiers.safe.length > 0) {
   staged = tiers.safe.map((e) => e.path);
   git(["add", "--", ...staged], { cwd: root });
+}
+
+// ---------------------------------------------------------------- --run
+if (runMode) {
+  const queueTiers = [
+    ["ESCALATE", tiers.escalate],
+    ["READ", tiers.read],
+    ["SKIM", tiers.skim],
+  ];
+  const queue = queueTiers.flatMap(([tier, entries]) => entries.map((entry) => ({ tier, entry })));
+  const stagedCount = staged.length;
+  const queueCount = queue.length;
+  const result = queueCount === 0 ? "clean" : "residue";
+  const repoName = basename(root);
+
+  const logScript =
+    process.env.STAGE_LOG_SCRIPT || join(homedir(), ".claude", "skills", "review", "log-review-metrics");
+  try {
+    execFileSync(
+      "bash",
+      [logScript, `repo=${repoName}`, "lane=stage", `suppressed=${stagedCount}`, `queue=${queueCount}`, `result=${result}`],
+      { cwd: root, stdio: ["ignore", "ignore", "pipe"] },
+    );
+  } catch (err) {
+    const detail = (err?.stderr ? String(err.stderr).trim() : "") || err?.message;
+    console.error(`stage: warning: metrics row not logged: ${detail}`);
+  }
+
+  const reasonText = (tier, entry) => {
+    if (entry.reasons.length > 0) return entry.reasons.join("; ");
+    return tier === "SKIM" ? "low blast radius (types, styles, docs)" : "semantic change, no tripwire";
+  };
+
+  const report = ["## Stage", ""];
+  report.push(queueCount === 0 ? "Read (0): nothing left to read." : `Read (${queueCount}), in blast-radius order:`);
+  for (const [tier, entries] of queueTiers) {
+    if (entries.length === 0) continue;
+    report.push(`  ${tier}:`);
+    for (const entry of entries) report.push(`  - \`${entry.path}\` — ${reasonText(tier, entry)}`);
+  }
+  report.push("");
+
+  if (noStage) {
+    report.push(`Staged mechanically (0) — --no-stage given; ${tiers.safe.length} SAFE file(s) left unstaged.`);
+  } else {
+    report.push(`Staged mechanically (${stagedCount}) — invariant-verified, skip. \`git diff --staged\` to spot-check.`);
+  }
+  report.push("");
+
+  const jumpRows = queue
+    .filter(({ entry }) => entry.line)
+    .map(({ tier, entry }) =>
+      JSON.stringify({ tier, path: entry.path, line: entry.line, reason: reasonText(tier, entry) }),
+    );
+  report.push("```jump-queue", ...jumpRows, "```", "");
+  report.push(
+    "Still yours: write the one-line note for each jump-queue row from the diff, run nvim-jump with the rows in order, and report any disagreement with a tier.",
+  );
+  process.stdout.write(report.join("\n") + "\n");
+  process.exit(0);
 }
 
 // ------------------------------------------------------------- review sizing

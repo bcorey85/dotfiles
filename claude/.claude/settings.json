@@ -432,6 +432,16 @@
     ],
     "SessionStart": [
       {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v ledger >/dev/null 2>&1 && ledger hook session-start; exit 0",
+            "async": true
+          }
+        ]
+      },
+      {
         "matcher": "startup|resume|clear|compact",
         "hooks": [
           {
@@ -526,7 +536,8 @@
     "playwright@claude-plugins-official": false,
     "frontend-design@claude-plugins-official": false,
     "ralph-loop@claude-plugins-official": false,
-    "sonarqube-agent-plugins@claude-plugins-official": false
+    "sonarqube-agent-plugins@claude-plugins-official": false,
+    "rust-analyzer-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "ponytail": {

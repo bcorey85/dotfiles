@@ -31,8 +31,8 @@ Receipt line (hand to `/branch-recap`): `test audit: <n> culled, <n> weak of <N>
 Log the firing (non-blocking; skip if audit skipped):
 
 ```bash
-bash "$HOME/.claude/skills/review/log-review-metrics" \
-  repo="$(basename "$(git rev-parse --show-toplevel)")" lane=test-audit \
+~/.claude/skills/review/log-review-metrics \
+  repo=<repo> lane=test-audit \
   test_intent_ran=1 test_intent=<n findings> tests_added=<the auditor's Tests added header> culled=<n> weak=<n> \
   requires_mutation=<n> mutation_equivalent=<n of those the tester ruled EQUIVALENT> \
   mutation_open=<n still INDETERMINATE or unrouted> \

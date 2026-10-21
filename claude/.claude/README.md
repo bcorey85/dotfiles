@@ -3,6 +3,58 @@
 Agents, skills, hooks, and rules for Claude Code. Stowed to `~/.claude/`.
 Why the agents have this shape: [docs/agent-evals.md](../../docs/agent-evals.md).
 
+## Telemetry: off by default
+
+Nothing in this toolkit records anything until you opt in. That covers two
+parts:
+
+- **Toolkit logs:** agent use, skill use, review metrics, escapes, scan and
+  spec runs, gate blocks. They append to `~/.claude/*.jsonl` only when
+  `CLAUDE_TOOLKIT_TELEMETRY=1` is set. They never leave your machine.
+- **The ledger:** Claude Code's own OpenTelemetry, received by `ledger`. The
+  `SessionStart` hook runs `ledger hook session-start` only when `ledger` is
+  on your PATH, and exits 0 silently when it is not.
+
+Off, the toolkit works the same: gates, reviews and their output still run.
+The deferred-findings queue (`review-findings.jsonl`) is workflow state, not
+telemetry, so it always writes. The three generated security gates have their
+own logging opt-in and ignore this switch.
+
+What it is for: measuring the toolkit, so its parts earn their cost. The
+logs and the ledger answer:
+
+- Where a tool call's time goes: approval, classifier, hooks, the run itself.
+- What each agent, skill and model costs in tokens.
+- Which review gates find issues that later get fixed, and which get dismissed.
+- Which agents and skills go unused.
+
+Those answers decide what gets tuned or cut here.
+
+To opt in on your own machine:
+
+1. Toolkit logs: add `export CLAUDE_TOOLKIT_TELEMETRY=1` to `~/.zshrc.local`,
+   which stays out of git. Remove it to opt out.
+2. The ledger: install `ledger` from [agent-ledger](https://github.com/bcorey85/agent-ledger)
+   (private for now): `cargo install --path . --locked` in a clone.
+3. Run `ledger init --machine <name>`. The data stays in a local git repo.
+   To back it up, add `--remote <url>` pointing at a private repo you own.
+4. Add these lines to `~/.zshrc.local`:
+
+   ```sh
+   export CLAUDE_CODE_ENABLE_TELEMETRY=1
+   export OTEL_LOGS_EXPORTER=otlp
+   export OTEL_METRICS_EXPORTER=otlp
+   export OTEL_EXPORTER_OTLP_PROTOCOL=http/json
+   export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:24318
+   export OTEL_METRICS_INCLUDE_VERSION=true
+   export OTEL_METRICS_INCLUDE_ACCOUNT_UUID=false
+   ```
+
+5. Open a new shell, then start Claude Code.
+
+The receiver listens on loopback only. The ledger keeps allowlisted metadata:
+no prompts, tool input or output, paths or commands.
+
 ## Ticket lifecycle, end to end
 
 ```

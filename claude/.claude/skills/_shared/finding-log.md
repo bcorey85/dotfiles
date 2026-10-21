@@ -7,21 +7,16 @@ Canonical instruction for every finding-emitting gate.
 Run after dispositions are known (`actioned` real, not predicted). Telemetry never blocks.
 
 ```bash
-L="$HOME/.claude/skills/review/log-review-finding"
-
-# An ARRAY, not a string — a quoted string collapses every join key into repo=. Always expand as "${C[@]}".
-C=(
-  "repo=$(basename "$(git rev-parse --show-toplevel)")"
-  "branch=$(git branch --show-current)"
-  lane=<lane> scope=<phase|branch-exit|standalone> phase=<index|-> iter=<N>
-)
+# Each row is its own plain Bash call by this path: no $HOME, variable, array or $(...).
+# Repeat lane/scope/phase/iter on every call. The script adds repo and branch itself.
 
 # ONE run row per gate dispatched — INCLUDING gates that returned nothing.
-bash "$L" kind=run "${C[@]}" gate=<agent name> n_findings=<n> diff_loc=<n> \
-  result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES|NOT DISPATCHED>
+~/.claude/skills/review/log-review-finding kind=run lane=<lane> scope=<phase|branch-exit|standalone> phase=<index|-> iter=<N> \
+  gate=<agent name> n_findings=<n> diff_loc=<n> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES|NOT DISPATCHED>
 
 # ONE finding row per finding that gate emitted.
-bash "$L" kind=finding "${C[@]}" gate=<agent name> disposition=<fix|ask|nit> [blocker=yes] \
+~/.claude/skills/review/log-review-finding kind=finding lane=<lane> scope=<phase|branch-exit|standalone> phase=<index|-> iter=<N> \
+  gate=<agent name> disposition=<fix|ask|nit> [blocker=yes] \
   class=<bug|smell|duplication|complexity|plan-drift|test-gap|weak-assertion|security|perf|correctness|docs|other> \
   file=<path> line=<n> actioned=<fixed|skipped_fp|deferred|ask|none> [source=<round|fix-diff|last-pass|class|gate>] \
   desc="<one line>"

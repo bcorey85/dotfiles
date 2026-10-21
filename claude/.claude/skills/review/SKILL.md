@@ -21,6 +21,7 @@ Thin wrapper over the `review-loop` agent: dispatch it, render the returned pack
    - any `handoff:` block from `$ARGUMENTS` (schema: `~/.claude/skills/_shared/handoff-block.md`)
    - any `+fast` / `+deep` modifier and `iter=N`
    - if `$ARGUMENTS` names a file path and no handoff block was given, scope the review to that file only
+   - `base: <ref>` when `$ARGUMENTS` holds `base=<ref>`: the loop then reviews every change since that ref, commits included
 
 2. **Route on the returned `status`** — first match wins:
 
@@ -28,7 +29,7 @@ Thin wrapper over the `review-loop` agent: dispatch it, render the returned pack
    - **`critical-blocker`** → STOP. Present `blockers` and wait for direction. Do NOT re-dispatch, do NOT `/fix`.
    - **`cap-reached`** → STOP. Report `findings_remaining`; the user decides. Do NOT `/fix`. The session stays `dirty`, so `git commit` stays blocked.
    - **`deferred`** → render the packet (step 3), add `findings_remaining` under `### Deferred to branch exit`, record convergence as for `converged`. Do NOT re-dispatch or `/fix` those items.
-   - **`converged`** → render the packet (step 3), then `bash ~/.claude/scripts/review-gate-mark clean`. Mark ONLY on `converged` or `deferred`.
+   - **`converged`** → render the packet (step 3), then `~/.claude/scripts/review-gate-mark clean`. Mark ONLY on `converged` or `deferred`.
 
 3. **Render the packet**, in this order:
 
@@ -44,9 +45,8 @@ Thin wrapper over the `review-loop` agent: dispatch it, render the returned pack
    **Log each ask outcome** (PLAN-IMPACT asks excluded). After the user answers, one row per ask; telemetry never blocks:
 
    ```bash
-   bash "$HOME/.claude/skills/review/log-review-finding" kind=finding \
-     repo="$(basename "$(git rev-parse --show-toplevel)")" branch="$(git branch --show-current)" \
-     lane=none scope=standalone phase=- iter=<returned iter> \
+   ~/.claude/skills/review/log-review-finding kind=finding \
+     lane=none scope=<branch-exit with base=, else standalone> phase=- iter=<returned iter> \
      gate=<entry gate> disposition=ask class=<entry class> file=<path> line=<n> \
      actioned=ask ask_outcome=<accepted|rejected|modified> desc="ask resolved: <one line>"
    ```

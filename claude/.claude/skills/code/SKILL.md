@@ -11,17 +11,17 @@ allowed-tools: [Agent, Bash, Read, Skill]
 
 You route nothing. `code-step.py` decides, and you run what it prints. Run every command from the repo root.
 
-1. If the task text below starts with `asks-done`, `decide` or `verify`, run `python3 ~/.claude/scripts/code-step.py <task text>`. Otherwise run `python3 ~/.claude/scripts/code-step.py start <task text>`. For text with no plan file, the script takes it as the task.
+1. If the task text below starts with `asks-done`, `decide`, `verify`, `review-again` or `after-plan-edit`, run `python3 ~/.claude/scripts/code-step.py <task text>`. If it starts with `tick`, run `python3 ~/.claude/scripts/code-step.py tick <phase>`: the user says a phase is done. Otherwise run `python3 ~/.claude/scripts/code-step.py start <task text>`. For text with no plan file, the script takes it as the task.
 2. Read the `ACTION:` line of every output and do exactly that:
-   - `dispatch`: make one `Agent` call with the printed AGENT and MODEL and the text between the PROMPT markers, verbatim. Wait for its result. Then run the verb named in NEXT.
+   - `dispatch`: make one `Agent` call with the printed AGENT and MODEL and the text between the PROMPT markers, verbatim. The agent runs in the background: do not wait for its result and do not write text. In the next turn run the verb named in NEXT as a Bash call. That verb waits for the agent's report.
+   - `wait`: no report had arrived yet. Run the command it prints, exactly as printed.
    - `invoke-skill`: invoke that skill, then run `code-step.py skill-done pass` or `skill-done fail`.
-   - `auto-advance`: run the `review-gate-mark clean` command, then `code-step.py start`.
-   - `stop-block-B` / `stop-block-C`: run the printed mark-clean command, invoke Skill `stage`, then hand back.
-   - `ask-user`: run any command the output names, then hand back. The script already wrote the question into say.md.
+   - `auto-advance`: run the commit command the output names, then `code-step.py start`.
+   - `stop-block-B` / `stop-block-C`: invoke Skill `stage`, then hand back.
+   - `ask-user`: hand back.
    - `stop` / `judgment`: hand back.
-3. After a `converged` or `deferred` packet the script prints a `review-gate-mark clean` line. Run it as its own Bash command, exactly as printed.
-4. Your hand-back is the contents of `<git dir>/code-step/say.md` verbatim, then the `stage` queue if you ran it, then the lines printed after a `stop` or `judgment` ACTION. Add nothing else.
-5. Never write a prompt, a handoff block or a status yourself. Never edit the plan.
+3. Your hand-back is the contents of `<git dir>/code-step/say.md` verbatim, then the `stage` queue if you ran it, then the lines printed after a `stop` or `judgment` ACTION. Add nothing else.
+4. Never write a prompt, a handoff block or a status yourself. Never edit the plan.
 
 ## Task
 

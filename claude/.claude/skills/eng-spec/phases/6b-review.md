@@ -49,7 +49,6 @@ diff and what it touches, not a fresh read.
 
     ```bash
     ~/.claude/scripts/log-spec-run \
-      repo=<repo> \
       slug=<task dir basename> ticket=<ID|none> verdict=finalized \
       phases=<count> criteria=<count> decisions=<count> \
       research_q=<count> gaps=<count> falsified=<count> \

@@ -144,7 +144,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet(CONVERGED)
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: render-and-finish", output)
-        self.assertIn("review-gate-mark clean", output)
+        self.assertIn("`~/.claude/scripts/review-gate-mark clean`", output)
+        self.assertNotIn("bash ~/.claude/scripts/review-gate-mark", output)
         self.assertLess(output.index("[blocker] orders query lacked"), output.index("unused import"))
         self.assertIn("Class closure: enumerated every query", output)
         self.assertIn("### Skipped as false positives", output)
@@ -204,7 +205,8 @@ class ReviewFixScriptTest(unittest.TestCase):
 
         planFile = self.tempRoot / "plan.md"
         planFile.write_text("# Plan\n\n## Phase 1\n\nwork\n")
-        code, output = self.run_script(["decide", "adopt", "--ruling", "yes, add the table", "--plan", str(planFile)])
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "yes, add the table",
+                                        "--plan", str(planFile)])
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: redispatch", output)
         self.assertIn("plan_impact: RESOLVED - Adopt plan change.", output)
@@ -218,7 +220,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.packet(PLAN_IMPACT)
         planFile = self.tempRoot / "plan.md"
         planFile.write_text("# Plan\n\n## Plan Deviations\n\n- old entry\n\n## Phase 1\n\nwork\n")
-        self.run_script(["decide", "keep", "--plan", str(planFile)])
+        self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep it", "--plan", str(planFile)])
         lines = planFile.read_text().splitlines()
         self.assertLess(lines.index("- old entry"), next(i for i, l in enumerate(lines) if "Keep plan as written" in l))
         self.assertLess(next(i for i, l in enumerate(lines) if "Keep plan as written" in l), lines.index("## Phase 1"))
@@ -228,6 +230,89 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(["decide", "discuss"])
         self.assertIn("ACTION: discuss", output)
         self.assertNotIn("redispatch", output)
+
+    def test_decide_discuss_prints_the_decide_commands_for_both_by_values(self):
+        self.packet(PLAN_IMPACT)
+        code, output = self.run_script(["decide", "discuss"])
+        self.assertEqual(code, 0, output)
+        for word in ("adopt", "keep"):
+            for by in ("user", "session"):
+                self.assertIn(f"review-fix.py decide {word} --by {by} --ruling", output)
+        self.assertEqual(4, output.count("--plan <the plan path, when the handoff names one>"))
+
+    def test_plan_impact_modal_names_the_by_form(self):
+        code, output = self.packet(PLAN_IMPACT)
+        self.assertIn("decide <adopt|keep> --by user --ruling", output)
+        self.assertIn("pass `--by session`", output)
+        self.assertIn("--plan <the plan path, when the handoff names one>", output)
+
+    def test_decide_without_a_ruling_stops_with_the_usage_line_and_records_nothing(self):
+        self.packet(PLAN_IMPACT)
+        stageBefore = self.stored_stage()
+        planFile = self.tempRoot / "plan.md"
+        planFile.write_text("# Plan\n")
+        for decision in ("adopt", "keep"):
+            with self.subTest(decision=decision):
+                code, output = self.run_script(["decide", decision, "--by", "user", "--plan", str(planFile)])
+                self.assertEqual(code, 2)
+                self.assertIn("ACTION: stop-usage", output)
+                self.assertIn(f"decide {decision} needs --ruling", output)
+                self.assertEqual(stageBefore, self.stored_stage())
+                self.assertEqual("# Plan\n", planFile.read_text())
+
+    def stored_stage(self):
+        return json.loads((self.repo / ".git" / "review-fix" / "state.json").read_text())["stage"]
+
+    def test_decide_without_by_stops_with_the_usage_line_and_leaves_the_state(self):
+        self.packet(PLAN_IMPACT)
+        stageBefore = self.stored_stage()
+        planFile = self.tempRoot / "plan.md"
+        planFile.write_text("# Plan\n")
+        code, output = self.run_script(["decide", "adopt", "--ruling", "my call", "--plan", str(planFile)])
+        self.assertEqual(code, 2)
+        self.assertIn("ACTION: stop-usage", output)
+        self.assertIn('decide <adopt|keep> --by <user|session> --ruling "<the user\'s answer>"', output)
+        self.assertEqual(stageBefore, self.stored_stage())
+        self.assertEqual("# Plan\n", planFile.read_text())
+
+    def test_decide_with_a_bad_by_value_stops_with_the_usage_line(self):
+        self.packet(PLAN_IMPACT)
+        stageBefore = self.stored_stage()
+        code, output = self.run_script(["decide", "keep", "--by", "maybe", "--ruling", "my call"])
+        self.assertEqual(code, 2)
+        self.assertIn("ACTION: stop-usage", output)
+        self.assertIn("--by <user|session>", output)
+        self.assertIn("needs --by user or --by session", output)
+        self.assertEqual(stageBefore, self.stored_stage())
+
+    def test_decide_by_with_no_value_stops_with_the_usage_line(self):
+        self.packet(PLAN_IMPACT)
+        stageBefore = self.stored_stage()
+        code, output = self.run_script(["decide", "keep", "--by", "--ruling", "my call"])
+        self.assertEqual(code, 2)
+        self.assertIn("--by <user|session>", output)
+        self.assertEqual(stageBefore, self.stored_stage())
+
+    def test_decide_by_session_signs_as_the_session_not_the_user(self):
+        self.packet(PLAN_IMPACT)
+        planFile = self.tempRoot / "plan.md"
+        planFile.write_text("# Plan\n")
+        code, output = self.run_script(["decide", "adopt", "--by", "session", "--ruling", "my own call",
+                                        "--plan", str(planFile)])
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: redispatch", output)
+        self.assertIn("The session ruled, not the user.", output)
+        self.assertIn("| the session, not the user | my own call", planFile.read_text())
+        self.assertNotIn("| t |", planFile.read_text())
+
+    def test_decide_by_user_signs_with_the_git_user_name(self):
+        self.packet(PLAN_IMPACT)
+        planFile = self.tempRoot / "plan.md"
+        planFile.write_text("# Plan\n")
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep it", "--plan", str(planFile)])
+        self.assertEqual(code, 0, output)
+        self.assertIn("| Keep plan as written | t | keep it", planFile.read_text())
+        self.assertNotIn("The session ruled", output)
 
     def test_decide_without_a_waiting_plan_impact_fails(self):
         self.packet(CONVERGED)
@@ -381,7 +466,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 2, output)
         self.assertIn("ACTION: stop-parse-failure", output)
         self.assertIn(expected, output)
-        self.assertIn("review-gate-mark dirty", output)
+        self.assertIn("`~/.claude/scripts/review-gate-mark dirty`", output)
         self.assertNotIn("render-and-finish", output)
         self.assertEqual(self.rows(self.findingsFile), [])
 
@@ -564,7 +649,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet("")
         self.assertEqual(code, 2, output)
         self.assertIn("no review-loop dispatch on record", output)
-        self.assertIn("review-gate-mark dirty", output)
+        self.assertIn("`~/.claude/scripts/review-gate-mark dirty`", output)
 
     def test_another_sessions_hand_back_is_never_taken_as_current(self):
         self.seed(CONVERGED, session=OTHER_SESSION)
@@ -878,8 +963,8 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_done_and_redispatch_stages_survive_every_verb(self):
         self.packet(PLAN_IMPACT)
-        self.run_script(["decide", "keep"])
-        for arguments in (["decide", "keep"], ["asks-done", "accepted"], ["escape", "--escape", self.escape_spec()]):
+        self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep it"])
+        for arguments in (["decide", "keep", "--by", "user", "--ruling", "keep it"], ["asks-done", "accepted"], ["escape", "--escape", self.escape_spec()]):
             code, output = self.run_script(arguments)
             self.assertNotIn("Traceback", output)
             self.assertIn("ACTION:", output)

@@ -85,10 +85,23 @@
 # Numeric-looking values are stored as numbers, everything else as strings.
 # A "date" field (UTC ISO 8601) is always added. Output file:
 #   $REVIEW_FINDINGS_FILE or ~/.claude/review-findings.jsonl
+# The default file is the deferred queue and is always written. A caller's out=<path>
+# redirect is a metrics file: it is written only while the metrics switch is on (CLAUDE_TOOLKIT_TELEMETRY=1, or the file ~/.claude/toolkit-telemetry).
 set -euo pipefail
+
+script_dir=$(dirname -- "${BASH_SOURCE[0]}")
+
+# --check as the first argument runs every validation below, writes nothing, ignores the
+# telemetry switch and exits 0 when the arguments would be logged.
+check_only=""
+if [ "${1:-}" = "--check" ]; then
+  check_only=1
+  shift
+fi
 
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 out="${REVIEW_FINDINGS_FILE:-$HOME/.claude/review-findings.jsonl}"
+redirected=""
 
 # schema_version marks the row's schema era; bump ONLY on a breaking change
 # (a value-vocabulary swap or a field-meaning change), never for additive fields.
@@ -109,7 +122,7 @@ json=$(jq -cn --argjson sv "$SCHEMA_VERSION" \
    + (if $h != "" then {head: $h, dirty: $d} else {} end)')
 for kv in "$@"; do
   case "$kv" in
-    out=*) out="${kv#out=}"; continue ;;
+    out=*) out="${kv#out=}"; redirected=1; continue ;;
     *=*) ;;
     *) echo "skipping malformed arg (want key=value): $kv" >&2; continue ;;
   esac
@@ -240,6 +253,12 @@ fi
 if [ "$kind" = run ] && [ "$(jq -r '.n_findings // "MISSING"' <<< "$json")" = MISSING ]; then
   echo "refusing to log: kind=run needs n_findings=<n> (0 for a silent run)." >&2
   exit 1
+fi
+
+[ -z "$check_only" ] || exit 0
+
+if [ -n "$redirected" ] && ! "$script_dir/../../scripts/telemetry_enabled.sh" 2>/dev/null; then
+  exit 0
 fi
 
 printf '%s\n' "$json" >> "$out"

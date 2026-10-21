@@ -201,6 +201,13 @@ def save_report(repo, agentType, message):
         reportsFile.write(json.dumps(row) + "\n")
 
 
+def date_dispatch_now(repo):
+    stateFile = repo / ".git/code-step/state.json"
+    saved = json.loads(stateFile.read_text())
+    saved["dispatchAt"] = time.time()
+    stateFile.write_text(json.dumps(saved, indent=1))
+
+
 def apply_plan_edit_outcome(repo, name, planPath):
     if name == "plan-not-edited":
         return
@@ -331,8 +338,12 @@ def user_answers(repo):
     stage = state.get("stage")
     answers = []
     if stage in ("impact-coder", "impact-review"):
-        ruling = ["--ruling", "the user's words"]
+        ruling = ["--by", "user", "--ruling", "the user's words"]
+        sessionRuling = ["--by", "session", "--ruling", "the session's words"]
         answers += [("decide adopt", ["decide", "adopt", *ruling], None), ("decide keep", ["decide", "keep", *ruling], None),
+                    ("decide adopt by session", ["decide", "adopt", *sessionRuling], None),
+                    ("decide keep by session", ["decide", "keep", *sessionRuling], None),
+                    ("decide keep without --by", ["decide", "keep", "--ruling", "the user's words"], None),
                     ("decide keep without a ruling", ["decide", "keep"], None),
                     ("decide discuss", ["decide", "discuss"], None), ("decide bogus", ["decide", "maybe"], None)]
     if stage == "asks":
@@ -360,16 +371,23 @@ def children_of(node):
     stage = state.get("stage")
     children = []
     waitingOn = None
-    if node.action == "wait":
+    isPlanEdit = stage == "plan-coder" and node.action in ("dispatch", "wait")
+    if node.action == "wait" and not isPlanEdit:
         waitingOn = "coder" if stage in ("coder", "asks-coder") else "review-loop"
-    if node.action == "dispatch" and node.agent in ("coder", "review-loop") and stage != "plan-coder":
+    if node.action == "dispatch" and node.agent in ("coder", "review-loop"):
         # The agent has not handed back when the verb that follows the dispatch runs: the verb says to run it again.
-        verb = "after-coder" if node.agent == "coder" else "after-review"
-        children.append(("[no report yet]", lambda repo: None, [verb], NO_ROW_YET_PRESETS))
-    if node.action == "dispatch" and node.agent == "coder" and stage == "plan-coder":
+        verb = "after-review" if node.agent == "review-loop" else "after-coder"
+        setup = lambda repo: None
+        if isPlanEdit:
+            # The saved dispatch is older than the wait cap by now: date it again so the wait itself is tried.
+            verb, setup = "after-plan-edit", date_dispatch_now
+        children.append(("[no report yet]", setup, [verb], NO_ROW_YET_PRESETS))
+    if isPlanEdit:
         for name in PLAN_EDIT_OUTCOMES:
-            children.append((f"[plan-edit coder: {name}]", lambda repo, name=name: apply_plan_edit_outcome(repo, name, state["plan"]),
-                             ["after-plan-edit"]))
+            def setup(repo, name=name):
+                apply_plan_edit_outcome(repo, name, state["plan"])
+                save_report(repo, "coder", "plan edited")
+            children.append((f"[plan-edit coder: {name}]", setup, ["after-plan-edit"]))
     elif waitingOn == "coder" or (node.action == "dispatch" and node.agent == "coder"):
         for name in CODER_OUTCOMES:
             def setup(repo, name=name):
@@ -408,6 +426,7 @@ class Explorer:
         self.queue = collections.deque()
         self.budgetHit = False
         self.roots = []
+        self.planEditCallsFromWait = 0
 
     def new_repo(self):
         self.nodeCount += 1
@@ -432,6 +451,10 @@ class Explorer:
             self.failures.append(Failure(f"over the {STEP_LIMIT}-step limit", history, "", history[-6:]))
             return "fail"
 
+        if parent and parent.action == "wait" and label.startswith("[plan-edit coder:") \
+                and load_saved_state(parent.repo).get("stage") == "plan-coder":
+            self.planEditCallsFromWait += 1
+
         output, crash = call_script(repo, {**presets, **(callPresets or {})}, argv)
         action, agent = parse_action(output)
         if crash:
@@ -440,7 +463,8 @@ class Explorer:
         if action is None:
             self.failures.append(Failure("no ACTION line", history, output.strip()[-200:], history[-2:]))
             return "fail"
-        isRuledDecision = argv[0] == "decide" and argv[1:2] in (["adopt"], ["keep"]) and "--ruling" in argv
+        isRuledDecision = (argv[0] == "decide" and argv[1:2] in (["adopt"], ["keep"]) and "--ruling" in argv
+                           and argv[argv.index("--by") + 1:][:1] in (["user"], ["session"]) if "--by" in argv else False)
         isAnswer = newSegment and (isRuledDecision or argv[0] == "asks-done")
         answerCount = (parent.answerCount if parent else 0) + (1 if isAnswer else 0)
         ancestorsInSegment = frozenset() if newSegment or parent is None else parent.ancestorsInSegment | {parent.nodeId}
@@ -626,6 +650,7 @@ class TerminationTest(unittest.TestCase):
         report = summarize(explorer, entries)
         print("\n" + report)
         self.assertEqual([], explorer.failures, report)
+        self.assertGreater(explorer.planEditCallsFromWait, 0)
 
 
 if __name__ == "__main__":

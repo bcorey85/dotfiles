@@ -14,18 +14,18 @@ Every `/eng-spec` plan ends with these FOUR phases, in order after the last feat
 
 2. **Test audit** (risk: high) — `/test-audit`: cull spam, sweep weak assertions — the half of test-intent no phase judges. Findings → `/fix`; receipt → Recap. Success Criteria: denominator stated, every finding routed.
 
-3. **Verify pass** (risk: high) — two complementary checks, both required:
-   - **Branch-wide deep review** — ONE `code-reviewer` (omit `model`) over the branch diff: the only fresh-eyes look at cross-phase interactions. Findings via `/review` routing. Log it per `~/.claude/skills/_shared/finding-log.md` with `scope=branch-exit`.
-   - `/verify-branch` — reconcile the shipped diff against the ticket/plan
-     (completeness), run the plan's Automated Verification commands, and emit the
+3. **Verify pass** (risk: high) — `/verify-branch` runs both checks, in order:
+   - **Branch-wide deep review** — ONE `code-reviewer` over the branch diff, unless one ran since the last change: the only fresh-eyes look at cross-phase interactions. Findings via `/review` routing, logged with `scope=branch-exit`.
+   - **Completeness** — reconcile the shipped diff against the ticket/plan
+     (completeness), run the plan's Automated Verification commands (a failing command is a gap), and emit the
      **human smoke-test checklist** (all human-only Manual Verification items).
-   - **Acceptance-criteria reconciliation** — per id: name the covering test (`file:line`) or MISSING. `## Manual only` items are satisfied via the smoke-test checklist. MISSING fails the phase — a test is owed or the user retires the criterion on record.
+     - **Acceptance-criteria reconciliation** — per id: name the covering test (`file:line`) or MISSING. `## Manual only` items are satisfied via the smoke-test checklist. MISSING fails the phase — a test is owed or the user retires the criterion on record.
 
-     Match on **behavior, not markers** — no ids to grep; read and judged.
+       Match on **behavior, not markers** — no ids to grep; read and judged.
 
-     Success Criteria: deep review clean, reconciliation reports no missing work,
-     every acceptance criterion mapped to a test or explicitly retired,
-     smoke-test checklist delivered.
+   Success Criteria: deep review clean, reconciliation reports no missing work,
+   every acceptance criterion mapped to a test or explicitly retired,
+   smoke-test checklist delivered.
 
 4. **Recap** (risk: low) — `/branch-recap`: `/stage` triage, deferred queue, recap receipt — from the branch's own process, never the codebase (`/orient` on demand). No gates. Success Criteria: recap produced, residue handed over.
 

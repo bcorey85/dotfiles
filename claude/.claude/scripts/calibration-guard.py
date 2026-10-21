@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SessionStart hook: report an unrestored calibration or mutation seed.
 
-Port of calibration-guard.sh. /calibrate and mutation-tester share one lock, ~/.claude/calibration-lock.json
+/calibrate and mutation-tester share one lock, ~/.claude/calibration-lock.json
 (fields file, backup_path, class, ts, kind). The lock is deleted only after the restore is verified, so a lock
 that survives into a new session means the restore never happened. This hook prints the paths needed to fix it.
 No lock: no output. Always exits 0.

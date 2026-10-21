@@ -6,8 +6,7 @@
 #   mode=staged     staged only, against base
 #   base=HEAD       (default) the ref every count is taken against
 #   merge_base=<ref>  compare-to ref for the MERGE_BASE line; default: the
-#                     upstream of the current branch, else origin/HEAD, else
-#                     the first of main/master that exists, else empty
+#                     ref that scripts/branch-base returns, else empty
 #   paths=<a:b:c>   colon-separated pathspec filter applied to every git call
 #   root=<dir>      run in this directory instead of the current one
 #   caller=<name>   also append one invocation line to the skill-usage log
@@ -24,6 +23,7 @@
 # Exit 0 with ROOT= empty when the directory is not a git repo. Never fails the
 # caller: every git call that errors prints an empty section.
 set -uo pipefail
+script_dir=$(dirname -- "${BASH_SOURCE[0]}")
 
 mode=worktree base=HEAD merge_base="" paths="" root="" caller="" skill=review-loop
 for kv in "$@"; do
@@ -53,7 +53,7 @@ if [ -z "$paths" ]; then pathspec=(); fi
 
 top=$(git rev-parse --show-toplevel 2>/dev/null || true)
 
-if [ -n "$caller" ]; then
+if [ -n "$caller" ] && "$script_dir/../../scripts/telemetry_enabled.sh" 2>/dev/null; then
   log="${SKILL_USAGE_FILE:-$HOME/.claude/skill-usage.jsonl}"
   repo=$(basename "${top:-$PWD}")
   if command -v jq >/dev/null 2>&1; then
@@ -75,15 +75,22 @@ fi
 echo "BRANCH=$(git branch --show-current 2>/dev/null || true)"
 
 if [ -z "$merge_base" ]; then
-  merge_base=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)
-fi
-if [ -z "$merge_base" ]; then
-  merge_base=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)
-fi
-if [ -z "$merge_base" ]; then
-  for c in main master; do
-    git rev-parse --verify --quiet "$c" >/dev/null 2>&1 && { merge_base="$c"; break; }
-  done
+  branch_base_script="${BRANCH_BASE_SCRIPT:-$HOME/.claude/scripts/branch-base}"
+  if [ -x "$branch_base_script" ]; then
+    # branch-base prints stdout only on exit 0 and stderr only on failure
+    branch_base_out=$("$branch_base_script" 2>&1)
+    branch_base_rc=$?
+    if [ "$branch_base_rc" -eq 0 ]; then
+      merge_base=${branch_base_out%% *}
+    else
+      # keep the reason, drop the instruction aimed at an interactive caller
+      branch_base_reason=${branch_base_out#STOP: }
+      branch_base_reason=${branch_base_reason%%; ask the user*}
+      echo "review-scope: MERGE_BASE empty: branch-base exit $branch_base_rc${branch_base_reason:+: $branch_base_reason}" >&2
+    fi
+  else
+    echo "review-scope: MERGE_BASE empty: not executable at $branch_base_script" >&2
+  fi
 fi
 if [ -n "$merge_base" ]; then
   echo "MERGE_BASE=$(git merge-base HEAD "$merge_base" 2>/dev/null || true)"

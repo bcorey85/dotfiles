@@ -6,15 +6,15 @@ allowed-tools: [Agent, Bash, Read, Edit, AskUserQuestion]
 
 # Fix Code Review Feedback
 
-Thin wrapper over the `review-loop` agent (`mode: fix-first`): hand it the findings, render the returned packet, raise the modals it cannot.
+Thin wrapper over the `review-loop` agent (`mode: fix-first`). A script parses the returned packet, routes on status, renders it, logs the escape and ask rows, and posts the Aikido replies. You dispatch, run the script, and do what its `ACTION:` lines say.
 
 ## Modifiers
 
-- `+fast` / `+deep` — semantics in `~/.claude/skills/_shared/modifiers.md` (read it when either is present). Pass through verbatim.
+- `+fast` / `+deep` — pass through verbatim (semantics in `~/.claude/skills/_shared/modifiers.md`; read it only if you are unsure).
 
 ## Instructions
 
-1. **Dispatch the loop**. `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"`. Pass, verbatim:
+1. **Dispatch the loop** in your first response. `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"`. Pass, verbatim:
    - `mode: fix-first`, `caller: fix`
    - the findings, from whichever source applies: `/cc` entries (`path`, `line`, `body`, `id` — highest priority, user-authored), a `/review` handoff block, or the conversation
    - any `handoff:` block (schema: `~/.claude/skills/_shared/handoff-block.md`), `iter=N`, and any `+fast` / `+deep` modifier
@@ -22,60 +22,30 @@ Thin wrapper over the `review-loop` agent (`mode: fix-first`): hand it the findi
 
    Invoked bare, with no findings in args and no handoff: if `~/.claude/claude-comments.md` may hold inline comments, point the user at `/cc` rather than parsing that file here.
 
-2. **Route on the returned `status`** — first match wins:
-
-   - **`plan-impact`** → raise the modal (see `/review`'s "Plan-impact findings" section — same routing), then re-dispatch with the decision and BOTH returned counters preserved (`iter` and `spec_iter`).
-   - **`critical-blocker`** → STOP. Present `blockers` and wait. Do NOT re-dispatch.
-   - **`cap-reached`** → STOP. Report `findings_remaining`; the user decides. The session is correctly left `dirty`, so `git commit` stays blocked.
-   - **`deferred`** → render the packet (step 3), add `findings_remaining` under `### Deferred to branch exit`, record convergence as for `converged`. Do NOT re-dispatch.
-   - **`converged`** → render the packet (step 3), then `~/.claude/scripts/review-gate-mark clean`. Mark ONLY on `converged` or `deferred`.
-
-3. **Log walkthrough escapes — MANDATORY on `converged`, do not skip.** When the findings came from **the user, in conversation**, on code a prior `/review` already blessed, log each one.
-
-   Fires only when ALL hold:
-   - `status: converged` or `deferred`, and the fix was actually applied (not skipped as a false positive, not deferred)
-   - the finding came from the **conversation** — NOT from a `/review` handoff block and NOT from `/cc`
-   - the code was already through `/review` on this branch
-   - it is a defect, not a new requirement or a change of direction
-
-   One line per distinct defect, no user prompt, do not pause:
+2. **Run the script on the returned packet.** Decide the flags before you run it; the script applies the rules. It reads the packet a hook saved, for this session, when the loop handed back. Do not paste it. Running the step again repeats no side effect.
 
    ```bash
-   ~/.claude/scripts/log-escape stage_found=walkthrough gate_missed=<review|drift-gate|test-intent|stage|coder|eng-spec> class=<bug|smell|duplication|plan-drift|test-gap|other> severity=<high|medium|low> lane=<eng-spec|code|other> guard=<...> desc="<one line>" file=<path>
+   python3 ~/.claude/scripts/review-fix.py packet --skill fix --source <conversation|cc|handoff> [--lane <eng-spec|code|other>] \
+     [--escape "file=<path>|class=<class>|severity=<high|medium|low>|gate_missed=<review|drift-gate|test-intent|stage|coder|eng-spec>|guard=<type|convention|gotcha|rule|check|none|n-a>|desc=<one line>"]... \
+     [--aikido "<path>:<line>=<comment_id>"]...
    ```
 
-   `guard` is the ratchet rung from `~/.claude/skills/_shared/escape-ratchet.md`. Pick it here without pausing; state the proposed guard in the packet (step 3) and apply it on approval there.
+   - `--source`: where the findings came from. Escapes log only for `conversation`.
+   - `--escape`, one per distinct defect: only when the user reported it in conversation, on code a prior `/review` on this branch already passed, and it is a defect, not a new requirement or a change of direction. Pick `guard` from `~/.claude/skills/_shared/escape-ratchet.md` without pausing. `<class>` is one of the classes in the script's `CLASSES` list (`~/.claude/scripts/handback.py`); use `other` when unsure. `lane` is `eng-spec` for an eng-spec doc, else `code`. The script logs it only when the status is `converged` or `deferred` and a `fixed[]` entry names the file. When the user reports the defect after the packet ran, log it later with `python3 ~/.claude/scripts/review-fix.py escape --escape "..."`; the script records what it logged, so a repeat logs nothing twice.
+   - `--aikido`, one per finding that is an Aikido PR comment (`author` is `aikido-pr-checks[bot]`, or the body carries `@AikidoSec` / `app.aikido.dev`, and it has a `comment_id`). The script posts exactly one reply per comment.
 
-   Classify from the finding itself (`class=other` when unsure); infer `lane` from planning artifacts (eng-spec doc → `eng-spec`, else `code`). A failed log never blocks the fix — mention it and continue.
+   When the packet's first line is `status: converged` or `status: deferred`, put `~/.claude/scripts/review-gate-mark clean` in the same response as a second, parallel Bash call. For any other status, never mark. If the gate denies a `clean` mark, leave the gate dirty, tell the user the reason it gave, and do not retry the mark.
 
-4. **Render the packet**: `### Fixed` from `fixed[]` with `blocker` items first and marked; `skipped_fp[]` with reasons; `perf[]` under its own heading with `Principle:` lines; `nit[]` inline. If any finding needs architectural rethinking, recommend `/eng-spec`.
+3. **Do what the script printed.** Read the `ACTION:` line:
 
-5. **Raise what the agent could not**. `nvim-jump` `ask[]` per `~/.claude/skills/_shared/nvim-jump.md` (each at its `file_line`, `--note` = its question), then present each with its question; wait for direction. Never auto-fix an ask item.
+   - `render-and-finish` → say the text between `BEGIN USER TEXT` and `END USER TEXT` verbatim. Report any `LOGGED / POSTED` failure. If any finding needs architectural rethinking, recommend `/eng-spec`. If the gate mark did not run in parallel, run it now as its own Bash command. State a proposed escape guard in your closing line and apply it on approval.
+   - `present-asks` → say the user text, then present each ask with its question and wait. The script already ran nvim-jump. Never auto-fix an ask. After the answers run `python3 ~/.claude/scripts/review-fix.py asks-done <accepted|rejected|modified>[:<note>] ...`, one outcome per ask in order.
+   - `ask-user-plan-impact` → call `AskUserQuestion` as printed, then run the `decide` command it names. On `ACTION: redispatch`, re-dispatch with the same arguments plus the lines it printed (both counters kept), then run step 2 again. On `ACTION: discuss`, talk it through, then run the `decide` command that it printed for the outcome.
+   - `stop` → present what it printed and wait. Do NOT re-dispatch. The session is correctly left `dirty`.
+   - `stop-no-handback` → the loop ended without handing back. Do what the lines say: the first time, re-dispatch `review-loop` once with the same arguments and run step 2 again; the second time, stop and show the user the loop's final text. Never mark clean.
+   - `stop-parse-failure` or `stop-usage` → the packet or the call was bad. If you ran the gate mark in parallel, run `~/.claude/scripts/review-gate-mark dirty`. Show the user the problems. Never guess a missing field.
 
-   **Log each ask outcome** (PLAN-IMPACT asks excluded). After the user answers, one row per ask; telemetry never blocks:
-
-   ```bash
-   ~/.claude/skills/review/log-review-finding kind=finding \
-     lane=<eng-spec|code|other, per step 3> scope=standalone phase=- iter=<returned iter> \
-     gate=<entry gate> disposition=ask class=<entry class> file=<path> line=<n> \
-     actioned=ask ask_outcome=<accepted|rejected|modified> desc="ask resolved: <one line>"
-   ```
-
-6. **Aikido PR-comment replies — post disposition back to the bot.** Fires only for findings that are Aikido PR comments: `author` is `aikido-pr-checks[bot]` (or the body carries `@AikidoSec` / `app.aikido.dev`) AND the finding carries a `comment_id`. Skip this step entirely when no such findings are present, or when no `comment_id` is available. Match packet entries to comments by `(path, line)`:
-
-   - **Fixed** (entry in `fixed[]`, fix actually applied) → reply `Fixed.` plus a one-line note of what changed.
-   - **Not relevant** (entry in `skipped_fp[]`, ruled a false positive) → reply `@AikidoSec ignore: <reason>` using the FP reason, verbatim in that form.
-   - Anything else (deferred, nit, ask, cap-reached residue) → reply `Not fixed in this pass: <status> — <reason or open question>`. No `ignore`; the finding stays open. Every Aikido finding gets exactly one reply.
-
-   Post each reply to the review-comment thread:
-
-   ```bash
-   repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-   pr=$(gh pr view --json number --jq '.number')
-   gh api --method POST "repos/$repo/pulls/$pr/comments/<comment_id>/replies" -f body='<reply>'
-   ```
-
-   Best-effort: a failed reply never blocks the fix or the commit gate — report it and continue. List posted replies under `### Aikido replies` in the packet.
+4. **What stays yours:** deciding the `--escape` and `--aikido` flags, judging the user's answer to an ask, acting on accepted asks, the `/eng-spec` recommendation, and the closing line.
 
 ## Arguments
 

@@ -205,14 +205,14 @@ fi
 
 # --- 4d. reviewer calibration reachability ----------------------------------
 # Whole-tree, not per-file: seven reviewer agents legitimately carry no
-# reference. Zero across all of them means calibration-refs-guard.sh has nothing
+# reference. Zero across all of them means calibration-refs-guard.py has nothing
 # left to guard.
 print_info "Reviewer calibration reachability"
 if ls "$CLAUDE_DIR"/agents/*reviewer*.md >/dev/null 2>&1; then
   if grep -q "reviewer-calibration.md" "$CLAUDE_DIR"/agents/*reviewer*.md 2>/dev/null; then
     print_success "reviewer-calibration.md is referenced"
   else
-    print_warn "no reviewer agent references reviewer-calibration.md — calibration-refs-guard.sh is now a no-op"
+    print_warn "no reviewer agent references reviewer-calibration.md — calibration-refs-guard.py is now a no-op"
   fi
 fi
 

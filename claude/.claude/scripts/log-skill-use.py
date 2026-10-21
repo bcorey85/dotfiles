@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PostToolUse (Skill) and UserPromptSubmit hook: skill-usage telemetry.
 
-Port of log-skill-use.sh. Appends {ts, skill, via, repo} to SKILL_USAGE_FILE (default
+Appends {ts, skill, via, repo} to SKILL_USAGE_FILE (default
 ~/.claude/skill-usage.jsonl). PostToolUse logs tool_input.skill with via "model". UserPromptSubmit logs a
 leading /name in the prompt with via "user". Emits no hook output. Exits 0, except 5 on a payload that is
 not valid JSON or not an object, as the bash original did through jq.
@@ -15,6 +15,12 @@ import time
 import hook_input
 from hook_input import (JqError, bash_basename, current_directory, index, parse_documents, present, raw_text,
                         report_open_failure)
+
+try:
+    from telemetry_enabled import telemetry_enabled
+except ImportError:
+    def telemetry_enabled():
+        return False
 
 PROMPT_SKILL = re.compile(r"/([A-Za-z0-9:_-]+)")
 
@@ -54,6 +60,9 @@ def main():
             via = "user"
 
     if skill == "":
+        return 0
+
+    if not telemetry_enabled():
         return 0
 
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR", "")

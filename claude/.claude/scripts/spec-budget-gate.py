@@ -181,7 +181,7 @@ def check(raw):
         deny("spec-budget-gate: this edit grows the planning tree to ~%d words (ceiling %d, currently %d). The "
              "planning system grows only by displacement — delete words elsewhere in the guarded set (eng-spec, "
              "spec-* agents, its _shared files) in the same change, or ask the user to raise TOTAL_CEILING in "
-             "spec-budget-gate.sh. Never raise it yourself." % (new_total, TOTAL_CEILING, total))
+             "spec-budget-gate.py. Never raise it yourself." % (new_total, TOTAL_CEILING, total))
 
 
 def main():

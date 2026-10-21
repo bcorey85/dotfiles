@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PreToolUse hook on Agent: inside a subagent, force run_in_background:false on every Agent dispatch.
 
-Port of agent-foreground.sh. A nested caller is a payload carrying agent_id or agent_type. For those the hook
+A nested caller is a payload carrying agent_id or agent_type. For those the hook
 answers allow plus updatedInput = the call's tool_input plus run_in_background:false. Top-level dispatches are
 untouched. CLAUDE_SKIP_HOOKS set to any non-empty value exits 0. Never blocks: any failure exits 0 with no output.
 """

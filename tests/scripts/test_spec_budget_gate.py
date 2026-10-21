@@ -137,7 +137,7 @@ class SpecBudgetGateTest(unittest.TestCase):
                          "spec-budget-gate: this edit grows the planning tree to ~8701 words (ceiling 8700, "
                          "currently 8650). The planning system grows only by displacement — delete words elsewhere "
                          "in the guarded set (eng-spec, spec-* agents, its _shared files) in the same change, or "
-                         "ask the user to raise TOTAL_CEILING in spec-budget-gate.sh. Never raise it yourself.")
+                         "ask the user to raise TOTAL_CEILING in spec-budget-gate.py. Never raise it yourself.")
 
     def test_total_covers_every_guarded_agent_and_shared_file(self):
         names = ["agents/spec-questions.md", "agents/spec-leak-check.md", "agents/spec-research.md",

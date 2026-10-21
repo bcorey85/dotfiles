@@ -1,3 +1,4 @@
+import datetime
 import importlib.util
 import json
 import os
@@ -8,10 +9,12 @@ import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
+import unittest.mock
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-REAL_CLAUDE = REPO_ROOT / "claude" / ".claude"
+REAL_CLAUDE = pathlib.Path(os.environ.get("CODE_STEP_REAL_CLAUDE") or REPO_ROOT / "claude" / ".claude")
 SCRIPT = pathlib.Path(os.environ.get("CODE_STEP_SCRIPT") or REAL_CLAUDE / "scripts" / "code-step.py")
 HANDBACK_SCRIPT = pathlib.Path(os.environ.get("HANDBACK_SCRIPT") or REAL_CLAUDE / "scripts" / "handback.py")
 sys.path.insert(0, str(SCRIPT.parent))
@@ -81,7 +84,9 @@ class CodeStepTest(unittest.TestCase):
     SESSION = "sess-1"
 
     def setUp(self):
-        self.tmp = pathlib.Path(tempfile.mkdtemp())
+        tempDirectory = tempfile.TemporaryDirectory()
+        self.addCleanup(tempDirectory.cleanup)
+        self.tmp = pathlib.Path(tempDirectory.name)
         self.claude = self.tmp / "claude"
         (self.claude / "scripts").mkdir(parents=True)
         (self.claude / "skills/review").mkdir(parents=True)
@@ -113,9 +118,6 @@ class CodeStepTest(unittest.TestCase):
         for command in (["git", "init", "-q"], ["git", "add", "-A"], ["git", "commit", "-qm", "base"]):
             subprocess.run(command, cwd=self.repo, check=True, capture_output=True, env=self.env)
         self.plan = "docs/plans/orders/spec.md"
-
-    def tearDown(self):
-        shutil.rmtree(self.tmp, ignore_errors=True)
 
     def step(self, *args, stdin=None):
         return run(self.repo, self.env, *args, stdin=stdin).stdout
@@ -264,11 +266,13 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("ACTION: ask-user", out)
         self.assertIn("## Question for the user", self.said())
         for option in ("Adopt plan change", "Keep plan as written", "Discuss",
-                       "`decide adopt --ruling \"<the user's answer>\"`", "`decide keep --ruling \"<the user's answer>\"`"):
+                       "`decide adopt --by user --ruling \"<the user's answer>\"`",
+                       "`decide keep --by user --ruling \"<the user's answer>\"`",
+                       "pass `--by session`", "never changes the acceptance criteria"):
             self.assertIn(option, self.said())
         self.assertNotIn("AskUserQuestion", out + self.said())
         self.assertNotIn("AGENT: review-loop", out)
-        out = self.step("decide", "keep", "--ruling", "keep it, the importer is right")
+        out = self.step("decide", "keep", "--by", "user", "--ruling", "keep it, the importer is right")
         self.assertIn("AGENT: review-loop", out)
         self.assertIn("Decision: Keep plan as written", out)
         self.assertNotIn("## Question for the user", self.said())
@@ -290,7 +294,7 @@ class CodeStepTest(unittest.TestCase):
     def test_adopt_rewrites_the_plan_before_the_review(self):
         report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
         self.coder_round(report)
-        out = self.step("decide", "adopt", "--ruling", "adopt it, drop the header")
+        out = self.step("decide", "adopt", "--by", "user", "--ruling", "adopt it, drop the header")
         self.assertIn("AGENT: coder", out)
         self.assertNotIn("AGENT: review-loop", out)
         self.assertEqual("plan-coder", self.state()["stage"])
@@ -299,6 +303,647 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("AGENT: review-loop", out)
         self.assertIn("flagged: none", out)
         self.assertIn("now states the ruling", self.said())
+
+    CRITERIA = "docs/plans/orders/acceptance-criteria.md"
+    DECIDE_USAGE = 'decide <adopt|keep> --by <user|session> --ruling "<the user\'s answer>"'
+
+    def criteria_text(self):
+        return (self.repo / self.CRITERIA).read_text()
+
+    def set_git_user(self, name):
+        subprocess.run(["git", "config", "user.name", name], cwd=self.repo, check=True, capture_output=True)
+
+    def test_decide_without_by_stops_with_the_usage_line_and_leaves_the_state(self):
+        for word in ("adopt", "keep"):
+            self.coder_round(self.IMPACT_REPORT)
+            before = self.state()
+            out = self.step("decide", word, "--ruling", "my call")
+            self.assertIn("ACTION: stop", out)
+            self.assertIn(self.DECIDE_USAGE, out)
+            self.assertEqual(before, self.state())
+            self.assertNotIn("## Plan Deviations", self.plan_text())
+
+    def test_decide_with_another_by_value_stops_with_the_usage_line(self):
+        self.coder_round(self.IMPACT_REPORT)
+        before = self.state()
+        out = self.step("decide", "adopt", "--by", "maybe", "--ruling", "my call")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn(self.DECIDE_USAGE, out)
+        self.assertEqual(before, self.state())
+
+    def test_decide_by_with_no_value_before_the_ruling_stops(self):
+        self.coder_round(self.IMPACT_REPORT)
+        out = self.step("decide", "adopt", "--by", "--ruling", "my call")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn(self.DECIDE_USAGE, out)
+
+    def test_decide_discuss_needs_no_by(self):
+        self.coder_round(self.IMPACT_REPORT)
+        out = self.step("decide", "discuss")
+        self.assertIn("ACTION: ask-user", out)
+        self.assertIn("decide adopt --by user --ruling", self.said())
+        self.assertIn("pass `--by session`", self.said())
+
+    def test_decide_without_ruling_words_names_the_by_form(self):
+        self.coder_round(self.IMPACT_REPORT)
+        out = self.step("decide", "keep", "--by", "user")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("decide keep --by user --ruling", out)
+
+    def test_user_adopt_signs_with_the_git_user_and_lets_the_coder_rewrite_the_criteria(self):
+        self.set_git_user("Pat Signer")
+        self.coder_round(self.IMPACT_REPORT)
+        out = self.step("decide", "adopt", "--by", "user", "--ruling", "drop the header")
+        ruling = self.state()["ruling"]
+        self.assertTrue(ruling["byUser"])
+        self.assertEqual("Pat Signer", ruling["by"])
+        self.assertIn(f"Signed off by Pat Signer, {ruling['at']}", out)
+        self.assertIn(f"and its acceptance criteria file {self.CRITERIA}", out)
+        self.assertIn("The user adopted the plan change. Dispatch a coder to rewrite the plan steps and acceptance "
+                      "criteria it contradicts.", out.split("-----BEGIN PROMPT-----")[0])
+        self.assertNotIn("Do not edit", out)
+        self.assertNotIn("stay as written", out)
+        self.assertIn("The user's words:", self.plan_text())
+        self.assertIn("RESOLVED: the user ruled on this disagreement.", self.state()["planImpact"])
+
+    def test_session_adopt_keeps_the_criteria_out_of_the_edit_scope(self):
+        self.coder_round(self.IMPACT_REPORT)
+        out = self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        ruling = self.state()["ruling"]
+        self.assertFalse(ruling["byUser"])
+        self.assertEqual("the session, not the user", ruling["by"])
+        self.assertIn("AGENT: coder", out)
+        self.assertIn(f"Do not edit {self.CRITERIA}. Only the user's own sign-off changes an acceptance criterion.", out)
+        self.assertIn(f"Edit only the plan file {self.plan}. ", out)
+        self.assertNotIn("Signed off by", out)
+        self.assertNotIn("and its acceptance criteria file", out)
+        self.assertNotIn("Rewrite each criterion", out)
+        self.assertIn("The acceptance criteria stay as written", out)
+        self.assertIn("Ruled by the session, not the user", self.plan_text())
+        self.assertIn("The ruling's words:", self.plan_text())
+        self.assertNotIn("The user's words:", self.plan_text())
+        planImpact = self.state()["planImpact"]
+        self.assertIn("RESOLVED: the session ruled on this disagreement, not the user.", planImpact)
+        self.assertNotIn("the user ruled", planImpact)
+        self.assertNotIn("user's words", planImpact)
+
+    def test_session_keep_with_a_criteria_file_prints_the_stay_as_written_line(self):
+        self.coder_round(self.IMPACT_REPORT)
+        out = self.step("decide", "keep", "--by", "session", "--ruling", "my own call")
+        self.assertIn("AGENT: review-loop", out)
+        self.assertIn("The acceptance criteria stay as written", out)
+        self.assertIn("RESOLVED: the session ruled", out)
+
+    def test_session_adopt_with_no_criteria_file_has_no_criteria_line(self):
+        self.coder_round(self.IMPACT_REPORT)
+        (self.repo / self.CRITERIA).unlink()
+        out = self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        self.assertIn("AGENT: coder", out)
+        self.assertNotIn("Do not edit", out)
+        self.assertNotIn("stay as written", out)
+
+    def test_after_plan_edit_restores_criteria_the_coder_changed_on_a_session_ruling(self):
+        original = self.criteria_text()
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        (self.repo / self.CRITERIA).write_text(original + "AC-1 orders may be empty\nSigned off by someone\n")
+        (self.repo / self.plan).write_text(self.plan_text().replace(
+            "## Phase 2", "Adopted step: drop the header.\n\n## Phase 2", 1))
+        out = self.step("after-plan-edit")
+        self.assertEqual(original, self.criteria_text())
+        self.assertIn("changed after a ruling the user did not make, and the script restored them.", self.said())
+        copyPath = self.replaced_copies()[0]
+        self.assertIn(f"The text it replaced is in {copyPath}.", self.said())
+        self.assertNotIn(self.CRITERIA, self.state()["files"])
+        self.assertEqual([], self.state()["flagged"])
+        self.assertEqual(original + "AC-1 orders may be empty\nSigned off by someone\n", copyPath.read_text())
+        self.assert_copy_is_not_phase_work(out)
+        self.assertIn("AGENT: review-loop", out)
+        self.assertNotIn("Traceback", out)
+        self.assertNotIn("changed too", self.said())
+        self.assertNotIn("criteriaGuard", self.state())
+
+    def test_after_plan_edit_restores_criteria_the_coder_deleted_on_a_session_ruling(self):
+        original = self.criteria_text()
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        (self.repo / self.CRITERIA).unlink()
+        out = self.step("after-plan-edit")
+        self.assertEqual(original, self.criteria_text())
+        self.assertIn("the script restored them.", self.said())
+        self.assertNotIn(self.CRITERIA, self.state()["files"])
+        self.assertEqual([], self.state()["flagged"])
+        self.assertNotIn("Traceback", out)
+
+    def replaced_copies(self):
+        folder = self.repo / ".git/code-step-replaced-criteria"
+        return sorted(folder.glob("*")) if folder.is_dir() else []
+
+    def assert_copy_is_not_phase_work(self, out):
+        # The saved copy sits in the git dir, so no phase list, flag or commit line may name it.
+        stateText = json.dumps(self.state())
+        self.assertNotIn("replaced-criteria", stateText)
+        status = subprocess.run(["git", "status", "--porcelain"], cwd=self.repo, capture_output=True, text=True,
+                                env=self.env).stdout
+        self.assertNotIn("replaced-criteria", status)
+
+    def check_start_restores_the_criteria(self, startArguments):
+        original = self.criteria_text()
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        self.hook("coder", "plan edited")
+        (self.repo / self.CRITERIA).write_text("AC-1 rewritten by the coder\n")
+        self.step("start", "docs/plans/nope.md")
+        self.assertNotIn("criteriaGuard", self.state())
+        self.assertEqual(original, self.criteria_text())
+        (self.repo / self.CRITERIA).write_text("AC-1 the user's own edit\n")
+        self.step(*startArguments)
+        self.assertEqual("AC-1 the user's own edit\n", self.criteria_text())
+        self.assertNotIn("criteriaGuard", self.state())
+
+    def test_start_keeps_the_replaced_text_in_the_git_dir_and_names_it(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.")
+        (self.repo / self.CRITERIA).write_text("AC-1 changed by someone\n")
+        out = self.step("start")
+        copyPath = self.replaced_copies()[0]
+        self.assertTrue(copyPath.is_absolute())
+        self.assertIn(f"The text it replaced is in {copyPath}.", self.said())
+        self.assertNotIn("coder", self.said())
+        self.assertEqual("AC-1 changed by someone\n", copyPath.read_text())
+        self.assertEqual("AC-1 orders exist\n", self.criteria_text())
+        self.assert_copy_is_not_phase_work(out)
+
+    def test_two_restores_with_different_text_leave_two_copies(self):
+        for text in ("AC-1 first change\n", "AC-1 second change\n"):
+            self.coder_round(self.IMPACT_REPORT)
+            self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+            self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.")
+            (self.repo / self.CRITERIA).write_text(text)
+            self.step("start")
+        copies = sorted(path.read_text() for path in self.replaced_copies())
+        self.assertEqual(["AC-1 first change\n", "AC-1 second change\n"], copies)
+
+    def test_a_criteria_file_the_coder_created_is_deleted_and_its_text_kept(self):
+        self.coder_round(self.IMPACT_REPORT)
+        (self.repo / self.CRITERIA).unlink()
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.")
+        (self.repo / self.CRITERIA).write_text("AC-1 invented\n")
+        out = self.step("start")
+        copyPath = self.replaced_copies()[0]
+        self.assertFalse((self.repo / self.CRITERIA).exists())
+        self.assertEqual("AC-1 invented\n", copyPath.read_text())
+        self.assertIn(f"The text it deleted is in {copyPath}.", self.said())
+        self.assert_copy_is_not_phase_work(out)
+
+    def test_after_plan_edit_deletes_a_criteria_file_the_coder_created(self):
+        self.coder_round(self.IMPACT_REPORT)
+        (self.repo / self.CRITERIA).unlink()
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        (self.repo / self.CRITERIA).write_text("AC-1 invented\n")
+        out = self.step("after-plan-edit")
+        copyPath = self.replaced_copies()[0]
+        self.assertFalse((self.repo / self.CRITERIA).exists())
+        self.assertEqual("AC-1 invented\n", copyPath.read_text())
+        self.assertTrue(copyPath.is_absolute())
+        self.assertIn(f"The text it deleted is in {copyPath}.", self.said())
+        self.assertNotIn(self.CRITERIA, self.state()["files"])
+        self.assertEqual([], self.state()["flagged"])
+        self.assert_copy_is_not_phase_work(out)
+
+    def test_after_plan_edit_keeps_a_criteria_file_the_coder_created_on_a_user_ruling(self):
+        self.coder_round(self.IMPACT_REPORT)
+        (self.repo / self.CRITERIA).unlink()
+        self.step("decide", "adopt", "--by", "user", "--ruling", "add the criteria")
+        (self.repo / self.CRITERIA).write_text("AC-1 added\n")
+        out = self.step("after-plan-edit")
+        self.assertEqual("AC-1 added\n", self.criteria_text())
+        self.assertEqual([], self.replaced_copies())
+        self.assertNotIn("deleted it", self.said())
+
+    def commit_on_new_branch(self, criteriaText):
+        subprocess.run(["git", "checkout", "-q", "-b", "other-branch"], cwd=self.repo, check=True, env=self.env)
+        (self.repo / self.CRITERIA).write_text(criteriaText)
+        subprocess.run(["git", "add", self.CRITERIA], cwd=self.repo, check=True, env=self.env)
+        subprocess.run(["git", "commit", "-q", "-m", "criteria on the other branch"], cwd=self.repo, check=True,
+                       env=self.env)
+
+    def check_another_branch_stops_before_the_settle(self):
+        before = self.state()
+        said = self.said()
+        out = self.step("after-plan-edit")
+        self.assertIn("ACTION: stop", out)
+        self.assertNotIn("AGENT:", out)
+        self.assertIn("Switch back to branch master, then run `! python3 ", out)
+        self.assertIn("Tell the user.", out)
+        self.assertEqual("AC-1 the other branch\n", self.criteria_text())
+        self.assertEqual(said, self.said())
+        self.assertEqual(before, self.state())
+        self.assertIn("criteriaGuard", self.state())
+        self.assertEqual([], self.replaced_copies())
+
+    def test_after_plan_edit_on_another_branch_stops_and_keeps_the_guard_when_a_file_existed_at_the_save(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        self.commit_on_new_branch("AC-1 the other branch\n")
+        self.check_another_branch_stops_before_the_settle()
+
+    def test_after_plan_edit_on_another_branch_stops_and_keeps_the_guard_when_no_file_existed_at_the_save(self):
+        self.coder_round(self.IMPACT_REPORT)
+        (self.repo / self.CRITERIA).unlink()
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        self.commit_on_new_branch("AC-1 the other branch\n")
+        self.check_another_branch_stops_before_the_settle()
+
+    def test_a_start_restore_that_then_stops_early_leaves_the_message_and_the_question_in_say(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.")
+        (self.repo / self.CRITERIA).write_text("AC-1 changed by someone\n")
+        out = self.step("start", "docs/plans/nope.md")
+        copyPath = self.replaced_copies()[0]
+        self.assertIn("ACTION: ask-user", out)
+        self.assertIn(f"The text it replaced is in {copyPath}.", self.said())
+        self.assertIn("## Question for the user", self.said())
+
+    def test_start_task_with_no_run_clears_text_an_earlier_command_left(self):
+        said = self.repo / ".git/code-step/say.md"
+        said.parent.mkdir(parents=True, exist_ok=True)
+        said.write_text("## Question for the user\n\nMain session: no plan file is at docs/nope.md.\n")
+        out = self.step("start", "--task", "add a flag")
+        self.assertIn("Implement: add a flag", out)
+        self.assertEqual("", self.said())
+
+    def test_start_task_after_an_auto_advance_drops_the_auto_advance_text(self):
+        self.finish_phase_one()
+        self.step("start")
+        (self.repo / "backend/src/totals.ts").write_text("export const total = 1;\n")
+        self.hook("coder", "BEHAVIOR: totals")
+        self.step("after-coder")
+        self.hook("review-loop", self.LOOP_OK)
+        self.assertIn("ACTION: auto-advance", self.step("after-review"))
+        self.assertIn("Auto-advancing to Phase 3", self.said())
+        self.commit_all()
+        out = self.step("start", "--task", "fix the typo")
+        self.assertIn("Implement: fix the typo", out)
+        self.assertNotIn("Auto-advancing", self.said())
+
+    def check_a_planless_start_keeps_the_restore_message(self, startArguments):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.")
+        (self.repo / self.CRITERIA).write_text("AC-1 changed by someone\n")
+        self.step(*startArguments)
+        copyPath = self.replaced_copies()[0]
+        self.assertIn(f"The text it replaced is in {copyPath}.", self.said())
+
+    def test_start_task_keeps_the_restore_message_in_say(self):
+        self.check_a_planless_start_keeps_the_restore_message(["start", "--task", "add a small thing"])
+
+    def test_start_with_task_text_keeps_the_restore_message_in_say(self):
+        self.check_a_planless_start_keeps_the_restore_message(["start", "fix the typo"])
+
+    def git(self, *arguments):
+        return subprocess.run(["git", *arguments], cwd=self.repo, check=True, env=self.env, capture_output=True,
+                              text=True).stdout
+
+    def set_aside(self):
+        # The user shelves the uncommitted work by hand: keep each changed or untracked file's text, then reset it.
+        kept = {}
+        for line in self.git("status", "--porcelain", "-uall").splitlines():
+            name = line[3:]
+            path = self.repo / name
+            kept[name] = path.read_text() if path.exists() else None
+            if line.startswith("??"):
+                path.unlink()
+                continue
+            path.write_text(self.git("show", f"HEAD:{name}"))
+        return kept
+
+    def put_back(self, kept):
+        for name, text in kept.items():
+            path = self.repo / name
+            if text is None:
+                path.unlink(missing_ok=True)
+                continue
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+
+    def leave_for_a_branch_without_the_plan(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        (self.repo / self.CRITERIA).write_text("AC-1 signed by the coder\n")
+        self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.")
+        home = self.git("branch", "--show-current").strip()
+        kept = self.set_aside()
+        self.git("checkout", "-q", "--orphan", "bare-branch")
+        self.git("rm", "-rfq", ".")
+        return home, kept
+
+    def test_after_plan_edit_on_a_branch_without_the_plan_stops_and_changes_no_state(self):
+        home, kept = self.leave_for_a_branch_without_the_plan()
+        before = self.state()
+        said = self.said()
+        outputs = [self.step("after-plan-edit"), self.step("after-plan-edit")]
+        for out in outputs:
+            self.assertNotIn("Traceback", out)
+            self.assertIn("ACTION: stop", out)
+            self.assertIn(f"Switch back to branch {home}, then run `! python3 ", out)
+            self.assertIn("code-step.py after-plan-edit` from the repo root, "
+                          "and tell the session to follow its ACTION line. Tell the user.", out)
+        self.assertEqual(said, self.said())
+        self.assertEqual(before, self.state())
+        self.assertIn("criteriaGuard", self.state())
+        self.assertIn("planEditBaseline", self.state())
+
+    def test_after_plan_edit_with_the_plan_deleted_on_the_right_branch_names_the_plan_and_changes_no_state(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.")
+        (self.repo / self.plan).unlink()
+        before = self.state()
+        said = self.said()
+        out = self.step("after-plan-edit")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn(f"The plan {self.plan} is missing from this checkout", out)
+        self.assertIn(f"Restore {self.plan}, then run `! python3 ", out)
+        self.assertIn("Tell the user.", out)
+        self.assertNotIn("Switch back", out)
+        self.assertEqual(before, self.state())
+        self.assertEqual(said, self.said())
+
+    def test_after_plan_edit_with_no_recorded_branch_says_to_check_out_the_branch_where_it_started(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.")
+        stateFile = self.repo / ".git/code-step/state.json"
+        recorded = json.loads(stateFile.read_text())
+        recorded["branch"] = "-"
+        stateFile.write_text(json.dumps(recorded))
+        out = self.step("after-plan-edit")
+        self.assertIn("Check out the branch or commit where the plan edit started, then run", out)
+        self.assertIn("Tell the user.", out)
+        self.assertNotIn("branch -", out)
+
+    def test_start_after_the_plan_edit_wait_gave_up_restores_the_saved_criteria(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        (self.repo / self.CRITERIA).write_text("AC-1 rewritten by the plan coder\n")
+        self.set_state(dispatchAt=time.time())
+        time.sleep(0.7)
+        self.wait_env(0.2, "0.05")
+        gaveUp = self.step("after-plan-edit")
+        self.assertIn("ACTION: stop", gaveUp)
+        self.assertEqual("stopped", self.state()["stage"])
+        self.assertIn("criteriaGuard", self.state())
+        self.step("start")
+        self.assertEqual("AC-1 orders exist\n", self.criteria_text())
+        self.assertNotIn("criteriaGuard", self.state())
+        copyPath = self.replaced_copies()[0]
+        self.assertIn(f"The text it replaced is in {copyPath}.", self.said())
+
+    def test_tick_during_the_plan_edit_restores_the_saved_criteria(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.")
+        (self.repo / self.CRITERIA).write_text("AC-1 rewritten by the plan coder\n")
+        self.step("tick", "1")
+        self.assertEqual("done", self.state()["stage"])
+        self.assertEqual("AC-1 orders exist\n", self.criteria_text())
+        self.assertNotIn("criteriaGuard", self.state())
+        copyPath = self.replaced_copies()[0]
+        self.assertIn(f"The text it replaced is in {copyPath}.", self.said())
+
+    def test_a_criteria_edit_the_user_makes_after_a_tick_survives_the_next_start(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.")
+        self.step("tick", "1")
+        (self.repo / self.CRITERIA).write_text("AC-1 the user's own edit\n")
+        self.step("start")
+        self.assertEqual("AC-1 the user's own edit\n", self.criteria_text())
+        self.assertEqual([], self.replaced_copies())
+        self.assertNotIn("did not make", self.said())
+
+    def test_tick_on_another_branch_drops_the_guard_and_says_so(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.")
+        self.commit_on_new_branch("AC-1 the other branch\n")
+        self.step("tick", "1")
+        self.assertEqual("AC-1 the other branch\n", self.criteria_text())
+        self.assertNotIn("criteriaGuard", self.state())
+        self.assertIn("belong to a plan edit on another branch", self.said())
+
+    def open_plan_edit_with_a_late_criteria_write(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        (self.repo / self.CRITERIA).write_text("AC-1 rewritten late by the plan coder\n")
+
+    def check_a_verb_stops_while_the_plan_edit_coder_is_out(self, verbArguments):
+        self.open_plan_edit_with_a_late_criteria_write()
+        before = self.state()
+        said = self.said()
+        out = self.step(*verbArguments)
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("`! python3 ", out)
+        self.assertIn("code-step.py after-plan-edit` from the repo root first", out)
+        self.assertTrue(out.rstrip().endswith("Tell the user."))
+        self.assertEqual("AC-1 rewritten late by the plan coder\n", self.criteria_text())
+        self.assertEqual(before, self.state())
+        self.assertEqual(said, self.said())
+        self.assertEqual([], self.replaced_copies())
+
+    def test_tick_stops_while_the_plan_edit_coder_is_out(self):
+        self.check_a_verb_stops_while_the_plan_edit_coder_is_out(["tick", "1"])
+
+    def test_start_stops_while_the_plan_edit_coder_is_out(self):
+        self.check_a_verb_stops_while_the_plan_edit_coder_is_out(["start"])
+
+    def test_start_take_over_stops_while_the_plan_edit_coder_is_out(self):
+        self.check_a_verb_stops_while_the_plan_edit_coder_is_out(["start", "--take-over"])
+
+    def check_the_stop_leads_through_after_plan_edit_to_a_restore(self, verbArguments, otherSession):
+        self.open_plan_edit_with_a_late_criteria_write()
+        if otherSession:
+            self.set_state(sessionId="other-session")
+        self.assertIn("ACTION: stop", self.step(*verbArguments))
+        self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.", session="other-session" if otherSession else self.SESSION)
+        (self.repo / self.CRITERIA).write_text("AC-1 rewritten after the stop\n")
+        out = self.step("after-plan-edit")
+        self.assertIn("AGENT: review-loop", out)
+        self.assertEqual("AC-1 orders exist\n", self.criteria_text())
+        self.assertNotIn("criteriaGuard", self.state())
+        self.assertEqual(self.SESSION, self.state()["sessionId"])
+        copyPath = self.replaced_copies()[0]
+        self.assertEqual("AC-1 rewritten after the stop\n", copyPath.read_text())
+
+    def test_a_tick_stop_then_after_plan_edit_restores_a_late_coder_write(self):
+        self.check_the_stop_leads_through_after_plan_edit_to_a_restore(["tick", "1"], False)
+
+    def test_a_start_stop_then_after_plan_edit_restores_a_late_coder_write(self):
+        self.check_the_stop_leads_through_after_plan_edit_to_a_restore(["start"], False)
+
+    def test_a_take_over_stop_then_after_plan_edit_under_the_new_session_restores_a_late_coder_write(self):
+        self.check_the_stop_leads_through_after_plan_edit_to_a_restore(["start", "--take-over"], True)
+
+    def test_after_plan_edit_before_the_coder_reports_waits_and_restores_a_later_criteria_write(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        self.wait_env(1, "0.2")
+        early = self.step("after-plan-edit")
+        self.assertIn("ACTION: wait", early)
+        self.assertIn(f"`{self.own_command('after-plan-edit')}`", early)
+        self.assertNotIn("AGENT:", early)
+        self.assertEqual("plan-coder", self.state()["stage"])
+        self.assertIn("criteriaGuard", self.state())
+        (self.repo / self.CRITERIA).write_text("AC-1 signed by the coder\n")
+        self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.")
+        out = self.step("after-plan-edit")
+        self.assertEqual("AC-1 orders exist\n", self.criteria_text())
+        self.assertNotIn("criteriaGuard", self.state())
+        self.assertIn("AGENT: review-loop", out)
+
+    def test_after_plan_edit_rerun_on_the_plans_branch_restores_the_criteria_and_dispatches_the_review(self):
+        home, kept = self.leave_for_a_branch_without_the_plan()
+        self.step("after-plan-edit")
+        self.git("checkout", "-q", "-f", home)
+        self.put_back(kept)
+        out = self.step("after-plan-edit")
+        self.assertEqual("AC-1 orders exist\n", self.criteria_text())
+        self.assertNotIn(self.CRITERIA, self.state()["files"])
+        self.assertEqual([], self.state()["flagged"])
+        self.assertIn("AGENT: review-loop", out)
+
+    def test_copies_made_in_the_same_second_get_a_counter_and_overwrite_nothing(self):
+        folder = self.repo / ".git/code-step-replaced-criteria"
+        folder.mkdir()
+        now = datetime.datetime.now(datetime.timezone.utc)
+        existing = {}
+        for offset in range(61):
+            stamp = (now + datetime.timedelta(seconds=offset)).strftime("%Y%m%dT%H%M%SZ")
+            name = f"{stamp}-01-acceptance-criteria.md"
+            (folder / name).write_text(f"old {offset}\n")
+            existing[name] = f"old {offset}\n"
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.")
+        (self.repo / self.CRITERIA).write_text("AC-1 the new change\n")
+        self.step("start")
+        for name, text in existing.items():
+            self.assertEqual(text, (folder / name).read_text())
+        newCopies = [path for path in self.replaced_copies() if path.name not in existing]
+        self.assertEqual(["AC-1 the new change\n"], [path.read_text() for path in newCopies])
+
+    def check_a_stale_run_of_an_ended_session_does_not_lock_the_next_start(self, by):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", by, "--ruling", "my own call")
+        stateFile = self.repo / ".git/code-step/state.json"
+        state = json.loads(stateFile.read_text())
+        state["sessionId"] = "an-ended-session"
+        state["dispatchAt"] = time.time() - 3 * 60 * 60
+        stateFile.write_text(json.dumps(state))
+        threeHoursAgo = time.time() - 3 * 60 * 60
+        os.utime(stateFile, (threeHoursAgo, threeHoursAgo))
+        first = self.step("start", "docs/plans/typo/spec.md")
+        self.assertIn("ACTION: ask-user", first)
+        second = self.step("start", self.plan)
+        self.assertNotIn("Another Claude session", second)
+        self.assertIn("ACTION: dispatch", second)
+
+    def test_a_stale_session_ruling_run_does_not_lock_the_next_start(self):
+        self.check_a_stale_run_of_an_ended_session_does_not_lock_the_next_start("session")
+
+    def test_a_stale_user_ruling_run_does_not_lock_the_next_start(self):
+        self.check_a_stale_run_of_an_ended_session_does_not_lock_the_next_start("user")
+
+    def test_start_after_the_plan_folder_moved_drops_the_saved_criteria_and_does_not_crash(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.")
+        shutil.move(self.repo / "docs/plans/orders", self.repo / "docs/plans/orders-v2")
+        for attempt in range(2):
+            out = self.step("start", "docs/plans/orders-v2/spec.md")
+            self.assertNotIn("Traceback", out)
+            self.assertIn("ACTION:", out)
+            self.assertNotIn("criteriaGuard", self.state())
+        self.assertEqual("AC-1 orders exist\n", (self.repo / "docs/plans/orders-v2/acceptance-criteria.md").read_text())
+
+    def test_start_restores_the_criteria_the_coder_edited_during_a_session_plan_edit(self):
+        self.check_start_restores_the_criteria(["start"])
+
+    def test_start_take_over_restores_the_criteria_the_coder_edited_during_a_session_plan_edit(self):
+        self.check_start_restores_the_criteria(["start", "--take-over"])
+
+    def test_start_on_another_branch_drops_the_saved_criteria_instead_of_restoring_them(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.")
+        self.assertIn("criteriaGuard", self.state())
+        subprocess.run(["git", "checkout", "-q", "-b", "other-branch"], cwd=self.repo, check=True, env=self.env)
+        shutil.rmtree(self.repo / "docs/plans/orders")
+        (self.repo / "docs/plans/b").mkdir(parents=True)
+        (self.repo / "docs/plans/b/plan.md").write_text(PLAN)
+        (self.repo / "docs/plans/b/acceptance-criteria.md").write_text("AC-1 b exists\n")
+        early = self.step("start", "docs/plans/nope.md")
+        self.assertIn("belong to a plan edit on another branch", self.said())
+        self.assertNotIn("criteriaGuard", self.state())
+        out = self.step("start", "docs/plans/b/plan.md")
+        self.assertNotIn("Traceback", out)
+        self.assertIn("ACTION:", out, out)
+        self.assertFalse((self.repo / self.CRITERIA).exists())
+        self.assertNotIn("criteriaGuard", self.state(), out)
+
+    def test_session_adopt_headline_does_not_say_the_user_adopted_or_rewrite_the_criteria(self):
+        self.coder_round(self.IMPACT_REPORT)
+        out = self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        outsideThePrompt = out.split("-----BEGIN PROMPT-----")[0]
+        self.assertNotIn("The user adopted", outsideThePrompt)
+        self.assertNotIn("acceptance criteria it contradicts", outsideThePrompt)
+        self.assertIn("The plan change was adopted by the session, not the user. Dispatch a coder to rewrite the plan "
+                      "steps it contradicts. The acceptance criteria do not change.", outsideThePrompt)
+
+    def test_after_plan_edit_leaves_unchanged_criteria_alone_on_a_session_ruling(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        out = self.step("after-plan-edit")
+        self.assertNotIn("script restored", out)
+        self.assertEqual("AC-1 orders exist\n", self.criteria_text())
+        self.assertEqual([], self.replaced_copies())
+
+    def test_after_plan_edit_keeps_the_criteria_the_coder_rewrote_on_a_user_ruling(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "user", "--ruling", "drop the header")
+        (self.repo / self.CRITERIA).write_text("AC-1 orders exist, no header\n")
+        out = self.step("after-plan-edit")
+        self.assertNotIn("script restored", out)
+        self.assertEqual("AC-1 orders exist, no header\n", self.criteria_text())
+        self.assertIn("changed too", self.said())
+
+    def test_preset_decision_keeps_the_criteria_out_of_the_edit_scope_and_restores_them(self):
+        self.env["CODE_STEP_IMPACT_DECISION"] = "adopt"
+        original = self.criteria_text()
+        out = self.coder_round(self.IMPACT_REPORT)
+        ruling = self.state()["ruling"]
+        self.assertFalse(ruling["byUser"])
+        self.assertEqual("the pre-set decision", ruling["by"])
+        self.assertIn(f"Do not edit {self.CRITERIA}.", out)
+        self.assertNotIn("Signed off by", out)
+        self.assertIn("The acceptance criteria stay as written", out)
+        outsideThePrompt = out.split("-----BEGIN PROMPT-----")[0]
+        self.assertNotIn("The user adopted", outsideThePrompt)
+        self.assertNotIn("acceptance criteria it contradicts", outsideThePrompt)
+        self.assertIn("The plan change was adopted by the pre-set decision. Dispatch a coder to rewrite the plan "
+                      "steps it contradicts. The acceptance criteria do not change.", outsideThePrompt)
+        self.assertIn("The ruling's words:", self.plan_text())
+        self.assertIn("RESOLVED: the pre-set decision ruled on this disagreement, not the user.",
+                      self.state()["planImpact"])
+        (self.repo / self.CRITERIA).write_text("AC-1 rewritten\n")
+        out = self.step("after-plan-edit")
+        self.assertEqual(original, self.criteria_text())
+        self.assertIn("the script restored them.", self.said())
 
     def test_review_packet_block_scalar_reaches_the_question_without_its_indicator(self):
         self.coder_round()
@@ -986,7 +1631,7 @@ class CodeStepTest(unittest.TestCase):
     def test_missing_plan_at_decide_stops(self):
         self.coder_round("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes")
         (self.repo / self.plan).unlink()
-        self.assertIn("ACTION: stop", self.step("decide", "keep", "--ruling", "keep it"))
+        self.assertIn("ACTION: stop", self.step("decide", "keep", "--by", "user", "--ruling", "keep it"))
 
     def test_unreadable_state_file_stops_with_its_name(self):
         self.start_phase_one()
@@ -1157,14 +1802,14 @@ class CodeStepTest(unittest.TestCase):
         self.coder_round()
         self.hook("review-loop", "status: plan-impact\niter: 1\nplan_impact: |\n    PLAN-IMPACT:\n      found: B\n")
         self.step("after-review")
-        out = self.step("decide", "keep", "--ruling", "keep it")
+        out = self.step("decide", "keep", "--by", "user", "--ruling", "keep it")
         self.assertIn("AGENT: review-loop", out)
         self.assertIn(self.SKIP_LINE, out)
         self.assertIn("iter: 0", out)
 
     def test_ruling_raised_by_the_coder_before_any_review_gets_a_full_first_review(self):
         self.coder_round(self.IMPACT_REPORT)
-        out = self.step("decide", "keep", "--ruling", "keep it")
+        out = self.step("decide", "keep", "--by", "user", "--ruling", "keep it")
         self.assertIn("AGENT: review-loop", out)
         self.assertNotIn(self.SKIP_LINE, out)
 
@@ -1172,7 +1817,7 @@ class CodeStepTest(unittest.TestCase):
         self.coder_round()
         self.hook("review-loop", "status: plan-impact\niter: 1\nplan_impact: |\n    PLAN-IMPACT:\n      found: B\n")
         self.step("after-review")
-        out = self.step("decide", "adopt", "--ruling", "adopt it")
+        out = self.step("decide", "adopt", "--by", "user", "--ruling", "adopt it")
         self.assertIn("AGENT: coder", out)
         (self.repo / self.plan).write_text(self.plan_text().replace(
             "## Phase 2", "Adopted step: drop the header.\n\n## Phase 2", 1))
@@ -1469,6 +2114,12 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn(self.own_command("after-coder"), first["permissionDecisionReason"])
         self.assertEqual("", self.fork_handback().stdout)
 
+    def test_fork_handback_names_after_plan_edit_while_the_plan_edit_coder_is_out(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        reason = json.loads(self.fork_handback().stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn(self.own_command("after-plan-edit"), reason)
+
     def test_fork_handback_names_after_review_while_the_review_loop_is_out(self):
         self.coder_round()
         reason = json.loads(self.fork_handback().stdout)["hookSpecificOutput"]["permissionDecisionReason"]
@@ -1678,9 +2329,10 @@ class CodeStepTest(unittest.TestCase):
 
     GUARDED_RUNS = [
         ("coder", None, "dispatch"), ("review", None, "dispatch"), ("asks-coder", None, "dispatch"),
+        ("plan-coder", None, "dispatch"),
         ("stopped", "invalid-packet", "state-file"),
         ("asks", None, "state-file"), ("impact-coder", None, "state-file"), ("impact-review", None, "state-file"),
-        ("skill", None, "state-file"), ("plan-coder", None, "state-file"),
+        ("skill", None, "state-file"),
         ("stopped", "verification", "state-file"), ("stopped", "plan-format", "state-file"),
     ]
 
@@ -1705,10 +2357,18 @@ class CodeStepTest(unittest.TestCase):
                 self.assertEqual(stage, self.state()["stage"])
 
                 self.leave_run_of_another_session(stage, stopReason, ageKind, 2 * 60 * 60 + 60)
-                self.assertIn("ACTION: dispatch", self.step("start", self.plan))
+                lifted = self.step("start", self.plan)
+                if stage == "plan-coder":
+                    self.assertIn("code-step.py after-plan-edit` from the repo root first", lifted)
+                else:
+                    self.assertIn("ACTION: dispatch", lifted)
 
                 self.leave_run_of_another_session(stage, stopReason, ageKind, 60)
-                self.assertIn("ACTION: dispatch", self.step("start", self.plan, "--take-over"))
+                takenOver = self.step("start", self.plan, "--take-over")
+                if stage == "plan-coder":
+                    self.assertIn("code-step.py after-plan-edit` from the repo root first", takenOver)
+                    continue
+                self.assertIn("ACTION: dispatch", takenOver)
 
     def test_a_stop_for_a_verification_failure_in_another_session_does_not_block_the_same_session(self):
         self.leave_run_of_another_session("stopped", "verification", "state-file", 60)
@@ -1870,6 +2530,13 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual("block", json.loads(self.stop_hook())["decision"])
         self.assertEqual("", self.stop_hook())
 
+    def test_the_stop_hook_blocks_the_fork_naming_after_plan_edit_while_the_plan_edit_coder_is_out(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
+        first = json.loads(self.stop_hook())
+        self.assertEqual("block", first["decision"])
+        self.assertIn(self.own_command("after-plan-edit"), first["reason"])
+
     def test_the_stop_hook_leaves_other_sessions_other_agents_and_answered_dispatches_alone(self):
         self.start_phase_one()
         self.assertEqual("", self.stop_hook(session="other"))
@@ -1928,6 +2595,27 @@ class CodeStepTest(unittest.TestCase):
         self.set_state(sessionId="a-stale-pin")
         self.step("after-review")
         self.assertEqual("clean\n", self.gate_mark(self.SESSION))
+
+
+class FrozenDatetime(datetime.datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return cls(2026, 10, 21, 3, 0, 0, tzinfo=tz)
+
+
+class SameSecondCopiesTest(unittest.TestCase):
+    def test_two_copies_in_one_second_keep_both_texts(self):
+        tempDirectory = tempfile.TemporaryDirectory()
+        self.addCleanup(tempDirectory.cleanup)
+        repo = pathlib.Path(tempDirectory.name)
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        frozenClock = types.SimpleNamespace(datetime=FrozenDatetime, timezone=datetime.timezone)
+        with unittest.mock.patch.object(code_step, "datetime", frozenClock):
+            first = code_step.save_replaced_criteria(repo, "acceptance-criteria.md", "AC-1 first\n")
+            second = code_step.save_replaced_criteria(repo, "acceptance-criteria.md", "AC-1 second\n")
+        self.assertNotEqual(first, second)
+        self.assertEqual("AC-1 first\n", first.read_text())
+        self.assertEqual("AC-1 second\n", second.read_text())
 
 
 if __name__ == "__main__":

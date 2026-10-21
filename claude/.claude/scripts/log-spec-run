@@ -15,7 +15,8 @@
 #
 # usage: log-spec-run key=value [key=value ...]
 #   canonical fields:
-#     repo=<basename>
+#     repo=<basename>                 derived by scripts/repo-name; a caller value
+#       is only a fallback when repo-name fails, so callers may omit it
 #     slug=<task dir basename>        the plan's identity; joins to docs/plans/<slug>
 #     ticket=<ID|none>
 #     verdict=finalized|abandoned     abandoned plans count too — a plan dropped
@@ -79,6 +80,16 @@ for kv in "$@"; do
   json=$(jq -c --arg k "$k" --arg v "$v" '.[$k] = ($v | (tonumber? // .))' <<< "$json")
 done
 
+# The checkout is not the repo: in a linked worktree a caller's
+# `basename $(git rev-parse --show-toplevel)` is the worktree directory, and the
+# session guard refuses command text that holds a substitution. Derive the
+# canonical name here.
+script_dir=$(dirname -- "${BASH_SOURCE[0]}")
+repo_name_script="$script_dir/repo-name"
+if canonical=$("$repo_name_script" 2>/dev/null); then
+  json=$(jq -c --arg r "$canonical" '.repo = $r' <<< "$json")
+fi
+
 verdict=$(jq -r '.verdict // ""' <<< "$json")
 case "$verdict" in
   finalized|abandoned) ;;
@@ -98,6 +109,8 @@ fi
 [ -n "$(jq -r '.slug // ""' <<< "$json")" ] || {
   echo "refusing to log: slug=<task dir basename> is required — it is the join key." >&2
   exit 1; }
+
+"$script_dir/telemetry_enabled.sh" 2>/dev/null || exit 0
 
 printf '%s\n' "$json" >> "$out"
 echo "logged → $out"

@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+# branch-base — print the default base ref of a branch and where it came from
+#
+# usage: branch-base [--head <branch>]
+#   --head <branch>  branch to find the base of; default: the checked-out branch
+#
+# A head named main or master never uses the candidate list below: its base is
+# its same-named upstream, else origin/<head> (both print source own-upstream),
+# else an upstream with another name (source upstream), else STOP. A stale
+# origin/HEAD, origin/master or local master would give a much wider diff.
+#
+# Any other head, first existing candidate wins:
+#   1 upstream       <head>@{upstream}, unless it is the same branch on a remote
+#   2 origin-head    origin/HEAD
+#   3 origin-main    origin/main
+#   4 origin-master  origin/master
+#   5 main           local main
+#   6 master         local master
+#   7 own-upstream   the head's same-named upstream, only when a candidate in 2-6
+#                    was skipped for being the head (a head like develop that
+#                    origin/HEAD points at) and no later candidate exists
+# A candidate that is the head itself, or its remote copy origin/<head>, is skipped.
+# Refs are compared as full ref names, so a local branch named origin/main never
+# stands in for the remote one; the printed ref is the shortest unambiguous name.
+#
+# stdout: one line, "<ref> <source>", exit 0.
+# No candidate: "STOP: no base found for <head>; ask the user for a base branch"
+# on stderr, exit 1. Bad arguments (an empty --head, or a --head that is neither
+# a local branch nor origin/<head>) or not a git repo: exit 2.
+set -uo pipefail
+
+head=""
+have_head=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --head)
+      [ $# -ge 2 ] || { echo "branch-base: --head needs a branch" >&2; exit 2; }
+      [ -n "$2" ] || { echo "branch-base: --head needs a non-empty branch" >&2; exit 2; }
+      head="$2"; have_head=1; shift 2 ;;
+    *) echo "branch-base: unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+git rev-parse --git-dir >/dev/null 2>&1 || { echo "branch-base: not a git repository" >&2; exit 2; }
+
+if [ "$have_head" = 0 ]; then
+  head=$(git branch --show-current 2>/dev/null || true)
+fi
+
+# is_head <full ref>: the ref is the head branch, locally or on origin
+is_head() {
+  [ -n "$head" ] && { [ "$1" = "refs/heads/$head" ] || [ "$1" = "refs/remotes/origin/$head" ]; }
+}
+
+# ref_exists <full ref>
+ref_exists() {
+  git rev-parse --verify --quiet "$1^{commit}" >/dev/null 2>&1
+}
+
+# emit <full ref> <source>: print the shortest unambiguous name of the ref
+emit() {
+  short=$(git rev-parse --abbrev-ref "$1" 2>/dev/null || true)
+  printf '%s %s\n' "${short:-$1}" "$2"
+  exit 0
+}
+
+# stop: no base found for the head; the wording is relied on by review-scope
+stop() {
+  echo "STOP: no base found for ${head:-detached HEAD}; ask the user for a base branch" >&2
+  exit 1
+}
+
+# --head must name a local branch, or a branch that exists only on origin
+if [ "$have_head" = 1 ] \
+  && ! git show-ref --verify --quiet "refs/heads/$head" \
+  && ! git show-ref --verify --quiet "refs/remotes/origin/$head"; then
+  echo "branch-base: no such branch: $head" >&2
+  exit 2
+fi
+
+# own_upstream: the head's upstream (full ref) when it is the same-named branch on a remote
+own_upstream=""
+# other_upstream: the head's upstream (full ref) when it has another name; only
+# kept for main and master, whose upstream may be a stale name from a rename
+other_upstream=""
+
+# 1. the head's own upstream, unless it is its own remote copy
+if [ -n "$head" ] && git show-ref --verify --quiet "refs/heads/$head"; then
+  remoteref=$(git for-each-ref --format='%(upstream:remoteref)' "refs/heads/$head" 2>/dev/null || true)
+  upstream=$(git rev-parse --symbolic-full-name "$head@{upstream}" 2>/dev/null || true)
+  if [ -n "$upstream" ] && ref_exists "$upstream"; then
+    if [ "$remoteref" = "refs/heads/$head" ]; then
+      own_upstream="$upstream"
+    elif ! is_head "$upstream"; then
+      case "$head" in
+        main|master) other_upstream="$upstream" ;;
+        *) emit "$upstream" upstream ;;
+      esac
+    fi
+  fi
+fi
+
+# The default branch: its same-named upstream, else its remote copy, else an
+# upstream with another name (a renamed branch), else nothing.
+case "$head" in
+  main|master)
+    [ -n "$own_upstream" ] && emit "$own_upstream" own-upstream
+    ref_exists "refs/remotes/origin/$head" && emit "refs/remotes/origin/$head" own-upstream
+    [ -n "$other_upstream" ] && emit "$other_upstream" upstream
+    stop
+    ;;
+esac
+
+# skipped_self=1 when a candidate in steps 2-6 exists but is the head itself
+skipped_self=0
+
+# emit_candidate_unless_head <full ref> <source>: emit the candidate, or note that it is the head
+emit_candidate_unless_head() {
+  ref_exists "$1" || return 0
+  if is_head "$1"; then
+    skipped_self=1
+    return 0
+  fi
+  emit "$1" "$2"
+}
+
+# 2. origin/HEAD
+origin_head=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null || true)
+if [ -n "$origin_head" ]; then
+  emit_candidate_unless_head "$origin_head" origin-head
+fi
+
+# 3-4. origin/main, origin/master
+for name in main master; do
+  emit_candidate_unless_head "refs/remotes/origin/$name" "origin-$name"
+done
+
+# 5-6. local main, master
+for name in main master; do
+  emit_candidate_unless_head "refs/heads/$name" "$name"
+done
+
+# 7. no other candidate: the same-named upstream is the only base left
+if [ "$skipped_self" = 1 ] && [ -n "$own_upstream" ]; then
+  emit "$own_upstream" own-upstream
+fi
+
+stop

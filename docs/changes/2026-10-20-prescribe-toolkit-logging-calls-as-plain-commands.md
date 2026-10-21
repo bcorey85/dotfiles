@@ -15,10 +15,11 @@ watches: []
 - `skills/_shared/finding-log.md`: the `L=` variable and the `C=( ... )` array are gone. Each run row and finding row is one plain call that repeats lane, scope, phase and iter.
 - `skills/review/SKILL.md` and `skills/fix/SKILL.md` ask-outcome rows: plain path, no `repo=` and no `branch=`.
 - Seven log-escape callers (fix, cc, escape, refactor, commit, pr-comments, verify-branch): `~/.claude/scripts/log-escape stage_found=...`, no `repo=`.
-- log-review-metrics in the review-loop metrics step and test-audit, and log-spec-run in eng-spec 6b-review: plain path, and `repo=<repo>` in place of `$(basename ...)`. calibrate keeps its old form until the log-review-metrics draft installs, because its `out=` still needs `$HOME`.
+- log-review-metrics in the review-loop metrics step, test-audit and calibrate, and log-spec-run in eng-spec 6b-review: plain path and no `repo=`. calibrate passes `out=~/.claude/review-calibration.jsonl`.
+- log-review-metrics and log-spec-run set `repo` from repo-name, as log-review-finding and log-escape do, and keep a caller value only when repo-name fails. log-review-metrics expands a leading `~` in `out=`.
 - Five other calls lose the `bash` prefix and run the executable by path: review-gate-mark in review and fix, resolve-task-dir in verify-branch and test-intent-reviewer, spec-criteria-lint in eng-spec finalize. The review-commit-gate hook matches `review-gate-mark clean` anywhere in the command, so the mark still registers.
-
-Not installed yet: log-review-metrics and log-spec-run take `repo=` from the caller. The drafts in `~/dev/evals/worktree-guard/` make each script set `repo` from repo-name, as log-review-finding and log-escape do, and keep a caller value only when repo-name fails. log-review-metrics also expands a leading `~` in `out=`. After install, the callers drop `repo=`: the review-loop metrics step, test-audit, calibrate, and eng-spec 6b-review.
+- `agents/test-reviewer.md` branch scope: `<default>` is the first word that `~/.claude/scripts/branch-base` prints. On its `STOP:` line, the reviewer asks the user for the base.
+- `skills/audit/skills.md` names the `log-skill-use.py` hooks in place of the old `.sh` name.
 
 ## Evidence
 
@@ -27,6 +28,8 @@ The Claude Code worktree docs ("How Claude Code enforces isolation", Command sha
 ## Result
 
 A probe in a worktree-isolated subagent ran review-scope four ways. The guard refused `bash "$HOME/..."`. It ran `~/.claude/skills/review/review-scope`, the same call split with a backslash line continuation, and the literal home path.
+
+Installed 2026-10-20 with the logger scripts. The `review-fix.py` mark strings lost their `bash ` prefix on 2026-10-21, with the sign-off install bundle.
 
 ## Watch
 

@@ -66,7 +66,7 @@ jq -n --arg f "<target>" --arg b "$HOME/.claude/calibration/$(basename <target>)
   > ~/.claude/calibration-lock.json
 ```
 
-The lock is the safety net (`calibration-guard.sh` shouts on sessions starting with one present). Apply with **Edit** — one line, minimal, unmarked.
+The lock is the safety net (`calibration-guard.py` shouts on sessions starting with one present). Apply with **Edit** — one line, minimal, unmarked.
 
 ## Step 3: Run the reviewer blind
 
@@ -106,9 +106,8 @@ sha256sum <target> | cut -c1-16   # must equal pre_hash
 ## Step 6: Log
 
 ```bash
-bash "$HOME/.claude/skills/review/log-review-metrics" \
-  out="$HOME/.claude/review-calibration.jsonl" \
-  repo="$(basename "$(git rev-parse --show-toplevel)")" \
+~/.claude/skills/review/log-review-metrics \
+  out=~/.claude/review-calibration.jsonl \
   reviewer=<sonnet|deep> class=<defect class> file=<target> \
   result=<caught|missed> other_findings=<n>
 ```

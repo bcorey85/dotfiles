@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """PreToolUse hook on Agent: guard Agent tool calls against silent Opus inheritance.
 
-Port of agent-model-guard.sh. Same decisions, stdout, stderr and exit codes.
-
   1. CLAUDE_SKIP_HOOKS set to any non-empty value: exit 0.
   2. Non-Agent tools pass.
   3. A subagent_type with characters outside [A-Za-z0-9_-] is denied.

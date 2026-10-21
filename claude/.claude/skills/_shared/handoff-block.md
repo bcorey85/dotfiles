@@ -14,7 +14,7 @@ handoff:
           note: <why this specific block looks the way it does>
   tests-run: <exact command + exit code, e.g. "npx jest src/orders.test.ts → exit 0"; scoped to the changed files; or "none">
   flagged: <issues the upstream coder explicitly flagged, or "none">
-  plan_impact: <"none", or a block that starts RESOLVED: the user's decision, who ruled and when, the ruling in their words, then the PLAN-IMPACT block it settles>
+  plan_impact: <"none", or a block that starts RESOLVED: the ruling, who ruled (the user, the session or the pre-set decision) and when, the ruling's words, then the PLAN-IMPACT block it settles>
   prior-issues:           # only present on fix → review
     - issue: <one line>
       status: fixed | skipped | partial
@@ -37,7 +37,7 @@ When present:
 
 - Use `files` as exact review scope. Do not run `git diff`.
 - `prior-issues` present ⇒ verify fixes fix-by-fix before scanning for new issues.
-- `plan_impact` starting `RESOLVED` ⇒ settled by the user: review against the ruling, never return it as `plan-impact`.
+- `plan_impact` starting `RESOLVED` ⇒ settled by a ruling, and the block names who ruled: review against the ruling, never return it as `plan-impact`.
 - `iter`/`spec_iter` are separate budgets. Never fold them.
 
 When absent (manual `/review` invocation), fall back to git discovery.

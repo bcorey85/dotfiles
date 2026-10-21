@@ -14,6 +14,12 @@ import time
 import hook_input
 from hook_input import current_directory, report_open_failure
 
+try:
+    from telemetry_enabled import telemetry_enabled
+except ImportError:
+    def telemetry_enabled():
+        return False
+
 TEST_SUFFIXES = ("_test.go", ".test.ts", ".test.tsx", ".test.js", ".test.jsx", ".spec.ts", ".spec.tsx", ".spec.js",
                  ".spec.jsx", "_spec.rb", "_test.py", "/conftest.py")
 TEST_PREFIXED_PYTHON = re.compile(r".*/test_.*\.py", re.S)
@@ -68,6 +74,9 @@ def check(raw):
         snippet = tool_input.get("content")
     if not present(snippet):
         snippet = ""
+
+    if not telemetry_enabled():
+        return
 
     log_path = os.environ.get("HOME", "") + "/.claude/test-edit-telemetry.jsonl"
     try:

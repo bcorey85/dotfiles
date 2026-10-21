@@ -10,6 +10,8 @@ import sys
 import tempfile
 import unittest
 
+os.environ.pop("CLAUDE_TOOLKIT_TELEMETRY", None)  # the switch file alone decides in these tests
+
 SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts") / "log-skill-use.py"
 TIMESTAMP = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
 
@@ -70,6 +72,7 @@ def run_hook(stdin, env=None, project=None, cwd=None):
     with tempfile.TemporaryDirectory() as scratch:
         home = pathlib.Path(scratch) / "home"
         (home / ".claude").mkdir(parents=True)
+        (home / ".claude" / "toolkit-telemetry").touch()
         working = pathlib.Path(scratch) / "work" / "myrepo"
         working.mkdir(parents=True)
         environment = {key: value for key, value in os.environ.items()
@@ -141,6 +144,8 @@ class LogSkillUseTest(unittest.TestCase):
     def test_output_file_override_and_missing_directory(self):
         with tempfile.TemporaryDirectory() as scratch:
             target = pathlib.Path(scratch) / "custom.jsonl"
+            (pathlib.Path(scratch) / ".claude").mkdir()
+            (pathlib.Path(scratch) / ".claude" / "toolkit-telemetry").touch()
             environment = dict(os.environ, HOME=scratch, SKILL_USAGE_FILE=str(target))
             subprocess.run([sys.executable, str(SCRIPT)], input=post("a"), text=True, env=environment)
             subprocess.run([sys.executable, str(SCRIPT)], input=post("b"), text=True, env=environment)

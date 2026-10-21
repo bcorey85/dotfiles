@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SessionStart hook: warn when CLAUDE_SKIP_HOOKS is set.
 
-Port of warn-skip-hooks.sh. Prints one line of JSON with a systemMessage when CLAUDE_SKIP_HOOKS is set to any
+Prints one line of JSON with a systemMessage when CLAUDE_SKIP_HOOKS is set to any
 non-empty value, and nothing otherwise. Always exits 0.
 """
 import os

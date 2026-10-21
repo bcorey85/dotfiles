@@ -29,7 +29,7 @@ def agent_payload(model=None, subagent="coder", tool_name="Agent", **extra):
     return json.dumps(payload)
 
 
-# Shared with the parity harness: name, stdin, env, files written under HOME or the project dir.
+# Each case: name, stdin, env, files written under HOME or the project dir.
 PARITY_CASES = [
     {"name": "non-agent tool", "stdin": agent_payload(tool_name="Bash")},
     {"name": "explicit sonnet", "stdin": agent_payload("sonnet")},

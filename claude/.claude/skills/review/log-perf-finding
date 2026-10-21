@@ -12,6 +12,8 @@
 # Re-logging the same repo + file_line + finding on a re-verify pass is a no-op.
 set -euo pipefail
 
+script_dir=$(dirname -- "${BASH_SOURCE[0]}")
+
 out="${BACKEND_PERF_FILE:-$HOME/.claude/backend-perf-findings.md}"
 
 repo="" file_line="" finding="" principle="" disposition="reported"
@@ -33,6 +35,8 @@ for required in repo file_line finding principle; do
     exit 1
   fi
 done
+
+"$script_dir/../../scripts/telemetry_enabled.sh" 2>/dev/null || exit 0
 
 if [ ! -f "$out" ]; then
   printf '# Backend Perf - Findings Log\n\n' > "$out"

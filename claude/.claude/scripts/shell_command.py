@@ -1,11 +1,86 @@
 """Read a shell command line as steps joined by operators, without running or fully parsing it."""
 import re
+import shlex
 
 SETUP_STEP = re.compile(r"^[ \t(]*(cd[ \t]|source[ \t]|\.[ \t]|export[ \t]|([^\W\d]\w*=[^ \t]*[ \t]*)+$)")
 # `|&` (pipe both streams), `>&`, `&>` and `&&` are not a lone `&`; a lone `&` sends the step before it to the background.
 OPERATOR = re.compile(r"(\|\||&&|\|(?!&)|(?<![>&|])&(?![&>])|;|\n)")
 LEADING_BRACES = re.compile(r"(?:[ \t]*\{(?=[ \t]))*")
 TRAILING_BRACES = re.compile(r"(?:(?:^|[ \t])\}[ \t]*)+$")
+SEPARATOR_CHARS = set("();|&\n")
+REDIRECT_CHARS = set("<>&")
+# shlex drops the quotes and escapes, so a quoted or escaped operator character would read as a real operator.
+HIDDEN_OPERATOR = re.compile(r"""\\[();|&<>\n]|(["'])\s*[();|&<>\n][\s();|&<>]*\1""")
+# `5 >f` redirects stdout and leaves 5 as an argument, but dropping a redirect's file descriptor would take the 5.
+SPACED_REDIRECT_NUMBER = re.compile(r"(?<!\S)\d+[ \t]+[<>]")
+# The target of `>&1`, `2>&1` or `>&-` copies or closes a file descriptor; any other `>&` target is a file.
+FILE_DESCRIPTOR_TARGET = re.compile(r"\d+-?|-")
+
+
+def redirection_writes_file(operator, target):
+    """True when a redirection can create or change a file: an output operator (`>`, `>>`, `&>`, `>&`, `<>`) whose
+    target is not /dev/null and not a file-descriptor copy (`>&1`, `>&2`, `>&-`). An input redirection never does."""
+    if ">" not in operator or target == "/dev/null":
+        return False
+    return not (operator.endswith("&") and FILE_DESCRIPTOR_TARGET.fullmatch(target))
+
+
+def split_simple_commands(command):
+    """The words of each simple command in a shell command, with the quotes and escapes resolved (see
+    parse_simple_commands). A command that is only a redirection is left out."""
+    return [words for words, _redirections in parse_simple_commands(command) if words]
+
+
+def parse_simple_commands(command):
+    """Split a shell command into its simple commands, each a pair (words, redirections). Words have the quotes and
+    escapes resolved; a redirection is (operator, target), with a target of "" when none follows. Operators, `(`,
+    `)` and an unquoted newline end a command (an empty one is left out); a redirection's file descriptor number is
+    not a word; a comment is not a comment, its words stay. Raises ValueError for text this reading cannot trust: an
+    unclosed quote, a quoted or escaped operator character, a number then a space then a redirection (`5 >f`), or a
+    run of operator characters it cannot sort (`>|`)."""
+    if HIDDEN_OPERATOR.search(command):
+        raise ValueError("operator character inside quotes or after a backslash")
+    if SPACED_REDIRECT_NUMBER.search(command):
+        raise ValueError("a number, a space and a redirection")
+
+    lexer = shlex.shlex(command, posix=True, punctuation_chars="();<>|&\n")
+    lexer.whitespace = " \t\r"
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    commands = []
+    words = []
+    redirections = []
+    pendingOperator = None
+    for token in lexer:
+        characters = set(token)
+        if token and characters <= SEPARATOR_CHARS:
+            if pendingOperator is not None:
+                redirections.append((pendingOperator, ""))
+            pendingOperator = None
+            if words or redirections:
+                commands.append((words, redirections))
+            words = []
+            redirections = []
+            continue
+        if token and characters <= REDIRECT_CHARS:
+            if pendingOperator is not None:
+                redirections.append((pendingOperator, ""))
+            if words and words[-1].isdigit():
+                words.pop()
+            pendingOperator = token
+            continue
+        if token and characters <= SEPARATOR_CHARS | REDIRECT_CHARS:
+            raise ValueError("unsorted operator characters: " + token)
+        if pendingOperator is not None:
+            redirections.append((pendingOperator, token))
+            pendingOperator = None
+            continue
+        words.append(token)
+    if pendingOperator is not None:
+        redirections.append((pendingOperator, ""))
+    if words or redirections:
+        commands.append((words, redirections))
+    return commands
 
 
 def split_command_steps(command):

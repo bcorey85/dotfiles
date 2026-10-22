@@ -2316,15 +2316,21 @@ def ask_the_user(repoRoot, state, asks):
 def log_ask_outcomes(repoRoot, state, outcomes):
     branch = git_output(repoRoot, "branch", "--show-current") or "-"
     for item, outcome in zip(state["asks"], outcomes):
+        findingId = item.get("finding_id")
+        if not findingId:
+            # The outcome supersedes its ask row by finding_id. With none it would add a second finding.
+            print("code-step: ask outcome without finding_id, not logged", file=sys.stderr)
+            continue
         fileLine = item.get("file_line", "-:0")
         path, _, line = fileLine.partition(":")
+        # The writer takes phase as a token, so a run with no phase sends none.
+        phaseArgs = [f"phase={state['phase']}"] if state.get("phase") else []
         run_command(["bash", str(CLAUDE_DIR / "skills/review/log-review-finding"), "kind=finding",
-                     f"repo={repoRoot.name}", f"branch={branch}", f"lane={state['lane']}", "scope=phase",
-                     f"phase={state.get('phase') or '-'}", f"iter={state['iter']}",
+                     f"finding_id={findingId}", f"branch={branch}", f"lane={state['lane']}", "scope=phase",
+                     *phaseArgs, f"iter={state['iter']}",
                      f"gate={item.get('gate', 'code-reviewer')}",
                      "disposition=ask", f"class={item.get('class', 'other')}", f"file={path}",
-                     f"line={re.sub(r'[^0-9].*', '', line) or '0'}", "actioned=ask", f"ask_outcome={outcome}",
-                     f"desc=ask resolved: {item.get('question', '')[:100]}"], repoRoot)
+                     f"line={re.sub(r'[^0-9].*', '', line) or '0'}", "actioned=ask", f"ask_outcome={outcome}"], repoRoot)
 
 
 def asks_coder_prompt(acceptedAsks):

@@ -5,16 +5,16 @@ Analyze both sides of the flywheel:
 - **Catches** — what `/review` logs on every run (via `log-review-metrics`): repo, iter, disposition counts (`fix`/`ask`/`nit`/`blocker`), outcome buckets (`fixed`/`skipped_fp`), `test_intent`, `culled`, `result`. Every row also carries `comment_noise`, always 0 and not reported. Rows dated before 2026-09-01 also carry `class_closed` and `fixed_classes`; both are retired and neither is reported — the stopping-rule receipt is prose in the review packet now, not telemetry.
 - **Escapes** — what got PAST the gates (via `~/.claude/scripts/log-escape`, fed by `/cc`, `/refactor`, `/verify-branch`, and manual `/escape`): `stage_found`, `gate_missed`, `class`, `severity`.
 - **Scans** — what the deterministic scans found and how much was real (via `~/.claude/scripts/log-scan`, fed by `/code` prohibition scans): `scan`, `stage`, `exit`, `candidates`, `confirmed`, `fixed`, `fp`.
-- **Plans** — one row per finalized (or abandoned) plan (via `~/.claude/scripts/log-spec-run`, fed by `/eng-spec`): `slug`, `verdict`, `phases`, `criteria`, `decisions`, `research_q`, `gaps`, `falsified`.
-- **Per-finding rows** — the same catches at finding granularity (via `~/.claude/skills/review/log-review-finding`, fed by `/review`, `/refactor`, `/verify-branch`, `/branch-recap`): `kind=run` rows carry `gate`, `scope`, `diff_loc`, `n_findings` including the silent runs; `kind=finding` rows carry `gate`, `disposition` (+ optional `blocker`), `class`, `file`, `line`, `actioned`. This is the only source with a per-gate denominator and a `file:line` join key.
+- **Plans** — one row per finalized (or abandoned) plan (via `~/.claude/scripts/log-spec-run`, fed by `/eng-spec`): `verdict`, `phases`, `criteria`, `decisions`, `research_q`, `gaps`, `falsified`.
+- **Per-finding rows** — the same catches at finding granularity (via `~/.claude/skills/review/log-review-finding`, fed by `/review`, `/refactor`, `/verify-branch`, `/branch-recap`): `kind=run` rows carry `gate`, `scope`, `diff_loc`, `n_findings` including the silent runs; `kind=finding` rows carry `gate`, `disposition` (+ optional `blocker`), `class`, `path_key`, `line`, `actioned`. `path_key` is a keyed hash of the file path, never the path, so the join key is `path_key:line`. This is the only source with a per-gate denominator and a per-finding join key.
 
-Every live row carries a `schema_version`, and the current version differs by source — check the writing script rather than assuming one number across the logs. Analyze only the current version. Older-schema rows are moved to `~/.claude/telemetry-archive/` and out of scope — `schema_version < current` is the archive filter, no date reasoning.
+Every live row in the escapes and scan jsonl files carries a `schema_version`, and the current version differs by file — check the writing script rather than assuming one number across the logs. Analyze only the current version. Older-schema rows are moved to `~/.claude/telemetry-archive/` and out of scope — `schema_version < current` is the archive filter, no date reasoning.
 
 ## Instructions
 
-1. **Locate the files**: `${REVIEW_METRICS_FILE:-$HOME/.claude/review-metrics.jsonl}`, `${REVIEW_ESCAPES_FILE:-$HOME/.claude/review-escapes.jsonl}`, and `${REVIEW_FINDINGS_FILE:-$HOME/.claude/review-findings.jsonl}`. If the metrics file is missing or empty, say so and stop. If only the escapes file is missing, analyze catches and note that no escapes have been logged yet — which is either great news or (more likely, early on) means the capture points haven't fired yet; don't interpret an empty escape log as proof of trustworthiness until catch volume is substantial.
+1. **Locate the rows**: every step below that runs `ledger` first checks `command -v ledger` and, when it is absent, skips the step with one line. Review rows live in the ledger: find them with `ledger query` over `review_run`, `review_finding`, `review_metrics` and `spec_run`. The escapes file stays `${REVIEW_ESCAPES_FILE:-$HOME/.claude/review-escapes.jsonl}`. If `review_metrics` has no rows, say so and stop. If only the escapes file is missing, analyze catches and note that no escapes have been logged yet — which is either great news or (more likely, early on) means the capture points haven't fired yet; don't interpret an empty escape log as proof of trustworthiness until catch volume is substantial.
 
-1a. **Per-gate contribution** — read `${REVIEW_FINDINGS_FILE:-$HOME/.claude/review-findings.jsonl}`. Skip with one line if missing or thin. Otherwise, per `gate`:
+1a. **Per-gate contribution** — read `ledger yield --class all` (per-gate runs, silent runs, findings, `actioned` by a later edit, `dismissed`, `disposed_fixed`) and `ledger query` over `review_finding`. Skip with one line if `ledger` is absent or the rows are thin. Otherwise, per `gate`:
 
 - **Yield and denominator**: findings per run, and the share of runs with `n_findings=0`. Report the raw pair; read it with the next two before judging.
 - **Action rate**: `actioned=fixed` over all its findings. `skipped_fp` is the false-positive rate; `deferred` is the branch-exit queue this gate is feeding.
@@ -29,11 +29,11 @@ Every live row carries a `schema_version`, and the current version differs by so
 - **Did-not-run rate**: share of rows with `exit=2`. Any non-trivial rate means the scan is silently absent from runs that reported clean, and every clean report since is suspect.
 - Report scan findings BESIDE the agent-gate numbers, never merged into them.
 
-1c. **Residue→escape join** — the price of the round cap. Join `actioned=deferred` findings to escapes on **same repo + byte-identical `desc`** (fuzzy is not evidence). Report matches over total deferred as the **residue-leak rate** and list the matched strings. High = deferral leaks and the cap buys speed with defects; near-zero = deferral safe. Skip with one line if either file lacks `deferred` rows.
+1c. **Residue→escape join** — the price of the round cap, retired. The join keyed on a byte-identical `desc`, which findings no longer carry. Print one skip line and go on: `residue→escape join: findings carry no desc since LED-5`.
 
 1d. **Per-class recall** — the only step here that measures what the gates MISS. Everything else in this lane counts what they found, which cannot distinguish a gate that catches everything from one nobody points at. Join the two logs on `class`, current schema era only, and per class report the raw pair:
 
-- **caught** = `kind=finding` rows of that class in `${REVIEW_FINDINGS_FILE}`, listed by the gates that filed them.
+- **caught** = `review_finding` rows of that class, listed by the gates that filed them: `ledger query "select class, gate, count(*) from review_finding group by class, gate"`. Skip the caught side with one line if `ledger` is absent.
 - **missed** = rows of that class in `${REVIEW_ESCAPES_FILE}`, listed by `gate_missed`.
 - **recall** = caught / (caught + missed), reported with both numbers beside it and never alone.
 
@@ -45,9 +45,9 @@ Read it by class, not by gate — the two sides only meet at the class. Three co
 
 Headline = the LOWEST-recall class a reviewer owns. Never propose retiring a gate on unmeasured recall; propose the missing capture point first.
 
-1e. **Planning denominator** — read `${SPEC_RUNS_FILE:-$HOME/.claude/spec-runs.jsonl}`. Skip with one line if missing or thin. `gate_missed=eng-spec` escapes are the numerator; this file is the denominator. Report defects per finalized plan AND per criterion (`sum(criteria)` across rows). Report `sum(falsified)` beside them — sweep yield is `falsified / (falsified + eng-spec escapes)`; a yield trending to zero over 10+ plans means the sweep is not running or is checking the wrong claims. Count `verdict=abandoned` rows separately, never drop them.
+1e. **Planning denominator** — read `ledger query` over `spec_run`. Skip with one line if `ledger` is absent or the rows are thin. `gate_missed=eng-spec` escapes are the numerator. Report defects per finalized plan AND per criterion (`sum(criteria)` across rows). Report `sum(falsified)` beside them — sweep yield is `falsified / (falsified + eng-spec escapes)`; a yield trending to zero over 10+ plans means the sweep is not running or is checking the wrong claims. Count `verdict=abandoned` rows separately, never drop them.
 
-2. **Aggregate with jq/awk in a single pass** (redirect to a temp file if long). Compute:
+2. **Aggregate the `review_metrics` rows** from `ledger query` (skip the step if `ledger` is absent), with jq/awk in a single pass over its output (redirect to a temp file if long). Compute:
    - **Run count** total and per repo. Exclude `lane=stage`, `lane=phase-gate`, and `lane=test-audit` rows from all loop math; they feed only their own metrics below.
    - **Iteration distribution**: runs at `iter=0`, `1`, `2`. A run reaches 2 whenever its first review's `fix` findings got a coder, so 2 is no tail — read it beside the share of runs with `fixed > 0`. Count rows at `3` or `oneshot` apart: they predate the present counter.
    - **Disposition totals and per-run averages**: `fix` / `ask` / `nit`, plus `blocker` as a share of `fix`.
@@ -57,7 +57,7 @@ Headline = the LOWEST-recall class a reviewer owns. Never propose retiring a gat
    - **Cull volume**: sum(`culled`) and per-run average — diff-added tests the loop had to delete (`[test-cull]`).
    - **Smell yield**: sum(`smells`) and findings per run. Compare against `class=smell|duplication` escape volume.
    - **Complexity escapes**: count `class=complexity` rows (logged by `/refactor simplify`) separately from `smell`/`duplication` — Zero rows means the mode has not run — check that before reading the count.
-   - **Result distribution**: PASS / PASS WITH WARNINGS / NEEDS CHANGES. Any other value on a pre-2026-09-01 row counts as no-verdict-recorded (the logger rejects them now).
+   - **Result distribution**: PASS / PASS_WITH_WARNINGS / NEEDS_CHANGES. Any other value on a pre-2026-09-01 row counts as no-verdict-recorded (the writer now stores an unknown verdict as `other`, counted in the yield header).
    - **Escapes** (when the escapes file exists): counts by `gate_missed`, by `class`, by `stage_found`; severity mix; per repo; by `lane` (`eng-spec` vs bare `code`); guard-rung distribution, bucketed by `guard` and split by `gate_missed`. Headline per gate: **escape ratio** = its escapes vs. its catch volume over the same period.
    - If a repo filter was passed in arguments, scope everything to that repo.
 

@@ -10,6 +10,8 @@ import tempfile
 import unittest
 from unittest import mock
 
+import fake_ledger
+
 SCRIPT = pathlib.Path(
     os.environ.get("REFACTOR_FLOW_PATH")
     or pathlib.Path.home() / ".claude" / "skills" / "refactor" / "scripts" / "refactor-flow.py"
@@ -55,7 +57,7 @@ class RefactorFlowTest(unittest.TestCase):
         self.tempRoot = pathlib.Path(temp_dir.name)
         self.home = self.tempRoot / "home"
         self.escapes = self.tempRoot / "escapes.jsonl"
-        self.findings = self.tempRoot / "findings.jsonl"
+        self.ledgerEnv = fake_ledger.install(self.tempRoot)
         self.logInputDir = self.tempRoot / "log-inputs"
         self.logInputDir.mkdir()
         (self.home / ".claude").mkdir(parents=True)
@@ -105,13 +107,19 @@ class RefactorFlowTest(unittest.TestCase):
             "REFACTOR_CLAUDE_DIR": REAL_CLAUDE_DIR,
             "BRANCH_BASE_SCRIPT": BRANCH_BASE,
             "REVIEW_ESCAPES_FILE": str(self.escapes),
-            "REVIEW_FINDINGS_FILE": str(self.findings),
             "REFACTOR_LOG_INPUT_DIR": str(self.logInputDir),
+            **self.ledgerEnv,
             **(extraEnv or {}),
         }
         return subprocess.run(
             [sys.executable, str(SCRIPT), *args], cwd=cwd or self.repo, env=env, capture_output=True, text=True
         )
+
+    def findingRows(self):
+        """Every row log-review-finding sent to `ledger write`, oldest first, as the row the writer built plus a
+        `kind` of run or finding taken from the row type. A file path is carried in path_key, raw, until the real
+        ledger keys it."""
+        return [{**row, "kind": row["_type"].removeprefix("review_")} for row in fake_ledger.recorded_rows(self.ledgerEnv)]
 
     def logInput(self, payload, name="log-input.json"):
         path = self.tempRoot / name
@@ -212,7 +220,7 @@ class RefactorFlowTest(unittest.TestCase):
         self.pushedFeatureBranch({"a.py": "x = 1\ny = 2\n"})
         done = self.log("branch", {"finder": "smell-reviewer", "lane": "code", "findings": []})
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(self.rows(self.findings)[0]["diff_loc"], 2)
+        self.assertEqual(self.findingRows()[0]["diff_loc"], "2")
 
     def test_branch_prep_with_no_base_passes_the_helper_stop_line_through(self):
         self.git("branch", "-m", "main", "work")
@@ -255,7 +263,7 @@ class RefactorFlowTest(unittest.TestCase):
         again = self.log("branch", payload)
         self.assertEqual(again.returncode, 0, again.stderr)
         self.assertIn("2 already logged, skipped", again.stdout)
-        finding_rows = self.rows(self.findings)
+        finding_rows = self.findingRows()
         self.assertEqual(len(finding_rows), 2)
 
     def test_log_rerun_after_the_input_loses_a_finding_writes_no_second_run_row(self):
@@ -267,7 +275,7 @@ class RefactorFlowTest(unittest.TestCase):
         one = {**two, "findings": two["findings"][:1]}
         again = self.log("branch", one)
         self.assertEqual(again.returncode, 0, again.stderr)
-        finding_rows = self.rows(self.findings)
+        finding_rows = self.findingRows()
         run_rows = [row for row in finding_rows if row["kind"] == "run"]
         self.assertEqual(len(run_rows), 1)
         self.assertEqual(len(finding_rows), 3)
@@ -279,8 +287,8 @@ class RefactorFlowTest(unittest.TestCase):
         payload = {"finder": "smell-reviewer", "lane": "code", "target": ["mod/[ab].py"], "findings": []}
         done = self.log("audit", payload)
         self.assertEqual(done.returncode, 0, done.stderr)
-        finding_rows = self.rows(self.findings)
-        self.assertEqual(finding_rows[0]["diff_loc"], 3)
+        finding_rows = self.findingRows()
+        self.assertEqual(finding_rows[0]["diff_loc"], "3")
 
     def test_log_audit_diff_loc_ignores_relative_config(self):
         config = self.tempRoot / "gitconfig"
@@ -291,8 +299,8 @@ class RefactorFlowTest(unittest.TestCase):
         payload = {"finder": "smell-reviewer", "lane": "code", "target": ["mod", "../top"], "findings": []}
         done = self.log("audit", payload, cwd=self.repo / "pkg", extraEnv={"GIT_CONFIG_GLOBAL": str(config)})
         self.assertEqual(done.returncode, 0, done.stderr)
-        finding_rows = self.rows(self.findings)
-        self.assertEqual(finding_rows[0]["diff_loc"], 6)
+        finding_rows = self.findingRows()
+        self.assertEqual(finding_rows[0]["diff_loc"], "6")
 
     def test_log_escape_flag_must_be_a_boolean(self):
         self.branchWith({"a.py": "x = 1\n"})
@@ -320,7 +328,7 @@ class RefactorFlowTest(unittest.TestCase):
         done = self.log("branch", {"finder": "smell-reviewer", "lane": "code", "findings": []})
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(self.lastLine(done)[:5], "STOP:")
-        self.assertEqual(self.rows(self.findings), [])
+        self.assertEqual(self.findingRows(), [])
 
     def test_log_orphan_branch_stops_and_writes_nothing(self):
         self.git("checkout", "-q", "--orphan", "lone")
@@ -331,7 +339,7 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertIn("share no history", done.stdout)
         self.assertEqual(self.lastLine(done)[:5], "STOP:")
         self.assertEqual(self.rows(self.escapes), [])
-        self.assertEqual(self.rows(self.findings), [])
+        self.assertEqual(self.findingRows(), [])
 
     def test_prep_calls_keep_only_the_newest_fifty_log_input_files(self):
         self.branchWith({"a.py": "x = 1\n"})
@@ -685,13 +693,13 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertEqual(escapes[0]["class"], "duplication")
         self.assertEqual(escapes[0]["desc"], "same parse twice")
         self.assertEqual(escapes[0]["line"], 3)
-        finding_rows = self.rows(self.findings)
+        finding_rows = self.findingRows()
         run_row = [row for row in finding_rows if row["kind"] == "run"][0]
         self.assertEqual(run_row["gate"], "smell-reviewer")
         self.assertEqual(run_row["scope"], "branch-exit")
-        self.assertEqual(run_row["n_findings"], 2)
-        self.assertEqual(run_row["diff_loc"], 1)
-        self.assertEqual(run_row["result"], "NEEDS CHANGES")
+        self.assertEqual(run_row["n_findings"], "2")
+        self.assertEqual(run_row["diff_loc"], "1")
+        self.assertEqual(run_row["result"], "NEEDS_CHANGES")
         self.assertEqual(len([row for row in finding_rows if row["kind"] == "finding"]), 2)
         self.assertIn("  iter: 0", done.stdout)
         self.assertIn("- path: a.py", done.stdout)
@@ -714,16 +722,16 @@ class RefactorFlowTest(unittest.TestCase):
                    "findings": [self.finding()]}
         done = self.log("branch", payload)
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual([row["kind"] for row in self.rows(self.findings)], ["run", "finding"])
+        self.assertEqual([row["kind"] for row in self.findingRows()], ["run", "finding"])
         self.assertEqual(self.rows(self.escapes), [])
 
     def test_log_empty_handed_still_writes_run_row(self):
         self.branchWith({"a.py": "x = 1\n"})
         done = self.log("branch", {"finder": "smell-reviewer", "lane": "code", "findings": []})
         self.assertEqual(done.returncode, 0, done.stderr)
-        finding_rows = self.rows(self.findings)
+        finding_rows = self.findingRows()
         self.assertEqual(len(finding_rows), 1)
-        self.assertEqual(finding_rows[0]["n_findings"], 0)
+        self.assertEqual(finding_rows[0]["n_findings"], "0")
         self.assertEqual(finding_rows[0]["result"], "PASS")
         self.assertEqual(self.rows(self.escapes), [])
 
@@ -734,7 +742,7 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertEqual(done.returncode, 1)
         self.assertIn("needs guards", done.stderr)
         self.assertEqual(self.rows(self.escapes), [])
-        self.assertEqual(self.rows(self.findings), [])
+        self.assertEqual(self.findingRows(), [])
 
     def test_log_one_guard_serves_a_whole_class_group(self):
         self.branchWith({"a.py": "x = 1\n"})
@@ -755,7 +763,7 @@ class RefactorFlowTest(unittest.TestCase):
             self.assertEqual(done.returncode, 1, override)
         missing_lane = {"finder": "smell-reviewer", "findings": []}
         self.assertEqual(self.log("branch", missing_lane).returncode, 1)
-        self.assertEqual(self.rows(self.findings), [])
+        self.assertEqual(self.findingRows(), [])
         self.assertEqual(self.rows(self.escapes), [])
 
     def test_log_writes_a_file_path_with_spaces_whole_into_both_logs(self):
@@ -766,7 +774,7 @@ class RefactorFlowTest(unittest.TestCase):
         done = self.log("branch", payload)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual([row["file"] for row in self.rows(self.escapes)], [spaced])
-        finding_files = [row["file"] for row in self.rows(self.findings) if row["kind"] == "finding"]
+        finding_files = [row["path_key"] for row in self.findingRows() if row["kind"] == "finding"]
         self.assertEqual(finding_files, [spaced])
 
     def test_log_refuses_a_file_path_that_would_swallow_a_second_field(self):
@@ -779,7 +787,7 @@ class RefactorFlowTest(unittest.TestCase):
             self.assertEqual(done.returncode, 1, file)
             self.assertIn("`file` must not contain a space followed by `name=`", done.stderr)
         self.assertEqual(self.rows(self.escapes), [])
-        self.assertEqual(self.rows(self.findings), [])
+        self.assertEqual(self.findingRows(), [])
 
     def test_log_refuses_a_file_path_with_a_line_break(self):
         self.branchWith({"a.py": "x = 1\n"})
@@ -790,15 +798,14 @@ class RefactorFlowTest(unittest.TestCase):
             self.assertEqual(done.returncode, 1, repr(file))
             self.assertIn("`file` must be one line", done.stderr)
         self.assertEqual(self.rows(self.escapes), [])
-        self.assertEqual(self.rows(self.findings), [])
+        self.assertEqual(self.findingRows(), [])
 
     def logWriters(self):
         """Each log writer as (name, run(*extra), logged rows), so one rule is asserted against both."""
         escape_writer = os.environ.get("REFACTOR_LOG_ESCAPE") or str(pathlib.Path(REAL_CLAUDE_DIR) / "scripts" / "log-escape")
         finding_writer = os.environ.get("REFACTOR_LOG_FINDING") or str(
             pathlib.Path(REAL_CLAUDE_DIR) / "skills" / "review" / "log-review-finding")
-        env = {**os.environ, "HOME": str(self.home), "REVIEW_ESCAPES_FILE": str(self.escapes),
-               "REVIEW_FINDINGS_FILE": str(self.findings)}
+        env = {**os.environ, "HOME": str(self.home), "REVIEW_ESCAPES_FILE": str(self.escapes), **self.ledgerEnv}
         escape_base = ["stage_found=refactor", "gate_missed=review", "class=smell", "severity=low", "guard=none"]
         finding_base = ["kind=finding", "gate=smell-reviewer", "lane=code", "scope=standalone", "phase=-", "iter=0",
                         "disposition=fix", "class=smell", "line=1", "actioned=none"]
@@ -810,7 +817,8 @@ class RefactorFlowTest(unittest.TestCase):
             return run
 
         return [("log-escape", runner(escape_writer, escape_base), lambda: self.rows(self.escapes)),
-                ("log-review-finding", runner(finding_writer, finding_base), lambda: self.rows(self.findings))]
+                ("log-review-finding", runner(finding_writer, finding_base),
+                 lambda: [{**row, "file": row["path_key"]} for row in self.findingRows()])]
 
     def test_log_writers_refuse_a_space_in_any_value_but_free_text_and_a_clean_file_path(self):
         for name, run, rows in self.logWriters():
@@ -820,6 +828,21 @@ class RefactorFlowTest(unittest.TestCase):
             done = run("file=a b.py", "desc=free text, with spaces")
             self.assertEqual(done.returncode, 0, f"{name} {done.stderr}")
             self.assertEqual(rows()[0]["file"], "a b.py", name)
+
+    def test_log_review_finding_with_an_out_redirect_sends_one_row_while_the_switch_is_on_and_none_while_off(self):
+        with mock.patch.dict(os.environ):
+            os.environ.pop("CLAUDE_TOOLKIT_TELEMETRY", None)
+            run = {name: run for name, run, _ in self.logWriters()}["log-review-finding"]
+            sink = self.tempRoot / "sink.jsonl"
+            on = run("file=a.py", f"out={sink}")
+            self.assertEqual(on.returncode, 0, on.stderr)
+            findingRows = fake_ledger.recorded_rows(self.ledgerEnv)
+            self.assertEqual([row["_type"] for row in findingRows], ["review_finding"])
+            self.assertEqual(findingRows[0]["path_key"], "a.py")
+            (self.home / ".claude" / "toolkit-telemetry").unlink()
+            off = run("file=a.py", f"out={sink}")
+            self.assertEqual(off.returncode, 0, off.stderr)
+            self.assertEqual(len(fake_ledger.recorded_rows(self.ledgerEnv)), 1)
 
     def test_log_writers_refuse_a_file_path_with_whitespace_then_a_name_or_a_line_break(self):
         swallowing = ("a.py\tlane=code", "a.py\nlane=code", "a.py\rb.py", "a.py\nb.py", "a.py \tlane=code")
@@ -840,15 +863,16 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertEqual(first.stdout.count("NEXT:"), 1)
         self.assertIn("no handoff given", self.lastLine(first))
         self.assertEqual(self.rows(self.escapes), [])
-        self.assertEqual([row["kind"] for row in self.rows(self.findings)], ["run"])
+        self.assertEqual([row["kind"] for row in self.findingRows()], ["run", "finding"])
 
         fixed = {**payload, "guards": {"smell": "none"}, "findings": [self.finding(**{"class": "smell"})]}
         second = self.log("branch", fixed)
         self.assertEqual(second.returncode, 0, second.stderr)
         escape_rows = self.rows(self.escapes)
         self.assertEqual(len(escape_rows), 1)
-        finding_rows = self.rows(self.findings)
-        self.assertEqual(sorted(row["kind"] for row in finding_rows), ["finding", "run"])
+        finding_rows = self.findingRows()
+        self.assertEqual(sorted(row["kind"] for row in finding_rows), ["finding", "finding", "run"])
+        self.assertEqual([row["class"] for row in finding_rows if row["kind"] == "finding"], ["weird", "smell"])
 
     def test_log_run_twice_writes_nothing_the_second_time(self):
         self.branchWith({"a.py": "x = 1\n"})
@@ -857,14 +881,14 @@ class RefactorFlowTest(unittest.TestCase):
         first = self.log("branch", payload)
         self.assertEqual(first.returncode, 0, first.stderr)
         escape_rows = self.rows(self.escapes)
-        finding_rows = self.rows(self.findings)
+        finding_rows = self.findingRows()
         escape_count = len(escape_rows)
         finding_count = len(finding_rows)
         self.assertEqual((escape_count, finding_count), (1, 2))
         second = self.log("branch", payload)
         self.assertEqual(second.returncode, 0, second.stderr)
         escape_rows_after = self.rows(self.escapes)
-        finding_rows_after = self.rows(self.findings)
+        finding_rows_after = self.findingRows()
         self.assertEqual(len(escape_rows_after), escape_count)
         self.assertEqual(len(finding_rows_after), finding_count)
         self.assertIn("3 already logged, skipped", second.stdout)
@@ -903,11 +927,11 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertEqual(self.log("branch", payload).returncode, 0)
         again = self.flow("log", "--mode", "branch", "--input", self.logInput(payload, "second-run.json"))
         self.assertEqual(again.returncode, 0, again.stderr)
-        rows_after_new_file = self.rows(self.findings)
+        rows_after_new_file = self.findingRows()
         self.assertEqual(len(rows_after_new_file), 2)
         same_file = self.log("branch", payload)
         self.assertIn("1 already logged, skipped", same_file.stdout)
-        rows_after_same_file = self.rows(self.findings)
+        rows_after_same_file = self.findingRows()
         self.assertEqual(len(rows_after_same_file), 2)
 
     def test_log_state_keeps_one_entry_per_input_path_and_a_bounded_number_of_paths(self):
@@ -926,7 +950,7 @@ class RefactorFlowTest(unittest.TestCase):
                                      "handoff": self.handoffInput()})
         self.assertEqual(done.returncode, 1)
         self.assertIn("finder", done.stderr)
-        self.assertEqual(self.rows(self.findings), [])
+        self.assertEqual(self.findingRows(), [])
 
     def test_log_refuses_a_finder_that_is_not_a_string(self):
         for finder in (["smell-reviewer"], {"a": 1}, 7):
@@ -942,7 +966,7 @@ class RefactorFlowTest(unittest.TestCase):
             done = self.log(mode, payload)
             self.assertEqual(done.returncode, 1, mode)
             self.assertIn("ghost", done.stderr)
-        self.assertEqual(self.rows(self.findings), [])
+        self.assertEqual(self.findingRows(), [])
 
     def test_log_works_in_a_sha256_repository(self):
         probe = subprocess.run(["git", "init", "-q", "--object-format=sha256", str(self.tempRoot / "probe")],
@@ -958,7 +982,7 @@ class RefactorFlowTest(unittest.TestCase):
         payload = {"finder": "smell-reviewer", "lane": "code", "target": ["src"], "findings": []}
         done = self.log("audit", payload, cwd=sha256_repo)
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(self.rows(self.findings)[0]["diff_loc"], 2)
+        self.assertEqual(self.findingRows()[0]["diff_loc"], "2")
 
     def test_log_simplify_escape_error_names_the_finding(self):
         self.write("mod/a.py", "a\n")
@@ -980,7 +1004,7 @@ class RefactorFlowTest(unittest.TestCase):
         done = self.log("branch", payload, cwd=spaced)
         self.assertEqual(done.returncode, 0, done.stderr)
         escape_rows = self.rows(self.escapes)
-        finding_rows = self.rows(self.findings)
+        finding_rows = self.findingRows()
         self.assertEqual(len(escape_rows), 1)
         self.assertEqual(len(finding_rows), 2)
         self.assertIn("handoff:", done.stdout)
@@ -1006,9 +1030,9 @@ class RefactorFlowTest(unittest.TestCase):
                    "findings": [self.finding(escape=False)]}
         done = self.log("audit", payload)
         self.assertEqual(done.returncode, 0, done.stderr)
-        run_row = [row for row in self.rows(self.findings) if row["kind"] == "run"][0]
+        run_row = [row for row in self.findingRows() if row["kind"] == "run"][0]
         self.assertEqual(run_row["scope"], "standalone")
-        self.assertEqual(run_row["diff_loc"], 3)
+        self.assertEqual(run_row["diff_loc"], "3")
         self.assertEqual(self.rows(self.escapes), [])
         self.assertIn("No coders, no /review", done.stdout)
         with_handoff = {**payload, "handoff": self.handoffInput()}
@@ -1022,7 +1046,7 @@ class RefactorFlowTest(unittest.TestCase):
         payload = {"finder": "smell-reviewer", "lane": "code", "target": ["mod"], "findings": []}
         done = self.log("audit", payload, cwd=self.repo / "pkg")
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(self.rows(self.findings)[0]["diff_loc"], 4)
+        self.assertEqual(self.findingRows()[0]["diff_loc"], "4")
 
     def test_log_audit_requires_target(self):
         done = self.log("audit", {"finder": "smell-reviewer", "lane": "code", "findings": []})
@@ -1051,13 +1075,13 @@ class RefactorFlowTest(unittest.TestCase):
         payload = {"finder": "complexity-reviewer", "lane": "code", "target": slice_files, "findings": []}
         done = self.log("simplify", payload)
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(self.rows(self.findings)[0]["diff_loc"], 10)
+        self.assertEqual(self.findingRows()[0]["diff_loc"], "10")
 
     def test_log_targeted_without_finder_writes_only_the_handoff(self):
         payload = {"findings": [], "handoff": self.handoffInput()}
         done = self.log("targeted", payload)
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(self.rows(self.findings), [])
+        self.assertEqual(self.findingRows(), [])
         self.assertIn("handoff:", done.stdout)
 
     def test_log_without_handoff_points_at_the_handoff_verb_and_that_verb_writes_nothing(self):
@@ -1066,7 +1090,7 @@ class RefactorFlowTest(unittest.TestCase):
         logged = self.log("branch", payload)
         self.assertIn("handoff --input", self.lastLine(logged))
         self.assertNotIn("re-run `log`", self.lastLine(logged))
-        rows_before = self.rows(self.findings)
+        rows_before = self.findingRows()
 
         with_handoff = {**payload, "handoff": self.handoffInput(), "modifier": "+deep"}
         done = self.flow("handoff", "--input", self.logInput(with_handoff))
@@ -1074,7 +1098,7 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertIn("handoff:", done.stdout)
         self.assertIn("modifier `+deep`", done.stdout)
         self.assertEqual(self.lastLine(done)[:5], "NEXT:")
-        self.assertEqual(self.rows(self.findings), rows_before)
+        self.assertEqual(self.findingRows(), rows_before)
         self.assertEqual(self.rows(self.escapes), [])
 
     def test_handoff_verb_requires_a_handoff(self):
@@ -1133,13 +1157,13 @@ class RefactorFlowTest(unittest.TestCase):
                 self.assertIn("base `origin/main`", pushed.stdout)
 
             # a second pass over the log verbs repeats no row and still ends.
-            findings_before = self.rows(self.findings)
+            findings_before = self.findingRows()
             escapes_before = self.rows(self.escapes)
             for verb in verbs[-3:]:
                 done = self.flow(*verb)
                 self.assertEqual(done.returncode, 0, done.stderr)
                 self.assertRegex(self.lastLine(done), r"^(NEXT|STOP): ")
-            self.assertEqual(findings_before, self.rows(self.findings))
+            self.assertEqual(findings_before, self.findingRows())
             self.assertEqual(escapes_before, self.rows(self.escapes))
 
 

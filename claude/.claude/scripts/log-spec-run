@@ -49,46 +49,23 @@
 #       taken is a reader talking past the owner, and the ratio is the number to
 #       read, not the count.
 #
-# Numeric-looking values are stored as numbers, everything else as strings.
-# A "date" field (UTC ISO 8601) is always added. Output file:
-#   $SPEC_RUNS_FILE or ~/.claude/spec-runs.jsonl
+# Every value is sent as a JSON string to `ledger write spec_run`, which types it and
+# adds the date, repo and session. slug, date, schema_version, repo and out are
+# accepted and never stored. With no `ledger` on PATH the write is skipped silently.
+# A row `ledger write` refuses exits 2.
 set -euo pipefail
 
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
-out="${SPEC_RUNS_FILE:-$HOME/.claude/spec-runs.jsonl}"
 
-# schema_version marks the row's schema era; bump ONLY on a breaking change
-# (a value-vocabulary swap or a field-meaning change), never for additive fields.
-SCHEMA_VERSION=1
-json=$(jq -cn --argjson sv "$SCHEMA_VERSION" '{date: (now | todate), schema_version: $sv}')
-for kv in "$@"; do
-  case "$kv" in
-    out=*) out="${kv#out=}"; continue ;;
-    *=*) ;;
-    *) echo "skipping malformed arg (want key=value): $kv" >&2; continue ;;
-  esac
-  k="${kv%%=*}"
-  v="${kv#*=}"
-  # No field here is free text. A space in any value means the caller quoted too
-  # much and swallowed the following key=value pairs into this one, which is how
-  # repo= ends up holding every other field and the row joins to nothing.
-  if [ "$v" != "${v#* }" ]; then
-    echo "refusing to log: $k= contains a space: '$v'" >&2
-    echo "Quote each key=value separately." >&2
-    exit 1
-  fi
-  json=$(jq -c --arg k "$k" --arg v "$v" '.[$k] = ($v | (tonumber? // .))' <<< "$json")
-done
-
-# The checkout is not the repo: in a linked worktree a caller's
-# `basename $(git rev-parse --show-toplevel)` is the worktree directory, and the
-# session guard refuses command text that holds a substitution. Derive the
-# canonical name here.
 script_dir=$(dirname -- "${BASH_SOURCE[0]}")
-repo_name_script="$script_dir/repo-name"
-if canonical=$("$repo_name_script" 2>/dev/null); then
-  json=$(jq -c --arg r "$canonical" '.repo = $r' <<< "$json")
-fi
+# shellcheck source=_kv.sh
+source "$script_dir/_kv.sh"
+
+# No field here is free text, so a space in any value is refused: the caller quoted
+# too much and swallowed the following key=value pairs into it, which is how repo=
+# ends up holding every other field and the row joins to nothing.
+json='{}'
+kv_fold "" "" "$@"
 
 verdict=$(jq -r '.verdict // ""' <<< "$json")
 case "$verdict" in
@@ -106,11 +83,7 @@ if [ "$(jq -r '.criteria // "MISSING"' <<< "$json")" = MISSING ]; then
   exit 1
 fi
 
-[ -n "$(jq -r '.slug // ""' <<< "$json")" ] || {
-  echo "refusing to log: slug=<task dir basename> is required — it is the join key." >&2
-  exit 1; }
-
 "$script_dir/telemetry_enabled.sh" 2>/dev/null || exit 0
 
-printf '%s\n' "$json" >> "$out"
-echo "logged → $out"
+payload=$(jq -c 'del(.slug)' <<< "$json")
+printf '%s\n' "$payload" | bash "$script_dir/ledger-write" spec_run

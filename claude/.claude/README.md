@@ -8,17 +8,19 @@ Why the agents have this shape: [docs/agent-evals.md](../../docs/agent-evals.md)
 Nothing in this toolkit records anything until you opt in. That covers two
 parts:
 
-- **Toolkit logs:** agent use, skill use, review metrics, escapes, scan and
-  spec runs, gate blocks. They append to `~/.claude/*.jsonl` only when
-  `CLAUDE_TOOLKIT_TELEMETRY=1` is set. They never leave your machine.
+- **Toolkit logs:** agent use, skill use, escapes, scans, gate blocks, and the
+  ledger rows `spec_run`, `review_metrics` and `review_scope`. They are
+  written only when `CLAUDE_TOOLKIT_TELEMETRY=1` is set. They never leave
+  your machine.
 - **The ledger:** Claude Code's own OpenTelemetry, received by `ledger`. The
   `SessionStart` hook runs `ledger hook session-start` only when `ledger` is
   on your PATH, and exits 0 silently when it is not.
 
 Off, the toolkit works the same: gates, reviews and their output still run.
-The deferred-findings queue (`review-findings.jsonl`) is workflow state, not
-telemetry, so it always writes. The three generated security gates have their
-own logging opt-in and ignore this switch.
+The deferred-findings queue (the ledger's `review_finding` and `review_run`
+rows) is workflow state, not telemetry, so it is always written. The
+three generated security gates have their own logging opt-in and ignore
+this switch.
 
 What it is for: measuring the toolkit, so its parts earn their cost. The
 logs and the ledger answer:

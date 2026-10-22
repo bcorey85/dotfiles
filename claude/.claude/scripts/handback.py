@@ -31,7 +31,7 @@ PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers",
                "ask", "class_closure", "files_touched", "nit", "load_bearing_clean", "perf", "smell", "principle"]
 LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "perf", "files_touched", "smell"]
 SCALAR_KEYS = ("status", "iter", "spec_iter", "load_bearing_clean")
-ITEM_KEYS = ["disposition", "smell", "finding", "file_line", "blocker", "question", "gate", "class", "reason", "item",
+ITEM_KEYS = ["disposition", "smell", "finding_id", "finding", "file_line", "blocker", "question", "gate", "class", "reason", "item",
              "phase", "principle"]
 NONE_VALUE = re.compile(r"^\[\s*\]|^\(?\s*(none|n/a|null)\b", re.I)
 BLOCK_INDICATOR = re.compile(r"^[|>][+-]?$")

@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 
@@ -227,30 +228,21 @@ def tree_fingerprint(top, mergeBase, excludeRel=None):
 
 def review_ran(repo, branch, fingerprint):
     """(ran, reason). A branch-exit code-reviewer run row that verify-log wrote (it carries REVIEW_MARKER and a tree
-    fingerprint) counts when its fingerprint equals `fingerprint`."""
-    logPath = pathlib.Path(os.environ.get("REVIEW_FINDINGS_FILE") or CLAUDE_HOME / "review-findings.jsonl")
-    if not logPath.is_file():
-        return False, "no review-findings log"
-    rows = []
-    for number, line in enumerate(logPath.read_text().splitlines(), 1):
-        if not line.strip():
-            continue
-        try:
-            row = json.loads(line)
-        except ValueError as error:
-            raise Fail(f"{logPath}:{number}: not valid JSON ({error}); fix or remove the line")
-        isMatch = (row.get("kind") == "run" and row.get("gate") == REVIEW_GATE and row.get("scope") == "branch-exit"
-                   and row.get("repo") == repo and row.get("branch") == branch
-                   and row.get("source") == REVIEW_MARKER and row.get("tree"))
-        if isMatch:
-            rows.append(row)
-    if not rows:
-        return False, f"no {REVIEW_GATE} branch-exit run row from verify-log for {repo}@{branch}"
+    fingerprint) counts when its fingerprint equals `fingerprint`. `ledger yield --review-trees` lists the
+    fingerprints of the checkout the process runs in, so `repo` and `branch` come from that checkout."""
+    if shutil.which("ledger") is None:
+        return False, "ledger not installed"
+    listed = run(["ledger", "yield", "--review-trees"])
+    if listed.returncode != 0:
+        errorLines = listed.stderr.strip().splitlines()
+        raise Fail(errorLines[-1] if errorLines else f"ledger yield --review-trees exited {listed.returncode}")
 
-    for row in reversed(rows):
-        if row["tree"] == fingerprint:
-            return True, f"{REVIEW_GATE} run row at {row['date']}, tree unchanged since"
-    return False, f"the tree differs from the one reviewed at {rows[-1]['date']}"
+    trees = listed.stdout.splitlines()[1:]
+    if not trees:
+        return False, f"no {REVIEW_GATE} branch-exit run row from verify-log for {repo}@{branch}"
+    if fingerprint in trees:
+        return True, f"{REVIEW_GATE} run row in the ledger, tree unchanged since"
+    return False, "the tree differs from the one reviewed"
 
 
 def context_path(repo, branch):

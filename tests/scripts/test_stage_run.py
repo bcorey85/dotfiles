@@ -5,6 +5,8 @@ import subprocess
 import tempfile
 import unittest
 
+import fake_ledger
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 REAL_CLAUDE = REPO_ROOT / "claude" / ".claude"
 SCRIPT = pathlib.Path(os.environ.get("STAGE_SCRIPT") or REAL_CLAUDE / "skills" / "stage" / "scripts" / "stage.mjs")
@@ -30,7 +32,7 @@ class StageRunTest(unittest.TestCase):
         (self.home / ".claude" / "toolkit-telemetry").touch()
         self.repo = self.tempRoot / "myrepo"
         self.repo.mkdir()
-        self.metricsFile = self.tempRoot / "metrics.jsonl"
+        self.ledgerEnv = fake_ledger.install(self.tempRoot)
         self.git("init", "-q")
         self.write("README.md", "hello\n")
         self.git("add", "README.md")
@@ -50,7 +52,7 @@ class StageRunTest(unittest.TestCase):
             **os.environ,
             **GIT_ENV,
             "HOME": str(self.home),
-            "REVIEW_METRICS_FILE": str(self.metricsFile),
+            **self.ledgerEnv,
             "STAGE_LOG_SCRIPT": str(logScript or LOG_SCRIPT),
         }
         return subprocess.run(["node", str(SCRIPT), *args], cwd=self.repo, env=env, capture_output=True, text=True)
@@ -60,9 +62,7 @@ class StageRunTest(unittest.TestCase):
         return [line for line in out.split("\n") if line]
 
     def metricsRows(self):
-        if not self.metricsFile.exists():
-            return []
-        return [json.loads(line) for line in self.metricsFile.read_text().splitlines()]
+        return fake_ledger.recorded_rows(self.ledgerEnv, "review_metrics")
 
     def jumpRows(self, stdout):
         inside = stdout.split("```jump-queue\n", 1)[1].split("```", 1)[0]
@@ -80,9 +80,9 @@ class StageRunTest(unittest.TestCase):
         rows = self.metricsRows()
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["lane"], "stage")
-        self.assertEqual(rows[0]["repo"], "myrepo")
-        self.assertEqual(rows[0]["suppressed"], 0)
-        self.assertEqual(rows[0]["queue"], 0)
+        self.assertNotIn("repo", rows[0])
+        self.assertEqual(rows[0]["suppressed"], "0")
+        self.assertEqual(rows[0]["queue"], "0")
         self.assertEqual(rows[0]["result"], "clean")
 
     def test_stages_safe_tier_and_queues_the_rest(self):
@@ -101,7 +101,7 @@ class StageRunTest(unittest.TestCase):
         self.assertEqual(rows[1], {"tier": "READ", "path": "src/service.ts", "line": 1, "reason": "semantic change, no tripwire"})
         self.assertIn("hot path", rows[0]["reason"])
         logged = self.metricsRows()[0]
-        self.assertEqual((logged["suppressed"], logged["queue"], logged["result"]), (1, 2, "residue"))
+        self.assertEqual((logged["suppressed"], logged["queue"], logged["result"]), ("1", "2", "residue"))
         self.assertIn("Still yours:", result.stdout.strip().splitlines()[-1])
 
     def test_classifies_once(self):
@@ -120,7 +120,7 @@ class StageRunTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("`lib/auth/session.ts`", result.stdout)
         self.assertEqual(self.jumpRows(result.stdout), [])
-        self.assertEqual(self.metricsRows()[0]["queue"], 1)
+        self.assertEqual(self.metricsRows()[0]["queue"], "1")
 
     def test_renamed_file(self):
         self.write("src/old.ts", "export const value = 1;\nexport const other = 2;\nexport const third = 3;\n")
@@ -160,7 +160,7 @@ class StageRunTest(unittest.TestCase):
         self.assertEqual(self.stagedPaths(), [])
         self.assertIn("Staged mechanically (0)", result.stdout)
         logged = self.metricsRows()[0]
-        self.assertEqual((logged["suppressed"], logged["queue"]), (0, 1))
+        self.assertEqual((logged["suppressed"], logged["queue"]), ("0", "1"))
 
     def test_classifier_error_exits_nonzero_and_stages_nothing(self):
         self.addBarrel()
@@ -178,7 +178,7 @@ class StageRunTest(unittest.TestCase):
         emptyRepo.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=emptyRepo, check=True, env={**os.environ, **GIT_ENV})
         (emptyRepo / "index.ts").write_text("export * from './a';\n")
-        env = {**os.environ, **GIT_ENV, "REVIEW_METRICS_FILE": str(self.metricsFile), "STAGE_LOG_SCRIPT": str(LOG_SCRIPT)}
+        env = {**os.environ, **GIT_ENV, **self.ledgerEnv, "STAGE_LOG_SCRIPT": str(LOG_SCRIPT)}
         result = subprocess.run(["node", str(SCRIPT), "--run"], cwd=emptyRepo, env=env, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("stage: --run failed", result.stderr)

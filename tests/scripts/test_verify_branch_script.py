@@ -10,6 +10,8 @@ import tempfile
 import time
 import unittest
 
+import fake_ledger
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 REAL_CLAUDE = REPO_ROOT / "claude" / ".claude"
 REAL_HOME = pathlib.Path.home()
@@ -33,13 +35,14 @@ GIT_ENV = {
 STUB_LOGGER = """#!/usr/bin/env bash
 check=0
 if [ "$1" = "--check" ]; then check=1; shift; fi
+if [ "$check" = 0 ] && [ -n "$STUB_ARGV_LOG" ]; then printf '%s\\0' "$@" >> "$STUB_ARGV_LOG"; fi
 for arg in "$@"; do
   if [ -n "$STUB_REFUSE" ] && [[ "$arg" == *"$STUB_REFUSE"* ]]; then echo "refused: $arg" >&2; exit 1; fi
   if [ "$check" = 0 ] && [ -n "$STUB_FAIL_WRITE" ] && [[ "$arg" == *"$STUB_FAIL_WRITE"* ]]; then
     echo "write failed: $arg" >&2; exit 1
   fi
 done
-if [ "$check" = 1 ]; then export REVIEW_FINDINGS_FILE=/dev/null REVIEW_ESCAPES_FILE=/dev/null; fi
+if [ "$check" = 1 ]; then exec bash REAL --check "$@"; fi
 exec bash REAL "$@"
 """
 
@@ -121,13 +124,14 @@ class VerifyBranchBase(unittest.TestCase):
         (self.home / ".claude" / "toolkit-telemetry").write_text("")
         self.repo = self.tempRoot / "myrepo"
         self.repo.mkdir()
-        self.findings = self.tempRoot / "findings.jsonl"
+        self.ledgerEnv = fake_ledger.install(self.tempRoot)
+        self.findings = pathlib.Path(self.ledgerEnv["FAKE_LEDGER_ROWS"])
         self.escapes = self.tempRoot / "escapes.jsonl"
         finderStub = self.stub_logger("finder", FINDER)
         escaperStub = self.stub_logger("escaper", ESCAPER)
         self.env = subprocess_env({
-            **os.environ, **GIT_ENV, "HOME": str(self.home), "VERIFY_STATE_DIR": str(self.tempRoot / "state"),
-            "REVIEW_FINDINGS_FILE": str(self.findings), "REVIEW_ESCAPES_FILE": str(self.escapes),
+            **os.environ, **GIT_ENV, **self.ledgerEnv, "HOME": str(self.home),
+            "VERIFY_STATE_DIR": str(self.tempRoot / "state"), "REVIEW_ESCAPES_FILE": str(self.escapes),
             "RESOLVE_TASK_DIR_SCRIPT": str(RESOLVER), "LOG_REVIEW_FINDING_SCRIPT": str(finderStub),
             "LOG_ESCAPE_SCRIPT": str(escaperStub), "REPO_NAME_SCRIPT": str(REPO_NAMER)})
         self.git("init", "-q", "-b", "master")
@@ -355,11 +359,12 @@ class PrepTest(VerifyBranchBase):
     def test_review_signal_fresh_then_stale_after_a_real_edit(self):
         self.reviewed_tree()
         row = self.jsonl(self.findings)[0]
-        self.assertEqual((row["gate"], row["scope"], row["kind"]), ("code-reviewer", "branch-exit", "run"))
+        self.assertEqual((row["gate"], row["scope"], row["_type"]), ("code-reviewer", "branch-exit", "review_run"))
         self.assertEqual((row["source"], row["lane"]), ("verify-branch", "verify"))
         self.assertTrue(row["tree"].startswith("sha256:"))
-        self.assertGreaterEqual(row["diff_loc"], 5)
-        self.assertEqual(row["repo"], "myrepo")
+        self.assertGreaterEqual(int(row["diff_loc"]), 5)
+        self.assertEqual(row["branch_key"], "LED-9-thing")
+        self.assertNotIn("repo", row)
 
         self.write("src/a.py", "print(2)\n")
         stale = self.prep().stdout
@@ -434,24 +439,15 @@ class PrepTest(VerifyBranchBase):
         self.findings.write_text("")
         head = self.git("rev-parse", "HEAD").strip()
         loopRows = [
-            {"kind": "run", "gate": "code-reviewer", "scope": "branch-exit", "iter": 2, "diff_loc": 0, "n_findings": 0,
-             "result": "PASS", "repo": "myrepo", "branch": "LED-9-thing", "head": head, "date": "2026-10-20T10:00:00Z"},
-            {"kind": "run", "gate": "code-reviewer", "scope": "branch-exit", "iter": 1, "diff_loc": 9, "n_findings": 2,
-             "result": "NEEDS CHANGES", "repo": "myrepo", "branch": "LED-9-thing", "head": head,
-             "date": "2026-10-20T10:01:00Z"},
-            {"kind": "run", "gate": "smell-reviewer", "scope": "branch-exit", "iter": 1, "diff_loc": 9,
-             "n_findings": 0, "repo": "myrepo", "branch": "LED-9-thing", "head": head, "date": "2026-10-20T10:02:00Z"},
+            {"_type": "review_run", "gate": "code-reviewer", "scope": "branch-exit", "iter": "2", "diff_loc": "0",
+             "n_findings": "0", "result": "PASS", "branch_key": "LED-9-thing", "head": head},
+            {"_type": "review_run", "gate": "code-reviewer", "scope": "branch-exit", "iter": "1", "diff_loc": "9",
+             "n_findings": "2", "result": "NEEDS_CHANGES", "branch_key": "LED-9-thing", "head": head},
+            {"_type": "review_run", "gate": "smell-reviewer", "scope": "branch-exit", "iter": "1", "diff_loc": "9",
+             "n_findings": "0", "branch_key": "LED-9-thing", "head": head},
         ]
         self.findings.write_text("\n".join(json.dumps(row) for row in loopRows) + "\n")
         self.assertIn("NOT run", self.prep().stdout)
-
-    def test_unparseable_review_log_line_fails_with_path_and_line(self):
-        self.reviewed_tree()
-        with self.findings.open("a") as handle:
-            handle.write("this is not json\n")
-        done = self.prep()
-        self.assertEqual(done.returncode, 2, done.stdout)
-        self.assertIn(f"{self.findings}:2:", done.stderr)
 
     def test_review_row_of_another_branch_does_not_count(self):
         self.reviewed_tree()
@@ -583,9 +579,8 @@ class ReviewGateTest(VerifyBranchBase):
 
     def test_review_row_without_the_marker_does_not_pass_the_gate(self):
         head = self.git("rev-parse", "HEAD").strip()
-        row = {"kind": "run", "gate": "code-reviewer", "scope": "branch-exit", "iter": 1, "diff_loc": 5,
-               "n_findings": 0, "result": "PASS", "repo": "myrepo", "branch": "LED-9-thing", "head": head,
-               "date": "2026-10-20T10:00:00Z"}
+        row = {"_type": "review_run", "gate": "code-reviewer", "scope": "branch-exit", "iter": "1", "diff_loc": "5",
+               "n_findings": "0", "result": "PASS", "branch_key": "LED-9-thing", "head": head}
         self.findings.write_text(json.dumps(row) + "\n")
         self.assertEqual(self.log("--rows", "-", stdin=self.rows()).returncode, 2)
 
@@ -663,8 +658,8 @@ class LogTest(VerifyBranchBase):
         self.assertIn("GAPS: 1", done.stdout)
         self.assertNotIn("CLEAN", done.stdout)
         logged = self.verifier_rows()
-        self.assertEqual((logged[0]["result"], logged[0]["n_findings"]), ("NEEDS CHANGES", 1))
-        self.assertIn("AC3", logged[1]["desc"])
+        self.assertEqual((logged[0]["result"], logged[0]["n_findings"]), ("NEEDS_CHANGES", "1"))
+        self.assertNotIn("desc", logged[1])
 
     def test_an_id_named_inside_a_longer_id_does_not_count_as_covered(self):
         rows = json.dumps([{"item": "AC10: item", "verdict": "done"}, {"item": "AC2: item", "verdict": "done"},
@@ -693,15 +688,15 @@ class LogTest(VerifyBranchBase):
         self.assertEqual(done.returncode, 0, done.stderr)
         logged = self.verifier_rows()
         run = logged[0]
-        self.assertEqual((run["kind"], run["gate"], run["scope"], run["n_findings"], run["result"]),
-                         ("run", "plan-verifier", "branch-exit", 2, "NEEDS CHANGES"))
+        self.assertEqual((run["_type"], run["gate"], run["scope"], run["n_findings"], run["result"]),
+                         ("review_run", "plan-verifier", "branch-exit", "2", "NEEDS_CHANGES"))
         self.assertEqual(run["lane"], "verify")
         self.assertNotIn("tree", run)
-        self.assertEqual(run["diff_loc"], 5)
+        self.assertEqual(run["diff_loc"], "5")
         findings = logged[1:]
         self.assertEqual([f["class"] for f in findings], ["plan-drift", "plan-drift"])
         self.assertEqual([f["lane"] for f in findings], ["verify", "verify"])
-        self.assertEqual([f["file"] for f in findings], ["src/f2.py", "src/f3.py"])
+        self.assertEqual([f["path_key"] for f in findings], ["src/f2.py", "src/f3.py"])
         escapes = self.jsonl(self.escapes)
         self.assertEqual([e["guard"] for e in escapes], ["check", "none"])
         self.assertEqual([e["severity"] for e in escapes], ["medium", "medium"])
@@ -713,7 +708,7 @@ class LogTest(VerifyBranchBase):
     def test_gap_without_a_file_logs_the_repo_relative_plan_path(self):
         rows = self.dump([{"item": "x", "verdict": "missing"}])
         self.assertEqual(self.log("--rows", "-", stdin=rows).returncode, 0)
-        self.assertEqual(self.verifier_rows()[1]["file"], "docs/plans/LED-9-thing/spec.md")
+        self.assertEqual(self.verifier_rows()[1]["path_key"], "docs/plans/LED-9-thing/spec.md")
 
     def test_gap_without_guard_asks_and_escapes_only_follows_up(self):
         rows = self.rows("missing")
@@ -759,7 +754,7 @@ class LogTest(VerifyBranchBase):
         rows = self.rows("overridden", "overridden", extra=[{"signoff": "Brandon, 2026-10-20: ok"}, {}])
         done = self.log("--rows", "-", stdin=rows)
         self.assertIn("GAPS: 1", done.stdout)
-        self.assertEqual(self.verifier_rows()[0]["n_findings"], 1)
+        self.assertEqual(self.verifier_rows()[0]["n_findings"], "1")
 
     def test_failed_automated_check_is_a_gap_not_a_clean_pass(self):
         rows = self.rows("done", "failed-check", extra=[{}, {"guard": "check", "severity": "high"}])
@@ -768,7 +763,7 @@ class LogTest(VerifyBranchBase):
         self.assertIn("GAPS: 1", done.stdout)
         self.assertNotIn("CLEAN", done.stdout)
         logged = self.verifier_rows()
-        self.assertEqual((logged[0]["result"], logged[0]["n_findings"]), ("NEEDS CHANGES", 1))
+        self.assertEqual((logged[0]["result"], logged[0]["n_findings"]), ("NEEDS_CHANGES", "1"))
         self.assertEqual(logged[1]["class"], "plan-drift")
         self.assertEqual(self.jsonl(self.escapes)[0]["severity"], "high")
 
@@ -819,8 +814,8 @@ class LogTest(VerifyBranchBase):
         done = self.log("--rows", "-", stdin=rows)
         self.assertEqual(done.returncode, 0, done.stderr)
         logged = self.verifier_rows()
-        self.assertEqual([row["kind"] for row in logged], ["run", "finding"])
-        self.assertEqual(logged[1]["line"], 12)
+        self.assertEqual([row["_type"] for row in logged], ["review_run", "review_finding"])
+        self.assertEqual(logged[1]["line"], "12")
         self.assertIs(self.context()["logged"], True)
 
     def test_unparseable_line_fails_before_the_run_row_is_written(self):
@@ -844,7 +839,7 @@ class LogTest(VerifyBranchBase):
         self.assertIn("NOT a pass", done.stdout)
         run = self.verifier_rows()[0]
         self.assertNotIn("result", run)
-        self.assertEqual(run["n_findings"], 0)
+        self.assertEqual(run["n_findings"], "0")
 
     def test_bad_rows_fail_loudly(self):
         for bad in ("not json", '[{"item":"x","verdict":"maybe"}]'):
@@ -868,7 +863,7 @@ class LogTest(VerifyBranchBase):
         self.assertIn("logger failed", done.stderr)
         self.assertIn("NOT logged: plan-drift finding: AC2: item 2", done.stderr)
         self.assertNotIn("NOT logged: plan-verifier run row", done.stderr)
-        self.assertEqual([row["kind"] for row in self.verifier_rows()], ["run", "finding"])
+        self.assertEqual([row["_type"] for row in self.verifier_rows()], ["review_run", "review_finding"])
         self.assertIs(self.context()["logged"], True)
 
     def test_unknown_flag_exits_2_and_logs_nothing(self):
@@ -884,10 +879,13 @@ class LogTest(VerifyBranchBase):
 
     def test_multiline_desc_is_one_line(self):
         rows = self.dump([{"item": 'has "quotes"\nand a newline', "verdict": "missing", "guard": "none"}])
-        self.assertEqual(self.log("--rows", "-", stdin=rows).returncode, 0)
-        desc = self.verifier_rows()[1]["desc"]
-        self.assertNotIn("\n", desc)
-        self.assertNotIn('"', desc)
+        argvLog = self.tempRoot / "finder-argv"
+        self.assertEqual(self.log("--rows", "-", stdin=rows, extraEnv={"STUB_ARGV_LOG": str(argvLog)}).returncode, 0)
+        descs = [arg for arg in argvLog.read_text().split("\0") if arg.startswith("desc=")]
+        self.assertTrue(descs)
+        for desc in descs:
+            self.assertNotIn("\n", desc)
+            self.assertNotIn('"', desc)
 
     def test_detached_head_fails(self):
         self.git("checkout", "-q", "--detach")
@@ -902,13 +900,6 @@ class LogTest(VerifyBranchBase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(len(self.verifier_rows()), 2)
         self.assertEqual(len(self.jsonl(self.escapes)), 1)
-
-    def test_unparseable_review_log_line_fails_with_path_and_line(self):
-        with self.findings.open("a") as handle:
-            handle.write("{broken\n")
-        done = self.log("--rows", "-", stdin=self.rows("done"))
-        self.assertEqual(done.returncode, 2)
-        self.assertIn(f"{self.findings}:2:", done.stderr)
 
 
 class ReviewLogTest(VerifyBranchBase):
@@ -925,11 +916,12 @@ class ReviewLogTest(VerifyBranchBase):
         done = self.log_review(findings, "NEEDS CHANGES", "--findings", "2")
         self.assertEqual(done.returncode, 0, done.stderr)
         run, first, second = self.jsonl(self.findings)
-        self.assertEqual((run["kind"], run["n_findings"], run["result"]), ("run", 2, "NEEDS CHANGES"))
+        self.assertEqual((run["_type"], run["n_findings"], run["result"]), ("review_run", "2", "NEEDS_CHANGES"))
         for row in (run, first, second):
             self.assertEqual((row["gate"], row["scope"], row["lane"]), ("code-reviewer", "branch-exit", "verify"))
-        self.assertEqual((first["kind"], first["class"], first["actioned"], first["line"]), ("finding", "bug", "fixed", 3))
-        self.assertEqual((second["class"], second["line"], second["disposition"]), ("duplication", 7, "fix"))
+        self.assertEqual((first["_type"], first["class"], first["actioned"], first["line"]),
+                         ("review_finding", "bug", "fixed", "3"))
+        self.assertEqual((second["class"], second["line"], second["disposition"]), ("duplication", "7", "fix"))
 
     def test_actioned_is_required(self):
         findings = json.dumps([{"desc": "x", "file": "src/a.py", "line": 1, "class": "bug"}])
@@ -1071,7 +1063,7 @@ class RealPlansTest(unittest.TestCase):
                 env = subprocess_env({**os.environ, "HOME": str(tempHome), "VERIFY_STATE_DIR": tempDir.name,
                                       "GIT_OPTIONAL_LOCKS": "0", "REPO_NAME_SCRIPT": str(REPO_NAMER),
                                       "RESOLVE_TASK_DIR_SCRIPT": str(RESOLVER),
-                                      "REVIEW_FINDINGS_FILE": str(pathlib.Path(tempDir.name) / "none.jsonl")})
+                                      **fake_ledger.install(tempDir.name)})
                 rootsRun = subprocess.run(["git", "rev-list", "--max-parents=0", "HEAD"], cwd=repoRoot, env=env,
                                           capture_output=True, text=True)
                 roots = rootsRun.stdout.split()

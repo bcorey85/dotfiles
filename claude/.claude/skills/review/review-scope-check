@@ -91,47 +91,33 @@ refute "paths: excluded dir" "$out" "b/f.txt"
 
 # --- family 6: invocation log -------------------------------------------------
 unset CLAUDE_TOOLKIT_TELEMETRY  # a session that exports it would turn the switch on for "switch absent" below
-hook="$HOME/.claude/scripts/log-skill-use.py"
-log="$work/usage.jsonl"
 fakehome="$work/home"
 mkdir -p "$fakehome/.claude"
 [ -x "$here/../../scripts/telemetry_enabled.sh" ] || fail "helper missing" "$here/../../scripts/telemetry_enabled.sh"
 
-# switch absent: no caller line
-: >"$log"
-HOME="$fakehome" SKILL_USAGE_FILE="$log" "$scope" root="$work/wt" caller=review >/dev/null
-[ ! -s "$log" ] && pass "log: switch absent, no line" || fail "log: switch absent, no line" "got $(wc -l <"$log")"
-touch "$fakehome/.claude/toolkit-telemetry"
+if command -v ledger >/dev/null 2>&1; then
+  ledger_root="$work/ledger-root"
+  review_scope_rows() { AGENT_LEDGER_ROOT="$ledger_root" ledger query "select skill, caller from review_scope" | tail -n +2; }
 
-out=$(HOME="$fakehome" SKILL_USAGE_FILE="$log" "$scope" root="$work/wt" caller=review)
-refute "log: nothing on stdout"  "$out" '"skill"'
-assert "log: scope still printed" "$out" "SHORTSTAT="
-[ "$(wc -l <"$log")" = 1 ] && pass "log: exactly one line" \
-  || fail "log: exactly one line" "got $(wc -l <"$log")"
-line=$(cat "$log")
-assert "log: via is agent" "$line" '"via":"agent"'
-assert "log: caller rides along" "$line" '"caller":"review"'
-assert "log: repo is the basename" "$line" '"repo":"wt"'
+  # switch absent: no row
+  AGENT_LEDGER_ROOT="$ledger_root" HOME="$fakehome" "$scope" root="$work/wt" caller=review >/dev/null
+  [ -z "$(review_scope_rows)" ] && pass "log: switch absent, no row" || fail "log: switch absent, no row" "got: $(review_scope_rows)"
+  touch "$fakehome/.claude/toolkit-telemetry"
 
-# the line must carry the hook's own first four keys, in the hook's own order
-if [ -x "$hook" ] && command -v jq >/dev/null 2>&1; then
-  ref="$work/ref.jsonl"
-  printf '{"hook_event_name":"PostToolUse","tool_input":{"skill":"review-loop"}}' \
-    | HOME="$fakehome" SKILL_USAGE_FILE="$ref" CLAUDE_PROJECT_DIR="$work/wt" python3 "$hook" >/dev/null 2>&1
-  want=$(jq -r 'keys_unsorted | join(",")' "$ref" 2>/dev/null)
-  got=$(jq -r 'keys_unsorted | del(.[-1:][]) | join(",")' "$log" 2>/dev/null)
-  [ -n "$want" ] && [ "$want" = "$got" ] && pass "log: key order matches the hook" \
-    || fail "log: key order matches the hook" "hook=$want scope=$got"
-  jq -e 'has("caller") and (.ts | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T.*Z$"))' "$log" >/dev/null \
-    && pass "log: caller added last, ts is RFC3339 Z" \
-    || fail "log: caller added last, ts is RFC3339 Z" "see $log"
+  out=$(AGENT_LEDGER_ROOT="$ledger_root" HOME="$fakehome" "$scope" root="$work/wt" caller=review)
+  refute "log: nothing on stdout" "$out" '"skill"'
+  assert "log: scope still printed" "$out" "SHORTSTAT="
+  rows=$(review_scope_rows)
+  [ "$rows" = "$(printf 'review-loop\treview')" ] && pass "caller_writes_review_scope_row" \
+    || fail "caller_writes_review_scope_row" "got: $rows"
+
+  # no caller: no row
+  AGENT_LEDGER_ROOT="$ledger_root" HOME="$fakehome" "$scope" root="$work/wt" >/dev/null
+  [ "$(review_scope_rows | wc -l | tr -d ' ')" = 1 ] && pass "log: no caller, no row" \
+    || fail "log: no caller, no row" "got: $(review_scope_rows)"
 else
-  printf 'skip  hook or jq not available\n'
+  printf 'skip  ledger not on PATH\n'
 fi
-
-: >"$log"
-out=$(HOME="$fakehome" "$scope" root="$work/wt" >/dev/null; HOME="$fakehome" SKILL_USAGE_FILE="$log" "$scope" root="$work/wt" >/dev/null; wc -l <"$log")
-[ "$out" = 0 ] && pass "log: no caller, no line" || fail "log: no caller, no line" "got $out"
 
 # --- family 7: pushed feature branch --------------------------------------------
 # push -u makes origin/feature the upstream; MERGE_BASE must still be the fork point

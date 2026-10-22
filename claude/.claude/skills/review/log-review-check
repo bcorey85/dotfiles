@@ -1,0 +1,339 @@
+#!/usr/bin/env bash
+# log-review-check — no-model check for the review writers
+#
+# usage: log-review-check [tmpdir]
+#   Runs log-review-finding, log-review-metrics, log-spec-run and review-scope against a
+#   throwaway ledger root and HOME, using the `ledger` first on PATH, and asserts what
+#   reaches the ledger. Prints one line per case and exits non-zero on any failure.
+#   Build the binary first and put it first on PATH:
+#     PATH=<agent-ledger>/target/debug:$PATH bash log-review-check
+set -uo pipefail
+
+here=$(cd "$(dirname "$0")" && pwd)
+scripts="$here/../../scripts"
+work=$(mktemp -d "${1:-${TMPDIR:-/tmp}}/log-review-check.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+fails=0
+
+pass() { printf 'ok    %s\n' "$1"; }
+fail() { printf 'FAIL  %s\n     %s\n' "$1" "$2"; fails=$((fails + 1)); }
+
+command -v ledger >/dev/null 2>&1 || { printf 'FAIL  ledger is not on PATH\n'; exit 1; }
+command -v jq >/dev/null 2>&1 || { printf 'FAIL  jq is not on PATH\n'; exit 1; }
+
+expect() { # name want got
+  if [ "$2" = "$3" ]; then pass "$1"; else fail "$1" "want '$2', got '$3'"; fi
+}
+
+contains() { # name haystack needle
+  case "$2" in
+    *"$3"*) pass "$1" ;;
+    *) fail "$1" "missing: $3 in: $2" ;;
+  esac
+}
+
+lacks() { # name haystack needle
+  case "$2" in
+    *"$3"*) fail "$1" "unexpected: $3" ;;
+    *) pass "$1" ;;
+  esac
+}
+
+# The planted values stand in for a real path, branch and description. None may reach a shard.
+planted_file="src/planted_widget_zq.rs"
+planted_branch="planted-branch-zq"
+planted_desc="planted description zq"
+
+export AGENT_LEDGER_ROOT="$work/root"
+export HOME="$work/home"
+export CLAUDE_TOOLKIT_TELEMETRY=1
+unset CLAUDE_CODE_SESSION_ID
+mkdir -p "$HOME/.claude"
+
+repo="$work/repo"
+mkdir -p "$repo" && git -C "$repo" init -q -b "$planted_branch"
+git -C "$repo" config user.email check@example.invalid
+git -C "$repo" config user.name check
+printf 'one\n' >"$repo/kept.txt"
+git -C "$repo" add -A && git -C "$repo" commit -qm base
+cd "$repo" || exit 1
+
+finding="$here/log-review-finding"
+metrics="$here/log-review-metrics"
+spec_run="$scripts/log-spec-run"
+scope="$here/review-scope"
+
+scalar() { # sql -> the first cell of the first row
+  ledger query "$1" | sed -n '2p' | cut -f1
+}
+
+# --- a run, a finding, and an ask-outcome supersede ---------------------------
+out=$("$finding" kind=run lane=code scope=phase phase=1 iter=1 gate=code-reviewer \
+  n_findings=2 diff_loc=40 "result=PASS WITH WARNINGS" 2>"$work/err.txt")
+rc=$?
+expect "run: exit 0" 0 "$rc"
+run_id=${out#run_id=}
+expect "run: prints run_id" "run_id=$run_id" "$out"
+expect "run: one row" 1 "$(scalar "select count(*) from review_run where run_id = '$run_id'")"
+expect "run: spaced result stored with underscores" PASS_WITH_WARNINGS \
+  "$(scalar "select result from review_run where run_id = '$run_id'")"
+expect "run: n_findings typed as a number" 2 "$(scalar "select n_findings from review_run where run_id = '$run_id'")"
+
+out=$("$finding" kind=finding lane=code scope=phase phase=1 iter=1 gate=code-reviewer \
+  disposition=ask class=bug "file=$planted_file" line=3 actioned=ask \
+  "desc=$planted_desc" 2>"$work/err.txt")
+rc=$?
+expect "finding: exit 0" 0 "$rc"
+finding_id=${out#finding_id=}
+expect "finding: prints finding_id" "finding_id=$finding_id" "$out"
+expect "finding: stdout holds only the id" 1 "$(printf '%s\n' "$out" | wc -l | tr -d ' ')"
+expect "finding: one row" 1 "$(scalar "select count(*) from review_finding where finding_id = '$finding_id'")"
+expect "finding: path stored as a key" 1 \
+  "$(scalar "select path_key is not null and path_key != '$planted_file' from review_finding where finding_id = '$finding_id'")"
+expect "finding: branch stored as a key" 1 \
+  "$(scalar "select branch_key is not null and branch_key != '$planted_branch' from review_finding where finding_id = '$finding_id'")"
+# The keys are per ledger root, so the reference comes from this root: the same file= and branch=
+# from the same cwd go straight to `ledger write`, superseding the row (same finding_id) so no
+# count below changes. The stored keys are read before that write and must equal the reference's.
+stored_path_key=$(scalar "select path_key from review_finding where finding_id = '$finding_id'")
+stored_branch_key=$(scalar "select branch_key from review_finding where finding_id = '$finding_id'")
+jq -cn --arg id "$finding_id" --arg f "$planted_file" --arg b "$planted_branch" \
+  '{gate: "code-reviewer", disposition: "ask", class: "bug", actioned: "ask", finding_id: $id,
+    lane: "code", scope: "phase", phase: "1", iter: "1", line: "3", path_key: $f, branch_key: $b}' \
+  | ledger write review_finding >/dev/null 2>&1
+rc=$?
+expect "finding: reference write: exit 0" 0 "$rc"
+expect "finding: reference write: shard holds 2 raw lines for the id" 2 \
+  "$(grep -rhF -- "$finding_id" "$AGENT_LEDGER_ROOT/data/events" | wc -l | tr -d ' ')"
+expect "finding: reference write: no reject written" 0 \
+  "$(find "$AGENT_LEDGER_ROOT/data/rejects" -type f 2>/dev/null | wc -l | tr -d ' ')"
+expect "finding: path key matches the reference writer key" "$(scalar "select path_key from review_finding where finding_id = '$finding_id'")" "$stored_path_key"
+expect "finding: branch key matches the reference writer key" "$(scalar "select branch_key from review_finding where finding_id = '$finding_id'")" "$stored_branch_key"
+expect "finding: line typed as a number" 3 "$(scalar "select line from review_finding where finding_id = '$finding_id'")"
+
+"$finding" kind=finding "finding_id=$finding_id" lane=code scope=phase phase=1 iter=1 gate=code-reviewer \
+  disposition=ask class=bug "file=$planted_file" line=3 actioned=ask ask_outcome=accepted \
+  >"$work/out.txt" 2>"$work/err.txt"
+rc=$?
+expect "ask outcome: exit 0" 0 "$rc"
+expect "ask outcome: supersedes the ask row" 1 "$(scalar "select count(*) from review_finding where finding_id = '$finding_id'")"
+expect "ask outcome: outcome stored" accepted \
+  "$(scalar "select ask_outcome from review_finding where finding_id = '$finding_id'")"
+expect "ask outcome: ask rows still count once" 1 "$(scalar "select count(*) from review_finding")"
+
+# --- ask_outcome_without_finding_id_writes_nothing ----------------------------
+out=$("$finding" kind=finding lane=code scope=phase phase=1 iter=1 gate=code-reviewer \
+  disposition=ask class=bug "file=$planted_file" line=3 actioned=ask ask_outcome=rejected 2>"$work/err.txt")
+rc=$?
+expect "ask_outcome_without_finding_id_writes_nothing: exit 0" 0 "$rc"
+expect "ask_outcome_without_finding_id_writes_nothing: stderr line" \
+  "log-review-finding: ask outcome without finding_id, not logged" "$(cat "$work/err.txt")"
+lacks "ask_outcome_without_finding_id_writes_nothing: no finding_id on stdout" "$out" "finding_id="
+expect "ask_outcome_without_finding_id_writes_nothing: no new row" 1 "$(scalar "select count(*) from review_finding")"
+
+# --- phase=- is dropped, not refused ------------------------------------------
+out=$("$finding" kind=finding lane=code scope=standalone phase=- iter=1 gate=code-reviewer \
+  disposition=fix class=bug "file=$planted_file" line=4 actioned=none 2>"$work/err.txt")
+rc=$?
+dash_id=${out#finding_id=}
+expect "phase dash: exit 0" 0 "$rc"
+expect "phase dash: stderr empty" "" "$(cat "$work/err.txt")"
+expect "phase dash: row lands in the shard" 1 \
+  "$(grep -rhF -- "$dash_id" "$AGENT_LEDGER_ROOT/data/events" | wc -l | tr -d ' ')"
+expect "phase dash: row in the cache with no phase" 1 \
+  "$(scalar "select count(*) from review_finding where finding_id = '$dash_id' and phase is null")"
+expect "phase dash: no reject written" 0 \
+  "$(find "$AGENT_LEDGER_ROOT/data/rejects" -type f 2>/dev/null | wc -l | tr -d ' ')"
+
+# --- refusals -----------------------------------------------------------------
+"$finding" kind=finding gate=code-reviewer disposition=fix class=bogus actioned=none >/dev/null 2>&1
+expect "unknown class exits 0" 0 "$?"
+expect "unknown class stores other" 1 "$(scalar "select count(*) from review_finding where class = 'other'")"
+"$finding" kind=finding gate=code-reviewer scope=phase disposition=fix class=bug actioned=deferred >/dev/null 2>&1
+expect "refusal: loop fix deferral exits 1" 1 "$?"
+"$finding" kind=run gate=code-reviewer >/dev/null 2>&1
+expect "refusal: run without n_findings exits 1" 1 "$?"
+expect "refusal: only the other-class row added" 3 "$(scalar "select count(*) from review_finding")"
+expect "refusal: no extra run row" 1 "$(scalar "select count(*) from review_run")"
+
+# --- an uncounted report stores SQL NULL, never 0 -----------------------------
+out=$("$finding" kind=run lane=code scope=phase phase=1 iter=2 gate=code-reviewer \
+  n_findings=null 2>"$work/err.txt")
+rc=$?
+expect "uncounted run: exit 0" 0 "$rc"
+null_run_id=${out#run_id=}
+expect "uncounted run: prints run_id" "run_id=$null_run_id" "$out"
+expect "uncounted run: one row" 1 "$(scalar "select count(*) from review_run where run_id = '$null_run_id'")"
+expect "uncounted run: n_findings reads back NULL" 1 \
+  "$(scalar "select n_findings is null from review_run where run_id = '$null_run_id'")"
+expect "uncounted run: n_findings is not 0" 0 \
+  "$(scalar "select count(*) from review_run where run_id = '$null_run_id' and n_findings = 0")"
+"$finding" kind=run lane=code scope=phase phase=1 iter=3 gate=code-reviewer >/dev/null 2>&1
+expect "uncounted run: a run with no n_findings is still refused" 1 "$?"
+expect "uncounted run: the refused run added no row" 2 "$(scalar "select count(*) from review_run")"
+
+# --- metrics with every live key ----------------------------------------------
+"$metrics" iter=2 ask=1 base_suite=green blocker=1 class_closed=1 comment_noise=0 coverage_lost=0 culled=0 \
+  fix=3 fixed=2 mutation_equivalent=0 mutation_open=1 nit=1 queue=0 requires_mutation=0 skipped_fp=1 smells=1 \
+  spec_iter=0 suppressed=0 test_intent=1 test_intent_ran=1 tests_added=2 weak=0 lane=code gate=code-reviewer \
+  "result=PASS WITH WARNINGS" 'specialists={"smell-reviewer":2}' fixed_classes=bug:1,docs:2 \
+  "desc=$planted_desc" repo=ignored session=ignored date=ignored schema_version=2 \
+  >/dev/null 2>"$work/err.txt"
+expect "metrics: exit 0" 0 "$?"
+expect "metrics: one row" 1 "$(scalar "select count(*) from review_metrics")"
+expect "metrics: spaced result stored with underscores" PASS_WITH_WARNINGS "$(scalar "select result from review_metrics")"
+expect "metrics: repo is the cwd's repo, not the caller's value" "$(basename "$repo")" "$(scalar "select repo from review_metrics where iter = 2")"
+expect "metrics: no column holds the desc text" 0 \
+  "$(ledger query "select * from review_metrics" | grep -cF -- "$planted_desc")"
+expect "metrics: counts typed as numbers" 3 "$(scalar "select fix from review_metrics")"
+expect "metrics: specialists stored as counts" 2 "$(scalar "select json_extract(specialists, '\$.smell_reviewer') from review_metrics")"
+expect "metrics: fixed_classes stored as counts" 2 "$(scalar "select json_extract(fixed_classes, '\$.docs') from review_metrics")"
+"$metrics" iter=3 'result=PASS (NITS ONLY)' >/dev/null 2>"$work/err.txt"
+expect "metrics: nits-only result: exit 0" 0 "$?"
+expect "metrics: nits-only result stored as PASS_WITH_WARNINGS" PASS_WITH_WARNINGS "$(scalar "select result from review_metrics where iter = 3")"
+"$metrics" iter=4 result=clean >/dev/null 2>"$work/err.txt"
+expect "metrics: clean result: exit 0" 0 "$?"
+expect "metrics: clean result stored as sent" clean "$(scalar "select result from review_metrics where iter = 4")"
+"$metrics" iter=5 'result=Needs Changes' >/dev/null 2>"$work/err.txt"
+expect "metrics: mixed-case result: exit 0" 0 "$?"
+expect "metrics: mixed-case result stored uppercase with underscores" NEEDS_CHANGES "$(scalar "select result from review_metrics where iter = 5")"
+"$metrics" iter=6 'result=pass_(nits_only)' >/dev/null 2>"$work/err.txt"
+expect "metrics: underscored nits-only result: exit 0" 0 "$?"
+expect "metrics: underscored nits-only result stored as PASS_WITH_WARNINGS" PASS_WITH_WARNINGS "$(scalar "select result from review_metrics where iter = 6")"
+"$metrics" iter=7 'result=PASS WITH WARNINGS (2)' >/dev/null 2>"$work/err.txt"
+expect "metrics: warnings result with trailing text: exit 0" 0 "$?"
+expect "metrics: warnings result with trailing text stored as PASS_WITH_WARNINGS" PASS_WITH_WARNINGS "$(scalar "select result from review_metrics where iter = 7")"
+
+# --- a spec run ---------------------------------------------------------------
+"$spec_run" slug=planted-slug-zq ticket=LED-5 verdict=finalized phases=3 criteria=10 decisions=4 gaps=1 \
+  >/dev/null 2>"$work/err.txt"
+expect "spec run: exit 0" 0 "$?"
+expect "spec run: one row" 1 "$(scalar "select count(*) from spec_run")"
+expect "spec run: criteria typed as a number" 10 "$(scalar "select criteria from spec_run")"
+"$spec_run" slug=x verdict=maybe criteria=1 >/dev/null 2>&1
+expect "spec run: bad verdict exits 1" 1 "$?"
+"$spec_run" slug=x verdict=finalized >/dev/null 2>&1
+expect "spec run: missing criteria exits 1" 1 "$?"
+
+# --- no_ledger_entry_points_exit_0_silent -------------------------------------
+# A PATH without `ledger`: every directory that holds one is dropped.
+bare_path=""
+old_ifs=$IFS
+IFS=:
+for dir in $PATH; do
+  [ -x "$dir/ledger" ] && continue
+  bare_path="${bare_path:+$bare_path:}$dir"
+done
+IFS=$old_ifs
+
+with_ledger_scope=$("$scope" root="$repo" merge_base=HEAD caller=review 2>/dev/null)
+before=$(scalar "select (select count(*) from review_finding) + (select count(*) from review_run) + (select count(*) from review_metrics) + (select count(*) from spec_run) + (select count(*) from review_scope)")
+
+PATH="$bare_path" command -v ledger >/dev/null 2>&1 && fail "no ledger: PATH still finds ledger" "$bare_path"
+
+no_ledger_out=$(PATH="$bare_path" "$finding" kind=finding lane=code scope=standalone iter=1 gate=code-reviewer \
+  disposition=fix class=bug "file=$planted_file" line=1 actioned=fixed 2>"$work/err.txt")
+expect "no ledger: finding exits 0" 0 "$?"
+expect "no ledger: finding stderr empty" "" "$(cat "$work/err.txt")"
+contains "no ledger: finding still prints finding_id" "$no_ledger_out" "finding_id="
+
+PATH="$bare_path" "$metrics" iter=1 fix=1 result=PASS >/dev/null 2>"$work/err.txt"
+expect "no ledger: metrics exits 0" 0 "$?"
+expect "no ledger: metrics stderr empty" "" "$(cat "$work/err.txt")"
+
+PATH="$bare_path" "$spec_run" slug=x verdict=finalized criteria=1 >/dev/null 2>"$work/err.txt"
+expect "no ledger: spec run exits 0" 0 "$?"
+expect "no ledger: spec run stderr empty" "" "$(cat "$work/err.txt")"
+
+no_ledger_scope=$(PATH="$bare_path" "$scope" root="$repo" merge_base=HEAD caller=review 2>"$work/err.txt")
+expect "no ledger: review-scope exits 0" 0 "$?"
+expect "no ledger: review-scope stderr empty" "" "$(cat "$work/err.txt")"
+expect "no ledger: review-scope stdout matches the run with ledger" "$with_ledger_scope" "$no_ledger_scope"
+
+after=$(scalar "select (select count(*) from review_finding) + (select count(*) from review_run) + (select count(*) from review_metrics) + (select count(*) from spec_run) + (select count(*) from review_scope)")
+expect "no ledger: nothing was written" "$before" "$after"
+
+# --- every call shape the callers send reaches the shard, none is rejected ----
+# Each case is the key=value list one caller sends, unset fields included: no phase, an empty
+# phase, a dash for phase, branch and file, and an empty desc. Every call must exit 0, add
+# exactly one line to the shards and leave the rejects directory empty.
+shard_lines() { grep -rh '' "$AGENT_LEDGER_ROOT/data/events" 2>/dev/null | wc -l | tr -d ' '; }
+reject_files() { find "$AGENT_LEDGER_ROOT/data/rejects" -type f 2>/dev/null | wc -l | tr -d ' '; }
+
+sends() { # name writer key=value...
+  local name="$1" writer="$2" before rc
+  shift 2
+  before=$(shard_lines)
+  "$writer" "$@" >"$work/out.txt" 2>"$work/err.txt"
+  rc=$?
+  expect "sends $name: exit 0" 0 "$rc"
+  expect "sends $name: one shard line added" $((before + 1)) "$(shard_lines)"
+  expect "sends $name: no reject written" 0 "$(reject_files)"
+}
+
+# an ask outcome after the user answers, with and without a phase
+sends "ask outcome, scope phase, phase set" "$finding" kind=finding finding_id=0a0a0a0a0a0a0a01 \
+  "branch=$planted_branch" lane=code scope=phase phase=2 iter=1 gate=code-reviewer disposition=ask class=bug \
+  "file=$planted_file" line=3 actioned=ask ask_outcome=accepted
+sends "ask outcome, scope standalone, no phase" "$finding" kind=finding finding_id=0a0a0a0a0a0a0a02 \
+  "branch=$planted_branch" lane=code scope=standalone iter=1 gate=code-reviewer disposition=ask class=bug \
+  "file=$planted_file" line=3 actioned=ask ask_outcome=rejected
+sends "ask outcome, dash branch and file, line 0" "$finding" kind=finding finding_id=0a0a0a0a0a0a0a03 \
+  branch=- lane=code scope=phase phase=1 iter=2 gate=code-reviewer disposition=ask class=other file=- line=0 \
+  actioned=ask ask_outcome=accepted
+sends "ask outcome, empty phase" "$finding" kind=finding finding_id=0a0a0a0a0a0a0a04 \
+  lane=code scope=phase phase= iter=1 gate=code-reviewer disposition=ask class=bug "file=$planted_file" line=3 \
+  actioned=ask ask_outcome=accepted
+
+# the verify branch-exit rows
+sends "verify run row" "$finding" kind=run "repo=ignored-repo" "branch=$planted_branch" lane=verify \
+  scope=branch-exit phase=- iter=0 gate=code-reviewer n_findings=1 diff_loc=12 "result=PASS WITH WARNINGS" \
+  source=verify-branch tree=plantedtreehashzq
+sends "verify finding row" "$finding" kind=finding "repo=ignored-repo" "branch=$planted_branch" lane=verify \
+  scope=branch-exit phase=- iter=0 gate=code-reviewer disposition=fix class=bug "file=$planted_file" line=2 \
+  actioned=fixed "desc=$planted_desc"
+sends "plan-verifier run row" "$finding" kind=run "repo=ignored-repo" "branch=$planted_branch" lane=verify \
+  scope=branch-exit phase=- iter=0 gate=plan-verifier n_findings=1 diff_loc=12 "result=NEEDS CHANGES"
+sends "plan-verifier run row, no result" "$finding" kind=run "repo=ignored-repo" "branch=$planted_branch" \
+  lane=verify scope=branch-exit phase=- iter=0 gate=plan-verifier n_findings=0 diff_loc=12
+sends "plan-drift finding row" "$finding" kind=finding "repo=ignored-repo" "branch=$planted_branch" lane=verify \
+  scope=branch-exit phase=- iter=0 gate=plan-verifier disposition=fix class=plan-drift "file=$planted_file" \
+  line=5 actioned=none "desc=$planted_desc"
+
+# the refactor finder rows
+sends "refactor run row" "$finding" kind=run lane=refactor scope=standalone phase=- iter=0 gate=smell-reviewer \
+  n_findings=1 diff_loc=30 result=PASS
+sends "refactor finding row" "$finding" kind=finding lane=refactor scope=branch-exit phase=- iter=0 \
+  gate=smell-reviewer disposition=fix class=bug "file=$planted_file" line=7 actioned=none "desc="
+
+# the review-loop gate's run row: an uncounted report, an empty phase, a redirect that is never folded
+sends "gate run row, uncounted, empty phase" "$finding" kind=run gate=code-reviewer n_findings=null lane=code \
+  phase= "out=$work/unused-findings.jsonl"
+sends "gate run row, counted, phase set" "$finding" kind=run gate=code-reviewer n_findings=0 lane=code phase=3 \
+  result=PASS "out=$work/unused-findings.jsonl"
+
+# the metrics writer: the stage row and a row with empty values
+sends "stage metrics row" "$metrics" "repo=$(basename "$repo")" lane=stage suppressed=2 queue=0 result=clean
+sends "stage metrics row, residue" "$metrics" "repo=$(basename "$repo")" lane=stage suppressed=0 queue=3 \
+  result=residue
+sends "metrics row, empty values" "$metrics" iter=9 lane= gate= "desc=" result=clean
+
+# the spec-run writer, the other _kv.sh caller
+sends "spec run row, zero counts" "$spec_run" slug=planted-slug-zq verdict=finalized phases=0 criteria=0 \
+  decisions=0 gaps=0
+
+# --- no retired file, no leaked value -----------------------------------------
+for retired in review-findings.jsonl spec-runs.jsonl review-metrics.jsonl; do
+  [ ! -e "$HOME/.claude/$retired" ] && pass "no $retired written" || fail "no $retired written" "found $HOME/.claude/$retired"
+done
+
+for planted in "$planted_file" "planted_widget_zq" "$planted_branch" "$planted_desc" "planted-slug-zq"; do
+  if grep -rqF -- "$planted" "$AGENT_LEDGER_ROOT"; then
+    fail "no shard byte holds: $planted" "found under $AGENT_LEDGER_ROOT"
+  else
+    pass "no shard byte holds: $planted"
+  fi
+done
+
+printf '\n%s failure(s)\n' "$fails"
+[ "$fails" -eq 0 ]

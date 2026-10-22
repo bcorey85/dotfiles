@@ -22,7 +22,7 @@
     with `n_findings` counted from that reviewer's own report. A report that cannot be counted,
     because it has no known layout or a findings section holds text and no entry, gets a row with
     `n_findings` null, never a guessed count. Each dispatch (tool_use_id) is written once per session, so a repeat stop adds nothing. The
-    logger applies the telemetry switch; a logging failure never blocks a stop.
+    gate applies the telemetry switch before it calls the logger; a logging failure never blocks a stop.
 
 Hook JSON on stdin; on a violation, a decision JSON on stdout; exit 0 always. Any parse
 failure passes (fail open) and says why on stderr: this gate adds a check, it must never
@@ -34,6 +34,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 
@@ -275,18 +276,33 @@ def reviewer_runs(path):
 
 
 def write_run_row(hook, run, lane, phase):
-    """True when log-review-finding wrote the row. It writes nothing while the telemetry switch is off."""
+    """True when log-review-finding wrote the row. It writes nothing while the telemetry switch is off or `ledger`
+    is not on PATH, and it prints one stderr line for each skip."""
     claude_dir = pathlib.Path(os.environ.get("REVIEW_LOOP_GATE_CLAUDE_DIR") or pathlib.Path.home() / ".claude")
-    out = os.environ.get("REVIEW_FINDINGS_FILE") or str(pathlib.Path.home() / ".claude" / "review-findings.jsonl")
+    switch_script = claude_dir / "scripts" / "telemetry_enabled.sh"
+    if not switch_script.is_file():
+        print("review-loop-gate: run row for %s skipped: %s is missing" % (run["gate"], switch_script), file=sys.stderr)
+        return False
+    try:
+        switch = subprocess.run(["bash", str(switch_script)], capture_output=True, timeout=10)
+    except subprocess.TimeoutExpired:
+        print("review-loop-gate: run row for %s skipped: the telemetry switch timed out" % run["gate"], file=sys.stderr)
+        return False
+    if switch.returncode:
+        print("review-loop-gate: run row for %s skipped: telemetry is off" % run["gate"], file=sys.stderr)
+        return False
+    if not shutil.which("ledger"):
+        print("review-loop-gate: run row for %s skipped: ledger is not on PATH" % run["gate"], file=sys.stderr)
+        return False
     command = ["bash", str(claude_dir / "skills" / "review" / "log-review-finding"), "kind=run", "gate=" + run["gate"],
-               "n_findings=%s" % ("null" if run["n_findings"] is None else run["n_findings"]), "lane=" + lane, "phase=" + phase, "out=" + out]
+               "n_findings=%s" % ("null" if run["n_findings"] is None else run["n_findings"]), "lane=" + lane, "phase=" + phase]
     if run["result"]:
         command.append("result=" + run["result"])
     env = {**os.environ, "CLAUDE_CODE_SESSION_ID": hook["session_id"]}
     done = subprocess.run(command, env=env, cwd=hook.get("cwd") or None, capture_output=True, text=True, timeout=30)
     if done.returncode:
         print("review-loop-gate: run row for %s not written: %s" % (run["gate"], done.stderr.strip()), file=sys.stderr)
-    return done.returncode == 0 and "logged" in done.stdout
+    return done.returncode == 0 and "run_id=" in done.stdout
 
 
 def log_run_rows(hook, path):

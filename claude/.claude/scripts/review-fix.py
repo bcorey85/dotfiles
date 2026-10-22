@@ -18,7 +18,7 @@ renders the packet, logs the rows, posts the Aikido replies, and prints what the
       same text are two runs.
   review-fix.py escape --escape "..."...   log escape rows from the saved packet state (fix, repeatable)
   review-fix.py asks-done <outcome>...   one outcome per ask, in order: accepted | rejected | modified, optional
-                                         ":<one line note>" after it. Logs one row per ask, once.
+                                         ":<one line note>" after it, accepted and not stored. Logs one row per ask, once.
   review-fix.py decide <adopt|keep> --by <user|session> --ruling "<the words>" [--plan <path>]
                                          Only --by user is the user's own word.
   review-fix.py decide discuss          print the decide commands for a plan-impact ruling and record nothing.
@@ -300,7 +300,7 @@ def present_asks(packet, state):
     lines = [f"The script ran nvim-jump for all asks ({state['jumped']}). Do not run it again.",
              "Present each ask below with its question and wait for the user's direction. Never auto-fix an ask.",
              f"After the user answers, run once: python3 ~/.claude/scripts/review-fix.py asks-done "
-             f"<outcome> x{len(asks)}  (accepted | rejected | modified, optional ':<one line note>')",
+             f"<outcome> x{len(asks)}  (accepted | rejected | modified, optional ':<one line note>', accepted and not stored)",
              gate_mark_line()]
     for number, item in enumerate(asks, 1):
         askClass = item["class"] + (f" (was {item['class_raw']})" if item.get("class_raw") else "")
@@ -462,7 +462,7 @@ def new_state(options, packet, packetId):
              "branch": git_output("branch", "--show-current") or "-", "packet_id": packetId,
              "source": options.source, "fixed_paths": fixedPaths}
     if sameRun:
-        for key in ("stage", "asks", "jumped", "aikido_posted", "escapes_logged", "asks_logged", "plan_impact"):
+        for key in ("stage", "asks", "jumped", "aikido_posted", "escapes_logged", "asks_logged", "asks_skipped", "plan_impact"):
             if key in previous:
                 state[key] = previous[key]
     return state
@@ -554,16 +554,19 @@ def is_plan_impact_ask(item):
     return any(str(item.get(key) or "").lstrip().startswith(PLAN_IMPACT_PREFIX) for key in ("finding", "question"))
 
 
-def log_ask_outcome(state, item, outcome, note):
+def log_ask_outcome(state, item, outcome):
     path, line = split_location(item.get("file_line") or "-")
-    desc = "ask resolved: " + one_line(note or item["question"], 100)
-    if item.get("class_raw"):
-        desc += f" [class: {one_line(item['class_raw'], 40)}]"
+    findingId = item.get("finding_id")
+    if not findingId:
+        # The outcome supersedes its ask row by finding_id. With none it would add a second finding.
+        # Code None marks it as skipped, apart from a logged row (0) and a failure.
+        print("review-fix: ask outcome without finding_id, not logged", file=sys.stderr)
+        return (None, "ask outcome without finding_id, not logged"), path, line
     return run_command(["bash", str(CLAUDE_DIR / "skills/review/log-review-finding"), "kind=finding",
-                        f"repo={state['repo']}", f"branch={state['branch']}", f"lane={state['lane']}",
-                        f"scope={state['scope']}", "phase=-", f"iter={state['iter']}", f"gate={item['gate']}",
+                        f"finding_id={findingId}", f"branch={state['branch']}", f"lane={state['lane']}",
+                        f"scope={state['scope']}", f"iter={state['iter']}", f"gate={item['gate']}",
                         "disposition=ask", f"class={item['class']}", f"file={path}", f"line={line}",
-                        "actioned=ask", f"ask_outcome={outcome}", f"desc={desc}"]), path, line
+                        "actioned=ask", f"ask_outcome={outcome}"]), path, line
 
 
 def command_asks_done(argv):
@@ -582,25 +585,33 @@ def command_asks_done(argv):
             raise UsageError(f"outcome {word!r} is not one of {'|'.join(ASK_OUTCOMES)}")
         outcomes.append((outcome, note.strip()))
     logged = state.setdefault("asks_logged", [])
+    skipped = state.setdefault("asks_skipped", [])
     failures = []
     skippedPlanImpact = 0
-    for index, (item, (outcome, note)) in enumerate(zip(asks, outcomes)):
+    skippedNoId = 0
+    for index, (item, (outcome, _note)) in enumerate(zip(asks, outcomes)):
         if index in logged:
             continue
         if is_plan_impact_ask(item):
             logged.append(index)
+            skipped.append(index)
             skippedPlanImpact += 1
             continue
-        (code, output), path, line = log_ask_outcome(state, item, outcome, note)
-        if code == 0:
+        (code, output), path, line = log_ask_outcome(state, item, outcome)
+        if code is None:
+            logged.append(index)
+            skipped.append(index)
+            skippedNoId += 1
+        elif code == 0:
             logged.append(index)
         else:
             failures.append(f"{path}:{line}: {one_line(output, 160)}")
     if not failures:
         state["stage"] = "done"
     save_state(state)
-    emit("done", f"Logged {len(logged) - skippedPlanImpact} of {len(asks)} ask outcome row(s)." +
+    emit("done", f"Logged {len(logged) - len(skipped)} of {len(asks)} ask outcome row(s)." +
          (f" {skippedPlanImpact} plan-impact ask(s) are not logged as findings." if skippedPlanImpact else "") +
+         (f" {skippedNoId} ask(s) without a finding_id are not logged." if skippedNoId else "") +
          (" Failures (mention, never block; run the same asks-done again to retry only these):" if failures else ""),
          *["- " + failure for failure in failures])
     print("MODEL STILL DOES: act on accepted/modified asks as the user directed (dispatch a coder, or edit in scope).")

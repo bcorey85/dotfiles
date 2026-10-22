@@ -4,14 +4,14 @@ Data-driven monthly audit of `~/.claude/skills/`. The guidance this implements: 
 
 ## Inputs
 
-1. **Telemetry**: `${SKILL_USAGE_FILE:-$HOME/.claude/skill-usage.jsonl}` — written by the `log-skill-use.py` hooks and by the review loop's scope script (`{ts, skill, via, repo}`, plus `caller` from the script; `via` is `user` for typed slash commands, `model` for Skill-tool invocations). If the file is missing or empty, say the telemetry hooks haven't fired yet (check they're registered in settings.json), and still run the static checks below.
+1. **Telemetry**: `${SKILL_USAGE_FILE:-$HOME/.claude/skill-usage.jsonl}` — written by the `log-skill-use.py` hooks (`{ts, skill, via, repo}`; `via` is `user` for typed slash commands, `model` for Skill-tool invocations). If the file is missing or empty, say the telemetry hooks haven't fired yet (check they're registered in settings.json), and still run the static checks below.
 2. **Inventory**: every `~/.claude/skills/*/SKILL.md` — name, description, body line count.
 
 ## Exempt list (never flag)
 
 - `coder-core` — preloaded via agent `skills:` frontmatter; it can never appear in telemetry.
 - `_shared/` files and lane files inside a skill dir (like this one) — not skills.
-- `review` and `fix` are thin wrappers over the `review-loop` **agent**, which is dispatched, not `Skill`-invoked — so `log-skill-use.py` (a `PostToolUse` hook on `Skill`) cannot see the chained runs. The agent self-logs instead: count lines with `"skill":"review-loop"`, and read their `caller` field (`code` | `review` | `fix`) to separate chained runs from user-typed ones. A low `via: user` count on `review` is therefore expected and is NOT evidence of disuse.
+- `review` and `fix` are thin wrappers over the `review-loop` **agent**, which is dispatched, not `Skill`-invoked — so `log-skill-use.py` (a `PostToolUse` hook on `Skill`) cannot see the chained runs. The agent's scope script logs it instead, as `review_scope` rows in the ledger: count them with `ledger query "select skill, caller, count(*) from review_scope group by skill, caller"` and read the `caller` column (`code` | `review` | `fix`) to separate chained runs from user-typed ones. Skip this count with one line if `ledger` is absent (`command -v ledger`). A low `via: user` count on `review` is therefore expected and is NOT evidence of disuse.
 
 ## Process (single pass, jq/awk — don't re-read the log per skill)
 

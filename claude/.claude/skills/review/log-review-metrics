@@ -1,62 +1,60 @@
 #!/usr/bin/env bash
-# log-review-metrics — append one JSONL line per /review run to the metrics log
+# log-review-metrics — one metrics row per /review run, written through `ledger write`
 #
 # usage: log-review-metrics key=value [key=value ...]
-#   e.g. log-review-metrics iter=2 critical=0 high=1 medium=3 low=0 \
-#          fixed=2 skipped_fp=1 ask=0 result=PASS
+#   e.g. log-review-metrics iter=2 fix=1 fixed=2 skipped_fp=1 ask=0 result=PASS
 #
-# Numeric-looking values are stored as numbers, everything else as strings.
-# A "repo" field is added from scripts/repo-name (the canonical repo, not the
-# worktree directory); a caller-passed repo= is kept only if repo-name fails.
-# A "date" field (UTC ISO 8601) is always added. Output file:
-#   $REVIEW_METRICS_FILE or ~/.claude/review-metrics.jsonl
-# The reserved key out=<path> redirects output to a different JSONL (it is
-# consumed, not logged). Second-draft telemetry retired 2026-07-16; the
-# second_draft= routing below stays as a corruption backstop for stale callers.
+# Every value is sent as a JSON string; `ledger write review_metrics` types it.
+# `specialists=` and `fixed_classes=` are counts by name, as a JSON object
+# (`{"code-reviewer":2}`) or as `name:count,name:count`; names are stored lowercase
+# with underscores for hyphens (`code_reviewer`). `result=` takes the spaced
+# words (PASS WITH WARNINGS, NEEDS CHANGES, NOT DISPATCHED); they are stored with
+# underscores, and `PASS (NITS ONLY)` is stored as PASS_WITH_WARNINGS, as
+# log-review-finding folds it. clean, residue and findings are stored as sent.
+# date, schema_version, repo, session and desc are accepted and never stored; the
+# writer adds the date, repo and session, and keys `branch=` into branch_key.
+# With no `ledger` on PATH the write is skipped silently. A row `ledger write`
+# refuses exits 2.
+#
+# Second-draft telemetry retired 2026-07-16; a second_draft= key still routes the
+# row to the second-draft log, as a corruption backstop for stale callers. An
+# explicit out=<path> writes the row there as one JSONL line instead of to the
+# ledger. Both redirects write only while the metrics switch is on.
 set -euo pipefail
 
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
-out="${REVIEW_METRICS_FILE:-$HOME/.claude/review-metrics.jsonl}"
+script_dir=$(dirname -- "${BASH_SOURCE[0]}")
+# shellcheck source=../../scripts/_kv.sh
+source "$script_dir/../../scripts/_kv.sh"
+out=""
 # Second-draft rows route to the second-draft log even when the caller forgets
-# out= — a second_draft= key in the review-metrics file corrupts both datasets.
+# out= — a second_draft= key in the review-metrics rows corrupts both datasets.
 case " $* " in
   *" out="*) ;;
   *" second_draft="*) out="${SECOND_DRAFT_FILE:-$HOME/.claude/second-draft.jsonl}" ;;
 esac
 
-# schema_version marks the row's schema era. Bump ONLY on a breaking change —
-# a disposition/vocabulary swap, a field whose meaning changes, or a retirement.
-# Additive fields do NOT bump it (analysis null-coalesces them). /audit review
-# reads only the current version; older versions live in telemetry-archive/.
-# v1 = critical/high/medium/low severity era (pre-2026-08-08, archived).
-SCHEMA_VERSION=2
-# session and branch are the join keys across the three review logs. Both are
-# read here, never trusted to the caller; a caller's own branch= still wins.
-json=$(jq -cn --argjson sv "$SCHEMA_VERSION" \
-  --arg s "${CLAUDE_CODE_SESSION_ID:-}" --arg b "$(git branch --show-current 2>/dev/null || true)" \
-  '{date: (now | todate), schema_version: $sv}
-   + (if $s != "" then {session: $s} else {} end)
-   + (if $b != "" then {branch: $b} else {} end)')
-for kv in "$@"; do
-  case "$kv" in
-    out=*) out="${kv#out=}"; continue ;;
-    *=*) ;;
-    *) echo "skipping malformed arg (want key=value): $kv" >&2; continue ;;
-  esac
-  k="${kv%%=*}"
-  v="${kv#*=}"
-  json=$(jq -c --arg k "$k" --arg v "$v" '.[$k] = ($v | (tonumber? // .))' <<< "$json")
-done
+# The branch is read here, never trusted to the caller; a caller's own branch= still wins.
+json=$(jq -cn --arg b "$(git branch --show-current 2>/dev/null || true)" \
+  '{} + (if $b != "" then {branch: $b} else {} end)')
 
-# The checkout is not the repo: in a linked worktree a caller's
-# `basename $(git rev-parse --show-toplevel)` is the worktree directory, and the
-# session guard refuses command text that holds a substitution. Derive the
-# canonical name here.
-script_dir=$(dirname -- "${BASH_SOURCE[0]}")
-repo_name_script="$script_dir/../../scripts/repo-name"
-if canonical=$("$repo_name_script" 2>/dev/null); then
-  json=$(jq -c --arg r "$canonical" '.repo = $r' <<< "$json")
-fi
+# specialists= and fixed_classes= are counts by name, not strings.
+fold_counts_by_name() {
+  case "$1" in
+    specialists|fixed_classes) ;;
+    *) return 1 ;;
+  esac
+
+  json=$(jq -c --arg k "$1" --arg v "$2" '
+    .[$k] = (try ($v | fromjson | select(type == "object"))
+             catch ($v | split(",") | map(select(. != "") | split(":") | {key: .[0], value: (.[1] // "0")}) | from_entries)
+             // {})
+    | .[$k] |= with_entries(.key |= (ascii_downcase | gsub("-"; "_")))' <<< "$json") || exit $?
+}
+
+# Every value may hold spaces here (result=PASS WITH WARNINGS).
+kv_fold "*" fold_counts_by_name "$@"
+[ -z "$kv_out_seen" ] || out="$kv_out"
 
 # The caller's shell may leave ~ after = unexpanded (zsh does), so expand a
 # bare ~ or a leading ~/ here (~user is left alone).
@@ -67,5 +65,21 @@ esac
 
 "$script_dir/../../scripts/telemetry_enabled.sh" 2>/dev/null || exit 0
 
-printf '%s\n' "$json" >> "$out"
-echo "logged → $out"
+if [ -n "$out" ]; then
+  printf '%s\n' "$(jq -c '. + {date: (now | todate)}' <<< "$json")" >> "$out"
+  echo "logged → $out"
+  exit 0
+fi
+
+payload=$(jq -c '
+  def result_verdict:
+    (ascii_upcase | gsub("[_-]"; " ")) as $norm
+    | if ($norm | test("^PASS WITH WARNINGS")) or $norm == "PASS (NITS ONLY)" then "PASS_WITH_WARNINGS"
+    elif $norm == "PASS" then "PASS"
+    elif $norm | test("^NEEDS CHANGES") then "NEEDS_CHANGES"
+    elif $norm | test("^NOT DISPATCHED") then "NOT_DISPATCHED"
+    else gsub(" "; "_") end;
+  del(.desc)
+  | (if .result then .result |= result_verdict else . end)
+  | with_entries(.key |= (if . == "branch" then "branch_key" else . end))' <<< "$json")
+printf '%s\n' "$payload" | bash "$script_dir/../../scripts/ledger-write" review_metrics

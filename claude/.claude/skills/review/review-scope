@@ -9,16 +9,16 @@
 #                     ref that scripts/branch-base returns, else empty
 #   paths=<a:b:c>   colon-separated pathspec filter applied to every git call
 #   root=<dir>      run in this directory instead of the current one
-#   caller=<name>   also append one invocation line to the skill-usage log
-#   skill=<name>    skill name on that line (default: review-loop)
+#   caller=<name>   also write one review_scope row through `ledger write`
+#   skill=<name>    skill name on that row (default: review-loop)
 #
 # Prints eight labelled sections and no diff text:
 #   ROOT, BRANCH, MERGE_BASE, STATUS, FILES, NUMSTAT, SHORTSTAT, UNTRACKED
 #
-# With caller=, appends {ts, skill, via, repo, caller} to $SKILL_USAGE_FILE
-# (default ~/.claude/skill-usage.jsonl) — the same first four keys, in the same
-# order, as the skill-usage hook writes. The append never fails the caller and
-# never touches stdout.
+# With caller=, pipes {skill, caller} to `ledger write review_scope`, which adds the
+# time, repo and session. The write runs only while the metrics switch is on and `jq` is on PATH. It
+# never fails the caller and never touches stdout; `ledger write` may still print to stderr.
+# With no `ledger` on PATH the write is skipped silently and the scope prints as usual.
 #
 # Exit 0 with ROOT= empty when the directory is not a git repo. Never fails the
 # caller: every git call that errors prints an empty section.
@@ -53,17 +53,10 @@ if [ -z "$paths" ]; then pathspec=(); fi
 
 top=$(git rev-parse --show-toplevel 2>/dev/null || true)
 
-if [ -n "$caller" ] && "$script_dir/../../scripts/telemetry_enabled.sh" 2>/dev/null; then
-  log="${SKILL_USAGE_FILE:-$HOME/.claude/skill-usage.jsonl}"
-  repo=$(basename "${top:-$PWD}")
-  if command -v jq >/dev/null 2>&1; then
-    jq -cn --arg skill "$skill" --arg repo "$repo" --arg caller "$caller" \
-      '{ts: (now | todate), skill: $skill, via: "agent", repo: $repo, caller: $caller}' \
-      >>"$log" 2>/dev/null || true
-  else
-    printf '{"ts":"%s","skill":"%s","via":"agent","repo":"%s","caller":"%s"}\n' \
-      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$skill" "$repo" "$caller" >>"$log" 2>/dev/null || true
-  fi
+if [ -n "$caller" ] && command -v jq >/dev/null 2>&1 \
+  && "$script_dir/../../scripts/telemetry_enabled.sh" 2>/dev/null; then
+  jq -cn --arg skill "$skill" --arg caller "$caller" '{skill: $skill, caller: $caller}' \
+    | bash "$script_dir/../../scripts/ledger-write" review_scope >/dev/null || true
 fi
 
 echo "ROOT=$top"

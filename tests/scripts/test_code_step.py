@@ -204,7 +204,7 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / self.plan).write_text(self.plan_text().replace(old, line))
 
     ASK = ('status: converged\niter: 1\nfixed: []\nask: [{"finding": "f", "file_line": "backend/src/orders.ts:2", '
-           '"question": "keep?", "gate": "code-reviewer", "class": "correctness"}]')
+           '"question": "keep?", "gate": "code-reviewer", "class": "correctness", "finding_id": "planted-ask-id"}]')
 
     LOOP_OK = "status: converged\niter: 1\nfixed: []\nask: []\nnit: []"
 
@@ -1106,6 +1106,8 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("- [ ] Phase 1:", self.plan_text())
         out = self.step("asks-done", "accepted")
         self.assertIn("ask_outcome=accepted", self.log.read_text())
+        self.assertIn("finding_id=planted-ask-id", self.log.read_text())
+        self.assertNotIn("desc=", self.log.read_text())
         self.assertIn("ACTION: dispatch", out)
         self.assertIn("AGENT: coder", out)
         self.assertIn("[accepted] f - keep? (backend/src/orders.ts:2)", out)

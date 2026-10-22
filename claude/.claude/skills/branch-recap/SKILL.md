@@ -29,14 +29,20 @@ Nothing unstaged → receipt line `residue: none — all phases staged clean`.
 Per-phase residue of the review round budget comes due here — skip this step and deferral was deletion.
 
 ```bash
-jq -c --arg b "$(git branch --show-current)" \
-  'select(.kind=="finding" and .actioned=="deferred" and .branch==$b)' \
-  "${REVIEW_FINDINGS_FILE:-$HOME/.claude/review-findings.jsonl}"
+if command -v ledger >/dev/null 2>&1; then
+  ledger yield --deferred
+else
+  echo "deferred: not tracked (ledger not installed)"
+fi
 ```
 
-Read the queue against the **branch** diff — some findings died when a later phase resolved them.
+`ledger yield --deferred` reads the current repo and branch from the cwd and prints a header line, then one row per deferred finding: `finding_id, ts, gate, class, disposition, blocker, fix_induced, line, actioned, gate_agent_run_id, session`. `actioned=1` means a later edit to the finding's file landed inside its gate run's window.
 
-Triage: **fix now** (`/fix`), **stale** (later phase resolved — say which), **carry** (real but out-of-scope — `/escape` so branch-filtering doesn't lose it). Empty → `deferred: none`, else `deferred: <n> fixed, <n> stale, <n> carried of <m>`.
+Without `ledger` the queue went unread: the recap says `deferred: not tracked (ledger not installed)` and never `deferred: none`.
+
+Read the queue against the **branch** diff — some findings died when a later phase resolved them. A row with `actioned=1` is marked **likely stale**. For the rest, read the gate agent transcript locally — `~/.claude/projects/*/<session>/subagents/agent-<gate_agent_run_id>.jsonl` — and match the row to its finding by gate, class and line. The ledger keeps no description, so the transcript is where the finding's text lives.
+
+Triage: **fix now** (`/fix`), **stale** (later phase resolved — say which), **carry** (real but out-of-scope — `/escape` so branch-filtering doesn't lose it). Header only → `deferred: none`, else `deferred: <n> fixed, <n> stale, <n> carried of <m>`.
 
 A deferred `blocker` (or `fix_induced=bug`) is a loop bug, not a work item — escalate as such.
 
@@ -63,7 +69,7 @@ Spec: <task-dir>
 - <any REQUIRES-MUTATION items with their KILLED/SURVIVED/EQUIVALENT/INDETERMINATE verdicts, or marked unrouted-and-open>
 
 ### Deferred findings             (round budget, read at branch bound)
-- <fixed / stale / carried, one line each, with the gate and disposition each came from; or "none">
+- <fixed / stale / carried, one line each, with the gate and disposition each came from; or "none"; or "not tracked (ledger not installed)">
 
 ### Smoke-test checklist          (from the /verify-branch closing phase)
 - <every human-only item, with steps>

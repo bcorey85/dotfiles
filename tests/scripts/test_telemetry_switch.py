@@ -2,7 +2,8 @@
 (CLAUDE_TOOLKIT_TELEMETRY=1, or the file ~/.claude/toolkit-telemetry).
 
 For each writer: with the switch absent it writes nothing and exits 0 (log-escape prints one line); with the
-switch present it writes. The kept logs (review-findings.jsonl's default path) write either way.
+switch present it writes. log-review-finding's default `ledger write` happens with the switch off too; only an
+`out=` redirect obeys the switch.
 
 Every case copies the writer and its helpers into a temp layout (claude/scripts, claude/skills/review) and
 runs it with HOME set to a temp dir, so no row reaches the real logs.
@@ -27,7 +28,8 @@ if DRAFT_DIR and not os.environ.get("BRANCH_RECAP_SKILL"):
     RECEIPT_SKILL = pathlib.Path(DRAFT_DIR) / "branch-recap-SKILL.md"
 
 SCRIPTS = ["telemetry_enabled.sh", "telemetry_enabled.py", "hook_input.py", "repo-name", "log-agent-usage.py",
-           "log-skill-use.py", "test-edit-telemetry.py", "log-escape", "log-scan", "log-spec-run", "coder-gate.py"]
+           "log-skill-use.py", "test-edit-telemetry.py", "log-escape", "log-scan", "log-spec-run", "coder-gate.py",
+           "_kv.sh", "ledger-write"]
 REVIEW = ["log-review-metrics", "log-perf-finding", "log-review-finding", "review-scope"]
 # hook_input.py and repo-name are not part of this change: they always come from the installed copy.
 INSTALLED_ONLY = {"hook_input.py", "repo-name"}
@@ -57,6 +59,15 @@ REVIEW_SCOPE_SWITCH_LINES = [
 ]
 
 
+# Stands in for the `ledger` binary on PATH: records each `ledger write` call (its arguments and the row on stdin)
+# as one JSON line in $LEDGER_STUB_CALLS, so a test sees what the real ledger-write script sent.
+LEDGER_STUB = """#!{python}
+import json, os, sys
+with open(os.environ["LEDGER_STUB_CALLS"], "a") as calls:
+    calls.write(json.dumps({{"args": sys.argv[1:], "row": json.loads(sys.stdin.read())}}) + "\\n")
+"""
+
+
 def source_file(name, subdir):
     if DRAFT_DIR and name not in INSTALLED_ONLY:
         return pathlib.Path(DRAFT_DIR) / name
@@ -83,6 +94,12 @@ class SwitchTest(unittest.TestCase):
         self.work = self.root / "work"
         self.work.mkdir()
         self.switch = self.home / ".claude" / "toolkit-telemetry"
+        self.stubBin = self.root / "bin"
+        self.stubBin.mkdir()
+        self.ledgerCalls = self.root / "ledger-calls.jsonl"
+        stubPath = self.stubBin / "ledger"
+        stubPath.write_text(LEDGER_STUB.format(python=sys.executable))
+        stubPath.chmod(0o755)
 
     def add_review_scope_switch_lines(self):
         """The draft review-scope predates the switch helper's command form. The install adds the switch lines to
@@ -105,7 +122,8 @@ class SwitchTest(unittest.TestCase):
                        if not key.endswith("_FILE")
                        and key not in ("CLAUDE_PROJECT_DIR", "CLAUDE_SKIP_HOOKS", "CLAUDE_TOOLKIT_TELEMETRY")}
         environment.update(GIT_ENV)
-        environment.update(HOME=str(self.home), TMPDIR=str(self.root))
+        environment.update(HOME=str(self.home), TMPDIR=str(self.root), LEDGER_STUB_CALLS=str(self.ledgerCalls),
+                           PATH=str(self.stubBin) + os.pathsep + environment.get("PATH", ""))
         environment.update(extra or {})
         return environment
 
@@ -119,6 +137,32 @@ class SwitchTest(unittest.TestCase):
     def lines(self, name):
         path = self.home_file(name)
         return path.read_text().splitlines() if path.exists() else []
+
+    def ledger_calls(self):
+        """Every `ledger write` call the stub has recorded, oldest first."""
+        if not self.ledgerCalls.exists():
+            return []
+        return [json.loads(line) for line in self.ledgerCalls.read_text().splitlines()]
+
+    def assert_ledger_switch(self, rowType, run, quiet=True):
+        """run() invokes the writer once. Off: exit 0, no output (unless quiet is False), no `ledger write` call and
+        no jsonl file. On: exit 0 and exactly one `ledger write <rowType>` call. Returns the finished run and the
+        call's row."""
+        self.turn("off")
+        finished = run()
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        if quiet:
+            self.assertEqual((finished.stdout, finished.stderr), ("", ""))
+        self.assertEqual(self.ledger_calls(), [], "ledger written while the switch was absent")
+        self.assertEqual(list((self.home / ".claude").glob("*.jsonl")), [])
+        self.turn("on")
+        finished = run()
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        calls = self.ledger_calls()
+        self.assertEqual(len(calls), 1, "ledger not written while the switch was present")
+        self.assertEqual(calls[0]["args"][:2], ["write", rowType])
+        self.assertEqual(list((self.home / ".claude").glob("*.jsonl")), [])
+        return finished, calls[0]["row"]
 
     def assert_switch(self, name, run, quiet=True):
         """run() invokes the writer once. Off: name is not created, exit 0, no output. On: name gets a row."""
@@ -224,7 +268,8 @@ class SwitchTest(unittest.TestCase):
 
     def test_log_review_metrics_default_file(self):
         script = str(self.review / "log-review-metrics")
-        self.assert_switch("review-metrics.jsonl", lambda: self.run_command([script, "iter=1", "result=PASS"]))
+        _, row = self.assert_ledger_switch("review_metrics", lambda: self.run_command([script, "iter=1", "result=PASS"]))
+        self.assertEqual(row, {"iter": "1", "result": "PASS"})
 
     def test_log_review_metrics_second_draft_route(self):
         script = str(self.review / "log-review-metrics")
@@ -296,8 +341,11 @@ class SwitchTest(unittest.TestCase):
         return [args[0], "--check", *args[1:]]
 
     def invalid(self, args):
-        """The same arguments with one value the logger's vocabulary refuses."""
-        return [argument.replace("class=bug", "class=nonsense") for argument in args]
+        """The same arguments with one value the logger itself refuses: a class outside log-escape's vocabulary, a
+        kind outside run|finding for log-review-finding (it passes an unknown class on to `ledger write`, which
+        stores it as other)."""
+        return [argument.replace("class=bug", "class=nonsense").replace("kind=finding", "kind=nonsense")
+                for argument in args]
 
     def test_check_valid_arguments_exit_zero_and_write_nothing_with_switch_on(self):
         self.turn("on")
@@ -306,6 +354,7 @@ class SwitchTest(unittest.TestCase):
                 finished = self.run_command(self.with_check(args))
                 self.assertEqual((finished.returncode, finished.stdout, finished.stderr), (0, "", ""))
                 self.assertEqual(list((self.home / ".claude").glob("*.jsonl")), [])
+                self.assertEqual(self.ledger_calls(), [])
 
     def test_check_valid_arguments_exit_zero_with_switch_off(self):
         self.turn("off")
@@ -328,6 +377,38 @@ class SwitchTest(unittest.TestCase):
                     self.assertEqual(checkCall.stderr, realCall.stderr)
                     self.assertEqual(checkCall.stdout, realCall.stdout)
 
+    def test_review_finding_passes_an_unknown_class_to_the_ledger_as_given(self):
+        """The class vocabulary lives in `ledger write`, so log-review-finding exits 0 and sends the value as given;
+        --check refuses nothing for it either."""
+        self.turn("on")
+        badArgs = self.invalid(self.finding_check_args())
+        badArgs[1] = "kind=finding"
+        checkCall = self.run_command(self.with_check(badArgs))
+        self.assertEqual((checkCall.returncode, checkCall.stdout, checkCall.stderr), (0, "", ""))
+        realCall = self.run_command(badArgs)
+        self.assertEqual(realCall.returncode, 0, realCall.stderr)
+        calls = self.ledger_calls()
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["row"]["class"], "nonsense")
+
+    def test_review_finding_refuses_a_missing_kind_a_missing_gate_and_a_value_with_a_space(self):
+        """Malformed input (no kind, no gate, a space in a value) exits nonzero with the switch on or off and sends nothing to the ledger."""
+        finding = str(self.review / "log-review-finding")
+        noKind = [finding, "gate=code-reviewer", "class=bug", "disposition=fix"]
+        noGate = [finding, "kind=finding", "class=bug", "disposition=fix"]
+        spacedValue = [finding, "kind=finding", "gate=code-reviewer", "class=bug", "disposition=fix",
+                       "repo=two words"]
+        for state in ("on", "off"):
+            self.turn(state)
+            for label, args, message in (("no kind", noKind, "kind=run|finding is required"),
+                                         ("no gate", noGate, "gate=<agent name> is required"),
+                                         ("space in a value", spacedValue, "contains a space")):
+                with self.subTest(case=label, switch=state):
+                    finished = self.run_command(args)
+                    self.assertEqual(finished.returncode, 1)
+                    self.assertIn(message, finished.stderr)
+                    self.assertEqual(self.ledger_calls(), [])
+
     def test_check_writes_nothing_even_with_the_switch_on(self):
         self.turn("on")
         redirected = self.root / "redirected.jsonl"
@@ -337,8 +418,10 @@ class SwitchTest(unittest.TestCase):
                                                                "REVIEW_ESCAPES_FILE": str(redirected)})
                 self.assertFalse(redirected.exists())
                 self.assertEqual(list((self.home / ".claude").glob("*.jsonl")), [])
+                self.assertEqual(self.ledger_calls(), [])
         self.run_command(self.with_check(self.finding_check_args() + [f"out={redirected}"]))
         self.assertFalse(redirected.exists())
+        self.assertEqual(self.ledger_calls(), [])
 
     def test_check_flag_after_the_first_argument_is_not_the_check_mode(self):
         self.turn("on")
@@ -356,8 +439,9 @@ class SwitchTest(unittest.TestCase):
     def test_log_spec_run(self):
         script = str(self.scripts / "log-spec-run")
         args = [script, "slug=my-plan", "verdict=finalized", "criteria=3"]
-        finished = self.assert_switch("spec-runs.jsonl", lambda: self.run_command(args), quiet=False)
-        self.assertTrue(finished.stdout.startswith("logged"))
+        finished, row = self.assert_ledger_switch("spec_run", lambda: self.run_command(args))
+        self.assertEqual(row, {"verdict": "finalized", "criteria": "3"})
+        self.assertEqual(finished.stdout, "")
 
     # ---- review-scope and log-review-finding
 
@@ -367,32 +451,50 @@ class SwitchTest(unittest.TestCase):
         finished = self.run_command([script, "caller=review"])
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertIn("ROOT=", finished.stdout)
+        self.assertEqual(self.ledger_calls(), [])
         self.assertFalse(self.home_file("skill-usage.jsonl").exists())
         self.turn("on")
         finished = self.run_command([script, "caller=review"])
         self.assertIn("ROOT=", finished.stdout)
-        self.assertEqual(json.loads(self.lines("skill-usage.jsonl")[0])["caller"], "review")
+        calls = self.ledger_calls()
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["args"][:2], ["write", "review_scope"])
+        self.assertEqual(calls[0]["row"], {"skill": "review-loop", "caller": "review"})
+        self.assertFalse(self.home_file("skill-usage.jsonl").exists())
 
     def finding_args(self, *extra):
         return [str(self.review / "log-review-finding"), "kind=run", "gate=code-reviewer", "n_findings=0", *extra]
+
+    def assert_run_row_sent(self, finished):
+        """The one recorded call is the run row for finding_args(), and stdout names the id the row carries."""
+        calls = self.ledger_calls()
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["args"][:2], ["write", "review_run"])
+        row = calls[0]["row"]
+        self.assertEqual((row["gate"], row["n_findings"]), ("code-reviewer", "0"))
+        self.assertEqual(finished.stdout, f"run_id={row['run_id']}\n")
 
     def test_review_findings_default_path_is_kept_when_off(self):
         self.turn("off")
         finished = self.run_command(self.finding_args())
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertIn("logged", finished.stdout)
-        self.assertEqual(len(self.lines("review-findings.jsonl")), 1)
+        self.assert_run_row_sent(finished)
+        self.assertEqual(list((self.home / ".claude").glob("*.jsonl")), [])
 
-    def test_review_findings_env_file_is_kept_when_off(self):
+    def test_review_findings_env_file_is_ignored_and_row_still_sent_when_off(self):
         target = self.root / "queue.jsonl"
         self.turn("off")
         finished = self.run_command(self.finding_args(), extra={"REVIEW_FINDINGS_FILE": str(target)})
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertEqual(len(target.read_text().splitlines()), 1)
+        self.assert_run_row_sent(finished)
+        self.assertFalse(target.exists())
 
     def test_review_findings_out_redirect_obeys_switch(self):
         target = self.home_file("review-calibration.jsonl")
-        self.assert_switch("review-calibration.jsonl", lambda: self.run_command(self.finding_args(f"out={target}")))
+        finished, row = self.assert_ledger_switch(
+            "review_run", lambda: self.run_command(self.finding_args(f"out={target}")), quiet=False)
+        self.assertEqual(finished.stdout, f"run_id={row['run_id']}\n")
+        self.assertFalse(target.exists())
         self.assertEqual(self.lines("review-findings.jsonl"), [])
 
     # ---- branch-recap receipt line

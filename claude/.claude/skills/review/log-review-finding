@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # log-review-finding — per-finding and per-run telemetry for every review gate.
 #
-# review-metrics.jsonl records one aggregate row per /review run: disposition
+# The `review_metrics` ledger type records one aggregate row per /review run: disposition
 # counts, no per-finding detail. That answers "how loud was this run" and
 # nothing else. Two questions it cannot answer:
 #
 #   - What did a gate catch that no other gate caught? (needs file:line)
 #   - What is a gate's denominator? (needs the silent runs recorded too)
 #
-# This log carries both. Two row kinds, discriminated by `kind`:
+# This writer carries both. Two row kinds, discriminated by `kind`, sent through
+# `ledger-write` as two ledger row types: `review_run` for kind=run and
+# `review_finding` for kind=finding. Both are written whatever the metrics switch
+# says, except under a caller's out= redirect (see below).
 #
 #   kind=run      one per GATE DISPATCH, including dispatches that found
 #                 nothing. The silent runs are the denominator; a log that
@@ -26,7 +29,7 @@
 #       phase       gate ran at a /code phase boundary, on that phase's diff
 #       branch-exit gate ran in a closing phase, on the whole-branch diff
 #       standalone  direct invocation, no enclosing loop
-#     phase=<index|name>          ("-" when scope is not `phase`)
+#     phase=<index|name>          (omit it when scope is not `phase`; a "-" or empty value is dropped)
 #     iter=<N>                    review-loop iteration this dispatch belongs to
 #     gate=code-reviewer|smell-reviewer|smell-reviewer-deep
 #         |security-reviewer|security-reviewer-deep|perf-reviewer
@@ -46,7 +49,8 @@
 #     result=PASS|PASS WITH WARNINGS|NEEDS CHANGES|NOT DISPATCHED   (optional)
 #       Case and -/_ spelling are normalized, and the words gates reach for when
 #       none of the four fit are folded in: clean and intent-aligned are PASS,
-#       findings, gaps and residue are NEEDS CHANGES. Anything else is refused.
+#       findings, gaps and residue are NEEDS CHANGES. Anything else is passed to
+#       `ledger write`, which stores it as `other`.
 #
 #   kind=finding ONLY
 #     disposition=fix|ask|nit       what the reviewer said should happen
@@ -84,14 +88,25 @@
 #       last-pass and class may defer. A code-reviewer `fix` row with
 #       actioned=deferred at scope phase or standalone is refused without one.
 #
-# Numeric-looking values are stored as numbers, everything else as strings.
-# A "date" field (UTC ISO 8601) is always added. Output file:
-#   $REVIEW_FINDINGS_FILE or ~/.claude/review-findings.jsonl
-# The default file is the deferred queue and is always written. A caller's out=<path>
-# redirect is a metrics file: it is written only while the metrics switch is on (CLAUDE_TOOLKIT_TELEMETRY=1, or the file ~/.claude/toolkit-telemetry).
+# Every value is sent as a JSON string, except n_findings=null, which is sent as JSON null; `ledger write` types it. The row goes to
+# `ledger write review_run|review_finding`, which adds the date, repo and session,
+# keys `file=` and `branch=` into path_key and branch_key, and holds the deferred
+# queue. desc, date, schema_version, repo, session, kind and out are accepted and
+# never stored. A caller's out=<path> redirect is a metrics write: it happens only
+# while the metrics switch is on (CLAUDE_TOOLKIT_TELEMETRY=1, or the file
+# ~/.claude/toolkit-telemetry).
+#
+# Prints finding_id=<id> (run_id=<id> for a run row). The id is minted here unless
+# the caller passes finding_id= or run_id=. A later row for the same finding_id
+# supersedes the earlier one, so an ask outcome passes the id its ask row printed.
+# An ask outcome (actioned=ask with ask_outcome=) with no finding_id writes nothing,
+# prints one stderr line and exits 0. With no `ledger` on PATH the write is skipped
+# silently and everything else runs as before. A row `ledger write` refuses exits 2.
 set -euo pipefail
 
 script_dir=$(dirname -- "${BASH_SOURCE[0]}")
+# shellcheck source=../../scripts/_kv.sh
+source "$script_dir/../../scripts/_kv.sh"
 
 # --check as the first argument runs every validation below, writes nothing, ignores the
 # telemetry switch and exits 0 when the arguments would be logged.
@@ -102,62 +117,54 @@ if [ "${1:-}" = "--check" ]; then
 fi
 
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
-out="${REVIEW_FINDINGS_FILE:-$HOME/.claude/review-findings.jsonl}"
-redirected=""
 
-# schema_version marks the row's schema era; bump ONLY on a breaking change
-# (a value-vocabulary swap or a field-meaning change), never for additive fields.
-# /audit review reads only the current version; older versions are archived.
-SCHEMA_VERSION=3
-# session and branch are the join keys across the three review logs. Both are
-# read here, never trusted to the caller; a caller's own branch= still wins.
-# head and dirty name the tree the gate saw.
+# The branch is read here, never trusted to the caller; a caller's own branch= still
+# wins. head and dirty name the tree the gate saw.
 head=$(git rev-parse HEAD 2>/dev/null || true)
 dirty=""
 [[ -n "$head" ]] && { [[ -n "$(git status --porcelain 2>/dev/null)" ]] && dirty=1 || dirty=0; }
-json=$(jq -cn --argjson sv "$SCHEMA_VERSION" \
-  --arg s "${CLAUDE_CODE_SESSION_ID:-}" --arg b "$(git branch --show-current 2>/dev/null || true)" \
+json=$(jq -cn \
+  --arg b "$(git branch --show-current 2>/dev/null || true)" \
   --arg h "$head" --arg d "$dirty" \
-  '{date: (now | todate), schema_version: $sv}
-   + (if $s != "" then {session: $s} else {} end)
+  '{}
    + (if $b != "" then {branch: $b} else {} end)
    + (if $h != "" then {head: $h, dirty: $d} else {} end)')
+
 swallowed_pair=$'[ \t\n\r\f\v][A-Za-z_][A-Za-z0-9_]*='
-for kv in "$@"; do
-  case "$kv" in
-    out=*) out="${kv#out=}"; redirected=1; continue ;;
-    *=*) ;;
-    *) echo "skipping malformed arg (want key=value): $kv" >&2; continue ;;
-  esac
-  k="${kv%%=*}"
-  v="${kv#*=}"
-  # Only desc and result are free text. A space in any other value means the
-  # caller quoted too much and swallowed the following key=value pairs into this
-  # one — which is how repo= ends up holding branch, lane, scope, phase and
-  # iter, destroying every join key /audit review needs. Fail loud.
-  # A file path may hold spaces. It is refused when it holds a line break, or
-  # whitespace followed by name= (the shape of a swallowed pair).
-  case "$k" in
-    desc|result) ;;
-    file)
-      if [[ $v == *$'\n'* || $v == *$'\r'* || $v =~ $swallowed_pair ]]; then
-        echo "refusing to log: file= holds a line break or whitespace then a name=: '$v'" >&2
-        echo "Quote each key=value separately; only desc= and result= (and a file= path with no line break and no whitespace then name=) may contain spaces." >&2
-        exit 1
-      fi ;;
-    *)
-      if [ "$v" != "${v#* }" ]; then
-        echo "refusing to log: $k= contains a space: '$v'" >&2
-        echo "Quote each key=value separately; only desc= and result= (and a file= path with no line break and no whitespace then name=) may contain spaces." >&2
-        exit 1
-      fi ;;
-  esac
-  if [ "$k" = n_findings ] && [ "$v" = null ]; then
-    json=$(jq -c '.n_findings = null' <<< "$json")
-    continue
+
+# kv_fold sends every value as a string; this hook handles these values itself.
+# file=<path>: a path may hold spaces, so kv_fold's space refusal is off for it. It is
+#   refused here when it holds a line break, or whitespace followed by name= (the shape
+#   of a swallowed pair). A clean path is left to the default string fold.
+# n_findings=null: a run whose report could not be counted; folded to JSON null, which
+#   `ledger write` stores as SQL NULL, never 0.
+# phase=- or an empty phase: no phase; the key is dropped, since phase is a token in
+#   the registry and "-" or empty would be refused.
+fold_writer_special_values() {
+  if [ "$1" = file ]; then
+    if [[ $2 == *$'\n'* || $2 == *$'\r'* || $2 =~ $swallowed_pair ]]; then
+      echo "refusing to log: file= holds a line break or whitespace then a name=: '$2'" >&2
+      echo "Quote each key=value separately; only desc= and result= (and a file= path with no line break and no whitespace then name=) may contain spaces." >&2
+      exit 1
+    fi
+    return 1
   fi
-  json=$(jq -c --arg k "$k" --arg v "$v" '.[$k] = ($v | (tonumber? // .))' <<< "$json")
-done
+  if [ "$1" = n_findings ] && [ "$2" = null ]; then
+    json=$(jq -c '.n_findings = null' <<< "$json")
+    return 0
+  fi
+  if [ "$1" = phase ] && { [ "$2" = "-" ] || [ -z "$2" ]; }; then
+    return 0
+  fi
+  return 1
+}
+
+# Only desc, result and file are free text. A space in any other value means the caller
+# quoted too much and swallowed the following key=value pairs into this one — which
+# is how repo= ends up holding branch, lane, scope, phase and iter, destroying every
+# join key /audit review needs. Fail loud.
+kv_fold "desc result file" fold_writer_special_values "$@"
+redirected=$kv_out_seen
 
 kind=$(jq -r '.kind // ""' <<< "$json")
 gate=$(jq -r '.gate // ""' <<< "$json")
@@ -170,13 +177,8 @@ esac
 
 [ -n "$gate" ] || { echo "refusing to log: gate=<agent name> is required." >&2; exit 1; }
 
-# The checkout is not the repo. In a linked worktree the caller's
-# `basename $(git rev-parse --show-toplevel)` is the worktree directory, so one
-# repo logs under as many names as it has had worktrees and every per-repo rate
-# splits across them. Derive it here instead of trusting the caller.
-if canonical=$("$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../scripts" && pwd)/repo-name" 2>/dev/null); then
-  json=$(jq -c --arg r "$canonical" '.repo = $r' <<< "$json")
-fi
+# The repo is not set here: `ledger write` derives it from the cwd, and names a
+# linked worktree by its main checkout.
 
 # `result` is the gate's verdict, reported as a distribution. It was collecting
 # disposition words ("fix", "clean", "gaps", "actioned") instead — each one a
@@ -186,22 +188,18 @@ fi
 # Rejecting outright loses the row, because telemetry never blocks the caller:
 # the gates with no natural PASS/NEEDS CHANGES vocabulary (plan-verifier,
 # test-intent-reviewer, test-reviewer) then log no run row at all and lose their
-# denominator. So spelling and the known synonyms are folded in, and only a
-# genuinely unmappable value is refused.
+# denominator. So spelling and the known synonyms are folded in, and a value
+# that maps to none goes to `ledger write` as given, which stores it as `other`.
 if [ "$kind" = run ]; then
   res=$(jq -r '.result // ""' <<< "$json")
   norm=$(printf '%s' "$res" | tr '[:lower:]' '[:upper:]' | tr '_-' '  ')
   case "$norm" in
     "") mapped="" ;;
-    "PASS WITH WARNINGS"* | "PASS (NITS ONLY)") mapped="PASS WITH WARNINGS" ;;
+    "PASS WITH WARNINGS"* | "PASS (NITS ONLY)") mapped="PASS_WITH_WARNINGS" ;;
     PASS | CLEAN* | "INTENT ALIGNED") mapped="PASS" ;;
-    "NEEDS CHANGES"* | FINDINGS | GAPS | "GAPS FOUND" | RESIDUE) mapped="NEEDS CHANGES" ;;
-    "NOT DISPATCHED"*) mapped="NOT DISPATCHED" ;;
-    *)
-      echo "refusing to log: result=$res is not PASS|PASS WITH WARNINGS|NEEDS CHANGES|NOT DISPATCHED" >&2
-      echo "It is the gate's verdict, not what happened to the findings. Omit it if" >&2
-      echo "the gate gave no verdict; put anything else in desc=." >&2
-      exit 1 ;;
+    "NEEDS CHANGES"* | FINDINGS | GAPS | "GAPS FOUND" | RESIDUE) mapped="NEEDS_CHANGES" ;;
+    "NOT DISPATCHED"*) mapped="NOT_DISPATCHED" ;;
+    *) mapped="$res" ;;
   esac
   if [ "$mapped" != "$res" ]; then
     [ -z "$mapped" ] || echo "note: result=$res logged as $mapped" >&2
@@ -209,43 +207,16 @@ if [ "$kind" = run ]; then
   fi
 fi
 
-# `class` is the join key against review-escapes.jsonl. An unknown value cannot
-# be cross-tabulated, and `other` is a legal answer that costs the analysis a
-# bucket every time it is used as a shrug — nearly half of all findings landed
-# there, dominated by stale comments and wrong documented rationale, which is
-# what `docs` now exists for.
 if [ "$kind" = finding ]; then
-  cls=$(jq -r '.class // ""' <<< "$json")
-  case "$cls" in
-    "" | bug | smell | duplication | complexity | plan-drift | test-gap \
-      | weak-assertion | security | perf | correctness | docs | other) ;;
-    *)
-      echo "refusing to log: class=$cls is not one of bug|smell|duplication|complexity|" >&2
-      echo "plan-drift|test-gap|weak-assertion|security|perf|correctness|docs|other." >&2
-      echo "The vocabulary is shared with log-escape so the caught and escaped sides" >&2
-      echo "cross-tabulate; do not invent values." >&2
-      exit 1 ;;
-  esac
+  # Only the literal 'bug' promotes the row to blocker=yes; any other
+  # fix_induced value goes to `ledger write` as given.
   fi_val=$(jq -r '.fix_induced // ""' <<< "$json")
-  case "$fi_val" in
-    "" | yes | no) ;;
-    bug) json=$(jq -c '.blocker = "yes"' <<< "$json") ;;
-    *)
-      echo "refusing to log: fix_induced=$fi_val is not yes|no|bug." >&2
-      echo "Only the literal 'bug' promotes the row to blocker=yes." >&2
-      exit 1 ;;
-  esac
+  [ "$fi_val" != bug ] || json=$(jq -c '.blocker = "yes"' <<< "$json")
 
   # The review loop sends every `fix` finding to a coder except two kinds. A
   # deferred row goes to a branch-exit queue that most branches never read, so
   # a wrong deferral drops the finding.
   source=$(jq -r '.source // ""' <<< "$json")
-  case "$source" in
-    "" | round | fix-diff | last-pass | class | gate) ;;
-    *)
-      echo "refusing to log: source=$source is not round|fix-diff|last-pass|class|gate." >&2
-      exit 1 ;;
-  esac
   disposition=$(jq -r '.disposition // ""' <<< "$json")
   actioned=$(jq -r '.actioned // ""' <<< "$json")
   scope=$(jq -r '.scope // ""' <<< "$json")
@@ -270,11 +241,40 @@ if [ "$kind" = run ] && [ "$(jq -r 'has("n_findings")' <<< "$json")" != true ]; 
   exit 1
 fi
 
-[ -z "$check_only" ] || exit 0
-
-if [ -n "$redirected" ] && ! "$script_dir/../../scripts/telemetry_enabled.sh" 2>/dev/null; then
+# An ask outcome supersedes its ask row by finding_id. Without one it would add a
+# second finding to every count, so nothing is written. This runs before minting: a
+# refused call mints no id and prints no finding_id=.
+if [ "$kind" = finding ] \
+  && [ "$(jq -r '.actioned // ""' <<< "$json")" = ask ] \
+  && [ -n "$(jq -r '.ask_outcome // ""' <<< "$json")" ] \
+  && [ -z "$(jq -r '.finding_id // ""' <<< "$json")" ]; then
+  echo "log-review-finding: ask outcome without finding_id, not logged" >&2
   exit 0
 fi
 
-printf '%s\n' "$json" >> "$out"
-echo "logged → $out"
+[ -z "$check_only" ] || exit 0
+
+id_key=run_id
+[ "$kind" = finding ] && id_key=finding_id
+id=$(jq -r --arg k "$id_key" '.[$k] // ""' <<< "$json")
+if [ -z "$id" ]; then
+  id=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
+  json=$(jq -c --arg k "$id_key" --arg v "$id" '.[$k] = $v' <<< "$json")
+fi
+
+# desc is free text and never stored. file and branch go to the writer raw; it keys
+# them (path_key, branch_key) and drops a dash or empty value.
+payload=$(jq -c '
+  del(.desc, .kind)
+  | with_entries(.key |= (if . == "file" then "path_key" elif . == "branch" then "branch_key" else . end))' <<< "$json")
+
+write_row() {
+  [ -z "$redirected" ] || "$script_dir/../../scripts/telemetry_enabled.sh" 2>/dev/null || return 0
+  printf '%s\n' "$payload" | bash "$script_dir/../../scripts/ledger-write" "review_$kind"
+}
+
+write_rc=0
+write_row || write_rc=$?
+[ "$write_rc" -eq 0 ] || exit "$write_rc"
+
+echo "$id_key=$id"

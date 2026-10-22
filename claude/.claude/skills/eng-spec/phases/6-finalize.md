@@ -49,9 +49,6 @@
 16b. **Dry-run the verification criteria** — two failure modes of the plan's
 `#### Automated Verification:` commands survive reading. Resolve each with the user before Phase 7.
 
-    - **Static lint**: `~/.claude/scripts/spec-criteria-lint.sh <plan-path>`
-      flags a test-file `**File**:` target and a verification-command file that no
-      phase creates and is absent.
     - **Falsifiability run**: for each **read-only** command (build, test, lint,
       `git grep` — never one that writes), run it as written against the pre-implementation tree. Clean RED is good; already-GREEN or BROKEN-on-bad-flag lets the coder pass with no check running.
     - **Batch, don't dribble**: collect every read-only command first, then run

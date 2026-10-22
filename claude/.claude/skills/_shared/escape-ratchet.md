@@ -18,7 +18,7 @@ Per escape: _cheapest structural guard that would have caught it?_ First applica
 
 **Plan-stage escapes take a different rung** (code matched spec; no reviewer could catch): rungs 1–4 mostly don't apply. Take:
 
-5. **`check`** — one command where finalization already runs commands: a falsification-sweep line, or a `spec-criteria-lint.sh` rule when mechanically detectable. Lint for plan-text patterns (path, token, target); sweep when the tree must answer (count, flag behavior, landed deliverable). FIRST rung for plan-stage, before `none`.
+5. **`check`** — one command where finalization already runs commands: a falsification-sweep line. FIRST rung for plan-stage, before `none`.
 
 `none` is legal for one-offs — but a decision, not a default: reach it only after rejecting 1–4.
 

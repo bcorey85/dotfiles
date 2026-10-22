@@ -556,12 +556,17 @@ def is_plan_impact_ask(item):
 
 def log_ask_outcome(state, item, outcome):
     path, line = split_location(item.get("file_line") or "-")
-    findingId = item.get("finding_id")
-    if not findingId:
-        # The outcome supersedes its ask row by finding_id. With none it would add a second finding.
+    findingId = handback.ask_finding_id(item)
+    if findingId is None:
+        # The outcome supersedes its ask row by finding_id. log-review-finding refuses only a value with a space.
+        # Any other non-id value ("none", "-", a short hex) is a placeholder or a damaged id, and logging it would
+        # write a stray row that replaces no ask row.
         # Code None marks it as skipped, apart from a logged row (0) and a failure.
-        print("review-fix: ask outcome without finding_id, not logged", file=sys.stderr)
-        return (None, "ask outcome without finding_id, not logged"), path, line
+        ignoredValue = handback.item_field(item, "finding_id", None)
+        ignoredText = "no finding_id" if ignoredValue is None else f"ignored {ignoredValue!r}"
+        note = f"ask outcome without a valid finding_id ({ignoredText}), not logged"
+        print(f"review-fix: {note}", file=sys.stderr)
+        return (None, note), path, line
     return run_command(["bash", str(CLAUDE_DIR / "skills/review/log-review-finding"), "kind=finding",
                         f"finding_id={findingId}", f"branch={state['branch']}", f"lane={state['lane']}",
                         f"scope={state['scope']}", f"iter={state['iter']}", f"gate={item['gate']}",

@@ -21,10 +21,13 @@ review_fix = importlib.util.module_from_spec(loaded_review_fix)
 loaded_review_fix.loader.exec_module(review_fix)
 import handback  # noqa: E402
 
+# log-review-finding mints ids as 16 lowercase hex chars; review-fix logs no other shape.
+MINTED_FINDING_ID = "0123456789abcdef"
+
 
 def ask_item(**overrides):
     item = {"finding": "a finding", "file_line": "src/widget.py:12", "question": "keep it?",
-            "gate": "code-reviewer", "class": "bug", "finding_id": "abc123"}
+            "gate": "code-reviewer", "class": "bug", "finding_id": MINTED_FINDING_ID}
     item.update(overrides)
     return item
 
@@ -53,7 +56,7 @@ class LogAskOutcomes(unittest.TestCase):
 
         self.assertEqual(len(self.calls), 1)
         argv = self.calls[0]
-        self.assertIn("finding_id=abc123", argv)
+        self.assertIn(f"finding_id={MINTED_FINDING_ID}", argv)
         self.assertIn("ask_outcome=accepted", argv)
         self.assertIn("actioned=ask", argv)
         self.assertIn("disposition=ask", argv)
@@ -93,7 +96,7 @@ class ReviewFixLogAskOutcome(unittest.TestCase):
 
         self.assertEqual(len(self.calls), 1)
         argv = self.calls[0]
-        self.assertIn("finding_id=abc123", argv)
+        self.assertIn(f"finding_id={MINTED_FINDING_ID}", argv)
         self.assertIn("ask_outcome=accepted", argv)
         for expected in ("actioned=ask", "disposition=ask", "gate=code-reviewer", "class=bug", "lane=fix",
                          "scope=diff", "iter=1", "file=src/widget.py", "line=12"):
@@ -109,11 +112,12 @@ class ReviewFixLogAskOutcome(unittest.TestCase):
 
         self.assertEqual(self.calls, [])
         self.assertIsNone(code)
-        self.assertIn("ask outcome without finding_id, not logged", stderr.getvalue())
+        self.assertIn("ask outcome without a valid finding_id (no finding_id), not logged", stderr.getvalue())
 
     def test_asks_done_retry_does_not_count_skipped_asks_as_logged(self):
-        self.state.update({"stage": "asks", "asks": [ask_item(finding_id=None), ask_item(finding_id="one"),
-                                                      ask_item(finding_id="two")]})
+        self.state.update({"stage": "asks", "asks": [ask_item(finding_id=None),
+                                                      ask_item(finding_id="1111111111111111"),
+                                                      ask_item(finding_id="2222222222222222")]})
         original = (review_fix.load_state, review_fix.save_state)
         review_fix.load_state = lambda: self.state
         review_fix.save_state = lambda state: None

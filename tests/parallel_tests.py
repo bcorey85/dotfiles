@@ -7,12 +7,14 @@
 A file listed in SHARDS runs as several processes, each taking every Nth test, so one huge file cannot bound the
 wall-clock. Expected failures and skips follow unittest: they do not fail the file."""
 import concurrent.futures
+import functools
 import importlib
 import os
 import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 
@@ -57,13 +59,35 @@ def build_jobs():
     return jobs
 
 
-def run_job(job):
+def write_fixed_git_config(configFolder):
+    # Writes the one global git config every test process sees; returns its path.
+    # The empty file stands in for the machine's global ignore and attributes files.
+    configPath = pathlib.Path(configFolder) / "gitconfig"
+    emptyPath = pathlib.Path(configFolder) / "empty"
+    emptyPath.write_text("")
+    configPath.write_text('[user]\n\tname = ci\n\temail = ci@example.com\n[init]\n\tdefaultBranch = master\n'
+                          f'[core]\n\texcludesFile = "{emptyPath}"\n\tattributesFile = "{emptyPath}"\n')
+    return configPath
+
+
+def fixed_git_environment(configPath):
+    # Returns the environment for a test process: the fixed config replaces the machine's global and system git config,
+    # and config passed through the environment is dropped.
+    environment = {name: value for name, value in os.environ.items()
+                   if name not in ("GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT")
+                   and not name.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"))}
+    environment["GIT_CONFIG_GLOBAL"] = str(configPath)
+    environment["GIT_CONFIG_NOSYSTEM"] = "1"
+    return environment
+
+
+def run_job(job, environment):
     testFile, shardIndex, shardCount = job
     started = time.monotonic()
     finished = subprocess.run(
         [sys.executable, str(pathlib.Path(__file__).resolve()), "--worker", testFile, str(shardIndex), str(shardCount)],
         cwd=str(REPO_ROOT), capture_output=True, text=True,
-        encoding="utf-8", errors="replace",
+        encoding="utf-8", errors="replace", env=environment,
     )
     seconds = time.monotonic() - started
     output = finished.stdout + finished.stderr
@@ -76,14 +100,17 @@ def main():
     workers = os.cpu_count() or 1
     wallStarted = time.monotonic()
     perFile = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-        for testFile, testCount, seconds, passed, output in pool.map(run_job, build_jobs()):
-            entry = perFile.setdefault(testFile, {"count": 0, "seconds": 0.0, "passed": True, "failures": []})
-            entry["count"] += testCount
-            entry["seconds"] += seconds
-            entry["passed"] = entry["passed"] and passed
-            if not passed:
-                entry["failures"].append(output)
+    with tempfile.TemporaryDirectory() as configFolder:
+        environment = fixed_git_environment(write_fixed_git_config(configFolder))
+        runJob = functools.partial(run_job, environment=environment)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            for testFile, testCount, seconds, passed, output in pool.map(runJob, build_jobs()):
+                entry = perFile.setdefault(testFile, {"count": 0, "seconds": 0.0, "passed": True, "failures": []})
+                entry["count"] += testCount
+                entry["seconds"] += seconds
+                entry["passed"] = entry["passed"] and passed
+                if not passed:
+                    entry["failures"].append(output)
 
     totalTests, totalSeconds, failedFiles = 0, 0.0, []
     for testFile in sorted(perFile):

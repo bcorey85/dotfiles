@@ -239,11 +239,61 @@ class QualityCheckCapTest(unittest.TestCase):
         self.fire("PostToolUseFailure", command="pytest", error="Exit code 1\nFAILED")
         self.assert_denied(self.pre("pytest"))
 
-    def test_timeout_and_interrupt_failures_record_nothing(self):
-        self.fire("PostToolUseFailure", command="pytest", tool_error={"error_type": "timeout"})
-        self.fire("PostToolUseFailure", command="pytest", tool_error={"error_type": "interrupted"})
-        self.fire("PostToolUseFailure", command="pytest", error="Command timed out after 120s")
+    def test_a_timeout_records_nothing(self):
+        self.fire("PostToolUseFailure", command="pytest", error="Exit code 143\n\nCommand timed out after 2m 0s",
+                  is_interrupt=False, tool_use_id="toolu_01", duration_ms=120000)
+        self.assertEqual(self.state_files(), [])
         self.assert_allowed(self.pre("pytest"))
+
+    def test_a_failure_whose_output_quotes_the_timeout_text_is_still_recorded(self):
+        self.fire("PostToolUseFailure", command="pytest", is_interrupt=False, tool_use_id="toolu_01", duration_ms=900,
+                  error="Exit code 1\nFAILED test_runner.py::test_timeout - AssertionError: "
+                        "'Command timed out after 5s'")
+        self.assert_denied(self.pre("pytest"))
+
+    def test_an_interrupted_run_records_nothing(self):
+        payload = {"hook_event_name": "PostToolUseFailure", "tool_name": "Bash", "session_id": "s1",
+                   "cwd": str(self.work), "tool_input": {"command": "pytest"}, "is_interrupt": True,
+                   "error": "Exit code 1\n[Request interrupted by user for tool use]"}
+        self.fire_raw(json.dumps(payload))
+        self.assertEqual(self.state_files(), [])
+        self.assert_allowed(self.pre("pytest"))
+
+    def test_the_same_failure_without_the_interrupt_flag_is_recorded(self):
+        self.fire("PostToolUseFailure", command="pytest", is_interrupt=False,
+                  error="Exit code 1\n[Request interrupted by user for tool use]")
+        self.assert_denied(self.pre("pytest"))
+
+    def test_a_run_ended_by_a_signal_is_not_recorded_and_the_rerun_is_allowed(self):
+        for code in (129, 137, 144, 192):
+            self.fire("PostToolUseFailure", command="pytest", error="Exit code %d\nTerminated" % code)
+            self.assertEqual(self.state_files(), [])
+            self.assert_allowed(self.pre("pytest"))
+
+    def test_a_signal_exit_leaves_an_earlier_record_of_another_check_alone(self):
+        self.fire("PostToolUseFailure", command="pytest", error="Exit code 1")
+        self.assert_denied(self.pre("pytest"))
+        self.fire("PostToolUseFailure", command="eslint .", error="Exit code 144")
+        self.assert_allowed(self.pre("eslint ."))
+        self.assert_denied(self.pre("pytest"))
+
+    def test_a_plain_nonzero_exit_is_still_recorded(self):
+        for code in (1, 2, 127, 128, 193, 255):
+            self.fire("PostToolUseFailure", command="pytest", error="Exit code %d\nFAILED" % code)
+            self.assert_denied(self.pre("pytest"))
+            self.assert_allowed(self.edit())
+
+    def test_exit_code_in_error_text_reads_only_a_leading_exit_code_line(self):
+        module = self.load_module()
+        self.assertEqual(module.exit_code_in_error_text("Exit code 144\nTerminated"), 144)
+        self.assertEqual(module.exit_code_in_error_text("Exit code 1"), 1)
+        self.assertIsNone(module.exit_code_in_error_text("FAILED\nExit code 144"))
+        self.assertIsNone(module.exit_code_in_error_text("Command timed out after 120s"))
+        self.assertIsNone(module.exit_code_in_error_text(""))
+
+    def test_exit_code_text_after_the_first_line_does_not_count_as_the_exit_status(self):
+        self.fire("PostToolUseFailure", command="pytest", error="FAILED\nworker ended: Exit code 144")
+        self.assert_denied(self.pre("pytest"))
 
     # only a check that ran is counted
 

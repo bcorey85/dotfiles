@@ -21,6 +21,11 @@ missing → say which, and stop.
 
 ## Steps
 
+Run the steps in order, one child at a time. After each dispatch, wait for that
+child's completion notice, then Glob for the file it writes. Never end your turn
+while a child runs: a hand-back ends the run, and the child's result is lost.
+File missing after the notice → say which step and stop.
+
 1. **`spec-questions`** with the ticket path. It writes `01-questions.md`.
    Pinned model — omit `model`.
 

@@ -63,5 +63,63 @@ class ReviewRan(unittest.TestCase):
         self.assertEqual(str(raised.exception), "ledger yield: not inside a git repository")
 
 
+class BusyLedger(unittest.TestCase):
+    """The ledger exits 75 after waiting on its lock. The stub logs each call so a test counts the tries."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.calls = pathlib.Path(self.directory.name) / "calls"
+        patcher = mock.patch.dict(os.environ, {
+            "PATH": os.pathsep.join([self.directory.name, "/usr/bin", "/bin"]),
+            verify_common.LEDGER_BACKOFF_ENV: "0", verify_common.LEDGER_TIMEOUT_ENV: "10"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def plant_script(self, body):
+        plant_ledger(self.directory.name, f'echo x >> "{self.calls}"\ntries=$(wc -l < "{self.calls}")\n{body}')
+
+    def tries(self):
+        return len(self.calls.read_text().split())
+
+    def test_a_busy_ledger_is_tried_again_and_the_clear_answer_is_used(self):
+        self.plant_script(f'[ "$tries" -lt 3 ] && exit 75\nprintf "tree\\n{PLANTED_TREE}\\n"\n')
+
+        ran, _ = verify_common.review_ran("some-repo", "some-branch", PLANTED_TREE)
+
+        self.assertTrue(ran)
+        self.assertEqual(self.tries(), 3)
+
+    def test_a_ledger_that_stays_busy_fails_and_never_reads_as_no_review(self):
+        self.plant_script("echo 'ledger: cache busy' >&2\nexit 75\n")
+
+        with self.assertRaises(verify_common.Fail) as raised:
+            verify_common.review_ran("some-repo", "some-branch", PLANTED_TREE)
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("ledger is busy", str(raised.exception))
+        self.assertIn("run this step again", str(raised.exception))
+        self.assertEqual(self.tries(), verify_common.LEDGER_ATTEMPTS)
+
+    def test_a_ledger_that_does_not_answer_in_time_fails_busy(self):
+        self.plant_script("exec sleep 30\n")
+        os.environ[verify_common.LEDGER_TIMEOUT_ENV] = "0.5"
+
+        with self.assertRaises(verify_common.Fail) as raised:
+            verify_common.review_ran("some-repo", "some-branch", PLANTED_TREE)
+
+        self.assertIn("ledger is busy", str(raised.exception))
+        self.assertEqual(self.tries(), verify_common.LEDGER_ATTEMPTS)
+
+    def test_a_real_failure_is_not_tried_again(self):
+        self.plant_script("echo 'ledger yield: broken schema' >&2\nexit 1\n")
+
+        with self.assertRaises(verify_common.Fail) as raised:
+            verify_common.review_ran("some-repo", "some-branch", PLANTED_TREE)
+
+        self.assertEqual(str(raised.exception), "ledger yield: broken schema")
+        self.assertEqual(self.tries(), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

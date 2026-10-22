@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -41,6 +42,31 @@ class FencedLineIndexesTest(unittest.TestCase):
 
     def test_text_with_no_fence_has_no_fenced_lines(self):
         self.assertEqual(set(), script_utils.fenced_line_indexes(["# a", "b `code` c"]))
+
+
+class HeadingSectionIndexesTest(unittest.TestCase):
+    def test_the_lines_under_the_heading_run_to_the_next_heading_of_its_level(self):
+        lines = ["# t", "## Notes", "a", "## Other", "b"]
+        self.assertEqual([2], script_utils.heading_section_indexes(lines, "Notes"))
+
+    def test_a_deeper_heading_and_its_lines_stay_inside_the_section(self):
+        lines = ["## Notes", "a", "#### Deep", "b", "## Other", "c"]
+        self.assertEqual([1, 2, 3], script_utils.heading_section_indexes(lines, "Notes"))
+
+    def test_a_higher_heading_ends_the_section(self):
+        lines = ["### Notes", "a", "## Up", "b"]
+        self.assertEqual([1], script_utils.heading_section_indexes(lines, "Notes"))
+
+    def test_a_hash_line_inside_a_fence_is_not_a_heading_and_stays_in_the_section(self):
+        lines = ["## Notes", "```", "## Other", "```", "tail", "## End"]
+        self.assertEqual([1, 2, 3, 4], script_utils.heading_section_indexes(lines, "Notes"))
+
+    def test_the_heading_text_must_match_exactly_and_every_matching_section_counts(self):
+        lines = ["## Notes later", "a", "## Notes", "b", "## X", "## Notes", "c"]
+        self.assertEqual([3, 6], script_utils.heading_section_indexes(lines, "Notes"))
+
+    def test_text_with_no_such_heading_gives_no_lines(self):
+        self.assertEqual([], script_utils.heading_section_indexes(["## A", "b"], "Notes"))
 
 
 class VisibleTextTest(unittest.TestCase):
@@ -108,6 +134,64 @@ class WaitForTest(unittest.TestCase):
         self.assertEqual(1, len(calls))
 
 
+class RunRetryingTest(unittest.TestCase):
+    """A planted program that exits with the next code of a list on each run, or sleeps when the code is `hang`."""
+
+    PROGRAM = (
+        "import pathlib, sys, time\n"
+        "folder = pathlib.Path(sys.argv[1])\n"
+        "runs = len(list(folder.glob('run-*')))\n"
+        "(folder / f'run-{runs}').write_text('')\n"
+        "codes = (folder / 'codes').read_text().split()\n"
+        "code = codes[min(runs, len(codes) - 1)]\n"
+        "if code == 'hang':\n"
+        "    time.sleep(30)\n"
+        "print(f'run {runs} exit {code}')\n"
+        "sys.exit(int(code))\n")
+
+    def plant(self, codes):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = pathlib.Path(folder.name)
+        (self.folder / "codes").write_text(" ".join(codes))
+        (self.folder / "program.py").write_text(self.PROGRAM)
+        self.sleeps = []
+        return [sys.executable, str(self.folder / "program.py"), str(self.folder)]
+
+    def runs(self):
+        return len(list(self.folder.glob("run-*")))
+
+    def run_retrying(self, argv, attempts=4, timeoutSeconds=10):
+        return script_utils.run_retrying(argv, (75,), attempts, 2, timeoutSeconds, sleep=self.sleeps.append)
+
+    def test_a_clean_run_is_not_repeated(self):
+        done = self.run_retrying(self.plant(["0"]))
+        self.assertEqual((0, 1, []), (done.returncode, self.runs(), self.sleeps))
+        self.assertEqual("run 0 exit 0\n", done.stdout)
+
+    def test_a_retry_code_is_run_again_with_a_growing_pause_until_it_clears(self):
+        done = self.run_retrying(self.plant(["75", "75", "0"]))
+        self.assertEqual((0, 3, [2, 4]), (done.returncode, self.runs(), self.sleeps))
+
+    def test_a_retry_code_on_the_last_attempt_is_returned_not_raised(self):
+        done = self.run_retrying(self.plant(["75"]), attempts=3)
+        self.assertEqual((75, 3, [2, 4]), (done.returncode, self.runs(), self.sleeps))
+
+    def test_any_other_failure_is_returned_at_once_without_a_retry(self):
+        done = self.run_retrying(self.plant(["1", "0"]))
+        self.assertEqual((1, 1, []), (done.returncode, self.runs(), self.sleeps))
+
+    def test_a_timed_out_run_is_run_again(self):
+        done = self.run_retrying(self.plant(["hang", "0"]), timeoutSeconds=1)
+        self.assertEqual((0, 2, [2]), (done.returncode, self.runs(), self.sleeps))
+
+    def test_a_timeout_on_the_last_attempt_raises(self):
+        argv = self.plant(["hang"])
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self.run_retrying(argv, attempts=2, timeoutSeconds=1)
+        self.assertEqual((2, [2]), (self.runs(), self.sleeps))
+
+
 class JoinedDistinctTest(unittest.TestCase):
     def test_equal_values_appear_once_and_empty_values_are_dropped(self):
         self.assertEqual("Q? (a.ts:3)", script_utils.joined_distinct(["Q? (a.ts:3)", "", "Q? (a.ts:3)"]))
@@ -126,6 +210,16 @@ class ContainsIgnoringWhitespaceTest(unittest.TestCase):
 
     def test_an_empty_or_blank_part_is_not_contained(self):
         self.assertFalse(script_utils.contains_ignoring_whitespace("anything", " \n"))
+
+
+class HasWhitespaceTest(unittest.TestCase):
+    def test_a_space_tab_or_newline_anywhere_counts(self):
+        for text in ("two words", "tab\there", "line\nbreak", " leading", "trailing "):
+            self.assertTrue(script_utils.has_whitespace(text), repr(text))
+
+    def test_text_with_none_does_not(self):
+        for text in ("docs/plans/orders/spec.md", "ABC-400", ""):
+            self.assertFalse(script_utils.has_whitespace(text), repr(text))
 
 
 class PreToolUseDenyTest(unittest.TestCase):
@@ -234,6 +328,45 @@ class TextAndFileHelpersTest(unittest.TestCase):
         for thread in threads:
             thread.join()
         self.assertEqual(len(script_utils.read_jsonl(path)), 160)
+
+
+class StripFlagValuesTest(unittest.TestCase):
+    FLAGS = ("--manifest-path", "-p", "--package", "--project")
+
+    def stripped(self, command):
+        return " ".join(script_utils.strip_flag_values(command, self.FLAGS).split())
+
+    def test_a_flag_and_its_separate_value_are_removed(self):
+        self.assertEqual("cargo test --release", self.stripped("cargo test --manifest-path /a/b/Cargo.toml --release"))
+
+    def test_a_flag_joined_to_its_value_by_an_equals_sign_is_removed(self):
+        self.assertEqual("cargo test", self.stripped("cargo test --manifest-path=/a/b/Cargo.toml"))
+
+    def test_a_quoted_value_with_spaces_is_removed_whole(self):
+        self.assertEqual("tool run", self.stripped("tool --project 'my app/x.json' run"))
+        self.assertEqual("tool run", self.stripped('tool --project="my app/x.json" run'))
+
+    def test_every_listed_flag_is_removed(self):
+        for flag in self.FLAGS:
+            with self.subTest(flag=flag):
+                self.assertEqual("run", self.stripped("run %s name" % flag))
+
+    def test_the_text_after_the_value_stays(self):
+        self.assertEqual("pytest tests/a.py", self.stripped("pytest -p xdist tests/a.py"))
+
+    def test_a_flag_followed_by_another_flag_or_by_nothing_is_left_alone(self):
+        self.assertEqual("cargo test -p --release", self.stripped("cargo test -p --release"))
+        self.assertEqual("cargo test -p", self.stripped("cargo test -p"))
+
+    def test_a_flag_name_inside_a_longer_word_is_not_a_match(self):
+        self.assertEqual("run --pp x -pq y a-p b", self.stripped("run --pp x -pq y a-p b"))
+        self.assertEqual("run --packages x", self.stripped("run --packages x"))
+
+    def test_other_flags_and_their_values_stay(self):
+        self.assertEqual("go test -run TestX", self.stripped("go test -run TestX"))
+
+    def test_no_flags_changes_nothing(self):
+        self.assertEqual("a -p b   c  d", script_utils.strip_flag_values("a -p b   c  d", ()))
 
 
 class NearestFileUpwardTest(unittest.TestCase):

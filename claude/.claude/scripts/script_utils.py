@@ -12,6 +12,7 @@ import time
 import uuid
 
 FENCE_OPEN = re.compile(r"^\s*(`{3,}|~{3,})")
+MARKDOWN_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 CHECKBOX = re.compile(r"\[[xX]\]")
 INLINE_CODE_OR_COMMENT_OPEN = re.compile(r"`[^`]*`|<!--")
 PATH_LINE = re.compile(r"`?([\w@./-]+\.\w+:\d+(?:[-,]\d+)*)`?")
@@ -36,6 +37,31 @@ def fenced_line_indexes(lines):
         if stripped and stripped[0] == opener[0] and set(stripped) == {opener[0]} and len(stripped) >= len(opener):
             opener = None
     return fenced
+
+
+def heading_section_indexes(lines, headingText):
+    """0-based indexes of the lines under every markdown heading whose text is exactly headingText, the heading line
+    itself left out. A section runs to the next heading of its own level or a higher one; a deeper heading stays inside
+    it. A `#` line inside a fenced block is not a heading, and the fenced lines belong to the section that holds them.
+    Returns [] when no heading matches."""
+    fenced = fenced_line_indexes(lines)
+    indexes = []
+    openLevel = None
+    for index, line in enumerate(lines):
+        heading = None if index in fenced else MARKDOWN_HEADING.match(line)
+        if heading is None:
+            if openLevel is not None:
+                indexes.append(index)
+            continue
+
+        level = len(heading.group(1))
+        if openLevel is not None and level <= openLevel:
+            openLevel = None
+        if openLevel is None and heading.group(2).strip() == headingText:
+            openLevel = level
+        elif openLevel is not None:
+            indexes.append(index)
+    return indexes
 
 
 def _comparable_line(line):
@@ -67,6 +93,24 @@ def wait_for(check, timeoutSeconds, intervalSeconds):
         if remaining <= 0:
             return None
         time.sleep(min(intervalSeconds, remaining))
+
+
+def run_retrying(argv, retryExitCodes, attempts, backoffSeconds, timeoutSeconds, sleep=time.sleep, **runKwargs):
+    """Run argv with captured text output, at most `attempts` times, and return the last CompletedProcess. A run is
+    tried again, after sleeping backoffSeconds times the number of runs so far, when its exit code is in
+    retryExitCodes or it does not finish in timeoutSeconds. Any other exit code is returned at once. When the last
+    run times out, subprocess.TimeoutExpired is raised; when it exits with a retry code, that result is returned."""
+    for attempt in range(1, attempts + 1):
+        try:
+            done = subprocess.run(argv, capture_output=True, text=True, errors="replace", timeout=timeoutSeconds,
+                                  **runKwargs)
+        except subprocess.TimeoutExpired:
+            if attempt == attempts:
+                raise
+        else:
+            if done.returncode not in retryExitCodes or attempt == attempts:
+                return done
+        sleep(backoffSeconds * attempt)
 
 
 def last_change_ns(path):
@@ -121,6 +165,23 @@ def contains_ignoring_whitespace(text, part):
     is never contained."""
     squashedPart = " ".join(str(part).split())
     return bool(squashedPart) and squashedPart in " ".join(str(text).split())
+
+
+def has_whitespace(text):
+    """True when `text` holds any whitespace character: a space, tab or newline."""
+    return re.search(r"\s", str(text)) is not None
+
+
+def strip_flag_values(command, flags):
+    """`command` with every `flag value` and `flag=value` pair of the named flags replaced by one space. A flag
+    matches as a whole word. Its value is the next word, or the next quoted text, unless that word starts with a dash:
+    a flag followed by another flag, or by nothing, is left as it is."""
+    if not flags:
+        return command
+    names = "|".join(re.escape(flag) for flag in sorted(flags, key=len, reverse=True))
+    quotedOrWord = r"""(?:"[^"]*"|'[^']*'|\S+)"""
+    pair = re.compile(r"(?<!\S)(?:%s)(?:=%s?|\s+(?!-)%s)" % (names, quotedOrWord, quotedOrWord))
+    return pair.sub(" ", command)
 
 
 def pre_tool_use_deny(reason):

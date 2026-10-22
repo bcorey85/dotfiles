@@ -6,6 +6,8 @@ Logging half of /verify-branch. Reads the context verify-prep saved, and refuses
 covers the tree verify-prep measured and the tree has not changed since (exit 2: rerun verify-prep).
 
 rows: a JSON list; each row {"item","verdict","file","line","evidence", optional "severity","guard","signoff"}.
+Every criterion id verify-prep saved needs a verdict row naming it, `missing` included; any id with no row exits 2 and
+writes nothing.
 verdict is done|partial|missing|failed-check|needs-manual|overridden. partial, missing, failed-check and an
 overridden row with no `signoff` are gaps. `line` is an integer or a range like "12-20" (the first number is kept).
 Empty rows are an error unless --result NA, which logs a run row with no result and exits 3.
@@ -48,16 +50,12 @@ def is_gap(row):
     return row["verdict"] == "overridden" and not str(row.get("signoff") or "").strip()
 
 
-def add_rows_for_unverdicted_ids(rows, context):
-    """(rows, absentIds). Every criteria-file id prep saved needs a verdict row naming it; one with none is a
-    `missing` gap, so a verifier that skipped a criterion cannot produce a clean pass."""
+def ids_without_verdict_row(rows, context):
+    """The criteria-file ids prep saved that no verdict row names, in file order."""
     covered = set()
     for row in rows:
         covered.update(vc.AC_ID.findall(str(row["item"])))
-    absent = [acId for acId in context["criteria"].get("ids", []) if acId not in covered]
-    added = [{"item": f"{acId}: no verdict row was returned for this criterion", "verdict": "missing", "line": 0}
-             for acId in absent]
-    return [*rows, *added], absent
+    return [acId for acId in context["criteria"].get("ids", []) if acId not in covered]
 
 
 def parse_options(args, valued, flagNames=()):
@@ -235,13 +233,20 @@ def checklist(context, rows):
         lines.append(f"- [ ] {entry['label']}: {entry['text']}\n      steps: <model>")
     for entry in manualEntries:
         lines.append(f"- [ ] (manual-only) {entry['id']}: {entry['text']}\n      steps: <model>")
+    movedNotes = []
     if context["plan"]:
-        for item in vc.manual_items(read_source(context["plan"], "plan"), context["plan"]):
+        planText = read_source(context["plan"], "plan")
+        for item in vc.manual_items(planText, context["plan"]):
             if item["humanOnly"]:
                 lines.append(f"- [ ] (human-only) {item['text']}\n      steps: <model>")
+        movedNotes = vc.moved_phase_notes(planText, context["plan"])
     for row in rows:
         if row["verdict"] == "needs-manual":
             lines.append(f"- [ ] (needs-manual) {one_line(row['item'], 300)}\n      steps: <model>")
+    if movedNotes:
+        lines.append("")
+        lines.append("## Moved phases (another ticket owns them; not checked on this branch)")
+        lines.extend(f"- {note}" for note in movedNotes)
     lines.append("")
     lines.append("## Diff hotspots (read these first, skim the rest)")
     hotspots = context["diff"]["hotspots"]
@@ -320,9 +325,10 @@ def log_rows(args, context, top):
         raise vc.Fail("--result NA takes empty rows: the gate had nothing to check")
     if not rows and not notApplicable:
         raise vc.Fail("rows are empty: pass --result NA if the plan gave the gate nothing to check")
-    absentIds = []
-    if not notApplicable:
-        rows, absentIds = add_rows_for_unverdicted_ids(rows, context)
+    absentIds = [] if notApplicable else ids_without_verdict_row(rows, context)
+    if absentIds:
+        raise vc.Fail(f"no verdict row for {', '.join(absentIds)}: send a verdict for every criterion id, `missing` "
+                      "included. Nothing was written")
 
     writes, gaps, needGuard, alreadyRecorded = plan_row_writes(rows, context, notApplicable, escapesOnly)
     packet = checklist(context, rows) if not gaps and not notApplicable and not escapesOnly else None
@@ -347,8 +353,6 @@ def log_rows(args, context, top):
             print(f"  NEEDS GUARD (ratchet, escape-ratchet.md): {one_line(row['item'], 120)}")
         return 0
 
-    if absentIds:
-        print(f"NO VERDICT ROW for {', '.join(absentIds)}: logged as missing (a gap).")
     counts = {verdict: sum(1 for row in rows if row["verdict"] == verdict) for verdict in VERDICTS}
     print(f"verdicts: {len(rows)} items " + ", ".join(f"{k}={v}" for k, v in counts.items()))
     if alreadyRecorded:

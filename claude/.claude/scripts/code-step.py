@@ -657,8 +657,38 @@ def gated_phase_text(entries):
     return "; ".join(f"Phase {entry['number']} (gate: {entry['gate']})" for entry in entries)
 
 
+def gate_blockers(pending):
+    # A run never starts a phase past an open gated one. Returns the gated open phases ahead of the first open phase
+    # without a gate, and that phase (None when every open phase is gated).
+    nextUngated = next((entry for entry in pending if not entry["gate"]), None)
+    gatedAhead = pending[:pending.index(nextUngated)] if nextUngated else pending
+    return gatedAhead, nextUngated
+
+
+def gate_block_text(gatedAhead, nextUngated):
+    gatedText = gated_phase_text(gatedAhead)
+    text = f"open phases with a gate clause come first: {gatedText}. The script does not judge a gate."
+    if nextUngated:
+        text += f" The next open phase without a gate is Phase {nextUngated['number']}."
+    return text + " `start --phase <id>` runs one anyway."
+
+
+def moved_phase_text(entries):
+    return ", ".join(f"Phase {entry['number']} to {entry['movedTo']}" for entry in entries if entry["moved"])
+
+
+def moved_phase_stop(entry, planName, coderRan=False):
+    # coderRan is True when the phase became moved after its coder was dispatched.
+    if coderRan:
+        ranText = "The coder ran, and its work is not marked done or committed."
+    else:
+        ranText = "No coder was dispatched."
+    return (f"Phase {entry['number']} is moved to {entry['movedTo']} in {planName}, so this plan does not run it. "
+            f"{ranText} Tell the user; the phase is worked under {entry['movedTo']}.")
+
+
 def ordered_pending(entries):
-    pending = [entry for entry in entries if not entry["done"]]
+    pending = [entry for entry in entries if entry["open"]]
     return [e for e in pending if not e["closing"]] + [e for e in pending if e["closing"]]
 
 
@@ -961,6 +991,11 @@ def other_session_run_age(repoRoot, previous):
 
 def looks_like_plan_argument(word):
     path = pathlib.Path(word)
+    # A word with whitespace is task text that happens to name a file, unless it is itself a file (a real plan whose
+    # path has a space).
+    if script_utils.has_whitespace(word) and not path.is_file():
+        return False
+
     return looks_like_plan_path(word) or TICKET_ID.match(word) is not None or path.is_file() or path.is_dir()
 
 
@@ -1115,22 +1150,21 @@ def command_start(args):
             listed = ", ".join(e["number"] for e in entries) or "none"
             return emit("stop", f"Phase {phaseId} is not in the Phase Status of {planRel}. Listed phases: {listed}. "
                         "Tell the user.")
+        if entry["moved"]:
+            return emit("stop", moved_phase_stop(entry, planRel))
         if entry["done"]:
             return emit("stop", f"Phase {phaseId} is already marked done in {planRel}. No coder was dispatched. Tell "
                         "the user; to run it again, they uncheck it in Phase Status first.")
     elif entries and not pending:
-        return emit("stop", "Every phase in the plan is checked. Tell the user the plan is complete. " + FOLLOW_UP_HINT)
+        movedText = moved_phase_text(entries)
+        checkedText = f"checked or moved to another ticket ({movedText})" if movedText else "checked"
+        return emit("stop", f"Every phase in the plan is {checkedText}. Tell the user the plan is complete. "
+                    + FOLLOW_UP_HINT)
     else:
-        ungated = [e for e in pending if not e["gate"]]
-        if pending and not ungated:
-            return emit("stop", "Every open phase in the plan carries a gate clause, so none was started: "
-                        + gated_phase_text(pending) + ". The script does not judge a gate. Tell the user. To run one "
-                        "anyway, start it by id with `start --phase <id>`.")
-        entry = ungated[0] if pending else None
-        skipped = pending[:pending.index(entry)] if entry else []
-        if skipped:
-            print("Skipped the open phases with a gate clause: " + gated_phase_text(skipped)
-                  + ". `start --phase <id>` runs one anyway.")
+        gatedAhead, entry = gate_blockers(pending)
+        if gatedAhead:
+            return emit("stop", "No phase was started, and no coder was dispatched: "
+                        + gate_block_text(gatedAhead, entry) + " Tell the user.")
 
     number = entry["number"] if entry else None
     section = phase_text(planLines, number) if entry else "\n".join(planLines)
@@ -1285,6 +1319,25 @@ def first_plan_impact(messages):
     return None
 
 
+ALREADY_DONE_LINE = re.compile(r"^[ \t>*`_-]*ALREADY-DONE[*`_]*:[ \t]*(?:ask[ \t]*)?(\d+)[ \t]*(?:—|–|--?)[ \t]*(.*)$", re.M)
+
+
+def already_done_ask_numbers(repoRoot, report):
+    # The numbers of the asks the coder says need no edit. Each one counts only when its ALREADY-DONE line holds nothing
+    # but a file:line (a closing period, comma or semicolon aside) and that file exists in the repo.
+    numbers = set()
+    for match in ALREADY_DONE_LINE.finditer(report):
+        location = script_utils.PATH_LINE.fullmatch(match.group(2).strip().rstrip(".,;"))
+        if location and (repoRoot / script_utils.normalize_path(location.group(1))).is_file():
+            numbers.add(int(match.group(1)))
+    return numbers
+
+
+def every_accepted_ask_already_done(repoRoot, state, report):
+    acceptedAskNumbers = set(range(1, len(state["acceptedAsks"]) + 1))
+    return acceptedAskNumbers <= already_done_ask_numbers(repoRoot, report)
+
+
 def why_by_file(report):
     grouped = {}
     for match in re.finditer(r"^WHY:\s*`?(\S+?)`?(?::|\s+)(\d+-\d+)\s*[—-]+\s*(.+)$", report, re.M):
@@ -1375,6 +1428,14 @@ def asks_coder_changed_files(changedNow, asksBaseline):
     return sorted(name for name in names if changedNow.get(name) != asksBaseline.get(name))
 
 
+def finish_without_review(repoRoot, state, changedFiles, coderStage, sayText):
+    # No review has anything to cover: run the phase's verification commands and tick, as after a clean review.
+    state.update({"files": changedFiles, "coderStage": coderStage, "stage": "review"})
+    save_state(repoRoot, state)
+    say(repoRoot, sayText)
+    return finish_phase(repoRoot, state)
+
+
 def command_after_coder(repoRoot, state, args):
     if not wait_for_handback(repoRoot, state, "after-coder", longChecksFollow=state["stage"] == "asks-coder"):
         return
@@ -1432,7 +1493,16 @@ def command_after_coder(repoRoot, state, args):
     changedFiles = [name for name, digest in changedNow.items() if name not in baseline or baseline[name] != digest]
     changedFiles += [name for name in committed_since(repoRoot, state.get("baseHead")) if name not in changedFiles]
     asksCoderChangedNothing = isAskFix and changedNow == state.get("asksBaseline")
-    if not changedFiles or asksCoderChangedNothing or "/eng-spec" in report:
+    recommendsEngSpec = "/eng-spec" in report
+    reportRaisesBlocker = recommendsEngSpec or bool(first_plan_impact([report])) or bool(coder_flags(report))
+    everyAskAlreadyDone = asksCoderChangedNothing and every_accepted_ask_already_done(repoRoot, state, report)
+    if asksCoderChangedNothing and everyAskAlreadyDone and not reportRaisesBlocker:
+        # The user confirmed the asks and the coder named, for each one, the file:line that already does it: the review
+        # has converged. Any other report with no change (a failed edit, a blocked hook, a question) stops below.
+        return finish_without_review(repoRoot, state, changedFiles, coderStage,
+                                     "The asks coder changed nothing, and named where each confirmed ask is already in "
+                                     "the code. No review runs. The coder reported:\n" + report)
+    if not changedFiles or asksCoderChangedNothing or recommendsEngSpec:
         state["stage"] = "stopped"
         state["resumableCoderAt"] = time.time()
         state["resumableCoderId"] = latestRow.get("agent_id") or "unknown"
@@ -1457,11 +1527,8 @@ def command_after_coder(repoRoot, state, args):
         # existed keeps the whole-phase scope.
         changedFiles = asks_coder_changed_files(changedNow, asksBaseline)
         if all(name.lower().endswith(DOCS_SUFFIXES) for name in changedFiles):
-            state.update({"files": changedFiles, "coderStage": coderStage})
-            state["stage"] = "review"
-            save_state(repoRoot, state)
-            say(repoRoot, "The asks coder changed only docs files. No review runs on them.")
-            return finish_phase(repoRoot, state)
+            return finish_without_review(repoRoot, state, changedFiles, coderStage,
+                                         "The asks coder changed only docs files. No review runs on them.")
 
     behavior = behavior_lines(report)
     whyGroups = resolve_report_paths(why_by_file(report), changedFiles)
@@ -2314,23 +2381,36 @@ def ask_the_user(repoRoot, state, asks):
 
 
 def log_ask_outcomes(repoRoot, state, outcomes):
+    module, importError = load_handback()
+    if module is None:
+        print(f"code-step: ask outcomes not logged: {importError}", file=sys.stderr)
+        return
+
     branch = git_output(repoRoot, "branch", "--show-current") or "-"
     for item, outcome in zip(state["asks"], outcomes):
-        findingId = item.get("finding_id")
-        if not findingId:
-            # The outcome supersedes its ask row by finding_id. With none it would add a second finding.
-            print("code-step: ask outcome without finding_id, not logged", file=sys.stderr)
+        findingId = module.ask_finding_id(item)
+        if findingId is None:
+            # The outcome supersedes its ask row by finding_id. Only an id the ledger writer mints replaces a row:
+            # a placeholder such as "none" or a damaged id would add a second finding.
+            ignoredValue = item.get("finding_id")
+            ignoredText = "no finding_id" if ignoredValue is None else f"ignored {ignoredValue!r}"
+            print(f"code-step: ask outcome without a valid finding_id ({ignoredText}), not logged", file=sys.stderr)
             continue
+
         fileLine = item.get("file_line", "-:0")
         path, _, line = fileLine.partition(":")
         # The writer takes phase as a token, so a run with no phase sends none.
         phaseArgs = [f"phase={state['phase']}"] if state.get("phase") else []
-        run_command(["bash", str(CLAUDE_DIR / "skills/review/log-review-finding"), "kind=finding",
-                     f"finding_id={findingId}", f"branch={branch}", f"lane={state['lane']}", "scope=phase",
-                     *phaseArgs, f"iter={state['iter']}",
-                     f"gate={item.get('gate', 'code-reviewer')}",
-                     "disposition=ask", f"class={item.get('class', 'other')}", f"file={path}",
-                     f"line={re.sub(r'[^0-9].*', '', line) or '0'}", "actioned=ask", f"ask_outcome={outcome}"], repoRoot)
+        loggerCode, loggerOutput = run_command(
+            ["bash", str(CLAUDE_DIR / "skills/review/log-review-finding"), "kind=finding",
+             f"finding_id={findingId}", f"branch={branch}", f"lane={state['lane']}", "scope=phase",
+             *phaseArgs, f"iter={state['iter']}",
+             f"gate={item.get('gate', 'code-reviewer')}",
+             "disposition=ask", f"class={item.get('class', 'other')}", f"file={path}",
+             f"line={re.sub(r'[^0-9].*', '', line) or '0'}", "actioned=ask", f"ask_outcome={outcome}"], repoRoot)
+        if loggerCode != 0:
+            print(f"code-step: ask outcome for finding_id {findingId} not logged: log-review-finding exited "
+                  f"{loggerCode}: {script_utils.one_line(loggerOutput)}", file=sys.stderr)
 
 
 def asks_coder_prompt(acceptedAsks):
@@ -2342,7 +2422,9 @@ def asks_coder_prompt(acceptedAsks):
         if changeText:
             lines.append(f"   The user's change: {changeText}")
     lines += ["", "Run the typecheck, and lint and tests for only the files you changed, once, after all edits. "
-              "If an ask turns out architectural, report back and recommend /eng-spec."]
+              "If an ask turns out architectural, report back and recommend /eng-spec.",
+              "For each ask whose change the code already makes, so that it needs no edit, add one line to your report: "
+              "`ALREADY-DONE: <ask number> — <file:line>`. Add that line for no other ask."]
     return "\n".join(lines)
 
 
@@ -2432,6 +2514,8 @@ def command_tick(args):
     if entry is None:
         listed = ", ".join(e["number"] for e in plan["entries"]) or "none"
         return emit("stop", f"Phase {number} is not in the Phase Status of {state['plan']}. Listed phases: {listed}.")
+    if entry["moved"]:
+        return emit("stop", moved_phase_stop(entry, state["plan"]))
     if entry["done"]:
         return emit("stop", f"Phase {number} is already marked done in {state['plan']}.")
 
@@ -2517,17 +2601,18 @@ def run_verification_commands(repoRoot, phaseSection):
 
 def mark_phase_done(planPath, number):
     planLines = planPath.read_text().split("\n")
-    entry = next((e for e in parse_plan(planLines)["entries"] if e["number"] == number and not e["done"]), None)
+    entry = next((e for e in parse_plan(planLines)["entries"] if e["number"] == number and e["open"]), None)
     if entry:
         planLines[entry["line"]] = planLines[entry["line"]].replace("[ ]", "[x]", 1)
     planPath.write_text("\n".join(planLines))
 
 
 def boundary_decision(state, entries, number):
-    # A run started with --phase N ends after phase N, whatever other phases are still open. A phase with a gate clause
-    # is never the next phase of a run, so when only gated phases are open this is the last phase the run can do.
-    startableOthers = [e for e in entries if not e["done"] and not e["gate"] and e["number"] != number]
-    isLast = state.get("onlyPhase") == number or not startableOthers
+    # A run started with --phase N ends after phase N, whatever other phases are still open. A run never starts a phase
+    # past an open gated one, so when a gated phase comes first (or only gated phases are open) this is the last phase
+    # the run can do.
+    gatedAhead, nextUngated = gate_blockers([e for e in ordered_pending(entries) if e["number"] != number])
+    isLast = state.get("onlyPhase") == number or bool(gatedAhead) or nextUngated is None
     if isLast:
         return "C", "last phase"
     if number == "1":
@@ -2644,6 +2729,13 @@ def finish_phase(repoRoot, state, skipVerification=False):
         return emit("stop", plan_failure_message(plan, state["plan"]))
 
     number = state["phase"]
+    runningEntry = next((e for e in plan["entries"] if e["number"] == number), None)
+    if runningEntry and runningEntry["moved"]:
+        state["stage"] = "stopped"
+        state.pop("stopReason", None)
+        save_state(repoRoot, state)
+        return emit("stop", moved_phase_stop(runningEntry, state["plan"], coderRan=True))
+
     section = phase_text(planLines, number) if number is not None else "\n".join(planLines)
     section = section or ""
     verifyResults, skipped, unparsed = ([], [], [])
@@ -2687,12 +2779,10 @@ def finish_phase(repoRoot, state, skipVerification=False):
         reopened = [] if isClosing else reopen_closing_phases(planPath)
     entries = parse_plan(planPath.read_text().splitlines())["entries"]
     block, riskLabel = boundary_decision(state, entries, number)
-    nextPending = ordered_pending(entries)
-    startable = [e for e in nextPending if not e["gate"]]
-    nextNumber = startable[0]["number"] if startable else None
-    # The gated phases ahead of the next one are skipped by `start`; with nothing startable, every open phase is gated.
-    gatedAhead = nextPending[:nextPending.index(startable[0])] if startable else nextPending
-    gatedText = gated_phase_text(gatedAhead)
+    gatedAhead, nextUngated = gate_blockers(ordered_pending(entries))
+    nextNumber = nextUngated["number"] if nextUngated else None
+    gateBlockText = gate_block_text(gatedAhead, nextUngated) if gatedAhead else ""
+    movedText = moved_phase_text(entries)
     commitText, commitLine, commitFiles = phase_commit(repoRoot, state)
     state["stage"] = "done"
     state["autoAdvance"] = block == "A"
@@ -2720,12 +2810,12 @@ def finish_phase(repoRoot, state, skipVerification=False):
 
     if block == "A":
         nextStart = f"{INSTALLED_COMMAND} start" + (f" {state['modifier']}" if state.get("modifier") else "")
-        say(repoRoot, block_a(number, riskLabel, manualGroups, nextNumber, gatedText))
+        say(repoRoot, block_a(number, riskLabel, manualGroups, nextNumber))
         commitStep = (f"First run this commit command as a Bash call: {commitLine}\nThen " if commitLine else "")
         emit("auto-advance", "The user sees block A at the end of the turn. "
              + f"{commitStep}in the same response run `{nextStart}` for Phase " + nextNumber + ".")
         return
-    blockText = block_b_or_c(block, number, riskLabel, state, manualGroups, nextNumber, gatedText)
+    blockText = block_b_or_c(block, number, riskLabel, state, manualGroups, nextNumber, gateBlockText, movedText)
     say(repoRoot, blockText.replace("<<STAGE QUEUE>>", "(the /stage queue is printed above in this turn)"))
     emit("stop-block-" + block,
          "Invoke the Skill tool with `stage` and print its queue verbatim. The user sees the rest of the phase-complete "
@@ -2737,23 +2827,18 @@ def manual_item_line(item):
     return f"- [{'x' if item['checked'] else ' '}] {item['text']}"
 
 
-def skipped_gate_line(gatedText):
-    return f" Skipped, gate clause: {gatedText}. `start --phase <id>` runs one anyway." if gatedText else ""
-
-
-def block_a(number, riskLabel, manualGroups, nextNumber, gatedText=""):
+def block_a(number, riskLabel, manualGroups, nextNumber):
     verifiedCount, notRunCount, humanCount = (len(manualGroups[name]) for name in ("verified", "notRun", "humanOnly"))
     return (f"Phase {number} complete - machine gates green (review ✓, execution ✓, automated-verification ✓). "
             f"Risk: low. Manual verification: {verifiedCount} verified, {notRunCount} agent-run items not yet run "
             f"(/verify-branch runs them at the end of the branch), {humanCount} human-only deferred to the "
-            f"/verify-branch packet.\n-> Auto-advancing to Phase {nextNumber} in-session (no /clear; interrupt anytime)."
-            + skipped_gate_line(gatedText))
+            f"/verify-branch packet.\n-> Auto-advancing to Phase {nextNumber} in-session (no /clear; interrupt anytime).")
 
 
-def block_b_or_c(block, number, riskLabel, state, manualGroups, nextNumber, gatedText=""):
+def block_b_or_c(block, number, riskLabel, state, manualGroups, nextNumber, gateBlockText="", movedText=""):
     behavior = state.get("behavior") or []
     lastText = f"Phase {number} complete (last phase)." if number is not None else "The plan is complete."
-    if number is not None and gatedText:
+    if number is not None and gateBlockText:
         # Open gated phases mean the plan is not complete, so this phase is not the last one.
         lastText = f"Phase {number} complete."
     isOnlyPhase = number is not None and state.get("onlyPhase") == number
@@ -2783,14 +2868,14 @@ def block_b_or_c(block, number, riskLabel, state, manualGroups, nextNumber, gate
         parts += ["Next:", f"  1. {step1}",
                   f"  2. Stage what you've read, then run /clear and /code to start Phase {nextNumber} fresh. "
                   "To keep this context, confirm here.", "", "Or give feedback now for revisions to Phase " + number + "."]
-        if gatedText:
-            parts += [skipped_gate_line(gatedText).strip()]
     elif isOnlyPhase:
         parts += ["This run was started for this phase only. Other phases may be open; run `start` when the user "
                   "asks for the next one."]
-    elif gatedText:
-        parts += ["No phase starts on its own: every open phase carries a gate clause and the script does not judge a "
-                  f"gate: {gatedText}. Tell the user. `start --phase <id>` runs one anyway. The plan is not complete."]
+    elif gateBlockText:
+        parts += [f"No phase starts on its own: {gateBlockText} Tell the user. The plan is not complete."]
+    elif movedText:
+        parts += [f"All other phases are complete or moved to another ticket ({movedText}). Next: /verify-branch "
+                  "(completeness + review packet; includes the remaining human-only checks), then you open the PR."]
     else:
         parts += ["All phases complete. Next: /verify-branch (completeness + review packet; includes the remaining "
                   "human-only checks), then you open the PR."]

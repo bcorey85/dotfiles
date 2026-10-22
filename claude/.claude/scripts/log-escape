@@ -65,8 +65,8 @@
 #     guard=type|convention|gotcha|rule|check|none|n-a   (REQUIRED — the ratchet
 #       rung applied so this class of defect cannot recur; see
 #       ~/.claude/skills/_shared/escape-ratchet.md. `check` is the plan-stage
-#       rung: a command added to the spec finalization sweep, or to
-#       spec-criteria-lint.sh. `none` = considered and rejected. `n-a` = this row
+#       rung: a command added to the spec finalization sweep. `none` =
+#       considered and rejected. `n-a` = this row
 #       is not review-flywheel data, i.e. a REVIEW_ESCAPES_FILE override log.)
 #     desc="one line"
 #     file=path

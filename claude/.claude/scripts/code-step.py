@@ -19,12 +19,18 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
   code-step.py review-again                     dispatch the review loop again on the same diff, after its packet did not parse
   code-step.py tick <phase id>                  mark a phase done that the user finished outside /code
   code-step.py hook                             PreToolUse hook on SubagentHandback: save coder and review-loop messages
+  code-step.py log-hook                         PostToolUse hook on Agent|SubagentHandback|SendMessage: log launch,
+                                                hand-back and resume events of the run
+  code-step.py dispatch-hook                    PreToolUse hook on Agent: deny a coder or review-loop launch whose
+                                                prompt lacks the saved dispatch prompt, or a repeat launch of a coder
   code-step.py stop-hook                        SubagentStop hook: keep the /code fork from stopping while a dispatch is open
   code-step.py plan-hook                        PostToolUse hook on Edit|Write: reject a plan edit that does not parse
   code-step.py status                           print the saved state
 
 One coder runs per phase. The current skill's two parallel coders for deliverables that share no file are dropped by design.
-Run from the repo root. State lives in <git dir>/code-step/. Env CODE_STEP_CLAUDE_DIR overrides ~/.claude."""
+Run from the repo root. State lives in <git dir>/code-step/. Env CODE_STEP_CLAUDE_DIR overrides ~/.claude.
+Each run also keeps <git dir>/code-step/runs/<run id>/events.jsonl and one prompt-<dispatch id>.txt per dispatch."""
+import collections
 import datetime
 import json
 import os
@@ -45,6 +51,11 @@ CLAUDE_DIR = pathlib.Path(os.environ.get("CODE_STEP_CLAUDE_DIR", pathlib.Path.ho
 SCRIPTS_DIR = CLAUDE_DIR / "scripts"
 SELF_COMMAND = "python3 " + str(pathlib.Path(__file__).resolve())
 INSTALLED_COMMAND = "python3 ~/.claude/scripts/code-step.py"
+EVENT_VERSION = 1
+RUNS_DIR_NAME = "runs"
+DISPATCH_MARKER = "code-step-dispatch:"
+DISPATCH_MARKER_PATTERN = re.compile(re.escape(DISPATCH_MARKER) + r"\s+([^\s/]+)/(d\d+)\b")
+PROMPT_DENIAL_LIMIT = 3
 PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
 DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
 CLOSING_TITLE_END = r"\b(?!\s*\w)"
@@ -175,6 +186,73 @@ def save_state(cwd, state):
     (directory / "state.json").write_text(json.dumps(state, indent=1))
 
 
+# ---------- event log ----------
+
+def runs_dir(cwd):
+    return state_dir(cwd) / RUNS_DIR_NAME
+
+
+def start_run(cwd):
+    # A new run: the logs and prompt files of older runs go, and the new run's id comes back. The run's folder is made
+    # by its first write.
+    shutil.rmtree(runs_dir(cwd), ignore_errors=True)
+    return script_utils.sortable_unique_id()
+
+
+def run_events_path(cwd, runId):
+    return runs_dir(cwd) / runId / "events.jsonl"
+
+
+def log_event(cwd, runId, event, sessionId, **fields):
+    row = {"v": EVENT_VERSION, "ts": time.time(), "event": event, "session_id": sessionId, **fields}
+    script_utils.append_jsonl(run_events_path(cwd, runId), row)
+
+
+def read_events(cwd, runId):
+    return script_utils.read_jsonl(run_events_path(cwd, runId))
+
+
+def dispatch_marker(promptText):
+    # (run id, dispatch id) of the last marker in the prompt of an Agent call, or None. The marker counts wherever it
+    # stands: on its own line, after other text on a folded line, or with text after it.
+    found = DISPATCH_MARKER_PATTERN.findall(str(promptText or ""))
+    return found[-1] if found else None
+
+
+def dispatch_standing(events):
+    # What the log says of the newest dispatch: the launch that names it (the first one) and the denials of Agent calls
+    # for it. Hand-backs, stops and the open or closed reading are not read from the log yet.
+    dispatches = [event for event in events if event.get("event") == "dispatch"]
+    if not dispatches:
+        return {"dispatch": None, "launched": None, "blocks": []}
+    current = dispatches[-1]
+    ofCurrent = [event for event in events if event.get("dispatch") == current["id"]]
+    launches = [event for event in ofCurrent if event.get("event") == "launch"]
+    blocks = [event for event in ofCurrent if event.get("event") == "fork-block"]
+    return {"dispatch": current, "launched": launches[0] if launches else None, "blocks": blocks}
+
+
+def record_dispatch(repoRoot, state, verb, agentType, model, prompt):
+    # Saves the dispatch prompt in the run's folder, ending with the marker line that the launch hook reads back, and
+    # logs the dispatch. Returns the prompt with its marker and the path of the saved file.
+    runId = state["runId"]
+    dispatchCount = sum(1 for event in read_events(repoRoot, runId) if event.get("event") == "dispatch")
+    dispatchId = f"d{dispatchCount + 1}"
+    markedPrompt = f"{own_path(prompt).rstrip()}\n\n{DISPATCH_MARKER} {runId}/{dispatchId}"
+    promptFile = runs_dir(repoRoot) / runId / f"prompt-{dispatchId}.txt"
+    promptFile.parent.mkdir(parents=True, exist_ok=True)
+    promptFile.write_text(markedPrompt + "\n")
+    log_event(repoRoot, runId, "dispatch", session_pin(), id=dispatchId, agent_type=agentType, stage=state["stage"],
+              verb=verb, model=model, prompt_file=str(promptFile))
+    return markedPrompt, promptFile
+
+
+def emit_dispatch(repoRoot, state, verb, *lines, prompt, agent, model=None):
+    # The one way a dispatch reaches the fork: logged and saved first, then printed with the path of the saved prompt.
+    markedPrompt, promptFile = record_dispatch(repoRoot, state, verb, agent, model, prompt)
+    emit("dispatch", *lines, next_after(verb), prompt=markedPrompt, agent=agent, model=model, promptFile=promptFile)
+
+
 def saved_messages(cwd, agentType, stage, skipRows=0):
     # The last message per agent id of this type saved while the state was in this stage, ignoring the first
     # skipRows rows of the file.
@@ -301,6 +379,8 @@ def abandon_open_dispatch(repoRoot, previous):
 def open_dispatch(state):
     # A dispatch is open from here until the dispatched agent's hand-back row is newer than dispatchAt.
     state["dispatchAt"] = time.time()
+    if not state.get("runId"):
+        state["runId"] = script_utils.sortable_unique_id()
     state.pop("forkDenied", None)
     state.pop("forkStopBlocks", None)
 
@@ -544,7 +624,7 @@ def ask_user(repoRoot, instruction, *questionLines):
     emit("ask-user", "The question for the user is in say.md. Hand back.")
 
 
-def emit(action, *lines, prompt=None, agent=None, model=None):
+def emit(action, *lines, prompt=None, agent=None, model=None, promptFile=None):
     lines = [own_path(line) for line in lines]
     print(f"ACTION: {action}")
     if agent:
@@ -554,6 +634,8 @@ def emit(action, *lines, prompt=None, agent=None, model=None):
               "result; the NEXT verb waits for the report.")
     for line in lines:
         print(line)
+    if promptFile is not None:
+        print(f"PROMPT FILE: {promptFile}")
     if prompt is not None:
         print("PROMPT (pass it verbatim, add and remove nothing):")
         print("-----BEGIN PROMPT-----")
@@ -1068,6 +1150,7 @@ def command_start(args):
 
     reportsFile = state_dir(repoRoot) / "reports.jsonl"
     reportsFile.unlink(missing_ok=True)
+    runId = start_run(repoRoot)
 
     statePhase = number if hasPhases and entry else None
     isSameUnfinishedPhase = (previous.get("plan") == planRel and previous.get("phase") == statePhase
@@ -1082,26 +1165,26 @@ def command_start(args):
              "modifier": modifier, "risk": entry["risk"] if entry else "high", "title": entry["title"] if entry else "",
              "gateCommands": commands, "baseline": baseline, "baseHead": baseHead, "startedAt": time.time(),
              "phaseText": section if entry and hasPhases else None, "onlyPhase": phaseId,
-             "sessionId": session_pin()}
+             "sessionId": session_pin(), "runId": runId}
     open_dispatch(state)
     save_state(repoRoot, state)
     model = "haiku" if modifier == "+fast" else None
-    emit("dispatch", gateNote, next_after("after-coder"), prompt=prompt, agent="coder", model=model)
+    emit_dispatch(repoRoot, state, "after-coder", gateNote, prompt=prompt, agent="coder", model=model)
 
 
 def start_planless(repoRoot, modifier, taskText, branch="-"):
-    state = {"stage": "coder", "plan": None, "lane": "code", "phase": None, "branch": branch, "modifier": modifier,
-             "risk": "high", "title": "", "gateCommands": [], "baseline": file_hashes(repoRoot),
-             "startedAt": time.time(), "sessionId": session_pin()}
-    open_dispatch(state)
     directory = state_dir(repoRoot)
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "reports.jsonl").unlink(missing_ok=True)
+    state = {"stage": "coder", "plan": None, "lane": "code", "phase": None, "branch": branch, "modifier": modifier,
+             "risk": "high", "title": "", "gateCommands": [], "baseline": file_hashes(repoRoot),
+             "startedAt": time.time(), "sessionId": session_pin(), "runId": start_run(repoRoot)}
+    open_dispatch(state)
     save_state(repoRoot, state)
     prompt = (f"Implement: {taskText}\nRun the typecheck, and lint and tests for only the files you changed, once, "
               "after all edits. If the task turns out architectural, report back and recommend /eng-spec.")
     model = "haiku" if modifier == "+fast" else None
-    emit("dispatch", next_after("after-coder"), prompt=prompt, agent="coder", model=model)
+    emit_dispatch(repoRoot, state, "after-coder", prompt=prompt, agent="coder", model=model)
 
 
 def start_closing_phase(repoRoot, planRel, lane, modifier, entry, skill, section, branch, onlyPhase=None):
@@ -1319,9 +1402,8 @@ def command_after_coder(repoRoot, state, args):
         prompt = (f"Phase {state['phase']} of `{state['plan']}` gained lines after the first coder was dispatched. "
                   "Implement only these added or changed lines. Do not redo the rest of the phase:\n\n"
                   + "\n".join(addendum["added"]))
-        return emit("dispatch", "The plan phase changed while the coder ran. Dispatch a coder for the added lines "
-                    "before the review.",
-                    next_after("after-coder"), prompt=prompt, agent="coder")
+        return emit_dispatch(repoRoot, state, "after-coder", "The plan phase changed while the coder ran. Dispatch a "
+                             "coder for the added lines before the review.", prompt=prompt, agent="coder")
     gate = None if isAskFix else gate_results(repoRoot)
     # Read before `clear` deletes the gate: with no gate every row counts, so a draft or a still-running coder's row
     # would read as a report.
@@ -1696,8 +1778,7 @@ def emit_plan_edit_dispatch(repoRoot, state):
         unchangedClause = " The acceptance criteria do not change." if criteriaRel else ""
         headline = (f"The plan change was adopted by {ruling['by']}. Dispatch a coder to rewrite the plan steps it "
                     f"contradicts.{unchangedClause}")
-    emit("dispatch", headline,
-         next_after("after-plan-edit"), prompt=prompt, agent="coder")
+    emit_dispatch(repoRoot, state, "after-plan-edit", headline, prompt=prompt, agent="coder")
 
 
 def command_review_again(repoRoot, state, args):
@@ -1897,7 +1978,7 @@ def emit_review_dispatch(repoRoot, state):
         summary += [f"  {path}:{note['lines']} - {note['note']}" for note in notes]
     summary.append("Auto-dispatching review to check the implementation before committing.")
     say(repoRoot, "\n".join(summary))
-    emit("dispatch", next_after("after-review"), prompt=prompt, agent="review-loop", model="sonnet")
+    emit_dispatch(repoRoot, state, "after-review", prompt=prompt, agent="review-loop", model="sonnet")
 
 
 # ---------- hook ----------
@@ -1934,8 +2015,124 @@ def deny_early_fork_handback(cwd, state):
     reason = (f"A dispatched agent has not handed back yet. Do not hand back. Run `{own_path(INSTALLED_COMMAND)} "
               f"{open_dispatch_verb(state)}` with Bash timeout {BASH_TIMEOUT_MS}: it waits for the hand-back and "
               "prints the next action.")
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                             "permissionDecisionReason": reason}}))
+    script_utils.pre_tool_use_deny(reason)
+
+
+def tool_response_agent_id(toolResponse):
+    # The id in the tool_response of a nested Agent call that launched async, or None when the response holds none.
+    if not isinstance(toolResponse, dict):
+        return None
+    return toolResponse.get("agentId")
+
+
+HookCall = collections.namedtuple("HookCall", "event cwd state runId sessionId toolInput")
+
+
+def read_hook_call(requireRun=True):
+    # The setup every hook shares. Reads the event on stdin and returns it with the repo's state, the run id, the
+    # session and the tool call's input. Returns None when the event is not an object, the repo holds no state, the
+    # state is pinned to another session, or (requireRun) the state has no run.
+    event = json.load(sys.stdin)
+    if not isinstance(event, dict):
+        return None
+
+    cwd = event.get("cwd") or "."
+    state = load_state(cwd)
+    if not state:
+        return None
+
+    runId = state.get("runId")
+    if requireRun and not runId:
+        return None
+
+    sessionId = event.get("session_id")
+    if sessionId and state.get("sessionId") and sessionId != state["sessionId"]:
+        return None
+
+    toolInput = event.get("tool_input") if isinstance(event.get("tool_input"), dict) else {}
+    return HookCall(event, cwd, state, runId, sessionId, toolInput)
+
+
+def command_log_hook():
+    # PostToolUse on Agent, SubagentHandback and SendMessage: one event per call that went through. A hand-back that
+    # the PreToolUse gates denied never reaches PostToolUse, so it is never logged.
+    try:
+        call = read_hook_call()
+        if call is None or call.state.get("stage") == "done":
+            return
+
+        toolName = call.event.get("tool_name")
+        if toolName == "Agent":
+            marker = dispatch_marker(call.toolInput.get("prompt"))
+            if marker is None or marker[0] != call.runId:
+                return
+
+            agentId = tool_response_agent_id(call.event.get("tool_response"))
+            if agentId is None:
+                print("code-step log-hook: the Agent call's tool_response has no agentId; no launch logged",
+                      file=sys.stderr)
+                return
+
+            log_event(call.cwd, call.runId, "launch", call.sessionId, agent_id=agentId, dispatch=marker[1])
+        elif toolName == "SendMessage":
+            log_event(call.cwd, call.runId, "resume", call.sessionId, agent_id=call.toolInput.get("to"))
+        elif toolName == "SubagentHandback":
+            message = str(call.toolInput.get("message", ""))
+            log_event(call.cwd, call.runId, "handback", call.sessionId, agent_id=call.event.get("agent_id"),
+                      agent_type=call.event.get("agent_type"), message=message)
+    except Exception as error:
+        print(f"code-step log-hook: {error}", file=sys.stderr)
+
+
+def command_dispatch_hook():
+    # PreToolUse on Agent: while a coder or review-loop dispatch of the run is pending, the Agent call for that agent
+    # type must carry the whole saved dispatch prompt. A coder dispatch may not be launched twice: an Agent call that
+    # carries its marker after its launch is denied. A review-loop launch is never denied for a repeat, because the
+    # shared hand-back store records a review-loop dispatch even when this hook denies the call.
+    try:
+        call = read_hook_call()
+        if call is None or call.event.get("tool_name") != "Agent" or call.state.get("stage") not in HOOK_STAGES:
+            return
+
+        standing = dispatch_standing(read_events(call.cwd, call.runId))
+        dispatch = standing["dispatch"]
+        if dispatch is None or dispatch.get("stage") != call.state["stage"]:
+            return
+        if time.time() - dispatch["ts"] > SAY_MAX_AGE_SECONDS:
+            return
+        if call.toolInput.get("subagent_type") != dispatch.get("agent_type"):
+            return
+
+        if standing["launched"] is not None:
+            carriesMarker = dispatch_marker(call.toolInput.get("prompt")) == (call.runId, dispatch["id"])
+            if dispatch.get("agent_type") != CODER or not carriesMarker:
+                return
+
+            reason = (f"This dispatch was already launched (agent {standing['launched'].get('agent_id')}). Do not "
+                      f"dispatch it again. Run {own_path(timed_command(dispatch['verb']))}: it waits for the "
+                      "hand-back and prints the next action.")
+            log_event(call.cwd, call.runId, "fork-block", call.sessionId, dispatch=dispatch["id"], kind="relaunch")
+            script_utils.pre_tool_use_deny(reason)
+            return
+
+        promptFile = dispatch.get("prompt_file") or ""
+        try:
+            savedPrompt = pathlib.Path(promptFile).read_text()
+        except OSError:
+            return
+        if script_utils.contains_ignoring_whitespace(call.toolInput.get("prompt"), savedPrompt):
+            return
+
+        reason = (f"The prompt of this Agent call is not the dispatch prompt. Read {promptFile} and pass its whole "
+                  "text.")
+        denials = sum(1 for block in standing["blocks"] if block.get("kind") == "prompt-deny")
+        if denials >= PROMPT_DENIAL_LIMIT:
+            reason = (f"This Agent call was denied {denials} times. Stop. Do not dispatch again and do not run another "
+                      f"verb. Tell the user the dispatch prompt in {promptFile} could not be passed.")
+        log_event(call.cwd, call.runId, "fork-block", call.sessionId, dispatch=dispatch["id"], kind="prompt-deny")
+        script_utils.pre_tool_use_deny(reason)
+    except Exception as error:
+        print(f"code-step dispatch-hook: {error}", file=sys.stderr)
 
 
 def command_stop_hook():
@@ -1962,22 +2159,23 @@ def command_stop_hook():
 
 def command_hook():
     try:
-        event = json.load(sys.stdin)
+        call = read_hook_call(requireRun=False)
+        if call is None:
+            return
+
+        event, cwd, state, sessionId = call.event, call.cwd, call.state, call.sessionId
         agentType = event.get("agent_type")
         if agentType not in ("coder", "review-loop", FORK_AGENT_TYPE):
             return
-        cwd = event.get("cwd") or "."
-        state = load_state(cwd)
-        isResumedCoder = (state is not None and state["stage"] == "stopped" and agentType == CODER
+
+        isResumedCoder = (state["stage"] == "stopped" and agentType == CODER
                           and state.get("resumableCoderAt") is not None
                           and state.get("resumableCoderId") == (event.get("agent_id") or "unknown"))
-        isResumedReview = state is not None and agentType == REVIEW_LOOP and awaits_resumed_review(state)
-        if state is None or (state["stage"] not in HOOK_STAGES and not isResumedCoder and not isResumedReview):
+        isResumedReview = agentType == REVIEW_LOOP and awaits_resumed_review(state)
+        if state["stage"] not in HOOK_STAGES and not isResumedCoder and not isResumedReview:
             return
-        sessionId = event.get("session_id")
+
         pinnedSession = state.get("sessionId")
-        if sessionId and pinnedSession and sessionId != pinnedSession:
-            return
         if isResumedCoder:
             put_resumed_coder_back(cwd, state)
         if isResumedReview:
@@ -1992,7 +2190,7 @@ def command_hook():
             state["sessionId"] = sessionId
             save_state(cwd, state)
         row = {"ts": time.time(), "agent_type": agentType, "agent_id": event.get("agent_id") or "unknown",
-               "stage": state["stage"], "message": str((event.get("tool_input") or {}).get("message", ""))}
+               "stage": state["stage"], "message": str(call.toolInput.get("message", ""))}
         with (state_dir(cwd) / "reports.jsonl").open("a") as reportsFile:
             reportsFile.write(json.dumps(row) + "\n")
     except Exception as error:
@@ -2157,9 +2355,9 @@ def apply_asks_or_finish(repoRoot, state, outcomes, changeTexts):
     open_dispatch(state)
     save_state(repoRoot, state)
     model = "haiku" if state.get("modifier") == "+fast" else None
-    emit("dispatch", "The user accepted review asks. Dispatch a coder to apply them. A review of that coder's "
-         "diff runs after it (none when the diff is docs only) before the phase can finish.",
-         next_after("after-coder"), prompt=asks_coder_prompt(acceptedAsks), agent="coder", model=model)
+    emit_dispatch(repoRoot, state, "after-coder", "The user accepted review asks. Dispatch a coder to apply them. A "
+                  "review of that coder's diff runs after it (none when the diff is docs only) before the phase can "
+                  "finish.", prompt=asks_coder_prompt(acceptedAsks), agent="coder", model=model)
 
 
 def split_asks_done_args(args):
@@ -2623,6 +2821,10 @@ def main():
     resumeVerbs = ("decide", "asks-done", "verify", "review-again")
     if verb == "hook":
         return command_hook()
+    if verb == "log-hook":
+        return command_log_hook()
+    if verb == "dispatch-hook":
+        return command_dispatch_hook()
     if verb == "plan-hook":
         return command_plan_hook()
     if verb == "stop-hook":
@@ -2638,7 +2840,7 @@ def main():
             return print(error)
     if verb not in verbs:
         sys.exit("usage: code-step.py start|after-coder|decide|after-plan-edit|after-review|asks-done|skill-done|verify"
-                 "|review-again|tick|hook|stop-hook|say-hook|status|plan|plan-hook")
+                 "|review-again|tick|hook|log-hook|dispatch-hook|stop-hook|say-hook|status|plan|plan-hook")
     if verb in resumeVerbs:
         clear_say(repo_root())
     try:

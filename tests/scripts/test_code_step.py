@@ -175,13 +175,16 @@ class CodeStepTest(unittest.TestCase):
     def start_phase_one(self, *extra):
         return self.step("start", self.plan, *extra)
 
-    def begin_coder(self, source="export const o = 1\n"):
-        self.start_phase_one()
+    def pass_coder_gate(self):
         gatePath = self.repo / ".git/coder-gate.json"
         if gatePath.exists():
             gate = json.loads(gatePath.read_text())
             gate["coders"]["a1"] = {"runs": 1, "denies": 0, "failed": [], "skipped": [], "result": "pass"}
             gatePath.write_text(json.dumps(gate))
+
+    def begin_coder(self, source="export const o = 1\n"):
+        self.start_phase_one()
+        self.pass_coder_gate()
         (self.repo / "backend/src/orders.ts").write_text(source)
 
     def coder_round(self, report=None, source="export const o = 1\n"):
@@ -341,6 +344,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("AGENT: coder", out)
         self.assertNotIn("AGENT: review-loop", out)
         self.assertEqual("plan-coder", self.state()["stage"])
+        self.assert_dispatch_logged(out, "d2", "coder", "plan-coder", "after-plan-edit")
         (self.repo / self.plan).write_text(self.plan_text() + "\nadopted step\n")
         out = self.step("after-plan-edit")
         self.assertIn("AGENT: review-loop", out)
@@ -1108,6 +1112,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("marked done", out)
         self.assertIn("- [ ] Phase 1:", self.plan_text())
         self.assertEqual("asks-coder", self.state()["stage"])
+        self.assert_dispatch_logged(out, "d3", "coder", "asks-coder", "after-coder")
         (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
         self.hook("coder", "BEHAVIOR: applied the ask")
         out = self.step("after-coder")
@@ -1464,6 +1469,7 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("after-coder")
         self.assertIn("AGENT: coder", out)
         self.assertIn("Add a CSV export.", out)
+        self.assert_dispatch_logged(out, "d2", "coder", "coder", "after-coder")
         self.hook("coder", "BEHAVIOR: csv export\nREVIEW: recommended", agentId="a2")
         self.assertNotIn("Add a CSV export.", self.step("after-coder"))
 
@@ -3310,6 +3316,423 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("after-coder")
         self.assertIn("ACTION: ask-user", out)
         self.assertNotIn("stoppedCoderReport", self.state())
+
+    # ---------- the event log: dispatch events, prompt files, the log hook and the dispatch hook ----------
+
+    HOOK_FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
+
+    def run_events(self):
+        eventsFile = self.repo / ".git/code-step/runs" / self.state()["runId"] / "events.jsonl"
+        return [json.loads(line) for line in eventsFile.read_text().splitlines()] if eventsFile.exists() else []
+
+    def events_named(self, eventName):
+        return [event for event in self.run_events() if event["event"] == eventName]
+
+    def printed_prompt(self, out):
+        return out.split("-----BEGIN PROMPT-----\n", 1)[1].split("\n-----END PROMPT-----", 1)[0]
+
+    def hook_fixture(self, name):
+        # One event of its kind as the tool call and its result were recorded in a transcript: the tool_name, the
+        # tool_input and the tool_response, with the prompt and message text cut to a placeholder.
+        fixtureFile = self.HOOK_FIXTURES / f"hook_event_{name}.json"
+        return json.loads(fixtureFile.read_text())
+
+    def log_hook(self, toolName, toolInput, toolResponse=None, **extra):
+        event = {"tool_name": toolName, "tool_input": toolInput, "cwd": str(self.repo), "session_id": self.SESSION,
+                 **extra}
+        if toolResponse is not None:
+            event["tool_response"] = toolResponse
+        return run(self.repo, self.env, "log-hook", stdin=json.dumps(event))
+
+    def log_fixture(self, name, toolInput=None, toolResponse=None, **extra):
+        # Feeds the log hook the recorded event of this kind, with the given fields laid over the recorded ones.
+        fixture = self.hook_fixture(name)
+        fixture["tool_input"].update(toolInput or {})
+        fixture["tool_response"].update(toolResponse or {})
+        return self.log_hook(fixture["tool_name"], fixture["tool_input"], fixture["tool_response"], **extra)
+
+    def launch_agent(self, prompt, agentId="a1", subagentType="coder"):
+        return self.log_fixture("agent_launch", {"subagent_type": subagentType, "prompt": prompt},
+                                {"agentId": agentId})
+
+    def send_message(self, to, **extra):
+        return self.log_fixture("send_message", {"to": to, "recipient": to}, **extra)
+
+    def hand_back(self, message, agentType, agentId):
+        return self.log_fixture("subagent_handback", {"message": message}, agent_type=agentType, agent_id=agentId)
+
+    def dispatch_hook(self, prompt, subagentType="coder", session=SESSION):
+        event = {"tool_name": "Agent", "tool_input": {"subagent_type": subagentType, "prompt": prompt},
+                 "cwd": str(self.repo)}
+        if session:
+            event["session_id"] = session
+        return run(self.repo, self.env, "dispatch-hook", stdin=json.dumps(event)).stdout
+
+    def denial_reason(self, hookOutput):
+        return json.loads(hookOutput)["hookSpecificOutput"]["permissionDecisionReason"]
+
+    def assert_dispatch_logged(self, out, dispatchId, agentType, stage, verb):
+        # The printed dispatch is the logged one: same agent, stage and verb, the saved prompt file named, and the
+        # prompt ending with the marker line of its id.
+        dispatch = next((event for event in self.events_named("dispatch") if event["id"] == dispatchId), None)
+        self.assertIsNotNone(dispatch, f"no dispatch event {dispatchId}")
+        self.assertEqual((agentType, stage, verb), (dispatch["agent_type"], dispatch["stage"], dispatch["verb"]))
+        self.assertIn(f"PROMPT FILE: {dispatch['prompt_file']}\n", out)
+        printedLines = self.printed_prompt(out).splitlines()
+        self.assertEqual(f"code-step-dispatch: {self.state()['runId']}/{dispatchId}", printedLines[-1])
+
+    def test_dispatch_event_writes_prompt_file(self):
+        out = self.start_phase_one()
+
+        runId = self.state()["runId"]
+        dispatches = self.events_named("dispatch")
+        self.assertEqual(1, len(dispatches))
+        dispatch = dispatches[0]
+        dispatchKeys = {"v", "ts", "event", "session_id", "id", "agent_type", "stage", "verb", "model", "prompt_file"}
+        self.assertEqual(dispatchKeys, set(dispatch))
+        self.assertEqual((1, "d1", self.SESSION), (dispatch["v"], dispatch["id"], dispatch["session_id"]))
+        self.assertEqual(("coder", "coder", "after-coder", None),
+                         (dispatch["agent_type"], dispatch["stage"], dispatch["verb"], dispatch["model"]))
+        promptFile = self.repo / ".git/code-step/runs" / runId / "prompt-d1.txt"
+        self.assertEqual(str(promptFile), dispatch["prompt_file"])
+        self.assertIn(f"PROMPT FILE: {promptFile}\n", out)
+        savedPrompt = promptFile.read_text()
+        self.assertIn("Implement Phase 1 of `docs/plans/orders/spec.md`", savedPrompt)
+        self.assertIn("Packet for Phase 1", savedPrompt)
+        self.assertEqual(f"code-step-dispatch: {runId}/d1", savedPrompt.rstrip().splitlines()[-1])
+        self.assertEqual(savedPrompt.rstrip(), self.printed_prompt(out))
+
+    def test_every_dispatch_kind_logs_an_event_with_its_agent_verb_and_model(self):
+        self.coder_round()
+
+        reviewDispatch = self.events_named("dispatch")[-1]
+        self.assertEqual(("d2", "review-loop", "review", "after-review", "sonnet"),
+                         (reviewDispatch["id"], reviewDispatch["agent_type"], reviewDispatch["stage"],
+                          reviewDispatch["verb"], reviewDispatch["model"]))
+        reviewPrompt = pathlib.Path(reviewDispatch["prompt_file"]).read_text()
+        self.assertIn("mode: review-first", reviewPrompt)
+        self.assertEqual(f"code-step-dispatch: {self.state()['runId']}/d2", reviewPrompt.rstrip().splitlines()[-1])
+
+    def test_planless_start_logs_its_dispatch_and_saves_its_prompt(self):
+        out = self.step("start", "+fast", "--task", "fix the typo")
+
+        dispatch = self.events_named("dispatch")[0]
+        self.assertEqual(("d1", "coder", "haiku"), (dispatch["id"], dispatch["agent_type"], dispatch["model"]))
+        self.assertIn(f"PROMPT FILE: {dispatch['prompt_file']}", out)
+        self.assertIn("Implement: fix the typo", pathlib.Path(dispatch["prompt_file"]).read_text())
+
+    def test_a_new_start_deletes_the_older_run_folders(self):
+        self.start_phase_one()
+        firstRun = self.state()["runId"]
+
+        self.start_phase_one()
+
+        runFolders = [folder.name for folder in (self.repo / ".git/code-step/runs").iterdir()]
+        self.assertNotEqual(firstRun, self.state()["runId"])
+        self.assertEqual([self.state()["runId"]], runFolders)
+
+    def test_launch_binds_marker(self):
+        out = self.start_phase_one()
+        runId = self.state()["runId"]
+
+        self.launch_agent(self.printed_prompt(out), agentId="agent-7")
+
+        launches = self.events_named("launch")
+        self.assertEqual(1, len(launches))
+        self.assertEqual((1, "launch", self.SESSION, "agent-7", "d1"),
+                         (launches[0]["v"], launches[0]["event"], launches[0]["session_id"], launches[0]["agent_id"],
+                          launches[0]["dispatch"]))
+        self.launch_agent("An Agent call with no marker line", agentId="agent-8")
+        self.launch_agent(f"text\ncode-step-dispatch: {runId}-old/d1", agentId="agent-9")
+        launches = self.events_named("launch")
+        self.assertEqual(["agent-7"], [launch["agent_id"] for launch in launches])
+
+    def test_launch_binds_a_marker_that_is_folded_into_one_line_or_followed_by_text(self):
+        out = self.start_phase_one()
+        wholePrompt = self.printed_prompt(out)
+        oneLinePrompt = " ".join(wholePrompt.split())
+        promptWithTrailingText = wholePrompt + " Thank you."
+
+        self.assertEqual("", self.dispatch_hook(oneLinePrompt))
+        self.assertEqual("", self.dispatch_hook(promptWithTrailingText))
+        self.launch_agent(oneLinePrompt, agentId="agent-1")
+        self.launch_agent(promptWithTrailingText, agentId="agent-2")
+
+        launches = self.events_named("launch")
+        self.assertEqual([("agent-1", "d1"), ("agent-2", "d1")],
+                         [(launch["agent_id"], launch["dispatch"]) for launch in launches])
+
+    def test_launch_without_an_agent_id_in_the_tool_response_logs_nothing_and_names_the_field(self):
+        out = self.start_phase_one()
+        launch = self.hook_fixture("agent_launch")
+        launch["tool_input"]["prompt"] = self.printed_prompt(out)
+        del launch["tool_response"]["agentId"]
+
+        result = self.log_hook("Agent", launch["tool_input"], launch["tool_response"])
+
+        self.assertEqual([], self.events_named("launch"))
+        self.assertEqual("", result.stdout)
+        stderrLines = result.stderr.splitlines()
+        self.assertEqual(1, len(stderrLines))
+        self.assertIn("agentId", result.stderr)
+
+    def test_sendmessage_writes_resume(self):
+        self.start_phase_one()
+
+        self.send_message("agent-7")
+
+        resumes = self.events_named("resume")
+        self.assertEqual([("agent-7", self.SESSION)],
+                         [(resume["agent_id"], resume["session_id"]) for resume in resumes])
+
+    def test_denied_handback_not_logged(self):
+        self.start_phase_one()
+        message = "BEHAVIOR: orders exist\nREVIEW: recommended"
+
+        # The PreToolUse hook sees every hand-back call, also one that the hand-back gate denies. Only a call that went
+        # through reaches PostToolUse.
+        self.hook("coder", message, agentId="a7")
+        self.assertEqual([], self.events_named("handback"))
+        self.hand_back(message, "coder", "a7")
+
+        handbacks = self.events_named("handback")
+        self.assertEqual([("a7", "coder", message)],
+                         [(handback["agent_id"], handback["agent_type"], handback["message"])
+                          for handback in handbacks])
+
+    def test_a_state_without_a_run_id_gets_one_at_its_next_dispatch_and_the_hooks_leave_it_alone(self):
+        self.start_phase_one()
+        oldRunId = self.state()["runId"]
+        oldEvents = self.run_events()
+        statePath = self.repo / ".git/code-step/state.json"
+        legacyState = json.loads(statePath.read_text())
+        legacyState["runId"] = None
+        statePath.write_text(json.dumps(legacyState))
+        agentCall = {"tool_name": "Agent", "cwd": str(self.repo), "session_id": self.SESSION,
+                     "tool_input": {"subagent_type": "coder", "prompt": "thin"}}
+
+        launchResult = self.launch_agent(f"code-step-dispatch: {oldRunId}/d1", agentId="agent-7")
+        resumeResult = self.send_message("agent-7")
+        denyResult = run(self.repo, self.env, "dispatch-hook", stdin=json.dumps(agentCall))
+
+        for result in (launchResult, resumeResult, denyResult):
+            self.assertEqual(("", ""), (result.stdout, result.stderr))
+        eventsFile = self.repo / ".git/code-step/runs" / oldRunId / "events.jsonl"
+        self.assertEqual(oldEvents, [json.loads(line) for line in eventsFile.read_text().splitlines()])
+
+        self.pass_coder_gate()
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+        out = self.step("after-coder")
+
+        self.assertIn("AGENT: review-loop", out)
+        newRunId = self.state()["runId"]
+        self.assertTrue(newRunId)
+        self.assertNotEqual(oldRunId, newRunId)
+        dispatches = self.events_named("dispatch")
+        self.assertEqual(["d1"], [dispatch["id"] for dispatch in dispatches])
+        self.assert_dispatch_logged(out, "d1", "review-loop", "review", "after-review")
+
+    def test_log_hook_writes_nothing_for_another_session_or_a_finished_run(self):
+        out = self.start_phase_one()
+        wholePrompt = self.printed_prompt(out)
+
+        self.send_message("agent-7", session_id="sess-other")
+        self.assertEqual([], self.events_named("resume"))
+        self.send_message("agent-7")
+        resumes = self.events_named("resume")
+        self.assertEqual(1, len(resumes))
+
+        self.finish_phase_one()
+        eventCount = len(self.run_events())
+        self.assertEqual("done", self.state()["stage"])
+        self.send_message("agent-7")
+        self.launch_agent(wholePrompt, agentId="agent-8")
+
+        eventsAfterDone = self.run_events()
+        self.assertEqual(eventCount, len(eventsAfterDone))
+
+    def test_dispatch_hook_denies_missing_packet(self):
+        out = self.start_phase_one()
+        wholePrompt = self.printed_prompt(out)
+        promptFile = self.events_named("dispatch")[0]["prompt_file"]
+        thinPrompt = "Implement Phase 1 of `docs/plans/orders/spec.md`. Read the plan phase-scoped."
+
+        reason = self.denial_reason(self.dispatch_hook(thinPrompt))
+
+        forkBlocks = self.events_named("fork-block")
+        self.assertIn(f"Read {promptFile} and pass its whole text.", reason)
+        self.assertEqual([("d1", "prompt-deny")], [(block["dispatch"], block["kind"]) for block in forkBlocks])
+        self.assertEqual("", self.dispatch_hook(wholePrompt))
+
+    def test_dispatch_hook_accepts_the_whole_prompt_with_changed_whitespace(self):
+        out = self.start_phase_one()
+        reflowed = "Task for you:\n\n   " + self.printed_prompt(out).replace("\n", "\n\n  ").replace(" ", "  ")
+
+        self.assertEqual("", self.dispatch_hook(reflowed))
+        self.assertEqual([], self.events_named("fork-block"))
+
+    def test_dispatch_hook_stops_the_fork_after_three_denials(self):
+        self.start_phase_one()
+        promptFile = self.events_named("dispatch")[0]["prompt_file"]
+
+        reasons = [self.denial_reason(self.dispatch_hook("thin")) for _ in range(4)]
+
+        for reason in reasons[:3]:
+            self.assertIn("pass its whole text", reason)
+        self.assertNotIn("pass its whole text", reasons[3])
+        self.assertIn("Stop.", reasons[3])
+        self.assertIn(promptFile, reasons[3])
+
+    def test_dispatch_hook_denies_a_second_launch_of_the_same_dispatch(self):
+        out = self.start_phase_one()
+        wholePrompt = self.printed_prompt(out)
+        self.assertEqual("", self.dispatch_hook(wholePrompt))
+        self.launch_agent(wholePrompt, agentId="agent-7")
+
+        reason = self.denial_reason(self.dispatch_hook(wholePrompt))
+
+        self.assertIn("already launched", reason)
+        self.assertIn("agent-7", reason)
+        self.assertIn(f"`{code_step.SELF_COMMAND} after-coder` as a Bash call with timeout", reason)
+        forkBlocks = self.events_named("fork-block")
+        self.assertEqual([("d1", "relaunch")], [(block["dispatch"], block["kind"]) for block in forkBlocks])
+
+    def test_dispatch_hook_denies_a_one_line_copy_of_a_launched_prompt(self):
+        out = self.start_phase_one()
+        wholePrompt = self.printed_prompt(out)
+        oneLinePrompt = " ".join(wholePrompt.split())
+        self.launch_agent(wholePrompt, agentId="agent-7")
+
+        reason = self.denial_reason(self.dispatch_hook(oneLinePrompt))
+
+        forkBlocks = self.events_named("fork-block")
+        self.assertIn("already launched", reason)
+        self.assertEqual([("d1", "relaunch")], [(block["dispatch"], block["kind"]) for block in forkBlocks])
+
+    def test_dispatch_hook_relaunch_denials_never_reach_the_prompt_denial_cap(self):
+        out = self.start_phase_one()
+        wholePrompt = self.printed_prompt(out)
+        self.launch_agent(wholePrompt, agentId="agent-7")
+
+        reasons = [self.denial_reason(self.dispatch_hook(wholePrompt)) for _ in range(4)]
+
+        for reason in reasons:
+            self.assertIn("already launched", reason)
+            self.assertIn("after-coder", reason)
+            self.assertNotIn("Stop.", reason)
+        forkBlocks = self.events_named("fork-block")
+        self.assertEqual(["relaunch"] * 4, [block["kind"] for block in forkBlocks])
+
+    def test_dispatch_hook_lets_a_coder_call_without_the_marker_pass_after_the_coder_launch(self):
+        out = self.start_phase_one()
+        self.launch_agent(self.printed_prompt(out), agentId="agent-7")
+
+        result = self.dispatch_hook("Explore the orders module.")
+
+        self.assertEqual("", result)
+        self.assertEqual([], self.events_named("fork-block"))
+
+    def test_dispatch_hook_lets_a_call_without_the_marker_pass_while_a_launched_dispatch_is_open(self):
+        self.start_phase_one()
+        self.launch_agent("code-step-dispatch: " + self.state()["runId"] + "/d1")
+        self.pass_coder_gate()
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+        reviewOut = self.step("after-coder")
+        self.launch_agent(self.printed_prompt(reviewOut), agentId="agent-9", subagentType="review-loop")
+
+        self.assertEqual("", self.dispatch_hook("Review this branch for the user.", subagentType="review-loop"))
+        self.assertEqual([], self.events_named("fork-block"))
+
+    def test_dispatch_hook_lets_a_review_loop_relaunch_with_its_marker_pass(self):
+        self.start_phase_one()
+        self.launch_agent("code-step-dispatch: " + self.state()["runId"] + "/d1")
+        self.pass_coder_gate()
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+        reviewOut = self.step("after-coder")
+        reviewPrompt = self.printed_prompt(reviewOut)
+        self.launch_agent(reviewPrompt, agentId="agent-9", subagentType="review-loop")
+
+        self.assertEqual("", self.dispatch_hook(reviewPrompt, subagentType="review-loop"))
+        self.assertEqual([], self.events_named("fork-block"))
+
+    def test_dispatch_hook_denies_a_thin_review_loop_prompt_while_the_review_dispatch_is_pending(self):
+        self.start_phase_one()
+        self.launch_agent("code-step-dispatch: " + self.state()["runId"] + "/d1")
+        self.pass_coder_gate()
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+        reviewOut = self.step("after-coder")
+        reviewPrompt = self.printed_prompt(reviewOut)
+        reviewPromptFile = self.events_named("dispatch")[-1]["prompt_file"]
+
+        reason = self.denial_reason(self.dispatch_hook("Review the branch.", subagentType="review-loop"))
+
+        forkBlocks = self.events_named("fork-block")
+        self.assertIn(f"Read {reviewPromptFile} and pass its whole text.", reason)
+        self.assertEqual([("d2", "prompt-deny")], [(block["dispatch"], block["kind"]) for block in forkBlocks])
+        self.assertEqual("", self.dispatch_hook(reviewPrompt, subagentType="review-loop"))
+
+    def test_dispatch_hook_denies_the_whole_prompt_with_its_marker_line_removed(self):
+        out = self.start_phase_one()
+        markerLine = f"code-step-dispatch: {self.state()['runId']}/d1"
+        promptWithoutMarker = self.printed_prompt(out).replace(markerLine, "").rstrip()
+        self.assertNotIn("code-step-dispatch", promptWithoutMarker)
+
+        reason = self.denial_reason(self.dispatch_hook(promptWithoutMarker))
+
+        forkBlocks = self.events_named("fork-block")
+        self.assertIn("pass its whole text", reason)
+        self.assertEqual([("d1", "prompt-deny")], [(block["dispatch"], block["kind"]) for block in forkBlocks])
+
+    def test_dispatch_hook_leaves_other_agents_other_sessions_and_finished_runs_alone(self):
+        self.assertEqual("", self.dispatch_hook("thin"))
+        self.start_phase_one()
+        self.assertEqual("", self.dispatch_hook("thin", subagentType="Explore"))
+        self.assertEqual("", self.dispatch_hook("thin", subagentType="review-loop"))
+        self.assertEqual("", self.dispatch_hook("thin", session="sess-other"))
+        self.assertEqual([], self.events_named("fork-block"))
+
+        self.finish_phase_one()
+
+        self.assertEqual("done", self.state()["stage"])
+        self.assertEqual("", self.dispatch_hook("thin"))
+
+    def test_a_start_run_again_opens_a_new_run_and_after_coder_without_a_report_stops_as_before(self):
+        firstOut = self.start_phase_one()
+        firstRun = self.state()["runId"]
+
+        rerunOut = self.start_phase_one()
+
+        self.assertNotEqual(firstRun, self.state()["runId"])
+        dispatchIds = [dispatch["id"] for dispatch in self.events_named("dispatch")]
+        self.assertEqual(["d1"], dispatchIds)
+        self.assertIn("ACTION: dispatch", rerunOut)
+        firstBody = self.printed_prompt(firstOut).rsplit("\n", 1)[0]
+        rerunBody = self.printed_prompt(rerunOut).rsplit("\n", 1)[0]
+        self.assertEqual(firstBody, rerunBody)
+
+        afterOut = self.step("after-coder")
+
+        self.assertIn("No coder report was saved", afterOut)
+        self.assertNotIn("ACTION: dispatch", afterOut)
+
+    def test_a_start_from_another_session_opens_a_new_run(self):
+        self.start_phase_one()
+        firstRun = self.state()["runId"]
+        statePath = self.repo / ".git/code-step/state.json"
+        oldState = json.loads(statePath.read_text())
+        oldState["dispatchAt"] = time.time() - 3 * 60 * 60
+        statePath.write_text(json.dumps(oldState))
+        self.env["CLAUDE_CODE_SESSION_ID"] = "sess-2"
+
+        self.start_phase_one()
+
+        dispatches = self.events_named("dispatch")
+        self.assertNotEqual(firstRun, self.state()["runId"])
+        self.assertEqual([("d1", "sess-2")], [(dispatch["id"], dispatch["session_id"]) for dispatch in dispatches])
 
 
 if __name__ == "__main__":

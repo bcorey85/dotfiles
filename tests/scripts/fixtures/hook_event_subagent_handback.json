@@ -1,0 +1,10 @@
+{
+ "tool_name": "SubagentHandback",
+ "tool_input": {
+  "message": "<report text>"
+ },
+ "tool_response": {
+  "success": true,
+  "message": "Report delivered to your caller."
+ }
+}

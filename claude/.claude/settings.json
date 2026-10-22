@@ -321,6 +321,15 @@
             "command": "python3 ~/.claude/scripts/code-step.py plan-hook"
           }
         ]
+      },
+      {
+        "matcher": "Agent|SubagentHandback|SendMessage",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/scripts/code-step.py log-hook"
+          }
+        ]
       }
     ],
     "PostToolUseFailure": [
@@ -412,6 +421,10 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/scripts/handback.py hook dispatch"
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/scripts/code-step.py dispatch-hook"
           }
         ]
       },

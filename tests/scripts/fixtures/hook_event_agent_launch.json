@@ -1,0 +1,18 @@
+{
+ "tool_name": "Agent",
+ "tool_input": {
+  "description": "Extract db.cursor() helper",
+  "subagent_type": "coder",
+  "prompt": "<prompt text>"
+ },
+ "tool_response": {
+  "isAsync": true,
+  "status": "async_launched",
+  "agentId": "a7fded3522881e3d9",
+  "description": "Extract db.cursor() helper",
+  "resolvedModel": "claude-opus-5-5",
+  "prompt": "<prompt text>",
+  "outputFile": "/tmp/claude-1000/-home-brandon-dev-agent-memory/0c520d6a-b0ad-4350-91f0-74de87e212c1/tasks/a7fded3522881e3d9.output",
+  "canReadOutputFile": true
+ }
+}

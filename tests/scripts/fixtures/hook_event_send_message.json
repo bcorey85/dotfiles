@@ -1,0 +1,15 @@
+{
+ "tool_name": "SendMessage",
+ "tool_input": {
+  "to": "a172eec708117a988",
+  "summary": "Verify orders.js fix and new tests",
+  "message": "<message text>",
+  "type": "message",
+  "recipient": "a172eec708117a988",
+  "content": "<message text>"
+ },
+ "tool_response": {
+  "success": true,
+  "message": "Resumed agent. Its final report follows this JSON, framed by the harness."
+ }
+}

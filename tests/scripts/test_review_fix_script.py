@@ -856,7 +856,47 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(["asks-done", "accepted"])
         self.assertEqual(code, 0, output)
         self.assertIn("1 ask(s) without a finding_id are not logged.", output)
+        self.assertIn("(no finding_id)", output)
         self.assertEqual(self.ledgerWrites(), [])
+
+    def ask_packet_with_finding_id(self, findingIdText):
+        return CLEAN_EMPTY.replace("ask: []", "ask:\n  - {finding: x, finding_id: " + findingIdText + ", file_line: a.ts:1, "
+                                   "question: cap?, gate: code-reviewer, class: smell}")
+
+    def test_an_ask_whose_finding_id_is_a_placeholder_is_skipped_and_names_the_ignored_value(self):
+        placeholders = {"none logged": "'none logged'", "none": "'none'", "-": "'-'", '""': "''",
+                        "a1b2c3d4e5f6000": "'a1b2c3d4e5f6000'", "A1B2C3D4E5F60001": "'A1B2C3D4E5F60001'",
+                        "a1b2c3d4e5f600011": "'a1b2c3d4e5f600011'", "a1b2c3d4e5f6000g": "'a1b2c3d4e5f6000g'"}
+        for findingIdText, ignoredRepr in placeholders.items():
+            with self.subTest(findingId=findingIdText):
+                self.packet(self.ask_packet_with_finding_id(findingIdText))
+                code, output = self.run_script(["asks-done", "modified:tighten the cap"])
+                self.assertEqual(code, 0, output)
+                self.assertIn("Logged 0 of 1 ask outcome row(s). 1 ask(s) without a finding_id are not logged.", output)
+                self.assertIn(f"ignored {ignoredRepr}", output)
+                self.assertNotIn("refusing to log", output)
+                self.assertEqual(self.ledgerWrites(), [])
+                code, output = self.run_script(["asks-done", "modified:tighten the cap"])
+                self.assertEqual(code, 0, output)
+                self.assertIn("The ask outcomes were already logged.", output)
+
+    def test_an_ask_with_a_valid_finding_id_among_placeholder_asks_logs_only_the_valid_one(self):
+        text = CLEAN_EMPTY.replace("ask: []", "ask:\n"
+                                   "  - {finding: x, finding_id: none logged, file_line: a.ts:1, question: cap?, gate: code-reviewer, class: smell}\n"
+                                   "  - {finding: y, finding_id: a1b2c3d4e5f60005, file_line: b.ts:2, question: cap?, gate: code-reviewer, class: smell}")
+        self.packet(text)
+        code, output = self.run_script(["asks-done", "modified:tighten the cap", "accepted"])
+        self.assertEqual(code, 0, output)
+        self.assertIn("Logged 1 of 2 ask outcome row(s). 1 ask(s) without a finding_id are not logged.", output)
+        findingRows = self.ledgerWrites()
+        self.assertEqual([row["finding_id"] for row in findingRows], ["a1b2c3d4e5f60005"])
+        self.assertEqual([row["ask_outcome"] for row in findingRows], ["accepted"])
+
+    def test_a_valid_finding_id_with_surrounding_spaces_is_logged_without_them(self):
+        self.packet(self.ask_packet_with_finding_id('" a1b2c3d4e5f60006 "'))
+        code, output = self.run_script(["asks-done", "modified:tighten the cap"])
+        self.assertEqual(code, 0, output)
+        self.assertEqual([row["finding_id"] for row in self.ledgerWrites()], ["a1b2c3d4e5f60006"])
 
     def test_present_asks_prints_the_gate_mark_line(self):
         code, output = self.packet(WITH_ASK)

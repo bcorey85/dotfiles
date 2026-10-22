@@ -47,6 +47,7 @@ INLINE_KEY_AT = re.compile(r"(?:^|\n\s*|([,.;|?!)])\s+)(" + "|".join(ITEM_KEYS) 
 KEPT_DELIMITERS = "?!)"
 ITEM_KEY_START = re.compile(r"(?:%s)\s*:" % "|".join(ITEM_KEYS))
 STALE_STORE_SECONDS = 7 * 86400
+FINDING_ID_PATTERN = re.compile(r"[0-9a-f]{16}")
 
 
 class PacketError(Exception):
@@ -241,6 +242,15 @@ def item_text(item, *keys):
 def item_field(item, key, default=""):
     """A mapping entry's field; a plain-text entry has none."""
     return item.get(key, default) if isinstance(item, dict) else default
+
+
+def ask_finding_id(item):
+    """The entry's finding_id when it is an id the ledger writer mints (16 lowercase hex chars); otherwise None.
+    A placeholder such as "none logged" or "-", or a damaged id, is not an id."""
+    findingId = item_field(item, "finding_id", None)
+    if isinstance(findingId, str) and FINDING_ID_PATTERN.fullmatch(findingId.strip()):
+        return findingId.strip()
+    return None
 
 
 def entry_paths(item):

@@ -188,6 +188,27 @@ class ValidateTest(HandbackTestBase):
             handback.load("status: pending. The verification pass has not reported.\n\nDone so far:\n- fixed\n")
 
 
+class AskFindingIdTest(unittest.TestCase):
+    def test_a_16_char_lowercase_hex_id_is_returned(self):
+        self.assertEqual(handback.ask_finding_id({"finding_id": "a1b2c3d4e5f60001"}), "a1b2c3d4e5f60001")
+
+    def test_surrounding_whitespace_is_stripped_from_a_valid_id(self):
+        self.assertEqual(handback.ask_finding_id({"finding_id": "  a1b2c3d4e5f60001\t"}), "a1b2c3d4e5f60001")
+
+    def test_a_placeholder_or_damaged_id_is_none(self):
+        notIds = ["none logged", "none", "-", "n/a", "", "   ", "a1b2c3d4e5f6000", "a1b2c3d4e5f600011",
+                  "A1B2C3D4E5F60001", "a1b2c3d4e5f6000g", "a1b2c3d4 e5f60001", "a1b2c3d4e5f60001\nx"]
+        for notId in notIds:
+            with self.subTest(findingId=notId):
+                self.assertIsNone(handback.ask_finding_id({"finding_id": notId}))
+
+    def test_a_missing_or_non_string_id_is_none(self):
+        for entry in [{}, {"finding_id": None}, {"finding_id": 1234567890123456}, {"finding_id": ["a1b2c3d4e5f60001"]},
+                      "a1b2c3d4e5f60001 in plain text"]:
+            with self.subTest(entry=entry):
+                self.assertIsNone(handback.ask_finding_id(entry))
+
+
 class RenderTest(HandbackTestBase):
     def test_findings_remaining_show_on_converged(self):
         text = CONVERGED.replace("ask: []", 'ask: []\nfindings_remaining: [{disposition: fix, finding: left over, file_line: a.ts:1}]')

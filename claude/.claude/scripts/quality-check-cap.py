@@ -4,8 +4,10 @@
 PostToolUse(Write|Edit|MultiEdit|NotebookEdit) touches `edits`; PreToolUse(Bash) denies a check whose last run is
 newer than `edits`, unless a file in the repo was changed by means the Write/Edit hook never sees (shell
 redirection, a script) more recently than that run, then it allows. PostToolUse(Bash) records the run;
-PostToolUseFailure(Bash) does too, except when the failure was a timeout or an interrupt. A check is recorded only
-when it surely ran: after a failure, a check behind `&&` or `||` may never have started, so it is not recorded; after
+PostToolUseFailure(Bash) does too, except when the run did not finish: an interrupt (`is_interrupt`) or an exit
+status of 129 to 192 (128 + signal number: ended by a signal, such as a pkill or a timeout kill), so the rerun is
+allowed. Exit 128 and 255 are ordinary failures (git and PHP fatal errors) and are recorded. A check is recorded only when it
+surely ran: after a failure, a check behind `&&` or `||` may never have started, so it is not recorded; after
 a success, a check behind `||` is not. A command with a formatter that rewrites files (`cargo fmt`, `prettier
 --write`, `ruff format`...) is never denied when every check in it runs only after the formatter succeeded (joined
 to it by `&&`, pipes allowed), and resets the cap like an edit. Key: normalized command + effective cwd (POSIX cksum) + the agent
@@ -25,9 +27,10 @@ import time
 import hashlib
 
 import hook_input
-from hook_input import JqError, cksum, jq_get, jq_str, truthy
+from hook_input import JqError, cksum, exit_code_in_error_text, jq_get, jq_str, truthy
 from shell_command import runs_only_after_success, split_command_steps, step_surely_ran
 
+SIGNAL_EXIT_CODES = range(129, 193)
 WS ="[ \t\n\r\f\v]"
 SP = " \t\n\r\f\v"
 CHECKS = ("(npm|pnpm|yarn|bun)( run)? (test|lint|typecheck|type-check|check|build)|jest|vitest|pytest|tsc|eslint|"
@@ -269,10 +272,9 @@ def run(raw, state):
         return
 
     if event == "PostToolUseFailure":
-        error_type = field(root_json, "tool_error", "error_type")
-        if error_type in ("timeout", "interrupted"):
+        if truthy(jq_get(root_json, "is_interrupt")):
             return
-        if "Command timed out after" in field(root_json, "error"):
+        if exit_code_in_error_text(field(root_json, "error")) in SIGNAL_EXIT_CODES:
             return
 
     command = field(root_json, "tool_input", "command")

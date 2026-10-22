@@ -165,6 +165,13 @@ def parse_documents_partial(text):
         documents.append(document)
 
 
+def exit_code_in_error_text(text):
+    """The N of a leading "Exit code N" line in a failed Bash tool's error text, as an int, or None when the text
+    does not start with one."""
+    found = re.match(r"Exit code (\d+)", text)
+    return int(found.group(1)) if found else None
+
+
 def bash_basename(path):
     stripped = path.rstrip("/")
     if stripped == "":

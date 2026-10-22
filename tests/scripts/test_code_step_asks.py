@@ -23,6 +23,7 @@ import handback  # noqa: E402
 
 # log-review-finding mints ids as 16 lowercase hex chars; review-fix logs no other shape.
 MINTED_FINDING_ID = "0123456789abcdef"
+OTHER_MINTED_FINDING_ID = "fedcba9876543210"
 
 
 def ask_item(**overrides):
@@ -35,9 +36,10 @@ def ask_item(**overrides):
 class LogAskOutcomes(unittest.TestCase):
     def setUp(self):
         self.calls = []
+        self.loggerResult = (0, "")
         self.original_run_command = code_step.run_command
         self.original_git_output = code_step.git_output
-        code_step.run_command = lambda command, cwd, **_: self.calls.append(command)
+        code_step.run_command = lambda command, cwd, **_: self.calls.append(command) or self.loggerResult
         code_step.git_output = lambda *_: "some-branch"
 
     def tearDown(self):
@@ -74,11 +76,63 @@ class LogAskOutcomes(unittest.TestCase):
         self.assertIn("iter=2", self.calls[0])
 
     def test_ask_without_finding_id_writes_nothing_and_says_so(self):
-        stderr = self.log([ask_item(finding_id=None), ask_item(finding_id="keep1")], ["rejected", "modified"])
+        stderr = self.log([ask_item(finding_id=None), ask_item(finding_id=OTHER_MINTED_FINDING_ID)],
+                          ["rejected", "modified"])
 
-        self.assertEqual(stderr.count("ask outcome without finding_id, not logged"), 1)
+        self.assertEqual(stderr.count("ask outcome without a valid finding_id (no finding_id), not logged"), 1)
         self.assertEqual(len(self.calls), 1)
-        self.assertIn("finding_id=keep1", self.calls[0])
+        self.assertIn(f"finding_id={OTHER_MINTED_FINDING_ID}", self.calls[0])
+
+    def test_asks_whose_finding_id_is_the_word_none_write_no_row_and_are_named(self):
+        stderr = self.log([ask_item(finding_id="none"), ask_item(finding_id="none"),
+                           ask_item(finding_id=OTHER_MINTED_FINDING_ID)], ["accepted", "rejected", "accepted"])
+
+        self.assertEqual(stderr.count("ignored 'none'"), 2)
+        self.assertEqual(len(self.calls), 1)
+        self.assertIn(f"finding_id={OTHER_MINTED_FINDING_ID}", self.calls[0])
+        self.assertFalse([call for call in self.calls if "finding_id=none" in call])
+
+    def test_an_ask_whose_finding_id_is_prose_with_a_space_writes_no_row_and_is_named(self):
+        stderr = self.log([ask_item(finding_id="none logged")], ["accepted"])
+
+        self.assertEqual(self.calls, [])
+        self.assertIn("ignored 'none logged'", stderr)
+        self.assertIn("not logged", stderr)
+
+    def test_a_short_or_upper_case_hex_finding_id_is_not_an_id(self):
+        stderr = self.log([ask_item(finding_id="abc123"), ask_item(finding_id=MINTED_FINDING_ID.upper())],
+                          ["accepted", "accepted"])
+
+        self.assertEqual(self.calls, [])
+        self.assertEqual(stderr.count("not logged"), 2)
+
+    def test_a_logger_that_fails_is_named_on_stderr_with_the_id_and_its_output(self):
+        self.loggerResult = (1, "log-review-finding: field finding_id has a space")
+
+        stderr = self.log([ask_item()], ["accepted"])
+
+        self.assertEqual(len(self.calls), 1)
+        self.assertIn(f"ask outcome for finding_id {MINTED_FINDING_ID} not logged", stderr)
+        self.assertIn("exited 1", stderr)
+        self.assertIn("field finding_id has a space", stderr)
+
+    def test_a_logger_that_succeeds_prints_nothing(self):
+        stderr = self.log([ask_item()], ["accepted"])
+
+        self.assertEqual(1, len(self.calls))
+        self.assertEqual("", stderr)
+
+    def test_a_missing_hand_back_reader_logs_nothing_and_says_why(self):
+        original = code_step.load_handback
+        code_step.load_handback = lambda: (None, "handback.py could not be imported (boom)")
+        try:
+            stderr = self.log([ask_item()], ["accepted"])
+        finally:
+            code_step.load_handback = original
+
+        self.assertEqual(self.calls, [])
+        self.assertIn("ask outcomes not logged", stderr)
+        self.assertIn("boom", stderr)
 
 
 class ReviewFixLogAskOutcome(unittest.TestCase):

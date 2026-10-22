@@ -83,6 +83,32 @@ SPEC = """# Plan
 - [ ] **Manual-verified** (human-only): read the thing
 """
 
+MOVED_PLAN = """# Plan
+
+## Phase Status
+
+- [ ] Phase 1: Local work (risk: low)
+- [-] Phase 2: Mac runs (risk: high) — moved to LED-16, per the user 2026-10-20
+
+## Phase 1: Local work
+
+#### Manual Verification (human-only):
+
+- [ ] human-only: kept item
+
+## Phase 2: Mac runs — moved to LED-16
+
+#### Manual Verification (human-only):
+
+- [ ] human-only: Mac item
+- [ ] human-only: second Mac item
+- [x] human-only: done Mac item
+
+## Plan Deviations
+
+- 2026-10-20: Phase 2 moves to LED-16.
+"""
+
 CRITERIA = """# Acceptance Criteria
 
 - **AC1** — First thing works.
@@ -265,6 +291,33 @@ class PrepTest(VerifyBranchBase):
         self.assertEqual([item["text"] for item in common.manual_items(plan, "plan.md")],
                          ["human-only: still open"])
 
+    def test_the_manual_items_of_a_moved_phase_are_not_missing_and_the_phase_is_named_with_its_ticket(self):
+        common = load_common()
+        self.assertEqual(["human-only: kept item"], [item["text"] for item in common.manual_items(MOVED_PLAN, "plan.md")])
+        self.assertEqual(["Phase 2 moved to LED-16: 2 unchecked Manual Verification item(s) go with it"],
+                         common.moved_phase_notes(MOVED_PLAN, "plan.md"))
+        self.assertEqual([], common.moved_phase_notes(SPEC, "spec.md"))
+
+    def test_a_moved_line_with_no_ticket_key_fails_instead_of_dropping_or_naming_the_phase(self):
+        common = load_common()
+        planText = MOVED_PLAN.replace("moved to LED-16, per the user", "deferred, per the user")
+        for call in (common.manual_items, common.moved_phase_notes):
+            with self.subTest(call=call.__name__):
+                with self.assertRaises(common.Fail) as caught:
+                    call(planText, "plan.md")
+                self.assertTrue(str(caught.exception).startswith("plan.md:6:"), str(caught.exception))
+                self.assertIn("moved to <KEY>", str(caught.exception))
+
+    def test_a_moved_line_with_no_plan_deviations_entry_fails_instead_of_dropping_the_phase_items(self):
+        common = load_common()
+        planText = MOVED_PLAN.replace("- 2026-10-20: Phase 2 moves to LED-16.", "- 2026-10-20: Phase 1 changed.")
+        for call in (common.manual_items, common.moved_phase_notes):
+            with self.subTest(call=call.__name__):
+                with self.assertRaises(common.Fail) as caught:
+                    call(planText, "plan.md")
+                self.assertTrue(str(caught.exception).startswith("plan.md:6:"), str(caught.exception))
+                self.assertIn("Plan Deviations", str(caught.exception))
+
     def test_manual_verification_line_outside_the_grammar_fails_with_path_and_line(self):
         self.task_dir(spec="# Plan\n\n#### Manual Verification:\n\n| a | b |\n")
         done = self.prep()
@@ -429,6 +482,22 @@ class PrepTest(VerifyBranchBase):
         self.write("my notes.txt", "two\n")
         self.assertIn("NOT run", self.prep().stdout)
 
+    def test_a_busy_ledger_exits_2_and_never_reads_as_no_review(self):
+        self.reviewed_tree()
+        busyDir = self.tempRoot / "busy-ledger-bin"
+        busyDir.mkdir()
+        busy = busyDir / "ledger"
+        busy.write_text("#!/bin/sh\necho 'ledger: cache busy' >&2\nexit 75\n")
+        busy.chmod(0o755)
+        busyEnv = {"PATH": f"{busyDir}{os.pathsep}{self.env['PATH']}", "VERIFY_LEDGER_BACKOFF_SECONDS": "0"}
+
+        done = self.prep(extraEnv=busyEnv)
+
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("ledger is busy", done.stderr)
+        self.assertIn("run this step again", done.stderr)
+        self.assertNotIn("NOT run", done.stdout)
+
     def test_review_row_for_old_head_with_no_content_change_still_counts(self):
         self.reviewed_tree()
         self.git("commit", "-q", "--allow-empty", "-m", "empty")
@@ -567,7 +636,8 @@ class ReviewGateTest(VerifyBranchBase):
         self.assertEqual(self.prep().returncode, 0)
 
     def rows(self):
-        return json.dumps([{"item": "AC1: item", "verdict": "done", "file": "src/f1.py", "line": 1, "evidence": "e"}])
+        return json.dumps([{"item": f"AC{n}: item", "verdict": "done", "file": f"src/f{n}.py", "line": 1,
+                            "evidence": "e"} for n in (1, 2, 3)])
 
     def test_no_review_logged_exits_2_and_writes_nothing(self):
         done = self.log("--rows", "-", stdin=self.rows())
@@ -650,22 +720,43 @@ class LogTest(VerifyBranchBase):
                               "evidence": "e"})
         return json.dumps(built)
 
-    def test_an_id_with_no_verdict_row_is_a_gap(self):
+    def test_an_id_with_no_verdict_row_exits_2_names_it_and_writes_nothing(self):
         rows = json.dumps([{"item": "AC1: item", "verdict": "done"}, {"item": "AC2: item", "verdict": "done"}])
         done = self.log("--rows", "-", stdin=rows)
-        self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertIn("NO VERDICT ROW for AC3", done.stdout)
-        self.assertIn("GAPS: 1", done.stdout)
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("no verdict row for AC3", done.stderr)
         self.assertNotIn("CLEAN", done.stdout)
-        logged = self.verifier_rows()
-        self.assertEqual((logged[0]["result"], logged[0]["n_findings"]), ("NEEDS_CHANGES", "1"))
-        self.assertNotIn("desc", logged[1])
+        self.assertEqual(self.verifier_rows(), [])
+        self.assertEqual(self.jsonl(self.escapes), [])
+        self.assertIsNot(self.context().get("logged"), True)
+
+    def test_every_absent_id_is_named(self):
+        rows = json.dumps([{"item": "AC2: item", "verdict": "done"}])
+        done = self.log("--rows", "-", stdin=rows)
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("no verdict row for AC1, AC3", done.stderr)
+
+    def test_a_missing_row_for_every_id_is_accepted_and_logged_as_a_gap(self):
+        rows = json.dumps([{"item": f"AC{n}: item", "verdict": "missing", "guard": "check", "severity": "medium"}
+                           for n in (1, 2, 3)])
+        done = self.log("--rows", "-", stdin=rows)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("GAPS: 3", done.stdout)
+        self.assertIs(self.context()["logged"], True)
+
+    def test_a_call_that_exited_2_for_an_absent_id_can_be_sent_again_complete(self):
+        partial = json.dumps([{"item": "AC1: item", "verdict": "done"}])
+        self.assertEqual(self.log("--rows", "-", stdin=partial).returncode, 2)
+        done = self.log("--rows", "-", stdin=self.rows("done", "done", "done"))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("CLEAN", done.stdout)
 
     def test_an_id_named_inside_a_longer_id_does_not_count_as_covered(self):
         rows = json.dumps([{"item": "AC10: item", "verdict": "done"}, {"item": "AC2: item", "verdict": "done"},
                            {"item": "AC3: item", "verdict": "done"}])
         done = self.log("--rows", "-", stdin=rows)
-        self.assertIn("NO VERDICT ROW for AC1", done.stdout)
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("no verdict row for AC1", done.stderr)
 
     def test_whitespace_only_signoff_is_a_gap(self):
         rows = self.rows("overridden", extra=[{"signoff": "  \n "}])
@@ -800,6 +891,27 @@ class LogTest(VerifyBranchBase):
         done = self.log("--rows", "-", stdin=self.rows("done"))
         self.assertIn("late item", done.stdout)
         self.assertNotIn("ticked item", done.stdout)
+
+    def test_a_moved_phase_is_listed_with_its_ticket_and_its_items_are_not_in_the_checklist(self):
+        planPath = self.repo / "docs" / "plans" / "LED-9-thing" / "spec.md"
+        planPath.write_text(MOVED_PLAN)
+        done = self.log("--rows", "-", stdin=self.rows("done"))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("(human-only) human-only: kept item", done.stdout)
+        self.assertNotIn("Mac item", done.stdout)
+        self.assertIn("## Moved phases", done.stdout)
+        self.assertIn("- Phase 2 moved to LED-16: 2 unchecked Manual Verification item(s) go with it", done.stdout)
+
+    def test_a_moved_line_with_no_ticket_key_or_no_deviation_entry_stops_verify_log_with_the_line(self):
+        planPath = self.repo / "docs" / "plans" / "LED-9-thing" / "spec.md"
+        noKey = MOVED_PLAN.replace("moved to LED-16, per the user", "deferred, per the user")
+        noDeviation = MOVED_PLAN.replace("- 2026-10-20: Phase 2 moves to LED-16.", "- 2026-10-20: Phase 1 changed.")
+        for name, planText in (("no key", noKey), ("no deviation", noDeviation)):
+            with self.subTest(name):
+                planPath.write_text(planText)
+                done = self.log("--rows", "-", stdin=self.rows("done"))
+                self.assertNotEqual(done.returncode, 0, done.stdout)
+                self.assertIn("spec.md:6:", done.stderr)
 
     def test_ticket_edited_after_prep_reaches_the_checklist(self):
         ticketPath = self.repo / "docs" / "plans" / "LED-9-thing" / "00-ticket.md"

@@ -203,8 +203,10 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn(old, self.plan_text())
         (self.repo / self.plan).write_text(self.plan_text().replace(old, line))
 
+    # The ledger writer mints finding ids as 16 lowercase hex characters; code-step logs no other shape.
+    ASK_FINDING_ID = "0123456789abcdef"
     ASK = ('status: converged\niter: 1\nfixed: []\nask: [{"finding": "f", "file_line": "backend/src/orders.ts:2", '
-           '"question": "keep?", "gate": "code-reviewer", "class": "correctness", "finding_id": "planted-ask-id"}]')
+           '"question": "keep?", "gate": "code-reviewer", "class": "correctness", "finding_id": "0123456789abcdef"}]')
 
     LOOP_OK = "status: converged\niter: 1\nfixed: []\nask: []\nnit: []"
 
@@ -1106,7 +1108,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("- [ ] Phase 1:", self.plan_text())
         out = self.step("asks-done", "accepted")
         self.assertIn("ask_outcome=accepted", self.log.read_text())
-        self.assertIn("finding_id=planted-ask-id", self.log.read_text())
+        self.assertIn(f"finding_id={self.ASK_FINDING_ID}", self.log.read_text())
         self.assertNotIn("desc=", self.log.read_text())
         self.assertIn("ACTION: dispatch", out)
         self.assertIn("AGENT: coder", out)
@@ -1659,6 +1661,46 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("Implement: fix the export button", out)
         self.assertNotIn("No plan file", out)
 
+    TASK_TEXT_NAMING_FILES = ("Close gap X: add rules in registry/rules/x.toml, add cases in src/x.rs, "
+                              "update docs/plans/<slug>/parity.md")
+
+    def assert_started_planless_with_the_file_naming_text(self, out):
+        self.assertIn(f"Implement: {self.TASK_TEXT_NAMING_FILES}", out)
+        self.assertNotIn("No plan file", out)
+        self.assertNotIn("no plan", out.lower())
+        self.assertFalse(self.state().get("plan"))
+
+    def test_task_flag_text_that_names_files_is_task_text(self):
+        out = self.step("start", "--task", self.TASK_TEXT_NAMING_FILES)
+        self.assert_started_planless_with_the_file_naming_text(out)
+
+    def test_a_positional_argument_with_whitespace_that_names_files_is_task_text(self):
+        out = self.step("start", self.TASK_TEXT_NAMING_FILES)
+        self.assert_started_planless_with_the_file_naming_text(out)
+
+    def test_a_positional_argument_with_whitespace_that_starts_with_a_real_plan_folder_is_task_text(self):
+        text = "docs/plans/orders needs its parity table updated"
+        out = self.step("start", text)
+        self.assertIn(f"Implement: {text}", out)
+        self.assertNotIn("Phase 1 of", out)
+
+    def test_a_positional_argument_with_whitespace_that_is_a_real_plan_file_is_a_plan_path(self):
+        spacedPlan = "docs/plans/orders/spec copy.md"
+        (self.repo / spacedPlan).write_text(self.plan_text())
+        out = self.step("start", spacedPlan)
+        self.assertIn(f"Implement Phase 1 of `{spacedPlan}`", out)
+        self.assertNotIn(f"Implement: {spacedPlan}", out)
+
+    def test_a_positional_argument_with_whitespace_that_is_not_a_file_is_task_text(self):
+        notAFile = "docs/plans/orders/spec copy.md"
+        out = self.step("start", notAFile)
+        self.assertIn(f"Implement: {notAFile}", out)
+        self.assertNotIn("Phase 1 of", out)
+
+    def test_a_positional_argument_without_whitespace_is_still_a_plan_path(self):
+        out = self.step("start", self.plan)
+        self.assertIn(f"Implement Phase 1 of `{self.plan}`", out)
+
     def test_plan_outside_the_repo_asks_for_one_inside(self):
         outside = self.tmp / "outside.md"
         outside.write_text(PLAN)
@@ -1898,13 +1940,148 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("path: backend/src/orders.ts", out)
         self.assertIn("path: backend/src/extra.ts", out)
 
-    def test_asks_coder_that_changed_nothing_stops_instead_of_reviewing(self):
+    ALREADY_DONE_REPORT = "ALREADY-DONE: 1 — backend/src/orders.ts:2\nThe ask was already built; nothing to change."
+
+    def test_asks_coder_prompt_asks_for_an_already_done_line_for_each_ask_that_needs_no_edit(self):
+        out = self.apply_first_ask()
+        self.assertIn("ALREADY-DONE: <ask number> — <file:line>", out)
+
+    def test_asks_coder_that_changed_nothing_runs_the_verification_and_finishes_the_phase(self):
         self.apply_first_ask()
-        self.hook("coder", "Could not apply the rename; left as is.")
+        self.hook("coder", self.ALREADY_DONE_REPORT)
+        out = self.step("after-coder")
+        self.assertNotIn("AGENT: review-loop", out)
+        self.assertIn("Phase 1 marked done", out)
+        self.assertMarkedClean(out)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+        self.assertIn("already in the code", self.said())
+        self.assertIn("The ask was already built", self.said())
+
+    def test_asks_coder_that_changed_nothing_stops_when_the_verification_fails(self):
+        self.set_verification('- [ ] **Check**: fails - `bash -c "exit 1"`')
+        self.apply_first_ask()
+        self.hook("coder", self.ALREADY_DONE_REPORT)
+        out = self.step("after-coder")
+        self.assertIn("Automated Verification failed", out)
+        self.assertEqual("verification", self.state()["stopReason"])
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+
+    def assert_unchanged_asks_coder_stops(self, report):
+        self.apply_first_ask()
+        self.hook("coder", report)
         out = self.step("after-coder")
         self.assertIn("ACTION: stop", out)
         self.assertNotIn("AGENT: review-loop", out)
+        self.assertNotIn("marked done", out)
         self.assertEqual("stopped", self.state()["stage"])
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+
+    def test_asks_coder_that_changed_nothing_and_has_an_open_question_stops(self):
+        self.assert_unchanged_asks_coder_stops("Open question: which name should the rename use?")
+
+    def test_asks_coder_that_changed_nothing_and_recommends_eng_spec_stops(self):
+        self.assert_unchanged_asks_coder_stops("This is architectural; run /eng-spec.")
+
+    def test_asks_coder_that_changed_nothing_and_could_not_apply_the_ask_stops(self):
+        self.assert_unchanged_asks_coder_stops("Could not apply the rename; left as is.")
+
+    def test_asks_coder_that_changed_nothing_because_a_hook_blocked_the_edit_stops(self):
+        self.assert_unchanged_asks_coder_stops(
+            "The Edit on backend/src/orders.ts was blocked by a hook, so I could not apply ask 1.")
+
+    def test_asks_coder_that_changed_nothing_and_calls_the_ask_ambiguous_stops(self):
+        self.assert_unchanged_asks_coder_stops("Ask 1 is ambiguous, so I made no change.")
+
+    def test_asks_coder_that_changed_nothing_and_recommends_eng_spec_before_any_change_stops(self):
+        self.assert_unchanged_asks_coder_stops("I recommend running eng-spec before any change.")
+
+    def test_asks_coder_that_changed_nothing_with_no_already_done_line_stops_even_when_it_says_done(self):
+        self.assert_unchanged_asks_coder_stops("The ask was already built; nothing to change.")
+
+    def test_asks_coder_already_done_line_without_a_file_and_line_does_not_count(self):
+        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 —")
+
+    def test_asks_coder_already_done_line_with_n_a_as_its_location_stops(self):
+        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 — n/a")
+
+    def test_asks_coder_already_done_line_with_the_placeholder_location_stops(self):
+        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 — <file:line>")
+
+    def test_asks_coder_already_done_line_with_prose_as_its_location_stops(self):
+        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 — could not apply it, the edit failed")
+
+    def test_asks_coder_already_done_line_naming_a_real_file_without_a_line_stops(self):
+        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 — backend/src/orders.ts")
+
+    def test_asks_coder_already_done_line_naming_a_file_that_does_not_exist_stops(self):
+        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 — backend/src/nope.ts:9")
+
+    def test_asks_coder_already_done_line_with_text_after_a_real_file_and_line_stops(self):
+        self.assert_unchanged_asks_coder_stops(
+            "ALREADY-DONE: 1 — backend/src/orders.ts:2 not done, the Edit was blocked.")
+
+    def assert_already_done_line_finishes_the_phase(self, line):
+        self.apply_first_ask()
+        self.hook("coder", line)
+        out = self.step("after-coder")
+        self.assertIn("Phase 1 marked done", out)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+
+    def test_asks_coder_already_done_line_naming_a_real_file_and_line_finishes_the_phase(self):
+        self.assert_already_done_line_finishes_the_phase("ALREADY-DONE: 1 — backend/src/orders.ts:2")
+
+    def test_asks_coder_already_done_line_with_backticks_and_a_line_range_finishes_the_phase(self):
+        self.assert_already_done_line_finishes_the_phase("ALREADY-DONE: 1 — `backend/src/orders.ts:1-2`")
+
+    def test_asks_coder_already_done_line_with_a_closing_period_finishes_the_phase(self):
+        self.assert_already_done_line_finishes_the_phase("ALREADY-DONE: 1 — backend/src/orders.ts:2.")
+
+    def test_asks_coder_already_done_line_for_another_ask_number_does_not_count(self):
+        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 2 — backend/src/orders.ts:2")
+
+    def test_an_asks_coder_state_without_its_accepted_asks_does_not_tick_the_phase(self):
+        self.apply_first_ask()
+        self.set_state(acceptedAsks=None)
+        self.hook("coder", "Nothing to report.")
+        result = run(self.repo, self.env, "after-coder")
+        self.assertNotIn("marked done", result.stdout)
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+
+    def test_asks_coder_already_done_line_with_an_open_question_stops(self):
+        self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nOpen question: which name should it use?")
+
+    def test_asks_coder_already_done_line_with_an_eng_spec_recommendation_stops(self):
+        self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nThe rest needs /eng-spec.")
+
+    def test_asks_coder_already_done_line_with_a_plan_impact_report_stops(self):
+        self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\n" + self.IMPACT_REPORT)
+
+    def accept_two_asks(self):
+        secondAsk = ('{"finding": "g", "file_line": "backend/src/orders.ts:3", "question": "rename?", '
+                     '"gate": "code-reviewer", "class": "correctness", "finding_id": "fedcba9876543210"}')
+        twoAsks = self.ASK.replace("}]", "}, " + secondAsk + "]")
+        self.coder_round()
+        self.hook("review-loop", twoAsks.replace("iter: 1", "iter: 2"))
+        self.step("after-review")
+        self.step("asks-done", "accepted", "accepted")
+
+    def test_asks_coder_that_changed_nothing_covers_only_some_of_two_asks_stops(self):
+        self.accept_two_asks()
+        self.hook("coder", "ALREADY-DONE: 1 — backend/src/orders.ts:2")
+        out = self.step("after-coder")
+        self.assertIn("ACTION: stop", out)
+        self.assertEqual("stopped", self.state()["stage"])
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+
+    def test_asks_coder_that_changed_nothing_names_every_one_of_two_asks_finishes_the_phase(self):
+        self.accept_two_asks()
+        self.hook("coder", "ALREADY-DONE: 1 — backend/src/orders.ts:2\nALREADY-DONE: 2 - backend/src/orders.ts:3")
+        out = self.step("after-coder")
+        self.assertIn("Phase 1 marked done", out)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+
+    def test_asks_coder_that_changed_nothing_and_reports_a_plan_impact_stops(self):
+        self.assert_unchanged_asks_coder_stops(self.IMPACT_REPORT)
 
     def test_re_review_after_the_asks_coder_gets_the_accepted_asks_as_prior_issues(self):
         self.apply_first_ask()
@@ -3132,25 +3309,49 @@ class CodeStepTest(unittest.TestCase):
             text = text.replace(line, f"{line} — gate: {condition}")
         (self.repo / self.plan).write_text(text)
 
-    def test_start_skips_a_gated_open_phase_and_names_it_and_its_gate(self):
+    def test_start_stops_at_a_gated_open_phase_and_names_it_its_gate_and_the_next_ungated_phase(self):
         self.gate_phases(1)
         out = self.step("start", self.plan)
-        self.assertIn("AGENT: coder", out)
+        self.assertIn("ACTION: stop", out)
+        self.assertNotIn("AGENT:", out)
         self.assertIn("Phase 1 (gate: LED-5 merged)", out)
-        self.assertEqual("2", self.state()["phase"])
+        self.assertIn("The next open phase without a gate is Phase 2.", out)
+        self.assertIn("`start --phase <id>` runs one anyway.", out)
+        self.assertIn("no coder was dispatched", out)
+        self.assertEqual("no code-step state", self.step("status").strip())
 
     def test_start_with_a_phase_id_runs_a_gated_phase(self):
         self.gate_phases(1)
         out = self.step("start", self.plan, "--phase", "1")
         self.assertIn("AGENT: coder", out)
-        self.assertNotIn("Skipped", out)
+        self.assertNotIn("gate clause", out)
         self.assertEqual("1", self.state()["phase"])
 
-    def test_start_names_only_the_gated_phases_it_passed_over(self):
+    def test_start_with_the_id_of_an_ungated_phase_past_a_gated_one_runs_it(self):
+        self.gate_phases(1)
+        out = self.step("start", self.plan, "--phase", "2")
+        self.assertIn("AGENT: coder", out)
+        self.assertEqual("2", self.state()["phase"])
+
+    def test_start_names_only_the_gated_phases_ahead_of_the_next_ungated_phase(self):
         self.gate_phases(1, 3)
         out = self.step("start", self.plan)
+        self.assertIn("ACTION: stop", out)
         self.assertIn("Phase 1 (gate: LED-5 merged)", out)
         self.assertNotIn("Phase 3 (gate", out)
+        self.assertIn("The next open phase without a gate is Phase 2.", out)
+
+    def test_start_runs_an_ungated_phase_that_comes_before_a_gated_one(self):
+        self.gate_phases(2)
+        out = self.step("start", self.plan)
+        self.assertIn("AGENT: coder", out)
+        self.assertEqual("1", self.state()["phase"])
+
+    def test_a_moved_phase_ahead_of_an_ungated_one_is_not_an_open_gate(self):
+        self.move_phases(1)
+        self.gate_phases(3)
+        out = self.step("start", self.plan)
+        self.assertIn("AGENT: coder", out)
         self.assertEqual("2", self.state()["phase"])
 
     def test_start_stops_and_opens_no_dispatch_when_every_open_phase_is_gated(self):
@@ -3165,17 +3366,18 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("dispatchAt", state)
         self.assertEqual("stopped", state["stage"])
 
-    def test_a_gated_phase_that_is_done_is_not_named_when_start_skips_the_open_ones(self):
+    def test_a_gated_phase_that_is_done_is_not_named_when_start_stops_at_an_open_one(self):
         self.mark_phases_done(1)
         self.gate_phases(2)
         out = self.step("start", self.plan)
         self.assertNotIn("Phase 1 (gate", out)
         self.assertIn("Phase 2 (gate: LED-5 merged)", out)
-        self.assertEqual("3", self.state()["phase"])
+        self.assertIn("The next open phase without a gate is Phase 3.", out)
+        self.assertNotIn("AGENT:", out)
 
-    # ---------- the phase a run advances to is never a gated one ----------
+    # ---------- the phase a run advances to is never past a gated one ----------
 
-    def test_auto_advance_names_the_next_ungated_phase_and_the_gated_one_it_skips(self):
+    def test_the_boundary_does_not_auto_advance_past_a_gated_phase_and_names_it_and_the_next_ungated_one(self):
         self.finish_phase_one()
         self.gate_phases(3)
         self.step("start", self.plan)
@@ -3184,11 +3386,14 @@ class CodeStepTest(unittest.TestCase):
         self.step("after-coder")
         self.hook("review-loop", self.LOOP_OK)
         out = self.step("after-review")
-        self.assertIn("ACTION: auto-advance", out)
-        self.assertIn("for Phase 4.", out)
-        self.assertNotIn("for Phase 3", out)
-        self.assertIn("Auto-advancing to Phase 4", self.said())
-        self.assertIn("Phase 3 (gate: LED-5 merged)", self.said())
+        self.assertNotIn("ACTION: auto-advance", out)
+        self.assertFalse(self.state()["autoAdvance"])
+        said = self.said()
+        self.assertNotIn("Auto-advancing", said)
+        self.assertNotIn("(last phase)", said)
+        self.assertIn("Phase 3 (gate: LED-5 merged)", said)
+        self.assertIn("The next open phase without a gate is Phase 4.", said)
+        self.assertIn("The plan is not complete.", said)
 
     def test_the_boundary_does_not_auto_advance_when_every_open_phase_is_gated(self):
         self.finish_phase_one()
@@ -3206,6 +3411,88 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("All phases complete", said)
         self.assertIn("Phase 3 (gate: the data team signs off)", said)
         self.assertIn("Phase 4 (gate: the data team signs off)", said)
+
+    # ---------- a phase marked [-] is moved to another ticket: never started, never done ----------
+
+    def move_phases(self, *numbers, withDeviation=True):
+        text = self.plan_text()
+        for number in numbers:
+            line = next(line for line in text.splitlines() if line.startswith(f"- [ ] Phase {number}:"))
+            movedLine = line.replace("- [ ]", "- [-]", 1) + " — moved to LED-16, per the user 2026-10-20"
+            text = text.replace(line, movedLine)
+        if withDeviation:
+            entries = "".join(f"- 2026-10-20: Phase {number} moves to LED-16. User, 2026-10-20: \"defer it\".\n"
+                              for number in numbers)
+            text = text.replace("## References", f"## Plan Deviations\n\n{entries}\n## References")
+        (self.repo / self.plan).write_text(text)
+
+    def test_start_never_picks_a_moved_phase_as_the_next_phase(self):
+        self.move_phases(1)
+        out = self.step("start", self.plan)
+        self.assertIn("AGENT: coder", out)
+        self.assertEqual("2", self.state()["phase"])
+
+    def test_a_plan_whose_only_open_phases_are_moved_is_complete(self):
+        self.mark_phases_done(1, 4)
+        self.move_phases(2, 3)
+        out = self.step("start", self.plan)
+        self.assertIn("ACTION: stop", out)
+        self.assertNotIn("AGENT:", out)
+        self.assertIn("plan is complete", out)
+        self.assertIn("Phase 2 to LED-16", out)
+        self.assertIn("Phase 3 to LED-16", out)
+
+    def test_start_with_the_id_of_a_moved_phase_refuses_and_names_the_ticket(self):
+        self.move_phases(2)
+        out = self.step("start", self.plan, "--phase", "2")
+        self.assertIn("ACTION: stop", out)
+        self.assertNotIn("AGENT:", out)
+        self.assertIn("Phase 2 is moved to LED-16", out)
+        self.assertIn("No coder was dispatched", out)
+        self.assertNotIn("The coder ran", out)
+
+    def test_tick_refuses_a_moved_phase_and_leaves_its_line_alone(self):
+        self.move_phases(2)
+        self.step("start", self.plan)
+        before = self.plan_text()
+        out = self.step("tick", "2")
+        self.assertIn("Phase 2 is moved to LED-16", out)
+        self.assertEqual(before, self.plan_text())
+
+    def test_finishing_the_last_open_phase_ends_the_plan_when_the_rest_are_moved(self):
+        self.move_phases(2, 3, 4)
+        out = self.finish_phase_one()
+        said = self.said()
+        self.assertIn("ACTION: stop-block-C", out)
+        self.assertIn("complete or moved to another ticket (Phase 2 to LED-16, Phase 3 to LED-16, Phase 4 to LED-16)",
+                      said)
+        self.assertNotIn("All phases complete", said)
+        self.assertNotIn("Auto-advancing", said)
+
+    def test_a_phase_moved_while_it_runs_stops_the_finish_without_marking_or_committing(self):
+        self.coder_round()
+        before = self.plan_text()
+        self.move_phases(1)
+        movedPlan = self.plan_text()
+        self.assertNotEqual(before, movedPlan)
+        self.hook("review-loop", self.LOOP_OK)
+        out = self.step("after-review")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("Phase 1 is moved to LED-16", out)
+        self.assertIn("The coder ran, and its work is not marked done or committed.", out)
+        self.assertNotIn("No coder was dispatched", out)
+        self.assertEqual("stopped", self.state()["stage"])
+        self.assertEqual(movedPlan, self.plan_text())
+        self.assertNotIn("Phase 1 marked done", out + self.said())
+        self.assertNotIn("Commit command", self.said())
+
+    def test_a_moved_line_with_no_plan_deviations_entry_stops_start_with_the_fix(self):
+        self.move_phases(2, withDeviation=False)
+        out = self.step("start", self.plan)
+        self.assertIn("ACTION: stop", out)
+        self.assertNotIn("AGENT:", out)
+        self.assertIn("moved-without-deviation", out)
+        self.assertIn("(who, when, their words)", out)
 
     # ---------- the phase-done line and the last-phase wording ----------
 
@@ -3248,12 +3535,21 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("(last phase)", said)
         self.assertIn("The plan is not complete.", said)
 
-    def test_a_sign_off_block_starts_the_next_ungated_phase_and_names_the_gated_one_it_skips(self):
+    def test_a_sign_off_block_does_not_start_a_phase_past_a_gated_one_and_names_both(self):
         self.gate_phases(2)
+        out = self.finish_phase_one()
+        said = self.said()
+        self.assertIn("ACTION: stop-block-C", out)
+        self.assertNotIn("fresh", said)
+        self.assertIn("Phase 2 (gate: LED-5 merged)", said)
+        self.assertIn("The next open phase without a gate is Phase 3.", said)
+
+    def test_a_sign_off_block_starts_the_next_phase_when_a_gated_phase_comes_after_it(self):
+        self.gate_phases(3)
         self.finish_phase_one()
         said = self.said()
-        self.assertIn("start Phase 3 fresh", said)
-        self.assertIn("Phase 2 (gate: LED-5 merged)", said)
+        self.assertIn("start Phase 2 fresh", said)
+        self.assertNotIn("gate clause", said)
 
     # ---------- a spent wait cap does not make the next wait stop at once ----------
 

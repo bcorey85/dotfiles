@@ -221,6 +221,152 @@ class PhaseGateClauseTest(unittest.TestCase):
                                     "- [ ] Phase 9: Fix the flow – gate: LED-6 merged"))
 
 
+REAL_MOVED_LINE = ("- [-] Phase 11: Work Mac runs (risk: high) — moved to LED-16 "
+                   "(`docs/tickets/LED-16-work-mac-rollout.md`), per agent-ledger-1d 2026-10-20; see Plan Deviations")
+REAL_DEVIATION = ("- 2026-10-20: Phase 11 (work Mac runs) moves to a new ticket, LED-16. Ruled by agent-ledger-1d, "
+                  "delegated by Brandon 2026-10-20. Brandon's words, 2026-10-20: \"do i NEED to do all this now\"")
+
+
+class MovedPhaseTest(unittest.TestCase):
+    def plan(self, statusLine=REAL_MOVED_LINE, deviations=("## Plan Deviations", "", REAL_DEVIATION)):
+        lines = ["## Phase Status", "", "- [x] Phase 10: Runs (risk: low)", statusLine, "",
+                 "## Phase 10: Runs", "text", "", "## Phase 11: Work Mac runs — moved to LED-16", "handed off", ""]
+        return plan_format.parse_plan(lines + list(deviations))
+
+    def kinds(self, plan):
+        return [failure["kind"] for failure in plan["failures"]]
+
+    def test_the_real_moved_line_with_its_deviation_entry_parses_and_is_neither_done_nor_open(self):
+        plan = self.plan()
+        entry = next(entry for entry in plan["entries"] if entry["number"] == "11")
+        self.assertEqual([], plan["failures"])
+        self.assertEqual((True, False, "LED-16"), (entry["moved"], entry["done"], entry["movedTo"]))
+        self.assertEqual((False, True), (plan["entries"][0]["moved"], plan["entries"][0]["done"]))
+
+    def test_a_moved_line_without_a_target_ticket_fails_and_says_to_add_it(self):
+        plan = self.plan("- [-] Phase 11: Work Mac runs (risk: high) — deferred, see Plan Deviations")
+        self.assertEqual(["moved-without-target"], self.kinds(plan))
+        self.assertEqual(4, plan["failures"][0]["line"])
+        self.assertIn("moved to <KEY>", plan["failures"][0]["detail"])
+        self.assertNotIn("- [ ] Phase", plan["failures"][0]["detail"])
+
+    def test_a_target_must_be_a_ticket_key(self):
+        for title in ("moved to later", "moved to LED16", "moved to led-16 maybe"):
+            with self.subTest(title=title):
+                plan = self.plan(f"- [-] Phase 11: Work Mac runs (risk: high) — {title}")
+                self.assertEqual(["moved-without-target"], self.kinds(plan))
+
+    def test_a_moved_phase_with_no_deviation_entry_naming_it_fails_and_says_to_record_the_sign_off(self):
+        plan = self.plan(deviations=())
+        self.assertEqual(["moved-without-deviation"], self.kinds(plan))
+        self.assertEqual(4, plan["failures"][0]["line"])
+        detail = plan["failures"][0]["detail"]
+        self.assertIn("the sign-off for the move in Plan Deviations (who, when, their words)", detail)
+        self.assertNotIn("user's", detail)
+
+    def test_a_moved_phase_may_have_no_section_of_its_own(self):
+        lines = ["## Phase Status", "", "- [x] Phase 10: Runs (risk: low)", REAL_MOVED_LINE, "",
+                 "## Phase 10: Runs", "text", "", "## Plan Deviations", "", REAL_DEVIATION]
+        plan = plan_format.parse_plan(lines)
+        self.assertNotIn("11", plan["sections"])
+        self.assertEqual([], plan["failures"])
+
+    def test_an_open_phase_with_no_section_still_fails(self):
+        lines = ["## Phase Status", "", "- [ ] Phase 10: Runs (risk: low)", "- [ ] Phase 11: Mac runs", "",
+                 "## Phase 10: Runs", "text"]
+        plan = plan_format.parse_plan(lines)
+        self.assertEqual(["missing-section"], self.kinds(plan))
+
+    def test_a_tick_entry_that_names_the_phase_does_not_record_the_move(self):
+        tickEntry = ("- 2026-10-21 (Phase 11): marked done with `tick`, outside the coder, review and verification "
+                     "steps of /code.")
+        plan = self.plan(deviations=("## Plan Deviations", "", tickEntry))
+        self.assertEqual(["moved-without-deviation"], self.kinds(plan))
+        self.assertIn("LED-16", plan["failures"][0]["detail"])
+
+    def test_the_phase_and_the_ticket_key_must_be_named_in_one_line(self):
+        plan = self.plan(deviations=("## Plan Deviations", "", "- 2026-10-20: Phase 11 is deferred.",
+                                     "- 2026-10-20: the rollout goes to LED-16."))
+        self.assertEqual(["moved-without-deviation"], self.kinds(plan))
+
+    def test_the_key_in_the_entry_must_stand_alone_and_be_the_key_the_line_moves_to(self):
+        for entry in ("- 2026-10-20: Phase 11 moves to LED-160.", "- 2026-10-20: Phase 11 moves to LED-17.",
+                      "- 2026-10-20: Phase 11 moves to XLED-16."):
+            with self.subTest(entry=entry):
+                plan = self.plan(deviations=("## Plan Deviations", "", entry))
+                self.assertEqual(["moved-without-deviation"], self.kinds(plan))
+
+    def test_a_phase_id_that_starts_with_p_is_named_by_the_id_or_by_phase_and_the_id(self):
+        lines = ["## Phase Status", "", "- [x] Phase P3: Runs", "- [-] Phase P4: Mac runs — moved to LED-16", "",
+                 "## Phase P3: Runs", "text", "", "## Plan Deviations", ""]
+        for entry, expected in (("- 2026-10-20: P4 moves to LED-16.", []),
+                                ("- 2026-10-20: Phase P4 moves to LED-16.", []),
+                                ("- 2026-10-20: Phase 4 moves to LED-16.", ["moved-without-deviation"]),
+                                ("- 2026-10-20: PP4 moves to LED-16.", ["moved-without-deviation"]),
+                                ("- 2026-10-20: P40 moves to LED-16.", ["moved-without-deviation"]),
+                                ("- 2026-10-20: P3 moves to LED-16.", ["moved-without-deviation"])):
+            with self.subTest(entry=entry):
+                plan = plan_format.parse_plan(lines + [entry])
+                self.assertEqual(expected, self.kinds(plan))
+
+    def test_an_entry_that_names_another_phase_does_not_count(self):
+        for entry in ("- 2026-10-20: Phase 1 moves to LED-16.", "- 2026-10-20: Phase 110 moves to LED-16.",
+                      "- 2026-10-20: Phase 11.2 moves to LED-16.", "- 2026-10-20: TOP11 moves to LED-16."):
+            with self.subTest(entry=entry):
+                plan = self.plan(deviations=("## Plan Deviations", "", entry))
+                self.assertEqual(["moved-without-deviation"], self.kinds(plan))
+
+    def test_an_entry_names_the_phase_as_phase_or_p_in_a_bullet_or_a_numbered_item(self):
+        for entry in ("1. **Phase 11 moved to LED-16** (2026-10-20).", "- P11 moved to LED-16.",
+                      "- **2026-10-20, Phase 11 (work Mac runs).** Moved to LED-16.",
+                      "- 2026-10-20: moved Phase 11 to LED-16.", "- P11, moved to LED-16."):
+            with self.subTest(entry=entry):
+                plan = self.plan(deviations=("## Plan Deviations", "", entry))
+                self.assertEqual([], plan["failures"])
+
+    def test_the_check_does_not_judge_who_signed_the_entry(self):
+        plan = self.plan(deviations=("## Plan Deviations", "", "- Phase 11 moves to LED-16."))
+        self.assertEqual([], plan["failures"])
+
+    def test_a_mention_outside_the_plan_deviations_section_does_not_count(self):
+        before = ("## Notes", "Phase 11 moves to LED-16.", "", "## Plan Deviations", "", "- Phase 9 changed.")
+        after = ("## Plan Deviations", "", "- Phase 9 changed.", "", "## Later notes", "Phase 11 moves to LED-16.")
+        for deviations in (before, after):
+            with self.subTest(deviations=deviations):
+                self.assertEqual(["moved-without-deviation"], self.kinds(self.plan(deviations=deviations)))
+
+    def test_moved_phases_lists_only_the_dash_marked_entries_of_a_plan_text(self):
+        text = "\n".join(["## Phase Status", "- [ ] Phase 1: a", REAL_MOVED_LINE, "- [x] Phase 2: b", "",
+                          "## Plan Deviations", REAL_DEVIATION])
+        self.assertEqual([("11", "LED-16")], [(e["number"], e["movedTo"]) for e in plan_format.moved_phases(text)])
+        self.assertEqual([], plan_format.moved_phases("no phase status here"))
+
+    def test_moved_phases_raises_with_the_name_and_line_for_a_moved_line_with_no_key(self):
+        text = "\n".join(["## Phase Status", "- [ ] Phase 1: a", "- [-] Phase 2: b — deferred", "",
+                          "## Plan Deviations", "- Phase 2 deferred."])
+        with self.assertRaises(plan_format.PlanFormatError) as caught:
+            plan_format.moved_phases(text, "spec.md")
+        self.assertTrue(str(caught.exception).startswith("spec.md:3:"), str(caught.exception))
+        self.assertIn("moved to <KEY>", str(caught.exception))
+
+    def test_moved_phases_raises_with_the_name_and_line_for_a_moved_line_no_deviation_records(self):
+        text = "\n".join(["## Phase Status", "- [ ] Phase 1: a", "- [-] Phase 2: b — moved to LED-16", "",
+                          "## Plan Deviations", "- 2026-10-21 (Phase 2): marked done with `tick`."])
+        with self.assertRaises(plan_format.PlanFormatError) as caught:
+            plan_format.moved_phases(text, "spec.md")
+        self.assertTrue(str(caught.exception).startswith("spec.md:3:"), str(caught.exception))
+        self.assertIn("Plan Deviations", str(caught.exception))
+
+    def test_open_and_done_lines_are_unmoved(self):
+        entries, failures = plan_format.phase_status_entries(
+            ["## Phase Status", "- [ ] Phase 1: a", "- [x] Phase 2: b", "- [X] Phase 3: c",
+             "- [-] Phase 4: d — moved to LED-16"], lambda title: None)
+        self.assertEqual([], failures)
+        self.assertEqual([(False, False), (False, True), (False, True), (True, False)],
+                         [(e["moved"], e["done"]) for e in entries[:4]])
+        self.assertEqual([True, False, False, False], [e["open"] for e in entries])
+
+
 class LoudFailureTest(unittest.TestCase):
     def assert_fails_at(self, text, lineNumber):
         with self.assertRaises(plan_format.PlanFormatError) as caught:
@@ -270,6 +416,22 @@ class RealPlansTest(unittest.TestCase):
                 self.assertTrue(all(item["line"] > 0 and item["text"] for item in items))
         print(f"parsed {len(paths)} of {len(paths)} real plan files, {itemCount} Manual Verification items",
               file=sys.stderr)
+
+    def test_every_real_phase_status_line_marked_moved_parses_with_its_section_and_deviation_entry(self):
+        paths = sorted(glob.glob(str(pathlib.Path.home() / "dev" / "*" / "docs" / "plans" / "*" / "spec.md")))
+        if not paths:
+            self.skipTest("no real plans on this machine")
+        movedCount = 0
+        movedKinds = {"unparsed-line", "section-without-status", "moved-without-target", "moved-without-deviation"}
+        for path in paths:
+            lines = pathlib.Path(path).read_text(errors="replace").splitlines()
+            dashLines = [line for line in lines if line.startswith("- [-] Phase ")]
+            plan = plan_format.parse_plan(lines)
+            with self.subTest(path=path):
+                self.assertEqual([], [f for f in plan["failures"] if f["kind"] in movedKinds])
+                self.assertEqual(len(dashLines), sum(1 for entry in plan["entries"] if entry["moved"]))
+            movedCount += len(dashLines)
+        print(f"parsed {len(paths)} of {len(paths)} real plans, {movedCount} moved Phase Status lines", file=sys.stderr)
 
 
 if __name__ == "__main__":

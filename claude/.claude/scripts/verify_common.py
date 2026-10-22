@@ -9,10 +9,21 @@ import subprocess
 import sys
 
 import plan_format
+import script_utils
 
 CLAUDE_HOME = pathlib.Path.home() / ".claude"
 REVIEW_MARKER = "verify-branch"
 REVIEW_GATE = "code-reviewer"
+# `ledger yield` waits up to 10 s on a locked database, then exits 75. A busy ledger is never read as "no review ran".
+LEDGER_BUSY_EXIT = 75
+LEDGER_ATTEMPTS = 4
+# The environment variables set the call timeout and the pause between tries; they exist so a test need not wait.
+LEDGER_CALL_TIMEOUT_SECONDS = 60
+LEDGER_BACKOFF_SECONDS = 3
+LEDGER_TIMEOUT_ENV = "VERIFY_LEDGER_TIMEOUT_SECONDS"
+LEDGER_BACKOFF_ENV = "VERIFY_LEDGER_BACKOFF_SECONDS"
+LEDGER_BUSY_MESSAGE = ("the ledger is busy (another process holds the database), so the review state could not be "
+                       "read; run this step again in a minute")
 AC_HEADING = re.compile(r"^(#{2,3})\s+(?:acceptance(?:\s+criteria)?|requirements)\s*:?\s*$", re.I)
 AC_HEADING_LOOSE = re.compile(r"^(#{2,3})\s+(?:acceptance|requirements)\b", re.I)
 LISTITEM = re.compile(r"^(\s*)(?:[-*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?(.*)$")
@@ -146,12 +157,32 @@ def criteria_file(text, name="acceptance-criteria.md"):
 def manual_items(planText, name):
     """Unchecked Manual Verification items in a plan, tagged human-only from the heading or the item.
 
-    The section grammar is plan_format's; a line it does not parse raises Fail with `name:line`."""
+    The items of a phase moved to another ticket (`[-]` in Phase Status) are not listed: this branch does not owe them.
+    The section grammar is plan_format's; a line it does not parse, and a moved line with no ticket key or no Plan
+    Deviations line, raise Fail with `name:line`."""
     try:
         parsed = plan_format.manual_verification(planText, name)
+        movedIds = {entry["number"] for entry in plan_format.moved_phases(planText, name)}
     except plan_format.PlanFormatError as error:
         raise Fail(str(error))
-    return [{"text": item["text"], "humanOnly": item["humanOnly"]} for item in parsed if not item["checked"]]
+    return [{"text": item["text"], "humanOnly": item["humanOnly"]} for item in parsed
+            if not item["checked"] and item["phase"] not in movedIds]
+
+
+def moved_phase_notes(planText, name):
+    """One line per phase moved to another ticket: `Phase <id> moved to <KEY>`, with the count of its unchecked Manual
+    Verification items, which move with it. [] when no phase is moved."""
+    try:
+        parsed = plan_format.manual_verification(planText, name)
+        movedEntries = plan_format.moved_phases(planText, name)
+    except plan_format.PlanFormatError as error:
+        raise Fail(str(error))
+    notes = []
+    for entry in movedEntries:
+        unchecked = sum(1 for item in parsed if item["phase"] == entry["number"] and not item["checked"])
+        notes.append(f"Phase {entry['number']} moved to {entry['movedTo']}: {unchecked} unchecked Manual Verification "
+                     "item(s) go with it")
+    return notes
 
 
 # ---------- git ----------
@@ -232,7 +263,17 @@ def review_ran(repo, branch, fingerprint):
     fingerprints of the checkout the process runs in, so `repo` and `branch` come from that checkout."""
     if shutil.which("ledger") is None:
         return False, "ledger not installed"
-    listed = run(["ledger", "yield", "--review-trees"])
+    try:
+        listed = script_utils.run_retrying(
+            ["ledger", "yield", "--review-trees"], (LEDGER_BUSY_EXIT,), LEDGER_ATTEMPTS,
+            float(os.environ.get(LEDGER_BACKOFF_ENV, LEDGER_BACKOFF_SECONDS)),
+            float(os.environ.get(LEDGER_TIMEOUT_ENV, LEDGER_CALL_TIMEOUT_SECONDS)))
+    except OSError as error:
+        raise Fail(f"cannot run ledger: {error}")
+    except subprocess.TimeoutExpired:
+        raise Fail(LEDGER_BUSY_MESSAGE)
+    if listed.returncode == LEDGER_BUSY_EXIT:
+        raise Fail(LEDGER_BUSY_MESSAGE)
     if listed.returncode != 0:
         errorLines = listed.stderr.strip().splitlines()
         raise Fail(errorLines[-1] if errorLines else f"ledger yield --review-trees exited {listed.returncode}")

@@ -16,13 +16,18 @@ Anything else fails: a fenced block, a table, a quote, an HTML comment, an inden
 list item under a deeper sub-heading inside the section (it would be read as a manual item).
 A phase stays open across its Success Criteria, Automated Verification and Manual Verification headings, whatever
 their level.
+
+Phase Status grammar: `- [ ] Phase <id>: <title>` is open, `- [x] ...` is done, and `- [-] ...` is moved to another
+ticket. A moved line says `moved to <KEY>` (a ticket key such as LED-16), and the plan's `## Plan Deviations` section
+holds a line that names the phase (`Phase <id>` or `P<id>`) and the ticket key. The reader checks that the line exists,
+never who signed it. A moved phase is neither done nor open, and it needs no `## Phase <id>` section: a move may take
+the section to the new ticket.
 """
 import re
 
 import script_utils
 
 PHASE_ID = r"(?=[A-Za-z0-9.-]*\d)[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*"
-HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 PHASE_HEADING = re.compile(rf"^(#{{2,4}})\s+Phase\s+({PHASE_ID})(?![A-Za-z0-9])")
 MANUAL_HEADING = re.compile(r"^(#{1,6})\s+manual verification\b(.*)$", re.I)
 SUCCESS_GROUP_HEADING = re.compile(r"^#{1,6}\s+(?:success criteria|automated verification|manual verification)\b", re.I)
@@ -34,7 +39,10 @@ HUMAN_ONLY_MARK = "human-only"
 AGENT_VERIFIED_MARK = "agent-verified"
 
 
-PHASE_STATUS_LINE = re.compile(rf"^[-*]\s+\[( |x|X)\]\s+Phase\s+({PHASE_ID})\s*[:.—–-]\s*(.*)$")
+PHASE_STATUS_LINE = re.compile(rf"^[-*]\s+\[( |x|X|-)\]\s+Phase\s+({PHASE_ID})\s*[:.—–-]\s*(.*)$")
+MOVED_MARK = "-"
+MOVED_TARGET = re.compile(r"(?i:moved to)\s+([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])")
+DEVIATIONS_HEADING = "Plan Deviations"
 STATUS_ITEM_START = re.compile(r"^[-*]\s+\[")
 RISK_MARK = re.compile(r"\(risk:\s*(low|high)\)", re.I)
 GATE_CLAUSE = re.compile(r"(?:^|\s)[—–-]\s*gate:\s*(.*)$", re.I)
@@ -73,7 +81,7 @@ def phase_spans(lines):
     for index, line in enumerate(lines):
         if index in fenced:
             continue
-        heading = HEADING.match(line)
+        heading = script_utils.MARKDOWN_HEADING.match(line)
         if not heading:
             continue
 
@@ -114,7 +122,10 @@ def phase_status_entries(lines, closing_skill):
     """The `- [ ] Phase <id>: <title>` lines under the `Phase Status` heading, in file order, and the failures for a
     list line that does not parse or an id listed twice. `closing_skill(title)` names the skill a closing phase runs,
     or None. Each entry is {"line", "done", "number", "title", "risk", "closing", "gate"}; "gate" is the text of a
-    `gate: <condition>` clause in the title, or None."""
+    `gate: <condition>` clause in the title, or None. "moved" is True for a `[-]` line and "movedTo" is the ticket key
+    its `moved to <KEY>` names, or None; a moved phase is not "done". "open" is True for a phase that is neither done
+    nor moved: the phases a run can still start. A `[-]` line with no `moved to <KEY>` is a failure and still returns
+    its entry."""
     fenced = script_utils.fenced_line_indexes(lines)
     entries = []
     failures = []
@@ -124,7 +135,7 @@ def phase_status_entries(lines, closing_skill):
     for index, line in enumerate(lines):
         if index in fenced:
             continue
-        heading = HEADING.match(line)
+        heading = script_utils.MARKDOWN_HEADING.match(line)
         if heading:
             inStatus = heading.group(2).strip() == "Phase Status"
             continue
@@ -147,16 +158,50 @@ def phase_status_entries(lines, closing_skill):
         title = match.group(3)
         risk = RISK_MARK.search(title)
         closing = closing_skill(title)
-        entries.append({"line": index, "done": match.group(1) != " ", "number": number, "title": title,
+        isMoved = match.group(1) == MOVED_MARK
+        target = MOVED_TARGET.search(title) if isMoved else None
+        if isMoved and not target:
+            failures.append({"line": index + 1, "kind": "moved-without-target", "detail": f"Phase {number} is marked "
+                             "`[-]` (moved to another ticket) but the line does not say `moved to <KEY>`. Add the "
+                             "ticket key, for example `moved to LED-16`."})
+        isDone = match.group(1) in ("x", "X")
+        entries.append({"line": index, "done": isDone, "moved": isMoved, "open": not isDone and not isMoved,
+                        "movedTo": target.group(1) if target else None, "number": number, "title": title,
                         "risk": risk.group(1).lower() if risk else "high", "closing": closing,
                         "gate": gate_condition(title)})
     return entries, failures
 
 
+def deviation_records_move(lines, number, ticketKey):
+    """True when one line of the plan's `## Plan Deviations` section names the phase and names the ticket key it moved
+    to. The phase is named `Phase <id>` or `P<id>`, not followed by more of an id; an id that already starts with `P` is
+    also named by itself (`P4`, `Phase P4`). The key must stand alone (`LED-16`, not `LED-160`). A line that names only
+    the phase, such as a tick entry, does not count. The check only finds the words; it never judges who signed."""
+    deviationLines = [lines[index] for index in script_utils.heading_section_indexes(lines, DEVIATIONS_HEADING)]
+    escaped = re.escape(number)
+    bareName = escaped if number.startswith("P") else "P" + escaped
+    phaseName = re.compile(rf"(?<![A-Za-z0-9])(?:Phase\s+{escaped}|{bareName})(?![A-Za-z0-9]|[.-][A-Za-z0-9])")
+    keyName = re.compile(rf"(?<![A-Za-z0-9]){re.escape(ticketKey)}(?![A-Za-z0-9])")
+    return any(phaseName.search(line) and keyName.search(line) for line in deviationLines)
+
+
+def moved_deviation_failure(lines, entry):
+    """The `moved-without-deviation` failure for a moved entry whose ticket key no Plan Deviations line records with
+    the phase's name, or None. A moved entry with no key has its own failure and gives None here."""
+    if not entry["moved"] or entry["movedTo"] is None:
+        return None
+    if deviation_records_move(lines, entry["number"], entry["movedTo"]):
+        return None
+    return {"line": entry["line"] + 1, "kind": "moved-without-deviation", "detail": f"Phase {entry['number']} is "
+            f"marked moved, but '## {DEVIATIONS_HEADING}' has no line that names it and {entry['movedTo']}. Record "
+            f"the sign-off for the move in {DEVIATIONS_HEADING} (who, when, their words), and name Phase "
+            f"{entry['number']} and {entry['movedTo']} in the same line."}
+
+
 def parse_plan(lines, closing_skill=lambda title: None):
     """The plan's Phase Status entries and phase sections, with every failure sorted by line: {"entries", "sections"
     (id to the first section of that id), "failures"}. A Phase Status entry with no section is a failure unless it is
-    a closing phase, and a section with no Phase Status entry is a failure when the plan lists any phase."""
+    a closing phase or a moved phase, and a section with no Phase Status entry is a failure when the plan lists any phase."""
     entries, failures = phase_status_entries(lines, closing_skill)
     spans, sectionFailures = phase_spans(lines)
     failures += sectionFailures
@@ -166,8 +211,13 @@ def parse_plan(lines, closing_skill=lambda title: None):
         sections.setdefault(sectionId, section)
 
     for entry in entries:
-        # A closing phase is defined by its skill, so its Phase Status line needs no section of its own.
-        if entry["number"] not in sections and not entry["closing"]:
+        deviationFailure = moved_deviation_failure(lines, entry)
+        if deviationFailure:
+            failures.append(deviationFailure)
+
+        # A closing phase is defined by its skill, so its Phase Status line needs no section of its own. A moved phase
+        # may take its section to the new ticket.
+        if entry["number"] not in sections and not entry["closing"] and not entry["moved"]:
             failures.append({"line": entry["line"] + 1, "kind": "missing-section", "detail": f"Phase "
                              f"{entry['number']} is in Phase Status but the plan has no '## Phase {entry['number']}' "
                              "section."})
@@ -181,6 +231,23 @@ def parse_plan(lines, closing_skill=lambda title: None):
 
     failures.sort(key=lambda failure: failure["line"])
     return {"entries": entries, "sections": sections, "failures": failures}
+
+
+def moved_phases(text, name="plan"):
+    """The Phase Status entries marked `[-]` (moved to another ticket) in this plan text, in file order. A plan with no
+    Phase Status gives []. A moved line with no `moved to <KEY>`, or with no Plan Deviations line that records the move,
+    raises PlanFormatError that starts with `name:line:`, the same check parse_plan makes. Other lines the Phase Status
+    grammar rejects are left to parse_plan, which names them."""
+    lines = text.splitlines()
+    entries, entryFailures = phase_status_entries(lines, lambda title: None)
+    moved = [entry for entry in entries if entry["moved"]]
+    failures = [failure for failure in entryFailures if failure["kind"] == "moved-without-target"]
+    deviationFailures = [moved_deviation_failure(lines, entry) for entry in moved]
+    failures += [failure for failure in deviationFailures if failure]
+    if failures:
+        first = min(failures, key=lambda failure: failure["line"])
+        raise PlanFormatError(f"{name}:{first['line']}: {first['detail']}")
+    return moved
 
 
 def phase_at(spans, index):
@@ -212,7 +279,7 @@ def manual_verification(text, name="plan"):
     for index, line in enumerate(lines):
         number = index + 1
         isFenced = index in fenced
-        heading = None if isFenced else HEADING.match(line)
+        heading = None if isFenced else script_utils.MARKDOWN_HEADING.match(line)
 
         if not isFenced and line.strip() == "---":
             inSection = False

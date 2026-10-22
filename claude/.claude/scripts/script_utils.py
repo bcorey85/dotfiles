@@ -9,6 +9,7 @@ import pathlib
 import re
 import subprocess
 import time
+import uuid
 
 FENCE_OPEN = re.compile(r"^\s*(`{3,}|~{3,})")
 CHECKBOX = re.compile(r"\[[xX]\]")
@@ -113,6 +114,28 @@ def visible_text(line, in_comment):
 def one_line(text, limit=200):
     """The text on one line: runs of whitespace collapse to a space, cut at `limit` characters."""
     return re.sub(r"\s+", " ", str(text)).strip()[:limit]
+
+
+def contains_ignoring_whitespace(text, part):
+    """True when `part` occurs in `text` once every run of whitespace in both reads as one space. An empty part
+    is never contained."""
+    squashedPart = " ".join(str(part).split())
+    return bool(squashedPart) and squashedPart in " ".join(str(text).split())
+
+
+def pre_tool_use_deny(reason):
+    """Print the PreToolUse hook output that denies the tool call and shows `reason` to the model."""
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                             "permissionDecisionReason": reason}}))
+
+
+def sortable_unique_id(now=None):
+    """An id that sorts by creation time and does not repeat: local time to the second, a dash, six random hex
+    digits. `now` is epoch seconds (default: the current time)."""
+    epochSeconds = now if now is not None else time.time()
+    localTime = time.localtime(epochSeconds)
+    stamp = time.strftime("%Y%m%dT%H%M%S", localTime)
+    return stamp + "-" + uuid.uuid4().hex[:6]
 
 
 def unquote(text):

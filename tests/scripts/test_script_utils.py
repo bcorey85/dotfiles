@@ -1,4 +1,7 @@
+import contextlib
 import importlib.util
+import io
+import json
 import os
 import pathlib
 import subprocess
@@ -112,6 +115,38 @@ class JoinedDistinctTest(unittest.TestCase):
     def test_different_values_are_joined_in_order(self):
         self.assertEqual("a - b", script_utils.joined_distinct(["a", "b"]))
         self.assertEqual("a | b", script_utils.joined_distinct(["a", "b"], " | "))
+
+
+class ContainsIgnoringWhitespaceTest(unittest.TestCase):
+    def test_a_part_that_differs_only_in_line_breaks_and_indentation_is_contained(self):
+        self.assertTrue(script_utils.contains_ignoring_whitespace("intro\n\n  a   b\nc\n", "a b\n   c"))
+
+    def test_a_part_with_a_different_word_is_not_contained(self):
+        self.assertFalse(script_utils.contains_ignoring_whitespace("intro a b", "a b c"))
+
+    def test_an_empty_or_blank_part_is_not_contained(self):
+        self.assertFalse(script_utils.contains_ignoring_whitespace("anything", " \n"))
+
+
+class PreToolUseDenyTest(unittest.TestCase):
+    def test_prints_one_json_line_that_denies_the_call_with_the_reason(self):
+        printed = io.StringIO()
+
+        with contextlib.redirect_stdout(printed):
+            script_utils.pre_tool_use_deny("Read the file first.")
+
+        printedLines = printed.getvalue().splitlines()
+        denial = json.loads(printed.getvalue())
+        self.assertEqual({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                                 "permissionDecisionReason": "Read the file first."}}, denial)
+        self.assertEqual(1, len(printedLines))
+
+
+class SortableUniqueIdTest(unittest.TestCase):
+    def test_ids_made_in_one_second_differ_and_later_seconds_sort_later(self):
+        first = script_utils.sortable_unique_id(1000)
+        self.assertNotEqual(first, script_utils.sortable_unique_id(1000))
+        self.assertLess(first, script_utils.sortable_unique_id(1001))
 
 
 class LastChangeNsTest(unittest.TestCase):

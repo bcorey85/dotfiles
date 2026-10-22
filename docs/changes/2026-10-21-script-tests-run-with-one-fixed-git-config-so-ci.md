@@ -24,7 +24,7 @@ Tests: under a hostile config (`safe.directory = *` in the global file and in `G
 
 ## Result
 
-Built 2026-10-21. Waits for the install and the first CI run after the push.
+Built 2026-10-21. Installed and pushed the same day. The first CI run after the push passed, the first pass in the workflow's 16 runs.
 
 ## Watch
 

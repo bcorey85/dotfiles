@@ -284,10 +284,6 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/scripts/review-commit-gate.py"
-          },
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/scripts/log-agent-usage.py"
           }
         ]
       },

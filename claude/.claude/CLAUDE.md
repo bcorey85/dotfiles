@@ -14,7 +14,7 @@ Coders run only the tests for the files they changed. The full suite runs once, 
 
 ## Ticket Acceptance Criteria
 
-The ticket's ACs are the contract. Only the user's explicit sign-off overrides one. A plan, ADR, criteria file or agent never cuts, narrows or hands an AC to another repo or team on its own. Record each sign-off with who, when and their words. A run that shows an AC failing is a failing AC: report it as failing, never as someone else's job.
+The ticket's ACs are the contract. Only the user's explicit sign-off overrides one. A plan, ADR, criteria file or agent never cuts, narrows or hands an AC to another repo or team on its own. Record each sign-off with who and when. A run that shows an AC failing is a failing AC: report it as failing, never as someone else's job.
 
 ## Messages to Other Sessions
 

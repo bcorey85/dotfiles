@@ -49,11 +49,11 @@ Convert the verifier's verdict table to a JSON list and pipe it in:
 ```bash
 ~/.claude/scripts/verify-log --rows - <<'JSON'
 [{"item": "<criterion>", "verdict": "done|partial|missing|failed-check|needs-manual|overridden",
-  "file": "<path>", "line": 0, "evidence": "<one line>", "signoff": "<who, when, their words; overridden only>"}]
+  "file": "<path>", "line": 0, "evidence": "<one line>", "signoff": "<who and when; overridden only>"}]
 JSON
 ```
 
-One row per verdicted item, verbatim, plus one `failed-check` row for each ✗ automated check in the verifier's Job 2 table (`item` is the command, `evidence` its failure). Add a `missing` row for each id the verifier marks ⚠️ MISSING; name the id at the start of `item` (`AC3: ...`). Send a row for every id in the criteria file: if one has no row, the script exits 2, names it and writes nothing. `line` is a number or a range such as `12-20`. The script writes the run row and a `plan-drift` finding row per gap, and prints the result. A `partial`, a `missing`, a `failed-check`, and an `overridden` row without a quoted sign-off are gaps. An N/A verdict exits 3: tell the user, do not report completeness. Empty rows without `--result NA` exit 2.
+One row per verdicted item, verbatim, plus one `failed-check` row for each ✗ automated check in the verifier's Job 2 table (`item` is the command, `evidence` its failure). Add a `missing` row for each id the verifier marks ⚠️ MISSING; name the id at the start of `item` (`AC3: ...`). Send a row for every id in the criteria file: if one has no row, the script exits 2, names it and writes nothing. `line` is a number or a range such as `12-20`. The script writes the run row and a `plan-drift` finding row per gap, and prints the result. A `partial`, a `missing`, a `failed-check`, and an `overridden` row without a sign-off are gaps. An N/A verdict exits 3: tell the user, do not report completeness. Empty rows without `--result NA` exit 2.
 
 ## Routing
 

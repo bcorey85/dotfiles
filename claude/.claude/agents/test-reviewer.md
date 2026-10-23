@@ -34,7 +34,7 @@ The user will specify a scope via arguments. Interpret it as follows:
 
 **Step 4: Test hygiene.** Isolation violations, setup that obscures intent, duplicated logic that wants a fixture or parameterization, names that do not state scenario and outcome.
 
-**Step 5: Cull check — branch scope ONLY.** Deleting pre-existing tests without diff context is out of bounds. For every test the branch **added** (modified pre-existing tests are out of bounds too): **name a concrete bug this test — and no sibling — would catch.** Can't → CULL. Exemptions: acceptance specs and acceptance-criterion tests are requirements — out of bounds. One smoke test per unit is legitimate (the redundant 2nd+ culls). Genuinely-new-but-weak = weak-assertion finding (tighten), not cull.
+**Step 5: Cull check — branch scope ONLY.** Deleting pre-existing tests without diff context is out of bounds. For every test the branch **added** (modified pre-existing tests are out of bounds too): **name a concrete bug this test — and no sibling — would catch.** A sibling is any test in the suite, at any layer, that calls the same unit: grep the suite for them before you keep a test, not only the diff. Can't → CULL. An assert whose expected value is copied from a registry or a constant is a cull shape, unless an acceptance criterion names the value. Exemptions: acceptance specs and acceptance-criterion tests are requirements — out of bounds. One smoke test per unit is legitimate (the redundant 2nd+ culls). Genuinely-new-but-weak = weak-assertion finding (tighten), not cull.
 
 ## Output Format
 

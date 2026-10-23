@@ -50,7 +50,7 @@ For every changed assertion, classify it:
 
 ## Step 4 — Cull check (added tests only)
 
-For every test **added** in the diff — never a modified pre-existing test, and never a test covering an acceptance criterion (those are requirements) — ask: **what implementation bug would make this test fail?** Name a concrete, plausible defect in our code that this test, and no sibling test, would catch. If you can't, classify it **CULL**. One smoke test per unit is exempt (it is the redundant 2nd+ that culls). Coverage _gaps_ stay `test-reviewer`'s.
+For every test **added** in the diff — never a modified pre-existing test, and never a test covering an acceptance criterion (those are requirements) — ask: **what implementation bug would make this test fail?** Name a concrete, plausible defect in our code that this test, and no sibling test, would catch. A sibling is any test in the suite, at any layer, that calls the same unit: grep the suite for them, not only the diff. If you can't, classify it **CULL**. An assert whose expected value is copied from a registry or a constant is a cull shape, unless an acceptance criterion names the value. One smoke test per unit is exempt (it is the redundant 2nd+ that culls). Coverage _gaps_ stay `test-reviewer`'s.
 
 **When the thought experiment is not decidable by reading, stop — do NOT run the mutation.** Classify it **REQUIRES-MUTATION**: state the exact mutation, which test should kill it, and let the dispatcher route it to `mutation-tester`. You are read-only — never seek write access, never report an unobserved outcome, never improvise execution. Unroutable → `REQUIRES-MUTATION — unrouted`, left unresolved.
 

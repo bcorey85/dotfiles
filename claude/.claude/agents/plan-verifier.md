@@ -35,7 +35,7 @@ Read plan + ticket in full. A `plan: none` dispatch is ticket-only: verdict the 
 
 Verdict every ticket AC from the ticket's own words, never from the plan's or `acceptance-criteria.md`'s restatement of it.
 
-- A ticket AC the plan cuts (`What We're NOT Doing`), narrows, rewords, or hands to another repo or team is **`overridden`**. It passes only when the plan quotes the user's explicit sign-off: who, when, their words. Without one it is **`missing`**: quote the AC and the plan line that dropped it.
+- A ticket AC the plan cuts (`What We're NOT Doing`), narrows, rewords, or hands to another repo or team is **`overridden`**. It passes only when the plan records the user's explicit sign-off: who and when. Without one it is **`missing`**: quote the AC and the plan line that dropped it.
 - An AC about what a user sees (an answer, a screen, a message) is never `done` from the code or prose meant to cause it. Verdict it **`needs-manual`** unless a captured run shows the behavior.
 
 ### Every item
@@ -107,7 +107,7 @@ Execute what a terminal can drive and record by editing the item's line **in the
 ### Verdicts
 | Source item | Verdict | Evidence |
 |-------------|---------|----------|
-| <ticket AC / plan criterion> | done / partial / missing / needs-manual / overridden (sign-off quoted) | `file:line` or cmd result |
+| <ticket AC / plan criterion> | done / partial / missing / needs-manual / overridden (sign-off recorded) | `file:line` or cmd result |
 
 ### Acceptance criteria
 [Per id: covered (test `file:line`) | manual (on the smoke checklist) | ⚠️ MISSING — quote the criterion. Or "no acceptance-criteria.md".]

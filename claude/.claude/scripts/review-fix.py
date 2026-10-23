@@ -5,7 +5,7 @@ renders the packet, logs the rows, posts the Aikido replies, and prints what the
 
   review-fix.py packet --skill review|fix [options] [< packet]
       --scope branch-exit|standalone   scope of the ask rows (review passes branch-exit when it dispatched with base=)
-      --lane eng-spec|code|other|none  lane of the ask and escape rows (default none for review, code for fix)
+      --lane <lane>  lane of the ask and escape rows (default none for review, code for fix); `ledger registry` lists the allowed values
       --source conversation|cc|handoff (fix) where the findings came from; escapes log only for conversation
       --escape "file=<p>|class=<c>|severity=<s>|gate_missed=<g>|guard=<r>|desc=<one line>"   (fix, repeatable)
       --aikido "<path>:<line>=<comment_id>"                                                 (fix, repeatable)
@@ -40,14 +40,10 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import handback  # noqa: E402
 import script_utils  # noqa: E402
-from handback import CLASSES, PacketError, item_field, item_text  # noqa: E402
+from handback import PacketError, item_field, item_text  # noqa: E402
 from script_utils import one_line, split_location  # noqa: E402
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR", pathlib.Path.home() / ".claude"))
-SEVERITIES = ["high", "medium", "low"]
-GATES_MISSED = ["review", "drift-gate", "test-intent", "stage", "coder", "eng-spec"]
-GUARDS = ["type", "convention", "gotcha", "rule", "check", "none", "n-a"]
-LANES = ["eng-spec", "code", "other", "none"]
 SOURCES = ["conversation", "cc", "handoff"]
 ASK_OUTCOMES = ["accepted", "rejected", "modified"]
 PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
@@ -149,15 +145,9 @@ def parse_escape(spec):
     missing = [name for name in ("file", "class", "severity", "gate_missed", "guard", "desc") if not fields.get(name)]
     if missing:
         raise UsageError(f"--escape {spec!r} lacks {', '.join(missing)}")
-    for name, allowed in (("class", CLASSES), ("severity", SEVERITIES), ("gate_missed", GATES_MISSED),
-                          ("guard", GUARDS)):
-        if fields[name] not in allowed:
-            raise UsageError(f"--escape {name}={fields[name]!r} is not one of {'|'.join(allowed)}")
     extra = sorted(set(fields) - {"file", "class", "severity", "gate_missed", "guard", "desc", "lane"})
     if extra:
         raise UsageError(f"--escape has unknown keys: {', '.join(extra)}")
-    if fields.get("lane") and fields["lane"] not in LANES:
-        raise UsageError(f"--escape lane={fields['lane']!r} is not one of {'|'.join(LANES)}")
     return fields
 
 
@@ -179,7 +169,7 @@ def packet_arguments(argv):
     parser = argument_parser("packet")
     parser.add_argument("--skill", required=True, choices=["review", "fix"])
     parser.add_argument("--scope", default="standalone", choices=["branch-exit", "standalone"])
-    parser.add_argument("--lane", choices=LANES)
+    parser.add_argument("--lane")
     parser.add_argument("--source", default="handoff", choices=SOURCES)
     parser.add_argument("--escape", action="append", default=[])
     parser.add_argument("--aikido", action="append", default=[])

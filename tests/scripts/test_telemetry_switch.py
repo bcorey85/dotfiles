@@ -186,8 +186,7 @@ class SwitchTest(unittest.TestCase):
                  ("neither", {}, "off", False),
                  ("var=0, no file", {"CLAUDE_TOOLKIT_TELEMETRY": "0"}, "off", False)]
         scanArguments = ["repo=r", "scan=prohibition", "stage=manual", "exit=0", "candidates=2", "confirmed=1"]
-        writers = [("agent-usage.jsonl", "log-agent-usage.py", HOOK_POST, []),
-                   ("scan-runs.jsonl", "log-scan", None, scanArguments)]
+        writers = [("agent-usage.jsonl", "log-agent-usage.py", HOOK_POST, [])]
         for caseName, extra, fileState, expectRow in cases:
             for logName, script, payload, arguments in writers:
                 with self.subTest(case=caseName, writer=script):
@@ -198,6 +197,12 @@ class SwitchTest(unittest.TestCase):
                                                 json.dumps(payload) if payload else None, extra=extra)
                     self.assertEqual(finished.returncode, 0, finished.stderr)
                     self.assertEqual(len(self.lines(logName)), 1 if expectRow else 0)
+            with self.subTest(case=caseName, writer="log-scan"):
+                self.turn(fileState)
+                self.ledgerCalls.unlink(missing_ok=True)
+                finished = self.run_command(["bash", str(self.scripts / "log-scan"), *scanArguments], extra=extra)
+                self.assertEqual(finished.returncode, 0, finished.stderr)
+                self.assertEqual(len(self.ledger_calls()), 1 if expectRow else 0)
 
     def test_helper_four_cases_as_command_and_import(self):
         """The two helper forms agree on the four cases."""
@@ -310,19 +315,26 @@ class SwitchTest(unittest.TestCase):
         self.turn("off")
         finished = self.run_command(args)
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertFalse(self.home_file("review-escapes.jsonl").exists())
         self.assertEqual(finished.stdout, "not logged: toolkit telemetry is off\n")
+        self.assertEqual(self.ledger_calls(), [])
         self.turn("on")
         finished = self.run_command(args)
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertTrue(finished.stdout.startswith("logged"))
-        self.assertEqual(len(self.lines("review-escapes.jsonl")), 1)
+        self.assertEqual(finished.stdout, "")
+        calls = self.ledger_calls()
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["args"][:2], ["write", "review_escape"])
+        self.assertFalse(self.home_file("review-escapes.jsonl").exists())
 
     def test_log_escape_validation_still_runs_when_off(self):
         self.turn("off")
-        finished = self.run_command([str(self.scripts / "log-escape"), "class=nonsense", "guard=none"])
+        script = str(self.scripts / "log-escape")
+        finished = self.run_command([script, "class=nonsense"])
         self.assertEqual(finished.returncode, 1)
         self.assertIn("refusing to log", finished.stderr)
+        finished = self.run_command([script, "class=nonsense", "guard=none"])
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(finished.stdout, "not logged: toolkit telemetry is off\n")
 
     # ---- --check: the same validation, no write, switch ignored
 
@@ -341,11 +353,10 @@ class SwitchTest(unittest.TestCase):
         return [args[0], "--check", *args[1:]]
 
     def invalid(self, args):
-        """The same arguments with one value the logger itself refuses: a class outside log-escape's vocabulary, a
-        kind outside run|finding for log-review-finding (it passes an unknown class on to `ledger write`, which
-        stores it as other)."""
-        return [argument.replace("class=bug", "class=nonsense").replace("kind=finding", "kind=nonsense")
-                for argument in args]
+        """The same arguments with one value the logger itself refuses: a missing guard for log-escape, a kind
+        outside run|finding for log-review-finding (both pass an unknown class on to `ledger write`, which stores
+        it as other)."""
+        return [argument.replace("kind=finding", "kind=nonsense") for argument in args if argument != "guard=none"]
 
     def test_check_valid_arguments_exit_zero_and_write_nothing_with_switch_on(self):
         self.turn("on")
@@ -381,8 +392,8 @@ class SwitchTest(unittest.TestCase):
         """The class vocabulary lives in `ledger write`, so log-review-finding exits 0 and sends the value as given;
         --check refuses nothing for it either."""
         self.turn("on")
-        badArgs = self.invalid(self.finding_check_args())
-        badArgs[1] = "kind=finding"
+        badArgs = self.finding_check_args()
+        badArgs[badArgs.index("class=bug")] = "class=nonsense"
         checkCall = self.run_command(self.with_check(badArgs))
         self.assertEqual((checkCall.returncode, checkCall.stdout, checkCall.stderr), (0, "", ""))
         realCall = self.run_command(badArgs)
@@ -429,12 +440,13 @@ class SwitchTest(unittest.TestCase):
         finished = self.run_command([args[0], args[1], "--check", *args[2:]])
         self.assertEqual(finished.returncode, 0)
         self.assertIn("skipping malformed arg", finished.stderr)
-        self.assertEqual(len(self.lines("review-escapes.jsonl")), 1)
+        self.assertEqual(len(self.ledger_calls()), 1)
 
     def test_log_scan(self):
         script = str(self.scripts / "log-scan")
         args = [script, "repo=r", "scan=prohibition", "stage=manual", "exit=0", "candidates=2", "confirmed=1"]
-        self.assert_switch("scan-runs.jsonl", lambda: self.run_command(args), quiet=False)
+        _, row = self.assert_ledger_switch("scan_run", lambda: self.run_command(args))
+        self.assertEqual(row["scan"], "prohibition")
 
     def test_log_spec_run(self):
         script = str(self.scripts / "log-spec-run")
@@ -541,6 +553,7 @@ class SwitchTest(unittest.TestCase):
         finished = self.run_command([str(self.scripts / "log-scan"), "repo=r", "scan=other", "stage=manual", "exit=2"])
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertFalse(self.home_file("scan-runs.jsonl").exists())
+        self.assertEqual(self.ledger_calls(), [])
 
     def test_missing_helper_keeps_log_escape_off(self):
         (self.scripts / "telemetry_enabled.sh").unlink()
@@ -548,6 +561,7 @@ class SwitchTest(unittest.TestCase):
         finished = self.run_command([str(self.scripts / "log-escape"), *self.ESCAPE_ARGS])
         self.assertEqual((finished.returncode, finished.stdout), (0, "not logged: toolkit telemetry is off\n"))
         self.assertFalse(self.home_file("review-escapes.jsonl").exists())
+        self.assertEqual(self.ledger_calls(), [])
 
     def test_missing_python_helper_keeps_logging_hooks_off(self):
         (self.scripts / "telemetry_enabled.py").unlink()

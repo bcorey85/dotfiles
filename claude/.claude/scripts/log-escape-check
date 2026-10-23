@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# log-escape-check — no-model check for the escape and scan writers
+#
+# usage: log-escape-check [tmpdir]
+#   Runs log-escape and log-scan against a throwaway ledger root and HOME, using the
+#   `ledger` first on PATH, and asserts what reaches the ledger. Prints one line per
+#   case and exits non-zero on any failure.
+#   Build the binary first and put it first on PATH:
+#     PATH=<agent-ledger>/target/debug:$PATH bash log-escape-check
+set -uo pipefail
+
+here=$(cd "$(dirname "$0")" && pwd)
+work=$(mktemp -d "${1:-${TMPDIR:-/tmp}}/log-escape-check.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+fails=0
+
+pass() { printf 'ok    %s\n' "$1"; }
+fail() { printf 'FAIL  %s\n     %s\n' "$1" "$2"; fails=$((fails + 1)); }
+
+command -v ledger >/dev/null 2>&1 || { printf 'FAIL  ledger is not on PATH\n'; exit 1; }
+command -v jq >/dev/null 2>&1 || { printf 'FAIL  jq is not on PATH\n'; exit 1; }
+
+expect() { # name want got
+  if [ "$2" = "$3" ]; then pass "$1"; else fail "$1" "want '$2', got '$3'"; fi
+}
+
+contains() { # name haystack needle
+  case "$2" in
+    *"$3"*) pass "$1" ;;
+    *) fail "$1" "missing: $3 in: $2" ;;
+  esac
+}
+
+lacks() { # name haystack needle
+  case "$2" in
+    *"$3"*) fail "$1" "unexpected: $3" ;;
+    *) pass "$1" ;;
+  esac
+}
+
+# The planted values stand in for a real path, branch, description and note. None may reach a shard.
+planted_file="src/planted_widget_zq.rs"
+planted_branch="planted-branch-zq"
+planted_desc="planted description zq"
+planted_note="planted note zq"
+
+export AGENT_LEDGER_ROOT="$work/root"
+export HOME="$work/home"
+export CLAUDE_TOOLKIT_TELEMETRY=1
+unset CLAUDE_CODE_SESSION_ID
+mkdir -p "$HOME/.claude"
+
+repo="$work/repo"
+mkdir -p "$repo" && git -C "$repo" init -q -b "$planted_branch"
+git -C "$repo" config user.email check@example.invalid
+git -C "$repo" config user.name check
+printf 'one\n' >"$repo/kept.txt"
+git -C "$repo" add -A && git -C "$repo" commit -qm base
+cd "$repo" || exit 1
+
+escape="$here/log-escape"
+scan="$here/log-scan"
+
+scalar() { # sql -> the first cell of the first row
+  ledger query "$1" | sed -n '2p' | cut -f1
+}
+
+# --- an escape with a class outside the vocabulary -----------------------------
+"$escape" gate_missed=review stage_found=pr-human severity=high class=nonsense \
+  guard=none "desc=$planted_desc" "file=$planted_file" >"$work/out.txt" 2>"$work/err.txt"
+rc=$?
+expect "escape: unknown class exits 0" 0 "$rc"
+contains "escape: unknown class prints a reject line" "$(cat "$work/err.txt")" "reject: enum_value_unknown class"
+expect "escape: unknown class stored as other" other \
+  "$(scalar "select class from review_escape where gate_missed = 'review'")"
+rejects=$(grep -rh '' "$AGENT_LEDGER_ROOT/data/rejects" 2>/dev/null)
+expect "escape: one class reject line" 1 "$(printf '%s\n' "$rejects" | grep -c '"field":"class"')"
+contains "escape: the reject line names the class field" "$rejects" '"class"'
+
+# --- an escape with a guard outside the vocabulary -----------------------------
+guard_root="$work/guard-root"
+AGENT_LEDGER_ROOT="$guard_root" "$escape" gate_missed=coder stage_found=pr-human severity=high class=bug \
+  guard=vibes "desc=$planted_desc" "file=$planted_file" >"$work/out.txt" 2>"$work/err.txt"
+rc=$?
+expect "escape: unknown guard exits 0" 0 "$rc"
+contains "escape: unknown guard prints a reject line" "$(cat "$work/err.txt")" "reject: enum_value_unknown guard"
+expect "escape: unknown guard stored as other" other \
+  "$(AGENT_LEDGER_ROOT="$guard_root" scalar "select guard from review_escape where gate_missed = 'coder'")"
+guard_rejects=$(grep -rh '"field":"guard"' "$guard_root/data/rejects" 2>/dev/null)
+expect "escape: one guard reject line" 1 "$(printf '%s\n' "$guard_rejects" | grep -c .)"
+contains "escape: the guard reject line carries the value" "$guard_rejects" '"value":"vibes"'
+today=$(date -u +%Y-%m-%d)
+yield_header=$(AGENT_LEDGER_ROOT="$guard_root" ledger yield --escapes --class all --until "$today" | grep '^# escape rejects')
+expect "yield --escapes counts the guard reject as kept" \
+  "# escape rejects: 0 refused, 1 kept as other" "$yield_header"
+
+# --- keyed fields and nothing planted in the root ------------------------------
+path_key=$(scalar "select path_key from review_escape where gate_missed = 'review'")
+branch_key=$(scalar "select branch_key from review_escape where gate_missed = 'review'")
+case "$path_key" in
+  *[!0-9a-f]* | "") fail "escape: path_key is 32 hex" "got '$path_key'" ;;
+  *) expect "escape: path_key is 32 hex" 32 "${#path_key}" ;;
+esac
+case "$branch_key" in
+  *[!0-9a-f]* | "") fail "escape: branch_key is 32 hex" "got '$branch_key'" ;;
+  *) expect "escape: branch_key is 32 hex" 32 "${#branch_key}" ;;
+esac
+
+# --- a scan row ----------------------------------------------------------------
+"$scan" scan=prohibition stage=manual exit=0 candidates=2 confirmed=1 \
+  "branch=$planted_branch" "note=$planted_note" >"$work/out.txt" 2>"$work/err.txt"
+rc=$?
+expect "scan: exit 0" 0 "$rc"
+expect "scan: one row" 1 "$(scalar "select count(*) from scan_run where scan = 'prohibition'")"
+
+leaked=$(grep -rl -e "$planted_file" -e "$planted_branch" -e "$planted_desc" -e "$planted_note" \
+  "$AGENT_LEDGER_ROOT" "$guard_root" 2>/dev/null)
+expect "no planted path, branch, desc or note reaches the root" "" "$leaked"
+
+# --- a missing gate_missed is refused ------------------------------------------
+"$escape" stage_found=pr-human severity=high class=bug guard=none >"$work/out.txt" 2>"$work/err.txt"
+rc=$?
+expect "escape: missing gate_missed exits 2" 2 "$rc"
+
+# --- the yield total equals the table count ------------------------------------
+yield_total=$(ledger yield --escapes --class all --until "$today" | awk -F'\t' '/^#/ || $1 == "gate_missed" { next } { total += $5 } END { print total + 0 }')
+table_total=$(scalar "select count(*) from review_escape")
+expect "yield --escapes total equals the review_escape count" "$table_total" "$yield_total"
+
+printf '%s failure(s)\n' "$fails"
+[ "$fails" -eq 0 ]

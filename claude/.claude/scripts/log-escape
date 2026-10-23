@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# log-escape — append one JSONL line per escaped defect to the escape log.
+# log-escape — write one review_escape row per escaped defect through `ledger write`.
 #
 # An "escape" is a defect found DOWNSTREAM of the gate that should have caught
 # it: a human PR read, a /cc comment, a /refactor smell sweep, a /q-verify gap,
-# or production. This file is the ground-truth side of the review flywheel;
-# ~/.claude/review-metrics.jsonl is the "what the gates caught" side. /audit review
-# aggregates both to compute per-gate escape rates.
+# or production. These rows are the ground-truth side of the review flywheel;
+# the review_finding and review_run rows are the "what the gates caught" side.
+# /audit review aggregates both to compute per-gate escape rates.
 #
-# usage: log-escape key=value [key=value ...]
+# usage: log-escape [--check] key=value [key=value ...]
 #   canonical fields:
-#     repo=<basename>
+#     repo, date and session are added by `ledger write`; passing them is harmless
+#       and they are never stored from the caller.
 #     stage_found=cc|walkthrough|refactor|q-verify|verify|pr-human|pr-bot|prod|
 #                 phase-gate|plan-review|other
 #       plan-review = the fresh-eyes reader caught it in the finalized plan,
@@ -67,9 +68,9 @@
 #       ~/.claude/skills/_shared/escape-ratchet.md. `check` is the plan-stage
 #       rung: a command added to the spec finalization sweep. `none` =
 #       considered and rejected. `n-a` = this row
-#       is not review-flywheel data, i.e. a REVIEW_ESCAPES_FILE override log.)
-#     desc="one line"
-#     file=path
+#       is not review-flywheel data.)
+#     desc="one line"   accepted for the caller's own record; never stored
+#     file=path         sent as path_key (a keyed hash); the path is never stored
 #     lane=q-plan|eng-spec|code|other   (optional: planning lane that produced
 #                                        the shipped work — enables lane-level
 #                                        escape attribution in /audit review)
@@ -78,12 +79,19 @@
 #       unreferenced symbols), was never populated on a single row, and nothing
 #       reads it. Historical rows keep it; the audit reports it nowhere.
 #
-# Numeric-looking values are stored as numbers, everything else as strings.
-# A "date" field (UTC ISO 8601) is always added. Output file:
-#   $REVIEW_ESCAPES_FILE or ~/.claude/review-escapes.jsonl
+# Every value is sent as a JSON string; `ledger write` types it and adds date, repo
+# and session. An unknown class or guard is stored as `other`; stderr prints
+# `reject: enum_value_unknown <field>` and a reject record is written (the
+# guard's record carries the value); stage_found, gate_missed, severity
+# and lane fold to `other` silently. `ledger registry` lists the allowed values.
+# desc and scan_flagged are dropped, file becomes path_key and
+# branch becomes branch_key. With no `ledger` on PATH the write is skipped
+# silently. A row `ledger write` refuses exits 2.
 set -euo pipefail
 
 script_dir=$(dirname -- "${BASH_SOURCE[0]}")
+# shellcheck source=_kv.sh
+source "$script_dir/_kv.sh"
 
 # --check as the first argument runs every validation below, writes nothing, ignores the
 # telemetry switch and exits 0 when the arguments would be logged.
@@ -94,82 +102,42 @@ if [ "${1:-}" = "--check" ]; then
 fi
 
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
-out="${REVIEW_ESCAPES_FILE:-$HOME/.claude/review-escapes.jsonl}"
 
-# schema_version marks the row's schema era; bump ONLY on a breaking change
-# (a value-vocabulary swap or a field-meaning change), never for additive fields.
-# /audit review reads only the current version; older versions are archived.
-# v1 = pre-2026-08-08 (deep-plan/q-plan lane labels), archived.
-SCHEMA_VERSION=2
-# session and branch are the join keys across the three review logs. Both are
-# read here, never trusted to the caller; a caller's own branch= still wins.
-# head is the commit the escape was logged against. Pass line=<n> and
-# commit=<sha> when the finding names them.
-json=$(jq -cn --argjson sv "$SCHEMA_VERSION" \
-  --arg s "${CLAUDE_CODE_SESSION_ID:-}" --arg b "$(git branch --show-current 2>/dev/null || true)" \
-  --arg h "$(git rev-parse HEAD 2>/dev/null || true)" \
-  '{date: (now | todate), schema_version: $sv}
-   + (if $s != "" then {session: $s} else {} end)
-   + (if $b != "" then {branch: $b} else {} end)
+# branch and head are the join keys to the review rows. Both are read here,
+# never trusted to the caller; a caller's own branch= still wins because it folds
+# after this seed. head is the commit the escape was logged against. Pass line=<n>
+# and commit=<sha> when the finding names them.
+current_branch=$(git branch --show-current 2>/dev/null || true)
+current_head=$(git rev-parse HEAD 2>/dev/null || true)
+json=$(jq -cn --arg b "$current_branch" --arg h "$current_head" \
+  '(if $b != "" then {branch: $b} else {} end)
    + (if $h != "" then {head: $h} else {} end)')
+
+# Only desc and file are free text. A space in any other value means the caller
+# quoted too much and swallowed the following key=value pairs into it, which
+# silently destroys gate attribution — kv_fold refuses it. A file path may hold
+# spaces; it is refused when it holds a line break, or whitespace followed by
+# name= (the shape of a swallowed pair).
 swallowed_pair=$'[ \t\n\r\f\v][A-Za-z_][A-Za-z0-9_]*='
-for kv in "$@"; do
-  case "$kv" in
-    *=*) ;;
-    *) echo "skipping malformed arg (want key=value): $kv" >&2; continue ;;
-  esac
-  k="${kv%%=*}"
-  v="${kv#*=}"
-  # Only desc is free text. A space in any other value means the caller quoted
-  # too much and swallowed the following key=value pairs into this one, which
-  # silently destroys gate attribution — fail loud instead of logging the row.
-  # A file path may hold spaces. It is refused when it holds a line break, or
-  # whitespace followed by name= (the shape of a swallowed pair).
-  if [ "$k" = "file" ]; then
-    if [[ $v == *$'\n'* || $v == *$'\r'* || $v =~ $swallowed_pair ]]; then
-      echo "refusing to log: file= holds a line break or whitespace then a name=: '$v'" >&2
-      echo "Quote each key=value separately; only desc= (and a file= path with no line break and no whitespace then name=) may contain spaces." >&2
-      exit 1
-    fi
-  elif [ "$k" != "desc" ] && [ "$v" != "${v#* }" ]; then
-    echo "refusing to log: $k= contains a space: '$v'" >&2
+escape_file_check() {
+  [ "$1" = "file" ] || return 1
+  local path="$2"
+  if [[ $path == *$'\n'* || $path == *$'\r'* || $path =~ $swallowed_pair ]]; then
+    echo "refusing to log: file= holds a line break or whitespace then a name=: '$path'" >&2
     echo "Quote each key=value separately; only desc= (and a file= path with no line break and no whitespace then name=) may contain spaces." >&2
     exit 1
   fi
-  json=$(jq -c --arg k "$k" --arg v "$v" '.[$k] = ($v | (tonumber? // .))' <<< "$json")
-done
-
-# The checkout is not the repo: inside a linked worktree the caller's
-# `basename $(git rev-parse --show-toplevel)` is the worktree directory, so one
-# repo escapes under several names and its escape rate splits across them.
-if canonical=$("$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/repo-name" 2>/dev/null); then
-  json=$(jq -c --arg r "$canonical" '.repo = $r' <<< "$json")
-fi
-
-cls=$(jq -r '.class // ""' <<< "$json")
-case "$cls" in
-  "" | bug | smell | duplication | complexity | plan-drift | test-gap \
-    | weak-assertion | security | perf | correctness | docs | other) ;;
-  *)
-    echo "refusing to log: class=$cls is not one of bug|smell|duplication|complexity|" >&2
-    echo "plan-drift|test-gap|weak-assertion|security|perf|correctness|docs|other." >&2
-    echo "The vocabulary is shared with log-review-finding so the caught and escaped" >&2
-    echo "sides cross-tabulate; a one-off value is a row that joins to nothing." >&2
-    exit 1 ;;
-esac
+  return 1
+}
+kv_fold "desc file" escape_file_check "$@"
 
 guard=$(jq -r '.guard // ""' <<< "$json")
-case "$guard" in
-  type|convention|gotcha|rule|check|none|n-a) ;;
-  "")
-    echo "refusing to log: guard= is required." >&2
-    echo "Run the ratchet (~/.claude/skills/_shared/escape-ratchet.md), then pass" >&2
-    echo "guard=type|convention|gotcha|rule|check|none (or guard=n-a for non-flywheel logs)." >&2
-    exit 1 ;;
-  *)
-    echo "refusing to log: guard=$guard is not one of type|convention|gotcha|rule|check|none|n-a" >&2
-    exit 1 ;;
-esac
+if [ -z "$guard" ]; then
+  echo "refusing to log: guard= is required." >&2
+  echo "Run the ratchet (~/.claude/skills/_shared/escape-ratchet.md), then pass" >&2
+  echo "guard=type|convention|gotcha|rule|check|none (or guard=n-a for non-flywheel logs)." >&2
+  exit 1
+fi
 
 [ -z "$check_only" ] || exit 0
 
@@ -178,5 +146,5 @@ if ! "$script_dir/telemetry_enabled.sh" 2>/dev/null; then
   exit 0
 fi
 
-printf '%s\n' "$json" >> "$out"
-echo "logged → $out"
+payload=$(jq -c 'del(.desc, .scan_flagged) | with_entries(.key |= ({"file": "path_key", "branch": "branch_key"}[.] // .))' <<< "$json")
+printf '%s\n' "$payload" | bash "$script_dir/ledger-write" review_escape

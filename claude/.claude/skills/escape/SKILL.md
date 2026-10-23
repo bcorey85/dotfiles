@@ -1,6 +1,6 @@
 ---
 name: escape
-description: Log a defect that escaped the automated loop — caught by human PR reading, in production, or anywhere downstream of the gates. Appends to `~/.claude/review-escapes.jsonl`, the ground-truth side of the review flywheel (aggregated by /audit review). Triggers on "log escape", "the loop missed this", "this got past review", "/escape", and "log these over-engineering findings".
+description: Log a defect that escaped the automated loop — caught by human PR reading, in production, or anywhere downstream of the gates. Writes a `review_escape` row through `ledger write`, the ground-truth side of the review flywheel (aggregated by /audit review). Triggers on "log escape", "the loop missed this", "this got past review", "/escape", and "log these over-engineering findings".
 allowed-tools: [Bash, Read, Glob, Grep, Edit]
 ---
 
@@ -15,7 +15,7 @@ One escape = one defect found downstream of its gate. `/cc`/`/fix`/`/refactor`/`
    - `gate_missed` — which layer should have caught it: `review` (bugs/quality), `drift-gate` (plan drift), `test-intent` (bug-pinning), `stage` (SAFE-tier invariant failed), `coder` (should never have been written), `eng-spec` (**defect was in the plan** — use whenever implementation faithfully matched a wrong spec, never `coder`).
    - `class` — `bug` | `smell` | `duplication` | `complexity` | `plan-drift` | `test-gap` | `other` (`complexity` = code that need not have existed, the `/refactor simplify` class)
    - `severity` — `high` | `medium` | `low`
-   - `desc` — one line, specific enough to be legible in 3 months
+   - `desc` — one line, specific enough to be legible in 3 months (not stored; the row keeps the other fields)
    - `file` — representative path, if known
    - `lane` — optional planning lane (`eng-spec`/`code`/`other`); ask when ambiguous.
 

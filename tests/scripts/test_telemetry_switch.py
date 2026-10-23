@@ -27,7 +27,7 @@ RECEIPT_SKILL = pathlib.Path(os.environ.get("BRANCH_RECAP_SKILL") or REAL_CLAUDE
 if DRAFT_DIR and not os.environ.get("BRANCH_RECAP_SKILL"):
     RECEIPT_SKILL = pathlib.Path(DRAFT_DIR) / "branch-recap-SKILL.md"
 
-SCRIPTS = ["telemetry_enabled.sh", "telemetry_enabled.py", "hook_input.py", "repo-name", "log-agent-usage.py",
+SCRIPTS = ["telemetry_enabled.sh", "telemetry_enabled.py", "hook_input.py", "repo-name",
            "log-skill-use.py", "test-edit-telemetry.py", "log-escape", "log-scan", "log-spec-run", "coder-gate.py",
            "_kv.sh", "ledger-write"]
 REVIEW = ["log-review-metrics", "log-perf-finding", "log-review-finding", "review-scope"]
@@ -186,17 +186,7 @@ class SwitchTest(unittest.TestCase):
                  ("neither", {}, "off", False),
                  ("var=0, no file", {"CLAUDE_TOOLKIT_TELEMETRY": "0"}, "off", False)]
         scanArguments = ["repo=r", "scan=prohibition", "stage=manual", "exit=0", "candidates=2", "confirmed=1"]
-        writers = [("agent-usage.jsonl", "log-agent-usage.py", HOOK_POST, [])]
         for caseName, extra, fileState, expectRow in cases:
-            for logName, script, payload, arguments in writers:
-                with self.subTest(case=caseName, writer=script):
-                    self.turn(fileState)
-                    self.home_file(logName).unlink(missing_ok=True)
-                    interpreter = [sys.executable] if script.endswith(".py") else ["bash"]
-                    finished = self.run_command([*interpreter, str(self.scripts / script), *arguments],
-                                                json.dumps(payload) if payload else None, extra=extra)
-                    self.assertEqual(finished.returncode, 0, finished.stderr)
-                    self.assertEqual(len(self.lines(logName)), 1 if expectRow else 0)
             with self.subTest(case=caseName, writer="log-scan"):
                 self.turn(fileState)
                 self.ledgerCalls.unlink(missing_ok=True)
@@ -224,9 +214,6 @@ class SwitchTest(unittest.TestCase):
         return lambda: self.run_command(command, json.dumps(payload))
 
     # ---- hooks
-
-    def test_agent_usage_py(self):
-        self.assert_switch("agent-usage.jsonl", self.hook("log-agent-usage.py", HOOK_POST))
 
     def test_skill_use_py_model(self):
         self.assert_switch("skill-usage.jsonl", self.hook("log-skill-use.py", SKILL_POST))
@@ -566,8 +553,7 @@ class SwitchTest(unittest.TestCase):
     def test_missing_python_helper_keeps_logging_hooks_off(self):
         (self.scripts / "telemetry_enabled.py").unlink()
         self.turn("on")
-        cases = [("log-agent-usage.py", HOOK_POST, "agent-usage.jsonl"),
-                 ("log-skill-use.py", SKILL_POST, "skill-usage.jsonl"),
+        cases = [("log-skill-use.py", SKILL_POST, "skill-usage.jsonl"),
                  ("test-edit-telemetry.py", TEST_EDIT, "test-edit-telemetry.jsonl")]
         for script, payload, logName in cases:
             with self.subTest(hook=script):

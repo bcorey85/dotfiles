@@ -207,7 +207,7 @@ varied the block.
 | f2187213 | orchestration.md | ### Tools | removal round | 97 words, moved from CLAUDE.md. [change](changes/2026-09-27-the-bullet-in-the-orchestration-file-s-tools.md) |
 | 3c347f82 | orchestration.md | ### Tool Use Efficiency | removal round | 66 words, moved from CLAUDE.md. [change](changes/2026-09-27-the-tools-and-tool-use-efficiency-sections-and-the.md) |
 | 68747bf7 | orchestration.md | ### Delegation | removal round, census | 259 words by `wc -w`. [change](changes/2026-09-27-the-delegation-block-in-the-main-session.md) |
-| bac64bc3 | orchestration.md | ### Git | removal round, judgment | Moved from the git rules file at 79 words. [change](changes/2026-10-16-worktrees-inside-herdr-open-through-herdr-worktree.md) |
+| 5b0b5399 | orchestration.md | ### Git | removal round, judgment | Moved from the git rules file at 79 words. [change](changes/2026-10-16-worktrees-inside-herdr-open-through-herdr-worktree.md) |
 | cb8fd8eb | orchestration.md | ### Stacked PRs (`gh stack`, github/gh-stack) | removal round | 137 words, moved from the git rules file. [change](changes/2026-09-27-the-bullet-in-the-orchestration-file-s-tools.md) |
 | 8920e329 | rules/testing.md | (preamble) | unproven | Frontmatter path globs for test and spec files, 11 words. |
 | cf45f3c0 | rules/testing.md | # Testing | unproven | 25 words. [change](changes/2026-09-27-the-laconic-output-style-was-deleted-and-the.md) |

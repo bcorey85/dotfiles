@@ -2,6 +2,7 @@
 """Run every tests/scripts/test_*.py file as its own process, `nproc` at a time, slowest first.
 
   parallel_tests.py                       run the suite, print one line per file, print failing output, exit 1 on failure
+  parallel_tests.py test_a.py test_b.py   run only the named files from tests/scripts; an unknown name exits non-zero
   parallel_tests.py --worker FILE I N     (internal) run the tests of FILE whose position mod N is I
 
 A file listed in SHARDS runs as several processes, each taking every Nth test, so one huge file cannot bound the
@@ -47,9 +48,16 @@ def run_worker(testFile, shardIndex, shardCount):
     return 0 if outcome.wasSuccessful() else 1
 
 
-def build_jobs():
-    # Returns (file name, shard index, shard count) jobs, heaviest first.
+def build_jobs(fileNames=()):
+    # Returns (file name, shard index, shard count) jobs, heaviest first. Given file names, keeps only those files
+    # and exits non-zero on a name that is not a test file in SCRIPTS_TESTS.
     files = sorted(SCRIPTS_TESTS.glob("test_*.py"), key=lambda path: path.stat().st_size, reverse=True)
+    if fileNames:
+        knownNames = {path.name for path in files}
+        unknownNames = [name for name in fileNames if name not in knownNames]
+        if unknownNames:
+            sys.exit(f"parallel_tests.py: not a test file in {SCRIPTS_TESTS}: {' '.join(unknownNames)}")
+        files = [path for path in files if path.name in fileNames]
     jobs = []
     for path in files:
         shardCount = SHARDS.get(path.name, 1)
@@ -96,7 +104,8 @@ def run_job(job, environment):
     return testFile, testCount, seconds, finished.returncode == 0 and ran is not None, output
 
 
-def main():
+def main(fileNames=()):
+    jobs = build_jobs(fileNames)
     workers = os.cpu_count() or 1
     wallStarted = time.monotonic()
     perFile = {}
@@ -104,7 +113,7 @@ def main():
         environment = fixed_git_environment(write_fixed_git_config(configFolder))
         runJob = functools.partial(run_job, environment=environment)
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-            for testFile, testCount, seconds, passed, output in pool.map(runJob, build_jobs()):
+            for testFile, testCount, seconds, passed, output in pool.map(runJob, jobs):
                 entry = perFile.setdefault(testFile, {"count": 0, "seconds": 0.0, "passed": True, "failures": []})
                 entry["count"] += testCount
                 entry["seconds"] += seconds
@@ -134,4 +143,4 @@ def main():
 if __name__ == "__main__":
     if len(sys.argv) == 5 and sys.argv[1] == "--worker":
         sys.exit(run_worker(sys.argv[2], int(sys.argv[3]), int(sys.argv[4])))
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

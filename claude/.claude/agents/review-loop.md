@@ -136,6 +136,14 @@ information, not an error to correct.
 
 Dispatch a `coder` with the `fix` findings. **Never pass an `ask` to the fix coder. Never dispatch a coder for `nit` items alone.**
 
+**Fix cause**: before the dispatch, record why this coder runs, one row for the dispatch. Put the `finding_id` of each `fix` finding (the id `log-review-finding` printed) in `dispatched_for`:
+
+```bash
+printf '%s' '{"agent_type":"coder","dispatch_kind":"fix","dispatched_for":[<finding ids>]}' | ~/.claude/scripts/ledger-write dispatch_cause
+```
+
+A non-zero exit never blocks the dispatch. The ledger pairs this row with the coder's next run.
+
 **Small items**: when Step 4 routed `nit` items on this pass, add a `## Small items` section below the findings — the small-items text below verbatim, then the `nit` items verbatim. A repair dispatched from Step 5d's findings carries no small items.
 
 Include this fence verbatim in every coder prompt you send:

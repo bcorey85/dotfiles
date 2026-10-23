@@ -236,15 +236,6 @@ class LoneSurrogateLogTest(HookRunTest):
         row = json.loads((self.home / ".claude" / "skill-usage.jsonl").read_text(encoding="utf-8"))
         self.assertEqual(row["skill"], "re?view")
 
-    def test_log_agent_usage_writes_the_row(self):
-        # finding 9
-        body = (b'{"hook_event_name":"PostToolUse","tool_input":{"description":"x\\ud800y","subagent_type":"coder"},'
-                b'"tool_response":{"content":"ok"}}')
-        finished = self.run_hook("log-agent-usage", body)
-        self.assertEqual((finished.returncode, finished.stderr), (0, b""))
-        row = json.loads((self.home / ".claude" / "agent-usage.jsonl").read_text(encoding="utf-8"))
-        self.assertEqual(row["desc"], "x?y")
-
 
 class OpenErrorLineTest(HookRunTest):
     """finding 10: a plain line, with no made-up shell script name and line number."""
@@ -260,12 +251,6 @@ class OpenErrorLineTest(HookRunTest):
                                                        "tool_input": {"skill": "fix"}}),
                           {"SKILL_USAGE_FILE": missing})
         self.assertEqual(text, "log-skill-use: cannot open %s: No such file or directory\n" % missing)
-
-    def test_log_agent_usage(self):
-        missing = str(self.work / "nodir" / "usage.jsonl")
-        text = self.check("log-agent-usage", json.dumps({"hook_event_name": "PostToolUse", "tool_input": {}}),
-                          {"AGENT_USAGE_FILE": missing})
-        self.assertEqual(text, "log-agent-usage: cannot open %s: No such file or directory\n" % missing)
 
     def test_test_edit_telemetry(self):
         log = self.home / ".claude" / "test-edit-telemetry.jsonl"
@@ -298,7 +283,7 @@ class GitDisciplineAmendTest(HookRunTest):
 class RunGateTest(HookRunTest):
     PORTED = ("agent-model-guard","calibration-guard", "calibration-refs-guard",
               "claudemd-linecount", "comment-bloat-gate", "dead-prose-gate", "emit-orchestration", "format-changed",
-              "git-discipline-gate", "log-agent-usage", "log-skill-use", "quality-check-cap", "review-commit-gate",
+              "git-discipline-gate", "log-skill-use", "quality-check-cap", "review-commit-gate",
               "shell-write-gate", "spec-budget-gate", "stale-citation-gate", "test-edit-telemetry", "warn-skip-hooks")
     GATES = ("shell-write-gate", "quality-check-cap", "git-discipline-gate", "review-commit-gate",
              "comment-bloat-gate", "spec-budget-gate", "agent-model-guard")

@@ -11,6 +11,8 @@ import threading
 import time
 import unittest
 
+import fake_ledger
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 REAL_CLAUDE = pathlib.Path(os.environ.get("CODE_STEP_REAL_CLAUDE") or REPO_ROOT / "claude" / ".claude")
 SCRIPT = pathlib.Path(os.environ.get("CODE_STEP_SCRIPT") or REAL_CLAUDE / "scripts" / "code-step.py")
@@ -174,6 +176,27 @@ class CodeStepTest(unittest.TestCase):
 
     def start_phase_one(self, *extra):
         return self.step("start", self.plan, *extra)
+
+    def use_fake_ledger(self, **extra):
+        shutil.copy(REAL_CLAUDE / "scripts" / "ledger-write", self.claude / "scripts" / "ledger-write")
+        self.env.update(fake_ledger.install(self.tmp), CLAUDE_TOOLKIT_TELEMETRY="1", **extra)
+
+    def test_record_dispatch_writes_build_cause(self):
+        self.use_fake_ledger()
+        self.assertIn("AGENT: coder", self.start_phase_one())
+        causes = fake_ledger.recorded_rows(self.env, "dispatch_cause")
+        self.assertEqual([{"agent_type": "coder", "dispatch_kind": "build", "dispatched_for": ["after-coder"],
+                           "_session": self.SESSION}],
+                         [{key: value for key, value in cause.items() if key not in ("_type", "_cwd")}
+                          for cause in causes])
+
+    def test_record_dispatch_survives_ledger_failure(self):
+        self.use_fake_ledger(FAKE_LEDGER_WRITE_EXIT="1")
+        started = run(self.repo, self.env, "start", self.plan)
+        self.assertIn("AGENT: coder", started.stdout)
+        causeLines = [line for line in started.stderr.splitlines() if "dispatch_cause" in line]
+        self.assertEqual(1, len(causeLines), started.stderr)
+        self.assertEqual([], fake_ledger.recorded_rows(self.env, "dispatch_cause"))
 
     def pass_coder_gate(self):
         gatePath = self.repo / ".git/coder-gate.json"

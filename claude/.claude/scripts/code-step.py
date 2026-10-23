@@ -47,6 +47,12 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import plan_format
 import script_utils
 
+try:
+    from telemetry_enabled import telemetry_enabled
+except ImportError:
+    def telemetry_enabled():
+        return False
+
 CLAUDE_DIR = pathlib.Path(os.environ.get("CODE_STEP_CLAUDE_DIR", pathlib.Path.home() / ".claude"))
 SCRIPTS_DIR = CLAUDE_DIR / "scripts"
 SELF_COMMAND = "python3 " + str(pathlib.Path(__file__).resolve())
@@ -232,9 +238,36 @@ def dispatch_standing(events):
     return {"dispatch": current, "launched": launches[0] if launches else None, "blocks": blocks}
 
 
+LEDGER_WRITE_SECONDS = 10
+
+
+def record_dispatch_cause(verb, agentType):
+    # Tells the ledger why a coder is about to run: a build dispatch for this verb. The ledger pairs the cause with
+    # the coder's next transcript run. A failed write prints one stderr line and never stops the dispatch.
+    if agentType != "coder" or not telemetry_enabled():
+        return
+
+    cause = {"agent_type": agentType, "dispatch_kind": "build", "dispatched_for": [verb]}
+    env = dict(os.environ)
+    sessionId = session_pin()
+    if sessionId:
+        env["CLAUDE_CODE_SESSION_ID"] = sessionId
+
+    try:
+        written = subprocess.run([str(SCRIPTS_DIR / "ledger-write"), "dispatch_cause"], input=json.dumps(cause),
+                                 env=env, capture_output=True, text=True, timeout=LEDGER_WRITE_SECONDS)
+    except (OSError, subprocess.SubprocessError) as error:
+        print(f"code-step: dispatch_cause not recorded: {type(error).__name__}", file=sys.stderr)
+        return
+
+    if written.returncode != 0:
+        print(f"code-step: dispatch_cause not recorded: ledger-write exited {written.returncode}", file=sys.stderr)
+
+
 def record_dispatch(repoRoot, state, verb, agentType, model, prompt):
     # Saves the dispatch prompt in the run's folder, ending with the marker line that the launch hook reads back, and
     # logs the dispatch. Returns the prompt with its marker and the path of the saved file.
+    record_dispatch_cause(verb, agentType)
     runId = state["runId"]
     dispatchCount = sum(1 for event in read_events(repoRoot, runId) if event.get("event") == "dispatch")
     dispatchId = f"d{dispatchCount + 1}"

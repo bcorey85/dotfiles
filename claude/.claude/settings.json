@@ -230,6 +230,15 @@
             "command": "~/.claude/scripts/notify 'Claude Code' 'Task complete'"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "tuios agent-hook claude-code --integration 3",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -330,6 +339,15 @@
             "command": "python3 ~/.claude/scripts/code-step.py log-hook"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "tuios agent-hook claude-code --integration 3",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
       }
     ],
     "PostToolUseFailure": [
@@ -339,6 +357,15 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/scripts/quality-check-cap.py"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "tuios agent-hook claude-code --integration 3",
+            "timeout": 5,
+            "type": "command"
           }
         ]
       }
@@ -454,6 +481,15 @@
             "command": "python3 ~/.claude/scripts/handback.py hook handback"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "tuios agent-hook claude-code --integration 3",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -508,6 +544,15 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "tuios agent-hook claude-code --integration 3",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
       }
     ],
     "SessionEnd": [
@@ -516,6 +561,15 @@
           {
             "type": "command",
             "command": "command -v ledger >/dev/null 2>&1 && ledger hook session-end; exit 0"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "tuios agent-hook claude-code --integration 3",
+            "timeout": 5,
+            "type": "command"
           }
         ]
       }
@@ -546,6 +600,15 @@
             "async": true
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "tuios agent-hook claude-code --integration 3",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
       }
     ],
     "Stop": [
@@ -569,6 +632,15 @@
             "async": true
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "tuios agent-hook claude-code --integration 3",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
       }
     ],
     "StopFailure": [
@@ -578,6 +650,15 @@
             "type": "command",
             "command": "command -v ledger >/dev/null 2>&1 && ledger hook stop-failure; exit 0",
             "async": true
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "tuios agent-hook claude-code --integration 3",
+            "timeout": 5,
+            "type": "command"
           }
         ]
       }
@@ -596,6 +677,59 @@
           {
             "type": "command",
             "command": "echo 'Style: verdict in sentence one. Under 100 words unless I ask for detail. Plain words, short sentences, no should/may/might, no recap.'"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "tuios agent-hook claude-code --integration 3",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "command": "tuios agent-hook claude-code --integration 3",
+            "timeout": 310,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "PermissionDenied": [
+      {
+        "hooks": [
+          {
+            "command": "tuios agent-hook claude-code --integration 3",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "ElicitationResult": [
+      {
+        "hooks": [
+          {
+            "command": "tuios agent-hook claude-code --integration 3",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "command": "tuios agent-hook claude-code --integration 3",
+            "timeout": 5,
+            "type": "command"
           }
         ]
       }

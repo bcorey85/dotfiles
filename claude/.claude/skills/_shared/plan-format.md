@@ -27,6 +27,7 @@ skeleton`, the thinnest end-to-end path (`/code` stops after it for calibration)
 - Success Criteria are TESTABLE assertions — each specifies HOW to verify
   with the project's real commands (from project CLAUDE.md / package
   scripts), never generic placeholders.
+- Each Automated Verification item takes one of three shapes. (1) One backticked command that starts with a program on PATH plus at least one argument, or with an executable file in the repo (`./check`, `scripts/check`). (2) `N/A` with the reason. (3) A `**CI-verified**:` or `Human-only:` tag for a check that runs in another place. `/code` never runs it. A command must end by itself: never `tail -f`, `watch`, `sleep`, an editor or `claude`.
 - Manual Verification items are DRIVEABLE scenarios — exact command, request,
   or interaction plus expected result. Items only a human can judge (visual
   polish, UX feel) must say so explicitly so they route to the human-only

@@ -33,6 +33,9 @@
 #              reset-keys`) is overwritten on the next toggle. herdr's own
 #              auto_switch is deliberately off: it keys off the terminal's
 #              reported appearance rather than ~/.cache/theme-mode.
+#   - tuios:   runs theme = "none", so its panes and chrome take ghostty's
+#              colours. After the ghostty reload this script runs
+#              `tuios theme reload`, which makes every client ask again.
 #   - starship: this script regenerates the REAL ~/.config/starship.toml from
 #              the stowed ~/.config/starship.toml.template with the active
 #              `palette =` line swapped to `<family>-<mode>` — a two-axis
@@ -1368,6 +1371,16 @@ herdr_apply() { # <family> <mode> — regenerate the live config, reload the ser
   command -v herdr >/dev/null 2>&1 && herdr server reload-config >/dev/null 2>&1 || true
 }
 
+tuios_apply() { # — make every tuios client read the terminal's colours again
+  command -v tuios >/dev/null 2>&1 || return 0
+
+  # tuios runs theme = "none" (tuios/.config/tuios/config.d/dotfiles.toml), so
+  # it has no palette of its own: it asks ghostty. ghostty reloads on the
+  # SIGUSR2 in apply() asynchronously, so give it a moment before tuios asks.
+  sleep 0.3
+  tuios theme reload >/dev/null 2>&1 || true
+}
+
 current_mode() { cat "$MODE_FILE" 2>/dev/null | tr -d '[:space:]'; }
 current_family() {
   local f
@@ -1453,6 +1466,9 @@ apply() { # <family> <mode> — write state and repaint herdr + ghostty
   # herdr: regenerate ~/.config/herdr/config.toml from the stowed template with
   # the active palette, then reload the running server. No-op without herdr.
   herdr_apply "$family" "$mode"
+
+  # tuios: follows ghostty's colours. No-op without tuios.
+  tuios_apply
 
   # hunk: one builtin theme id per family x mode, edited in place. No-op for a
   # family with no mapping.

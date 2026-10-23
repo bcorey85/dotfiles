@@ -70,10 +70,10 @@ function M.toggle()
     -- When inside a herdr zoom, unzoom first so the layout is restored before zen
     -- collapses the window; otherwise herdr leaves the pane in a half-zoomed state.
     if vim.env.HERDR_PANE_ID ~= nil then
-      local result = vim.system({ "herdr", "pane", "layout", "--current" }):wait()
+      local result = vim.system({ "herdr-api", "pane", "layout", "--current" }):wait()
       local ok, layout = pcall(vim.json.decode, result.stdout or "{}")
       if ok and layout and layout.result and layout.result.layout and layout.result.layout.zoomed then
-        vim.system({ "herdr", "pane", "zoom", "--current", "--toggle" }):wait()
+        vim.system({ "herdr-api", "pane", "zoom", "--current", "--toggle" }):wait()
       end
     end
     Snacks.zen()

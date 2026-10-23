@@ -9,9 +9,10 @@
 
 local M = {}
 
--- Run herdr, synchronously; returns trimmed stdout or nil on failure.
+-- Run herdr (via herdr-api, so tuios works too), synchronously; returns trimmed
+-- stdout or nil on failure.
 local function herdr(args)
-  local cmd = { "herdr" }
+  local cmd = { "herdr-api" }
   vim.list_extend(cmd, args)
   local res = vim.system(cmd, { text = true }):wait()
   if res.code ~= 0 or not res.stdout or res.stdout == "" then
@@ -111,7 +112,7 @@ function M.send(line1, line2)
   if not ref then
     return
   end
-  local res = vim.system({ "herdr", "pane", "send-text", pane.pane_id, ref .. " " }):wait()
+  local res = vim.system({ "herdr-api", "pane", "send-text", pane.pane_id, ref .. " " }):wait()
   if res.code ~= 0 then
     vim.notify("herdr pane send-text failed: " .. (res.stderr or ""), vim.log.levels.ERROR)
     return

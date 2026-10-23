@@ -71,7 +71,7 @@ these before Phase 7 and resolve every miss with the user like a `DESIGN GAP`.
       key, and path the plan quotes gets one `rg` against the tree, or one
       `--help` for a flag.
     - **Tool and dependency behavior** — every claim about what a command, flag,
-      or library version does gets its `--help` or a one-line run.
+      or library version does gets its `--help` or a one-line run. So does the validator or parser each new value meets.
     - **Internal agreement** — any quantity the plan states in more than one
       place must agree everywhere, and a frozen literal must match every later assertion.
     - **Batch the probes**: collect every check below first, then run at most

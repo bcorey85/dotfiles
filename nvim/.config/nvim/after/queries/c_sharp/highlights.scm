@@ -17,3 +17,10 @@
   (destructor_declaration name: (identifier) @declaration.function)
 ]
   (#set! priority 130))
+
+; A generic method call through a member (obj.Get<T>()) is a call: plain.
+((invocation_expression
+  (member_access_expression
+    (generic_name
+      (identifier) @function.method.call)))
+  (#set! priority 101))

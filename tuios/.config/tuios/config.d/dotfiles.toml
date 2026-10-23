@@ -1,0 +1,397 @@
+# tuios config (stowed: tuios). The port of herdr/.config/herdr/config.toml.template.
+#
+# tuios reads config.d/*.toml after its own include list and before
+# config.toml, so ~/.config/tuios/config.toml stays tuios-owned and
+# machine-local (tuios writes it on first start, and the settings page saves
+# there). A key set in config.toml wins over this file.
+#
+# Mapping: a herdr workspace is a tuios session, a herdr tab is a tuios
+# workspace, a herdr pane is a tuios window.
+#
+# Rule applied throughout: YOUR keys win. tuios defaults that collided were
+# unbound (= []) or moved, not the other way round. Check the result with
+# `tuios keybinds doctor`.
+
+# tmux/herdr behaviour: always tiled, keys go to the pane, no floating-window
+# chrome (title pills, window buttons, double borders between panes).
+[startup]
+tiled = true
+layout = "bsp"
+start_in_terminal_mode = true
+
+[appearance]
+shared_borders = true
+border_style = "normal"
+hide_window_buttons = true
+window_button_zoom = false
+window_title_style = "plain"
+click_to_type = "single"
+zoom_borderless = true
+tiling_scheme = "longest_side"
+# Take the colours from the terminal (ghostty), which theme-mode switches.
+# theme-mode runs `tuios theme reload` so clients re-read them.
+theme = "none"
+motion = "none"
+zoom_animation = false
+
+[plugins]
+# herdr plugins, run by the tuios daemon. install/tuios installs both.
+enabled = ["herdr-splits", "herdr-automatic-rename"]
+
+[keybindings]
+leader_key = "ctrl+space"
+
+# ─── terminal mode ───────────────────────────────────────────────────────────
+[keybindings.global]
+command_palette = []                    # was ctrl+p (nvim, fzf, shell history)
+
+[keybindings.terminal_mode]
+terminal_next_window = []               # was alt+n
+terminal_prev_window = []               # was alt+p
+terminal_exit_mode = []                 # was alt+esc: window mode turns letters into window commands
+# tmux prefix+; promoted to a direct chord, as under herdr.
+last_pane = ["ctrl+;"]
+
+# Window mode defaults on keys the command keys below own.
+[keybindings.workspaces]
+switch_workspace_1 = []                 # alt+1..4 belong to harpoon
+switch_workspace_2 = []
+switch_workspace_3 = []
+switch_workspace_4 = []
+switch_workspace_5 = []
+switch_workspace_6 = []
+switch_workspace_7 = []
+switch_workspace_8 = []
+switch_workspace_9 = []
+
+[keybindings.layout]
+toggle_tiling = []                      # was t: tiling stays on, no floating panes
+preselect_left = []                     # alt+hjkl belong to herdr-splits resize
+preselect_down = []
+preselect_up = []
+preselect_right = []
+
+# ─── after the leader ────────────────────────────────────────────────────────
+[keybindings.prefix_mode]
+# structure
+prefix_new_window = []                  # was c (yours: new tab)
+new_workspace = ["c"]
+close_workspace = ["X"]
+prefix_close_session = ["ctrl+d"]       # was X
+rename_workspace = [","]
+prefix_settings = []                    # was ,
+prefix_rename_window = ["ctrl+shift+p"] # was r (yours: reload)
+prefix_detach = ["D"]                   # was d (yours: hunk)
+prefix_debug = []                       # was D
+reload_config = ["r", "ctrl+r"]
+choose_tree = ["o"]                     # was / (yours: grep)
+prefix_next_attention = ["i"]           # was o
+prefix_inbox = ["I"]                    # was i
+prefix_toggle_other_rail = []           # was H
+swap_left = ["H"]
+swap_right = ["L"]
+prefix_layout = ["alt+l"]               # was L
+prefix_rotate_split = []                # was R (yours: resize)
+"open_menu:resize" = ["R"]
+prefix_toggle_sidebar = ["ctrl+b"]      # was b (yours: htop)
+prefix_command_palette = [":"]          # was P (yours: gh-dash)
+prefix_next_window = ["ctrl+tab"]       # was n and tab (yours: notes, harpoon menu)
+prefix_prev_window = []                 # was p and shift+tab
+next_workspace = ["ctrl+n"]
+prev_workspace = ["ctrl+p"]
+
+# tabs on 1..9, workspaces on shift+1..9
+prefix_select_0 = []
+prefix_select_1 = []
+prefix_select_2 = []
+prefix_select_3 = []
+prefix_select_4 = []
+prefix_select_5 = []
+prefix_select_6 = []
+prefix_select_7 = []
+prefix_select_8 = []
+prefix_select_9 = []
+switch_workspace_1 = ["1"]
+switch_workspace_2 = ["2"]
+switch_workspace_3 = ["3"]
+switch_workspace_4 = ["4"]
+switch_workspace_5 = ["5"]
+switch_workspace_6 = ["6"]
+switch_workspace_7 = ["7"]
+switch_workspace_8 = ["8"]
+switch_workspace_9 = ["9"]
+switch_session_1 = ["!"]
+switch_session_2 = ["@"]
+switch_session_3 = ["#"]
+switch_session_4 = ["$"]
+switch_session_5 = ["%"]
+switch_session_6 = ["^"]
+switch_session_7 = ["&"]
+switch_session_8 = ["*"]
+switch_session_9 = ["("]
+choose_buffer = []                      # was #
+prev_session = []                       # was (
+
+# defaults on keys the command keys below own
+launcher = []                           # was a (yours: harpoon add)
+toggle_scratch = []                     # was g (yours: lazygit)
+prefix_explore = []                     # was e (yours: fyler)
+prefix_agents_settings = []             # was A (yours: diffask)
+prefix_toggle_tiling = []               # was space (yours: find files)
+prefix_review = []                      # was v (yours: vault)
+prefix_file_search = []                 # was f (yours: sessionizer)
+prefix_window = []                      # was t (yours: theme toggle)
+
+[keybindings.window_prefix]
+window_prefix_tiling = []               # was t t: tiling stays on
+
+[keybindings.gui]
+gui_toggle_float = []                   # was ctrl+shift+alt+f
+
+[keybindings.menus.resize]
+title = "Resize"
+sticky = true
+
+[keybindings.menus.resize.keys]
+resize_pane_left_5 = ["h"]
+resize_pane_down_5 = ["j"]
+resize_pane_up_5 = ["k"]
+resize_pane_right_5 = ["l"]
+
+# ─── smart splits — C-hjkl nav / M-hjkl resize across tuios<->nvim ───────────
+# tuios side of herdr-splits.nvim (nvim side: lua/plugins/herdr-splits.lua).
+# tuios 0.10.1 has no plugin_action key type, so each key runs the plugin's
+# action through the CLI.
+[[keybindings.command]]
+key = "ctrl+h"
+type = "shell"
+command = "tuios plugins run herdr-splits nav-left"
+
+[[keybindings.command]]
+key = "ctrl+j"
+type = "shell"
+command = "tuios plugins run herdr-splits nav-down"
+
+[[keybindings.command]]
+key = "ctrl+k"
+type = "shell"
+command = "tuios plugins run herdr-splits nav-up"
+
+[[keybindings.command]]
+key = "ctrl+l"
+type = "shell"
+command = "tuios plugins run herdr-splits nav-right"
+
+[[keybindings.command]]
+key = "alt+h"
+type = "shell"
+command = "tuios plugins run herdr-splits resize-left"
+
+[[keybindings.command]]
+key = "alt+j"
+type = "shell"
+command = "tuios plugins run herdr-splits resize-down"
+
+[[keybindings.command]]
+key = "alt+k"
+type = "shell"
+command = "tuios plugins run herdr-splits resize-up"
+
+[[keybindings.command]]
+key = "alt+l"
+type = "shell"
+command = "tuios plugins run herdr-splits resize-right"
+
+# ─── harpoon (scripts/.local/bin/herdr-harpoon) ──────────────────────────────
+[[keybindings.command]]
+key = "alt+1"
+type = "shell"
+command = "~/.local/bin/herdr-harpoon jump 1"
+
+[[keybindings.command]]
+key = "alt+2"
+type = "shell"
+command = "~/.local/bin/herdr-harpoon jump 2"
+
+[[keybindings.command]]
+key = "alt+3"
+type = "shell"
+command = "~/.local/bin/herdr-harpoon jump 3"
+
+[[keybindings.command]]
+key = "alt+4"
+type = "shell"
+command = "~/.local/bin/herdr-harpoon jump 4"
+
+[[keybindings.command]]
+key = "prefix+a"
+type = "shell"
+command = "~/.local/bin/herdr-harpoon add"
+description = "Harpoon: pin project"
+
+[[keybindings.command]]
+key = "prefix+tab"
+type = "popup"
+command = "~/.local/bin/herdr-harpoon menu"
+description = "Harpoon: edit slots"
+width = "70%"
+height = "60%"
+
+# ─── popups ──────────────────────────────────────────────────────────────────
+# Commands start in the focused pane's folder. The mise shim prepend is for
+# tools the daemon's login environment cannot resolve (hunk is a mise-global
+# npm package); see the herdr template for the full story.
+[[keybindings.command]]
+key = "prefix+g"
+type = "popup"
+command = "PATH=\"${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims:$PATH\" lazygit"
+description = "lazygit"
+width = "100%"
+height = "100%"
+
+[[keybindings.command]]
+key = "prefix+alt+g"
+type = "popup"
+command = "NEOGIT_POPUP=1 nvim -c 'Neogit' -c 'silent! only'"
+description = "neogit"
+width = "100%"
+height = "100%"
+
+[[keybindings.command]]
+key = "prefix+d"
+type = "popup"
+command = "PATH=\"${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims:$PATH\" EDITOR=\"${EDITOR:-nvim}\" REVIEW_POPUP=1 ~/.local/bin/hunk-review-popup"
+description = "hunk review"
+width = "100%"
+height = "100%"
+
+[[keybindings.command]]
+key = "prefix+alt+d"
+type = "popup"
+command = "CODEDIFF_POPUP=1 nvim -c 'CodeDiffReview'"
+description = "codediff review"
+width = "100%"
+height = "100%"
+
+[[keybindings.command]]
+key = "prefix+G"
+type = "popup"
+command = "INSITU_POPUP=1 nvim -c 'InsituNext'"
+description = "insitu: next unreviewed hunk"
+width = "100%"
+height = "100%"
+
+[[keybindings.command]]
+key = "prefix+e"
+type = "popup"
+command = "FYLER_POPUP=1 nvim -c 'Fyler'"
+description = "fyler"
+width = "100%"
+height = "100%"
+
+[[keybindings.command]]
+key = "prefix+A"
+type = "popup"
+command = "~/.local/bin/diffask"
+description = "diffask"
+width = "80%"
+height = "75%"
+
+[[keybindings.command]]
+key = "prefix+b"
+type = "popup"
+command = "htop"
+description = "htop"
+width = "95%"
+height = "95%"
+
+[[keybindings.command]]
+key = "prefix+P"
+type = "popup"
+command = "gh dash"
+description = "gh dash"
+width = "100%"
+height = "100%"
+
+[[keybindings.command]]
+key = "prefix+l"
+type = "popup"
+command = "lazydocker"
+description = "lazydocker"
+width = "100%"
+height = "100%"
+
+[[keybindings.command]]
+key = "prefix+/"
+type = "popup"
+command = "FIND_POPUP=grep nvim"
+description = "live grep"
+width = "95%"
+height = "95%"
+
+[[keybindings.command]]
+key = "prefix+space"
+type = "popup"
+command = "FIND_POPUP=smart nvim"
+description = "find files"
+width = "95%"
+height = "95%"
+
+[[keybindings.command]]
+key = "prefix+v"
+type = "popup"
+command = "fd -e md . ~/vault | fzf --header 'enter=read | ctrl-e=edit' --preview '~/.local/bin/glow-fit -s dark {}' --preview-window='right,60%' --bind 'enter:become(~/.local/bin/glow-fit -p {})' --bind 'ctrl-e:become(FIND_POPUP=1 nvim {})'"
+description = "vault search"
+width = "95%"
+height = "95%"
+
+[[keybindings.command]]
+key = "prefix+n"
+type = "popup"
+command = "~/.local/bin/notes-menu"
+description = "notes"
+width = "90%"
+height = "90%"
+
+[[keybindings.command]]
+key = "prefix+f"
+type = "popup"
+command = "~/.local/bin/herdr-sessionizer"
+description = "sessionizer"
+width = "60%"
+height = "60%"
+
+[[keybindings.command]]
+key = "prefix+ctrl+w"
+type = "popup"
+command = "~/.local/bin/herdr-worktree"
+description = "new worktree workspace"
+width = "60%"
+height = "3"                            # cells: border + the one prompt line
+
+# ctrl+. needs the kitty keyboard protocol (ghostty); the prefix chord is the
+# fallback for terminals without it.
+[[keybindings.command]]
+name = "agent-fleet"
+key = "ctrl+."
+type = "popup"
+command = "~/.local/bin/herdr-fleet"
+description = "agent fleet"
+width = "85%"
+height = "80%"
+
+[[keybindings.command]]
+name = "agent-fleet-prefix"
+key = "prefix+ctrl+."
+type = "popup"
+command = "~/.local/bin/herdr-fleet"
+description = "agent fleet"
+width = "85%"
+height = "80%"
+
+# ─── shell commands (no popup) ───────────────────────────────────────────────
+[[keybindings.command]]
+key = "prefix+t"
+type = "shell"
+command = "~/.local/bin/theme-mode toggle"
+description = "theme toggle"

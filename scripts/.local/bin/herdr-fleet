@@ -17,7 +17,7 @@
 
 export PATH="$HOME/.local/bin:$PATH"
 
-agents=$(herdr agent list 2>/dev/null)
+agents=$(herdr-api agent list 2>/dev/null)
 
 if [ -z "$agents" ]; then
     echo "herdr is not running (no response from the socket API)."
@@ -114,4 +114,20 @@ sel=$(printf '%s\n' "${rows[@]}" | fzf \
     --header="1-9=jump  enter=jump  ●=current" \
     "${digit_binds[@]}") || exit 0
 
-[ -n "$sel" ] && herdr agent focus "$(printf '%s' "$sel" | cut -f1)"
+[ -z "$sel" ] && exit 0
+target=$(printf '%s' "$sel" | cut -f1)
+
+# Under tuios a herdr workspace is a tuios session, and `agent focus` focuses
+# the pane without moving the client there — switch sessions first. The herdr
+# pane id carries the tuios window uuid's first 12 hex digits after the `p`.
+# herdr itself switches workspaces on focus, so this only runs under tuios.
+if [ -n "${TUIOS_SOCKET:-}" ]; then
+    target_window=${target##*:p}
+    target_session=$(tuios list-agents --all-sessions --json | jq -r --arg w "$target_window" \
+        '.agents[] | select((.window_id | gsub("-"; "")) | startswith($w)) | .session')
+    if [ -n "$target_session" ] && [ "$target_session" != "${TUIOS_SESSION:-}" ]; then
+        tuios switch-session "$target_session"
+    fi
+fi
+
+herdr-api agent focus "$target"

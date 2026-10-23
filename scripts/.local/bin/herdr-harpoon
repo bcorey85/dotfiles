@@ -15,7 +15,7 @@ LIST="${XDG_DATA_HOME:-$HOME/.local/share}/herdr-harpoon/list"
 mkdir -p "$(dirname "$LIST")"
 touch "$LIST"
 
-snapshot() { herdr api snapshot 2>/dev/null; }
+snapshot() { herdr-api api snapshot 2>/dev/null; }
 
 cmd="${1:-menu}"
 
@@ -40,19 +40,21 @@ case "$cmd" in
         [ -z "$entry" ] && exit 0
         if [[ "$entry" == @* ]]; then
             label="${entry#@}"
-            ws=$(herdr workspace list 2>/dev/null \
+            ws=$(herdr-api workspace list 2>/dev/null \
               | jq -r --arg l "$label" '.result.workspaces[] | select(.label == $l) | .workspace_id' | head -1)
-            if [ -n "$ws" ]; then
-                herdr workspace focus "$ws" >/dev/null
-            else
-                herdr workspace create --cwd "$HOME" --label "$label" --focus >/dev/null
+            if [ -z "$ws" ]; then
+                ws=$(herdr-api workspace create --cwd "$HOME" --label "$label" --focus \
+                    | jq -r '.result.workspace.workspace_id')
             fi
+
+            # tuios ignores create's --focus, so focus by id in both cases.
+            herdr-api workspace focus "$ws" >/dev/null
         else
             herdr-project-open "$entry"
         fi
         ;;
     menu)
-        # Runs inside a herdr popup — line N == slot N; reorder/dd to edit, q saves+closes.
+        # Runs inside a herdr or tuios popup — line N == slot N; reorder/dd to edit, q saves+closes.
         exec nvim -c 'nnoremap <buffer> q <Cmd>wq<CR>' "$LIST"
         ;;
     *)

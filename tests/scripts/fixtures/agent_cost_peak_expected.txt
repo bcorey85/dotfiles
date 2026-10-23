@@ -1,0 +1,7 @@
+agent                            n        total      mean      boot       max   share
+fixture-reviewer                 1         9720      9720      9020      9720   71.4%
+fixture-coder                    1         2860      2860      2100      2860   21.0%
+?                                1         1035      1035      1005      1035    7.6%
+
+3 dispatches, 13615 tokens, mean 4538
+mean bootstrap 4041 tokens/dispatch (89% of the mean dispatch)

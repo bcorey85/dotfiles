@@ -1,13 +1,14 @@
 #!/bin/bash
 # agent-cost — where the subagent token spend actually goes.
 #
-# Reads the per-subagent records Claude Code writes under
+# PEAK (default) reads the per-subagent records Claude Code writes under
 #   ~/.claude/projects/<project>/<session>/subagents/
 #     agent-<id>.jsonl        full transcript, per-turn message.usage
 #     agent-<id>.meta.json    {agentType, description, toolUseId, spawnDepth}
-# and aggregates them by agent type, repo, model, or spawn depth.
+# SPEND (--spend) reads the ledger instead (see below). Both aggregate by agent
+# type, repo, model, or spawn depth.
 #
-# Why this source and not ~/.claude/agent-usage.jsonl (the PostToolUse hook,
+# Why PEAK reads these and not ~/.claude/agent-usage.jsonl (the PostToolUse hook,
 # now legacy): that hook fires when the Agent TOOL returns, which for a
 # BACKGROUND dispatch is before the agent has done any work — a third of its
 # rows carry `tokens: null` and no fallback field name can fix it. The
@@ -42,14 +43,22 @@
 # description: agreement within ~1% (10798/10932, 11283/11411, 13775/13904).
 #
 # SPEND (--spend) — what the dispatch actually cost, which is a sum over API
-# calls, since EVERY call bills its own input including the cached part:
-#   sum over turns of (input + cache_write*1.25 + cache_read*0.1) * model_in_rate
-#   + sum(output) * model_out_rate
+# calls, since EVERY call bills its own input including the cached part. The
+# dollars come from the ledger's v_request_cost_all view, one priced row per
+# request; this script holds no rates and has no way to override them. Prices
+# live in the ledger's registry/rules/prices.toml. SPEND keeps this machine's
+# rows only, and never needs jq, find or the projects dir.
 # Those re-sends the peak metric deliberately discards are real charges. On a
 # 47-turn opus backend-architect: peak reports 159,620, while the billed volume
 # is 49k output + 566k cache write + 1,558k cache read. Peak understates the
 # billed traffic ~13x and inverts its composition — spend is overwhelmingly
 # input-side, output is ~2%.
+#
+# Every SPEND run prints the assumption counts behind its dollars (requests
+# priced at standard speed because the speed was not recorded, cache writes
+# priced at the 5m rate because no 5m/1h split was recorded), and an UNPRICED
+# line for requests the ledger could not price. Unpriced requests are never
+# counted as $0.
 #
 # Which one you want:
 #   optimizing context/bootstrap, or comparing dispatch counts -> PEAK
@@ -68,9 +77,8 @@
 #   agent-cost --repo 'niwa|rolecall'      ...so alternation works
 #   agent-cost --repo '^(?!agent-evals)'   ...but negation does NOT (POSIX ERE)
 #   agent-cost --days 30 --by repo
-#   agent-cost --spend             dollars instead of tokens, with components
+#   agent-cost --spend             dollars from the ledger, with components
 #   agent-cost --spend --by model  which tier the money is going to
-#   agent-cost --rates 'opus:15:75 haiku:1:5'   override the rate table
 #
 # The regex filter matters more than it looks: this machine's history is
 # dominated by the 2026-07 eval program, which ran the real skills against
@@ -80,26 +88,8 @@
 # --since exists for A/B runs of the same task: --days cannot separate two runs
 # that happen on the same day, so a second run's numbers silently include the
 # first run's dispatches. Stamp `date +%s` before a run, pass it back after.
-#
-# RATE TABLE — THESE GO STALE AND NOTHING HERE WILL TELL YOU.
-# Format: <model-substring>:<$ per Mtok input>:<$ per Mtok output>, first match
-# wins, so list more specific substrings first. Cache multipliers are structural
-# rather than per-model (write 1.25x input, read 0.1x input) and are applied on
-# top. Override with --rates or $AGENT_COST_RATES; a model matching NO entry is
-# counted into an "unpriced" bucket and reported, never silently priced at zero.
-#
-# The defaults below are the author's best knowledge at time of writing and are
-# NOT authoritative — verify against current published pricing before quoting a
-# dollar figure to anyone. Every --spend run prints the table it used for
-# exactly this reason. Ratios between tiers are far more stable than absolute
-# rates, so treat "opus costs ~15x haiku on input" as the durable claim and the
-# dollar totals as indicative.
 
 set -u
-
-DEFAULT_RATES='opus:15:75 sonnet:3:15 haiku:1:5'
-CACHE_WRITE_MULT=1.25
-CACHE_READ_MULT=0.1
 
 ROOT="${CLAUDE_PROJECTS_DIR:-$HOME/.claude/projects}"
 BY=agent
@@ -107,14 +97,12 @@ DAYS=0
 REPO=
 SINCE=
 SPEND=0
-RATES="${AGENT_COST_RATES:-$DEFAULT_RATES}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --days)  DAYS="${2:-0}"; shift 2 ;;
     --since) SINCE="${2:-}"; shift 2 ;;
     --spend) SPEND=1; shift ;;
-    --rates) RATES="${2:-}"; shift 2 ;;
     --by)   BY="${2:-agent}"; shift 2 ;;
     --repo) REPO="${2:-}"; shift 2 ;;
     -h|--help) sed -n '/^# Usage:/,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -122,20 +110,18 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# COL indexes PEAK's extract rows; SPEND_COL indexes the ledger query's rows.
 case "$BY" in
-  agent) COL=1 ;;
-  repo)  COL=2 ;;
-  model) COL=3 ;;
-  depth) COL=6 ;;
+  agent) COL=1; SPEND_COL=3 ;;
+  repo)  COL=2; SPEND_COL=4 ;;
+  model) COL=3; SPEND_COL=5 ;;
+  depth) COL=6; SPEND_COL=6 ;;
   *) printf 'agent-cost: --by must be agent, repo, model, or depth\n' >&2; exit 2 ;;
 esac
 
-command -v jq >/dev/null 2>&1 || { printf 'agent-cost: jq not found\n' >&2; exit 1; }
-[ -d "$ROOT" ] || { printf 'agent-cost: no projects dir at %s\n' "$ROOT" >&2; exit 1; }
-
-# --days prunes by file mtime BEFORE the per-file jq, which is the difference
-# between a sub-second run and several seconds across ~700 transcripts. The
-# in-record timestamp is still the authority; mtime only narrows the candidates.
+# The cutoff is an epoch; PEAK prunes files by it, SPEND turns it into a
+# timestamp. 0 means no cutoff.
+cutoff=0
 if [ -n "$SINCE" ]; then
   case "$SINCE" in
     @*) cutoff="${SINCE#@}" ;;
@@ -148,12 +134,153 @@ if [ -n "$SINCE" ]; then
   case "$cutoff" in
     ''|*[!0-9]*) printf 'agent-cost: --since did not resolve to an epoch\n' >&2; exit 2 ;;
   esac
-  find_args=(-newermt "@$cutoff")
 elif [ "$DAYS" -gt 0 ] 2>/dev/null; then
   cutoff=$(( $(date +%s) - DAYS * 86400 ))
+fi
+
+# The SQL a SPEND run sends. One row per (machine, run, model, price status,
+# unpriced reason). A run is kept when it STARTED at or after the cutoff, so
+# the cutoff is applied to the run's first request, not to each request. The
+# machine name and --repo are filtered in awk and never enter the SQL.
+spend_query() {
+  cat <<'SQL'
+WITH runs AS MATERIALIZED (
+    SELECT machine, agent_run_id, MIN(first_ts) AS run_start
+    FROM v_request_cost_all
+    WHERE run_kind = 'subagent'
+    GROUP BY machine, agent_run_id
+)
+SELECT c.machine, c.agent_run_id, MIN(c.agent) AS agent, MIN(c.repo) AS repo, c.model,
+    MIN(c.spawn_depth) AS spawn_depth, c.price_status, c.unpriced_reason,
+    COUNT(*) AS requests, SUM(c.cost_usd) AS cost_usd,
+    SUM(c.output_tokens) AS output_tokens, SUM(c.cache_write_tokens) AS cache_write_tokens,
+    SUM(c.cache_read_tokens) AS cache_read_tokens,
+    SUM(c.speed_assumed) AS speed_assumed, SUM(c.write_split_assumed) AS write_split_assumed
+FROM v_request_cost_all c
+JOIN runs r ON r.machine = c.machine AND r.agent_run_id = c.agent_run_id
+WHERE c.run_kind = 'subagent'
+SQL
+  if [ "$cutoff" -gt 0 ]; then
+    printf "    AND r.run_start >= '%s'\n" "$cutoff_iso"
+  fi
+  printf '%s\n' 'GROUP BY c.machine, c.agent_run_id, c.model, c.price_status, c.unpriced_reason'
+}
+
+spend() {
+  command -v ledger >/dev/null 2>&1 ||
+    { printf 'agent-cost: ledger not found on PATH\n' >&2; return 1; }
+
+  # The machine name is read as the ledger reads it: the whole file, trailing
+  # CR and LF trimmed.
+  local machine_file machine cr lf
+  if [ -n "${AGENT_LEDGER_ROOT:-}" ]; then
+    machine_file="$AGENT_LEDGER_ROOT/config/machine"
+  else
+    machine_file="$HOME/.config/agent-ledger/machine"
+  fi
+  [ -r "$machine_file" ] ||
+    { printf 'agent-cost: no ledger machine file\n' >&2; return 1; }
+  machine=$(cat "$machine_file")
+  cr=$(printf '\r')
+  lf=$(printf '\nx'); lf=${lf%x}
+  while [ "${machine%["$cr""$lf"]}" != "$machine" ]; do
+    machine="${machine%["$cr""$lf"]}"
+  done
+  [ -n "$machine" ] ||
+    { printf 'agent-cost: no ledger machine file\n' >&2; return 1; }
+
+  cutoff_iso=
+  if [ "$cutoff" -gt 0 ]; then
+    cutoff_iso=$(date -u -d "@$cutoff" +%Y-%m-%dT%H:%M:%S 2>/dev/null) ||
+      cutoff_iso=$(date -u -r "$cutoff" +%Y-%m-%dT%H:%M:%S 2>/dev/null)
+    case "$cutoff_iso" in
+      [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]) ;;
+      *) printf 'agent-cost: cannot format the --since cutoff\n' >&2; return 2 ;;
+    esac
+  fi
+
+  local query_sql ledger_rows
+  query_sql=$(spend_query)
+  ledger_rows=$(ledger query "$query_sql") ||
+    { printf 'agent-cost: ledger query failed\n' >&2; return 1; }
+
+  # Columns: 1 machine, 2 agent_run_id, 3 agent, 4 repo, 5 model, 6 depth,
+  # 7 price_status, 8 unpriced_reason, 9 requests, 10 cost, 11 output,
+  # 12 cache write, 13 cache read, 14 speed assumed, 15 write split assumed.
+  printf '%s\n' "$ledger_rows" | awk -F'\t' -v machine="$machine" -v by="$BY" \
+    -v repo="$REPO" -v col="$SPEND_COL" '
+NR == 1 { next }
+$1 != machine { next }
+repo != "" && $4 !~ repo { next }
+{
+  group = $col
+  if (group == "") group = "?"
+  rows++
+}
+$7 == "priced" {
+  if (!((group SUBSEP $2) in seenkey)) { seenkey[group SUBSEP $2] = 1; dispatches[group]++ }
+  if (!($2 in seenrun)) { seenrun[$2] = 1; cnt++ }
+  cost[group] += $10; output[group] += $11; cache_write[group] += $12; cache_read[group] += $13
+  tot += $10; totout += $11; totw += $12; totr += $13
+  speedassumed += $14; splitassumed += $15
+  next
+}
+{
+  unpriced += $9
+  unpmodel[$5 "(" ($8 == "" ? $7 : $8) ")"] += $9
+}
+function unpricedline() {
+  if (unpriced > 0) {
+    printf "UNPRICED: %d requests excluded:", unpriced
+    for (m in unpmodel) printf " %s(%d)", m, unpmodel[m]
+    printf "\n"
+  }
+}
+END {
+  if (rows == 0) {
+    print "agent-cost: no dispatches in range"
+    exit
+  }
+  if (cnt == 0) {
+    print "agent-cost: no priced dispatches in range"
+    unpricedline()
+    exit
+  }
+  # Rows through an output pipe, closed before the summary prints: POSIX awk
+  # has no asort, and sorting the whole stream downstream would shuffle the
+  # summary lines into the table.
+  cmd = "sort -k3 -rn"
+  printf "%-28s %5s %10s %9s %9s %9s %9s %7s\n", \
+    by, "n", "cost$", "mean$", "outM", "cwrtM", "creadM", "share"
+  for (group in dispatches)
+    printf "%-28s %5d %10.2f %9.3f %9.2f %9.2f %9.2f %6.1f%%\n", \
+      group, dispatches[group], cost[group], cost[group]/dispatches[group], \
+      output[group]/1e6, cache_write[group]/1e6, cache_read[group]/1e6, 100*cost[group]/tot | cmd
+  close(cmd)
+  printf "\n%d dispatches, $%.2f, mean $%.3f\n", cnt, tot, tot/cnt
+  printf "billed volume: %.2fM output, %.2fM cache write, %.2fM cache read\n", \
+    totout/1e6, totw/1e6, totr/1e6
+  printf "prices: ledger model_price (registry/rules/prices.toml); assumed: %d requests at standard speed, %d cache writes at the 5m rate\n", \
+    speedassumed, splitassumed
+  unpricedline()
+}
+'
+}
+
+if [ "$SPEND" = 1 ]; then
+  spend
+  exit $?
+fi
+
+command -v jq >/dev/null 2>&1 || { printf 'agent-cost: jq not found\n' >&2; exit 1; }
+[ -d "$ROOT" ] || { printf 'agent-cost: no projects dir at %s\n' "$ROOT" >&2; exit 1; }
+
+# --days prunes by file mtime BEFORE the per-file jq, which is the difference
+# between a sub-second run and several seconds across ~700 transcripts. The
+# in-record timestamp is still the authority; mtime only narrows the candidates.
+if [ "$cutoff" -gt 0 ]; then
   find_args=(-newermt "@$cutoff")
 else
-  cutoff=0
   find_args=()
 fi
 
@@ -195,37 +322,9 @@ extract() {
   done
 }
 
-extract | awk -F'\t' -v col="$COL" -v by="$BY" -v repo="$REPO" -v cut="$cutoff" \
-  -v spend="$SPEND" -v rates="$RATES" -v cwm="$CACHE_WRITE_MULT" -v crm="$CACHE_READ_MULT" '
-BEGIN {
-  nrates = split(rates, RR, /[ \t,]+/)
-  for (i = 1; i <= nrates; i++) {
-    if (RR[i] == "") continue
-    split(RR[i], P, ":")
-    pat[i] = P[1]; rin[i] = P[2] + 0; rout[i] = P[3] + 0
-  }
-}
-# First substring match wins, so a rate table lists specific before general.
-# Returns -1 rather than 0 for an unknown model: a dispatch priced at zero is
-# indistinguishable from a free one, and that is how a whole tier goes missing.
-function price(model, out, inp, cw, cr,   i) {
-  for (i = 1; i <= nrates; i++)
-    if (pat[i] != "" && index(model, pat[i]) > 0)
-      return ((inp + cw * cwm + cr * crm) * rin[i] + out * rout[i]) / 1000000
-  return -1
-}
+extract | awk -F'\t' -v col="$COL" -v by="$BY" -v repo="$REPO" -v cut="$cutoff" '
 repo != "" && $2 !~ repo { next }
 cut > 0 && $5 > 0 && $5 < cut { next }
-spend == 1 {
-  d = price($3, $8, $9, $10, $11)
-  if (d < 0) { unpriced++; unpmodel[$3]++; next }
-  k = $col
-  n[k]++; s[k] += d
-  o[k] += $8; w[k] += $10; r[k] += $11
-  tot += d; cnt++
-  totout += $8; totw += $10; totr += $11
-  next
-}
 {
   k = $col
   n[k]++; s[k] += $4; b[k] += $7
@@ -235,33 +334,12 @@ spend == 1 {
 END {
   if (cnt == 0) {
     print "agent-cost: no dispatches in range"
-    if (unpriced > 0)
-      printf "(%d dispatches present but no rate matched their model)\n", unpriced
     exit
   }
   # Rows through an output pipe, closed before the summary prints: POSIX awk
   # has no asort, and sorting the whole stream downstream would shuffle the
   # summary lines into the table.
   cmd = "sort -k3 -rn"
-  if (spend == 1) {
-    printf "%-28s %5s %10s %9s %9s %9s %9s %7s\n", \
-      by, "n", "cost$", "mean$", "outM", "cwrtM", "creadM", "share"
-    for (k in n)
-      printf "%-28s %5d %10.2f %9.3f %9.2f %9.2f %9.2f %6.1f%%\n", \
-        k, n[k], s[k], s[k]/n[k], o[k]/1e6, w[k]/1e6, r[k]/1e6, 100*s[k]/tot | cmd
-    close(cmd)
-    printf "\n%d dispatches, $%.2f, mean $%.3f\n", cnt, tot, tot/cnt
-    printf "billed volume: %.2fM output, %.2fM cache write, %.2fM cache read\n", \
-      totout/1e6, totw/1e6, totr/1e6
-    printf "rates: %s (cache write x%s, read x%s) -- VERIFY BEFORE QUOTING\n", \
-      rates, cwm, crm
-    if (unpriced > 0) {
-      printf "UNPRICED: %d dispatches excluded, no rate matched:", unpriced
-      for (m in unpmodel) printf " %s(%d)", m, unpmodel[m]
-      printf "\n"
-    }
-    exit
-  }
   printf "%-28s %5s %12s %9s %9s %9s %7s\n", by, "n", "total", "mean", "boot", "max", "share"
   for (k in n)
     printf "%-28s %5d %12d %9d %9d %9d %6.1f%%\n", \

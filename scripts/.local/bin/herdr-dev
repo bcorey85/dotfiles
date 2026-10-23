@@ -1,10 +1,11 @@
 #!/bin/bash
-# Launch a coding layout for a project in a herdr workspace.
+# Launch a coding layout for a project in a herdr workspace (a tuios session
+# under tuios).
 #
 # Usage: herdr-dev [directory] [workspace_id] [claude_session]
 #   directory       defaults to cwd; all panes open there.
 #   workspace_id    defaults to the workspace of the current pane (requires
-#                   running inside herdr). herdr-project-open passes it
+#                   running inside herdr or tuios). herdr-project-open passes it
 #                   explicitly so the layout lands in the workspace it just made.
 #   claude_session  a Claude session id; the claude pane opens a fork of that
 #                   conversation instead of a fresh one (herdr-worktree --fork).
@@ -21,6 +22,10 @@
 #
 # send-text writes literal text without submitting; send-keys enter is the
 # separate submit. Hence the run() helper.
+#
+# Under tuios the layout calls need a client on the workspace. tuios splits the
+# focused pane 50/50 whatever the --ratio, and opens a new tab untiled, so the
+# tuios branches below resize the code tab and build the console natively.
 
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
@@ -31,44 +36,81 @@ ws="${2:-}"
 claude_session="${3:-}"
 
 if [ -z "$ws" ]; then
-    ws=$(herdr pane current 2>/dev/null | jq -r '.result.pane.workspace_id // empty')
+    ws=$(herdr-api pane current 2>/dev/null | jq -r '.result.pane.workspace_id // empty')
 fi
 if [ -z "$ws" ]; then
-    echo "herdr-dev: no workspace — pass one, or run inside herdr" >&2
+    echo "herdr-dev: no workspace — pass one, or run inside herdr or tuios" >&2
     exit 1
 fi
 
 # Type a command into a pane and submit it.
 run() {
-    herdr pane send-text "$1" "$2" >/dev/null
-    herdr pane send-keys "$1" enter >/dev/null
+    herdr-api pane send-text "$1" "$2" >/dev/null
+    herdr-api pane send-keys "$1" enter >/dev/null
 }
 
 # Split $1 and echo the new pane's id.
 split() {
-    herdr pane split "$1" --direction right --ratio "$2" --cwd "$dir" --no-focus \
+    herdr-api pane split "$1" --direction right --ratio "$2" --cwd "$dir" --no-focus \
         | jq -r '.result.pane.pane_id'
 }
 
+# The tuios session behind herdr workspace id w<12 hex>: the session whose id
+# starts with those hex digits.
+tuios_session() {
+    local session_id_prefix="${ws#w}"
+
+    tuios ls --json \
+        | jq -r --arg id "$session_id_prefix" \
+            '.[] | select((.id | gsub("-"; "")) | startswith($id)) | .name'
+}
+
+# Fill the focused, untiled console tab with three equal tiled columns.
+build_tuios_console() {
+    local session second_pane
+
+    session=$(tuios_session)
+    tuios set-layout -s "$session" --tiling true >/dev/null
+
+    second_pane=$(tuios split-window right -s "$session" --json | jq -r '.window_id')
+    tuios split-window right -s "$session" -w "$second_pane" >/dev/null
+
+    # BSP leaves 50 | 25 | 25. Narrowing the first column by 1/6 of the width
+    # gives 1/3 each, since the right half keeps its 50/50 split.
+    herdr-api pane resize --direction left --amount 0.1667 --pane "$c1" >/dev/null
+}
+
 # ── Tab 1 "code": claude (40%) | nvim (60%) ─────────────────────────────────
-code_tab=$(herdr workspace get "$ws" | jq -r '.result.workspace.active_tab_id')
-agent=$(herdr pane list --workspace "$ws" \
+code_tab=$(herdr-api workspace get "$ws" | jq -r '.result.workspace.active_tab_id')
+agent=$(herdr-api pane list --workspace "$ws" \
     | jq -r --arg t "$code_tab" '.result.panes[] | select(.tab_id == $t) | .pane_id' | head -1)
 
-herdr tab rename "$code_tab" code >/dev/null
-herdr pane rename "$agent" claude >/dev/null
+herdr-api tab rename "$code_tab" code >/dev/null
+herdr-api pane rename "$agent" claude >/dev/null
 run "$agent" "claude${claude_session:+ --resume $claude_session --fork-session}"
 
 editor=$(split "$agent" 0.4)
-herdr pane rename "$editor" editor >/dev/null
+herdr-api pane rename "$editor" editor >/dev/null
 run "$editor" "nvim ."
 
+if [ -n "${TUIOS_SOCKET:-}" ]; then
+    # 50 | 50 to 40 | 60: move the editor's left edge a tenth of the width.
+    herdr-api pane resize --direction left --amount 0.1 --pane "$editor" >/dev/null
+fi
+
 # ── Tab 2 "console": three equal shells ─────────────────────────────────────
-console=$(herdr tab create --workspace "$ws" --label console --cwd "$dir" --no-focus)
+console=$(herdr-api tab create --workspace "$ws" --label console --cwd "$dir" --no-focus)
 c1=$(jq -r '.result.root_pane.pane_id' <<<"$console")
-# 1/3 then half of the remaining 2/3 => three equal columns.
-c2=$(split "$c1" 0.3334)
-split "$c2" 0.5 >/dev/null
+
+if [ -n "${TUIOS_SOCKET:-}" ]; then
+    console_tab=$(jq -r '.result.tab.tab_id' <<<"$console")
+    herdr-api tab focus "$console_tab" >/dev/null
+    build_tuios_console
+else
+    # 1/3 then half of the remaining 2/3 => three equal columns.
+    c2=$(split "$c1" 0.3334)
+    split "$c2" 0.5 >/dev/null
+fi
 
 mprocs_cfg=""
 if [ -f "$dir/mprocs.yaml" ]; then
@@ -82,5 +124,5 @@ fi
 
 # Land on the editor. `pane focus` is directional only — there is no
 # focus-this-id form — so aim right from the claude pane.
-herdr tab focus "$code_tab" >/dev/null
-herdr pane focus --direction right --pane "$agent" >/dev/null
+herdr-api tab focus "$code_tab" >/dev/null
+herdr-api pane focus --direction right --pane "$agent" >/dev/null

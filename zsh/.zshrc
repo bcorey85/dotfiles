@@ -31,12 +31,22 @@ if [[ -d "$XDG_RUNTIME_DIR/hypr" ]]; then
   fi
 fi
 
-# Auto-start herdr (attach-or-create to its always-on persistent session).
+# Auto-start the multiplexer (attach-or-create to its always-on persistent session).
 #   NO_MUX=1                         escape hatch — bare terminal, no multiplexer
-#   HERDR_*                          already inside herdr → skip, so a pane's
-#                                    $SHELL never nests another mux.
-if [ -z "$NO_MUX" ] &&
-  [ -z "${HERDR_TAB_ID}${HERDR_PANE_ID}${HERDR_SOCKET_PATH}" ]; then
+#   MUX=tuios                        per machine, in ~/.zshrc.local: tuios
+#                                    instead of herdr
+#   HERDR_* / TUIOS_SESSION          already inside a mux → skip, so a pane's
+#                                    $SHELL never nests another mux. tuios
+#                                    panes carry the HERDR_* set too.
+if [ -z "$NO_MUX" ] && [ "$MUX" = tuios ] &&
+  [ -z "${HERDR_TAB_ID}${HERDR_PANE_ID}${HERDR_SOCKET_PATH}${TUIOS_SESSION}" ]; then
+  if [ -x "$HOME/.local/bin/tuios" ]; then
+    "$HOME/.local/bin/tuios" attach
+  elif command -v tuios &>/dev/null; then
+    tuios attach
+  fi
+elif [ -z "$NO_MUX" ] &&
+  [ -z "${HERDR_TAB_ID}${HERDR_PANE_ID}${HERDR_SOCKET_PATH}${TUIOS_SESSION}" ]; then
   # herdr reads config.toml at server start, so the template must be rendered
   # BEFORE the launch below — not in the herdr block further down, which the
   # foreground `herdr` here doesn't reach until the session exits.
@@ -255,19 +265,19 @@ function cw() {
         # One cockpit tab per worktree: nvim (60%) | claude (40%), named after
         # the worktree so the tab bar shows which agent lives where.
         local ws
-        ws=$(herdr pane current 2>/dev/null | jq -r '.result.pane.workspace_id // empty')
+        ws=$(herdr-api pane current 2>/dev/null | jq -r '.result.pane.workspace_id // empty')
         if [[ -n "$ws" ]]; then
             local tab editor agent
-            tab=$(herdr tab create --workspace "$ws" --label "$name" --cwd "$wt_dir" --focus)
+            tab=$(herdr-api tab create --workspace "$ws" --label "$name" --cwd "$wt_dir" --focus)
             editor=$(jq -r '.result.root_pane.pane_id' <<<"$tab")
-            herdr pane rename "$editor" editor >/dev/null
-            herdr pane send-text "$editor" "nvim ." >/dev/null
-            herdr pane send-keys "$editor" enter >/dev/null
-            agent=$(herdr pane split "$editor" --direction right --ratio 0.6 --cwd "$wt_dir" --no-focus | jq -r '.result.pane.pane_id')
-            herdr pane rename "$agent" claude >/dev/null
-            herdr pane send-text "$agent" "claude" >/dev/null
-            herdr pane send-keys "$agent" enter >/dev/null
-            herdr pane focus --direction left --pane "$agent" >/dev/null
+            herdr-api pane rename "$editor" editor >/dev/null
+            herdr-api pane send-text "$editor" "nvim ." >/dev/null
+            herdr-api pane send-keys "$editor" enter >/dev/null
+            agent=$(herdr-api pane split "$editor" --direction right --ratio 0.6 --cwd "$wt_dir" --no-focus | jq -r '.result.pane.pane_id')
+            herdr-api pane rename "$agent" claude >/dev/null
+            herdr-api pane send-text "$agent" "claude" >/dev/null
+            herdr-api pane send-keys "$agent" enter >/dev/null
+            herdr-api pane focus --direction left --pane "$agent" >/dev/null
         else
             cd "$wt_dir" && claude
         fi

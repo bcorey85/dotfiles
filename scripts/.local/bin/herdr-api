@@ -1,0 +1,20 @@
+#!/bin/bash
+# Run a herdr CLI command against the multiplexer this shell lives in.
+#
+# Usage: herdr-api <herdr args...>     e.g. herdr-api pane current
+#
+#   tuios  tuios answers the herdr API on <TUIOS_SOCKET>.herdr. Its panes, popups
+#          and command keys all carry TUIOS_SOCKET. The herdr binary on PATH is
+#          the pinned install/herdr client, too old for tuios's protocol, so this
+#          runs the herdr shim tuios keeps beside the socket.
+#   herdr  the herdr on PATH, which reads HERDR_SOCKET_PATH itself.
+
+set -euo pipefail
+
+if [ -n "${TUIOS_SOCKET:-}" ]; then
+    runtime_dir=$(dirname "$TUIOS_SOCKET")
+    export HERDR_SOCKET_PATH="$TUIOS_SOCKET.herdr"
+    exec "$runtime_dir/herdr/bin/herdr" "$@"
+fi
+
+exec herdr "$@"

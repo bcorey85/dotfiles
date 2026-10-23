@@ -25,6 +25,8 @@ claude/.claude/*
 claude/.claude/skills/synced/
 # herdr's agent skill, regenerated from `herdr --skill` by install/herdr.
 claude/.claude/skills/herdr/
+# tuios's agent skill, regenerated from `tuios --skill` by install/tuios.
+claude/.claude/skills/tuios/
 !claude/.claude/hooks/
 !claude/.claude/rules/
 !claude/.claude/scripts/

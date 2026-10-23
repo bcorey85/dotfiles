@@ -6,6 +6,7 @@ Personal configuration files across WSL, Ubuntu, macOS, and Arch Linux.
 
 - **nvim** - Neovim configuration (lazy.nvim, specs in `lua/plugins/`)
 - **herdr** - agent-aware terminal multiplexer (config template; `theme-mode` generates the real config)
+- **tuios** - terminal window manager, the herdr alternative (`config.d/dotfiles.toml` ports the herdr keys; set `MUX=tuios` in `~/.zshrc.local` to autostart it)
 - **zsh** - zsh configuration (manually cloned plugins, starship prompt)
 - **kanata** - Keyboard remapping
 - **claude** - Claude Code configuration ([ticket lifecycle](claude/.claude/README.md), [why the agents are shaped this way](docs/agent-evals.md))

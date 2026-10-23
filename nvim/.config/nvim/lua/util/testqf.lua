@@ -78,9 +78,10 @@ end
 
 local cached ---@type {id: string, label: string}|nil
 
--- Run herdr, synchronously; returns trimmed stdout or nil on failure.
+-- Run herdr (via herdr-api, so tuios works too), synchronously; returns trimmed
+-- stdout or nil on failure.
 local function herdr(args)
-  local cmd = { "herdr" }
+  local cmd = { "herdr-api" }
   vim.list_extend(cmd, args)
   local res = vim.system(cmd, { text = true }):wait()
   if res.code ~= 0 or not res.stdout or res.stdout == "" then
@@ -114,7 +115,7 @@ end
 
 local function capture(pane)
   local lines = vim.fn.systemlist({
-    "herdr", "pane", "read", pane.id,
+    "herdr-api", "pane", "read", pane.id,
     "--source", "recent",
     "--lines", "2000",
   })

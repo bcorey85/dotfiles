@@ -1,5 +1,6 @@
 #!/bin/bash
-# Create a git worktree as its own herdr workspace, laid out by herdr-dev.
+# Create a git worktree as its own herdr workspace (a tuios session under
+# tuios), laid out by herdr-dev.
 #
 # Usage: herdr-worktree [--fork] [--base <ref>] [branch]
 #   branch  prompted for when omitted (the prefix+ctrl+w popup).
@@ -88,16 +89,30 @@ worktree="$worktree_parent/$repo-$suffix"
 
 claude_session=""
 if [ -n "$fork" ]; then
-    claude_session=$(herdr pane current \
+    claude_session=$(herdr-api pane current \
         | jq -r 'select(.result.pane.agent == "claude") | .result.pane.agent_session.value // empty')
     [ -n "$claude_session" ] || { echo "herdr-worktree: --fork needs a claude pane" >&2; exit 1; }
 fi
 
 # herdr prints its own error to stderr, so only name the step that failed.
-created=$(herdr worktree create --cwd "$checkout" --branch "$branch" --base "$base" \
-    --path "$worktree" --label "$(basename "$worktree")" --focus) \
-    || { echo "herdr-worktree: herdr worktree create failed" >&2; exit 1; }
+# tuios answers no worktree.create, so under tuios git makes the worktree and
+# the workspace opens on it.
+label="$(basename "$worktree")"
+if [ -n "${TUIOS_SOCKET:-}" ]; then
+    git -C "$checkout" worktree add -b "$branch" "$worktree" "$base" \
+        || { echo "herdr-worktree: git worktree add failed" >&2; exit 1; }
+    created=$(herdr-api workspace create --cwd "$worktree" --label "$label" --focus) \
+        || { echo "herdr-worktree: workspace create failed" >&2; exit 1; }
+else
+    created=$(herdr worktree create --cwd "$checkout" --branch "$branch" --base "$base" \
+        --path "$worktree" --label "$label" --focus) \
+        || { echo "herdr-worktree: herdr worktree create failed" >&2; exit 1; }
+fi
 ws=$(jq -r '.result.workspace.workspace_id' <<<"$created")
+
+# tuios ignores create's --focus, and herdr-dev's layout calls need the client
+# on this workspace.
+herdr-api workspace focus "$ws" >/dev/null
 
 "$bin_dir/herdr-dev" "$worktree" "$ws" "$claude_session"
 

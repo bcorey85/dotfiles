@@ -34,3 +34,8 @@
 (static_item
   name: (identifier) @declaration.variable
   (#set! priority 130))
+
+; Macro names at their macro_rules! definition. Invocations stay plain.
+(macro_definition
+  name: (identifier) @declaration.function
+  (#set! priority 130))

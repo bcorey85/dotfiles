@@ -221,7 +221,7 @@ local groups = {
   PreProc = { fg = c.kw },
   Include = { fg = c.kw },
   Define = { fg = c.kw },
-  Macro = { fg = c.fn },
+  Macro = { fg = c.fg },
   PreCondit = { fg = c.kw },
   Type = { fg = c.fg },
   StorageClass = { fg = c.kw },
@@ -285,7 +285,7 @@ local groups = {
   -- Calls are plain; purple marks functions at their definition.
   ["@function.builtin"] = { fg = c.fg },
   ["@function.call"] = { fg = c.fg },
-  ["@function.macro"] = { fg = c.fn },
+  ["@function.macro"] = { fg = c.fg },
   ["@function.method"] = { fg = c.fn },
   ["@function.method.call"] = { fg = c.fg },
   ["@constructor"] = { fg = c.fg },

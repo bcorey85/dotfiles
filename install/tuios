@@ -1,0 +1,104 @@
+#!/bin/bash
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_info() { echo -e "${YELLOW}→${NC} $1"; }
+
+# tuios — terminal window manager with agent state, an Inbox and herdr API
+# compatibility (https://github.com/Gaurav-Gosain/tuios). Homebrew and the AUR
+# carry it, apt and pacman do not, so this pins a release tarball and verifies
+# it against a checksum recorded here, as install/herdr does. Bump VERSION +
+# the SHA256 lines together (--update forces a reinstall at the pinned
+# version). Checksums come from the release API:
+#   gh release view <TAG> --repo Gaurav-Gosain/tuios --json assets \
+#     --jq '.assets[] | "\(.name) \(.digest)"'
+
+VERSION="0.10.1"
+
+# herdr plugins the tuios config enables in [plugins]. tuios has no plugin
+# installer: it runs the checkouts `herdr plugin install` makes, so this needs
+# install/herdr first.
+#   herdr-splits.nvim — C-hjkl nav / M-hjkl resize across the tuios<->nvim
+#   boundary (nvim side: nvim/.config/nvim/lua/plugins/herdr-splits.lua).
+#   herdr-automatic-rename — names tabs after the foreground program.
+PLUGINS="lmilojevicc/herdr-splits.nvim qu8n/herdr-automatic-rename"
+
+install_plugins() {
+  local repo name
+  if [ ! -x "$HOME/.local/bin/herdr" ]; then
+    print_error "herdr not installed — run install/herdr, then re-run install/tuios for its plugins"
+    return
+  fi
+  for repo in $PLUGINS; do
+    name=$(basename "$repo" .nvim)
+    if "$HOME/.local/bin/tuios" plugins list 2>/dev/null | grep -q "^${name} "; then
+      print_success "tuios plugin ${name} already installed"
+    else
+      print_info "Installing tuios plugin ${name}..."
+      "$HOME/.local/bin/herdr" plugin install "$repo" --yes >/dev/null
+      print_success "tuios plugin ${name} installed"
+    fi
+  done
+}
+
+# tuios's agent skill (`tuios --skill`), rewritten on every run so it matches
+# the installed binary. Same placement rules as install/herdr's skill.
+install_skill() {
+  local claude_skills_dir="$HOME/.claude/skills"
+  if [ ! -d "$claude_skills_dir" ]; then
+    print_info "~/.claude/skills not stowed — skipping tuios skill (re-run after install/stow)"
+    return
+  fi
+  mkdir -p "$claude_skills_dir/tuios"
+  "$HOME/.local/bin/tuios" --skill > "$claude_skills_dir/tuios/SKILL.md"
+  print_success "tuios skill written to ~/.claude/skills/tuios"
+}
+
+if command -v tuios &>/dev/null && [ "$1" != "--update" ]; then
+  print_success "tuios already installed ($(tuios --version 2>/dev/null || true)) — use --update to upgrade"
+  install_plugins
+  install_skill
+  exit 0
+fi
+
+# macOS ships bash 3.2 (no associative arrays) — checksums live in this case.
+case "$(uname -s)-$(uname -m)" in
+  Linux-x86_64) PLATFORM=Linux_x86_64 SHA256="85a4bf339a9a6793e0b3d15abdccd9a96ca8d2ff76072007ec99be31f1a16a5f" ;;
+  Linux-aarch64) PLATFORM=Linux_arm64 SHA256="538a9f240c153029375e6d24369b685316a00c04f8341306b07811f68c699c5d" ;;
+  Darwin-arm64) PLATFORM=Darwin_arm64 SHA256="302e28404b619e54891466be51b9b24818692d1d52fcd227c0042de2dc6ed019" ;;
+  Darwin-x86_64) PLATFORM=Darwin_x86_64 SHA256="69092c9d5a33f3d9d31700511072463fc7006f5b3bb966ef73a23106b092a383" ;;
+  *)
+    print_error "Unsupported platform: $(uname -s)-$(uname -m)"
+    exit 1
+    ;;
+esac
+
+ASSET="tuios_${VERSION}_${PLATFORM}.tar.gz"
+URL="https://github.com/Gaurav-Gosain/tuios/releases/download/v${VERSION}/${ASSET}"
+
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+print_info "Downloading tuios v${VERSION} (${PLATFORM})..."
+curl -fsSL -o "$TMP_DIR/$ASSET" "$URL"
+# macOS has shasum, not sha256sum
+if command -v sha256sum &>/dev/null; then
+  echo "${SHA256}  $TMP_DIR/$ASSET" | sha256sum --check --quiet
+else
+  echo "${SHA256}  $TMP_DIR/$ASSET" | shasum -a 256 --check --quiet
+fi
+tar -xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR" tuios
+
+mkdir -p "$HOME/.local/bin"
+install -m 755 "$TMP_DIR/tuios" "$HOME/.local/bin/tuios"
+print_success "tuios installed to ~/.local/bin ($("$HOME/.local/bin/tuios" --version 2>/dev/null || true))"
+
+install_plugins
+install_skill

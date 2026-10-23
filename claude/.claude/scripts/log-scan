@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# log-scan — append one JSONL line per deterministic-scan RUN.
+# log-scan — write one scan_run row through `ledger write` per deterministic-scan RUN.
 #
-# Why this exists: a scan that is never scored is unfalsifiable. The escape log
-# (~/.claude/review-escapes.jsonl) records what a HUMAN caught downstream; the
-# review metrics record what the review loop caught. Neither records whether a
-# scan fired, whether what it printed was real, or whether it ran at all. Without
-# this file, "we added a dead-code scan" can never be checked against "did it
-# ever catch anything," and a scan that produces nothing but noise looks exactly
-# like a scan that keeps the tree clean.
+# Why this exists: a scan that is never scored is unfalsifiable. The review_escape
+# rows record what a HUMAN caught downstream; the review rows record what the
+# review loop caught. Neither records whether a scan fired, whether what it
+# printed was real, or whether it ran at all. Without these rows, "we added a
+# dead-code scan" can never be checked against "did it ever catch anything," and
+# a scan that produces nothing but noise looks exactly like a scan that keeps the
+# tree clean.
 #
 # The number that matters:
 #   candidates → confirmed  is PRECISION. A scan whose confirmed/candidates
@@ -30,7 +30,6 @@
 #
 # usage: log-scan key=value [key=value ...]
 #   required:
-#     repo=<basename>
 #     scan=acceptance-stub|prohibition|other
 #       prohibition = a banned pattern that must not appear at all (a plan's
 #       "git grep <X> returns zero hits" criterion). candidates is the hit
@@ -44,30 +43,23 @@
 #     fixed=<confirmed rows actually fixed this run>
 #     fp=<candidates dismissed as false positives>
 #     note="one line — what the confirmed ones were, or why all were dismissed"
-#     branch=<branch name>
+#       accepted for the caller's own record; never stored
+#     branch=<branch name>   sent as branch_key (a keyed hash)
 #
-# Output file: $SCAN_RUNS_FILE or ~/.claude/scan-runs.jsonl
+# Every value is sent as a JSON string; `ledger write` types it, stores an
+# unknown scan or stage as `other`, and adds date, repo and session. With no
+# `ledger` on PATH the write is skipped silently. A row `ledger write` refuses
+# exits 2.
 set -euo pipefail
 
 script_dir=$(dirname -- "${BASH_SOURCE[0]}")
+# shellcheck source=_kv.sh
+source "$script_dir/_kv.sh"
 
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
-out="${SCAN_RUNS_FILE:-$HOME/.claude/scan-runs.jsonl}"
 
-# schema_version marks the row's schema era; bump ONLY on a breaking change
-# (a value-vocabulary swap or a field-meaning change), never for additive fields.
-# /audit review reads only the current version; older versions are archived.
-SCHEMA_VERSION=2
-json=$(jq -cn --argjson sv "$SCHEMA_VERSION" '{date: (now | todate), schema_version: $sv}')
-for kv in "$@"; do
-  case "$kv" in
-    *=*) ;;
-    *) echo "skipping malformed arg (want key=value): $kv" >&2; continue ;;
-  esac
-  k="${kv%%=*}"
-  v="${kv#*=}"
-  json=$(jq -c --arg k "$k" --arg v "$v" '.[$k] = ($v | (tonumber? // .))' <<< "$json")
-done
+json='{}'
+kv_fold "note" "" "$@"
 
 need() {
   local f; f=$(jq -r --arg k "$1" '.[$k] // ""' <<< "$json")
@@ -75,19 +67,7 @@ need() {
   echo "refusing to log: $1= is required." >&2
   exit 1
 }
-need repo; need scan; need stage; need exit
-
-scan=$(jq -r '.scan' <<< "$json")
-case "$scan" in
-  acceptance-stub|prohibition|other) ;;
-  *) echo "refusing to log: scan=$scan is not one of acceptance-stub|prohibition|other" >&2; exit 1 ;;
-esac
-
-stage=$(jq -r '.stage' <<< "$json")
-case "$stage" in
-  branch-recap|code-phase|refactor|manual) ;;
-  *) echo "refusing to log: stage=$stage is not one of branch-recap|code-phase|refactor|manual" >&2; exit 1 ;;
-esac
+need scan; need stage; need exit
 
 code=$(jq -r '.exit' <<< "$json")
 if [ "$code" = "0" ] || [ "$code" = "1" ]; then
@@ -106,5 +86,5 @@ fi
 
 "$script_dir/telemetry_enabled.sh" 2>/dev/null || exit 0
 
-printf '%s\n' "$json" >> "$out"
-echo "logged → $out"
+payload=$(jq -c 'del(.note) | with_entries(.key |= ({"branch": "branch_key"}[.] // .))' <<< "$json")
+printf '%s\n' "$payload" | bash "$script_dir/ledger-write" scan_run

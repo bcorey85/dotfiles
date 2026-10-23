@@ -145,8 +145,12 @@ class ReviewFixScriptTest(unittest.TestCase):
     def ledgerWrites(self):
         """Every `ledger write` call log-review-finding made, oldest first. Each is the row the writer piped in:
         strings, the file path raw in path_key, and no date, repo, session or desc, plus the stand-in's _type,
-        _cwd and _session."""
-        return fake_ledger.recorded_rows(self.ledgerEnv)
+        _cwd and _session. The review_escape rows log-escape sends are read by escapeRows."""
+        return [row for row in fake_ledger.recorded_rows(self.ledgerEnv) if row["_type"] != "review_escape"]
+
+    def escapeRows(self):
+        """Every `review_escape` row log-escape sent to `ledger write`, oldest first; the file path is in path_key."""
+        return fake_ledger.recorded_rows(self.ledgerEnv, "review_escape")
 
     # ---------- routing ----------
 
@@ -401,32 +405,39 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_walkthrough_escape_logs_only_for_a_conversation_finding_that_was_applied(self):
         code, output = self.packet(CONVERGED, "--source", "conversation", "--escape", self.escape_spec(), skill="fix")
         self.assertEqual(code, 0, output)
-        rows = self.rows(self.escapesFile)
+        rows = self.escapeRows()
         self.assertEqual(len(rows), 1, output)
         self.assertEqual(rows[0]["stage_found"], "walkthrough")
         self.assertEqual(rows[0]["gate_missed"], "review")
         self.assertEqual(rows[0]["guard"], "convention")
         self.assertEqual(rows[0]["lane"], "code")
-        self.assertEqual(rows[0]["file"], "src/orders.ts")
+        self.assertEqual(rows[0]["path_key"], "src/orders.ts")
 
     def test_escape_from_a_cc_comment_is_not_logged(self):
         code, output = self.packet(CONVERGED, "--source", "cc", "--escape", self.escape_spec(), skill="fix")
         self.assertEqual(code, 0, output)
-        self.assertEqual(self.rows(self.escapesFile), [])
+        self.assertEqual(self.escapeRows(), [])
         self.assertIn("not the conversation", output)
 
     def test_escape_for_a_file_with_no_fixed_entry_is_not_logged(self):
         code, output = self.packet(CONVERGED, "--source", "conversation",
                                    "--escape", self.escape_spec(file="src/other.ts"), skill="fix")
-        self.assertEqual(self.rows(self.escapesFile), [])
+        self.assertEqual(self.escapeRows(), [])
         self.assertIn("no fixed[] entry names that file", output)
 
-    def test_escape_with_a_bad_vocabulary_value_fails_before_anything_is_logged(self):
+    def test_escape_the_ledger_refuses_is_noted_and_not_logged(self):
+        code, output = self.packet(CONVERGED, "--source", "conversation",
+                                   "--escape", self.escape_spec(), skill="fix",
+                                   FAKE_LEDGER_WRITE_EXIT="2")
+        self.assertEqual(code, 0, output)
+        self.assertIn("escape log FAILED for src/orders.ts", output)
+        self.assertEqual(self.escapeRows(), [])
+
+    def test_unknown_guard_reaches_the_ledger_as_given(self):
         code, output = self.packet(CONVERGED, "--source", "conversation",
                                    "--escape", self.escape_spec(guard="vibes"), skill="fix")
-        self.assertEqual(code, 2)
-        self.assertIn("guard='vibes'", output)
-        self.assertEqual(self.rows(self.escapesFile), [])
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.escapeRows()[0]["guard"], "vibes")
 
     def test_escape_missing_a_field_fails_loudly(self):
         spec = self.escape_spec().replace("|severity=high", "")
@@ -436,7 +447,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_escape_on_a_non_converged_status_is_not_logged(self):
         code, output = self.packet(CAP, "--source", "conversation", "--escape", self.escape_spec(), skill="fix")
-        self.assertEqual(self.rows(self.escapesFile), [])
+        self.assertEqual(self.escapeRows(), [])
 
     def test_escape_flag_on_review_is_refused(self):
         code, output = self.packet(CONVERGED, "--escape", self.escape_spec())
@@ -921,7 +932,7 @@ class ReviewFixScriptTest(unittest.TestCase):
     # ---------- side effects happen once ----------
 
     def escape_ids(self):
-        return [row["file"] for row in self.rows(self.escapesFile)]
+        return [row["path_key"] for row in self.escapeRows()]
 
     def posts(self):
         return [call for call in self.ghLog.read_text().splitlines() if call.startswith("api")] if self.ghLog.exists() else []

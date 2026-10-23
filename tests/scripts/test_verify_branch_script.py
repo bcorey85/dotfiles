@@ -207,6 +207,10 @@ class VerifyBranchBase(unittest.TestCase):
     def log_review(self, findings="[]", result="PASS", *extra, **kwargs):
         return self.log("review", "--result", result, "--rows", "-", *extra, stdin=findings, **kwargs)
 
+    def escapeRows(self):
+        """Every `review_escape` row log-escape sent to `ledger write`, oldest first."""
+        return fake_ledger.recorded_rows(self.ledgerEnv, "review_escape")
+
     def jsonl(self, path):
         if not path.is_file():
             return []
@@ -691,7 +695,7 @@ class ReviewGateTest(VerifyBranchBase):
         done = self.log("--rows", "-", "--escapes-only", stdin=rows)
         self.assertEqual(done.returncode, 2)
         self.assertIn("none was logged", done.stderr)
-        self.assertEqual(self.jsonl(self.escapes), [])
+        self.assertEqual(self.escapeRows(), [])
 
 
 class LogTest(VerifyBranchBase):
@@ -770,7 +774,7 @@ class LogTest(VerifyBranchBase):
         again = self.log("--rows", "-", stdin=rows)
         self.assertEqual(again.returncode, 0, again.stderr)
         self.assertIn("already recorded", again.stdout)
-        self.assertEqual(len(self.jsonl(self.escapes)), 1)
+        self.assertEqual(len(self.escapeRows()), 1)
 
     def test_gaps_write_run_findings_and_escapes(self):
         rows = self.rows("done", "partial", "missing",
@@ -788,7 +792,7 @@ class LogTest(VerifyBranchBase):
         self.assertEqual([f["class"] for f in findings], ["plan-drift", "plan-drift"])
         self.assertEqual([f["lane"] for f in findings], ["verify", "verify"])
         self.assertEqual([f["path_key"] for f in findings], ["src/f2.py", "src/f3.py"])
-        escapes = self.jsonl(self.escapes)
+        escapes = self.escapeRows()
         self.assertEqual([e["guard"] for e in escapes], ["check", "none"])
         self.assertEqual([e["severity"] for e in escapes], ["medium", "medium"])
         self.assertEqual(escapes[0]["gate_missed"], "drift-gate")
@@ -805,7 +809,7 @@ class LogTest(VerifyBranchBase):
         rows = self.rows("missing")
         done = self.log("--rows", "-", stdin=rows)
         self.assertIn("NEEDS GUARD", done.stdout)
-        self.assertEqual(self.jsonl(self.escapes), [])
+        self.assertEqual(self.escapeRows(), [])
         again = self.log("--rows", "-", stdin=rows)
         self.assertEqual(again.returncode, 2)
         self.assertIn("already logged", again.stderr)
@@ -815,7 +819,7 @@ class LogTest(VerifyBranchBase):
         self.assertIn("escapes logged: 1", followUp.stdout)
         for absent in ("verdicts:", "GAPS", "CLEAN", "Smoke-test"):
             self.assertNotIn(absent, followUp.stdout)
-        self.assertEqual(len(self.jsonl(self.escapes)), 1)
+        self.assertEqual(len(self.escapeRows()), 1)
         self.assertEqual(len(self.verifier_rows()), 2)
 
     def test_repeated_escapes_only_does_not_log_the_same_escape_twice(self):
@@ -825,7 +829,7 @@ class LogTest(VerifyBranchBase):
         second = self.log("--rows", "-", "--escapes-only", stdin=fixed)
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertIn("already recorded", second.stdout)
-        self.assertEqual(len(self.jsonl(self.escapes)), 1)
+        self.assertEqual(len(self.escapeRows()), 1)
 
     def test_escapes_only_does_not_reread_the_plan(self):
         self.assertEqual(self.log("--rows", "-", stdin=self.rows("missing")).returncode, 0)
@@ -839,7 +843,7 @@ class LogTest(VerifyBranchBase):
         rows = self.rows("missing", extra=[{"guard": "rule", "severity": "high"}])
         self.assertEqual(self.log("--rows", "-", stdin=rows).returncode, 0)
         self.assertEqual(self.log("--rows", "-", "--escapes-only", stdin=rows).returncode, 0)
-        self.assertEqual(len(self.jsonl(self.escapes)), 1)
+        self.assertEqual(len(self.escapeRows()), 1)
 
     def test_overridden_without_signoff_is_a_gap(self):
         rows = self.rows("overridden", "overridden", extra=[{"signoff": "Brandon, 2026-10-20: ok"}, {}])
@@ -856,7 +860,7 @@ class LogTest(VerifyBranchBase):
         logged = self.verifier_rows()
         self.assertEqual((logged[0]["result"], logged[0]["n_findings"]), ("NEEDS_CHANGES", "1"))
         self.assertEqual(logged[1]["class"], "plan-drift")
-        self.assertEqual(self.jsonl(self.escapes)[0]["severity"], "high")
+        self.assertEqual(self.escapeRows()[0]["severity"], "high")
 
     def test_clean_logs_pass_and_prints_checklist(self):
         rows = self.rows("done", "done", "needs-manual")
@@ -965,7 +969,7 @@ class LogTest(VerifyBranchBase):
         self.assertIn("logger failed", done.stderr)
         self.assertIn("nothing was written", done.stderr)
         self.assertEqual(self.verifier_rows(), [])
-        self.assertEqual(self.jsonl(self.escapes), [])
+        self.assertEqual(self.escapeRows(), [])
         self.assertFalse(self.context()["logged"])
 
     def test_a_logger_failing_mid_run_names_the_rows_not_logged_and_keeps_what_was_written(self):
@@ -1011,7 +1015,7 @@ class LogTest(VerifyBranchBase):
         done = self.log("--rows", "-", stdin=rows, cwd=self.repo / "src")
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(len(self.verifier_rows()), 2)
-        self.assertEqual(len(self.jsonl(self.escapes)), 1)
+        self.assertEqual(len(self.escapeRows()), 1)
 
 
 class ReviewLogTest(VerifyBranchBase):

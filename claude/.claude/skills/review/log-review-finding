@@ -17,7 +17,7 @@
 #                 nothing. The silent runs are the denominator; a log that
 #                 only records findings makes every gate look perfect.
 #   kind=finding  one per finding that gate emitted, with file:line so rows
-#                 join against each other and against review-escapes.jsonl.
+#                 join against each other and against the review_escape rows.
 #
 # usage: log-review-finding kind=run|finding key=value [key=value ...]
 #
@@ -58,7 +58,7 @@
 #                                   in place ships the defect — set
 #                                   automatically when fix_induced=bug
 #     class=bug|smell|duplication|complexity|plan-drift|test-gap|weak-assertion
-#          |security|perf|correctness|docs|other  (same vocabulary as log-escape,
+#          |security|perf|correctness|docs|other  (same vocabulary as review_escape,
 #                                                  so the two logs cross-tabulate)
 #       perf = query/IO cost (N+1, unbounded query, missing index, over-fetch,
 #       serial awaits, per-item round-trip). perf-reviewer's findings go here,

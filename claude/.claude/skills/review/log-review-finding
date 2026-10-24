@@ -264,7 +264,8 @@ if [ -z "$id" ]; then
 fi
 
 # desc is free text and never stored. file and branch go to the writer raw; it keys
-# them (path_key, branch_key) and drops a dash or empty value.
+# them (path_key, branch_key) and drops a dash or empty value. With no ledger, they are
+# stored raw in the local jsonl file.
 payload=$(jq -c '
   del(.desc, .kind)
   | with_entries(.key |= (if . == "file" then "path_key" elif . == "branch" then "branch_key" else . end))' <<< "$json")

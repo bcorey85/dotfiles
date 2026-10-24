@@ -4,15 +4,18 @@
 # usage: ledger-write <type>   (the row is read from stdin)
 #
 # With `ledger` on PATH: drops the row's date, schema_version, repo and session keys, which
-# `ledger write` sets itself, adds --session when CLAUDE_CODE_SESSION_ID is set, and exits with the
-# code `ledger write` returns.
+# `ledger write` sets itself (and a spec_run row's slug, which the ledger does not store), adds
+# --session when CLAUDE_CODE_SESSION_ID is set, and exits with the code `ledger write` returns.
 #
 # With no `ledger` on PATH: appends the row as one JSON line to the file its type used before the
 # ledger, with date (UTC ISO), schema_version, repo and session added, and prints one stderr line
-# naming the file. Numeric-looking strings are stored as numbers, branch_key as branch, path_key as
-# file; stored raw (the ledger would key them). Keys ending in _id and head stay
-# strings; result is stored with spaces (PASS WITH WARNINGS). If the append fails it prints one stderr line and exits 0: a telemetry write never blocks
-# the workflow. A type with no file is dropped with one stderr line.
+# naming the file. Numeric-looking strings are stored as numbers, one object level down too
+# (specialists, fixed_classes); branch_key is stored as branch and path_key as file, both stored
+# raw in the local jsonl file with no ledger. Keys ending in _id, and head and dirty, stay
+# strings. A result is stored with spaces (PASS WITH WARNINGS). A review_scope row is
+# {ts, skill, via, session, repo, caller}, the shape the skill-usage file always held. If the
+# append fails, or HOME is unset, it prints one stderr line and exits 0: a telemetry write never
+# blocks the workflow. A type with no file is dropped with one stderr line.
 #
 # Files, each overridden by the variable beside it:
 #   review_finding, review_run  ~/.claude/review-findings.jsonl  REVIEW_FINDINGS_FILE
@@ -32,12 +35,17 @@ if command -v ledger >/dev/null 2>&1; then
 
   # The ledger owns date, schema_version, repo and session; a caller's values for them are
   # dropped here, once, so no writer repeats the list.
-  jq -c 'del(.date, .schema_version, .repo, .session)' \
+  jq -c --arg row_type "$1" \
+    'del(.date, .schema_version, .repo, .session) | if $row_type == "spec_run" then del(.slug) else . end' \
     | ledger write "$1" ${session_args[@]+"${session_args[@]}"}
   exit $?
 fi
 
 row_type="$1"
+if [ -z "${HOME:-}" ]; then
+  echo "ledger-write: ledger not on PATH; HOME is unset, row dropped" >&2
+  exit 0
+fi
 script_dir=$(dirname -- "${BASH_SOURCE[0]}")
 
 case "$row_type" in
@@ -58,9 +66,12 @@ repo=$("$script_dir/../tools/repo-name" 2>/dev/null || true)
 
 # Ids and the head commit are strings: a 16-hex id such as 12e4567890123456 reads as a number.
 if ! jsonl_row=$(jq -c --argjson sv "$schema_version" --arg kind "$kind" --arg repo "$repo" \
-  --arg session "${CLAUDE_CODE_SESSION_ID:-}" '
+  --arg session "${CLAUDE_CODE_SESSION_ID:-}" --arg row_type "$row_type" '
+  def number_like: if type == "string" then (tonumber? // .) else . end;
   def typed($key):
-    if ($key | endswith("_id")) or $key == "head" or type != "string" then . else (tonumber? // .) end;
+    if ($key | endswith("_id")) or $key == "head" or $key == "dirty" then .
+    elif type == "object" then map_values(number_like)
+    else number_like end;
   def spaced_result:
     if type == "string" and . == "PASS_WITH_WARNINGS" then "PASS WITH WARNINGS"
     elif type == "string" and . == "NEEDS_CHANGES" then "NEEDS CHANGES"
@@ -70,8 +81,9 @@ if ! jsonl_row=$(jq -c --argjson sv "$schema_version" --arg kind "$kind" --arg r
   | with_entries(.key |= (if . == "branch_key" then "branch" elif . == "path_key" then "file" else . end))
   | with_entries(.key as $key | .value |= typed($key))
   | (if has("result") then .result |= spaced_result else . end)
-  | {date: (now | todate)}
+  | (if $row_type == "review_scope" then {ts: (now | todate)} else {date: (now | todate)} end)
     + (if $sv != null then {schema_version: $sv} else {} end)
+    + (if $row_type == "review_scope" then {via: "agent"} else {} end)
     + (if $session != "" then {session: $session} else {} end)
     + (if $repo != "" then {repo: $repo} else {} end)
     + (if $kind != "" then {kind: $kind} else {} end)

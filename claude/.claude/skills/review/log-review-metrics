@@ -12,7 +12,8 @@
 # underscores, and `PASS (NITS ONLY)` is stored as PASS_WITH_WARNINGS, as
 # log-review-finding folds it. clean, residue and findings are stored as sent.
 # date, schema_version, repo, session and desc are accepted and never stored; the
-# writer adds the date, repo and session, and keys `branch=` into branch_key.
+# writer adds the date, repo and session, and keys `branch=` into branch_key (with no
+# ledger, stored raw in the local jsonl file).
 # With no `ledger` on PATH `ledger-write` appends the row to
 # ~/.claude/review-metrics.jsonl and prints one stderr line. A row `ledger write`
 # refuses exits 2.

@@ -71,6 +71,7 @@
 #       is not review-flywheel data.)
 #     desc="one line"   accepted for the caller's own record; never stored
 #     file=path         sent as path_key (a keyed hash); the path is never stored
+#                       (with no ledger, stored raw in the local jsonl file)
 #     lane=q-plan|eng-spec|code|other   (optional: planning lane that produced
 #                                        the shipped work — enables lane-level
 #                                        escape attribution in /audit review)

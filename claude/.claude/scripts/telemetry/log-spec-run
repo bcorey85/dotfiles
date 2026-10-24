@@ -50,9 +50,10 @@
 #       read, not the count.
 #
 # Every value is sent as a JSON string to `ledger write spec_run`, which types it and
-# adds the date, repo and session. slug, date, schema_version, repo and out are
-# accepted and never stored. With no `ledger` on PATH `ledger-write` appends the row to
-# ~/.claude/spec-runs.jsonl and prints one stderr line.
+# adds the date, repo and session. date, schema_version, repo and out are accepted and
+# never stored. slug goes to `ledger-write`, which drops it for the ledger; with no
+# `ledger` on PATH it appends the row, slug included, to ~/.claude/spec-runs.jsonl and
+# prints one stderr line.
 # A row `ledger write` refuses exits 2.
 set -euo pipefail
 
@@ -86,5 +87,4 @@ fi
 
 "$script_dir/telemetry_enabled.sh" 2>/dev/null || exit 0
 
-payload=$(jq -c 'del(.slug)' <<< "$json")
-printf '%s\n' "$payload" | bash "$script_dir/ledger-write" spec_run
+printf '%s\n' "$json" | bash "$script_dir/ledger-write" spec_run

@@ -16,6 +16,7 @@ SCRIPT = pathlib.Path(os.environ.get("CODE_STEP_SCRIPT") or
 spec = importlib.util.spec_from_file_location("code_step", SCRIPT)
 code_step = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(code_step)
+import code_step_core  # noqa: E402
 
 PLAN = """# Plan
 
@@ -89,25 +90,21 @@ def say_text(repo):
     return say_file.read_text() if say_file.exists() else ""
 
 
-def launch_review_dispatch(repo, agent_id):
-    # A review-loop hand-back counts only from the agent that the pending review dispatch launched: log the dispatch
-    # and its launch, as the dispatch verb and the log hook do.
+def save_report(repo, agent_type, stage, message):
+    # Logs what the hooks log for one agent of the run: its dispatch, its launch and its hand-back. A review-loop
+    # hand-back counts only from the agent that the pending review dispatch launched.
     run_id = "20260101T000000-1"
     state = read_state(repo)
     state["runId"] = run_id
     state["dispatchAt"] = time.time()
     write_state(repo, state)
-    code_step.log_event(repo, run_id, "dispatch", "session-1", id="d1", agent_type="review-loop", stage=state["stage"])
-    code_step.log_event(repo, run_id, "launch", "session-1", agent_id=agent_id, dispatch="d1")
-
-
-def save_report(repo, agent_type, stage, message):
     agent_id = f"{agent_type}-1"
-    if agent_type == "review-loop":
-        launch_review_dispatch(repo, agent_id)
-    row = {"ts": time.time(), "agent_type": agent_type, "agent_id": agent_id, "stage": stage, "message": message}
-    with (repo / ".git" / "code-step" / "reports.jsonl").open("a") as reports_file:
-        reports_file.write(json.dumps(row) + "\n")
+    dispatch_id = f"d{len(code_step_core.read_events(repo, run_id)) + 1}"
+    code_step_core.log_event(repo, run_id, "dispatch", "session-1", id=dispatch_id, agent_type=agent_type,
+                             stage=stage)
+    code_step_core.log_event(repo, run_id, "launch", "session-1", agent_id=agent_id, dispatch=dispatch_id)
+    code_step_core.log_event(repo, run_id, "handback", "session-1", agent_id=agent_id, agent_type=agent_type,
+                             message=message)
 
 
 def run(repo, *args):

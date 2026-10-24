@@ -31,7 +31,6 @@ class StageRunTest(unittest.TestCase):
         self.temp_root = pathlib.Path(temp_dir.name)
         self.home = self.temp_root / "home"
         (self.home / ".claude").mkdir(parents=True)
-        (self.home / ".claude" / "toolkit-telemetry").touch()
         self.repo = self.temp_root / "myrepo"
         self.repo.mkdir()
         self.ledger_env = fake_ledger.install(self.temp_root)
@@ -54,6 +53,7 @@ class StageRunTest(unittest.TestCase):
             **os.environ,
             **GIT_ENV,
             "HOME": str(self.home),
+            "CLAUDE_TOOLKIT_TELEMETRY": "1",
             **self.ledger_env,
             "STAGE_LOG_SCRIPT": str(log_script or LOG_SCRIPT),
         }

@@ -64,7 +64,6 @@ class RefactorFlowTest(unittest.TestCase):
         self.log_input_dir = self.temp_root / "log-inputs"
         self.log_input_dir.mkdir()
         (self.home / ".claude").mkdir(parents=True)
-        (self.home / ".claude" / "toolkit-telemetry").touch()
         self.repo = self.make_repo("myrepo")
 
     def make_repo(self, name):
@@ -102,11 +101,11 @@ class RefactorFlowTest(unittest.TestCase):
         self.commit_all("work")
 
     def flow(self, *args, extra_env=None, cwd=None):
-        caller_env = {key: value for key, value in os.environ.items() if key != "CLAUDE_TOOLKIT_TELEMETRY"}
         env = {
-            **caller_env,
+            **os.environ,
             **GIT_ENV,
             "HOME": str(self.home),
+            "CLAUDE_TOOLKIT_TELEMETRY": "1",
             "REFACTOR_CLAUDE_DIR": REAL_CLAUDE_DIR,
             "BRANCH_BASE_SCRIPT": BRANCH_BASE,
             "REVIEW_ESCAPES_FILE": str(self.escapes),
@@ -729,10 +728,9 @@ class RefactorFlowTest(unittest.TestCase):
 
     def test_log_writes_no_escape_row_while_the_telemetry_switch_is_off(self):
         self.branch_with({"a.py": "x = 1\n"})
-        (self.home / ".claude" / "toolkit-telemetry").unlink()
         payload = {"finder": "smell-reviewer", "lane": "code", "guards": {"duplication": "none"},
                    "findings": [self.finding()]}
-        done = self.log("branch", payload)
+        done = self.log("branch", payload, extra_env={"CLAUDE_TOOLKIT_TELEMETRY": "0"})
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual([row["kind"] for row in self.finding_rows()], ["run", "finding"])
         self.assertEqual(self.escape_rows(), [])
@@ -812,12 +810,13 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertEqual(self.escape_rows(), [])
         self.assertEqual(self.finding_rows(), [])
 
-    def log_writers(self):
+    def log_writers(self, telemetry="1"):
         """Each log writer as (name, run(*extra), logged rows), so one rule is asserted against both."""
         escape_writer = LOG_ESCAPE
         finding_writer = os.environ.get("REFACTOR_LOG_FINDING") or str(
             pathlib.Path(REAL_CLAUDE_DIR) / "skills" / "review" / "log-review-finding")
-        env = {**os.environ, "HOME": str(self.home), "REVIEW_ESCAPES_FILE": str(self.escapes), **self.ledger_env}
+        env = {**os.environ, "HOME": str(self.home), "CLAUDE_TOOLKIT_TELEMETRY": telemetry,
+               "REVIEW_ESCAPES_FILE": str(self.escapes), **self.ledger_env}
         escape_base = ["stage_found=refactor", "gate_missed=review", "class=smell", "severity=low", "guard=none"]
         finding_base = ["kind=finding", "gate=smell-reviewer", "lane=code", "scope=standalone", "phase=-", "iter=0",
                         "disposition=fix", "class=smell", "line=1", "actioned=none"]
@@ -843,19 +842,17 @@ class RefactorFlowTest(unittest.TestCase):
             self.assertEqual(rows()[0]["file"], "a b.py", name)
 
     def test_log_review_finding_with_an_out_redirect_sends_one_row_while_the_switch_is_on_and_none_while_off(self):
-        with mock.patch.dict(os.environ):
-            os.environ.pop("CLAUDE_TOOLKIT_TELEMETRY", None)
-            run = {name: run for name, run, _ in self.log_writers()}["log-review-finding"]
-            sink = self.temp_root / "sink.jsonl"
-            on = run("file=a.py", f"out={sink}")
-            self.assertEqual(on.returncode, 0, on.stderr)
-            finding_rows = fake_ledger.recorded_rows(self.ledger_env)
-            self.assertEqual([row["_type"] for row in finding_rows], ["review_finding"])
-            self.assertEqual(finding_rows[0]["path_key"], "a.py")
-            (self.home / ".claude" / "toolkit-telemetry").unlink()
-            off = run("file=a.py", f"out={sink}")
-            self.assertEqual(off.returncode, 0, off.stderr)
-            self.assertEqual(len(fake_ledger.recorded_rows(self.ledger_env)), 1)
+        run_on = {name: run for name, run, _ in self.log_writers()}["log-review-finding"]
+        run_off = {name: run for name, run, _ in self.log_writers("0")}["log-review-finding"]
+        sink = self.temp_root / "sink.jsonl"
+        on = run_on("file=a.py", f"out={sink}")
+        self.assertEqual(on.returncode, 0, on.stderr)
+        finding_rows = fake_ledger.recorded_rows(self.ledger_env)
+        self.assertEqual([row["_type"] for row in finding_rows], ["review_finding"])
+        self.assertEqual(finding_rows[0]["path_key"], "a.py")
+        off = run_off("file=a.py", f"out={sink}")
+        self.assertEqual(off.returncode, 0, off.stderr)
+        self.assertEqual(len(fake_ledger.recorded_rows(self.ledger_env)), 1)
 
     def test_log_writers_refuse_a_file_path_with_whitespace_then_a_name_or_a_line_break(self):
         swallowing = ("a.py\tlane=code", "a.py\nlane=code", "a.py\rb.py", "a.py\nb.py", "a.py \tlane=code")

@@ -257,6 +257,64 @@ def phase_at(spans, index):
     return next((section_id for section_id, section in spans if section["start"] <= index < section["end"]), None)
 
 
+def manual_heading_step(scan, line, level, name, number):
+    """Moves the Manual Verification scan over one heading line: it opens, deepens or closes the section."""
+    scan["last"] = None
+    manual = MANUAL_HEADING.match(line)
+    if manual:
+        if level not in SECTION_LEVELS:
+            raise PlanFormatError(f"{name}:{number}: a Manual Verification heading must be level 3 or level "
+                                  f"4 (`### Manual Verification` or `#### Manual Verification`): "
+                                  f"{line.strip()[:80]}")
+        if not scan["in_section"] or level <= scan["section_level"]:
+            scan["section_level"] = level
+        scan["in_section"] = True
+        scan["qualifier"] = manual.group(2)
+        scan["deeper_heading"] = None
+    elif scan["in_section"] and level > scan["section_level"]:
+        scan["deeper_heading"] = line.strip()[:80]
+    else:
+        scan["in_section"] = False
+
+
+def manual_line_step(scan, line, is_fenced, name, position):
+    """Moves the Manual Verification scan over one non-heading line inside the section. `position` is the 1-based
+    line number and the phase id of the line."""
+    number, phase = position
+    if is_fenced:
+        raise PlanFormatError(f"{name}:{number}: a fenced block inside Manual Verification; write each step "
+                              f"as a list item: {line.strip()[:80]}")
+    if not line.strip():
+        return
+
+    if line[0] in " \t":
+        if scan["last"] is None:
+            raise PlanFormatError(f"{name}:{number}: indented line with no list item above it in Manual "
+                                  f"Verification: {line.strip()[:80]}")
+        scan["last"]["text"] += " " + line.strip()
+        return
+
+    entry = LIST_ENTRY.match(line)
+    if entry and scan["deeper_heading"]:
+        raise PlanFormatError(
+            f"{name}:{number}: a list item under the sub-heading `{scan['deeper_heading']}` inside Manual "
+            f"Verification; if that heading starts a new section, give it the Manual Verification "
+            f"heading's level or a higher one, otherwise move the item above it: "
+            f"{line.strip()[:80]}"
+        )
+    if entry and (entry.group(1) is not None or not NOT_APPLICABLE.match(line)):
+        scan["last"] = {"phase": phase, "text": entry.group(2).strip(),
+                        "checked": (entry.group(1) or "").lower() == "x", "line": number,
+                        "heading": scan["qualifier"]}
+        scan["items"].append(scan["last"])
+        return
+
+    scan["last"] = None
+    if line.startswith(FOREIGN_START):
+        raise PlanFormatError(f"{name}:{number}: line shape not allowed in Manual Verification (table, quote or "
+                              f"HTML): {line.strip()[:80]}")
+
+
 def manual_verification(text, name="plan"):
     """Every item of every Manual Verification section, in file order.
 
@@ -271,12 +329,8 @@ def manual_verification(text, name="plan"):
     lines = text.splitlines()
     fenced = script_utils.fenced_line_indexes(lines)
     spans, _ = phase_spans(lines)
-    items = []
-    in_section = False
-    section_level = 0
-    deeper_heading = None
-    qualifier = ""
-    last = None
+    scan = {"items": [], "in_section": False, "section_level": 0, "deeper_heading": None, "qualifier": "",
+            "last": None}
 
     for index, line in enumerate(lines):
         number = index + 1
@@ -284,62 +338,15 @@ def manual_verification(text, name="plan"):
         heading = None if is_fenced else script_utils.MARKDOWN_HEADING.match(line)
 
         if not is_fenced and line.strip() == "---":
-            in_section = False
-            last = None
+            scan["in_section"] = False
+            scan["last"] = None
         if heading:
-            level = len(heading.group(1))
-            last = None
-            manual = MANUAL_HEADING.match(line)
-            if manual:
-                if level not in SECTION_LEVELS:
-                    raise PlanFormatError(f"{name}:{number}: a Manual Verification heading must be level 3 or level "
-                                          f"4 (`### Manual Verification` or `#### Manual Verification`): "
-                                          f"{line.strip()[:80]}")
-                if not in_section or level <= section_level:
-                    section_level = level
-                in_section = True
-                qualifier = manual.group(2)
-                deeper_heading = None
-            elif in_section and level > section_level:
-                deeper_heading = line.strip()[:80]
-            else:
-                in_section = False
+            manual_heading_step(scan, line, len(heading.group(1)), name, number)
             continue
+        if scan["in_section"]:
+            manual_line_step(scan, line, is_fenced, name, (number, phase_at(spans, index)))
 
-        if not in_section:
-            continue
-        if is_fenced:
-            raise PlanFormatError(f"{name}:{number}: a fenced block inside Manual Verification; write each step "
-                                  f"as a list item: {line.strip()[:80]}")
-        if not line.strip():
-            continue
-
-        if line[0] in " \t":
-            if last is None:
-                raise PlanFormatError(f"{name}:{number}: indented line with no list item above it in Manual "
-                                      f"Verification: {line.strip()[:80]}")
-            last["text"] += " " + line.strip()
-            continue
-
-        entry = LIST_ENTRY.match(line)
-        if entry and deeper_heading:
-            raise PlanFormatError(
-                f"{name}:{number}: a list item under the sub-heading `{deeper_heading}` inside Manual "
-                f"Verification; if that heading starts a new section, give it the Manual Verification "
-                f"heading's level or a higher one, otherwise move the item above it: "
-                f"{line.strip()[:80]}"
-            )
-        if entry and (entry.group(1) is not None or not NOT_APPLICABLE.match(line)):
-            last = {"phase": phase_at(spans, index), "text": entry.group(2).strip(),
-                    "checked": (entry.group(1) or "").lower() == "x", "line": number, "heading": qualifier}
-            items.append(last)
-            continue
-
-        last = None
-        if line.startswith(FOREIGN_START):
-            raise PlanFormatError(f"{name}:{number}: line shape not allowed in Manual Verification (table, quote or "
-                                  f"HTML): {line.strip()[:80]}")
-
+    items = scan["items"]
     for item in items:
         item["humanOnly"] = HUMAN_ONLY_MARK in item["heading"].lower() or HUMAN_ONLY_MARK in item["text"].lower()
         item["verified"] = item["checked"] or (not item["humanOnly"] and AGENT_VERIFIED_MARK in item["text"].lower())
@@ -443,3 +450,139 @@ def repo_gate_env(repo_root, plan_rel=None):
         if name not in chosen and len(variants) == 1:
             chosen[name] = next(iter(variants))
     return list(chosen.values())
+
+
+CLOSING_TITLE_END = r"\b(?!\s*\w)"
+CLOSING_PHASES = [
+    (re.compile(r"^Refactor pass" + CLOSING_TITLE_END, re.I), "/refactor +deep"),
+    (re.compile(r"^Test audit" + CLOSING_TITLE_END, re.I), "/test-audit"),
+    (re.compile(r"^Verify pass" + CLOSING_TITLE_END, re.I), "/verify-branch"),
+    (re.compile(r"^Recap" + CLOSING_TITLE_END, re.I), "/branch-recap"),
+]
+
+
+def closing_skill(title):
+    """The skill a closing phase's title names (`Verify pass` names /verify-branch), or None for any other title."""
+    return next((skill for pattern, skill in CLOSING_PHASES if pattern.search(title)), None)
+
+
+def parse_plan_with_closing_phases(plan_lines):
+    """parse_plan with the closing phases recognised by their titles."""
+    return parse_plan(plan_lines, closing_skill)
+
+
+def phase_text(plan_lines, number):
+    """The text of the phase's section, or None when the plan has no section for it."""
+    section = phase_section(plan_lines, number)
+    if section is None:
+        return None
+    return "\n".join(plan_lines[section["start"]:section["end"]])
+
+
+def ordered_pending(entries):
+    """The open phases, with the closing phases after the rest."""
+    pending = [entry for entry in entries if entry["open"]]
+    return [e for e in pending if not e["closing"]] + [e for e in pending if e["closing"]]
+
+
+def gate_blockers(pending):
+    """A run never starts a phase past an open gated one. The gated open phases ahead of the first open phase without
+    a gate, and that phase (None when every open phase is gated)."""
+    next_ungated = next((entry for entry in pending if not entry["gate"]), None)
+    gated_ahead = pending[:pending.index(next_ungated)] if next_ungated else pending
+    return gated_ahead, next_ungated
+
+
+def gated_phase_text(entries):
+    return "; ".join(f"Phase {entry['number']} (gate: {entry['gate']})" for entry in entries)
+
+
+def gate_block_text(gated_ahead, next_ungated):
+    gated_text = gated_phase_text(gated_ahead)
+    text = f"open phases with a gate clause come first: {gated_text}. The script does not judge a gate."
+    if next_ungated:
+        text += f" The next open phase without a gate is Phase {next_ungated['number']}."
+    return text + " `start --phase <id>` runs one anyway."
+
+
+def moved_phase_text(entries):
+    return ", ".join(f"Phase {entry['number']} to {entry['movedTo']}" for entry in entries if entry["moved"])
+
+
+def moved_phase_stop(entry, plan_name, coder_ran=False):
+    """The stop text for a phase that is moved to another ticket. coder_ran is True when the phase became moved after
+    its coder was dispatched."""
+    if coder_ran:
+        ran_text = "The coder ran, and its work is not marked done or committed."
+    else:
+        ran_text = "No coder was dispatched."
+    return (f"Phase {entry['number']} is moved to {entry['movedTo']} in {plan_name}, so this plan does not run it. "
+            f"{ran_text} Tell the user; the phase is worked under {entry['movedTo']}.")
+
+
+def mark_phase_done(plan_path, number):
+    """Check the phase's Phase Status line in the plan file when the phase is open."""
+    plan_lines = plan_path.read_text().split("\n")
+    entries = parse_plan_with_closing_phases(plan_lines)["entries"]
+    entry = next((e for e in entries if e["number"] == number and e["open"]), None)
+    if entry:
+        plan_lines[entry["line"]] = plan_lines[entry["line"]].replace("[ ]", "[x]", 1)
+    plan_path.write_text("\n".join(plan_lines))
+
+
+def append_deviation(plan_path, entry):
+    """Add the entry lines at the end of the plan's `## Plan Deviations` section, creating the section before
+    `## References` (or at the end) when the plan has none."""
+    lines = plan_path.read_text().split("\n")
+    sections = [i for i, line in enumerate(lines) if line.startswith("## ")]
+    existing = next((i for i in sections if lines[i].strip() == "## Plan Deviations"), None)
+    if existing is not None:
+        end = next((i for i in sections if i > existing), len(lines))
+        lines[end:end] = [*entry, ""]
+    else:
+        references = next((i for i in sections if lines[i].strip() == "## References"), len(lines))
+        lines[references:references] = ["## Plan Deviations", "", *entry, ""]
+    plan_path.write_text("\n".join(lines))
+
+
+def reopen_closing_phases(plan_path):
+    """Uncheck every done closing phase in the plan file; the numbers of the phases it unchecked."""
+    plan_lines = plan_path.read_text().split("\n")
+    reopened = [e for e in parse_plan_with_closing_phases(plan_lines)["entries"] if e["closing"] and e["done"]]
+    for entry in reopened:
+        plan_lines[entry["line"]] = re.sub(r"\[[xX]\]", "[ ]", plan_lines[entry["line"]], count=1)
+    plan_path.write_text("\n".join(plan_lines))
+    return [entry["number"] for entry in reopened]
+
+
+def plan_failure_rows(plan, plan_name):
+    return [f"{plan_name}:{f['line']}: {f['kind']}: {f['detail']}" for f in plan["failures"]]
+
+
+def plan_failure_message(plan, plan_name):
+    rows = plan_failure_rows(plan, plan_name)
+    return "The plan's Phase Status does not parse. Report each line to the user and stop:\n" + "\n".join(rows)
+
+
+def phase_manual_items(plan_lines, number, plan_name):
+    """The Manual Verification items of one phase (all phases when number is None). The grammar reads the whole plan,
+    so a PlanFormatError names the line in the file."""
+    items = manual_verification("\n".join(plan_lines), plan_name)
+    if number is None:
+        return items
+    return [item for item in items if item["phase"] == str(number)]
+
+
+def manual_format_message(error, resume_line=""):
+    message = ("The plan's Manual Verification section does not parse. Do not mark the phase done. Report to the "
+               f"user and stop:\n{error}")
+    return message + ("\n" + resume_line if resume_line else "")
+
+
+def manual_format_failure(plan_lines, plan_name, resume_line=""):
+    """The stop message for a Manual Verification section the grammar does not parse, or None when all parse."""
+    try:
+        manual_verification("\n".join(plan_lines), plan_name)
+    except PlanFormatError as error:
+        return manual_format_message(error, resume_line)
+    return None

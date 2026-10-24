@@ -7,6 +7,7 @@ import json
 import os
 import pathlib
 import re
+import signal
 import stat
 import subprocess
 import time
@@ -111,6 +112,22 @@ def wait_for(check, timeout_seconds, interval_seconds):
         if remaining <= 0:
             return None
         time.sleep(min(interval_seconds, remaining))
+
+
+def run_process(command, cwd, stdin=None, timeout=None):
+    """Run a command (a list, or a string for the shell) in cwd and return (exit code, stdout, stderr), both as text.
+    When the command does not finish in `timeout` seconds, kill its whole process group, so a shell command that
+    started a server cannot keep the pipes open, and return (None, stdout, stderr) with what it printed."""
+    process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.PIPE if stdin is not None else None,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                               shell=isinstance(command, str), start_new_session=True)
+    try:
+        stdout, stderr = process.communicate(stdin, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        stdout, stderr = process.communicate()
+        return None, stdout, stderr
+    return process.returncode, stdout, stderr
 
 
 def run_retrying(argv, retry_exit_codes, attempts, backoff_seconds, timeout_seconds, sleep=time.sleep, **run_kwargs):

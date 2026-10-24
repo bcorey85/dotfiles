@@ -64,7 +64,8 @@ TMP_ROOT = pathlib.Path(tempfile.mkdtemp(prefix="termination-"))
 CLAUDE_STUB = TMP_ROOT / "claude"
 (CLAUDE_STUB / "scripts").mkdir(parents=True)
 (CLAUDE_STUB / "skills/review").mkdir(parents=True)
-for script_name in ("coder_gate.py", "coder_packet.py", "plan_format.py", "script_utils.py", "resolve-task-dir.sh"):
+for script_name in ("coder_gate.py", "coder_packet.py", "plan_format.py", "script_utils.py", "resolve-task-dir.sh",
+                    "code_step_core.py", "code_step_boundary.py", "code_step_hooks.py"):
     shutil.copy(
         SCRIPT.parent / script_name
         if (SCRIPT.parent / script_name).exists()
@@ -89,6 +90,7 @@ module_spec = importlib.util.spec_from_file_location("code_step_under_test", SCR
 code_step = importlib.util.module_from_spec(module_spec)
 with mock.patch.dict(os.environ, {"CODE_STEP_CLAUDE_DIR": str(CLAUDE_STUB)}):
     module_spec.loader.exec_module(code_step)
+import code_step_core
 
 PLAN_DIR = "docs/plans/ORD-1-orders"
 PLAN_A = f"{PLAN_DIR}/spec.md"
@@ -222,30 +224,30 @@ SESSION = GIT_ENV["CLAUDE_CODE_SESSION_ID"]
 REVIEW_AGENT_ID = "a1"
 
 
-def launch_the_pending_review(repo):
-    # A review-loop hand-back counts only from the agent the pending review dispatch launched. Log that launch, as the
-    # log hook does after the Agent call. A dispatch that is already launched keeps its launch.
+def launch_the_pending_dispatch(repo):
+    # A hand-back counts only from the agent the pending dispatch launched. Log that launch, as the log hook does after
+    # the Agent call. A dispatch that is already launched keeps its launch.
     run_id = load_saved_state(repo).get("runId")
     if not run_id:
         return
 
-    events = code_step.read_events(repo, run_id)
+    events = code_step_core.read_events(repo, run_id)
     dispatches = [event for event in events if event["event"] == "dispatch"]
-    if not dispatches or dispatches[-1].get("agent_type") != "review-loop":
+    if not dispatches:
         return
 
     dispatch_id = dispatches[-1]["id"]
     if any(event["event"] == "launch" and event.get("dispatch") == dispatch_id for event in events):
         return
 
-    code_step.log_event(repo, run_id, "launch", SESSION, agent_id=REVIEW_AGENT_ID, dispatch=dispatch_id)
+    code_step_core.log_event(repo, run_id, "launch", SESSION, agent_id=REVIEW_AGENT_ID, dispatch=dispatch_id)
 
 
 def send_message_to(agent_id):
     # The setup for a user answer that reached the agent with SendMessage: the log hook records it as a resume.
     def setup(repo):
         run_id = load_saved_state(repo).get("runId")
-        code_step.log_event(repo, run_id, "resume", SESSION, agent_id=agent_id)
+        code_step_core.log_event(repo, run_id, "resume", SESSION, agent_id=agent_id)
 
     return setup
 
@@ -262,20 +264,21 @@ def store_review_loop_report(repo, message, agent_id="a1"):
 
 
 def save_report(repo, agent_type, message, agent_id="a1"):
+    # The log hook records a hand-back that went through; the dispatch it answers is launched first.
     if agent_type == "review-loop":
         store_review_loop_report(repo, message, agent_id)
-    state_file = repo / ".git/code-step/state.json"
-    stage = json.loads(state_file.read_text())["stage"]
-    row = {"ts": time.time(), "agent_type": agent_type, "agent_id": agent_id, "stage": stage, "message": message}
-    with (repo / ".git/code-step/reports.jsonl").open("a") as reports_file:
-        reports_file.write(json.dumps(row) + "\n")
+    launch_the_pending_dispatch(repo)
+    run_id = load_saved_state(repo).get("runId")
+    code_step_core.log_event(repo, run_id, "handback", SESSION, agent_id=agent_id, agent_type=agent_type,
+                             message=message)
 
 
-def date_dispatch_now(repo):
+def date_dispatch_now_and_launch(repo):
     state_file = repo / ".git/code-step/state.json"
     saved = json.loads(state_file.read_text())
     saved["dispatchAt"] = time.time()
     state_file.write_text(json.dumps(saved, indent=1))
+    launch_the_pending_dispatch(repo)
 
 
 def apply_plan_edit_outcome(repo, name, plan_path):
@@ -386,8 +389,6 @@ IGNORED_STATE_KEYS = (
     "asksBaseline",
     "sessionId",
     "dispatchAt",
-    "forkDenied",
-    "forkStopBlocks",
 )
 
 
@@ -529,13 +530,8 @@ def children_of(node):
         waiting_on = "coder" if stage in ("coder", "asks-coder") else "review-loop"
     if node.action == "dispatch" and node.agent in ("coder", "review-loop"):
         # The agent has not handed back when the verb that follows the dispatch runs: the verb says to run it again.
-        def setup(repo):
-            return None
-        if is_plan_edit:
-            # The saved dispatch is older than the wait cap by now: date it again so the wait itself is tried.
-            setup = date_dispatch_now
-        elif node.agent == "review-loop":
-            setup = launch_the_pending_review
+        # A plan-edit dispatch is older than the wait cap by now: date it again so the wait itself is tried.
+        setup = date_dispatch_now_and_launch if is_plan_edit else launch_the_pending_dispatch
         children.append(("[no report yet]", setup, ["resume"], NO_ROW_YET_PRESETS))
         if node.agent == "review-loop":
             children.append(("[no report yet, launch not logged]", lambda repo: None, ["resume"], NO_ROW_YET_PRESETS))
@@ -559,13 +555,13 @@ def children_of(node):
             if name.startswith("plan-impact") and is_answered and "RESOLVED" in state.get("lastReviewPrompt", ""):
                 continue
             def setup(repo, message=message):
-                launch_the_pending_review(repo)
+                launch_the_pending_dispatch(repo)
                 if message is not None:
                     save_report(repo, "review-loop", message)
             children.append((f"[review-loop: {name}]", setup, ["resume"]))
         if node.action == "dispatch":
             def setup_other_agent(repo):
-                launch_the_pending_review(repo)
+                launch_the_pending_dispatch(repo)
                 save_report(repo, "review-loop", REVIEW_OUTCOMES["converged-clean"], agent_id="other-agent")
             children.append(("[review-loop: converged-clean from another agent]", setup_other_agent, ["resume"],
                              NO_ROW_YET_PRESETS))

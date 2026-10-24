@@ -21,6 +21,9 @@ sys.path.insert(0, str(SCRIPT.parent))
 module_spec = importlib.util.spec_from_file_location("code_step", SCRIPT)
 code_step = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(code_step)
+import code_step_boundary  # noqa: E402
+import code_step_core  # noqa: E402
+import plan_format  # noqa: E402
 
 PLAN = """# Orders Plan
 
@@ -118,7 +121,8 @@ class CodeStepTest(unittest.TestCase):
         (self.claude / "skills/review").mkdir(parents=True)
         for name in ("coder_gate.py", "resolve-task-dir.sh"):
             shutil.copy(REAL_CLAUDE / "scripts" / name, self.claude / "scripts" / name)
-        for name in ("coder_packet.py", "plan_format.py", "script_utils.py"):
+        for name in ("coder_packet.py", "plan_format.py", "script_utils.py", "code_step_core.py",
+                     "code_step_boundary.py", "code_step_hooks.py"):
             shutil.copy(SCRIPT.parent / name, self.claude / "scripts" / name)
         self.log = self.tmp / "calls.log"
         for name in ("scripts/log-scan", "skills/review/log-review-finding"):
@@ -136,6 +140,7 @@ class CodeStepTest(unittest.TestCase):
         self.env.pop("CODE_STEP_IMPACT_DECISION", None)
         self.env.pop("CODE_STEP_ASKS_OUTCOME", None)
         self.plan = "docs/plans/orders/spec.md"
+        self.gate_commands = ["true"]
 
     def step(self, *args, stdin=None):
         return run(self.repo, self.env, *args, stdin=stdin).stdout
@@ -144,41 +149,78 @@ class CodeStepTest(unittest.TestCase):
         return subprocess.run([sys.executable, str(HANDBACK_SCRIPT), "hook", kind], env=self.env,
                               input=json.dumps(event), capture_output=True, text=True)
 
-    def launch_the_pending_review(self, agent_id):
-        # A review-loop hand-back counts only from the agent the pending review dispatch launched, so a test launches
-        # its review-loop first, as the Agent call's log hook records it. A dispatch already launched keeps its launch.
+    def launch_the_pending_dispatch(self, agent_id, agent_type):
+        # A hand-back counts only from the agent the pending dispatch launched, so a test launches its agent first, as
+        # the Agent call's log hook records it. A dispatch already launched keeps its launch.
         run_id = self.state().get("runId")
         events_file = self.repo / ".git/code-step/runs" / str(run_id) / "events.jsonl"
         if not run_id or not events_file.exists():
             return
         events = [json.loads(line) for line in events_file.read_text().splitlines()]
         dispatches = [event for event in events if event["event"] == "dispatch"]
-        if not dispatches or dispatches[-1]["agent_type"] != "review-loop":
+        if not dispatches or dispatches[-1]["agent_type"] != agent_type:
             return
         dispatch_id = dispatches[-1]["id"]
         if any(event["event"] == "launch" and event.get("dispatch") == dispatch_id for event in events):
             return
-        self.launch_agent(f"code-step-dispatch: {run_id}/{dispatch_id}", agent_id=agent_id, subagent_type="review-loop")
+        self.launch_agent(f"code-step-dispatch: {run_id}/{dispatch_id}", agent_id=agent_id, subagent_type=agent_type)
+
+    def launch_the_pending_review(self, agent_id):
+        self.launch_the_pending_dispatch(agent_id, "review-loop")
+
+    def run_the_coder_gate(self, event):
+        # The real gate hook of the coder, with the gate's commands swapped for self.gate_commands so that no test runs
+        # npm. Returns the hook's decision, or None when the gate does not look at the call.
+        gate_path = self.repo / ".git/coder-gate.json"
+        if event["agent_type"] != "coder" or not gate_path.exists():
+            return None
+
+        gate = json.loads(gate_path.read_text())
+        gate["commands"] = self.gate_commands
+        gate_path.write_text(json.dumps(gate))
+        finished = subprocess.run([sys.executable, str(self.claude / "scripts/coder_gate.py"), "hook"], env=self.env,
+                                  input=json.dumps(event), capture_output=True, text=True)
+        if not finished.stdout.strip():
+            return None
+        return json.loads(finished.stdout)["hookSpecificOutput"]
 
     def hook(self, agent_type, message, agent_id="a1", session=SESSION, launched=True):
+        # The fork hands back. The PreToolUse hooks of settings.json see the call: the coder gate may deny it or stamp
+        # its message, the hand-back packet hook may deny it, and so may the code-step hook. A hand-back that goes
+        # through is logged by the PostToolUse log hook with the message as stamped; a denied one never reaches it.
         event = {"agent_type": agent_type, "agent_id": agent_id, "cwd": str(self.repo),
                  "tool_input": {"message": message}}
         if session:
             event["session_id"] = session
-        if agent_type == "review-loop" and launched:
-            self.launch_the_pending_review(agent_id)
+        if launched:
+            self.launch_the_pending_dispatch(agent_id, agent_type)
+
+        gate_decision = self.run_the_coder_gate(event)
+        packet_hook_denies = False
         if agent_type == "review-loop" and session:
             # The shared hand-back store sees the review-loop's dispatch and hand-back, as its own hooks record them.
             self.handback_hook("dispatch", {"session_id": session, "tool_input": {"subagent_type": "review-loop"}})
-            self.handback_hook("handback", event)
-        return run(self.repo, self.env, "hook", stdin=json.dumps(event))
+            packet_result = self.handback_hook("handback", event)
+            packet_hook_denies = "permissionDecision" in packet_result.stdout
+        result = run(self.repo, self.env, "hook", stdin=json.dumps(event))
+
+        gate_denies = gate_decision is not None and gate_decision["permissionDecision"] == "deny"
+        if gate_denies or packet_hook_denies or "permissionDecision" in result.stdout:
+            return result
+
+        stamped_message = message
+        if gate_decision is not None:
+            stamped_message = gate_decision["updatedInput"]["message"]
+        self.hand_back(stamped_message, agent_type, agent_id, session=session)
+        return result
 
     def commit_all(self):
         for command in (["git", "add", "-A"], ["git", "commit", "-qm", "phase"]):
             subprocess.run(command, cwd=self.repo, check=True, capture_output=True, env=self.env)
 
     def state(self):
-        return json.loads(self.step("status"))
+        out = self.step("status")
+        return json.loads(out) if out.startswith("{") else {}
 
     def gate_mark(self, session=SESSION):
         mark_file = self.home / ".claude/state/review-gate" / session
@@ -436,8 +478,9 @@ class CodeStepTest(unittest.TestCase):
     def test_a_verification_item_may_start_with_an_environment_setting(self):
         item = "- [ ] **Tests**: the streams pass - `CARGO_BUILD_JOBS=4 cargo test --test side_streams`"
 
-        self.assertEqual("CARGO_BUILD_JOBS=4 cargo test --test side_streams", code_step.verification_command(item))
-        self.assertIsNone(code_step.verification_item_problem(item, self.repo))
+        command = code_step_boundary.verification_command(item)
+        self.assertEqual("CARGO_BUILD_JOBS=4 cargo test --test side_streams", command)
+        self.assertIsNone(code_step_boundary.verification_item_problem(item, self.repo))
 
     def test_gate_runs_no_cargo_command_when_the_phase_names_no_rust_file(self):
         (self.repo / "crate").mkdir()
@@ -457,15 +500,16 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("AGENT: coder", out)
         self.assertIn("scan=acceptance-stub", self.log.read_text())
 
-    def test_hook_saves_only_during_a_run_and_only_for_known_agents(self):
+    def test_the_log_hook_logs_the_hand_backs_of_any_agent_type_and_only_the_awaited_coders_counts(self):
         self.hook("coder", "early")
         self.assertFalse((self.repo / ".git/code-step").exists())
-        self.start_phase_one()
-        self.hook("Explore", "ignored")
-        self.hook("coder", "kept")
-        rows = (self.repo / ".git/code-step/reports.jsonl").read_text().splitlines()
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(json.loads(rows[0])["message"], "kept")
+        self.begin_coder()
+        self.hook("Explore", "another agent's report", agent_id="e1")
+        self.hook("coder", self.CODER_REPORT)
+        handbacks = self.events_named("handback")
+        self.assertEqual([("Explore", "e1"), ("coder", "a1")],
+                         [(event["agent_type"], event["agent_id"]) for event in handbacks])
+        self.assertIn("AGENT: review-loop", self.step("after-coder"))
 
     def test_after_coder_builds_review_prompt(self):
         out = self.coder_round()
@@ -774,33 +818,6 @@ class CodeStepTest(unittest.TestCase):
         subprocess.run(["git", "commit", "-q", "-m", "criteria on the other branch"], cwd=self.repo, check=True,
                        env=self.env)
 
-    def check_another_branch_stops_before_the_settle(self):
-        before = self.state()
-        said = self.said()
-        out = self.step("after-plan-edit")
-        self.assertIn("ACTION: stop", out)
-        self.assertNotIn("AGENT:", out)
-        self.assertIn("Switch back to branch master, then run `! python3 ", out)
-        self.assertIn("Tell the user.", out)
-        self.assertEqual("AC-1 the other branch\n", self.criteria_text())
-        self.assertEqual(said, self.said())
-        self.assertEqual(before, self.state())
-        self.assertIn("criteriaGuard", self.state())
-        self.assertEqual([], self.replaced_copies())
-
-    def test_after_plan_edit_on_another_branch_stops_and_keeps_the_guard_when_a_file_existed_at_the_save(self):
-        self.coder_round(self.IMPACT_REPORT)
-        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
-        self.commit_on_new_branch("AC-1 the other branch\n")
-        self.check_another_branch_stops_before_the_settle()
-
-    def test_after_plan_edit_on_another_branch_stops_and_keeps_the_guard_when_no_file_existed_at_the_save(self):
-        self.coder_round(self.IMPACT_REPORT)
-        (self.repo / self.CRITERIA).unlink()
-        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
-        self.commit_on_new_branch("AC-1 the other branch\n")
-        self.check_another_branch_stops_before_the_settle()
-
     def test_a_start_restore_that_then_stops_early_leaves_the_message_and_the_question_in_say(self):
         self.coder_round(self.IMPACT_REPORT)
         self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
@@ -875,62 +892,6 @@ class CodeStepTest(unittest.TestCase):
                 continue
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
-
-    def leave_for_a_branch_without_the_plan(self):
-        self.coder_round(self.IMPACT_REPORT)
-        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
-        (self.repo / self.CRITERIA).write_text("AC-1 signed by the coder\n")
-        self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.")
-        home = self.git("branch", "--show-current").strip()
-        kept = self.set_aside()
-        self.git("checkout", "-q", "--orphan", "bare-branch")
-        self.git("rm", "-rfq", ".")
-        return home, kept
-
-    def test_after_plan_edit_on_a_branch_without_the_plan_stops_and_changes_no_state(self):
-        home, _kept = self.leave_for_a_branch_without_the_plan()
-        before = self.state()
-        said = self.said()
-        outputs = [self.step("after-plan-edit"), self.step("after-plan-edit")]
-        for out in outputs:
-            self.assertNotIn("Traceback", out)
-            self.assertIn("ACTION: stop", out)
-            self.assertIn(f"Switch back to branch {home}, then run `! python3 ", out)
-            self.assertIn("code_step.py resume` from the repo root, "
-                          "and tell the session to follow its ACTION line. Tell the user.", out)
-        self.assertEqual(said, self.said())
-        self.assertEqual(before, self.state())
-        self.assertIn("criteriaGuard", self.state())
-        self.assertIn("planEditBaseline", self.state())
-
-    def test_after_plan_edit_with_the_plan_deleted_on_the_right_branch_names_the_plan_and_changes_no_state(self):
-        self.coder_round(self.IMPACT_REPORT)
-        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
-        self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.")
-        (self.repo / self.plan).unlink()
-        before = self.state()
-        said = self.said()
-        out = self.step("after-plan-edit")
-        self.assertIn("ACTION: stop", out)
-        self.assertIn(f"The plan {self.plan} is missing from this checkout", out)
-        self.assertIn(f"Restore {self.plan}, then run `! python3 ", out)
-        self.assertIn("Tell the user.", out)
-        self.assertNotIn("Switch back", out)
-        self.assertEqual(before, self.state())
-        self.assertEqual(said, self.said())
-
-    def test_after_plan_edit_with_no_recorded_branch_says_to_check_out_the_branch_where_it_started(self):
-        self.coder_round(self.IMPACT_REPORT)
-        self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
-        self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.")
-        state_file = self.repo / ".git/code-step/state.json"
-        recorded = json.loads(state_file.read_text())
-        recorded["branch"] = "-"
-        state_file.write_text(json.dumps(recorded))
-        out = self.step("after-plan-edit")
-        self.assertIn("Check out the branch or commit where the plan edit started, then run", out)
-        self.assertIn("Tell the user.", out)
-        self.assertNotIn("branch -", out)
 
     def test_start_after_the_plan_edit_wait_gave_up_restores_the_saved_criteria(self):
         self.coder_round(self.IMPACT_REPORT)
@@ -1032,9 +993,6 @@ class CodeStepTest(unittest.TestCase):
     def test_a_start_stop_then_after_plan_edit_restores_a_late_coder_write(self):
         self.check_the_stop_leads_through_after_plan_edit_to_a_restore(["start", "--restart"], False)
 
-    def test_a_take_over_stop_then_after_plan_edit_under_the_new_session_restores_a_late_coder_write(self):
-        self.check_the_stop_leads_through_after_plan_edit_to_a_restore(["start", "--take-over"], True)
-
     def test_after_plan_edit_before_the_coder_reports_waits_and_restores_a_later_criteria_write(self):
         self.coder_round(self.IMPACT_REPORT)
         self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
@@ -1050,17 +1008,6 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("after-plan-edit")
         self.assertEqual("AC-1 orders exist\n", self.criteria_text())
         self.assertNotIn("criteriaGuard", self.state())
-        self.assertIn("AGENT: review-loop", out)
-
-    def test_after_plan_edit_rerun_on_the_plans_branch_restores_the_criteria_and_dispatches_the_review(self):
-        home, kept = self.leave_for_a_branch_without_the_plan()
-        self.step("after-plan-edit")
-        self.git("checkout", "-q", "-f", home)
-        self.put_back(kept)
-        out = self.step("after-plan-edit")
-        self.assertEqual("AC-1 orders exist\n", self.criteria_text())
-        self.assertNotIn(self.CRITERIA, self.state()["files"])
-        self.assertEqual([], self.state()["flagged"])
         self.assertIn("AGENT: review-loop", out)
 
     def test_copies_made_in_the_same_second_get_a_counter_and_overwrite_nothing(self):
@@ -1082,28 +1029,6 @@ class CodeStepTest(unittest.TestCase):
             self.assertEqual(text, (folder / name).read_text())
         new_copies = [path for path in self.replaced_copies() if path.name not in existing]
         self.assertEqual(["AC-1 the new change\n"], [path.read_text() for path in new_copies])
-
-    def check_a_stale_run_of_an_ended_session_does_not_lock_the_next_start(self, by):
-        self.coder_round(self.IMPACT_REPORT)
-        self.step("decide", "adopt", "--by", by, "--ruling", "my own call")
-        state_file = self.repo / ".git/code-step/state.json"
-        state = json.loads(state_file.read_text())
-        state["sessionId"] = "an-ended-session"
-        state["dispatchAt"] = time.time() - 3 * 60 * 60
-        state_file.write_text(json.dumps(state))
-        three_hours_ago = time.time() - 3 * 60 * 60
-        os.utime(state_file, (three_hours_ago, three_hours_ago))
-        first = self.step("start", "--restart", "docs/plans/typo/spec.md")
-        self.assertIn("ACTION: ask-user", first)
-        second = self.step("start", "--restart", self.plan)
-        self.assertNotIn("Another Claude session", second)
-        self.assertIn("ACTION: dispatch", second)
-
-    def test_a_stale_session_ruling_run_does_not_lock_the_next_start(self):
-        self.check_a_stale_run_of_an_ended_session_does_not_lock_the_next_start("session")
-
-    def test_a_stale_user_ruling_run_does_not_lock_the_next_start(self):
-        self.check_a_stale_run_of_an_ended_session_does_not_lock_the_next_start("user")
 
     def test_start_after_the_plan_folder_moved_drops_the_saved_criteria_and_does_not_crash(self):
         self.coder_round(self.IMPACT_REPORT)
@@ -1415,17 +1340,17 @@ class CodeStepTest(unittest.TestCase):
 
     def test_hook_saves_nothing_once_the_phase_is_done(self):
         self.finish_phase_one()
-        reports_file = self.repo / ".git/code-step/reports.jsonl"
-        before = len(reports_file.read_text().splitlines())
+        before = len(self.events_named("handback"))
         self.hook("coder", "from another session")
-        self.assertEqual(before, len(reports_file.read_text().splitlines()))
+        self.assertEqual(before, len(self.events_named("handback")))
 
     def test_hook_ignores_a_session_other_than_the_one_that_started_the_coder(self):
         self.start_phase_one()
         self.hook("coder", "mine")
         self.hook("coder", "theirs", agent_id="a2", session="s2")
-        rows = (self.repo / ".git/code-step/reports.jsonl").read_text().splitlines()
-        self.assertEqual(["mine"], [json.loads(row)["message"] for row in rows])
+        handbacks = self.events_named("handback")
+        self.assertEqual(1, len(handbacks))
+        self.assertTrue(handbacks[0]["message"].startswith("mine"))
 
     def test_bare_start_on_another_branch_resolves_the_plan_again(self):
         self.finish_phase_one()
@@ -1492,7 +1417,7 @@ class CodeStepTest(unittest.TestCase):
                   "/refactor +deep", "Verify pass (risk: high)": "/verify-branch", "Recap": "/branch-recap",
                   "Test audit — /test-audit cross-phase test gate (risk: high)": "/test-audit"}
         for title, expected in titles.items():
-            found = next((skill for pattern, skill in code_step.CLOSING_PHASES if pattern.search(title)), None)
+            found = next((skill for pattern, skill in plan_format.CLOSING_PHASES if pattern.search(title)), None)
             self.assertEqual(expected, found, title)
 
     def test_closing_phase_prints_its_own_section(self):
@@ -1558,8 +1483,8 @@ class CodeStepTest(unittest.TestCase):
 
     def test_phase_section_lookup_keeps_six_and_six_a_apart(self):
         lines = ["## Phase 6A: x", "a", "## Phase 6: y", "b"]
-        self.assertEqual("## Phase 6: y\nb", code_step.phase_text(lines, "6"))
-        self.assertEqual("## Phase 6A: x\na", code_step.phase_text(lines, "6A"))
+        self.assertEqual("## Phase 6: y\nb", plan_format.phase_text(lines, "6"))
+        self.assertEqual("## Phase 6A: x\na", plan_format.phase_text(lines, "6A"))
 
     def test_phase_status_line_formats_a_real_plan_can_use(self):
         lines = ["## Phase Status", "",
@@ -1569,7 +1494,7 @@ class CodeStepTest(unittest.TestCase):
                  "-  [ ]  Phase  9:  Extra spaces (risk: low)",
                  "* [ ] Phase 10 – En dash and star bullet",
                  "- [ ] Phase 11: No risk tag"]
-        entries = code_step.parse_plan(lines)["entries"]
+        entries = plan_format.parse_plan_with_closing_phases(lines)["entries"]
         self.assertEqual(["6C2", "7", "8", "9", "10", "11"], [e["number"] for e in entries])
         self.assertEqual(["low", "high", "low", "low", "high", "high"], [e["risk"] for e in entries])
         self.assertEqual([False, True, False, False, False, False], [e["done"] for e in entries])
@@ -1581,16 +1506,16 @@ class CodeStepTest(unittest.TestCase):
         plan_path = self.repo / "ids.md"
         plan_path.write_text("\n".join(["## Phase Status", "", *status_lines, "", *sections, ""]))
         plan_lines = plan_path.read_text().splitlines()
-        self.assertEqual(ids, [e["number"] for e in code_step.parse_plan(plan_lines)["entries"]])
+        self.assertEqual(ids, [e["number"] for e in plan_format.parse_plan_with_closing_phases(plan_lines)["entries"]])
         for i in ids:
-            self.assertEqual(f"## Phase {i}: Title {i}\nbody {i}", code_step.phase_text(plan_lines, i))
-            code_step.mark_phase_done(plan_path, i)
-        self.assertEqual([True] * len(ids), [e["done"] for e in code_step.parse_plan(
+            self.assertEqual(f"## Phase {i}: Title {i}\nbody {i}", plan_format.phase_text(plan_lines, i))
+            plan_format.mark_phase_done(plan_path, i)
+        self.assertEqual([True] * len(ids), [e["done"] for e in plan_format.parse_plan_with_closing_phases(
             plan_path.read_text().splitlines())["entries"]])
 
     def test_dotted_phase_section_is_not_the_whole_number_section(self):
         lines = ["## Phase 10.5: x", "a", "## Phase 10: y", "b"]
-        self.assertEqual("## Phase 10: y\nb", code_step.phase_text(lines, "10"))
+        self.assertEqual("## Phase 10: y\nb", plan_format.phase_text(lines, "10"))
 
     def test_unparsed_phase_status_line_stops_with_its_line_number(self):
         (self.repo / self.plan).write_text(self.plan_text().replace("- [ ] Phase 2: Totals", "- [ ] Step two: Totals"))
@@ -1675,18 +1600,6 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("Closing phase(s) 4 were checked and are unchecked again", out)
         self.assertIn("- [ ] Phase 4:", self.plan_text())
 
-    def test_steps_added_to_the_phase_during_the_run_get_their_own_coder_before_the_review(self):
-        self.begin_coder()
-        (self.repo / self.plan).write_text(self.plan_text().replace(
-            "## Phase 2: Totals", "- Add a CSV export.\n\n## Phase 2: Totals"))
-        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
-        out = self.step("after-coder")
-        self.assertIn("AGENT: coder", out)
-        self.assertIn("Add a CSV export.", out)
-        self.assert_dispatch_logged(out, "d2", "coder", "coder", "resume")
-        self.hook("coder", "BEHAVIOR: csv export\nREVIEW: recommended", agent_id="a2")
-        self.assertNotIn("Add a CSV export.", self.step("after-coder"))
-
     def test_plan_hook_prints_failures_only_for_an_edit_of_the_active_plan(self):
         self.start_phase_one()
         (self.repo / self.plan).write_text(self.plan_text().replace("- [ ] Phase 2: Totals", "- [ ] Step two"))
@@ -1763,9 +1676,18 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("after-review")
         self.assertIn("f - keep?", out + self.said())
 
+    def hand_back_an_unreadable_packet(self, agent_id="a1"):
+        # The packet hook denies an unreadable packet the first time its agent hands it back; the second goes through.
+        packet = "status: deferred\niter: 1\nfindings_remaining: []"
+        self.hook("review-loop", packet, agent_id=agent_id)
+        denied_handbacks = [event for event in self.events_named("handback") if event["agent_id"] == agent_id
+                            and event["agent_type"] == "review-loop" and event["message"] == packet]
+        self.assertEqual([], denied_handbacks)
+        self.hook("review-loop", packet, agent_id=agent_id)
+
     def leave_unreadable_packet(self):
         self.coder_round()
-        self.hook("review-loop", "status: deferred\niter: 1\nfindings_remaining: []")
+        self.hand_back_an_unreadable_packet()
         return self.step("after-review")
 
     def test_an_unreadable_review_packet_stops_with_the_raw_packet_and_one_resume_command(self):
@@ -1794,7 +1716,7 @@ class CodeStepTest(unittest.TestCase):
     def test_review_again_after_a_failed_re_review_keeps_the_structure_pass_skip(self):
         out = self.asks_follow_up(lambda: (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n"))
         self.assertIn(self.SKIP_LINE, out)
-        self.hook("review-loop", "status: deferred\niter: 1\nfindings_remaining: []", agent_id="a2")
+        self.hand_back_an_unreadable_packet(agent_id="a2")
         self.assertIn("review-again", self.step("after-review"))
         self.assertEqual("invalid-packet", self.state()["stopReason"])
         again = self.step("review-again")
@@ -1954,13 +1876,18 @@ class CodeStepTest(unittest.TestCase):
     def test_torn_report_line_is_skipped(self):
         self.begin_coder()
         self.hook("coder", "BEHAVIOR: orders exist")
-        with (self.repo / ".git/code-step/reports.jsonl").open("a") as reports_file:
-            reports_file.write('{"agent_type": "cod\n')
+        events_file = self.repo / ".git/code-step/runs" / self.state()["runId"] / "events.jsonl"
+        with events_file.open("a") as events_stream:
+            events_stream.write('{"event": "hand\n')
         self.assertIn("AGENT: review-loop", self.step("after-coder"))
 
     def test_plan_impact_survives_a_retry_that_sends_only_the_fix(self):
         self.begin_coder()
+        self.gate_commands = ["echo lint broke; exit 1"]
         self.hook("coder", "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes")
+        self.assertEqual([], self.events_named("handback"))
+        self.assertEqual(1, len(self.events_named("handback-attempt")))
+        self.gate_commands = ["true"]
         self.hook("coder", "fixed the lint error")
         self.assertIn("ACTION: ask-user", self.step("after-coder"))
 
@@ -1972,7 +1899,9 @@ class CodeStepTest(unittest.TestCase):
 
     def test_plan_impact_status_with_no_description_stops(self):
         self.coder_round()
-        self.hook("review-loop", "status: plan-impact\niter: 1\nplan_impact:\n")
+        packet = "status: plan-impact\niter: 1\nplan_impact:\n"
+        self.hook("review-loop", packet)
+        self.hook("review-loop", packet)
         out = self.step("after-review")
         self.assertIn("ACTION: stop", out)
         self.assertNotIn("ACTION: ask-user", out)
@@ -1999,9 +1928,9 @@ class CodeStepTest(unittest.TestCase):
 
     def test_other_test_scripts_are_run_not_skipped(self):
         for command in ("npm run test:e2e", "npm run lint:fix", "npx vitest run src/a.test.ts"):
-            self.assertIsNone(code_step.WHOLE_SUITE.match(command), command)
+            self.assertIsNone(code_step_boundary.WHOLE_SUITE.match(command), command)
         for command in ("cd backend && npm test", "npm run lint", "npx vitest run", "pytest", "ruff check"):
-            self.assertIsNotNone(code_step.WHOLE_SUITE.match(command), command)
+            self.assertIsNotNone(code_step_boundary.WHOLE_SUITE.match(command), command)
         self.env["CODE_STEP_VERIFY_TIMEOUT"] = "5"
         self.set_verification("- [ ] **E2E**: `bash -c 'exit 3'`")
         self.coder_round()
@@ -2145,7 +2074,6 @@ class CodeStepTest(unittest.TestCase):
         self.hook("review-loop", self.LOOP_OK)
         out = self.step("after-review")
         self.assertNotIn("AGENT: coder", out)
-        self.assertNotIn("gained lines", out)
         self.assertIn("- [x] Phase 1:", self.plan_text())
 
     def test_asks_coder_that_changed_only_docs_sends_no_review_and_finishes_the_phase(self):
@@ -2398,10 +2326,10 @@ class CodeStepTest(unittest.TestCase):
             "## Phase 2: B",
             "",
         ]
-        plan = code_step.parse_plan(lines)
+        plan = plan_format.parse_plan_with_closing_phases(lines)
         self.assertEqual((4, 10), (plan["sections"]["1"]["start"], plan["sections"]["1"]["end"]))
-        self.assertIn("# install", code_step.phase_text(lines, "1"))
-        self.assertIn("more text", code_step.phase_text(lines, "1"))
+        self.assertIn("# install", plan_format.phase_text(lines, "1"))
+        self.assertIn("more text", plan_format.phase_text(lines, "1"))
 
     def test_a_tilde_fence_and_an_indented_fence_hide_headings_too(self):
         lines = [
@@ -2418,7 +2346,7 @@ class CodeStepTest(unittest.TestCase):
             "tail",
             "",
         ]
-        plan = code_step.parse_plan(lines)
+        plan = plan_format.parse_plan_with_closing_phases(lines)
         self.assertEqual(len(lines), plan["sections"]["1"]["end"])
         self.assertEqual([], plan["failures"])
 
@@ -2434,14 +2362,14 @@ class CodeStepTest(unittest.TestCase):
             "## Phase 1: A",
             "",
         ]
-        plan = code_step.parse_plan(lines)
+        plan = plan_format.parse_plan_with_closing_phases(lines)
         self.assertEqual(["1"], list(plan["sections"]))
         self.assertEqual(["1"], [entry["number"] for entry in plan["entries"]])
         self.assertEqual([], plan["failures"])
 
     def test_two_sections_with_the_same_phase_id_are_a_duplicate_id_failure(self):
         lines = ["# T", "## Phase Status", "- [ ] Phase 1: A", "## Phase 1: A", "x", "## Phase 1: A again", ""]
-        failures = code_step.parse_plan(lines)["failures"]
+        failures = plan_format.parse_plan_with_closing_phases(lines)["failures"]
         self.assertEqual([(6, "duplicate-id")], [(f["line"], f["kind"]) for f in failures])
         self.assertIn("line 4", failures[0]["detail"])
         result = self.plan_check("\n".join(lines))
@@ -2449,29 +2377,6 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn(":6: duplicate-id", result.stdout)
 
     # ---------- the addendum coder fires only on added lines ----------
-
-    def added_lines_after(self, edit):
-        directory = tempfile.TemporaryDirectory()
-        self.addCleanup(directory.cleanup)
-        root = pathlib.Path(directory.name)
-        plan = (
-            "# P\n## Phase Status\n- [ ] Phase 1: A (risk: low)\n## Phase 1: A\nDo a.\n\n#### Manual Verification:\n"
-            "- [ ] check it\n## Phase 2: B\nx\n"
-        )
-        (root / "plan.md").write_text(edit(plan))
-        state = {"plan": "plan.md", "phase": "1", "phaseText": code_step.phase_text(plan.split("\n"), "1")}
-        return code_step.added_phase_lines(root, state)
-
-    def test_ticking_a_checkbox_is_not_an_added_line(self):
-        self.assertIsNone(self.added_lines_after(lambda p: p.replace("- [ ] check it", "- [x] check it")))
-
-    def test_an_added_blank_line_or_trailing_space_is_not_an_added_line(self):
-        self.assertIsNone(self.added_lines_after(lambda p: p.replace("Do a.\n", "Do a.\n\n")))
-        self.assertIsNone(self.added_lines_after(lambda p: p.replace("Do a.", "Do a. ")))
-
-    def test_a_real_added_step_is_still_an_added_line(self):
-        found = self.added_lines_after(lambda p: p.replace("Do a.\n", "Do a.\nAlso do b.\n"))
-        self.assertEqual(["Also do b."], found["added"])
 
     # ---------- plan-hook ignores malformed input ----------
 
@@ -2753,16 +2658,6 @@ class CodeStepTest(unittest.TestCase):
         self.wait_env(1, "0.2")
         self.assertIn("ACTION: wait", self.step("after-review"))
 
-    def test_a_coder_row_without_a_passing_gate_result_does_not_end_the_coder_wait(self):
-        for result in (None, "deny", "none"):
-            with self.subTest(result=result):
-                self.start_phase_one("--restart")
-                self.set_gate_result(result)
-                (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
-                self.hook("coder", self.CODER_REPORT)
-                self.wait_env(1, "0.2")
-                self.assertIn("ACTION: wait", self.step("after-coder"))
-
     def test_a_coder_row_with_a_cap_gate_result_ends_the_coder_wait(self):
         self.start_phase_one()
         self.set_gate_result("cap")
@@ -2786,48 +2681,6 @@ class CodeStepTest(unittest.TestCase):
         self.step("start", "--task", "add orders")
         self.assertEqual(self.SESSION, self.state()["sessionId"])
 
-    def leave_dispatch_of(self, session):
-        self.start_phase_one()
-        self.set_state(sessionId=session, dispatchAt=time.time() - 60)
-
-    def test_start_stops_when_another_live_session_has_an_open_dispatch(self):
-        self.leave_dispatch_of("other-session")
-        before = (self.repo / ".git/code-step/state.json").read_text()
-        out = self.step("start", self.plan)
-        self.assertIn("ACTION: stop", out)
-        self.assertIn(self.plan, out)
-        self.assertIn("Phase 1", out)
-        self.assertIn("worktree", out)
-        self.assertIn("--take-over", out)
-        self.assertEqual(before, (self.repo / ".git/code-step/state.json").read_text())
-
-    def leave_asks_of(self, session):
-        self.coder_round()
-        self.hook("review-loop", self.ASK)
-        self.step("after-review")
-        self.assertEqual("asks", self.state()["stage"])
-        self.set_state(sessionId=session)
-        state_file = self.repo / ".git/code-step/state.json"
-        past = time.time() - 60
-        os.utime(state_file, (past, past))
-
-    def test_start_stops_when_another_session_waits_at_asks(self):
-        self.leave_asks_of("other-session")
-        out = self.step("start", self.plan, "+fast")
-        self.assertIn("ACTION: stop", out)
-        self.assertIn("in another session; this block lifts at", out)
-        self.assertIn("invoke Skill code with `--take-over " + self.plan + " +fast`", out)
-        self.assertEqual("asks", self.state()["stage"])
-
-    GUARDED_RUNS: ClassVar[list] = [
-        ("coder", None, "dispatch"), ("review", None, "dispatch"), ("asks-coder", None, "dispatch"),
-        ("plan-coder", None, "dispatch"),
-        ("stopped", "invalid-packet", "state-file"),
-        ("asks", None, "state-file"), ("impact-coder", None, "state-file"), ("impact-review", None, "state-file"),
-        ("skill", None, "state-file"),
-        ("stopped", "verification", "state-file"), ("stopped", "plan-format", "state-file"),
-    ]
-
     def leave_run_of_another_session(self, stage, stop_reason, age_kind, age_seconds):
         self.start_phase_one()
         changes = {"stage": stage, "stopReason": stop_reason, "sessionId": "other-session"}
@@ -2838,30 +2691,6 @@ class CodeStepTest(unittest.TestCase):
         past = time.time() - age_seconds
         os.utime(state_file, (past, past))
 
-    def test_every_guarded_stage_blocks_a_live_run_lifts_after_two_hours_and_yields_to_take_over(self):
-        for stage, stop_reason, age_kind in self.GUARDED_RUNS:
-            with self.subTest(stage=stage, stop_reason=stop_reason):
-                self.leave_run_of_another_session(stage, stop_reason, age_kind, 60)
-                blocked = self.step("start", self.plan)
-                self.assertIn("ACTION: stop", blocked)
-                self.assertIn("Last active", blocked)
-                self.assertIn("--take-over", blocked)
-                self.assertEqual(stage, self.state()["stage"])
-
-                self.leave_run_of_another_session(stage, stop_reason, age_kind, 2 * 60 * 60 + 60)
-                lifted = self.step("start", "--restart", self.plan)
-                if stage == "plan-coder":
-                    self.assertIn("code_step.py resume` from the repo root first", lifted)
-                else:
-                    self.assertIn("ACTION: dispatch", lifted)
-
-                self.leave_run_of_another_session(stage, stop_reason, age_kind, 60)
-                taken_over = self.step("start", self.plan, "--take-over")
-                if stage == "plan-coder":
-                    self.assertIn("code_step.py resume` from the repo root first", taken_over)
-                    continue
-                self.assertIn("ACTION: dispatch", taken_over)
-
     def test_a_stop_for_a_verification_failure_in_another_session_does_not_block_the_same_session(self):
         self.leave_run_of_another_session("stopped", "verification", "state-file", 60)
         self.set_state(sessionId=self.SESSION)
@@ -2871,23 +2700,6 @@ class CodeStepTest(unittest.TestCase):
         self.mark_phases_done(1, 2, 3)
         self.assertIn("ACTION: invoke-skill", self.step("start", self.plan))
         self.assertEqual(self.SESSION, self.state()["sessionId"])
-
-    def test_the_same_session_starts_over_its_own_open_dispatch(self):
-        self.leave_dispatch_of(self.SESSION)
-        self.assertIn("ACTION: dispatch", self.step("start", "--restart", self.plan))
-
-    def test_an_open_dispatch_with_no_pinned_session_is_abandoned(self):
-        self.leave_dispatch_of(None)
-        self.assertIn("ACTION: dispatch", self.step("start", "--restart", self.plan))
-
-    def test_a_state_with_no_pinned_session_claims_no_handbacks(self):
-        self.begin_coder()
-        self.set_state(sessionId=None)
-        (self.repo / ".git/code-step/reports.jsonl").write_text(json.dumps(
-            {"ts": time.time() + 5, "agent_type": "coder", "agent_id": "a1", "stage": "coder",
-             "message": self.CODER_REPORT}) + "\n")
-        self.wait_env(1, "0.2")
-        self.assertIn("ACTION: wait", self.step("after-coder"))
 
     def test_the_wait_stops_once_the_dispatch_is_older_than_three_waits(self):
         self.begin_coder()
@@ -2904,17 +2716,6 @@ class CodeStepTest(unittest.TestCase):
         self.hook("coder", self.CODER_REPORT)
         self.wait_env(10, "0.2")
         self.assertIn("AGENT: review-loop", self.step("after-coder"))
-
-    def test_a_long_wait_ends_with_run_the_same_command_again_so_the_checks_start_fresh(self):
-        self.coder_round()
-        self.wait_env(20)
-        self.env["CODE_STEP_FRESH_CALL_SECONDS"] = "0.5"
-        self.late_hook(1, "review-loop", self.LOOP_OK)
-        out = self.step("after-review")
-        self.assertIn("ACTION: wait", out)
-        self.assertIn("The report arrived", out)
-        self.assertIn(self.own_command("resume"), out)
-        self.assertIn("ACTION: stop-block-B", self.step("after-review"))
 
     # ---------- start: abandoned runs, arguments, the commit line ----------
 
@@ -3055,7 +2856,8 @@ class CodeStepTest(unittest.TestCase):
     def test_missing_handback_module_stops_the_run_and_writes_no_gate_file(self):
         bare = self.tmp / "bare"
         bare.mkdir()
-        for name in (SCRIPT.name, "script_utils.py", "plan_format.py"):
+        for name in (SCRIPT.name, "script_utils.py", "plan_format.py", "code_step_core.py", "code_step_boundary.py",
+                     "code_step_hooks.py"):
             shutil.copy(SCRIPT.parent / name, bare / name)
         env = dict(self.env, PYTHONPATH="")
         script = str(bare / SCRIPT.name)
@@ -3064,15 +2866,8 @@ class CodeStepTest(unittest.TestCase):
             return subprocess.run([sys.executable, script, *args], cwd=self.repo, env=env, input=stdin,
                                   capture_output=True, text=True).stdout
 
-        bare_step("start", "--task", "add orders")
-        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
-        event = {"agent_type": "coder", "agent_id": "a1", "cwd": str(self.repo), "session_id": self.SESSION,
-                 "tool_input": {"message": self.CODER_REPORT}}
-        bare_step("hook", stdin=json.dumps(event))
-        bare_step("after-coder")
-        self.launch_the_pending_review("a1")
-        event.update(agent_type="review-loop", tool_input={"message": self.LOOP_OK})
-        bare_step("hook", stdin=json.dumps(event))
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
         out = bare_step("after-review")
         self.assertIn("ACTION: stop", out)
         self.assertIn("handback.py could not be imported", out)
@@ -3096,7 +2891,7 @@ class CodeStepTest(unittest.TestCase):
     def test_a_cargo_verification_item_is_read_as_a_command(self):
         item = "- [ ] **Tests**: the streams pass - `cargo test --test side_streams && cargo clippy -- -D warnings`"
         self.assertEqual("cargo test --test side_streams && cargo clippy -- -D warnings",
-                         code_step.verification_command(item))
+                         code_step_boundary.verification_command(item))
 
     def test_a_phase_whose_verification_items_yield_no_command_is_not_marked_done(self):
         self.coder_round_then_edit_verification("- [ ] **Check**: the streams pass, see the log")
@@ -3110,8 +2905,8 @@ class CodeStepTest(unittest.TestCase):
 
     def test_the_review_prompt_is_built_from_the_latest_coder_only(self):
         self.begin_coder()
-        self.hook("coder", "BEHAVIOR: stale change\nWHY: backend/src/stale.ts 1-2 — stale reason", agent_id="a0")
         self.hook("coder", "BEHAVIOR: orders exist\nWHY: backend/src/orders.ts 3-5 — order matters", agent_id="a1")
+        self.hook("coder", "BEHAVIOR: stale change\nWHY: backend/src/stale.ts 1-2 — stale reason", agent_id="a0")
         out = self.step("after-coder")
         self.assertIn("AGENT: review-loop", out)
         self.assertIn("order matters", out)
@@ -3166,10 +2961,10 @@ class CodeStepTest(unittest.TestCase):
         record = "\n#### Phase 2 record (2026-10-21):\n\nDone by hand.\n"
         (self.repo / self.plan).write_text(self.plan_text().replace(
             "**File**: `backend/src/totals.ts`\n", "**File**: `backend/src/totals.ts`\n" + record))
-        plan = code_step.parse_plan(self.plan_text().splitlines())
+        plan = plan_format.parse_plan_with_closing_phases(self.plan_text().splitlines())
         self.assertEqual([], plan["failures"])
         self.assertEqual({"1", "2", "3", "4"}, set(plan["sections"]))
-        self.assertIn("Done by hand.", code_step.phase_text(self.plan_text().splitlines(), "2"))
+        self.assertIn("Done by hand.", plan_format.phase_text(self.plan_text().splitlines(), "2"))
         event = {"cwd": str(self.repo), "tool_input": {"file_path": str(self.repo / self.plan)}}
         self.assertEqual(0, run(self.repo, self.env, "plan-hook", stdin=json.dumps(event)).returncode)
 
@@ -3185,11 +2980,11 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("docs/plans/orders/spec.md", commit_line)
 
     def test_the_commit_subject_carries_the_ticket_id_of_the_plan_folder_or_branch(self):
-        self.assertEqual("LED-15: ", code_step.ticket_prefix({"plan": "docs/plans/LED-15-recap/spec.md"}))
-        self.assertEqual("LED-15: ", code_step.ticket_prefix({"plan": "docs/plans/orders/spec.md",
+        self.assertEqual("LED-15: ", code_step_boundary.ticket_prefix({"plan": "docs/plans/LED-15-recap/spec.md"}))
+        self.assertEqual("LED-15: ", code_step_boundary.ticket_prefix({"plan": "docs/plans/orders/spec.md",
                                                                "branch": "brandon/LED-15-recap"}))
-        self.assertEqual("", code_step.ticket_prefix({"plan": "docs/plans/orders/spec.md", "branch": "main"}))
-        self.assertEqual("", code_step.ticket_prefix({"plan": None, "branch": "main"}))
+        self.assertEqual("", code_step_boundary.ticket_prefix({"plan": "docs/plans/orders/spec.md", "branch": "main"}))
+        self.assertEqual("", code_step_boundary.ticket_prefix({"plan": None, "branch": "main"}))
 
     def test_a_phase_flag_run_ends_after_that_phase_even_with_an_earlier_phase_open(self):
         self.step("start", self.plan, "--phase", "2")
@@ -3207,9 +3002,12 @@ class CodeStepTest(unittest.TestCase):
     def test_a_hand_back_saved_before_the_latest_dispatch_is_not_read(self):
         self.start_phase_one()
         dispatch_at = self.state()["dispatchAt"]
-        stale_row = {"ts": dispatch_at - 100, "agent_type": "coder", "agent_id": "old", "stage": "coder",
-                    "message": "PLAN-IMPACT: yes\nBEHAVIOR: stale"}
-        (self.repo / ".git/code-step/reports.jsonl").write_text(json.dumps(stale_row) + "\n")
+        self.launch_the_pending_dispatch("a1", "coder")
+        stale_row = {"v": 1, "ts": dispatch_at - 100, "event": "handback", "session_id": self.SESSION,
+                     "agent_id": "a1", "agent_type": "coder", "message": "PLAN-IMPACT: yes\nBEHAVIOR: stale"}
+        events_file = self.repo / ".git/code-step/runs" / self.state()["runId"] / "events.jsonl"
+        with events_file.open("a") as events_stream:
+            events_stream.write(json.dumps(stale_row) + "\n")
         (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
         out = self.step("after-coder")
         self.assertIn("No coder report was saved", out)
@@ -3230,39 +3028,15 @@ class CodeStepTest(unittest.TestCase):
             )
         )
 
-    def test_an_addendum_coders_report_joins_the_first_coders_report(self):
-        self.begin_coder()
-        self.hook("coder", "BEHAVIOR: orders exist\nWHY: backend/src/orders.ts 3-5 — order matters", agent_id="a1")
-        self.add_a_line_to_phase_one()
-        out = self.step("after-coder")
-        self.assertIn("gained lines", out)
-        self.assertIn("AGENT: coder", out)
-        self.allow_coder_at_the_gate("a2")
-        self.hook("coder", "BEHAVIOR: totals added\nWHY: backend/src/orders.ts 8-9 — totals line", agent_id="a2")
-        out = self.step("after-coder")
-        self.assertIn("AGENT: review-loop", out)
-        self.assertIn("order matters", out)
-        self.assertIn("totals line", out)
-        self.assertEqual(["orders exist", "totals added"], self.state()["behavior"])
-
-    def test_an_addendum_coder_that_recommends_eng_spec_stops_with_both_reports(self):
-        self.begin_coder()
-        self.hook("coder", "BEHAVIOR: orders exist", agent_id="a1")
-        self.add_a_line_to_phase_one()
-        self.step("after-coder")
-        self.allow_coder_at_the_gate("a2")
-        self.hook("coder", "BEHAVIOR: none\nthe totals need /eng-spec", agent_id="a2")
-        out = self.step("after-coder")
-        self.assertIn("ACTION: stop", out)
-        self.assertIn("orders exist", out)
-        self.assertIn("the totals need /eng-spec", out)
-
     def test_a_coder_that_is_not_the_stopped_one_does_not_revive_the_run(self):
         self.stop_the_coder_on_a_blocked_report()
         self.hook("coder", "BEHAVIOR: another coder\nREVIEW: recommended", agent_id="other")
+        self.send_message("a1")
+        self.assertIn("has not handed back", self.step("after-coder"))
         self.assertEqual("stopped", self.state()["stage"])
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
         self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended", agent_id="a1")
-        self.assertEqual("coder", self.state()["stage"])
+        self.assertIn("AGENT: review-loop", self.step("after-coder"))
 
     def test_the_stop_on_a_blocked_coder_says_to_resume_it_with_send_message_then_run_resume(self):
         self.start_phase_one()
@@ -3274,14 +3048,14 @@ class CodeStepTest(unittest.TestCase):
     def test_a_word_dash_number_in_a_plan_folder_or_branch_is_not_a_ticket_id(self):
         for name in ("upgrade-node-20", "oauth-2", "fix-1", "phase-2", "python-3", "led-15"):
             with self.subTest(name=name):
-                self.assertEqual("", code_step.ticket_prefix({"plan": f"work/{name}/spec.md", "branch": name}))
-        self.assertEqual("ABC2-7: ", code_step.ticket_prefix({"plan": "work/upgrade-node-20/spec.md",
+                self.assertEqual("", code_step_boundary.ticket_prefix({"plan": f"work/{name}/spec.md", "branch": name}))
+        self.assertEqual("ABC2-7: ", code_step_boundary.ticket_prefix({"plan": "work/upgrade-node-20/spec.md",
                                                                "branch": "brandon/ABC2-7-upgrade"}))
 
     def test_an_automated_verification_section_of_only_not_applicable_items_is_empty(self):
         for item in ("- [ ] N/A — docs only", "- [ ] **N/A**: nothing to run", "- [x] none"):
             with self.subTest(item=item):
-                self.assertEqual(([], [], []), code_step.run_verification_commands(
+                self.assertEqual(([], [], []), code_step_boundary.run_verification_commands(
                     self.repo, f"#### Automated Verification:\n\n{item}\n\n#### Manual Verification:\n"))
 
     def test_a_phase_with_only_a_not_applicable_automated_item_is_marked_done(self):
@@ -3293,10 +3067,10 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual("done", self.state()["stage"])
 
     def test_a_script_path_or_sh_command_is_read_as_a_verification_command(self):
-        self.assertEqual("./scripts/check.sh --fast", code_step.verification_command(
+        self.assertEqual("./scripts/check.sh --fast", code_step_boundary.verification_command(
             "- [ ] **Check**: passes - `./scripts/check.sh --fast`"))
         self.assertEqual(
-            "sh scripts/check.sh", code_step.verification_command("- [ ] **Check**: `sh scripts/check.sh`")
+            "sh scripts/check.sh", code_step_boundary.verification_command("- [ ] **Check**: `sh scripts/check.sh`")
         )
 
     def test_a_command_with_leading_variable_assignments_runs_with_them_set(self):
@@ -3312,12 +3086,13 @@ class CodeStepTest(unittest.TestCase):
     def test_the_prefixed_command_wins_over_a_later_span_without_a_prefix(self):
         item = "- [ ] **Env**: `PARITY_PATH=/x/y.py cargo test --test watch_parity`, not `cargo test`"
 
-        self.assertEqual("PARITY_PATH=/x/y.py cargo test --test watch_parity", code_step.verification_command(item))
+        command = code_step_boundary.verification_command(item)
+        self.assertEqual("PARITY_PATH=/x/y.py cargo test --test watch_parity", command)
 
     def test_a_quoted_assignment_value_with_spaces_is_kept_in_the_command(self):
         item = "- [ ] **Env**: `GREETING=\"a b\" bash -c 'echo hi'`"
 
-        self.assertEqual("GREETING=\"a b\" bash -c 'echo hi'", code_step.verification_command(item))
+        self.assertEqual("GREETING=\"a b\" bash -c 'echo hi'", code_step_boundary.verification_command(item))
 
     def test_an_assignment_followed_by_no_command_or_by_a_program_that_is_not_installed_is_not_a_verification_command(
         self,
@@ -3327,25 +3102,26 @@ class CodeStepTest(unittest.TestCase):
             "- [ ] **Env**: `PARITY_PATH=/x/y.py nosuchprogram hi`",
         ):
             with self.subTest(item=item):
-                self.assertIsNone(code_step.verification_command(item))
+                self.assertIsNone(code_step_boundary.verification_command(item))
 
     def test_an_assignment_that_expands_a_variable_or_runs_a_command_still_leads_to_the_command(self):
         for command in ("LEDGER_REAL_DOTFILES=$HOME/dotfiles cargo test --test watch_parity",
                         "PATH=/x/bin:$PATH cargo test", 'DATABASE_URL="$TEST_DB" pytest -q',
                         "T=$(find . -name x) cargo test", "A=1 B=$HOME/x make all"):
             with self.subTest(command=command):
-                self.assertTrue(code_step.COMMAND_START.match(command))
-                self.assertEqual(command, code_step.verification_command(f"- [ ] **Check**: passes - `{command}`"))
+                self.assertTrue(code_step_boundary.COMMAND_START.match(command))
+                item = f"- [ ] **Check**: passes - `{command}`"
+                self.assertEqual(command, code_step_boundary.verification_command(item))
 
     def test_an_assignment_followed_by_a_control_operator_is_not_a_command_start(self):
         for span in ("A=1 && cargo test", "A=1 ; cargo test", "A=1 | cat", "A=1 # note"):
             with self.subTest(span=span):
-                self.assertIsNone(code_step.COMMAND_START.match(span))
+                self.assertIsNone(code_step_boundary.COMMAND_START.match(span))
 
     def test_a_whole_suite_command_with_a_variable_prefix_is_still_skipped(self):
         section = "#### Automated Verification:\n\n- [ ] **All**: `CI=1 npm test`\n\n#### Manual Verification:\n"
 
-        results, skipped, unparsed = code_step.run_verification_commands(self.repo, section)
+        results, skipped, unparsed = code_step_boundary.run_verification_commands(self.repo, section)
 
         self.assertEqual(([], ["CI=1 npm test"], []), (results, skipped, unparsed))
 
@@ -3382,12 +3158,6 @@ class CodeStepTest(unittest.TestCase):
 
     # ---------- after-coder never reads a report before the dispatched coder's final hand-back ----------
 
-    def set_coder_gate_result(self, result, agent_id):
-        gate_path = self.repo / ".git/coder-gate.json"
-        gate = json.loads(gate_path.read_text())
-        gate["coders"][agent_id] = {"runs": 1, "denies": 0, "failed": [], "skipped": [], "result": result}
-        gate_path.write_text(json.dumps(gate))
-
     def test_resume_with_no_dispatch_time_asks_for_the_saved_state_and_dispatches_nothing(self):
         self.begin_coder()
         self.set_state(dispatchAt=None)
@@ -3411,15 +3181,6 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("PLAN-IMPACT", self.said())
         self.assertIn("The run is at stage coder.", self.said())
 
-    def test_a_plan_impact_in_the_row_of_a_coder_the_gate_has_not_passed_is_not_raised(self):
-        self.begin_coder()
-        self.set_coder_gate_result("deny", "a0")
-        self.hook("coder", "BEHAVIOR: still working\nPLAN-IMPACT: yes", agent_id="a0")
-        self.hook("coder", self.CODER_REPORT)
-        out = self.step("after-coder")
-        self.assertNotIn("ACTION: ask-user", out)
-        self.assertIn("AGENT: review-loop", out)
-
     def test_a_final_report_that_names_a_plan_impact_still_asks_the_user(self):
         self.begin_coder()
         self.hook("coder", "BEHAVIOR: orders exist\nPLAN-IMPACT: yes")
@@ -3438,7 +3199,9 @@ class CodeStepTest(unittest.TestCase):
         self.stop_the_coder_on_a_blocked_report()
         self.send_message("a1")
         self.set_state(resumableCoderAt=time.time() - 100)
-        (self.repo / ".git/code-step/reports.jsonl").write_text("")
+        events_file = self.repo / ".git/code-step/runs" / self.state()["runId"] / "events.jsonl"
+        kept_lines = [line for line in events_file.read_text().splitlines() if json.loads(line)["event"] != "handback"]
+        events_file.write_text("\n".join(kept_lines) + "\n")
         self.wait_env(1, "0.2")
         out = self.step("after-coder")
         self.assertIn("ACTION: wait", out)
@@ -3466,10 +3229,18 @@ class CodeStepTest(unittest.TestCase):
 
     def test_the_hand_back_of_a_resumed_coder_clears_the_saved_first_wait_time(self):
         self.stop_the_coder_on_a_blocked_report()
+        self.send_message("a1")
         self.wait_env(1, "0.2")
         self.step("after-coder")
-        self.hook("coder", "BEHAVIOR: orders exist")
-        self.assertNotIn("resumeWaitAt", self.state())
+        self.assertIsNotNone(self.state().get("resumeWaitAt"))
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+        self.assertIn("AGENT: review-loop", self.step("after-coder"))
+        state = self.state()
+        self.assertEqual("review", state["stage"])
+        self.assertNotIn("resumeWaitAt", state)
+        self.assertNotIn("resumableCoderAt", state)
+        self.assertNotIn("resumableCoderId", state)
 
     def test_after_coder_says_the_resumed_coder_has_not_handed_back_when_it_runs_with_no_wait(self):
         self.stop_the_coder_on_a_blocked_report()
@@ -3487,7 +3258,6 @@ class CodeStepTest(unittest.TestCase):
         self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
         out = self.step("after-coder")
         self.assertIn("ACTION: ask-user", out)
-        self.assertNotIn("stoppedCoderReport", self.state())
 
     def test_after_coder_goes_to_review_when_the_resumed_coder_hands_back_while_it_waits(self):
         self.stop_the_coder_on_a_blocked_report()
@@ -3565,7 +3335,7 @@ class CodeStepTest(unittest.TestCase):
 
     def stop_the_review_at_the_wait_cap(self):
         self.coder_round()
-        self.launch_the_pending_review("a1")
+        self.launch_the_pending_review("r1")
         self.set_state(dispatchAt=time.time() - 100)
         self.wait_env(1, "0.2")
         out = self.step("after-review")
@@ -3580,7 +3350,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_after_review_waits_for_a_review_loop_resumed_after_the_cap(self):
         self.stop_the_review_at_the_wait_cap()
-        self.send_message("a1")
+        self.send_message("r1")
         out = self.step("after-review")
         self.assertIn("ACTION: wait", out)
         self.assertNotIn("no review pending", out)
@@ -3588,7 +3358,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_repeated_waits_on_a_review_loop_resumed_after_the_cap_end_in_the_cap_stop(self):
         self.stop_the_review_at_the_wait_cap()
-        self.send_message("a1")
+        self.send_message("r1")
         self.wait_env(2, "0.2")
         self.assertIn("ACTION: wait", self.step("after-review"))
         first_wait_at = self.state()["resumeWaitAt"]
@@ -3601,7 +3371,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_after_review_says_the_resumed_review_loop_has_not_handed_back_when_it_runs_with_no_wait(self):
         self.stop_the_review_at_the_wait_cap()
-        self.send_message("a1")
+        self.send_message("r1")
         self.wait_env(0)
         out = self.step("after-review")
         self.assertIn("ACTION: stop", out)
@@ -3609,20 +3379,56 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("no review pending", out)
         self.assertNotIn("Run `start` first", out)
 
-    def test_the_hand_back_of_a_review_loop_resumed_after_the_cap_puts_the_stage_back_to_review(self):
+    def test_the_hand_back_of_a_resumed_review_loop_clears_the_resume_mark_and_the_saved_first_wait_time(self):
         self.stop_the_review_at_the_wait_cap()
-        self.send_message("a1")
+        self.send_message("r1")
         self.step("after-review")
-        self.hook("review-loop", self.LOOP_OK)
+        self.assertIsNotNone(self.state().get("resumeWaitAt"))
+        self.hook("review-loop", self.ASK, agent_id="r1")
+        self.step("after-review")
         state = self.state()
-        self.assertEqual("review", state["stage"])
+        self.assertEqual("asks", state["stage"])
         self.assertNotIn("resumableReview", state)
         self.assertNotIn("resumeWaitAt", state)
 
+    def test_the_coder_reports_of_an_asks_round_hold_only_the_agents_of_its_newest_dispatch(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("a1", "coder")
+        self.hook("coder", "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C")
+        state = self.state()
+        run_id = state["runId"]
+        for dispatch_id, agent_id in (("d2", "ask1"), ("d3", "ask2")):
+            code_step_core.log_event(self.repo, run_id, "dispatch", self.SESSION, id=dispatch_id,
+                                     agent_type="coder", stage="asks-coder")
+            code_step_core.log_event(self.repo, run_id, "launch", self.SESSION, agent_id=agent_id,
+                                     dispatch=dispatch_id)
+            code_step_core.log_event(self.repo, run_id, "handback", self.SESSION, agent_id=agent_id,
+                                     agent_type="coder", message=f"report of {agent_id}")
+
+        reports = code_step_core.phase_coder_reports(self.repo, state)
+
+        self.assertEqual([("a1", "coder"), ("ask2", "asks-coder")],
+                         [(report["agent_id"], report["stage"]) for report in reports])
+        self.assertEqual(["report of ask2"], reports[1]["messages"])
+
+    def test_a_dispatch_opened_on_a_state_with_no_run_id_starts_a_new_run_at_its_first_dispatch(self):
+        state = {"stage": "coder"}
+        code_step_core.open_dispatch(state)
+        run_id = state["runId"]
+        self.assertTrue(run_id)
+        self.assertIsNotNone(state["dispatchAt"])
+
+        marked_prompt, _prompt_file = code_step_core.record_dispatch(self.repo, state, "after-coder", "coder", None,
+                                                                     "the prompt")
+        self.assertTrue(marked_prompt.endswith(f"code-step-dispatch: {run_id}/d1"))
+
+        code_step_core.open_dispatch(state)
+        self.assertEqual(run_id, state["runId"])
+
     def test_a_review_loop_resumed_after_the_cap_that_hands_back_is_the_pending_review(self):
         self.stop_the_review_at_the_wait_cap()
-        self.send_message("a1")
-        self.hook("review-loop", self.LOOP_OK)
+        self.send_message("r1")
+        self.hook("review-loop", self.LOOP_OK, agent_id="r1")
         out = self.step("after-review")
         self.assertNotIn("no review pending", out)
         self.assertIn("Phase 1 marked done", out)
@@ -3917,32 +3723,17 @@ class CodeStepTest(unittest.TestCase):
 
     def test_the_wait_after_a_cap_stop_on_a_resumed_review_loop_waits_again(self):
         self.stop_the_review_at_the_wait_cap()
-        self.send_message("a1")
+        self.send_message("r1")
         self.step("after-review")
         self.set_state(resumeWaitAt=time.time() - 100)
         self.assertIn("has not handed back in", self.step("after-review"))
         self.assertNotIn("resumeWaitAt", self.state())
-        self.send_message("a1")
+        self.send_message("r1")
         out = self.step("after-review")
         self.assertIn("ACTION: wait", out)
         self.assertNotIn("has not handed back in", out)
 
     # ---------- a stale save that undid the hook's flip does not lose the resumed coder's report ----------
-
-    def test_after_coder_goes_to_review_when_a_stale_save_overwrote_the_hook_flip(self):
-        self.stop_the_coder_on_a_blocked_report()
-        state_file = self.repo / ".git/code-step/state.json"
-        stale_state = state_file.read_text()
-        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
-        self.hook("coder", self.CODER_REPORT)
-        self.assertEqual("coder", self.state()["stage"])
-        state_file.write_text(stale_state)
-        self.assertEqual("stopped", self.state()["stage"])
-        self.wait_env(1, "0.2")
-        out = self.step("after-coder")
-        self.assertIn("AGENT: review-loop", out)
-        self.assertEqual("review", self.state()["stage"])
-        self.assertNotIn("resumableCoderAt", self.state())
 
     def test_after_coder_still_waits_when_the_resumed_coder_has_saved_no_row(self):
         self.stop_the_coder_on_a_blocked_report()
@@ -3962,12 +3753,10 @@ class CodeStepTest(unittest.TestCase):
         self.hook("coder", "BEHAVIOR: none\nstill blocked")
         out = self.step("after-coder")
         self.assertIn("ACTION: stop", out)
-        self.assertIn("PLAN-IMPACT:", self.state()["stoppedCoderReport"])
         (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
         self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
         out = self.step("after-coder")
         self.assertIn("ACTION: ask-user", out)
-        self.assertNotIn("stoppedCoderReport", self.state())
 
     # ---------- the event log: dispatch events, prompt files, the log hook and the dispatch hook ----------
 
@@ -4010,8 +3799,9 @@ class CodeStepTest(unittest.TestCase):
     def send_message(self, to, **extra):
         return self.log_fixture("send_message", {"to": to, "recipient": to}, **extra)
 
-    def hand_back(self, message, agent_type, agent_id):
-        return self.log_fixture("subagent_handback", {"message": message}, agent_type=agent_type, agent_id=agent_id)
+    def hand_back(self, message, agent_type, agent_id, session=SESSION):
+        return self.log_fixture("subagent_handback", {"message": message}, agent_type=agent_type, agent_id=agent_id,
+                                session_id=session)
 
     def dispatch_hook(self, prompt, subagent_type="coder", session=SESSION):
         event = {"tool_name": "Agent", "tool_input": {"subagent_type": subagent_type, "prompt": prompt},
@@ -4114,7 +3904,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual([("agent-1", "d1"), ("agent-2", "d1")],
                          [(launch["agent_id"], launch["dispatch"]) for launch in launches])
 
-    def test_launch_without_an_agent_id_in_the_tool_response_logs_nothing_and_names_the_field(self):
+    def test_a_launch_without_an_agent_id_is_logged_and_the_wait_stops_on_it_without_a_second_dispatch(self):
         out = self.start_phase_one()
         launch = self.hook_fixture("agent_launch")
         launch["tool_input"]["prompt"] = self.printed_prompt(out)
@@ -4122,11 +3912,16 @@ class CodeStepTest(unittest.TestCase):
 
         result = self.log_hook("Agent", launch["tool_input"], launch["tool_response"])
 
-        self.assertEqual([], self.events_named("launch"))
+        self.assertEqual([None], [event["agent_id"] for event in self.events_named("launch")])
         self.assertEqual("", result.stdout)
-        stderr_lines = result.stderr.splitlines()
-        self.assertEqual(1, len(stderr_lines))
-        self.assertIn("agentId", result.stderr)
+        self.assertEqual("", result.stderr)
+        self.wait_env(20)
+        self.env["CODE_STEP_LAUNCH_SECONDS"] = "0"
+        stopped = self.step("after-coder")
+        self.assertIn("ACTION: stop", stopped)
+        self.assertIn("launch has no agent id", stopped)
+        self.assertNotIn("ACTION: dispatch", stopped)
+        self.assertEqual(1, len(self.events_named("dispatch")))
 
     def test_sendmessage_writes_resume(self):
         self.start_phase_one()
@@ -4143,7 +3938,9 @@ class CodeStepTest(unittest.TestCase):
 
         # The PreToolUse hook sees every hand-back call, also one that the hand-back gate denies. Only a call that went
         # through reaches PostToolUse.
-        self.hook("coder", message, agent_id="a7")
+        pre_call = {"agent_type": "coder", "agent_id": "a7", "cwd": str(self.repo), "session_id": self.SESSION,
+                    "tool_input": {"message": message}}
+        run(self.repo, self.env, "hook", stdin=json.dumps(pre_call))
         self.assertEqual([], self.events_named("handback"))
         self.hand_back(message, "coder", "a7")
 
@@ -4152,7 +3949,7 @@ class CodeStepTest(unittest.TestCase):
                          [(handback["agent_id"], handback["agent_type"], handback["message"])
                           for handback in handbacks])
 
-    def test_a_state_without_a_run_id_gets_one_at_its_next_dispatch_and_the_hooks_leave_it_alone(self):
+    def test_the_hooks_leave_a_state_without_a_run_id_alone(self):
         self.start_phase_one()
         old_run_id = self.state()["runId"]
         old_events = self.run_events()
@@ -4171,19 +3968,6 @@ class CodeStepTest(unittest.TestCase):
             self.assertEqual(("", ""), (result.stdout, result.stderr))
         events_file = self.repo / ".git/code-step/runs" / old_run_id / "events.jsonl"
         self.assertEqual(old_events, [json.loads(line) for line in events_file.read_text().splitlines()])
-
-        self.pass_coder_gate()
-        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
-        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
-        out = self.step("after-coder")
-
-        self.assertIn("AGENT: review-loop", out)
-        new_run_id = self.state()["runId"]
-        self.assertTrue(new_run_id)
-        self.assertNotEqual(old_run_id, new_run_id)
-        dispatches = self.events_named("dispatch")
-        self.assertEqual(["d1"], [dispatch["id"] for dispatch in dispatches])
-        self.assert_dispatch_logged(out, "d1", "review-loop", "review", "resume")
 
     def test_log_hook_writes_nothing_for_another_session_or_a_finished_run(self):
         out = self.start_phase_one()
@@ -4246,7 +4030,7 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertIn("already launched", reason)
         self.assertIn("agent-7", reason)
-        self.assertIn(f"`{code_step.SELF_COMMAND} resume` as a Bash call with timeout", reason)
+        self.assertIn(f"`{code_step_core.SELF_COMMAND} resume` as a Bash call with timeout", reason)
         fork_blocks = self.events_named("fork-block")
         self.assertEqual([("d1", "relaunch")], [(block["dispatch"], block["kind"]) for block in fork_blocks])
 
@@ -4575,22 +4359,22 @@ class CodeStepTest(unittest.TestCase):
         self.make_repo_script("check-orders")
         text = self.bad_item_plan("- [ ] **Check**: the orders pass - `check-orders --all`")
 
-        self.assertFalse(code_step.starts_like_a_program_here("check-orders --all", self.repo))
+        self.assertFalse(code_step_boundary.starts_like_a_program_here("check-orders --all", self.repo))
         self.assertEqual(1, self.plan_check(text).returncode)
 
     def test_a_line_that_names_a_path_program_and_then_holds_the_real_command_gives_the_real_command(self):
         item = "- [ ] **Check**: with `ls -la` listing the files, `npm run build` exits 0."
 
-        self.assertEqual("npm run build", code_step.verification_command(item))
+        self.assertEqual("npm run build", code_step_boundary.verification_command(item))
 
     def test_a_program_of_the_path_needs_an_argument_to_be_a_fallback_command(self):
-        self.assertIsNone(code_step.verification_command("- [ ] **Check**: the `ls` program lists them"))
-        self.assertEqual("ls -la", code_step.verification_command("- [ ] **Check**: lists them - `ls -la`"))
+        self.assertIsNone(code_step_boundary.verification_command("- [ ] **Check**: the `ls` program lists them"))
+        self.assertEqual("ls -la", code_step_boundary.verification_command("- [ ] **Check**: lists them - `ls -la`"))
 
     def test_claude_and_yes_are_never_a_fallback_command(self):
         for span in ("claude -p hello", "yes please", "FOO=1 claude --version"):
             with self.subTest(span=span):
-                self.assertIsNone(code_step.verification_command(f"- [ ] **Check**: runs `{span}`"))
+                self.assertIsNone(code_step_boundary.verification_command(f"- [ ] **Check**: runs `{span}`"))
 
     def test_a_program_that_never_ends_or_waits_for_input_is_never_a_fallback_command(self):
         spans = ("watch -n 1 date", "top -b", "htop -d 5", "less notes.txt", "more notes.txt", "vi notes.txt",
@@ -4601,19 +4385,19 @@ class CodeStepTest(unittest.TestCase):
         with unittest.mock.patch.object(code_step.shutil, "which", return_value="/usr/bin/anything"):
             for span in spans:
                 with self.subTest(span=span):
-                    self.assertFalse(code_step.starts_like_a_program_here(span, self.repo))
+                    self.assertFalse(code_step_boundary.starts_like_a_program_here(span, self.repo))
 
     def test_tail_without_follow_is_a_fallback_command(self):
         with unittest.mock.patch.object(code_step.shutil, "which", return_value="/usr/bin/tail"):
             for span in ("tail -n 5 app.log", "tail app.log", "tail -c 20 app.log"):
                 with self.subTest(span=span):
-                    self.assertTrue(code_step.starts_like_a_program_here(span, self.repo))
+                    self.assertTrue(code_step_boundary.starts_like_a_program_here(span, self.repo))
 
     def test_claude_and_yes_are_refused_by_a_path_to_them_too(self):
         for span in ("/usr/bin/yes y", "/home/u/.local/bin/claude -p hi", "FOO=1 /usr/bin/yes y"):
             with self.subTest(span=span):
-                self.assertFalse(code_step.starts_like_a_program_here(span, self.repo))
-                self.assertIsNone(code_step.verification_command(f"- [ ] **Check**: runs `{span}`", self.repo))
+                self.assertFalse(code_step_boundary.starts_like_a_program_here(span, self.repo))
+                self.assertIsNone(code_step_boundary.verification_command(f"- [ ] **Check**: runs `{span}`", self.repo))
 
     def test_a_file_outside_the_repo_is_not_a_repo_file_command(self):
         outside = self.repo.parent / "outside-tool"
@@ -4625,14 +4409,14 @@ class CodeStepTest(unittest.TestCase):
 
         for span in (f"../{outside.name} --x", "./link-tool --x"):
             with self.subTest(span=span):
-                self.assertFalse(code_step.starts_like_a_program_here(span, self.repo))
+                self.assertFalse(code_step_boundary.starts_like_a_program_here(span, self.repo))
 
     def test_a_relative_path_is_never_looked_up_from_the_working_directory_as_a_path_program(self):
         with unittest.mock.patch.object(code_step.shutil, "which", return_value="/anywhere/tool"):
-            self.assertFalse(code_step.starts_like_a_program_here("../tool --x", self.repo))
-            self.assertFalse(code_step.starts_like_a_program_here("sub/tool --x", self.repo))
-            self.assertTrue(code_step.starts_like_a_program_here("tool --x", self.repo))
-            self.assertTrue(code_step.starts_like_a_program_here("/opt/bin/tool --x", self.repo))
+            self.assertFalse(code_step_boundary.starts_like_a_program_here("../tool --x", self.repo))
+            self.assertFalse(code_step_boundary.starts_like_a_program_here("sub/tool --x", self.repo))
+            self.assertTrue(code_step_boundary.starts_like_a_program_here("tool --x", self.repo))
+            self.assertTrue(code_step_boundary.starts_like_a_program_here("/opt/bin/tool --x", self.repo))
 
     def test_a_file_inside_the_repo_by_a_path_that_goes_through_a_folder_is_a_repo_file_command(self):
         (self.repo / "bin").mkdir()
@@ -4642,7 +4426,7 @@ class CodeStepTest(unittest.TestCase):
 
         for span in ("bin/tool --x", "./bin/tool --x", "bin/../bin/tool --x", f"{tool} --x"):
             with self.subTest(span=span):
-                self.assertTrue(code_step.starts_like_a_program_here(span, self.repo))
+                self.assertTrue(code_step_boundary.starts_like_a_program_here(span, self.repo))
 
     def test_the_write_time_check_applies_the_argument_and_program_rules_of_the_fallback(self):
         for item in ("- [ ] **Check**: the `ls` program lists them", "- [ ] **Check**: asks `claude -p hello`",
@@ -4653,14 +4437,15 @@ class CodeStepTest(unittest.TestCase):
     def test_a_repo_file_is_a_command_only_when_it_is_executable(self):
         check_file = self.make_repo_script("scripts/check-orders", 0o644)
         item = "- [ ] **Check**: the orders pass - `scripts/check-orders --all`"
-        not_executable = code_step.verification_command(item, self.repo)
+        not_executable = code_step_boundary.verification_command(item, self.repo)
         check_file.chmod(0o755)
-        executable = code_step.verification_command(item, self.repo)
+        executable = code_step_boundary.verification_command(item, self.repo)
 
         self.assertEqual((None, "scripts/check-orders --all"), (not_executable, executable))
 
     def test_the_item_problem_names_the_command_word_after_the_variable_assignments(self):
-        problem = code_step.verification_item_problem("- [ ] **Check**: the orders pass - `FOO=1 RUN x`", self.repo)
+        item = "- [ ] **Check**: the orders pass - `FOO=1 RUN x`"
+        problem = code_step_boundary.verification_item_problem(item, self.repo)
 
         self.assertIn("it starts with `RUN`", problem)
         self.assertNotIn("FOO=1", problem)
@@ -4673,20 +4458,20 @@ class CodeStepTest(unittest.TestCase):
                      "- [x] **Human-only:** open it", "- [ ] **Test-verified**: HUMAN-ONLY, a person looks"):
             with self.subTest(item=item):
                 self.assertIsNotNone(code_step.plan_format.deferred_verification_tag(item))
-                self.assertIsNone(code_step.verification_item_problem(item, self.repo))
+                self.assertIsNone(code_step_boundary.verification_item_problem(item, self.repo))
                 self.assertEqual(0, self.plan_check(self.bad_item_plan(item)).returncode)
 
     def test_an_item_that_only_mentions_ci_verified_after_other_words_is_not_tagged(self):
         item = "- [ ] **Check**: the orders pass, not CI-verified yet"
 
         self.assertIsNone(code_step.plan_format.deferred_verification_tag(item))
-        self.assertIsNotNone(code_step.verification_item_problem(item, self.repo))
+        self.assertIsNotNone(code_step_boundary.verification_item_problem(item, self.repo))
 
     def test_an_item_tagged_for_ci_or_a_person_is_never_run_even_with_a_command_in_it(self):
         section = ("#### Automated Verification:\n\n- [ ] **CI-verified**: the pipeline runs `touch ran-by-code-step`\n"
                    "- [ ] Human-only: look at the page\n\n#### Manual Verification:\n")
 
-        self.assertEqual(([], [], []), code_step.run_verification_commands(self.repo, section))
+        self.assertEqual(([], [], []), code_step_boundary.run_verification_commands(self.repo, section))
         self.assertFalse((self.repo / "ran-by-code-step").exists())
 
     def test_a_not_applicable_item_is_never_run_even_with_a_command_in_it(self):
@@ -4695,7 +4480,7 @@ class CodeStepTest(unittest.TestCase):
             "Verification:\n"
         )
 
-        self.assertEqual(([], [], []), code_step.run_verification_commands(self.repo, section))
+        self.assertEqual(([], [], []), code_step_boundary.run_verification_commands(self.repo, section))
         self.assertFalse((self.repo / "ran-na-item").exists())
 
     def test_deferred_items_are_listed_with_their_tag_in_file_order(self):
@@ -4704,7 +4489,7 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertEqual([("CI-verified", "**CI-verified**: the pipeline runs it"),
                           ("human-only", "Human-only: look at the page")],
-                         code_step.deferred_verification_items(section))
+                         code_step_boundary.deferred_verification_items(section))
 
     def test_start_accepts_a_plan_with_an_item_tagged_ci_verified(self):
         (self.repo / self.plan).write_text(self.bad_item_plan("- [ ] **CI-verified**: the pipeline runs it"))
@@ -4739,7 +4524,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("CI-verified**: push and watch the pipeline - ", out)
 
     def test_the_item_shape_text_names_the_three_shapes(self):
-        shape = code_step.VERIFICATION_ITEM_SHAPE
+        shape = code_step_boundary.VERIFICATION_ITEM_SHAPE
 
         for text in ("one of three shapes", "N/A", "CI-verified", "Human-only", "executable file in the repo",
                      "'- [ ] **Name**: what it checks - `npm test`'"):
@@ -4786,7 +4571,7 @@ class CodeStepTest(unittest.TestCase):
         # edit is taken as the phase text the coder worked from, so it does not send a second coder for added lines.
         self.begin_coder()
         self.replace_phase_one_verification(lines)
-        self.set_state(phaseText=code_step.phase_text(self.plan_text().splitlines(), "1"))
+        self.set_state(phaseText=plan_format.phase_text(self.plan_text().splitlines(), "1"))
         self.hook("coder", self.CODER_REPORT)
         self.step("after-coder")
 

@@ -619,5 +619,163 @@ class RepoGateEnvTest(unittest.TestCase):
         self.assertEqual(["B=9"], plan_format.repo_gate_env(self.root, "docs/plans/gone/spec.md"))
 
 
+CLOSING_PLAN = """## Phase Status
+
+- [ ] Phase 1: Build
+- [ ] Phase 2: Gated work — gate: LED-5 merged
+- [x] Phase 3: Refactor pass
+- [ ] Phase 4: Verify pass
+- [ ] Phase 5: Later work
+
+## Phase 1: Build
+
+build text
+
+## Phase 2: Gated work
+
+gated text
+
+## Phase 5: Later work
+
+later text
+
+## References
+"""
+
+
+class ClosingPhaseHelpersTest(unittest.TestCase):
+    def entries(self, text=CLOSING_PLAN):
+        plan = plan_format.parse_plan_with_closing_phases(text.split("\n"))
+        self.assertEqual([], plan["failures"])
+        return plan["entries"]
+
+    def test_a_closing_title_names_its_skill_and_any_other_title_names_none(self):
+        self.assertEqual("/refactor +deep", plan_format.closing_skill("Refactor pass"))
+        self.assertEqual("/test-audit", plan_format.closing_skill("test audit"))
+        self.assertEqual("/verify-branch", plan_format.closing_skill("Verify pass"))
+        self.assertEqual("/branch-recap", plan_format.closing_skill("Recap"))
+        self.assertIsNone(plan_format.closing_skill("Verify pass for the orders API"))
+        self.assertIsNone(plan_format.closing_skill("Build it"))
+
+    def test_the_closing_phases_are_recognised_and_need_no_section(self):
+        closing = [(entry["number"], entry["closing"]) for entry in self.entries()]
+        self.assertEqual([("1", None), ("2", None), ("3", "/refactor +deep"), ("4", "/verify-branch"), ("5", None)],
+                         closing)
+
+    def test_phase_text_is_the_section_or_none(self):
+        lines = CLOSING_PLAN.split("\n")
+        self.assertEqual("## Phase 1: Build\n\nbuild text\n", plan_format.phase_text(lines, "1"))
+        self.assertIsNone(plan_format.phase_text(lines, "4"))
+
+    def test_open_phases_come_in_plan_order_with_the_closing_phases_last(self):
+        text = CLOSING_PLAN.replace("- [x] Phase 3", "- [ ] Phase 3")
+        pending = plan_format.ordered_pending(self.entries(text))
+        self.assertEqual(["1", "2", "5", "3", "4"], [entry["number"] for entry in pending])
+
+    def test_gate_blockers_are_the_gated_phases_ahead_of_the_first_phase_without_a_gate(self):
+        pending = plan_format.ordered_pending(self.entries())
+        gated_ahead, next_ungated = plan_format.gate_blockers(pending)
+        self.assertEqual([], gated_ahead)
+        self.assertEqual("1", next_ungated["number"])
+
+        gated_ahead, next_ungated = plan_format.gate_blockers(pending[1:])
+        self.assertEqual(["2"], [entry["number"] for entry in gated_ahead])
+        self.assertEqual("5", next_ungated["number"])
+
+        gated_ahead, next_ungated = plan_format.gate_blockers(pending[1:2])
+        self.assertEqual(["2"], [entry["number"] for entry in gated_ahead])
+        self.assertIsNone(next_ungated)
+
+    def test_the_gate_block_text_names_each_gate_and_the_next_phase_without_one(self):
+        pending = plan_format.ordered_pending(self.entries())[1:]
+        gated_ahead, next_ungated = plan_format.gate_blockers(pending)
+        text = plan_format.gate_block_text(gated_ahead, next_ungated)
+        self.assertIn("Phase 2 (gate: LED-5 merged)", text)
+        self.assertIn("The next open phase without a gate is Phase 5.", text)
+        self.assertTrue(text.endswith("`start --phase <id>` runs one anyway."))
+        self.assertNotIn("without a gate", plan_format.gate_block_text(gated_ahead, None))
+
+    def test_the_moved_phase_text_and_stop_name_the_target_ticket(self):
+        entry = {"number": "11", "moved": True, "movedTo": "LED-16"}
+        other = {"number": "12", "moved": False, "movedTo": None}
+        self.assertEqual("Phase 11 to LED-16", plan_format.moved_phase_text([entry, other]))
+        before_coder = plan_format.moved_phase_stop(entry, "spec.md")
+        self.assertIn("Phase 11 is moved to LED-16 in spec.md", before_coder)
+        self.assertIn("No coder was dispatched.", before_coder)
+        after_coder = plan_format.moved_phase_stop(entry, "spec.md", coder_ran=True)
+        self.assertIn("The coder ran, and its work is not marked done or committed.", after_coder)
+
+    def test_the_failure_rows_name_the_plan_line_kind_and_detail(self):
+        plan = {"failures": [{"line": 4, "kind": "duplicate-id", "detail": "Phase 1 twice"}]}
+        self.assertEqual(["spec.md:4: duplicate-id: Phase 1 twice"], plan_format.plan_failure_rows(plan, "spec.md"))
+        message = plan_format.plan_failure_message(plan, "spec.md")
+        self.assertTrue(message.startswith("The plan's Phase Status does not parse."))
+        self.assertTrue(message.endswith("spec.md:4: duplicate-id: Phase 1 twice"))
+
+
+class PlanFileEditTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.plan_path = pathlib.Path(folder.name) / "spec.md"
+        self.plan_path.write_text(CLOSING_PLAN)
+
+    def test_marking_a_phase_done_checks_only_its_open_status_line(self):
+        plan_format.mark_phase_done(self.plan_path, "1")
+        text = self.plan_path.read_text()
+        self.assertIn("- [x] Phase 1: Build", text)
+        self.assertIn("- [ ] Phase 2: Gated work", text)
+        self.assertEqual(CLOSING_PLAN.replace("- [ ] Phase 1", "- [x] Phase 1"), text)
+
+    def test_marking_a_done_or_unknown_phase_changes_nothing(self):
+        plan_format.mark_phase_done(self.plan_path, "3")
+        plan_format.mark_phase_done(self.plan_path, "99")
+        self.assertEqual(CLOSING_PLAN, self.plan_path.read_text())
+
+    def test_reopening_unchecks_the_done_closing_phases_and_names_them(self):
+        reopened = plan_format.reopen_closing_phases(self.plan_path)
+        self.assertEqual(["3"], reopened)
+        self.assertIn("- [ ] Phase 3: Refactor pass", self.plan_path.read_text())
+        self.assertEqual([], plan_format.reopen_closing_phases(self.plan_path))
+
+    def test_a_deviation_makes_its_section_before_the_references(self):
+        plan_format.append_deviation(self.plan_path, ["- 2026-10-24: Phase 2 waits."])
+        lines = self.plan_path.read_text().split("\n")
+        self.assertEqual(["## Plan Deviations", "", "- 2026-10-24: Phase 2 waits.", "", "## References"],
+                         lines[lines.index("## Plan Deviations"):lines.index("## References") + 1])
+
+    def test_a_deviation_joins_the_end_of_the_section_the_plan_has(self):
+        self.plan_path.write_text("## Plan Deviations\n\n- first\n\n## References\n")
+        plan_format.append_deviation(self.plan_path, ["- second"])
+        self.assertEqual("## Plan Deviations\n\n- first\n\n- second\n\n## References\n", self.plan_path.read_text())
+
+    def test_a_deviation_goes_to_the_end_when_the_plan_has_no_references(self):
+        self.plan_path.write_text("## Phase 1: a\n\ntext\n")
+        plan_format.append_deviation(self.plan_path, ["- note"])
+        self.assertEqual("## Phase 1: a\n\ntext\n\n## Plan Deviations\n\n- note\n", self.plan_path.read_text())
+
+
+class ManualFormatHelpersTest(unittest.TestCase):
+    GOOD = ("## Phase 1: a\n\n#### Manual Verification:\n\n- [ ] open it\n\n## Phase 2: b\n\n"
+            "#### Manual Verification:\n\n- [ ] read it\n")
+    BAD = "## Phase 1: a\n\n#### Manual Verification:\n\n- [ ] open it\n| a | b |\n"
+
+    def test_the_items_of_one_phase_or_all_phases(self):
+        lines = self.GOOD.split("\n")
+        self.assertEqual(["open it"], [i["text"] for i in plan_format.phase_manual_items(lines, 1, "spec.md")])
+        self.assertEqual(["open it", "read it"],
+                         [i["text"] for i in plan_format.phase_manual_items(lines, None, "spec.md")])
+
+    def test_a_section_that_parses_has_no_failure_message(self):
+        self.assertIsNone(plan_format.manual_format_failure(self.GOOD.split("\n"), "spec.md"))
+
+    def test_a_section_that_does_not_parse_gives_the_stop_message_and_the_resume_line(self):
+        message = plan_format.manual_format_failure(self.BAD.split("\n"), "spec.md", "Then run resume.")
+        self.assertTrue(message.startswith("The plan's Manual Verification section does not parse."))
+        self.assertIn("spec.md", message)
+        self.assertTrue(message.endswith("\nThen run resume."))
+        self.assertFalse(plan_format.manual_format_message("boom").endswith("\n"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -6,7 +6,6 @@ became. The fixtures are those of test_code_step.py; its own tests run there, no
 
 run: python3 -m unittest test_code_step_resume
 """
-import json
 import shutil
 import time
 
@@ -18,10 +17,6 @@ BLOCKER_PACKET = "status: critical-blocker\niter: 1\nblockers:\n  - finding: b\n
 class ResumeTest(base.CodeStepTest):
     def state_bytes(self):
         return (self.repo / ".git/code-step/state.json").read_bytes()
-
-    def report_rows(self):
-        reports_file = self.repo / ".git/code-step/reports.jsonl"
-        return [json.loads(line) for line in reports_file.read_text().splitlines()] if reports_file.exists() else []
 
     def assert_refused_with_rerun(self, out, verb_words):
         self.assertTrue(out.startswith("Refused: "), out)
@@ -375,8 +370,7 @@ class ResumeTest(base.CodeStepTest):
         self.assertEqual(before, self.state_bytes())
 
     def test_resume_at_a_stop_for_a_guarded_verb_prints_the_state_and_names_that_verb(self):
-        self.coder_round()
-        self.hook("review-loop", "status: deferred\niter: 1\nfindings_remaining: []")
+        self.leave_unreadable_packet()
         self.step("resume")
         self.assertEqual("invalid-packet", self.state()["stopReason"])
 
@@ -497,10 +491,8 @@ class ResumeTest(base.CodeStepTest):
         self.stop_the_coder_at_the_wait_cap(launched_as="c1")
         self.assertEqual("c1", self.state()["resumableCoderId"])
         self.send_message("c1")
-        self.set_coder_gate_result("pass", "c1")
         (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
         self.hook("coder", self.CODER_REPORT, agent_id="c1")
-        self.assertEqual("coder", self.state()["stage"])
 
         out = self.step("resume")
 
@@ -574,7 +566,7 @@ class ResumeTest(base.CodeStepTest):
 
         out = self.step("resume")
 
-        self.assertIn("other", [row["agent_id"] for row in self.report_rows()])
+        self.assertIn("other", [event["agent_id"] for event in self.events_named("handback")])
         self.assertNotIn("Phase 1 marked done", out)
         self.assertIn("- [ ] Phase 1:", self.plan_text())
         self.assertIsNone(self.gate_mark())
@@ -596,20 +588,24 @@ class ResumeTest(base.CodeStepTest):
 
     def test_a_review_loop_resumed_with_send_message_keeps_its_launch_id_and_another_id_is_ignored(self):
         self.stop_the_review_at_the_wait_cap()
-        self.send_message("a1")
-        self.hook("review-loop", self.LOOP_OK, agent_id="other")
-        self.assertEqual("stopped", self.state()["stage"])
-        self.hook("review-loop", self.LOOP_OK, agent_id="a1")
+        self.send_message("r1")
+        self.hook("review-loop", self.ASK, agent_id="other")
+        self.hook("review-loop", self.LOOP_OK, agent_id="r1")
 
         out = self.step("resume")
 
         self.assertIn("Phase 1 marked done", out)
+        self.assertNotIn("keep?", out + self.said())
 
-    def test_a_coder_hand_back_from_an_agent_the_run_did_not_launch_still_answers_the_pending_coder(self):
+    def test_the_hand_back_of_a_coder_that_was_never_launched_does_not_count(self):
         self.begin_coder()
-        self.hook("coder", self.CODER_REPORT, agent_id="a1")
+        self.hook("coder", self.CODER_REPORT, agent_id="a1", launched=False)
 
-        self.assertIn("AGENT: review-loop", self.step("resume"))
+        out = self.step("resume")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("No coder report was saved", out)
+        self.assertNotIn("AGENT: review-loop", out)
 
 # The tests inherited from the fixture class run in test_code_step.py: leave them out here.
 for inherited_test in [name for name in dir(base.CodeStepTest) if name.startswith("test_")]:

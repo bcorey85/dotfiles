@@ -192,6 +192,44 @@ class RunRetryingTest(unittest.TestCase):
         self.assertEqual((2, [2]), (self.runs(), self.sleeps))
 
 
+class RunProcessTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = pathlib.Path(folder.name)
+
+    def test_a_list_command_returns_its_exit_code_and_both_streams(self):
+        code, stdout, stderr = script_utils.run_process(
+            [sys.executable, "-c", "import sys; print('out'); print('err', file=sys.stderr); sys.exit(3)"],
+            self.folder)
+        self.assertEqual((3, "out\n", "err\n"), (code, stdout, stderr))
+
+    def test_a_string_command_runs_in_the_shell_in_the_given_folder(self):
+        code, stdout, _ = script_utils.run_process("pwd && echo $((1 + 2))", self.folder)
+        self.assertEqual(0, code)
+        self.assertEqual([str(self.folder.resolve()), "3"], stdout.split())
+
+    def test_stdin_reaches_the_command(self):
+        command = [sys.executable, "-c", "import sys; print(sys.stdin.read().upper())"]
+        code, stdout, _ = script_utils.run_process(command, self.folder, stdin="hello")
+        self.assertEqual((0, "HELLO\n"), (code, stdout))
+
+    def test_a_command_that_outlives_the_timeout_returns_no_exit_code_with_what_it_printed(self):
+        started = time.monotonic()
+        code, stdout, _ = script_utils.run_process("echo before; sleep 30", self.folder, timeout=1)
+        self.assertIsNone(code)
+        self.assertEqual("before\n", stdout)
+        self.assertLess(time.monotonic() - started, 10)
+
+    def test_a_timeout_kills_a_child_that_holds_the_pipes_open(self):
+        marker = self.folder / "survived"
+        command = f"(sleep 3; touch {marker}) & wait"
+        code, _, _ = script_utils.run_process(command, self.folder, timeout=1)
+        self.assertIsNone(code)
+        time.sleep(3.5)
+        self.assertFalse(marker.exists())
+
+
 class JoinedDistinctTest(unittest.TestCase):
     def test_equal_values_appear_once_and_empty_values_are_dropped(self):
         self.assertEqual("Q? (a.ts:3)", script_utils.joined_distinct(["Q? (a.ts:3)", "", "Q? (a.ts:3)"]))

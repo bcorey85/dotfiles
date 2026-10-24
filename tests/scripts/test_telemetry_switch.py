@@ -28,12 +28,12 @@ CALIBRATE_SKILL = pathlib.Path(os.environ.get("CALIBRATE_SKILL") or REAL_CLAUDE 
 if DRAFT_DIR and not os.environ.get("BRANCH_RECAP_SKILL"):
     RECEIPT_SKILL = pathlib.Path(DRAFT_DIR) / "branch-recap-SKILL.md"
 
-SCRIPTS = ["telemetry_enabled.sh", "telemetry_enabled.py", "hook_input.py", "repo-name",
+SCRIPTS = ["telemetry_enabled.sh", "telemetry_enabled.py", "hook_input.py",
            "log-skill-use.py", "test-edit-telemetry.py", "log-escape", "log-scan", "log-spec-run", "coder-gate.py",
            "_kv.sh", "ledger-write"]
 REVIEW = ["log-review-metrics", "log-perf-finding", "log-review-finding", "review-scope"]
-# hook_input.py and repo-name are not part of this change: they always come from the installed copy.
-INSTALLED_ONLY = {"hook_input.py", "repo-name"}
+# hook_input.py is not part of this change: it always comes from the installed copy.
+INSTALLED_ONLY = {"hook_input.py"}
 
 GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t",
            "GIT_COMMITTER_EMAIL": "t@example.com", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}

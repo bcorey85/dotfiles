@@ -9,6 +9,8 @@ the verify scripts call:
   ledger yield --review-trees            prints `tree`, then the `tree` of each recorded review_run
                                          of the code-reviewer at branch-exit with source verify-branch
                                          and a tree, whose `branch_key` is the cwd's current branch
+  ledger repo                            prints the main repo's directory name, as the real one does; exits 1
+                                         outside a git repository
   anything else                          exits 64
 
 `ledger write` records nothing and exits with the code in FAKE_LEDGER_WRITE_EXIT when that is set
@@ -54,6 +56,14 @@ if len(args) >= 2 and args[0] == "write":
         row["_session"] = args[args.index("--session") + 1]
     with open(rowsPath, "a") as handle:
         handle.write(json.dumps(row) + "\\n")
+    sys.exit(0)
+
+if args == ["repo"]:
+    common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                            capture_output=True, text=True)
+    if common.returncode != 0:
+        sys.exit(1)
+    print(os.path.basename(os.path.dirname(common.stdout.strip())))
     sys.exit(0)
 
 if args == ["yield", "--review-trees"]:

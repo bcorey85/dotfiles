@@ -22,7 +22,6 @@ LOG = SCRIPT_DIR / "verify-log"
 RESOLVER = pathlib.Path(os.environ.get("RESOLVE_TASK_DIR_SCRIPT") or REAL_CLAUDE / "scripts" / "resolve-task-dir.sh")
 FINDER = pathlib.Path(os.environ.get("LOG_REVIEW_FINDING_SCRIPT") or REAL_CLAUDE / "skills" / "review" / "log-review-finding")
 ESCAPER = pathlib.Path(os.environ.get("LOG_ESCAPE_SCRIPT") or REAL_CLAUDE / "scripts" / "log-escape")
-REPO_NAMER = pathlib.Path(os.environ.get("REPO_NAME_SCRIPT") or REAL_CLAUDE / "scripts" / "repo-name")
 
 GIT_ENV = {
     "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t",
@@ -159,7 +158,7 @@ class VerifyBranchBase(unittest.TestCase):
             **os.environ, **GIT_ENV, **self.ledgerEnv, "HOME": str(self.home),
             "VERIFY_STATE_DIR": str(self.tempRoot / "state"), "REVIEW_ESCAPES_FILE": str(self.escapes),
             "RESOLVE_TASK_DIR_SCRIPT": str(RESOLVER), "LOG_REVIEW_FINDING_SCRIPT": str(finderStub),
-            "LOG_ESCAPE_SCRIPT": str(escaperStub), "REPO_NAME_SCRIPT": str(REPO_NAMER)})
+            "LOG_ESCAPE_SCRIPT": str(escaperStub)})
         self.git("init", "-q", "-b", "master")
         self.write("README.md", "hello\n")
         self.git("add", ".")
@@ -1177,8 +1176,7 @@ class RealPlansTest(unittest.TestCase):
                 tempHome = pathlib.Path(tempDir.name) / "home"
                 (tempHome / ".claude").mkdir(parents=True)
                 env = subprocess_env({**os.environ, "HOME": str(tempHome), "VERIFY_STATE_DIR": tempDir.name,
-                                      "GIT_OPTIONAL_LOCKS": "0", "REPO_NAME_SCRIPT": str(REPO_NAMER),
-                                      "RESOLVE_TASK_DIR_SCRIPT": str(RESOLVER),
+                                      "GIT_OPTIONAL_LOCKS": "0", "RESOLVE_TASK_DIR_SCRIPT": str(RESOLVER),
                                       **fake_ledger.install(tempDir.name)})
                 rootsRun = subprocess.run(["git", "rev-list", "--max-parents=0", "HEAD"], cwd=repoRoot, env=env,
                                           capture_output=True, text=True)

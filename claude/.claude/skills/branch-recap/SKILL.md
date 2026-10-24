@@ -12,7 +12,7 @@ The fourth and last closing phase, and the exit-side counterpart to `/eng-spec`.
 
 **Not `/orient`.** `/orient` reads the **codebase** (how the change fits); this reads only the **branch's process residue** (walkthroughs, packets, receipts, `git status`) — "what remains before the PR?" Never re-reads code for a system map; consumes a prior `/orient` map or points the user to run one.
 
-Output: ONE human **recap** + a machine row in `branch-recap-receipts.jsonl`. Never `git add` semantic files, commit, or open a PR.
+Output: ONE human **recap** + a machine row written through `ledger-write branch_recap`. Never `git add` semantic files, commit, or open a PR.
 
 ## Step 1: Residue triage — `/stage`
 
@@ -86,10 +86,12 @@ Persist (non-blocking; on failure mention and continue):
 
 ```bash
 if "$HOME/.claude/scripts/telemetry_enabled.sh" 2>/dev/null; then
-  printf '{"ts":"%s","repo":"%s","branch":"%s","test_audit":"%s","residue":%d,"files":%d}\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(basename "$(git rev-parse --show-toplevel)")" \
-    "$(git rev-parse --abbrev-ref HEAD)" "<clean|n culled|n weak|no receipt>" \
-    <unstaged count> <changed-file count> >> "$HOME/.claude/branch-recap-receipts.jsonl"
+  jq -cn --arg test_audit "<clean|culled|no_receipt>" --argjson culled <n culled> \
+    --argjson coverage_lost <n coverage lost> --argjson residue <unstaged count> \
+    --argjson files <changed-file count> --arg branch_key "$(git rev-parse --abbrev-ref HEAD)" \
+    '{test_audit: $test_audit, culled: $culled, coverage_lost: $coverage_lost, residue: $residue,
+      files: $files, branch_key: $branch_key}' \
+    | "$HOME/.claude/scripts/ledger-write" branch_recap
 fi
 ```
 

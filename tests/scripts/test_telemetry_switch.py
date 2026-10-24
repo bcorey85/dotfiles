@@ -21,9 +21,10 @@ import sys
 import tempfile
 import unittest
 
-REAL_CLAUDE = pathlib.Path.home() / ".claude"
+REAL_CLAUDE = pathlib.Path(__file__).resolve().parents[2] / "claude" / ".claude"
 DRAFT_DIR = os.environ.get("TELEMETRY_SWITCH_DRAFT_DIR")
 RECEIPT_SKILL = pathlib.Path(os.environ.get("BRANCH_RECAP_SKILL") or REAL_CLAUDE / "skills" / "branch-recap" / "SKILL.md")
+CALIBRATE_SKILL = pathlib.Path(os.environ.get("CALIBRATE_SKILL") or REAL_CLAUDE / "skills" / "calibrate" / "SKILL.md")
 if DRAFT_DIR and not os.environ.get("BRANCH_RECAP_SKILL"):
     RECEIPT_SKILL = pathlib.Path(DRAFT_DIR) / "branch-recap-SKILL.md"
 
@@ -226,15 +227,16 @@ class SwitchTest(unittest.TestCase):
 
     def test_coder_gate_whole_package_deny_still_denies_when_off(self):
         command = [sys.executable, str(self.scripts / "coder-gate.py"), "bash-hook"]
-        self.turn("off")
-        finished = self.run_command(command, json.dumps(CODER_BASH))
-        self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertEqual(json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
-        self.assertFalse(self.home_file("coder-gate.jsonl").exists())
-        self.turn("on")
-        finished = self.run_command(command, json.dumps(CODER_BASH))
-        self.assertEqual(json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
-        self.assertEqual(json.loads(self.lines("coder-gate.jsonl")[0])["result"], "whole-package-deny")
+        decisions = []
+
+        def run():
+            finished = self.run_command(command, json.dumps(CODER_BASH))
+            decisions.append(json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecision"])
+            return finished
+
+        _, row = self.assert_ledger_switch("coder_gate", run, quiet=False)
+        self.assertEqual(decisions, ["deny", "deny"])
+        self.assertEqual(row["result"], "whole-package-deny")
 
     def test_coder_gate_handback_log(self):
         repo = self.work / "repo"
@@ -246,15 +248,14 @@ class SwitchTest(unittest.TestCase):
         self.assertEqual(setGate.returncode, 0, setGate.stderr)
         handback = {"hook_event_name": "PreToolUse", "agent_type": "coder", "agent_id": "a1", "cwd": str(repo),
                     "tool_input": {"message": "done"}}
-        self.turn("off")
-        finished = self.run_command(gate + ["hook"], json.dumps(handback), cwd=repo)
-        self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertIn("HAND-BACK GATE: pass", finished.stdout)
-        self.assertFalse(self.home_file("coder-gate.jsonl").exists())
-        self.turn("on")
-        finished = self.run_command(gate + ["hook"], json.dumps(handback), cwd=repo)
-        self.assertIn("HAND-BACK GATE: pass", finished.stdout)
-        self.assertEqual(json.loads(self.lines("coder-gate.jsonl")[0])["result"], "pass")
+
+        def run():
+            finished = self.run_command(gate + ["hook"], json.dumps(handback), cwd=repo)
+            self.assertIn("HAND-BACK GATE: pass", finished.stdout)
+            return finished
+
+        _, row = self.assert_ledger_switch("coder_gate", run, quiet=False)
+        self.assertEqual(row["result"], "pass")
 
     # ---- scripts
 
@@ -263,15 +264,35 @@ class SwitchTest(unittest.TestCase):
         _, row = self.assert_ledger_switch("review_metrics", lambda: self.run_command([script, "iter=1", "result=PASS"]))
         self.assertEqual(row, {"iter": "1", "result": "PASS"})
 
-    def test_log_review_metrics_second_draft_route(self):
+    def test_log_review_metrics_has_no_second_draft_route(self):
         script = str(self.review / "log-review-metrics")
-        self.assert_switch("second-draft.jsonl", lambda: self.run_command([script, "iter=1", "second_draft=1"]))
+        self.turn("on")
+        finished = self.run_command([script, "iter=1", "second_draft=1"])
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        calls = self.ledger_calls()
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["args"][:2], ["write", "review_metrics"])
+        self.assertEqual(list((self.home / ".claude").glob("*.jsonl")), [])
 
-    def test_log_review_metrics_calibration_redirect(self):
-        script = str(self.review / "log-review-metrics")
-        target = self.home_file("review-calibration.jsonl")
-        self.assert_switch("review-calibration.jsonl",
-                           lambda: self.run_command([script, f"out={target}", "reviewer=sonnet", "result=caught"]))
+    def calibrate_log_block(self):
+        text = CALIBRATE_SKILL.read_text()
+        found = re.search(r"## Step 6: Log\n\n```bash\n(.*?)```", text, re.S)
+        self.assertIsNotNone(found, "log block not found in calibrate SKILL.md")
+        block = found.group(1)
+        for placeholder, value in (("<sonnet|deep>", "sonnet"), ("<defect class>", "bug"),
+                                   ("<caught|missed>", "caught"), ("<n>", "0")):
+            block = block.replace(placeholder, value)
+        return block
+
+    def test_calibrate_log_step_writes_review_calibration(self):
+        homeScripts = self.home / ".claude" / "scripts"
+        homeScripts.mkdir(exist_ok=True)
+        for name in ("telemetry_enabled.sh", "ledger-write"):
+            shutil.copy2(self.scripts / name, homeScripts / name)
+        block = self.calibrate_log_block()
+        _, row = self.assert_ledger_switch("review_calibration",
+                                           lambda: self.run_command(["bash", "-c", block]))
+        self.assertEqual(row, {"reviewer": "sonnet", "class": "bug", "result": "caught", "other_findings": 0})
 
     def test_log_perf_finding(self):
         script = str(self.review / "log-perf-finding")
@@ -489,7 +510,7 @@ class SwitchTest(unittest.TestCase):
         self.assertFalse(target.exists())
 
     def test_review_findings_out_redirect_obeys_switch(self):
-        target = self.home_file("review-calibration.jsonl")
+        target = self.root / "redirect.jsonl"
         finished, row = self.assert_ledger_switch(
             "review_run", lambda: self.run_command(self.finding_args(f"out={target}")), quiet=False)
         self.assertEqual(finished.stdout, f"run_id={row['run_id']}\n")
@@ -503,7 +524,8 @@ class SwitchTest(unittest.TestCase):
         found = re.search(r"Persist \(non-blocking[^\n]*\n\n```bash\n(.*?)```", text, re.S)
         self.assertIsNotNone(found, "receipt block not found in branch-recap SKILL.md")
         block = found.group(1)
-        for placeholder, value in (("<clean|n culled|n weak>", "clean"), ("<unstaged count>", "0"),
+        for placeholder, value in (("<clean|culled|no_receipt>", "clean"), ("<n culled>", "0"),
+                                   ("<n coverage lost>", "0"), ("<unstaged count>", "0"),
                                    ("<changed-file count>", "0")):
             block = block.replace(placeholder, value)
         return block
@@ -514,9 +536,14 @@ class SwitchTest(unittest.TestCase):
         self.run_command(["git", "init", "-q"], cwd=repo)
         self.run_command(["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "--allow-empty", "-m", "i"], cwd=repo)
         (self.home / ".claude" / "scripts").mkdir(exist_ok=True)
-        shutil.copy2(self.scripts / "telemetry_enabled.sh", self.home / ".claude" / "scripts" / "telemetry_enabled.sh")
+        for name in ("telemetry_enabled.sh", "ledger-write"):
+            shutil.copy2(self.scripts / name, self.home / ".claude" / "scripts" / name)
         block = self.receipt_block()
-        self.assert_switch("branch-recap-receipts.jsonl", lambda: self.run_command(["bash", "-c", block], cwd=repo))
+        _, row = self.assert_ledger_switch("branch_recap",
+                                           lambda: self.run_command(["bash", "-c", block], cwd=repo))
+        self.assertEqual({key: row[key] for key in ("test_audit", "culled", "coverage_lost", "residue", "files")},
+                         {"test_audit": "clean", "culled": 0, "coverage_lost": 0, "residue": 0, "files": 0})
+        self.assertTrue(row["branch_key"])
 
     # ---- helpers
 
@@ -568,7 +595,7 @@ class SwitchTest(unittest.TestCase):
         finished = self.run_command(command, json.dumps(CODER_BASH))
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertEqual(json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
-        self.assertFalse(self.home_file("coder-gate.jsonl").exists())
+        self.assertEqual(self.ledger_calls(), [])
 
     def test_missing_python_helper_coder_gate_handback_still_runs_and_logs_nothing(self):
         (self.scripts / "telemetry_enabled.py").unlink()
@@ -584,7 +611,7 @@ class SwitchTest(unittest.TestCase):
         finished = self.run_command(gate + ["hook"], json.dumps(handback), cwd=repo)
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertIn("HAND-BACK GATE: pass", finished.stdout)
-        self.assertFalse(self.home_file("coder-gate.jsonl").exists())
+        self.assertEqual(self.ledger_calls(), [])
 
 
 if __name__ == "__main__":

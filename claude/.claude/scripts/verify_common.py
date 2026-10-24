@@ -196,8 +196,11 @@ def repo_top(cwd):
 
 
 def repo_name(top):
-    script = script_path("REPO_NAME_SCRIPT", "scripts/repo-name")
-    done = run([script], cwd=top)
+    try:
+        done = run(["ledger", "repo"], cwd=top)
+    except Fail:
+        return top.name
+
     if done.returncode == 0 and done.stdout.strip():
         return done.stdout.strip()
     return top.name

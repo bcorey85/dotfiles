@@ -36,7 +36,8 @@ MAX_DENIES = 3
 MAX_GATE_AGE_SECONDS = 6 * 3600
 COMMAND_TIMEOUT_SECONDS = 1200
 TAIL_CHARS = 6000
-GATE_LOG = pathlib.Path.home() / ".claude/coder-gate.jsonl"
+LEDGER_WRITE = pathlib.Path(__file__).parent / "ledger-write"
+LEDGER_WRITE_SECONDS = 10
 
 # A simple command that starts with one of these runs tests or lint. With no path, test name or changed-files flag
 # after it, it covers the whole package. "test" and "lint" also match script names such as "test:unit".
@@ -258,19 +259,28 @@ def stamped_handback(toolInput, coder):
                                    "updatedInput": stampedInput}}
 
 
-def append_gate_log(row):
+def append_gate_log(result, run=None, seconds=None, failed=None, agentRunId=None):
+    # Records one gate event through `ledger-write coder_gate`. The ledger stamps the time and the repo. A failed
+    # write prints one stderr line and never changes the verdict.
     if not telemetry_enabled():
         return
 
-    with GATE_LOG.open("a") as logFile:
-        logFile.write(json.dumps(row) + "\n")
+    fields = {"result": result, "run": run, "seconds": seconds, "failed": failed, "agent_run_id": agentRunId}
+    row = {name: value for name, value in fields.items() if value is not None}
+    try:
+        written = subprocess.run([str(LEDGER_WRITE), "coder_gate"], input=json.dumps(row), capture_output=True,
+                                 text=True, timeout=LEDGER_WRITE_SECONDS)
+    except (OSError, subprocess.SubprocessError) as error:
+        print(f"coder-gate: gate row not recorded: {type(error).__name__}", file=sys.stderr)
+        return
+
+    if written.returncode != 0:
+        print(f"coder-gate: gate row not recorded: ledger-write exited {written.returncode}", file=sys.stderr)
 
 
-def log_gate_run(gate, coder, seconds, failedCount):
-    repoName = pathlib.Path(gate["repoRoot"]).name
-    row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "repo": repoName, "result": coder["result"],
-           "run": coder["runs"], "seconds": seconds, "failed": failedCount}
-    append_gate_log(row)
+def log_gate_run(coder, seconds, failedCount, agentId):
+    agentRunId = None if agentId == "unknown" else agentId
+    append_gate_log(coder["result"], run=coder["runs"], seconds=seconds, failed=failedCount, agentRunId=agentRunId)
 
 
 def run_hook():
@@ -309,7 +319,7 @@ def run_hook():
         gate["coders"][agentId] = coder
         gatePath.write_text(json.dumps(gate, indent=1))
 
-    log_gate_run(gate, coder, seconds, len(failures))
+    log_gate_run(coder, seconds, len(failures), agentId)
 
     if coder["result"] == "deny":
         print(json.dumps(denial(failures)))
@@ -328,9 +338,7 @@ def run_bash_hook():
     if not runs_whole_package(command):
         return
 
-    repoName = pathlib.Path(event.get("cwd") or ".").name
-    row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "repo": repoName, "result": "whole-package-deny"}
-    append_gate_log(row)
+    append_gate_log("whole-package-deny", agentRunId=event.get("agent_id"))
 
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                              "permissionDecisionReason": WHOLE_PACKAGE_REASON}}))

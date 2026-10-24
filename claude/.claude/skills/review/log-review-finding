@@ -105,8 +105,8 @@
 set -euo pipefail
 
 script_dir=$(dirname -- "${BASH_SOURCE[0]}")
-# shellcheck source=../../scripts/_kv.sh
-source "$script_dir/../../scripts/_kv.sh"
+# shellcheck source=../../scripts/lib/_kv.sh
+source "$script_dir/../../scripts/lib/_kv.sh"
 
 # --check as the first argument runs every validation below, writes nothing, ignores the
 # telemetry switch and exits 0 when the arguments would be logged.
@@ -269,8 +269,8 @@ payload=$(jq -c '
   | with_entries(.key |= (if . == "file" then "path_key" elif . == "branch" then "branch_key" else . end))' <<< "$json")
 
 write_row() {
-  [ -z "$redirected" ] || "$script_dir/../../scripts/telemetry_enabled.sh" 2>/dev/null || return 0
-  printf '%s\n' "$payload" | bash "$script_dir/../../scripts/ledger-write" "review_$kind"
+  [ -z "$redirected" ] || "$script_dir/../../scripts/telemetry/telemetry_enabled.sh" 2>/dev/null || return 0
+  printf '%s\n' "$payload" | bash "$script_dir/../../scripts/telemetry/ledger-write" "review_$kind"
 }
 
 write_rc=0

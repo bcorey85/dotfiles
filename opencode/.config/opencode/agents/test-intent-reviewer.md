@@ -23,7 +23,7 @@ Never treat the implementation as ground truth — a bug-pinning test matches th
 Run the task resolver to find the spec directory for the current branch:
 
 ```bash
-bash ~/.claude/scripts/resolve-task-dir.sh
+bash ~/.claude/scripts/tools/resolve-task-dir.sh
 ```
 
 - **Exit 0** (one match): the oracle is, in priority order:

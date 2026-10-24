@@ -13,7 +13,7 @@ Two checks, in order, on every path to branch end: a branch-wide correctness rev
 ## Step 0: prep
 
 ```bash
-~/.claude/scripts/verify-prep $ARGUMENTS
+~/.claude/scripts/review/verify-prep $ARGUMENTS
 ```
 
 It resolves the task dir, reads the criteria, measures the diff, checks whether a branch-wide review ran since the last change, and prints the dispatches. Do the steps it prints, in order. Do not re-derive any of it.
@@ -31,7 +31,7 @@ For a sprint-branch cut pass `--base <ref>`. The ticket's ACs are always in scop
 
 1. Dispatch `code-reviewer` with the exact prompt prep prints.
 2. Route its findings with `/review` and fix them.
-3. After the fixes, log the review with every finding the reviewer reported, one entry each (`[]` when none): `~/.claude/scripts/verify-log review --result <PASS|PASS WITH WARNINGS|NEEDS CHANGES> --rows <file|->`. Each entry is `{"desc": "<one line>", "file": "<path>", "line": 0, "class": "<bug|smell|...>", "actioned": "<fixed|skipped_fp|deferred|ask|none>"}`. `actioned` is required, and a `fix` finding (the default disposition) cannot have `actioned` `none`. `class` and `disposition` are optional.
+3. After the fixes, log the review with every finding the reviewer reported, one entry each (`[]` when none): `~/.claude/scripts/review/verify-log review --result <PASS|PASS WITH WARNINGS|NEEDS CHANGES> --rows <file|->`. Each entry is `{"desc": "<one line>", "file": "<path>", "line": 0, "class": "<bug|smell|...>", "actioned": "<fixed|skipped_fp|deferred|ask|none>"}`. `actioned` is required, and a `fix` finding (the default disposition) cannot have `actioned` `none`. `class` and `disposition` are optional.
 4. Rerun `verify-prep`. It must now report the review as ran. Do not continue until it does.
 
 The log row records the content of the tree, apart from the task dir. Any later change to the diff or to an untracked file (an edit, a deletion, a rename, a new file) makes the review stale: prep says so and asks for the review again. `verify-log` exits 2 with "rerun verify-prep" when the tree changed since prep or no logged review covers it, and logs nothing. Only a review logged by `verify-log review` counts.
@@ -47,7 +47,7 @@ Dispatch `plan-verifier` (pinned; omit `model`) with the exact payload prep prin
 Convert the verifier's verdict table to a JSON list and pipe it in:
 
 ```bash
-~/.claude/scripts/verify-log --rows - <<'JSON'
+~/.claude/scripts/review/verify-log --rows - <<'JSON'
 [{"item": "<criterion>", "verdict": "done|partial|missing|failed-check|needs-manual|overridden",
   "file": "<path>", "line": 0, "evidence": "<one line>", "signoff": "<who and when; overridden only>"}]
 JSON

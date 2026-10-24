@@ -10,7 +10,7 @@ import unittest
 
 import toolkit_paths
 
-SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR) / "warn_skip_hooks.py"
+SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.GATES_DIR) / "warn_skip_hooks.py"
 
 EXPECTED = (
     '{"systemMessage":"\\n\u26a0\ufe0f\u26a0\ufe0f\u26a0\ufe0f\\nCLAUDE_SKIP_HOOKS is set \u2014 all CB Security '

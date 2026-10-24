@@ -5,7 +5,7 @@ import unittest.mock
 
 import toolkit_paths
 
-sys.path.insert(0, str(toolkit_paths.SCRIPTS_DIR))
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 import hook_input
 
 

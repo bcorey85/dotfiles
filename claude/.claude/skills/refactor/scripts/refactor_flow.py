@@ -48,9 +48,9 @@ from pathlib import Path
 from stat import S_ISREG
 
 CLAUDE = Path(os.environ.get("REFACTOR_CLAUDE_DIR", Path.home() / ".claude"))
-LOG_ESCAPE = os.environ.get("REFACTOR_LOG_ESCAPE") or str(CLAUDE / "scripts" / "log-escape")
+LOG_ESCAPE = os.environ.get("REFACTOR_LOG_ESCAPE") or str(CLAUDE / "scripts" / "telemetry" / "log-escape")
 LOG_FINDING = os.environ.get("REFACTOR_LOG_FINDING") or str(CLAUDE / "skills" / "review" / "log-review-finding")
-BRANCH_BASE = os.environ.get("BRANCH_BASE_SCRIPT") or str(CLAUDE / "scripts" / "branch-base")
+BRANCH_BASE = os.environ.get("BRANCH_BASE_SCRIPT") or str(CLAUDE / "scripts" / "tools" / "branch-base")
 
 FINDERS = {"smell-reviewer", "complexity-reviewer"}
 MAX_SIMPLIFY_FILES = 25

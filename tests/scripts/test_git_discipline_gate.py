@@ -11,7 +11,7 @@ import unittest
 import toolkit_paths
 
 SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR")
-                      or toolkit_paths.SCRIPTS_DIR) / "git_discipline_gate.py"
+                      or toolkit_paths.GATES_DIR) / "git_discipline_gate.py"
 
 
 class GitDisciplineGateTest(unittest.TestCase):

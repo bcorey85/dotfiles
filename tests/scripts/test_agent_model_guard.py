@@ -11,7 +11,7 @@ import unittest
 
 import toolkit_paths
 
-SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR) / "agent_model_guard.py"
+SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.GATES_DIR) / "agent_model_guard.py"
 
 OPUS_STDERR = (
     "[agent-model-guard] BLOCKED: Agent call sets model containing 'opus' at the call site.\n"

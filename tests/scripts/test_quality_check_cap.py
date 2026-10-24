@@ -13,7 +13,7 @@ import unittest
 import toolkit_paths
 
 HERE = pathlib.Path(__file__).resolve().parent
-LIVE_SCRIPTS_DIR = toolkit_paths.SCRIPTS_DIR
+LIVE_SCRIPTS_DIR = toolkit_paths.GATES_DIR
 SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or (HERE if (HERE / "quality_check_cap.py").exists()
                                                              else LIVE_SCRIPTS_DIR)) / "quality_check_cap.py"
 DENY_START = "[quality-check-cap] '"

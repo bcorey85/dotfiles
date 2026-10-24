@@ -10,7 +10,7 @@ import unittest
 
 import toolkit_paths
 
-SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR)
+SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.GATES_DIR)
 SCRIPT = SCRIPTS_DIR / "dead_prose_gate.py"
 
 

@@ -60,7 +60,7 @@ cd "$repo" || exit 1
 
 finding="$here/log-review-finding"
 metrics="$here/log-review-metrics"
-spec_run="$scripts/log-spec-run"
+spec_run="$scripts/telemetry/log-spec-run"
 scope="$here/review-scope"
 
 scalar() { # sql -> the first cell of the first row

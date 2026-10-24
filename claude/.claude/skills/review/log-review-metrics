@@ -24,8 +24,8 @@ set -euo pipefail
 
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 script_dir=$(dirname -- "${BASH_SOURCE[0]}")
-# shellcheck source=../../scripts/_kv.sh
-source "$script_dir/../../scripts/_kv.sh"
+# shellcheck source=../../scripts/lib/_kv.sh
+source "$script_dir/../../scripts/lib/_kv.sh"
 out=""
 # Second-draft rows route to the second-draft log even when the caller forgets
 # out= — a second_draft= key in the review-metrics rows corrupts both datasets.
@@ -63,7 +63,7 @@ case "$out" in
   "~/"*) out="$HOME/${out#"~/"}" ;;
 esac
 
-"$script_dir/../../scripts/telemetry_enabled.sh" 2>/dev/null || exit 0
+"$script_dir/../../scripts/telemetry/telemetry_enabled.sh" 2>/dev/null || exit 0
 
 if [ -n "$out" ]; then
   printf '%s\n' "$(jq -c '. + {date: (now | todate)}' <<< "$json")" >> "$out"
@@ -82,4 +82,4 @@ payload=$(jq -c '
   del(.desc)
   | (if .result then .result |= result_verdict else . end)
   | with_entries(.key |= (if . == "branch" then "branch_key" else . end))' <<< "$json")
-printf '%s\n' "$payload" | bash "$script_dir/../../scripts/ledger-write" review_metrics
+printf '%s\n' "$payload" | bash "$script_dir/../../scripts/telemetry/ledger-write" review_metrics

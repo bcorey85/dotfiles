@@ -35,11 +35,12 @@ from unittest import mock
 import toolkit_paths
 
 HERE = pathlib.Path(__file__).parent
-REPO_SCRIPT = HERE.parent.parent / "claude" / ".claude" / "scripts" / "code_step.py"
+REPO_SCRIPT = HERE.parent.parent / "claude" / ".claude" / "scripts" / "code" / "code_step.py"
 SCRIPT = pathlib.Path(os.environ["CODE_STEP_SCRIPT"]) if os.environ.get("CODE_STEP_SCRIPT") else \
     HERE / "code_step.py" if (HERE / "code_step.py").exists() else REPO_SCRIPT
-REAL_CLAUDE = SCRIPT.parent.parent if (SCRIPT.parent / "coder_gate.py").exists() else toolkit_paths.CLAUDE_DIR
-HANDBACK_SCRIPT = pathlib.Path(os.environ.get("HANDBACK_SCRIPT") or REAL_CLAUDE / "scripts" / "handback.py")
+REAL_CLAUDE = SCRIPT.parent.parent.parent if (SCRIPT.parent / "coder_gate.py").exists() else toolkit_paths.CLAUDE_DIR
+SCRIPTS_ROOT = SCRIPT.parent.parent
+HANDBACK_SCRIPT = pathlib.Path(os.environ.get("HANDBACK_SCRIPT") or REAL_CLAUDE / "scripts" / "review" / "handback.py")
 sys.path.insert(0, str(HANDBACK_SCRIPT.parent))
 sys.path.insert(0, str(SCRIPT.parent))
 import functools
@@ -66,13 +67,15 @@ CLAUDE_STUB = TMP_ROOT / "claude"
 (CLAUDE_STUB / "skills/review").mkdir(parents=True)
 for script_name in ("coder_gate.py", "coder_packet.py", "plan_format.py", "script_utils.py", "resolve-task-dir.sh",
                     "code_step_core.py", "code_step_boundary.py", "code_step_hooks.py"):
-    shutil.copy(
-        SCRIPT.parent / script_name
-        if (SCRIPT.parent / script_name).exists()
-        else toolkit_paths.SCRIPTS_DIR / script_name,
-        CLAUDE_STUB / "scripts" / script_name,
-    )
-for stub_name in ("scripts/log-scan", "skills/review/log-review-finding"):
+    try:
+        source_file = toolkit_paths.script_in(SCRIPTS_ROOT, script_name)
+    except FileNotFoundError:
+        source_file = toolkit_paths.script_in(toolkit_paths.SCRIPTS_DIR, script_name)
+    staged_file = CLAUDE_STUB / "scripts" / source_file.parent.name / script_name
+    staged_file.parent.mkdir(exist_ok=True)
+    shutil.copy(source_file, staged_file)
+(CLAUDE_STUB / "scripts" / "telemetry").mkdir(exist_ok=True)
+for stub_name in ("scripts/telemetry/log-scan", "skills/review/log-review-finding"):
     stub_file = CLAUDE_STUB / stub_name
     stub_file.write_text("#!/usr/bin/env bash\nexit 0\n")
     stub_file.chmod(0o755)

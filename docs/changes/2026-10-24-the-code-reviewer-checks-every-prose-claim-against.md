@@ -9,7 +9,7 @@ components: ["agent/code-reviewer"]
 evidence: ["census"]
 watches: []
 test: ""
-unmeasured: "Escape rows have no class for a false or stale prose claim. The logger files them under other, smell or bug, so no intake number separates them. Read it by rerunning the lens census on the review escapes dated after the edit."
+unmeasured: "Until this date the escape skills never offered the docs class, so the logged class has no before period for false or stale prose. From this date they file it as docs. Read it once about 40 new review escapes have landed: the docs share of review escapes against the census share of 13 percent."
 ---
 
 ## Change
@@ -27,7 +27,7 @@ Pending. Predicted: the reviewer catches about half of the class, so review esca
 
 ## Watch
 
-None. See `unmeasured`. Recount with `escape-lens/` in agent-evals once about 40 new review escapes have landed.
+None. See `unmeasured`. The escape skills' `docs` class is its own change file of the same date; it makes the share readable.
 
 ## Back-out
 

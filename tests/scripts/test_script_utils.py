@@ -416,6 +416,46 @@ class DirectoryRelativeToTest(unittest.TestCase):
         self.assertEqual("", script_utils.directory_relative_to(root, root))
 
 
+class IsExecutableFileInsideTest(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = pathlib.Path(directory.name) / "root"
+        (self.root / "bin").mkdir(parents=True)
+
+    def make_file(self, path, mode):
+        path.write_text("#!/bin/sh\n")
+        path.chmod(mode)
+        return path
+
+    def test_an_executable_file_under_the_root_is_one_by_a_relative_or_absolute_path(self):
+        tool = self.make_file(self.root / "bin" / "tool", 0o755)
+
+        for path in ("bin/tool", "./bin/tool", "bin/../bin/tool", str(tool)):
+            with self.subTest(path=path):
+                self.assertTrue(script_utils.is_executable_file_inside(self.root, path))
+
+    def test_the_root_may_be_given_as_text(self):
+        self.make_file(self.root / "bin" / "tool", 0o755)
+
+        self.assertTrue(script_utils.is_executable_file_inside(str(self.root), "bin/tool"))
+
+    def test_a_file_without_the_execute_bit_a_folder_and_a_missing_file_are_not_one(self):
+        self.make_file(self.root / "bin" / "plain", 0o644)
+
+        for path in ("bin/plain", "bin", "bin/missing"):
+            with self.subTest(path=path):
+                self.assertFalse(script_utils.is_executable_file_inside(self.root, path))
+
+    def test_a_path_that_leaves_the_root_by_dots_by_a_link_or_by_an_absolute_path_is_not_one(self):
+        outside = self.make_file(self.root.parent / "outside-tool", 0o755)
+        (self.root / "bin" / "link").symlink_to(outside)
+
+        for path in ("../outside-tool", "bin/link", str(outside)):
+            with self.subTest(path=path):
+                self.assertFalse(script_utils.is_executable_file_inside(self.root, path))
+
+
 class InsideGitWorkTreeTest(unittest.TestCase):
     def folder(self):
         tempDir = tempfile.TemporaryDirectory()
@@ -499,6 +539,94 @@ class InsideGitWorkTreeTest(unittest.TestCase):
         self.assertFalse(script_utils.inside_git_work_tree(str(hook)))
         with unittest.mock.patch.dict(os.environ, {"PATH": str(self.folder())}):
             self.assertFalse(script_utils.inside_git_work_tree(str(hook)))
+
+
+class LeadingEnvAssignmentsTest(unittest.TestCase):
+    def test_a_line_gives_the_assignments_it_starts_with_as_written(self):
+        self.assertEqual(["A=1", "B=/x/y.py"], script_utils.leading_env_assignments(["A=1 B=/x/y.py cargo test"]))
+
+    def test_a_quoted_value_with_spaces_is_kept_whole(self):
+        self.assertEqual(['GREETING="a b"'], script_utils.leading_env_assignments(['GREETING="a b" bash -c true']))
+
+    def test_the_first_line_to_set_a_name_decides_its_value_and_order_is_first_seen(self):
+        lines = ["B=1 make", "A=2 make", "B=3 make"]
+
+        self.assertEqual(["B=1", "A=2"], script_utils.leading_env_assignments(lines))
+
+    def test_a_line_with_no_leading_assignment_or_only_an_assignment_sets_nothing(self):
+        lines = ["cargo test", "echo A=1", "A=1", "  ", ""]
+
+        self.assertEqual([], script_utils.leading_env_assignments(lines))
+
+    def test_an_assignment_after_the_command_is_not_a_leading_one(self):
+        self.assertEqual([], script_utils.leading_env_assignments(["cargo test A=1", "cargo test A=1 --quiet"]))
+
+    def test_no_lines_give_no_assignments(self):
+        self.assertEqual([], script_utils.leading_env_assignments([]))
+
+    def test_an_assignment_whose_value_the_shell_would_run_or_expand_is_not_a_setting(self):
+        lines = ['n=$(ledger count) && test "$n" = 3', "S=...; cargo test", "PATH=/x/bin:$PATH cargo test",
+                 "T=$(find . -name x) cargo test", "Q=`date` cargo test", "A=1&&cargo test", "B=x|cargo test",
+                 "C=<in cargo test", 'D="a $HOME" cargo test', "E='a;b' cargo test", "F=1 && cargo test",
+                 "G=1 ; cargo test", "H=1 | cat", "I=1 # note", "J=1 > out.txt", "K=1 (cargo test)", "L=1 {cargo test}",
+                 "M=1 ! cargo test", 'N="x\\" cmd"', 'O="a\\b" cargo test', "X=~/a cargo test",
+                 "X=a:~/b cargo test"]
+
+        self.assertEqual([], script_utils.leading_env_assignments(lines))
+
+    def test_a_literal_assignment_followed_by_one_the_shell_would_expand_gives_nothing(self):
+        self.assertEqual([], script_utils.leading_env_assignments(["A=1 B=$(x) cargo test"]))
+
+    def test_a_quoted_literal_value_and_a_path_value_are_settings(self):
+        lines = ['LEDGER_ORACLE="on" cargo test', "ROOT='/x/y z' cargo test", "HOOK=/home/u/dotfiles/a.sh bash t.sh"]
+
+        self.assertEqual(['LEDGER_ORACLE="on"', "ROOT='/x/y z'", "HOOK=/home/u/dotfiles/a.sh"],
+                         script_utils.leading_env_assignments(lines))
+
+    def test_a_span_of_only_assignments_is_prose_not_a_setting(self):
+        self.assertEqual([], script_utils.leading_env_assignments(["src=index pass=done", "src=index", "src=index ", "A=1  "]))
+
+    def test_a_span_of_assignments_then_a_word_gives_the_assignments(self):
+        self.assertEqual(["src=index"], script_utils.leading_env_assignments(["src=index pass"]))
+
+
+class FirstCommandWordTest(unittest.TestCase):
+    def test_the_word_after_the_leading_assignments_is_the_command(self):
+        self.assertEqual("RUN", script_utils.first_command_word("FOO=1 RUN x"))
+        self.assertEqual("cargo", script_utils.first_command_word("A=1 B='x y' cargo test"))
+        self.assertEqual("npm", script_utils.first_command_word("  npm test "))
+        self.assertEqual("cargo", script_utils.first_command_word("CARGO_BUILD_JOBS=4 cargo test --lib a::b"))
+        self.assertEqual(["CARGO_BUILD_JOBS=4"], script_utils.leading_env_assignments(
+            ["CARGO_BUILD_JOBS=4 cargo test --test side_streams"]))
+
+    def test_a_command_of_only_blanks_has_no_first_word(self):
+        self.assertEqual("", script_utils.first_command_word("   "))
+
+    def test_the_command_after_an_assignment_that_runs_or_expands_something_is_the_command(self):
+        commands = {"T=$(find . -name x) cargo test": "cargo",
+                    "LEDGER_REAL_DOTFILES=$HOME/dotfiles cargo test --test x": "cargo",
+                    "PATH=/x/bin:$PATH cargo test": "cargo",
+                    'DATABASE_URL="$TEST_DB" pytest -q': "pytest",
+                    "A=1 B=$(x) C='y z' make all": "make"}
+        for command, word in commands.items():
+            with self.subTest(command=command):
+                self.assertEqual(word, script_utils.first_command_word(command))
+
+    def test_an_assignment_followed_by_a_control_operator_has_no_command_after_it(self):
+        for command in ("A=1 && cargo test", "A=1 ; cargo test", "A=1 | cat", "A=1 # note", "S=...; cargo test"):
+            with self.subTest(command=command):
+                self.assertEqual(command, script_utils.without_leading_env_assignments(command))
+
+    def test_the_command_after_the_assignments_is_given_back(self):
+        self.assertEqual("npm test", script_utils.without_leading_env_assignments(" CI=1 npm test"))
+        self.assertEqual("npm test", script_utils.without_leading_env_assignments("npm test"))
+        self.assertEqual("cargo test", script_utils.without_leading_env_assignments("PATH=/x:$PATH A=\"$B\" cargo test"))
+
+
+class BacktickedSpansTest(unittest.TestCase):
+    def test_backticked_spans_are_the_text_between_backticks_in_order(self):
+        self.assertEqual(["a b", "c"], script_utils.backticked_spans("x `a b` y `c` z"))
+        self.assertEqual([], script_utils.backticked_spans("no code here"))
 
 
 if __name__ == "__main__":

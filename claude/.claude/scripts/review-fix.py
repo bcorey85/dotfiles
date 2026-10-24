@@ -19,7 +19,7 @@ renders the packet, logs the rows, posts the Aikido replies, and prints what the
   review-fix.py escape --escape "..."...   log escape rows from the saved packet state (fix, repeatable)
   review-fix.py asks-done <outcome>...   one outcome per ask, in order: accepted | rejected | modified, optional
                                          ":<one line note>" after it, accepted and not stored. Logs one row per ask, once.
-  review-fix.py decide <adopt|keep> --by <user|session> --ruling "<the words>" [--plan <path>]
+  review-fix.py decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>" [--plan <path>]
                                          Only --by user is the user's own word.
   review-fix.py decide discuss          print the decide commands for a plan-impact ruling and record nothing.
 
@@ -50,7 +50,7 @@ PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
 DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
 DECIDE_SCRIPT = "python3 ~/.claude/scripts/review-fix.py"
 PLAN_ARG_NOTE = "--plan <the plan path, when the handoff names one>"
-DECIDE_USAGE = f'decide <adopt|keep> --by <user|session> --ruling "<the user\'s answer>" {PLAN_ARG_NOTE}'
+DECIDE_USAGE = f'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>" {PLAN_ARG_NOTE}'
 DECIDE_BY_NOTE = ("If the user told you to make the call yourself, or you rule without asking, pass `--by session` in "
                   "place of `--by user`. A session ruling never changes the acceptance criteria.")
 MARK_CLEAN = "~/.claude/scripts/review-gate-mark clean"
@@ -253,7 +253,7 @@ def present_plan_impact(packet, state):
          "found, then what changes, taken from this block:",
          packet["plan_impact"],
          f"Options, in this order: {' / '.join(PLAN_IMPACT_OPTIONS)}.",
-         f"Then run: {DECIDE_SCRIPT} decide <adopt|keep> --by user --ruling \"<the user's answer>\" "
+         f"Then run: {DECIDE_SCRIPT} decide <adopt|keep> --by user --ruling \"<the decision in one line>\" "
          f"{PLAN_ARG_NOTE}",
          DECIDE_BY_NOTE,
          f"Counters held for the re-dispatch: iter={packet['iter']} spec_iter={packet['spec_iter'] if packet['spec_iter'] is not None else 'absent'}")
@@ -630,7 +630,7 @@ def append_plan_deviation(planPath, entry):
 
 def discuss_commands():
     commands = []
-    for by, words in (("user", "the user's answer"), ("session", "your reason")):
+    for by, words in (("user", "the decision in one line"), ("session", "your reason")):
         for decision in ("adopt", "keep"):
             commands.append(f'{DECIDE_SCRIPT} decide {decision} --by {by} --ruling "<{words}>" {PLAN_ARG_NOTE}')
     return commands

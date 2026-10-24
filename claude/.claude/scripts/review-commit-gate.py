@@ -2,23 +2,24 @@
 """A coder dispatch obligates /review before a commit.
 
   PostToolUse(Agent): a coder dispatch marks the session dirty.
-  PreToolUse(Bash):   `git commit` while dirty asks the user to confirm; `review-gate-mark clean|dirty` records
-                      that state. `clean` is denied unless this session's latest stored review-loop hand-back
-                      (handback.py) is converged or deferred.
+  PreToolUse(Bash):   `git commit` while dirty is denied, with the reason telling the session to run /review and
+                      commit after it converges; `review-gate-mark clean|dirty` records that state. `clean` is
+                      denied unless this session's latest stored review-loop hand-back (handback.py) is converged
+                      or deferred.
 
-A dirty commit that ships only notes does not ask. The commit passes when every path it can ship is a Markdown file
+A dirty commit that ships only notes is not denied. The commit passes when every path it can ship is a Markdown file
 under the repo's top-level docs/ folder: the paths already staged (`git diff --cached`, run in the hook input's
 cwd), every `git add` pathspec in the command, and every commit pathspec. Each pathspec must name one file
-literally: a folder, `.`, a glob, `~`, `$` or a `:` magic pathspec asks. It asks when the command can stage or pick
-more than that, or when the hook cannot tell which repo or files it uses:
+literally: a folder, `.`, a glob, `~`, `$` or a `:` magic pathspec is denied. It is denied when the command can
+stage or pick more than that, or when the hook cannot tell which repo or files it uses:
   - `git add` with any option except `--`
   - `git commit` with an option other than the plain flags and message options it knows, so `-a`, `--all`, `-i`,
-    `--include`, `--amend` and `-o`/`--only` with no pathspec all ask
+    `--include`, `--amend` and `-o`/`--only` with no pathspec are all denied
   - any command that is not git and not echo, printf, true, pwd or ls (so `cd`, `env`, `time`, a group, a function,
     a path to git, an assignment before a command), `git -C` or another git option before the subcommand, a git
-    subcommand other than add, commit, status, diff, log or show
+    subcommand other than add, commit, status, diff, log, show or rev-parse
   - a word with `$` or a backtick, unless the whole word is a quoted-heredoc message `$(cat <<'X' ... X)`
-  - a status, diff, log or show with a `--output` option, since it writes a file
+  - a status, diff, log, show or rev-parse with a `--output` option, since it writes a file
   - an output redirection (`>`, `>>`, `&>`, `n>`) whose target is not /dev/null or a file-descriptor copy (`2>&1`),
     since it can rewrite a hook or the index; an input redirection is fine
   - no `git commit` in the command, or more than one
@@ -30,10 +31,10 @@ substitution), then `commit` appears in it, or when a simple command runs git (a
 `env git` or a path counts), with any global options, and then `commit`. A global option the hook does not know may
 take a value, so `commit` anywhere after it counts. A command shlex cannot read counts when `git`, then only
 option-like words with an optional value each, then `commit` appears in it.
-The session stays dirty; a later commit that ships code asks again.
+The session stays dirty; a later commit that ships code is denied again.
 
 State: ~/.claude/state/review-gate/<session>. Hook JSON in, one permissionDecision line out, exit 0. On an internal
-error PreToolUse asks; PostToolUse stays silent.
+error PreToolUse asks the user; PostToolUse stays silent.
 """
 import json
 import os
@@ -61,7 +62,7 @@ DOCS_FOLDER = "docs/"
 NOTES_SUFFIX = ".md"
 # Characters a shell or git would expand in a pathspec, and a newline.
 EXPANDING_CHARS = set("*?[]{}$`~\\\n")
-READ_ONLY_GIT = ("status", "diff", "log", "show")
+READ_ONLY_GIT = ("status", "diff", "log", "show", "rev-parse")
 READ_ONLY_PROGRAMS = ("echo", "printf", "true", "pwd", "ls")
 # A message word `$(cat <<'X'` + body + `X` + `)` runs nothing: the body is quoted and ends at the first line X.
 HEREDOC_MESSAGE = re.compile(r"\$\(cat <<'(?P<tag>[A-Za-z_]\w*)'\n(?:(?!(?P=tag)\n).*\n)*(?P=tag)\n\)")
@@ -84,10 +85,6 @@ COMMIT_VALUE_OPTIONS = {"--message", "--file", "--author", "--date", "--trailer"
 COMMIT_VALUE_LETTERS = "mFCct"
 
 
-class Ask(Exception):
-    pass
-
-
 class Deny(Exception):
     pass
 
@@ -103,10 +100,6 @@ def field(root, *keys, **options):
     if "default" in options and not truthy(value):
         return options["default"]
     return jq_str(value)
-
-
-def emit_ask(reason):
-    hook_input.emit_decision("ask", reason)
 
 
 def prune_old(state_dir):
@@ -353,8 +346,11 @@ def run(raw, state):
                 return
             if ships_only_notes(command, field(root, "cwd")):
                 return
-            raise Ask("[review-commit-gate] Coder work from this session has no converged /review. Allow to "
-                      "commit anyway, or deny and run /review.")
+            raise Deny("[review-commit-gate] Coder work from this session has no converged /review. Run /review on "
+                       "the coder work and commit after it converges. If the commit ships only Markdown files under "
+                       "the repo's top-level docs/ folder, run it as a plain `git commit` (with `git add` of single "
+                       "named files if needed) from the repo root in its own Bash call, with no `cd`, `env` or "
+                       "`git -C`, because the gate passes that form.")
         marked = MARK.search(command)
         if marked:
             reason = None
@@ -404,8 +400,6 @@ def main():
     rc = None
     try:
         run(sys.stdin.buffer.read().decode("utf-8", "replace"), state)
-    except Ask as asked:
-        emit_ask(str(asked))
     except Deny as denied:
         hook_input.emit_decision("deny", str(denied))
     except JqError as error:
@@ -416,7 +410,8 @@ def main():
         return 0
     if state["event"] == "PostToolUse":
         return rc
-    emit_ask("[review-commit-gate] internal error (exit %d). Allow to run the command anyway." % rc)
+    hook_input.emit_decision("ask",
+                             "[review-commit-gate] internal error (exit %d). Allow to run the command anyway." % rc)
     return 0
 
 

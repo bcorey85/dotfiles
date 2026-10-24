@@ -55,7 +55,9 @@ for stubName in ("scripts/log-scan", "skills/review/log-review-finding"):
     stubFile.chmod(0o755)
 GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
            "CODE_STEP_CLAUDE_DIR": str(CLAUDE_STUB), "CODE_STEP_WAIT_SECONDS": "0", "HOME": str(TMP_ROOT / "home"),
-           "CLAUDE_CODE_SESSION_ID": "sess-termination"}
+           "CLAUDE_CODE_SESSION_ID": "sess-termination",
+           # The explorer makes no Agent calls and takes minutes: no dispatch may age into the launch grace period.
+           "CODE_STEP_LAUNCH_SECONDS": "1000000"}
 NO_ROW_YET_PRESETS = {"CODE_STEP_WAIT_SECONDS": "0.2", "CODE_STEP_POLL_SECONDS": "0.05"}
 
 # code-step.py reads CODE_STEP_CLAUDE_DIR once, at import. Set it only while the module loads, so the real log

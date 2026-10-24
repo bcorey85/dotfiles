@@ -234,6 +234,42 @@ class VerifyBranchBase(unittest.TestCase):
 
 
 class PrepTest(VerifyBranchBase):
+    GATED_SPEC = SPEC + ("\n## Phase 1: Work\n\n#### Automated Verification:\n\n"
+                         "- [ ] **Test-verified**: passes - `LEDGER_EDIT_WATCH_PY=/x/edit_watch.py cargo test`\n")
+
+    def verifier_prompt(self, out):
+        return out.split("STEP 2: dispatch Agent subagent_type=plan-verifier", 1)[1]
+
+    def test_the_verifier_prompt_carries_the_gate_variables_the_plan_commands_start_with(self):
+        self.task_dir(spec=self.GATED_SPEC)
+
+        done = self.prep()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        prompt = self.verifier_prompt(done.stdout)
+        self.assertIn("  gate-env: LEDGER_EDIT_WATCH_PY=/x/edit_watch.py", prompt)
+        self.assertIn("Put these variables before every test, check or build command you run.", prompt)
+        self.assertEqual(["LEDGER_EDIT_WATCH_PY=/x/edit_watch.py"], self.context()["gateEnv"])
+
+    def test_the_code_review_prompt_carries_the_gate_variables_too(self):
+        self.task_dir(spec=self.GATED_SPEC)
+
+        done = self.prep()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        reviewStep = done.stdout.split("STEP 1:", 1)[1].split("STEP 2:", 1)[0]
+        self.assertIn("subagent_type=code-reviewer", reviewStep)
+        self.assertIn("  gate-env: LEDGER_EDIT_WATCH_PY=/x/edit_watch.py", reviewStep)
+        self.assertIn("Put these variables before every test, check or build command you run.", reviewStep)
+
+    def test_the_verifier_prompt_has_no_gate_env_line_when_no_plan_command_sets_a_variable(self):
+        self.task_dir()
+
+        done = self.prep()
+
+        self.assertNotIn("gate-env:", done.stdout)
+        self.assertEqual([], self.context()["gateEnv"])
+
     def test_task_dir_prints_review_step_then_verifier_payload(self):
         self.task_dir()
         done = self.prep()

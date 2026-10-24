@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -10,6 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
+import unittest.mock
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 REAL_CLAUDE = pathlib.Path(os.environ.get("CODE_STEP_REAL_CLAUDE") or REPO_ROOT / "claude" / ".claude")
@@ -250,6 +252,8 @@ class CodeStepTest(unittest.TestCase):
 
         gate = json.loads((self.repo / ".git/coder-gate.json").read_text())
         self.assertEqual(1, gate["commands"].count("cd crate && cargo clippy --all-targets -- -D warnings"))
+        self.assertEqual(["cd crate && cargo test --lib --bins"],
+                         [command for command in gate["commands"] if "cargo test" in command])
         self.assertIn("cd backend && npm run typecheck", gate["commands"])
 
     def test_gate_runs_clippy_without_a_cd_prefix_when_the_phase_names_only_the_root_cargo_manifest(self):
@@ -261,6 +265,149 @@ class CodeStepTest(unittest.TestCase):
 
         gate = json.loads((self.repo / ".git/coder-gate.json").read_text())
         self.assertEqual(1, gate["commands"].count("cargo clippy --all-targets -- -D warnings"))
+
+    def test_gate_runs_only_the_rust_tests_of_the_named_files_and_sets_no_cargo_variable(self):
+        (self.repo / "crate/src").mkdir(parents=True)
+        (self.repo / "crate/tests").mkdir()
+        (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
+        (self.repo / "crate/src/lib.rs").write_text("")
+        rustFiles = "**File**: `crate/src/store/query.rs`\n**File**: `crate/tests/side_streams.rs`"
+        (self.repo / self.plan).write_text(self.plan_text().replace("**File**: `backend/src/orders.test.ts`", rustFiles))
+
+        self.start_phase_one()
+
+        gate = json.loads((self.repo / ".git/coder-gate.json").read_text())
+        self.assertEqual(["cd crate && cargo clippy --all-targets -- -D warnings",
+                          "cd crate && cargo test --lib --bins",
+                          "cd crate && cargo test --test side_streams"],
+                         [command for command in gate["commands"] if "cargo" in command])
+
+    def test_cargo_tests_are_the_test_target_binary_or_library_of_each_named_rust_file(self):
+        (self.repo / "crate/src/a").mkdir(parents=True)
+        (self.repo / "crate/tests/common").mkdir(parents=True)
+        (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
+        (self.repo / "crate/tests/side_streams").mkdir()
+        (self.repo / "crate/src/lib.rs").write_text("")
+        (self.repo / "crate/tests/side_streams/main.rs").write_text("")
+        cases = {
+            "crate/tests/side_streams.rs": "cargo test --test side_streams",
+            "crate/tests/side_streams/main.rs": "cargo test --test side_streams",
+            "crate/tests/side_streams/helper.rs": "cargo test --test side_streams",
+            "crate/tests/side_streams/deep/helper.rs": "cargo test --test side_streams",
+            "crate/tests/common/mod.rs": "cargo test --tests",
+            "crate/tests/common/deep/helper.rs": "cargo test --tests",
+            "crate/src/a/b.rs": "cargo test --lib --bins",
+            "crate/src/a/mod.rs": "cargo test --lib --bins",
+            "crate/src/a.rs": "cargo test --lib --bins",
+            "crate/src/a/b/c.rs": "cargo test --lib --bins",
+            "crate/src/bin.rs": "cargo test --lib --bins",
+            "crate/src/lib.rs": "cargo test --lib --bins",
+            "crate/src/main.rs": "cargo test --lib --bins",
+            "crate/src/bin/tool.rs": "cargo test --bin tool",
+            "crate/src/bin/tool/main.rs": "cargo test --bin tool",
+            "crate/src/bin/tool/helper.rs": "cargo test --bin tool",
+            "crate/src/bin/tool/deep/main.rs": "cargo test --bin tool",
+            "crate/benches/speed.rs": None,
+        }
+        for path, expected in cases.items():
+            with self.subTest(path=path):
+                clippy = "cd crate && cargo clippy --all-targets -- -D warnings"
+                wanted = [clippy] + ([f"cd crate && {expected}"] if expected else [])
+
+                self.assertEqual(wanted, code_step.cargo_commands(self.repo, [path]))
+
+    def test_cargo_commands_are_merged_per_crate_without_duplicates_and_never_run_a_whole_crate(self):
+        for crate in ("one", "two"):
+            (self.repo / crate / "src").mkdir(parents=True)
+            (self.repo / crate / "src/lib.rs").write_text("")
+            (self.repo / crate / "Cargo.toml").write_text(f'[package]\nname = "{crate}"\n')
+        paths = ["one/src/a.rs", "two/src/b.rs", "one/src/a.rs", "one/src/lib.rs", "one/Cargo.toml", "one/src/c.rs"]
+
+        commands = code_step.cargo_commands(self.repo, paths)
+
+        clippy = "cargo clippy --all-targets -- -D warnings"
+        self.assertEqual([f"cd one && {clippy}", "cd one && cargo test --lib --bins",
+                          f"cd two && {clippy}", "cd two && cargo test --lib --bins"], commands)
+
+    def test_a_shared_test_helper_change_runs_only_clippy_and_the_all_targets_test(self):
+        (self.repo / "crate/src").mkdir(parents=True)
+        (self.repo / "crate/tests/common").mkdir(parents=True)
+        (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
+        (self.repo / "crate/src/lib.rs").write_text("")
+        paths = ["crate/tests/side_streams.rs", "crate/src/a.rs", "crate/tests/common/mod.rs", "crate/src/bin/tool.rs",
+                 "crate/tests/orders.rs"]
+
+        commands = code_step.cargo_commands(self.repo, paths)
+
+        self.assertEqual(["cd crate && cargo clippy --all-targets -- -D warnings", "cd crate && cargo test --tests"],
+                         commands)
+        self.assertNotIn("cd crate && cargo test --lib --bins", commands)
+
+    def test_two_modules_of_one_library_crate_give_one_lib_test_command(self):
+        (self.repo / "lib/src/store").mkdir(parents=True)
+        (self.repo / "lib/src/lib.rs").write_text("")
+        (self.repo / "lib/Cargo.toml").write_text('[package]\nname = "lib"\n')
+
+        commands = code_step.cargo_commands(self.repo, ["lib/src/store/query.rs", "lib/src/orders.rs"])
+
+        self.assertEqual(["cd lib && cargo clippy --all-targets -- -D warnings", "cd lib && cargo test --lib --bins"],
+                         commands)
+
+    def test_a_change_to_the_library_root_runs_the_lib_tests(self):
+        (self.repo / "lib/src").mkdir(parents=True)
+        (self.repo / "lib/src/lib.rs").write_text("")
+        (self.repo / "lib/Cargo.toml").write_text('[package]\nname = "lib"\n')
+
+        commands = code_step.cargo_commands(self.repo, ["lib/src/lib.rs"])
+
+        self.assertEqual(["cd lib && cargo clippy --all-targets -- -D warnings", "cd lib && cargo test --lib --bins"],
+                         commands)
+
+    def test_a_named_binary_file_in_a_library_crate_runs_only_that_binary(self):
+        (self.repo / "both/src/bin").mkdir(parents=True)
+        (self.repo / "both/src/lib.rs").write_text("")
+        (self.repo / "both/Cargo.toml").write_text('[package]\nname = "both"\n')
+
+        commands = code_step.cargo_commands(self.repo, ["both/src/bin/tool.rs"])
+
+        self.assertEqual(["cd both && cargo clippy --all-targets -- -D warnings", "cd both && cargo test --bin tool"],
+                         commands)
+
+    def test_a_crate_with_no_library_runs_every_file_under_src_with_bins_once(self):
+        (self.repo / "tool/src/store").mkdir(parents=True)
+        (self.repo / "tool/src/main.rs").write_text("")
+        (self.repo / "tool/Cargo.toml").write_text('[package]\nname = "tool"\n')
+
+        commands = code_step.cargo_commands(self.repo, ["tool/src/store/query.rs", "tool/src/store/mod.rs",
+                                                        "tool/src/main.rs"])
+
+        self.assertEqual(["cd tool && cargo clippy --all-targets -- -D warnings", "cd tool && cargo test --bins"],
+                         commands)
+
+    def test_a_crate_with_a_library_and_a_binary_runs_a_src_file_with_lib_and_bins(self):
+        (self.repo / "both/src").mkdir(parents=True)
+        (self.repo / "both/src/lib.rs").write_text("")
+        (self.repo / "both/src/main.rs").write_text("")
+        (self.repo / "both/Cargo.toml").write_text('[package]\nname = "both"\n')
+
+        commands = code_step.cargo_commands(self.repo, ["both/src/store.rs", "both/src/main.rs"])
+
+        self.assertEqual(["cd both && cargo clippy --all-targets -- -D warnings", "cd both && cargo test --lib --bins"],
+                         commands)
+
+    def test_a_manifest_alone_or_a_file_outside_src_and_tests_gives_clippy_and_no_test(self):
+        (self.repo / "Cargo.toml").write_text('[package]\nname = "root-crate"\n')
+        (self.repo / "src").mkdir()
+
+        commands = code_step.cargo_commands(self.repo, ["Cargo.toml", "benches/speed.rs", "build.rs"])
+
+        self.assertEqual(["cargo clippy --all-targets -- -D warnings"], commands)
+
+    def test_a_verification_item_may_start_with_an_environment_setting(self):
+        item = "- [ ] **Tests**: the streams pass - `CARGO_BUILD_JOBS=4 cargo test --test side_streams`"
+
+        self.assertEqual("CARGO_BUILD_JOBS=4 cargo test --test side_streams", code_step.verification_command(item))
+        self.assertIsNone(code_step.verification_item_problem(item, self.repo))
 
     def test_gate_runs_no_cargo_command_when_the_phase_names_no_rust_file(self):
         (self.repo / "crate").mkdir()
@@ -314,9 +461,10 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("ACTION: ask-user", out)
         self.assertIn("## Question for the user", self.said())
         for option in ("Adopt plan change", "Keep plan as written", "Discuss",
-                       "`decide adopt --by user --ruling \"<the user's answer>\"`",
-                       "`decide keep --by user --ruling \"<the user's answer>\"`",
-                       "pass `--by session`", "never changes the acceptance criteria"):
+                       "`decide adopt --by user --ruling \"<the decision in one line>\"`",
+                       "`decide keep --by user --ruling \"<the decision in one line>\"`",
+                       "pass `--by session`", "never changes the acceptance criteria",
+                       "with the ruling in one line, in your own words, as the --ruling text. Do not quote the user."):
             self.assertIn(option, self.said())
         self.assertNotIn("AskUserQuestion", out + self.said())
         self.assertNotIn("AGENT: review-loop", out)
@@ -354,7 +502,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("now states the ruling", self.said())
 
     CRITERIA = "docs/plans/orders/acceptance-criteria.md"
-    DECIDE_USAGE = 'decide <adopt|keep> --by <user|session> --ruling "<the user\'s answer>"'
+    DECIDE_USAGE = 'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"'
 
     def criteria_text(self):
         return (self.repo / self.CRITERIA).read_text()
@@ -406,14 +554,27 @@ class CodeStepTest(unittest.TestCase):
         ruling = self.state()["ruling"]
         self.assertTrue(ruling["byUser"])
         self.assertEqual("Pat Signer", ruling["by"])
-        self.assertIn(f"Signed off by Pat Signer, {ruling['at']}", out)
+        self.assertIn(f"`Signed off by Pat Signer, {ruling['at']}: <the change in one line>`", out)
         self.assertIn(f"and its acceptance criteria file {self.CRITERIA}", out)
         self.assertIn("The user adopted the plan change. Dispatch a coder to rewrite the plan steps and acceptance "
                       "criteria it contradicts.", out.split("-----BEGIN PROMPT-----")[0])
         self.assertNotIn("Do not edit", out)
         self.assertNotIn("stay as written", out)
-        self.assertIn("The user's words:", self.plan_text())
+        self.assertIn("  The ruling: drop the header\n\n  The disagreement:", self.plan_text())
+        self.assertNotIn("  > ", self.plan_text())
+        self.assertNotIn("user's words", self.plan_text())
+        self.assertNotIn("user's words", out)
+        self.assertIn("The user ruled (Pat Signer, ", out)
+        self.assertIn("):\n\ndrop the header", out)
+        self.assertIn("The ruling:\n  drop the header", self.state()["planImpact"])
         self.assertIn("RESOLVED: the user ruled on this disagreement.", self.state()["planImpact"])
+
+    def test_a_ruling_of_several_lines_is_recorded_on_one_line_without_a_quote_block(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "keep", "--by", "session", "--ruling", "keep the header\n  as it is")
+
+        self.assertIn("  The ruling: keep the header as it is\n", self.plan_text())
+        self.assertNotIn(">", self.plan_text().split("## Plan Deviations", 1)[1].split("The disagreement:", 1)[0])
 
     def test_session_adopt_keeps_the_criteria_out_of_the_edit_scope(self):
         self.coder_round(self.IMPACT_REPORT)
@@ -428,8 +589,10 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("and its acceptance criteria file", out)
         self.assertNotIn("Rewrite each criterion", out)
         self.assertIn("The acceptance criteria stay as written", out)
+        self.assertIn("The ruling (the session, not the user, ", out)
+        self.assertNotIn("The user ruled", out)
         self.assertIn("Ruled by the session, not the user", self.plan_text())
-        self.assertIn("The ruling's words:", self.plan_text())
+        self.assertIn("  The ruling: my own call", self.plan_text())
         self.assertNotIn("The user's words:", self.plan_text())
         planImpact = self.state()["planImpact"]
         self.assertIn("RESOLVED: the session ruled on this disagreement, not the user.", planImpact)
@@ -980,7 +1143,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("acceptance criteria it contradicts", outsideThePrompt)
         self.assertIn("The plan change was adopted by the pre-set decision. Dispatch a coder to rewrite the plan "
                       "steps it contradicts. The acceptance criteria do not change.", outsideThePrompt)
-        self.assertIn("The ruling's words:", self.plan_text())
+        self.assertIn("  The ruling: pre-set decision 'adopt'; no user was asked", self.plan_text())
         self.assertIn("RESOLVED: the pre-set decision ruled on this disagreement, not the user.",
                       self.state()["planImpact"])
         (self.repo / self.CRITERIA).write_text("AC-1 rewritten\n")
@@ -2824,12 +2987,12 @@ class CodeStepTest(unittest.TestCase):
                          code_step.verification_command(item))
 
     def test_a_phase_whose_verification_items_yield_no_command_is_not_marked_done(self):
-        self.replace_phase_one_verification("- [ ] **Check**: the streams pass, see the log")
-        self.coder_round()
+        self.coder_round_then_edit_verification("- [ ] **Check**: the streams pass, see the log")
         self.hook("review-loop", self.LOOP_OK)
         out = self.step("after-review")
         self.assertIn("ACTION: stop", out)
-        self.assertIn("no command could be read", out)
+        self.assertIn("nothing was run", out)
+        self.assertIn("see the log - it has no backticked command", out)
         self.assertIn("- [ ] Phase 1:", self.plan_text())
         self.assertEqual("stopped", self.state()["stage"])
 
@@ -3037,10 +3200,23 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertEqual("GREETING=\"a b\" bash -c 'echo hi'", code_step.verification_command(item))
 
-    def test_an_assignment_with_no_command_after_it_is_not_a_verification_command(self):
-        for item in ("- [ ] **Env**: set `PARITY_PATH=/x/y.py` first", "- [ ] **Env**: `PARITY_PATH=/x/y.py echo hi`"):
+    def test_an_assignment_followed_by_no_command_or_by_a_program_that_is_not_installed_is_not_a_verification_command(self):
+        for item in ("- [ ] **Env**: set `PARITY_PATH=/x/y.py` first", "- [ ] **Env**: `PARITY_PATH=/x/y.py nosuchprogram hi`"):
             with self.subTest(item=item):
                 self.assertIsNone(code_step.verification_command(item))
+
+    def test_an_assignment_that_expands_a_variable_or_runs_a_command_still_leads_to_the_command(self):
+        for command in ("LEDGER_REAL_DOTFILES=$HOME/dotfiles cargo test --test watch_parity",
+                        "PATH=/x/bin:$PATH cargo test", 'DATABASE_URL="$TEST_DB" pytest -q',
+                        "T=$(find . -name x) cargo test", "A=1 B=$HOME/x make all"):
+            with self.subTest(command=command):
+                self.assertTrue(code_step.COMMAND_START.match(command))
+                self.assertEqual(command, code_step.verification_command(f"- [ ] **Check**: passes - `{command}`"))
+
+    def test_an_assignment_followed_by_a_control_operator_is_not_a_command_start(self):
+        for span in ("A=1 && cargo test", "A=1 ; cargo test", "A=1 | cat", "A=1 # note"):
+            with self.subTest(span=span):
+                self.assertIsNone(code_step.COMMAND_START.match(span))
 
     def test_a_whole_suite_command_with_a_variable_prefix_is_still_skipped(self):
         section = "#### Automated Verification:\n\n- [ ] **All**: `CI=1 npm test`\n\n#### Manual Verification:\n"
@@ -3050,8 +3226,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual(([], ["CI=1 npm test"], []), (results, skipped, unparsed))
 
     def test_the_unparsed_verification_stop_names_tick_for_checks_that_cannot_be_automated(self):
-        self.replace_phase_one_verification("- [ ] **Check**: the streams pass, see the log")
-        self.coder_round()
+        self.coder_round_then_edit_verification("- [ ] **Check**: the streams pass, see the log")
         self.hook("review-loop", self.LOOP_OK)
         out = self.step("after-review")
         self.assertIn("`tick 1`", out)
@@ -3492,7 +3667,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("ACTION: stop", out)
         self.assertNotIn("AGENT:", out)
         self.assertIn("moved-without-deviation", out)
-        self.assertIn("(who, when, their words)", out)
+        self.assertIn("(who and when), and name Phase 2 and LED-16 in the same line.", out)
 
     # ---------- the phase-done line and the last-phase wording ----------
 
@@ -4031,6 +4206,479 @@ class CodeStepTest(unittest.TestCase):
         dispatches = self.events_named("dispatch")
         self.assertNotEqual(firstRun, self.state()["runId"])
         self.assertEqual([("d1", "sess-2")], [(dispatch["id"], dispatch["session_id"]) for dispatch in dispatches])
+
+    # ---------- the ask-user action names the real say file ----------
+
+    def real_say_file(self):
+        return (self.repo / ".git/code-step/say.md").resolve()
+
+    def test_the_ask_user_action_for_a_plan_impact_names_the_real_say_file(self):
+        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
+
+        out = self.coder_round(report)
+
+        self.assertIn("ACTION: ask-user", out)
+        self.assertIn(f"The question for the user is in {self.real_say_file()}. Hand back.", out)
+        self.assertIn("## Question for the user", self.real_say_file().read_text())
+
+    def test_the_ask_user_action_for_review_asks_names_the_real_say_file(self):
+        self.coder_round()
+        asks = '  - {question: "q1", file_line: "backend/src/orders.ts:1", gate: code-reviewer}'
+        self.hook("review-loop", f"status: converged\niter: 1\nfixed: []\nask (for the user):\n{asks}")
+
+        out = self.step("after-review")
+
+        self.assertIn("ACTION: ask-user", out)
+        self.assertIn(f"The question for the user is in {self.real_say_file()}. Hand back.", out)
+
+    # ---------- a dispatch whose Agent call never left ----------
+
+    def age_dispatches(self, seconds):
+        eventsFile = self.repo / ".git/code-step/runs" / self.state()["runId"] / "events.jsonl"
+        rows = [json.loads(line) for line in eventsFile.read_text().splitlines()]
+        for row in rows:
+            row["ts"] -= seconds
+        eventsFile.write_text("".join(json.dumps(row) + "\n" for row in rows))
+
+    def test_a_wait_on_a_dispatch_with_no_launch_prints_the_dispatch_again(self):
+        self.begin_coder()
+        self.age_dispatches(120)
+        self.wait_env(5, "0.2")
+        started = time.monotonic()
+
+        out = self.step("after-coder")
+
+        self.assertLess(time.monotonic() - started, 3)
+        self.assertIn("ACTION: dispatch", out)
+        self.assertIn("AGENT: coder", out)
+        self.assertIn("Dispatch d1 was logged", out)
+        self.assertIn("no Agent call for it was launched", out)
+        self.assertEqual(1, len(self.events_named("dispatch")))
+        self.assertEqual(self.printed_prompt(out).rstrip(), pathlib.Path(
+            self.events_named("dispatch")[0]["prompt_file"]).read_text().rstrip())
+
+    def test_a_wait_on_a_review_dispatch_with_no_launch_prints_the_review_dispatch_again(self):
+        self.coder_round()
+        self.age_dispatches(120)
+        self.wait_env(5, "0.2")
+
+        out = self.step("after-review")
+
+        self.assertIn("ACTION: dispatch", out)
+        self.assertIn("AGENT: review-loop", out)
+        self.assertEqual(2, len(self.events_named("dispatch")))
+
+    def test_a_wait_on_a_launched_dispatch_keeps_waiting(self):
+        out = self.start_phase_one()
+        self.pass_coder_gate()
+        self.launch_agent(self.printed_prompt(out))
+        self.age_dispatches(120)
+        self.wait_env(1, "0.2")
+
+        waited = self.step("after-coder")
+
+        self.assertIn("ACTION: wait", waited)
+
+    def test_a_wait_on_a_fresh_dispatch_with_no_launch_keeps_waiting(self):
+        self.begin_coder()
+        self.wait_env(1, "0.2")
+
+        out = self.step("after-coder")
+
+        self.assertIn("ACTION: wait", out)
+
+    def test_a_wait_past_the_cap_on_a_dispatch_with_no_launch_stops_and_does_not_print_it_again(self):
+        self.begin_coder()
+        self.age_dispatches(5000)
+        self.set_state(dispatchAt=time.time() - 5000)
+        self.wait_env(1, "0.2")
+
+        out = self.step("after-coder")
+
+        self.assertIn("ACTION: stop", out)
+
+    def test_a_wait_does_not_print_again_a_dispatch_made_for_another_agent(self):
+        self.begin_coder()
+        eventsFile = self.repo / ".git/code-step/runs" / self.state()["runId"] / "events.jsonl"
+        rows = [json.loads(line) for line in eventsFile.read_text().splitlines()]
+        for row in rows:
+            if row["event"] == "dispatch":
+                row["agent_type"] = "review-loop"
+        eventsFile.write_text("".join(json.dumps(row) + "\n" for row in rows))
+        self.age_dispatches(120)
+        self.wait_env(1, "0.2")
+
+        out = self.step("after-coder")
+
+        self.assertIn("ACTION: wait", out)
+
+    def test_a_dispatch_output_repeats_the_action_and_the_agent_after_the_prompt(self):
+        out = self.start_phase_one()
+
+        tail = out.split("-----END PROMPT-----", 1)[1]
+
+        self.assertIn("ACTION: dispatch", tail)
+        self.assertIn("AGENT: coder", tail)
+        self.assertIn("MODEL:", tail)
+        self.assertIn("NEXT: right after the Agent call", tail)
+
+    def test_the_wait_ends_at_the_cap_and_not_at_the_end_of_the_wait_that_passes_it(self):
+        self.begin_coder()
+        self.set_state(dispatchAt=time.time() - 28)
+        self.wait_env(10, "0.2")
+        started = time.monotonic()
+
+        out = self.step("after-coder")
+
+        self.assertLess(time.monotonic() - started, 6)
+        self.assertIn("ACTION: stop", out)
+        self.assertEqual("stopped", self.state()["stage"])
+
+    # ---------- an Automated Verification item that cannot run ----------
+
+    def bad_item_plan(self, item):
+        old = "- [ ] **Prohibition**: no console.log - `git grep -n --untracked console.log -- backend/src/orders.ts`"
+        return self.plan_text().replace(old, item)
+
+    def test_plan_check_fails_an_item_that_starts_with_a_word_that_is_no_program(self):
+        text = self.bad_item_plan("- [ ] **Check**: the orders pass - `RUN npx vitest run`")
+        badLine = text.splitlines().index("- [ ] **Check**: the orders pass - `RUN npx vitest run`") + 1
+
+        result = self.plan_check(text)
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn(f":{badLine}:", result.stdout)
+        self.assertIn("it starts with `RUN`", result.stdout)
+        self.assertIn("one of three shapes", result.stdout)
+
+    def test_plan_check_fails_an_item_with_no_backticked_command(self):
+        text = self.bad_item_plan("- [ ] **Check**: the orders pass, see the log")
+
+        result = self.plan_check(text)
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("it has no backticked command and is not marked N/A", result.stdout)
+
+    def test_plan_check_passes_items_marked_n_a_and_commands_on_the_path_or_in_the_repo(self):
+        for item in ("- [ ] N/A - docs only", "- [ ] **Test-verified**: N/A on the machines; the suites stand.",
+                     "- [ ] **Check**: passes - `test -d backend`", "- [ ] **Check**: passes - `bash backend/package.json`"):
+            with self.subTest(item=item):
+                self.assertEqual(0, self.plan_check(self.bad_item_plan(item)).returncode)
+
+    def make_repo_script(self, relativePath, mode=0o755):
+        scriptFile = self.repo / relativePath
+        scriptFile.parent.mkdir(parents=True, exist_ok=True)
+        scriptFile.write_text("#!/bin/sh\n")
+        scriptFile.chmod(mode)
+        return scriptFile
+
+    def test_plan_check_passes_an_item_that_starts_with_an_executable_file_of_the_repo(self):
+        self.make_repo_script("check-orders")
+        self.make_repo_script("scripts/check-orders")
+
+        for span in ("./check-orders --all", "scripts/check-orders --all"):
+            with self.subTest(span=span):
+                text = self.bad_item_plan(f"- [ ] **Check**: the orders pass - `{span}`")
+
+                self.assertEqual(0, self.plan_check(text).returncode)
+
+    def test_plan_check_fails_an_item_that_starts_with_a_file_of_the_repo_that_is_not_executable(self):
+        self.make_repo_script("scripts/check-orders", 0o644)
+        text = self.bad_item_plan("- [ ] **Check**: the orders pass - `scripts/check-orders --all`")
+
+        self.assertEqual(1, self.plan_check(text).returncode)
+
+    def test_a_bare_word_is_never_a_file_of_the_repo(self):
+        self.make_repo_script("check-orders")
+        text = self.bad_item_plan("- [ ] **Check**: the orders pass - `check-orders --all`")
+
+        self.assertFalse(code_step.starts_like_a_program_here("check-orders --all", self.repo))
+        self.assertEqual(1, self.plan_check(text).returncode)
+
+    def test_a_line_that_names_a_path_program_and_then_holds_the_real_command_gives_the_real_command(self):
+        item = "- [ ] **Check**: with `ls -la` listing the files, `npm run build` exits 0."
+
+        self.assertEqual("npm run build", code_step.verification_command(item))
+
+    def test_a_program_of_the_path_needs_an_argument_to_be_a_fallback_command(self):
+        self.assertIsNone(code_step.verification_command("- [ ] **Check**: the `ls` program lists them"))
+        self.assertEqual("ls -la", code_step.verification_command("- [ ] **Check**: lists them - `ls -la`"))
+
+    def test_claude_and_yes_are_never_a_fallback_command(self):
+        for span in ("claude -p hello", "yes please", "FOO=1 claude --version"):
+            with self.subTest(span=span):
+                self.assertIsNone(code_step.verification_command(f"- [ ] **Check**: runs `{span}`"))
+
+    def test_a_program_that_never_ends_or_waits_for_input_is_never_a_fallback_command(self):
+        spans = ("watch -n 1 date", "top -b", "htop -d 5", "less notes.txt", "more notes.txt", "vi notes.txt",
+                 "vim notes.txt", "nano notes.txt", "sleep 5", "tail -f app.log", "tail -F app.log",
+                 "tail -n 5 -f app.log", "tail --follow app.log", "FOO=1 sleep 5", "/usr/bin/watch ls",
+                 "tail -Fn5 app.log", "tail -fn20 x")
+
+        with unittest.mock.patch.object(code_step.shutil, "which", return_value="/usr/bin/anything"):
+            for span in spans:
+                with self.subTest(span=span):
+                    self.assertFalse(code_step.starts_like_a_program_here(span, self.repo))
+
+    def test_tail_without_follow_is_a_fallback_command(self):
+        with unittest.mock.patch.object(code_step.shutil, "which", return_value="/usr/bin/tail"):
+            for span in ("tail -n 5 app.log", "tail app.log", "tail -c 20 app.log"):
+                with self.subTest(span=span):
+                    self.assertTrue(code_step.starts_like_a_program_here(span, self.repo))
+
+    def test_claude_and_yes_are_refused_by_a_path_to_them_too(self):
+        for span in ("/usr/bin/yes y", "/home/u/.local/bin/claude -p hi", "FOO=1 /usr/bin/yes y"):
+            with self.subTest(span=span):
+                self.assertFalse(code_step.starts_like_a_program_here(span, self.repo))
+                self.assertIsNone(code_step.verification_command(f"- [ ] **Check**: runs `{span}`", self.repo))
+
+    def test_a_file_outside_the_repo_is_not_a_repo_file_command(self):
+        outside = self.repo.parent / "outside-tool"
+        outside.write_text("#!/bin/sh\n")
+        outside.chmod(0o755)
+        self.addCleanup(outside.unlink)
+        insideLink = self.repo / "link-tool"
+        insideLink.symlink_to(outside)
+
+        for span in (f"../{outside.name} --x", "./link-tool --x"):
+            with self.subTest(span=span):
+                self.assertFalse(code_step.starts_like_a_program_here(span, self.repo))
+
+    def test_a_relative_path_is_never_looked_up_from_the_working_directory_as_a_path_program(self):
+        with unittest.mock.patch.object(code_step.shutil, "which", return_value="/anywhere/tool"):
+            self.assertFalse(code_step.starts_like_a_program_here("../tool --x", self.repo))
+            self.assertFalse(code_step.starts_like_a_program_here("sub/tool --x", self.repo))
+            self.assertTrue(code_step.starts_like_a_program_here("tool --x", self.repo))
+            self.assertTrue(code_step.starts_like_a_program_here("/opt/bin/tool --x", self.repo))
+
+    def test_a_file_inside_the_repo_by_a_path_that_goes_through_a_folder_is_a_repo_file_command(self):
+        (self.repo / "bin").mkdir()
+        tool = self.repo / "bin" / "tool"
+        tool.write_text("#!/bin/sh\n")
+        tool.chmod(0o755)
+
+        for span in ("bin/tool --x", "./bin/tool --x", "bin/../bin/tool --x", f"{tool} --x"):
+            with self.subTest(span=span):
+                self.assertTrue(code_step.starts_like_a_program_here(span, self.repo))
+
+    def test_the_write_time_check_applies_the_argument_and_program_rules_of_the_fallback(self):
+        for item in ("- [ ] **Check**: the `ls` program lists them", "- [ ] **Check**: asks `claude -p hello`",
+                     "- [ ] **Check**: runs `/usr/bin/yes y`"):
+            with self.subTest(item=item):
+                self.assertEqual(1, self.plan_check(self.bad_item_plan(item)).returncode)
+
+    def test_a_repo_file_is_a_command_only_when_it_is_executable(self):
+        checkFile = self.make_repo_script("scripts/check-orders", 0o644)
+        item = "- [ ] **Check**: the orders pass - `scripts/check-orders --all`"
+        notExecutable = code_step.verification_command(item, self.repo)
+        checkFile.chmod(0o755)
+        executable = code_step.verification_command(item, self.repo)
+
+        self.assertEqual((None, "scripts/check-orders --all"), (notExecutable, executable))
+
+    def test_the_item_problem_names_the_command_word_after_the_variable_assignments(self):
+        problem = code_step.verification_item_problem("- [ ] **Check**: the orders pass - `FOO=1 RUN x`", self.repo)
+
+        self.assertIn("it starts with `RUN`", problem)
+        self.assertNotIn("FOO=1", problem)
+
+    # ---------- an item that CI or a person runs ----------
+
+    def test_an_item_tagged_ci_verified_or_human_only_is_a_third_shape_in_any_case_or_markup(self):
+        for item in ("- [ ] CI-verified: push and watch the pipeline", "- [ ] **CI-verified**: the pipeline runs it",
+                     "- [ ] **ci-verified** - `gh run watch`", "- [ ] Human-only: look at the page",
+                     "- [x] **Human-only:** open it", "- [ ] **Test-verified**: HUMAN-ONLY, a person looks"):
+            with self.subTest(item=item):
+                self.assertIsNotNone(code_step.plan_format.deferred_verification_tag(item))
+                self.assertIsNone(code_step.verification_item_problem(item, self.repo))
+                self.assertEqual(0, self.plan_check(self.bad_item_plan(item)).returncode)
+
+    def test_an_item_that_only_mentions_ci_verified_after_other_words_is_not_tagged(self):
+        item = "- [ ] **Check**: the orders pass, not CI-verified yet"
+
+        self.assertIsNone(code_step.plan_format.deferred_verification_tag(item))
+        self.assertIsNotNone(code_step.verification_item_problem(item, self.repo))
+
+    def test_an_item_tagged_for_ci_or_a_person_is_never_run_even_with_a_command_in_it(self):
+        section = ("#### Automated Verification:\n\n- [ ] **CI-verified**: the pipeline runs `touch ran-by-code-step`\n"
+                   "- [ ] Human-only: look at the page\n\n#### Manual Verification:\n")
+
+        self.assertEqual(([], [], []), code_step.run_verification_commands(self.repo, section))
+        self.assertFalse((self.repo / "ran-by-code-step").exists())
+
+    def test_a_not_applicable_item_is_never_run_even_with_a_command_in_it(self):
+        section = "#### Automated Verification:\n\n- [ ] N/A — nothing to run, not `touch ran-na-item`\n\n#### Manual Verification:\n"
+
+        self.assertEqual(([], [], []), code_step.run_verification_commands(self.repo, section))
+        self.assertFalse((self.repo / "ran-na-item").exists())
+
+    def test_deferred_items_are_listed_with_their_tag_in_file_order(self):
+        section = ("#### Automated Verification:\n\n- [ ] **CI-verified**: the pipeline runs it\n"
+                   "- [ ] **Check**: runs - `true now`\n- [ ] Human-only: look at the page\n")
+
+        self.assertEqual([("CI-verified", "**CI-verified**: the pipeline runs it"),
+                          ("human-only", "Human-only: look at the page")],
+                         code_step.deferred_verification_items(section))
+
+    def test_start_accepts_a_plan_with_an_item_tagged_ci_verified(self):
+        (self.repo / self.plan).write_text(self.bad_item_plan("- [ ] **CI-verified**: the pipeline runs it"))
+
+        out = self.start_phase_one()
+
+        self.assertIn("AGENT: coder", out)
+
+    def test_finish_phase_lists_the_items_it_did_not_run_and_marks_the_phase_done(self):
+        self.coder_round_then_edit_verification("- [ ] **Check**: runs - `test -d backend`\n"
+                                                "- [ ] **CI-verified**: push and watch the pipeline\n"
+                                                "- [ ] Human-only: look at the page")
+        self.hook("review-loop", self.LOOP_OK)
+
+        out = self.step("after-review")
+
+        self.assertNotIn("could not be run", out)
+        self.assertEqual("done", self.state()["stage"])
+        self.assertIn("not run here: CI-verified - **CI-verified**: push and watch the pipeline", out)
+        self.assertIn("not run here: human-only - Human-only: look at the page", out)
+        self.assertIn("1 command(s) green (test -d backend)", out)
+
+    def test_an_untagged_item_without_a_command_still_stops_even_when_others_are_tagged(self):
+        self.coder_round_then_edit_verification("- [ ] **CI-verified**: push and watch the pipeline\n"
+                                                "- [ ] **Check**: the streams pass, see the log")
+        self.hook("review-loop", self.LOOP_OK)
+
+        out = self.step("after-review")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("could not be run", out)
+        self.assertNotIn("CI-verified**: push and watch the pipeline - ", out)
+
+    def test_the_item_shape_text_names_the_three_shapes(self):
+        shape = code_step.VERIFICATION_ITEM_SHAPE
+
+        for text in ("one of three shapes", "N/A", "CI-verified", "Human-only", "executable file in the repo",
+                     "'- [ ] **Name**: what it checks - `npm test`'"):
+            self.assertIn(text, shape)
+        self.assertNotIn("``", shape)
+
+    def test_plan_check_leaves_a_done_phase_item_without_a_command_alone(self):
+        text = self.bad_item_plan("- [ ] **Check**: the orders pass, see the log").replace(
+            "- [ ] Phase 1: Walking skeleton", "- [x] Phase 1: Walking skeleton")
+
+        self.assertEqual(0, self.plan_check(text).returncode)
+
+    def test_plan_check_leaves_a_closing_phase_item_without_a_command_alone(self):
+        text = self.plan_text().replace("## Phase 4: Refactor pass\n\nSweep.", "## Phase 4: Refactor pass\n\nSweep.\n\n"
+                                        "#### Automated Verification:\n\n- [ ] Recap produced.\n")
+
+        self.assertEqual(0, self.plan_check(text).returncode)
+
+    def test_start_stops_on_an_item_that_cannot_run_and_names_its_line(self):
+        item = "- [ ] **Check**: the orders pass - `RUN npx vitest run`"
+        (self.repo / self.plan).write_text(self.bad_item_plan(item))
+        badLine = self.plan_text().splitlines().index(item) + 1
+
+        out = self.start_phase_one()
+
+        self.assertIn("ACTION: stop", out)
+        self.assertNotIn("AGENT: coder", out)
+        self.assertIn(f"{self.plan}:{badLine}:", out)
+
+    def test_the_plan_hook_exits_two_on_an_item_that_cannot_run(self):
+        self.start_phase_one()
+        item = "- [ ] **Check**: the orders pass - `RUN npx vitest run`"
+        (self.repo / self.plan).write_text(self.bad_item_plan(item))
+        badLine = self.plan_text().splitlines().index(item) + 1
+        event = {"cwd": str(self.repo), "tool_input": {"file_path": str(self.repo / self.plan)}}
+
+        result = run(self.repo, self.env, "plan-hook", stdin=json.dumps(event))
+
+        self.assertEqual(2, result.returncode)
+        self.assertIn(f"{self.plan}:{badLine}:", result.stderr)
+
+    def coder_round_then_edit_verification(self, lines):
+        # The plan is edited after the phase starts, as a coder would: `start` stops on an item that cannot run. The
+        # edit is taken as the phase text the coder worked from, so it does not send a second coder for added lines.
+        self.begin_coder()
+        self.replace_phase_one_verification(lines)
+        self.set_state(phaseText=code_step.phase_text(self.plan_text().splitlines(), "1"))
+        self.hook("coder", self.CODER_REPORT)
+        self.step("after-coder")
+
+    def test_a_stop_for_unrunnable_items_names_each_line_with_its_reason_when_other_commands_ran(self):
+        self.coder_round_then_edit_verification("- [ ] **Check**: runs - `test -d backend`\n"
+                                                "- [ ] **Check**: the streams pass, see the log\n"
+                                                "- [ ] **Check**: the orders pass - `RUN npx vitest run`")
+        self.hook("review-loop", self.LOOP_OK)
+
+        out = self.step("after-review")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("1 other command(s) ran", out)
+        self.assertIn("- [ ] **Check**: the streams pass, see the log - it has no backticked command", out)
+        self.assertIn("- [ ] **Check**: the orders pass - `RUN npx vitest run` - no backticked span starts with", out)
+        self.assertIn("one of three shapes", out)
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+
+    # ---------- the repo's gate environment variables ----------
+
+    def add_plan_with_gate(self, folder, command):
+        planDir = self.repo / "docs/plans" / folder
+        planDir.mkdir(parents=True)
+        (planDir / "spec.md").write_text(f"# Other\n\n## Phase 1: X\n\n#### Automated Verification:\n\n"
+                                         f"- [ ] **Test-verified**: passes - `{command}`\n\n#### Manual Verification:\n")
+
+    def test_a_planless_dispatch_carries_the_gate_variables_the_repo_plans_agree_on(self):
+        self.add_plan_with_gate("other", "LEDGER_EDIT_WATCH_PY=/x/edit_watch.py cargo test")
+
+        out = self.step("start", "--task", "add a flag")
+
+        self.assertIn("gate-env: LEDGER_EDIT_WATCH_PY=/x/edit_watch.py", self.printed_prompt(out))
+
+    def test_a_planless_dispatch_leaves_out_a_variable_the_repo_plans_give_two_values(self):
+        self.add_plan_with_gate("one", "GATE_PATH=/a cargo test")
+        self.add_plan_with_gate("two", "GATE_PATH=/b cargo test")
+        self.add_plan_with_gate("three", "GATE_FLAG=1 cargo test")
+
+        out = self.step("start", "--task", "add a flag")
+
+        prompt = self.printed_prompt(out)
+        self.assertIn("gate-env: GATE_FLAG=1", prompt)
+        self.assertNotIn("GATE_PATH", prompt)
+
+    def test_a_dispatch_with_no_gate_variables_in_the_plans_has_no_gate_env_line(self):
+        out = self.start_phase_one()
+
+        self.assertNotIn("gate-env:", self.printed_prompt(out))
+
+    def test_the_coder_gate_runs_its_commands_with_the_gate_variables_of_the_repo(self):
+        self.set_verification("- [ ] **Env**: passes - `GATE_X=1 npx vitest run`")
+        self.add_plan_with_gate("other", 'GATE_Y="two words" cargo test')
+
+        out = self.start_phase_one()
+
+        gate = json.loads((self.repo / ".git/coder-gate.json").read_text())
+        self.assertEqual({"GATE_X": "1", "GATE_Y": "two words"}, gate["env"])
+        self.assertIn('With: GATE_X=1 GATE_Y="two words".', out)
+
+    def test_the_coder_gate_given_no_gate_variables_stores_none_and_says_nothing_about_them(self):
+        out = self.start_phase_one()
+
+        gate = json.loads((self.repo / ".git/coder-gate.json").read_text())
+        self.assertEqual({}, gate["env"])
+        self.assertNotIn("With:", out)
+
+    def test_a_plan_dispatch_and_its_review_dispatch_carry_the_plans_own_gate_variables(self):
+        self.set_verification("- [ ] **Env**: passes - `GATE_X=1 npx vitest run`")
+
+        out = self.start_phase_one()
+        self.assertIn("gate-env: GATE_X=1", self.printed_prompt(out))
+        self.pass_coder_gate()
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", self.CODER_REPORT)
+        reviewOut = self.step("after-coder")
+
+        self.assertIn("AGENT: review-loop", reviewOut)
+        self.assertIn("gate-env: GATE_X=1", self.printed_prompt(reviewOut))
 
 
 if __name__ == "__main__":

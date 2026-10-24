@@ -2,6 +2,7 @@ import glob
 import os
 import pathlib
 import sys
+import tempfile
 import unittest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -261,7 +262,8 @@ class MovedPhaseTest(unittest.TestCase):
         self.assertEqual(["moved-without-deviation"], self.kinds(plan))
         self.assertEqual(4, plan["failures"][0]["line"])
         detail = plan["failures"][0]["detail"]
-        self.assertIn("the sign-off for the move in Plan Deviations (who, when, their words)", detail)
+        self.assertIn("the sign-off for the move in Plan Deviations (who and when), and name Phase 11 and LED-16 in "
+                      "the same line.", detail)
         self.assertNotIn("user's", detail)
 
     def test_a_moved_phase_may_have_no_section_of_its_own(self):
@@ -432,6 +434,175 @@ class RealPlansTest(unittest.TestCase):
                 self.assertEqual(len(dashLines), sum(1 for entry in plan["entries"] if entry["moved"]))
             movedCount += len(dashLines)
         print(f"parsed {len(paths)} of {len(paths)} real plans, {movedCount} moved Phase Status lines", file=sys.stderr)
+
+
+AUTOMATED_PLAN = """# Plan
+
+## Phase 1: Build it
+
+#### Automated Verification:
+
+- [ ] **Test-verified**: passes - `LEDGER_PY=/x/e.py cargo test --lib`
+- [x] **Lint**: clean - `npm run lint`
+  indented note
+- N/A not an item
+
+#### Manual Verification:
+
+- [ ] open the page
+
+## Phase 2: Ship it
+
+### Automated Verification
+
+- [ ] **Check**: `GATE=1 make check`
+"""
+
+
+class AutomatedVerificationRowsTest(unittest.TestCase):
+    def test_rows_are_the_checkbox_items_under_the_automated_heading_with_their_indexes(self):
+        lines = AUTOMATED_PLAN.splitlines()
+
+        rows = plan_format.automated_verification_rows(lines)
+
+        self.assertEqual([6, 7], [index for index, _ in rows])
+        self.assertTrue(rows[0][1].startswith("- [ ] **Test-verified**"))
+
+    def test_a_manual_verification_item_and_a_level_three_heading_are_not_rows(self):
+        lines = AUTOMATED_PLAN.splitlines()
+
+        rows = [line for _, line in plan_format.automated_verification_rows(lines)]
+
+        self.assertNotIn("- [ ] open the page", rows)
+        self.assertNotIn("- [ ] **Check**: `GATE=1 make check`", rows)
+
+    def test_a_heading_of_level_one_to_three_ends_the_list(self):
+        for heading in ("# Next", "## Phase 2: Next", "### Notes"):
+            with self.subTest(heading=heading):
+                lines = ["#### Automated Verification:", "- [ ] a `x`", heading, "- [ ] b `y`"]
+
+                self.assertEqual([(1, "- [ ] a `x`")], plan_format.automated_verification_rows(lines))
+
+    def test_a_horizontal_rule_ends_the_list(self):
+        lines = ["#### Automated Verification:", "- [ ] a `x`", "---", "- [ ] b `y`"]
+
+        self.assertEqual([(1, "- [ ] a `x`")], plan_format.automated_verification_rows(lines))
+
+
+class GateEnvTest(unittest.TestCase):
+    def test_gate_env_text_names_the_variables_and_says_where_to_put_them(self):
+        self.assertEqual("gate-env: A=1 B=2\n(Put these variables before every test, check or build command you run.)",
+                         plan_format.gate_env_text(["A=1", "B=2"]))
+
+    def test_gate_env_text_is_empty_when_there_are_no_variables(self):
+        self.assertEqual("", plan_format.gate_env_text([]))
+
+    def test_gate_env_is_the_leading_assignments_of_the_automated_commands(self):
+        self.assertEqual(["LEDGER_PY=/x/e.py"], plan_format.gate_env(AUTOMATED_PLAN))
+
+    def test_a_plan_with_no_automated_assignment_gives_none(self):
+        self.assertEqual([], plan_format.gate_env("#### Automated Verification:\n\n- [ ] a `cargo test`\n"))
+
+    def test_shell_and_prose_spans_of_real_plans_give_no_variables(self):
+        spans = ["n=$(ledger count) && test \"$n\" = 3", "S=...; cargo test", "PATH=/x/bin:$PATH cargo test",
+                 "T=$(find . -name x) cargo test", "src=index pass=done"]
+        plan = "#### Automated Verification:\n\n" + "".join(f"- [ ] **T**: sees `{span}` here\n" for span in spans)
+
+        self.assertEqual([], plan_format.gate_env(plan))
+
+    def test_an_item_the_code_step_never_runs_gives_no_variables(self):
+        items = ["- [ ] **CI-verified**: the pipeline runs `FULL_E2E=1 npm test`",
+                 "- [ ] Human-only: open the page, then `SHOW_ALL=1 npm start`",
+                 "- [ ] N/A - docs only, no `DOCS_ONLY=1 make docs`"]
+        for item in items:
+            with self.subTest(item=item):
+                self.assertEqual([], plan_format.gate_env("#### Automated Verification:\n\n" + item + "\n"))
+
+    def test_an_item_that_is_run_still_gives_its_variables_beside_one_that_is_not(self):
+        plan = ("#### Automated Verification:\n\n- [ ] **CI-verified**: runs `FULL_E2E=1 npm test`\n"
+                "- [ ] **Unit**: `QUICK=1 npm test`\n")
+
+        self.assertEqual(["QUICK=1"], plan_format.gate_env(plan))
+
+    def test_the_item_tags_are_read_the_same_for_the_gate_env_and_the_run(self):
+        self.assertEqual("CI-verified", plan_format.deferred_verification_tag("- [ ] **ci-verified**: the pipeline"))
+        self.assertEqual("human-only", plan_format.deferred_verification_tag("- [x] Human-only: a look"))
+        self.assertIsNone(plan_format.deferred_verification_tag("- [ ] **Unit**: `npm test`, not CI-verified"))
+        self.assertIsNotNone(plan_format.NO_AUTOMATED_CHECK.match("- [ ] **Test-verified**: N/A on the machines."))
+
+    def test_an_item_runs_no_command_when_it_says_n_a_or_is_left_to_ci_or_a_person(self):
+        for item in ("- [ ] N/A - docs only", "- [x] none", "- [ ] **Test-verified**: N/A on the machines.",
+                     "- [ ] **CI-verified**: the pipeline runs `npm test`", "- [ ] Human-only: look at the page"):
+            with self.subTest(item=item):
+                self.assertTrue(plan_format.runs_no_command(item))
+
+    def test_an_item_with_a_command_runs_it_even_when_it_mentions_ci_or_n_a_later(self):
+        for item in ("- [ ] **Unit**: `npm test`, not CI-verified", "- [ ] **Check**: `make check` (N/A on mac)",
+                     "- [ ] `RUN x`"):
+            with self.subTest(item=item):
+                self.assertFalse(plan_format.runs_no_command(item))
+
+    def test_the_item_text_is_the_line_without_its_box_and_edge_spaces(self):
+        self.assertEqual("**Unit**: `npm test`", plan_format.automated_item_text("  - [ ] **Unit**: `npm test`  "))
+        self.assertEqual("done", plan_format.automated_item_text("- [x]   done"))
+        self.assertEqual("", plan_format.automated_item_text("- [ ]"))
+
+
+class RepoGateEnvTest(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = pathlib.Path(directory.name)
+
+    def write_plan(self, folder, command):
+        planDir = self.root / "docs/plans" / folder
+        planDir.mkdir(parents=True)
+        (planDir / "spec.md").write_text(f"## Phase 1: X\n\n#### Automated Verification:\n\n- [ ] **T**: `{command}`\n")
+        return f"docs/plans/{folder}/spec.md"
+
+    def test_a_repo_with_no_plans_has_no_gate_env(self):
+        self.assertEqual([], plan_format.repo_gate_env(self.root))
+
+    def test_plans_that_agree_on_a_value_give_it(self):
+        self.write_plan("one", "A=1 cargo test")
+        self.write_plan("two", "A=1 B=2 cargo test")
+
+        self.assertEqual(["A=1", "B=2"], sorted(plan_format.repo_gate_env(self.root)))
+
+    def test_plans_that_disagree_on_a_value_leave_the_name_out(self):
+        self.write_plan("one", "A=1 cargo test")
+        self.write_plan("two", "A=2 cargo test")
+        self.write_plan("three", "B=3 cargo test")
+
+        self.assertEqual(["B=3"], plan_format.repo_gate_env(self.root))
+
+    def test_the_plan_of_the_run_decides_its_own_value_over_the_others(self):
+        self.write_plan("one", "A=1 cargo test")
+        ownPlan = self.write_plan("two", "A=2 cargo test")
+        self.write_plan("three", "A=3 cargo test")
+
+        self.assertEqual(["A=2"], plan_format.repo_gate_env(self.root, ownPlan))
+
+    def test_the_plan_of_the_run_keeps_the_names_the_other_plans_agree_on(self):
+        self.write_plan("one", "B=9 cargo test")
+        ownPlan = self.write_plan("two", "A=2 cargo test")
+
+        self.assertEqual(["A=2", "B=9"], sorted(plan_format.repo_gate_env(self.root, ownPlan)))
+
+    def test_shell_junk_in_other_plans_adds_no_names_and_literal_settings_stay(self):
+        self.write_plan("one", "n=$(ledger count) && test 1 = 1")
+        self.write_plan("two", "PATH=/x/bin:$PATH cargo test")
+        self.write_plan("three", "T=$(find . -name x) cargo test")
+        self.write_plan("four", "src=index pass=done")
+        self.write_plan("five", "S=...; cargo test")
+        self.write_plan("six", "CARGO_BUILD_JOBS=4 cargo test")
+
+        self.assertEqual(["CARGO_BUILD_JOBS=4"], plan_format.repo_gate_env(self.root))
+
+    def test_a_plan_path_that_does_not_exist_is_read_as_a_plan_with_no_names(self):
+        self.write_plan("one", "B=9 cargo test")
+
+        self.assertEqual(["B=9"], plan_format.repo_gate_env(self.root, "docs/plans/gone/spec.md"))
 
 
 if __name__ == "__main__":

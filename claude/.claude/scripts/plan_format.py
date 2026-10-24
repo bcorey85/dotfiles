@@ -23,6 +23,7 @@ holds a line that names the phase (`Phase <id>` or `P<id>`) and the ticket key. 
 never who signed it. A moved phase is neither done nor open, and it needs no `## Phase <id>` section: a move may take
 the section to the new ticket.
 """
+import pathlib
 import re
 
 import script_utils
@@ -194,7 +195,7 @@ def moved_deviation_failure(lines, entry):
         return None
     return {"line": entry["line"] + 1, "kind": "moved-without-deviation", "detail": f"Phase {entry['number']} is "
             f"marked moved, but '## {DEVIATIONS_HEADING}' has no line that names it and {entry['movedTo']}. Record "
-            f"the sign-off for the move in {DEVIATIONS_HEADING} (who, when, their words), and name Phase "
+            f"the sign-off for the move in {DEVIATIONS_HEADING} (who and when), and name Phase "
             f"{entry['number']} and {entry['movedTo']} in the same line."}
 
 
@@ -340,3 +341,102 @@ def manual_verification(text, name="plan"):
         item["humanOnly"] = HUMAN_ONLY_MARK in item["heading"].lower() or HUMAN_ONLY_MARK in item["text"].lower()
         item["verified"] = item["checked"] or (not item["humanOnly"] and AGENT_VERIFIED_MARK in item["text"].lower())
     return items
+
+
+AUTOMATED_HEADING = "#### Automated Verification"
+AUTOMATED_ITEM = re.compile(r"^- \[[ x]\]")
+AUTOMATED_ITEM_BOX = re.compile(r"^- \[[ x]\]\s*")
+PLAN_FILES_GLOB = "docs/plans/*/spec.md"
+GATE_ENV_HINT = "(Put these variables before every test, check or build command you run.)"
+
+# An Automated Verification item that says there is nothing to run: "- [ ] N/A — docs only", "- [ ] none".
+# A bold label may come first when the word after it is N/A: "- [ ] **Test-verified**: N/A on the machines."
+NO_AUTOMATED_CHECK = re.compile(r"^- \[[ x]\]\s*(?:[*_`]*\s*(?:n/a|none)\b|\*\*[^*]+\*\*:?\s*n/a\b)", re.IGNORECASE)
+
+# An Automated Verification item that the code step never runs because the plan says another place does:
+# "- [ ] **CI-verified**: the pipeline runs it", "- [ ] Human-only: look at the page". A bold label may come first.
+DEFERRED_VERIFICATION = re.compile(r"^- \[[ x]\]\s*(?:\*\*[^*]+\*\*:?\s*)?[*_`]*\s*(?P<tag>ci-verified|human-only)\b",
+                                   re.IGNORECASE)
+DEFERRED_TAG_NAMES = {"ci-verified": "CI-verified", "human-only": "human-only"}
+
+
+def automated_verification_rows(lines):
+    """(index, line) for each `- [ ]` or `- [x]` item under a `#### Automated Verification` heading, in file order. The
+    list ends at the next `#### ` heading, a heading of level 1 to 3, or a `---` rule."""
+    verificationItems = []
+    inside = False
+    for index, line in enumerate(lines):
+        if line.startswith("#### "):
+            inside = line.startswith(AUTOMATED_HEADING)
+            continue
+        if re.match(r"#{1,3} ", line) or line.strip() == "---":
+            inside = False
+        if inside and AUTOMATED_ITEM.match(line):
+            verificationItems.append((index, line))
+    return verificationItems
+
+
+def automated_item_text(line):
+    """The words of an Automated Verification item, without the `- [ ]` box."""
+    return AUTOMATED_ITEM_BOX.sub("", line.strip())
+
+
+def deferred_verification_tag(line):
+    """"CI-verified" or "human-only" for an Automated Verification item tagged that way, else None."""
+    tagMatch = DEFERRED_VERIFICATION.match(line)
+    return DEFERRED_TAG_NAMES[tagMatch.group("tag").lower()] if tagMatch else None
+
+
+def runs_no_command(line):
+    """True for an Automated Verification item that gets no command run: it says N/A or none, or it is left to CI or
+    a person."""
+    return bool(NO_AUTOMATED_CHECK.match(line) or deferred_verification_tag(line))
+
+
+def gate_env(planText):
+    """The `NAME=value` words that the plan's Automated Verification commands start with, one per name, in file order.
+    An item that says N/A or is left to CI or a person is not a command that gets run, so it gives none."""
+    verificationItems = automated_verification_rows(planText.splitlines())
+    runnableItems = [line for _, line in verificationItems if not runs_no_command(line)]
+    spans = [span for line in runnableItems for span in script_utils.backticked_spans(line)]
+    return script_utils.leading_env_assignments(spans)
+
+
+def gate_env_text(gateEnv):
+    """The two lines that tell an agent which variables to put before its gate commands, or "" when there are none."""
+    if not gateEnv:
+        return ""
+    return f"gate-env: {' '.join(gateEnv)}\n{GATE_ENV_HINT}"
+
+
+def repo_gate_env(repoRoot, planRel=None):
+    """The environment variables the repo's gate commands need: what `gate_env` reads from the plans under
+    docs/plans/*/spec.md. The plan `planRel` (a path under repoRoot) decides its own names. A name only other plans set
+    counts when they all give it the same value; a name they give different values is left out, since no plan says
+    which one this run needs."""
+    root = pathlib.Path(repoRoot)
+    chosen = {}
+
+    if planRel:
+        try:
+            ownText = (root / planRel).read_text()
+        except OSError:
+            ownText = ""
+        for assignment in gate_env(ownText):
+            chosen[assignment.split("=", 1)[0]] = assignment
+
+    seen = {}
+    for planPath in sorted(root.glob(PLAN_FILES_GLOB)):
+        if planRel and planPath.resolve() == (root / planRel).resolve():
+            continue
+        try:
+            assignments = gate_env(planPath.read_text())
+        except OSError:
+            continue
+        for assignment in assignments:
+            seen.setdefault(assignment.split("=", 1)[0], set()).add(assignment)
+
+    for name, variants in seen.items():
+        if name not in chosen and len(variants) == 1:
+            chosen[name] = next(iter(variants))
+    return list(chosen.values())

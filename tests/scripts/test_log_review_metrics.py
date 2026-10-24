@@ -8,8 +8,6 @@ import unittest
 
 import fake_ledger
 
-os.environ.pop("CLAUDE_TOOLKIT_TELEMETRY", None)  # the switch file alone decides in these tests
-
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 REAL_CLAUDE = REPO_ROOT / "claude" / ".claude"
 SCRIPT = pathlib.Path(
@@ -38,7 +36,6 @@ class LogReviewMetricsRepoTest(unittest.TestCase):
         self.root = pathlib.Path(temp_dir.name)
         self.home = self.root / "home"
         (self.home / ".claude").mkdir(parents=True)
-        (self.home / ".claude" / "toolkit-telemetry").touch()
         review_dir = self.root / "claude" / "skills" / "review"
         self.scripts_dir = self.root / "claude" / "scripts"
         review_dir.mkdir(parents=True)
@@ -66,7 +63,8 @@ class LogReviewMetricsRepoTest(unittest.TestCase):
         return subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True).stdout
 
     def run_metrics(self, *args):
-        env = {**os.environ, **GIT_ENV, "HOME": str(self.home), **self.ledger_env}
+        env = {**os.environ, **GIT_ENV, "HOME": str(self.home), "CLAUDE_TOOLKIT_TELEMETRY": "1",
+               **self.ledger_env}
         return subprocess.run([str(self.script), *args], env=env, cwd=self.worktree, capture_output=True, text=True)
 
     def logged_metrics_row_at(self, out_value, expected_log_path, *args):

@@ -151,7 +151,6 @@ class VerifyBranchBase(unittest.TestCase):
         self.addCleanup(home_dir.cleanup)
         self.home = pathlib.Path(home_dir.name)
         (self.home / ".claude").mkdir()
-        (self.home / ".claude" / "toolkit-telemetry").write_text("")
         self.repo = self.temp_root / "myrepo"
         self.repo.mkdir()
         self.ledger_env = fake_ledger.install(self.temp_root)
@@ -161,6 +160,7 @@ class VerifyBranchBase(unittest.TestCase):
         escaper_stub = self.stub_logger("escaper", ESCAPER)
         self.env = subprocess_env({
             **os.environ, **GIT_ENV, **self.ledger_env, "HOME": str(self.home),
+            "CLAUDE_TOOLKIT_TELEMETRY": "1",
             "VERIFY_STATE_DIR": str(self.temp_root / "state"), "REVIEW_ESCAPES_FILE": str(self.escapes),
             "RESOLVE_TASK_DIR_SCRIPT": str(RESOLVER), "LOG_REVIEW_FINDING_SCRIPT": str(finder_stub),
             "LOG_ESCAPE_SCRIPT": str(escaper_stub), "REPO_NAME_SCRIPT": str(REPO_NAMER)})

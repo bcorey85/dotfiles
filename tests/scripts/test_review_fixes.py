@@ -27,14 +27,14 @@ class HookRunTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.home = pathlib.Path(self.tmp.name) / "home"
         (self.home / ".claude").mkdir(parents=True)
-        (self.home / ".claude" / "toolkit-telemetry").touch()
         self.work = pathlib.Path(self.tmp.name) / "work"
         self.work.mkdir()
 
     def run_hook(self, name, stdin, env_extra=None, **options):
         if isinstance(stdin, str):
             stdin = stdin.encode("utf-8")
-        environment = {"PATH": os.environ["PATH"], "HOME": str(self.home), "TMPDIR": self.tmp.name}
+        environment = {"PATH": os.environ["PATH"], "HOME": str(self.home), "TMPDIR": self.tmp.name,
+                       "CLAUDE_TOOLKIT_TELEMETRY": "1"}
         environment.update(env_extra or {})
         return subprocess.run([sys.executable, str(hook_script(name.replace("-", "_") + ".py"))], input=stdin,
                               capture_output=True, env=environment, cwd=str(self.work), **options)

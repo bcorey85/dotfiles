@@ -4,14 +4,18 @@
 # usage: ledger-write <type>   (the row is read from stdin)
 #
 # With `ledger` on PATH: drops the row's date, schema_version, repo and session keys, which
-# `ledger write` sets itself, adds --session when CLAUDE_CODE_SESSION_ID is set, and exits with the
-# code `ledger write` returns.
+# `ledger write` sets itself (and a spec_run row's slug, which the ledger does not store), adds
+# --session when CLAUDE_CODE_SESSION_ID is set, and exits with the code `ledger write` returns.
 #
 # With no `ledger` on PATH: appends the row as one JSON line to the file its type used before the
 # ledger, with date (UTC ISO), schema_version, repo and session added, and prints one stderr line
-# naming the file. Numeric-looking strings are stored as numbers, branch_key as branch, path_key as
-# file. If the append fails it prints one stderr line and exits 0: a telemetry write never blocks
-# the workflow. A type with no file is dropped with one stderr line.
+# naming the file. Numeric-looking strings are stored as numbers, one object level down too
+# (specialists, fixed_classes); branch_key is stored as branch and path_key as file, both stored
+# raw in the local jsonl file with no ledger. Keys ending in _id, and head and dirty, stay
+# strings. A result is stored with spaces (PASS WITH WARNINGS). A review_scope row is
+# {ts, skill, via, session, repo, caller}, the shape the skill-usage file always held. If the
+# append fails, or HOME is unset, it prints one stderr line and exits 0: a telemetry write never
+# blocks the workflow. A type with no file is dropped with one stderr line.
 #
 # Files, each overridden by the variable beside it:
 #   review_finding, review_run  ~/.claude/review-findings.jsonl  REVIEW_FINDINGS_FILE
@@ -19,6 +23,7 @@
 #   review_escape               ~/.claude/review-escapes.jsonl   REVIEW_ESCAPES_FILE
 #   spec_run                    ~/.claude/spec-runs.jsonl        SPEC_RUNS_FILE
 #   scan_run                    ~/.claude/scan-runs.jsonl        SCAN_RUNS_FILE
+#   review_scope                ~/.claude/skill-usage.jsonl      SKILL_USAGE_FILE
 # review_run rows carry kind=run and review_finding rows kind=finding, as before the ledger.
 #
 # The caller owns the telemetry switch and what to do with a refused row.
@@ -30,21 +35,27 @@ if command -v ledger >/dev/null 2>&1; then
 
   # The ledger owns date, schema_version, repo and session; a caller's values for them are
   # dropped here, once, so no writer repeats the list.
-  jq -c 'del(.date, .schema_version, .repo, .session)' \
+  jq -c --arg row_type "$1" \
+    'del(.date, .schema_version, .repo, .session) | if $row_type == "spec_run" then del(.slug) else . end' \
     | ledger write "$1" ${session_args[@]+"${session_args[@]}"}
   exit $?
 fi
 
 row_type="$1"
+if [ -z "${HOME:-}" ]; then
+  echo "ledger-write: ledger not on PATH; HOME is unset, row dropped" >&2
+  exit 0
+fi
 script_dir=$(dirname -- "${BASH_SOURCE[0]}")
 
 case "$row_type" in
-  review_finding) out="${REVIEW_FINDINGS_FILE:-$HOME/.claude/review-findings.jsonl}"; schema_version=3; kind=finding ;;
-  review_run) out="${REVIEW_FINDINGS_FILE:-$HOME/.claude/review-findings.jsonl}"; schema_version=3; kind=run ;;
-  review_metrics) out="${REVIEW_METRICS_FILE:-$HOME/.claude/review-metrics.jsonl}"; schema_version=2; kind="" ;;
-  review_escape) out="${REVIEW_ESCAPES_FILE:-$HOME/.claude/review-escapes.jsonl}"; schema_version=2; kind="" ;;
-  spec_run) out="${SPEC_RUNS_FILE:-$HOME/.claude/spec-runs.jsonl}"; schema_version=1; kind="" ;;
-  scan_run) out="${SCAN_RUNS_FILE:-$HOME/.claude/scan-runs.jsonl}"; schema_version=2; kind="" ;;
+  review_finding) log_file="${REVIEW_FINDINGS_FILE:-$HOME/.claude/review-findings.jsonl}"; schema_version=3; kind=finding ;;
+  review_run) log_file="${REVIEW_FINDINGS_FILE:-$HOME/.claude/review-findings.jsonl}"; schema_version=3; kind=run ;;
+  review_metrics) log_file="${REVIEW_METRICS_FILE:-$HOME/.claude/review-metrics.jsonl}"; schema_version=2; kind="" ;;
+  review_escape) log_file="${REVIEW_ESCAPES_FILE:-$HOME/.claude/review-escapes.jsonl}"; schema_version=2; kind="" ;;
+  spec_run) log_file="${SPEC_RUNS_FILE:-$HOME/.claude/spec-runs.jsonl}"; schema_version=1; kind="" ;;
+  scan_run) log_file="${SCAN_RUNS_FILE:-$HOME/.claude/scan-runs.jsonl}"; schema_version=2; kind="" ;;
+  review_scope) log_file="${SKILL_USAGE_FILE:-$HOME/.claude/skill-usage.jsonl}"; schema_version=null; kind="" ;;
   *)
     echo "ledger-write: ledger not on PATH; $row_type has no jsonl file, row dropped" >&2
     exit 0 ;;
@@ -53,13 +64,26 @@ esac
 # The checkout is not the repo: repo-name names a linked worktree by its main checkout.
 repo=$("$script_dir/../tools/repo-name" 2>/dev/null || true)
 
-if ! row=$(jq -c --arg sv "$schema_version" --arg kind "$kind" --arg repo "$repo" \
-  --arg session "${CLAUDE_CODE_SESSION_ID:-}" '
-  def typed: if type == "string" then (tonumber? // .) else . end;
+# Ids and the head commit are strings: a 16-hex id such as 12e4567890123456 reads as a number.
+if ! jsonl_row=$(jq -c --argjson sv "$schema_version" --arg kind "$kind" --arg repo "$repo" \
+  --arg session "${CLAUDE_CODE_SESSION_ID:-}" --arg row_type "$row_type" '
+  def number_like: if type == "string" then (tonumber? // .) else . end;
+  def typed($key):
+    if ($key | endswith("_id")) or $key == "head" or $key == "dirty" then .
+    elif type == "object" then map_values(number_like)
+    else number_like end;
+  def spaced_result:
+    if type == "string" and . == "PASS_WITH_WARNINGS" then "PASS WITH WARNINGS"
+    elif type == "string" and . == "NEEDS_CHANGES" then "NEEDS CHANGES"
+    elif type == "string" and . == "NOT_DISPATCHED" then "NOT DISPATCHED"
+    else . end;
   del(.date, .schema_version, .repo, .session)
   | with_entries(.key |= (if . == "branch_key" then "branch" elif . == "path_key" then "file" else . end))
-  | with_entries(.value |= typed)
-  | {date: (now | todate), schema_version: ($sv | tonumber)}
+  | with_entries(.key as $key | .value |= typed($key))
+  | (if has("result") then .result |= spaced_result else . end)
+  | (if $row_type == "review_scope" then {ts: (now | todate)} else {date: (now | todate)} end)
+    + (if $sv != null then {schema_version: $sv} else {} end)
+    + (if $row_type == "review_scope" then {via: "agent"} else {} end)
     + (if $session != "" then {session: $session} else {} end)
     + (if $repo != "" then {repo: $repo} else {} end)
     + (if $kind != "" then {kind: $kind} else {} end)
@@ -68,9 +92,9 @@ if ! row=$(jq -c --arg sv "$schema_version" --arg kind "$kind" --arg repo "$repo
   exit 0
 fi
 
-if ! { mkdir -p -- "$(dirname -- "$out")" && printf '%s\n' "$row" >> "$out"; } 2>/dev/null; then
-  echo "ledger-write: ledger not on PATH; could not append $row_type row to $out, row dropped" >&2
+if ! { mkdir -p -- "$(dirname -- "$log_file")" && printf '%s\n' "$jsonl_row" >> "$log_file"; } 2>/dev/null; then
+  echo "ledger-write: ledger not on PATH; could not append $row_type row to $log_file, row dropped" >&2
   exit 0
 fi
 
-echo "ledger-write: ledger not on PATH; row appended to $out" >&2
+echo "ledger-write: ledger not on PATH; row appended to $log_file" >&2

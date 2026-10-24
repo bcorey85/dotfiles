@@ -3,12 +3,12 @@ type: "Change"
 title: "With no ledger on PATH the metrics writers append to the old jsonl files"
 description: "ledger-write exited 0 silently when the ledger binary was missing, so a machine with no ledger lost every review finding, review run, review metrics row, escape, spec run and scan run. It now appends the completed row to the jsonl file each type used before the ledger switch and prints one stderr line."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T15:52:13-05:00"}
-seq: 15
+seq: 14
 kind: "fix"
-components: ["script/log-escape", "script/log-scan", "script/log-spec-run", "script/log-review-finding", "script/log-review-metrics", "script/review-loop-gate"]
+components: ["script/log-escape", "script/log-scan", "script/log-spec-run", "script/log-review-finding", "script/log-review-metrics", "script/review-scope", "script/review-loop-gate"]
 evidence: ["census"]
 watches: []
-test: "tests/scripts/test_ledger_write_fallback.py::LedgerWriteFallbackTest::test_no_ledger_appends_the_completed_row_to_the_type_file_and_prints_one_stderr_line"
+test: "tests/scripts/test_ledger_write.py::LedgerWriteTest::test_no_ledger_appends_the_completed_row_to_the_type_file_and_prints_one_stderr_line"
 unmeasured: ""
 ---
 
@@ -22,9 +22,11 @@ unmeasured: ""
 - `spec_run` goes to `spec-runs.jsonl`.
 - `scan_run` goes to `scan-runs.jsonl`.
 
-It adds `date`, `schema_version`, `repo` and `session` the way the writers did before the switch, and prints `ledger-write: ledger not on PATH; row appended to <file>`. A failed append prints one stderr line and exits 0, so a telemetry write never blocks the workflow. The callers still own the telemetry switch.
+- `review_scope` goes to `skill-usage.jsonl`, with `ts` and `via` `agent`.
 
-`review_loop_gate.py` no longer skips the review run row when `ledger` is missing. It passes on the writer's stderr line. The writers' header comments and the audit review lane no longer say the jsonl files are frozen.
+It adds `date`, `schema_version`, `repo` and `session` the way the writers did before the switch. It writes `result` with spaces, as before the switch, and keeps ids, `head` and `dirty` as strings. A spec run row keeps its `slug` in the file. The ledger still does not get it. With HOME unset, the script drops the row with one stderr line. `file` and `branch` stay raw in the local file, and the work intake hashes them when it copies the file. It prints `ledger-write: ledger not on PATH; row appended to <file>`. A failed append prints one stderr line and exits 0, so a telemetry write never blocks the workflow. The callers still own the telemetry switch.
+
+`review_loop_gate.py` no longer skips the review run row when `ledger` is missing. It passes on the writer's stderr line. If the append fails, the gate retries the row on the next stop. The writers' header comments and the audit review lane no longer say the jsonl files are frozen.
 
 ## Evidence
 

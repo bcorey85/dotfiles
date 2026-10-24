@@ -23,7 +23,7 @@ Untested. Compare the review gates' findings and escape rates before and after 2
 
 ## Watch
 
-—
+Read 2026-10-24 on work logs through 2026-10-22: review escapes per code-reviewer run 0.18 after, against a median of 0.22 (range 0.09 to 0.56) before. No change. Kept: the move came with the CLI update and has no file to revert. Watch closed.
 
 ## Back-out
 

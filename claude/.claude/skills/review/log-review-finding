@@ -93,8 +93,7 @@
 # keys `file=` and `branch=` into path_key and branch_key, and holds the deferred
 # queue. desc, date, schema_version, repo, session, kind and out are accepted and
 # never stored. A caller's out=<path> redirect is a metrics write: it happens only
-# while the metrics switch is on (CLAUDE_TOOLKIT_TELEMETRY=1, or the file
-# ~/.claude/toolkit-telemetry).
+# while the metrics switch is on (CLAUDE_TOOLKIT_TELEMETRY=1).
 #
 # Prints finding_id=<id> (run_id=<id> for a run row). The id is minted here unless
 # the caller passes finding_id= or run_id=. A later row for the same finding_id
@@ -264,7 +263,8 @@ if [ -z "$id" ]; then
 fi
 
 # desc is free text and never stored. file and branch go to the writer raw; it keys
-# them (path_key, branch_key) and drops a dash or empty value.
+# them (path_key, branch_key) and drops a dash or empty value. With no ledger, they are
+# stored raw in the local jsonl file.
 payload=$(jq -c '
   del(.desc, .kind)
   | with_entries(.key |= (if . == "file" then "path_key" elif . == "branch" then "branch_key" else . end))' <<< "$json")

@@ -10,8 +10,6 @@ import unittest
 
 import toolkit_paths
 
-os.environ.pop("CLAUDE_TOOLKIT_TELEMETRY", None)  # the switch file alone decides in these tests
-
 SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.TELEMETRY_DIR)
 SCRIPT = SCRIPTS_DIR / "test_edit_telemetry.py"
 
@@ -25,11 +23,11 @@ class TestEditTelemetryTest(unittest.TestCase):
         self.root = pathlib.Path(self.tmp.name).resolve()
         self.home = self.root / "home"
         (self.home / ".claude").mkdir(parents=True)
-        (self.home / ".claude" / "toolkit-telemetry").touch()
         self.log = self.home / ".claude" / "test-edit-telemetry.jsonl"
 
     def run_hook(self, payload, env=None, cwd=None, stderr=""):
-        environment = {"PATH": os.environ["PATH"], "HOME": str(self.home), "TMPDIR": str(self.root)}
+        environment = {"PATH": os.environ["PATH"], "HOME": str(self.home), "TMPDIR": str(self.root),
+                       "CLAUDE_TOOLKIT_TELEMETRY": "1"}
         environment.update(env or {})
         stdin = payload if isinstance(payload, str) else json.dumps(payload)
         finished = subprocess.run([sys.executable, str(SCRIPT)], input=stdin, capture_output=True, text=True,
@@ -121,11 +119,11 @@ class TestEditTelemetryTest(unittest.TestCase):
         shell_message = f"test-edit-telemetry: cannot open {self.log}: Is a directory\n"
         self.edit("/r/a_test.py", stderr=shell_message)
 
-    def test_missing_claude_directory_means_switch_off(self):
-        self.home = self.root / "nohome"
-        self.home.mkdir()
-        self.edit("/r/a_test.py")
-        self.assertFalse((self.home / ".claude").exists())
+    def test_switch_off_writes_nothing(self):
+        payload = {"hook_event_name": "PreToolUse", "tool_name": "Edit",
+                   "tool_input": {"file_path": "/r/a_test.py", "new_string": "assert x == 1"}}
+        self.run_hook(payload, env={"CLAUDE_TOOLKIT_TELEMETRY": "0"})
+        self.assertFalse(self.log.exists())
 
     def test_control_characters_are_escaped_like_jq(self):
         self.run_hook({"tool_name": "Edit", "tool_input": {"file_path": "/r/a_test.py", "new_string": 'a\x01\x7f\n"b'}})

@@ -23,7 +23,7 @@ At work, 72 of 160 structure escapes had no structure pass before them. On five 
 
 ## Watch
 
-—
+Read 2026-10-24 on work logs through 2026-10-22: smell, duplication and complexity escapes per code-reviewer run 0.12 after, against a median of 0.12 (range 0.04 to 0.19) before. No change. Kept: the Opus structure reviewer stopped running on every loop with no rise in structure escapes. Watch closed.
 
 ## Back-out
 

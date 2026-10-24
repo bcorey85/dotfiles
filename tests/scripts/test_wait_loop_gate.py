@@ -115,9 +115,19 @@ class WaitLoopGateTest(unittest.TestCase):
         self.assertEqual(decision["permissionDecision"], "deny")
         self.assertIn("600000", decision["permissionDecisionReason"])
 
+    def test_review_loop_shell_background_denied(self):
+        for command in ("make test > test.log 2>&1 &", "npm run dev & sleep 5; curl localhost:3000",
+                        "nohup make test > test.log", "setsid pytest -q", "make test & disown"):
+            with self.subTest(command=command):
+                finished = run_command(command, agent_type="review-loop")
+                self.assertIn("deny", finished.stdout)
+
     def test_review_loop_foreground_call_passes(self):
-        finished = run_command("make test", agent_type="review-loop")
-        self.assertEqual(finished.stdout, "")
+        for command in ("make test", "make lint && make test 2>&1 | tail -40", "pytest -q &> test.log",
+                        "make test |& tail", 'echo "a & b"', "cat <<'EOF'\nrun it &\nEOF"):
+            with self.subTest(command=command):
+                finished = run_command(command, agent_type="review-loop")
+                self.assertEqual(finished.stdout, "")
 
     def test_background_call_passes_for_other_agents_and_main_session(self):
         for finished in (run_command("make test", in_background=True),

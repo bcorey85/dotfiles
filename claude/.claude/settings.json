@@ -406,6 +406,10 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/scripts/gates/wait_loop_gate.py"
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/scripts/review/deferred_push_check.py"
           }
         ]
       },

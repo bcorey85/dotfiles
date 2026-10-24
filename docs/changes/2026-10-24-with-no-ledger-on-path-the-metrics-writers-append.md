@@ -3,7 +3,7 @@ type: "Change"
 title: "With no ledger on PATH the metrics writers append to the old jsonl files"
 description: "ledger-write exited 0 silently when the ledger binary was missing, so a machine with no ledger lost every review finding, review run, review metrics row, escape, spec run and scan run. It now appends the completed row to the jsonl file each type used before the ledger switch and prints one stderr line."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T15:52:13-05:00"}
-seq: 13
+seq: 15
 kind: "fix"
 components: ["script/log-escape", "script/log-scan", "script/log-spec-run", "script/log-review-finding", "script/log-review-metrics", "script/review-loop-gate"]
 evidence: ["census"]

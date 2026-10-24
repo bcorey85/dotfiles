@@ -72,7 +72,7 @@ class EmitOrchestrationTest(unittest.TestCase):
                          '    "additionalContext": "x\\n"\n  }\n}\n')
 
     def test_unicode_is_not_escaped_but_del_is(self):
-        finished = run_hook("caf\u00e9 \U0001f600 a\x7fb".encode("utf-8"))
+        finished = run_hook("caf\u00e9 \U0001f600 a\x7fb".encode())
         text = finished.stdout.decode("utf-8")
         self.assertIn("caf\u00e9 \U0001f600 a\\u007fb", text)
 

@@ -36,7 +36,7 @@ SCRIPT_FOLDERS = {"telemetry_enabled.sh": "telemetry", "telemetry_enabled.py": "
                   "repo-name": "tools", "log_agent_usage.py": "telemetry", "log_skill_use.py": "telemetry",
                   "test_edit_telemetry.py": "telemetry", "log-escape": "telemetry", "log-scan": "telemetry",
                   "log-spec-run": "telemetry", "coder_gate.py": "code", "script_utils.py": "lib", "_kv.sh": "lib",
-                  "ledger-write": "telemetry"}
+                  "ledger-write": "telemetry", "shell_command.py": "lib", "makefile_text.py": "lib"}
 SCRIPTS = list(SCRIPT_FOLDERS)
 REVIEW = ["log-review-metrics", "log-perf-finding", "log-review-finding", "review-scope"]
 # hook_input.py and repo-name are not part of this change: they always come from the installed copy.

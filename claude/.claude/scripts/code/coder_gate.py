@@ -11,9 +11,11 @@ A command may hold {files}, or {files:.ts,.tsx} to keep only those suffixes. At 
 with the files the coder changed: tracked changes against HEAD plus untracked files, relative to the directory of a
 leading `cd <dir> &&`, else the repo root. A command whose list is empty is skipped, never passed or failed.
 
-set and bash-hook refuse a command that runs a whole test suite, lints a whole package or runs a build. The gate
-runs at every hand-back and a coder runs its checks after every edit, and the review loop runs the full check
-command once, at its end.
+set and bash-hook refuse a command that runs a whole test suite, lints a whole package or runs a build, also when
+a make target or a docker exec or run call runs it (make is read from the Makefile text; a NAME=value argument, a
+missing Makefile or a missing target lets the call through, and make -n, -q, -t or -h runs no recipe line except one
+marked `+` or one that names `$(MAKE)`, which is not judged). The gate runs at every hand-back and a coder runs its
+checks after every edit, and the review loop runs the full check command once, at its end.
 
 The hook runs the stored commands when a coder calls SubagentHandback. If any command fails, it refuses the call
 and returns the output tail of each failed command to the coder, at most 3 times per coder. On a pass or at the cap,
@@ -31,6 +33,8 @@ import time
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in ("lib", "telemetry")]
 import script_utils
+from makefile_text import load_makefile, parse_make_arguments
+from shell_command import docker_forwarded_variables, docker_set_variables, unwrap_docker, without_assignments
 
 try:
     from telemetry_enabled import telemetry_enabled
@@ -63,6 +67,9 @@ SCRIPT_VARIANT_WORDS = ("test", "lint", "build")
 WHOLE_PACKAGE_REASON = ("This command runs a whole test suite, lints a whole package or runs a build. Run the "
                         "typecheck, and lint and tests for only the files you changed. The review loop runs the full "
                         "check once, at its end.")
+SCOPE_RANK = {"none": 0, "targeted": 1, "unresolved": 2, "whole": 3}
+MAKE_PROGRAMS = ("make", "gmake")
+MAX_MAKE_DEPTH = 5
 CHANGED_FILES_FLAGS = ("--changed", "--onlyChanged")
 WHOLE_PACKAGE_PATHS = {".", "./"}
 SHELL_OPERATORS = {"&&", "||", ";", "|", "&", "(", ")"}
@@ -118,12 +125,11 @@ def matches_prefix(words, prefix):
     return True
 
 
-def covers_whole_package(words):
-    while words and "=" in words[0] and not words[0].startswith("-"):
-        words = words[1:]
-
+def direct_check_scope(words):
+    # "whole" for a build or a test or lint run with no path, test name or changed-files flag, "targeted" for one
+    # with, "none" for any other command.
     if any(matches_prefix(words, prefix) for prefix in BUILD_PREFIXES):
-        return True
+        return "whole"
 
     for prefix in CHECK_RUN_PREFIXES:
         if not matches_prefix(words, prefix):
@@ -131,17 +137,150 @@ def covers_whole_package(words):
         scope_words = [word for word in words[len(prefix):]
                       if word.startswith(CHANGED_FILES_FLAGS)
                       or not (word.startswith("-") or word == "run" or word in WHOLE_PACKAGE_PATHS)]
-        return not scope_words
-    return False
+        return "targeted" if scope_words else "whole"
+    return "none"
 
 
-def runs_whole_package(command):
+class CheckScan:
+    # What a command line runs: the widest scope found, and the make recipe commands that run a whole suite.
+    def __init__(self):
+        self.scope = "none"
+        self.whole_recipes = []
+        self.visited_depths = {}
+
+    def note(self, scope):
+        if SCOPE_RANK[scope] > SCOPE_RANK[self.scope]:
+            self.scope = scope
+
+
+def scan_command(command, cwd, scan, depth=0, recipe=None):
+    # recipe is (the make call, the target) while the command is a line of a make recipe.
     try:
         simple_command_list = list(simple_commands(command))
     except ValueError:
         # shlex cannot split some valid shell, such as $'...' quotes. Let the command through.
-        return False
-    return any(covers_whole_package(words) for words in simple_command_list)
+        scan.note("unresolved")
+        return
+
+    for words in simple_command_list:
+        written_command = shlex.join(words)
+        command_words = without_assignments(words)
+        assigned_names = {word.split("=", 1)[0] for word in words[:len(words) - len(command_words)]}
+        words = command_words
+        if len(words) == 2 and words[0] == "cd":
+            cwd = pathlib.Path(cwd) / words[1]
+            continue
+        scan_words(words, written_command, cwd, scan, depth, recipe, assigned_names)
+
+
+def scan_words(words, written_command, cwd, scan, depth, recipe, assigned_names=frozenset()):
+    # written_command is the simple command as written, with its NAME=value words and any docker call; words are
+    # the same command with the NAME=value words dropped, which is what gets judged. assigned_names holds the names
+    # of the NAME=value words that came before the command.
+    inner_words = unwrap_docker(words)
+    forwarded_names = docker_forwarded_variables(words)
+    set_names = docker_set_variables(words)
+    if inner_words is not None:
+        words = without_assignments(inner_words)
+    if not words:
+        return
+
+    if pathlib.PurePath(words[0]).name in MAKE_PROGRAMS:
+        # A NAME=value right before make can narrow the target, as one after it does. One before a docker call
+        # reaches the make inside the container only when the call forwards it with -e NAME or --env NAME. A docker
+        # -e NAME=value or --env NAME=value sets one inside the container, so it reaches the make as well.
+        reaches_make = assigned_names if inner_words is None else (assigned_names & forwarded_names) | set_names
+        if reaches_make:
+            scan.note("unresolved")
+            return
+        scan_make(words, written_command, cwd, scan, depth, recipe)
+        return
+
+    scope = direct_check_scope(words)
+    scan.note(scope)
+    if scope == "whole" and recipe:
+        scan.whole_recipes.append((*recipe, written_command))
+
+
+def scan_make(words, written_command, cwd, scan, depth, recipe):
+    arguments = parse_make_arguments(words[1:])
+    # Printing the commands (-n), answering a question (-q), touching the targets (-t) or printing help (-h) runs no
+    # recipe line except one marked `+` or one that names `$(MAKE)`, which is not judged.
+    if arguments.runs_no_recipe:
+        return
+
+    # A NAME=value argument can narrow the target, so the call is let through.
+    if arguments.has_variable_assignment or depth >= MAX_MAKE_DEPTH:
+        scan.note("unresolved")
+        return
+
+    directory = pathlib.Path(cwd) / arguments.directory
+    makefile = load_makefile(directory, arguments.files)
+    if makefile is None:
+        scan.note("unresolved")
+        return
+
+    make_call = recipe[0] if recipe else written_command
+    targets = arguments.targets or [makefile.default_goal]
+    for target in targets:
+        if target is None or not makefile.has_rule(target):
+            scan.note("unresolved")
+            continue
+        scan_target(makefile, (directory, tuple(arguments.files)), target, scan, depth + 1, make_call)
+
+
+def scan_target(makefile, makefile_key, target, scan, depth, make_call):
+    visit_key = (*makefile_key, target)
+    # A target scanned at a shallower depth has had all of its prerequisites and recipe read.
+    scanned_depth = scan.visited_depths.get(visit_key)
+    if scanned_depth is not None and scanned_depth <= depth:
+        return
+
+    if depth > MAX_MAKE_DEPTH:
+        scan.note("unresolved")
+        return
+    scan.visited_depths[visit_key] = depth
+
+    # A prerequisite with no rule is a file, not a target.
+    for prerequisite in makefile.all_prerequisites(target):
+        if makefile.has_rule(prerequisite):
+            scan_target(makefile, makefile_key, prerequisite, scan, depth + 1, make_call)
+
+    directory = makefile_key[0]
+    for recipe_command in makefile.recipe_commands(target):
+        scan_command(recipe_command, directory, scan, depth, (make_call, target))
+
+
+def command_check_scope(command, cwd):
+    # "whole" when the command runs a whole test suite, lint or build, "targeted" when it runs one on named files,
+    # "unresolved" when what it runs cannot be read from the text (so it is let through), else "none". A make target
+    # or docker exec is judged by the commands it runs.
+    return scanned_command(command, cwd).scope
+
+
+def scanned_command(command, cwd):
+    scan = CheckScan()
+    scan_command(command, cwd, scan)
+    return scan
+
+
+def whole_recipe_lines(scan):
+    # One line for each make recipe command that runs a whole suite: the make call, the recipe command and its target.
+    return [f"`{make_call}` runs `{recipe_command}` in target `{target}`."
+            for make_call, target, recipe_command in dict.fromkeys(scan.whole_recipes)]
+
+
+def whole_package_reason(command, cwd):
+    # The refusal text for a command that runs a whole suite, else None.
+    scan = scanned_command(command, cwd)
+    if scan.scope != "whole":
+        return None
+
+    recipe_lines = whole_recipe_lines(scan)
+    if not recipe_lines:
+        return WHOLE_PACKAGE_REASON
+    return "\n".join([WHOLE_PACKAGE_REASON, *recipe_lines,
+                      "Run the targeted command from the recipe directly on the changed files."])
 
 
 def environment_from_assignments(assignments):
@@ -168,15 +307,24 @@ def set_gate(commands, gate_assignments=()):
     if not commands:
         sys.exit("coder-gate: set needs at least one command")
 
-    whole_package_commands = [command for command in commands if runs_whole_package(command)]
-    if whole_package_commands:
-        refused_lines = "\n".join(f"  {command}" for command in whole_package_commands)
+    # The gate runs each command from the repo root, so the commands are judged from there.
+    repo_root = git_output(".", "rev-parse", "--show-toplevel")
+    if repo_root is None:
+        sys.exit("coder-gate: set must run inside a git work tree")
+    refused_lines = []
+    for command in commands:
+        scan = scanned_command(command, repo_root)
+        if scan.scope != "whole":
+            continue
+
+        refused_lines.append(f"  {command}")
+        refused_lines.extend(f"    {recipe_line}" for recipe_line in whole_recipe_lines(scan))
+    if refused_lines:
         sys.exit("coder-gate: refused. These commands run a whole test suite, lint a whole package or run a build:\n"
-                 + refused_lines + "\nName the test files, test names or lint paths that the phase changes, or "
-                 "use {files}. The review loop runs the full check command once, at its end.")
+                 + "\n".join(refused_lines) + "\nName the test files, test names or lint paths that the phase "
+                 "changes, or use {files}. The review loop runs the full check command once, at its end.")
 
     environment = environment_from_assignments(gate_assignments)
-    repo_root = git_output(".", "rev-parse", "--show-toplevel")
     gate = {"repoRoot": repo_root, "commands": commands, "env": environment, "setAt": time.time(), "coders": {}}
     script_utils.write_text_atomically(gate_file, json.dumps(gate, indent=1))
     print(f"coder gate set: {len(commands)} command(s)")
@@ -352,33 +500,40 @@ def run_bash_hook():
         return
 
     command = str((event.get("tool_input") or {}).get("command", ""))
-    if not runs_whole_package(command):
+    cwd = event.get("cwd") or "."
+    reason = whole_package_reason(command, cwd)
+    if reason is None:
         return
 
-    repo_name = pathlib.Path(event.get("cwd") or ".").name
+    repo_name = pathlib.Path(cwd).name
     row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "repo": repo_name, "result": "whole-package-deny"}
     append_gate_log(row)
 
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                             "permissionDecisionReason": WHOLE_PACKAGE_REASON}}))
+                                             "permissionDecisionReason": reason}}))
 
 
-verb = sys.argv[1] if len(sys.argv) > 1 else ""
-if verb == "set":
-    set_arguments = sys.argv[2:]
-    env_assignments = []
-    while len(set_arguments) >= 2 and set_arguments[0] == "--env":
-        env_assignments.append(set_arguments[1])
-        set_arguments = set_arguments[2:]
-    if "--env" in set_arguments:
-        sys.exit("coder-gate: --env needs NAME=value, got nothing after it")
+def main():
+    verb = sys.argv[1] if len(sys.argv) > 1 else ""
+    if verb == "set":
+        set_arguments = sys.argv[2:]
+        env_assignments = []
+        while len(set_arguments) >= 2 and set_arguments[0] == "--env":
+            env_assignments.append(set_arguments[1])
+            set_arguments = set_arguments[2:]
+        if "--env" in set_arguments:
+            sys.exit("coder-gate: --env needs NAME=value, got nothing after it")
 
-    set_gate(set_arguments, env_assignments)
-elif verb == "clear":
-    clear_gate()
-elif verb == "hook":
-    run_hook()
-elif verb == "bash-hook":
-    run_bash_hook()
-else:
-    sys.exit("usage: coder_gate.py set [--env NAME=value]... <command>... | clear | hook | bash-hook")
+        set_gate(set_arguments, env_assignments)
+    elif verb == "clear":
+        clear_gate()
+    elif verb == "hook":
+        run_hook()
+    elif verb == "bash-hook":
+        run_bash_hook()
+    else:
+        sys.exit("usage: coder_gate.py set [--env NAME=value]... <command>... | clear | hook | bash-hook")
+
+
+if __name__ == "__main__":
+    main()

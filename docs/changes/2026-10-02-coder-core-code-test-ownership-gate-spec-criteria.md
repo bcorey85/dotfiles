@@ -41,7 +41,7 @@ Sealed bench comparison on ticket-level cells, 72 valid runs: hidden failures pe
 
 ## Watch
 
-—
+Read 2026-10-24 on work logs through 2026-10-21: test-gap findings per code-reviewer run fell from a median of 0.38 (range 0.22 to 0.51) to 0.19. Better. Kept. Watch closed.
 
 ## Back-out
 

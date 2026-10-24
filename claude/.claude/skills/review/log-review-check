@@ -231,23 +231,38 @@ before=$(scalar "select (select count(*) from review_finding) + (select count(*)
 
 PATH="$bare_path" command -v ledger >/dev/null 2>&1 && fail "no ledger: PATH still finds ledger" "$bare_path"
 
-no_ledger_out=$(PATH="$bare_path" "$finding" kind=finding lane=code scope=standalone iter=1 gate=code-reviewer \
-  disposition=fix class=bug "file=$planted_file" line=1 actioned=fixed 2>"$work/err.txt")
+# Without a ledger each writer appends one row to its old jsonl file and prints one stderr line
+# naming it. The fallback gets its own HOME, so the retired-file check below still reads the
+# ledger run's HOME.
+fallback_home="$work/fallback-home"
+mkdir -p "$fallback_home"
+fallback_lines() { # file name -> the number of rows in $fallback_home/.claude/<name>
+  wc -l <"$fallback_home/.claude/$1" 2>/dev/null | tr -d ' '
+}
+expect_appended() { # name file name -> stderr is the one writer line naming the file
+  expect "$1: stderr is one appended line" \
+    "ledger-write: ledger not on PATH; row appended to $fallback_home/.claude/$2" "$(cat "$work/err.txt")"
+  expect "$1: one row in $2" 1 "$(fallback_lines "$2")"
+}
+
+no_ledger_out=$(HOME="$fallback_home" PATH="$bare_path" "$finding" kind=finding lane=code scope=standalone iter=1 \
+  gate=code-reviewer disposition=fix class=bug "file=$planted_file" line=1 actioned=fixed 2>"$work/err.txt")
 expect "no ledger: finding exits 0" 0 "$?"
-expect "no ledger: finding stderr empty" "" "$(cat "$work/err.txt")"
+expect_appended "no ledger: finding" review-findings.jsonl
 contains "no ledger: finding still prints finding_id" "$no_ledger_out" "finding_id="
 
-PATH="$bare_path" "$metrics" iter=1 fix=1 result=PASS >/dev/null 2>"$work/err.txt"
+HOME="$fallback_home" PATH="$bare_path" "$metrics" iter=1 fix=1 result=PASS >/dev/null 2>"$work/err.txt"
 expect "no ledger: metrics exits 0" 0 "$?"
-expect "no ledger: metrics stderr empty" "" "$(cat "$work/err.txt")"
+expect_appended "no ledger: metrics" review-metrics.jsonl
 
-PATH="$bare_path" "$spec_run" slug=x verdict=finalized criteria=1 >/dev/null 2>"$work/err.txt"
+HOME="$fallback_home" PATH="$bare_path" "$spec_run" slug=x verdict=finalized criteria=1 >/dev/null 2>"$work/err.txt"
 expect "no ledger: spec run exits 0" 0 "$?"
-expect "no ledger: spec run stderr empty" "" "$(cat "$work/err.txt")"
+expect_appended "no ledger: spec run" spec-runs.jsonl
 
-no_ledger_scope=$(PATH="$bare_path" "$scope" root="$repo" merge_base=HEAD caller=review 2>"$work/err.txt")
+no_ledger_scope=$(HOME="$fallback_home" PATH="$bare_path" "$scope" root="$repo" merge_base=HEAD caller=review \
+  2>"$work/err.txt")
 expect "no ledger: review-scope exits 0" 0 "$?"
-expect "no ledger: review-scope stderr empty" "" "$(cat "$work/err.txt")"
+expect_appended "no ledger: review-scope" skill-usage.jsonl
 expect "no ledger: review-scope stdout matches the run with ledger" "$with_ledger_scope" "$no_ledger_scope"
 
 after=$(scalar "select (select count(*) from review_finding) + (select count(*) from review_run) + (select count(*) from review_metrics) + (select count(*) from spec_run) + (select count(*) from review_scope)")

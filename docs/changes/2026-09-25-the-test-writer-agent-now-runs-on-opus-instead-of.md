@@ -23,7 +23,7 @@ On the same fixed code, over 11 trees and 3 runs per tree, Opus killed 10.0 poin
 
 ## Watch
 
-—
+Read 2026-10-24 on work logs through 2026-10-21: test-gap and weak-assertion findings per code-reviewer run 0.35 after, against a median of 0.39 (range 0.21 to 0.55) before. No change. The test-writer agent was deleted on 2026-10-02, when the coder took over its tests, so the edit ran one week. Watch closed as reverted.
 
 ## Back-out
 

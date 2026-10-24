@@ -18,7 +18,8 @@
 # With caller=, pipes {skill, caller} to `ledger write review_scope`, which adds the
 # time, repo and session. The write runs only while the metrics switch is on and `jq` is on PATH. It
 # never fails the caller and never touches stdout; `ledger write` may still print to stderr.
-# With no `ledger` on PATH the write is skipped silently and the scope prints as usual.
+# With no `ledger` on PATH `ledger-write` appends {ts, skill, via, session, repo, caller} to
+# ~/.claude/skill-usage.jsonl (SKILL_USAGE_FILE) and prints one stderr line; the scope prints as usual.
 #
 # Exit 0 with ROOT= empty when the directory is not a git repo. Never fails the
 # caller: every git call that errors prints an empty section.

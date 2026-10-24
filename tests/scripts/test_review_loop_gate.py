@@ -325,12 +325,7 @@ class RunRowTest(unittest.TestCase):
 
     def test_a_run_row_goes_to_the_findings_file_while_ledger_is_off_path_and_is_written_once(self):
         records = self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))])
-        fake_dir = os.path.join(self.tmp.name, "fake-ledger-bin")
-        self.env["PATH"] = os.pathsep.join(
-            part
-            for part in self.env["PATH"].split(os.pathsep)
-            if part != fake_dir and not os.path.exists(os.path.join(part, "ledger"))
-        )
+        self.env["PATH"] = fake_ledger.path_without_ledger(self.env["PATH"])
         self.assertIsNone(shutil.which("ledger", path=self.env["PATH"]))
         findings_file = os.path.join(self.home, ".claude", "review-findings.jsonl")
         self.quiet = False
@@ -341,6 +336,19 @@ class RunRowTest(unittest.TestCase):
             logged = [json.loads(line) for line in handle]
         self.assertEqual(1, len(logged))
         self.assertEqual(("run", "code-reviewer", "s1"), (logged[0]["kind"], logged[0]["gate"], logged[0]["session"]))
+        self.stop(records)
+        with open(findings_file, encoding="utf-8") as handle:
+            self.assertEqual(1, len(handle.readlines()))
+
+    def test_a_row_the_fallback_could_not_append_is_retried_on_the_next_stop(self):
+        records = self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))])
+        self.env["PATH"] = fake_ledger.path_without_ledger(self.env["PATH"])
+        findings_file = os.path.join(self.home, ".claude", "review-findings.jsonl")
+        os.makedirs(findings_file)
+        self.quiet = False
+        self.stop(records)
+        self.assertIn("row dropped", self.stderr)
+        os.rmdir(findings_file)
         self.stop(records)
         with open(findings_file, encoding="utf-8") as handle:
             self.assertEqual(1, len(handle.readlines()))

@@ -102,7 +102,7 @@ if command -v ledger >/dev/null 2>&1; then
   # switch absent: no row
   AGENT_LEDGER_ROOT="$ledger_root" HOME="$fakehome" "$scope" root="$work/wt" caller=review >/dev/null
   [ -z "$(review_scope_rows)" ] && pass "log: switch absent, no row" || fail "log: switch absent, no row" "got: $(review_scope_rows)"
-  touch "$fakehome/.claude/toolkit-telemetry"
+  export CLAUDE_TOOLKIT_TELEMETRY=1
 
   out=$(AGENT_LEDGER_ROOT="$ledger_root" HOME="$fakehome" "$scope" root="$work/wt" caller=review)
   refute "log: nothing on stdout" "$out" '"skill"'

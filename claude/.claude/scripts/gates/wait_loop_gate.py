@@ -2,13 +2,15 @@
 """PreToolUse hook on Bash: deny unbounded waits in subagent Bash calls, with the bounded form to use.
 
 A subagent that waits on a condition that never comes true runs until the 10-minute Bash ceiling. This hook denies
-four shapes, only when the payload shows a subagent (agent_type or agent_id is set). The main session is exempt.
+five shapes, only when the payload shows a subagent (agent_type or agent_id is set). The main session is exempt.
 
   1. an until or while loop that runs sleep
   2. a for loop that runs sleep, unless its count is literal and count x sleep seconds <= 120
   3. follow mode (tail -f, docker logs -f, docker compose logs -f, kubectl logs -f, journalctl -f, watch),
      unless the whole call starts with `timeout N` and N <= 120
   4. a standalone sleep longer than 30 seconds
+  5. any background job from review-loop (run_in_background, a lone &, nohup, setsid, disown): it ends its turn
+     waiting on jobs whose results never come back
 
 Heredoc bodies, quoted strings and comments are ignored. Any error exits 0 with no output.
 """
@@ -17,15 +19,13 @@ import os
 import re
 import sys
 
+_SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+sys.path[:0] = [os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
+from shell_statements import clean, statements
+
 MAX_TOTAL_WAIT = 120
 MAX_STANDALONE_SLEEP = 30
 LOOP_WORDS = {"for", "while", "until", "select"}
-SKIP_WORDS = {"do", "then", "else", "elif", "if", "!", "time"}
-HEREDOC = re.compile(r"(?<!<)<<(?!<)-?\s*(['\"]?)([A-Za-z_]\w*)\1")
-QUOTED = re.compile(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"")
-COMMENT = re.compile(r"(^|\s)#[^\n]*")
-COMMAND_SUBSTITUTION = re.compile(r"\$\(([^()]*)\)")
-SEPARATORS = re.compile(r"\n|;|&&|\|\||\|&|\||&|\(|\)")
 DURATION = re.compile(r"^(\d+(?:\.\d+)?)([smhd]?)$")
 BRACE_RANGE = re.compile(r"^\{(\d+)\.\.(\d+)\}$")
 FOLLOW_FLAGS = re.compile(r"^-[A-Za-z0-9]*[fF][A-Za-z0-9]*$")
@@ -45,40 +45,13 @@ FOLLOW_REASON = ("Follow mode never ends, so the call runs until the 10-minute l
 SLEEP_REASON = ("A long sleep wastes the call. Sleep 30 seconds or less. To wait on a condition, use a counted loop, "
                 "for example `for i in $(seq 30); do <check> && break; sleep 3; done`. If the check still fails, "
                 "stop waiting and report it in your hand-back.")
-
-
-def strip_heredocs(command):
-    kept = []
-    delimiter = None
-    for line in command.split("\n"):
-        if delimiter is not None:
-            if line.strip() == delimiter:
-                delimiter = None
-            continue
-        kept.append(line)
-        found = HEREDOC.search(line)
-        if found:
-            delimiter = found.group(2)
-    return "\n".join(kept)
-
-
-def clean(command):
-    without_heredocs = strip_heredocs(command)
-    without_quotes = QUOTED.sub('""', without_heredocs)
-    without_comments = COMMENT.sub(r"\1", without_quotes)
-    return COMMAND_SUBSTITUTION.sub(lambda match: "$<" + match.group(1).replace(" ", "\x00") + ">", without_comments)
-
-
-def statements(command):
-    # Each statement is a list of words. Leading do/then/else and env assignments are dropped.
-    parsed = []
-    for part in SEPARATORS.split(clean(command)):
-        words = part.split()
-        while words and (words[0] in SKIP_WORDS or re.match(r"^[A-Za-z_]\w*=", words[0])):
-            words = words[1:]
-        if words:
-            parsed.append(words)
-    return parsed
+BACKGROUND_REASON = ("Review-loop runs every check in the foreground. A background job's result does not come back "
+                     "to this loop, so it waits for nothing. Run the same command without run_in_background, a "
+                     "trailing &, nohup, setsid or disown, and set the Bash timeout up to 600000 ms.")
+BACKGROUND_AGENT = "review-loop"
+# A lone & that sends a job to the background; &&, |&, 2>&1 and &> are not one.
+SHELL_BACKGROUND = re.compile(r"(?<![&>|<])&(?![&>])")
+DETACH_WORDS = {"nohup", "setsid", "disown"}
 
 
 def seconds_of(word):
@@ -215,13 +188,24 @@ def deny_reason(command):
     return None
 
 
+def starts_detached_job(command):
+    if SHELL_BACKGROUND.search(clean(command)):
+        return True
+    return any(words[0] in DETACH_WORDS for words in statements(command))
+
+
 def main():
     try:
         payload = json.loads(sys.stdin.read())
         is_subagent = bool(payload.get("agent_type") or payload.get("agent_id"))
-        command = (payload.get("tool_input") or {}).get("command")
+        tool_input = payload.get("tool_input") or {}
+        command = tool_input.get("command")
         if not os.environ.get("CLAUDE_SKIP_HOOKS") and is_subagent and isinstance(command, str):
-            reason = deny_reason(command)
+            in_background = tool_input.get("run_in_background") is True or starts_detached_job(command)
+            if in_background and payload.get("agent_type") == BACKGROUND_AGENT:
+                reason = BACKGROUND_REASON
+            else:
+                reason = deny_reason(command)
             if reason:
                 sys.stdout.write(json.dumps({"hookSpecificOutput": {
                     "hookEventName": "PreToolUse", "permissionDecision": "deny",

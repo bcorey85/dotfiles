@@ -1,5 +1,5 @@
 """Checks that every toolkit metrics writer obeys the metrics switch
-(CLAUDE_TOOLKIT_TELEMETRY=1, or the file ~/.claude/toolkit-telemetry).
+(CLAUDE_TOOLKIT_TELEMETRY=1).
 
 For each writer: with the switch absent it writes nothing and exits 0 (log-escape prints one line); with the
 switch present it writes. log-review-finding's default `ledger write` happens with the switch off too; only an
@@ -107,6 +107,7 @@ class SwitchTest(unittest.TestCase):
         self.work = self.root / "work"
         self.work.mkdir()
         self.switch = self.home / ".claude" / "toolkit-telemetry"
+        self.switch_is_on = False
         self.stub_bin = self.root / "bin"
         self.stub_bin.mkdir()
         self.ledger_calls_file = self.root / "ledger-calls.jsonl"
@@ -125,7 +126,11 @@ class SwitchTest(unittest.TestCase):
         scope_path.write_text(scope_text)
 
     def turn(self, state):
-        if state == "on":
+        self.switch_is_on = state == "on"
+
+    def leave_old_switch_file(self, present):
+        # The file ~/.claude/toolkit-telemetry no longer decides anything; cases leave it behind to prove that.
+        if present:
             self.switch.touch()
         else:
             self.switch.unlink(missing_ok=True)
@@ -137,6 +142,8 @@ class SwitchTest(unittest.TestCase):
         environment.update(GIT_ENV)
         environment.update(HOME=str(self.home), TMPDIR=str(self.root), LEDGER_STUB_CALLS=str(self.ledger_calls_file),
                            PATH=str(self.stub_bin) + os.pathsep + environment.get("PATH", ""))
+        if self.switch_is_on:
+            environment["CLAUDE_TOOLKIT_TELEMETRY"] = "1"
         environment.update(extra or {})
         return environment
 
@@ -192,18 +199,19 @@ class SwitchTest(unittest.TestCase):
         return finished
 
     def test_four_switch_cases_for_every_writer_language(self):
-        """The helper decides for bash and Python writers alike: var=1 logs, var unset with the file logs, neither
-        does not, and var=0 with no file does not."""
-        cases = [("var=1, no file", {"CLAUDE_TOOLKIT_TELEMETRY": "1"}, "off", True),
-                 ("var unset, file present", {}, "on", True),
-                 ("neither", {}, "off", False),
-                 ("var=0, no file", {"CLAUDE_TOOLKIT_TELEMETRY": "0"}, "off", False)]
+        """The helper decides for bash and Python writers alike: var=1 logs, var unset does not even with the old
+        switch file present, and var=0 does not."""
+        cases = [("var=1, no file", {"CLAUDE_TOOLKIT_TELEMETRY": "1"}, False, True),
+                 ("var unset, file present", {}, True, False),
+                 ("neither", {}, False, False),
+                 ("var=0, no file", {"CLAUDE_TOOLKIT_TELEMETRY": "0"}, False, False)]
         scan_arguments = ["repo=r", "scan=prohibition", "stage=manual", "exit=0", "candidates=2", "confirmed=1"]
         writers = [("agent-usage.jsonl", "log_agent_usage.py", HOOK_POST, [])]
-        for case_name, extra, file_state, expect_row in cases:
+        self.turn("off")
+        for case_name, extra, file_present, expect_row in cases:
             for log_name, script, payload, arguments in writers:
                 with self.subTest(case=case_name, writer=script):
-                    self.turn(file_state)
+                    self.leave_old_switch_file(file_present)
                     self.home_file(log_name).unlink(missing_ok=True)
                     interpreter = [sys.executable] if script.endswith(".py") else ["bash"]
                     finished = self.run_command([*interpreter, str(self.script_path(script)), *arguments],
@@ -211,7 +219,7 @@ class SwitchTest(unittest.TestCase):
                     self.assertEqual(finished.returncode, 0, finished.stderr)
                     self.assertEqual(len(self.lines(log_name)), 1 if expect_row else 0)
             with self.subTest(case=case_name, writer="log-scan"):
-                self.turn(file_state)
+                self.leave_old_switch_file(file_present)
                 self.ledger_calls_file.unlink(missing_ok=True)
                 finished = self.run_command(["bash", str(self.script_path("log-scan")), *scan_arguments], extra=extra)
                 self.assertEqual(finished.returncode, 0, finished.stderr)
@@ -219,11 +227,12 @@ class SwitchTest(unittest.TestCase):
 
     def test_helper_four_cases_as_command_and_import(self):
         """The two helper forms agree on the four cases."""
-        cases = [({"CLAUDE_TOOLKIT_TELEMETRY": "1"}, False, 0), ({}, True, 0), ({}, False, 1),
+        cases = [({"CLAUDE_TOOLKIT_TELEMETRY": "1"}, False, 0), ({}, True, 1), ({}, False, 1),
                  ({"CLAUDE_TOOLKIT_TELEMETRY": "0"}, False, 1)]
+        self.turn("off")
         for extra, with_file, expected_code in cases:
             with self.subTest(extra=extra, with_file=with_file):
-                self.turn("on" if with_file else "off")
+                self.leave_old_switch_file(with_file)
                 shell_run = self.run_command(["bash", str(self.script_path("telemetry_enabled.sh"))], extra=extra)
                 self.assertEqual(shell_run.returncode, expected_code, shell_run.stderr)
                 python_run = self.run_command(

@@ -364,11 +364,13 @@ def write_run_row(hook, run, lane, phase):
         print(
             "review-loop-gate: run row for {} not written: {}".format(run["gate"], done.stderr.strip()), file=sys.stderr
         )
+    dropped = False
     if done.returncode == 0:
         for line in done.stderr.splitlines():
             if line.startswith("ledger-write:"):
                 print("review-loop-gate: " + line, file=sys.stderr)
-    return done.returncode == 0 and "run_id=" in done.stdout
+                dropped = dropped or line.endswith("row dropped")
+    return done.returncode == 0 and not dropped and "run_id=" in done.stdout
 
 
 def state_file_for(session_id, suffix):

@@ -42,7 +42,6 @@ import json
 import os
 import pathlib
 import re
-import shutil
 import subprocess
 import sys
 
@@ -326,8 +325,9 @@ def reviewer_runs(path):
 
 
 def write_run_row(hook, run, lane, phase):
-    """True when log-review-finding wrote the row. It writes nothing while the telemetry switch is off or `ledger`
-    is not on PATH, and it prints one stderr line for each skip."""
+    """True when log-review-finding wrote the row. It writes nothing while the telemetry switch is off, and it
+    prints one stderr line for each skip. With no `ledger` on PATH the row goes to review-findings.jsonl, and the
+    writer's stderr line is passed on."""
     claude_dir = pathlib.Path(os.environ.get("REVIEW_LOOP_GATE_CLAUDE_DIR") or pathlib.Path.home() / ".claude")
     switch_script = claude_dir / "scripts" / "telemetry" / "telemetry_enabled.sh"
     if not switch_script.is_file():
@@ -347,9 +347,6 @@ def write_run_row(hook, run, lane, phase):
     if switch.returncode:
         print("review-loop-gate: run row for {} skipped: telemetry is off".format(run["gate"]), file=sys.stderr)
         return False
-    if not shutil.which("ledger"):
-        print("review-loop-gate: run row for {} skipped: ledger is not on PATH".format(run["gate"]), file=sys.stderr)
-        return False
     command = [
         "bash",
         str(claude_dir / "skills" / "review" / "log-review-finding"),
@@ -367,6 +364,10 @@ def write_run_row(hook, run, lane, phase):
         print(
             "review-loop-gate: run row for {} not written: {}".format(run["gate"], done.stderr.strip()), file=sys.stderr
         )
+    if done.returncode == 0:
+        for line in done.stderr.splitlines():
+            if line.startswith("ledger-write:"):
+                print("review-loop-gate: " + line, file=sys.stderr)
     return done.returncode == 0 and "run_id=" in done.stdout
 
 

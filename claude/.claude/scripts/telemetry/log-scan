@@ -48,8 +48,8 @@
 #
 # Every value is sent as a JSON string; `ledger write` types it, stores an
 # unknown scan or stage as `other`, and adds date, repo and session. With no
-# `ledger` on PATH the write is skipped silently. A row `ledger write` refuses
-# exits 2.
+# `ledger` on PATH `ledger-write` appends the row to ~/.claude/scan-runs.jsonl and
+# prints one stderr line. A row `ledger write` refuses exits 2.
 set -euo pipefail
 
 script_dir=$(dirname -- "${BASH_SOURCE[0]}")

@@ -7,7 +7,6 @@ Script location: LOG_ESCAPE_SCRIPT, defaulting to ~/.claude/scripts/telemetry/lo
 """
 import os
 import pathlib
-import shutil
 import subprocess
 import tempfile
 import unittest
@@ -147,14 +146,6 @@ class LogEscapeTest(unittest.TestCase):
         done = self.run_escape(*VALID_ARGS, env=self.environment(CLAUDE_TOOLKIT_TELEMETRY="0"))
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(done.stdout, "not logged: toolkit telemetry is off\n")
-        self.assertEqual(self.escape_rows(), [])
-
-    def test_no_ledger_on_path_exits_0_silently(self):
-        no_ledger = fake_ledger.no_ledger_env(self.temp_root)
-        self.assertIsNone(shutil.which("ledger", path=no_ledger["PATH"]))
-        done = self.run_escape(*VALID_ARGS, env=self.environment(**no_ledger))
-        self.assertEqual((done.returncode, done.stdout, done.stderr), (0, "", ""))
-        self.assertEqual(list(pathlib.Path(no_ledger["AGENT_LEDGER_ROOT"]).iterdir()), [])
         self.assertEqual(self.escape_rows(), [])
 
     def test_ledger_exit_code_passes_through(self):

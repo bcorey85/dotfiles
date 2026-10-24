@@ -323,26 +323,27 @@ class RunRowTest(unittest.TestCase):
         self.stop(records)
         self.assertEqual(1, len(self.rows()))
 
-    def test_no_row_is_marked_written_while_ledger_is_off_path_and_it_is_written_once_on(self):
+    def test_a_run_row_goes_to_the_findings_file_while_ledger_is_off_path_and_is_written_once(self):
         records = self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))])
         fake_dir = os.path.join(self.tmp.name, "fake-ledger-bin")
-        bash_dir = os.path.dirname(shutil.which("bash"))
-        good_path = self.env["PATH"]
         self.env["PATH"] = os.pathsep.join(
             part
-            for part in good_path.split(os.pathsep)
+            for part in self.env["PATH"].split(os.pathsep)
             if part != fake_dir and not os.path.exists(os.path.join(part, "ledger"))
         )
         self.assertIsNone(shutil.which("ledger", path=self.env["PATH"]))
-        self.assertTrue(bash_dir in self.env["PATH"].split(os.pathsep))
+        findings_file = os.path.join(self.home, ".claude", "review-findings.jsonl")
         self.quiet = False
         self.stop(records)
         self.assertEqual([], self.rows())
-        self.assertIn("ledger is not on PATH", self.stderr)
-        self.env["PATH"] = good_path
-        self.quiet = True
+        self.assertIn("row appended to " + findings_file, self.stderr)
+        with open(findings_file, encoding="utf-8") as handle:
+            logged = [json.loads(line) for line in handle]
+        self.assertEqual(1, len(logged))
+        self.assertEqual(("run", "code-reviewer", "s1"), (logged[0]["kind"], logged[0]["gate"], logged[0]["session"]))
         self.stop(records)
-        self.assertEqual(1, len(self.rows()))
+        with open(findings_file, encoding="utf-8") as handle:
+            self.assertEqual(1, len(handle.readlines()))
 
     def test_a_missing_telemetry_script_skips_the_row_with_a_stderr_line(self):
         records = self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))])

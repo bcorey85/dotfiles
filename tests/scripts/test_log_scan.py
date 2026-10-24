@@ -7,7 +7,6 @@ Script location: LOG_SCAN_SCRIPT, defaulting to ~/.claude/scripts/telemetry/log-
 """
 import os
 import pathlib
-import shutil
 import subprocess
 import tempfile
 import unittest
@@ -101,14 +100,6 @@ class LogScanTest(unittest.TestCase):
     def test_telemetry_off_is_silent(self):
         done = self.run_scan(*RAN_ARGS, env=self.environment(CLAUDE_TOOLKIT_TELEMETRY="0"))
         self.assertEqual((done.returncode, done.stdout, done.stderr), (0, "", ""))
-        self.assertEqual(self.scan_rows(), [])
-
-    def test_no_ledger_on_path_exits_0_silently(self):
-        no_ledger = fake_ledger.no_ledger_env(self.temp_root)
-        self.assertIsNone(shutil.which("ledger", path=no_ledger["PATH"]))
-        done = self.run_scan(*RAN_ARGS, env=self.environment(**no_ledger))
-        self.assertEqual((done.returncode, done.stdout, done.stderr), (0, "", ""))
-        self.assertEqual(list(pathlib.Path(no_ledger["AGENT_LEDGER_ROOT"]).iterdir()), [])
         self.assertEqual(self.scan_rows(), [])
 
     def test_retired_scan_runs_file_var_writes_no_file(self):

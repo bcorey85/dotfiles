@@ -51,7 +51,8 @@
 #
 # Every value is sent as a JSON string to `ledger write spec_run`, which types it and
 # adds the date, repo and session. slug, date, schema_version, repo and out are
-# accepted and never stored. With no `ledger` on PATH the write is skipped silently.
+# accepted and never stored. With no `ledger` on PATH `ledger-write` appends the row to
+# ~/.claude/spec-runs.jsonl and prints one stderr line.
 # A row `ledger write` refuses exits 2.
 set -euo pipefail
 

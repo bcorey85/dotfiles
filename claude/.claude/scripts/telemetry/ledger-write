@@ -3,18 +3,74 @@
 #
 # usage: ledger-write <type>   (the row is read from stdin)
 #
-# Exits 0 silently when there is no `ledger` on PATH. Drops the row's date, schema_version, repo and
-# session keys, which `ledger write` sets itself. Adds --session when CLAUDE_CODE_SESSION_ID is
-# set. Exits with the code `ledger write` returns. The caller owns the telemetry switch and what to
-# do with a refused row.
+# With `ledger` on PATH: drops the row's date, schema_version, repo and session keys, which
+# `ledger write` sets itself, adds --session when CLAUDE_CODE_SESSION_ID is set, and exits with the
+# code `ledger write` returns.
+#
+# With no `ledger` on PATH: appends the row as one JSON line to the file its type used before the
+# ledger, with date (UTC ISO), schema_version, repo and session added, and prints one stderr line
+# naming the file. Numeric-looking strings are stored as numbers, branch_key as branch, path_key as
+# file. If the append fails it prints one stderr line and exits 0: a telemetry write never blocks
+# the workflow. A type with no file is dropped with one stderr line.
+#
+# Files, each overridden by the variable beside it:
+#   review_finding, review_run  ~/.claude/review-findings.jsonl  REVIEW_FINDINGS_FILE
+#   review_metrics              ~/.claude/review-metrics.jsonl   REVIEW_METRICS_FILE
+#   review_escape               ~/.claude/review-escapes.jsonl   REVIEW_ESCAPES_FILE
+#   spec_run                    ~/.claude/spec-runs.jsonl        SPEC_RUNS_FILE
+#   scan_run                    ~/.claude/scan-runs.jsonl        SCAN_RUNS_FILE
+# review_run rows carry kind=run and review_finding rows kind=finding, as before the ledger.
+#
+# The caller owns the telemetry switch and what to do with a refused row.
 set -euo pipefail
 
-command -v ledger >/dev/null 2>&1 || exit 0
+if command -v ledger >/dev/null 2>&1; then
+  session_args=()
+  [ -z "${CLAUDE_CODE_SESSION_ID:-}" ] || session_args=(--session "$CLAUDE_CODE_SESSION_ID")
 
-session_args=()
-[ -z "${CLAUDE_CODE_SESSION_ID:-}" ] || session_args=(--session "$CLAUDE_CODE_SESSION_ID")
+  # The ledger owns date, schema_version, repo and session; a caller's values for them are
+  # dropped here, once, so no writer repeats the list.
+  jq -c 'del(.date, .schema_version, .repo, .session)' \
+    | ledger write "$1" ${session_args[@]+"${session_args[@]}"}
+  exit $?
+fi
 
-# The ledger owns date, schema_version, repo and session; a caller's values for them are
-# dropped here, once, so no writer repeats the list.
-jq -c 'del(.date, .schema_version, .repo, .session)' \
-  | ledger write "$1" ${session_args[@]+"${session_args[@]}"}
+row_type="$1"
+script_dir=$(dirname -- "${BASH_SOURCE[0]}")
+
+case "$row_type" in
+  review_finding) out="${REVIEW_FINDINGS_FILE:-$HOME/.claude/review-findings.jsonl}"; schema_version=3; kind=finding ;;
+  review_run) out="${REVIEW_FINDINGS_FILE:-$HOME/.claude/review-findings.jsonl}"; schema_version=3; kind=run ;;
+  review_metrics) out="${REVIEW_METRICS_FILE:-$HOME/.claude/review-metrics.jsonl}"; schema_version=2; kind="" ;;
+  review_escape) out="${REVIEW_ESCAPES_FILE:-$HOME/.claude/review-escapes.jsonl}"; schema_version=2; kind="" ;;
+  spec_run) out="${SPEC_RUNS_FILE:-$HOME/.claude/spec-runs.jsonl}"; schema_version=1; kind="" ;;
+  scan_run) out="${SCAN_RUNS_FILE:-$HOME/.claude/scan-runs.jsonl}"; schema_version=2; kind="" ;;
+  *)
+    echo "ledger-write: ledger not on PATH; $row_type has no jsonl file, row dropped" >&2
+    exit 0 ;;
+esac
+
+# The checkout is not the repo: repo-name names a linked worktree by its main checkout.
+repo=$("$script_dir/../tools/repo-name" 2>/dev/null || true)
+
+if ! row=$(jq -c --arg sv "$schema_version" --arg kind "$kind" --arg repo "$repo" \
+  --arg session "${CLAUDE_CODE_SESSION_ID:-}" '
+  def typed: if type == "string" then (tonumber? // .) else . end;
+  del(.date, .schema_version, .repo, .session)
+  | with_entries(.key |= (if . == "branch_key" then "branch" elif . == "path_key" then "file" else . end))
+  | with_entries(.value |= typed)
+  | {date: (now | todate), schema_version: ($sv | tonumber)}
+    + (if $session != "" then {session: $session} else {} end)
+    + (if $repo != "" then {repo: $repo} else {} end)
+    + (if $kind != "" then {kind: $kind} else {} end)
+    + .' 2>/dev/null); then
+  echo "ledger-write: ledger not on PATH; $row_type row is not valid JSON, row dropped" >&2
+  exit 0
+fi
+
+if ! { mkdir -p -- "$(dirname -- "$out")" && printf '%s\n' "$row" >> "$out"; } 2>/dev/null; then
+  echo "ledger-write: ledger not on PATH; could not append $row_type row to $out, row dropped" >&2
+  exit 0
+fi
+
+echo "ledger-write: ledger not on PATH; row appended to $out" >&2

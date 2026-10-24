@@ -134,7 +134,7 @@ class CodeStepTest(unittest.TestCase):
         for name in ("coder_gate.py", "resolve-task-dir.sh"):
             stage_script(REAL_CLAUDE / "scripts", name, self.claude / "scripts")
         for name in ("coder_packet.py", "plan_format.py", "script_utils.py", "code_step_core.py",
-                     "code_step_boundary.py", "code_step_hooks.py"):
+                     "code_step_boundary.py", "code_step_hooks.py", "shell_command.py", "makefile_text.py"):
             stage_script(SCRIPTS_ROOT, name, self.claude / "scripts")
         self.log = self.tmp / "calls.log"
         (self.claude / "scripts" / "telemetry").mkdir()

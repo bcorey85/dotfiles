@@ -13,12 +13,16 @@ SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or (HERE if (HERE 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from shell_command import (
+    docker_forwarded_variables,
+    docker_set_variables,
     parse_simple_commands,
     redirection_writes_file,
     runs_only_after_success,
     split_command_steps,
     split_simple_commands,
     step_surely_ran,
+    unwrap_docker,
+    without_assignments,
 )
 
 
@@ -196,6 +200,78 @@ class StepSurelyRanTest(unittest.TestCase):
         self.assertEqual([step_surely_ran(steps, i, True) for i in range(2)], [False, True])
         steps = split_command_steps("x; a && b | c &")
         self.assertEqual([step_surely_ran(steps, i, True) for i in range(4)], [True, False, False, False])
+
+
+class UnwrapDockerTest(unittest.TestCase):
+    def test_the_command_after_the_service_container_or_image_is_returned(self):
+        cases = {
+            "docker compose exec -T app pytest -q": ["pytest", "-q"],
+            "docker-compose run --rm app npm test": ["npm", "test"],
+            "docker exec -it web ls": ["ls"],
+            "docker container run image echo hi": ["echo", "hi"],
+            "docker run image": [],
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(expected, unwrap_docker(command.split()))
+
+    def test_options_that_take_a_value_are_skipped_with_it_and_flags_are_not(self):
+        words = ["docker", "compose", "-f", "ci.yml", "exec", "-e", "A=1", "--env", "B=2", "-w", "/app", "-u", "root",
+                 "--workdir=/x", "-d", "app", "pytest"]
+
+        self.assertEqual(["pytest"], unwrap_docker(words))
+
+    def test_other_commands_are_not_docker_calls(self):
+        for command in ("docker compose up -d", "docker ps", "docker build .", "pytest", ""):
+            with self.subTest(command=command):
+                self.assertIsNone(unwrap_docker(command.split()))
+                self.assertEqual(set(), docker_forwarded_variables(command.split()))
+
+    def test_variables_passed_by_name_are_forwarded_and_variables_given_a_value_are_not(self):
+        cases = {
+            "docker compose exec -e FILE app make test": {"FILE"},
+            "docker compose run --rm --env FILE --env=OTHER -eMORE app make test": {"FILE", "OTHER", "MORE"},
+            "docker exec -e FILE=x app make test": set(),
+            "docker compose exec -w /app app make -e FILE": set(),
+            "docker run --name FILE image make test": set(),
+            "docker compose exec app make test": set(),
+            "docker run -e": set(),
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(expected, docker_forwarded_variables(command.split()))
+
+    def test_variables_given_a_value_are_set_and_variables_passed_by_name_are_not(self):
+        cases = {
+            "docker compose exec -e FILE=x app make test": {"FILE"},
+            "docker compose run --rm --env FILE=x --env=OTHER=y -eMORE=z app make test": {"FILE", "OTHER", "MORE"},
+            "docker exec -e FILE app make test": set(),
+            "docker compose exec -w /app app make -e FILE=x": set(),
+            "docker compose exec app make test": set(),
+            "pytest -e FILE=x": set(),
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(expected, docker_set_variables(command.split()))
+
+    def test_added_value_options_are_skipped_with_their_value(self):
+        words = ["docker", "run", "--memory", "1g", "--cpus", "2", "--pull", "always", "--ulimit", "nofile=1", "app",
+                 "pytest"]
+
+        self.assertEqual(["pytest"], unwrap_docker(words))
+
+
+class WithoutAssignmentsTest(unittest.TestCase):
+    def test_leading_assignments_are_dropped_and_later_ones_and_flags_stay(self):
+        cases = {
+            "A=1 B=2 pytest C=3": ["pytest", "C=3"],
+            "pytest": ["pytest"],
+            "A=1": [],
+            "--env=x pytest": ["--env=x", "pytest"],
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(expected, without_assignments(command.split()))
 
 
 if __name__ == "__main__":

@@ -16,6 +16,14 @@ HIDDEN_OPERATOR = re.compile(r"""\\[();|&<>\n]|(["'])\s*[();|&<>\n][\s();|&<>]*\
 SPACED_REDIRECT_NUMBER = re.compile(r"(?<!\S)\d+[ \t]+[<>]")
 # The target of `>&1`, `2>&1` or `>&-` copies or closes a file descriptor; any other `>&` target is a file.
 FILE_DESCRIPTOR_TARGET = re.compile(r"\d+-?|-")
+# docker and docker compose options that take the next word as their value. `--opt=value` is one word, read as a flag.
+DOCKER_VALUE_OPTIONS = {
+    "-e", "--env", "-w", "--workdir", "-u", "--user", "--entrypoint", "-v", "--volume", "--name", "-p", "--publish",
+    "--network", "--env-file", "-f", "--file", "--project-name", "--project-directory", "--profile", "-l", "--label",
+    "--mount", "--add-host", "--cap-add", "--cap-drop", "--hostname", "--platform", "--context", "--volumes-from",
+    "-m", "--memory", "--cpus", "--gpus", "--shm-size", "--ulimit", "--tmpfs", "--device", "--restart", "--pull",
+    "--security-opt", "--log-opt", "--index", "--ansi", "--progress",
+}
 
 
 def redirection_writes_file(operator, target):
@@ -82,6 +90,85 @@ def parse_simple_commands(command):
     if words or redirections:
         commands.append((words, redirections))
     return commands
+
+
+def unwrap_docker(words):
+    """The command that a `docker compose exec|run`, `docker-compose exec|run`, `docker exec|run` or `docker
+    container exec|run` call runs inside its container, as a list of words (empty when it names none). None when the
+    words are not such a call. An option that takes a value is skipped with its value; any other option is a flag."""
+    command_start = docker_command_start(words)
+    if command_start is None:
+        return None
+    return words[command_start:]
+
+
+def docker_command_start(words):
+    # The index in words where the command run inside the container starts, or None when the words are not a docker
+    # exec or run call.
+    if not words or words[0] not in ("docker", "docker-compose"):
+        return None
+
+    index = skip_docker_options(words, 1)
+    if words[0] == "docker" and index < len(words) and words[index] in ("compose", "container"):
+        index = skip_docker_options(words, index + 1)
+    if index >= len(words) or words[index] not in ("exec", "run"):
+        return None
+
+    # The word after the options is the service, container or image; the rest is the command.
+    index = skip_docker_options(words, index + 1)
+    return min(index + 1, len(words))
+
+
+def docker_forwarded_variables(words):
+    """The names of the host variables that a docker exec or run call passes into the container with `-e NAME`,
+    `--env NAME`, `--env=NAME` or `-eNAME` (an option that sets a value, `-e NAME=value`, forwards none). An empty
+    set when the words are not such a call."""
+    return {value for value in docker_environment_values(words) if "=" not in value}
+
+
+def docker_set_variables(words):
+    """The names of the variables that a docker exec or run call sets inside the container with `-e NAME=value`,
+    `--env NAME=value`, `--env=NAME=value` or `-eNAME=value`. An empty set when the words are not such a call."""
+    return {value.split("=", 1)[0] for value in docker_environment_values(words) if "=" in value}
+
+
+def docker_environment_values(words):
+    # The value of each -e or --env option of a docker exec or run call: `NAME` or `NAME=value`.
+    command_start = docker_command_start(words)
+    if command_start is None:
+        return []
+
+    values = []
+    index = 1
+    while index < command_start:
+        word = words[index]
+        index += 1
+        value = None
+        if word in ("-e", "--env"):
+            value = words[index] if index < command_start else None
+            index += 1
+        elif word.startswith("--env="):
+            value = word[len("--env="):]
+        elif word.startswith("-e") and not word.startswith("--"):
+            value = word[2:]
+        elif word in DOCKER_VALUE_OPTIONS:
+            index += 1
+        if value:
+            values.append(value)
+    return values
+
+
+def skip_docker_options(words, index):
+    while index < len(words) and words[index].startswith("-"):
+        index += 2 if words[index] in DOCKER_VALUE_OPTIONS else 1
+    return index
+
+
+def without_assignments(words):
+    """The words with the leading NAME=value words dropped."""
+    while words and "=" in words[0] and not words[0].startswith("-"):
+        words = words[1:]
+    return words
 
 
 def split_command_steps(command):

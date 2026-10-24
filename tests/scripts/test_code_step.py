@@ -13,11 +13,23 @@ import unittest
 import unittest.mock
 from typing import ClassVar
 
+import toolkit_paths
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 REAL_CLAUDE = pathlib.Path(os.environ.get("CODE_STEP_REAL_CLAUDE") or REPO_ROOT / "claude" / ".claude")
-SCRIPT = pathlib.Path(os.environ.get("CODE_STEP_SCRIPT") or REAL_CLAUDE / "scripts" / "code_step.py")
-HANDBACK_SCRIPT = pathlib.Path(os.environ.get("HANDBACK_SCRIPT") or REAL_CLAUDE / "scripts" / "handback.py")
+SCRIPT = pathlib.Path(os.environ.get("CODE_STEP_SCRIPT") or REAL_CLAUDE / "scripts" / "code" / "code_step.py")
+HANDBACK_SCRIPT = pathlib.Path(os.environ.get("HANDBACK_SCRIPT") or REAL_CLAUDE / "scripts" / "review" / "handback.py")
+SCRIPTS_ROOT = SCRIPT.parent.parent
 sys.path.insert(0, str(SCRIPT.parent))
+sys.path.insert(0, str(SCRIPTS_ROOT / "lib"))
+
+
+def stage_script(source_root, name, destination_root):
+    """Copy `name` from its folder under source_root into the same folder under destination_root."""
+    source = toolkit_paths.script_in(source_root, name)
+    destination = destination_root / source.parent.name / name
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(source, destination)
 module_spec = importlib.util.spec_from_file_location("code_step", SCRIPT)
 code_step = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(code_step)
@@ -120,12 +132,13 @@ class CodeStepTest(unittest.TestCase):
         (self.claude / "scripts").mkdir(parents=True)
         (self.claude / "skills/review").mkdir(parents=True)
         for name in ("coder_gate.py", "resolve-task-dir.sh"):
-            shutil.copy(REAL_CLAUDE / "scripts" / name, self.claude / "scripts" / name)
+            stage_script(REAL_CLAUDE / "scripts", name, self.claude / "scripts")
         for name in ("coder_packet.py", "plan_format.py", "script_utils.py", "code_step_core.py",
                      "code_step_boundary.py", "code_step_hooks.py"):
-            shutil.copy(SCRIPT.parent / name, self.claude / "scripts" / name)
+            stage_script(SCRIPTS_ROOT, name, self.claude / "scripts")
         self.log = self.tmp / "calls.log"
-        for name in ("scripts/log-scan", "skills/review/log-review-finding"):
+        (self.claude / "scripts" / "telemetry").mkdir()
+        for name in ("scripts/telemetry/log-scan", "skills/review/log-review-finding"):
             stub = self.claude / name
             stub.write_text(f'#!/usr/bin/env bash\necho "{name} $@" >> {self.log}\n')
             stub.chmod(0o755)
@@ -178,7 +191,8 @@ class CodeStepTest(unittest.TestCase):
         gate = json.loads(gate_path.read_text())
         gate["commands"] = self.gate_commands
         gate_path.write_text(json.dumps(gate))
-        finished = subprocess.run([sys.executable, str(self.claude / "scripts/coder_gate.py"), "hook"], env=self.env,
+        gate_script = str(self.claude / "scripts/code/coder_gate.py")
+        finished = subprocess.run([sys.executable, gate_script, "hook"], env=self.env,
                                   input=json.dumps(event), capture_output=True, text=True)
         if not finished.stdout.strip():
             return None
@@ -2858,7 +2872,7 @@ class CodeStepTest(unittest.TestCase):
         bare.mkdir()
         for name in (SCRIPT.name, "script_utils.py", "plan_format.py", "code_step_core.py", "code_step_boundary.py",
                      "code_step_hooks.py"):
-            shutil.copy(SCRIPT.parent / name, bare / name)
+            shutil.copy(toolkit_paths.script_in(SCRIPTS_ROOT, name), bare / name)
         env = dict(self.env, PYTHONPATH="")
         script = str(bare / SCRIPT.name)
 

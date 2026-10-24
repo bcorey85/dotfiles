@@ -7,7 +7,7 @@ import unittest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = pathlib.Path(
-    os.environ.get("PLAN_FORMAT_SCRIPT") or REPO_ROOT / "claude" / ".claude" / "scripts" / "plan_format.py"
+    os.environ.get("PLAN_FORMAT_SCRIPT") or REPO_ROOT / "claude" / ".claude" / "scripts" / "lib" / "plan_format.py"
 )
 sys.path.insert(0, str(SCRIPT.parent))
 import plan_format

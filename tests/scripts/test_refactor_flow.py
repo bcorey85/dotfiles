@@ -18,8 +18,9 @@ SCRIPT = pathlib.Path(
     or toolkit_paths.CLAUDE_DIR / "skills" / "refactor" / "scripts" / "refactor_flow.py"
 )
 REAL_CLAUDE_DIR = os.environ.get("REFACTOR_CLAUDE_DIR") or str(toolkit_paths.CLAUDE_DIR)
-BRANCH_BASE = os.environ.get("BRANCH_BASE_SCRIPT") or str(pathlib.Path(REAL_CLAUDE_DIR) / "scripts" / "branch-base")
-LOG_ESCAPE = os.environ.get("REFACTOR_LOG_ESCAPE") or str(pathlib.Path(REAL_CLAUDE_DIR) / "scripts" / "log-escape")
+REAL_SCRIPTS_DIR = pathlib.Path(REAL_CLAUDE_DIR) / "scripts"
+BRANCH_BASE = os.environ.get("BRANCH_BASE_SCRIPT") or str(REAL_SCRIPTS_DIR / "tools" / "branch-base")
+LOG_ESCAPE = os.environ.get("REFACTOR_LOG_ESCAPE") or str(REAL_SCRIPTS_DIR / "telemetry" / "log-escape")
 
 GIT_ENV = {
     "GIT_AUTHOR_NAME": "t",

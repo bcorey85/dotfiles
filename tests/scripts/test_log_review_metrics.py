@@ -16,10 +16,10 @@ SCRIPT = pathlib.Path(
     os.environ.get("LOG_REVIEW_METRICS_SCRIPT") or REAL_CLAUDE / "skills" / "review" / "log-review-metrics"
 )
 TELEMETRY_ENABLED_SCRIPT = pathlib.Path(
-    os.environ.get("TELEMETRY_ENABLED_SCRIPT") or REAL_CLAUDE / "scripts" / "telemetry_enabled.sh"
+    os.environ.get("TELEMETRY_ENABLED_SCRIPT") or REAL_CLAUDE / "scripts" / "telemetry" / "telemetry_enabled.sh"
 )
-KV_SCRIPT = REAL_CLAUDE / "scripts" / "_kv.sh"
-LEDGER_WRITE_SCRIPT = REAL_CLAUDE / "scripts" / "ledger-write"
+KV_SCRIPT = REAL_CLAUDE / "scripts" / "lib" / "_kv.sh"
+LEDGER_WRITE_SCRIPT = REAL_CLAUDE / "scripts" / "telemetry" / "ledger-write"
 
 GIT_ENV = {
     "GIT_AUTHOR_NAME": "t",
@@ -42,12 +42,14 @@ class LogReviewMetricsRepoTest(unittest.TestCase):
         review_dir = self.root / "claude" / "skills" / "review"
         self.scripts_dir = self.root / "claude" / "scripts"
         review_dir.mkdir(parents=True)
-        self.scripts_dir.mkdir()
+        telemetry_dir = self.scripts_dir / "telemetry"
+        telemetry_dir.mkdir(parents=True)
+        (self.scripts_dir / "lib").mkdir()
         self.script = review_dir / "log-review-metrics"
         shutil.copy2(SCRIPT, self.script)
-        shutil.copy2(TELEMETRY_ENABLED_SCRIPT, self.scripts_dir / "telemetry_enabled.sh")
-        shutil.copy2(KV_SCRIPT, self.scripts_dir / "_kv.sh")
-        shutil.copy2(LEDGER_WRITE_SCRIPT, self.scripts_dir / "ledger-write")
+        shutil.copy2(TELEMETRY_ENABLED_SCRIPT, telemetry_dir / "telemetry_enabled.sh")
+        shutil.copy2(KV_SCRIPT, self.scripts_dir / "lib" / "_kv.sh")
+        shutil.copy2(LEDGER_WRITE_SCRIPT, telemetry_dir / "ledger-write")
         self.ledger_env = fake_ledger.install(self.root)
 
         self.main_repo = self.root / "mainrepo"

@@ -1,0 +1,588 @@
+"""plan_format.py: the one reader of a plan's phase sections, its Phase Status list and its `#### Manual Verification`
+sections.
+
+Installed in scripts/lib beside script_utils.py. A plan file is text a person or a model wrote, so the
+reader stops on any line it does not know and names the file and the line.
+
+Section grammar, from every real plan under ~/dev/*/docs/{plans,eng-specs}:
+  heading   `### Manual Verification` or `#### Manual Verification`, optionally followed by a qualifier such as
+            `(human-only, Brandon):`. The same words at any other heading level are an error.
+  item      a list entry at column 0: `- [ ] text`, `- [x] text` (the template form), `- text`, `* text`, `1. text`.
+            Indented lines below it (sub-bullets, wrapped text, numbered steps) belong to it.
+  marker    a line that opens with `N/A` (bare or as a plain bullet): the phase has no manual items.
+  prose     a line at column 0 that is not a list entry (an intro such as "In a temp root:", "Expected: ...").
+  end       the next heading of the section's own level or a higher one, a `---` rule, or the end of the file.
+Anything else fails: a fenced block, a table, a quote, an HTML comment, an indented line with no item above it, or a
+list item under a deeper sub-heading inside the section (it would be read as a manual item).
+A phase stays open across its Success Criteria, Automated Verification and Manual Verification headings, whatever
+their level.
+
+Phase Status grammar: `- [ ] Phase <id>: <title>` is open, `- [x] ...` is done, and `- [-] ...` is moved to another
+ticket. A moved line says `moved to <KEY>` (a ticket key such as LED-16), and the plan's `## Plan Deviations` section
+holds a line that names the phase (`Phase <id>` or `P<id>`) and the ticket key. The reader checks that the line exists,
+never who signed it. A moved phase is neither done nor open, and it needs no `## Phase <id>` section: a move may take
+the section to the new ticket.
+"""
+import pathlib
+import re
+
+import script_utils
+
+PHASE_ID = r"(?=[A-Za-z0-9.-]*\d)[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*"
+PHASE_HEADING = re.compile(rf"^(#{{2,4}})\s+Phase\s+({PHASE_ID})(?![A-Za-z0-9])")
+MANUAL_HEADING = re.compile(r"^(#{1,6})\s+manual verification\b(.*)$", re.I)
+SUCCESS_GROUP_HEADING = re.compile(r"^#{1,6}\s+(?:success criteria|automated verification|manual verification)\b", re.I)
+LIST_ENTRY = re.compile(r"^(?:[-*]|\d+[.)])\s+(?:\[([ xX])\]\s+)?(.*)$")
+NOT_APPLICABLE = re.compile(r"^(?:[-*]\s+)?N/A\b", re.I)
+FOREIGN_START = ("|", ">", "<")
+SECTION_LEVELS = (3, 4)
+HUMAN_ONLY_MARK = "human-only"
+AGENT_VERIFIED_MARK = "agent-verified"
+
+
+PHASE_STATUS_LINE = re.compile(rf"^[-*]\s+\[( |x|X|-)\]\s+Phase\s+({PHASE_ID})\s*[:.—–-]\s*(.*)$")
+MOVED_MARK = "-"
+MOVED_TARGET = re.compile(r"(?i:moved to)\s+([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])")
+DEVIATIONS_HEADING = "Plan Deviations"
+STATUS_ITEM_START = re.compile(r"^[-*]\s+\[")
+RISK_MARK = re.compile(r"\(risk:\s*(low|high)\)", re.I)
+GATE_CLAUSE = re.compile(r"(?:^|\s)[—–-]\s*gate:\s*(.*)$", re.I)
+UNSTATED_GATE = "(no condition written)"
+
+
+def gate_condition(title):
+    """The text of a `gate: <condition>` clause in a Phase Status title, or None when the title has no clause. The risk
+    mark is not part of the condition. A clause with no text gives UNSTATED_GATE. The reader only reports the text: it
+    never judges whether the condition holds."""
+    clause = GATE_CLAUSE.search(title)
+    if not clause:
+        return None
+    return RISK_MARK.sub("", clause.group(1)).strip() or UNSTATED_GATE
+
+
+class PlanFormatError(Exception):
+    """A line the grammar does not parse. The message starts with `name:line:`."""
+
+
+def phase_spans(lines):
+    """Every `Phase <id>` section of the plan in file order, as (id, {"start", "level", "title", "end"}) with 0-based
+    line indexes, `end` exclusive, and the failures for ids that have two sections.
+
+    A section runs to the next heading of its own level or a higher one, or to the next section. Its Success Criteria,
+    Automated Verification and Manual Verification headings do not end it, whatever their level. A heading of an id
+    that already has a section, deeper than the section it sits in (a `#### Phase <id> record` under `## Phase <id>`),
+    is a note inside that section, not a second section. A second section of one id is a failure and is still
+    returned."""
+    fenced = script_utils.fenced_line_indexes(lines)
+    spans = []
+    failures = []
+    first_lines = {}
+    current = None
+
+    for index, line in enumerate(lines):
+        if index in fenced:
+            continue
+        heading = script_utils.MARKDOWN_HEADING.match(line)
+        if not heading:
+            continue
+
+        level = len(heading.group(1))
+        if current is not None and level <= current["level"] and not SUCCESS_GROUP_HEADING.match(line):
+            current["end"] = index
+            current = None
+
+        phase_heading = PHASE_HEADING.match(line)
+        if not phase_heading:
+            continue
+
+        section_id = phase_heading.group(2)
+        if current is not None and level > current["level"] and section_id in first_lines:
+            continue
+
+        if current is not None:
+            current["end"] = index
+        current = {"start": index, "level": level, "title": line[phase_heading.end():].lstrip(" :.—–-"),
+                   "end": len(lines)}
+        spans.append((section_id, current))
+        if section_id in first_lines:
+            failures.append({"line": index + 1, "kind": "duplicate-id", "detail": f"Phase {section_id} has two "
+                             f"sections, on line {first_lines[section_id] + 1} and line {index + 1}. Give "
+                             "each phase its own id."})
+            continue
+        first_lines[section_id] = index
+    return spans, failures
+
+
+def phase_section(lines, phase_id):
+    """The first section of the phase with this exact id as {"start", "level", "title", "end"}, or None."""
+    spans, _ = phase_spans(lines)
+    return next((section for section_id, section in spans if section_id == phase_id), None)
+
+
+def phase_status_entries(lines, closing_skill):
+    """The `- [ ] Phase <id>: <title>` lines under the `Phase Status` heading, in file order, and the failures for a
+    list line that does not parse or an id listed twice. `closing_skill(title)` names the skill a closing phase runs,
+    or None. Each entry is {"line", "done", "number", "title", "risk", "closing", "gate"}; "gate" is the text of a
+    `gate: <condition>` clause in the title, or None. "moved" is True for a `[-]` line and "movedTo" is the ticket key
+    its `moved to <KEY>` names, or None; a moved phase is not "done". "open" is True for a phase that is neither done
+    nor moved: the phases a run can still start. A `[-]` line with no `moved to <KEY>` is a failure and still returns
+    its entry."""
+    fenced = script_utils.fenced_line_indexes(lines)
+    entries = []
+    failures = []
+    first_lines = {}
+    in_status = False
+
+    for index, line in enumerate(lines):
+        if index in fenced:
+            continue
+        heading = script_utils.MARKDOWN_HEADING.match(line)
+        if heading:
+            in_status = heading.group(2).strip() == "Phase Status"
+            continue
+        if not in_status or not STATUS_ITEM_START.match(line):
+            continue
+
+        match = PHASE_STATUS_LINE.match(line)
+        if not match:
+            failures.append({"line": index + 1, "kind": "unparsed-line", "detail": f"{line.strip()!r}. Rewrite it as "
+                             "`- [ ] Phase <id>: <title>`, or move it out of the section."})
+            continue
+
+        number = match.group(2)
+        if number in first_lines:
+            failures.append({"line": index + 1, "kind": "duplicate-id", "detail": f"Phase {number} twice, on line "
+                             f"{first_lines[number] + 1} and line {index + 1}. Give each phase its own id."})
+            continue
+
+        first_lines[number] = index
+        title = match.group(3)
+        risk = RISK_MARK.search(title)
+        closing = closing_skill(title)
+        is_moved = match.group(1) == MOVED_MARK
+        target = MOVED_TARGET.search(title) if is_moved else None
+        if is_moved and not target:
+            failures.append({"line": index + 1, "kind": "moved-without-target", "detail": f"Phase {number} is marked "
+                             "`[-]` (moved to another ticket) but the line does not say `moved to <KEY>`. Add the "
+                             "ticket key, for example `moved to LED-16`."})
+        is_done = match.group(1) in ("x", "X")
+        entries.append({"line": index, "done": is_done, "moved": is_moved, "open": not is_done and not is_moved,
+                        "movedTo": target.group(1) if target else None, "number": number, "title": title,
+                        "risk": risk.group(1).lower() if risk else "high", "closing": closing,
+                        "gate": gate_condition(title)})
+    return entries, failures
+
+
+def deviation_records_move(lines, number, ticket_key):
+    """True when one line of the plan's `## Plan Deviations` section names the phase and names the ticket key it moved
+    to. The phase is named `Phase <id>` or `P<id>`, not followed by more of an id; an id that already starts with `P` is
+    also named by itself (`P4`, `Phase P4`). The key must stand alone (`LED-16`, not `LED-160`). A line that names only
+    the phase, such as a tick entry, does not count. The check only finds the words; it never judges who signed."""
+    deviation_lines = [lines[index] for index in script_utils.heading_section_indexes(lines, DEVIATIONS_HEADING)]
+    escaped = re.escape(number)
+    bare_name = escaped if number.startswith("P") else "P" + escaped
+    phase_name = re.compile(rf"(?<![A-Za-z0-9])(?:Phase\s+{escaped}|{bare_name})(?![A-Za-z0-9]|[.-][A-Za-z0-9])")
+    key_name = re.compile(rf"(?<![A-Za-z0-9]){re.escape(ticket_key)}(?![A-Za-z0-9])")
+    return any(phase_name.search(line) and key_name.search(line) for line in deviation_lines)
+
+
+def moved_deviation_failure(lines, entry):
+    """The `moved-without-deviation` failure for a moved entry whose ticket key no Plan Deviations line records with
+    the phase's name, or None. A moved entry with no key has its own failure and gives None here."""
+    if not entry["moved"] or entry["movedTo"] is None:
+        return None
+    if deviation_records_move(lines, entry["number"], entry["movedTo"]):
+        return None
+    return {"line": entry["line"] + 1, "kind": "moved-without-deviation", "detail": f"Phase {entry['number']} is "
+            f"marked moved, but '## {DEVIATIONS_HEADING}' has no line that names it and {entry['movedTo']}. Record "
+            f"the sign-off for the move in {DEVIATIONS_HEADING} (who and when), and name Phase "
+            f"{entry['number']} and {entry['movedTo']} in the same line."}
+
+
+def parse_plan(lines, closing_skill=lambda title: None):
+    """The plan's Phase Status entries and phase sections, with every failure sorted by line: {"entries", "sections"
+    (id to the first section of that id), "failures"}. A Phase Status entry with no section is a failure unless it is
+    a closing phase or a moved phase, and a section with no Phase Status entry is a failure when the plan lists any
+    phase."""
+    entries, failures = phase_status_entries(lines, closing_skill)
+    spans, section_failures = phase_spans(lines)
+    failures += section_failures
+
+    sections = {}
+    for section_id, section in spans:
+        sections.setdefault(section_id, section)
+
+    for entry in entries:
+        deviation_failure = moved_deviation_failure(lines, entry)
+        if deviation_failure:
+            failures.append(deviation_failure)
+
+        # A closing phase is defined by its skill, so its Phase Status line needs no section of its own. A moved phase
+        # may take its section to the new ticket.
+        if entry["number"] not in sections and not entry["closing"] and not entry["moved"]:
+            failures.append({"line": entry["line"] + 1, "kind": "missing-section", "detail": f"Phase "
+                             f"{entry['number']} is in Phase Status but the plan has no '## Phase {entry['number']}' "
+                             "section."})
+
+    status_ids = {entry["number"] for entry in entries}
+    for number, section in sections.items():
+        if entries and number not in status_ids:
+            failures.append({"line": section["start"] + 1, "kind": "section-without-status", "detail": f"Phase "
+                             f"{number} has a section but no Phase Status entry. Add `- [ ] Phase {number}: "
+                             f"{section['title']}` to the Phase Status list."})
+
+    failures.sort(key=lambda failure: failure["line"])
+    return {"entries": entries, "sections": sections, "failures": failures}
+
+
+def moved_phases(text, name="plan"):
+    """The Phase Status entries marked `[-]` (moved to another ticket) in this plan text, in file order. A plan with no
+    Phase Status gives []. A moved line with no `moved to <KEY>`, or with no Plan Deviations line that records the move,
+    raises PlanFormatError that starts with `name:line:`, the same check parse_plan makes. Other lines the Phase Status
+    grammar rejects are left to parse_plan, which names them."""
+    lines = text.splitlines()
+    entries, entry_failures = phase_status_entries(lines, lambda title: None)
+    moved = [entry for entry in entries if entry["moved"]]
+    failures = [failure for failure in entry_failures if failure["kind"] == "moved-without-target"]
+    deviation_failures = [moved_deviation_failure(lines, entry) for entry in moved]
+    failures += [failure for failure in deviation_failures if failure]
+    if failures:
+        first = min(failures, key=lambda failure: failure["line"])
+        raise PlanFormatError(f"{name}:{first['line']}: {first['detail']}")
+    return moved
+
+
+def phase_at(spans, index):
+    """The id of the phase section that holds this 0-based line index, or None."""
+    return next((section_id for section_id, section in spans if section["start"] <= index < section["end"]), None)
+
+
+def manual_heading_step(scan, line, level, name, number):
+    """Moves the Manual Verification scan over one heading line: it opens, deepens or closes the section."""
+    scan["last"] = None
+    manual = MANUAL_HEADING.match(line)
+    if manual:
+        if level not in SECTION_LEVELS:
+            raise PlanFormatError(f"{name}:{number}: a Manual Verification heading must be level 3 or level "
+                                  f"4 (`### Manual Verification` or `#### Manual Verification`): "
+                                  f"{line.strip()[:80]}")
+        if not scan["in_section"] or level <= scan["section_level"]:
+            scan["section_level"] = level
+        scan["in_section"] = True
+        scan["qualifier"] = manual.group(2)
+        scan["deeper_heading"] = None
+    elif scan["in_section"] and level > scan["section_level"]:
+        scan["deeper_heading"] = line.strip()[:80]
+    else:
+        scan["in_section"] = False
+
+
+def manual_line_step(scan, line, is_fenced, name, position):
+    """Moves the Manual Verification scan over one non-heading line inside the section. `position` is the 1-based
+    line number and the phase id of the line."""
+    number, phase = position
+    if is_fenced:
+        raise PlanFormatError(f"{name}:{number}: a fenced block inside Manual Verification; write each step "
+                              f"as a list item: {line.strip()[:80]}")
+    if not line.strip():
+        return
+
+    if line[0] in " \t":
+        if scan["last"] is None:
+            raise PlanFormatError(f"{name}:{number}: indented line with no list item above it in Manual "
+                                  f"Verification: {line.strip()[:80]}")
+        scan["last"]["text"] += " " + line.strip()
+        return
+
+    entry = LIST_ENTRY.match(line)
+    if entry and scan["deeper_heading"]:
+        raise PlanFormatError(
+            f"{name}:{number}: a list item under the sub-heading `{scan['deeper_heading']}` inside Manual "
+            f"Verification; if that heading starts a new section, give it the Manual Verification "
+            f"heading's level or a higher one, otherwise move the item above it: "
+            f"{line.strip()[:80]}"
+        )
+    if entry and (entry.group(1) is not None or not NOT_APPLICABLE.match(line)):
+        scan["last"] = {"phase": phase, "text": entry.group(2).strip(),
+                        "checked": (entry.group(1) or "").lower() == "x", "line": number,
+                        "heading": scan["qualifier"]}
+        scan["items"].append(scan["last"])
+        return
+
+    scan["last"] = None
+    if line.startswith(FOREIGN_START):
+        raise PlanFormatError(f"{name}:{number}: line shape not allowed in Manual Verification (table, quote or "
+                              f"HTML): {line.strip()[:80]}")
+
+
+def manual_verification(text, name="plan"):
+    """Every item of every Manual Verification section, in file order.
+
+    Each item is {"phase": the id of the `## Phase <id>` heading above it or None, "text": the item with its indented
+    lines folded in, "checked": True for `[x]`, "line": the 1-based line of the item, "heading": the qualifier text
+    after the section's heading words, "humanOnly": True only when the heading qualifier or the item text says
+    "human-only" (any case); an unmarked item is run by an agent, as the plan template tells the writer to mark the
+    items only a person can judge, "verified": True for a checked item, or an item that is not human-only and says
+    "agent-verified" (any case); any other agent-run item has not been run yet}. Items are folded in whole: "text"
+    includes the wrapped lines, so the mark counts wherever it sits in the item. Raises PlanFormatError for a line the
+    grammar does not parse."""
+    lines = text.splitlines()
+    fenced = script_utils.fenced_line_indexes(lines)
+    spans, _ = phase_spans(lines)
+    scan = {"items": [], "in_section": False, "section_level": 0, "deeper_heading": None, "qualifier": "",
+            "last": None}
+
+    for index, line in enumerate(lines):
+        number = index + 1
+        is_fenced = index in fenced
+        heading = None if is_fenced else script_utils.MARKDOWN_HEADING.match(line)
+
+        if not is_fenced and line.strip() == "---":
+            scan["in_section"] = False
+            scan["last"] = None
+        if heading:
+            manual_heading_step(scan, line, len(heading.group(1)), name, number)
+            continue
+        if scan["in_section"]:
+            manual_line_step(scan, line, is_fenced, name, (number, phase_at(spans, index)))
+
+    items = scan["items"]
+    for item in items:
+        item["humanOnly"] = HUMAN_ONLY_MARK in item["heading"].lower() or HUMAN_ONLY_MARK in item["text"].lower()
+        item["verified"] = item["checked"] or (not item["humanOnly"] and AGENT_VERIFIED_MARK in item["text"].lower())
+    return items
+
+
+AUTOMATED_HEADING = "#### Automated Verification"
+AUTOMATED_ITEM = re.compile(r"^- \[[ x]\]")
+AUTOMATED_ITEM_BOX = re.compile(r"^- \[[ x]\]\s*")
+PLAN_FILES_GLOB = "docs/plans/*/spec.md"
+GATE_ENV_HINT = "(Put these variables before every test, check or build command you run.)"
+
+# An Automated Verification item that says there is nothing to run: "- [ ] N/A — docs only", "- [ ] none".
+# A bold label may come first when the word after it is N/A: "- [ ] **Test-verified**: N/A on the machines."
+NO_AUTOMATED_CHECK = re.compile(r"^- \[[ x]\]\s*(?:[*_`]*\s*(?:n/a|none)\b|\*\*[^*]+\*\*:?\s*n/a\b)", re.IGNORECASE)
+
+# An Automated Verification item that the code step never runs because the plan says another place does:
+# "- [ ] **CI-verified**: the pipeline runs it", "- [ ] Human-only: look at the page". A bold label may come first.
+DEFERRED_VERIFICATION = re.compile(r"^- \[[ x]\]\s*(?:\*\*[^*]+\*\*:?\s*)?[*_`]*\s*(?P<tag>ci-verified|human-only)\b",
+                                   re.IGNORECASE)
+DEFERRED_TAG_NAMES = {"ci-verified": "CI-verified", "human-only": "human-only"}
+
+
+def automated_verification_rows(lines):
+    """(index, line) for each `- [ ]` or `- [x]` item under a `#### Automated Verification` heading, in file order. The
+    list ends at the next `#### ` heading, a heading of level 1 to 3, or a `---` rule."""
+    verification_items = []
+    inside = False
+    for index, line in enumerate(lines):
+        if line.startswith("#### "):
+            inside = line.startswith(AUTOMATED_HEADING)
+            continue
+        if re.match(r"#{1,3} ", line) or line.strip() == "---":
+            inside = False
+        if inside and AUTOMATED_ITEM.match(line):
+            verification_items.append((index, line))
+    return verification_items
+
+
+def automated_item_text(line):
+    """The words of an Automated Verification item, without the `- [ ]` box."""
+    return AUTOMATED_ITEM_BOX.sub("", line.strip())
+
+
+def deferred_verification_tag(line):
+    """"CI-verified" or "human-only" for an Automated Verification item tagged that way, else None."""
+    tag_match = DEFERRED_VERIFICATION.match(line)
+    return DEFERRED_TAG_NAMES[tag_match.group("tag").lower()] if tag_match else None
+
+
+def runs_no_command(line):
+    """True for an Automated Verification item that gets no command run: it says N/A or none, or it is left to CI or
+    a person."""
+    return bool(NO_AUTOMATED_CHECK.match(line) or deferred_verification_tag(line))
+
+
+def gate_env(plan_text):
+    """The `NAME=value` words that the plan's Automated Verification commands start with, one per name, in file order.
+    An item that says N/A or is left to CI or a person is not a command that gets run, so it gives none."""
+    verification_items = automated_verification_rows(plan_text.splitlines())
+    runnable_items = [line for _, line in verification_items if not runs_no_command(line)]
+    spans = [span for line in runnable_items for span in script_utils.backticked_spans(line)]
+    return script_utils.leading_env_assignments(spans)
+
+
+def gate_env_text(gate_env_assignments):
+    """The two lines that tell an agent which variables to put before its gate commands, or "" when there are none."""
+    if not gate_env_assignments:
+        return ""
+    return f"gate-env: {' '.join(gate_env_assignments)}\n{GATE_ENV_HINT}"
+
+
+def repo_gate_env(repo_root, plan_rel=None):
+    """The environment variables the repo's gate commands need: what `gate_env` reads from the plans under
+    docs/plans/*/spec.md. The plan `planRel` (a path under repoRoot) decides its own names. A name only other plans set
+    counts when they all give it the same value; a name they give different values is left out, since no plan says
+    which one this run needs."""
+    root = pathlib.Path(repo_root)
+    chosen = {}
+
+    if plan_rel:
+        try:
+            own_text = (root / plan_rel).read_text()
+        except OSError:
+            own_text = ""
+        for assignment in gate_env(own_text):
+            chosen[assignment.split("=", 1)[0]] = assignment
+
+    seen = {}
+    for plan_path in sorted(root.glob(PLAN_FILES_GLOB)):
+        if plan_rel and plan_path.resolve() == (root / plan_rel).resolve():
+            continue
+        try:
+            assignments = gate_env(plan_path.read_text())
+        except OSError:
+            continue
+        for assignment in assignments:
+            seen.setdefault(assignment.split("=", 1)[0], set()).add(assignment)
+
+    for name, variants in seen.items():
+        if name not in chosen and len(variants) == 1:
+            chosen[name] = next(iter(variants))
+    return list(chosen.values())
+
+
+CLOSING_TITLE_END = r"\b(?!\s*\w)"
+CLOSING_PHASES = [
+    (re.compile(r"^Refactor pass" + CLOSING_TITLE_END, re.I), "/refactor +deep"),
+    (re.compile(r"^Test audit" + CLOSING_TITLE_END, re.I), "/test-audit"),
+    (re.compile(r"^Verify pass" + CLOSING_TITLE_END, re.I), "/verify-branch"),
+    (re.compile(r"^Recap" + CLOSING_TITLE_END, re.I), "/branch-recap"),
+]
+
+
+def closing_skill(title):
+    """The skill a closing phase's title names (`Verify pass` names /verify-branch), or None for any other title."""
+    return next((skill for pattern, skill in CLOSING_PHASES if pattern.search(title)), None)
+
+
+def parse_plan_with_closing_phases(plan_lines):
+    """parse_plan with the closing phases recognised by their titles."""
+    return parse_plan(plan_lines, closing_skill)
+
+
+def phase_text(plan_lines, number):
+    """The text of the phase's section, or None when the plan has no section for it."""
+    section = phase_section(plan_lines, number)
+    if section is None:
+        return None
+    return "\n".join(plan_lines[section["start"]:section["end"]])
+
+
+def ordered_pending(entries):
+    """The open phases, with the closing phases after the rest."""
+    pending = [entry for entry in entries if entry["open"]]
+    return [e for e in pending if not e["closing"]] + [e for e in pending if e["closing"]]
+
+
+def gate_blockers(pending):
+    """A run never starts a phase past an open gated one. The gated open phases ahead of the first open phase without
+    a gate, and that phase (None when every open phase is gated)."""
+    next_ungated = next((entry for entry in pending if not entry["gate"]), None)
+    gated_ahead = pending[:pending.index(next_ungated)] if next_ungated else pending
+    return gated_ahead, next_ungated
+
+
+def gated_phase_text(entries):
+    return "; ".join(f"Phase {entry['number']} (gate: {entry['gate']})" for entry in entries)
+
+
+def gate_block_text(gated_ahead, next_ungated):
+    gated_text = gated_phase_text(gated_ahead)
+    text = f"open phases with a gate clause come first: {gated_text}. The script does not judge a gate."
+    if next_ungated:
+        text += f" The next open phase without a gate is Phase {next_ungated['number']}."
+    return text + " `start --phase <id>` runs one anyway."
+
+
+def moved_phase_text(entries):
+    return ", ".join(f"Phase {entry['number']} to {entry['movedTo']}" for entry in entries if entry["moved"])
+
+
+def moved_phase_stop(entry, plan_name, coder_ran=False):
+    """The stop text for a phase that is moved to another ticket. coder_ran is True when the phase became moved after
+    its coder was dispatched."""
+    if coder_ran:
+        ran_text = "The coder ran, and its work is not marked done or committed."
+    else:
+        ran_text = "No coder was dispatched."
+    return (f"Phase {entry['number']} is moved to {entry['movedTo']} in {plan_name}, so this plan does not run it. "
+            f"{ran_text} Tell the user; the phase is worked under {entry['movedTo']}.")
+
+
+def mark_phase_done(plan_path, number):
+    """Check the phase's Phase Status line in the plan file when the phase is open."""
+    plan_lines = plan_path.read_text().split("\n")
+    entries = parse_plan_with_closing_phases(plan_lines)["entries"]
+    entry = next((e for e in entries if e["number"] == number and e["open"]), None)
+    if entry:
+        plan_lines[entry["line"]] = plan_lines[entry["line"]].replace("[ ]", "[x]", 1)
+    plan_path.write_text("\n".join(plan_lines))
+
+
+def append_deviation(plan_path, entry):
+    """Add the entry lines at the end of the plan's `## Plan Deviations` section, creating the section before
+    `## References` (or at the end) when the plan has none."""
+    lines = plan_path.read_text().split("\n")
+    sections = [i for i, line in enumerate(lines) if line.startswith("## ")]
+    existing = next((i for i in sections if lines[i].strip() == "## Plan Deviations"), None)
+    if existing is not None:
+        end = next((i for i in sections if i > existing), len(lines))
+        lines[end:end] = [*entry, ""]
+    else:
+        references = next((i for i in sections if lines[i].strip() == "## References"), len(lines))
+        lines[references:references] = ["## Plan Deviations", "", *entry, ""]
+    plan_path.write_text("\n".join(lines))
+
+
+def reopen_closing_phases(plan_path):
+    """Uncheck every done closing phase in the plan file; the numbers of the phases it unchecked."""
+    plan_lines = plan_path.read_text().split("\n")
+    reopened = [e for e in parse_plan_with_closing_phases(plan_lines)["entries"] if e["closing"] and e["done"]]
+    for entry in reopened:
+        plan_lines[entry["line"]] = re.sub(r"\[[xX]\]", "[ ]", plan_lines[entry["line"]], count=1)
+    plan_path.write_text("\n".join(plan_lines))
+    return [entry["number"] for entry in reopened]
+
+
+def plan_failure_rows(plan, plan_name):
+    return [f"{plan_name}:{f['line']}: {f['kind']}: {f['detail']}" for f in plan["failures"]]
+
+
+def plan_failure_message(plan, plan_name):
+    rows = plan_failure_rows(plan, plan_name)
+    return "The plan's Phase Status does not parse. Report each line to the user and stop:\n" + "\n".join(rows)
+
+
+def phase_manual_items(plan_lines, number, plan_name):
+    """The Manual Verification items of one phase (all phases when number is None). The grammar reads the whole plan,
+    so a PlanFormatError names the line in the file."""
+    items = manual_verification("\n".join(plan_lines), plan_name)
+    if number is None:
+        return items
+    return [item for item in items if item["phase"] == str(number)]
+
+
+def manual_format_message(error, resume_line=""):
+    message = ("The plan's Manual Verification section does not parse. Do not mark the phase done. Report to the "
+               f"user and stop:\n{error}")
+    return message + ("\n" + resume_line if resume_line else "")
+
+
+def manual_format_failure(plan_lines, plan_name, resume_line=""):
+    """The stop message for a Manual Verification section the grammar does not parse, or None when all parse."""
+    try:
+        manual_verification("\n".join(plan_lines), plan_name)
+    except PlanFormatError as error:
+        return manual_format_message(error, resume_line)
+    return None

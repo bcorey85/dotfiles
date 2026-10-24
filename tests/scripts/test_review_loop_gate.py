@@ -10,7 +10,8 @@ import unittest
 import fake_ledger
 import toolkit_paths
 
-SCRIPT = os.environ.get("REVIEW_LOOP_GATE_SCRIPT") or str(toolkit_paths.SCRIPTS_DIR / "review_loop_gate.py")
+SCRIPT = os.environ.get("REVIEW_LOOP_GATE_SCRIPT") or str(toolkit_paths.REVIEW_DIR / "review_loop_gate.py")
+SCRIPTS_ROOT = str(toolkit_paths.SCRIPTS_DIR)
 LOGGER = os.environ.get("LOG_REVIEW_FINDING_SCRIPT") or str(
     toolkit_paths.CLAUDE_DIR / "skills" / "review" / "log-review-finding"
 )
@@ -235,7 +236,7 @@ class RunRowTest(unittest.TestCase):
         claude_dir = os.path.join(self.tmp.name, "claude")
         os.makedirs(os.path.join(claude_dir, "skills", "review"))
         shutil.copy2(LOGGER, os.path.join(claude_dir, "skills", "review", "log-review-finding"))
-        os.symlink(os.path.dirname(SCRIPT), os.path.join(claude_dir, "scripts"))
+        os.symlink(SCRIPTS_ROOT, os.path.join(claude_dir, "scripts"))
         self.script, self.quiet, self.stderr = SCRIPT, True, ""
         self.env = {**os.environ, "HOME": self.home, **fake_ledger.install(self.tmp.name),
                     "REVIEW_LOOP_GATE_STATE_DIR": os.path.join(self.tmp.name, "state"),
@@ -349,9 +350,14 @@ class RunRowTest(unittest.TestCase):
         scripts_link = os.path.join(claude_dir, "scripts")
         os.remove(scripts_link)
         os.makedirs(scripts_link)
-        for name in os.listdir(os.path.dirname(SCRIPT)):
+        for name in os.listdir(SCRIPTS_ROOT):
+            if name != "telemetry":
+                os.symlink(os.path.join(SCRIPTS_ROOT, name), os.path.join(scripts_link, name))
+        telemetry_link = os.path.join(scripts_link, "telemetry")
+        os.makedirs(telemetry_link)
+        for name in os.listdir(os.path.join(SCRIPTS_ROOT, "telemetry")):
             if name != "telemetry_enabled.sh":
-                os.symlink(os.path.join(os.path.dirname(SCRIPT), name), os.path.join(scripts_link, name))
+                os.symlink(os.path.join(SCRIPTS_ROOT, "telemetry", name), os.path.join(telemetry_link, name))
         self.quiet = False
         self.stop(records)
         self.assertEqual([], self.rows())

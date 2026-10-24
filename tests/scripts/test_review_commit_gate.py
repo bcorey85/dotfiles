@@ -14,7 +14,8 @@ import toolkit_paths
 
 SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR)
 INSTALLED_DIR = toolkit_paths.SCRIPTS_DIR
-STAGED_FILES = ("review_commit_gate.py", "handback.py", "script_utils.py", "hook_input.py", "shell_command.py")
+STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), ("lib", "script_utils.py"),
+                ("lib", "hook_input.py"), ("lib", "shell_command.py"))
 COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no converged /review. Run /review on the "
                  "coder work and commit after it converges. If the commit ships only Markdown files under the "
                  "repo's top-level docs/ folder, run it as a plain `git commit` (with `git add` of single named "
@@ -32,11 +33,12 @@ class GateCase(unittest.TestCase):
         self.store_dir = self.home / ".claude" / "state" / "handback"
         self.scripts = self.tmp / "scripts"
         self.scripts.mkdir()
-        for name in STAGED_FILES:
-            source = SCRIPTS_DIR / name
-            source = source if source.exists() else INSTALLED_DIR / name
-            shutil.copy(str(source), str(self.scripts / name))
-        self.script = self.scripts / "review_commit_gate.py"
+        for folder, name in STAGED_FILES:
+            source = SCRIPTS_DIR / folder / name
+            source = source if source.exists() else INSTALLED_DIR / folder / name
+            (self.scripts / folder).mkdir(exist_ok=True)
+            shutil.copy(str(source), str(self.scripts / folder / name))
+        self.script = self.scripts / "review" / "review_commit_gate.py"
 
     def seed_handback(self, status=None, session="s1", dispatches=1, handed_back=True):
         """Rows as handback.py's hook stores them: dispatches first, then one hand-back."""
@@ -138,7 +140,7 @@ class ReviewCommitGateTest(GateCase):
         self.assert_silent(self.bash("review-gate-mark clean"))
         self.assertEqual(self.state(), "clean\n")
         self.assert_silent(self.bash("git commit -m x"))
-        self.assert_silent(self.bash("~/.claude/scripts/review-gate-mark   dirty"))
+        self.assert_silent(self.bash("~/.claude/scripts/review/review-gate-mark   dirty"))
         self.assertEqual(self.state(), "dirty\n")
         self.assert_commit_denied(self.bash("git commit -m x"))
 
@@ -210,7 +212,7 @@ class ReviewCommitGateTest(GateCase):
 
     def test_missing_handback_module_is_an_internal_error_on_clean_only(self):
         self.dispatch()
-        (self.scripts / "handback.py").unlink()
+        (self.scripts / "review" / "handback.py").unlink()
         self.assert_internal_error_asks(self.bash("review-gate-mark clean"), 1)
         self.assertEqual(self.state(), "dirty\n")
         self.assert_commit_denied(self.bash("git commit -m x"))
@@ -583,7 +585,7 @@ class NotesOnlyCommitTest(GateCase):
 
     def test_a_later_git_word_is_tried_when_an_earlier_one_is_an_argument(self):
         spec = importlib.util.spec_from_file_location("review_commit_gate_under_test",
-                                                      str(SCRIPTS_DIR / "review_commit_gate.py"))
+                                                      str(SCRIPTS_DIR / "review" / "review_commit_gate.py"))
         gate = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(gate)
         self.assertTrue(gate.runs_git_commit(["env", "-u", "git", "git", "-C", "x", "commit"]))

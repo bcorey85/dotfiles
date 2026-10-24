@@ -32,9 +32,12 @@ RECEIPT_SKILL = pathlib.Path(
 if DRAFT_DIR and not os.environ.get("BRANCH_RECAP_SKILL"):
     RECEIPT_SKILL = pathlib.Path(DRAFT_DIR) / "branch-recap-SKILL.md"
 
-SCRIPTS = ["telemetry_enabled.sh", "telemetry_enabled.py", "hook_input.py", "repo-name", "log_agent_usage.py",
-           "log_skill_use.py", "test_edit_telemetry.py", "log-escape", "log-scan", "log-spec-run", "coder_gate.py",
-           "script_utils.py", "_kv.sh", "ledger-write"]
+SCRIPT_FOLDERS = {"telemetry_enabled.sh": "telemetry", "telemetry_enabled.py": "telemetry", "hook_input.py": "lib",
+                  "repo-name": "tools", "log_agent_usage.py": "telemetry", "log_skill_use.py": "telemetry",
+                  "test_edit_telemetry.py": "telemetry", "log-escape": "telemetry", "log-scan": "telemetry",
+                  "log-spec-run": "telemetry", "coder_gate.py": "code", "script_utils.py": "lib", "_kv.sh": "lib",
+                  "ledger-write": "telemetry"}
+SCRIPTS = list(SCRIPT_FOLDERS)
 REVIEW = ["log-review-metrics", "log-perf-finding", "log-review-finding", "review-scope"]
 # hook_input.py and repo-name are not part of this change: they always come from the installed copy.
 INSTALLED_ONLY = {"hook_input.py", "repo-name"}
@@ -80,6 +83,9 @@ def source_file(name, subdir):
 
 
 class SwitchTest(unittest.TestCase):
+    def script_path(self, name):
+        return self.scripts / SCRIPT_FOLDERS[name] / name
+
     def setUp(self):
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
@@ -91,7 +97,9 @@ class SwitchTest(unittest.TestCase):
         self.scripts.mkdir(parents=True)
         self.review.mkdir(parents=True)
         for name in SCRIPTS:
-            shutil.copy2(source_file(name, "scripts"), self.scripts / name)
+            target = self.script_path(name)
+            target.parent.mkdir(exist_ok=True)
+            shutil.copy2(source_file(name, "scripts/" + SCRIPT_FOLDERS[name]), target)
         for name in REVIEW:
             shutil.copy2(source_file(name, "skills/review"), self.review / name)
         if DRAFT_DIR:
@@ -198,14 +206,14 @@ class SwitchTest(unittest.TestCase):
                     self.turn(file_state)
                     self.home_file(log_name).unlink(missing_ok=True)
                     interpreter = [sys.executable] if script.endswith(".py") else ["bash"]
-                    finished = self.run_command([*interpreter, str(self.scripts / script), *arguments],
+                    finished = self.run_command([*interpreter, str(self.script_path(script)), *arguments],
                                                 json.dumps(payload) if payload else None, extra=extra)
                     self.assertEqual(finished.returncode, 0, finished.stderr)
                     self.assertEqual(len(self.lines(log_name)), 1 if expect_row else 0)
             with self.subTest(case=case_name, writer="log-scan"):
                 self.turn(file_state)
                 self.ledger_calls_file.unlink(missing_ok=True)
-                finished = self.run_command(["bash", str(self.scripts / "log-scan"), *scan_arguments], extra=extra)
+                finished = self.run_command(["bash", str(self.script_path("log-scan")), *scan_arguments], extra=extra)
                 self.assertEqual(finished.returncode, 0, finished.stderr)
                 self.assertEqual(len(self.ledger_calls()), 1 if expect_row else 0)
 
@@ -216,19 +224,19 @@ class SwitchTest(unittest.TestCase):
         for extra, with_file, expected_code in cases:
             with self.subTest(extra=extra, with_file=with_file):
                 self.turn("on" if with_file else "off")
-                shell_run = self.run_command(["bash", str(self.scripts / "telemetry_enabled.sh")], extra=extra)
+                shell_run = self.run_command(["bash", str(self.script_path("telemetry_enabled.sh"))], extra=extra)
                 self.assertEqual(shell_run.returncode, expected_code, shell_run.stderr)
                 python_run = self.run_command(
                     [sys.executable, "-I", "-c", "import sys; sys.path.insert(0, sys.argv[1]);"
                      " from telemetry_enabled import telemetry_enabled; sys.exit(0 if telemetry_enabled() else 1)",
-                     str(self.scripts)], extra=extra)
+                     str(self.scripts / "telemetry")], extra=extra)
                 self.assertEqual(python_run.returncode, expected_code, python_run.stderr)
 
     def hook(self, script, payload):
         command = (
-            [sys.executable, str(self.scripts / script)]
+            [sys.executable, str(self.script_path(script))]
             if script.endswith(".py")
-            else ["bash", str(self.scripts / script)]
+            else ["bash", str(self.script_path(script))]
         )
         return lambda: self.run_command(command, json.dumps(payload))
 
@@ -247,7 +255,7 @@ class SwitchTest(unittest.TestCase):
         self.assert_switch("test-edit-telemetry.jsonl", self.hook("test_edit_telemetry.py", TEST_EDIT))
 
     def test_coder_gate_whole_package_deny_still_denies_when_off(self):
-        command = [sys.executable, str(self.scripts / "coder_gate.py"), "bash-hook"]
+        command = [sys.executable, str(self.script_path("coder_gate.py")), "bash-hook"]
         self.turn("off")
         finished = self.run_command(command, json.dumps(CODER_BASH))
         self.assertEqual(finished.returncode, 0, finished.stderr)
@@ -265,7 +273,7 @@ class SwitchTest(unittest.TestCase):
         self.run_command(
             ["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "--allow-empty", "-m", "i"], cwd=repo
         )
-        gate = [sys.executable, str(self.scripts / "coder_gate.py")]
+        gate = [sys.executable, str(self.script_path("coder_gate.py"))]
         set_gate = self.run_command([*gate, "set", "true"], cwd=repo)
         self.assertEqual(set_gate.returncode, 0, set_gate.stderr)
         handback = {"hook_event_name": "PreToolUse", "agent_type": "coder", "agent_id": "a1", "cwd": str(repo),
@@ -329,7 +337,7 @@ class SwitchTest(unittest.TestCase):
     ]
 
     def test_log_escape_prints_one_line_when_off(self):
-        script = str(self.scripts / "log-escape")
+        script = str(self.script_path("log-escape"))
         args = [script, *self.ESCAPE_ARGS]
         self.turn("off")
         finished = self.run_command(args)
@@ -347,7 +355,7 @@ class SwitchTest(unittest.TestCase):
 
     def test_log_escape_validation_still_runs_when_off(self):
         self.turn("off")
-        script = str(self.scripts / "log-escape")
+        script = str(self.script_path("log-escape"))
         finished = self.run_command([script, "class=nonsense"])
         self.assertEqual(finished.returncode, 1)
         self.assertIn("refusing to log", finished.stderr)
@@ -362,7 +370,7 @@ class SwitchTest(unittest.TestCase):
                 "disposition=fix", "desc=a bug"]
 
     def escape_check_args(self):
-        return [str(self.scripts / "log-escape"), *self.ESCAPE_ARGS]
+        return [str(self.script_path("log-escape")), *self.ESCAPE_ARGS]
 
     def checkers(self):
         """(label, argument list) for each logger that accepts --check, with arguments a real call accepts."""
@@ -463,13 +471,13 @@ class SwitchTest(unittest.TestCase):
         self.assertEqual(len(self.ledger_calls()), 1)
 
     def test_log_scan(self):
-        script = str(self.scripts / "log-scan")
+        script = str(self.script_path("log-scan"))
         args = [script, "repo=r", "scan=prohibition", "stage=manual", "exit=0", "candidates=2", "confirmed=1"]
         _, row = self.assert_ledger_switch("scan_run", lambda: self.run_command(args))
         self.assertEqual(row["scan"], "prohibition")
 
     def test_log_spec_run(self):
-        script = str(self.scripts / "log-spec-run")
+        script = str(self.script_path("log-spec-run"))
         args = [script, "slug=my-plan", "verdict=finalized", "criteria=3"]
         finished, row = self.assert_ledger_switch("spec_run", lambda: self.run_command(args))
         self.assertEqual(row, {"verdict": "finalized", "criteria": "3"})
@@ -548,15 +556,16 @@ class SwitchTest(unittest.TestCase):
         self.run_command(
             ["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "--allow-empty", "-m", "i"], cwd=repo
         )
-        (self.home / ".claude" / "scripts").mkdir(exist_ok=True)
-        shutil.copy2(self.scripts / "telemetry_enabled.sh", self.home / ".claude" / "scripts" / "telemetry_enabled.sh")
+        installed_helper = self.home / ".claude" / "scripts" / "telemetry" / "telemetry_enabled.sh"
+        installed_helper.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(self.script_path("telemetry_enabled.sh"), installed_helper)
         block = self.receipt_block()
         self.assert_switch("branch-recap-receipts.jsonl", lambda: self.run_command(["bash", "-c", block], cwd=repo))
 
     # ---- helpers
 
     def test_helper_bash(self):
-        helper = str(self.scripts / "telemetry_enabled.sh")
+        helper = str(self.script_path("telemetry_enabled.sh"))
         self.turn("off")
         self.assertEqual(self.run_command([helper]).returncode, 1)
         self.turn("on")
@@ -569,28 +578,29 @@ class SwitchTest(unittest.TestCase):
             "import telemetry_enabled, sys; sys.exit(0 if telemetry_enabled.telemetry_enabled() else 1)",
         ]
         self.turn("off")
-        self.assertEqual(self.run_command(command, extra={"PYTHONPATH": str(self.scripts)}).returncode, 1)
+        self.assertEqual(self.run_command(command, extra={"PYTHONPATH": str(self.scripts / "telemetry")}).returncode, 1)
         self.turn("on")
-        self.assertEqual(self.run_command(command, extra={"PYTHONPATH": str(self.scripts)}).returncode, 0)
+        self.assertEqual(self.run_command(command, extra={"PYTHONPATH": str(self.scripts / "telemetry")}).returncode, 0)
 
     def test_missing_helper_keeps_bash_writer_off(self):
-        (self.scripts / "telemetry_enabled.sh").unlink()
+        (self.script_path("telemetry_enabled.sh")).unlink()
         self.turn("on")
-        finished = self.run_command([str(self.scripts / "log-scan"), "repo=r", "scan=other", "stage=manual", "exit=2"])
+        scan_arguments = ["repo=r", "scan=other", "stage=manual", "exit=2"]
+        finished = self.run_command([str(self.script_path("log-scan")), *scan_arguments])
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertFalse(self.home_file("scan-runs.jsonl").exists())
         self.assertEqual(self.ledger_calls(), [])
 
     def test_missing_helper_keeps_log_escape_off(self):
-        (self.scripts / "telemetry_enabled.sh").unlink()
+        (self.script_path("telemetry_enabled.sh")).unlink()
         self.turn("on")
-        finished = self.run_command([str(self.scripts / "log-escape"), *self.ESCAPE_ARGS])
+        finished = self.run_command([str(self.script_path("log-escape")), *self.ESCAPE_ARGS])
         self.assertEqual((finished.returncode, finished.stdout), (0, "not logged: toolkit telemetry is off\n"))
         self.assertFalse(self.home_file("review-escapes.jsonl").exists())
         self.assertEqual(self.ledger_calls(), [])
 
     def test_missing_python_helper_keeps_logging_hooks_off(self):
-        (self.scripts / "telemetry_enabled.py").unlink()
+        (self.script_path("telemetry_enabled.py")).unlink()
         self.turn("on")
         cases = [("log_agent_usage.py", HOOK_POST, "agent-usage.jsonl"),
                  ("log_skill_use.py", SKILL_POST, "skill-usage.jsonl"),
@@ -602,16 +612,16 @@ class SwitchTest(unittest.TestCase):
                 self.assertFalse(self.home_file(log_name).exists())
 
     def test_missing_python_helper_coder_gate_still_denies_and_logs_nothing(self):
-        (self.scripts / "telemetry_enabled.py").unlink()
+        (self.script_path("telemetry_enabled.py")).unlink()
         self.turn("on")
-        command = [sys.executable, str(self.scripts / "coder_gate.py"), "bash-hook"]
+        command = [sys.executable, str(self.script_path("coder_gate.py")), "bash-hook"]
         finished = self.run_command(command, json.dumps(CODER_BASH))
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertEqual(json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
         self.assertFalse(self.home_file("coder-gate.jsonl").exists())
 
     def test_missing_python_helper_coder_gate_handback_still_runs_and_logs_nothing(self):
-        (self.scripts / "telemetry_enabled.py").unlink()
+        (self.script_path("telemetry_enabled.py")).unlink()
         self.turn("on")
         repo = self.work / "repo"
         repo.mkdir()
@@ -619,7 +629,7 @@ class SwitchTest(unittest.TestCase):
         self.run_command(
             ["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "--allow-empty", "-m", "i"], cwd=repo
         )
-        gate = [sys.executable, str(self.scripts / "coder_gate.py")]
+        gate = [sys.executable, str(self.script_path("coder_gate.py"))]
         self.assertEqual(self.run_command([*gate, "set", "true"], cwd=repo).returncode, 0)
         handback = {"hook_event_name": "PreToolUse", "agent_type": "coder", "agent_id": "a1", "cwd": str(repo),
                     "tool_input": {"message": "done"}}

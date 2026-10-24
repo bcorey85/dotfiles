@@ -7,7 +7,7 @@ import unittest
 import toolkit_paths
 
 HERE = pathlib.Path(__file__).resolve().parent
-LIVE_SCRIPTS_DIR = toolkit_paths.SCRIPTS_DIR
+LIVE_SCRIPTS_DIR = toolkit_paths.LIB_DIR
 SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or (HERE if (HERE / "shell_command.py").exists()
                                                                   else LIVE_SCRIPTS_DIR))
 sys.path.insert(0, str(SCRIPTS_DIR))

@@ -11,7 +11,7 @@ import unittest
 
 import toolkit_paths
 
-SCRIPT = pathlib.Path(os.environ.get("HANDBACK_SCRIPT") or toolkit_paths.SCRIPTS_DIR / "handback.py")
+SCRIPT = pathlib.Path(os.environ.get("HANDBACK_SCRIPT") or toolkit_paths.REVIEW_DIR / "handback.py")
 SESSION = "sess-1"
 
 spec = importlib.util.spec_from_file_location("handback_under_test", str(SCRIPT))

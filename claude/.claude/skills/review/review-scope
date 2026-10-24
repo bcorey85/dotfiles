@@ -6,7 +6,7 @@
 #   mode=staged     staged only, against base
 #   base=HEAD       (default) the ref every count is taken against
 #   merge_base=<ref>  compare-to ref for the MERGE_BASE line; default: the
-#                     ref that scripts/branch-base returns, else empty
+#                     ref that scripts/tools/branch-base returns, else empty
 #   paths=<a:b:c>   colon-separated pathspec filter applied to every git call
 #   root=<dir>      run in this directory instead of the current one
 #   caller=<name>   also write one review_scope row through `ledger write`
@@ -54,9 +54,9 @@ if [ -z "$paths" ]; then pathspec=(); fi
 top=$(git rev-parse --show-toplevel 2>/dev/null || true)
 
 if [ -n "$caller" ] && command -v jq >/dev/null 2>&1 \
-  && "$script_dir/../../scripts/telemetry_enabled.sh" 2>/dev/null; then
+  && "$script_dir/../../scripts/telemetry/telemetry_enabled.sh" 2>/dev/null; then
   jq -cn --arg skill "$skill" --arg caller "$caller" '{skill: $skill, caller: $caller}' \
-    | bash "$script_dir/../../scripts/ledger-write" review_scope >/dev/null || true
+    | bash "$script_dir/../../scripts/telemetry/ledger-write" review_scope >/dev/null || true
 fi
 
 echo "ROOT=$top"
@@ -68,7 +68,7 @@ fi
 echo "BRANCH=$(git branch --show-current 2>/dev/null || true)"
 
 if [ -z "$merge_base" ]; then
-  branch_base_script="${BRANCH_BASE_SCRIPT:-$HOME/.claude/scripts/branch-base}"
+  branch_base_script="${BRANCH_BASE_SCRIPT:-$HOME/.claude/scripts/tools/branch-base}"
   if [ -x "$branch_base_script" ]; then
     # branch-base prints stdout only on exit 0 and stderr only on failure
     branch_base_out=$("$branch_base_script" 2>&1)

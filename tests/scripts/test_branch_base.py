@@ -10,7 +10,7 @@ import unittest
 import toolkit_paths
 
 SCRIPT = os.environ.get(
-    "BRANCH_BASE_SCRIPT", str(toolkit_paths.SCRIPTS_DIR / "branch-base")
+    "BRANCH_BASE_SCRIPT", str(toolkit_paths.TOOLS_DIR / "branch-base")
 )
 GIT_ENV = {
     **os.environ,

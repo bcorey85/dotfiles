@@ -15,8 +15,8 @@
 #
 # usage: log-spec-run key=value [key=value ...]
 #   canonical fields:
-#     repo=<basename>                 derived by scripts/repo-name; a caller value
-#       is only a fallback when repo-name fails, so callers may omit it
+#     repo=<basename>                 accepted and never stored: `ledger write`
+#       adds the repo, so callers may omit it
 #     slug=<task dir basename>        the plan's identity; joins to docs/plans/<slug>
 #     ticket=<ID|none>
 #     verdict=finalized|abandoned     abandoned plans count too — a plan dropped

@@ -295,6 +295,10 @@ def build_template():
     subprocess.run(
         ["git", "init", "-q", "-b", "ORD-1-work", "--template="], cwd=template, check=True, capture_output=True
     )
+    # A commit starts a detached git maintenance run. Its lock file vanishes while copytree copies the template.
+    for setting in (["maintenance.auto", "false"], ["gc.auto", "0"]):
+        subprocess.run(["git", "config", *setting], cwd=template, check=True, capture_output=True)
+
     write_text(
         template,
         "backend/package.json",

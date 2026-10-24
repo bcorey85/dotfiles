@@ -1,4 +1,4 @@
-"""Checks for git-discipline-gate.py, the PreToolUse(Bash) hook enforcing four git rules."""
+"""Checks for git_discipline_gate.py, the PreToolUse(Bash) hook enforcing four git rules."""
 import json
 import os
 import pathlib
@@ -8,8 +8,10 @@ import sys
 import tempfile
 import unittest
 
+import toolkit_paths
+
 SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR")
-                      or pathlib.Path.home() / ".claude" / "scripts") / "git-discipline-gate.py"
+                      or toolkit_paths.SCRIPTS_DIR) / "git_discipline_gate.py"
 
 
 class GitDisciplineGateTest(unittest.TestCase):
@@ -103,8 +105,9 @@ class GitDisciplineGateTest(unittest.TestCase):
 
     def test_commit_on_main_or_master_denied(self):
         for branch in ("main", "master"):
-            reason = self.assert_denied("git commit -m x", "[git-discipline-gate] git commit on %s is blocked"
-                                        % branch, branch=branch)
+            reason = self.assert_denied(
+                "git commit -m x", f"[git-discipline-gate] git commit on {branch} is blocked", branch=branch
+            )
         self.assertEqual(reason, "[git-discipline-gate] git commit on master is blocked: create a feature branch "
                                  "first (global rule). If committing here is genuinely intended, the user can run "
                                  "it themselves.")

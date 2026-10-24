@@ -13,13 +13,13 @@ import unittest
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = pathlib.Path(os.environ.get("CODE_STEP_SCRIPTS_DIR") or REPO_ROOT / "claude" / ".claude" / "scripts")
 sys.path.insert(0, str(SCRIPTS_DIR))
-loaded = importlib.util.spec_from_file_location("code_step", SCRIPTS_DIR / "code-step.py")
+loaded = importlib.util.spec_from_file_location("code_step", SCRIPTS_DIR / "code_step.py")
 code_step = importlib.util.module_from_spec(loaded)
 loaded.loader.exec_module(code_step)
-loaded_review_fix = importlib.util.spec_from_file_location("review_fix", SCRIPTS_DIR / "review-fix.py")
+loaded_review_fix = importlib.util.spec_from_file_location("review_fix", SCRIPTS_DIR / "review_fix.py")
 review_fix = importlib.util.module_from_spec(loaded_review_fix)
 loaded_review_fix.loader.exec_module(review_fix)
-import handback  # noqa: E402
+import handback
 
 # log-review-finding mints ids as 16 lowercase hex chars; review-fix logs no other shape.
 MINTED_FINDING_ID = "0123456789abcdef"
@@ -36,10 +36,10 @@ def ask_item(**overrides):
 class LogAskOutcomes(unittest.TestCase):
     def setUp(self):
         self.calls = []
-        self.loggerResult = (0, "")
+        self.logger_result = (0, "")
         self.original_run_command = code_step.run_command
         self.original_git_output = code_step.git_output
-        code_step.run_command = lambda command, cwd, **_: self.calls.append(command) or self.loggerResult
+        code_step.run_command = lambda command, cwd, **_: self.calls.append(command) or self.logger_result
         code_step.git_output = lambda *_: "some-branch"
 
     def tearDown(self):
@@ -107,7 +107,7 @@ class LogAskOutcomes(unittest.TestCase):
         self.assertEqual(stderr.count("not logged"), 2)
 
     def test_a_logger_that_fails_is_named_on_stderr_with_the_id_and_its_output(self):
-        self.loggerResult = (1, "log-review-finding: field finding_id has a space")
+        self.logger_result = (1, "log-review-finding: field finding_id has a space")
 
         stderr = self.log([ask_item()], ["accepted"])
 

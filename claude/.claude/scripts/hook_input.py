@@ -3,6 +3,7 @@
 Each port does `import hook_input`; python3 puts the script's own directory first on sys.path, so this file must sit
 beside the ports. Not a hook itself.
 """
+import contextlib
 import json
 import os
 import re
@@ -21,7 +22,9 @@ class JqError(Exception):
 
 
 def hook_name():
-    return os.path.splitext(os.path.basename(sys.argv[0] or "hook"))[0]
+    """The name stderr messages open with. Scripts are snake_case files; the name stays the kebab-case hook id."""
+    script_stem = os.path.splitext(os.path.basename(sys.argv[0] or "hook"))[0]
+    return script_stem.replace("_", "-")
 
 
 def encode_out(text, errors="surrogateescape"):
@@ -56,7 +59,7 @@ def emit_decision(decision, reason):
 
 def report_open_failure(error, path):
     """One plain line for a log or file the hook could not open. The hook goes on without it."""
-    text = "%s: cannot open %s: %s\n" % (hook_name(), path, os.strerror(error.errno or 0))
+    text = f"{hook_name()}: cannot open {path}: {os.strerror(error.errno or 0)}\n"
     emit_stderr(text)
 
 
@@ -97,7 +100,7 @@ def index(value, key):
         return None
     if isinstance(value, dict):
         return value.get(key)
-    raise JqError('Cannot index %s with string ("%s")' % (jq_type(value), key))
+    raise JqError(f'Cannot index {jq_type(value)} with string ("{key}")')
 
 
 def jq_get(obj, *keys):
@@ -240,9 +243,7 @@ def run_gate(main):
     except SystemExit:
         raise
     except Exception as error:
-        try:
-            emit_stderr("%s: crashed (%s: %s) - blocking the call\n" % (hook_name(), type(error).__name__, error))
-        except Exception:
-            pass
+        with contextlib.suppress(Exception):
+            emit_stderr(f"{hook_name()}: crashed ({type(error).__name__}: {error}) - blocking the call\n")
         sys.exit(2)
     sys.exit(code or 0)

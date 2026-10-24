@@ -14,8 +14,9 @@ import subprocess
 import sys
 
 import hook_input
-from hook_input import JqError, jq_get, jq_str, bash_basename as shell_basename, bash_dirname as shell_dirname
-from hook_input import split_segments
+from hook_input import JqError, jq_get, jq_str, split_segments
+from hook_input import bash_basename as shell_basename
+from hook_input import bash_dirname as shell_dirname
 
 SP =" \t\n\r\f\v"
 SPC = r"[ \t\r\f\v]"
@@ -35,7 +36,7 @@ ESCAPE_HINT = (" If this deny is wrong (a > inside a quoted string or heredoc, a
                "command with a trailing #skip-shell-write-gate comment — it disarms this gate for that one command.")
 
 
-class Deny(Exception):
+class DenyError(Exception):
     pass
 
 
@@ -133,9 +134,9 @@ def check_ownership(raw, cwd, agent, ownership_gate):
             try:
                 reason = jq_get(json.loads(out), "hookSpecificOutput", "permissionDecisionReason")
             except ValueError:
-                raise JqError(2)
+                raise JqError(2) from None
             text = "null" if reason is None else (reason if isinstance(reason, str) else json.dumps(reason))
-            raise Deny("[shell-write-gate] " + text.rstrip("\n"))
+            raise DenyError("[shell-write-gate] " + text.rstrip("\n"))
 
 
 def is_git_tracked(path):
@@ -154,8 +155,10 @@ def run(raw):
     try:
         payload = json.loads(raw)
         command = jq_str(jq_get(payload, "tool_input", "command"))
-    except (ValueError, JqError):
-        raise Deny("[shell-write-gate] hook input did not parse — failing closed. Report this to the user.")
+    except ValueError, JqError:
+        raise DenyError(
+            "[shell-write-gate] hook input did not parse — failing closed. Report this to the user."
+        ) from None
     agent = jq_str(jq_get(payload, "agent_type"))
     cwd = jq_str(jq_get(payload, "cwd")) or os.getcwd()
     if not command:
@@ -209,7 +212,7 @@ def run(raw):
         target = re.split("[" + SP + "]", segment)[-1]
         if (not target or target.startswith("-") or "'" in target or '"' in target or target == word):
             target = segment
-        raise Deny("[shell-write-gate] in-place editing of " + target + " bypasses the Write/Edit hook pipeline. "
+        raise DenyError("[shell-write-gate] in-place editing of " + target + " bypasses the Write/Edit hook pipeline. "
                    "Use the Write or Edit tool." + ESCAPE_HINT)
 
     for raw_target in targets:
@@ -221,7 +224,7 @@ def run(raw):
             if resolved and os.path.exists(shell_dirname(resolved)):
                 path = resolved
         if is_git_tracked(path):
-            raise Deny("[shell-write-gate] " + path + " is git-tracked. Shell writes bypass the Write/Edit hook "
+            raise DenyError("[shell-write-gate] " + path + " is git-tracked. Shell writes bypass the Write/Edit hook "
                        "pipeline (comment/prose/budget gates). Use the Write or Edit tool." + ESCAPE_HINT)
 
 
@@ -231,15 +234,14 @@ def main():
     internal = None
     try:
         run(sys.stdin.buffer.read().decode("utf-8", "replace"))
-    except Deny as denied:
+    except DenyError as denied:
         emit_deny(str(denied))
     except JqError as error:
         internal = error.rc
     except Exception:
         internal = 1
     if internal is not None:
-        emit_deny("[shell-write-gate] internal error (exit %d) — failing closed. Report this to the user."
-                  % internal)
+        emit_deny(f"[shell-write-gate] internal error (exit {internal}) — failing closed. Report this to the user.")
     return 0
 
 

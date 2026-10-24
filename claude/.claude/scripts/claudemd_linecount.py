@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """PostToolUse hook on Write|Edit: warn on stderr when an edited CLAUDE.md exceeds 150 lines. Always exits 0."""
+import contextlib
 import errno
 import json
-import os
 import re
 import sys
 
-import hook_input
 from hook_input import emit_stderr, report_open_failure
 
 LINE_LIMIT = 150
@@ -39,15 +38,14 @@ def check(raw):
         return
     lines = line_count(file_path)
     if lines > LINE_LIMIT:
-        emit_stderr("CLAUDE.md is %d lines (target: <150). Consider moving reference data to skills or MEMORY.md.\n"
-                    % lines)
+        emit_stderr(
+            f"CLAUDE.md is {lines} lines (target: <150). Consider moving reference data to skills or MEMORY.md.\n"
+        )
 
 
 def main():
-    try:
+    with contextlib.suppress(Exception):
         check(sys.stdin.buffer.read())
-    except Exception:
-        pass
     sys.exit(0)
 
 

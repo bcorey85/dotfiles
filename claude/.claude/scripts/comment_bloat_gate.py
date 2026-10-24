@@ -8,7 +8,6 @@ Exit 2 with the reason on stderr blocks; every other path exits 0. Any error exi
 import json
 import os
 import re
-import sys
 
 import hook_input
 import script_utils
@@ -100,7 +99,7 @@ def marker_rows(file_lines, comments_only=False):
             continue
         if comments_only and not COMMENT_LINE.match(line):
             continue
-        row = "%d:%s" % (number, line)
+        row = f"{number}:{line}"
         hit = any(p.search(row) for p in CASE_INSENSITIVE_MARKERS) or any(p.search(row) for p in CASE_SENSITIVE_MARKERS)
         if hit and not NOT_A_MARKER.search(row):
             rows.append((number, line))
@@ -140,12 +139,14 @@ def check(raw):
 
     added_lines = set(new_lines)
     data_only = file_path.endswith(".json")
-    leaks = ["  %d:%s\n" % (number, line) for number, line in marker_rows(file_lines, data_only)
+    leaks = [f"  {number}:{line}\n" for number, line in marker_rows(file_lines, data_only)
              if line in added_lines]
     if leaks:
-        return block_inside_repo(file_path, "comment-bloat-gate: private-workflow marker in an added line (%s). Zero "
-                                 "exceptions — keep the reason, drop the pointer (_shared/code-vocabulary.md):\n"
-                                 % name + "".join(leaks))
+        return block_inside_repo(
+            file_path,
+            f"comment-bloat-gate: private-workflow marker in an added line ({name}). Zero "
+            "exceptions — keep the reason, drop the pointer (_shared/code-vocabulary.md):\n" + "".join(leaks),
+        )
 
     added_comments = [line for line in new_lines if COMMENT_LINE.match(line)]
     if not any(not DELIMITER_LINE.match(line) for line in added_comments):
@@ -156,10 +157,12 @@ def check(raw):
     comments = sum(1 for line in file_lines if COMMENT_LINE.match(line) and not DELIMITER_LINE.match(line))
     percent = comments * 100 // total
     if percent > DENSITY_CAP_PERCENT:
-        return block_inside_repo(file_path, "comment-bloat-gate: %s is %d%% comments (%d/%d non-blank lines), cap "
-                                 "~20%%. Delete the comments this edit added, or rename/split so they are "
-                                 "unnecessary. Never add code to lower the ratio.\n"
-                                 % (name, percent, comments, total))
+        return block_inside_repo(
+            file_path,
+            f"comment-bloat-gate: {name} is {percent}% comments ({comments}/{total} non-blank lines), cap "
+            f"~20%. Delete the comments this edit added, or rename/split so they are "
+            f"unnecessary. Never add code to lower the ratio.\n",
+        )
     return 0
 
 

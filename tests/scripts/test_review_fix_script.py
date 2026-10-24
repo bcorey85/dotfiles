@@ -6,12 +6,13 @@ import tempfile
 import unittest
 
 import fake_ledger
+import toolkit_paths
 
-SCRIPT = pathlib.Path(os.environ.get("REVIEW_FIX_SCRIPT") or pathlib.Path.home() / ".claude" / "scripts" / "review-fix.py")
+SCRIPT = pathlib.Path(os.environ.get("REVIEW_FIX_SCRIPT") or toolkit_paths.SCRIPTS_DIR / "review_fix.py")
 HANDBACK = SCRIPT.parent / "handback.py"
 SESSION = "11111111-aaaa-bbbb-cccc-222222222222"
 OTHER_SESSION = "99999999-aaaa-bbbb-cccc-888888888888"
-CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR") or pathlib.Path.home() / ".claude")
+CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR") or toolkit_paths.CLAUDE_DIR)
 
 GIT_ENV = {
     "GIT_AUTHOR_NAME": "t",
@@ -47,7 +48,8 @@ files_touched: []
 nit: []
 """
 
-WITH_ASK = """status: converged
+WITH_ASK = (
+    """status: converged
 iter: 1
 fixed: []
 ask:
@@ -57,9 +59,12 @@ ask:
     question: "Should retries be capped at 3 or configurable?"
     gate: code-reviewer
     class: smell
-  - {finding: "no index", finding_id: a1b2c3d4e5f60002, file_line: src/db.ts:5, question: "Add an index on tenant_id?", gate: perf-reviewer, class: perf}
-class_closure: n/a - fixed[] empty
 """
+    '  - {finding: "no index", finding_id: a1b2c3d4e5f60002, file_line: src/db.ts:5, '
+    'question: "Add an index on tenant_id?", gate: perf-reviewer, class: perf}\n'
+    """class_closure: n/a - fixed[] empty
+"""
+)
 
 PLAN_IMPACT = """status: plan-impact
 iter: 1
@@ -96,19 +101,19 @@ class_closure: n/a - fixed[] empty
 
 class ReviewFixScriptTest(unittest.TestCase):
     def setUp(self):
-        tempDir = tempfile.TemporaryDirectory()
-        self.addCleanup(tempDir.cleanup)
-        self.tempRoot = pathlib.Path(tempDir.name)
-        self.repo = self.tempRoot / "myrepo"
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.temp_root = pathlib.Path(temp_dir.name)
+        self.repo = self.temp_root / "myrepo"
         self.repo.mkdir()
-        self.ledgerEnv = fake_ledger.install(self.tempRoot)
-        self.escapesFile = self.tempRoot / "escapes.jsonl"
-        self.jumpLog = self.tempRoot / "jump.log"
-        self.ghLog = self.tempRoot / "gh.log"
-        self.storeDir = self.tempRoot / "store"
-        self.fakeJump = self.fake_command("nvim-jump", f'echo "$@" >> {self.jumpLog}\nexit "${{JUMP_EXIT:-0}}"')
-        self.fakeGh = self.fake_command(
-            "gh", f'echo "$@" >> {self.ghLog}\ncase "$1 $2" in "repo view") echo acme/web;; "pr view") echo 7;; esac\n'
+        self.ledger_env = fake_ledger.install(self.temp_root)
+        self.escapes_file = self.temp_root / "escapes.jsonl"
+        self.jump_log = self.temp_root / "jump.log"
+        self.gh_log = self.temp_root / "gh.log"
+        self.store_dir = self.temp_root / "store"
+        self.fake_jump = self.fake_command("nvim-jump", f'echo "$@" >> {self.jump_log}\nexit "${{JUMP_EXIT:-0}}"')
+        self.fake_gh = self.fake_command(
+            "gh", f'echo "$@" >> {self.gh_log}\ncase "$1 $2" in "repo view") echo acme/web;; "pr view") echo 7;; esac\n'
                   'exit "${GH_EXIT:-0}"')
         self.git("init", "-q")
         (self.repo / "README.md").write_text("hi\n")
@@ -116,16 +121,16 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.git("commit", "-q", "-m", "init")
 
     def fake_command(self, name, body):
-        path = self.tempRoot / name
+        path = self.temp_root / name
         path.write_text("#!/usr/bin/env bash\n" + body + "\n")
         path.chmod(0o755)
         return path
 
     def environment(self, **extra):
-        return {**os.environ, **GIT_ENV, **self.ledgerEnv,
-                "REVIEW_ESCAPES_FILE": str(self.escapesFile), "REVIEW_FIX_NVIM_JUMP": str(self.fakeJump),
-                "REVIEW_FIX_GH": str(self.fakeGh), "REVIEW_FIX_CLAUDE_DIR": str(CLAUDE_DIR),
-                "HANDBACK_STORE_DIR": str(self.storeDir), "CLAUDE_CODE_SESSION_ID": SESSION,
+        return {**os.environ, **GIT_ENV, **self.ledger_env,
+                "REVIEW_ESCAPES_FILE": str(self.escapes_file), "REVIEW_FIX_NVIM_JUMP": str(self.fake_jump),
+                "REVIEW_FIX_GH": str(self.fake_gh), "REVIEW_FIX_CLAUDE_DIR": str(CLAUDE_DIR),
+                "HANDBACK_STORE_DIR": str(self.store_dir), "CLAUDE_CODE_SESSION_ID": SESSION,
                 "CLAUDE_TOOLKIT_TELEMETRY": "1", **extra}
 
     def git(self, *args):
@@ -142,15 +147,15 @@ class ReviewFixScriptTest(unittest.TestCase):
     def rows(self, path):
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
-    def ledgerWrites(self):
+    def ledger_writes(self):
         """Every `ledger write` call log-review-finding made, oldest first. Each is the row the writer piped in:
         strings, the file path raw in path_key, and no date, repo, session or desc, plus the stand-in's _type,
-        _cwd and _session. The review_escape rows log-escape sends are read by escapeRows."""
-        return [row for row in fake_ledger.recorded_rows(self.ledgerEnv) if row["_type"] != "review_escape"]
+        _cwd and _session. The review_escape rows log-escape sends are read by escape_rows."""
+        return [row for row in fake_ledger.recorded_rows(self.ledger_env) if row["_type"] != "review_escape"]
 
-    def escapeRows(self):
+    def escape_rows(self):
         """Every `review_escape` row log-escape sent to `ledger write`, oldest first; the file path is in path_key."""
-        return fake_ledger.recorded_rows(self.ledgerEnv, "review_escape")
+        return fake_ledger.recorded_rows(self.ledger_env, "review_escape")
 
     # ---------- routing ----------
 
@@ -168,8 +173,12 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("Do not present this run as clean", output)
 
     def test_converged_with_bare_none_class_closure_says_the_receipt_is_missing(self):
-        code, output = self.packet(CONVERGED.replace(
-            "class_closure: enumerated every query in orders.ts; the tenant filter now sits on all 3", "class_closure: none"))
+        code, output = self.packet(
+            CONVERGED.replace(
+                "class_closure: enumerated every query in orders.ts; the tenant filter now sits on all 3",
+                "class_closure: none",
+            )
+        )
         self.assertEqual(code, 0, output)
         self.assertIn("receipt is missing", output)
 
@@ -217,31 +226,35 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("Adopt plan change / Keep plan as written / Discuss", output)
         self.assertIn("iter=1 spec_iter=2", output)
 
-        planFile = self.tempRoot / "plan.md"
-        planFile.write_text("# Plan\n\n## Phase 1\n\nwork\n")
+        plan_file = self.temp_root / "plan.md"
+        plan_file.write_text("# Plan\n\n## Phase 1\n\nwork\n")
         code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "yes, add the table",
-                                        "--plan", str(planFile)])
+                                        "--plan", str(plan_file)])
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: redispatch", output)
         self.assertIn("plan_impact: RESOLVED - Adopt plan change.", output)
         self.assertIn("iter=1", output)
         self.assertIn("spec_iter=2", output)
-        planText = planFile.read_text()
-        self.assertIn("## Plan Deviations", planText)
-        self.assertIn("Adopt plan change | t", planText)
+        plan_text = plan_file.read_text()
+        self.assertIn("## Plan Deviations", plan_text)
+        self.assertIn("Adopt plan change | t", plan_text)
 
     def test_decide_appends_to_an_existing_plan_deviations_section_before_the_next_heading(self):
         self.packet(PLAN_IMPACT)
-        planFile = self.tempRoot / "plan.md"
-        planFile.write_text("# Plan\n\n## Plan Deviations\n\n- old entry\n\n## Phase 1\n\nwork\n")
-        self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep it", "--plan", str(planFile)])
-        lines = planFile.read_text().splitlines()
-        self.assertLess(lines.index("- old entry"), next(i for i, l in enumerate(lines) if "Keep plan as written" in l))
-        self.assertLess(next(i for i, l in enumerate(lines) if "Keep plan as written" in l), lines.index("## Phase 1"))
+        plan_file = self.temp_root / "plan.md"
+        plan_file.write_text("# Plan\n\n## Plan Deviations\n\n- old entry\n\n## Phase 1\n\nwork\n")
+        self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep it", "--plan", str(plan_file)])
+        lines = plan_file.read_text().splitlines()
+        self.assertLess(
+            lines.index("- old entry"), next(i for i, line in enumerate(lines) if "Keep plan as written" in line)
+        )
+        self.assertLess(
+            next(i for i, line in enumerate(lines) if "Keep plan as written" in line), lines.index("## Phase 1")
+        )
 
     def test_decide_discuss_does_not_redispatch(self):
         self.packet(PLAN_IMPACT)
-        code, output = self.run_script(["decide", "discuss"])
+        _code, output = self.run_script(["decide", "discuss"])
         self.assertIn("ACTION: discuss", output)
         self.assertNotIn("redispatch", output)
 
@@ -251,7 +264,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         for word in ("adopt", "keep"):
             for by in ("user", "session"):
-                self.assertIn(f"review-fix.py decide {word} --by {by} --ruling", output)
+                self.assertIn(f"review_fix.py decide {word} --by {by} --ruling", output)
         self.assertEqual(4, output.count("--plan <the plan path, when the handoff names one>"))
         self.assertEqual(2, output.count('--ruling "<the decision in one line>"'))
 
@@ -263,77 +276,79 @@ class ReviewFixScriptTest(unittest.TestCase):
                       output)
 
     def test_plan_impact_modal_names_the_by_form(self):
-        code, output = self.packet(PLAN_IMPACT)
+        _code, output = self.packet(PLAN_IMPACT)
         self.assertIn('decide <adopt|keep> --by user --ruling "<the decision in one line>"', output)
         self.assertIn("pass `--by session`", output)
         self.assertIn("--plan <the plan path, when the handoff names one>", output)
 
     def test_decide_without_a_ruling_stops_with_the_usage_line_and_records_nothing(self):
         self.packet(PLAN_IMPACT)
-        stageBefore = self.stored_stage()
-        planFile = self.tempRoot / "plan.md"
-        planFile.write_text("# Plan\n")
+        stage_before = self.stored_stage()
+        plan_file = self.temp_root / "plan.md"
+        plan_file.write_text("# Plan\n")
         for decision in ("adopt", "keep"):
             with self.subTest(decision=decision):
-                code, output = self.run_script(["decide", decision, "--by", "user", "--plan", str(planFile)])
+                code, output = self.run_script(["decide", decision, "--by", "user", "--plan", str(plan_file)])
                 self.assertEqual(code, 2)
                 self.assertIn("ACTION: stop-usage", output)
                 self.assertIn(f"decide {decision} needs --ruling", output)
-                self.assertEqual(stageBefore, self.stored_stage())
-                self.assertEqual("# Plan\n", planFile.read_text())
+                self.assertEqual(stage_before, self.stored_stage())
+                self.assertEqual("# Plan\n", plan_file.read_text())
 
     def stored_stage(self):
         return json.loads((self.repo / ".git" / "review-fix" / "state.json").read_text())["stage"]
 
     def test_decide_without_by_stops_with_the_usage_line_and_leaves_the_state(self):
         self.packet(PLAN_IMPACT)
-        stageBefore = self.stored_stage()
-        planFile = self.tempRoot / "plan.md"
-        planFile.write_text("# Plan\n")
-        code, output = self.run_script(["decide", "adopt", "--ruling", "my call", "--plan", str(planFile)])
+        stage_before = self.stored_stage()
+        plan_file = self.temp_root / "plan.md"
+        plan_file.write_text("# Plan\n")
+        code, output = self.run_script(["decide", "adopt", "--ruling", "my call", "--plan", str(plan_file)])
         self.assertEqual(code, 2)
         self.assertIn("ACTION: stop-usage", output)
         self.assertIn('decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"', output)
-        self.assertEqual(stageBefore, self.stored_stage())
-        self.assertEqual("# Plan\n", planFile.read_text())
+        self.assertEqual(stage_before, self.stored_stage())
+        self.assertEqual("# Plan\n", plan_file.read_text())
 
     def test_decide_with_a_bad_by_value_stops_with_the_usage_line(self):
         self.packet(PLAN_IMPACT)
-        stageBefore = self.stored_stage()
+        stage_before = self.stored_stage()
         code, output = self.run_script(["decide", "keep", "--by", "maybe", "--ruling", "my call"])
         self.assertEqual(code, 2)
         self.assertIn("ACTION: stop-usage", output)
         self.assertIn("--by <user|session>", output)
         self.assertIn("needs --by user or --by session", output)
-        self.assertEqual(stageBefore, self.stored_stage())
+        self.assertEqual(stage_before, self.stored_stage())
 
     def test_decide_by_with_no_value_stops_with_the_usage_line(self):
         self.packet(PLAN_IMPACT)
-        stageBefore = self.stored_stage()
+        stage_before = self.stored_stage()
         code, output = self.run_script(["decide", "keep", "--by", "--ruling", "my call"])
         self.assertEqual(code, 2)
         self.assertIn("--by <user|session>", output)
-        self.assertEqual(stageBefore, self.stored_stage())
+        self.assertEqual(stage_before, self.stored_stage())
 
     def test_decide_by_session_signs_as_the_session_not_the_user(self):
         self.packet(PLAN_IMPACT)
-        planFile = self.tempRoot / "plan.md"
-        planFile.write_text("# Plan\n")
+        plan_file = self.temp_root / "plan.md"
+        plan_file.write_text("# Plan\n")
         code, output = self.run_script(["decide", "adopt", "--by", "session", "--ruling", "my own call",
-                                        "--plan", str(planFile)])
+                                        "--plan", str(plan_file)])
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: redispatch", output)
         self.assertIn("The session ruled, not the user.", output)
-        self.assertIn("| the session, not the user | my own call", planFile.read_text())
-        self.assertNotIn("| t |", planFile.read_text())
+        self.assertIn("| the session, not the user | my own call", plan_file.read_text())
+        self.assertNotIn("| t |", plan_file.read_text())
 
     def test_decide_by_user_signs_with_the_git_user_name(self):
         self.packet(PLAN_IMPACT)
-        planFile = self.tempRoot / "plan.md"
-        planFile.write_text("# Plan\n")
-        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep it", "--plan", str(planFile)])
+        plan_file = self.temp_root / "plan.md"
+        plan_file.write_text("# Plan\n")
+        code, output = self.run_script(
+            ["decide", "keep", "--by", "user", "--ruling", "keep it", "--plan", str(plan_file)]
+        )
         self.assertEqual(code, 0, output)
-        self.assertIn("| Keep plan as written | t | keep it", planFile.read_text())
+        self.assertIn("| Keep plan as written | t | keep it", plan_file.read_text())
         self.assertNotIn("The session ruled", output)
 
     def test_decide_without_a_waiting_plan_impact_fails(self):
@@ -350,27 +365,27 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("ACTION: present-asks", output)
         self.assertIn("1. src/retry.ts:10", output)
         self.assertIn("Should retries be capped at 3 or configurable?", output)
-        jump = self.jumpLog.read_text()
+        jump = self.jump_log.read_text()
         self.assertIn("--note Should retries be capped at 3 or configurable? src/retry.ts:10", jump)
         self.assertIn("src/db.ts:5", jump)
 
         code, output = self.run_script(["asks-done", "accepted", "rejected:not worth it"])
         self.assertEqual(code, 0, output)
-        findingRows = self.ledgerWrites()
-        self.assertEqual([row["_type"] for row in findingRows], ["review_finding"] * 2)
-        self.assertEqual([row["_session"] for row in findingRows], [SESSION] * 2)
-        self.assertEqual([row["ask_outcome"] for row in findingRows], ["accepted", "rejected"])
-        self.assertEqual([row["finding_id"] for row in findingRows], ["a1b2c3d4e5f60001", "a1b2c3d4e5f60002"])
-        self.assertEqual(findingRows[0]["gate"], "code-reviewer")
-        self.assertEqual(findingRows[1]["gate"], "perf-reviewer")
-        self.assertEqual(findingRows[1]["class"], "perf")
-        self.assertEqual(findingRows[0]["scope"], "branch-exit")
-        self.assertEqual(findingRows[0]["path_key"], "src/retry.ts")
-        self.assertEqual(findingRows[0]["line"], "10")
-        self.assertNotIn("repo", findingRows[0])
-        self.assertEqual([os.path.realpath(row["_cwd"]) for row in findingRows], [os.path.realpath(self.repo)] * 2)
-        self.assertNotIn("desc", findingRows[1])
-        self.assertEqual(findingRows[0]["iter"], "1")
+        finding_rows = self.ledger_writes()
+        self.assertEqual([row["_type"] for row in finding_rows], ["review_finding"] * 2)
+        self.assertEqual([row["_session"] for row in finding_rows], [SESSION] * 2)
+        self.assertEqual([row["ask_outcome"] for row in finding_rows], ["accepted", "rejected"])
+        self.assertEqual([row["finding_id"] for row in finding_rows], ["a1b2c3d4e5f60001", "a1b2c3d4e5f60002"])
+        self.assertEqual(finding_rows[0]["gate"], "code-reviewer")
+        self.assertEqual(finding_rows[1]["gate"], "perf-reviewer")
+        self.assertEqual(finding_rows[1]["class"], "perf")
+        self.assertEqual(finding_rows[0]["scope"], "branch-exit")
+        self.assertEqual(finding_rows[0]["path_key"], "src/retry.ts")
+        self.assertEqual(finding_rows[0]["line"], "10")
+        self.assertNotIn("repo", finding_rows[0])
+        self.assertEqual([os.path.realpath(row["_cwd"]) for row in finding_rows], [os.path.realpath(self.repo)] * 2)
+        self.assertNotIn("desc", finding_rows[1])
+        self.assertEqual(finding_rows[0]["iter"], "1")
 
     def test_nvim_jump_with_no_owner_is_silent_and_still_lists_the_asks(self):
         code, output = self.packet(WITH_ASK, JUMP_EXIT="1")
@@ -388,18 +403,18 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(["asks-done", "accepted"])
         self.assertEqual(code, 2)
         self.assertIn("2 ask(s) waiting but 1 outcome(s) given", output)
-        self.assertEqual(self.ledgerWrites(), [])
+        self.assertEqual(self.ledger_writes(), [])
 
     def test_asks_done_with_an_unknown_outcome_fails_loudly(self):
         self.packet(WITH_ASK)
         code, output = self.run_script(["asks-done", "accepted", "maybe"])
         self.assertEqual(code, 2)
         self.assertIn("accepted|rejected|modified", output)
-        self.assertEqual(self.ledgerWrites(), [])
+        self.assertEqual(self.ledger_writes(), [])
 
     def test_asks_done_without_waiting_asks_fails(self):
         self.packet(CONVERGED)
-        code, output = self.run_script(["asks-done", "accepted"])
+        code, _output = self.run_script(["asks-done", "accepted"])
         self.assertEqual(code, 2)
 
     # ---------- /fix extras ----------
@@ -413,7 +428,7 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_walkthrough_escape_logs_only_for_a_conversation_finding_that_was_applied(self):
         code, output = self.packet(CONVERGED, "--source", "conversation", "--escape", self.escape_spec(), skill="fix")
         self.assertEqual(code, 0, output)
-        rows = self.escapeRows()
+        rows = self.escape_rows()
         self.assertEqual(len(rows), 1, output)
         self.assertEqual(rows[0]["stage_found"], "walkthrough")
         self.assertEqual(rows[0]["gate_missed"], "review")
@@ -424,13 +439,13 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_escape_from_a_cc_comment_is_not_logged(self):
         code, output = self.packet(CONVERGED, "--source", "cc", "--escape", self.escape_spec(), skill="fix")
         self.assertEqual(code, 0, output)
-        self.assertEqual(self.escapeRows(), [])
+        self.assertEqual(self.escape_rows(), [])
         self.assertIn("not the conversation", output)
 
     def test_escape_for_a_file_with_no_fixed_entry_is_not_logged(self):
-        code, output = self.packet(CONVERGED, "--source", "conversation",
+        _code, output = self.packet(CONVERGED, "--source", "conversation",
                                    "--escape", self.escape_spec(file="src/other.ts"), skill="fix")
-        self.assertEqual(self.escapeRows(), [])
+        self.assertEqual(self.escape_rows(), [])
         self.assertIn("no fixed[] entry names that file", output)
 
     def test_escape_the_ledger_refuses_is_noted_and_not_logged(self):
@@ -439,13 +454,13 @@ class ReviewFixScriptTest(unittest.TestCase):
                                    FAKE_LEDGER_WRITE_EXIT="2")
         self.assertEqual(code, 0, output)
         self.assertIn("escape log FAILED for src/orders.ts", output)
-        self.assertEqual(self.escapeRows(), [])
+        self.assertEqual(self.escape_rows(), [])
 
     def test_unknown_guard_reaches_the_ledger_as_given(self):
         code, output = self.packet(CONVERGED, "--source", "conversation",
                                    "--escape", self.escape_spec(guard="vibes"), skill="fix")
         self.assertEqual(code, 0, output)
-        self.assertEqual(self.escapeRows()[0]["guard"], "vibes")
+        self.assertEqual(self.escape_rows()[0]["guard"], "vibes")
 
     def test_escape_missing_a_field_fails_loudly(self):
         spec = self.escape_spec().replace("|severity=high", "")
@@ -454,19 +469,23 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("lacks severity", output)
 
     def test_escape_on_a_non_converged_status_is_not_logged(self):
-        code, output = self.packet(CAP, "--source", "conversation", "--escape", self.escape_spec(), skill="fix")
-        self.assertEqual(self.escapeRows(), [])
+        _code, _output = self.packet(CAP, "--source", "conversation", "--escape", self.escape_spec(), skill="fix")
+        self.assertEqual(self.escape_rows(), [])
 
     def test_escape_flag_on_review_is_refused(self):
-        code, output = self.packet(CONVERGED, "--escape", self.escape_spec())
+        code, _output = self.packet(CONVERGED, "--escape", self.escape_spec())
         self.assertEqual(code, 2)
 
     def test_aikido_replies_follow_fixed_skipped_and_other_dispositions(self):
-        text = CONVERGED.replace("ask: []", 'ask: [{finding: "pick a cap", file_line: src/c.ts:4, question: "cap?", gate: code-reviewer, class: smell}]')
+        text = CONVERGED.replace(
+            "ask: []",
+            'ask: [{finding: "pick a cap", file_line: src/c.ts:4, question: "cap?", gate: code-reviewer, class: '
+            'smell}]',
+        )
         code, output = self.packet(text, "--aikido", "src/orders.ts:42=111", "--aikido", "src/a.ts:9=222",
                                    "--aikido", "src/c.ts:4=333", skill="fix")
         self.assertEqual(code, 0, output)
-        calls = self.ghLog.read_text().splitlines()
+        calls = self.gh_log.read_text().splitlines()
         posts = [call for call in calls if call.startswith("api")]
         self.assertEqual(len(posts), 3)
         self.assertIn("repos/acme/web/pulls/7/comments/111/replies", posts[0])
@@ -488,7 +507,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_fix_render_has_no_class_closure_line_unless_the_packet_carries_one(self):
         text = "\n".join(line for line in CONVERGED.splitlines() if not line.startswith("class_closure"))
-        code, output = self.packet(text, skill="fix")
+        _code, output = self.packet(text, skill="fix")
         self.assertNotIn("Class closure", output)
         self.assertNotIn("receipt", output)
 
@@ -501,7 +520,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn(expected, output)
         self.assertIn("`~/.claude/scripts/review-gate-mark dirty`", output)
         self.assertNotIn("render-and-finish", output)
-        self.assertEqual(self.ledgerWrites(), [])
+        self.assertEqual(self.ledger_writes(), [])
 
     def test_empty_stdin_is_a_parse_failure(self):
         self.assert_parse_failure("", "no review-loop dispatch on record")
@@ -523,10 +542,15 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assert_parse_failure(text, "fixed is missing")
 
     def test_fixed_entry_without_a_finding_is_a_parse_failure(self):
-        self.assert_parse_failure(CONVERGED.replace('finding: "orders query lacked a tenant filter", ', ""), "no finding")
+        self.assert_parse_failure(
+            CONVERGED.replace('finding: "orders query lacked a tenant filter", ', ""), "no finding"
+        )
 
     def test_ask_entry_without_a_question_is_a_parse_failure(self):
-        self.assert_parse_failure(WITH_ASK.replace('finding: "no index", ', "").replace('question: "Add an index on tenant_id?", ', ""), "no question")
+        self.assert_parse_failure(
+            WITH_ASK.replace('finding: "no index", ', "").replace('question: "Add an index on tenant_id?", ', ""),
+            "no question",
+        )
 
     def test_ask_entry_without_a_file_line_is_a_parse_failure(self):
         self.assert_parse_failure(WITH_ASK.replace("file_line: src/db.ts:5, ", ""), "no file_line")
@@ -561,12 +585,16 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.packet("status: bogus")
         code, output = self.run_script(["asks-done", "accepted", "accepted"])
         self.assertEqual(code, 2, output)
-        self.assertEqual(self.ledgerWrites(), [])
+        self.assertEqual(self.ledger_writes(), [])
 
     # ---------- whitespace and format tolerance ----------
 
     def test_extra_whitespace_and_a_code_fence_around_the_packet_still_parse(self):
-        padded = "```\n" + "\n".join("   " + line + "   " if line else line for line in CONVERGED.splitlines()) + "\n\n\n```\n"
+        padded = (
+            "```\n"
+            + "\n".join("   " + line + "   " if line else line for line in CONVERGED.splitlines())
+            + "\n\n\n```\n"
+        )
         code, output = self.packet(padded)
         self.assertEqual(code, 0, output)
         self.assertIn("[blocker] orders query lacked a tenant filter - src/orders.ts:42", output)
@@ -592,44 +620,69 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("- x - a.ts:1", output)
 
     def test_perf_entries_render_under_their_own_heading_with_the_principle(self):
-        text = CLEAN_EMPTY + 'perf:\n  - {finding: "N+1 in loader", file_line: src/l.ts:3, principle: "batch the lookups"}\n'
+        text = (
+            CLEAN_EMPTY
+            + 'perf:\n  - {finding: "N+1 in loader", file_line: src/l.ts:3, principle: "batch the lookups"}\n'
+        )
         code, output = self.packet(text)
         self.assertEqual(code, 0, output)
         self.assertIn("### Perf findings", output)
         self.assertIn("Principle: batch the lookups", output)
 
     def test_finding_text_containing_a_comma_and_key_word_keeps_its_whole_text(self):
-        text = CLEAN_EMPTY.replace("fixed: []", 'fixed: [{finding: "guard the read, then class: fix it", file_line: a.ts:1, blocker: false}]')
-        code, output = self.packet(text)
+        text = CLEAN_EMPTY.replace(
+            "fixed: []", 'fixed: [{finding: "guard the read, then class: fix it", file_line: a.ts:1, blocker: false}]'
+        )
+        _code, output = self.packet(text)
         self.assertIn("guard the read, then class: fix it", output)
 
     # ---------- shapes seen in real review-loop hand-backs ----------
 
     def test_unbracketed_key_value_asks_with_dot_semicolon_and_pipe_separators_parse(self):
-        text = CLEAN_EMPTY.replace("ask: []", "ask:\n"
-            "- finding: cache lock spans the scan. file_line: serve.go:162,188. question: what staleness is fine? gate: code-reviewer. class: perf\n"
-            "- finding: timeouts left unset; file_line: cli/serve.go:35; question: out of scope? gate: robustness; class: ops\n"
-            "- finding: ReadHeaderTimeout question | file_line: cli/serve.go:35 | question: use an http.Server? | gate: robustness | class: ops")
+        text = CLEAN_EMPTY.replace(
+            "ask: []",
+            "ask:\n"
+            "- finding: cache lock spans the scan. file_line: serve.go:162,188. question: what staleness is fine? "
+            "gate: code-reviewer. class: perf\n"
+            "- finding: timeouts left unset; file_line: cli/serve.go:35; question: out of scope? gate: robustness; "
+            "class: ops\n"
+            "- finding: ReadHeaderTimeout question | file_line: cli/serve.go:35 | question: use an http.Server? | "
+            "gate: robustness | class: ops",
+        )
         code, output = self.packet(text)
         self.assertEqual(code, 0, output)
         self.assertIn("what staleness is fine?", output)
         self.assertIn("use an http.Server?", output)
 
     def test_flow_ask_with_a_finding_but_no_question_uses_the_finding_as_the_question(self):
-        text = CLEAN_EMPTY.replace("ask: []", 'ask:\n  - {finding: "Accept it as the contract and update the README?", file_line: "src/inventory.ts:103-110", gate: code-reviewer, class: docs}')
+        text = CLEAN_EMPTY.replace(
+            "ask: []",
+            'ask:\n  - {finding: "Accept it as the contract and update the README?", file_line: '
+            '"src/inventory.ts:103-110", gate: code-reviewer, class: docs}',
+        )
         code, output = self.packet(text)
         self.assertEqual(code, 0, output)
         self.assertIn("Accept it as the contract", output)
 
     def test_flow_ask_whose_keys_follow_a_period_parses(self):
-        text = CLEAN_EMPTY.replace("ask: []", "ask:\n  - {finding: The rules file wants interface. file_line: backend/a.ts:1, question: Convert the shapes? gate: code-reviewer, class: docs}")
+        text = CLEAN_EMPTY.replace(
+            "ask: []",
+            "ask:\n  - {finding: The rules file wants interface. file_line: backend/a.ts:1, question: Convert the "
+            "shapes? gate: code-reviewer, class: docs}",
+        )
         code, output = self.packet(text)
         self.assertEqual(code, 0, output)
         self.assertIn("Convert the shapes?", output)
 
     def test_free_text_file_line_and_a_comma_list_of_lines_parse(self):
-        text = CLEAN_EMPTY.replace("ask: []", "ask:\n- finding: parseDateOnly is unresolved | file_line: service.test.ts:1313 area | question: drop it? | gate: carried | class: carried")
-        text = text.replace("fixed: []", 'fixed: [{finding: "spec gap", file_line: "spec.md:432, :1521-1523", blocker: false}]')
+        text = CLEAN_EMPTY.replace(
+            "ask: []",
+            "ask:\n- finding: parseDateOnly is unresolved | file_line: service.test.ts:1313 area | question: drop it? "
+            "| gate: carried | class: carried",
+        )
+        text = text.replace(
+            "fixed: []", 'fixed: [{finding: "spec gap", file_line: "spec.md:432, :1521-1523", blocker: false}]'
+        )
         code, output = self.packet(text)
         self.assertEqual(code, 0, output)
 
@@ -644,29 +697,39 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("blank lines between steps", output)
 
     def test_a_real_pending_report_is_a_parse_failure(self):
-        self.assert_parse_failure("status: pending. This is not a convergence packet. The verification pass has not reported.\n\nDone so far:\n- fixed\n", "status is")
+        self.assert_parse_failure(
+            "status: pending. This is not a convergence packet. The verification pass has not reported.\n\nDone so "
+            "far:\n- fixed\n",
+            "status is",
+        )
 
     def test_a_deferred_packet_with_asks_but_no_findings_remaining_is_a_parse_failure(self):
-        text = "status: deferred\niter: 1\nfixed: []\nskipped_fp: []\nblockers: []\nfindings_remaining: []\nask:\n- {finding: x, file_line: a.ts:1, question: y?}\n"
+        text = (
+            "status: deferred\niter: 1\nfixed: []\nskipped_fp: []\nblockers: []\nfindings_remaining: []\nask:\n- "
+            "{finding: x, file_line: a.ts:1, question: y?}\n"
+        )
         self.assert_parse_failure(text, "findings_remaining")
 
     def test_a_cap_reached_packet_with_an_empty_findings_remaining_is_a_parse_failure(self):
-        self.assert_parse_failure("status: cap-reached\niter: 2\nfixed: []\nblockers: []\nfindings_remaining: [] (none open)\n", "findings_remaining")
+        self.assert_parse_failure(
+            "status: cap-reached\niter: 2\nfixed: []\nblockers: []\nfindings_remaining: [] (none open)\n",
+            "findings_remaining",
+        )
 
     # ---------- no-paste: saved hand-back ----------
 
     def hook(self, event, which=None, **extra):
         arguments = ["hook", which] if which else ["hook"]
-        done = subprocess.run(["python3", "-I", str(HANDBACK), *arguments], cwd=self.tempRoot,
+        done = subprocess.run(["python3", "-I", str(HANDBACK), *arguments], cwd=self.temp_root,
                               input=json.dumps(event), text=True, capture_output=True, env=self.environment(**extra))
         return done.returncode, done.stdout + done.stderr
 
     def dispatch(self, session=SESSION, subagent="review-loop"):
         return self.hook({"session_id": session, "tool_name": "Agent", "tool_input": {"subagent_type": subagent}})
 
-    def hand_back(self, message=CONVERGED, session=SESSION, agent="review-loop", agentId="a1"):
+    def hand_back(self, message=CONVERGED, session=SESSION, agent="review-loop", agent_id="a1"):
         return self.hook({"session_id": session, "tool_name": "SubagentHandback", "agent_type": agent,
-                          "agent_id": agentId, "tool_input": {"message": message}})
+                          "agent_id": agent_id, "tool_input": {"message": message}})
 
     def seed(self, message=CONVERGED, session=SESSION):
         self.dispatch(session)
@@ -696,7 +759,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet("")
         self.assertEqual(code, 2, output)
         self.assertIn("ACTION: stop-no-handback", output)
-        self.hand_back(CLEAN_EMPTY, agentId="a2")
+        self.hand_back(CLEAN_EMPTY, agent_id="a2")
         code, output = self.packet("")
         self.assertEqual(code, 0, output)
 
@@ -730,10 +793,10 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_sessions_in_one_repo_keep_separate_miss_counts(self):
         self.dispatch(OTHER_SESSION)
-        code, output = self.packet("", CLAUDE_CODE_SESSION_ID=OTHER_SESSION)
+        _, output = self.packet("", CLAUDE_CODE_SESSION_ID=OTHER_SESSION)
         self.assertIn("Re-dispatch review-loop once", output)
         self.dispatch()
-        code, output = self.packet("")
+        _code, output = self.packet("")
         self.assertIn("Re-dispatch review-loop once", output)
         self.assertNotIn("Stop. Do not re-dispatch", output)
 
@@ -742,10 +805,10 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.dispatch()
         self.packet("", skill="review")
         self.dispatch()
-        code, output = self.packet("", skill="fix")
+        _, output = self.packet("", skill="fix")
         self.assertIn("Re-dispatch review-loop once", output)
         self.dispatch()
-        code, output = self.packet("", skill="review")
+        _code, output = self.packet("", skill="review")
         self.assertIn("Show the user the loop's final text", output)
 
     def test_a_denied_dispatch_blocks_nothing_once_a_later_dispatch_hands_back(self):
@@ -760,21 +823,21 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.packet("")
         self.run_script(["asks-done", "accepted", "accepted"])
         self.dispatch()
-        self.hand_back(WITH_ASK, agentId="a2")
+        self.hand_back(WITH_ASK, agent_id="a2")
         code, output = self.packet("")
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: present-asks", output)
-        self.assertEqual(len(self.jumpLog.read_text().splitlines()), 2)
+        self.assertEqual(len(self.jump_log.read_text().splitlines()), 2)
         self.run_script(["asks-done", "accepted", "accepted"])
-        self.assertEqual(len(self.ledgerWrites()), 4)
+        self.assertEqual(len(self.ledger_writes()), 4)
 
     def test_re_running_packet_on_the_same_stored_hand_back_is_one_run(self):
         self.seed(WITH_ASK)
         self.packet("")
         self.run_script(["asks-done", "accepted", "accepted"])
-        code, output = self.packet("")
+        _code, output = self.packet("")
         self.assertIn("ACTION: done", output)
-        self.assertEqual(len(self.ledgerWrites()), 2)
+        self.assertEqual(len(self.ledger_writes()), 2)
 
     def test_dispatch_of_another_agent_does_not_make_the_hand_back_stale(self):
         self.seed()
@@ -800,10 +863,10 @@ class ReviewFixScriptTest(unittest.TestCase):
     # ---------- /code state ----------
 
     def write_code_step(self, **fields):
-        codeStep = self.repo / ".git" / "code-step"
-        codeStep.mkdir(exist_ok=True)
-        (codeStep / "state.json").write_text(json.dumps(fields))
-        return codeStep / "state.json"
+        code_step = self.repo / ".git" / "code-step"
+        code_step.mkdir(exist_ok=True)
+        (code_step / "state.json").write_text(json.dumps(fields))
+        return code_step / "state.json"
 
     def test_code_step_state_of_the_same_session_blocks_a_saved_read_and_is_named(self):
         self.seed()
@@ -811,7 +874,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet("")
         self.assertEqual(code, 2, output)
         self.assertIn(str(path), output)
-        self.assertIn("code-step.py after-review", output)
+        self.assertIn("code_step.py resume", output)
 
     def test_code_step_state_pinned_to_another_session_does_not_block(self):
         self.seed()
@@ -830,10 +893,14 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     # ---------- shapes that broke on real hand-backs ----------
 
-    NUMBERED = ("status: converged\niter: 1\nfixed: []\nask:\n"
-                "1. finding: cap on retries | file_line: src/retry.ts:10 | question: cap at 3? | gate: code-reviewer | class: smell\n"
-                "2) finding: add index | file_line: src/db.ts:5 | question: index tenant_id? | gate: perf-reviewer | class: perf\n"
-                "class_closure: n/a - fixed[] empty\nThe loop found two questions.\n")
+    NUMBERED = (
+        "status: converged\niter: 1\nfixed: []\nask:\n"
+        "1. finding: cap on retries | file_line: src/retry.ts:10 | question: cap at 3? | gate: code-reviewer | class: "
+        "smell\n"
+        "2) finding: add index | file_line: src/db.ts:5 | question: index tenant_id? | gate: perf-reviewer | class: "
+        "perf\n"
+        "class_closure: n/a - fixed[] empty\nThe loop found two questions.\n"
+    )
 
     def test_numbered_asks_are_two_asks_and_the_closing_prose_stays_a_trailer(self):
         code, output = self.packet(self.NUMBERED)
@@ -848,25 +915,34 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("see the thread above", output)
 
     def test_ask_with_an_unknown_class_and_a_gate_phrase_is_logged_as_other_and_the_raw_class_is_not_sent(self):
-        text = CLEAN_EMPTY.replace("ask: []", "ask:\n  - {finding: x, finding_id: a1b2c3d4e5f60003, file_line: \"a.ts:1, b.ts:2\", question: why?, "
-                                   "gate: code-reviewer / robustness, class: ops}")
+        text = CLEAN_EMPTY.replace(
+            "ask: []",
+            'ask:\n  - {finding: x, finding_id: a1b2c3d4e5f60003, file_line: "a.ts:1, b.ts:2", question: why?, '
+            "gate: code-reviewer / robustness, class: ops}",
+        )
         self.packet(text)
         code, output = self.run_script(["asks-done", "accepted"])
         self.assertEqual(code, 0, output)
-        row = self.ledgerWrites()[0]
-        self.assertEqual((row["class"], row["gate"], row["path_key"], row["line"]), ("other", "code-reviewer", "a.ts", "1"))
+        row = self.ledger_writes()[0]
+        self.assertEqual(
+            (row["class"], row["gate"], row["path_key"], row["line"]), ("other", "code-reviewer", "a.ts", "1")
+        )
         self.assertNotIn("ops", json.dumps(row))
         self.assertNotIn("desc", row)
 
     def test_a_plan_impact_ask_is_presented_but_not_logged(self):
-        text = CLEAN_EMPTY.replace("ask: []", "ask:\n  - {finding: \"PLAN-IMPACT: queue is at-most-once\", "
-                                   "file_line: a.ts:1, question: adopt?, gate: code-reviewer, class: plan-drift}\n"
-                                   "  - {finding: real ask, finding_id: a1b2c3d4e5f60004, file_line: b.ts:2, question: cap?, gate: code-reviewer, class: smell}")
+        text = CLEAN_EMPTY.replace(
+            "ask: []",
+            'ask:\n  - {finding: "PLAN-IMPACT: queue is at-most-once", '
+            "file_line: a.ts:1, question: adopt?, gate: code-reviewer, class: plan-drift}\n"
+            "  - {finding: real ask, finding_id: a1b2c3d4e5f60004, file_line: b.ts:2, question: cap?, gate: "
+            "code-reviewer, class: smell}",
+        )
         code, output = self.packet(text)
         self.assertIn("adopt?", output)
         code, output = self.run_script(["asks-done", "accepted", "accepted"])
         self.assertEqual(code, 0, output)
-        self.assertEqual([row["path_key"] for row in self.ledgerWrites()], ["b.ts"])
+        self.assertEqual([row["path_key"] for row in self.ledger_writes()], ["b.ts"])
 
     def test_an_ask_without_a_finding_id_is_reported_and_sends_nothing_to_the_ledger(self):
         text = CLEAN_EMPTY.replace("ask: []", "ask:\n  - {finding: x, file_line: a.ts:1, question: cap?, "
@@ -876,74 +952,90 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("1 ask(s) without a finding_id are not logged.", output)
         self.assertIn("(no finding_id)", output)
-        self.assertEqual(self.ledgerWrites(), [])
+        self.assertEqual(self.ledger_writes(), [])
 
-    def ask_packet_with_finding_id(self, findingIdText):
-        return CLEAN_EMPTY.replace("ask: []", "ask:\n  - {finding: x, finding_id: " + findingIdText + ", file_line: a.ts:1, "
-                                   "question: cap?, gate: code-reviewer, class: smell}")
+    def ask_packet_with_finding_id(self, finding_id_text):
+        return CLEAN_EMPTY.replace(
+            "ask: []",
+            "ask:\n  - {finding: x, finding_id: " + finding_id_text + ", file_line: a.ts:1, "
+            "question: cap?, gate: code-reviewer, class: smell}",
+        )
 
     def test_an_ask_whose_finding_id_is_a_placeholder_is_skipped_and_names_the_ignored_value(self):
         placeholders = {"none logged": "'none logged'", "none": "'none'", "-": "'-'", '""': "''",
                         "a1b2c3d4e5f6000": "'a1b2c3d4e5f6000'", "A1B2C3D4E5F60001": "'A1B2C3D4E5F60001'",
                         "a1b2c3d4e5f600011": "'a1b2c3d4e5f600011'", "a1b2c3d4e5f6000g": "'a1b2c3d4e5f6000g'"}
-        for findingIdText, ignoredRepr in placeholders.items():
-            with self.subTest(findingId=findingIdText):
-                self.packet(self.ask_packet_with_finding_id(findingIdText))
+        for finding_id_text, ignored_repr in placeholders.items():
+            with self.subTest(finding_id=finding_id_text):
+                self.packet(self.ask_packet_with_finding_id(finding_id_text))
                 code, output = self.run_script(["asks-done", "modified:tighten the cap"])
                 self.assertEqual(code, 0, output)
                 self.assertIn("Logged 0 of 1 ask outcome row(s). 1 ask(s) without a finding_id are not logged.", output)
-                self.assertIn(f"ignored {ignoredRepr}", output)
+                self.assertIn(f"ignored {ignored_repr}", output)
                 self.assertNotIn("refusing to log", output)
-                self.assertEqual(self.ledgerWrites(), [])
+                self.assertEqual(self.ledger_writes(), [])
                 code, output = self.run_script(["asks-done", "modified:tighten the cap"])
                 self.assertEqual(code, 0, output)
                 self.assertIn("The ask outcomes were already logged.", output)
 
     def test_an_ask_with_a_valid_finding_id_among_placeholder_asks_logs_only_the_valid_one(self):
-        text = CLEAN_EMPTY.replace("ask: []", "ask:\n"
-                                   "  - {finding: x, finding_id: none logged, file_line: a.ts:1, question: cap?, gate: code-reviewer, class: smell}\n"
-                                   "  - {finding: y, finding_id: a1b2c3d4e5f60005, file_line: b.ts:2, question: cap?, gate: code-reviewer, class: smell}")
+        text = CLEAN_EMPTY.replace(
+            "ask: []",
+            "ask:\n"
+            "  - {finding: x, finding_id: none logged, file_line: a.ts:1, question: cap?, gate: code-reviewer, class: "
+            "smell}\n"
+            "  - {finding: y, finding_id: a1b2c3d4e5f60005, file_line: b.ts:2, question: cap?, gate: code-reviewer, "
+            "class: smell}",
+        )
         self.packet(text)
         code, output = self.run_script(["asks-done", "modified:tighten the cap", "accepted"])
         self.assertEqual(code, 0, output)
         self.assertIn("Logged 1 of 2 ask outcome row(s). 1 ask(s) without a finding_id are not logged.", output)
-        findingRows = self.ledgerWrites()
-        self.assertEqual([row["finding_id"] for row in findingRows], ["a1b2c3d4e5f60005"])
-        self.assertEqual([row["ask_outcome"] for row in findingRows], ["accepted"])
+        finding_rows = self.ledger_writes()
+        self.assertEqual([row["finding_id"] for row in finding_rows], ["a1b2c3d4e5f60005"])
+        self.assertEqual([row["ask_outcome"] for row in finding_rows], ["accepted"])
 
     def test_a_valid_finding_id_with_surrounding_spaces_is_logged_without_them(self):
         self.packet(self.ask_packet_with_finding_id('" a1b2c3d4e5f60006 "'))
         code, output = self.run_script(["asks-done", "modified:tighten the cap"])
         self.assertEqual(code, 0, output)
-        self.assertEqual([row["finding_id"] for row in self.ledgerWrites()], ["a1b2c3d4e5f60006"])
+        self.assertEqual([row["finding_id"] for row in self.ledger_writes()], ["a1b2c3d4e5f60006"])
 
     def test_present_asks_prints_the_gate_mark_line(self):
-        code, output = self.packet(WITH_ASK)
+        _code, output = self.packet(WITH_ASK)
         self.assertIn("review-gate-mark clean", output)
 
     def test_empty_list_key_does_not_swallow_the_next_unindented_key(self):
         text = "status: converged\niter: 1\nfixed: []\nask: []\nclass_closure: all queries listed\nfiles_touched: []\n"
-        code, output = self.packet(text)
+        _code, output = self.packet(text)
         self.assertIn("Class closure: all queries listed", output)
 
     def test_bare_not_applicable_class_closure_with_empty_fixed_prints_one_line(self):
-        code, output = self.packet(CLEAN_EMPTY.replace("n/a - fixed[] empty", "n/a"))
+        _code, output = self.packet(CLEAN_EMPTY.replace("n/a - fixed[] empty", "n/a"))
         self.assertEqual(output.count("Class closure"), 1)
         self.assertNotIn("receipt is missing", output)
 
     def test_findings_remaining_show_on_converged(self):
-        code, output = self.packet(CONVERGED.replace("findings_remaining: []",
-                                                     'findings_remaining: [{disposition: fix, finding: "left over", file_line: a.ts:1}]'))
+        _code, output = self.packet(
+            CONVERGED.replace(
+                "findings_remaining: []",
+                'findings_remaining: [{disposition: fix, finding: "left over", file_line: a.ts:1}]',
+            )
+        )
         self.assertIn("### Findings remaining", output)
         self.assertIn("left over", output)
 
     # ---------- side effects happen once ----------
 
     def escape_ids(self):
-        return [row["path_key"] for row in self.escapeRows()]
+        return [row["path_key"] for row in self.escape_rows()]
 
     def posts(self):
-        return [call for call in self.ghLog.read_text().splitlines() if call.startswith("api")] if self.ghLog.exists() else []
+        return (
+            [call for call in self.gh_log.read_text().splitlines() if call.startswith("api")]
+            if self.gh_log.exists()
+            else []
+        )
 
     def test_re_running_packet_posts_logs_and_jumps_nothing_twice(self):
         flags = ("--source", "conversation", "--escape", self.escape_spec(), "--aikido", "src/orders.ts:42=111")
@@ -957,7 +1049,7 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_re_running_packet_with_asks_does_not_jump_again(self):
         self.packet(WITH_ASK)
         self.packet(WITH_ASK)
-        self.assertEqual(len(self.jumpLog.read_text().splitlines()), 1)
+        self.assertEqual(len(self.jump_log.read_text().splitlines()), 1)
 
     def test_packet_after_asks_done_logs_nothing_more_and_keeps_the_stage(self):
         self.packet(WITH_ASK)
@@ -965,7 +1057,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet(WITH_ASK)
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: done", output)
-        self.assertEqual(len(self.ledgerWrites()), 2)
+        self.assertEqual(len(self.ledger_writes()), 2)
 
     def test_asks_done_twice_is_a_no_op(self):
         self.packet(WITH_ASK)
@@ -973,14 +1065,14 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(["asks-done", "accepted", "accepted"])
         self.assertEqual(code, 0, output)
         self.assertIn("already logged", output)
-        self.assertEqual(len(self.ledgerWrites()), 2)
+        self.assertEqual(len(self.ledger_writes()), 2)
 
     def test_asks_done_after_a_failed_row_retries_only_the_unlogged_ones(self):
         self.packet(WITH_ASK)
-        code, output = self.run_script(["asks-done", "accepted", "accepted"], REVIEW_FIX_CLAUDE_DIR=str(self.tempRoot / "nowhere"))
-        self.assertEqual(self.ledgerWrites(), [])
-        code, output = self.run_script(["asks-done", "accepted", "accepted"])
-        self.assertEqual(len(self.ledgerWrites()), 2)
+        self.run_script(["asks-done", "accepted", "accepted"], REVIEW_FIX_CLAUDE_DIR=str(self.temp_root / "nowhere"))
+        self.assertEqual(self.ledger_writes(), [])
+        _code, _output = self.run_script(["asks-done", "accepted", "accepted"])
+        self.assertEqual(len(self.ledger_writes()), 2)
 
     def test_escape_verb_logs_from_the_saved_packet_once(self):
         self.packet(CONVERGED, "--source", "conversation", skill="fix")
@@ -1001,7 +1093,7 @@ class ReviewFixScriptTest(unittest.TestCase):
                                    'file_line: "`./src/orders.ts:42`", blocker: false}]')
         self.packet(text, "--source", "conversation", skill="fix")
         for path in ("src/orders.ts:42", "./lib/q.ts"):
-            code, output = self.run_script(["escape", "--escape", self.escape_spec(file=path)])
+            _code, output = self.run_script(["escape", "--escape", self.escape_spec(file=path)])
             self.assertIn("escape logged", output)
         self.assertEqual(self.escape_ids(), ["src/orders.ts", "lib/q.ts"])
 
@@ -1014,12 +1106,12 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_critical_blocker_and_cap_reached_still_post_the_aikido_replies(self):
         for text, target in ((BLOCKER, "src/auth.ts:12=31"), (CAP, "src/q.ts:7=32")):
-            self.ghLog.write_text("") if self.ghLog.exists() else None
+            self.gh_log.write_text("") if self.gh_log.exists() else None
             code, output = self.packet(text, "--aikido", target, skill="fix")
             self.assertEqual(code, 0, output)
             self.assertTrue(output.startswith("ACTION: stop"), output)
             self.assertEqual(len(self.posts()), 1, output)
-            self.assertIn("Not fixed in this pass", self.ghLog.read_text())
+            self.assertIn("Not fixed in this pass", self.gh_log.read_text())
 
     # ---------- walk: every state and every verb ----------
 
@@ -1028,30 +1120,34 @@ class ReviewFixScriptTest(unittest.TestCase):
                   "parse-failed": "status: bogus"}
         verbs = {"packet": ["packet", "--skill", "review"], "escape": ["escape", "--escape", self.escape_spec()],
                  "asks-done": ["asks-done", "accepted", "accepted"], "decide": ["decide", "keep"]}
-        for stateName, text in states.items():
-            for verbName, arguments in verbs.items():
-                with self.subTest(state=stateName, verb=verbName):
-                    self.setUp_fresh_state(text)
-                    code, output = self.run_script(arguments, CONVERGED if verbName == "packet" else "")
+        for state_name, text in states.items():
+            for verb_name, arguments in verbs.items():
+                with self.subTest(state=state_name, verb=verb_name):
+                    self.set_up_fresh_state(text)
+                    code, output = self.run_script(arguments, CONVERGED if verb_name == "packet" else "")
                     self.assertNotIn("Traceback", output)
                     self.assertIn(code, (0, 2), output)
                     self.assertIn("ACTION:", output)
 
-    def setUp_fresh_state(self, text):
-        stateFile = self.repo / ".git" / "review-fix" / "state.json"
-        if stateFile.exists():
-            stateFile.unlink()
+    def set_up_fresh_state(self, text):
+        state_file = self.repo / ".git" / "review-fix" / "state.json"
+        if state_file.exists():
+            state_file.unlink()
         if text is not None:
             self.packet(text)
 
     def test_done_and_redispatch_stages_survive_every_verb(self):
         self.packet(PLAN_IMPACT)
         self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep it"])
-        for arguments in (["decide", "keep", "--by", "user", "--ruling", "keep it"], ["asks-done", "accepted"], ["escape", "--escape", self.escape_spec()]):
-            code, output = self.run_script(arguments)
+        for arguments in (
+            ["decide", "keep", "--by", "user", "--ruling", "keep it"],
+            ["asks-done", "accepted"],
+            ["escape", "--escape", self.escape_spec()],
+        ):
+            _, output = self.run_script(arguments)
             self.assertNotIn("Traceback", output)
             self.assertIn("ACTION:", output)
-        code, output = self.packet(PLAN_IMPACT)
+        _code, output = self.packet(PLAN_IMPACT)
         self.assertIn("ACTION: done", output)
 
     def test_usage_error_without_a_skill_stops_loudly(self):
@@ -1062,7 +1158,7 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_unknown_subcommand_prints_usage_and_fails(self):
         code, output = self.run_script(["nope"])
         self.assertEqual(code, 2)
-        self.assertIn("review-fix.py", output)
+        self.assertIn("review_fix.py", output)
 
 
 if __name__ == "__main__":

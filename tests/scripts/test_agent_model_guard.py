@@ -1,4 +1,4 @@
-"""Checks for agent-model-guard.py, the PreToolUse hook that blocks Agent calls with Opus or no model pin.
+"""Checks for agent_model_guard.py, the PreToolUse hook that blocks Agent calls with Opus or no model pin.
 
 Set HOOK_SCRIPTS_DIR to run against another directory of scripts."""
 import json
@@ -9,7 +9,9 @@ import sys
 import tempfile
 import unittest
 
-SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts") / "agent-model-guard.py"
+import toolkit_paths
+
+SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR) / "agent_model_guard.py"
 
 OPUS_STDERR = (
     "[agent-model-guard] BLOCKED: Agent call sets model containing 'opus' at the call site.\n"
@@ -47,22 +49,45 @@ PARITY_CASES = [
     {"name": "no model no file", "stdin": agent_payload(None, subagent="ghost")},
     {"name": "empty model no file", "stdin": agent_payload("", subagent="ghost")},
     {"name": "no subagent no model", "stdin": agent_payload(None, subagent=None)},
-    {"name": "home frontmatter pin", "stdin": agent_payload(None, subagent="pinned"),
-     "files": {"home/.claude/agents/pinned.md": "---\nname: pinned\nmodel: sonnet\n---\nbody\n"}},
-    {"name": "home no frontmatter pin", "stdin": agent_payload(None, subagent="loose"),
-     "files": {"home/.claude/agents/loose.md": "---\nname: loose\n---\nbody\n"}},
-    {"name": "indented model line is not a pin", "stdin": agent_payload(None, subagent="indented"),
-     "files": {"home/.claude/agents/indented.md": "---\n  model: sonnet\n---\n"}},
-    {"name": "project pin", "stdin": agent_payload(None, subagent="projpin"), "project": True,
-     "files": {"project/.claude/agents/projpin.md": "model: opus\n"}},
-    {"name": "project file without pin does not fall back to home", "stdin": agent_payload(None, subagent="both"),
-     "project": True,
-     "files": {"project/.claude/agents/both.md": "no pin\n", "home/.claude/agents/both.md": "model: sonnet\n"}},
-    {"name": "project dir without file falls back to home", "stdin": agent_payload(None, subagent="fallback"),
-     "project": True, "files": {"home/.claude/agents/fallback.md": "model: haiku\n"}},
+    {
+        "name": "home frontmatter pin",
+        "stdin": agent_payload(None, subagent="pinned"),
+        "files": {"home/.claude/agents/pinned.md": "---\nname: pinned\nmodel: sonnet\n---\nbody\n"},
+    },
+    {
+        "name": "home no frontmatter pin",
+        "stdin": agent_payload(None, subagent="loose"),
+        "files": {"home/.claude/agents/loose.md": "---\nname: loose\n---\nbody\n"},
+    },
+    {
+        "name": "indented model line is not a pin",
+        "stdin": agent_payload(None, subagent="indented"),
+        "files": {"home/.claude/agents/indented.md": "---\n  model: sonnet\n---\n"},
+    },
+    {
+        "name": "project pin",
+        "stdin": agent_payload(None, subagent="projpin"),
+        "project": True,
+        "files": {"project/.claude/agents/projpin.md": "model: opus\n"},
+    },
+    {
+        "name": "project file without pin does not fall back to home",
+        "stdin": agent_payload(None, subagent="both"),
+        "project": True,
+        "files": {"project/.claude/agents/both.md": "no pin\n", "home/.claude/agents/both.md": "model: sonnet\n"},
+    },
+    {
+        "name": "project dir without file falls back to home",
+        "stdin": agent_payload(None, subagent="fallback"),
+        "project": True,
+        "files": {"home/.claude/agents/fallback.md": "model: haiku\n"},
+    },
     {"name": "numeric model", "stdin": agent_payload(5)},
     {"name": "false model is empty", "stdin": agent_payload(False, subagent="ghost")},
-    {"name": "null model is empty", "stdin": agent_payload(None, subagent="ghost").replace('"y"}', '"y", "model": null}')},
+    {
+        "name": "null model is empty",
+        "stdin": agent_payload(None, subagent="ghost").replace('"y"}', '"y", "model": null}'),
+    },
     {"name": "empty stdin", "stdin": ""},
     {"name": "whitespace stdin", "stdin": "  \n"},
     {"name": "null document", "stdin": "null"},
@@ -161,7 +186,9 @@ class AgentModelGuardTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 0)
         self.assertIn("subagent_type='ghost' has no model pin.", finished.stderr)
         self.assertTrue(finished.stderr.endswith('      model: "sonnet" - fan-out implementation or analysis\n'))
-        self.assertIn("has no model pin. No 'model:' frontmatter found", decision_of(finished)["permissionDecisionReason"])
+        self.assertIn(
+            "has no model pin. No 'model:' frontmatter found", decision_of(finished)["permissionDecisionReason"]
+        )
 
     def test_empty_model_string_counts_as_missing(self):
         finished = run_hook(stdin=agent_payload("", subagent="ghost"))

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""review-loop-gate.py — deterministic checks on the review loop.
+"""review_loop_gate.py — deterministic checks on the review loop.
 
   SubagentHandback (PreToolUse, review-loop): refuses the loop's first hand-back while either check
     below would block, with the same reasons, so the loop can still act before its report goes out.
@@ -28,14 +28,15 @@
     `kind=run` row per reviewer dispatch (`*-reviewer`, `*-reviewer-deep`) through log-review-finding,
     with `n_findings` counted from that reviewer's own report. A report that cannot be counted,
     because it has no known layout or a findings section holds text and no entry, gets a row with
-    `n_findings` null, never a guessed count. Each dispatch (tool_use_id) is written once per session, so a repeat stop adds nothing. The
+    `n_findings` null, never a guessed count. Each dispatch (tool_use_id) is written once per session, so a repeat
+    stop adds nothing. The
     gate applies the telemetry switch before it calls the logger; a logging failure never blocks a stop.
 
 Hook JSON on stdin; on a violation, a decision JSON on stdout; exit 0 always. Any parse
 failure passes (fail open) and says why on stderr: this gate adds a check, it must never
 stop the loop on its own error.
 
-Dry run for a saved transcript:  review-loop-gate.py --check <loop transcript.jsonl>
+Dry run for a saved transcript:  review_loop_gate.py --check <loop transcript.jsonl>
 """
 import json
 import os
@@ -96,8 +97,9 @@ HEADING_MARKUP = re.compile(r"[*_`:]")
 SECTION_HEADING = re.compile(r"^(#{2,4})\s*(.*)")
 LIST_MARKER = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
 PATH_TOKEN = r"`?[\w@~+./-]*[./][\w@~+./-]*"
-ENTRY_START = re.compile(r"^(?:\*{0,2}\[blocker\]\*{0,2}\s*)?\*{0,2}(?:%s:\d[\d,\u2013-]*`?(?!\w)|%s`?\s+[\u2014\u2013-])"
-                         % (PATH_TOKEN, PATH_TOKEN))
+ENTRY_START = re.compile(
+    rf"^(?:\*{{0,2}}\[blocker\]\*{{0,2}}\s*)?\*{{0,2}}(?:{PATH_TOKEN}:\d[\d,\u2013-]*`?(?!\w)|{PATH_TOKEN}`?\s+[\u2014\u2013-])"
+)
 NO_ENTRIES = re.compile(r"^[\[(*_`]*(none|n/a|nothing|-|\u2014|\u2013)[\])*_`.!]*$", re.I)
 INTENT_SECTIONS = re.compile(r"(BUG-PINNING|UNVERIFIABLE|CULL|REQUIRES-MUTATION|WEAK)\b")
 # (report heading, does a section of this report hold findings: (heading level, title) -> bool)
@@ -229,7 +231,11 @@ def section_findings(lines):
         return 0
     if NO_ENTRIES.match(LIST_MARKER.sub("", content[0].strip())):
         return 0
-    indents = [len(raw) - len(raw.lstrip()) for raw in content if LIST_MARKER.match(raw.strip()) or ENTRY_START.match(raw.strip())]
+    indents = [
+        len(raw) - len(raw.lstrip())
+        for raw in content
+        if LIST_MARKER.match(raw.strip()) or ENTRY_START.match(raw.strip())
+    ]
     if not indents:
         return None
     return indents.count(min(indents))
@@ -304,7 +310,11 @@ def reviewer_runs(path):
     for tool_use_id, gate in kinds.items():
         if not RUN_GATES.search(gate):
             continue
-        texts = [foreground.get(tool_use_id, "")] + by_tool_use.get(tool_use_id, []) + by_agent.get(agent_of.get(tool_use_id), [])
+        texts = [
+            foreground.get(tool_use_id, ""),
+            *by_tool_use.get(tool_use_id, []),
+            *by_agent.get(agent_of.get(tool_use_id), []),
+        ]
         counted = [(count_findings(text), text) for text in texts]
         count, report = next(((c, t) for c, t in counted if c is not None), (None, ""))
         assessment = ASSESSMENT.search(report)
@@ -321,27 +331,42 @@ def write_run_row(hook, run, lane, phase):
     claude_dir = pathlib.Path(os.environ.get("REVIEW_LOOP_GATE_CLAUDE_DIR") or pathlib.Path.home() / ".claude")
     switch_script = claude_dir / "scripts" / "telemetry_enabled.sh"
     if not switch_script.is_file():
-        print("review-loop-gate: run row for %s skipped: %s is missing" % (run["gate"], switch_script), file=sys.stderr)
+        print(
+            "review-loop-gate: run row for {} skipped: {} is missing".format(run["gate"], switch_script),
+            file=sys.stderr,
+        )
         return False
     try:
         switch = subprocess.run(["bash", str(switch_script)], capture_output=True, timeout=10)
     except subprocess.TimeoutExpired:
-        print("review-loop-gate: run row for %s skipped: the telemetry switch timed out" % run["gate"], file=sys.stderr)
+        print(
+            "review-loop-gate: run row for {} skipped: the telemetry switch timed out".format(run["gate"]),
+            file=sys.stderr,
+        )
         return False
     if switch.returncode:
-        print("review-loop-gate: run row for %s skipped: telemetry is off" % run["gate"], file=sys.stderr)
+        print("review-loop-gate: run row for {} skipped: telemetry is off".format(run["gate"]), file=sys.stderr)
         return False
     if not shutil.which("ledger"):
-        print("review-loop-gate: run row for %s skipped: ledger is not on PATH" % run["gate"], file=sys.stderr)
+        print("review-loop-gate: run row for {} skipped: ledger is not on PATH".format(run["gate"]), file=sys.stderr)
         return False
-    command = ["bash", str(claude_dir / "skills" / "review" / "log-review-finding"), "kind=run", "gate=" + run["gate"],
-               "n_findings=%s" % ("null" if run["n_findings"] is None else run["n_findings"]), "lane=" + lane, "phase=" + phase]
+    command = [
+        "bash",
+        str(claude_dir / "skills" / "review" / "log-review-finding"),
+        "kind=run",
+        "gate=" + run["gate"],
+        f"n_findings={('null' if run['n_findings'] is None else run['n_findings'])}",
+        "lane=" + lane,
+        "phase=" + phase,
+    ]
     if run["result"]:
         command.append("result=" + run["result"])
     env = {**os.environ, "CLAUDE_CODE_SESSION_ID": hook["session_id"]}
     done = subprocess.run(command, env=env, cwd=hook.get("cwd") or None, capture_output=True, text=True, timeout=30)
     if done.returncode:
-        print("review-loop-gate: run row for %s not written: %s" % (run["gate"], done.stderr.strip()), file=sys.stderr)
+        print(
+            "review-loop-gate: run row for {} not written: {}".format(run["gate"], done.stderr.strip()), file=sys.stderr
+        )
     return done.returncode == 0 and "run_id=" in done.stdout
 
 
@@ -375,7 +400,7 @@ def log_run_rows(hook, path):
             if not write_run_row(hook, run, lane, phase):
                 script_utils.append_jsonl(state_file, {"tool_use_id": run["tool_use_id"], "undone": True})
     except Exception as e:
-        print("review-loop-gate: run rows skipped, %s: %s" % (type(e).__name__, e), file=sys.stderr)
+        print(f"review-loop-gate: run rows skipped, {type(e).__name__}: {e}", file=sys.stderr)
 
 
 def loop_transcript(hook):
@@ -383,7 +408,7 @@ def loop_transcript(hook):
     if path:
         return path
     aid, top = hook.get("agent_id"), hook.get("transcript_path") or ""
-    return os.path.join(top[:-len(".jsonl")], "subagents", "agent-%s.jsonl" % aid) if aid and top else None
+    return os.path.join(top[:-len(".jsonl")], "subagents", f"agent-{aid}.jsonl") if aid and top else None
 
 
 def agent_type(hook, path):
@@ -414,10 +439,10 @@ def check_handback(hook):
     if hook.get("agent_type") != "review-loop" or not hook.get("session_id"):
         return
     if script_utils is None:
-        raise ImportError("script_utils is not beside review-loop-gate.py; no hand-back check ran")
+        raise ImportError("script_utils is not beside review_loop_gate.py; no hand-back check ran")
     path = loop_transcript(hook)
     if not path or not os.path.exists(path):
-        raise FileNotFoundError("no loop transcript for agent %s" % hook.get("agent_id"))
+        raise FileNotFoundError("no loop transcript for agent {}".format(hook.get("agent_id")))
     why = reasons(path, str((hook.get("tool_input") or {}).get("message") or ""))
     refused_before = last_handback_event(hook) in ("denied", "insisted")
     event = "clear" if not why else "insisted" if refused_before else "denied"
@@ -442,7 +467,7 @@ def main():
         unread, ungated, exempt, open_dispatches = scan(sys.argv[2])
         print(", ".join([("unread, no-review" if exempt else "unread") if unread else "read"]
                         + (["no full check after the last code change"] if ungated else [])
-                        + (["waiting on %d background dispatches" % open_dispatches] if open_dispatches else [])))
+                        + ([f"waiting on {open_dispatches} background dispatches"] if open_dispatches else [])))
         return
     if os.environ.get("CLAUDE_SKIP_HOOKS"):
         return
@@ -461,7 +486,7 @@ def main():
         if agent_type(hook, path) != "review-loop":
             return
         if not path or not os.path.exists(path):
-            raise FileNotFoundError("no loop transcript for agent %s" % hook.get("agent_id"))
+            raise FileNotFoundError("no loop transcript for agent {}".format(hook.get("agent_id")))
         scanned = scan(path, hook.get("last_assistant_message"))
         why = [] if hook.get("stop_hook_active") or hand_back_insisted(hook) else reasons_for(scanned)
         if why:
@@ -474,4 +499,4 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:  # fail open, visibly
-        print("review-loop-gate: skipped, %s: %s" % (type(e).__name__, e), file=sys.stderr)
+        print(f"review-loop-gate: skipped, {type(e).__name__}: {e}", file=sys.stderr)

@@ -76,7 +76,7 @@ def phase_spans(lines):
     fenced = script_utils.fenced_line_indexes(lines)
     spans = []
     failures = []
-    firstLines = {}
+    first_lines = {}
     current = None
 
     for index, line in enumerate(lines):
@@ -91,32 +91,32 @@ def phase_spans(lines):
             current["end"] = index
             current = None
 
-        phaseHeading = PHASE_HEADING.match(line)
-        if not phaseHeading:
+        phase_heading = PHASE_HEADING.match(line)
+        if not phase_heading:
             continue
 
-        sectionId = phaseHeading.group(2)
-        if current is not None and level > current["level"] and sectionId in firstLines:
+        section_id = phase_heading.group(2)
+        if current is not None and level > current["level"] and section_id in first_lines:
             continue
 
         if current is not None:
             current["end"] = index
-        current = {"start": index, "level": level, "title": line[phaseHeading.end():].lstrip(" :.—–-"),
+        current = {"start": index, "level": level, "title": line[phase_heading.end():].lstrip(" :.—–-"),
                    "end": len(lines)}
-        spans.append((sectionId, current))
-        if sectionId in firstLines:
-            failures.append({"line": index + 1, "kind": "duplicate-id", "detail": f"Phase {sectionId} has two "
-                             f"sections, on line {firstLines[sectionId] + 1} and line {index + 1}. Give "
+        spans.append((section_id, current))
+        if section_id in first_lines:
+            failures.append({"line": index + 1, "kind": "duplicate-id", "detail": f"Phase {section_id} has two "
+                             f"sections, on line {first_lines[section_id] + 1} and line {index + 1}. Give "
                              "each phase its own id."})
             continue
-        firstLines[sectionId] = index
+        first_lines[section_id] = index
     return spans, failures
 
 
-def phase_section(lines, phaseId):
+def phase_section(lines, phase_id):
     """The first section of the phase with this exact id as {"start", "level", "title", "end"}, or None."""
     spans, _ = phase_spans(lines)
-    return next((section for sectionId, section in spans if sectionId == phaseId), None)
+    return next((section for section_id, section in spans if section_id == phase_id), None)
 
 
 def phase_status_entries(lines, closing_skill):
@@ -130,17 +130,17 @@ def phase_status_entries(lines, closing_skill):
     fenced = script_utils.fenced_line_indexes(lines)
     entries = []
     failures = []
-    firstLines = {}
-    inStatus = False
+    first_lines = {}
+    in_status = False
 
     for index, line in enumerate(lines):
         if index in fenced:
             continue
         heading = script_utils.MARKDOWN_HEADING.match(line)
         if heading:
-            inStatus = heading.group(2).strip() == "Phase Status"
+            in_status = heading.group(2).strip() == "Phase Status"
             continue
-        if not inStatus or not STATUS_ITEM_START.match(line):
+        if not in_status or not STATUS_ITEM_START.match(line):
             continue
 
         match = PHASE_STATUS_LINE.match(line)
@@ -150,40 +150,40 @@ def phase_status_entries(lines, closing_skill):
             continue
 
         number = match.group(2)
-        if number in firstLines:
+        if number in first_lines:
             failures.append({"line": index + 1, "kind": "duplicate-id", "detail": f"Phase {number} twice, on line "
-                             f"{firstLines[number] + 1} and line {index + 1}. Give each phase its own id."})
+                             f"{first_lines[number] + 1} and line {index + 1}. Give each phase its own id."})
             continue
 
-        firstLines[number] = index
+        first_lines[number] = index
         title = match.group(3)
         risk = RISK_MARK.search(title)
         closing = closing_skill(title)
-        isMoved = match.group(1) == MOVED_MARK
-        target = MOVED_TARGET.search(title) if isMoved else None
-        if isMoved and not target:
+        is_moved = match.group(1) == MOVED_MARK
+        target = MOVED_TARGET.search(title) if is_moved else None
+        if is_moved and not target:
             failures.append({"line": index + 1, "kind": "moved-without-target", "detail": f"Phase {number} is marked "
                              "`[-]` (moved to another ticket) but the line does not say `moved to <KEY>`. Add the "
                              "ticket key, for example `moved to LED-16`."})
-        isDone = match.group(1) in ("x", "X")
-        entries.append({"line": index, "done": isDone, "moved": isMoved, "open": not isDone and not isMoved,
+        is_done = match.group(1) in ("x", "X")
+        entries.append({"line": index, "done": is_done, "moved": is_moved, "open": not is_done and not is_moved,
                         "movedTo": target.group(1) if target else None, "number": number, "title": title,
                         "risk": risk.group(1).lower() if risk else "high", "closing": closing,
                         "gate": gate_condition(title)})
     return entries, failures
 
 
-def deviation_records_move(lines, number, ticketKey):
+def deviation_records_move(lines, number, ticket_key):
     """True when one line of the plan's `## Plan Deviations` section names the phase and names the ticket key it moved
     to. The phase is named `Phase <id>` or `P<id>`, not followed by more of an id; an id that already starts with `P` is
     also named by itself (`P4`, `Phase P4`). The key must stand alone (`LED-16`, not `LED-160`). A line that names only
     the phase, such as a tick entry, does not count. The check only finds the words; it never judges who signed."""
-    deviationLines = [lines[index] for index in script_utils.heading_section_indexes(lines, DEVIATIONS_HEADING)]
+    deviation_lines = [lines[index] for index in script_utils.heading_section_indexes(lines, DEVIATIONS_HEADING)]
     escaped = re.escape(number)
-    bareName = escaped if number.startswith("P") else "P" + escaped
-    phaseName = re.compile(rf"(?<![A-Za-z0-9])(?:Phase\s+{escaped}|{bareName})(?![A-Za-z0-9]|[.-][A-Za-z0-9])")
-    keyName = re.compile(rf"(?<![A-Za-z0-9]){re.escape(ticketKey)}(?![A-Za-z0-9])")
-    return any(phaseName.search(line) and keyName.search(line) for line in deviationLines)
+    bare_name = escaped if number.startswith("P") else "P" + escaped
+    phase_name = re.compile(rf"(?<![A-Za-z0-9])(?:Phase\s+{escaped}|{bare_name})(?![A-Za-z0-9]|[.-][A-Za-z0-9])")
+    key_name = re.compile(rf"(?<![A-Za-z0-9]){re.escape(ticket_key)}(?![A-Za-z0-9])")
+    return any(phase_name.search(line) and key_name.search(line) for line in deviation_lines)
 
 
 def moved_deviation_failure(lines, entry):
@@ -202,19 +202,20 @@ def moved_deviation_failure(lines, entry):
 def parse_plan(lines, closing_skill=lambda title: None):
     """The plan's Phase Status entries and phase sections, with every failure sorted by line: {"entries", "sections"
     (id to the first section of that id), "failures"}. A Phase Status entry with no section is a failure unless it is
-    a closing phase or a moved phase, and a section with no Phase Status entry is a failure when the plan lists any phase."""
+    a closing phase or a moved phase, and a section with no Phase Status entry is a failure when the plan lists any
+    phase."""
     entries, failures = phase_status_entries(lines, closing_skill)
-    spans, sectionFailures = phase_spans(lines)
-    failures += sectionFailures
+    spans, section_failures = phase_spans(lines)
+    failures += section_failures
 
     sections = {}
-    for sectionId, section in spans:
-        sections.setdefault(sectionId, section)
+    for section_id, section in spans:
+        sections.setdefault(section_id, section)
 
     for entry in entries:
-        deviationFailure = moved_deviation_failure(lines, entry)
-        if deviationFailure:
-            failures.append(deviationFailure)
+        deviation_failure = moved_deviation_failure(lines, entry)
+        if deviation_failure:
+            failures.append(deviation_failure)
 
         # A closing phase is defined by its skill, so its Phase Status line needs no section of its own. A moved phase
         # may take its section to the new ticket.
@@ -223,9 +224,9 @@ def parse_plan(lines, closing_skill=lambda title: None):
                              f"{entry['number']} is in Phase Status but the plan has no '## Phase {entry['number']}' "
                              "section."})
 
-    statusIds = {entry["number"] for entry in entries}
+    status_ids = {entry["number"] for entry in entries}
     for number, section in sections.items():
-        if entries and number not in statusIds:
+        if entries and number not in status_ids:
             failures.append({"line": section["start"] + 1, "kind": "section-without-status", "detail": f"Phase "
                              f"{number} has a section but no Phase Status entry. Add `- [ ] Phase {number}: "
                              f"{section['title']}` to the Phase Status list."})
@@ -240,11 +241,11 @@ def moved_phases(text, name="plan"):
     raises PlanFormatError that starts with `name:line:`, the same check parse_plan makes. Other lines the Phase Status
     grammar rejects are left to parse_plan, which names them."""
     lines = text.splitlines()
-    entries, entryFailures = phase_status_entries(lines, lambda title: None)
+    entries, entry_failures = phase_status_entries(lines, lambda title: None)
     moved = [entry for entry in entries if entry["moved"]]
-    failures = [failure for failure in entryFailures if failure["kind"] == "moved-without-target"]
-    deviationFailures = [moved_deviation_failure(lines, entry) for entry in moved]
-    failures += [failure for failure in deviationFailures if failure]
+    failures = [failure for failure in entry_failures if failure["kind"] == "moved-without-target"]
+    deviation_failures = [moved_deviation_failure(lines, entry) for entry in moved]
+    failures += [failure for failure in deviation_failures if failure]
     if failures:
         first = min(failures, key=lambda failure: failure["line"])
         raise PlanFormatError(f"{name}:{first['line']}: {first['detail']}")
@@ -253,7 +254,7 @@ def moved_phases(text, name="plan"):
 
 def phase_at(spans, index):
     """The id of the phase section that holds this 0-based line index, or None."""
-    return next((sectionId for sectionId, section in spans if section["start"] <= index < section["end"]), None)
+    return next((section_id for section_id, section in spans if section["start"] <= index < section["end"]), None)
 
 
 def manual_verification(text, name="plan"):
@@ -271,19 +272,19 @@ def manual_verification(text, name="plan"):
     fenced = script_utils.fenced_line_indexes(lines)
     spans, _ = phase_spans(lines)
     items = []
-    inSection = False
-    sectionLevel = 0
-    deeperHeading = None
+    in_section = False
+    section_level = 0
+    deeper_heading = None
     qualifier = ""
     last = None
 
     for index, line in enumerate(lines):
         number = index + 1
-        isFenced = index in fenced
-        heading = None if isFenced else script_utils.MARKDOWN_HEADING.match(line)
+        is_fenced = index in fenced
+        heading = None if is_fenced else script_utils.MARKDOWN_HEADING.match(line)
 
-        if not isFenced and line.strip() == "---":
-            inSection = False
+        if not is_fenced and line.strip() == "---":
+            in_section = False
             last = None
         if heading:
             level = len(heading.group(1))
@@ -294,20 +295,20 @@ def manual_verification(text, name="plan"):
                     raise PlanFormatError(f"{name}:{number}: a Manual Verification heading must be level 3 or level "
                                           f"4 (`### Manual Verification` or `#### Manual Verification`): "
                                           f"{line.strip()[:80]}")
-                if not inSection or level <= sectionLevel:
-                    sectionLevel = level
-                inSection = True
+                if not in_section or level <= section_level:
+                    section_level = level
+                in_section = True
                 qualifier = manual.group(2)
-                deeperHeading = None
-            elif inSection and level > sectionLevel:
-                deeperHeading = line.strip()[:80]
+                deeper_heading = None
+            elif in_section and level > section_level:
+                deeper_heading = line.strip()[:80]
             else:
-                inSection = False
+                in_section = False
             continue
 
-        if not inSection:
+        if not in_section:
             continue
-        if isFenced:
+        if is_fenced:
             raise PlanFormatError(f"{name}:{number}: a fenced block inside Manual Verification; write each step "
                                   f"as a list item: {line.strip()[:80]}")
         if not line.strip():
@@ -321,11 +322,13 @@ def manual_verification(text, name="plan"):
             continue
 
         entry = LIST_ENTRY.match(line)
-        if entry and deeperHeading:
-            raise PlanFormatError(f"{name}:{number}: a list item under the sub-heading `{deeperHeading}` inside Manual "
-                                  f"Verification; if that heading starts a new section, give it the Manual Verification "
-                                  f"heading's level or a higher one, otherwise move the item above it: "
-                                  f"{line.strip()[:80]}")
+        if entry and deeper_heading:
+            raise PlanFormatError(
+                f"{name}:{number}: a list item under the sub-heading `{deeper_heading}` inside Manual "
+                f"Verification; if that heading starts a new section, give it the Manual Verification "
+                f"heading's level or a higher one, otherwise move the item above it: "
+                f"{line.strip()[:80]}"
+            )
         if entry and (entry.group(1) is not None or not NOT_APPLICABLE.match(line)):
             last = {"phase": phase_at(spans, index), "text": entry.group(2).strip(),
                     "checked": (entry.group(1) or "").lower() == "x", "line": number, "heading": qualifier}
@@ -363,7 +366,7 @@ DEFERRED_TAG_NAMES = {"ci-verified": "CI-verified", "human-only": "human-only"}
 def automated_verification_rows(lines):
     """(index, line) for each `- [ ]` or `- [x]` item under a `#### Automated Verification` heading, in file order. The
     list ends at the next `#### ` heading, a heading of level 1 to 3, or a `---` rule."""
-    verificationItems = []
+    verification_items = []
     inside = False
     for index, line in enumerate(lines):
         if line.startswith("#### "):
@@ -372,8 +375,8 @@ def automated_verification_rows(lines):
         if re.match(r"#{1,3} ", line) or line.strip() == "---":
             inside = False
         if inside and AUTOMATED_ITEM.match(line):
-            verificationItems.append((index, line))
-    return verificationItems
+            verification_items.append((index, line))
+    return verification_items
 
 
 def automated_item_text(line):
@@ -383,8 +386,8 @@ def automated_item_text(line):
 
 def deferred_verification_tag(line):
     """"CI-verified" or "human-only" for an Automated Verification item tagged that way, else None."""
-    tagMatch = DEFERRED_VERIFICATION.match(line)
-    return DEFERRED_TAG_NAMES[tagMatch.group("tag").lower()] if tagMatch else None
+    tag_match = DEFERRED_VERIFICATION.match(line)
+    return DEFERRED_TAG_NAMES[tag_match.group("tag").lower()] if tag_match else None
 
 
 def runs_no_command(line):
@@ -393,44 +396,44 @@ def runs_no_command(line):
     return bool(NO_AUTOMATED_CHECK.match(line) or deferred_verification_tag(line))
 
 
-def gate_env(planText):
+def gate_env(plan_text):
     """The `NAME=value` words that the plan's Automated Verification commands start with, one per name, in file order.
     An item that says N/A or is left to CI or a person is not a command that gets run, so it gives none."""
-    verificationItems = automated_verification_rows(planText.splitlines())
-    runnableItems = [line for _, line in verificationItems if not runs_no_command(line)]
-    spans = [span for line in runnableItems for span in script_utils.backticked_spans(line)]
+    verification_items = automated_verification_rows(plan_text.splitlines())
+    runnable_items = [line for _, line in verification_items if not runs_no_command(line)]
+    spans = [span for line in runnable_items for span in script_utils.backticked_spans(line)]
     return script_utils.leading_env_assignments(spans)
 
 
-def gate_env_text(gateEnv):
+def gate_env_text(gate_env_assignments):
     """The two lines that tell an agent which variables to put before its gate commands, or "" when there are none."""
-    if not gateEnv:
+    if not gate_env_assignments:
         return ""
-    return f"gate-env: {' '.join(gateEnv)}\n{GATE_ENV_HINT}"
+    return f"gate-env: {' '.join(gate_env_assignments)}\n{GATE_ENV_HINT}"
 
 
-def repo_gate_env(repoRoot, planRel=None):
+def repo_gate_env(repo_root, plan_rel=None):
     """The environment variables the repo's gate commands need: what `gate_env` reads from the plans under
     docs/plans/*/spec.md. The plan `planRel` (a path under repoRoot) decides its own names. A name only other plans set
     counts when they all give it the same value; a name they give different values is left out, since no plan says
     which one this run needs."""
-    root = pathlib.Path(repoRoot)
+    root = pathlib.Path(repo_root)
     chosen = {}
 
-    if planRel:
+    if plan_rel:
         try:
-            ownText = (root / planRel).read_text()
+            own_text = (root / plan_rel).read_text()
         except OSError:
-            ownText = ""
-        for assignment in gate_env(ownText):
+            own_text = ""
+        for assignment in gate_env(own_text):
             chosen[assignment.split("=", 1)[0]] = assignment
 
     seen = {}
-    for planPath in sorted(root.glob(PLAN_FILES_GLOB)):
-        if planRel and planPath.resolve() == (root / planRel).resolve():
+    for plan_path in sorted(root.glob(PLAN_FILES_GLOB)):
+        if plan_rel and plan_path.resolve() == (root / plan_rel).resolve():
             continue
         try:
-            assignments = gate_env(planPath.read_text())
+            assignments = gate_env(plan_path.read_text())
         except OSError:
             continue
         for assignment in assignments:

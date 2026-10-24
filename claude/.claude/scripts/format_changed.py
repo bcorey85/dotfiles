@@ -5,10 +5,12 @@ UserPromptSubmit snapshots the dirty set with content hashes. Stop formats files
 to that set or whose hash moved, so untouched hand edits are left alone. Silent and always exits 0.
 Stop formats nothing while a merge, squash merge, cherry-pick, revert or rebase is unfinished: the files the other
 side brought in are in the dirty set, and reformatting them leaves unstaged edits behind the commit.
-A commit or reset deletes the message files git leaves for a squash merge or `cherry-pick -n`, so formatting resumes then.
+A commit or reset deletes the message files git leaves for a squash merge or `cherry-pick -n`, so formatting resumes
+then.
 CLAUDE_SKIP_HOOKS set to any non-empty value exits 0. Snapshots live in ~/.claude/state/format-changed and
 snapshots older than 2 days are deleted on every run.
 """
+import contextlib
 import json
 import locale
 import os
@@ -28,10 +30,7 @@ def build_crc_table():
     for byte in range(256):
         value = byte << 24
         for _ in range(8):
-            if value & 0x80000000:
-                value = ((value << 1) ^ 0x04C11DB7) & 0xFFFFFFFF
-            else:
-                value = (value << 1) & 0xFFFFFFFF
+            value = (value << 1 ^ 79764919) & 4294967295 if value & 2147483648 else value << 1 & 4294967295
         table.append(value)
     return table
 
@@ -96,7 +95,7 @@ def field(documents, key):
 
 
 def run_git(arguments):
-    finished = subprocess.run(["git"] + arguments, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+    finished = subprocess.run(["git", *arguments], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                               stderr=subprocess.DEVNULL)
     return finished.stdout.decode("utf-8", "surrogateescape")
 
@@ -111,7 +110,10 @@ def collation_key(path):
 def dirty_hashes():
     """Lines of "<hash> <path>" for every existing file in the dirty set, sorted like `sort -u`."""
     names = set()
-    for arguments in (["diff", "--name-only", "--diff-filter=d", "HEAD"], ["ls-files", "--others", "--exclude-standard"]):
+    for arguments in (
+        ["diff", "--name-only", "--diff-filter=d", "HEAD"],
+        ["ls-files", "--others", "--exclude-standard"],
+    ):
         try:
             output = run_git(arguments)
         except OSError:
@@ -123,7 +125,7 @@ def dirty_hashes():
     if not existing:
         return []
     try:
-        hashes = run_git(["hash-object", "--"] + existing).split("\n")
+        hashes = run_git(["hash-object", "--", *existing]).split("\n")
     except OSError:
         hashes = []
     if hashes and hashes[-1] == "":
@@ -132,7 +134,7 @@ def dirty_hashes():
     for position in range(max(len(hashes), len(existing))):
         digest = hashes[position] if position < len(hashes) else ""
         name = existing[position] if position < len(existing) else ""
-        lines.append("%s %s" % (digest, name))
+        lines.append(f"{digest} {name}")
     return lines
 
 
@@ -151,10 +153,8 @@ def remove_old_snapshots(state_dir):
 
 
 def run_quiet(command):
-    try:
+    with contextlib.suppress(OSError):
         subprocess.run(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except OSError:
-        pass
 
 
 def tool_available(name):
@@ -195,10 +195,8 @@ def main():
     if cwd == "":
         cwd = os.environ.get("PWD") or os.getcwd()
 
-    try:
+    with contextlib.suppress(locale.Error):
         locale.setlocale(locale.LC_COLLATE, "")
-    except locale.Error:
-        pass
 
     try:
         finished = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel", "--absolute-git-dir"],
@@ -219,7 +217,7 @@ def main():
     except OSError:
         return 0
     remove_old_snapshots(state_dir)
-    snapshot = "%s/%s-%d" % (state_dir, session, cksum(os.fsencode(root)))
+    snapshot = f"{state_dir}/{session}-{cksum(os.fsencode(root))}"
 
     if event == "UserPromptSubmit":
         lines = dirty_hashes()
@@ -238,7 +236,7 @@ def main():
     if not os.path.isfile(snapshot):
         return 0
     try:
-        with open(snapshot, "r", encoding="utf-8", errors="surrogateescape") as handle:
+        with open(snapshot, encoding="utf-8", errors="surrogateescape") as handle:
             snapshot_lines = handle.read().split("\n")
     except OSError:
         snapshot_lines = []
@@ -258,14 +256,14 @@ def main():
 
     if lint_files:
         if tool_available("oxlint"):
-            run_quiet(["npx", "oxlint", "--fix"] + lint_files)
+            run_quiet(["npx", "oxlint", "--fix", *lint_files])
         elif os.path.exists("node_modules/.bin/eslint") and os.access("node_modules/.bin/eslint", os.X_OK):
-            run_quiet(["npx", "eslint", "--fix", "--no-warn-ignored", "--max-warnings=0"] + lint_files)
+            run_quiet(["npx", "eslint", "--fix", "--no-warn-ignored", "--max-warnings=0", *lint_files])
 
     if tool_available("oxfmt"):
-        run_quiet(["npx", "oxfmt"] + format_files)
+        run_quiet(["npx", "oxfmt", *format_files])
     else:
-        run_quiet(["npx", "--yes", "prettier", "--write"] + format_files)
+        run_quiet(["npx", "--yes", "prettier", "--write", *format_files])
     return 0
 
 

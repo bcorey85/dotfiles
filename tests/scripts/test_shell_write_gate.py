@@ -1,4 +1,4 @@
-"""Checks for shell-write-gate.py, the PreToolUse(Bash) hook that denies shell writes bypassing Write/Edit."""
+"""Checks for shell_write_gate.py, the PreToolUse(Bash) hook that denies shell writes bypassing Write/Edit."""
 import json
 import os
 import pathlib
@@ -8,8 +8,10 @@ import sys
 import tempfile
 import unittest
 
+import toolkit_paths
+
 SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR")
-                      or pathlib.Path.home() / ".claude" / "scripts") / "shell-write-gate.py"
+                      or toolkit_paths.SCRIPTS_DIR) / "shell_write_gate.py"
 HINT = "#skip-shell-write-gate"
 
 
@@ -112,7 +114,7 @@ class ShellWriteGateTest(unittest.TestCase):
                         "echo hi | tee -a -i tracked.txt", "echo hi > './tracked.txt'",
                         "echo hi > \"tracked.txt\"", "echo hi 2> tracked.txt"):
             reason = self.assert_denied(command)
-            self.assertTrue(reason.startswith("[shell-write-gate] %s/" % self.repo), reason)
+            self.assertTrue(reason.startswith(f"[shell-write-gate] {self.repo}/"), reason)
             self.assertIn("tracked.txt is git-tracked. Shell writes bypass the Write/Edit hook pipeline "
                           "(comment/prose/budget gates). Use the Write or Edit tool.", reason)
             self.assertIn(HINT, reason)
@@ -124,7 +126,7 @@ class ShellWriteGateTest(unittest.TestCase):
             self.assert_allowed(command)
 
     def test_absolute_tilde_and_cwd_targets(self):
-        self.assert_denied("echo hi > %s/tracked.txt" % self.repo)
+        self.assert_denied(f"echo hi > {self.repo}/tracked.txt")
         self.assert_denied("echo hi > ../repo/tracked.txt")
         sub = self.repo / "sub"
         sub.mkdir()
@@ -134,7 +136,7 @@ class ShellWriteGateTest(unittest.TestCase):
         (tilde_repo / "t.txt").write_text("x\n")
         subprocess.run(["git", "-C", str(tilde_repo), "add", "t.txt"], check=True)
         reason = self.assert_denied("echo hi > ~/r/t.txt")
-        self.assertIn("%s/r/t.txt is git-tracked" % self.home, reason)
+        self.assertIn(f"{self.home}/r/t.txt is git-tracked", reason)
 
     def test_symlink_to_tracked_file_denied_with_resolved_path(self):
         os.symlink(str(self.repo / "tracked.txt"), str(self.tmp / "link.txt"))
@@ -180,8 +182,9 @@ class ShellWriteGateTest(unittest.TestCase):
     def test_ownership_gate_denies_writes_by_agents(self):
         script = self.install_with_gate(self.DENY_TESTS_GATE)
         reason = self.assert_denied("echo hi > tests/new.py", agent="coder", script=script)
-        self.assertEqual(reason, "[shell-write-gate] tests are owned by the test agent (coder, %s/tests/new.py)"
-                         % self.repo)
+        self.assertEqual(
+            reason, f"[shell-write-gate] tests are owned by the test agent (coder, {self.repo}/tests/new.py)"
+        )
         for command in ("rm tests/a.py", "mv src/a.py tests/a.py", "cp a tests/a", "touch tests/x",
                         "git rm tests/a.py", "git checkout -- tests/a.py", "dd if=/dev/zero of=tests/z",
                         "sed -i s/a/b/ tests/a.py", "echo x | tee tests/t.py", "ls | xargs sed -i s/a/b/ tests/q",

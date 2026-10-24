@@ -12,7 +12,7 @@ from unittest import mock
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = pathlib.Path(os.environ.get("VERIFY_COMMON_SCRIPTS_DIR") or REPO_ROOT / "claude" / ".claude" / "scripts")
 sys.path.insert(0, str(SCRIPTS_DIR))
-import verify_common  # noqa: E402
+import verify_common
 
 PLANTED_TREE = "sha256:" + "ab12" * 16
 OTHER_TREE = "sha256:" + "cd34" * 16
@@ -33,13 +33,15 @@ class ReviewRan(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def test_planted_fingerprint_ran_and_other_did_not(self):
-        plant_ledger(self.directory.name, f'[ "$*" = "yield --review-trees" ] || exit 64\nprintf "tree\\n{PLANTED_TREE}\\n"\n')
+        plant_ledger(
+            self.directory.name, f'[ "$*" = "yield --review-trees" ] || exit 64\nprintf "tree\\n{PLANTED_TREE}\\n"\n'
+        )
 
         ran, _ = verify_common.review_ran("some-repo", "some-branch", PLANTED_TREE)
-        notRan, reason = verify_common.review_ran("some-repo", "some-branch", OTHER_TREE)
+        not_ran, reason = verify_common.review_ran("some-repo", "some-branch", OTHER_TREE)
 
         self.assertTrue(ran)
-        self.assertFalse(notRan)
+        self.assertFalse(not_ran)
         self.assertIn("differs", reason)
 
     def test_header_only_listing_did_not_run(self):
@@ -57,7 +59,7 @@ class ReviewRan(unittest.TestCase):
     def test_nonzero_exit_raises_fail_with_stderr_line(self):
         plant_ledger(self.directory.name, 'echo "ledger yield: not inside a git repository" >&2\nexit 1\n')
 
-        with self.assertRaises(verify_common.Fail) as raised:
+        with self.assertRaises(verify_common.VerifyError) as raised:
             verify_common.review_ran("some-repo", "some-branch", PLANTED_TREE)
 
         self.assertEqual(str(raised.exception), "ledger yield: not inside a git repository")
@@ -93,7 +95,7 @@ class BusyLedger(unittest.TestCase):
     def test_a_ledger_that_stays_busy_fails_and_never_reads_as_no_review(self):
         self.plant_script("echo 'ledger: cache busy' >&2\nexit 75\n")
 
-        with self.assertRaises(verify_common.Fail) as raised:
+        with self.assertRaises(verify_common.VerifyError) as raised:
             verify_common.review_ran("some-repo", "some-branch", PLANTED_TREE)
 
         self.assertEqual(raised.exception.code, 2)
@@ -105,7 +107,7 @@ class BusyLedger(unittest.TestCase):
         self.plant_script("exec sleep 30\n")
         os.environ[verify_common.LEDGER_TIMEOUT_ENV] = "0.5"
 
-        with self.assertRaises(verify_common.Fail) as raised:
+        with self.assertRaises(verify_common.VerifyError) as raised:
             verify_common.review_ran("some-repo", "some-branch", PLANTED_TREE)
 
         self.assertIn("ledger is busy", str(raised.exception))
@@ -114,7 +116,7 @@ class BusyLedger(unittest.TestCase):
     def test_a_real_failure_is_not_tried_again(self):
         self.plant_script("echo 'ledger yield: broken schema' >&2\nexit 1\n")
 
-        with self.assertRaises(verify_common.Fail) as raised:
+        with self.assertRaises(verify_common.VerifyError) as raised:
             verify_common.review_ran("some-repo", "some-branch", PLANTED_TREE)
 
         self.assertEqual(str(raised.exception), "ledger yield: broken schema")

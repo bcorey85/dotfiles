@@ -7,6 +7,7 @@ names the sections it adopts as **Bold Heading** on lines that mention reviewer-
 
 CALIB_FILE and CALIB_AGENTS_DIR override the live paths so the check can be exercised against fixtures.
 """
+import contextlib
 import json
 import os
 import re
@@ -86,7 +87,7 @@ def check(raw):
             if not heading:
                 continue
             if calibration_lower is None or ("## " + heading).lower() not in calibration_lower:
-                missing += "  %s names \"%s\" — no such heading in the calibration file\n" % (name, heading)
+                missing += f"  {name} names \"{heading}\" — no such heading in the calibration file\n"
     if not missing:
         return
 
@@ -96,10 +97,8 @@ def check(raw):
 
 
 def main():
-    try:
+    with contextlib.suppress(Exception):
         check(sys.stdin.buffer.read())
-    except Exception:
-        pass
     sys.exit(0)
 
 

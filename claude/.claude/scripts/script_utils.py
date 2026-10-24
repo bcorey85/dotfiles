@@ -7,6 +7,7 @@ import json
 import os
 import pathlib
 import re
+import stat
 import subprocess
 import time
 import uuid
@@ -56,27 +57,27 @@ def fenced_line_indexes(lines):
     return fenced
 
 
-def heading_section_indexes(lines, headingText):
-    """0-based indexes of the lines under every markdown heading whose text is exactly headingText, the heading line
+def heading_section_indexes(lines, heading_text):
+    """0-based indexes of the lines under every markdown heading whose text is exactly heading_text, the heading line
     itself left out. A section runs to the next heading of its own level or a higher one; a deeper heading stays inside
     it. A `#` line inside a fenced block is not a heading, and the fenced lines belong to the section that holds them.
     Returns [] when no heading matches."""
     fenced = fenced_line_indexes(lines)
     indexes = []
-    openLevel = None
+    open_level = None
     for index, line in enumerate(lines):
         heading = None if index in fenced else MARKDOWN_HEADING.match(line)
         if heading is None:
-            if openLevel is not None:
+            if open_level is not None:
                 indexes.append(index)
             continue
 
         level = len(heading.group(1))
-        if openLevel is not None and level <= openLevel:
-            openLevel = None
-        if openLevel is None and heading.group(2).strip() == headingText:
-            openLevel = level
-        elif openLevel is not None:
+        if open_level is not None and level <= open_level:
+            open_level = None
+        if open_level is None and heading.group(2).strip() == heading_text:
+            open_level = level
+        elif open_level is not None:
             indexes.append(index)
     return indexes
 
@@ -85,23 +86,23 @@ def _comparable_line(line):
     return CHECKBOX.sub("[ ]", " ".join(line.split()))
 
 
-def lines_added(beforeLines, afterLines):
-    """The lines of afterLines that beforeLines lacks, as they read in afterLines. Blank lines, whitespace-only
+def lines_added(before_lines, after_lines):
+    """The lines of after_lines that before_lines lacks, as they read in after_lines. Blank lines, whitespace-only
     changes and a markdown checkbox ticked or unticked do not make a line added."""
-    beforeKeys = [_comparable_line(line) for line in beforeLines]
-    afterKeys = [_comparable_line(line) for line in afterLines]
-    matcher = difflib.SequenceMatcher(None, beforeKeys, afterKeys, autojunk=False)
+    before_keys = [_comparable_line(line) for line in before_lines]
+    after_keys = [_comparable_line(line) for line in after_lines]
+    matcher = difflib.SequenceMatcher(None, before_keys, after_keys, autojunk=False)
     added = []
-    for tag, _, _, afterStart, afterEnd in matcher.get_opcodes():
+    for tag, _, _, after_start, after_end in matcher.get_opcodes():
         if tag in ("insert", "replace"):
-            added += [afterLines[i] for i in range(afterStart, afterEnd) if afterKeys[i]]
+            added += [after_lines[i] for i in range(after_start, after_end) if after_keys[i]]
     return added
 
 
-def wait_for(check, timeoutSeconds, intervalSeconds):
+def wait_for(check, timeout_seconds, interval_seconds):
     """Call check() until it returns a truthy value, then return that value. Check once, then every
-    intervalSeconds, for at most timeoutSeconds. Return None when nothing was found in that time."""
-    deadline = time.monotonic() + timeoutSeconds
+    interval_seconds, for at most timeout_seconds. Return None when nothing was found in that time."""
+    deadline = time.monotonic() + timeout_seconds
     while True:
         found = check()
         if found:
@@ -109,25 +110,25 @@ def wait_for(check, timeoutSeconds, intervalSeconds):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return None
-        time.sleep(min(intervalSeconds, remaining))
+        time.sleep(min(interval_seconds, remaining))
 
 
-def run_retrying(argv, retryExitCodes, attempts, backoffSeconds, timeoutSeconds, sleep=time.sleep, **runKwargs):
+def run_retrying(argv, retry_exit_codes, attempts, backoff_seconds, timeout_seconds, sleep=time.sleep, **run_kwargs):
     """Run argv with captured text output, at most `attempts` times, and return the last CompletedProcess. A run is
-    tried again, after sleeping backoffSeconds times the number of runs so far, when its exit code is in
-    retryExitCodes or it does not finish in timeoutSeconds. Any other exit code is returned at once. When the last
+    tried again, after sleeping backoff_seconds times the number of runs so far, when its exit code is in
+    retry_exit_codes or it does not finish in timeout_seconds. Any other exit code is returned at once. When the last
     run times out, subprocess.TimeoutExpired is raised; when it exits with a retry code, that result is returned."""
     for attempt in range(1, attempts + 1):
         try:
-            done = subprocess.run(argv, capture_output=True, text=True, errors="replace", timeout=timeoutSeconds,
-                                  **runKwargs)
+            done = subprocess.run(argv, capture_output=True, text=True, errors="replace", timeout=timeout_seconds,
+                                  **run_kwargs)
         except subprocess.TimeoutExpired:
             if attempt == attempts:
                 raise
         else:
-            if done.returncode not in retryExitCodes or attempt == attempts:
+            if done.returncode not in retry_exit_codes or attempt == attempts:
                 return done
-        sleep(backoffSeconds * attempt)
+        sleep(backoff_seconds * attempt)
 
 
 def last_change_ns(path):
@@ -180,13 +181,19 @@ def one_line(text, limit=200):
 def contains_ignoring_whitespace(text, part):
     """True when `part` occurs in `text` once every run of whitespace in both reads as one space. An empty part
     is never contained."""
-    squashedPart = " ".join(str(part).split())
-    return bool(squashedPart) and squashedPart in " ".join(str(text).split())
+    squashed_part = " ".join(str(part).split())
+    return bool(squashed_part) and squashed_part in " ".join(str(text).split())
 
 
 def has_whitespace(text):
     """True when `text` holds any whitespace character: a space, tab or newline."""
     return re.search(r"\s", str(text)) is not None
+
+
+def words_of_arguments(arguments):
+    """The words of command-line text. One argument that holds spaces is split at them (the text came quoted as a
+    whole); several arguments are kept as they were given."""
+    return arguments[0].split() if len(arguments) == 1 else list(arguments)
 
 
 def strip_flag_values(command, flags):
@@ -196,22 +203,22 @@ def strip_flag_values(command, flags):
     if not flags:
         return command
     names = "|".join(re.escape(flag) for flag in sorted(flags, key=len, reverse=True))
-    quotedOrWord = r"""(?:"[^"]*"|'[^']*'|\S+)"""
-    pair = re.compile(r"(?<!\S)(?:%s)(?:=%s?|\s+(?!-)%s)" % (names, quotedOrWord, quotedOrWord))
+    quoted_or_word = r"""(?:"[^"]*"|'[^']*'|\S+)"""
+    pair = re.compile(rf"(?<!\S)(?:{names})(?:={quoted_or_word}?|\s+(?!-){quoted_or_word})")
     return pair.sub(" ", command)
 
 
-def leading_env_assignments(commandLines):
+def leading_env_assignments(command_lines):
     """The `NAME=value` words that the command lines start with, as written (quotes kept), one per variable name: the
     first line to set a name decides its value. Order is first seen. A line that is only an assignment, with no command
     after it, sets nothing."""
     assignments = {}
-    for line in commandLines:
+    for line in command_lines:
         leading = ENV_ASSIGNMENTS.match(str(line).lstrip())
         if leading is None:
             continue
-        for assignmentMatch in ENV_ASSIGNMENT.finditer(leading.group(0)):
-            assignments.setdefault(assignmentMatch.group(1), assignmentMatch.group(0))
+        for assignment_match in ENV_ASSIGNMENT.finditer(leading.group(0)):
+            assignments.setdefault(assignment_match.group(1), assignment_match.group(0))
     return list(assignments.values())
 
 
@@ -243,9 +250,9 @@ def pre_tool_use_deny(reason):
 def sortable_unique_id(now=None):
     """An id that sorts by creation time and does not repeat: local time to the second, a dash, six random hex
     digits. `now` is epoch seconds (default: the current time)."""
-    epochSeconds = now if now is not None else time.time()
-    localTime = time.localtime(epochSeconds)
-    stamp = time.strftime("%Y%m%dT%H%M%S", localTime)
+    epoch_seconds = now if now is not None else time.time()
+    local_time = time.localtime(epoch_seconds)
+    stamp = time.strftime("%Y%m%dT%H%M%S", local_time)
     return stamp + "-" + uuid.uuid4().hex[:6]
 
 
@@ -330,9 +337,9 @@ def paths_named(*texts):
     for text in texts:
         text = str(text or "")
         candidates = [normalize_path(hit) for hit in PATH_LINE.findall(text)]
-        firstToken = re.split(r"[\s,;|]", text.strip().strip("`'\""), maxsplit=1)[0]
-        if FILE_NAME.match(firstToken):
-            candidates.insert(0, normalize_path(firstToken))
+        first_token = re.split(r"[\s,;|]", text.strip().strip("`'\""), maxsplit=1)[0]
+        if FILE_NAME.match(first_token):
+            candidates.insert(0, normalize_path(first_token))
         for path in candidates:
             if path and path not in paths:
                 paths.append(path)
@@ -354,7 +361,7 @@ def _nearest_existing_folder(path):
     return folder
 
 
-def inside_git_work_tree(path, timeoutSeconds=2):
+def inside_git_work_tree(path, timeout_seconds=2):
     """True when path (a file or folder, which may not exist yet) lies inside a git work tree, False when it does
     not. A symlink is followed to its target. The inside of a .git folder and a bare repo are not a work tree.
     Asks `git rev-parse --is-inside-work-tree` from the nearest existing folder. When git cannot run, does not
@@ -362,7 +369,7 @@ def inside_git_work_tree(path, timeoutSeconds=2):
     folder = _nearest_existing_folder(path)
     try:
         done = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=folder, stdin=subprocess.DEVNULL,
-                              capture_output=True, text=True, timeout=timeoutSeconds)
+                              capture_output=True, text=True, timeout=timeout_seconds)
     except (OSError, subprocess.SubprocessError):
         return _has_git_entry_above(folder)
     if done.returncode != 0:
@@ -389,6 +396,24 @@ def _has_git_entry_above(folder):
         folder = parent
 
 
+def write_text_atomically(path, text):
+    """Write `text` to `path` so a reader sees the old file or the new one, never a half-written file."""
+    path = pathlib.Path(path)
+    temp_path = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+
+    # A new file gets 0o666 less the umask, as write_text gives. The kernel applies the umask here, so it is never read.
+    descriptor = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+    try:
+        with os.fdopen(descriptor, "w") as temp_file:
+            temp_file.write(text)
+        if path.exists():
+            os.chmod(temp_path, stat.S_IMODE(path.stat().st_mode))
+        os.replace(temp_path, path)
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        raise
+
+
 def append_jsonl(path, row):
     """Append one JSON row as one write, so concurrent appenders cannot interleave inside a row."""
     path = pathlib.Path(path)
@@ -406,47 +431,47 @@ def read_jsonl(path):
     path = pathlib.Path(path)
     if not path.exists():
         return []
-    objectRows = []
+    object_rows = []
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         try:
             row = json.loads(line)
         except ValueError:
             continue
         if isinstance(row, dict):
-            objectRows.append(row)
-    return objectRows
+            object_rows.append(row)
+    return object_rows
 
 
-def nearest_file_upward(startDirectory, fileName, stopDirectory):
-    """The nearest file called fileName in startDirectory or a parent of it, looking no higher than stopDirectory,
-    or None. A startDirectory that is not inside stopDirectory finds nothing, `..` segments included. Both are
+def nearest_file_upward(start_directory, file_name, stop_directory):
+    """The nearest file called file_name in start_directory or a parent of it, looking no higher than stop_directory,
+    or None. A start_directory that is not inside stop_directory finds nothing, `..` segments included. Both are
     pathlib.Path."""
-    resolvedStart = startDirectory.resolve()
-    if stopDirectory.resolve() not in (resolvedStart, *resolvedStart.parents):
+    resolved_start = start_directory.resolve()
+    if stop_directory.resolve() not in (resolved_start, *resolved_start.parents):
         return None
 
-    directory = startDirectory
+    directory = start_directory
     while True:
-        candidate = directory / fileName
+        candidate = directory / file_name
         if candidate.is_file():
             return candidate
-        if directory == stopDirectory or stopDirectory not in directory.parents:
+        if directory == stop_directory or stop_directory not in directory.parents:
             return None
         directory = directory.parent
 
 
-def directory_relative_to(rootDirectory, directory):
-    """The directory's path under rootDirectory as text, or "" when it is rootDirectory itself. Both are
+def directory_relative_to(root_directory, directory):
+    """The directory's path under root_directory as text, or "" when it is root_directory itself. Both are
     pathlib.Path."""
-    return str(directory.relative_to(rootDirectory)) if directory != rootDirectory else ""
+    return str(directory.relative_to(root_directory)) if directory != root_directory else ""
 
 
-def is_executable_file_inside(rootDirectory, relativePath):
-    """True when relativePath, taken from rootDirectory, names an executable file inside rootDirectory. A path that
-    leaves rootDirectory (a `..` segment or a link out) is not one. rootDirectory is a pathlib.Path or text."""
-    resolvedRoot = pathlib.Path(rootDirectory).resolve()
-    candidate = (resolvedRoot / relativePath).resolve()
-    if not candidate.is_relative_to(resolvedRoot):
+def is_executable_file_inside(root_directory, relative_path):
+    """True when relative_path, taken from root_directory, names an executable file inside root_directory. A path that
+    leaves root_directory (a `..` segment or a link out) is not one. root_directory is a pathlib.Path or text."""
+    resolved_root = pathlib.Path(root_directory).resolve()
+    candidate = (resolved_root / relative_path).resolve()
+    if not candidate.is_relative_to(resolved_root):
         return False
 
     return candidate.is_file() and os.access(candidate, os.X_OK)

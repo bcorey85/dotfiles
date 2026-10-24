@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """refactor-flow: the fixed steps of the /refactor skill, one call per mode.
 
-  refactor-flow.py branch-prep [--head REF] [--base REF]
-  refactor-flow.py audit-prep <dir> [--jscpd-timeout SECONDS]
-  refactor-flow.py simplify-prep <dir|file...> [--slice N]
-  refactor-flow.py log --mode branch|targeted|audit|simplify --input FILE.json [--base REF]
-  refactor-flow.py handoff --input FILE.json
+  refactor_flow.py branch-prep [--head REF] [--base REF]
+  refactor_flow.py audit-prep <dir> [--jscpd-timeout SECONDS]
+  refactor_flow.py simplify-prep <dir|file...> [--slice N]
+  refactor_flow.py log --mode branch|targeted|audit|simplify --input FILE.json [--base REF]
+  refactor_flow.py handoff --input FILE.json
 
 Every verb prints its report and ends with one `NEXT:` line naming what the
 model still does, or a `STOP:` line with the reason. Each prep verb deletes all but the newest 49
@@ -87,22 +87,22 @@ SIMPLIFY_ASK = ("Find what could be deleted if this module were shaped different
 NO_HISTORY_STOP = "STOP: {base} and {head} share no history; ask the user for --base."
 
 
-class Fail(Exception):
+class RefactorFlowError(Exception):
     """Bad input: print it, write nothing, exit 1."""
 
 
-class NoSharedHistory(Fail):
+class NoSharedHistoryError(RefactorFlowError):
     """The base and the head have no merge base (orphan branch, shallow clone)."""
 
 
-class NoBase(Fail):
+class NoBaseError(RefactorFlowError):
     """The branch-base helper found no base; the message is its `STOP:` line."""
 
 
 def run(args, check=True):
     done = subprocess.run(args, capture_output=True, text=True, errors="replace")
     if check and done.returncode != 0:
-        raise Fail(f"`{' '.join(args)}` failed: {done.stderr.strip() or done.stdout.strip()}")
+        raise RefactorFlowError(f"`{' '.join(args)}` failed: {done.stderr.strip() or done.stdout.strip()}")
     return done
 
 
@@ -113,7 +113,7 @@ def git(*args, check=True):
 def repo_root():
     done = git("rev-parse", "--show-toplevel", check=False)
     if done.returncode != 0:
-        raise Fail("not inside a git repository")
+        raise RefactorFlowError("not inside a git repository")
     return done.stdout.strip()
 
 
@@ -125,19 +125,19 @@ def pick_base(requested, head=None):
     """Returns (ref, where the ref came from). The branch-base helper owns the order of candidates."""
     if requested:
         if not ref_exists(requested):
-            raise Fail(f"--base {requested} is not a commit")
+            raise RefactorFlowError(f"--base {requested} is not a commit")
         return requested, "--base"
 
     command = ["bash", BRANCH_BASE, *(["--head", head] if head else [])]
     done = run(command, check=False)
     if done.returncode == 1 and done.stderr.startswith("STOP:"):
-        raise NoBase(done.stderr.strip())
+        raise NoBaseError(done.stderr.strip())
     if done.returncode != 0:
-        raise Fail(f"`{' '.join(command)}` failed: {done.stderr.strip() or done.stdout.strip()}")
+        raise RefactorFlowError(f"`{' '.join(command)}` failed: {done.stderr.strip() or done.stdout.strip()}")
 
     ref, _, source = done.stdout.strip().partition(" ")
     if not ref or not source:
-        raise Fail(f"`{' '.join(command)}` printed {done.stdout.strip()!r}; expected `<ref> <source>`")
+        raise RefactorFlowError(f"`{' '.join(command)}` printed {done.stdout.strip()!r}; expected `<ref> <source>`")
     return ref, source
 
 
@@ -156,8 +156,8 @@ def diff_output(span, *args, pathspecs=()):
         return done.stdout
     if "no merge base" in done.stderr:
         base, _, head = span.partition("...")
-        raise NoSharedHistory(NO_HISTORY_STOP.format(base=base, head=head))
-    raise Fail(f"`git diff {span}` failed: {done.stderr.strip()}")
+        raise NoSharedHistoryError(NO_HISTORY_STOP.format(base=base, head=head))
+    raise RefactorFlowError(f"`git diff {span}` failed: {done.stderr.strip()}")
 
 
 def sweep_matches(diff_text):
@@ -213,7 +213,7 @@ def unquote_c_path(quoted):
         end = escape.start() if escape else len(inner)
         plain = inner[position:end]
         if "\\" in plain:
-            raise Fail(f"cannot decode quoted path {quoted!r}: unknown escape")
+            raise RefactorFlowError(f"cannot decode quoted path {quoted!r}: unknown escape")
         decoded += plain.encode("utf-8", errors="surrogateescape")
         if escape is None:
             break
@@ -231,7 +231,7 @@ def parse_new_path(header):
         target = unquote_c_path(target)
     if target.startswith("b/"):
         return target[2:]
-    raise Fail(f"cannot parse diff header {header!r}: expected `+++ b/<path>` or `+++ /dev/null`")
+    raise RefactorFlowError(f"cannot parse diff header {header!r}: expected `+++ b/<path>` or `+++ /dev/null`")
 
 
 def binary_paths(numstat_text):
@@ -301,10 +301,8 @@ def prune_log_inputs(folder):
             dated.append((entry.st_mtime, path))
     dated.sort()
     for _, stale in dated[:-keep]:
-        try:
+        with contextlib.suppress(OSError):
             stale.unlink()
-        except OSError:
-            pass
 
 
 def fresh_log_input():
@@ -319,14 +317,14 @@ def branch_prep(opts):
     head = opts.head or "HEAD"
     if not ref_exists(head):
         if opts.head:
-            raise Fail(f"--head {head} is not a commit")
+            raise RefactorFlowError(f"--head {head} is not a commit")
         print("Branch audit: HEAD is unborn, the repository has no commits yet.")
         print("STOP: tell the user there are no commits to audit. Dispatch nothing.")
         return 0
 
     try:
         base, base_source = pick_base(opts.base, opts.head)
-    except NoBase as err:
+    except NoBaseError as err:
         print(err)
         return 0
 
@@ -334,7 +332,7 @@ def branch_prep(opts):
     try:
         files = changed_files(span)
         diff_text = diff_output(span, "-U0")
-    except NoSharedHistory as err:
+    except NoSharedHistoryError as err:
         print(f"Branch audit: {span} has no merge base.")
         print(err)
         return 0
@@ -417,7 +415,7 @@ def tracked_files(target):
     """Tracked files under the target paths, relative to the cwd (git ls-files -z)."""
     done = git("--literal-pathspecs", "ls-files", "-z", "--", *target, check=False)
     if done.returncode != 0:
-        raise Fail(f"git ls-files failed for {target}: {done.stderr.strip()}")
+        raise RefactorFlowError(f"git ls-files failed for {target}: {done.stderr.strip()}")
     return [name for name in done.stdout.split("\0") if name]
 
 
@@ -479,7 +477,7 @@ def simplify_prep(opts):
 
     slices = [files[i:i + MAX_SIMPLIFY_FILES] for i in range(0, len(files), MAX_SIMPLIFY_FILES)]
     if not 1 <= opts.slice <= len(slices):
-        raise Fail(f"--slice {opts.slice} out of range 1..{len(slices)}")
+        raise RefactorFlowError(f"--slice {opts.slice} out of range 1..{len(slices)}")
     chosen = slices[opts.slice - 1]
     label = " ".join(targets)
     log_input = fresh_log_input()
@@ -514,14 +512,14 @@ def simplify_prep(opts):
 def require_text(container, key, where):
     value = container.get(key)
     if not isinstance(value, str) or not value.strip():
-        raise Fail(f"{where}: `{key}` must be a non-empty string")
+        raise RefactorFlowError(f"{where}: `{key}` must be a non-empty string")
     return value
 
 
 def single_line(container, key, where):
     value = require_text(container, key, where)
     if "\n" in value or "\r" in value:
-        raise Fail(f"{where}: `{key}` must be one line")
+        raise RefactorFlowError(f"{where}: `{key}` must be one line")
     return value.strip()
 
 
@@ -532,15 +530,15 @@ def one_line_path(value, key, where):
     """A path may hold spaces: the writers get it as one argument. It must not hold a line break, or a
     ` name=` that the writers read as a second field swallowed into this one."""
     if "\n" in value or "\r" in value:
-        raise Fail(f"{where}: `{key}` must be one line")
+        raise RefactorFlowError(f"{where}: `{key}` must be one line")
     if SWALLOWED_PAIR.search(value):
-        raise Fail(f"{where}: `{key}` must not contain a space followed by `name=` (got {value!r})")
+        raise RefactorFlowError(f"{where}: `{key}` must not contain a space followed by `name=` (got {value!r})")
 
 
 def validate_finding(finding, index, mode):
     where = f"findings[{index}]"
     if not isinstance(finding, dict):
-        raise Fail(f"{where}: must be an object")
+        raise RefactorFlowError(f"{where}: must be an object")
 
     for key in ("class", "disposition", "actioned", "file"):
         require_text(finding, key, where)
@@ -548,31 +546,31 @@ def validate_finding(finding, index, mode):
 
     line = finding.get("line")
     if isinstance(line, bool) or not isinstance(line, int):
-        raise Fail(f"{where}: `line` must be an integer (0 when the finding names no line)")
+        raise RefactorFlowError(f"{where}: `line` must be an integer (0 when the finding names no line)")
 
     finding["desc"] = single_line(finding, "desc", where)
     if not isinstance(finding.get("escape", False), bool):
-        raise Fail(f"{where}: `escape` must be true or false (got {finding['escape']!r})")
+        raise RefactorFlowError(f"{where}: `escape` must be true or false (got {finding['escape']!r})")
     if not finding.get("escape"):
         return
 
     if mode in ("audit", "targeted"):
-        raise Fail(f"{where}: escape rows are not logged in {mode} mode")
+        raise RefactorFlowError(f"{where}: escape rows are not logged in {mode} mode")
     if mode == "simplify" and finding["class"] != "complexity":
-        raise Fail(f"{where}: simplify escape rows must be class=complexity")
+        raise RefactorFlowError(f"{where}: simplify escape rows must be class=complexity")
     require_text(finding, "severity", where)
 
 
 def validate_handoff(handoff):
     if not isinstance(handoff, dict):
-        raise Fail("`handoff` must be an object")
+        raise RefactorFlowError("`handoff` must be an object")
     files = handoff.get("files")
     if not isinstance(files, list) or not files:
-        raise Fail("handoff.files must list at least one {path, change}")
+        raise RefactorFlowError("handoff.files must list at least one {path, change}")
 
     for entry in files:
         if not isinstance(entry, dict):
-            raise Fail("handoff.files entries must be objects")
+            raise RefactorFlowError("handoff.files entries must be objects")
         single_line(entry, "path", "handoff.files")
         single_line(entry, "change", "handoff.files")
     single_line(handoff, "tests_run", "handoff")
@@ -580,16 +578,16 @@ def validate_handoff(handoff):
 
     plan_impact = handoff.get("plan_impact", "none")
     if not isinstance(plan_impact, str) or not plan_impact.strip():
-        raise Fail("handoff.plan_impact must be a non-empty string (`none` when there is none)")
+        raise RefactorFlowError("handoff.plan_impact must be a non-empty string (`none` when there is none)")
 
 
 def validate_log(mode, refactor_log):
     finder = refactor_log.get("finder") or None
     if mode == "targeted":
         if finder:
-            raise Fail("`finder` must be omitted in targeted mode (no finder is dispatched)")
+            raise RefactorFlowError("`finder` must be omitted in targeted mode (no finder is dispatched)")
     elif not isinstance(finder, str) or finder not in FINDERS:
-        raise Fail(f"`finder` must be one of {sorted(FINDERS)}")
+        raise RefactorFlowError(f"`finder` must be one of {sorted(FINDERS)}")
 
     lane = None
     if finder:
@@ -597,31 +595,31 @@ def validate_log(mode, refactor_log):
 
     findings = refactor_log.get("findings", [])
     if not isinstance(findings, list):
-        raise Fail("`findings` must be a list")
+        raise RefactorFlowError("`findings` must be a list")
     for index, finding in enumerate(findings):
         validate_finding(finding, index, mode)
 
     guards = refactor_log.get("guards", {})
     if not isinstance(guards, dict):
-        raise Fail("`guards` must be an object")
+        raise RefactorFlowError("`guards` must be an object")
     escape_classes = sorted({finding["class"] for finding in findings if finding.get("escape")})
     for escape_class in escape_classes:
         if not isinstance(guards.get(escape_class), str) or not guards[escape_class]:
-            raise Fail(f"escape class `{escape_class}` needs guards[\"{escape_class}\"] (run the ratchet)")
+            raise RefactorFlowError(f"escape class `{escape_class}` needs guards[\"{escape_class}\"] (run the ratchet)")
 
     verdict = refactor_log.get("result") or ("NEEDS CHANGES" if findings else "PASS")
     if not isinstance(verdict, str):
-        raise Fail("`result` must be a string")
+        raise RefactorFlowError("`result` must be a string")
 
     targets = refactor_log.get("target") or []
     if not isinstance(targets, list) or not all(isinstance(item, str) and item for item in targets):
-        raise Fail("`target` must be a list of paths")
+        raise RefactorFlowError("`target` must be a list of paths")
     if finder and mode in ("audit", "simplify") and not targets:
-        raise Fail("`target` (list of dirs or files) is required in audit and simplify mode")
+        raise RefactorFlowError("`target` (list of dirs or files) is required in audit and simplify mode")
 
     handoff = refactor_log.get("handoff")
     if mode == "audit" and handoff:
-        raise Fail("audit mode never hands off to /review")
+        raise RefactorFlowError("audit mode never hands off to /review")
     if handoff:
         validate_handoff(handoff)
 
@@ -669,16 +667,16 @@ def read_refactor_log(path):
     try:
         refactor_log = json.loads(Path(path).read_text())
     except (OSError, ValueError) as err:
-        raise Fail(f"cannot read --input {path}: {err}")
+        raise RefactorFlowError(f"cannot read --input {path}: {err}") from err
     if not isinstance(refactor_log, dict):
-        raise Fail(f"--input {path} must hold a JSON object")
+        raise RefactorFlowError(f"--input {path} must hold a JSON object")
     return refactor_log
 
 
 def read_modifier(refactor_log):
     modifier = refactor_log.get("modifier")
     if modifier is not None and not isinstance(modifier, str):
-        raise Fail("`modifier` must be a string")
+        raise RefactorFlowError("`modifier` must be a string")
     return modifier
 
 
@@ -735,9 +733,9 @@ def load_written_state():
     try:
         state = json.loads(path.read_text())
     except ValueError as err:
-        raise Fail(f"cannot read {path}: {err}; delete it to reset the dedupe state")
+        raise RefactorFlowError(f"cannot read {path}: {err}; delete it to reset the dedupe state") from err
     if not isinstance(state, dict):
-        raise Fail(f"{path} must hold a JSON object; delete it to reset the dedupe state")
+        raise RefactorFlowError(f"{path} must hold a JSON object; delete it to reset the dedupe state")
     return state
 
 
@@ -793,7 +791,7 @@ def check_targets_match(mode, validated_log):
         return
     for target in validated_log["targets"]:
         if not tracked_files([target]):
-            raise Fail(f"target `{target}` matches no tracked file; log the paths the prep listed")
+            raise RefactorFlowError(f"target `{target}` matches no tracked file; log the paths the prep listed")
 
 
 def log_next(validated_log, mode):
@@ -813,11 +811,11 @@ def log_verb(opts):
     check_targets_match(opts.mode, validated_log)
     try:
         writes = build_writes(opts.mode, opts.base, validated_log)
-    except NoBase as err:
+    except NoBaseError as err:
         print("Logging: nothing written, the branch has no base to measure its diff against.")
         print(err)
         return 0
-    except NoSharedHistory as err:
+    except NoSharedHistoryError as err:
         print("Logging: nothing written, the base and the branch share no history.")
         print(err)
         return 0
@@ -854,7 +852,7 @@ def handoff_verb(opts):
     refactor_log = read_refactor_log(opts.input)
     handoff = refactor_log.get("handoff")
     if not handoff:
-        raise Fail("the input has no `handoff` key")
+        raise RefactorFlowError("the input has no `handoff` key")
     validate_handoff(handoff)
     modifier = read_modifier(refactor_log)
 
@@ -891,7 +889,7 @@ def main():
                 "log": log_verb, "handoff": handoff_verb}
     try:
         return handlers[opts.verb](opts)
-    except Fail as err:
+    except RefactorFlowError as err:
         print(f"refactor-flow: {err}", file=sys.stderr)
         return 1
 

@@ -5,6 +5,7 @@ LOG-ONLY: never emits a permission decision, always exits 0, prints nothing. Row
 ~/.claude/test-edit-telemetry.jsonl: {ts, tool, agent, file, cwd, snippet}. agent is agent_type or "main"; snippet is
 the first 200 characters of new_string or content. CLAUDE_SKIP_HOOKS skips logging. A write failure is ignored.
 """
+import contextlib
 import json
 import os
 import re
@@ -93,10 +94,8 @@ def check(raw):
 
 
 def main():
-    try:
+    with contextlib.suppress(Exception):
         check(hook_input.read_stdin_text())
-    except Exception:
-        pass
     sys.exit(0)
 
 

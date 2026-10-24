@@ -7,7 +7,8 @@ Appends one line per completed subagent dispatch to AGENT_USAGE_FILE
 
 The token fields probe several candidate paths because the Agent tool_response schema is not contractual;
 respKeys is the self-diagnostic. reportChars and noResult are null on the async schema (no inline content).
-Writes nothing while the metrics switch is off (CLAUDE_TOOLKIT_TELEMETRY=1, or the file ~/.claude/toolkit-telemetry). Never emits hook output. Exits 0, except 5 on a payload that is not valid JSON or not an object, as the
+Writes nothing while the metrics switch is off (CLAUDE_TOOLKIT_TELEMETRY=1, or the file ~/.claude/toolkit-telemetry).
+Never emits hook output. Exits 0, except 5 on a payload that is not valid JSON or not an object, as the
 bash original did through jq.
 """
 import json
@@ -17,8 +18,18 @@ import sys
 import time
 
 import hook_input
-from hook_input import (JqError, bash_basename, current_directory, first_truthy, index, jq_type, parse_documents,
-                        raw_text, report_open_failure, truthy)
+from hook_input import (
+    JqError,
+    bash_basename,
+    current_directory,
+    first_truthy,
+    index,
+    jq_type,
+    parse_documents,
+    raw_text,
+    report_open_failure,
+    truthy,
+)
 
 try:
     from telemetry_enabled import telemetry_enabled
@@ -35,14 +46,11 @@ ASCII_LOWER = {ord(c): ord(c) + 32 for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"}
 def join_text(content):
     pieces = []
     for element in content:
-        if isinstance(element, dict):
-            text = element.get("text")
-        else:
-            text = None
+        text = element.get("text") if isinstance(element, dict) else None
         if not truthy(text):
             text = ""
         if isinstance(text, (list, dict)):
-            raise JqError("Cannot join with %s" % jq_type(text))
+            raise JqError(f"Cannot join with {jq_type(text)}")
         pieces.append(raw_text(text))
     return " ".join(pieces)
 
@@ -66,7 +74,7 @@ def usage_row(document, repo):
     if isinstance(description, (str, list)):
         description = description[0:80]
     else:
-        raise JqError("Cannot index %s with object" % jq_type(description))
+        raise JqError(f"Cannot index {jq_type(description)} with object")
 
     usage = responder.get("usage")
     tokens = first_truthy(
@@ -111,7 +119,7 @@ def main():
     try:
         documents = parse_documents(text)
     except ValueError:
-        sys.stderr.write("jq: error (at <stdin>:%d): parse error\n" % (newlines + 1))
+        sys.stderr.write(f"jq: error (at <stdin>:{(newlines + 1)}): parse error\n")
         return 5
 
     events = []
@@ -119,7 +127,7 @@ def main():
         try:
             events.append(raw_text(first_truthy(lambda d=document: index(d, "hook_event_name"), lambda: "")))
         except JqError as error:
-            sys.stderr.write("jq: error (at <stdin>:%d): %s\n" % (newlines + 1, error))
+            sys.stderr.write(f"jq: error (at <stdin>:{(newlines + 1)}): {error}\n")
             return 5
     event = "\n".join(events).rstrip("\n")
     if event != "PostToolUse":

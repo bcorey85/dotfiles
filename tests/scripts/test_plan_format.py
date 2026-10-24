@@ -6,9 +6,11 @@ import tempfile
 import unittest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-SCRIPT = pathlib.Path(os.environ.get("PLAN_FORMAT_SCRIPT") or REPO_ROOT / "claude" / ".claude" / "scripts" / "plan_format.py")
+SCRIPT = pathlib.Path(
+    os.environ.get("PLAN_FORMAT_SCRIPT") or REPO_ROOT / "claude" / ".claude" / "scripts" / "plan_format.py"
+)
 sys.path.insert(0, str(SCRIPT.parent))
-import plan_format  # noqa: E402
+import plan_format
 
 TEMPLATE = """# Plan
 
@@ -74,7 +76,12 @@ class SectionShapeTest(unittest.TestCase):
         self.assertTrue(all(not i["checked"] for i in items))
 
     def test_not_applicable_lines_are_accepted_and_yield_no_item(self):
-        for body in ("N/A.", "N/A (docs-only).", "- N/A beyond tests; the live check is Phase 8.", "N/A — scripts only"):
+        for body in (
+            "N/A.",
+            "N/A (docs-only).",
+            "- N/A beyond tests; the live check is Phase 8.",
+            "N/A — scripts only",
+        ):
             with self.subTest(body=body):
                 self.assertEqual(parse(f"## Phase 1: x\n\n#### Manual Verification:\n\n{body}\n\n## Phase 2: y\n"), [])
 
@@ -121,8 +128,10 @@ class SectionShapeTest(unittest.TestCase):
         self.assertIn("move the item above it", str(caught.exception))
 
     def test_a_phase_stays_open_across_a_level_3_success_criteria_group(self):
-        text = ("### Phase 1: x\n\n### Success Criteria\n\n### Automated Verification:\n\n- `make test` passes.\n\n"
-                "### Manual Verification:\n\n- [ ] b\n\n### Testing Strategy\n\n### Manual Verification:\n\n- [ ] late\n")
+        text = (
+            "### Phase 1: x\n\n### Success Criteria\n\n### Automated Verification:\n\n- `make test` passes.\n\n"
+            "### Manual Verification:\n\n- [ ] b\n\n### Testing Strategy\n\n### Manual Verification:\n\n- [ ] late\n"
+        )
         self.assertEqual([("b", "1"), ("late", None)], [(i["text"], i["phase"]) for i in parse(text)])
 
     def test_phase_resets_at_a_non_phase_heading_of_the_same_level(self):
@@ -177,7 +186,8 @@ class PhaseSectionsTest(unittest.TestCase):
 
     def test_parse_plan_fails_a_status_entry_with_no_section_unless_it_is_a_closing_phase(self):
         lines = ["## Phase Status", f"- [ ] Phase {self.ONE}: build", f"- [ ] Phase {self.TWO}: Recap", ""]
-        closing = lambda title: "/branch-recap" if title.startswith("Recap") else None
+        def closing(title):
+            return "/branch-recap" if title.startswith("Recap") else None
         plan = plan_format.parse_plan(lines, closing)
         self.assertEqual([(1, "missing-section")], [(f["line"] - 1, f["kind"]) for f in plan["failures"]])
         self.assertEqual([None, "/branch-recap"], [e["closing"] for e in plan["entries"]])
@@ -191,8 +201,8 @@ class PhaseSectionsTest(unittest.TestCase):
 
 
 class PhaseGateClauseTest(unittest.TestCase):
-    def gates(self, *statusLines):
-        entries, failures = plan_format.phase_status_entries(["## Phase Status", *statusLines], lambda title: None)
+    def gates(self, *status_lines):
+        entries, failures = plan_format.phase_status_entries(["## Phase Status", *status_lines], lambda title: None)
         self.assertEqual([], failures)
         return [entry["gate"] for entry in entries]
 
@@ -229,8 +239,8 @@ REAL_DEVIATION = ("- 2026-10-20: Phase 11 (work Mac runs) moves to a new ticket,
 
 
 class MovedPhaseTest(unittest.TestCase):
-    def plan(self, statusLine=REAL_MOVED_LINE, deviations=("## Plan Deviations", "", REAL_DEVIATION)):
-        lines = ["## Phase Status", "", "- [x] Phase 10: Runs (risk: low)", statusLine, "",
+    def plan(self, status_line=REAL_MOVED_LINE, deviations=("## Plan Deviations", "", REAL_DEVIATION)):
+        lines = ["## Phase Status", "", "- [x] Phase 10: Runs (risk: low)", status_line, "",
                  "## Phase 10: Runs", "text", "", "## Phase 11: Work Mac runs — moved to LED-16", "handed off", ""]
         return plan_format.parse_plan(lines + list(deviations))
 
@@ -280,9 +290,9 @@ class MovedPhaseTest(unittest.TestCase):
         self.assertEqual(["missing-section"], self.kinds(plan))
 
     def test_a_tick_entry_that_names_the_phase_does_not_record_the_move(self):
-        tickEntry = ("- 2026-10-21 (Phase 11): marked done with `tick`, outside the coder, review and verification "
+        tick_entry = ("- 2026-10-21 (Phase 11): marked done with `tick`, outside the coder, review and verification "
                      "steps of /code.")
-        plan = self.plan(deviations=("## Plan Deviations", "", tickEntry))
+        plan = self.plan(deviations=("## Plan Deviations", "", tick_entry))
         self.assertEqual(["moved-without-deviation"], self.kinds(plan))
         self.assertIn("LED-16", plan["failures"][0]["detail"])
 
@@ -308,7 +318,7 @@ class MovedPhaseTest(unittest.TestCase):
                                 ("- 2026-10-20: P40 moves to LED-16.", ["moved-without-deviation"]),
                                 ("- 2026-10-20: P3 moves to LED-16.", ["moved-without-deviation"])):
             with self.subTest(entry=entry):
-                plan = plan_format.parse_plan(lines + [entry])
+                plan = plan_format.parse_plan([*lines, entry])
                 self.assertEqual(expected, self.kinds(plan))
 
     def test_an_entry_that_names_another_phase_does_not_count(self):
@@ -370,10 +380,10 @@ class MovedPhaseTest(unittest.TestCase):
 
 
 class LoudFailureTest(unittest.TestCase):
-    def assert_fails_at(self, text, lineNumber):
+    def assert_fails_at(self, text, line_number):
         with self.assertRaises(plan_format.PlanFormatError) as caught:
             parse(text)
-        self.assertTrue(str(caught.exception).startswith(f"plan.md:{lineNumber}:"), str(caught.exception))
+        self.assertTrue(str(caught.exception).startswith(f"plan.md:{line_number}:"), str(caught.exception))
 
     def test_a_heading_level_other_than_3_or_4_fails_instead_of_dropping_the_items(self):
         for marks in ("##", "#####"):
@@ -410,30 +420,32 @@ class RealPlansTest(unittest.TestCase):
         paths = self.plan_paths()
         if not paths:
             self.skipTest("no real plans on this machine")
-        itemCount = 0
+        item_count = 0
         for path in paths:
             with self.subTest(path=path):
                 items = plan_format.manual_verification(pathlib.Path(path).read_text(errors="replace"), path)
-                itemCount += len(items)
+                item_count += len(items)
                 self.assertTrue(all(item["line"] > 0 and item["text"] for item in items))
-        print(f"parsed {len(paths)} of {len(paths)} real plan files, {itemCount} Manual Verification items",
+        print(f"parsed {len(paths)} of {len(paths)} real plan files, {item_count} Manual Verification items",
               file=sys.stderr)
 
     def test_every_real_phase_status_line_marked_moved_parses_with_its_section_and_deviation_entry(self):
         paths = sorted(glob.glob(str(pathlib.Path.home() / "dev" / "*" / "docs" / "plans" / "*" / "spec.md")))
         if not paths:
             self.skipTest("no real plans on this machine")
-        movedCount = 0
-        movedKinds = {"unparsed-line", "section-without-status", "moved-without-target", "moved-without-deviation"}
+        moved_count = 0
+        moved_kinds = {"unparsed-line", "section-without-status", "moved-without-target", "moved-without-deviation"}
         for path in paths:
             lines = pathlib.Path(path).read_text(errors="replace").splitlines()
-            dashLines = [line for line in lines if line.startswith("- [-] Phase ")]
+            dash_lines = [line for line in lines if line.startswith("- [-] Phase ")]
             plan = plan_format.parse_plan(lines)
             with self.subTest(path=path):
-                self.assertEqual([], [f for f in plan["failures"] if f["kind"] in movedKinds])
-                self.assertEqual(len(dashLines), sum(1 for entry in plan["entries"] if entry["moved"]))
-            movedCount += len(dashLines)
-        print(f"parsed {len(paths)} of {len(paths)} real plans, {movedCount} moved Phase Status lines", file=sys.stderr)
+                self.assertEqual([], [f for f in plan["failures"] if f["kind"] in moved_kinds])
+                self.assertEqual(len(dash_lines), sum(1 for entry in plan["entries"] if entry["moved"]))
+            moved_count += len(dash_lines)
+        print(
+            f"parsed {len(paths)} of {len(paths)} real plans, {moved_count} moved Phase Status lines", file=sys.stderr
+        )
 
 
 AUTOMATED_PLAN = """# Plan
@@ -555,9 +567,11 @@ class RepoGateEnvTest(unittest.TestCase):
         self.root = pathlib.Path(directory.name)
 
     def write_plan(self, folder, command):
-        planDir = self.root / "docs/plans" / folder
-        planDir.mkdir(parents=True)
-        (planDir / "spec.md").write_text(f"## Phase 1: X\n\n#### Automated Verification:\n\n- [ ] **T**: `{command}`\n")
+        plan_dir = self.root / "docs/plans" / folder
+        plan_dir.mkdir(parents=True)
+        (plan_dir / "spec.md").write_text(
+            f"## Phase 1: X\n\n#### Automated Verification:\n\n- [ ] **T**: `{command}`\n"
+        )
         return f"docs/plans/{folder}/spec.md"
 
     def test_a_repo_with_no_plans_has_no_gate_env(self):
@@ -578,16 +592,16 @@ class RepoGateEnvTest(unittest.TestCase):
 
     def test_the_plan_of_the_run_decides_its_own_value_over_the_others(self):
         self.write_plan("one", "A=1 cargo test")
-        ownPlan = self.write_plan("two", "A=2 cargo test")
+        own_plan = self.write_plan("two", "A=2 cargo test")
         self.write_plan("three", "A=3 cargo test")
 
-        self.assertEqual(["A=2"], plan_format.repo_gate_env(self.root, ownPlan))
+        self.assertEqual(["A=2"], plan_format.repo_gate_env(self.root, own_plan))
 
     def test_the_plan_of_the_run_keeps_the_names_the_other_plans_agree_on(self):
         self.write_plan("one", "B=9 cargo test")
-        ownPlan = self.write_plan("two", "A=2 cargo test")
+        own_plan = self.write_plan("two", "A=2 cargo test")
 
-        self.assertEqual(["A=2", "B=9"], sorted(plan_format.repo_gate_env(self.root, ownPlan)))
+        self.assertEqual(["A=2", "B=9"], sorted(plan_format.repo_gate_env(self.root, own_plan)))
 
     def test_shell_junk_in_other_plans_adds_no_names_and_literal_settings_stay(self):
         self.write_plan("one", "n=$(ledger count) && test 1 = 1")

@@ -8,9 +8,12 @@ import tempfile
 import unittest
 
 import fake_ledger
+import toolkit_paths
 
-SCRIPT = os.environ.get("REVIEW_LOOP_GATE_SCRIPT") or os.path.expanduser("~/.claude/scripts/review-loop-gate.py")
-LOGGER = os.environ.get("LOG_REVIEW_FINDING_SCRIPT") or os.path.expanduser("~/.claude/skills/review/log-review-finding")
+SCRIPT = os.environ.get("REVIEW_LOOP_GATE_SCRIPT") or str(toolkit_paths.SCRIPTS_DIR / "review_loop_gate.py")
+LOGGER = os.environ.get("LOG_REVIEW_FINDING_SCRIPT") or str(
+    toolkit_paths.CLAUDE_DIR / "skills" / "review" / "log-review-finding"
+)
 
 ASYNC_RESULT = "Async agent launched successfully.\nagentId: a7bf12f9c51bc4875 (internal ID)"
 
@@ -36,7 +39,9 @@ def bash(command):
 
 
 def notification(tool_use_id):
-    prompt = "<task-notification>\n<task-id>t1</task-id>\n<tool-use-id>%s</tool-use-id>\n</task-notification>" % tool_use_id
+    prompt = (
+        f"<task-notification>\n<task-id>t1</task-id>\n<tool-use-id>{tool_use_id}</tool-use-id>\n</task-notification>"
+    )
     return {"type": "attachment", "attachment": {"type": "queued_command", "prompt": prompt}}
 
 
@@ -64,12 +69,12 @@ class ReviewLoopGateTest(unittest.TestCase):
         self.assertEqual(self.stop(self.coder_and_background_reviewer()), "")
 
     def test_reported_background_dispatch_blocks_without_full_check(self):
-        out = self.stop(self.coder_and_background_reviewer() + [notification("toolu_rev")])
+        out = self.stop([*self.coder_and_background_reviewer(), notification("toolu_rev")])
         self.assertIn("No full check ran", json.loads(out)["reason"])
 
     def test_agent_message_counts_as_reported(self):
         message = user('<agent-message from="a7bf12f9c51bc4875">findings</agent-message>')
-        out = self.stop(self.coder_and_background_reviewer() + [message])
+        out = self.stop([*self.coder_and_background_reviewer(), message])
         self.assertIn("No full check ran", json.loads(out)["reason"])
 
     def test_foreground_dispatch_blocks(self):
@@ -96,16 +101,16 @@ class FullCheckTest(unittest.TestCase):
         cls.gate = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.gate)
 
-    def assertFull(self, command):
+    def assert_full(self, command):
         self.assertTrue(self.gate.full_check(command), command)
 
-    def assertScoped(self, command):
+    def assert_scoped(self, command):
         self.assertFalse(self.gate.full_check(command), command)
 
     def test_the_commands_two_loops_ran_as_their_full_check_count(self):
-        self.assertFull("cargo test --manifest-path /home/brandon/dev/agent-ledger-LED-12/Cargo.toml"
+        self.assert_full("cargo test --manifest-path /home/brandon/dev/agent-ledger-LED-12/Cargo.toml"
                         " > /tmp/review-gate.log 2>&1; echo exit=$?")
-        self.assertFull("cargo test --manifest-path /home/brandon/dev/agent-ledger-LED-2/Cargo.toml"
+        self.assert_full("cargo test --manifest-path /home/brandon/dev/agent-ledger-LED-2/Cargo.toml"
                         " > /tmp/review-gate.log 2>&1; echo exit=$?; tail -4 /tmp/review-gate.log")
 
     def test_the_value_of_a_package_or_project_flag_does_not_scope_a_run(self):
@@ -121,7 +126,7 @@ class FullCheckTest(unittest.TestCase):
                         "npx tsc --project=packages/web/tsconfig.json --noEmit",
                         "cargo test --manifest-path '/r/my app/Cargo.toml'"):
             with self.subTest(command=command):
-                self.assertFull(command)
+                self.assert_full(command)
 
     def test_each_checker_ignores_the_value_of_the_flags_that_name_its_package_or_project(self):
         for command in ("pytest -p plugins/x",
@@ -132,7 +137,7 @@ class FullCheckTest(unittest.TestCase):
                         "npx vitest --project packages/web",
                         "dotnet test --project src/App"):
             with self.subTest(command=command):
-                self.assertFull(command)
+                self.assert_full(command)
 
     def test_a_test_name_filter_or_a_trailing_test_target_still_scopes_a_run(self):
         for command in ("pytest -k login",
@@ -146,7 +151,7 @@ class FullCheckTest(unittest.TestCase):
                         "cargo test --package core -- --exact a::b",
                         "npm test --workspace packages/web"):
             with self.subTest(command=command):
-                self.assertScoped(command)
+                self.assert_scoped(command)
 
     def test_a_flag_that_names_a_package_for_one_checker_can_name_a_test_file_for_another(self):
         for command in ("bats -p test/login.bats",
@@ -156,13 +161,13 @@ class FullCheckTest(unittest.TestCase):
                         "pytest --project a/b",
                         "npx vitest -p a/b"):
             with self.subTest(command=command):
-                self.assertScoped(command)
+                self.assert_scoped(command)
 
     def test_a_flag_value_in_one_command_does_not_hide_a_scope_in_the_next(self):
-        self.assertScoped("cargo test -p core && cargo test tests/foo.rs")
+        self.assert_scoped("cargo test -p core && cargo test tests/foo.rs")
 
     def test_a_flag_at_the_end_of_its_command_takes_no_value_from_the_next_one(self):
-        self.assertScoped("cargo test -p; pytest tests/a.py")
+        self.assert_scoped("cargo test -p; pytest tests/a.py")
 
 
 def indented(report):
@@ -206,13 +211,17 @@ a.py:2 — [complexity] y"""
 
 
 def agent_message(agent_id, report):
-    return user('Another Claude session sent a message while you were working:\n<agent-message from="%s">\n%s'
-                % (agent_id, indented(report)))
+    return user(
+        f'Another Claude session sent a message while you were working:\n<agent-message from="{agent_id}">\n'
+        f'{indented(report)}'
+    )
 
 
 def notification_with_result(tool_use_id, report):
-    prompt = ("<task-notification>\n<task-id>t1</task-id>\n<tool-use-id>%s</tool-use-id>\n<result>%s</result>\n"
-              "</task-notification>" % (tool_use_id, indented(report)))
+    prompt = (
+        f"<task-notification>\n<task-id>t1</task-id>\n<tool-use-id>{tool_use_id}</tool-use-id>\n<result>{indented(report)}</result>\n"
+        "</task-notification>"
+    )
     return {"type": "attachment", "attachment": {"type": "queued_command", "prompt": prompt}}
 
 
@@ -269,17 +278,22 @@ class RunRowTest(unittest.TestCase):
         self.assertEqual("PASS_WITH_WARNINGS", rows["smell-reviewer"]["result"])
 
     def test_background_reports_arrive_in_the_opposite_order_and_keep_their_own_count(self):
-        records = self.loop([dispatch("t_smell", "smell-reviewer"), result("t_smell", "Async agent launched\nagentId: asmell")],
-                            [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
-                            [agent_message("acode", CODE_REPORT)], [agent_message("asmell", SMELL_REPORT)])
+        records = self.loop(
+            [dispatch("t_smell", "smell-reviewer"), result("t_smell", "Async agent launched\nagentId: asmell")],
+            [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
+            [agent_message("acode", CODE_REPORT)],
+            [agent_message("asmell", SMELL_REPORT)],
+        )
         self.stop(records)
         counts = {row["gate"]: row["n_findings"] for row in self.rows()}
         self.assertEqual({"smell-reviewer": "1", "code-reviewer": "3"}, counts)
 
     def test_task_notification_result_and_a_clean_report_with_no_sections(self):
-        records = self.loop([dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
-                            [notification_with_result("t_code", CLEAN_REPORT)],
-                            [dispatch("t_cx", "complexity-reviewer-deep"), result("t_cx", indented(COMPLEXITY_REPORT))])
+        records = self.loop(
+            [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
+            [notification_with_result("t_code", CLEAN_REPORT)],
+            [dispatch("t_cx", "complexity-reviewer-deep"), result("t_cx", indented(COMPLEXITY_REPORT))],
+        )
         self.stop(records)
         rows = {row["gate"]: row for row in self.rows()}
         self.assertEqual("0", rows["code-reviewer"]["n_findings"])
@@ -292,7 +306,7 @@ class RunRowTest(unittest.TestCase):
         self.stop(records)
         self.stop(records)
         self.assertEqual(1, len(self.rows()))
-        more = records + [dispatch("t_next", "code-reviewer"), result("t_next", indented(CLEAN_REPORT))]
+        more = [*records, dispatch("t_next", "code-reviewer"), result("t_next", indented(CLEAN_REPORT))]
         self.stop(more)
         self.assertEqual(["3", "0"], [row["n_findings"] for row in self.rows()])
 
@@ -314,7 +328,10 @@ class RunRowTest(unittest.TestCase):
         bash_dir = os.path.dirname(shutil.which("bash"))
         good_path = self.env["PATH"]
         self.env["PATH"] = os.pathsep.join(
-            part for part in good_path.split(os.pathsep) if part != fake_dir and not os.path.exists(os.path.join(part, "ledger")))
+            part
+            for part in good_path.split(os.pathsep)
+            if part != fake_dir and not os.path.exists(os.path.join(part, "ledger"))
+        )
         self.assertIsNone(shutil.which("ledger", path=self.env["PATH"]))
         self.assertTrue(bash_dir in self.env["PATH"].split(os.pathsep))
         self.quiet = False
@@ -348,7 +365,9 @@ class RunRowTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.home, ".claude", "review-findings.jsonl")))
 
     def test_open_background_dispatch_writes_nothing(self):
-        records = self.loop([dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")])
+        records = self.loop(
+            [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")]
+        )
         self.stop(records)
         self.assertEqual([], self.rows())
 
@@ -360,11 +379,13 @@ class RunRowTest(unittest.TestCase):
 
     def test_a_report_that_cannot_be_counted_still_writes_its_row_with_null(self):
         prose = "## Code Review Summary\n\n### Fix\nThe fix section has prose and no entry."
-        records = self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(prose))],
-                            [dispatch("t_other", "perf-reviewer"), result("t_other", "free text, no review heading")],
-                            [dispatch("t_async", "smell-reviewer"), result("t_async", "Async agent launched\nagentId: alost")],
-                            [agent_message("alost", "I ran out of budget before I wrote a report.")],
-                            [dispatch("t_deep", "security-reviewer-deep"), result("t_deep", indented(CODE_REPORT))])
+        records = self.loop(
+            [dispatch("t_code", "code-reviewer"), result("t_code", indented(prose))],
+            [dispatch("t_other", "perf-reviewer"), result("t_other", "free text, no review heading")],
+            [dispatch("t_async", "smell-reviewer"), result("t_async", "Async agent launched\nagentId: alost")],
+            [agent_message("alost", "I ran out of budget before I wrote a report.")],
+            [dispatch("t_deep", "security-reviewer-deep"), result("t_deep", indented(CODE_REPORT))],
+        )
         self.stop(records)
         counts = {row["gate"]: row["n_findings"] for row in self.rows()}
         self.assertEqual({"code-reviewer": None, "perf-reviewer": None, "smell-reviewer": None,
@@ -372,7 +393,7 @@ class RunRowTest(unittest.TestCase):
         self.assertTrue(all("n_findings" in row for row in self.rows()))
 
     def counted(self, report, gate="code-reviewer"):
-        tool_use_id = "t_%d" % len(self.rows())
+        tool_use_id = f"t_{len(self.rows())}"
         self.stop(self.loop([dispatch(tool_use_id, gate), result(tool_use_id, indented(report))]))
         return self.rows()[-1]["n_findings"]
 
@@ -439,21 +460,27 @@ None of the above is a blocker, but this is:
 
     def test_two_notifications_in_one_record_do_not_lend_a_result_across_the_boundary(self):
         both = ("<task-notification><tool-use-id>t_smell</tool-use-id><status>killed</status></task-notification>"
-                "<task-notification><tool-use-id>t_code</tool-use-id><result>%s</result></task-notification>"
-                % indented(CODE_REPORT))
-        records = self.loop([dispatch("t_smell", "smell-reviewer"), result("t_smell", "Async agent launched\nagentId: asmell")],
-                            [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
-                            [{"type": "attachment", "attachment": {"type": "queued_command", "prompt": both}}])
+                f"<task-notification><tool-use-id>t_code</tool-use-id><result>{indented(CODE_REPORT)}</result></task-notification>")
+        records = self.loop(
+            [dispatch("t_smell", "smell-reviewer"), result("t_smell", "Async agent launched\nagentId: asmell")],
+            [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
+            [{"type": "attachment", "attachment": {"type": "queued_command", "prompt": both}}],
+        )
         self.stop(records)
         counts = {row["gate"]: row["n_findings"] for row in self.rows()}
         self.assertEqual({"smell-reviewer": None, "code-reviewer": "3"}, counts)
 
     def test_an_agent_message_ends_at_the_next_agent_message(self):
-        both = user('<agent-message from="asmell">\n%s\n<agent-message from="acode">\n%s'
-                    % ("I stopped early.", indented(CODE_REPORT)))
-        records = self.loop([dispatch("t_smell", "smell-reviewer"), result("t_smell", "Async agent launched\nagentId: asmell")],
-                            [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
-                            [both])
+        both = user(
+            '<agent-message from="asmell">\n{}\n<agent-message from="acode">\n{}'.format(
+                "I stopped early.", indented(CODE_REPORT)
+            )
+        )
+        records = self.loop(
+            [dispatch("t_smell", "smell-reviewer"), result("t_smell", "Async agent launched\nagentId: asmell")],
+            [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
+            [both],
+        )
         self.stop(records)
         counts = {row["gate"]: row["n_findings"] for row in self.rows()}
         self.assertEqual({"smell-reviewer": None, "code-reviewer": "3"}, counts)
@@ -472,7 +499,7 @@ None of the above is a blocker, but this is:
     def test_a_missing_helper_module_skips_the_rows_and_the_stop_still_passes(self):
         lone = os.path.join(self.tmp.name, "lone")
         os.makedirs(lone)
-        self.script = os.path.join(lone, "review-loop-gate.py")
+        self.script = os.path.join(lone, "review_loop_gate.py")
         shutil.copy2(SCRIPT, self.script)
         self.quiet = False
         out = self.stop(self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))]))
@@ -599,7 +626,7 @@ class HandBackGateTest(unittest.TestCase):
         self.stderr = ""
 
     def write_loop(self, records, agent_id="aloop1"):
-        with open(os.path.join(self.subagents, "agent-%s.jsonl" % agent_id), "w", encoding="utf-8") as fh:
+        with open(os.path.join(self.subagents, f"agent-{agent_id}.jsonl"), "w", encoding="utf-8") as fh:
             for rec in records:
                 fh.write(json.dumps(rec) + "\n")
 
@@ -628,14 +655,14 @@ class HandBackGateTest(unittest.TestCase):
                 dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "ok")]
 
     def clean(self):
-        return self.skipped_full_check() + [bash("npm test > /tmp/review-gate.log 2>&1")]
+        return [*self.skipped_full_check(), bash("npm test > /tmp/review-gate.log 2>&1")]
 
     def unread_fix(self):
         return [user("review loop"),
                 dispatch("toolu_fix", "coder"), result("toolu_fix", "done\nagentId: afix1 (internal ID)"),
                 bash("npm test > /tmp/review-gate.log 2>&1")]
 
-    def assertRefused(self, out, reason):
+    def assert_refused(self, out, reason):
         denial = json.loads(out)["hookSpecificOutput"]
         self.assertEqual(denial["hookEventName"], "PreToolUse")
         self.assertEqual(denial["permissionDecision"], "deny")
@@ -644,12 +671,12 @@ class HandBackGateTest(unittest.TestCase):
 
     def test_a_hand_back_with_no_full_check_after_the_last_code_change_is_refused(self):
         self.write_loop(self.skipped_full_check())
-        self.assertRefused(self.hand_back(), "No full check ran")
+        self.assert_refused(self.hand_back(), "No full check ran")
         self.assertEqual(self.stderr, "")
 
     def test_a_hand_back_with_an_unread_code_fix_is_refused(self):
         self.write_loop(self.unread_fix())
-        self.assertRefused(self.hand_back(), "fix diff is unread")
+        self.assert_refused(self.hand_back(), "fix diff is unread")
 
     def test_a_clean_loop_hands_back(self):
         self.write_loop(self.clean())
@@ -658,7 +685,7 @@ class HandBackGateTest(unittest.TestCase):
 
     def test_the_second_hand_back_after_a_refusal_goes_through(self):
         self.write_loop(self.skipped_full_check())
-        self.assertRefused(self.hand_back(), "No full check ran")
+        self.assert_refused(self.hand_back(), "No full check ran")
         self.assertEqual(self.hand_back(), "")
         self.assertEqual(self.hand_back(), "")
 
@@ -666,30 +693,34 @@ class HandBackGateTest(unittest.TestCase):
         self.write_loop(self.clean())
         self.assertEqual(self.hand_back(), "")
         self.write_loop(self.skipped_full_check())
-        self.assertRefused(self.hand_back(), "No full check ran")
+        self.assert_refused(self.hand_back(), "No full check ran")
 
     def test_each_agent_has_its_own_refusal(self):
         self.write_loop(self.skipped_full_check(), agent_id="aloop1")
         self.write_loop(self.skipped_full_check(), agent_id="aloop2")
-        self.assertRefused(self.hand_back(agent_id="aloop1"), "No full check ran")
-        self.assertRefused(self.hand_back(agent_id="aloop2"), "No full check ran")
+        self.assert_refused(self.hand_back(agent_id="aloop1"), "No full check ran")
+        self.assert_refused(self.hand_back(agent_id="aloop2"), "No full check ran")
         self.assertEqual(self.hand_back(agent_id="aloop1"), "")
 
     def test_each_session_has_its_own_refusal(self):
         self.write_loop(self.skipped_full_check())
-        self.assertRefused(self.hand_back(session_id="s1"), "No full check ran")
-        self.assertRefused(self.hand_back(session_id="s2"), "No full check ran")
+        self.assert_refused(self.hand_back(session_id="s1"), "No full check ran")
+        self.assert_refused(self.hand_back(session_id="s2"), "No full check ran")
 
     def test_a_plan_impact_hand_back_owes_no_full_check(self):
         self.write_loop(self.skipped_full_check())
         self.assertEqual(self.hand_back(message="## Packet\nstatus: plan-impact\nthe plan is wrong"), "")
 
     def test_the_hand_back_message_stands_in_for_the_last_text_and_not_the_transcript(self):
-        records = self.skipped_full_check() + [
-            {"type": "assistant", "message": {"role": "assistant", "content": [
-                {"type": "text", "text": "status: plan-impact"}]}}]
+        records = [
+            *self.skipped_full_check(),
+            {
+                "type": "assistant",
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "status: plan-impact"}]},
+            },
+        ]
         self.write_loop(records)
-        self.assertRefused(self.hand_back(message="status: done"), "No full check ran")
+        self.assert_refused(self.hand_back(message="status: done"), "No full check ran")
 
     def test_an_open_background_dispatch_is_not_refused(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
@@ -709,13 +740,13 @@ class HandBackGateTest(unittest.TestCase):
 
     def test_the_stop_after_an_insisted_hand_back_has_nothing_left_to_ask(self):
         self.write_loop(self.unread_fix())
-        self.assertRefused(self.hand_back(), "fix diff is unread")
+        self.assert_refused(self.hand_back(), "fix diff is unread")
         self.assertEqual(self.hand_back(), "")
         self.assertEqual(self.stop(), "")
 
     def test_the_stop_after_a_refused_hand_back_still_blocks(self):
         self.write_loop(self.unread_fix())
-        self.assertRefused(self.hand_back(), "fix diff is unread")
+        self.assert_refused(self.hand_back(), "fix diff is unread")
         self.assertIn("fix diff is unread", json.loads(self.stop())["reason"])
 
     def test_a_stop_with_no_hand_back_before_it_still_blocks(self):
@@ -744,7 +775,7 @@ class HandBackGateTest(unittest.TestCase):
     def test_a_missing_helper_module_lets_the_hand_back_through_with_a_stderr_line(self):
         lone = os.path.join(self.tmp.name, "lone")
         os.makedirs(lone)
-        self.script = os.path.join(lone, "review-loop-gate.py")
+        self.script = os.path.join(lone, "review_loop_gate.py")
         shutil.copy2(SCRIPT, self.script)
         self.write_loop(self.skipped_full_check())
         self.assertEqual(self.hand_back(), "")

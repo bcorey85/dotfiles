@@ -3,14 +3,14 @@
 
 /calibrate and mutation-tester share one lock,
 ${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration/lock.json; the old ~/.claude/calibration-lock.json
-is read as a fallback (fields file, backup_path, class, ts, kind). The lock is deleted only after the restore is verified, so a lock
+is read as a fallback (fields file, backup_path, class, ts, kind). The lock is deleted only after the restore is
+verified, so a lock
 that survives into a new session means the restore never happened. This hook prints the paths needed to fix it.
 No lock: no output. Always exits 0.
 """
 import os
 import sys
 
-import hook_input
 from hook_input import parse_documents_partial, raw_text
 
 
@@ -65,21 +65,21 @@ def main():
         what = "CALIBRATION SEED — a previous /calibrate run did not finish."
 
     message = (
-        "⚠️  UNRESTORED %(what)s\n"
+        f"⚠️  UNRESTORED {what}\n"
         "\n"
-        "A deliberate '%(class)s' mutation was applied at %(ts)s and may still be in:\n"
-        "  %(file)s\n"
+        f"A deliberate '{seed_class}' mutation was applied at {stamp} and may still be in:\n"
+        f"  {file}\n"
         "\n"
         "Restore it from the backup before doing ANY other work in that repo:\n"
-        "  cp \"%(backup)s\" \"%(file)s\"\n"
+        f"  cp \"{backup}\" \"{file}\"\n"
         "\n"
         "Then verify the file is back to what you expect and remove the lock:\n"
-        "  rm \"%(lock)s\"\n"
+        f"  rm \"{lock}\"\n"
         "\n"
         "Do not commit until this is resolved. Do not run /calibrate or dispatch\n"
         "mutation-tester until this lock is gone — both refuse to seed on top of an\n"
         "unrestored seed.\n"
-    ) % {"what": what, "class": seed_class, "ts": stamp, "file": file, "backup": backup, "lock": lock}
+    )
     sys.stdout.buffer.write(message.encode("utf-8", "replace"))
     sys.stdout.buffer.flush()
     return 0

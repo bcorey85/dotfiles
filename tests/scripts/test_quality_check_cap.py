@@ -1,4 +1,4 @@
-"""Checks for quality-check-cap.py: caps a quality check at one re-run per edit."""
+"""Checks for quality_check_cap.py: caps a quality check at one re-run per edit."""
 import importlib.util
 import json
 import os
@@ -10,10 +10,12 @@ import tempfile
 import time
 import unittest
 
+import toolkit_paths
+
 HERE = pathlib.Path(__file__).resolve().parent
-LIVE_SCRIPTS_DIR = pathlib.Path.home() / ".claude" / "scripts"
-SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or (HERE if (HERE / "quality-check-cap.py").exists()
-                                                             else LIVE_SCRIPTS_DIR)) / "quality-check-cap.py"
+LIVE_SCRIPTS_DIR = toolkit_paths.SCRIPTS_DIR
+SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or (HERE if (HERE / "quality_check_cap.py").exists()
+                                                             else LIVE_SCRIPTS_DIR)) / "quality_check_cap.py"
 DENY_START = "[quality-check-cap] '"
 TICK = 0.03
 
@@ -148,7 +150,7 @@ class QualityCheckCapTest(unittest.TestCase):
         module = self.load_module()
         self.post("pytest -q")
         key = module.cksum(b"pytest -q\n" + str(self.work).encode())
-        self.assertEqual(self.state_files(), ["run-%d" % key])
+        self.assertEqual(self.state_files(), [f"run-{key}"])
 
     def test_edit_tools_reset_the_cap(self):
         for tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
@@ -202,10 +204,10 @@ class QualityCheckCapTest(unittest.TestCase):
         other.mkdir()
         self.post("pytest")
         self.assert_allowed(self.pre("pytest", cwd=other))
-        self.assert_allowed(self.pre("cd %s && pytest" % other))
-        self.post("cd %s && pytest" % other)
+        self.assert_allowed(self.pre(f"cd {other} && pytest"))
+        self.post(f"cd {other} && pytest")
         self.assert_denied(self.pre("pytest", cwd=other))
-        self.assert_denied(self.pre("cd %s; pytest" % self.work))
+        self.assert_denied(self.pre(f"cd {self.work}; pytest"))
 
     def test_tilde_cd_uses_home(self):
         (self.home / "proj").mkdir()
@@ -266,7 +268,7 @@ class QualityCheckCapTest(unittest.TestCase):
 
     def test_a_run_ended_by_a_signal_is_not_recorded_and_the_rerun_is_allowed(self):
         for code in (129, 137, 144, 192):
-            self.fire("PostToolUseFailure", command="pytest", error="Exit code %d\nTerminated" % code)
+            self.fire("PostToolUseFailure", command="pytest", error=f"Exit code {code}\nTerminated")
             self.assertEqual(self.state_files(), [])
             self.assert_allowed(self.pre("pytest"))
 
@@ -279,7 +281,7 @@ class QualityCheckCapTest(unittest.TestCase):
 
     def test_a_plain_nonzero_exit_is_still_recorded(self):
         for code in (1, 2, 127, 128, 193, 255):
-            self.fire("PostToolUseFailure", command="pytest", error="Exit code %d\nFAILED" % code)
+            self.fire("PostToolUseFailure", command="pytest", error=f"Exit code {code}\nFAILED")
             self.assert_denied(self.pre("pytest"))
             self.assert_allowed(self.edit())
 
@@ -311,9 +313,9 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assert_allowed(self.pre("eslint ."))
 
     def test_failed_check_after_cd_or_source_or_assignment_is_counted(self):
-        for command in ("cd %s && pytest -q" % self.work, "source .venv/bin/activate && pytest -q",
+        for command in (f"cd {self.work} && pytest -q", "source .venv/bin/activate && pytest -q",
                         ". .venv/bin/activate && pytest -q", "FOO=1 && pytest -q",
-                        "cd %s && source .venv/bin/activate && pytest -q" % self.work):
+                        f"cd {self.work} && source .venv/bin/activate && pytest -q"):
             self.fire("PostToolUseFailure", command=command, error="Exit code 1")
             self.assert_denied(self.pre(command))
             self.assert_allowed(self.edit())

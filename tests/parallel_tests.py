@@ -38,106 +38,106 @@ def flatten(suite):
             yield item
 
 
-def run_worker(testFile, shardIndex, shardCount):
+def run_worker(test_file, shard_index, shard_count):
     sys.path.insert(0, str(SCRIPTS_TESTS))
-    module = importlib.import_module(pathlib.Path(testFile).stem)
-    allTests = list(flatten(unittest.defaultTestLoader.loadTestsFromModule(module)))
-    chosen = [test for position, test in enumerate(allTests) if position % shardCount == shardIndex]
+    module = importlib.import_module(pathlib.Path(test_file).stem)
+    all_tests = list(flatten(unittest.defaultTestLoader.loadTestsFromModule(module)))
+    chosen = [test for position, test in enumerate(all_tests) if position % shard_count == shard_index]
     suite = unittest.TestSuite(chosen)
     outcome = unittest.TextTestRunner(verbosity=2).run(suite)
     return 0 if outcome.wasSuccessful() else 1
 
 
-def build_jobs(fileNames=()):
+def build_jobs(file_names=()):
     # Returns (file name, shard index, shard count) jobs, heaviest first. Given file names, keeps only those files
     # and exits non-zero on a name that is not a test file in SCRIPTS_TESTS.
     files = sorted(SCRIPTS_TESTS.glob("test_*.py"), key=lambda path: path.stat().st_size, reverse=True)
-    if fileNames:
-        knownNames = {path.name for path in files}
-        unknownNames = [name for name in fileNames if name not in knownNames]
-        if unknownNames:
-            sys.exit(f"parallel_tests.py: not a test file in {SCRIPTS_TESTS}: {' '.join(unknownNames)}")
-        files = [path for path in files if path.name in fileNames]
+    if file_names:
+        known_names = {path.name for path in files}
+        unknown_names = [name for name in file_names if name not in known_names]
+        if unknown_names:
+            sys.exit(f"parallel_tests.py: not a test file in {SCRIPTS_TESTS}: {' '.join(unknown_names)}")
+        files = [path for path in files if path.name in file_names]
     jobs = []
     for path in files:
-        shardCount = SHARDS.get(path.name, 1)
-        for shardIndex in range(shardCount):
-            jobs.append((path.name, shardIndex, shardCount))
+        shard_count = SHARDS.get(path.name, 1)
+        for shard_index in range(shard_count):
+            jobs.append((path.name, shard_index, shard_count))
     jobs.sort(key=lambda job: HEAVY_FIRST.index(job[0]) if job[0] in HEAVY_FIRST else len(HEAVY_FIRST))
     return jobs
 
 
-def write_fixed_git_config(configFolder):
+def write_fixed_git_config(config_folder):
     # Writes the one global git config every test process sees; returns its path.
     # The empty file stands in for the machine's global ignore and attributes files.
-    configPath = pathlib.Path(configFolder) / "gitconfig"
-    emptyPath = pathlib.Path(configFolder) / "empty"
-    emptyPath.write_text("")
-    configPath.write_text('[user]\n\tname = ci\n\temail = ci@example.com\n[init]\n\tdefaultBranch = master\n'
-                          f'[core]\n\texcludesFile = "{emptyPath}"\n\tattributesFile = "{emptyPath}"\n')
-    return configPath
+    config_path = pathlib.Path(config_folder) / "gitconfig"
+    empty_path = pathlib.Path(config_folder) / "empty"
+    empty_path.write_text("")
+    config_path.write_text('[user]\n\tname = ci\n\temail = ci@example.com\n[init]\n\tdefaultBranch = master\n'
+                          f'[core]\n\texcludesFile = "{empty_path}"\n\tattributesFile = "{empty_path}"\n')
+    return config_path
 
 
-def fixed_git_environment(configPath):
+def fixed_git_environment(config_path):
     # Returns the environment for a test process: the fixed config replaces the machine's global and system git config,
     # and config passed through the environment is dropped.
     environment = {name: value for name, value in os.environ.items()
                    if name not in ("GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT")
                    and not name.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"))}
-    environment["GIT_CONFIG_GLOBAL"] = str(configPath)
+    environment["GIT_CONFIG_GLOBAL"] = str(config_path)
     environment["GIT_CONFIG_NOSYSTEM"] = "1"
     return environment
 
 
 def run_job(job, environment):
-    testFile, shardIndex, shardCount = job
+    test_file, shard_index, shard_count = job
     started = time.monotonic()
     finished = subprocess.run(
-        [sys.executable, str(pathlib.Path(__file__).resolve()), "--worker", testFile, str(shardIndex), str(shardCount)],
+        [sys.executable, str(pathlib.Path(__file__).resolve()), "--worker", test_file, str(shard_index), str(shard_count)],
         cwd=str(REPO_ROOT), capture_output=True, text=True,
         encoding="utf-8", errors="replace", env=environment,
     )
     seconds = time.monotonic() - started
     output = finished.stdout + finished.stderr
     ran = re.search(r"^Ran (\d+) tests?", output, re.MULTILINE)
-    testCount = int(ran.group(1)) if ran else 0
-    return testFile, testCount, seconds, finished.returncode == 0 and ran is not None, output
+    test_count = int(ran.group(1)) if ran else 0
+    return test_file, test_count, seconds, finished.returncode == 0 and ran is not None, output
 
 
-def main(fileNames=()):
-    jobs = build_jobs(fileNames)
+def main(file_names=()):
+    jobs = build_jobs(file_names)
     workers = os.cpu_count() or 1
-    wallStarted = time.monotonic()
-    perFile = {}
-    with tempfile.TemporaryDirectory() as configFolder:
-        environment = fixed_git_environment(write_fixed_git_config(configFolder))
-        runJob = functools.partial(run_job, environment=environment)
+    wall_started = time.monotonic()
+    per_file = {}
+    with tempfile.TemporaryDirectory() as config_folder:
+        environment = fixed_git_environment(write_fixed_git_config(config_folder))
+        job_runner = functools.partial(run_job, environment=environment)
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-            for testFile, testCount, seconds, passed, output in pool.map(runJob, jobs):
-                entry = perFile.setdefault(testFile, {"count": 0, "seconds": 0.0, "passed": True, "failures": []})
-                entry["count"] += testCount
+            for test_file, test_count, seconds, passed, output in pool.map(job_runner, jobs):
+                entry = per_file.setdefault(test_file, {"count": 0, "seconds": 0.0, "passed": True, "failures": []})
+                entry["count"] += test_count
                 entry["seconds"] += seconds
                 entry["passed"] = entry["passed"] and passed
                 if not passed:
                     entry["failures"].append(output)
 
-    totalTests, totalSeconds, failedFiles = 0, 0.0, []
-    for testFile in sorted(perFile):
-        entry = perFile[testFile]
+    total_tests, total_seconds, failed_files = 0, 0.0, []
+    for test_file in sorted(per_file):
+        entry = per_file[test_file]
         status = "OK" if entry["passed"] else "FAIL"
-        print(f"{testFile:42} {entry['count']:5} tests {entry['seconds']:7.1f}s {status}")
-        totalTests += entry["count"]
-        totalSeconds += entry["seconds"]
+        print(f"{test_file:42} {entry['count']:5} tests {entry['seconds']:7.1f}s {status}")
+        total_tests += entry["count"]
+        total_seconds += entry["seconds"]
         if not entry["passed"]:
-            failedFiles.append(testFile)
-    for testFile in failedFiles:
-        print(f"\n===== {testFile} FAILED =====")
-        for output in perFile[testFile]["failures"]:
+            failed_files.append(test_file)
+    for test_file in failed_files:
+        print(f"\n===== {test_file} FAILED =====")
+        for output in per_file[test_file]["failures"]:
             print(output)
-    wall = time.monotonic() - wallStarted
-    print(f"\n{totalTests} tests in {len(perFile)} files, wall-clock {wall:.1f}s, sum of per-file seconds {totalSeconds:.1f}s, "
-          f"{len(failedFiles)} failed")
-    return 1 if failedFiles else 0
+    wall = time.monotonic() - wall_started
+    print(f"\n{total_tests} tests in {len(per_file)} files, wall-clock {wall:.1f}s, sum of per-file seconds {total_seconds:.1f}s, "
+          f"{len(failed_files)} failed")
+    return 1 if failed_files else 0
 
 
 if __name__ == "__main__":

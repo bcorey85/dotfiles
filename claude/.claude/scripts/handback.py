@@ -10,7 +10,8 @@
                                         comes from the event's tool_name; any other argument does nothing.
   handback.py latest <session id>       print the session's latest dispatch and hand-back rows as JSON
 
-Importers use parse, validate, load, render, record, latest, hand_back_gap and false_clean_reason. The store is one append-only JSON-lines file per
+Importers use parse, validate, load, render, record, latest, hand_back_gap and false_clean_reason. The store is one
+append-only JSON-lines file per
 session under $HANDBACK_STORE_DIR (default ~/.claude/state/handback), keyed by the hook event's session_id, which is
 the value of CLAUDE_CODE_SESSION_ID inside a Bash call."""
 import json
@@ -22,8 +23,8 @@ import textwrap
 import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import script_utils  # noqa: E402
-from script_utils import first_number, one_line, unquote  # noqa: E402
+import script_utils
+from script_utils import first_number, one_line, unquote
 
 STATUSES = ["converged", "deferred", "plan-impact", "critical-blocker", "cap-reached"]
 CLEAN_STATUSES = ("converged", "deferred")
@@ -31,8 +32,21 @@ PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers",
                "ask", "class_closure", "files_touched", "nit", "load_bearing_clean", "perf", "smell", "principle"]
 LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "perf", "files_touched", "smell"]
 SCALAR_KEYS = ("status", "iter", "spec_iter", "load_bearing_clean")
-ITEM_KEYS = ["disposition", "smell", "finding_id", "finding", "file_line", "blocker", "question", "gate", "class", "reason", "item",
-             "phase", "principle"]
+ITEM_KEYS = [
+    "disposition",
+    "smell",
+    "finding_id",
+    "finding",
+    "file_line",
+    "blocker",
+    "question",
+    "gate",
+    "class",
+    "reason",
+    "item",
+    "phase",
+    "principle",
+]
 NONE_VALUE = re.compile(r"^\[\s*\]|^\(?\s*(none|n/a|null)\b", re.I)
 BLOCK_INDICATOR = re.compile(r"^[|>][+-]?$")
 NUMBERED_ITEM = re.compile(r"^\s*\d+[.)]\s")
@@ -45,7 +59,7 @@ FENCE_OPEN = "```"
 BLOCKER_TEXT = re.compile(r"\[blocker\]|\bblocker\s*[:=]\s*(?:yes|true)\b", re.I)
 INLINE_KEY_AT = re.compile(r"(?:^|\n\s*|([,.;|?!)])\s+)(" + "|".join(ITEM_KEYS) + r")\s*:\s*")
 KEPT_DELIMITERS = "?!)"
-ITEM_KEY_START = re.compile(r"(?:%s)\s*:" % "|".join(ITEM_KEYS))
+ITEM_KEY_START = re.compile(r"(?:{})\s*:".format("|".join(ITEM_KEYS)))
 STALE_STORE_SECONDS = 7 * 86400
 FINDING_ID_PATTERN = re.compile(r"[0-9a-f]{16}")
 
@@ -59,38 +73,38 @@ class PacketError(Exception):
 
 # ---------- parsing ----------
 
-def is_block_scalar(valueLines):
-    return BLOCK_INDICATOR.match(valueLines[0].strip()) is not None
+def is_block_scalar(value_lines):
+    return BLOCK_INDICATOR.match(value_lines[0].strip()) is not None
 
 
 def is_item_line(line):
     return line.lstrip().startswith("-") or NUMBERED_ITEM.match(line) is not None
 
 
-def ends_packet_value(key, valueLines, line, nextLine=""):
+def ends_packet_value(key, value_lines, line, next_line=""):
     # A scalar key owns one line. A list key owns its item lines and their indented continuations; the first
     # unindented prose line after them is the loop's closing note, not another item.
     if key in SCALAR_KEYS:
         return True
     unindented = line[:1] not in (" ", "\t")
-    if is_block_scalar(valueLines):
+    if is_block_scalar(value_lines):
         return unindented
-    isNoneList = key in LIST_KEYS and len(valueLines) == 1 and NONE_VALUE.match(valueLines[0].strip()) is not None
-    if isNoneList:
+    is_none_list = key in LIST_KEYS and len(value_lines) == 1 and NONE_VALUE.match(value_lines[0].strip()) is not None
+    if is_none_list:
         return unindented
-    isList = any(is_item_line(valueLine) for valueLine in valueLines[1:])
-    isEmptyListKey = key in LIST_KEYS and valueLines == [""]
-    if isEmptyListKey and is_item_line(nextLine):
+    is_list = any(is_item_line(value_line) for value_line in value_lines[1:])
+    is_empty_list_key = key in LIST_KEYS and value_lines == [""]
+    if is_empty_list_key and is_item_line(next_line):
         return False
-    startsItem = is_item_line(line) or line[:1] in ("[", "{", "]", "}")
-    return (isList or isEmptyListKey) and unindented and not startsItem
+    starts_item = is_item_line(line) or line[:1] in ("[", "{", "]", "}")
+    return (is_list or is_empty_list_key) and unindented and not starts_item
 
 
-def packet_value(valueLines):
-    if is_block_scalar(valueLines):
-        return textwrap.dedent("\n".join(valueLines[1:])).strip()
-    first = valueLines[0].strip()
-    rest = "\n".join(valueLines[1:]).rstrip()
+def packet_value(value_lines):
+    if is_block_scalar(value_lines):
+        return textwrap.dedent("\n".join(value_lines[1:])).strip()
+    first = value_lines[0].strip()
+    rest = "\n".join(value_lines[1:]).rstrip()
     if first:
         return (first + "\n" + rest).strip() if rest.strip() else first
     return rest.strip("\n")
@@ -99,22 +113,22 @@ def packet_value(valueLines):
 def parse(message):
     """The packet's raw fields as text, plus `trailer` (prose outside any field)."""
     lines = [line.rstrip() for line in message.splitlines() if not line.strip().startswith(FENCE_OPEN)]
-    textLines = textwrap.dedent("\n".join(lines)).splitlines()
-    nextLines = [""] * len(textLines)
+    text_lines = textwrap.dedent("\n".join(lines)).splitlines()
+    next_lines = [""] * len(text_lines)
     following = ""
-    for index in range(len(textLines) - 1, -1, -1):
-        nextLines[index] = following
-        following = textLines[index] if textLines[index].strip() else following
+    for index in range(len(text_lines) - 1, -1, -1):
+        next_lines[index] = following
+        following = text_lines[index] if text_lines[index].strip() else following
     fields = {}
     trailer = []
     key = None
-    for index, line in enumerate(textLines):
+    for index, line in enumerate(text_lines):
         match = re.match(r"^([a-z_]+)(?:[ \t]*\([^)]*\))?:[ \t]*(.*)$", line)
-        isPacketKey = match is not None and match.group(1) in PACKET_KEYS
-        if isPacketKey and match.group(1) not in fields:
+        is_packet_key = match is not None and match.group(1) in PACKET_KEYS
+        if is_packet_key and match.group(1) not in fields:
             key = match.group(1)
             fields[key] = [match.group(2)]
-        elif isPacketKey:
+        elif is_packet_key:
             key = None
             trailer.append(line)
         elif key and not line.strip() and is_block_scalar(fields[key]):
@@ -124,7 +138,7 @@ def parse(message):
                 continue
             key = None
             trailer.append("")
-        elif key and ends_packet_value(key, fields[key], line, nextLines[index]):
+        elif key and ends_packet_value(key, fields[key], line, next_lines[index]):
             key = None
             trailer.append(line)
         elif key:
@@ -144,20 +158,20 @@ def parse_flow_mapping(chunk):
 def parse_inline_pairs(body):
     # A key starts a field at the start of the body, after a newline, or after `, ` `. ` `; ` `| ` `? ` `! ` `) `.
     # A key word after a bare space is part of the previous value.
-    maskedBody = script_utils.unquoted_mask(body)
-    matches = list(INLINE_KEY_AT.finditer(maskedBody))
+    masked_body = script_utils.unquoted_mask(body)
+    matches = list(INLINE_KEY_AT.finditer(masked_body))
     if not matches:
         return None
     fields = {}
-    leadText = body[:matches[0].start()].strip().rstrip(".;|,").strip()
-    if leadText:
-        fields["finding"] = unquote(leadText)
+    lead_text = body[:matches[0].start()].strip().rstrip(".;|,").strip()
+    if lead_text:
+        fields["finding"] = unquote(lead_text)
     for position, match in enumerate(matches):
         end = len(body)
         if position + 1 < len(matches):
             following = matches[position + 1]
-            keepsDelimiter = following.group(1) is not None and following.group(1) in KEPT_DELIMITERS
-            end = following.start() + (1 if keepsDelimiter else 0)
+            keeps_delimiter = following.group(1) is not None and following.group(1) in KEPT_DELIMITERS
+            end = following.start() + (1 if keeps_delimiter else 0)
         fields[match.group(2)] = unquote(body[match.end():end].strip().rstrip(".;|").strip())
     return fields
 
@@ -174,14 +188,14 @@ def split_top_level_items(body):
         return [body]
 
     def indent_of(marker):
-        markerLine = marker.group(0).rsplit("\n", 1)[-1]
-        return len(markerLine) - len(markerLine.lstrip())
+        marker_line = marker.group(0).rsplit("\n", 1)[-1]
+        return len(marker_line) - len(marker_line.lstrip())
 
     shallowest = min(indent_of(marker) for marker in markers)
-    topLevel = [marker for marker in markers if indent_of(marker) == shallowest]
+    top_level = [marker for marker in markers if indent_of(marker) == shallowest]
     chunks = []
     position = 0
-    for marker in topLevel:
+    for marker in top_level:
         chunks.append(body[position:marker.start()])
         position = marker.end()
     chunks.append(body[position:])
@@ -192,8 +206,8 @@ def read_list(raw):
     """(lead prose, items) of a list field. Lead prose is text before the first item marker: it is not an item."""
     indented = raw.strip("\n").rstrip()
     raw = raw.strip()
-    hasItems = ITEM_START.search(raw) is not None or "{" in raw
-    if raw == "" or (not hasItems and NONE_VALUE.match(raw)):
+    has_items = ITEM_START.search(raw) is not None or "{" in raw
+    if raw == "" or (not has_items and NONE_VALUE.match(raw)):
         return "", []
     try:
         loaded = json.loads(raw)
@@ -208,23 +222,23 @@ def read_list(raw):
     if len(chunks) > 1:
         lead = chunks[0].strip()
         chunks = chunks[1:]
-    listEntries = []
+    list_entries = []
     for chunk in chunks:
         chunk = chunk.strip()
         if not chunk:
             continue
-        flowFields = parse_flow_mapping(chunk) if chunk.startswith("{") and chunk.endswith("}") else None
-        if flowFields:
-            listEntries.append(flowFields)
+        flow_fields = parse_flow_mapping(chunk) if chunk.startswith("{") and chunk.endswith("}") else None
+        if flow_fields:
+            list_entries.append(flow_fields)
             continue
-        inlineFields = parse_inline_pairs(chunk) if ITEM_KEY_START.match(chunk) else None
-        if inlineFields and len(inlineFields) > 1 and "\n" not in chunk:
-            listEntries.append(inlineFields)
+        inline_fields = parse_inline_pairs(chunk) if ITEM_KEY_START.match(chunk) else None
+        if inline_fields and len(inline_fields) > 1 and "\n" not in chunk:
+            list_entries.append(inline_fields)
             continue
         pairs = dict(re.findall(r"^\s*(\w+):\s*(.+)$", chunk, re.M))
-        listEntries.append({name: unquote(value) for name, value in pairs.items()}
+        list_entries.append({name: unquote(value) for name, value in pairs.items()}
                            if pairs and all(name in ITEM_KEYS for name in pairs) else unquote(chunk))
-    return lead, listEntries
+    return lead, list_entries
 
 
 # ---------- items ----------
@@ -247,9 +261,9 @@ def item_field(item, key, default=""):
 def ask_finding_id(item):
     """The entry's finding_id when it is an id the ledger writer mints (16 lowercase hex chars); otherwise None.
     A placeholder such as "none logged" or "-", or a damaged id, is not an id."""
-    findingId = item_field(item, "finding_id", None)
-    if isinstance(findingId, str) and FINDING_ID_PATTERN.fullmatch(findingId.strip()):
-        return findingId.strip()
+    finding_id = item_field(item, "finding_id", None)
+    if isinstance(finding_id, str) and FINDING_ID_PATTERN.fullmatch(finding_id.strip()):
+        return finding_id.strip()
     return None
 
 
@@ -264,17 +278,17 @@ def entry_locations(item):
     """Every (path, line) that a list entry names."""
     if not isinstance(item, dict):
         return [script_utils.split_location(hit) for hit in script_utils.PATH_LINE.findall(str(item))]
-    findingText = str(item.get("finding") or "")
-    itemText = str(item.get("item") or "")
-    texts = [str(item.get("file_line") or ""), *script_utils.PATH_LINE.findall(findingText),
-             *script_utils.PATH_LINE.findall(itemText)]
+    finding_text = str(item.get("finding") or "")
+    item_summary = str(item.get("item") or "")
+    texts = [str(item.get("file_line") or ""), *script_utils.PATH_LINE.findall(finding_text),
+             *script_utils.PATH_LINE.findall(item_summary)]
     return [script_utils.split_location(text) for text in texts if text.strip()]
 
 
-def entry_from_text(text, textKey):
+def entry_from_text(text, text_key):
     """A plain-text list entry (`- text | path:line | blocker: no`) as the mapping the loop's flow style gives."""
     found = script_utils.PATH_LINE.search(text)
-    entry = {textKey: text, "blocker": "yes" if BLOCKER_TEXT.search(text) else "no", "from_text": True}
+    entry = {text_key: text, "blocker": "yes" if BLOCKER_TEXT.search(text) else "no", "from_text": True}
     if found:
         entry["file_line"] = found.group(1)
     return entry
@@ -290,18 +304,18 @@ def first_token(text):
 def validate(raw):
     """Typed packet from the raw fields. Raises PacketError listing every problem; never guesses a missing field."""
     problems = []
-    statusWords = raw.get("status", "").strip().strip("`'\"").lower().split()
-    status = statusWords[0] if statusWords else ""
+    status_words = raw.get("status", "").strip().strip("`'\"").lower().split()
+    status = status_words[0] if status_words else ""
     if status not in STATUSES:
         problems.append(f"status is {raw.get('status', 'missing')!r}; want one of {', '.join(STATUSES)}")
-    iterRound = first_number(raw.get("iter"))
-    if iterRound is None:
+    iter_round = first_number(raw.get("iter"))
+    if iter_round is None:
         problems.append("iter is missing or has no number")
-    specIter = first_number(raw.get("spec_iter"))
-    if raw.get("spec_iter", "").strip() and specIter is None:
+    spec_iter = first_number(raw.get("spec_iter"))
+    if raw.get("spec_iter", "").strip() and spec_iter is None:
         problems.append("spec_iter has no number")
 
-    packet = {"status": status, "iter": iterRound, "spec_iter": specIter,
+    packet = {"status": status, "iter": iter_round, "spec_iter": spec_iter,
               "class_closure": raw.get("class_closure", "").strip(),
               "load_bearing_clean": raw.get("load_bearing_clean", "").strip(),
               "plan_impact": raw.get("plan_impact", "").strip()}
@@ -311,8 +325,8 @@ def validate(raw):
         if lead:
             trailer.append(lead)
     packet["trailer"] = "\n".join(part for part in trailer if part).strip()
-    for key, textKey in (("fixed", "finding"), ("findings_remaining", "finding"), ("ask", "question")):
-        packet[key] = [entry_from_text(item, textKey) if isinstance(item, str) else item for item in packet[key]]
+    for key, text_key in (("fixed", "finding"), ("findings_remaining", "finding"), ("ask", "question")):
+        packet[key] = [entry_from_text(item, text_key) if isinstance(item, str) else item for item in packet[key]]
     for item in packet["ask"]:
         if not isinstance(item, dict):
             continue
@@ -321,11 +335,11 @@ def validate(raw):
         elif item.get("finding") and not item.get("question"):
             item["question"] = item["finding"]
         item["gate"] = first_token(item.get("gate")) or DEFAULT_GATE
-        askClass = str(item.get("class") or "").strip()
-        if askClass not in CLASSES:
+        ask_class = str(item.get("class") or "").strip()
+        if ask_class not in CLASSES:
             item["class"] = "other"
-            if askClass:
-                item["class_raw"] = askClass
+            if ask_class:
+                item["class_raw"] = ask_class
     for item in packet["fixed"]:
         if isinstance(item, dict) and not item.get("finding") and item.get("smell"):
             item["finding"] = item["smell"]
@@ -386,13 +400,13 @@ def render(packet, skill, sections=()):
     closure = packet["class_closure"]
     if skill == "review" or closure:
         lines.append(f"Class closure: {closure or 'MISSING'}")
-        owesReceipt = bool(fixed) or not closure
-        if skill == "review" and packet["status"] == "converged" and owesReceipt and receipt_is_missing(closure):
+        owes_receipt = bool(fixed) or not closure
+        if skill == "review" and packet["status"] == "converged" and owes_receipt and receipt_is_missing(closure):
             lines.append("The class-closure receipt is missing or names no repaired finding. Do not present this "
                          "run as clean.")
-    loadBearing = packet["load_bearing_clean"]
-    if loadBearing and loadBearing.lower() not in ("none", "omitted"):
-        lines.append("Load-bearing: " + loadBearing)
+    load_bearing = packet["load_bearing_clean"]
+    if load_bearing and load_bearing.lower() not in ("none", "omitted"):
+        lines.append("Load-bearing: " + load_bearing)
 
     skipped = packet["skipped_fp"]
     if skipped:
@@ -406,14 +420,16 @@ def render(packet, skill, sections=()):
         lines.append("### Perf findings")
         for item in packet["perf"]:
             principle = item_field(item, "principle")
-            lines.append(f"- {item_text(item, 'finding', 'file_line')}" + (f"\n  Principle: {principle}" if principle else ""))
+            lines.append(
+                f"- {item_text(item, 'finding', 'file_line')}" + (f"\n  Principle: {principle}" if principle else "")
+            )
     if packet["findings_remaining"]:
         lines.append("### Deferred to branch exit" if packet["status"] == "deferred" else "### Findings remaining")
         lines += [f"- [{item.get('disposition', 'open')}] {item_text(item, 'finding', 'file_line')}"
                   if isinstance(item, dict) else f"- {item}" for item in packet["findings_remaining"]]
-    for heading, sectionLines in sections:
+    for heading, section_lines in sections:
         lines.append(f"### {heading}")
-        lines += sectionLines
+        lines += section_lines
     if packet["trailer"]:
         lines.append(packet["trailer"])
     return "\n".join(lines)
@@ -426,8 +442,8 @@ def store_dir():
     return pathlib.Path(override) if override else pathlib.Path.home() / ".claude" / "state" / "handback"
 
 
-def session_file(sessionId):
-    safe = re.sub(r"[^\w.-]", "_", str(sessionId))
+def session_file(session_id):
+    safe = re.sub(r"[^\w.-]", "_", str(session_id))
     if not safe.strip("._"):
         raise ValueError("session id is empty")
     return store_dir() / (safe + ".jsonl")
@@ -446,28 +462,28 @@ def prune_stale():
             pass
 
 
-def record(sessionId, kind, **fields):
+def record(session_id, kind, **fields):
     """Append one row to the session's own file. Other sessions' files are never touched."""
-    row = {"kind": kind, "ts": time.time(), "session_id": sessionId, **fields}
+    row = {"kind": kind, "ts": time.time(), "session_id": session_id, **fields}
     prune_stale()
-    script_utils.append_jsonl(session_file(sessionId), row)
+    script_utils.append_jsonl(session_file(session_id), row)
     return row
 
 
-def latest(sessionId):
+def latest(session_id):
     """{"dispatch": last review-loop dispatch row or None, "handback": last hand-back row or None, "unanswered": the
     number of dispatches after the last hand-back (all of them when there is none), "pending": unanswered > 0}. A
     hand-back clears every dispatch before it, so a dispatch that another hook denied blocks nothing once a later
     dispatch hands back. A row holds kind, ts, session_id; a hand-back row also agent_id, status, problems, message.
     Rows are ordered by append, not by clock."""
     standing = {"dispatch": None, "handback": None, "unanswered": 0, "pending": False}
-    if not sessionId:
+    if not session_id:
         return standing
     try:
-        storedRows = script_utils.read_jsonl(session_file(sessionId))
+        stored_rows = script_utils.read_jsonl(session_file(session_id))
     except ValueError:
         return standing
-    for row in storedRows:
+    for row in stored_rows:
         if row.get("kind") == "dispatch":
             standing["dispatch"] = row
             standing["unanswered"] += 1
@@ -496,11 +512,11 @@ def hand_back_gap(seen):
     return None
 
 
-def false_clean_reason(sessionId):
+def false_clean_reason(session_id):
     """Why `review-gate-mark clean` is refused for the session, or None when its latest review-loop hand-back is
     current and converged or deferred. Takes the hook event's session_id, the value of CLAUDE_CODE_SESSION_ID in a Bash
     call. An empty session id is refused."""
-    seen = latest(sessionId)
+    seen = latest(session_id)
     gap = hand_back_gap(seen)
     if seen["handback"] is None:
         return "no review-loop hand-back is stored for this session"
@@ -510,13 +526,13 @@ def false_clean_reason(sessionId):
         return "the review-loop was dispatched again and has not handed back"
     status = seen["handback"].get("status")
     if status not in CLEAN_STATUSES:
-        return "the latest review-loop hand-back is %s" % status
+        return f"the latest review-loop hand-back is {status}"
     return None
 
 
-def was_rejected(sessionId, agentId):
-    storedRows = script_utils.read_jsonl(session_file(sessionId))
-    return any(row.get("kind") == "rejected" and row.get("agent_id") == agentId for row in storedRows)
+def was_rejected(session_id, agent_id):
+    stored_rows = script_utils.read_jsonl(session_file(session_id))
+    return any(row.get("kind") == "rejected" and row.get("agent_id") == agent_id for row in stored_rows)
 
 
 # ---------- hook ----------
@@ -529,28 +545,28 @@ def deny_line(reason):
 def handle_hook(event, kind=None):
     """Record a review-loop dispatch or hand-back. Returns the deny reason for a bad packet seen the first time from
     its agent, else None."""
-    sessionId = event.get("session_id")
-    if not sessionId:
+    session_id = event.get("session_id")
+    if not session_id:
         return None
-    toolInput = event.get("tool_input") or {}
+    tool_input = event.get("tool_input") or {}
     kind = kind or {"Agent": "dispatch", "SubagentHandback": "handback"}.get(event.get("tool_name"))
     if kind == "dispatch":
-        if toolInput.get("subagent_type") == REVIEW_LOOP:
-            record(sessionId, "dispatch")
+        if tool_input.get("subagent_type") == REVIEW_LOOP:
+            record(session_id, "dispatch")
         return None
     if kind != "handback" or event.get("agent_type") != REVIEW_LOOP:
         return None
-    message = str(toolInput.get("message", ""))
-    agentId = event.get("agent_id") or "unknown"
+    message = str(tool_input.get("message", ""))
+    agent_id = event.get("agent_id") or "unknown"
     try:
         status, problems = load(message)["status"], []
     except PacketError as error:
         status, problems = "invalid", error.problems
-    if problems and not was_rejected(sessionId, agentId):
-        record(sessionId, "rejected", agent_id=agentId, problems=problems)
+    if problems and not was_rejected(session_id, agent_id):
+        record(session_id, "rejected", agent_id=agent_id, problems=problems)
         return ("The review-loop packet does not parse: " + "; ".join(problems) +
                 ". Fix the packet to the schema in your instructions and hand back again.")
-    record(sessionId, "handback", agent_id=agentId, status=status, problems=problems, message=message)
+    record(session_id, "handback", agent_id=agent_id, status=status, problems=problems, message=message)
     return None
 
 

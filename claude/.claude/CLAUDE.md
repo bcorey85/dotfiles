@@ -10,6 +10,7 @@ The git index is the user's: files already staged are ones the user staged after
 
 Coders run only the tests for the files they changed. The full suite runs once, at the end of review.
 
+- The user never waits on tests or lint. Before you hand the user an install command, run the full suite and lint yourself on the files it installs, and do not say done until they pass. The install command only writes files: it never runs tests or lint.
 - Any failing approach: max 3 attempts, then stop and ask.
 
 ## Ticket Acceptance Criteria

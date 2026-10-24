@@ -1,4 +1,4 @@
-"""Checks for review-commit-gate.py: a coder dispatch obligates /review before a commit."""
+"""Checks for review_commit_gate.py: a coder dispatch obligates /review before a commit."""
 import importlib.util
 import json
 import os
@@ -10,9 +10,11 @@ import tempfile
 import time
 import unittest
 
-SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts")
-INSTALLED_DIR = pathlib.Path.home() / ".claude" / "scripts"
-STAGED_FILES = ("review-commit-gate.py", "handback.py", "script_utils.py", "hook_input.py", "shell_command.py")
+import toolkit_paths
+
+SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR)
+INSTALLED_DIR = toolkit_paths.SCRIPTS_DIR
+STAGED_FILES = ("review_commit_gate.py", "handback.py", "script_utils.py", "hook_input.py", "shell_command.py")
 COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no converged /review. Run /review on the "
                  "coder work and commit after it converges. If the commit ships only Markdown files under the "
                  "repo's top-level docs/ folder, run it as a plain `git commit` (with `git add` of single named "
@@ -34,7 +36,7 @@ class GateCase(unittest.TestCase):
             source = SCRIPTS_DIR / name
             source = source if source.exists() else INSTALLED_DIR / name
             shutil.copy(str(source), str(self.scripts / name))
-        self.script = self.scripts / "review-commit-gate.py"
+        self.script = self.scripts / "review_commit_gate.py"
 
     def seed_handback(self, status=None, session="s1", dispatches=1, handed_back=True):
         """Rows as handback.py's hook stores them: dispatches first, then one hand-back."""
@@ -80,7 +82,7 @@ class GateCase(unittest.TestCase):
             "hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": COMMIT_DENIED}})
 
     def assert_internal_error_asks(self, finished, exit_code, stderr=""):
-        reason = "[review-commit-gate] internal error (exit %d). Allow to run the command anyway." % exit_code
+        reason = f"[review-commit-gate] internal error (exit {exit_code}). Allow to run the command anyway."
         self.assertEqual(finished.returncode, 0)
         self.assertEqual(finished.stderr, stderr)
         self.assertEqual(json.loads(finished.stdout), {"hookSpecificOutput": {
@@ -261,7 +263,7 @@ class ReviewCommitGateTest(GateCase):
         (self.home / ".claude").write_text("a file, not a directory")
         self.assert_internal_error_asks(
             self.bash("git commit -m x"), 1,
-            stderr="mkdir: cannot create directory '%s': Not a directory\n" % (self.home / ".claude"))
+            stderr=f"mkdir: cannot create directory '{(self.home / ".claude")}': Not a directory\n")
         finished = self.dispatch()
         self.assertEqual((finished.returncode, finished.stdout), (1, ""))
 
@@ -329,28 +331,26 @@ class NotesOnlyCommitTest(GateCase):
         self.assertEqual(self.state(), "dirty\n")
 
     def test_add_then_commit_of_a_notes_file_is_not_denied_with_an_empty_or_a_docs_index(self):
-        command = 'git add %s && git commit -q -m "notes"' % self.NOTES
+        command = f'git add {self.NOTES} && git commit -q -m "notes"'
         self.assert_silent(self.commit_in(command))
         self.stage("docs/other.md")
         self.assert_silent(self.commit_in(command))
 
     def test_code_step_commit_form_with_a_bare_double_dash_passes_for_notes_and_is_denied_for_code(self):
-        self.assert_silent(self.commit_in('git add -- %s && git commit -m "notes" -- %s' % (self.NOTES, self.NOTES)))
+        self.assert_silent(self.commit_in(f'git add -- {self.NOTES} && git commit -m "notes" -- {self.NOTES}'))
         self.assert_commit_denied(self.commit_in('git add -- src/a.py && git commit -m "notes" -- src/a.py'))
-        self.assert_commit_denied(self.commit_in('git add -- %s && git commit -m "notes" -- src/a.py' % self.NOTES))
+        self.assert_commit_denied(self.commit_in(f'git add -- {self.NOTES} && git commit -m "notes" -- src/a.py'))
 
     def test_a_heredoc_message_and_other_read_only_git_steps_pass(self):
-        message = "git add %s && git commit -m \"$(cat <<'EOF'\nnotes\n\nmore\nEOF\n)\"" % self.NOTES
+        message = f"git add {self.NOTES} && git commit -m \"$(cat <<'EOF'\nnotes\n\nmore\nEOF\n)\""
         self.assert_silent(self.commit_in(message))
-        self.assert_silent(self.commit_in("git status\ngit add %s\ngit commit -m x 2>&1 && echo done" % self.NOTES))
+        self.assert_silent(self.commit_in(f"git status\ngit add {self.NOTES}\ngit commit -m x 2>&1 && echo done"))
 
     def test_a_notes_commit_followed_by_rev_parse_of_the_new_commit_passes(self):
         self.assert_silent(self.commit_in(self.SPEC_CHAIN))
-        self.assert_silent(self.commit_in("git rev-parse --show-toplevel && git add %s && git commit -m x"
-                                          % self.NOTES))
-        self.assert_silent(self.commit_in("git add %s && git commit -m x && git rev-parse HEAD 2>&1" % self.NOTES))
-        self.assert_silent(self.commit_in("git add %s && git commit -m x && git rev-parse HEAD >/dev/null"
-                                          % self.NOTES))
+        self.assert_silent(self.commit_in(f"git rev-parse --show-toplevel && git add {self.NOTES} && git commit -m x"))
+        self.assert_silent(self.commit_in(f"git add {self.NOTES} && git commit -m x && git rev-parse HEAD 2>&1"))
+        self.assert_silent(self.commit_in(f"git add {self.NOTES} && git commit -m x && git rev-parse HEAD >/dev/null"))
 
     def test_the_same_chain_with_a_code_file_is_denied(self):
         self.assert_all_denied([
@@ -421,7 +421,7 @@ class NotesOnlyCommitTest(GateCase):
 
     def test_git_add_with_any_option_is_denied(self):
         self.stage(self.NOTES)
-        self.assert_all_denied(["git add %s %s && git commit -m x" % (option, self.NOTES)
+        self.assert_all_denied([f"git add {option} {self.NOTES} && git commit -m x"
                                 for option in ("-A", "-u", "--all", "-f", "-p", "-N", "--force", "--update", "-n")])
         self.assert_all_denied(["git add && git commit -m x", "git add -- && git commit -m x"])
 
@@ -432,7 +432,7 @@ class NotesOnlyCommitTest(GateCase):
                                 "git -c core.x=1 add docs/x.md && git commit -m x",
                                 "git --git-dir=.git add docs/x.md && git commit -m x",
                                 "GIT_INDEX_FILE=i git add docs/x.md && git commit -m x",
-                                "git add %s && cd src && git commit -m x" % self.NOTES,
+                                f"git add {self.NOTES} && cd src && git commit -m x",
                                 "git commit -m x && git commit -m y", "git commit -m x; git commit -m y",
                                 "git commit -m x\ngit commit -m y", "git status && echo git commit",
                                 "git commit-tree abc", "time git commit -m x",
@@ -440,7 +440,7 @@ class NotesOnlyCommitTest(GateCase):
 
     def test_other_git_steps_that_can_change_the_index_are_denied(self):
         self.stage(self.NOTES)
-        self.assert_all_denied(["git rm -q --cached %s && git commit -m x" % self.NOTES,
+        self.assert_all_denied([f"git rm -q --cached {self.NOTES} && git commit -m x",
                                 "git mv a b && git commit -m x", "git reset -q && git commit -m x",
                                 "git checkout -- . && git commit -m x", "git apply --index p.diff && git commit -m x",
                                 "git stash && git commit -m x"])
@@ -583,7 +583,7 @@ class NotesOnlyCommitTest(GateCase):
 
     def test_a_later_git_word_is_tried_when_an_earlier_one_is_an_argument(self):
         spec = importlib.util.spec_from_file_location("review_commit_gate_under_test",
-                                                      str(SCRIPTS_DIR / "review-commit-gate.py"))
+                                                      str(SCRIPTS_DIR / "review_commit_gate.py"))
         gate = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(gate)
         self.assertTrue(gate.runs_git_commit(["env", "-u", "git", "git", "-C", "x", "commit"]))

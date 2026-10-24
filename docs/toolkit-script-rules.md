@@ -5,6 +5,8 @@ These rules apply to every script under `claude/.claude/scripts/` and `claude/.c
 ## Names
 
 - Name every Python file in snake_case, as PEP 8 says: `review_fix.py`, `script_utils.py`. Python cannot import a name with a hyphen.
+- Name functions, methods, variables, parameters and attributes in snake_case, classes in CapWords and constants in UPPER_CASE, as PEP 8 says. Keep the names of JSON keys, log fields and state-file keys as they are: files on disk already hold them.
+- `ruff check` with the repo `ruff.toml` must pass before hand-over. Ignore a rule only in `ruff.toml`, with a comment that says why its fix makes the code worse.
 
 ## Read the real inputs first
 

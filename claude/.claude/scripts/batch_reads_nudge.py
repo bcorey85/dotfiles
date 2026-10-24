@@ -87,9 +87,9 @@ def responses(records, subagent=False):
 def run_length(turns, current):
     """Single-read responses in a row, ending at the response that holds the running call. The transcript can lag,
     so a call it does not hold yet is taken as a new response of its own."""
-    name, tool_input, use_id = current
+    _name, _tool_input, use_id = current
     end = next((i for i in range(len(turns) - 1, -1, -1) if turns[i] and any(c[2] == use_id for c in turns[i])), None)
-    turns = turns[:end + 1] if end is not None else turns + [[current]]
+    turns = turns[:end + 1] if end is not None else [*turns, [current]]
     n = 0
     for t in reversed(turns):               # a human prompt is None, and a response with no call is empty
         if not t or len(t) != 1 or not is_read(t[0][0], t[0][1]):
@@ -118,7 +118,9 @@ def main():
     try:
         text = decide(json.loads(sys.stdin.read()))
         if text:
-            sys.stdout.write(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}}))
+            sys.stdout.write(
+                json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}})
+            )
     except Exception:
         pass
     sys.exit(0)

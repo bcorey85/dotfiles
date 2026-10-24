@@ -9,14 +9,15 @@ allowed-tools: [Agent, Bash, Read, Skill]
 
 # Code
 
-You route nothing. `code-step.py` decides, and you run what it prints. Run every command from the repo root.
+You route nothing. `code_step.py` decides, and you run what it prints. Run every command from the repo root.
 
-1. If the task text below starts with `asks-done`, `decide`, `verify`, `review-again` or `after-plan-edit`, run `python3 ~/.claude/scripts/code-step.py <task text>`. If it starts with `tick`, run `python3 ~/.claude/scripts/code-step.py tick <phase>`: the user says a phase is done. If the task text is empty or is `continue`, run `python3 ~/.claude/scripts/code-step.py start` with no argument: it resumes the saved plan. Otherwise run `python3 ~/.claude/scripts/code-step.py start <task text>`. For text with no plan file, the script takes it as the task. Run each `code-step.py` verb as its own Bash call, with no pipe, `head`, `sed` or second command: cut output loses the prompt.
+1. If the task text below starts with `asks-done`, `decide`, `verify`, `review-again` or `skill-done`, run `python3 ~/.claude/scripts/code_step.py <task text>`. If it starts with `tick`, run `python3 ~/.claude/scripts/code_step.py tick <phase>`: the user says a phase is done. If the task text is empty, or is `continue`, `resume` or `after-plan-edit`, run `python3 ~/.claude/scripts/code_step.py resume`: it goes on with the open run, or starts the saved plan's next phase. Otherwise run `python3 ~/.claude/scripts/code_step.py start <task text>`. For text with no plan file, the script takes it as the task. Run each `code_step.py` verb as its own Bash call, with no pipe, `head`, `sed` or second command: cut output loses the prompt.
 2. Read the `ACTION:` line of every output and do exactly that:
    - `dispatch`: make one `Agent` call with the printed AGENT and MODEL and the text between the PROMPT markers, verbatim. The agent runs in the background: do not wait for its result and do not write text. In the next turn run the verb named in NEXT as a Bash call. That verb waits for the agent's report.
    - `wait`: no report had arrived yet. Run the command it prints, exactly as printed.
-   - `invoke-skill`: invoke that skill, then run `code-step.py skill-done pass` or `skill-done fail`.
-   - `auto-advance`: run the commit command the output names, then `code-step.py start`.
+   - `rerun`: the script refused the command and changed nothing. Run the COMMAND it prints once, exactly as printed. If that is refused too, hand back.
+   - `invoke-skill`: invoke that skill. Run `code_step.py skill-done pass` only when the skill reports no open finding. Otherwise run `skill-done fail`.
+   - `auto-advance`: run the commit command the output names, then the next-phase command it names.
    - `stop-block-B` / `stop-block-C`: invoke Skill `stage`, then hand back.
    - `ask-user`: hand back.
    - `stop` / `judgment`: hand back.

@@ -15,9 +15,9 @@ import unittest.mock
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = pathlib.Path(os.environ.get("SCRIPT_UTILS_SCRIPT")
                       or REPO_ROOT / "claude" / ".claude" / "scripts" / "script_utils.py")
-moduleSpec = importlib.util.spec_from_file_location("script_utils", SCRIPT)
-script_utils = importlib.util.module_from_spec(moduleSpec)
-moduleSpec.loader.exec_module(script_utils)
+module_spec = importlib.util.spec_from_file_location("script_utils", SCRIPT)
+script_utils = importlib.util.module_from_spec(module_spec)
+module_spec.loader.exec_module(script_utils)
 
 
 class FencedLineIndexesTest(unittest.TestCase):
@@ -161,8 +161,8 @@ class RunRetryingTest(unittest.TestCase):
     def runs(self):
         return len(list(self.folder.glob("run-*")))
 
-    def run_retrying(self, argv, attempts=4, timeoutSeconds=10):
-        return script_utils.run_retrying(argv, (75,), attempts, 2, timeoutSeconds, sleep=self.sleeps.append)
+    def run_retrying(self, argv, attempts=4, timeout_seconds=10):
+        return script_utils.run_retrying(argv, (75,), attempts, 2, timeout_seconds, sleep=self.sleeps.append)
 
     def test_a_clean_run_is_not_repeated(self):
         done = self.run_retrying(self.plant(["0"]))
@@ -182,13 +182,13 @@ class RunRetryingTest(unittest.TestCase):
         self.assertEqual((1, 1, []), (done.returncode, self.runs(), self.sleeps))
 
     def test_a_timed_out_run_is_run_again(self):
-        done = self.run_retrying(self.plant(["hang", "0"]), timeoutSeconds=1)
+        done = self.run_retrying(self.plant(["hang", "0"]), timeout_seconds=1)
         self.assertEqual((0, 2, [2]), (done.returncode, self.runs(), self.sleeps))
 
     def test_a_timeout_on_the_last_attempt_raises(self):
         argv = self.plant(["hang"])
         with self.assertRaises(subprocess.TimeoutExpired):
-            self.run_retrying(argv, attempts=2, timeoutSeconds=1)
+            self.run_retrying(argv, attempts=2, timeout_seconds=1)
         self.assertEqual((2, [2]), (self.runs(), self.sleeps))
 
 
@@ -222,6 +222,20 @@ class HasWhitespaceTest(unittest.TestCase):
             self.assertFalse(script_utils.has_whitespace(text), repr(text))
 
 
+class WordsOfArgumentsTest(unittest.TestCase):
+    def test_one_argument_with_spaces_is_split_at_them(self):
+        self.assertEqual(["fix", "the", "typo"], script_utils.words_of_arguments(["fix  the typo"]))
+
+    def test_several_arguments_are_kept_as_given_even_when_one_holds_spaces(self):
+        self.assertEqual(["fix", "the typo"], script_utils.words_of_arguments(["fix", "the typo"]))
+
+    def test_no_arguments_give_no_words(self):
+        self.assertEqual([], script_utils.words_of_arguments([]))
+
+    def test_a_tuple_of_arguments_gives_a_list(self):
+        self.assertEqual(["a", "b"], script_utils.words_of_arguments(("a", "b")))
+
+
 class PreToolUseDenyTest(unittest.TestCase):
     def test_prints_one_json_line_that_denies_the_call_with_the_reason(self):
         printed = io.StringIO()
@@ -229,11 +243,11 @@ class PreToolUseDenyTest(unittest.TestCase):
         with contextlib.redirect_stdout(printed):
             script_utils.pre_tool_use_deny("Read the file first.")
 
-        printedLines = printed.getvalue().splitlines()
+        printed_lines = printed.getvalue().splitlines()
         denial = json.loads(printed.getvalue())
         self.assertEqual({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                                  "permissionDecisionReason": "Read the file first."}}, denial)
-        self.assertEqual(1, len(printedLines))
+        self.assertEqual(1, len(printed_lines))
 
 
 class SortableUniqueIdTest(unittest.TestCase):
@@ -245,21 +259,21 @@ class SortableUniqueIdTest(unittest.TestCase):
 
 class LastChangeNsTest(unittest.TestCase):
     def test_a_renamed_file_with_an_old_mtime_reports_its_newer_ctime(self):
-        tempDir = tempfile.TemporaryDirectory()
-        self.addCleanup(tempDir.cleanup)
-        source = pathlib.Path(tempDir.name) / "source.md"
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        source = pathlib.Path(temp_dir.name) / "source.md"
         source.write_text("x\n")
         os.utime(source, (50, 50))
-        moved = pathlib.Path(tempDir.name) / "moved.md"
+        moved = pathlib.Path(temp_dir.name) / "moved.md"
         source.rename(moved)
 
         self.assertEqual(50 * 10**9, moved.stat().st_mtime_ns)
         self.assertGreater(script_utils.last_change_ns(moved), 50 * 10**9)
 
     def test_a_file_whose_mtime_was_set_into_the_future_reports_the_mtime(self):
-        tempDir = tempfile.TemporaryDirectory()
-        self.addCleanup(tempDir.cleanup)
-        path = pathlib.Path(tempDir.name) / "future.md"
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        path = pathlib.Path(temp_dir.name) / "future.md"
         path.write_text("x\n")
         future = time.time() + 1000
         os.utime(path, (future, future))
@@ -349,7 +363,7 @@ class StripFlagValuesTest(unittest.TestCase):
     def test_every_listed_flag_is_removed(self):
         for flag in self.FLAGS:
             with self.subTest(flag=flag):
-                self.assertEqual("run", self.stripped("run %s name" % flag))
+                self.assertEqual("run", self.stripped(f"run {flag} name"))
 
     def test_the_text_after_the_value_stays(self):
         self.assertEqual("pytest tests/a.py", self.stripped("pytest -p xdist tests/a.py"))
@@ -371,9 +385,9 @@ class StripFlagValuesTest(unittest.TestCase):
 
 class NearestFileUpwardTest(unittest.TestCase):
     def setUp(self):
-        tempDir = tempfile.TemporaryDirectory()
-        self.addCleanup(tempDir.cleanup)
-        self.root = pathlib.Path(tempDir.name) / "repo"
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.root = pathlib.Path(temp_dir.name) / "repo"
         (self.root / "pkg/src/deep").mkdir(parents=True)
         (self.root / "pkg/package.json").write_text("{}")
 
@@ -458,9 +472,9 @@ class IsExecutableFileInsideTest(unittest.TestCase):
 
 class InsideGitWorkTreeTest(unittest.TestCase):
     def folder(self):
-        tempDir = tempfile.TemporaryDirectory()
-        self.addCleanup(tempDir.cleanup)
-        return pathlib.Path(tempDir.name)
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        return pathlib.Path(temp_dir.name)
 
     def test_a_file_in_a_repo_is_inside_and_a_file_outside_any_repo_is_not(self):
         repo = self.folder()
@@ -584,7 +598,9 @@ class LeadingEnvAssignmentsTest(unittest.TestCase):
                          script_utils.leading_env_assignments(lines))
 
     def test_a_span_of_only_assignments_is_prose_not_a_setting(self):
-        self.assertEqual([], script_utils.leading_env_assignments(["src=index pass=done", "src=index", "src=index ", "A=1  "]))
+        self.assertEqual(
+            [], script_utils.leading_env_assignments(["src=index pass=done", "src=index", "src=index ", "A=1  "])
+        )
 
     def test_a_span_of_assignments_then_a_word_gives_the_assignments(self):
         self.assertEqual(["src=index"], script_utils.leading_env_assignments(["src=index pass"]))
@@ -620,13 +636,63 @@ class FirstCommandWordTest(unittest.TestCase):
     def test_the_command_after_the_assignments_is_given_back(self):
         self.assertEqual("npm test", script_utils.without_leading_env_assignments(" CI=1 npm test"))
         self.assertEqual("npm test", script_utils.without_leading_env_assignments("npm test"))
-        self.assertEqual("cargo test", script_utils.without_leading_env_assignments("PATH=/x:$PATH A=\"$B\" cargo test"))
+        self.assertEqual("cargo test", script_utils.without_leading_env_assignments('PATH=/x:$PATH A="$B" cargo test'))
 
 
 class BacktickedSpansTest(unittest.TestCase):
     def test_backticked_spans_are_the_text_between_backticks_in_order(self):
         self.assertEqual(["a b", "c"], script_utils.backticked_spans("x `a b` y `c` z"))
         self.assertEqual([], script_utils.backticked_spans("no code here"))
+
+
+class WriteTextAtomicallyTest(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.folder = pathlib.Path(directory.name)
+
+    def test_the_text_replaces_the_old_file_and_no_temp_file_stays(self):
+        target = self.folder / "state.json"
+        target.write_text("old")
+
+        script_utils.write_text_atomically(target, "new")
+
+        self.assertEqual("new", target.read_text())
+        self.assertEqual(["state.json"], sorted(path.name for path in self.folder.iterdir()))
+
+    def test_a_new_file_gets_the_mode_that_write_text_gives_under_the_umask(self):
+        for umask, expected_mode in ((0o022, 0o644), (0o077, 0o600), (0o002, 0o664)):
+            with self.subTest(umask=oct(umask)):
+                target = self.folder / f"state-{umask:o}.json"
+                previous_umask = os.umask(umask)
+                try:
+                    script_utils.write_text_atomically(target, "new")
+                finally:
+                    os.umask(previous_umask)
+
+                self.assertEqual(expected_mode, target.stat().st_mode & 0o777)
+
+    def test_an_existing_file_keeps_its_mode(self):
+        for mode in (0o600, 0o664, 0o755):
+            with self.subTest(mode=oct(mode)):
+                target = self.folder / f"state-{mode:o}.json"
+                target.write_text("old")
+                target.chmod(mode)
+
+                script_utils.write_text_atomically(target, "new")
+
+                self.assertEqual("new", target.read_text())
+                self.assertEqual(mode, target.stat().st_mode & 0o777)
+
+    def test_a_failed_replace_keeps_the_old_file_and_removes_the_temp_file(self):
+        target = self.folder / "state.json"
+        target.write_text("old")
+
+        with unittest.mock.patch("os.replace", side_effect=OSError("disk full")), self.assertRaises(OSError):
+            script_utils.write_text_atomically(target, "new")
+
+        self.assertEqual("old", target.read_text())
+        self.assertEqual(["state.json"], sorted(path.name for path in self.folder.iterdir()))
 
 
 if __name__ == "__main__":

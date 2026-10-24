@@ -1,11 +1,11 @@
 """Hand-back gate for coder subagents. Run set and clear from inside the repo.
 
-  coder-gate.py set [--env NAME=value]... <command>...
+  coder_gate.py set [--env NAME=value]... <command>...
                                   store the check commands the gate runs, each one shell command from the repo root,
                                   and the variables each one runs with
-  coder-gate.py clear             print each coder's last gate result, then delete the gate
-  coder-gate.py hook              PreToolUse hook on SubagentHandback
-  coder-gate.py bash-hook         PreToolUse hook on Bash: refuses a coder's whole-package check
+  coder_gate.py clear             print each coder's last gate result, then delete the gate
+  coder_gate.py hook              PreToolUse hook on SubagentHandback
+  coder_gate.py bash-hook         PreToolUse hook on Bash: refuses a coder's whole-package check
 
 A command may hold {files}, or {files:.ts,.tsx} to keep only those suffixes. At every hand-back the gate fills it
 with the files the coder changed: tracked changes against HEAD plus untracked files, relative to the directory of a
@@ -28,6 +28,8 @@ import shlex
 import subprocess
 import sys
 import time
+
+import script_utils
 
 try:
     from telemetry_enabled import telemetry_enabled
@@ -76,10 +78,10 @@ def git_output(cwd, *args):
 
 
 def gate_path(cwd):
-    gitPath = git_output(cwd, "rev-parse", "--path-format=absolute", "--git-path", "coder-gate.json")
-    if gitPath is None:
+    git_path = git_output(cwd, "rev-parse", "--path-format=absolute", "--git-path", "coder-gate.json")
+    if git_path is None:
         return None
-    return pathlib.Path(gitPath)
+    return pathlib.Path(git_path)
 
 
 def simple_commands(command):
@@ -87,7 +89,7 @@ def simple_commands(command):
     lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     words = []
-    skipRedirectTarget = False
+    skip_redirect_target = False
     for token in lexer:
         if token in SHELL_OPERATORS:
             yield words
@@ -96,10 +98,10 @@ def simple_commands(command):
         if set(token) <= REDIRECT_CHARS:
             if words and words[-1].isdigit():
                 words.pop()
-            skipRedirectTarget = True
+            skip_redirect_target = True
             continue
-        if skipRedirectTarget:
-            skipRedirectTarget = False
+        if skip_redirect_target:
+            skip_redirect_target = False
             continue
         words.append(token)
     yield words
@@ -108,9 +110,9 @@ def simple_commands(command):
 def matches_prefix(words, prefix):
     if len(words) < len(prefix):
         return False
-    for word, expected in zip(words, prefix):
-        scriptVariant = expected in SCRIPT_VARIANT_WORDS and word.startswith(expected + ":")
-        if word != expected and not scriptVariant:
+    for word, expected in zip(words, prefix, strict=False):
+        script_variant = expected in SCRIPT_VARIANT_WORDS and word.startswith(expected + ":")
+        if word != expected and not script_variant:
             return False
     return True
 
@@ -125,20 +127,20 @@ def covers_whole_package(words):
     for prefix in CHECK_RUN_PREFIXES:
         if not matches_prefix(words, prefix):
             continue
-        scopeWords = [word for word in words[len(prefix):]
+        scope_words = [word for word in words[len(prefix):]
                       if word.startswith(CHANGED_FILES_FLAGS)
                       or not (word.startswith("-") or word == "run" or word in WHOLE_PACKAGE_PATHS)]
-        return not scopeWords
+        return not scope_words
     return False
 
 
 def runs_whole_package(command):
     try:
-        simpleCommands = list(simple_commands(command))
+        simple_command_list = list(simple_commands(command))
     except ValueError:
         # shlex cannot split some valid shell, such as $'...' quotes. Let the command through.
         return False
-    return any(covers_whole_package(words) for words in simpleCommands)
+    return any(covers_whole_package(words) for words in simple_command_list)
 
 
 def environment_from_assignments(assignments):
@@ -149,8 +151,8 @@ def environment_from_assignments(assignments):
             words = shlex.split(assignment)
         except ValueError:
             words = []
-        isOneAssignment = len(words) == 1 and ENV_ASSIGNMENT.match(words[0])
-        if not isOneAssignment:
+        is_one_assignment = len(words) == 1 and ENV_ASSIGNMENT.match(words[0])
+        if not is_one_assignment:
             sys.exit(f"coder-gate: --env needs NAME=value, got {assignment!r}")
 
         name, value = words[0].split("=", 1)
@@ -158,82 +160,82 @@ def environment_from_assignments(assignments):
     return environment
 
 
-def set_gate(commands, envAssignments=()):
-    gatePath = gate_path(".")
-    if gatePath is None:
+def set_gate(commands, gate_assignments=()):
+    gate_file = gate_path(".")
+    if gate_file is None:
         sys.exit("coder-gate: not inside a git repo")
     if not commands:
         sys.exit("coder-gate: set needs at least one command")
 
-    wholePackageCommands = [command for command in commands if runs_whole_package(command)]
-    if wholePackageCommands:
-        refusedLines = "\n".join(f"  {command}" for command in wholePackageCommands)
+    whole_package_commands = [command for command in commands if runs_whole_package(command)]
+    if whole_package_commands:
+        refused_lines = "\n".join(f"  {command}" for command in whole_package_commands)
         sys.exit("coder-gate: refused. These commands run a whole test suite, lint a whole package or run a build:\n"
-                 + refusedLines + "\nName the test files, test names or lint paths that the phase changes, or "
+                 + refused_lines + "\nName the test files, test names or lint paths that the phase changes, or "
                  "use {files}. The review loop runs the full check command once, at its end.")
 
-    environment = environment_from_assignments(envAssignments)
-    repoRoot = git_output(".", "rev-parse", "--show-toplevel")
-    gate = {"repoRoot": repoRoot, "commands": commands, "env": environment, "setAt": time.time(), "coders": {}}
-    gatePath.write_text(json.dumps(gate, indent=1))
+    environment = environment_from_assignments(gate_assignments)
+    repo_root = git_output(".", "rev-parse", "--show-toplevel")
+    gate = {"repoRoot": repo_root, "commands": commands, "env": environment, "setAt": time.time(), "coders": {}}
+    script_utils.write_text_atomically(gate_file, json.dumps(gate, indent=1))
     print(f"coder gate set: {len(commands)} command(s)")
 
 
 def clear_gate():
-    gatePath = gate_path(".")
-    if gatePath is None or not gatePath.exists():
+    gate_file = gate_path(".")
+    if gate_file is None or not gate_file.exists():
         print("coder gate: none set")
         return
 
-    gate = json.loads(gatePath.read_text())
+    gate = json.loads(gate_file.read_text())
     for coder in gate["coders"].values():
-        failedCommands = ", ".join(coder["failed"]) or "none"
-        skippedCommands = ", ".join(coder.get("skipped", [])) or "none"
-        print(f"coder gate: {coder['result']} after {coder['runs']} run(s), failed: {failedCommands}, "
-              f"skipped: {skippedCommands}")
+        failed_commands = ", ".join(coder["failed"]) or "none"
+        skipped_commands = ", ".join(coder.get("skipped", [])) or "none"
+        print(f"coder gate: {coder['result']} after {coder['runs']} run(s), failed: {failed_commands}, "
+              f"skipped: {skipped_commands}")
     if not gate["coders"]:
         print("coder gate: never ran, no coder handed back through it")
 
-    gatePath.unlink()
-    gatePath.with_suffix(".lock").unlink(missing_ok=True)
+    gate_file.unlink()
+    gate_file.with_suffix(".lock").unlink(missing_ok=True)
 
 
-def command_directory(command, repoRoot):
+def command_directory(command, repo_root):
     # A leading `cd <dir> &&` or `cd <dir> ;` sets the directory that {files} is relative to.
     try:
         words = shlex.split(command)
     except ValueError:
-        return repoRoot
+        return repo_root
     if len(words) >= 3 and words[0] == "cd" and words[2] in ("&&", ";"):
-        return str((pathlib.Path(repoRoot) / words[1]).resolve())
-    return repoRoot
+        return str((pathlib.Path(repo_root) / words[1]).resolve())
+    return repo_root
 
 
 def changed_files(directory):
     # Tracked changes against HEAD, deletions excluded, plus untracked files, all relative to directory.
-    trackedFiles = git_output(directory, "diff", "--name-only", "--relative", "--diff-filter=d", "HEAD") or ""
-    untrackedFiles = git_output(directory, "ls-files", "--others", "--exclude-standard") or ""
-    names = [name for name in (trackedFiles + "\n" + untrackedFiles).split("\n") if name]
+    tracked_files = git_output(directory, "diff", "--name-only", "--relative", "--diff-filter=d", "HEAD") or ""
+    untracked_files = git_output(directory, "ls-files", "--others", "--exclude-standard") or ""
+    names = [name for name in (tracked_files + "\n" + untracked_files).split("\n") if name]
     return sorted(set(names))
 
 
-def fill_files(command, repoRoot):
+def fill_files(command, repo_root):
     # Returns the command with each {files} filled, or None when a placeholder keeps no file.
     if not FILES_PLACEHOLDER.search(command):
         return command
 
-    directory = command_directory(command, repoRoot)
-    changedFiles = changed_files(directory)
+    directory = command_directory(command, repo_root)
+    changed_file_list = changed_files(directory)
 
-    filledCommand = command
+    filled_command = command
     for match in FILES_PLACEHOLDER.finditer(command):
         suffixes = tuple(suffix for suffix in (match.group(1) or "").split(",") if suffix)
-        keptFiles = [name for name in changedFiles if not suffixes or name.endswith(suffixes)]
-        if not keptFiles:
+        kept_files = [name for name in changed_file_list if not suffixes or name.endswith(suffixes)]
+        if not kept_files:
             return None
-        quotedFiles = " ".join(shlex.quote(name) for name in keptFiles)
-        filledCommand = filledCommand.replace(match.group(0), quotedFiles, 1)
-    return filledCommand
+        quoted_files = " ".join(shlex.quote(name) for name in kept_files)
+        filled_command = filled_command.replace(match.group(0), quoted_files, 1)
+    return filled_command
 
 
 def run_commands(gate):
@@ -241,13 +243,13 @@ def run_commands(gate):
     skipped = []
     environment = {**os.environ, **gate.get("env", {})}
     for command in gate["commands"]:
-        filledCommand = fill_files(command, gate["repoRoot"])
-        if filledCommand is None:
+        filled_command = fill_files(command, gate["repoRoot"])
+        if filled_command is None:
             skipped.append(command)
             continue
 
         try:
-            finished = subprocess.run(filledCommand, shell=True, cwd=gate["repoRoot"], env=environment,
+            finished = subprocess.run(filled_command, shell=True, cwd=gate["repoRoot"], env=environment,
                                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                       timeout=COMMAND_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
@@ -262,38 +264,38 @@ def denial(failures):
     chunks = []
     for command, outcome, output in failures:
         chunks.append(f"=== `{command}` failed ({outcome}), output tail ===\n{output[-TAIL_CHARS:]}")
-    failureText = "\n\n".join(chunks)
-    reason = ("The hand-back gate ran the phase's checks and they failed.\n\n" + failureText
+    failure_text = "\n\n".join(chunks)
+    reason = ("The hand-back gate ran the phase's checks and they failed.\n\n" + failure_text
               + "\n\nFix these. Do not run the checks yourself. Then call SubagentHandback again.")
     return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                    "permissionDecisionReason": reason}}
 
 
-def stamped_handback(toolInput, coder):
+def stamped_handback(tool_input, coder):
     # The coder writes its report before the gate runs, so the report can still say that a re-run is pending.
-    failedCommands = ", ".join(coder["failed"]) or "none"
-    skippedCommands = ", ".join(coder.get("skipped", [])) or "none"
-    stamp = (f"\n\nHAND-BACK GATE: {coder['result']} after {coder['runs']} run(s), failed: {failedCommands}, "
-             f"skipped (no changed files): {skippedCommands}. "
+    failed_commands = ", ".join(coder["failed"]) or "none"
+    skipped_commands = ", ".join(coder.get("skipped", [])) or "none"
+    stamp = (f"\n\nHAND-BACK GATE: {coder['result']} after {coder['runs']} run(s), failed: {failed_commands}, "
+             f"skipped (no changed files): {skipped_commands}. "
              "The gate ran after this report was written. The report is final.")
-    stampedInput = dict(toolInput)
-    stampedInput["message"] = str(toolInput.get("message", "")) + stamp
+    stamped_input = dict(tool_input)
+    stamped_input["message"] = str(tool_input.get("message", "")) + stamp
     return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow",
-                                   "updatedInput": stampedInput}}
+                                   "updatedInput": stamped_input}}
 
 
 def append_gate_log(row):
     if not telemetry_enabled():
         return
 
-    with GATE_LOG.open("a") as logFile:
-        logFile.write(json.dumps(row) + "\n")
+    with GATE_LOG.open("a") as log_file:
+        log_file.write(json.dumps(row) + "\n")
 
 
-def log_gate_run(gate, coder, seconds, failedCount):
-    repoName = pathlib.Path(gate["repoRoot"]).name
-    row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "repo": repoName, "result": coder["result"],
-           "run": coder["runs"], "seconds": seconds, "failed": failedCount}
+def log_gate_run(gate, coder, seconds, failed_count):
+    repo_name = pathlib.Path(gate["repoRoot"]).name
+    row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "repo": repo_name, "result": coder["result"],
+           "run": coder["runs"], "seconds": seconds, "failed": failed_count}
     append_gate_log(row)
 
 
@@ -302,15 +304,15 @@ def run_hook():
     if event.get("agent_type") != "coder":
         return
 
-    gatePath = gate_path(event.get("cwd") or ".")
-    if gatePath is None or not gatePath.exists():
+    gate_file = gate_path(event.get("cwd") or ".")
+    if gate_file is None or not gate_file.exists():
         return
 
-    lockPath = gatePath.with_suffix(".lock")
-    with lockPath.open("w") as lockFile:
-        fcntl.flock(lockFile, fcntl.LOCK_EX)
+    lock_path = gate_file.with_suffix(".lock")
+    with lock_path.open("w") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
 
-        gate = json.loads(gatePath.read_text())
+        gate = json.loads(gate_file.read_text())
         if time.time() - gate["setAt"] > MAX_GATE_AGE_SECONDS:
             return
 
@@ -318,8 +320,8 @@ def run_hook():
         failures, skipped = run_commands(gate)
         seconds = round(time.time() - started)
 
-        agentId = event.get("agent_id") or "unknown"
-        coder = gate["coders"].get(agentId, {"runs": 0, "denies": 0, "failed": [], "result": "none"})
+        agent_id = event.get("agent_id") or "unknown"
+        coder = gate["coders"].get(agent_id, {"runs": 0, "denies": 0, "failed": [], "result": "none"})
         coder["runs"] += 1
         coder["failed"] = [command for command, _, _ in failures]
         coder["skipped"] = skipped
@@ -330,8 +332,8 @@ def run_hook():
         else:
             coder["result"] = "deny"
             coder["denies"] += 1
-        gate["coders"][agentId] = coder
-        gatePath.write_text(json.dumps(gate, indent=1))
+        gate["coders"][agent_id] = coder
+        script_utils.write_text_atomically(gate_file, json.dumps(gate, indent=1))
 
     log_gate_run(gate, coder, seconds, len(failures))
 
@@ -339,8 +341,8 @@ def run_hook():
         print(json.dumps(denial(failures)))
         return
 
-    toolInput = event.get("tool_input") or {}
-    print(json.dumps(stamped_handback(toolInput, coder)))
+    tool_input = event.get("tool_input") or {}
+    print(json.dumps(stamped_handback(tool_input, coder)))
 
 
 def run_bash_hook():
@@ -352,8 +354,8 @@ def run_bash_hook():
     if not runs_whole_package(command):
         return
 
-    repoName = pathlib.Path(event.get("cwd") or ".").name
-    row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "repo": repoName, "result": "whole-package-deny"}
+    repo_name = pathlib.Path(event.get("cwd") or ".").name
+    row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "repo": repo_name, "result": "whole-package-deny"}
     append_gate_log(row)
 
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
@@ -362,15 +364,15 @@ def run_bash_hook():
 
 verb = sys.argv[1] if len(sys.argv) > 1 else ""
 if verb == "set":
-    setArguments = sys.argv[2:]
-    envAssignments = []
-    while len(setArguments) >= 2 and setArguments[0] == "--env":
-        envAssignments.append(setArguments[1])
-        setArguments = setArguments[2:]
-    if "--env" in setArguments:
+    set_arguments = sys.argv[2:]
+    env_assignments = []
+    while len(set_arguments) >= 2 and set_arguments[0] == "--env":
+        env_assignments.append(set_arguments[1])
+        set_arguments = set_arguments[2:]
+    if "--env" in set_arguments:
         sys.exit("coder-gate: --env needs NAME=value, got nothing after it")
 
-    set_gate(setArguments, envAssignments)
+    set_gate(set_arguments, env_assignments)
 elif verb == "clear":
     clear_gate()
 elif verb == "hook":
@@ -378,4 +380,4 @@ elif verb == "hook":
 elif verb == "bash-hook":
     run_bash_hook()
 else:
-    sys.exit("usage: coder-gate.py set [--env NAME=value]... <command>... | clear | hook | bash-hook")
+    sys.exit("usage: coder_gate.py set [--env NAME=value]... <command>... | clear | hook | bash-hook")

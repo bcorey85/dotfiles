@@ -1,4 +1,4 @@
-"""Checks for dead-prose-gate.py, the PostToolUse hook that warns on banned rationale and hardcoded paths in agent,
+"""Checks for dead_prose_gate.py, the PostToolUse hook that warns on banned rationale and hardcoded paths in agent,
 skill and command bodies. It never blocks."""
 import json
 import os
@@ -8,8 +8,10 @@ import sys
 import tempfile
 import unittest
 
-SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts")
-SCRIPT = SCRIPTS_DIR / "dead-prose-gate.py"
+import toolkit_paths
+
+SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR)
+SCRIPT = SCRIPTS_DIR / "dead_prose_gate.py"
 
 
 class DeadProseGateTest(unittest.TestCase):
@@ -50,16 +52,27 @@ class DeadProseGateTest(unittest.TestCase):
         self.assertEqual(self.edit(path), "")
 
     def test_rationale_patterns_are_reported_for_agents_and_skills(self):
-        samples = ["This exists because users asked", "it exists only because of X", "the reason this exists is Y",
-                   "a chosen budget, not a rule", "not a measured default", "chosen measured budget", "was retired in May",
-                   "retired because of cost", "measured basis here", "as measured", "we measured it", "see x 2026-08-09"]
+        samples = [
+            "This exists because users asked",
+            "it exists only because of X",
+            "the reason this exists is Y",
+            "a chosen budget, not a rule",
+            "not a measured default",
+            "chosen measured budget",
+            "was retired in May",
+            "retired because of cost",
+            "measured basis here",
+            "as measured",
+            "we measured it",
+            "see x 2026-08-09",
+        ]
         for surface in ("agents", "skills/foo"):
             for sample in samples:
                 with self.subTest(surface=surface, sample=sample):
-                    path = self.write(".claude/%s/a.md" % surface, "keep this\n%s\nkeep that\n" % sample)
+                    path = self.write(f".claude/{surface}/a.md", f"keep this\n{sample}\nkeep that\n")
                     self.assertEqual(self.edit(path),
                                      "dead-prose-gate: possible banned rationale in a.md — the rule ships every "
-                                     "dispatch; keep the RULE, cut the defense:\n  2:%s\n" % sample)
+                                     f"dispatch; keep the RULE, cut the defense:\n  2:{sample}\n")
 
     def test_rationale_is_case_insensitive_and_date_needs_a_leading_character(self):
         path = self.write(".claude/agents/a.md", "THIS EXISTS BECAUSE X\n2026-01-02 starts the line\n")
@@ -80,10 +93,10 @@ class DeadProseGateTest(unittest.TestCase):
     def test_portability_patterns_are_reported(self):
         for sample in ("/Users/me/x", "/home/brandon/x", "in dotfiles repo"):
             with self.subTest(sample=sample):
-                path = self.write(".claude/agents/a.md", "ok\n%s\n" % sample)
+                path = self.write(".claude/agents/a.md", f"ok\n{sample}\n")
                 self.assertEqual(self.edit(path),
                                  "dead-prose-gate: hardcoded path or repo name in a.md — agents, skills and commands "
-                                 "must be portable across WSL/Ubuntu/macOS/Arch:\n  2:%s\n" % sample)
+                                 f"must be portable across WSL/Ubuntu/macOS/Arch:\n  2:{sample}\n")
 
     def test_portability_ignores_embedded_words_and_uppercase_home(self):
         path = self.write(".claude/agents/a.md", "mydotfiles2 and /home/Me and /home/ and ~/x\n")

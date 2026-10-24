@@ -32,7 +32,7 @@ import re
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import verify_common as vc  # noqa: E402
+import verify_common as vc
 
 VERDICTS = ("done", "partial", "missing", "failed-check", "needs-manual", "overridden")
 REVIEW_RESULTS = ("PASS", "PASS WITH WARNINGS", "NEEDS CHANGES")
@@ -55,10 +55,10 @@ def ids_without_verdict_row(rows, context):
     covered = set()
     for row in rows:
         covered.update(vc.AC_ID.findall(str(row["item"])))
-    return [acId for acId in context["criteria"].get("ids", []) if acId not in covered]
+    return [ac_id for ac_id in context["criteria"].get("ids", []) if ac_id not in covered]
 
 
-def parse_options(args, valued, flagNames=()):
+def parse_options(args, valued, flag_names=()):
     """({option: value}, {flags}) from args; an option in `valued` takes the next argument. Any other argument fails."""
     options = {}
     flags = set()
@@ -67,15 +67,15 @@ def parse_options(args, valued, flagNames=()):
         arg = args[index]
         if arg in valued:
             if index + 1 >= len(args):
-                raise vc.Fail(f"{arg} needs a value")
+                raise vc.VerifyError(f"{arg} needs a value")
             options[arg] = args[index + 1]
             index += 2
-        elif arg in flagNames:
+        elif arg in flag_names:
             flags.add(arg)
             index += 1
         else:
-            known = ", ".join([*valued, *flagNames])
-            raise vc.Fail(f"unknown argument {arg!r}; this command takes {known}")
+            known = ", ".join([*valued, *flag_names])
+            raise vc.VerifyError(f"unknown argument {arg!r}; this command takes {known}")
     return options, flags
 
 
@@ -86,7 +86,7 @@ def normalize_line(value, where):
         return value
     match = LEADING_INT.match(str(value))
     if not match:
-        raise vc.Fail(f"{where}: line {value!r} is not an integer or a range like 12-20")
+        raise vc.VerifyError(f"{where}: line {value!r} is not an integer or a range like 12-20")
     return int(match.group(1))
 
 
@@ -95,9 +95,9 @@ def read_json_list(source, what):
     try:
         items = json.loads(text)
     except ValueError as error:
-        raise vc.Fail(f"{what} are not valid JSON: {error}")
+        raise vc.VerifyError(f"{what} are not valid JSON: {error}") from error
     if not isinstance(items, list):
-        raise vc.Fail(f"{what} must be a JSON list")
+        raise vc.VerifyError(f"{what} must be a JSON list")
     return items
 
 
@@ -105,7 +105,7 @@ def load_rows(source):
     rows = read_json_list(source, "rows")
     for index, row in enumerate(rows):
         if not isinstance(row, dict) or row.get("verdict") not in VERDICTS or not row.get("item"):
-            raise vc.Fail(f"row {index} needs `item` and a verdict in {', '.join(VERDICTS)}")
+            raise vc.VerifyError(f"row {index} needs `item` and a verdict in {', '.join(VERDICTS)}")
         row["line"] = normalize_line(row.get("line"), f"row {index}")
     return rows
 
@@ -114,14 +114,16 @@ def load_review_findings(source):
     findings = read_json_list(source, "findings")
     for index, finding in enumerate(findings):
         if not isinstance(finding, dict) or not finding.get("desc") or not finding.get("file"):
-            raise vc.Fail(f"finding {index} needs `desc` and `file`")
+            raise vc.VerifyError(f"finding {index} needs `desc` and `file`")
         if not finding.get("actioned"):
-            raise vc.Fail(f"finding {index} needs `actioned`: what happened to it (a finding the reviewer reported "
-                          "is never logged without its outcome)")
+            raise vc.VerifyError(
+                f"finding {index} needs `actioned`: what happened to it (a finding the reviewer reported "
+                "is never logged without its outcome)"
+            )
         finding.setdefault("class", "correctness")
         finding.setdefault("disposition", "fix")
         if finding["disposition"] == "fix" and finding["actioned"] == "none":
-            raise vc.Fail(f"finding {index}: a `fix` finding cannot have actioned `none`; fix it, mark it "
+            raise vc.VerifyError(f"finding {index}: a `fix` finding cannot have actioned `none`; fix it, mark it "
                           "skipped_fp, or defer it")
         finding["line"] = normalize_line(finding.get("line"), f"finding {index}")
     return findings
@@ -142,18 +144,18 @@ def check_all(writes, cwd):
         argv = write["argv"]
         failure = call_logger([*argv[:2], "--check", *argv[2:]], cwd)
         if failure:
-            raise vc.Fail(f"{failure}\n  rejected row: {write['label']}\n  nothing was written")
+            raise vc.VerifyError(f"{failure}\n  rejected row: {write['label']}\n  nothing was written")
 
 
-def write_all(writes, cwd, afterWrite=None):
+def write_all(writes, cwd, after_write=None):
     """Run every logger call in order. A failure stops the run and names the rows that were not logged."""
     for position, write in enumerate(writes):
         failure = call_logger(write["argv"], cwd)
         if failure:
-            notLogged = "\n".join(f"  NOT logged: {pending['label']}" for pending in writes[position:])
-            raise vc.Fail(f"{failure}\n{notLogged}")
-        if afterWrite:
-            afterWrite(write)
+            not_logged = "\n".join(f"  NOT logged: {pending['label']}" for pending in writes[position:])
+            raise vc.VerifyError(f"{failure}\n{not_logged}")
+        if after_write:
+            after_write(write)
 
 
 def finding_prefix(context, gate):
@@ -164,13 +166,13 @@ def finding_prefix(context, gate):
 def require_current_review(context, top):
     """Exit 2 unless the tree is the one verify-prep measured and a branch-wide review row covers it."""
     if "fingerprint" not in context:
-        raise vc.Fail("the saved verify-prep context has no tree fingerprint: rerun verify-prep")
+        raise vc.VerifyError("the saved verify-prep context has no tree fingerprint: rerun verify-prep")
     fingerprint = vc.tree_fingerprint(top, context["mergeBase"], context["excludeRel"])
     if fingerprint != context["fingerprint"]:
-        raise vc.Fail("the tree changed since verify-prep measured it: rerun verify-prep")
+        raise vc.VerifyError("the tree changed since verify-prep measured it: rerun verify-prep")
     ran, reason = vc.review_ran(context["repo"], context["branch"], fingerprint)
     if not ran:
-        raise vc.Fail(f"no branch-wide code review covers this tree ({reason}): rerun verify-prep and do its "
+        raise vc.VerifyError(f"no branch-wide code review covers this tree ({reason}): rerun verify-prep and do its "
                       "review step first")
 
 
@@ -178,20 +180,20 @@ def log_review(args, context, top):
     options, _ = parse_options(args, ("--result", "--rows", "--findings"))
     result = options.get("--result")
     if result not in REVIEW_RESULTS:
-        raise vc.Fail(f"review needs --result, one of {', '.join(REVIEW_RESULTS)}")
+        raise vc.VerifyError(f"review needs --result, one of {', '.join(REVIEW_RESULTS)}")
     findings = load_review_findings(options["--rows"]) if "--rows" in options else []
     declared = options.get("--findings")
     if declared is not None and not declared.isdigit():
-        raise vc.Fail(f"--findings {declared!r} is not a count")
+        raise vc.VerifyError(f"--findings {declared!r} is not a count")
     if declared is not None and int(declared) != len(findings):
-        raise vc.Fail(f"--findings {declared} but --rows holds {len(findings)} finding(s): log every finding")
+        raise vc.VerifyError(f"--findings {declared} but --rows holds {len(findings)} finding(s): log every finding")
     if declared is None and "--rows" not in options:
-        raise vc.Fail("review needs --rows (a JSON list; [] when the reviewer found nothing)")
+        raise vc.VerifyError("review needs --rows (a JSON list; [] when the reviewer found nothing)")
 
     fingerprint = vc.tree_fingerprint(top, context["mergeBase"], context["excludeRel"])
-    alreadyCovered, reason = vc.review_ran(context["repo"], context["branch"], fingerprint)
-    if alreadyCovered:
-        raise vc.Fail(f"a branch-wide review row already covers this tree ({reason}): nothing to log. "
+    already_covered, reason = vc.review_ran(context["repo"], context["branch"], fingerprint)
+    if already_covered:
+        raise vc.VerifyError(f"a branch-wide review row already covers this tree ({reason}): nothing to log. "
                       "Rerun verify-prep. Change the tree (a fix) before logging another review.")
 
     logger = vc.script_path("LOG_REVIEW_FINDING_SCRIPT", "skills/review/log-review-finding")
@@ -215,38 +217,38 @@ def read_source(path, what):
     try:
         return pathlib.Path(path).read_text()
     except OSError as error:
-        raise vc.Fail(f"{what} {path} cannot be read now: {error}")
+        raise vc.VerifyError(f"{what} {path} cannot be read now: {error}") from error
 
 
 def checklist(context, rows):
     """The review-packet skeleton. The ticket, the criteria file and the plan are read again here, so an edit since
     verify-prep reaches the checklist."""
-    ticketPath = context["ticket"]
-    ticketEntries = vc.ticket_criteria(read_source(ticketPath, "ticket"), ticketPath)
-    manualEntries = []
+    ticket_path = context["ticket"]
+    ticket_entries = vc.ticket_criteria(read_source(ticket_path, "ticket"), ticket_path)
+    manual_entries = []
     if context.get("criteriaPath"):
-        _, manualEntries = vc.criteria_file(read_source(context["criteriaPath"], "criteria file"),
+        _, manual_entries = vc.criteria_file(read_source(context["criteriaPath"], "criteria file"),
                                             context["criteriaPath"])
 
     lines = ["## Smoke-test checklist (fill each steps: with concrete steps)"]
-    for entry in ticketEntries:
+    for entry in ticket_entries:
         lines.append(f"- [ ] {entry['label']}: {entry['text']}\n      steps: <model>")
-    for entry in manualEntries:
+    for entry in manual_entries:
         lines.append(f"- [ ] (manual-only) {entry['id']}: {entry['text']}\n      steps: <model>")
-    movedNotes = []
+    moved_notes = []
     if context["plan"]:
-        planText = read_source(context["plan"], "plan")
-        for item in vc.manual_items(planText, context["plan"]):
+        plan_text = read_source(context["plan"], "plan")
+        for item in vc.manual_items(plan_text, context["plan"]):
             if item["humanOnly"]:
                 lines.append(f"- [ ] (human-only) {item['text']}\n      steps: <model>")
-        movedNotes = vc.moved_phase_notes(planText, context["plan"])
+        moved_notes = vc.moved_phase_notes(plan_text, context["plan"])
     for row in rows:
         if row["verdict"] == "needs-manual":
             lines.append(f"- [ ] (needs-manual) {one_line(row['item'], 300)}\n      steps: <model>")
-    if movedNotes:
+    if moved_notes:
         lines.append("")
         lines.append("## Moved phases (another ticket owns them; not checked on this branch)")
-        lines.extend(f"- {note}" for note in movedNotes)
+        lines.extend(f"- {note}" for note in moved_notes)
     lines.append("")
     lines.append("## Diff hotspots (read these first, skim the rest)")
     hotspots = context["diff"]["hotspots"]
@@ -264,107 +266,119 @@ def escape_key(row, context):
     return f"{one_line(row['item'])}\t{row.get('file') or context['planRel']}"
 
 
-def plan_row_writes(rows, context, notApplicable, escapesOnly):
-    """(writes, gaps, needGuard, alreadyRecorded): every logger call this run makes, in order."""
+def plan_row_writes(rows, context, not_applicable, escapes_only):
+    """(writes, gaps, need_guard, already_recorded): every logger call this run makes, in order."""
     finder = vc.script_path("LOG_REVIEW_FINDING_SCRIPT", "skills/review/log-review-finding")
     escaper = vc.script_path("LOG_ESCAPE_SCRIPT", "scripts/log-escape")
     gaps = [row for row in rows if is_gap(row)]
-    planRel = context["planRel"]
+    plan_rel = context["planRel"]
     writes = []
 
-    if not escapesOnly:
+    if not escapes_only:
         prefix = finding_prefix(context, "plan-verifier")
-        runArgv = ["bash", finder, "kind=run", *prefix, f"n_findings={len(gaps)}", f"diff_loc={context['diff']['diffLoc']}"]
-        if not notApplicable:
-            runArgv.append(f"result={'NEEDS CHANGES' if gaps else 'PASS'}")
-        writes.append({"label": "plan-verifier run row", "argv": runArgv, "marksLogged": True})
+        run_argv = [
+            "bash",
+            finder,
+            "kind=run",
+            *prefix,
+            f"n_findings={len(gaps)}",
+            f"diff_loc={context['diff']['diffLoc']}",
+        ]
+        if not not_applicable:
+            run_argv.append(f"result={'NEEDS CHANGES' if gaps else 'PASS'}")
+        writes.append({"label": "plan-verifier run row", "argv": run_argv, "marksLogged": True})
         for row in gaps:
             writes.append({"label": f"plan-drift finding: {one_line(row['item'], 80)}",
                            "argv": ["bash", finder, "kind=finding", *prefix, "disposition=fix", "class=plan-drift",
-                                    f"file={row.get('file') or planRel}", f"line={row['line']}", "actioned=none",
+                                    f"file={row.get('file') or plan_rel}", f"line={row['line']}", "actioned=none",
                                     f"desc={one_line(row['item'])}"]})
 
-    needGuard = []
-    alreadyRecorded = 0
+    need_guard = []
+    already_recorded = 0
     for row in gaps:
         if not row.get("guard"):
-            needGuard.append(row)
+            need_guard.append(row)
             continue
         key = escape_key(row, context)
         if key in context["escapes"]:
-            alreadyRecorded += 1
+            already_recorded += 1
             continue
-        escapeArgv = ["bash", escaper, f"repo={context['repo']}", "stage_found=verify", "gate_missed=drift-gate",
+        escape_argv = ["bash", escaper, f"repo={context['repo']}", "stage_found=verify", "gate_missed=drift-gate",
                       "class=plan-drift", "lane=eng-spec", f"guard={row['guard']}",
-                      f"desc={one_line(row['item'])}", f"file={row.get('file') or planRel}"]
+                      f"desc={one_line(row['item'])}", f"file={row.get('file') or plan_rel}"]
         if row.get("severity"):
-            escapeArgv.append(f"severity={row['severity']}")
-        writes.append({"label": f"drift-gate escape: {one_line(row['item'], 80)}", "argv": escapeArgv,
+            escape_argv.append(f"severity={row['severity']}")
+        writes.append({"label": f"drift-gate escape: {one_line(row['item'], 80)}", "argv": escape_argv,
                        "escapeKey": key})
-    return writes, gaps, needGuard, alreadyRecorded
+    return writes, gaps, need_guard, already_recorded
 
 
 def log_rows(args, context, top):
     options, flags = parse_options(args, ("--rows", "--result"), ("--escapes-only",))
     if "--rows" not in options:
-        raise vc.Fail("--rows is required (use `--rows -` for stdin)")
+        raise vc.VerifyError("--rows is required (use `--rows -` for stdin)")
     if options.get("--result", "NA") != "NA":
-        raise vc.Fail(f"--result {options['--result']!r}: only NA is accepted (the verdict comes from the rows)")
-    notApplicable = "--result" in options
-    escapesOnly = "--escapes-only" in flags
+        raise vc.VerifyError(f"--result {options['--result']!r}: only NA is accepted (the verdict comes from the rows)")
+    not_applicable = "--result" in options
+    escapes_only = "--escapes-only" in flags
 
-    if escapesOnly and not context.get("logged"):
-        raise vc.Fail("--escapes-only follows a full run of this prep context, and none was logged: "
+    if escapes_only and not context.get("logged"):
+        raise vc.VerifyError("--escapes-only follows a full run of this prep context, and none was logged: "
                       "run verify-log --rows without it")
-    if not escapesOnly and context.get("logged"):
-        raise vc.Fail("this prep context was already logged; rerun verify-prep first, or pass --escapes-only")
+    if not escapes_only and context.get("logged"):
+        raise vc.VerifyError("this prep context was already logged; rerun verify-prep first, or pass --escapes-only")
     require_current_review(context, top)
 
     rows = load_rows(options["--rows"])
-    if notApplicable and rows:
-        raise vc.Fail("--result NA takes empty rows: the gate had nothing to check")
-    if not rows and not notApplicable:
-        raise vc.Fail("rows are empty: pass --result NA if the plan gave the gate nothing to check")
-    absentIds = [] if notApplicable else ids_without_verdict_row(rows, context)
-    if absentIds:
-        raise vc.Fail(f"no verdict row for {', '.join(absentIds)}: send a verdict for every criterion id, `missing` "
-                      "included. Nothing was written")
+    if not_applicable and rows:
+        raise vc.VerifyError("--result NA takes empty rows: the gate had nothing to check")
+    if not rows and not not_applicable:
+        raise vc.VerifyError("rows are empty: pass --result NA if the plan gave the gate nothing to check")
+    absent_ids = [] if not_applicable else ids_without_verdict_row(rows, context)
+    if absent_ids:
+        raise vc.VerifyError(
+            f"no verdict row for {', '.join(absent_ids)}: send a verdict for every criterion id, `missing` "
+            "included. Nothing was written"
+        )
 
-    writes, gaps, needGuard, alreadyRecorded = plan_row_writes(rows, context, notApplicable, escapesOnly)
-    packet = checklist(context, rows) if not gaps and not notApplicable and not escapesOnly else None
+    writes, gaps, need_guard, already_recorded = plan_row_writes(rows, context, not_applicable, escapes_only)
+    packet = checklist(context, rows) if not gaps and not not_applicable and not escapes_only else None
     check_all(writes, top)
 
-    statePath = vc.context_path(context["repo"], context["branch"])
+    state_path = vc.context_path(context["repo"], context["branch"])
 
     def record(write):
         if write.get("marksLogged"):
             context["logged"] = True
         if write.get("escapeKey"):
             context["escapes"].append(write["escapeKey"])
-        vc.save_context(statePath, context)
+        vc.save_context(state_path, context)
 
     write_all(writes, top, record)
 
-    if escapesOnly:
+    if escapes_only:
         print(f"escapes logged: {len(writes)}")
-        if alreadyRecorded:
-            print(f"escapes already recorded, not logged again: {alreadyRecorded}")
-        for row in needGuard:
+        if already_recorded:
+            print(f"escapes already recorded, not logged again: {already_recorded}")
+        for row in need_guard:
             print(f"  NEEDS GUARD (ratchet, escape-ratchet.md): {one_line(row['item'], 120)}")
         return 0
 
     counts = {verdict: sum(1 for row in rows if row["verdict"] == verdict) for verdict in VERDICTS}
     print(f"verdicts: {len(rows)} items " + ", ".join(f"{k}={v}" for k, v in counts.items()))
-    if alreadyRecorded:
-        print(f"escapes already recorded, not logged again: {alreadyRecorded}")
-    if notApplicable:
-        print("N/A: no criteria in scope. This is NOT a pass: the gate did not run. Tell the user; do not report completeness.")
+    if already_recorded:
+        print(f"escapes already recorded, not logged again: {already_recorded}")
+    if not_applicable:
+        print(
+            "N/A: no criteria in scope. This is NOT a pass: the gate did not run. Tell the user; do not report "
+            "completeness."
+        )
         return 3
     if gaps:
         print(f"GAPS: {len(gaps)} (logged as plan-drift findings). List them for the user, then offer /fix or /code.")
-        for row in needGuard:
+        for row in need_guard:
             print(f"  NEEDS GUARD (ratchet, escape-ratchet.md): {one_line(row['item'], 120)}")
-        if needGuard:
+        if need_guard:
             print("  Rerun with the guards added to those rows and --escapes-only to log the escapes.")
         return 0
     print("CLEAN. The packet needs the bare /refactor check, then:")
@@ -374,7 +388,7 @@ def log_rows(args, context, top):
 
 def main(argv):
     if not argv:
-        raise vc.Fail("usage: verify-log --rows <file|-> | verify-log review --result R --rows <file|->")
+        raise vc.VerifyError("usage: verify-log --rows <file|-> | verify-log review --result R --rows <file|->")
     top = vc.repo_top(os.getcwd())
     repo = vc.repo_name(top)
     branch = vc.current_branch(top)
@@ -389,5 +403,5 @@ def main(argv):
 if __name__ == "__main__":
     try:
         sys.exit(main(sys.argv[1:]))
-    except vc.Fail as error:
+    except vc.VerifyError as error:
         vc.die(error)

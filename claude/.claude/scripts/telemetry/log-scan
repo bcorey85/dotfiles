@@ -45,6 +45,7 @@
 #     note="one line — what the confirmed ones were, or why all were dismissed"
 #       accepted for the caller's own record; never stored
 #     branch=<branch name>   sent as branch_key (a keyed hash)
+#                       (with no ledger, stored raw in the local jsonl file)
 #
 # Every value is sent as a JSON string; `ledger write` types it, stores an
 # unknown scan or stage as `other`, and adds date, repo and session. With no

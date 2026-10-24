@@ -14,8 +14,7 @@ the verify scripts call:
 `ledger write` records nothing and exits with the code in FAKE_LEDGER_WRITE_EXIT when that is set
 to a nonzero number.
 
-`no_ledger_env(directory)` returns env entries whose PATH holds only bash, jq, git and dirname, so
-no `ledger` is found, plus an AGENT_LEDGER_ROOT under `directory`.
+`path_without_ledger(path)` returns `path` with every directory that holds a `ledger` left out.
 
 The real writer keys the branch before it stores it; this stand-in compares the raw branch the
 scripts send, which is the same value the real one is given.
@@ -23,7 +22,6 @@ scripts send, which is the same value the real one is given.
 import json
 import os
 import pathlib
-import shutil
 
 LEDGER_SOURCE = '''#!/usr/bin/env python3
 import json
@@ -84,20 +82,9 @@ def install(directory):
     }
 
 
-NO_LEDGER_TOOLS = ("bash", "jq", "git", "dirname")
-
-
-def no_ledger_env(directory):
-    """Env entries with a PATH of only the tools the writers need and no `ledger`."""
-    bin_directory = pathlib.Path(directory) / "no-ledger-bin"
-    bin_directory.mkdir(parents=True, exist_ok=True)
-    for tool in NO_LEDGER_TOOLS:
-        link = bin_directory / tool
-        if not link.exists():
-            link.symlink_to(shutil.which(tool))
-    ledger_root = pathlib.Path(directory) / "no-ledger-root"
-    ledger_root.mkdir(parents=True, exist_ok=True)
-    return {"PATH": str(bin_directory), "AGENT_LEDGER_ROOT": str(ledger_root)}
+def path_without_ledger(path):
+    """`path`, a PATH string, without the directories that hold a `ledger` (the stand-in's included)."""
+    return os.pathsep.join(part for part in path.split(os.pathsep) if not os.path.exists(os.path.join(part, "ledger")))
 
 
 def recorded_rows(env, row_type=None):

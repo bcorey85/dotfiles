@@ -18,6 +18,23 @@ INLINE_CODE_OR_COMMENT_OPEN = re.compile(r"`[^`]*`|<!--")
 PATH_LINE = re.compile(r"`?([\w@./-]+\.\w+:\d+(?:[-,]\d+)*)`?")
 FILE_NAME = re.compile(r"^[\w@./-]+\.\w+(?::\d|$)")
 QUOTE_OPENERS = " :[{,\t\n"
+BACKTICKED = re.compile(r"`([^`]+)`")
+# A literal value is plain characters or a quoted string with no `$`, backtick, `;`, `&`, `|`, `<`, `>` (and no
+# backslash in a double-quoted one): the shell would run or expand anything else, so it is not a setting that can be
+# copied. A plain word has no `~` either: the shell expands it at the start of a value and after a `:`, which
+# shlex.split does not.
+ENV_VALUE = r""""[^"$`;&|<>\\]*"|'[^'$`;&|<>]*'|[^\s"'$`;&|<>()\\~]*"""
+ENV_ASSIGNMENT = re.compile(rf"([A-Za-z_][A-Za-z0-9_]*)=({ENV_VALUE})")
+# What must follow the assignments: a word that is not another assignment and does not start with a shell control
+# operator, a comment, a grouping or a negation. Without it "A=1 && cargo test" would read "&&" as the command.
+COMMAND_WORD_AHEAD = r"(?![A-Za-z_][A-Za-z0-9_]*=)(?![;&|<>()#{}!])(?=\S)"
+# The NAME=value words a command line starts with, each followed by whitespace, which the shell passes to the command.
+# A command word must follow them. Only literal values: this reading builds the settings that get copied.
+ENV_ASSIGNMENTS = re.compile(rf"(?:[A-Za-z_][A-Za-z0-9_]*=(?:{ENV_VALUE})\s+)+{COMMAND_WORD_AHEAD}")
+# The same words with any value, one that expands a variable or runs a command included (`PATH=/x:$PATH cargo test`):
+# the shell passes those to the command as well, so a reading that only finds where the command starts accepts them.
+ENV_PREFIX_VALUE = r"""(?:"[^"]*"|'[^']*'|\$\([^)]*\)|[^\s"'`;&|<>()])*"""
+ENV_PREFIX = re.compile(rf"(?:[A-Za-z_][A-Za-z0-9_]*={ENV_PREFIX_VALUE}\s+)+{COMMAND_WORD_AHEAD}")
 
 
 def fenced_line_indexes(lines):
@@ -182,6 +199,39 @@ def strip_flag_values(command, flags):
     quotedOrWord = r"""(?:"[^"]*"|'[^']*'|\S+)"""
     pair = re.compile(r"(?<!\S)(?:%s)(?:=%s?|\s+(?!-)%s)" % (names, quotedOrWord, quotedOrWord))
     return pair.sub(" ", command)
+
+
+def leading_env_assignments(commandLines):
+    """The `NAME=value` words that the command lines start with, as written (quotes kept), one per variable name: the
+    first line to set a name decides its value. Order is first seen. A line that is only an assignment, with no command
+    after it, sets nothing."""
+    assignments = {}
+    for line in commandLines:
+        leading = ENV_ASSIGNMENTS.match(str(line).lstrip())
+        if leading is None:
+            continue
+        for assignmentMatch in ENV_ASSIGNMENT.finditer(leading.group(0)):
+            assignments.setdefault(assignmentMatch.group(1), assignmentMatch.group(0))
+    return list(assignments.values())
+
+
+def without_leading_env_assignments(command):
+    """The command with the NAME=value words it starts with taken off, whatever their values; the command itself when
+    it starts with none."""
+    stripped = command.strip()
+    leading = ENV_PREFIX.match(stripped)
+    return stripped[leading.end():] if leading else stripped
+
+
+def first_command_word(command):
+    """The first word of a command after any leading NAME=value assignments, or "" for an empty command."""
+    words = without_leading_env_assignments(command).split()
+    return words[0] if words else ""
+
+
+def backticked_spans(line):
+    """The text of each `backticked` span of a line, in order."""
+    return BACKTICKED.findall(line)
 
 
 def pre_tool_use_deny(reason):
@@ -389,3 +439,14 @@ def directory_relative_to(rootDirectory, directory):
     """The directory's path under rootDirectory as text, or "" when it is rootDirectory itself. Both are
     pathlib.Path."""
     return str(directory.relative_to(rootDirectory)) if directory != rootDirectory else ""
+
+
+def is_executable_file_inside(rootDirectory, relativePath):
+    """True when relativePath, taken from rootDirectory, names an executable file inside rootDirectory. A path that
+    leaves rootDirectory (a `..` segment or a link out) is not one. rootDirectory is a pathlib.Path or text."""
+    resolvedRoot = pathlib.Path(rootDirectory).resolve()
+    candidate = (resolvedRoot / relativePath).resolve()
+    if not candidate.is_relative_to(resolvedRoot):
+        return False
+
+    return candidate.is_file() and os.access(candidate, os.X_OK)

@@ -1,6 +1,8 @@
 """Hand-back gate for coder subagents. Run set and clear from inside the repo.
 
-  coder-gate.py set <command>...  store the check commands the gate runs, each one shell command from the repo root
+  coder-gate.py set [--env NAME=value]... <command>...
+                                  store the check commands the gate runs, each one shell command from the repo root,
+                                  and the variables each one runs with
   coder-gate.py clear             print each coder's last gate result, then delete the gate
   coder-gate.py hook              PreToolUse hook on SubagentHandback
   coder-gate.py bash-hook         PreToolUse hook on Bash: refuses a coder's whole-package check
@@ -19,6 +21,7 @@ it appends the gate result to the hand-back message, so the caller reads the rep
 older than 6 hours or another agent type, the hand-back goes through untouched. Parallel coders take turns."""
 import fcntl
 import json
+import os
 import pathlib
 import re
 import shlex
@@ -62,6 +65,7 @@ WHOLE_PACKAGE_PATHS = {".", "./"}
 SHELL_OPERATORS = {"&&", "||", ";", "|", "&", "(", ")"}
 REDIRECT_CHARS = set("<>&")
 FILES_PLACEHOLDER = re.compile(r"\{files(?::([^{}]*))?\}")
+ENV_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 
 
 def git_output(cwd, *args):
@@ -137,7 +141,24 @@ def runs_whole_package(command):
     return any(covers_whole_package(words) for words in simpleCommands)
 
 
-def set_gate(commands):
+def environment_from_assignments(assignments):
+    # {name: value} for NAME=value shell words such as `A=1` or `B="two words"`. Exits on a word that is not one.
+    environment = {}
+    for assignment in assignments:
+        try:
+            words = shlex.split(assignment)
+        except ValueError:
+            words = []
+        isOneAssignment = len(words) == 1 and ENV_ASSIGNMENT.match(words[0])
+        if not isOneAssignment:
+            sys.exit(f"coder-gate: --env needs NAME=value, got {assignment!r}")
+
+        name, value = words[0].split("=", 1)
+        environment[name] = value
+    return environment
+
+
+def set_gate(commands, envAssignments=()):
     gatePath = gate_path(".")
     if gatePath is None:
         sys.exit("coder-gate: not inside a git repo")
@@ -151,8 +172,9 @@ def set_gate(commands):
                  + refusedLines + "\nName the test files, test names or lint paths that the phase changes, or "
                  "use {files}. The review loop runs the full check command once, at its end.")
 
+    environment = environment_from_assignments(envAssignments)
     repoRoot = git_output(".", "rev-parse", "--show-toplevel")
-    gate = {"repoRoot": repoRoot, "commands": commands, "setAt": time.time(), "coders": {}}
+    gate = {"repoRoot": repoRoot, "commands": commands, "env": environment, "setAt": time.time(), "coders": {}}
     gatePath.write_text(json.dumps(gate, indent=1))
     print(f"coder gate set: {len(commands)} command(s)")
 
@@ -217,6 +239,7 @@ def fill_files(command, repoRoot):
 def run_commands(gate):
     failures = []
     skipped = []
+    environment = {**os.environ, **gate.get("env", {})}
     for command in gate["commands"]:
         filledCommand = fill_files(command, gate["repoRoot"])
         if filledCommand is None:
@@ -224,8 +247,9 @@ def run_commands(gate):
             continue
 
         try:
-            finished = subprocess.run(filledCommand, shell=True, cwd=gate["repoRoot"], stdout=subprocess.PIPE,
-                                      stderr=subprocess.STDOUT, text=True, timeout=COMMAND_TIMEOUT_SECONDS)
+            finished = subprocess.run(filledCommand, shell=True, cwd=gate["repoRoot"], env=environment,
+                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                      timeout=COMMAND_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
             failures.append((command, f"timeout after {COMMAND_TIMEOUT_SECONDS} s", ""))
             continue
@@ -338,7 +362,15 @@ def run_bash_hook():
 
 verb = sys.argv[1] if len(sys.argv) > 1 else ""
 if verb == "set":
-    set_gate(sys.argv[2:])
+    setArguments = sys.argv[2:]
+    envAssignments = []
+    while len(setArguments) >= 2 and setArguments[0] == "--env":
+        envAssignments.append(setArguments[1])
+        setArguments = setArguments[2:]
+    if "--env" in setArguments:
+        sys.exit("coder-gate: --env needs NAME=value, got nothing after it")
+
+    set_gate(setArguments, envAssignments)
 elif verb == "clear":
     clear_gate()
 elif verb == "hook":
@@ -346,4 +378,4 @@ elif verb == "hook":
 elif verb == "bash-hook":
     run_bash_hook()
 else:
-    sys.exit("usage: coder-gate.py set <command>... | clear | hook | bash-hook")
+    sys.exit("usage: coder-gate.py set [--env NAME=value]... <command>... | clear | hook | bash-hook")

@@ -118,7 +118,7 @@ class PlanImpactFlowTest(unittest.TestCase):
         self.assertIn("ACTION: ask-user", output)
         self.assertNotIn("AskUserQuestion", output + say_text(repo))
         self.assertIn("## Question for the user", say_text(repo))
-        self.assertIn("`decide adopt --by user --ruling \"<the user's answer>\"`", say_text(repo))
+        self.assertIn("`decide adopt --by user --ruling \"<the decision in one line>\"`", say_text(repo))
         self.assertEqual(read_state(repo)["impact"],
                          "PLAN-IMPACT:\n  assumed: the CSV has a header row\n\n  found: the importer rejects a header row")
 
@@ -205,8 +205,8 @@ class PlanImpactFlowTest(unittest.TestCase):
 
         planText = (repo / "plan.md").read_text()
         self.assertIn("## Plan Deviations", planText)
-        self.assertIn("The user's words:", planText)
-        self.assertIn("  > " + RULING, planText)
+        self.assertIn("  The ruling: " + RULING + "\n", planText)
+        self.assertNotIn("  > " + RULING, planText)
         self.assertIn("Ruled by t at", planText)
         self.assertEqual(read_state(repo)["ruling"]["words"], RULING)
 

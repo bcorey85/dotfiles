@@ -8,7 +8,7 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
   code-step.py start --task "<text>"           planless work: the coder dispatch without gate or packet
   code-step.py after-coder                      wait for the coder's hand-back, clear the gate, build the exact
                                                 review-loop dispatch (or the plan-disagreement modal)
-  code-step.py decide <adopt|keep> --by <user|session> --ruling "<the words>"
+  code-step.py decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"
                                                 only --by user is the user's own word: a session ruling never changes a criterion
   code-step.py decide discuss                   ask the user how to rule when the code and the plan disagree; records nothing
   code-step.py after-plan-edit                  the coder rewrote the plan to an adopted change: build the review dispatch
@@ -69,6 +69,7 @@ HANDBACK_WAIT_SECONDS = 570
 HANDBACK_POLL_SECONDS = 2
 HANDBACK_TOTAL_WAIT_MULTIPLE = 3
 FRESH_CALL_AFTER_SECONDS = 60
+LAUNCH_EXPECTED_SECONDS = 60
 FORK_STOP_BLOCK_LIMIT = 2
 BASH_TIMEOUT_MS = 600000
 CODER = "coder"
@@ -249,7 +250,15 @@ def record_dispatch(repoRoot, state, verb, agentType, model, prompt):
 
 def emit_dispatch(repoRoot, state, verb, *lines, prompt, agent, model=None):
     # The one way a dispatch reaches the fork: logged and saved first, then printed with the path of the saved prompt.
+    # Every agent it dispatches runs a gate, so the repo's gate env vars go in the prompt.
+    planRel = state.get("plan")
+    gateEnv = plan_format.repo_gate_env(repoRoot, planRel)
+    gateEnvText = plan_format.gate_env_text(gateEnv)
+    if gateEnvText:
+        prompt = f"{prompt.rstrip()}\n\n{gateEnvText}"
+
     markedPrompt, promptFile = record_dispatch(repoRoot, state, verb, agent, model, prompt)
+
     emit("dispatch", *lines, next_after(verb), prompt=markedPrompt, agent=agent, model=model, promptFile=promptFile)
 
 
@@ -514,6 +523,45 @@ def missing_dispatch_time_stop(state):
             "the phase over. Tell the user.")
 
 
+def unlaunched_dispatch(repoRoot, state, agentType):
+    # The newest dispatch of this run when its Agent call never left: no launch row, and older than the launch grace.
+    # Only the dispatch the state is in can be waited for; a resumed agent has a launch row of its own.
+    if state.get("stage") not in HOOK_STAGES or not state.get("runId"):
+        return None
+    standing = dispatch_standing(read_events(repoRoot, state["runId"]))
+    dispatch = standing["dispatch"]
+    if dispatch is None or standing["launched"] is not None:
+        return None
+
+    if dispatch.get("stage") != state["stage"] or dispatch.get("agent_type") != agentType:
+        return None
+
+    graceSeconds = float(os.environ.get("CODE_STEP_LAUNCH_SECONDS", LAUNCH_EXPECTED_SECONDS))
+    if time.time() - dispatch["ts"] < graceSeconds:
+        return None
+    return dispatch
+
+
+def emit_unlaunched_dispatch(dispatch):
+    # Prints the logged dispatch again from its saved prompt file. It logs no new dispatch: the first one stands.
+    promptFile = pathlib.Path(dispatch.get("prompt_file") or "")
+    age = time.time() - dispatch["ts"]
+    notice = (f"Dispatch {dispatch['id']} was logged {age:.0f} seconds ago and no Agent call for it was launched. "
+              "Make the Agent call now with the prompt below; do not wait for it.")
+    nextVerb = next_after(dispatch["verb"])
+    agent = dispatch.get("agent_type")
+    model = dispatch.get("model")
+
+    try:
+        savedPrompt = promptFile.read_text().rstrip()
+    except OSError:
+        emit("dispatch", notice, f"Read the prompt file {promptFile} and pass its whole text.", nextVerb,
+             agent=agent, model=model, promptFile=promptFile)
+        return
+
+    emit("dispatch", notice, nextVerb, prompt=savedPrompt, agent=agent, model=model, promptFile=promptFile)
+
+
 def wait_for_handback(repoRoot, state, verb, longChecksFollow=False):
     # Nested Agent calls return at once, so the verb that follows a dispatch waits here for the hand-back row.
     # CODE_STEP_WAIT_SECONDS=0 skips the wait. Returns False after emitting the line that says to run the verb again,
@@ -546,10 +594,25 @@ def wait_for_handback(repoRoot, state, verb, longChecksFollow=False):
         clockStart = state["resumeWaitAt"]
     else:
         clockStart = since
-    isPastCap = waitStarted - clockStart > totalCap
-    # The state is read again on each poll: a hook may pin the session while the wait runs.
-    found = script_utils.wait_for(lambda: latest_handback_row(repoRoot, load_state(repoRoot) or state, agentType, since),
-                                  0 if isPastCap else limit, interval)
+    # The wait ends at the cap, not at the end of the wait that passes it.
+    untilCap = max(0.0, clockStart + totalCap - waitStarted)
+    endsAtCap = untilCap <= limit
+
+    def handback_or_unlaunched():
+        # The state is read again on each poll: a hook may pin the session while the wait runs.
+        handbackRow = latest_handback_row(repoRoot, load_state(repoRoot) or state, agentType, since)
+        if handbackRow:
+            return "handback", handbackRow
+        if untilCap <= 0:
+            # The cap is spent: the cap stop comes next, not another print of the dispatch.
+            return None
+        dispatch = unlaunched_dispatch(repoRoot, load_state(repoRoot) or state, agentType)
+        return ("unlaunched", dispatch) if dispatch else None
+
+    found = script_utils.wait_for(handback_or_unlaunched, min(limit, untilCap), interval)
+    if found and found[0] == "unlaunched":
+        emit_unlaunched_dispatch(found[1])
+        return False
     if found:
         waited = time.time() - waitStarted
         threshold = float(os.environ.get("CODE_STEP_FRESH_CALL_SECONDS", FRESH_CALL_AFTER_SECONDS))
@@ -558,7 +621,7 @@ def wait_for_handback(repoRoot, state, verb, longChecksFollow=False):
                  f"after it start in a call of their own: {timed_command(verb)}.")
             return False
         return True
-    if time.time() - clockStart > totalCap:
+    if endsAtCap:
         resumeText = ""
         if agentType == REVIEW_LOOP:
             state["resumableReview"] = True
@@ -582,13 +645,24 @@ def own_path(text):
     return text.replace(INSTALLED_COMMAND, SELF_COMMAND)
 
 
+def say_file_in(directory):
+    # say.md sits in the state folder, one level above the run folders.
+    return directory / "say.md"
+
+
+def say_file(repoRoot):
+    # The real path of say.md for this repo.
+    directory = state_dir(repoRoot)
+    return say_file_in(directory) if directory is not None else pathlib.Path("say.md")
+
+
 def say(repoRoot, text):
     # User-facing text goes to a file the /code subagent hands back verbatim, so the model never has to copy it.
     directory = state_dir(repoRoot)
     if directory is None:
         return
     directory.mkdir(parents=True, exist_ok=True)
-    with open(directory / "say.md", "a") as sayFile:
+    with open(say_file_in(directory), "a") as sayFile:
         sayFile.write(own_path(text).rstrip() + "\n\n")
 
 
@@ -597,9 +671,9 @@ def command_say_hook():
     try:
         event = json.loads(sys.stdin.read() or "{}")
         directory = state_dir(pathlib.Path(event.get("cwd") or os.getcwd()))
-        if directory is None or not (directory / "say.md").exists():
+        if directory is None or not say_file_in(directory).exists():
             return
-        sayFile = directory / "say.md"
+        sayFile = say_file_in(directory)
         isStale = time.time() - sayFile.stat().st_mtime > SAY_MAX_AGE_SECONDS
         text = sayFile.read_text().strip()
         sayFile.write_text("")
@@ -614,22 +688,25 @@ def command_say_hook():
 
 def clear_say(repoRoot):
     directory = state_dir(repoRoot)
-    if directory is not None and (directory / "say.md").exists():
-        (directory / "say.md").write_text("")
+    if directory is not None and say_file_in(directory).exists():
+        say_file_in(directory).write_text("")
 
 
 def ask_user(repoRoot, instruction, *questionLines):
     # The /code subagent cannot ask the user: the question goes in say.md for the main session to ask.
     say(repoRoot, "\n".join(["## Question for the user", "", "Main session: " + instruction, "", *questionLines]))
-    emit("ask-user", "The question for the user is in say.md. Hand back.")
+    emit("ask-user", f"The question for the user is in {say_file(repoRoot)}. Hand back.")
 
 
 def emit(action, *lines, prompt=None, agent=None, model=None, promptFile=None):
     lines = [own_path(line) for line in lines]
-    print(f"ACTION: {action}")
+    headerLines = [f"ACTION: {action}"]
     if agent:
-        print(f"AGENT: {agent}")
-        print(f"MODEL: {model or 'omit the model argument'}")
+        headerLines += [f"AGENT: {agent}", f"MODEL: {model or 'omit the model argument'}"]
+
+    for headerLine in headerLines:
+        print(headerLine)
+    if agent:
         print("BACKGROUND: no. Never set run_in_background. The Agent call returns at once: do not wait for its "
               "result; the NEXT verb waits for the report.")
     for line in lines:
@@ -641,6 +718,13 @@ def emit(action, *lines, prompt=None, agent=None, model=None, promptFile=None):
         print("-----BEGIN PROMPT-----")
         print(own_path(prompt))
         print("-----END PROMPT-----")
+    if agent:
+        # A reader that keeps only the tail of a long output still sees what to do.
+        for headerLine in headerLines:
+            print(headerLine)
+        for line in lines:
+            if line.startswith("NEXT:"):
+                print(line)
 
 
 # ---------- plan parsing ----------
@@ -738,6 +822,10 @@ def command_plan_hook():
         if manualFailure:
             print(manualFailure, file=sys.stderr)
             sys.exit(2)
+        verificationFailure = verification_format_failure(planLines, state["plan"], pathlib.Path(cwd), plan["entries"])
+        if verificationFailure:
+            print(verificationFailure, file=sys.stderr)
+            sys.exit(2)
     except ValueError:
         return
     except (OSError, StateFileError) as error:
@@ -795,21 +883,10 @@ def command_plan(args):
     manualFailure = manual_format_failure(planLines, args[1])
     if manualFailure:
         print(manualFailure)
-    sys.exit(1 if plan["failures"] or manualFailure else 0)
-
-
-def automated_verification_items(phaseSection):
-    items = []
-    inside = False
-    for line in phaseSection.splitlines():
-        if line.startswith("#### "):
-            inside = line.startswith("#### Automated Verification")
-            continue
-        if re.match(r"#{1,3} ", line) or line.strip() == "---":
-            inside = False
-        if inside and re.match(r"^- \[[ x]\]", line):
-            items.append(line)
-    return items
+    verificationFailure = verification_format_failure(planLines, args[1], pathlib.Path.cwd(), plan["entries"])
+    if verificationFailure:
+        print(verificationFailure)
+    sys.exit(1 if plan["failures"] or manualFailure or verificationFailure else 0)
 
 
 # ---------- gate derivation ----------
@@ -868,20 +945,70 @@ def python_commands(repoRoot, paths):
     return commands
 
 
+def cargo_test_scope(crateDir, fileInCrate):
+    # The cargo test arguments for one Rust file, given the crate directory and the file's path from it, or None when
+    # no test belongs to it. `src/bin/<name>.rs` and every file under `src/bin/<name>/` are the binary `<name>`.
+    # Any other file under `src/`, `lib.rs` and `main.rs` included, runs the library and binary unit tests
+    # (`--lib --bins`) in a crate with a `src/lib.rs`, and the binaries (`--bins`) in a crate with none; `--lib` alone
+    # would skip the unit tests in `main.rs` and in the modules only `main.rs` reaches. `tests/<name>.rs` is the test
+    # target `<name>`. Any file under `tests/<dir>/` is the test target `<dir>` when `tests/<dir>/main.rs` exists, and
+    # otherwise a helper that any integration test can include, so it runs every test target (`--tests`),
+    # which already covers the library and every binary, so the crate's other test commands are dropped.
+    # A `src/` change does not run the integration tests in `tests/`, because CI runs the full suite.
+    # No module filter: a test in an unchanged module can pin the old behavior of the changed one, and the cost is
+    # compiling the test binary, which a filter does not save.
+    parts = pathlib.PurePosixPath(fileInCrate).with_suffix("").parts
+    if len(parts) < 2:
+        return None
+
+    if parts[0] == "tests":
+        if len(parts) == 2:
+            return f"--test {parts[1]}"
+
+        isTargetMainFile = parts[2:] == ("main",)
+        isTestTargetDirectory = isTargetMainFile or (crateDir / "tests" / parts[1] / "main.rs").is_file()
+        return f"--test {parts[1]}" if isTestTargetDirectory else "--tests"
+
+    if parts[0] != "src":
+        return None
+
+    isUnderBinDirectory = parts[1] == "bin" and len(parts) > 2
+    if isUnderBinDirectory:
+        return f"--bin {parts[2]}"
+
+    if (crateDir / "src" / "lib.rs").is_file():
+        return "--lib --bins"
+    return "--bins"
+
+
 def cargo_commands(repoRoot, paths):
-    crateDirs = []
+    commandsByCrate = {}
     for path in paths:
-        if not (path.endswith(".rs") or pathlib.PurePosixPath(path).name == "Cargo.toml"):
+        isRustFile = path.endswith(".rs")
+        if not (isRustFile or pathlib.PurePosixPath(path).name == "Cargo.toml"):
             continue
 
         crateDir = nearest_directory_with(repoRoot, path, "Cargo.toml")
-        if crateDir is not None and crateDir not in crateDirs:
-            crateDirs.append(crateDir)
+        if crateDir is None:
+            continue
+
+        crateCommands = commandsByCrate.setdefault(crateDir, [CARGO_CLIPPY])
+        if not isRustFile:
+            continue
+
+        pathInCrate = str((repoRoot / path).relative_to(crateDir))
+        scope = cargo_test_scope(crateDir, pathInCrate)
+        testCommand = f"cargo test {scope}" if scope else None
+        if testCommand and testCommand not in crateCommands:
+            crateCommands.append(testCommand)
 
     commands = []
-    for crateDir in crateDirs:
+    for crateDir, crateCommands in commandsByCrate.items():
+        if "cargo test --tests" in crateCommands:
+            crateCommands = [CARGO_CLIPPY, "cargo test --tests"]
+
         crateRel = script_utils.directory_relative_to(repoRoot, crateDir)
-        commands.append(in_directory(CARGO_CLIPPY, crateRel))
+        commands += [in_directory(command, crateRel) for command in crateCommands]
     return commands
 
 
@@ -1136,6 +1263,9 @@ def command_start(args):
     manualFailure = manual_format_failure(planLines, planRel, RESUME_LINE.format(noun="section", verb="start"))
     if manualFailure:
         return emit("stop", manualFailure)
+    verificationFailure = verification_format_failure(planLines, planRel, repoRoot, plan["entries"])
+    if verificationFailure:
+        return emit("stop", verificationFailure + " " + RESUME_LINE.format(noun="section", verb="start"))
 
     entries = plan["entries"]
     hasPhases = bool(plan["sections"])
@@ -1179,7 +1309,7 @@ def command_start(args):
         return
 
     commands = derive_gate_commands(repoRoot, section) if entry else []
-    gateNote = set_gate_and_packet_note(repoRoot, commands)
+    gateNote = set_gate_and_packet_note(repoRoot, planRel, commands)
     packetText = packet_text(repoRoot, planRel, number, hasPhases and entry)
 
     reportsFile = state_dir(repoRoot) / "reports.jsonl"
@@ -1251,13 +1381,20 @@ def check_acceptance_criteria(repoRoot, planLines, planRel):
     return False
 
 
-def set_gate_and_packet_note(repoRoot, commands):
+def set_gate_and_packet_note(repoRoot, planRel, commands):
     if not commands:
         return "GATE: none derived; the coder runs its own checks (the packet says so)."
-    code, output = run_command(["python3", str(SCRIPTS_DIR / "coder-gate.py"), "set", *commands], repoRoot)
+
+    # The gate runs the commands later, at each hand-back, so the repo's gate env goes into the stored gate.
+    gateEnv = plan_format.repo_gate_env(repoRoot, planRel)
+    envArguments = [argument for assignment in gateEnv for argument in ("--env", assignment)]
+    code, output = run_command(["python3", str(SCRIPTS_DIR / "coder-gate.py"), "set", *envArguments, *commands],
+                               repoRoot)
     if code != 0:
         return f"GATE: not set ({output.splitlines()[0] if output else 'refused'}); the coder runs its own checks."
-    return f"GATE: {output}. Commands: " + " | ".join(commands)
+
+    envNote = f" With: {' '.join(gateEnv)}." if gateEnv else ""
+    return f"GATE: {output}. Commands: " + " | ".join(commands) + envNote
 
 
 def packet_text(repoRoot, planRel, number, usePacket):
@@ -1578,7 +1715,7 @@ def preset_decision(repoRoot):
 
 
 def decide_call(word):
-    return f"`decide {word} --by user --ruling \"<the user's answer>\"`"
+    return f"`decide {word} --by user --ruling \"<the decision in one line>\"`"
 
 
 DECIDE_BY_NOTE = ("If the user told you to make the call yourself, or you rule without asking, pass `--by session` in "
@@ -1594,8 +1731,8 @@ def emit_plan_impact_modal(impact, repoRoot):
                                                 f"pre-set decision '{word}'; no user was asked"],
                               rulingBy="the pre-set decision")
     ask_user(repoRoot, "the code and the plan disagree. Ask the user this question in plain text and wait for the "
-             "answer. Then invoke Skill code with the args after the option the user chose, with the user's whole "
-             "answer, in their words, as the --ruling text.",
+             "answer. Then invoke Skill code with the args after the option the user chose, with the ruling in one "
+             "line, in your own words, as the --ruling text. Do not quote the user.",
              impact, "",
              f"1. {PLAN_IMPACT_OPTIONS[0]} (a coder rewrites the plan steps to match the ruling): "
              f"{decide_call('adopt')}",
@@ -1607,10 +1744,10 @@ def emit_plan_impact_modal(impact, repoRoot):
 
 def record_deviation(repoRoot, state):
     ruling = state["ruling"]
+    rulingLine = " ".join(ruling["words"].split())
     entry = [f"- {time.strftime('%Y-%m-%d')} (Phase {state['phase']}): {ruling['decision']}. "
              f"Ruled by {ruling['by']} at {ruling['at']}.", "",
-             "  The user's words:" if ruling["byUser"] else "  The ruling's words:"]
-    entry += ["  > " + line for line in ruling["words"].splitlines()]
+             f"  The ruling: {rulingLine}"]
     entry += ["", "  The disagreement:"]
     entry += ["  " + line for line in state["impact"].splitlines()]
     append_deviation(repoRoot / state["plan"], entry)
@@ -1646,22 +1783,22 @@ def resolved_plan_impact(state):
     # returning the question again.
     ruling = state["ruling"]
     if ruling["byUser"]:
-        resolved, wordsLabel = "the user ruled on this disagreement", "Ruling, in the user's words:"
+        resolved = "the user ruled on this disagreement"
     elif ruling["by"] == "the pre-set decision":
-        resolved, wordsLabel = "the pre-set decision ruled on this disagreement, not the user", "The ruling's words:"
+        resolved = "the pre-set decision ruled on this disagreement, not the user"
     else:
-        resolved, wordsLabel = "the session ruled on this disagreement, not the user", "The ruling's words:"
+        resolved = "the session ruled on this disagreement, not the user"
     lines = [f"RESOLVED: {resolved}. Review the code against the ruling. It is not an open question.",
              f"Decision: {ruling['decision']}",
              f"Ruled by: {ruling['by']}, at {ruling['at']}",
-             wordsLabel]
+             "The ruling:"]
     lines += ["  " + line for line in ruling["words"].splitlines()]
     lines.append("The disagreement it settles:")
     lines += ["  " + line for line in state["impact"].splitlines()]
     return "\n".join(lines)
 
 
-DECIDE_USAGE = 'decide <adopt|keep> --by <user|session> --ruling "<the user\'s answer>"'
+DECIDE_USAGE = 'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"'
 
 
 def command_decide(repoRoot, state, args, rulingBy=None):
@@ -1804,8 +1941,8 @@ def plan_edit_prompt(state, criteriaRel):
         "",
         state["impact"],
         "",
-        (f"The user ruled ({ruling['by']}, {ruling['at']}). The ruling, in the user's words:" if userRuled
-         else f"The ruling ({ruling['by']}, {ruling['at']}). The ruling's words:"),
+        (f"The user ruled ({ruling['by']}, {ruling['at']}):" if userRuled
+         else f"The ruling ({ruling['by']}, {ruling['at']}):"),
         "",
         ruling["words"],
         "",
@@ -1818,8 +1955,8 @@ def plan_edit_prompt(state, criteriaRel):
     if criteriaRel and userRuled:
         lines += ["",
                   f"Rewrite each criterion in {criteriaRel} that the ruling changes, so that it states the ruling. Under "
-                  f"each one you rewrite, add `Signed off by {ruling['by']}, {ruling['at']}: \"<the user's words on "
-                  "this criterion>\"`. Keep every other criterion as it is."]
+                  f"each one you rewrite, add `Signed off by {ruling['by']}, {ruling['at']}: <the change in one line>`. "
+                  "Keep every other criterion as it is."]
     lines += ["", "Report each line you changed as `<file>:<line number>: <new text>`."]
     return "\n".join(lines)
 
@@ -2377,7 +2514,7 @@ def ask_the_user(repoRoot, state, asks):
         f"is accepted, rejected or modified. Then invoke Skill code with the args `asks-done` and {len(asks)} outcome "
         "word(s), in order. After a modified outcome, add `--change \"<the user's change text>\"`.", "",
         *[f"{n + 1}. {ask_text(item)}" for n, item in enumerate(asks)]]))
-    emit("ask-user", "The question for the user is in say.md. Hand back.")
+    emit("ask-user", f"The question for the user is in {say_file(repoRoot)}. Hand back.")
 
 
 def log_ask_outcomes(repoRoot, state, outcomes):
@@ -2537,24 +2674,131 @@ def command_verify(repoRoot, state, args):
     finish_phase(repoRoot, state)
 
 
-ENV_ASSIGNMENTS = re.compile(r"""(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s"']*)\s+)+""")
-COMMAND_START = re.compile(r"^(?:" + ENV_ASSIGNMENTS.pattern + r")?"
+COMMAND_START = re.compile(r"^(?:" + script_utils.ENV_PREFIX.pattern + r")?"
                            r"(cd |npm |npx |pnpm |yarn |git |node |python3? |pytest|ruff |bash |curl |make "
                            r"|cargo |go |deno |bun |uv |poetry |tsc\b|eslint |vitest|jest|mvn |gradle |\./"
                            r"|dotnet |docker |just |rake |bundle |ruby |php |composer |mix |swift |sbt |bazel |tox\b"
                            r"|mypy |pyright|sh )")
 
-# An Automated Verification item that says there is nothing to run: "- [ ] N/A — docs only", "- [ ] none".
-NO_AUTOMATED_CHECK = re.compile(r"^- \[[ x]\]\s*[*_`]*\s*(?:n/a|none)\b", re.IGNORECASE)
+# Programs that a prose span can start with but that are never a check: they start a session, never end or wait for
+# input. `tail` is one only when it follows a file (see TAIL_FOLLOWS).
+NOT_A_CHECK_PROGRAMS = ("claude", "yes", "watch", "top", "htop", "less", "more", "vi", "vim", "nano", "sleep")
+TAIL_FOLLOWS = re.compile(r"^(?:-[A-Za-z0-9]*[fF][A-Za-z0-9]*|--follow(?:=\w+)?)$")
 
 
-def verification_command(line):
-    # The first backticked span that starts like a shell command, after any leading NAME=value assignments, which the
-    # shell passes to the command; the line may continue after it ("`npm run build` exits 0.").
-    for span in re.findall(r"`([^`]+)`", line):
+def deferred_verification_items(phaseSection):
+    # (tag, item text) for each Automated Verification item the plan leaves to CI or to a person, in file order.
+    deferred = []
+    for _, line in plan_format.automated_verification_rows(phaseSection.splitlines()):
+        tag = plan_format.deferred_verification_tag(line)
+        if not tag:
+            continue
+
+        itemText = plan_format.automated_item_text(line)
+        deferred.append((tag, itemText))
+    return deferred
+
+
+def never_returns(words):
+    # True when the command in `words` is a program that never ends or waits for input, so it cannot be a check.
+    programName = pathlib.PurePath(words[0]).name
+    if programName in NOT_A_CHECK_PROGRAMS:
+        return True
+
+    return programName == "tail" and any(TAIL_FOLLOWS.match(word) for word in words[1:])
+
+
+def starts_like_a_program_here(span, repoRoot):
+    # A span COMMAND_START does not know is a command when it starts with a path to an executable file of the repo,
+    # or with a program on PATH that has at least one argument after it (a program word alone is how prose names a
+    # tool, and a bare word is looked up on PATH only, never in the repo).
+    words = script_utils.without_leading_env_assignments(span).split()
+    if not words:
+        return False
+
+    program = words[0]
+    hasSlash = "/" in program
+    if hasSlash and repoRoot is not None and script_utils.is_executable_file_inside(repoRoot, program):
+        return True
+
+    if len(words) < 2 or never_returns(words):
+        return False
+
+    # A relative path with a slash is looked up from the working directory, not PATH: only the repo-file rule above
+    # may accept it, and that rule keeps it inside the repo.
+    if hasSlash and not pathlib.PurePath(program).is_absolute():
+        return False
+
+    return shutil.which(program) is not None
+
+
+def verification_command(line, repoRoot=None):
+    # The first backticked span that starts with a known program, after any leading NAME=value assignments, which the
+    # shell passes to the command; when none does, the first span that starts with a program of this machine. The
+    # line may continue after it ("`npm run build` exits 0.").
+    spans = script_utils.backticked_spans(line)
+    for span in spans:
         if COMMAND_START.match(span):
             return span
+
+    for span in spans:
+        if starts_like_a_program_here(span, repoRoot):
+            return span
+
     return None
+
+
+def verification_item_problem(line, repoRoot):
+    # Why an Automated Verification item cannot run, or None when it runs, says there is nothing to run or is left to
+    # CI or a person. The write-time check of a plan and the stop after a phase use this one reading.
+    if plan_format.runs_no_command(line):
+        return None
+    if verification_command(line, repoRoot):
+        return None
+
+    spans = script_utils.backticked_spans(line)
+    if not spans:
+        return "it has no backticked command and is not marked N/A, CI-verified or human-only"
+
+    startWords = []
+    for span in spans:
+        firstWord = script_utils.first_command_word(span) or span
+        startWords.append(f"`{firstWord}`")
+    return ("no backticked span starts with a program on PATH (with an argument) or an executable file in the repo "
+            f"(it starts with {', '.join(startWords)})")
+
+
+VERIFICATION_ITEM_SHAPE = (
+    "Each Automated Verification item is one line in one of three shapes. (1) One backticked command that starts with "
+    "a program on PATH (with at least one argument) or an executable file in the repo, for example the line "
+    "'- [ ] **Name**: what it checks - `npm test`'. (2) N/A, for example '- [ ] N/A - docs only'. (3) A tag that "
+    "says CI or a person runs it, for example '- [ ] **CI-verified**: the pipeline runs it' or '- [ ] Human-only: "
+    "look at the page'. This script never runs the third shape.")
+
+
+def verification_format_failure(planLines, planName, repoRoot, entries):
+    # The write-time message for open phases whose Automated Verification items cannot run, or None when all can. A
+    # closing phase is checked by its skill, which runs no verification command.
+    problems = []
+    for entry in entries:
+        if not entry["open"] or entry["closing"]:
+            continue
+
+        section = plan_format.phase_section(planLines, entry["number"])
+        if section is None:
+            continue
+
+        sectionLines = planLines[section["start"]:section["end"]]
+        for index, line in plan_format.automated_verification_rows(sectionLines):
+            problem = verification_item_problem(line, repoRoot)
+            if problem:
+                problems.append(f"{planName}:{section['start'] + index + 1}: {line.strip()[:100]} - {problem}")
+
+    if not problems:
+        return None
+
+    return ("The plan has Automated Verification items that cannot run. Fix each line:\n" + "\n".join(problems) + "\n"
+            + VERIFICATION_ITEM_SHAPE)
 
 
 def check_prohibition(repoRoot, command, code, output):
@@ -2581,14 +2825,14 @@ def run_verification_commands(repoRoot, phaseSection):
     skipped = []
     unparsed = []
     timeout = int(os.environ.get("CODE_STEP_VERIFY_TIMEOUT", VERIFY_TIMEOUT_SECONDS))
-    for line in automated_verification_items(phaseSection):
-        if NO_AUTOMATED_CHECK.match(line):
+    for _, line in plan_format.automated_verification_rows(phaseSection.splitlines()):
+        if plan_format.runs_no_command(line):
             continue
-        command = verification_command(line)
+        command = verification_command(line, repoRoot)
         if command is None:
             unparsed.append(line.strip())
             continue
-        if WHOLE_SUITE.match(ENV_ASSIGNMENTS.sub("", command, count=1)):
+        if WHOLE_SUITE.match(script_utils.without_leading_env_assignments(command)):
             skipped.append(command)
             continue
         code, output = run_command(command, repoRoot, timeout=timeout)
@@ -2741,18 +2985,19 @@ def finish_phase(repoRoot, state, skipVerification=False):
     verifyResults, skipped, unparsed = ([], [], [])
     if not skipVerification:
         verifyResults, skipped, unparsed = run_verification_commands(repoRoot, section)
-    # A section that lists items while none yields a command means the parse missed them: the phase is not verified.
-    if unparsed and not verifyResults and not skipped:
+    # An item that yields no command was not run: the phase is not verified, whatever the other items did.
+    if unparsed:
         state.update({"stage": "stopped", "stopReason": "verification"})
         save_state(repoRoot, state)
         tickText = (f" For a check that cannot be automated, the user can confirm it; on the user's word only, invoke "
                     f"Skill code with `tick {state['phase']}` to mark the phase done." if state.get("phase") else
                     " For a check that cannot be automated, the user can confirm it and mark the phase done with `tick`.")
-        return emit("stop", "The phase has an Automated Verification section but no command could be read from it, so "
-                    "nothing was run. Do not mark the phase done. Report to the user; the lines are:",
-                    *[f"- {line}" for line in unparsed],
-                    "Each item needs a backticked command that starts with a known program (npm, cargo, go, pytest, "
-                    "git, bash, sh, ./script ...)." + tickText + " " + RESUME_LINE.format(noun="section", verb="verify"))
+        ranText = ("nothing was run" if not verifyResults and not skipped else
+                   f"{len(verifyResults)} other command(s) ran")
+        return emit("stop", f"The phase has Automated Verification items that could not be run ({ranText}). Do not "
+                    "mark the phase done. Report each line to the user:",
+                    *[f"- {line} - {verification_item_problem(line, repoRoot)}" for line in unparsed],
+                    VERIFICATION_ITEM_SHAPE + tickText + " " + RESUME_LINE.format(noun="section", verb="verify"))
     failed = [(command, code, output) for command, code, output in verifyResults if code != 0]
     if failed:
         state.update({"stage": "stopped", "stopReason": "verification"})
@@ -2793,13 +3038,17 @@ def finish_phase(repoRoot, state, skipVerification=False):
 
     doneText = f"Phase {number} marked done in {state['plan']}." if number is not None \
         else f"The plan {state['plan']} is finished."
-    listedItems = [line for line in automated_verification_items(section) if not NO_AUTOMATED_CHECK.match(line)]
+    listedItems = [line for _, line in plan_format.automated_verification_rows(section.splitlines())
+                   if not plan_format.NO_AUTOMATED_CHECK.match(line)]
     if not verifyResults and not skipped and not listedItems:
         doneLine = f"{doneText} The phase lists no verification commands, so none were run."
     else:
         doneLine = (f"{doneText} Verification run: "
                     f"{len(verifyResults)} command(s) green ({'; '.join(c for c, _, _ in verifyResults) or 'none'}); "
                     f"skipped as covered by the review loop: {len(skipped)}.")
+        notRunHere = [f"not run here: {tag} - {text[:120]}" for tag, text in deferred_verification_items(section)]
+        if notRunHere:
+            doneLine += " " + "; ".join(notRunHere) + "."
     if reopened:
         doneLine += (f" Closing phase(s) {', '.join(reopened)} were checked and are unchecked again, so they run on "
                      "the new code.")

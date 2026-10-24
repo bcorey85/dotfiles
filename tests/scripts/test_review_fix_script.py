@@ -253,10 +253,18 @@ class ReviewFixScriptTest(unittest.TestCase):
             for by in ("user", "session"):
                 self.assertIn(f"review-fix.py decide {word} --by {by} --ruling", output)
         self.assertEqual(4, output.count("--plan <the plan path, when the handoff names one>"))
+        self.assertEqual(2, output.count('--ruling "<the decision in one line>"'))
+
+    def test_the_script_usage_asks_for_the_decision_in_one_line(self):
+        code, output = self.run_script([])
+
+        self.assertEqual(2, code)
+        self.assertIn('decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>" [--plan <path>]',
+                      output)
 
     def test_plan_impact_modal_names_the_by_form(self):
         code, output = self.packet(PLAN_IMPACT)
-        self.assertIn("decide <adopt|keep> --by user --ruling", output)
+        self.assertIn('decide <adopt|keep> --by user --ruling "<the decision in one line>"', output)
         self.assertIn("pass `--by session`", output)
         self.assertIn("--plan <the plan path, when the handoff names one>", output)
 
@@ -285,7 +293,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(["decide", "adopt", "--ruling", "my call", "--plan", str(planFile)])
         self.assertEqual(code, 2)
         self.assertIn("ACTION: stop-usage", output)
-        self.assertIn('decide <adopt|keep> --by <user|session> --ruling "<the user\'s answer>"', output)
+        self.assertIn('decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"', output)
         self.assertEqual(stageBefore, self.stored_stage())
         self.assertEqual("# Plan\n", planFile.read_text())
 

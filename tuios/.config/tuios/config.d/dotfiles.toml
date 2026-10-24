@@ -28,9 +28,10 @@ window_title_style = "plain"
 click_to_type = "single"
 zoom_borderless = true
 tiling_scheme = "longest_side"
-# Take the colours from the terminal (ghostty), which theme-mode switches.
-# theme-mode runs `tuios theme reload` so clients re-read them.
-theme = "none"
+# theme-mode writes this theme (themes/theme-mode.json, machine-local) from the
+# active ghostty palette, with teal chrome. "none" would keep tuios's own
+# accents and grey dialogs. `theme-mode tuios` rewrites it.
+theme = "theme-mode"
 motion = "none"
 zoom_animation = false
 
@@ -76,7 +77,7 @@ preselect_right = []
 # structure
 prefix_new_window = []                  # was c (yours: new tab)
 new_workspace = ["c"]
-close_workspace = ["X"]
+close_workspace = []                    # X is a command key below: no confirm
 prefix_close_session = ["ctrl+d"]       # was X
 rename_workspace = [","]
 prefix_settings = []                    # was ,
@@ -162,6 +163,14 @@ resize_pane_right_5 = ["l"]
 # tuios side of herdr-splits.nvim (nvim side: lua/plugins/herdr-splits.lua).
 # tuios 0.10.1 has no plugin_action key type, so each key runs the plugin's
 # action through the CLI.
+# tuios always confirms close_workspace (no option turns it off); the CLI verb
+# closes at once.
+[[keybindings.command]]
+key = "prefix+X"
+type = "shell"
+command = "tuios close-workspace"
+description = "close workspace"
+
 [[keybindings.command]]
 key = "ctrl+h"
 type = "shell"

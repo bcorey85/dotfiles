@@ -13,8 +13,11 @@ import unittest
 SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts")
 INSTALLED_DIR = pathlib.Path.home() / ".claude" / "scripts"
 STAGED_FILES = ("review-commit-gate.py", "handback.py", "script_utils.py", "hook_input.py", "shell_command.py")
-ASK = ("[review-commit-gate] Coder work from this session has no converged /review. Allow to commit anyway, or "
-       "deny and run /review.")
+COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no converged /review. Run /review on the "
+                 "coder work and commit after it converges. If the commit ships only Markdown files under the "
+                 "repo's top-level docs/ folder, run it as a plain `git commit` (with `git add` of single named "
+                 "files if needed) from the repo root in its own Bash call, with no `cd`, `env` or `git -C`, "
+                 "because the gate passes that form.")
 
 
 class GateCase(unittest.TestCase):
@@ -70,7 +73,14 @@ class GateCase(unittest.TestCase):
     def assert_silent(self, finished):
         self.assertEqual((finished.returncode, finished.stdout, finished.stderr), (0, "", ""))
 
-    def assert_asks(self, finished, reason=ASK, stderr=""):
+    def assert_commit_denied(self, finished):
+        self.assertEqual(finished.returncode, 0)
+        self.assertEqual(finished.stderr, "")
+        self.assertEqual(json.loads(finished.stdout), {"hookSpecificOutput": {
+            "hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": COMMIT_DENIED}})
+
+    def assert_internal_error_asks(self, finished, exit_code, stderr=""):
+        reason = "[review-commit-gate] internal error (exit %d). Allow to run the command anyway." % exit_code
         self.assertEqual(finished.returncode, 0)
         self.assertEqual(finished.stderr, stderr)
         self.assertEqual(json.loads(finished.stdout), {"hookSpecificOutput": {
@@ -85,11 +95,19 @@ class ReviewCommitGateTest(GateCase):
     def test_commit_without_coder_dispatch_passes(self):
         self.assert_silent(self.bash("git commit -m x"))
 
-    def test_coder_dispatch_makes_commit_ask(self):
+    def test_coder_dispatch_makes_commit_denied(self):
         self.assert_silent(self.dispatch("coder"))
         self.assertEqual(self.state(), "dirty\n")
-        self.assert_asks(self.bash("git commit -m x"))
-        self.assert_asks(self.bash("git add . && git  commit -am x"))
+        self.assert_commit_denied(self.bash("git commit -m x"))
+        self.assert_commit_denied(self.bash("git add . && git  commit -am x"))
+
+    def test_the_commit_deny_reason_names_review_and_the_plain_docs_commit_form(self):
+        self.dispatch()
+        finished = self.bash("git commit -m x")
+        self.assert_denies(finished, "[review-commit-gate]")
+        self.assert_denies(finished, "Run /review on the coder work and commit after it converges.")
+        self.assert_denies(finished, "plain `git commit`")
+        self.assert_denies(finished, "top-level docs/ folder")
 
     def test_every_coder_variant_marks_dirty(self):
         for name in ("coder", "coder-deep", "backend-coder", "backend-coder-deep", "frontend-coder",
@@ -110,9 +128,9 @@ class ReviewCommitGateTest(GateCase):
 
     def test_commit_tree_counts_as_a_commit_like_the_bash_original(self):
         self.dispatch()
-        self.assert_asks(self.bash("git commit-tree abc"))
+        self.assert_commit_denied(self.bash("git commit-tree abc"))
 
-    def test_mark_clean_then_commit_passes_and_mark_dirty_asks_again(self):
+    def test_mark_clean_then_commit_passes_and_mark_dirty_denies_again(self):
         self.dispatch()
         self.seed_handback("converged")
         self.assert_silent(self.bash("review-gate-mark clean"))
@@ -120,7 +138,7 @@ class ReviewCommitGateTest(GateCase):
         self.assert_silent(self.bash("git commit -m x"))
         self.assert_silent(self.bash("~/.claude/scripts/review-gate-mark   dirty"))
         self.assertEqual(self.state(), "dirty\n")
-        self.assert_asks(self.bash("git commit -m x"))
+        self.assert_commit_denied(self.bash("git commit -m x"))
 
     def test_mark_with_other_word_is_ignored(self):
         self.assert_silent(self.bash("review-gate-mark other"))
@@ -128,7 +146,7 @@ class ReviewCommitGateTest(GateCase):
 
     def test_commit_beats_mark_in_the_same_command(self):
         self.dispatch()
-        self.assert_asks(self.bash("review-gate-mark clean && git commit -m x"))
+        self.assert_commit_denied(self.bash("review-gate-mark clean && git commit -m x"))
         self.assertEqual(self.state(), "dirty\n")
 
     def test_mark_clean_without_prior_state_creates_it(self):
@@ -143,7 +161,7 @@ class ReviewCommitGateTest(GateCase):
             self.seed_handback(status, session=session)
             self.assert_denies(self.bash("review-gate-mark clean", session=session), status)
             self.assertEqual(self.state(session), "dirty\n", status)
-            self.assert_asks(self.bash("git commit -m x", session=session))
+            self.assert_commit_denied(self.bash("git commit -m x", session=session))
 
     def test_clean_is_denied_with_no_hand_back_and_names_the_cause(self):
         self.dispatch()
@@ -191,10 +209,9 @@ class ReviewCommitGateTest(GateCase):
     def test_missing_handback_module_is_an_internal_error_on_clean_only(self):
         self.dispatch()
         (self.scripts / "handback.py").unlink()
-        self.assert_asks(self.bash("review-gate-mark clean"),
-                         "[review-commit-gate] internal error (exit 1). Allow to run the command anyway.")
+        self.assert_internal_error_asks(self.bash("review-gate-mark clean"), 1)
         self.assertEqual(self.state(), "dirty\n")
-        self.assert_asks(self.bash("git commit -m x"))
+        self.assert_commit_denied(self.bash("git commit -m x"))
         self.assert_silent(self.bash("review-gate-mark dirty"))
 
     def test_dirty_always_passes(self):
@@ -206,7 +223,7 @@ class ReviewCommitGateTest(GateCase):
 
     def test_sessions_are_separate_and_missing_session_is_unknown(self):
         self.dispatch(session="a")
-        self.assert_asks(self.bash("git commit -m x", session="a"))
+        self.assert_commit_denied(self.bash("git commit -m x", session="a"))
         self.assert_silent(self.bash("git commit -m x", session="b"))
         payload = {"hook_event_name": "PostToolUse", "tool_input": {"subagent_type": "coder"}}
         self.fire_raw(json.dumps(payload))
@@ -238,21 +255,19 @@ class ReviewCommitGateTest(GateCase):
         self.assertFalse(self.state_dir.exists())
 
     def test_unparseable_input_asks_with_internal_error(self):
-        self.assert_asks(self.fire_raw("not json"),
-                         "[review-commit-gate] internal error (exit 2). Allow to run the command anyway.")
+        self.assert_internal_error_asks(self.fire_raw("not json"), 2)
 
     def test_internal_error_asks_on_pre_but_stays_silent_on_post(self):
         (self.home / ".claude").write_text("a file, not a directory")
-        self.assert_asks(self.bash("git commit -m x"),
-                         "[review-commit-gate] internal error (exit 1). Allow to run the command anyway.",
-                         stderr="mkdir: cannot create directory '%s': Not a directory\n" % (self.home / ".claude"))
+        self.assert_internal_error_asks(
+            self.bash("git commit -m x"), 1,
+            stderr="mkdir: cannot create directory '%s': Not a directory\n" % (self.home / ".claude"))
         finished = self.dispatch()
         self.assertEqual((finished.returncode, finished.stdout), (1, ""))
 
     def test_string_tool_input_asks_with_jq_error_code(self):
         payload = {"hook_event_name": "PreToolUse", "session_id": "s1", "tool_input": "oops"}
-        self.assert_asks(self.fire_raw(json.dumps(payload)),
-                         "[review-commit-gate] internal error (exit 5). Allow to run the command anyway.")
+        self.assert_internal_error_asks(self.fire_raw(json.dumps(payload)), 5)
 
     def test_empty_input_passes_and_creates_state_dir(self):
         self.assert_silent(self.fire_raw(""))
@@ -260,8 +275,10 @@ class ReviewCommitGateTest(GateCase):
 
 
 class NotesOnlyCommitTest(GateCase):
-    """A dirty session does not ask for a commit that ships only Markdown files under docs/."""
+    """A dirty session does not deny a commit that ships only Markdown files under docs/."""
     NOTES = "docs/plans/X/03-decisions.md"
+    SPEC_CHAIN = ('git add docs/plans/LED-21-retire-agent-tokens/spec.md && git commit -q -m "LED-21: reword G1 for '
+                  'the direct run join" && git rev-parse HEAD')
 
     def setUp(self):
         super().setUp()
@@ -293,39 +310,69 @@ class NotesOnlyCommitTest(GateCase):
         self.seed_handback("converged")
         self.assert_silent(self.bash("review-gate-mark clean"))
 
-    def assert_all_ask(self, commands, repo=None):
+    def assert_all_denied(self, commands, repo=None):
         for command in commands:
             with self.subTest(command=command):
-                self.assert_asks(self.commit_in(command, repo))
+                self.assert_commit_denied(self.commit_in(command, repo))
 
     def assert_all_pass(self, commands, repo=None):
         for command in commands:
             with self.subTest(command=command):
                 self.assert_silent(self.commit_in(command, repo))
 
-    def test_docs_only_staged_commit_does_not_ask_and_the_session_stays_dirty(self):
+    def test_docs_only_staged_commit_is_not_denied_and_the_session_stays_dirty(self):
         self.stage(self.NOTES)
         self.assert_silent(self.commit_in('git commit -q -m "notes"'))
         self.assertEqual(self.state(), "dirty\n")
         self.stage("src/a.py")
-        self.assert_asks(self.commit_in('git commit -q -m "code"'))
+        self.assert_commit_denied(self.commit_in('git commit -q -m "code"'))
         self.assertEqual(self.state(), "dirty\n")
 
-    def test_add_then_commit_of_a_notes_file_does_not_ask_with_an_empty_or_a_docs_index(self):
+    def test_add_then_commit_of_a_notes_file_is_not_denied_with_an_empty_or_a_docs_index(self):
         command = 'git add %s && git commit -q -m "notes"' % self.NOTES
         self.assert_silent(self.commit_in(command))
         self.stage("docs/other.md")
         self.assert_silent(self.commit_in(command))
 
-    def test_code_step_commit_form_with_a_bare_double_dash_passes_for_notes_and_asks_for_code(self):
+    def test_code_step_commit_form_with_a_bare_double_dash_passes_for_notes_and_is_denied_for_code(self):
         self.assert_silent(self.commit_in('git add -- %s && git commit -m "notes" -- %s' % (self.NOTES, self.NOTES)))
-        self.assert_asks(self.commit_in('git add -- src/a.py && git commit -m "notes" -- src/a.py'))
-        self.assert_asks(self.commit_in('git add -- %s && git commit -m "notes" -- src/a.py' % self.NOTES))
+        self.assert_commit_denied(self.commit_in('git add -- src/a.py && git commit -m "notes" -- src/a.py'))
+        self.assert_commit_denied(self.commit_in('git add -- %s && git commit -m "notes" -- src/a.py' % self.NOTES))
 
     def test_a_heredoc_message_and_other_read_only_git_steps_pass(self):
         message = "git add %s && git commit -m \"$(cat <<'EOF'\nnotes\n\nmore\nEOF\n)\"" % self.NOTES
         self.assert_silent(self.commit_in(message))
         self.assert_silent(self.commit_in("git status\ngit add %s\ngit commit -m x 2>&1 && echo done" % self.NOTES))
+
+    def test_a_notes_commit_followed_by_rev_parse_of_the_new_commit_passes(self):
+        self.assert_silent(self.commit_in(self.SPEC_CHAIN))
+        self.assert_silent(self.commit_in("git rev-parse --show-toplevel && git add %s && git commit -m x"
+                                          % self.NOTES))
+        self.assert_silent(self.commit_in("git add %s && git commit -m x && git rev-parse HEAD 2>&1" % self.NOTES))
+        self.assert_silent(self.commit_in("git add %s && git commit -m x && git rev-parse HEAD >/dev/null"
+                                          % self.NOTES))
+
+    def test_the_same_chain_with_a_code_file_is_denied(self):
+        self.assert_all_denied([
+            'git add src/a.py && git commit -q -m "LED-21: reword G1 for the direct run join" && git rev-parse HEAD',
+            'git add docs/plans/LED-21-retire-agent-tokens/spec.md src/a.py && git commit -q -m "x" && '
+            'git rev-parse HEAD',
+            'git add docs/plans/LED-21-retire-agent-tokens/spec.md && git commit -q -m "x" -- src/a.py && '
+            'git rev-parse HEAD'])
+
+    def test_rev_parse_still_goes_through_the_output_and_redirection_checks(self):
+        self.stage(self.NOTES)
+        self.assert_all_denied(["git rev-parse --output=.git/hooks/pre-commit && git commit -m x",
+                                "git commit -m x && git rev-parse --output .git/hooks/pre-commit",
+                                "git rev-parse HEAD > .git/hooks/pre-commit && git commit -m x",
+                                "git commit -m x && git rev-parse HEAD >> .husky/pre-commit",
+                                "git commit -m x && git rev-parse HEAD 2>err.log",
+                                "git commit -m x && git rev-parse HEAD > $HOOK",
+                                "git -C . rev-parse HEAD && git commit -m x",
+                                "git commit -m x && git rev-parse $(git add src/a.py)",
+                                "git commit -m x && git rev-parse `git add src/a.py`"])
+        self.assert_all_pass(["git commit -m x && git rev-parse HEAD > /dev/null",
+                              "git commit -m x && git rev-parse HEAD 2>&1"])
 
     def test_commit_options_that_only_take_a_message_pass(self):
         self.stage(self.NOTES)
@@ -335,197 +382,200 @@ class NotesOnlyCommitTest(GateCase):
                               "git commit -m x -- " + self.NOTES, "git commit -o -m x " + self.NOTES,
                               "git commit --only " + self.NOTES + " -m x", "git commit " + self.NOTES + " -m x"])
 
-    def test_a_code_file_in_any_place_asks(self):
+    def test_a_code_file_in_any_place_is_denied(self):
         for path in ("docs/x.py", "README.md", "src/notes.md", "docs/notes.txt", "docs", "src/docs/x.md",
                      "docs.md"):
             with self.subTest(path=path):
                 repo = self.make_repo("stage-" + path.replace("/", "-"))
                 self.stage(path, repo=repo)
-                self.assert_asks(self.commit_in("git commit -m x", repo))
+                self.assert_commit_denied(self.commit_in("git commit -m x", repo))
 
-    def test_one_code_file_among_notes_asks_in_the_index_the_add_and_the_commit_pathspec(self):
+    def test_one_code_file_among_notes_is_denied_in_the_index_the_add_and_the_commit_pathspec(self):
         self.stage(self.NOTES)
         self.stage("src/a.py")
-        self.assert_asks(self.commit_in("git commit -m x"))
+        self.assert_commit_denied(self.commit_in("git commit -m x"))
         self.git(self.repo, "reset", "-q", "--", "src/a.py")
         self.assert_silent(self.commit_in("git commit -m x"))
         self.stage("src/b.py")
-        self.assert_asks(self.commit_in("git add docs/other.md && git commit -m x"))
+        self.assert_commit_denied(self.commit_in("git add docs/other.md && git commit -m x"))
         self.git(self.repo, "reset", "-q")
         self.stage(self.NOTES)
-        self.assert_all_ask(["git add src/a.py && git commit -m x", "git commit -m x -- src/a.py",
-                             "git add docs && git commit -m x", "git add 'docs/*.md' && git commit -m x",
-                             "git add . && git commit -m x", "git commit -m x docs", "git commit -m x 'docs/*.md'",
-                             "git commit -m x :/docs/x.md", "git commit -m x ':(top)docs/x.md'",
-                             "git commit -m x docs/../src/a.md", "git commit -m x docs/",
-                             "git commit -m x /abs/docs/x.md", "git commit -m x docs/x.md/",
-                             "git commit --message=x src/a.py", "git commit -mx src/a.py",
-                             "git commit -m x $HOME/docs/x.md", "git commit -m x ~/docs/x.md",
-                             "git commit -m x docs/{a,b}.md", "git commit -m x docs/a?.md"])
+        self.assert_all_denied(["git add src/a.py && git commit -m x", "git commit -m x -- src/a.py",
+                                "git add docs && git commit -m x", "git add 'docs/*.md' && git commit -m x",
+                                "git add . && git commit -m x", "git commit -m x docs", "git commit -m x 'docs/*.md'",
+                                "git commit -m x :/docs/x.md", "git commit -m x ':(top)docs/x.md'",
+                                "git commit -m x docs/../src/a.md", "git commit -m x docs/",
+                                "git commit -m x /abs/docs/x.md", "git commit -m x docs/x.md/",
+                                "git commit --message=x src/a.py", "git commit -mx src/a.py",
+                                "git commit -m x $HOME/docs/x.md", "git commit -m x ~/docs/x.md",
+                                "git commit -m x docs/{a,b}.md", "git commit -m x docs/a?.md"])
 
-    def test_options_that_can_stage_more_at_commit_time_ask(self):
+    def test_options_that_can_stage_more_at_commit_time_are_denied(self):
         self.stage(self.NOTES)
-        self.assert_all_ask(["git commit -a -m x", "git commit --all -m x", "git commit -am x", "git commit -i -m x",
-                             "git commit --include -m x", "git commit --amend -m x", "git commit --amend --no-edit",
-                             "git commit -o -m x", "git commit --only -m x", "git commit -m x -a",
-                             "git commit -m x --pathspec-from-file=list.txt", "git commit -m x --unknown",
-                             "git commit --am -m x", "git commit -m x -u", "git commit -S -m x"])
+        self.assert_all_denied(["git commit -a -m x", "git commit --all -m x", "git commit -am x",
+                                "git commit -i -m x", "git commit --include -m x", "git commit --amend -m x",
+                                "git commit --amend --no-edit", "git commit -o -m x", "git commit --only -m x",
+                                "git commit -m x -a", "git commit -m x --pathspec-from-file=list.txt",
+                                "git commit -m x --unknown", "git commit --am -m x", "git commit -m x -u",
+                                "git commit -S -m x"])
 
-    def test_git_add_with_any_option_asks(self):
+    def test_git_add_with_any_option_is_denied(self):
         self.stage(self.NOTES)
-        self.assert_all_ask(["git add %s %s && git commit -m x" % (option, self.NOTES)
-                             for option in ("-A", "-u", "--all", "-f", "-p", "-N", "--force", "--update", "-n")])
-        self.assert_all_ask(["git add && git commit -m x", "git add -- && git commit -m x"])
+        self.assert_all_denied(["git add %s %s && git commit -m x" % (option, self.NOTES)
+                                for option in ("-A", "-u", "--all", "-f", "-p", "-N", "--force", "--update", "-n")])
+        self.assert_all_denied(["git add && git commit -m x", "git add -- && git commit -m x"])
 
-    def test_a_directory_or_repo_change_in_the_same_command_asks(self):
+    def test_a_directory_or_repo_change_in_the_same_command_is_denied(self):
         self.stage(self.NOTES)
-        self.assert_all_ask(["cd src && git commit -m x", "cd . ; git commit -m x", "pushd . && git commit -m x",
-                             "(cd .. && git commit -m x)", "git -C . add docs/x.md && git commit -m x",
-                             "git -c core.x=1 add docs/x.md && git commit -m x",
-                             "git --git-dir=.git add docs/x.md && git commit -m x",
-                             "GIT_INDEX_FILE=i git add docs/x.md && git commit -m x",
-                             "git add %s && cd src && git commit -m x" % self.NOTES,
-                             "git commit -m x && git commit -m y", "git commit -m x; git commit -m y",
-                             "git commit -m x\ngit commit -m y", "git status && echo git commit",
-                             "git commit-tree abc", "time git commit -m x",
-                             "git commit -m x || git commit -m y"])
+        self.assert_all_denied(["cd src && git commit -m x", "cd . ; git commit -m x", "pushd . && git commit -m x",
+                                "(cd .. && git commit -m x)", "git -C . add docs/x.md && git commit -m x",
+                                "git -c core.x=1 add docs/x.md && git commit -m x",
+                                "git --git-dir=.git add docs/x.md && git commit -m x",
+                                "GIT_INDEX_FILE=i git add docs/x.md && git commit -m x",
+                                "git add %s && cd src && git commit -m x" % self.NOTES,
+                                "git commit -m x && git commit -m y", "git commit -m x; git commit -m y",
+                                "git commit -m x\ngit commit -m y", "git status && echo git commit",
+                                "git commit-tree abc", "time git commit -m x",
+                                "git commit -m x || git commit -m y"])
 
-    def test_other_git_steps_that_can_change_the_index_ask(self):
+    def test_other_git_steps_that_can_change_the_index_are_denied(self):
         self.stage(self.NOTES)
-        self.assert_all_ask(["git rm -q --cached %s && git commit -m x" % self.NOTES, "git mv a b && git commit -m x",
-                             "git reset -q && git commit -m x", "git checkout -- . && git commit -m x",
-                             "git apply --index p.diff && git commit -m x", "git stash && git commit -m x"])
+        self.assert_all_denied(["git rm -q --cached %s && git commit -m x" % self.NOTES,
+                                "git mv a b && git commit -m x", "git reset -q && git commit -m x",
+                                "git checkout -- . && git commit -m x", "git apply --index p.diff && git commit -m x",
+                                "git stash && git commit -m x"])
 
-    def test_text_shlex_cannot_trust_asks(self):
+    def test_text_shlex_cannot_trust_is_denied(self):
         self.stage(self.NOTES)
-        self.assert_all_ask(['git commit -m "open', 'git commit -m ";" -- src/a.py', r"git commit -m x \; y",
-                             "git commit -m '&&' -- src/a.py", 'git commit -m ">" src/a.py',
-                             "git commit -m '(' src/a.py", 'git commit -m ">" ' + self.NOTES,
-                             "git commit -m '(' " + self.NOTES, 'git commit -m "|" ' + self.NOTES,
-                             r"git commit -m a\>b " + self.NOTES])
+        self.assert_all_denied(['git commit -m "open', 'git commit -m ";" -- src/a.py', r"git commit -m x \; y",
+                                "git commit -m '&&' -- src/a.py", 'git commit -m ">" src/a.py',
+                                "git commit -m '(' src/a.py", 'git commit -m ">" ' + self.NOTES,
+                                "git commit -m '(' " + self.NOTES, 'git commit -m "|" ' + self.NOTES,
+                                r"git commit -m a\>b " + self.NOTES])
 
-    def test_a_command_that_is_not_git_or_a_read_only_program_asks(self):
+    def test_a_command_that_is_not_git_or_a_read_only_program_is_denied(self):
         self.stage(self.NOTES)
-        self.assert_all_ask(["{ git add docs/x.md && git commit -m x; }", "if true; then git commit -m x; fi",
-                             "! git commit -m x", "env GIT_DIR=x git commit -m x", "command git commit -m x",
-                             "time git commit -m x", "/usr/bin/git commit -m x", "builtin cd src && git commit -m x",
-                             "export GIT_DIR=x && git commit -m x", "declare -x GIT_DIR=x && git commit -m x",
-                             "typeset -x GIT_DIR=x && git commit -m x", "source env.sh && git commit -m x",
-                             ". env.sh && git commit -m x", "popd && git commit -m x",
-                             "f() { cd src; }; f; git commit -m x", "git commit -F - <<EOF\nmessage\nEOF",
-                             "git add docs/x.md && git commit -m x && rm docs/x.md"])
+        self.assert_all_denied(["{ git add docs/x.md && git commit -m x; }", "if true; then git commit -m x; fi",
+                                "! git commit -m x", "env GIT_DIR=x git commit -m x", "command git commit -m x",
+                                "time git commit -m x", "/usr/bin/git commit -m x",
+                                "builtin cd src && git commit -m x", "export GIT_DIR=x && git commit -m x",
+                                "declare -x GIT_DIR=x && git commit -m x", "typeset -x GIT_DIR=x && git commit -m x",
+                                "source env.sh && git commit -m x", ". env.sh && git commit -m x",
+                                "popd && git commit -m x", "f() { cd src; }; f; git commit -m x",
+                                "git commit -F - <<EOF\nmessage\nEOF",
+                                "git add docs/x.md && git commit -m x && rm docs/x.md"])
 
     def test_read_only_programs_around_the_commit_pass(self):
         self.stage(self.NOTES)
         self.assert_all_pass(["echo start; printf x; true; pwd; ls && git commit -m x",
                               "git commit -m x && ls docs && echo done"])
 
-    def test_a_word_that_runs_a_substitution_asks(self):
+    def test_a_word_that_runs_a_substitution_is_denied(self):
         self.stage(self.NOTES)
-        self.assert_all_ask(['git commit -m "$(git add src/a.py)msg"', 'git commit -m "`git add src/a.py`"',
-                             'git commit -m "$(git commit -qam x)"', 'git commit -m "$MESSAGE"',
-                             "git commit -m x docs/`ls`.md", "git commit -m ${MESSAGE}",
-                             "git commit -m \"$(cat <<'EOF'\nTitle\nEOF\ngit add src/a.py\nEOF\n)\"",
-                             "git commit -m \"$(cat <<'EOF'\nTitle\nEOF\n) $(git add src/a.py)\"",
-                             "git commit -m \"$(cat <<EOF\nTitle\nEOF\n)\"",
-                             "git commit -m \"$(cat <<'EOF'\nTitle\n)\""])
+        self.assert_all_denied(['git commit -m "$(git add src/a.py)msg"', 'git commit -m "`git add src/a.py`"',
+                                'git commit -m "$(git commit -qam x)"', 'git commit -m "$MESSAGE"',
+                                "git commit -m x docs/`ls`.md", "git commit -m ${MESSAGE}",
+                                "git commit -m \"$(cat <<'EOF'\nTitle\nEOF\ngit add src/a.py\nEOF\n)\"",
+                                "git commit -m \"$(cat <<'EOF'\nTitle\nEOF\n) $(git add src/a.py)\"",
+                                "git commit -m \"$(cat <<EOF\nTitle\nEOF\n)\"",
+                                "git commit -m \"$(cat <<'EOF'\nTitle\n)\""])
 
     def test_a_quoted_heredoc_message_passes_with_any_tag(self):
         self.stage(self.NOTES)
         self.assert_all_pass(["git commit -m \"$(cat <<'EOF'\nTitle\n\nBody $HOME `x`\nEOF\n)\"",
                               "git commit -m \"$(cat <<'MSG_2'\nTitle\nEOFX\nMSG_2\n)\""])
 
-    def test_a_rename_into_docs_asks_because_the_old_path_ships_too(self):
+    def test_a_rename_into_docs_is_denied_because_the_old_path_ships_too(self):
         self.stage("NOTES.md", "src/a.py")
         self.git(self.repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "base")
         (self.repo / "docs").mkdir(exist_ok=True)
         self.git(self.repo, "mv", "NOTES.md", "docs/NOTES.md")
-        self.assert_asks(self.commit_in("git commit -m x"))
+        self.assert_commit_denied(self.commit_in("git commit -m x"))
         self.git(self.repo, "reset", "-q", "--hard")
         (self.repo / "docs").mkdir(exist_ok=True)
         self.git(self.repo, "mv", "src/a.py", "docs/a.md")
-        self.assert_asks(self.commit_in("git commit -m x"))
+        self.assert_commit_denied(self.commit_in("git commit -m x"))
 
     def test_a_relative_diff_setting_does_not_hide_staged_code_outside_the_cwd_folder(self):
         self.git(self.repo, "config", "diff.relative", "true")
         self.stage("src/a.py")
         (self.repo / "sub").mkdir()
-        self.assert_asks(self.commit_in("git add ../docs/x.md && git commit -m x", self.repo / "sub"))
+        self.assert_commit_denied(self.commit_in("git add ../docs/x.md && git commit -m x", self.repo / "sub"))
 
-    def test_a_number_then_a_space_then_a_redirection_asks(self):
+    def test_a_number_then_a_space_then_a_redirection_is_denied(self):
         self.stage(self.NOTES)
-        self.assert_asks(self.commit_in("git add docs/a.md 5 >/dev/null && git commit -m x"))
+        self.assert_commit_denied(self.commit_in("git add docs/a.md 5 >/dev/null && git commit -m x"))
         self.assert_silent(self.commit_in("git add docs/a.md 2>/dev/null && git commit -m x"))
 
-    def test_a_pathspec_that_names_a_folder_asks_even_when_it_ends_in_md(self):
+    def test_a_pathspec_that_names_a_folder_is_denied_even_when_it_ends_in_md(self):
         self.stage(self.NOTES)
         folder = self.repo / "docs" / "dir.md"
         folder.mkdir()
         (folder / "code.py").write_text("x = 1\n")
-        self.assert_all_ask(["git add docs/dir.md && git commit -m x", "git commit -m x docs/dir.md",
-                             "git add -- docs/dir.md && git commit -m x -- docs/dir.md"])
+        self.assert_all_denied(["git add docs/dir.md && git commit -m x", "git commit -m x docs/dir.md",
+                                "git add -- docs/dir.md && git commit -m x -- docs/dir.md"])
         self.assert_silent(self.commit_in("git add docs/plans/X/03-decisions.md && git commit -m x"))
 
-    def test_a_commit_behind_git_options_asks_when_dirty_and_stays_silent_when_clean(self):
+    def test_a_commit_behind_git_options_is_denied_when_dirty_and_stays_silent_when_clean(self):
         commands = ["git -C x commit -m x", "git -c k=v commit -m x", "git --no-pager commit -m x",
                     "git -P commit -m x", "git --git-dir=x commit -m x", "git --git-dir x commit -m x",
                     "git add docs/x.md && git -C . commit -m x", "git -C x commit -m 'open",
                     "git --attr-source HEAD commit -m x", "git --frob x commit -m x", "git --frob commit -m x",
                     "git --frob=1 -C . commit -m x"]
         self.stage(self.NOTES)
-        self.assert_all_ask(commands)
-        self.assert_asks(self.commit_in("git commit -m 'open"))
+        self.assert_all_denied(commands)
+        self.assert_commit_denied(self.commit_in("git commit -m 'open"))
         self.go_clean()
         self.assert_all_pass(commands)
 
-    def test_a_commit_behind_a_wrapper_or_a_path_to_git_asks_when_dirty_and_stays_silent_when_clean(self):
+    def test_a_commit_behind_a_wrapper_or_a_path_to_git_is_denied_when_dirty_and_stays_silent_when_clean(self):
         commands = ["env git -C . commit -m x", "command git -C . commit -m x", "/usr/bin/git -C . commit -m x",
                     "time git -C . commit -m x", "! git -P commit -m x", "env -i A=1 git --no-pager commit -m x",
                     "GIT_DIR=x git -C . commit -m x", "env git -C x commit -m 'open"]
         self.stage(self.NOTES)
-        self.assert_all_ask(commands)
+        self.assert_all_denied(commands)
         self.go_clean()
         self.assert_all_pass(commands)
 
-    def assert_commit_asks_when_dirty_and_stays_silent_when_clean(self, command):
+    def assert_commit_denied_when_dirty_and_silent_when_clean(self, command):
         self.stage(self.NOTES)
-        self.assert_asks(self.commit_in(command))
+        self.assert_commit_denied(self.commit_in(command))
         self.go_clean()
         self.assert_silent(self.commit_in(command))
 
-    def test_a_commit_split_by_a_line_continuation_after_a_git_option_asks(self):
-        self.assert_commit_asks_when_dirty_and_stays_silent_when_clean("git -C . \\\ncommit -m y")
+    def test_a_commit_split_by_a_line_continuation_after_a_git_option_is_denied(self):
+        self.assert_commit_denied_when_dirty_and_silent_when_clean("git -C . \\\ncommit -m y")
 
-    def test_a_commit_split_by_a_line_continuation_right_after_git_asks(self):
-        self.assert_commit_asks_when_dirty_and_stays_silent_when_clean("git \\\ncommit -m y")
+    def test_a_commit_split_by_a_line_continuation_right_after_git_is_denied(self):
+        self.assert_commit_denied_when_dirty_and_silent_when_clean("git \\\ncommit -m y")
 
-    def test_a_commit_split_by_a_line_continuation_in_a_command_shlex_cannot_read_asks(self):
-        self.assert_commit_asks_when_dirty_and_stays_silent_when_clean("git -C . \\\ncommit -m 'open")
+    def test_a_commit_split_by_a_line_continuation_in_a_command_shlex_cannot_read_is_denied(self):
+        self.assert_commit_denied_when_dirty_and_silent_when_clean("git -C . \\\ncommit -m 'open")
 
-    def test_a_commit_behind_a_git_option_valued_by_a_dollar_substitution_asks(self):
-        self.assert_commit_asks_when_dirty_and_stays_silent_when_clean(
+    def test_a_commit_behind_a_git_option_valued_by_a_dollar_substitution_is_denied(self):
+        self.assert_commit_denied_when_dirty_and_silent_when_clean(
             "git -C $(git rev-parse --show-toplevel) commit -m y")
 
-    def test_a_commit_behind_a_git_option_valued_by_a_short_dollar_substitution_asks(self):
-        self.assert_commit_asks_when_dirty_and_stays_silent_when_clean("git -C $(pwd) commit -m y")
+    def test_a_commit_behind_a_git_option_valued_by_a_short_dollar_substitution_is_denied(self):
+        self.assert_commit_denied_when_dirty_and_silent_when_clean("git -C $(pwd) commit -m y")
 
-    def test_a_commit_behind_a_git_option_valued_by_a_backtick_substitution_asks(self):
-        self.assert_commit_asks_when_dirty_and_stays_silent_when_clean("git -C `git rev-parse --show-toplevel` commit -m y")
+    def test_a_commit_behind_a_git_option_valued_by_a_backtick_substitution_is_denied(self):
+        self.assert_commit_denied_when_dirty_and_silent_when_clean("git -C `git rev-parse --show-toplevel` commit -m y")
 
-    def test_a_commit_behind_a_git_option_valued_by_a_quoted_path_with_a_quoted_operator_asks(self):
-        self.assert_commit_asks_when_dirty_and_stays_silent_when_clean('git -C "my dir" commit -m ";"')
+    def test_a_commit_behind_a_git_option_valued_by_a_quoted_path_with_a_quoted_operator_is_denied(self):
+        self.assert_commit_denied_when_dirty_and_silent_when_clean('git -C "my dir" commit -m ";"')
 
-    def test_a_commit_behind_an_env_option_named_git_asks(self):
-        self.assert_commit_asks_when_dirty_and_stays_silent_when_clean("env -u git git -C . commit -m y")
+    def test_a_commit_behind_an_env_option_named_git_is_denied(self):
+        self.assert_commit_denied_when_dirty_and_silent_when_clean("env -u git git -C . commit -m y")
 
-    def test_a_commit_inside_an_eval_string_asks(self):
-        self.assert_commit_asks_when_dirty_and_stays_silent_when_clean("eval 'git -C . commit -m y'")
+    def test_a_commit_inside_an_eval_string_is_denied(self):
+        self.assert_commit_denied_when_dirty_and_silent_when_clean("eval 'git -C . commit -m y'")
 
-    def test_a_commit_behind_a_path_to_git_and_an_unknown_valued_option_asks(self):
-        self.assert_commit_asks_when_dirty_and_stays_silent_when_clean("/usr/bin/git --frob x commit -m y")
+    def test_a_commit_behind_a_path_to_git_and_an_unknown_valued_option_is_denied(self):
+        self.assert_commit_denied_when_dirty_and_silent_when_clean("/usr/bin/git --frob x commit -m y")
 
-    def test_a_commit_behind_an_unknown_valued_option_in_a_command_shlex_cannot_read_asks(self):
-        self.assert_commit_asks_when_dirty_and_stays_silent_when_clean("git --frob x commit -m 'open")
+    def test_a_commit_behind_an_unknown_valued_option_in_a_command_shlex_cannot_read_is_denied(self):
+        self.assert_commit_denied_when_dirty_and_silent_when_clean("git --frob x commit -m 'open")
 
     def test_git_reads_that_mention_commit_after_an_option_or_a_path_are_not_commits(self):
         self.assert_all_pass(["git log --grep commit", "git log --oneline -n 5", "git status && git diff --stat",
@@ -541,13 +591,13 @@ class NotesOnlyCommitTest(GateCase):
 
     def test_a_quoted_newline_word_does_not_hide_a_code_pathspec_after_it(self):
         self.stage(self.NOTES)
-        self.assert_asks(self.commit_in('git commit -m y docs/x.md "\n" ls src/a.py'))
+        self.assert_commit_denied(self.commit_in('git commit -m y docs/x.md "\n" ls src/a.py'))
         self.assert_silent(self.commit_in("git commit -m y docs/x.md\nls src/a.py"))
 
-    def test_a_read_only_git_subcommand_that_writes_a_file_with_output_asks(self):
+    def test_a_read_only_git_subcommand_that_writes_a_file_with_output_is_denied(self):
         self.stage(self.NOTES)
-        self.assert_all_ask(["git log -1 --output=.git/hooks/pre-commit && git add docs/x.md && git commit -m y",
-                             "git diff --output .git/hooks/pre-commit && git commit -m y"])
+        self.assert_all_denied(["git log -1 --output=.git/hooks/pre-commit && git add docs/x.md && git commit -m y",
+                                "git diff --output .git/hooks/pre-commit && git commit -m y"])
         self.assert_silent(self.commit_in("git log -1 && git add docs/x.md && git commit -m y"))
 
     def test_commands_that_only_read_git_or_mention_commit_stay_silent_when_dirty(self):
@@ -557,40 +607,40 @@ class NotesOnlyCommitTest(GateCase):
                               "git --attr-source HEAD log --grep commit", "git --git-dir=x log --grep commit",
                               "git --work-tree=x -P -p status commit"])
 
-    def test_an_output_redirection_to_a_file_asks_and_a_discarded_or_copied_one_passes(self):
+    def test_an_output_redirection_to_a_file_is_denied_and_a_discarded_or_copied_one_passes(self):
         self.stage(self.NOTES)
-        self.assert_all_ask(["echo 'git add -A' >> .husky/pre-commit && git commit -m x",
-                             "git show HEAD:a > .git/hooks/pre-commit && git add docs/a.md && git commit -m x",
-                             "git add docs/a.md &> out.log && git commit -m x",
-                             "git add docs/a.md && git commit -m x >out.log", "git commit -m x 2>err.log",
-                             "git add docs/a.md && git commit -m x >&out.log",
-                             "git add docs/a.md && git commit -m x >| f",
-                             "echo x; > .git/index; git commit -m x", "printf x >.git/index\ngit commit -m x",
-                             "git commit -m x > $HOOK", "git commit -m x >", "git commit -m x <> f"])
+        self.assert_all_denied(["echo 'git add -A' >> .husky/pre-commit && git commit -m x",
+                                "git show HEAD:a > .git/hooks/pre-commit && git add docs/a.md && git commit -m x",
+                                "git add docs/a.md &> out.log && git commit -m x",
+                                "git add docs/a.md && git commit -m x >out.log", "git commit -m x 2>err.log",
+                                "git add docs/a.md && git commit -m x >&out.log",
+                                "git add docs/a.md && git commit -m x >| f",
+                                "echo x; > .git/index; git commit -m x", "printf x >.git/index\ngit commit -m x",
+                                "git commit -m x > $HOOK", "git commit -m x >", "git commit -m x <> f"])
         self.assert_all_pass(["git add docs/a.md 2>/dev/null && git commit -m x 2>&1",
                               "git add docs/a.md >/dev/null 2>&1 && git commit -m x &>/dev/null",
                               "git commit -m x > /dev/null 2>&-", "git commit -F - < msg.txt",
                               "git commit -F - <<< x", "git commit -m x >&2",
                               "echo x; > /dev/null; git commit -m x", "< in.txt\ngit commit -m x"])
 
-    def test_a_git_error_a_missing_cwd_or_no_paths_asks(self):
+    def test_a_git_error_a_missing_cwd_or_no_paths_is_denied(self):
         elsewhere = self.tmp / "not-a-repo"
         elsewhere.mkdir()
         notes_commit = "git add docs/x.md && git commit -m x"
-        self.assert_asks(self.commit_in(notes_commit, elsewhere))
-        self.assert_asks(self.commit_in(notes_commit, self.tmp / "missing"))
-        self.assert_asks(self.bash(notes_commit))
-        self.assert_asks(self.bash(notes_commit, cwd=""))
-        self.assert_asks(self.commit_in("git commit -m x"))
-        self.assert_asks(self.commit_in("git commit --allow-empty -m x"))
+        self.assert_commit_denied(self.commit_in(notes_commit, elsewhere))
+        self.assert_commit_denied(self.commit_in(notes_commit, self.tmp / "missing"))
+        self.assert_commit_denied(self.bash(notes_commit))
+        self.assert_commit_denied(self.bash(notes_commit, cwd=""))
+        self.assert_commit_denied(self.commit_in("git commit -m x"))
+        self.assert_commit_denied(self.commit_in("git commit --allow-empty -m x"))
 
-    def test_git_missing_or_slow_asks(self):
+    def test_git_missing_or_slow_is_denied(self):
         self.stage(self.NOTES)
         command = "git add docs/x.md && git commit -m x"
         self.assert_silent(self.commit_in(command))
         empty = self.tmp / "no-git"
         empty.mkdir()
-        self.assert_asks(self.fire_raw(json.dumps({
+        self.assert_commit_denied(self.fire_raw(json.dumps({
             "hook_event_name": "PreToolUse", "session_id": "s1", "cwd": str(self.repo),
             "tool_input": {"command": command}}), env_extra={"PATH": str(empty)}))
         slow = self.tmp / "slow-git"
@@ -599,7 +649,7 @@ class NotesOnlyCommitTest(GateCase):
         stub.write_text("#!/bin/sh\nexec sleep 30\n")
         stub.chmod(0o755)
         started = time.monotonic()
-        self.assert_asks(self.fire_raw(json.dumps({
+        self.assert_commit_denied(self.fire_raw(json.dumps({
             "hook_event_name": "PreToolUse", "session_id": "s1", "cwd": str(self.repo),
             "tool_input": {"command": command}}), env_extra={"PATH": str(slow)}))
         self.assertLess(time.monotonic() - started, 20)
@@ -610,21 +660,21 @@ class NotesOnlyCommitTest(GateCase):
         inside = self.repo / "docs"
         self.assert_silent(self.commit_in("git add plans/X/03-decisions.md && git commit -m x", inside))
         self.assert_silent(self.commit_in("git add ../docs/other.md && git commit -m x", inside))
-        self.assert_asks(self.commit_in("git add ../src/a.md && git commit -m x", inside))
-        self.assert_asks(self.commit_in("git add ../../x.md && git commit -m x", inside))
-        self.assert_asks(self.commit_in("git add ':(top)src/a.md' && git commit -m x", inside))
-        self.assert_asks(self.commit_in("git add ':/src/a.md' && git commit -m x", inside))
+        self.assert_commit_denied(self.commit_in("git add ../src/a.md && git commit -m x", inside))
+        self.assert_commit_denied(self.commit_in("git add ../../x.md && git commit -m x", inside))
+        self.assert_commit_denied(self.commit_in("git add ':(top)src/a.md' && git commit -m x", inside))
+        self.assert_commit_denied(self.commit_in("git add ':/src/a.md' && git commit -m x", inside))
         (self.repo / "sub").mkdir()
-        self.assert_asks(self.commit_in("git add docs/x.md && git commit -m x", self.repo / "sub"))
+        self.assert_commit_denied(self.commit_in("git add docs/x.md && git commit -m x", self.repo / "sub"))
 
-    def test_clean_session_never_asks(self):
+    def test_clean_session_never_denies(self):
         self.seed_handback("converged")
         self.assert_silent(self.bash("review-gate-mark clean"))
         self.stage("src/a.py")
         self.assert_silent(self.commit_in("git commit -m x"))
         self.assert_silent(self.commit_in("git add src/b.py && git commit -a -m x"))
 
-    def test_a_session_that_never_dispatched_a_coder_never_asks(self):
+    def test_a_session_that_never_dispatched_a_coder_never_denies(self):
         self.stage("src/a.py")
         self.assert_silent(self.commit_in("git commit -m x", session="other"))
 

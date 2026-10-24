@@ -14,6 +14,7 @@ import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import plan_format  # noqa: E402
 import verify_common as vc  # noqa: E402
 
 REVIEW_PROMPT = ("Branch-wide deep review: review the whole branch diff against its base branch (git diff "
@@ -181,6 +182,8 @@ def print_plan(context):
     lines.append(f"ticket: {context['ticket']}")
     lines.append(f"plan: {context['plan'] or 'none'}")
     lines.append(f"base: {context['baseRef']} (merge-base {context['mergeBase'][:10]})")
+    gateEnvText = plan_format.gate_env_text(context["gateEnv"])
+    gateEnvLines = ["  " + line for line in gateEnvText.splitlines()]
     diff = context["diff"]
     lines.append(f"diff: {diff['files']} files, +{diff['insertions']} -{diff['deletions']} (diff_loc={diff['diffLoc']}); "
                  f"{diff['uncommitted']} uncommitted, {len(diff['untracked'])} untracked")
@@ -200,6 +203,7 @@ def print_plan(context):
         lines.append("  Dispatch Agent subagent_type=code-reviewer (omit model) with this prompt:")
         lines.append("  ---")
         lines.append("  " + REVIEW_PROMPT.format(base=context["mergeBase"]))
+        lines += gateEnvLines
         if diff["uncommitted"]:
             lines.append(f"  {diff['uncommitted']} uncommitted file(s) are outside `base...HEAD`: also read `git diff` "
                          "(working tree).")
@@ -226,6 +230,7 @@ def print_plan(context):
                  "covers committed and uncommitted changes")
     if untracked:
         lines.append(f"  {untracked}: they are part of the branch.")
+    lines += gateEnvLines
     lines.append("  ---")
     lines.append("  Then convert its verdict table to rows JSON and run: verify-log --rows <file> "
                  "(see SKILL.md for the row shape).")
@@ -271,8 +276,10 @@ def main(argv):
 
     planFile = planPath or ticketPath
     planRel = vc.repo_relative(planFile, top) or str(planFile)
+    gateEnv = plan_format.repo_gate_env(top, vc.repo_relative(planPath, top) if planPath else None)
     context = {"repo": repo, "branch": branch, "note": note, "ticket": str(ticketPath),
                "plan": str(planPath) if planPath else None, "planRel": planRel, "criteriaPath": criteriaPath,
+               "gateEnv": gateEnv,
                "baseRef": baseRef, "mergeBase": mergeBase, "diff": diff, "criteria": criteria,
                "excludeRel": excludeRel, "fingerprint": fingerprint, "review": {"ran": ran, "reason": reason},
                "logged": False, "escapes": earlierEscapes}

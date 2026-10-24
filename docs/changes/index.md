@@ -22,6 +22,7 @@ okf_version: "0.2"
 
 # 2026-10-24
 
+* [With no ledger on PATH the metrics writers append to the old jsonl files](2026-10-24-with-no-ledger-on-path-the-metrics-writers-append.md) - ledger-write exited 0 silently when the ledger binary was missing, so a machine with no ledger lost every review finding, review run, review metrics row, escape, spec run and scan run. It now appends the completed row to the jsonl file each type used before the ledger switch and prints one stderr line.
 * [Escape loggers file false or stale prose as docs](2026-10-24-escape-loggers-file-false-or-stale-prose-as-docs.md) - The four skills that log escapes by hand name the `docs` class, and the two that log review comments say a false or stale comment, doc or description is `docs`, never `smell` or `other`. The logger already accepted `docs`; the skills never offered it.
 * [The code reviewer checks every prose claim against the code](2026-10-24-the-code-reviewer-checks-every-prose-claim-against.md) - The code reviewer gains a prose-claims lens. Every comment, docstring, doc, ADR and run-time description that the diff adds, or that names something the diff changes, must hold for the code after the diff. A false or stale claim is a fix, never a smell or a nit.
 * [Toolkit scripts sorted into code, review, gates, telemetry, lib and tools folders](2026-10-24-toolkit-scripts-sorted-into-code-review-gates.md) - The 52 flat scripts in ~/.claude/scripts moved into six folders by concern. Hook commands, imports and logic are unchanged; only paths changed.

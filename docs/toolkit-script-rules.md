@@ -22,8 +22,15 @@ These rules apply to every script under `claude/.claude/scripts/` and `claude/.c
 
 ## Changes during a run
 
-- List each way that the input or the state can change while a run is open: the main session adds a phase or a step, the user edits the file, a step runs twice, the branch changes. Handle each one and give each one a test.
+- List each way that the input or the state can change while a run is open: the main session adds a phase or a step, the user edits the file, a step runs twice, the branch changes. Write a route only for a change that a session reported. Send every other change to one fallback stop that names the state and the recovery command.
 - Every verb ends with a next command, a stop with a reason, or done. Test a step script with a walk over every state and verb, not one happy path. The walk fails when a path repeats a step or never ends.
+
+## Size
+
+- Add code for a defect only when a session hit it, or when it fires on every run. A case that only a reviewer or a designer thought of gets the fallback stop, not new code.
+- Before you write a helper, search `script_utils.py`, `hook_input.py`, `plan_format.py`, `shell_command.py` and the other scripts for one that does the job. Use it, or move it into a shared module and make both callers use it.
+- Do not add a verb, a route or a state field to a script over 1000 lines. First split it by concern, or cut it.
+- When a design gives a size estimate, report the real diff size at hand-over. If the diff is more than twice the estimate, stop and report to the orchestrator before review.
 
 ## Tests
 

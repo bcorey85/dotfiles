@@ -19,15 +19,13 @@ import os
 import re
 import sys
 
+_SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+sys.path[:0] = [os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
+from shell_statements import clean, statements
+
 MAX_TOTAL_WAIT = 120
 MAX_STANDALONE_SLEEP = 30
 LOOP_WORDS = {"for", "while", "until", "select"}
-SKIP_WORDS = {"do", "then", "else", "elif", "if", "!", "time"}
-HEREDOC = re.compile(r"(?<!<)<<(?!<)-?\s*(['\"]?)([A-Za-z_]\w*)\1")
-QUOTED = re.compile(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"")
-COMMENT = re.compile(r"(^|\s)#[^\n]*")
-COMMAND_SUBSTITUTION = re.compile(r"\$\(([^()]*)\)")
-SEPARATORS = re.compile(r"\n|;|&&|\|\||\|&|\||&|\(|\)")
 DURATION = re.compile(r"^(\d+(?:\.\d+)?)([smhd]?)$")
 BRACE_RANGE = re.compile(r"^\{(\d+)\.\.(\d+)\}$")
 FOLLOW_FLAGS = re.compile(r"^-[A-Za-z0-9]*[fF][A-Za-z0-9]*$")
@@ -54,40 +52,6 @@ BACKGROUND_AGENT = "review-loop"
 # A lone & that sends a job to the background; &&, |&, 2>&1 and &> are not one.
 SHELL_BACKGROUND = re.compile(r"(?<![&>|<])&(?![&>])")
 DETACH_WORDS = {"nohup", "setsid", "disown"}
-
-
-def strip_heredocs(command):
-    kept = []
-    delimiter = None
-    for line in command.split("\n"):
-        if delimiter is not None:
-            if line.strip() == delimiter:
-                delimiter = None
-            continue
-        kept.append(line)
-        found = HEREDOC.search(line)
-        if found:
-            delimiter = found.group(2)
-    return "\n".join(kept)
-
-
-def clean(command):
-    without_heredocs = strip_heredocs(command)
-    without_quotes = QUOTED.sub('""', without_heredocs)
-    without_comments = COMMENT.sub(r"\1", without_quotes)
-    return COMMAND_SUBSTITUTION.sub(lambda match: "$<" + match.group(1).replace(" ", "\x00") + ">", without_comments)
-
-
-def statements(command):
-    # Each statement is a list of words. Leading do/then/else and env assignments are dropped.
-    parsed = []
-    for part in SEPARATORS.split(clean(command)):
-        words = part.split()
-        while words and (words[0] in SKIP_WORDS or re.match(r"^[A-Za-z_]\w*=", words[0])):
-            words = words[1:]
-        if words:
-            parsed.append(words)
-    return parsed
 
 
 def seconds_of(word):

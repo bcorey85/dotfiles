@@ -37,7 +37,7 @@ Unmeasured. The round that would have measured it gave no usable comparison, so 
 
 ## Watch
 
-—
+Read 2026-10-24 on work logs through 2026-10-21: findings per code-reviewer run rose from a median of 2.47 (range 2.03 to 3.80) to 4.24. Kept: six later edits that add findings share the window, the last three weekly readings (3.44, 2.94, 3.72) are back inside the before range, and the failure this change could cause is a fall in findings, which did not happen. Watch closed.
 
 ## Back-out
 

@@ -23,7 +23,7 @@ Under the Write-and-Edit rule, the same 5 tasks went from 5 of 10 runs with no c
 
 ## Watch
 
-—
+Read 2026-10-24 on work logs through 2026-10-22: review escapes per code-reviewer run 0.19 after, against a median of 0.25 (range 0.11 to 0.46) before. No change. Kept: escapes did not rise, and a Sonnet coder costs less against the usage limits than an Opus one. Watch closed.
 
 ## Back-out
 

@@ -2,6 +2,10 @@
 
 These rules apply to every script under `claude/.claude/scripts/` and `claude/.claude/skills/*/scripts/`, and to every draft of one.
 
+## Names
+
+- Name every Python file in snake_case, as PEP 8 says: `review_fix.py`, `script_utils.py`. Python cannot import a name with a hyphen.
+
 ## Read the real inputs first
 
 - Before you write code that reads text a model or a person wrote (a plan, a packet, a report, a transcript), collect the real files it will read. On this machine: plans under `~/dev/*/docs/plans/`, code-step state under each repo's `git rev-parse --git-path code-step`, and subagent transcripts under `~/.claude/projects/`.

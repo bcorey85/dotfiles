@@ -11,8 +11,9 @@ import unittest
 
 import toolkit_paths
 
-SCRIPT = pathlib.Path(os.environ.get("CODE_STEP_SCRIPT") or
-                      pathlib.Path(__file__).resolve().parents[2] / "claude" / ".claude" / "scripts" / "code_step.py")
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+REPO_CODE_STEP = REPO_ROOT / "claude" / ".claude" / "scripts" / "code" / "code_step.py"
+SCRIPT = pathlib.Path(os.environ.get("CODE_STEP_SCRIPT") or REPO_CODE_STEP)
 spec = importlib.util.spec_from_file_location("code_step", SCRIPT)
 code_step = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(code_step)

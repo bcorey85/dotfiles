@@ -36,10 +36,12 @@ from datetime import date
 from pathlib import Path
 
 HOME = Path.home()
-sys.path.insert(0, str(HOME / ".claude" / "scripts"))
+sys.path.insert(0, str(HOME / ".claude" / "scripts" / "lib"))
 import script_utils
 
-RESOLVE_SCRIPT = os.environ.get("ADR_RESOLVE_SCRIPT") or str(HOME / ".claude" / "scripts" / "resolve-task-dir.sh")
+RESOLVE_SCRIPT = os.environ.get("ADR_RESOLVE_SCRIPT") or str(
+    HOME / ".claude" / "scripts" / "tools" / "resolve-task-dir.sh"
+)
 TEMPLATE_PATH = os.environ.get("ADR_TEMPLATE") or str(HOME / ".claude" / "skills" / "_shared" / "adr-template.md")
 GH_COMMAND = os.environ.get("ADR_GH") or "gh"
 

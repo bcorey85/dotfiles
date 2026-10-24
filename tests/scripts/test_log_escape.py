@@ -3,7 +3,7 @@
 A stand-in `ledger` (fake_ledger) records what the script sends. Every case runs in a temp git repo with HOME
 set to a temp dir, so nothing reaches a real log.
 
-Script location: LOG_ESCAPE_SCRIPT, defaulting to ~/.claude/scripts/log-escape.
+Script location: LOG_ESCAPE_SCRIPT, defaulting to ~/.claude/scripts/telemetry/log-escape.
 """
 import os
 import pathlib
@@ -15,7 +15,7 @@ import unittest
 import fake_ledger
 import toolkit_paths
 
-SCRIPT = pathlib.Path(os.environ.get("LOG_ESCAPE_SCRIPT") or toolkit_paths.SCRIPTS_DIR / "log-escape")
+SCRIPT = pathlib.Path(os.environ.get("LOG_ESCAPE_SCRIPT") or toolkit_paths.TELEMETRY_DIR / "log-escape")
 
 GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t",
            "GIT_COMMITTER_EMAIL": "t@example.com", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}

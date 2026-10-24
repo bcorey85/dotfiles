@@ -7,7 +7,7 @@ import unittest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 REAL_CLAUDE = pathlib.Path(os.environ.get("CODE_STEP_REAL_CLAUDE") or REPO_ROOT / "claude" / ".claude")
-PACKET = pathlib.Path(os.environ.get("CODER_PACKET_SCRIPT") or REAL_CLAUDE / "scripts" / "coder_packet.py")
+PACKET = pathlib.Path(os.environ.get("CODER_PACKET_SCRIPT") or REAL_CLAUDE / "scripts" / "code" / "coder_packet.py")
 
 WHOLE_ID = "6"
 DOTTED_ID = "6.1"

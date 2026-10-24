@@ -13,7 +13,7 @@ import unittest
 
 import toolkit_paths
 
-SCRIPT_DIR = pathlib.Path(os.environ.get("TELEMETRY_ENABLED_DIR") or toolkit_paths.SCRIPTS_DIR)
+SCRIPT_DIR = pathlib.Path(os.environ.get("TELEMETRY_ENABLED_DIR") or toolkit_paths.TELEMETRY_DIR)
 
 PYTHON_RUNNER = (
     "import sys; sys.path.insert(0, sys.argv[1]); "

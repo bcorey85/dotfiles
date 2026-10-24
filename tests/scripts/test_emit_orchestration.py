@@ -11,7 +11,7 @@ import unittest
 
 import toolkit_paths
 
-SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR) / "emit_orchestration.py"
+SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.GATES_DIR) / "emit_orchestration.py"
 
 ORCHESTRATION = "home/.claude/orchestration.md"
 WARNING = ("WARNING: ~/.claude/orchestration.md is missing or unreadable. Delegation rules are NOT loaded this "

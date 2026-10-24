@@ -3,7 +3,7 @@
 A stand-in `ledger` (fake_ledger) records what the script sends. Every case runs with HOME set to a temp dir,
 so nothing reaches a real log.
 
-Script location: LOG_SCAN_SCRIPT, defaulting to ~/.claude/scripts/log-scan.
+Script location: LOG_SCAN_SCRIPT, defaulting to ~/.claude/scripts/telemetry/log-scan.
 """
 import os
 import pathlib
@@ -15,7 +15,7 @@ import unittest
 import fake_ledger
 import toolkit_paths
 
-SCRIPT = pathlib.Path(os.environ.get("LOG_SCAN_SCRIPT") or toolkit_paths.SCRIPTS_DIR / "log-scan")
+SCRIPT = pathlib.Path(os.environ.get("LOG_SCAN_SCRIPT") or toolkit_paths.TELEMETRY_DIR / "log-scan")
 
 RAN_ARGS = ["scan=prohibition", "stage=manual", "exit=0", "candidates=2", "confirmed=1"]
 

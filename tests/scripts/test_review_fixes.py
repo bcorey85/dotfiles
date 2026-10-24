@@ -16,6 +16,11 @@ import toolkit_paths
 SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR)
 
 
+def hook_script(file_name):
+    """The script file under whichever scripts subfolder holds it."""
+    return next(SCRIPTS_DIR.glob("*/" + file_name))
+
+
 class HookRunTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -31,7 +36,7 @@ class HookRunTest(unittest.TestCase):
             stdin = stdin.encode("utf-8")
         environment = {"PATH": os.environ["PATH"], "HOME": str(self.home), "TMPDIR": self.tmp.name}
         environment.update(env_extra or {})
-        return subprocess.run([sys.executable, str(SCRIPTS_DIR / (name.replace("-", "_") + ".py"))], input=stdin,
+        return subprocess.run([sys.executable, str(hook_script(name.replace("-", "_") + ".py"))], input=stdin,
                               capture_output=True, env=environment, cwd=str(self.work), **options)
 
     def decision(self, finished):
@@ -307,7 +312,7 @@ class RunGateTest(HookRunTest):
 
     def test_crash_escaping_main_blocks_with_exit_2_and_one_line(self):
         driver = pathlib.Path(self.tmp.name) / "crashing-gate.py"
-        shutil.copy(str(SCRIPTS_DIR / "hook_input.py"), str(pathlib.Path(self.tmp.name) / "hook_input.py"))
+        shutil.copy(str(SCRIPTS_DIR / "lib" / "hook_input.py"), str(pathlib.Path(self.tmp.name) / "hook_input.py"))
         driver.write_text("import hook_input\n\n\ndef main():\n    raise RuntimeError('boom')\n\n\n"
                           "hook_input.run_gate(main)\n")
         finished = subprocess.run([sys.executable, str(driver)], input=b"{}", capture_output=True)
@@ -319,7 +324,7 @@ class RunGateTest(HookRunTest):
 
     def test_run_gate_passes_the_exit_code_of_main_through(self):
         driver = pathlib.Path(self.tmp.name) / "quiet-gate.py"
-        shutil.copy(str(SCRIPTS_DIR / "hook_input.py"), str(pathlib.Path(self.tmp.name) / "hook_input.py"))
+        shutil.copy(str(SCRIPTS_DIR / "lib" / "hook_input.py"), str(pathlib.Path(self.tmp.name) / "hook_input.py"))
         driver.write_text("import hook_input\nhook_input.run_gate(lambda: 3)\n")
         self.assertEqual(subprocess.run([sys.executable, str(driver)]).returncode, 3)
 
@@ -327,7 +332,7 @@ class RunGateTest(HookRunTest):
         # stdout closed: the deny cannot be printed, the crash escapes the port's own handler, run_gate exits 2
         payload = json.dumps({"tool_input": {"command": "git stash"}}).encode("utf-8")
         environment = {"PATH": os.environ["PATH"], "HOME": str(self.home)}
-        process = subprocess.Popen([sys.executable, str(SCRIPTS_DIR / "git_discipline_gate.py")],
+        process = subprocess.Popen([sys.executable, str(hook_script("git_discipline_gate.py"))],
                                    stdin=subprocess.PIPE, stderr=subprocess.PIPE, env=environment,
                                    cwd=str(self.work), preexec_fn=lambda: os.close(1))
         _, stderr = process.communicate(payload)
@@ -336,10 +341,10 @@ class RunGateTest(HookRunTest):
 
     def test_every_gate_imports_run_gate_and_is_executable(self):
         for name in self.GATES:
-            path = SCRIPTS_DIR / (name.replace("-", "_") + ".py")
+            path = hook_script(name.replace("-", "_") + ".py")
             self.assertIn("hook_input.run_gate(main)", path.read_text(), name)
         for name in self.PORTED:
-            path = SCRIPTS_DIR / (name.replace("-", "_") + ".py")
+            path = hook_script(name.replace("-", "_") + ".py")
             self.assertEqual(path.read_text().splitlines()[0], "#!/usr/bin/env python3", path.name)
             self.assertTrue(os.access(str(path), os.X_OK), path.name)
 

@@ -15,16 +15,18 @@ import fake_ledger
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 REAL_CLAUDE = REPO_ROOT / "claude" / ".claude"
 REAL_HOME = pathlib.Path.home()
-SCRIPT_DIR = pathlib.Path(os.environ.get("VERIFY_BRANCH_SCRIPT_DIR") or REAL_CLAUDE / "scripts")
+SCRIPT_DIR = pathlib.Path(os.environ.get("VERIFY_BRANCH_SCRIPT_DIR") or REAL_CLAUDE / "scripts" / "review")
 PLAN_FORMAT_DIR = os.environ.get("PLAN_FORMAT_DIR")
 PREP = SCRIPT_DIR / "verify-prep"
 LOG = SCRIPT_DIR / "verify-log"
-RESOLVER = pathlib.Path(os.environ.get("RESOLVE_TASK_DIR_SCRIPT") or REAL_CLAUDE / "scripts" / "resolve-task-dir.sh")
+RESOLVER = pathlib.Path(
+    os.environ.get("RESOLVE_TASK_DIR_SCRIPT") or REAL_CLAUDE / "scripts" / "tools" / "resolve-task-dir.sh"
+)
 FINDER = pathlib.Path(
     os.environ.get("LOG_REVIEW_FINDING_SCRIPT") or REAL_CLAUDE / "skills" / "review" / "log-review-finding"
 )
-ESCAPER = pathlib.Path(os.environ.get("LOG_ESCAPE_SCRIPT") or REAL_CLAUDE / "scripts" / "log-escape")
-REPO_NAMER = pathlib.Path(os.environ.get("REPO_NAME_SCRIPT") or REAL_CLAUDE / "scripts" / "repo-name")
+ESCAPER = pathlib.Path(os.environ.get("LOG_ESCAPE_SCRIPT") or REAL_CLAUDE / "scripts" / "telemetry" / "log-escape")
+REPO_NAMER = pathlib.Path(os.environ.get("REPO_NAME_SCRIPT") or REAL_CLAUDE / "scripts" / "tools" / "repo-name")
 
 GIT_ENV = {
     "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t",

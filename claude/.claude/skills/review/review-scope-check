@@ -93,7 +93,7 @@ refute "paths: excluded dir" "$out" "b/f.txt"
 unset CLAUDE_TOOLKIT_TELEMETRY  # a session that exports it would turn the switch on for "switch absent" below
 fakehome="$work/home"
 mkdir -p "$fakehome/.claude"
-[ -x "$here/../../scripts/telemetry_enabled.sh" ] || fail "helper missing" "$here/../../scripts/telemetry_enabled.sh"
+[ -x "$here/../../scripts/telemetry/telemetry_enabled.sh" ] || fail "helper missing" "$here/../../scripts/telemetry/telemetry_enabled.sh"
 
 if command -v ledger >/dev/null 2>&1; then
   ledger_root="$work/ledger-root"

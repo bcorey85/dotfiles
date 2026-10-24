@@ -11,7 +11,7 @@ import unittest
 import toolkit_paths
 
 SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR")
-                      or toolkit_paths.SCRIPTS_DIR) / "shell_write_gate.py"
+                      or toolkit_paths.GATES_DIR) / "shell_write_gate.py"
 HINT = "#skip-shell-write-gate"
 
 
@@ -160,11 +160,12 @@ class ShellWriteGateTest(unittest.TestCase):
     # test ownership gate beside the script
 
     def install_with_gate(self, gate_body):
-        folder = self.tmp / "scripts"
-        folder.mkdir()
+        folder = self.tmp / "scripts" / "gates"
+        folder.mkdir(parents=True)
         script = folder / SCRIPT.name
         shutil.copy(str(SCRIPT), str(script))
-        shutil.copy(str(SCRIPT.with_name("hook_input.py")), str(folder / "hook_input.py"))
+        shutil.copytree(str(SCRIPT.parent.parent / "lib"), str(folder.parent / "lib"),
+                        ignore=shutil.ignore_patterns("__pycache__"))
         gate =folder / "test-ownership-gate.sh"
         gate.write_text(gate_body)
         return script

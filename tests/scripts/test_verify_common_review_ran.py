@@ -11,7 +11,8 @@ from unittest import mock
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = pathlib.Path(os.environ.get("VERIFY_COMMON_SCRIPTS_DIR") or REPO_ROOT / "claude" / ".claude" / "scripts")
-sys.path.insert(0, str(SCRIPTS_DIR))
+sys.path.insert(0, str(SCRIPTS_DIR / "review"))
+sys.path.insert(0, str(SCRIPTS_DIR / "lib"))
 import verify_common
 
 PLANTED_TREE = "sha256:" + "ab12" * 16

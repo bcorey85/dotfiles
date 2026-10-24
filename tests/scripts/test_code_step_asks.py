@@ -12,11 +12,12 @@ import unittest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = pathlib.Path(os.environ.get("CODE_STEP_SCRIPTS_DIR") or REPO_ROOT / "claude" / ".claude" / "scripts")
-sys.path.insert(0, str(SCRIPTS_DIR))
-loaded = importlib.util.spec_from_file_location("code_step", SCRIPTS_DIR / "code_step.py")
+for folder in ("lib", "review", "code"):
+    sys.path.insert(0, str(SCRIPTS_DIR / folder))
+loaded = importlib.util.spec_from_file_location("code_step", SCRIPTS_DIR / "code" / "code_step.py")
 code_step = importlib.util.module_from_spec(loaded)
 loaded.loader.exec_module(code_step)
-loaded_review_fix = importlib.util.spec_from_file_location("review_fix", SCRIPTS_DIR / "review_fix.py")
+loaded_review_fix = importlib.util.spec_from_file_location("review_fix", SCRIPTS_DIR / "review" / "review_fix.py")
 review_fix = importlib.util.module_from_spec(loaded_review_fix)
 loaded_review_fix.loader.exec_module(review_fix)
 import handback

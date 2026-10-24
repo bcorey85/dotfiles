@@ -26,7 +26,7 @@ One escape = one defect found downstream of its gate. `/cc`/`/fix`/`/refactor`/`
 3. **Log it**:
 
    ```bash
-   ~/.claude/scripts/log-escape stage_found=<...> gate_missed=<...> class=<...> severity=<...> lane=<...> guard=<...> desc="<...>" file=<...>
+   ~/.claude/scripts/telemetry/log-escape stage_found=<...> gate_missed=<...> class=<...> severity=<...> lane=<...> guard=<...> desc="<...>" file=<...>
    ```
 
 4. **Confirm** by echoing the logged fields plus guard, then stop. Never fixes — route through `/fix`.

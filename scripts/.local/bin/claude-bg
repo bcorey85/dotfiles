@@ -2,7 +2,7 @@
 # claude-bg — fire-and-forget headless Claude run (the delegation lane).
 #
 # Runs `claude -p` in the background, logs to ~/.local/state/claude-bg/, and
-# pings ~/.claude/scripts/notify when it finishes — so long chores (doc audits,
+# pings ~/.claude/scripts/tools/notify when it finishes — so long chores (doc audits,
 # dep bumps, changelog drafts) run while you keep working. Headless runs never
 # prompt: anything not already allowed by settings permissions is denied, so
 # scope prompts to work your allowlist covers, or run interactively instead.
@@ -14,7 +14,7 @@
 set -euo pipefail
 
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-bg"
-NOTIFY="$HOME/.claude/scripts/notify"
+NOTIFY="$HOME/.claude/scripts/tools/notify"
 mkdir -p "$LOG_DIR"
 
 case "${1:-}" in

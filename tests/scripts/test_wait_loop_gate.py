@@ -11,7 +11,7 @@ import unittest
 import toolkit_paths
 
 SCRIPT = pathlib.Path(os.environ.get("WAIT_LOOP_GATE_SCRIPT")
-                      or toolkit_paths.SCRIPTS_DIR / "wait_loop_gate.py")
+                      or toolkit_paths.GATES_DIR / "wait_loop_gate.py")
 
 
 def run_hook(stdin):

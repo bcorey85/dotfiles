@@ -198,6 +198,57 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual(1, len(causeLines), started.stderr)
         self.assertEqual([], fake_ledger.recorded_rows(self.env, "dispatch_cause"))
 
+    def use_coder_gate_ledger(self, **extra):
+        self.use_fake_ledger(**extra)
+        shutil.copy(REAL_CLAUDE / "scripts" / "telemetry_enabled.py", self.claude / "scripts" / "telemetry_enabled.py")
+
+    def run_coder_gate(self, verb, event):
+        gate = str(self.claude / "scripts" / "coder-gate.py")
+        return subprocess.run([sys.executable, gate, verb], input=json.dumps(event), capture_output=True, text=True,
+                              cwd=self.repo, env=self.env)
+
+    def coder_handback_event(self):
+        return {"agent_type": "coder", "agent_id": "a1", "cwd": str(self.repo), "tool_input": {"message": "done"}}
+
+    def set_passing_gate(self):
+        gate = str(self.claude / "scripts" / "coder-gate.py")
+        done = subprocess.run([sys.executable, gate, "set", "true"], capture_output=True, text=True, cwd=self.repo,
+                              env=self.env)
+        self.assertEqual(0, done.returncode, done.stderr)
+
+    def coder_gate_rows(self):
+        return [{key: value for key, value in row.items() if not key.startswith("_")}
+                for row in fake_ledger.recorded_rows(self.env, "coder_gate")]
+
+    def test_gate_run_writes_coder_gate_through_ledger(self):
+        self.use_coder_gate_ledger()
+        self.set_passing_gate()
+        finished = self.run_coder_gate("hook", self.coder_handback_event())
+        self.assertEqual(0, finished.returncode, finished.stderr)
+        self.assertIn("HAND-BACK GATE: pass", finished.stdout)
+        rows = self.coder_gate_rows()
+        self.assertEqual(1, len(rows), rows)
+        self.assertEqual({"result": "pass", "run": 1, "failed": 0, "agent_run_id": "a1"},
+                         {key: value for key, value in rows[0].items() if key != "seconds"})
+        self.assertIn("seconds", rows[0])
+
+    def test_whole_package_deny_writes_coder_gate(self):
+        self.use_coder_gate_ledger()
+        event = {"agent_type": "coder", "agent_id": "a1", "cwd": str(self.repo), "tool_input": {"command": "npm test"}}
+        finished = self.run_coder_gate("bash-hook", event)
+        self.assertEqual(0, finished.returncode, finished.stderr)
+        self.assertEqual("deny", json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecision"])
+        self.assertEqual([{"result": "whole-package-deny", "agent_run_id": "a1"}], self.coder_gate_rows())
+
+    def test_ledger_failure_keeps_verdict(self):
+        self.use_coder_gate_ledger(FAKE_LEDGER_WRITE_EXIT="1")
+        self.set_passing_gate()
+        finished = self.run_coder_gate("hook", self.coder_handback_event())
+        self.assertEqual(0, finished.returncode, finished.stderr)
+        self.assertIn("HAND-BACK GATE: pass", finished.stdout)
+        self.assertIn("coder-gate: gate row not recorded", finished.stderr)
+        self.assertEqual([], self.coder_gate_rows())
+
     def pass_coder_gate(self):
         gatePath = self.repo / ".git/coder-gate.json"
         if gatePath.exists():

@@ -77,7 +77,7 @@ NON_SCOPING_FLAGS = {
     "vitest": ("--project",),
     "dotnet": ("--project",),
 }
-GATE_LOG = re.compile(r"(?:>\s*|\btee\s+(?:-a\s+)?)\S*review-gate[\w.-]*\.log")
+REVIEW_GATE_LOG_REDIRECT = re.compile(r"(?:>\s*|\btee\s+(?:-a\s+)?)\S*review-gate[\w.-]*\.log")
 CHECKER = re.compile(r"(?:\A|[;&|(]\s*|\n\s*)(?:cd\s+\S+\s*&&\s*)?(?:[A-Za-z_]\w*=\S+\s+)*"
                      r"(?:(?:time|npx|bunx|uv\s+run|poetry\s+run|python3?\s+-m|bundle\s+exec)\s+)*"
                      r"(?P<checker>(?:npm|pnpm|yarn|bun)\s+(?:(?:-F|--filter|workspace)\s+\S+\s+)?(?:run\s+)?"
@@ -152,7 +152,7 @@ def full_check(cmd):
         checker = m.group("checker").split()[0]
         if SCOPED.search(scoping_words(rest, checker)):
             return False
-    return bool(hits) or bool(GATE_LOG.search(cmd))
+    return bool(hits) or bool(REVIEW_GATE_LOG_REDIRECT.search(cmd))
 
 
 def scan(path, final=None):

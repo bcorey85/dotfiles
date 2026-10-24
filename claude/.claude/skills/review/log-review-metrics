@@ -16,10 +16,8 @@
 # With no `ledger` on PATH the write is skipped silently. A row `ledger write`
 # refuses exits 2.
 #
-# Second-draft telemetry retired 2026-07-16; a second_draft= key still routes the
-# row to the second-draft log, as a corruption backstop for stale callers. An
-# explicit out=<path> writes the row there as one JSONL line instead of to the
-# ledger. Both redirects write only while the metrics switch is on.
+# An explicit out=<path> writes the row there as one JSONL line instead of to the
+# ledger. The redirect writes only while the metrics switch is on.
 set -euo pipefail
 
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
@@ -27,12 +25,6 @@ script_dir=$(dirname -- "${BASH_SOURCE[0]}")
 # shellcheck source=../../scripts/_kv.sh
 source "$script_dir/../../scripts/_kv.sh"
 out=""
-# Second-draft rows route to the second-draft log even when the caller forgets
-# out= — a second_draft= key in the review-metrics rows corrupts both datasets.
-case " $* " in
-  *" out="*) ;;
-  *" second_draft="*) out="${SECOND_DRAFT_FILE:-$HOME/.claude/second-draft.jsonl}" ;;
-esac
 
 # The branch is read here, never trusted to the caller; a caller's own branch= still wins.
 json=$(jq -cn --arg b "$(git branch --show-current 2>/dev/null || true)" \

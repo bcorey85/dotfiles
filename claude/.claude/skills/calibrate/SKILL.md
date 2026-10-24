@@ -106,10 +106,12 @@ sha256sum <target> | cut -c1-16   # must equal pre_hash
 ## Step 6: Log
 
 ```bash
-~/.claude/skills/review/log-review-metrics \
-  out=~/.claude/review-calibration.jsonl \
-  reviewer=<sonnet|deep> class=<defect class> file=<target> \
-  result=<caught|missed> other_findings=<n>
+if "$HOME/.claude/scripts/telemetry_enabled.sh" 2>/dev/null; then
+  jq -cn --arg reviewer "<sonnet|deep>" --arg class "<defect class>" --arg result "<caught|missed>" \
+    --argjson other_findings <n> \
+    '{reviewer: $reviewer, class: $class, result: $result, other_findings: $other_findings}' \
+    | "$HOME/.claude/scripts/ledger-write" review_calibration
+fi
 ```
 
 ## Step 7: Report
@@ -117,8 +119,8 @@ sha256sum <target> | cut -c1-16   # must equal pre_hash
 Three lines. The seed, the verdict, and the running recall:
 
 ```bash
-jq -s 'group_by(.reviewer)[] | {reviewer: .[0].reviewer, n: length,
-  caught: (map(select(.result=="caught")) | length)}' ~/.claude/review-calibration.jsonl
+ledger query "select reviewer, count(*) as n, sum(result = 'caught') as caught
+  from review_calibration group by reviewer"
 ```
 
 State recall as a fraction with N (`3/5 caught (sonnet)`) — never a percentage below N=10 (provisional). What it licenses: **high** → zero-finding runs are real, trust the loop and read less; **low** → every clean review is uninformative, change the reviewer tier, not your reading.

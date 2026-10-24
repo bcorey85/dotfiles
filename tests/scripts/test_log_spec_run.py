@@ -7,8 +7,6 @@ import unittest
 
 import fake_ledger
 
-os.environ.pop("CLAUDE_TOOLKIT_TELEMETRY", None)  # the switch file alone decides in these tests
-
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 REAL_CLAUDE = REPO_ROOT / "claude" / ".claude"
 SCRIPT = pathlib.Path(os.environ.get("LOG_SPEC_RUN_SCRIPT") or REAL_CLAUDE / "scripts" / "telemetry" / "log-spec-run")
@@ -35,7 +33,6 @@ class LogSpecRunRepoTest(unittest.TestCase):
         self.root = pathlib.Path(temp_dir.name)
         self.home = self.root / "home"
         (self.home / ".claude").mkdir(parents=True)
-        (self.home / ".claude" / "toolkit-telemetry").touch()
         self.scripts_dir = self.root / "claude" / "scripts"
         telemetry_dir = self.scripts_dir / "telemetry"
         telemetry_dir.mkdir(parents=True)
@@ -62,7 +59,8 @@ class LogSpecRunRepoTest(unittest.TestCase):
 
     def logged_spec_run_row(self, *args):
         out_file = self.root / "never-written.jsonl"
-        env = {**os.environ, **GIT_ENV, "HOME": str(self.home), **self.ledger_env}
+        env = {**os.environ, **GIT_ENV, "HOME": str(self.home), "CLAUDE_TOOLKIT_TELEMETRY": "1",
+               **self.ledger_env}
 
         spec_run = subprocess.run(
             [str(self.script), f"out={out_file}", "slug=my-plan", "verdict=finalized", "criteria=3", *args],

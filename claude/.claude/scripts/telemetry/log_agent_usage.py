@@ -7,7 +7,7 @@ Appends one line per completed subagent dispatch to AGENT_USAGE_FILE
 
 The token fields probe several candidate paths because the Agent tool_response schema is not contractual;
 respKeys is the self-diagnostic. reportChars and noResult are null on the async schema (no inline content).
-Writes nothing while the metrics switch is off (CLAUDE_TOOLKIT_TELEMETRY=1, or the file ~/.claude/toolkit-telemetry).
+Writes nothing while the metrics switch is off (CLAUDE_TOOLKIT_TELEMETRY=1).
 Never emits hook output. Exits 0, except 5 on a payload that is not valid JSON or not an object, as the
 bash original did through jq.
 """

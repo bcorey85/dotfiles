@@ -137,12 +137,11 @@ def run_hook(stdin, env=None, project=None):
     with tempfile.TemporaryDirectory() as scratch:
         home = pathlib.Path(scratch) / "home"
         (home / ".claude").mkdir(parents=True)
-        (home / ".claude" / "toolkit-telemetry").touch()
         working = pathlib.Path(scratch) / "work" / "myrepo"
         working.mkdir(parents=True)
         environment = {key: value for key, value in os.environ.items()
                        if key not in ("CLAUDE_PROJECT_DIR", "AGENT_USAGE_FILE")}
-        environment.update(HOME=str(home), TMPDIR=scratch, PWD=str(working))
+        environment.update(HOME=str(home), TMPDIR=scratch, PWD=str(working), CLAUDE_TOOLKIT_TELEMETRY="1")
         if project:
             environment["CLAUDE_PROJECT_DIR"] = project
         environment.update({key: value.replace("{ROOT}", scratch) for key, value in (env or {}).items()})
@@ -305,8 +304,7 @@ class LogAgentUsageTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             target = pathlib.Path(scratch) / "custom.jsonl"
             (pathlib.Path(scratch) / ".claude").mkdir()
-            (pathlib.Path(scratch) / ".claude" / "toolkit-telemetry").touch()
-            environment = dict(os.environ, HOME=scratch, AGENT_USAGE_FILE=str(target))
+            environment = dict(os.environ, HOME=scratch, AGENT_USAGE_FILE=str(target), CLAUDE_TOOLKIT_TELEMETRY="1")
             subprocess.run([sys.executable, str(SCRIPT)], input=post(), text=True, env=environment)
             subprocess.run([sys.executable, str(SCRIPT)], input=post(), text=True, env=environment)
             self.assertEqual(len(target.read_text().splitlines()), 2)

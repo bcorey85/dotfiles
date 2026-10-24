@@ -9,7 +9,8 @@ five shapes, only when the payload shows a subagent (agent_type or agent_id is s
   3. follow mode (tail -f, docker logs -f, docker compose logs -f, kubectl logs -f, journalctl -f, watch),
      unless the whole call starts with `timeout N` and N <= 120
   4. a standalone sleep longer than 30 seconds
-  5. any run_in_background call from review-loop: it ends its turn waiting on jobs whose results never come back
+  5. any background job from review-loop (run_in_background, a lone &, nohup, setsid, disown): it ends its turn
+     waiting on jobs whose results never come back
 
 Heredoc bodies, quoted strings and comments are ignored. Any error exits 0 with no output.
 """
@@ -47,9 +48,12 @@ SLEEP_REASON = ("A long sleep wastes the call. Sleep 30 seconds or less. To wait
                 "for example `for i in $(seq 30); do <check> && break; sleep 3; done`. If the check still fails, "
                 "stop waiting and report it in your hand-back.")
 BACKGROUND_REASON = ("Review-loop runs every check in the foreground. A background job's result does not come back "
-                     "to this loop, so it waits for nothing. Run the same command without run_in_background and set "
-                     "the Bash timeout up to 600000 ms.")
+                     "to this loop, so it waits for nothing. Run the same command without run_in_background, a "
+                     "trailing &, nohup, setsid or disown, and set the Bash timeout up to 600000 ms.")
 BACKGROUND_AGENT = "review-loop"
+# A lone & that sends a job to the background; &&, |&, 2>&1 and &> are not one.
+SHELL_BACKGROUND = re.compile(r"(?<![&>|<])&(?![&>])")
+DETACH_WORDS = {"nohup", "setsid", "disown"}
 
 
 def strip_heredocs(command):
@@ -220,6 +224,12 @@ def deny_reason(command):
     return None
 
 
+def starts_detached_job(command):
+    if SHELL_BACKGROUND.search(clean(command)):
+        return True
+    return any(words[0] in DETACH_WORDS for words in statements(command))
+
+
 def main():
     try:
         payload = json.loads(sys.stdin.read())
@@ -227,7 +237,7 @@ def main():
         tool_input = payload.get("tool_input") or {}
         command = tool_input.get("command")
         if not os.environ.get("CLAUDE_SKIP_HOOKS") and is_subagent and isinstance(command, str):
-            in_background = tool_input.get("run_in_background") is True
+            in_background = tool_input.get("run_in_background") is True or starts_detached_job(command)
             if in_background and payload.get("agent_type") == BACKGROUND_AGENT:
                 reason = BACKGROUND_REASON
             else:

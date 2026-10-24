@@ -4,14 +4,22 @@ import pathlib
 import sys
 import unittest
 
+import toolkit_paths
+
 HERE = pathlib.Path(__file__).resolve().parent
-LIVE_SCRIPTS_DIR = pathlib.Path.home() / ".claude" / "scripts"
+LIVE_SCRIPTS_DIR = toolkit_paths.SCRIPTS_DIR
 SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or (HERE if (HERE / "shell_command.py").exists()
                                                                   else LIVE_SCRIPTS_DIR))
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-from shell_command import (parse_simple_commands, redirection_writes_file, runs_only_after_success,  # noqa: E402
-                           split_command_steps, split_simple_commands, step_surely_ran)
+from shell_command import (
+    parse_simple_commands,
+    redirection_writes_file,
+    runs_only_after_success,
+    split_command_steps,
+    split_simple_commands,
+    step_surely_ran,
+)
 
 
 class SplitSimpleCommandsTest(unittest.TestCase):

@@ -1,6 +1,5 @@
 """agent-cost: SPEND reads the ledger through a stub `ledger` on PATH; PEAK reads transcripts."""
 import datetime
-import os
 import pathlib
 import shutil
 import subprocess
@@ -60,11 +59,11 @@ class AgentCostTest(unittest.TestCase):
         self.stub_exit = "0"
 
     def plant(self, *rows):
-        self.rows_file.write_text("\n".join((HEADER,) + rows) + "\n")
+        self.rows_file.write_text("\n".join((HEADER, *rows)) + "\n")
 
     def run_script(self, *arguments, path=None, projects=str(PROJECTS), ledger_root=None):
         environment = {
-            "PATH": path if path is not None else "%s:%s:/usr/bin:/bin" % (self.stub_dir, self.jq_dir),
+            "PATH": path if path is not None else f"{self.stub_dir}:{self.jq_dir}:/usr/bin:/bin",
             "HOME": str(self.home),
             "LC_ALL": "C",
             "AGENT_LEDGER_ROOT": str(self.ledger_root if ledger_root is None else ledger_root),
@@ -73,7 +72,7 @@ class AgentCostTest(unittest.TestCase):
             "STUB_ROWS": str(self.rows_file),
             "STUB_EXIT": self.stub_exit,
         }
-        return subprocess.run([str(SCRIPT)] + list(arguments), capture_output=True, text=True, env=environment)
+        return subprocess.run([str(SCRIPT), *list(arguments)], capture_output=True, text=True, env=environment)
 
     def sent_arguments(self):
         return self.argv_log.read_text() if self.argv_log.exists() else ""
@@ -155,15 +154,15 @@ class AgentCostTest(unittest.TestCase):
     def test_since_epoch_puts_iso_cutoff_in_query(self):
         self.plant(priced("run-1"))
         epoch = 1760000000
-        iso = datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+        iso = datetime.datetime.fromtimestamp(epoch, datetime.UTC).strftime("%Y-%m-%dT%H:%M:%S")
 
-        self.run_script("--spend", "--since", "@%d" % epoch)
+        self.run_script("--spend", "--since", f"@{epoch}")
         with_cutoff = self.sent_arguments()
         self.argv_log.unlink()
         self.run_script("--spend")
         without_cutoff = self.sent_arguments()
 
-        self.assertIn("AND r.run_start >= '%s'" % iso, with_cutoff)
+        self.assertIn(f"AND r.run_start >= '{iso}'", with_cutoff)
         self.assertNotIn("run_start >=", without_cutoff)
 
     def test_rates_flag_is_rejected(self):
@@ -182,7 +181,7 @@ class AgentCostTest(unittest.TestCase):
         empty_dir = self.root / "empty"
         empty_dir.mkdir()
 
-        spend_report = self.run_script("--spend", path="%s:/usr/bin:/bin" % empty_dir)
+        spend_report = self.run_script("--spend", path=f"{empty_dir}:/usr/bin:/bin")
 
         self.assertEqual(spend_report.returncode, 1)
         self.assertIn("ledger", spend_report.stderr)
@@ -294,7 +293,7 @@ class AgentCostTest(unittest.TestCase):
     def test_days_puts_iso_cutoff_in_query(self):
         self.plant(priced("run-1"))
         days = 3
-        expected = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)
+        expected = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=days)
 
         self.run_script("--spend", "--days", str(days))
         sent = self.sent_arguments()
@@ -305,7 +304,7 @@ class AgentCostTest(unittest.TestCase):
         prefix = "AND r.run_start >= '"
         self.assertIn(prefix, sent)
         stamp = sent.split(prefix, 1)[1].split("'", 1)[0]
-        cutoff = datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=datetime.timezone.utc)
+        cutoff = datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=datetime.UTC)
         self.assertLess(abs((cutoff - expected).total_seconds()), 120)
         self.assertNotIn("run_start >=", without_cutoff)
 

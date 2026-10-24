@@ -13,8 +13,16 @@ import sys
 import time
 
 import hook_input
-from hook_input import (JqError, bash_basename, current_directory, index, parse_documents, present, raw_text,
-                        report_open_failure)
+from hook_input import (
+    JqError,
+    bash_basename,
+    current_directory,
+    index,
+    parse_documents,
+    present,
+    raw_text,
+    report_open_failure,
+)
 
 try:
     from telemetry_enabled import telemetry_enabled
@@ -32,7 +40,7 @@ def field(documents, extract, newlines):
         try:
             pieces.append(raw_text(extract(document)))
         except JqError as error:
-            sys.stderr.write("jq: error (at <stdin>:%d): %s\n" % (newlines + 1, error))
+            sys.stderr.write(f"jq: error (at <stdin>:{(newlines + 1)}): {error}\n")
             sys.exit(5)
     return "\n".join(pieces).rstrip("\n")
 
@@ -43,7 +51,7 @@ def main():
     try:
         documents = parse_documents(text)
     except ValueError:
-        sys.stderr.write("jq: error (at <stdin>:%d): parse error\n" % (newlines + 1))
+        sys.stderr.write(f"jq: error (at <stdin>:{(newlines + 1)}): parse error\n")
         return 5
 
     event = field(documents, lambda d: present(index(d, "hook_event_name")), newlines)

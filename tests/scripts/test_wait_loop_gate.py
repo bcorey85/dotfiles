@@ -1,4 +1,4 @@
-"""Checks for wait-loop-gate.py, the PreToolUse hook that denies unbounded waits in subagent Bash calls.
+"""Checks for wait_loop_gate.py, the PreToolUse hook that denies unbounded waits in subagent Bash calls.
 
 Set WAIT_LOOP_GATE_SCRIPT to run against another copy, such as a staged one."""
 import json
@@ -8,8 +8,10 @@ import subprocess
 import sys
 import unittest
 
+import toolkit_paths
+
 SCRIPT = pathlib.Path(os.environ.get("WAIT_LOOP_GATE_SCRIPT")
-                      or pathlib.Path.home() / ".claude" / "scripts" / "wait-loop-gate.py")
+                      or toolkit_paths.SCRIPTS_DIR / "wait_loop_gate.py")
 
 
 def run_hook(stdin):

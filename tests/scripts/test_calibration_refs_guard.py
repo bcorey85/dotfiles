@@ -1,4 +1,4 @@
-"""Checks for calibration-refs-guard.py, the PostToolUse hook that reports reviewer agents naming calibration
+"""Checks for calibration_refs_guard.py, the PostToolUse hook that reports reviewer agents naming calibration
 headings that no longer exist."""
 import json
 import os
@@ -8,8 +8,10 @@ import sys
 import tempfile
 import unittest
 
-SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts")
-SCRIPT = SCRIPTS_DIR / "calibration-refs-guard.py"
+import toolkit_paths
+
+SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR)
+SCRIPT = SCRIPTS_DIR / "calibration_refs_guard.py"
 
 CALIBRATION = "# Calibration\n\n## Severity Scale\ntext\n\n## False Positives\ntext\n"
 TAIL = ("A reviewer told to adopt a heading that does not exist gets that section only by\n"

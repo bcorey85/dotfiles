@@ -20,16 +20,21 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from typing import ClassVar
 
-REAL_CLAUDE = pathlib.Path.home() / ".claude"
+import toolkit_paths
+
+REAL_CLAUDE = toolkit_paths.CLAUDE_DIR
 DRAFT_DIR = os.environ.get("TELEMETRY_SWITCH_DRAFT_DIR")
-RECEIPT_SKILL = pathlib.Path(os.environ.get("BRANCH_RECAP_SKILL") or REAL_CLAUDE / "skills" / "branch-recap" / "SKILL.md")
+RECEIPT_SKILL = pathlib.Path(
+    os.environ.get("BRANCH_RECAP_SKILL") or REAL_CLAUDE / "skills" / "branch-recap" / "SKILL.md"
+)
 if DRAFT_DIR and not os.environ.get("BRANCH_RECAP_SKILL"):
     RECEIPT_SKILL = pathlib.Path(DRAFT_DIR) / "branch-recap-SKILL.md"
 
-SCRIPTS = ["telemetry_enabled.sh", "telemetry_enabled.py", "hook_input.py", "repo-name", "log-agent-usage.py",
-           "log-skill-use.py", "test-edit-telemetry.py", "log-escape", "log-scan", "log-spec-run", "coder-gate.py",
-           "_kv.sh", "ledger-write"]
+SCRIPTS = ["telemetry_enabled.sh", "telemetry_enabled.py", "hook_input.py", "repo-name", "log_agent_usage.py",
+           "log_skill_use.py", "test_edit_telemetry.py", "log-escape", "log-scan", "log-spec-run", "coder_gate.py",
+           "script_utils.py", "_kv.sh", "ledger-write"]
 REVIEW = ["log-review-metrics", "log-perf-finding", "log-review-finding", "review-scope"]
 # hook_input.py and repo-name are not part of this change: they always come from the installed copy.
 INSTALLED_ONLY = {"hook_input.py", "repo-name"}
@@ -76,9 +81,9 @@ def source_file(name, subdir):
 
 class SwitchTest(unittest.TestCase):
     def setUp(self):
-        tempDir = tempfile.TemporaryDirectory()
-        self.addCleanup(tempDir.cleanup)
-        self.root = pathlib.Path(tempDir.name).resolve()
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.root = pathlib.Path(temp_dir.name).resolve()
         self.home = self.root / "home"
         (self.home / ".claude").mkdir(parents=True)
         self.scripts = self.root / "claude" / "scripts"
@@ -94,22 +99,22 @@ class SwitchTest(unittest.TestCase):
         self.work = self.root / "work"
         self.work.mkdir()
         self.switch = self.home / ".claude" / "toolkit-telemetry"
-        self.stubBin = self.root / "bin"
-        self.stubBin.mkdir()
-        self.ledgerCalls = self.root / "ledger-calls.jsonl"
-        stubPath = self.stubBin / "ledger"
-        stubPath.write_text(LEDGER_STUB.format(python=sys.executable))
-        stubPath.chmod(0o755)
+        self.stub_bin = self.root / "bin"
+        self.stub_bin.mkdir()
+        self.ledger_calls_file = self.root / "ledger-calls.jsonl"
+        stub_path = self.stub_bin / "ledger"
+        stub_path.write_text(LEDGER_STUB.format(python=sys.executable))
+        stub_path.chmod(0o755)
 
     def add_review_scope_switch_lines(self):
         """The draft review-scope predates the switch helper's command form. The install adds the switch lines to
         the branch-base review-scope instead; this applies those same lines to the temp copy."""
-        scopePath = self.review / "review-scope"
-        scopeText = scopePath.read_text()
-        for oldText, newText in REVIEW_SCOPE_SWITCH_LINES:
-            self.assertEqual(scopeText.count(oldText), 1, oldText)
-            scopeText = scopeText.replace(oldText, newText)
-        scopePath.write_text(scopeText)
+        scope_path = self.review / "review-scope"
+        scope_text = scope_path.read_text()
+        for old_text, new_text in REVIEW_SCOPE_SWITCH_LINES:
+            self.assertEqual(scope_text.count(old_text), 1, old_text)
+            scope_text = scope_text.replace(old_text, new_text)
+        scope_path.write_text(scope_text)
 
     def turn(self, state):
         if state == "on":
@@ -122,8 +127,8 @@ class SwitchTest(unittest.TestCase):
                        if not key.endswith("_FILE")
                        and key not in ("CLAUDE_PROJECT_DIR", "CLAUDE_SKIP_HOOKS", "CLAUDE_TOOLKIT_TELEMETRY")}
         environment.update(GIT_ENV)
-        environment.update(HOME=str(self.home), TMPDIR=str(self.root), LEDGER_STUB_CALLS=str(self.ledgerCalls),
-                           PATH=str(self.stubBin) + os.pathsep + environment.get("PATH", ""))
+        environment.update(HOME=str(self.home), TMPDIR=str(self.root), LEDGER_STUB_CALLS=str(self.ledger_calls_file),
+                           PATH=str(self.stub_bin) + os.pathsep + environment.get("PATH", ""))
         environment.update(extra or {})
         return environment
 
@@ -140,13 +145,13 @@ class SwitchTest(unittest.TestCase):
 
     def ledger_calls(self):
         """Every `ledger write` call the stub has recorded, oldest first."""
-        if not self.ledgerCalls.exists():
+        if not self.ledger_calls_file.exists():
             return []
-        return [json.loads(line) for line in self.ledgerCalls.read_text().splitlines()]
+        return [json.loads(line) for line in self.ledger_calls_file.read_text().splitlines()]
 
-    def assert_ledger_switch(self, rowType, run, quiet=True):
+    def assert_ledger_switch(self, row_type, run, quiet=True):
         """run() invokes the writer once. Off: exit 0, no output (unless quiet is False), no `ledger write` call and
-        no jsonl file. On: exit 0 and exactly one `ledger write <rowType>` call. Returns the finished run and the
+        no jsonl file. On: exit 0 and exactly one `ledger write <row_type>` call. Returns the finished run and the
         call's row."""
         self.turn("off")
         finished = run()
@@ -160,7 +165,7 @@ class SwitchTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 0, finished.stderr)
         calls = self.ledger_calls()
         self.assertEqual(len(calls), 1, "ledger not written while the switch was present")
-        self.assertEqual(calls[0]["args"][:2], ["write", rowType])
+        self.assertEqual(calls[0]["args"][:2], ["write", row_type])
         self.assertEqual(list((self.home / ".claude").glob("*.jsonl")), [])
         return finished, calls[0]["row"]
 
@@ -185,60 +190,64 @@ class SwitchTest(unittest.TestCase):
                  ("var unset, file present", {}, "on", True),
                  ("neither", {}, "off", False),
                  ("var=0, no file", {"CLAUDE_TOOLKIT_TELEMETRY": "0"}, "off", False)]
-        scanArguments = ["repo=r", "scan=prohibition", "stage=manual", "exit=0", "candidates=2", "confirmed=1"]
-        writers = [("agent-usage.jsonl", "log-agent-usage.py", HOOK_POST, [])]
-        for caseName, extra, fileState, expectRow in cases:
-            for logName, script, payload, arguments in writers:
-                with self.subTest(case=caseName, writer=script):
-                    self.turn(fileState)
-                    self.home_file(logName).unlink(missing_ok=True)
+        scan_arguments = ["repo=r", "scan=prohibition", "stage=manual", "exit=0", "candidates=2", "confirmed=1"]
+        writers = [("agent-usage.jsonl", "log_agent_usage.py", HOOK_POST, [])]
+        for case_name, extra, file_state, expect_row in cases:
+            for log_name, script, payload, arguments in writers:
+                with self.subTest(case=case_name, writer=script):
+                    self.turn(file_state)
+                    self.home_file(log_name).unlink(missing_ok=True)
                     interpreter = [sys.executable] if script.endswith(".py") else ["bash"]
                     finished = self.run_command([*interpreter, str(self.scripts / script), *arguments],
                                                 json.dumps(payload) if payload else None, extra=extra)
                     self.assertEqual(finished.returncode, 0, finished.stderr)
-                    self.assertEqual(len(self.lines(logName)), 1 if expectRow else 0)
-            with self.subTest(case=caseName, writer="log-scan"):
-                self.turn(fileState)
-                self.ledgerCalls.unlink(missing_ok=True)
-                finished = self.run_command(["bash", str(self.scripts / "log-scan"), *scanArguments], extra=extra)
+                    self.assertEqual(len(self.lines(log_name)), 1 if expect_row else 0)
+            with self.subTest(case=case_name, writer="log-scan"):
+                self.turn(file_state)
+                self.ledger_calls_file.unlink(missing_ok=True)
+                finished = self.run_command(["bash", str(self.scripts / "log-scan"), *scan_arguments], extra=extra)
                 self.assertEqual(finished.returncode, 0, finished.stderr)
-                self.assertEqual(len(self.ledger_calls()), 1 if expectRow else 0)
+                self.assertEqual(len(self.ledger_calls()), 1 if expect_row else 0)
 
     def test_helper_four_cases_as_command_and_import(self):
         """The two helper forms agree on the four cases."""
         cases = [({"CLAUDE_TOOLKIT_TELEMETRY": "1"}, False, 0), ({}, True, 0), ({}, False, 1),
                  ({"CLAUDE_TOOLKIT_TELEMETRY": "0"}, False, 1)]
-        for extra, withFile, expectedCode in cases:
-            with self.subTest(extra=extra, withFile=withFile):
-                self.turn("on" if withFile else "off")
-                shellRun = self.run_command(["bash", str(self.scripts / "telemetry_enabled.sh")], extra=extra)
-                self.assertEqual(shellRun.returncode, expectedCode, shellRun.stderr)
-                pythonRun = self.run_command(
+        for extra, with_file, expected_code in cases:
+            with self.subTest(extra=extra, with_file=with_file):
+                self.turn("on" if with_file else "off")
+                shell_run = self.run_command(["bash", str(self.scripts / "telemetry_enabled.sh")], extra=extra)
+                self.assertEqual(shell_run.returncode, expected_code, shell_run.stderr)
+                python_run = self.run_command(
                     [sys.executable, "-I", "-c", "import sys; sys.path.insert(0, sys.argv[1]);"
                      " from telemetry_enabled import telemetry_enabled; sys.exit(0 if telemetry_enabled() else 1)",
                      str(self.scripts)], extra=extra)
-                self.assertEqual(pythonRun.returncode, expectedCode, pythonRun.stderr)
+                self.assertEqual(python_run.returncode, expected_code, python_run.stderr)
 
     def hook(self, script, payload):
-        command = [sys.executable, str(self.scripts / script)] if script.endswith(".py") else ["bash", str(self.scripts / script)]
+        command = (
+            [sys.executable, str(self.scripts / script)]
+            if script.endswith(".py")
+            else ["bash", str(self.scripts / script)]
+        )
         return lambda: self.run_command(command, json.dumps(payload))
 
     # ---- hooks
 
     def test_agent_usage_py(self):
-        self.assert_switch("agent-usage.jsonl", self.hook("log-agent-usage.py", HOOK_POST))
+        self.assert_switch("agent-usage.jsonl", self.hook("log_agent_usage.py", HOOK_POST))
 
     def test_skill_use_py_model(self):
-        self.assert_switch("skill-usage.jsonl", self.hook("log-skill-use.py", SKILL_POST))
+        self.assert_switch("skill-usage.jsonl", self.hook("log_skill_use.py", SKILL_POST))
 
     def test_skill_use_py_prompt(self):
-        self.assert_switch("skill-usage.jsonl", self.hook("log-skill-use.py", SKILL_PROMPT))
+        self.assert_switch("skill-usage.jsonl", self.hook("log_skill_use.py", SKILL_PROMPT))
 
     def test_test_edit_telemetry_py(self):
-        self.assert_switch("test-edit-telemetry.jsonl", self.hook("test-edit-telemetry.py", TEST_EDIT))
+        self.assert_switch("test-edit-telemetry.jsonl", self.hook("test_edit_telemetry.py", TEST_EDIT))
 
     def test_coder_gate_whole_package_deny_still_denies_when_off(self):
-        command = [sys.executable, str(self.scripts / "coder-gate.py"), "bash-hook"]
+        command = [sys.executable, str(self.scripts / "coder_gate.py"), "bash-hook"]
         self.turn("off")
         finished = self.run_command(command, json.dumps(CODER_BASH))
         self.assertEqual(finished.returncode, 0, finished.stderr)
@@ -253,19 +262,21 @@ class SwitchTest(unittest.TestCase):
         repo = self.work / "repo"
         repo.mkdir()
         self.run_command(["git", "init", "-q"], cwd=repo)
-        self.run_command(["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "--allow-empty", "-m", "i"], cwd=repo)
-        gate = [sys.executable, str(self.scripts / "coder-gate.py")]
-        setGate = self.run_command(gate + ["set", "true"], cwd=repo)
-        self.assertEqual(setGate.returncode, 0, setGate.stderr)
+        self.run_command(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "--allow-empty", "-m", "i"], cwd=repo
+        )
+        gate = [sys.executable, str(self.scripts / "coder_gate.py")]
+        set_gate = self.run_command([*gate, "set", "true"], cwd=repo)
+        self.assertEqual(set_gate.returncode, 0, set_gate.stderr)
         handback = {"hook_event_name": "PreToolUse", "agent_type": "coder", "agent_id": "a1", "cwd": str(repo),
                     "tool_input": {"message": "done"}}
         self.turn("off")
-        finished = self.run_command(gate + ["hook"], json.dumps(handback), cwd=repo)
+        finished = self.run_command([*gate, "hook"], json.dumps(handback), cwd=repo)
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertIn("HAND-BACK GATE: pass", finished.stdout)
         self.assertFalse(self.home_file("coder-gate.jsonl").exists())
         self.turn("on")
-        finished = self.run_command(gate + ["hook"], json.dumps(handback), cwd=repo)
+        finished = self.run_command([*gate, "hook"], json.dumps(handback), cwd=repo)
         self.assertIn("HAND-BACK GATE: pass", finished.stdout)
         self.assertEqual(json.loads(self.lines("coder-gate.jsonl")[0])["result"], "pass")
 
@@ -273,7 +284,9 @@ class SwitchTest(unittest.TestCase):
 
     def test_log_review_metrics_default_file(self):
         script = str(self.review / "log-review-metrics")
-        _, row = self.assert_ledger_switch("review_metrics", lambda: self.run_command([script, "iter=1", "result=PASS"]))
+        _, row = self.assert_ledger_switch(
+            "review_metrics", lambda: self.run_command([script, "iter=1", "result=PASS"])
+        )
         self.assertEqual(row, {"iter": "1", "result": "PASS"})
 
     def test_log_review_metrics_second_draft_route(self):
@@ -306,8 +319,14 @@ class SwitchTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 1)
         self.assertIn("missing required arg", finished.stderr)
 
-    ESCAPE_ARGS = ["gate_missed=code-reviewer", "stage_found=human-pr", "severity=high", "class=bug",
-                   "guard=none", "desc=a bug"]
+    ESCAPE_ARGS: ClassVar[list[str]] = [
+        "gate_missed=code-reviewer",
+        "stage_found=human-pr",
+        "severity=high",
+        "class=bug",
+        "guard=none",
+        "desc=a bug",
+    ]
 
     def test_log_escape_prints_one_line_when_off(self):
         script = str(self.scripts / "log-escape")
@@ -379,41 +398,42 @@ class SwitchTest(unittest.TestCase):
             self.turn(state)
             for label, args in self.checkers():
                 with self.subTest(logger=label, switch=state):
-                    badArgs = self.invalid(args)
-                    realCall = self.run_command(badArgs)
-                    checkCall = self.run_command(self.with_check(badArgs))
-                    self.assertNotEqual(realCall.returncode, 0)
-                    self.assertIn("refusing to log", realCall.stderr)
-                    self.assertEqual(checkCall.returncode, realCall.returncode)
-                    self.assertEqual(checkCall.stderr, realCall.stderr)
-                    self.assertEqual(checkCall.stdout, realCall.stdout)
+                    bad_args = self.invalid(args)
+                    real_call = self.run_command(bad_args)
+                    check_call = self.run_command(self.with_check(bad_args))
+                    self.assertNotEqual(real_call.returncode, 0)
+                    self.assertIn("refusing to log", real_call.stderr)
+                    self.assertEqual(check_call.returncode, real_call.returncode)
+                    self.assertEqual(check_call.stderr, real_call.stderr)
+                    self.assertEqual(check_call.stdout, real_call.stdout)
 
     def test_review_finding_passes_an_unknown_class_to_the_ledger_as_given(self):
         """The class vocabulary lives in `ledger write`, so log-review-finding exits 0 and sends the value as given;
         --check refuses nothing for it either."""
         self.turn("on")
-        badArgs = self.finding_check_args()
-        badArgs[badArgs.index("class=bug")] = "class=nonsense"
-        checkCall = self.run_command(self.with_check(badArgs))
-        self.assertEqual((checkCall.returncode, checkCall.stdout, checkCall.stderr), (0, "", ""))
-        realCall = self.run_command(badArgs)
-        self.assertEqual(realCall.returncode, 0, realCall.stderr)
+        bad_args = self.finding_check_args()
+        bad_args[bad_args.index("class=bug")] = "class=nonsense"
+        check_call = self.run_command(self.with_check(bad_args))
+        self.assertEqual((check_call.returncode, check_call.stdout, check_call.stderr), (0, "", ""))
+        real_call = self.run_command(bad_args)
+        self.assertEqual(real_call.returncode, 0, real_call.stderr)
         calls = self.ledger_calls()
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["row"]["class"], "nonsense")
 
     def test_review_finding_refuses_a_missing_kind_a_missing_gate_and_a_value_with_a_space(self):
-        """Malformed input (no kind, no gate, a space in a value) exits nonzero with the switch on or off and sends nothing to the ledger."""
+        """Malformed input (no kind, no gate, a space in a value) exits nonzero with the switch on or off and sends
+        nothing to the ledger."""
         finding = str(self.review / "log-review-finding")
-        noKind = [finding, "gate=code-reviewer", "class=bug", "disposition=fix"]
-        noGate = [finding, "kind=finding", "class=bug", "disposition=fix"]
-        spacedValue = [finding, "kind=finding", "gate=code-reviewer", "class=bug", "disposition=fix",
+        no_kind = [finding, "gate=code-reviewer", "class=bug", "disposition=fix"]
+        no_gate = [finding, "kind=finding", "class=bug", "disposition=fix"]
+        spaced_value = [finding, "kind=finding", "gate=code-reviewer", "class=bug", "disposition=fix",
                        "repo=two words"]
         for state in ("on", "off"):
             self.turn(state)
-            for label, args, message in (("no kind", noKind, "kind=run|finding is required"),
-                                         ("no gate", noGate, "gate=<agent name> is required"),
-                                         ("space in a value", spacedValue, "contains a space")):
+            for label, args, message in (("no kind", no_kind, "kind=run|finding is required"),
+                                         ("no gate", no_gate, "gate=<agent name> is required"),
+                                         ("space in a value", spaced_value, "contains a space")):
                 with self.subTest(case=label, switch=state):
                     finished = self.run_command(args)
                     self.assertEqual(finished.returncode, 1)
@@ -430,7 +450,7 @@ class SwitchTest(unittest.TestCase):
                 self.assertFalse(redirected.exists())
                 self.assertEqual(list((self.home / ".claude").glob("*.jsonl")), [])
                 self.assertEqual(self.ledger_calls(), [])
-        self.run_command(self.with_check(self.finding_check_args() + [f"out={redirected}"]))
+        self.run_command(self.with_check([*self.finding_check_args(), f"out={redirected}"]))
         self.assertFalse(redirected.exists())
         self.assertEqual(self.ledger_calls(), [])
 
@@ -525,7 +545,9 @@ class SwitchTest(unittest.TestCase):
         repo = self.work / "repo"
         repo.mkdir()
         self.run_command(["git", "init", "-q"], cwd=repo)
-        self.run_command(["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "--allow-empty", "-m", "i"], cwd=repo)
+        self.run_command(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "--allow-empty", "-m", "i"], cwd=repo
+        )
         (self.home / ".claude" / "scripts").mkdir(exist_ok=True)
         shutil.copy2(self.scripts / "telemetry_enabled.sh", self.home / ".claude" / "scripts" / "telemetry_enabled.sh")
         block = self.receipt_block()
@@ -541,7 +563,11 @@ class SwitchTest(unittest.TestCase):
         self.assertEqual(self.run_command([helper]).returncode, 0)
 
     def test_helper_python(self):
-        command = [sys.executable, "-c", "import telemetry_enabled, sys; sys.exit(0 if telemetry_enabled.telemetry_enabled() else 1)"]
+        command = [
+            sys.executable,
+            "-c",
+            "import telemetry_enabled, sys; sys.exit(0 if telemetry_enabled.telemetry_enabled() else 1)",
+        ]
         self.turn("off")
         self.assertEqual(self.run_command(command, extra={"PYTHONPATH": str(self.scripts)}).returncode, 1)
         self.turn("on")
@@ -566,19 +592,19 @@ class SwitchTest(unittest.TestCase):
     def test_missing_python_helper_keeps_logging_hooks_off(self):
         (self.scripts / "telemetry_enabled.py").unlink()
         self.turn("on")
-        cases = [("log-agent-usage.py", HOOK_POST, "agent-usage.jsonl"),
-                 ("log-skill-use.py", SKILL_POST, "skill-usage.jsonl"),
-                 ("test-edit-telemetry.py", TEST_EDIT, "test-edit-telemetry.jsonl")]
-        for script, payload, logName in cases:
+        cases = [("log_agent_usage.py", HOOK_POST, "agent-usage.jsonl"),
+                 ("log_skill_use.py", SKILL_POST, "skill-usage.jsonl"),
+                 ("test_edit_telemetry.py", TEST_EDIT, "test-edit-telemetry.jsonl")]
+        for script, payload, log_name in cases:
             with self.subTest(hook=script):
                 finished = self.hook(script, payload)()
                 self.assertEqual((finished.returncode, finished.stdout, finished.stderr), (0, "", ""))
-                self.assertFalse(self.home_file(logName).exists())
+                self.assertFalse(self.home_file(log_name).exists())
 
     def test_missing_python_helper_coder_gate_still_denies_and_logs_nothing(self):
         (self.scripts / "telemetry_enabled.py").unlink()
         self.turn("on")
-        command = [sys.executable, str(self.scripts / "coder-gate.py"), "bash-hook"]
+        command = [sys.executable, str(self.scripts / "coder_gate.py"), "bash-hook"]
         finished = self.run_command(command, json.dumps(CODER_BASH))
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertEqual(json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
@@ -590,12 +616,14 @@ class SwitchTest(unittest.TestCase):
         repo = self.work / "repo"
         repo.mkdir()
         self.run_command(["git", "init", "-q"], cwd=repo)
-        self.run_command(["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "--allow-empty", "-m", "i"], cwd=repo)
-        gate = [sys.executable, str(self.scripts / "coder-gate.py")]
-        self.assertEqual(self.run_command(gate + ["set", "true"], cwd=repo).returncode, 0)
+        self.run_command(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "--allow-empty", "-m", "i"], cwd=repo
+        )
+        gate = [sys.executable, str(self.scripts / "coder_gate.py")]
+        self.assertEqual(self.run_command([*gate, "set", "true"], cwd=repo).returncode, 0)
         handback = {"hook_event_name": "PreToolUse", "agent_type": "coder", "agent_id": "a1", "cwd": str(repo),
                     "tool_input": {"message": "done"}}
-        finished = self.run_command(gate + ["hook"], json.dumps(handback), cwd=repo)
+        finished = self.run_command([*gate, "hook"], json.dumps(handback), cwd=repo)
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertIn("HAND-BACK GATE: pass", finished.stdout)
         self.assertFalse(self.home_file("coder-gate.jsonl").exists())

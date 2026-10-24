@@ -3,7 +3,8 @@ import re
 import shlex
 
 SETUP_STEP = re.compile(r"^[ \t(]*(cd[ \t]|source[ \t]|\.[ \t]|export[ \t]|([^\W\d]\w*=[^ \t]*[ \t]*)+$)")
-# `|&` (pipe both streams), `>&`, `&>` and `&&` are not a lone `&`; a lone `&` sends the step before it to the background.
+# `|&` (pipe both streams), `>&`, `&>` and `&&` are not a lone `&`; a lone `&` sends the step before it to the
+# background.
 OPERATOR = re.compile(r"(\|\||&&|\|(?!&)|(?<![>&|])&(?![&>])|;|\n)")
 LEADING_BRACES = re.compile(r"(?:[ \t]*\{(?=[ \t]))*")
 TRAILING_BRACES = re.compile(r"(?:(?:^|[ \t])\}[ \t]*)+$")
@@ -50,34 +51,34 @@ def parse_simple_commands(command):
     commands = []
     words = []
     redirections = []
-    pendingOperator = None
+    pending_operator = None
     for token in lexer:
         characters = set(token)
         if token and characters <= SEPARATOR_CHARS:
-            if pendingOperator is not None:
-                redirections.append((pendingOperator, ""))
-            pendingOperator = None
+            if pending_operator is not None:
+                redirections.append((pending_operator, ""))
+            pending_operator = None
             if words or redirections:
                 commands.append((words, redirections))
             words = []
             redirections = []
             continue
         if token and characters <= REDIRECT_CHARS:
-            if pendingOperator is not None:
-                redirections.append((pendingOperator, ""))
+            if pending_operator is not None:
+                redirections.append((pending_operator, ""))
             if words and words[-1].isdigit():
                 words.pop()
-            pendingOperator = token
+            pending_operator = token
             continue
         if token and characters <= SEPARATOR_CHARS | REDIRECT_CHARS:
             raise ValueError("unsorted operator characters: " + token)
-        if pendingOperator is not None:
-            redirections.append((pendingOperator, token))
-            pendingOperator = None
+        if pending_operator is not None:
+            redirections.append((pending_operator, token))
+            pending_operator = None
             continue
         words.append(token)
-    if pendingOperator is not None:
-        redirections.append((pendingOperator, ""))
+    if pending_operator is not None:
+        redirections.append((pending_operator, ""))
     if words or redirections:
         commands.append((words, redirections))
     return commands

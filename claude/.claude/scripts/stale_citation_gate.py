@@ -6,6 +6,7 @@ Markdown-like files (.md .markdown .rst .txt): every `dir/file.ext[:line]` citat
 and the document's own directory. Source files: comment lines are scanned for planning vocabulary, any line for the
 hard markers. Files outside a git work tree are skipped.
 """
+import contextlib
 import json
 import os
 import re
@@ -107,11 +108,11 @@ def unresolved_citations(file_path, relative_path, root):
             # A path whose own directory is absent is probably not repo-relative.
             anchored = any(os.path.isdir(os.path.dirname(candidate) or ".") for candidate in candidates)
             if anchored and (not proposes or line):
-                missing += "  %s — no such path\n" % cite
+                missing += f"  {cite} — no such path\n"
         elif line and os.path.isfile(target):
             count = newline_count(target)
             if int(line) > count:
-                missing += "  %s — file has %d lines\n" % (cite, count)
+                missing += f"  {cite} — file has {count} lines\n"
     return missing
 
 
@@ -121,13 +122,13 @@ def planning_vocabulary_hits(file_path):
     for number, line in enumerate(lines, 1):
         if not COMMENT_LINE.search(line):
             continue
-        row = "%d:%s" % (number, line)
+        row = f"{number}:{line}"
         if any(pattern.search(row) for pattern in VOCABULARY):
             hits[number] = line
     for number, line in enumerate(lines, 1):
         if HARD_MARKERS.search(line):
             hits[number] = line
-    return ["%d:%s" % (number, hits[number]) for number in sorted(hits)]
+    return [f"{number}:{hits[number]}" for number in sorted(hits)]
 
 
 def check(raw):
@@ -149,24 +150,28 @@ def check(raw):
     if file_path.endswith(DOC_SUFFIXES):
         missing = unresolved_citations(file_path, relative_path, root)
         if missing:
-            emit_stderr("stale-citation-gate: %s cites paths that do not resolve — a rename, renumber or deletion "
-                        "elsewhere falsified them:\n%s" % (relative_path, missing))
+            emit_stderr(
+                f"stale-citation-gate: {relative_path} cites paths that do not resolve — a rename, renumber or "
+                "deletion "
+                f"elsewhere falsified them:\n{missing}"
+            )
         return
 
     if not file_path.endswith(SOURCE_SUFFIXES):
         return
     hits = planning_vocabulary_hits(file_path)
     if hits:
-        emit_stderr("stale-citation-gate: planning vocabulary in shipped source %s — keep the fact, cut the "
-                    "reference (see skills/_shared/code-vocabulary.md):\n%s"
-                    % (relative_path, "".join("  %s\n" % hit for hit in hits)))
+        emit_stderr(
+            "stale-citation-gate: planning vocabulary in shipped source {} — keep the fact, cut the "
+            "reference (see skills/_shared/code-vocabulary.md):\n{}".format(
+                relative_path, "".join(f"  {hit}\n" for hit in hits)
+            )
+        )
 
 
 def main():
-    try:
+    with contextlib.suppress(Exception):
         check(sys.stdin.buffer.read())
-    except Exception:
-        pass
     sys.exit(0)
 
 

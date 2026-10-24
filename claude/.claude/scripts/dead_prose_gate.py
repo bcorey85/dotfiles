@@ -5,6 +5,7 @@ hardcoded path.
 The rationale check covers .claude/{agents,skills}/*.md; the portability check also covers .claude/commands/*.md.
 A warning, never a block: always exits 0, warnings go to stderr.
 """
+import contextlib
 import json
 import os
 import re
@@ -28,7 +29,7 @@ PORTABILITY = re.compile(r"/Users/|/home/[a-z]|\bdotfiles\b")
 
 
 def numbered_hits(lines, matches):
-    return ["  %d:%s\n" % (number, line) for number, line in enumerate(lines, 1) if matches(line)]
+    return [f"  {number}:{line}\n" for number, line in enumerate(lines, 1) if matches(line)]
 
 
 def check(raw):
@@ -53,20 +54,18 @@ def check(raw):
     if RATIONALE_SURFACE.search(file_path):
         rationale = numbered_hits(lines, lambda line: any(p.search(line) for p in RATIONALE))
         if rationale:
-            emit_stderr("dead-prose-gate: possible banned rationale in %s — the rule ships every dispatch; keep the "
-                        "RULE, cut the defense:\n%s" % (name, "".join(rationale)))
+            emit_stderr("dead-prose-gate: possible banned rationale in {} — the rule ships every dispatch; keep the "
+                        "RULE, cut the defense:\n{}".format(name, "".join(rationale)))
 
     portability = numbered_hits(lines, PORTABILITY.search)
     if portability:
-        emit_stderr("dead-prose-gate: hardcoded path or repo name in %s — agents, skills and commands must be "
-                    "portable across WSL/Ubuntu/macOS/Arch:\n%s" % (name, "".join(portability)))
+        emit_stderr("dead-prose-gate: hardcoded path or repo name in {} — agents, skills and commands must be "
+                    "portable across WSL/Ubuntu/macOS/Arch:\n{}".format(name, "".join(portability)))
 
 
 def main():
-    try:
+    with contextlib.suppress(Exception):
         check(sys.stdin.buffer.read())
-    except Exception:
-        pass
     sys.exit(0)
 
 

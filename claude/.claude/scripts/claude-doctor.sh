@@ -8,7 +8,7 @@
 #   4. agent frontmatter: name matches filename, model value is legal (sonnet|haiku|opus),
 #      -deep variants delegate to their base agent
 #   4b. rules/ structure: frontmatter, a paths: key, a non-empty body
-#   4c. orchestration.md exists and emit-orchestration.py is registered
+#   4c. orchestration.md exists and emit_orchestration.py is registered
 #   4d. at least one reviewer agent still references reviewer-calibration.md
 #   4e. every heading block of an anchored prompt file has a docs/rule-anchors.md row
 #   5. skill frontmatter: name matches directory, allowed-tools contains no unknown tool names
@@ -87,9 +87,9 @@ fi
 print_info "Expected hook registrations"
 reg_blob=$(cat "$SETTINGS" "$CLAUDE_DIR/settings.local.json" 2>/dev/null)
 for pair in \
-  "emit-orchestration.py:orchestration context injection" \
-  "shell-write-gate.py:shell-write bypass gate" \
-  "quality-check-cap.py:quality-check repeat-run cap"; do
+  "emit_orchestration.py:orchestration context injection" \
+  "shell_write_gate.py:shell-write bypass gate" \
+  "quality_check_cap.py:quality-check repeat-run cap"; do
   script="${pair%%:*}"; label="${pair#*:}"
   [[ -f "$CLAUDE_DIR/scripts/$script" ]] || continue
   if grep -q "$script" <<<"$reg_blob"; then
@@ -198,7 +198,7 @@ fi
 
 # --- 4c. orchestration wiring -----------------------------------------------
 print_info "Orchestration wiring"
-if [[ -f "$CLAUDE_DIR/orchestration.md" ]] && grep -q "emit-orchestration.py" <<<"$reg_blob"; then
+if [[ -f "$CLAUDE_DIR/orchestration.md" ]] && grep -q "emit_orchestration.py" <<<"$reg_blob"; then
   print_success "orchestration.md is wired to SessionStart"
 else
   print_warn "orchestration rules are not wired — the main session will silently have no routing rules"
@@ -206,14 +206,14 @@ fi
 
 # --- 4d. reviewer calibration reachability ----------------------------------
 # Whole-tree, not per-file: seven reviewer agents legitimately carry no
-# reference. Zero across all of them means calibration-refs-guard.py has nothing
+# reference. Zero across all of them means calibration_refs_guard.py has nothing
 # left to guard.
 print_info "Reviewer calibration reachability"
 if ls "$CLAUDE_DIR"/agents/*reviewer*.md >/dev/null 2>&1; then
   if grep -q "reviewer-calibration.md" "$CLAUDE_DIR"/agents/*reviewer*.md 2>/dev/null; then
     print_success "reviewer-calibration.md is referenced"
   else
-    print_warn "no reviewer agent references reviewer-calibration.md — calibration-refs-guard.py is now a no-op"
+    print_warn "no reviewer agent references reviewer-calibration.md — calibration_refs_guard.py is now a no-op"
   fi
 fi
 

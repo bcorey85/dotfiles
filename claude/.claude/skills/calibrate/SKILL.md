@@ -66,7 +66,7 @@ jq -n --arg f "<target>" --arg b "${XDG_STATE_HOME:-$HOME/.local/state}/claude-c
   > "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration"/lock.json
 ```
 
-The lock is the safety net (`calibration-guard.py` shouts on sessions starting with one present). Apply with **Edit** — one line, minimal, unmarked.
+The lock is the safety net (`calibration_guard.py` shouts on sessions starting with one present). Apply with **Edit** — one line, minimal, unmarked.
 
 ## Step 3: Run the reviewer blind
 

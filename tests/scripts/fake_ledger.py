@@ -73,13 +73,13 @@ sys.exit(64)
 
 def install(directory):
     """Plant the stand-in under `directory`; return the env entries that put it first on PATH."""
-    binDirectory = pathlib.Path(directory) / "fake-ledger-bin"
-    binDirectory.mkdir(parents=True, exist_ok=True)
-    ledger = binDirectory / "ledger"
+    bin_directory = pathlib.Path(directory) / "fake-ledger-bin"
+    bin_directory.mkdir(parents=True, exist_ok=True)
+    ledger = bin_directory / "ledger"
     ledger.write_text(LEDGER_SOURCE)
     ledger.chmod(0o755)
     return {
-        "PATH": f"{binDirectory}{os.pathsep}{os.environ['PATH']}",
+        "PATH": f"{bin_directory}{os.pathsep}{os.environ['PATH']}",
         "FAKE_LEDGER_ROWS": str(pathlib.Path(directory) / "fake-ledger-rows.jsonl"),
     }
 
@@ -89,21 +89,21 @@ NO_LEDGER_TOOLS = ("bash", "jq", "git", "dirname")
 
 def no_ledger_env(directory):
     """Env entries with a PATH of only the tools the writers need and no `ledger`."""
-    binDirectory = pathlib.Path(directory) / "no-ledger-bin"
-    binDirectory.mkdir(parents=True, exist_ok=True)
+    bin_directory = pathlib.Path(directory) / "no-ledger-bin"
+    bin_directory.mkdir(parents=True, exist_ok=True)
     for tool in NO_LEDGER_TOOLS:
-        link = binDirectory / tool
+        link = bin_directory / tool
         if not link.exists():
             link.symlink_to(shutil.which(tool))
-    ledgerRoot = pathlib.Path(directory) / "no-ledger-root"
-    ledgerRoot.mkdir(parents=True, exist_ok=True)
-    return {"PATH": str(binDirectory), "AGENT_LEDGER_ROOT": str(ledgerRoot)}
+    ledger_root = pathlib.Path(directory) / "no-ledger-root"
+    ledger_root.mkdir(parents=True, exist_ok=True)
+    return {"PATH": str(bin_directory), "AGENT_LEDGER_ROOT": str(ledger_root)}
 
 
-def recorded_rows(env, rowType=None):
-    """The rows the stand-in recorded, oldest first; only those of `rowType` when given."""
-    rowsPath = pathlib.Path(env["FAKE_LEDGER_ROWS"])
-    if not rowsPath.is_file():
+def recorded_rows(env, row_type=None):
+    """The rows the stand-in recorded, oldest first; only those of `row_type` when given."""
+    rows_path = pathlib.Path(env["FAKE_LEDGER_ROWS"])
+    if not rows_path.is_file():
         return []
-    rows = [json.loads(line) for line in rowsPath.read_text().splitlines() if line.strip()]
-    return [row for row in rows if rowType is None or row["_type"] == rowType]
+    rows = [json.loads(line) for line in rows_path.read_text().splitlines() if line.strip()]
+    return [row for row in rows if row_type is None or row["_type"] == row_type]

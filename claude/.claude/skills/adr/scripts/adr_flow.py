@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Fixed steps of the /adr skill in one call each.
 
-  adr-flow.py prep [<path-or-ticket>]
-  adr-flow.py check <adr-path>
-  adr-flow.py finish <adr-path> [--task-dir <absolute-task-dir>] [--draft-is-current] [--keep-task-dir]
+  adr_flow.py prep [<path-or-ticket>]
+  adr_flow.py check <adr-path>
+  adr_flow.py finish <adr-path> [--task-dir <absolute-task-dir>] [--draft-is-current] [--keep-task-dir]
 
 prep: resolve the task dir, print the target path, the PR url or "(pending)",
 the ticket url, the absolute task dir, each source path with its line count,
@@ -85,16 +85,16 @@ KEEP_WORD = "keep"
 MODEL_STEPS_PREP = (
     "Model still does: read the sources above with Read, draft the ADR, ask the user when Alternatives "
     "rejected or Assumptions cannot be filled, Write the draft to the target path, then run "
-    "`adr-flow.py finish <draft> [--task-dir <absolute task dir>]{keep_flag}`."
+    "`adr_flow.py finish <draft> [--task-dir <absolute task dir>]{keep_flag}`."
 )
 MODEL_STEPS_AMBIGUOUS = "Model still does: ask the user which candidate is the source, then rerun prep with it."
 MODEL_STEPS_FINISH = (
     "Model still does: ask the user `Drafted to <path>. Adjust?`, apply their edits, "
-    "then run `adr-flow.py check <path>`."
+    "then run `adr_flow.py check <path>`."
 )
 
 
-class Refused(Exception):
+class RefusedError(Exception):
     pass
 
 
@@ -480,7 +480,7 @@ def git_status_entries(root, relative):
         ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored", "--", relative], cwd=root
     )
     if status_listing.returncode != 0:
-        raise Refused(f"git status failed: {status_listing.stderr.strip()}")
+        raise RefusedError(f"git status failed: {status_listing.stderr.strip()}")
 
     entries = []
     skip_next = False
@@ -491,7 +491,7 @@ def git_status_entries(root, relative):
         if field == "":
             continue
         if len(field) < 4 or field[2] != " ":
-            raise Refused(f"git status gave an entry this script cannot read: {field!r}")
+            raise RefusedError(f"git status gave an entry this script cannot read: {field!r}")
         status, path = field[:2], field[3:]
         if "R" in status or "C" in status:
             skip_next = True
@@ -500,10 +500,11 @@ def git_status_entries(root, relative):
 
 
 def refuse_hidden_edits(root, relative):
-    """Refuse when a tracked file in the task dir is skip-worktree or assume-unchanged: git status cannot see its edits."""
+    """Refuse when a tracked file in the task dir is skip-worktree or assume-unchanged: git status cannot see its
+    edits."""
     tracked_listing = run(["git", "ls-files", "-v", "-z", "--", relative], cwd=root)
     if tracked_listing.returncode != 0:
-        raise Refused(f"git ls-files failed: {tracked_listing.stderr.strip()}")
+        raise RefusedError(f"git ls-files failed: {tracked_listing.stderr.strip()}")
     hidden = []
     for entry in tracked_listing.stdout.split("\0"):
         if len(entry) < 3:
@@ -512,7 +513,9 @@ def refuse_hidden_edits(root, relative):
         if flag == "S" or flag.islower():
             hidden.append(path)
     if hidden:
-        raise Refused(f"tracked files hidden from git status (skip-worktree or assume-unchanged): {', '.join(hidden[:5])}")
+        raise RefusedError(
+            f"tracked files hidden from git status (skip-worktree or assume-unchanged): {', '.join(hidden[:5])}"
+        )
 
 
 def is_plan_file(name):
@@ -537,7 +540,7 @@ def refuse_other_ticket(adr_file, task_dir):
     adr_parts = split_key_slug(adr_file.stem)
     task_parts = split_key_slug(task_dir.name)
     if adr_parts and task_parts and adr_parts[0] != task_parts[0]:
-        raise Refused(f"the draft is for {adr_parts[0]} but the task dir is for {task_parts[0]}")
+        raise RefusedError(f"the draft is for {adr_parts[0]} but the task dir is for {task_parts[0]}")
 
 
 def last_commit_of(root, path):
@@ -552,7 +555,7 @@ def last_commit_of(root, path):
 
 
 def committed_draft_refusal(adr_file):
-    return Refused(
+    return RefusedError(
         f"{adr_file} is already committed and unchanged; write the new draft before deleting the task dir. "
         "If the user says the committed draft already holds the decision, rerun finish with --draft-is-current"
     )
@@ -562,7 +565,7 @@ def refuse_task_files_newer_than(task_files, cutoff_ns):
     """Refuse when a file in task_files changed after cutoff_ns: the draft may not hold it."""
     newer = sorted(path.name for path in task_files if path.is_file() and script_utils.last_change_ns(path) > cutoff_ns)
     if newer:
-        raise Refused(
+        raise RefusedError(
             f"task dir files are newer than the draft: {', '.join(newer[:10])}. "
             "Fold them into the draft, or rerun finish with --draft-is-current if the user says the draft holds them"
         )
@@ -594,7 +597,7 @@ def refuse_unproven_draft(root, adr_file, task_dir, status_entries, draft_is_cur
 
     uncommitted = [path for status, path in status_entries if status != "!!"]
     if uncommitted:
-        raise Refused(
+        raise RefusedError(
             f"task dir has uncommitted changes: {', '.join(uncommitted[:10])}. "
             "Commit or discard them, then run finish again"
         )
@@ -619,27 +622,29 @@ def validate_task_dir(root, task_dir_argument):
     """Return (the Path to delete, its git status entries), or raise Refused."""
     plans_dir = root / "docs" / "plans"
     if not task_dir_argument:
-        raise Refused("--task-dir is empty; pass the absolute task dir printed by prep, or omit the flag")
+        raise RefusedError("--task-dir is empty; pass the absolute task dir printed by prep, or omit the flag")
     if not os.path.isabs(task_dir_argument):
-        raise Refused(f"--task-dir `{task_dir_argument}` is relative; pass the absolute task dir printed by prep")
+        raise RefusedError(f"--task-dir `{task_dir_argument}` is relative; pass the absolute task dir printed by prep")
     given = Path(os.path.abspath(task_dir_argument))
 
     problem = task_dir_problem(root, given)
     if problem:
-        raise Refused(problem)
+        raise RefusedError(problem)
     if given.is_symlink():
-        raise Refused(f"{given} is a symlink")
+        raise RefusedError(f"{given} is a symlink")
     for parent in (root / "docs", plans_dir):
         if parent.is_symlink():
-            raise Refused(f"{parent} is a symlink")
+            raise RefusedError(f"{parent} is a symlink")
     if not given.is_dir():
-        raise Refused(f"{given} is not a directory")
+        raise RefusedError(f"{given} is not a directory")
     if os.path.realpath(given) != str(given) or os.path.realpath(root) != str(root):
-        raise Refused(f"{given} does not resolve to itself")
+        raise RefusedError(f"{given} does not resolve to itself")
 
     given_root = repo_root(given)
     if given_root != root:
-        raise Refused(f"{given} belongs to the git repository at {given_root}, not {root}; git status cannot vouch for it")
+        raise RefusedError(
+            f"{given} belongs to the git repository at {given_root}, not {root}; git status cannot vouch for it"
+        )
 
     relative = given.relative_to(root).as_posix()
     refuse_hidden_edits(root, relative)
@@ -647,19 +652,20 @@ def validate_task_dir(root, task_dir_argument):
     status_entries = git_status_entries(root, relative)
     staged_paths = [path for status, path in status_entries if status[0] not in " ?!"]
     if staged_paths:
-        raise Refused(
+        raise RefusedError(
             f"STOP: staged entries in the task dir: {', '.join(staged_paths[:10])}. "
             "The user must commit or unstage them, then run finish again. Nothing was unstaged."
         )
 
     offenders = non_plan_entries(root, given, status_entries)
     if offenders:
-        raise Refused(f"the task dir holds files that are not plan files: {', '.join(offenders[:10])}")
+        raise RefusedError(f"the task dir holds files that are not plan files: {', '.join(offenders[:10])}")
     return given, status_entries
 
 
 def kept_task_dir(root, argument):
-    """The absolute path when argument names an existing task dir (absolute, a directory, one slug under plans), else None."""
+    """The absolute path when argument names an existing task dir (absolute, a directory, one slug under plans), else
+    None."""
     if not argument or not os.path.isabs(argument) or not os.path.isdir(argument):
         return None
     if task_dir_problem(root, argument) is not None:
@@ -710,7 +716,7 @@ def finish(adr_path, task_dir_argument, draft_is_current, keep_task_dir):
             task_dir, status_entries = validate_task_dir(root, task_dir_argument)
             refuse_other_ticket(adr_file, task_dir)
             refuse_unproven_draft(root, adr_file, task_dir, status_entries, draft_is_current)
-        except Refused as refusal:
+        except RefusedError as refusal:
             outcome = "Task dir kept." if kept is not None else "Nothing was deleted."
             print(f"REFUSED delete: {refusal}")
             print(f"The draft passed the checks and stays at {adr_path}. {outcome}")
@@ -743,7 +749,7 @@ def main(argv):
 
     if verb == "check":
         if len(rest) != 1:
-            print("usage: adr-flow.py check <adr-path>", file=sys.stderr)
+            print("usage: adr_flow.py check <adr-path>", file=sys.stderr)
             return 1
         return command_check(rest[0])
 
@@ -760,7 +766,7 @@ def main(argv):
     rest = [argument for argument in rest if argument not in ("--draft-is-current", "--keep-task-dir")]
     if len(rest) != 1:
         print(
-            "usage: adr-flow.py finish <adr-path> [--task-dir <absolute-task-dir>] "
+            "usage: adr_flow.py finish <adr-path> [--task-dir <absolute-task-dir>] "
             "[--draft-is-current] [--keep-task-dir]",
             file=sys.stderr,
         )

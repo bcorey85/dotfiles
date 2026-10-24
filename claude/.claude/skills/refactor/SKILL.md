@@ -21,7 +21,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
 ## Script
 
-`python3 ~/.claude/skills/refactor/scripts/refactor-flow.py <verb>`. Each verb prints its report and ends with a `NEXT:` line (what you still do) or a `STOP:` line (say why and stop; a repository with no commits ends in `STOP:` too). Exit 1 = bad input: fix the input and re-run; nothing was written.
+`python3 ~/.claude/skills/refactor/scripts/refactor_flow.py <verb>`. Each verb prints its report and ends with a `NEXT:` line (what you still do) or a `STOP:` line (say why and stop; a repository with no commits ends in `STOP:` too). Exit 1 = bad input: fix the input and re-run; nothing was written.
 
 ## Instructions
 
@@ -35,7 +35,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
 3. **Branch audit (default)**: target = entire branch diff. Do NOT ask focus, do NOT read changed files.
 
-   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor-flow.py branch-prep` and read `~/.claude/skills/_shared/escape-ratchet.md` in the same response. It prints the base it chose (the `branch-base` helper picks it; pass `--base REF` to override), the mechanical-sweep matches, and the finder prompt with the changed-file list (deleted, renamed and binary files marked). `STOP:` on an empty diff, a base with no shared history, or no base found.
+   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py branch-prep` and read `~/.claude/skills/_shared/escape-ratchet.md` in the same response. It prints the base it chose (the `branch-base` helper picks it; pass `--base REF` to override), the mechanical-sweep matches, and the finder prompt with the changed-file list (deleted, renamed and binary files marked). `STOP:` on an empty diff, a base with no shared history, or no base found.
 
    b. **Finder dispatch**: ONE `smell-reviewer` (pinned; omit `model` unless `+fast`) with the prompt the script printed. Every finding must carry `file:line` (and the sibling/prior-art `file:line` for duplication).
 
@@ -59,19 +59,19 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
    **Test audit (conditional)**: dispatch `test-reviewer` (pinned; omit `model`) when the refactor could change test guarantees (moved/split/merged logic, behavior-adjacent paths, touched test files, coder uncertainty). SKIP for purely mechanical refactors with green checks. Weakened/altered tests flagged → CRITICAL-rule violation: stop, alert the user.
 
-   **Log and hand off — one call.** Write the JSON file at the path the prep script's `NEXT:` line named (a fresh path for each invocation), and run `python3 ~/.claude/skills/refactor/scripts/refactor-flow.py log --mode <branch|targeted|simplify> --input <file> [--base REF]`. Use one input file per /refactor invocation; re-run `log` on that file (the script skips rows already written for it). In branch mode pass `--base` with the base `branch-prep` printed in its `NEXT:` line. It writes the escape rows, the finder rows and prints the `/review` handoff block. You supply:
+   **Log and hand off — one call.** Write the JSON file at the path the prep script's `NEXT:` line named (a fresh path for each invocation), and run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py log --mode <branch|targeted|simplify> --input <file> [--base REF]`. Use one input file per /refactor invocation; re-run `log` on that file (the script skips rows already written for it). In branch mode pass `--base` with the base `branch-prep` printed in its `NEXT:` line. It writes the escape rows, the finder rows and prints the `/review` handoff block. You supply:
    - `finder` (the dispatched agent; omit in targeted mode), `lane` (required whenever there is a finder; from conversation/planning artifacts), `result` (optional).
    - `findings`: one entry per finder finding, each `{class, disposition, actioned, file, line, desc}` (`line` 0 when none; `desc` one line). Add `escape: true` plus `severity` for each distinct smell in branch-loop code (branch-audit: `duplication` for scope-item-1, `smell` otherwise; simplify: `complexity`). One entry per smell, not per file. Never `escape` mechanical-sweep matches or legacy targets — old debt is not an escape.
    - `guards`: one guard per escape `class` group, from the ratchet (`escape-ratchet.md`, read in step 3a; read it now in simplify mode). The script refuses an escape class with no guard.
    - `handoff`: `files` (`{path, change}`, one line each), `tests_run` (exact command + exit code, or `none`), `flagged`, optional `plan_impact` (may span lines). Add `modifier` if one was given.
 
-   If it prints no handoff and code changed, add `handoff` to the file and run `python3 ~/.claude/skills/refactor/scripts/refactor-flow.py handoff --input <file>`; that prints the block and writes nothing. If `log` exits 2 (a writer refused a row), still follow its `NEXT:` and tell the user which row failed.
+   If it prints no handoff and code changed, add `handoff` to the file and run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py handoff --input <file>`; that prints the block and writes nothing. If `log` exits 2 (a writer refused a row), still follow its `NEXT:` and tell the user which row failed.
 
    **Auto-dispatch review**: tell the user you're auto-dispatching `/review`, then Skill-invoke `/review` with the handoff block the script printed + any modifier.
 
 6. **Audit mode — global DRY / pattern sweep of pre-existing code. Report-only: no coders, no `/review`, no code changes.**
 
-   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor-flow.py audit-prep <target-dir>`. It runs jscpd (or prints "no mechanical detection — agent prior-art search only") and prints the finder prompt, with the candidate clone pairs when there are any.
+   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py audit-prep <target-dir>`. It runs jscpd (or prints "no mechanical detection — agent prior-art search only") and prints the finder prompt, with the candidate clone pairs when there are any.
 
    b. **Judgment dispatch**: ONE `smell-reviewer` (omit `model` unless `+fast`) with the printed prompt.
 
@@ -81,7 +81,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
 7. **Simplify mode — what could be DELETED if this module were shaped differently.** Fixes are opt-in per finding, never wholesale.
 
-   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor-flow.py simplify-prep <target...>`. It expands the target with `git ls-files`; over 25 files it splits and runs slice 1 — tell the user which slice runs (`--slice N` for the others).
+   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py simplify-prep <target...>`. It expands the target with `git ls-files`; over 25 files it splits and runs slice 1 — tell the user which slice runs (`--slice N` for the others).
 
    b. **Do NOT read the files yourself.**
 

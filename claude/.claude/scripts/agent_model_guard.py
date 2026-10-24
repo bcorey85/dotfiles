@@ -46,7 +46,7 @@ def field(documents, extract, newlines):
         try:
             pieces.append(raw_text(extract(document)))
         except JqError as error:
-            sys.stderr.write("jq: error (at <stdin>:%d): %s\n" % (newlines, error))
+            sys.stderr.write(f"jq: error (at <stdin>:{newlines}): {error}\n")
             sys.exit(5)
     return "\n".join(pieces).rstrip("\n").replace("\x00", "")
 
@@ -54,10 +54,10 @@ def field(documents, extract, newlines):
 def find_agent_file(subagent):
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR", "")
     if project_dir:
-        project_file = "%s/.claude/agents/%s.md" % (project_dir, subagent)
+        project_file = f"{project_dir}/.claude/agents/{subagent}.md"
         if os.path.isfile(project_file):
             return project_file
-    home_file = "%s/.claude/agents/%s.md" % (os.environ.get("HOME", ""), subagent)
+    home_file = "{}/.claude/agents/{}.md".format(os.environ.get("HOME", ""), subagent)
     if os.path.isfile(home_file):
         return home_file
     return ""
@@ -79,7 +79,7 @@ def decide(text):
     try:
         documents = parse_documents(text)
     except ValueError:
-        sys.stderr.write("jq: error (at <stdin>:%d): parse error\n" % newlines)
+        sys.stderr.write(f"jq: error (at <stdin>:{newlines}): parse error\n")
         return 5, "", ""
 
     tool_name = field(documents, lambda d: present(index(d, "tool_name")), newlines)
@@ -90,8 +90,8 @@ def decide(text):
     subagent = field(documents, lambda d: present(index(index(d, "tool_input"), "subagent_type")), newlines)
 
     if subagent and not SUBAGENT_PATTERN.match(subagent):
-        reason = ("Agent call to subagent_type='%s' is invalid. subagent_type must contain only alphanumeric "
-                  "characters, hyphens, and underscores." % subagent)
+        reason = (f"Agent call to subagent_type='{subagent}' is invalid. subagent_type must contain only alphanumeric "
+                  "characters, hyphens, and underscores.")
         return 0, jq_deny(reason), ""
 
     lowered = bash_lower(model)
@@ -122,7 +122,7 @@ def decide(text):
         return 0, "", ""
 
     stderr_text = (
-        "[agent-model-guard] BLOCKED: Agent call to subagent_type='%s' has no model pin.\n"
+        f"[agent-model-guard] BLOCKED: Agent call to subagent_type='{subagent}' has no model pin.\n"
         "No 'model:' frontmatter was found in the agent file (or the agent file does not exist).\n"
         "Without a pin the subagent inherits the orchestrator's model — silently running Opus\n"
         "when dispatched from an Opus orchestrator.\n"
@@ -130,10 +130,10 @@ def decide(text):
         "  - Add 'model: <opus|sonnet|haiku>' to the agent file's frontmatter, OR\n"
         "  - Pass an explicit model at the call site:\n"
         "      model: \"haiku\"  - read-only / lookup work\n"
-        "      model: \"sonnet\" - fan-out implementation or analysis\n" % subagent)
-    reason = ("Agent call to subagent_type='%s' has no model pin. No 'model:' frontmatter found in the agent "
+        "      model: \"sonnet\" - fan-out implementation or analysis\n")
+    reason = (f"Agent call to subagent_type='{subagent}' has no model pin. No 'model:' frontmatter found in the agent "
               "file (or the file does not exist). Add a 'model:' line to the agent frontmatter or pass an "
-              "explicit model at the call site." % subagent)
+              "explicit model at the call site.")
     return 0, jq_deny(reason), stderr_text
 
 

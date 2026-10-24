@@ -6,6 +6,7 @@ to survive compaction). TOTAL is every guarded file at once (eng-spec, its spec-
 consumes). An edit that grows past a ceiling is denied; growth only by displacement. Ceiling changes need the
 user's explicit sign-off: never raise one to make an edit fit. CLAUDE_SKIP_HOOKS skips the gate. Any error allows.
 """
+import contextlib
 import json
 import os
 import sys
@@ -110,7 +111,7 @@ def phase_paths(base):
 
 def deny(reason):
     line = ('{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",'
-            '"permissionDecisionReason":"%s"}}\n' % reason)
+            f'"permissionDecisionReason":"{reason}"}}}}\n')
     sys.stdout.buffer.write(line.encode("utf-8", "surrogateescape"))
     sys.stdout.buffer.flush()
 
@@ -169,26 +170,30 @@ def check(raw):
     resident = spine + max_phase
 
     if resident > RESIDENT_CEILING and new_words > old_words:
-        deny("spec-budget-gate: this edit puts eng-spec's resident load at ~%d words (ceiling %d) — SKILL.md (%d) "
-             "plus its largest phase file (%d). That is what is actually in context during a run and what has to "
-             "survive compaction. Cut words from the spine or from that phase file in the same change, or move a "
-             "rule into the agent that is the only one who applies it. Splitting a phase file only helps if it is "
-             "a real phase boundary. Ask the user to raise RESIDENT_CEILING; never raise it yourself."
-             % (resident, RESIDENT_CEILING, spine, max_phase))
+        deny(
+            f"spec-budget-gate: this edit puts eng-spec's resident load at ~{resident} words (ceiling "
+            f"{RESIDENT_CEILING}) — SKILL.md ({spine}) "
+            f"plus its largest phase file ({max_phase}). That is what is actually in context during a run and what has "
+            "to "
+            f"survive compaction. Cut words from the spine or from that phase file in the same change, or move a "
+            f"rule into the agent that is the only one who applies it. Splitting a phase file only helps if it is "
+            f"a real phase boundary. Ask the user to raise RESIDENT_CEILING; never raise it yourself."
+        )
         return
 
     if new_total > TOTAL_CEILING and new_total > total:
-        deny("spec-budget-gate: this edit grows the planning tree to ~%d words (ceiling %d, currently %d). The "
-             "planning system grows only by displacement — delete words elsewhere in the guarded set (eng-spec, "
-             "spec-* agents, its _shared files) in the same change, or ask the user to raise TOTAL_CEILING in "
-             "spec-budget-gate.py. Never raise it yourself." % (new_total, TOTAL_CEILING, total))
+        deny(
+            f"spec-budget-gate: this edit grows the planning tree to ~{new_total} words (ceiling {TOTAL_CEILING}, "
+            f"currently {total}). The "
+            f"planning system grows only by displacement — delete words elsewhere in the guarded set (eng-spec, "
+            f"spec-* agents, its _shared files) in the same change, or ask the user to raise TOTAL_CEILING in "
+            f"spec_budget_gate.py. Never raise it yourself."
+        )
 
 
 def main():
-    try:
+    with contextlib.suppress(Exception):
         check(hook_input.read_stdin_text())
-    except Exception:
-        pass
     return 0
 
 

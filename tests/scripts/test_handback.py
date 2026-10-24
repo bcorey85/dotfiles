@@ -9,7 +9,9 @@ import tempfile
 import time
 import unittest
 
-SCRIPT = pathlib.Path(os.environ.get("HANDBACK_SCRIPT") or pathlib.Path.home() / ".claude" / "scripts" / "handback.py")
+import toolkit_paths
+
+SCRIPT = pathlib.Path(os.environ.get("HANDBACK_SCRIPT") or toolkit_paths.SCRIPTS_DIR / "handback.py")
 SESSION = "sess-1"
 
 spec = importlib.util.spec_from_file_location("handback_under_test", str(SCRIPT))
@@ -101,7 +103,9 @@ class ParseTest(HandbackTestBase):
         self.assertEqual(pairs["file_line"], "a.ts:1")
 
     def test_a_field_name_after_punctuation_and_space_starts_a_field_and_a_question_mark_stays(self):
-        pairs = handback.parse_inline_pairs("finding: x. question: cap it? gate: code-reviewer; class: smell | file_line: a.ts:1")
+        pairs = handback.parse_inline_pairs(
+            "finding: x. question: cap it? gate: code-reviewer; class: smell | file_line: a.ts:1"
+        )
         self.assertEqual(pairs["question"], "cap it?")
         self.assertEqual((pairs["gate"], pairs["class"], pairs["file_line"]), ("code-reviewer", "smell", "a.ts:1"))
 
@@ -116,7 +120,9 @@ class ParseTest(HandbackTestBase):
         self.assertIn("n+1", packet["perf"])
 
     def test_flow_list_split_over_lines_parses(self):
-        packet = handback.load("status: converged\niter: 1\nfixed: [{finding: a, file_line: a.ts:1},\n {finding: b, file_line: b.ts:2}]\n")
+        packet = handback.load(
+            "status: converged\niter: 1\nfixed: [{finding: a, file_line: a.ts:1},\n {finding: b, file_line: b.ts:2}]\n"
+        )
         self.assertEqual([item["finding"] for item in packet["fixed"]], ["a", "b"])
 
     def test_json_style_list_parses(self):
@@ -129,7 +135,9 @@ class ParseTest(HandbackTestBase):
         self.assertNotIn('"', packet["fixed"][0]["finding"])
 
     def test_plain_text_fixed_entry_becomes_a_mapping_with_its_path(self):
-        packet = handback.load("status: converged\niter: 1\nfixed:\n  - removed the dead branch | src/a.ts:4 | blocker: no\n")
+        packet = handback.load(
+            "status: converged\niter: 1\nfixed:\n  - removed the dead branch | src/a.ts:4 | blocker: no\n"
+        )
         self.assertEqual(packet["fixed"][0]["file_line"], "src/a.ts:4")
         self.assertEqual(packet["fixed"][0]["blocker"], "no")
 
@@ -153,11 +161,14 @@ class ValidateTest(HandbackTestBase):
         self.assertEqual(packet["ask"][1]["gate"], "code-reviewer")
 
     def test_every_status_word_validates_with_its_required_fields(self):
-        cases = {"converged": CONVERGED,
-                 "deferred": "status: deferred\niter: 1\nfixed: []\nfindings_remaining:\n- {finding: x, file_line: a.ts:1}\n",
-                 "critical-blocker": "status: critical-blocker\niter: 1\nblockers:\n- bad thing\n",
-                 "cap-reached": "status: cap-reached\niter: 2\nfindings_remaining:\n- {finding: x, file_line: a.ts:1}\n",
-                 "plan-impact": "status: plan-impact\niter: 1\nspec_iter: 0\nplan_impact: assumed a, found b\n"}
+        cases = {
+            "converged": CONVERGED,
+            "deferred": "status: deferred\niter: 1\nfixed: []\nfindings_remaining:\n- {finding: x, file_line: "
+                        "a.ts:1}\n",
+            "critical-blocker": "status: critical-blocker\niter: 1\nblockers:\n- bad thing\n",
+            "cap-reached": "status: cap-reached\niter: 2\nfindings_remaining:\n- {finding: x, file_line: a.ts:1}\n",
+            "plan-impact": "status: plan-impact\niter: 1\nspec_iter: 0\nplan_impact: assumed a, found b\n",
+        }
         for status, text in cases.items():
             self.assertEqual(handback.load(text)["status"], status)
 
@@ -178,7 +189,10 @@ class ValidateTest(HandbackTestBase):
                 handback.load(text)
 
     def test_cap_reached_with_a_key_present_but_empty_is_a_problem_and_a_missing_key_is_another(self):
-        for text in ("status: cap-reached\niter: 2\nfindings_remaining: [] (none open)\n", "status: cap-reached\niter: 2\n"):
+        for text in (
+            "status: cap-reached\niter: 2\nfindings_remaining: [] (none open)\n",
+            "status: cap-reached\niter: 2\n",
+        ):
             with self.assertRaises(handback.PacketError) as raised:
                 handback.load(text)
             self.assertIn("findings_remaining", raised.exception.problems[0])
@@ -196,11 +210,11 @@ class AskFindingIdTest(unittest.TestCase):
         self.assertEqual(handback.ask_finding_id({"finding_id": "  a1b2c3d4e5f60001\t"}), "a1b2c3d4e5f60001")
 
     def test_a_placeholder_or_damaged_id_is_none(self):
-        notIds = ["none logged", "none", "-", "n/a", "", "   ", "a1b2c3d4e5f6000", "a1b2c3d4e5f600011",
+        not_ids = ["none logged", "none", "-", "n/a", "", "   ", "a1b2c3d4e5f6000", "a1b2c3d4e5f600011",
                   "A1B2C3D4E5F60001", "a1b2c3d4e5f6000g", "a1b2c3d4 e5f60001", "a1b2c3d4e5f60001\nx"]
-        for notId in notIds:
-            with self.subTest(findingId=notId):
-                self.assertIsNone(handback.ask_finding_id({"finding_id": notId}))
+        for not_id in not_ids:
+            with self.subTest(finding_id=not_id):
+                self.assertIsNone(handback.ask_finding_id({"finding_id": not_id}))
 
     def test_a_missing_or_non_string_id_is_none(self):
         for entry in [{}, {"finding_id": None}, {"finding_id": 1234567890123456}, {"finding_id": ["a1b2c3d4e5f60001"]},
@@ -211,7 +225,9 @@ class AskFindingIdTest(unittest.TestCase):
 
 class RenderTest(HandbackTestBase):
     def test_findings_remaining_show_on_converged(self):
-        text = CONVERGED.replace("ask: []", 'ask: []\nfindings_remaining: [{disposition: fix, finding: left over, file_line: a.ts:1}]')
+        text = CONVERGED.replace(
+            "ask: []", "ask: []\nfindings_remaining: [{disposition: fix, finding: left over, file_line: a.ts:1}]"
+        )
         self.assertIn("### Findings remaining", handback.render(handback.load(text), "review"))
 
     def test_bare_not_applicable_closure_with_empty_fixed_prints_one_line(self):
@@ -337,7 +353,7 @@ class CliTest(HandbackTestBase):
         self.assertIn("ok: status=converged", out)
 
     def test_check_rejects_a_bad_packet_with_the_reason_on_stderr(self):
-        code, out, err = self.run_cli(["check"], "status: nope\niter: 1\n")
+        code, _out, err = self.run_cli(["check"], "status: nope\niter: 1\n")
         self.assertEqual(code, 1)
         self.assertIn("status is 'nope'", err)
 
@@ -345,13 +361,13 @@ class CliTest(HandbackTestBase):
         self.assertEqual(self.run_cli(["check"], "")[0], 1)
 
     def test_no_arguments_prints_usage_and_exits_2(self):
-        code, out, err = self.run_cli([])
+        code, _out, err = self.run_cli([])
         self.assertEqual(code, 2)
         self.assertIn("handback.py", err)
 
     def test_latest_prints_the_session_rows_as_json(self):
         handback.record(SESSION, "dispatch")
-        code, out, err = self.run_cli(["latest", SESSION])
+        _code, out, _err = self.run_cli(["latest", SESSION])
         self.assertEqual(json.loads(out)["pending"], True)
 
 
@@ -379,18 +395,18 @@ class HookTest(HandbackTestBase):
 
     def test_bad_packet_is_denied_once_per_agent_then_stored_as_invalid(self):
         bad = self.event("SubagentHandback", message="status: pending")
-        code, out, err = self.fire(bad)
+        code, out, _ = self.fire(bad)
         decision = json.loads(out)["hookSpecificOutput"]
         self.assertEqual((code, decision["permissionDecision"]), (0, "deny"))
         self.assertIn("status is", decision["permissionDecisionReason"])
         self.assertIsNone(handback.latest(SESSION)["handback"])
-        code, out, err = self.fire(bad)
+        code, out, _err = self.fire(bad)
         self.assertEqual((code, out), (0, ""))
         self.assertEqual(handback.latest(SESSION)["handback"]["status"], "invalid")
 
     def test_a_different_agent_id_is_denied_afresh(self):
         self.fire(self.event("SubagentHandback", message="junk"))
-        code, out, err = self.fire(self.event("SubagentHandback", message="junk", agent_id="a2"))
+        _code, out, _err = self.fire(self.event("SubagentHandback", message="junk", agent_id="a2"))
         self.assertIn("deny", out)
 
     def test_an_unknown_kind_argument_does_nothing_and_never_acts_as_handback(self):
@@ -410,7 +426,7 @@ class HookTest(HandbackTestBase):
         self.assertFalse(self.store.exists())
 
     def test_unreadable_event_exits_zero_and_blocks_nothing(self):
-        code, out, err = self.run_cli(["hook"], "not json")
+        code, out, _err = self.run_cli(["hook"], "not json")
         self.assertEqual((code, out), (0, ""))
 
 

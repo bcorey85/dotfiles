@@ -1,4 +1,4 @@
-"""Tests for coder-gate.py: the variables a gate runs its commands with."""
+"""Tests for coder_gate.py: the variables a gate runs its commands with."""
 import json
 import os
 import pathlib
@@ -9,20 +9,20 @@ import unittest
 
 HERE = pathlib.Path(__file__).resolve().parent
 REAL_CLAUDE = pathlib.Path(os.environ.get("CODE_STEP_REAL_CLAUDE") or HERE.parent.parent / "claude" / ".claude")
-GATE_SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or REAL_CLAUDE / "scripts") / "coder-gate.py"
+GATE_SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or REAL_CLAUDE / "scripts") / "coder_gate.py"
 GIT_IDENTITY = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t",
                 "GIT_COMMITTER_EMAIL": "t@example.com"}
 
 
 class CoderGateEnvironmentTests(unittest.TestCase):
     def setUp(self):
-        tempDirectory = tempfile.TemporaryDirectory()
-        self.addCleanup(tempDirectory.cleanup)
-        self.repo = pathlib.Path(tempDirectory.name) / "repo"
+        temp_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_directory.cleanup)
+        self.repo = pathlib.Path(temp_directory.name) / "repo"
         self.repo.mkdir()
-        self.home = pathlib.Path(tempDirectory.name) / "home"
+        self.home = pathlib.Path(temp_directory.name) / "home"
         self.home.mkdir()
-        self.env = {**os.environ, **GIT_IDENTITY, "HOME": str(self.home)}
+        self.env = {**os.environ, **GIT_IDENTITY, "HOME": str(self.home), "CLAUDE_TOOLKIT_TELEMETRY": "0"}
         self.env.pop("GATE_PROBE", None)
         subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True, env=self.env)
 

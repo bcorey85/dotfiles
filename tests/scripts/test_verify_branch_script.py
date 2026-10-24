@@ -20,7 +20,9 @@ PLAN_FORMAT_DIR = os.environ.get("PLAN_FORMAT_DIR")
 PREP = SCRIPT_DIR / "verify-prep"
 LOG = SCRIPT_DIR / "verify-log"
 RESOLVER = pathlib.Path(os.environ.get("RESOLVE_TASK_DIR_SCRIPT") or REAL_CLAUDE / "scripts" / "resolve-task-dir.sh")
-FINDER = pathlib.Path(os.environ.get("LOG_REVIEW_FINDING_SCRIPT") or REAL_CLAUDE / "skills" / "review" / "log-review-finding")
+FINDER = pathlib.Path(
+    os.environ.get("LOG_REVIEW_FINDING_SCRIPT") or REAL_CLAUDE / "skills" / "review" / "log-review-finding"
+)
 ESCAPER = pathlib.Path(os.environ.get("LOG_ESCAPE_SCRIPT") or REAL_CLAUDE / "scripts" / "log-escape")
 REPO_NAMER = pathlib.Path(os.environ.get("REPO_NAME_SCRIPT") or REAL_CLAUDE / "scripts" / "repo-name")
 
@@ -140,26 +142,26 @@ def subprocess_env(base):
 
 class VerifyBranchBase(unittest.TestCase):
     def setUp(self):
-        tempDir = tempfile.TemporaryDirectory()
-        self.addCleanup(tempDir.cleanup)
-        self.tempRoot = pathlib.Path(tempDir.name)
-        homeDir = tempfile.TemporaryDirectory()
-        self.addCleanup(homeDir.cleanup)
-        self.home = pathlib.Path(homeDir.name)
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.temp_root = pathlib.Path(temp_dir.name)
+        home_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(home_dir.cleanup)
+        self.home = pathlib.Path(home_dir.name)
         (self.home / ".claude").mkdir()
         (self.home / ".claude" / "toolkit-telemetry").write_text("")
-        self.repo = self.tempRoot / "myrepo"
+        self.repo = self.temp_root / "myrepo"
         self.repo.mkdir()
-        self.ledgerEnv = fake_ledger.install(self.tempRoot)
-        self.findings = pathlib.Path(self.ledgerEnv["FAKE_LEDGER_ROWS"])
-        self.escapes = self.tempRoot / "escapes.jsonl"
-        finderStub = self.stub_logger("finder", FINDER)
-        escaperStub = self.stub_logger("escaper", ESCAPER)
+        self.ledger_env = fake_ledger.install(self.temp_root)
+        self.findings = pathlib.Path(self.ledger_env["FAKE_LEDGER_ROWS"])
+        self.escapes = self.temp_root / "escapes.jsonl"
+        finder_stub = self.stub_logger("finder", FINDER)
+        escaper_stub = self.stub_logger("escaper", ESCAPER)
         self.env = subprocess_env({
-            **os.environ, **GIT_ENV, **self.ledgerEnv, "HOME": str(self.home),
-            "VERIFY_STATE_DIR": str(self.tempRoot / "state"), "REVIEW_ESCAPES_FILE": str(self.escapes),
-            "RESOLVE_TASK_DIR_SCRIPT": str(RESOLVER), "LOG_REVIEW_FINDING_SCRIPT": str(finderStub),
-            "LOG_ESCAPE_SCRIPT": str(escaperStub), "REPO_NAME_SCRIPT": str(REPO_NAMER)})
+            **os.environ, **GIT_ENV, **self.ledger_env, "HOME": str(self.home),
+            "VERIFY_STATE_DIR": str(self.temp_root / "state"), "REVIEW_ESCAPES_FILE": str(self.escapes),
+            "RESOLVE_TASK_DIR_SCRIPT": str(RESOLVER), "LOG_REVIEW_FINDING_SCRIPT": str(finder_stub),
+            "LOG_ESCAPE_SCRIPT": str(escaper_stub), "REPO_NAME_SCRIPT": str(REPO_NAMER)})
         self.git("init", "-q", "-b", "master")
         self.write("README.md", "hello\n")
         self.git("add", ".")
@@ -169,17 +171,17 @@ class VerifyBranchBase(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-q", "-m", "work")
 
-    def stub_logger(self, name, realLogger):
-        path = self.tempRoot / f"stub-{name}"
-        path.write_text(STUB_LOGGER.replace("REAL", str(realLogger)))
+    def stub_logger(self, name, real_logger):
+        path = self.temp_root / f"stub-{name}"
+        path.write_text(STUB_LOGGER.replace("REAL", str(real_logger)))
         return path
 
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.repo, env=self.env, check=True, capture_output=True,
                               text=True).stdout
 
-    def write(self, relPath, body):
-        path = self.repo / relPath
+    def write(self, rel_path, body):
+        path = self.repo / rel_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(body)
         return path
@@ -195,21 +197,21 @@ class VerifyBranchBase(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-q", "-m", message)
 
-    def prep(self, *args, extraEnv=None, cwd=None):
-        env = {**self.env, **(extraEnv or {})}
+    def prep(self, *args, extra_env=None, cwd=None):
+        env = {**self.env, **(extra_env or {})}
         return subprocess.run([str(PREP), *args], cwd=cwd or self.repo, env=env, capture_output=True, text=True)
 
-    def log(self, *args, stdin=None, extraEnv=None, cwd=None):
-        env = {**self.env, **(extraEnv or {})}
+    def log(self, *args, stdin=None, extra_env=None, cwd=None):
+        env = {**self.env, **(extra_env or {})}
         return subprocess.run([str(LOG), *args], cwd=cwd or self.repo, env=env, capture_output=True, text=True,
                               input=stdin)
 
     def log_review(self, findings="[]", result="PASS", *extra, **kwargs):
         return self.log("review", "--result", result, "--rows", "-", *extra, stdin=findings, **kwargs)
 
-    def escapeRows(self):
+    def escape_rows(self):
         """Every `review_escape` row log-escape sent to `ledger write`, oldest first."""
-        return fake_ledger.recorded_rows(self.ledgerEnv, "review_escape")
+        return fake_ledger.recorded_rows(self.ledger_env, "review_escape")
 
     def jsonl(self, path):
         if not path.is_file():
@@ -220,7 +222,7 @@ class VerifyBranchBase(unittest.TestCase):
         return [row for row in self.jsonl(self.findings) if row.get("gate") == "plan-verifier"]
 
     def context(self):
-        return json.loads(next((self.tempRoot / "state").glob("*.json")).read_text())
+        return json.loads(next((self.temp_root / "state").glob("*.json")).read_text())
 
     def reviewed_tree(self):
         """A committed plan, one more source file, and a logged branch-wide review of exactly that tree."""
@@ -257,10 +259,10 @@ class PrepTest(VerifyBranchBase):
         done = self.prep()
 
         self.assertEqual(done.returncode, 0, done.stderr)
-        reviewStep = done.stdout.split("STEP 1:", 1)[1].split("STEP 2:", 1)[0]
-        self.assertIn("subagent_type=code-reviewer", reviewStep)
-        self.assertIn("  gate-env: LEDGER_EDIT_WATCH_PY=/x/edit_watch.py", reviewStep)
-        self.assertIn("Put these variables before every test, check or build command you run.", reviewStep)
+        review_step = done.stdout.split("STEP 1:", 1)[1].split("STEP 2:", 1)[0]
+        self.assertIn("subagent_type=code-reviewer", review_step)
+        self.assertIn("  gate-env: LEDGER_EDIT_WATCH_PY=/x/edit_watch.py", review_step)
+        self.assertIn("Put these variables before every test, check or build command you run.", review_step)
 
     def test_the_verifier_prompt_has_no_gate_env_line_when_no_plan_command_sets_a_variable(self):
         self.task_dir()
@@ -320,10 +322,10 @@ class PrepTest(VerifyBranchBase):
         plan_format = importlib.import_module("plan_format")
         plan = ("## Queue\n\n#### Manual Verification:\n\n- [ ] open the page\n- [ ] **Agent-verified**: ran it\n"
                 "- [ ] Human-only: judge the spacing\n")
-        fromReader = [item["humanOnly"] for item in plan_format.manual_verification(plan, "plan.md")]
-        fromVerifyBranch = [item["humanOnly"] for item in common.manual_items(plan, "plan.md")]
-        self.assertEqual(fromVerifyBranch, fromReader)
-        self.assertEqual(fromVerifyBranch, [False, False, True])
+        from_reader = [item["humanOnly"] for item in plan_format.manual_verification(plan, "plan.md")]
+        from_verify_branch = [item["humanOnly"] for item in common.manual_items(plan, "plan.md")]
+        self.assertEqual(from_verify_branch, from_reader)
+        self.assertEqual(from_verify_branch, [False, False, True])
 
     def test_checked_manual_items_are_skipped(self):
         common = load_common()
@@ -333,28 +335,30 @@ class PrepTest(VerifyBranchBase):
 
     def test_the_manual_items_of_a_moved_phase_are_not_missing_and_the_phase_is_named_with_its_ticket(self):
         common = load_common()
-        self.assertEqual(["human-only: kept item"], [item["text"] for item in common.manual_items(MOVED_PLAN, "plan.md")])
+        self.assertEqual(
+            ["human-only: kept item"], [item["text"] for item in common.manual_items(MOVED_PLAN, "plan.md")]
+        )
         self.assertEqual(["Phase 2 moved to LED-16: 2 unchecked Manual Verification item(s) go with it"],
                          common.moved_phase_notes(MOVED_PLAN, "plan.md"))
         self.assertEqual([], common.moved_phase_notes(SPEC, "spec.md"))
 
     def test_a_moved_line_with_no_ticket_key_fails_instead_of_dropping_or_naming_the_phase(self):
         common = load_common()
-        planText = MOVED_PLAN.replace("moved to LED-16, per the user", "deferred, per the user")
+        plan_text = MOVED_PLAN.replace("moved to LED-16, per the user", "deferred, per the user")
         for call in (common.manual_items, common.moved_phase_notes):
             with self.subTest(call=call.__name__):
-                with self.assertRaises(common.Fail) as caught:
-                    call(planText, "plan.md")
+                with self.assertRaises(common.VerifyError) as caught:
+                    call(plan_text, "plan.md")
                 self.assertTrue(str(caught.exception).startswith("plan.md:6:"), str(caught.exception))
                 self.assertIn("moved to <KEY>", str(caught.exception))
 
     def test_a_moved_line_with_no_plan_deviations_entry_fails_instead_of_dropping_the_phase_items(self):
         common = load_common()
-        planText = MOVED_PLAN.replace("- 2026-10-20: Phase 2 moves to LED-16.", "- 2026-10-20: Phase 1 changed.")
+        plan_text = MOVED_PLAN.replace("- 2026-10-20: Phase 2 moves to LED-16.", "- 2026-10-20: Phase 1 changed.")
         for call in (common.manual_items, common.moved_phase_notes):
             with self.subTest(call=call.__name__):
-                with self.assertRaises(common.Fail) as caught:
-                    call(planText, "plan.md")
+                with self.assertRaises(common.VerifyError) as caught:
+                    call(plan_text, "plan.md")
                 self.assertTrue(str(caught.exception).startswith("plan.md:6:"), str(caught.exception))
                 self.assertIn("Plan Deviations", str(caught.exception))
 
@@ -373,13 +377,13 @@ class PrepTest(VerifyBranchBase):
     def test_a_heading_that_only_starts_like_a_criteria_heading_fails_with_path_and_line(self):
         common = load_common()
         for heading in ("## Acceptance Stubs", "## Requirements and Constraints"):
-            with self.assertRaises(common.Fail, msg=heading) as caught:
+            with self.assertRaises(common.VerifyError, msg=heading) as caught:
                 common.ticket_criteria(f"# T\n\n{heading}\n\n- a stub\n", "ticket.md")
             self.assertIn("ticket.md:3:", str(caught.exception))
 
     def test_prose_line_in_the_criteria_section_fails_with_path_and_line(self):
         common = load_common()
-        with self.assertRaises(common.Fail) as caught:
+        with self.assertRaises(common.VerifyError) as caught:
             common.ticket_criteria("# T\n\n## Acceptance\n\nThese hold:\n\n- one\n", "ticket.md")
         self.assertIn("ticket.md:5:", str(caught.exception))
 
@@ -403,7 +407,7 @@ class PrepTest(VerifyBranchBase):
 
     def test_criteria_file_line_that_names_an_id_but_does_not_parse_fails(self):
         common = load_common()
-        with self.assertRaises(common.Fail) as caught:
+        with self.assertRaises(common.VerifyError) as caught:
             common.criteria_file("- **AC1** — fine.\n- **AC9** no dash here\n")
         self.assertIn(":2:", str(caught.exception))
 
@@ -418,13 +422,22 @@ class PrepTest(VerifyBranchBase):
 
     def test_criteria_file_fails_on_a_miswritten_criterion_line_whatever_the_line_start(self):
         common = load_common()
-        malformed = ["**AC5** text with no dash", "- **AC5**: colon in place of a dash", "  - **AC5** no dash, indented",
-                     "1. **AC5** numbered, but the grammar takes only - or * markers", "* [ ] **AC5** checkbox, unsupported",
-                     "| **AC5** | text |", "Criterion **AC5** — text", "> **AC5** — text",
-                     "- *(new)* **AC5** — text", "- ~~**AC5**~~ — x", "-**AC5** — x"]
+        malformed = [
+            "**AC5** text with no dash",
+            "- **AC5**: colon in place of a dash",
+            "  - **AC5** no dash, indented",
+            "1. **AC5** numbered, but the grammar takes only - or * markers",
+            "* [ ] **AC5** checkbox, unsupported",
+            "| **AC5** | text |",
+            "Criterion **AC5** — text",
+            "> **AC5** — text",
+            "- *(new)* **AC5** — text",
+            "- ~~**AC5**~~ — x",
+            "-**AC5** — x",
+        ]
         for line in malformed:
             with self.subTest(line=line):
-                with self.assertRaises(common.Fail) as caught:
+                with self.assertRaises(common.VerifyError) as caught:
                     common.criteria_file(f"- **AC1** — fine.\n{line}\n")
                 self.assertIn(":2:", str(caught.exception))
 
@@ -524,14 +537,14 @@ class PrepTest(VerifyBranchBase):
 
     def test_a_busy_ledger_exits_2_and_never_reads_as_no_review(self):
         self.reviewed_tree()
-        busyDir = self.tempRoot / "busy-ledger-bin"
-        busyDir.mkdir()
-        busy = busyDir / "ledger"
+        busy_dir = self.temp_root / "busy-ledger-bin"
+        busy_dir.mkdir()
+        busy = busy_dir / "ledger"
         busy.write_text("#!/bin/sh\necho 'ledger: cache busy' >&2\nexit 75\n")
         busy.chmod(0o755)
-        busyEnv = {"PATH": f"{busyDir}{os.pathsep}{self.env['PATH']}", "VERIFY_LEDGER_BACKOFF_SECONDS": "0"}
+        busy_env = {"PATH": f"{busy_dir}{os.pathsep}{self.env['PATH']}", "VERIFY_LEDGER_BACKOFF_SECONDS": "0"}
 
-        done = self.prep(extraEnv=busyEnv)
+        done = self.prep(extra_env=busy_env)
 
         self.assertEqual(done.returncode, 2)
         self.assertIn("ledger is busy", done.stderr)
@@ -547,7 +560,7 @@ class PrepTest(VerifyBranchBase):
         self.reviewed_tree()
         self.findings.write_text("")
         head = self.git("rev-parse", "HEAD").strip()
-        loopRows = [
+        loop_rows = [
             {"_type": "review_run", "gate": "code-reviewer", "scope": "branch-exit", "iter": "2", "diff_loc": "0",
              "n_findings": "0", "result": "PASS", "branch_key": "LED-9-thing", "head": head},
             {"_type": "review_run", "gate": "code-reviewer", "scope": "branch-exit", "iter": "1", "diff_loc": "9",
@@ -555,7 +568,7 @@ class PrepTest(VerifyBranchBase):
             {"_type": "review_run", "gate": "smell-reviewer", "scope": "branch-exit", "iter": "1", "diff_loc": "9",
              "n_findings": "0", "branch_key": "LED-9-thing", "head": head},
         ]
-        self.findings.write_text("\n".join(json.dumps(row) for row in loopRows) + "\n")
+        self.findings.write_text("\n".join(json.dumps(row) for row in loop_rows) + "\n")
         self.assertIn("NOT run", self.prep().stdout)
 
     def test_review_row_of_another_branch_does_not_count(self):
@@ -593,7 +606,7 @@ class PrepTest(VerifyBranchBase):
         self.assertIn("is empty: nothing to verify", done.stderr)
 
     def test_outside_a_git_repository_fails(self):
-        done = self.prep(cwd=self.tempRoot)
+        done = self.prep(cwd=self.temp_root)
         self.assertEqual(done.returncode, 2)
         self.assertIn("not inside a git repository", done.stderr)
 
@@ -620,7 +633,7 @@ class PrepTest(VerifyBranchBase):
         done = self.prep()
         self.assertEqual(done.returncode, 4)
         self.assertIn("--ticket-file", done.stderr)
-        ticket = self.tempRoot / "NOPE-1-ticket.md"
+        ticket = self.temp_root / "NOPE-1-ticket.md"
         ticket.write_text(TICKET)
         done = self.prep("--ticket-file", str(ticket))
         self.assertEqual(done.returncode, 0, done.stderr)
@@ -731,7 +744,7 @@ class ReviewGateTest(VerifyBranchBase):
         done = self.log("--rows", "-", "--escapes-only", stdin=rows)
         self.assertEqual(done.returncode, 2)
         self.assertIn("none was logged", done.stderr)
-        self.assertEqual(self.escapeRows(), [])
+        self.assertEqual(self.escape_rows(), [])
 
 
 class LogTest(VerifyBranchBase):
@@ -747,7 +760,7 @@ class LogTest(VerifyBranchBase):
     def rows(self, *verdicts, extra=None):
         built = [{"item": f"AC{n}: item {n}", "verdict": verdict, "file": f"src/f{n}.py", "line": n,
                   "evidence": "e"} for n, verdict in enumerate(verdicts, 1)]
-        for row, more in zip(built, extra or []):
+        for row, more in zip(built, extra or [], strict=False):
             row.update(more)
         return self.dump(built)
 
@@ -810,7 +823,7 @@ class LogTest(VerifyBranchBase):
         again = self.log("--rows", "-", stdin=rows)
         self.assertEqual(again.returncode, 0, again.stderr)
         self.assertIn("already recorded", again.stdout)
-        self.assertEqual(len(self.escapeRows()), 1)
+        self.assertEqual(len(self.escape_rows()), 1)
 
     def test_gaps_write_run_findings_and_escapes(self):
         rows = self.rows("done", "partial", "missing",
@@ -828,7 +841,7 @@ class LogTest(VerifyBranchBase):
         self.assertEqual([f["class"] for f in findings], ["plan-drift", "plan-drift"])
         self.assertEqual([f["lane"] for f in findings], ["verify", "verify"])
         self.assertEqual([f["path_key"] for f in findings], ["src/f2.py", "src/f3.py"])
-        escapes = self.escapeRows()
+        escapes = self.escape_rows()
         self.assertEqual([e["guard"] for e in escapes], ["check", "none"])
         self.assertEqual([e["severity"] for e in escapes], ["medium", "medium"])
         self.assertEqual(escapes[0]["gate_missed"], "drift-gate")
@@ -845,17 +858,17 @@ class LogTest(VerifyBranchBase):
         rows = self.rows("missing")
         done = self.log("--rows", "-", stdin=rows)
         self.assertIn("NEEDS GUARD", done.stdout)
-        self.assertEqual(self.escapeRows(), [])
+        self.assertEqual(self.escape_rows(), [])
         again = self.log("--rows", "-", stdin=rows)
         self.assertEqual(again.returncode, 2)
         self.assertIn("already logged", again.stderr)
         fixed = self.rows("missing", extra=[{"guard": "rule", "severity": "high"}])
-        followUp = self.log("--rows", "-", "--escapes-only", stdin=fixed)
-        self.assertEqual(followUp.returncode, 0, followUp.stderr)
-        self.assertIn("escapes logged: 1", followUp.stdout)
+        follow_up = self.log("--rows", "-", "--escapes-only", stdin=fixed)
+        self.assertEqual(follow_up.returncode, 0, follow_up.stderr)
+        self.assertIn("escapes logged: 1", follow_up.stdout)
         for absent in ("verdicts:", "GAPS", "CLEAN", "Smoke-test"):
-            self.assertNotIn(absent, followUp.stdout)
-        self.assertEqual(len(self.escapeRows()), 1)
+            self.assertNotIn(absent, follow_up.stdout)
+        self.assertEqual(len(self.escape_rows()), 1)
         self.assertEqual(len(self.verifier_rows()), 2)
 
     def test_repeated_escapes_only_does_not_log_the_same_escape_twice(self):
@@ -865,21 +878,21 @@ class LogTest(VerifyBranchBase):
         second = self.log("--rows", "-", "--escapes-only", stdin=fixed)
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertIn("already recorded", second.stdout)
-        self.assertEqual(len(self.escapeRows()), 1)
+        self.assertEqual(len(self.escape_rows()), 1)
 
     def test_escapes_only_does_not_reread_the_plan(self):
         self.assertEqual(self.log("--rows", "-", stdin=self.rows("missing")).returncode, 0)
         (self.repo / "docs" / "plans" / "LED-9-thing" / "spec.md").unlink()
-        noGaps = self.rows("done")
-        followUp = self.log("--rows", "-", "--escapes-only", stdin=noGaps)
-        self.assertEqual(followUp.returncode, 0, followUp.stderr)
-        self.assertIn("escapes logged: 0", followUp.stdout)
+        no_gaps = self.rows("done")
+        follow_up = self.log("--rows", "-", "--escapes-only", stdin=no_gaps)
+        self.assertEqual(follow_up.returncode, 0, follow_up.stderr)
+        self.assertIn("escapes logged: 0", follow_up.stdout)
 
     def test_escape_already_logged_in_the_full_run_is_not_logged_by_escapes_only(self):
         rows = self.rows("missing", extra=[{"guard": "rule", "severity": "high"}])
         self.assertEqual(self.log("--rows", "-", stdin=rows).returncode, 0)
         self.assertEqual(self.log("--rows", "-", "--escapes-only", stdin=rows).returncode, 0)
-        self.assertEqual(len(self.escapeRows()), 1)
+        self.assertEqual(len(self.escape_rows()), 1)
 
     def test_overridden_without_signoff_is_a_gap(self):
         rows = self.rows("overridden", "overridden", extra=[{"signoff": "Brandon, 2026-10-20: ok"}, {}])
@@ -896,7 +909,7 @@ class LogTest(VerifyBranchBase):
         logged = self.verifier_rows()
         self.assertEqual((logged[0]["result"], logged[0]["n_findings"]), ("NEEDS_CHANGES", "1"))
         self.assertEqual(logged[1]["class"], "plan-drift")
-        self.assertEqual(self.escapeRows()[0]["severity"], "high")
+        self.assertEqual(self.escape_rows()[0]["severity"], "high")
 
     def test_clean_logs_pass_and_prints_checklist(self):
         rows = self.rows("done", "done", "needs-manual")
@@ -914,10 +927,12 @@ class LogTest(VerifyBranchBase):
         self.assertNotIn("agent can drive this", done.stdout)
 
     def test_manual_only_entries_come_from_the_criteria_file_not_ticket_ordinals(self):
-        criteria = "- **AC1** — a.\n- **AC2** — b.\n## Manual only\n- **AC2** — only on a phone.\n- **AC7** — only on a Mac.\n"
+        criteria = (
+            "- **AC1** — a.\n- **AC2** — b.\n## Manual only\n- **AC2** — only on a phone.\n- **AC7** — only on a Mac.\n"
+        )
         self.task_dir(criteria=criteria)
         self.assertEqual(self.prep().returncode, 0)
-        covering = self.dump([{"item": f"{acId}: x", "verdict": "done"} for acId in ("AC1", "AC2", "AC7")])
+        covering = self.dump([{"item": f"{ac_id}: x", "verdict": "done"} for ac_id in ("AC1", "AC2", "AC7")])
         done = self.log("--rows", "-", stdin=covering)
         self.assertIn("(manual-only) AC7: only on a Mac.", done.stdout)
         self.assertIn("(manual-only) AC2: only on a phone.", done.stdout)
@@ -925,16 +940,18 @@ class LogTest(VerifyBranchBase):
         self.assertIn("- [ ] Ticket #1: First thing works", done.stdout)
 
     def test_manual_items_added_to_the_plan_after_prep_reach_the_checklist(self):
-        planPath = self.repo / "docs" / "plans" / "LED-9-thing" / "spec.md"
-        planPath.write_text(SPEC + "\n#### Manual Verification (human-only):\n\n- [ ] human-only: late item — needs a phone\n"
-                            "- [x] human-only: ticked item — done\n")
+        plan_path = self.repo / "docs" / "plans" / "LED-9-thing" / "spec.md"
+        plan_path.write_text(
+            SPEC + "\n#### Manual Verification (human-only):\n\n- [ ] human-only: late item — needs a phone\n"
+            "- [x] human-only: ticked item — done\n"
+        )
         done = self.log("--rows", "-", stdin=self.rows("done"))
         self.assertIn("late item", done.stdout)
         self.assertNotIn("ticked item", done.stdout)
 
     def test_a_moved_phase_is_listed_with_its_ticket_and_its_items_are_not_in_the_checklist(self):
-        planPath = self.repo / "docs" / "plans" / "LED-9-thing" / "spec.md"
-        planPath.write_text(MOVED_PLAN)
+        plan_path = self.repo / "docs" / "plans" / "LED-9-thing" / "spec.md"
+        plan_path.write_text(MOVED_PLAN)
         done = self.log("--rows", "-", stdin=self.rows("done"))
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("(human-only) human-only: kept item", done.stdout)
@@ -943,19 +960,19 @@ class LogTest(VerifyBranchBase):
         self.assertIn("- Phase 2 moved to LED-16: 2 unchecked Manual Verification item(s) go with it", done.stdout)
 
     def test_a_moved_line_with_no_ticket_key_or_no_deviation_entry_stops_verify_log_with_the_line(self):
-        planPath = self.repo / "docs" / "plans" / "LED-9-thing" / "spec.md"
-        noKey = MOVED_PLAN.replace("moved to LED-16, per the user", "deferred, per the user")
-        noDeviation = MOVED_PLAN.replace("- 2026-10-20: Phase 2 moves to LED-16.", "- 2026-10-20: Phase 1 changed.")
-        for name, planText in (("no key", noKey), ("no deviation", noDeviation)):
+        plan_path = self.repo / "docs" / "plans" / "LED-9-thing" / "spec.md"
+        no_key = MOVED_PLAN.replace("moved to LED-16, per the user", "deferred, per the user")
+        no_deviation = MOVED_PLAN.replace("- 2026-10-20: Phase 2 moves to LED-16.", "- 2026-10-20: Phase 1 changed.")
+        for name, plan_text in (("no key", no_key), ("no deviation", no_deviation)):
             with self.subTest(name):
-                planPath.write_text(planText)
+                plan_path.write_text(plan_text)
                 done = self.log("--rows", "-", stdin=self.rows("done"))
                 self.assertNotEqual(done.returncode, 0, done.stdout)
                 self.assertIn("spec.md:6:", done.stderr)
 
     def test_ticket_edited_after_prep_reaches_the_checklist(self):
-        ticketPath = self.repo / "docs" / "plans" / "LED-9-thing" / "00-ticket.md"
-        ticketPath.write_text(TICKET.replace("First thing works", "Reworded first thing"))
+        ticket_path = self.repo / "docs" / "plans" / "LED-9-thing" / "00-ticket.md"
+        ticket_path.write_text(TICKET.replace("First thing works", "Reworded first thing"))
         done = self.log("--rows", "-", stdin=self.rows("done"))
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("Ticket #1: Reworded first thing", done.stdout)
@@ -1000,17 +1017,17 @@ class LogTest(VerifyBranchBase):
 
     def test_a_guard_the_logger_refuses_stops_the_run_before_any_write(self):
         rows = self.dump([{"item": "x", "verdict": "missing", "guard": "wish"}])
-        done = self.log("--rows", "-", stdin=rows, extraEnv={"STUB_REFUSE": "guard=wish"})
+        done = self.log("--rows", "-", stdin=rows, extra_env={"STUB_REFUSE": "guard=wish"})
         self.assertEqual(done.returncode, 2)
         self.assertIn("logger failed", done.stderr)
         self.assertIn("nothing was written", done.stderr)
         self.assertEqual(self.verifier_rows(), [])
-        self.assertEqual(self.escapeRows(), [])
+        self.assertEqual(self.escape_rows(), [])
         self.assertFalse(self.context()["logged"])
 
     def test_a_logger_failing_mid_run_names_the_rows_not_logged_and_keeps_what_was_written(self):
         rows = self.rows("missing", "missing", extra=[{}, {}])
-        done = self.log("--rows", "-", stdin=rows, extraEnv={"STUB_FAIL_WRITE": "desc=AC2"})
+        done = self.log("--rows", "-", stdin=rows, extra_env={"STUB_FAIL_WRITE": "desc=AC2"})
         self.assertEqual(done.returncode, 2)
         self.assertIn("logger failed", done.stderr)
         self.assertIn("NOT logged: plan-drift finding: AC2: item 2", done.stderr)
@@ -1031,9 +1048,9 @@ class LogTest(VerifyBranchBase):
 
     def test_multiline_desc_is_one_line(self):
         rows = self.dump([{"item": 'has "quotes"\nand a newline', "verdict": "missing", "guard": "none"}])
-        argvLog = self.tempRoot / "finder-argv"
-        self.assertEqual(self.log("--rows", "-", stdin=rows, extraEnv={"STUB_ARGV_LOG": str(argvLog)}).returncode, 0)
-        descs = [arg for arg in argvLog.read_text().split("\0") if arg.startswith("desc=")]
+        argv_log = self.temp_root / "finder-argv"
+        self.assertEqual(self.log("--rows", "-", stdin=rows, extra_env={"STUB_ARGV_LOG": str(argv_log)}).returncode, 0)
+        descs = [arg for arg in argv_log.read_text().split("\0") if arg.startswith("desc=")]
         self.assertTrue(descs)
         for desc in descs:
             self.assertNotIn("\n", desc)
@@ -1051,7 +1068,7 @@ class LogTest(VerifyBranchBase):
         done = self.log("--rows", "-", stdin=rows, cwd=self.repo / "src")
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(len(self.verifier_rows()), 2)
-        self.assertEqual(len(self.escapeRows()), 1)
+        self.assertEqual(len(self.escape_rows()), 1)
 
 
 class ReviewLogTest(VerifyBranchBase):
@@ -1109,7 +1126,7 @@ class ReviewLogTest(VerifyBranchBase):
 
     def test_bad_finding_fails_before_the_run_row(self):
         bad = json.dumps([{"desc": "x", "file": "src/a.py", "class": "wish", "actioned": "fixed"}])
-        done = self.log_review(bad, extraEnv={"STUB_REFUSE": "class=wish"})
+        done = self.log_review(bad, extra_env={"STUB_REFUSE": "class=wish"})
         self.assertEqual(done.returncode, 2)
         self.assertIn("nothing was written", done.stderr)
         self.assertEqual(self.jsonl(self.findings), [])
@@ -1146,9 +1163,9 @@ class RealPlansTest(unittest.TestCase):
                 dirs.update(pathlib.Path(p).parent for p in found)
         return sorted(dirs)
 
-    def ticket_path(self, taskDir):
-        fixed = taskDir / "00-ticket.md"
-        return fixed if fixed.is_file() else sorted(taskDir.glob("*-00-ticket.md"))[0]
+    def ticket_path(self, task_dir):
+        fixed = task_dir / "00-ticket.md"
+        return fixed if fixed.is_file() else sorted(task_dir.glob("*-00-ticket.md"))[0]
 
     def test_every_real_ticket_yields_criteria_and_every_criteria_id_parses(self):
         common = load_common()
@@ -1156,25 +1173,25 @@ class RealPlansTest(unittest.TestCase):
         if not dirs:
             self.skipTest("no real plans on this machine")
         counts = []
-        for taskDir in dirs:
-            with self.subTest(taskDir=str(taskDir)):
-                found = common.ticket_criteria(self.ticket_path(taskDir).read_text(), str(taskDir))
+        for task_dir in dirs:
+            with self.subTest(task_dir=str(task_dir)):
+                found = common.ticket_criteria(self.ticket_path(task_dir).read_text(), str(task_dir))
                 self.assertGreaterEqual(len(found), 1)
-                criteriaPath = taskDir / "acceptance-criteria.md"
-                if criteriaPath.is_file():
-                    text = criteriaPath.read_text()
-                    entries, manual = common.criteria_file(text, str(criteriaPath))
+                criteria_path = task_dir / "acceptance-criteria.md"
+                if criteria_path.is_file():
+                    text = criteria_path.read_text()
+                    entries, manual = common.criteria_file(text, str(criteria_path))
                     parsed = len(entries) + len(manual)
                     expected = sum(len(re.findall(r"AC\d+", span)) for span in self.BOLD_ID_LINE.findall(text))
                     plain = len(re.findall(r"\*\*AC\d+\*\*", text))
-                    counts.append((str(taskDir), parsed, expected, plain))
+                    counts.append((str(task_dir), parsed, expected, plain))
                     self.assertGreaterEqual(parsed, 1)
                     self.assertEqual(parsed, expected)
                     self.assertGreaterEqual(parsed, plain)
-                plans = [taskDir / "spec.md", *taskDir.glob("*-05-plan.md")]
-                for planPath in plans:
-                    if planPath.is_file():
-                        common.manual_items(planPath.read_text(), str(planPath))
+                plans = [task_dir / "spec.md", *task_dir.glob("*-05-plan.md")]
+                for plan_path in plans:
+                    if plan_path.is_file():
+                        common.manual_items(plan_path.read_text(), str(plan_path))
         for name, parsed, expected, plain in counts:
             print(f"{name}: parsed {parsed} ids; bold-id lines hold {expected}; **ACn** occurrences {plain}",
                   file=sys.stderr)
@@ -1184,15 +1201,15 @@ class RealPlansTest(unittest.TestCase):
         plans = sorted(glob.glob(str(REAL_HOME / "dev" / "residuum" / "docs" / "eng-specs" / "RES-[3-6]-*.md")))
         if not plans:
             self.skipTest("no single-file plans on this machine")
-        for planPath in plans:
-            with self.subTest(plan=planPath):
-                with self.assertRaises(common.Fail) as caught:
-                    common.ticket_criteria(pathlib.Path(planPath).read_text(), planPath)
+        for plan_path in plans:
+            with self.subTest(plan=plan_path):
+                with self.assertRaises(common.VerifyError) as caught:
+                    common.ticket_criteria(pathlib.Path(plan_path).read_text(), plan_path)
                 self.assertIn("Acceptance Stubs", str(caught.exception))
-                self.assertIn(f"{planPath}:", str(caught.exception))
+                self.assertIn(f"{plan_path}:", str(caught.exception))
 
-    def repo_with_history(self, taskDir):
-        for candidate in (taskDir, *taskDir.parents):
+    def repo_with_history(self, task_dir):
+        for candidate in (task_dir, *task_dir.parents):
             if (candidate / ".git").exists():
                 return candidate
         return None
@@ -1203,31 +1220,40 @@ class RealPlansTest(unittest.TestCase):
             self.skipTest("no real plans on this machine")
         parsed = 0
         ran = 0
-        for taskDir in dirs:
-            repoRoot = self.repo_with_history(taskDir)
-            if repoRoot is None:
+        detached = 0
+        for task_dir in dirs:
+            repo_root = self.repo_with_history(task_dir)
+            if repo_root is None:
                 continue
-            with self.subTest(taskDir=str(taskDir)):
-                tempDir = tempfile.TemporaryDirectory()
-                self.addCleanup(tempDir.cleanup)
-                tempHome = pathlib.Path(tempDir.name) / "home"
-                (tempHome / ".claude").mkdir(parents=True)
-                env = subprocess_env({**os.environ, "HOME": str(tempHome), "VERIFY_STATE_DIR": tempDir.name,
+            with self.subTest(task_dir=str(task_dir)):
+                temp_dir = tempfile.TemporaryDirectory()
+                self.addCleanup(temp_dir.cleanup)
+                temp_home = pathlib.Path(temp_dir.name) / "home"
+                (temp_home / ".claude").mkdir(parents=True)
+                env = subprocess_env({**os.environ, "HOME": str(temp_home), "VERIFY_STATE_DIR": temp_dir.name,
                                       "GIT_OPTIONAL_LOCKS": "0", "REPO_NAME_SCRIPT": str(REPO_NAMER),
                                       "RESOLVE_TASK_DIR_SCRIPT": str(RESOLVER),
-                                      **fake_ledger.install(tempDir.name)})
-                rootsRun = subprocess.run(["git", "rev-list", "--max-parents=0", "HEAD"], cwd=repoRoot, env=env,
+                                      **fake_ledger.install(temp_dir.name)})
+                roots_run = subprocess.run(["git", "rev-list", "--max-parents=0", "HEAD"], cwd=repo_root, env=env,
                                           capture_output=True, text=True)
-                roots = rootsRun.stdout.split()
-                if rootsRun.returncode != 0 or not roots:
+                roots = roots_run.stdout.split()
+                if roots_run.returncode != 0 or not roots:
                     continue
+
+                branch_run = subprocess.run(["git", "symbolic-ref", "-q", "HEAD"], cwd=repo_root, env=env,
+                                           capture_output=True, text=True)
+                if branch_run.returncode != 0:
+                    detached += 1
+                    continue
+
                 ran += 1
-                done = subprocess.run([str(PREP), str(taskDir), "--base", roots[-1]], cwd=repoRoot, env=env,
+                done = subprocess.run([str(PREP), str(task_dir), "--base", roots[-1]], cwd=repo_root, env=env,
                                       capture_output=True, text=True)
                 self.assertEqual(done.returncode, 0, done.stderr)
                 self.assertIn("STEP 1", done.stdout)
                 parsed += 1
-        print(f"parsed {parsed} of {len(dirs)} real task dirs ({ran} had a repo with commits)", file=sys.stderr)
+        print(f"parsed {parsed} of {len(dirs)} real task dirs ({ran} had a repo with commits, "
+              f"{detached} skipped on a detached HEAD, which verify-prep refuses by design)", file=sys.stderr)
 
 
 if __name__ == "__main__":

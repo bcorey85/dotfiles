@@ -28,7 +28,7 @@ ATTRIBUTION = re.compile(r"Claude-Session:|claude\.ai/code/session_|Co-Authored-
 COMMIT_OR_PUSH = re.compile(r"\bgit" + S + r"(commit|push)\b", re.I)
 
 
-class Deny(Exception):
+class DenyError(Exception):
     pass
 
 
@@ -66,34 +66,35 @@ def is_direct_edit_repo():
 def run(raw):
     try:
         command = command_of(raw)
-    except (ValueError, JqError):
-        raise Deny("[git-discipline-gate] hook input did not parse — failing closed. Report this to the user.")
+    except ValueError, JqError:
+        raise DenyError(
+            "[git-discipline-gate] hook input did not parse — failing closed. Report this to the user."
+        ) from None
     if not command:
         return
 
     branch = current_branch()
 
     if STASH.search(command) and not STASH_READ.search(command):
-        raise Deny("[git-discipline-gate] git stash is blocked: it breaks parallel-agent work and resets staged "
+        raise DenyError("[git-discipline-gate] git stash is blocked: it breaks parallel-agent work and resets staged "
                    "files. If stashing is genuinely needed, ask the user — they can run it themselves.")
 
     if COMMIT.search(command) and AMEND.search(command):
-        raise Deny("[git-discipline-gate] git commit --amend is blocked: never rewrite history unless the user "
+        raise DenyError("[git-discipline-gate] git commit --amend is blocked: never rewrite history unless the user "
                    "explicitly asked. Make a new commit, or ask the user.")
 
     if COMMIT_OR_PR.search(command) and ATTRIBUTION.search(command):
-        raise Deny("[git-discipline-gate] Commit and PR text must carry no attribution or session trailer. Remove "
+        raise DenyError("[git-discipline-gate] Commit and PR text must carry no attribution or session trailer. Remove "
                    "it and retry.")
 
     if COMMIT_OR_PUSH.search(command) and branch.startswith("worktree-"):
-        raise Deny("[git-discipline-gate] branch '" + branch + "' still carries the auto-generated worktree- "
+        raise DenyError("[git-discipline-gate] branch '" + branch + "' still carries the auto-generated worktree- "
                    "prefix. Rename it to the plain TICKET-NUM-desc form and push it with -u first, then retry.")
 
-    if COMMIT.search(command):
-        if branch in ("main", "master") and not is_direct_edit_repo():
-            raise Deny("[git-discipline-gate] git commit on " + branch + " is blocked: create a feature branch "
-                       "first (global rule). If committing here is genuinely intended, the user can run it "
-                       "themselves.")
+    if COMMIT.search(command) and branch in ("main", "master") and not is_direct_edit_repo():
+        raise DenyError("[git-discipline-gate] git commit on " + branch + " is blocked: create a feature branch "
+                   "first (global rule). If committing here is genuinely intended, the user can run it "
+                   "themselves.")
 
 
 def main():
@@ -102,7 +103,7 @@ def main():
     internal = False
     try:
         run(sys.stdin.buffer.read().decode("utf-8", "replace"))
-    except Deny as denied:
+    except DenyError as denied:
         emit_deny(str(denied))
     except Exception:
         internal = True

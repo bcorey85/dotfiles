@@ -6,25 +6,27 @@ newer than `edits`, unless a file in the repo was changed by means the Write/Edi
 redirection, a script) more recently than that run, then it allows. PostToolUse(Bash) records the run;
 PostToolUseFailure(Bash) does too, except when the run did not finish: an interrupt (`is_interrupt`) or an exit
 status of 129 to 192 (128 + signal number: ended by a signal, such as a pkill or a timeout kill), so the rerun is
-allowed. Exit 128 and 255 are ordinary failures (git and PHP fatal errors) and are recorded. A check is recorded only when it
+allowed. Exit 128 and 255 are ordinary failures (git and PHP fatal errors) and are recorded. A check is recorded only
+when it
 surely ran: after a failure, a check behind `&&` or `||` may never have started, so it is not recorded; after
 a success, a check behind `||` is not. A command with a formatter that rewrites files (`cargo fmt`, `prettier
 --write`, `ruff format`...) is never denied when every check in it runs only after the formatter succeeded (joined
-to it by `&&`, pipes allowed), and resets the cap like an edit. Key: normalized command + effective cwd (POSIX cksum) + the agent
+to it by `&&`, pipes allowed), and resets the cap like an edit. Key: normalized command + effective cwd (POSIX cksum)
++ the agent
 that ran it: a run is capped only against an earlier run by the same agent, so a subagent's first run of a check is
 always allowed. The agent is the hook input's `agent_id` (set only inside a subagent); the main thread has none.
 Edits are shared by every agent of the session, because they change the tree all of them see. Escape: a trailing
 `#skip-quality-cap`. Fails closed only on the PreToolUse Bash path; state errors fail open. State lives in
 ~/.claude/state/quality-check/<session>/.
 """
+import contextlib
+import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
 import time
-
-import hashlib
 
 import hook_input
 from hook_input import JqError, cksum, exit_code_in_error_text, jq_get, jq_str, truthy
@@ -52,11 +54,11 @@ DENY_TEXT = ("' already ran this session and nothing has been edited since. Re-r
              "the user. If you believe this deny is wrong, stop and tell the user what you were about to run.")
 
 
-class Deny(Exception):
+class DenyError(Exception):
     pass
 
 
-class Exit(Exception):
+class ExitError(Exception):
     def __init__(self, rc=0):
         Exception.__init__(self)
         self.rc = rc
@@ -138,7 +140,7 @@ GIT_TIMEOUT_SECONDS = 5
 
 def git_output(args):
     try:
-        finished = subprocess.run(["git"] + args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        finished = subprocess.run(["git", *args], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                   timeout=GIT_TIMEOUT_SECONDS)
     except (OSError, subprocess.SubprocessError):
         return None
@@ -185,10 +187,7 @@ def changed_since_run(cwd, run_file):
     listing = git_output(["-C", top, "ls-files", "-z", "--modified", "--others", "--exclude-standard"])
     if not listing:
         return False
-    for name in listing.split(b"\0"):
-        if name and newer(top + "/" + os.fsdecode(name), run_file):
-            return True
-    return False
+    return any(name and newer(top + "/" + os.fsdecode(name), run_file) for name in listing.split(b"\x00"))
 
 
 def tree_changed_since_run(cwd, run_file):
@@ -245,7 +244,7 @@ def run(raw, state):
             root_json = json.loads(raw)
             state["tool"] = field(root_json, "tool_name")
         except (ValueError, JqError):
-            raise Exit(0)
+            raise ExitError(0) from None
     tool = state["tool"]
     event = field(root_json, "hook_event_name")
     state["event"] = event
@@ -259,14 +258,12 @@ def run(raw, state):
     try:
         os.makedirs(state_dir, exist_ok=True)
     except OSError:
-        raise Exit(0)
+        raise ExitError(0) from None
     prune_old(root)
 
     if tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
-        try:
+        with contextlib.suppress(OSError):
             touch(state_dir + "/edits")
-        except OSError:
-            pass
         return
     if tool != "Bash":
         return
@@ -317,10 +314,8 @@ def run(raw, state):
 
     if event in ("PostToolUse", "PostToolUseFailure"):
         if format_indexes:
-            try:
+            with contextlib.suppress(OSError):
                 touch(state_dir + "/edits")
-            except OSError:
-                pass
         for index, _, run_file, check_cwd in checks:
             if not step_surely_ran(steps, index, succeeded):
                 continue
@@ -329,7 +324,7 @@ def run(raw, state):
                     handle.write(tree_fingerprint(check_cwd) or "")
                 touch_after(run_file, state_dir + "/edits")
             except OSError:
-                raise Exit(0)
+                raise ExitError(0) from None
         return
 
     if format_indexes:
@@ -338,9 +333,10 @@ def run(raw, state):
         if every_check_follows_a_formatter:
             return
     for _, norm, run_file, check_cwd in checks:
-        if newer(run_file, state_dir + "/edits"):
-            if not changed_since_run(check_cwd, run_file) and not tree_changed_since_run(check_cwd, run_file):
-                raise Deny("[quality-check-cap] '" + norm + DENY_TEXT)
+        edited_since_run = newer(run_file, state_dir + "/edits")
+        if (edited_since_run and not changed_since_run(check_cwd, run_file)
+                and not tree_changed_since_run(check_cwd, run_file)):
+            raise DenyError("[quality-check-cap] '" + norm + DENY_TEXT)
 
 
 def main():
@@ -350,9 +346,9 @@ def main():
     internal = None
     try:
         run(sys.stdin.buffer.read().decode("utf-8", "replace"), state)
-    except Deny as denied:
+    except DenyError as denied:
         emit_deny(str(denied))
-    except Exit as done:
+    except ExitError as done:
         return done.rc
     except JqError as error:
         internal = error.rc
@@ -361,8 +357,8 @@ def main():
     if internal is None:
         return 0
     if state["tool"] == "Bash" and state["event"] == "PreToolUse":
-        emit_deny("[quality-check-cap] internal error (exit %d) — failing closed. Report this to the "
-                  "user." % internal)
+        emit_deny(f"[quality-check-cap] internal error (exit {internal}) — failing closed. Report this to the "
+                  f"user.")
         return 0
     return internal
 

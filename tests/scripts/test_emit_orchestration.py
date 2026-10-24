@@ -1,4 +1,4 @@
-"""Checks for emit-orchestration.py, the SessionStart hook that injects ~/.claude/orchestration.md.
+"""Checks for emit_orchestration.py, the SessionStart hook that injects ~/.claude/orchestration.md.
 
 Set HOOK_SCRIPTS_DIR to run against another directory of scripts."""
 import json
@@ -9,7 +9,9 @@ import sys
 import tempfile
 import unittest
 
-SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts") / "emit-orchestration.py"
+import toolkit_paths
+
+SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR) / "emit_orchestration.py"
 
 ORCHESTRATION = "home/.claude/orchestration.md"
 WARNING = ("WARNING: ~/.claude/orchestration.md is missing or unreadable. Delegation rules are NOT loaded this "
@@ -21,14 +23,22 @@ PARITY_CASES = [
     {"name": "empty file", "stdin": "", "files": {ORCHESTRATION: ""}},
     {"name": "no trailing newline", "stdin": "", "files": {ORCHESTRATION: "abc"}},
     {"name": "quotes backslash tab", "stdin": "", "files": {ORCHESTRATION: 'say "hi"\\n\ttab \\ done\n'}},
-    {"name": "unicode", "stdin": "", "files": {ORCHESTRATION: "caf\u00e9 \u2014 \u26a0\ufe0f \U0001f600 \u65e5\u672c\n"}},
+    {
+        "name": "unicode",
+        "stdin": "",
+        "files": {ORCHESTRATION: "caf\u00e9 \u2014 \u26a0\ufe0f \U0001f600 \u65e5\u672c\n"},
+    },
     {"name": "del and control chars", "stdin": "", "files": {ORCHESTRATION: "a\x7fb\x01c\x1bd\r\n"}},
     {"name": "blank lines", "stdin": "", "files": {ORCHESTRATION: "\n\n\nx\n\n\n"}},
     {"name": "directory instead of file", "stdin": "", "files": {ORCHESTRATION + "/keep": "x"}},
     {"name": "stdin ignored", "stdin": '{"hook_event_name":"SessionStart"}', "files": {ORCHESTRATION: "x\n"}},
     {"name": "skip hooks not honored", "stdin": "", "env": {"CLAUDE_SKIP_HOOKS": "1"}, "files": {ORCHESTRATION: "x\n"}},
 ]
-TYPICAL = {"name": "typical", "stdin": "", "files": {ORCHESTRATION: "# Orchestration\n" + "Delegate to agents.\n" * 200}}
+TYPICAL = {
+    "name": "typical",
+    "stdin": "",
+    "files": {ORCHESTRATION: "# Orchestration\n" + "Delegate to agents.\n" * 200},
+}
 
 
 def run_hook(content=None, unreadable=False):

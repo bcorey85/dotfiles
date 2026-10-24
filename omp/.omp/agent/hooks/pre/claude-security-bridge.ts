@@ -52,10 +52,10 @@ const PRE_TOOL_GATES: Record<string, { tool: string; gates: string[] }> = {
     tool: "Bash",
     gates: [
       "bash-safety-gate.sh",
-      "git-discipline-gate.py",
-      "review-commit-gate.py",
-      "shell-write-gate.py",
-      "quality-check-cap.py",
+      "git_discipline_gate.py",
+      "review_commit_gate.py",
+      "shell_write_gate.py",
+      "quality_check_cap.py",
     ],
   },
   read: { tool: "Read", gates: ["block-credential-read.sh"] },
@@ -268,7 +268,7 @@ export default function bridge(pi: HookPi): void {
     const cwd = ctx?.cwd ?? process.cwd();
     if (event.toolName === "bash") {
       await runGate(
-        "quality-check-cap.py",
+        "quality_check_cap.py",
         {
           hook_event_name: "PostToolUse",
           session_id: SESSION_ID,
@@ -282,7 +282,7 @@ export default function bridge(pi: HookPi): void {
 
     if (!event.isError && EDIT_TOOLS[event.toolName]) {
       await runGate(
-        "quality-check-cap.py",
+        "quality_check_cap.py",
         {
           hook_event_name: "PostToolUse",
           session_id: SESSION_ID,
@@ -301,7 +301,7 @@ export default function bridge(pi: HookPi): void {
     await Promise.all(
       agents.map((agent) =>
         runGate(
-          "review-commit-gate.py",
+          "review_commit_gate.py",
           {
             hook_event_name: "PostToolUse",
             session_id: SESSION_ID,

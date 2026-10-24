@@ -85,7 +85,7 @@ COMMIT_VALUE_OPTIONS = {"--message", "--file", "--author", "--date", "--trailer"
 COMMIT_VALUE_LETTERS = "mFCct"
 
 
-class Deny(Exception):
+class DenyError(Exception):
     pass
 
 
@@ -120,26 +120,26 @@ def commit_pathspecs(args):
     """The pathspecs in the words after `git commit`, or None when a word is an option other than a plain flag or a
     message-style option with its value. `--` ends the options."""
     pathspecs = []
-    onlyGiven = False
-    optionsEnded = False
+    only_given = False
+    options_ended = False
     index = 0
     while index < len(args):
         word = args[index]
         index += 1
-        if optionsEnded or not word.startswith("-") or word == "-":
+        if options_ended or not word.startswith("-") or word == "-":
             pathspecs.append(word)
             continue
         if word == "--":
-            optionsEnded = True
+            options_ended = True
             continue
         if word.startswith("--"):
-            name, hasValue, _ = word.partition("=")
+            name, has_value, _ = word.partition("=")
             if name in COMMIT_VALUE_OPTIONS:
-                index += 0 if hasValue else 1
+                index += 0 if has_value else 1
                 continue
-            if name not in COMMIT_FLAGS or hasValue:
+            if name not in COMMIT_FLAGS or has_value:
                 return None
-            onlyGiven = onlyGiven or name in COMMIT_ONLY_FLAGS
+            only_given = only_given or name in COMMIT_ONLY_FLAGS
             continue
         letters = word[1:]
         for position, letter in enumerate(letters):
@@ -148,8 +148,8 @@ def commit_pathspecs(args):
                 break
             if "-" + letter not in COMMIT_FLAGS:
                 return None
-            onlyGiven = onlyGiven or "-" + letter in COMMIT_ONLY_FLAGS
-    if onlyGiven and not pathspecs:
+            only_given = only_given or "-" + letter in COMMIT_ONLY_FLAGS
+    if only_given and not pathspecs:
         return None
     return pathspecs
 
@@ -157,12 +157,12 @@ def commit_pathspecs(args):
 def add_pathspecs(args):
     """The pathspecs after `git add`, or None when there is an option other than `--` or no pathspec."""
     pathspecs = []
-    optionsEnded = False
+    options_ended = False
     for word in args:
-        if not optionsEnded and word == "--":
-            optionsEnded = True
+        if not options_ended and word == "--":
+            options_ended = True
             continue
-        if not optionsEnded and word.startswith("-"):
+        if not options_ended and word.startswith("-"):
             return None
         pathspecs.append(word)
     return pathspecs or None
@@ -176,8 +176,8 @@ def runs_substitution(word):
 
 
 def is_known_git_global_option(option):
-    name, hasValue, _ = option.partition("=")
-    return option in GIT_GLOBAL_FLAGS or (bool(hasValue) and name in GIT_GLOBAL_OPTIONS_WITH_VALUE)
+    name, has_value, _ = option.partition("=")
+    return option in GIT_GLOBAL_FLAGS or (bool(has_value) and name in GIT_GLOBAL_OPTIONS_WITH_VALUE)
 
 
 def runs_git_commit(words):
@@ -185,23 +185,23 @@ def runs_git_commit(words):
     name is `git`, so `env`, `command`, `time`, `!`, a path or an earlier `git` argument before it do not hide it. An
     option git is not known to have before the subcommand may take a value, so it counts when `commit` comes anywhere
     after it."""
-    gitIndexes = [index for index, word in enumerate(words) if posixpath.basename(word) == "git"]
-    return any(commit_follows_git(words, gitIndex) for gitIndex in gitIndexes)
+    git_indexes = [index for index, word in enumerate(words) if posixpath.basename(word) == "git"]
+    return any(commit_follows_git(words, git_index) for git_index in git_indexes)
 
 
-def commit_follows_git(words, gitIndex):
-    index = gitIndex + 1
-    unknownOption = False
+def commit_follows_git(words, git_index):
+    index = git_index + 1
+    unknown_option = False
     while index < len(words) and words[index].startswith("-"):
         option = words[index]
         if option in GIT_GLOBAL_OPTIONS_WITH_VALUE:
             index += 2
             continue
-        unknownOption = unknownOption or not is_known_git_global_option(option)
+        unknown_option = unknown_option or not is_known_git_global_option(option)
         index += 1
     if index < len(words) and words[index] == "commit":
         return True
-    return unknownOption and "commit" in words[index:]
+    return unknown_option and "commit" in words[index:]
 
 
 def is_commit_command(command):
@@ -214,24 +214,24 @@ def is_commit_command(command):
     if COMMIT.search(joined) or GIT_THEN_COMMIT.search(joined):
         return True
     try:
-        simpleCommands = split_simple_commands(joined)
+        simple_commands = split_simple_commands(joined)
     except ValueError:
         return UNREADABLE_GIT_THEN_COMMIT.search(joined) is not None
-    return any(runs_git_commit(words) for words in simpleCommands)
+    return any(runs_git_commit(words) for words in simple_commands)
 
 
 def command_pathspecs(command):
     """(add pathspecs, commit pathspecs) of a command that holds exactly one `git commit` and nothing that changes
     the repo, the directory or the index in a way this reading cannot follow; None for any other command."""
     try:
-        simpleCommands = parse_simple_commands(command)
+        simple_commands = parse_simple_commands(command)
     except ValueError:
         return None
 
-    addPaths = []
-    commitPaths = []
-    commitCount = 0
-    for words, redirections in simpleCommands:
+    add_paths = []
+    commit_paths = []
+    commit_count = 0
+    for words, redirections in simple_commands:
         if any(redirection_writes_file(operator, target) for operator, target in redirections):
             return None
         if not words:
@@ -247,22 +247,22 @@ def command_pathspecs(command):
         # A git option before the subcommand (-C, -c, --git-dir) lands here as the subcommand and is refused below.
         subcommand, args = words[1], words[2:]
         if subcommand == "commit":
-            commitCount += 1
+            commit_count += 1
             pathspecs = commit_pathspecs(args)
             if pathspecs is None:
                 return None
-            commitPaths += pathspecs
+            commit_paths += pathspecs
         elif subcommand == "add":
             pathspecs = add_pathspecs(args)
             if pathspecs is None:
                 return None
-            addPaths += pathspecs
+            add_paths += pathspecs
         elif subcommand not in READ_ONLY_GIT or any(word.startswith("--output") for word in args):
             # `--output` makes a read-only subcommand write a file, such as a hook.
             return None
-    if commitCount != 1:
+    if commit_count != 1:
         return None
-    return addPaths, commitPaths
+    return add_paths, commit_paths
 
 
 def git_output(cwd, *args):
@@ -293,20 +293,20 @@ def ships_only_notes(command, cwd):
     found = command_pathspecs(command)
     if found is None or not cwd:
         return False
-    addPaths, commitPaths = found
+    add_paths, commit_paths = found
 
-    stagedOutput = git_output(cwd, "diff", "--cached", "--name-only", "--no-renames", "--no-relative", "-z")
-    prefixOutput = git_output(cwd, "rev-parse", "--show-prefix")
-    if stagedOutput is None or prefixOutput is None:
+    staged_output = git_output(cwd, "diff", "--cached", "--name-only", "--no-renames", "--no-relative", "-z")
+    prefix_output = git_output(cwd, "rev-parse", "--show-prefix")
+    if staged_output is None or prefix_output is None:
         return False
 
-    prefix = prefixOutput.rstrip("\n")
-    shippedPaths = [path for path in stagedOutput.split("\0") if path]
-    for pathspec in addPaths + commitPaths:
+    prefix = prefix_output.rstrip("\n")
+    shipped_paths = [path for path in staged_output.split("\0") if path]
+    for pathspec in add_paths + commit_paths:
         if os.path.isdir(os.path.join(cwd, pathspec)):
             return False
-        shippedPaths.append(repo_path(pathspec, prefix) or "")
-    return bool(shippedPaths) and all(is_notes_path(path) for path in shippedPaths)
+        shipped_paths.append(repo_path(pathspec, prefix) or "")
+    return bool(shipped_paths) and all(is_notes_path(path) for path in shipped_paths)
 
 
 def run(raw, state):
@@ -316,7 +316,7 @@ def run(raw, state):
         try:
             root = json.loads(raw)
         except ValueError:
-            raise JqError(2)
+            raise JqError(2) from None
     event = field(root, "hook_event_name")
     state["event"] = event
     session = field(root, "session_id", default="unknown")
@@ -326,7 +326,7 @@ def run(raw, state):
         os.makedirs(state_dir, exist_ok=True)
     except OSError:
         report_mkdir_failure(state_dir)
-        raise JqError(1)
+        raise JqError(1) from None
     state_file = state_dir + "/" + session
     prune_old(state_dir)
 
@@ -346,11 +346,13 @@ def run(raw, state):
                 return
             if ships_only_notes(command, field(root, "cwd")):
                 return
-            raise Deny("[review-commit-gate] Coder work from this session has no converged /review. Run /review on "
-                       "the coder work and commit after it converges. If the commit ships only Markdown files under "
-                       "the repo's top-level docs/ folder, run it as a plain `git commit` (with `git add` of single "
-                       "named files if needed) from the repo root in its own Bash call, with no `cd`, `env` or "
-                       "`git -C`, because the gate passes that form.")
+            raise DenyError(
+                "[review-commit-gate] Coder work from this session has no converged /review. Run /review on "
+                "the coder work and commit after it converges. If the commit ships only Markdown files under "
+                "the repo's top-level docs/ folder, run it as a plain `git commit` (with `git add` of single "
+                "named files if needed) from the repo root in its own Bash call, with no `cd`, `env` or "
+                "`git -C`, because the gate passes that form."
+            )
         marked = MARK.search(command)
         if marked:
             reason = None
@@ -360,8 +362,10 @@ def run(raw, state):
                 import handback
                 reason = handback.false_clean_reason(session)
             if reason:
-                raise Deny("[review-commit-gate] Gate not marked clean: %s. Only a converged or deferred review "
-                           "hand-back from this session allows clean." % reason)
+                raise DenyError(
+                    f"[review-commit-gate] Gate not marked clean: {reason}. Only a converged or deferred review "
+                    "hand-back from this session allows clean."
+                )
             with open(state_file, "w") as handle:
                 handle.write(marked.group(1) + "\n")
 
@@ -383,13 +387,14 @@ def report_mkdir_failure(state_dir):
             if os.path.isdir(walked):
                 continue
             reason = "File exists" if walked == state_dir else "Not a directory"
-            hook_input.emit_stderr("mkdir: cannot create directory %s%s%s: %s\n" % (left, walked, right, reason))
+            hook_input.emit_stderr(f"mkdir: cannot create directory {left}{walked}{right}: {reason}\n")
             return
         try:
             os.mkdir(walked)
         except OSError as error:
-            hook_input.emit_stderr("mkdir: cannot create directory %s%s%s: %s\n"
-                                   % (left, walked, right, os.strerror(error.errno or 0)))
+            hook_input.emit_stderr(
+                f"mkdir: cannot create directory {left}{walked}{right}: {os.strerror(error.errno or 0)}\n"
+            )
             return
 
 
@@ -400,7 +405,7 @@ def main():
     rc = None
     try:
         run(sys.stdin.buffer.read().decode("utf-8", "replace"), state)
-    except Deny as denied:
+    except DenyError as denied:
         hook_input.emit_decision("deny", str(denied))
     except JqError as error:
         rc = error.rc
@@ -411,7 +416,7 @@ def main():
     if state["event"] == "PostToolUse":
         return rc
     hook_input.emit_decision("ask",
-                             "[review-commit-gate] internal error (exit %d). Allow to run the command anyway." % rc)
+                             f"[review-commit-gate] internal error (exit {rc}). Allow to run the command anyway.")
     return 0
 
 

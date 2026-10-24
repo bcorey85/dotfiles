@@ -26,7 +26,7 @@ Thin wrapper over the `review-loop` agent. A script parses the returned packet, 
 2. **Run the script on the returned packet.** The script reads the packet a hook saved, for this session, when the loop handed back. Do not paste it. Running it again repeats no side effect:
 
    ```bash
-   python3 ~/.claude/scripts/review-fix.py packet --skill review [--scope branch-exit] [--lane <eng-spec|code|other>]
+   python3 ~/.claude/scripts/review_fix.py packet --skill review [--scope branch-exit] [--lane <eng-spec|code|other>]
    ```
 
    If it stops with a saved-packet error (no dispatch on record), run `~/.claude/scripts/review-gate-mark dirty` if you marked, and tell the user.
@@ -38,7 +38,7 @@ Thin wrapper over the `review-loop` agent. A script parses the returned packet, 
 3. **Do what the script printed.** Read the `ACTION:` line:
 
    - `render-and-finish` → say the text between `BEGIN USER TEXT` and `END USER TEXT` verbatim, then your one closing line. If the gate mark did not run in parallel, run it now as its own Bash command.
-   - `present-asks` → say the user text, then present each ask with its question and wait. The script already ran nvim-jump. Never auto-fix an ask. After the answers run `python3 ~/.claude/scripts/review-fix.py asks-done <accepted|rejected|modified>[:<note>] ...` (the note is accepted and not stored), one outcome per ask in order. Each outcome row carries that ask's `finding_id` (the id `log-review-finding` printed for its ask row, saved in the packet); an ask with no `finding_id` logs nothing.
+   - `present-asks` → say the user text, then present each ask with its question and wait. The script already ran nvim-jump. Never auto-fix an ask. After the answers run `python3 ~/.claude/scripts/review_fix.py asks-done <accepted|rejected|modified>[:<note>] ...` (the note is accepted and not stored), one outcome per ask in order. Each outcome row carries that ask's `finding_id` (the id `log-review-finding` printed for its ask row, saved in the packet); an ask with no `finding_id` logs nothing.
    - `ask-user-plan-impact` → call `AskUserQuestion` as printed, then run the `decide` command it names. On `ACTION: redispatch`, re-dispatch `review-loop` with the same arguments plus the lines it printed (both counters kept), then run step 2 again. On `ACTION: discuss`, talk it through with the user, then run the `decide` command that it printed for the outcome.
    - `stop` → present what it printed, wait for direction. Do NOT re-dispatch, do NOT `/fix`, do NOT mark.
    - `stop-no-handback` → the loop ended without handing back. Do what the lines say: the first time, re-dispatch `review-loop` once with the same arguments and run step 2 again; the second time, stop and show the user the loop's final text. Never mark clean.

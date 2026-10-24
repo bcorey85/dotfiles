@@ -1,4 +1,4 @@
-"""Checks for test-edit-telemetry.py, the log-only PreToolUse hook that records edits to test files."""
+"""Checks for test_edit_telemetry.py, the log-only PreToolUse hook that records edits to test files."""
 import json
 import os
 import pathlib
@@ -8,10 +8,12 @@ import sys
 import tempfile
 import unittest
 
+import toolkit_paths
+
 os.environ.pop("CLAUDE_TOOLKIT_TELEMETRY", None)  # the switch file alone decides in these tests
 
-SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts")
-SCRIPT = SCRIPTS_DIR / "test-edit-telemetry.py"
+SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR)
+SCRIPT = SCRIPTS_DIR / "test_edit_telemetry.py"
 
 TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
@@ -116,7 +118,7 @@ class TestEditTelemetryTest(unittest.TestCase):
 
     def test_unopenable_log_is_ignored(self):
         self.log.mkdir()
-        shell_message = "test-edit-telemetry: cannot open %s: Is a directory\n" % self.log
+        shell_message = f"test-edit-telemetry: cannot open {self.log}: Is a directory\n"
         self.edit("/r/a_test.py", stderr=shell_message)
 
     def test_missing_claude_directory_means_switch_off(self):
@@ -126,7 +128,7 @@ class TestEditTelemetryTest(unittest.TestCase):
         self.assertFalse((self.home / ".claude").exists())
 
     def test_control_characters_are_escaped_like_jq(self):
-        self.run_hook({"tool_name": "Edit", "tool_input": {"file_path": "/r/a_test.py", "new_string": "a\x01\x7f\n\"b"}})
+        self.run_hook({"tool_name": "Edit", "tool_input": {"file_path": "/r/a_test.py", "new_string": 'a\x01\x7f\n"b'}})
         self.assertIn('"snippet":"a\\u0001\\u007f\\n\\"b"', self.log.read_text())
 
     def test_non_string_snippet_logs_nothing(self):

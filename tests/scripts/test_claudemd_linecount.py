@@ -1,4 +1,4 @@
-"""Checks for claudemd-linecount.py, the PostToolUse hook that warns when an edited CLAUDE.md passes 150 lines."""
+"""Checks for claudemd_linecount.py, the PostToolUse hook that warns when an edited CLAUDE.md passes 150 lines."""
 import json
 import os
 import pathlib
@@ -7,8 +7,10 @@ import sys
 import tempfile
 import unittest
 
-SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts")
-SCRIPT = SCRIPTS_DIR / "claudemd-linecount.py"
+import toolkit_paths
+
+SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR)
+SCRIPT = SCRIPTS_DIR / "claudemd_linecount.py"
 
 WARNING = "CLAUDE.md is %d lines (target: <150). Consider moving reference data to skills or MEMORY.md.\n"
 
@@ -59,7 +61,7 @@ class ClaudeMdLinecountTest(unittest.TestCase):
     def test_missing_claude_md_prints_one_plain_open_error(self):
         path = str(self.root / "gone" / "CLAUDE.md")
         stderr = self.edit(path)
-        self.assertEqual(stderr, "claudemd-linecount: cannot open %s: No such file or directory\n" % path)
+        self.assertEqual(stderr, f"claudemd-linecount: cannot open {path}: No such file or directory\n")
 
     def test_skip_variable_does_not_disable_warning(self):
         path = self.write("CLAUDE.md", 160)

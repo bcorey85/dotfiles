@@ -30,15 +30,15 @@ def resolve_folder(folder):
 
 def inside_evals_folder(home):
     try:
-        projectFolder = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
-        resolvedProject = resolve_folder(projectFolder)
-        evalsFolder = resolve_folder(os.path.join(home, "dev", "evals"))
+        project_folder = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+        resolved_project = resolve_folder(project_folder)
+        evals_folder = resolve_folder(os.path.join(home, "dev", "evals"))
     except OSError:
         return False
 
     # Compare the way telemetry_enabled.sh does: the project folder plus a slash starts with the evals folder plus
     # a slash, so whole path parts match and ~/dev/evals-old does not.
-    return (resolvedProject + "/").startswith(evalsFolder + "/")
+    return (resolved_project + "/").startswith(evals_folder + "/")
 
 
 def telemetry_enabled():

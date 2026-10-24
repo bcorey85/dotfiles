@@ -12,8 +12,12 @@ import toolkit_paths
 
 CLAUDE_DIR = toolkit_paths.CLAUDE_DIR
 SCRIPT = pathlib.Path(os.environ.get("ADR_FLOW_PATH") or CLAUDE_DIR / "skills" / "adr" / "scripts" / "adr_flow.py")
-SCRIPT_UTILS = pathlib.Path(os.environ.get("ADR_SCRIPT_UTILS_PATH") or CLAUDE_DIR / "scripts" / "script_utils.py")
-RESOLVE_SCRIPT = pathlib.Path(os.environ.get("ADR_RESOLVE_SCRIPT") or CLAUDE_DIR / "scripts" / "resolve-task-dir.sh")
+SCRIPT_UTILS = pathlib.Path(
+    os.environ.get("ADR_SCRIPT_UTILS_PATH") or CLAUDE_DIR / "scripts" / "lib" / "script_utils.py"
+)
+RESOLVE_SCRIPT = pathlib.Path(
+    os.environ.get("ADR_RESOLVE_SCRIPT") or CLAUDE_DIR / "scripts" / "tools" / "resolve-task-dir.sh"
+)
 TEMPLATE = pathlib.Path(os.environ.get("ADR_TEMPLATE") or CLAUDE_DIR / "skills" / "_shared" / "adr-template.md")
 PLANS = "docs/plans"
 DECISIONS = "docs/decisions"
@@ -24,8 +28,8 @@ def install_into_home(home):
     installed = home / ".claude" / "skills" / "adr" / "scripts" / "adr_flow.py"
     for source, target in (
         (SCRIPT, installed),
-        (SCRIPT_UTILS, home / ".claude" / "scripts" / "script_utils.py"),
-        (RESOLVE_SCRIPT, home / ".claude" / "scripts" / "resolve-task-dir.sh"),
+        (SCRIPT_UTILS, home / ".claude" / "scripts" / "lib" / "script_utils.py"),
+        (RESOLVE_SCRIPT, home / ".claude" / "scripts" / "tools" / "resolve-task-dir.sh"),
         (TEMPLATE, home / ".claude" / "skills" / "_shared" / "adr-template.md"),
     ):
         target.parent.mkdir(parents=True, exist_ok=True)

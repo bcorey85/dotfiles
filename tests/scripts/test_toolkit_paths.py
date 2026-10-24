@@ -35,7 +35,17 @@ class ToolkitPathsTest(unittest.TestCase):
         self.assertEqual(pathlib.Path.home() / ".claude", reloaded.CLAUDE_DIR)
 
     def test_the_scripts_folder_holds_the_shared_script_utilities(self):
-        self.assertTrue((toolkit_paths.SCRIPTS_DIR / "script_utils.py").is_file())
+        self.assertTrue((toolkit_paths.LIB_DIR / "script_utils.py").is_file())
+
+    def test_each_script_folder_sits_under_the_scripts_folder(self):
+        reloaded = self.reload_with_environment(TOOLKIT_CLAUDE_DIR="/somewhere/else/.claude")
+
+        self.assertEqual(
+            {name: pathlib.Path("/somewhere/else/.claude/scripts") / name
+             for name in ("code", "review", "telemetry", "lib", "tools", "gates")},
+            {"code": reloaded.CODE_DIR, "review": reloaded.REVIEW_DIR, "telemetry": reloaded.TELEMETRY_DIR,
+             "lib": reloaded.LIB_DIR, "tools": reloaded.TOOLS_DIR, "gates": reloaded.GATES_DIR},
+        )
 
 
 if __name__ == "__main__":

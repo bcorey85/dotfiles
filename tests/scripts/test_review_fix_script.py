@@ -8,7 +8,7 @@ import unittest
 import fake_ledger
 import toolkit_paths
 
-SCRIPT = pathlib.Path(os.environ.get("REVIEW_FIX_SCRIPT") or toolkit_paths.SCRIPTS_DIR / "review_fix.py")
+SCRIPT = pathlib.Path(os.environ.get("REVIEW_FIX_SCRIPT") or toolkit_paths.REVIEW_DIR / "review_fix.py")
 HANDBACK = SCRIPT.parent / "handback.py"
 SESSION = "11111111-aaaa-bbbb-cccc-222222222222"
 OTHER_SESSION = "99999999-aaaa-bbbb-cccc-888888888888"
@@ -163,8 +163,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet(CONVERGED)
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: render-and-finish", output)
-        self.assertIn("`~/.claude/scripts/review-gate-mark clean`", output)
-        self.assertNotIn("bash ~/.claude/scripts/review-gate-mark", output)
+        self.assertIn("`~/.claude/scripts/review/review-gate-mark clean`", output)
+        self.assertNotIn("bash ~/.claude/scripts/review/review-gate-mark", output)
         self.assertLess(output.index("[blocker] orders query lacked"), output.index("unused import"))
         self.assertIn("Class closure: enumerated every query", output)
         self.assertIn("### Skipped as false positives", output)
@@ -518,7 +518,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 2, output)
         self.assertIn("ACTION: stop-parse-failure", output)
         self.assertIn(expected, output)
-        self.assertIn("`~/.claude/scripts/review-gate-mark dirty`", output)
+        self.assertIn("`~/.claude/scripts/review/review-gate-mark dirty`", output)
         self.assertNotIn("render-and-finish", output)
         self.assertEqual(self.ledger_writes(), [])
 
@@ -745,7 +745,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet("")
         self.assertEqual(code, 2, output)
         self.assertIn("no review-loop dispatch on record", output)
-        self.assertIn("`~/.claude/scripts/review-gate-mark dirty`", output)
+        self.assertIn("`~/.claude/scripts/review/review-gate-mark dirty`", output)
 
     def test_another_sessions_hand_back_is_never_taken_as_current(self):
         self.seed(CONVERGED, session=OTHER_SESSION)

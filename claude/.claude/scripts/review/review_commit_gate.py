@@ -40,13 +40,13 @@ import json
 import os
 import posixpath
 import re
-import subprocess
 import sys
 import time
 
 _SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path[:0] = [_SCRIPT_DIR, os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
 import hook_input
+import script_utils
 from hook_input import JqError, jq_get, jq_str, truthy
 from shell_command import parse_simple_commands, redirection_writes_file, split_simple_commands
 
@@ -266,18 +266,6 @@ def command_pathspecs(command):
     return add_paths, commit_paths
 
 
-def git_output(cwd, *args):
-    """Standard output of `git -C cwd <args>`, or None when git fails, is missing or takes too long."""
-    try:
-        finished = subprocess.run(["git", "-C", cwd, *args], stdin=subprocess.DEVNULL, capture_output=True,
-                                  timeout=GIT_TIMEOUT_SECONDS)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if finished.returncode != 0:
-        return None
-    return finished.stdout.decode("utf-8", "replace")
-
-
 def is_notes_path(path):
     return path.startswith(DOCS_FOLDER) and path.endswith(NOTES_SUFFIX)
 
@@ -296,12 +284,12 @@ def ships_only_notes(command, cwd):
         return False
     add_paths, commit_paths = found
 
-    staged_output = git_output(cwd, "diff", "--cached", "--name-only", "--no-renames", "--no-relative", "-z")
-    prefix_output = git_output(cwd, "rev-parse", "--show-prefix")
-    if staged_output is None or prefix_output is None:
+    staged_output = script_utils.git_output(cwd, "diff", "--cached", "--name-only", "--no-renames", "--no-relative",
+                                            "-z", timeout=GIT_TIMEOUT_SECONDS)
+    prefix = script_utils.git_output(cwd, "rev-parse", "--show-prefix", timeout=GIT_TIMEOUT_SECONDS)
+    if staged_output is None or prefix is None:
         return False
 
-    prefix = prefix_output.rstrip("\n")
     shipped_paths = [path for path in staged_output.split("\0") if path]
     for pathspec in add_paths + commit_paths:
         if os.path.isdir(os.path.join(cwd, pathspec)):

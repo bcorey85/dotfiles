@@ -61,6 +61,19 @@ class CoderPacketTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn(f"no Phase {WHOLE_ID} heading in the plan", result.stderr)
 
+    def test_a_plan_outside_any_git_repository_stops_with_a_message(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        plan = pathlib.Path(outside.name) / "plan.md"
+        plan.write_text(PLAN_WITH_A_DOTTED_PHASE_FIRST)
+
+        result = subprocess.run([sys.executable, str(PACKET), str(plan), WHOLE_ID], cwd=outside.name, env=self.env,
+                                capture_output=True, text=True)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("is not inside a git repository", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

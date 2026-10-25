@@ -85,20 +85,15 @@ def run_command(command, cwd=None):
     return done.returncode, (done.stdout + done.stderr).strip()
 
 
-def git_output(*args):
-    code, output = run_command(["git", *args])
-    return output if code == 0 else None
-
-
 def repo_name():
-    root = git_output("rev-parse", "--show-toplevel")
+    root = script_utils.git_output(".", "rev-parse", "--show-toplevel")
     if root is None:
         raise UsageError("not inside a git repo")
     return pathlib.Path(root).name
 
 
 def review_fix_dir():
-    found = git_output("rev-parse", "--path-format=absolute", "--git-path", "review-fix")
+    found = script_utils.git_output(".", "rev-parse", "--path-format=absolute", "--git-path", "review-fix")
     if found is None:
         raise UsageError("not inside a git repo")
     return pathlib.Path(found)
@@ -394,7 +389,7 @@ def post_aikido_replies(packet, targets, state):
 # ---------- the packet ----------
 
 def code_step_state_path():
-    found = git_output("rev-parse", "--path-format=absolute", "--git-path", "code-step")
+    found = script_utils.git_output(".", "rev-parse", "--path-format=absolute", "--git-path", "code-step")
     return None if found is None else pathlib.Path(found) / "state.json"
 
 
@@ -462,7 +457,7 @@ def new_state(options, packet, packet_id):
         fixed_paths += [path for path in handback.entry_paths(item) if path not in fixed_paths]
     state = {"skill": options.skill, "scope": options.scope, "lane": options.lane, "iter": packet["iter"],
              "spec_iter": packet["spec_iter"], "status": packet["status"], "repo": repo_name(),
-             "branch": git_output("branch", "--show-current") or "-", "packet_id": packet_id,
+             "branch": script_utils.git_output(".", "branch", "--show-current") or "-", "packet_id": packet_id,
              "source": options.source, "fixed_paths": fixed_paths}
     if same_run:
         for key in (
@@ -688,7 +683,7 @@ def command_decide(argv):
     if options.by == "session":
         owner = "the session, not the user"
     else:
-        identity = git_output("var", "GIT_AUTHOR_IDENT") or ""
+        identity = script_utils.git_output(".", "var", "GIT_AUTHOR_IDENT") or ""
         owner = identity.split(" <")[0] or "user"
     today = datetime.date.today().isoformat()
     finding = one_line(state["plan_impact"], 300)

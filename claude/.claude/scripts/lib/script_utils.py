@@ -130,6 +130,21 @@ def run_process(command, cwd, stdin=None, timeout=None):
     return process.returncode, stdout, stderr
 
 
+def git_output(cwd, *args, timeout=None):
+    """Standard output of `git <args>` run in cwd, without its trailing newlines, or None when git fails, is missing or
+    takes longer than `timeout` seconds. A warning on stderr never becomes part of the answer. Paths come back as
+    they are: quoting is off, and bytes that are not UTF-8 decode as os.fsdecode does, so os.fsencode gives them
+    back."""
+    try:
+        finished = subprocess.run(["git", "-c", "core.quotepath=false", *args], cwd=cwd, stdin=subprocess.DEVNULL,
+                                  capture_output=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if finished.returncode != 0:
+        return None
+    return os.fsdecode(finished.stdout).rstrip("\n")
+
+
 def run_retrying(argv, retry_exit_codes, attempts, backoff_seconds, timeout_seconds, sleep=time.sleep, **run_kwargs):
     """Run argv with captured text output, at most `attempts` times, and return the last CompletedProcess. A run is
     tried again, after sleeping backoff_seconds times the number of runs so far, when its exit code is in
@@ -384,14 +399,10 @@ def inside_git_work_tree(path, timeout_seconds=2):
     Asks `git rev-parse --is-inside-work-tree` from the nearest existing folder. When git cannot run, does not
     answer in time or exits with an error, looks for a .git entry in that folder or a parent instead."""
     folder = _nearest_existing_folder(path)
-    try:
-        done = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=folder, stdin=subprocess.DEVNULL,
-                              capture_output=True, text=True, timeout=timeout_seconds)
-    except (OSError, subprocess.SubprocessError):
+    answer = git_output(folder, "rev-parse", "--is-inside-work-tree", timeout=timeout_seconds)
+    if answer is None:
         return _has_git_entry_above(folder)
-    if done.returncode != 0:
-        return _has_git_entry_above(folder)
-    return done.stdout.strip() == "true"
+    return answer.strip() == "true"
 
 
 def _is_bare_repo(folder):

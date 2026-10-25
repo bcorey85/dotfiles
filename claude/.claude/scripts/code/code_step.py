@@ -88,7 +88,6 @@ from code_step_core import (
     emit,
     emit_dispatch,
     file_hashes,
-    git_output,
     head_commit,
     load_handback,
     load_state,
@@ -122,6 +121,7 @@ from code_step_hooks import (
     command_say_hook,
     command_stop_hook,
 )
+from script_utils import git_output
 
 PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
 DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}

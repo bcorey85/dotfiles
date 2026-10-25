@@ -12,7 +12,8 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / "lib")]
 import plan_format
 import script_utils
 
-CLAUDE_HOME = pathlib.Path.home() / ".claude"
+TOOLKIT_DIR = pathlib.Path(__file__).resolve().parents[2]
+STATE_ROOT = pathlib.Path.home() / ".claude" / "state"
 REVIEW_MARKER = "verify-branch"
 REVIEW_GATE = "code-reviewer"
 # `ledger yield` waits up to 10 s on a locked database, then exits 75. A busy ledger is never read as "no review ran".
@@ -64,7 +65,7 @@ def git(args, cwd, check=True):
 
 
 def script_path(env_name, installed_relative):
-    return os.environ.get(env_name) or str(CLAUDE_HOME / installed_relative)
+    return os.environ.get(env_name) or str(TOOLKIT_DIR / installed_relative)
 
 
 # ---------- markdown parsing ----------
@@ -292,7 +293,7 @@ def review_ran(repo, branch, fingerprint):
 
 
 def context_path(repo, branch):
-    state_dir = pathlib.Path(os.environ.get("VERIFY_STATE_DIR") or CLAUDE_HOME / "state" / "verify-branch")
+    state_dir = pathlib.Path(os.environ.get("VERIFY_STATE_DIR") or STATE_ROOT / "verify-branch")
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", f"{repo}-{branch}")
     return state_dir / f"{safe}.json"
 

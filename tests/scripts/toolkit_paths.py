@@ -1,8 +1,10 @@
-"""Where the toolkit files under test live: the installed ~/.claude, or the folder TOOLKIT_CLAUDE_DIR names."""
+"""Where the toolkit files under test live: the claude/.claude folder of the tree these tests sit in, or the folder
+TOOLKIT_CLAUDE_DIR names."""
 import os
 import pathlib
 
-CLAUDE_DIR = pathlib.Path(os.environ.get("TOOLKIT_CLAUDE_DIR") or pathlib.Path.home() / ".claude")
+TREE_CLAUDE_DIR = pathlib.Path(__file__).resolve().parents[2] / "claude" / ".claude"
+CLAUDE_DIR = pathlib.Path(os.environ.get("TOOLKIT_CLAUDE_DIR") or TREE_CLAUDE_DIR)
 SCRIPTS_DIR = CLAUDE_DIR / "scripts"
 CODE_DIR = SCRIPTS_DIR / "code"
 REVIEW_DIR = SCRIPTS_DIR / "review"

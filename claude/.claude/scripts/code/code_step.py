@@ -32,7 +32,7 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
 
 One coder runs per phase. The current skill's two parallel coders for deliverables that share no file are dropped by
 design.
-Run from the repo root. State lives in <git dir>/code-step/. Env CODE_STEP_CLAUDE_DIR overrides ~/.claude.
+Run from the repo root. State lives in <git dir>/code-step/. Env CODE_STEP_CLAUDE_DIR overrides the toolkit folder.
 Each run also keeps <git dir>/code-step/runs/<run id>/events.jsonl and one prompt-<dispatch id>.txt per dispatch. The
 hooks write only that log; the verbs read it and write state.json.
 

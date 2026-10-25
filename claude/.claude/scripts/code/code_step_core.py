@@ -18,7 +18,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for
 import plan_format
 import script_utils
 
-CLAUDE_DIR = pathlib.Path(os.environ.get("CODE_STEP_CLAUDE_DIR", pathlib.Path.home() / ".claude"))
+CLAUDE_DIR = pathlib.Path(os.environ.get("CODE_STEP_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
 SCRIPTS_DIR = CLAUDE_DIR / "scripts"
 SELF_COMMAND = "python3 " + str(pathlib.Path(__file__).resolve().with_name("code_step.py"))
 INSTALLED_COMMAND = "python3 ~/.claude/scripts/code/code_step.py"

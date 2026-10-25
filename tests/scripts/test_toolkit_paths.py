@@ -17,11 +17,13 @@ class ToolkitPathsTest(unittest.TestCase):
             os.environ.update(environment)
             return importlib.reload(toolkit_paths)
 
-    def test_the_default_is_the_installed_claude_folder(self):
+    def test_the_default_is_the_toolkit_folder_of_the_tree_the_tests_sit_in(self):
+        tree_claude_dir = pathlib.Path(__file__).resolve().parents[2] / "claude" / ".claude"
+
         reloaded = self.reload_with_environment()
 
-        self.assertEqual(pathlib.Path.home() / ".claude", reloaded.CLAUDE_DIR)
-        self.assertEqual(pathlib.Path.home() / ".claude" / "scripts", reloaded.SCRIPTS_DIR)
+        self.assertEqual(tree_claude_dir, reloaded.CLAUDE_DIR)
+        self.assertEqual(tree_claude_dir / "scripts", reloaded.SCRIPTS_DIR)
 
     def test_the_environment_variable_points_the_tests_at_another_folder(self):
         reloaded = self.reload_with_environment(TOOLKIT_CLAUDE_DIR="/somewhere/else/.claude")
@@ -29,10 +31,12 @@ class ToolkitPathsTest(unittest.TestCase):
         self.assertEqual(pathlib.Path("/somewhere/else/.claude"), reloaded.CLAUDE_DIR)
         self.assertEqual(pathlib.Path("/somewhere/else/.claude/scripts"), reloaded.SCRIPTS_DIR)
 
-    def test_an_empty_environment_variable_falls_back_to_the_installed_folder(self):
+    def test_an_empty_environment_variable_falls_back_to_the_tree_folder(self):
+        tree_claude_dir = pathlib.Path(__file__).resolve().parents[2] / "claude" / ".claude"
+
         reloaded = self.reload_with_environment(TOOLKIT_CLAUDE_DIR="")
 
-        self.assertEqual(pathlib.Path.home() / ".claude", reloaded.CLAUDE_DIR)
+        self.assertEqual(tree_claude_dir, reloaded.CLAUDE_DIR)
 
     def test_the_scripts_folder_holds_the_shared_script_utilities(self):
         self.assertTrue((toolkit_paths.LIB_DIR / "script_utils.py").is_file())

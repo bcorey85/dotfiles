@@ -51,6 +51,7 @@ try:
 except ImportError:  # without the helpers each check keeps its stricter reading: it blocks where it could pass
     script_utils = None
 
+OWN_CLAUDE_DIR = pathlib.Path(__file__).resolve().parents[2]
 CODERS = re.compile(r"^(backend-|frontend-)?coder(-deep)?$")
 REVIEWERS = re.compile(r"^code-reviewer(-deep)?$")
 AGENT_ID = re.compile(r"agentId:\s*([A-Za-z0-9-]+)")
@@ -328,7 +329,7 @@ def write_run_row(hook, run, lane, phase):
     """True when log-review-finding wrote the row. It writes nothing while the telemetry switch is off, and it
     prints one stderr line for each skip. With no `ledger` on PATH the row goes to review-findings.jsonl, and the
     writer's stderr line is passed on."""
-    claude_dir = pathlib.Path(os.environ.get("REVIEW_LOOP_GATE_CLAUDE_DIR") or pathlib.Path.home() / ".claude")
+    claude_dir = pathlib.Path(os.environ.get("REVIEW_LOOP_GATE_CLAUDE_DIR") or OWN_CLAUDE_DIR)
     switch_script = claude_dir / "scripts" / "telemetry" / "telemetry_enabled.sh"
     if not switch_script.is_file():
         print(

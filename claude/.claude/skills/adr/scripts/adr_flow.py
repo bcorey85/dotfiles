@@ -35,14 +35,12 @@ import sys
 from datetime import date
 from pathlib import Path
 
-HOME = Path.home()
-sys.path.insert(0, str(HOME / ".claude" / "scripts" / "lib"))
+CLAUDE_DIR = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(CLAUDE_DIR / "scripts" / "lib"))
 import script_utils
 
-RESOLVE_SCRIPT = os.environ.get("ADR_RESOLVE_SCRIPT") or str(
-    HOME / ".claude" / "scripts" / "tools" / "resolve-task-dir.sh"
-)
-TEMPLATE_PATH = os.environ.get("ADR_TEMPLATE") or str(HOME / ".claude" / "skills" / "_shared" / "adr-template.md")
+RESOLVE_SCRIPT = os.environ.get("ADR_RESOLVE_SCRIPT") or str(CLAUDE_DIR / "scripts" / "tools" / "resolve-task-dir.sh")
+TEMPLATE_PATH = os.environ.get("ADR_TEMPLATE") or str(CLAUDE_DIR / "skills" / "_shared" / "adr-template.md")
 GH_COMMAND = os.environ.get("ADR_GH") or "gh"
 
 # Task-dir grammar, from every task dir under ~/dev: LED-0-telemetry-contract,

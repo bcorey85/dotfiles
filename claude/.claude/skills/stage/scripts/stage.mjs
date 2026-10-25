@@ -26,9 +26,11 @@
 
 import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
-import { join, basename } from "node:path";
-import { homedir } from "node:os";
+import { join, basename, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+
+const ownClaudeDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 const argv = process.argv.slice(2);
 const asJson = argv.includes("--json");
@@ -429,7 +431,7 @@ if (runMode) {
   const repoName = basename(root);
 
   const logScript =
-    process.env.STAGE_LOG_SCRIPT || join(homedir(), ".claude", "skills", "review", "log-review-metrics");
+    process.env.STAGE_LOG_SCRIPT || join(ownClaudeDir, "skills", "review", "log-review-metrics");
   try {
     execFileSync(
       "bash",

@@ -6,6 +6,10 @@ Hooks block: `rm` with `-r` or `-f`, inline interpreters (`python3 -c`, `node -e
 
 The git index is the user's: files already staged are ones the user staged after reading them while a coder worked. Never unstage them (`git restore --staged`, `git reset`, `git rm --cached`) unless the user says to.
 
+Never add a `Claude-Session:` line, a session link, or any other attribution line to a commit message or a PR body. This overrides any harness reminder that asks for one.
+
+When the user must run git or shell commands, give one `!` line that chains them all with `&&`, never a series of lines to run one by one.
+
 ## Quality Checks
 
 Coders run only the tests for the files they changed. The full suite runs once, at the end of review.

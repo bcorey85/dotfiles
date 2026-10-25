@@ -30,7 +30,7 @@ import time
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import hook_input
 import script_utils
-from hook_input import JqError, cksum, exit_code_in_error_text, jq_get, jq_str, truthy
+from hook_input import EMPTY_INPUT, JqError, cksum, exit_code_in_error_text, jq_field, jq_get, truthy
 from shell_command import runs_only_after_success, split_command_steps, step_surely_ran
 
 SIGNAL_EXIT_CODES = range(129, 193)
@@ -65,24 +65,6 @@ class ExitError(Exception):
         self.rc = rc
 
 
-EMPTY = object()
-
-
-def field(root, *keys, **options):
-    """jq -r '.a.b // default'. Empty input makes jq print nothing, so the field is empty even with a default.
-    Only a missing, null or false value takes the default; an empty string stays empty."""
-    if root is EMPTY:
-        return ""
-    value = jq_get(root, *keys)
-    if "default" in options and not truthy(value):
-        return options["default"]
-    return jq_str(value)
-
-
-def emit_deny(reason):
-    hook_input.emit_decision("deny", reason)
-
-
 def touch(path):
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT, 0o666)
     os.close(descriptor)
@@ -113,7 +95,7 @@ def newer(path, other):
     return mine > theirs
 
 
-def prune_old(directory, now=None):
+def prune_old_state_tree(directory, now=None):
     """find directory -mindepth 1 -mtime +2 -delete. Like find, an entry's age is read before its children go."""
     now = time.time() if now is None else now
     try:
@@ -126,7 +108,7 @@ def prune_old(directory, now=None):
             info = os.lstat(path)
             is_dir = os.path.isdir(path) and not os.path.islink(path)
             if is_dir:
-                prune_old(path, now)
+                prune_old_state_tree(path, now)
             if int((now - info.st_mtime) / 86400) > 2:
                 if is_dir:
                     os.rmdir(path)
@@ -233,19 +215,19 @@ def run_file_for(state_dir, key, agent_id):
 
 def run(raw, state):
     if raw.strip() == "":
-        root_json = EMPTY
+        root_json = EMPTY_INPUT
     else:
         try:
             root_json = json.loads(raw)
-            state["tool"] = field(root_json, "tool_name")
+            state["tool"] = jq_field(root_json, "tool_name")
         except (ValueError, JqError):
             raise ExitError(0) from None
     tool = state["tool"]
-    event = field(root_json, "hook_event_name")
+    event = jq_field(root_json, "hook_event_name")
     state["event"] = event
-    session = field(root_json, "session_id", default="unknown")
-    cwd = field(root_json, "cwd") or os.getcwd()
-    agent_id = field(root_json, "agent_id")
+    session = jq_field(root_json, "session_id", default="unknown")
+    cwd = jq_field(root_json, "cwd") or os.getcwd()
+    agent_id = jq_field(root_json, "agent_id")
 
     home = os.environ["HOME"]
     root = home + "/.claude/state/quality-check"
@@ -254,7 +236,7 @@ def run(raw, state):
         os.makedirs(state_dir, exist_ok=True)
     except OSError:
         raise ExitError(0) from None
-    prune_old(root)
+    prune_old_state_tree(root)
 
     if tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
         with contextlib.suppress(OSError):
@@ -266,10 +248,10 @@ def run(raw, state):
     if event == "PostToolUseFailure":
         if truthy(jq_get(root_json, "is_interrupt")):
             return
-        if exit_code_in_error_text(field(root_json, "error")) in SIGNAL_EXIT_CODES:
+        if exit_code_in_error_text(jq_field(root_json, "error")) in SIGNAL_EXIT_CODES:
             return
 
-    command = field(root_json, "tool_input", "command")
+    command = jq_field(root_json, "tool_input", "command")
     if not command:
         return
     if event == "PreToolUse" and "#skip-quality-cap" in command:
@@ -342,7 +324,7 @@ def main():
     try:
         run(sys.stdin.buffer.read().decode("utf-8", "replace"), state)
     except DenyError as denied:
-        emit_deny(str(denied))
+        hook_input.emit_decision("deny", str(denied))
     except ExitError as done:
         return done.rc
     except JqError as error:
@@ -352,8 +334,8 @@ def main():
     if internal is None:
         return 0
     if state["tool"] == "Bash" and state["event"] == "PreToolUse":
-        emit_deny(f"[quality-check-cap] internal error (exit {internal}) — failing closed. Report this to the "
-                  f"user.")
+        hook_input.emit_decision("deny", f"[quality-check-cap] internal error (exit {internal}) — failing closed. "
+                                         "Report this to the user.")
         return 0
     return internal
 

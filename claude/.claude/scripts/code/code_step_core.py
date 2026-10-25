@@ -42,18 +42,9 @@ HOOK_STAGES = ("coder", "review", "asks-coder", "plan-coder")
 CODER_STAGES = ("coder", "asks-coder")
 FORK_AGENT_TYPE = "general-purpose"
 SAY_MAX_AGE_SECONDS = 6 * 3600
-TIMEOUT_EXIT_CODE = 124
 
 
 # ---------- git and state file ----------
-
-def run_command(command, cwd, stdin=None, timeout=None):
-    code, stdout, stderr = script_utils.run_process(command, cwd, stdin=stdin, timeout=timeout)
-    if code is None:
-        tail = (stdout + stderr).strip()
-        return TIMEOUT_EXIT_CODE, (tail + f"\ntimed out after {timeout} seconds").strip()
-    return code, (stdout + stderr).strip()
-
 
 def git_names(cwd, *args):
     # Names from a git command that takes -z: a name with a non-ASCII or special character comes back as it is.
@@ -61,11 +52,11 @@ def git_names(cwd, *args):
     return [name for name in (output or "").split("\0") if name]
 
 
-def repo_root():
-    root = git_output(os.getcwd(), "rev-parse", "--show-toplevel")
+def repo_root_or_exit():
+    root = script_utils.repo_root(os.getcwd())
     if root is None:
         sys.exit("code-step: not inside a git repo")
-    return pathlib.Path(root)
+    return root
 
 
 def state_dir(cwd):
@@ -90,8 +81,9 @@ def load_state(cwd):
         raise StateFileError(f"{state_file} is not readable JSON") from None
 
 
-def current_branch(cwd):
-    return git_output(cwd, "branch", "--show-current") or "-"
+def branch_label(cwd):
+    # The branch name for a log row: "-" on a detached HEAD or when git fails.
+    return script_utils.current_branch(cwd) or "-"
 
 
 def save_state(cwd, state):

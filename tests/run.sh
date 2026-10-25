@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Lints first (ruff with the rules in ruff.toml fails the run, C901 only reports), then checks for new duplicate code
+# Lints first (ruff with the rules in ruff.toml fails the run, C901 only reports), then checks for any duplicate code
 # (tests/duplicate_code.py), then runs every unit test under tests/, one process per test
 # file, nproc at a time. The tests run even when the lint fails. Exits non-zero on any failure.
 set -euo pipefail

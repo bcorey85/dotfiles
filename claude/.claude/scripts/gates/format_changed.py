@@ -11,13 +11,15 @@ CLAUDE_SKIP_HOOKS set to any non-empty value exits 0. Snapshots live in ~/.claud
 snapshots older than 2 days are deleted on every run.
 """
 import contextlib
-import json
 import locale
 import os
 import shutil
 import subprocess
 import sys
-import time
+
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import hook_input
+import script_utils
 
 LINT_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".vue")
 FORMAT_ONLY_SUFFIXES = (".json", ".css", ".scss", ".md")
@@ -25,79 +27,10 @@ OPERATION_MARKERS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-me
                      "SQUASH_MSG", "MERGE_MSG")
 
 
-def build_crc_table():
-    table = []
-    for byte in range(256):
-        value = byte << 24
-        for _ in range(8):
-            value = (value << 1 ^ 79764919) & 4294967295 if value & 2147483648 else value << 1 & 4294967295
-        table.append(value)
-    return table
-
-
-CRC_TABLE = build_crc_table()
-
-
-def cksum(data):
-    """POSIX cksum of bytes, as printed in the first column."""
-    crc = 0
-    for byte in data:
-        crc = ((crc << 8) & 0xFFFFFFFF) ^ CRC_TABLE[((crc >> 24) ^ byte) & 0xFF]
-    length = len(data)
-    while length:
-        crc = ((crc << 8) & 0xFFFFFFFF) ^ CRC_TABLE[((crc >> 24) ^ length) & 0xFF]
-        length >>= 8
-    return (~crc) & 0xFFFFFFFF
-
-
-def raw_text(value):
-    if isinstance(value, str):
-        return value
-    if value is True:
-        return "true"
-    if value is False:
-        return "false"
-    if value is None:
-        return "null"
-    if isinstance(value, (list, dict)):
-        return json.dumps(value, indent=2, ensure_ascii=False)
-    return json.dumps(value)
-
-
-def parse_documents(text):
-    decoder = json.JSONDecoder()
-    documents = []
-    position = 0
-    length = len(text)
-    while True:
-        while position < length and text[position] in " \t\r\n":
-            position += 1
-        if position >= length:
-            return documents
-        document, position = decoder.raw_decode(text, position)
-        documents.append(document)
-
-
-def field(documents, key):
-    """`jq -r '.key // ""'` over every document, as a shell variable holds it."""
-    pieces = []
-    for document in documents:
-        if document is None:
-            value = None
-        elif isinstance(document, dict):
-            value = document.get(key)
-        else:
-            raise ValueError(key)
-        if value is None or value is False:
-            value = ""
-        pieces.append(raw_text(value))
+def event_field(documents, key):
+    """`jq -r '.key // ""'` over every document, as a shell variable holds it. Raises JqError on a non-object."""
+    pieces = [hook_input.jq_str(hook_input.index(document, key)) for document in documents]
     return "\n".join(pieces).rstrip("\n")
-
-
-def run_git(arguments):
-    finished = subprocess.run(["git", *arguments], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                              stderr=subprocess.DEVNULL)
-    return finished.stdout.decode("utf-8", "surrogateescape")
 
 
 def collation_key(path):
@@ -114,42 +47,22 @@ def dirty_hashes():
         ["diff", "--name-only", "--diff-filter=d", "HEAD"],
         ["ls-files", "--others", "--exclude-standard"],
     ):
-        try:
-            output = run_git(arguments)
-        except OSError:
-            continue
+        output = script_utils.git_output(".", *arguments) or ""
         for line in output.split("\n"):
             if line != "":
                 names.add(line)
     existing = [name for name in sorted(names, key=collation_key) if os.path.isfile(name)]
     if not existing:
         return []
-    try:
-        hashes = run_git(["hash-object", "--", *existing]).split("\n")
-    except OSError:
-        hashes = []
-    if hashes and hashes[-1] == "":
-        hashes.pop()
+
+    hash_output = script_utils.git_output(".", "hash-object", "--", *existing)
+    hashes = hash_output.split("\n") if hash_output else []
     lines = []
     for position in range(max(len(hashes), len(existing))):
         digest = hashes[position] if position < len(hashes) else ""
         name = existing[position] if position < len(existing) else ""
         lines.append(f"{digest} {name}")
     return lines
-
-
-def remove_old_snapshots(state_dir):
-    now = time.time()
-    for directory, _, names in os.walk(state_dir):
-        for name in names:
-            path = os.path.join(directory, name)
-            try:
-                if os.path.islink(path) or not os.path.isfile(path):
-                    continue
-                if int((now - os.stat(path).st_mtime) // 86400) > 2:
-                    os.unlink(path)
-            except OSError:
-                pass
 
 
 def run_quiet(command):
@@ -184,11 +97,11 @@ def main():
         return 0
     try:
         text = sys.stdin.buffer.read().decode("utf-8", "replace").rstrip("\n")
-        documents = parse_documents(text)
-        event = field(documents, "hook_event_name")
-        session = field(documents, "session_id")
-        cwd = field(documents, "cwd")
-    except ValueError:
+        documents = hook_input.parse_documents(text)
+        event = event_field(documents, "hook_event_name")
+        session = event_field(documents, "session_id")
+        cwd = event_field(documents, "cwd")
+    except (ValueError, hook_input.JqError):
         return 0
     if session == "":
         return 0
@@ -198,14 +111,10 @@ def main():
     with contextlib.suppress(locale.Error):
         locale.setlocale(locale.LC_COLLATE, "")
 
-    try:
-        finished = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel", "--absolute-git-dir"],
-                                  stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    except OSError:
+    repo_dirs = script_utils.git_output(".", "-C", cwd, "rev-parse", "--show-toplevel", "--absolute-git-dir")
+    if repo_dirs is None:
         return 0
-    if finished.returncode != 0:
-        return 0
-    root, _, git_dir = finished.stdout.decode("utf-8", "surrogateescape").rstrip("\n").rpartition("\n")
+    root, _, git_dir = repo_dirs.rpartition("\n")
     try:
         os.chdir(root)
     except OSError:
@@ -216,8 +125,9 @@ def main():
         os.makedirs(state_dir, exist_ok=True)
     except OSError:
         return 0
-    remove_old_snapshots(state_dir)
-    snapshot = f"{state_dir}/{session}-{cksum(os.fsencode(root))}"
+    hook_input.prune_old_state_files(state_dir)
+    root_checksum = hook_input.cksum(os.fsencode(root))
+    snapshot = f"{state_dir}/{session}-{root_checksum}"
 
     if event == "UserPromptSubmit":
         lines = dirty_hashes()

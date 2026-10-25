@@ -13,20 +13,15 @@ import os
 import re
 import sys
 
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+from hook_input import read_file_text
+
 BOLD = re.compile(r"\*\*([^*]*)\*\*")
 REVIEWER_AGENT = re.compile(r".*reviewer.*\.md", re.S)
 
 REPORT_TAIL = ("A reviewer told to adopt a heading that does not exist gets that section only by\n"
                "accident, through \"adopt in full\". Update every agent that names the heading, or\n"
                "restore the heading, before moving on.\n")
-
-
-def read_text(path):
-    try:
-        with open(path, "rb") as handle:
-            return handle.read().decode("utf-8", "surrogateescape")
-    except OSError:
-        return None
 
 
 def is_watched(path, agents_dir):
@@ -77,12 +72,12 @@ def check(raw):
     if not os.path.isfile(calibration_path):
         return
 
-    calibration = read_text(calibration_path)
+    calibration = read_file_text(calibration_path)
     calibration_lower = None if calibration is None else calibration.lower()
 
     missing = ""
     for name, agent_path in reviewer_agents(agents_dir):
-        agent_text = read_text(agent_path) or ""
+        agent_text = read_file_text(agent_path) or ""
         for heading in named_headings(agent_text):
             if not heading:
                 continue

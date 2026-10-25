@@ -12,11 +12,11 @@ Denies with PreToolUse decision JSON. Fails closed on internal error.
 import json
 import os
 import re
-import subprocess
 import sys
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import hook_input
+import script_utils
 from hook_input import JqError, jq_get, jq_str
 
 S =r"[ \t\r\f\v]+"
@@ -33,27 +33,12 @@ class DenyError(Exception):
     pass
 
 
-def emit_deny(reason):
-    hook_input.emit_decision("deny", reason)
-
-
 def command_of(raw):
     """`jq -r '.tool_input.command // ""'` with trailing newlines dropped. Raises on input jq rejects."""
     if raw.strip() == "":
         return ""
     payload = json.loads(raw)
     return jq_str(jq_get(payload, "tool_input", "command"))
-
-
-def current_branch():
-    try:
-        finished = subprocess.run(["git", "symbolic-ref", "--short", "-q", "HEAD"], stdout=subprocess.PIPE,
-                                  stderr=subprocess.DEVNULL)
-    except OSError:
-        return ""
-    if finished.returncode != 0:
-        return ""
-    return finished.stdout.decode("utf-8", "replace").rstrip("\n")
 
 
 def is_direct_edit_repo():
@@ -74,7 +59,7 @@ def run(raw):
     if not command:
         return
 
-    branch = current_branch()
+    branch = script_utils.current_branch(".") or ""
 
     if STASH.search(command) and not STASH_READ.search(command):
         raise DenyError("[git-discipline-gate] git stash is blocked: it breaks parallel-agent work and resets staged "
@@ -105,11 +90,12 @@ def main():
     try:
         run(sys.stdin.buffer.read().decode("utf-8", "replace"))
     except DenyError as denied:
-        emit_deny(str(denied))
+        hook_input.emit_decision("deny", str(denied))
     except Exception:
         internal = True
     if internal:
-        emit_deny("[git-discipline-gate] internal error (exit 1) — failing closed. Report this to the user.")
+        hook_input.emit_decision("deny", "[git-discipline-gate] internal error (exit 1) — failing closed. "
+                                         "Report this to the user.")
     return 0
 
 

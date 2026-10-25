@@ -47,11 +47,7 @@ def word_count(text):
 
 
 def read_text(path):
-    try:
-        with open(path, "rb") as handle:
-            return handle.read().decode("utf-8", "replace")
-    except OSError:
-        return ""
+    return hook_input.read_file_text(path, "replace") or ""
 
 
 def words_in_file(path):
@@ -121,13 +117,10 @@ def check(raw):
     if os.environ.get("CLAUDE_SKIP_HOOKS"):
         return
     payload = json.loads(raw)
-    tool_input = payload.get("tool_input") if isinstance(payload, dict) else None
-    if not isinstance(tool_input, dict):
+    tool_input = hook_input.tool_input_of(payload)
+    if tool_input is None:
         return
-    file_path = tool_input.get("file_path")
-    if file_path is None or file_path is False:
-        return
-    file_path = file_path.rstrip("\n") if isinstance(file_path, str) else json.dumps(file_path)
+    file_path = hook_input.edited_file_path(tool_input)
     if not file_path or not guarded_target(file_path):
         return
     base = tree_base(file_path)

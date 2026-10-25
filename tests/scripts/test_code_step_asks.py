@@ -173,9 +173,9 @@ class ReviewFixLogAskOutcome(unittest.TestCase):
         self.state.update({"stage": "asks", "asks": [ask_item(finding_id=None),
                                                       ask_item(finding_id="1111111111111111"),
                                                       ask_item(finding_id="2222222222222222")]})
-        original = (review_fix.load_state, review_fix.save_state)
-        review_fix.load_state = lambda: self.state
-        review_fix.save_state = lambda state: None
+        original = (review_fix.load_fix_state, review_fix.save_fix_state)
+        review_fix.load_fix_state = lambda: self.state
+        review_fix.save_fix_state = lambda state: None
         outputs = []
         try:
             for _ in range(2):
@@ -185,7 +185,7 @@ class ReviewFixLogAskOutcome(unittest.TestCase):
                     review_fix.command_asks_done(["accepted", "accepted", "accepted"])
                 outputs.append(out.getvalue())
         finally:
-            review_fix.load_state, review_fix.save_state = original
+            review_fix.load_fix_state, review_fix.save_fix_state = original
 
         self.assertIn("Logged 2 of 3", outputs[0])
         self.assertIn("Logged 2 of 3", outputs[1])

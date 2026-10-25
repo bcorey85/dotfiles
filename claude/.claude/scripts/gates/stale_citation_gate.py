@@ -10,10 +10,10 @@ import contextlib
 import json
 import os
 import re
-import subprocess
 import sys
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import script_utils
 from hook_input import emit_stderr
 
 DOC_SUFFIXES = (".md", ".markdown", ".rst", ".txt")
@@ -54,18 +54,6 @@ def read_lines(path):
             return handle.read().decode("utf-8", "surrogateescape").split("\n")
     except OSError:
         return []
-
-
-def repo_root(file_path):
-    directory = os.path.dirname(file_path) or "."
-    try:
-        finished = subprocess.run(["git", "-C", directory, "rev-parse", "--show-toplevel"],
-                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    except OSError:
-        return ""
-    if finished.returncode != 0:
-        return ""
-    return finished.stdout.decode("utf-8", "surrogateescape").rstrip("\n")
 
 
 def citations_in(lines):
@@ -141,9 +129,10 @@ def check(raw):
     if not file_path or not os.path.isfile(file_path):
         return
 
-    root = repo_root(file_path)
-    if not root:
+    top = script_utils.repo_root(os.path.dirname(file_path) or ".")
+    if top is None:
         return
+    root = str(top)
     if any(part in file_path for part in SKIPPED_PATH_PARTS) or file_path.endswith(SKIPPED_SUFFIXES):
         return
     relative_path = file_path[len(root) + 1:] if file_path.startswith(root + "/") else file_path

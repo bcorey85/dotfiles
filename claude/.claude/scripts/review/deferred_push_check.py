@@ -22,9 +22,9 @@ import sys
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent / "lib"))
+import script_utils
 from shell_statements import statements
 
-REPO_NAME_SCRIPT = SCRIPT_DIR.parent / "tools" / "repo-name"
 DEFAULT_FINDINGS_FILE = pathlib.Path.home() / ".claude" / "review-findings.jsonl"
 LISTED_CLASSES = {"bug", "correctness"}
 MAX_FINDINGS = 20
@@ -64,17 +64,6 @@ def run_git(cwd, *args):
     # Returns (exit code, stdout); stderr is dropped.
     finished = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=GIT_TIMEOUT_SECONDS)
     return finished.returncode, finished.stdout
-
-
-def repo_name(cwd):
-    finished = subprocess.run([str(REPO_NAME_SCRIPT)], cwd=cwd, capture_output=True, text=True,
-                              timeout=GIT_TIMEOUT_SECONDS)
-    return finished.stdout.strip()
-
-
-def current_branch(cwd):
-    code, out = run_git(cwd, "rev-parse", "--abbrev-ref", "HEAD")
-    return out.strip() if code == 0 else None
 
 
 def read_rows(path):
@@ -173,11 +162,11 @@ def main():
         if not isinstance(command, str) or not is_trigger(command):
             sys.exit(0)
         cwd = payload.get("cwd") or os.getcwd()
-        branch = current_branch(cwd)
+        branch = script_utils.current_branch(cwd, timeout=GIT_TIMEOUT_SECONDS)
         if not branch:
             sys.exit(0)
         findings_file = os.environ.get("REVIEW_FINDINGS_FILE") or DEFAULT_FINDINGS_FILE
-        candidates = branch_findings(read_rows(findings_file), repo_name(cwd), branch)
+        candidates = branch_findings(read_rows(findings_file), script_utils.repo_name(cwd), branch)
         unchanged = [row for row in candidates if code_unchanged(cwd, row)]
         if unchanged:
             sys.stdout.write(json.dumps({"hookSpecificOutput": {

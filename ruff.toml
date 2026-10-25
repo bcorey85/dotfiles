@@ -6,6 +6,7 @@ include = [
     "claude/.claude/scripts/review/verify-prep",
     "claude/.claude/skills/*/scripts/*.py",
     "tests/scripts/**/*.py",
+    "tests/duplicate_code.py",
 ]
 extend-exclude = ["claude/.claude/skills/synced", "claude/.claude/skills/herdr", "claude/.claude/skills/tuios"]
 

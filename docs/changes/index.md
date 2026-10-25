@@ -24,6 +24,7 @@ okf_version: "0.2"
 
 # 2026-10-25
 
+* [Fail the toolkit test run on new duplicate code](2026-10-25-fail-the-toolkit-test-run-on-new-duplicate-code.md) - tests/run.sh now runs tests/duplicate_code.py, which fails when a toolkit script defines a top-level function name another script already defines, or when jscpd finds a new token clone; today's repeats sit in a baseline that may only shrink.
 * [Coder hand-back gate lists stale comment and doc lines](2026-10-25-coder-hand-back-gate-lists-stale-comment-and-doc.md) - The coder's hand-back gate on every plan phase runs stale_prose.py, which lists the comment and doc lines that name a symbol the diff renamed, removed or changed, so the coder fixes stale prose before review.
 * [Read git output through one shared lib function](2026-10-25-read-git-output-through-one-shared-lib-function.md) - Six toolkit scripts and one lib helper each ran git through their own git_output copy; they now all call script_utils.git_output, which drops stderr, turns path quoting off, keeps non-UTF-8 names and takes an optional timeout.
 * [Own-branch /peer-review catches log as peer-review escapes; each run logs own-branch or teammate](2026-10-25-own-branch-peer-review-catches-log-as-peer-review.md) - /escape gains a peer-review stage; /peer-review logs one row per run saying whether the PR is the user's own, and on an own-branch run hands each kept defect to /escape.

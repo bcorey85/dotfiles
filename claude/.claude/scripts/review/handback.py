@@ -40,6 +40,7 @@ ITEM_KEYS = [
     "file_line",
     "blocker",
     "question",
+    "change",
     "gate",
     "class",
     "reason",
@@ -356,6 +357,9 @@ def validate(raw):
             problems.append(f"ask entry has no question: {one_line(item, 80)!r}")
         elif not item.get("file_line") and not item.get("from_text"):
             problems.append(f"ask entry has no file_line: {one_line(item.get('question'), 80)!r}")
+        elif not item.get("change") and not item.get("from_text"):
+            problems.append(f"ask entry has no change, the one edit an accepted answer makes: "
+                            f"{one_line(item.get('question'), 80)!r}")
     if status == "plan-impact" and not packet["plan_impact"]:
         problems.append("status is plan-impact but plan_impact is empty")
     if status == "critical-blocker" and not packet["blockers"]:

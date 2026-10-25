@@ -230,6 +230,43 @@ class RunProcessTest(unittest.TestCase):
         self.assertFalse(marker.exists())
 
 
+class GitOutputTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.repo = pathlib.Path(folder.name)
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+
+    def test_stdout_comes_back_without_its_trailing_newline(self):
+        top = script_utils.git_output(self.repo, "rev-parse", "--show-toplevel")
+        self.assertEqual(str(self.repo.resolve()), top)
+
+    def test_stderr_of_a_command_that_succeeds_is_not_part_of_the_answer(self):
+        self.assertEqual("", script_utils.git_output(self.repo, "checkout", "-q", "-b", "topic"))
+        self.assertEqual("", script_utils.git_output(self.repo, "checkout", "-b", "other"))
+
+    def test_a_failing_command_a_folder_outside_any_repo_and_a_missing_folder_give_none(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+
+        self.assertIsNone(script_utils.git_output(self.repo, "rev-parse", "--verify", "-q", "HEAD"))
+        self.assertIsNone(script_utils.git_output(outside.name, "rev-parse", "--show-toplevel"))
+        self.assertIsNone(script_utils.git_output(self.repo / "missing", "status"))
+
+    def test_a_non_ascii_name_comes_back_unquoted(self):
+        (self.repo / "café.txt").write_text("x\n")
+        self.assertEqual("café.txt", script_utils.git_output(self.repo, "ls-files", "--others"))
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "only Linux file systems take a name that is not UTF-8")
+    def test_a_name_that_is_not_utf8_round_trips_through_fsencode(self):
+        name = b"caf\xe9.txt"
+        (self.repo / os.fsdecode(name)).write_text("x\n")
+
+        listing = script_utils.git_output(self.repo, "ls-files", "--others", "-z")
+
+        self.assertEqual(name + b"\0", os.fsencode(listing))
+
+
 class JoinedDistinctTest(unittest.TestCase):
     def test_equal_values_appear_once_and_empty_values_are_dropped(self):
         self.assertEqual("Q? (a.ts:3)", script_utils.joined_distinct(["Q? (a.ts:3)", "", "Q? (a.ts:3)"]))

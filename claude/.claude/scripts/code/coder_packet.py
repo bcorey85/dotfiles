@@ -8,7 +8,6 @@ the rules tell the coder not to run checks."""
 import json
 import pathlib
 import re
-import subprocess
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
@@ -22,11 +21,6 @@ PYTHON_IMPORT = re.compile(r"^from\s+(\.+)([\w.]*)\s+import", re.MULTILINE)
 SCRIPT_SUFFIXES = [".ts", ".tsx", ".mts", ".js", ".jsx", ".mjs"]
 TEST_HELPER_DIRECTORY = re.compile(r"test|fixture|factor", re.IGNORECASE)
 TEST_FILE = re.compile(r"\.(test|spec)\.|^test_|_test\.py$")
-
-
-def git_output(cwd, *args):
-    found = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True)
-    return found.stdout.strip()
 
 
 def phase_bounds(plan_lines, phase_number):
@@ -155,7 +149,10 @@ def bullet_list(paths, repo_root):
 
 plan = pathlib.Path(sys.argv[1]).resolve()
 phase_argument = sys.argv[2]
-repository_root = pathlib.Path(git_output(plan.parent, "rev-parse", "--show-toplevel"))
+repository_root_text = script_utils.git_output(plan.parent, "rev-parse", "--show-toplevel")
+if repository_root_text is None:
+    sys.exit(f"coder-packet: {plan} is not inside a git repository")
+repository_root = pathlib.Path(repository_root_text)
 plan_file_lines = plan.read_text().splitlines()
 
 plan_headings, phase_start, phase_end, first_phase_line = phase_bounds(plan_file_lines, phase_argument)
@@ -203,7 +200,10 @@ criteria = plan.parent / "acceptance-criteria.md"
 if criteria.is_file():
     plan_ranges.append(f"- {criteria.relative_to(repository_root)} (the requirements list)")
 
-gate_path = git_output(repository_root, "rev-parse", "--path-format=absolute", "--git-path", "coder-gate.json")
+gate_path = script_utils.git_output(repository_root, "rev-parse", "--path-format=absolute", "--git-path",
+                                    "coder-gate.json")
+if gate_path is None:
+    sys.exit(f"coder-packet: git cannot name the coder gate file in {repository_root}")
 if pathlib.Path(gate_path).exists():
     check_rule = (
         "4. Do not run typecheck, lint, tests or any other check. When you call SubagentHandback, a hook runs "

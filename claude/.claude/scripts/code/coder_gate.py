@@ -78,15 +78,8 @@ FILES_PLACEHOLDER = re.compile(r"\{files(?::([^{}]*))?\}")
 ENV_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 
 
-def git_output(cwd, *args):
-    found = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
-    if found.returncode != 0:
-        return None
-    return found.stdout.strip()
-
-
 def gate_path(cwd):
-    git_path = git_output(cwd, "rev-parse", "--path-format=absolute", "--git-path", "coder-gate.json")
+    git_path = script_utils.git_output(cwd, "rev-parse", "--path-format=absolute", "--git-path", "coder-gate.json")
     if git_path is None:
         return None
     return pathlib.Path(git_path)
@@ -308,7 +301,7 @@ def set_gate(commands, gate_assignments=()):
         sys.exit("coder-gate: set needs at least one command")
 
     # The gate runs each command from the repo root, so the commands are judged from there.
-    repo_root = git_output(".", "rev-parse", "--show-toplevel")
+    repo_root = script_utils.git_output(".", "rev-parse", "--show-toplevel")
     if repo_root is None:
         sys.exit("coder-gate: set must run inside a git work tree")
     refused_lines = []
@@ -362,8 +355,9 @@ def command_directory(command, repo_root):
 
 def changed_files(directory):
     # Tracked changes against HEAD, deletions excluded, plus untracked files, all relative to directory.
-    tracked_files = git_output(directory, "diff", "--name-only", "--relative", "--diff-filter=d", "HEAD") or ""
-    untracked_files = git_output(directory, "ls-files", "--others", "--exclude-standard") or ""
+    tracked_files = script_utils.git_output(directory, "diff", "--name-only", "--relative", "--diff-filter=d",
+                                            "HEAD") or ""
+    untracked_files = script_utils.git_output(directory, "ls-files", "--others", "--exclude-standard") or ""
     names = [name for name in (tracked_files + "\n" + untracked_files).split("\n") if name]
     return sorted(set(names))
 

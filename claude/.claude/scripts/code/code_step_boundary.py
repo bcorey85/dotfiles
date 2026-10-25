@@ -21,7 +21,6 @@ from code_step_core import (
     current_branch,
     emit,
     file_hashes,
-    git_output,
     is_dispatch_open,
     load_handback,
     load_state,
@@ -31,6 +30,7 @@ from code_step_core import (
     say,
     session_pin,
 )
+from script_utils import git_output
 
 VERIFY_TIMEOUT_SECONDS = 600
 WHOLE_SUITE = re.compile(r"^(?:(?:cd \S+ && )?(?:npm|pnpm|yarn) (?:run )?(?:test|lint)"

@@ -24,12 +24,12 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 import sys
 import time
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import hook_input
+import script_utils
 from hook_input import JqError, cksum, exit_code_in_error_text, jq_get, jq_str, truthy
 from shell_command import runs_only_after_success, split_command_steps, step_surely_ran
 
@@ -139,36 +139,31 @@ def prune_old(directory, now=None):
 GIT_TIMEOUT_SECONDS = 5
 
 
-def git_output(args):
-    try:
-        finished = subprocess.run(["git", *args], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                  timeout=GIT_TIMEOUT_SECONDS)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return finished.stdout if finished.returncode == 0 else None
+def timed_git_output(cwd, *args):
+    return script_utils.git_output(cwd, *args, timeout=GIT_TIMEOUT_SECONDS)
 
 
 def tree_fingerprint(cwd):
     """A hash of HEAD, the diff against HEAD and the untracked file list: it changes when git (merge, pull,
     checkout, reset, rebase, apply...) or any shell write changes the tree. None when cwd is not a repo or git fails."""
-    top = git_output(["-C", cwd, "rev-parse", "--show-toplevel"])
+    top = timed_git_output(cwd, "rev-parse", "--show-toplevel")
     if top is None:
         return None
-    top = os.fsdecode(top).rstrip("\n")
-    head = git_output(["-C", top, "rev-parse", "--verify", "-q", "HEAD"])
+    head = timed_git_output(top, "rev-parse", "--verify", "-q", "HEAD")
     if head is None:
-        head = b"unborn"
-        diff = git_output(["-C", top, "diff"])
-        staged = git_output(["-C", top, "diff", "--cached"])
+        head = "unborn"
+        diff = timed_git_output(top, "diff")
+        staged = timed_git_output(top, "diff", "--cached")
         diff = None if diff is None or staged is None else diff + staged
     else:
-        diff = git_output(["-C", top, "diff", "HEAD"])
-    untracked = git_output(["-C", top, "ls-files", "-o", "--exclude-standard"])
+        diff = timed_git_output(top, "diff", "HEAD")
+    untracked = timed_git_output(top, "ls-files", "-o", "--exclude-standard")
     if diff is None or untracked is None:
         return None
     digest = hashlib.sha256()
     for part in (head, diff, untracked):
-        digest.update(hashlib.sha256(part).digest())
+        part_bytes = os.fsencode(part)
+        digest.update(hashlib.sha256(part_bytes).digest())
     return digest.hexdigest()
 
 
@@ -181,14 +176,13 @@ def recorded_fingerprint(run_file):
 
 
 def changed_since_run(cwd, run_file):
-    top_bytes = git_output(["-C", cwd, "rev-parse", "--show-toplevel"])
-    if top_bytes is None:
+    top = timed_git_output(cwd, "rev-parse", "--show-toplevel")
+    if top is None:
         return False
-    top = os.fsdecode(top_bytes).rstrip("\n")
-    listing = git_output(["-C", top, "ls-files", "-z", "--modified", "--others", "--exclude-standard"])
+    listing = timed_git_output(top, "ls-files", "-z", "--modified", "--others", "--exclude-standard")
     if not listing:
         return False
-    return any(name and newer(top + "/" + os.fsdecode(name), run_file) for name in listing.split(b"\x00"))
+    return any(name and newer(top + "/" + name, run_file) for name in listing.split("\x00"))
 
 
 def tree_changed_since_run(cwd, run_file):

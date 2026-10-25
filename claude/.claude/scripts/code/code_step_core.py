@@ -17,6 +17,7 @@ import time
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in ("code", "lib", "review")]
 import plan_format
 import script_utils
+from script_utils import git_output
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("CODE_STEP_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
 SCRIPTS_DIR = CLAUDE_DIR / "scripts"
@@ -52,12 +53,6 @@ def run_command(command, cwd, stdin=None, timeout=None):
         tail = (stdout + stderr).strip()
         return TIMEOUT_EXIT_CODE, (tail + f"\ntimed out after {timeout} seconds").strip()
     return code, (stdout + stderr).strip()
-
-
-def git_output(cwd, *args):
-    # The command's stdout when it exits 0, else None: a warning on stderr never becomes part of the answer.
-    code, stdout, _stderr = script_utils.run_process(["git", "-c", "core.quotepath=false", *args], cwd)
-    return stdout.strip() if code == 0 else None
 
 
 def git_names(cwd, *args):

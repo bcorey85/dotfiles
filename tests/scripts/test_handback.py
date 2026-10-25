@@ -31,8 +31,10 @@ NUMBERED = """status: converged
 iter: 1
 fixed: []
 ask:
-1. finding: cap on retries | file_line: src/retry.ts:10 | question: cap at 3? | gate: code-reviewer | class: smell
-2) finding: add index | file_line: src/db.ts:5 | question: index tenant_id? | gate: perf-reviewer | class: perf
+1. finding: cap on retries | file_line: src/retry.ts:10 | question: cap at 3? | \
+change: stop the retry loop after 3 tries | gate: code-reviewer | class: smell
+2) finding: add index | file_line: src/db.ts:5 | question: index tenant_id? | \
+change: add an index on orders.tenant_id | gate: perf-reviewer | class: perf
 Closing note from the loop.
 """
 
@@ -149,6 +151,21 @@ class ParseTest(HandbackTestBase):
 
 
 class ValidateTest(HandbackTestBase):
+    def test_an_ask_carries_its_one_proposed_change_as_its_own_field(self):
+        packet = handback.load(NUMBERED)
+
+        self.assertEqual("cap at 3?", packet["ask"][0]["question"])
+        self.assertEqual("stop the retry loop after 3 tries", packet["ask"][0]["change"])
+
+    def test_an_either_or_ask_with_no_proposed_change_is_refused(self):
+        either_or = NUMBERED.replace(" | change: stop the retry loop after 3 tries", "").replace(
+            "question: cap at 3?", "question: cap at 3, or keep retrying with backoff?")
+
+        with self.assertRaises(handback.PacketError) as raised:
+            handback.load(either_or)
+
+        self.assertIn("ask entry has no change", raised.exception.problems[0])
+
     def test_unknown_ask_class_becomes_other_and_the_raw_class_is_kept(self):
         packet = handback.load(NUMBERED.replace("class: smell", "class: ops"))
         self.assertEqual((packet["ask"][0]["class"], packet["ask"][0]["class_raw"]), ("other", "ops"))

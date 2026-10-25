@@ -287,6 +287,37 @@ class ResumeTest(base.CodeStepTest):
         self.assertIn("start --task", out)
         self.assertEqual(before, self.state_bytes())
 
+    # ---------- a new session takes the run over ----------
+
+    NEW_SESSION = "sess-2"
+
+    def test_a_resume_from_a_new_session_keeps_the_open_asks_and_takes_their_answers(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+        self.step("resume")
+        self.env["CLAUDE_CODE_SESSION_ID"] = self.NEW_SESSION
+
+        resumed = self.step("resume")
+        stage_after_resume = self.state()["stage"]
+        answered = self.step("asks-done", "rejected")
+
+        self.assertIn("ACTION: ask-user", resumed)
+        self.assertEqual("asks", stage_after_resume)
+        self.assert_first_phase_ticked()
+        self.assert_marked_clean(answered, self.NEW_SESSION)
+
+    def test_a_review_again_from_a_new_session_pins_the_run_to_it_so_its_hand_back_counts(self):
+        self.stop_the_review_at_the_wait_cap()
+        self.env["CLAUDE_CODE_SESSION_ID"] = self.NEW_SESSION
+
+        self.step("review-again")
+        pinned_session = self.state()["sessionId"]
+        self.hook("review-loop", self.LOOP_OK, agent_id="r2", session=self.NEW_SESSION)
+        self.step("resume")
+
+        self.assertEqual(self.NEW_SESSION, pinned_session)
+        self.assert_first_phase_ticked()
+
     # ---------- resume by saved state ----------
 
     def test_resume_with_no_saved_run_does_what_a_bare_start_does(self):
@@ -392,20 +423,22 @@ class ResumeTest(base.CodeStepTest):
         self.assertIn("stage stopped with stop reason verification", self.said())
         self.assertIn("`verify`", self.said())
 
-    def test_resume_at_a_closing_phase_names_the_skill_and_skill_done(self):
+    def test_resume_from_a_new_session_at_a_closing_phase_invokes_its_skill_again(self):
         self.finish_phase_one()
         self.mark_phases_done(1, 2, 3)
         self.step("start", self.plan)
         self.assertEqual("skill", self.state()["stage"])
         before = self.state_bytes()
+        self.env["CLAUDE_CODE_SESSION_ID"] = self.NEW_SESSION
 
         out = self.step("resume")
 
-        self.assertIn("ACTION: ask-user", out)
-        self.assertIn("The run is at stage skill.", self.said())
-        self.assertIn("`/refactor +deep`", self.said())
-        self.assertIn("`skill-done pass`", self.said())
-        self.assertIn("`skill-done fail`", self.said())
+        self.assertIn("ACTION: invoke-skill", out)
+        self.assertIn("`/refactor +deep`", out)
+        self.assertIn("The phase's own plan section follows", out)
+        self.assertIn("Sweep.", out)
+        self.assertIn("skill-done pass`", out)
+        self.assertIn("`skill-done fail`", out)
         self.assertEqual(before, self.state_bytes())
 
     PLANLESS_RESTART = 'ask the user for the task text, then run `start --restart --task "<the task text>"`'

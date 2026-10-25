@@ -57,11 +57,13 @@ ask:
     finding_id: a1b2c3d4e5f60001
     file_line: src/retry.ts:10
     question: "Should retries be capped at 3 or configurable?"
+    change: "cap retries at 3"
     gate: code-reviewer
     class: smell
 """
     '  - {finding: "no index", finding_id: a1b2c3d4e5f60002, file_line: src/db.ts:5, '
-    'question: "Add an index on tenant_id?", gate: perf-reviewer, class: perf}\n'
+    'question: "Add an index on tenant_id?", change: "add an index on tenant_id", gate: perf-reviewer, '
+    'class: perf}\n'
     """class_closure: n/a - fixed[] empty
 """
 )
@@ -479,8 +481,8 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_aikido_replies_follow_fixed_skipped_and_other_dispositions(self):
         text = CONVERGED.replace(
             "ask: []",
-            'ask: [{finding: "pick a cap", file_line: src/c.ts:4, question: "cap?", gate: code-reviewer, class: '
-            'smell}]',
+            'ask: [{finding: "pick a cap", file_line: src/c.ts:4, question: "cap?", change: "cap at 3", '
+            'gate: code-reviewer, class: smell}]',
         )
         code, output = self.packet(text, "--aikido", "src/orders.ts:42=111", "--aikido", "src/a.ts:9=222",
                                    "--aikido", "src/c.ts:4=333", skill="fix")
@@ -643,11 +645,11 @@ class ReviewFixScriptTest(unittest.TestCase):
             "ask: []",
             "ask:\n"
             "- finding: cache lock spans the scan. file_line: serve.go:162,188. question: what staleness is fine? "
-            "gate: code-reviewer. class: perf\n"
-            "- finding: timeouts left unset; file_line: cli/serve.go:35; question: out of scope? gate: robustness; "
-            "class: ops\n"
+            "change: release the lock before the scan. gate: code-reviewer. class: perf\n"
+            "- finding: timeouts left unset; file_line: cli/serve.go:35; question: out of scope? change: set the "
+            "timeouts; gate: robustness; class: ops\n"
             "- finding: ReadHeaderTimeout question | file_line: cli/serve.go:35 | question: use an http.Server? | "
-            "gate: robustness | class: ops",
+            "change: serve through an http.Server | gate: robustness | class: ops",
         )
         code, output = self.packet(text)
         self.assertEqual(code, 0, output)
@@ -658,7 +660,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         text = CLEAN_EMPTY.replace(
             "ask: []",
             'ask:\n  - {finding: "Accept it as the contract and update the README?", file_line: '
-            '"src/inventory.ts:103-110", gate: code-reviewer, class: docs}',
+            '"src/inventory.ts:103-110", change: "update the README", gate: code-reviewer, class: docs}',
         )
         code, output = self.packet(text)
         self.assertEqual(code, 0, output)
@@ -668,7 +670,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         text = CLEAN_EMPTY.replace(
             "ask: []",
             "ask:\n  - {finding: The rules file wants interface. file_line: backend/a.ts:1, question: Convert the "
-            "shapes? gate: code-reviewer, class: docs}",
+            "shapes? change: convert the shapes to interfaces, gate: code-reviewer, class: docs}",
         )
         code, output = self.packet(text)
         self.assertEqual(code, 0, output)
@@ -678,7 +680,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         text = CLEAN_EMPTY.replace(
             "ask: []",
             "ask:\n- finding: parseDateOnly is unresolved | file_line: service.test.ts:1313 area | question: drop it? "
-            "| gate: carried | class: carried",
+            "| change: drop the parseDateOnly test | gate: carried | class: carried",
         )
         text = text.replace(
             "fixed: []", 'fixed: [{finding: "spec gap", file_line: "spec.md:432, :1521-1523", blocker: false}]'
@@ -895,10 +897,10 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     NUMBERED = (
         "status: converged\niter: 1\nfixed: []\nask:\n"
-        "1. finding: cap on retries | file_line: src/retry.ts:10 | question: cap at 3? | gate: code-reviewer | class: "
-        "smell\n"
-        "2) finding: add index | file_line: src/db.ts:5 | question: index tenant_id? | gate: perf-reviewer | class: "
-        "perf\n"
+        "1. finding: cap on retries | file_line: src/retry.ts:10 | question: cap at 3? | change: cap at 3 | "
+        "gate: code-reviewer | class: smell\n"
+        "2) finding: add index | file_line: src/db.ts:5 | question: index tenant_id? | change: add the index | "
+        "gate: perf-reviewer | class: perf\n"
         "class_closure: n/a - fixed[] empty\nThe loop found two questions.\n"
     )
 
@@ -918,7 +920,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         text = CLEAN_EMPTY.replace(
             "ask: []",
             'ask:\n  - {finding: x, finding_id: a1b2c3d4e5f60003, file_line: "a.ts:1, b.ts:2", question: why?, '
-            "gate: code-reviewer / robustness, class: ops}",
+            "change: c, gate: code-reviewer / robustness, class: ops}",
         )
         self.packet(text)
         code, output = self.run_script(["asks-done", "accepted"])
@@ -934,9 +936,9 @@ class ReviewFixScriptTest(unittest.TestCase):
         text = CLEAN_EMPTY.replace(
             "ask: []",
             'ask:\n  - {finding: "PLAN-IMPACT: queue is at-most-once", '
-            "file_line: a.ts:1, question: adopt?, gate: code-reviewer, class: plan-drift}\n"
-            "  - {finding: real ask, finding_id: a1b2c3d4e5f60004, file_line: b.ts:2, question: cap?, gate: "
-            "code-reviewer, class: smell}",
+            "file_line: a.ts:1, question: adopt?, change: adopt it, gate: code-reviewer, class: plan-drift}\n"
+            "  - {finding: real ask, finding_id: a1b2c3d4e5f60004, file_line: b.ts:2, question: cap?, change: cap "
+            "at 3, gate: code-reviewer, class: smell}",
         )
         code, output = self.packet(text)
         self.assertIn("adopt?", output)
@@ -946,7 +948,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_an_ask_without_a_finding_id_is_reported_and_sends_nothing_to_the_ledger(self):
         text = CLEAN_EMPTY.replace("ask: []", "ask:\n  - {finding: x, file_line: a.ts:1, question: cap?, "
-                                   "gate: code-reviewer, class: smell}")
+                                   "change: cap at 3, gate: code-reviewer, class: smell}")
         self.packet(text)
         code, output = self.run_script(["asks-done", "accepted"])
         self.assertEqual(code, 0, output)
@@ -958,7 +960,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         return CLEAN_EMPTY.replace(
             "ask: []",
             "ask:\n  - {finding: x, finding_id: " + finding_id_text + ", file_line: a.ts:1, "
-            "question: cap?, gate: code-reviewer, class: smell}",
+            "question: cap?, change: cap at 3, gate: code-reviewer, class: smell}",
         )
 
     def test_an_ask_whose_finding_id_is_a_placeholder_is_skipped_and_names_the_ignored_value(self):
@@ -982,10 +984,10 @@ class ReviewFixScriptTest(unittest.TestCase):
         text = CLEAN_EMPTY.replace(
             "ask: []",
             "ask:\n"
-            "  - {finding: x, finding_id: none logged, file_line: a.ts:1, question: cap?, gate: code-reviewer, class: "
-            "smell}\n"
-            "  - {finding: y, finding_id: a1b2c3d4e5f60005, file_line: b.ts:2, question: cap?, gate: code-reviewer, "
-            "class: smell}",
+            "  - {finding: x, finding_id: none logged, file_line: a.ts:1, question: cap?, change: cap at 3, "
+            "gate: code-reviewer, class: smell}\n"
+            "  - {finding: y, finding_id: a1b2c3d4e5f60005, file_line: b.ts:2, question: cap?, change: cap at 3, "
+            "gate: code-reviewer, class: smell}",
         )
         self.packet(text)
         code, output = self.run_script(["asks-done", "modified:tighten the cap", "accepted"])
@@ -1004,6 +1006,17 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_present_asks_prints_the_gate_mark_line(self):
         _code, output = self.packet(WITH_ASK)
         self.assertIn("review-gate-mark clean", output)
+
+    def test_present_asks_names_each_proposed_change_and_what_each_outcome_does(self):
+        code, output = self.packet(WITH_ASK)
+        self.assertEqual(code, 0, output)
+        self.assertIn("Proposed change: cap retries at 3", output)
+        self.assertIn("Proposed change: add an index on tenant_id", output)
+        self.assertIn("accepted: make the proposed change", output)
+        self.assertIn("rejected: leave the code as it stands", output)
+
+    def test_an_either_or_ask_with_no_proposed_change_is_a_parse_failure(self):
+        self.assert_parse_failure(WITH_ASK.replace('    change: "cap retries at 3"\n', ""), "ask entry has no change")
 
     def test_empty_list_key_does_not_swallow_the_next_unindented_key(self):
         text = "status: converged\niter: 1\nfixed: []\nask: []\nclass_closure: all queries listed\nfiles_touched: []\n"

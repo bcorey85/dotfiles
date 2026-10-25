@@ -1,6 +1,6 @@
 ---
 name: peer-review
-description: Peer-review someone else's PR — orient first (intent, change map, risk surface), then a report-only tiered review (blocking / suggestions / nits), then an optional one-at-a-time walkthrough with discussion. Never edits code, never enters the fix loop.
+description: Peer-review a PR, a colleague's or your own — orient first (intent, change map, risk surface), then a report-only tiered review (blocking / suggestions / nits), then an optional one-at-a-time walkthrough with discussion. Never edits code, never enters the fix loop.
 allowed-tools:
   [
     Agent,
@@ -18,7 +18,7 @@ allowed-tools:
 
 # Peer Review
 
-Assist a human peer review of someone else's PR. Two hard differences from `/review`:
+Assist a human peer review of a PR: a colleague's, or the user's own branch before others read it. Two hard differences from `/review`:
 
 1. **Report-only.** NEVER dispatch `/fix`, never edit files, never run the convergence loop, never log to `review-metrics.jsonl` (that flywheel measures OUR loop).
 2. **Orientation before judgment** — what changed and why, before any finding.
@@ -38,6 +38,15 @@ After step 3, save the orientation block to `<vault>/orientations/<yyyy-mm-dd>-<
 ### 1. Resolve the PR
 
 Arg is a PR number, URL, or head branch. Resolve with `gh pr view <arg> --json number,title,body,author,baseRefName,headRefName,url,additions,deletions,changedFiles,statusCheckRollup,isDraft`. No arg → the current branch's PR; if none, ask the user which PR.
+
+Set `caller`: `own-branch` when the PR author's login equals `gh api user --jq .login`, else `teammate`. Log the run once:
+
+```bash
+if "$HOME/.claude/scripts/telemetry/telemetry_enabled.sh" 2>/dev/null; then
+  jq -cn --arg caller "<own-branch|teammate>" '{skill: "peer-review", caller: $caller}' \
+    | "$HOME/.claude/scripts/telemetry/ledger-write" review_scope >/dev/null || true
+fi
+```
 
 Fetch existing review activity (for dedup in step 4):
 
@@ -163,6 +172,7 @@ The user can also name numbers (`walk 1 3 5`) to walk a subset, or type `next` /
 ### 7. Wrap up
 
 - `+comment`: draft one GitHub comment per comment-marked finding (never dismissed; describe, suggest, don't command; PLAUSIBLE as questions). No niceties or human-sounding filler: no thanks, greetings, praise, sign-offs, or softeners ("Thanks for this", "Nice work", "Just a thought"). Start each comment and the review body with the substance. Show full draft; after explicit approval, post via the `post-review` skill (validates anchors, hands the user the post command — the agent never posts).
+- `own-branch` only: each `blocker`, `ask` or `fix` the user kept as a real defect (not dismissed, not REFUTED) got past the loop's gates. Invoke `/escape` once per defect with `stage_found=peer-review`. Skip nits, and code the branch never sent through the loop. A `teammate` run logs no escape.
 - Always: `git worktree remove "${TMPDIR:-/tmp}/peer-review-<number>" --force` and confirm removal.
 
 ## Arguments

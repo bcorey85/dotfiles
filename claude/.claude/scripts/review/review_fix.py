@@ -26,9 +26,9 @@ renders the packet, logs the rows, posts the Aikido replies, and prints what the
   review_fix.py decide discuss          print the decide commands for a plan-impact ruling and record nothing.
 
 State lives in <git dir>/review-fix/state.json. A packet that does not parse stops with exit 2 and an instruction to
-mark the gate dirty. Env REVIEW_FIX_CLAUDE_DIR overrides ~/.claude; REVIEW_FIX_NVIM_JUMP and REVIEW_FIX_GH override
-the nvim-jump and gh commands; HANDBACK_STORE_DIR overrides the hand-back store; CLAUDE_CODE_SESSION_ID names the
-session."""
+mark the gate dirty. Env REVIEW_FIX_CLAUDE_DIR overrides the toolkit folder; REVIEW_FIX_NVIM_JUMP and REVIEW_FIX_GH
+override the nvim-jump and gh commands; HANDBACK_STORE_DIR overrides the hand-back store;
+CLAUDE_CODE_SESSION_ID names the session."""
 import argparse
 import datetime
 import hashlib
@@ -45,7 +45,7 @@ import script_utils
 from handback import PacketError, item_field, item_text
 from script_utils import one_line, split_location
 
-CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR", pathlib.Path.home() / ".claude"))
+CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
 SOURCES = ["conversation", "cc", "handoff"]
 ASK_OUTCOMES = ["accepted", "rejected", "modified"]
 PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]

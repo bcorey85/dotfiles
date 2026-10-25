@@ -24,7 +24,7 @@
 # Exit 0 with ROOT= empty when the directory is not a git repo. Never fails the
 # caller: every git call that errors prints an empty section.
 set -uo pipefail
-script_dir=$(dirname -- "${BASH_SOURCE[0]}")
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 mode=worktree base=HEAD merge_base="" paths="" root="" caller="" skill=review-loop
 for kv in "$@"; do
@@ -69,7 +69,7 @@ fi
 echo "BRANCH=$(git branch --show-current 2>/dev/null || true)"
 
 if [ -z "$merge_base" ]; then
-  branch_base_script="${BRANCH_BASE_SCRIPT:-$HOME/.claude/scripts/tools/branch-base}"
+  branch_base_script="${BRANCH_BASE_SCRIPT:-$script_dir/../../scripts/tools/branch-base}"
   if [ -x "$branch_base_script" ]; then
     # branch-base prints stdout only on exit 0 and stderr only on failure
     branch_base_out=$("$branch_base_script" 2>&1)

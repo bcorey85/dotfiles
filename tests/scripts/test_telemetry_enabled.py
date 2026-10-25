@@ -2,7 +2,7 @@
 
 The switch is the CLAUDE_TOOLKIT_TELEMETRY variable alone. Every case runs the script as a subprocess with HOME set
 to a temp dir. Script location: TELEMETRY_ENABLED_DIR names the directory that holds both scripts. Unset, the
-installed files under ~/.claude/scripts are used.
+files under claude/.claude/scripts in this tree are used.
 """
 import os
 import pathlib

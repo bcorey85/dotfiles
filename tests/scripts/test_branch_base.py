@@ -1,6 +1,6 @@
 """Tests for the branch-base script.
 
-BRANCH_BASE_SCRIPT overrides the script path; it defaults to the installed one.
+BRANCH_BASE_SCRIPT overrides the script path; it defaults to the one in this tree.
 """
 import os
 import subprocess

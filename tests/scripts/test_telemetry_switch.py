@@ -9,7 +9,7 @@ Every case copies the writer and its helpers into a temp layout (claude/scripts,
 runs it with HOME set to a temp dir, so no row reaches the real logs.
 
 Script locations: TELEMETRY_SWITCH_DRAFT_DIR names one flat directory that holds every file under its final
-name (the draft directory). Unset, the installed files under ~/.claude are used.
+name (the draft directory). Unset, the files under claude/.claude in this tree are used.
 """
 import json
 import os
@@ -39,7 +39,7 @@ SCRIPT_FOLDERS = {"telemetry_enabled.sh": "telemetry", "telemetry_enabled.py": "
                   "ledger-write": "telemetry", "shell_command.py": "lib", "makefile_text.py": "lib"}
 SCRIPTS = list(SCRIPT_FOLDERS)
 REVIEW = ["log-review-metrics", "log-perf-finding", "log-review-finding", "review-scope"]
-# hook_input.py and repo-name are not part of this change: they always come from the installed copy.
+# hook_input.py and repo-name are not part of this change: they always come from the tree's copy.
 INSTALLED_ONLY = {"hook_input.py", "repo-name"}
 
 GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t",

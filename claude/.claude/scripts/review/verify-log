@@ -7,7 +7,8 @@ covers the tree verify-prep measured and the tree has not changed since (exit 2:
 
 rows: a JSON list; each row {"item","verdict","file","line","evidence", optional "severity","guard","signoff"}.
 Every criterion id verify-prep saved needs a verdict row naming it, `missing` included; any id with no row exits 2 and
-writes nothing.
+writes nothing. The same holds for each ticket criterion, with or without a criteria file: it needs a row whose `item`
+starts with its `Ticket #n` label (as verify-prep numbers them; leading markdown emphasis or code marks are allowed).
 verdict is done|partial|missing|failed-check|needs-manual|overridden. partial, missing, failed-check and an
 overridden row with no `signoff` are gaps. `line` is an integer or a range like "12-20" (the first number is kept).
 Empty rows are an error unless --result NA, which logs a run row with no result and exits 3.
@@ -56,6 +57,14 @@ def ids_without_verdict_row(rows, context):
     for row in rows:
         covered.update(vc.AC_ID.findall(str(row["item"])))
     return [ac_id for ac_id in context["criteria"].get("ids", []) if ac_id not in covered]
+
+
+def ticket_labels_without_verdict_row(rows, context):
+    """The ticket criterion labels (`Ticket #2`) prep saved that no verdict row names, in ticket order. A label matches
+    at the start of the row, at a word boundary, so `Ticket #1` is not found inside `Ticket #12` or mid-text."""
+    item_texts = [str(row["item"]) for row in rows]
+    return [label for label in context["criteria"].get("ticketLabels", [])
+            if not any(re.match(r"[\s*_`]*" + re.escape(label) + r"\b", text) for text in item_texts)]
 
 
 def parse_options(args, valued, flag_names=()):
@@ -335,10 +344,12 @@ def log_rows(args, context, top):
     if not rows and not not_applicable:
         raise vc.VerifyError("rows are empty: pass --result NA if the plan gave the gate nothing to check")
     absent_ids = [] if not_applicable else ids_without_verdict_row(rows, context)
-    if absent_ids:
+    absent_labels = [] if not_applicable else ticket_labels_without_verdict_row(rows, context)
+    if absent_ids or absent_labels:
+        absent = [*absent_ids, *absent_labels]
         raise vc.VerifyError(
-            f"no verdict row for {', '.join(absent_ids)}: send a verdict for every criterion id, `missing` "
-            "included. Nothing was written"
+            f"no verdict row for {', '.join(absent)}: send a verdict for every criterion id and every ticket "
+            "criterion (named `Ticket #n` at the start of `item`), `missing` included. Nothing was written"
         )
 
     writes, gaps, need_guard, already_recorded = plan_row_writes(rows, context, not_applicable, escapes_only)

@@ -250,7 +250,14 @@ def verification_format_failure(plan_lines, plan_name, repo_dir, entries):
             continue
 
         section_lines = plan_lines[section["start"]:section["end"]]
-        for index, line in plan_format.automated_verification_rows(section_lines):
+        try:
+            rows = plan_format.automated_verification_rows(section_lines, plan_name, section["start"] + 1,
+                                                         strict=True)
+        except plan_format.PlanFormatError as error:
+            problems.append(str(error))
+            continue
+
+        for index, line in rows:
             problem = verification_item_problem(line, repo_dir)
             if problem:
                 problems.append(f"{plan_name}:{section['start'] + index + 1}: {line.strip()[:100]} - {problem}")

@@ -354,6 +354,8 @@ def manual_verification(text, name="plan"):
 
 
 AUTOMATED_HEADING = "#### Automated Verification"
+# A level 2 or 3 heading that opens an acceptance-criteria section, in any wording that starts with "Acceptance".
+ACCEPTANCE_HEADING = re.compile(r"^#{2,3}\s+acceptance\b", re.IGNORECASE)
 AUTOMATED_ITEM = re.compile(r"^- \[[ x]\]")
 AUTOMATED_ITEM_BOX = re.compile(r"^- \[[ x]\]\s*")
 PLAN_FILES_GLOB = "docs/plans/*/spec.md"
@@ -370,14 +372,25 @@ DEFERRED_VERIFICATION = re.compile(r"^- \[[ x]\]\s*(?:\*\*[^*]+\*\*:?\s*)?[*_`]*
 DEFERRED_TAG_NAMES = {"ci-verified": "CI-verified", "human-only": "human-only"}
 
 
-def automated_verification_rows(lines):
+def automated_verification_rows(lines, name="plan", first_line=1, strict=False):
     """(index, line) for each `- [ ]` or `- [x]` item under a `#### Automated Verification` heading, in file order. The
-    list ends at the next `#### ` heading, a heading of level 1 to 3, or a `---` rule."""
+    list ends at the next `#### ` heading, a heading of level 1 to 3, or a `---` rule. A `#### ` heading that names
+    automated verification in other words raises PlanFormatError when `strict` is set (`name:line:`; `first_line` is
+    the file line of lines[0]), because its items would otherwise be read as absent. A Manual Verification heading is
+    never misworded."""
     verification_items = []
     inside = False
     for index, line in enumerate(lines):
         if line.startswith("#### "):
             inside = line.startswith(AUTOMATED_HEADING)
+            lowered = line.lower()
+            misworded = "automated" in lowered and "verif" in lowered and not MANUAL_HEADING.match(line)
+            if strict and not inside and misworded:
+                raise PlanFormatError(
+                    f"{name}:{first_line + index}: heading `{line.strip()}` is not a verification heading; "
+                    f"rename it to `{AUTOMATED_HEADING}` for commands, or `#### Manual Verification:` for human "
+                    f"checks, or its items are not read"
+                )
             continue
         if re.match(r"#{1,3} ", line) or line.strip() == "---":
             inside = False

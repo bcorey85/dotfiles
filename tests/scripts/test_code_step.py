@@ -514,6 +514,16 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("AGENT: coder", out)
         self.assertIn("scan=acceptance-stub", self.log.read_text())
 
+    def test_empty_criteria_file_stops_whatever_the_wording_of_the_criteria_heading(self):
+        (self.repo / "docs/plans/orders/acceptance-criteria.md").write_text("")
+        for heading in ("### Acceptance criteria", "## ACCEPTANCE CRITERIA (orders)", "## Acceptance"):
+            with self.subTest(heading=heading):
+                (self.repo / self.plan).write_text(PLAN.replace("## Acceptance Criteria", heading))
+                out = self.start_phase_one()
+                self.assertIn("ACTION: stop", out)
+                self.assertIn("acceptance-criteria.md is missing or empty", out)
+                self.step("start", self.plan, "--restart")
+
     def test_the_log_hook_logs_the_hand_backs_of_any_agent_type_and_only_the_awaited_coders_counts(self):
         self.hook("coder", "early")
         self.assertFalse((self.repo / ".git/code-step").exists())
@@ -4327,6 +4337,16 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn(f":{bad_line}:", result.stdout)
         self.assertIn("it starts with `RUN`", result.stdout)
         self.assertIn("one of three shapes", result.stdout)
+
+    def test_plan_check_fails_a_misworded_automated_verification_heading_with_its_line(self):
+        text = self.plan_text().replace("#### Automated Verification:", "#### Automated Checks (verification):", 1)
+        bad_line = text.splitlines().index("#### Automated Checks (verification):") + 1
+
+        result = self.plan_check(text)
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn(f":{bad_line}:", result.stdout)
+        self.assertIn("#### Automated Verification", result.stdout)
 
     def test_plan_check_fails_an_item_with_no_backticked_command(self):
         text = self.bad_item_plan("- [ ] **Check**: the orders pass, see the log")

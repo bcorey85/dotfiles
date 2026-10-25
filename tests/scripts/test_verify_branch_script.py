@@ -651,6 +651,25 @@ class PrepTest(VerifyBranchBase):
         self.assertEqual(context["ticket"], context["plan"])
         self.assertEqual(context["excludeRel"], "docs/plans/LED-9-flat.md")
 
+    def test_the_verifier_payload_lists_each_ticket_label_with_its_text_in_prep_order(self):
+        self.task_dir(ticket=REQUIREMENTS_TICKET)
+
+        done = self.prep()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        payload = done.stdout.split("subagent_type=plan-verifier", 1)[1]
+        self.assertIn("  Ticket #1: Requirement alpha\n  Ticket #2: Requirement beta\n", payload)
+        self.assertNotIn("Criterion gamma", payload)
+
+    def test_the_flat_mode_verifier_payload_lists_the_ticket_labels_too(self):
+        self.write("docs/plans/LED-9-flat.md", REQUIREMENTS_TICKET + "\n" + SPEC)
+
+        done = self.prep("LED-9")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        payload = done.stdout.split("subagent_type=plan-verifier", 1)[1]
+        self.assertIn("  Ticket #1: Requirement alpha\n  Ticket #2: Requirement beta\n", payload)
+
     def test_task_dir_without_spec_is_ticket_only(self):
         self.task_dir(spec=None, criteria=None)
         done = self.prep()
@@ -682,6 +701,54 @@ class PrepTest(VerifyBranchBase):
         self.assertIn("plan: none", done.stdout)
 
 
+def ticket_rows(rows):
+    """A `done` row for each of the TICKET fixture's three criteria (`Ticket #1`..`Ticket #3`) the rows do not name."""
+    named = " ".join(row["item"] for row in rows)
+    return [{"item": f"Ticket #{n}: criterion {n}", "verdict": "done", "file": f"src/t{n}.py", "line": 1,
+             "evidence": "e"} for n in (1, 2, 3) if f"Ticket #{n}" not in named]
+
+
+REQUIREMENTS_TICKET = """# LED-9: Thing
+
+## Requirements
+
+- Requirement alpha
+- Requirement beta
+
+## Acceptance Criteria
+
+- Criterion gamma
+"""
+
+
+class TicketOnlyLogTest(VerifyBranchBase):
+    """A task dir with no criteria file still owes a verdict row for every ticket criterion."""
+
+    def setUp(self):
+        super().setUp()
+        self.task_dir(spec=None, criteria=None)
+        self.assertEqual(self.prep().returncode, 0)
+        self.assertEqual(self.log_review().returncode, 0)
+        self.assertEqual(self.prep().returncode, 0)
+
+    def test_rows_that_skip_a_ticket_criterion_exit_2_and_write_nothing(self):
+        rows = json.dumps([{"item": "Ticket #1: First thing works", "verdict": "done"}])
+        done = self.log("--rows", "-", stdin=rows)
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("no verdict row for Ticket #2, Ticket #3", done.stderr)
+        self.assertNotIn("CLEAN", done.stdout)
+        self.assertEqual(self.verifier_rows(), [])
+
+    def test_rows_naming_every_ticket_criterion_are_logged_clean(self):
+        done = self.log("--rows", "-", stdin=json.dumps(ticket_rows([])))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("CLEAN", done.stdout)
+
+    def test_result_na_skips_the_ticket_check(self):
+        done = self.log("--rows", "-", "--result", "NA", stdin="[]")
+        self.assertEqual(done.returncode, 3)
+
+
 class ReviewGateTest(VerifyBranchBase):
     """verify-log refuses to write unless a marked branch review covers the tree prep measured."""
 
@@ -691,8 +758,9 @@ class ReviewGateTest(VerifyBranchBase):
         self.assertEqual(self.prep().returncode, 0)
 
     def rows(self):
-        return json.dumps([{"item": f"AC{n}: item", "verdict": "done", "file": f"src/f{n}.py", "line": 1,
-                            "evidence": "e"} for n in (1, 2, 3)])
+        built = [{"item": f"AC{n}: item", "verdict": "done", "file": f"src/f{n}.py", "line": 1,
+                  "evidence": "e"} for n in (1, 2, 3)]
+        return json.dumps([*built, *ticket_rows(built)])
 
     def test_no_review_logged_exits_2_and_writes_nothing(self):
         done = self.log("--rows", "-", stdin=self.rows())
@@ -773,6 +841,7 @@ class LogTest(VerifyBranchBase):
             if f"AC{n}" not in covered:
                 built.append({"item": f"AC{n}: item {n}", "verdict": "done", "file": f"src/p{n}.py", "line": 1,
                               "evidence": "e"})
+        built.extend(ticket_rows(built))
         return json.dumps(built)
 
     def test_an_id_with_no_verdict_row_exits_2_names_it_and_writes_nothing(self):
@@ -785,6 +854,50 @@ class LogTest(VerifyBranchBase):
         self.assertEqual(self.jsonl(self.escapes), [])
         self.assertIsNot(self.context().get("logged"), True)
 
+    def test_a_ticket_criterion_with_no_verdict_row_exits_2_names_it_and_writes_nothing(self):
+        built = [{"item": f"AC{n}: item", "verdict": "done"} for n in (1, 2, 3)]
+        built.append({"item": "Ticket #1: First thing works", "verdict": "done"})
+        done = self.log("--rows", "-", stdin=json.dumps(built))
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("no verdict row for Ticket #2, Ticket #3", done.stderr)
+        self.assertNotIn("CLEAN", done.stdout)
+        self.assertEqual(self.verifier_rows(), [])
+        self.assertIsNot(self.context().get("logged"), True)
+
+    def test_a_ticket_label_inside_a_longer_label_does_not_count_as_covered(self):
+        built = [{"item": f"AC{n}: item", "verdict": "done"} for n in (1, 2, 3)]
+        built.extend({"item": f"Ticket #{n}2: other", "verdict": "done"} for n in (1, 2, 3))
+        done = self.log("--rows", "-", stdin=json.dumps(built))
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("no verdict row for Ticket #1, Ticket #2, Ticket #3", done.stderr)
+
+    def test_a_bold_or_backticked_label_at_the_start_of_a_row_covers_its_criterion(self):
+        built = [{"item": f"AC{n}: item", "verdict": "done", "file": f"src/a{n}.py", "line": 1, "evidence": "e"}
+                 for n in (1, 2, 3)]
+        built.append({"item": "**Ticket #1**: First thing works", "verdict": "done", "file": "src/t1.py",
+                      "line": 1, "evidence": "e"})
+        built.append({"item": "`Ticket #2`: Second thing", "verdict": "done", "file": "src/t2.py",
+                      "line": 1, "evidence": "e"})
+        built.append({"item": "Ticket #3: Third thing", "verdict": "done", "file": "src/t3.py",
+                      "line": 1, "evidence": "e"})
+        done = self.log("--rows", "-", stdin=json.dumps(built))
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_a_label_named_only_mid_text_in_another_row_does_not_cover_it(self):
+        built = [{"item": f"AC{n}: item", "verdict": "done"} for n in (1, 2, 3)]
+        built.append({"item": "Ticket #1: First thing works", "verdict": "done"})
+        built.append({"item": "Ticket #3: same as Ticket #2 for admins", "verdict": "done"})
+        done = self.log("--rows", "-", stdin=json.dumps(built))
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("no verdict row for Ticket #2", done.stderr)
+        self.assertEqual(self.verifier_rows(), [])
+
+    def test_missing_ids_and_ticket_labels_are_named_in_one_message(self):
+        done = self.log("--rows", "-", stdin=json.dumps([{"item": "AC2: item", "verdict": "done"}]))
+        self.assertEqual(done.returncode, 2)
+        self.assertEqual(1, done.stderr.count("no verdict row for"))
+        self.assertIn("AC1, AC3, Ticket #1, Ticket #2, Ticket #3", done.stderr)
+
     def test_every_absent_id_is_named(self):
         rows = json.dumps([{"item": "AC2: item", "verdict": "done"}])
         done = self.log("--rows", "-", stdin=rows)
@@ -792,8 +905,9 @@ class LogTest(VerifyBranchBase):
         self.assertIn("no verdict row for AC1, AC3", done.stderr)
 
     def test_a_missing_row_for_every_id_is_accepted_and_logged_as_a_gap(self):
-        rows = json.dumps([{"item": f"AC{n}: item", "verdict": "missing", "guard": "check", "severity": "medium"}
-                           for n in (1, 2, 3)])
+        built = [{"item": f"AC{n}: item", "verdict": "missing", "guard": "check", "severity": "medium"}
+                 for n in (1, 2, 3)]
+        rows = json.dumps([*built, *ticket_rows(built)])
         done = self.log("--rows", "-", stdin=rows)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("GAPS: 3", done.stdout)

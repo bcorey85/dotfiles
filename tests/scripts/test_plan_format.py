@@ -495,6 +495,31 @@ class AutomatedVerificationRowsTest(unittest.TestCase):
 
                 self.assertEqual([(1, "- [ ] a `x`")], plan_format.automated_verification_rows(lines))
 
+    def test_a_misworded_verification_heading_raises_with_its_file_line_and_the_expected_heading(self):
+        for heading in ("#### Automated Verfication Steps (verif)", "#### Verification (automated)",
+                        "#### automated verification checks"):
+            with self.subTest(heading=heading):
+                lines = ["text", heading, "- [ ] a `x`"]
+
+                with self.assertRaises(plan_format.PlanFormatError) as raised:
+                    plan_format.automated_verification_rows(lines, "plan.md", 10, strict=True)
+
+                self.assertIn("plan.md:11:", str(raised.exception))
+                self.assertIn(plan_format.AUTOMATED_HEADING, str(raised.exception))
+                self.assertIn("#### Manual Verification:", str(raised.exception))
+
+    def test_a_misworded_heading_reads_as_no_items_unless_strict(self):
+        lines = ["#### Verification (automated)", "- [ ] a `x`"]
+
+        self.assertEqual([], plan_format.automated_verification_rows(lines))
+
+    def test_other_level_four_headings_are_not_misworded_verification_headings(self):
+        for heading in ("#### Manual Verification:", "#### Manual Verification (cannot be automated):",
+                        "#### Success Criteria", "#### Automated tests"):
+            with self.subTest(heading=heading):
+                lines = [heading, "- [ ] a `x`"]
+                self.assertEqual([], plan_format.automated_verification_rows(lines, strict=True))
+
     def test_a_horizontal_rule_ends_the_list(self):
         lines = ["#### Automated Verification:", "- [ ] a `x`", "---", "- [ ] b `y`"]
 
@@ -612,6 +637,15 @@ class RepoGateEnvTest(unittest.TestCase):
         self.write_plan("six", "CARGO_BUILD_JOBS=4 cargo test")
 
         self.assertEqual(["CARGO_BUILD_JOBS=4"], plan_format.repo_gate_env(self.root))
+
+    def test_an_old_plan_with_a_misworded_verification_heading_does_not_stop_the_read(self):
+        old_dir = self.root / "docs/plans/old"
+        old_dir.mkdir(parents=True)
+        old_plan = "## Phase 1: X\n\n#### Verification (automated):\n\n- [ ] `A=1 cargo test`\n"
+        (old_dir / "spec.md").write_text(old_plan)
+        self.write_plan("current", "B=2 cargo test")
+
+        self.assertEqual(["B=2"], plan_format.repo_gate_env(self.root))
 
     def test_a_plan_path_that_does_not_exist_is_read_as_a_plan_with_no_names(self):
         self.write_plan("one", "B=9 cargo test")

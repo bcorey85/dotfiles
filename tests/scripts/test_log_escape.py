@@ -99,6 +99,20 @@ class LogEscapeTest(unittest.TestCase):
         self.assertIn("refusing to log: lane= contains a space: 'two words'", done.stderr)
         self.assertEqual(self.escape_rows(), [])
 
+    def test_pairs_in_one_unsplit_argument_are_folded_one_by_one(self):
+        # zsh does not split an unquoted variable: C="gate_missed=review severity=high"; log-escape $C
+        # sends one argument.
+        done = self.run_escape("gate_missed=review stage_found=pr-human  severity=high", "class=bug", "guard=none")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        row = self.escape_rows()[0]
+        self.assertEqual((row["gate_missed"], row["stage_found"], row["severity"]), ("review", "pr-human", "high"))
+
+    def test_a_spaced_value_with_a_bare_word_after_a_pair_is_refused(self):
+        done = self.run_escape(*VALID_ARGS, "lane=code line=7 extra")
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("refusing to log: lane= contains a space", done.stderr)
+        self.assertEqual(self.escape_rows(), [])
+
     def test_file_with_a_swallowed_pair_is_refused(self):
         swallowing = ("a.py lane=code", "a.py\tlane=code", "a.py\nb.py", "a.py\rb.py")
         for path in swallowing:

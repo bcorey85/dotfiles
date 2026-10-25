@@ -36,12 +36,6 @@ import script_utils
 from makefile_text import load_makefile, parse_make_arguments
 from shell_command import docker_forwarded_variables, docker_set_variables, unwrap_docker, without_assignments
 
-try:
-    from telemetry_enabled import telemetry_enabled
-except ImportError:
-    def telemetry_enabled():
-        return False
-
 MAX_DENIES = 3
 MAX_GATE_AGE_SECONDS = 6 * 3600
 COMMAND_TIMEOUT_SECONDS = 1200
@@ -428,7 +422,7 @@ def stamped_handback(tool_input, coder):
 
 
 def append_gate_log(row):
-    if not telemetry_enabled():
+    if not script_utils.telemetry_switch_on():
         return
 
     with GATE_LOG.open("a") as log_file:

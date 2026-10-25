@@ -7,8 +7,12 @@ import json
 import os
 import re
 import sys
+import time
 
 JQ_WHITESPACE = " \t\r\n"
+# The parsed payload of an empty stdin: jq prints nothing for it, so every field of it is empty.
+EMPTY_INPUT = object()
+STATE_MAX_AGE_DAYS = 2
 
 
 class JqError(Exception):
@@ -127,11 +131,74 @@ def raw_text(value):
     return json.dumps(value)
 
 
+def jq_output(documents, extract, error_line):
+    """What `jq -r <extract>` leaves in a shell variable, over every document. A jq runtime error prints jq's message
+    with `error_line` as the input line and exits 5."""
+    pieces = []
+    for document in documents:
+        try:
+            pieces.append(raw_text(extract(document)))
+        except JqError as error:
+            sys.stderr.write(f"jq: error (at <stdin>:{error_line}): {error}\n")
+            sys.exit(5)
+    return "\n".join(pieces).rstrip("\n")
+
+
 def jq_str(value):
     """What `jq -r '.x // ""'` prints, with the trailing newlines a shell $(...) drops."""
     if value is None or value is False:
         return ""
     return raw_text(value).rstrip("\n")
+
+
+def jq_field(root, *keys, default=None):
+    """jq -r '.a.b // default'. EMPTY_INPUT makes jq print nothing, so the field is empty even with a default.
+    Only a missing, null or false value takes the default; an empty string stays empty."""
+    if root is EMPTY_INPUT:
+        return ""
+    value = jq_get(root, *keys)
+    if default is not None and not truthy(value):
+        return default
+    return jq_str(value)
+
+
+def tool_input_of(payload):
+    """The payload's tool_input object, or None when it has none."""
+    tool_input = payload.get("tool_input") if isinstance(payload, dict) else None
+    return tool_input if isinstance(tool_input, dict) else None
+
+
+def edited_file_path(tool_input):
+    """`jq -r '.file_path // empty'` on tool_input, without trailing newlines; "" when it names no file."""
+    file_path = tool_input.get("file_path")
+    if not truthy(file_path):
+        return ""
+    return file_path.rstrip("\n") if isinstance(file_path, str) else json.dumps(file_path)
+
+
+def read_file_text(path, errors="surrogateescape"):
+    """A file's text decoded as UTF-8, or None when it cannot be read."""
+    try:
+        with open(path, "rb") as handle:
+            file_bytes = handle.read()
+    except OSError:
+        return None
+    return file_bytes.decode("utf-8", errors)
+
+
+def prune_old_state_files(state_dir):
+    """find state_dir -type f -mtime +2 -delete"""
+    now = time.time()
+    for directory, _, names in os.walk(state_dir):
+        for name in names:
+            path = os.path.join(directory, name)
+            try:
+                if os.path.islink(path) or not os.path.isfile(path):
+                    continue
+                if int((now - os.stat(path).st_mtime) // 86400) > STATE_MAX_AGE_DAYS:
+                    os.unlink(path)
+            except OSError:
+                pass
 
 
 def parse_documents(text):

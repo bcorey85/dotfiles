@@ -401,7 +401,7 @@ class PrepTest(VerifyBranchBase):
                 "## Manual only\n"
                 "- **AC14 (macOS half)** — qualifier inside the bold.\n"
                 "- **AC2 (work half), AC4** — several ids in one bold.\n")
-        entries, manual = common.criteria_file(text)
+        entries, manual = common.parse_criteria_file(text)
         self.assertEqual([e["id"] for e in entries], ["AC20", "AC21"])
         self.assertEqual(entries[1]["text"], "parenthetical after the bold.")
         self.assertEqual([m["id"] for m in manual], ["AC14", "AC2", "AC4"])
@@ -410,7 +410,7 @@ class PrepTest(VerifyBranchBase):
     def test_criteria_file_line_that_names_an_id_but_does_not_parse_fails(self):
         common = load_common()
         with self.assertRaises(common.VerifyError) as caught:
-            common.criteria_file("- **AC1** — fine.\n- **AC9** no dash here\n")
+            common.parse_criteria_file("- **AC1** — fine.\n- **AC9** no dash here\n")
         self.assertIn(":2:", str(caught.exception))
 
     def test_criteria_file_skips_a_bold_id_in_the_middle_of_a_line(self):
@@ -418,7 +418,7 @@ class PrepTest(VerifyBranchBase):
         text = ("- **AC3** — first.\n"
                 "  **Status: OPEN, waiting on LED-5.** Prose that says **AC4's main-skill part is OPEN** and more.\n"
                 "- **AC4** — second.\n")
-        entries, manual = common.criteria_file(text)
+        entries, manual = common.parse_criteria_file(text)
         self.assertEqual([e["id"] for e in entries], ["AC3", "AC4"])
         self.assertEqual(manual, [])
 
@@ -440,12 +440,12 @@ class PrepTest(VerifyBranchBase):
         for line in malformed:
             with self.subTest(line=line):
                 with self.assertRaises(common.VerifyError) as caught:
-                    common.criteria_file(f"- **AC1** — fine.\n{line}\n")
+                    common.parse_criteria_file(f"- **AC1** — fine.\n{line}\n")
                 self.assertIn(":2:", str(caught.exception))
 
     def test_criteria_file_parses_indented_and_starred_criterion_lines(self):
         common = load_common()
-        entries, _ = common.criteria_file("  - **AC1** — indented.\n* **AC2** — starred.\n")
+        entries, _ = common.parse_criteria_file("  - **AC1** — indented.\n* **AC2** — starred.\n")
         self.assertEqual([(e["id"], e["text"]) for e in entries], [("AC1", "indented."), ("AC2", "starred.")])
 
     def test_zero_criteria_fails_loudly(self):
@@ -1296,7 +1296,7 @@ class RealPlansTest(unittest.TestCase):
                 criteria_path = task_dir / "acceptance-criteria.md"
                 if criteria_path.is_file():
                     text = criteria_path.read_text()
-                    entries, manual = common.criteria_file(text, str(criteria_path))
+                    entries, manual = common.parse_criteria_file(text, str(criteria_path))
                     parsed = len(entries) + len(manual)
                     expected = sum(len(re.findall(r"AC\d+", span)) for span in self.BOLD_ID_LINE.findall(text))
                     plain = len(re.findall(r"\*\*AC\d+\*\*", text))

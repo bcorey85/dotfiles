@@ -81,9 +81,9 @@ from code_step_core import (
     awaited_handback,
     awaits_resumed_coder,
     awaits_resumed_review,
+    branch_label,
     clear_say,
     committed_since,
-    current_branch,
     dispatch_since,
     emit,
     emit_dispatch,
@@ -97,10 +97,9 @@ from code_step_core import (
     put_resumed_coder_back,
     put_resumed_review_back,
     refuse,
-    repo_root,
+    repo_root_or_exit,
     restart_instruction,
     resumed_agent_pending_stop,
-    run_command,
     save_state,
     say,
     say_file,
@@ -121,7 +120,7 @@ from code_step_hooks import (
     command_say_hook,
     command_stop_hook,
 )
-from script_utils import git_output
+from script_utils import git_output, run_command
 
 PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
 DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
@@ -652,10 +651,10 @@ def prepare_fresh_start(repo_dir, previous, branch, parsed):
 def command_start(args):
     args = without_blank_task_text(args)
     parsed = parse_start_args(args)
-    repo_dir = repo_root()
+    repo_dir = repo_root_or_exit()
     os.chdir(repo_dir)
     previous = load_state(repo_dir) or {}
-    branch = current_branch(repo_dir)
+    branch = branch_label(repo_dir)
 
     refusal = start_refusal(repo_dir, previous, branch, args, parsed)
     if refusal:
@@ -1478,7 +1477,7 @@ def command_after_plan_edit(repo_dir, state, args):
     state["sessionId"] = session_pin() or state.get("sessionId")
 
     had_criteria_guard = state.get("criteriaGuard") is not None
-    criteria_message = settle_criteria_guard(repo_dir, state, current_branch(repo_dir))
+    criteria_message = settle_criteria_guard(repo_dir, state, branch_label(repo_dir))
     if criteria_message:
         say(repo_dir, criteria_message)
 
@@ -1888,7 +1887,7 @@ def command_asks_done(repo_dir, state, args):
 
 def run_guarded_verb(verb, handler, args):
     guard = STAGE_GUARDS[verb]
-    repo_dir = repo_root()
+    repo_dir = repo_root_or_exit()
     os.chdir(repo_dir)
     state = load_state(repo_dir)
     at_stage = state is not None and state["stage"] in guard["stages"]
@@ -2028,7 +2027,7 @@ RESUME_HANDLERS = {
 
 
 def command_resume(args):
-    repo_dir = repo_root()
+    repo_dir = repo_root_or_exit()
     os.chdir(repo_dir)
     if args:
         return refuse("resume takes no arguments.", script_command(RESUME_VERB),
@@ -2042,7 +2041,7 @@ def command_resume(args):
 
 
 def command_status():
-    state = load_state(repo_root())
+    state = load_state(repo_root_or_exit())
     print(json.dumps(state, indent=1) if state else "no code-step state")
 
 
@@ -2063,7 +2062,7 @@ VERB_USAGE = ("usage: code_step.py start|resume|decide|asks-done|skill-done|veri
 
 def run_verb(verb, handler, args):
     if verb in VERBS_THAT_CLEAR_SAY:
-        clear_say(repo_root())
+        clear_say(repo_root_or_exit())
     try:
         if verb in STAGE_GUARDS:
             run_guarded_verb(verb, handler, args)

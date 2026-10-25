@@ -53,31 +53,13 @@ DENSITY_CAP_PERCENT = 22
 MIN_LINES_FOR_DENSITY = 30
 
 
-def jq_text(value):
-    if isinstance(value, str):
-        return value
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (dict, list)):
-        return json.dumps(value, indent=2, ensure_ascii=False)
-    return json.dumps(value)
-
-
 def first_present(tool_input, *keys):
     """jq `.a // .b // empty`: null and false fall through to the next key."""
     for key in keys:
         value = tool_input.get(key)
         if value is not None and value is not False:
-            return jq_text(value).rstrip("\n")
+            return hook_input.raw_text(value).rstrip("\n")
     return ""
-
-
-def read_text(path):
-    try:
-        with open(path, "rb") as handle:
-            return handle.read().decode("utf-8", "surrogateescape")
-    except OSError:
-        return ""
 
 
 def surface_of(file_path):
@@ -135,7 +117,8 @@ def check(raw):
     if not new_text:
         return 0
 
-    file_lines = read_text(file_path).split("\n")
+    file_text = hook_input.read_file_text(file_path) or ""
+    file_lines = file_text.split("\n")
     new_lines = new_text.split("\n")
     name = os.path.basename(file_path)
 

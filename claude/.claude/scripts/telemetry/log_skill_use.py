@@ -14,55 +14,38 @@ import time
 
 sys.path[:0] = [os.path.dirname(os.path.dirname(os.path.realpath(__file__))) + "/lib"]
 import hook_input
+import script_utils
 from hook_input import (
-    JqError,
     bash_basename,
     current_directory,
     index,
     parse_documents,
     present,
-    raw_text,
     report_open_failure,
 )
-
-try:
-    from telemetry_enabled import telemetry_enabled
-except ImportError:
-    def telemetry_enabled():
-        return False
 
 PROMPT_SKILL = re.compile(r"/([A-Za-z0-9:_-]+)")
 
 
-def field(documents, extract, newlines):
-    """What `jq -r <extract> <<<"$input"` leaves in a shell variable (here-string adds one newline)."""
-    pieces = []
-    for document in documents:
-        try:
-            pieces.append(raw_text(extract(document)))
-        except JqError as error:
-            sys.stderr.write(f"jq: error (at <stdin>:{(newlines + 1)}): {error}\n")
-            sys.exit(5)
-    return "\n".join(pieces).rstrip("\n")
-
-
 def main():
     text = hook_input.read_stdin_text().rstrip("\n")
-    newlines = text.count("\n")
+    # A here-string adds one newline, so jq counts one more input line than the text holds.
+    error_line = text.count("\n") + 1
     try:
         documents = parse_documents(text)
     except ValueError:
-        sys.stderr.write(f"jq: error (at <stdin>:{(newlines + 1)}): parse error\n")
+        sys.stderr.write(f"jq: error (at <stdin>:{error_line}): parse error\n")
         return 5
 
-    event = field(documents, lambda d: present(index(d, "hook_event_name")), newlines)
+    event = hook_input.jq_output(documents, lambda d: present(index(d, "hook_event_name")), error_line)
     skill = ""
     via = ""
     if event == "PostToolUse":
-        skill = field(documents, lambda d: present(index(index(d, "tool_input"), "skill")), newlines)
+        skill = hook_input.jq_output(documents, lambda d: present(index(index(d, "tool_input"), "skill")),
+                                     error_line)
         via = "model"
     elif event == "UserPromptSubmit":
-        prompt = field(documents, lambda d: present(index(d, "prompt")), newlines)
+        prompt = hook_input.jq_output(documents, lambda d: present(index(d, "prompt")), error_line)
         found = PROMPT_SKILL.match(prompt)
         if found:
             skill = found.group(1)
@@ -71,7 +54,7 @@ def main():
     if skill == "":
         return 0
 
-    if not telemetry_enabled():
+    if not script_utils.telemetry_switch_on():
         return 0
 
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR", "")

@@ -8,6 +8,7 @@ import re
 import sys
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import hook_input
 from hook_input import emit_stderr, report_open_failure
 
 LINE_LIMIT = 150
@@ -29,13 +30,10 @@ def line_count(file_path):
 
 def check(raw):
     payload = json.loads(raw)
-    tool_input = payload.get("tool_input") if isinstance(payload, dict) else None
-    if not isinstance(tool_input, dict):
+    tool_input = hook_input.tool_input_of(payload)
+    if tool_input is None:
         return
-    file_path = tool_input.get("file_path")
-    if file_path is None or file_path is False:
-        return
-    file_path = file_path.rstrip("\n") if isinstance(file_path, str) else json.dumps(file_path)
+    file_path = hook_input.edited_file_path(tool_input)
     if not file_path or not CLAUDE_MD.search(file_path):
         return
     lines = line_count(file_path)

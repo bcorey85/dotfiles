@@ -14,33 +14,14 @@ import time
 
 sys.path[:0] = [os.path.dirname(os.path.dirname(os.path.realpath(__file__))) + "/lib"]
 import hook_input
-from hook_input import current_directory, report_open_failure
-
-try:
-    from telemetry_enabled import telemetry_enabled
-except ImportError:
-    def telemetry_enabled():
-        return False
+import script_utils
+from hook_input import current_directory, raw_text, report_open_failure, truthy
 
 TEST_SUFFIXES = ("_test.go", ".test.ts", ".test.tsx", ".test.js", ".test.jsx", ".spec.ts", ".spec.tsx", ".spec.js",
                  ".spec.jsx", "_spec.rb", "_test.py", "/conftest.py")
 TEST_PREFIXED_PYTHON = re.compile(r".*/test_.*\.py", re.S)
 TEST_DIRECTORIES = ("/tests/", "/testdata/", "/fixtures/", "/__tests__/", "/__mocks__/")
 SNIPPET_LENGTH = 200
-
-
-def jq_text(value):
-    if isinstance(value, str):
-        return value
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (dict, list)):
-        return json.dumps(value, indent=2, ensure_ascii=False)
-    return json.dumps(value)
-
-
-def present(value):
-    return value is not None and value is not False
 
 
 def is_test_file(file_path):
@@ -62,22 +43,22 @@ def check(raw):
     if not isinstance(tool_input, dict):
         return
     file_path = tool_input.get("file_path")
-    file_path = jq_text(file_path).rstrip("\n") if present(file_path) else ""
+    file_path = raw_text(file_path).rstrip("\n") if truthy(file_path) else ""
     if not file_path or not is_test_file(file_path):
         return
 
     tool = payload.get("tool_name")
-    tool = jq_text(tool).rstrip("\n") if present(tool) else ""
+    tool = raw_text(tool).rstrip("\n") if truthy(tool) else ""
     agent = payload.get("agent_type")
-    agent = jq_text(agent).rstrip("\n") if present(agent) else "main"
+    agent = raw_text(agent).rstrip("\n") if truthy(agent) else "main"
 
     snippet = tool_input.get("new_string")
-    if not present(snippet):
+    if not truthy(snippet):
         snippet = tool_input.get("content")
-    if not present(snippet):
+    if not truthy(snippet):
         snippet = ""
 
-    if not telemetry_enabled():
+    if not script_utils.telemetry_switch_on():
         return
 
     log_path = os.environ.get("HOME", "") + "/.claude/test-edit-telemetry.jsonl"

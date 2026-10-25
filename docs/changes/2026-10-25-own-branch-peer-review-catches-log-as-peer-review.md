@@ -27,7 +27,7 @@ The user runs `/peer-review` on their own branch before others read it, and thos
 
 ## Result
 
-Checked on the jsonl path (no ledger on PATH): the run row writes `{"skill":"peer-review","caller":"own-branch",...}` and `log-escape stage_found=peer-review ...` writes a row that keeps the value. With the ledger on PATH all three new values fold to `other` until the ledger registry adds them; that request went to the ledger repo. The `log-escape` header comment still lists the old stage values: the write-edit gate blocked the comment edit.
+Checked on the jsonl path (no ledger on PATH): the run row writes `{"skill":"peer-review","caller":"own-branch",...}` and `log-escape stage_found=peer-review ...` writes a row that keeps the value. With the ledger on PATH all three new values fold to `other` until the ledger registry adds them; that request went to the ledger repo. The `log-escape` header comment lists `peer-review` among the stage values; the user applied that comment edit after the write-edit gate blocked it.
 
 ## Watch
 

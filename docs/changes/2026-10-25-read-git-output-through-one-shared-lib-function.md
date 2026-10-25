@@ -3,7 +3,7 @@ type: "Change"
 title: "Read git output through one shared lib function"
 description: "Six toolkit scripts and one lib helper each ran git through their own git_output copy; they now all call script_utils.git_output, which drops stderr, turns path quoting off, keeps non-UTF-8 names and takes an optional timeout."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T15:50:43-05:00"}
-seq: 4
+seq: 5
 kind: "user-rule"
 components: ["script/script-utils", "script/code-step", "script/coder-gate", "script/coder-packet", "script/review-fix", "script/review-commit-gate", "script/quality-check-cap"]
 evidence: ["judgment"]

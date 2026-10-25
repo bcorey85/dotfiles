@@ -11,8 +11,10 @@
 #   canonical fields:
 #     repo, date and session are added by `ledger write`; passing them is harmless
 #       and they are never stored from the caller.
-#     stage_found=cc|walkthrough|refactor|q-verify|verify|pr-human|pr-bot|prod|
-#                 phase-gate|plan-review|other
+#     stage_found=cc|walkthrough|refactor|q-verify|verify|pr-human|pr-bot|
+#                 peer-review|prod|phase-gate|plan-review|other
+#       peer-review = the user ran /peer-review on their own branch and it
+#       caught the defect after the gates. A teammate branch catch is no escape.
 #       plan-review = the fresh-eyes reader caught it in the finalized plan,
 #       before any coder ran. The earliest stage there is; pair it with
 #       gate_missed=eng-spec. Logged so these rows sit in the same file, on the

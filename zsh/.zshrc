@@ -215,6 +215,7 @@ alias vd='nvim +"cd ~/dotfiles" ~/dotfiles'
 alias vn='nvim +"cd ~/vault" ~/vault'
 alias nvim-old='NVIM_APPNAME=nvim-old nvim'
 alias cc="claude"
+alias ccskip="CLAUDE_SKIP_HOOKS=1 claude"
 alias oc="opencode"
 
 # hunk persists view toggles back into its own config, so the flags below are

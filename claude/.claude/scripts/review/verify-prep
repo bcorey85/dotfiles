@@ -110,9 +110,11 @@ def resolve_inputs(target, ticket_file, top):
 
 def read_criteria(mode, ticket_path, plan_path):
     """(counts, criteriaPath|None). Every source is parsed here so a bad file fails at prep; verify-log reads them
-    again when it prints the checklist, so only counts are kept."""
-    counts = {"ticket": len(vc.ticket_criteria(ticket_path.read_text(), str(ticket_path))), "criteriaFileIds": 0,
-              "manualOnly": 0, "manualVerification": 0, "ids": []}
+    again when it prints the checklist, so it keeps the counts, the ids, and the ticket labels and lines."""
+    ticket_entries = vc.ticket_criteria(ticket_path.read_text(), str(ticket_path))
+    counts = {"ticket": len(ticket_entries), "ticketLabels": [entry["label"] for entry in ticket_entries],
+              "ticketLines": [f"{entry['label']}: {entry['text']}" for entry in ticket_entries],
+              "criteriaFileIds": 0, "manualOnly": 0, "manualVerification": 0, "ids": []}
 
     criteria_path = None
     candidate = ticket_path.parent / "acceptance-criteria.md"
@@ -241,6 +243,7 @@ def print_plan(context):
     if untracked:
         lines.append(f"  {untracked}: they are part of the branch.")
     lines += gate_env_lines
+    lines += [f"  {ticket_line}" for ticket_line in criteria["ticketLines"]]
     lines.append("  ---")
     lines.append("  Then convert its verdict table to rows JSON and run: verify-log --rows <file> "
                  "(see SKILL.md for the row shape).")

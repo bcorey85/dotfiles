@@ -879,7 +879,7 @@ def start_closing_phase(repo_dir, plan_rel, lane, modifier, entry, skill, sectio
 
 
 def check_acceptance_criteria(repo_dir, plan_lines, plan_rel):
-    has_criteria_section = any(line.strip() == "## Acceptance Criteria" for line in plan_lines)
+    has_criteria_section = any(plan_format.ACCEPTANCE_HEADING.match(line) for line in plan_lines)
     if not has_criteria_section:
         return True
     criteria_path = criteria_rel(plan_rel)

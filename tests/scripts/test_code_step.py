@@ -1264,6 +1264,26 @@ class CodeStepTest(unittest.TestCase):
         self.step("after-review")
         self.assertEqual("PLAN-IMPACT:\n  found: B", self.state()["impact"])
 
+    PLAN_IMPACT_WITH_LEFTOVERS = (
+        "status: plan-impact\niter: 1\nplan_impact: |\n    PLAN-IMPACT:\n      found: B\n"
+        "pending_fix_findings_not_dispatched: three test gaps need a coder once the plan-impact is settled\n"
+        'ask: [{"finding": "second", "file_line": "backend/src/orders.ts:2", "question": "second ask?", '
+        '"change": "c", "gate": "code-reviewer", "class": "correctness", "finding_id": "0123456789abcdef"}]')
+
+    def test_a_plan_impact_round_s_other_asks_and_pending_findings_reach_the_question_and_the_next_review(self):
+        self.coder_round()
+        self.hook("review-loop", self.PLAN_IMPACT_WITH_LEFTOVERS)
+        self.step("after-review")
+        question = self.said()
+        self.assertIn("ask: second - second ask?", question)
+        self.assertIn("three test gaps need a coder", question)
+        out = self.step("decide", "keep", "--by", "user", "--ruling", "keep it")
+        self.assertIn("AGENT: review-loop", out)
+        self.assertIn("carried-findings:", out)
+        self.assertIn("ask: second - second ask?", out)
+        self.assertIn("three test gaps need a coder", out)
+        self.assertNotIn("carriedFindings", self.state())
+
     def test_phase_one_converged_stops_with_block_b_and_marks_done(self):
         self.coder_round()
         self.hook("review-loop", self.LOOP_OK)
@@ -1417,6 +1437,23 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("after-review")
         self.assertIn("Phase 1 marked done", out)
         self.assertIn("- [x] Phase 1:", self.plan_text())
+
+    def test_an_ask_fix_coder_s_behavior_stays_off_the_phase_implemented_line(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+        self.step("after-review")
+        self.step("asks-done", "accepted")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: tests only, schema unchanged")
+        self.step("after-coder")
+        said = self.said()
+        self.assertIn("Implemented: orders exist\n", said)
+        self.assertIn("Ask-fix: tests only, schema unchanged", said)
+        self.assertNotIn("orders exist; tests only", said)
+        self.assertEqual(["orders exist"], self.state()["behavior"])
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("after-review")
+        self.assertNotIn("tests only", self.said().split("Behavior delta")[-1])
 
     def test_rejected_asks_finish_the_phase_without_a_coder(self):
         self.coder_round()

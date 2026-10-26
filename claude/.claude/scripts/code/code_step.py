@@ -1241,7 +1241,9 @@ def record_coder_report(repo_dir, state, report, gate, changed_files):
     why_groups = resolve_report_paths(why_by_file(report), changed_files)
     tests_run = tests_run_text(gate, state)
     if is_ask_fix:
-        behavior = list(state.get("behavior", [])) + behavior
+        # The ask-fix coder's behavior stays off the phase's own behavior (its Implemented line and Behavior delta).
+        state["askFixBehavior"] = list(state.get("askFixBehavior", [])) + behavior
+        behavior = list(state.get("behavior", []))
         for path, notes in state["why"].items():
             if path in changed_files:
                 why_groups[path] = notes + why_groups.get(path, [])
@@ -1359,7 +1361,15 @@ DECIDE_BY_NOTE = ("If the user told you to make the call yourself, or you rule w
                   "place of `--by user`. A session ruling never changes the acceptance criteria.")
 
 
-def emit_plan_impact_modal(impact, repo_dir):
+def carried_question_lines(carried):
+    # The findings the plan-impact round left open, shown under the question so the user sees them with the ruling.
+    if not carried:
+        return []
+    return ["Also open from the same review round. The review after the ruling gets these too:",
+            *[f"- {line}" for line in carried], ""]
+
+
+def emit_plan_impact_modal(impact, repo_dir, carried=()):
     word = preset_decision(repo_dir)
     if word:
         print(f"PLAN-IMPACT answered by the pre-set decision '{word}'. No question to the user.")
@@ -1371,6 +1381,7 @@ def emit_plan_impact_modal(impact, repo_dir):
              "answer. Then invoke Skill code with the args after the option the user chose, with the ruling in one "
              "line, in your own words, as the --ruling text. Do not quote the user.",
              impact, "",
+             *carried_question_lines(carried),
              f"1. {PLAN_IMPACT_OPTIONS[0]} (a coder rewrites the plan steps to match the ruling): "
              f"{decide_call('adopt')}",
              f"2. {PLAN_IMPACT_OPTIONS[1]}: {decide_call('keep')}",
@@ -1615,6 +1626,9 @@ def handoff_block(repo_dir, state):
     else:
         lines.append("  plan_impact: |")
         lines += ["    " + line for line in plan_impact.splitlines()]
+    if state.get("carriedFindings"):
+        lines.append("  carried-findings:  # left open by the round that returned plan-impact; review them too")
+        lines += [f"    - {carried}" for carried in state["carriedFindings"]]
     lines.append(f"  iter: {state.get('iter', 0)}")
     if state.get("spec_iter"):
         lines.append(f"  spec_iter: {state['spec_iter']}")
@@ -1713,12 +1727,15 @@ def emit_review_dispatch(repo_dir, state):
     state["reviewRan"] = True
     prompt = "\n".join(header) + "\n\n" + handoff_block(repo_dir, state)
     state["stage"] = "review"
+    state.pop("carriedFindings", None)
     open_dispatch(state)
     state["lastReviewPrompt"] = prompt
     state.pop("reviewStatus", None)
     save_state(repo_dir, state)
 
     summary = ["Implemented: " + ("; ".join(state["behavior"]) or "see the diff.")]
+    if state.get("askFixBehavior"):
+        summary.append("Ask-fix: " + "; ".join(state["askFixBehavior"]))
     summary.append("Flagged: " + ("; ".join(state["flagged"]) if state["flagged"] else "none."))
     for path, notes in state["why"].items():
         summary += [f"  {path}:{note['lines']} - {note['note']}" for note in notes]
@@ -1744,13 +1761,25 @@ def load_review_packet(repo_dir, state, message):
                     "To review the same diff again, invoke Skill code with `review-again`.")
 
 
+def carried_findings(module, packet):
+    # What a plan-impact round leaves open besides the plan-impact itself: its other asks, its remaining findings and
+    # its closing prose (where the loop lists fix findings it did not dispatch), each on one line.
+    lines = [f"ask: {ask_text(item)} ({item.get('file_line', '-')})" for item in packet["ask"]]
+    lines += ["finding: " + module.item_text(item, "finding", "file_line") for item in packet["findings_remaining"]]
+    if packet["trailer"]:
+        lines.append("loop note: " + script_utils.one_line(packet["trailer"], 800))
+    return lines
+
+
 def stop_on_review_status(repo_dir, state, module, packet):
     # True after the stop or question a packet status that ends the run prints.
     status = packet["status"]
     if status == "plan-impact":
         state.update({"stage": "impact-review", "impact": packet["plan_impact"]})
         save_state(repo_dir, state)
-        emit_plan_impact_modal(state["impact"], repo_dir)
+        state["carriedFindings"] = carried_findings(module, packet)
+        save_state(repo_dir, state)
+        emit_plan_impact_modal(state["impact"], repo_dir, state["carriedFindings"])
         return True
     if status == "critical-blocker":
         state["stage"] = "stopped"
@@ -2101,7 +2130,7 @@ def resume_after_plan_edit(repo_dir, state):
 
 
 def ask_about_impact(repo_dir, state):
-    emit_plan_impact_modal(state["impact"], repo_dir)
+    emit_plan_impact_modal(state["impact"], repo_dir, state.get("carriedFindings", []))
 
 
 def ask_about_asks(repo_dir, state):

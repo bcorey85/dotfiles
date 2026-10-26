@@ -152,7 +152,7 @@ def run(raw):
     try:
         payload = json.loads(raw)
         command = jq_str(jq_get(payload, "tool_input", "command"))
-    except ValueError, JqError:
+    except (ValueError, JqError):
         raise DenyError(
             "[shell-write-gate] hook input did not parse — failing closed. Report this to the user."
         ) from None

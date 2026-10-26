@@ -120,6 +120,16 @@ class SplitCommandStepsTest(unittest.TestCase):
             self.assertEqual(len(split_command_steps(command)), 1, command)
         self.assertEqual(len(split_command_steps("a >f 2>&1 | b")), 2)
 
+    def test_a_quoted_operator_stays_inside_its_step(self):
+        steps = split_command_steps("rg -n 'typecheck|tsc|lint' f | head")
+        self.assertEqual(steps, [("", "rg -n 'typecheck|tsc|lint' f "), ("|", " head")])
+        for command in ('echo "a && b"', "echo 'a || b; c'", "echo a\\;b", 'echo "x\\" | y"'):
+            self.assertEqual(len(split_command_steps(command)), 1, command)
+
+    def test_an_unquoted_pipe_after_a_quoted_one_still_splits(self):
+        self.assertEqual(len(split_command_steps("npm test | tee x")), 2)
+        self.assertEqual(len(split_command_steps("echo 'a|b' && echo \"c;d\" ; ls")), 3)
+
 
 class RunsOnlyAfterSuccessTest(unittest.TestCase):
     def test_steps_chained_by_and_run_only_after_the_earlier_step_succeeded(self):

@@ -187,13 +187,44 @@ def without_assignments(words):
 
 def split_command_steps(command):
     """Split a shell command on ||, &&, | ; newline and a lone & into (operator, step) pairs. The operator is the one
-    that comes before the step; the first step has "". A newline counts as ";"."""
-    pieces = OPERATOR.split(command)
-    steps = [("", pieces[0])]
-    for index in range(1, len(pieces), 2):
-        operator = ";" if pieces[index] == "\n" else pieces[index]
-        steps.append((operator, pieces[index + 1]))
+    that comes before the step; the first step has "". A newline counts as ";". An operator inside single or double
+    quotes, or after a backslash, stays in its step."""
+    quoted = quoted_positions(command)
+    steps = []
+    operator = ""
+    step_start = 0
+    for match in OPERATOR.finditer(command):
+        if match.start() in quoted:
+            continue
+        steps.append((operator, command[step_start:match.start()]))
+        operator = ";" if match.group() == "\n" else match.group()
+        step_start = match.end()
+    steps.append((operator, command[step_start:]))
     return steps
+
+
+def quoted_positions(command):
+    # The indexes of the characters that sit inside quotes or right after a backslash outside single quotes.
+    positions = set()
+    quote = None
+    index = 0
+    while index < len(command):
+        character = command[index]
+        if quote is None:
+            if character in "'\"":
+                quote = character
+            elif character == "\\":
+                positions.add(index + 1)
+                index += 1
+        elif character == quote:
+            quote = None
+        elif character == "\\" and quote == '"':
+            positions.add(index + 1)
+            index += 1
+        else:
+            positions.add(index)
+        index += 1
+    return positions
 
 
 def group_depth_change(step):

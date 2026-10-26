@@ -16,7 +16,10 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
   code_step.py asks-done [--by <user|session>] <outcome>...
                                                 log the answer to each ask[] entry, then run the phase gates;
                                                 --by session when the session ruled itself, default user
-  code_step.py skill-done <pass|fail>          a closing phase's skill returned: mark it done (pass) or stop (fail)
+  code_step.py skill-done <pass|fail> [--evidence "<text>"]...
+                                                a closing phase's skill returned: mark it done (pass) or stop (fail);
+                                                at pass, give one --evidence per open Success Criteria item and the
+                                                script writes it into the plan
   code_step.py verify                           re-run the phase gates after a failed Automated Verification was fixed
   code_step.py review-again                     dispatch the review loop again on the same diff, after its packet did
                                                 not parse
@@ -63,6 +66,8 @@ from code_step_boundary import (
     command_verify,
     criteria_file,
     criteria_rel,
+    evidence_command_shape,
+    evidence_request_lines,
     finish_phase,
     mark_review_gate_clean,
     save_criteria_guard,
@@ -921,7 +926,9 @@ def start_closing_phase(repo_dir, plan_rel, lane, modifier, entry, skill, sectio
 
 
 def emit_closing_skill(repo_dir, plan_rel, number, title, skill, section):
-    verdict_step = ("run `python3 ~/.claude/scripts/code/code_step.py skill-done pass` when the phase's Success "
+    open_items = plan_format.open_success_items(section.split("\n")) if section else []
+    pass_command = evidence_command_shape(len(open_items))
+    verdict_step = (f"run `{pass_command}` when the phase's Success "
                    "Criteria hold, or `skill-done fail` when they do not (for the Verify pass, any MISSING "
                    "criterion fails it)")
     section_lines = (
@@ -942,6 +949,7 @@ def emit_closing_skill(repo_dir, plan_rel, number, title, skill, section):
         f"`{skill}`; a coder is not dispatched.",
         *section_lines,
         *ruled_lines,
+        *evidence_request_lines(open_items),
         f"The skill needs judgment. When it returns, {verdict_step}.",
     )
 

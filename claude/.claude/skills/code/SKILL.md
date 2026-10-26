@@ -16,7 +16,7 @@ You route nothing. `code_step.py` decides, and you run what it prints. Run every
    - `dispatch`: make one `Agent` call with the printed AGENT and MODEL and the text between the PROMPT markers, verbatim. The agent runs in the background: do not wait for its result and do not write text. In the next turn run the verb named in NEXT as a Bash call. That verb waits for the agent's report.
    - `wait`: no report had arrived yet. Run the command it prints, exactly as printed.
    - `rerun`: the script refused the command and changed nothing. Run the COMMAND it prints once, exactly as printed. If that is refused too, hand back.
-   - `invoke-skill`: invoke that skill. Run `code_step.py skill-done pass` only when the skill reports no open finding. Otherwise run `skill-done fail`.
+   - `invoke-skill`: invoke that skill. Run the `skill-done pass` command it prints, one `--evidence` per open item it lists, only when the skill reports no open finding. Otherwise run `skill-done fail`.
    - `auto-advance`: run the commit command the output names, then the next-phase command it names.
    - `stop-block-B` / `stop-block-C`: invoke Skill `stage`, then hand back.
    - `ask-user`: hand back.

@@ -1964,6 +1964,87 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("- [ ] Phase 4:", self.plan_text())
         self.assertEqual("stopped", self.state()["stage"])
 
+    CLOSING_CRITERIA = (
+        "\nSweep.\n\n### Success Criteria\n\n#### Automated Verification\n\n"
+        "- [ ] Quality checks green\n"
+        "- [ ] Concentration gate evaluated; both counts stated\n"
+        "  and the module named\n"
+        "- [ ] **CI-verified**: the pipeline is green\n"
+        "- [x] Already checked\n\n"
+        "#### Manual Verification\n\n"
+        "- [ ] Look at the page\n\n"
+    )
+
+    def refactor_status_line(self, text):
+        return next(line for line in text.splitlines() if "Refactor pass - /refactor cleanup sweep" in line)
+
+    def start_closing_phase_with_criteria(self, criteria=None):
+        self.mark_phases_done(1, 2, 3)
+        text = self.plan_text().replace("\nSweep.\n\n", criteria or self.CLOSING_CRITERIA, 1)
+        (self.repo / self.plan).write_text(text)
+        return self.step("start", self.plan)
+
+    def test_skill_done_pass_without_evidence_stops_and_changes_nothing(self):
+        self.start_closing_phase_with_criteria()
+        plan_before = self.plan_text()
+        state_before = self.state()
+
+        out = self.step("skill-done", "pass")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("1. Quality checks green", out)
+        self.assertIn("2. Concentration gate evaluated; both counts stated and the module named", out)
+        self.assertNotIn("3.", out)
+        self.assertIn('skill-done pass --evidence "<item 1 evidence>" --evidence "<item 2 evidence>"', out)
+        self.assertEqual(plan_before, self.plan_text())
+        self.assertEqual(state_before, self.state())
+
+    def test_skill_done_pass_with_a_wrong_evidence_count_changes_nothing(self):
+        self.start_closing_phase_with_criteria()
+        plan_before = self.plan_text()
+
+        out = self.step("skill-done", "pass", "--evidence", "only one")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertEqual(plan_before, self.plan_text())
+
+    def test_skill_done_pass_writes_each_evidence_under_its_box(self):
+        self.start_closing_phase_with_criteria()
+
+        self.step("skill-done", "pass", "--evidence", "ruff and pytest green",
+                  "--evidence", "largest module 120 added lines; branch 340")
+
+        text = self.plan_text()
+        self.assertIn("- [x] Quality checks green\n  - Done: ruff and pytest green\n"
+                      "- [x] Concentration gate evaluated; both counts stated\n  and the module named\n"
+                      "  - Done: largest module 120 added lines; branch 340\n", text)
+        self.assertTrue(self.refactor_status_line(text).startswith("- [x]"))
+
+    def test_skill_done_pass_leaves_manual_and_ci_verified_items_alone(self):
+        self.start_closing_phase_with_criteria()
+
+        self.step("skill-done", "pass", "--evidence", "a", "--evidence", "b")
+
+        text = self.plan_text()
+        self.assertIn("- [ ] **CI-verified**: the pipeline is green\n", text)
+        self.assertIn("- [ ] Look at the page\n", text)
+        self.assertEqual(2, text.count("  - Done:"))
+
+    def test_skill_done_pass_with_no_open_items_needs_no_evidence(self):
+        self.start_closing_phase_with_criteria("\nSweep.\n\n### Success Criteria\n\n- [x] Done already\n\n")
+
+        self.step("skill-done", "pass")
+
+        self.assertTrue(self.refactor_status_line(self.plan_text()).startswith("- [x]"))
+
+    def test_closing_phase_prompt_names_the_open_items_and_the_command(self):
+        out = self.start_closing_phase_with_criteria()
+
+        self.assertIn("ACTION: invoke-skill", out)
+        self.assertIn("1. Quality checks green", out)
+        self.assertIn("2. Concentration gate evaluated; both counts stated and the module named", out)
+        self.assertIn('skill-done pass --evidence "<item 1 evidence>" --evidence "<item 2 evidence>"', out)
+
     def test_closing_phase_block_has_no_derive_placeholder(self):
         self.mark_phases_done(1, 2, 3)
         self.step("start", self.plan)

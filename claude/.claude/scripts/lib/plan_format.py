@@ -432,6 +432,54 @@ def runs_no_command(line):
     return bool(NO_AUTOMATED_CHECK.match(line) or deferred_verification_tag(line))
 
 
+OPEN_BOX = re.compile(r"^- \[ \]")
+SUCCESS_BOLD_LABEL = re.compile(r"^\*\*success criteria\b", re.I)
+BOLD_LABEL_LINE = re.compile(r"^\*\*[^*]+\*\*:?\s*$")
+SUCCESS_OR_AUTOMATED_HEADING = re.compile(r"^#{1,6}\s+(?:success criteria|automated verification)\b", re.I)
+
+
+def open_success_items(lines):
+    """The `- [ ]` items under a phase's Success Criteria that need evidence, in file order, as {"index": the 0-based
+    line of the item, "end": the index after its indented continuation lines, "text": the item's words with its
+    continuation lines folded in}. Items under Manual Verification, tagged CI-verified or human-only, and N/A items are
+    left out, and so are items in fenced blocks. `lines` is one phase's section."""
+    fenced = script_utils.fenced_line_indexes(lines)
+    items = []
+    inside = False
+
+    for index, line in enumerate(lines):
+        if index in fenced:
+            continue
+        if script_utils.MARKDOWN_HEADING.match(line):
+            inside = bool(SUCCESS_OR_AUTOMATED_HEADING.match(line))
+            continue
+        if BOLD_LABEL_LINE.match(line):
+            inside = bool(SUCCESS_BOLD_LABEL.match(line))
+            continue
+        if line.strip() == "---":
+            inside = False
+            continue
+        if not (inside and OPEN_BOX.match(line)) or runs_no_command(line):
+            continue
+
+        end = index + 1
+        while end < len(lines) and lines[end].strip() and lines[end][0] in " \t" and end not in fenced:
+            end += 1
+        folded = " ".join(part.strip() for part in lines[index:end])
+        items.append({"index": index, "end": end, "text": automated_item_text(folded)})
+    return items
+
+
+def write_item_evidence(lines, items, evidence):
+    """`lines` with each open item's box checked and a `  - Done: <evidence>` line under it (after its continuation
+    lines). `items` come from open_success_items(lines); `evidence` has one text per item, in the same order."""
+    written = list(lines)
+    for item, text in reversed(list(zip(items, evidence, strict=True))):
+        written.insert(item["end"], f"  - Done: {text}")
+        written[item["index"]] = written[item["index"]].replace("[ ]", "[x]", 1)
+    return written
+
+
 def gate_env(plan_text):
     """The `NAME=value` words that the plan's Automated Verification commands start with, one per name, in file order.
     An item that says N/A or is left to CI or a person is not a command that gets run, so it gives none."""

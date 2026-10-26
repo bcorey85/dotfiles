@@ -306,6 +306,22 @@ def pop_option(arguments, flag):
     return arguments[:position] + arguments[position + 2:], value
 
 
+def pop_repeated_option(arguments, flag):
+    """(the arguments without every `flag` and its value, the values in order). A `flag` that is the last word has the
+    value ""."""
+    rest = []
+    values = []
+    position = 0
+    while position < len(arguments):
+        if arguments[position] != flag:
+            rest.append(arguments[position])
+            position += 1
+            continue
+        values.append(arguments[position + 1] if position + 1 < len(arguments) else "")
+        position += 2
+    return rest, values
+
+
 def strip_flag_values(command, flags):
     """`command` with every `flag value` and `flag=value` pair of the named flags replaced by one space. A flag
     matches as a whole word. Its value is the next word, or the next quoted text, unless that word starts with a dash:

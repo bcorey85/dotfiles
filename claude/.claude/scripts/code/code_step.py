@@ -1811,15 +1811,7 @@ def log_ask_outcomes(repo_dir, state, outcomes):
 
     branch = git_output(repo_dir, "branch", "--show-current") or "-"
     for item, outcome in zip(state["asks"], outcomes, strict=False):
-        finding_id = module.ask_finding_id(item)
-        if finding_id is None:
-            # The outcome supersedes its ask row by finding_id. Only an id the ledger writer mints replaces a row:
-            # a placeholder such as "none" or a damaged id would add a second finding.
-            ignored_value = item.get("finding_id")
-            ignored_text = "no finding_id" if ignored_value is None else f"ignored {ignored_value!r}"
-            print(f"code-step: ask outcome without a valid finding_id ({ignored_text}), not logged", file=sys.stderr)
-            continue
-
+        finding_id, new_finding_id_note = module.ask_outcome_finding_id(item)
         file_line = item.get("file_line", "-:0")
         path, _, line = file_line.partition(":")
         # The writer takes phase as a token, so a run with no phase sends none.
@@ -1834,6 +1826,8 @@ def log_ask_outcomes(repo_dir, state, outcomes):
         if logger_code != 0:
             print(f"code-step: ask outcome for finding_id {finding_id} not logged: log-review-finding exited "
                   f"{logger_code}: {script_utils.one_line(logger_output)}", file=sys.stderr)
+        elif new_finding_id_note:
+            print(f"code-step: {new_finding_id_note}", file=sys.stderr)
 
 
 def asks_coder_prompt(accepted_asks):

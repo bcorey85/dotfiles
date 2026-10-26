@@ -251,6 +251,26 @@ class AskFindingIdTest(unittest.TestCase):
                 self.assertIsNone(handback.ask_finding_id(entry))
 
 
+class AskOutcomeFindingIdTest(unittest.TestCase):
+    def test_a_valid_id_is_kept_with_no_note(self):
+        self.assertEqual(handback.ask_outcome_finding_id({"finding_id": " a1b2c3d4e5f60001 "}),
+                         ("a1b2c3d4e5f60001", None))
+
+    def test_a_placeholder_id_gets_a_new_id_in_the_writer_shape_and_a_note_naming_both(self):
+        new_finding_id, note = handback.ask_outcome_finding_id({"finding_id": "not logged (no id was printed)"})
+
+        self.assertEqual(handback.ask_finding_id({"finding_id": new_finding_id}), new_finding_id)
+        self.assertIn("ignored 'not logged (no id was printed)'", note)
+        self.assertIn(f"logged under new finding_id {new_finding_id}", note)
+
+    def test_a_missing_id_gets_a_fresh_id_on_every_call(self):
+        first_new_id, first_note = handback.ask_outcome_finding_id({})
+        second_new_id, _ = handback.ask_outcome_finding_id({})
+
+        self.assertNotEqual(first_new_id, second_new_id)
+        self.assertIn("(no finding_id)", first_note)
+
+
 class RenderTest(HandbackTestBase):
     def test_findings_remaining_show_on_converged(self):
         text = CONVERGED.replace(

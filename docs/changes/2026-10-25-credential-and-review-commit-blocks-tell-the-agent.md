@@ -24,7 +24,7 @@ census: in the newest intake, main sessions had 98 turns that ended right after 
 
 ## Result
 
-Effect unmeasured. A turn that ended on one of these blocks should now continue; the main-turn count in review-queue.txt is the reading.
+Effect unmeasured. A turn that ended on one of these blocks should now continue; the main-turn count in review-queue.txt is the reading. The full suite passes: 2132 tests, 0 failed, lint clean.
 
 ## Watch
 

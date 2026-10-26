@@ -427,6 +427,9 @@ class HookTest(HandbackTestBase):
 
     def test_review_loop_dispatch_and_good_hand_back_are_stored_without_output(self):
         self.assertEqual(self.fire(self.event("Agent"))[:2], (0, ""))
+        reviewer = {"session_id": SESSION, "tool_name": "Agent", "agent_type": "review-loop", "agent_id": "a1",
+                    "tool_input": {"subagent_type": "code-reviewer"}}
+        self.assertEqual(self.fire(reviewer)[:2], (0, ""))
         self.assertEqual(self.fire(self.event("SubagentHandback"))[:2], (0, ""))
         seen = handback.latest(SESSION)
         self.assertEqual(seen["handback"]["status"], "converged")
@@ -477,6 +480,93 @@ class HookTest(HandbackTestBase):
         self.assertIn("handback hook:", err)
         self.assertNotIn("unknown kind", err)
         self.assertFalse(self.store.exists())
+
+
+class ReviewerRequiredTest(HandbackTestBase):
+    def dispatch(self, agent_type, calling_agent_id=None, prompt=""):
+        """A PreToolUse Agent event: from the main session, or from the subagent `calling_agent_id`."""
+        event = {"session_id": SESSION, "tool_name": "Agent",
+                 "tool_input": {"subagent_type": agent_type, "prompt": prompt}}
+        if calling_agent_id:
+            event.update({"agent_type": "review-loop", "agent_id": calling_agent_id})
+        self.assertEqual(self.run_cli(["hook", "dispatch"], json.dumps(event))[:2], (0, ""))
+
+    def hand_back(self, agent_id="a1"):
+        event = {"session_id": SESSION, "tool_name": "SubagentHandback", "agent_type": "review-loop",
+                 "agent_id": agent_id, "tool_input": {"message": CONVERGED}}
+        return self.run_cli(["hook", "handback"], json.dumps(event))[:2]
+
+    def assert_denied(self, result):
+        code, out = result
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_clean_hand_back_with_no_reviewer_is_denied_once_then_stored_flagged_and_refused(self):
+        self.dispatch("review-loop")
+        self.dispatch("coder", "a1")
+        self.assert_denied(self.hand_back())
+        self.assertIsNone(handback.latest(SESSION)["handback"])
+        self.assertEqual(self.hand_back(), (0, ""))
+        self.assertIn("no reviewer", handback.false_clean_reason(SESSION))
+
+    def test_reviewer_dispatched_after_the_coder_passes(self):
+        self.dispatch("review-loop")
+        self.dispatch("coder", "a1")
+        self.dispatch("code-reviewer", "a1")
+        self.assertEqual(self.hand_back(), (0, ""))
+        self.assertIsNone(handback.false_clean_reason(SESSION))
+
+    def test_reviewer_with_no_coder_step_passes(self):
+        self.dispatch("review-loop")
+        self.dispatch("perf-reviewer-deep", "a1")
+        self.assertEqual(self.hand_back(), (0, ""))
+        self.assertIsNone(handback.false_clean_reason(SESSION))
+
+    def test_coder_dispatched_after_the_last_reviewer_is_denied(self):
+        self.dispatch("review-loop")
+        self.dispatch("code-reviewer", "a1")
+        self.dispatch("backend-coder-deep", "a1")
+        self.assert_denied(self.hand_back())
+
+    def test_no_review_mode_dispatch_passes_with_no_reviewer(self):
+        self.dispatch("review-loop", prompt="scope: branch\nno-review\n")
+        self.dispatch("coder", "a1")
+        self.assertEqual(self.hand_back(), (0, ""))
+        self.assertIsNone(handback.false_clean_reason(SESSION))
+
+    def test_a_normal_loop_is_denied_after_a_later_no_review_loop_claimed_the_exemption(self):
+        self.dispatch("review-loop")
+        self.dispatch("review-loop", prompt="no-review")
+        self.dispatch("coder", "a1")
+        self.dispatch("coder", "a2")
+        self.assertEqual(self.hand_back("a2"), (0, ""))
+        self.assert_denied(self.hand_back("a1"))
+
+    def test_a_no_review_loop_passes_though_a_normal_loop_was_dispatched_after_it(self):
+        self.dispatch("review-loop", prompt="no-review")
+        self.dispatch("review-loop")
+        self.dispatch("coder", "a1")
+        self.assertEqual(self.hand_back("a1"), (0, ""))
+        self.assertIsNone(handback.false_clean_reason(SESSION))
+
+    def test_each_no_review_dispatch_exempts_one_hand_back(self):
+        self.dispatch("review-loop", prompt="no-review")
+        self.dispatch("review-loop", prompt="no-review")
+        self.assertEqual(self.hand_back("a1"), (0, ""))
+        self.assertEqual(self.hand_back("a2"), (0, ""))
+        self.assertEqual(self.hand_back("a1"), (0, ""))
+        self.assert_denied(self.hand_back("a3"))
+
+    def test_reviewer_dispatched_by_another_agent_id_does_not_count(self):
+        self.dispatch("review-loop")
+        self.dispatch("coder", "a1")
+        self.dispatch("code-reviewer", "a2")
+        self.assert_denied(self.hand_back())
+
+    def test_other_agent_types_are_not_steps(self):
+        self.dispatch("review-loop")
+        self.dispatch("Explore", "a1")
+        self.assert_denied(self.hand_back())
 
 
 if __name__ == "__main__":

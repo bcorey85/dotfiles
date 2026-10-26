@@ -20,6 +20,20 @@ script_utils = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(script_utils)
 
 
+class SubagentTypeTest(unittest.TestCase):
+    def test_coder_types_match_each_coder_and_its_deep_variant_only(self):
+        for name in ("coder", "coder-deep", "backend-coder", "frontend-coder-deep"):
+            self.assertTrue(script_utils.CODERS.match(name), name)
+        for name in ("code-reviewer", "coder-helper", "plan-coder", "Explore"):
+            self.assertFalse(script_utils.CODERS.match(name), name)
+
+    def test_reviewer_types_match_each_reviewer_and_its_deep_variant_only(self):
+        for name in ("code-reviewer", "perf-reviewer-deep", "reviewer"):
+            self.assertTrue(script_utils.REVIEWERS.match(name), name)
+        for name in ("review-loop", "coder", "reviewer-notes", "Explore"):
+            self.assertFalse(script_utils.REVIEWERS.match(name), name)
+
+
 class FencedLineIndexesTest(unittest.TestCase):
     def test_lines_between_backtick_fences_and_the_fences_themselves_are_fenced(self):
         lines = ["# a", "```bash", "# not a heading", "```", "# b"]

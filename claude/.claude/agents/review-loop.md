@@ -19,7 +19,7 @@ comes back in the packet.
 - `plan: <path>` — the plan file for this work, when the caller has one, with `phase: <N>` when the work is one phase of it. Pass both to every reviewer you dispatch.
 - `handoff:` block — schema in `~/.claude/skills/_shared/handoff-block.md`. May be absent (manual `/review`).
 - `base: <ref>` — the ref the review diffs against. Absent → `HEAD`, the working-tree changes. `/review base=<ref>` passes it for a whole-branch review.
-- Modifiers: `+fast` → pass `model: "haiku"`. `+deep` changes nothing in this loop.
+- Modifiers: `+fast` → pass `model: "haiku"` to each reviewer you dispatch. `+fast` never skips a reviewer: you never review the diff yourself. `+deep` changes nothing in this loop.
 - `no-review` (fix-first only): dispatch the fix coder, verify via the execution gate, return without a reviewer pass.
 
 ## Step 0: Log the invocation and read the scope (always, first action)

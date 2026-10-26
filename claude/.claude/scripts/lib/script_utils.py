@@ -21,6 +21,9 @@ PATH_LINE = re.compile(r"`?([\w@./-]+\.\w+:\d+(?:[-,]\d+)*)`?")
 FILE_NAME = re.compile(r"^[\w@./-]+\.\w+(?::\d|$)")
 QUOTE_OPENERS = " :[{,\t\n"
 BACKTICKED = re.compile(r"`([^`]+)`")
+# Subagent types: the agents that change code, and the agents that review it (code-reviewer, perf-reviewer-deep, ...).
+CODERS = re.compile(r"^(backend-|frontend-)?coder(-deep)?$")
+REVIEWERS = re.compile(r"^([a-z]+-)*reviewer(-deep)?$")
 TIMEOUT_EXIT_CODE = 124
 COMMAND_NOT_FOUND_EXIT_CODE = 127
 REPO_NAME_SCRIPT = pathlib.Path(__file__).resolve().parent.parent / "tools" / "repo-name"

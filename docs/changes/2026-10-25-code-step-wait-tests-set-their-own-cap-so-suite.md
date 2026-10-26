@@ -33,7 +33,10 @@ wrote before the step stopped counting.
 
 ## Result
 
-Filled in at hand-over.
+Three full suite runs in a row under `nice -n 19`: 2049 of 2051 passed each time, with no wait-test failure. With
+the cap check removed, the tests of the stop at the cap failed. After merging master: 2116 of 2118 passed. The two
+failures in every run are `test_plan_format.RealPlansTest` and `test_verify_branch_script.RealPlansTest`. They fail
+the same way on master, because a live plan in another worktree has a level-5 heading.
 
 ## Watch
 

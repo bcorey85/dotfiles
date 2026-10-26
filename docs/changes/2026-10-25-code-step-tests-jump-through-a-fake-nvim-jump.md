@@ -34,7 +34,8 @@ never does.
 
 ## Result
 
-Filled in at hand-over.
+The vtsls count stayed at 0 through three full suite runs under `nice -n 19` and one at normal priority. The new
+test passes. The suite results and the two pre-existing failures are in the wait-cap change file.
 
 ## Watch
 

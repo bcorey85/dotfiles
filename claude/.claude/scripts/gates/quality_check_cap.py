@@ -17,8 +17,12 @@ that ran it: a run is capped only against an earlier run by the same agent, so a
 always allowed. The agent is the hook input's `agent_id` (set only inside a subagent); the main thread has none.
 Edits are shared by every agent of the session, because they change the tree all of them see. A `cargo test`
 scoped to a named target (`--lib`, `--doc`, `--test <name>`, `--bin <name>`, a test-name filter) is never capped;
-unscoped it is. Escape: a trailing `#skip-quality-cap`. Fails closed only on the PreToolUse Bash path; state
-errors fail open. State lives in ~/.claude/state/quality-check/<session>/.
+unscoped it is. A check step with `--help`, `-h`, `--version` or `-V` as a whole word runs nothing: never denied,
+never recorded. A check in the body of a `for` loop (`for i in 1 2 3; do pytest x; done`) is never denied, so a flake
+check can repeat with no edit between; it is still recorded, so a plain rerun after it is denied. A `while` or `until`
+body, an `if`, a bare `true;` and a `for` over fewer than two values get no such exemption. Escape: a trailing
+`#skip-quality-cap`. Fails closed only on the PreToolUse Bash path; state errors fail open. State lives in
+~/.claude/state/quality-check/<session>/.
 """
 import contextlib
 import hashlib
@@ -53,13 +57,21 @@ CARGO_TARGET_FLAGS = ("--test", "--bin", "--example", "--bench")
 CARGO_WHOLE_TREE_FLAGS = ("--workspace", "--all", "--all-targets")
 CARGO_VALUE_FLAGS = ("-p", "--package", "--features", "-F", "--target", "--manifest-path", "-j", "--jobs",
                      "--profile", "--color", "--target-dir", "--exclude", "--message-format", "--config", "-Z")
+HELP_FLAGS = ("--help", "-h", "--version", "-V")
+LOOP_HEADER = re.compile("^(for|while|until)" + WS)
+LOOP_BODY_START = re.compile("^(do|then|else)(" + WS + "+|$)")
+LOOP_END = re.compile("^done(" + WS + "|$)")
+FOR_VALUES = re.compile("^for" + WS + r"+\w+" + WS + "+in" + WS + "+(.*)$", re.S)
+SEQ_COUNT = re.compile(r"^\$\(seq" + WS + r"+(\d+)(?:" + WS + r"+(\d+))?" + WS + r"*\)$")
+BRACE_RANGE = re.compile(r"^\{(\d+)\.\.(\d+)\}$")
 CD_SEGMENT = re.compile("^cd" + WS + "+([^" + SP + "]+)$")
 WRAPPER = re.compile("^(time|env|npx|bunx|pnpm exec|yarn dlx)" + WS + "+")
 ASSIGNMENT = re.compile(r"^[^\W\d]\w*=[^" + SP + "]*" + WS + "+")
 DENY_TEXT = ("' already ran this session and nothing has been edited since. Re-running unchanged code cannot "
              "produce a different result. Redirect the failing run to /tmp/check.log, read the WHOLE log, fix every "
              "failure in one batch, then run it once more. If it still fails after that batch fix, stop and ask "
-             "the user. If you believe this deny is wrong, stop and tell the user what you were about to run.")
+             "the user. To repeat a check on purpose, run it in one `for i in 1 2 3; do <check>; done` loop. If you "
+             "believe this deny is wrong, stop and tell the user what you were about to run.")
 
 
 class DenyError(Exception):
@@ -231,6 +243,37 @@ def is_scoped_cargo_test(segment):
     return False
 
 
+def is_help_probe(segment):
+    """True when the check step asks for usage or the version (`--help`, `-h`, `--version`, `-V` as a whole word of
+    this step) and so runs nothing."""
+    try:
+        words = shlex.split(segment)
+    except ValueError:
+        words = segment.split()
+    return any(word in HELP_FLAGS for word in words)
+
+
+def for_loop_repeats(header):
+    """True when a `for` header runs its body at least twice: two or more listed values, `$(seq N)` or `{a..b}` with
+    N or b - a + 1 at least 2. A one-value loop is a dodge, not a repeat."""
+    values = FOR_VALUES.match(header)
+    if not values:
+        return False
+
+    listed = values.group(1).strip()
+    seq = SEQ_COUNT.match(listed)
+    if seq:
+        first = int(seq.group(1)) if seq.group(2) else 1
+        last = int(seq.group(2) or seq.group(1))
+        return last - first + 1 >= 2
+
+    brace = BRACE_RANGE.match(listed)
+    if brace:
+        return abs(int(brace.group(2)) - int(brace.group(1))) + 1 >= 2
+
+    return len(listed.split()) >= 2
+
+
 def state_dir_for(root, session):
     return root + "/" + session
 
@@ -298,6 +341,7 @@ def run(raw, state):
     succeeded = event == "PostToolUse"
     checks = []
     format_indexes = []
+    loop_kinds = []
     for index, (_, segment) in enumerate(steps):
         segment = re.sub("^" + WS + "+", "", segment)
         segment = re.sub(WS + "+$", "", segment)
@@ -307,6 +351,13 @@ def run(raw, state):
             if target.startswith("~"):
                 target = home + target[1:]
             cwd = target if target.startswith("/") else cwd + "/" + target
+            continue
+        segment = LOOP_BODY_START.sub("", segment)
+        if LOOP_HEADER.match(segment):
+            loop_kinds.append("repeat" if for_loop_repeats(segment) else segment.split()[0])
+        elif LOOP_END.match(segment):
+            if loop_kinds:
+                loop_kinds.pop()
             continue
         segment = re.sub(r"^[({ \t]+", "", segment)
         while True:
@@ -320,19 +371,23 @@ def run(raw, state):
         if not CHECK_START.search(segment):
             continue
 
+        if is_help_probe(segment):
+            continue
+
         if is_scoped_cargo_test(normalize(segment)):
             continue
 
         norm = normalize(segment)
         key = str(cksum((norm + "\n" + cwd).encode("utf-8", "surrogateescape")))
         run_file = run_file_for(state_dir, key, agent_id)
-        checks.append((index, norm, run_file, cwd))
+        in_repeat_loop = bool(loop_kinds) and loop_kinds[-1] == "repeat"
+        checks.append((index, norm, run_file, cwd, in_repeat_loop))
 
     if event in ("PostToolUse", "PostToolUseFailure"):
         if format_indexes:
             with contextlib.suppress(OSError):
                 touch(state_dir + "/edits")
-        for index, _, run_file, check_cwd in checks:
+        for index, _, run_file, check_cwd, _ in checks:
             if not step_surely_ran(steps, index, succeeded):
                 continue
             try:
@@ -345,10 +400,12 @@ def run(raw, state):
 
     if format_indexes:
         every_check_follows_a_formatter = all(follows_a_formatter(steps, format_indexes, check_index)
-                                              for check_index, _, _, _ in checks)
+                                              for check_index, _, _, _, _ in checks)
         if every_check_follows_a_formatter:
             return
-    for _, norm, run_file, check_cwd in checks:
+    for _, norm, run_file, check_cwd, in_repeat_loop in checks:
+        if in_repeat_loop:
+            continue
         edited_since_run = newer(run_file, state_dir + "/edits")
         if (edited_since_run and not changed_since_run(check_cwd, run_file)
                 and not tree_changed_since_run(check_cwd, run_file)):

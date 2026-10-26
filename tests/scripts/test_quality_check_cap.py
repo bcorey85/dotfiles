@@ -494,6 +494,73 @@ class QualityCheckCapTest(unittest.TestCase):
         self.post("cargo fmt --check")
         self.assert_allowed(self.pre("cargo fmt --check"))
 
+    # help probes
+
+    def test_a_help_probe_is_never_denied_and_never_recorded(self):
+        for command in ("cargo test --help", "pytest -h", "vitest --help", "pytest --version", "mypy -V",
+                        "pytest -k foo -h"):
+            self.post(command)
+            self.assertEqual(self.state_files(), [], command)
+            self.assert_allowed(self.pre(command))
+
+    def test_a_help_probe_after_a_recorded_run_of_the_same_check_is_allowed(self):
+        self.post("cargo test")
+        self.post("pytest")
+        self.assert_allowed(self.pre("cargo test --help"))
+        self.assert_allowed(self.pre("pytest -h"))
+        self.assert_denied(self.pre("cargo test"))
+        self.assert_denied(self.pre("pytest"))
+
+    def test_a_help_flag_of_another_step_does_not_make_the_check_a_help_probe(self):
+        self.post("pytest tests")
+        self.assert_denied(self.pre("pytest tests && grep -h x f"))
+        self.assert_denied(self.pre("grep -h x f; pytest tests"))
+        self.post("pytest tests && grep -h x f")
+        self.assertEqual(len(self.state_files()), 1)
+
+    def test_h_inside_another_flag_or_a_quoted_value_is_not_a_help_probe(self):
+        for command in ("pytest --headed", "pytest -rh", "pytest -k 'a -h'"):
+            self.post(command)
+            self.assert_denied(self.pre(command))
+
+    # deliberate repeats in a for loop
+
+    def test_a_for_loop_repeat_is_allowed_and_recorded_so_a_plain_rerun_is_denied(self):
+        self.post("pytest tests/x.py")
+        self.assert_allowed(self.pre("for i in 1 2 3; do pytest tests/x.py; done"))
+        self.post("for i in 1 2 3; do pytest tests/x.py; done")
+        self.assert_denied(self.pre("pytest tests/x.py"))
+        self.assert_allowed(self.pre("for i in 1 2 3; do pytest tests/x.py; done"))
+
+    def test_a_for_loop_run_is_recorded_when_nothing_ran_before(self):
+        self.post("for i in $(seq 3); do cargo test; done")
+        self.assert_denied(self.pre("cargo test"))
+
+    def test_a_for_loop_over_a_seq_substitution_repeats_a_check(self):
+        self.post("cargo test")
+        self.assert_allowed(self.pre("for i in $(seq 3); do cargo test; done"))
+        self.assert_allowed(self.pre("for i in 1 2\ndo\n  cargo test\ndone"))
+        self.assert_allowed(self.pre("for i in 1 2; do cargo test 2>&1 | tail -3; done"))
+
+    def test_a_while_or_until_loop_is_still_capped(self):
+        self.post("pytest tests/x.py")
+        self.assert_denied(self.pre("while true; do pytest tests/x.py; done"))
+        self.assert_denied(self.pre("until false; do pytest tests/x.py; done"))
+
+    def test_a_check_outside_a_for_loop_is_still_capped(self):
+        self.post("pytest tests/x.py")
+        self.assert_denied(self.pre("true; pytest tests/x.py"))
+        self.assert_denied(self.pre("if true; then pytest tests/x.py; fi"))
+        self.assert_denied(self.pre("for i in 1 2; do echo $i; done; pytest tests/x.py"))
+        self.assert_denied(self.pre("for i in 1 2; do while true; do pytest tests/x.py; done; done"))
+
+    def test_a_for_loop_over_one_value_is_still_capped(self):
+        self.post("pytest tests/x.py")
+        for values in ("1", "$(seq 1)", "{1..1}", "$(seq 3 3)"):
+            self.assert_denied(self.pre(f"for i in {values}; do pytest tests/x.py; done"))
+        for values in ("{1..3}", "$(seq 1 3)"):
+            self.assert_allowed(self.pre(f"for i in {values}; do pytest tests/x.py; done"))
+
     # formatters that write
 
     def test_command_with_a_writing_formatter_is_never_a_repeat(self):

@@ -27,9 +27,6 @@ LEDGER_TIMEOUT_ENV = "VERIFY_LEDGER_TIMEOUT_SECONDS"
 LEDGER_BACKOFF_ENV = "VERIFY_LEDGER_BACKOFF_SECONDS"
 LEDGER_BUSY_MESSAGE = ("the ledger is busy (another process holds the database), so the review state could not be "
                        "read; run this step again in a minute")
-AC_HEADING = re.compile(r"^(#{2,3})\s+(?:acceptance(?:\s+criteria)?|requirements)\s*:?\s*$", re.I)
-AC_HEADING_LOOSE = re.compile(r"^(#{2,3})\s+(?:acceptance|requirements)\b", re.I)
-LISTITEM = re.compile(r"^(\s*)(?:[-*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?(.*)$")
 # Accepted id spans: a plain id, an id followed by a parenthetical, an id with a qualifier inside the bold,
 # or several comma-separated ids inside one bold span.
 ID_LINE = re.compile(r"^\s*[-*]\s+\*\*(AC\d+[^*]*)\*\*\s*(?:\([^)]*\))?\s*[—–-]+\s*(.*)$")
@@ -59,69 +56,21 @@ def script_path(env_name, installed_relative):
 
 # ---------- markdown parsing ----------
 
-def heading_level(line):
-    match = re.match(r"^(#+)\s", line)
-    return len(match.group(1)) if match else 0
+heading_level = plan_format.heading_level
 
 
-def section_body(lines, start_index):
-    """Lines under lines[start_index] up to a heading of the same or higher level, or a `---` rule."""
-    level = heading_level(lines[start_index])
-    body = []
-    for line in lines[start_index + 1:]:
-        if line.strip() == "---":
-            break
-        next_level = heading_level(line)
-        if next_level and next_level <= level:
-            break
-        body.append(line)
-    return body
+def raising_verify_error(plan_reader):
+    """The reader, with the PlanFormatError it raises raised as a VerifyError."""
+    @functools.wraps(plan_reader)
+    def read(*args):
+        try:
+            return plan_reader(*args)
+        except plan_format.PlanFormatError as error:
+            raise VerifyError(str(error)) from error
+    return read
 
 
-def top_level_items(body, name="section", first_line=1):
-    """Top-level list items of a section; wrapped and nested lines are folded into the item above.
-
-    A line at column 0 that is not a list item but holds a word is prose the parse would drop: it raises Fail
-    with `name:line`. `first_line` is the file line number of body[0]."""
-    items = []
-    for offset, line in enumerate(body):
-        match = LISTITEM.match(line)
-        is_prose = (not match and line.strip() and not line.startswith((" ", "\t")) and re.search(r"\w", line))
-        if is_prose:
-            raise VerifyError(f"{name}:{first_line + offset}: prose in the criteria section is not a list item, so it "
-                       f"would be skipped: {line.strip()[:80]}")
-        if match and len(match.group(1)) < 2:
-            items.append(match.group(2).strip())
-        elif match and items:
-            items[-1] += " " + match.group(2).strip()
-        elif line.strip() and line.startswith((" ", "\t")) and items:
-            items[-1] += " " + line.strip()
-    return items
-
-
-def ticket_criteria(ticket_text, name="ticket"):
-    """Criteria from a ticket (or legacy flat plan), numbered in order and labelled by source
-    (`Ticket #2`): the ticket's own numbering, never an id from the criteria file. Raises Fail when none are found
-    or when a heading starts like a criteria heading but is not one."""
-    lines = ticket_text.splitlines()
-    for number, line in enumerate(lines, 1):
-        if AC_HEADING_LOOSE.match(line) and not AC_HEADING.match(line):
-            raise VerifyError(
-                f"{name}:{number}: heading `{line.strip()}` is not a recognized criteria heading "
-                "(`Acceptance`, `Acceptance` + `criteria`, `Requirements`); rename it or what it holds is not read"
-            )
-    candidates = [i for i, line in enumerate(lines) if AC_HEADING.match(line)]
-    if not candidates:
-        raise VerifyError("no `## Acceptance*` or `## Requirements*` heading in the ticket; "
-                   "refusing to treat zero criteria as a pass")
-    candidates.sort(key=lambda i: (heading_level(lines[i]), i))
-    for index in candidates:
-        items = top_level_items(section_body(lines, index), name, index + 2)
-        if items:
-            return [{"number": n, "label": f"Ticket #{n}", "text": text} for n, text in enumerate(items, 1)]
-    raise VerifyError(
-        f"heading `{lines[candidates[0]].strip()}` has no list items; refusing to treat zero criteria as a pass"
-    )
+ticket_criteria = raising_verify_error(plan_format.ticket_criteria)
 
 
 def parse_criteria_file(text, name="acceptance-criteria.md"):

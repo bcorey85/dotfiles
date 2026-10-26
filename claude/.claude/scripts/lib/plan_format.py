@@ -65,6 +65,10 @@ class PlanFormatError(Exception):
     """A line the grammar does not parse. The message starts with `name:line:`."""
 
 
+class NoCriteriaHeadingError(PlanFormatError):
+    """A ticket with no `## Acceptance*` or `## Requirements*` heading."""
+
+
 def phase_spans(lines):
     """Every `Phase <id>` section of the plan in file order, as (id, {"start", "level", "title", "end"}) with 0-based
     line indexes, `end` exclusive, and the failures for ids that have two sections.
@@ -716,17 +720,25 @@ def content_words(text):
 
 
 def spec_ac_failures(spec_path):
-    """The ac_reference_failures rows for a file named spec.md, read against the acceptance-criteria.md beside it (a
-    missing file is None). Any other file name has no criteria to check and gives []. A criteria file with a repeated
-    id gives its one error row."""
+    """The finalization rows for a file named spec.md: the ac_reference_failures rows read against the
+    acceptance-criteria.md beside it (a missing file is None) and the ac_drift_failures rows against the ticket beside
+    it (checked only when both the ticket and the criteria file exist). Any other file name gives []. A criteria file
+    with a repeated id gives its one error row. A ticket with no criteria heading is not checked for drift."""
     if spec_path.name != "spec.md":
         return []
+    spec_text = spec_path.read_text()
+    failures = []
     criteria_path = spec_path.with_name("acceptance-criteria.md")
     criteria_text = criteria_path.read_text() if criteria_path.is_file() else None
+    ticket_paths = sorted(spec_path.parent.glob("*00-ticket.md"))
     try:
-        return ac_reference_failures(spec_path.read_text(), criteria_text, str(spec_path), str(criteria_path))
+        failures += ac_reference_failures(spec_text, criteria_text, str(spec_path), str(criteria_path))
+        if criteria_text is not None and len(ticket_paths) == 1:
+            failures += ac_drift_failures(ticket_paths[0].read_text(), criteria_text, spec_text, str(ticket_paths[0]),
+                                          str(criteria_path))
     except PlanFormatError as error:
-        return [str(error)]
+        failures.append(str(error))
+    return failures
 
 
 def ac_reference_failures(spec_text, criteria_text, spec_name="spec.md", criteria_name="acceptance-criteria.md"):
@@ -754,4 +766,121 @@ def ac_reference_failures(spec_text, criteria_text, spec_name="spec.md", criteri
                 failures.append(f"{where} {criterion_id} shares no wording with {criterion_id} in {criteria_name} "
                                 f"({criteria[criterion_id][:60]!r}); it may be the ticket's number. Write "
                                 f"`ticket {criterion_id}`, or name the criterion's behavior beside it")
+    return failures
+
+
+# The ticket's acceptance criteria. verify-prep, verify-log and the plan check all read them through ticket_criteria.
+AC_HEADING = re.compile(r"^(#{2,3})\s+(?:acceptance(?:\s+criteria)?|requirements)\s*:?\s*$", re.I)
+AC_HEADING_LOOSE = re.compile(r"^(#{2,3})\s+(?:acceptance|requirements)\b", re.I)
+LISTITEM = re.compile(r"^(\s*)(?:[-*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?(.*)$")
+
+
+def heading_level(line):
+    match = re.match(r"^(#+)\s", line)
+    return len(match.group(1)) if match else 0
+
+
+def section_body(lines, start_index):
+    """Lines under lines[start_index] up to a heading of the same or higher level, or a `---` rule."""
+    level = heading_level(lines[start_index])
+    body = []
+    for line in lines[start_index + 1:]:
+        if line.strip() == "---":
+            break
+        next_level = heading_level(line)
+        if next_level and next_level <= level:
+            break
+        body.append(line)
+    return body
+
+
+def top_level_items(body, name="section", first_line=1):
+    """Top-level list items of a section; wrapped and nested lines are folded into the item above.
+
+    A line at column 0 that is not a list item but holds a word is prose the parse would drop: it raises
+    PlanFormatError with `name:line`. `first_line` is the file line number of body[0]."""
+    items = []
+    for offset, line in enumerate(body):
+        match = LISTITEM.match(line)
+        is_prose = (not match and line.strip() and not line.startswith((" ", "\t")) and re.search(r"\w", line))
+        if is_prose:
+            raise PlanFormatError(f"{name}:{first_line + offset}: prose in the criteria section is not a list item, "
+                                  f"so it would be skipped: {line.strip()[:80]}")
+        if match and len(match.group(1)) < 2:
+            items.append(match.group(2).strip())
+        elif match and items:
+            items[-1] += " " + match.group(2).strip()
+        elif line.strip() and line.startswith((" ", "\t")) and items:
+            items[-1] += " " + line.strip()
+    return items
+
+
+def ticket_criteria(ticket_text, name="ticket"):
+    """Criteria from a ticket (or legacy flat plan), numbered in order and labelled by source
+    (`Ticket #2`): the ticket's own numbering, never an id from the criteria file. Raises PlanFormatError when none
+    are found or when a heading starts like a criteria heading but is not one."""
+    lines = ticket_text.splitlines()
+    for number, line in enumerate(lines, 1):
+        if AC_HEADING_LOOSE.match(line) and not AC_HEADING.match(line):
+            raise PlanFormatError(
+                f"{name}:{number}: heading `{line.strip()}` is not a recognized criteria heading "
+                "(`Acceptance`, `Acceptance` + `criteria`, `Requirements`); rename it or what it holds is not read"
+            )
+    candidates = [i for i, line in enumerate(lines) if AC_HEADING.match(line)]
+    if not candidates:
+        raise NoCriteriaHeadingError(f"{name}: no `## Acceptance*` or `## Requirements*` heading in the ticket; "
+                                "refusing to treat zero criteria as a pass")
+    candidates.sort(key=lambda i: (heading_level(lines[i]), i))
+    for index in candidates:
+        items = top_level_items(section_body(lines, index), name, index + 2)
+        if items:
+            return [{"number": n, "label": f"Ticket #{n}", "text": text} for n, text in enumerate(items, 1)]
+    raise PlanFormatError(
+        f"{name}: heading `{lines[candidates[0]].strip()}` has no list items; refusing to treat zero criteria as a pass"
+    )
+
+
+# Ticket-criteria drift. A plan or criteria file never cuts, narrows, splits or rewords a ticket criterion without the
+# user's sign-off, so each ticket criterion's text must be the text of some AC in acceptance-criteria.md.
+SIGN_OFF = re.compile(r"sign-?off", re.I)
+MARKDOWN_MARKS = re.compile(r"[*_`]")
+
+
+def normalized_words(text):
+    """The text without markdown marks (`*`, `_`, backticks) and with each run of whitespace made one space."""
+    return " ".join(MARKDOWN_MARKS.sub("", text).split())
+
+
+def sign_off_names(lines, entry):
+    """True when a line holds a sign-off and names the ticket criterion: it quotes the criterion's text or says
+    `Ticket #<n>`."""
+    label = re.compile(rf"ticket\s*#{entry['number']}(?!\d)", re.I)
+    for line in lines:
+        if SIGN_OFF.search(line) and (normalized_words(entry["text"]) in normalized_words(line) or label.search(line)):
+            return True
+    return False
+
+
+def ac_drift_failures(ticket_text, criteria_text, spec_text, ticket_name="00-ticket.md",
+                      criteria_name="acceptance-criteria.md"):
+    """One message for each ticket criterion whose text (compared after markdown marks and whitespace are normalised)
+    is the text of no AC in the criteria file, unless a line of the criteria file or of the spec's `## Plan Deviations`
+    section holds a sign-off that names it. A ticket with no criteria heading has nothing to drift from and gives [];
+    any other ticket the reader cannot parse raises PlanFormatError (`ticket_name:line:`)."""
+    try:
+        ticket_entries = ticket_criteria(ticket_text, ticket_name)
+    except NoCriteriaHeadingError:
+        return []
+    criteria_texts = {normalized_words(text) for text in criteria_by_id(criteria_text, criteria_name).values()}
+    spec_lines = spec_text.splitlines()
+    deviation_lines = [spec_lines[index]
+                       for index in script_utils.heading_section_indexes(spec_lines, DEVIATIONS_HEADING)]
+    sign_off_lines = criteria_text.splitlines() + deviation_lines
+    failures = []
+    for entry in ticket_entries:
+        if normalized_words(entry["text"]) in criteria_texts or sign_off_names(sign_off_lines, entry):
+            continue
+        failures.append(f"{criteria_name}: ticket criterion {entry['number']} reads {entry['text'][:100]!r}: no AC in "
+                        f"the criteria file carries this wording and no sign-off names it. Copy it verbatim into one "
+                        f"AC, or record the user's sign-off (who and when) naming it")
     return failures

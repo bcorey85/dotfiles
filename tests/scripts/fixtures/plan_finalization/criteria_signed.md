@@ -1,0 +1,4 @@
+# Acceptance Criteria
+
+- **AC1** — Selecting a package with no linkable files shows an explicit empty message.
+- **AC2** — A second run reuses the cached index and may skip the scan. Ticket #2 reworded. Sign-off: Brandon, 2026-10-26.

@@ -171,8 +171,8 @@ type = "shell"
 key = "prefix+tab"                      # edit/reorder slots
 command = "~/.local/bin/herdr-harpoon menu"
 type = "popup"
-width = "70%"
-height = "60%"
+width = "100%"
+height = "100%"
 
 # ─── popups ──────────────────────────────────────────────────────────────────
 # cwd is inherited from the focused pane automatically.
@@ -243,15 +243,15 @@ height = "100%"
 key = "prefix+shift+a"                  # diffask
 command = "~/.local/bin/diffask"
 type = "popup"
-width = "80%"
-height = "75%"
+width = "100%"
+height = "100%"
 
 [[keys.command]]
 key = "prefix+b"                        # htop
 command = "htop"
 type = "popup"
-width = "95%"
-height = "95%"
+width = "100%"
+height = "100%"
 
 [[keys.command]]
 key = "prefix+shift+p"                  # gh-dash
@@ -271,36 +271,36 @@ height = "100%"
 key = "prefix+slash"                    # live grep: nvim snacks grep (<leader>/)
 command = "FIND_POPUP=grep nvim"
 type = "popup"
-width = "95%"
-height = "95%"
+width = "100%"
+height = "100%"
 
 [[keys.command]]
 key = "prefix+space"                    # find files: nvim snacks smart (<leader><space>)
 command = "FIND_POPUP=smart nvim"
 type = "popup"
-width = "95%"
-height = "95%"
+width = "100%"
+height = "100%"
 
 [[keys.command]]
 key = "prefix+v"                        # obsidian vault search
 command = "fd -e md . ~/vault | fzf --header 'enter=read | ctrl-e=edit' --preview '~/.local/bin/glow-fit -s dark {}' --preview-window='right,60%' --bind 'enter:become(~/.local/bin/glow-fit -p {})' --bind 'ctrl-e:become(FIND_POPUP=1 nvim {})'"
 type = "popup"
-width = "95%"
-height = "95%"
+width = "100%"
+height = "100%"
 
 [[keys.command]]
 key = "prefix+n"                        # notes menu
 command = "~/.local/bin/notes-menu"
 type = "popup"
-width = "90%"
-height = "90%"
+width = "100%"
+height = "100%"
 
 [[keys.command]]
 key = "prefix+f"                        # sessionizer (herdr-native workspace picker)
 command = "~/.local/bin/herdr-sessionizer"
 type = "popup"
-width = "60%"
-height = "60%"
+width = "100%"
+height = "100%"
 
 # The native new_worktree (prefix+ctrl+g) makes a bare workspace; this one adds
 # the herdr-dev layout and pushes the branch.
@@ -319,8 +319,8 @@ height = 3                              # cells: border + the one prompt line
 key = ["ctrl+period", "prefix+ctrl+period"]
 command = "~/.local/bin/herdr-fleet"
 type = "popup"
-width = "85%"
-height = "80%"
+width = "100%"
+height = "100%"
 
 # ─── shell commands (no popup) ───────────────────────────────────────────────
 [[keys.command]]

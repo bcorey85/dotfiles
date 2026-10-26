@@ -126,7 +126,8 @@ if grep -qiE '\brm\b.*?\s-[a-zA-Z]*[rf]\b' <<< "$CMD"; then
     fi
 fi
 # Generic pipe-to-shell
-if grep -qiE '\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?(ba)?sh\b|\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?zsh\b|\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?dash\b|\|\s*((/usr(/local)?/s?bin/)|/s?bin/)?ksh\b' <<< "$CMD"; then
+if grep -qF '|' <<< "$CMD" && grep -qiE '\b(ba|z|da|k)?sh\b' <<< "$CMD" && \
+   ! python3 "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/tools/pipe_shell_check.py" <<< "$CMD"; then
     block "[pipe_shell] [threat:7] Pipe-to-shell is not allowed — piping any command into a shell interpreter"
 fi
 if grep -qiE 'curl\b.*(--output\b|-o\b)|wget\b.*(-O\b|--output-document\b)' <<< "$CMD" && \

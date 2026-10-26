@@ -12,6 +12,8 @@ Every `/eng-spec` plan ends with these FOUR phases, in order after the last feat
    cause, concentration gate evaluated (module dispatched with the trigger
    named, or both counts stated).
 
+   A scope box diffs two recorded commit ids, never a branch name (`main...HEAD` is empty once the branch merges), and fails on an empty diff: `test -n "$(git diff --name-only <base-sha>..<head-sha>)"`. `plan check` fails a box that diffs a branch name.
+
 2. **Test audit** (risk: high) — `/test-audit`: cull spam, sweep weak assertions — the half of test-intent no phase judges. Findings → `/fix`; receipt → Recap. Success Criteria: denominator stated, every finding routed.
 
 3. **Verify pass** (risk: high) — `/verify-branch` runs both checks, in order:

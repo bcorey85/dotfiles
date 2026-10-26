@@ -2046,6 +2046,40 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("Automated Verification failed", self.step("after-review"))
         self.assertIn("- [ ] Phase 1:", self.plan_text())
 
+    def test_a_grep_ban_with_no_match_holds(self):
+        self.set_verification("- [ ] **Prohibition**: no console.log - `grep -n console.log backend/src/orders.ts`")
+        outcome = self.finish_phase_one()
+        self.assertNotIn("Automated Verification failed", outcome)
+
+    def test_an_rg_ban_with_no_match_holds(self):
+        self.set_verification("- [ ] **Prohibition**: no console.log - `rg -n console.log backend/src/orders.ts`")
+        outcome = self.finish_phase_one()
+        self.assertNotIn("Automated Verification failed", outcome)
+
+    def test_a_negated_rg_ban_runs_and_holds_on_no_match(self):
+        self.set_verification("- [ ] **Prohibition**: no console.log - `! rg -n console.log backend/src/orders.ts`")
+        outcome = self.finish_phase_one()
+        self.assertNotIn("cannot run", outcome)
+        self.assertNotIn("Automated Verification failed", outcome)
+
+    def test_a_negated_rg_ban_passes_plan_check(self):
+        self.set_verification("- [ ] **Prohibition**: no console.log - `! rg -n console.log backend/src/orders.ts`")
+        result = subprocess.run([sys.executable, str(SCRIPT), "plan", "check", self.plan],
+                                cwd=self.repo, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_an_rg_ban_with_a_match_fails(self):
+        self.set_verification("- [ ] **Prohibition**: no console.log - `rg -n console.log backend/src/orders.ts`")
+        self.coder_round(source="console.log(1)\n")
+        self.hook("review-loop", self.LOOP_OK)
+        self.assertIn("Automated Verification failed", self.step("after-review"))
+
+    def test_a_grep_ban_with_a_match_fails(self):
+        self.set_verification("- [ ] **Prohibition**: no console.log - `grep -n console.log backend/src/orders.ts`")
+        self.coder_round(source="console.log(1)\n")
+        self.hook("review-loop", self.LOOP_OK)
+        self.assertIn("Automated Verification failed", self.step("after-review"))
+
     def test_prohibition_pipe_form_is_judged_by_its_output(self):
         self.set_verification(
             "- [ ] **Prohibition**: none - `git grep -n console.log -- backend/src/orders.ts | wc -l`"
@@ -4431,6 +4465,35 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertEqual(1, result.returncode)
         self.assertIn("it has no backticked command and is not marked N/A", result.stdout)
+
+    def test_plan_check_fails_a_box_that_diffs_a_moving_branch_name(self):
+        for span in ("main...HEAD", "origin/master..HEAD", "main..feature"):
+            with self.subTest(span=span):
+                item = f"- [ ] **Scope-verified**: the branch changed files - `git diff --name-only {span}`"
+                text = self.bad_item_plan(item)
+                bad_line = text.splitlines().index(item) + 1
+
+                result = self.plan_check(text)
+
+                self.assertEqual(1, result.returncode)
+                self.assertIn(f":{bad_line}:", result.stdout)
+                self.assertIn("moving branch name", result.stdout)
+
+    def test_plan_check_fails_a_closing_phase_box_that_diffs_a_moving_branch_name(self):
+        item = "- [ ] **Scope-verified**: files changed - `git diff --name-only main...HEAD`"
+        text = self.plan_text().replace("\nSweep.\n", f"\n**Success Criteria**:\n\n{item}\n")
+        bad_line = text.splitlines().index(item) + 1
+
+        result = self.plan_check(text)
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn(f":{bad_line}:", result.stdout)
+
+    def test_plan_check_passes_a_box_that_diffs_recorded_commits_and_fails_on_an_empty_diff(self):
+        item = ("- [ ] **Scope-verified**: files changed - "
+                "`test -n \"$(git diff --name-only abc1234..def5678)\"`")
+
+        self.assertEqual(0, self.plan_check(self.bad_item_plan(item)).returncode)
 
     def test_plan_check_passes_items_marked_n_a_and_commands_on_the_path_or_in_the_repo(self):
         for item in (

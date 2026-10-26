@@ -191,7 +191,10 @@ def command_plan(args):
     verification_failure = verification_format_failure(plan_lines, args[1], pathlib.Path.cwd(), plan["entries"])
     if verification_failure:
         print(verification_failure)
-    sys.exit(1 if plan["failures"] or manual_failure or verification_failure else 0)
+    ac_failures = plan_format.spec_ac_failures(pathlib.Path(args[1]))
+    for row in ac_failures:
+        print(row)
+    sys.exit(1 if plan["failures"] or manual_failure or verification_failure or ac_failures else 0)
 
 
 # ---------- gate derivation ----------

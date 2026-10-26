@@ -32,6 +32,10 @@ from code_step_core import (
 from script_utils import git_output, run_command
 
 VERIFY_TIMEOUT_SECONDS = 600
+# A ban written with rg or grep: exit 1 (no match) holds it, like git grep.
+SEARCH_BAN = re.compile(r"^(?:rg|grep|egrep)\s")
+# A ban written `! rg ...` is the same ban as `rg ...`: no match holds it.
+NEGATED_SEARCH = re.compile(r"^!\s+(?=(?:rg|grep|egrep|git grep)\s)")
 WHOLE_SUITE = re.compile(r"^(?:(?:cd \S+ && )?(?:npm|pnpm|yarn) (?:run )?(?:test|lint)"
                          r"|(?:cd \S+ && )?npx (?:vitest|jest)(?: run)?|(?:python3 -m )?pytest|ruff check)$")
 TICKET_IN_NAME = re.compile(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]+-\d+)(?![A-Za-z0-9])")
@@ -204,7 +208,7 @@ def verification_command(line, repo_dir=None):
     # The first backticked span that starts with a known program, after any leading NAME=value assignments, which the
     # shell passes to the command; when none does, the first span that starts with a program of this machine. The
     # line may continue after it ("`npm run build` exits 0.").
-    spans = script_utils.backticked_spans(line)
+    spans = [NEGATED_SEARCH.sub("", span) for span in script_utils.backticked_spans(line)]
     for span in spans:
         if COMMAND_START.match(span):
             return span
@@ -236,28 +240,40 @@ def verification_item_problem(line, repo_dir):
             f"(it starts with {', '.join(start_words)})")
 
 
+def phase_verification_rows(plan_lines, section, closing, plan_name):
+    # (index, line) of the checkbox items to check in one phase section, indexes relative to the section. A closing
+    # phase has no Automated Verification heading, so every checkbox line in it counts.
+    section_lines = plan_lines[section["start"]:section["end"]]
+    if closing:
+        return [(index, line) for index, line in enumerate(section_lines) if plan_format.AUTOMATED_ITEM.match(line)]
+    return plan_format.automated_verification_rows(section_lines, plan_name, section["start"] + 1, strict=True)
+
+
 def verification_format_failure(plan_lines, plan_name, repo_dir, entries):
     # The write-time message for open phases whose Automated Verification items cannot run, or None when all can. A
-    # closing phase is checked by its skill, which runs no verification command.
+    # closing phase is checked by its skill, which runs no verification command, so only its boxes that diff a moving
+    # branch name are reported.
     problems = []
     for entry in entries:
-        if not entry["open"] or entry["closing"]:
+        if not entry["open"]:
             continue
 
         section = plan_format.phase_section(plan_lines, entry["number"])
         if section is None:
             continue
 
-        section_lines = plan_lines[section["start"]:section["end"]]
         try:
-            rows = plan_format.automated_verification_rows(section_lines, plan_name, section["start"] + 1,
-                                                         strict=True)
+            rows = phase_verification_rows(plan_lines, section, entry["closing"], plan_name)
         except plan_format.PlanFormatError as error:
             problems.append(str(error))
             continue
 
         for index, line in rows:
-            problem = verification_item_problem(line, repo_dir)
+            problem = None
+            if plan_format.moving_base_diff(line):
+                problem = plan_format.MOVING_BASE_DIFF_FIX
+            elif not entry["closing"]:
+                problem = verification_item_problem(line, repo_dir)
             if problem:
                 problems.append(f"{plan_name}:{section['start'] + index + 1}: {line.strip()[:100]} - {problem}")
 
@@ -269,7 +285,8 @@ def verification_format_failure(plan_lines, plan_name, repo_dir, entries):
 
 
 def check_prohibition(repo_dir, command, code, output):
-    # A git grep ban passes on exit 1 (no match) and fails on exit 0 (a hit). Any other exit is an error that stops.
+    # A git grep, rg or grep ban passes on exit 1 (no match) and fails on exit 0 (a hit). Any other exit is an error
+    # that stops.
     # A pipe form is judged by its output: empty or 0 passes.
     hit_rows = len([row for row in output.splitlines() if row.strip()])
     if "|" in command:
@@ -303,7 +320,7 @@ def run_verification_commands(repo_dir, phase_section):
             skipped.append(command)
             continue
         code, output = run_command(command, repo_dir, timeout=timeout)
-        if "git grep" in command:
+        if "git grep" in command or SEARCH_BAN.match(script_utils.without_leading_env_assignments(command)):
             results.append(check_prohibition(repo_dir, command, code, output))
             continue
         results.append((command, code, output))

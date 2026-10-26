@@ -60,7 +60,7 @@ Each item: source file path, function/method name, what's not tested, why it mat
 ### Assertions the Spec Does Not Support
 
 [Tests that pin behavior the acceptance criteria, ticket or plan contradict (`fix`) or leave open (`ask`).
-Each item: test file path and line, test name, the asserted value, the criterion or ticket line it contradicts or the open question, and for a `fix` the corrected assertion.]
+Each item: test file path and line, test name, the asserted value, the criterion or ticket line it contradicts or the open question, for a `fix` the corrected assertion, and for an `ask` the one edit an `accepted` answer makes.]
 
 ### Weak or Meaningless Tests
 

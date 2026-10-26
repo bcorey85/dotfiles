@@ -114,7 +114,7 @@ not re-derive it. Route on the label:
 
 - **`fix`** → auto-fix loop. Its `blocker` flag does not change the
   routing here. It changes only what the second fix-diff pass does (Step 5d) and what stops a phase.
-- **`ask`** → never dispatched. Collected and surfaced to the user in the packet, each entry carrying its emitting `gate` and `class`.
+- **`ask`** → never dispatched. Collected and surfaced to the user in the packet, each entry carrying the reviewer's `change` and its emitting `gate` and `class`.
 - **`nit`** → never dispatches a coder, never re-raised on a later pass. When this pass
   dispatches a fix coder, its `nit` items ride along as small items (Step 5); otherwise
   report-only.
@@ -305,7 +305,7 @@ skipped_fp: [{item, reason}]             # `fix` findings dropped as false posit
 blockers: [<one line each>]              # status=critical-blocker
 findings_remaining: [{disposition, finding, file_line}]  # status=deferred | cap-reached
 plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
-ask: [{finding, file_line, question, gate, class, finding_id}]  # never auto-fixed; the user answers these; gate/class/finding_id ride along so the caller can log the outcome. finding_id is the id log-review-finding printed for that ask row; the outcome row supersedes the ask row by it, and an outcome with no finding_id is not logged
+ask: [{finding, file_line, question, change, gate, class, finding_id}]  # never auto-fixed; the user answers these; change is the one edit an accepted answer makes; gate/class/finding_id ride along so the caller can log the outcome. finding_id is the id log-review-finding printed for that ask row; the outcome row supersedes the ask row by it, and an outcome with no finding_id is not logged
 class_closure: <the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a — fixed[] empty>
 files_touched: [<path>]
 nit: [<one line each>]                   # a small item ends `applied` or `skipped: <reason>`

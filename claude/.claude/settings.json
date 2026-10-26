@@ -385,6 +385,11 @@
           },
           {
             "type": "command",
+            "if": "Bash(*rg*)",
+            "command": "python3 ~/.claude/scripts/gates/rg_path_gate.py"
+          },
+          {
+            "type": "command",
             "if": "Bash(*git*)",
             "command": "python3 ~/.claude/scripts/gates/git_discipline_gate.py"
           },

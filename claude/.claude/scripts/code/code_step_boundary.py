@@ -50,7 +50,20 @@ PRESENCE_WORDING = re.compile(r"\bpresence\b|\bpresent\b|\bexists?\b|\bcontains?
 SEARCH_BAN_NOTE = ("\nan rg or grep line is a ban unless its text says it checks presence "
                    "(present, exists, contains, finds)\n")
 # A ban written `! rg ...` is the same ban as `rg ...`: no match holds it.
-NEGATED_SEARCH = re.compile(r"^!\s+(?=(?:rg|grep|egrep|git grep)\s)")
+# A leading `cd <dir> &&` does not change what the command searches: it stays in the command and is ignored here.
+LEADING_CD = r"(?:cd \S+ && )?"
+NEGATED_SEARCH = re.compile(r"^(" + LEADING_CD + r")!\s+(?=(?:rg|grep|egrep|git grep)\s)")
+
+
+def without_negation(span):
+    """The span with the `!` of a negated search taken off, any leading `cd <dir> &&` kept."""
+    return NEGATED_SEARCH.sub(r"\1", span)
+
+
+def without_leading_cd_and_env(command):
+    """The command with any NAME=value words and a `cd <dir> &&` it starts with taken off, for judging what it is."""
+    unassigned = script_utils.without_leading_env_assignments(command)
+    return re.sub(r"^cd \S+ && ", "", unassigned)
 WHOLE_SUITE = re.compile(r"^(?:(?:cd \S+ && )?(?:npm|pnpm|yarn) (?:run )?(?:test|lint)"
                          r"|(?:cd \S+ && )?npx (?:vitest|jest)(?: run)?|(?:python3 -m )?pytest|ruff check)$")
 TICKET_IN_NAME = re.compile(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]+-\d+)(?![A-Za-z0-9])")
@@ -223,7 +236,7 @@ def verification_command(line, repo_dir=None):
     # The first backticked span that starts with a known program, after any leading NAME=value assignments, which the
     # shell passes to the command; when none does, the first span that starts with a program of this machine. The
     # line may continue after it ("`npm run build` exits 0.").
-    spans = [NEGATED_SEARCH.sub("", span) for span in script_utils.backticked_spans(line)]
+    spans = [without_negation(span) for span in script_utils.backticked_spans(line)]
     for span in spans:
         if COMMAND_START.match(span):
             return span
@@ -303,10 +316,10 @@ def is_search_ban(command, line):
     if "git grep" in command:
         return True
 
-    if not SEARCH_COMMAND.match(script_utils.without_leading_env_assignments(command)):
+    if not SEARCH_COMMAND.match(without_leading_cd_and_env(command)):
         return False
 
-    if NEGATED_SEARCH.search(line.replace("`", "")):
+    if any(without_negation(span) == command and span != command for span in script_utils.backticked_spans(line)):
         return True
 
     text = line.replace(command, "")

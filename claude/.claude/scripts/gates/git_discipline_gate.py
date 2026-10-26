@@ -52,7 +52,7 @@ def is_direct_edit_repo():
 def run(raw):
     try:
         command = command_of(raw)
-    except ValueError, JqError:
+    except (ValueError, JqError):
         raise DenyError(
             "[git-discipline-gate] hook input did not parse — failing closed. Report this to the user."
         ) from None

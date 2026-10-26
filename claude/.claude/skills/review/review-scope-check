@@ -148,12 +148,12 @@ out=$("$scope" root="$work/pushed")
 assert "default branch: MERGE_BASE is the pushed tip" "$out" "MERGE_BASE=$fork"
 
 # --- family 9: branch-base missing or failing --------------------------------------
-out=$(BRANCH_BASE_SCRIPT=/nonexistent "$scope" root="$work/pushed" 2>"$work/err.txt")
+out=$(BRANCH_BASE_SCRIPT=/nonexistent "$scope" root="$work/pushed" base=HEAD 2>"$work/err.txt")
 assert "no branch-base: MERGE_BASE empty" "$out" "MERGE_BASE=
 "
 assert "no branch-base: other sections still printed" "$out" "SHORTSTAT="
 assert "no branch-base: reason on stderr" "$(cat "$work/err.txt")" "MERGE_BASE empty: not executable at /nonexistent"
-out=$(BRANCH_BASE_SCRIPT=/bin/false "$scope" root="$work/pushed" 2>"$work/err.txt")
+out=$(BRANCH_BASE_SCRIPT=/bin/false "$scope" root="$work/pushed" base=HEAD 2>"$work/err.txt")
 assert "failing branch-base: exit code on stderr" "$(cat "$work/err.txt")" "MERGE_BASE empty: branch-base exit 1"
 
 newrepo "$work/nobase" trunk

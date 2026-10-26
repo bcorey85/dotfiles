@@ -89,6 +89,20 @@ class DenyError(Exception):
     pass
 
 
+def short_flags(word):
+    """For one bundle of short `git commit` options such as `-qm`: (it holds -o, the next word is the value of its
+    last letter), or None when a letter before the first value letter is not a known flag."""
+    letters = word[1:]
+    only_given = False
+    for position, letter in enumerate(letters):
+        if letter in COMMIT_VALUE_LETTERS:
+            return only_given, position == len(letters) - 1
+        if "-" + letter not in COMMIT_FLAGS:
+            return None
+        only_given = only_given or "-" + letter in COMMIT_ONLY_FLAGS
+    return only_given, False
+
+
 def commit_pathspecs(args):
     """The pathspecs in the words after `git commit`, or None when a word is an option other than a plain flag or a
     message-style option with its value. `--` ends the options."""
@@ -114,14 +128,12 @@ def commit_pathspecs(args):
                 return None
             only_given = only_given or name in COMMIT_ONLY_FLAGS
             continue
-        letters = word[1:]
-        for position, letter in enumerate(letters):
-            if letter in COMMIT_VALUE_LETTERS:
-                index += 1 if position == len(letters) - 1 else 0
-                break
-            if "-" + letter not in COMMIT_FLAGS:
-                return None
-            only_given = only_given or "-" + letter in COMMIT_ONLY_FLAGS
+        flags = short_flags(word)
+        if flags is None:
+            return None
+        bundle_only, value_follows = flags
+        only_given = only_given or bundle_only
+        index += 1 if value_follows else 0
     if only_given and not pathspecs:
         return None
     return pathspecs
@@ -193,6 +205,31 @@ def is_commit_command(command):
     return any(runs_git_commit(words) for words in simple_commands)
 
 
+PATHSPEC_READERS = {"commit": commit_pathspecs, "add": add_pathspecs}
+
+
+def simple_command_is_safe(words, redirections):
+    """True when one simple command writes no file and runs nothing this reading cannot follow: an empty command, a
+    read-only program, or git add, git commit or a read-only git subcommand, with no `$` or backtick word other than
+    a quoted-heredoc message."""
+    if any(redirection_writes_file(operator, target) for operator, target in redirections):
+        return False
+    if any(runs_substitution(word) for word in words):
+        return False
+    if not words:
+        return True
+    if words[0] != "git":
+        return words[0] in READ_ONLY_PROGRAMS
+    if len(words) < 2:
+        return False
+    # A git option before the subcommand (-C, -c, --git-dir) lands here as the subcommand and is refused.
+    subcommand, args = words[1], words[2:]
+    if subcommand in PATHSPEC_READERS:
+        return True
+    # `--output` makes a read-only subcommand write a file, such as a hook.
+    return subcommand in READ_ONLY_GIT and not any(word.startswith("--output") for word in args)
+
+
 def command_pathspecs(command):
     """(add pathspecs, commit pathspecs) of a command that holds exactly one `git commit` and nothing that changes
     the repo, the directory or the index in a way this reading cannot follow; None for any other command."""
@@ -200,42 +237,21 @@ def command_pathspecs(command):
         simple_commands = parse_simple_commands(command)
     except ValueError:
         return None
-
-    add_paths = []
-    commit_paths = []
-    commit_count = 0
-    for words, redirections in simple_commands:
-        if any(redirection_writes_file(operator, target) for operator, target in redirections):
-            return None
-        if not words:
-            continue
-        if any(runs_substitution(word) for word in words):
-            return None
-        if words[0] != "git":
-            if words[0] not in READ_ONLY_PROGRAMS:
-                return None
-            continue
-        if len(words) < 2:
-            return None
-        # A git option before the subcommand (-C, -c, --git-dir) lands here as the subcommand and is refused below.
-        subcommand, args = words[1], words[2:]
-        if subcommand == "commit":
-            commit_count += 1
-            pathspecs = commit_pathspecs(args)
-            if pathspecs is None:
-                return None
-            commit_paths += pathspecs
-        elif subcommand == "add":
-            pathspecs = add_pathspecs(args)
-            if pathspecs is None:
-                return None
-            add_paths += pathspecs
-        elif subcommand not in READ_ONLY_GIT or any(word.startswith("--output") for word in args):
-            # `--output` makes a read-only subcommand write a file, such as a hook.
-            return None
-    if commit_count != 1:
+    if not all(simple_command_is_safe(words, redirections) for words, redirections in simple_commands):
         return None
-    return add_paths, commit_paths
+
+    git_calls = [words[1:] for words, _ in simple_commands if words[:1] == ["git"] and words[1] in PATHSPEC_READERS]
+    subcommands = [subcommand for subcommand, *_ in git_calls]
+    if subcommands.count("commit") != 1:
+        return None
+
+    pathspecs = {"add": [], "commit": []}
+    for subcommand, *args in git_calls:
+        found = PATHSPEC_READERS[subcommand](args)
+        if found is None:
+            return None
+        pathspecs[subcommand] += found
+    return pathspecs["add"], pathspecs["commit"]
 
 
 def is_notes_path(path):
@@ -270,93 +286,92 @@ def ships_only_notes(command, cwd):
     return bool(shipped_paths) and all(is_notes_path(path) for path in shipped_paths)
 
 
-def run(raw, state):
+def read_event(raw):
+    """The hook event JSON; empty input reads as the empty event."""
     if raw.strip() == "":
-        root = EMPTY_INPUT
-    else:
-        try:
-            root = json.loads(raw)
-        except ValueError:
-            raise JqError(2) from None
+        return EMPTY_INPUT
+    try:
+        return json.loads(raw)
+    except ValueError:
+        raise JqError(2) from None
+
+
+def open_state_dir():
+    """The gate's state folder, made when missing, with stale session files pruned."""
+    state_dir = os.environ["HOME"] + "/.claude/state/review-gate"
+    try:
+        os.makedirs(state_dir, exist_ok=True)
+    except OSError as error:
+        hook_input.emit_stderr(f"review-commit-gate: cannot create {state_dir}: {error.strerror}\n")
+        raise JqError(1) from None
+    prune_old_state_files(state_dir)
+    return state_dir
+
+
+def on_post_tool_use(root, state_file):
+    if jq_field(root, "tool_input", "subagent_type") in CODERS:
+        with open(state_file, "w") as handle:
+            handle.write("dirty\n")
+
+
+def check_commit(command, root, state_file):
+    """Deny a commit while the session is dirty, unless it ships only notes."""
+    try:
+        with open(state_file, "rb") as handle:
+            current = handle.read().decode("utf-8", "replace").rstrip("\n")
+    except OSError:
+        return
+    if current != "dirty":
+        return
+    if ships_only_notes(command, jq_field(root, "cwd")):
+        return
+    raise DenyError(
+        "[review-commit-gate] Coder work from this session has no converged /review. Run /review on "
+        "the coder work and commit after it converges. If the commit ships only Markdown files under "
+        "the repo's top-level docs/ folder, run it as a plain `git commit` (with `git add` of single "
+        "named files if needed) from the repo root in its own Bash call, with no `cd`, `env` or "
+        "`git -C`, because the gate passes that form."
+    )
+
+
+def apply_mark(mark, session, state_file):
+    """Record `review-gate-mark clean|dirty`. `clean` is denied without a converged or deferred hand-back."""
+    if mark == "clean":
+        # Imported here, not at load: a missing module is an internal error on a `clean` mark only, and the
+        # commit check and the dirty mark keep working.
+        import handback
+        reason = handback.false_clean_reason(session)
+        if reason:
+            raise DenyError(
+                f"[review-commit-gate] Gate not marked clean: {reason}. Only a converged or deferred review "
+                "hand-back from this session allows clean."
+            )
+    with open(state_file, "w") as handle:
+        handle.write(mark + "\n")
+
+
+def on_pre_tool_use(root, session, state_file):
+    """A commit command is checked and never also marks; any other command may mark."""
+    command = jq_field(root, "tool_input", "command")
+    if is_commit_command(command):
+        check_commit(command, root, state_file)
+        return
+    marked = MARK.search(command)
+    if marked:
+        apply_mark(marked.group(1), session, state_file)
+
+
+def run(raw, state):
+    root = read_event(raw)
     event = jq_field(root, "hook_event_name")
     state["event"] = event
     session = jq_field(root, "session_id", default="unknown")
 
-    state_dir = os.environ["HOME"] + "/.claude/state/review-gate"
-    try:
-        os.makedirs(state_dir, exist_ok=True)
-    except OSError:
-        report_mkdir_failure(state_dir)
-        raise JqError(1) from None
-    state_file = state_dir + "/" + session
-    prune_old_state_files(state_dir)
-
+    state_file = open_state_dir() + "/" + session
     if event == "PostToolUse":
-        if jq_field(root, "tool_input", "subagent_type") in CODERS:
-            with open(state_file, "w") as handle:
-                handle.write("dirty\n")
+        on_post_tool_use(root, state_file)
     elif event == "PreToolUse":
-        command = jq_field(root, "tool_input", "command")
-        if is_commit_command(command):
-            try:
-                with open(state_file, "rb") as handle:
-                    current = handle.read().decode("utf-8", "replace").rstrip("\n")
-            except OSError:
-                return
-            if current != "dirty":
-                return
-            if ships_only_notes(command, jq_field(root, "cwd")):
-                return
-            raise DenyError(
-                "[review-commit-gate] Coder work from this session has no converged /review. Run /review on "
-                "the coder work and commit after it converges. If the commit ships only Markdown files under "
-                "the repo's top-level docs/ folder, run it as a plain `git commit` (with `git add` of single "
-                "named files if needed) from the repo root in its own Bash call, with no `cd`, `env` or "
-                "`git -C`, because the gate passes that form."
-            )
-        marked = MARK.search(command)
-        if marked:
-            reason = None
-            if marked.group(1) == "clean":
-                # Imported here, not at load: a missing module is an internal error on a `clean` mark only, and the
-                # commit check and the dirty mark keep working.
-                import handback
-                reason = handback.false_clean_reason(session)
-            if reason:
-                raise DenyError(
-                    f"[review-commit-gate] Gate not marked clean: {reason}. Only a converged or deferred review "
-                    "hand-back from this session allows clean."
-                )
-            with open(state_file, "w") as handle:
-                handle.write(marked.group(1) + "\n")
-
-
-def report_mkdir_failure(state_dir):
-    """`mkdir -p` names the first path component it cannot create; GNU quotes it with curly quotes in UTF-8 locales."""
-    # Python itself sets LC_CTYPE=C.UTF-8 at start-up when the locale is C (PEP 538); that value says nothing.
-    ctype = os.environ.get("LC_CTYPE", "")
-    ctype = "" if ctype == "C.UTF-8" else ctype
-    locale = os.environ.get("LC_ALL") or ctype or os.environ.get("LANG") or ""
-    left, right = ("\u2018", "\u2019") if "utf-8" in locale.lower().replace("utf8", "utf-8") else ("'", "'")
-    walked = ""
-    for piece in state_dir.split("/"):
-        walked = walked + "/" + piece if walked or state_dir.startswith("/") else piece
-        walked = walked.replace("//", "/")
-        if not piece:
-            continue
-        if os.path.lexists(walked):
-            if os.path.isdir(walked):
-                continue
-            reason = "File exists" if walked == state_dir else "Not a directory"
-            hook_input.emit_stderr(f"mkdir: cannot create directory {left}{walked}{right}: {reason}\n")
-            return
-        try:
-            os.mkdir(walked)
-        except OSError as error:
-            hook_input.emit_stderr(
-                f"mkdir: cannot create directory {left}{walked}{right}: {os.strerror(error.errno or 0)}\n"
-            )
-            return
+        on_pre_tool_use(root, session, state_file)
 
 
 def main():

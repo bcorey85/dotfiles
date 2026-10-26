@@ -160,35 +160,63 @@ class ReviewFixLogAskOutcome(unittest.TestCase):
         self.assertFalse([word for word in argv if word.startswith("desc=")])
         self.assertFalse([word for word in argv if word.startswith("repo=")])
 
-    def test_ask_without_finding_id_calls_nothing_and_is_marked_skipped(self):
-        stderr = io.StringIO()
-        with contextlib.redirect_stderr(stderr):
-            (code, _), _, _ = review_fix.log_ask_outcome(self.state, ask_item(finding_id=None), "rejected")
-
-        self.assertEqual(self.calls, [])
-        self.assertIsNone(code)
-        self.assertIn("ask outcome without a valid finding_id (no finding_id), not logged", stderr.getvalue())
-
-    def test_asks_done_retry_does_not_count_skipped_asks_as_logged(self):
-        self.state.update({"stage": "asks", "asks": [ask_item(finding_id=None),
-                                                      ask_item(finding_id="1111111111111111"),
-                                                      ask_item(finding_id="2222222222222222")]})
+    def asks_done(self, asks, outcomes):
+        """(stdout, stderr) of one asks-done call on asks waiting in self.state."""
+        self.state.update({"stage": "asks", "asks": asks})
         original = (review_fix.load_fix_state, review_fix.save_fix_state)
         review_fix.load_fix_state = lambda: self.state
         review_fix.save_fix_state = lambda state: None
-        outputs = []
+        out, err = io.StringIO(), io.StringIO()
         try:
-            for _ in range(2):
-                self.state["stage"] = "asks"
-                out = io.StringIO()
-                with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
-                    review_fix.command_asks_done(["accepted", "accepted", "accepted"])
-                outputs.append(out.getvalue())
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                review_fix.command_asks_done(outcomes)
         finally:
             review_fix.load_fix_state, review_fix.save_fix_state = original
+        return out.getvalue(), err.getvalue()
+
+    def test_ask_without_finding_id_calls_nothing_and_is_marked_skipped(self):
+        out, err = self.asks_done([ask_item(finding_id=None)], ["rejected"])
+
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.state["asks_logged"], [0])
+        self.assertIn("Logged 0 of 1", out)
+        self.assertIn("ask outcome without a valid finding_id (no finding_id), not logged", err)
+
+    def test_asks_done_retry_does_not_count_skipped_asks_as_logged(self):
+        asks = [ask_item(finding_id=None), ask_item(finding_id="1111111111111111"),
+                ask_item(finding_id="2222222222222222")]
+        outputs = [self.asks_done(asks, ["accepted", "accepted", "accepted"])[0] for _ in range(2)]
 
         self.assertIn("Logged 2 of 3", outputs[0])
         self.assertIn("Logged 2 of 3", outputs[1])
+
+    def test_a_failed_row_keeps_the_stage_and_the_retry_logs_only_that_row(self):
+        failing_id = "finding_id=2222222222222222"
+        failed = []
+
+        def run_command(command, cwd=None):
+            self.calls.append(command)
+            if failing_id in command and not failed:
+                failed.append(command)
+                return 1, "boom"
+            return 0, ""
+
+        review_fix.run_command = run_command
+        asks = [ask_item(finding_id="1111111111111111"), ask_item(finding_id="2222222222222222")]
+
+        first, _ = self.asks_done(asks, ["accepted", "rejected"])
+        self.assertIn("Logged 1 of 2", first)
+        self.assertIn("Failures", first)
+        self.assertIn("- src/widget.py:12: boom", first)
+        self.assertEqual(self.state["stage"], "asks")
+
+        self.calls.clear()
+        second, _ = self.asks_done(asks, ["accepted", "rejected"])
+        self.assertEqual(len(self.calls), 1)
+        self.assertIn(failing_id, self.calls[0])
+        self.assertIn("Logged 2 of 2", second)
+        self.assertNotIn("Failures", second)
+        self.assertEqual(self.state["stage"], "done")
 
     def test_handback_item_keys_include_finding_id(self):
         self.assertIn("finding_id", handback.ITEM_KEYS)

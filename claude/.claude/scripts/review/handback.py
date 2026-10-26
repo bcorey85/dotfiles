@@ -3,15 +3,14 @@
 
   handback.py check < packet            exit 0 and one `ok` line for a packet that parses and validates; exit 1 and the
                                         problems on stderr for a bad one
-  handback.py hook [dispatch|handback] < hook event JSON
+  handback.py hook dispatch|handback < hook event JSON
                                         PreToolUse hook. Matcher Agent records each review-loop dispatch; matcher
                                         SubagentHandback validates and records each review-loop hand-back, and denies a
-                                        bad packet once per agent so the loop can repair it. With no argument the kind
-                                        comes from the event's tool_name; any other argument does nothing.
-  handback.py latest <session id>       print the session's latest dispatch and hand-back rows as JSON
+                                        bad packet once per agent so the loop can repair it. Any other argument does
+                                        nothing.
 
-Importers use parse, validate, load, render, record, latest, hand_back_gap and false_clean_reason. The store is one
-append-only JSON-lines file per
+Importers use parse, validate, load, render, record, latest, hand_back_gap and false_clean_reason. A validated packet's
+fixed, skipped_fp, findings_remaining and ask entries are all mappings. The store is one append-only JSON-lines file per
 session under $HANDBACK_STORE_DIR (default ~/.claude/state/handback), keyed by the hook event's session_id, which is
 the value of CLAUDE_CODE_SESSION_ID inside a Bash call."""
 import json
@@ -29,9 +28,15 @@ from script_utils import first_number, one_line, unquote
 STATUSES = ["converged", "deferred", "plan-impact", "critical-blocker", "cap-reached"]
 CLEAN_STATUSES = ("converged", "deferred")
 PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers", "findings_remaining", "plan_impact",
-               "ask", "class_closure", "files_touched", "nit", "load_bearing_clean", "perf", "smell", "principle"]
-LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "perf", "files_touched", "smell"]
+               "ask", "class_closure", "files_touched", "nit", "load_bearing_clean"]
+LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched"]
 SCALAR_KEYS = ("status", "iter", "spec_iter", "load_bearing_clean")
+# The list fields whose entries validate turns into mappings, and the key a plain-text entry's text goes under.
+ENTRY_TEXT_KEYS = {"fixed": "finding", "skipped_fp": "item", "findings_remaining": "finding", "ask": "question"}
+# The field each status requires, and the word for its absence. cap-reached says "missing" when the key is absent.
+STATUS_REQUIRES = {"plan-impact": ("plan_impact", "empty"), "critical-blocker": ("blockers", "empty"),
+                   "cap-reached": ("findings_remaining", "empty"),
+                   "deferred": ("findings_remaining", "missing or empty")}
 ITEM_KEYS = [
     "disposition",
     "smell",
@@ -46,7 +51,6 @@ ITEM_KEYS = [
     "reason",
     "item",
     "phase",
-    "principle",
 ]
 NONE_VALUE = re.compile(r"^\[\s*\]|^\(?\s*(none|n/a|null)\b", re.I)
 BLOCK_INDICATOR = re.compile(r"^[|>][+-]?$")
@@ -254,15 +258,10 @@ def item_text(item, *keys):
     return str(item)
 
 
-def item_field(item, key, default=""):
-    """A mapping entry's field; a plain-text entry has none."""
-    return item.get(key, default) if isinstance(item, dict) else default
-
-
 def ask_finding_id(item):
     """The entry's finding_id when it is an id the ledger writer mints (16 lowercase hex chars); otherwise None.
     A placeholder such as "none logged" or "-", or a damaged id, is not an id."""
-    finding_id = item_field(item, "finding_id", None)
+    finding_id = item.get("finding_id")
     if isinstance(finding_id, str) and FINDING_ID_PATTERN.fullmatch(finding_id.strip()):
         return finding_id.strip()
     return None
@@ -270,15 +269,11 @@ def ask_finding_id(item):
 
 def entry_paths(item):
     """Every normalized path that a list entry names: its file_line plus each path:line in its finding text."""
-    if not isinstance(item, dict):
-        return script_utils.paths_named(item)
     return script_utils.paths_named(item.get("file_line"), item.get("finding"), item.get("item"))
 
 
 def entry_locations(item):
     """Every (path, line) that a list entry names."""
-    if not isinstance(item, dict):
-        return [script_utils.split_location(hit) for hit in script_utils.PATH_LINE.findall(str(item))]
     finding_text = str(item.get("finding") or "")
     item_summary = str(item.get("item") or "")
     texts = [str(item.get("file_line") or ""), *script_utils.PATH_LINE.findall(finding_text),
@@ -302,8 +297,8 @@ def first_token(text):
 
 # ---------- validation ----------
 
-def validate(raw):
-    """Typed packet from the raw fields. Raises PacketError listing every problem; never guesses a missing field."""
+def read_header(raw):
+    """(the packet's scalar fields, their problems)."""
     problems = []
     status_words = raw.get("status", "").strip().strip("`'\"").lower().split()
     status = status_words[0] if status_words else ""
@@ -316,60 +311,90 @@ def validate(raw):
     if raw.get("spec_iter", "").strip() and spec_iter is None:
         problems.append("spec_iter has no number")
 
-    packet = {"status": status, "iter": iter_round, "spec_iter": spec_iter,
+    header = {"status": status, "iter": iter_round, "spec_iter": spec_iter,
               "class_closure": raw.get("class_closure", "").strip(),
               "load_bearing_clean": raw.get("load_bearing_clean", "").strip(),
               "plan_impact": raw.get("plan_impact", "").strip()}
-    trailer = [raw.get("trailer", "")]
-    for key in LIST_KEYS:
-        lead, packet[key] = read_list(raw.get(key, ""))
-        if lead:
-            trailer.append(lead)
-    packet["trailer"] = "\n".join(part for part in trailer if part).strip()
-    for key, text_key in (("fixed", "finding"), ("findings_remaining", "finding"), ("ask", "question")):
-        packet[key] = [entry_from_text(item, text_key) if isinstance(item, str) else item for item in packet[key]]
-    for item in packet["ask"]:
+    return header, problems
+
+
+def normalize_ask(item):
+    if item.get("from_text"):
+        item["finding"] = item["question"]
+    elif item.get("finding") and not item.get("question"):
+        item["question"] = item["finding"]
+    item["gate"] = first_token(item.get("gate")) or DEFAULT_GATE
+
+    ask_class = str(item.get("class") or "").strip()
+    if ask_class in CLASSES:
+        return
+    item["class"] = "other"
+    if ask_class:
+        item["class_raw"] = ask_class
+
+
+def normalize_items(key, entries):
+    """The entries of list field `key`, a text entry made a mapping when the field is in ENTRY_TEXT_KEYS. Any other
+    entry stays as it is, for item_problems to refuse."""
+    text_key = ENTRY_TEXT_KEYS.get(key)
+    if text_key is None:
+        return entries
+    items = [entry_from_text(item, text_key) if isinstance(item, str) else item for item in entries]
+    for item in items:
         if not isinstance(item, dict):
             continue
-        if item.get("from_text"):
-            item["finding"] = item["question"]
-        elif item.get("finding") and not item.get("question"):
-            item["question"] = item["finding"]
-        item["gate"] = first_token(item.get("gate")) or DEFAULT_GATE
-        ask_class = str(item.get("class") or "").strip()
-        if ask_class not in CLASSES:
-            item["class"] = "other"
-            if ask_class:
-                item["class_raw"] = ask_class
-    for item in packet["fixed"]:
-        if isinstance(item, dict) and not item.get("finding") and item.get("smell"):
+        if key == "ask":
+            normalize_ask(item)
+        elif key == "fixed" and not item.get("finding") and item.get("smell"):
             item["finding"] = item["smell"]
+    return items
 
-    if "fixed" not in raw and status in ("converged", "deferred"):
-        problems.append("fixed is missing: the packet must always carry fixed, even as []")
-    for item in packet["fixed"]:
-        if not (isinstance(item, dict) and item.get("finding")):
-            problems.append(f"fixed entry has no finding: {one_line(item, 80)!r}")
+
+def item_problems(raw, packet):
+    problems = [f"fixed entry has no finding: {one_line(item, 80)!r}" for item in packet["fixed"]
+                if not (isinstance(item, dict) and item.get("finding"))]
     if raw.get("ask", "").strip() and not packet["ask"] and not NONE_VALUE.match(raw["ask"].strip()):
         problems.append(f"ask holds text but yields no ask entries: {one_line(raw['ask'], 80)!r}")
     for item in packet["ask"]:
         if not isinstance(item, dict) or not item.get("question"):
             problems.append(f"ask entry has no question: {one_line(item, 80)!r}")
-        elif not item.get("file_line") and not item.get("from_text"):
-            problems.append(f"ask entry has no file_line: {one_line(item.get('question'), 80)!r}")
+            continue
+        question = one_line(item.get("question"), 80)
+        if not item.get("file_line") and not item.get("from_text"):
+            problems.append(f"ask entry has no file_line: {question!r}")
         elif not item.get("change") and not item.get("from_text"):
-            problems.append(f"ask entry has no change, the one edit an accepted answer makes: "
-                            f"{one_line(item.get('question'), 80)!r}")
-    if status == "plan-impact" and not packet["plan_impact"]:
-        problems.append("status is plan-impact but plan_impact is empty")
-    if status == "critical-blocker" and not packet["blockers"]:
-        problems.append("status is critical-blocker but blockers is empty")
-    if status == "cap-reached" and "findings_remaining" in raw and not packet["findings_remaining"]:
-        problems.append("status is cap-reached but findings_remaining is empty")
-    if status == "cap-reached" and "findings_remaining" not in raw:
-        problems.append("status is cap-reached but findings_remaining is missing")
-    if status == "deferred" and not packet["findings_remaining"]:
-        problems.append("status is deferred but findings_remaining is missing or empty")
+            problems.append(f"ask entry has no change, the one edit an accepted answer makes: {question!r}")
+    return problems
+
+
+def status_problems(raw, packet):
+    status = packet["status"]
+    problems = []
+    if "fixed" not in raw and status in CLEAN_STATUSES:
+        problems.append("fixed is missing: the packet must always carry fixed, even as []")
+
+    field, absence = STATUS_REQUIRES.get(status, (None, ""))
+    if field is None or packet[field]:
+        return problems
+    if status == "cap-reached" and field not in raw:
+        absence = "missing"
+    problems.append(f"status is {status} but {field} is {absence}")
+    return problems
+
+
+def validate(raw):
+    """Typed packet from the raw fields. Raises PacketError listing every problem; never guesses a missing field."""
+    packet, problems = read_header(raw)
+
+    trailer = [raw.get("trailer", "")]
+    for key in LIST_KEYS:
+        lead, entries = read_list(raw.get(key, ""))
+        packet[key] = normalize_items(key, entries)
+        if lead:
+            trailer.append(lead)
+    packet["trailer"] = "\n".join(part for part in trailer if part).strip()
+
+    problems += item_problems(raw, packet) + status_problems(raw, packet)
     if problems:
         raise PacketError(problems)
     return packet
@@ -392,6 +417,23 @@ def receipt_is_missing(closure):
     return re.fullmatch(r"(none|n/a)?[\s.]*", closure.strip().lower()) is not None
 
 
+def skipped_line(item):
+    if item.get("from_text"):
+        return f"- {item['item']}"
+    return f"- {item_text(item, 'item', 'finding', 'file_line')}: {item.get('reason', 'no reason given')}"
+
+
+def remaining_line(item):
+    return f"- [{item.get('disposition', 'open')}] {item_text(item, 'finding', 'file_line')}"
+
+
+def render_items(lines, heading, items, item_line):
+    if not items:
+        return
+    lines.append(f"### {heading}")
+    lines += [item_line(item) for item in items]
+
+
 def render(packet, skill, sections=()):
     """The user-facing text. `sections` are (heading, lines) pairs placed before the trailer."""
     lines = ["### Fixed"]
@@ -412,25 +454,12 @@ def render(packet, skill, sections=()):
     if load_bearing and load_bearing.lower() not in ("none", "omitted"):
         lines.append("Load-bearing: " + load_bearing)
 
-    skipped = packet["skipped_fp"]
-    if skipped:
-        lines.append("### Skipped as false positives")
-        lines += [f"- {item_text(item, 'item', 'finding', 'file_line')}: {item.get('reason', 'no reason given')}"
-                  if isinstance(item, dict) else f"- {item}" for item in skipped]
+    render_items(lines, "Skipped as false positives", packet["skipped_fp"], skipped_line)
     if packet["nit"]:
         lines.append("### Nits")
         lines.append("- " + "; ".join(item_text(item, "finding", "item") for item in packet["nit"]))
-    if packet["perf"]:
-        lines.append("### Perf findings")
-        for item in packet["perf"]:
-            principle = item_field(item, "principle")
-            lines.append(
-                f"- {item_text(item, 'finding', 'file_line')}" + (f"\n  Principle: {principle}" if principle else "")
-            )
-    if packet["findings_remaining"]:
-        lines.append("### Deferred to branch exit" if packet["status"] == "deferred" else "### Findings remaining")
-        lines += [f"- [{item.get('disposition', 'open')}] {item_text(item, 'finding', 'file_line')}"
-                  if isinstance(item, dict) else f"- {item}" for item in packet["findings_remaining"]]
+    remaining_heading = "Deferred to branch exit" if packet["status"] == "deferred" else "Findings remaining"
+    render_items(lines, remaining_heading, packet["findings_remaining"], remaining_line)
     for heading, section_lines in sections:
         lines.append(f"### {heading}")
         lines += section_lines
@@ -546,14 +575,13 @@ def deny_line(reason):
                                               "permissionDecisionReason": reason}})
 
 
-def handle_hook(event, kind=None):
+def handle_hook(event, kind):
     """Record a review-loop dispatch or hand-back. Returns the deny reason for a bad packet seen the first time from
     its agent, else None."""
     session_id = event.get("session_id")
     if not session_id:
         return None
     tool_input = event.get("tool_input") or {}
-    kind = kind or {"Agent": "dispatch", "SubagentHandback": "handback"}.get(event.get("tool_name"))
     if kind == "dispatch":
         if tool_input.get("subagent_type") == REVIEW_LOOP:
             record(session_id, "dispatch")
@@ -577,10 +605,10 @@ def handle_hook(event, kind=None):
 def command_hook(argv):
     """Never blocks on its own error."""
     try:
-        if len(argv) > 1 or (argv and argv[0] not in ("dispatch", "handback")):
+        if argv not in (["dispatch"], ["handback"]):
             print(f"handback hook: unknown kind {' '.join(argv)!r}; want dispatch or handback", file=sys.stderr)
             return 0
-        reason = handle_hook(json.load(sys.stdin), argv[0] if argv else None)
+        reason = handle_hook(json.load(sys.stdin), argv[0])
         if reason:
             print(deny_line(reason))
     except Exception as error:
@@ -606,9 +634,6 @@ def main(argv):
         return command_check()
     if argv[:1] == ["hook"]:
         return command_hook(argv[1:])
-    if argv[:1] == ["latest"] and len(argv) == 2:
-        print(json.dumps(latest(argv[1])))
-        return 0
     print(__doc__, file=sys.stderr)
     return 2
 

@@ -37,11 +37,12 @@ import os
 import pathlib
 import sys
 
-sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../code")]
+import code_step_core
 import handback
 import plan_format
 import script_utils
-from handback import PacketError, item_field, item_text
+from handback import PacketError, item_text
 from script_utils import one_line, run_command, split_location
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
@@ -57,9 +58,11 @@ DECIDE_BY_NOTE = ("If the user told you to make the call yourself, or you rule w
 MARK_CLEAN = "~/.claude/scripts/review/review-gate-mark clean"
 MARK_DIRTY = "~/.claude/scripts/review/review-gate-mark dirty"
 NOTHING_OUTSTANDING = "No issues found that warrant auto-fix. Ready for `/commit`."
-CODE_STEP_HOOK_STAGES = ("coder", "review", "asks-coder")
+LOGGED_HEADING = "LOGGED / POSTED (mention failures, never block on them):"
 FINISHED_STAGES = ("done", "redispatch")
 PLAN_IMPACT_PREFIX = "PLAN-IMPACT"
+PLAN_IMPACT = "plan-impact"
+NO_FINDING_ID = "no-finding-id"
 VERBS = ("packet", "escape", "asks-done", "decide")
 
 
@@ -166,7 +169,7 @@ def packet_arguments(argv):
 # ---------- actions ----------
 
 def is_outstanding(packet):
-    return any(packet[key] for key in ("fixed", "ask", "skipped_fp", "nit", "perf", "findings_remaining"))
+    return any(packet[key] for key in ("fixed", "ask", "skipped_fp", "nit", "findings_remaining"))
 
 
 def print_user_block(text):
@@ -327,13 +330,13 @@ def aikido_reply(target, packet):
     named = f"{where[0]}:{where[1]}"
     for item in packet["fixed"]:
         if where in handback.entry_locations(item):
-            return f"Fixed — {one_line(item_field(item, 'finding'), 160)}"
+            return f"Fixed — {one_line(item.get('finding', ''), 160)}"
     for item in packet["skipped_fp"]:
         if named in item_text(item, "item", "finding", "file_line") or where in handback.entry_locations(item):
-            return f"@AikidoSec ignore: {one_line(item_field(item, 'reason', 'no reason given'), 200)}"
+            return f"@AikidoSec ignore: {one_line(item.get('reason', 'no reason given'), 200)}"
     for item in packet["findings_remaining"] + packet["ask"]:
         if where in handback.entry_locations(item):
-            reason = item_field(item, "question") or item_field(item, "finding") or "open"
+            reason = item.get("question") or item.get("finding") or "open"
             return f"Not fixed in this pass: {packet['status']} — {one_line(reason, 160)}"
     return f"Not fixed in this pass: {packet['status']} — no matching entry in the packet"
 
@@ -376,26 +379,18 @@ def post_aikido_replies(packet, targets, state):
 
 # ---------- the packet ----------
 
-def code_step_state_path():
-    found = script_utils.git_output(".", "rev-parse", "--path-format=absolute", "--git-path", "code-step")
-    return None if found is None else pathlib.Path(found) / "state.json"
-
-
 def active_code_step(session_id):
     """(state path, stage) of a /code run that owns this session's review hand-backs, else None. A run pinned to a
     different session does not count."""
-    path = code_step_state_path()
-    if path is None or not path.exists():
-        return None
     try:
-        code_step = json.loads(path.read_text())
-    except ValueError:
+        code_step = code_step_core.load_state(".")
+    except code_step_core.StateFileError:
         return None
-    if code_step.get("stage") not in CODE_STEP_HOOK_STAGES:
+    if code_step is None or code_step.get("stage") not in code_step_core.REVIEW_HANDBACK_STAGES:
         return None
     if code_step.get("sessionId") != session_id:
         return None
-    return path, code_step["stage"]
+    return code_step_core.state_dir(".") / "state.json", code_step["stage"]
 
 
 def hand_back_id(stored_row, session_id):
@@ -455,12 +450,48 @@ def new_state(options, packet, packet_id):
             "aikido_posted",
             "escapes_logged",
             "asks_logged",
-            "asks_skipped",
             "plan_impact",
         ):
             if key in previous:
                 state[key] = previous[key]
     return state
+
+
+def print_logged(notes):
+    if not notes:
+        return
+    print(LOGGED_HEADING)
+    print("\n".join("- " + note for note in notes))
+
+
+def blocker_lines(packet):
+    return ["- " + one_line(item_text(item, "finding", "item"), 400) for item in packet["blockers"]]
+
+
+def remaining_lines(packet):
+    return ["- " + item_text(item, "disposition", "finding", "file_line") for item in packet["findings_remaining"]]
+
+
+# The statuses that stop the caller: (the instruction, the packet's entry lines under it).
+STOP_STATUSES = {
+    "critical-blocker": ("Present these blockers and wait for direction. Do not re-dispatch. Do not run /fix. "
+                         "Do not mark the gate.", blocker_lines),
+    "cap-reached": ("The review cap was reached. Report these findings; the user decides. Do not re-dispatch. Do not "
+                    "run /fix. Do not mark the gate: the session stays dirty, so git commit stays blocked.",
+                    remaining_lines),
+}
+
+
+def stop_for_status(packet, options, state):
+    save_fix_state(state)
+    replies, failures = post_aikido_replies(packet, options.aikido_targets, state)
+
+    instruction, entry_lines = STOP_STATUSES[packet["status"]]
+    print_action("stop", instruction, *entry_lines(packet))
+    if replies:
+        print("AIKIDO REPLIES POSTED:")
+        print("\n".join(replies))
+    print_logged(failures)
 
 
 def command_packet(argv):
@@ -475,35 +506,11 @@ def command_packet(argv):
     if state.get("stage") in FINISHED_STAGES:
         return print_action("done", f"This packet was already processed (stage {state['stage']}). Nothing was "
                             "logged or posted again. Continue from the step the first output named.")
-    status = packet["status"]
 
-    if status == "plan-impact":
+    if packet["status"] == "plan-impact":
         return present_plan_impact(packet, state)
-    if status in ("critical-blocker", "cap-reached"):
-        save_fix_state(state)
-        replies, failures = post_aikido_replies(packet, options.aikido_targets, state)
-        if status == "critical-blocker":
-            print_action("stop", "Present these blockers and wait for direction. Do not re-dispatch. Do not run /fix. "
-                         "Do not mark the gate.",
-                         *["- " + one_line(item_text(item, "finding", "item"), 400) for item in packet["blockers"]])
-        else:
-            print_action(
-                "stop",
-                "The review cap was reached. Report these findings; the user decides. Do not "
-                "re-dispatch. Do not run /fix. Do not mark the gate: the session stays dirty, so git commit "
-                "stays blocked.",
-                *[
-                    "- " + item_text(item, "disposition", "finding", "file_line")
-                    for item in packet["findings_remaining"]
-                ],
-            )
-        if replies:
-            print("AIKIDO REPLIES POSTED:")
-            print("\n".join(replies))
-        if failures:
-            print("LOGGED / POSTED (mention failures, never block on them):")
-            print("\n".join("- " + note for note in failures))
-        return
+    if packet["status"] in STOP_STATUSES:
+        return stop_for_status(packet, options, state)
 
     save_fix_state(state)
     notes = log_escapes(state, options.escapes, options.lane)
@@ -515,9 +522,7 @@ def command_packet(argv):
         print_action("render-and-finish", gate_mark_line())
     sections = [("Aikido replies", replies)] if replies else []
     print_user_block(handback.render(packet, options.skill, sections))
-    if notes:
-        print("LOGGED / POSTED (mention failures, never block on them):")
-        print("\n".join("- " + note for note in notes))
+    print_logged(notes)
     if options.skill == "review" and not is_outstanding(packet):
         print(f"Nothing is outstanding: say \"{NOTHING_OUTSTANDING}\"")
     print("MODEL STILL DOES: " + model_duties(packet, options))
@@ -555,24 +560,68 @@ def is_plan_impact_ask(item):
     return any(str(item.get(key) or "").lstrip().startswith(PLAN_IMPACT_PREFIX) for key in ("finding", "question"))
 
 
+def skip_reason(item):
+    """Why an ask's outcome is not logged: PLAN_IMPACT (not a finding) or NO_FINDING_ID; None when it is logged.
+    The outcome supersedes its ask row by finding_id. log-review-finding refuses only a value with a space. Any other
+    non-id value ("none", "-", a short hex) is a placeholder or a damaged id, and logging it would write a stray row
+    that replaces no ask row."""
+    if is_plan_impact_ask(item):
+        return PLAN_IMPACT
+    if handback.ask_finding_id(item) is None:
+        return NO_FINDING_ID
+    return None
+
+
+def warn_no_finding_id(item):
+    ignored_value = item.get("finding_id")
+    ignored_text = "no finding_id" if ignored_value is None else f"ignored {ignored_value!r}"
+    print(f"review-fix: ask outcome without a valid finding_id ({ignored_text}), not logged", file=sys.stderr)
+
+
 def log_ask_outcome(state, item, outcome):
+    """(exit code, output) of the outcome row's log call."""
     path, line = split_location(item.get("file_line") or "-")
-    finding_id = handback.ask_finding_id(item)
-    if finding_id is None:
-        # The outcome supersedes its ask row by finding_id. log-review-finding refuses only a value with a space.
-        # Any other non-id value ("none", "-", a short hex) is a placeholder or a damaged id, and logging it would
-        # write a stray row that replaces no ask row.
-        # Code None marks it as skipped, apart from a logged row (0) and a failure.
-        ignored_value = handback.item_field(item, "finding_id", None)
-        ignored_text = "no finding_id" if ignored_value is None else f"ignored {ignored_value!r}"
-        note = f"ask outcome without a valid finding_id ({ignored_text}), not logged"
-        print(f"review-fix: {note}", file=sys.stderr)
-        return (None, note), path, line
     return run_command(["bash", str(CLAUDE_DIR / "skills/review/log-review-finding"), "kind=finding",
-                        f"finding_id={finding_id}", f"branch={state['branch']}", f"lane={state['lane']}",
-                        f"scope={state['scope']}", f"iter={state['iter']}", f"gate={item['gate']}",
-                        "disposition=ask", f"class={item['class']}", f"file={path}", f"line={line}",
-                        "actioned=ask", f"ask_outcome={outcome}"]), path, line
+                        f"finding_id={handback.ask_finding_id(item)}", f"branch={state['branch']}",
+                        f"lane={state['lane']}", f"scope={state['scope']}", f"iter={state['iter']}",
+                        f"gate={item['gate']}", "disposition=ask", f"class={item['class']}", f"file={path}",
+                        f"line={line}", "actioned=ask", f"ask_outcome={outcome}"])
+
+
+def read_outcomes(argv, asks):
+    """The outcome word of each ask. A note after `:` is accepted and dropped."""
+    if len(argv) != len(asks):
+        raise UsageError(f"{len(asks)} ask(s) waiting but {len(argv)} outcome(s) given")
+    outcomes = [word.partition(":")[0] for word in argv]
+    for word, outcome in zip(argv, outcomes, strict=True):
+        if outcome not in ASK_OUTCOMES:
+            raise UsageError(f"outcome {word!r} is not one of {'|'.join(ASK_OUTCOMES)}")
+    return outcomes
+
+
+def log_fix_ask_outcomes(state, asks, outcomes):
+    """(skips of this call by reason, failure lines). An ask that is logged or skipped joins asks_logged and is never
+    tried again."""
+    logged = state.setdefault("asks_logged", [])
+    skips = {PLAN_IMPACT: 0, NO_FINDING_ID: 0}
+    failures = []
+    for index, (item, outcome) in enumerate(zip(asks, outcomes, strict=True)):
+        if index in logged:
+            continue
+        reason = skip_reason(item)
+        if reason == NO_FINDING_ID:
+            warn_no_finding_id(item)
+        if reason is not None:
+            skips[reason] += 1
+            logged.append(index)
+            continue
+        code, output = log_ask_outcome(state, item, outcome)
+        if code == 0:
+            logged.append(index)
+            continue
+        path, line = split_location(item.get("file_line") or "-")
+        failures.append(f"{path}:{line}: {one_line(output, 160)}")
+    return skips, failures
 
 
 def command_asks_done(argv):
@@ -582,46 +631,22 @@ def command_asks_done(argv):
         return print_action("done", "The ask outcomes were already logged. Run nothing more.")
     if state.get("stage") != "asks" or not asks:
         raise UsageError("no asks are waiting. `asks-done` follows a packet that carried ask[] entries.")
-    if len(argv) != len(asks):
-        raise UsageError(f"{len(asks)} ask(s) waiting but {len(argv)} outcome(s) given")
-    outcomes = []
-    for word in argv:
-        outcome, _, note = word.partition(":")
-        if outcome not in ASK_OUTCOMES:
-            raise UsageError(f"outcome {word!r} is not one of {'|'.join(ASK_OUTCOMES)}")
-        outcomes.append((outcome, note.strip()))
-    logged = state.setdefault("asks_logged", [])
-    skipped = state.setdefault("asks_skipped", [])
-    failures = []
-    skipped_plan_impact = 0
-    skipped_no_id = 0
-    for index, (item, (outcome, _note)) in enumerate(zip(asks, outcomes, strict=False)):
-        if index in logged:
-            continue
-        if is_plan_impact_ask(item):
-            logged.append(index)
-            skipped.append(index)
-            skipped_plan_impact += 1
-            continue
-        (code, output), path, line = log_ask_outcome(state, item, outcome)
-        if code is None:
-            logged.append(index)
-            skipped.append(index)
-            skipped_no_id += 1
-        elif code == 0:
-            logged.append(index)
-        else:
-            failures.append(f"{path}:{line}: {one_line(output, 160)}")
+    outcomes = read_outcomes(argv, asks)
+
+    skips, failures = log_fix_ask_outcomes(state, asks, outcomes)
     if not failures:
         state["stage"] = "done"
     save_fix_state(state)
-    print_action("done", f"Logged {len(logged) - len(skipped)} of {len(asks)} ask outcome row(s)." +
-                 (f" {skipped_plan_impact} plan-impact ask(s) are not logged as findings."
-                  if skipped_plan_impact else "") +
-                 (f" {skipped_no_id} ask(s) without a finding_id are not logged." if skipped_no_id else "") +
-                 (" Failures (mention, never block; run the same asks-done again to retry only these):"
-                  if failures else ""),
-                 *["- " + failure for failure in failures])
+
+    rows_logged = sum(1 for index in state["asks_logged"] if skip_reason(asks[index]) is None)
+    summary = f"Logged {rows_logged} of {len(asks)} ask outcome row(s)."
+    if skips[PLAN_IMPACT]:
+        summary += f" {skips[PLAN_IMPACT]} plan-impact ask(s) are not logged as findings."
+    if skips[NO_FINDING_ID]:
+        summary += f" {skips[NO_FINDING_ID]} ask(s) without a finding_id are not logged."
+    if failures:
+        summary += " Failures (mention, never block; run the same asks-done again to retry only these):"
+    print_action("done", summary, *["- " + failure for failure in failures])
     print("MODEL STILL DOES: act on accepted/modified asks as the user directed (dispatch a coder, or edit in scope).")
 
 

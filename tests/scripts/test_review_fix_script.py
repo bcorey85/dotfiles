@@ -625,16 +625,6 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("- x - a.ts:1", output)
 
-    def test_perf_entries_render_under_their_own_heading_with_the_principle(self):
-        text = (
-            CLEAN_EMPTY
-            + 'perf:\n  - {finding: "N+1 in loader", file_line: src/l.ts:3, principle: "batch the lookups"}\n'
-        )
-        code, output = self.packet(text)
-        self.assertEqual(code, 0, output)
-        self.assertIn("### Perf findings", output)
-        self.assertIn("Principle: batch the lookups", output)
-
     def test_finding_text_containing_a_comma_and_key_word_keeps_its_whole_text(self):
         text = CLEAN_EMPTY.replace(
             "fixed: []", 'fixed: [{finding: "guard the read, then class: fix it", file_line: a.ts:1, blocker: false}]'
@@ -724,18 +714,18 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     # ---------- no-paste: saved hand-back ----------
 
-    def hook(self, event, which=None, **extra):
-        arguments = ["hook", which] if which else ["hook"]
-        done = subprocess.run(["python3", "-I", str(HANDBACK), *arguments], cwd=self.temp_root,
+    def hook(self, event, which, **extra):
+        done = subprocess.run(["python3", "-I", str(HANDBACK), "hook", which], cwd=self.temp_root,
                               input=json.dumps(event), text=True, capture_output=True, env=self.environment(**extra))
         return done.returncode, done.stdout + done.stderr
 
     def dispatch(self, session=SESSION, subagent="review-loop"):
-        return self.hook({"session_id": session, "tool_name": "Agent", "tool_input": {"subagent_type": subagent}})
+        return self.hook({"session_id": session, "tool_name": "Agent", "tool_input": {"subagent_type": subagent}},
+                         "dispatch")
 
     def hand_back(self, message=CONVERGED, session=SESSION, agent="review-loop", agent_id="a1"):
         return self.hook({"session_id": session, "tool_name": "SubagentHandback", "agent_type": agent,
-                          "agent_id": agent_id, "tool_input": {"message": message}})
+                          "agent_id": agent_id, "tool_input": {"message": message}}, "handback")
 
     def seed(self, message=CONVERGED, session=SESSION):
         self.dispatch(session)
@@ -896,6 +886,23 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.seed()
         self.write_code_step(stage="done", sessionId=SESSION)
         self.assertEqual(self.packet("")[0], 0)
+
+    def test_every_stage_that_owns_review_hand_backs_blocks_and_plan_coder_does_not(self):
+        for stage in ("coder", "asks-coder"):
+            with self.subTest(stage=stage):
+                self.seed()
+                self.write_code_step(stage=stage, sessionId=SESSION)
+                self.assertEqual(self.packet("")[0], 2)
+        self.seed()
+        self.write_code_step(stage="plan-coder", sessionId=SESSION)
+        self.assertEqual(self.packet("")[0], 0)
+
+    def test_an_unreadable_code_step_state_does_not_block(self):
+        self.seed()
+        self.write_code_step().write_text("{")
+        code, output = self.packet("")
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("Traceback", output)
 
     # ---------- shapes that broke on real hand-backs ----------
 

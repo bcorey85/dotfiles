@@ -19,6 +19,7 @@ import time
 
 sys.path[:0] = [os.path.dirname(os.path.dirname(os.path.realpath(__file__))) + "/lib"]
 import hook_input
+import script_utils
 from hook_input import (
     JqError,
     bash_basename,
@@ -31,12 +32,6 @@ from hook_input import (
     report_open_failure,
     truthy,
 )
-
-try:
-    from telemetry_enabled import telemetry_enabled
-except ImportError:
-    def telemetry_enabled():
-        return False
 
 NO_RESULT = re.compile(
     "no results|not found|no matches|could not find|couldn.t find|nothing (found|to report)|no relevant|no such|"
@@ -134,7 +129,7 @@ def main():
     if event != "PostToolUse":
         return 0
 
-    if not telemetry_enabled():
+    if not script_utils.telemetry_switch_on():
         return 0
 
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR", "")

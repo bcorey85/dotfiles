@@ -41,10 +41,6 @@ class DenyError(Exception):
     pass
 
 
-def emit_deny(reason):
-    hook_input.emit_decision("deny", reason)
-
-
 def words_of(text):
     return [w for w in re.split("[ \t\n]+", text) if w]
 
@@ -53,7 +49,7 @@ def trim(text):
     return text.strip(SP)
 
 
-def unquote(text):
+def strip_target_quotes(text):
     if text.endswith('"'):
         text = text[:-1]
     if text.startswith('"'):
@@ -98,7 +94,7 @@ def find_editor_word(segment):
 
 
 def resolve_target(raw, cwd):
-    path = unquote(trim(raw))
+    path = strip_target_quotes(trim(raw))
     if not path or path.startswith("-") or path.startswith("&") or path.startswith("/dev/"):
         return None
     if path.startswith("~"):
@@ -236,13 +232,14 @@ def main():
     try:
         run(sys.stdin.buffer.read().decode("utf-8", "replace"))
     except DenyError as denied:
-        emit_deny(str(denied))
+        hook_input.emit_decision("deny", str(denied))
     except JqError as error:
         internal = error.rc
     except Exception:
         internal = 1
     if internal is not None:
-        emit_deny(f"[shell-write-gate] internal error (exit {internal}) — failing closed. Report this to the user.")
+        hook_input.emit_decision("deny", f"[shell-write-gate] internal error (exit {internal}) — failing closed. "
+                                         "Report this to the user.")
     return 0
 
 

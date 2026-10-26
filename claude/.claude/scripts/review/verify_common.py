@@ -1,4 +1,5 @@
 """Shared helpers for verify-prep and verify-log: git, plan/ticket parsing, the review signal, the saved run context."""
+import functools
 import hashlib
 import json
 import os
@@ -49,19 +50,7 @@ class VerifyError(Exception):
         self.code = code
 
 
-def run(argv, cwd=None, check=False, stdin=None):
-    try:
-        done = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, errors="replace", input=stdin)
-    except OSError as error:
-        raise VerifyError(f"cannot run {argv[0]}: {error}") from error
-    if check and done.returncode != 0:
-        raise VerifyError(f"{' '.join(argv)} failed: {done.stderr.strip()}")
-    return done
-
-
-def git(args, cwd, check=True):
-    done = run(["git", *args], cwd=cwd, check=check)
-    return done.stdout.strip()
+run = functools.partial(script_utils.run_or_raise, error_type=VerifyError)
 
 
 def script_path(env_name, installed_relative):
@@ -135,7 +124,7 @@ def ticket_criteria(ticket_text, name="ticket"):
     )
 
 
-def criteria_file(text, name="acceptance-criteria.md"):
+def parse_criteria_file(text, name="acceptance-criteria.md"):
     """(entries, manual_entries) from acceptance-criteria.md, one {id, text} per id.
 
     Lines are `- **ACn** — text`; the id span may carry a parenthetical or several ids. Any line that starts
@@ -195,18 +184,10 @@ def moved_phase_notes(plan_text, name):
 
 def repo_top(cwd):
     """The repo top level as a resolved path. Raises Fail outside a repository."""
-    done = run(["git", "rev-parse", "--show-toplevel"], cwd=cwd)
-    if done.returncode != 0 or not done.stdout.strip():
+    top = script_utils.repo_root(cwd)
+    if top is None:
         raise VerifyError("not inside a git repository")
-    return pathlib.Path(done.stdout.strip()).resolve()
-
-
-def repo_name(top):
-    script = script_path("REPO_NAME_SCRIPT", "scripts/tools/repo-name")
-    done = run([script], cwd=top)
-    if done.returncode == 0 and done.stdout.strip():
-        return done.stdout.strip()
-    return top.name
+    return top.resolve()
 
 
 def find_base(top, override=None):
@@ -219,8 +200,8 @@ def find_base(top, override=None):
     raise VerifyError(f"no base found (tried {', '.join(refs)}); pass --base <ref> for a sprint branch")
 
 
-def current_branch(top):
-    branch = git(["branch", "--show-current"], top)
+def require_branch(top):
+    branch = script_utils.current_branch(top)
     if not branch:
         raise VerifyError("detached HEAD: check out the branch")
     return branch
@@ -238,7 +219,7 @@ def is_under(name, exclude_rel):
     return name == exclude_rel or name.startswith(exclude_rel.rstrip("/") + "/")
 
 
-def tree_fingerprint(top, merge_base, exclude_rel=None):
+def branch_fingerprint(top, merge_base, exclude_rel=None):
     """Content fingerprint of the branch as it stands: `git diff <mergeBase>` plus the hash of each untracked file.
 
     Equal fingerprints mean equal content, whatever the commits, mtimes or renames in between. `excludeRel` (a path

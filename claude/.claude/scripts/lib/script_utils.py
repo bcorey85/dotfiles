@@ -21,6 +21,10 @@ PATH_LINE = re.compile(r"`?([\w@./-]+\.\w+:\d+(?:[-,]\d+)*)`?")
 FILE_NAME = re.compile(r"^[\w@./-]+\.\w+(?::\d|$)")
 QUOTE_OPENERS = " :[{,\t\n"
 BACKTICKED = re.compile(r"`([^`]+)`")
+TIMEOUT_EXIT_CODE = 124
+COMMAND_NOT_FOUND_EXIT_CODE = 127
+REPO_NAME_SCRIPT = pathlib.Path(__file__).resolve().parent.parent / "tools" / "repo-name"
+REPO_NAME_TIMEOUT_SECONDS = 10
 # A literal value is plain characters or a quoted string with no `$`, backtick, `;`, `&`, `|`, `<`, `>` (and no
 # backslash in a double-quoted one): the shell would run or expand anything else, so it is not a setting that can be
 # copied. A plain word has no `~` either: the shell expands it at the start of a value and after a `:`, which
@@ -143,6 +147,62 @@ def git_output(cwd, *args, timeout=None):
     if finished.returncode != 0:
         return None
     return os.fsdecode(finished.stdout).rstrip("\n")
+
+
+def run_command(command, cwd=None, stdin=None, timeout=None):
+    """Run a command as run_process does and return (exit code, stdout and stderr joined and stripped). A program that
+    is not found exits COMMAND_NOT_FOUND_EXIT_CODE; a run past `timeout` seconds exits TIMEOUT_EXIT_CODE with a note
+    after what it printed."""
+    try:
+        code, stdout, stderr = run_process(command, cwd, stdin=stdin, timeout=timeout)
+    except FileNotFoundError:
+        program = command if isinstance(command, str) else command[0]
+        return COMMAND_NOT_FOUND_EXIT_CODE, f"{program}: command not found"
+
+    output = (stdout + stderr).strip()
+    if code is None:
+        return TIMEOUT_EXIT_CODE, (output + f"\ntimed out after {timeout} seconds").strip()
+    return code, output
+
+
+def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None):
+    """Run argv with captured text output and return the CompletedProcess. Raise error_type when argv cannot start
+    and, with check, when it exits non-zero, naming the command and its stderr, or its stdout when stderr is empty."""
+    try:
+        finished = subprocess.run(argv, cwd=cwd, input=stdin, capture_output=True, text=True, errors="replace")
+    except OSError as error:
+        raise error_type(f"cannot run {argv[0]}: {error}") from error
+
+    if check and finished.returncode != 0:
+        detail = finished.stderr.strip() or finished.stdout.strip()
+        raise error_type(f"`{' '.join(argv)}` failed: {detail}")
+    return finished
+
+
+def repo_root(cwd, timeout=None):
+    """The top level of the git work tree that holds cwd, or None outside one."""
+    top = git_output(cwd, "rev-parse", "--show-toplevel", timeout=timeout)
+    if not top:
+        return None
+    return pathlib.Path(top)
+
+
+def current_branch(cwd, timeout=None):
+    """The checked-out branch name: "" on a detached HEAD, None when git fails."""
+    return git_output(cwd, "branch", "--show-current", timeout=timeout)
+
+
+def repo_name(cwd):
+    """The repository name that tools/repo-name prints (a linked worktree reports its main checkout). When the script
+    fails, the name of cwd, as repo-name prints outside a repo. REPO_NAME_SCRIPT names another script."""
+    script = os.environ.get("REPO_NAME_SCRIPT") or str(REPO_NAME_SCRIPT)
+    try:
+        finished = subprocess.run([script], cwd=cwd, capture_output=True, text=True, timeout=REPO_NAME_TIMEOUT_SECONDS)
+    except (OSError, subprocess.SubprocessError):
+        finished = None
+
+    name = finished.stdout.strip() if finished is not None and finished.returncode == 0 else ""
+    return name or pathlib.Path(cwd).resolve().name
 
 
 def run_retrying(argv, retry_exit_codes, attempts, backoff_seconds, timeout_seconds, sleep=time.sleep, **run_kwargs):
@@ -277,6 +337,15 @@ def pre_tool_use_deny(reason):
     """Print the PreToolUse hook output that denies the tool call and shows `reason` to the model."""
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                              "permissionDecisionReason": reason}}))
+
+
+def telemetry_switch_on():
+    """The toolkit metrics switch from telemetry/telemetry_enabled.py. A missing helper counts as off."""
+    try:
+        from telemetry_enabled import telemetry_enabled
+    except ImportError:
+        return False
+    return telemetry_enabled()
 
 
 def sortable_unique_id(now=None):

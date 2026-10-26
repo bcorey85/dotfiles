@@ -105,18 +105,6 @@ def run(command, cwd=None, timeout=30):
         return subprocess.CompletedProcess(command, 127, "", str(error))
 
 
-def repo_root(start=None):
-    toplevel = run(["git", "rev-parse", "--show-toplevel"], cwd=start)
-    if toplevel.returncode != 0:
-        return None
-    return Path(toplevel.stdout.strip())
-
-
-def current_branch(root):
-    branch_listing = run(["git", "branch", "--show-current"], cwd=root)
-    return branch_listing.stdout.strip()
-
-
 def default_branches(root):
     names = set(DEFAULT_BRANCHES)
     origin_head = run(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd=root)
@@ -209,14 +197,12 @@ def detect_pr(root, branch):
     return PENDING_PR
 
 
-def line_count(path):
-    return len(path.read_text(errors="replace").splitlines())
-
-
 def source_line(path):
     if not path.is_file():
         return f"- {path} (missing)"
-    return f"- {path} ({line_count(path)} lines)"
+
+    source_lines = path.read_text(errors="replace").splitlines()
+    return f"- {path} ({len(source_lines)} lines)"
 
 
 def task_dir_problem(root, task_dir):
@@ -244,7 +230,7 @@ def split_keep_trigger(argument):
 def prep(raw_argument):
     argument, keep_requested = split_keep_trigger(raw_argument)
     keep_flag = " --keep-task-dir" if keep_requested else ""
-    root = repo_root()
+    root = script_utils.repo_root(None)
     if root is None:
         print("adr-flow: not inside a git repository", file=sys.stderr)
         return 1
@@ -257,7 +243,7 @@ def prep(raw_argument):
         )
         return 1
 
-    branch = current_branch(root)
+    branch = script_utils.current_branch(root) or ""
     kind, resolved_lines, resolve_error = resolve_task_dir(root, argument)
     task_path = root / resolved_lines[0] if kind in ("task-dir", "legacy-plan") else None
     task_problem = task_dir_problem(root, task_path) if kind == "task-dir" else None
@@ -640,7 +626,7 @@ def validate_task_dir(root, task_dir_argument):
     if os.path.realpath(given) != str(given) or os.path.realpath(root) != str(root):
         raise RefusedError(f"{given} does not resolve to itself")
 
-    given_root = repo_root(given)
+    given_root = script_utils.repo_root(given)
     if given_root != root:
         raise RefusedError(
             f"{given} belongs to the git repository at {given_root}, not {root}; git status cannot vouch for it"
@@ -679,7 +665,7 @@ def finish(adr_path, task_dir_argument, draft_is_current, keep_task_dir):
         print(f"adr-flow: no such file: {adr_path}", file=sys.stderr)
         return 1
 
-    root = repo_root(adr_file.resolve().parent)
+    root = script_utils.repo_root(adr_file.resolve().parent)
     if root is None:
         print("adr-flow: the draft is not inside a git repository", file=sys.stderr)
         return 1

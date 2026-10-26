@@ -41,13 +41,12 @@ import os
 import posixpath
 import re
 import sys
-import time
 
 _SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path[:0] = [_SCRIPT_DIR, os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
 import hook_input
 import script_utils
-from hook_input import JqError, jq_get, jq_str, truthy
+from hook_input import EMPTY_INPUT, JqError, jq_field, prune_old_state_files
 from shell_command import parse_simple_commands, redirection_writes_file, split_simple_commands
 
 CODERS = ("coder", "coder-deep", "backend-coder", "backend-coder-deep", "frontend-coder", "frontend-coder-deep")
@@ -88,33 +87,6 @@ COMMIT_VALUE_LETTERS = "mFCct"
 
 class DenyError(Exception):
     pass
-
-
-EMPTY = object()
-
-
-def field(root, *keys, **options):
-    """jq -r '.a.b // default'. Only a missing, null or false value takes the default; an empty string stays empty."""
-    if root is EMPTY:
-        return ""
-    value = jq_get(root, *keys)
-    if "default" in options and not truthy(value):
-        return options["default"]
-    return jq_str(value)
-
-
-def prune_old(state_dir):
-    """find state_dir -type f -mtime +2 -delete"""
-    now = time.time()
-    for current, _dirs, files in os.walk(state_dir):
-        for name in files:
-            path = os.path.join(current, name)
-            try:
-                info = os.lstat(path)
-                if os.path.isfile(path) and not os.path.islink(path) and int((now - info.st_mtime) / 86400) > 2:
-                    os.unlink(path)
-            except OSError:
-                pass
 
 
 def commit_pathspecs(args):
@@ -300,15 +272,15 @@ def ships_only_notes(command, cwd):
 
 def run(raw, state):
     if raw.strip() == "":
-        root = EMPTY
+        root = EMPTY_INPUT
     else:
         try:
             root = json.loads(raw)
         except ValueError:
             raise JqError(2) from None
-    event = field(root, "hook_event_name")
+    event = jq_field(root, "hook_event_name")
     state["event"] = event
-    session = field(root, "session_id", default="unknown")
+    session = jq_field(root, "session_id", default="unknown")
 
     state_dir = os.environ["HOME"] + "/.claude/state/review-gate"
     try:
@@ -317,14 +289,14 @@ def run(raw, state):
         report_mkdir_failure(state_dir)
         raise JqError(1) from None
     state_file = state_dir + "/" + session
-    prune_old(state_dir)
+    prune_old_state_files(state_dir)
 
     if event == "PostToolUse":
-        if field(root, "tool_input", "subagent_type") in CODERS:
+        if jq_field(root, "tool_input", "subagent_type") in CODERS:
             with open(state_file, "w") as handle:
                 handle.write("dirty\n")
     elif event == "PreToolUse":
-        command = field(root, "tool_input", "command")
+        command = jq_field(root, "tool_input", "command")
         if is_commit_command(command):
             try:
                 with open(state_file, "rb") as handle:
@@ -333,7 +305,7 @@ def run(raw, state):
                 return
             if current != "dirty":
                 return
-            if ships_only_notes(command, field(root, "cwd")):
+            if ships_only_notes(command, jq_field(root, "cwd")):
                 return
             raise DenyError(
                 "[review-commit-gate] Coder work from this session has no converged /review. Run /review on "

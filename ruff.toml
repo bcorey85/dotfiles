@@ -6,6 +6,7 @@ include = [
     "claude/.claude/scripts/review/verify-prep",
     "claude/.claude/skills/*/scripts/*.py",
     "tests/scripts/**/*.py",
+    "tests/duplicate_code.py",
 ]
 extend-exclude = ["claude/.claude/skills/synced", "claude/.claude/skills/herdr", "claude/.claude/skills/tuios"]
 
@@ -19,9 +20,11 @@ max-complexity = 10
 [lint.per-file-ignores]
 # These files put the scripts folder on sys.path first, so the sibling-module imports that follow cannot sit at the top.
 "claude/.claude/skills/adr/scripts/adr_flow.py" = ["E402"]
+"claude/.claude/skills/refactor/scripts/refactor_flow.py" = ["E402"]
 # Every script in a toolkit folder starts with a sys.path line that adds its own folder and lib/, so the sibling
 # imports that follow cannot sit at the top.
 "claude/.claude/scripts/*/*.py" = ["E402"]
+"claude/.claude/scripts/review/verify-log" = ["E402"]
 "claude/.claude/scripts/review/verify-prep" = ["E402"]
 "tests/scripts/test_code_step_asks.py" = ["E402"]
 "tests/scripts/test_code_step_termination.py" = ["E402"]

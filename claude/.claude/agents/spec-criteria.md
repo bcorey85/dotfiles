@@ -24,6 +24,8 @@ without reading the code.
 
 Derive from the **ticket**, using the plan only for reach. Ticket/plan divergence → write the ticket's, flag it.
 
+Copy each ticket acceptance criterion verbatim into one AC; a split or reworded one needs a sign-off.
+
 ## Damage-path sweep — before you finish
 
 Walk the failure surface, not just the happy path: every input the change reads

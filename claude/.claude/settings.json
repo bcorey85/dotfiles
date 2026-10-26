@@ -400,6 +400,11 @@
           },
           {
             "type": "command",
+            "if": "Bash(*review-gate-mark*)",
+            "command": "python3 ~/.claude/scripts/review/review_commit_gate.py"
+          },
+          {
+            "type": "command",
             "command": "python3 ~/.claude/scripts/gates/shell_write_gate.py"
           },
           {

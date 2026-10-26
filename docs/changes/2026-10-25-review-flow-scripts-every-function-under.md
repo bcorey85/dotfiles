@@ -3,7 +3,7 @@ type: "Change"
 title: "Review-flow scripts: every function under complexity 10, dead CLI surface cut"
 description: "review_fix, handback, review_loop_gate and review_commit_gate hold no function over C901 10 and tests/run.sh fails on one; the hand-back latest verb, kind inference, the --check dry run, the Task tool name and the unused packet keys are gone."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T20:42:06-05:00"}
-seq: 13
+seq: 18
 kind: "fix"
 components: ["script/review-fix", "script/handback", "script/review-loop-gate", "script/review-commit-gate", "script/code-step"]
 evidence: ["judgment"]

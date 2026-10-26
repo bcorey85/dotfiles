@@ -468,6 +468,25 @@ class QualityCheckCapTest(unittest.TestCase):
             (repo / name).write_text("x\n")
         self.assert_allowed(self.pre("cargo clippy", cwd=repo))
 
+    # scoped cargo test
+
+    def test_a_cargo_test_scoped_to_a_named_target_is_never_a_repeat(self):
+        for command in ("cargo test --lib", "cargo test --doc", "cargo test --test api", "cargo test --test=api",
+                        "cargo test --bin tool", "cargo test parses_header", "cargo test -p core --lib",
+                        "cargo test --lib -- --nocapture", "cargo fmt --check && cargo test --lib"):
+            self.post(command)
+            self.assert_allowed(self.pre(command))
+
+    def test_an_unscoped_cargo_test_is_still_a_repeat(self):
+        for command in ("cargo test", "cargo test --workspace", "cargo test --workspace --lib", "cargo test -p core",
+                        "cargo test --all-targets", "cargo test -- --nocapture"):
+            self.post(command)
+            self.assert_denied(self.pre(command))
+
+    def test_a_format_check_alone_is_never_a_repeat(self):
+        self.post("cargo fmt --check")
+        self.assert_allowed(self.pre("cargo fmt --check"))
+
     # formatters that write
 
     def test_command_with_a_writing_formatter_is_never_a_repeat(self):

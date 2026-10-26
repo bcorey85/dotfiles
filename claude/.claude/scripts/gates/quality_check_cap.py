@@ -15,15 +15,17 @@ to it by `&&`, pipes allowed), and resets the cap like an edit. Key: normalized 
 + the agent
 that ran it: a run is capped only against an earlier run by the same agent, so a subagent's first run of a check is
 always allowed. The agent is the hook input's `agent_id` (set only inside a subagent); the main thread has none.
-Edits are shared by every agent of the session, because they change the tree all of them see. Escape: a trailing
-`#skip-quality-cap`. Fails closed only on the PreToolUse Bash path; state errors fail open. State lives in
-~/.claude/state/quality-check/<session>/.
+Edits are shared by every agent of the session, because they change the tree all of them see. A `cargo test`
+scoped to a named target (`--lib`, `--doc`, `--test <name>`, `--bin <name>`, a test-name filter) is never capped;
+unscoped it is. Escape: a trailing `#skip-quality-cap`. Fails closed only on the PreToolUse Bash path; state
+errors fail open. State lives in ~/.claude/state/quality-check/<session>/.
 """
 import contextlib
 import hashlib
 import json
 import os
 import re
+import shlex
 import sys
 import time
 
@@ -46,6 +48,11 @@ FORMATTER_START = re.compile("^(" + FORMATTERS + ")(" + WS + "|$)")
 FORMATTER_WRITES = re.compile(r"--write|(^|\s)-w(\s|$)|--fix|--apply")
 FORMATTER_READS_ONLY = re.compile(r"--check|--diff|--dry-run|(^|\s)-l(\s|$)|--list-different")
 FORMATTER_WRITES_BY_DEFAULT = re.compile("^(cargo fmt|rustfmt|black|ruff format|go fmt|dotnet format)")
+CARGO_TEST = re.compile("^cargo test(" + WS + "|$)")
+CARGO_TARGET_FLAGS = ("--test", "--bin", "--example", "--bench")
+CARGO_WHOLE_TREE_FLAGS = ("--workspace", "--all", "--all-targets")
+CARGO_VALUE_FLAGS = ("-p", "--package", "--features", "-F", "--target", "--manifest-path", "-j", "--jobs",
+                     "--profile", "--color", "--target-dir", "--exclude", "--message-format", "--config", "-Z")
 CD_SEGMENT = re.compile("^cd" + WS + "+([^" + SP + "]+)$")
 WRAPPER = re.compile("^(time|env|npx|bunx|pnpm exec|yarn dlx)" + WS + "+")
 ASSIGNMENT = re.compile(r"^[^\W\d]\w*=[^" + SP + "]*" + WS + "+")
@@ -195,6 +202,35 @@ def writes_files(segment):
     return bool(FORMATTER_WRITES.search(segment) or FORMATTER_WRITES_BY_DEFAULT.search(segment))
 
 
+def is_scoped_cargo_test(segment):
+    """True when a `cargo test` names its target: --lib, --doc, --test/--bin/--example/--bench <name>, or a test-name
+    filter. A run over the whole workspace or with no scope is the full suite and stays capped."""
+    if not CARGO_TEST.search(segment):
+        return False
+    try:
+        words = shlex.split(segment)
+    except ValueError:
+        words = segment.split()
+    words = words[2:]
+    if "--" in words:
+        words = words[:words.index("--")]
+    if any(word in CARGO_WHOLE_TREE_FLAGS for word in words):
+        return False
+    skip_value = False
+    for word in words:
+        if skip_value:
+            skip_value = False
+            continue
+        if word in ("--lib", "--doc") or word in CARGO_TARGET_FLAGS or word.split("=")[0] in CARGO_TARGET_FLAGS:
+            return True
+        if word in CARGO_VALUE_FLAGS:
+            skip_value = True
+            continue
+        if not word.startswith("-"):
+            return True
+    return False
+
+
 def state_dir_for(root, session):
     return root + "/" + session
 
@@ -282,6 +318,9 @@ def run(raw, state):
             format_indexes.append(index)
             continue
         if not CHECK_START.search(segment):
+            continue
+
+        if is_scoped_cargo_test(normalize(segment)):
             continue
 
         norm = normalize(segment)

@@ -2,7 +2,7 @@
 name: code
 description: Dispatch a coder subagent for implementation, then auto-run `/review`. Use for "implement/build/add X" when the task is well-defined or a plan file exists; features needing design decisions go to /eng-spec first.
 context: fork
-agent: general-purpose
+agent: code-fork
 model: sonnet
 allowed-tools: [Agent, Bash, Read, Skill]
 ---

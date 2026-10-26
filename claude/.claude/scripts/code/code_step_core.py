@@ -43,7 +43,8 @@ HOOK_STAGES = ("coder", "review", "asks-coder", "plan-coder")
 # their saved hand-back.
 REVIEW_HANDBACK_STAGES = ("coder", "review", "asks-coder")
 CODER_STAGES = ("coder", "asks-coder")
-FORK_AGENT_TYPE = "general-purpose"
+# The agent the /code skill forks into (its `agent:` line). It has no Edit or Write tool.
+FORK_AGENT_TYPE = "code-fork"
 SAY_MAX_AGE_SECONDS = 6 * 3600
 
 

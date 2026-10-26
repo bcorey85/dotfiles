@@ -74,9 +74,9 @@ def tool_response_agent_id(tool_response):
 
 
 def is_pinned_fork_event(event, state):
-    # The /code fork is the one general-purpose agent in the session that /code pinned. A general-purpose agent of
-    # another session, or of a session /code did not pin, is not touched. The agent type is the only thing a hook
-    # event records about the fork (its description is not in the event).
+    # The /code fork is the code-fork agent in the session that /code pinned. A code-fork agent of another session,
+    # or of a session /code did not pin, is not touched. The agent type is the only thing a hook event records about
+    # the fork (its description is not in the event).
     session_id = event.get("session_id")
     pinned_session = state.get("sessionId")
     return event.get("agent_type") == FORK_AGENT_TYPE and bool(session_id) and session_id == pinned_session

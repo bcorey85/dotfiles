@@ -50,13 +50,16 @@
 16b. **Dry-run the verification criteria** — two failure modes of the plan's
 `#### Automated Verification:` commands survive reading. Resolve each with the user before Phase 7.
 
-    - **Falsifiability run**: for each **read-only** command (build, test, lint,
-      `git grep` — never one that writes), run it as written against the pre-implementation tree. Clean RED is good; already-GREEN or BROKEN-on-bad-flag lets the coder pass with no check running.
-    - **Batch, don't dribble**: collect every read-only command first, then run
-      them in ONE Bash call (two at most on a large plan). Each command is
-      followed by `echo CHECK <n> rc=$?` and guarded with `|| true`, so one
-      failure cannot abort the batch. A command that writes never enters a
-      batch — it stays out entirely, not queued for later.
+    - **Falsifiability run**: run
+      `python3 ~/.claude/scripts/tools/criteria_dry_run.py docs/plans/<slug>/spec.md`
+      once. It runs every Automated Verification command of every phase against
+      the pre-implementation tree and prints `CHECK <n> RED|GREEN|BROKEN|UNPARSED`
+      plus `FLAG` lines. Clean RED is good; GREEN, BROKEN or UNPARSED lets the coder
+      pass with no check running. A filtered test run that matches no test reads RED
+      (the test does not exist yet). A `FLAG` is a defect in the criterion: a
+      `pgrep -f` that matches the shell running it, or a count that differs from
+      the plan's own code. Pass `--skip <n>` for each command that writes; a
+      command that writes never runs.
     - **Criteria that read a file or a diff**: open the file and confirm it holds
       what the criterion looks for, and that the container or path is the one the
       phase changes. An `rg` over prose uses `-U` and `\s+`, or a wrapped phrase

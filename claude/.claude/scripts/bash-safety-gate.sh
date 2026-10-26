@@ -113,7 +113,7 @@ if grep -qiE 'git\s+(reset\s+--hard|clean\s+(-f|--force)|checkout\s+--\s+\.|rest
     block "[git_reset_clean] [threat:5] Destructive git commands (reset --hard, clean -f, checkout -- .) are not allowed"
 fi
 if grep -qiE 'git\s+push\b' <<< "$CMD" && \
-   grep -qiE '\b(main|master)\b' <<< "$CMD"; then
+   ! python3 "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/tools/git_push_main_check.py" <<< "$CMD"; then
     block "[git_push_main] [threat:5] Pushing directly to main/master is not allowed"
 fi
 if grep -qiE 'git\s+(commit|push|merge)\b.*--no-verify' <<< "$CMD"; then

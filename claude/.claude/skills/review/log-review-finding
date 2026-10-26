@@ -82,10 +82,9 @@
 #     fix_induced=yes|no|bug      (optional) the finding names code a previous
 #       fix in this loop introduced, not code the coder originally wrote.
 #       `bug` sets blocker=yes.
-#     source=round|fix-diff|last-pass|class|gate   (review-loop `fix` rows) where
-#       the finding came from: a full review, the first or the second fix-diff
-#       pass, an open class member at the round cap, or the execution gate. Only
-#       last-pass and class may defer. A code-reviewer `fix` row with
+#     source=round|class|gate   (review-loop `fix` rows) where the finding came
+#       from: a full review, an open class member at the round cap, or the
+#       execution gate. Only class may defer. A code-reviewer `fix` row with
 #       actioned=deferred at scope phase or standalone is refused without one.
 #
 # Every value is sent as a JSON string, except n_findings=null, which is sent as JSON null; `ledger write` types it. The row goes to
@@ -213,9 +212,9 @@ if [ "$kind" = finding ]; then
   fi_val=$(jq -r '.fix_induced // ""' <<< "$json")
   [ "$fi_val" != bug ] || json=$(jq -c '.blocker = "yes"' <<< "$json")
 
-  # The review loop sends every `fix` finding to a coder except two kinds. A
-  # deferred row goes to a branch-exit queue that most branches never read, so
-  # a wrong deferral drops the finding.
+  # The review loop sends every `fix` finding to a coder but an open class
+  # member at the round cap. A deferred row goes to a branch-exit queue that most
+  # branches never read, so a wrong deferral drops the finding.
   source=$(jq -r '.source // ""' <<< "$json")
   disposition=$(jq -r '.disposition // ""' <<< "$json")
   actioned=$(jq -r '.actioned // ""' <<< "$json")
@@ -223,12 +222,11 @@ if [ "$kind" = finding ]; then
   if [ "$disposition" = fix ] && [ "$actioned" = deferred ]; then
     loop_row=no
     [ "$gate" = code-reviewer ] && { [ "$scope" = phase ] || [ "$scope" = standalone ]; } && loop_row=yes
-    if [ -n "$source" ] && [ "$source" != last-pass ] && [ "$source" != class ] \
+    if [ -n "$source" ] && [ "$source" != class ] \
       || { [ -z "$source" ] && [ "$loop_row" = yes ]; }; then
-      echo "refusing to log: a review-loop fix finding defers only from the second fix-diff pass" >&2
-      echo "(source=last-pass) or as an open class member at the round cap (source=class)." >&2
-      echo "A full review's, the first fix-diff pass's and the execution gate's fix findings get" >&2
-      echo "a coder at any iter. Dispatch one, read its diff, then log the row with actioned=fixed." >&2
+      echo "refusing to log: a review-loop fix finding defers only as an open class member at the" >&2
+      echo "round cap (source=class). A full review's and the execution gate's fix findings get a" >&2
+      echo "coder at any iter. Dispatch one, then log the row with actioned=fixed." >&2
       exit 1
     fi
   fi

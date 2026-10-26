@@ -43,7 +43,8 @@ mark.
 ```
 each iteration:
   1. check cap   → if iter >= 2: no full review → the cap exit (Step 5c), WITHOUT dispatching a reviewer
-     the cap stops a reviewer, never a coder: a second-round `fix` finding got its coder in step 5 before this check
+     the cap stops a reviewer, never a coder: a second-round `fix` finding got its coder in step 5 before this check,
+     and only the execution gate (Step 6) reads that coder's diff
   2. dispatch reviewer → `iter++` at the dispatch, whatever it returns
      first round only: on a large diff, the structure reviewer and the test-reviewer go out in the SAME message (Step 3a)
      later rounds: re-review by every reviewer that filed a `fix` last round
@@ -51,14 +52,11 @@ each iteration:
   4. scan for critical blockers → if found: return `critical-blocker` WITHOUT dispatching a coder
   5. dispatch ONE fix coder for every `fix` finding, test gaps included, at every `iter` (Step 5); `ask` and `nit` never dispatch
   6. repeat
-
-on exit (any status), if a fix diff is unread: the fix-diff verification pass (Step 5d)
-  — no counter, no cap, once per unread fix diff. The first pass sends every `fix` finding it files to a coder
 ```
 
 ## Step 1: Parse args
 
-- **Iteration counter.** `iter=N` (default `iter=0`) arrives in args and returns in the packet. A caller re-entering the loop passes back what it received. It counts **correctness rounds**: reviewer findings and their fixes (Steps 3–5), including class-closure re-entries. **The budget is TWO rounds.** If `iter >= 2` when a full review comes due, do not dispatch it: take the cap exit (Step 5c). This cap governs full correctness ROUNDS; the Step 5d fix-diff verification is not one.
+- **Iteration counter.** `iter=N` (default `iter=0`) arrives in args and returns in the packet. A caller re-entering the loop passes back what it received. It counts **correctness rounds**: reviewer findings and their fixes (Steps 3–5), including class-closure re-entries. **The budget is TWO rounds.** If `iter >= 2` when a full review comes due, do not dispatch it: take the cap exit (Step 5c).
 
 - **Handoff block**: if present, it is the review scope. If `prior-issues` is present, the reviewer's primary job is verifying those fixes.
 
@@ -113,7 +111,7 @@ Every finding arrives already carrying its disposition — the reviewer decided 
 not re-derive it. Route on the label:
 
 - **`fix`** → auto-fix loop. Its `blocker` flag does not change the
-  routing here. It changes only what the second fix-diff pass does (Step 5d) and what stops a phase.
+  routing here. It changes only what stops a phase.
 - **`ask`** → never dispatched. Collected and surfaced to the user in the packet, each entry carrying the reviewer's `change` and its emitting `gate` and `class`.
 - **`nit`** → never dispatches a coder, never re-raised on a later pass. When this pass
   dispatches a fix coder, its `nit` items ride along as small items (Step 5); otherwise
@@ -136,7 +134,7 @@ information, not an error to correct.
 
 Dispatch a `coder` with the `fix` findings. **Never pass an `ask` to the fix coder. Never dispatch a coder for `nit` items alone.**
 
-**Small items**: when Step 4 routed `nit` items on this pass, add a `## Small items` section below the findings — the small-items text below verbatim, then the `nit` items verbatim. A repair dispatched from Step 5d's findings carries no small items.
+**Small items**: when Step 4 routed `nit` items on this pass, add a `## Small items` section below the findings — the small-items text below verbatim, then the `nit` items verbatim.
 
 Include this fence verbatim in every coder prompt you send:
 
@@ -154,9 +152,9 @@ Record every resolved finding into `fixed[]` as `{finding, file_line, blocker}` 
 
 **PLAN-IMPACT pass-through**: scan each coder report for a `PLAN-IMPACT:` block (`coder-core` requires `PLAN-IMPACT: yes` as the report's last line when one exists). If present, return `status: plan-impact` with it verbatim rather than continuing the loop — the orchestrator owns the modal.
 
-Build `prior-issues` from the coder report as Step 5b does, add the coder's changed files to the next review's scope, then re-enter step 1. If no full review follows, Step 5d reads this fix diff before the loop returns.
+Build `prior-issues` from the coder report as Step 5b does, add the coder's changed files to the next review's scope, then re-enter step 1. If no full review follows, only the execution gate (Step 6) reads this fix diff.
 
-**Docs-only fixes end the loop.** When every finding the coder applied — each `fix` and each applied small item — carries class `docs`, dispatch no further review and no fix-diff pass. Go to Step 6.
+**Docs-only fixes end the loop.** When every finding the coder applied — each `fix` and each applied small item — carries class `docs`, dispatch no further review. Go to Step 6.
 
 ## Step 5b: `mode: fix-first`
 
@@ -184,66 +182,23 @@ gets a coder. The cap stops a third full review and nothing else. A deferred
 finding is not discarded: it moves to the branch-exit queue, where it is read
 once, in one place, against the whole branch instead of one phase of it.
 
-**What may defer.** Only two kinds of `fix` finding defer:
-
-- `last-pass`: a finding without `blocker` from the second fix-diff pass (Step 5d).
-- `class`: a class member that Step 6 finds open at `iter >= 2`. Step 6 returns `cap-reached`.
+**What may defer.** Only a `class` `fix` finding defers: a class member that
+Step 6 finds open at `iter >= 2`. Step 6 returns `cap-reached`.
 
 Every other `fix` finding gets a coder (Step 5) at any `iter`: each full review's
-(`round`), the first fix-diff pass's (`fix-diff`) and the execution gate's (`gate`).
-Log each `fix` finding with its source word (Step 7b). The logger refuses a
-deferred row with any other source.
+(`round`) and the execution gate's (`gate`). Log each `fix` finding with its
+source word (Step 7b). The logger refuses a deferred row with any other source.
 
 **Defer** = log each finding per `~/.claude/skills/_shared/finding-log.md` with
 `actioned=deferred`, then return it in `findings_remaining`. The `branch` field
 is what makes the queue retrievable — never omit it. Deferred findings keep
 their original `gate` and disposition; do not re-grade them on the way out.
 
-**The cap exit.** Dispatch no full review and do not `iter++`. Run Step 5d if a
-fix diff is unread, then Step 6, and Steps 7 and 7b. Unless one of those
-returns first, return `status: deferred` if `findings_remaining` holds a finding,
-else `status: converged`. At `iter >= 2` the `fix` findings of a gate failure get
-one coder per invocation: after the repair and its pass, run the gate once more;
-a second failure returns `status: critical-blocker`.
-
-## Step 5d: Fix-diff verification (once per unread fix diff)
-
-A fix diff that no one reads is the one change in the phase with no reviewer
-behind it. Before this loop returns — `deferred`, `converged`, or `cap-reached` —
-if a fix diff is unread, dispatch **one** `code-reviewer` scoped to every
-unread fix diff.
-
-Unless `no-review` is in args or the fix was docs-only (Step 5), the last dispatch
-of a loop that ran a fix coder is a reviewer, never a coder.
-A fix diff is read once a pass read it, once a later full review of this loop
-(Step 3) had all its files in scope, or when it applied only `docs` findings; a clean second review that covered the first
-repair gets no pass. Every other fix diff is unread, and no repair exits unread.
-The pass does not increment `iter`, and is not subject to its cap: it verifies
-work this loop dispatched, not another round of finding new work. Only the first
-pass routes.
-Every later one dispatches nothing — a `blocker` returns
-`status: critical-blocker`, everything else defers.
-
-The dispatch carries: the fix coder's changed-file list from its `REVIEW:` line,
-its `WHY:` ranges when it gave any, the `prior-issues` block (issue / status /
-file) built in Step 5, and this scope. Run no git call to build it:
-
-> Your job, in this order: (1) did each prior issue's fix actually take, and take
-> completely; (2) did this diff introduce a new defect, break behavior that
-> previously worked, or contradict the spec or the docs. The module is readable
-> for context, but the review is scoped to this diff — do not report pre-existing
-> defects the diff neither introduced nor was meant to fix.
->
-> Judge every fix against the spec and docs **as they stood**. A fix
-> contradicting documented behavior is a finding against the fix;
-> genuinely-better-new-behavior is an `ask`, never a doc amendment.
-
-Route the first pass like a full review: one coder (Step 5) for every `fix`
-finding it files, `blocker` or not, and for every `partial` / `still broken`
-prior issue. The second pass reads that coder's diff, unless the coder applied
-only `docs` findings. On the second pass, a `partial` / `still broken` prior
-issue rides into `findings_remaining` with its original disposition — never
-`converged` while one stands.
+**The cap exit.** Dispatch no full review and do not `iter++`. Run Step 6, then
+Steps 7 and 7b. Unless one of those returns first, return `status: deferred` if
+`findings_remaining` holds a finding, else `status: converged`. At `iter >= 2`
+the `fix` findings of a gate failure get one coder per invocation: after the
+repair, run the gate once more; a second failure returns `status: critical-blocker`.
 
 ## Step 6: Convergence — the execution gate
 

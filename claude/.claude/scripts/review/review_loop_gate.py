@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """review_loop_gate.py — deterministic checks on the review loop.
 
-  SubagentStop (review-loop), the backstop: blocks once, with every reason that holds, when
-    - a fix coder ran after the last code-reviewer read — a fresh dispatch, or a SendMessage to a
-      code-reviewer it dispatched. `no-review` in the loop prompt exempts this check only.
-    - no full check ran after the last code change: a shell call that runs a project checker, or
-      redirects into the review-gate log, with no file, directory or test-name filter. For the
-      checkers that take them, the value of `--manifest-path`, `-p`, `--package` or `--project`
-      names a package or project and is no filter (see NON_SCOPING_FLAGS). The last
-      coder step — a dispatch, or a SendMessage to a coder it dispatched — is the last code change;
-      with none, the loop start is, since the phase changed code before the loop ran. A handoff
-      `tests-run` never exempts it. A loop returning `status: plan-impact` owes no check.
+  SubagentStop (review-loop), the backstop: blocks once when no full check ran after the last code
+      change: a shell call that runs a project checker, or redirects into the review-gate log, with
+      no file, directory or test-name filter. For the checkers that take them, the value of
+      `--manifest-path`, `-p`, `--package` or `--project` names a package or project and is no
+      filter (see NON_SCOPING_FLAGS). The last coder step — a dispatch, or a SendMessage to a coder
+      it dispatched — is the last code change; with none, the loop start is, since the phase changed
+      code before the loop ran. A handoff `tests-run` never exempts it. A loop returning
+      `status: plan-impact` owes no check.
       A second stop in a row passes (stop_hook_active), so a stuck loop cannot spin. The block
       reason reaches the loop as context and it keeps working. Register with matcher
       `review-loop`; the agent_type check below still guards an unscoped entry.
@@ -43,11 +41,9 @@ import script_utils
 
 OWN_CLAUDE_DIR = pathlib.Path(__file__).resolve().parents[2]
 CODERS = re.compile(r"^(backend-|frontend-)?coder(-deep)?$")
-REVIEWERS = re.compile(r"^code-reviewer(-deep)?$")
 AGENT_ID = re.compile(r"agentId:\s*([A-Za-z0-9-]+)")
 CALLER_CODE = re.compile(r"(?i)(?<![\w-])caller[`*]*\s*[:=]\s*[`\"']?code\b")
 HANDOFF = re.compile(r"(?im)^[ \t]*handoff[ \t]*:")
-NO_REVIEW = re.compile(r"(?<![\w-])no-review(?![\w-])")
 PLAN_IMPACT = re.compile(r"(?im)^[ \t>*`-]*status[`*]*[ \t]*:[ \t`*]*plan-impact\b")
 REDIRECT = re.compile(r"\d*>>?\s*&?\S+|&>\s*\S+")
 SEGMENT_END = re.compile(r"&&|\|\||[;|\n]")
@@ -104,9 +100,6 @@ ASSESSMENT = re.compile(r"Overall Assessment\*{0,2}:?\s*\**(PASS WITH WARNINGS|P
 PROMPT_LANE = re.compile(r"(?im)^[ \t>*`-]*lane[`*]*[ \t]*:[ \t`*]*(eng-spec|code|other|none)\b")
 PROMPT_PHASE = re.compile(r"(?im)^[ \t>*`-]*phase[`*]*[ \t]*:[ \t`*]*([\w.-]+)")
 
-PASS_REASON = ("A fix coder ran after the last code-reviewer read of this loop, so its fix diff is unread. "
-               "Run Step 5d now: dispatch one code-reviewer scoped to every unread fix diff, route its "
-               "findings, then return the packet.")
 GATE_REASON = ("No full check ran after the last code change in this phase. A scoped run, including the "
                "handoff's tests-run, does not count. Run the Step 6 execution gate now: the project's full "
                "quality-check command once, redirected to /tmp/review-gate.log. Route any failure as Step 6 "
@@ -221,25 +214,21 @@ class LoopTranscript:
 
 
 def scan(transcript, final=None):
-    """(a coder ran after the last reviewer read, no full check ran after the last code change, the loop prompt
-    holds no-review, the count of background dispatches that have not reported). final is the loop's last message;
-    the transcript's last text stands in when it is None."""
-    last_coder = max(transcript.dispatch_lines(CODERS), default=-1)
-    last_read = max(transcript.steps(REVIEWERS), default=-1)
+    """(no full check ran after the last code change, the count of background dispatches that have not reported).
+    final is the loop's last message; the transcript's last text stands in when it is None."""
     last_step = max(transcript.steps(CODERS), default=0)
     last_full = max(transcript.full_checks, default=-1)
 
     plan_impact = PLAN_IMPACT.search(transcript.last_text if final is None else final)
     ungated = last_full < last_step and not plan_impact
-    exempt = bool(NO_REVIEW.search(transcript.prompt or ""))
-    return last_coder > last_read, ungated, exempt, transcript.open_dispatches()
+    return ungated, transcript.open_dispatches()
 
 
 def reasons_for(scanned):
-    unread, ungated, exempt, open_dispatches = scanned
-    if open_dispatches:
+    ungated, open_dispatches = scanned
+    if open_dispatches or not ungated:
         return []
-    return [r for r, hit in ((PASS_REASON, unread and not exempt), (GATE_REASON, ungated)) if hit]
+    return [GATE_REASON]
 
 
 def section_findings(lines):
@@ -422,7 +411,7 @@ def check_stop(hook):
     why = [] if hook.get("stop_hook_active") else reasons_for(scanned)
     if why:
         print(json.dumps({"decision": "block", "reason": " ".join(why)}))
-    elif not scanned[3]:
+    elif not scanned[1]:
         log_run_rows(hook, transcript)
 
 

@@ -134,7 +134,8 @@ class CodeStepTest(unittest.TestCase):
         for name in ("coder_gate.py", "resolve-task-dir.sh"):
             stage_script(REAL_CLAUDE / "scripts", name, self.claude / "scripts")
         for name in ("coder_packet.py", "plan_format.py", "script_utils.py", "code_step_core.py",
-                     "code_step_boundary.py", "code_step_hooks.py", "shell_command.py", "makefile_text.py"):
+                     "code_step_boundary.py", "code_step_hooks.py", "shell_command.py", "makefile_text.py",
+                     "test_run_output.py"):
             stage_script(SCRIPTS_ROOT, name, self.claude / "scripts")
         self.log = self.tmp / "calls.log"
         (self.claude / "scripts" / "telemetry").mkdir()
@@ -3015,7 +3016,7 @@ class CodeStepTest(unittest.TestCase):
         bare = self.tmp / "bare"
         bare.mkdir()
         for name in (SCRIPT.name, "script_utils.py", "plan_format.py", "reviewed_tree.py", "code_step_core.py",
-                     "code_step_boundary.py", "code_step_hooks.py"):
+                     "code_step_boundary.py", "code_step_hooks.py", "test_run_output.py"):
             shutil.copy(toolkit_paths.script_in(SCRIPTS_ROOT, name), bare / name)
         env = dict(self.env, PYTHONPATH="")
         script = str(bare / SCRIPT.name)
@@ -3276,6 +3277,29 @@ class CodeStepTest(unittest.TestCase):
         results, skipped, unparsed = code_step_boundary.run_verification_commands(self.repo, section)
 
         self.assertEqual(([], ["CI=1 npm test"], []), (results, skipped, unparsed))
+
+    @staticmethod
+    def verification_section(command):
+        return (f"#### Automated Verification:\n\n- [ ] **New test**: passes - `{command}`\n\n"
+                "#### Manual Verification:\n")
+
+    def test_a_filtered_test_run_that_matches_no_test_fails_the_verification(self):
+        command = """python3 -c "print('vitest: no tests found')" -t nomatch"""
+
+        results, _, _ = code_step_boundary.run_verification_commands(self.repo, self.verification_section(command))
+
+        (ran_command, code, output), = results
+        self.assertEqual(command, ran_command)
+        self.assertNotEqual(0, code)
+        self.assertIn("test filter matched no test", output)
+
+    def test_a_filtered_test_run_that_reports_a_passed_test_stays_green(self):
+        command = """python3 -c "print('vitest: 2 passed')" -t match"""
+
+        results, _, _ = code_step_boundary.run_verification_commands(self.repo, self.verification_section(command))
+
+        (_, code, _), = results
+        self.assertEqual(0, code)
 
     def test_the_unparsed_verification_stop_names_tick_for_checks_that_cannot_be_automated(self):
         self.coder_round_then_edit_verification("- [ ] **Check**: the streams pass, see the log")

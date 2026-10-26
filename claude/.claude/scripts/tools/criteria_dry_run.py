@@ -21,15 +21,9 @@ sys.path[:0] = [str(SCRIPTS_DIR / "lib"), str(SCRIPTS_DIR / "code")]
 import code_step_boundary
 import plan_format
 import script_utils
+from test_run_output import matches_no_test
 
 DEFAULT_TIMEOUT_SECONDS = 600
-TEST_RUNNER = re.compile(r"\b(?:pytest|vitest|jest|mocha|cargo\s+test|go\s+test|bun\s+test"
-                         r"|(?:npm|pnpm|yarn|npx)\b.*\btest)\b")
-TEST_FILTER = re.compile(r"(?:^|\s)(?:-k|-t|-run|--testNamePattern|--test-name-pattern|--grep|--filter)(?:[\s=]|$)"
-                         r"|\S::\w|cargo\s+test\s+(?!-)\S")
-PASSED_TESTS = re.compile(r"(\d+) passed")
-GO_PACKAGE_OK = re.compile(r"^ok\s+\S+.*$", re.MULTILINE)
-GO_NO_TESTS = "[no tests to run]"
 FENCE_LINE = re.compile(r"^\s*(?:`{3,}|~{3,})")
 PGREP_WORD = re.compile(r"\bpgrep\b([^|;&]*)")
 BRACKET_CLASS = re.compile(r"\[[^\]]+\]")
@@ -40,22 +34,6 @@ COMMAND_BREAKS = {"|", "||", "&&", ";", "&"}
 STATED_IN_COMMAND = re.compile(r"(?:-eq|==?)\s*[\"']?(\d+)\b")
 STATED_IN_ITEM = re.compile(r"\b(?:is|are|=|==|equals?|returns?|prints?|outputs?|shows?|gives?|reports?|expects?|"
                             r"expected)\s+(?:exactly\s+)?(\d+)\b", re.IGNORECASE)
-
-
-def passed_test_count(output):
-    """How many tests the runner output says passed: the sum of every `N passed` (pytest, vitest, jest, cargo), plus
-    each go package line that ran tests. 0 when the output reports none."""
-    total = sum(int(number) for number in PASSED_TESTS.findall(output))
-    total += sum(1 for line in GO_PACKAGE_OK.findall(output) if GO_NO_TESTS not in line)
-    return total
-
-
-def matches_no_test(command, code, output):
-    """True for a filtered test run that exits 0 and reports no passed test. A filter that matches nothing exits 0
-    in vitest, jest and cargo, so the exit code alone reads it as passing."""
-    if code != 0 or not TEST_RUNNER.search(command) or not TEST_FILTER.search(command):
-        return False
-    return passed_test_count(output) == 0
 
 
 def self_matching_pgrep(command):

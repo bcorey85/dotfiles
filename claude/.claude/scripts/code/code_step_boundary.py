@@ -31,8 +31,12 @@ from code_step_core import (
     session_pin,
 )
 from script_utils import git_output, run_command
+from test_run_output import matches_no_test
 
 VERIFY_TIMEOUT_SECONDS = 600
+# A filtered test run that exits 0 but reports no passed test did not run the phase's test: it fails the box.
+NO_TEST_MATCHED_EXIT_CODE = 1
+NO_TEST_MATCHED_NOTE = "\nthe test filter matched no test: the run exits 0 but reports no passed test\n"
 # A ban written with rg or grep: exit 1 (no match) holds it, like git grep.
 SEARCH_BAN = re.compile(r"^(?:rg|grep|egrep)\s")
 # A ban written `! rg ...` is the same ban as `rg ...`: no match holds it.
@@ -324,6 +328,9 @@ def run_verification_commands(repo_dir, phase_section):
         if "git grep" in command or SEARCH_BAN.match(script_utils.without_leading_env_assignments(command)):
             results.append(check_prohibition(repo_dir, command, code, output))
             continue
+        if matches_no_test(command, code, output):
+            code = NO_TEST_MATCHED_EXIT_CODE
+            output += NO_TEST_MATCHED_NOTE
         results.append((command, code, output))
     return results, skipped, unparsed
 

@@ -219,6 +219,13 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assert_denied(self.pre("eslint . || true"))
         self.assert_denied(self.pre("ls; pytest a.py"))
 
+    def test_a_search_pattern_naming_a_check_is_not_a_run_of_it(self):
+        search = "rg -n -i 'typecheck|tsc|lint' a b | head -20"
+        self.post("tsc --noEmit")
+        self.assert_allowed(self.pre(search))
+        self.assert_allowed(self.post(search))
+        self.assert_allowed(self.pre(search))
+
     def test_skip_comment_allows_pre_and_is_stripped_for_post(self):
         self.post("pytest")
         self.assert_allowed(self.pre("pytest #skip-quality-cap"))

@@ -753,6 +753,8 @@ class ReviewFixScriptTest(unittest.TestCase):
                          "dispatch")
 
     def hand_back(self, message=CONVERGED, session=SESSION, agent="review-loop", agent_id="a1"):
+        self.hook({"session_id": session, "tool_name": "Agent", "agent_type": agent, "agent_id": agent_id,
+                   "tool_input": {"subagent_type": "code-reviewer"}}, "dispatch")
         return self.hook({"session_id": session, "tool_name": "SubagentHandback", "agent_type": agent,
                           "agent_id": agent_id, "tool_input": {"message": message}}, "handback")
 
@@ -765,6 +767,22 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet("")
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: render-and-finish", output)
+
+    def test_a_clean_hand_back_flagged_as_unreviewed_stops_with_a_re_dispatch_instruction(self):
+        self.dispatch()
+        coder = {"session_id": SESSION, "tool_name": "Agent", "agent_type": "review-loop", "agent_id": "a1",
+                 "tool_input": {"subagent_type": "coder"}}
+        self.hook(coder, "dispatch")
+        self.hand_back_without_reviewer()
+        self.hand_back_without_reviewer()
+        code, output = self.packet("")
+        self.assertEqual(code, 2, output)
+        self.assertIn("ACTION: stop-no-reviewer", output)
+        self.assertNotIn("render-and-finish", output)
+
+    def hand_back_without_reviewer(self):
+        return self.hook({"session_id": SESSION, "tool_name": "SubagentHandback", "agent_type": "review-loop",
+                          "agent_id": "a1", "tool_input": {"message": CONVERGED}}, "handback")
 
     def test_session_with_no_dispatch_on_record_is_refused(self):
         code, output = self.packet("")

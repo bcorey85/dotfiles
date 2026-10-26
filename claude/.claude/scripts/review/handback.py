@@ -60,6 +60,7 @@ ITEM_START = re.compile(r"^\s*(?:-|\d+[.)])\s+", re.M)
 CLASSES = ["bug", "smell", "duplication", "complexity", "plan-drift", "test-gap", "weak-assertion", "security", "perf",
            "correctness", "docs", "other"]
 REVIEW_LOOP = "review-loop"
+NO_REVIEW_MODE = re.compile(r"(?im)^[ \t>*`-]*no-review\b")
 DEFAULT_GATE = "code-reviewer"
 FENCE_OPEN = "```"
 BLOCKER_TEXT = re.compile(r"\[blocker\]|\bblocker\s*[:=]\s*(?:yes|true)\b", re.I)
@@ -576,7 +577,39 @@ def false_clean_reason(session_id):
     status = seen["handback"].get("status")
     if status not in CLEAN_STATUSES:
         return f"the latest review-loop hand-back is {status}"
+    if seen["handback"].get("no_reviewer"):
+        return "the review-loop handed back clean with no reviewer run after its last code change"
     return None
+
+
+def ran_reviewer(session_id, agent_id):
+    """False when the review-loop agent `agent_id` dispatched no reviewer after its last coder dispatch. With no coder
+    dispatch, any reviewer dispatch by it counts. Coders resumed with SendMessage are not counted: the hook sees only
+    the recipient's id, not its type."""
+    stored_rows = script_utils.read_jsonl(session_file(session_id))
+    steps = [row["step"] for row in stored_rows if row.get("kind") == "step" and row.get("agent_id") == agent_id]
+    after_coder = steps[len(steps) - steps[::-1].index("coder"):] if "coder" in steps else steps
+    return "reviewer" in after_coder
+
+
+def claim_no_review(session_id, agent_id):
+    """True when `agent_id` is exempt from the reviewer rule: it was exempted before, or the session holds more
+    no-review dispatches than exemptions, and this claims one. A dispatch row has no agent id, so a normal loop that
+    skips review while an unclaimed no-review loop runs in parallel can take that exemption."""
+    stored_rows = script_utils.read_jsonl(session_file(session_id))
+    exempted = [row for row in stored_rows if row.get("kind") == "no-review-exempt"]
+    if any(row.get("agent_id") == agent_id for row in exempted):
+        return True
+    no_review_dispatches = [row for row in stored_rows if row.get("kind") == "dispatch" and row.get("no_review")]
+    if len(no_review_dispatches) <= len(exempted):
+        return False
+    record(session_id, "no-review-exempt", agent_id=agent_id)
+    return True
+
+
+def was_unreviewed(session_id, agent_id):
+    stored_rows = script_utils.read_jsonl(session_file(session_id))
+    return any(row.get("kind") == "unreviewed" and row.get("agent_id") == agent_id for row in stored_rows)
 
 
 def was_rejected(session_id, agent_id):
@@ -599,8 +632,14 @@ def handle_hook(event, kind):
         return None
     tool_input = event.get("tool_input") or {}
     if kind == "dispatch":
-        if tool_input.get("subagent_type") == REVIEW_LOOP:
-            record(session_id, "dispatch")
+        subagent_type = str(tool_input.get("subagent_type") or "")
+        if event.get("agent_type") == REVIEW_LOOP:
+            step = "coder" if script_utils.CODERS.match(subagent_type) else "reviewer"
+            if step == "coder" or script_utils.REVIEWERS.match(subagent_type):
+                record(session_id, "step", agent_id=event.get("agent_id") or "unknown", step=step)
+        elif subagent_type == REVIEW_LOOP:
+            prompt = str(tool_input.get("prompt") or "")
+            record(session_id, "dispatch", no_review=NO_REVIEW_MODE.search(prompt) is not None)
         return None
     if kind != "handback" or event.get("agent_type") != REVIEW_LOOP:
         return None
@@ -614,7 +653,14 @@ def handle_hook(event, kind):
         record(session_id, "rejected", agent_id=agent_id, problems=problems)
         return ("The review-loop packet does not parse: " + "; ".join(problems) +
                 ". Fix the packet to the schema in your instructions and hand back again.")
-    record(session_id, "handback", agent_id=agent_id, status=status, problems=problems, message=message)
+    unreviewed = (status in CLEAN_STATUSES and not ran_reviewer(session_id, agent_id)
+                  and not claim_no_review(session_id, agent_id))
+    if unreviewed and not was_unreviewed(session_id, agent_id):
+        record(session_id, "unreviewed", agent_id=agent_id)
+        return ("This review-loop hand-back is clean but no reviewer ran after the last code change. Dispatch the "
+                "code-reviewer on the diff, fix what it finds, then hand back again.")
+    record(session_id, "handback", agent_id=agent_id, status=status, problems=problems, message=message,
+           no_reviewer=unreviewed)
     return None
 
 

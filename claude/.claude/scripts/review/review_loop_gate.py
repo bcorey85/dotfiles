@@ -41,7 +41,6 @@ import handback
 import script_utils
 
 OWN_CLAUDE_DIR = pathlib.Path(__file__).resolve().parents[2]
-CODERS = re.compile(r"^(backend-|frontend-)?coder(-deep)?$")
 AGENT_ID = re.compile(r"agentId:\s*([A-Za-z0-9-]+)")
 CALLER_CODE = re.compile(r"(?i)(?<![\w-])caller[`*]*\s*[:=]\s*[`\"']?code\b")
 HANDOFF = re.compile(r"(?im)^[ \t]*handoff[ \t]*:")
@@ -234,7 +233,7 @@ class LoopTranscript:
 def scan(transcript, final=None):
     """(no full check ran after the last code change, the count of background dispatches that have not reported).
     final is the loop's last message; the transcript's last text stands in when it is None."""
-    last_step = max(transcript.steps(CODERS), default=0)
+    last_step = max(transcript.steps(script_utils.CODERS), default=0)
     last_full = max(transcript.full_checks, default=-1)
 
     plan_impact = PLAN_IMPACT.search(transcript.last_text if final is None else final)

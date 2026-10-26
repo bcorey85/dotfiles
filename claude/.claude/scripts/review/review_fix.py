@@ -230,6 +230,18 @@ def stop_for_missing_hand_back(skill, last_hand_back_id):
                  keep_dirty)
 
 
+def stop_for_unreviewed(skill):
+    """The loop handed back clean after a code change with no reviewer run: the review did not happen."""
+    keep_dirty = f"If you ran `{MARK_CLEAN}` alongside this call, run `{MARK_DIRTY}` now as its own Bash command."
+    print_action("stop-no-reviewer",
+                 "The review-loop handed back clean but dispatched no reviewer after its last code change. Nothing was "
+                 "routed, logged or posted.",
+                 f"Re-dispatch review-loop with the same arguments for a real review pass, then run "
+                 f"`packet --skill {skill}` again. Do not mark the gate clean.",
+                 keep_dirty)
+    return 2
+
+
 def present_plan_impact(packet, state):
     state.update({"stage": "plan-impact", "plan_impact": packet["plan_impact"]})
     save_fix_state(state)
@@ -424,14 +436,15 @@ def saved_hand_back(session_id):
 
 
 def read_message():
-    """(packet text, run id). A saved hand-back is one run per stored row (agent id and time), so two dispatches that
-    return the same text are two runs. A packet on stdin has no row: its text hash is the run id."""
+    """(packet text, run id, whether the loop handed back clean with no reviewer run).
+    A saved hand-back is one run per stored row (agent id and time), so two dispatches that return the same text are
+    two runs. A packet on stdin has no row: its text hash is the run id."""
     stdin_text = "" if sys.stdin.isatty() else sys.stdin.read()
     if stdin_text.strip():
-        return stdin_text, "stdin:" + hashlib.sha1(stdin_text.encode("utf-8")).hexdigest()
+        return stdin_text, "stdin:" + hashlib.sha1(stdin_text.encode("utf-8")).hexdigest(), False
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     stored_row = saved_hand_back(session_id)
-    return stored_row["message"], hand_back_id(stored_row, session_id)
+    return stored_row["message"], hand_back_id(stored_row, session_id), bool(stored_row.get("no_reviewer"))
 
 
 def new_state(options, packet, packet_id):
@@ -499,11 +512,13 @@ def stop_for_status(packet, options, state):
 def command_packet(argv):
     options = packet_arguments(argv)
     try:
-        message, packet_id = read_message()
+        message, packet_id, unreviewed = read_message()
     except NoHandbackError as error:
         stop_for_missing_hand_back(options.skill, error.last_hand_back_id)
         return 2
     packet = handback.load(message)
+    if unreviewed:
+        return stop_for_unreviewed(options.skill)
     state = new_state(options, packet, packet_id)
     if state.get("stage") in FINISHED_STAGES:
         return print_action("done", f"This packet was already processed (stage {state['stage']}). Nothing was "

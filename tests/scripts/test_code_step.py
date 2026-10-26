@@ -222,6 +222,8 @@ class CodeStepTest(unittest.TestCase):
         if agent_type == "review-loop" and session:
             # The shared hand-back store sees the review-loop's dispatch and hand-back, as its own hooks record them.
             self.handback_hook("dispatch", {"session_id": session, "tool_input": {"subagent_type": "review-loop"}})
+            self.handback_hook("dispatch", {"session_id": session, "agent_type": agent_type, "agent_id": agent_id,
+                                            "tool_input": {"subagent_type": "code-reviewer"}})
             packet_result = self.handback_hook("handback", event)
             packet_hook_denies = "permissionDecision" in packet_result.stdout
         result = run(self.repo, self.env, "hook", stdin=json.dumps(event))

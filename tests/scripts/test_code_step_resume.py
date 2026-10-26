@@ -81,6 +81,22 @@ class ResumeTest(base.CodeStepTest):
             self.assertIn("was not passed to the coder", out)
         self.assertEqual(before, self.state_bytes())
 
+    def test_start_with_a_plan_then_phase_and_its_id_starts_that_phase(self):
+        self.finish_phase_one()
+
+        out = self.step("start", self.plan, "Phase", "2")
+
+        self.assertIn("ACTION: dispatch", out)
+        self.assertEqual("2", self.state()["phase"])
+
+    def test_start_with_a_plan_then_a_bare_phase_id_in_one_quoted_argument_starts_that_phase(self):
+        self.finish_phase_one()
+
+        out = self.step("start", f"{self.plan} 2")
+
+        self.assertIn("ACTION: dispatch", out)
+        self.assertEqual("2", self.state()["phase"])
+
     def test_start_with_a_phase_and_no_plan_before_task_text_is_refused_with_the_start_and_the_task_commands(self):
         self.finish_phase_one()
         before = self.state_bytes()

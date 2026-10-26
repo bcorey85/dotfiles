@@ -2854,8 +2854,12 @@ class CodeStepTest(unittest.TestCase):
 
     # ---------- the fork's own hand-back ----------
 
-    def fork_handback(self, session=SESSION):
-        return self.hook("general-purpose", "waiting", agent_id="fork", session=session)
+    def fork_handback(self, session=SESSION, agent_type=code_step_core.FORK_AGENT_TYPE):
+        return self.hook(agent_type, "waiting", agent_id="fork", session=session)
+
+    def test_a_general_purpose_handback_while_the_coder_is_out_is_not_the_forks(self):
+        self.start_phase_one()
+        self.assertEqual("", self.fork_handback(agent_type="general-purpose").stdout)
 
     def test_fork_handback_while_the_coder_is_out_is_denied_once_naming_the_wait_command(self):
         self.start_phase_one()
@@ -3163,7 +3167,7 @@ class CodeStepTest(unittest.TestCase):
 
     # ---------- the fork's stop ----------
 
-    def stop_hook(self, session=SESSION, agent_type="general-purpose"):
+    def stop_hook(self, session=SESSION, agent_type=code_step_core.FORK_AGENT_TYPE):
         event = {"agent_type": agent_type, "cwd": str(self.repo), "session_id": session}
         return run(self.repo, self.env, "stop-hook", stdin=json.dumps(event)).stdout
 
@@ -5077,6 +5081,32 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertIn("AGENT: review-loop", review_out)
         self.assertIn("gate-env: GATE_X=1", self.printed_prompt(review_out))
+
+
+def frontmatter_value(markdown_path, key):
+    """The value of `key:` in the frontmatter of a skill or agent file, or None when the frontmatter has no such key."""
+    frontmatter = markdown_path.read_text().split("---")[1]
+    for line in frontmatter.splitlines():
+        name, _, value = line.partition(":")
+        if name.strip() == key:
+            return value.strip()
+    return None
+
+
+class CodeForkToolsTest(unittest.TestCase):
+    # `allowed-tools` in a skill only pre-approves tools; the forked agent's own definition decides which it has.
+
+    def test_the_code_skill_forks_into_the_agent_the_hooks_watch(self):
+        skill = REAL_CLAUDE / "skills" / "code" / "SKILL.md"
+
+        self.assertEqual(code_step_core.FORK_AGENT_TYPE, frontmatter_value(skill, "agent"))
+
+    def test_the_code_fork_agent_has_no_tool_that_edits_a_file(self):
+        agent = REAL_CLAUDE / "agents" / f"{code_step_core.FORK_AGENT_TYPE}.md"
+        disallowed = frontmatter_value(agent, "disallowedTools") or ""
+
+        disallowed_tools = {tool.strip() for tool in disallowed.split(",")}
+        self.assertLessEqual({"Edit", "Write", "NotebookEdit"}, disallowed_tools)
 
 
 if __name__ == "__main__":

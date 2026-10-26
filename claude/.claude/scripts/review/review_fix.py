@@ -599,7 +599,7 @@ def read_outcomes(argv, asks):
     return outcomes
 
 
-def log_ask_outcomes(state, asks, outcomes):
+def log_fix_ask_outcomes(state, asks, outcomes):
     """(skips of this call by reason, failure lines). An ask that is logged or skipped joins asks_logged and is never
     tried again."""
     logged = state.setdefault("asks_logged", [])
@@ -633,7 +633,7 @@ def command_asks_done(argv):
         raise UsageError("no asks are waiting. `asks-done` follows a packet that carried ask[] entries.")
     outcomes = read_outcomes(argv, asks)
 
-    skips, failures = log_ask_outcomes(state, asks, outcomes)
+    skips, failures = log_fix_ask_outcomes(state, asks, outcomes)
     if not failures:
         state["stage"] = "done"
     save_fix_state(state)

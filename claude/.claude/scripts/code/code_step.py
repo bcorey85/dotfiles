@@ -19,6 +19,9 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
   code_step.py review-again                     dispatch the review loop again on the same diff, after its packet did
                                                 not parse
   code_step.py tick <phase id>                  mark a phase done that the user finished outside /code
+  code_step.py abort                            end the open run on purpose: settle its criteria copy, clear its gate
+                                                and texts, archive state.json as aborted-<UTC time>.json; the working
+                                                tree stays as it is
   code_step.py hook                             PreToolUse hook on SubagentHandback: deny the fork's hand-back while a
                                                 dispatched agent is still out
   code_step.py log-hook                         PostToolUse hook on Agent|SubagentHandback|SendMessage: log launch,
@@ -488,11 +491,11 @@ def phase_words_as_flag(args):
 
 
 def first_word_is_verb(words):
-    # Whether `start` was given a verb name in place of task text. `start` and `status` are verbs only where a verb
-    # would fit: `status` alone, and `start` alone or before a flag or a modifier. More plain words after either make
-    # task text, as in `start start caching the list`.
+    # Whether `start` was given a verb name in place of task text. `start`, `status` and `abort` are verbs only where
+    # a verb would fit: `status` or `abort` alone, and `start` alone or before a flag or a modifier. More plain words
+    # after any of them make task text, as in `start start caching the list`.
     first_word = words[0]
-    if first_word == "status":
+    if first_word in ("status", "abort"):
         return len(words) == 1
     if first_word == "start":
         return len(words) == 1 or words[1].startswith(("-", "+"))
@@ -1173,10 +1176,15 @@ def coder_flagged(state, gate, report, is_ask_fix):
     return flagged + coder_flags(report)
 
 
+def changed_since_baseline(state, changed_now):
+    # The files of the working tree that differ from the run's baseline.
+    baseline = state["baseline"]
+    return [name for name, digest in changed_now.items() if name not in baseline or baseline[name] != digest]
+
+
 def coder_changed_files(repo_dir, state, changed_now):
     # The files the phase changed since its baseline, and the files the coder committed itself.
-    baseline = state["baseline"]
-    changed_files = [name for name, digest in changed_now.items() if name not in baseline or baseline[name] != digest]
+    changed_files = changed_since_baseline(state, changed_now)
     committed = committed_since(repo_dir, state.get("baseHead"))
     return changed_files + [name for name in committed if name not in changed_files]
 
@@ -2123,6 +2131,54 @@ def command_resume(args):
     RESUME_HANDLERS.get(route, ask_about_unrecorded_state)(repo_dir, state)
 
 
+def abort_dropped_lines(repo_dir, state, criteria_message, archive_path):
+    # What `abort` tells the user it dropped, one line each. The dispatch line reads the launch log, so call it before
+    # the state moves.
+    lines = [f"Dropped the /code run: {phase_label(state)} at stage {state['stage']}."]
+    if criteria_message:
+        lines.append(criteria_message)
+
+    if state.get("dispatchAt") is not None:
+        agent_id = awaited_agent_id(repo_dir, state)
+        agent_text = f"agent {agent_id}" if agent_id else "an agent whose launch was not logged"
+        lines.append(f"A dispatch was still open: {agent_text} may still be running. The user can stop it.")
+
+    if state.get("baseline") is not None:
+        left_files = changed_since_baseline(state, file_hashes(repo_dir))
+        if left_files:
+            lines.append("The run left these uncommitted files in the working tree. Abort did not touch them: "
+                         + ", ".join(left_files))
+
+    lines.append(f"The run's state is archived in {archive_path}.")
+    return lines
+
+
+def command_abort(args):
+    repo_dir = repo_root_or_exit()
+    os.chdir(repo_dir)
+    if args:
+        return refuse("abort takes no arguments.", script_command("abort"))
+
+    state = load_state(repo_dir)
+    if state is None or state.get("stage") in (None, "done"):
+        return emit("stop", "No /code run is open here. Nothing was dropped.")
+
+    criteria_message = None
+    if state.get("criteriaGuard") is not None:
+        criteria_message = settle_criteria_guard(repo_dir, state, branch_label(repo_dir))
+        save_state(repo_dir, state)
+
+    clear_say(repo_dir)
+    clear_question(repo_dir)
+    run_command(["python3", str(SCRIPTS_DIR / "code" / "coder_gate.py"), "clear"], repo_dir)
+
+    directory = state_dir(repo_dir)
+    archive_path = directory / f"aborted-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json"
+    lines = abort_dropped_lines(repo_dir, state, criteria_message, archive_path)
+    (directory / "state.json").rename(archive_path)
+    emit("stop", *lines)
+
+
 def command_status():
     state = load_state(repo_root_or_exit())
     print(json.dumps(state, indent=1) if state else "no code-step state")
@@ -2139,8 +2195,8 @@ HOOK_VERBS = {
     "hook": command_hook, "log-hook": command_log_hook, "dispatch-hook": command_dispatch_hook,
     "plan-hook": command_plan_hook, "stop-hook": command_stop_hook, "say-hook": command_say_hook,
 }
-VERB_USAGE = ("usage: code_step.py start|resume|decide|asks-done|skill-done|verify|review-again|tick|hook|log-hook"
-              "|dispatch-hook|stop-hook|say-hook|status|plan|plan-hook")
+VERB_USAGE = ("usage: code_step.py start|resume|decide|asks-done|skill-done|verify|review-again|tick|abort|hook"
+              "|log-hook|dispatch-hook|stop-hook|say-hook|status|plan|plan-hook")
 
 
 def run_verb(verb, handler, args):
@@ -2161,7 +2217,7 @@ def main():
     args = sys.argv[2:]
     verbs = {"start": command_start, RESUME_VERB: command_resume, "decide": command_decide,
              "asks-done": command_asks_done, "skill-done": command_skill_done, "verify": command_verify,
-             "tick": command_tick, "review-again": command_review_again}
+             "tick": command_tick, "review-again": command_review_again, "abort": command_abort}
     verbs.update(dict.fromkeys(RESUME_ALIASES, command_resume))
     if verb in HOOK_VERBS:
         return HOOK_VERBS[verb]()

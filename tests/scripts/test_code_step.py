@@ -331,6 +331,56 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual(expected, self.stored_gate_commands()[-1])
         self.assertRegex(self.state()["baseHead"], "^[0-9a-f]{40}$")
 
+    def test_start_after_abort_begins_a_fresh_run(self):
+        self.start_phase_one()
+
+        self.step("abort")
+        out = self.start_phase_one()
+
+        self.assertNotIn("a /code run is open here", out)
+        self.assertIn("ACTION: dispatch", out)
+        self.assertIn("AGENT: coder", out)
+
+    def test_abort_with_no_open_run_says_so_and_writes_no_file(self):
+        out = self.step("abort")
+
+        self.assertIn("No /code run is open here. Nothing was dropped.", out)
+        self.assertFalse((self.repo / ".git/code-step").exists())
+
+    def test_abort_archives_the_state_and_keeps_the_ruled_asks_and_names_the_open_dispatch(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("agent-9", "coder")
+        state_folder = self.repo / ".git/code-step"
+        (state_folder / "ruled-asks.json").write_text("[]")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+
+        out = self.step("abort")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("agent agent-9", out)
+        self.assertIn("backend/src/orders.ts", out)
+        self.assertFalse((state_folder / "state.json").exists())
+        archives = list(state_folder.glob("aborted-*.json"))
+        self.assertEqual(1, len(archives))
+        self.assertIn(str(archives[0]), out)
+        self.assertEqual("coder", json.loads(archives[0].read_text())["stage"])
+        self.assertTrue((state_folder / "ruled-asks.json").exists())
+        self.assertTrue((self.repo / "backend/src/orders.ts").exists())
+
+    def test_abort_refuses_extra_arguments_and_keeps_the_run(self):
+        self.start_phase_one()
+
+        out = self.step("abort", "now")
+
+        self.assertIn("Refused: abort takes no arguments.", out)
+        self.assertEqual("coder", self.state()["stage"])
+
+    def test_start_names_the_abort_verb_when_given_it_as_task_text(self):
+        out = self.step("start", "abort")
+
+        self.assertIn("`abort` is a verb, not task text.", out)
+        self.assertIn("code_step.py abort", out)
+
     def test_gate_of_a_restarted_unfinished_phase_uses_the_first_base_commit(self):
         self.start_phase_one()
         first_base_head = self.state()["baseHead"]

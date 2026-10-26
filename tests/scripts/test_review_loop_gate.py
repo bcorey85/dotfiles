@@ -646,3 +646,51 @@ class HandoffDispatchTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+PACKET = """status: converged
+iter: 1
+fixed: [{finding: "null deref", file_line: "a.py:3", blocker: no}]
+skipped_fp: []
+ask: []
+class_closure: n/a — fixed[] empty
+files_touched: [a.py, %s]
+nit: []"""
+FINDING_ROW = ("~/.claude/skills/review/log-review-finding kind=finding lane=code scope=phase iter=1 "
+               "gate=code-reviewer disposition=fix class=bug file=a.py line=3 actioned=fixed")
+METRICS_ROW = "~/.claude/skills/review/log-review-metrics lane=code iter=1 fix=1 ask=0 nit=0 fixed=1 result=PASS"
+
+
+class LedgerRowsTest(ReviewLoopGateTest):
+    def loop(self, *rows, plan="spec.md"):
+        return [user(f"review loop\nlane: code\nplan: {plan}"), bash("npm test > /tmp/review-gate.log 2>&1"),
+                *[bash(row) for row in rows]]
+
+    def stop_with_packet(self, records, touched="spec.md"):
+        return self.stop(records, last_assistant_message=PACKET % touched)
+
+    def test_a_packet_with_a_fixed_finding_and_no_finding_row_is_blocked_once(self):
+        records = self.loop(METRICS_ROW, plan="other.md")
+        reason = json.loads(self.stop_with_packet(records, touched="b.py"))["reason"]
+        self.assertIn("1 finding(s)", reason)
+        self.assertIn("only 0 per-finding", reason)
+
+    def test_a_missing_metrics_line_is_blocked(self):
+        reason = json.loads(self.stop_with_packet(self.loop(FINDING_ROW, plan="other.md"), "b.py"))["reason"]
+        self.assertIn("no metrics line", reason)
+
+    def test_every_row_logged_passes(self):
+        self.assertEqual(self.stop_with_packet(self.loop(FINDING_ROW, METRICS_ROW, plan="other.md"), "b.py"), "")
+
+    def test_a_second_stop_in_a_row_passes(self):
+        records = self.loop(plan="other.md")
+        self.assertEqual(self.stop(records, last_assistant_message=PACKET % "b.py", stop_hook_active=True), "")
+
+    def test_a_plan_file_in_files_touched_is_blocked(self):
+        records = self.loop(FINDING_ROW, METRICS_ROW)
+        reason = json.loads(self.stop_with_packet(records))["reason"]
+        self.assertIn("never edits the plan", reason)
+
+    def test_a_plan_path_that_ends_in_the_touched_path_is_blocked(self):
+        records = self.loop(FINDING_ROW, METRICS_ROW, plan="/repo/docs/spec.md")
+        self.assertIn("never edits the plan", json.loads(self.stop_with_packet(records, "docs/spec.md"))["reason"])

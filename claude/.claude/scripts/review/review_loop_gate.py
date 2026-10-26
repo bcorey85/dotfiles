@@ -37,6 +37,7 @@ import subprocess
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+import handback
 import script_utils
 
 OWN_CLAUDE_DIR = pathlib.Path(__file__).resolve().parents[2]
@@ -98,8 +99,17 @@ LAYOUTS = (
 )
 ASSESSMENT = re.compile(r"Overall Assessment\*{0,2}:?\s*\**(PASS WITH WARNINGS|PASS|NEEDS CHANGES)")
 PROMPT_LANE = re.compile(r"(?im)^[ \t>*`-]*lane[`*]*[ \t]*:[ \t`*]*(eng-spec|code|other|none)\b")
+PROMPT_PLAN = re.compile(r"(?im)^[ \t>*`-]*plan[`*]*[ \t]*:[ \t`*]*(\S+?)[`*]*[ \t]*$")
+FINDING_CALL = re.compile(r"log-review-finding\s+kind=finding\b")
+METRICS_CALL = re.compile(r"log-review-metrics\b")
+PACKET_ROW_KEYS = ("fixed", "skipped_fp", "findings_remaining", "ask", "nit")
 PROMPT_PHASE = re.compile(r"(?im)^[ \t>*`-]*phase[`*]*[ \t]*:[ \t`*]*([\w.-]+)")
 
+LEDGER_REASON = ("The packet lists {owed} finding(s) (fixed, skipped, deferred, ask, nit) but only {logged} "
+                 "per-finding row(s) were logged{metrics}. Run Step 7 and Step 7b now, one "
+                 "`log-review-finding kind=finding` call per finding, then return the packet.")
+PLAN_EDIT_REASON = ("The packet's files_touched names the plan file {plan}. A review fix never edits the plan. Revert "
+                    "that edit, and return the finding that needs a plan change as `status: plan-impact`.")
 GATE_REASON = ("No full check ran after the last code change in this phase. A scoped run, including the "
                "handoff's tests-run, does not count. Run the Step 6 execution gate now: the project's full "
                "quality-check command once, redirected to /tmp/review-gate.log. Route any failure as Step 6 "
@@ -146,6 +156,8 @@ class LoopTranscript:
         self.notifications = {}  # tool_use_id -> the results its task notifications carried, [] for none
         self.agent_messages = {}  # agent id -> the texts of its agent messages
         self.messages_sent = []  # (transcript line, SendMessage recipient)
+        self.finding_rows_logged = 0  # per-finding ledger rows the loop's own Bash calls wrote
+        self.metrics_logged = False
         self.full_checks = []  # the transcript lines of the shell calls that ran a full check
         with open(path, encoding="utf-8") as fh:
             for n, line in enumerate(fh):
@@ -187,7 +199,13 @@ class LoopTranscript:
             self.dispatched_at[block.get("id")] = n
         elif block.get("name") == "SendMessage":
             self.messages_sent.append((n, tool_input.get("to")))
-        elif block.get("name") == "Bash" and full_check(str(tool_input.get("command") or "")):
+        elif block.get("name") == "Bash":
+            self.read_command(n, str(tool_input.get("command") or ""))
+
+    def read_command(self, n, command):
+        self.finding_rows_logged += len(FINDING_CALL.findall(command))
+        self.metrics_logged = self.metrics_logged or bool(METRICS_CALL.search(command))
+        if full_check(command):
             self.full_checks.append(n)
 
     def launched_agent(self, tool_use_id):
@@ -229,6 +247,46 @@ def reasons_for(scanned):
     if open_dispatches or not ungated:
         return []
     return [GATE_REASON]
+
+
+def final_packet(transcript, final):
+    """The loop's hand-back packet, or None when the last message holds none that parses."""
+    try:
+        return handback.load(transcript.last_text if final is None else final)
+    except handback.PacketError:
+        return None
+
+
+def ledger_reasons(transcript, final):
+    """The reasons for a block when the packet owes ledger rows the loop did not write, or when it names the plan file
+    as touched. Nothing when the packet does not parse: a stop check never guesses."""
+    packet = final_packet(transcript, final)
+    if packet is None:
+        return []
+    reasons = []
+
+    owed = sum(len(packet.get(key) or []) for key in PACKET_ROW_KEYS)
+    missing_metrics = not transcript.metrics_logged
+    if transcript.finding_rows_logged < owed or missing_metrics:
+        metrics = " and no metrics line" if missing_metrics else ""
+        reasons.append(LEDGER_REASON.format(owed=owed, logged=transcript.finding_rows_logged, metrics=metrics))
+
+    plan = PROMPT_PLAN.search(transcript.prompt or "")
+    if plan and touches_plan(packet.get("files_touched") or [], plan.group(1)):
+        reasons.append(PLAN_EDIT_REASON.format(plan=plan.group(1)))
+    return reasons
+
+
+def touches_plan(files_touched, plan):
+    """True when a files_touched entry names the plan file, as the same path or as a path that ends the other."""
+    plan_path = plan.strip("`\"'")
+    touched_paths = [path for entry in files_touched for path in re.split(r"[\s,\[\]]+", str(entry))]
+    for entry in touched_paths:
+        touched = entry.strip("`\"'")
+        if touched and (touched == plan_path or touched.endswith("/" + plan_path.lstrip("./"))
+                        or plan_path.endswith("/" + touched.lstrip("./"))):
+            return True
+    return False
 
 
 def section_findings(lines):
@@ -409,6 +467,8 @@ def check_stop(hook):
     transcript = LoopTranscript(hook["agent_transcript_path"])
     scanned = scan(transcript, hook.get("last_assistant_message"))
     why = [] if hook.get("stop_hook_active") else reasons_for(scanned)
+    if not hook.get("stop_hook_active") and not scanned[1]:
+        why += ledger_reasons(transcript, hook.get("last_assistant_message"))
     if why:
         print(json.dumps({"decision": "block", "reason": " ".join(why)}))
     elif not scanned[1]:

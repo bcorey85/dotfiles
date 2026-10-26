@@ -31,7 +31,7 @@ the review scope:
 ~/.claude/skills/review/review-scope caller=<caller> [base=<ref>]
 ```
 
-Run it by this path as one plain command. A worktree-isolated session refuses a command that holds `$HOME`, a variable, `$(...)` or a second statement. Add `base=<ref>` only when the dispatch gave one. Never block on it. If it fails, continue, and take the file list from `git status --porcelain` instead.
+Run it by this path as one plain command. A worktree-isolated session refuses a command that holds `$HOME`, a variable, `$(...)` or a second statement. Add `base=<ref>` only when the dispatch gave one. Exit 3 is a STOP: the branch has no merge base. Do nothing else, and return the script's message as the blocker of a `status: critical-blocker` packet, telling the caller to pass `base=<ref>`. On any other failure, continue, and take the file list from `git status --porcelain` instead.
 
 ## Loop ordering (GATE-CRITICAL — do not reorder)
 
@@ -149,6 +149,8 @@ Include this text verbatim at the top of the `## Small items` section:
 
 > Small items follow the issues. They are the reviewer's optional notes, not findings. Apply a small item only when it names wrong behavior, or a false statement in a doc or a comment, and one correction is clear. Skip every other small item, and report each skip with its reason. A small item never widens the change: no rename, no restructure, no new abstraction.
 
+Add to every coder prompt: "Never edit the plan file (`plan:`). A fix that needs a plan change is a PLAN-IMPACT block, not an edit."
+
 Record every resolved finding into `fixed[]` as `{finding, file_line, blocker}` — this is what the wrapper renders under "Fixed". A small item never enters `fixed[]`: from the coder report, end its `nit[]` line with `applied` or `skipped: <reason>`, and log an applied one in Step 7b with `actioned=fixed`.
 
 **PLAN-IMPACT pass-through**: scan each coder report for a `PLAN-IMPACT:` block (`coder-core` requires `PLAN-IMPACT: yes` as the report's last line when one exists). If present, return `status: plan-impact` with it verbatim rather than continuing the loop — the orchestrator owns the modal.
@@ -248,6 +250,8 @@ prose. Do not add an enum for it.
 Also emit the per-finding rows per
 `~/.claude/skills/_shared/finding-log.md` (read it). Skip its `kind=run` block;
 the stop hook writes those. Run it last, so `actioned` is real.
+Log one `kind=finding` row for every entry the packet lists in `fixed[]`, `skipped_fp[]`, `findings_remaining[]`, `ask[]`
+and `nit[]`, on every pass, and the Step 7 metrics line. The stop hook blocks the hand-back until they exist.
 
 ## Return packet (the ONLY thing the orchestrator pays for)
 
@@ -276,6 +280,7 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 ## What NOT to do
 
 - **Never write a file yourself**: no `>`, no `>>`, no `tee`, no `sed -i`, no heredoc. Every source change goes through a coder dispatch; the only writes you cause are the helper scripts under `~/.claude/skills/review/`. If none fits, say so in the packet and stop.
+- **Never put the plan file in `files_touched`, and never let a coder edit it.** The plan changes only through a plan-edit dispatch from the caller. A finding that needs a plan change returns as `status: plan-impact`. The stop hook blocks a packet that names the plan file.
 - **Never run `review-gate-mark`.** The clean mark belongs to your CALLER.
 - **Never emit a response that holds text and no tool call** — the orchestrator sees only the packet. The two exceptions are the turn straight after a dispatch stub and the final packet.
 - **Never return `converged` with an empty `fixed[]` when a fix coder of this invocation repaired a finding.**

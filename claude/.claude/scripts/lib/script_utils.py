@@ -165,15 +165,21 @@ def run_command(command, cwd=None, stdin=None, timeout=None):
     return code, output
 
 
-def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None):
-    """Run argv with captured text output and return the CompletedProcess. Raise error_type when argv cannot start
-    and, with check, when it exits non-zero, naming the command and its stderr, or its stdout when stderr is empty."""
+def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None, ok_codes=(0,), timeout=None):
+    """Run argv and return the CompletedProcess, its output decoded as UTF-8 with no newline translation. Raise
+    error_type when argv cannot start or runs past `timeout` seconds and, with check, when its exit code is not in
+    ok_codes, naming the command and its stderr, or its stdout when stderr is empty."""
+    stdin_bytes = None if stdin is None else stdin.encode()
     try:
-        finished = subprocess.run(argv, cwd=cwd, input=stdin, capture_output=True, text=True, errors="replace")
+        finished = subprocess.run(argv, cwd=cwd, input=stdin_bytes, capture_output=True, timeout=timeout)
     except OSError as error:
         raise error_type(f"cannot run {argv[0]}: {error}") from error
+    except subprocess.TimeoutExpired as error:
+        raise error_type(f"`{' '.join(argv)}` ran past {timeout} seconds") from error
 
-    if check and finished.returncode != 0:
+    finished.stdout = finished.stdout.decode("utf-8", "replace")
+    finished.stderr = finished.stderr.decode("utf-8", "replace")
+    if check and finished.returncode not in ok_codes:
         detail = finished.stderr.strip() or finished.stdout.strip()
         raise error_type(f"`{' '.join(argv)}` failed: {detail}")
     return finished

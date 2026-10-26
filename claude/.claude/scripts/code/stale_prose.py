@@ -19,7 +19,6 @@ import argparse
 import json
 import pathlib
 import re
-import subprocess
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / "lib")]
@@ -89,19 +88,13 @@ class GitError(Exception):
     pass
 
 
-def git_output(root, *args, ok_codes=(0,)):
+def git_stdout(root, *args, ok_codes=(0,)):
     """The standard output of `git -c core.quotepath=off <args>` run in root, decoded as UTF-8 with no newline
     translation. Raises GitError on any other exit."""
     argv = ["git", "-c", "core.quotepath=off", *args]
-    try:
-        done = subprocess.run(argv, capture_output=True, timeout=GIT_TIMEOUT_SECONDS, cwd=root)
-    except (OSError, subprocess.SubprocessError) as error:
-        raise GitError(f"could not run git: {error}") from error
-    stdout = done.stdout.decode("utf-8", "replace")
-    if done.returncode not in ok_codes:
-        stderr = done.stderr.decode("utf-8", "replace")
-        raise GitError(f"git {' '.join(args[:2])} failed: {stderr.strip() or stdout.strip()}")
-    return stdout
+    finished = script_utils.run_or_raise(argv, GitError, cwd=root, check=True, ok_codes=ok_codes,
+                                         timeout=GIT_TIMEOUT_SECONDS)
+    return finished.stdout
 
 
 def suffix_of(path):
@@ -169,7 +162,7 @@ def comment_lines_of_side(root, base, path, side):
     file at the base revision) or the `added` side (the working-tree file). An empty set when that side of the file
     does not exist."""
     if side == "removed":
-        text = git_output(root, "show", f"{base}:{path}", ok_codes=(0, 128))
+        text = git_stdout(root, "show", f"{base}:{path}", ok_codes=(0, 128))
     else:
         text = working_tree_text(root, path)
     return comment_numbers_of_text(text, path)
@@ -228,7 +221,7 @@ def grep_lines(root, names):
     pathspecs = [f"*{suffix}" for suffix in SEARCHED_SUFFIXES]
     for start in range(0, len(names), NAMES_PER_GREP):
         patterns = [argument for name in names[start:start + NAMES_PER_GREP] for argument in ("-e", name)]
-        output = git_output(root, "grep", "-n", "-w", "-I", "-F", "--null", "--no-color", *patterns, "--", *pathspecs,
+        output = git_stdout(root, "grep", "-n", "-w", "-I", "-F", "--null", "--no-color", *patterns, "--", *pathspecs,
                             *PLAN_EXCLUDES, ok_codes=(0, 1))
         for row in output.split("\n"):
             path, _, rest = row.partition("\0")
@@ -337,19 +330,19 @@ def report_lines(symbols, rows):
 
 
 def run(base):
-    root = git_output(".", "rev-parse", "--show-toplevel").strip()
-    base_sha = git_output(root, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{base}^{{commit}}",
+    root = git_stdout(".", "rev-parse", "--show-toplevel").strip()
+    base_sha = git_stdout(root, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{base}^{{commit}}",
                           ok_codes=(0, 1)).strip()
     if not base_sha:
         raise GitError(f"--base {base!r} is not a commit; expected a revision such as HEAD or a sha")
 
-    state_path = pathlib.Path(git_output(root, "rev-parse", "--path-format=absolute", "--git-path",
+    state_path = pathlib.Path(git_stdout(root, "rev-parse", "--path-format=absolute", "--git-path",
                                          "stale-prose-shown.json").strip())
     shown = load_shown(state_path, base_sha)
 
     # The prose files are in the diff too, so that the lines it added can be left out of the hits.
     pathspecs = [f"*{suffix}" for suffix in SEARCHED_SUFFIXES]
-    diff_text = git_output(root, "diff", "-U0", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames",
+    diff_text = git_stdout(root, "diff", "-U0", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames",
                            "--no-prefix", base_sha, "--", *pathspecs)
     diff_files = source_text.parse_unified_diff(diff_text)
     symbols, old_literals = changed_symbols(diff_files, root, base_sha)

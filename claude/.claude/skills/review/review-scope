@@ -21,16 +21,19 @@
 # With no `ledger` on PATH `ledger-write` appends {ts, skill, via, session, repo, caller} to
 # ~/.claude/skill-usage.jsonl (SKILL_USAGE_FILE) and prints one stderr line; the scope prints as usual.
 #
+# Exit 3 (reason on stderr, stdout stops after BRANCH) when no merge base is found, no base= was given,
+# and HEAD has commits that no other branch or remote ref has: the scope would silently drop them.
+#
 # Exit 0 with ROOT= empty when the directory is not a git repo. Never fails the
 # caller: every git call that errors prints an empty section.
 set -uo pipefail
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
-mode=worktree base=HEAD merge_base="" paths="" root="" caller="" skill=review-loop
+mode=worktree base=HEAD base_given=0 merge_base="" paths="" root="" caller="" skill=review-loop
 for kv in "$@"; do
   case "$kv" in
     mode=*) mode="${kv#mode=}" ;;
-    base=*) base="${kv#base=}" ;;
+    base=*) base="${kv#base=}"; base_given=1 ;;
     merge_base=*) merge_base="${kv#merge_base=}" ;;
     paths=*) paths="${kv#paths=}" ;;
     root=*) root="${kv#root=}" ;;
@@ -84,6 +87,21 @@ if [ -z "$merge_base" ]; then
     fi
   else
     echo "review-scope: MERGE_BASE empty: not executable at $branch_base_script" >&2
+  fi
+fi
+# No base ref and no base= argument: the scope below is only the working tree. When the
+# branch holds commits that no other ref has, those commits would drop out of the review
+# silently, so stop and ask for a base instead.
+if [ -z "$merge_base" ] && [ "$base_given" = 0 ]; then
+  current_ref=$(git symbolic-ref -q HEAD 2>/dev/null || true)
+  exclude_current=()
+  [ -n "$current_ref" ] && exclude_current=(--exclude="${current_ref#refs/heads/}")
+  other_refs=$(git for-each-ref --format='%(refname)' refs/heads refs/remotes 2>/dev/null | grep -vxF "${current_ref:-none}" | head -n 1)
+  branch_only_commits=$(git rev-list --count HEAD --not "${exclude_current[@]+"${exclude_current[@]}"}" --branches --remotes 2>/dev/null || echo 0)
+  # a repo with no other ref (a lone default branch) has no base to find: the working tree is the scope
+  if [ -n "$other_refs" ] && [ "${branch_only_commits:-0}" -gt 0 ]; then
+    echo "review-scope: STOP: no base ref found and this branch has $branch_only_commits commit(s) no other ref has; a working-tree scope would miss them. Rerun with base=<ref> (whole-branch review) or merge_base=<ref>." >&2
+    exit 3
   fi
 fi
 if [ -n "$merge_base" ]; then

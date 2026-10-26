@@ -198,11 +198,11 @@ class AdrFlowTest(unittest.TestCase):
     def absolute(self, rel_path):
         return str(self.repo / rel_path)
 
-    def run_flow(self, *args, cwd=None):
+    def run_flow(self, *args, cwd=None, interpreter=sys.executable):
         env = {key: value for key, value in os.environ.items() if not key.startswith("ADR_") and key != "PYTHONPATH"}
         env.update({**GIT_ENV, "HOME": str(self.home), "ADR_GH": str(self.gh)})
         return subprocess.run(
-            [sys.executable, str(self.installed_script), *args],
+            [interpreter, str(self.installed_script), *args],
             cwd=cwd or self.repo,
             env=env,
             capture_output=True,
@@ -463,6 +463,16 @@ class AdrFlowTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("prep takes one path or ticket key plus an optional keep; got: LED-5 keep it", result.stderr)
         self.assertEqual(result.stdout, "")
+
+    @unittest.skipUnless(toolkit_paths.PRE_314_PYTHON, "needs a Python older than 3.14")
+    def test_prep_refuses_long_text_instead_of_crashing(self):
+        long_text = "LED-5 " + "and also rewrite the decision record from scratch " * 8
+
+        result = self.run_flow("prep", long_text, interpreter=toolkit_paths.PRE_314_PYTHON)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("prep takes one path or ticket key plus an optional keep", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
 
     def test_prep_keep_inside_a_word_is_not_a_trigger(self):
         task_dir = self.make_task_dir("LED-7-keepalive")

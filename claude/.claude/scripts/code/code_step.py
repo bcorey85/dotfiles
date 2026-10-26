@@ -357,13 +357,14 @@ StartArgs = collections.namedtuple("StartArgs", "modifier plan_args task_text ph
 
 
 def looks_like_plan_argument(word):
-    path = pathlib.Path(word)
     # A word with whitespace is task text that happens to name a file, unless it is itself a file (a real plan whose
-    # path has a space).
-    if script_utils.has_whitespace(word) and not path.is_file():
+    # path has a space). Words are tested with os.path, not pathlib: before Python 3.14, pathlib raises on a word
+    # longer than a file name may be, which is any long task text.
+    if script_utils.has_whitespace(word) and not os.path.isfile(word):
         return False
 
-    return looks_like_plan_path(word) or TICKET_ID.match(word) is not None or path.is_file() or path.is_dir()
+    return (looks_like_plan_path(word) or TICKET_ID.match(word) is not None or os.path.isfile(word)
+            or os.path.isdir(word))
 
 
 def looks_like_plan_path(argument):
@@ -461,7 +462,7 @@ def phase_words_as_flag(args):
         return args
 
     plan_word = words[plan_at]
-    if not (plan_word.endswith(".md") and pathlib.Path(plan_word).is_file()):
+    if not (plan_word.endswith(".md") and os.path.isfile(plan_word)):
         return args
     return [*words[:plan_at + 1], "--phase", words[-1]]
 
@@ -522,7 +523,7 @@ def split_plan_words(words, parsed):
     # (plan words, task words, phase id, whether the text held a `--phase <id>`) for task text that may hold a plan.
     # Only a plan file as the first word, a plan argument before the text, or an explicit --phase is not task text.
     plan_words = list(parsed.plan_args)
-    is_plan_file_first = not plan_words and pathlib.Path(words[0]).is_file()
+    is_plan_file_first = not plan_words and os.path.isfile(words[0])
     if is_plan_file_first:
         plan_words = [words[0]]
     text_words = words[1:] if is_plan_file_first else list(words)
@@ -546,7 +547,7 @@ def plan_inside_task_refusal(words, parsed):
     # A word that is no plan file (a directory, a ticket id, a source file) may be the first word of the task, so
     # the task choice keeps it in the text.
     has_word_that_is_no_plan_file = any(
-        not (pathlib.Path(plan_word).is_file() and plan_word.endswith(".md")) for plan_word in plan_words)
+        not (os.path.isfile(plan_word) and plan_word.endswith(".md")) for plan_word in plan_words)
     task_words = [*plan_words, *text_words] if has_word_that_is_no_plan_file else text_words
     if task_words:
         commands.append(task_command(task_words, parsed.modifier))
@@ -722,8 +723,8 @@ def resolve_start_plan(repo_dir, previous, branch, plan_args):
     # (plan path, lane) of the plan this `start` runs, or None after the stop or question it printed.
     plan_arg = plan_args[0] if plan_args else None
     lane = previous.get("lane", "code")
-    is_unknown_arg = plan_arg is not None and not pathlib.Path(plan_arg).is_file()
-    if is_unknown_arg and (TICKET_ID.match(plan_arg) or pathlib.Path(plan_arg).is_dir()):
+    is_unknown_arg = plan_arg is not None and not os.path.isfile(plan_arg)
+    if is_unknown_arg and (TICKET_ID.match(plan_arg) or os.path.isdir(plan_arg)):
         return resolve_named_task(repo_dir, plan_arg)
     if plan_arg is None and reusable_plan(previous, branch):
         return previous["plan"], lane
@@ -735,7 +736,7 @@ def resolve_start_plan(repo_dir, previous, branch, plan_args):
 def load_start_plan(repo_dir, plan_arg, args):
     # (plan path in the repo, plan lines, parsed plan) of a plan that is fit to start, or None after a stop.
     plan_path = pathlib.Path(plan_arg)
-    if not plan_path.is_file():
+    if not os.path.isfile(plan_arg):
         return ask_user(repo_dir, f"no plan file is at {plan_arg}. Ask the user for the path. Then invoke Skill code "
                         "with that path.")
     try:

@@ -47,6 +47,13 @@ def parse_simple_commands(command):
     not a word; a comment is not a comment, its words stay. Raises ValueError for text this reading cannot trust: an
     unclosed quote, a quoted or escaped operator character, a number then a space then a redirection (`5 >f`), or a
     run of operator characters it cannot sort (`>|`)."""
+    return [(words, redirections) for words, redirections, _piped in parse_piped_commands(command)]
+
+
+def parse_piped_commands(command):
+    """Like parse_simple_commands, but each command is a triple (words, redirections, piped): piped is True when
+    the command reads from a pipe, that is, a `|` or `|&` comes right before it. Raises ValueError as
+    parse_simple_commands does."""
     if HIDDEN_OPERATOR.search(command):
         raise ValueError("operator character inside quotes or after a backslash")
     if SPACED_REDIRECT_NUMBER.search(command):
@@ -57,6 +64,8 @@ def parse_simple_commands(command):
     lexer.whitespace_split = True
     lexer.commenters = ""
     commands = []
+    piped = False
+    next_piped = False
     words = []
     redirections = []
     pending_operator = None
@@ -67,7 +76,12 @@ def parse_simple_commands(command):
                 redirections.append((pending_operator, ""))
             pending_operator = None
             if words or redirections:
-                commands.append((words, redirections))
+                commands.append((words, redirections, piped))
+                piped = False
+                next_piped = False
+            if token.replace("\n", "").replace("(", "") in ("|", "|&"):
+                next_piped = True
+            piped = next_piped
             words = []
             redirections = []
             continue
@@ -88,7 +102,7 @@ def parse_simple_commands(command):
     if pending_operator is not None:
         redirections.append((pending_operator, ""))
     if words or redirections:
-        commands.append((words, redirections))
+        commands.append((words, redirections, piped))
     return commands
 
 

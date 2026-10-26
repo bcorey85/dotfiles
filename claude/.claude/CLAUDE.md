@@ -17,6 +17,10 @@ Coders run only the tests for the files they changed. The full suite runs once, 
 - The user never waits on tests or lint. Before you hand the user an install command, run the full suite and lint yourself on the files it installs, and do not say done until they pass. The install command only writes files: it never runs tests or lint.
 - Any failing approach: max 3 attempts, then stop and ask.
 
+## Bugs and Inefficiencies You Notice
+
+When you notice a bug or an inefficiency in the Claude Code toolkit (an agent, skill, command, hook, script or rule) or in how a session runs it, tell the user first, in that reply. Then add it to the queue: run `python3 ~/agent-evals/bin/build_queue.py new` (read its `--help` for the arguments), fill the file it prints, and run `python3 ~/agent-evals/bin/build_queue.py`. On the work machine, write only the toolkit part and what goes wrong: never work code, file paths, ticket text or tool output. If `~/agent-evals` is missing, tell the user the item was not queued.
+
 ## Ticket Acceptance Criteria
 
 The ticket's ACs are the contract. Only the user's explicit sign-off overrides one. A plan, ADR, criteria file or agent never cuts, narrows or hands an AC to another repo or team on its own. Record each sign-off with who and when. A run that shows an AC failing is a failing AC: report it as failing, never as someone else's job.

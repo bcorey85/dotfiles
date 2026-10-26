@@ -45,6 +45,9 @@ while [ $# -gt 0 ]; do
     shift
 done
 
+command -v herdr-api >/dev/null \
+    || { echo "herdr-worktree: herdr-api is not on PATH; run ~/dotfiles/install/stow to link it into ~/.local/bin" >&2; exit 1; }
+
 if [ -z "$branch" ]; then
     # fzf as a one-line prompt: Enter returns the typed text (exit 1, since
     # there is no list to match), Esc cancels (exit 130).

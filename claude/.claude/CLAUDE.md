@@ -17,15 +17,6 @@ Coders run only the tests for the files they changed. The full suite runs once, 
 - The user never waits on tests or lint. Before you hand the user an install command, run the full suite and lint yourself on the files it installs, and do not say done until they pass. The install command only writes files: it never runs tests or lint.
 - Any failing approach: max 3 attempts, then stop and ask.
 
-## Machine Load
-
-Every open session shares one machine. A run that takes all its memory or CPU kills every session.
-
-- Cap the workers of every test runner at 2 in the repo's own config file: vitest and jest `maxWorkers: 2`, playwright `workers: 2`, pytest-xdist `-n 2`. A command-line flag or env var does not reach the sessions a script or bench starts.
-- Start no second test suite, build or bench run while one is running. Run bench arms one at a time.
-- Before a heavy run, check free memory (`free -g` on Linux, `vm_stat` on macOS). Under 8 GB available: wait, and report what holds it.
-- After a crash or an out-of-memory kill, read the previous boot's kernel log for `Killed process` before you rerun anything, and fix the cause first.
-
 ## Ticket Acceptance Criteria
 
 The ticket's ACs are the contract. Only the user's explicit sign-off overrides one. A plan, ADR, criteria file or agent never cuts, narrows or hands an AC to another repo or team on its own. Record each sign-off with who and when. A run that shows an AC failing is a failing AC: report it as failing, never as someone else's job.

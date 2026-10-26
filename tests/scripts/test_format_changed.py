@@ -385,6 +385,10 @@ class FormatChangedTest(unittest.TestCase):
             self.repo.calls(), [("npx", ["--yes", "prettier", "--write", "a.json", "b.css", "c.scss", "d.md"])]
         )
 
+    def test_plan_files_are_never_formatted(self):
+        self.turn({"docs/plans/login/spec.md": "1", "docs/plans/login/shards.json": "1", "docs/notes.md": "1"})
+        self.assertEqual(self.repo.calls(), [("npx", ["--yes", "prettier", "--write", "docs/notes.md"])])
+
     def test_nothing_formattable_runs_nothing(self):
         self.turn({"a.txt": "1"})
         self.assertEqual(self.repo.calls(), [])

@@ -7,6 +7,8 @@ Stop formats nothing while a merge, squash merge, cherry-pick, revert or rebase 
 side brought in are in the dirty set, and reformatting them leaves unstaged edits behind the commit.
 A commit or reset deletes the message files git leaves for a squash merge or `cherry-pick -n`, so formatting resumes
 then.
+Files under docs/plans/ are never formatted: a plan's later Edits and its review shards quote its text exactly, and a
+reflow between turns makes them miss.
 CLAUDE_SKIP_HOOKS set to any non-empty value exits 0. Snapshots live in ~/.claude/state/format-changed and
 snapshots older than 2 days are deleted on every run.
 """
@@ -23,6 +25,7 @@ import script_utils
 
 LINT_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".vue")
 FORMAT_ONLY_SUFFIXES = (".json", ".css", ".scss", ".md")
+PLANS_DIR = "docs/plans/"
 OPERATION_MARKERS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply",
                      "SQUASH_MSG", "MERGE_MSG")
 
@@ -156,6 +159,8 @@ def main():
     format_files = []
     lint_files = []
     for path in snapshot_difference(snapshot_lines):
+        if path.startswith(PLANS_DIR):
+            continue
         if path.endswith(LINT_SUFFIXES):
             format_files.append(path)
             lint_files.append(path)

@@ -72,7 +72,7 @@ Never audit pre-existing smells in surrounding code. The one sanctioned reach ou
 [`blocker` only when shipping the item means data loss, a security breach, or a production outage in normal use. Anything less is a plain `fix`.]
 
 ### Ask
-[file:line — issue — the question the human has to answer]
+[file:line — issue — the question the human has to answer — change: the one edit an `accepted` answer makes]
 [Only two cases are an `ask`: you checked and cannot confirm the premise, or the defect is real and more than one correction is defensible. A defect with one clear correction is a `fix`. Finish every check that you can run yourself.]
 [Never auto-fixed. When the code and the plan or ticket disagree and the plan is the side in doubt, open the line with `PLAN-IMPACT:` and name both sides.]
 

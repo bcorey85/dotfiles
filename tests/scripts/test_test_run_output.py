@@ -56,6 +56,23 @@ class MatchesNoTestTest(unittest.TestCase):
     def test_a_failing_run_is_never_a_no_match(self):
         self.assertFalse(test_run_output.matches_no_test("npx vitest run -t totals", 1, NO_TEST_OUTPUTS["vitest"]))
 
+    def test_a_cargo_test_name_after_option_flags_is_a_filter(self):
+        commands = [
+            "cargo test --test billing totals",
+            "cargo test -p ledger --test billing totals",
+            "cargo test --test billing -- totals",
+            "cargo test --release --lib totals",
+        ]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertTrue(test_run_output.matches_no_test(command, 0, NO_TEST_OUTPUTS["cargo"]))
+
+    def test_a_cargo_test_with_only_options_is_not_a_filter(self):
+        commands = ["cargo test --test billing", "cargo test -p ledger --test billing --release", "cargo test"]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertFalse(test_run_output.matches_no_test(command, 0, NO_TEST_OUTPUTS["cargo"]))
+
 
 if __name__ == "__main__":
     unittest.main()

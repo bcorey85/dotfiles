@@ -4,7 +4,12 @@ import re
 TEST_RUNNER = re.compile(r"\b(?:pytest|vitest|jest|mocha|cargo\s+test|go\s+test|bun\s+test"
                          r"|(?:npm|pnpm|yarn|npx)\b.*\btest)\b")
 TEST_FILTER = re.compile(r"(?:^|\s)(?:-k|-t|-run|--testNamePattern|--test-name-pattern|--grep|--filter)(?:[\s=]|$)"
-                         r"|\S::\w|cargo\s+test\s+(?!-)\S")
+                         r"|\S::\w")
+CARGO_TEST = re.compile(r"\bcargo\s+(?:\+\S+\s+)?test\b([^;&|]*)")
+# The cargo options that take their value as the next token; `--opt=value` carries its own.
+CARGO_VALUE_OPTIONS = {"--test", "--bin", "--example", "--bench", "-p", "--package", "--exclude", "--features",
+                       "-F", "--target", "--manifest-path", "--profile", "-j", "--jobs", "--target-dir",
+                       "--color", "--config", "-Z", "--message-format"}
 # `N passed` (pytest, vitest, jest, playwright, cargo), `N passing` (mocha), `N pass` (bun).
 PASSED_TESTS = re.compile(r"(\d+) pass(?:ed|ing)?\b")
 GO_PACKAGE_OK = re.compile(r"^ok\s+\S+.*$", re.MULTILINE)
@@ -19,9 +24,33 @@ def passed_test_count(output):
     return total
 
 
+def cargo_test_is_filtered(command):
+    """True when a `cargo test` in the command names a test filter: any token after `--`, or a bare token that is
+    not an option or an option's value."""
+    for match in CARGO_TEST.finditer(command):
+        tokens = match.group(1).split()
+        if "--" in tokens[:-1]:
+            return True
+        skip_value = False
+        for token in tokens:
+            if skip_value:
+                skip_value = False
+            elif token == "--":
+                break
+            elif token in CARGO_VALUE_OPTIONS:
+                skip_value = True
+            elif not token.startswith("-"):
+                return True
+    return False
+
+
 def matches_no_test(command, code, output):
     """True for a filtered test run that exits 0 and reports no passed test. A filter that matches nothing exits 0
     in vitest, jest and cargo, so the exit code alone reads it as passing."""
-    if code != 0 or not TEST_RUNNER.search(command) or not TEST_FILTER.search(command):
+    if code != 0 or not TEST_RUNNER.search(command):
+        return False
+
+    is_filtered = TEST_FILTER.search(command) or cargo_test_is_filtered(command)
+    if not is_filtered:
         return False
     return passed_test_count(output) == 0

@@ -17,6 +17,7 @@ import json
 import os
 import pathlib
 import re
+import secrets
 import sys
 import textwrap
 import time
@@ -265,6 +266,21 @@ def ask_finding_id(item):
     if isinstance(finding_id, str) and FINDING_ID_PATTERN.fullmatch(finding_id.strip()):
         return finding_id.strip()
     return None
+
+
+def ask_outcome_finding_id(item):
+    """(the finding_id an ask's outcome row is logged under, a stderr note or None). A valid id supersedes the ask row
+    the loop logged. With no valid id the loop handed back no ask row to supersede, so the outcome row gets a new id in
+    the ledger writer's shape and stands as that ask's only row: the user's answer is never dropped."""
+    finding_id = ask_finding_id(item)
+    if finding_id is not None:
+        return finding_id, None
+
+    new_finding_id = secrets.token_hex(8)
+    ignored_value = item.get("finding_id")
+    ignored_text = "no finding_id" if ignored_value is None else f"ignored {ignored_value!r}"
+    note = f"ask outcome without a valid finding_id ({ignored_text}), logged under new finding_id {new_finding_id}"
+    return new_finding_id, note
 
 
 def entry_paths(item):

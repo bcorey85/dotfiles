@@ -62,7 +62,7 @@ LOGGED_HEADING = "LOGGED / POSTED (mention failures, never block on them):"
 FINISHED_STAGES = ("done", "redispatch")
 PLAN_IMPACT_PREFIX = "PLAN-IMPACT"
 PLAN_IMPACT = "plan-impact"
-NO_FINDING_ID = "no-finding-id"
+NEW_FINDING_ID = "new-finding-id"
 VERBS = ("packet", "escape", "asks-done", "decide")
 
 
@@ -560,29 +560,11 @@ def is_plan_impact_ask(item):
     return any(str(item.get(key) or "").lstrip().startswith(PLAN_IMPACT_PREFIX) for key in ("finding", "question"))
 
 
-def skip_reason(item):
-    """Why an ask's outcome is not logged: PLAN_IMPACT (not a finding) or NO_FINDING_ID; None when it is logged.
-    The outcome supersedes its ask row by finding_id. log-review-finding refuses only a value with a space. Any other
-    non-id value ("none", "-", a short hex) is a placeholder or a damaged id, and logging it would write a stray row
-    that replaces no ask row."""
-    if is_plan_impact_ask(item):
-        return PLAN_IMPACT
-    if handback.ask_finding_id(item) is None:
-        return NO_FINDING_ID
-    return None
-
-
-def warn_no_finding_id(item):
-    ignored_value = item.get("finding_id")
-    ignored_text = "no finding_id" if ignored_value is None else f"ignored {ignored_value!r}"
-    print(f"review-fix: ask outcome without a valid finding_id ({ignored_text}), not logged", file=sys.stderr)
-
-
-def log_ask_outcome(state, item, outcome):
+def log_ask_outcome(state, item, outcome, finding_id):
     """(exit code, output) of the outcome row's log call."""
     path, line = split_location(item.get("file_line") or "-")
     return run_command(["bash", str(CLAUDE_DIR / "skills/review/log-review-finding"), "kind=finding",
-                        f"finding_id={handback.ask_finding_id(item)}", f"branch={state['branch']}",
+                        f"finding_id={finding_id}", f"branch={state['branch']}",
                         f"lane={state['lane']}", f"scope={state['scope']}", f"iter={state['iter']}",
                         f"gate={item['gate']}", "disposition=ask", f"class={item['class']}", f"file={path}",
                         f"line={line}", "actioned=ask", f"ask_outcome={outcome}"])
@@ -600,28 +582,30 @@ def read_outcomes(argv, asks):
 
 
 def log_fix_ask_outcomes(state, asks, outcomes):
-    """(skips of this call by reason, failure lines). An ask that is logged or skipped joins asks_logged and is never
-    tried again."""
+    """(ask counts of this call: plan-impact asks skipped, outcomes logged under a new finding_id; failure lines). An
+    ask that is logged or skipped joins asks_logged and is never tried again."""
     logged = state.setdefault("asks_logged", [])
-    skips = {PLAN_IMPACT: 0, NO_FINDING_ID: 0}
+    ask_counts = {PLAN_IMPACT: 0, NEW_FINDING_ID: 0}
     failures = []
     for index, (item, outcome) in enumerate(zip(asks, outcomes, strict=True)):
         if index in logged:
             continue
-        reason = skip_reason(item)
-        if reason == NO_FINDING_ID:
-            warn_no_finding_id(item)
-        if reason is not None:
-            skips[reason] += 1
+        if is_plan_impact_ask(item):
+            ask_counts[PLAN_IMPACT] += 1
             logged.append(index)
             continue
-        code, output = log_ask_outcome(state, item, outcome)
+
+        finding_id, new_finding_id_note = handback.ask_outcome_finding_id(item)
+        code, output = log_ask_outcome(state, item, outcome, finding_id)
         if code == 0:
             logged.append(index)
+            if new_finding_id_note:
+                print(f"review-fix: {new_finding_id_note}", file=sys.stderr)
+                ask_counts[NEW_FINDING_ID] += 1
             continue
         path, line = split_location(item.get("file_line") or "-")
         failures.append(f"{path}:{line}: {one_line(output, 160)}")
-    return skips, failures
+    return ask_counts, failures
 
 
 def command_asks_done(argv):
@@ -633,17 +617,18 @@ def command_asks_done(argv):
         raise UsageError("no asks are waiting. `asks-done` follows a packet that carried ask[] entries.")
     outcomes = read_outcomes(argv, asks)
 
-    skips, failures = log_fix_ask_outcomes(state, asks, outcomes)
+    ask_counts, failures = log_fix_ask_outcomes(state, asks, outcomes)
     if not failures:
         state["stage"] = "done"
     save_fix_state(state)
 
-    rows_logged = sum(1 for index in state["asks_logged"] if skip_reason(asks[index]) is None)
+    rows_logged = sum(1 for index in state["asks_logged"] if not is_plan_impact_ask(asks[index]))
     summary = f"Logged {rows_logged} of {len(asks)} ask outcome row(s)."
-    if skips[PLAN_IMPACT]:
-        summary += f" {skips[PLAN_IMPACT]} plan-impact ask(s) are not logged as findings."
-    if skips[NO_FINDING_ID]:
-        summary += f" {skips[NO_FINDING_ID]} ask(s) without a finding_id are not logged."
+    if ask_counts[PLAN_IMPACT]:
+        summary += f" {ask_counts[PLAN_IMPACT]} plan-impact ask(s) are not logged as findings."
+    if ask_counts[NEW_FINDING_ID]:
+        summary += (f" {ask_counts[NEW_FINDING_ID]} ask(s) without a valid finding_id are logged under a new "
+                    "finding_id.")
     if failures:
         summary += " Failures (mention, never block; run the same asks-done again to retry only these):"
     print_action("done", summary, *["- " + failure for failure in failures])

@@ -41,6 +41,6 @@ Run after dispositions are known (`actioned` real, not predicted). Telemetry nev
 - **`result=` is the gate's verdict.** Gates with no pass/fail vocabulary still owe one (`PASS` clean/intent-aligned, `NEEDS CHANGES` gaps/residue, `NOT DISPATCHED` surface-unmatched). Omit only with genuinely no verdict.
 
 - **`desc=` is accepted and never stored.** The ledger keeps no free text. Leave it off new calls.
-- **Asks:** the call that logs an `actioned=ask` finding row prints `finding_id=<id>`. Capture it and put it on that ask's `ask[]` item. The outcome call passes `finding_id=<id>` and `ask_outcome=`, and it supersedes the ask row. An ask outcome with no `finding_id` writes nothing.
+- **Asks:** the call that logs an `actioned=ask` finding row prints `finding_id=<id>`. Capture it and put it on that ask's `ask[]` item. The outcome call passes `finding_id=<id>` and `ask_outcome=`, and it supersedes the ask row. The writer refuses an ask outcome with no `finding_id`; `review_fix.py asks-done` and code-step then log it under a new id.
 
 Full field reference lives in the script's header.

@@ -260,7 +260,7 @@ skipped_fp: [{item, reason}]             # `fix` findings dropped as false posit
 blockers: [<one line each>]              # status=critical-blocker
 findings_remaining: [{disposition, finding, file_line}]  # status=deferred | cap-reached
 plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
-ask: [{finding, file_line, question, change, gate, class, finding_id}]  # never auto-fixed; the user answers these; change is the one edit an accepted answer makes; gate/class/finding_id ride along so the caller can log the outcome. finding_id is the id log-review-finding printed for that ask row; the outcome row supersedes the ask row by it, and an outcome with no finding_id is not logged
+ask: [{finding, file_line, question, change, gate, class, finding_id}]  # never auto-fixed; the user answers these; change is the one edit an accepted answer makes; gate/class/finding_id ride along so the caller can log the outcome. finding_id is the id log-review-finding printed for that ask row; the outcome row supersedes the ask row by it. With no finding_id the outcome goes under a new id and the ask row you logged stays open, so never hand back a placeholder
 class_closure: <the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a — fixed[] empty>
 files_touched: [<path>]
 nit: [<one line each>]                   # a small item ends `applied` or `skipped: <reason>`

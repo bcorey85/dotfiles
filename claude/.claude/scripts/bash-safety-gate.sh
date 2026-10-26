@@ -63,7 +63,7 @@ if ! grep -qiE '(\b(bash|sh|dash|zsh|ksh)\s+-(c|s)\b)|((^|\|\||&&|;|\s\|\s)\s*ev
 fi
 # Indirect execution — bypasses all keyword-based rules
 if grep -qiE '\b(bash|sh|dash|zsh|ksh)\s+-(c|s)\b' <<< "$CMD"; then
-    block "[indirect_shell] [threat:7] Indirect shell execution (sh -c) is not allowed — prevents rule bypass"
+    block "[indirect_shell] [threat:7] Indirect shell execution (sh -c) is not allowed — prevents rule bypass. Run the inner command directly as its own Bash call, without the shell wrapper, and keep going."
 fi
 if grep -qiE '(^|\|\||&&|;|\s\|\s)\s*eval\s' <<< "$CMD"; then
     block "[eval] [threat:7] eval is not allowed — prevents rule bypass via dynamic command construction"
@@ -93,7 +93,7 @@ fi
 # Reading credential/secret files via shell
 if grep -qiE '(cat|head|tail|less|more|sort|diff|jq|cut|strings|uniq|nl|tac|rev|od|xxd|hexdump|grep|rg|egrep|fgrep|awk|sed)\s+[^;|&]*(\.aws/(credentials|config)|\.kube/config|\.docker/config\.json|\.boto|\.s3cfg|\.netrc|\.git-credentials|\.npmrc|\.pypirc|\.gem/credentials|vault/password|1pass\.txt|github\.txt|\.(pem|key|p12|pfx)\b|\.ssh/(id_(rsa|ed25519|ecdsa|dsa)|authorized_keys|config)|\.gnupg/|\.config/gcloud/|\.azure/(accessTokens|azureProfile|msal_token_cache)|\.config/gh/hosts\.yml|\.env(rc|(\.[a-z]+)*)?\b|(credentials|service[._]account|application_default_credentials)\.json|\.tfstate|\.vault-token|\.dev\.vars|\.htpasswd|token\.json)' <<< "$CMD"; then
     if ! grep -qiE '\.env(rc)?\.(example|sample|template|test|dist)\b' <<< "$CMD"; then
-        block "[cat_creds] [threat:5] Reading credential/secret files via shell is not allowed"
+        block "[cat_creds] [threat:5] Reading credential/secret files via shell is not allowed. Do not read it by another route and do not stop: carry on without its contents. Take variable names from the .env.example or a README, and if the task needs a real value, finish the rest and name the value in your final report so the user can supply it."
     fi
 fi
 if grep -qiE '(cat|head|tail|less|more|sort|grep|rg|strings|diff)\s+.*\.(bash_history|zsh_history|sh_history|python_history|node_repl_history|mysql_history|psql_history|irb_history|rediscli_history)' <<< "$CMD"; then

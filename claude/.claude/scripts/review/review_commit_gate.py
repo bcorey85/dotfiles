@@ -326,8 +326,8 @@ def check_commit(command, root, state_file):
     if ships_only_notes(command, jq_field(root, "cwd")):
         return
     raise DenyError(
-        "[review-commit-gate] Coder work from this session has no converged /review. Run /review on "
-        "the coder work and commit after it converges. If the commit ships only Markdown files under "
+        "[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
+        "the user: invoke the /review skill now on the coder work, then commit after it converges. If the commit ships only Markdown files under "
         "the repo's top-level docs/ folder, run it as a plain `git commit` (with `git add` of single "
         "named files if needed) from the repo root in its own Bash call, with no `cd`, `env` or "
         "`git -C`, because the gate passes that form."

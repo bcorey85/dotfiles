@@ -7,6 +7,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -141,6 +142,45 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         self.gate_hook()
 
         self.assertEqual("pass", self.stored_gate()["coders"]["a1"]["result"])
+
+
+class RunCommandsTests(unittest.TestCase):
+    def setUp(self):
+        temp_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_directory.cleanup)
+        self.repo = pathlib.Path(temp_directory.name)
+        self.gate = load_gate_module()
+
+    def run_gate_commands(self, *commands, env=None):
+        return self.gate.run_commands({"repoRoot": str(self.repo), "commands": list(commands), "env": env or {}})
+
+    def test_a_failing_command_reports_its_exit_code_and_both_streams(self):
+        failures, skipped = self.run_gate_commands("echo to-stdout; echo to-stderr >&2; exit 3")
+
+        self.assertEqual([], skipped)
+        (_command, outcome, output), = failures
+        self.assertEqual("exit 3", outcome)
+        self.assertIn("to-stdout", output)
+        self.assertIn("to-stderr", output)
+
+    def test_the_gate_variables_reach_the_command(self):
+        failures, _ = self.run_gate_commands('test "$GATE_PROBE" = set', env={"GATE_PROBE": "set"})
+
+        self.assertEqual([], failures)
+
+    def test_a_timeout_kills_a_child_that_holds_the_pipes_open(self):
+        marker = self.repo / "survived"
+        self.gate.COMMAND_TIMEOUT_SECONDS = 1
+        started = time.monotonic()
+
+        failures, _ = self.run_gate_commands(f"echo before; (sleep 3; touch {marker}) & wait")
+
+        self.assertLess(time.monotonic() - started, 3)
+        (_command, outcome, output), = failures
+        self.assertEqual("timeout after 1 s", outcome)
+        self.assertIn("before", output)
+        time.sleep(3)
+        self.assertFalse(marker.exists())
 
 
 def load_gate_module():

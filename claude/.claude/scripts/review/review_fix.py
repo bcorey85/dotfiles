@@ -35,11 +35,11 @@ import hashlib
 import json
 import os
 import pathlib
-import re
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import handback
+import plan_format
 import script_utils
 from handback import PacketError, item_field, item_text
 from script_utils import one_line, run_command, split_location
@@ -627,22 +627,6 @@ def command_asks_done(argv):
 
 # ---------- plan-impact ruling ----------
 
-def append_plan_deviation(plan_path, entry):
-    path = pathlib.Path(plan_path)
-    if not path.exists():
-        raise UsageError(f"--plan {plan_path} does not exist")
-    text = path.read_text()
-    heading = re.search(r"^## Plan Deviations[ \t]*$", text, re.M)
-    if heading is None:
-        path.write_text(text.rstrip("\n") + f"\n\n## Plan Deviations\n\n{entry}\n")
-        return
-    next_heading = re.search(r"^## ", text[heading.end():], re.M)
-    insert_at = heading.end() + next_heading.start() if next_heading else len(text)
-    path.write_text(
-        text[:insert_at].rstrip("\n") + f"\n{entry}\n" + (("\n" + text[insert_at:]) if next_heading else "")
-    )
-
-
 def discuss_commands():
     commands = []
     for by, words in (("user", "the decision in one line"), ("session", "your reason")):
@@ -669,17 +653,17 @@ def command_decide(argv):
                          f"{DECIDE_BY_NOTE}")
     if not options.ruling.strip():
         raise UsageError(f"decide {options.decision} needs --ruling. Usage: `{DECIDE_USAGE}`.")
+    plan_path = pathlib.Path(options.plan) if options.plan else None
+    if plan_path is not None and not plan_path.exists():
+        raise UsageError(f"--plan {options.plan} does not exist")
+
     choice = DECISION_WORDS[options.decision]
-    if options.by == "session":
-        owner = "the session, not the user"
-    else:
-        identity = script_utils.git_output(".", "var", "GIT_AUTHOR_IDENT") or ""
-        owner = identity.split(" <")[0] or "user"
-    today = datetime.date.today().isoformat()
-    finding = one_line(state["plan_impact"], 300)
-    entry = f"- {today} | {finding} | {choice} | {owner} | {one_line(options.ruling)}"
-    if options.plan:
-        append_plan_deviation(options.plan, entry)
+    owner = plan_format.ruling_owner(".", options.by)
+    ruled_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    entry = plan_format.ruling_deviation(None, choice, owner, ruled_at, options.ruling, state["plan_impact"])
+    if plan_path is not None:
+        plan_format.append_deviation(plan_path, entry)
+
     spec = state.get("spec_iter")
     session_note = " The session ruled, not the user." if options.by == "session" else ""
     lines = [f"plan_impact: RESOLVED - {choice}.{session_note} Ruling: {one_line(options.ruling)}",
@@ -693,9 +677,9 @@ def command_decide(argv):
         (
             f"Recorded in {options.plan} under ## Plan Deviations."
             if options.plan
-            else "No --plan was given: add this line under ## Plan Deviations in the plan yourself, then continue:"
+            else "No --plan was given: add these lines under ## Plan Deviations in the plan yourself, then continue:"
         ),
-        entry,
+        *entry,
         'Re-dispatch review-loop (same Agent call, model: "sonnet") with the same arguments as the first dispatch '
         "and these lines added, both counters kept:",
         *lines,

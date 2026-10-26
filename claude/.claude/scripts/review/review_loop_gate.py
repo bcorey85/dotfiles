@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
 """review_loop_gate.py — deterministic checks on the review loop.
 
-  SubagentHandback (PreToolUse, review-loop): refuses the loop's first hand-back while either check
-    below would block, with the same reasons, so the loop can still act before its report goes out.
-    The hand-back's own message stands in for the loop's last text. A second hand-back after a
-    refusal goes through, and the stop check then stays quiet. Register with matcher
-    `SubagentHandback`; the agent_type check still guards the other agents.
   SubagentStop (review-loop), the backstop: blocks once, with every reason that holds, when
     - a fix coder ran after the last code-reviewer read — a fresh dispatch, or a SendMessage to a
       code-reviewer it dispatched. `no-review` in the loop prompt exempts this check only.
@@ -122,8 +117,6 @@ GATE_REASON = ("No full check ran after the last code change in this phase. A sc
                "handoff's tests-run, does not count. Run the Step 6 execution gate now: the project's full "
                "quality-check command once, redirected to /tmp/review-gate.log. Route any failure as Step 6 "
                "says, then return the packet.")
-HANDBACK_REFUSED = (" Your hand-back was refused before it went out, so you can still act: do this, then call "
-                    "SubagentHandback again.")
 HANDOFF_REASON = ("A review-loop dispatch from /code carries no handoff block. Build it per "
                   "~/.claude/skills/_shared/handoff-block.md and dispatch again.")
 
@@ -216,10 +209,6 @@ def reasons_for(scanned):
     if open_dispatches:
         return []
     return [r for r, hit in ((PASS_REASON, unread and not exempt), (GATE_REASON, ungated)) if hit]
-
-
-def reasons(path, final=None):
-    return reasons_for(scan(path, final))
 
 
 def section_findings(lines):
@@ -374,11 +363,11 @@ def write_run_row(hook, run, lane, phase):
     return done.returncode == 0 and not dropped and "run_id=" in done.stdout
 
 
-def state_file_for(session_id, suffix):
-    """The gate's state file for one session: run-row marks use `.jsonl`, hand-back marks `-handback.jsonl`."""
+def state_file_for(session_id):
+    """The gate's state file of run-row marks for one session."""
     state_dir = pathlib.Path(os.environ.get("REVIEW_LOOP_GATE_STATE_DIR")
                              or pathlib.Path.home() / ".claude" / "state" / "review-loop-gate")
-    return state_dir / (re.sub(r"[^\w.-]", "_", str(session_id)) + suffix)
+    return state_dir / (re.sub(r"[^\w.-]", "_", str(session_id)) + ".jsonl")
 
 
 def log_run_rows(hook, path):
@@ -391,7 +380,7 @@ def log_run_rows(hook, path):
         sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / "lib")]
         import script_utils
         runs, lane, phase = reviewer_runs(path)
-        state_file = state_file_for(session_id, ".jsonl")
+        state_file = state_file_for(session_id)
         marks = {}
         for row in script_utils.read_jsonl(state_file):
             marks[row.get("tool_use_id")] = not row.get("undone")
@@ -427,45 +416,6 @@ def agent_type(hook, path):
         return None
 
 
-def last_handback_event(hook):
-    """What the gate last did with a hand-back from this agent: "denied", "insisted" (the agent handed back again
-    after a denial, so the second hand-back went through) or "clear"; None when it has seen none."""
-    mark_file = state_file_for(hook.get("session_id"), "-handback.jsonl")
-    marks = script_utils.read_jsonl(mark_file)
-    events = [row.get("event") for row in marks if row.get("agent_id") == hook.get("agent_id")]
-    return events[-1] if events else None
-
-
-def check_handback(hook):
-    """PreToolUse on SubagentHandback: refuse a review-loop's first hand-back while the stop checks would block, so
-    the agent can still act on the reason. The hand-back's own message stands in for the loop's last text. A second
-    hand-back after a refusal goes through, so a stuck loop cannot spin; the stop check then stays quiet."""
-    if hook.get("agent_type") != "review-loop" or not hook.get("session_id"):
-        return
-    if script_utils is None:
-        raise ImportError("script_utils is not beside review_loop_gate.py; no hand-back check ran")
-    path = loop_transcript(hook)
-    if not path or not os.path.exists(path):
-        raise FileNotFoundError("no loop transcript for agent {}".format(hook.get("agent_id")))
-    why = reasons(path, str((hook.get("tool_input") or {}).get("message") or ""))
-    refused_before = last_handback_event(hook) in ("denied", "insisted")
-    event = "clear" if not why else "insisted" if refused_before else "denied"
-    # The mark goes first: when it cannot be saved the hand-back is not refused, so a stuck loop cannot spin.
-    script_utils.append_jsonl(state_file_for(hook["session_id"], "-handback.jsonl"),
-                              {"agent_id": hook.get("agent_id"), "event": event})
-    if event == "denied":
-        script_utils.pre_tool_use_deny(" ".join(why) + HANDBACK_REFUSED)
-
-
-def hand_back_insisted(hook):
-    """True when this agent handed back again after the gate refused its hand-back: the stop that follows has nothing
-    left to ask. A mark that cannot be read is no mark."""
-    try:
-        return bool(hook.get("session_id")) and last_handback_event(hook) == "insisted"
-    except Exception:
-        return False
-
-
 def main():
     if len(sys.argv) == 3 and sys.argv[1] == "--check":
         unread, ungated, exempt, open_dispatches = scan(sys.argv[2])
@@ -483,8 +433,6 @@ def main():
         if inp.get("subagent_type") == "review-loop" and CALLER_CODE.search(prompt) and not HANDOFF.search(prompt):
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                                      "permissionDecisionReason": HANDOFF_REASON}}))
-    elif event == "PreToolUse" and hook.get("tool_name") == "SubagentHandback":
-        check_handback(hook)
     elif event == "SubagentStop":
         path = loop_transcript(hook)
         if agent_type(hook, path) != "review-loop":
@@ -492,7 +440,7 @@ def main():
         if not path or not os.path.exists(path):
             raise FileNotFoundError("no loop transcript for agent {}".format(hook.get("agent_id")))
         scanned = scan(path, hook.get("last_assistant_message"))
-        why = [] if hook.get("stop_hook_active") or hand_back_insisted(hook) else reasons_for(scanned)
+        why = [] if hook.get("stop_hook_active") else reasons_for(scanned)
         if why:
             print(json.dumps({"decision": "block", "reason": " ".join(why)}))
         elif not scanned[3]:

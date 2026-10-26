@@ -2293,6 +2293,26 @@ class CodeStepTest(unittest.TestCase):
                                 cwd=self.repo, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_a_cd_then_rg_line_that_prints_nothing_passes_verify(self):
+        self.set_verification("- [ ] the migration is purely additive. "
+                              "`cd backend && rg -n 'ALTER COLUMN|DROP ' src/orders.ts` prints nothing.")
+        outcome = self.finish_phase_one()
+        self.assertNotIn("Automated Verification failed", outcome)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+
+    def test_a_cd_then_rg_line_that_prints_nothing_fails_on_a_hit(self):
+        self.set_verification("- [ ] the migration is purely additive. "
+                              "`cd backend && rg -n 'DROP ' src/orders.ts` prints nothing.")
+        self.coder_round(source="DROP TABLE o\n")
+        self.hook("review-loop", self.LOOP_OK)
+        self.assertIn("Automated Verification failed", self.step("after-review"))
+
+    def test_a_cd_then_negated_rg_is_a_ban(self):
+        line = "- [ ] **Check**: `cd backend && ! rg -n x src/orders.ts`"
+        command = code_step_boundary.verification_command(line)
+        self.assertEqual(command, "cd backend && rg -n x src/orders.ts")
+        self.assertTrue(code_step_boundary.is_search_ban(command, line + " exists"))
+
     def test_an_rg_ban_with_a_match_fails(self):
         self.set_verification("- [ ] **Prohibition**: no console.log - `rg -n console.log backend/src/orders.ts`")
         self.coder_round(source="console.log(1)\n")

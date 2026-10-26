@@ -142,7 +142,7 @@ def phase_code_lines(lines, section):
 def is_ban(line, command):
     """True when the item writes its command as a negated search (`! rg ...`): exit 1, no match, holds it."""
     spans = script_utils.backticked_spans(line)
-    return any(code_step_boundary.NEGATED_SEARCH.sub("", span) == command and span != command for span in spans)
+    return any(code_step_boundary.without_negation(span) == command and span != command for span in spans)
 
 
 def criteria_in_plan(lines, repo_dir):

@@ -68,7 +68,7 @@ A clearly-shippable out-of-domain issue gets a single closing `Note:` line, neve
 [file:line — [smell] issue — the consolidation, with the existing candidate's file:line]
 
 ### Ask
-[file:line — [smell] issue — the question the human has to answer]
+[file:line — [smell] issue — the question the human has to answer — change: the one edit an `accepted` answer makes]
 [Use this when the consolidation is a design call, not a mechanical extraction.]
 
 ### Nit

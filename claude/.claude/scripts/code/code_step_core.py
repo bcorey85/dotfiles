@@ -219,8 +219,10 @@ def emit_dispatch(repo_dir, state, verb, *lines, prompt, agent, model=None):
 
 
 def open_dispatch(state):
-    # A dispatch is open from here until the dispatched agent's hand-back event is newer than dispatchAt.
+    # A dispatch is open from here until the dispatched agent's hand-back event is newer than dispatchAt. The session
+    # that opens it pins the run: a new session that resumes the run reads the events of the agents it launches.
     state["dispatchAt"] = time.time()
+    state["sessionId"] = session_pin() or state.get("sessionId")
     if not state.get("runId"):
         state["runId"] = script_utils.sortable_unique_id()
 

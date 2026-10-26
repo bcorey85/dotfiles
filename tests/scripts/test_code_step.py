@@ -412,6 +412,33 @@ class CodeStepTest(unittest.TestCase):
                           "cd crate && cargo test --test side_streams"],
                          [command for command in gate["commands"] if "cargo" in command])
 
+    def make_helper_phase_with_verification(self, verification_line):
+        (self.repo / "crate/src").mkdir(parents=True)
+        (self.repo / "crate/tests/common").mkdir(parents=True)
+        (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
+        (self.repo / "crate/src/lib.rs").write_text("")
+        (self.repo / "crate/tests/common/mod.rs").write_text("")
+        helper_file = "**File**: `backend/src/orders.test.ts`\n**File**: `crate/tests/common/mod.rs`"
+        plan_text = self.plan_text().replace("**File**: `backend/src/orders.test.ts`", helper_file)
+        old = "- [ ] **Prohibition**: no console.log - `git grep -n --untracked console.log -- backend/src/orders.ts`"
+        self.assertIn(old, plan_text)
+        (self.repo / self.plan).write_text(plan_text.replace(old, verification_line))
+        self.start_phase_one()
+        return json.loads((self.repo / ".git/coder-gate.json").read_text())["commands"]
+
+    def test_gate_takes_the_cargo_commands_the_phase_lists_in_place_of_the_derived_ones(self):
+        commands = self.make_helper_phase_with_verification("- [ ] Orders test passes: `cargo test --test orders`")
+
+        self.assertIn("cargo test --test orders", commands)
+        self.assertEqual([], [command for command in commands if "cargo test --tests" in command])
+        self.assertEqual([], [command for command in commands if "cargo clippy" in command])
+
+    def test_gate_keeps_the_derived_cargo_commands_when_the_phase_lists_no_cargo_command(self):
+        commands = self.make_helper_phase_with_verification("- [ ] No stray logging: `git grep -n TODO -- crate/src`")
+
+        self.assertIn("cd crate && cargo test --tests", commands)
+        self.assertIn("cd crate && cargo clippy --all-targets -- -D warnings", commands)
+
     def test_cargo_tests_are_the_test_target_binary_or_library_of_each_named_rust_file(self):
         (self.repo / "crate/src/a").mkdir(parents=True)
         (self.repo / "crate/tests/common").mkdir(parents=True)

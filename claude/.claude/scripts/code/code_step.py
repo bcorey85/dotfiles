@@ -63,6 +63,7 @@ from code_step_boundary import (
     save_criteria_guard,
     settle_criteria_guard,
     stop_while_plan_edit_coder_is_out,
+    verification_command,
     verification_format_failure,
 )
 from code_step_core import (
@@ -169,6 +170,7 @@ NO_REVIEW_PACKET = ("No review-loop packet was saved. The log-hook (code_step.py
                     "Tell the user.")
 TICKET_ID = re.compile(r"^[A-Za-z]+-\d+$")
 CARGO_CLIPPY = "cargo clippy --all-targets -- -D warnings"
+RUNS_CARGO = re.compile(r"(?:^|&&\s*)cargo\s")
 TYPECHECK_SCRIPTS = ["typecheck", "type-check", "check-types", "tsc"]
 SCRIPT_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".mts", ".mjs")
 TEST_SUFFIXES = ".test.ts,.test.tsx,.spec.ts,.spec.tsx,.test.js,.test.jsx"
@@ -325,6 +327,23 @@ def cargo_commands(repo_dir, paths):
     return commands
 
 
+def listed_cargo_commands(repo_dir, phase_section):
+    # The cargo commands the phase's Automated Verification lists, read the way the phase boundary reads them.
+    listed = []
+    for _, line in plan_format.automated_verification_rows(phase_section.splitlines()):
+        if plan_format.runs_no_command(line):
+            continue
+
+        command = verification_command(line, repo_dir)
+        if not command:
+            continue
+
+        command_without_env = script_utils.without_leading_env_assignments(command)
+        if RUNS_CARGO.search(command_without_env) and command not in listed:
+            listed.append(command)
+    return listed
+
+
 def derive_gate_commands(repo_dir, phase_section):
     paths = []
     for match in PATH_IN_BACKTICKS.finditer(phase_section):
@@ -341,7 +360,8 @@ def derive_gate_commands(repo_dir, phase_section):
     for package_dir, package_paths in by_package.items():
         commands += script_package_commands(repo_dir, package_dir, package_paths)
     root_manifests = BARE_CARGO_MANIFEST.findall(phase_section)
-    commands += cargo_commands(repo_dir, paths + root_manifests)
+    listed_cargo = listed_cargo_commands(repo_dir, phase_section)
+    commands += listed_cargo or cargo_commands(repo_dir, paths + root_manifests)
     commands += python_commands(repo_dir, paths)
     return commands
 

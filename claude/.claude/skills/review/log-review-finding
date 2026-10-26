@@ -101,6 +101,12 @@
 # prints one stderr line and exits 0. With no `ledger` on PATH `ledger-write` appends the
 # row to ~/.claude/review-findings.jsonl (kind=finding or run), prints one stderr line
 # and everything else runs as before. A row `ledger write` refuses exits 2.
+#
+# A row logged on a dirty tree carries snapshot=<sha>: a commit on HEAD of that tree, untracked
+# files included, kept under refs/review-snapshots/<id>. A later row for the same id sends the
+# commit its first row saved. The user's index and working tree are not touched. Snapshot refs
+# older than 90 days are deleted when a new one is saved. A ledger build that refuses the field
+# gets the row without it, and the ref is deleted.
 set -euo pipefail
 
 script_dir=$(dirname -- "${BASH_SOURCE[0]}")
@@ -252,6 +258,40 @@ fi
 
 [ -z "$check_only" ] || exit 0
 
+SNAPSHOT_REFS=refs/review-snapshots
+SNAPSHOT_KEEP_DAYS=90
+ledger_write="$script_dir/../../scripts/telemetry/ledger-write"
+
+# Prints a commit on HEAD of the working tree, built in a temp index seeded from the real one.
+save_snapshot() {
+  local real_index temp_index tree
+  real_index=$(git rev-parse --git-path index) || return 1
+  temp_index=$(mktemp) || return 1
+  if [ -f "$real_index" ]; then cp -- "$real_index" "$temp_index"; else rm -f -- "$temp_index"; fi
+
+  tree=$(GIT_INDEX_FILE=$temp_index git add -A && GIT_INDEX_FILE=$temp_index git write-tree) || tree=""
+  rm -f -- "$temp_index"
+  [ -n "$tree" ] || return 1
+
+  git commit-tree "$tree" -p "$head" -m "review snapshot $id"
+}
+
+prune_snapshots() {
+  local now cutoff
+  now=$(date +%s)
+  cutoff=$(( now - SNAPSHOT_KEEP_DAYS * 86400 ))
+  git for-each-ref --format='%(committerdate:unix) %(refname)' "$SNAPSHOT_REFS/" \
+    | awk -v cutoff="$cutoff" '$1 < cutoff { print "delete " $2 }' \
+    | git update-ref --stdin
+}
+
+# Sends $1 to the ledger writer and keeps what it printed on stderr in writer_stderr.
+send_row() {
+  local rc=0
+  { writer_stderr=$(printf '%s\n' "$1" | bash "$ledger_write" "review_$kind" 2>&1 >&3); } 3>&1 || rc=$?
+  return "$rc"
+}
+
 id_key=run_id
 [ "$kind" = finding ] && id_key=finding_id
 id=$(jq -r --arg k "$id_key" '.[$k] // ""' <<< "$json")
@@ -260,6 +300,23 @@ if [ -z "$id" ]; then
   json=$(jq -c --arg k "$id_key" --arg v "$id" '.[$k] = $v' <<< "$json")
 fi
 
+if [ -n "$redirected" ] && ! "$script_dir/../../scripts/telemetry/telemetry_enabled.sh" 2>/dev/null; then
+  echo "$id_key=$id"
+  exit 0
+fi
+
+snapshot_ref="$SNAPSHOT_REFS/$id"
+snapshot=$(git rev-parse -q --verify "$snapshot_ref^{commit}" 2>/dev/null || true)
+if [ -z "$snapshot" ] && [ "$dirty" = 1 ]; then
+  if snapshot=$(save_snapshot) && git update-ref "$snapshot_ref" "$snapshot"; then
+    prune_snapshots
+  else
+    echo "log-review-finding: could not save the reviewed tree; the row is logged without snapshot" >&2
+    snapshot=""
+  fi
+fi
+[ -z "$snapshot" ] || json=$(jq -c --arg s "$snapshot" '.snapshot = $s' <<< "$json")
+
 # desc is free text and never stored. file and branch go to the writer raw; it keys
 # them (path_key, branch_key) and drops a dash or empty value. With no ledger, they are
 # stored raw in the local jsonl file.
@@ -267,13 +324,18 @@ payload=$(jq -c '
   del(.desc, .kind)
   | with_entries(.key |= (if . == "file" then "path_key" elif . == "branch" then "branch_key" else . end))' <<< "$json")
 
-write_row() {
-  [ -z "$redirected" ] || "$script_dir/../../scripts/telemetry/telemetry_enabled.sh" 2>/dev/null || return 0
-  printf '%s\n' "$payload" | bash "$script_dir/../../scripts/telemetry/ledger-write" "review_$kind"
-}
-
 write_rc=0
-write_row || write_rc=$?
+send_row "$payload" || write_rc=$?
+
+if [ "$write_rc" -eq 2 ] && [[ $writer_stderr == *"field_unknown snapshot"* ]]; then
+  git update-ref -d "$snapshot_ref"
+  echo "note: this ledger build does not store snapshot; the row is logged without it" >&2
+  payload=$(jq -c 'del(.snapshot)' <<< "$payload")
+  write_rc=0
+  send_row "$payload" || write_rc=$?
+fi
+
+[ -z "$writer_stderr" ] || printf '%s\n' "$writer_stderr" >&2
 [ "$write_rc" -eq 0 ] || exit "$write_rc"
 
 echo "$id_key=$id"

@@ -11,8 +11,8 @@
 # ledger, with date (UTC ISO), schema_version, repo and session added, and prints one stderr line
 # naming the file. Numeric-looking strings are stored as numbers, one object level down too
 # (specialists, fixed_classes); branch_key is stored as branch and path_key as file, both stored
-# raw in the local jsonl file with no ledger. Keys ending in _id, and head and dirty, stay
-# strings. A result is stored with spaces (PASS WITH WARNINGS). A review_scope row is
+# raw in the local jsonl file with no ledger. Keys ending in _id, and head, dirty and snapshot,
+# stay strings. A result is stored with spaces (PASS WITH WARNINGS). A review_scope row is
 # {ts, skill, via, session, repo, caller}, the shape the skill-usage file always held. If the
 # append fails, or HOME is unset, it prints one stderr line and exits 0: a telemetry write never
 # blocks the workflow. A type with no file is dropped with one stderr line.
@@ -69,7 +69,7 @@ if ! jsonl_row=$(jq -c --argjson sv "$schema_version" --arg kind "$kind" --arg r
   --arg session "${CLAUDE_CODE_SESSION_ID:-}" --arg row_type "$row_type" '
   def number_like: if type == "string" then (tonumber? // .) else . end;
   def typed($key):
-    if ($key | endswith("_id")) or $key == "head" or $key == "dirty" then .
+    if ($key | endswith("_id")) or $key == "head" or $key == "dirty" or $key == "snapshot" then .
     elif type == "object" then map_values(number_like)
     else number_like end;
   def spaced_result:

@@ -110,7 +110,7 @@ def save_report(repo, agent_type, stage, message):
 
 def run(repo, *args):
     env = dict(os.environ, HOME=str(repo.parent / "home"), CODE_STEP_WAIT_SECONDS="0",
-               CODE_STEP_CLAUDE_DIR=str(REAL_CLAUDE_DIR))
+               CODE_STEP_CLAUDE_DIR=str(REAL_CLAUDE_DIR), CODE_STEP_NVIM_JUMP="true")
     done = subprocess.run(["python3", str(SCRIPT), *args], cwd=repo, capture_output=True, text=True, env=env)
     return done.stdout + done.stderr
 

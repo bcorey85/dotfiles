@@ -32,7 +32,8 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
 
 One coder runs per phase. The current skill's two parallel coders for deliverables that share no file are dropped by
 design.
-Run from the repo root. State lives in <git dir>/code-step/. Env CODE_STEP_CLAUDE_DIR overrides the toolkit folder.
+Run from the repo root. State lives in <git dir>/code-step/. Env CODE_STEP_CLAUDE_DIR overrides the toolkit folder;
+CODE_STEP_NVIM_JUMP overrides the nvim-jump command.
 Each run also keeps <git dir>/code-step/runs/<run id>/events.jsonl and one prompt-<dispatch id>.txt per dispatch. The
 hooks write only that log; the verbs read it and write state.json.
 
@@ -1739,15 +1740,18 @@ def preset_ask_outcome(repo_dir):
 
 
 def present_asks(repo_dir, state, asks):
+    nvim_jump = os.environ.get("CODE_STEP_NVIM_JUMP", "nvim-jump")
+    is_nvim_jump_installed = shutil.which(nvim_jump) is not None
+
     anchors = []
     for item in asks:
         file_line = item.get("file_line", "")
         question = item.get("question", "")
         is_single_anchor = re.match(r"^[^\s,;]+:\d+(-\d+)?$", file_line) is not None
-        if is_single_anchor and shutil.which("nvim-jump"):
+        if is_single_anchor and is_nvim_jump_installed:
             anchors += ["--note", question[:120], file_line]
     if anchors:
-        run_command(["nvim-jump", *anchors], repo_dir)
+        run_command([nvim_jump, *anchors], repo_dir)
     state["asks"] = asks
     preset_outcome = preset_ask_outcome(repo_dir)
     is_new_ask_after_asks_coder = preset_outcome and preset_outcome != "rejected" and state.get("asksApplied")

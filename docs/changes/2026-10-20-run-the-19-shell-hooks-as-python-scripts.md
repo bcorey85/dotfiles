@@ -75,6 +75,8 @@ Both groups match the prediction and stay under 200 ms. `bash-safety-gate.sh` is
 
 `hook-port-python`: the daily median of subagent short Bash reads at work, before against after 2026-10-20. The good direction is down, by about 0.5 s. The next work hook timing census gives the direct reading: the parallel hook group times before and after a Bash call. If either group stays above 200 ms, read the per-hook table for the slow port.
 
+Reading, 2026-10-26 intake: WORSE, kept. The subagent short-read median went from 1.54 s before to 4.75 s after. The rise started a week before this edit: 1.6 s on 2026-10-12, 2.3 s on 10-14, 3.3 s on 10-19, then 4.6 s on 10-20. The main session rose the same way. Calls a hook rejected, which run no command and no classifier, rose from 0.5 s to 1.7 s before the edit and kept rising after it. `batch-reads-nudge` took 76 ms per run on 2026-10-04 and 1.4 s on 10-19 as a bash hook. As a Python hook it took the same 1.3–1.6 s. The work machine showed a load average of about 16 on 10 cores, with a Docker VM at 617% CPU and 73 days of uptime. The machine slows every call, so this metric cannot read the edit. The direct census reading stands: the hooks before a Bash call fell from 425 ms to 139 ms, and the hooks after it fell from 338 ms to 39 ms. The watch is closed.
+
 ## Back-out
 
 Restore `settings.json` from `settings.json.bak-hookport`, if no other edit came after the swap. Otherwise change each `python3 <dir>/<name>.py` registration back to `<dir>/<name>.sh`. The `.sh` files are still installed.

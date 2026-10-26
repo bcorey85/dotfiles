@@ -98,10 +98,13 @@ from code_step_core import (
     pin_session,
     put_resumed_coder_back,
     put_resumed_review_back,
+    record_ruled_asks,
     refuse,
     repo_root_or_exit,
     restart_instruction,
     resumed_agent_pending_stop,
+    ruled_asks_lines,
+    ruled_asks_path,
     save_state,
     say,
     script_command,
@@ -870,6 +873,8 @@ def start_phase_coder(repo_dir, previous, branch, parsed, phase):
 
 
 def start_planless(repo_dir, modifier, task_text, branch="-"):
+    # A new task has no earlier rulings: the ones of a previous planless task do not carry over.
+    ruled_asks_path(repo_dir).unlink(missing_ok=True)
     state = {"stage": "coder", "plan": None, "lane": "code", "phase": None, "branch": branch, "modifier": modifier,
              "risk": "high", "title": "", "gateCommands": [], "baseline": file_hashes(repo_dir),
              "startedAt": time.time(), "sessionId": session_pin(), "runId": start_run(repo_dir)}
@@ -886,10 +891,10 @@ def start_closing_phase(repo_dir, plan_rel, lane, modifier, entry, skill, sectio
              "modifier": modifier, "risk": entry["risk"], "title": entry["title"], "gateCommands": [], "behavior": [],
              "baseline": file_hashes(repo_dir), "onlyPhase": only_phase, "sessionId": session_pin()}
     save_state(repo_dir, state)
-    emit_closing_skill(entry["number"], entry["title"], skill, section)
+    emit_closing_skill(repo_dir, plan_rel, entry["number"], entry["title"], skill, section)
 
 
-def emit_closing_skill(number, title, skill, section):
+def emit_closing_skill(repo_dir, plan_rel, number, title, skill, section):
     verdict_step = ("run `python3 ~/.claude/scripts/code/code_step.py skill-done pass` when the phase's Success "
                    "Criteria hold, or `skill-done fail` when they do not (for the Verify pass, any MISSING "
                    "criterion fails it)")
@@ -898,11 +903,19 @@ def emit_closing_skill(number, title, skill, section):
         if section
         else []
     )
+    ruled_asks = ruled_asks_lines(repo_dir, plan_rel)
+    ruled_lines = (
+        ["Asks already ruled in this run. Never raise one of them again, and never undo its outcome:",
+         *[f"- {ruled_ask}" for ruled_ask in ruled_asks]]
+        if ruled_asks
+        else []
+    )
     emit(
         "invoke-skill",
         f"Phase {number} ({title}) is a closing phase. Invoke the Skill tool with "
         f"`{skill}`; a coder is not dispatched.",
         *section_lines,
+        *ruled_lines,
         f"The skill needs judgment. When it returns, {verdict_step}.",
     )
 
@@ -1533,7 +1546,7 @@ def command_after_plan_edit(repo_dir, state, args):
 
 # ---------- review dispatch ----------
 
-def handoff_block(state):
+def handoff_block(repo_dir, state):
     lines = ["handoff:", "  files:"]
     behavior_fallback = state["behavior"][0] if state.get("behavior") else None
     for path in state["files"]:
@@ -1551,6 +1564,10 @@ def handoff_block(state):
             lines.append(f"    - issue: {prior_issue['issue']}")
             lines.append("      status: fixed")
             lines.append(f"      file: {prior_issue['file'] or '-'}")
+    ruled_asks = ruled_asks_lines(repo_dir, state.get("plan"))
+    if ruled_asks:
+        lines.append("  ruled-asks:")
+        lines += [f"    - {ruled_ask}" for ruled_ask in ruled_asks]
     lines.append(f"  tests-run: {state['testsRun']}")
     lines.append("  flagged: " + ("; ".join(state["flagged"]) if state["flagged"] else "none"))
     plan_impact = state.get("planImpact", "none")
@@ -1655,10 +1672,11 @@ def emit_review_dispatch(repo_dir, state):
     if state["structurePassSkipped"]:
         header.append("structure-pass: skip")
     state["reviewRan"] = True
-    prompt = "\n".join(header) + "\n\n" + handoff_block(state)
+    prompt = "\n".join(header) + "\n\n" + handoff_block(repo_dir, state)
     state["stage"] = "review"
     open_dispatch(state)
     state["lastReviewPrompt"] = prompt
+    state.pop("reviewStatus", None)
     save_state(repo_dir, state)
 
     summary = ["Implemented: " + ("; ".join(state["behavior"]) or "see the diff.")]
@@ -1734,6 +1752,7 @@ def command_after_review(repo_dir, state, args):
     if packet["spec_iter"] is not None:
         state["spec_iter"] = packet["spec_iter"]
     state["packet"] = packet
+    state["reviewStatus"] = packet["status"]
     if stop_on_review_status(repo_dir, state, module, packet):
         return
 
@@ -1785,6 +1804,7 @@ def present_asks(repo_dir, state, asks):
         print(f"{len(asks)} review ask(s) answered by the pre-set outcome '{preset_outcome}'. No question to the user:")
         say(repo_dir, "\n".join(["Review asks, answered by the pre-set outcome:", *numbered_ask_lines(asks)]))
         log_ask_outcomes(repo_dir, state, [preset_outcome] * len(asks))
+        record_ruled_asks(repo_dir, state, [preset_outcome] * len(asks), [None] * len(asks))
         return apply_asks_or_finish(repo_dir, state, [preset_outcome] * len(asks), [None] * len(asks))
     ask_the_user(repo_dir, state, asks)
 
@@ -1903,6 +1923,7 @@ def command_asks_done(repo_dir, state, args):
     remaining_changes = iter(given_changes)
     change_texts = [next(remaining_changes) if outcome == "modified" else None for outcome in outcomes]
     log_ask_outcomes(repo_dir, state, outcomes)
+    record_ruled_asks(repo_dir, state, outcomes, change_texts)
     apply_asks_or_finish(repo_dir, state, outcomes, change_texts)
 
 
@@ -2012,7 +2033,7 @@ def resume_closing_skill(repo_dir, state):
     plan_lines = (repo_dir / state["plan"]).read_text().split("\n")
     section = plan_format.phase_text(plan_lines, state["phase"])
     skill = plan_format.closing_skill(state["title"])
-    emit_closing_skill(state["phase"], state["title"], skill, section)
+    emit_closing_skill(repo_dir, state["plan"], state["phase"], state["title"], skill, section)
 
 
 def resume_start(repo_dir, state):

@@ -358,6 +358,16 @@ def mark_review_gate_clean(repo_dir, state):
         emit("stop", f"Cannot confirm the review loop ended clean: {import_error}. The review gate is not marked "
              "clean. Tell the user.")
         return False
+    # The packet this run read is the record of how its loop ended. The shared hand-back store is keyed by session
+    # and can hold an earlier converged hand-back, so it never overrules a packet that did not converge.
+    review_status = state.get("reviewStatus")
+    if review_status is not None and review_status not in module.CLEAN_STATUSES:
+        state["stage"] = "stopped"
+        state["stopReason"] = "review-not-converged"
+        save_state(repo_dir, state)
+        emit("stop", f"The phase stays open: its review loop ended {review_status}, not converged. Nothing is "
+             "committed and the review gate is not marked clean. Report to the user what the review waits on.")
+        return False
     reviewing_session = state.get("sessionId") or session_pin()
     reason = module.false_clean_reason(reviewing_session)
     if reason:

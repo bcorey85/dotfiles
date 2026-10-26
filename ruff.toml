@@ -27,6 +27,7 @@ max-complexity = 10
 "claude/.claude/scripts/review/verify-log" = ["E402"]
 "claude/.claude/scripts/review/verify-prep" = ["E402"]
 "tests/scripts/test_code_step_asks.py" = ["E402"]
+"tests/scripts/test_code_step_open_phase.py" = ["E402"]
 "tests/scripts/test_code_step_termination.py" = ["E402"]
 # HOOK_SCRIPTS_DIR can point the test at another copy of makefile_text, so sys.path is set after the assignments that
 # read it and the import that follows cannot sit at the top.

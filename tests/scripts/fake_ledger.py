@@ -12,7 +12,8 @@ the verify scripts call:
   anything else                          exits 64
 
 `ledger write` records nothing and exits with the code in FAKE_LEDGER_WRITE_EXIT when that is set
-to a nonzero number.
+to a nonzero number. It refuses a row that carries a key named in FAKE_LEDGER_UNKNOWN_FIELDS (comma
+separated) as an older build does: `reject: field_unknown <key>` on stderr, exit 2.
 
 `path_without_ledger(path)` returns `path` with every directory that holds a `ledger` left out.
 
@@ -46,6 +47,10 @@ if len(args) >= 2 and args[0] == "write":
         sys.stdin.read()
         sys.exit(writeExit)
     row = json.loads(sys.stdin.read())
+    unknownFields = [key for key in os.environ.get("FAKE_LEDGER_UNKNOWN_FIELDS", "").split(",") if key in row]
+    if unknownFields:
+        print(f"reject: field_unknown {unknownFields[0]}", file=sys.stderr)
+        sys.exit(2)
     row["_type"] = args[1]
     row["_cwd"] = os.getcwd()
     if "--session" in args:

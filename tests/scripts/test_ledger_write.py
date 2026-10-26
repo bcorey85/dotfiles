@@ -225,13 +225,16 @@ class LedgerWriteTest(unittest.TestCase):
         self.assertIn("could not append", done.stderr)
         self.assertIn("row dropped", done.stderr)
 
-    def test_ids_and_the_head_commit_stay_strings_and_other_numbers_are_typed(self):
-        row_text = json.dumps({"finding_id": "12e4567890123456", "run_id": "1234", "head": "1234567", "iter": "3"})
-        done = self.run_script(LEDGER_WRITE, ["review_finding"], stdin=row_text)
+    def test_ids_the_head_commit_and_the_snapshot_stay_strings_and_other_numbers_are_typed(self):
+        row_fields = {
+            "finding_id": "12e4567890123456", "run_id": "1234", "head": "1234567", "snapshot": "12e45", "iter": "3"
+        }  # fmt: skip
+        done = self.run_script(LEDGER_WRITE, ["review_finding"], stdin=json.dumps(row_fields))
         self.assertEqual(done.returncode, 0, done.stderr)
         appended_row = self.logged_rows("review-findings.jsonl")[-1]
         self.assertEqual(appended_row["finding_id"], "12e4567890123456")
         self.assertEqual((appended_row["run_id"], appended_row["head"]), ("1234", "1234567"))
+        self.assertEqual(appended_row["snapshot"], "12e45")
         self.assertEqual(appended_row["iter"], 3)
 
     def test_numbers_inside_object_values_are_typed_and_dirty_and_a_dash_stay_strings(self):

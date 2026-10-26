@@ -418,6 +418,35 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("accepted|rejected|modified", output)
         self.assertEqual(self.ledger_writes(), [])
 
+    def test_asks_done_by_session_logs_who_ruled_and_says_so(self):
+        self.packet(WITH_ASK)
+        code, output = self.run_script(["asks-done", "--by", "session", "accepted", "rejected"])
+        self.assertEqual(code, 0, output)
+        self.assertIn("The session ruled, not the user.", output)
+        self.assertEqual([row["ask_decided_by"] for row in self.ledger_writes()], ["session"] * 2)
+
+    def test_asks_done_without_by_logs_the_user_as_the_one_who_ruled(self):
+        self.packet(WITH_ASK)
+        code, output = self.run_script(["asks-done", "accepted", "rejected"])
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("The session ruled", output)
+        self.assertEqual([row["ask_decided_by"] for row in self.ledger_writes()], ["user"] * 2)
+
+    def test_asks_done_with_a_bad_by_value_fails_loudly_and_logs_nothing(self):
+        self.packet(WITH_ASK)
+        for by_words in (["--by", "robot"], ["--by"]):
+            with self.subTest(by_words):
+                code, output = self.run_script(["asks-done", *by_words, "accepted", "rejected"])
+                self.assertEqual(code, 2)
+                self.assertIn("user or session", output)
+                self.assertEqual(self.ledger_writes(), [])
+
+    def test_the_asks_packet_tells_the_session_when_it_may_decide_the_asks_itself(self):
+        code, output = self.packet(WITH_ASK)
+        self.assertEqual(code, 0, output)
+        self.assertIn("hands ask decisions to the session", output)
+        self.assertIn("--by session", output)
+
     def test_asks_done_without_waiting_asks_fails(self):
         self.packet(CONVERGED)
         code, _output = self.run_script(["asks-done", "accepted"])

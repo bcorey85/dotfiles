@@ -13,7 +13,9 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
                                                 a criterion
   code_step.py decide discuss                   ask the user how to rule when the code and the plan disagree; records
                                                 nothing
-  code_step.py asks-done <outcome>...           log the user's answer to each ask[] entry, then run the phase gates
+  code_step.py asks-done [--by <user|session>] <outcome>...
+                                                log the answer to each ask[] entry, then run the phase gates;
+                                                --by session when the session ruled itself, default user
   code_step.py skill-done <pass|fail>          a closing phase's skill returned: mark it done (pass) or stop (fail)
   code_step.py verify                           re-run the phase gates after a failed Automated Verification was fixed
   code_step.py review-again                     dispatch the review loop again on the same diff, after its packet did
@@ -142,7 +144,7 @@ FOLLOW_UP_HINT = ("A follow-up change to a finished plan needs the task text: in
                   "`start --task \"<text>\"`.")
 WAITING_STAGES = ("asks", "impact-coder", "impact-review", "skill", "plan-coder")
 ASKS_DONE_USAGE = ("asks-done needs one outcome per ask: accepted, rejected or modified. Each modified ask needs the "
-                   "user's change after it as `--change \"<text>\"`.")
+                   "user's change after it as `--change \"<text>\"`. `--by user` or `--by session` says who ruled.")
 # The state each guarded verb needs: the stages it may run at, the stop reasons it accepts when the stage is "stopped",
 # and the refusal text when the state is anything else. `start`, `tick` and `resume` run at any stage and are not in
 # the table. A review-loop resumed after the wait cap also counts for review-again.
@@ -1832,7 +1834,7 @@ def present_asks(repo_dir, state, asks):
     if preset_outcome:
         print(f"{len(asks)} review ask(s) answered by the pre-set outcome '{preset_outcome}'. No question to the user:")
         say(repo_dir, "\n".join(["Review asks, answered by the pre-set outcome:", *numbered_ask_lines(asks)]))
-        log_ask_outcomes(repo_dir, state, [preset_outcome] * len(asks))
+        log_ask_outcomes(repo_dir, state, [preset_outcome] * len(asks), "session")
         record_ruled_asks(repo_dir, state, [preset_outcome] * len(asks), [None] * len(asks))
         return apply_asks_or_finish(repo_dir, state, [preset_outcome] * len(asks), [None] * len(asks))
     ask_the_user(repo_dir, state, asks)
@@ -1850,12 +1852,13 @@ def ask_the_user(repo_dir, state, asks):
         f"ask the user about each review ask below in plain text and wait for the answers. Each answer is accepted "
         f"(make the proposed change), rejected (leave the code as it stands) or modified (make the user's change "
         f"instead). Then invoke Skill code with the args `asks-done` and {len(asks)} outcome word(s), in order. After "
-        "a modified outcome, add `--change \"<the user's change text>\"`.",
+        "a modified outcome, add `--change \"<the user's change text>\"`. If the repo's CLAUDE.md hands ask "
+        "decisions to the session, decide each ask yourself instead of asking, and add `--by session` to asks-done.",
         *numbered_ask_lines(asks),
     )
 
 
-def log_ask_outcomes(repo_dir, state, outcomes):
+def log_ask_outcomes(repo_dir, state, outcomes, decided_by="user"):
     module, import_error = load_handback()
     if module is None:
         print(f"code-step: ask outcomes not logged: {import_error}", file=sys.stderr)
@@ -1874,7 +1877,8 @@ def log_ask_outcomes(repo_dir, state, outcomes):
              *phase_args, f"iter={state['iter']}",
              f"gate={item.get('gate', 'code-reviewer')}",
              "disposition=ask", f"class={item.get('class', 'other')}", f"file={path}",
-             f"line={re.sub(r'[^0-9].*', '', line) or '0'}", "actioned=ask", f"ask_outcome={outcome}"], repo_dir)
+             f"line={re.sub(r'[^0-9].*', '', line) or '0'}", "actioned=ask", f"ask_outcome={outcome}",
+             f"ask_decided_by={decided_by}"], repo_dir)
         if logger_code != 0:
             print(f"code-step: ask outcome for finding_id {finding_id} not logged: log-review-finding exited "
                   f"{logger_code}: {script_utils.one_line(logger_output)}", file=sys.stderr)
@@ -1943,15 +1947,18 @@ def split_asks_done_args(args):
 
 
 def command_asks_done(repo_dir, state, args):
-    outcomes, given_changes = split_asks_done_args(args)
-    if len(outcomes) != len(state["asks"]) \
+    outcome_args, decided_by = script_utils.pop_option(args, "--by")
+    if decided_by is None:
+        decided_by = "user"
+    outcomes, given_changes = split_asks_done_args(outcome_args)
+    if decided_by not in ("user", "session") or len(outcomes) != len(state["asks"]) \
             or any(outcome not in ASK_OUTCOMES for outcome in outcomes) or given_changes is None \
             or len(given_changes) != outcomes.count("modified"):
         return emit("stop", ASKS_DONE_USAGE)
 
     remaining_changes = iter(given_changes)
     change_texts = [next(remaining_changes) if outcome == "modified" else None for outcome in outcomes]
-    log_ask_outcomes(repo_dir, state, outcomes)
+    log_ask_outcomes(repo_dir, state, outcomes, decided_by)
     record_ruled_asks(repo_dir, state, outcomes, change_texts)
     apply_asks_or_finish(repo_dir, state, outcomes, change_texts)
 

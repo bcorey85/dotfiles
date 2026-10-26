@@ -86,6 +86,9 @@
 #       from: a full review, an open class member at the round cap, or the
 #       execution gate. Only class may defer. A code-reviewer `fix` row with
 #       actioned=deferred at scope phase or standalone is refused without one.
+#     ask_decided_by=user|session  (optional, ask outcome rows) who ruled on the ask:
+#       the user, or the session itself when the repo hands ask decisions to it.
+#       A ledger build that refuses the field gets the row without it.
 #
 # Every value is sent as a JSON string, except n_findings=null, which is sent as JSON null; `ledger write` types it. The row goes to
 # `ledger write review_run|review_finding`, which adds the date, repo and session,
@@ -327,13 +330,21 @@ payload=$(jq -c '
 write_rc=0
 send_row "$payload" || write_rc=$?
 
-if [ "$write_rc" -eq 2 ] && [[ $writer_stderr == *"field_unknown snapshot"* ]]; then
-  git update-ref -d "$snapshot_ref"
-  echo "note: this ledger build does not store snapshot; the row is logged without it" >&2
-  payload=$(jq -c 'del(.snapshot)' <<< "$payload")
+# An older ledger build refuses a field it does not know. Drop each refused optional field and
+# retry, so the row still lands. The writer names one field per refusal, so allow one retry per field.
+for _retry in 1 2; do
+  [ "$write_rc" -eq 2 ] || break
+  refused_field=""
+  for optional_field in snapshot ask_decided_by; do
+    [[ $writer_stderr == *"field_unknown $optional_field"* ]] && refused_field=$optional_field
+  done
+  [ -n "$refused_field" ] || break
+  [ "$refused_field" != snapshot ] || git update-ref -d "$snapshot_ref"
+  echo "note: this ledger build does not store $refused_field; the row is logged without it" >&2
+  payload=$(jq -c --arg f "$refused_field" 'del(.[$f])' <<< "$payload")
   write_rc=0
   send_row "$payload" || write_rc=$?
-fi
+done
 
 [ -z "$writer_stderr" ] || printf '%s\n' "$writer_stderr" >&2
 [ "$write_rc" -eq 0 ] || exit "$write_rc"

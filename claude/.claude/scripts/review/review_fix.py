@@ -18,9 +18,10 @@ renders the packet, logs the rows, posts the Aikido replies, and prints what the
       effect: posted replies, logged escapes and the nvim-jump are kept in the state. Two dispatches that return the
       same text are two runs.
   review_fix.py escape --escape "..."...   log escape rows from the saved packet state (fix, repeatable)
-  review_fix.py asks-done <outcome>...   one outcome per ask, in order: accepted | rejected | modified, optional
+  review_fix.py asks-done [--by <user|session>] <outcome>...
+                                         one outcome per ask, in order: accepted | rejected | modified, optional
                                          ":<one line note>" after it, accepted and not stored. Logs one row per ask,
-                                         once.
+                                         once. --by session when the session ruled on the asks itself; default user.
   review_fix.py decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>" [--plan <path>]
                                          Only --by user is the user's own word.
   review_fix.py decide discuss          print the decide commands for a plan-impact ruling and record nothing.
@@ -277,7 +278,8 @@ def present_packet_asks(packet, state):
     lines = [
         f"The script ran nvim-jump for all asks ({state['jumped']}). Do not run it again.",
         "Present each ask below with its question and its proposed change, and wait for the user's direction. "
-        "Never auto-fix an ask.",
+        "Never auto-fix an ask. If the repo's CLAUDE.md hands ask decisions to the session, decide each ask "
+        "yourself and add `--by session` to asks-done; otherwise wait for the user.",
         f"After the user answers, run once: python3 ~/.claude/scripts/review/review_fix.py asks-done "
         f"<outcome> x{len(asks)}  (accepted: make the proposed change | rejected: leave the code as it stands | "
         "modified: make the user's change instead; optional ':<one line note>', accepted and not stored)",
@@ -560,14 +562,15 @@ def is_plan_impact_ask(item):
     return any(str(item.get(key) or "").lstrip().startswith(PLAN_IMPACT_PREFIX) for key in ("finding", "question"))
 
 
-def log_ask_outcome(state, item, outcome, finding_id):
+def log_ask_outcome(state, item, outcome, finding_id, decided_by="user"):
     """(exit code, output) of the outcome row's log call."""
     path, line = split_location(item.get("file_line") or "-")
     return run_command(["bash", str(CLAUDE_DIR / "skills/review/log-review-finding"), "kind=finding",
                         f"finding_id={finding_id}", f"branch={state['branch']}",
                         f"lane={state['lane']}", f"scope={state['scope']}", f"iter={state['iter']}",
                         f"gate={item['gate']}", "disposition=ask", f"class={item['class']}", f"file={path}",
-                        f"line={line}", "actioned=ask", f"ask_outcome={outcome}"])
+                        f"line={line}", "actioned=ask", f"ask_outcome={outcome}",
+                        f"ask_decided_by={decided_by}"])
 
 
 def read_outcomes(argv, asks):
@@ -581,7 +584,7 @@ def read_outcomes(argv, asks):
     return outcomes
 
 
-def log_fix_ask_outcomes(state, asks, outcomes):
+def log_fix_ask_outcomes(state, asks, outcomes, decided_by="user"):
     """(ask counts of this call: plan-impact asks skipped, outcomes logged under a new finding_id; failure lines). An
     ask that is logged or skipped joins asks_logged and is never tried again."""
     logged = state.setdefault("asks_logged", [])
@@ -596,7 +599,7 @@ def log_fix_ask_outcomes(state, asks, outcomes):
             continue
 
         finding_id, new_finding_id_note = handback.ask_outcome_finding_id(item)
-        code, output = log_ask_outcome(state, item, outcome, finding_id)
+        code, output = log_ask_outcome(state, item, outcome, finding_id, decided_by)
         if code == 0:
             logged.append(index)
             if new_finding_id_note:
@@ -615,15 +618,22 @@ def command_asks_done(argv):
         return print_action("done", "The ask outcomes were already logged. Run nothing more.")
     if state.get("stage") != "asks" or not asks:
         raise UsageError("no asks are waiting. `asks-done` follows a packet that carried ask[] entries.")
-    outcomes = read_outcomes(argv, asks)
+    outcome_words, decided_by = script_utils.pop_option(argv, "--by")
+    if decided_by is None:
+        decided_by = "user"
+    if decided_by not in ("user", "session"):
+        raise UsageError(f"asks-done --by needs user or session, not {decided_by!r}")
+    outcomes = read_outcomes(outcome_words, asks)
 
-    ask_counts, failures = log_fix_ask_outcomes(state, asks, outcomes)
+    ask_counts, failures = log_fix_ask_outcomes(state, asks, outcomes, decided_by)
     if not failures:
         state["stage"] = "done"
     save_fix_state(state)
 
     rows_logged = sum(1 for index in state["asks_logged"] if not is_plan_impact_ask(asks[index]))
     summary = f"Logged {rows_logged} of {len(asks)} ask outcome row(s)."
+    if decided_by == "session":
+        summary += " The session ruled, not the user."
     if ask_counts[PLAN_IMPACT]:
         summary += f" {ask_counts[PLAN_IMPACT]} plan-impact ask(s) are not logged as findings."
     if ask_counts[NEW_FINDING_ID]:

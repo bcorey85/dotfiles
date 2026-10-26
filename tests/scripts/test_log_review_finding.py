@@ -121,6 +121,33 @@ class ReviewSnapshotTest(unittest.TestCase):
         self.assertIn("does not store snapshot", done.stderr)
         self.assertNotIn("field_unknown", done.stderr)
 
+    def test_a_ledger_build_without_ask_decided_by_gets_the_row_without_it(self):
+        done = self.log([*FINDING_ARGS, "ask_decided_by=session"],
+                        extra_env={"FAKE_LEDGER_UNKNOWN_FIELDS": "ask_decided_by"})
+
+        (finding_row,) = fake_ledger.recorded_rows(self.ledger_env, "review_finding")
+        self.assertNotIn("ask_decided_by", finding_row)
+        self.assertIn("does not store ask_decided_by", done.stderr)
+        self.assertNotIn("field_unknown", done.stderr)
+
+    def test_a_ledger_build_without_either_field_gets_the_row_without_both_whatever_order_it_names_them(self):
+        for refused in ("snapshot,ask_decided_by", "ask_decided_by,snapshot"):
+            with self.subTest(refused):
+                self.make_dirty()
+                rows_before = len(fake_ledger.recorded_rows(self.ledger_env, "review_finding"))
+
+                refusing_ledger = {"FAKE_LEDGER_UNKNOWN_FIELDS": refused}
+                done = self.log([*FINDING_ARGS, "ask_decided_by=user"], extra_env=refusing_ledger)
+
+                new_row = fake_ledger.recorded_rows(self.ledger_env, "review_finding")[rows_before]
+                self.assertNotIn("ask_decided_by", new_row)
+                self.assertNotIn("snapshot", new_row)
+                self.assertNotIn("field_unknown", done.stderr)
+                self.assertEqual(self.snapshot_refs(), [])
+                self.git("checkout", "-q", "--", ".")
+                self.git("clean", "-fdq")
+                self.git("reset", "-q")
+
     def test_a_new_snapshot_prunes_the_refs_older_than_90_days(self):
         old_date = {"GIT_COMMITTER_DATE": "2020-01-01T00:00:00Z"}
         tree = self.git("rev-parse", "HEAD^{tree}")

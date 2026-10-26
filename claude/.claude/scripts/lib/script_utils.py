@@ -295,6 +295,17 @@ def words_of_arguments(arguments):
     return arguments[0].split() if len(arguments) == 1 else list(arguments)
 
 
+def pop_option(arguments, flag):
+    """(the arguments without the first `flag` and its value, that value). The value is None when `flag` is not
+    given and "" when `flag` is the last word."""
+    arguments = list(arguments)
+    if flag not in arguments:
+        return arguments, None
+    position = arguments.index(flag)
+    value = arguments[position + 1] if position + 1 < len(arguments) else ""
+    return arguments[:position] + arguments[position + 2:], value
+
+
 def strip_flag_values(command, flags):
     """`command` with every `flag value` and `flag=value` pair of the named flags replaced by one space. A flag
     matches as a whole word. Its value is the next word, or the next quoted text, unless that word starts with a dash:

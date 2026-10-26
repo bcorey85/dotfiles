@@ -10,8 +10,8 @@ Identical configurations reached by different paths are explored once. The verdi
 that reaches it. A hand-back starts a new segment: the user's answer (decide, asks-done, resume, start) is one
 more entry verb, so loops that only close through a user answer are not counted as stuck.
 
-A hand-back must also leave the user a way out. Every command a hand-back names (in its output or in the say.md it
-points to) is run on a copy of the repo, and none may be refused.
+A hand-back must also leave the user a way out. Every command a hand-back names (in its output, or in the say.md and
+question.md it points to) is run on a copy of the repo, and none may be refused.
 """
 import atexit
 import collections
@@ -514,8 +514,10 @@ def named_commands(text):
 
 
 def saved_say_text(repo):
-    say_file = repo / ".git/code-step/say.md"
-    return say_file.read_text() if say_file.exists() else ""
+    # say.md, then question.md: the two files a hand-back points to.
+    state_folder = repo / ".git/code-step"
+    saved_files = [state_folder / "say.md", state_folder / "question.md"]
+    return "".join(saved_file.read_text() for saved_file in saved_files if saved_file.exists())
 
 
 def commit_everything(repo):

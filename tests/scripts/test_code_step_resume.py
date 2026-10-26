@@ -6,6 +6,8 @@ became. The fixtures are those of test_code_step.py; its own tests run there, no
 
 run: python3 -m unittest test_code_step_resume
 """
+import json
+import pathlib
 import shutil
 import time
 
@@ -496,6 +498,52 @@ class ResumeTest(base.CodeStepTest):
         self.assertIn("tick 1", self.said())
         self.assertIn("start --restart", self.said())
         self.assertEqual(before, self.state_bytes())
+
+    def end_the_main_sessions_turn(self):
+        # The main session's Stop event runs the say-hook while the /code fork still works.
+        stop_event = json.dumps({"cwd": str(self.repo), "hook_event_name": "Stop"})
+        base.run(self.repo, self.env, "say-hook", stdin=stop_event)
+
+    def question_file_named_in(self, out):
+        ask_line = next(line for line in out.splitlines() if line.startswith("The question for the user is in "))
+        question_path = ask_line.removeprefix("The question for the user is in ").removesuffix(". Hand back.")
+        return pathlib.Path(question_path)
+
+    def test_the_question_for_a_stopped_coder_outlives_the_main_sessions_stop_hook(self):
+        self.stop_the_coder_on_a_blocked_report()
+
+        out = self.step("resume")
+        self.end_the_main_sessions_turn()
+
+        question_text = self.question_file_named_in(out).read_text()
+        self.assertIn("## Question for the user", question_text)
+        self.assertIn("agent a1 with SendMessage", question_text)
+
+    def test_resume_with_the_users_answer_from_a_stopped_coder_carries_the_answer_to_the_question(self):
+        self.stop_the_coder_on_a_blocked_report()
+        self.end_the_main_sessions_turn()
+        before = self.state_bytes()
+
+        out = self.step("resume", "use the v2 endpoint")
+        self.end_the_main_sessions_turn()
+
+        self.assertIn("ACTION: ask-user", out)
+        question_text = self.question_file_named_in(out).read_text()
+        answer_step = "The user answered: use the v2 endpoint. Send that answer to agent a1 with SendMessage"
+        self.assertIn(answer_step, question_text)
+        self.assertEqual(before, self.state_bytes())
+
+    def test_the_next_verb_clears_the_answered_question(self):
+        self.stop_the_coder_on_a_blocked_report()
+        out = self.step("resume")
+        question_file = self.question_file_named_in(out)
+
+        self.step("status")
+        self.assertIn("## Question for the user", question_file.read_text())
+        self.step("resume")
+        self.step("tick", "1")
+
+        self.assertNotIn("## Question for the user", question_file.read_text())
 
     # ---------- the wait caps ----------
 

@@ -83,6 +83,7 @@ from code_step_core import (
     awaits_resumed_coder,
     awaits_resumed_review,
     branch_label,
+    clear_question,
     clear_say,
     committed_since,
     dispatch_since,
@@ -103,7 +104,6 @@ from code_step_core import (
     resumed_agent_pending_stop,
     save_state,
     say,
-    say_file,
     script_command,
     sent_message_since,
     session_pin,
@@ -1774,14 +1774,14 @@ def ask_the_user(repo_dir, state, asks):
         return
     state["stage"] = "asks"
     save_state(repo_dir, state)
-    say(repo_dir, "\n".join([
-        "## Question for the user", "",
-        f"Main session: ask the user about each review ask below in plain text and wait for the answers. Each answer "
-        f"is accepted (make the proposed change), rejected (leave the code as it stands) or modified (make the user's "
-        f"change instead). Then invoke Skill code with the args `asks-done` and {len(asks)} outcome word(s), in order. "
-        "After a modified outcome, add `--change \"<the user's change text>\"`.", "",
-        *numbered_ask_lines(asks)]))
-    emit("ask-user", f"The question for the user is in {say_file(repo_dir)}. Hand back.")
+    ask_user(
+        repo_dir,
+        f"ask the user about each review ask below in plain text and wait for the answers. Each answer is accepted "
+        f"(make the proposed change), rejected (leave the code as it stands) or modified (make the user's change "
+        f"instead). Then invoke Skill code with the args `asks-done` and {len(asks)} outcome word(s), in order. After "
+        "a modified outcome, add `--change \"<the user's change text>\"`.",
+        *numbered_ask_lines(asks),
+    )
 
 
 def log_ask_outcomes(repo_dir, state, outcomes):
@@ -1950,16 +1950,23 @@ def resume_route(repo_dir, state):
     return STAGE_ROUTES.get(stage, "ask-unknown")
 
 
-def ask_about_stopped_coder(repo_dir, state):
+def ask_about_stopped_coder(repo_dir, state, answer=None):
+    # With the user's answer from `resume <answer>`, the question tells the main session to send that answer on.
     phase_tick = (f" If the user says Phase {state['phase']} is done, run `tick {state['phase']}`."
                  if state.get("plan") and state.get("phase") else "")
     report = stopped_coder_report(repo_dir, state)
     restart_instruction_text = restart_instruction(state)
+    coder_id = state["resumableCoderId"]
+    if answer is None:
+        send_step = f"Send the user's answer to agent {coder_id} with SendMessage, then run resume."
+    else:
+        send_step = (f"The user answered: {answer}. Send that answer to agent {coder_id} with SendMessage, then "
+                     "run resume.")
+
     ask_user(
         repo_dir,
-        f"The coder stopped and waits for the user's answer. Its report: {report}. Send the user's "
-        f"answer to agent {state['resumableCoderId']} with SendMessage, then run resume.{phase_tick} To dispatch a "
-        f"new coder for the phase, {restart_instruction_text}.",
+        f"The coder stopped and waits for the user's answer. Its report: {report}. {send_step}{phase_tick} To "
+        f"dispatch a new coder for the phase, {restart_instruction_text}.",
     )
 
 
@@ -2043,14 +2050,18 @@ RESUME_HANDLERS = {
 def command_resume(args):
     repo_dir = repo_root_or_exit()
     os.chdir(repo_dir)
-    if args:
-        return refuse("resume takes no arguments.", script_command(RESUME_VERB),
-                      notes=("For new work, use `start --task \"<text>\"`.",))
-
     state = load_state(repo_dir)
     route = resume_route(repo_dir, state)
+    # Only a coder that waits for the user's answer takes one: `resume <answer>`.
+    if args and route != "ask-coder":
+        return refuse("resume takes no arguments here: no stopped coder waits for an answer.",
+                      script_command(RESUME_VERB), notes=("For new work, use `start --task \"<text>\"`.",))
+
     if state is not None and (state["stage"] == "stopped" or state["stage"] in WAITING_STAGES):
         clear_say(repo_dir)
+
+    if args:
+        return ask_about_stopped_coder(repo_dir, state, answer=" ".join(args))
     RESUME_HANDLERS.get(route, ask_about_unrecorded_state)(repo_dir, state)
 
 
@@ -2075,6 +2086,7 @@ VERB_USAGE = ("usage: code_step.py start|resume|decide|asks-done|skill-done|veri
 
 
 def run_verb(verb, handler, args):
+    clear_question(repo_root_or_exit())
     if verb in VERBS_THAT_CLEAR_SAY:
         clear_say(repo_root_or_exit())
     try:

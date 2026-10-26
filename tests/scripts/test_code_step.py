@@ -258,8 +258,10 @@ class CodeStepTest(unittest.TestCase):
         self.assertTrue(entries[0]["done"])
 
     def said(self):
-        say_file = self.repo / ".git/code-step/say.md"
-        return say_file.read_text() if say_file.exists() else ""
+        # The say text, then the question for the user: the two files the /code skill hands back.
+        state_folder = self.repo / ".git/code-step"
+        saved_files = [state_folder / "say.md", state_folder / "question.md"]
+        return "".join(saved_file.read_text() for saved_file in saved_files if saved_file.exists())
 
     def plan_text(self):
         return (self.repo / self.plan).read_text()
@@ -4268,21 +4270,21 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotEqual(first_run, self.state()["runId"])
         self.assertEqual([("d1", "sess-2")], [(dispatch["id"], dispatch["session_id"]) for dispatch in dispatches])
 
-    # ---------- the ask-user action names the real say file ----------
+    # ---------- the ask-user action names the real question file ----------
 
-    def real_say_file(self):
-        return (self.repo / ".git/code-step/say.md").resolve()
+    def real_question_file(self):
+        return (self.repo / ".git/code-step/question.md").resolve()
 
-    def test_the_ask_user_action_for_a_plan_impact_names_the_real_say_file(self):
+    def test_the_ask_user_action_for_a_plan_impact_names_the_real_question_file(self):
         report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
 
         out = self.coder_round(report)
 
         self.assertIn("ACTION: ask-user", out)
-        self.assertIn(f"The question for the user is in {self.real_say_file()}. Hand back.", out)
-        self.assertIn("## Question for the user", self.real_say_file().read_text())
+        self.assertIn(f"The question for the user is in {self.real_question_file()}. Hand back.", out)
+        self.assertIn("## Question for the user", self.real_question_file().read_text())
 
-    def test_the_ask_user_action_for_review_asks_names_the_real_say_file(self):
+    def test_the_ask_user_action_for_review_asks_names_the_real_question_file(self):
         self.coder_round()
         asks = '  - {question: "q1", change: "c1", file_line: "backend/src/orders.ts:1", gate: code-reviewer}'
         self.hook("review-loop", f"status: converged\niter: 1\nfixed: []\nask (for the user):\n{asks}")
@@ -4290,7 +4292,7 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("after-review")
 
         self.assertIn("ACTION: ask-user", out)
-        self.assertIn(f"The question for the user is in {self.real_say_file()}. Hand back.", out)
+        self.assertIn(f"The question for the user is in {self.real_question_file()}. Hand back.", out)
 
     # ---------- a dispatch whose Agent call never left ----------
 

@@ -12,6 +12,7 @@ import shutil
 import time
 
 import plan_format
+import reviewed_tree
 import script_utils
 from code_step_core import (
     INSTALLED_COMMAND,
@@ -364,7 +365,10 @@ def mark_review_gate_clean(repo_dir, state):
         return False
     gate_dir = pathlib.Path.home() / ".claude" / "state" / "review-gate"
     gate_dir.mkdir(parents=True, exist_ok=True)
-    (gate_dir / (session_pin() or state.get("sessionId") or "unknown")).write_text("clean\n")
+    committing_session = session_pin() or state.get("sessionId") or "unknown"
+    (gate_dir / committing_session).write_text("clean\n")
+    # The tree the loop reviewed: a later coder dispatch that edits nothing leaves it unchanged, so its commit passes.
+    reviewed_tree.record_reviewed(committing_session, repo_dir)
     return True
 
 

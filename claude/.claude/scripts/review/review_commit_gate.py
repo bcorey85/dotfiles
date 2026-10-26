@@ -33,6 +33,15 @@ take a value, so `commit` anywhere after it counts. A command shlex cannot read 
 option-like words with an optional value each, then `commit` appears in it.
 The session stays dirty; a later commit that ships code is denied again.
 
+A dirty session still commits in three more cases, each checked against something a subagent cannot write:
+  - the user's latest prompt in the main transcript starts with `[no-review]` (the user ordered this turn's commits
+    without review; text in a task notification or a tool result never counts)
+  - the commit concludes a merge (the repo it commits in has a MERGE_HEAD)
+  - the working tree of the repo it commits in is the tree a converged review covered (reviewed_tree.py), so work
+    that converged in /code's review-loop, or in /review, commits after a later coder dispatch that edited nothing.
+That repo is the one `git -C <dir>` names (every -C joined, relative to the hook input's cwd), else the cwd; a
+command with `--git-dir` or `--work-tree` has none and gets no credit.
+
 State: ~/.claude/state/review-gate/<session>. Hook JSON in, one permissionDecision line out, exit 0. On an internal
 error PreToolUse asks the user; PostToolUse stays silent.
 """
@@ -45,6 +54,7 @@ import sys
 _SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path[:0] = [_SCRIPT_DIR, os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
 import hook_input
+import reviewed_tree
 import script_utils
 from hook_input import EMPTY_INPUT, JqError, jq_field, prune_old_state_files
 from shell_command import parse_simple_commands, redirection_writes_file, split_simple_commands
@@ -58,6 +68,7 @@ OPTION_VALUE = r"""(?:"[^"]*"|'[^']*'|\$\([^()]*\)|`[^`]*`|\S+)"""
 UNREADABLE_GIT_THEN_COMMIT = re.compile(r"\bgit(?:[ \t]+-\S+(?:[ \t]+" + OPTION_VALUE + r")?)*[ \t]+commit\b")
 MARK = re.compile(r"review-gate-mark[ \t\n\r\f\v]+(clean|dirty)")
 GIT_TIMEOUT_SECONDS = 3
+NO_REVIEW_MARKER = "[no-review]"
 DOCS_FOLDER = "docs/"
 NOTES_SUFFIX = ".md"
 # Characters a shell or git would expand in a pathspec, and a newline.
@@ -314,14 +325,92 @@ def on_post_tool_use(root, state_file):
             handle.write("dirty\n")
 
 
-def check_commit(command, root, state_file):
-    """Deny a commit while the session is dirty, unless it ships only notes."""
+def prompt_text(record):
+    """The text of a transcript record when it is a prompt the user typed in the main session, else None. A tool
+    result, a meta record (command expansions, reminders) and a subagent record are not the user's words."""
+    if record.get("type") != "user" or record.get("isMeta") or record.get("isSidechain"):
+        return None
+    content = (record.get("message") or {}).get("content")
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list) or not all(isinstance(block, dict) and block.get("type") == "text"
+                                                for block in content):
+        return None
+    return "".join(str(block.get("text", "")) for block in content)
+
+
+def user_ordered_no_review(root):
+    """True when the user's latest prompt in the main transcript starts with the no-review marker. A task
+    notification or a peer message starts with a tag, so a subagent's report cannot carry the marker."""
+    transcript_path = jq_field(root, "transcript_path")
+    if not transcript_path:
+        return False
+    latest_prompt = None
+    try:
+        with open(transcript_path, encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                try:
+                    record = json.loads(line)
+                except ValueError:
+                    continue
+                text = prompt_text(record) if isinstance(record, dict) else None
+                if text is not None and text.strip():
+                    latest_prompt = text
+    except OSError:
+        return False
+    return latest_prompt is not None and latest_prompt.lstrip().startswith(NO_REVIEW_MARKER)
+
+
+def commit_repo_dir(command, cwd):
+    """The directory a `git commit` in the command runs in: the cwd, moved by each `git -C <dir>` before the
+    subcommand. None when the command cannot be read, holds no commit, or uses an option that moves the repo
+    (--git-dir, --work-tree) the gate does not follow."""
+    if not cwd:
+        return None
+    try:
+        simple_commands = split_simple_commands(LINE_CONTINUATION.sub("", command))
+    except ValueError:
+        return None
+    for words in simple_commands:
+        if posixpath.basename(words[0]) != "git":
+            continue
+        directory = cwd
+        index = 1
+        while index < len(words) and words[index].startswith("-"):
+            option = words[index]
+            if option == "-C" and index + 1 < len(words):
+                directory = os.path.join(directory, words[index + 1])
+                index += 2
+            elif is_known_git_global_option(option) and not option.startswith(("--git-dir", "--work-tree")):
+                index += 1
+            else:
+                return None
+        if index < len(words) and words[index] == "commit":
+            return os.path.normpath(directory)
+    return None
+
+
+def concludes_merge(repo_dir):
+    """True when the repo has a merge in progress, so the commit is the merge commit."""
+    merge_head = script_utils.git_output(repo_dir, "rev-parse", "-q", "--verify", "MERGE_HEAD",
+                                         timeout=GIT_TIMEOUT_SECONDS)
+    return bool(merge_head)
+
+
+def check_commit(command, root, state_file, session):
+    """Deny a commit while the session is dirty, unless the user ordered it without review, it concludes a merge,
+    the tree is the one a converged review covered, or it ships only notes."""
     try:
         with open(state_file, "rb") as handle:
             current = handle.read().decode("utf-8", "replace").rstrip("\n")
     except OSError:
         return
     if current != "dirty":
+        return
+    if user_ordered_no_review(root):
+        return
+    repo_dir = commit_repo_dir(command, jq_field(root, "cwd"))
+    if repo_dir and (concludes_merge(repo_dir) or reviewed_tree.is_reviewed(session, repo_dir)):
         return
     if ships_only_notes(command, jq_field(root, "cwd")):
         return
@@ -334,7 +423,7 @@ def check_commit(command, root, state_file):
     )
 
 
-def apply_mark(mark, session, state_file):
+def apply_mark(mark, session, state_file, cwd):
     """Record `review-gate-mark clean|dirty`. `clean` is denied without a converged or deferred hand-back."""
     if mark == "clean":
         # Imported here, not at load: a missing module is an internal error on a `clean` mark only, and the
@@ -348,17 +437,19 @@ def apply_mark(mark, session, state_file):
             )
     with open(state_file, "w") as handle:
         handle.write(mark + "\n")
+    if mark == "clean" and cwd:
+        reviewed_tree.record_reviewed(session, cwd)
 
 
 def on_pre_tool_use(root, session, state_file):
     """A commit command is checked and never also marks; any other command may mark."""
     command = jq_field(root, "tool_input", "command")
     if is_commit_command(command):
-        check_commit(command, root, state_file)
+        check_commit(command, root, state_file, session)
         return
     marked = MARK.search(command)
     if marked:
-        apply_mark(marked.group(1), session, state_file)
+        apply_mark(marked.group(1), session, state_file, jq_field(root, "cwd"))
 
 
 def run(raw, state):

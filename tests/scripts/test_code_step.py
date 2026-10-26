@@ -146,7 +146,12 @@ class CodeStepTest(unittest.TestCase):
         shutil.copytree(self.base_repo, self.repo, symlinks=True)
         self.home = self.tmp / "home"
         self.home.mkdir()
+        self.jump_log = self.tmp / "jump.log"
+        self.nvim_jump = self.tmp / "nvim-jump"
+        self.nvim_jump.write_text(f'#!/usr/bin/env bash\necho "$@" >> {self.jump_log}\n')
+        self.nvim_jump.chmod(0o755)
         self.env = dict(os.environ, CODE_STEP_CLAUDE_DIR=str(self.claude), **self.GIT_IDENTITY,
+                        CODE_STEP_NVIM_JUMP=str(self.nvim_jump),
                         HOME=str(self.home), CODE_STEP_WAIT_SECONDS="0", CLAUDE_CODE_SESSION_ID=self.SESSION,
                         HANDBACK_STORE_DIR=str(self.tmp / "handback-store"),
                         PYTHONPATH=str(HANDBACK_SCRIPT.parent))
@@ -1286,6 +1291,22 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("asks-done", "rejected")
         self.assertNotIn("AGENT: coder", out)
         self.assertIn("Phase 1 marked done", out)
+
+    def test_review_asks_jump_through_the_set_nvim_jump_and_never_the_one_on_path(self):
+        path_folder = self.tmp / "bin"
+        path_folder.mkdir()
+        path_jump_log = self.tmp / "path-jump.log"
+        path_jump = path_folder / "nvim-jump"
+        path_jump.write_text(f'#!/usr/bin/env bash\necho "$@" >> {path_jump_log}\n')
+        path_jump.chmod(0o755)
+        self.env["PATH"] = f"{path_folder}{os.pathsep}{self.env['PATH']}"
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+
+        self.step("after-review")
+
+        self.assertIn("--note keep? backend/src/orders.ts:2", self.jump_log.read_text())
+        self.assertFalse(path_jump_log.exists())
 
     def test_preset_ask_outcome_records_and_applies_before_finishing(self):
         self.env["CODE_STEP_ASKS_OUTCOME"] = "accepted"

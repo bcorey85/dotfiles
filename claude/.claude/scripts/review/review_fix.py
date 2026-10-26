@@ -273,16 +273,19 @@ def present_packet_asks(packet, state):
     save_fix_state(state)
     lines = [
         f"The script ran nvim-jump for all asks ({state['jumped']}). Do not run it again.",
-        "Present each ask below with its question and wait for the user's direction. Never auto-fix an ask.",
+        "Present each ask below with its question and its proposed change, and wait for the user's direction. "
+        "Never auto-fix an ask.",
         f"After the user answers, run once: python3 ~/.claude/scripts/review/review_fix.py asks-done "
-        f"<outcome> x{len(asks)}  (accepted | rejected | modified, optional ':<one line note>', accepted and not "
-        "stored)",
+        f"<outcome> x{len(asks)}  (accepted: make the proposed change | rejected: leave the code as it stands | "
+        "modified: make the user's change instead; optional ':<one line note>', accepted and not stored)",
         gate_mark_line(),
     ]
     for number, item in enumerate(asks, 1):
         ask_class = item["class"] + (f" (was {item['class_raw']})" if item.get("class_raw") else "")
         lines.append(f"{number}. {item.get('file_line') or 'no file:line'}  [{item['gate']}/{ask_class}]")
         lines.append(f"   {item['question']}")
+        if item.get("change"):
+            lines.append(f"   Proposed change: {item['change']}")
     print_action("present-asks", *lines)
 
 

@@ -864,6 +864,10 @@ def start_closing_phase(repo_dir, plan_rel, lane, modifier, entry, skill, sectio
              "modifier": modifier, "risk": entry["risk"], "title": entry["title"], "gateCommands": [], "behavior": [],
              "baseline": file_hashes(repo_dir), "onlyPhase": only_phase, "sessionId": session_pin()}
     save_state(repo_dir, state)
+    emit_closing_skill(entry["number"], entry["title"], skill, section)
+
+
+def emit_closing_skill(number, title, skill, section):
     verdict_step = ("run `python3 ~/.claude/scripts/code/code_step.py skill-done pass` when the phase's Success "
                    "Criteria hold, or `skill-done fail` when they do not (for the Verify pass, any MISSING "
                    "criterion fails it)")
@@ -874,7 +878,7 @@ def start_closing_phase(repo_dir, plan_rel, lane, modifier, entry, skill, sectio
     )
     emit(
         "invoke-skill",
-        f"Phase {entry['number']} ({entry['title']}) is a closing phase. Invoke the Skill tool with "
+        f"Phase {number} ({title}) is a closing phase. Invoke the Skill tool with "
         f"`{skill}`; a coder is not dispatched.",
         *section_lines,
         f"The skill needs judgment. When it returns, {verdict_step}.",
@@ -1250,6 +1254,16 @@ def prior_issues(accepted_asks):
 def ask_text(item):
     # The shared reader copies a finding into the question (and the reverse) when only one is given: show it once.
     return script_utils.joined_distinct([str(item.get("finding") or ""), str(item.get("question") or "")])
+
+
+def numbered_ask_lines(asks):
+    # Each ask with the one change an accepted answer makes.
+    lines = []
+    for number, item in enumerate(asks, 1):
+        lines.append(f"{number}. {ask_text(item)}")
+        if item.get("change"):
+            lines.append(f"   Proposed change: {item['change']}")
+    return lines
 
 
 # ---------- plan impact ----------
@@ -1760,8 +1774,7 @@ def present_asks(repo_dir, state, asks):
         return ask_the_user(repo_dir, state, asks)
     if preset_outcome:
         print(f"{len(asks)} review ask(s) answered by the pre-set outcome '{preset_outcome}'. No question to the user:")
-        say(repo_dir, "Review asks, answered by the pre-set outcome:\n" + "\n".join(
-            f"{n + 1}. {ask_text(item)}" for n, item in enumerate(asks)))
+        say(repo_dir, "\n".join(["Review asks, answered by the pre-set outcome:", *numbered_ask_lines(asks)]))
         log_ask_outcomes(repo_dir, state, [preset_outcome] * len(asks))
         return apply_asks_or_finish(repo_dir, state, [preset_outcome] * len(asks), [None] * len(asks))
     ask_the_user(repo_dir, state, asks)
@@ -1777,9 +1790,10 @@ def ask_the_user(repo_dir, state, asks):
     say(repo_dir, "\n".join([
         "## Question for the user", "",
         f"Main session: ask the user about each review ask below in plain text and wait for the answers. Each answer "
-        f"is accepted, rejected or modified. Then invoke Skill code with the args `asks-done` and {len(asks)} outcome "
-        "word(s), in order. After a modified outcome, add `--change \"<the user's change text>\"`.", "",
-        *[f"{n + 1}. {ask_text(item)}" for n, item in enumerate(asks)]]))
+        f"is accepted (make the proposed change), rejected (leave the code as it stands) or modified (make the user's "
+        f"change instead). Then invoke Skill code with the args `asks-done` and {len(asks)} outcome word(s), in order. "
+        "After a modified outcome, add `--change \"<the user's change text>\"`.", "",
+        *numbered_ask_lines(asks)]))
     emit("ask-user", f"The question for the user is in {say_file(repo_dir)}. Hand back.")
 
 
@@ -1817,13 +1831,15 @@ def log_ask_outcomes(repo_dir, state, outcomes):
 
 
 def asks_coder_prompt(accepted_asks):
-    lines = ["Apply these review asks. The user accepted them. Change only what they name.", ""]
+    lines = ["Apply these review asks. The user accepted them. Make the change each one names and nothing else.", ""]
     for number, (item, outcome, change_text) in enumerate(accepted_asks, 1):
         location = item.get("file_line", "")
         lines.append(f"{number}. [{outcome}] {ask_text(item)}"
                      + (f" ({location})" if location else ""))
         if change_text:
             lines.append(f"   The user's change: {change_text}")
+        elif item.get("change"):
+            lines.append(f"   The proposed change: {item['change']}")
     lines += [
         "",
         "Run the typecheck, and lint and tests for only the files you changed, once, after all edits. "
@@ -1963,16 +1979,15 @@ def ask_about_stopped_coder(repo_dir, state):
 def ask_about_unrecorded_state(repo_dir, state):
     # The fallback stop for a saved state that no route covers: it prints the state and the command that goes on.
     stage = state["stage"]
+    if stage == "skill":
+        return resume_closing_skill(repo_dir, state)
+
     stop_reason = state.get("stopReason")
     saved = f"The run is at stage {stage}" + (f" with stop reason {stop_reason}." if stop_reason else ".")
     guarded_verb = next((verb for verb, guard in STAGE_GUARDS.items()
                         if stage in guard["stages"] and stop_reason in guard.get("stopReasons", ())), None)
     if guarded_verb:
         next_step = f"When the cause is fixed, run `{guarded_verb}`."
-    elif stage == "skill":
-        skill = plan_format.closing_skill(state.get("title", ""))
-        next_step = (f"Invoke the Skill tool with `{skill}`. When it returns, run `skill-done pass` when the phase's "
-                    "Success Criteria hold, or `skill-done fail` when they do not.")
     else:
         restart_instruction_text = restart_instruction(state)
         status_command = script_command("status")
@@ -1980,6 +1995,14 @@ def ask_about_unrecorded_state(repo_dir, state):
             f"Run `{status_command}` to read the saved state. To start the phase over, {restart_instruction_text}."
         )
     ask_user(repo_dir, f"{saved} {next_step}")
+
+
+def resume_closing_skill(repo_dir, state):
+    # A closing phase that outlives its session: a resume invokes its skill again, with the phase's plan section.
+    plan_lines = (repo_dir / state["plan"]).read_text().split("\n")
+    section = plan_format.phase_text(plan_lines, state["phase"])
+    skill = plan_format.closing_skill(state["title"])
+    emit_closing_skill(state["phase"], state["title"], skill, section)
 
 
 def resume_start(repo_dir, state):

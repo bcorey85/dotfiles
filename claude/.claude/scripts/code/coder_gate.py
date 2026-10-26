@@ -27,7 +27,6 @@ import os
 import pathlib
 import re
 import shlex
-import subprocess
 import sys
 import time
 
@@ -385,15 +384,14 @@ def run_commands(gate):
             skipped.append(command)
             continue
 
-        try:
-            finished = subprocess.run(filled_command, shell=True, cwd=gate["repoRoot"], env=environment,
-                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                      timeout=COMMAND_TIMEOUT_SECONDS)
-        except subprocess.TimeoutExpired:
-            failures.append((command, f"timeout after {COMMAND_TIMEOUT_SECONDS} s", ""))
+        code, stdout, stderr = script_utils.run_process(filled_command, gate["repoRoot"], env=environment,
+                                                        timeout=COMMAND_TIMEOUT_SECONDS)
+        output = stdout + stderr
+        if code is None:
+            failures.append((command, f"timeout after {COMMAND_TIMEOUT_SECONDS} s", output))
             continue
-        if finished.returncode != 0:
-            failures.append((command, f"exit {finished.returncode}", finished.stdout))
+        if code != 0:
+            failures.append((command, f"exit {code}", output))
     return failures, skipped
 
 

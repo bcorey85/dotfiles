@@ -31,6 +31,8 @@ In the sealed coder round, the coders that ran their own checks ran path-scoped 
 
 Sonnet coder cache read per dispatch from the weekly token table, and `whole-package-deny` rows per week in the gate log.
 
+Reading, 2026-10-26 intake: BETTER, kept. Sonnet coder cache read per dispatch fell from 5.38 M before to 1.82 M after, across 284 dispatches. Test runs per dispatch held at 0.86 before and 0.89 after. The coder reading-list and hand-back gate edit shipped the same day and reads the same metric, so the two cannot be separated.
+
 ## Back-out
 
 delete the `bash-hook` entry from the Bash PreToolUse list in `settings.json` and the scope sentences in `coder-core`

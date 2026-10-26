@@ -333,13 +333,15 @@ def boundary_decision(state, entries, number):
 def mark_review_gate_clean(repo_dir, state):
     # The review-commit-gate hook reads this file: the review loop ended clean, so the session may commit.
     # Returns False after emitting a stop when the hand-back record shows the loop did not end clean, or when the
-    # shared hand-back reader is not installed. Nothing is written then.
+    # shared hand-back reader is not installed. Nothing is written then. The hand-back is read for the session the
+    # run is pinned to, which launched the review loop; the mark is written for the session that commits.
     module, import_error = load_handback()
     if module is None:
         emit("stop", f"Cannot confirm the review loop ended clean: {import_error}. The review gate is not marked "
              "clean. Tell the user.")
         return False
-    reason = module.false_clean_reason(os.environ.get("CLAUDE_CODE_SESSION_ID"))
+    reviewing_session = state.get("sessionId") or session_pin()
+    reason = module.false_clean_reason(reviewing_session)
     if reason:
         emit("stop", f"The review gate is not marked clean: {reason}. Tell the user.")
         return False

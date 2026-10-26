@@ -3,7 +3,7 @@ type: "Change"
 title: "Code-step wait tests set their own cap so suite load cannot reach it"
 description: "The code-step hand-back cap now reads an optional CODE_STEP_WAIT_MULTIPLE, which defaults to the same three waits; the tests that expect a wait set it to 60, so a slow setup under suite load no longer turns their wait into a cap stop."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T18:55:03-05:00"}
-seq: 10
+seq: 12
 kind: "fix"
 components: ["script/code-step"]
 evidence: ["judgment"]

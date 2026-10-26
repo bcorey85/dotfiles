@@ -167,9 +167,10 @@ class CodeStepTest(unittest.TestCase):
         return subprocess.run([sys.executable, str(HANDBACK_SCRIPT), "hook", kind], env=self.env,
                               input=json.dumps(event), capture_output=True, text=True)
 
-    def launch_the_pending_dispatch(self, agent_id, agent_type):
+    def launch_the_pending_dispatch(self, agent_id, agent_type, session=SESSION):
         # A hand-back counts only from the agent the pending dispatch launched, so a test launches its agent first, as
-        # the Agent call's log hook records it. A dispatch already launched keeps its launch.
+        # the Agent call's log hook records it, from the session that hands back. A dispatch already launched keeps its
+        # launch.
         run_id = self.state().get("runId")
         events_file = self.repo / ".git/code-step/runs" / str(run_id) / "events.jsonl"
         if not run_id or not events_file.exists():
@@ -181,7 +182,8 @@ class CodeStepTest(unittest.TestCase):
         dispatch_id = dispatches[-1]["id"]
         if any(event["event"] == "launch" and event.get("dispatch") == dispatch_id for event in events):
             return
-        self.launch_agent(f"code-step-dispatch: {run_id}/{dispatch_id}", agent_id=agent_id, subagent_type=agent_type)
+        self.launch_agent(f"code-step-dispatch: {run_id}/{dispatch_id}", agent_id=agent_id, subagent_type=agent_type,
+                          session=session)
 
     def launch_the_pending_review(self, agent_id):
         self.launch_the_pending_dispatch(agent_id, "review-loop")
@@ -212,7 +214,7 @@ class CodeStepTest(unittest.TestCase):
         if session:
             event["session_id"] = session
         if launched:
-            self.launch_the_pending_dispatch(agent_id, agent_type)
+            self.launch_the_pending_dispatch(agent_id, agent_type, session or self.SESSION)
 
         gate_decision = self.run_the_coder_gate(event)
         packet_hook_denies = False
@@ -249,6 +251,11 @@ class CodeStepTest(unittest.TestCase):
         # The script writes the review-commit-gate state file itself, so the output no longer tells the model to.
         self.assertNotIn("review-gate-mark", out)
         self.assertEqual("clean\n", self.gate_mark(session))
+
+    def assert_first_phase_ticked(self):
+        plan_lines = self.plan_text().split("\n")
+        entries = plan_format.parse_plan_with_closing_phases(plan_lines)["entries"]
+        self.assertTrue(entries[0]["done"])
 
     def said(self):
         say_file = self.repo / ".git/code-step/say.md"
@@ -291,7 +298,8 @@ class CodeStepTest(unittest.TestCase):
     # The ledger writer mints finding ids as 16 lowercase hex characters; code-step logs no other shape.
     ASK_FINDING_ID = "0123456789abcdef"
     ASK = ('status: converged\niter: 1\nfixed: []\nask: [{"finding": "f", "file_line": "backend/src/orders.ts:2", '
-           '"question": "keep?", "gate": "code-reviewer", "class": "correctness", "finding_id": "0123456789abcdef"}]')
+           '"question": "keep?", "change": "export o as a const", "gate": "code-reviewer", "class": "correctness", '
+           '"finding_id": "0123456789abcdef"}]')
 
     LOOP_OK = "status: converged\niter: 1\nfixed: []\nask: []\nnit: []"
 
@@ -1239,8 +1247,8 @@ class CodeStepTest(unittest.TestCase):
 
     def test_a_converged_packet_with_a_labelled_ask_list_asks_the_user(self):
         self.coder_round()
-        asks = "\n".join(f'  - {{question: "q{n}", file_line: "backend/src/orders.ts:{n}", gate: code-reviewer}}'
-                         for n in (1, 2, 3))
+        asks = "\n".join(f'  - {{question: "q{n}", change: "c{n}", file_line: "backend/src/orders.ts:{n}", '
+                         'gate: code-reviewer}}' for n in (1, 2, 3))
         self.hook("review-loop", f"status: converged\niter: 1\nfixed: []\nask (for the user):\n{asks}")
         out = self.step("after-review")
         self.assertIn("ACTION: ask-user", out)
@@ -1282,6 +1290,24 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("after-review")
         self.assertIn("ACTION: stop", out)
         self.assertIn("- [ ] Phase 1:", self.plan_text())
+
+    def test_the_question_for_the_user_names_each_asks_proposed_change_and_what_each_answer_does(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+
+        self.step("after-review")
+
+        self.assertIn("   Proposed change: export o as a const", self.said())
+        self.assertIn("accepted (make the proposed change), rejected (leave the code as it stands)", self.said())
+
+    def test_an_accepted_ask_sends_its_proposed_change_to_the_asks_coder(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+        self.step("after-review")
+
+        out = self.step("asks-done", "accepted")
+
+        self.assertIn("   The proposed change: export o as a const", out)
 
     def test_asks_flow_logs_outcomes(self):
         self.coder_round()
@@ -1738,7 +1764,8 @@ class CodeStepTest(unittest.TestCase):
     def test_an_ask_that_repeats_one_text_in_finding_and_question_shows_it_once(self):
         self.coder_round()
         self.hook("review-loop", 'status: converged\niter: 1\nfixed: []\nask: [{"finding": "Is the cap right?", '
-                  '"file_line": "backend/src/orders.ts:2", "gate": "code-reviewer", "class": "correctness"}]')
+                  '"change": "cap at 3", "file_line": "backend/src/orders.ts:2", "gate": "code-reviewer", '
+                  '"class": "correctness"}]')
         out = self.step("after-review")
         self.assertIn("Is the cap right?", out + self.said())
         self.assertNotIn("Is the cap right? - Is the cap right?", out + self.said())
@@ -2285,7 +2312,8 @@ class CodeStepTest(unittest.TestCase):
 
     def accept_two_asks(self):
         second_ask = ('{"finding": "g", "file_line": "backend/src/orders.ts:3", "question": "rename?", '
-                     '"gate": "code-reviewer", "class": "correctness", "finding_id": "fedcba9876543210"}')
+                      '"change": "rename o to orderCount", "gate": "code-reviewer", "class": "correctness", '
+                      '"finding_id": "fedcba9876543210"}')
         two_asks = self.ASK.replace("}]", "}, " + second_ask + "]")
         self.coder_round()
         self.hook("review-loop", two_asks.replace("iter: 1", "iter: 2"))
@@ -2948,13 +2976,6 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("ACTION: stop", out)
         self.assertIn("handback.py could not be imported", out)
         self.assertIsNone(self.gate_mark())
-
-    def test_the_clean_mark_asks_about_the_environments_session_not_the_stored_pin(self):
-        self.coder_round()
-        self.hook("review-loop", self.LOOP_OK)
-        self.set_state(sessionId="a-stale-pin")
-        self.step("after-review")
-        self.assertEqual("clean\n", self.gate_mark(self.SESSION))
 
     # ---------- reported defects ----------
 
@@ -3869,9 +3890,9 @@ class CodeStepTest(unittest.TestCase):
         fixture["tool_response"].update(tool_response or {})
         return self.log_hook(fixture["tool_name"], fixture["tool_input"], fixture["tool_response"], **extra)
 
-    def launch_agent(self, prompt, agent_id="a1", subagent_type="coder"):
+    def launch_agent(self, prompt, agent_id="a1", subagent_type="coder", session=SESSION):
         return self.log_fixture("agent_launch", {"subagent_type": subagent_type, "prompt": prompt},
-                                {"agentId": agent_id})
+                                {"agentId": agent_id}, session_id=session)
 
     def send_message(self, to, **extra):
         return self.log_fixture("send_message", {"to": to, "recipient": to}, **extra)
@@ -4263,7 +4284,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_the_ask_user_action_for_review_asks_names_the_real_say_file(self):
         self.coder_round()
-        asks = '  - {question: "q1", file_line: "backend/src/orders.ts:1", gate: code-reviewer}'
+        asks = '  - {question: "q1", change: "c1", file_line: "backend/src/orders.ts:1", gate: code-reviewer}'
         self.hook("review-loop", f"status: converged\niter: 1\nfixed: []\nask (for the user):\n{asks}")
 
         out = self.step("after-review")

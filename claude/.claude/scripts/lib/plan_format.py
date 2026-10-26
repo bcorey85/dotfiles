@@ -44,6 +44,7 @@ PHASE_STATUS_LINE = re.compile(rf"^[-*]\s+\[( |x|X|-)\]\s+Phase\s+({PHASE_ID})\s
 MOVED_MARK = "-"
 MOVED_TARGET = re.compile(r"(?i:moved to)\s+([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])")
 DEVIATIONS_HEADING = "Plan Deviations"
+SESSION_RULING_OWNER = "the session, not the user"
 STATUS_ITEM_START = re.compile(r"^[-*]\s+\[")
 RISK_MARK = re.compile(r"\(risk:\s*(low|high)\)", re.I)
 GATE_CLAUSE = re.compile(r"(?:^|\s)[—–-]\s*gate:\s*(.*)$", re.I)
@@ -556,6 +557,25 @@ def append_deviation(plan_path, entry):
         references = next((i for i in sections if lines[i].strip() == "## References"), len(lines))
         lines[references:references] = ["## Plan Deviations", "", *entry, ""]
     plan_path.write_text("\n".join(lines))
+
+
+def ruling_owner(repo_dir, by):
+    """Who a plan-impact ruling is signed by: the git user name for `--by user`, the session otherwise."""
+    if by != "user":
+        return SESSION_RULING_OWNER
+    return script_utils.git_output(repo_dir, "config", "user.name") or "the user"
+
+
+def ruling_deviation(phase, decision, owner, ruled_at, ruling_words, disagreement):
+    """The `## Plan Deviations` entry lines for one plan-impact ruling. `ruled_at` is "YYYY-MM-DD HH:MM"; a phase of
+    None leaves the phase out of the entry's first line."""
+    ruled_on = ruled_at.split()[0]
+    dated = f"- {ruled_on} (Phase {phase})" if phase is not None else f"- {ruled_on}"
+    ruling_line = " ".join(ruling_words.split())
+    entry = [f"{dated}: {decision}. Ruled by {owner} at {ruled_at}.", "", f"  The ruling: {ruling_line}",
+             "", "  The disagreement:"]
+    entry += ["  " + line for line in disagreement.splitlines()]
+    return entry
 
 
 def reopen_closing_phases(plan_path):

@@ -1307,12 +1307,8 @@ def emit_plan_impact_modal(impact, repo_dir):
 
 def record_deviation(repo_dir, state):
     ruling = state["ruling"]
-    ruling_line = " ".join(ruling["words"].split())
-    entry = [f"- {time.strftime('%Y-%m-%d')} (Phase {state['phase']}): {ruling['decision']}. "
-             f"Ruled by {ruling['by']} at {ruling['at']}.", "",
-             f"  The ruling: {ruling_line}"]
-    entry += ["", "  The disagreement:"]
-    entry += ["  " + line for line in state["impact"].splitlines()]
+    entry = plan_format.ruling_deviation(state["phase"], ruling["decision"], ruling["by"], ruling["at"],
+                                         ruling["words"], state["impact"])
     plan_format.append_deviation(repo_dir / state["plan"], entry)
 
 
@@ -1350,10 +1346,6 @@ def resolved_plan_impact(state):
 DECIDE_USAGE = 'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"'
 
 
-def git_user_name(repo_dir):
-    return git_output(repo_dir, "config", "user.name") or "the user"
-
-
 def decision_for_word(repo_dir, state, word):
     # The decision the word names, or None after the stop or the question it printed (a blank word, an unknown word, or
     # discuss).
@@ -1381,12 +1373,7 @@ def ruling_problem(word, by, ruling_words):
 
 def record_ruling(repo_dir, state, decision, by, ruling_words, ruling_by):
     by_user = by == "user" and not ruling_by
-    if ruling_by:
-        ruling_name = ruling_by
-    elif by_user:
-        ruling_name = git_user_name(repo_dir)
-    else:
-        ruling_name = "the session, not the user"
+    ruling_name = ruling_by or plan_format.ruling_owner(repo_dir, by)
     state["ruling"] = {"decision": decision, "words": ruling_words, "by": ruling_name, "byUser": by_user,
                        "at": time.strftime("%Y-%m-%d %H:%M")}
     if not by_user and state.get("plan") and criteria_file(repo_dir, state):

@@ -788,6 +788,19 @@ class PlanFileEditTest(unittest.TestCase):
         plan_format.append_deviation(self.plan_path, ["- note"])
         self.assertEqual("## Phase 1: a\n\ntext\n\n## Plan Deviations\n\n- note\n", self.plan_path.read_text())
 
+    def test_a_ruling_entry_names_the_phase_decision_owner_ruling_and_disagreement(self):
+        entry = plan_format.ruling_deviation("2", "Adopt plan change", "Pat Signer", "2026-10-25 09:30",
+                                             "use the  new\ntable", "assumed: one table\nfound: two")
+        self.assertEqual(["- 2026-10-25 (Phase 2): Adopt plan change. Ruled by Pat Signer at 2026-10-25 09:30.", "",
+                          "  The ruling: use the new table", "", "  The disagreement:", "  assumed: one table",
+                          "  found: two"], entry)
+
+    def test_a_ruling_entry_with_no_phase_leaves_the_phase_out(self):
+        entry = plan_format.ruling_deviation(None, "Keep plan as written", "the session, not the user",
+                                             "2026-10-25 09:30", "keep it", "found: two")
+        self.assertEqual("- 2026-10-25: Keep plan as written. Ruled by the session, not the user at 2026-10-25 09:30.",
+                         entry[0])
+
 
 class ManualFormatHelpersTest(unittest.TestCase):
     GOOD = ("## Phase 1: a\n\n#### Manual Verification:\n\n- [ ] open it\n\n## Phase 2: b\n\n"

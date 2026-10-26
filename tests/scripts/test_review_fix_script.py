@@ -239,7 +239,10 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("spec_iter=2", output)
         plan_text = plan_file.read_text()
         self.assertIn("## Plan Deviations", plan_text)
-        self.assertIn("Adopt plan change | t", plan_text)
+        ruling_heading = r"- \d{4}-\d\d-\d\d: Adopt plan change\. Ruled by .+ at \d{4}-\d\d-\d\d \d\d:\d\d\."
+        self.assertRegex(plan_text, ruling_heading)
+        self.assertIn("  The ruling: yes, add the table", plan_text)
+        self.assertIn("  The disagreement:", plan_text)
 
     def test_decide_appends_to_an_existing_plan_deviations_section_before_the_next_heading(self):
         self.packet(PLAN_IMPACT)
@@ -339,18 +342,19 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: redispatch", output)
         self.assertIn("The session ruled, not the user.", output)
-        self.assertIn("| the session, not the user | my own call", plan_file.read_text())
-        self.assertNotIn("| t |", plan_file.read_text())
+        self.assertIn("Ruled by the session, not the user at", plan_file.read_text())
+        self.assertIn("The ruling: my own call", plan_file.read_text())
 
     def test_decide_by_user_signs_with_the_git_user_name(self):
         self.packet(PLAN_IMPACT)
         plan_file = self.temp_root / "plan.md"
         plan_file.write_text("# Plan\n")
         code, output = self.run_script(
-            ["decide", "keep", "--by", "user", "--ruling", "keep it", "--plan", str(plan_file)]
+            ["decide", "keep", "--by", "user", "--ruling", "keep it", "--plan", str(plan_file)],
+            GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="user.name", GIT_CONFIG_VALUE_0="Pat Signer",
         )
         self.assertEqual(code, 0, output)
-        self.assertIn("| Keep plan as written | t | keep it", plan_file.read_text())
+        self.assertIn("Keep plan as written. Ruled by Pat Signer at", plan_file.read_text())
         self.assertNotIn("The session ruled", output)
 
     def test_decide_without_a_waiting_plan_impact_fails(self):

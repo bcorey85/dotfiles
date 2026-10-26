@@ -1,7 +1,6 @@
 """source_text.py: plain-text readers for source files and their diffs, with no rule of any one script.
 
-Installed as ~/.claude/scripts/lib/source_text.py. Toolkit scripts (under ~/.claude/scripts/ and
-~/.claude/skills/*/scripts/) import it by adding ~/.claude/scripts/lib to sys.path."""
+Toolkit scripts import it after putting scripts/lib on sys.path."""
 import re
 from dataclasses import dataclass, field
 

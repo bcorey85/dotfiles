@@ -3,7 +3,7 @@ type: "Change"
 title: "Fail the toolkit test run on new duplicate code"
 description: "tests/run.sh now runs tests/duplicate_code.py, which fails when a toolkit script defines a top-level function name another script already defines, or when jscpd finds a new token clone; today's repeats sit in a baseline that may only shrink."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T16:11:30-05:00"}
-seq: 6
+seq: 8
 kind: "user-rule"
 components: ["script/duplicate-code", "script/parallel-tests"]
 evidence: ["judgment"]

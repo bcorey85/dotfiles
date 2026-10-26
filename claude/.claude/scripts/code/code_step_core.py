@@ -605,10 +605,33 @@ def clear_say(repo_dir):
         say_file_in(directory).write_text("")
 
 
+def question_file_in(directory):
+    # question.md sits beside say.md. The Stop say-hook empties say.md, never question.md.
+    return directory / "question.md"
+
+
+def question_file(repo_dir):
+    # The real path of question.md for this repo.
+    directory = state_dir(repo_dir)
+    return question_file_in(directory) if directory is not None else pathlib.Path("question.md")
+
+
+def clear_question(repo_dir):
+    # Every verb run answers or replaces the last question.
+    directory = state_dir(repo_dir)
+    if directory is not None and question_file_in(directory).exists():
+        question_file_in(directory).write_text("")
+
+
 def ask_user(repo_dir, instruction, *question_lines):
-    # The /code subagent cannot ask the user: the question goes in say.md for the main session to ask.
-    say(repo_dir, "\n".join(["## Question for the user", "", "Main session: " + instruction, "", *question_lines]))
-    emit("ask-user", f"The question for the user is in {say_file(repo_dir)}. Hand back.")
+    # The /code subagent cannot ask the user: the question goes in question.md for the main session to ask.
+    directory = state_dir(repo_dir)
+    if directory is not None:
+        directory.mkdir(parents=True, exist_ok=True)
+        question_text = "\n".join(["## Question for the user", "", "Main session: " + instruction, "", *question_lines])
+        question_file_in(directory).write_text(own_path(question_text).rstrip() + "\n")
+
+    emit("ask-user", f"The question for the user is in {question_file(repo_dir)}. Hand back.")
 
 
 def emit(action, *lines, prompt=None, agent=None, model=None, prompt_file=None):

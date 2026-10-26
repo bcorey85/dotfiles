@@ -87,8 +87,10 @@ def read_state(repo):
 
 
 def say_text(repo):
-    say_file = repo / ".git" / "code-step" / "say.md"
-    return say_file.read_text() if say_file.exists() else ""
+    # say.md, then question.md: the two files the /code skill hands back.
+    state_folder = repo / ".git" / "code-step"
+    saved_files = [state_folder / "say.md", state_folder / "question.md"]
+    return "".join(saved_file.read_text() for saved_file in saved_files if saved_file.exists())
 
 
 def save_report(repo, agent_type, stage, message):

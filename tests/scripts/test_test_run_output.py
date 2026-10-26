@@ -41,6 +41,13 @@ class PassedTestCountTest(unittest.TestCase):
 
 
 class MatchesNoTestTest(unittest.TestCase):
+    def test_a_runner_inside_a_command_substitution_is_not_judged(self):
+        dollar = "test \"$(env CARGO_BUILD_JOBS=4 cargo test fault_codes -- --exact 2>&1 | rg -c 'ok')\" = 2"
+        backtick = "test \"`cargo test fault_codes -- --exact 2>&1 | rg -c ok`\" = 2"
+        for command in (dollar, backtick):
+            with self.subTest(command=command):
+                self.assertFalse(test_run_output.matches_no_test(command, 0, ""))
+
     def test_a_filtered_mocha_run_that_passed_is_not_a_no_match(self):
         self.assertFalse(test_run_output.matches_no_test("npx mocha --grep totals", 0, PASSING_SUMMARIES["mocha"]))
 

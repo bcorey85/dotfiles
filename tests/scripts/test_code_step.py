@@ -2269,6 +2269,18 @@ class CodeStepTest(unittest.TestCase):
         outcome = self.finish_phase_one()
         self.assertNotIn("Automated Verification failed", outcome)
 
+    def test_an_rg_presence_check_passes_on_a_hit(self):
+        self.set_verification("- [ ] **Presence**: the export exists - `rg -q 'export const o' backend/src/orders.ts`")
+        outcome = self.finish_phase_one()
+        self.assertNotIn("Automated Verification failed", outcome)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+
+    def test_an_rg_line_with_no_wording_is_a_ban_and_fails_on_a_hit(self):
+        self.set_verification("- [ ] **Rename**: the old name is gone - `rg -n 'export const o' backend/src/orders.ts`")
+        outcome = self.finish_phase_one()
+        self.assertIn("Automated Verification failed", outcome)
+        self.assertIn("unless its text says it checks presence", outcome)
+
     def test_a_negated_rg_ban_runs_and_holds_on_no_match(self):
         self.set_verification("- [ ] **Prohibition**: no console.log - `! rg -n console.log backend/src/orders.ts`")
         outcome = self.finish_phase_one()

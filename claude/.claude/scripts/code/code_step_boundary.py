@@ -38,8 +38,17 @@ VERIFY_TIMEOUT_SECONDS = 600
 # A filtered test run that exits 0 but reports no passed test did not run the phase's test: it fails the box.
 NO_TEST_MATCHED_EXIT_CODE = 1
 NO_TEST_MATCHED_NOTE = "\nthe test filter matched no test: the run exits 0 but reports no passed test\n"
-# A ban written with rg or grep: exit 1 (no match) holds it, like git grep.
-SEARCH_BAN = re.compile(r"^(?:rg|grep|egrep)\s")
+# An rg or grep line is a ban (exit 1, no match, holds it) unless its text, outside the command, says it checks
+# presence (exit 0 passes). Ban wording on the same line wins. A git grep line is always a ban.
+SEARCH_COMMAND = re.compile(r"^(?:rg|grep|egrep)\s")
+BAN_WORDING = re.compile(r"\bprohibition\b|\bno\s+(?:match(?:es)?|output|hits?)\b|\bprints?\s+nothing\b"
+                         r"|\bexit(?:s|ing)?\s+(?:code\s+)?1\b|\babsent\b|\bmust\s+not\b|\bnone\b|\bnothing\b"
+                         r"|\bgone\b|\bremoved\b|\bzero\b|\bno\s+longer\b",
+                         re.IGNORECASE)
+PRESENCE_WORDING = re.compile(r"\bpresence\b|\bpresent\b|\bexists?\b|\bcontains?\b|\bdefines?\b|\bdefined\b"
+                              r"|\bfinds?\b|\bfound\b|\ba\s+hit\b|\bmatches\b", re.IGNORECASE)
+SEARCH_BAN_NOTE = ("\nan rg or grep line is a ban unless its text says it checks presence "
+                   "(present, exists, contains, finds)\n")
 # A ban written `! rg ...` is the same ban as `rg ...`: no match holds it.
 NEGATED_SEARCH = re.compile(r"^!\s+(?=(?:rg|grep|egrep|git grep)\s)")
 WHOLE_SUITE = re.compile(r"^(?:(?:cd \S+ && )?(?:npm|pnpm|yarn) (?:run )?(?:test|lint)"
@@ -290,6 +299,23 @@ def verification_format_failure(plan_lines, plan_name, repo_dir, entries):
             + VERIFICATION_ITEM_SHAPE)
 
 
+def is_search_ban(command, line):
+    if "git grep" in command:
+        return True
+
+    if not SEARCH_COMMAND.match(script_utils.without_leading_env_assignments(command)):
+        return False
+
+    if NEGATED_SEARCH.search(line.replace("`", "")):
+        return True
+
+    text = line.replace(command, "")
+    if BAN_WORDING.search(text):
+        return True
+
+    return not PRESENCE_WORDING.search(text)
+
+
 def check_prohibition(repo_dir, command, code, output):
     # A git grep, rg or grep ban passes on exit 1 (no match) and fails on exit 0 (a hit). Any other exit is an error
     # that stops.
@@ -326,8 +352,11 @@ def run_verification_commands(repo_dir, phase_section):
             skipped.append(command)
             continue
         code, output = run_command(command, repo_dir, timeout=timeout)
-        if "git grep" in command or SEARCH_BAN.match(script_utils.without_leading_env_assignments(command)):
-            results.append(check_prohibition(repo_dir, command, code, output))
+        if is_search_ban(command, line):
+            result = check_prohibition(repo_dir, command, code, output)
+            if result[1] != 0 and "git grep" not in command and not PRESENCE_WORDING.search(line.replace(command, "")):
+                result = (result[0], result[1], result[2] + SEARCH_BAN_NOTE)
+            results.append(result)
             continue
         if matches_no_test(command, code, output):
             code = NO_TEST_MATCHED_EXIT_CODE

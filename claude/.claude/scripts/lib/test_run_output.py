@@ -13,6 +13,8 @@ CARGO_VALUE_OPTIONS = {"--test", "--bin", "--example", "--bench", "-p", "--packa
 # `N passed` (pytest, vitest, jest, playwright, cargo), `N passing` (mocha), `N pass` (bun).
 PASSED_TESTS = re.compile(r"(\d+) pass(?:ed|ing)?\b")
 GO_PACKAGE_OK = re.compile(r"^ok\s+\S+.*$", re.MULTILINE)
+# A command substitution `$(...)` or backticks: its runner's output goes into the outer command, not into its report.
+SUBSTITUTION = re.compile(r"\$\([^)]*\)|`[^`]*`")
 GO_NO_TESTS = "[no tests to run]"
 
 
@@ -46,8 +48,9 @@ def cargo_test_is_filtered(command):
 
 def matches_no_test(command, code, output):
     """True for a filtered test run that exits 0 and reports no passed test. A filter that matches nothing exits 0
-    in vitest, jest and cargo, so the exit code alone reads it as passing."""
-    if code != 0 or not TEST_RUNNER.search(command):
+    in vitest, jest and cargo, so the exit code alone reads it as passing. A runner inside a command substitution
+    is not judged: the outer output does not carry its report."""
+    if code != 0 or not TEST_RUNNER.search(SUBSTITUTION.sub("", command)):
         return False
 
     is_filtered = TEST_FILTER.search(command) or cargo_test_is_filtered(command)

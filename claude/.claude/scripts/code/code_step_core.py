@@ -39,6 +39,9 @@ REVIEW_LOOP = "review-loop"
 RESUME_VERB = "resume"
 RESUME_LINE = "When the {noun} is fixed, run `python3 ~/.claude/scripts/code/code_step.py {verb}`."
 HOOK_STAGES = ("coder", "review", "asks-coder", "plan-coder")
+# The stages in which the run owns its session's review-loop hand-backs, so review_fix.py `packet` refuses to read
+# their saved hand-back.
+REVIEW_HANDBACK_STAGES = ("coder", "review", "asks-coder")
 CODER_STAGES = ("coder", "asks-coder")
 FORK_AGENT_TYPE = "general-purpose"
 SAY_MAX_AGE_SECONDS = 6 * 3600

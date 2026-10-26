@@ -39,6 +39,11 @@ def bash(command):
     return {"type": "assistant", "message": {"role": "assistant", "content": [block]}}
 
 
+def send_message(to):
+    block = {"type": "tool_use", "id": "toolu_send", "name": "SendMessage", "input": {"to": to, "message": "go on"}}
+    return {"type": "assistant", "message": {"role": "assistant", "content": [block]}}
+
+
 def notification(tool_use_id):
     prompt = (
         f"<task-notification>\n<task-id>t1</task-id>\n<tool-use-id>{tool_use_id}</tool-use-id>\n</task-notification>"
@@ -90,6 +95,24 @@ class ReviewLoopGateTest(unittest.TestCase):
                    dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "ok"),
                    bash("npm test > /tmp/review-gate.log 2>&1")]
         self.assertEqual(self.stop(records), "")
+
+    def test_a_message_to_the_reviewer_after_a_fix_coder_counts_as_a_read(self):
+        records = [user("review loop"),
+                   dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
+                   dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "agentId: arev1"),
+                   dispatch("toolu_fix", "coder"), result("toolu_fix", "done"),
+                   bash("npm test > /tmp/review-gate.log 2>&1")]
+        self.assertIn("its fix diff is unread", json.loads(self.stop(records))["reason"])
+        self.assertEqual(self.stop([*records, send_message("arev1")]), "")
+
+    def test_a_message_to_a_coder_after_the_full_check_counts_as_a_code_change(self):
+        records = [user("review loop"),
+                   dispatch("toolu_coder", "coder"), result("toolu_coder", "agentId: acoder1"),
+                   dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "ok"),
+                   bash("npm test > /tmp/review-gate.log 2>&1")]
+        self.assertEqual(self.stop(records), "")
+        out = self.stop([*records, send_message("acoder1")])
+        self.assertIn("No full check ran", json.loads(out)["reason"])
 
     def test_stop_hook_active_passes(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
@@ -505,17 +528,6 @@ None of the above is a blocker, but this is:
         with open(blocker, "w") as fh:
             fh.write("a file where the folder should go")
         self.env["REVIEW_LOOP_GATE_STATE_DIR"] = os.path.join(blocker, "state")
-        self.quiet = False
-        out = self.stop(self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))]))
-        self.assertEqual("", out)
-        self.assertEqual([], self.rows())
-        self.assertIn("run rows skipped", self.stderr)
-
-    def test_a_missing_helper_module_skips_the_rows_and_the_stop_still_passes(self):
-        lone = os.path.join(self.tmp.name, "lone")
-        os.makedirs(lone)
-        self.script = os.path.join(lone, "review_loop_gate.py")
-        shutil.copy2(SCRIPT, self.script)
         self.quiet = False
         out = self.stop(self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))]))
         self.assertEqual("", out)

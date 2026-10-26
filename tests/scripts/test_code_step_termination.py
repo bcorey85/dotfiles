@@ -82,7 +82,7 @@ for stub_name in ("scripts/telemetry/log-scan", "skills/review/log-review-findin
     stub_file.chmod(0o755)
 GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
            "CODE_STEP_CLAUDE_DIR": str(CLAUDE_STUB), "CODE_STEP_WAIT_SECONDS": "0", "HOME": str(TMP_ROOT / "home"),
-           "CLAUDE_CODE_SESSION_ID": "sess-termination",
+           "CLAUDE_CODE_SESSION_ID": "sess-termination", "CODE_STEP_NVIM_JUMP": "true",
            # The explorer makes no Agent calls and takes minutes: no dispatch may age into the launch grace period.
            "CODE_STEP_LAUNCH_SECONDS": "1000000"}
 NO_ROW_YET_PRESETS = {"CODE_STEP_WAIT_SECONDS": "0.2", "CODE_STEP_POLL_SECONDS": "0.05"}

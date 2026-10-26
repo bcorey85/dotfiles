@@ -14,9 +14,16 @@ import shutil
 import sys
 import time
 
-sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in ("code", "lib", "review")]
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder)
+                for folder in ("code", "lib", "review", "telemetry")]
 import plan_format
 import script_utils
+
+try:
+    from telemetry_enabled import telemetry_enabled
+except ImportError:
+    def telemetry_enabled():
+        return False
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("CODE_STEP_CLAUDE_DIR", pathlib.Path.home() / ".claude"))
 SCRIPTS_DIR = CLAUDE_DIR / "scripts"
@@ -108,6 +115,42 @@ def save_state(cwd, state):
 def session_pin():
     # The id of the session that runs /code. The fork sees its parent's id here, and hook events carry the same id.
     return os.environ.get("CLAUDE_CODE_SESSION_ID") or None
+
+
+def emit_phase_event(state, verb, agent_type=None, event=None, packet_status=None):
+    # One phase_event row per verb (main(), with the verb the route picked for a resume) and one per completed
+    # hand-back (the log hook), through ledger-write. packet_status is the caller's: only an after-review that stored
+    # a new packet has one. It writes no state and never fails the caller: a missing ledger or a failed write is
+    # ignored. The row carries labels and ids only, never message text.
+    if not telemetry_enabled():
+        return
+
+    try:
+        code_run_id = state.get("phaseRunId") or state.get("runId")
+        if not code_run_id:
+            return
+
+        phase = state.get("phase") or ""
+        payload = {
+            "code_run_id": code_run_id,
+            "seq": time.time_ns() // 1000,
+            "stage": state.get("stage"),
+            "verb": verb,
+            "packet_status": packet_status,
+            "iter": state.get("iter"),
+            "plan_phase": int(phase) if phase.isdigit() else None,
+            "agent_type": agent_type,
+        }
+        session = state.get("sessionId") or session_pin() or (event or {}).get("session_id")
+        child_env = {**os.environ, "CLAUDE_CODE_SESSION_ID": session} if session else None
+
+        ledger_write = str(SCRIPTS_DIR / "telemetry" / "ledger-write")
+        row_ts = script_utils.utc_timestamp_ms()
+        payload_json = json.dumps(payload)
+        script_utils.run_process(["bash", ledger_write, "phase_event", "--ts", row_ts], None, stdin=payload_json,
+                                 env=child_env)
+    except Exception:
+        return
 
 
 def head_commit(repo_dir):

@@ -13,6 +13,7 @@ import unittest
 import unittest.mock
 from typing import ClassVar
 
+import fake_ledger
 import toolkit_paths
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -157,6 +158,193 @@ class CodeStepTest(unittest.TestCase):
 
     def step(self, *args, stdin=None):
         return run(self.repo, self.env, *args, stdin=stdin).stdout
+
+    def ledger_env(self):
+        # Installs the real ledger-write and the telemetry switch helper beside the staged scripts, puts the fake
+        # ledger first on PATH and turns telemetry on. Only the tests that call it write phase events.
+        telemetry_dir = self.claude / "scripts" / "telemetry"
+        for name in ("ledger-write", "telemetry_enabled.py"):
+            shutil.copy(REAL_CLAUDE / "scripts" / "telemetry" / name, telemetry_dir / name)
+        self.env.update(fake_ledger.install(self.tmp))
+        self.env["CLAUDE_TOOLKIT_TELEMETRY"] = "1"
+
+    def phase_events(self):
+        return fake_ledger.recorded_rows(self.env, "phase_event")
+
+    def test_verbs_emit_phase_events_with_ts_and_distinct_ids(self):
+        self.ledger_env()
+        self.finish_phase_one()
+        rows = self.phase_events()
+        state = self.state()
+
+        self.assertEqual([("start", "coder"), ("handback", "coder"), ("after-coder", "review"),
+                          ("handback", "review"), ("after-review", "done")],
+                         [(row["verb"], row["stage"]) for row in rows])
+        self.assertEqual({state["runId"]}, {row["code_run_id"] for row in rows})
+        seqs = [row["seq"] for row in rows]
+        self.assertEqual(sorted(set(seqs)), seqs)
+        for row in rows:
+            self.assertTrue(row["_ts"].endswith("Z"), row)
+            self.assertEqual(self.SESSION, row["_session"])
+        self.assertNotIn("phaseSeq", state)
+
+    def test_phase_event_rows_carry_only_the_registered_labels_and_ids(self):
+        self.ledger_env()
+        self.finish_phase_one()
+        rows = self.phase_events()
+        branch = subprocess.run(["git", "branch", "--show-current"], cwd=self.repo, capture_output=True,
+                                text=True).stdout.strip()
+
+        registered_keys = {"code_run_id", "seq", "stage", "verb", "packet_status", "iter", "plan_phase",
+                           "agent_type", "_type", "_cwd", "_session", "_ts"}
+        for row in rows:
+            self.assertEqual(registered_keys, set(row), row)
+            sent_values = " ".join(str(value) for key, value in row.items() if not key.startswith("_"))
+            self.assertNotIn(str(self.repo), sent_values)
+            self.assertNotIn(branch, sent_values)
+        after_review = rows[-1]
+        self.assertEqual("after-review", after_review["verb"])
+        self.assertEqual("converged", after_review["packet_status"])
+        self.assertEqual(1, after_review["plan_phase"])
+
+    def test_closing_phase_events_carry_their_own_code_run_id(self):
+        self.ledger_env()
+        self.finish_phase_one()
+        plan_phase_run_ids = {row["code_run_id"] for row in self.phase_events()}
+        self.mark_phases_done(2, 3)
+        out = self.step("start", self.plan)
+        self.assertIn("ACTION: invoke-skill", out)
+        state = self.state()
+        closing_rows = [row for row in self.phase_events() if row["stage"] == "skill"]
+
+        self.assertTrue(state["phaseRunId"])
+        self.assertEqual([state["phaseRunId"]], [row["code_run_id"] for row in closing_rows])
+        self.assertNotIn(state["phaseRunId"], plan_phase_run_ids)
+
+    def test_handback_hook_emits_agent_type_without_message_text(self):
+        self.ledger_env()
+        self.begin_coder()
+        planted_message = "PLANTED-MESSAGE-TEXT-7731"
+        self.hook("coder", planted_message)
+        handbacks = [row for row in self.phase_events() if row["verb"] == "handback"]
+
+        self.assertEqual(["coder"], [row["agent_type"] for row in handbacks])
+        self.assertNotIn(planted_message, pathlib.Path(self.env["FAKE_LEDGER_ROWS"]).read_text())
+
+    def test_emit_leaves_os_environ_unchanged(self):
+        self.ledger_env()
+        emitted_session = "emitted-session"
+        state = {"phaseRunId": "run-1", "stage": "coder", "sessionId": emitted_session}
+        with (unittest.mock.patch.dict(os.environ, self.env, clear=True),
+              unittest.mock.patch.object(code_step_core, "SCRIPTS_DIR", self.claude / "scripts")):
+            environ_before = dict(os.environ)
+            code_step_core.emit_phase_event(state, "start")
+            environ_after = dict(os.environ)
+
+        self.assertEqual(environ_before, environ_after)
+        rows = self.phase_events()
+        self.assertEqual([emitted_session], [row["_session"] for row in rows])
+
+    def test_failed_ledger_write_does_not_change_a_verb_or_the_log_hook(self):
+        self.ledger_env()
+        telemetry_on = dict(self.env)
+        telemetry_off = {key: value for key, value in telemetry_on.items() if key != "CLAUDE_TOOLKIT_TELEMETRY"}
+        path_without_ledger = fake_ledger.path_without_ledger(telemetry_on["PATH"])
+        self.assertIsNone(shutil.which("ledger", path=path_without_ledger))
+        cases = {
+            "telemetry off": telemetry_off,
+            "ledger write exits 1": {**telemetry_on, "FAKE_LEDGER_WRITE_EXIT": "1"},
+            "ledger write exits 75 (busy)": {**telemetry_on, "FAKE_LEDGER_WRITE_EXIT": "75"},
+            "no ledger on PATH": {**telemetry_on, "PATH": path_without_ledger},
+            "ledger-write script removed": telemetry_on,
+        }
+        outcomes = {}
+        for name, case_env in cases.items():
+            if name == "ledger-write script removed":
+                (self.claude / "scripts" / "telemetry" / "ledger-write").unlink()
+            self.env = case_env
+            started = run(self.repo, self.env, "start", "--restart", self.plan)
+            run_id = self.state()["runId"]
+            handed_back = self.hand_back("report", "coder", "a1")
+            outcomes[name] = (started.returncode, started.stdout.replace(run_id, "RUN"), handed_back.returncode,
+                              handed_back.stdout.replace(run_id, "RUN"))
+
+        expected = outcomes["telemetry off"]
+        self.assertEqual(0, expected[0])
+        self.assertIn("ACTION: dispatch", expected[1])
+        self.assertEqual(0, expected[2])
+        for name, outcome in outcomes.items():
+            with self.subTest(name):
+                self.assertEqual(expected, outcome)
+
+    def test_a_denied_handback_attempt_writes_no_handback_row(self):
+        self.ledger_env()
+        self.coder_round()
+        denied = "status: deferred\niter: 1\nfindings_remaining: []"
+        self.hook("review-loop", denied)
+        handbacks = [row for row in self.phase_events() if row["verb"] == "handback"]
+
+        self.assertEqual(["coder"], [row["agent_type"] for row in handbacks])
+
+    def test_closing_phase_handback_emits_a_row_keyed_by_phase_run_id(self):
+        self.ledger_env()
+        self.finish_phase_one()
+        self.mark_phases_done(2, 3)
+        self.step("start", self.plan)
+        state = self.state()
+        self.assertNotIn("runId", state)
+        rows_before = len(self.phase_events())
+        self.hand_back("closing report", "general-purpose", "a9")
+        new_rows = self.phase_events()[rows_before:]
+
+        self.assertEqual([("handback", state["phaseRunId"])], [(row["verb"], row["code_run_id"]) for row in new_rows])
+
+    def test_resume_emits_its_routed_verb_and_reads_packet_status_from_it(self):
+        self.ledger_env()
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("resume")
+        resumed_to_review = self.phase_events()[-1]
+
+        self.assertEqual(("after-review", "converged"), (resumed_to_review["verb"], resumed_to_review["packet_status"]))
+
+        self.step("start", "--restart", self.plan)
+        self.step("resume")
+        routed_elsewhere = self.phase_events()[-1]
+
+        self.assertEqual(("after-coder", None), (routed_elsewhere["verb"], routed_elsewhere["packet_status"]))
+        self.assertNotIn("resume", [row["verb"] for row in self.phase_events()])
+
+    def test_resume_routed_to_an_ask_stop_emits_no_row(self):
+        self.ledger_env()
+        self.coder_round()
+        self.set_state(stage="unrecognised-stage")
+        rows_before = len(self.phase_events())
+        resumed = run(self.repo, self.env, "resume")
+        telemetry_off = {key: value for key, value in self.env.items() if key != "CLAUDE_TOOLKIT_TELEMETRY"}
+        resumed_silently = run(self.repo, telemetry_off, "resume")
+
+        self.assertEqual(rows_before, len(self.phase_events()))
+        self.assertEqual((resumed_silently.returncode, resumed_silently.stdout), (resumed.returncode, resumed.stdout))
+
+    def test_resume_of_a_finished_phase_emits_start(self):
+        self.ledger_env()
+        self.finish_phase_one()
+        self.step("resume")
+        resumed_from_done = self.phase_events()[-1]
+
+        self.assertEqual("start", resumed_from_done["verb"])
+
+    def test_a_timed_out_after_review_writes_no_packet_status(self):
+        self.ledger_env()
+        self.coder_round()
+        self.set_state(packet={"status": "converged", "iter": 1})
+        for verb in ("after-review", "resume"):
+            with self.subTest(verb):
+                self.step(verb)
+                timed_out = self.phase_events()[-1]
+
+                self.assertEqual(("after-review", None), (timed_out["verb"], timed_out["packet_status"]))
 
     def handback_hook(self, kind, event):
         return subprocess.run([sys.executable, str(HANDBACK_SCRIPT), "hook", kind], env=self.env,

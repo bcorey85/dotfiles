@@ -26,6 +26,7 @@ from code_step_core import (
     StateFileError,
     dispatch_marker,
     dispatch_standing,
+    emit_phase_event,
     expected_agent,
     is_dispatch_open,
     load_state,
@@ -133,21 +134,30 @@ def log_launch(call):
 
 def command_log_hook():
     # PostToolUse on Agent, SubagentHandback and SendMessage: one event per call that went through. A hand-back that
-    # the PreToolUse gates denied never reaches PostToolUse, so it is never logged.
+    # the PreToolUse gates denied never reaches PostToolUse, so it is never logged and emits no phase_event row.
+    # A completed hand-back emits its phase_event row here, also in a closing phase: that state has a phaseRunId and
+    # no runId, so it writes no events.jsonl event, and the row is keyed by phaseRunId.
     try:
-        call = read_hook_call()
+        call = read_hook_call(require_run=False)
         if call is None or call.state.get("stage") == "done":
             return
 
         tool_name = call.event.get("tool_name")
         if tool_name == "Agent":
+            if not call.run_id:
+                return
             log_launch(call)
         elif tool_name == "SendMessage":
+            if not call.run_id:
+                return
             log_event(call.cwd, call.run_id, "resume", call.session_id, agent_id=call.tool_input.get("to"))
         elif tool_name == "SubagentHandback":
-            message = str(call.tool_input.get("message", ""))
-            log_event(call.cwd, call.run_id, "handback", call.session_id, agent_id=call.event.get("agent_id"),
-                      agent_type=call.event.get("agent_type"), message=message)
+            agent_type = call.event.get("agent_type")
+            if call.run_id:
+                message = str(call.tool_input.get("message", ""))
+                log_event(call.cwd, call.run_id, "handback", call.session_id, agent_id=call.event.get("agent_id"),
+                          agent_type=agent_type, message=message)
+            emit_phase_event(call.state, "handback", agent_type, call.event)
     except Exception as error:
         print(f"code-step log-hook: {error}", file=sys.stderr)
 

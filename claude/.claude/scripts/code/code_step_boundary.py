@@ -1,6 +1,6 @@
 """code_step_boundary.py: the part of code_step.py that guards the plan's acceptance criteria and ends a phase: the
-saved criteria copy, the Automated Verification runner, the phase boundary and the closing verbs (skill-done, tick,
-verify).
+saved criteria copy, the Automated Verification runner, the phase boundary, the closing-phase start and the closing
+verbs (skill-done, tick, verify).
 
 Imports run one way: code_step_core, code_step_boundary, code_step_hooks, code_step."""
 import datetime
@@ -687,6 +687,32 @@ def finish_phase(repo_dir, state, skip_verification=False):
         return emit("stop", plan_format.manual_format_message(error, RESUME_LINE.format(noun="section", verb="verify")))
 
     close_phase(repo_dir, state, plan_path, plan, section, manual_items, verification)
+
+
+# ---------- closing phase start ----------
+
+def start_closing_phase(repo_dir, plan_rel, lane, modifier, entry, skill, section, branch, only_phase=None):
+    # A closing phase has no coder run, so it carries its own id (phaseRunId) for the phase_event rows.
+    state = {"stage": "skill", "plan": plan_rel, "lane": lane, "phase": entry["number"], "branch": branch,
+             "modifier": modifier, "risk": entry["risk"], "title": entry["title"], "gateCommands": [], "behavior": [],
+             "baseline": file_hashes(repo_dir), "onlyPhase": only_phase, "sessionId": session_pin(),
+             "phaseRunId": script_utils.sortable_unique_id()}
+    save_state(repo_dir, state)
+    verdict_step = ("run `python3 ~/.claude/scripts/code/code_step.py skill-done pass` when the phase's Success "
+                   "Criteria hold, or `skill-done fail` when they do not (for the Verify pass, any MISSING "
+                   "criterion fails it)")
+    section_lines = (
+        ["The phase's own plan section follows. Follow its steps and gates; the skill alone is not the phase:", section]
+        if section
+        else []
+    )
+    emit(
+        "invoke-skill",
+        f"Phase {entry['number']} ({entry['title']}) is a closing phase. Invoke the Skill tool with "
+        f"`{skill}`; a coder is not dispatched.",
+        *section_lines,
+        f"The skill needs judgment. When it returns, {verdict_step}.",
+    )
 
 
 # ---------- closing verbs ----------

@@ -214,6 +214,12 @@ class RunProcessTest(unittest.TestCase):
         code, stdout, _ = script_utils.run_process(command, self.folder, stdin="hello")
         self.assertEqual((0, "HELLO\n"), (code, stdout))
 
+    def test_env_is_the_childs_environment(self):
+        command = [sys.executable, "-c",
+                   "import os; print(os.environ['RUN_PROCESS_PROBE'], os.environ.get('PATH', 'absent'))"]
+        code, stdout, _ = script_utils.run_process(command, self.folder, env={"RUN_PROCESS_PROBE": "set"})
+        self.assertEqual((0, "set absent\n"), (code, stdout))
+
     def test_a_command_that_outlives_the_timeout_returns_no_exit_code_with_what_it_printed(self):
         started = time.monotonic()
         code, stdout, _ = script_utils.run_process("echo before; sleep 30", self.folder, timeout=1)
@@ -293,6 +299,11 @@ class SortableUniqueIdTest(unittest.TestCase):
         first = script_utils.sortable_unique_id(1000)
         self.assertNotEqual(first, script_utils.sortable_unique_id(1000))
         self.assertLess(first, script_utils.sortable_unique_id(1001))
+
+
+class UtcTimestampMsTest(unittest.TestCase):
+    def test_the_timestamp_is_utc_iso_8601_with_milliseconds_and_a_z(self):
+        self.assertRegex(script_utils.utc_timestamp_ms(), r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
 
 
 class LastChangeNsTest(unittest.TestCase):

@@ -15,6 +15,11 @@ written to the task directory — the plan itself is never split:
     Each phase ends at the next level-2 heading; back matter starts after the
     final phase's section. Neither front nor back matter includes phase bodies.
 
+    Right after each hand-back, Write it whole to
+    `review-round<n>-shard-<x>.md` in the task directory (`a` if unsharded).
+    Before round 2 run `python3 ~/.claude/scripts/tools/plan_review_reports.py check <task dir> 2`;
+    stop if it fails. Round 2 reads those files.
+
     Dedup the two reports by (section, claim) before step 20. A finding only
     one shard raised still counts.
 

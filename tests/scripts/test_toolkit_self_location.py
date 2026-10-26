@@ -45,7 +45,6 @@ LEDGER_DIR = "makes the folder that holds the ledger files"
 ALLOWED_HITS = [
     ("scripts/bash-safety-gate.sh", "grep -qiE '(\\b(bash|sh|dash", "pattern text that matches commands"),
     ("scripts/bash-safety-gate.sh", "(tee[[:space:]]+", "pattern text that matches writes to the live install"),
-    ("scripts/code/code_step.py", "run `python3 ~/.claude/scripts/code/code_step.py skill-done", PRINTED),
     ("scripts/code/code_step_core.py", "INSTALLED_COMMAND = ", PRINTED),
     ("scripts/code/code_step_core.py", "RESUME_LINE = ", PRINTED),
     ("scripts/gates/agent_model_guard.py", "home_file = ", LIVE_AGENTS),

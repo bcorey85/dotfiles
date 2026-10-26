@@ -31,6 +31,8 @@ Every `/eng-spec` plan ends with these FOUR phases, in order after the last feat
 
 4. **Recap** (risk: low) — `/branch-recap`: `/stage` triage, deferred queue, recap receipt — from the branch's own process, never the codebase (`/orient` on demand). No gates. Success Criteria: recap produced, residue handed over.
 
+At `skill-done pass`, the session gives one `--evidence` per open Success Criteria item and the script writes it into the plan.
+
 Nothing after this is a phase. `/adr` runs **pre-PR**, shipping in the code's PR.
 
 ## Phase Status lines (copy verbatim, renumbering)

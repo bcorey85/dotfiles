@@ -790,6 +790,16 @@ class PopOptionTest(unittest.TestCase):
 
         self.assertEqual(["a", "--by", "x"], arguments)
 
+    def test_pop_repeated_option_takes_every_value_in_order(self):
+        cases = [
+            ("two values", ["pass", "--e", "a b", "--e", "c"], (["pass"], ["a b", "c"])),
+            ("flag absent", ["pass"], (["pass"], [])),
+            ("flag with no value", ["pass", "--e"], (["pass"], [""])),
+        ]
+        for message, arguments, expected in cases:
+            with self.subTest(message):
+                self.assertEqual(expected, script_utils.pop_repeated_option(arguments, "--e"))
+
 
 if __name__ == "__main__":
     unittest.main()

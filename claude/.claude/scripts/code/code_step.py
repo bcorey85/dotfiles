@@ -816,12 +816,7 @@ def start_plan_run(repo_dir, previous, branch, parsed, start_command):
 def start_phase_coder(repo_dir, previous, branch, parsed, phase):
     plan_rel, entry, section = phase["plan_rel"], phase["entry"], phase["section"]
     number = entry["number"] if entry else None
-    commands = derive_gate_commands(repo_dir, section) if entry else []
-    gate_note = set_gate_and_packet_note(repo_dir, plan_rel, commands)
     use_packet = phase["has_phases"] and entry
-    packet_body = packet_text(repo_dir, plan_rel, number, use_packet)
-    run_id = start_run(repo_dir)
-
     state_phase = number if use_packet else None
     is_same_unfinished_phase = (previous.get("plan") == plan_rel and previous.get("phase") == state_phase
                              and previous.get("stage") not in (None, "done") and previous.get("baseline") is not None)
@@ -829,6 +824,14 @@ def start_phase_coder(repo_dir, previous, branch, parsed, phase):
     base_head = (
         previous.get("baseHead") if is_same_unfinished_phase and previous.get("baseHead") else head_commit(repo_dir)
     )
+
+    commands = derive_gate_commands(repo_dir, section) if entry else []
+    if entry:
+        stale_prose_script = pathlib.Path(__file__).resolve().parent / "stale_prose.py"
+        commands.append(f"python3 {stale_prose_script} --base {base_head}")
+    gate_note = set_gate_and_packet_note(repo_dir, plan_rel, commands)
+    packet_body = packet_text(repo_dir, plan_rel, number, use_packet)
+    run_id = start_run(repo_dir)
 
     phase_description = f"Phase {number} of `{plan_rel}`" if use_packet else f"`{plan_rel}`"
     prompt = (f"Implement {phase_description}. Read the plan phase-scoped.\n"

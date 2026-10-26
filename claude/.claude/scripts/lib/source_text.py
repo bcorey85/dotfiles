@@ -1,7 +1,6 @@
 """source_text.py: plain-text readers for source files and their diffs, with no rule of any one script.
 
-Installed in scripts/lib beside script_utils.py. Toolkit scripts import it after putting scripts/lib on
-sys.path."""
+Toolkit scripts import it after putting scripts/lib on sys.path."""
 import re
 from dataclasses import dataclass, field
 

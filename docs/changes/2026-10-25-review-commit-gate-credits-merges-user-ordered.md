@@ -20,7 +20,7 @@ The commit gate blocked any commit in a dirty session. It now passes four more c
 
 - A commit that concludes a merge (the repo has a MERGE_HEAD).
 - A commit while the user's latest prompt in the main transcript starts with `[no-review]`. Tool results, meta records, subagent records and task notifications never count, so a subagent report cannot carry the order. The next prompt without the marker ends it.
-- A commit of a working tree that a converged review covered. `review-gate-mark clean` and /code's phase finish now record a fingerprint of the repo's tree (new `lib/reviewed_tree.py`); a later coder dispatch that edits nothing, such as a commit-only hand-off after two converged phases, leaves the fingerprint equal, so the commit passes. Any edit or new untracked file changes it and the commit is denied again.
+- A commit of a working tree that a converged review covered. `review-gate-mark clean` and /code's phase finish now record a fingerprint of the repo's tree (new `lib/reviewed_tree.py`, under `review_gate_dir()`); a later coder dispatch that edits nothing, such as a commit-only hand-off after two converged phases, leaves the fingerprint equal, so the commit passes. Any edit or new untracked file changes it and the commit is denied again.
 - A commit run as `git -C <dir>` or from a cwd outside the repo is judged by that repo's tree. A command with `--git-dir` or `--work-tree` gets no credit.
 
 An unreviewed coder commit is still denied.

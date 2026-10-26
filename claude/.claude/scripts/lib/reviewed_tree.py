@@ -17,12 +17,12 @@ GIT_TIMEOUT_SECONDS = 10
 REVIEWED_SUFFIX = ".reviewed"
 
 
-def state_dir():
+def review_gate_dir():
     return pathlib.Path(os.environ["HOME"]) / ".claude" / "state" / "review-gate"
 
 
 def reviewed_file(session):
-    return state_dir() / (session + REVIEWED_SUFFIX)
+    return review_gate_dir() / (session + REVIEWED_SUFFIX)
 
 
 def fingerprint(repo_dir):

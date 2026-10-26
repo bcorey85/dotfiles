@@ -3063,7 +3063,7 @@ class CodeStepTest(unittest.TestCase):
         self.wait_env(10, "0.2", waits=3)
         out = self.step("after-coder")
         self.assertIn("ACTION: stop", out)
-        self.assertIn("coder dispatched at", out)
+        self.assertIn("coder has not handed back in", out)
         self.assertEqual("stopped", self.state()["stage"])
 
     def test_a_wait_past_the_cap_still_takes_a_row_that_arrived(self):
@@ -3709,12 +3709,25 @@ class CodeStepTest(unittest.TestCase):
     def stop_the_review_at_the_wait_cap(self):
         self.coder_round()
         self.launch_the_pending_review("r1")
+        self.age_dispatches(100)
         self.set_state(dispatchAt=time.time() - 100)
         self.wait_env(1, "0.2", waits=3)
         out = self.step("after-review")
         self.assertIn("ACTION: stop", out)
         self.assertEqual("stopped", self.state()["stage"])
         return out
+
+    def test_the_review_wait_cap_counts_from_the_launch_not_from_the_printed_dispatch(self):
+        self.coder_round()
+        self.set_state(dispatchAt=time.time() - 100)
+        self.launch_the_pending_review("r1")
+        self.wait_env(1, "0.2", waits=3)
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: wait", out)
+        self.assertNotIn("has not handed back in", out)
+        self.assertNotEqual("stopped", self.state()["stage"])
 
     def test_the_stop_at_the_review_wait_cap_says_to_run_after_review_when_the_loop_is_resumed(self):
         out = self.stop_the_review_at_the_wait_cap()

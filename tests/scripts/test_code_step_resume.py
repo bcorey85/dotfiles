@@ -36,6 +36,7 @@ class ResumeTest(base.CodeStepTest):
         if launched_as:
             dispatch_id = self.events_named("dispatch")[-1]["id"]
             self.launch_agent(f"code-step-dispatch: {self.state()['runId']}/{dispatch_id}", agent_id=launched_as)
+            self.age_dispatches(100)
         self.set_state(dispatchAt=time.time() - 100)
         self.wait_env(1, "0.2")
         out = self.step("resume")

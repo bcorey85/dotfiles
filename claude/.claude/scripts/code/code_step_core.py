@@ -475,8 +475,13 @@ def emit_unlaunched_dispatch(dispatch):
 def wait_clock_start(repo_dir, state, since, wait_started):
     # The time the cap counts from. A resumed agent's dispatch time is the stop that came before the user's answer, so
     # the cap counts from the first wait on it. That first wait is saved once; the verb that finds the hand-back
-    # clears it.
+    # clears it. Any other agent counts from the launch of the newest dispatch when one is logged (the dispatch is
+    # printed before the Agent call, and the worker may hold it a long time), and never earlier than `since`.
     if not (awaits_resumed_coder(state) or awaits_resumed_review(state)):
+        launched = newest_dispatch_standing(repo_dir, state)["launched"]
+        launched_at = launched.get("ts") if launched else None
+        if isinstance(launched_at, (int, float)):
+            return max(since, launched_at)
         return since
     if state.get("resumeWaitAt") is None:
         state["resumeWaitAt"] = wait_started
@@ -567,8 +572,8 @@ def stop_at_wait_cap(repo_dir, state, agent_type, clock_start, total_cap):
     # The cap is spent: a wait after the user resumes the agent again counts from its own first wait.
     state.pop("resumeWaitAt", None)
     save_state(repo_dir, state)
-    emit("stop", f"The {agent_type} dispatched at {dispatch_time_text(clock_start)} has not handed back in "
-         f"{stopped_at - clock_start:.0f} seconds (the cap is {total_cap:g}). It may have died or been stopped. Do "
+    emit("stop", f"The {agent_type} has not handed back in {stopped_at - clock_start:.0f} seconds, counted from "
+         f"{dispatch_time_text(clock_start)} (the cap is {total_cap:g}). It may have died or been stopped. Do "
          "not dispatch it again and do not wait longer. Tell the user." + resume_text)
 
 

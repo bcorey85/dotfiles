@@ -400,6 +400,21 @@ def automated_verification_rows(lines, name="plan", first_line=1, strict=False):
     return verification_items
 
 
+# A `git diff` span that ends or starts at a branch name that moves: `main...HEAD`, `origin/master..HEAD`. Once the
+# branch merges, that span is empty, so a box that diffs it passes after merge with nothing read.
+MOVING_BASE_DIFF = re.compile(
+    r"git\s+(?:-\S+\s+)*diff\b[^`\n]*?(?<![\w./-])(?:origin/|upstream/)?(?:main|master|develop|trunk)\.\.\.?[\w./^~-]+")
+MOVING_BASE_DIFF_FIX = (
+    "it diffs a moving branch name, which is empty once the branch merges. Diff two recorded commit ids "
+    "(`<base-sha>..<head-sha>`) or the merge's first parent (`<merge-sha>^1..<merge-sha>`), and make the box fail "
+    "on an empty diff: `test -n \"$(git diff --name-only <base-sha>..<head-sha>)\"`")
+
+
+def moving_base_diff(line):
+    """True for an Automated Verification item whose command diffs a span that starts at a branch name that moves."""
+    return bool(MOVING_BASE_DIFF.search(line))
+
+
 def automated_item_text(line):
     """The words of an Automated Verification item, without the `- [ ]` box."""
     return AUTOMATED_ITEM_BOX.sub("", line.strip())
@@ -619,3 +634,76 @@ def manual_format_failure(plan_lines, plan_name, resume_line=""):
     except PlanFormatError as error:
         return manual_format_message(error, resume_line)
     return None
+
+
+# Acceptance-criteria cross-references. spec.md is written before acceptance-criteria.md, so a bare `AC<n>` in the spec
+# can only be the ticket's numbering, while the criteria file numbers its own. A bare `AC<n>` must therefore name
+# criterion n of the criteria file (the spec line shares at least two content words with it); a reference to the
+# ticket's number is written "ticket AC<n>".
+CRITERION_LINE = re.compile(r"^\s*[-*]\s+\**(AC\d+)\**\s*[:.—–-]*\s*(.*)$")
+AC_REFERENCE = re.compile(r"(?<![A-Za-z0-9])(?P<ticket>ticket\s+)?AC(?P<number>\d+)(?![A-Za-z0-9])", re.IGNORECASE)
+CONTENT_WORD = re.compile(r"[a-z]{4,}")
+AC_STOP_WORDS = frozenset({"that", "this", "with", "from", "when", "then", "than", "into", "must", "shall", "will",
+                           "have", "does", "each", "every", "criterion", "criteria", "ticket", "spec", "plan"})
+MIN_SHARED_WORDS = 2
+
+
+def criteria_by_id(criteria_text, name="acceptance-criteria.md"):
+    """{"AC<n>": criterion text} for each `- **AC<n>** — text` line of the criteria file. A duplicate id raises
+    PlanFormatError (`name:line:`)."""
+    criteria = {}
+    for number, line in enumerate(criteria_text.splitlines(), start=1):
+        match = CRITERION_LINE.match(line)
+        if not match:
+            continue
+        criterion_id = match.group(1).upper()
+        if criterion_id in criteria:
+            raise PlanFormatError(f"{name}:{number}: {criterion_id} is defined twice; give each criterion its own id")
+        criteria[criterion_id] = match.group(2)
+    return criteria
+
+
+def content_words(text):
+    return set(CONTENT_WORD.findall(text.lower())) - AC_STOP_WORDS
+
+
+def spec_ac_failures(spec_path):
+    """The ac_reference_failures rows for a file named spec.md, read against the acceptance-criteria.md beside it (a
+    missing file is None). Any other file name has no criteria to check and gives []. A criteria file with a repeated
+    id gives its one error row."""
+    if spec_path.name != "spec.md":
+        return []
+    criteria_path = spec_path.with_name("acceptance-criteria.md")
+    criteria_text = criteria_path.read_text() if criteria_path.is_file() else None
+    try:
+        return ac_reference_failures(spec_path.read_text(), criteria_text, str(spec_path), str(criteria_path))
+    except PlanFormatError as error:
+        return [str(error)]
+
+
+def ac_reference_failures(spec_text, criteria_text, spec_name="spec.md", criteria_name="acceptance-criteria.md"):
+    """One `name:line: message` string for each bare `AC<n>` in the spec that does not name criterion n of the
+    criteria file. `criteria_text` None means the criteria file does not exist, so every bare reference fails. A
+    reference written `ticket AC<n>` is never checked. Fenced blocks are skipped. The line holding the reference, and
+    the line after it, must share at least MIN_SHARED_WORDS content words with the criterion."""
+    criteria = criteria_by_id(criteria_text, criteria_name) if criteria_text is not None else {}
+    lines = spec_text.splitlines()
+    fenced = script_utils.fenced_line_indexes(lines)
+    failures = []
+    for index, line in enumerate(lines):
+        if index in fenced:
+            continue
+        nearby = content_words(" ".join(lines[index:index + 2]))
+        for reference in AC_REFERENCE.finditer(line):
+            if reference.group("ticket"):
+                continue
+            criterion_id = f"AC{reference.group('number')}"
+            where = f"{spec_name}:{index + 1}:"
+            if criterion_id not in criteria:
+                failures.append(f"{where} {criterion_id} is not an id in {criteria_name}; write "
+                                f"`ticket {criterion_id}` for the ticket's number, or cite the criteria file's id")
+            elif len(nearby & content_words(criteria[criterion_id])) < MIN_SHARED_WORDS:
+                failures.append(f"{where} {criterion_id} shares no wording with {criterion_id} in {criteria_name} "
+                                f"({criteria[criterion_id][:60]!r}); it may be the ticket's number. Write "
+                                f"`ticket {criterion_id}`, or name the criterion's behavior beside it")
+    return failures

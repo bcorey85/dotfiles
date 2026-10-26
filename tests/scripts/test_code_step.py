@@ -1442,6 +1442,45 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("--note keep? backend/src/orders.ts:2", self.jump_log.read_text())
         self.assertFalse(path_jump_log.exists())
 
+    def asks_done_logged_text(self, *by_words):
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+        self.step("after-review")
+        self.step("asks-done", "accepted", *by_words)
+        return self.log.read_text()
+
+    def test_asks_done_by_session_logs_the_session_as_the_one_who_ruled(self):
+        self.assertIn("ask_decided_by=session", self.asks_done_logged_text("--by", "session"))
+
+    def test_asks_done_without_by_logs_the_user_as_the_one_who_ruled(self):
+        self.assertIn("ask_decided_by=user", self.asks_done_logged_text())
+
+    def test_asks_done_with_a_bad_by_value_stops_and_logs_nothing(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+        self.step("after-review")
+
+        out = self.step("asks-done", "accepted", "--by", "robot")
+
+        self.assertIn("--by session", out)
+        self.assertFalse(self.log.exists() and "ask_outcome=" in self.log.read_text())
+
+    def test_the_ask_prompt_names_the_by_session_path(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+        self.step("after-review")
+
+        self.assertIn("--by session", self.said())
+
+    def test_preset_ask_outcome_logs_the_session_as_the_one_who_ruled(self):
+        self.env["CODE_STEP_ASKS_OUTCOME"] = "accepted"
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+
+        self.step("after-review")
+
+        self.assertIn("ask_decided_by=session", self.log.read_text())
+
     def test_preset_ask_outcome_records_and_applies_before_finishing(self):
         self.env["CODE_STEP_ASKS_OUTCOME"] = "accepted"
         self.coder_round()

@@ -770,5 +770,26 @@ class WriteTextAtomicallyTest(unittest.TestCase):
         self.assertEqual(["state.json"], sorted(path.name for path in self.folder.iterdir()))
 
 
+class PopOptionTest(unittest.TestCase):
+    def test_flag_and_value_are_removed_wherever_they_sit(self):
+        cases = [
+            ("flag first", ["--by", "session", "accepted"], (["accepted"], "session")),
+            ("flag last with value", ["accepted", "--by", "user"], (["accepted"], "user")),
+            ("flag in the middle", ["a", "--by", "x", "b"], (["a", "b"], "x")),
+            ("flag absent", ["a", "b"], (["a", "b"], None)),
+            ("flag with no value", ["a", "--by"], (["a"], "")),
+        ]
+        for message, arguments, expected in cases:
+            with self.subTest(message):
+                self.assertEqual(expected, script_utils.pop_option(arguments, "--by"))
+
+    def test_the_given_list_is_not_changed(self):
+        arguments = ["a", "--by", "x"]
+
+        script_utils.pop_option(arguments, "--by")
+
+        self.assertEqual(["a", "--by", "x"], arguments)
+
+
 if __name__ == "__main__":
     unittest.main()

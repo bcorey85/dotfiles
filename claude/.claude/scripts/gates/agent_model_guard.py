@@ -16,7 +16,7 @@ import sys
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import hook_input
-from hook_input import JqError, index, parse_documents, present, raw_text
+from hook_input import index, parse_documents, present
 
 SUBAGENT_PATTERN = re.compile(r"[A-Za-z0-9_-]+\Z")
 
@@ -31,7 +31,7 @@ def bash_lower(text):
     return "".join(character.lower()[:1] for character in text)
 
 
-def emit(stdout_text, stderr_text=""):
+def write_hook_output(stdout_text, stderr_text=""):
     if stderr_text:
         sys.stderr.buffer.write(stderr_text.encode("utf-8", "replace"))
         sys.stderr.buffer.flush()
@@ -40,16 +40,9 @@ def emit(stdout_text, stderr_text=""):
         sys.stdout.buffer.flush()
 
 
-def field(documents, extract, newlines):
-    """What `printf '%s' "$input" | jq -r <extract>` leaves in a shell variable."""
-    pieces = []
-    for document in documents:
-        try:
-            pieces.append(raw_text(extract(document)))
-        except JqError as error:
-            sys.stderr.write(f"jq: error (at <stdin>:{newlines}): {error}\n")
-            sys.exit(5)
-    return "\n".join(pieces).rstrip("\n").replace("\x00", "")
+def payload_field(documents, extract, newlines):
+    """What `printf '%s' "$input" | jq -r <extract>` leaves in a shell variable, which cannot hold a NUL."""
+    return hook_input.jq_output(documents, extract, newlines).replace("\x00", "")
 
 
 def find_agent_file(subagent):
@@ -83,12 +76,12 @@ def decide(text):
         sys.stderr.write(f"jq: error (at <stdin>:{newlines}): parse error\n")
         return 5, "", ""
 
-    tool_name = field(documents, lambda d: present(index(d, "tool_name")), newlines)
+    tool_name = payload_field(documents, lambda d: present(index(d, "tool_name")), newlines)
     if tool_name != "Agent":
         return 0, "", ""
 
-    model = field(documents, lambda d: present(index(index(d, "tool_input"), "model")), newlines)
-    subagent = field(documents, lambda d: present(index(index(d, "tool_input"), "subagent_type")), newlines)
+    model = payload_field(documents, lambda d: present(index(index(d, "tool_input"), "model")), newlines)
+    subagent = payload_field(documents, lambda d: present(index(index(d, "tool_input"), "subagent_type")), newlines)
 
     if subagent and not SUBAGENT_PATTERN.match(subagent):
         reason = (f"Agent call to subagent_type='{subagent}' is invalid. subagent_type must contain only alphanumeric "
@@ -143,7 +136,7 @@ def main():
         return 0
     text = hook_input.read_stdin_text().rstrip("\n")
     code, stdout_text, stderr_text = decide(text)
-    emit(stdout_text, stderr_text)
+    write_hook_output(stdout_text, stderr_text)
     return code
 
 

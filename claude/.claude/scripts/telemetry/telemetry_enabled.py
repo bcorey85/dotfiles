@@ -6,12 +6,7 @@ Decided by the environment alone:
 Every metrics writer skips its write when the switch is off. The check reads the environment at call time, so a
 test's env sets its own switch.
 
-Import it next to hook_input. A missing helper counts as off, so the import sits in a try block:
-    try:
-        from telemetry_enabled import telemetry_enabled
-    except ImportError:
-        def telemetry_enabled():
-            return False
+Python callers ask script_utils.telemetry_switch_on(), which counts a missing helper as off.
 """
 import os
 

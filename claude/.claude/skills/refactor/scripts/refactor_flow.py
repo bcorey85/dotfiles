@@ -34,6 +34,7 @@ Exit codes: 0 ok or a clean stop, 1 bad input (nothing was written), 2 a writer 
 import argparse
 import contextlib
 import fcntl
+import functools
 import hashlib
 import json
 import os
@@ -46,6 +47,10 @@ import tempfile
 import uuid
 from pathlib import Path
 from stat import S_ISREG
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "lib"))
+import script_utils
+import source_text
 
 CLAUDE = Path(os.environ.get("REFACTOR_CLAUDE_DIR", Path(__file__).resolve().parents[3]))
 LOG_ESCAPE = os.environ.get("REFACTOR_LOG_ESCAPE") or str(CLAUDE / "scripts" / "telemetry" / "log-escape")
@@ -99,22 +104,18 @@ class NoBaseError(RefactorFlowError):
     """The branch-base helper found no base; the message is its `STOP:` line."""
 
 
-def run(args, check=True):
-    done = subprocess.run(args, capture_output=True, text=True, errors="replace")
-    if check and done.returncode != 0:
-        raise RefactorFlowError(f"`{' '.join(args)}` failed: {done.stderr.strip() or done.stdout.strip()}")
-    return done
+run = functools.partial(script_utils.run_or_raise, error_type=RefactorFlowError, check=True)
 
 
 def git(*args, check=True):
     return run(["git", *args], check=check)
 
 
-def repo_root():
-    done = git("rev-parse", "--show-toplevel", check=False)
-    if done.returncode != 0:
+def require_repo():
+    root = script_utils.repo_root(".")
+    if root is None:
         raise RefactorFlowError("not inside a git repository")
-    return done.stdout.strip()
+    return str(root)
 
 
 def ref_exists(ref):
@@ -200,35 +201,15 @@ def sweep_matches(diff_text):
     return matches
 
 
-C_ESCAPES = {"a": 7, "b": 8, "f": 12, "n": 10, "r": 13, "t": 9, "v": 11, '"': 34, "\\": 92}
-C_ESCAPE = re.compile(r'\\([0-7]{3}|[abfnrtv"\\])')
-
-
-def unquote_c_path(quoted):
-    """Decode a git C-quoted name (`"..."`): the escapes git writes, octal bytes, then UTF-8."""
-    inner = quoted[1:-1]
-    decoded = bytearray()
-    position = 0
-    for escape in [*C_ESCAPE.finditer(inner), None]:
-        end = escape.start() if escape else len(inner)
-        plain = inner[position:end]
-        if "\\" in plain:
-            raise RefactorFlowError(f"cannot decode quoted path {quoted!r}: unknown escape")
-        decoded += plain.encode("utf-8", errors="surrogateescape")
-        if escape is None:
-            break
-        code = escape.group(1)
-        decoded.append(int(code, 8) if code[0] in "01234567" else C_ESCAPES[code])
-        position = escape.end()
-    return decoded.decode("utf-8", errors="replace")
-
-
 def parse_new_path(header):
     target = header[4:].rstrip("\t")
     if target == "/dev/null":
         return None
     if len(target) >= 2 and target.startswith('"') and target.endswith('"'):
-        target = unquote_c_path(target)
+        try:
+            target = source_text.unquote_c_path(target)
+        except ValueError as error:
+            raise RefactorFlowError(str(error)) from error
     if target.startswith("b/"):
         return target[2:]
     raise RefactorFlowError(f"cannot parse diff header {header!r}: expected `+++ b/<path>` or `+++ /dev/null`")
@@ -253,7 +234,7 @@ def binary_paths(numstat_text):
     return binary
 
 
-def changed_files(span):
+def labelled_span_files(span):
     """(path, label) for each file in the span; the label names deleted, renamed, copied and binary files."""
     tokens = diff_output(span, "--name-status", "-z").split("\0")
     binary = binary_paths(diff_output(span, "--numstat", "-z"))
@@ -313,7 +294,7 @@ def fresh_log_input():
 
 
 def branch_prep(opts):
-    repo_root()
+    require_repo()
     head = opts.head or "HEAD"
     if not ref_exists(head):
         if opts.head:
@@ -330,7 +311,7 @@ def branch_prep(opts):
 
     span = f"{base}...{head}"
     try:
-        files = changed_files(span)
+        files = labelled_span_files(span)
         diff_text = diff_output(span, "-U0")
     except NoSharedHistoryError as err:
         print(f"Branch audit: {span} has no merge base.")
@@ -420,7 +401,7 @@ def tracked_files(target):
 
 
 def audit_prep(opts):
-    repo_root()
+    require_repo()
     target = opts.target
     files = tracked_files([target])
     if not files:
@@ -461,7 +442,7 @@ def audit_prep(opts):
 
 
 def simplify_prep(opts):
-    repo_root()
+    require_repo()
     targets = opts.target
     files = []
     seen = set()
@@ -804,7 +785,7 @@ def log_next(validated_log, mode):
 
 
 def log_verb(opts):
-    root = repo_root()
+    root = require_repo()
     refactor_log = read_refactor_log(opts.input)
     validated_log = validate_log(opts.mode, refactor_log)
     modifier = read_modifier(refactor_log)
@@ -862,7 +843,7 @@ def handoff_verb(opts):
     return 0
 
 
-def parse():
+def parse_arguments():
     parser = argparse.ArgumentParser(prog="refactor-flow")
     sub = parser.add_subparsers(dest="verb", required=True)
     branch = sub.add_parser("branch-prep")
@@ -884,7 +865,7 @@ def parse():
 
 
 def main():
-    opts = parse()
+    opts = parse_arguments()
     handlers = {"branch-prep": branch_prep, "audit-prep": audit_prep, "simplify-prep": simplify_prep,
                 "log": log_verb, "handoff": handoff_verb}
     try:

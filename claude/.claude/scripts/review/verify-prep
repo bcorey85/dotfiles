@@ -119,7 +119,7 @@ def read_criteria(mode, ticket_path, plan_path):
     criteria_path = None
     candidate = ticket_path.parent / "acceptance-criteria.md"
     if mode == "dir" and candidate.is_file():
-        entries, manual_entries = vc.criteria_file(candidate.read_text(), str(candidate))
+        entries, manual_entries = vc.parse_criteria_file(candidate.read_text(), str(candidate))
         if not entries and not manual_entries:
             raise vc.VerifyError(f"{candidate} exists but holds no `- **ACn** — text` lines")
         criteria_path = str(candidate)
@@ -263,20 +263,20 @@ def main(argv):
     options = parse_args(argv)
     original_cwd = os.getcwd()
     top = vc.repo_top(original_cwd)
-    branch = vc.current_branch(top)
+    branch = vc.require_branch(top)
 
     target = against_original_cwd(options["target"], original_cwd, must_exist=True)
     ticket_file = against_original_cwd(options["ticketFile"], original_cwd, must_exist=False)
     mode, ticket_path, plan_path, note = resolve_inputs(target, ticket_file, top)
     criteria, criteria_path = read_criteria(mode, ticket_path, plan_path)
     base_ref, merge_base = vc.find_base(top, options["base"])
-    repo = vc.repo_name(top)
+    repo = vc.script_utils.repo_name(top)
     diff = measure_diff(top, merge_base)
     if diff["files"] == 0:
         raise vc.VerifyError(f"diff vs {base_ref} is empty: nothing to verify")
 
     exclude_rel = excluded_from_fingerprint(mode, ticket_path, plan_path, top)
-    fingerprint = vc.tree_fingerprint(top, merge_base, exclude_rel)
+    fingerprint = vc.branch_fingerprint(top, merge_base, exclude_rel)
     ran, reason = vc.review_ran(repo, branch, fingerprint)
 
     state_path = vc.context_path(repo, branch)

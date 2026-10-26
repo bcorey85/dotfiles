@@ -309,6 +309,34 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("npx vitest run src/orders.test.ts", joined)
         self.assertEqual(self.state()["stage"], "coder")
 
+    def stored_gate_commands(self):
+        return json.loads((self.repo / ".git/coder-gate.json").read_text())["commands"]
+
+    def test_gate_ends_with_the_stale_prose_check_from_the_base_commit_of_the_step(self):
+        self.start_phase_one()
+
+        stale_prose_script = SCRIPT.resolve().parent / "stale_prose.py"
+        expected = f"python3 {stale_prose_script} --base {self.state()['baseHead']}"
+        self.assertEqual(expected, self.stored_gate_commands()[-1])
+        self.assertRegex(self.state()["baseHead"], "^[0-9a-f]{40}$")
+
+    def test_gate_of_a_restarted_unfinished_phase_uses_the_first_base_commit(self):
+        self.start_phase_one()
+        first_base_head = self.state()["baseHead"]
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.commit_all()
+
+        self.step("start", "--restart")
+
+        stale_prose_script = SCRIPT.resolve().parent / "stale_prose.py"
+        self.assertEqual(f"python3 {stale_prose_script} --base {first_base_head}", self.stored_gate_commands()[-1])
+        self.assertEqual(first_base_head, self.state()["baseHead"])
+
+    def test_planless_start_keeps_no_stale_prose_gate(self):
+        self.step("start", "fix the typo in the orders page")
+
+        self.assertFalse((self.repo / ".git/coder-gate.json").exists())
+
     def test_gate_skips_a_package_in_a_sibling_repo(self):
         sibling = self.tmp / "sibling/evals"
         (sibling / "truth").mkdir(parents=True)
@@ -2954,12 +2982,13 @@ class CodeStepTest(unittest.TestCase):
     def test_the_review_prompt_is_built_from_the_latest_coder_only(self):
         self.begin_coder()
         self.hook("coder", "BEHAVIOR: orders exist\nWHY: backend/src/orders.ts 3-5 — order matters", agent_id="a1")
-        self.hook("coder", "BEHAVIOR: stale change\nWHY: backend/src/stale.ts 1-2 — stale reason", agent_id="a0")
+        self.hook("coder", "BEHAVIOR: superseded change\nWHY: backend/src/superseded.ts 1-2 — superseded reason",
+                  agent_id="a0")
         out = self.step("after-coder")
         self.assertIn("AGENT: review-loop", out)
         self.assertIn("order matters", out)
-        self.assertNotIn("stale", out)
-        self.assertNotIn("stale", self.said())
+        self.assertNotIn("superseded", out)
+        self.assertNotIn("superseded", self.said())
         self.assertEqual(["orders exist"], self.state()["behavior"])
 
     def stop_the_coder_on_a_blocked_report(self):

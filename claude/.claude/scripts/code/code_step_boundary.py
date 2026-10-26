@@ -18,19 +18,18 @@ from code_step_core import (
     RESUME_LINE,
     RESUME_VERB,
     SCRIPTS_DIR,
-    current_branch,
+    branch_label,
     emit,
     file_hashes,
     is_dispatch_open,
     load_handback,
     load_state,
-    repo_root,
-    run_command,
+    repo_root_or_exit,
     save_state,
     say,
     session_pin,
 )
-from script_utils import git_output
+from script_utils import git_output, run_command
 
 VERIFY_TIMEOUT_SECONDS = 600
 WHOLE_SUITE = re.compile(r"^(?:(?:cd \S+ && )?(?:npm|pnpm|yarn) (?:run )?(?:test|lint)"
@@ -284,7 +283,7 @@ def check_prohibition(repo_dir, command, code, output):
         verdict, hits = code, 0
     run_command(["bash", str(SCRIPTS_DIR / "telemetry" / "log-scan"), f"repo={repo_dir.name}", "scan=prohibition",
                  "stage=code-phase", f"exit={verdict}", f"candidates={hits}", f"confirmed={hits}",
-                 f"branch={current_branch(repo_dir)}", f"note={command[:120]}"], repo_dir)
+                 f"branch={branch_label(repo_dir)}", f"note={command[:120]}"], repo_dir)
     return command, verdict, output
 
 
@@ -742,7 +741,7 @@ def tick_plan_stop(repo_dir, state, args):
 
 def command_tick(args):
     # The user finished a phase outside /code. The main session runs this only on the user's word.
-    repo_dir = repo_root()
+    repo_dir = repo_root_or_exit()
     os.chdir(repo_dir)
     state = load_state(repo_dir)
     has_one_phase_arg = state is not None and state.get("plan") and len(args) == 1
@@ -754,7 +753,7 @@ def command_tick(args):
         return emit("stop", stop_text)
 
     number = args[0]
-    criteria_message = settle_criteria_guard(repo_dir, state, current_branch(repo_dir))
+    criteria_message = settle_criteria_guard(repo_dir, state, branch_label(repo_dir))
     if criteria_message:
         say(repo_dir, criteria_message)
 

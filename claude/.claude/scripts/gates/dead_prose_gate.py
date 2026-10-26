@@ -12,6 +12,7 @@ import re
 import sys
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import hook_input
 from hook_input import emit_stderr
 
 SURFACE = re.compile(r"\.claude/(agents|skills|commands)/.*\.md$", re.M)
@@ -35,21 +36,15 @@ def numbered_hits(lines, matches):
 
 def check(raw):
     payload = json.loads(raw)
-    tool_input = payload.get("tool_input") if isinstance(payload, dict) else None
-    if not isinstance(tool_input, dict):
+    tool_input = hook_input.tool_input_of(payload)
+    if tool_input is None:
         return
-    file_path = tool_input.get("file_path")
-    if file_path is None or file_path is False:
-        return
-    file_path = file_path.rstrip("\n") if isinstance(file_path, str) else json.dumps(file_path)
+    file_path = hook_input.edited_file_path(tool_input)
     if not file_path or not SURFACE.search(file_path) or not os.path.isfile(file_path):
         return
 
-    try:
-        with open(file_path, "rb") as handle:
-            lines = handle.read().decode("utf-8", "surrogateescape").split("\n")
-    except OSError:
-        lines = []
+    file_text = hook_input.read_file_text(file_path) or ""
+    lines = file_text.split("\n")
     name = os.path.basename(file_path)
 
     if RATIONALE_SURFACE.search(file_path):

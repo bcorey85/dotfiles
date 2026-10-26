@@ -32,7 +32,8 @@ import pathlib
 import re
 import sys
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+import script_utils
 import verify_common as vc
 
 VERDICTS = ("done", "partial", "missing", "failed-check", "needs-manual", "overridden")
@@ -40,9 +41,9 @@ REVIEW_RESULTS = ("PASS", "PASS WITH WARNINGS", "NEEDS CHANGES")
 LEADING_INT = re.compile(r"^\s*(\d+)")
 
 
-def one_line(text, limit=200):
-    flat = re.sub(r"\s+", " ", str(text or "")).replace('"', "'").strip()
-    return flat[:limit]
+def log_text(text, limit=200):
+    # A log argument holds no double quote.
+    return script_utils.one_line(text or "", limit).replace('"', "'")
 
 
 def is_gap(row):
@@ -176,7 +177,7 @@ def require_current_review(context, top):
     """Exit 2 unless the tree is the one verify-prep measured and a branch-wide review row covers it."""
     if "fingerprint" not in context:
         raise vc.VerifyError("the saved verify-prep context has no tree fingerprint: rerun verify-prep")
-    fingerprint = vc.tree_fingerprint(top, context["mergeBase"], context["excludeRel"])
+    fingerprint = vc.branch_fingerprint(top, context["mergeBase"], context["excludeRel"])
     if fingerprint != context["fingerprint"]:
         raise vc.VerifyError("the tree changed since verify-prep measured it: rerun verify-prep")
     ran, reason = vc.review_ran(context["repo"], context["branch"], fingerprint)
@@ -199,7 +200,7 @@ def log_review(args, context, top):
     if declared is None and "--rows" not in options:
         raise vc.VerifyError("review needs --rows (a JSON list; [] when the reviewer found nothing)")
 
-    fingerprint = vc.tree_fingerprint(top, context["mergeBase"], context["excludeRel"])
+    fingerprint = vc.branch_fingerprint(top, context["mergeBase"], context["excludeRel"])
     already_covered, reason = vc.review_ran(context["repo"], context["branch"], fingerprint)
     if already_covered:
         raise vc.VerifyError(f"a branch-wide review row already covers this tree ({reason}): nothing to log. "
@@ -212,10 +213,10 @@ def log_review(args, context, top):
                         f"diff_loc={context['diff']['diffLoc']}", f"result={result}",
                         f"source={vc.REVIEW_MARKER}", f"tree={fingerprint}"]}]
     for finding in findings:
-        writes.append({"label": f"finding: {one_line(finding['desc'], 80)}",
+        writes.append({"label": f"finding: {log_text(finding['desc'], 80)}",
                        "argv": ["bash", logger, "kind=finding", *prefix, f"disposition={finding['disposition']}",
                                 f"class={finding['class']}", f"file={finding['file']}", f"line={finding['line']}",
-                                f"actioned={finding['actioned']}", f"desc={one_line(finding['desc'])}"]})
+                                f"actioned={finding['actioned']}", f"desc={log_text(finding['desc'])}"]})
     check_all(writes, top)
     write_all(writes, top)
     print(f"logged code-reviewer branch-exit run row and {len(findings)} finding row(s)")
@@ -236,7 +237,7 @@ def checklist(context, rows):
     ticket_entries = vc.ticket_criteria(read_source(ticket_path, "ticket"), ticket_path)
     manual_entries = []
     if context.get("criteriaPath"):
-        _, manual_entries = vc.criteria_file(read_source(context["criteriaPath"], "criteria file"),
+        _, manual_entries = vc.parse_criteria_file(read_source(context["criteriaPath"], "criteria file"),
                                             context["criteriaPath"])
 
     lines = ["## Smoke-test checklist (fill each steps: with concrete steps)"]
@@ -253,7 +254,7 @@ def checklist(context, rows):
         moved_notes = vc.moved_phase_notes(plan_text, context["plan"])
     for row in rows:
         if row["verdict"] == "needs-manual":
-            lines.append(f"- [ ] (needs-manual) {one_line(row['item'], 300)}\n      steps: <model>")
+            lines.append(f"- [ ] (needs-manual) {log_text(row['item'], 300)}\n      steps: <model>")
     if moved_notes:
         lines.append("")
         lines.append("## Moved phases (another ticket owns them; not checked on this branch)")
@@ -267,12 +268,12 @@ def checklist(context, rows):
         lines.append("")
         lines.append("## Evidence to jump to (nvim-jump, table order)")
         for row in evidence:
-            lines.append(f"- {row['file']}:{row['line']}  {one_line(row['item'], 120)}")
+            lines.append(f"- {row['file']}:{row['line']}  {log_text(row['item'], 120)}")
     return "\n".join(lines)
 
 
 def escape_key(row, context):
-    return f"{one_line(row['item'])}\t{row.get('file') or context['planRel']}"
+    return f"{log_text(row['item'])}\t{row.get('file') or context['planRel']}"
 
 
 def plan_row_writes(rows, context, not_applicable, escapes_only):
@@ -297,10 +298,10 @@ def plan_row_writes(rows, context, not_applicable, escapes_only):
             run_argv.append(f"result={'NEEDS CHANGES' if gaps else 'PASS'}")
         writes.append({"label": "plan-verifier run row", "argv": run_argv, "marksLogged": True})
         for row in gaps:
-            writes.append({"label": f"plan-drift finding: {one_line(row['item'], 80)}",
+            writes.append({"label": f"plan-drift finding: {log_text(row['item'], 80)}",
                            "argv": ["bash", finder, "kind=finding", *prefix, "disposition=fix", "class=plan-drift",
                                     f"file={row.get('file') or plan_rel}", f"line={row['line']}", "actioned=none",
-                                    f"desc={one_line(row['item'])}"]})
+                                    f"desc={log_text(row['item'])}"]})
 
     need_guard = []
     already_recorded = 0
@@ -314,10 +315,10 @@ def plan_row_writes(rows, context, not_applicable, escapes_only):
             continue
         escape_argv = ["bash", escaper, f"repo={context['repo']}", "stage_found=verify", "gate_missed=drift-gate",
                       "class=plan-drift", "lane=eng-spec", f"guard={row['guard']}",
-                      f"desc={one_line(row['item'])}", f"file={row.get('file') or plan_rel}"]
+                      f"desc={log_text(row['item'])}", f"file={row.get('file') or plan_rel}"]
         if row.get("severity"):
             escape_argv.append(f"severity={row['severity']}")
-        writes.append({"label": f"drift-gate escape: {one_line(row['item'], 80)}", "argv": escape_argv,
+        writes.append({"label": f"drift-gate escape: {log_text(row['item'], 80)}", "argv": escape_argv,
                        "escapeKey": key})
     return writes, gaps, need_guard, already_recorded
 
@@ -372,7 +373,7 @@ def log_rows(args, context, top):
         if already_recorded:
             print(f"escapes already recorded, not logged again: {already_recorded}")
         for row in need_guard:
-            print(f"  NEEDS GUARD (ratchet, escape-ratchet.md): {one_line(row['item'], 120)}")
+            print(f"  NEEDS GUARD (ratchet, escape-ratchet.md): {log_text(row['item'], 120)}")
         return 0
 
     counts = {verdict: sum(1 for row in rows if row["verdict"] == verdict) for verdict in VERDICTS}
@@ -388,7 +389,7 @@ def log_rows(args, context, top):
     if gaps:
         print(f"GAPS: {len(gaps)} (logged as plan-drift findings). List them for the user, then offer /fix or /code.")
         for row in need_guard:
-            print(f"  NEEDS GUARD (ratchet, escape-ratchet.md): {one_line(row['item'], 120)}")
+            print(f"  NEEDS GUARD (ratchet, escape-ratchet.md): {log_text(row['item'], 120)}")
         if need_guard:
             print("  Rerun with the guards added to those rows and --escapes-only to log the escapes.")
         return 0
@@ -401,8 +402,8 @@ def main(argv):
     if not argv:
         raise vc.VerifyError("usage: verify-log --rows <file|-> | verify-log review --result R --rows <file|->")
     top = vc.repo_top(os.getcwd())
-    repo = vc.repo_name(top)
-    branch = vc.current_branch(top)
+    repo = script_utils.repo_name(top)
+    branch = vc.require_branch(top)
     context = vc.load_context(vc.context_path(repo, branch))
     context.setdefault("escapes", [])
 

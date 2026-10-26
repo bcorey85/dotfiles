@@ -4,8 +4,9 @@
 entries that put it first on PATH. It records what the scripts send and answers the one reader
 the verify scripts call:
 
-  ledger write <type> [--session <id>]   appends the stdin JSON object to the rows file as one line,
-                                         with `_type`, `_cwd` and, when given, `_session` added
+  ledger write <type> [--session <id>] [--ts <time>]
+                                         appends the stdin JSON object to the rows file as one line,
+                                         with `_type`, `_cwd` and, when given, `_session` and `_ts` added
   ledger yield --review-trees            prints `tree`, then the `tree` of each recorded review_run
                                          of the code-reviewer at branch-exit with source verify-branch
                                          and a tree, whose `branch_key` is the cwd's current branch
@@ -50,6 +51,8 @@ if len(args) >= 2 and args[0] == "write":
     row["_cwd"] = os.getcwd()
     if "--session" in args:
         row["_session"] = args[args.index("--session") + 1]
+    if "--ts" in args:
+        row["_ts"] = args[args.index("--ts") + 1]
     with open(rowsPath, "a") as handle:
         handle.write(json.dumps(row) + "\\n")
     sys.exit(0)

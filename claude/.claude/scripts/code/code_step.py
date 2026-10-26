@@ -22,7 +22,8 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
   code_step.py hook                             PreToolUse hook on SubagentHandback: deny the fork's hand-back while a
                                                 dispatched agent is still out
   code_step.py log-hook                         PostToolUse hook on Agent|SubagentHandback|SendMessage: log launch,
-                                                hand-back and resume events of the run
+                                                hand-back and resume events of the run, and writes a phase_event row
+                                                per completed hand-back
   code_step.py dispatch-hook                    PreToolUse hook on Agent: deny a coder or review-loop launch whose
                                                 prompt lacks the saved dispatch prompt, or a repeat launch of a coder
   code_step.py stop-hook                        SubagentStop hook: keep the /code fork from stopping while a dispatch
@@ -61,6 +62,7 @@ from code_step_boundary import (
     mark_review_gate_clean,
     save_criteria_guard,
     settle_criteria_guard,
+    start_closing_phase,
     stop_while_plan_edit_coder_is_out,
     verification_format_failure,
 )
@@ -87,6 +89,7 @@ from code_step_core import (
     dispatch_since,
     emit,
     emit_dispatch,
+    emit_phase_event,
     file_hashes,
     git_output,
     head_commit,
@@ -110,6 +113,7 @@ from code_step_core import (
     session_pin,
     start_run,
     state_dir,
+    telemetry_enabled,
     timed_command,
     uncommitted_files,
     wait_for_handback,
@@ -854,28 +858,6 @@ def start_planless(repo_dir, modifier, task_text, branch="-"):
               "after all edits. If the task turns out architectural, report back and recommend /eng-spec.")
     model = "haiku" if modifier == "+fast" else None
     emit_dispatch(repo_dir, state, RESUME_VERB, prompt=prompt, agent="coder", model=model)
-
-
-def start_closing_phase(repo_dir, plan_rel, lane, modifier, entry, skill, section, branch, only_phase=None):
-    state = {"stage": "skill", "plan": plan_rel, "lane": lane, "phase": entry["number"], "branch": branch,
-             "modifier": modifier, "risk": entry["risk"], "title": entry["title"], "gateCommands": [], "behavior": [],
-             "baseline": file_hashes(repo_dir), "onlyPhase": only_phase, "sessionId": session_pin()}
-    save_state(repo_dir, state)
-    verdict_step = ("run `python3 ~/.claude/scripts/code/code_step.py skill-done pass` when the phase's Success "
-                   "Criteria hold, or `skill-done fail` when they do not (for the Verify pass, any MISSING "
-                   "criterion fails it)")
-    section_lines = (
-        ["The phase's own plan section follows. Follow its steps and gates; the skill alone is not the phase:", section]
-        if section
-        else []
-    )
-    emit(
-        "invoke-skill",
-        f"Phase {entry['number']} ({entry['title']}) is a closing phase. Invoke the Skill tool with "
-        f"`{skill}`; a coder is not dispatched.",
-        *section_lines,
-        f"The skill needs judgment. When it returns, {verdict_step}.",
-    )
 
 
 def check_acceptance_criteria(repo_dir, plan_lines, plan_rel):
@@ -2085,7 +2067,53 @@ def main():
         return run_status()
     if verb not in verbs:
         sys.exit(VERB_USAGE)
-    run_verb(verb, verbs[verb], args)
+    emitted_verb, packet = pre_verb_phase_event(verb)
+    try:
+        run_verb(verb, verbs[verb], args)
+    finally:
+        emit_post_verb_phase_event(emitted_verb, packet)
+
+
+def pre_verb_phase_event(verb):
+    # The verb the phase_event row names and the packet the saved state holds before the verb runs. A resume emits the
+    # verb of the route it picks, which only the state before the verb tells (the route `done` starts the next phase,
+    # so it is `start`). A resume verb returns (None, None) when telemetry is off or the state cannot be read: nothing
+    # is emitted. A resume routed to an ask-* stop emits nothing either: no step ran.
+    if verb != RESUME_VERB and verb not in RESUME_ALIASES:
+        return verb, None
+    if not telemetry_enabled():
+        return None, None
+
+    try:
+        repo_dir = repo_root()
+        state = load_state(repo_dir)
+        route = resume_route(repo_dir, state)
+    except (StateFileError, SystemExit, KeyError):
+        return None, None
+
+    if route.startswith("ask-"):
+        return None, None
+
+    return ("start" if route == "done" else route), (state or {}).get("packet")
+
+
+def emit_post_verb_phase_event(emitted_verb, packet):
+    # The state after the verb names the stage the verb left. A state file that cannot be read, or none, emits nothing.
+    # packet_status is set only for an after-review that stored a new packet; a timed-out one leaves the packet as it
+    # was, so its row carries none.
+    if not telemetry_enabled() or emitted_verb is None:
+        return
+
+    try:
+        state = load_state(repo_root())
+    except (StateFileError, SystemExit):
+        return
+    if not state:
+        return
+
+    stored_new_packet = emitted_verb == "after-review" and state.get("packet") != packet
+    packet_status = (state.get("packet") or {}).get("status") if stored_new_packet else None
+    emit_phase_event(state, emitted_verb, packet_status=packet_status)
 
 
 if __name__ == "__main__":

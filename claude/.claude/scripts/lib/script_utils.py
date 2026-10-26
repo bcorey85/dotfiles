@@ -2,6 +2,7 @@
 
 Installed as ~/.claude/scripts/lib/script_utils.py. Scripts under ~/.claude/scripts/ import it from there by adding
 that directory to sys.path."""
+import datetime
 import difflib
 import json
 import os
@@ -114,13 +115,14 @@ def wait_for(check, timeout_seconds, interval_seconds):
         time.sleep(min(interval_seconds, remaining))
 
 
-def run_process(command, cwd, stdin=None, timeout=None):
+def run_process(command, cwd, stdin=None, timeout=None, env=None):
     """Run a command (a list, or a string for the shell) in cwd and return (exit code, stdout, stderr), both as text.
+    `env` is the child's environment (default: this process's).
     When the command does not finish in `timeout` seconds, kill its whole process group, so a shell command that
     started a server cannot keep the pipes open, and return (None, stdout, stderr) with what it printed."""
     process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.PIPE if stdin is not None else None,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                               shell=isinstance(command, str), start_new_session=True)
+                               shell=isinstance(command, str), start_new_session=True, env=env)
     try:
         stdout, stderr = process.communicate(stdin, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -271,6 +273,11 @@ def sortable_unique_id(now=None):
     local_time = time.localtime(epoch_seconds)
     stamp = time.strftime("%Y%m%dT%H%M%S", local_time)
     return stamp + "-" + uuid.uuid4().hex[:6]
+
+
+def utc_timestamp_ms():
+    """The current UTC time as ISO-8601 with milliseconds and a Z."""
+    return datetime.datetime.now(datetime.UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def unquote(text):

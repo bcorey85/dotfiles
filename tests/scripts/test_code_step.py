@@ -923,7 +923,7 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / self.CRITERIA).write_text("AC-1 rewritten by the plan coder\n")
         self.set_state(dispatchAt=time.time())
         time.sleep(0.7)
-        self.wait_env(0.2, "0.05")
+        self.wait_env(0.2, "0.05", waits=3)
         gave_up = self.step("after-plan-edit")
         self.assertIn("ACTION: stop", gave_up)
         self.assertEqual("stopped", self.state()["stage"])
@@ -2467,8 +2467,11 @@ class CodeStepTest(unittest.TestCase):
         # Printed commands name the running script by its real path.
         return f"python3 {SCRIPT.resolve()} {verb}"
 
-    def wait_env(self, seconds, interval="0.1"):
-        self.env.update(CODE_STEP_WAIT_SECONDS=str(seconds), CODE_STEP_POLL_SECONDS=interval)
+    def wait_env(self, seconds, interval="0.1", waits=60):
+        # The cap is `waits` waits from the dispatch. The default keeps a slow setup under suite load from reaching it;
+        # a test of the stop at the cap passes waits=3, the script's own multiple.
+        self.env.update(CODE_STEP_WAIT_SECONDS=str(seconds), CODE_STEP_POLL_SECONDS=interval,
+                        CODE_STEP_WAIT_MULTIPLE=str(waits))
 
     def late_hook(self, delay, agent_type, message):
         timer = threading.Timer(delay, self.hook, args=(agent_type, message))
@@ -2728,7 +2731,7 @@ class CodeStepTest(unittest.TestCase):
     def test_the_wait_stops_once_the_dispatch_is_older_than_three_waits(self):
         self.begin_coder()
         self.set_state(dispatchAt=time.time() - 100)
-        self.wait_env(10, "0.2")
+        self.wait_env(10, "0.2", waits=3)
         out = self.step("after-coder")
         self.assertIn("ACTION: stop", out)
         self.assertIn("coder dispatched at", out)
@@ -2738,7 +2741,7 @@ class CodeStepTest(unittest.TestCase):
         self.begin_coder()
         self.set_state(dispatchAt=time.time() - 100)
         self.hook("coder", self.CODER_REPORT)
-        self.wait_env(10, "0.2")
+        self.wait_env(10, "0.2", waits=3)
         self.assertIn("AGENT: review-loop", self.step("after-coder"))
 
     # ---------- start: abandoned runs, arguments, the commit line ----------
@@ -3226,7 +3229,7 @@ class CodeStepTest(unittest.TestCase):
         events_file = self.repo / ".git/code-step/runs" / self.state()["runId"] / "events.jsonl"
         kept_lines = [line for line in events_file.read_text().splitlines() if json.loads(line)["event"] != "handback"]
         events_file.write_text("\n".join(kept_lines) + "\n")
-        self.wait_env(1, "0.2")
+        self.wait_env(1, "0.2", waits=3)
         out = self.step("after-coder")
         self.assertIn("ACTION: wait", out)
         self.assertNotIn("has not handed back in", out)
@@ -3235,7 +3238,7 @@ class CodeStepTest(unittest.TestCase):
     def test_repeated_waits_on_a_resumed_coder_end_in_the_cap_stop(self):
         self.stop_the_coder_on_a_blocked_report()
         self.send_message("a1")
-        self.wait_env(1, "0.2")
+        self.wait_env(1, "0.2", waits=3)
         self.step("after-coder")
         self.set_state(resumeWaitAt=time.time() - 100)
         out = self.step("after-coder")
@@ -3361,7 +3364,7 @@ class CodeStepTest(unittest.TestCase):
         self.coder_round()
         self.launch_the_pending_review("r1")
         self.set_state(dispatchAt=time.time() - 100)
-        self.wait_env(1, "0.2")
+        self.wait_env(1, "0.2", waits=3)
         out = self.step("after-review")
         self.assertIn("ACTION: stop", out)
         self.assertEqual("stopped", self.state()["stage"])
@@ -3383,7 +3386,7 @@ class CodeStepTest(unittest.TestCase):
     def test_repeated_waits_on_a_review_loop_resumed_after_the_cap_end_in_the_cap_stop(self):
         self.stop_the_review_at_the_wait_cap()
         self.send_message("r1")
-        self.wait_env(2, "0.2")
+        self.wait_env(2, "0.2", waits=3)
         self.assertIn("ACTION: wait", self.step("after-review"))
         first_wait_at = self.state()["resumeWaitAt"]
         self.assertIn("ACTION: wait", self.step("after-review"))
@@ -3735,7 +3738,7 @@ class CodeStepTest(unittest.TestCase):
     def test_the_wait_after_a_cap_stop_on_a_resumed_coder_waits_again(self):
         self.stop_the_coder_on_a_blocked_report()
         self.send_message("a1")
-        self.wait_env(1, "0.2")
+        self.wait_env(1, "0.2", waits=3)
         self.step("after-coder")
         self.set_state(resumeWaitAt=time.time() - 100)
         self.assertIn("has not handed back in", self.step("after-coder"))
@@ -4278,7 +4281,7 @@ class CodeStepTest(unittest.TestCase):
         self.begin_coder()
         self.age_dispatches(5000)
         self.set_state(dispatchAt=time.time() - 5000)
-        self.wait_env(1, "0.2")
+        self.wait_env(1, "0.2", waits=3)
 
         out = self.step("after-coder")
 
@@ -4312,7 +4315,7 @@ class CodeStepTest(unittest.TestCase):
     def test_the_wait_ends_at_the_cap_and_not_at_the_end_of_the_wait_that_passes_it(self):
         self.begin_coder()
         self.set_state(dispatchAt=time.time() - 28)
-        self.wait_env(10, "0.2")
+        self.wait_env(10, "0.2", waits=3)
         started = time.monotonic()
 
         out = self.step("after-coder")

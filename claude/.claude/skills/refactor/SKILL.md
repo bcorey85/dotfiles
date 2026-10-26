@@ -27,6 +27,8 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
 1. **Check for modifiers**: `+fast` → `model: "haiku"`. Strip modifiers from subagent prompts.
 
+   **Ruled asks**: when the invoking message lists asks already ruled in this run, drop every finding that matches one, never undo its outcome, and pass the list to each reviewer you dispatch.
+
 2. **Determine the mode** — first match wins:
    - `$ARGUMENTS` starts with `simplify`, or names a target plus a complexity complaint ("this is too complex", "reduce the complexity in X", "why is this so convoluted") → **Simplify mode** (step 7). Bare `simplify` with no target: list top-level source dirs and ask — never the whole repo in one dispatch.
    - `$ARGUMENTS` starts with `audit` → **Audit mode** (step 6). Bare `audit` with no target: list top-level source dirs and ask — never the whole repo in one dispatch.

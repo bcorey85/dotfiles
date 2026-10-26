@@ -59,6 +59,7 @@ each iteration:
 - **Iteration counter.** `iter=N` (default `iter=0`) arrives in args and returns in the packet. A caller re-entering the loop passes back what it received. It counts **correctness rounds**: reviewer findings and their fixes (Steps 3–5), including class-closure re-entries. **The budget is TWO rounds.** If `iter >= 2` when a full review comes due, do not dispatch it: take the cap exit (Step 5c).
 
 - **Handoff block**: if present, it is the review scope. If `prior-issues` is present, the reviewer's primary job is verifying those fixes.
+- **`ruled-asks`**: each line is an ask the user already ruled on, with its outcome. Pass them to every reviewer. A finding that matches one is already ruled: drop it, never return it in `ask[]` or `plan_impact`, and never fix against a `rejected` outcome.
 
 - **Resolved `plan_impact`**: a handoff `plan_impact` that starts `RESOLVED` is the user's ruling. Pass it to every reviewer as the standard the code must meet. Never return it as `plan-impact`; return `plan-impact` only for a disagreement the ruling does not settle.
 

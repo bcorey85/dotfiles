@@ -95,6 +95,45 @@ def save_state(cwd, state):
     script_utils.write_text_atomically(directory / "state.json", json.dumps(state, indent=1))
 
 
+RULED_ASKS_FILE = "ruled-asks.json"
+
+
+def ruled_asks_path(cwd):
+    return state_dir(cwd) / RULED_ASKS_FILE
+
+
+def read_ruled_asks(cwd):
+    path = ruled_asks_path(cwd)
+    if not path.exists():
+        return []
+    return json.loads(path.read_text())
+
+
+def record_ruled_asks(cwd, state, outcomes, change_texts):
+    # The outcome of every ask the user (or a pre-set outcome) ruled on. It outlives the phase: a later review, plan
+    # impact or refactor pass of the same plan reads it so that it does not raise the same ask again.
+    ruled = read_ruled_asks(cwd)
+    for item, outcome, change_text in zip(state["asks"], outcomes, change_texts, strict=True):
+        ruled.append({"plan": state.get("plan"), "phase": state.get("phase"), "file_line": item.get("file_line", ""),
+                      "ask": script_utils.joined_distinct([str(item.get("finding") or ""),
+                                                           str(item.get("question") or "")]),
+                      "outcome": outcome, "change": change_text or ""})
+    state_dir(cwd).mkdir(parents=True, exist_ok=True)
+    script_utils.write_text_atomically(ruled_asks_path(cwd), json.dumps(ruled, indent=1))
+
+
+def ruled_asks_lines(cwd, plan):
+    # One line per ask already ruled in this plan's run, for a prompt. Empty when none was ruled.
+    lines = []
+    for ruled in read_ruled_asks(cwd):
+        if ruled["plan"] != plan:
+            continue
+        where = f" ({ruled['file_line']})" if ruled["file_line"] else ""
+        change = f" - the user's change: {ruled['change']}" if ruled["change"] else ""
+        lines.append(f"{ruled['ask']}{where}: {ruled['outcome']}, Phase {ruled['phase']}{change}")
+    return lines
+
+
 def session_pin():
     # The id of the session that runs /code. The fork sees its parent's id here, and hook events carry the same id.
     return os.environ.get("CLAUDE_CODE_SESSION_ID") or None

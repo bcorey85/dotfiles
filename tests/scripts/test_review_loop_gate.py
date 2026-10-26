@@ -96,14 +96,13 @@ class ReviewLoopGateTest(unittest.TestCase):
                    bash("npm test > /tmp/review-gate.log 2>&1")]
         self.assertEqual(self.stop(records), "")
 
-    def test_a_message_to_the_reviewer_after_a_fix_coder_counts_as_a_read(self):
+    def test_a_fix_coder_after_the_last_review_needs_only_the_full_check(self):
         records = [user("review loop"),
                    dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
-                   dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "agentId: arev1"),
-                   dispatch("toolu_fix", "coder"), result("toolu_fix", "done"),
-                   bash("npm test > /tmp/review-gate.log 2>&1")]
-        self.assertIn("its fix diff is unread", json.loads(self.stop(records))["reason"])
-        self.assertEqual(self.stop([*records, send_message("arev1")]), "")
+                   dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "ok"),
+                   dispatch("toolu_fix", "coder"), result("toolu_fix", "done")]
+        self.assertIn("No full check ran", json.loads(self.stop(records))["reason"])
+        self.assertEqual(self.stop([*records, bash("npm test > /tmp/review-gate.log 2>&1")]), "")
 
     def test_a_message_to_a_coder_after_the_full_check_counts_as_a_code_change(self):
         records = [user("review loop"),

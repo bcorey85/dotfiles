@@ -158,6 +158,18 @@ class LedgerWriteTest(unittest.TestCase):
                 self.assertEqual(len(fake_ledger.recorded_rows(self.ledger_env, row_type)), 1)
                 self.assertFalse((self.home / ".claude" / file_name).exists())
 
+    def test_a_deferred_review_loop_fix_row_is_logged_only_for_an_open_class_member(self):
+        script, args, _file_name, _expected_fields = CASES["review_finding"]
+        deferred_args = [arg for arg in args if not arg.startswith("actioned=")] + ["actioned=deferred"]
+        sources = (("class", True), ("last-pass", False), ("fix-diff", False), ("round", False), ("", False))
+        for source, logged in sources:
+            with self.subTest(source=source):
+                source_args = [f"source={source}"] if source else []
+                done = self.run_script(script, [*deferred_args, *source_args], with_ledger=True)
+                self.assertEqual(done.returncode == 0, logged, done.stderr)
+                if not logged:
+                    self.assertIn("defers only as an open class member", done.stderr)
+
     def test_telemetry_off_writes_no_file_without_a_ledger(self):
         for row_type in SWITCHED_WRITERS:
             script, args, file_name, _expected_fields = CASES[row_type]

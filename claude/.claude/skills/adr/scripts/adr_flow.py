@@ -235,7 +235,7 @@ def prep(raw_argument):
         print("adr-flow: not inside a git repository", file=sys.stderr)
         return 1
 
-    names_existing_path = Path(argument).exists() or (root / argument).exists()
+    names_existing_path = os.path.exists(argument) or os.path.exists(root / argument)
     if any(character.isspace() for character in argument) and not names_existing_path:
         print(
             f"adr-flow: prep takes one path or ticket key plus an optional keep; got: {raw_argument}",

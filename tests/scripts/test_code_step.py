@@ -90,8 +90,8 @@ Tests.
 """
 
 
-def run(cwd, env, *args, stdin=None):
-    return subprocess.run([sys.executable, str(SCRIPT), *args], cwd=cwd, env=env, input=stdin,
+def run(cwd, env, *args, stdin=None, interpreter=sys.executable):
+    return subprocess.run([interpreter, str(SCRIPT), *args], cwd=cwd, env=env, input=stdin,
                           capture_output=True, text=True)
 
 
@@ -1917,6 +1917,21 @@ class CodeStepTest(unittest.TestCase):
     def test_a_positional_argument_with_whitespace_that_names_files_is_task_text(self):
         out = self.step("start", self.TASK_TEXT_NAMING_FILES)
         self.assert_started_planless_with_the_file_naming_text(out)
+
+    LONG_TASK_TEXT = "\n\n".join(
+        ["Show the owner name and the due date on each row of the list view, and sort the rows by due date. " * 4] * 3)
+
+    @unittest.skipUnless(toolkit_paths.PRE_314_PYTHON, "needs a Python older than 3.14")
+    def test_long_task_text_reaches_the_coder_whole(self):
+        for args in (["start", self.LONG_TASK_TEXT], ["start", "+fast", self.LONG_TASK_TEXT],
+                     ["start", "--task", self.LONG_TASK_TEXT]):
+            with self.subTest(args=args[:-1]):
+                shutil.rmtree(self.repo / ".git/code-step", ignore_errors=True)
+
+                completed = run(self.repo, self.env, *args, interpreter=toolkit_paths.PRE_314_PYTHON)
+
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertIn(f"Implement: {self.LONG_TASK_TEXT}", completed.stdout)
 
     def test_a_positional_argument_with_whitespace_that_starts_with_a_real_plan_folder_is_task_text(self):
         text = "docs/plans/orders needs its parity table updated"

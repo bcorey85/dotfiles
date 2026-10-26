@@ -2,7 +2,7 @@
 name: spec-criteria
 description: "Drafts the acceptance-criteria file from ticket, decision ledger and finalized plan. Dispatched by /eng-spec after finalization, before any coder."
 model: sonnet
-tools: Read, Glob, Grep, Write
+tools: Read, Glob, Grep, Write, Edit
 color: yellow
 ---
 

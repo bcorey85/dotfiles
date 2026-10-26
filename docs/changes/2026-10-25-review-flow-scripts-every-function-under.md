@@ -48,6 +48,9 @@ The named test fails on the base script, which printed a different mkdir message
 `wait_env(1, "0.2")`, the same timing cause that `2026-10-25-code-step-wait-tests-set-their-own-cap-so-suite`
 fixed; the base predates that fix, and the merge of master brings it in.
 
+The first full suite after the merge failed the duplicate check: review_fix's new `log_ask_outcomes` helper shared
+its name with `code_step.log_ask_outcomes`. It is renamed `log_fix_ask_outcomes`; the duplicate check is clean.
+
 ## Watch
 
 None. No intake number reads these scripts' internals; their outputs keep their shape.

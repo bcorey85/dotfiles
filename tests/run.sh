@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Lints first (ruff with the rules in ruff.toml fails the run, C901 only reports), then checks for any duplicate code
+# Lints first (ruff with the rules in ruff.toml fails the run, C901 only reports, a missing ruff stops the run), then checks for any duplicate code
 # (tests/duplicate_code.py), then runs every unit test under tests/, one process per test
 # file, nproc at a time. The tests run even when the lint fails. Exits non-zero on any failure.
 set -euo pipefail
@@ -19,7 +19,8 @@ if command -v ruff >/dev/null 2>&1; then
         claude/.claude/scripts/lib/plan_format.py)
     ruff check --no-cache --select C901 "${codeStepFiles[@]}" || lintStatus=1
 else
-    echo "ruff not installed: lint skipped" >&2
+    echo "ruff not installed: install it (pacman -S ruff, brew install ruff or pipx install ruff) and rerun" >&2
+    exit 1
 fi
 
 duplicateStatus=0

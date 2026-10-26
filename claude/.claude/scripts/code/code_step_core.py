@@ -476,7 +476,7 @@ def wait_for_handback(repo_dir, state, verb):
 
     interval = float(os.environ.get("CODE_STEP_POLL_SECONDS", HANDBACK_POLL_SECONDS))
     agent_type = expected_agent(state)
-    total_cap = limit * HANDBACK_TOTAL_WAIT_MULTIPLE
+    total_cap = limit * float(os.environ.get("CODE_STEP_WAIT_MULTIPLE", HANDBACK_TOTAL_WAIT_MULTIPLE))
     wait_started = time.time()
     clock_start = wait_clock_start(repo_dir, state, since, wait_started)
     # The wait ends at the cap, not at the end of the wait that passes it.

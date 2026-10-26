@@ -68,7 +68,6 @@ LOG_INPUT_NAME = re.compile(re.escape(LOG_INPUT_PREFIX) + rf"[0-9a-f]{{{LOG_INPU
 
 SWEEP_MARKERS = re.compile(r"TODO|FIXME|XXX|HACK|console\.(log|debug)|debugger\b|binding\.pry|print\(")
 SWEEP_COMMENTED_CODE = re.compile(r"^\s*(//|#)\s*(if |for |while |return |const |let |var |def |function |import )")
-HUNK_HEADER = re.compile(r"@@ -\S+ \+(\d+)(?:,\d+)? @@")
 CLONE_SITE = re.compile(r"^\s+(?:- )?(.+?) (\[\d+:\d+ - \d+:\d+\])\s*$")
 
 SMELL_BOUND = ("Your review bound for this run is the whole branch diff (`git diff {base}...{head}`), "
@@ -151,7 +150,7 @@ def diff_output(span, *args, pathspecs=()):
     """Run `git diff` over a span with the flags that make its output parseable under any user config."""
     limit = ["--", *pathspecs] if pathspecs else []
     done = git("--literal-pathspecs", "-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff",
-               "--no-textconv", "--no-relative", "--src-prefix=a/", "--dst-prefix=b/", *args, span, *limit,
+               "--no-textconv", "--no-relative", "--no-prefix", *args, span, *limit,
                check=False)
     if done.returncode == 0:
         return done.stdout
@@ -163,56 +162,20 @@ def diff_output(span, *args, pathspecs=()):
 
 def sweep_matches(diff_text):
     """Added lines that match the two mechanical-sweep patterns, as (path, line, kind, text)."""
+    try:
+        diff_files = source_text.parse_unified_diff(diff_text)
+    except ValueError as error:
+        raise RefactorFlowError(f"cannot parse the branch diff: {error}") from error
+
     matches = []
-    path = None
-    new_file_line = 0
-    in_header = False
-
-    for raw in diff_text.splitlines():
-        if raw.startswith("diff --git "):
-            in_header = True
-            path = None
-            continue
-
-        if in_header:
-            hunk = HUNK_HEADER.match(raw)
-            if hunk:
-                in_header = False
-                new_file_line = int(hunk.group(1))
-                continue
-            if raw.startswith("+++ "):
-                path = parse_new_path(raw)
-            continue
-
-        hunk = HUNK_HEADER.match(raw)
-        if hunk:
-            new_file_line = int(hunk.group(1))
-            continue
-
-        if not raw.startswith("+") or path is None:
-            continue
-
-        text = raw[1:]
-        if SWEEP_MARKERS.search(text):
-            matches.append((path, new_file_line, "marker", text.strip()))
-        if SWEEP_COMMENTED_CODE.search(text):
-            matches.append((path, new_file_line, "commented-out code", text.strip()))
-        new_file_line += 1
+    for diff_file in diff_files:
+        for hunk in diff_file.hunks:
+            for line, text in hunk.added:
+                if SWEEP_MARKERS.search(text):
+                    matches.append((diff_file.path, line, "marker", text.strip()))
+                if SWEEP_COMMENTED_CODE.search(text):
+                    matches.append((diff_file.path, line, "commented-out code", text.strip()))
     return matches
-
-
-def parse_new_path(header):
-    target = header[4:].rstrip("\t")
-    if target == "/dev/null":
-        return None
-    if len(target) >= 2 and target.startswith('"') and target.endswith('"'):
-        try:
-            target = source_text.unquote_c_path(target)
-        except ValueError as error:
-            raise RefactorFlowError(str(error)) from error
-    if target.startswith("b/"):
-        return target[2:]
-    raise RefactorFlowError(f"cannot parse diff header {header!r}: expected `+++ b/<path>` or `+++ /dev/null`")
 
 
 def binary_paths(numstat_text):

@@ -50,6 +50,7 @@ from stat import S_ISREG
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "lib"))
 import script_utils
+import source_text
 
 CLAUDE = Path(os.environ.get("REFACTOR_CLAUDE_DIR", Path(__file__).resolve().parents[3]))
 LOG_ESCAPE = os.environ.get("REFACTOR_LOG_ESCAPE") or str(CLAUDE / "scripts" / "telemetry" / "log-escape")
@@ -200,35 +201,15 @@ def sweep_matches(diff_text):
     return matches
 
 
-C_ESCAPES = {"a": 7, "b": 8, "f": 12, "n": 10, "r": 13, "t": 9, "v": 11, '"': 34, "\\": 92}
-C_ESCAPE = re.compile(r'\\([0-7]{3}|[abfnrtv"\\])')
-
-
-def unquote_c_path(quoted):
-    """Decode a git C-quoted name (`"..."`): the escapes git writes, octal bytes, then UTF-8."""
-    inner = quoted[1:-1]
-    decoded = bytearray()
-    position = 0
-    for escape in [*C_ESCAPE.finditer(inner), None]:
-        end = escape.start() if escape else len(inner)
-        plain = inner[position:end]
-        if "\\" in plain:
-            raise RefactorFlowError(f"cannot decode quoted path {quoted!r}: unknown escape")
-        decoded += plain.encode("utf-8", errors="surrogateescape")
-        if escape is None:
-            break
-        code = escape.group(1)
-        decoded.append(int(code, 8) if code[0] in "01234567" else C_ESCAPES[code])
-        position = escape.end()
-    return decoded.decode("utf-8", errors="replace")
-
-
 def parse_new_path(header):
     target = header[4:].rstrip("\t")
     if target == "/dev/null":
         return None
     if len(target) >= 2 and target.startswith('"') and target.endswith('"'):
-        target = unquote_c_path(target)
+        try:
+            target = source_text.unquote_c_path(target)
+        except ValueError as error:
+            raise RefactorFlowError(str(error)) from error
     if target.startswith("b/"):
         return target[2:]
     raise RefactorFlowError(f"cannot parse diff header {header!r}: expected `+++ b/<path>` or `+++ /dev/null`")

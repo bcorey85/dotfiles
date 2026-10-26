@@ -153,6 +153,18 @@ class ReviewCommitGateTest(GateCase):
         self.assert_commit_denied(self.bash("review-gate-mark clean && git commit -m x"))
         self.assertEqual(self.state(), "dirty\n")
 
+    def test_an_allowed_commit_that_names_a_mark_leaves_the_state(self):
+        self.dispatch()
+        self.seed_handback("converged")
+        self.bash("review-gate-mark clean")
+        self.assert_silent(self.bash('git commit -m "review-gate-mark dirty"'))
+        self.assertEqual(self.state(), "clean\n")
+
+    def test_an_allowed_commit_then_a_mark_writes_no_state(self):
+        self.seed_handback("converged")
+        self.assert_silent(self.bash("git commit -m x && review-gate-mark clean"))
+        self.assertIsNone(self.state())
+
     def test_mark_clean_without_prior_state_creates_it(self):
         self.seed_handback("deferred")
         self.assert_silent(self.bash("review-gate-mark clean"))
@@ -265,7 +277,7 @@ class ReviewCommitGateTest(GateCase):
         (self.home / ".claude").write_text("a file, not a directory")
         self.assert_internal_error_asks(
             self.bash("git commit -m x"), 1,
-            stderr=f"mkdir: cannot create directory '{(self.home / ".claude")}': Not a directory\n")
+            stderr=f"review-commit-gate: cannot create {self.state_dir}: Not a directory\n")
         finished = self.dispatch()
         self.assertEqual((finished.returncode, finished.stdout), (1, ""))
 

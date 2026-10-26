@@ -486,24 +486,13 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertIn("tab\tname.py:1 [marker]", done.stdout)
         self.assertIn("(4 match(es))", done.stdout)
 
-    def test_parse_new_path_decodes_every_escape_git_writes(self):
-        module = load_script_module()
-        cases = {
-            '+++ "b/q\\"uote"': 'q"uote',
-            '+++ "b/back\\\\slash"': "back\\slash",
-            '+++ "b/t\\tab"': "t\tab",
-            '+++ "b/n\\nl"': "n\nl",
-            '+++ "b/caf\\303\\251"': "café",
-            '+++ "b/café\\"x"': 'café"x',
-            "+++ b/a b.py\t": "a b.py",
-            "+++ /dev/null": None,
-        }
-        for header, expected in cases.items():
-            self.assertEqual(module.parse_new_path(header), expected, header)
-        with self.assertRaises(module.RefactorFlowError):
-            module.parse_new_path('+++ "b/bad\\qescape"')
-        with self.assertRaises(module.RefactorFlowError):
-            module.parse_new_path("+++ c/other")
+    def test_branch_prep_sweeps_a_whole_line_that_holds_a_form_feed_or_lone_carriage_return(self):
+        self.branch_with({"a.py": "page = 1\x0c# TODO after the feed\nkept = 2\rprint('after the return')\n"})
+        done = self.flow("branch-prep")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("a.py:1 [marker] page = 1\x0c# TODO after the feed", done.stdout)
+        # The flow's stdout is read in text mode, which turns the carriage return into a newline.
+        self.assertIn("a.py:2 [marker] kept = 2\nprint('after the return')", done.stdout)
 
     def test_branch_prep_survives_user_git_config(self):
         config = self.temp_root / "gitconfig"

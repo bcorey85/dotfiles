@@ -27,11 +27,9 @@
     stop adds nothing. The
     gate applies the telemetry switch before it calls the logger; a logging failure never blocks a stop.
 
-Hook JSON on stdin; on a violation, a decision JSON on stdout; exit 0 always. Any parse
-failure passes (fail open) and says why on stderr: this gate adds a check, it must never
-stop the loop on its own error.
-
-Dry run for a saved transcript:  review_loop_gate.py --check <loop transcript.jsonl>
+Hook JSON on stdin; on a violation, a decision JSON on stdout; exit 0, but exit 1 when lib/script_utils.py
+cannot be imported. Any parse failure passes (fail open) and says why on stderr: this gate adds a check, it must
+never stop the loop on its own error.
 """
 import json
 import os
@@ -41,17 +39,12 @@ import subprocess
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
-try:
-    import script_utils
-except ImportError:  # without the helpers each check keeps its stricter reading: it blocks where it could pass
-    script_utils = None
+import script_utils
 
 OWN_CLAUDE_DIR = pathlib.Path(__file__).resolve().parents[2]
 CODERS = re.compile(r"^(backend-|frontend-)?coder(-deep)?$")
 REVIEWERS = re.compile(r"^code-reviewer(-deep)?$")
 AGENT_ID = re.compile(r"agentId:\s*([A-Za-z0-9-]+)")
-REPORTED_TOOL_USE = re.compile(r"<tool-use-id>\s*([\w-]+)\s*</tool-use-id>")
-REPORTED_AGENT = re.compile(r"<agent-message\s+from=\"([\w-]+)\"")
 CALLER_CODE = re.compile(r"(?i)(?<![\w-])caller[`*]*\s*[:=]\s*[`\"']?code\b")
 HANDOFF = re.compile(r"(?im)^[ \t]*handoff[ \t]*:")
 NO_REVIEW = re.compile(r"(?<![\w-])no-review(?![\w-])")
@@ -84,8 +77,9 @@ CHECKER = re.compile(r"(?:\A|[;&|(]\s*|\n\s*)(?:cd\s+\S+\s*&&\s*)?(?:[A-Za-z_]\w
 
 RUN_GATES = re.compile(r"-reviewer(-deep)?$")
 AGENT_MESSAGE = re.compile(r"<agent-message\s+from=\"([\w-]+)\">(.*?)(?=</agent-message>|<agent-message\s|\Z)", re.S)
-NOTIFICATION_RESULT = re.compile(r"<tool-use-id>\s*([\w-]+)\s*</tool-use-id>(?:(?!</task-notification>).)*?"
-                                 r"<result>((?:(?!</task-notification>).)*?)</result>", re.S)
+# A task notification's tool_use_id, and its result when it carries one: a killed dispatch reports with none.
+NOTIFICATION = re.compile(r"<tool-use-id>\s*([\w-]+)\s*</tool-use-id>(?:(?:(?!</task-notification>).)*?"
+                          r"<result>((?:(?!</task-notification>).)*?)</result>)?", re.S)
 NIT_SECTION = re.compile(r"(?mi)^\s*#{2,4}\s*[*_`]*Nits?\b")
 FENCE =re.compile(r"^(```|~~~)")
 HEADING_MARKUP = re.compile(r"[*_`:]")
@@ -132,8 +126,6 @@ def scoping_words(rest, checker):
     that pick a package, a project or a manifest for this checker gone, since those values do not narrow which tests
     run."""
     arguments = REDIRECT.sub(" ", rest)
-    if script_utils is None:
-        return arguments
     flags = NON_SCOPING_FLAGS.get(checker, ())
     return script_utils.strip_flag_values(arguments, flags)
 
@@ -150,58 +142,97 @@ def full_check(cmd):
     return bool(hits) or bool(GATE_LOG.search(cmd))
 
 
-def scan(path, final=None):
+class LoopTranscript:
+    """One read of a loop transcript: what the stop check and the run rows need from it."""
+
+    def __init__(self, path):
+        self.prompt, self.last_text = None, ""
+        self.kinds = {}  # dispatch tool_use_id -> subagent_type, in dispatch order
+        self.dispatched_at = {}  # dispatch tool_use_id -> transcript line
+        self.results = {}  # dispatch tool_use_id -> the text of its tool_result
+        self.notifications = {}  # tool_use_id -> the results its task notifications carried, [] for none
+        self.agent_messages = {}  # agent id -> the texts of its agent messages
+        self.messages_sent = []  # (transcript line, SendMessage recipient)
+        self.full_checks = []  # the transcript lines of the shell calls that ran a full check
+        with open(path, encoding="utf-8") as fh:
+            for n, line in enumerate(fh):
+                self.read_record(n, json.loads(line))
+
+    def read_record(self, n, rec):
+        content = (rec.get("message") or {}).get("content")
+        if self.prompt is None and rec.get("type") == "user":
+            self.prompt = text_of(content)
+
+        carrier = text_of(content) if rec.get("type") == "user" else ""
+        carrier += " " + str((rec.get("attachment") or {}).get("prompt") or "")
+        self.read_reports(carrier)
+
+        for block in content if isinstance(content, list) else []:
+            if isinstance(block, dict):
+                self.read_block(n, rec.get("type"), block)
+
+    def read_reports(self, carrier):
+        for notification in NOTIFICATION.finditer(carrier):
+            reports = self.notifications.setdefault(notification.group(1), [])
+            if notification.group(2) is not None:
+                reports.append(notification.group(2))
+        for agent_id, report in AGENT_MESSAGE.findall(carrier):
+            self.agent_messages.setdefault(agent_id, []).append(report)
+
+    def read_block(self, n, record_type, block):
+        if block.get("type") == "text" and record_type == "assistant" and block.get("text", "").strip():
+            self.last_text = block["text"]
+        elif block.get("type") == "tool_use":
+            self.read_tool_use(n, block)
+        elif block.get("type") == "tool_result" and block.get("tool_use_id") in self.kinds:
+            self.results[block["tool_use_id"]] = text_of(block.get("content"))
+
+    def read_tool_use(self, n, block):
+        tool_input = block.get("input") or {}
+        if block.get("name") == "Agent":
+            self.kinds[block.get("id")] = tool_input.get("subagent_type") or ""
+            self.dispatched_at[block.get("id")] = n
+        elif block.get("name") == "SendMessage":
+            self.messages_sent.append((n, tool_input.get("to")))
+        elif block.get("name") == "Bash" and full_check(str(tool_input.get("command") or "")):
+            self.full_checks.append(n)
+
+    def launched_agent(self, tool_use_id):
+        """The agent id that the dispatch's tool_result names, or None."""
+        launched = AGENT_ID.findall(self.results.get(tool_use_id, ""))
+        return launched[0] if launched else None
+
+    def dispatch_lines(self, kinds):
+        """The transcript lines of the dispatches whose subagent_type matches kinds."""
+        return [self.dispatched_at[tool_use_id] for tool_use_id, kind in self.kinds.items() if kinds.match(kind)]
+
+    def steps(self, kinds):
+        """The transcript lines of the dispatches whose subagent_type matches kinds, and of the SendMessages to the
+        agents that those dispatches launched."""
+        agents = {agent_id for tool_use_id, kind in self.kinds.items() if kinds.match(kind)
+                  for agent_id in AGENT_ID.findall(self.results.get(tool_use_id, ""))}
+        return self.dispatch_lines(kinds) + [n for n, recipient in self.messages_sent if recipient in agents]
+
+    def open_dispatches(self):
+        """The count of background dispatches that have not reported back, by task notification or agent message."""
+        return sum(1 for tool_use_id, text in self.results.items()
+                   if "Async agent launched" in text and tool_use_id not in self.notifications
+                   and self.launched_agent(tool_use_id) not in self.agent_messages)
+
+
+def scan(transcript, final=None):
     """(a coder ran after the last reviewer read, no full check ran after the last code change, the loop prompt
     holds no-review, the count of background dispatches that have not reported). final is the loop's last message;
     the transcript's last text stands in when it is None."""
-    kinds, reviewer_ids, coder_ids = {}, set(), set()
-    background, reported_tool_uses, reported_agents = {}, set(), set()
-    last_coder, last_step, last_read, last_full, prompt, last_text = -1, 0, -1, -1, None, ""
-    with open(path, encoding="utf-8") as fh:
-        for n, line in enumerate(fh):
-            rec = json.loads(line)
-            msg = rec.get("message") or {}
-            content = msg.get("content")
-            if prompt is None and rec.get("type") == "user":
-                prompt = text_of(content)
-            report_text = text_of(content) if rec.get("type") == "user" else ""
-            report_text += " " + str((rec.get("attachment") or {}).get("prompt") or "")
-            reported_tool_uses.update(REPORTED_TOOL_USE.findall(report_text))
-            reported_agents.update(REPORTED_AGENT.findall(report_text))
-            for b in content if isinstance(content, list) else []:
-                if not isinstance(b, dict):
-                    continue
-                if b.get("type") == "text" and rec.get("type") == "assistant" and b.get("text", "").strip():
-                    last_text = b["text"]
-                elif b.get("type") == "tool_use":
-                    inp = b.get("input") or {}
-                    if b.get("name") in ("Agent", "Task"):
-                        kind = inp.get("subagent_type") or ""
-                        kinds[b.get("id")] = kind
-                        if CODERS.match(kind):
-                            last_coder = last_step = n
-                        elif REVIEWERS.match(kind):
-                            last_read = n
-                    elif b.get("name") == "SendMessage" and inp.get("to") in reviewer_ids:
-                        last_read = n
-                    elif b.get("name") == "SendMessage" and inp.get("to") in coder_ids:
-                        last_step = n
-                    elif b.get("name") == "Bash":
-                        if full_check(str(inp.get("command") or "")):
-                            last_full = n
-                elif b.get("type") == "tool_result":
-                    result_text = text_of(b.get("content"))
-                    if b.get("tool_use_id") in kinds and "Async agent launched" in result_text:
-                        launched = AGENT_ID.findall(result_text)
-                        background[b.get("tool_use_id")] = launched[0] if launched else None
-                    kind = kinds.get(b.get("tool_use_id"), "")
-                    ids = reviewer_ids if REVIEWERS.match(kind) else coder_ids if CODERS.match(kind) else None
-                    if ids is not None:
-                        ids.update(AGENT_ID.findall(result_text))
-    ungated = last_full < last_step and not PLAN_IMPACT.search(last_text if final is None else final)
-    open_dispatches = sum(1 for tool_use_id, agent_id in background.items()
-                          if tool_use_id not in reported_tool_uses and agent_id not in reported_agents)
-    return last_coder > last_read, ungated, bool(NO_REVIEW.search(prompt or "")), open_dispatches
+    last_coder = max(transcript.dispatch_lines(CODERS), default=-1)
+    last_read = max(transcript.steps(REVIEWERS), default=-1)
+    last_step = max(transcript.steps(CODERS), default=0)
+    last_full = max(transcript.full_checks, default=-1)
+
+    plan_impact = PLAN_IMPACT.search(transcript.last_text if final is None else final)
+    ungated = last_full < last_step and not plan_impact
+    exempt = bool(NO_REVIEW.search(transcript.prompt or ""))
+    return last_coder > last_read, ungated, exempt, transcript.open_dispatches()
 
 
 def reasons_for(scanned):
@@ -230,12 +261,9 @@ def section_findings(lines):
     return indents.count(min(indents))
 
 
-def count_findings(report):
-    """The number of findings in a reviewer report, or None when the count would be a guess: the text is no
-    review report, or a section that holds findings has text and no entry in it."""
-    holds_findings = next((counts for heading, counts in LAYOUTS if heading.search(report)), None)
-    if holds_findings is None:
-        return None
+def findings_sections(report, holds_findings):
+    """The lines of each report section that holds findings. Lines inside a code fence are skipped, and a deeper
+    heading stays inside its section."""
     sections, current, level, fenced = [], None, 0, False
     for raw in report.splitlines():
         line = raw.strip()
@@ -253,64 +281,51 @@ def count_findings(report):
                 sections.append(current)
         elif current is not None:
             current.append(raw)
-    total = 0
-    for lines in sections:
-        found = section_findings(lines)
-        if found is None:
-            return None
-        total += found
-    assessment = ASSESSMENT.search(report)
-    if total == 0 and assessment and assessment.group(1) == "NEEDS CHANGES":
+    return sections
+
+
+def count_findings(report):
+    """The number of findings in a reviewer report, or None when the count would be a guess: the text is no
+    review report, or a section that holds findings has text and no entry in it."""
+    holds_findings = next((counts for heading, counts in LAYOUTS if heading.search(report)), None)
+    if holds_findings is None:
         return None
-    if total == 0 and assessment and assessment.group(1) == "PASS WITH WARNINGS" and not NIT_SECTION.search(report):
+
+    counts = [section_findings(lines) for lines in findings_sections(report, holds_findings)]
+    if None in counts:
+        return None
+
+    total = sum(counts)
+    assessment = ASSESSMENT.search(report)
+    verdict = assessment.group(1) if assessment else ""
+    if total == 0 and verdict == "NEEDS CHANGES":
+        return None
+    if total == 0 and verdict == "PASS WITH WARNINGS" and not NIT_SECTION.search(report):
         return None
     return total
 
 
-def reviewer_runs(path):
+def reviewer_runs(transcript):
     """([{tool_use_id, gate, n_findings, result}], lane, phase) for every reviewer dispatch of the loop. The report
     is the dispatch's tool_result, the result of its task notification, or an agent message from the agent that
     the dispatch launched; the first one that counts is used. n_findings is None when none of them counts."""
-    kinds, agent_of, foreground = {}, {}, {}
-    by_tool_use, by_agent, prompt = {}, {}, None
-    with open(path, encoding="utf-8") as fh:
-        for line in fh:
-            rec = json.loads(line)
-            content = (rec.get("message") or {}).get("content")
-            if prompt is None and rec.get("type") == "user":
-                prompt = text_of(content)
-            carrier = text_of(content) if rec.get("type") == "user" else ""
-            carrier += " " + str((rec.get("attachment") or {}).get("prompt") or "")
-            for tool_use_id, report in NOTIFICATION_RESULT.findall(carrier):
-                by_tool_use.setdefault(tool_use_id, []).append(report)
-            for agent_id, report in AGENT_MESSAGE.findall(carrier):
-                by_agent.setdefault(agent_id, []).append(report)
-            for b in content if isinstance(content, list) else []:
-                if not isinstance(b, dict):
-                    continue
-                if b.get("type") == "tool_use" and b.get("name") in ("Agent", "Task"):
-                    kinds[b.get("id")] = (b.get("input") or {}).get("subagent_type") or ""
-                elif b.get("type") == "tool_result" and b.get("tool_use_id") in kinds:
-                    result_text = text_of(b.get("content"))
-                    foreground[b["tool_use_id"]] = result_text
-                    launched = AGENT_ID.findall(result_text)
-                    agent_of[b["tool_use_id"]] = launched[0] if launched else None
     runs = []
-    for tool_use_id, gate in kinds.items():
+    for tool_use_id, gate in transcript.kinds.items():
         if not RUN_GATES.search(gate):
             continue
+        launched = transcript.launched_agent(tool_use_id)
         texts = [
-            foreground.get(tool_use_id, ""),
-            *by_tool_use.get(tool_use_id, []),
-            *by_agent.get(agent_of.get(tool_use_id), []),
+            transcript.results.get(tool_use_id, ""),
+            *transcript.notifications.get(tool_use_id, []),
+            *transcript.agent_messages.get(launched, []),
         ]
         counted = [(count_findings(text), text) for text in texts]
         count, report = next(((c, t) for c, t in counted if c is not None), (None, ""))
         assessment = ASSESSMENT.search(report)
-        runs.append({"tool_use_id": tool_use_id, "gate": gate, "n_findings": count, "texts": texts,
+        runs.append({"tool_use_id": tool_use_id, "gate": gate, "n_findings": count,
                      "result": assessment.group(1) if assessment else ""})
-    lane = PROMPT_LANE.search(prompt or "")
-    phase = PROMPT_PHASE.search(prompt or "")
+    lane = PROMPT_LANE.search(transcript.prompt or "")
+    phase = PROMPT_PHASE.search(transcript.prompt or "")
     return runs, lane.group(1) if lane else "none", phase.group(1) if phase else "-"
 
 
@@ -370,16 +385,14 @@ def state_file_for(session_id):
     return state_dir / (re.sub(r"[^\w.-]", "_", str(session_id)) + ".jsonl")
 
 
-def log_run_rows(hook, path):
+def log_run_rows(hook, transcript):
     """Write the run rows that this session has not written yet. Never raises: a logging failure must not stop the
     loop."""
     try:
         session_id = hook.get("session_id")
         if not session_id:
             return
-        sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / "lib")]
-        import script_utils
-        runs, lane, phase = reviewer_runs(path)
+        runs, lane, phase = reviewer_runs(transcript)
         state_file = state_file_for(session_id)
         marks = {}
         for row in script_utils.read_jsonl(state_file):
@@ -396,55 +409,32 @@ def log_run_rows(hook, path):
         print(f"review-loop-gate: run rows skipped, {type(e).__name__}: {e}", file=sys.stderr)
 
 
-def loop_transcript(hook):
-    path = hook.get("agent_transcript_path")
-    if path:
-        return path
-    aid, top = hook.get("agent_id"), hook.get("transcript_path") or ""
-    return os.path.join(top[:-len(".jsonl")], "subagents", f"agent-{aid}.jsonl") if aid and top else None
+def check_dispatch(tool_input):
+    prompt = tool_input.get("prompt") or ""
+    if tool_input.get("subagent_type") == "review-loop" and CALLER_CODE.search(prompt) and not HANDOFF.search(prompt):
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                                 "permissionDecisionReason": HANDOFF_REASON}}))
 
 
-def agent_type(hook, path):
-    if hook.get("agent_type"):
-        return hook["agent_type"]
-    if not path:
-        return None
-    try:
-        with open(path[:-len(".jsonl")] + ".meta.json", encoding="utf-8") as fh:
-            return json.load(fh).get("agentType")
-    except (OSError, ValueError):
-        return None
+def check_stop(hook):
+    transcript = LoopTranscript(hook["agent_transcript_path"])
+    scanned = scan(transcript, hook.get("last_assistant_message"))
+    why = [] if hook.get("stop_hook_active") else reasons_for(scanned)
+    if why:
+        print(json.dumps({"decision": "block", "reason": " ".join(why)}))
+    elif not scanned[3]:
+        log_run_rows(hook, transcript)
 
 
 def main():
-    if len(sys.argv) == 3 and sys.argv[1] == "--check":
-        unread, ungated, exempt, open_dispatches = scan(sys.argv[2])
-        print(", ".join([("unread, no-review" if exempt else "unread") if unread else "read"]
-                        + (["no full check after the last code change"] if ungated else [])
-                        + ([f"waiting on {open_dispatches} background dispatches"] if open_dispatches else [])))
-        return
     if os.environ.get("CLAUDE_SKIP_HOOKS"):
         return
     hook = json.load(sys.stdin)
     event = hook.get("hook_event_name")
-    if event == "PreToolUse" and hook.get("tool_name") in ("Agent", "Task"):
-        inp = hook.get("tool_input") or {}
-        prompt = inp.get("prompt") or ""
-        if inp.get("subagent_type") == "review-loop" and CALLER_CODE.search(prompt) and not HANDOFF.search(prompt):
-            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                                     "permissionDecisionReason": HANDOFF_REASON}}))
-    elif event == "SubagentStop":
-        path = loop_transcript(hook)
-        if agent_type(hook, path) != "review-loop":
-            return
-        if not path or not os.path.exists(path):
-            raise FileNotFoundError("no loop transcript for agent {}".format(hook.get("agent_id")))
-        scanned = scan(path, hook.get("last_assistant_message"))
-        why = [] if hook.get("stop_hook_active") else reasons_for(scanned)
-        if why:
-            print(json.dumps({"decision": "block", "reason": " ".join(why)}))
-        elif not scanned[3]:
-            log_run_rows(hook, path)
+    if event == "PreToolUse" and hook.get("tool_name") == "Agent":
+        check_dispatch(hook.get("tool_input") or {})
+    elif event == "SubagentStop" and hook.get("agent_type") == "review-loop":
+        check_stop(hook)
 
 
 if __name__ == "__main__":

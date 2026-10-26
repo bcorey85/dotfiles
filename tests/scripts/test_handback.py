@@ -115,11 +115,12 @@ class ParseTest(HandbackTestBase):
         packet = handback.parse("status (final): converged\niter: 1\nfixed: []\n")
         self.assertEqual(packet["status"], "converged")
 
-    def test_perf_smell_files_touched_and_principle_are_packet_keys(self):
-        packet = handback.parse("status: converged\niter: 1\nfixed: []\nperf:\n- {finding: n+1}\nsmell: []\n"
-                                "files_touched: []\nprinciple: batch\n")
-        self.assertEqual(packet["principle"], "batch")
-        self.assertIn("n+1", packet["perf"])
+    def test_files_touched_is_a_packet_key_and_perf_smell_principle_are_trailer(self):
+        packet = handback.parse("status: converged\niter: 1\nfixed: []\nfiles_touched: [a.py]\n\nperf: n+1\n"
+                                "smell: []\nprinciple: batch\n")
+        self.assertEqual(packet["files_touched"], "[a.py]")
+        self.assertFalse({"perf", "smell", "principle"} & set(packet))
+        self.assertIn("principle: batch", packet["trailer"])
 
     def test_flow_list_split_over_lines_parses(self):
         packet = handback.load(
@@ -142,6 +143,16 @@ class ParseTest(HandbackTestBase):
         )
         self.assertEqual(packet["fixed"][0]["file_line"], "src/a.ts:4")
         self.assertEqual(packet["fixed"][0]["blocker"], "no")
+
+    def test_an_entry_that_is_neither_text_nor_a_mapping_is_a_problem(self):
+        for text, problem in (("status: converged\niter: 1\nfixed: [null]\n", "fixed entry has no finding: 'None'"),
+                              ("status: converged\niter: 1\nfixed: [5]\n", "fixed entry has no finding: '5'"),
+                              ("status: converged\niter: 1\nfixed: []\nask: [null]\n", "ask entry has no question"),
+                              ("status: converged\niter: 1\nfixed: []\nask: [[\"q\"]]\n", "ask entry has no question")):
+            with self.subTest(text=text), self.assertRaises(handback.PacketError) as raised:
+                handback.load(text)
+            self.assertTrue([found for found in raised.exception.problems if found.startswith(problem)],
+                            raised.exception.problems)
 
     def test_missing_spec_iter_is_none_and_missing_iter_is_a_problem(self):
         self.assertIsNone(handback.load(CONVERGED)["spec_iter"])
@@ -206,13 +217,13 @@ class ValidateTest(HandbackTestBase):
                 handback.load(text)
 
     def test_cap_reached_with_a_key_present_but_empty_is_a_problem_and_a_missing_key_is_another(self):
-        for text in (
-            "status: cap-reached\niter: 2\nfindings_remaining: [] (none open)\n",
-            "status: cap-reached\niter: 2\n",
+        for text, absence in (
+            ("status: cap-reached\niter: 2\nfindings_remaining: [] (none open)\n", "empty"),
+            ("status: cap-reached\niter: 2\n", "missing"),
         ):
-            with self.assertRaises(handback.PacketError) as raised:
+            with self.subTest(text=text), self.assertRaises(handback.PacketError) as raised:
                 handback.load(text)
-            self.assertIn("findings_remaining", raised.exception.problems[0])
+            self.assertIn(f"status is cap-reached but findings_remaining is {absence}", raised.exception.problems)
 
     def test_pending_report_is_not_a_packet(self):
         with self.assertRaises(handback.PacketError):
@@ -235,7 +246,7 @@ class AskFindingIdTest(unittest.TestCase):
 
     def test_a_missing_or_non_string_id_is_none(self):
         for entry in [{}, {"finding_id": None}, {"finding_id": 1234567890123456}, {"finding_id": ["a1b2c3d4e5f60001"]},
-                      "a1b2c3d4e5f60001 in plain text"]:
+                      handback.entry_from_text("a1b2c3d4e5f60001 in plain text", "question")]:
             with self.subTest(entry=entry):
                 self.assertIsNone(handback.ask_finding_id(entry))
 
@@ -382,11 +393,6 @@ class CliTest(HandbackTestBase):
         self.assertEqual(code, 2)
         self.assertIn("handback.py", err)
 
-    def test_latest_prints_the_session_rows_as_json(self):
-        handback.record(SESSION, "dispatch")
-        _code, out, _err = self.run_cli(["latest", SESSION])
-        self.assertEqual(json.loads(out)["pending"], True)
-
 
 class HookTest(HandbackTestBase):
     def event(self, tool, session=SESSION, agent="review-loop", message=CONVERGED, agent_id="a1"):
@@ -396,7 +402,8 @@ class HookTest(HandbackTestBase):
                 "tool_input": {"message": message}}
 
     def fire(self, event, *arguments):
-        return self.run_cli(["hook", *arguments], json.dumps(event))
+        kind = {"Agent": "dispatch", "SubagentHandback": "handback"}[event["tool_name"]]
+        return self.run_cli(["hook", *(arguments or [kind])], json.dumps(event))
 
     def test_review_loop_dispatch_and_good_hand_back_are_stored_without_output(self):
         self.assertEqual(self.fire(self.event("Agent"))[:2], (0, ""))
@@ -432,9 +439,11 @@ class HookTest(HandbackTestBase):
         self.assertIn("unknown kind", err)
         self.assertFalse(self.store.exists())
 
-    def test_an_explicit_kind_overrides_the_tool_name(self):
-        self.fire(self.event("Agent"), "dispatch")
-        self.assertIsNotNone(handback.latest(SESSION)["dispatch"])
+    def test_no_kind_argument_does_nothing(self):
+        code, out, err = self.run_cli(["hook"], json.dumps(self.event("Agent")))
+        self.assertEqual((code, out), (0, ""))
+        self.assertIn("unknown kind", err)
+        self.assertFalse(self.store.exists())
 
     def test_event_without_a_session_id_records_nothing(self):
         event = self.event("Agent")
@@ -443,8 +452,11 @@ class HookTest(HandbackTestBase):
         self.assertFalse(self.store.exists())
 
     def test_unreadable_event_exits_zero_and_blocks_nothing(self):
-        code, out, _err = self.run_cli(["hook"], "not json")
+        code, out, err = self.run_cli(["hook", "handback"], "not json")
         self.assertEqual((code, out), (0, ""))
+        self.assertIn("handback hook:", err)
+        self.assertNotIn("unknown kind", err)
+        self.assertFalse(self.store.exists())
 
 
 if __name__ == "__main__":

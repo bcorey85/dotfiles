@@ -442,6 +442,24 @@ def phase_flag_position(words):
     return None
 
 
+def phase_words_as_flag(args):
+    # `<plan> Phase <id>` and `<plan> <id>` name a phase of that plan: the words with `--phase <id>` in their place.
+    # Any other args come back as they were.
+    words = script_utils.words_of_arguments(args) if args else []
+    if "--task" in words or "--phase" in words:
+        return args
+
+    has_phase_word = len(words) >= 3 and words[-2].lower() == "phase"
+    plan_at = len(words) - (3 if has_phase_word else 2)
+    if plan_at < 0 or not re.fullmatch(plan_format.PHASE_ID, words[-1]):
+        return args
+
+    plan_word = words[plan_at]
+    if not (plan_word.endswith(".md") and pathlib.Path(plan_word).is_file()):
+        return args
+    return [*words[:plan_at + 1], "--phase", words[-1]]
+
+
 def first_word_is_verb(words):
     # Whether `start` was given a verb name in place of task text. `start` and `status` are verbs only where a verb
     # would fit: `status` alone, and `start` alone or before a flag or a modifier. More plain words after either make
@@ -650,10 +668,11 @@ def prepare_fresh_start(repo_dir, previous, branch, parsed):
 
 
 def command_start(args):
-    args = without_blank_task_text(args)
-    parsed = parse_start_args(args)
     repo_dir = repo_root_or_exit()
     os.chdir(repo_dir)
+    args = without_blank_task_text(args)
+    args = phase_words_as_flag(args)
+    parsed = parse_start_args(args)
     previous = load_state(repo_dir) or {}
     branch = branch_label(repo_dir)
 

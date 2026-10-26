@@ -62,8 +62,40 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
    **Log and hand off — one call.** Write the JSON file at the path the prep script's `NEXT:` line named (a fresh path for each invocation), and run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py log --mode <branch|targeted|simplify> --input <file> [--base REF]`. Use one input file per /refactor invocation; re-run `log` on that file (the script skips rows already written for it). In branch mode pass `--base` with the base `branch-prep` printed in its `NEXT:` line. It writes the escape rows, the finder rows and prints the `/review` handoff block. You supply:
    - `finder` (the dispatched agent; omit in targeted mode), `lane` (required whenever there is a finder; from conversation/planning artifacts), `result` (optional).
    - `findings`: one entry per finder finding, each `{class, disposition, actioned, file, line, desc}` (`line` 0 when none; `desc` one line). Add `escape: true` plus `severity` for each distinct smell in branch-loop code (branch-audit: `duplication` for scope-item-1, `smell` otherwise; simplify: `complexity`). One entry per smell, not per file. Never `escape` mechanical-sweep matches or legacy targets — old debt is not an escape.
-   - `guards`: one guard per escape `class` group, from the ratchet (`escape-ratchet.md`, read in step 3a; read it now in simplify mode). The script refuses an escape class with no guard.
-   - `handoff`: `files` (`{path, change}`, one line each), `tests_run` (exact command + exit code, or `none`), `flagged`, optional `plan_impact` (may span lines). Add `modifier` if one was given.
+   - `guards`: an object, `{"<class>": "<guard>"}`, one guard per escape `class` group, from the ratchet (`escape-ratchet.md`, read in step 3a; read it now in simplify mode). The script refuses an escape class with no guard.
+   - `handoff`: `files` (`{path, change}`, one line each), `tests_run` (exact command + exit code, or `none`), `flagged` (one line, `none` when nothing is flagged), optional `plan_impact` (may span lines). Add `modifier` if one was given.
+
+   ```json
+   {
+     "finder": "smell-reviewer",
+     "lane": "code",
+     "result": "NEEDS CHANGES",
+     "findings": [
+       {
+         "class": "duplication",
+         "disposition": "fix",
+         "actioned": "fixed",
+         "file": "src/orders.py",
+         "line": 3,
+         "desc": "the same parse in two handlers",
+         "severity": "medium",
+         "escape": true
+       }
+     ],
+     "guards": { "duplication": "convention" },
+     "handoff": {
+       "files": [
+         {
+           "path": "src/orders.py",
+           "change": "one parse helper for both handlers"
+         }
+       ],
+       "tests_run": "pytest tests/test_orders.py -> exit 0",
+       "flagged": "none",
+       "plan_impact": "none"
+     }
+   }
+   ```
 
    If it prints no handoff and code changed, add `handoff` to the file and run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py handoff --input <file>`; that prints the block and writes nothing. If `log` exits 2 (a writer refused a row), still follow its `NEXT:` and tell the user which row failed.
 

@@ -233,6 +233,17 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(self.finding_rows()[0]["diff_loc"], "2")
 
+    def test_the_log_input_example_in_the_skill_logs_on_the_first_call(self):
+        skill_text = (SCRIPT.parent.parent / "SKILL.md").read_text()
+        example_match = re.search(r"```json\n(.*?)```", skill_text, re.S)
+        self.assertIsNotNone(example_match, "the skill shows no JSON log input example")
+        skill_example = json.loads(example_match.group(1))
+        self.pushed_feature_branch({"src/orders.py": "x = 1\n"})
+
+        done = self.log("branch", skill_example)
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+
     def test_branch_prep_with_no_base_passes_the_helper_stop_line_through(self):
         self.git("branch", "-m", "main", "work")
         self.git("checkout", "-q", "-b", "other")

@@ -2698,7 +2698,10 @@ class CodeStepTest(unittest.TestCase):
         self.assertIsNone(self.gate_mark("sess-1"))
         out = self.step("after-review")
         self.assert_marked_clean(out, "sess-1")
-        self.assertEqual({"sess-1"}, {p.name for p in (self.home / ".claude/state/review-gate").iterdir()})
+        self.assertEqual({"sess-1", "sess-1.reviewed"},
+                         {p.name for p in (self.home / ".claude/state/review-gate").iterdir()})
+        reviewed = json.loads((self.home / ".claude/state/review-gate/sess-1.reviewed").read_text())
+        self.assertEqual([str(self.repo.resolve())], [str(pathlib.Path(top).resolve()) for top in reviewed])
 
     def test_a_failed_verification_still_marks_the_gate_clean_and_prints_no_mark_command(self):
         self.set_verification('- [ ] **Check**: fails - `bash -c "exit 1"`')
@@ -2996,8 +2999,8 @@ class CodeStepTest(unittest.TestCase):
     def test_missing_handback_module_stops_the_run_and_writes_no_gate_file(self):
         bare = self.tmp / "bare"
         bare.mkdir()
-        for name in (SCRIPT.name, "script_utils.py", "plan_format.py", "code_step_core.py", "code_step_boundary.py",
-                     "code_step_hooks.py"):
+        for name in (SCRIPT.name, "script_utils.py", "plan_format.py", "reviewed_tree.py", "code_step_core.py",
+                     "code_step_boundary.py", "code_step_hooks.py"):
             shutil.copy(toolkit_paths.script_in(SCRIPTS_ROOT, name), bare / name)
         env = dict(self.env, PYTHONPATH="")
         script = str(bare / SCRIPT.name)

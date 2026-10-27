@@ -669,12 +669,15 @@ def false_clean_reason(session_id):
     return None
 
 
-def ran_reviewer(session_id, agent_id):
-    """False when the review-loop agent `agent_id` dispatched no reviewer after its last coder dispatch. With no coder
-    dispatch, any reviewer dispatch by it counts. Coders resumed with SendMessage are not counted: the hook sees only
-    the recipient's id, not its type."""
+def ran_reviewer(session_id, agent_id, iter_round):
+    """False when the review-loop agent `agent_id` dispatched no reviewer at all, or, below round 2, none after its
+    last coder dispatch. From round 2 on, no full review follows a coder, so one reviewer dispatch is enough. Coders
+    resumed with SendMessage are not counted: the hook sees only the recipient's id, not its type."""
     stored_rows = script_utils.read_jsonl(session_file(session_id))
     steps = [row["step"] for row in stored_rows if row.get("kind") == "step" and row.get("agent_id") == agent_id]
+
+    if iter_round >= 2:
+        return "reviewer" in steps
     after_coder = steps[len(steps) - steps[::-1].index("coder"):] if "coder" in steps else steps
     return "reviewer" in after_coder
 
@@ -732,15 +735,17 @@ def handle_hook(event, kind):
         return None
     message = str(tool_input.get("message", ""))
     agent_id = event.get("agent_id") or "unknown"
+    iter_round = None
     try:
-        status, problems = load(message)["status"], []
+        packet = load(message)
+        status, problems, iter_round = packet["status"], [], packet["iter"]
     except PacketError as error:
         status, problems = "invalid", error.problems
     if problems and not was_rejected(session_id, agent_id):
         record(session_id, "rejected", agent_id=agent_id, problems=problems)
         return ("The review-loop packet does not parse: " + "; ".join(problems) +
                 ". Fix the packet to the schema in your instructions and hand back again.")
-    unreviewed = (status in CLEAN_STATUSES and not ran_reviewer(session_id, agent_id)
+    unreviewed = (status in CLEAN_STATUSES and not ran_reviewer(session_id, agent_id, iter_round)
                   and not claim_no_review(session_id, agent_id))
     if unreviewed and not was_unreviewed(session_id, agent_id):
         record(session_id, "unreviewed", agent_id=agent_id)

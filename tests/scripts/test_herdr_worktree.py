@@ -9,13 +9,10 @@ import subprocess
 import tempfile
 import unittest
 
+from stubs import write_stub
+
 HERDR_WORKTREE = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin" / "herdr-worktree"
 CREATED_WORKSPACE = '{"result":{"workspace":{"workspace_id":"w1"}}}'
-
-
-def write_stub(path, body):
-    path.write_text("#!/bin/bash\n" + body + "\n")
-    path.chmod(0o755)
 
 
 def git(cwd, *args):

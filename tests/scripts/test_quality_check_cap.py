@@ -581,6 +581,14 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assertEqual(suggested, "npm test > /tmp/check.log 2>&1")
         self.assert_allowed(self.pre(suggested, cwd=self.work / "sub"))
 
+    def test_the_cut_deny_keeps_the_cd_prefix_as_typed(self):
+        (self.work / "sub").mkdir()
+        self.post("cd sub && npm test 2>&1 | tail -2", cwd=self.work)
+        reason = self.assert_denied(self.pre("cd sub && npm test", cwd=self.work))
+        suggested = reason.split("Run it once as `", 1)[1].split("`", 1)[0]
+        self.assertEqual(suggested, "cd sub && npm test > /tmp/check.log 2>&1")
+        self.assert_allowed(self.pre(suggested, cwd=self.work))
+
     def test_the_cut_deny_keeps_the_wrapper_and_env_prefix_as_typed(self):
         for typed in ("npx eslint .", "FOO=1 pytest -q"):
             with self.subTest(typed=typed):

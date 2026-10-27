@@ -390,6 +390,7 @@ def run(raw, state):
     checks = []
     format_indexes = []
     loop_kinds = []
+    cd_steps = []
     for index, (_, segment) in enumerate(steps):
         segment = re.sub("^" + WS + "+", "", segment)
         segment = re.sub(WS + "+$", "", segment)
@@ -399,6 +400,7 @@ def run(raw, state):
             if target.startswith("~"):
                 target = home + target[1:]
             cwd = target if target.startswith("/") else cwd + "/" + target
+            cd_steps.append(segment)
             continue
         segment = LOOP_BODY_START.sub("", segment)
         if LOOP_HEADER.match(segment):
@@ -408,7 +410,7 @@ def run(raw, state):
                 loop_kinds.pop()
             continue
         segment = re.sub(r"^[({ \t]+", "", segment)
-        command_text = normalize(segment)
+        command_text = " && ".join([*cd_steps, normalize(segment)])
         while True:
             stripped = ASSIGNMENT.sub("", WRAPPER.sub("", segment, count=1), count=1)
             if stripped == segment:

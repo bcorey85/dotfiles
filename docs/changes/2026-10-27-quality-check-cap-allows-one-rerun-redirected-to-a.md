@@ -20,7 +20,8 @@ unmeasured: ""
   file (`tee <file>` or `> <file>`).
 - After a cut run, the cap allows one rerun of the same check that sends its stdout to a file. A rerun that does not
   keep its output is still denied.
-- The deny after a cut run names the exact form to run: the check with ` > /tmp/check.log 2>&1` appended.
+- The deny after a cut run names the exact form to run: the check as typed, its `cd <dir> &&`, wrapper and
+  assignment prefixes kept, with ` > /tmp/check.log 2>&1` appended.
 - The plain deny's suggested form no longer reads as a second allowed run.
 
 ## Evidence
@@ -32,7 +33,7 @@ unmeasured: ""
 
 ## Result
 
-- `tests/scripts/test_quality_check_cap.py` passes (90 tests); ruff passes on the changed files.
+- `tests/scripts/test_quality_check_cap.py` passes (91 tests); ruff passes on the changed files.
 
 ## Watch
 

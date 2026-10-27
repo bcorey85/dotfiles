@@ -7,6 +7,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 import toolkit_paths
@@ -44,7 +45,7 @@ PARITY_CASES = [
 TYPICAL = {"name": "typical", "stdin": "", "files": {LOCK: FULL_LOCK}}
 
 
-def run_hook(lock_text=None, old_lock_text=None, state_home=None):
+def run_hook(lock_text=None, old_lock_text=None, state_home=None, args=()):
     """Lock text goes to the state-dir lock (under state_home when given, else $HOME/.local/state);
     old_lock_text goes to the pre-move lock under ~/.claude."""
     with tempfile.TemporaryDirectory() as scratch:
@@ -63,7 +64,7 @@ def run_hook(lock_text=None, old_lock_text=None, state_home=None):
             lock_path.write_text(lock_text)
         if old_lock_text is not None:
             old_lock_path.write_text(old_lock_text)
-        finished = subprocess.run([sys.executable, str(SCRIPT)], capture_output=True, env=environment)
+        finished = subprocess.run([sys.executable, str(SCRIPT), *args], capture_output=True, env=environment)
         text = (
             finished.stdout.decode("utf-8").replace(str(lock_path), "<LOCK>").replace(str(old_lock_path), "<OLD-LOCK>")
         )
@@ -74,6 +75,20 @@ class CalibrationGuardTest(unittest.TestCase):
     def test_no_lock_prints_nothing(self):
         finished, text = run_hook()
         self.assertEqual((finished.returncode, text, finished.stderr), (0, "", b""))
+
+    def test_live_flag_exits_zero_only_for_a_live_lock(self):
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        old = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 2 * 60 * 60))
+        cases = [
+            ("no lock", None, 1),
+            ("fresh lock", json.dumps({"file": "a", "ts": now}), 0),
+            ("stale lock", json.dumps({"file": "a", "ts": old}), 1),
+            ("dead owner", json.dumps({"file": "a", "ts": now, "owner_pid": "99999999"}), 1),
+        ]
+        for name, lock, expected in cases:
+            with self.subTest(name):
+                finished, text = run_hook(lock, args=("--live",))
+                self.assertEqual((finished.returncode, text), (expected, ""))
 
     def test_calibrate_lock_message_is_exact(self):
         finished, text = run_hook(FULL_LOCK)
@@ -193,6 +208,87 @@ class CalibrationGuardTest(unittest.TestCase):
         _, text = run_hook(json.dumps({"file": "new.ts"}), old_lock_text=json.dumps({"file": "old.ts"}))
         self.assertIn("new.ts", text)
         self.assertNotIn("old.ts", text)
+
+
+def owned_lock(owner_pid=None, age_seconds=60, worktree="/work/tree-b"):
+    """A mutation lock written `age_seconds` ago by a run in `worktree`; owner_pid None leaves the field out."""
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - age_seconds))
+    lock = {"file": "src/a.ts", "backup_path": "/state/backups/a.ts.bak", "class": "mutant: flip",
+            "ts": stamp, "kind": "mutation-test"}
+    if worktree is not None:
+        lock["worktree"] = worktree
+    if owner_pid is not None:
+        lock["owner_pid"] = owner_pid
+    return json.dumps(lock)
+
+
+def dead_pid():
+    finished = subprocess.Popen([sys.executable, "-c", "pass"])
+    finished.wait()
+    return finished.pid
+
+
+class LiveLockTest(unittest.TestCase):
+    def test_live_lock_held_by_another_session_gives_no_restore_instruction(self):
+        finished, text = run_hook(owned_lock(owner_pid=os.getpid()))
+        self.assertEqual(finished.returncode, 0)
+        self.assertNotIn("UNRESTORED", text)
+        self.assertNotIn("cp ", text)
+        self.assertNotIn("rm ", text)
+        self.assertIn("/work/tree-b/src/a.ts", text)
+
+    def test_lock_with_a_dead_owner_names_the_absolute_file_to_restore(self):
+        _, text = run_hook(owned_lock(owner_pid=dead_pid()))
+        self.assertIn("UNRESTORED MUTATION SEED", text)
+        self.assertIn('  cp "/state/backups/a.ts.bak" "/work/tree-b/src/a.ts"\n', text)
+
+    def test_lock_older_than_the_timeout_is_stale_even_with_a_live_owner(self):
+        _, text = run_hook(owned_lock(owner_pid=os.getpid(), age_seconds=2 * 60 * 60))
+        self.assertIn('  cp "/state/backups/a.ts.bak" "/work/tree-b/src/a.ts"\n', text)
+
+    def test_old_format_lock_is_live_inside_the_timeout_and_stale_past_it(self):
+        _, young = run_hook(owned_lock(worktree=None))
+        _, old = run_hook(owned_lock(worktree=None, age_seconds=2 * 60 * 60))
+        self.assertNotIn("UNRESTORED", young)
+        self.assertNotIn("cp ", young)
+        self.assertIn('  cp "/state/backups/a.ts.bak" "src/a.ts"\n', old)
+
+
+def written_lock(writer=None, owner_pid=None):
+    """A fresh lock whose `writer` field is left out when writer is None."""
+    lock = json.loads(owned_lock(owner_pid=owner_pid))
+    if writer is not None:
+        lock["writer"] = writer
+    return json.dumps(lock)
+
+
+class SameSessionLockTest(unittest.TestCase):
+    """The caller passes its own session pid; the same pid in a lock means the writer shared that session."""
+
+    SESSION_PID = os.getpid()
+
+    def live_exit_code(self, lock):
+        finished, _ = run_hook(lock, args=("--live", "--session-pid", str(self.SESSION_PID)))
+        return finished.returncode
+
+    def test_calibrate_lock_from_the_callers_own_session_is_stale(self):
+        lock = written_lock(writer="calibrate", owner_pid=self.SESSION_PID)
+        self.assertEqual(self.live_exit_code(lock), 1)
+
+    def test_mutation_tester_lock_from_the_callers_own_session_is_live(self):
+        lock = written_lock(writer="mutation-tester", owner_pid=self.SESSION_PID)
+        self.assertEqual(self.live_exit_code(lock), 0)
+
+    def test_calibrate_lock_from_another_live_session_is_live(self):
+        other_session = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        self.addCleanup(other_session.wait)
+        self.addCleanup(other_session.kill)
+        lock = written_lock(writer="calibrate", owner_pid=other_session.pid)
+        self.assertEqual(self.live_exit_code(lock), 0)
+
+    def test_lock_without_a_writer_keeps_the_old_rule(self):
+        lock = written_lock(owner_pid=self.SESSION_PID)
+        self.assertEqual(self.live_exit_code(lock), 0)
 
 
 if __name__ == "__main__":

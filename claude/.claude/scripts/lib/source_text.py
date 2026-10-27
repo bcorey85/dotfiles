@@ -1,6 +1,7 @@
 """source_text.py: plain-text readers for source files and their diffs, with no rule of any one script.
 
 Toolkit scripts import it after putting scripts/lib on sys.path."""
+import os
 import re
 from dataclasses import dataclass, field
 
@@ -11,7 +12,30 @@ C_ESCAPES = {"a": 7, "b": 8, "f": 12, "n": 10, "r": 13, "t": 9, "v": 11, '"': 34
 C_ESCAPE = re.compile(r'\\([0-7]{3}|[abfnrtv"\\])')
 LITERAL = re.compile(r"""(?P<quote>["'`])(?P<text>(?:\\.|(?!(?P=quote)).)*)(?P=quote)"""
                      r"""|(?<![\w$.])(?P<number>\d+(?:\.\d+)?)""")
+STRING_PATTERN = r"""(?P<quote>["'`])(?:\\.|(?!(?P=quote)).)*(?P=quote)"""
+STRING_LITERAL = re.compile(STRING_PATTERN)
+STRING_OR_BLOCK_COMMENT_START = re.compile(rf"(?P<string>{STRING_PATTERN})|/\*")
+TRIPLE_QUOTE_SCAN = re.compile(r"""\"\"\"|'''|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|#""")
+TRIPLE_QUOTE_START = re.compile(r"""[rRuUbBfF]{0,2}(\"\"\"|''')""")
+STRING_OPENING_ENDINGS = ("(", "[", "{", ",", "=")
+STRING_OR_COMMENT_START = re.compile(rf"(?P<string>{STRING_PATTERN})|#|//")
+STRING_OR_HASH_START = re.compile(rf"(?P<string>{STRING_PATTERN})|#")
+STRING_OR_SLASH_START = re.compile(rf"(?P<string>{STRING_PATTERN})|//")
+COMMENT_START_OF_STYLE = {"hash": STRING_OR_HASH_START, "hash_triple": STRING_OR_HASH_START,
+                          "slash": STRING_OR_SLASH_START}
 COMMENT_STYLES = ("slash", "hash", "hash_triple")
+COMMENT_STYLE_OF_SUFFIX = {
+    ".py": "hash_triple", ".rb": "hash",
+    ".sh": "hash", ".bash": "hash", ".zsh": "hash", ".yml": "hash", ".yaml": "hash",
+    **dict.fromkeys((
+        ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go", ".rs", ".java", ".kt", ".swift", ".php", ".c", ".h",
+        ".cc", ".cpp", ".hpp"), "slash"),
+}
+
+
+def comment_style_of(path):
+    """The comment style (one of COMMENT_STYLES) of a source file by its suffix, or None for an unknown suffix."""
+    return COMMENT_STYLE_OF_SUFFIX.get(os.path.splitext(path)[1])
 
 
 @dataclass
@@ -160,12 +184,25 @@ def _hash_comment_numbers(lines, triple_quotes):
 
 def _opened_triple_quote(line, stripped):
     """(the triple quote that the line leaves open or None, whether the line is docstring text). A line that starts
-    with a triple quote is docstring text; a string assigned on the line opens a region but is not text."""
-    for quote in ('"""', "'''"):
-        if quote not in line:
+    with a triple quote, with an optional string prefix such as `r`, is docstring text; a string assigned on the line
+    opens a region but is not text. A triple quote inside a single-quoted literal or after a `#` does not count."""
+    is_text_line = TRIPLE_QUOTE_START.match(stripped) is not None
+    position = 0
+    while True:
+        found = TRIPLE_QUOTE_SCAN.search(line, position)
+        if found is None or found.group() == "#":
+            return None, is_text_line
+
+        quote = found.group()
+        if quote not in ('"""', "'''"):
+            position = found.end()
             continue
-        return (quote if line.count(quote) % 2 == 1 else None), stripped.startswith(quote)
-    return None, False
+
+        closing = line.find(quote, found.end())
+        if closing < 0:
+            return quote, is_text_line
+
+        position = closing + len(quote)
 
 
 def literals_of(line):
@@ -182,6 +219,24 @@ def mask_literals(line):
     return LITERAL.sub("#", line)
 
 
+def without_string_text(line):
+    """The line with the text of every single-line string literal (single, double or backtick quotes) removed, so a
+    search of the result sees code but not data held in a string. A trailing comment that holds a quote is mangled;
+    split it off first with split_trailing_comment."""
+    return STRING_LITERAL.sub(lambda found: found.group("quote") * 2, line)
+
+
+def split_trailing_comment(line, style=None):
+    """(code, comment): the line cut at the first comment marker that is not inside a single-line string literal. The
+    marker is `#` for style `hash` or `hash_triple`, `//` for `slash`, and either for no style. The comment keeps its
+    marker; it is empty when the line has none."""
+    start = COMMENT_START_OF_STYLE.get(style, STRING_OR_COMMENT_START)
+    for found in start.finditer(line):
+        if found.group("string") is None:
+            return line[:found.start()], line[found.start():]
+    return line, ""
+
+
 def comment_line_numbers(lines, style):
     """The 1-based numbers of the lines of a source file that are comment text. `slash`: a line that starts with `//`,
     and every line of a `/* ... */` block. `hash`: a line that starts with `#`. `hash_triple`: the same, plus every
@@ -193,3 +248,73 @@ def comment_line_numbers(lines, style):
     if style in ("hash", "hash_triple"):
         return _hash_comment_numbers(lines, style == "hash_triple")
     raise ValueError(f"unknown comment style {style!r}; expected one of {COMMENT_STYLES}")
+
+
+def _template_backtick_count(text):
+    """The backticks of a text that can open or close a template literal: those outside a quoted string and outside a
+    trailing `//` or `/*` comment."""
+    code, _ = split_trailing_comment(text, "slash")
+    for found in STRING_OR_BLOCK_COMMENT_START.finditer(code):
+        if found.group("string") is None:
+            code = code[:found.start()]
+            break
+    return STRING_LITERAL.sub("", code).count("`")
+
+
+def _closing_backtick(line):
+    """The index of the first backtick of a line that is not escaped by a backslash, or -1."""
+    position = 0
+    while position < len(line):
+        if line[position] == "\\":
+            position += 2
+            continue
+        if line[position] == "`":
+            return position
+        position += 1
+    return -1
+
+
+def string_data_regions(lines, style):
+    """(numbers, closing_tails) of the multi-line strings held as data. numbers is the 1-based numbers of the lines
+    that continue one: the lines after the line that opens a triple-quoted string assigned or passed on the line
+    (`x = \"\"\"`, `f(\"\"\"`; style `hash_triple`) or a backtick template literal (style `slash`), up to but not
+    including the line that closes it. A triple quote that starts its own line is data when the previous code line
+    ends with `(`, `[`, `{`, `,` or `=`. Any other line that starts with a triple quote, with an optional string
+    prefix, is a docstring, which is prose and is not listed. closing_tails maps the number of each line that closes
+    one to the text after its closing quote, which is code or a comment. Other styles give no lines."""
+    numbers = set()
+    closing_tails = {}
+    if style == "hash_triple":
+        open_quote = None
+        is_data = False
+        previous = ""
+        for number, line in enumerate(lines, 1):
+            stripped = line.strip()
+            if open_quote:
+                if line.count(open_quote) % 2 == 1:
+                    if is_data:
+                        closing_tails[number] = line[line.index(open_quote) + len(open_quote):]
+                    open_quote = None
+                elif is_data:
+                    numbers.add(number)
+            elif not stripped.startswith("#"):
+                open_quote, is_text_line = _opened_triple_quote(line, stripped)
+                is_data = open_quote is not None and (not is_text_line or previous.endswith(STRING_OPENING_ENDINGS))
+            if stripped and not stripped.startswith("#"):
+                previous = stripped
+    elif style == "slash":
+        comment_numbers = _slash_comment_numbers(lines)
+        in_template = False
+        for number, line in enumerate(lines, 1):
+            if in_template:
+                closing = _closing_backtick(line)
+                if closing < 0:
+                    numbers.add(number)
+                    continue
+
+                tail = line[closing + 1:]
+                closing_tails[number] = tail
+                in_template = _template_backtick_count(tail) % 2 == 1
+            elif number not in comment_numbers:
+                in_template = _template_backtick_count(line) % 2 == 1
+    return numbers, closing_tails

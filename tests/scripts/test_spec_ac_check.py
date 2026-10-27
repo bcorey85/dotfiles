@@ -78,5 +78,48 @@ class PlanCheckAcTest(unittest.TestCase):
         self.assertNotIn("shares no wording", done.stdout)
 
 
+class FinalPlanCheckTest(unittest.TestCase):
+    SPEC_WITH_CRITERIA_SECTION = "# Spec\n\n## Acceptance Criteria\n\nSee the criteria file.\n"
+
+    def final_check(self, criteria_text, final=True):
+        with tempfile.TemporaryDirectory() as task_dir:
+            task_path = pathlib.Path(task_dir)
+            spec_path = task_path / "spec.md"
+            spec_path.write_text(self.SPEC_WITH_CRITERIA_SECTION)
+            if criteria_text is not None:
+                (task_path / "acceptance-criteria.md").write_text(criteria_text)
+
+            flags = ["--final"] if final else []
+            return subprocess.run([sys.executable, str(CODE_STEP), "plan", "check", *flags, str(spec_path)],
+                                  cwd=task_dir, capture_output=True, text=True, check=False)
+
+    def test_final_check_fails_a_spec_whose_criteria_file_is_missing_and_names_the_step(self):
+        done = self.final_check(None)
+        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+        self.assertIn("acceptance-criteria.md: missing or empty", done.stdout)
+        self.assertIn("dispatch spec-criteria", done.stdout)
+
+    def test_final_check_fails_an_empty_criteria_file(self):
+        done = self.final_check("  \n")
+        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+        self.assertIn("acceptance-criteria.md: missing or empty", done.stdout)
+
+    def test_final_check_passes_the_missing_file_row_once_criteria_exist(self):
+        done = self.final_check(fixture("criteria.md"))
+        self.assertEqual((done.returncode, done.stdout, done.stderr), (0, "", ""))
+
+    def test_final_check_with_no_criteria_section_and_no_file_does_not_report_a_missing_file(self):
+        with tempfile.TemporaryDirectory() as task_dir:
+            spec_path = pathlib.Path(task_dir) / "spec.md"
+            spec_path.write_text("# Spec\n\n## Approach\n\nx\n")
+            done = subprocess.run([sys.executable, str(CODE_STEP), "plan", "check", "--final", str(spec_path)],
+                                  cwd=task_dir, capture_output=True, text=True, check=False)
+        self.assertEqual((done.returncode, done.stdout, done.stderr), (0, "", ""))
+
+    def test_plain_check_does_not_ask_for_the_criteria_file_written_after_the_spec(self):
+        done = self.final_check(None, final=False)
+        self.assertEqual((done.returncode, done.stdout, done.stderr), (0, "", ""))
+
+
 if __name__ == "__main__":
     unittest.main()

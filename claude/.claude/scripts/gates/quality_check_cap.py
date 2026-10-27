@@ -87,6 +87,8 @@ DENY_TEXT = ("' already ran this session and nothing has been edited since. Re-r
 CUT_DENY_TEXT = ("' already ran this session and nothing has been edited since, and that run's output went through "
                  "tail, head or grep. Run it once as `{redirected}`, read the WHOLE log, fix every failure in one "
                  "batch, then run it once more." + DENY_TAIL)
+CHAIN_DENY_TEXT = (" This call was denied as a whole because of that fragment alone: none of its other steps ran. "
+                   "Send the other steps again without it, as their own call.")
 
 CheckStep = collections.namedtuple(
     "CheckStep", "index norm command_text run_file cwd in_repeat_loop output_saved output_cut")
@@ -461,6 +463,9 @@ def run(raw, state):
                                               for check in checks)
         if every_check_follows_a_formatter:
             return
+
+    is_real_chain = any(op in ("&&", "||", ";", "&") and step.strip() for op, step in steps[1:])
+    chain_text = CHAIN_DENY_TEXT if is_real_chain else ""
     for check in checks:
         if check.in_repeat_loop:
             continue
@@ -470,11 +475,11 @@ def run(raw, state):
             continue
 
         if not recorded_output_was_cut(check.run_file):
-            raise DenyError("[quality-check-cap] '" + check.norm + DENY_TEXT)
+            raise DenyError("[quality-check-cap] '" + check.norm + DENY_TEXT + chain_text)
         if check.output_saved:
             continue
         cut_deny_text = CUT_DENY_TEXT.format(redirected=check.command_text + LOG_REDIRECT)
-        raise DenyError("[quality-check-cap] '" + check.norm + cut_deny_text)
+        raise DenyError("[quality-check-cap] '" + check.norm + cut_deny_text + chain_text)
 
 
 def main():

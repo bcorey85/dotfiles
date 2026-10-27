@@ -93,22 +93,38 @@ class BusyLedger(unittest.TestCase):
         self.assertTrue(ran)
         self.assertEqual(self.tries(), 3)
 
-    def test_a_ledger_that_stays_busy_fails_and_never_reads_as_no_review(self):
-        self.plant_script("echo 'ledger: cache busy' >&2\nexit 75\n")
+    def test_a_ledger_that_stays_busy_raises_ledger_busy_with_its_own_line_and_never_reads_as_no_review(self):
+        self.plant_script("echo 'ledger: cache behind, retry' >&2\nexit 75\n")
 
-        with self.assertRaises(verify_common.VerifyError) as raised:
+        with self.assertRaises(verify_common.LedgerBusyError) as raised:
             verify_common.review_ran("some-repo", "some-branch", PLANTED_TREE)
 
-        self.assertEqual(raised.exception.code, 2)
         self.assertIn("ledger is busy", str(raised.exception))
-        self.assertIn("run this step again", str(raised.exception))
+        self.assertIn("ledger: cache behind, retry", str(raised.exception))
         self.assertEqual(self.tries(), verify_common.LEDGER_ATTEMPTS)
 
-    def test_a_ledger_that_does_not_answer_in_time_fails_busy(self):
+    def test_the_busy_message_names_the_time_spent_waiting(self):
+        self.plant_script("exit 75\n")
+
+        with self.assertRaises(verify_common.LedgerBusyError) as raised:
+            verify_common.review_ran("some-repo", "some-branch", PLANTED_TREE)
+
+        self.assertRegex(str(raised.exception), r"over \d+ s")
+
+    def test_the_retries_wait_about_a_minute_before_giving_up(self):
+        backoff_seconds = verify_common.LEDGER_BACKOFF_SECONDS
+        attempts = verify_common.LEDGER_ATTEMPTS
+
+        waited = backoff_seconds * attempts * (attempts - 1) / 2
+
+        self.assertGreaterEqual(waited, 50)
+        self.assertLessEqual(waited, 90)
+
+    def test_a_ledger_that_does_not_answer_in_time_raises_ledger_busy(self):
         self.plant_script("exec sleep 30\n")
         os.environ[verify_common.LEDGER_TIMEOUT_ENV] = "0.5"
 
-        with self.assertRaises(verify_common.VerifyError) as raised:
+        with self.assertRaises(verify_common.LedgerBusyError) as raised:
             verify_common.review_ran("some-repo", "some-branch", PLANTED_TREE)
 
         self.assertIn("ledger is busy", str(raised.exception))

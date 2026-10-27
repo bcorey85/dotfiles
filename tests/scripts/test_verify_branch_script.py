@@ -12,6 +12,7 @@ import time
 import unittest
 
 import fake_ledger
+import toolkit_paths
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 REAL_CLAUDE = REPO_ROOT / "claude" / ".claude"
@@ -1317,6 +1318,7 @@ class ReviewLogTest(VerifyBranchBase):
         self.assertIn("REVIEW: ran", self.prep(cwd=self.repo / "src").stdout)
 
 
+@unittest.skipUnless(toolkit_paths.REAL_PLANS_ENABLED, toolkit_paths.REAL_PLANS_SKIP_REASON)
 class RealPlansTest(unittest.TestCase):
     """Every real task dir under ~/dev/*/docs/{plans,eng-specs}/: the criteria parse, and no id is silently dropped."""
 

@@ -20,6 +20,7 @@ loaded.loader.exec_module(code_step)
 loaded_review_fix = importlib.util.spec_from_file_location("review_fix", SCRIPTS_DIR / "review" / "review_fix.py")
 review_fix = importlib.util.module_from_spec(loaded_review_fix)
 loaded_review_fix.loader.exec_module(review_fix)
+import code_step_review
 import handback
 
 # log-review-finding mints ids as 16 lowercase hex chars; review-fix logs no other shape.
@@ -38,20 +39,20 @@ class LogAskOutcomes(unittest.TestCase):
     def setUp(self):
         self.calls = []
         self.logger_result = (0, "")
-        self.original_run_command = code_step.run_command
-        self.original_git_output = code_step.git_output
-        code_step.run_command = lambda command, cwd, **_: self.calls.append(command) or self.logger_result
-        code_step.git_output = lambda *_: "some-branch"
+        self.original_run_command = code_step_review.run_command
+        self.original_git_output = code_step_review.git_output
+        code_step_review.run_command = lambda command, cwd, **_: self.calls.append(command) or self.logger_result
+        code_step_review.git_output = lambda *_: "some-branch"
 
     def tearDown(self):
-        code_step.run_command = self.original_run_command
-        code_step.git_output = self.original_git_output
+        code_step_review.run_command = self.original_run_command
+        code_step_review.git_output = self.original_git_output
 
     def log(self, asks, outcomes, phase="1"):
         state = {"asks": asks, "lane": "code", "phase": phase, "iter": 2}
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
-            code_step.log_ask_outcomes(pathlib.Path("/tmp/some-repo"), state, outcomes)
+            code_step_review.log_ask_outcomes(pathlib.Path("/tmp/some-repo"), state, outcomes)
         return stderr.getvalue()
 
     def test_argv_carries_finding_id_and_no_free_text(self):
@@ -141,12 +142,12 @@ class LogAskOutcomes(unittest.TestCase):
         self.assertEqual("", stderr)
 
     def test_a_missing_hand_back_reader_logs_nothing_and_says_why(self):
-        original = code_step.load_handback
-        code_step.load_handback = lambda: (None, "handback.py could not be imported (boom)")
+        original = code_step_review.load_handback
+        code_step_review.load_handback = lambda: (None, "handback.py could not be imported (boom)")
         try:
             stderr = self.log([ask_item()], ["accepted"])
         finally:
-            code_step.load_handback = original
+            code_step_review.load_handback = original
 
         self.assertEqual(self.calls, [])
         self.assertIn("ask outcomes not logged", stderr)

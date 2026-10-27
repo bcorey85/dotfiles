@@ -41,6 +41,7 @@ import hook_input
 import script_utils
 from hook_input import EMPTY_INPUT, JqError, cksum, exit_code_in_error_text, jq_field, jq_get, truthy
 from shell_command import runs_only_after_success, split_command_steps, step_surely_ran
+from shell_statements import strip_comments, strip_heredocs
 
 SIGNAL_EXIT_CODES = range(129, 193)
 WS ="[ \t\n\r\f\v]"
@@ -385,11 +386,12 @@ def run(raw, state):
         return
     command = command.replace("#skip-quality-cap", "")
 
-    steps = split_command_steps(command)
+    steps = split_command_steps(strip_comments(strip_heredocs(command)))
     succeeded = event == "PostToolUse"
     checks = []
     format_indexes = []
     loop_kinds = []
+    cd_steps = []
     for index, (_, segment) in enumerate(steps):
         segment = re.sub("^" + WS + "+", "", segment)
         segment = re.sub(WS + "+$", "", segment)
@@ -399,6 +401,7 @@ def run(raw, state):
             if target.startswith("~"):
                 target = home + target[1:]
             cwd = target if target.startswith("/") else cwd + "/" + target
+            cd_steps.append(segment)
             continue
         segment = LOOP_BODY_START.sub("", segment)
         if LOOP_HEADER.match(segment):
@@ -408,7 +411,7 @@ def run(raw, state):
                 loop_kinds.pop()
             continue
         segment = re.sub(r"^[({ \t]+", "", segment)
-        command_text = normalize(segment)
+        command_text = " && ".join([*cd_steps, normalize(segment)])
         while True:
             stripped = ASSIGNMENT.sub("", WRAPPER.sub("", segment, count=1), count=1)
             if stripped == segment:

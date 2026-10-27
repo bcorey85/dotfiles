@@ -219,6 +219,13 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assert_denied(self.pre("eslint . || true"))
         self.assert_denied(self.pre("ls; pytest a.py"))
 
+    def test_a_heredoc_body_naming_a_check_is_not_a_run_of_it(self):
+        self.post("pytest tests/test_x.py")
+        pr_create = ("gh pr create --title t --body \"$(cat <<'EOF'\n## Test plan\npytest tests/test_x.py\nEOF\n)\"")
+        self.assert_allowed(self.pre(pr_create))
+        self.post(pr_create)
+        self.assertEqual(len(self.state_files()), 1)
+
     def test_a_search_pattern_naming_a_check_is_not_a_run_of_it(self):
         search = "rg -n -i 'typecheck|tsc|lint' a b | head -20"
         self.post("tsc --noEmit")
@@ -580,6 +587,14 @@ class QualityCheckCapTest(unittest.TestCase):
         suggested = reason.split("Run it once as `", 1)[1].split("`", 1)[0]
         self.assertEqual(suggested, "npm test > /tmp/check.log 2>&1")
         self.assert_allowed(self.pre(suggested, cwd=self.work / "sub"))
+
+    def test_the_cut_deny_keeps_the_cd_prefix_as_typed(self):
+        (self.work / "sub").mkdir()
+        self.post("cd sub && npm test 2>&1 | tail -2", cwd=self.work)
+        reason = self.assert_denied(self.pre("cd sub && npm test", cwd=self.work))
+        suggested = reason.split("Run it once as `", 1)[1].split("`", 1)[0]
+        self.assertEqual(suggested, "cd sub && npm test > /tmp/check.log 2>&1")
+        self.assert_allowed(self.pre(suggested, cwd=self.work))
 
     def test_the_cut_deny_keeps_the_wrapper_and_env_prefix_as_typed(self):
         for typed in ("npx eslint .", "FOO=1 pytest -q"):

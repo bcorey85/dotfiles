@@ -236,7 +236,7 @@ class VerifyBranchBase(unittest.TestCase):
         busy.write_text(f"#!/bin/sh\nif [ \"$1\" = yield ]; then echo 'ledger: cache behind, retry' >&2; exit 75; fi\n"
                         f"exec '{writer}' \"$@\"\n")
         busy.chmod(0o755)
-        return {"PATH": f"{busy_dir}{os.pathsep}{self.env['PATH']}", "VERIFY_LEDGER_BACKOFF_SECONDS": "0"}
+        return {"PATH": f"{busy_dir}{os.pathsep}{self.env['PATH']}", "LEDGER_READ_BACKOFF_SECONDS": "0"}
 
     def reviewed_tree(self):
         """A committed plan, one more source file, and a logged branch-wide review of exactly that tree."""

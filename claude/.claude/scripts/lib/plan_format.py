@@ -500,6 +500,14 @@ def gate_env_text(gate_env_assignments):
     return f"gate-env: {' '.join(gate_env_assignments)}\n{GATE_ENV_HINT}"
 
 
+def gate_env_words_in(prompt_text):
+    """The `NAME=value` words of the prompt's `gate-env:` line, as written, or []."""
+    match = re.search(r"^gate-env:[ \t]*(.+)$", prompt_text, re.M)
+    if not match:
+        return []
+    return [word.group(0) for word in script_utils.ENV_ASSIGNMENT.finditer(match.group(1))]
+
+
 def repo_gate_env(repo_root, plan_rel=None):
     """The environment variables the repo's gate commands need: what `gate_env` reads from the plans under
     docs/plans/*/spec.md. A run whose own plan `planRel` (a path under repoRoot) is readable gets only that plan's

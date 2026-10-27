@@ -1,7 +1,8 @@
 """code_step_hooks.py: the hook commands of code_step.py. The hooks write the run's event log and deny or block the
 fork's calls; none writes state.json.
 
-Imports run one way: code_step_core, code_step_boundary, code_step_hooks, code_step."""
+Imports run one way: code_step_core, code_step_boundary, code_step_hooks, code_step_gates, code_step_start,
+code_step_report, code_step_review, code_step."""
 import collections
 import datetime
 import json
@@ -287,6 +288,10 @@ def plan_write_failure(plan, plan_lines, plan_name, repo_dir):
 
 def command_say_hook():
     # Stop hook: print the saved user-facing text as the hook's systemMessage, keep a copy in say.log, empty say.md.
+    # A child session of the scripted review loop sets CLAUDE_FORMAT_HOOK_OFF: its Stop must not take the main
+    # session's text.
+    if os.environ.get("CLAUDE_FORMAT_HOOK_OFF"):
+        return
     try:
         event = json.loads(sys.stdin.read() or "{}")
         directory = state_dir(pathlib.Path(event.get("cwd") or os.getcwd()))

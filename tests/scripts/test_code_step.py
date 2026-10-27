@@ -3461,7 +3461,8 @@ class CodeStepTest(unittest.TestCase):
         bare = self.tmp / "bare"
         bare.mkdir()
         for name in (SCRIPT.name, "script_utils.py", "plan_format.py", "reviewed_tree.py", "code_step_core.py",
-                     "code_step_boundary.py", "code_step_hooks.py", "test_run_output.py"):
+                     "code_step_boundary.py", "code_step_hooks.py", "code_step_closing.py", "code_step_restart.py",
+                     "code_step_start_args.py", "test_run_output.py", "shell_command.py"):
             shutil.copy(toolkit_paths.script_in(SCRIPTS_ROOT, name), bare / name)
         env = dict(self.env, PYTHONPATH="")
         script = str(bare / SCRIPT.name)

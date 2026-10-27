@@ -18,7 +18,8 @@ unmeasured: "The gate-env line of a dispatch is not logged; no intake number rea
 
 With a readable plan, the coder prompt's `gate-env:` line, the stored coder gate and verify-prep's env come from that plan
 alone. Planless `--task` runs and verify-prep with no plan keep the agreed values of the repo's plans. Task-text or
-run-note assignments do not override the plan's line.
+run-note assignments do not override the plan's line. `repo_gate_env` reads the two cases through `own_plan_gate_env` and
+`agreed_gate_env`, which keeps it under the complexity cap the code-step files carry.
 
 ## Evidence
 

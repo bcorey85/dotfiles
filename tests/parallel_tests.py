@@ -13,6 +13,7 @@ import importlib
 import os
 import pathlib
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -22,6 +23,9 @@ import unittest
 # REPO_ROOT overrides the repo that holds tests/scripts, so the bundle copy can run against the installed suite.
 REPO_ROOT = pathlib.Path(os.environ.get("REPO_ROOT") or pathlib.Path(__file__).resolve().parent.parent)
 SCRIPTS_TESTS = REPO_ROOT / "tests" / "scripts"
+# A test process that runs longer than this many seconds is killed and its file reported as failed. The slowest file
+# takes about 240s on Linux; TEST_FILE_TIMEOUT_SECONDS overrides the limit.
+FILE_TIMEOUT_SECONDS = float(os.environ.get("TEST_FILE_TIMEOUT_SECONDS") or 1200)
 # Files known to take minutes; each runs as this many processes.
 SHARDS = {"test_code_step.py": 4}
 # Slowest files by measured time, started before the rest (the rest start by file size, largest first).
@@ -92,16 +96,25 @@ def fixed_git_environment(config_path):
 def run_job(job, environment):
     test_file, shard_index, shard_count = job
     started = time.monotonic()
-    finished = subprocess.run(
-        [sys.executable, str(pathlib.Path(__file__).resolve()), "--worker", test_file, str(shard_index), str(shard_count)],
-        cwd=str(REPO_ROOT), capture_output=True, text=True,
-        encoding="utf-8", errors="replace", env=environment,
-    )
+    command = [sys.executable, str(pathlib.Path(__file__).resolve()), "--worker", test_file, str(shard_index),
+               str(shard_count)]
+    # The worker leads its own process group, so a timeout kills the subprocesses its tests started too.
+    process = subprocess.Popen(command, cwd=str(REPO_ROOT), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                               encoding="utf-8", errors="replace", env=environment, start_new_session=True)
+    timed_out = False
+    try:
+        stdout, stderr = process.communicate(timeout=FILE_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        os.killpg(process.pid, signal.SIGKILL)
+        stdout, stderr = process.communicate()
     seconds = time.monotonic() - started
-    output = finished.stdout + finished.stderr
+    output = (stdout or "") + (stderr or "")
+    if timed_out:
+        output += f"\n{test_file} timed out after {FILE_TIMEOUT_SECONDS:g}s and was killed\n"
     ran = re.search(r"^Ran (\d+) tests?", output, re.MULTILINE)
     test_count = int(ran.group(1)) if ran else 0
-    return test_file, test_count, seconds, finished.returncode == 0 and ran is not None, output
+    return test_file, test_count, seconds, not timed_out and process.returncode == 0 and ran is not None, output
 
 
 def main(file_names=()):

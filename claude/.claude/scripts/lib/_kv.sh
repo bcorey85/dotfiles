@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# _kv.sh — key=value argument parsing shared by the metrics writers. Source it; do not run it.
+# _kv.sh — key=value argument parsing and the --help usage printer shared by the telemetry and review scripts. Source it; do not run it.
 #
 # usage: kv_fold <free_text_keys> <hook> [key=value ...]
 #
@@ -95,4 +95,16 @@ kv_unfold() {
     fi
   done
   kv_pairs+=("$key=${words[0]}" "${words[@]:1}")
+}
+
+# usage: kv_help_exit <script_path> [arg ...]
+#
+# When the first arg is --help or -h, prints the script's leading comment block (its usage
+# text) to stdout and exits the calling script 0, so no row is written. Call it before any
+# argument is parsed or any check runs. Any other first arg returns 0 and changes nothing.
+kv_help_exit() {
+  case "${2:-}" in
+    --help|-h) sed -n '2,${/^#/!q;s/^# \{0,1\}//;p;}' "$1"; exit 0 ;;
+  esac
+  return 0
 }

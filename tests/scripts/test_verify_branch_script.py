@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -11,6 +12,7 @@ import time
 import unittest
 
 import fake_ledger
+import toolkit_paths
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 REAL_CLAUDE = REPO_ROOT / "claude" / ".claude"
@@ -225,6 +227,21 @@ class VerifyBranchBase(unittest.TestCase):
 
     def context(self):
         return json.loads(next((self.temp_root / "state").glob("*.json")).read_text())
+
+    def failing_reads_env(self, stderr_line, exit_code):
+        """Env with a `ledger` first on PATH whose reads print stderr_line and exit exit_code; writes go through."""
+        reads_dir = self.temp_root / f"ledger-reads-exit-{exit_code}-bin"
+        reads_dir.mkdir(exist_ok=True)
+        reads = reads_dir / "ledger"
+        writer = shutil.which("ledger", path=self.ledger_env["PATH"])
+        reads.write_text(f"#!/bin/sh\nif [ \"$1\" = yield ]; then echo '{stderr_line}' >&2; exit {exit_code}; fi\n"
+                         f"exec '{writer}' \"$@\"\n")
+        reads.chmod(0o755)
+        return {"PATH": f"{reads_dir}{os.pathsep}{self.env['PATH']}", "LEDGER_READ_BACKOFF_SECONDS": "0"}
+
+    def busy_ledger_env(self):
+        """Reads exit 75, as when the ledger cache is behind."""
+        return self.failing_reads_env("ledger: cache behind, retry", 75)
 
     def reviewed_tree(self):
         """A committed plan, one more source file, and a logged branch-wide review of exactly that tree."""
@@ -537,21 +554,55 @@ class PrepTest(VerifyBranchBase):
         self.write("my notes.txt", "two\n")
         self.assertIn("NOT run", self.prep().stdout)
 
-    def test_a_busy_ledger_exits_2_and_never_reads_as_no_review(self):
+    def test_a_busy_ledger_reads_the_review_this_checkout_logged_and_the_verifier_prompt_names_the_skip(self):
         self.reviewed_tree()
-        busy_dir = self.temp_root / "busy-ledger-bin"
-        busy_dir.mkdir()
-        busy = busy_dir / "ledger"
-        busy.write_text("#!/bin/sh\necho 'ledger: cache busy' >&2\nexit 75\n")
-        busy.chmod(0o755)
-        busy_env = {"PATH": f"{busy_dir}{os.pathsep}{self.env['PATH']}", "VERIFY_LEDGER_BACKOFF_SECONDS": "0"}
 
-        done = self.prep(extra_env=busy_env)
+        done = self.prep(extra_env=self.busy_ledger_env())
 
-        self.assertEqual(done.returncode, 2)
-        self.assertIn("ledger is busy", done.stderr)
-        self.assertIn("run this step again", done.stderr)
-        self.assertNotIn("NOT run", done.stdout)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("REVIEW: ran", done.stdout)
+        self.assertIn("ledger: cache behind", done.stdout)
+        self.assertIn("subagent_type=plan-verifier", done.stdout)
+        self.assertIn("review state: not read from the ledger", done.stdout)
+        self.assertIs(self.context()["review"]["read"], False)
+
+    def test_a_busy_ledger_with_no_review_logged_here_still_asks_for_the_review(self):
+        self.task_dir()
+
+        done = self.prep(extra_env=self.busy_ledger_env())
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("NOT run", done.stdout)
+        self.assertIn("ledger: cache behind", done.stdout)
+
+    def test_a_review_logged_while_the_ledger_is_busy_counts_on_the_next_prep(self):
+        self.task_dir()
+        busy_env = self.busy_ledger_env()
+        self.assertEqual(self.prep(extra_env=busy_env).returncode, 0)
+
+        logged = self.log_review(extra_env=busy_env)
+        second = self.log_review(extra_env=busy_env)
+
+        self.assertEqual(logged.returncode, 0, logged.stderr)
+        self.assertEqual(second.returncode, 2)
+        self.assertIn("already covers", second.stderr)
+        self.assertIn("REVIEW: ran", self.prep(extra_env=busy_env).stdout)
+
+    def test_a_failing_ledger_read_never_blocks_the_run(self):
+        self.task_dir()
+        failing_env = self.failing_reads_env("ledger yield: broken schema", 1)
+        first_prep = self.prep(extra_env=failing_env)
+
+        logged = self.log_review(extra_env=failing_env)
+        second_prep = self.prep(extra_env=failing_env)
+
+        self.assertEqual(first_prep.returncode, 0, first_prep.stderr)
+        self.assertIn("NOT run", first_prep.stdout)
+        self.assertEqual(logged.returncode, 0, logged.stderr)
+        self.assertEqual(second_prep.returncode, 0, second_prep.stderr)
+        self.assertIn("REVIEW: ran", second_prep.stdout)
+        self.assertIn("ledger yield: broken schema", second_prep.stdout)
+        self.assertIn("review state: not read from the ledger", second_prep.stdout)
 
     def test_review_row_for_old_head_with_no_content_change_still_counts(self):
         self.reviewed_tree()
@@ -769,6 +820,27 @@ class ReviewGateTest(VerifyBranchBase):
         self.assertNotIn("CLEAN", done.stdout)
         self.assertEqual(self.jsonl(self.findings), [])
         self.assertIs(self.context()["logged"], False)
+
+    def test_a_busy_ledger_logs_the_verifier_rows_when_this_checkout_logged_the_review(self):
+        self.assertEqual(self.log_review().returncode, 0)
+        busy_env = self.busy_ledger_env()
+        self.assertEqual(self.prep(extra_env=busy_env).returncode, 0)
+
+        done = self.log("--rows", "-", stdin=self.rows(), extra_env=busy_env)
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("review check read from this checkout's record", done.stderr)
+        self.assertNotEqual(self.verifier_rows(), [])
+
+    def test_a_busy_ledger_with_no_review_logged_here_exits_2_and_writes_nothing(self):
+        busy_env = self.busy_ledger_env()
+        self.assertEqual(self.prep(extra_env=busy_env).returncode, 0)
+
+        done = self.log("--rows", "-", stdin=self.rows(), extra_env=busy_env)
+
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("rerun verify-prep", done.stderr)
+        self.assertEqual(self.verifier_rows(), [])
 
     def test_review_row_without_the_marker_does_not_pass_the_gate(self):
         head = self.git("rev-parse", "HEAD").strip()
@@ -1266,6 +1338,7 @@ class ReviewLogTest(VerifyBranchBase):
         self.assertIn("REVIEW: ran", self.prep(cwd=self.repo / "src").stdout)
 
 
+@unittest.skipUnless(toolkit_paths.REAL_PLANS_ENABLED, toolkit_paths.REAL_PLANS_SKIP_REASON)
 class RealPlansTest(unittest.TestCase):
     """Every real task dir under ~/dev/*/docs/{plans,eng-specs}/: the criteria parse, and no id is silently dropped."""
 

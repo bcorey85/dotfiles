@@ -14,7 +14,6 @@ SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR")
                       or toolkit_paths.GATES_DIR) / "shell_write_gate.py"
 HINT = "#skip-shell-write-gate"
 
-
 class ShellWriteGateTest(unittest.TestCase):
     def setUp(self):
         self.tmp = pathlib.Path(tempfile.mkdtemp())
@@ -89,13 +88,14 @@ class ShellWriteGateTest(unittest.TestCase):
                         "perl -pi -e 's/a/b/' f", "perl -i -ne 'print' f", "awk -i inplace '{print}' f",
                         "gawk -i inplace '{print}' f", "FOO=1 sed -i s/a/b/ f", "time sed -i s/a/b/ f",
                         "cat x && sed -i s/a/b/ f", "/usr/bin/sed -i s/a/b/ f", "ls | xargs sed -i s/a/b/",
-                        "find . -exec sed -i s/a/b/ {} ;", "sudo sed -i s/a/b/ f"):
+                        "find . -exec sed -i s/a/b/ {} ;", "sudo sed -i s/a/b/ f",
+                        "sed -i 's/a\\|b/c/' f", "sed -i 's/\\(a\\)/b/' f"):
             self.assert_denied(command)
 
     def test_target_falls_back_to_whole_segment_when_last_word_is_unusable(self):
         self.assertIn("in-place editing of sed -i s/a/b/ -n bypasses",
                       self.assert_denied("sed -i s/a/b/ -n"))
-        self.assertIn("editing of sed -i 's/a/b/' \"f\" bypasses", self.assert_denied("sed -i 's/a/b/' \"f\""))
+        self.assertIn("in-place editing of f bypasses", self.assert_denied("sed -i 's/a/b/' \"f\""))
 
     def test_editor_names_as_arguments_pass(self):
         for command in ("grep -in sed file", "echo sed -i", "ls -i", "sed s/a/b/ f", "perl -e 'print 1'",
@@ -122,7 +122,7 @@ class ShellWriteGateTest(unittest.TestCase):
     def test_redirect_onto_untracked_or_special_target_passes(self):
         for command in ("echo hi > untracked.txt", "echo hi > new.txt", "echo hi > /dev/null", "ls 2>&1",
                         "ls >&2", "echo hi | tee untracked.txt", "echo hi | tee -a", "echo a > ", "echo hi >> >",
-                        "cat < tracked.txt", "echo committee tracked.txt"):
+                        "cat < tracked.txt", "echo committee tracked.txt", "rg -n tee tracked.txt"):
             self.assert_allowed(command)
 
     def test_absolute_tilde_and_cwd_targets(self):
@@ -157,67 +157,330 @@ class ShellWriteGateTest(unittest.TestCase):
         reason = self.assert_denied("echo a > untracked.txt; echo b > tracked.txt")
         self.assertIn("tracked.txt is git-tracked", reason)
 
-    # test ownership gate beside the script
+    # relative targets resolve against the session cwd, stream merges, heredoc bodies
 
-    def install_with_gate(self, gate_body):
-        folder = self.tmp / "scripts" / "gates"
-        folder.mkdir(parents=True)
-        script = folder / SCRIPT.name
-        shutil.copy(str(SCRIPT), str(script))
-        shutil.copytree(str(SCRIPT.parent.parent / "lib"), str(folder.parent / "lib"),
-                        ignore=shutil.ignore_patterns("__pycache__"))
-        gate =folder / "test-ownership-gate.sh"
-        gate.write_text(gate_body)
-        return script
+    def test_a_relative_target_resolves_against_the_session_cwd_whatever_a_cd_names(self):
+        (self.repo / "sub").mkdir()
+        scratch = self.tmp / "scratch"
+        scratch.mkdir()
+        (scratch / "tracked.txt").write_text("x\n")
+        for command in ("cd sub && echo x > tracked.txt", f"cd {scratch} && echo x > tracked.txt",
+                        "(cd sub; echo x > tracked.txt)", "pushd sub && echo x | tee tracked.txt"):
+            reason = self.assert_denied(command)
+            self.assertIn(f"{self.repo}/tracked.txt is git-tracked", reason)
 
-    DENY_TESTS_GATE = (
-        '#!/usr/bin/env bash\n'
-        'in=$(cat)\n'
-        'f=$(jq -r .tool_input.file_path <<<"$in")\n'
-        'a=$(jq -r .agent_type <<<"$in")\n'
-        'if [[ "$f" == */tests/* ]]; then\n'
-        '  jq -cn --arg r "tests are owned by the test agent ($a, $f)" '
-        '\'{hookSpecificOutput:{permissionDecision:"deny",permissionDecisionReason:$r}}\'\n'
-        'fi\n')
+    def test_a_coder_new_file_rule_is_skipped_for_a_relative_target_after_a_directory_change(self):
+        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        for command in ("cd sub && echo x > new.py", "pushd sub && echo x > new.py", "popd; echo x > new.py",
+                        "if true; then cd sub; fi; echo x > new.py", "echo $(cd sub; echo x > new.py)",
+                        "command cd sub && echo x | tee new.py", "cd 'unterminated; echo x > new.py"):
+            self.assert_allowed(command, agent="coder", cwd=str(outside))
+        for command in ("echo x > new.py", "echo cd sub; echo x > new.py", "echo 'cd sub' > new.py",
+                        "cd sub && echo x > /var/tmp/not-a-temp-dir/new.py", "cd sub && echo x > $UNSET_DIR/new.py"):
+            self.assert_denied(command, agent="coder", cwd=str(outside))
 
-    def test_ownership_gate_denies_writes_by_agents(self):
-        script = self.install_with_gate(self.DENY_TESTS_GATE)
-        reason = self.assert_denied("echo hi > tests/new.py", agent="coder", script=script)
-        self.assertEqual(
-            reason, f"[shell-write-gate] tests are owned by the test agent (coder, {self.repo}/tests/new.py)"
-        )
-        for command in ("rm tests/a.py", "mv src/a.py tests/a.py", "cp a tests/a", "touch tests/x",
-                        "git rm tests/a.py", "git checkout -- tests/a.py", "dd if=/dev/zero of=tests/z",
-                        "sed -i s/a/b/ tests/a.py", "echo x | tee tests/t.py", "ls | xargs sed -i s/a/b/ tests/q",
-                        "FOO=1 rm tests/a.py", "rm -rf tests"):
-            self.assert_denied(command, agent="coder", script=script)
+    def test_a_coder_is_not_denied_for_a_redirect_like_text_after_a_substitution_in_quotes(self):
+        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        for command in ('echo "Result: $(true) => ok" | cat', 'git commit -m "Bump to $(cat VERSION) -> faster"'):
+            self.assert_allowed(command, agent="coder", cwd=str(outside))
 
-    def test_ownership_gate_skips_main_session_and_clean_paths(self):
-        script = self.install_with_gate(self.DENY_TESTS_GATE)
-        self.assert_allowed("echo hi > tests/new.py", script=script)
-        self.assert_allowed("echo hi > src/new.py", agent="coder", script=script)
-        self.assert_allowed("rm src/a.py", agent="coder", script=script)
-        self.assert_allowed("git status tests/a.py", agent="coder", script=script)
-        self.assert_allowed("sed s/a/b/ tests/a.py", agent="coder", script=script)
-        self.assert_allowed("cat tests/a.py", agent="coder", script=script)
+    def test_a_write_inside_a_shell_c_string_is_checked(self):
+        for command in ('bash -lc "echo x > tracked.txt"', "bash -x -c 'echo x | tee tracked.txt'",
+                        'zsh -ic "echo x > tracked.txt"', 'timeout 5 bash -lc "echo x > tracked.txt"',
+                        'bash -lc "cd a && echo x > tracked.txt"', 'bash -c "bash -c \'echo x > tracked.txt\'"'):
+            reason = self.assert_denied(command)
+            self.assertIn("tracked.txt is git-tracked", reason)
+        self.assert_allowed('bash -lc "echo x > untracked.txt"')
 
-    def test_ownership_gate_is_not_escapable(self):
-        script = self.install_with_gate(self.DENY_TESTS_GATE)
-        self.assert_denied("rm tests/a.py " + HINT, agent="coder", script=script)
+    def test_a_write_inside_shell_c_code_behind_options_invokers_and_escapes_is_checked(self):
+        for command in ('bash -euo pipefail -c "echo x > tracked.txt"',
+                        'bash --rcfile /dev/null -c "echo x > tracked.txt"',
+                        'xargs sh -c "echo x > tracked.txt"',
+                        'find . -exec sh -c "echo x > tracked.txt" \\;',
+                        'eval "echo x > tracked.txt"',
+                        'bash -c "echo \\"\\$(echo a > tracked.txt)\\""'):
+            reason = self.assert_denied(command)
+            self.assertIn("tracked.txt is git-tracked", reason)
 
-    def test_ownership_gate_checks_trailing_slash_form(self):
-        script = self.install_with_gate(self.DENY_TESTS_GATE.replace("*/tests/*", "*/tests/"))
-        self.assert_denied("rm tests", agent="coder", script=script)
+    def test_heredoc_bodies_and_comments_inside_shell_c_code_are_not_read_as_redirects(self):
+        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        for command in ('bash -c "cat > /tmp/x.txt <<EOF\nfoo > /opt/bar.txt\nEOF"',
+                        'bash -c "echo hi # > /opt/bar.txt"'):
+            self.assert_allowed(command, agent="coder", cwd=str(outside))
 
-    def test_failing_ownership_gate_fails_closed(self):
-        script = self.install_with_gate("#!/usr/bin/env bash\nexit 3\n")
-        reason = self.assert_denied("rm tests/a.py", agent="coder", script=script)
-        self.assertEqual(reason, "[shell-write-gate] internal error (exit 3) — failing closed. "
-                                 "Report this to the user.")
+    def test_a_write_in_code_a_runner_takes_is_checked_against_tracked_files_only(self):
+        for command in ('head -n 5 > /tmp/f; eval "echo x > tracked.txt"',
+                        'if true; then eval "echo x > tracked.txt"; fi',
+                        'bash -c -- "echo x > tracked.txt"', 'bash -c -e "echo x > tracked.txt"',
+                        'su -c "echo x > tracked.txt"', 'watch -n1 "echo x > tracked.txt"',
+                        'sh -c "echo x > tracked.txt"', 'docker exec c sh -c "echo x > tracked.txt"',
+                        'git rebase -i --exec "echo hi > tracked.txt" HEAD~3',
+                        "parallel 'echo {} > tracked.txt' ::: a"):
+            reason = self.assert_denied(command)
+            self.assertIn("tracked.txt is git-tracked", reason)
 
-    def test_agent_without_gate_file_falls_through_to_other_rules(self):
-        self.assert_allowed("rm tests/a.py", agent="coder")
-        self.assert_denied("echo hi > tracked.txt", agent="coder")
+    def test_a_coder_may_write_a_new_file_in_code_a_runner_takes(self):
+        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        for command in ('docker exec c sed -i s/a/b/ /app/conf',
+                        'podman exec c sh -c "echo x > /app/new.txt"',
+                        'kubectl exec p -- bash -c "echo x > /app/new.txt"',
+                        'ssh host bash -c "echo x > /app/new.txt"',
+                        'for s in a b; do docker exec $s sh -c "echo x > /app/new.txt"; done',
+                        'docker compose exec app sh -c "echo x > /app/new.txt"',
+                        'docker exec c bash -lc "cat > /app/new.txt <<EOF\nx\nEOF"',
+                        'sudo docker exec c tee /app/new.txt',
+                        'sh -c "echo x > /app/new.txt"'):
+            self.assert_allowed(command, agent="coder", cwd=str(outside))
+
+    def test_a_tee_inside_a_container_is_no_new_file_on_the_host(self):
+        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        for command in ("echo x | docker exec -i web tee /app/config.yml",
+                        "docker compose exec web tee /srv/new.txt < /dev/null"):
+            self.assert_allowed(command, agent="coder", cwd=str(outside))
+        self.assert_denied("echo x | tee /srv/new.txt", agent="coder", cwd=str(outside))
+        self.assert_denied("echo x | docker exec -i web cat > /srv/new.txt", agent="coder", cwd=str(outside))
+        self.assert_denied("echo x | docker exec -i web tee tracked.txt")
+
+    def test_stream_merges_are_not_targets(self):
+        for command in ("ls 2>&1", "ls >&2", "ls 1>&2", "ls 2>&1 | cat", "make 2>&1 | tee untracked.txt"):
+            self.assert_allowed(command)
+        for command in ("ls 2>&1 > tracked.txt", "ls > tracked.txt 2>&1", "ls >&2 > tracked.txt"):
+            reason = self.assert_denied(command)
+            self.assertIn(f"{self.repo}/tracked.txt is git-tracked", reason)
+
+    def test_in_place_deny_names_the_file_not_a_trailing_stream_merge(self):
+        for command in ("sed -i s/a/b/ f.txt 2>&1", "sed -i s/a/b/ f.txt > out.log", "sed -i s/a/b/ f.txt 2>/dev/null"):
+            reason = self.assert_denied(command)
+            self.assertIn("in-place editing of f.txt bypasses", reason)
+
+    def test_gt_inside_quotes_is_not_a_redirect_for_coders(self):
+        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        for agent in ("coder", "backend-coder"):
+            for command in ('rg -n "(x) => x.id" src', "jq '.[] | select(.n > 3)' data.json",
+                            "git log --format='%h > %s' -5", 'rg -n "count > 0" src',
+                            "echo 'a > tracked.txt'"):
+                self.assert_allowed(command, agent=agent, cwd=str(outside))
+                self.assert_allowed(command)
+
+    def test_coder_variants_are_covered_by_the_new_file_rule(self):
+        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        for agent in ("backend-coder", "frontend-coder-deep", "coder-deep"):
+            reason = self.assert_denied("echo hi > helper.py", agent=agent, cwd=str(outside))
+            self.assertIn("Write tool", reason)
+            self.assertNotIn(HINT, reason)
+
+    def test_coder_in_the_main_session_cannot_use_the_skip_comment(self):
+        reason = self.assert_denied("echo hi > tracked.txt " + HINT, agent="coder")
+        self.assertIn("Write tool", reason)
+        self.assert_allowed("echo hi > tracked.txt " + HINT, agent="reviewer")
+
+    def test_coder_target_with_temp_variable_is_checked_after_expansion(self):
+        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        for target in ("$TMPDIR/check.log", "${TMPDIR}/check.log", "$HOME/check.log"):
+            self.assert_allowed(f"echo hi > {target}", agent="coder", cwd=str(outside))
+
+    def test_coder_target_with_unresolved_variable_is_denied(self):
+        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        for target in ("$PWD/out.log", "$UNSET_DIR/check.log"):
+            reason = self.assert_denied(f"pytest > {target}", agent="coder", cwd=str(outside))
+            self.assertIn(target, reason)
+            self.assertIn("cannot resolve", reason)
+
+    def test_coder_target_through_home_is_checked_against_the_temp_dir_rule(self):
+        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        for target in ("$HOME/new.py", "${HOME}/new.py"):
+            payload = {"tool_input": {"command": f"echo hi > {target}"}, "cwd": str(self.repo), "agent_type": "coder"}
+            reason = self.denied(self.run_hook(json.dumps(payload), env_extra={"HOME": str(outside)}))
+            self.assertIn(f"{outside}/new.py", reason)
+
+    def test_regex_fallback_finds_the_redirect_target(self):
+        reason = self.assert_denied("grep 'x\\|y' f > tracked.txt")
+        self.assertIn("tracked.txt is git-tracked", reason)
+        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        self.assert_allowed("grep 'x\\|y' 'a > new.py' src", agent="coder", cwd=str(outside))
+
+    def test_clobber_and_merge_redirects_onto_tracked_files_are_denied(self):
+        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        for command in ("echo x >| tracked.txt", "echo x >&tracked.txt", "echo x >& tracked.txt",
+                        "grep 'x\\|y' f >| tracked.txt", "grep 'x\\|y' f >&tracked.txt"):
+            reason = self.assert_denied(command)
+            self.assertIn("tracked.txt is git-tracked", reason)
+        for command in ("echo x >| newfile.txt", "echo x >&newfile.txt", "grep 'x\\|y' f >| newfile.txt"):
+            self.assertIn("new file created from the shell", self.assert_denied(command, agent="coder",
+                                                                                cwd=str(outside)))
+        for command in ("grep 'x\\|y' f 2>&1", "grep 'x\\|y' f >&2", "grep 'x\\|y' f >&-"):
+            self.assert_allowed(command, agent="coder", cwd=str(outside))
+
+    def test_tee_behind_an_output_wrapper_is_a_write(self):
+        for command in ("echo x | stdbuf -oL tee tracked.txt", "echo x | stdbuf -o L tee -a tracked.txt",
+                        "echo x | setsid tee tracked.txt", "echo x | ionice -c 3 tee tracked.txt",
+                        "echo x | unbuffer tee tracked.txt"):
+            reason = self.assert_denied(command)
+            self.assertIn("tracked.txt is git-tracked", reason)
+
+    def test_a_heredoc_marker_in_a_comment_does_not_hide_the_next_line(self):
+        reason = self.assert_denied("echo hi # <<X\necho x > tracked.txt")
+        self.assertIn("tracked.txt is git-tracked", reason)
+
+    def test_a_tilde_target_expands_without_home_set(self):
+        payload = {"tool_input": {"command": "echo hi > ~/tracked.txt"}, "cwd": str(self.repo)}
+        env = {"PATH": os.environ["PATH"]}
+        finished = subprocess.run([sys.executable, str(SCRIPT)], input=json.dumps(payload), capture_output=True,
+                                  text=True, env=env, cwd=str(self.repo))
+        self.assertEqual(finished.returncode, 0)
+        self.assertEqual(finished.stderr, "")
+        self.assertEqual(finished.stdout, "")
+
+    def test_a_comment_after_a_tee_target_is_not_a_target(self):
+        self.assert_allowed("echo x | tee /tmp/out.log # keep log", agent="coder")
+        self.assert_allowed("echo x | tee /tmp/out.log # see tracked.txt")
+
+    def test_a_tee_target_before_a_comment_and_a_quoted_hash_are_still_checked(self):
+        reason = self.assert_denied("echo x | tee tracked.txt # keep log")
+        self.assertIn("tracked.txt is git-tracked", reason)
+        reason = self.assert_denied("echo '# a' | tee tracked.txt")
+        self.assertIn("tracked.txt is git-tracked", reason)
+
+    def test_in_place_editor_inside_a_group_is_denied(self):
+        for command in ("(sed -i s/a/b/ f.txt)", "{ sed -i s/a/b/ f.txt; }", "(cd sub && perl -pi -e s/a/b/ f.txt)"):
+            reason = self.assert_denied(command)
+            self.assertIn("in-place editing of f.txt bypasses", reason)
+
+    # in-place loop and ownership loop read shell code only
+
+    def test_heredoc_body_and_quoted_text_are_not_in_place_edits(self):
+        for command in ("cat > /tmp/probe.sh <<'EOF'\nsed -i 's/a/b/' x\nEOF",
+                        'echo "done; sed -i s/a/b/ f"', "echo 'x' ; echo \"a; perl -pi -e s/a/b/ f\""):
+            self.assert_allowed(command)
+            self.assert_allowed(command, agent="coder")
+
+    def test_heredoc_body_fed_to_a_shell_is_read_as_commands(self):
+        for agent_fields in ({"agent_id": "a1"}, {"agent_type": "coder"}):
+            command = "bash <<'EOF'\nsed -i s/a/b/ tracked.txt\nEOF"
+            payload = {"tool_input": {"command": command}, "cwd": str(self.repo), **agent_fields}
+            reason = self.denied(self.run_hook(json.dumps(payload)))
+            self.assertIn("in-place editing of tracked.txt", reason)
+
+    def test_heredoc_body_is_never_parsed_as_redirect(self):
+        for quote in ("", "'", '"'):
+            body = f"cat <<{quote}EOF{quote}\necho hi > tracked.txt\nx | tee tracked.txt\nEOF"
+            self.assert_allowed(body)
+        self.assert_allowed("cat <<-'EOF'\n\tx > tracked.txt\n\tEOF\nls")
+        self.assert_allowed("cat <<A <<B\n> tracked.txt\nA\n> tracked.txt\nB")
+        reason = self.assert_denied("cat <<EOF\nhi\nEOF\necho x > tracked.txt")
+        self.assertIn("tracked.txt is git-tracked", reason)
+        self.assert_denied("cat > tracked.txt <<'EOF'\nhi\nEOF")
+
+    # the reading of comments and heredocs
+
+    def make_tracked_scope_files(self):
+        # A tracked tests/run.sh.
+        (self.repo / "tests").mkdir(exist_ok=True)
+        (self.repo / "tests" / "run.sh").write_text("x\n")
+        subprocess.run(["git", "-C", str(self.repo), "add", "tests/run.sh"], check=True)
+
+    def test_a_write_inside_a_substitution_in_double_quotes_is_seen(self):
+        for command in ('echo "$(echo x > tracked.txt)"', 'echo "`echo x > tracked.txt`"',
+                        'echo "q" "$(echo "a" > tracked.txt)"'):
+            self.assert_denied(command)
+
+    def test_a_commit_message_heredoc_in_a_substitution_hides_its_body(self):
+        self.assert_allowed("git commit -m \"$(cat <<'EOF'\nquote \" then > tracked.txt\nEOF\n)\"")
+        self.assert_allowed("git commit -m \"$(cat <<'EOF'\n5\" screen\nsed -i is banned\nEOF\n)\"")
+
+    def test_a_comment_with_an_apostrophe_does_not_hide_later_commands(self):
+        for command in ("ls # it's\nls # don't\nsed -i s/a/b/ f.txt", "# don't\nsed -i s/a/b/ f.txt",
+                        "ls # it's\necho x > tracked.txt"):
+            self.assert_denied(command)
+
+    def test_a_heredoc_delimiter_is_the_whole_shell_word(self):
+        self.make_tracked_scope_files()
+        self.assert_denied("cat <<EOF-X > /dev/null\nx\nEOF-X\necho hi > tests/run.sh")
+
+    def test_a_quoted_marker_on_a_multi_line_string_opens_no_heredoc(self):
+        self.make_tracked_scope_files()
+        self.assert_denied("echo 'a\ncat <<EOF\nb'\necho hi > tests/run.sh")
+
+    def test_an_arithmetic_shift_with_spaces_opens_no_heredoc(self):
+        self.make_tracked_scope_files()
+        self.assert_denied("(( v = 1 << x ))\necho hi > tests/run.sh")
+
+    def test_a_substitution_in_an_unquoted_heredoc_body_is_code(self):
+        self.make_tracked_scope_files()
+        self.assert_denied("cat <<EOF > /dev/null\n$(echo hi > tests/run.sh)\nEOF")
+
+    def test_an_unparsed_line_that_opens_a_heredoc_keeps_the_body_as_code(self):
+        reason = self.assert_denied("echo '|'; bash <<EOF\nsed -i s/a/b/ tracked.txt\nEOF")
+        self.assertIn("in-place editing of tracked.txt", reason)
+
+    def test_a_command_behind_a_wrapper_is_judged_like_the_bare_command(self):
+        for command in ("nohup sed -i s/a/b/ f", "stdbuf -o0 sed -i s/a/b/ f"):
+            self.assertIn("in-place editing", self.assert_denied(command))
+        self.assert_denied("nohup tee tracked.txt")
+
+    # subagent calls
+
+    def test_subagent_skip_comment_does_not_disarm_and_deny_says_edit(self):
+        for agent_fields in ({"agent_id": "a1"}, {"agent_type": "coder"}, {"agent_id": "a1", "agent_type": "coder"}):
+            for command in ("sed -i s/a/b/ f " + HINT, "echo hi > tracked.txt " + HINT):
+                payload = {"tool_input": {"command": command}, "cwd": str(self.repo), **agent_fields}
+                reason = self.denied(self.run_hook(json.dumps(payload)))
+                self.assertIn("Edit tool", reason)
+                self.assertIn("Write tool", reason)
+                self.assertIn("This agent has no way to skip this gate.", reason)
+                self.assertNotIn(HINT, reason)
+
+    def test_subagent_in_place_and_tracked_redirects_denied_as_in_main_session(self):
+        for agent_fields in ({"agent_id": "a1"}, {"agent_type": "reviewer"}):
+            for command in ("sed -i s/a/b/ untracked.txt", "perl -pi -e s/a/b/ f", "cat >> tracked.txt <<EOF\nx\nEOF",
+                            "echo hi > tracked.txt", "echo hi | tee -a tracked.txt"):
+                payload = {"tool_input": {"command": command}, "cwd": str(self.repo), **agent_fields}
+                self.denied(self.run_hook(json.dumps(payload)))
+                self.assert_denied(command)
+
+    def test_main_session_still_gets_skip_comment_in_deny_text(self):
+        self.assertIn(HINT, self.assert_denied("sed -i s/a/b/ f"))
+
+    def test_coder_new_file_outside_temp_dir_denied_naming_write(self):
+        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        temp_dir = self.tmp / "tempdir"
+        temp_dir.mkdir()
+        env = {"TMPDIR": str(temp_dir)}
+
+        def run_in(command, cwd, agent):
+            payload = {"tool_input": {"command": command}, "cwd": str(cwd)}
+            if agent:
+                payload["agent_type"] = agent
+            return self.run_hook(json.dumps(payload), env_extra=env)
+
+        for command in ("cat > helper.py <<EOF\nx\nEOF", "echo hi > helper.py", "echo hi | tee helper.py"):
+            reason = self.denied(run_in(command, outside, "coder"))
+            self.assertIn("Write tool", reason)
+            self.assertIn(f"{outside}/helper.py", reason)
+            self.assertNotIn(HINT, reason)
+            for agent in (None, "reviewer"):
+                finished = run_in(command, outside, agent)
+                self.assertEqual((finished.returncode, finished.stdout), (0, ""), command)
+        for command in (f"echo hi > {temp_dir}/check.log", "echo hi > /tmp/shell-gate-check.log",
+                        "echo hi > /dev/null", "ls 2>&1"):
+            finished = run_in(command, outside, "coder")
+            self.assertEqual((finished.returncode, finished.stdout), (0, ""), command)
+        (outside / "existing.txt").write_text("x")
+        finished = run_in("echo hi > existing.txt", outside, "coder")
+        self.assertEqual((finished.returncode, finished.stdout), (0, ""))
 
 
 if __name__ == "__main__":

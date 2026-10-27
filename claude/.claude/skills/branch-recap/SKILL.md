@@ -29,22 +29,15 @@ Nothing unstaged → receipt line `residue: none — all phases staged clean`.
 Per-phase residue of the review round budget comes due here — skip this step and deferral was deletion.
 
 ```bash
-if command -v ledger >/dev/null 2>&1; then
-  for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-    ledger yield --deferred; ledger_exit=$?
-    [ "$ledger_exit" -ne 75 ] && break
-    [ "$attempt" -lt 12 ] && sleep 5
-  done
-  if [ "$ledger_exit" -eq 75 ]; then echo "deferred: not read (cache busy or behind)"
-  elif [ "$ledger_exit" -ne 0 ]; then echo "deferred: not read (ledger exit $ledger_exit)"; fi
-else
-  echo "deferred: not tracked (ledger not installed)"
-fi
+~/.claude/scripts/tools/ledger_deferred.py
 ```
 
-`ledger yield --deferred` reads the current repo and branch from the cwd and prints a header line, then one row per deferred finding: `finding_id, ts, gate, class, disposition, blocker, fix_induced, line, actioned, gate_agent_run_id, session`. `actioned=1` means a later edit to the finding's file landed inside its gate run's window. Exit 75 means its cache is busy (locked) or behind and a catch-up runs; the loop retries for up to 60 seconds.
+It runs `ledger yield --deferred`, which reads the current repo and branch from the cwd and prints a header line, then one row per deferred finding: `finding_id, ts, gate, class, disposition, blocker, fix_induced, line, actioned, gate_agent_run_id, session`. `actioned=1` means a later edit to the finding's file landed inside its gate run's window. While the ledger cache is behind, the script waits up to about 90 s for it to catch up. Do not retry it yourself.
 
-Without `ledger`, or with a cache still busy or behind after the retries, or a ledger exit other than 0, the queue went unread: the recap says `deferred: not tracked (ledger not installed)`, `deferred: not read (cache busy or behind)` or `deferred: not read (ledger exit <code>)`, and never `deferred: none`.
+When the queue goes unread, the script prints the recap line, and the recap uses it as printed, never `deferred: none`:
+- no `ledger`: `deferred: not tracked (ledger not installed)`.
+- exit 75, the cache still behind after the wait: `deferred: not read (<reason>)` and the command that brings the cache up to date.
+- other ledger failure: `deferred: not read (<reason>)`.
 
 Read the queue against the **branch** diff — some findings died when a later phase resolved them. A row with `actioned=1` is marked **likely stale**. For the rest, read the gate agent transcript locally — `~/.claude/projects/*/<session>/subagents/agent-<gate_agent_run_id>.jsonl` — and match the row to its finding by gate, class and line. The ledger keeps no description, so the transcript is where the finding's text lives.
 
@@ -79,7 +72,7 @@ Spec: <task-dir>
 - <any REQUIRES-MUTATION items with their KILLED/SURVIVED/EQUIVALENT/INDETERMINATE verdicts, or marked unrouted-and-open>
 
 ### Deferred findings             (round budget, read at branch bound)
-- <fixed / stale / carried, one line each, with the gate and disposition each came from; or "none"; or "not tracked (ledger not installed)"; or "not read (cache busy or behind)"; or "not read (ledger exit <code>)">
+- <fixed / stale / carried, one line each, with the gate and disposition each came from; or "none"; or "not tracked (ledger not installed)"; or "not read (<reason>)" with the command that brings the cache up to date; or "not read (<reason>)">
 
 ### Companion branches            (Step 2b)
 - <repo>@<branch> — <PR url, or "no PR", or "not pushed">; or "none"

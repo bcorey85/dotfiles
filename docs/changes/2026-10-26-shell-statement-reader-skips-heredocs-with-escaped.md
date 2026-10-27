@@ -3,7 +3,7 @@ type: "Change"
 title: "Shell statement reader skips heredocs with escaped or hyphenated delimiters"
 description: "The heredoc opener pattern accepts a backslash-escaped delimiter and dots or hyphens in the delimiter, so the follow-mode gate no longer reads such a heredoc's file text as commands."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:44:10-05:00"}
-seq: 80
+seq: 99
 kind: "fix"
 components: ["script/wait-loop-gate"]
 evidence: ["judgment"]

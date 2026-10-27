@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
 
 JQ_WHITESPACE = " \t\r\n"
@@ -269,10 +270,28 @@ def current_directory():
     return os.getcwd()
 
 
-def split_segments(command):
-    """Split a shell command on ||, &&, | and ; into segments."""
-    text = command.replace("||", "\n").replace("&&", "\n")
-    return re.sub(r"[|;]", "\n", text).split("\n")
+def temp_roots():
+    """The real paths of the directories that count as temp: /tmp, the system temp dir and $TMPDIR."""
+    roots = {"/tmp", tempfile.gettempdir()}
+    if os.environ.get("TMPDIR"):
+        roots.add(os.environ["TMPDIR"])
+    return [os.path.realpath(root) for root in roots]
+
+
+def is_under_temp_dir(path):
+    real = os.path.realpath(path)
+    return any(real == root or real.startswith(root.rstrip("/") + "/") for root in temp_roots())
+
+
+def expand_env_names(text, names):
+    """The text with `$NAME` and `${NAME}` replaced by the environment value, for each NAME in names that is set.
+    Other variables stay as written."""
+    for name in names:
+        value = os.environ.get(name)
+        if value is None:
+            continue
+        text = re.sub(r"\$\{" + name + r"\}|\$" + name + r"(?!\w)", lambda _found, value=value: value, text)
+    return text
 
 
 def _crc_table():

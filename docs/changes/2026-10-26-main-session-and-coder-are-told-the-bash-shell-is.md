@@ -3,7 +3,7 @@ type: "Change"
 title: "Main session and coder are told the Bash shell is zsh"
 description: "The orchestration rule and coder-core say an unquoted $VAR stays one word under zsh and splits under bash, and to loop over an array in a form both shells read, or write each command out."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:39:43-05:00"}
-seq: 76
+seq: 95
 kind: "fix"
 components: ["rule/orchestration", "skill/coder-core"]
 evidence: ["judgment"]

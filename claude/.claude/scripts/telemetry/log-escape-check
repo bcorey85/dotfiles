@@ -10,6 +10,9 @@
 set -uo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=../lib/_kv.sh
+source "$here/../lib/_kv.sh"
+kv_help_exit "${BASH_SOURCE[0]}" "$@"
 work=$(mktemp -d "${1:-${TMPDIR:-/tmp}}/log-escape-check.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 fails=0

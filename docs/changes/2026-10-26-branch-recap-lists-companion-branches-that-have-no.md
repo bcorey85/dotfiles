@@ -3,7 +3,7 @@ type: "Change"
 title: "branch recap lists companion branches that have no PR"
 description: "branch-recap gains a step that checks every other repo the spec names for a PR on its branch, lists a pushed branch with no PR first in a Companion branches section, and starts the Next line with opening it."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:56:21-05:00"}
-seq: 88
+seq: 106
 kind: "fix"
 components: ["skill/branch-recap"]
 evidence: ["judgment"]

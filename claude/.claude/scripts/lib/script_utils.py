@@ -7,6 +7,8 @@ import json
 import os
 import pathlib
 import re
+import shlex
+import shutil
 import signal
 import stat
 import subprocess
@@ -30,22 +32,43 @@ TIMEOUT_EXIT_CODE = 124
 COMMAND_NOT_FOUND_EXIT_CODE = 127
 REPO_NAME_SCRIPT = pathlib.Path(__file__).resolve().parent.parent / "tools" / "repo-name"
 REPO_NAME_TIMEOUT_SECONDS = 10
+ENV_NAME = r"[A-Za-z_][A-Za-z0-9_]*"
 # A literal value is plain characters or a quoted string with no `$`, backtick, `;`, `&`, `|`, `<`, `>` (and no
 # backslash in a double-quoted one): the shell would run or expand anything else, so it is not a setting that can be
 # copied. A plain word has no `~` either: the shell expands it at the start of a value and after a `:`, which
 # shlex.split does not.
 ENV_VALUE = r""""[^"$`;&|<>\\]*"|'[^'$`;&|<>]*'|[^\s"'$`;&|<>()\\~]*"""
-ENV_ASSIGNMENT = re.compile(rf"([A-Za-z_][A-Za-z0-9_]*)=({ENV_VALUE})")
+ENV_ASSIGNMENT = re.compile(rf"({ENV_NAME})=({ENV_VALUE})")
+# The NAME= start of one shell word, after shlex.split.
+ENV_ASSIGNMENT_NAME = re.compile(rf"{ENV_NAME}=")
 # What must follow the assignments: a word that is not another assignment and does not start with a shell control
 # operator, a comment, a grouping or a negation. Without it "A=1 && cargo test" would read "&&" as the command.
-COMMAND_WORD_AHEAD = r"(?![A-Za-z_][A-Za-z0-9_]*=)(?![;&|<>()#{}!])(?=\S)"
+COMMAND_WORD_AHEAD = rf"(?!{ENV_NAME}=)(?![;&|<>()#{{}}!])(?=\S)"
 # The NAME=value words a command line starts with, each followed by whitespace, which the shell passes to the command.
 # A command word must follow them. Only literal values: this reading builds the settings that get copied.
-ENV_ASSIGNMENTS = re.compile(rf"(?:[A-Za-z_][A-Za-z0-9_]*=(?:{ENV_VALUE})\s+)+{COMMAND_WORD_AHEAD}")
+ENV_ASSIGNMENTS = re.compile(rf"(?:{ENV_NAME}=(?:{ENV_VALUE})\s+)+{COMMAND_WORD_AHEAD}")
 # The same words with any value, one that expands a variable or runs a command included (`PATH=/x:$PATH cargo test`):
 # the shell passes those to the command as well, so a reading that only finds where the command starts accepts them.
 ENV_PREFIX_VALUE = r"""(?:"[^"]*"|'[^']*'|\$\([^)]*\)|[^\s"'`;&|<>()])*"""
-ENV_PREFIX = re.compile(rf"(?:[A-Za-z_][A-Za-z0-9_]*={ENV_PREFIX_VALUE}\s+)+{COMMAND_WORD_AHEAD}")
+ENV_PREFIX = re.compile(rf"(?:{ENV_NAME}={ENV_PREFIX_VALUE}\s+)+{COMMAND_WORD_AHEAD}")
+
+
+def environment_from_assignments(assignments):
+    """{name: value} for NAME=value shell words such as `A=1` or `B="two words"`. Raises ValueError on a word that is
+    not one."""
+    environment = {}
+    for assignment in assignments:
+        try:
+            words = shlex.split(assignment)
+        except ValueError:
+            words = []
+        is_one_assignment = len(words) == 1 and ENV_ASSIGNMENT_NAME.match(words[0])
+        if not is_one_assignment:
+            raise ValueError(f"needs NAME=value, got {assignment!r}")
+
+        name, value = words[0].split("=", 1)
+        environment[name] = value
+    return environment
 
 
 def fenced_line_indexes(lines):
@@ -123,14 +146,17 @@ def wait_for(check, timeout_seconds, interval_seconds):
         time.sleep(min(interval_seconds, remaining))
 
 
-def run_process(command, cwd, stdin=None, timeout=None, env=None):
+def run_process(command, cwd, stdin=None, timeout=None, env=None, on_start=None):
     """Run a command (a list, or a string for the shell) in cwd and return (exit code, stdout, stderr), both as text.
     `env`, when given, is the command's whole environment. When the command does not finish in `timeout` seconds, kill
     its whole process group, so a shell command that started a server cannot keep the pipes open, and return (None,
-    stdout, stderr) with what it printed."""
+    stdout, stderr) with what it printed. `on_start`, when given, is called with the process pid once it runs, so a
+    caller can track the process group it leads."""
     process = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.PIPE if stdin is not None else None,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                shell=isinstance(command, str), start_new_session=True)
+    if on_start:
+        on_start(process.pid)
     try:
         stdout, stderr = process.communicate(stdin, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -238,6 +264,71 @@ def run_retrying(argv, retry_exit_codes, attempts, backoff_seconds, timeout_seco
             if done.returncode not in retry_exit_codes or attempt == attempts:
                 return done
         sleep(backoff_seconds * attempt)
+
+
+def attempts_within(wait_seconds, backoff_seconds):
+    """The most tries of a run_retrying loop whose pauses (backoff_seconds times 1, then times 2, ...) add up to no
+    more than wait_seconds. Always at least 1."""
+    attempts = 1
+    waited = 0
+    while waited + backoff_seconds * attempts <= wait_seconds:
+        waited += backoff_seconds * attempts
+        attempts += 1
+    return attempts
+
+
+# A ledger read whose cache is behind exits 75 at once and starts a worker that catches up. Every caller waits up to
+# LEDGER_WAIT_SECONDS of pauses between tries (each try may also run up to LEDGER_CALL_TIMEOUT_SECONDS), then
+# reports the read as not done; the ledger never blocks the work.
+LEDGER_BUSY_EXIT = 75
+LEDGER_WAIT_SECONDS = 90
+LEDGER_BACKOFF_SECONDS = 3
+LEDGER_CALL_TIMEOUT_SECONDS = 60
+# These two exist so a test need not wait.
+LEDGER_BACKOFF_ENV = "LEDGER_READ_BACKOFF_SECONDS"
+LEDGER_CALL_TIMEOUT_ENV = "LEDGER_READ_CALL_TIMEOUT_SECONDS"
+
+
+class LedgerUnreadError(Exception):
+    """A ledger read gave no answer. Callers carry on without it and say what was not read."""
+
+
+class LedgerNotInstalledError(LedgerUnreadError):
+    """No `ledger` program is on PATH."""
+
+
+class LedgerBusyError(LedgerUnreadError):
+    """A ledger read found the cache still behind (exit 75) or timed out on its last try. The message names the
+    command, the seconds of pauses and the ledger's own last stderr line."""
+
+
+def ledger_failure_reason(done):
+    """The last stderr line of a finished ledger call, or `exited <code>` when it wrote none."""
+    stderr_lines = done.stderr.strip().splitlines()
+    return stderr_lines[-1] if stderr_lines else f"exited {done.returncode}"
+
+
+def read_ledger(args):
+    """Run `ledger <args>` and return its CompletedProcess for any exit but 75. Exit 75 and a call that does not
+    finish in time are tried again, with pauses totalling LEDGER_WAIT_SECONDS (each try may also run up to
+    LEDGER_CALL_TIMEOUT_SECONDS); then LedgerBusyError is raised. Raises
+    LedgerNotInstalledError when there is no `ledger` on PATH."""
+    if shutil.which("ledger") is None:
+        raise LedgerNotInstalledError("ledger not installed")
+
+    backoff = float(os.environ.get(LEDGER_BACKOFF_ENV, LEDGER_BACKOFF_SECONDS))
+    timeout = float(os.environ.get(LEDGER_CALL_TIMEOUT_ENV, LEDGER_CALL_TIMEOUT_SECONDS))
+    attempts = attempts_within(LEDGER_WAIT_SECONDS, LEDGER_BACKOFF_SECONDS)
+    waited = round(backoff * attempts * (attempts - 1) / 2)
+    command = " ".join(["ledger", *args])
+    try:
+        done = run_retrying(["ledger", *args], (LEDGER_BUSY_EXIT,), attempts, backoff, timeout)
+    except subprocess.TimeoutExpired:
+        raise LedgerBusyError(f"{command}: no answer within {timeout:g} s per try ({waited} s of pauses)") from None
+    if done.returncode != LEDGER_BUSY_EXIT:
+        return done
+
+    raise LedgerBusyError(f"{command}: {ledger_failure_reason(done)} ({waited} s of pauses)")
 
 
 def last_change_ns(path):

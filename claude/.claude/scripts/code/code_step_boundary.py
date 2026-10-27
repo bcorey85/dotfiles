@@ -2,7 +2,8 @@
 saved criteria copy, the Automated Verification runner, the phase boundary and the closing verbs (skill-done, tick,
 verify).
 
-Imports run one way: code_step_core, code_step_boundary, code_step_hooks, code_step."""
+Imports run one way: code_step_core, code_step_boundary, code_step_hooks, code_step_gates, code_step_start,
+code_step_report, code_step_review, code_step."""
 import datetime
 import os
 import pathlib
@@ -79,7 +80,9 @@ TAIL_FOLLOWS = re.compile(r"^(?:-[A-Za-z0-9]*[fF][A-Za-z0-9]*|--follow(?:=\w+)?)
 VERIFICATION_ITEM_SHAPE = (
     "Each Automated Verification item is one line in one of three shapes. (1) One backticked command that starts with "
     "a program on PATH (with at least one argument) or an executable file in the repo, for example the line "
-    "'- [ ] **Name**: what it checks - `npm test`'. (2) N/A, for example '- [ ] N/A - docs only'. (3) A tag that "
+    "'- [ ] **Name**: what it checks - `npm test`'. A check that needs a variable assignment, `&&`, a pipe or a "
+    "subshell goes in an executable repo script, run as `path/to/script args`; the script's comments name no ticket "
+    "or plan path. (2) N/A, for example '- [ ] N/A - docs only'. (3) A tag that "
     "says CI or a person runs it, for example '- [ ] **CI-verified**: the pipeline runs it' or '- [ ] Human-only: "
     "look at the page'. This script never runs the third shape.")
 
@@ -303,12 +306,14 @@ def verification_format_failure(plan_lines, plan_name, repo_dir, entries):
             elif not entry["closing"]:
                 problem = verification_item_problem(line, repo_dir)
             if problem:
-                problems.append(f"{plan_name}:{section['start'] + index + 1}: {line.strip()[:100]} - {problem}")
+                problems.append(f"{plan_name}:{section['start'] + index + 1}: Phase {entry['number']}: "
+                                f"{line.strip()[:100]} - {problem}")
 
     if not problems:
         return None
 
-    return ("The plan has Automated Verification items that cannot run. Fix each line:\n" + "\n".join(problems) + "\n"
+    return ("The plan has Automated Verification items that cannot run. Every open phase is checked at each start, "
+            "so a later phase's line stops the first phase's start. Fix each line:\n" + "\n".join(problems) + "\n"
             + VERIFICATION_ITEM_SHAPE)
 
 
@@ -503,10 +508,10 @@ def commit_message(repo_dir, state):
 
 
 def phase_commit(repo_dir, state):
-    # The phase's own changed files: dirty now, and not dirty before the phase started. Files that were dirty before
-    # stay out of the command, except the plan: the script ticks the phase in it, so the commit carries it even when it
-    # held other uncommitted edits before the phase. The commit names its files after `--`, so it takes only those
-    # files from the index and leaves anything the user staged by hand staged and uncommitted.
+    # The phase's own changed files: dirty now, and either not dirty before the phase started or with content that
+    # differs from the baseline hash. Files that were dirty before and are unchanged stay out of the command. The plan
+    # is always in it when it changed: the script ticks the phase there. The commit names its files after `--`, so it
+    # takes only those files from the index and leaves anything the user staged by hand staged and uncommitted.
     # Returns (text for the user, the commit command line, the files it commits); the text and line are "" with no
     # files.
     baseline = state.get("baseline") or {}
@@ -514,8 +519,9 @@ def phase_commit(repo_dir, state):
     plan_name = state.get("plan")
     changed_since = [name for name in dirty_now if name in baseline and dirty_now[name] != baseline[name]]
     plan_had_earlier_edits = plan_name in changed_since
-    own_files = [name for name in dirty_now if name not in baseline or (name == plan_name and plan_had_earlier_edits)]
-    left_out = [name for name in changed_since if name != plan_name]
+    own_files = [name for name in dirty_now if name not in baseline or name in changed_since]
+    left_out = [name for name in dirty_now if name in baseline and name not in changed_since]
+    edited_dirty = [name for name in changed_since if name != plan_name]
     if not own_files:
         return "", "", []
 
@@ -526,6 +532,12 @@ def phase_commit(repo_dir, state):
     if plan_had_earlier_edits:
         lines += [
             f"{plan_name} had uncommitted edits before the phase. The commit includes them with the phase tick.",
+            "",
+        ]
+    if edited_dirty:
+        lines += [
+            "Edited by this phase, was dirty before (the commit mixes the earlier edits with this phase's): "
+            + ", ".join(edited_dirty),
             "",
         ]
     if left_out:

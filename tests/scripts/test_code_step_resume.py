@@ -70,17 +70,16 @@ class ResumeTest(base.CodeStepTest):
         self.assertIn("Phase 2", resumed)
         self.assertEqual(self.plan, self.state()["plan"])
 
-    def test_start_with_a_plan_and_a_phase_inside_the_task_text_is_refused_with_the_start_and_the_task_commands(self):
+    def test_start_with_a_plan_and_a_phase_before_text_takes_the_text_as_run_notes(self):
         self.finish_phase_one()
-        before = self.state_bytes()
 
         spread = self.step("start", self.plan, "--phase", "2", "—", "add", "the", "brief")
-        quoted = self.step("start", f"{self.plan} --phase 2 — add the brief")
+        self.assertIn("— add the brief", spread)
+        self.assertEqual("2", self.state()["phase"])
+        quoted = self.step("start", "--restart", f"{self.plan} --phase 2 — add the brief")
 
-        for out in (spread, quoted):
-            self.assert_refused_with_choices(out, f"start {self.plan} --phase 2", "start --task '— add the brief'")
-            self.assertIn("was not passed to the coder", out)
-        self.assertEqual(before, self.state_bytes())
+        self.assertIn("AGENT: coder", spread)
+        self.assertIn("— add the brief", quoted)
 
     def test_start_with_a_plan_then_phase_and_its_id_starts_that_phase(self):
         self.finish_phase_one()
@@ -457,7 +456,7 @@ class ResumeTest(base.CodeStepTest):
         self.assertIn("The phase's own plan section follows", out)
         self.assertIn("Sweep.", out)
         self.assertIn("skill-done pass`", out)
-        self.assertIn("`skill-done fail`", out)
+        self.assertIn("`skill-done fail --finding", out)
         self.assertEqual(before, self.state_bytes())
 
     PLANLESS_RESTART = 'ask the user for the task text, then run `start --restart --task "<the task text>"`'

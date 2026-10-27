@@ -94,6 +94,7 @@ from code_step_core import (
     script_command,
     sent_message_since,
     state_dir,
+    stop_review_script,
     take_handback,
     timed_command,
     wait_for_handback,
@@ -369,6 +370,8 @@ def stopped_route(repo_dir, state):
     if awaits_resumed_coder(state):
         return "after-coder" if coder_answer_sent(repo_dir, state) else "ask-coder"
     if awaits_resumed_review(state):
+        if state.get("reviewScriptPid"):
+            return "after-review"
         return "after-review" if review_answer_sent(repo_dir, state) else "ask-review-cap"
 
     return "ask-coder-cap" if state.get("stopReason") == "coder-cap" else "ask-unknown"
@@ -539,6 +542,7 @@ def command_abort(args):
         criteria_message = settle_criteria_guard(repo_dir, state, branch_label(repo_dir))
         save_state(repo_dir, state)
 
+    stop_review_script(state)
     clear_say(repo_dir)
     clear_question(repo_dir)
     run_command(["python3", str(SCRIPTS_DIR / "code" / "coder_gate.py"), "clear"], repo_dir)

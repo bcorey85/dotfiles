@@ -99,5 +99,23 @@ class SkipTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 0)
 
 
+class ClosingPhaseTest(unittest.TestCase):
+    def test_a_closing_phase_item_is_left_to_its_skill_like_the_plan_check_leaves_it(self):
+        closing_plan = ("# Plan\n\n## Phase 1: Build\n\n#### Automated Verification:\n\n"
+                        "- [ ] `test -e not-built-yet` exits 0\n\n## Phase 2: Refactor pass\n\n"
+                        "#### Automated Verification:\n\n"
+                        '- [ ] `CHANGED="$(git diff --name-only)" && test -n "$CHANGED"` exits 0\n')
+
+        with tempfile.TemporaryDirectory() as temp:
+            plan = pathlib.Path(temp) / "plan.md"
+            plan.write_text(closing_plan)
+            finished = subprocess.run([sys.executable, str(SCRIPT), str(plan), "--repo", temp],
+                                      capture_output=True, text=True)
+
+        self.assertNotIn("UNPARSED", finished.stdout)
+        self.assertNotIn("CHANGED", finished.stdout)
+        self.assertEqual(finished.returncode, 0, finished.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

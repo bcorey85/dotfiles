@@ -225,6 +225,14 @@ class TestAuditRowTest(LoggerRepoCase):
         (finding_row,) = fake_ledger.recorded_rows(self.ledger_env, "review_finding")
         self.assertEqual((finding_row["path_key"], finding_row["line"]), ("src/app.test.ts", "12"))
 
+    def test_help_prints_usage_and_writes_nothing(self):
+        for flag in ("--help", "-h"):
+            with self.subTest(flag=flag):
+                done = self.log([flag])
+                self.assertEqual(done.stderr, "")
+                self.assertIn("usage: log-review-finding kind=run|finding", done.stdout)
+                self.assertEqual(fake_ledger.recorded_rows(self.ledger_env), [])
+
 
 if __name__ == "__main__":
     unittest.main()

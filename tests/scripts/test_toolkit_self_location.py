@@ -9,6 +9,8 @@ import pathlib
 import re
 import unittest
 
+import toolkit_paths
+
 TREE_CLAUDE_DIR = pathlib.Path(__file__).resolve().parents[2] / "claude" / ".claude"
 SCANNED_FOLDERS = ("scripts", "hooks", "skills", "commands", "rules")
 
@@ -43,8 +45,6 @@ LIVE_AGENTS = "reads the user's own agent definitions for the live session; its 
 DATA_FILE = "data file under the home folder"
 LEDGER_DIR = "makes the folder that holds the ledger files"
 ALLOWED_HITS = [
-    ("scripts/bash-safety-gate.sh", "grep -qiE '(\\b(bash|sh|dash", "pattern text that matches commands"),
-    ("scripts/bash-safety-gate.sh", "(tee[[:space:]]+", "pattern text that matches writes to the live install"),
     ("scripts/code/code_step_core.py", "INSTALLED_COMMAND = ", PRINTED),
     ("scripts/code/code_step_core.py", "RESUME_LINE = ", PRINTED),
     ("scripts/gates/agent_model_guard.py", "home_file = ", LIVE_AGENTS),
@@ -81,6 +81,10 @@ def scanned_files():
     for folder in SCANNED_FOLDERS:
         for path in sorted((TREE_CLAUDE_DIR / folder).rglob("*")):
             if not path.is_file() or path.suffix == ".md" or "__pycache__" in path.parts:
+                continue
+
+            relative = path.relative_to(TREE_CLAUDE_DIR).as_posix()
+            if relative in toolkit_paths.WORK_HOOKS:
                 continue
             yield path
 

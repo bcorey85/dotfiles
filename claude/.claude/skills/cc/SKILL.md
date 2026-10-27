@@ -81,10 +81,10 @@ One queue, one escape-log pass. The source only decides which script clears the 
 7. **Log escapes.** Every comment that resulted in a real fix is ground truth: the human caught something the automated gates blessed. For each entry **fixed** (not answered, not skipped-as-FP, not deferred), log one line. A run with no `change` entries logs nothing here.
 
    ```bash
-   ~/.claude/scripts/log-escape stage_found=cc gate_missed=review class=<bug|smell|duplication|plan-drift|test-gap|other> severity=<high|medium|low> lane=<eng-spec|code|other> guard=<...> desc="<comment gist>" file=<path>
+   ~/.claude/scripts/telemetry/log-escape stage_found=cc gate_missed=review class=<bug|smell|duplication|plan-drift|test-gap|docs|other> severity=<high|medium|low> lane=<eng-spec|code|other> guard=<...> desc="<comment gist>" file=<path>
    ```
 
-   `guard` is the ratchet rung from `~/.claude/skills/_shared/escape-ratchet.md` (batch by `class` across the resolved comments); surface the proposed guard in step 8's summary and apply it on approval.
+   `class`: a comment that says a comment, doc or description is false or stale about the code is `docs`, never `smell` or `other`. `guard` is the ratchet rung from `~/.claude/skills/_shared/escape-ratchet.md` (batch by `class` across the resolved comments); surface the proposed guard in step 8's summary and apply it on approval.
 
    `stage_found=cc` for BOTH sources — same stage, different reader. Classify `class` from the comment body, and when unsure, `other`. `lane` from planning artifacts (eng-spec doc → `eng-spec`, else `code`); ask only when genuinely ambiguous. Do NOT log comments that were new requirements or changed direction — a gate can't miss information it never had.
 

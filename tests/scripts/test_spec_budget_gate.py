@@ -1,4 +1,4 @@
-"""Checks for spec-budget-gate.py, the PreToolUse hook that denies edits growing the eng-spec planning tree past its
+"""Checks for spec_budget_gate.py, the PreToolUse hook that denies edits growing the eng-spec planning tree past its
 word budget."""
 import json
 import os
@@ -8,8 +8,10 @@ import sys
 import tempfile
 import unittest
 
-SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts")
-SCRIPT = SCRIPTS_DIR / "spec-budget-gate.py"
+import toolkit_paths
+
+SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.GATES_DIR)
+SCRIPT = SCRIPTS_DIR / "spec_budget_gate.py"
 
 
 def words(count):
@@ -121,7 +123,9 @@ class SpecBudgetGateTest(unittest.TestCase):
         path = self.put("skills/eng-spec/SKILL.md", words(1000))
         self.put("skills/eng-spec/phases/a.md", words(496))
         edits = [{"old_string": "w", "new_string": "w w w"}, {"old_string": "w", "new_string": "w w w"}]
-        self.assert_allowed(self.run_hook({"tool_name": "MultiEdit", "tool_input": {"file_path": path, "edits": edits}}))
+        self.assert_allowed(
+            self.run_hook({"tool_name": "MultiEdit", "tool_input": {"file_path": path, "edits": edits}})
+        )
         edits.append({"old_string": "", "new_string": "w w"})
         reason = self.denial(self.run_hook({"tool_name": "MultiEdit",
                                             "tool_input": {"file_path": path, "edits": edits}}))
@@ -137,7 +141,7 @@ class SpecBudgetGateTest(unittest.TestCase):
                          "spec-budget-gate: this edit grows the planning tree to ~8701 words (ceiling 8700, "
                          "currently 8650). The planning system grows only by displacement — delete words elsewhere "
                          "in the guarded set (eng-spec, spec-* agents, its _shared files) in the same change, or "
-                         "ask the user to raise TOTAL_CEILING in spec-budget-gate.py. Never raise it yourself.")
+                         "ask the user to raise TOTAL_CEILING in spec_budget_gate.py. Never raise it yourself.")
 
     def test_total_covers_every_guarded_agent_and_shared_file(self):
         names = ["agents/spec-questions.md", "agents/spec-leak-check.md", "agents/spec-research.md",

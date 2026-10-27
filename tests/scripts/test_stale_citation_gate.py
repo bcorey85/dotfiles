@@ -1,4 +1,4 @@
-"""Checks for stale-citation-gate.py, the PostToolUse hook that warns on stale document citations and planning
+"""Checks for stale_citation_gate.py, the PostToolUse hook that warns on stale document citations and planning
 vocabulary in shipped source. It never blocks."""
 import json
 import os
@@ -8,8 +8,10 @@ import sys
 import tempfile
 import unittest
 
-SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts")
-SCRIPT = SCRIPTS_DIR / "stale-citation-gate.py"
+import toolkit_paths
+
+SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.GATES_DIR)
+SCRIPT = SCRIPTS_DIR / "stale_citation_gate.py"
 
 
 class StaleCitationGateTest(unittest.TestCase):

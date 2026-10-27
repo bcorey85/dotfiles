@@ -8,9 +8,13 @@ import tempfile
 import unittest
 
 import fake_ledger
+import toolkit_paths
 
-SCRIPT = os.environ.get("REVIEW_LOOP_GATE_SCRIPT") or os.path.expanduser("~/.claude/scripts/review-loop-gate.py")
-LOGGER = os.environ.get("LOG_REVIEW_FINDING_SCRIPT") or os.path.expanduser("~/.claude/skills/review/log-review-finding")
+SCRIPT = os.environ.get("REVIEW_LOOP_GATE_SCRIPT") or str(toolkit_paths.REVIEW_DIR / "review_loop_gate.py")
+SCRIPTS_ROOT = str(toolkit_paths.SCRIPTS_DIR)
+LOGGER = os.environ.get("LOG_REVIEW_FINDING_SCRIPT") or str(
+    toolkit_paths.CLAUDE_DIR / "skills" / "review" / "log-review-finding"
+)
 
 ASYNC_RESULT = "Async agent launched successfully.\nagentId: a7bf12f9c51bc4875 (internal ID)"
 
@@ -30,14 +34,40 @@ def result(tool_use_id, text):
     return {"type": "user", "message": {"role": "user", "content": [block]}}
 
 
-def bash(command):
-    block = {"type": "tool_use", "id": "toolu_bash", "name": "Bash", "input": {"command": command}}
+def bash(command, tool_use_id="toolu_bash"):
+    block = {"type": "tool_use", "id": tool_use_id, "name": "Bash", "input": {"command": command}}
+    return {"type": "assistant", "message": {"role": "assistant", "content": [block]}}
+
+
+def send_message(to):
+    block = {"type": "tool_use", "id": "toolu_send", "name": "SendMessage", "input": {"to": to, "message": "go on"}}
     return {"type": "assistant", "message": {"role": "assistant", "content": [block]}}
 
 
 def notification(tool_use_id):
-    prompt = "<task-notification>\n<task-id>t1</task-id>\n<tool-use-id>%s</tool-use-id>\n</task-notification>" % tool_use_id
+    prompt = (
+        f"<task-notification>\n<task-id>t1</task-id>\n<tool-use-id>{tool_use_id}</tool-use-id>\n</task-notification>"
+    )
     return {"type": "attachment", "attachment": {"type": "queued_command", "prompt": prompt}}
+
+
+def coder_and_background_reviewer():
+    return [user("review loop"),
+            dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
+            dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", ASYNC_RESULT)]
+
+
+def resume_background_coder():
+    """A background coder launched and already notified, then resumed with a SendMessage that came back as a resume."""
+    send = {"type": "tool_use", "id": "toolu_resume", "name": "SendMessage",
+            "input": {"to": "a5bc2ebfa0d6aeaf8", "message": "fix it"}}
+    resumed = json.dumps({"success": True, "message": "Resuming agent a5bc2eb", "resumedAgentId": "a5bc2ebfa0d6aeaf8"})
+    return [user("review loop"),
+            dispatch("toolu_coder", "coder"),
+            result("toolu_coder", "Async agent launched\nagentId: a5bc2ebfa0d6aeaf8"),
+            notification("toolu_coder"),
+            {"type": "assistant", "message": {"role": "assistant", "content": [send]}},
+            result("toolu_resume", resumed)]
 
 
 class ReviewLoopGateTest(unittest.TestCase):
@@ -55,21 +85,16 @@ class ReviewLoopGateTest(unittest.TestCase):
         self.assertEqual(proc.stderr, "")
         return proc.stdout
 
-    def coder_and_background_reviewer(self):
-        return [user("review loop"),
-                dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
-                dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", ASYNC_RESULT)]
-
     def test_open_background_dispatch_passes(self):
-        self.assertEqual(self.stop(self.coder_and_background_reviewer()), "")
+        self.assertEqual(self.stop(coder_and_background_reviewer()), "")
 
     def test_reported_background_dispatch_blocks_without_full_check(self):
-        out = self.stop(self.coder_and_background_reviewer() + [notification("toolu_rev")])
+        out = self.stop([*coder_and_background_reviewer(), notification("toolu_rev")])
         self.assertIn("No full check ran", json.loads(out)["reason"])
 
     def test_agent_message_counts_as_reported(self):
         message = user('<agent-message from="a7bf12f9c51bc4875">findings</agent-message>')
-        out = self.stop(self.coder_and_background_reviewer() + [message])
+        out = self.stop([*coder_and_background_reviewer(), message])
         self.assertIn("No full check ran", json.loads(out)["reason"])
 
     def test_foreground_dispatch_blocks(self):
@@ -85,9 +110,180 @@ class ReviewLoopGateTest(unittest.TestCase):
                    bash("npm test > /tmp/review-gate.log 2>&1")]
         self.assertEqual(self.stop(records), "")
 
+    def test_a_fix_coder_after_the_last_review_needs_only_the_full_check(self):
+        records = [user("review loop"),
+                   dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
+                   dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "ok"),
+                   dispatch("toolu_fix", "coder"), result("toolu_fix", "done")]
+        self.assertIn("No full check ran", json.loads(self.stop(records))["reason"])
+        self.assertEqual(self.stop([*records, bash("npm test > /tmp/review-gate.log 2>&1")]), "")
+
+    def test_a_message_to_a_coder_after_the_full_check_counts_as_a_code_change(self):
+        records = [user("review loop"),
+                   dispatch("toolu_coder", "coder"), result("toolu_coder", "agentId: acoder1"),
+                   dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "ok"),
+                   bash("npm test > /tmp/review-gate.log 2>&1")]
+        self.assertEqual(self.stop(records), "")
+        out = self.stop([*records, send_message("acoder1")])
+        self.assertIn("No full check ran", json.loads(out)["reason"])
+
     def test_stop_hook_active_passes(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
         self.assertEqual(self.stop(records, stop_hook_active=True), "")
+
+    def test_a_foreground_report_that_quotes_the_launch_text_is_not_an_open_dispatch(self):
+        report = "Reviewed the gate. It counts `Async agent launched` results as open dispatches.\nagentId: arev1"
+        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
+                   dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", report)]
+        self.assertIn("No full check ran", json.loads(self.stop(records))["reason"])
+
+
+class StopRowTest(unittest.TestCase):
+    def stop_in_session(self, records, store_dir, transcript_path=None, **extra):
+        # The hook runs with its own store folder so the test never writes the real ~/.claude/state.
+        env = {**os.environ, "HANDBACK_STORE_DIR": store_dir}
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = os.path.join(tmp.name, "loop.jsonl")
+        with open(path, "w", encoding="utf-8") as fh:
+            for rec in records:
+                fh.write(rec if isinstance(rec, str) else json.dumps(rec))
+                fh.write("\n")
+        hook = {"hook_event_name": "SubagentStop", "agent_type": "review-loop",
+                "agent_transcript_path": transcript_path or path, "session_id": "s-stop", "agent_id": "loop-1",
+                **extra}
+        return subprocess.run([sys.executable, "-B", SCRIPT], input=json.dumps(hook), capture_output=True,
+                              text=True, check=True, env=env)
+
+    def new_store(self):
+        store = tempfile.TemporaryDirectory()
+        self.addCleanup(store.cleanup)
+        return store.name
+
+    def open_counts(self, store_dir):
+        return [row["open_dispatches"] for row in self.stored_stops(store_dir)]
+
+    def stored_stops(self, store_dir):
+        with open(os.path.join(store_dir, "s-stop.jsonl"), encoding="utf-8") as fh:
+            return [row for row in map(json.loads, fh) if row["kind"] == "stop"]
+
+    def test_a_stop_stores_the_loop_agent_and_its_open_dispatch_count(self):
+        store = tempfile.TemporaryDirectory()
+        self.addCleanup(store.cleanup)
+        waiting = self.stop_in_session(coder_and_background_reviewer(), store.name)
+        self.assertEqual(waiting.stdout, "")
+        finished = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
+                    bash("npm test > /tmp/review-gate.log 2>&1")]
+        self.stop_in_session(finished, store.name)
+        stops = self.stored_stops(store.name)
+        self.assertEqual([(row["agent_id"], row["open_dispatches"]) for row in stops],
+                         [("loop-1", 1), ("loop-1", 0)])
+
+    def logged_ask_rows(self, command, printed):
+        store = self.new_store()
+        self.stop_in_session([user("review loop"), bash(command, "toolu_log"), result("toolu_log", printed)], store)
+        [stop] = self.stored_stops(store)
+        return stop.get("ask_rows")
+
+    def test_a_stop_stores_the_id_the_log_helper_printed_for_each_ask_row(self):
+        command = ('cd ~/.claude/skills/review && L="lane=none scope=standalone iter=2 gate=code-reviewer"; '
+                   'D=docs/guide\n'
+                   './log-review-finding kind=run $L n_findings=3 diff_loc=9 result=PASS\n'
+                   './log-review-finding kind=finding $L disposition=fix class=bug file=src/a.ts line=4 '
+                   'actioned=fixed\n'
+                   './log-review-finding kind=finding $L disposition=ask class=docs file=$D/spec.md line=314 '
+                   'actioned=ask\n'
+                   './log-review-finding kind=finding $L disposition=ask class=smell file="src/b.ts" line=7 '
+                   'actioned=ask && echo done')
+        printed = ("run_id=18ece5ac665dfd8e\nfinding_id=6087ff2824ca37b6\nfinding_id=712b01a68fd88a12\n"
+                   "finding_id=b220bc228d6edb04")
+        self.assertEqual(self.logged_ask_rows(command, printed),
+                         [{"file": "spec.md", "line": 314, "finding_id": "712b01a68fd88a12"},
+                          {"file": "src/b.ts", "line": 7, "finding_id": "b220bc228d6edb04"}])
+
+    def test_a_command_whose_printed_ids_do_not_match_its_finding_calls_pairs_nothing(self):
+        command = ('./log-review-finding kind=finding lane=none disposition=ask class=docs file=a.ts line=1 '
+                   'actioned=ask\n'
+                   './log-review-finding kind=finding lane=none disposition=ask class=docs file=b.ts line=2 '
+                   'actioned=ask')
+        self.assertEqual(self.logged_ask_rows(command, "finding_id=6087ff2824ca37b6\nlog-review-finding: failed"), [])
+
+    def test_a_helper_path_held_in_a_shell_variable_still_counts_as_a_finding_call(self):
+        command = ('L=~/.claude/skills/review/log-review-finding; D=docs/guide\n'
+                   '$L kind=finding lane=none disposition=fix class=bug file=src/a.ts line=4 actioned=fixed\n'
+                   '${L} kind=finding lane=none disposition=ask class=docs file=$D/spec.md line=314 actioned=ask')
+        printed = "finding_id=6087ff2824ca37b6\nfinding_id=712b01a68fd88a12"
+        self.assertEqual(self.logged_ask_rows(command, printed),
+                         [{"file": "spec.md", "line": 314, "finding_id": "712b01a68fd88a12"}])
+
+    def test_a_command_that_mixes_the_variable_form_and_the_path_form_pairs_each_call_with_its_own_id(self):
+        command = ('L=~/.claude/skills/review/log-review-finding\n'
+                   '$L kind=finding lane=none disposition=ask class=docs file=a.ts line=1 actioned=ask\n'
+                   './log-review-finding kind=finding lane=none disposition=fix class=bug file=b.ts line=2 '
+                   'actioned=fixed\n'
+                   '$L kind=finding lane=none disposition=ask class=docs file=c.ts line=3 actioned=ask')
+        printed = "finding_id=6087ff2824ca37b6\nfinding_id=712b01a68fd88a12\nfinding_id=b220bc228d6edb04"
+        self.assertEqual(self.logged_ask_rows(command, printed),
+                         [{"file": "a.ts", "line": 1, "finding_id": "6087ff2824ca37b6"},
+                          {"file": "c.ts", "line": 3, "finding_id": "b220bc228d6edb04"}])
+
+    def test_a_stop_the_gate_blocked_is_stored_as_blocked_and_a_passing_stop_is_not(self):
+        store = self.new_store()
+        unchecked = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        checked = [*unchecked, bash("npm test > /tmp/review-gate.log 2>&1")]
+        blocked_out = self.stop_in_session(unchecked, store)
+        self.stop_in_session(checked, store)
+        self.assertIn("block", blocked_out.stdout)
+        self.assertEqual([bool(row.get("blocked")) for row in self.stored_stops(store)], [True, False])
+
+    def test_a_stop_with_no_ask_call_stores_no_ask_rows(self):
+        self.assertEqual(self.logged_ask_rows("ls", "ok"), [])
+
+    def test_a_store_write_error_never_blocks_the_stop(self):
+        store = tempfile.TemporaryDirectory()
+        self.addCleanup(store.cleanup)
+        blocked = os.path.join(store.name, "file")
+        with open(blocked, "w", encoding="utf-8") as fh:
+            fh.write("not a folder")
+        done = self.stop_in_session(coder_and_background_reviewer(), blocked)
+        self.assertEqual(done.stdout, "")
+        self.assertIn("stop row skipped", done.stderr)
+
+    def test_a_stop_with_an_unreadable_transcript_writes_a_zero_row_and_still_fails_open(self):
+        store = self.new_store()
+        self.stop_in_session(coder_and_background_reviewer(), store)
+        half_written = [*coder_and_background_reviewer(), '{"type": "user", "mess']
+        torn = self.stop_in_session(half_written, store)
+        missing = self.stop_in_session([], store, transcript_path=os.path.join(store, "no-such-loop.jsonl"))
+        self.assertEqual((torn.stdout, missing.stdout), ("", ""))
+        self.assertIn("skipped", torn.stderr)
+        self.assertIn("skipped", missing.stderr)
+        self.assertEqual(self.open_counts(store), [1, 0, 0])
+
+    def test_a_resume_result_with_only_the_short_id_matches_the_launched_agent_by_prefix(self):
+        store = self.new_store()
+        short_only = [*resume_background_coder()[:-1], result("toolu_resume", "Resuming agent a5bc2eb")]
+        self.stop_in_session(short_only, store)
+        self.stop_in_session([*short_only, notification("toolu_resume")], store)
+        self.assertEqual(self.open_counts(store), [1, 0])
+
+    def test_a_non_object_transcript_line_writes_a_zero_row_and_still_fails_open(self):
+        store = self.new_store()
+        self.stop_in_session(coder_and_background_reviewer(), store)
+        done = self.stop_in_session([*coder_and_background_reviewer(), "[]"], store)
+        self.assertEqual(done.stdout, "")
+        self.assertIn("skipped", done.stderr)
+        self.assertEqual(self.open_counts(store), [1, 0])
+
+    def test_a_background_resume_is_open_until_a_later_notification_or_agent_message(self):
+        store = self.new_store()
+        resumed = resume_background_coder()
+        self.stop_in_session(resumed, store)
+        self.stop_in_session([*resumed, notification("toolu_resume")], store)
+        message = user('<agent-message from="a5bc2ebfa0d6aeaf8">done</agent-message>')
+        self.stop_in_session([*resumed, message], store)
+        self.assertEqual(self.open_counts(store), [1, 0, 0])
+
 
 class FullCheckTest(unittest.TestCase):
     @classmethod
@@ -96,16 +292,16 @@ class FullCheckTest(unittest.TestCase):
         cls.gate = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.gate)
 
-    def assertFull(self, command):
+    def assert_full(self, command):
         self.assertTrue(self.gate.full_check(command), command)
 
-    def assertScoped(self, command):
+    def assert_scoped(self, command):
         self.assertFalse(self.gate.full_check(command), command)
 
     def test_the_commands_two_loops_ran_as_their_full_check_count(self):
-        self.assertFull("cargo test --manifest-path /home/brandon/dev/agent-ledger-LED-12/Cargo.toml"
+        self.assert_full("cargo test --manifest-path /home/brandon/dev/agent-ledger-LED-12/Cargo.toml"
                         " > /tmp/review-gate.log 2>&1; echo exit=$?")
-        self.assertFull("cargo test --manifest-path /home/brandon/dev/agent-ledger-LED-2/Cargo.toml"
+        self.assert_full("cargo test --manifest-path /home/brandon/dev/agent-ledger-LED-2/Cargo.toml"
                         " > /tmp/review-gate.log 2>&1; echo exit=$?; tail -4 /tmp/review-gate.log")
 
     def test_the_value_of_a_package_or_project_flag_does_not_scope_a_run(self):
@@ -121,7 +317,7 @@ class FullCheckTest(unittest.TestCase):
                         "npx tsc --project=packages/web/tsconfig.json --noEmit",
                         "cargo test --manifest-path '/r/my app/Cargo.toml'"):
             with self.subTest(command=command):
-                self.assertFull(command)
+                self.assert_full(command)
 
     def test_each_checker_ignores_the_value_of_the_flags_that_name_its_package_or_project(self):
         for command in ("pytest -p plugins/x",
@@ -132,7 +328,7 @@ class FullCheckTest(unittest.TestCase):
                         "npx vitest --project packages/web",
                         "dotnet test --project src/App"):
             with self.subTest(command=command):
-                self.assertFull(command)
+                self.assert_full(command)
 
     def test_a_test_name_filter_or_a_trailing_test_target_still_scopes_a_run(self):
         for command in ("pytest -k login",
@@ -146,7 +342,7 @@ class FullCheckTest(unittest.TestCase):
                         "cargo test --package core -- --exact a::b",
                         "npm test --workspace packages/web"):
             with self.subTest(command=command):
-                self.assertScoped(command)
+                self.assert_scoped(command)
 
     def test_a_flag_that_names_a_package_for_one_checker_can_name_a_test_file_for_another(self):
         for command in ("bats -p test/login.bats",
@@ -156,13 +352,13 @@ class FullCheckTest(unittest.TestCase):
                         "pytest --project a/b",
                         "npx vitest -p a/b"):
             with self.subTest(command=command):
-                self.assertScoped(command)
+                self.assert_scoped(command)
 
     def test_a_flag_value_in_one_command_does_not_hide_a_scope_in_the_next(self):
-        self.assertScoped("cargo test -p core && cargo test tests/foo.rs")
+        self.assert_scoped("cargo test -p core && cargo test tests/foo.rs")
 
     def test_a_flag_at_the_end_of_its_command_takes_no_value_from_the_next_one(self):
-        self.assertScoped("cargo test -p; pytest tests/a.py")
+        self.assert_scoped("cargo test -p; pytest tests/a.py")
 
 
 def indented(report):
@@ -206,13 +402,17 @@ a.py:2 — [complexity] y"""
 
 
 def agent_message(agent_id, report):
-    return user('Another Claude session sent a message while you were working:\n<agent-message from="%s">\n%s'
-                % (agent_id, indented(report)))
+    return user(
+        f'Another Claude session sent a message while you were working:\n<agent-message from="{agent_id}">\n'
+        f'{indented(report)}'
+    )
 
 
 def notification_with_result(tool_use_id, report):
-    prompt = ("<task-notification>\n<task-id>t1</task-id>\n<tool-use-id>%s</tool-use-id>\n<result>%s</result>\n"
-              "</task-notification>" % (tool_use_id, indented(report)))
+    prompt = (
+        f"<task-notification>\n<task-id>t1</task-id>\n<tool-use-id>{tool_use_id}</tool-use-id>\n<result>{indented(report)}</result>\n"
+        "</task-notification>"
+    )
     return {"type": "attachment", "attachment": {"type": "queued_command", "prompt": prompt}}
 
 
@@ -226,7 +426,7 @@ class RunRowTest(unittest.TestCase):
         claude_dir = os.path.join(self.tmp.name, "claude")
         os.makedirs(os.path.join(claude_dir, "skills", "review"))
         shutil.copy2(LOGGER, os.path.join(claude_dir, "skills", "review", "log-review-finding"))
-        os.symlink(os.path.dirname(SCRIPT), os.path.join(claude_dir, "scripts"))
+        os.symlink(SCRIPTS_ROOT, os.path.join(claude_dir, "scripts"))
         self.script, self.quiet, self.stderr = SCRIPT, True, ""
         self.env = {**os.environ, "HOME": self.home, **fake_ledger.install(self.tmp.name),
                     "REVIEW_LOOP_GATE_STATE_DIR": os.path.join(self.tmp.name, "state"),
@@ -268,18 +468,31 @@ class RunRowTest(unittest.TestCase):
                          (code["_type"], code["result"], code["lane"], code["phase"], code["_session"]))
         self.assertEqual("PASS_WITH_WARNINGS", rows["smell-reviewer"]["result"])
 
+    def test_a_fix_loop_dispatched_from_a_test_audit_writes_its_run_rows_under_the_test_audit_lane(self):
+        records = [user("review loop\nlane: test-audit"), dispatch("t_code", "code-reviewer"),
+                   result("t_code", indented(CODE_REPORT)), bash("npm test > /tmp/review-gate.log 2>&1")]
+        self.assertEqual(self.stop(records), "")
+
+        (code,) = self.rows()
+        self.assertEqual("test-audit", code["lane"])
+
     def test_background_reports_arrive_in_the_opposite_order_and_keep_their_own_count(self):
-        records = self.loop([dispatch("t_smell", "smell-reviewer"), result("t_smell", "Async agent launched\nagentId: asmell")],
-                            [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
-                            [agent_message("acode", CODE_REPORT)], [agent_message("asmell", SMELL_REPORT)])
+        records = self.loop(
+            [dispatch("t_smell", "smell-reviewer"), result("t_smell", "Async agent launched\nagentId: asmell")],
+            [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
+            [agent_message("acode", CODE_REPORT)],
+            [agent_message("asmell", SMELL_REPORT)],
+        )
         self.stop(records)
         counts = {row["gate"]: row["n_findings"] for row in self.rows()}
         self.assertEqual({"smell-reviewer": "1", "code-reviewer": "3"}, counts)
 
     def test_task_notification_result_and_a_clean_report_with_no_sections(self):
-        records = self.loop([dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
-                            [notification_with_result("t_code", CLEAN_REPORT)],
-                            [dispatch("t_cx", "complexity-reviewer-deep"), result("t_cx", indented(COMPLEXITY_REPORT))])
+        records = self.loop(
+            [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
+            [notification_with_result("t_code", CLEAN_REPORT)],
+            [dispatch("t_cx", "complexity-reviewer-deep"), result("t_cx", indented(COMPLEXITY_REPORT))],
+        )
         self.stop(records)
         rows = {row["gate"]: row for row in self.rows()}
         self.assertEqual("0", rows["code-reviewer"]["n_findings"])
@@ -292,7 +505,7 @@ class RunRowTest(unittest.TestCase):
         self.stop(records)
         self.stop(records)
         self.assertEqual(1, len(self.rows()))
-        more = records + [dispatch("t_next", "code-reviewer"), result("t_next", indented(CLEAN_REPORT))]
+        more = [*records, dispatch("t_next", "code-reviewer"), result("t_next", indented(CLEAN_REPORT))]
         self.stop(more)
         self.assertEqual(["3", "0"], [row["n_findings"] for row in self.rows()])
 
@@ -308,21 +521,18 @@ class RunRowTest(unittest.TestCase):
         self.stop(records)
         self.assertEqual(1, len(self.rows()))
 
-    def test_no_row_is_marked_written_while_ledger_is_off_path_and_it_is_written_once_on(self):
+    def test_a_run_row_is_dropped_with_one_writer_line_and_no_file_while_ledger_is_off_path(self):
         records = self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))])
-        fake_dir = os.path.join(self.tmp.name, "fake-ledger-bin")
-        bash_dir = os.path.dirname(shutil.which("bash"))
-        good_path = self.env["PATH"]
-        self.env["PATH"] = os.pathsep.join(
-            part for part in good_path.split(os.pathsep) if part != fake_dir and not os.path.exists(os.path.join(part, "ledger")))
+        path_with_ledger = self.env["PATH"]
+        self.env["PATH"] = fake_ledger.path_without_ledger(path_with_ledger)
         self.assertIsNone(shutil.which("ledger", path=self.env["PATH"]))
-        self.assertTrue(bash_dir in self.env["PATH"].split(os.pathsep))
+        findings_file = os.path.join(self.home, ".claude", toolkit_paths.local_stream_file("review-findings"))
         self.quiet = False
         self.stop(records)
         self.assertEqual([], self.rows())
-        self.assertIn("ledger is not on PATH", self.stderr)
-        self.env["PATH"] = good_path
-        self.quiet = True
+        self.assertIn("ledger not on PATH; review_run row dropped", self.stderr)
+        self.assertFalse(os.path.exists(findings_file))
+        self.env["PATH"] = path_with_ledger
         self.stop(records)
         self.assertEqual(1, len(self.rows()))
 
@@ -332,9 +542,14 @@ class RunRowTest(unittest.TestCase):
         scripts_link = os.path.join(claude_dir, "scripts")
         os.remove(scripts_link)
         os.makedirs(scripts_link)
-        for name in os.listdir(os.path.dirname(SCRIPT)):
+        for name in os.listdir(SCRIPTS_ROOT):
+            if name != "telemetry":
+                os.symlink(os.path.join(SCRIPTS_ROOT, name), os.path.join(scripts_link, name))
+        telemetry_link = os.path.join(scripts_link, "telemetry")
+        os.makedirs(telemetry_link)
+        for name in os.listdir(os.path.join(SCRIPTS_ROOT, "telemetry")):
             if name != "telemetry_enabled.sh":
-                os.symlink(os.path.join(os.path.dirname(SCRIPT), name), os.path.join(scripts_link, name))
+                os.symlink(os.path.join(SCRIPTS_ROOT, "telemetry", name), os.path.join(telemetry_link, name))
         self.quiet = False
         self.stop(records)
         self.assertEqual([], self.rows())
@@ -345,10 +560,13 @@ class RunRowTest(unittest.TestCase):
         self.stop(records)
         self.assertEqual(1, len(self.rows()))
         self.assertEqual([], fake_ledger.recorded_rows(self.env, "review_finding"))
-        self.assertFalse(os.path.exists(os.path.join(self.home, ".claude", "review-findings.jsonl")))
+        findings_file = os.path.join(self.home, ".claude", toolkit_paths.local_stream_file("review-findings"))
+        self.assertFalse(os.path.exists(findings_file))
 
     def test_open_background_dispatch_writes_nothing(self):
-        records = self.loop([dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")])
+        records = self.loop(
+            [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")]
+        )
         self.stop(records)
         self.assertEqual([], self.rows())
 
@@ -360,11 +578,13 @@ class RunRowTest(unittest.TestCase):
 
     def test_a_report_that_cannot_be_counted_still_writes_its_row_with_null(self):
         prose = "## Code Review Summary\n\n### Fix\nThe fix section has prose and no entry."
-        records = self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(prose))],
-                            [dispatch("t_other", "perf-reviewer"), result("t_other", "free text, no review heading")],
-                            [dispatch("t_async", "smell-reviewer"), result("t_async", "Async agent launched\nagentId: alost")],
-                            [agent_message("alost", "I ran out of budget before I wrote a report.")],
-                            [dispatch("t_deep", "security-reviewer-deep"), result("t_deep", indented(CODE_REPORT))])
+        records = self.loop(
+            [dispatch("t_code", "code-reviewer"), result("t_code", indented(prose))],
+            [dispatch("t_other", "perf-reviewer"), result("t_other", "free text, no review heading")],
+            [dispatch("t_async", "smell-reviewer"), result("t_async", "Async agent launched\nagentId: alost")],
+            [agent_message("alost", "I ran out of budget before I wrote a report.")],
+            [dispatch("t_deep", "security-reviewer-deep"), result("t_deep", indented(CODE_REPORT))],
+        )
         self.stop(records)
         counts = {row["gate"]: row["n_findings"] for row in self.rows()}
         self.assertEqual({"code-reviewer": None, "perf-reviewer": None, "smell-reviewer": None,
@@ -372,7 +592,7 @@ class RunRowTest(unittest.TestCase):
         self.assertTrue(all("n_findings" in row for row in self.rows()))
 
     def counted(self, report, gate="code-reviewer"):
-        tool_use_id = "t_%d" % len(self.rows())
+        tool_use_id = f"t_{len(self.rows())}"
         self.stop(self.loop([dispatch(tool_use_id, gate), result(tool_use_id, indented(report))]))
         return self.rows()[-1]["n_findings"]
 
@@ -439,21 +659,27 @@ None of the above is a blocker, but this is:
 
     def test_two_notifications_in_one_record_do_not_lend_a_result_across_the_boundary(self):
         both = ("<task-notification><tool-use-id>t_smell</tool-use-id><status>killed</status></task-notification>"
-                "<task-notification><tool-use-id>t_code</tool-use-id><result>%s</result></task-notification>"
-                % indented(CODE_REPORT))
-        records = self.loop([dispatch("t_smell", "smell-reviewer"), result("t_smell", "Async agent launched\nagentId: asmell")],
-                            [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
-                            [{"type": "attachment", "attachment": {"type": "queued_command", "prompt": both}}])
+                f"<task-notification><tool-use-id>t_code</tool-use-id><result>{indented(CODE_REPORT)}</result></task-notification>")
+        records = self.loop(
+            [dispatch("t_smell", "smell-reviewer"), result("t_smell", "Async agent launched\nagentId: asmell")],
+            [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
+            [{"type": "attachment", "attachment": {"type": "queued_command", "prompt": both}}],
+        )
         self.stop(records)
         counts = {row["gate"]: row["n_findings"] for row in self.rows()}
         self.assertEqual({"smell-reviewer": None, "code-reviewer": "3"}, counts)
 
     def test_an_agent_message_ends_at_the_next_agent_message(self):
-        both = user('<agent-message from="asmell">\n%s\n<agent-message from="acode">\n%s'
-                    % ("I stopped early.", indented(CODE_REPORT)))
-        records = self.loop([dispatch("t_smell", "smell-reviewer"), result("t_smell", "Async agent launched\nagentId: asmell")],
-                            [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
-                            [both])
+        both = user(
+            '<agent-message from="asmell">\n{}\n<agent-message from="acode">\n{}'.format(
+                "I stopped early.", indented(CODE_REPORT)
+            )
+        )
+        records = self.loop(
+            [dispatch("t_smell", "smell-reviewer"), result("t_smell", "Async agent launched\nagentId: asmell")],
+            [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")],
+            [both],
+        )
         self.stop(records)
         counts = {row["gate"]: row["n_findings"] for row in self.rows()}
         self.assertEqual({"smell-reviewer": None, "code-reviewer": "3"}, counts)
@@ -463,17 +689,6 @@ None of the above is a blocker, but this is:
         with open(blocker, "w") as fh:
             fh.write("a file where the folder should go")
         self.env["REVIEW_LOOP_GATE_STATE_DIR"] = os.path.join(blocker, "state")
-        self.quiet = False
-        out = self.stop(self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))]))
-        self.assertEqual("", out)
-        self.assertEqual([], self.rows())
-        self.assertIn("run rows skipped", self.stderr)
-
-    def test_a_missing_helper_module_skips_the_rows_and_the_stop_still_passes(self):
-        lone = os.path.join(self.tmp.name, "lone")
-        os.makedirs(lone)
-        self.script = os.path.join(lone, "review-loop-gate.py")
-        shutil.copy2(SCRIPT, self.script)
         self.quiet = False
         out = self.stop(self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))]))
         self.assertEqual("", out)
@@ -581,180 +796,63 @@ The edited assertions match:
         self.assertEqual([], self.rows())
 
 
-class HandBackGateTest(unittest.TestCase):
-    """PreToolUse on SubagentHandback: the payload names the main transcript, and the loop's own transcript sits
-    under it at <main>/subagents/agent-<id>.jsonl."""
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.main_transcript = os.path.join(self.tmp.name, "session.jsonl")
-        self.subagents = os.path.join(self.tmp.name, "session", "subagents")
-        os.makedirs(self.subagents)
-        self.state_dir = os.path.join(self.tmp.name, "state")
-        self.env = {**os.environ, "HOME": self.tmp.name, "REVIEW_LOOP_GATE_STATE_DIR": self.state_dir,
-                    "REVIEW_LOOP_GATE_CLAUDE_DIR": os.path.join(self.tmp.name, "no-claude")}
-        self.env.pop("CLAUDE_SKIP_HOOKS", None)
-        self.script = SCRIPT
-        self.stderr = ""
-
-    def write_loop(self, records, agent_id="aloop1"):
-        with open(os.path.join(self.subagents, "agent-%s.jsonl" % agent_id), "w", encoding="utf-8") as fh:
-            for rec in records:
-                fh.write(json.dumps(rec) + "\n")
-
-    def run_gate(self, hook):
-        payload = {"session_id": "s1", "agent_id": "aloop1", "agent_type": "review-loop",
-                   "transcript_path": self.main_transcript}
-        payload.update(hook)
-        proc = subprocess.run([sys.executable, "-B", self.script], input=json.dumps(payload), capture_output=True,
-                              text=True, check=True, env=self.env, cwd=self.tmp.name)
-        self.stderr = proc.stderr
-        return proc.stdout
-
-    def hand_back(self, message="## Packet\nstatus: done", **fields):
-        hook = {"hook_event_name": "PreToolUse", "tool_name": "SubagentHandback", "tool_input": {"message": message}}
-        hook.update(fields)
-        return self.run_gate(hook)
-
-    def stop(self, **fields):
-        hook = {"hook_event_name": "SubagentStop", "stop_hook_active": False}
-        hook.update(fields)
-        return self.run_gate(hook)
-
-    def skipped_full_check(self):
-        return [user("review loop"),
-                dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
-                dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "ok")]
-
-    def clean(self):
-        return self.skipped_full_check() + [bash("npm test > /tmp/review-gate.log 2>&1")]
-
-    def unread_fix(self):
-        return [user("review loop"),
-                dispatch("toolu_fix", "coder"), result("toolu_fix", "done\nagentId: afix1 (internal ID)"),
-                bash("npm test > /tmp/review-gate.log 2>&1")]
-
-    def assertRefused(self, out, reason):
-        denial = json.loads(out)["hookSpecificOutput"]
-        self.assertEqual(denial["hookEventName"], "PreToolUse")
-        self.assertEqual(denial["permissionDecision"], "deny")
-        self.assertIn(reason, denial["permissionDecisionReason"])
-        self.assertIn("call SubagentHandback again", denial["permissionDecisionReason"])
-
-    def test_a_hand_back_with_no_full_check_after_the_last_code_change_is_refused(self):
-        self.write_loop(self.skipped_full_check())
-        self.assertRefused(self.hand_back(), "No full check ran")
-        self.assertEqual(self.stderr, "")
-
-    def test_a_hand_back_with_an_unread_code_fix_is_refused(self):
-        self.write_loop(self.unread_fix())
-        self.assertRefused(self.hand_back(), "fix diff is unread")
-
-    def test_a_clean_loop_hands_back(self):
-        self.write_loop(self.clean())
-        self.assertEqual(self.hand_back(), "")
-        self.assertEqual(self.stderr, "")
-
-    def test_the_second_hand_back_after_a_refusal_goes_through(self):
-        self.write_loop(self.skipped_full_check())
-        self.assertRefused(self.hand_back(), "No full check ran")
-        self.assertEqual(self.hand_back(), "")
-        self.assertEqual(self.hand_back(), "")
-
-    def test_a_refusal_is_not_remembered_after_a_clean_hand_back(self):
-        self.write_loop(self.clean())
-        self.assertEqual(self.hand_back(), "")
-        self.write_loop(self.skipped_full_check())
-        self.assertRefused(self.hand_back(), "No full check ran")
-
-    def test_each_agent_has_its_own_refusal(self):
-        self.write_loop(self.skipped_full_check(), agent_id="aloop1")
-        self.write_loop(self.skipped_full_check(), agent_id="aloop2")
-        self.assertRefused(self.hand_back(agent_id="aloop1"), "No full check ran")
-        self.assertRefused(self.hand_back(agent_id="aloop2"), "No full check ran")
-        self.assertEqual(self.hand_back(agent_id="aloop1"), "")
-
-    def test_each_session_has_its_own_refusal(self):
-        self.write_loop(self.skipped_full_check())
-        self.assertRefused(self.hand_back(session_id="s1"), "No full check ran")
-        self.assertRefused(self.hand_back(session_id="s2"), "No full check ran")
-
-    def test_a_plan_impact_hand_back_owes_no_full_check(self):
-        self.write_loop(self.skipped_full_check())
-        self.assertEqual(self.hand_back(message="## Packet\nstatus: plan-impact\nthe plan is wrong"), "")
-
-    def test_the_hand_back_message_stands_in_for_the_last_text_and_not_the_transcript(self):
-        records = self.skipped_full_check() + [
-            {"type": "assistant", "message": {"role": "assistant", "content": [
-                {"type": "text", "text": "status: plan-impact"}]}}]
-        self.write_loop(records)
-        self.assertRefused(self.hand_back(message="status: done"), "No full check ran")
-
-    def test_an_open_background_dispatch_is_not_refused(self):
-        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
-                   dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", ASYNC_RESULT)]
-        self.write_loop(records)
-        self.assertEqual(self.hand_back(), "")
-
-    def test_other_agents_are_not_checked(self):
-        self.write_loop(self.skipped_full_check())
-        self.assertEqual(self.hand_back(agent_type="coder"), "")
-        self.assertEqual(self.hand_back(agent_type="coder"), "")
-        self.assertFalse(os.path.exists(self.state_dir))
-
-    def test_a_hand_back_without_a_session_is_not_checked(self):
-        self.write_loop(self.skipped_full_check())
-        self.assertEqual(self.hand_back(session_id=""), "")
-
-    def test_the_stop_after_an_insisted_hand_back_has_nothing_left_to_ask(self):
-        self.write_loop(self.unread_fix())
-        self.assertRefused(self.hand_back(), "fix diff is unread")
-        self.assertEqual(self.hand_back(), "")
-        self.assertEqual(self.stop(), "")
-
-    def test_the_stop_after_a_refused_hand_back_still_blocks(self):
-        self.write_loop(self.unread_fix())
-        self.assertRefused(self.hand_back(), "fix diff is unread")
-        self.assertIn("fix diff is unread", json.loads(self.stop())["reason"])
-
-    def test_a_stop_with_no_hand_back_before_it_still_blocks(self):
-        self.write_loop(self.unread_fix())
-        self.assertIn("fix diff is unread", json.loads(self.stop())["reason"])
-
-    def test_a_clean_hand_back_does_not_quiet_a_later_stop(self):
-        self.write_loop(self.clean())
-        self.assertEqual(self.hand_back(), "")
-        self.write_loop(self.skipped_full_check())
-        self.assertIn("No full check ran", json.loads(self.stop())["reason"])
-
-    def test_an_unwritable_state_folder_lets_the_hand_back_through_with_a_stderr_line(self):
-        blocker = os.path.join(self.tmp.name, "blocker")
-        with open(blocker, "w") as fh:
-            fh.write("a file where the folder should go")
-        self.env["REVIEW_LOOP_GATE_STATE_DIR"] = os.path.join(blocker, "state")
-        self.write_loop(self.skipped_full_check())
-        self.assertEqual(self.hand_back(), "")
-        self.assertIn("review-loop-gate: skipped", self.stderr)
-
-    def test_a_missing_loop_transcript_lets_the_hand_back_through_with_a_stderr_line(self):
-        self.assertEqual(self.hand_back(agent_id="anobody"), "")
-        self.assertIn("no loop transcript", self.stderr)
-
-    def test_a_missing_helper_module_lets_the_hand_back_through_with_a_stderr_line(self):
-        lone = os.path.join(self.tmp.name, "lone")
-        os.makedirs(lone)
-        self.script = os.path.join(lone, "review-loop-gate.py")
-        shutil.copy2(SCRIPT, self.script)
-        self.write_loop(self.skipped_full_check())
-        self.assertEqual(self.hand_back(), "")
-        self.assertIn("script_utils is not beside", self.stderr)
-
-    def test_the_dispatch_check_for_a_review_loop_without_a_handoff_still_runs(self):
+class HandoffDispatchTest(unittest.TestCase):
+    def test_a_review_loop_dispatch_from_code_without_a_handoff_is_refused(self):
         hook = {"hook_event_name": "PreToolUse", "tool_name": "Agent",
                 "tool_input": {"subagent_type": "review-loop", "prompt": "caller: code\nno handoff"}}
-        self.assertIn("handoff", json.loads(self.run_gate(hook))["hookSpecificOutput"]["permissionDecisionReason"])
+        environment = {key: value for key, value in os.environ.items() if key != "CLAUDE_SKIP_HOOKS"}
+        proc = subprocess.run([sys.executable, "-B", SCRIPT], input=json.dumps(hook), capture_output=True,
+                              text=True, check=True, env=environment)
+        self.assertIn("handoff", json.loads(proc.stdout)["hookSpecificOutput"]["permissionDecisionReason"])
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+PACKET = """status: converged
+iter: 1
+fixed: [{finding: "null deref", file_line: "a.py:3", blocker: no}]
+skipped_fp: []
+ask: []
+class_closure: n/a — fixed[] empty
+files_touched: [a.py, %s]
+nit: []"""
+FINDING_ROW = ("~/.claude/skills/review/log-review-finding kind=finding lane=code scope=phase iter=1 "
+               "gate=code-reviewer disposition=fix class=bug file=a.py line=3 actioned=fixed")
+METRICS_ROW = "~/.claude/skills/review/log-review-metrics lane=code iter=1 fix=1 ask=0 nit=0 fixed=1 result=PASS"
+
+
+class LedgerRowsTest(ReviewLoopGateTest):
+    def loop(self, *rows, plan="spec.md"):
+        return [user(f"review loop\nlane: code\nplan: {plan}"), bash("npm test > /tmp/review-gate.log 2>&1"),
+                *[bash(row) for row in rows]]
+
+    def stop_with_packet(self, records, touched="spec.md"):
+        return self.stop(records, last_assistant_message=PACKET % touched)
+
+    def test_a_packet_with_a_fixed_finding_and_no_finding_row_is_blocked_once(self):
+        records = self.loop(METRICS_ROW, plan="other.md")
+        reason = json.loads(self.stop_with_packet(records, touched="b.py"))["reason"]
+        self.assertIn("1 finding(s)", reason)
+        self.assertIn("only 0 per-finding", reason)
+
+    def test_a_missing_metrics_line_is_blocked(self):
+        reason = json.loads(self.stop_with_packet(self.loop(FINDING_ROW, plan="other.md"), "b.py"))["reason"]
+        self.assertIn("no metrics line", reason)
+
+    def test_every_row_logged_passes(self):
+        self.assertEqual(self.stop_with_packet(self.loop(FINDING_ROW, METRICS_ROW, plan="other.md"), "b.py"), "")
+
+    def test_a_second_stop_in_a_row_passes(self):
+        records = self.loop(plan="other.md")
+        self.assertEqual(self.stop(records, last_assistant_message=PACKET % "b.py", stop_hook_active=True), "")
+
+    def test_a_plan_file_in_files_touched_is_blocked(self):
+        records = self.loop(FINDING_ROW, METRICS_ROW)
+        reason = json.loads(self.stop_with_packet(records))["reason"]
+        self.assertIn("never edits the plan", reason)
+
+    def test_a_plan_path_that_ends_in_the_touched_path_is_blocked(self):
+        records = self.loop(FINDING_ROW, METRICS_ROW, plan="/repo/docs/spec.md")
+        self.assertIn("never edits the plan", json.loads(self.stop_with_packet(records, "docs/spec.md"))["reason"])

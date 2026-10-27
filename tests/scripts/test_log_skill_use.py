@@ -1,4 +1,4 @@
-"""Checks for log-skill-use.py, the skill-usage telemetry hook.
+"""Checks for log_skill_use.py, the skill-usage telemetry hook.
 
 Set HOOK_SCRIPTS_DIR to run against another directory of scripts."""
 import json
@@ -10,9 +10,11 @@ import sys
 import tempfile
 import unittest
 
+import toolkit_paths
+
 os.environ.pop("CLAUDE_TOOLKIT_TELEMETRY", None)  # the switch file alone decides in these tests
 
-SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts") / "log-skill-use.py"
+SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.TELEMETRY_DIR) / "log_skill_use.py"
 TIMESTAMP = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
 
 
@@ -28,8 +30,10 @@ def prompt(text, event="UserPromptSubmit"):
 
 PARITY_CASES = [
     {"name": "model skill", "stdin": post("review")},
-    {"name": "model skill with args", "stdin": json.dumps({"hook_event_name": "PostToolUse",
-                                                             "tool_input": {"skill": "fix", "args": "x"}})},
+    {
+        "name": "model skill with args",
+        "stdin": json.dumps({"hook_event_name": "PostToolUse", "tool_input": {"skill": "fix", "args": "x"}}),
+    },
     {"name": "plugin skill", "stdin": post("anthropic-skills:deep-research")},
     {"name": "empty skill", "stdin": post("")},
     {"name": "missing skill", "stdin": json.dumps({"hook_event_name": "PostToolUse", "tool_input": {}})},
@@ -58,7 +62,11 @@ PARITY_CASES = [
     {"name": "project dir sets repo", "stdin": post("review"), "project": True},
     {"name": "output file override", "stdin": post("review"), "env": {"SKILL_USAGE_FILE": "{ROOT}/custom.jsonl"}},
     {"name": "output dir missing", "stdin": post("review"), "env": {"SKILL_USAGE_FILE": "{ROOT}/nope/x.jsonl"}},
-    {"name": "appends to existing", "stdin": post("review"), "files": {"home/.claude/skill-usage.jsonl": '{"old":1}\n'}},
+    {
+        "name": "appends to existing",
+        "stdin": post("review"),
+        "files": {"home/.claude/skill-usage.jsonl": '{"old":1}\n'},
+    },
     {"name": "empty stdin", "stdin": ""},
     {"name": "invalid json", "stdin": "not json"},
     {"name": "array payload", "stdin": "[1]"},
@@ -72,12 +80,11 @@ def run_hook(stdin, env=None, project=None, cwd=None):
     with tempfile.TemporaryDirectory() as scratch:
         home = pathlib.Path(scratch) / "home"
         (home / ".claude").mkdir(parents=True)
-        (home / ".claude" / "toolkit-telemetry").touch()
         working = pathlib.Path(scratch) / "work" / "myrepo"
         working.mkdir(parents=True)
         environment = {key: value for key, value in os.environ.items()
                        if key not in ("CLAUDE_PROJECT_DIR", "SKILL_USAGE_FILE")}
-        environment.update(HOME=str(home), TMPDIR=scratch, PWD=str(cwd or working))
+        environment.update(HOME=str(home), TMPDIR=scratch, PWD=str(cwd or working), CLAUDE_TOOLKIT_TELEMETRY="1")
         if project:
             environment["CLAUDE_PROJECT_DIR"] = project
         environment.update({key: value.replace("{ROOT}", scratch) for key, value in (env or {}).items()})
@@ -145,8 +152,7 @@ class LogSkillUseTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             target = pathlib.Path(scratch) / "custom.jsonl"
             (pathlib.Path(scratch) / ".claude").mkdir()
-            (pathlib.Path(scratch) / ".claude" / "toolkit-telemetry").touch()
-            environment = dict(os.environ, HOME=scratch, SKILL_USAGE_FILE=str(target))
+            environment = dict(os.environ, HOME=scratch, SKILL_USAGE_FILE=str(target), CLAUDE_TOOLKIT_TELEMETRY="1")
             subprocess.run([sys.executable, str(SCRIPT)], input=post("a"), text=True, env=environment)
             subprocess.run([sys.executable, str(SCRIPT)], input=post("b"), text=True, env=environment)
             self.assertEqual([json.loads(line)["skill"] for line in target.read_text().splitlines()], ["a", "b"])
@@ -154,8 +160,10 @@ class LogSkillUseTest(unittest.TestCase):
             finished = subprocess.run([sys.executable, str(SCRIPT)], input=post("a"), text=True, env=environment,
                                       capture_output=True)
             self.assertEqual(finished.returncode, 0)
-            self.assertEqual(finished.stderr, "log-skill-use: cannot open %s: No such file or directory\n"
-                             % environment["SKILL_USAGE_FILE"])
+            self.assertEqual(
+                finished.stderr,
+                "log-skill-use: cannot open {}: No such file or directory\n".format(environment["SKILL_USAGE_FILE"]),
+            )
 
     def test_bad_payloads_exit_five_without_a_row(self):
         for stdin in ("not json", "[1]", '"s"', "5"):
@@ -170,9 +178,9 @@ class LogSkillUseTest(unittest.TestCase):
             self.assertIsNone(rows)
 
     def test_string_tool_input_exits_five_only_on_post_tool_use(self):
-        finished, rows, _ = run_hook(json.dumps({"hook_event_name": "PostToolUse", "tool_input": "x"}))
+        finished, _rows, _ = run_hook(json.dumps({"hook_event_name": "PostToolUse", "tool_input": "x"}))
         self.assertEqual(finished.returncode, 5)
-        finished, rows, _ = run_hook(json.dumps({"hook_event_name": "Stop", "tool_input": "x"}))
+        finished, _rows, _ = run_hook(json.dumps({"hook_event_name": "Stop", "tool_input": "x"}))
         self.assertEqual(finished.returncode, 0)
 
     def test_skip_hooks_is_not_honored(self):

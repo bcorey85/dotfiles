@@ -17,7 +17,8 @@
     - **`DESIGN GAPS` returned by an architect**: resolve each with the user in
       prose (step 14's rule holds), append it to `03-decisions.md` as a decision
       block, **then send the resolution back to that architect** and take its
-      revised plan.
+      revised plan. Architects cannot edit files: get each changed section's
+      full text and write it in yourself.
     - **Testability lint**, one question per Success Criterion: could a reader of
       ONLY the plan decide it pass/fail (named command, output, or test)? A
       failure is UNDERSPECIFIED — resolve with the user like a `DESIGN GAP`, never
@@ -37,25 +38,28 @@
       gate stays in its sibling file, named by path.
     - **Write `## Constraints` and `## External Contracts` yourself — both are mandatory.** Rules live in those sections' comments in the spec template; write with the template open, not from memory.
     - **Fullstack: weave, don't concatenate.** "Backend phases, then frontend
-      phases" is the horizontal anti-pattern `plan-format.md` forbids — layer
-      phases give `/code`'s gates no end-to-end signal. Interleave
+      phases" is the horizontal anti-pattern `plan-format.md` forbids. Interleave
       vertical slices, each one verifiable increment of user-observable behavior.
       Single-layer phases only when the work genuinely is.
 
-    Write before step 16b, without a save question. All subsequent checks and
-    review use this saved spec. Persist every revision to the same file before
+    Write before step 16b, without a save question. After each write run
+    `python3 ~/.claude/scripts/code/code_step.py plan check docs/plans/<slug>/spec.md`;
+    exit 1: fix each line, rerun. All later checks use this saved spec. Persist every revision to the same file before
     continuing; never leave a repair only in conversation.
 
 16b. **Dry-run the verification criteria** — two failure modes of the plan's
 `#### Automated Verification:` commands survive reading. Resolve each with the user before Phase 7.
 
-    - **Falsifiability run**: for each **read-only** command (build, test, lint,
-      `git grep` — never one that writes), run it as written against the pre-implementation tree. Clean RED is good; already-GREEN or BROKEN-on-bad-flag lets the coder pass with no check running.
-    - **Batch, don't dribble**: collect every read-only command first, then run
-      them in ONE Bash call (two at most on a large plan). Each command is
-      followed by `echo CHECK <n> rc=$?` and guarded with `|| true`, so one
-      failure cannot abort the batch. A command that writes never enters a
-      batch — it stays out entirely, not queued for later.
+    - **Falsifiability run**: run
+      `python3 ~/.claude/scripts/tools/criteria_dry_run.py docs/plans/<slug>/spec.md`
+      once. It runs every Automated Verification command of every phase against
+      the pre-implementation tree and prints `CHECK <n> RED|GREEN|BROKEN|UNPARSED`
+      plus `FLAG` lines. Clean RED is good; GREEN, BROKEN or UNPARSED lets the coder
+      pass with no check running. A filtered test run that matches no test reads RED
+      (the test does not exist yet). A `FLAG` is a defect in the criterion: a
+      `pgrep -f` that matches the shell running it, or a count that differs from
+      the plan's own code. Pass `--skip <n>` for each command that writes; a
+      command that writes never runs.
     - **Criteria that read a file or a diff**: open the file and confirm it holds
       what the criterion looks for, and that the container or path is the one the
       phase changes. An `rg` over prose uses `-U` and `\s+`, or a wrapped phrase
@@ -74,11 +78,8 @@ these before Phase 7 and resolve every miss with the user like a `DESIGN GAP`.
       or library version does gets its `--help` or a one-line run. So does the validator or parser each new value meets.
     - **Internal agreement** — any quantity the plan states in more than one
       place must agree everywhere, and a frozen literal must match every later assertion.
-    - **Batch the probes**: collect every check below first, then run at most
-      TWO batched Bash calls — counts + names + tool-behavior in one,
-      deny-sweep + superseded-deliverables in the other. Same `echo CHECK <n>
-      rc=$?` markers and `|| true` guards as step 16b; one ambiguous result
-      re-runs solo, never the whole batch.
+    - **Batch the probes** in at most TWO Bash calls: counts + names +
+      tool-behavior, then the rest. Re-run an ambiguous result solo.
     - **Consumers of every changed member** — for each member, helper or rule
       whose SQL, name or wording the plan changes, `rg` its name across the whole
       repo (model, views, tools, tests, oracles, docs). Every hit is named in a
@@ -100,7 +101,9 @@ with `00-ticket.md`, `03-decisions.md`, the saved `spec.md`, and the task direct
 It writes `docs/plans/<slug>/acceptance-criteria.md` and returns the damage-path
 questions it refused to default.
 
-    Do not write the list yourself, and do not ask the architect to.
+    Do not write the list yourself, and do not ask the architect to. Then rerun
+    `plan check` on the spec (and after every edit to the list): it fails an `AC<n>` that is not
+    that criterion's id; write `ticket AC<n>` for the ticket's number.
 
     **Open the walk with a read-back.** In 15 lines or fewer, say what the
     system will do after this ticket, in the ticket owner's words: what goes in,

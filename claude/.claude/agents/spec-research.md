@@ -2,7 +2,7 @@
 name: spec-research
 description: "Answers a numbered list of codebase questions with file:line facts. Dispatched by goal-blind-researcher with the questions file only."
 model: sonnet
-tools: Bash, Read, Glob, Grep, LSP, Write
+tools: Bash, Read, Glob, Grep, LSP, Write, Edit
 maxTurns: 80
 color: purple
 ---

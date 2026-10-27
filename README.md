@@ -22,6 +22,8 @@ cd ~/dotfiles
 
 The setup script handles everything: dependencies, fonts, symlinks, zsh plugins, starship prompt, and shell configuration.
 
+To turn on the telemetry guard for commits, run `ledger guard install` (after cargo install).
+
 ## Individual Installers
 
 Each step can also be run independently from the `install/` directory:

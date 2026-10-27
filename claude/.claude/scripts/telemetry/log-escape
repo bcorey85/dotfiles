@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# log-escape — write one review_escape row per escaped defect through `ledger write`.
+#
+# An "escape" is a defect found DOWNSTREAM of the gate that should have caught
+# it: a human PR read, a /cc comment, a /refactor smell sweep, a /q-verify gap,
+# or production. These rows are the ground-truth side of the review flywheel;
+# the review_finding and review_run rows are the "what the gates caught" side.
+# /audit review aggregates both to compute per-gate escape rates.
+#
+# usage: log-escape [--check] key=value [key=value ...]
+#   canonical fields:
+#     repo, date and session are added by `ledger write`; passing them is harmless
+#       and they are never stored from the caller.
+#     stage_found=cc|walkthrough|refactor|q-verify|verify|pr-human|pr-bot|
+#                 peer-review|prod|phase-gate|plan-review|other
+#       peer-review = the user ran /peer-review on their own branch and it
+#       caught the defect after the gates. A teammate branch catch is no escape.
+#       plan-review = the fresh-eyes reader caught it in the finalized plan,
+#       before any coder ran. The earliest stage there is; pair it with
+#       gate_missed=eng-spec. Logged so these rows sit in the same file, on the
+#       same class vocabulary, as the plan defects that used to reach a phase
+#       gate or a PR — that comparison is the only way to tell whether the reader
+#       catches the shapes that were escaping. Findings here are ALSO counted on
+#       the planning-lane row; the two answer different questions (what the
+#       reader yielded, versus which gate the defect got past) and neither is a
+#       substitute for the other.
+#       pr-bot = a bot reviewer on the PR (Copilot, the Claude review bot)
+#       caught it, logged by /pr-comments. Distinct from pr-human because a
+#       bot's lens can be wired into the loop; a human's attention cannot.
+#       walkthrough = caught reading /stage's queue at a phase sign-off, i.e.
+#       inside the loop. Distinct from pr-human (caught after the branch left
+#       the gates) because the remediation differs: a walkthrough catch means
+#       the reviewer missed something the human then found one step later.
+#       phase-gate = caught by a downstream AGENT inside the phase loop, before
+#       a human read anything — a coder FAILING-TEST that resolves as a
+#       spec defect, a coder reporting the plan contradicts the code. Distinct
+#       from walkthrough because the loop caught this one itself; the
+#       remediation is upstream, not "the human reads harder".
+#     gate_missed=review|drift-gate|test-intent|stage|coder|eng-spec|q-verify
+#       eng-spec = the defect was IN THE PLAN, not in code written against it:
+#       an unrunnable success criterion, a criterion that contradicts the
+#       domain, a mandated primitive whose semantics were never stated. No
+#       implementation gate can catch these — a reviewer checks the diff
+#       against the spec, so a wrong spec and a faithful diff agree with each
+#       other. Remediation is a check added to /eng-spec, never a stricter
+#       reviewer. Do NOT log these as gate_missed=coder: it attributes a
+#       planning failure to the implementer and makes the coder's escape
+#       ratio unreadable.
+#     class=bug|smell|duplication|complexity|plan-drift|test-gap|weak-assertion
+#          |security|perf|correctness|docs|other
+#       Same vocabulary as log-review-finding, so the caught and escaped sides
+#       cross-tabulate. Do not invent values — a one-off value is a row that
+#       joins to nothing.
+#       docs = the prose is wrong about the code: a stale or misleading comment,
+#       a rationale citing the wrong quantity, a doc contradicting the behaviour
+#       it describes. The code may be correct; that separates it from `bug`.
+#       perf = query/IO cost: N+1, unbounded query, missing index, over-fetch,
+#       serial awaits, per-item round-trip. Use it instead of `other` for these,
+#       or the perf gate's misses stay indistinguishable from every other class's
+#       and its recall cannot be computed.
+#       complexity = code that need not have existed (branching a data model
+#       collapses, one-implementation indirection, unused configurability,
+#       guards a boundary check kills). Logged by /refactor simplify mode.
+#       Rows before 2026-08-11 also carry four retired values (dead-code,
+#       pattern-misalignment, stale-test, wrong-altitude) — 5 rows total. Report
+#       them as legacy; never remap them into the current vocabulary.
+#     severity=high|medium|low
+#     guard=type|convention|gotcha|rule|check|none|n-a   (REQUIRED — the ratchet
+#       rung applied so this class of defect cannot recur; see
+#       ~/.claude/skills/_shared/escape-ratchet.md. `check` is the plan-stage
+#       rung: a command added to the spec finalization sweep. `none` =
+#       considered and rejected. `n-a` = this row
+#       is not review-flywheel data.)
+#     desc="one line"   accepted for the caller's own record; never stored
+#     file=path         sent as path_key (a keyed hash); the path is never stored
+#     lane=q-plan|eng-spec|code|other   (optional: planning lane that produced
+#                                        the shipped work — enables lane-level
+#                                        escape attribution in /audit review)
+#     scan_flagged=  RETIRED — do not pass it. It scored the recall side of the
+#       whole-tree scans that no longer run (copied blocks, diverged copies,
+#       unreferenced symbols), was never populated on a single row, and nothing
+#       reads it. Historical rows keep it; the audit reports it nowhere.
+#
+# Every value is sent as a JSON string; `ledger write` types it and adds date, repo
+# and session. An unknown class or guard is stored as `other`; stderr prints
+# `reject: enum_value_unknown <field>` and a reject record is written (the
+# guard's record carries the value); stage_found, gate_missed, severity
+# and lane fold to `other` silently. `ledger registry` lists the allowed values.
+# desc and scan_flagged are dropped, file becomes path_key and
+# branch becomes branch_key. With no `ledger` on PATH `ledger-write` drops the
+# row and prints one stderr line. A row `ledger write` refuses exits 2.
+set -euo pipefail
+
+script_dir=$(dirname -- "${BASH_SOURCE[0]}")
+# shellcheck source=../lib/_kv.sh
+source "$script_dir/../lib/_kv.sh"
+kv_help_exit "${BASH_SOURCE[0]}" "$@"
+
+# --check as the first argument runs every validation below, writes nothing, ignores the
+# telemetry switch and exits 0 when the arguments would be logged.
+check_only=""
+if [ "${1:-}" = "--check" ]; then
+  check_only=1
+  shift
+fi
+
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
+
+# branch and head are the join keys to the review rows. Both are read here,
+# never trusted to the caller; a caller's own branch= still wins because it folds
+# after this seed. head is the commit the escape was logged against. Pass line=<n>
+# and commit=<sha> when the finding names them.
+current_branch=$(git branch --show-current 2>/dev/null || true)
+current_head=$(git rev-parse HEAD 2>/dev/null || true)
+json=$(jq -cn --arg b "$current_branch" --arg h "$current_head" \
+  '(if $b != "" then {branch: $b} else {} end)
+   + (if $h != "" then {head: $h} else {} end)')
+
+# Only desc and file are free text. A space in any other value means the caller
+# quoted too much and swallowed the following key=value pairs into it, which
+# silently destroys gate attribution — kv_fold refuses it. A file path may hold
+# spaces; it is refused when it holds a line break, or whitespace followed by
+# name= (the shape of a swallowed pair).
+swallowed_pair=$'[ \t\n\r\f\v][A-Za-z_][A-Za-z0-9_]*='
+escape_file_check() {
+  [ "$1" = "file" ] || return 1
+  local path="$2"
+  if [[ $path == *$'\n'* || $path == *$'\r'* || $path =~ $swallowed_pair ]]; then
+    echo "refusing to log: file= holds a line break or whitespace then a name=: '$path'" >&2
+    echo "Quote each key=value separately; only desc= (and a file= path with no line break and no whitespace then name=) may contain spaces." >&2
+    exit 1
+  fi
+  return 1
+}
+kv_fold "desc file" escape_file_check "$@"
+
+guard=$(jq -r '.guard // ""' <<< "$json")
+if [ -z "$guard" ]; then
+  echo "refusing to log: guard= is required." >&2
+  echo "Run the ratchet (~/.claude/skills/_shared/escape-ratchet.md), then pass" >&2
+  echo "guard=type|convention|gotcha|rule|check|none (or guard=n-a for non-flywheel logs)." >&2
+  exit 1
+fi
+
+[ -z "$check_only" ] || exit 0
+
+if ! "$script_dir/telemetry_enabled.sh" 2>/dev/null; then
+  echo "not logged: toolkit telemetry is off"
+  exit 0
+fi
+
+payload=$(jq -c 'del(.desc, .scan_flagged) | with_entries(.key |= ({"file": "path_key", "branch": "branch_key"}[.] // .))' <<< "$json")
+printf '%s\n' "$payload" | bash "$script_dir/ledger-write" review_escape

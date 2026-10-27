@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Run .githooks/ledger-guard first and refuse the commit when it fails.
+# Refuse a commit that changes the Claude Code toolkit without a change file, and a commit while the change
+# ledger (docs/changes) fails its check. Enable with: git config core.hooksPath .githooks
+# AGENT_EVALS_DIR overrides the agent-evals checkout (default ~/agent-evals).
+set -euo pipefail
+
+agent_evals_dir="${AGENT_EVALS_DIR:-$HOME/agent-evals}"
+build_changes="$agent_evals_dir/bin/build_changes.py"
+toolkit_pattern='^claude/\.claude/(agents|skills|commands|hooks|scripts)/|^claude/\.claude/CLAUDE\.md$'
+change_file_pattern='^docs/changes/20[^/]*\.md$'
+
+ledger_guard="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/ledger-guard"
+
+cd "$(git rev-parse --show-toplevel)"
+
+if ! "$ledger_guard"; then
+    echo "pre-commit: the ledger guard refused the commit; fix the lines it printed" >&2
+    exit 1
+fi
+
+touched_paths="$(git diff --cached --name-only)"
+toolkit_paths="$(grep -E "$toolkit_pattern" <<<"$touched_paths" || true)"
+change_files="$(git diff --cached --name-only --diff-filter=AM | grep -E "$change_file_pattern" || true)"
+
+if [[ -n "$toolkit_paths" && -z "$change_files" ]]; then
+    echo "pre-commit: the staged set changes the toolkit but stages no added or modified docs/changes/20*.md file:" >&2
+    sed 's/^/  /' <<<"$toolkit_paths" >&2
+    echo "File a change file with: python3 ~/agent-evals/bin/build_changes.py new \"<title>\" --by claude-code/<model id>" >&2
+    exit 1
+fi
+
+if [[ ! -f "$build_changes" ]]; then
+    echo "pre-commit: warning: $build_changes not found; the change ledger was not checked" >&2
+    exit 0
+fi
+
+if ! python3 "$build_changes" --check --root docs/changes; then
+    echo "pre-commit: docs/changes failed build_changes.py --check; fix the change files above and stage them" >&2
+    exit 1
+fi

@@ -13,12 +13,16 @@ if [[ -n "${BASH_TRACE_OUT:-}" ]]; then
 fi
 trap 'printf '"'"'{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"block-credential-read encountered an unexpected error — denying for safety"}}\n'"'"'; exit 0' ERR
 [[ -n "${CLAUDE_SKIP_HOOKS:-}" ]] && exit 0
+NEXT_STEP="Do not read it by another route and do not stop: carry on without its contents. Take variable names from the .env.example or a README, and if the task needs a real value, finish the rest and name the value in your final report so the user can supply it."
 HOOK_LOGGING=1  # set to 1 via: ./unix/install.sh --add-logging
 INPUT=$(cat)
 
 block() {
     local reason
     reason=$(printf '%s' "$1" | sed 's/"/\\"/g')
+    if [[ "$1" == \[* ]]; then
+        reason="$reason $NEXT_STEP"
+    fi
     printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$reason"
     if [[ "$HOOK_LOGGING" == "1" ]]; then
         local _ts _line _val

@@ -1,0 +1,12 @@
+#!/bin/sh
+# Refuses a commit whose staged scripts write a telemetry stream from outside
+# ledger, or call `ledger write` with a type the registry does not hold.
+# Turn it on once per clone with: ledger guard install
+
+if ! command -v ledger >/dev/null 2>&1; then
+    echo "pre-commit: ledger is not on PATH, so the guard cannot run." >&2
+    echo "Install it with: cargo install --path ~/dev/agent-ledger" >&2
+    exit 1
+fi
+
+exec ledger guard --staged

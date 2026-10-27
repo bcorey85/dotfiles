@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# ledger-write — pipe stdin into `ledger write <type>`, the one place the metrics writers share.
+#
+# usage: ledger-write <type>   (the row is read from stdin)
+#
+# With `ledger` on PATH: drops the row's date, schema_version, repo and session keys, which
+# `ledger write` sets itself (and a spec_run row's slug, which the ledger does not store), adds
+# --session when CLAUDE_CODE_SESSION_ID is set, and exits with the code `ledger write` returns.
+#
+# With no `ledger` on PATH: prints one stderr line, drops the row and exits 0. A telemetry write
+# never blocks the workflow, and no file is written.
+#
+# The caller owns the telemetry switch and what to do with a refused row.
+set -euo pipefail
+
+script_dir=$(dirname -- "${BASH_SOURCE[0]}")
+# shellcheck source=../lib/_kv.sh
+source "$script_dir/../lib/_kv.sh"
+kv_help_exit "${BASH_SOURCE[0]}" "$@"
+
+if ! command -v ledger >/dev/null 2>&1; then
+  echo "ledger-write: ledger not on PATH; $1 row dropped" >&2
+  # read the row first: a producer still writing would get SIGPIPE, and its pipeline fails under pipefail
+  cat >/dev/null
+  exit 0
+fi
+
+session_args=()
+[ -z "${CLAUDE_CODE_SESSION_ID:-}" ] || session_args=(--session "$CLAUDE_CODE_SESSION_ID")
+
+# The ledger owns date, schema_version, repo and session; a caller's values for them are
+# dropped here, once, so no writer repeats the list.
+jq -c --arg row_type "$1" \
+  'del(.date, .schema_version, .repo, .session) | if $row_type == "spec_run" then del(.slug) else . end' \
+  | ledger write "$1" ${session_args[@]+"${session_args[@]}"}

@@ -11,6 +11,9 @@ set -uo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 scripts="$here/../../scripts"
+# shellcheck source=../../scripts/lib/_kv.sh
+source "$scripts/lib/_kv.sh"
+kv_help_exit "${BASH_SOURCE[0]}" "$@"
 work=$(mktemp -d "${1:-${TMPDIR:-/tmp}}/log-review-check.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 fails=0
@@ -60,11 +63,19 @@ cd "$repo" || exit 1
 
 finding="$here/log-review-finding"
 metrics="$here/log-review-metrics"
-spec_run="$scripts/log-spec-run"
+spec_run="$scripts/telemetry/log-spec-run"
 scope="$here/review-scope"
 
+worker_exit=$(ledger worker --once >/dev/null 2>"$work/worker.err"; echo $?)
+expect "ledger worker --once exits 0" 0 "$worker_exit"
+
+query_rows() { # sql -> the query's output; the worker runs first so the cache is not behind
+  ledger worker --once >/dev/null 2>"$work/worker.err" || fail "ledger worker --once exits 0" "$(cat "$work/worker.err")"
+  ledger query "$1"
+}
+
 scalar() { # sql -> the first cell of the first row
-  ledger query "$1" | sed -n '2p' | cut -f1
+  query_rows "$1" | sed -n '2p' | cut -f1
 }
 
 # --- a run, a finding, and an ask-outcome supersede ---------------------------
@@ -184,7 +195,7 @@ expect "metrics: one row" 1 "$(scalar "select count(*) from review_metrics")"
 expect "metrics: spaced result stored with underscores" PASS_WITH_WARNINGS "$(scalar "select result from review_metrics")"
 expect "metrics: repo is the cwd's repo, not the caller's value" "$(basename "$repo")" "$(scalar "select repo from review_metrics where iter = 2")"
 expect "metrics: no column holds the desc text" 0 \
-  "$(ledger query "select * from review_metrics" | grep -cF -- "$planted_desc")"
+  "$(query_rows "select * from review_metrics" | grep -cF -- "$planted_desc")"
 expect "metrics: counts typed as numbers" 3 "$(scalar "select fix from review_metrics")"
 expect "metrics: specialists stored as counts" 2 "$(scalar "select json_extract(specialists, '\$.smell_reviewer') from review_metrics")"
 expect "metrics: fixed_classes stored as counts" 2 "$(scalar "select json_extract(fixed_classes, '\$.docs') from review_metrics")"
@@ -231,24 +242,35 @@ before=$(scalar "select (select count(*) from review_finding) + (select count(*)
 
 PATH="$bare_path" command -v ledger >/dev/null 2>&1 && fail "no ledger: PATH still finds ledger" "$bare_path"
 
-no_ledger_out=$(PATH="$bare_path" "$finding" kind=finding lane=code scope=standalone iter=1 gate=code-reviewer \
-  disposition=fix class=bug "file=$planted_file" line=1 actioned=fixed 2>"$work/err.txt")
+# Without a ledger each writer drops its row, prints one writer line on stderr and exits 0. The
+# check runs in its own HOME, so the file check below still reads the ledger run's HOME.
+no_ledger_home="$work/no-ledger-home"
+mkdir -p "$no_ledger_home"
+expect_dropped() { # name row-type -> stderr holds the one writer line naming the dropped row
+  expect "$1: stderr is one dropped line" \
+    "ledger-write: ledger not on PATH; $2 row dropped" "$(grep '^ledger-write:' "$work/err.txt")"
+}
+
+no_ledger_out=$(HOME="$no_ledger_home" PATH="$bare_path" "$finding" kind=finding lane=code scope=standalone iter=1 \
+  gate=code-reviewer disposition=fix class=bug "file=$planted_file" line=1 actioned=fixed 2>"$work/err.txt")
 expect "no ledger: finding exits 0" 0 "$?"
-expect "no ledger: finding stderr empty" "" "$(cat "$work/err.txt")"
+expect_dropped "no ledger: finding" review_finding
 contains "no ledger: finding still prints finding_id" "$no_ledger_out" "finding_id="
 
-PATH="$bare_path" "$metrics" iter=1 fix=1 result=PASS >/dev/null 2>"$work/err.txt"
+HOME="$no_ledger_home" PATH="$bare_path" "$metrics" iter=1 fix=1 result=PASS >/dev/null 2>"$work/err.txt"
 expect "no ledger: metrics exits 0" 0 "$?"
-expect "no ledger: metrics stderr empty" "" "$(cat "$work/err.txt")"
+expect_dropped "no ledger: metrics" review_metrics
 
-PATH="$bare_path" "$spec_run" slug=x verdict=finalized criteria=1 >/dev/null 2>"$work/err.txt"
+HOME="$no_ledger_home" PATH="$bare_path" "$spec_run" slug=x verdict=finalized criteria=1 >/dev/null 2>"$work/err.txt"
 expect "no ledger: spec run exits 0" 0 "$?"
-expect "no ledger: spec run stderr empty" "" "$(cat "$work/err.txt")"
+expect_dropped "no ledger: spec run" spec_run
 
-no_ledger_scope=$(PATH="$bare_path" "$scope" root="$repo" merge_base=HEAD caller=review 2>"$work/err.txt")
+no_ledger_scope=$(HOME="$no_ledger_home" PATH="$bare_path" "$scope" root="$repo" merge_base=HEAD caller=review \
+  2>"$work/err.txt")
 expect "no ledger: review-scope exits 0" 0 "$?"
-expect "no ledger: review-scope stderr empty" "" "$(cat "$work/err.txt")"
+expect_dropped "no ledger: review-scope" review_scope
 expect "no ledger: review-scope stdout matches the run with ledger" "$with_ledger_scope" "$no_ledger_scope"
+expect "no ledger: no file was written" "" "$(find "$no_ledger_home" -type f)"
 
 after=$(scalar "select (select count(*) from review_finding) + (select count(*) from review_run) + (select count(*) from review_metrics) + (select count(*) from spec_run) + (select count(*) from review_scope)")
 expect "no ledger: nothing was written" "$before" "$after"
@@ -322,10 +344,8 @@ sends "metrics row, empty values" "$metrics" iter=9 lane= gate= "desc=" result=c
 sends "spec run row, zero counts" "$spec_run" slug=planted-slug-zq verdict=finalized phases=0 criteria=0 \
   decisions=0 gaps=0
 
-# --- no retired file, no leaked value -----------------------------------------
-for retired in review-findings.jsonl spec-runs.jsonl review-metrics.jsonl; do
-  [ ! -e "$HOME/.claude/$retired" ] && pass "no $retired written" || fail "no $retired written" "found $HOME/.claude/$retired"
-done
+# --- no file in HOME, no leaked value -----------------------------------------
+expect "no jsonl file written under HOME/.claude" "" "$(find "$HOME/.claude" -name '*.jsonl')"
 
 for planted in "$planted_file" "planted_widget_zq" "$planted_branch" "$planted_desc" "planted-slug-zq"; do
   if grep -rqF -- "$planted" "$AGENT_LEDGER_ROOT"; then

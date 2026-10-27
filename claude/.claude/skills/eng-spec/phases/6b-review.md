@@ -15,6 +15,11 @@ written to the task directory — the plan itself is never split:
     Each phase ends at the next level-2 heading; back matter starts after the
     final phase's section. Neither front nor back matter includes phase bodies.
 
+    Right after each hand-back, Write it whole to
+    `review-round<n>-shard-<x>.md` in the task directory (`a` if unsharded).
+    Before round 2 run `python3 ~/.claude/scripts/tools/plan_review_reports.py check <task dir> 2`;
+    stop if it fails. Round 2 reads those files.
+
     Dedup the two reports by (section, claim) before step 20. A finding only
     one shard raised still counts.
 
@@ -31,7 +36,7 @@ diff and what it touches, not a fresh read.
     **Report the delta after round 1**: findings, and how many the previous
     repair created.
 
-    `BLOCKER` and `GAP` resolve like a `DESIGN GAP`: with the user, appended to `03-decisions.md`, then back to the owning architect for a revised plan — never hand-patched. `NIT` is yours to fix or drop.
+    `BLOCKER` and `GAP` resolve like a `DESIGN GAP`: with the user, appended to `03-decisions.md`, then back to the owning architect for revised section text that you write in (step 16) — never a patch of your own design. `NIT` is yours to fix or drop.
 
     **`ALT` goes to the user once.** Put it with the reviewer's three parts intact; never pre-filter. Accepted or declined, it becomes a decision block (declined = considered-and-rejected for `## Approaches Considered and Not Taken`). An ALT alone never triggers another round.
 
@@ -48,7 +53,7 @@ diff and what it touches, not a fresh read.
 21. **Log the plan.** One row, once, now that the plan is final:
 
     ```bash
-    ~/.claude/scripts/log-spec-run \
+    ~/.claude/scripts/telemetry/log-spec-run \
       slug=<task dir basename> ticket=<ID|none> verdict=finalized \
       phases=<count> criteria=<count> decisions=<count> \
       research_q=<count> gaps=<count> falsified=<count> \

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# review-gate-mark <clean|dirty> — no-op carrier for review-commit-gate.
+#
+#   clean — a review-loop packet came back `converged`
+#   dirty — force-arm the gate
+#
+# The real state write happens in review_commit_gate.py's PreToolUse(Bash)
+# hook, which sees this command string PLUS the session_id this script cannot
+# know. Run by the /review, /fix, and /code wrappers ONLY after rendering a
+# review-loop packet whose status is `converged`. Running it outside a hooked
+# Claude session records nothing (e.g. opencode, which has no hook layer).
+echo "review-gate-mark: ${1:-<no status>} (recorded by review-commit-gate hook if active)"

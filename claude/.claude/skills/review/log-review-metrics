@@ -13,17 +13,18 @@
 # log-review-finding folds it. clean, residue and findings are stored as sent.
 # date, schema_version, repo, session and desc are accepted and never stored; the
 # writer adds the date, repo and session, and keys `branch=` into branch_key.
-# With no `ledger` on PATH the write is skipped silently. A row `ledger write`
-# refuses exits 2.
+# With no `ledger` on PATH `ledger-write` drops the row and prints one stderr line. A row
+# `ledger write` refuses exits 2.
 #
 # An explicit out=<path> writes the row there as one JSONL line instead of to the
 # ledger. The redirect writes only while the metrics switch is on.
 set -euo pipefail
 
-command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 script_dir=$(dirname -- "${BASH_SOURCE[0]}")
-# shellcheck source=../../scripts/_kv.sh
-source "$script_dir/../../scripts/_kv.sh"
+# shellcheck source=../../scripts/lib/_kv.sh
+source "$script_dir/../../scripts/lib/_kv.sh"
+kv_help_exit "${BASH_SOURCE[0]}" "$@"
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 out=""
 
 # The branch is read here, never trusted to the caller; a caller's own branch= still wins.
@@ -55,7 +56,7 @@ case "$out" in
   "~/"*) out="$HOME/${out#"~/"}" ;;
 esac
 
-"$script_dir/../../scripts/telemetry_enabled.sh" 2>/dev/null || exit 0
+"$script_dir/../../scripts/telemetry/telemetry_enabled.sh" 2>/dev/null || exit 0
 
 if [ -n "$out" ]; then
   printf '%s\n' "$(jq -c '. + {date: (now | todate)}' <<< "$json")" >> "$out"
@@ -74,4 +75,4 @@ payload=$(jq -c '
   del(.desc)
   | (if .result then .result |= result_verdict else . end)
   | with_entries(.key |= (if . == "branch" then "branch_key" else . end))' <<< "$json")
-printf '%s\n' "$payload" | bash "$script_dir/../../scripts/ledger-write" review_metrics
+printf '%s\n' "$payload" | bash "$script_dir/../../scripts/telemetry/ledger-write" review_metrics

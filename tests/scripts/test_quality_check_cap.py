@@ -1,4 +1,4 @@
-"""Checks for quality-check-cap.py: caps a quality check at one re-run per edit."""
+"""Checks for quality_check_cap.py: caps a quality check at one re-run per edit."""
 import importlib.util
 import json
 import os
@@ -10,10 +10,12 @@ import tempfile
 import time
 import unittest
 
+import toolkit_paths
+
 HERE = pathlib.Path(__file__).resolve().parent
-LIVE_SCRIPTS_DIR = pathlib.Path.home() / ".claude" / "scripts"
-SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or (HERE if (HERE / "quality-check-cap.py").exists()
-                                                             else LIVE_SCRIPTS_DIR)) / "quality-check-cap.py"
+LIVE_SCRIPTS_DIR = toolkit_paths.GATES_DIR
+SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or (HERE if (HERE / "quality_check_cap.py").exists()
+                                                             else LIVE_SCRIPTS_DIR)) / "quality_check_cap.py"
 DENY_START = "[quality-check-cap] '"
 TICK = 0.03
 
@@ -148,7 +150,7 @@ class QualityCheckCapTest(unittest.TestCase):
         module = self.load_module()
         self.post("pytest -q")
         key = module.cksum(b"pytest -q\n" + str(self.work).encode())
-        self.assertEqual(self.state_files(), ["run-%d" % key])
+        self.assertEqual(self.state_files(), [f"run-{key}"])
 
     def test_edit_tools_reset_the_cap(self):
         for tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
@@ -202,10 +204,10 @@ class QualityCheckCapTest(unittest.TestCase):
         other.mkdir()
         self.post("pytest")
         self.assert_allowed(self.pre("pytest", cwd=other))
-        self.assert_allowed(self.pre("cd %s && pytest" % other))
-        self.post("cd %s && pytest" % other)
+        self.assert_allowed(self.pre(f"cd {other} && pytest"))
+        self.post(f"cd {other} && pytest")
         self.assert_denied(self.pre("pytest", cwd=other))
-        self.assert_denied(self.pre("cd %s; pytest" % self.work))
+        self.assert_denied(self.pre(f"cd {self.work}; pytest"))
 
     def test_tilde_cd_uses_home(self):
         (self.home / "proj").mkdir()
@@ -216,6 +218,20 @@ class QualityCheckCapTest(unittest.TestCase):
         self.post("pytest a.py && eslint .")
         self.assert_denied(self.pre("eslint . || true"))
         self.assert_denied(self.pre("ls; pytest a.py"))
+
+    def test_a_heredoc_body_naming_a_check_is_not_a_run_of_it(self):
+        self.post("pytest tests/test_x.py")
+        pr_create = ("gh pr create --title t --body \"$(cat <<'EOF'\n## Test plan\npytest tests/test_x.py\nEOF\n)\"")
+        self.assert_allowed(self.pre(pr_create))
+        self.post(pr_create)
+        self.assertEqual(len(self.state_files()), 1)
+
+    def test_a_search_pattern_naming_a_check_is_not_a_run_of_it(self):
+        search = "rg -n -i 'typecheck|tsc|lint' a b | head -20"
+        self.post("tsc --noEmit")
+        self.assert_allowed(self.pre(search))
+        self.assert_allowed(self.post(search))
+        self.assert_allowed(self.pre(search))
 
     def test_skip_comment_allows_pre_and_is_stripped_for_post(self):
         self.post("pytest")
@@ -266,7 +282,7 @@ class QualityCheckCapTest(unittest.TestCase):
 
     def test_a_run_ended_by_a_signal_is_not_recorded_and_the_rerun_is_allowed(self):
         for code in (129, 137, 144, 192):
-            self.fire("PostToolUseFailure", command="pytest", error="Exit code %d\nTerminated" % code)
+            self.fire("PostToolUseFailure", command="pytest", error=f"Exit code {code}\nTerminated")
             self.assertEqual(self.state_files(), [])
             self.assert_allowed(self.pre("pytest"))
 
@@ -279,7 +295,7 @@ class QualityCheckCapTest(unittest.TestCase):
 
     def test_a_plain_nonzero_exit_is_still_recorded(self):
         for code in (1, 2, 127, 128, 193, 255):
-            self.fire("PostToolUseFailure", command="pytest", error="Exit code %d\nFAILED" % code)
+            self.fire("PostToolUseFailure", command="pytest", error=f"Exit code {code}\nFAILED")
             self.assert_denied(self.pre("pytest"))
             self.assert_allowed(self.edit())
 
@@ -311,9 +327,9 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assert_allowed(self.pre("eslint ."))
 
     def test_failed_check_after_cd_or_source_or_assignment_is_counted(self):
-        for command in ("cd %s && pytest -q" % self.work, "source .venv/bin/activate && pytest -q",
+        for command in (f"cd {self.work} && pytest -q", "source .venv/bin/activate && pytest -q",
                         ". .venv/bin/activate && pytest -q", "FOO=1 && pytest -q",
-                        "cd %s && source .venv/bin/activate && pytest -q" % self.work):
+                        f"cd {self.work} && source .venv/bin/activate && pytest -q"):
             self.fire("PostToolUseFailure", command=command, error="Exit code 1")
             self.assert_denied(self.pre(command))
             self.assert_allowed(self.edit())
@@ -465,6 +481,158 @@ class QualityCheckCapTest(unittest.TestCase):
         for name in ("a.rs", "b.rs"):
             (repo / name).write_text("x\n")
         self.assert_allowed(self.pre("cargo clippy", cwd=repo))
+
+    # scoped cargo test
+
+    def test_a_cargo_test_scoped_to_a_named_target_is_never_a_repeat(self):
+        for command in ("cargo test --lib", "cargo test --doc", "cargo test --test api", "cargo test --test=api",
+                        "cargo test --bin tool", "cargo test parses_header", "cargo test -p core --lib",
+                        "cargo test --lib -- --nocapture", "cargo fmt --check && cargo test --lib"):
+            self.post(command)
+            self.assert_allowed(self.pre(command))
+
+    def test_an_unscoped_cargo_test_is_still_a_repeat(self):
+        for command in ("cargo test", "cargo test --workspace", "cargo test --workspace --lib", "cargo test -p core",
+                        "cargo test --all-targets", "cargo test -- --nocapture"):
+            self.post(command)
+            self.assert_denied(self.pre(command))
+
+    def test_a_format_check_alone_is_never_a_repeat(self):
+        self.post("cargo fmt --check")
+        self.assert_allowed(self.pre("cargo fmt --check"))
+
+    # help probes
+
+    def test_a_help_probe_is_never_denied_and_never_recorded(self):
+        for command in ("cargo test --help", "pytest -h", "vitest --help", "pytest --version", "mypy -V",
+                        "pytest -k foo -h"):
+            self.post(command)
+            self.assertEqual(self.state_files(), [], command)
+            self.assert_allowed(self.pre(command))
+
+    def test_a_help_probe_after_a_recorded_run_of_the_same_check_is_allowed(self):
+        self.post("cargo test")
+        self.post("pytest")
+        self.assert_allowed(self.pre("cargo test --help"))
+        self.assert_allowed(self.pre("pytest -h"))
+        self.assert_denied(self.pre("cargo test"))
+        self.assert_denied(self.pre("pytest"))
+
+    def test_a_help_flag_of_another_step_does_not_make_the_check_a_help_probe(self):
+        self.post("pytest tests")
+        self.assert_denied(self.pre("pytest tests && grep -h x f"))
+        self.assert_denied(self.pre("grep -h x f; pytest tests"))
+        self.post("pytest tests && grep -h x f")
+        self.assertEqual(len(self.state_files()), 1)
+
+    def test_h_inside_another_flag_or_a_quoted_value_is_not_a_help_probe(self):
+        for command in ("pytest --headed", "pytest -rh", "pytest -k 'a -h'"):
+            self.post(command)
+            self.assert_denied(self.pre(command))
+
+    # deliberate repeats in a for loop
+
+    def test_a_for_loop_repeat_is_allowed_and_recorded_so_a_plain_rerun_is_denied(self):
+        self.post("pytest tests/x.py")
+        self.assert_allowed(self.pre("for i in 1 2 3; do pytest tests/x.py; done"))
+        self.post("for i in 1 2 3; do pytest tests/x.py; done")
+        self.assert_denied(self.pre("pytest tests/x.py"))
+        self.assert_allowed(self.pre("for i in 1 2 3; do pytest tests/x.py; done"))
+
+    def test_a_for_loop_run_is_recorded_when_nothing_ran_before(self):
+        self.post("for i in $(seq 3); do cargo test; done")
+        self.assert_denied(self.pre("cargo test"))
+
+    def test_a_for_loop_over_a_seq_substitution_repeats_a_check(self):
+        self.post("cargo test")
+        self.assert_allowed(self.pre("for i in $(seq 3); do cargo test; done"))
+        self.assert_allowed(self.pre("for i in 1 2\ndo\n  cargo test\ndone"))
+        self.assert_allowed(self.pre("for i in 1 2; do cargo test 2>&1 | tail -3; done"))
+
+    # a run whose output was cut by tail, head or grep
+
+    def test_a_check_piped_to_tail_is_allowed_once_more_redirected_to_a_file(self):
+        ruff = "ruff check a.py b.py c.py"
+        self.post(ruff + " 2>&1 | tail -2")
+        self.assert_denied(self.pre(ruff))
+        for redirected in (ruff + " > /tmp/check.log 2>&1", ruff + " &> /tmp/check.log", ruff + " >> out.log",
+                           ruff + " 2>&1 | tee /tmp/check.log | tail -5"):
+            with self.subTest(command=redirected):
+                self.assert_allowed(self.pre(redirected))
+        self.post(ruff + " > /tmp/check.log 2>&1")
+        self.assert_denied(self.pre(ruff + " > /tmp/check.log 2>&1"))
+
+    def test_head_and_grep_cut_the_output_too(self):
+        for index, cut in enumerate(("| head -20", "| grep -c error", "2>&1 | grep -E 'E[0-9]+'")):
+            with self.subTest(cut=cut):
+                command = f"pytest tests/t{index}.py"
+                self.post(f"{command} {cut}")
+                self.assert_allowed(self.pre(f"{command} > /tmp/check.log 2>&1"))
+
+    def test_a_cut_run_still_denies_a_rerun_that_does_not_keep_the_output(self):
+        self.post("pytest -q | tail -3")
+        for command in ("pytest -q", "pytest -q | tail -50", "pytest -q 2> err.log", "pytest -q > /dev/null",
+                        "pytest -q >&2"):
+            with self.subTest(command=command):
+                self.assert_denied(self.pre(command))
+
+    def test_a_run_kept_in_a_file_before_the_filter_is_not_cut(self):
+        self.post("pytest -q 2>&1 | tee /tmp/check.log | tail -3")
+        self.assert_denied(self.pre("pytest -q > /tmp/check.log 2>&1"))
+
+    def test_the_cut_deny_names_a_form_the_cap_then_allows(self):
+        self.post("cd sub && npm test 2>&1 | tail -2", cwd=self.work)
+        (self.work / "sub").mkdir()
+        reason = self.assert_denied(self.pre("npm test", cwd=self.work / "sub"))
+        suggested = reason.split("Run it once as `", 1)[1].split("`", 1)[0]
+        self.assertEqual(suggested, "npm test > /tmp/check.log 2>&1")
+        self.assert_allowed(self.pre(suggested, cwd=self.work / "sub"))
+
+    def test_the_cut_deny_keeps_the_cd_prefix_as_typed(self):
+        (self.work / "sub").mkdir()
+        self.post("cd sub && npm test 2>&1 | tail -2", cwd=self.work)
+        reason = self.assert_denied(self.pre("cd sub && npm test", cwd=self.work))
+        suggested = reason.split("Run it once as `", 1)[1].split("`", 1)[0]
+        self.assertEqual(suggested, "cd sub && npm test > /tmp/check.log 2>&1")
+        self.assert_allowed(self.pre(suggested, cwd=self.work))
+
+    def test_the_cut_deny_keeps_the_wrapper_and_env_prefix_as_typed(self):
+        for typed in ("npx eslint .", "FOO=1 pytest -q"):
+            with self.subTest(typed=typed):
+                self.post(typed + " 2>&1 | tail -3")
+                reason = self.assert_denied(self.pre(typed))
+                suggested = reason.split("Run it once as `", 1)[1].split("`", 1)[0]
+                self.assertEqual(suggested, typed + " > /tmp/check.log 2>&1")
+                self.assert_allowed(self.pre(suggested))
+
+    def test_the_plain_deny_suggests_only_forms_the_cap_allows(self):
+        self.post("pytest -q")
+        reason = self.assert_denied(self.pre("pytest -q"))
+        self.assertIn("fix every failure in one batch, then run it once more with its output redirected to "
+                      "/tmp/check.log", reason)
+        self.assertIn("`for i in 1 2 3; do <check>; done`", reason)
+        self.assert_allowed(self.pre("for i in 1 2 3; do pytest -q; done"))
+        self.edit()
+        self.assert_allowed(self.pre("pytest -q > /tmp/check.log 2>&1"))
+
+    def test_a_while_or_until_loop_is_still_capped(self):
+        self.post("pytest tests/x.py")
+        self.assert_denied(self.pre("while true; do pytest tests/x.py; done"))
+        self.assert_denied(self.pre("until false; do pytest tests/x.py; done"))
+
+    def test_a_check_outside_a_for_loop_is_still_capped(self):
+        self.post("pytest tests/x.py")
+        self.assert_denied(self.pre("true; pytest tests/x.py"))
+        self.assert_denied(self.pre("if true; then pytest tests/x.py; fi"))
+        self.assert_denied(self.pre("for i in 1 2; do echo $i; done; pytest tests/x.py"))
+        self.assert_denied(self.pre("for i in 1 2; do while true; do pytest tests/x.py; done; done"))
+
+    def test_a_for_loop_over_one_value_is_still_capped(self):
+        self.post("pytest tests/x.py")
+        for values in ("1", "$(seq 1)", "{1..1}", "$(seq 3 3)"):
+            self.assert_denied(self.pre(f"for i in {values}; do pytest tests/x.py; done"))
+        for values in ("{1..3}", "$(seq 1 3)"):
+            self.assert_allowed(self.pre(f"for i in {values}; do pytest tests/x.py; done"))
 
     # formatters that write
 

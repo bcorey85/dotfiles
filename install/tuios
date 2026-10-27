@@ -61,10 +61,22 @@ install_skill() {
   print_success "tuios skill written to ~/.claude/skills/tuios"
 }
 
+# The stowed config selects theme = "theme-mode", a machine-local file that
+# theme-mode writes from the active ghostty palette.
+install_theme() {
+  if ! command -v theme-mode &>/dev/null; then
+    print_info "theme-mode not on PATH — skipping tuios theme (re-run after install/stow)"
+    return
+  fi
+  theme-mode tuios
+  print_success "tuios theme written to ~/.config/tuios/themes/theme-mode.json"
+}
+
 if command -v tuios &>/dev/null && [ "$1" != "--update" ]; then
   print_success "tuios already installed ($(tuios --version 2>/dev/null || true)) — use --update to upgrade"
   install_plugins
   install_skill
+  install_theme
   exit 0
 fi
 
@@ -102,3 +114,4 @@ print_success "tuios installed to ~/.local/bin ($("$HOME/.local/bin/tuios" --ver
 
 install_plugins
 install_skill
+install_theme

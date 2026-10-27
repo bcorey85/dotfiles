@@ -4,6 +4,7 @@ import io
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -14,10 +15,31 @@ import unittest.mock
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = pathlib.Path(os.environ.get("SCRIPT_UTILS_SCRIPT")
-                      or REPO_ROOT / "claude" / ".claude" / "scripts" / "script_utils.py")
-moduleSpec = importlib.util.spec_from_file_location("script_utils", SCRIPT)
-script_utils = importlib.util.module_from_spec(moduleSpec)
-moduleSpec.loader.exec_module(script_utils)
+                      or REPO_ROOT / "claude" / ".claude" / "scripts" / "lib" / "script_utils.py")
+module_spec = importlib.util.spec_from_file_location("script_utils", SCRIPT)
+script_utils = importlib.util.module_from_spec(module_spec)
+module_spec.loader.exec_module(script_utils)
+
+
+class TextBeforeMarkerTest(unittest.TestCase):
+    def test_the_text_is_cut_at_the_first_marker_and_kept_whole_without_one(self):
+        self.assertEqual("report", script_utils.text_before_marker("report--stamp one--stamp two", "--stamp"))
+        self.assertEqual("report", script_utils.text_before_marker("report", "--stamp"))
+        self.assertEqual("", script_utils.text_before_marker("--stamp only", "--stamp"))
+
+
+class SubagentTypeTest(unittest.TestCase):
+    def test_coder_types_match_each_coder_and_its_deep_variant_only(self):
+        for name in ("coder", "coder-deep", "backend-coder", "frontend-coder-deep"):
+            self.assertTrue(script_utils.CODERS.match(name), name)
+        for name in ("code-reviewer", "coder-helper", "plan-coder", "Explore"):
+            self.assertFalse(script_utils.CODERS.match(name), name)
+
+    def test_reviewer_types_match_each_reviewer_and_its_deep_variant_only(self):
+        for name in ("code-reviewer", "perf-reviewer-deep", "reviewer"):
+            self.assertTrue(script_utils.REVIEWERS.match(name), name)
+        for name in ("review-loop", "coder", "reviewer-notes", "Explore"):
+            self.assertFalse(script_utils.REVIEWERS.match(name), name)
 
 
 class FencedLineIndexesTest(unittest.TestCase):
@@ -161,8 +183,8 @@ class RunRetryingTest(unittest.TestCase):
     def runs(self):
         return len(list(self.folder.glob("run-*")))
 
-    def run_retrying(self, argv, attempts=4, timeoutSeconds=10):
-        return script_utils.run_retrying(argv, (75,), attempts, 2, timeoutSeconds, sleep=self.sleeps.append)
+    def run_retrying(self, argv, attempts=4, timeout_seconds=10):
+        return script_utils.run_retrying(argv, (75,), attempts, 2, timeout_seconds, sleep=self.sleeps.append)
 
     def test_a_clean_run_is_not_repeated(self):
         done = self.run_retrying(self.plant(["0"]))
@@ -182,14 +204,323 @@ class RunRetryingTest(unittest.TestCase):
         self.assertEqual((1, 1, []), (done.returncode, self.runs(), self.sleeps))
 
     def test_a_timed_out_run_is_run_again(self):
-        done = self.run_retrying(self.plant(["hang", "0"]), timeoutSeconds=1)
+        done = self.run_retrying(self.plant(["hang", "0"]), timeout_seconds=1)
         self.assertEqual((0, 2, [2]), (done.returncode, self.runs(), self.sleeps))
 
     def test_a_timeout_on_the_last_attempt_raises(self):
         argv = self.plant(["hang"])
         with self.assertRaises(subprocess.TimeoutExpired):
-            self.run_retrying(argv, attempts=2, timeoutSeconds=1)
+            self.run_retrying(argv, attempts=2, timeout_seconds=1)
         self.assertEqual((2, [2]), (self.runs(), self.sleeps))
+
+
+class AttemptsWithinTest(unittest.TestCase):
+    def test_the_tries_are_the_most_whose_growing_pauses_fit_the_wait(self):
+        cases = [(18, 3, 4), (90, 3, 8), (2, 3, 1), (3, 3, 2), (0, 3, 1), (83, 3, 7), (84, 3, 8)]
+        for wait, backoff, expected in cases:
+            with self.subTest(wait=wait, backoff=backoff):
+                self.assertEqual(expected, script_utils.attempts_within(wait, backoff))
+
+
+class LedgerFailureReasonTest(unittest.TestCase):
+    def test_the_reason_is_the_last_stderr_line_or_the_exit_code(self):
+        cases = [("first\nlast\n", "last"), ("", "exited 3"), ("\n  \n", "exited 3")]
+        for stderr, expected in cases:
+            with self.subTest(stderr=stderr):
+                done = subprocess.CompletedProcess(["ledger"], 3, stdout="", stderr=stderr)
+                self.assertEqual(expected, script_utils.ledger_failure_reason(done))
+
+
+class ReadLedgerTest(unittest.TestCase):
+    """A planted `ledger` that logs each call. The pause between tries is 0 unless a test sets it."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = pathlib.Path(folder.name)
+        self.calls = self.folder / "calls"
+        environment = unittest.mock.patch.dict(os.environ, {
+            "PATH": os.pathsep.join([str(self.folder), "/usr/bin", "/bin"]),
+            script_utils.LEDGER_BACKOFF_ENV: "0", script_utils.LEDGER_CALL_TIMEOUT_ENV: "10"})
+        environment.start()
+        self.addCleanup(environment.stop)
+
+    def plant(self, body):
+        stub = self.folder / "ledger"
+        stub.write_text(f'#!/bin/sh\necho x >> "{self.calls}"\ntries=$(wc -l < "{self.calls}")\n{body}')
+        stub.chmod(0o755)
+
+    def tries(self):
+        return len(self.calls.read_text().split())
+
+    def test_a_ledger_busy_for_six_tries_is_waited_for_and_its_answer_returned(self):
+        self.plant('[ "$tries" -le 6 ] && { echo "cache behind" >&2; exit 75; }\necho "the answer: $*"\n')
+
+        done = script_utils.read_ledger(["yield", "--deferred"])
+
+        self.assertEqual((0, "the answer: yield --deferred\n", 7), (done.returncode, done.stdout, self.tries()))
+
+    def test_another_failure_is_returned_after_one_try(self):
+        self.plant('echo "broken schema" >&2\nexit 1\n')
+
+        done = script_utils.read_ledger(["yield", "--deferred"])
+
+        self.assertEqual((1, "broken schema\n", 1), (done.returncode, done.stderr, self.tries()))
+
+    def test_a_ledger_that_stays_busy_raises_with_its_stderr_line_and_the_wait(self):
+        self.plant('echo "cache behind: too many shard rows are not loaded yet; retry" >&2\nexit 75\n')
+
+        with self.assertRaises(script_utils.LedgerBusyError) as raised:
+            script_utils.read_ledger(["yield", "--deferred"])
+
+        self.assertEqual("ledger yield --deferred: cache behind: too many shard rows are not loaded yet; retry "
+                         "(0 s of pauses)", str(raised.exception))
+        self.assertEqual(8, self.tries())
+
+    def test_the_wait_in_the_message_is_the_sum_of_the_pauses(self):
+        busy = subprocess.CompletedProcess(["ledger"], 75, "", "cache behind\n")
+        with unittest.mock.patch.dict(os.environ, {script_utils.LEDGER_BACKOFF_ENV: "3"}), \
+                unittest.mock.patch.object(script_utils, "run_retrying", return_value=busy) as retrying:
+            self.plant("exit 75\n")
+            with self.assertRaises(script_utils.LedgerBusyError) as raised:
+                script_utils.read_ledger(["yield", "--deferred"])
+
+        self.assertEqual("ledger yield --deferred: cache behind (84 s of pauses)", str(raised.exception))
+        self.assertEqual(8, retrying.call_args.args[2])
+
+    def test_a_ledger_that_never_answers_raises_busy(self):
+        self.plant("exec sleep 30\n")
+        os.environ[script_utils.LEDGER_CALL_TIMEOUT_ENV] = "0.3"
+
+        with self.assertRaises(script_utils.LedgerBusyError) as raised:
+            script_utils.read_ledger(["yield", "--deferred"])
+
+        self.assertIn("no answer within 0.3 s", str(raised.exception))
+        self.assertEqual(8, self.tries())
+
+    def test_no_ledger_on_path_raises_not_installed(self):
+        with self.assertRaises(script_utils.LedgerNotInstalledError):
+            script_utils.read_ledger(["yield", "--deferred"])
+
+
+class ParseTsvRowsTest(unittest.TestCase):
+    def test_rows_are_dicts_by_column_with_empty_cells_none(self):
+        rows = script_utils.parse_tsv_rows("a\tb\n1\t\nx\\ty\tz\\nw\\\\\n")
+        self.assertEqual([{"a": "1", "b": None}, {"a": "x\ty", "b": "z\nw\\"}], rows)
+
+    def test_empty_output_and_a_header_alone_give_no_rows(self):
+        self.assertEqual([], script_utils.parse_tsv_rows(""))
+        self.assertEqual([], script_utils.parse_tsv_rows("a\tb\n"))
+
+
+class LedgerReadersTest(unittest.TestCase):
+    """ledger_keys and query_ledger_rows_once against a planted `ledger`."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = pathlib.Path(folder.name)
+        self.calls = self.folder / "calls"
+        environment = unittest.mock.patch.dict(os.environ, {
+            "PATH": os.pathsep.join([str(self.folder), "/usr/bin", "/bin"])})
+        environment.start()
+        self.addCleanup(environment.stop)
+
+    def plant(self, body):
+        stub = self.folder / "ledger"
+        stub.write_text(f'#!/bin/sh\necho "$@" >> "{self.calls}"\n{body}')
+        stub.chmod(0o755)
+
+    def test_keys_come_back_in_order_with_an_empty_line_as_none(self):
+        self.plant('while read name; do if [ "$name" = skip ]; then echo; else echo "k-$name"; fi; done\n')
+        self.assertEqual(["k-a", None, "k-b"], script_utils.ledger_keys("path", ["a", "skip", "b"]))
+        self.assertEqual("key path", self.calls.read_text().strip())
+        self.assertEqual([], script_utils.ledger_keys("path", []))
+
+    def test_keys_raise_on_a_refusal_a_short_answer_a_newline_name_or_no_ledger(self):
+        self.plant('echo bad >&2\nexit 3\n')
+        with self.assertRaises(script_utils.LedgerUnreadError):
+            script_utils.ledger_keys("branch", ["a"])
+
+        self.plant('echo only-one\n')
+        with self.assertRaises(script_utils.LedgerUnreadError):
+            script_utils.ledger_keys("branch", ["a", "b"])
+
+        with self.assertRaises(ValueError):
+            script_utils.ledger_keys("branch", ["a\nb"])
+
+        (self.folder / "ledger").unlink()
+        with self.assertRaises(script_utils.LedgerNotInstalledError):
+            script_utils.ledger_keys("branch", ["a"])
+
+    def test_one_query_with_the_time_limit_and_no_worker_call(self):
+        self.plant('printf "a\\n1\\n"\n')
+        self.assertEqual([{"a": "1"}], script_utils.query_ledger_rows_once("select 1", 2, 5))
+        self.assertEqual(["query --max-time 2 select 1"], self.calls.read_text().splitlines())
+
+    def test_a_busy_ledger_raises_busy_after_one_call(self):
+        self.plant("echo cache busy >&2\nexit 75\n")
+        with self.assertRaises(script_utils.LedgerBusyError):
+            script_utils.query_ledger_rows_once("select 1", 2, 5)
+        self.assertEqual(1, len(self.calls.read_text().splitlines()))
+
+    def test_a_slow_ledger_raises_busy_and_a_refusal_raises_unread(self):
+        self.plant("sleep 5\n")
+        with self.assertRaises(script_utils.LedgerBusyError):
+            script_utils.query_ledger_rows_once("select 1", 2, 0.2)
+
+        self.plant("exit 2\n")
+        with self.assertRaises(script_utils.LedgerUnreadError):
+            script_utils.query_ledger_rows_once("select 1", 2, 5)
+
+
+class LedgerWriteTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = pathlib.Path(folder.name)
+        self.stub = self.folder / "ledger-write"
+        patcher = unittest.mock.patch.object(script_utils, "LEDGER_WRITE_SCRIPT", self.stub)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def plant(self, body):
+        self.stub.write_text(f"#!/bin/sh\n{body}")
+        self.stub.chmod(0o755)
+
+    def test_the_row_type_and_the_json_fields_reach_ledger_write(self):
+        self.plant(f'echo "$1" > "{self.folder}/type"\ncat > "{self.folder}/fields"\n')
+        self.assertTrue(script_utils.ledger_write("coder_gate", {"result": "pass"}, "gate"))
+        self.assertEqual("coder_gate", (self.folder / "type").read_text().strip())
+        self.assertEqual({"result": "pass"}, json.loads((self.folder / "fields").read_text()))
+
+    def test_a_failed_write_prints_one_stderr_line_and_returns_false(self):
+        self.plant("exit 3\n")
+        errors = io.StringIO()
+        with contextlib.redirect_stderr(errors):
+            self.assertFalse(script_utils.ledger_write("coder_gate", {}, "gate row"))
+        self.assertEqual(["gate row not recorded: ledger-write exited 3"], errors.getvalue().splitlines())
+
+    def test_a_missing_script_prints_one_stderr_line_and_does_not_raise(self):
+        errors = io.StringIO()
+        with contextlib.redirect_stderr(errors):
+            self.assertFalse(script_utils.ledger_write("coder_gate", {}, "gate row"))
+        self.assertEqual(["gate row not recorded: FileNotFoundError"], errors.getvalue().splitlines())
+
+    def test_a_hung_write_times_out_prints_one_stderr_line_and_returns_false(self):
+        self.plant("sleep 5\n")
+        errors = io.StringIO()
+        with unittest.mock.patch.object(script_utils, "LEDGER_WRITE_SECONDS", 0.2), \
+                contextlib.redirect_stderr(errors):
+            self.assertFalse(script_utils.ledger_write("coder_gate", {}, "gate row"))
+        self.assertEqual(["gate row not recorded: TimeoutExpired"], errors.getvalue().splitlines())
+
+
+class RunProcessTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = pathlib.Path(folder.name)
+
+    def test_a_list_command_returns_its_exit_code_and_both_streams(self):
+        code, stdout, stderr = script_utils.run_process(
+            [sys.executable, "-c", "import sys; print('out'); print('err', file=sys.stderr); sys.exit(3)"],
+            self.folder)
+        self.assertEqual((3, "out\n", "err\n"), (code, stdout, stderr))
+
+    def test_a_string_command_runs_in_the_shell_in_the_given_folder(self):
+        code, stdout, _ = script_utils.run_process("pwd && echo $((1 + 2))", self.folder)
+        self.assertEqual(0, code)
+        self.assertEqual([str(self.folder.resolve()), "3"], stdout.split())
+
+    def test_stdin_reaches_the_command(self):
+        command = [sys.executable, "-c", "import sys; print(sys.stdin.read().upper())"]
+        code, stdout, _ = script_utils.run_process(command, self.folder, stdin="hello")
+        self.assertEqual((0, "HELLO\n"), (code, stdout))
+
+    def test_a_command_that_outlives_the_timeout_returns_no_exit_code_with_what_it_printed(self):
+        started = time.monotonic()
+        code, stdout, _ = script_utils.run_process("echo before; sleep 30", self.folder, timeout=1)
+        self.assertIsNone(code)
+        self.assertEqual("before\n", stdout)
+        self.assertLess(time.monotonic() - started, 10)
+
+    def test_a_timeout_kills_a_child_that_holds_the_pipes_open(self):
+        marker = self.folder / "survived"
+        command = f"(sleep 3; touch {marker}) & wait"
+        code, _, _ = script_utils.run_process(command, self.folder, timeout=1)
+        self.assertIsNone(code)
+        time.sleep(3.5)
+        self.assertFalse(marker.exists())
+
+
+class GitOutputTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.repo = pathlib.Path(folder.name)
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+
+    def test_stdout_comes_back_without_its_trailing_newline(self):
+        top = script_utils.git_output(self.repo, "rev-parse", "--show-toplevel")
+        self.assertEqual(str(self.repo.resolve()), top)
+
+    def test_stderr_of_a_command_that_succeeds_is_not_part_of_the_answer(self):
+        self.assertEqual("", script_utils.git_output(self.repo, "checkout", "-q", "-b", "topic"))
+        self.assertEqual("", script_utils.git_output(self.repo, "checkout", "-b", "other"))
+
+    def test_a_failing_command_a_folder_outside_any_repo_and_a_missing_folder_give_none(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+
+        self.assertIsNone(script_utils.git_output(self.repo, "rev-parse", "--verify", "-q", "HEAD"))
+        self.assertIsNone(script_utils.git_output(outside.name, "rev-parse", "--show-toplevel"))
+        self.assertIsNone(script_utils.git_output(self.repo / "missing", "status"))
+
+    def test_a_non_ascii_name_comes_back_unquoted(self):
+        (self.repo / "café.txt").write_text("x\n")
+        self.assertEqual("café.txt", script_utils.git_output(self.repo, "ls-files", "--others"))
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "only Linux file systems take a name that is not UTF-8")
+    def test_a_name_that_is_not_utf8_round_trips_through_fsencode(self):
+        name = b"caf\xe9.txt"
+        (self.repo / os.fsdecode(name)).write_text("x\n")
+
+        listing = script_utils.git_output(self.repo, "ls-files", "--others", "-z")
+
+        self.assertEqual(name + b"\0", os.fsencode(listing))
+
+
+class RepoNameTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = pathlib.Path(folder.name)
+        self.bin = self.folder / "bin"
+        self.bin.mkdir()
+        self.cwd = self.folder / "shop-api-LED-9"
+        self.cwd.mkdir()
+        environment = unittest.mock.patch.dict(
+            os.environ, {"PATH": os.pathsep.join([str(self.bin), "/usr/bin", "/bin"])})
+        environment.start()
+        self.addCleanup(environment.stop)
+
+    def plant(self, body):
+        stub = self.bin / "ledger"
+        stub.write_text(f"#!/bin/sh\n{body}\n")
+        stub.chmod(0o755)
+
+    def test_the_name_ledger_repo_prints_wins_over_the_directory_name(self):
+        self.plant('[ "$*" = "repo" ] || exit 64\necho shop-api')
+        self.assertEqual("shop-api", script_utils.repo_name(self.cwd))
+
+    def test_a_failing_ledger_gives_the_directory_name(self):
+        self.plant("echo shop-api\nexit 2")
+        self.assertEqual("shop-api-LED-9", script_utils.repo_name(self.cwd))
+
+    def test_no_ledger_gives_the_directory_name(self):
+        self.assertIsNone(shutil.which("ledger", path=os.environ["PATH"]))
+        self.assertEqual("shop-api-LED-9", script_utils.repo_name(self.cwd))
 
 
 class JoinedDistinctTest(unittest.TestCase):
@@ -222,6 +553,20 @@ class HasWhitespaceTest(unittest.TestCase):
             self.assertFalse(script_utils.has_whitespace(text), repr(text))
 
 
+class WordsOfArgumentsTest(unittest.TestCase):
+    def test_one_argument_with_spaces_is_split_at_them(self):
+        self.assertEqual(["fix", "the", "typo"], script_utils.words_of_arguments(["fix  the typo"]))
+
+    def test_several_arguments_are_kept_as_given_even_when_one_holds_spaces(self):
+        self.assertEqual(["fix", "the typo"], script_utils.words_of_arguments(["fix", "the typo"]))
+
+    def test_no_arguments_give_no_words(self):
+        self.assertEqual([], script_utils.words_of_arguments([]))
+
+    def test_a_tuple_of_arguments_gives_a_list(self):
+        self.assertEqual(["a", "b"], script_utils.words_of_arguments(("a", "b")))
+
+
 class PreToolUseDenyTest(unittest.TestCase):
     def test_prints_one_json_line_that_denies_the_call_with_the_reason(self):
         printed = io.StringIO()
@@ -229,11 +574,11 @@ class PreToolUseDenyTest(unittest.TestCase):
         with contextlib.redirect_stdout(printed):
             script_utils.pre_tool_use_deny("Read the file first.")
 
-        printedLines = printed.getvalue().splitlines()
+        printed_lines = printed.getvalue().splitlines()
         denial = json.loads(printed.getvalue())
         self.assertEqual({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                                  "permissionDecisionReason": "Read the file first."}}, denial)
-        self.assertEqual(1, len(printedLines))
+        self.assertEqual(1, len(printed_lines))
 
 
 class SortableUniqueIdTest(unittest.TestCase):
@@ -245,21 +590,21 @@ class SortableUniqueIdTest(unittest.TestCase):
 
 class LastChangeNsTest(unittest.TestCase):
     def test_a_renamed_file_with_an_old_mtime_reports_its_newer_ctime(self):
-        tempDir = tempfile.TemporaryDirectory()
-        self.addCleanup(tempDir.cleanup)
-        source = pathlib.Path(tempDir.name) / "source.md"
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        source = pathlib.Path(temp_dir.name) / "source.md"
         source.write_text("x\n")
         os.utime(source, (50, 50))
-        moved = pathlib.Path(tempDir.name) / "moved.md"
+        moved = pathlib.Path(temp_dir.name) / "moved.md"
         source.rename(moved)
 
         self.assertEqual(50 * 10**9, moved.stat().st_mtime_ns)
         self.assertGreater(script_utils.last_change_ns(moved), 50 * 10**9)
 
     def test_a_file_whose_mtime_was_set_into_the_future_reports_the_mtime(self):
-        tempDir = tempfile.TemporaryDirectory()
-        self.addCleanup(tempDir.cleanup)
-        path = pathlib.Path(tempDir.name) / "future.md"
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        path = pathlib.Path(temp_dir.name) / "future.md"
         path.write_text("x\n")
         future = time.time() + 1000
         os.utime(path, (future, future))
@@ -349,7 +694,7 @@ class StripFlagValuesTest(unittest.TestCase):
     def test_every_listed_flag_is_removed(self):
         for flag in self.FLAGS:
             with self.subTest(flag=flag):
-                self.assertEqual("run", self.stripped("run %s name" % flag))
+                self.assertEqual("run", self.stripped(f"run {flag} name"))
 
     def test_the_text_after_the_value_stays(self):
         self.assertEqual("pytest tests/a.py", self.stripped("pytest -p xdist tests/a.py"))
@@ -371,9 +716,9 @@ class StripFlagValuesTest(unittest.TestCase):
 
 class NearestFileUpwardTest(unittest.TestCase):
     def setUp(self):
-        tempDir = tempfile.TemporaryDirectory()
-        self.addCleanup(tempDir.cleanup)
-        self.root = pathlib.Path(tempDir.name) / "repo"
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.root = pathlib.Path(temp_dir.name) / "repo"
         (self.root / "pkg/src/deep").mkdir(parents=True)
         (self.root / "pkg/package.json").write_text("{}")
 
@@ -416,11 +761,51 @@ class DirectoryRelativeToTest(unittest.TestCase):
         self.assertEqual("", script_utils.directory_relative_to(root, root))
 
 
+class IsExecutableFileInsideTest(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = pathlib.Path(directory.name) / "root"
+        (self.root / "bin").mkdir(parents=True)
+
+    def make_file(self, path, mode):
+        path.write_text("#!/bin/sh\n")
+        path.chmod(mode)
+        return path
+
+    def test_an_executable_file_under_the_root_is_one_by_a_relative_or_absolute_path(self):
+        tool = self.make_file(self.root / "bin" / "tool", 0o755)
+
+        for path in ("bin/tool", "./bin/tool", "bin/../bin/tool", str(tool)):
+            with self.subTest(path=path):
+                self.assertTrue(script_utils.is_executable_file_inside(self.root, path))
+
+    def test_the_root_may_be_given_as_text(self):
+        self.make_file(self.root / "bin" / "tool", 0o755)
+
+        self.assertTrue(script_utils.is_executable_file_inside(str(self.root), "bin/tool"))
+
+    def test_a_file_without_the_execute_bit_a_folder_and_a_missing_file_are_not_one(self):
+        self.make_file(self.root / "bin" / "plain", 0o644)
+
+        for path in ("bin/plain", "bin", "bin/missing"):
+            with self.subTest(path=path):
+                self.assertFalse(script_utils.is_executable_file_inside(self.root, path))
+
+    def test_a_path_that_leaves_the_root_by_dots_by_a_link_or_by_an_absolute_path_is_not_one(self):
+        outside = self.make_file(self.root.parent / "outside-tool", 0o755)
+        (self.root / "bin" / "link").symlink_to(outside)
+
+        for path in ("../outside-tool", "bin/link", str(outside)):
+            with self.subTest(path=path):
+                self.assertFalse(script_utils.is_executable_file_inside(self.root, path))
+
+
 class InsideGitWorkTreeTest(unittest.TestCase):
     def folder(self):
-        tempDir = tempfile.TemporaryDirectory()
-        self.addCleanup(tempDir.cleanup)
-        return pathlib.Path(tempDir.name)
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        return pathlib.Path(temp_dir.name)
 
     def test_a_file_in_a_repo_is_inside_and_a_file_outside_any_repo_is_not(self):
         repo = self.folder()
@@ -499,6 +884,177 @@ class InsideGitWorkTreeTest(unittest.TestCase):
         self.assertFalse(script_utils.inside_git_work_tree(str(hook)))
         with unittest.mock.patch.dict(os.environ, {"PATH": str(self.folder())}):
             self.assertFalse(script_utils.inside_git_work_tree(str(hook)))
+
+
+class LeadingEnvAssignmentsTest(unittest.TestCase):
+    def test_a_line_gives_the_assignments_it_starts_with_as_written(self):
+        self.assertEqual(["A=1", "B=/x/y.py"], script_utils.leading_env_assignments(["A=1 B=/x/y.py cargo test"]))
+
+    def test_a_quoted_value_with_spaces_is_kept_whole(self):
+        self.assertEqual(['GREETING="a b"'], script_utils.leading_env_assignments(['GREETING="a b" bash -c true']))
+
+    def test_the_first_line_to_set_a_name_decides_its_value_and_order_is_first_seen(self):
+        lines = ["B=1 make", "A=2 make", "B=3 make"]
+
+        self.assertEqual(["B=1", "A=2"], script_utils.leading_env_assignments(lines))
+
+    def test_a_line_with_no_leading_assignment_or_only_an_assignment_sets_nothing(self):
+        lines = ["cargo test", "echo A=1", "A=1", "  ", ""]
+
+        self.assertEqual([], script_utils.leading_env_assignments(lines))
+
+    def test_an_assignment_after_the_command_is_not_a_leading_one(self):
+        self.assertEqual([], script_utils.leading_env_assignments(["cargo test A=1", "cargo test A=1 --quiet"]))
+
+    def test_no_lines_give_no_assignments(self):
+        self.assertEqual([], script_utils.leading_env_assignments([]))
+
+    def test_an_assignment_whose_value_the_shell_would_run_or_expand_is_not_a_setting(self):
+        lines = ['n=$(ledger count) && test "$n" = 3', "S=...; cargo test", "PATH=/x/bin:$PATH cargo test",
+                 "T=$(find . -name x) cargo test", "Q=`date` cargo test", "A=1&&cargo test", "B=x|cargo test",
+                 "C=<in cargo test", 'D="a $HOME" cargo test', "E='a;b' cargo test", "F=1 && cargo test",
+                 "G=1 ; cargo test", "H=1 | cat", "I=1 # note", "J=1 > out.txt", "K=1 (cargo test)", "L=1 {cargo test}",
+                 "M=1 ! cargo test", 'N="x\\" cmd"', 'O="a\\b" cargo test', "X=~/a cargo test",
+                 "X=a:~/b cargo test"]
+
+        self.assertEqual([], script_utils.leading_env_assignments(lines))
+
+    def test_a_literal_assignment_followed_by_one_the_shell_would_expand_gives_nothing(self):
+        self.assertEqual([], script_utils.leading_env_assignments(["A=1 B=$(x) cargo test"]))
+
+    def test_a_quoted_literal_value_and_a_path_value_are_settings(self):
+        lines = ['LEDGER_ORACLE="on" cargo test', "ROOT='/x/y z' cargo test", "HOOK=/home/u/dotfiles/a.sh bash t.sh"]
+
+        self.assertEqual(['LEDGER_ORACLE="on"', "ROOT='/x/y z'", "HOOK=/home/u/dotfiles/a.sh"],
+                         script_utils.leading_env_assignments(lines))
+
+    def test_a_span_of_only_assignments_is_prose_not_a_setting(self):
+        self.assertEqual(
+            [], script_utils.leading_env_assignments(["src=index pass=done", "src=index", "src=index ", "A=1  "])
+        )
+
+    def test_a_span_of_assignments_then_a_word_gives_the_assignments(self):
+        self.assertEqual(["src=index"], script_utils.leading_env_assignments(["src=index pass"]))
+
+
+class FirstCommandWordTest(unittest.TestCase):
+    def test_the_word_after_the_leading_assignments_is_the_command(self):
+        self.assertEqual("RUN", script_utils.first_command_word("FOO=1 RUN x"))
+        self.assertEqual("cargo", script_utils.first_command_word("A=1 B='x y' cargo test"))
+        self.assertEqual("npm", script_utils.first_command_word("  npm test "))
+        self.assertEqual("cargo", script_utils.first_command_word("CARGO_BUILD_JOBS=4 cargo test --lib a::b"))
+        self.assertEqual(["CARGO_BUILD_JOBS=4"], script_utils.leading_env_assignments(
+            ["CARGO_BUILD_JOBS=4 cargo test --test side_streams"]))
+
+    def test_a_command_of_only_blanks_has_no_first_word(self):
+        self.assertEqual("", script_utils.first_command_word("   "))
+
+    def test_the_command_after_an_assignment_that_runs_or_expands_something_is_the_command(self):
+        commands = {"T=$(find . -name x) cargo test": "cargo",
+                    "LEDGER_REAL_DOTFILES=$HOME/dotfiles cargo test --test x": "cargo",
+                    "PATH=/x/bin:$PATH cargo test": "cargo",
+                    'DATABASE_URL="$TEST_DB" pytest -q': "pytest",
+                    "A=1 B=$(x) C='y z' make all": "make"}
+        for command, word in commands.items():
+            with self.subTest(command=command):
+                self.assertEqual(word, script_utils.first_command_word(command))
+
+    def test_an_assignment_followed_by_a_control_operator_has_no_command_after_it(self):
+        for command in ("A=1 && cargo test", "A=1 ; cargo test", "A=1 | cat", "A=1 # note", "S=...; cargo test"):
+            with self.subTest(command=command):
+                self.assertEqual(command, script_utils.without_leading_env_assignments(command))
+
+    def test_the_command_after_the_assignments_is_given_back(self):
+        self.assertEqual("npm test", script_utils.without_leading_env_assignments(" CI=1 npm test"))
+        self.assertEqual("npm test", script_utils.without_leading_env_assignments("npm test"))
+        self.assertEqual("cargo test", script_utils.without_leading_env_assignments('PATH=/x:$PATH A="$B" cargo test'))
+
+
+class BacktickedSpansTest(unittest.TestCase):
+    def test_backticked_spans_are_the_text_between_backticks_in_order(self):
+        self.assertEqual(["a b", "c"], script_utils.backticked_spans("x `a b` y `c` z"))
+        self.assertEqual([], script_utils.backticked_spans("no code here"))
+
+
+class WriteTextAtomicallyTest(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.folder = pathlib.Path(directory.name)
+
+    def test_the_text_replaces_the_old_file_and_no_temp_file_stays(self):
+        target = self.folder / "state.json"
+        target.write_text("old")
+
+        script_utils.write_text_atomically(target, "new")
+
+        self.assertEqual("new", target.read_text())
+        self.assertEqual(["state.json"], sorted(path.name for path in self.folder.iterdir()))
+
+    def test_a_new_file_gets_the_mode_that_write_text_gives_under_the_umask(self):
+        for umask, expected_mode in ((0o022, 0o644), (0o077, 0o600), (0o002, 0o664)):
+            with self.subTest(umask=oct(umask)):
+                target = self.folder / f"state-{umask:o}.json"
+                previous_umask = os.umask(umask)
+                try:
+                    script_utils.write_text_atomically(target, "new")
+                finally:
+                    os.umask(previous_umask)
+
+                self.assertEqual(expected_mode, target.stat().st_mode & 0o777)
+
+    def test_an_existing_file_keeps_its_mode(self):
+        for mode in (0o600, 0o664, 0o755):
+            with self.subTest(mode=oct(mode)):
+                target = self.folder / f"state-{mode:o}.json"
+                target.write_text("old")
+                target.chmod(mode)
+
+                script_utils.write_text_atomically(target, "new")
+
+                self.assertEqual("new", target.read_text())
+                self.assertEqual(mode, target.stat().st_mode & 0o777)
+
+    def test_a_failed_replace_keeps_the_old_file_and_removes_the_temp_file(self):
+        target = self.folder / "state.json"
+        target.write_text("old")
+
+        with unittest.mock.patch("os.replace", side_effect=OSError("disk full")), self.assertRaises(OSError):
+            script_utils.write_text_atomically(target, "new")
+
+        self.assertEqual("old", target.read_text())
+        self.assertEqual(["state.json"], sorted(path.name for path in self.folder.iterdir()))
+
+
+class PopOptionTest(unittest.TestCase):
+    def test_flag_and_value_are_removed_wherever_they_sit(self):
+        cases = [
+            ("flag first", ["--by", "session", "accepted"], (["accepted"], "session")),
+            ("flag last with value", ["accepted", "--by", "user"], (["accepted"], "user")),
+            ("flag in the middle", ["a", "--by", "x", "b"], (["a", "b"], "x")),
+            ("flag absent", ["a", "b"], (["a", "b"], None)),
+            ("flag with no value", ["a", "--by"], (["a"], "")),
+        ]
+        for message, arguments, expected in cases:
+            with self.subTest(message):
+                self.assertEqual(expected, script_utils.pop_option(arguments, "--by"))
+
+    def test_the_given_list_is_not_changed(self):
+        arguments = ["a", "--by", "x"]
+
+        script_utils.pop_option(arguments, "--by")
+
+        self.assertEqual(["a", "--by", "x"], arguments)
+
+    def test_pop_repeated_option_takes_every_value_in_order(self):
+        cases = [
+            ("two values", ["pass", "--e", "a b", "--e", "c"], (["pass"], ["a b", "c"])),
+            ("flag absent", ["pass"], (["pass"], [])),
+            ("flag with no value", ["pass", "--e"], (["pass"], [""])),
+        ]
+        for message, arguments, expected in cases:
+            with self.subTest(message):
+                self.assertEqual(expected, script_utils.pop_repeated_option(arguments, "--e"))
 
 
 if __name__ == "__main__":

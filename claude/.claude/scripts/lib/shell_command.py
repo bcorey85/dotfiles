@@ -1,11 +1,12 @@
 """Read a shell command line as steps joined by operators, without running or fully parsing it."""
+import os
 import re
 import shlex
 
 SETUP_STEP = re.compile(r"^[ \t(]*(cd[ \t]|source[ \t]|\.[ \t]|export[ \t]|([^\W\d]\w*=[^ \t]*[ \t]*)+$)")
-# `|&` (pipe both streams), `>&`, `&>` and `&&` are not a lone `&`; a lone `&` sends the step before it to the
-# background.
-OPERATOR = re.compile(r"(\|\||&&|\|(?!&)|(?<![>&|])&(?![&>])|;|\n)")
+# `>|` (clobber redirection) is not a pipe. `|&` (pipe both streams), `>&`, `&>` and `&&` are not a lone `&`; a lone
+# `&` sends the step before it to the background.
+OPERATOR = re.compile(r"(\|\||&&|(?<!>)\|(?!&)|(?<![>&|])&(?![&>])|;|\n)")
 LEADING_BRACES = re.compile(r"(?:[ \t]*\{(?=[ \t]))*")
 TRAILING_BRACES = re.compile(r"(?:(?:^|[ \t])\}[ \t]*)+$")
 SEPARATOR_CHARS = set("();|&\n")
@@ -23,6 +24,45 @@ DOCKER_VALUE_OPTIONS = {
     "--mount", "--add-host", "--cap-add", "--cap-drop", "--hostname", "--platform", "--context", "--volumes-from",
     "-m", "--memory", "--cpus", "--gpus", "--shm-size", "--ulimit", "--tmpfs", "--device", "--restart", "--pull",
     "--security-opt", "--log-opt", "--index", "--ansi", "--progress",
+}
+GROUP_WORDS = {"{", "!"}
+SHELL_INTERPRETERS = {"sh", "bash", "zsh", "dash", "ksh"}
+# A command text that names one of these as a word may run code the parser does not read: a shell's `-c` text, an
+# `eval` argument, a command run through another program or on another host. A quoted mention counts, except a
+# shell name right after a `|` or a backslash: that is a regex alternative such as `(py|sh)`.
+CODE_RUNNERS = re.compile(
+    r"(?<![|\\])\b(" + "|".join(sorted(SHELL_INTERPRETERS)) + r")(?![\w.-])"
+    r"|\b(eval|su|script|flock|watch|xargs|ssh|parallel)\b"
+    r"|\bgit\b[^\n]*\brebase\b[^\n]*\s(--exec|-x)\b"
+    r"|\bfind\b[^\n]*\s-exec(dir)?\b"
+    r"|\b(docker|podman)\b[^\n]*\b(exec|run)\b"
+    r"|\bkubectl\b[^\n]*\bexec\b"
+)
+SHELL_VALUE_OPTIONS = {"--rcfile", "--init-file", "--init"}
+# Words that run the command after them; each maps to the options that take the next word as their value.
+WRAPPER_VALUE_OPTIONS = {
+    "env": {"-u", "--unset", "-C", "--chdir", "-S", "--split-string"},
+    "sudo": {"-u", "--user", "-g", "--group", "-h", "--host", "-p", "--prompt", "-C", "-r", "-t", "-U", "-D", "-R",
+             "--chdir", "--chroot"},
+    "doas": {"-u", "-C"},
+    "timeout": {"-s", "--signal", "-k", "--kill-after"},
+    "nice": {"-n", "--adjustment"},
+    "nohup": set(),
+    "time": {"-o", "--output", "-f", "--format"},
+    "command": set(),
+    "exec": {"-a"},
+    "builtin": set(),
+    "stdbuf": {"-i", "-o", "-e"},
+    "setsid": set(),
+    "ionice": {"-c", "-n", "-p"},
+    "unbuffer": set(),
+}
+# `uv run`, `poetry run` and `pipenv run` run the command after their options.
+RUNNER_WRAPPERS = {
+    "uv": {"--with", "--with-requirements", "--python", "-p", "--directory", "--project", "--env-file", "--group",
+           "--extra", "--package", "--index"},
+    "poetry": {"-C", "--directory", "-P", "--project"},
+    "pipenv": {"--python", "--pypi-mirror"},
 }
 
 
@@ -46,7 +86,7 @@ def parse_simple_commands(command):
     `)` and an unquoted newline end a command (an empty one is left out); a redirection's file descriptor number is
     not a word; a comment is not a comment, its words stay. Raises ValueError for text this reading cannot trust: an
     unclosed quote, a quoted or escaped operator character, a number then a space then a redirection (`5 >f`), or a
-    run of operator characters it cannot sort (`>|`)."""
+    run of operator characters it cannot sort (`<|`). `>|` is an output redirection."""
     return [(words, redirections) for words, redirections, _piped in parse_piped_commands(command)]
 
 
@@ -85,7 +125,7 @@ def parse_piped_commands(command):
             words = []
             redirections = []
             continue
-        if token and characters <= REDIRECT_CHARS:
+        if token and (characters <= REDIRECT_CHARS or token == ">|"):
             if pending_operator is not None:
                 redirections.append((pending_operator, ""))
             if words and words[-1].isdigit():
@@ -122,14 +162,14 @@ def docker_command_start(words):
     if not words or words[0] not in ("docker", "docker-compose"):
         return None
 
-    index = skip_docker_options(words, 1)
+    index = skip_options(words, 1, DOCKER_VALUE_OPTIONS)
     if words[0] == "docker" and index < len(words) and words[index] in ("compose", "container"):
-        index = skip_docker_options(words, index + 1)
+        index = skip_options(words, index + 1, DOCKER_VALUE_OPTIONS)
     if index >= len(words) or words[index] not in ("exec", "run"):
         return None
 
     # The word after the options is the service, container or image; the rest is the command.
-    index = skip_docker_options(words, index + 1)
+    index = skip_options(words, index + 1, DOCKER_VALUE_OPTIONS)
     return min(index + 1, len(words))
 
 
@@ -172,9 +212,10 @@ def docker_environment_values(words):
     return values
 
 
-def skip_docker_options(words, index):
+def skip_options(words, index, value_options):
+    # The index of the first word from index on that is no option: an option that takes a value is skipped with it.
     while index < len(words) and words[index].startswith("-"):
-        index += 2 if words[index] in DOCKER_VALUE_OPTIONS else 1
+        index += 2 if words[index] in value_options else 1
     return index
 
 
@@ -183,6 +224,68 @@ def without_assignments(words):
     while words and "=" in words[0] and not words[0].startswith("-"):
         words = words[1:]
     return words
+
+
+def command_after_wrappers(words, peel_containers=True):
+    """The words of the command that a simple command finally runs, with the wrapper words, their flags and their
+    values dropped: env (flags, NAME=value), sudo, doas, timeout (flags, duration), nice, nohup, time, command, exec,
+    builtin, uv/poetry/pipenv run, a leading `{` or `!` and, unless peel_containers is False, a docker exec or run
+    call. Words that name no wrapper come back as they are; an empty list when the wrappers name no command."""
+    while True:
+        words = without_assignments(words)
+        if not words:
+            return words
+
+        name = os.path.basename(words[0])
+        container_command = unwrap_docker(words) if peel_containers else None
+        if container_command is not None:
+            words = container_command
+        elif name in GROUP_WORDS:
+            words = words[1:]
+        elif name in RUNNER_WRAPPERS:
+            if len(words) < 2 or words[1] != "run":
+                return words
+            words = words[skip_options(words, 2, RUNNER_WRAPPERS[name]):]
+        elif name in WRAPPER_VALUE_OPTIONS:
+            if name == "command" and words[1:2] in (["-v"], ["-V"]):
+                return words
+            rest = words[skip_options(words, 1, WRAPPER_VALUE_OPTIONS[name]):]
+            words = rest[1:] if name == "timeout" else rest
+        else:
+            return words
+
+
+def names_code_runner(command):
+    """True when the command text names a code runner (CODE_RUNNERS) as a word."""
+    return bool(CODE_RUNNERS.search(command))
+
+
+def runs_shell(words):
+    """True when the simple command, once its wrapper words are dropped, runs a shell interpreter."""
+    words = command_after_wrappers(words)
+    return bool(words) and os.path.basename(words[0]).lower() in SHELL_INTERPRETERS
+
+
+def shell_code_argument(words):
+    """The code text a shell interpreter runs from its `-c` option (`-c`, `-lc`, `-x -c`), once wrapper words are
+    dropped; None when the words run no shell or give it no `-c` code."""
+    words = command_after_wrappers(words)
+    if not words or os.path.basename(words[0]).lower() not in SHELL_INTERPRETERS:
+        return None
+
+    index = 1
+    while index < len(words) and words[index].startswith(("-", "+")):
+        word = words[index]
+        if word.startswith("-") and not word.startswith("--") and "c" in word[1:]:
+            if index + 1 >= len(words):
+                return None
+            # The shell removes a backslash before `$` or a backtick inside double quotes; shlex keeps it.
+            return re.sub(r"\\([$`])", r"\1", words[index + 1])
+        # An option takes the next word as its value: a long option named in SHELL_VALUE_OPTIONS, or a short-option
+        # cluster ending in `o` or `O` (`-o`, `+o`, `-euo`).
+        takes_value = word in SHELL_VALUE_OPTIONS or (not word.startswith("--") and word[-1] in "oO")
+        index += 2 if takes_value else 1
+    return None
 
 
 def split_command_steps(command):
@@ -203,28 +306,134 @@ def split_command_steps(command):
     return steps
 
 
-def quoted_positions(command):
-    # The indexes of the characters that sit inside quotes or right after a backslash outside single quotes.
+def quoted_positions(command, unclosed_is_quoted=True):
+    # The indexes of the characters that sit inside quotes, inside a comment (after its `#`, up to the newline) or
+    # right after a backslash outside single quotes. A quote that never closes covers the rest of the command, unless
+    # unclosed_is_quoted is False: then the text after it counts as unquoted, as a check that must not be hidden by a
+    # stray quote needs. A quote character inside a comment opens no quote. The text of a `$(...)` or backtick span
+    # inside double quotes is code the shell runs, so it is not quoted: it is read with its own quote state.
     positions = set()
-    quote = None
+    # One level per open `"$(` or "`" span, after the base level: its quote, how it closes, and its open `(` count.
+    levels = [{"quote": None, "closer": None, "depth": 0}]
+    quote_opened_at = 0
     index = 0
     while index < len(command):
         character = command[index]
+        level = levels[-1]
+        quote = level["quote"]
         if quote is None:
             if character in "'\"":
-                quote = character
+                level["quote"] = character
+                if len(levels) == 1:
+                    quote_opened_at = index
             elif character == "\\":
                 positions.add(index + 1)
                 index += 1
+            elif character == "#" and (index == 0 or command[index - 1] in " \t\r\f\v\n;&|()"):
+                comment_end = command.find("\n", index)
+                if comment_end == -1:
+                    comment_end = len(command)
+                positions.update(range(index + 1, comment_end))
+                index = comment_end
+                continue
+            elif character == "(" and level["closer"] == ")":
+                level["depth"] += 1
+            elif character == ")" and level["closer"] == ")" and level["depth"]:
+                level["depth"] -= 1
+            elif character == level["closer"]:
+                levels.pop()
         elif character == quote:
-            quote = None
+            level["quote"] = None
         elif character == "\\" and quote == '"':
             positions.add(index + 1)
             index += 1
+        elif quote == '"' and command.startswith("$(", index):
+            levels.append({"quote": None, "closer": ")", "depth": 0})
+            index += 1
+        elif quote == '"' and character == "`":
+            levels.append({"quote": None, "closer": "`", "depth": 0})
         else:
             positions.add(index)
         index += 1
+
+    if levels[0]["quote"] is not None and not unclosed_is_quoted:
+        positions = {position for position in positions if position < quote_opened_at}
     return positions
+
+
+def unquoted_matches(pattern, text, extra_hidden=()):
+    """The matches of the compiled pattern in text whose start is not inside quotes, nor at a position in
+    extra_hidden. A quote that never closes hides nothing."""
+    hidden = quoted_positions(text, unclosed_is_quoted=False)
+    hidden.update(extra_hidden)
+    return [match for match in pattern.finditer(text) if match.start() not in hidden]
+
+
+def substitution_spans(text):
+    """The text inside each outermost `$(...)` and backtick pair in text that is not in single quotes, a comment or
+    after a backslash; one inside double quotes counts. A span that never closes runs to the end of the text."""
+    hidden = quoted_positions(text, unclosed_is_quoted=False)
+    spans = []
+    index = 0
+    while index < len(text):
+        if index in hidden:
+            index += 1
+            continue
+
+        if text.startswith("$(", index):
+            depth = 0
+            end = len(text)
+            for position in range(index + 1, len(text)):
+                depth += {"(": 1, ")": -1}.get(text[position], 0) if position not in hidden else 0
+                if depth == 0:
+                    end = position
+                    break
+            spans.append(text[index + 2:end])
+            index = end
+        elif text[index] == "`":
+            end = text.find("`", index + 1)
+            if end == -1:
+                end = len(text)
+            spans.append(text[index + 1:end])
+            index = end
+        index += 1
+    return spans
+
+
+def path_word(word):
+    """The path a shell word names: a quote left at either end is dropped and a leading `~` or `~user` is replaced by
+    that home directory. A `~user` that names no user stays as it is."""
+    for quote in ('"', "'"):
+        if word.endswith(quote):
+            word = word[:-1]
+        if word.startswith(quote):
+            word = word[1:]
+    return os.path.expanduser(word)
+
+
+def step_parts(step):
+    """(core, tail) of a step: the command text after the `(` groups it opens, up to the first `)` that closes no `(`
+    of its own, and the text after the last such `)` (a redirection or pipe that applies to the closed group). A
+    quoted parenthesis is part of the command."""
+    quoted = quoted_positions(step, unclosed_is_quoted=False)
+    start = 0
+    while start < len(step) and step[start] in " \t({" and start not in quoted:
+        start += 1
+    depth = 0
+    closing = []
+    for index in range(start, len(step)):
+        if index in quoted:
+            continue
+        if step[index] == "(":
+            depth += 1
+        elif step[index] == ")":
+            if depth:
+                depth -= 1
+            else:
+                closing.append(index)
+    if not closing:
+        return step[start:], ""
+    return step[start:closing[0]], step[closing[-1] + 1:]
 
 
 def group_depth_change(step):

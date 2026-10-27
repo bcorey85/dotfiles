@@ -28,6 +28,9 @@
 # caller: every git call that errors prints an empty section.
 set -uo pipefail
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../../scripts/lib/_kv.sh
+source "$script_dir/../../scripts/lib/_kv.sh"
+kv_help_exit "${BASH_SOURCE[0]}" "$@"
 
 mode=worktree base=HEAD base_given=0 merge_base="" paths="" root="" caller="" skill=review-loop
 for kv in "$@"; do

@@ -177,6 +177,14 @@ class LogEscapeTest(unittest.TestCase):
         self.assertFalse((self.home / ".claude" / "review-escapes.jsonl").exists())
         self.assertEqual(len(self.escape_rows()), 1)
 
+    def test_help_prints_usage_and_writes_nothing(self):
+        for flag in ("--help", "-h"):
+            with self.subTest(flag=flag):
+                done = self.run_escape(flag)
+                self.assertEqual((done.returncode, done.stderr), (0, ""))
+                self.assertIn("usage: log-escape [--check] key=value", done.stdout)
+                self.assertEqual(fake_ledger.recorded_rows(self.ledger_env), [])
+
 
 if __name__ == "__main__":
     unittest.main()

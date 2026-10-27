@@ -7,6 +7,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import signal
 import stat
 import subprocess
@@ -238,6 +239,71 @@ def run_retrying(argv, retry_exit_codes, attempts, backoff_seconds, timeout_seco
             if done.returncode not in retry_exit_codes or attempt == attempts:
                 return done
         sleep(backoff_seconds * attempt)
+
+
+def attempts_within(wait_seconds, backoff_seconds):
+    """The most tries of a run_retrying loop whose pauses (backoff_seconds times 1, then times 2, ...) add up to no
+    more than wait_seconds. Always at least 1."""
+    attempts = 1
+    waited = 0
+    while waited + backoff_seconds * attempts <= wait_seconds:
+        waited += backoff_seconds * attempts
+        attempts += 1
+    return attempts
+
+
+# A ledger read whose cache is behind exits 75 at once and starts a worker that catches up. Every caller waits up to
+# LEDGER_WAIT_SECONDS of pauses between tries (each try may also run up to LEDGER_CALL_TIMEOUT_SECONDS), then
+# reports the read as not done; the ledger never blocks the work.
+LEDGER_BUSY_EXIT = 75
+LEDGER_WAIT_SECONDS = 90
+LEDGER_BACKOFF_SECONDS = 3
+LEDGER_CALL_TIMEOUT_SECONDS = 60
+# These two exist so a test need not wait.
+LEDGER_BACKOFF_ENV = "LEDGER_READ_BACKOFF_SECONDS"
+LEDGER_CALL_TIMEOUT_ENV = "LEDGER_READ_CALL_TIMEOUT_SECONDS"
+
+
+class LedgerUnreadError(Exception):
+    """A ledger read gave no answer. Callers carry on without it and say what was not read."""
+
+
+class LedgerNotInstalledError(LedgerUnreadError):
+    """No `ledger` program is on PATH."""
+
+
+class LedgerBusyError(LedgerUnreadError):
+    """A ledger read found the cache still behind (exit 75) or timed out on its last try. The message names the
+    command, the seconds of pauses and the ledger's own last stderr line."""
+
+
+def ledger_failure_reason(done):
+    """The last stderr line of a finished ledger call, or `exited <code>` when it wrote none."""
+    stderr_lines = done.stderr.strip().splitlines()
+    return stderr_lines[-1] if stderr_lines else f"exited {done.returncode}"
+
+
+def read_ledger(args):
+    """Run `ledger <args>` and return its CompletedProcess for any exit but 75. Exit 75 and a call that does not
+    finish in time are tried again, with pauses totalling LEDGER_WAIT_SECONDS (each try may also run up to
+    LEDGER_CALL_TIMEOUT_SECONDS); then LedgerBusyError is raised. Raises
+    LedgerNotInstalledError when there is no `ledger` on PATH."""
+    if shutil.which("ledger") is None:
+        raise LedgerNotInstalledError("ledger not installed")
+
+    backoff = float(os.environ.get(LEDGER_BACKOFF_ENV, LEDGER_BACKOFF_SECONDS))
+    timeout = float(os.environ.get(LEDGER_CALL_TIMEOUT_ENV, LEDGER_CALL_TIMEOUT_SECONDS))
+    attempts = attempts_within(LEDGER_WAIT_SECONDS, LEDGER_BACKOFF_SECONDS)
+    waited = round(backoff * attempts * (attempts - 1) / 2)
+    command = " ".join(["ledger", *args])
+    try:
+        done = run_retrying(["ledger", *args], (LEDGER_BUSY_EXIT,), attempts, backoff, timeout)
+    except subprocess.TimeoutExpired:
+        raise LedgerBusyError(f"{command}: no answer within {timeout:g} s per try ({waited} s of pauses)") from None
+    if done.returncode != LEDGER_BUSY_EXIT:
+        return done
+
+    raise LedgerBusyError(f"{command}: {ledger_failure_reason(done)} ({waited} s of pauses)")
 
 
 def last_change_ns(path):

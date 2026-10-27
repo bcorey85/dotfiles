@@ -24,10 +24,11 @@
 # ledger. Both redirects write only while the metrics switch is on.
 set -euo pipefail
 
-command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 script_dir=$(dirname -- "${BASH_SOURCE[0]}")
 # shellcheck source=../../scripts/lib/_kv.sh
 source "$script_dir/../../scripts/lib/_kv.sh"
+kv_help_exit "${BASH_SOURCE[0]}" "$@"
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 out=""
 # Second-draft rows route to the second-draft log even when the caller forgets
 # out= — a second_draft= key in the review-metrics rows corrupts both datasets.

@@ -572,9 +572,9 @@ class ReviewerRequiredTest(HandbackTestBase):
             event.update({"agent_type": "review-loop", "agent_id": calling_agent_id})
         self.assertEqual(self.run_cli(["hook", "dispatch"], json.dumps(event))[:2], (0, ""))
 
-    def hand_back(self, agent_id="a1"):
+    def hand_back(self, agent_id="a1", message=CONVERGED):
         event = {"session_id": SESSION, "tool_name": "SubagentHandback", "agent_type": "review-loop",
-                 "agent_id": agent_id, "tool_input": {"message": CONVERGED}}
+                 "agent_id": agent_id, "tool_input": {"message": message}}
         return self.run_cli(["hook", "handback"], json.dumps(event))[:2]
 
     def assert_denied(self, result):
@@ -643,6 +643,37 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.dispatch("coder", "a1")
         self.dispatch("code-reviewer", "a2")
         self.assert_denied(self.hand_back())
+
+    def test_cap_exit_coder_after_the_second_review_passes_when_converged(self):
+        self.dispatch("review-loop")
+        self.dispatch("code-reviewer", "a1")
+        self.dispatch("coder", "a1")
+        self.dispatch("code-reviewer", "a1")
+        self.dispatch("coder", "a1")
+        self.assertEqual(self.hand_back(message=CONVERGED.replace("iter: 1", "iter: 2")), (0, ""))
+        self.assertIsNone(handback.false_clean_reason(SESSION))
+
+    def test_cap_exit_coder_after_the_second_review_passes_when_deferred(self):
+        self.dispatch("review-loop")
+        self.dispatch("code-reviewer", "a1")
+        self.dispatch("coder", "a1")
+        self.dispatch("code-reviewer", "a1")
+        self.dispatch("coder", "a1")
+        message = ("status: deferred\niter: 2\nfixed: []\n"
+                   "findings_remaining:\n- {finding: x, file_line: a.ts:1}\n")
+        self.assertEqual(self.hand_back(message=message), (0, ""))
+        self.assertIsNone(handback.false_clean_reason(SESSION))
+
+    def test_round_two_hand_back_with_no_reviewer_ever_run_is_denied(self):
+        self.dispatch("review-loop")
+        self.dispatch("coder", "a1")
+        self.assert_denied(self.hand_back(message=CONVERGED.replace("iter: 1", "iter: 2")))
+
+    def test_round_two_reviewer_by_another_agent_id_does_not_exempt_the_trailing_coder(self):
+        self.dispatch("review-loop")
+        self.dispatch("code-reviewer", "a2")
+        self.dispatch("coder", "a1")
+        self.assert_denied(self.hand_back(message=CONVERGED.replace("iter: 1", "iter: 2")))
 
     def test_other_agent_types_are_not_steps(self):
         self.dispatch("review-loop")

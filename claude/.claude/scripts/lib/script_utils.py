@@ -24,6 +24,8 @@ BACKTICKED = re.compile(r"`([^`]+)`")
 # Subagent types: the agents that change code, and the agents that review it (code-reviewer, perf-reviewer-deep, ...).
 CODERS = re.compile(r"^(backend-|frontend-)?coder(-deep)?$")
 REVIEWERS = re.compile(r"^([a-z]+-)*reviewer(-deep)?$")
+# The line that starts the stamp the coder gate appends to a hand-back message. Everything after it is the gate's text.
+HAND_BACK_GATE_MARKER = "\n\nHAND-BACK GATE:"
 TIMEOUT_EXIT_CODE = 124
 COMMAND_NOT_FOUND_EXIT_CODE = 127
 REPO_NAME_SCRIPT = pathlib.Path(__file__).resolve().parent.parent / "tools" / "repo-name"
@@ -151,6 +153,11 @@ def git_output(cwd, *args, timeout=None):
     if finished.returncode != 0:
         return None
     return os.fsdecode(finished.stdout).rstrip("\n")
+
+
+def text_before_marker(text, marker):
+    # The text up to the first marker, or all of it when the marker is absent.
+    return text.split(marker, 1)[0]
 
 
 def run_command(command, cwd=None, stdin=None, timeout=None):

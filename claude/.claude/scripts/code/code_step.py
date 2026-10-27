@@ -1152,6 +1152,8 @@ def tests_run_text(gate, state):
         for command in gate["commands"]:
             if command in coder["failed"]:
                 parts.append(f"{command} -> failed at the hand-back gate ({coder['result']})")
+            elif command in coder.get("timed_out", []):
+                parts.append(f"{command} -> timed out at the hand-back gate, no test result")
             elif command in coder.get("skipped", []):
                 parts.append(f"{command} -> skipped, no changed files")
             else:
@@ -1253,10 +1255,16 @@ def record_coder_report(repo_dir, state, report, gate, changed_files):
                   "why": why_groups, "testsRun": tests_run, "coderStage": coder_stage})
 
 
+def coder_message_without_gate_stamp(message):
+    # The coder's own text. The gate's stamp holds command output, which is not the coder's report.
+    return script_utils.text_before_marker(message, script_utils.HAND_BACK_GATE_MARKER)
+
+
 def stage_plan_impact(repo_dir, state, coder_stage):
     # The first PLAN-IMPACT block in any hand-back, or attempt to hand back, of the coders this run dispatched at this
     # stage. A hand-back that a gate denied still counts: the coder may send only the fix on its retry.
-    messages = [message for report in phase_coder_reports(repo_dir, state) if report["stage"] == coder_stage
+    messages = [coder_message_without_gate_stamp(message)
+                for report in phase_coder_reports(repo_dir, state) if report["stage"] == coder_stage
                 for message in report["attempts"] + report["messages"]]
     return first_plan_impact(messages)
 
@@ -1264,7 +1272,7 @@ def stage_plan_impact(repo_dir, state, coder_stage):
 def review_coder_report(repo_dir, state, handback):
     coder_stage = state["stage"]
     is_ask_fix = coder_stage == "asks-coder"
-    report = handback.get("message", "")
+    report = coder_message_without_gate_stamp(handback.get("message", ""))
     gate = None if is_ask_fix else gate_results(repo_dir)
     gate_lines = state.get("gateLines", "")
     if not is_ask_fix:
@@ -1696,7 +1704,8 @@ def follow_up_is_small(before, after):
 def handoff_report(repo_dir, state):
     # The coders' last hand-back of this run: the phase coders', and the asks coders' after an asks round, joined.
     stages = ["coder"] + (["asks-coder"] if state.get("coderStage") == "asks-coder" else [])
-    last_messages = [report["messages"][-1] for report in phase_coder_reports(repo_dir, state)
+    last_messages = [coder_message_without_gate_stamp(report["messages"][-1])
+                     for report in phase_coder_reports(repo_dir, state)
                      if report["stage"] in stages and report["messages"]]
     return "\n\n".join(last_messages)
 

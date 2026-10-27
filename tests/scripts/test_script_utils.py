@@ -20,6 +20,13 @@ script_utils = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(script_utils)
 
 
+class TextBeforeMarkerTest(unittest.TestCase):
+    def test_the_text_is_cut_at_the_first_marker_and_kept_whole_without_one(self):
+        self.assertEqual("report", script_utils.text_before_marker("report--stamp one--stamp two", "--stamp"))
+        self.assertEqual("report", script_utils.text_before_marker("report", "--stamp"))
+        self.assertEqual("", script_utils.text_before_marker("--stamp only", "--stamp"))
+
+
 class SubagentTypeTest(unittest.TestCase):
     def test_coder_types_match_each_coder_and_its_deep_variant_only(self):
         for name in ("coder", "coder-deep", "backend-coder", "frontend-coder-deep"):

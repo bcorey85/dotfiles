@@ -18,8 +18,12 @@ marked `+` or one that names `$(MAKE)`, which is not judged). The gate runs at e
 checks after every edit, and the review loop runs the full check command once, at its end.
 
 The hook runs the stored commands when a coder calls SubagentHandback. If any command fails, it refuses the call
-and returns the output tail of each failed command to the coder, at most 3 times per coder. On a pass or at the cap,
-it appends the gate result to the hand-back message, so the caller reads the report as final. With no gate, a gate
+and returns the output tail of each failed command to the coder, at most 3 times per coder. A command that hits the
+timeout (1200 s) gave no test result: it is stored as timed_out, apart from failed, and never denies the call. A run
+with no failures and a timed-out command has the result "timeout". On a pass, a timeout or the cap, it appends the
+gate result to the hand-back message, so the caller reads the report as final. The stamp names each timed-out command
+with the last 600 characters of its output, and says that the gate got no result from it: the command is too broad,
+or a test hangs. With no gate, a gate
 older than 6 hours or another agent type, the hand-back goes through untouched. Parallel coders take turns."""
 import fcntl
 import json
@@ -39,6 +43,7 @@ MAX_DENIES = 3
 MAX_GATE_AGE_SECONDS = 6 * 3600
 COMMAND_TIMEOUT_SECONDS = 1200
 TAIL_CHARS = 6000
+TIMEOUT_TAIL_CHARS = 600
 GATE_LOG = pathlib.Path.home() / ".claude/coder-gate.jsonl"
 
 # A simple command that starts with one of these runs tests or lint. With no path, test name or changed-files flag
@@ -325,9 +330,10 @@ def clear_gate():
     gate = json.loads(gate_file.read_text())
     for coder in gate["coders"].values():
         failed_commands = ", ".join(coder["failed"]) or "none"
+        timed_out_commands = ", ".join(coder.get("timed_out", [])) or "none"
         skipped_commands = ", ".join(coder.get("skipped", [])) or "none"
         print(f"coder gate: {coder['result']} after {coder['runs']} run(s), failed: {failed_commands}, "
-              f"skipped: {skipped_commands}")
+              f"timed out (no test result): {timed_out_commands}, skipped: {skipped_commands}")
     if not gate["coders"]:
         print("coder gate: never ran, no coder handed back through it")
 
@@ -375,8 +381,10 @@ def fill_files(command, repo_root):
 
 
 def run_commands(gate):
+    # A command that hit the timeout gave no test result, so timed_out holds (command, output so far), never failures.
     failures = []
     skipped = []
+    timed_out = []
     environment = {**os.environ, **gate.get("env", {})}
     for command in gate["commands"]:
         filled_command = fill_files(command, gate["repoRoot"])
@@ -386,13 +394,12 @@ def run_commands(gate):
 
         code, stdout, stderr = script_utils.run_process(filled_command, gate["repoRoot"], env=environment,
                                                         timeout=COMMAND_TIMEOUT_SECONDS)
-        output = stdout + stderr
         if code is None:
-            failures.append((command, f"timeout after {COMMAND_TIMEOUT_SECONDS} s", output))
+            timed_out.append((command, stdout + stderr))
             continue
         if code != 0:
-            failures.append((command, f"exit {code}", output))
-    return failures, skipped
+            failures.append((command, f"exit {code}", stdout + stderr))
+    return failures, skipped, timed_out
 
 
 def denial(failures):
@@ -410,9 +417,19 @@ def stamped_handback(tool_input, coder):
     # The coder writes its report before the gate runs, so the report can still say that a re-run is pending.
     failed_commands = ", ".join(coder["failed"]) or "none"
     skipped_commands = ", ".join(coder.get("skipped", [])) or "none"
-    stamp = (f"\n\nHAND-BACK GATE: {coder['result']} after {coder['runs']} run(s), failed: {failed_commands}, "
+    stamp = (f"{script_utils.HAND_BACK_GATE_MARKER} {coder['result']} after {coder['runs']} run(s), "
+             f"failed: {failed_commands}, "
              f"skipped (no changed files): {skipped_commands}. "
              "The gate ran after this report was written. The report is final.")
+    timed_out_commands = coder.get("timed_out", [])
+    if timed_out_commands:
+        tails = coder.get("timed_out_tails", {})
+        timed_out_lines = "".join(f"\n  `{command}`, output tail:\n{tails.get(command, '')}"
+                                  for command in timed_out_commands)
+        stamp += (f"\nHAND-BACK GATE TIMEOUT: these commands timed out after {COMMAND_TIMEOUT_SECONDS} s with no "
+                  f"test result:{timed_out_lines}\nThe gate got no result from these commands; they are not among "
+                  "the failures. The command is too broad for the gate, or a test hangs. Read the output tail for a "
+                  "failure printed before the hang.")
     stamped_input = dict(tool_input)
     stamped_input["message"] = str(tool_input.get("message", "")) + stamp
     return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow",
@@ -427,10 +444,10 @@ def append_gate_log(row):
         log_file.write(json.dumps(row) + "\n")
 
 
-def log_gate_run(gate, coder, seconds, failed_count):
+def log_gate_run(gate, coder, seconds, failed_count, timed_out_count):
     repo_name = pathlib.Path(gate["repoRoot"]).name
     row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "repo": repo_name, "result": coder["result"],
-           "run": coder["runs"], "seconds": seconds, "failed": failed_count}
+           "run": coder["runs"], "seconds": seconds, "failed": failed_count, "timed_out": timed_out_count}
     append_gate_log(row)
 
 
@@ -452,7 +469,7 @@ def run_hook():
             return
 
         started = time.time()
-        failures, skipped = run_commands(gate)
+        failures, skipped, timed_out = run_commands(gate)
         seconds = round(time.time() - started)
 
         agent_id = event.get("agent_id") or "unknown"
@@ -460,8 +477,10 @@ def run_hook():
         coder["runs"] += 1
         coder["failed"] = [command for command, _, _ in failures]
         coder["skipped"] = skipped
+        coder["timed_out"] = [command for command, _ in timed_out]
+        coder["timed_out_tails"] = {command: output[-TIMEOUT_TAIL_CHARS:] for command, output in timed_out}
         if not failures:
-            coder["result"] = "pass"
+            coder["result"] = "timeout" if timed_out else "pass"
         elif coder["denies"] >= MAX_DENIES:
             coder["result"] = "cap"
         else:
@@ -470,7 +489,7 @@ def run_hook():
         gate["coders"][agent_id] = coder
         script_utils.write_text_atomically(gate_file, json.dumps(gate, indent=1))
 
-    log_gate_run(gate, coder, seconds, len(failures))
+    log_gate_run(gate, coder, seconds, len(failures), len(timed_out))
 
     if coder["result"] == "deny":
         print(json.dumps(denial(failures)))

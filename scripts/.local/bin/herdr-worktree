@@ -2,14 +2,17 @@
 # Create a git worktree as its own herdr workspace (a tuios session under
 # tuios), laid out by herdr-dev.
 #
-# Usage: herdr-worktree [--fork --prompt <text>] [--base <ref>] [branch]
-#   branch   prompted for when omitted (the prefix+ctrl+w popup).
-#   --fork   carry the Claude conversation running in this pane into the new
-#            workspace's claude pane, as a forked session. Needs --prompt.
-#   --prompt the brief the forked session starts working on at once. Only with
-#            --fork.
-#   --base   the ref to branch off. Defaults to origin's default branch, fetched
-#            first, or HEAD when the repo has no origin.
+# Usage: herdr-worktree [--fork --prompt-file <path> | --fork --prompt <text>]
+#                       [--base <ref>] [branch]
+#   branch        prompted for when omitted (the prefix+ctrl+w popup).
+#   --fork        carry the Claude conversation running in this pane into the
+#                 new workspace's claude pane, as a forked session. Needs a
+#                 brief: --prompt-file or --prompt.
+#   --prompt-file the file holding the brief the forked session starts working
+#                 on at once. Only with --fork.
+#   --prompt      the brief as text, in place of --prompt-file.
+#   --base        the ref to branch off. Defaults to origin's default branch,
+#                 fetched first, or HEAD when the repo has no origin.
 #
 # The worktree lands beside the main checkout: <repo>-<TICKET-NUM> for a
 # TICKET-NUM-desc branch, otherwise <repo>-<desc> (feature/ and fix/ dropped,
@@ -28,6 +31,7 @@ usage() { sed -n '2,/^$/s/^# \{0,1\}//p' "$0"; }
 
 fork=""
 prompt=""
+prompt_file=""
 base=""
 branch=""
 while [ $# -gt 0 ]; do
@@ -37,6 +41,11 @@ while [ $# -gt 0 ]; do
         --prompt)
             [ $# -ge 2 ] || { echo "herdr-worktree: --prompt needs text" >&2; exit 1; }
             prompt="$2"
+            shift
+            ;;
+        --prompt-file)
+            [ $# -ge 2 ] || { echo "herdr-worktree: --prompt-file needs a path" >&2; exit 1; }
+            prompt_file="$2"
             shift
             ;;
         --base)
@@ -53,10 +62,15 @@ while [ $# -gt 0 ]; do
     shift
 done
 
+if [ -n "$prompt_file" ]; then
+    [ -z "$prompt" ] || { echo "herdr-worktree: give --prompt or --prompt-file, not both" >&2; exit 1; }
+    prompt=$(cat -- "$prompt_file")
+fi
+
 [ -z "$fork" ] || [ -n "$prompt" ] \
-    || { echo "herdr-worktree: --fork needs --prompt <text>, the brief the forked session starts on" >&2; exit 1; }
+    || { echo "herdr-worktree: --fork needs a brief for the forked session: --prompt-file <path> or --prompt <text>" >&2; exit 1; }
 [ -z "$prompt" ] || [ -n "$fork" ] \
-    || { echo "herdr-worktree: --prompt only works with --fork" >&2; exit 1; }
+    || { echo "herdr-worktree: --prompt and --prompt-file only work with --fork" >&2; exit 1; }
 
 command -v herdr-api >/dev/null \
     || { echo "herdr-worktree: herdr-api is not on PATH; run ~/dotfiles/install/stow to link it into ~/.local/bin" >&2; exit 1; }

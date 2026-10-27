@@ -2,12 +2,14 @@
 # Create a git worktree as its own herdr workspace (a tuios session under
 # tuios), laid out by herdr-dev.
 #
-# Usage: herdr-worktree [--fork] [--base <ref>] [branch]
-#   branch  prompted for when omitted (the prefix+ctrl+w popup).
-#   --fork  carry the Claude conversation running in this pane into the new
-#           workspace's claude pane, as a forked session.
-#   --base  the ref to branch off. Defaults to origin's default branch, fetched
-#           first, or HEAD when the repo has no origin.
+# Usage: herdr-worktree [--fork --prompt <text>] [--base <ref>] [branch]
+#   branch   prompted for when omitted (the prefix+ctrl+w popup).
+#   --fork   carry the Claude conversation running in this pane into the new
+#            workspace's claude pane, as a forked session. Needs --prompt.
+#   --prompt the brief the forked session starts working on at once. Only with
+#            --fork.
+#   --base   the ref to branch off. Defaults to origin's default branch, fetched
+#            first, or HEAD when the repo has no origin.
 #
 # The worktree lands beside the main checkout: <repo>-<TICKET-NUM> for a
 # TICKET-NUM-desc branch, otherwise <repo>-<desc> (feature/ and fix/ dropped,
@@ -25,12 +27,18 @@ bin_dir="$(cd "$(dirname "$0")" && pwd)"
 usage() { sed -n '2,/^$/s/^# \{0,1\}//p' "$0"; }
 
 fork=""
+prompt=""
 base=""
 branch=""
 while [ $# -gt 0 ]; do
     case "$1" in
         -h|--help) usage; exit 0 ;;
         --fork) fork=1 ;;
+        --prompt)
+            [ $# -ge 2 ] || { echo "herdr-worktree: --prompt needs text" >&2; exit 1; }
+            prompt="$2"
+            shift
+            ;;
         --base)
             [ $# -ge 2 ] || { echo "herdr-worktree: --base needs a ref" >&2; exit 1; }
             base="$2"
@@ -44,6 +52,11 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
+
+[ -z "$fork" ] || [ -n "$prompt" ] \
+    || { echo "herdr-worktree: --fork needs --prompt <text>, the brief the forked session starts on" >&2; exit 1; }
+[ -z "$prompt" ] || [ -n "$fork" ] \
+    || { echo "herdr-worktree: --prompt only works with --fork" >&2; exit 1; }
 
 command -v herdr-api >/dev/null \
     || { echo "herdr-worktree: herdr-api is not on PATH; run ~/dotfiles/install/stow to link it into ~/.local/bin" >&2; exit 1; }
@@ -124,7 +137,7 @@ ws=$(jq -r '.result.workspace.workspace_id' <<<"$created")
 # on this workspace.
 herdr-api workspace focus "$ws" >/dev/null
 
-"$bin_dir/herdr-dev" "$worktree" "$ws" "$claude_session"
+"$bin_dir/herdr-dev" "$worktree" "$ws" "$claude_session" "$prompt"
 
 if git -C "$worktree" remote get-url origin &>/dev/null; then
     git -C "$worktree" push -u origin "$branch" \

@@ -1,9 +1,12 @@
 import glob
 import os
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
+
+import toolkit_paths
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = pathlib.Path(
@@ -406,6 +409,7 @@ class LoudFailureTest(unittest.TestCase):
         self.assert_fails_at("#### Manual Verification:\n\n- N/A beyond tests\n  detail\n", 4)
 
 
+@unittest.skipUnless(toolkit_paths.REAL_PLANS_ENABLED, toolkit_paths.REAL_PLANS_SKIP_REASON)
 class RealPlansTest(unittest.TestCase):
     """Every real plan under ~/dev/*/docs/{plans,eng-specs}/ parses, and every section yields phase-tagged items."""
 
@@ -446,6 +450,38 @@ class RealPlansTest(unittest.TestCase):
         print(
             f"parsed {len(paths)} of {len(paths)} real plans, {moved_count} moved Phase Status lines", file=sys.stderr
         )
+
+
+class RealPlansOptInTest(unittest.TestCase):
+    """A broken plan under ~/dev fails the real-plan sweep only when REAL_PLANS=1 asks for it."""
+
+    def setUp(self):
+        temp_home = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_home.cleanup)
+        self.home = pathlib.Path(temp_home.name)
+
+        plan_dir = self.home / "dev" / "some-repo" / "docs" / "plans" / "some-task"
+        plan_dir.mkdir(parents=True)
+        (plan_dir / "spec.md").write_text("#### Manual Verification:\n\n- [ ] x\n| a | b |\n")
+
+    def run_sweep(self, **environment):
+        sweep_env = {key: value for key, value in os.environ.items() if key != "REAL_PLANS"}
+        sweep_env.update(HOME=str(self.home), **environment)
+        return subprocess.run(
+            [sys.executable, "-m", "unittest", "test_plan_format.RealPlansTest"],
+            cwd=pathlib.Path(__file__).parent, env=sweep_env, capture_output=True, text=True, check=False,
+        )
+
+    def test_the_default_run_skips_a_broken_real_plan(self):
+        sweep = self.run_sweep()
+
+        self.assertEqual(0, sweep.returncode, sweep.stderr)
+        self.assertIn("skipped", sweep.stderr)
+
+    def test_real_plans_set_to_1_fails_on_a_broken_real_plan(self):
+        sweep = self.run_sweep(REAL_PLANS="1")
+
+        self.assertNotEqual(0, sweep.returncode, sweep.stderr)
 
 
 AUTOMATED_PLAN = """# Plan
@@ -622,11 +658,17 @@ class RepoGateEnvTest(unittest.TestCase):
 
         self.assertEqual(["A=2"], plan_format.repo_gate_env(self.root, own_plan))
 
-    def test_the_plan_of_the_run_keeps_the_names_the_other_plans_agree_on(self):
+    def test_the_plan_of_the_run_takes_no_name_that_only_other_plans_set(self):
         self.write_plan("one", "B=9 cargo test")
         own_plan = self.write_plan("two", "A=2 cargo test")
 
-        self.assertEqual(["A=2", "B=9"], sorted(plan_format.repo_gate_env(self.root, own_plan)))
+        self.assertEqual(["A=2"], plan_format.repo_gate_env(self.root, own_plan))
+
+    def test_a_plan_with_no_names_gives_none_even_when_other_plans_agree(self):
+        self.write_plan("one", "B=9 cargo test")
+        own_plan = self.write_plan("two", "cargo test")
+
+        self.assertEqual([], plan_format.repo_gate_env(self.root, own_plan))
 
     def test_shell_junk_in_other_plans_adds_no_names_and_literal_settings_stay(self):
         self.write_plan("one", "n=$(ledger count) && test 1 = 1")

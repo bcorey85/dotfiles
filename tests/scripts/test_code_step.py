@@ -35,6 +35,8 @@ code_step = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(code_step)
 import code_step_boundary  # noqa: E402
 import code_step_core  # noqa: E402
+import code_step_gates  # noqa: E402
+import code_step_report  # noqa: E402
 import plan_format  # noqa: E402
 
 PLAN = """# Orders Plan
@@ -133,9 +135,8 @@ class CodeStepTest(unittest.TestCase):
         (self.claude / "skills/review").mkdir(parents=True)
         for name in ("coder_gate.py", "resolve-task-dir.sh"):
             stage_script(REAL_CLAUDE / "scripts", name, self.claude / "scripts")
-        for name in ("coder_packet.py", "plan_format.py", "script_utils.py", "code_step_core.py",
-                     "code_step_boundary.py", "code_step_hooks.py", "shell_command.py", "makefile_text.py",
-                     "test_run_output.py"):
+        for name in ("coder_packet.py", "plan_format.py", "script_utils.py", *toolkit_paths.CODE_STEP_MODULES,
+                     "shell_command.py", "makefile_text.py", "test_run_output.py"):
             stage_script(SCRIPTS_ROOT, name, self.claude / "scripts")
         self.log = self.tmp / "calls.log"
         (self.claude / "scripts" / "telemetry").mkdir()
@@ -156,10 +157,12 @@ class CodeStepTest(unittest.TestCase):
         self.env = dict(os.environ, CODE_STEP_CLAUDE_DIR=str(self.claude), **self.GIT_IDENTITY,
                         CODE_STEP_NVIM_JUMP=str(self.nvim_jump),
                         HOME=str(self.home), CODE_STEP_WAIT_SECONDS="0", CLAUDE_CODE_SESSION_ID=self.SESSION,
+                        CODE_STEP_REVIEW_LOOP="agent",
                         HANDBACK_STORE_DIR=str(self.tmp / "handback-store"),
                         PYTHONPATH=str(HANDBACK_SCRIPT.parent))
         self.env.pop("CODE_STEP_IMPACT_DECISION", None)
         self.env.pop("CODE_STEP_ASKS_OUTCOME", None)
+        self.env.pop("CLAUDE_FORMAT_HOOK_OFF", None)
         self.plan = "docs/plans/orders/spec.md"
         self.gate_commands = ["true"]
 
@@ -541,7 +544,7 @@ class CodeStepTest(unittest.TestCase):
                 clippy = "cd crate && cargo clippy --all-targets -- -D warnings"
                 wanted = [clippy] + ([f"cd crate && {expected}"] if expected else [])
 
-                self.assertEqual(wanted, code_step.cargo_commands(self.repo, [path]))
+                self.assertEqual(wanted, code_step_gates.cargo_commands(self.repo, [path]))
 
     def test_cargo_commands_are_merged_per_crate_without_duplicates_and_never_run_a_whole_crate(self):
         for crate in ("one", "two"):
@@ -550,7 +553,7 @@ class CodeStepTest(unittest.TestCase):
             (self.repo / crate / "Cargo.toml").write_text(f'[package]\nname = "{crate}"\n')
         paths = ["one/src/a.rs", "two/src/b.rs", "one/src/a.rs", "one/src/lib.rs", "one/Cargo.toml", "one/src/c.rs"]
 
-        commands = code_step.cargo_commands(self.repo, paths)
+        commands = code_step_gates.cargo_commands(self.repo, paths)
 
         clippy = "cargo clippy --all-targets -- -D warnings"
         self.assertEqual([f"cd one && {clippy}", "cd one && cargo test --lib --bins",
@@ -564,7 +567,7 @@ class CodeStepTest(unittest.TestCase):
         paths = ["crate/tests/side_streams.rs", "crate/src/a.rs", "crate/tests/common/mod.rs", "crate/src/bin/tool.rs",
                  "crate/tests/orders.rs"]
 
-        commands = code_step.cargo_commands(self.repo, paths)
+        commands = code_step_gates.cargo_commands(self.repo, paths)
 
         self.assertEqual(["cd crate && cargo clippy --all-targets -- -D warnings", "cd crate && cargo test --tests"],
                          commands)
@@ -575,7 +578,7 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "lib/src/lib.rs").write_text("")
         (self.repo / "lib/Cargo.toml").write_text('[package]\nname = "lib"\n')
 
-        commands = code_step.cargo_commands(self.repo, ["lib/src/store/query.rs", "lib/src/orders.rs"])
+        commands = code_step_gates.cargo_commands(self.repo, ["lib/src/store/query.rs", "lib/src/orders.rs"])
 
         self.assertEqual(["cd lib && cargo clippy --all-targets -- -D warnings", "cd lib && cargo test --lib --bins"],
                          commands)
@@ -585,7 +588,7 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "lib/src/lib.rs").write_text("")
         (self.repo / "lib/Cargo.toml").write_text('[package]\nname = "lib"\n')
 
-        commands = code_step.cargo_commands(self.repo, ["lib/src/lib.rs"])
+        commands = code_step_gates.cargo_commands(self.repo, ["lib/src/lib.rs"])
 
         self.assertEqual(["cd lib && cargo clippy --all-targets -- -D warnings", "cd lib && cargo test --lib --bins"],
                          commands)
@@ -595,7 +598,7 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "both/src/lib.rs").write_text("")
         (self.repo / "both/Cargo.toml").write_text('[package]\nname = "both"\n')
 
-        commands = code_step.cargo_commands(self.repo, ["both/src/bin/tool.rs"])
+        commands = code_step_gates.cargo_commands(self.repo, ["both/src/bin/tool.rs"])
 
         self.assertEqual(["cd both && cargo clippy --all-targets -- -D warnings", "cd both && cargo test --bin tool"],
                          commands)
@@ -605,8 +608,8 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "tool/src/main.rs").write_text("")
         (self.repo / "tool/Cargo.toml").write_text('[package]\nname = "tool"\n')
 
-        commands = code_step.cargo_commands(self.repo, ["tool/src/store/query.rs", "tool/src/store/mod.rs",
-                                                        "tool/src/main.rs"])
+        commands = code_step_gates.cargo_commands(self.repo, ["tool/src/store/query.rs", "tool/src/store/mod.rs",
+                                                              "tool/src/main.rs"])
 
         self.assertEqual(["cd tool && cargo clippy --all-targets -- -D warnings", "cd tool && cargo test --bins"],
                          commands)
@@ -617,7 +620,7 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "both/src/main.rs").write_text("")
         (self.repo / "both/Cargo.toml").write_text('[package]\nname = "both"\n')
 
-        commands = code_step.cargo_commands(self.repo, ["both/src/store.rs", "both/src/main.rs"])
+        commands = code_step_gates.cargo_commands(self.repo, ["both/src/store.rs", "both/src/main.rs"])
 
         self.assertEqual(["cd both && cargo clippy --all-targets -- -D warnings", "cd both && cargo test --lib --bins"],
                          commands)
@@ -626,7 +629,7 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "Cargo.toml").write_text('[package]\nname = "root-crate"\n')
         (self.repo / "src").mkdir()
 
-        commands = code_step.cargo_commands(self.repo, ["Cargo.toml", "benches/speed.rs", "build.rs"])
+        commands = code_step_gates.cargo_commands(self.repo, ["Cargo.toml", "benches/speed.rs", "build.rs"])
 
         self.assertEqual(["cargo clippy --all-targets -- -D warnings"], commands)
 
@@ -1716,6 +1719,16 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn(expected, (self.repo / ".git/code-step/say.log").read_text())
         again = run(self.repo, self.env, "say-hook", stdin=json.dumps({"cwd": str(self.repo)}))
         self.assertEqual("", again.stdout)
+
+    def test_say_hook_of_a_child_session_leaves_the_text_for_the_main_session(self):
+        self.coder_round()
+        expected = self.said().strip()
+        child_env = {**self.env, "CLAUDE_FORMAT_HOOK_OFF": "1"}
+        result = run(
+            self.repo, child_env, "say-hook", stdin=json.dumps({"cwd": str(self.repo), "hook_event_name": "Stop"})
+        )
+        self.assertEqual(("", 0), (result.stdout, result.returncode))
+        self.assertEqual(expected, self.said().strip())
 
     def test_say_hook_is_silent_without_a_run(self):
         result = run(self.repo, self.env, "say-hook", stdin=json.dumps({"cwd": str(self.repo)}))
@@ -2874,10 +2887,10 @@ class CodeStepTest(unittest.TestCase):
 
     def test_ambiguous_wording_is_flagged_but_unambiguous_is_not(self):
         self.assertEqual(["The plan is ambiguous about rounding."],
-                         code_step.coder_flags("The plan is ambiguous about rounding."))
-        self.assertEqual(["Two ambiguities remain."], code_step.coder_flags("Two ambiguities remain."))
-        self.assertEqual([], code_step.coder_flags("The spec was unambiguous."))
-        self.assertEqual([], code_step.coder_flags("No ambiguities found."))
+                         code_step_report.coder_flags("The plan is ambiguous about rounding."))
+        self.assertEqual(["Two ambiguities remain."], code_step_report.coder_flags("Two ambiguities remain."))
+        self.assertEqual([], code_step_report.coder_flags("The spec was unambiguous."))
+        self.assertEqual([], code_step_report.coder_flags("No ambiguities found."))
 
     def test_start_clears_say_text_left_by_a_finished_phase_but_keeps_the_auto_advance_text(self):
         self.finish_phase_one()
@@ -3184,15 +3197,25 @@ class CodeStepTest(unittest.TestCase):
             self.commit_lines(),
         )
 
-    def test_the_commit_command_leaves_out_files_that_were_dirty_before_the_phase(self):
+    def test_the_commit_command_leaves_out_files_that_were_dirty_before_the_phase_and_untouched_by_it(self):
+        (self.repo / "backend/src/existing.ts").write_text("export const a = 2\n")
+        self.finish_phase_one()
+        self.assertEqual(1, len(self.commit_lines()))
+        self.assertNotIn("existing.ts", self.commit_lines()[0])
+        self.assertIn("Dirty before the phase and left out of the commit: backend/src/existing.ts", self.said())
+        self.assertNotIn("Edited by this phase", self.said())
+
+    def test_the_commit_command_includes_a_file_that_was_dirty_before_the_phase_and_edited_by_it(self):
         (self.repo / "backend/src/existing.ts").write_text("export const a = 2\n")
         self.coder_round()
         (self.repo / "backend/src/existing.ts").write_text("export const a = 3\n")
         self.hook("review-loop", self.LOOP_OK)
         self.step("after-review")
         self.assertEqual(1, len(self.commit_lines()))
-        self.assertNotIn("existing.ts", self.commit_lines()[0])
-        self.assertIn("Dirty before the phase and left out of the commit: backend/src/existing.ts", self.said())
+        self.assertIn(" backend/src/existing.ts", self.commit_lines()[0])
+        self.assertIn("Edited by this phase, was dirty before", self.said())
+        self.assertIn("backend/src/existing.ts", self.said().split("Edited by this phase, was dirty before")[1])
+        self.assertNotIn("left out of the commit: backend/src/existing.ts", self.said())
 
     def test_the_commit_command_includes_the_plan_when_it_was_dirty_before_the_phase_and_says_so(self):
         (self.repo / self.plan).write_text(self.plan_text().replace("Add orders.", "Add orders and returns."))
@@ -3318,7 +3341,7 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("start", "--restart", "docs/plans/orders/missing.md")
         self.assertIn("ACTION: ask-user", out)
         state = self.state()
-        self.assertEqual("stopped", state["stage"])
+        self.assertIsNone(state.get("stage"))
         self.assertNotIn("dispatchAt", state)
 
     def test_start_takes_flag_like_words_after_the_task_start_as_task_text(self):
@@ -3450,8 +3473,8 @@ class CodeStepTest(unittest.TestCase):
     def test_missing_handback_module_stops_the_run_and_writes_no_gate_file(self):
         bare = self.tmp / "bare"
         bare.mkdir()
-        for name in (SCRIPT.name, "script_utils.py", "plan_format.py", "reviewed_tree.py", "code_step_core.py",
-                     "code_step_boundary.py", "code_step_hooks.py", "test_run_output.py"):
+        for name in (SCRIPT.name, "script_utils.py", "plan_format.py", "reviewed_tree.py",
+                     *toolkit_paths.CODE_STEP_MODULES, "test_run_output.py", "shell_command.py"):
             shutil.copy(toolkit_paths.script_in(SCRIPTS_ROOT, name), bare / name)
         env = dict(self.env, PYTHONPATH="")
         script = str(bare / SCRIPT.name)
@@ -3752,7 +3775,7 @@ class CodeStepTest(unittest.TestCase):
         }
         for name, report in shapes.items():
             with self.subTest(name):
-                found = code_step.plan_impact_block(report)
+                found = code_step_report.plan_impact_block(report)
                 self.assertIsNotNone(found)
                 self.assertNotIn("block not found", found)
                 self.assertIn("assumed", found)
@@ -4143,7 +4166,7 @@ class CodeStepTest(unittest.TestCase):
             self.assertIn(f"Phase {number} (gate: the data team signs off)", out)
         state = self.state()
         self.assertNotIn("dispatchAt", state)
-        self.assertEqual("stopped", state["stage"])
+        self.assertIsNone(state.get("stage"))
 
     def test_a_gated_phase_that_is_done_is_not_named_when_start_stops_at_an_open_one(self):
         self.mark_phases_done(1)
@@ -5045,13 +5068,13 @@ class CodeStepTest(unittest.TestCase):
                  "tail -n 5 -f app.log", "tail --follow app.log", "FOO=1 sleep 5", "/usr/bin/watch ls",
                  "tail -Fn5 app.log", "tail -fn20 x")
 
-        with unittest.mock.patch.object(code_step.shutil, "which", return_value="/usr/bin/anything"):
+        with unittest.mock.patch.object(shutil, "which", return_value="/usr/bin/anything"):
             for span in spans:
                 with self.subTest(span=span):
                     self.assertFalse(code_step_boundary.starts_like_a_program_here(span, self.repo))
 
     def test_tail_without_follow_is_a_fallback_command(self):
-        with unittest.mock.patch.object(code_step.shutil, "which", return_value="/usr/bin/tail"):
+        with unittest.mock.patch.object(shutil, "which", return_value="/usr/bin/tail"):
             for span in ("tail -n 5 app.log", "tail app.log", "tail -c 20 app.log"):
                 with self.subTest(span=span):
                     self.assertTrue(code_step_boundary.starts_like_a_program_here(span, self.repo))
@@ -5075,7 +5098,7 @@ class CodeStepTest(unittest.TestCase):
                 self.assertFalse(code_step_boundary.starts_like_a_program_here(span, self.repo))
 
     def test_a_relative_path_is_never_looked_up_from_the_working_directory_as_a_path_program(self):
-        with unittest.mock.patch.object(code_step.shutil, "which", return_value="/anywhere/tool"):
+        with unittest.mock.patch.object(shutil, "which", return_value="/anywhere/tool"):
             self.assertFalse(code_step_boundary.starts_like_a_program_here("../tool --x", self.repo))
             self.assertFalse(code_step_boundary.starts_like_a_program_here("sub/tool --x", self.repo))
             self.assertTrue(code_step_boundary.starts_like_a_program_here("tool --x", self.repo))
@@ -5286,15 +5309,26 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertNotIn("gate-env:", self.printed_prompt(out))
 
-    def test_the_coder_gate_runs_its_commands_with_the_gate_variables_of_the_repo(self):
+    def test_the_coder_gate_runs_its_commands_with_the_gate_variables_of_the_plan_alone(self):
         self.set_verification("- [ ] **Env**: passes - `GATE_X=1 npx vitest run`")
         self.add_plan_with_gate("other", 'GATE_Y="two words" cargo test')
 
         out = self.start_phase_one()
 
         gate = json.loads((self.repo / ".git/coder-gate.json").read_text())
-        self.assertEqual({"GATE_X": "1", "GATE_Y": "two words"}, gate["env"])
-        self.assertIn('With: GATE_X=1 GATE_Y="two words".', out)
+        self.assertEqual({"GATE_X": "1"}, gate["env"])
+        self.assertIn("With: GATE_X=1.", out)
+
+    def test_a_plan_dispatch_names_only_its_own_gate_values_and_none_another_plan_sets(self):
+        self.set_verification("- [ ] **Env**: passes - `GATE_PORT=5001 npx vitest run`")
+        self.add_plan_with_gate("other", "GATE_PORT=6002 GATE_PROJECT=other cargo test")
+
+        out = self.start_phase_one()
+
+        prompt = self.printed_prompt(out)
+        self.assertIn("gate-env: GATE_PORT=5001", prompt)
+        self.assertNotIn("6002", prompt)
+        self.assertNotIn("GATE_PROJECT", prompt)
 
     def test_the_coder_gate_given_no_gate_variables_stores_none_and_says_nothing_about_them(self):
         out = self.start_phase_one()

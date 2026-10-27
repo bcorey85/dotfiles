@@ -5,8 +5,6 @@ import json
 import os
 import pathlib
 import re
-import shutil
-import subprocess
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / "lib")]
@@ -17,16 +15,6 @@ TOOLKIT_DIR = pathlib.Path(__file__).resolve().parents[2]
 STATE_ROOT = pathlib.Path.home() / ".claude" / "state"
 REVIEW_MARKER = "verify-branch"
 REVIEW_GATE = "code-reviewer"
-# `ledger yield` waits up to 10 s on a locked database, then exits 75. A busy ledger is never read as "no review ran".
-LEDGER_BUSY_EXIT = 75
-LEDGER_ATTEMPTS = 4
-# The environment variables set the call timeout and the pause between tries; they exist so a test need not wait.
-LEDGER_CALL_TIMEOUT_SECONDS = 60
-LEDGER_BACKOFF_SECONDS = 3
-LEDGER_TIMEOUT_ENV = "VERIFY_LEDGER_TIMEOUT_SECONDS"
-LEDGER_BACKOFF_ENV = "VERIFY_LEDGER_BACKOFF_SECONDS"
-LEDGER_BUSY_MESSAGE = ("the ledger is busy (another process holds the database), so the review state could not be "
-                       "read; run this step again in a minute")
 # Accepted id spans: a plain id, an id followed by a parenthetical, an id with a qualifier inside the bold,
 # or several comma-separated ids inside one bold span.
 ID_LINE = re.compile(r"^\s*[-*]\s+\*\*(AC\d+[^*]*)\*\*\s*(?:\([^)]*\))?\s*[—–-]+\s*(.*)$")
@@ -196,23 +184,16 @@ def branch_fingerprint(top, merge_base, exclude_rel=None):
 def review_ran(repo, branch, fingerprint):
     """(ran, reason). A branch-exit code-reviewer run row that verify-log wrote (it carries REVIEW_MARKER and a tree
     fingerprint) counts when its fingerprint equals `fingerprint`. `ledger yield --review-trees` lists the
-    fingerprints of the checkout the process runs in, so `repo` and `branch` come from that checkout."""
-    if shutil.which("ledger") is None:
-        return False, "ledger not installed"
+    fingerprints of the checkout the process runs in, so `repo` and `branch` come from that checkout. Raises
+    script_utils.LedgerUnreadError when the ledger is not installed, stays busy after the shared wait, or fails."""
     try:
-        listed = script_utils.run_retrying(
-            ["ledger", "yield", "--review-trees"], (LEDGER_BUSY_EXIT,), LEDGER_ATTEMPTS,
-            float(os.environ.get(LEDGER_BACKOFF_ENV, LEDGER_BACKOFF_SECONDS)),
-            float(os.environ.get(LEDGER_TIMEOUT_ENV, LEDGER_CALL_TIMEOUT_SECONDS)))
+        listed = script_utils.read_ledger(["yield", "--review-trees"])
     except OSError as error:
-        raise VerifyError(f"cannot run ledger: {error}") from error
-    except subprocess.TimeoutExpired:
-        raise VerifyError(LEDGER_BUSY_MESSAGE) from None
-    if listed.returncode == LEDGER_BUSY_EXIT:
-        raise VerifyError(LEDGER_BUSY_MESSAGE)
+        raise script_utils.LedgerUnreadError(f"ledger yield --review-trees: cannot run ledger: {error}") from error
+
     if listed.returncode != 0:
-        error_lines = listed.stderr.strip().splitlines()
-        raise VerifyError(error_lines[-1] if error_lines else f"ledger yield --review-trees exited {listed.returncode}")
+        raise script_utils.LedgerUnreadError(
+            f"ledger yield --review-trees: {script_utils.ledger_failure_reason(listed)}")
 
     trees = listed.stdout.splitlines()[1:]
     if not trees:
@@ -220,6 +201,20 @@ def review_ran(repo, branch, fingerprint):
     if fingerprint in trees:
         return True, f"{REVIEW_GATE} run row in the ledger, tree unchanged since"
     return False, "the tree differs from the one reviewed"
+
+
+def review_state(repo, branch, fingerprint, logged_tree):
+    """{"read", "ran", "reason"} for the context's `review`. read is True when the ledger answered. When it gives no
+    answer (not installed, busy or failing), read is False, and the review counts as ran only when verify-log logged
+    one for this same tree from this branch's saved context (`logged_tree` is the fingerprint it saved there)."""
+    try:
+        ran, reason = review_ran(repo, branch, fingerprint)
+    except script_utils.LedgerUnreadError as error:
+        logged_here = logged_tree == fingerprint
+        record = ("verify-log logged a review of this tree from this checkout" if logged_here
+                  else "no review of this tree was logged from this checkout")
+        return {"read": False, "ran": logged_here, "reason": f"{error}; {record}"}
+    return {"read": True, "ran": ran, "reason": reason}
 
 
 def context_path(repo, branch):

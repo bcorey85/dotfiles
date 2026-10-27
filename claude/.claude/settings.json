@@ -522,6 +522,15 @@
             "type": "command"
           }
         ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/agent-model-guard.sh"
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -583,6 +592,15 @@
             "command": "tuios agent-hook claude-code --integration 3",
             "timeout": 5,
             "type": "command"
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/warn-skip-hooks.sh"
           }
         ]
       }

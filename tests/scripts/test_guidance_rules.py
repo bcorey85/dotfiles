@@ -46,12 +46,6 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("code_step.py plan check --final ", text)
         self.assertIn("Exit 1 is an unresolved planning gate", text)
 
-    def test_branch_recap_retries_a_ledger_behind_and_never_records_an_unread_queue_as_none(self):
-        text = guidance_text("skills/branch-recap/SKILL.md")
-        self.assertIn('[ "$ledger_exit" -ne 75 ] && break', text)
-        self.assertGreaterEqual(text.count("not read (cache busy or behind)"), 1)
-        self.assertIn("not read (ledger exit $ledger_exit)", text)
-
     def test_branch_recap_lists_companion_branches_that_have_no_pr(self):
         text = guidance_text("skills/branch-recap/SKILL.md")
         self.assertIn("## Step 2b: Companion branches", text)

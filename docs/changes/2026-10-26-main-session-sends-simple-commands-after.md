@@ -3,7 +3,7 @@ type: "Change"
 title: "Main session sends simple commands after EnterWorktree"
 description: "The orchestration rule says Claude Code's own worktree guard refuses chains, $VAR, $(...) and heredocs after EnterWorktree, and to send one simple command per call with literal paths, in the session and in every subagent brief."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:39:43-05:00"}
-seq: 77
+seq: 96
 kind: "fix"
 components: ["rule/orchestration"]
 evidence: ["judgment"]

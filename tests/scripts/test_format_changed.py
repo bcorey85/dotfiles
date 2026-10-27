@@ -452,6 +452,12 @@ class FormatChangedTest(unittest.TestCase):
         self.repo.hook("Stop")
         self.assertEqual(self.repo.calls(), [])
 
+    def test_stop_with_format_hook_off_formats_nothing(self):
+        self.repo.hook("UserPromptSubmit")
+        self.repo.put("a.ts", "1")
+        self.repo.hook("Stop", extra_env={"CLAUDE_FORMAT_HOOK_OFF": "1"})
+        self.assertEqual(self.repo.calls(), [])
+
     def test_sessions_do_not_share_snapshots(self):
         self.repo.hook("UserPromptSubmit", session="one")
         self.repo.put("a.ts", "1")
@@ -490,6 +496,10 @@ class FormatChangedTest(unittest.TestCase):
 
     def test_skip_hooks_exits_quietly_and_writes_nothing(self):
         finished = self.repo.hook("UserPromptSubmit", extra_env={"CLAUDE_SKIP_HOOKS": "1"})
+        self.assertEqual((finished.returncode, finished.stdout, self.repo.state_files()), (0, b"", []))
+
+    def test_format_hook_off_exits_quietly_and_writes_nothing(self):
+        finished = self.repo.hook("UserPromptSubmit", extra_env={"CLAUDE_FORMAT_HOOK_OFF": "1"})
         self.assertEqual((finished.returncode, finished.stdout, self.repo.state_files()), (0, b"", []))
 
     def test_empty_skip_hooks_still_runs(self):

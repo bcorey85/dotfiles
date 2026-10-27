@@ -10,6 +10,8 @@ Never add a `Claude-Session:` line, a session link, or any other attribution lin
 
 When the user must run git or shell commands, give one `!` line that chains them all with `&&`, never a series of lines to run one by one.
 
+Never wrap text for the user to paste (a comment, message or reply) in a Markdown blockquote (`>`): the terminal renders it with a `▎` bar on every line, which the copy picks up. Give it as plain text.
+
 ## Quality Checks
 
 Coders run only the tests for the files they changed. The full suite runs once, at the end of review.

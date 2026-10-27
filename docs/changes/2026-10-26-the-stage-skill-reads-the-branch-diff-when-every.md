@@ -3,7 +3,7 @@ type: "Change"
 title: "The stage skill reads the branch diff when every phase is committed"
 description: "stage.mjs --run on a clean tree classifies the branch diff against its merge-base with the default branch, in report-only mode, instead of finding nothing."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:36:12-05:00"}
-seq: 74
+seq: 93
 kind: "fix"
 components: ["skill/stage"]
 evidence: ["judgment"]

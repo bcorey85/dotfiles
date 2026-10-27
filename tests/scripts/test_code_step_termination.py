@@ -66,8 +66,7 @@ CLAUDE_STUB = TMP_ROOT / "claude"
 (CLAUDE_STUB / "scripts").mkdir(parents=True)
 (CLAUDE_STUB / "skills/review").mkdir(parents=True)
 for script_name in ("coder_gate.py", "coder_packet.py", "plan_format.py", "script_utils.py", "resolve-task-dir.sh",
-                    "code_step_core.py", "code_step_boundary.py", "code_step_hooks.py", "shell_command.py",
-                    "makefile_text.py", "test_run_output.py"):
+                    *toolkit_paths.CODE_STEP_MODULES, "shell_command.py", "makefile_text.py", "test_run_output.py"):
     try:
         source_file = toolkit_paths.script_in(SCRIPTS_ROOT, script_name)
     except FileNotFoundError:
@@ -82,6 +81,7 @@ for stub_name in ("scripts/telemetry/log-scan", "skills/review/log-review-findin
     stub_file.chmod(0o755)
 GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
            "CODE_STEP_CLAUDE_DIR": str(CLAUDE_STUB), "CODE_STEP_WAIT_SECONDS": "0", "HOME": str(TMP_ROOT / "home"),
+           "CODE_STEP_REVIEW_LOOP": "agent",
            "CLAUDE_CODE_SESSION_ID": "sess-termination", "CODE_STEP_NVIM_JUMP": "true",
            # The explorer makes no Agent calls and takes minutes: no dispatch may age into the launch grace period.
            "CODE_STEP_LAUNCH_SECONDS": "1000000"}

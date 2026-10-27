@@ -3,7 +3,7 @@ type: "Change"
 title: "eng-spec stops before handoff when the criteria file was never written"
 description: "plan check gains --final, which also fails a spec with an Acceptance Criteria section whose acceptance-criteria.md is missing or empty and names the spec-criteria step; eng-spec's handoff runs it before it reports the plan saved."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:53:23-05:00"}
-seq: 84
+seq: 103
 kind: "fix"
 components: ["skill/eng-spec"]
 evidence: ["judgment"]

@@ -242,6 +242,9 @@ def print_plan(context):
                  "covers committed and uncommitted changes")
     if untracked:
         lines.append(f"  {untracked}: they are part of the branch.")
+    if not context["review"]["read"]:
+        lines.append("  review state: not read from the ledger (it stayed busy); this checkout's own record of the "
+                     "logged review stood in. Name this skipped input in your report.")
     lines += gate_env_lines
     lines += [f"  {ticket_line}" for ticket_line in criteria["ticketLines"]]
     lines.append("  ---")
@@ -277,15 +280,17 @@ def main(argv):
 
     exclude_rel = excluded_from_fingerprint(mode, ticket_path, plan_path, top)
     fingerprint = vc.branch_fingerprint(top, merge_base, exclude_rel)
-    ran, reason = vc.review_ran(repo, branch, fingerprint)
 
     state_path = vc.context_path(repo, branch)
-    earlier_escapes = []
+    earlier_context = {}
     if state_path.is_file():
         try:
-            earlier_escapes = vc.load_context(state_path).get("escapes", [])
+            earlier_context = vc.load_context(state_path)
         except ValueError:
-            earlier_escapes = []
+            earlier_context = {}
+    earlier_escapes = earlier_context.get("escapes", [])
+    review_logged_tree = earlier_context.get("reviewLoggedTree")
+    review = vc.review_state(repo, branch, fingerprint, review_logged_tree)
 
     plan_file = plan_path or ticket_path
     plan_rel = vc.repo_relative(plan_file, top) or str(plan_file)
@@ -294,8 +299,8 @@ def main(argv):
                "plan": str(plan_path) if plan_path else None, "planRel": plan_rel, "criteriaPath": criteria_path,
                "gateEnv": gate_env,
                "baseRef": base_ref, "mergeBase": merge_base, "diff": diff, "criteria": criteria,
-               "excludeRel": exclude_rel, "fingerprint": fingerprint, "review": {"ran": ran, "reason": reason},
-               "logged": False, "escapes": earlier_escapes}
+               "excludeRel": exclude_rel, "fingerprint": fingerprint, "review": review,
+               "reviewLoggedTree": review_logged_tree, "logged": False, "escapes": earlier_escapes}
     vc.save_context(state_path, context)
     print(print_plan(context))
     return 0

@@ -110,7 +110,7 @@ sha256sum <target> | cut -c1-16          # must equal pre_hash
 ```
 
 - Matches → `rm "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration"/lock.json`, and say in your report that the restore
-  was hash-verified. **If a safety gate blocks that removal, you are done: report the verdict, state the block, and print the exact command for the user to run. Never retry by another mechanism.**
+  was hash-verified. **If a safety gate blocks that removal, you are done: report the verdict, state the block, and print the exact command for your caller to run. Never retry by another mechanism.**
 - **Does not match** → **STOP and say so loudly**, with the target path and the backup path,
   at the very top of your report. Do not delete the lock. Do not report a verdict as though
   the run completed normally.

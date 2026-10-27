@@ -436,6 +436,20 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn(open_member, [entry["finding"] for entry in packet["fixed"]])
         self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 2)
 
+    def test_a_class_closure_reply_with_braces_in_its_prose_still_reads_the_closing_object(self):
+        closure = f"Closed. Every `{{CUBE}}.flag` site re-read.\n\n```json\n{CLOSED}\n```"
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": closure}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertIn("one exit, all re-read", packet["class_closure"])
+
     def test_a_coder_report_of_plan_impact_stops_with_the_report_and_no_second_review(self):
         report = "Cannot fix 1: it needs a new column the plan rules out.\nplan-impact: yes"
 

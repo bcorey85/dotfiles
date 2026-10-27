@@ -28,7 +28,9 @@ git rev-parse --show-toplevel && git status --porcelain
 
 - The dispatch does not state a test command → stop and say so. Never infer one from the repo.
 - Not a git repo → stop.
-- **Lock file exists** (`${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration/lock.json`, or the old `~/.claude/calibration-lock.json`) → **STOP**. A previous
+- **Lock file exists** (`${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration/lock.json`, or the old `~/.claude/calibration-lock.json`) → **STOP**. If
+  `python3 ~/.claude/scripts/gates/calibration_guard.py --live --session-pid "$PPID"` exits 0 the lock is live: report its owner and
+  worktree and stop; never restore or delete it. Otherwise a previous
   `mutation-tester` or `/calibrate` run mutated a file and never restored it. Report the
   lock's `file` and `backup_path` and stop. Never mutate on top of an unrestored mutation.
   Stop either way; never clear someone else's lock.
@@ -52,8 +54,9 @@ Hash the **file's contents**, not `git diff`.
 ```bash
 jq -n --arg f "<target>" --arg b "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration/backups/$(basename <target>).bak" \
       --arg h "<pre-mutation hash>" --arg c "mutant: <one-line description>" --arg l "<line>" \
-      '{ts: (now|todate), kind: "mutation-test", file: $f, backup_path: $b,
-        pre_hash: $h, class: $c, line: $l}' \
+      --arg w "$(git rev-parse --show-toplevel)" --argjson p "$PPID" \
+      '{ts: (now|todate), kind: "mutation-test", writer: "mutation-tester", file: $f, backup_path: $b,
+        pre_hash: $h, class: $c, line: $l, worktree: $w, owner_pid: $p}' \
   > "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration"/lock.json
 ```
 

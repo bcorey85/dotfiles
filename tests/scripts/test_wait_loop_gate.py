@@ -106,6 +106,12 @@ class WaitLoopGateTest(unittest.TestCase):
         self.assert_passes("cat > notes.md <<'EOF'\nuntil the build is green, sleep 600 and tail -f the log\n"
                            "while true; do sleep 1; done\nEOF\nls")
 
+    def test_heredoc_with_an_escaped_or_hyphenated_delimiter_hides_its_follow_words(self):
+        for opener, delimiter in (("<<\\EOF", "EOF"), ("<<'END-DATA'", "END-DATA"), ("<<-RULE.TXT", "RULE.TXT")):
+            with self.subTest(opener=opener):
+                self.assert_passes(f"cat > rule.txt {opener}\nwatch x\ntail -f app.log\n{delimiter}\nls")
+                self.assert_denied(f"cat > rule.txt {opener}\nfixture\n{delimiter}\nwatch x")
+
     def test_quoted_text_passes(self):
         self.assert_passes('echo "until ready; do sleep 60; done"')
 

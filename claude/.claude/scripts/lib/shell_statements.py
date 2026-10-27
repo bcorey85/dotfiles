@@ -2,7 +2,7 @@
 import re
 
 SKIP_WORDS = {"do", "then", "else", "elif", "if", "!", "time"}
-HEREDOC = re.compile(r"(?<!<)<<(?!<)-?\s*(['\"]?)([A-Za-z_]\w*)\1")
+HEREDOC = re.compile(r"(?<!<)<<(?!<)-?\s*\\?(['\"]?)([A-Za-z_][\w.-]*)\1")
 QUOTED = re.compile(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"")
 COMMENT = re.compile(r"(^|\s)#[^\n]*")
 COMMAND_SUBSTITUTION = re.compile(r"\$\(([^()]*)\)")

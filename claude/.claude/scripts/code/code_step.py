@@ -193,24 +193,32 @@ PATH_IN_BACKTICKS = re.compile(r"`([\w.@-]+(?:/[\w.@\[\]()-]+)+\.\w+)(?::\d+(?:-
 # ---------- plan check ----------
 
 def command_plan(args):
-    if len(args) < 2 or args[0] not in ("check", "parse"):
-        sys.exit("usage: code_step.py plan check|parse <path>")
-    plan_lines = pathlib.Path(args[1]).read_text().splitlines()
+    # `plan check --final <path>` also fails a spec whose criteria file was never written.
+    final = args[1:2] == ["--final"] and args[0] == "check"
+    path_args = args[2:] if final else args[1:]
+    if not path_args or args[0] not in ("check", "parse"):
+        sys.exit("usage: code_step.py plan check [--final]|parse <path>")
+    plan_path = path_args[0]
+
+    plan_lines = pathlib.Path(plan_path).read_text().splitlines()
     plan = plan_format.parse_plan_with_closing_phases(plan_lines)
     if args[0] == "parse":
         return print(json.dumps(plan, indent=1))
-    for row in plan_format.plan_failure_rows(plan, args[1]):
+    for row in plan_format.plan_failure_rows(plan, plan_path):
         print(row)
-    manual_failure = plan_format.manual_format_failure(plan_lines, args[1])
+    manual_failure = plan_format.manual_format_failure(plan_lines, plan_path)
     if manual_failure:
         print(manual_failure)
-    verification_failure = verification_format_failure(plan_lines, args[1], pathlib.Path.cwd(), plan["entries"])
+    verification_failure = verification_format_failure(plan_lines, plan_path, pathlib.Path.cwd(), plan["entries"])
     if verification_failure:
         print(verification_failure)
-    ac_failures = plan_format.spec_ac_failures(pathlib.Path(args[1]))
+    ac_failures = plan_format.spec_ac_failures(pathlib.Path(plan_path))
     for row in ac_failures:
         print(row)
-    sys.exit(1 if plan["failures"] or manual_failure or verification_failure or ac_failures else 0)
+    criteria_failure = plan_format.missing_criteria_failure(pathlib.Path(plan_path)) if final else None
+    if criteria_failure:
+        print(criteria_failure)
+    sys.exit(1 if plan["failures"] or manual_failure or verification_failure or ac_failures or criteria_failure else 0)
 
 
 # ---------- gate derivation ----------
@@ -864,7 +872,7 @@ def start_plan_run(repo_dir, previous, branch, parsed, start_command):
         return start_closing_phase(repo_dir, plan_rel, lane, parsed.modifier, entry, closing_skill_name, section,
                                    branch, parsed.phase_id)
 
-    if not check_acceptance_criteria(repo_dir, plan_lines, plan_rel):
+    if not check_acceptance_criteria(repo_dir, plan_rel):
         return
     start_phase_coder(repo_dir, previous, branch, parsed, {
         "plan_rel": plan_rel, "lane": lane, "entry": entry, "section": section, "has_phases": bool(plan["sections"])})
@@ -955,14 +963,11 @@ def emit_closing_skill(repo_dir, plan_rel, number, title, skill, section):
     )
 
 
-def check_acceptance_criteria(repo_dir, plan_lines, plan_rel):
-    has_criteria_section = any(plan_format.ACCEPTANCE_HEADING.match(line) for line in plan_lines)
-    if not has_criteria_section:
+def check_acceptance_criteria(repo_dir, plan_rel):
+    if plan_format.missing_criteria_failure(repo_dir / plan_rel) is None:
         return True
+
     criteria_path = criteria_rel(plan_rel)
-    criteria = repo_dir / criteria_path
-    if criteria.is_file() and criteria.read_text().strip():
-        return True
 
     note = f"{criteria_path} is missing or empty"
     run_command(["bash", str(SCRIPTS_DIR / "telemetry" / "log-scan"), f"repo={repo_dir.name}", "scan=acceptance-stub",

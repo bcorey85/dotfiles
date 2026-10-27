@@ -15,6 +15,7 @@
 - The auto-mode notice's Bash preference does not apply to file I/O: read with Read, change files with Edit/Write. Search through Bash (`rg`) is fine.
 - Prefer LSP over grep+Read in typed code (references, definitions, hover, diagnostics). Fall back to `rg` for plain text or unindexed file types.
 - Verify CLI syntax with `--help` before guessing.
+- An unquoted `$VAR` holding spaces stays one word in zsh and splits in bash. Loop over an array (`files=(a b); for f in "${files[@]}"`, which works in both) or write each command out. Never keep a command prefix or a file list in a plain string variable.
 
 ### Tool Use Efficiency
 
@@ -30,6 +31,7 @@
 - Keep diffs focused: one logical change per task.
 - Worktree branches: NEVER leave the auto-generated `worktree-` prefix in the branch name. Rename to the plain `TICKET-NUM-desc` (e.g. `ABC-123-cache-tuning`) immediately after creating the worktree, then push it to remote (`git push -u origin <branch>`) first — before doing work — so the branch is tracked and backed up.
 - Worktree location: create every worktree as a sibling of the repo, `../<repo>-<TICKET-NUM>` (e.g. `~/dev/my-app-ABC-123`). Inside herdr or tuios (`HERDR_ENV` set), run `herdr-worktree --fork <branch>`: it opens the worktree as its own workspace, pushes the branch and forks this conversation into the new claude pane. Then tell the user to switch there, and do no more work in this session. Outside herdr, use `git worktree add`, then `EnterWorktree` `path`. Never create one inside `.claude/worktrees/`, which is `EnterWorktree` `name`'s default.
+- After `EnterWorktree`, Claude Code's own worktree guard refuses a Bash command it cannot prove stays off git: `&&` or `;` chains, `$VAR`, `$(...)` and heredocs, even with no git in them. No hook does this, so there is nothing to fix locally. In that session run one simple command per call with literal paths, and say the same in every subagent brief. A subagent with no Write tool works without a scratch script.
 
 ### Stacked PRs (`gh stack`, github/gh-stack)
 

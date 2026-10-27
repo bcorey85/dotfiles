@@ -694,14 +694,10 @@ def claim_no_review(session_id, agent_id):
     return True
 
 
-def was_unreviewed(session_id, agent_id):
+def was_recorded(session_id, agent_id, kind):
+    """True when the session's file holds a row of this kind from this agent."""
     stored_rows = script_utils.read_jsonl(session_file(session_id))
-    return any(row.get("kind") == "unreviewed" and row.get("agent_id") == agent_id for row in stored_rows)
-
-
-def was_rejected(session_id, agent_id):
-    stored_rows = script_utils.read_jsonl(session_file(session_id))
-    return any(row.get("kind") == "rejected" and row.get("agent_id") == agent_id for row in stored_rows)
+    return any(row.get("kind") == kind and row.get("agent_id") == agent_id for row in stored_rows)
 
 
 # ---------- hook ----------
@@ -736,13 +732,13 @@ def handle_hook(event, kind):
         status, problems = load(message)["status"], []
     except PacketError as error:
         status, problems = "invalid", error.problems
-    if problems and not was_rejected(session_id, agent_id):
+    if problems and not was_recorded(session_id, agent_id, "rejected"):
         record(session_id, "rejected", agent_id=agent_id, problems=problems)
         return ("The review-loop packet does not parse: " + "; ".join(problems) +
                 ". Fix the packet to the schema in your instructions and hand back again.")
     unreviewed = (status in CLEAN_STATUSES and not ran_reviewer(session_id, agent_id)
                   and not claim_no_review(session_id, agent_id))
-    if unreviewed and not was_unreviewed(session_id, agent_id):
+    if unreviewed and not was_recorded(session_id, agent_id, "unreviewed"):
         record(session_id, "unreviewed", agent_id=agent_id)
         return ("This review-loop hand-back is clean but no reviewer ran after the last code change. Dispatch the "
                 "code-reviewer on the diff, fix what it finds, then hand back again.")

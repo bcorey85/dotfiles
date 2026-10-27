@@ -23,6 +23,8 @@ node <skill-base-dir>/scripts/stage.mjs --run
 
 Add `--no-stage` when the argument `no-stage` was given. One call classifies, stages the SAFE tier, counts N staged and M left to read, logs the flywheel row (a logging failure only prints a warning), and prints the finished `## Stage` report plus a `jump-queue` block.
 
+When the working tree is clean because /code committed every phase, the run reads the branch diff from its merge base with the ref `branch-base` resolves (the default branch, or the upstream of a stacked branch), stages nothing, and the report says so.
+
 The classifier is the single source of truth for tier + risk — never reclassify, promote to SAFE, or soften ESCALATE (disagreements go in the report). A non-zero exit means nothing was staged by this run: report the message and stop.
 
 - **ESCALATE** = high-risk (hot paths, enforcement-config edits, tripwires). **Read first — never staged.**

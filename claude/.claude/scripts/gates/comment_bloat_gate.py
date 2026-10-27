@@ -13,6 +13,7 @@ import sys
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import hook_input
 import script_utils
+import source_text
 from hook_input import emit_stderr
 
 GIT_PROBE_TIMEOUT_SECONDS = 2
@@ -49,6 +50,15 @@ NOT_A_MARKER = re.compile(
     r"utf-8|sha-[0-9]|iso-[0-9]|rfc-[0-9]|aes-[0-9]|http-[0-9]|base-[0-9]|dp-[0-9]|hdmi-[0-9]|dvi-[0-9]|usb-[0-9]",
     re.I)
 
+# The first argument of a test-name call is prose, so a marker in it counts. The lookbehind keeps `pattern.test(...)`
+# and `obj.it(...)` out; `t.Run`, `self.subTest` and `pytest.param(id=...)` name a test through a method or keyword.
+TEST_NAME_CALL = re.compile(
+    r"""(?<![.\w$])(?:it|test|describe|context|suite)(?:\.\w+)*(?:\([^()]*\)|`[^`]*`)?\(\s*(?=["'`])"""
+    r"""|\b(?:Run|subTest)\(\s*(?=["'`])"""
+    r"""|(?<![\w$])ids?\s*=\s*(?:\[|(?=["'`]))"""
+    r"""|\bsubTest\(\s*msg\s*=\s*(?=["'`])""")
+TEST_ID_LIST_TAIL = re.compile(r"[^\]]*\]")
+
 DENSITY_CAP_PERCENT = 22
 MIN_LINES_FOR_DENSITY = 30
 
@@ -73,21 +83,61 @@ def surface_of(file_path):
     return file_path
 
 
-def marker_rows(file_lines, comments_only=False):
+def searchable_text(line, style=None):
+    """The line with string text removed from the code part, except the name given to each test-name call, plus the raw
+    trailing comment. style is the file's comment style (see source_text.comment_style_of)."""
+    code, comment = source_text.split_trailing_comment(line, style)
+    kept = []
+    position = 0
+    for call in TEST_NAME_CALL.finditer(code):
+        if call.start() < position:
+            continue
+        opens_list = call.group().endswith("[")
+        name = (TEST_ID_LIST_TAIL if opens_list else source_text.STRING_LITERAL).match(code, call.end())
+        name_end = name.end() if name else call.end()
+        kept.append(source_text.without_string_text(code[position:call.start()]) + code[call.start():name_end])
+        position = name_end
+    kept.append(source_text.without_string_text(code[position:]))
+    return "".join(kept) + comment
+
+
+def comment_numbers_of(file_lines, style):
+    """Numbers of the lines that are comment text, including docstring and block-comment lines COMMENT_LINE misses.
+    style is the file's comment style; None gives no lines."""
+    if style is None:
+        return set()
+    return set(source_text.comment_line_numbers(file_lines, style))
+
+
+def marker_rows(file_lines, comments_only=False, file_path=""):
     """Numbered non-blank lines carrying a workflow marker, ordered by line number.
 
-    comments_only limits the scan to comment lines, for formats whose values are data, not prose."""
+    comments_only limits the scan to comment lines, for formats whose values are data, not prose. Lines inside a
+    multi-line string held as data are not searched; on the line that closes one, only the text after the closing
+    quote is."""
+    style = source_text.comment_style_of(file_path)
+    comment_numbers = comment_numbers_of(file_lines, style)
+    string_data_numbers, closing_tails = source_text.string_data_regions(file_lines, style)
     rows = []
     for number, line in enumerate(file_lines, 1):
-        if not NONBLANK.search(line):
+        if not NONBLANK.search(line) or number in string_data_numbers:
             continue
-        if comments_only and not COMMENT_LINE.match(line):
+        is_comment = COMMENT_LINE.match(line) or number in comment_numbers
+        if comments_only and not is_comment:
             continue
-        row = f"{number}:{line}"
+        if number in closing_tails:
+            searched = searchable_text(closing_tails[number], style)
+        else:
+            searched = line if is_comment else searchable_text(line, style)
+        row = f"{number}:{searched}"
         hit = any(p.search(row) for p in CASE_INSENSITIVE_MARKERS) or any(p.search(row) for p in CASE_SENSITIVE_MARKERS)
         if hit and not NOT_A_MARKER.search(row):
             rows.append((number, line))
     return rows
+
+
+def prose_comment_count(lines):
+    return sum(1 for line in lines if COMMENT_LINE.match(line) and not DELIMITER_LINE.match(line))
 
 
 def block_inside_repo(file_path, reason):
@@ -124,7 +174,7 @@ def check(raw):
 
     added_lines = set(new_lines)
     data_only = file_path.endswith(".json")
-    leaks = [f"  {number}:{line}\n" for number, line in marker_rows(file_lines, data_only)
+    leaks = [f"  {number}:{line}\n" for number, line in marker_rows(file_lines, data_only, file_path)
              if line in added_lines]
     if leaks:
         return block_inside_repo(
@@ -133,20 +183,22 @@ def check(raw):
             "exceptions — keep the reason, drop the pointer (_shared/code-vocabulary.md):\n" + "".join(leaks),
         )
 
-    added_comments = [line for line in new_lines if COMMENT_LINE.match(line)]
-    if not any(not DELIMITER_LINE.match(line) for line in added_comments):
+    old_lines = first_present(tool_input, "old_string").split("\n")
+    net_new_comments = prose_comment_count(new_lines) - prose_comment_count(old_lines)
+    if net_new_comments <= 0:
         return 0
     total = sum(1 for line in file_lines if NONBLANK.search(line))
     if total < MIN_LINES_FOR_DENSITY:
         return 0
-    comments = sum(1 for line in file_lines if COMMENT_LINE.match(line) and not DELIMITER_LINE.match(line))
+    comments = prose_comment_count(file_lines)
     percent = comments * 100 // total
     if percent > DENSITY_CAP_PERCENT:
         return block_inside_repo(
             file_path,
             f"comment-bloat-gate: {name} is {percent}% comments ({comments}/{total} non-blank lines), cap "
             f"~20%. Delete the comments this edit added, or rename/split so they are "
-            f"unnecessary. Never add code to lower the ratio.\n",
+            f"unnecessary; a comment the task requires stays, named in the hand-back. Never add code to lower "
+            f"the ratio.\n",
         )
     return 0
 

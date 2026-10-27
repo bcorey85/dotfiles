@@ -31,8 +31,10 @@ directory, ignore the extra and work from the questions alone.
 6. **Verify every citation before writing.** Re-open each cited location and
    confirm those exact lines show what you claim; cite from a fresh read, not
    recall.
-7. Write `02-research.md` beside the questions file. Never prefix that name.
-8. Return ONLY the file path and a one-line completion note. Never summarize the
+7. Glob the questions file. If it is gone, the spec was cancelled: write
+   nothing and return `cancelled: questions file removed`.
+8. Write `02-research.md` beside the questions file. Never prefix that name.
+9. Return ONLY the file path and a one-line completion note. Never summarize the
    findings in your reply.
 
 ## Document format

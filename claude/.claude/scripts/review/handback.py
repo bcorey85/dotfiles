@@ -586,8 +586,9 @@ def latest(session_id):
     hand-back (all of them when there is none), "pending": unanswered > 0}. A hand-back clears every dispatch before
     it, so a dispatch that another hook denied blocks nothing once a later dispatch hands back. A row holds kind, ts,
     session_id; a hand-back row also agent_id, status, problems, message; a stop row also agent_id,
-    open_dispatches (the background agents the loop still waited on when it stopped) and ask_rows. A stop the gate
-    blocked is not a stop: the loop went on, so such a row is skipped. Rows are ordered by append, not by clock."""
+    open_dispatches (the background agents and shells the loop still waited on when it stopped) and ask_rows. A
+    stop the gate blocked is not a stop: the loop went on, so such a row is skipped. Rows are ordered by append, not by
+    clock."""
     standing = {"dispatch": None, "handback": None, "stop": None, "unanswered": 0, "pending": False}
     if not session_id:
         return standing
@@ -633,9 +634,10 @@ LOOP_WAITING = "loop-waiting"
 
 def hand_back_gap(seen):
     """Why the session has no current hand-back, from a `latest` result: NO_DISPATCH (the session never dispatched a
-    review-loop), LOOP_WAITING (the loop's latest stop left a background agent running, so it will resume and may
-    still hand back), NO_HANDBACK (dispatched, nothing came back), REDISPATCHED (dispatched again after a hand-back),
-    or None when the latest hand-back is current. The one rule that /review, /fix and the commit gate share."""
+    review-loop), LOOP_WAITING (the loop's latest stop left a background agent or shell running, so it will resume and
+    may still hand back), NO_HANDBACK (dispatched, nothing came back), REDISPATCHED (dispatched again after a
+    hand-back), or None when the latest hand-back is current. The one rule that /review, /fix and the commit gate
+    share."""
     if seen["dispatch"] is None:
         return NO_DISPATCH
     if seen["handback"] is not None and not seen["pending"]:
@@ -654,7 +656,7 @@ def false_clean_reason(session_id):
     seen = latest(session_id)
     gap = hand_back_gap(seen)
     if gap == LOOP_WAITING:
-        return "the review-loop is waiting on a background agent it launched and has not handed back"
+        return "the review-loop is waiting on a background agent or shell it started and has not handed back"
     if seen["handback"] is None:
         return "no review-loop hand-back is stored for this session"
     if gap == NO_DISPATCH:

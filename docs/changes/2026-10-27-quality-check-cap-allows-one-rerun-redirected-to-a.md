@@ -32,7 +32,7 @@ unmeasured: ""
 
 ## Result
 
-- `tests/scripts/test_quality_check_cap.py` passes (89 tests); ruff passes on the changed files.
+- `tests/scripts/test_quality_check_cap.py` passes (90 tests); ruff passes on the changed files.
 
 ## Watch
 

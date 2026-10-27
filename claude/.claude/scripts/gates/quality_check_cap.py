@@ -87,7 +87,8 @@ CUT_DENY_TEXT = ("' already ran this session and nothing has been edited since, 
                  "tail, head or grep. Run it once as `{redirected}`, read the WHOLE log, fix every failure in one "
                  "batch, then run it once more." + DENY_TAIL)
 
-CheckStep = collections.namedtuple("CheckStep", "index norm run_file cwd in_repeat_loop output_saved output_cut")
+CheckStep = collections.namedtuple(
+    "CheckStep", "index norm command_text run_file cwd in_repeat_loop output_saved output_cut")
 
 
 class DenyError(Exception):
@@ -407,6 +408,7 @@ def run(raw, state):
                 loop_kinds.pop()
             continue
         segment = re.sub(r"^[({ \t]+", "", segment)
+        command_text = normalize(segment)
         while True:
             stripped = ASSIGNMENT.sub("", WRAPPER.sub("", segment, count=1), count=1)
             if stripped == segment:
@@ -430,7 +432,7 @@ def run(raw, state):
         in_repeat_loop = bool(loop_kinds) and loop_kinds[-1] == "repeat"
         output_saved = saves_output(steps, index, segment)
         output_cut = not output_saved and cuts_output(steps, index)
-        checks.append(CheckStep(index, norm, run_file, cwd, in_repeat_loop, output_saved, output_cut))
+        checks.append(CheckStep(index, norm, command_text, run_file, cwd, in_repeat_loop, output_saved, output_cut))
 
     if event in ("PostToolUse", "PostToolUseFailure"):
         if format_indexes:
@@ -442,6 +444,7 @@ def run(raw, state):
             record = tree_fingerprint(check.cwd) or ""
             if check.output_cut:
                 record += "\n" + CUT_MARK
+
             try:
                 with open(check.run_file, "w") as handle:
                     handle.write(record)
@@ -467,7 +470,7 @@ def run(raw, state):
             raise DenyError("[quality-check-cap] '" + check.norm + DENY_TEXT)
         if check.output_saved:
             continue
-        cut_deny_text = CUT_DENY_TEXT.format(redirected=check.norm + LOG_REDIRECT)
+        cut_deny_text = CUT_DENY_TEXT.format(redirected=check.command_text + LOG_REDIRECT)
         raise DenyError("[quality-check-cap] '" + check.norm + cut_deny_text)
 
 

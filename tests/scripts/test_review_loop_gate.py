@@ -51,6 +51,25 @@ def notification(tool_use_id):
     return {"type": "attachment", "attachment": {"type": "queued_command", "prompt": prompt}}
 
 
+def coder_and_background_reviewer():
+    return [user("review loop"),
+            dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
+            dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", ASYNC_RESULT)]
+
+
+def resume_background_coder():
+    """A background coder launched and already notified, then resumed with a SendMessage that came back as a resume."""
+    send = {"type": "tool_use", "id": "toolu_resume", "name": "SendMessage",
+            "input": {"to": "a5bc2ebfa0d6aeaf8", "message": "fix it"}}
+    resumed = json.dumps({"success": True, "message": "Resuming agent a5bc2eb", "resumedAgentId": "a5bc2ebfa0d6aeaf8"})
+    return [user("review loop"),
+            dispatch("toolu_coder", "coder"),
+            result("toolu_coder", "Async agent launched\nagentId: a5bc2ebfa0d6aeaf8"),
+            notification("toolu_coder"),
+            {"type": "assistant", "message": {"role": "assistant", "content": [send]}},
+            result("toolu_resume", resumed)]
+
+
 class ReviewLoopGateTest(unittest.TestCase):
     def stop(self, records, **extra):
         tmp = tempfile.TemporaryDirectory()
@@ -66,21 +85,16 @@ class ReviewLoopGateTest(unittest.TestCase):
         self.assertEqual(proc.stderr, "")
         return proc.stdout
 
-    def coder_and_background_reviewer(self):
-        return [user("review loop"),
-                dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
-                dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", ASYNC_RESULT)]
-
     def test_open_background_dispatch_passes(self):
-        self.assertEqual(self.stop(self.coder_and_background_reviewer()), "")
+        self.assertEqual(self.stop(coder_and_background_reviewer()), "")
 
     def test_reported_background_dispatch_blocks_without_full_check(self):
-        out = self.stop([*self.coder_and_background_reviewer(), notification("toolu_rev")])
+        out = self.stop([*coder_and_background_reviewer(), notification("toolu_rev")])
         self.assertIn("No full check ran", json.loads(out)["reason"])
 
     def test_agent_message_counts_as_reported(self):
         message = user('<agent-message from="a7bf12f9c51bc4875">findings</agent-message>')
-        out = self.stop([*self.coder_and_background_reviewer(), message])
+        out = self.stop([*coder_and_background_reviewer(), message])
         self.assertIn("No full check ran", json.loads(out)["reason"])
 
     def test_foreground_dispatch_blocks(self):
@@ -116,6 +130,100 @@ class ReviewLoopGateTest(unittest.TestCase):
     def test_stop_hook_active_passes(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
         self.assertEqual(self.stop(records, stop_hook_active=True), "")
+
+    def test_a_foreground_report_that_quotes_the_launch_text_is_not_an_open_dispatch(self):
+        report = "Reviewed the gate. It counts `Async agent launched` results as open dispatches.\nagentId: arev1"
+        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
+                   dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", report)]
+        self.assertIn("No full check ran", json.loads(self.stop(records))["reason"])
+
+
+class StopRowTest(unittest.TestCase):
+    def stop_in_session(self, records, store_dir, transcript_path=None, **extra):
+        # The hook runs with its own store folder so the test never writes the real ~/.claude/state.
+        env = {**os.environ, "HANDBACK_STORE_DIR": store_dir}
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = os.path.join(tmp.name, "loop.jsonl")
+        with open(path, "w", encoding="utf-8") as fh:
+            for rec in records:
+                fh.write(rec if isinstance(rec, str) else json.dumps(rec))
+                fh.write("\n")
+        hook = {"hook_event_name": "SubagentStop", "agent_type": "review-loop",
+                "agent_transcript_path": transcript_path or path, "session_id": "s-stop", "agent_id": "loop-1",
+                **extra}
+        return subprocess.run([sys.executable, "-B", SCRIPT], input=json.dumps(hook), capture_output=True,
+                              text=True, check=True, env=env)
+
+    def new_store(self):
+        store = tempfile.TemporaryDirectory()
+        self.addCleanup(store.cleanup)
+        return store.name
+
+    def open_counts(self, store_dir):
+        return [row["open_dispatches"] for row in self.stored_stops(store_dir)]
+
+    def stored_stops(self, store_dir):
+        with open(os.path.join(store_dir, "s-stop.jsonl"), encoding="utf-8") as fh:
+            return [row for row in map(json.loads, fh) if row["kind"] == "stop"]
+
+    def test_a_stop_stores_the_loop_agent_and_its_open_dispatch_count(self):
+        store = tempfile.TemporaryDirectory()
+        self.addCleanup(store.cleanup)
+        waiting = self.stop_in_session(coder_and_background_reviewer(), store.name)
+        self.assertEqual(waiting.stdout, "")
+        finished = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
+                    bash("npm test > /tmp/review-gate.log 2>&1")]
+        self.stop_in_session(finished, store.name)
+        stops = self.stored_stops(store.name)
+        self.assertEqual([(row["agent_id"], row["open_dispatches"]) for row in stops],
+                         [("loop-1", 1), ("loop-1", 0)])
+
+    def test_a_store_write_error_never_blocks_the_stop(self):
+        store = tempfile.TemporaryDirectory()
+        self.addCleanup(store.cleanup)
+        blocked = os.path.join(store.name, "file")
+        with open(blocked, "w", encoding="utf-8") as fh:
+            fh.write("not a folder")
+        done = self.stop_in_session(coder_and_background_reviewer(), blocked)
+        self.assertEqual(done.stdout, "")
+        self.assertIn("stop row skipped", done.stderr)
+
+    def test_a_stop_with_an_unreadable_transcript_writes_a_zero_row_and_still_fails_open(self):
+        store = self.new_store()
+        self.stop_in_session(coder_and_background_reviewer(), store)
+        half_written = [*coder_and_background_reviewer(), '{"type": "user", "mess']
+        torn = self.stop_in_session(half_written, store)
+        missing = self.stop_in_session([], store, transcript_path=os.path.join(store, "no-such-loop.jsonl"))
+        self.assertEqual((torn.stdout, missing.stdout), ("", ""))
+        self.assertIn("skipped", torn.stderr)
+        self.assertIn("skipped", missing.stderr)
+        self.assertEqual(self.open_counts(store), [1, 0, 0])
+
+    def test_a_resume_result_with_only_the_short_id_matches_the_launched_agent_by_prefix(self):
+        store = self.new_store()
+        short_only = [*resume_background_coder()[:-1], result("toolu_resume", "Resuming agent a5bc2eb")]
+        self.stop_in_session(short_only, store)
+        self.stop_in_session([*short_only, notification("toolu_resume")], store)
+        self.assertEqual(self.open_counts(store), [1, 0])
+
+    def test_a_non_object_transcript_line_writes_a_zero_row_and_still_fails_open(self):
+        store = self.new_store()
+        self.stop_in_session(coder_and_background_reviewer(), store)
+        done = self.stop_in_session([*coder_and_background_reviewer(), "[]"], store)
+        self.assertEqual(done.stdout, "")
+        self.assertIn("skipped", done.stderr)
+        self.assertEqual(self.open_counts(store), [1, 0])
+
+    def test_a_background_resume_is_open_until_a_later_notification_or_agent_message(self):
+        store = self.new_store()
+        resumed = resume_background_coder()
+        self.stop_in_session(resumed, store)
+        self.stop_in_session([*resumed, notification("toolu_resume")], store)
+        message = user('<agent-message from="a5bc2ebfa0d6aeaf8">done</agent-message>')
+        self.stop_in_session([*resumed, message], store)
+        self.assertEqual(self.open_counts(store), [1, 0, 0])
+
 
 class FullCheckTest(unittest.TestCase):
     @classmethod

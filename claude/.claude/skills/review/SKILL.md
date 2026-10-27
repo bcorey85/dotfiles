@@ -42,6 +42,7 @@ Thin wrapper over the `review-loop` agent. A script parses the returned packet, 
    - `ask-user-plan-impact` → call `AskUserQuestion` as printed, then run the `decide` command it names. On `ACTION: redispatch`, re-dispatch `review-loop` with the same arguments plus the lines it printed (both counters kept), then run step 2 again. On `ACTION: discuss`, talk it through with the user, then run the `decide` command that it printed for the outcome.
    - `stop` → present what it printed, wait for direction. Do NOT re-dispatch, do NOT `/fix`, do NOT mark.
    - `stop-no-handback` → the loop ended without handing back. Do what the lines say: the first time, re-dispatch `review-loop` once with the same arguments and run step 2 again; the second time, stop and show the user the loop's final text. Never mark clean.
+   - `wait-for-loop` → the loop is waiting on an agent it launched. Do not re-dispatch and never mark clean. End the turn; when the review-loop's completion notice arrives, run step 2 again.
    - `stop-parse-failure` or `stop-usage` → the packet or the call was bad. If you ran the gate mark in parallel, run `~/.claude/scripts/review/review-gate-mark dirty`. Show the user the problems. Never guess a missing field.
 
 4. **What stays yours:** judging the user's answer to an ask, acting on accepted asks, and the closing line. The script's `MODEL STILL DOES:` line lists the rest.

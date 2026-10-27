@@ -14,6 +14,13 @@
       `review-loop`; the agent_type check below still guards an unscoped entry.
     A stop while a background dispatch (`Async agent launched`) has not yet reported back, by task
       notification or agent message, passes: the loop is waiting, not done.
+    A background dispatch is a launch whose result starts with `Async agent launched`, or a SendMessage that
+      resumed an agent (`Resuming agent <id>`) with no later agent message or task notification from it.
+    Every review-loop SubagentStop appends a `kind=stop` row to the session's hand-back store (agent_id and
+      the count of open background dispatches), through handback.record. A count of one or more means the loop
+      is waiting: `review_fix.py packet` prints `ACTION: wait-for-loop`, not stop-no-handback. A row with 0 ends
+      the wait. A stop whose transcript cannot be read writes a 0 row, then fails open as before. A store write
+      error is reported on stderr and never blocks the stop.
   PreToolUse (Agent): a review-loop dispatch whose prompt says `caller: code` must carry a
       `handoff:` line.
 
@@ -42,6 +49,9 @@ import script_utils
 
 OWN_CLAUDE_DIR = pathlib.Path(__file__).resolve().parents[2]
 AGENT_ID = re.compile(r"agentId:\s*([A-Za-z0-9-]+)")
+ASYNC_LAUNCH = "Async agent launched"
+RESUMED_AGENT_ID = re.compile(r"resumedAgentId\W+([A-Za-z0-9-]+)")
+RESUMING_MESSAGE = re.compile(r"Resuming agent\s+([A-Za-z0-9-]+)")
 CALLER_CODE = re.compile(r"(?i)(?<![\w-])caller[`*]*\s*[:=]\s*[`\"']?code\b")
 HANDOFF = re.compile(r"(?im)^[ \t]*handoff[ \t]*:")
 PLAN_IMPACT = re.compile(r"(?im)^[ \t>*`-]*status[`*]*[ \t]*:[ \t`*]*plan-impact\b")
@@ -154,7 +164,11 @@ class LoopTranscript:
         self.results = {}  # dispatch tool_use_id -> the text of its tool_result
         self.notifications = {}  # tool_use_id -> the results its task notifications carried, [] for none
         self.agent_messages = {}  # agent id -> the texts of its agent messages
+        self.notified_at = {}  # tool_use_id -> the transcript lines of its task notifications
+        self.messaged_at = {}  # agent id -> the transcript lines of its agent messages
         self.messages_sent = []  # (transcript line, SendMessage recipient)
+        self.send_lines = {}  # SendMessage tool_use_id -> (transcript line, recipient)
+        self.resumes = []  # (transcript line, agent id, SendMessage tool_use_id) of each resume
         self.finding_rows_logged = 0  # per-finding ledger rows the loop's own Bash calls wrote
         self.metrics_logged = False
         self.full_checks = []  # the transcript lines of the shell calls that ran a full check
@@ -169,19 +183,21 @@ class LoopTranscript:
 
         carrier = text_of(content) if rec.get("type") == "user" else ""
         carrier += " " + str((rec.get("attachment") or {}).get("prompt") or "")
-        self.read_reports(carrier)
+        self.read_reports(n, carrier)
 
         for block in content if isinstance(content, list) else []:
             if isinstance(block, dict):
                 self.read_block(n, rec.get("type"), block)
 
-    def read_reports(self, carrier):
+    def read_reports(self, n, carrier):
         for notification in NOTIFICATION.finditer(carrier):
             reports = self.notifications.setdefault(notification.group(1), [])
+            self.notified_at.setdefault(notification.group(1), []).append(n)
             if notification.group(2) is not None:
                 reports.append(notification.group(2))
         for agent_id, report in AGENT_MESSAGE.findall(carrier):
             self.agent_messages.setdefault(agent_id, []).append(report)
+            self.messaged_at.setdefault(agent_id, []).append(n)
 
     def read_block(self, n, record_type, block):
         if block.get("type") == "text" and record_type == "assistant" and block.get("text", "").strip():
@@ -190,6 +206,24 @@ class LoopTranscript:
             self.read_tool_use(n, block)
         elif block.get("type") == "tool_result" and block.get("tool_use_id") in self.kinds:
             self.results[block["tool_use_id"]] = text_of(block.get("content"))
+        elif block.get("type") == "tool_result" and block.get("tool_use_id") in self.send_lines:
+            self.read_send_result(block)
+
+    def read_send_result(self, block):
+        """Record a SendMessage that resumed an agent. The result names the agent in full as `resumedAgentId`; its
+        message carries only a short prefix of that id, which stands in when the key is absent."""
+        text = text_of(block.get("content"))
+        full_id = RESUMED_AGENT_ID.search(text)
+        short_id = RESUMING_MESSAGE.search(text)
+        if full_id:
+            agent_id = full_id.group(1)
+        elif short_id:
+            known_agents = [self.launched_agent(tool_use_id) for tool_use_id in self.results]
+            agent_id = next((known for known in known_agents if known and known.startswith(short_id.group(1))),
+                            short_id.group(1))
+        else:
+            return
+        self.resumes.append((self.send_lines[block["tool_use_id"]][0], agent_id, block["tool_use_id"]))
 
     def read_tool_use(self, n, block):
         tool_input = block.get("input") or {}
@@ -198,6 +232,7 @@ class LoopTranscript:
             self.dispatched_at[block.get("id")] = n
         elif block.get("name") == "SendMessage":
             self.messages_sent.append((n, tool_input.get("to")))
+            self.send_lines[block.get("id")] = (n, tool_input.get("to"))
         elif block.get("name") == "Bash":
             self.read_command(n, str(tool_input.get("command") or ""))
 
@@ -223,11 +258,30 @@ class LoopTranscript:
                   for agent_id in AGENT_ID.findall(self.results.get(tool_use_id, ""))}
         return self.dispatch_lines(kinds) + [n for n, recipient in self.messages_sent if recipient in agents]
 
+    def open_launches(self):
+        """The tool_use_ids of background launches that have not reported back, by task notification or agent
+        message. Only a result that starts with the launch text is a launch: a foreground report may quote it."""
+        return [tool_use_id for tool_use_id, text in self.results.items()
+                if text.lstrip().startswith(ASYNC_LAUNCH) and tool_use_id not in self.notifications
+                and self.launched_agent(tool_use_id) not in self.agent_messages]
+
+    def resume_is_open(self, line, agent_id, send_id, open_launches):
+        """True when a SendMessage that resumed `agent_id` has had no agent message from it and no task notification
+        on a later transcript line, keyed by the SendMessage's id (the harness's key for a resumed agent) or by its
+        launch's. A launch that is itself still open already counts."""
+        launch_ids = [tool_use_id for tool_use_id in self.results if self.launched_agent(tool_use_id) == agent_id]
+        if any(tool_use_id in open_launches for tool_use_id in launch_ids):
+            return False
+        later_reports = [*self.messaged_at.get(agent_id, []), *self.notified_at.get(send_id, []),
+                         *(at for tool_use_id in launch_ids for at in self.notified_at.get(tool_use_id, []))]
+        return not any(at > line for at in later_reports)
+
     def open_dispatches(self):
-        """The count of background dispatches that have not reported back, by task notification or agent message."""
-        return sum(1 for tool_use_id, text in self.results.items()
-                   if "Async agent launched" in text and tool_use_id not in self.notifications
-                   and self.launched_agent(tool_use_id) not in self.agent_messages)
+        """The count of background dispatches that have not reported back, including each background resume of an
+        agent whose earlier notification already closed its launch."""
+        open_launches = self.open_launches()
+        open_resumes = [resume for resume in self.resumes if self.resume_is_open(*resume, open_launches)]
+        return len(open_launches) + len(open_resumes)
 
 
 def scan(transcript, final=None):
@@ -462,9 +516,28 @@ def check_dispatch(tool_input):
                                                  "permissionDecisionReason": HANDOFF_REASON}}))
 
 
+def record_stop(hook, open_dispatches):
+    """Store this stop with the count of background dispatches still open, so `review_fix.py packet` can tell a loop
+    that waits on an agent from one that ended without handing back. Never raises: a store failure must not stop the
+    loop."""
+    try:
+        session_id = hook.get("session_id")
+        if session_id:
+            handback.record(session_id, "stop", agent_id=hook.get("agent_id") or "unknown",
+                            open_dispatches=open_dispatches)
+    except Exception as e:
+        print(f"review-loop-gate: stop row skipped, {type(e).__name__}: {e}", file=sys.stderr)
+
+
 def check_stop(hook):
-    transcript = LoopTranscript(hook["agent_transcript_path"])
-    scanned = scan(transcript, hook.get("last_assistant_message"))
+    try:
+        transcript = LoopTranscript(hook["agent_transcript_path"])
+        scanned = scan(transcript, hook.get("last_assistant_message"))
+    except Exception:
+        # A transcript the gate cannot read still ends an earlier wait: with no row, the last open count would stand.
+        record_stop(hook, 0)
+        raise
+    record_stop(hook, scanned[1])
     why = [] if hook.get("stop_hook_active") else reasons_for(scanned)
     if not hook.get("stop_hook_active") and not scanned[1]:
         why += ledger_reasons(transcript, hook.get("last_assistant_message"))

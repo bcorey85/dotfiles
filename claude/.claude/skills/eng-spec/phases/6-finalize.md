@@ -78,8 +78,8 @@ these before Phase 7 and resolve every miss with the user like a `DESIGN GAP`.
       or library version does gets its `--help` or a one-line run. So does the validator or parser each new value meets.
     - **Internal agreement** — any quantity the plan states in more than one
       place must agree everywhere, and a frozen literal must match every later assertion.
-    - **Batch the probes** as in 16b, in at most TWO Bash calls: counts + names +
-      tool-behavior, then deny-sweep + superseded-deliverables. An ambiguous result re-runs solo.
+    - **Batch the probes** in at most TWO Bash calls: counts + names +
+      tool-behavior, then the rest. Re-run an ambiguous result solo.
     - **Consumers of every changed member** — for each member, helper or rule
       whose SQL, name or wording the plan changes, `rg` its name across the whole
       repo (model, views, tools, tests, oracles, docs). Every hit is named in a

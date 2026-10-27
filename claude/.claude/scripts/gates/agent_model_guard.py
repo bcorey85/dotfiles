@@ -4,9 +4,10 @@
   1. CLAUDE_SKIP_HOOKS set to any non-empty value: exit 0.
   2. Non-Agent tools pass.
   3. A subagent_type with characters outside [A-Za-z0-9_-] is denied.
-  4. A call-site model containing "opus" or "inherit" (case-insensitive) is denied, opus checked first.
-  5. Any other explicit model passes.
-  6. An empty model passes only when the agent file (CLAUDE_PROJECT_DIR first, then HOME) has a `model:` line.
+  4. subagent_type `fork` passes: a fork runs on the parent's model and ignores a call-site model.
+  5. A call-site model containing "opus" or "inherit" (case-insensitive) is denied, opus checked first.
+  6. Any other explicit model passes.
+  7. An empty model passes only when the agent file (CLAUDE_PROJECT_DIR first, then HOME) has a `model:` line.
 
 Invalid JSON or a non-object payload exits 5, as the bash original did through jq.
 """
@@ -19,6 +20,7 @@ import hook_input
 from hook_input import index, parse_documents, present
 
 SUBAGENT_PATTERN = re.compile(r"[A-Za-z0-9_-]+\Z")
+FORK_SUBAGENT = "fork"
 
 
 def jq_deny(reason):
@@ -87,6 +89,9 @@ def decide(text):
         reason = (f"Agent call to subagent_type='{subagent}' is invalid. subagent_type must contain only alphanumeric "
                   "characters, hyphens, and underscores.")
         return 0, jq_deny(reason), ""
+
+    if subagent == FORK_SUBAGENT:
+        return 0, "", ""
 
     lowered = bash_lower(model)
     if "opus" in lowered:

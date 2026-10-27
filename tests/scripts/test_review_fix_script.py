@@ -990,7 +990,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_code_step_state_of_the_same_session_blocks_a_saved_read_and_is_named(self):
         self.seed()
-        path = self.write_code_step(stage="review", sessionId=SESSION)
+        path = self.write_launched_run("a1")
         code, output = self.packet("")
         self.assertEqual(code, 2, output)
         self.assertIn(str(path), output)
@@ -1015,11 +1015,59 @@ class ReviewFixScriptTest(unittest.TestCase):
         for stage in ("coder", "asks-coder"):
             with self.subTest(stage=stage):
                 self.seed()
-                self.write_code_step(stage=stage, sessionId=SESSION)
+                self.write_launched_run("a1", stage=stage)
                 self.assertEqual(self.packet("")[0], 2)
         self.seed()
         self.write_code_step(stage="plan-coder", sessionId=SESSION)
         self.assertEqual(self.packet("")[0], 0)
+
+    def write_launched_run(self, agent_id, stage="review", later_launch_id=None):
+        path = self.write_code_step(stage=stage, sessionId=SESSION, runId="run1")
+        events = self.repo / ".git" / "code-step" / "runs" / "run1" / "events.jsonl"
+        events.parent.mkdir(parents=True, exist_ok=True)
+        rows = [{"event": "dispatch", "id": "d1", "ts": 1, "agent_type": "review-loop", "stage": "review"},
+                {"event": "launch", "dispatch": "d1", "ts": 2, "agent_id": agent_id}]
+        if later_launch_id:
+            rows += [{"event": "dispatch", "id": "d2", "ts": 3, "agent_type": "coder", "stage": "coder"},
+                     {"event": "launch", "dispatch": "d2", "ts": 4, "agent_id": later_launch_id}]
+        events.write_text("".join(json.dumps(row) + "\n" for row in rows))
+        return path
+
+    def test_standalone_review_hand_back_is_read_while_a_code_run_waits_on_another_agent(self):
+        self.write_launched_run("run-agent")
+        self.seed()
+        code, output = self.packet("")
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: render-and-finish", output)
+
+    def test_hand_back_of_the_agent_the_code_run_launched_is_still_refused(self):
+        self.write_launched_run("a1")
+        self.seed()
+        code, output = self.packet("")
+        self.assertEqual(code, 2, output)
+        self.assertIn("code_step.py resume", output)
+
+    def test_standalone_review_hand_back_is_read_while_a_code_run_at_review_has_no_launch_row_yet(self):
+        self.write_code_step(stage="review", sessionId=SESSION, runId="run1")
+        self.seed()
+        code, output = self.packet("")
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: render-and-finish", output)
+
+    def test_earlier_review_loop_hand_back_after_a_later_coder_launch_is_still_refused(self):
+        self.write_launched_run("a1", later_launch_id="coder-agent")
+        self.seed()
+        code, output = self.packet("")
+        self.assertEqual(code, 2, output)
+        self.assertIn("code_step.py resume", output)
+
+    def test_code_run_hand_back_after_a_standalone_review_is_still_refused(self):
+        self.write_launched_run("run-agent")
+        self.seed()
+        self.assertEqual(self.packet("")[0], 0)
+        self.dispatch()
+        self.hand_back(CLEAN_EMPTY, agent_id="run-agent")
+        self.assertEqual(self.packet("")[0], 2)
 
     def test_an_unreadable_code_step_state_does_not_block(self):
         self.seed()

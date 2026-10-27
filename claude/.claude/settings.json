@@ -507,6 +507,10 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/scripts/review/handback.py hook handback"
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/scripts/review/open_child_gate.py"
           }
         ]
       },

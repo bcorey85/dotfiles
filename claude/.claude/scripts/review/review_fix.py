@@ -444,9 +444,11 @@ def post_aikido_replies(packet, targets, state):
 
 # ---------- the packet ----------
 
-def active_code_step(session_id):
+def active_code_step(session_id, hand_back_agent_id):
     """(state path, stage) of a /code run that owns this session's review hand-backs, else None. A run pinned to a
-    different session does not count."""
+    different session does not count. The run owns only the hand-back of an agent it launched, so a hand-back from
+    another review-loop agent (a standalone /review while the run is paused or before its launch is logged) is not
+    the run's."""
     try:
         code_step = code_step_core.load_state(".")
     except code_step_core.StateFileError:
@@ -454,6 +456,10 @@ def active_code_step(session_id):
     if code_step is None or code_step.get("stage") not in code_step_core.REVIEW_HANDBACK_STAGES:
         return None
     if code_step.get("sessionId") != session_id:
+        return None
+    events = code_step_core.read_events(".", code_step.get("runId")) if code_step.get("runId") else []
+    launched_agent_ids = {event.get("agent_id") for event in events if event.get("event") == "launch"}
+    if not hand_back_agent_id or hand_back_agent_id not in launched_agent_ids:
         return None
     return code_step_core.state_dir(".") / "state.json", code_step["stage"]
 
@@ -472,11 +478,12 @@ def saved_hand_back(session_id):
     if not session_id:
         raise PacketError(["the packet on stdin is empty and CLAUDE_CODE_SESSION_ID is not set, so no saved "
                            "hand-back can be looked up"])
-    code_step = active_code_step(session_id)
+    seen = handback.latest(session_id)
+    stored_row = seen["handback"] or {}
+    code_step = active_code_step(session_id, stored_row.get("agent_id"))
     if code_step:
         raise PacketError([f"a /code run owns this session's review hand-backs (code-step state {code_step[0]}, stage "
                            f"{code_step[1]}): its packet goes through code_step.py resume, not `packet`"])
-    seen = handback.latest(session_id)
     gap = handback.hand_back_gap(seen)
     if gap == handback.NO_DISPATCH:
         raise PacketError([f"this session has no review-loop dispatch on record (session {session_id}): a hand-back "

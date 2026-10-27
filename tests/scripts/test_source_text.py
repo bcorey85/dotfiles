@@ -107,6 +107,90 @@ class CommentLineNumbersTest(unittest.TestCase):
             source_text.comment_line_numbers([], "lisp")
 
 
+class StringDataLineNumbersTest(unittest.TestCase):
+    def test_lines_after_an_assigned_triple_quote_are_data_but_a_docstring_is_not(self):
+        lines = ['def f():', '    """Doc.', "    more", '    """', '    y = """', "data", '"""', "z = 1"]
+
+        self.assertEqual({6}, source_text.string_data_regions(lines, "hash_triple")[0])
+        self.assertEqual({7: ""}, source_text.string_data_regions(lines, "hash_triple")[1])
+
+    def test_lines_after_an_opening_backtick_through_the_closing_one_are_data(self):
+        lines = ["// a `tick", "const s = `", "## x", "`;", "f();"]
+
+        self.assertEqual({3}, source_text.string_data_regions(lines, "slash")[0])
+        self.assertEqual({4: ";"}, source_text.string_data_regions(lines, "slash")[1])
+
+    def test_a_triple_quote_on_its_own_line_is_data_after_an_opening_bracket_comma_or_equals(self):
+        for opener in ("plan = textwrap.dedent(", "PLANS = [", "x = {", "f(a,", "x ="):
+            with self.subTest(opener=opener):
+                lines = [opener, '    """', "## body", '""",', "]"]
+
+                self.assertEqual({3}, source_text.string_data_regions(lines, "hash_triple")[0])
+
+    def test_a_triple_quote_on_its_own_line_after_a_colon_or_at_module_top_is_a_docstring(self):
+        for lines in (['def f():', '    """', "body", '    """'], ['"""', "body", '"""']):
+            with self.subTest(lines=lines):
+                self.assertEqual(set(), source_text.string_data_regions(lines, "hash_triple")[0])
+
+    def test_a_prefixed_docstring_is_not_data(self):
+        for prefix in ("r", "u", "b", "R"):
+            with self.subTest(prefix=prefix):
+                lines = ["def f():", f'    {prefix}"""Match x.', "    body", '    """']
+
+                self.assertEqual(set(), source_text.string_data_regions(lines, "hash_triple")[0])
+
+    def test_an_odd_backtick_inside_a_quoted_string_or_comment_does_not_open_a_template(self):
+        for line in ('const fence = "```";', "const fence = '`';", "const x = 1; // a ` tick"):
+            with self.subTest(line=line):
+                self.assertEqual(set(), source_text.string_data_regions([line, "a", "b"], "slash")[0])
+
+    def test_a_template_closes_at_the_first_unescaped_backtick_of_the_raw_line_even_with_a_slash_pair_before_it(self):
+        lines = ["const h = `", "  <p>hi</p>", "  see https://x.com/docs`;", "// Phase 1: leak", "const y = 2;"]
+
+        self.assertEqual(({2}, {3: ";"}), source_text.string_data_regions(lines, "slash"))
+
+    def test_an_escaped_backtick_inside_a_template_does_not_close_it(self):
+        lines = ["const h = `", "  a \\` b", "  c`;", "const y = 2;"]
+
+        self.assertEqual(({2}, {3: ";"}), source_text.string_data_regions(lines, "slash"))
+
+    def test_a_block_comment_body_line_with_an_odd_backtick_does_not_open_a_template(self):
+        lines = ["/*", "  uses a ` tick", "*/", "const y = 2;"]
+
+        self.assertEqual((set(), {}), source_text.string_data_regions(lines, "slash"))
+
+    def test_an_apostrophe_inside_a_template_on_one_line_does_not_open_a_template(self):
+        lines = ["warn(`can't find ${x}`, 'warn');", "// leftover note", "const y = 2;"]
+
+        self.assertEqual((set(), {}), source_text.string_data_regions(lines, "slash"))
+
+    def test_a_backtick_in_a_trailing_block_comment_does_not_open_a_template(self):
+        lines = ["foo(); /* it`s */", "// leftover note", "const y = 2;"]
+
+        self.assertEqual((set(), {}), source_text.string_data_regions(lines, "slash"))
+
+    def test_a_triple_quote_inside_a_single_quoted_literal_does_not_open_a_string(self):
+        lines = ["x = '\"\"\"'", "a", "b"]
+
+        self.assertEqual(set(), source_text.string_data_regions(lines, "hash_triple")[0])
+
+    def test_closing_tail_is_the_text_after_the_closing_quote(self):
+        lines = ['X = """', "data", '"""  # Phase 2 leftover']
+
+        self.assertEqual({2}, source_text.string_data_regions(lines, "hash_triple")[0])
+        self.assertEqual({3: "  # Phase 2 leftover"}, source_text.string_data_regions(lines, "hash_triple")[1])
+
+    def test_other_styles_give_no_lines(self):
+        self.assertEqual(set(), source_text.string_data_regions(['x = """', "a", '"""'], "hash")[0])
+
+
+class CommentStyleOfTest(unittest.TestCase):
+    def test_an_unknown_suffix_gives_none(self):
+        for path in ("x.md", "Makefile"):
+            with self.subTest(path=path):
+                self.assertIsNone(source_text.comment_style_of(path))
+
+
 class LiteralTest(unittest.TestCase):
     def test_literals_are_the_numbers_and_unquoted_strings_in_order(self):
         line = "const x2 = pick('a b', 3.5, \"q\") + 7"
@@ -118,6 +202,11 @@ class LiteralTest(unittest.TestCase):
 
         self.assertEqual(mask("export const A = 24"), mask("export const A = 4"))
         self.assertNotEqual(mask("const A = f(1)"), mask("const A = g(1)"))
+
+    def test_string_text_is_removed_and_code_and_trailing_comment_stay(self):
+        line = "plan = \"## Build\" + 'x'  # trailing note"
+
+        self.assertEqual("plan = \"\" + ''  # trailing note", source_text.without_string_text(line))
 
 
 if __name__ == "__main__":

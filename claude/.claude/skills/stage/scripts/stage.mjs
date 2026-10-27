@@ -36,7 +36,7 @@ const argv = process.argv.slice(2);
 const asJson = argv.includes("--json");
 const runMode = argv.includes("--run");
 const noStage = argv.includes("--no-stage");
-const doStage = argv.includes("--stage") || (runMode && !noStage);
+let doStage = argv.includes("--stage") || (runMode && !noStage);
 
 if (runMode) {
   process.on("uncaughtException", (err) => {
@@ -178,9 +178,9 @@ function codeResidue(line) {
 // ---------------------------------------------------------------- collect
 // Tracked changes (staged + unstaged) vs HEAD, plus untracked files.
 const changed = new Map(); // path -> { status }
-{
-  // -z gives STATUS \0 path (\0 newpath for renames), flattened; walk it.
-  const parts = git(["diff", "HEAD", "--name-status", "-M", "-z"], { cwd: root }).split("\0").filter(Boolean);
+let diffBase = "HEAD"; // what every diff reads against
+let branchBase = null; // base ref name, set only when --run reads the branch diff
+function addNameStatus(parts) {
   for (let i = 0; i < parts.length; ) {
     const status = parts[i][0];
     if (status === "R" || status === "C") {
@@ -192,8 +192,36 @@ const changed = new Map(); // path -> { status }
     }
   }
 }
+{
+  // -z gives STATUS \0 path (\0 newpath for renames), flattened; walk it.
+  addNameStatus(git(["diff", diffBase, "--name-status", "-M", "-z"], { cwd: root }).split("\0").filter(Boolean));
+}
 for (const p of git(["ls-files", "-o", "--exclude-standard", "-z"], { cwd: root }).split("\0").filter(Boolean)) {
   changed.set(p, { status: "A", untracked: true });
+}
+
+// A clean tree with everything committed: read the branch diff against its
+// base instead. Committed changes cannot be staged, so this mode is report-only.
+// The base comes from the branch-base tool (one resolver for the toolkit).
+if (runMode && changed.size === 0) {
+  try {
+    const resolved = execFileSync(join(ownClaudeDir, "scripts", "tools", "branch-base"), [], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const baseRef = resolved.trim().split(" ")[0];
+    const mergeBase = git(["merge-base", baseRef, "HEAD"], { cwd: root }).trim();
+    const parts = git(["diff", mergeBase, "--name-status", "-M", "-z"], { cwd: root }).split("\0").filter(Boolean);
+    addNameStatus(parts);
+    if (changed.size > 0) {
+      diffBase = mergeBase;
+      branchBase = baseRef;
+      doStage = false;
+    }
+  } catch {
+    // no resolvable base: report the empty tree as before
+  }
 }
 
 if (changed.size === 0 && !runMode) {
@@ -216,7 +244,7 @@ function diffLines(path, meta) {
       return { added: [], removed: [], binary: true };
     }
   }
-  const out = git(["diff", "HEAD", "--", path], { cwd: root });
+  const out = git(["diff", diffBase, "--", path], { cwd: root });
   if (/^Binary files /m.test(out)) return { added: [], removed: [], binary: true, raw: out };
   const added = [], removed = [];
   // New-file line number of the first changed line, for the nvim-jump queue.
@@ -430,17 +458,20 @@ if (runMode) {
   const result = queueCount === 0 ? "clean" : "residue";
   const repoName = basename(root);
 
+  // A branch-diff read stages nothing by design; a lane=stage row would count it as a stage run.
   const logScript =
     process.env.STAGE_LOG_SCRIPT || join(ownClaudeDir, "skills", "review", "log-review-metrics");
-  try {
-    execFileSync(
-      "bash",
-      [logScript, `repo=${repoName}`, "lane=stage", `suppressed=${stagedCount}`, `queue=${queueCount}`, `result=${result}`],
-      { cwd: root, stdio: ["ignore", "ignore", "pipe"] },
-    );
-  } catch (err) {
-    const detail = (err?.stderr ? String(err.stderr).trim() : "") || err?.message;
-    console.error(`stage: warning: metrics row not logged: ${detail}`);
+  if (!branchBase) {
+    try {
+      execFileSync(
+        "bash",
+        [logScript, `repo=${repoName}`, "lane=stage", `suppressed=${stagedCount}`, `queue=${queueCount}`, `result=${result}`],
+        { cwd: root, stdio: ["ignore", "ignore", "pipe"] },
+      );
+    } catch (err) {
+      const detail = (err?.stderr ? String(err.stderr).trim() : "") || err?.message;
+      console.error(`stage: warning: metrics row not logged: ${detail}`);
+    }
   }
 
   const reasonText = (tier, entry) => {
@@ -457,7 +488,11 @@ if (runMode) {
   }
   report.push("");
 
-  if (noStage) {
+  if (branchBase) {
+    report.push(
+      `Read the branch diff against \`${branchBase}\` (all changes committed) in report-only mode — nothing staged; ${tiers.safe.length} SAFE file(s) skipped.`,
+    );
+  } else if (noStage) {
     report.push(`Staged mechanically (0) — --no-stage given; ${tiers.safe.length} SAFE file(s) left unstaged.`);
   } else {
     report.push(`Staged mechanically (${stagedCount}) — invariant-verified, skip. \`git diff --staged\` to spot-check.`);

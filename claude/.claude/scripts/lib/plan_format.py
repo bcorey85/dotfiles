@@ -738,6 +738,21 @@ def content_words(text):
     return set(CONTENT_WORD.findall(text.lower())) - AC_STOP_WORDS
 
 
+def missing_criteria_failure(spec_path):
+    """The one row for a spec with an Acceptance Criteria section whose acceptance-criteria.md beside it is missing
+    or empty, else None. Run by `plan check --final` and by `/code` start; plain `plan check` skips it because the
+    criteria file is written after the spec."""
+    has_criteria_section = any(ACCEPTANCE_HEADING.match(line) for line in spec_path.read_text().splitlines())
+    if not has_criteria_section:
+        return None
+
+    criteria_path = spec_path.with_name("acceptance-criteria.md")
+    if criteria_path.is_file() and criteria_path.read_text().strip():
+        return None
+    return (f"{criteria_path}: missing or empty, and the spec has an Acceptance Criteria section. The spec-criteria "
+            "step never ran: dispatch spec-criteria (eng-spec Phase 6, step 17), never write the file yourself.")
+
+
 def spec_ac_failures(spec_path):
     """The finalization rows for a file named spec.md: the ac_reference_failures rows read against the
     acceptance-criteria.md beside it (a missing file is None) and the ac_drift_failures rows against the ticket beside

@@ -12,6 +12,7 @@ import unittest
 import toolkit_paths
 
 SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.GATES_DIR) / "agent_model_guard.py"
+FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
 
 OPUS_STDERR = (
     "[agent-model-guard] BLOCKED: Agent call sets model containing 'opus' at the call site.\n"
@@ -189,6 +190,13 @@ class AgentModelGuardTest(unittest.TestCase):
         self.assertIn(
             "has no model pin. No 'model:' frontmatter found", decision_of(finished)["permissionDecisionReason"]
         )
+
+    def test_fork_with_no_model_passes(self):
+        fork_launch = (FIXTURES / "hook_event_agent_fork.json").read_text()
+        self.assert_passes(stdin=fork_launch)
+
+    def test_fork_ignores_a_call_site_opus(self):
+        self.assert_passes(stdin=agent_payload("opus", subagent="fork"))
 
     def test_empty_model_string_counts_as_missing(self):
         finished = run_hook(stdin=agent_payload("", subagent="ghost"))

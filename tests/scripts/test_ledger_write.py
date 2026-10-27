@@ -287,6 +287,14 @@ class LedgerWriteTest(unittest.TestCase):
         writer_lines = [line for line in done.stderr.splitlines() if line.startswith("ledger-write:")]
         self.assertEqual(len(writer_lines), 1, done.stderr)
 
+    def test_help_prints_usage_and_writes_nothing(self):
+        for flag in ("--help", "-h"):
+            with self.subTest(flag=flag):
+                done = self.run_script(LEDGER_WRITE, [flag], with_ledger=True, stdin='{"verdict":"finalized"}')
+                self.assertEqual((done.returncode, done.stderr), (0, ""))
+                self.assertIn("usage: ledger-write <type>", done.stdout)
+                self.assertEqual(fake_ledger.recorded_rows(self.ledger_env), [])
+
 
 if __name__ == "__main__":
     unittest.main()

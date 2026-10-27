@@ -633,6 +633,57 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertEqual(["cargo clippy --all-targets -- -D warnings"], commands)
 
+    def test_python_gate_commands_run_through_the_runner_the_lock_file_or_virtualenv_names(self):
+        cases = {
+            "uv.lock": ["uv run ruff check {files:.py}", "uv run pytest tests/test_a.py"],
+            "poetry.lock": ["poetry run ruff check {files:.py}", "poetry run pytest tests/test_a.py"],
+            ".venv/bin/python": [".venv/bin/python -m ruff check {files:.py}",
+                                 ".venv/bin/python -m pytest tests/test_a.py"],
+            None: ["ruff check {files:.py}", "python3 -m pytest tests/test_a.py"],
+        }
+        for marker, expected in cases.items():
+            with self.subTest(marker=marker):
+                repo = self.tmp / f"python-{len(list(self.tmp.iterdir()))}"
+                repo.mkdir()
+                (repo / "pyproject.toml").write_text("[tool.ruff]\n")
+                if marker:
+                    (repo / marker).parent.mkdir(parents=True, exist_ok=True)
+                    (repo / marker).write_text("")
+
+                commands = code_step_gates.python_commands(repo, ["app/a.py", "tests/test_a.py"])
+
+                self.assertEqual(expected, commands)
+
+    def test_python_gate_commands_take_the_runner_of_the_pytest_command_the_phase_lists(self):
+        (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
+        (self.repo / "uv.lock").write_text("")
+        phase = ("**File**: `app/models.py`\n**File**: `tests/test_models.py`\n\n#### Automated Verification:\n\n"
+                 "- [ ] **Tests**: models pass - `DJANGO_SETTINGS_MODULE=app.test poetry run pytest tests/`\n")
+
+        commands = code_step_gates.derive_gate_commands(self.repo, phase)
+
+        self.assertEqual(["DJANGO_SETTINGS_MODULE=app.test poetry run ruff check {files:.py}",
+                          "DJANGO_SETTINGS_MODULE=app.test poetry run pytest tests/test_models.py"], commands)
+
+    def test_a_listed_pytest_command_that_changes_directory_gives_no_runner(self):
+        (self.repo / "pyproject.toml").write_text("")
+        (self.repo / "uv.lock").write_text("")
+        phase = ("**File**: `tests/test_models.py`\n\n#### Automated Verification:\n\n"
+                 "- [ ] **Tests**: models pass - `cd api && poetry run pytest tests/`\n")
+
+        commands = code_step_gates.derive_gate_commands(self.repo, phase)
+
+        self.assertEqual(["uv run pytest tests/test_models.py"], commands)
+
+    def test_a_listed_system_python_runner_keeps_ruff_as_its_own_program(self):
+        (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
+        phase = ("**File**: `tests/test_models.py`\n\n#### Automated Verification:\n\n"
+                 "- [ ] **Tests**: models pass - `python -m pytest tests/`\n")
+
+        commands = code_step_gates.derive_gate_commands(self.repo, phase)
+
+        self.assertEqual(["ruff check {files:.py}", "python -m pytest tests/test_models.py"], commands)
+
     def test_a_verification_item_may_start_with_an_environment_setting(self):
         item = "- [ ] **Tests**: the streams pass - `CARGO_BUILD_JOBS=4 cargo test --test side_streams`"
 
@@ -730,6 +781,22 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertIn(f"{timed_out_command} -> timed out at the hand-back gate, no test result", out)
         self.assertNotIn(f"{timed_out_command} -> exit 0", out)
+
+    def test_after_coder_reports_a_gate_setup_fault_as_no_test_result_not_exit_0(self):
+        self.begin_coder()
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+        gate_path = self.repo / ".git/coder-gate.json"
+        gate = json.loads(gate_path.read_text())
+        setup_fault_command = gate["commands"][0]
+        gate["coders"]["a1"] = {"runs": 1, "denies": 0, "failed": [], "skipped": [], "timed_out": [],
+                                "setup_faults": [setup_fault_command], "result": "setup-fault"}
+        gate_path.write_text(json.dumps(gate))
+
+        out = self.step("after-coder")
+
+        self.assertIn(f"{setup_fault_command} -> could not run at the hand-back gate (setup fault), no test result",
+                      out)
+        self.assertNotIn(f"{setup_fault_command} -> exit 0", out)
 
     def test_after_coder_ignores_files_dirty_before_start(self):
         (self.repo / "backend/src/existing.ts").write_text("export const a = 2\n")

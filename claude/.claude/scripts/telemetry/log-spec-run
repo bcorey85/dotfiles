@@ -57,11 +57,12 @@
 # A row `ledger write` refuses exits 2.
 set -euo pipefail
 
-command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
-
 script_dir=$(dirname -- "${BASH_SOURCE[0]}")
 # shellcheck source=../lib/_kv.sh
 source "$script_dir/../lib/_kv.sh"
+kv_help_exit "${BASH_SOURCE[0]}" "$@"
+
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 
 # No field here is free text, so a space in any value is refused: the caller quoted
 # too much and swallowed the following key=value pairs into it, which is how repo=

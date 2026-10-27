@@ -116,6 +116,14 @@ class LogReviewMetricsRepoTest(unittest.TestCase):
         metrics_run = self.run_metrics("out=~", "iter=7")
         self.assertNotEqual(metrics_run.returncode, 0)
 
+    def test_help_prints_usage_and_writes_nothing(self):
+        for flag in ("--help", "-h"):
+            with self.subTest(flag=flag):
+                metrics_run = self.run_metrics(flag)
+                self.assertEqual((metrics_run.returncode, metrics_run.stderr), (0, ""))
+                self.assertIn("usage: log-review-metrics key=value", metrics_run.stdout)
+                self.assertEqual(fake_ledger.recorded_rows(self.ledger_env), [])
+
 
 if __name__ == "__main__":
     unittest.main()

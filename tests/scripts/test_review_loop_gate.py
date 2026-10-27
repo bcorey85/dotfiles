@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -17,6 +18,14 @@ LOGGER = os.environ.get("LOG_REVIEW_FINDING_SCRIPT") or str(
 )
 
 ASYNC_RESULT = "Async agent launched successfully.\nagentId: a7bf12f9c51bc4875 (internal ID)"
+FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
+
+
+def background_shell(fixture_name):
+    """A real shell call, its result that moved it to the background, and its task notification."""
+    with open(FIXTURES / fixture_name, encoding="utf-8") as fh:
+        call, moved, notified = map(json.loads, fh)
+    return [user("review loop"), call, moved], notified
 
 
 def user(text):
@@ -283,6 +292,18 @@ class StopRowTest(unittest.TestCase):
         message = user('<agent-message from="a5bc2ebfa0d6aeaf8">done</agent-message>')
         self.stop_in_session([*resumed, message], store)
         self.assertEqual(self.open_counts(store), [1, 0, 0])
+
+    def test_a_shell_moved_to_the_background_is_open_until_its_task_notification(self):
+        for fixture_name in ("loop_shell_moved_to_background_by_timeout.jsonl", "loop_shell_run_in_background.jsonl"):
+            with self.subTest(fixture_name):
+                store = self.new_store()
+                waiting, notified = background_shell(fixture_name)
+
+                waiting_stop = self.stop_in_session(waiting, store)
+                self.stop_in_session([*waiting, notified], store)
+
+                self.assertEqual(waiting_stop.stdout, "")
+                self.assertEqual(self.open_counts(store), [1, 0])
 
 
 class FullCheckTest(unittest.TestCase):

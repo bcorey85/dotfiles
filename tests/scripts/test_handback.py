@@ -251,6 +251,45 @@ class AskFindingIdTest(unittest.TestCase):
                 self.assertIsNone(handback.ask_finding_id(entry))
 
 
+class AskParsedFindingIdTest(unittest.TestCase):
+    def test_a_finding_id_the_loop_wrote_survives_parsing_in_block_and_flow_style(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "  - finding: x\n    finding_id: a1b2c3d4e5f60001\n    file_line: a.ts:1\n    question: q?\n"
+                "    change: c\n"
+                "  - {finding: y, finding_id: a1b2c3d4e5f60002, file_line: b.ts:2, question: q?, change: c}\n")
+        packet = handback.load(text)
+        self.assertEqual([handback.ask_finding_id(item) for item in packet["ask"]],
+                         ["a1b2c3d4e5f60001", "a1b2c3d4e5f60002"])
+
+
+class ClaimLoggedAskIdTest(unittest.TestCase):
+    def logged_rows(self):
+        return [{"file": "src/retry.ts", "line": 10, "finding_id": "a1b2c3d4e5f60001"},
+                {"file": "src/db.ts", "line": 5, "finding_id": "a1b2c3d4e5f60002"}]
+
+    def test_an_ask_takes_the_id_of_the_logged_row_at_its_file_and_line(self):
+        logged_rows = self.logged_rows()
+        ask = {"file_line": "src/db.ts:5"}
+        self.assertEqual(handback.claim_logged_ask_id(ask, logged_rows), "a1b2c3d4e5f60002")
+
+    def test_a_logged_row_is_claimed_once(self):
+        logged_rows = self.logged_rows()
+        ask = {"file_line": "src/db.ts:5"}
+        handback.claim_logged_ask_id(ask, logged_rows)
+        self.assertIsNone(handback.claim_logged_ask_id(ask, logged_rows))
+        self.assertEqual(len(logged_rows), 1)
+
+    def test_a_row_logged_with_a_shorter_path_still_matches_the_ask_path(self):
+        logged_rows = [{"file": "spec.md", "line": 314, "finding_id": "a1b2c3d4e5f60003"}]
+        ask = {"file_line": "docs/guide/spec.md:314"}
+        self.assertEqual(handback.claim_logged_ask_id(ask, logged_rows), "a1b2c3d4e5f60003")
+
+    def test_another_line_or_file_or_a_partial_name_is_no_match(self):
+        for file_line in ["src/db.ts:6", "src/other.ts:5", "mydb.ts:5", "", "-"]:
+            with self.subTest(file_line=file_line):
+                self.assertIsNone(handback.claim_logged_ask_id({"file_line": file_line}, self.logged_rows()))
+
+
 class AskOutcomeFindingIdTest(unittest.TestCase):
     def test_a_valid_id_is_kept_with_no_note(self):
         self.assertEqual(handback.ask_outcome_finding_id({"finding_id": " a1b2c3d4e5f60001 "}),
@@ -351,6 +390,20 @@ class StoreTest(HandbackTestBase):
         handback.record(SESSION, "stop", agent_id="a1", open_dispatches=2)
         handback.record(SESSION, "handback", status="converged", message="m")
         self.assertIsNone(handback.hand_back_gap(handback.latest(SESSION)))
+
+    def test_a_stop_the_gate_blocked_is_not_the_standing_stop(self):
+        handback.record(SESSION, "dispatch")
+        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=0, ask_rows=[{"file": "a", "line": 1}])
+        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=0, ask_rows=[], blocked=True)
+        self.assertEqual(handback.latest(SESSION)["stop"]["ask_rows"], [{"file": "a", "line": 1}])
+
+    def test_the_settled_stop_is_the_awaited_agents_unblocked_stop_at_or_after_the_hand_back(self):
+        before = handback.record(SESSION, "stop", agent_id="a1", open_dispatches=0)["ts"]
+        handback.record(SESSION, "stop", agent_id="a2", open_dispatches=0)
+        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=0, blocked=True)
+        self.assertIsNone(handback.settled_stop_row(SESSION, "a1", before + 0.0001))
+        settled = handback.record(SESSION, "stop", agent_id="a1", open_dispatches=0, ask_rows=[])
+        self.assertEqual(handback.settled_stop_row(SESSION, "a1", before + 0.0001), settled)
 
     def test_a_wait_after_a_redispatch_is_not_redispatched_and_a_new_dispatch_clears_an_old_stop(self):
         handback.record(SESSION, "dispatch")

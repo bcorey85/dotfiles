@@ -72,6 +72,8 @@ KEPT_DELIMITERS = "?!)"
 ITEM_KEY_START = re.compile(r"(?:{})\s*:".format("|".join(ITEM_KEYS)))
 STALE_STORE_SECONDS = 7 * 86400
 FINDING_ID_PATTERN = re.compile(r"[0-9a-f]{16}")
+# A line `log-review-finding` prints for each finding row it writes.
+PRINTED_FINDING_ID = re.compile(r"(?m)^finding_id=(" + FINDING_ID_PATTERN.pattern + r")\s*$")
 
 
 class PacketError(Exception):
@@ -272,10 +274,65 @@ def ask_finding_id(item):
     return None
 
 
+def is_same_file(path, logged_path):
+    """True when two paths name one file, or one is the other's tail after a `/`: the loop logs the path its command
+    line spelled, which may be shorter than the ask's."""
+    if not path or not logged_path:
+        return False
+    return path == logged_path or path.endswith("/" + logged_path) or logged_path.endswith("/" + path)
+
+
+def claim_logged_ask_id(item, logged_rows):
+    """The finding_id of the logged ask row at the ask's file and line, or None. A claimed row leaves logged_rows, so
+    two asks never share one id. Each row is {file, line, finding_id}."""
+    path, line = script_utils.split_location(item.get("file_line") or "")
+    for row in logged_rows:
+        if row["line"] == line and is_same_file(path, row["file"]):
+            logged_rows.remove(row)
+            return row["finding_id"]
+    return None
+
+
+def ask_row_fields(context, item):
+    """The log-review-finding fields that an ask's row and its outcome row share. context holds the run's branch, lane,
+    scope and iter, and a phase when the run has one (the writer takes phase as a token, so a run with none sends
+    none)."""
+    path, line = script_utils.split_location(item.get("file_line") or "-")
+    phase_fields = [f"phase={context['phase']}"] if context.get("phase") else []
+    return [f"branch={context['branch']}", f"lane={context['lane']}", f"scope={context['scope']}", *phase_fields,
+            f"iter={context['iter']}", f"gate={item.get('gate', 'code-reviewer')}", "disposition=ask",
+            f"class={item.get('class', 'other')}", f"file={path}", f"line={line}", "actioned=ask"]
+
+
+def log_ask_row(logger, context, item, cwd=None):
+    """The finding_id that the log helper at `logger` printed for a new ask row, or None when the row was not logged."""
+    code, output = script_utils.run_command(["bash", str(logger), "kind=finding", *ask_row_fields(context, item)], cwd)
+    printed_ids = PRINTED_FINDING_ID.findall(output)
+    return printed_ids[0] if code == 0 and printed_ids else None
+
+
+def supply_ask_finding_ids(asks, session_id, logger, context, cwd=None):
+    """Give every ask in `asks` without a valid finding_id the id of the ask row the loop logged for it (the stop row's
+    ask_rows of this session, matched on file and line), or of an ask row logged here when the loop logged none. A
+    valid id on an ask stays and its logged row is never given to another ask. An ask whose row cannot be logged gets
+    none; the outcome is then logged under a new id. The caller saves the asks so a repeat logs no ask row twice."""
+    stop_row = latest(session_id)["stop"] or {}
+    written_ids = {ask_finding_id(item) for item in asks}
+    logged_rows = [dict(row) for row in stop_row.get("ask_rows") or [] if row["finding_id"] not in written_ids]
+    for item in asks:
+        if ask_finding_id(item):
+            continue
+
+        finding_id = claim_logged_ask_id(item, logged_rows) or log_ask_row(logger, context, item, cwd)
+        if finding_id:
+            item["finding_id"] = finding_id
+
+
 def ask_outcome_finding_id(item):
-    """(the finding_id an ask's outcome row is logged under, a stderr note or None). A valid id supersedes the ask row
-    the loop logged. With no valid id the loop handed back no ask row to supersede, so the outcome row gets a new id in
-    the ledger writer's shape and stands as that ask's only row: the user's answer is never dropped."""
+    """(the finding_id an ask's outcome row is logged under, a stderr note or None). A valid id, which the script
+    supplied from the ask's logged row, supersedes that row. An ask the script could not match or log has no valid id:
+    its outcome row gets a new id in the ledger writer's shape and stands as that ask's only row, so the user's answer
+    is never dropped."""
     finding_id = ask_finding_id(item)
     if finding_id is not None:
         return finding_id, None
@@ -528,9 +585,9 @@ def latest(session_id):
     review-loop stop row after the last dispatch or None, "unanswered": the number of dispatches after the last
     hand-back (all of them when there is none), "pending": unanswered > 0}. A hand-back clears every dispatch before
     it, so a dispatch that another hook denied blocks nothing once a later dispatch hands back. A row holds kind, ts,
-    session_id; a hand-back row also agent_id, status, problems, message; a stop row also agent_id and
-    open_dispatches, the background agents the loop still waited on when it stopped. Rows are ordered by append, not
-    by clock."""
+    session_id; a hand-back row also agent_id, status, problems, message; a stop row also agent_id,
+    open_dispatches (the background agents the loop still waited on when it stopped) and ask_rows. A stop the gate
+    blocked is not a stop: the loop went on, so such a row is skipped. Rows are ordered by append, not by clock."""
     standing = {"dispatch": None, "handback": None, "stop": None, "unanswered": 0, "pending": False}
     if not session_id:
         return standing
@@ -543,13 +600,29 @@ def latest(session_id):
             standing["dispatch"] = row
             standing["stop"] = None
             standing["unanswered"] += 1
-        elif row.get("kind") == "stop":
+        elif row.get("kind") == "stop" and not row.get("blocked"):
             standing["stop"] = row
         elif row.get("kind") == "handback":
             standing["handback"] = row
             standing["unanswered"] = 0
     standing["pending"] = standing["unanswered"] > 0
     return standing
+
+
+def settled_stop_row(session_id, agent_id, since):
+    """The newest stop row of agent_id written at or after `since` that the gate did not block, or None. The hand-back
+    row lands before the stop row of the same loop, so a reader of the hand-back looks here for the stop that
+    follows it."""
+    if not session_id:
+        return None
+    try:
+        stored_rows = script_utils.read_jsonl(session_file(session_id))
+    except ValueError:
+        return None
+    settled = [row for row in stored_rows
+               if row.get("kind") == "stop" and row.get("agent_id") == agent_id and not row.get("blocked")
+               and row.get("ts", 0) >= since]
+    return settled[-1] if settled else None
 
 
 NO_DISPATCH = "no-dispatch"

@@ -126,6 +126,7 @@ from code_step_core import (
     timed_command,
     uncommitted_files,
     wait_for_handback,
+    wait_for_loop_stop,
 )
 from code_step_hooks import (
     command_dispatch_hook,
@@ -1838,6 +1839,7 @@ def command_after_review(repo_dir, state, args):
     print("The review packet was saved for the user. Do not repeat it.")
     asks = packet["ask"]
     if asks:
+        fill_review_ask_ids(repo_dir, state, module, handback, asks)
         return present_asks(repo_dir, state, asks)
     finish_phase(repo_dir, state)
 
@@ -1904,26 +1906,49 @@ def ask_the_user(repo_dir, state, asks):
     )
 
 
+def ask_log_context(repo_dir, state):
+    # The run fields that an ask row and its outcome row share.
+    return {"branch": git_output(repo_dir, "branch", "--show-current") or "-", "lane": state["lane"],
+            "scope": "phase", "phase": state.get("phase"), "iter": state["iter"]}
+
+
+def fill_review_ask_ids(repo_dir, state, module, handback, asks):
+    # Give each ask the id of its ask row: the row the loop logged, or one logged here. The ids kept in state belong
+    # to one hand-back: reading the same hand-back again logs no row twice, and a later hand-back that asks at the same
+    # place starts with none.
+    wait_for_loop_stop(state, module, handback)
+    handback_key = f"{handback.get('agent_id')}|{handback.get('ts')}"
+    if state.get("askIdsHandback") != handback_key:
+        state["askIdsHandback"] = handback_key
+        state["askIds"] = {}
+
+    kept_ids = state["askIds"]
+    keys = [f"{item.get('file_line')}|{item.get('question')}" for item in asks]
+    for item, key in zip(asks, keys, strict=True):
+        if key in kept_ids and not module.ask_finding_id(item):
+            item["finding_id"] = kept_ids[key]
+
+    session_id = state.get("sessionId") or session_pin() or ""
+    logger = CLAUDE_DIR / "skills/review/log-review-finding"
+    module.supply_ask_finding_ids(asks, session_id, logger, ask_log_context(repo_dir, state), repo_dir)
+    for item, key in zip(asks, keys, strict=True):
+        if module.ask_finding_id(item):
+            kept_ids[key] = module.ask_finding_id(item)
+    save_state(repo_dir, state)
+
+
 def log_ask_outcomes(repo_dir, state, outcomes, decided_by="user"):
     module, import_error = load_handback()
     if module is None:
         print(f"code-step: ask outcomes not logged: {import_error}", file=sys.stderr)
         return
 
-    branch = git_output(repo_dir, "branch", "--show-current") or "-"
+    context = ask_log_context(repo_dir, state)
     for item, outcome in zip(state["asks"], outcomes, strict=False):
         finding_id, new_finding_id_note = module.ask_outcome_finding_id(item)
-        file_line = item.get("file_line", "-:0")
-        path, _, line = file_line.partition(":")
-        # The writer takes phase as a token, so a run with no phase sends none.
-        phase_args = [f"phase={state['phase']}"] if state.get("phase") else []
         logger_code, logger_output = run_command(
             ["bash", str(CLAUDE_DIR / "skills/review/log-review-finding"), "kind=finding",
-             f"finding_id={finding_id}", f"branch={branch}", f"lane={state['lane']}", "scope=phase",
-             *phase_args, f"iter={state['iter']}",
-             f"gate={item.get('gate', 'code-reviewer')}",
-             "disposition=ask", f"class={item.get('class', 'other')}", f"file={path}",
-             f"line={re.sub(r'[^0-9].*', '', line) or '0'}", "actioned=ask", f"ask_outcome={outcome}",
+             f"finding_id={finding_id}", *module.ask_row_fields(context, item), f"ask_outcome={outcome}",
              f"ask_decided_by={decided_by}"], repo_dir)
         if logger_code != 0:
             print(f"code-step: ask outcome for finding_id {finding_id} not logged: log-review-finding exited "

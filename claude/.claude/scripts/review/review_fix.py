@@ -589,6 +589,7 @@ def command_packet(argv):
     replies, failures = post_aikido_replies(packet, options.aikido_targets, state)
     notes += failures
     if packet["ask"]:
+        fill_packet_ask_ids(packet, state)
         present_packet_asks(packet, state)
     else:
         print_action("render-and-finish", gate_mark_line())
@@ -634,13 +635,23 @@ def is_plan_impact_ask(item):
 
 def log_ask_outcome(state, item, outcome, finding_id, decided_by="user"):
     """(exit code, output) of the outcome row's log call."""
-    path, line = split_location(item.get("file_line") or "-")
     return run_command(["bash", str(CLAUDE_DIR / "skills/review/log-review-finding"), "kind=finding",
-                        f"finding_id={finding_id}", f"branch={state['branch']}",
-                        f"lane={state['lane']}", f"scope={state['scope']}", f"iter={state['iter']}",
-                        f"gate={item['gate']}", "disposition=ask", f"class={item['class']}", f"file={path}",
-                        f"line={line}", "actioned=ask", f"ask_outcome={outcome}",
+                        f"finding_id={finding_id}", *handback.ask_row_fields(state, item), f"ask_outcome={outcome}",
                         f"ask_decided_by={decided_by}"])
+
+
+def fill_packet_ask_ids(packet, state):
+    """Give every ask without a valid finding_id the id of the ask row the loop logged for it, matched on file and
+    line, or of an ask row logged here when the loop logged none. A valid id the loop wrote stays. A plan-impact ask
+    is not a finding and gets none. An ask whose row cannot be logged gets none, and asks-done reports it. A repeat of
+    the same packet keeps the asks saved the first time, so no ask row is logged twice."""
+    if state.get("asks"):
+        packet["ask"] = state["asks"]
+        return
+
+    finding_asks = [item for item in packet["ask"] if not is_plan_impact_ask(item)]
+    handback.supply_ask_finding_ids(finding_asks, os.environ.get("CLAUDE_CODE_SESSION_ID", ""),
+                                    CLAUDE_DIR / "skills/review/log-review-finding", state)
 
 
 def read_outcomes(argv, asks):

@@ -141,7 +141,9 @@ class CodeStepTest(unittest.TestCase):
         (self.claude / "scripts" / "telemetry").mkdir()
         for name in ("scripts/telemetry/log-scan", "skills/review/log-review-finding"):
             stub = self.claude / name
-            stub.write_text(f'#!/usr/bin/env bash\necho "{name} $@" >> {self.log}\n')
+            stub.write_text(f'#!/usr/bin/env bash\necho "{name} $@" >> {self.log}\n'
+                            'case "$*" in *finding_id=*) ;; '
+                            f"*kind=finding*) echo finding_id={self.MINTED_FINDING_ID};; esac\n")
             stub.chmod(0o755)
         self.repo = self.tmp / "repo"
         shutil.copytree(self.base_repo, self.repo, symlinks=True)
@@ -302,9 +304,14 @@ class CodeStepTest(unittest.TestCase):
 
     # The ledger writer mints finding ids as 16 lowercase hex characters; code-step logs no other shape.
     ASK_FINDING_ID = "0123456789abcdef"
+    # The id the stand-in log helper prints for a finding row it is not given an id for.
+    MINTED_FINDING_ID = "aaaaaaaaaaaaaaaa"
+    LOGGED_FINDING_ID = "bbbbbbbbbbbbbbbb"
     ASK = ('status: converged\niter: 1\nfixed: []\nask: [{"finding": "f", "file_line": "backend/src/orders.ts:2", '
            '"question": "keep?", "change": "export o as a const", "gate": "code-reviewer", "class": "correctness", '
            '"finding_id": "0123456789abcdef"}]')
+
+    ASK_WITHOUT_FINDING_ID = ASK.replace(', "finding_id": "0123456789abcdef"', "")
 
     LOOP_OK = "status: converged\niter: 1\nfixed: []\nask: []\nnit: []"
 
@@ -1460,6 +1467,112 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("asks-done", "accepted")
 
         self.assertIn("   The proposed change: export o as a const", out)
+
+    def logged_stop_row(self, ask_rows, agent_id="a1", blocked=False):
+        row = {"kind": "stop", "ts": time.time(), "session_id": self.SESSION, "agent_id": agent_id,
+               "open_dispatches": 0, "ask_rows": ask_rows, "blocked": blocked}
+        store = self.tmp / "handback-store"
+        store.mkdir(exist_ok=True)
+        with open(store / f"{self.SESSION}.jsonl", "a", encoding="utf-8") as rows:
+            rows.write(json.dumps(row) + "\n")
+
+    def late_stop_row(self, delay, ask_rows, **row_fields):
+        timer = threading.Timer(delay, self.logged_stop_row, args=(ask_rows,), kwargs=row_fields)
+        self.addCleanup(timer.cancel)
+        timer.start()
+        return timer
+
+    def finding_log_lines(self):
+        return [line for line in self.log.read_text().splitlines() if "log-review-finding" in line]
+
+    def test_an_ask_the_loop_logged_without_writing_its_id_gets_its_outcome_under_the_logged_id(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK_WITHOUT_FINDING_ID)
+        self.logged_stop_row([{"file": "backend/src/orders.ts", "line": 2, "finding_id": self.LOGGED_FINDING_ID}])
+        self.step("after-review")
+
+        self.step("asks-done", "accepted")
+
+        [outcome_line] = self.finding_log_lines()
+        self.assertIn(f"finding_id={self.LOGGED_FINDING_ID}", outcome_line)
+        self.assertIn("ask_outcome=accepted", outcome_line)
+
+    def test_an_ask_the_loop_never_logged_gets_one_ask_row_and_one_outcome_under_the_same_id(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK_WITHOUT_FINDING_ID)
+        self.step("after-review")
+
+        self.step("asks-done", "accepted")
+
+        ask_line, outcome_line = self.finding_log_lines()
+        self.assertNotIn("ask_outcome=", ask_line)
+        self.assertNotIn("finding_id=", ask_line)
+        self.assertIn(f"finding_id={self.MINTED_FINDING_ID}", outcome_line)
+        self.assertIn("ask_outcome=accepted", outcome_line)
+
+    LOGGED_ASK_ROW: ClassVar[dict[str, object]] = {"file": "backend/src/orders.ts", "line": 2,
+                                                   "finding_id": LOGGED_FINDING_ID}
+
+    def test_an_ask_waits_for_the_stop_row_that_lands_after_the_hand_back_row(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK_WITHOUT_FINDING_ID)
+        self.wait_env(10)
+        self.late_stop_row(1, [self.LOGGED_ASK_ROW])
+        self.step("after-review")
+
+        self.step("asks-done", "accepted")
+
+        [outcome_line] = self.finding_log_lines()
+        self.assertIn(f"finding_id={self.LOGGED_FINDING_ID}", outcome_line)
+
+    def test_an_ask_skips_a_stop_row_the_gate_blocked_and_takes_the_one_that_follows(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK_WITHOUT_FINDING_ID)
+        self.wait_env(10)
+        self.logged_stop_row([], blocked=True)
+        self.late_stop_row(0.6, [self.LOGGED_ASK_ROW])
+        self.step("after-review")
+
+        self.step("asks-done", "accepted")
+
+        [outcome_line] = self.finding_log_lines()
+        self.assertIn(f"finding_id={self.LOGGED_FINDING_ID}", outcome_line)
+
+    def test_an_ask_with_no_settled_stop_row_in_time_is_logged_here_and_says_so_on_stderr(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK_WITHOUT_FINDING_ID)
+        self.wait_env(1, "0.2")
+        self.logged_stop_row([], blocked=True)
+
+        result = run(self.repo, self.env, "after-review")
+
+        self.assertIn("no settled stop row", result.stderr)
+        [ask_line] = self.finding_log_lines()
+        self.assertNotIn("ask_outcome=", ask_line)
+
+    def test_the_same_hand_back_read_twice_logs_one_ask_row(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK_WITHOUT_FINDING_ID)
+
+        self.step("after-review")
+        self.step("after-review")
+
+        self.assertEqual(len(self.finding_log_lines()), 1)
+
+    def test_a_later_hand_back_with_an_ask_at_the_same_place_gets_its_own_ask_row(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK_WITHOUT_FINDING_ID)
+        self.step("after-review")
+        self.step("asks-done", "accepted")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: applied the ask")
+        self.step("after-coder")
+        self.hook("review-loop", self.ASK_WITHOUT_FINDING_ID)
+
+        self.step("after-review")
+
+        ask_lines = [line for line in self.finding_log_lines() if "ask_outcome=" not in line]
+        self.assertEqual(len(ask_lines), 2)
 
     def test_asks_flow_logs_outcomes(self):
         self.coder_round()

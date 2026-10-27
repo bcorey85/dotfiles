@@ -542,6 +542,55 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assert_allowed(self.pre("for i in 1 2\ndo\n  cargo test\ndone"))
         self.assert_allowed(self.pre("for i in 1 2; do cargo test 2>&1 | tail -3; done"))
 
+    # a run whose output was cut by tail, head or grep
+
+    def test_a_check_piped_to_tail_is_allowed_once_more_redirected_to_a_file(self):
+        ruff = "ruff check a.py b.py c.py"
+        self.post(ruff + " 2>&1 | tail -2")
+        self.assert_denied(self.pre(ruff))
+        for redirected in (ruff + " > /tmp/check.log 2>&1", ruff + " &> /tmp/check.log", ruff + " >> out.log",
+                           ruff + " 2>&1 | tee /tmp/check.log | tail -5"):
+            with self.subTest(command=redirected):
+                self.assert_allowed(self.pre(redirected))
+        self.post(ruff + " > /tmp/check.log 2>&1")
+        self.assert_denied(self.pre(ruff + " > /tmp/check.log 2>&1"))
+
+    def test_head_and_grep_cut_the_output_too(self):
+        for index, cut in enumerate(("| head -20", "| grep -c error", "2>&1 | grep -E 'E[0-9]+'")):
+            with self.subTest(cut=cut):
+                command = f"pytest tests/t{index}.py"
+                self.post(f"{command} {cut}")
+                self.assert_allowed(self.pre(f"{command} > /tmp/check.log 2>&1"))
+
+    def test_a_cut_run_still_denies_a_rerun_that_does_not_keep_the_output(self):
+        self.post("pytest -q | tail -3")
+        for command in ("pytest -q", "pytest -q | tail -50", "pytest -q 2> err.log", "pytest -q > /dev/null",
+                        "pytest -q >&2"):
+            with self.subTest(command=command):
+                self.assert_denied(self.pre(command))
+
+    def test_a_run_kept_in_a_file_before_the_filter_is_not_cut(self):
+        self.post("pytest -q 2>&1 | tee /tmp/check.log | tail -3")
+        self.assert_denied(self.pre("pytest -q > /tmp/check.log 2>&1"))
+
+    def test_the_cut_deny_names_a_form_the_cap_then_allows(self):
+        self.post("cd sub && npm test 2>&1 | tail -2", cwd=self.work)
+        (self.work / "sub").mkdir()
+        reason = self.assert_denied(self.pre("npm test", cwd=self.work / "sub"))
+        suggested = reason.split("Run it once as `", 1)[1].split("`", 1)[0]
+        self.assertEqual(suggested, "npm test > /tmp/check.log 2>&1")
+        self.assert_allowed(self.pre(suggested, cwd=self.work / "sub"))
+
+    def test_the_plain_deny_suggests_only_forms_the_cap_allows(self):
+        self.post("pytest -q")
+        reason = self.assert_denied(self.pre("pytest -q"))
+        self.assertIn("fix every failure in one batch, then run it once more with its output redirected to "
+                      "/tmp/check.log", reason)
+        self.assertIn("`for i in 1 2 3; do <check>; done`", reason)
+        self.assert_allowed(self.pre("for i in 1 2 3; do pytest -q; done"))
+        self.edit()
+        self.assert_allowed(self.pre("pytest -q > /tmp/check.log 2>&1"))
+
     def test_a_while_or_until_loop_is_still_capped(self):
         self.post("pytest tests/x.py")
         self.assert_denied(self.pre("while true; do pytest tests/x.py; done"))

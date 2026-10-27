@@ -18,8 +18,8 @@ def main():
         print("deferred: not tracked (ledger not installed)")
         return 0
     except script_utils.LedgerBusyError as error:
-        print(f"deferred: not read ({error}). Run `ledger worker --once`, "
-              "then `~/.claude/scripts/tools/ledger_deferred.py` to read the queue.")
+        script = pathlib.Path(__file__).resolve()
+        print(f"deferred: not read ({error}). Run `ledger worker --once`, then `{script}` to read the queue.")
         return script_utils.LEDGER_BUSY_EXIT
 
     if done.returncode != 0:

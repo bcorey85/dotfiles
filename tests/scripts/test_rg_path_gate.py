@@ -95,6 +95,13 @@ class RgPathGateTest(unittest.TestCase):
         self.assert_passes("echo rg foo")
         self.assert_passes("cat merge.txt")
 
+    def test_a_step_split_inside_a_quoted_substitution_does_not_hide_a_hanging_rg(self):
+        self.assert_denied('echo "$(ls | wc -l)"; rg foo', 'rg foo .')
+
+    def test_rg_text_inside_a_heredoc_body_is_not_a_command(self):
+        self.assert_passes("gh pr create --title t --body \"$(cat <<'EOF'\n## Test plan\nrg -n pattern\nEOF\n)\"")
+        self.assert_passes("echo \"$(cat <<'EOF'\nrg foo\nEOF\n)\"")
+
     def test_unparseable_command_passes(self):
         self.assert_passes("rg 'foo")
         self.assert_passes("")

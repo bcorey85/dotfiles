@@ -39,6 +39,7 @@ CODER = "coder"
 REVIEW_LOOP = "review-loop"
 RESUME_VERB = "resume"
 RESUME_LINE = "When the {noun} is fixed, run `python3 ~/.claude/scripts/code/code_step.py {verb}`."
+TICKET_ID = re.compile(r"^[A-Za-z]+-\d+$")
 HOOK_STAGES = ("coder", "review", "asks-coder", "plan-coder")
 # The stages in which the run owns its session's review-loop hand-backs, so review_fix.py `packet` refuses to read
 # their saved hand-back.

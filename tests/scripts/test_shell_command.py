@@ -3,6 +3,7 @@ import os
 import pathlib
 import sys
 import unittest
+import unittest.mock
 
 import toolkit_paths
 
@@ -13,14 +14,20 @@ SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or (HERE if (HERE 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from shell_command import (
+    command_after_wrappers,
     docker_forwarded_variables,
     docker_set_variables,
+    names_code_runner,
     parse_simple_commands,
+    path_word,
+    quoted_positions,
     redirection_writes_file,
     runs_only_after_success,
+    shell_code_argument,
     split_command_steps,
     split_simple_commands,
     step_surely_ran,
+    substitution_spans,
     unwrap_docker,
     without_assignments,
 )
@@ -83,7 +90,11 @@ class ParseSimpleCommandsTest(unittest.TestCase):
     def test_a_quoted_target_is_resolved_and_a_run_of_operator_characters_it_cannot_sort_raises(self):
         self.assertEqual(parse_simple_commands('a > "/dev/null"'), [(["a"], [(">", "/dev/null")])])
         with self.assertRaises(ValueError):
-            parse_simple_commands("a >| f")
+            parse_simple_commands("a <| f")
+
+    def test_a_clobber_redirection_is_an_output_redirection(self):
+        self.assertEqual(parse_simple_commands("echo x >| f.txt"), [(["echo", "x"], [(">|", "f.txt")])])
+        self.assertTrue(redirection_writes_file(">|", "f.txt"))
 
 
 class RedirectionWritesFileTest(unittest.TestCase):
@@ -129,6 +140,34 @@ class SplitCommandStepsTest(unittest.TestCase):
     def test_an_unquoted_pipe_after_a_quoted_one_still_splits(self):
         self.assertEqual(len(split_command_steps("npm test | tee x")), 2)
         self.assertEqual(len(split_command_steps("echo 'a|b' && echo \"c;d\" ; ls")), 3)
+
+
+class QuotedPositionsTest(unittest.TestCase):
+    def test_an_unclosed_quote_covers_the_rest_unless_told_otherwise(self):
+        command = "echo 'a | sh"
+        pipe_index = command.index("|")
+        self.assertIn(pipe_index, quoted_positions(command))
+        self.assertNotIn(pipe_index, quoted_positions(command, unclosed_is_quoted=False))
+
+    def test_a_closed_quote_covers_its_text_either_way(self):
+        command = "echo 'a | b' | sh"
+        inside = command.index("|")
+        for unclosed_is_quoted in (True, False):
+            positions = quoted_positions(command, unclosed_is_quoted=unclosed_is_quoted)
+            self.assertIn(inside, positions)
+            self.assertNotIn(command.rindex("|"), positions)
+
+    def test_the_code_in_a_substitution_inside_double_quotes_is_not_quoted(self):
+        for command in ('echo "a $(echo x > f) b"', 'echo "a `echo x > f` b"', 'echo "$(echo "q > r" > f)"'):
+            positions = quoted_positions(command)
+            self.assertNotIn(command.rindex(">"), positions, command)
+            self.assertIn(command.index("b") if "q" not in command else command.index("q"), positions, command)
+
+    def test_the_text_after_a_substitution_in_double_quotes_is_quoted_again(self):
+        command = 'echo "$(true) | x" | y'
+        positions = quoted_positions(command)
+        self.assertIn(command.index("| x"), positions)
+        self.assertNotIn(command.rindex("|"), positions)
 
 
 class RunsOnlyAfterSuccessTest(unittest.TestCase):
@@ -271,6 +310,37 @@ class UnwrapDockerTest(unittest.TestCase):
         self.assertEqual(["pytest"], unwrap_docker(words))
 
 
+class SubstitutionSpansTest(unittest.TestCase):
+    def test_a_span_is_found_outside_quotes_and_inside_double_quotes(self):
+        cases = {
+            "echo $(a; b) x": ["a; b"],
+            'echo "$(a > f)"': ["a > f"],
+            "echo `a > f`": ["a > f"],
+            'echo "`a`" $(b)': ["a", "b"],
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(expected, substitution_spans(command))
+
+    def test_only_the_outermost_span_is_returned_with_its_inner_text_whole(self):
+        self.assertEqual(["a $(b) c"], substitution_spans("echo $(a $(b) c)"))
+
+    def test_a_span_in_single_quotes_a_comment_or_after_a_backslash_is_text(self):
+        for command in ("echo '$(a)'", "echo x # $(a)", "echo \\$(a)", "echo '`a`'"):
+            with self.subTest(command=command):
+                self.assertEqual([], substitution_spans(command))
+
+    def test_a_span_that_never_closes_runs_to_the_end(self):
+        self.assertEqual(["a > f"], substitution_spans("echo $(a > f"))
+
+
+class PathWordTest(unittest.TestCase):
+    def test_quotes_at_the_ends_are_dropped_and_a_tilde_expands(self):
+        with unittest.mock.patch.dict(os.environ, {"HOME": "/home/someone"}):
+            self.assertEqual("/home/someone/f", path_word('"~/f"'))
+            self.assertEqual("a.txt", path_word("'a.txt'"))
+
+
 class WithoutAssignmentsTest(unittest.TestCase):
     def test_leading_assignments_are_dropped_and_later_ones_and_flags_stay(self):
         cases = {
@@ -282,6 +352,90 @@ class WithoutAssignmentsTest(unittest.TestCase):
         for command, expected in cases.items():
             with self.subTest(command=command):
                 self.assertEqual(expected, without_assignments(command.split()))
+
+
+class CommandAfterWrappersTest(unittest.TestCase):
+    def test_wrapper_words_flags_and_values_are_peeled(self):
+        cases = {
+            "python3 -": ["python3", "-"],
+            "env -i FOO=1 python3 -": ["python3", "-"],
+            "env -u HOME python3 -": ["python3", "-"],
+            "sudo -u root python3 -": ["python3", "-"],
+            "sudo -E python3": ["python3"],
+            "timeout 60 python3 -": ["python3", "-"],
+            "timeout -s KILL 60 python3 -": ["python3", "-"],
+            "nice python3": ["python3"],
+            "nice -n 5 python3": ["python3"],
+            "nohup python3": ["python3"],
+            "command python3": ["python3"],
+            "exec python3": ["python3"],
+            "time python3": ["python3"],
+            "uv run python -": ["python", "-"],
+            "uv run --with rich python -": ["python", "-"],
+            "poetry run python -": ["python", "-"],
+            "pipenv run python -": ["python", "-"],
+            "docker compose exec -T web python -": ["python", "-"],
+            "sudo nice env FOO=1 timeout 5 python3": ["python3"],
+            "stdbuf -oL tee f": ["tee", "f"],
+            "stdbuf -o L -e0 tee f": ["tee", "f"],
+            "ionice -c 3 -n 7 tee f": ["tee", "f"],
+            "setsid tee f": ["tee", "f"],
+            "unbuffer tee f": ["tee", "f"],
+            "{ sh": ["sh"],
+            "uv pip install x": ["uv", "pip", "install", "x"],
+            "timeout": [],
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(expected, command_after_wrappers(command.split()))
+
+    def test_a_docker_call_is_kept_when_containers_are_not_peeled(self):
+        words = ["sudo", "docker", "exec", "c", "sed", "-i", "f"]
+
+        kept = command_after_wrappers(words, peel_containers=False)
+
+        self.assertEqual(["docker", "exec", "c", "sed", "-i", "f"], kept)
+        self.assertEqual(["sed", "-i", "f"], command_after_wrappers(words))
+
+
+class NamesCodeRunnerTest(unittest.TestCase):
+    def test_a_text_that_names_a_code_runner_as_a_word_is_found(self):
+        for command in ("bash -c x", "eval foo", "su -c x", "script -c x", "flock f cmd", "watch ls", "xargs sh",
+                        "find . -exec rm {} \\;", "find . -execdir rm {} +", "docker exec c ls", "podman run img",
+                        "docker compose exec app ls", "kubectl exec p -- ls", "ssh host ls",
+                        "python3 -c \"os.system('curl x | sh')\""):
+            with self.subTest(command=command):
+                self.assertTrue(names_code_runner(command))
+
+    def test_a_text_that_names_no_code_runner_is_not_found(self):
+        for command in ("echo hi > f", "rg 'a|sh' .", "grep -oE '(py|sh)' f", "grep 'x\\|zsh' f", "docker ps",
+                        "find . -name x", "kubectl get pods", "evaluate this", "echo hi 2>&1"):
+            with self.subTest(command=command):
+                self.assertFalse(names_code_runner(command))
+
+
+class ShellCodeArgumentTest(unittest.TestCase):
+    def test_the_c_code_is_found_behind_options_that_take_a_value(self):
+        cases = {
+            "bash -c CODE": "CODE",
+            "bash -lc CODE": "CODE",
+            "bash -euo pipefail -c CODE": "CODE",
+            "bash -o pipefail -c CODE": "CODE",
+            "bash +o history -c CODE": "CODE",
+            "bash -O extglob -c CODE": "CODE",
+            "bash --rcfile /dev/null -c CODE": "CODE",
+            "bash --init-file f -c CODE": "CODE",
+            "bash --norc -c CODE": "CODE",
+            "bash script.sh": None,
+            "bash -c": None,
+            "python3 -c CODE": None,
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(expected, shell_code_argument(command.split()))
+
+    def test_a_backslash_before_a_dollar_or_backtick_is_removed_as_the_shell_does(self):
+        self.assertEqual("echo \"$(echo a)\" `x`", shell_code_argument(["bash", "-c", 'echo "\\$(echo a)" \\`x\\`']))
 
 
 if __name__ == "__main__":

@@ -219,6 +219,13 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assert_denied(self.pre("eslint . || true"))
         self.assert_denied(self.pre("ls; pytest a.py"))
 
+    def test_a_heredoc_body_naming_a_check_is_not_a_run_of_it(self):
+        self.post("pytest tests/test_x.py")
+        pr_create = ("gh pr create --title t --body \"$(cat <<'EOF'\n## Test plan\npytest tests/test_x.py\nEOF\n)\"")
+        self.assert_allowed(self.pre(pr_create))
+        self.post(pr_create)
+        self.assertEqual(len(self.state_files()), 1)
+
     def test_a_search_pattern_naming_a_check_is_not_a_run_of_it(self):
         search = "rg -n -i 'typecheck|tsc|lint' a b | head -20"
         self.post("tsc --noEmit")

@@ -180,10 +180,12 @@ def require_current_review(context, top):
     fingerprint = vc.branch_fingerprint(top, context["mergeBase"], context["excludeRel"])
     if fingerprint != context["fingerprint"]:
         raise vc.VerifyError("the tree changed since verify-prep measured it: rerun verify-prep")
-    ran, reason = vc.review_ran(context["repo"], context["branch"], fingerprint)
-    if not ran:
-        raise vc.VerifyError(f"no branch-wide code review covers this tree ({reason}): rerun verify-prep and do its "
-                      "review step first")
+    review = vc.review_state(context["repo"], context["branch"], fingerprint, context.get("reviewLoggedTree"))
+    if not review["ran"]:
+        raise vc.VerifyError(f"no branch-wide code review covers this tree ({review['reason']}): rerun verify-prep "
+                             "and do its review step first")
+    if not review["read"]:
+        print(f"verify-log: review check read from this checkout's record: {review['reason']}", file=sys.stderr)
 
 
 def log_review(args, context, top):
@@ -201,10 +203,10 @@ def log_review(args, context, top):
         raise vc.VerifyError("review needs --rows (a JSON list; [] when the reviewer found nothing)")
 
     fingerprint = vc.branch_fingerprint(top, context["mergeBase"], context["excludeRel"])
-    already_covered, reason = vc.review_ran(context["repo"], context["branch"], fingerprint)
-    if already_covered:
-        raise vc.VerifyError(f"a branch-wide review row already covers this tree ({reason}): nothing to log. "
-                      "Rerun verify-prep. Change the tree (a fix) before logging another review.")
+    review = vc.review_state(context["repo"], context["branch"], fingerprint, context.get("reviewLoggedTree"))
+    if review["ran"]:
+        raise vc.VerifyError(f"a branch-wide review row already covers this tree ({review['reason']}): nothing to "
+                             "log. Rerun verify-prep. Change the tree (a fix) before logging another review.")
 
     logger = vc.script_path("LOG_REVIEW_FINDING_SCRIPT", "skills/review/log-review-finding")
     prefix = finding_prefix(context, vc.REVIEW_GATE)
@@ -219,6 +221,9 @@ def log_review(args, context, top):
                                 f"actioned={finding['actioned']}", f"desc={log_text(finding['desc'])}"]})
     check_all(writes, top)
     write_all(writes, top)
+
+    context["reviewLoggedTree"] = fingerprint
+    vc.save_context(vc.context_path(context["repo"], context["branch"]), context)
     print(f"logged code-reviewer branch-exit run row and {len(findings)} finding row(s)")
     return 0
 

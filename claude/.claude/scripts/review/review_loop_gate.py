@@ -497,8 +497,8 @@ def reviewer_runs(transcript):
 
 def write_run_row(hook, run, lane, phase):
     """True when log-review-finding wrote the row. It writes nothing while the telemetry switch is off, and it
-    prints one stderr line for each skip. With no `ledger` on PATH the row goes to review-findings.jsonl, and the
-    writer's stderr line is passed on."""
+    prints one stderr line for each skip. With no ledger found (PATH, then `${CARGO_HOME:-~/.cargo}/bin`) the row
+    goes to review-findings.jsonl, and the writer's stderr line is passed on."""
     claude_dir = pathlib.Path(os.environ.get("REVIEW_LOOP_GATE_CLAUDE_DIR") or OWN_CLAUDE_DIR)
     switch_script = claude_dir / "scripts" / "telemetry" / "telemetry_enabled.sh"
     if not switch_script.is_file():

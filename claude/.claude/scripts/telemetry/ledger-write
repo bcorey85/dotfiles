@@ -3,11 +3,13 @@
 #
 # usage: ledger-write <type>   (the row is read from stdin)
 #
-# With `ledger` on PATH: drops the row's date, schema_version, repo and session keys, which
+# The ledger is the first `ledger` on PATH, else the one in ${CARGO_HOME:-~/.cargo}/bin (ledger_bin).
+#
+# With a ledger: drops the row's date, schema_version, repo and session keys, which
 # `ledger write` sets itself (and a spec_run row's slug, which the ledger does not store), adds
 # --session when CLAUDE_CODE_SESSION_ID is set, and exits with the code `ledger write` returns.
 #
-# With no `ledger` on PATH: appends the row as one JSON line to the file its type used before the
+# With no ledger: appends the row as one JSON line to the file its type used before the
 # ledger, with date (UTC ISO), schema_version, repo and session added, and prints one stderr line
 # naming the file. Numeric-looking strings are stored as numbers, one object level down too
 # (specialists, fixed_classes); branch_key is stored as branch and path_key as file, both stored
@@ -33,8 +35,10 @@ script_dir=$(dirname -- "${BASH_SOURCE[0]}")
 # shellcheck source=../lib/_kv.sh
 source "$script_dir/../lib/_kv.sh"
 kv_help_exit "${BASH_SOURCE[0]}" "$@"
+# shellcheck source=../lib/_ledger.sh
+source "$script_dir/../lib/_ledger.sh"
 
-if command -v ledger >/dev/null 2>&1; then
+if ledger=$(ledger_bin); then
   session_args=()
   [ -z "${CLAUDE_CODE_SESSION_ID:-}" ] || session_args=(--session "$CLAUDE_CODE_SESSION_ID")
 
@@ -42,13 +46,13 @@ if command -v ledger >/dev/null 2>&1; then
   # dropped here, once, so no writer repeats the list.
   jq -c --arg row_type "$1" \
     'del(.date, .schema_version, .repo, .session) | if $row_type == "spec_run" then del(.slug) else . end' \
-    | ledger write "$1" ${session_args[@]+"${session_args[@]}"}
+    | "$ledger" write "$1" ${session_args[@]+"${session_args[@]}"}
   exit $?
 fi
 
 row_type="$1"
 if [ -z "${HOME:-}" ]; then
-  echo "ledger-write: ledger not on PATH; HOME is unset, row dropped" >&2
+  echo "ledger-write: no ledger found; HOME is unset, row dropped" >&2
   exit 0
 fi
 
@@ -61,7 +65,7 @@ case "$row_type" in
   scan_run) log_file="${SCAN_RUNS_FILE:-$HOME/.claude/scan-runs.jsonl}"; schema_version=2; kind="" ;;
   review_scope) log_file="${SKILL_USAGE_FILE:-$HOME/.claude/skill-usage.jsonl}"; schema_version=null; kind="" ;;
   *)
-    echo "ledger-write: ledger not on PATH; $row_type has no jsonl file, row dropped" >&2
+    echo "ledger-write: no ledger found; $row_type has no jsonl file, row dropped" >&2
     exit 0 ;;
 esac
 
@@ -92,13 +96,13 @@ if ! jsonl_row=$(jq -c --argjson sv "$schema_version" --arg kind "$kind" --arg r
     + (if $repo != "" then {repo: $repo} else {} end)
     + (if $kind != "" then {kind: $kind} else {} end)
     + .' 2>/dev/null); then
-  echo "ledger-write: ledger not on PATH; $row_type row is not valid JSON, row dropped" >&2
+  echo "ledger-write: no ledger found; $row_type row is not valid JSON, row dropped" >&2
   exit 0
 fi
 
 if ! { mkdir -p -- "$(dirname -- "$log_file")" && printf '%s\n' "$jsonl_row" >> "$log_file"; } 2>/dev/null; then
-  echo "ledger-write: ledger not on PATH; could not append $row_type row to $log_file, row dropped" >&2
+  echo "ledger-write: no ledger found; could not append $row_type row to $log_file, row dropped" >&2
   exit 0
 fi
 
-echo "ledger-write: ledger not on PATH; row appended to $log_file" >&2
+echo "ledger-write: no ledger found; row appended to $log_file" >&2

@@ -124,6 +124,9 @@ def main(file_names=()):
     per_file = {}
     with tempfile.TemporaryDirectory() as config_folder:
         environment = fixed_git_environment(write_fixed_git_config(config_folder))
+        # The scripts find the ledger in the cargo bin folder when PATH has none. An empty CARGO_HOME keeps a test that
+        # hides the ledger from PATH off the ledger this machine installed.
+        environment["CARGO_HOME"] = str(pathlib.Path(config_folder) / "cargo")
         job_runner = functools.partial(run_job, environment=environment)
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
             for test_file, test_count, seconds, passed, output in pool.map(job_runner, jobs):

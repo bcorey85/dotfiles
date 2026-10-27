@@ -1,4 +1,4 @@
-"""Checks for ledger-write and the metrics writers when no `ledger` is on PATH.
+"""Checks for ledger-write and the metrics writers when no ledger is found (PATH, then `${CARGO_HOME:-~/.cargo}/bin`).
 
 Each writer appends its row to the jsonl file its type used before the ledger, with date, schema_version,
 repo and session added, and prints one stderr line. With the ledger present the row goes to the ledger
@@ -113,6 +113,7 @@ class LedgerWriteTest(unittest.TestCase):
             **caller_env,
             **GIT_ENV,
             "HOME": str(self.home),
+            "CARGO_HOME": str(self.home / ".cargo"),
             "CLAUDE_TOOLKIT_TELEMETRY": telemetry,
             "CLAUDE_CODE_SESSION_ID": SESSION,
             **(extra_env or {}),
@@ -147,16 +148,30 @@ class LedgerWriteTest(unittest.TestCase):
                 stderr_lines = done.stderr.strip().splitlines()
                 self.assertEqual(len(stderr_lines), 1, done.stderr)
                 log_path = self.home / ".claude" / file_name
-                self.assertIn(f"ledger not on PATH; row appended to {log_path}", stderr_lines[0])
+                self.assertIn(f"no ledger found; row appended to {log_path}", stderr_lines[0])
 
     def test_with_the_ledger_the_row_goes_to_the_ledger_and_no_file_is_written(self):
         for row_type, (script, args, file_name, _expected_fields) in CASES.items():
             with self.subTest(row_type=row_type):
                 done = self.run_script(script, args, with_ledger=True)
                 self.assertEqual(done.returncode, 0, done.stderr)
-                self.assertNotIn("ledger not on PATH", done.stderr)
+                self.assertNotIn("no ledger found", done.stderr)
                 self.assertEqual(len(fake_ledger.recorded_rows(self.ledger_env, row_type)), 1)
                 self.assertFalse((self.home / ".claude" / file_name).exists())
+
+    def test_a_ledger_in_the_cargo_bin_folder_gets_the_row_when_path_has_none(self):
+        cargo_bin = self.home / ".cargo" / "bin"
+        cargo_bin.mkdir(parents=True)
+        fake_ledger_binary = shutil.which("ledger", path=self.ledger_env["PATH"])
+        shutil.copy2(fake_ledger_binary, cargo_bin / "ledger")
+        script, args, file_name, _expected_fields = CASES["review_escape"]
+
+        done = self.run_script(script, args, extra_env={"FAKE_LEDGER_ROWS": self.ledger_env["FAKE_LEDGER_ROWS"]})
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn("no ledger found", done.stderr)
+        self.assertEqual(len(fake_ledger.recorded_rows(self.ledger_env, "review_escape")), 1)
+        self.assertFalse((self.home / ".claude" / file_name).exists())
 
     def test_a_deferred_review_loop_fix_row_is_logged_only_for_an_open_class_member(self):
         script, args, _file_name, _expected_fields = CASES["review_finding"]
@@ -214,7 +229,7 @@ class LedgerWriteTest(unittest.TestCase):
     def test_an_unset_home_drops_the_row_with_one_stderr_line_and_exits_0(self):
         done = self.run_script(LEDGER_WRITE, ["review_escape"], stdin='{"class":"bug"}', home_set=False)
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(done.stderr.strip(), "ledger-write: ledger not on PATH; HOME is unset, row dropped")
+        self.assertEqual(done.stderr.strip(), "ledger-write: no ledger found; HOME is unset, row dropped")
 
     def test_a_failed_append_prints_one_stderr_line_and_exits_0(self):
         script, args, _file_name, _expected_fields = CASES["review_escape"]

@@ -264,11 +264,15 @@ LEDGER_BACKOFF_ENV = "LEDGER_READ_BACKOFF_SECONDS"
 LEDGER_CALL_TIMEOUT_ENV = "LEDGER_READ_CALL_TIMEOUT_SECONDS"
 
 
-class LedgerNotInstalledError(Exception):
+class LedgerUnreadError(Exception):
+    """A ledger read gave no answer. Callers carry on without it and say what was not read."""
+
+
+class LedgerNotInstalledError(LedgerUnreadError):
     """No `ledger` program is on PATH."""
 
 
-class LedgerBusyError(Exception):
+class LedgerBusyError(LedgerUnreadError):
     """A ledger read found the cache still behind (exit 75) or timed out on its last try. The message names the
     command, the seconds of pauses and the ledger's own last stderr line."""
 

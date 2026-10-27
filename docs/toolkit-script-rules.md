@@ -28,6 +28,11 @@ These rules apply to every script under `claude/.claude/scripts/` and `claude/.c
 - Before you change a script's output, exit code or arguments, search the toolkit for every caller: skills, agents, hooks, other scripts and `settings.json`. Test that each caller still reads the new output.
 - For a hook script, capture one real event of each type that it reads, and keep it as a fixture. Write the code against the captured fields. Never assume that a field holds a result at that event: an agent launch event fires before the agent finishes.
 
+## The ledger is optional
+
+- No skill, agent or script needs `ledger` to finish. A script reads it through `script_utils.read_ledger`; a skill step that runs `ledger` itself checks the exit code. When the ledger is not installed, stays busy or fails, go on without its answer, and print what was not read and the command that reads it. Never treat an unread ledger as an empty answer.
+- Write ledger rows through `telemetry/ledger-write`, which keeps the row in a local file when the ledger is absent.
+
 ## Changes during a run
 
 - List each way that the input or the state can change while a run is open: the main session adds a phase or a step, the user edits the file, a step runs twice, the branch changes. Write a route only for a change that a session reported. Send every other change to one fallback stop that names the state and the recovery command.

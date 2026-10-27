@@ -1,4 +1,6 @@
-"""Checks for verify_common.review_ran: it reads the branch's review trees from `ledger yield --review-trees`.
+"""Checks for verify_common.review_ran and review_state.
+
+review_ran reads the branch's review trees from `ledger yield --review-trees`.
 
 run: python3 tests/scripts/test_verify_common_review_ran.py
 """
@@ -53,18 +55,40 @@ class ReviewRan(unittest.TestCase):
 
         self.assertFalse(ran)
 
-    def test_no_ledger_on_path_reports_not_installed(self):
-        ran, reason = verify_common.review_ran("some-repo", "some-branch", PLANTED_TREE)
-
-        self.assertEqual((ran, reason), (False, "ledger not installed"))
-
-    def test_nonzero_exit_raises_fail_with_stderr_line(self):
-        plant_ledger(self.directory.name, 'echo "ledger yield: not inside a git repository" >&2\nexit 1\n')
-
-        with self.assertRaises(verify_common.VerifyError) as raised:
+    def test_no_ledger_on_path_raises_unread(self):
+        with self.assertRaises(script_utils.LedgerNotInstalledError):
             verify_common.review_ran("some-repo", "some-branch", PLANTED_TREE)
 
-        self.assertEqual(str(raised.exception), "ledger yield: not inside a git repository")
+    def test_nonzero_exit_raises_unread_with_stderr_line(self):
+        plant_ledger(self.directory.name, 'echo "ledger yield: not inside a git repository" >&2\nexit 1\n')
+
+        with self.assertRaises(script_utils.LedgerUnreadError) as raised:
+            verify_common.review_ran("some-repo", "some-branch", PLANTED_TREE)
+
+        self.assertEqual(str(raised.exception),
+                         "ledger yield --review-trees: ledger yield: not inside a git repository")
+
+
+class ReviewStateWithoutLedger(unittest.TestCase):
+    """With no ledger on PATH, the checkout's own record of the logged review decides."""
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        patcher = mock.patch.dict(os.environ, {"PATH": directory.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_the_review_logged_here_counts(self):
+        review = verify_common.review_state("some-repo", "some-branch", PLANTED_TREE, PLANTED_TREE)
+
+        self.assertEqual((review["read"], review["ran"]), (False, True))
+        self.assertIn("ledger not installed", review["reason"])
+
+    def test_no_review_logged_here_did_not_run(self):
+        review = verify_common.review_state("some-repo", "some-branch", PLANTED_TREE, None)
+
+        self.assertEqual((review["read"], review["ran"]), (False, False))
 
 
 class BusyLedger(unittest.TestCase):
@@ -125,10 +149,10 @@ class BusyLedger(unittest.TestCase):
     def test_a_real_failure_is_not_tried_again(self):
         self.plant_script("echo 'ledger yield: broken schema' >&2\nexit 1\n")
 
-        with self.assertRaises(verify_common.VerifyError) as raised:
+        with self.assertRaises(script_utils.LedgerUnreadError) as raised:
             verify_common.review_ran("some-repo", "some-branch", PLANTED_TREE)
 
-        self.assertEqual(str(raised.exception), "ledger yield: broken schema")
+        self.assertEqual(str(raised.exception), "ledger yield --review-trees: ledger yield: broken schema")
         self.assertEqual(self.tries(), 1)
 
 

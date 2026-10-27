@@ -18,7 +18,7 @@ unmeasured: ""
 
 - New `scripts/tools/ledger_deferred.py` runs `ledger yield --deferred` through `read_ledger`. Outcomes: the queue
   (exit 0); `deferred: not tracked (ledger not installed)` (exit 0); ``deferred: not read (<reason>). Run
-  `ledger worker --once`, then `~/.claude/scripts/tools/ledger_deferred.py` to read the queue.`` (exit 75); on any
+  `ledger worker --once`, then `<the script's own path>` to read the queue.`` (exit 75); on any
   other ledger failure the ledger's stderr and exit code, plus `deferred: not read (<last stderr line, or "exited
   <code>">)` on stdout.
 - branch-recap Step 2 calls the script in place of its inline bash block and names the unread outcomes, in the step and

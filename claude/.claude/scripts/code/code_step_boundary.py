@@ -79,7 +79,9 @@ TAIL_FOLLOWS = re.compile(r"^(?:-[A-Za-z0-9]*[fF][A-Za-z0-9]*|--follow(?:=\w+)?)
 VERIFICATION_ITEM_SHAPE = (
     "Each Automated Verification item is one line in one of three shapes. (1) One backticked command that starts with "
     "a program on PATH (with at least one argument) or an executable file in the repo, for example the line "
-    "'- [ ] **Name**: what it checks - `npm test`'. (2) N/A, for example '- [ ] N/A - docs only'. (3) A tag that "
+    "'- [ ] **Name**: what it checks - `npm test`'. A check that needs a variable assignment, `&&`, a pipe or a "
+    "subshell goes in an executable repo script, run as `path/to/script args`; the script's comments name no ticket "
+    "or plan path. (2) N/A, for example '- [ ] N/A - docs only'. (3) A tag that "
     "says CI or a person runs it, for example '- [ ] **CI-verified**: the pipeline runs it' or '- [ ] Human-only: "
     "look at the page'. This script never runs the third shape.")
 
@@ -303,12 +305,14 @@ def verification_format_failure(plan_lines, plan_name, repo_dir, entries):
             elif not entry["closing"]:
                 problem = verification_item_problem(line, repo_dir)
             if problem:
-                problems.append(f"{plan_name}:{section['start'] + index + 1}: {line.strip()[:100]} - {problem}")
+                problems.append(f"{plan_name}:{section['start'] + index + 1}: Phase {entry['number']}: "
+                                f"{line.strip()[:100]} - {problem}")
 
     if not problems:
         return None
 
-    return ("The plan has Automated Verification items that cannot run. Fix each line:\n" + "\n".join(problems) + "\n"
+    return ("The plan has Automated Verification items that cannot run. Every open phase is checked at each start, "
+            "so a later phase's line stops the first phase's start. Fix each line:\n" + "\n".join(problems) + "\n"
             + VERIFICATION_ITEM_SHAPE)
 
 

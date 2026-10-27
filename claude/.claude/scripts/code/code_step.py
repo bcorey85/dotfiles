@@ -2,11 +2,12 @@
 """code_step.py: the routing of /code as a script. The forked Sonnet subagent of /code runs one verb, reads its
 ACTION lines, does exactly that, and runs the next verb. The script builds every prompt and every argument.
 
-  code_step.py start [<plan>] [+fast|+deep] [--phase <id>] [--restart]
+  code_step.py start [<plan>] [+fast|+deep] [--phase <id>] [--restart] [<run notes>]
                                                 next phase of the plan (or the named one): checks, gate, packet, the
                                                 exact coder dispatch. `start --help` prints usage. --restart drops an
                                                 unfinished run first.
   code_step.py start --task "<text>"           planless work: the coder dispatch without gate or packet
+  code_step.py start --task-file <path>        the same, with the text read from a file
   code_step.py resume                           do the next step of the saved run, whatever stage or stop it is in
   code_step.py decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"
                                                 only --by user is the user's own word: a session ruling never changes
@@ -86,6 +87,7 @@ from code_step_core import (
     RESUME_VERB,
     REVIEW_LOOP,
     SCRIPTS_DIR,
+    TICKET_ID,
     StateFileError,
     abandon_open_dispatch,
     ask_user,
@@ -136,15 +138,27 @@ from code_step_hooks import (
     command_say_hook,
     command_stop_hook,
 )
+from code_step_restart import drop_open_run, is_run_open, reopens_stopped_run
+from code_step_start_args import (
+    TaskFileError,
+    carry_run_notes,
+    outside_repo_plan_refusal,
+    read_task_file,
+    run_notes_lines,
+    split_plan_words,
+)
 from script_utils import git_output, run_command
 
 PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
 DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
-START_USAGE = ('usage: code_step.py start [<plan>] [+fast|+deep] [--phase <id>] [--restart]\n'
+START_USAGE = ('usage: code_step.py start [<plan>] [+fast|+deep] [--phase <id>] [--restart] [<run notes>]\n'
                '       code_step.py start --task "<task text>"\n'
-               '--phase <id> starts the named phase. Text that follows the plan (or comes first, when there is no '
-               'plan file, ticket id or directory) is the task text. A flag before it, or after a plan, must be '
-               'known. --restart drops an unfinished run and starts over.')
+               '       code_step.py start --task-file <path>\n'
+               '--phase <id> starts the named phase; the text after a plan file or ticket id and its phase is the '
+               "run notes: the coder's constraints for that run. Text that comes first, when there is no plan file, "
+               'ticket id or directory, is the task text. --task-file reads the task text from a file, as it is. A '
+               'flag before the text, or after a plan, must be known. --restart drops an unfinished run and starts '
+               'over.')
 START_MODIFIERS = ("+fast", "+deep")
 FOLLOW_UP_HINT = ("A follow-up change to a finished plan needs the task text: invoke Skill code with "
                   "`start --task \"<text>\"`.")
@@ -179,7 +193,6 @@ NO_CODER_REPORT = ("No coder report was saved. The log-hook (code_step.py log-ho
                    "never handed back. Tell the user.")
 NO_REVIEW_PACKET = ("No review-loop packet was saved. The log-hook (code_step.py log-hook) is not installed. "
                     "Tell the user.")
-TICKET_ID = re.compile(r"^[A-Za-z]+-\d+$")
 CARGO_CLIPPY = "cargo clippy --all-targets -- -D warnings"
 RUNS_CARGO = re.compile(r"(?:^|&&\s*)cargo\s")
 TYPECHECK_SCRIPTS = ["typecheck", "type-check", "check-types", "tsc"]
@@ -384,7 +397,8 @@ def usage_error(message):
     sys.exit(2)
 
 
-StartArgs = collections.namedtuple("StartArgs", "modifier plan_args task_text phase_id restart positional_words")
+StartArgs = collections.namedtuple("StartArgs", "modifier plan_args task_text phase_id restart positional_words "
+                                   "run_notes", defaults=(None,))
 
 
 def looks_like_plan_argument(word):
@@ -427,10 +441,18 @@ def reject_unknown_flag(word):
         usage_error(f"unknown flag {word}")
 
 
+def task_file_text(args, flag_position):
+    try:
+        return read_task_file(args, flag_position)
+    except TaskFileError as error:
+        usage_error(str(error))
+
+
 def parse_start_args(args):
     # Flags are read left to right up to the first word that is not a plan file, ticket id or directory: that word
-    # and everything after it is task text, as is everything after --task. positional_words holds the words of task
-    # text that did not follow --task (None otherwise): start_refusal reads them.
+    # and everything after it is task text, as is everything after --task. --task-file takes the task text from the
+    # file it names. positional_words holds the words of task text that did not follow --task (None otherwise):
+    # start_refusal reads them.
     modifiers = []
     plan_args = []
     task_text = None
@@ -443,6 +465,12 @@ def parse_start_args(args):
         if word == "--task":
             task_text = " ".join(args[position + 1:])
             break
+        if task_text is not None and starts_task_text(word):
+            usage_error("text after --task-file")
+        if word == "--task-file":
+            task_text = task_file_text(args, position)
+            position += 2
+            continue
         if word == "--phase":
             phase_id = phase_flag_value(args, position)
             position += 2
@@ -469,22 +497,11 @@ def phase_label(state):
     return f"Phase {state['phase']} of {plan_name}" if state.get("phase") is not None else plan_name
 
 
-def phase_flag_position(words):
-    # Where an explicit `--phase <phase id>` sits in the words, or None. A `--phase` with no word after it, or with a
-    # word that is not a phase id after it, is part of the text.
-    for index, word in enumerate(words):
-        is_last = index + 1 >= len(words)
-        if word == "--phase" and not is_last and re.fullmatch(plan_format.PHASE_ID, words[index + 1]):
-            return index
-
-    return None
-
-
 def phase_words_as_flag(args):
     # `<plan> Phase <id>` and `<plan> <id>` name a phase of that plan: the words with `--phase <id>` in their place.
     # Any other args come back as they were.
     words = script_utils.words_of_arguments(args) if args else []
-    if "--task" in words or "--phase" in words:
+    if "--task" in words or "--task-file" in words or "--phase" in words:
         return args
 
     has_phase_word = len(words) >= 3 and words[-2].lower() == "phase"
@@ -511,11 +528,11 @@ def first_word_is_verb(words):
     return first_word in VERB_WORDS_REPLACED_BY_RESUME + VERB_WORDS_THAT_CARRY_INPUT
 
 
-def task_command(task_words, modifier):
+def task_command(task_words, modifier, *flags):
     # The `start` line that runs the words as task text, with the user's +fast or +deep kept.
     quoted_task_text = shlex.quote(" ".join(task_words))
     modifier_words = [modifier] if modifier else []
-    return script_command(" ".join(["start", *modifier_words, "--task", quoted_task_text]))
+    return script_command(" ".join(["start", *flags, *modifier_words, "--task", quoted_task_text]))
 
 
 def verb_as_task_refusal(words, parsed):
@@ -535,9 +552,20 @@ def verb_as_task_refusal(words, parsed):
     return verb_reason, [command], (f"For task text, use `{task_command_text}`.",)
 
 
+def plain_task_words(parsed):
+    # The words of positional task text that holds no plan, phase or run notes, or [] when there are none.
+    words = script_utils.words_of_arguments(parsed.positional_words) if parsed.positional_words else []
+    if not words:
+        return []
+
+    plan_words, _, phase_id, has_phase_flag = split_plan_words(words, parsed)
+    return [] if plan_words or phase_id or has_phase_flag else words
+
+
 def open_run_refusal(previous, args, parsed):
-    # An unfinished run blocks `start` unless --restart: (reason, commands, notes), or None. --task does not pass.
-    if previous.get("stage") in (None, "done") or parsed.restart:
+    # An unfinished run blocks `start` unless --restart: (reason, commands, notes), or None. --task does not pass. A
+    # run that stopped on the coder's report does not block the session that got the report.
+    if not is_run_open(previous) or parsed.restart or reopens_stopped_run(previous):
         return None
 
     resume_command = script_command(RESUME_VERB)
@@ -546,24 +574,11 @@ def open_run_refusal(previous, args, parsed):
         return reason, [resume_command], ()
 
     restart_command = script_command(f"start --restart {shlex.join(args)}")
+    plain_text_words = plain_task_words(parsed)
+    if plain_text_words:
+        restart_command = task_command(plain_text_words, parsed.modifier, "--restart")
     return reason, [resume_command, restart_command], (
         "`resume` goes on with the open run. `start --restart` drops it and starts over.",)
-
-
-def split_plan_words(words, parsed):
-    # (plan words, task words, phase id, whether the text held a `--phase <id>`) for task text that may hold a plan.
-    # Only a plan file as the first word, a plan argument before the text, or an explicit --phase is not task text.
-    plan_words = list(parsed.plan_args)
-    is_plan_file_first = not plan_words and os.path.isfile(words[0])
-    if is_plan_file_first:
-        plan_words = [words[0]]
-    text_words = words[1:] if is_plan_file_first else list(words)
-    phase_id = parsed.phase_id
-    phase_flag_at = phase_flag_position(text_words)
-    if phase_flag_at is not None:
-        phase_id = text_words[phase_flag_at + 1]
-        del text_words[phase_flag_at:phase_flag_at + 2]
-    return plan_words, text_words, phase_id, phase_flag_at is not None
 
 
 def plan_inside_task_refusal(words, parsed):
@@ -608,6 +623,10 @@ def start_refusal(repo_dir, previous, branch, args, parsed):
         return refusal
 
     refusal = open_run_refusal(previous, args, parsed)
+    if refusal:
+        return refusal
+
+    refusal = outside_repo_plan_refusal(repo_dir, parsed)
     if refusal or not words:
         return refusal
 
@@ -710,7 +729,7 @@ def command_start(args):
     os.chdir(repo_dir)
     args = without_blank_task_text(args)
     args = phase_words_as_flag(args)
-    parsed = parse_start_args(args)
+    parsed = carry_run_notes(parse_start_args(args))
     previous = load_state(repo_dir) or {}
     branch = branch_label(repo_dir)
 
@@ -725,6 +744,9 @@ def command_start(args):
 
     if not prepare_fresh_start(repo_dir, previous, branch, parsed):
         return
+
+    if parsed.restart or reopens_stopped_run(previous):
+        drop_open_run(repo_dir, previous)
 
     if parsed.task_text is not None:
         return start_planless(repo_dir, parsed.modifier, parsed.task_text, branch)
@@ -860,6 +882,9 @@ def start_plan_run(repo_dir, previous, branch, parsed, start_command):
     number = entry["number"] if entry else None
     section = plan_format.phase_text(plan_lines, number) if entry else "\n".join(plan_lines)
     closing_skill_name = plan_format.closing_skill(entry["title"]) if entry else None
+    if closing_skill_name and parsed.run_notes:
+        return emit("stop", f"Phase {number} is a closing phase and takes no run notes: they were not passed on. "
+                    "Tell the user.")
     if closing_skill_name:
         return start_closing_phase(repo_dir, plan_rel, lane, parsed.modifier, entry, closing_skill_name, section,
                                    branch, parsed.phase_id)
@@ -893,6 +918,7 @@ def start_phase_coder(repo_dir, previous, branch, parsed, phase):
     phase_description = f"Phase {number} of `{plan_rel}`" if use_packet else f"`{plan_rel}`"
     prompt = (f"Implement {phase_description}. Read the plan phase-scoped.\n"
               "If the task turns out architectural, report back and recommend /eng-spec.\n\n" + packet_body).rstrip()
+    prompt = "\n".join([prompt, *run_notes_lines(parsed.run_notes)])
     state = {"stage": "coder", "plan": plan_rel, "lane": phase["lane"], "phase": state_phase, "branch": branch,
              "modifier": parsed.modifier, "risk": entry["risk"] if entry else "high",
              "title": entry["title"] if entry else "", "gateCommands": commands, "baseline": baseline,

@@ -3318,7 +3318,7 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("start", "--restart", "docs/plans/orders/missing.md")
         self.assertIn("ACTION: ask-user", out)
         state = self.state()
-        self.assertEqual("stopped", state["stage"])
+        self.assertIsNone(state.get("stage"))
         self.assertNotIn("dispatchAt", state)
 
     def test_start_takes_flag_like_words_after_the_task_start_as_task_text(self):
@@ -4143,7 +4143,7 @@ class CodeStepTest(unittest.TestCase):
             self.assertIn(f"Phase {number} (gate: the data team signs off)", out)
         state = self.state()
         self.assertNotIn("dispatchAt", state)
-        self.assertEqual("stopped", state["stage"])
+        self.assertIsNone(state.get("stage"))
 
     def test_a_gated_phase_that_is_done_is_not_named_when_start_stops_at_an_open_one(self):
         self.mark_phases_done(1)

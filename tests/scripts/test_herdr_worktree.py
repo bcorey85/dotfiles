@@ -1,4 +1,7 @@
-"""Runs herdr-worktree against stub herdr commands and checks the checkout it asks herdr to branch from and the brief it hands herdr-dev."""
+"""Runs herdr-worktree against stub herdr commands.
+
+Checks the checkout it asks herdr to branch from and the brief it hands herdr-dev.
+"""
 import os
 import pathlib
 import shutil

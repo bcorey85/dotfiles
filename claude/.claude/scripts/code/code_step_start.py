@@ -31,6 +31,7 @@ from code_step_core import (
     emit_dispatch,
     file_hashes,
     head_commit,
+    is_run_open,
     load_state,
     open_dispatch,
     refuse,
@@ -45,7 +46,7 @@ from code_step_core import (
     uncommitted_files,
 )
 from code_step_gates import derive_gate_commands
-from code_step_restart import drop_open_run, is_run_open, reopens_stopped_run
+from code_step_restart import drop_open_run, reopens_stopped_run
 from code_step_start_args import (
     TaskFileError,
     carry_run_notes,

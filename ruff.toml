@@ -36,7 +36,6 @@ max-complexity = 10
 "tests/scripts/test_verify_common_review_ran.py" = ["E402"]
 # A failed open() is reported on its own and the hook then exits 0, so open() stays outside the with block that
 # covers the writes.
-"claude/.claude/scripts/telemetry/log_agent_usage.py" = ["SIM115"]
 "claude/.claude/scripts/telemetry/log_skill_use.py" = ["SIM115"]
 "claude/.claude/scripts/telemetry/test_edit_telemetry.py" = ["SIM115"]
 # The en dash (U+2013) is the character the plan and heading parsers must accept, so the strings keep it.

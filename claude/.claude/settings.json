@@ -285,10 +285,6 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/scripts/review/review_commit_gate.py"
-          },
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/scripts/telemetry/log_agent_usage.py"
           }
         ]
       },

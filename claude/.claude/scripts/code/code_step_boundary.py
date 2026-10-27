@@ -462,9 +462,40 @@ def ticket_prefix(state):
     return ""
 
 
-def commit_message(state):
-    recorded_behavior = state.get("behavior") or []
-    message = recorded_behavior[0] if recorded_behavior else (state.get("title") or "phase work")
+PLAN_COMMIT_LINE = re.compile(r"^\W*Commit\b[\s:*]*`([^`]+)`", re.IGNORECASE)
+EMPTY_SUMMARY = re.compile(r"none\b", re.IGNORECASE)
+
+
+def planned_commit_subject(repo_dir, state):
+    # The subject a `Commit `...`` line in the phase's own plan section names, or "" when the phase has none.
+    plan_name = state.get("plan")
+    phase_id = state.get("phase")
+    if not plan_name or phase_id is None:
+        return ""
+
+    plan_path = pathlib.Path(repo_dir) / plan_name
+    if not plan_path.is_file():
+        return ""
+
+    plan_lines = plan_path.read_text().splitlines()
+    section = plan_format.phase_section(plan_lines, phase_id)
+    if not section:
+        return ""
+
+    for line in plan_lines[section["start"]:section["end"]]:
+        found = PLAN_COMMIT_LINE.match(line)
+        if found:
+            return found.group(1).strip()
+    return ""
+
+
+def commit_message(repo_dir, state):
+    message = planned_commit_subject(repo_dir, state)
+    if not message:
+        recorded_behavior = state.get("behavior") or []
+        summary = recorded_behavior[0].strip() if recorded_behavior else ""
+        has_summary = bool(summary) and not EMPTY_SUMMARY.match(summary)
+        message = summary if has_summary else (state.get("title") or "phase work")
     prefix = ticket_prefix(state)
     if prefix and not message.lower().startswith(prefix.lower()):
         message = prefix + message
@@ -488,7 +519,7 @@ def phase_commit(repo_dir, state):
     if not own_files:
         return "", "", []
 
-    message = commit_message(state)
+    message = commit_message(repo_dir, state)
     quoted_files = " ".join(shlex.quote(name) for name in own_files)
     commit_line = f"git add -- {quoted_files} && git commit -m {shlex.quote(message)} -- {quoted_files}"
     lines = ["Files changed by this phase:", *diff_stat_rows(repo_dir, own_files), ""]

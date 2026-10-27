@@ -19,14 +19,13 @@ REVIEW_MARKER = "verify-branch"
 REVIEW_GATE = "code-reviewer"
 # `ledger yield` waits up to 10 s on a locked database, then exits 75. A busy ledger is never read as "no review ran".
 LEDGER_BUSY_EXIT = 75
-LEDGER_ATTEMPTS = 4
+# Each pause is LEDGER_BACKOFF_SECONDS longer than the last, so a ledger that stays busy is waited on for a minute.
+LEDGER_ATTEMPTS = 6
 # The environment variables set the call timeout and the pause between tries; they exist so a test need not wait.
 LEDGER_CALL_TIMEOUT_SECONDS = 60
-LEDGER_BACKOFF_SECONDS = 3
+LEDGER_BACKOFF_SECONDS = 4
 LEDGER_TIMEOUT_ENV = "VERIFY_LEDGER_TIMEOUT_SECONDS"
 LEDGER_BACKOFF_ENV = "VERIFY_LEDGER_BACKOFF_SECONDS"
-LEDGER_BUSY_MESSAGE = ("the ledger is busy (another process holds the database), so the review state could not be "
-                       "read; run this step again in a minute")
 # Accepted id spans: a plain id, an id followed by a parenthetical, an id with a qualifier inside the bold,
 # or several comma-separated ids inside one bold span.
 ID_LINE = re.compile(r"^\s*[-*]\s+\*\*(AC\d+[^*]*)\*\*\s*(?:\([^)]*\))?\s*[—–-]+\s*(.*)$")
@@ -45,6 +44,10 @@ class VerifyError(Exception):
     def __init__(self, message, code=2):
         super().__init__(message)
         self.code = code
+
+
+class LedgerBusyError(VerifyError):
+    """The ledger stayed busy, or its cache behind, through every try: the review state is unknown, not absent."""
 
 
 run = functools.partial(script_utils.run_or_raise, error_type=VerifyError)
@@ -193,25 +196,35 @@ def branch_fingerprint(top, merge_base, exclude_rel=None):
     return "sha256:" + digest.hexdigest()
 
 
+def ledger_busy_message(paused_seconds, ledger_line):
+    return (f"the ledger is busy or its cache is behind after {LEDGER_ATTEMPTS} tries over {paused_seconds:.0f} s "
+            f"of pauses (ledger said: {ledger_line}), so the review state could not be read")
+
+
 def review_ran(repo, branch, fingerprint):
     """(ran, reason). A branch-exit code-reviewer run row that verify-log wrote (it carries REVIEW_MARKER and a tree
     fingerprint) counts when its fingerprint equals `fingerprint`. `ledger yield --review-trees` lists the
-    fingerprints of the checkout the process runs in, so `repo` and `branch` come from that checkout."""
+    fingerprints of the checkout the process runs in, so `repo` and `branch` come from that checkout. Raises
+    LedgerBusyError when the ledger is still busy or behind after the last try."""
     if shutil.which("ledger") is None:
         return False, "ledger not installed"
+
+    backoff_seconds = float(os.environ.get(LEDGER_BACKOFF_ENV, LEDGER_BACKOFF_SECONDS))
+    timeout_seconds = float(os.environ.get(LEDGER_TIMEOUT_ENV, LEDGER_CALL_TIMEOUT_SECONDS))
+    paused_seconds = backoff_seconds * LEDGER_ATTEMPTS * (LEDGER_ATTEMPTS - 1) / 2
     try:
-        listed = script_utils.run_retrying(
-            ["ledger", "yield", "--review-trees"], (LEDGER_BUSY_EXIT,), LEDGER_ATTEMPTS,
-            float(os.environ.get(LEDGER_BACKOFF_ENV, LEDGER_BACKOFF_SECONDS)),
-            float(os.environ.get(LEDGER_TIMEOUT_ENV, LEDGER_CALL_TIMEOUT_SECONDS)))
+        listed = script_utils.run_retrying(["ledger", "yield", "--review-trees"], (LEDGER_BUSY_EXIT,),
+                                           LEDGER_ATTEMPTS, backoff_seconds, timeout_seconds)
     except OSError as error:
         raise VerifyError(f"cannot run ledger: {error}") from error
     except subprocess.TimeoutExpired:
-        raise VerifyError(LEDGER_BUSY_MESSAGE) from None
+        raise LedgerBusyError(ledger_busy_message(paused_seconds, f"no answer in {timeout_seconds:.0f} s")) from None
+
+    error_lines = listed.stderr.strip().splitlines()
     if listed.returncode == LEDGER_BUSY_EXIT:
-        raise VerifyError(LEDGER_BUSY_MESSAGE)
+        ledger_line = error_lines[-1] if error_lines else f"exit {LEDGER_BUSY_EXIT}"
+        raise LedgerBusyError(ledger_busy_message(paused_seconds, ledger_line))
     if listed.returncode != 0:
-        error_lines = listed.stderr.strip().splitlines()
         raise VerifyError(error_lines[-1] if error_lines else f"ledger yield --review-trees exited {listed.returncode}")
 
     trees = listed.stdout.splitlines()[1:]
@@ -220,6 +233,20 @@ def review_ran(repo, branch, fingerprint):
     if fingerprint in trees:
         return True, f"{REVIEW_GATE} run row in the ledger, tree unchanged since"
     return False, "the tree differs from the one reviewed"
+
+
+def review_state(repo, branch, fingerprint, logged_tree):
+    """{"read", "ran", "reason"} for the context's `review`. read is True when the ledger answered. When it stays busy,
+    read is False, and the review counts as ran only when verify-log logged one for this same tree from this branch's
+    saved context (`logged_tree` is the fingerprint it saved there)."""
+    try:
+        ran, reason = review_ran(repo, branch, fingerprint)
+    except LedgerBusyError as error:
+        logged_here = logged_tree == fingerprint
+        record = ("verify-log logged a review of this tree from this checkout" if logged_here
+                  else "no review of this tree was logged from this checkout")
+        return {"read": False, "ran": logged_here, "reason": f"{error}; {record}"}
+    return {"read": True, "ran": ran, "reason": reason}
 
 
 def context_path(repo, branch):

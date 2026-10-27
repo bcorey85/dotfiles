@@ -36,7 +36,7 @@ diff and what it touches, not a fresh read.
     **Report the delta after round 1**: findings, and how many the previous
     repair created.
 
-    `BLOCKER` and `GAP` resolve like a `DESIGN GAP`: with the user, appended to `03-decisions.md`, then back to the owning architect for a revised plan — never hand-patched. `NIT` is yours to fix or drop.
+    `BLOCKER` and `GAP` resolve like a `DESIGN GAP`: with the user, appended to `03-decisions.md`, then back to the owning architect for revised section text that you write in (step 16) — never a patch of your own design. `NIT` is yours to fix or drop.
 
     **`ALT` goes to the user once.** Put it with the reviewer's three parts intact; never pre-filter. Accepted or declined, it becomes a decision block (declined = considered-and-rejected for `## Approaches Considered and Not Taken`). An ALT alone never triggers another round.
 

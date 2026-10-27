@@ -17,7 +17,8 @@
     - **`DESIGN GAPS` returned by an architect**: resolve each with the user in
       prose (step 14's rule holds), append it to `03-decisions.md` as a decision
       block, **then send the resolution back to that architect** and take its
-      revised plan.
+      revised plan. Architects cannot edit files: get each changed section's
+      full text and write it in yourself.
     - **Testability lint**, one question per Success Criterion: could a reader of
       ONLY the plan decide it pass/fail (named command, output, or test)? A
       failure is UNDERSPECIFIED — resolve with the user like a `DESIGN GAP`, never
@@ -37,8 +38,7 @@
       gate stays in its sibling file, named by path.
     - **Write `## Constraints` and `## External Contracts` yourself — both are mandatory.** Rules live in those sections' comments in the spec template; write with the template open, not from memory.
     - **Fullstack: weave, don't concatenate.** "Backend phases, then frontend
-      phases" is the horizontal anti-pattern `plan-format.md` forbids — layer
-      phases give `/code`'s gates no end-to-end signal. Interleave
+      phases" is the horizontal anti-pattern `plan-format.md` forbids. Interleave
       vertical slices, each one verifiable increment of user-observable behavior.
       Single-layer phases only when the work genuinely is.
 

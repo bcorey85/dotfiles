@@ -456,7 +456,7 @@ class ResumeTest(base.CodeStepTest):
         self.assertIn("The phase's own plan section follows", out)
         self.assertIn("Sweep.", out)
         self.assertIn("skill-done pass`", out)
-        self.assertIn("`skill-done fail`", out)
+        self.assertIn("`skill-done fail --finding", out)
         self.assertEqual(before, self.state_bytes())
 
     PLANLESS_RESTART = 'ask the user for the task text, then run `start --restart --task "<the task text>"`'

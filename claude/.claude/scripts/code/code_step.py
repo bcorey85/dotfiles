@@ -17,7 +17,7 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
   code_step.py asks-done [--by <user|session>] <outcome>...
                                                 log the answer to each ask[] entry, then run the phase gates;
                                                 --by session when the session ruled itself, default user
-  code_step.py skill-done <pass|fail> [--evidence "<text>"]...
+  code_step.py skill-done <pass|fail> [--evidence "<text>"]... [--finding "<text>"]...
                                                 a closing phase's skill returned: mark it done (pass) or stop (fail);
                                                 at pass, give one --evidence per open Success Criteria item and the
                                                 script writes it into the plan
@@ -62,7 +62,6 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import plan_format
 import script_utils
 from code_step_boundary import (
-    command_skill_done,
     command_tick,
     command_verify,
     criteria_file,
@@ -77,6 +76,7 @@ from code_step_boundary import (
     verification_command,
     verification_format_failure,
 )
+from code_step_closing import command_skill_done_with_question
 from code_step_core import (
     CLAUDE_DIR,
     CODER,
@@ -109,6 +109,7 @@ from code_step_core import (
     open_dispatch,
     phase_coder_reports,
     pin_session,
+    plan_edit_open_choices,
     put_resumed_coder_back,
     put_resumed_review_back,
     record_ruled_asks,
@@ -125,6 +126,7 @@ from code_step_core import (
     session_pin,
     start_run,
     state_dir,
+    stop_with_question,
     timed_command,
     uncommitted_files,
     wait_for_handback,
@@ -956,8 +958,8 @@ def emit_closing_skill(repo_dir, plan_rel, number, title, skill, section):
     open_items = plan_format.open_success_items(section.split("\n")) if section else []
     pass_command = evidence_command_shape(len(open_items))
     verdict_step = (f"run `{pass_command}` when the phase's Success "
-                   "Criteria hold, or `skill-done fail` when they do not (for the Verify pass, any MISSING "
-                   "criterion fails it)")
+                   "Criteria hold, or `skill-done fail --finding \"<one line>\"` (one `--finding` per open finding) "
+                   "when they do not (for the Verify pass, any MISSING criterion fails it)")
     section_lines = (
         ["The phase's own plan section follows. Follow its steps and gates; the skill alone is not the phase:", section]
         if section
@@ -1244,6 +1246,9 @@ def unreviewable_outcome(repo_dir, state, report, changed_files, changed_now):
     return None
 
 
+CODER_REPORT_STOP_LINES = 6
+
+
 def stop_on_coder_report(repo_dir, state, report, agent_id):
     # The run stops on the coder's report: the user answers it, and the coder resumed with SendMessage goes on.
     state["stage"] = "stopped"
@@ -1257,9 +1262,15 @@ def stop_on_coder_report(repo_dir, state, report, agent_id):
                 else "")
     resume_text = (" If the user answers the coder's blocker, resume that coder with SendMessage, then run "
                   f"{timed_command(RESUME_VERB)}.")
-    emit("stop", "The coder produced no reviewable change, or recommended /eng-spec. Do not dispatch a "
-         "review. Do not mark the phase done." + tick_text + resume_text
-         + " Relay the coder's report to the user:", report)
+    report_lines = [line for line in report.splitlines() if line.strip()][:CODER_REPORT_STOP_LINES]
+    next_step = (f"if the user answers the coder's blocker, resume that coder with SendMessage, then run "
+                 f"`{script_command(RESUME_VERB)}`. To dispatch a new coder for the phase, "
+                 f"{restart_instruction(state)}.")
+    stop_with_question(
+        repo_dir, "the coder produced no reviewable change, or recommended /eng-spec.", report_lines, next_step,
+        "The coder produced no reviewable change, or recommended /eng-spec. Do not dispatch a "
+        "review. Do not mark the phase done." + tick_text + resume_text
+        + " Relay the coder's report to the user:", report)
 
 
 def record_coder_report(repo_dir, state, report, gate, changed_files):
@@ -1555,7 +1566,12 @@ def plan_edit_prompt(state, criteria_path):
             f"each one you rewrite, add `Signed off by {ruling['by']}, {ruling['at']}: <the change in one line>`. "
             "Keep every other criterion as it is.",
         ]
-    lines += ["", "Report each line you changed as `<file>:<line number>: <new text>`."]
+    lines += [
+        "",
+        "Report each line you changed as `<file>:<line number>: <new text>`. Ask the user nothing and make no choice "
+        "that is theirs. For each choice the ruling leaves open, end the report with one line: "
+        "`OPEN CHOICE: <the choice in one line>`. The script hands each such line to the user.",
+    ]
     return "\n".join(lines)
 
 
@@ -1597,6 +1613,8 @@ def command_after_plan_edit(repo_dir, state, args):
     if not wait_for_handback(repo_dir, state, RESUME_VERB):
         return
     state["sessionId"] = session_pin() or state.get("sessionId")
+    plan_edit_handback = awaited_handback(repo_dir, state) or {}
+    open_choices = plan_edit_open_choices(plan_edit_handback.get("message", ""))
 
     had_criteria_guard = state.get("criteriaGuard") is not None
     criteria_message = settle_criteria_guard(repo_dir, state, branch_label(repo_dir))
@@ -1625,6 +1643,9 @@ def command_after_plan_edit(repo_dir, state, args):
     if criteria_path and criteria_path in edited_files and state["ruling"]["byUser"]:
         plan_note += f" The acceptance criteria in {criteria_path} changed too: read them before you stage."
     say(repo_dir, plan_note)
+    if open_choices:
+        choice_lines = [f"- {choice}" for choice in open_choices]
+        say(repo_dir, "\n".join(["The plan-edit coder left these choices to the user:", *choice_lines]))
 
     emit_review_dispatch(repo_dir, state)
 
@@ -1807,6 +1828,11 @@ def carried_findings(module, packet):
     return lines
 
 
+def review_stop_next_step(state):
+    # The command after a review stop: the phase started over, once the user has ruled on the findings.
+    return f"after the user rules on the findings, {restart_instruction(state)} to start the phase over."
+
+
 def stop_on_review_status(repo_dir, state, module, packet):
     # True after the stop or question a packet status that ends the run prints.
     status = packet["status"]
@@ -1820,15 +1846,22 @@ def stop_on_review_status(repo_dir, state, module, packet):
     if status == "critical-blocker":
         state["stage"] = "stopped"
         save_state(repo_dir, state)
-        emit("stop", "Review found a critical blocker. Present these to the user. Do not mark the phase done.",
-             *["- " + module.item_text(item, "finding", "file_line") for item in packet["blockers"]])
+        blocker_lines = ["- " + module.item_text(item, "finding", "file_line") for item in packet["blockers"]]
+        stop_with_question(
+            repo_dir, "the review found a critical blocker.", [line[2:] for line in blocker_lines],
+            review_stop_next_step(state),
+            "Review found a critical blocker. Present these to the user. Do not mark the phase done.", *blocker_lines)
         return True
     if status == "cap-reached":
         state["stage"] = "stopped"
         save_state(repo_dir, state)
-        emit("stop", "The review cap was reached. Report these findings to the user. Do not mark the phase "
-             "done. The session stays dirty, so git commit stays blocked.",
-             *["- " + module.item_text(item, "finding", "file_line") for item in packet["findings_remaining"]])
+        remaining_lines = ["- " + module.item_text(item, "finding", "file_line")
+                           for item in packet["findings_remaining"]]
+        stop_with_question(
+            repo_dir, "the review cap was reached with findings still open.", [line[2:] for line in remaining_lines],
+            review_stop_next_step(state),
+            "The review cap was reached. Report these findings to the user. Do not mark the phase "
+            "done. The session stays dirty, so git commit stays blocked.", *remaining_lines)
         return True
     return False
 
@@ -2093,9 +2126,12 @@ def coder_answer_sent(repo_dir, state):
 
 
 def review_answer_sent(repo_dir, state):
-    # The user resumed the review-loop that the wait cap stopped on.
+    # The user resumed the review-loop that the wait cap stopped on, or it handed back late on its own.
     launch_id = awaited_agent_id(repo_dir, state)
-    return launch_id is not None and sent_message_since(repo_dir, state, state["resumableReview"], launch_id)
+    if launch_id is None:
+        return False
+    return (awaited_handback(repo_dir, state) is not None
+            or sent_message_since(repo_dir, state, state["resumableReview"], launch_id))
 
 
 def stopped_route(repo_dir, state):
@@ -2320,7 +2356,7 @@ def main():
     verb = sys.argv[1] if len(sys.argv) > 1 else ""
     args = sys.argv[2:]
     verbs = {"start": command_start, RESUME_VERB: command_resume, "decide": command_decide,
-             "asks-done": command_asks_done, "skill-done": command_skill_done, "verify": command_verify,
+             "asks-done": command_asks_done, "skill-done": command_skill_done_with_question, "verify": command_verify,
              "tick": command_tick, "review-again": command_review_again, "abort": command_abort}
     verbs.update(dict.fromkeys(RESUME_ALIASES, command_resume))
     if verb in HOOK_VERBS:

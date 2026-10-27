@@ -392,6 +392,14 @@ def resumed_agent_pending_stop(agent_type):
             f"has handed back, run {timed_command(RESUME_VERB)}.")
 
 
+PLAN_EDIT_OPEN_CHOICE = re.compile(r"^[ \t]*OPEN CHOICE:[ \t]*(\S.*)$", re.MULTILINE)
+
+
+def plan_edit_open_choices(report):
+    # The choices the plan-edit coder left to the user, one per `OPEN CHOICE:` line of its report.
+    return [choice.strip() for choice in PLAN_EDIT_OPEN_CHOICE.findall(report or "")]
+
+
 def phase_coder_reports(repo_dir, state):
     # The agents that coder-stage dispatches launched, one (agent id, stage, messages, attempts) per agent in launch
     # order. The messages of an agent are every hand-back event it logged, oldest first; its attempts are every message
@@ -576,8 +584,11 @@ def stop_on_launch_without_agent_id(repo_dir, state, agent_type):
     state["stage"] = "stopped"
     state.pop("resumeWaitAt", None)
     save_state(repo_dir, state)
-    emit("stop", f"The {agent_type} was launched, but the launch has no agent id, so its hand-back cannot be "
-         "matched. Do not dispatch it again and do not wait. Tell the user." + resume_text)
+    stop_with_question(
+        repo_dir, f"the {agent_type} was launched, but the launch has no agent id, so its hand-back cannot be matched.",
+        [], resume_text.strip(),
+        f"The {agent_type} was launched, but the launch has no agent id, so its hand-back cannot be "
+        "matched. Do not dispatch it again and do not wait. Tell the user." + resume_text)
     return False
 
 
@@ -594,9 +605,10 @@ def stop_at_wait_cap(repo_dir, state, agent_type, clock_start, total_cap):
     # The cap is spent: a wait after the user resumes the agent again counts from its own first wait.
     state.pop("resumeWaitAt", None)
     save_state(repo_dir, state)
-    emit("stop", f"The {agent_type} has not handed back in {stopped_at - clock_start:.0f} seconds, counted from "
-         f"{dispatch_time_text(clock_start)} (the cap is {total_cap:g}). It may have died or been stopped. Do "
-         "not dispatch it again and do not wait longer. Tell the user." + resume_text)
+    silent_text = (f"The {agent_type} has not handed back in {stopped_at - clock_start:.0f} seconds, counted from "
+                   f"{dispatch_time_text(clock_start)} (the cap is {total_cap:g}). It may have died or been stopped.")
+    stop_with_question(repo_dir, silent_text, [], resume_text.strip(),
+                       silent_text + " Do not dispatch it again and do not wait longer. Tell the user." + resume_text)
 
 
 def restart_instruction(state, restart_command="start --restart"):
@@ -689,15 +701,28 @@ def clear_question(repo_dir):
         question_file_in(directory).write_text("")
 
 
+def write_question(repo_dir, question_lines):
+    directory = state_dir(repo_dir)
+    if directory is None:
+        return
+    directory.mkdir(parents=True, exist_ok=True)
+    question_file_in(directory).write_text(own_path("\n".join(question_lines)).rstrip() + "\n")
+
+
 def ask_user(repo_dir, instruction, *question_lines):
     # The /code subagent cannot ask the user: the question goes in question.md for the main session to ask.
-    directory = state_dir(repo_dir)
-    if directory is not None:
-        directory.mkdir(parents=True, exist_ok=True)
-        question_text = "\n".join(["## Question for the user", "", "Main session: " + instruction, "", *question_lines])
-        question_file_in(directory).write_text(own_path(question_text).rstrip() + "\n")
-
+    write_question(repo_dir, ["## Question for the user", "", "Main session: " + instruction, "", *question_lines])
     emit("ask-user", f"The question for the user is in {question_file(repo_dir)}. Hand back.")
+
+
+def stop_with_question(repo_dir, why, items, next_step, *stop_lines):
+    # A stop on an agent's report or silence: question.md names why the run stopped, each open item on one line and
+    # the command that goes on, so the hand-back never rests on free text alone.
+    item_lines = [f"- {script_utils.one_line(item, 300)}" for item in items] or ["- (none reported)"]
+    write_question(repo_dir, ["## The run stopped", "", "Main session: tell the user why the run stopped and what "
+                              "waits on them.", "", "Why: " + why, "", "Open items:", *item_lines, "",
+                              "Next: " + next_step])
+    emit("stop", *stop_lines)
 
 
 def emit(action, *lines, prompt=None, agent=None, model=None, prompt_file=None):

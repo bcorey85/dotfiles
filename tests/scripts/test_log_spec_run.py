@@ -14,6 +14,7 @@ TELEMETRY_ENABLED_SCRIPT = pathlib.Path(
     os.environ.get("TELEMETRY_ENABLED_SCRIPT") or REAL_CLAUDE / "scripts" / "telemetry" / "telemetry_enabled.sh"
 )
 KV_SCRIPT = REAL_CLAUDE / "scripts" / "lib" / "_kv.sh"
+LEDGER_LIB_SCRIPT = REAL_CLAUDE / "scripts" / "lib" / "_ledger.sh"
 LEDGER_WRITE_SCRIPT = REAL_CLAUDE / "scripts" / "telemetry" / "ledger-write"
 
 GIT_ENV = {
@@ -41,6 +42,7 @@ class LogSpecRunRepoTest(unittest.TestCase):
         shutil.copy2(SCRIPT, self.script)
         shutil.copy2(TELEMETRY_ENABLED_SCRIPT, telemetry_dir / "telemetry_enabled.sh")
         shutil.copy2(KV_SCRIPT, self.scripts_dir / "lib" / "_kv.sh")
+        shutil.copy2(LEDGER_LIB_SCRIPT, self.scripts_dir / "lib" / "_ledger.sh")
         shutil.copy2(LEDGER_WRITE_SCRIPT, telemetry_dir / "ledger-write")
         self.ledger_env = fake_ledger.install(self.root)
 

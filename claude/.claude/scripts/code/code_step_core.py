@@ -17,7 +17,8 @@ import signal
 import sys
 import time
 
-sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in ("code", "lib", "review")]
+SIBLING_FOLDERS = ("code", "lib", "review", "telemetry")
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in SIBLING_FOLDERS]
 import plan_format
 import script_utils
 from script_utils import git_output

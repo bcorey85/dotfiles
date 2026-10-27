@@ -32,7 +32,7 @@ class ReviewRan(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-        patcher = mock.patch.dict(os.environ, {"PATH": self.directory.name})
+        patcher = mock.patch.dict(os.environ, {"PATH": self.directory.name, "CARGO_HOME": self.directory.name})
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -70,12 +70,13 @@ class ReviewRan(unittest.TestCase):
 
 
 class ReviewStateWithoutLedger(unittest.TestCase):
-    """With no ledger on PATH, the checkout's own record of the logged review decides."""
+    """With no ledger found (PATH, then `${CARGO_HOME:-~/.cargo}/bin`), the checkout's own record of the logged
+    review decides."""
 
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        patcher = mock.patch.dict(os.environ, {"PATH": directory.name})
+        patcher = mock.patch.dict(os.environ, {"PATH": directory.name, "CARGO_HOME": directory.name})
         patcher.start()
         self.addCleanup(patcher.stop)
 

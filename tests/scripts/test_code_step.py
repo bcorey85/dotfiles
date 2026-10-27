@@ -13,6 +13,7 @@ import unittest
 import unittest.mock
 from typing import ClassVar
 
+import fake_ledger
 import toolkit_paths
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -1433,6 +1434,19 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("after-review")
         self.assertIn("ACTION: auto-advance", out)
         self.assertIn("Auto-advancing to Phase 3", self.said())
+
+    def test_a_phase_closed_with_no_ledger_tells_the_user_the_rows_went_to_the_jsonl_files(self):
+        # HOME is the temp home, so with CARGO_HOME unset the cargo bin folder holds no ledger either.
+        self.env["PATH"] = fake_ledger.path_without_ledger(self.env["PATH"])
+        self.env.pop("CARGO_HOME", None)
+        self.env["CLAUDE_TOOLKIT_TELEMETRY"] = "1"
+
+        self.finish_phase_one()
+
+        self.assertIn(
+            "No ledger found on PATH or in the cargo bin folder ($CARGO_HOME/bin, default ~/.cargo/bin)",
+            self.said(),
+        )
 
     def test_gate_cap_forces_stop_block(self):
         self.advance_to_phase_two()

@@ -43,7 +43,8 @@ import pathlib
 import sys
 import time
 
-sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../code")]
+SIBLING_FOLDERS = (".", "../lib", "../code", "../telemetry")
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in SIBLING_FOLDERS]
 import code_step_core
 import handback
 import plan_format
@@ -594,6 +595,9 @@ def command_packet(argv):
     else:
         print_action("render-and-finish", gate_mark_line())
     sections = [("Aikido replies", replies)] if replies else []
+    ledger_warning = script_utils.missing_ledger_warning()
+    if ledger_warning:
+        sections.append(("Ledger", [ledger_warning]))
     print_user_block(handback.render(packet, options.skill, sections))
     print_logged(notes)
     if options.skill == "review" and not is_outstanding(packet):

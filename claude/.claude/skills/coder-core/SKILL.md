@@ -15,9 +15,9 @@ You edit files yourself, with Write and Edit; use Bash only to run commands, nev
 
 A hook denies the whole compound command, so one banned fragment stops everything else in it. Never put any of these in a Bash call:
 
-- a file write of any kind: `>`, `>>`, `tee`, a `cat <<EOF` heredoc, `sed -i`, `perl -pi` or `awk -i inplace`. Use Write or Edit, including to append. The one exception is a check log under `/tmp/` (see "Verify before you report").
+- a file write of any kind: `>`, `>>`, `tee`, a `cat <<EOF` heredoc, `sed -i`, `perl -pi` or `awk -i inplace`, or a program you wrote that opens a repo file for writing. Use Write or Edit, including to append. The one exception is a check log under `/tmp/` (see "Verify before you report").
 - `sh -c` or `bash -c`. Run the command directly, for example `docker compose exec -T cube node <script>`.
-- inline interpreters such as `python3 -c` or `node -e`. Write a script under `scratch/scripts/` and run it.
+- inline interpreters such as `python3 -c` or `node -e`, and interpreter code fed on stdin: `python3 - <<EOF`, `python3 <<EOF`, `cat x | python3`. Write a script under `scratch/scripts/` and run it.
 - `rm -r` or `rm -f`, `xargs`, `find -exec`, `sudo`, pipe-to-shell, `git stash`, or any git write.
 - a no-op or filler fragment such as `true`, `sed ... /dev/null` or a trailing `; true`. Every fragment has to do real work.
 

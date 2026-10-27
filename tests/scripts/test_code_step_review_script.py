@@ -142,9 +142,23 @@ class ReviewScriptTest(base.CodeStepTest):
         self.coder_round()
         started_pid = self.wait_for_file("started").read_text()
 
-        self.step("abort")
+        out = self.step("abort")
 
         self.assertEqual(started_pid, self.wait_for_file("terminated").read_text())
+        self.assertIn(f"Killed the review loop script (pid {started_pid})", out)
+        self.assertNotIn("may still be running", out)
+
+    def test_abort_of_a_script_that_already_exited_does_not_claim_to_have_killed_it(self):
+        self.env["FAKE_LOOP_MODE"] = "silent"
+        self.coder_round()
+        script_pid = self.state()["reviewScriptPid"]
+        self.wait_for_script_exit(script_pid)
+
+        out = self.step("abort")
+
+        self.assertIn(f"The review loop script (pid {script_pid}) had already exited.", out)
+        self.assertNotIn("Killed the review loop script", out)
+        self.assertNotIn("may still be running", out)
 
     def dispatch_rows(self):
         rows = []

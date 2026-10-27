@@ -34,8 +34,8 @@ def result(tool_use_id, text):
     return {"type": "user", "message": {"role": "user", "content": [block]}}
 
 
-def bash(command):
-    block = {"type": "tool_use", "id": "toolu_bash", "name": "Bash", "input": {"command": command}}
+def bash(command, tool_use_id="toolu_bash"):
+    block = {"type": "tool_use", "id": tool_use_id, "name": "Bash", "input": {"command": command}}
     return {"type": "assistant", "message": {"role": "assistant", "content": [block]}}
 
 
@@ -178,6 +178,66 @@ class StopRowTest(unittest.TestCase):
         stops = self.stored_stops(store.name)
         self.assertEqual([(row["agent_id"], row["open_dispatches"]) for row in stops],
                          [("loop-1", 1), ("loop-1", 0)])
+
+    def logged_ask_rows(self, command, printed):
+        store = self.new_store()
+        self.stop_in_session([user("review loop"), bash(command, "toolu_log"), result("toolu_log", printed)], store)
+        [stop] = self.stored_stops(store)
+        return stop.get("ask_rows")
+
+    def test_a_stop_stores_the_id_the_log_helper_printed_for_each_ask_row(self):
+        command = ('cd ~/.claude/skills/review && L="lane=none scope=standalone iter=2 gate=code-reviewer"; '
+                   'D=docs/guide\n'
+                   './log-review-finding kind=run $L n_findings=3 diff_loc=9 result=PASS\n'
+                   './log-review-finding kind=finding $L disposition=fix class=bug file=src/a.ts line=4 '
+                   'actioned=fixed\n'
+                   './log-review-finding kind=finding $L disposition=ask class=docs file=$D/spec.md line=314 '
+                   'actioned=ask\n'
+                   './log-review-finding kind=finding $L disposition=ask class=smell file="src/b.ts" line=7 '
+                   'actioned=ask && echo done')
+        printed = ("run_id=18ece5ac665dfd8e\nfinding_id=6087ff2824ca37b6\nfinding_id=712b01a68fd88a12\n"
+                   "finding_id=b220bc228d6edb04")
+        self.assertEqual(self.logged_ask_rows(command, printed),
+                         [{"file": "spec.md", "line": 314, "finding_id": "712b01a68fd88a12"},
+                          {"file": "src/b.ts", "line": 7, "finding_id": "b220bc228d6edb04"}])
+
+    def test_a_command_whose_printed_ids_do_not_match_its_finding_calls_pairs_nothing(self):
+        command = ('./log-review-finding kind=finding lane=none disposition=ask class=docs file=a.ts line=1 '
+                   'actioned=ask\n'
+                   './log-review-finding kind=finding lane=none disposition=ask class=docs file=b.ts line=2 '
+                   'actioned=ask')
+        self.assertEqual(self.logged_ask_rows(command, "finding_id=6087ff2824ca37b6\nlog-review-finding: failed"), [])
+
+    def test_a_helper_path_held_in_a_shell_variable_still_counts_as_a_finding_call(self):
+        command = ('L=~/.claude/skills/review/log-review-finding; D=docs/guide\n'
+                   '$L kind=finding lane=none disposition=fix class=bug file=src/a.ts line=4 actioned=fixed\n'
+                   '${L} kind=finding lane=none disposition=ask class=docs file=$D/spec.md line=314 actioned=ask')
+        printed = "finding_id=6087ff2824ca37b6\nfinding_id=712b01a68fd88a12"
+        self.assertEqual(self.logged_ask_rows(command, printed),
+                         [{"file": "spec.md", "line": 314, "finding_id": "712b01a68fd88a12"}])
+
+    def test_a_command_that_mixes_the_variable_form_and_the_path_form_pairs_each_call_with_its_own_id(self):
+        command = ('L=~/.claude/skills/review/log-review-finding\n'
+                   '$L kind=finding lane=none disposition=ask class=docs file=a.ts line=1 actioned=ask\n'
+                   './log-review-finding kind=finding lane=none disposition=fix class=bug file=b.ts line=2 '
+                   'actioned=fixed\n'
+                   '$L kind=finding lane=none disposition=ask class=docs file=c.ts line=3 actioned=ask')
+        printed = "finding_id=6087ff2824ca37b6\nfinding_id=712b01a68fd88a12\nfinding_id=b220bc228d6edb04"
+        self.assertEqual(self.logged_ask_rows(command, printed),
+                         [{"file": "a.ts", "line": 1, "finding_id": "6087ff2824ca37b6"},
+                          {"file": "c.ts", "line": 3, "finding_id": "b220bc228d6edb04"}])
+
+    def test_a_stop_the_gate_blocked_is_stored_as_blocked_and_a_passing_stop_is_not(self):
+        store = self.new_store()
+        unchecked = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        checked = [*unchecked, bash("npm test > /tmp/review-gate.log 2>&1")]
+        blocked_out = self.stop_in_session(unchecked, store)
+        self.stop_in_session(checked, store)
+        self.assertIn("block", blocked_out.stdout)
+        self.assertEqual([bool(row.get("blocked")) for row in self.stored_stops(store)], [True, False])
+
+    def test_a_stop_with_no_ask_call_stores_no_ask_rows(self):
+        self.assertEqual(self.logged_ask_rows("ls", "ok"), [])
 
     def test_a_store_write_error_never_blocks_the_stop(self):
         store = tempfile.TemporaryDirectory()

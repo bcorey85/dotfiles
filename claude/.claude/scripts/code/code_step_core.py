@@ -31,6 +31,7 @@ PROMPT_DENIAL_LIMIT = 3
 FORK_STOP_BLOCK_LIMIT = 2
 HANDBACK_WAIT_SECONDS = 570
 HANDBACK_POLL_SECONDS = 2
+STOP_ROW_WAIT_SECONDS = 15
 HANDBACK_TOTAL_WAIT_MULTIPLE = 3
 LAUNCH_EXPECTED_SECONDS = 60
 BASH_TIMEOUT_MS = 600000
@@ -544,6 +545,25 @@ def wait_for_handback(repo_dir, state, verb):
          f"not hand back. To keep waiting, run the same command again: `{INSTALLED_COMMAND} {verb}` (Bash timeout "
          f"{BASH_TIMEOUT_MS}).")
     return False
+
+
+def wait_for_loop_stop(state, module, handback):
+    # The review-loop's hand-back row reaches the shared store before the stop row of the same loop, and a stop that
+    # the review gate blocked is followed by more ledger rows. A reader of the stop row's ask rows waits, on the
+    # hand-back poll, for a stop the gate let through at or after the hand-back. CODE_STEP_WAIT_SECONDS=0 skips the
+    # wait. On a timeout it says so on stderr and the reader goes on without the row.
+    limit = min(float(os.environ.get("CODE_STEP_WAIT_SECONDS", HANDBACK_WAIT_SECONDS)), STOP_ROW_WAIT_SECONDS)
+    if limit <= 0:
+        return
+
+    interval = float(os.environ.get("CODE_STEP_POLL_SECONDS", HANDBACK_POLL_SECONDS))
+    session_id = state.get("sessionId") or session_pin() or ""
+    agent_id = handback.get("agent_id")
+    settled = script_utils.wait_for(lambda: module.settled_stop_row(session_id, agent_id, handback["ts"]),
+                                    limit, interval)
+    if settled is None:
+        print(f"code-step: no settled stop row from the review-loop within {limit:g} seconds: its logged ask rows "
+              "may be missed, so an ask it logged may get a second ask row.", file=sys.stderr)
 
 
 def stop_on_launch_without_agent_id(repo_dir, state, agent_type):

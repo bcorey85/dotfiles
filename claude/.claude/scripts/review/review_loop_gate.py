@@ -21,6 +21,8 @@
       is waiting: `review_fix.py packet` prints `ACTION: wait-for-loop`, not stop-no-handback. A row with 0 ends
       the wait. A stop whose transcript cannot be read writes a 0 row, then fails open as before. A store write
       error is reported on stderr and never blocks the stop.
+      The row also carries `ask_rows`: the file, line and printed finding_id of each `actioned=ask` row the loop
+      logged, so `review_fix.py packet` can give each ask its id.
   PreToolUse (Agent): a review-loop dispatch whose prompt says `caller: code` must carry a
       `handoff:` line.
 
@@ -40,6 +42,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 
@@ -109,7 +112,10 @@ LAYOUTS = (
 ASSESSMENT = re.compile(r"Overall Assessment\*{0,2}:?\s*\**(PASS WITH WARNINGS|PASS|NEEDS CHANGES)")
 PROMPT_LANE = re.compile(r"(?im)^[ \t>*`-]*lane[`*]*[ \t]*:[ \t`*]*(eng-spec|code|test-audit|other|none)\b")
 PROMPT_PLAN = re.compile(r"(?im)^[ \t>*`-]*plan[`*]*[ \t]*:[ \t`*]*(\S+?)[`*]*[ \t]*$")
-FINDING_CALL = re.compile(r"log-review-finding\s+kind=finding\b")
+HELPER_ASSIGNMENT = re.compile(r"(?:^|[\s;&|])(\w+)=[\"']?[^\s;&|\"']*log-review-finding[\"']?(?=[\s;&|]|$)")
+FINDING_CALL_TAIL = r"\s+kind=finding\b"
+FINDING_CALL_ARGUMENTS_TAIL = r"\s+(kind=finding\b[^\n;&|]*)"
+SHELL_VARIABLE_DIRECTORY = re.compile(r"^\$\{?\w+\}?/")
 METRICS_CALL = re.compile(r"log-review-metrics\b")
 PACKET_ROW_KEYS = ("fixed", "skipped_fp", "findings_remaining", "ask", "nit")
 PROMPT_PHASE = re.compile(r"(?im)^[ \t>*`-]*phase[`*]*[ \t]*:[ \t`*]*([\w.-]+)")
@@ -154,6 +160,23 @@ def full_check(cmd):
     return bool(hits) or bool(GATE_LOG.search(cmd))
 
 
+def finding_call_pattern(command, tail):
+    """A pattern for a call of the log helper followed by `tail`, in the command's own spelling: the helper's name, or
+    a shell variable the command set to a path that ends in it (`L=<skills dir>/review/log-review-finding`)."""
+    variables = [rf"\$(?:\{{{re.escape(name)}\}}|{re.escape(name)}\b)" for name in HELPER_ASSIGNMENT.findall(command)]
+    return re.compile("(?:" + "|".join(["log-review-finding", *variables]) + ")" + tail)
+
+
+def finding_call_fields(arguments):
+    """The key=value fields of one log-review-finding call's argument text. A word with no `=`, such as a shell
+    variable that stands for fields, is no field."""
+    try:
+        words = shlex.split(arguments)
+    except ValueError:
+        words = arguments.split()
+    return dict(word.split("=", 1) for word in words if "=" in word)
+
+
 class LoopTranscript:
     """One read of a loop transcript: what the stop check and the run rows need from it."""
 
@@ -171,6 +194,8 @@ class LoopTranscript:
         self.resumes = []  # (transcript line, agent id, SendMessage tool_use_id) of each resume
         self.finding_rows_logged = 0  # per-finding ledger rows the loop's own Bash calls wrote
         self.metrics_logged = False
+        self.finding_calls = {}  # Bash tool_use_id -> the key=value fields of each `kind=finding` call, in order
+        self.ask_rows = []  # {file, line, finding_id} of each `actioned=ask` row whose id the log helper printed
         self.full_checks = []  # the transcript lines of the shell calls that ran a full check
         with open(path, encoding="utf-8") as fh:
             for n, line in enumerate(fh):
@@ -208,6 +233,22 @@ class LoopTranscript:
             self.results[block["tool_use_id"]] = text_of(block.get("content"))
         elif block.get("type") == "tool_result" and block.get("tool_use_id") in self.send_lines:
             self.read_send_result(block)
+        elif block.get("type") == "tool_result" and block.get("tool_use_id") in self.finding_calls:
+            self.read_printed_finding_ids(block)
+
+    def read_printed_finding_ids(self, block):
+        """Pair each `kind=finding` call of a command with the finding_id the helper printed for it, in order, and keep
+        the pairs of the ask rows. A command whose printed ids do not number its calls (one failed) pairs nothing: an
+        id on the wrong row is worse than none."""
+        calls = self.finding_calls[block["tool_use_id"]]
+        printed_ids = handback.PRINTED_FINDING_ID.findall(text_of(block.get("content")))
+        if len(calls) != len(printed_ids):
+            return
+        for fields, finding_id in zip(calls, printed_ids, strict=True):
+            if fields.get("actioned") == "ask":
+                path = SHELL_VARIABLE_DIRECTORY.sub("", fields.get("file", ""))
+                self.ask_rows.append({"file": path, "line": script_utils.first_number(fields.get("line")) or 0,
+                                      "finding_id": finding_id})
 
     def read_send_result(self, block):
         """Record a SendMessage that resumed an agent. The result names the agent in full as `resumedAgentId`; its
@@ -234,10 +275,14 @@ class LoopTranscript:
             self.messages_sent.append((n, tool_input.get("to")))
             self.send_lines[block.get("id")] = (n, tool_input.get("to"))
         elif block.get("name") == "Bash":
-            self.read_command(n, str(tool_input.get("command") or ""))
+            self.read_command(n, block.get("id"), str(tool_input.get("command") or ""))
 
-    def read_command(self, n, command):
-        self.finding_rows_logged += len(FINDING_CALL.findall(command))
+    def read_command(self, n, tool_use_id, command):
+        self.finding_rows_logged += len(finding_call_pattern(command, FINDING_CALL_TAIL).findall(command))
+        arguments_pattern = finding_call_pattern(command, FINDING_CALL_ARGUMENTS_TAIL)
+        finding_calls = [finding_call_fields(arguments) for arguments in arguments_pattern.findall(command)]
+        if finding_calls:
+            self.finding_calls[tool_use_id] = finding_calls
         self.metrics_logged = self.metrics_logged or bool(METRICS_CALL.search(command))
         if full_check(command):
             self.full_checks.append(n)
@@ -516,15 +561,16 @@ def check_dispatch(tool_input):
                                                  "permissionDecisionReason": HANDOFF_REASON}}))
 
 
-def record_stop(hook, open_dispatches):
+def record_stop(hook, open_dispatches, ask_rows=(), blocked=False):
     """Store this stop with the count of background dispatches still open, so `review_fix.py packet` can tell a loop
-    that waits on an agent from one that ended without handing back. Never raises: a store failure must not stop the
-    loop."""
+    that waits on an agent from one that ended without handing back, with the ask rows the loop logged, so `packet`
+    can give each ask its finding_id, and with whether the gate blocked the stop, so a reader waits for the stop
+    that follows a block. Never raises: a store failure must not stop the loop."""
     try:
         session_id = hook.get("session_id")
         if session_id:
             handback.record(session_id, "stop", agent_id=hook.get("agent_id") or "unknown",
-                            open_dispatches=open_dispatches)
+                            open_dispatches=open_dispatches, ask_rows=list(ask_rows), blocked=blocked)
     except Exception as e:
         print(f"review-loop-gate: stop row skipped, {type(e).__name__}: {e}", file=sys.stderr)
 
@@ -537,10 +583,14 @@ def check_stop(hook):
         # A transcript the gate cannot read still ends an earlier wait: with no row, the last open count would stand.
         record_stop(hook, 0)
         raise
-    record_stop(hook, scanned[1])
-    why = [] if hook.get("stop_hook_active") else reasons_for(scanned)
-    if not hook.get("stop_hook_active") and not scanned[1]:
-        why += ledger_reasons(transcript, hook.get("last_assistant_message"))
+    try:
+        why = [] if hook.get("stop_hook_active") else reasons_for(scanned)
+        if not hook.get("stop_hook_active") and not scanned[1]:
+            why += ledger_reasons(transcript, hook.get("last_assistant_message"))
+    except Exception:
+        record_stop(hook, scanned[1], transcript.ask_rows)
+        raise
+    record_stop(hook, scanned[1], transcript.ask_rows, blocked=bool(why))
     if why:
         print(json.dumps({"decision": "block", "reason": " ".join(why)}))
     elif not scanned[1]:

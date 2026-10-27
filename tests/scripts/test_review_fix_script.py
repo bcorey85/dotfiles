@@ -835,8 +835,10 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("Re-dispatch review-loop once", output)
         self.assertEqual(self.saved_stage(), "asks")
 
-    def stop_row(self, open_dispatches, session=SESSION, ts=1000.5):
+    def stop_row(self, open_dispatches, session=SESSION, ts=1000.5, ask_rows=None):
         row = {"kind": "stop", "ts": ts, "session_id": session, "agent_id": "a1", "open_dispatches": open_dispatches}
+        if ask_rows is not None:
+            row["ask_rows"] = ask_rows
         with open(self.store_dir / (session + ".jsonl"), "a", encoding="utf-8") as store:
             store.write(json.dumps(row) + "\n")
 
@@ -1059,18 +1061,67 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertEqual([row["path_key"] for row in self.ledger_writes()], ["b.ts"])
 
-    def test_an_ask_without_a_finding_id_is_logged_under_a_new_finding_id_and_reported(self):
-        text = CLEAN_EMPTY.replace("ask: []", "ask:\n  - {finding: x, file_line: a.ts:1, question: cap?, "
-                                   "change: cap at 3, gate: code-reviewer, class: smell}")
-        self.packet(text)
+    ASK_WITHOUT_FINDING_ID = CLEAN_EMPTY.replace(
+        "ask: []", "ask:\n  - {finding: x, file_line: a.ts:1, question: cap?, change: cap at 3, gate: code-reviewer, "
+                   "class: smell}")
+
+    def test_an_ask_the_loop_logged_without_writing_its_id_gets_its_outcome_under_the_logged_id(self):
+        self.seed(self.ASK_WITHOUT_FINDING_ID)
+        self.stop_row(0, ask_rows=[{"file": "a.ts", "line": 1, "finding_id": "a1b2c3d4e5f60010"}])
+        code, output = self.packet("")
+        self.assertEqual(code, 0, output)
         code, output = self.run_script(["asks-done", "accepted"])
         self.assertEqual(code, 0, output)
-        self.assertIn("Logged 1 of 1 ask outcome row(s). 1 ask(s) without a valid finding_id are logged under a new "
-                      "finding_id.", output)
-        [finding_row] = self.ledger_writes()
-        self.assertRegex(finding_row["finding_id"], r"^[0-9a-f]{16}$")
-        self.assertEqual(finding_row["ask_outcome"], "accepted")
-        self.assertIn(f"(no finding_id), logged under new finding_id {finding_row['finding_id']}", output)
+        self.assertIn("Logged 1 of 1 ask outcome row(s).", output)
+        self.assertNotIn("without a valid finding_id", output)
+        [outcome_row] = self.ledger_writes()
+        self.assertEqual((outcome_row["finding_id"], outcome_row["ask_outcome"]), ("a1b2c3d4e5f60010", "accepted"))
+
+    def test_an_ask_the_loop_logged_under_a_placeholder_id_also_gets_the_logged_id(self):
+        text = self.ask_packet_with_finding_id("none logged")
+        self.seed(text)
+        self.stop_row(0, ask_rows=[{"file": "a.ts", "line": 1, "finding_id": "a1b2c3d4e5f60011"}])
+        self.packet("")
+        self.run_script(["asks-done", "accepted"])
+        self.assertEqual([row["finding_id"] for row in self.ledger_writes()], ["a1b2c3d4e5f60011"])
+
+    def test_a_valid_id_the_loop_wrote_wins_over_a_logged_row_at_the_same_place(self):
+        self.seed(self.ask_packet_with_finding_id("a1b2c3d4e5f60012"))
+        self.stop_row(0, ask_rows=[{"file": "a.ts", "line": 1, "finding_id": "a1b2c3d4e5f60013"}])
+        self.packet("")
+        self.run_script(["asks-done", "accepted"])
+        self.assertEqual([row["finding_id"] for row in self.ledger_writes()], ["a1b2c3d4e5f60012"])
+
+    def test_an_ask_the_loop_never_logged_gets_its_ask_row_from_packet_and_one_outcome_under_the_same_id(self):
+        self.packet(self.ASK_WITHOUT_FINDING_ID)
+        [ask_row] = self.ledger_writes()
+        self.assertRegex(ask_row["finding_id"], r"^[0-9a-f]{16}$")
+        self.assertEqual((ask_row["actioned"], ask_row["disposition"], ask_row["path_key"], ask_row["line"]),
+                         ("ask", "ask", "a.ts", "1"))
+        self.assertNotIn("ask_outcome", ask_row)
+
+        self.packet(self.ASK_WITHOUT_FINDING_ID)
+        self.assertEqual(len(self.ledger_writes()), 1)
+
+        code, output = self.run_script(["asks-done", "accepted"])
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("without a valid finding_id", output)
+        outcome_row = self.ledger_writes()[1]
+        self.assertEqual((outcome_row["finding_id"], outcome_row["ask_outcome"]), (ask_row["finding_id"], "accepted"))
+        self.assertEqual(len(self.ledger_writes()), 2)
+
+    def test_a_logged_row_serves_one_ask_and_a_second_ask_at_the_same_place_is_logged_by_packet(self):
+        text = CLEAN_EMPTY.replace(
+            "ask: []",
+            "ask:\n  - {finding: x, file_line: a.ts:1, question: cap?, change: c, gate: code-reviewer, class: smell}\n"
+            "  - {finding: y, file_line: a.ts:1, question: cap?, change: c, gate: code-reviewer, class: smell}")
+        self.seed(text)
+        self.stop_row(0, ask_rows=[{"file": "a.ts", "line": 1, "finding_id": "a1b2c3d4e5f60014"}])
+        self.packet("")
+        self.run_script(["asks-done", "accepted", "rejected"])
+        finding_ids = [row["finding_id"] for row in self.ledger_writes() if "ask_outcome" in row]
+        self.assertEqual(len(set(finding_ids)), 2)
+        self.assertEqual(finding_ids[0], "a1b2c3d4e5f60014")
 
     def ask_packet_with_finding_id(self, finding_id_text):
         return CLEAN_EMPTY.replace(
@@ -1079,28 +1130,32 @@ class ReviewFixScriptTest(unittest.TestCase):
             "question: cap?, change: cap at 3, gate: code-reviewer, class: smell}",
         )
 
-    def test_an_ask_whose_finding_id_is_a_placeholder_is_logged_once_under_a_new_id_and_names_the_ignored_value(self):
-        placeholders = {"none logged": "'none logged'", "not logged (no id was printed)":
-                        "'not logged (no id was printed)'", "none": "'none'", "-": "'-'", '""': "''",
-                        "a1b2c3d4e5f6000": "'a1b2c3d4e5f6000'", "A1B2C3D4E5F60001": "'A1B2C3D4E5F60001'",
-                        "a1b2c3d4e5f600011": "'a1b2c3d4e5f600011'", "a1b2c3d4e5f6000g": "'a1b2c3d4e5f6000g'"}
-        for finding_id_text, ignored_repr in placeholders.items():
+    def test_an_ask_whose_finding_id_is_a_placeholder_is_logged_by_packet_and_its_outcome_supersedes_that_row(self):
+        placeholders = ["none logged", "not logged (no id was printed)", "none", "-", '""', "a1b2c3d4e5f6000",
+                        "A1B2C3D4E5F60001", "a1b2c3d4e5f600011", "a1b2c3d4e5f6000g"]
+        for finding_id_text in placeholders:
             with self.subTest(finding_id=finding_id_text):
                 writes_before = len(self.ledger_writes())
                 self.packet(self.ask_packet_with_finding_id(finding_id_text))
                 code, output = self.run_script(["asks-done", "modified:tighten the cap"])
                 self.assertEqual(code, 0, output)
                 self.assertIn("Logged 1 of 1 ask outcome row(s).", output)
-                self.assertIn(f"ignored {ignored_repr}", output)
-                self.assertNotIn("refusing to log", output)
-                new_rows = self.ledger_writes()[writes_before:]
-                self.assertEqual(len(new_rows), 1)
-                self.assertRegex(new_rows[0]["finding_id"], r"^[0-9a-f]{16}$")
-                self.assertEqual(new_rows[0]["ask_outcome"], "modified")
+                self.assertNotIn("without a valid finding_id", output)
+                ask_row, outcome_row = self.ledger_writes()[writes_before:]
+                self.assertRegex(outcome_row["finding_id"], r"^[0-9a-f]{16}$")
+                self.assertEqual(ask_row["finding_id"], outcome_row["finding_id"])
+                self.assertEqual(outcome_row["ask_outcome"], "modified")
                 code, output = self.run_script(["asks-done", "modified:tighten the cap"])
                 self.assertEqual(code, 0, output)
                 self.assertIn("The ask outcomes were already logged.", output)
-                self.assertEqual(len(self.ledger_writes()), writes_before + 1)
+                self.assertEqual(len(self.ledger_writes()), writes_before + 2)
+
+    def test_an_ask_row_the_ledger_refuses_leaves_the_outcome_under_a_new_finding_id_and_says_so(self):
+        self.packet(self.ASK_WITHOUT_FINDING_ID, FAKE_LEDGER_WRITE_EXIT="1")
+        code, output = self.run_script(["asks-done", "accepted"])
+        self.assertEqual(code, 0, output)
+        self.assertEqual(len(self.ledger_writes()), 1)
+        self.assertIn("1 ask(s) without a valid finding_id are logged under a new finding_id.", output)
 
     def test_an_ask_with_a_valid_finding_id_among_placeholder_asks_keeps_its_id(self):
         text = CLEAN_EMPTY.replace(
@@ -1114,10 +1169,11 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.packet(text)
         code, output = self.run_script(["asks-done", "modified:tighten the cap", "accepted"])
         self.assertEqual(code, 0, output)
-        self.assertIn("Logged 2 of 2 ask outcome row(s). 1 ask(s) without a valid finding_id are logged under a new "
-                      "finding_id.", output)
-        new_id_row, kept_id_row = self.ledger_writes()
-        self.assertNotEqual(new_id_row["finding_id"], "none logged")
+        self.assertIn("Logged 2 of 2 ask outcome row(s).", output)
+        self.assertNotIn("without a valid finding_id", output)
+        ask_row, new_id_row, kept_id_row = self.ledger_writes()
+        self.assertNotIn("ask_outcome", ask_row)
+        self.assertEqual(new_id_row["finding_id"], ask_row["finding_id"])
         self.assertEqual(kept_id_row["finding_id"], "a1b2c3d4e5f60005")
         self.assertEqual([row["ask_outcome"] for row in (new_id_row, kept_id_row)], ["modified", "accepted"])
 

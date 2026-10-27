@@ -3,7 +3,7 @@ type: "Change"
 title: "The model-pin hook lets fork dispatches through"
 description: "agent_model_guard passes an Agent call with subagent_type fork before its opus, inherit and pin checks, since a fork always runs on the parent's model."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T12:26:06-05:00"}
-seq: 91
+seq: 92
 kind: "fix"
 components: ["script/agent-model-guard"]
 evidence: ["judgment"]

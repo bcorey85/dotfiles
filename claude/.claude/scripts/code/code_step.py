@@ -90,6 +90,7 @@ from code_step_core import (
     refuse,
     repo_root_or_exit,
     restart_instruction,
+    review_script_running,
     save_state,
     say,
     script_command,
@@ -519,14 +520,19 @@ def command_resume(args):
     RESUME_HANDLERS.get(route, ask_about_unrecorded_state)(repo_dir, state)
 
 
-def abort_dropped_lines(repo_dir, state, criteria_message, archive_path):
+def abort_dropped_lines(repo_dir, state, criteria_message, archive_path, script_pid,
+                       review_script_was_running):
     # What `abort` tells the user it dropped, one line each. The dispatch line reads the launch log, so call it before
     # the state moves.
     lines = [f"Dropped the /code run: {phase_label(state)} at stage {state['stage']}."]
     if criteria_message:
         lines.append(criteria_message)
 
-    if state.get("dispatchAt") is not None:
+    if script_pid is not None and review_script_was_running:
+        lines.append(f"Killed the review loop script (pid {script_pid}) and its claude calls.")
+    elif script_pid is not None:
+        lines.append(f"The review loop script (pid {script_pid}) had already exited.")
+    elif state.get("dispatchAt") is not None:
         agent_id = awaited_agent_id(repo_dir, state)
         agent_text = f"agent {agent_id}" if agent_id else "an agent whose launch was not logged"
         lines.append(f"A dispatch was still open: {agent_text} may still be running. The user can stop it.")
@@ -556,14 +562,16 @@ def command_abort(args):
         criteria_message = settle_criteria_guard(repo_dir, state, branch_label(repo_dir))
         save_state(repo_dir, state)
 
-    stop_review_script(state)
+    review_script_was_running = review_script_running(state)
+    script_pid = stop_review_script(state)
     clear_say(repo_dir)
     clear_question(repo_dir)
     run_command(["python3", str(SCRIPTS_DIR / "code" / "coder_gate.py"), "clear"], repo_dir)
 
     directory = state_dir(repo_dir)
     archive_path = directory / f"aborted-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json"
-    lines = abort_dropped_lines(repo_dir, state, criteria_message, archive_path)
+    lines = abort_dropped_lines(repo_dir, state, criteria_message, archive_path, script_pid,
+                                review_script_was_running)
     (directory / "state.json").rename(archive_path)
     emit("stop", *lines)
 

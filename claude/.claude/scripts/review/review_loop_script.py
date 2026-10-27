@@ -589,11 +589,13 @@ def telemetry(repo, lane, scope_fields, iter_count, tallies, run_rows):
 
 # ---------- the loop ----------
 
-def tally_review(tallies, parsed):
-    tallies["fix"] += len(parsed["fix"])
-    tallies["ask"] += len(parsed["ask"])
+def tally_review(tallies, parsed, fixes, design):
+    """Adds one review to the metrics tallies. A design-decision fix goes to the user as an ask, so it counts under
+    ask, not fix."""
+    tallies["fix"] += len(fixes)
+    tallies["ask"] += len(parsed["ask"]) + len(design)
     tallies["nit"] += len(parsed["nit"])
-    tallies["blocker"] += sum("[blocker]" in item.lower() for item in parsed["fix"])
+    tallies["blocker"] += sum("[blocker]" in item.lower() for item in fixes)
     every_finding = parsed["fix"] + parsed["ask"] + parsed["nit"]
     tallies["smells"] += sum("[smell]" in item.lower() for item in every_finding)
     if parsed["assessment"] == "NEEDS CHANGES":
@@ -666,15 +668,15 @@ class LoopRun:
 
         round_fix, round_nits = [], []
         for (agent, owned), parsed in zip(self.dispatches, reviews, strict=True):
-            tally_review(self.tallies, parsed)
+            design = [item for item in parsed["fix"] if "[design-decision]" in item.lower()]
+            fixes = [item for item in parsed["fix"] if item not in design]
+            tally_review(self.tallies, parsed, fixes, design)
 
             plan_changes = [item for item in parsed["ask"] if PLAN_CHANGE_MARK.match(item)]
             if plan_changes:
                 self.stop("plan-change", plan_changes)
                 break
 
-            design = [item for item in parsed["fix"] if "[design-decision]" in item.lower()]
-            fixes = [item for item in parsed["fix"] if item not in design]
             self.asks += parsed["ask"] + design
             self.ask_gates.update(dict.fromkeys(parsed["ask"] + design, agent))
             round_nits += parsed["nit"]

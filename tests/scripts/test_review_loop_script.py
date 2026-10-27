@@ -339,6 +339,24 @@ class ReviewLoopScriptTest(unittest.TestCase):
         stop = self.store_rows()[-1]
         self.assertEqual(stop["ask_rows"], [{"file": "app.py", "line": 3, "finding_id": finding_id}])
 
+    def test_a_design_decision_fix_counts_as_an_ask_in_the_metrics_row(self):
+        design_review = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n"
+                         "- `app.py:4` [design-decision] pick one owner for the limits\n\n"
+                         "## Ask\nNone\n\n## Nit\nNone\n\nOverall Assessment: NEEDS CHANGES\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": design_review}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual((len(packet["fixed"]), len(packet["ask"])), (1, 1))
+        metrics = fake_ledger.recorded_rows(self.env, "review_metrics")
+        self.assertEqual(len(metrics), 1)
+        self.assertEqual((metrics[0]["fix"], metrics[0]["ask"], metrics[0]["fixed"]), ("1", "1", "1"))
+
     def test_round_two_scope_ignores_files_a_format_hook_would_reflow(self):
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],

@@ -49,5 +49,5 @@ These rules apply to every script under `claude/.claude/scripts/` and `claude/.c
 
 - Put the tests in `~/dotfiles/tests/scripts/test_<script>.py`. Each test file reads the script path from one environment variable that defaults to the script in the tree the tests sit in. Run the tests from the worktree that holds the draft, before hand-over.
 - Add a test that fails without the change. Copy each real input shape that broke into a fixture.
-- Before hand-over, run the draft over every real input that you collected and report "parsed N of M". Name each failure as a bad input or a script gap.
+- Before hand-over, run the draft over every real input that you collected and report "parsed N of M". Name each failure as a bad input or a script gap. For the plan format, `REAL_PLANS=1 bash tests/run.sh` runs that sweep over `~/dev`; the default run never reads `~/dev`.
 - Run `bash ~/dotfiles/tests/run.sh` before you say that the change is done.

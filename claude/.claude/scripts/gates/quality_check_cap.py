@@ -20,10 +20,13 @@ scoped to a named target (`--lib`, `--doc`, `--test <name>`, `--bin <name>`, a t
 unscoped it is. A check step with `--help`, `-h`, `--version` or `-V` as a whole word runs nothing: never denied,
 never recorded. A check in the body of a `for` loop (`for i in 1 2 3; do pytest x; done`) is never denied, so a flake
 check can repeat with no edit between; it is still recorded, so a plain rerun after it is denied. A `while` or `until`
-body, an `if`, a bare `true;` and a `for` over fewer than two values get no such exemption. Escape: a trailing
+body, an `if`, a bare `true;` and a `for` over fewer than two values get no such exemption. A run whose output was
+piped into `tail`, `head` or `grep` and not kept in a file (`>`, `&>`, `| tee <file>`) is recorded as cut: one rerun
+with stdout sent to a file is then allowed, and the deny names that exact form. Escape: a trailing
 `#skip-quality-cap`. Fails closed only on the PreToolUse Bash path; state errors fail open. State lives in
 ~/.claude/state/quality-check/<session>/.
 """
+import collections
 import contextlib
 import hashlib
 import json
@@ -67,11 +70,25 @@ BRACE_RANGE = re.compile(r"^\{(\d+)\.\.(\d+)\}$")
 CD_SEGMENT = re.compile("^cd" + WS + "+([^" + SP + "]+)$")
 WRAPPER = re.compile("^(time|env|npx|bunx|pnpm exec|yarn dlx)" + WS + "+")
 ASSIGNMENT = re.compile(r"^[^\W\d]\w*=[^" + SP + "]*" + WS + "+")
+OUTPUT_FILTER_START = re.compile("^(tail|head|grep)(" + WS + "|$)")
+TEE_TO_FILE = re.compile("^tee(" + WS + "+-a)?" + WS + "+[^-" + SP + "]")
+# `>`, `>>`, `1>`, `&>` or `&>>` onto a file: stdout lands in it. `2>` and a descriptor copy (`>&2`) do not count.
+STDOUT_TO_FILE = re.compile("(^|" + WS + ")[1&]?>>?" + WS + "*(?!/dev/null(" + WS + "|$))[^&|;<>" + SP + "]")
+# The second line of a run record whose output went through tail, head or grep and was not kept in a file.
+CUT_MARK = "cut"
+LOG_REDIRECT = " > /tmp/check.log 2>&1"
+DENY_TAIL = (" If it still fails after that batch fix, stop and ask the user. To repeat a check on purpose, run it in "
+             "one `for i in 1 2 3; do <check>; done` loop. If you believe this deny is wrong, stop and tell the user "
+             "what you were about to run.")
 DENY_TEXT = ("' already ran this session and nothing has been edited since. Re-running unchanged code cannot "
-             "produce a different result. Redirect the failing run to /tmp/check.log, read the WHOLE log, fix every "
-             "failure in one batch, then run it once more. If it still fails after that batch fix, stop and ask "
-             "the user. To repeat a check on purpose, run it in one `for i in 1 2 3; do <check>; done` loop. If you "
-             "believe this deny is wrong, stop and tell the user what you were about to run.")
+             "produce a different result. Read that run's whole output, fix every failure in one batch, then run "
+             "it once more with its output redirected to /tmp/check.log and read the WHOLE log." + DENY_TAIL)
+CUT_DENY_TEXT = ("' already ran this session and nothing has been edited since, and that run's output went through "
+                 "tail, head or grep. Run it once as `{redirected}`, read the WHOLE log, fix every failure in one "
+                 "batch, then run it once more." + DENY_TAIL)
+
+CheckStep = collections.namedtuple(
+    "CheckStep", "index norm command_text run_file cwd in_repeat_loop output_saved output_cut")
 
 
 class DenyError(Exception):
@@ -168,12 +185,43 @@ def tree_fingerprint(cwd):
     return digest.hexdigest()
 
 
-def recorded_fingerprint(run_file):
+def run_record_lines(run_file):
+    """The lines of a run record: the tree fingerprint, then CUT_MARK when that run's output was cut."""
     try:
         with open(run_file) as handle:
-            return handle.read().strip()
+            return handle.read().splitlines()
     except OSError:
-        return ""
+        return []
+
+
+def recorded_fingerprint(run_file):
+    record_lines = run_record_lines(run_file)
+    return record_lines[0].strip() if record_lines else ""
+
+
+def recorded_output_was_cut(run_file):
+    return CUT_MARK in run_record_lines(run_file)[1:]
+
+
+def piped_step(steps, index):
+    """The step that reads the output of the step at `index` through a pipe, stripped, or None."""
+    if index + 1 >= len(steps) or steps[index + 1][0] != "|":
+        return None
+    return steps[index + 1][1].strip(SP)
+
+
+def saves_output(steps, index, segment):
+    """True when the check step sends its stdout to a file, by a redirection or through `| tee <file>`."""
+    if STDOUT_TO_FILE.search(segment):
+        return True
+    reader = piped_step(steps, index)
+    return reader is not None and TEE_TO_FILE.match(reader) is not None
+
+
+def cuts_output(steps, index):
+    """True when the check step's output goes into tail, head or grep."""
+    reader = piped_step(steps, index)
+    return reader is not None and OUTPUT_FILTER_START.match(reader) is not None
 
 
 def changed_since_run(cwd, run_file):
@@ -342,6 +390,7 @@ def run(raw, state):
     checks = []
     format_indexes = []
     loop_kinds = []
+    cd_steps = []
     for index, (_, segment) in enumerate(steps):
         segment = re.sub("^" + WS + "+", "", segment)
         segment = re.sub(WS + "+$", "", segment)
@@ -351,6 +400,7 @@ def run(raw, state):
             if target.startswith("~"):
                 target = home + target[1:]
             cwd = target if target.startswith("/") else cwd + "/" + target
+            cd_steps.append(segment)
             continue
         segment = LOOP_BODY_START.sub("", segment)
         if LOOP_HEADER.match(segment):
@@ -360,6 +410,7 @@ def run(raw, state):
                 loop_kinds.pop()
             continue
         segment = re.sub(r"^[({ \t]+", "", segment)
+        command_text = " && ".join([*cd_steps, normalize(segment)])
         while True:
             stripped = ASSIGNMENT.sub("", WRAPPER.sub("", segment, count=1), count=1)
             if stripped == segment:
@@ -381,35 +432,48 @@ def run(raw, state):
         key = str(cksum((norm + "\n" + cwd).encode("utf-8", "surrogateescape")))
         run_file = run_file_for(state_dir, key, agent_id)
         in_repeat_loop = bool(loop_kinds) and loop_kinds[-1] == "repeat"
-        checks.append((index, norm, run_file, cwd, in_repeat_loop))
+        output_saved = saves_output(steps, index, segment)
+        output_cut = not output_saved and cuts_output(steps, index)
+        checks.append(CheckStep(index, norm, command_text, run_file, cwd, in_repeat_loop, output_saved, output_cut))
 
     if event in ("PostToolUse", "PostToolUseFailure"):
         if format_indexes:
             with contextlib.suppress(OSError):
                 touch(state_dir + "/edits")
-        for index, _, run_file, check_cwd, _ in checks:
-            if not step_surely_ran(steps, index, succeeded):
+        for check in checks:
+            if not step_surely_ran(steps, check.index, succeeded):
                 continue
+            record = tree_fingerprint(check.cwd) or ""
+            if check.output_cut:
+                record += "\n" + CUT_MARK
+
             try:
-                with open(run_file, "w") as handle:
-                    handle.write(tree_fingerprint(check_cwd) or "")
-                touch_after(run_file, state_dir + "/edits")
+                with open(check.run_file, "w") as handle:
+                    handle.write(record)
+                touch_after(check.run_file, state_dir + "/edits")
             except OSError:
                 raise ExitError(0) from None
         return
 
     if format_indexes:
-        every_check_follows_a_formatter = all(follows_a_formatter(steps, format_indexes, check_index)
-                                              for check_index, _, _, _, _ in checks)
+        every_check_follows_a_formatter = all(follows_a_formatter(steps, format_indexes, check.index)
+                                              for check in checks)
         if every_check_follows_a_formatter:
             return
-    for _, norm, run_file, check_cwd, in_repeat_loop in checks:
-        if in_repeat_loop:
+    for check in checks:
+        if check.in_repeat_loop:
             continue
-        edited_since_run = newer(run_file, state_dir + "/edits")
-        if (edited_since_run and not changed_since_run(check_cwd, run_file)
-                and not tree_changed_since_run(check_cwd, run_file)):
-            raise DenyError("[quality-check-cap] '" + norm + DENY_TEXT)
+        ran_since_last_edit = newer(check.run_file, state_dir + "/edits")
+        if (not ran_since_last_edit or changed_since_run(check.cwd, check.run_file)
+                or tree_changed_since_run(check.cwd, check.run_file)):
+            continue
+
+        if not recorded_output_was_cut(check.run_file):
+            raise DenyError("[quality-check-cap] '" + check.norm + DENY_TEXT)
+        if check.output_saved:
+            continue
+        cut_deny_text = CUT_DENY_TEXT.format(redirected=check.command_text + LOG_REDIRECT)
+        raise DenyError("[quality-check-cap] '" + check.norm + cut_deny_text)
 
 
 def main():

@@ -243,8 +243,8 @@ def print_plan(context):
     if untracked:
         lines.append(f"  {untracked}: they are part of the branch.")
     if not context["review"]["read"]:
-        lines.append("  review state: not read from the ledger (it stayed busy); this checkout's own record of the "
-                     "logged review stood in. Name this skipped input in your report.")
+        lines.append(f"  review state: not read from the ledger ({context['review']['reason']}); this checkout's "
+                     "own record of the logged review stood in. Name this skipped input in your report.")
     lines += gate_env_lines
     lines += [f"  {ticket_line}" for ticket_line in criteria["ticketLines"]]
     lines.append("  ---")

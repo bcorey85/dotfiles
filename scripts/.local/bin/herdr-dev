@@ -10,8 +10,9 @@
 #   claude_session  a Claude session id; the claude pane opens a fork of that
 #                   conversation instead of a fresh one (herdr-worktree --fork).
 #   start_prompt    free text; with claude_session, the forked session starts
-#                   working on it at once. Any text is safe: it reaches the pane
-#                   through a temp file, not the typed command line.
+#                   working on it at once. Any text up to 128 KiB is safe: it
+#                   reaches the pane through a temp file, not the typed command
+#                   line, and follows `--`.
 #
 # Layout:
 #   Tab 1 "code"     claude (40%) | nvim (60%). herdr auto-detects the claude
@@ -100,7 +101,7 @@ if [ -n "$claude_session" ]; then
         # as it has been read; the text is never re-parsed.
         prompt_file=$(mktemp)
         printf '%s' "$start_prompt" >"$prompt_file"
-        claude_cmd="$claude_cmd \"\$(cat '$prompt_file'; rm -f '$prompt_file')\""
+        claude_cmd="$claude_cmd -- \"\$(cat '$prompt_file'; rm -f '$prompt_file')\""
     fi
 fi
 run "$agent" "$claude_cmd"

@@ -29,6 +29,11 @@
 # The caller owns the telemetry switch and what to do with a refused row.
 set -euo pipefail
 
+script_dir=$(dirname -- "${BASH_SOURCE[0]}")
+# shellcheck source=../lib/_kv.sh
+source "$script_dir/../lib/_kv.sh"
+kv_help_exit "${BASH_SOURCE[0]}" "$@"
+
 if command -v ledger >/dev/null 2>&1; then
   session_args=()
   [ -z "${CLAUDE_CODE_SESSION_ID:-}" ] || session_args=(--session "$CLAUDE_CODE_SESSION_ID")
@@ -46,7 +51,6 @@ if [ -z "${HOME:-}" ]; then
   echo "ledger-write: ledger not on PATH; HOME is unset, row dropped" >&2
   exit 0
 fi
-script_dir=$(dirname -- "${BASH_SOURCE[0]}")
 
 case "$row_type" in
   review_finding) log_file="${REVIEW_FINDINGS_FILE:-$HOME/.claude/review-findings.jsonl}"; schema_version=3; kind=finding ;;

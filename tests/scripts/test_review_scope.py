@@ -83,6 +83,13 @@ class ReviewScopeNoBaseTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("dirty.txt", done.stdout)
 
+    def test_help_prints_usage_and_exits_zero(self):
+        for flag in ("--help", "-h"):
+            with self.subTest(flag=flag):
+                done = run_scope(self.tmp, flag)
+                self.assertEqual((done.returncode, done.stderr), (0, ""))
+                self.assertIn("usage: review-scope [key=value ...]", done.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

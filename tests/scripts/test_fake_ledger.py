@@ -18,29 +18,40 @@ OTHER_BRANCH_TREE = "sha256:" + "cd34" * 16
 
 class FakeLedgerTest(unittest.TestCase):
     def setUp(self):
-        tempDir = tempfile.TemporaryDirectory()
-        self.addCleanup(tempDir.cleanup)
-        self.root = pathlib.Path(tempDir.name)
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.root = pathlib.Path(temp_dir.name)
         self.env = {**os.environ, **GIT_ENV, **fake_ledger.install(self.root)}
         self.repo = self.root / "repo"
         self.repo.mkdir()
         subprocess.run(["git", "init", "-q", "-b", "planted-branch"], cwd=self.repo, env=self.env, check=True)
 
     def ledger(self, *args, stdin=""):
-        return subprocess.run(["ledger", *args], cwd=self.repo, env=self.env, input=stdin, capture_output=True, text=True)
+        return subprocess.run(
+            ["ledger", *args], cwd=self.repo, env=self.env, input=stdin, capture_output=True, text=True
+        )
 
-    def write(self, rowType, row, *extra):
-        written = self.ledger("write", rowType, *extra, stdin=json.dumps(row))
+    def write(self, row_type, row, *extra):
+        written = self.ledger("write", row_type, *extra, stdin=json.dumps(row))
         self.assertEqual(written.returncode, 0, written.stderr)
 
-    def branchReviewRun(self, tree, branchKey):
+    def branch_review_run(self, tree, branch_key):
         return {"gate": "code-reviewer", "scope": "branch-exit", "source": "verify-branch", "tree": tree,
-                "branch_key": branchKey}
+                "branch_key": branch_key}
 
     def test_write_records_the_row_with_its_type_session_and_cwd(self):
         self.write("spec_run", {"verdict": "planted"}, "--session", "planted-session")
-        self.assertEqual(fake_ledger.recorded_rows(self.env), [
-            {"verdict": "planted", "_type": "spec_run", "_cwd": str(self.repo.resolve()), "_session": "planted-session"}])
+        self.assertEqual(
+            fake_ledger.recorded_rows(self.env),
+            [
+                {
+                    "verdict": "planted",
+                    "_type": "spec_run",
+                    "_cwd": str(self.repo.resolve()),
+                    "_session": "planted-session",
+                }
+            ],
+        )
 
     def test_recorded_rows_filters_by_type(self):
         self.write("spec_run", {"verdict": "planted"})
@@ -48,9 +59,9 @@ class FakeLedgerTest(unittest.TestCase):
         self.assertEqual([row["iter"] for row in fake_ledger.recorded_rows(self.env, "review_metrics")], ["1"])
 
     def test_review_trees_lists_only_this_branchs_verify_branch_code_review_runs(self):
-        self.write("review_run", self.branchReviewRun(PLANTED_TREE, "planted-branch"))
-        self.write("review_run", self.branchReviewRun(OTHER_BRANCH_TREE, "other-branch"))
-        self.write("review_run", {**self.branchReviewRun(OTHER_BRANCH_TREE, "planted-branch"), "source": "round"})
+        self.write("review_run", self.branch_review_run(PLANTED_TREE, "planted-branch"))
+        self.write("review_run", self.branch_review_run(OTHER_BRANCH_TREE, "other-branch"))
+        self.write("review_run", {**self.branch_review_run(OTHER_BRANCH_TREE, "planted-branch"), "source": "round"})
         self.assertEqual(self.ledger("yield", "--review-trees").stdout, f"tree\n{PLANTED_TREE}\n")
 
     def test_any_other_command_exits_64(self):

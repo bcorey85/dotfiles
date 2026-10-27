@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# log-spec-run — one JSONL row per finalized plan, so the planning lane has a
+# denominator.
+#
+# The escape log already records plan defects (`gate_missed=eng-spec`): a
+# criterion that cannot be run, a mandated primitive whose semantics were never
+# stated, a plan that contradicts the tree. What it cannot record is how many
+# plans were written, or how big they were. Without that, a count of plan defects
+# is a number with no denominator — it rises when more planning happens and falls
+# when less does, and neither movement means anything.
+#
+# One row per plan that reaches finalization. The size fields exist so the rate
+# can be per plan AND per criterion: a plan with 40 criteria and 3 defects is not
+# worse than a plan with 4 criteria and 2.
+#
+# usage: log-spec-run key=value [key=value ...]
+#   canonical fields:
+#     repo=<basename>                 accepted and never stored: `ledger write`
+#       adds the repo, so callers may omit it
+#     slug=<task dir basename>        the plan's identity; joins to docs/plans/<slug>
+#     ticket=<ID|none>
+#     verdict=finalized|abandoned     abandoned plans count too — a plan dropped
+#       after research is a planning cost that produced no code, and excluding
+#       them makes the lane look cheaper than it is.
+#     phases=<n>                      phases in the finalized plan
+#     criteria=<n>                    success criteria across all phases, plus
+#       acceptance-criteria.md ids when that file exists. The per-criterion
+#       denominator; count them, do not estimate.
+#     decisions=<n>                   entries in the decision ledger
+#     research_q=<n>                  questions the goal-blind research answered
+#     gaps=<n>                        DESIGN GAP items raised and resolved during
+#       planning — defects the lane caught itself, the numerator's other side
+#     falsified=<n>                   factual claims the finalization sweep found
+#       wrong against the tree and repaired before any coder ran. This is the one
+#       field that scores the sweep: it is the count of plan defects that did NOT
+#       become escapes.
+#     plan_review_findings=<n>        BLOCKER + GAP items the fresh-eyes plan
+#       reader raised across all its rounds. Same role as `falsified` for a
+#       different instrument: plan defects caught before a coder ran. 0 is a real
+#       answer and must be logged as one, or the reader's cost has no yield.
+#     plan_review_rounds=<n>          how many fresh reads it took to reach a
+#       clean one. Rounds beyond the first are the evidence that one pass does
+#       not saturate; a lane that always converges in one round can drop the loop.
+#     plan_review_alts=<n>            alternative approaches the reader argued for
+#     plan_review_alts_taken=<n>      how many the ticket owner accepted
+#       Separate from plan_review_findings, and never logged as escapes: an
+#       alternative is not a defect, the plan worked. The pair is the only measure
+#       of whether arguing the design is worth its cost — raised with none ever
+#       taken is a reader talking past the owner, and the ratio is the number to
+#       read, not the count.
+#
+# Every value is sent as a JSON string to `ledger write spec_run`, which types it and
+# adds the date, repo and session. date, schema_version, repo and out are accepted and
+# never stored. slug goes to `ledger-write`, which drops it for the ledger; with no
+# `ledger` on PATH it drops the row and prints one stderr line.
+# A row `ledger write` refuses exits 2.
+set -euo pipefail
+
+script_dir=$(dirname -- "${BASH_SOURCE[0]}")
+# shellcheck source=../lib/_kv.sh
+source "$script_dir/../lib/_kv.sh"
+kv_help_exit "${BASH_SOURCE[0]}" "$@"
+
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
+
+# No field here is free text, so a space in any value is refused: the caller quoted
+# too much and swallowed the following key=value pairs into it, which is how repo=
+# ends up holding every other field and the row joins to nothing.
+json='{}'
+kv_fold "" "" "$@"
+
+verdict=$(jq -r '.verdict // ""' <<< "$json")
+case "$verdict" in
+  finalized|abandoned) ;;
+  "") echo "refusing to log: verdict=finalized|abandoned is required." >&2; exit 1 ;;
+  *)  echo "refusing to log: verdict=$verdict is not finalized|abandoned" >&2; exit 1 ;;
+esac
+
+# criteria= is the per-criterion denominator. A row without it looks logged and
+# contributes nothing, which is the same failure a run row without n_findings has
+# in the review log.
+if [ "$(jq -r '.criteria // "MISSING"' <<< "$json")" = MISSING ]; then
+  echo "refusing to log: criteria=<n> is required (0 is a legitimate answer, and" >&2
+  echo "a plan with zero verdictable criteria is itself worth reporting)." >&2
+  exit 1
+fi
+
+"$script_dir/telemetry_enabled.sh" 2>/dev/null || exit 0
+
+printf '%s\n' "$json" | bash "$script_dir/ledger-write" spec_run

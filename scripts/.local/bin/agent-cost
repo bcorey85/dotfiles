@@ -8,7 +8,7 @@
 # SPEND (--spend) reads the ledger instead (see below). Both aggregate by agent
 # type, repo, model, or spawn depth.
 #
-# Why PEAK reads these and not ~/.claude/agent-usage.jsonl (the PostToolUse hook,
+# Why PEAK reads these and not the agent usage file in ~/.claude (the PostToolUse hook,
 # now legacy): that hook fires when the Agent TOOL returns, which for a
 # BACKGROUND dispatch is before the agent has done any work — a third of its
 # rows carry `tokens: null` and no fallback field name can fix it. The

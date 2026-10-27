@@ -66,7 +66,7 @@ jq -n --arg f "<target>" --arg b "${XDG_STATE_HOME:-$HOME/.local/state}/claude-c
   > "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration"/lock.json
 ```
 
-The lock is the safety net (`calibration-guard.py` shouts on sessions starting with one present). Apply with **Edit** — one line, minimal, unmarked.
+The lock is the safety net (`calibration_guard.py` shouts on sessions starting with one present). Apply with **Edit** — one line, minimal, unmarked.
 
 ## Step 3: Run the reviewer blind
 
@@ -106,11 +106,11 @@ sha256sum <target> | cut -c1-16   # must equal pre_hash
 ## Step 6: Log
 
 ```bash
-if "$HOME/.claude/scripts/telemetry_enabled.sh" 2>/dev/null; then
+if "$HOME/.claude/scripts/telemetry/telemetry_enabled.sh" 2>/dev/null; then
   jq -cn --arg reviewer "<sonnet|deep>" --arg class "<defect class>" --arg result "<caught|missed>" \
     --argjson other_findings <n> \
     '{reviewer: $reviewer, class: $class, result: $result, other_findings: $other_findings}' \
-    | "$HOME/.claude/scripts/ledger-write" review_calibration
+    | "$HOME/.claude/scripts/telemetry/ledger-write" review_calibration
 fi
 ```
 

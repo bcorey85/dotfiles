@@ -31,6 +31,8 @@ One plan phase, Sonnet coder, three runs per arm. Coder cache read 507,679 again
 
 Sonnet coder cache read per dispatch and responses per dispatch from the weekly token table, and review escapes per review run.
 
+Reading, 2026-10-26 intake: cache read BETTER, kept. Sonnet coder cache read per dispatch fell from 5.38 M before to 1.82 M after, across 284 dispatches. Median responses per dispatch fell from 30 to 14. Test runs per dispatch held at 0.86 before and 0.89 after, so the cut does not come from less checking. The coder whole-package check hook shipped the same day and reads the same metric, so the two cannot be separated. The escape watch stays open: it has only 2 days of escapes so far, 1 in 26 review runs.
+
 ## Back-out
 
 delete the `SubagentHandback` entry in `settings.json`, the gate and packet paragraph in `/code` step 3, the clear sentence in step 4, and the packet and hook sentences in `coder-core`

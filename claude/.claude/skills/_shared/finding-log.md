@@ -12,13 +12,13 @@ Run after dispositions are known (`actioned` real, not predicted). Telemetry nev
 
 # ONE run row per gate dispatched — INCLUDING gates that returned nothing.
 ~/.claude/skills/review/log-review-finding kind=run lane=<lane> scope=<phase|branch-exit|standalone> [phase=<index>] iter=<N> \
-  gate=<agent name> n_findings=<n> diff_loc=<n> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES|NOT DISPATCHED>
+  gate=<agent name> n_findings=<n> <diff_loc=<n>|diff_base=<ref>> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES|NOT DISPATCHED>
 
 # ONE finding row per finding that gate emitted.
 ~/.claude/skills/review/log-review-finding kind=finding lane=<lane> scope=<phase|branch-exit|standalone> [phase=<index>] iter=<N> \
   gate=<agent name> disposition=<fix|ask|nit> [blocker=yes] \
   class=<bug|smell|duplication|complexity|plan-drift|test-gap|weak-assertion|security|perf|correctness|docs|other> \
-  file=<path> line=<n> actioned=<fixed|skipped_fp|deferred|ask|none> [source=<round|fix-diff|last-pass|class|gate>]
+  <file=<path> line=<n>|file=unlocated> actioned=<fixed|skipped_fp|deferred|ask|none> [source=<round|class|gate>]
 # Prints finding_id=<id>.
 ```
 
@@ -28,20 +28,21 @@ Run after dispositions are known (`actioned` real, not predicted). Telemetry nev
 - **`gate=` is the literal agent name dispatched.** Never collapse a `-deep`
   tier into its base name.
 - **`diff_loc` is measured, not estimated.** `git diff --shortstat` over that
-  gate's scope, insertions + deletions.
-- **`file`/`line` is the join key.** A finding naming no line logs `line=0`.
+  gate's scope, insertions + deletions. A gate that reads a whole branch passes
+  `diff_base=<ref>` instead, and the script measures it to the working tree.
+- **`file`/`line` is the join key.** A finding naming no line logs `line=0`. A
+  finding naming no file logs `file=unlocated` and no line; never guess a file.
 - **`fix_induced=yes`** for code an earlier fix in this loop introduced.
 - **`fix_induced=bug`** — the tool sets `blocker=yes`; a loop-introduced bug cannot defer. Set `actioned=fixed`.
-- **`source=`** — review-loop only, on every `fix` row: `round` (a full review), `fix-diff` (the first fix-diff
-  pass), `last-pass` (the second fix-diff pass), `class` (an open class member at the cap), `gate` (the execution
-  gate). A `code-reviewer` `fix` row with `actioned=deferred` needs `source=last-pass` or `source=class`. The tool
-  refuses any other: that finding gets a coder.
+- **`source=`** — review-loop only, on every `fix` row: `round` (a full review), `class` (an open class member at
+  the cap), `gate` (the execution gate). A `code-reviewer` `fix` row with `actioned=deferred` needs `source=class`.
+  The tool refuses any other: that finding gets a coder.
 - `class=` uses the escape vocabulary so the caught and escaped sides
   cross-tabulate. Do not invent values — unknown ones store as `other` and are counted in the yield header.
 - **`other` is a last resort.** Reach for `docs` when the prose is wrong about the code (stale comment, wrong quantity, contradicting doc, over-cap volume).
 - **`result=` is the gate's verdict.** Gates with no pass/fail vocabulary still owe one (`PASS` clean/intent-aligned, `NEEDS CHANGES` gaps/residue, `NOT DISPATCHED` surface-unmatched). Omit only with genuinely no verdict.
 
 - **`desc=` is accepted and never stored.** The ledger keeps no free text. Leave it off new calls.
-- **Asks:** the call that logs an `actioned=ask` finding row prints `finding_id=<id>`. Capture it and put it on that ask's `ask[]` item. The outcome call passes `finding_id=<id>` and `ask_outcome=`, and it supersedes the ask row. An ask outcome with no `finding_id` writes nothing.
+- **Asks:** log an `actioned=ask` finding row with the same `file=` and `line=` as the ask's `file_line`. The caller reads the printed `finding_id=<id>` from the transcript and logs the outcome under it with `ask_outcome=`, which supersedes the ask row. The writer refuses an ask outcome with no `finding_id`.
 
 Full field reference lives in the script's header.

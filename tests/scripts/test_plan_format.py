@@ -1,13 +1,19 @@
 import glob
 import os
 import pathlib
+import subprocess
 import sys
+import tempfile
 import unittest
 
+import toolkit_paths
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-SCRIPT = pathlib.Path(os.environ.get("PLAN_FORMAT_SCRIPT") or REPO_ROOT / "claude" / ".claude" / "scripts" / "plan_format.py")
+SCRIPT = pathlib.Path(
+    os.environ.get("PLAN_FORMAT_SCRIPT") or REPO_ROOT / "claude" / ".claude" / "scripts" / "lib" / "plan_format.py"
+)
 sys.path.insert(0, str(SCRIPT.parent))
-import plan_format  # noqa: E402
+import plan_format
 
 TEMPLATE = """# Plan
 
@@ -73,7 +79,12 @@ class SectionShapeTest(unittest.TestCase):
         self.assertTrue(all(not i["checked"] for i in items))
 
     def test_not_applicable_lines_are_accepted_and_yield_no_item(self):
-        for body in ("N/A.", "N/A (docs-only).", "- N/A beyond tests; the live check is Phase 8.", "N/A — scripts only"):
+        for body in (
+            "N/A.",
+            "N/A (docs-only).",
+            "- N/A beyond tests; the live check is Phase 8.",
+            "N/A — scripts only",
+        ):
             with self.subTest(body=body):
                 self.assertEqual(parse(f"## Phase 1: x\n\n#### Manual Verification:\n\n{body}\n\n## Phase 2: y\n"), [])
 
@@ -120,8 +131,10 @@ class SectionShapeTest(unittest.TestCase):
         self.assertIn("move the item above it", str(caught.exception))
 
     def test_a_phase_stays_open_across_a_level_3_success_criteria_group(self):
-        text = ("### Phase 1: x\n\n### Success Criteria\n\n### Automated Verification:\n\n- `make test` passes.\n\n"
-                "### Manual Verification:\n\n- [ ] b\n\n### Testing Strategy\n\n### Manual Verification:\n\n- [ ] late\n")
+        text = (
+            "### Phase 1: x\n\n### Success Criteria\n\n### Automated Verification:\n\n- `make test` passes.\n\n"
+            "### Manual Verification:\n\n- [ ] b\n\n### Testing Strategy\n\n### Manual Verification:\n\n- [ ] late\n"
+        )
         self.assertEqual([("b", "1"), ("late", None)], [(i["text"], i["phase"]) for i in parse(text)])
 
     def test_phase_resets_at_a_non_phase_heading_of_the_same_level(self):
@@ -176,7 +189,8 @@ class PhaseSectionsTest(unittest.TestCase):
 
     def test_parse_plan_fails_a_status_entry_with_no_section_unless_it_is_a_closing_phase(self):
         lines = ["## Phase Status", f"- [ ] Phase {self.ONE}: build", f"- [ ] Phase {self.TWO}: Recap", ""]
-        closing = lambda title: "/branch-recap" if title.startswith("Recap") else None
+        def closing(title):
+            return "/branch-recap" if title.startswith("Recap") else None
         plan = plan_format.parse_plan(lines, closing)
         self.assertEqual([(1, "missing-section")], [(f["line"] - 1, f["kind"]) for f in plan["failures"]])
         self.assertEqual([None, "/branch-recap"], [e["closing"] for e in plan["entries"]])
@@ -190,8 +204,8 @@ class PhaseSectionsTest(unittest.TestCase):
 
 
 class PhaseGateClauseTest(unittest.TestCase):
-    def gates(self, *statusLines):
-        entries, failures = plan_format.phase_status_entries(["## Phase Status", *statusLines], lambda title: None)
+    def gates(self, *status_lines):
+        entries, failures = plan_format.phase_status_entries(["## Phase Status", *status_lines], lambda title: None)
         self.assertEqual([], failures)
         return [entry["gate"] for entry in entries]
 
@@ -228,8 +242,8 @@ REAL_DEVIATION = ("- 2026-10-20: Phase 11 (work Mac runs) moves to a new ticket,
 
 
 class MovedPhaseTest(unittest.TestCase):
-    def plan(self, statusLine=REAL_MOVED_LINE, deviations=("## Plan Deviations", "", REAL_DEVIATION)):
-        lines = ["## Phase Status", "", "- [x] Phase 10: Runs (risk: low)", statusLine, "",
+    def plan(self, status_line=REAL_MOVED_LINE, deviations=("## Plan Deviations", "", REAL_DEVIATION)):
+        lines = ["## Phase Status", "", "- [x] Phase 10: Runs (risk: low)", status_line, "",
                  "## Phase 10: Runs", "text", "", "## Phase 11: Work Mac runs — moved to LED-16", "handed off", ""]
         return plan_format.parse_plan(lines + list(deviations))
 
@@ -261,7 +275,8 @@ class MovedPhaseTest(unittest.TestCase):
         self.assertEqual(["moved-without-deviation"], self.kinds(plan))
         self.assertEqual(4, plan["failures"][0]["line"])
         detail = plan["failures"][0]["detail"]
-        self.assertIn("the sign-off for the move in Plan Deviations (who, when, their words)", detail)
+        self.assertIn("the sign-off for the move in Plan Deviations (who and when), and name Phase 11 and LED-16 in "
+                      "the same line.", detail)
         self.assertNotIn("user's", detail)
 
     def test_a_moved_phase_may_have_no_section_of_its_own(self):
@@ -278,9 +293,9 @@ class MovedPhaseTest(unittest.TestCase):
         self.assertEqual(["missing-section"], self.kinds(plan))
 
     def test_a_tick_entry_that_names_the_phase_does_not_record_the_move(self):
-        tickEntry = ("- 2026-10-21 (Phase 11): marked done with `tick`, outside the coder, review and verification "
+        tick_entry = ("- 2026-10-21 (Phase 11): marked done with `tick`, outside the coder, review and verification "
                      "steps of /code.")
-        plan = self.plan(deviations=("## Plan Deviations", "", tickEntry))
+        plan = self.plan(deviations=("## Plan Deviations", "", tick_entry))
         self.assertEqual(["moved-without-deviation"], self.kinds(plan))
         self.assertIn("LED-16", plan["failures"][0]["detail"])
 
@@ -306,7 +321,7 @@ class MovedPhaseTest(unittest.TestCase):
                                 ("- 2026-10-20: P40 moves to LED-16.", ["moved-without-deviation"]),
                                 ("- 2026-10-20: P3 moves to LED-16.", ["moved-without-deviation"])):
             with self.subTest(entry=entry):
-                plan = plan_format.parse_plan(lines + [entry])
+                plan = plan_format.parse_plan([*lines, entry])
                 self.assertEqual(expected, self.kinds(plan))
 
     def test_an_entry_that_names_another_phase_does_not_count(self):
@@ -368,10 +383,10 @@ class MovedPhaseTest(unittest.TestCase):
 
 
 class LoudFailureTest(unittest.TestCase):
-    def assert_fails_at(self, text, lineNumber):
+    def assert_fails_at(self, text, line_number):
         with self.assertRaises(plan_format.PlanFormatError) as caught:
             parse(text)
-        self.assertTrue(str(caught.exception).startswith(f"plan.md:{lineNumber}:"), str(caught.exception))
+        self.assertTrue(str(caught.exception).startswith(f"plan.md:{line_number}:"), str(caught.exception))
 
     def test_a_heading_level_other_than_3_or_4_fails_instead_of_dropping_the_items(self):
         for marks in ("##", "#####"):
@@ -394,6 +409,7 @@ class LoudFailureTest(unittest.TestCase):
         self.assert_fails_at("#### Manual Verification:\n\n- N/A beyond tests\n  detail\n", 4)
 
 
+@unittest.skipUnless(toolkit_paths.REAL_PLANS_ENABLED, toolkit_paths.REAL_PLANS_SKIP_REASON)
 class RealPlansTest(unittest.TestCase):
     """Every real plan under ~/dev/*/docs/{plans,eng-specs}/ parses, and every section yields phase-tagged items."""
 
@@ -408,30 +424,446 @@ class RealPlansTest(unittest.TestCase):
         paths = self.plan_paths()
         if not paths:
             self.skipTest("no real plans on this machine")
-        itemCount = 0
+        item_count = 0
         for path in paths:
             with self.subTest(path=path):
                 items = plan_format.manual_verification(pathlib.Path(path).read_text(errors="replace"), path)
-                itemCount += len(items)
+                item_count += len(items)
                 self.assertTrue(all(item["line"] > 0 and item["text"] for item in items))
-        print(f"parsed {len(paths)} of {len(paths)} real plan files, {itemCount} Manual Verification items",
+        print(f"parsed {len(paths)} of {len(paths)} real plan files, {item_count} Manual Verification items",
               file=sys.stderr)
 
     def test_every_real_phase_status_line_marked_moved_parses_with_its_section_and_deviation_entry(self):
         paths = sorted(glob.glob(str(pathlib.Path.home() / "dev" / "*" / "docs" / "plans" / "*" / "spec.md")))
         if not paths:
             self.skipTest("no real plans on this machine")
-        movedCount = 0
-        movedKinds = {"unparsed-line", "section-without-status", "moved-without-target", "moved-without-deviation"}
+        moved_count = 0
+        moved_kinds = {"unparsed-line", "section-without-status", "moved-without-target", "moved-without-deviation"}
         for path in paths:
             lines = pathlib.Path(path).read_text(errors="replace").splitlines()
-            dashLines = [line for line in lines if line.startswith("- [-] Phase ")]
+            dash_lines = [line for line in lines if line.startswith("- [-] Phase ")]
             plan = plan_format.parse_plan(lines)
             with self.subTest(path=path):
-                self.assertEqual([], [f for f in plan["failures"] if f["kind"] in movedKinds])
-                self.assertEqual(len(dashLines), sum(1 for entry in plan["entries"] if entry["moved"]))
-            movedCount += len(dashLines)
-        print(f"parsed {len(paths)} of {len(paths)} real plans, {movedCount} moved Phase Status lines", file=sys.stderr)
+                self.assertEqual([], [f for f in plan["failures"] if f["kind"] in moved_kinds])
+                self.assertEqual(len(dash_lines), sum(1 for entry in plan["entries"] if entry["moved"]))
+            moved_count += len(dash_lines)
+        print(
+            f"parsed {len(paths)} of {len(paths)} real plans, {moved_count} moved Phase Status lines", file=sys.stderr
+        )
+
+
+class RealPlansOptInTest(unittest.TestCase):
+    """A broken plan under ~/dev fails the real-plan sweep only when REAL_PLANS=1 asks for it."""
+
+    def setUp(self):
+        temp_home = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_home.cleanup)
+        self.home = pathlib.Path(temp_home.name)
+
+        plan_dir = self.home / "dev" / "some-repo" / "docs" / "plans" / "some-task"
+        plan_dir.mkdir(parents=True)
+        (plan_dir / "spec.md").write_text("#### Manual Verification:\n\n- [ ] x\n| a | b |\n")
+
+    def run_sweep(self, **environment):
+        sweep_env = {key: value for key, value in os.environ.items() if key != "REAL_PLANS"}
+        sweep_env.update(HOME=str(self.home), **environment)
+        return subprocess.run(
+            [sys.executable, "-m", "unittest", "test_plan_format.RealPlansTest"],
+            cwd=pathlib.Path(__file__).parent, env=sweep_env, capture_output=True, text=True, check=False,
+        )
+
+    def test_the_default_run_skips_a_broken_real_plan(self):
+        sweep = self.run_sweep()
+
+        self.assertEqual(0, sweep.returncode, sweep.stderr)
+        self.assertIn("skipped", sweep.stderr)
+
+    def test_real_plans_set_to_1_fails_on_a_broken_real_plan(self):
+        sweep = self.run_sweep(REAL_PLANS="1")
+
+        self.assertNotEqual(0, sweep.returncode, sweep.stderr)
+
+
+AUTOMATED_PLAN = """# Plan
+
+## Phase 1: Build it
+
+#### Automated Verification:
+
+- [ ] **Test-verified**: passes - `LEDGER_PY=/x/e.py cargo test --lib`
+- [x] **Lint**: clean - `npm run lint`
+  indented note
+- N/A not an item
+
+#### Manual Verification:
+
+- [ ] open the page
+
+## Phase 2: Ship it
+
+### Automated Verification
+
+- [ ] **Check**: `GATE=1 make check`
+"""
+
+
+class AutomatedVerificationRowsTest(unittest.TestCase):
+    def test_rows_are_the_checkbox_items_under_the_automated_heading_with_their_indexes(self):
+        lines = AUTOMATED_PLAN.splitlines()
+
+        rows = plan_format.automated_verification_rows(lines)
+
+        self.assertEqual([6, 7], [index for index, _ in rows])
+        self.assertTrue(rows[0][1].startswith("- [ ] **Test-verified**"))
+
+    def test_a_manual_verification_item_and_a_level_three_heading_are_not_rows(self):
+        lines = AUTOMATED_PLAN.splitlines()
+
+        rows = [line for _, line in plan_format.automated_verification_rows(lines)]
+
+        self.assertNotIn("- [ ] open the page", rows)
+        self.assertNotIn("- [ ] **Check**: `GATE=1 make check`", rows)
+
+    def test_a_heading_of_level_one_to_three_ends_the_list(self):
+        for heading in ("# Next", "## Phase 2: Next", "### Notes"):
+            with self.subTest(heading=heading):
+                lines = ["#### Automated Verification:", "- [ ] a `x`", heading, "- [ ] b `y`"]
+
+                self.assertEqual([(1, "- [ ] a `x`")], plan_format.automated_verification_rows(lines))
+
+    def test_a_misworded_verification_heading_raises_with_its_file_line_and_the_expected_heading(self):
+        for heading in ("#### Automated Verfication Steps (verif)", "#### Verification (automated)",
+                        "#### automated verification checks"):
+            with self.subTest(heading=heading):
+                lines = ["text", heading, "- [ ] a `x`"]
+
+                with self.assertRaises(plan_format.PlanFormatError) as raised:
+                    plan_format.automated_verification_rows(lines, "plan.md", 10, strict=True)
+
+                self.assertIn("plan.md:11:", str(raised.exception))
+                self.assertIn(plan_format.AUTOMATED_HEADING, str(raised.exception))
+                self.assertIn("#### Manual Verification:", str(raised.exception))
+
+    def test_a_misworded_heading_reads_as_no_items_unless_strict(self):
+        lines = ["#### Verification (automated)", "- [ ] a `x`"]
+
+        self.assertEqual([], plan_format.automated_verification_rows(lines))
+
+    def test_other_level_four_headings_are_not_misworded_verification_headings(self):
+        for heading in ("#### Manual Verification:", "#### Manual Verification (cannot be automated):",
+                        "#### Success Criteria", "#### Automated tests"):
+            with self.subTest(heading=heading):
+                lines = [heading, "- [ ] a `x`"]
+                self.assertEqual([], plan_format.automated_verification_rows(lines, strict=True))
+
+    def test_a_horizontal_rule_ends_the_list(self):
+        lines = ["#### Automated Verification:", "- [ ] a `x`", "---", "- [ ] b `y`"]
+
+        self.assertEqual([(1, "- [ ] a `x`")], plan_format.automated_verification_rows(lines))
+
+
+class GateEnvTest(unittest.TestCase):
+    def test_gate_env_text_names_the_variables_and_says_where_to_put_them(self):
+        self.assertEqual("gate-env: A=1 B=2\n(Put these variables before every test, check or build command you run.)",
+                         plan_format.gate_env_text(["A=1", "B=2"]))
+
+    def test_gate_env_text_is_empty_when_there_are_no_variables(self):
+        self.assertEqual("", plan_format.gate_env_text([]))
+
+    def test_gate_env_is_the_leading_assignments_of_the_automated_commands(self):
+        self.assertEqual(["LEDGER_PY=/x/e.py"], plan_format.gate_env(AUTOMATED_PLAN))
+
+    def test_a_plan_with_no_automated_assignment_gives_none(self):
+        self.assertEqual([], plan_format.gate_env("#### Automated Verification:\n\n- [ ] a `cargo test`\n"))
+
+    def test_shell_and_prose_spans_of_real_plans_give_no_variables(self):
+        spans = ["n=$(ledger count) && test \"$n\" = 3", "S=...; cargo test", "PATH=/x/bin:$PATH cargo test",
+                 "T=$(find . -name x) cargo test", "src=index pass=done"]
+        plan = "#### Automated Verification:\n\n" + "".join(f"- [ ] **T**: sees `{span}` here\n" for span in spans)
+
+        self.assertEqual([], plan_format.gate_env(plan))
+
+    def test_an_item_the_code_step_never_runs_gives_no_variables(self):
+        items = ["- [ ] **CI-verified**: the pipeline runs `FULL_E2E=1 npm test`",
+                 "- [ ] Human-only: open the page, then `SHOW_ALL=1 npm start`",
+                 "- [ ] N/A - docs only, no `DOCS_ONLY=1 make docs`"]
+        for item in items:
+            with self.subTest(item=item):
+                self.assertEqual([], plan_format.gate_env("#### Automated Verification:\n\n" + item + "\n"))
+
+    def test_an_item_that_is_run_still_gives_its_variables_beside_one_that_is_not(self):
+        plan = ("#### Automated Verification:\n\n- [ ] **CI-verified**: runs `FULL_E2E=1 npm test`\n"
+                "- [ ] **Unit**: `QUICK=1 npm test`\n")
+
+        self.assertEqual(["QUICK=1"], plan_format.gate_env(plan))
+
+    def test_the_item_tags_are_read_the_same_for_the_gate_env_and_the_run(self):
+        self.assertEqual("CI-verified", plan_format.deferred_verification_tag("- [ ] **ci-verified**: the pipeline"))
+        self.assertEqual("human-only", plan_format.deferred_verification_tag("- [x] Human-only: a look"))
+        self.assertIsNone(plan_format.deferred_verification_tag("- [ ] **Unit**: `npm test`, not CI-verified"))
+        self.assertIsNotNone(plan_format.NO_AUTOMATED_CHECK.match("- [ ] **Test-verified**: N/A on the machines."))
+
+    def test_an_item_runs_no_command_when_it_says_n_a_or_is_left_to_ci_or_a_person(self):
+        for item in ("- [ ] N/A - docs only", "- [x] none", "- [ ] **Test-verified**: N/A on the machines.",
+                     "- [ ] **CI-verified**: the pipeline runs `npm test`", "- [ ] Human-only: look at the page"):
+            with self.subTest(item=item):
+                self.assertTrue(plan_format.runs_no_command(item))
+
+    def test_an_item_with_a_command_runs_it_even_when_it_mentions_ci_or_n_a_later(self):
+        for item in ("- [ ] **Unit**: `npm test`, not CI-verified", "- [ ] **Check**: `make check` (N/A on mac)",
+                     "- [ ] `RUN x`"):
+            with self.subTest(item=item):
+                self.assertFalse(plan_format.runs_no_command(item))
+
+    def test_the_item_text_is_the_line_without_its_box_and_edge_spaces(self):
+        self.assertEqual("**Unit**: `npm test`", plan_format.automated_item_text("  - [ ] **Unit**: `npm test`  "))
+        self.assertEqual("done", plan_format.automated_item_text("- [x]   done"))
+        self.assertEqual("", plan_format.automated_item_text("- [ ]"))
+
+
+class RepoGateEnvTest(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = pathlib.Path(directory.name)
+
+    def write_plan(self, folder, command):
+        plan_dir = self.root / "docs/plans" / folder
+        plan_dir.mkdir(parents=True)
+        (plan_dir / "spec.md").write_text(
+            f"## Phase 1: X\n\n#### Automated Verification:\n\n- [ ] **T**: `{command}`\n"
+        )
+        return f"docs/plans/{folder}/spec.md"
+
+    def test_a_repo_with_no_plans_has_no_gate_env(self):
+        self.assertEqual([], plan_format.repo_gate_env(self.root))
+
+    def test_plans_that_agree_on_a_value_give_it(self):
+        self.write_plan("one", "A=1 cargo test")
+        self.write_plan("two", "A=1 B=2 cargo test")
+
+        self.assertEqual(["A=1", "B=2"], sorted(plan_format.repo_gate_env(self.root)))
+
+    def test_plans_that_disagree_on_a_value_leave_the_name_out(self):
+        self.write_plan("one", "A=1 cargo test")
+        self.write_plan("two", "A=2 cargo test")
+        self.write_plan("three", "B=3 cargo test")
+
+        self.assertEqual(["B=3"], plan_format.repo_gate_env(self.root))
+
+    def test_the_plan_of_the_run_decides_its_own_value_over_the_others(self):
+        self.write_plan("one", "A=1 cargo test")
+        own_plan = self.write_plan("two", "A=2 cargo test")
+        self.write_plan("three", "A=3 cargo test")
+
+        self.assertEqual(["A=2"], plan_format.repo_gate_env(self.root, own_plan))
+
+    def test_the_plan_of_the_run_takes_no_name_that_only_other_plans_set(self):
+        self.write_plan("one", "B=9 cargo test")
+        own_plan = self.write_plan("two", "A=2 cargo test")
+
+        self.assertEqual(["A=2"], plan_format.repo_gate_env(self.root, own_plan))
+
+    def test_a_plan_with_no_names_gives_none_even_when_other_plans_agree(self):
+        self.write_plan("one", "B=9 cargo test")
+        own_plan = self.write_plan("two", "cargo test")
+
+        self.assertEqual([], plan_format.repo_gate_env(self.root, own_plan))
+
+    def test_shell_junk_in_other_plans_adds_no_names_and_literal_settings_stay(self):
+        self.write_plan("one", "n=$(ledger count) && test 1 = 1")
+        self.write_plan("two", "PATH=/x/bin:$PATH cargo test")
+        self.write_plan("three", "T=$(find . -name x) cargo test")
+        self.write_plan("four", "src=index pass=done")
+        self.write_plan("five", "S=...; cargo test")
+        self.write_plan("six", "CARGO_BUILD_JOBS=4 cargo test")
+
+        self.assertEqual(["CARGO_BUILD_JOBS=4"], plan_format.repo_gate_env(self.root))
+
+    def test_an_old_plan_with_a_misworded_verification_heading_does_not_stop_the_read(self):
+        old_dir = self.root / "docs/plans/old"
+        old_dir.mkdir(parents=True)
+        old_plan = "## Phase 1: X\n\n#### Verification (automated):\n\n- [ ] `A=1 cargo test`\n"
+        (old_dir / "spec.md").write_text(old_plan)
+        self.write_plan("current", "B=2 cargo test")
+
+        self.assertEqual(["B=2"], plan_format.repo_gate_env(self.root))
+
+    def test_a_plan_path_that_does_not_exist_is_read_as_a_plan_with_no_names(self):
+        self.write_plan("one", "B=9 cargo test")
+
+        self.assertEqual(["B=9"], plan_format.repo_gate_env(self.root, "docs/plans/gone/spec.md"))
+
+
+CLOSING_PLAN = """## Phase Status
+
+- [ ] Phase 1: Build
+- [ ] Phase 2: Gated work — gate: LED-5 merged
+- [x] Phase 3: Refactor pass
+- [ ] Phase 4: Verify pass
+- [ ] Phase 5: Later work
+
+## Phase 1: Build
+
+build text
+
+## Phase 2: Gated work
+
+gated text
+
+## Phase 5: Later work
+
+later text
+
+## References
+"""
+
+
+class ClosingPhaseHelpersTest(unittest.TestCase):
+    def entries(self, text=CLOSING_PLAN):
+        plan = plan_format.parse_plan_with_closing_phases(text.split("\n"))
+        self.assertEqual([], plan["failures"])
+        return plan["entries"]
+
+    def test_a_closing_title_names_its_skill_and_any_other_title_names_none(self):
+        self.assertEqual("/refactor +deep", plan_format.closing_skill("Refactor pass"))
+        self.assertEqual("/test-audit", plan_format.closing_skill("test audit"))
+        self.assertEqual("/verify-branch", plan_format.closing_skill("Verify pass"))
+        self.assertEqual("/branch-recap", plan_format.closing_skill("Recap"))
+        self.assertIsNone(plan_format.closing_skill("Verify pass for the orders API"))
+        self.assertIsNone(plan_format.closing_skill("Build it"))
+
+    def test_the_closing_phases_are_recognised_and_need_no_section(self):
+        closing = [(entry["number"], entry["closing"]) for entry in self.entries()]
+        self.assertEqual([("1", None), ("2", None), ("3", "/refactor +deep"), ("4", "/verify-branch"), ("5", None)],
+                         closing)
+
+    def test_phase_text_is_the_section_or_none(self):
+        lines = CLOSING_PLAN.split("\n")
+        self.assertEqual("## Phase 1: Build\n\nbuild text\n", plan_format.phase_text(lines, "1"))
+        self.assertIsNone(plan_format.phase_text(lines, "4"))
+
+    def test_open_phases_come_in_plan_order_with_the_closing_phases_last(self):
+        text = CLOSING_PLAN.replace("- [x] Phase 3", "- [ ] Phase 3")
+        pending = plan_format.ordered_pending(self.entries(text))
+        self.assertEqual(["1", "2", "5", "3", "4"], [entry["number"] for entry in pending])
+
+    def test_gate_blockers_are_the_gated_phases_ahead_of_the_first_phase_without_a_gate(self):
+        pending = plan_format.ordered_pending(self.entries())
+        gated_ahead, next_ungated = plan_format.gate_blockers(pending)
+        self.assertEqual([], gated_ahead)
+        self.assertEqual("1", next_ungated["number"])
+
+        gated_ahead, next_ungated = plan_format.gate_blockers(pending[1:])
+        self.assertEqual(["2"], [entry["number"] for entry in gated_ahead])
+        self.assertEqual("5", next_ungated["number"])
+
+        gated_ahead, next_ungated = plan_format.gate_blockers(pending[1:2])
+        self.assertEqual(["2"], [entry["number"] for entry in gated_ahead])
+        self.assertIsNone(next_ungated)
+
+    def test_the_gate_block_text_names_each_gate_and_the_next_phase_without_one(self):
+        pending = plan_format.ordered_pending(self.entries())[1:]
+        gated_ahead, next_ungated = plan_format.gate_blockers(pending)
+        text = plan_format.gate_block_text(gated_ahead, next_ungated)
+        self.assertIn("Phase 2 (gate: LED-5 merged)", text)
+        self.assertIn("The next open phase without a gate is Phase 5.", text)
+        self.assertTrue(text.endswith("`start --phase <id>` runs one anyway."))
+        self.assertNotIn("without a gate", plan_format.gate_block_text(gated_ahead, None))
+
+    def test_the_moved_phase_text_and_stop_name_the_target_ticket(self):
+        entry = {"number": "11", "moved": True, "movedTo": "LED-16"}
+        other = {"number": "12", "moved": False, "movedTo": None}
+        self.assertEqual("Phase 11 to LED-16", plan_format.moved_phase_text([entry, other]))
+        before_coder = plan_format.moved_phase_stop(entry, "spec.md")
+        self.assertIn("Phase 11 is moved to LED-16 in spec.md", before_coder)
+        self.assertIn("No coder was dispatched.", before_coder)
+        after_coder = plan_format.moved_phase_stop(entry, "spec.md", coder_ran=True)
+        self.assertIn("The coder ran, and its work is not marked done or committed.", after_coder)
+
+    def test_the_failure_rows_name_the_plan_line_kind_and_detail(self):
+        plan = {"failures": [{"line": 4, "kind": "duplicate-id", "detail": "Phase 1 twice"}]}
+        self.assertEqual(["spec.md:4: duplicate-id: Phase 1 twice"], plan_format.plan_failure_rows(plan, "spec.md"))
+        message = plan_format.plan_failure_message(plan, "spec.md")
+        self.assertTrue(message.startswith("The plan's Phase Status does not parse."))
+        self.assertTrue(message.endswith("spec.md:4: duplicate-id: Phase 1 twice"))
+
+
+class PlanFileEditTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.plan_path = pathlib.Path(folder.name) / "spec.md"
+        self.plan_path.write_text(CLOSING_PLAN)
+
+    def test_marking_a_phase_done_checks_only_its_open_status_line(self):
+        plan_format.mark_phase_done(self.plan_path, "1")
+        text = self.plan_path.read_text()
+        self.assertIn("- [x] Phase 1: Build", text)
+        self.assertIn("- [ ] Phase 2: Gated work", text)
+        self.assertEqual(CLOSING_PLAN.replace("- [ ] Phase 1", "- [x] Phase 1"), text)
+
+    def test_marking_a_done_or_unknown_phase_changes_nothing(self):
+        plan_format.mark_phase_done(self.plan_path, "3")
+        plan_format.mark_phase_done(self.plan_path, "99")
+        self.assertEqual(CLOSING_PLAN, self.plan_path.read_text())
+
+    def test_reopening_unchecks_the_done_closing_phases_and_names_them(self):
+        reopened = plan_format.reopen_closing_phases(self.plan_path)
+        self.assertEqual(["3"], reopened)
+        self.assertIn("- [ ] Phase 3: Refactor pass", self.plan_path.read_text())
+        self.assertEqual([], plan_format.reopen_closing_phases(self.plan_path))
+
+    def test_a_deviation_makes_its_section_before_the_references(self):
+        plan_format.append_deviation(self.plan_path, ["- 2026-10-24: Phase 2 waits."])
+        lines = self.plan_path.read_text().split("\n")
+        self.assertEqual(["## Plan Deviations", "", "- 2026-10-24: Phase 2 waits.", "", "## References"],
+                         lines[lines.index("## Plan Deviations"):lines.index("## References") + 1])
+
+    def test_a_deviation_joins_the_end_of_the_section_the_plan_has(self):
+        self.plan_path.write_text("## Plan Deviations\n\n- first\n\n## References\n")
+        plan_format.append_deviation(self.plan_path, ["- second"])
+        self.assertEqual("## Plan Deviations\n\n- first\n\n- second\n\n## References\n", self.plan_path.read_text())
+
+    def test_a_deviation_goes_to_the_end_when_the_plan_has_no_references(self):
+        self.plan_path.write_text("## Phase 1: a\n\ntext\n")
+        plan_format.append_deviation(self.plan_path, ["- note"])
+        self.assertEqual("## Phase 1: a\n\ntext\n\n## Plan Deviations\n\n- note\n", self.plan_path.read_text())
+
+    def test_a_ruling_entry_names_the_phase_decision_owner_ruling_and_disagreement(self):
+        entry = plan_format.ruling_deviation("2", "Adopt plan change", "Pat Signer", "2026-10-25 09:30",
+                                             "use the  new\ntable", "assumed: one table\nfound: two")
+        self.assertEqual(["- 2026-10-25 (Phase 2): Adopt plan change. Ruled by Pat Signer at 2026-10-25 09:30.", "",
+                          "  The ruling: use the new table", "", "  The disagreement:", "  assumed: one table",
+                          "  found: two"], entry)
+
+    def test_a_ruling_entry_with_no_phase_leaves_the_phase_out(self):
+        entry = plan_format.ruling_deviation(None, "Keep plan as written", "the session, not the user",
+                                             "2026-10-25 09:30", "keep it", "found: two")
+        self.assertEqual("- 2026-10-25: Keep plan as written. Ruled by the session, not the user at 2026-10-25 09:30.",
+                         entry[0])
+
+
+class ManualFormatHelpersTest(unittest.TestCase):
+    GOOD = ("## Phase 1: a\n\n#### Manual Verification:\n\n- [ ] open it\n\n## Phase 2: b\n\n"
+            "#### Manual Verification:\n\n- [ ] read it\n")
+    BAD = "## Phase 1: a\n\n#### Manual Verification:\n\n- [ ] open it\n| a | b |\n"
+
+    def test_the_items_of_one_phase_or_all_phases(self):
+        lines = self.GOOD.split("\n")
+        self.assertEqual(["open it"], [i["text"] for i in plan_format.phase_manual_items(lines, 1, "spec.md")])
+        self.assertEqual(["open it", "read it"],
+                         [i["text"] for i in plan_format.phase_manual_items(lines, None, "spec.md")])
+
+    def test_a_section_that_parses_has_no_failure_message(self):
+        self.assertIsNone(plan_format.manual_format_failure(self.GOOD.split("\n"), "spec.md"))
+
+    def test_a_section_that_does_not_parse_gives_the_stop_message_and_the_resume_line(self):
+        message = plan_format.manual_format_failure(self.BAD.split("\n"), "spec.md", "Then run resume.")
+        self.assertTrue(message.startswith("The plan's Manual Verification section does not parse."))
+        self.assertIn("spec.md", message)
+        self.assertTrue(message.endswith("\nThen run resume."))
+        self.assertFalse(plan_format.manual_format_message("boom").endswith("\n"))
 
 
 if __name__ == "__main__":

@@ -4,12 +4,18 @@ on:
   push:
     paths:
       - "claude/.claude/scripts/**"
+      - "claude/.claude/hooks/**"
+      - "claude/.claude/skills/*/scripts/**"
       - "tests/**"
+      - "ruff.toml"
       - ".github/workflows/script-tests.yml"
   pull_request:
     paths:
       - "claude/.claude/scripts/**"
+      - "claude/.claude/hooks/**"
+      - "claude/.claude/skills/*/scripts/**"
       - "tests/**"
+      - "ruff.toml"
       - ".github/workflows/script-tests.yml"
 
 permissions:

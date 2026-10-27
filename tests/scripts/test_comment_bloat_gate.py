@@ -1,4 +1,4 @@
-"""Checks for comment-bloat-gate.py, the PostToolUse hook that blocks workflow-marker leaks and comment bloat."""
+"""Checks for comment_bloat_gate.py, the PostToolUse hook that blocks workflow-marker leaks and comment bloat."""
 import json
 import os
 import pathlib
@@ -7,13 +7,15 @@ import sys
 import tempfile
 import unittest
 
-SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts")
-SCRIPT = SCRIPTS_DIR / "comment-bloat-gate.py"
+import toolkit_paths
+
+SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.GATES_DIR)
+SCRIPT = SCRIPTS_DIR / "comment_bloat_gate.py"
 
 # Split so this file does not itself carry the plan-path marker the gate looks for.
 MARKER_LINE = 'SPEC = "dev/agent-ledger-LED-7/docs/' + 'plans/LED-7-watch-metrics/spec.md"'
 
-FILLER = "\n".join("value_%d = %d" % (index, index) for index in range(40)) + "\n"
+FILLER = "\n".join(f"value_{index} = {index}" for index in range(40)) + "\n"
 
 
 class CommentBloatGateTest(unittest.TestCase):
@@ -47,7 +49,11 @@ class CommentBloatGateTest(unittest.TestCase):
 
     def edit(self, path, new_text, tool="Edit", env=None):
         key = "content" if tool == "Write" else "new_string"
-        payload = {"hook_event_name": "PostToolUse", "tool_name": tool, "tool_input": {"file_path": path, key: new_text}}
+        payload = {
+            "hook_event_name": "PostToolUse",
+            "tool_name": tool,
+            "tool_input": {"file_path": path, key: new_text},
+        }
         return self.run_hook(json.dumps(payload), env)
 
     def assert_blocked(self, finished):
@@ -112,10 +118,27 @@ class CommentBloatGateTest(unittest.TestCase):
         self.assert_allowed(self.run_hook(json.dumps(payload)))
 
     def test_markers_in_added_lines_block(self):
-        samples = ["# phase 3 cleanup", "x = 1  # see docs/plans/auth.md", "# fixed in PR #123", "# issue #9",
-                   "# per the architect", "# written by the coder", "# the decision ledger says", "# acceptance criteria",
-                   "# acceptance contract", "# plan impact: none", "# plan-impact", "# user ruling", "# end-of-branch",
-                   "# (D4) chosen", "# D12: rule", "# PD3 applies", "# AC4 covered", "x = 1 # AC4", "AC9 = 1"]
+        samples = [
+            "# phase 3 cleanup",
+            "x = 1  # see docs/plans/auth.md",
+            "# fixed in PR #123",
+            "# issue #9",
+            "# per the architect",
+            "# written by the coder",
+            "# the decision ledger says",
+            "# acceptance criteria",
+            "# acceptance contract",
+            "# plan impact: none",
+            "# plan-impact",
+            "# user ruling",
+            "# end-of-branch",
+            "# (D4) chosen",
+            "# D12: rule",
+            "# PD3 applies",
+            "# AC4 covered",
+            "x = 1 # AC4",
+            "AC9 = 1",
+        ]
         for sample in samples:
             with self.subTest(sample=sample):
                 path = self.source("a.py", "x = 1\n" + sample + "\ny = 2\n")
@@ -180,7 +203,7 @@ class CommentBloatGateTest(unittest.TestCase):
         self.assert_blocked(self.edit(path, "# phase 2", env={"CLAUDE_SKIP_HOOKS": "1"}))
 
     def test_density_over_cap_blocks(self):
-        comments = "\n".join("# note %d" % index for index in range(15)) + "\n"
+        comments = "\n".join(f"# note {index}" for index in range(15)) + "\n"
         path = self.source("a.py", FILLER + comments)
         stderr = self.assert_blocked(self.edit(path, comments))
         self.assertEqual(stderr, "comment-bloat-gate: a.py is 27% comments (15/55 non-blank lines), cap ~20%. "
@@ -188,17 +211,17 @@ class CommentBloatGateTest(unittest.TestCase):
                                  "Never add code to lower the ratio.\n")
 
     def test_density_at_threshold_passes(self):
-        comments = "\n".join("# note %d" % index for index in range(10)) + "\n"
+        comments = "\n".join(f"# note {index}" for index in range(10)) + "\n"
         path = self.source("a.py", FILLER + comments)
         self.assert_allowed(self.edit(path, comments))
 
     def test_density_needs_thirty_non_blank_lines(self):
-        content = "\n".join("# note %d" % index for index in range(20)) + "\n"
+        content = "\n".join(f"# note {index}" for index in range(20)) + "\n"
         path = self.source("a.py", content)
         self.assert_allowed(self.edit(path, content))
 
     def test_density_ignores_edit_without_comments(self):
-        comments = "\n".join("# note %d" % index for index in range(15)) + "\n"
+        comments = "\n".join(f"# note {index}" for index in range(15)) + "\n"
         path = self.source("a.py", FILLER + comments)
         self.assert_allowed(self.edit(path, "value_1 = 1"))
 
@@ -210,10 +233,10 @@ class CommentBloatGateTest(unittest.TestCase):
         self.assert_allowed(self.edit(path, "/**\n */"))
 
     def test_jsdoc_continuation_counts_but_star_args_do_not(self):
-        stars = "\n".join(" * line %d" % index for index in range(15)) + "\n"
+        stars = "\n".join(f" * line {index}" for index in range(15)) + "\n"
         path = self.source("a.ts", FILLER + stars)
         self.assert_blocked(self.edit(path, stars))
-        code = "\n".join("*args%d" % index for index in range(15)) + "\n"
+        code = "\n".join(f"*args{index}" for index in range(15)) + "\n"
         path = self.source("b.ts", FILLER + code)
         self.assert_allowed(self.edit(path, code))
 
@@ -221,7 +244,7 @@ class CommentBloatGateTest(unittest.TestCase):
         leaders = ["//", "#", "--", ";", "<!--", "/*"]
         for leader in leaders:
             with self.subTest(leader=leader):
-                comments = "\n".join("%s note %d" % (leader, index) for index in range(15)) + "\n"
+                comments = "\n".join(f"{leader} note {index}" for index in range(15)) + "\n"
                 path = self.source("a.py", FILLER + comments)
                 self.assert_blocked(self.edit(path, comments))
 

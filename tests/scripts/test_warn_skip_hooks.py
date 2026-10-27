@@ -1,4 +1,4 @@
-"""Checks for warn-skip-hooks.py, the SessionStart hook that warns when CLAUDE_SKIP_HOOKS is set.
+"""Checks for warn_skip_hooks.py, the SessionStart hook that warns when CLAUDE_SKIP_HOOKS is set.
 
 Set HOOK_SCRIPTS_DIR to run against another directory of scripts."""
 import json
@@ -8,11 +8,15 @@ import subprocess
 import sys
 import unittest
 
-SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts") / "warn-skip-hooks.py"
+import toolkit_paths
 
-EXPECTED = ('{"systemMessage":"\\n\u26a0\ufe0f\u26a0\ufe0f\u26a0\ufe0f\\nCLAUDE_SKIP_HOOKS is set \u2014 all CB Security '
-            'Hooks are bypassed for this session.\\n\\nTo re-enable hooks, unset the variable and restart Claude '
-            'Code:\\n  unset CLAUDE_SKIP_HOOKS\\n\u26a0\ufe0f\u26a0\ufe0f\u26a0\ufe0f"}\n')
+SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.GATES_DIR) / "warn_skip_hooks.py"
+
+EXPECTED = (
+    '{"systemMessage":"\\n\u26a0\ufe0f\u26a0\ufe0f\u26a0\ufe0f\\nCLAUDE_SKIP_HOOKS is set \u2014 all CB Security '
+    "Hooks are bypassed for this session.\\n\\nTo re-enable hooks, unset the variable and restart Claude "
+    'Code:\\n  unset CLAUDE_SKIP_HOOKS\\n\u26a0\ufe0f\u26a0\ufe0f\u26a0\ufe0f"}\n'
+)
 
 PARITY_CASES = [
     {"name": "unset", "stdin": ""},

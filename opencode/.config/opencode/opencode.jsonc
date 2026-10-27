@@ -84,6 +84,7 @@
       "~/.claude/settings.json": "deny",
       "~/.claude/settings.local.json": "deny",
       "~/.claude/scripts/*": "deny",
+      "~/.claude/scripts/**": "deny",
       "~/.claude/hooks/*": "deny",
       "~/.config/opencode/opencode.json": "deny",
       "~/.config/opencode/opencode.jsonc": "deny",

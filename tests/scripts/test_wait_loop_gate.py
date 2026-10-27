@@ -1,4 +1,4 @@
-"""Checks for wait-loop-gate.py, the PreToolUse hook that denies unbounded waits in subagent Bash calls.
+"""Checks for wait_loop_gate.py, the PreToolUse hook that denies unbounded waits in subagent Bash calls.
 
 Set WAIT_LOOP_GATE_SCRIPT to run against another copy, such as a staged one."""
 import json
@@ -8,18 +8,22 @@ import subprocess
 import sys
 import unittest
 
+import toolkit_paths
+
 SCRIPT = pathlib.Path(os.environ.get("WAIT_LOOP_GATE_SCRIPT")
-                      or pathlib.Path.home() / ".claude" / "scripts" / "wait-loop-gate.py")
+                      or toolkit_paths.GATES_DIR / "wait_loop_gate.py")
 
 
 def run_hook(stdin):
     return subprocess.run([sys.executable, str(SCRIPT)], input=stdin, capture_output=True, text=True)
 
 
-def run_command(command, subagent=True):
+def run_command(command, subagent=True, agent_type="coder", in_background=False):
     payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+    if in_background:
+        payload["tool_input"]["run_in_background"] = True
     if subagent:
-        payload["agent_type"] = "coder"
+        payload["agent_type"] = agent_type
         payload["agent_id"] = "abc123"
     return run_hook(json.dumps(payload))
 
@@ -104,6 +108,32 @@ class WaitLoopGateTest(unittest.TestCase):
 
     def test_quoted_text_passes(self):
         self.assert_passes('echo "until ready; do sleep 60; done"')
+
+    def test_review_loop_background_call_denied(self):
+        finished = run_command("make test", agent_type="review-loop", in_background=True)
+        decision = json.loads(finished.stdout)["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+        self.assertIn("600000", decision["permissionDecisionReason"])
+
+    def test_review_loop_shell_background_denied(self):
+        for command in ("make test > test.log 2>&1 &", "npm run dev & sleep 5; curl localhost:3000",
+                        "nohup make test > test.log", "setsid pytest -q", "make test & disown"):
+            with self.subTest(command=command):
+                finished = run_command(command, agent_type="review-loop")
+                self.assertIn("deny", finished.stdout)
+
+    def test_review_loop_foreground_call_passes(self):
+        for command in ("make test", "make lint && make test 2>&1 | tail -40", "pytest -q &> test.log",
+                        "make test |& tail", 'echo "a & b"', "cat <<'EOF'\nrun it &\nEOF"):
+            with self.subTest(command=command):
+                finished = run_command(command, agent_type="review-loop")
+                self.assertEqual(finished.stdout, "")
+
+    def test_background_call_passes_for_other_agents_and_main_session(self):
+        for finished in (run_command("make test", in_background=True),
+                         run_command("make test", subagent=False, in_background=True)):
+            with self.subTest(stdout=finished.stdout):
+                self.assertEqual(finished.stdout, "")
 
     def test_garbage_stdin_passes(self):
         for stdin in ("", "not json", "[1, 2]", '{"agent_id": "x", "tool_input": null}',

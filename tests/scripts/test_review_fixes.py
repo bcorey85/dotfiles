@@ -11,7 +11,14 @@ import sys
 import tempfile
 import unittest
 
-SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts")
+import toolkit_paths
+
+SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR)
+
+
+def hook_script(file_name):
+    """The script file under whichever scripts subfolder holds it."""
+    return next(SCRIPTS_DIR.glob("*/" + file_name))
 
 
 class HookRunTest(unittest.TestCase):
@@ -20,16 +27,16 @@ class HookRunTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.home = pathlib.Path(self.tmp.name) / "home"
         (self.home / ".claude").mkdir(parents=True)
-        (self.home / ".claude" / "toolkit-telemetry").touch()
         self.work = pathlib.Path(self.tmp.name) / "work"
         self.work.mkdir()
 
     def run_hook(self, name, stdin, env_extra=None, **options):
         if isinstance(stdin, str):
             stdin = stdin.encode("utf-8")
-        environment = {"PATH": os.environ["PATH"], "HOME": str(self.home), "TMPDIR": self.tmp.name}
+        environment = {"PATH": os.environ["PATH"], "HOME": str(self.home), "TMPDIR": self.tmp.name,
+                       "CLAUDE_TOOLKIT_TELEMETRY": "1"}
         environment.update(env_extra or {})
-        return subprocess.run([sys.executable, str(SCRIPTS_DIR / (name + ".py"))], input=stdin,
+        return subprocess.run([sys.executable, str(hook_script(name.replace("-", "_") + ".py"))], input=stdin,
                               capture_output=True, env=environment, cwd=str(self.work), **options)
 
     def decision(self, finished):
@@ -148,8 +155,8 @@ class InvalidUtf8StdinTest(HookRunTest):
         # finding 6
         subprocess.run(["git", "init", "-q", str(self.work)], check=True)
         source = self.work / "a.py"
-        lines = ["value_%d = %d" % (number, number) for number in range(20)]
-        lines += ["# note %d" % number for number in range(15)]
+        lines = [f"value_{number} = {number}" for number in range(20)]
+        lines += [f"# note {number}" for number in range(15)]
         source.write_text("\n".join(lines) + "\n")
         body = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": str(source),
                                                               "new_string": "# note 1\n@@"}})
@@ -204,9 +211,9 @@ class IdeographicSpaceTest(HookRunTest):
         # finding 8: `[[:space:]]*` before the comment marker matches U+3000
         subprocess.run(["git", "init", "-q", str(self.work)], check=True)
         source = self.work / "a.py"
-        lines = ["value_%d = %d" % (number, number) for number in range(8)]
-        lines += ["　# note %d" % number for number in range(10)]
-        lines += ["value_x%d = 0" % number for number in range(12)]
+        lines = [f"value_{number} = {number}" for number in range(8)]
+        lines += [f"　# note {number}" for number in range(10)]
+        lines += [f"value_x{number} = 0" for number in range(12)]
         source.write_text("\n".join(lines) + "\n")
         body = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": str(source),
                                                               "new_string": "　# note 1\n"}})
@@ -250,19 +257,19 @@ class OpenErrorLineTest(HookRunTest):
         text = self.check("log-skill-use", json.dumps({"hook_event_name": "PostToolUse",
                                                        "tool_input": {"skill": "fix"}}),
                           {"SKILL_USAGE_FILE": missing})
-        self.assertEqual(text, "log-skill-use: cannot open %s: No such file or directory\n" % missing)
+        self.assertEqual(text, f"log-skill-use: cannot open {missing}: No such file or directory\n")
 
     def test_test_edit_telemetry(self):
         log = self.home / ".claude" / "test-edit-telemetry.jsonl"
         log.mkdir()
         text = self.check("test-edit-telemetry", json.dumps({"tool_name": "Edit",
                                                              "tool_input": {"file_path": "/r/a_test.py"}}))
-        self.assertEqual(text, "test-edit-telemetry: cannot open %s: Is a directory\n" % log)
+        self.assertEqual(text, f"test-edit-telemetry: cannot open {log}: Is a directory\n")
 
     def test_claudemd_linecount(self):
         missing = str(self.work / "gone" / "CLAUDE.md")
         text = self.check("claudemd-linecount", json.dumps({"tool_input": {"file_path": missing}}))
-        self.assertEqual(text, "claudemd-linecount: cannot open %s: No such file or directory\n" % missing)
+        self.assertEqual(text, f"claudemd-linecount: cannot open {missing}: No such file or directory\n")
 
 
 class GitDisciplineAmendTest(HookRunTest):
@@ -290,17 +297,19 @@ class RunGateTest(HookRunTest):
 
     def test_crash_escaping_main_blocks_with_exit_2_and_one_line(self):
         driver = pathlib.Path(self.tmp.name) / "crashing-gate.py"
-        shutil.copy(str(SCRIPTS_DIR / "hook_input.py"), str(pathlib.Path(self.tmp.name) / "hook_input.py"))
+        shutil.copy(str(SCRIPTS_DIR / "lib" / "hook_input.py"), str(pathlib.Path(self.tmp.name) / "hook_input.py"))
         driver.write_text("import hook_input\n\n\ndef main():\n    raise RuntimeError('boom')\n\n\n"
                           "hook_input.run_gate(main)\n")
         finished = subprocess.run([sys.executable, str(driver)], input=b"{}", capture_output=True)
         self.assertEqual(finished.returncode, 2)
         self.assertEqual(finished.stdout, b"")
-        self.assertEqual(finished.stderr.decode("utf-8"), "crashing-gate: crashed (RuntimeError: boom) - blocking the call\n")
+        self.assertEqual(
+            finished.stderr.decode("utf-8"), "crashing-gate: crashed (RuntimeError: boom) - blocking the call\n"
+        )
 
     def test_run_gate_passes_the_exit_code_of_main_through(self):
         driver = pathlib.Path(self.tmp.name) / "quiet-gate.py"
-        shutil.copy(str(SCRIPTS_DIR / "hook_input.py"), str(pathlib.Path(self.tmp.name) / "hook_input.py"))
+        shutil.copy(str(SCRIPTS_DIR / "lib" / "hook_input.py"), str(pathlib.Path(self.tmp.name) / "hook_input.py"))
         driver.write_text("import hook_input\nhook_input.run_gate(lambda: 3)\n")
         self.assertEqual(subprocess.run([sys.executable, str(driver)]).returncode, 3)
 
@@ -308,7 +317,7 @@ class RunGateTest(HookRunTest):
         # stdout closed: the deny cannot be printed, the crash escapes the port's own handler, run_gate exits 2
         payload = json.dumps({"tool_input": {"command": "git stash"}}).encode("utf-8")
         environment = {"PATH": os.environ["PATH"], "HOME": str(self.home)}
-        process = subprocess.Popen([sys.executable, str(SCRIPTS_DIR / "git-discipline-gate.py")],
+        process = subprocess.Popen([sys.executable, str(hook_script("git_discipline_gate.py"))],
                                    stdin=subprocess.PIPE, stderr=subprocess.PIPE, env=environment,
                                    cwd=str(self.work), preexec_fn=lambda: os.close(1))
         _, stderr = process.communicate(payload)
@@ -317,10 +326,10 @@ class RunGateTest(HookRunTest):
 
     def test_every_gate_imports_run_gate_and_is_executable(self):
         for name in self.GATES:
-            path = SCRIPTS_DIR / (name + ".py")
+            path = hook_script(name.replace("-", "_") + ".py")
             self.assertIn("hook_input.run_gate(main)", path.read_text(), name)
         for name in self.PORTED:
-            path = SCRIPTS_DIR / (name + ".py")
+            path = hook_script(name.replace("-", "_") + ".py")
             self.assertEqual(path.read_text().splitlines()[0], "#!/usr/bin/env python3", path.name)
             self.assertTrue(os.access(str(path), os.X_OK), path.name)
 

@@ -11,9 +11,9 @@ One escape = one defect found downstream of its gate. `/cc`/`/fix`/`/refactor`/`
 ## Instructions
 
 1. **Extract the fields** from `$ARGUMENTS` and the conversation:
-   - `stage_found` — where it surfaced: `walkthrough` (you, at phase sign-off), `phase-gate` (downstream agent, in-loop), `pr-human` (you, post-gates), `prod`, `verify`, `other`
+   - `stage_found` — where it surfaced: `walkthrough` (you, at phase sign-off), `phase-gate` (downstream agent, in-loop), `pr-human` (you, post-gates), `peer-review` (your own `/peer-review` run on your own branch, post-gates; a catch on a teammate's branch is no escape), `prod`, `verify`, `other`
    - `gate_missed` — which layer should have caught it: `review` (bugs/quality), `drift-gate` (plan drift), `test-intent` (bug-pinning), `stage` (SAFE-tier invariant failed), `coder` (should never have been written), `eng-spec` (**defect was in the plan** — use whenever implementation faithfully matched a wrong spec, never `coder`).
-   - `class` — `bug` | `smell` | `duplication` | `complexity` | `plan-drift` | `test-gap` | `other` (`complexity` = code that need not have existed, the `/refactor simplify` class)
+   - `class` — `bug` | `smell` | `duplication` | `complexity` | `plan-drift` | `test-gap` | `docs` | `other` (`complexity` = code that need not have existed, the `/refactor simplify` class; `docs` = prose that is false or stale about the code: a comment, docstring, doc, ADR or run-time description, even when the code is right)
    - `severity` — `high` | `medium` | `low`
    - `desc` — one line, specific enough to be legible in 3 months (not stored; the row keeps the other fields)
    - `file` — representative path, if known
@@ -26,7 +26,7 @@ One escape = one defect found downstream of its gate. `/cc`/`/fix`/`/refactor`/`
 3. **Log it**:
 
    ```bash
-   ~/.claude/scripts/log-escape stage_found=<...> gate_missed=<...> class=<...> severity=<...> lane=<...> guard=<...> desc="<...>" file=<...>
+   ~/.claude/scripts/telemetry/log-escape stage_found=<...> gate_missed=<...> class=<...> severity=<...> lane=<...> guard=<...> desc="<...>" file=<...>
    ```
 
 4. **Confirm** by echoing the logged fields plus guard, then stop. Never fixes — route through `/fix`.

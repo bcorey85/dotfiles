@@ -1,4 +1,4 @@
-"""Checks for calibration-guard.py, the SessionStart hook that reports an unrestored calibration or mutation seed.
+"""Checks for calibration_guard.py, the SessionStart hook that reports an unrestored calibration or mutation seed.
 
 Set HOOK_SCRIPTS_DIR to run against another directory of scripts."""
 import json
@@ -9,7 +9,9 @@ import sys
 import tempfile
 import unittest
 
-SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts") / "calibration-guard.py"
+import toolkit_paths
+
+SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.GATES_DIR) / "calibration_guard.py"
 
 LOCK = "home/.local/state/claude-calibration/lock.json"
 FULL_LOCK = json.dumps({"file": "src/a.ts", "backup_path": "/tmp/a.ts.bak", "class": "off-by-one",
@@ -62,7 +64,9 @@ def run_hook(lock_text=None, old_lock_text=None, state_home=None):
         if old_lock_text is not None:
             old_lock_path.write_text(old_lock_text)
         finished = subprocess.run([sys.executable, str(SCRIPT)], capture_output=True, env=environment)
-        text = finished.stdout.decode("utf-8").replace(str(lock_path), "<LOCK>").replace(str(old_lock_path), "<OLD-LOCK>")
+        text = (
+            finished.stdout.decode("utf-8").replace(str(lock_path), "<LOCK>").replace(str(old_lock_path), "<OLD-LOCK>")
+        )
         return finished, text
 
 
@@ -92,7 +96,9 @@ class CalibrationGuardTest(unittest.TestCase):
 
     def test_mutation_kind_changes_the_headline(self):
         _, text = run_hook(json.dumps({"kind": "mutation-test"}))
-        self.assertTrue(text.startswith("⚠️  UNRESTORED MUTATION SEED — a previous mutation-tester run did not finish.\n"))
+        self.assertTrue(
+            text.startswith("⚠️  UNRESTORED MUTATION SEED — a previous mutation-tester run did not finish.\n")
+        )
 
     def test_unknown_or_missing_kind_is_a_calibration_seed(self):
         for lock in ('{"kind":"other"}', "{}", '{"kind":null}'):

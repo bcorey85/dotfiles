@@ -1,4 +1,4 @@
-"""Termination test for code-step.py: drive the script the way the /code subagent does and check every run ends.
+"""Termination test for code_step.py: drive the script the way the /code subagent does and check every run ends.
 
 The explorer starts from each entry verb. For every ACTION the script prints it feeds each outcome the script accepts
 (fake agent reports written into the files the script reads; Claude never runs), then calls the next verb. It walks
@@ -7,18 +7,22 @@ stop or an ask-user. It fails when it calls the same verb on the same saved stat
 when it passes STEP_LIMIT calls, or when a call crashes or prints no ACTION.
 
 Identical configurations reached by different paths are explored once. The verdict of a shared tail covers every path
-that reaches it. A hand-back starts a new segment: the user's answer (decide, asks-done, verify, start) is one more
-entry verb, so loops that only close through a user answer are not counted as stuck.
+that reaches it. A hand-back starts a new segment: the user's answer (decide, asks-done, resume, start) is one
+more entry verb, so loops that only close through a user answer are not counted as stuck.
+
+A hand-back must also leave the user a way out. Every command a hand-back names (in its output, or in the say.md and
+question.md it points to) is run on a copy of the repo, and none may be refused.
 """
+import atexit
 import collections
 import contextlib
-import atexit
 import importlib.util
 import io
 import json
 import os
 import pathlib
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -28,43 +32,69 @@ import traceback
 import unittest
 from unittest import mock
 
+import toolkit_paths
+
 HERE = pathlib.Path(__file__).parent
-REPO_SCRIPT = HERE.parent.parent / "claude" / ".claude" / "scripts" / "code-step.py"
+REPO_SCRIPT = HERE.parent.parent / "claude" / ".claude" / "scripts" / "code" / "code_step.py"
 SCRIPT = pathlib.Path(os.environ["CODE_STEP_SCRIPT"]) if os.environ.get("CODE_STEP_SCRIPT") else \
-    HERE / "code-step.py" if (HERE / "code-step.py").exists() else REPO_SCRIPT
-REAL_CLAUDE = SCRIPT.parent.parent if (SCRIPT.parent / "coder-gate.py").exists() else pathlib.Path.home() / ".claude"
-HANDBACK_SCRIPT = pathlib.Path(os.environ.get("HANDBACK_SCRIPT") or REAL_CLAUDE / "scripts" / "handback.py")
+    HERE / "code_step.py" if (HERE / "code_step.py").exists() else REPO_SCRIPT
+REAL_CLAUDE = SCRIPT.parent.parent.parent if (SCRIPT.parent / "coder_gate.py").exists() else toolkit_paths.CLAUDE_DIR
+SCRIPTS_ROOT = SCRIPT.parent.parent
+HANDBACK_SCRIPT = pathlib.Path(os.environ.get("HANDBACK_SCRIPT") or REAL_CLAUDE / "scripts" / "review" / "handback.py")
 sys.path.insert(0, str(HANDBACK_SCRIPT.parent))
 sys.path.insert(0, str(SCRIPT.parent))
-import script_utils  # noqa: F401  (loaded before handback, so handback and code-step share the script directory's copy)
+import functools
+import operator
+
 import handback
+import script_utils  # noqa: F401  (loaded before handback, so handback and code-step share the script directory's copy)
+
 STEP_LIMIT = 30
 MAX_HANDBACKS = 3
 NODE_BUDGET = 5000
-HAND_BACK_ACTIONS = ("ask-user", "stop", "judgment", "stop-block-B", "stop-block-C")
+# The plan-edit coder is reached only through an adopted plan change, deep in the tree. A second, small exploration
+# over those entries alone makes sure the plan-edit wait is covered whatever the other entries spend of the budget.
+PLAN_EDIT_NODE_BUDGET = 1500
+HAND_BACK_ACTIONS = ("ask-user", "stop", "rerun", "judgment", "stop-block-B", "stop-block-C")
+# The verbs a hand-back may name for the user to run.
+NAMEABLE_VERBS = ("start", "resume", "decide", "asks-done", "skill-done", "review-again", "tick", "verify",
+                  "after-coder", "after-review", "after-plan-edit")
+BACKTICKED_TEXT = re.compile(r"`([^`\n]+)`")
 
 TMP_ROOT = pathlib.Path(tempfile.mkdtemp(prefix="termination-"))
 CLAUDE_STUB = TMP_ROOT / "claude"
 (CLAUDE_STUB / "scripts").mkdir(parents=True)
 (CLAUDE_STUB / "skills/review").mkdir(parents=True)
-for scriptName in ("coder-gate.py", "coder-packet.py", "plan_format.py", "script_utils.py", "resolve-task-dir.sh"):
-    shutil.copy(SCRIPT.parent / scriptName if (SCRIPT.parent / scriptName).exists() else pathlib.Path.home() / ".claude/scripts" / scriptName, CLAUDE_STUB / "scripts" / scriptName)
-for stubName in ("scripts/log-scan", "skills/review/log-review-finding"):
-    stubFile = CLAUDE_STUB / stubName
-    stubFile.write_text("#!/usr/bin/env bash\nexit 0\n")
-    stubFile.chmod(0o755)
+for script_name in ("coder_gate.py", "coder_packet.py", "plan_format.py", "script_utils.py", "resolve-task-dir.sh",
+                    *toolkit_paths.CODE_STEP_MODULES, "shell_command.py", "makefile_text.py", "test_run_output.py"):
+    try:
+        source_file = toolkit_paths.script_in(SCRIPTS_ROOT, script_name)
+    except FileNotFoundError:
+        source_file = toolkit_paths.script_in(toolkit_paths.SCRIPTS_DIR, script_name)
+    staged_file = CLAUDE_STUB / "scripts" / source_file.parent.name / script_name
+    staged_file.parent.mkdir(exist_ok=True)
+    shutil.copy(source_file, staged_file)
+(CLAUDE_STUB / "scripts" / "telemetry").mkdir(exist_ok=True)
+for stub_name in ("scripts/telemetry/log-scan", "skills/review/log-review-finding"):
+    stub_file = CLAUDE_STUB / stub_name
+    stub_file.write_text("#!/usr/bin/env bash\nexit 0\n")
+    stub_file.chmod(0o755)
 GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
            "CODE_STEP_CLAUDE_DIR": str(CLAUDE_STUB), "CODE_STEP_WAIT_SECONDS": "0", "HOME": str(TMP_ROOT / "home"),
-           "CLAUDE_CODE_SESSION_ID": "sess-termination"}
+           "CODE_STEP_REVIEW_LOOP": "agent",
+           "CLAUDE_CODE_SESSION_ID": "sess-termination", "CODE_STEP_NVIM_JUMP": "true",
+           # The explorer makes no Agent calls and takes minutes: no dispatch may age into the launch grace period.
+           "CODE_STEP_LAUNCH_SECONDS": "1000000"}
 NO_ROW_YET_PRESETS = {"CODE_STEP_WAIT_SECONDS": "0.2", "CODE_STEP_POLL_SECONDS": "0.05"}
 
-# code-step.py reads CODE_STEP_CLAUDE_DIR once, at import. Set it only while the module loads, so the real log
+# code_step.py reads CODE_STEP_CLAUDE_DIR once, at import. Set it only while the module loads, so the real log
 # scripts and the live ~/.claude files are never reached and other test modules keep their environment.
 atexit.register(shutil.rmtree, TMP_ROOT, ignore_errors=True)
-moduleSpec = importlib.util.spec_from_file_location("code_step_under_test", SCRIPT)
-codeStep = importlib.util.module_from_spec(moduleSpec)
+module_spec = importlib.util.spec_from_file_location("code_step_under_test", SCRIPT)
+code_step = importlib.util.module_from_spec(module_spec)
 with mock.patch.dict(os.environ, {"CODE_STEP_CLAUDE_DIR": str(CLAUDE_STUB)}):
-    moduleSpec.loader.exec_module(codeStep)
+    module_spec.loader.exec_module(code_step)
+import code_step_core
 
 PLAN_DIR = "docs/plans/ORD-1-orders"
 PLAN_A = f"{PLAN_DIR}/spec.md"
@@ -115,7 +145,10 @@ Check every criterion.
 - none
 """
 PLAN_NO_PHASE_STATUS = "# P\n\n## Overview\n\nx\n\n## Phase 1: One\n\nDo it.\n"
-PLAN_NO_CRITERIA = "# P\n\n## Acceptance Criteria\n\n- c\n\n## Phase Status\n\n- [ ] Phase 1: One (risk: low)\n\n## Phase 1: One\n\nx\n"
+PLAN_NO_CRITERIA = (
+    "# P\n\n## Acceptance Criteria\n\n- c\n\n## Phase Status\n\n- [ ] Phase 1: One (risk: low)\n\n## "
+    "Phase 1: One\n\nx\n"
+)
 PLAN_SINGLE = "# Single\n\n## Overview\n\nDo `backend/src/single.ts`.\n"
 
 PLAN_EDIT_PLANS = {"docs/other/single.md": PLAN_SINGLE, "docs/other/no-status.md": PLAN_NO_PHASE_STATUS,
@@ -123,14 +156,22 @@ PLAN_EDIT_PLANS = {"docs/other/single.md": PLAN_SINGLE, "docs/other/no-status.md
 
 # ---------- fake agent outcomes ----------
 
-ASK_ONE = '{"finding": "f", "file_line": "backend/src/orders.ts:2", "question": "keep?", "gate": "code-reviewer", "class": "correctness"}'
-ASK_TWO = '{"finding": "g", "file_line": "backend/src/orders.ts:3", "question": "drop?", "gate": "code-reviewer", "class": "other"}'
+ASK_ONE = (
+    '{"finding": "f", "file_line": "backend/src/orders.ts:2", "question": "keep?", "gate": "code-reviewer", '
+    '"class": "correctness"}'
+)
+ASK_TWO = (
+    '{"finding": "g", "file_line": "backend/src/orders.ts:3", "question": "drop?", "gate": "code-reviewer", '
+    '"class": "other"}'
+)
 REVIEW_OUTCOMES = {
     "converged-clean": "status: converged\niter: 1\nfixed: []\nask: []\nnit: []",
-    "converged-fixed": 'status: converged\niter: 2\nfixed:\n- {finding: "x", file_line: "backend/src/orders.ts:1", blocker: false}\nask: []',
+    "converged-fixed": 'status: converged\niter: 2\nfixed:\n- {finding: "x", file_line: "backend/src/orders.ts:1", '
+                       'blocker: false}\nask: []',
     "converged-ask1": f"status: converged\niter: 1\nfixed: []\nask: [{ASK_ONE}]",
     "converged-ask2": f"status: converged\niter: 1\nfixed: []\nask: [{ASK_ONE}, {ASK_TWO}]",
-    "deferred-ask": f'status: deferred\niter: 1\nfindings_remaining:\n- {{finding: "d", file_line: "a.ts:2"}}\nask: [{ASK_ONE}]',
+    "deferred-ask": f'status: deferred\niter: 1\nfindings_remaining:\n- {{finding: "d", file_line: "a.ts:2"}}\nask: '
+                    f'[{ASK_ONE}]',
     "critical-blocker": 'status: critical-blocker\niter: 1\nblockers:\n- {finding: "b", file_line: "a.ts:1"}',
     "cap-reached": 'status: cap-reached\niter: 3\nfindings_remaining:\n- {finding: "r", file_line: "a.ts:1"}',
     "plan-impact": "status: plan-impact\niter: 1\nplan_impact: |\n  assumed: a\n  changes: b",
@@ -156,35 +197,69 @@ CODER_OUTCOMES = {
 PLAN_EDIT_OUTCOMES = ("plan-edited", "plan-edited-and-stray-file", "plan-not-edited")
 
 
-def write_text(repo, relativePath, text):
-    target = repo / relativePath
+def write_text(repo, relative_path, text):
+    target = repo / relative_path
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(text)
 
 
-def apply_coder_outcome(repo, name, uniqueText):
-    files, flag, gateResult, report = CODER_OUTCOMES[name]
+def apply_coder_outcome(repo, name, unique_text):
+    files, flag, gate_result, report = CODER_OUTCOMES[name]
     if "src" in files:
-        write_text(repo, "backend/src/orders.ts", f"export const o = '{uniqueText}'\n")
+        write_text(repo, "backend/src/orders.ts", f"export const o = '{unique_text}'\n")
     if flag:
         write_text(repo, "verify.flag", "ok\n")
-    gatePath = repo / ".git/coder-gate.json"
-    if gatePath.exists():
-        gate = json.loads(gatePath.read_text())
-        if gateResult == "never":
+    gate_path = repo / ".git/coder-gate.json"
+    if gate_path.exists():
+        gate = json.loads(gate_path.read_text())
+        if gate_result == "never":
             gate["coders"] = {}
-        elif gateResult == "cap":
-            gate["coders"] = {"a1": {"runs": 4, "denies": 3, "failed": gate["commands"][:1], "skipped": [], "result": "cap"}}
+        elif gate_result == "cap":
+            gate["coders"] = {
+                "a1": {"runs": 4, "denies": 3, "failed": gate["commands"][:1], "skipped": [], "result": "cap"}
+            }
         else:
             gate["coders"] = {"a1": {"runs": 1, "denies": 0, "failed": [], "skipped": [], "result": "pass"}}
-        gatePath.write_text(json.dumps(gate))
+        gate_path.write_text(json.dumps(gate))
     return report
 
 
-def store_review_loop_report(repo, message):
+SESSION = GIT_ENV["CLAUDE_CODE_SESSION_ID"]
+REVIEW_AGENT_ID = "a1"
+
+
+def launch_the_pending_dispatch(repo):
+    # A hand-back counts only from the agent the pending dispatch launched. Log that launch, as the log hook does after
+    # the Agent call. A dispatch that is already launched keeps its launch.
+    run_id = load_saved_state(repo).get("runId")
+    if not run_id:
+        return
+
+    events = code_step_core.read_events(repo, run_id)
+    dispatches = [event for event in events if event["event"] == "dispatch"]
+    if not dispatches:
+        return
+
+    dispatch_id = dispatches[-1]["id"]
+    if any(event["event"] == "launch" and event.get("dispatch") == dispatch_id for event in events):
+        return
+
+    code_step_core.log_event(repo, run_id, "launch", SESSION, agent_id=REVIEW_AGENT_ID, dispatch=dispatch_id)
+
+
+def send_message_to(agent_id):
+    # The setup for a user answer that reached the agent with SendMessage: the log hook records it as a resume.
+    def setup(repo):
+        run_id = load_saved_state(repo).get("runId")
+        code_step_core.log_event(repo, run_id, "resume", SESSION, agent_id=agent_id)
+
+    return setup
+
+
+def store_review_loop_report(repo, message, agent_id="a1"):
     # The shared hand-back store records a review-loop dispatch and its hand-back. A packet that does not parse is
     # refused once and recorded when the agent hands back again, as the real hook does.
-    event = {"session_id": GIT_ENV["CLAUDE_CODE_SESSION_ID"], "agent_type": "review-loop", "agent_id": "a1",
+    event = {"session_id": GIT_ENV["CLAUDE_CODE_SESSION_ID"], "agent_type": "review-loop", "agent_id": agent_id,
              "tool_input": {"message": message}}
     with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(repo / ".git/handback-store")}):
         handback.handle_hook({**event, "tool_input": {"subagent_type": "review-loop"}}, "dispatch")
@@ -192,28 +267,29 @@ def store_review_loop_report(repo, message):
             handback.handle_hook(event, "handback")
 
 
-def save_report(repo, agentType, message):
-    if agentType == "review-loop":
-        store_review_loop_report(repo, message)
-    stateFile = repo / ".git/code-step/state.json"
-    stage = json.loads(stateFile.read_text())["stage"]
-    row = {"ts": time.time(), "agent_type": agentType, "agent_id": "a1", "stage": stage, "message": message}
-    with (repo / ".git/code-step/reports.jsonl").open("a") as reportsFile:
-        reportsFile.write(json.dumps(row) + "\n")
+def save_report(repo, agent_type, message, agent_id="a1"):
+    # The log hook records a hand-back that went through; the dispatch it answers is launched first.
+    if agent_type == "review-loop":
+        store_review_loop_report(repo, message, agent_id)
+    launch_the_pending_dispatch(repo)
+    run_id = load_saved_state(repo).get("runId")
+    code_step_core.log_event(repo, run_id, "handback", SESSION, agent_id=agent_id, agent_type=agent_type,
+                             message=message)
 
 
-def date_dispatch_now(repo):
-    stateFile = repo / ".git/code-step/state.json"
-    saved = json.loads(stateFile.read_text())
+def date_dispatch_now_and_launch(repo):
+    state_file = repo / ".git/code-step/state.json"
+    saved = json.loads(state_file.read_text())
     saved["dispatchAt"] = time.time()
-    stateFile.write_text(json.dumps(saved, indent=1))
+    state_file.write_text(json.dumps(saved, indent=1))
+    launch_the_pending_dispatch(repo)
 
 
-def apply_plan_edit_outcome(repo, name, planPath):
+def apply_plan_edit_outcome(repo, name, plan_path):
     if name == "plan-not-edited":
         return
-    planFile = repo / planPath
-    planFile.write_text(planFile.read_text().replace("Add orders.", "Add orders, with the adopted change."))
+    plan_file = repo / plan_path
+    plan_file.write_text(plan_file.read_text().replace("Add orders.", "Add orders, with the adopted change."))
     if name == "plan-edited-and-stray-file":
         write_text(repo, "backend/src/stray.ts", "export const s = 1\n")
 
@@ -223,9 +299,23 @@ def apply_plan_edit_outcome(repo, name, planPath):
 def build_template():
     template = TMP_ROOT / "template"
     template.mkdir()
-    subprocess.run(["git", "init", "-q", "-b", "ORD-1-work", "--template="], cwd=template, check=True, capture_output=True)
-    write_text(template, "backend/package.json", json.dumps({
-        "scripts": {"typecheck": "tsc --noEmit", "lint": "eslint ."}, "devDependencies": {"vitest": "1", "eslint": "9"}}))
+    subprocess.run(
+        ["git", "init", "-q", "-b", "ORD-1-work", "--template="], cwd=template, check=True, capture_output=True
+    )
+    # A commit starts a detached git maintenance run. Its lock file vanishes while copytree copies the template.
+    for setting in (["maintenance.auto", "false"], ["gc.auto", "0"]):
+        subprocess.run(["git", "config", *setting], cwd=template, check=True, capture_output=True)
+
+    write_text(
+        template,
+        "backend/package.json",
+        json.dumps(
+            {
+                "scripts": {"typecheck": "tsc --noEmit", "lint": "eslint ."},
+                "devDependencies": {"vitest": "1", "eslint": "9"},
+            }
+        ),
+    )
     write_text(template, "backend/src/existing.ts", "export const a = 1\n")
     write_text(template, PLAN_A, PLAN_A_TEXT)
     write_text(template, f"{PLAN_DIR}/acceptance-criteria.md", "AC-1 orders exist\n")
@@ -238,29 +328,29 @@ def build_template():
 
 def call_script(repo, presets, argv):
     # Run one verb in-process. Returns (stdout, crashTraceback or None).
-    scriptEnv = {name: value for name, value in os.environ.items()
+    script_env = {name: value for name, value in os.environ.items()
                  if name not in ("CODE_STEP_IMPACT_DECISION", "CODE_STEP_ASKS_OUTCOME")}
-    scriptEnv.update(GIT_ENV)
-    scriptEnv["HANDBACK_STORE_DIR"] = str(repo / ".git/handback-store")
-    scriptEnv.update(presets)
-    previousDirectory = os.getcwd()
-    previousArgv = sys.argv
+    script_env.update(GIT_ENV)
+    script_env["HANDBACK_STORE_DIR"] = str(repo / ".git/handback-store")
+    script_env.update(presets)
+    previous_directory = os.getcwd()
+    previous_argv = sys.argv
     os.chdir(repo)
-    sys.argv = ["code-step.py", *argv]
+    sys.argv = ["code_step.py", *argv]
     captured = io.StringIO()
     crash = None
     try:
-        with mock.patch.dict(os.environ, scriptEnv, clear=True), \
+        with mock.patch.dict(os.environ, script_env, clear=True), \
                 contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
             try:
-                codeStep.main()
+                code_step.main()
             except SystemExit as stopped:
                 captured.write(f"[exit: {stopped.code}]\n")
     except Exception:
         crash = traceback.format_exc()
     finally:
-        os.chdir(previousDirectory)
-        sys.argv = previousArgv
+        os.chdir(previous_directory)
+        sys.argv = previous_argv
     return captured.getvalue(), crash
 
 
@@ -275,11 +365,11 @@ def parse_action(output):
 
 
 def load_saved_state(repo):
-    stateFile = repo / ".git/code-step/state.json"
-    if not stateFile.exists():
+    state_file = repo / ".git/code-step/state.json"
+    if not state_file.exists():
         return {}
     try:
-        return json.loads(stateFile.read_text())
+        return json.loads(state_file.read_text())
     except ValueError:
         return {"unreadable": True}
 
@@ -287,13 +377,23 @@ def load_saved_state(repo):
 def plan_progress(repo):
     # Which phases are checked, so finishing a phase counts as progress and not as a repeat.
     progress = []
-    for planFile in sorted((repo / "docs").rglob("*.md")):
-        progress.append(planFile.name + ":" + "".join("x" if line.startswith("- [x]") else "" for line in planFile.read_text().splitlines()))
+    for plan_file in sorted((repo / "docs").rglob("*.md")):
+        progress.append(
+            plan_file.name
+            + ":"
+            + "".join("x" if line.startswith("- [x]") else "" for line in plan_file.read_text().splitlines())
+        )
     return "|".join(progress)
 
 
-IGNORED_STATE_KEYS = ("startedAt", "baseline", "planEditBaseline", "asksBaseline", "sessionId", "dispatchAt", "forkDenied",
-                      "forkStopBlocks")
+IGNORED_STATE_KEYS = (
+    "startedAt",
+    "baseline",
+    "planEditBaseline",
+    "asksBaseline",
+    "sessionId",
+    "dispatchAt",
+)
 
 
 MINUTE_STAMP = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}")
@@ -303,25 +403,26 @@ def state_signature(repo):
     # The script stamps each ruling with the wall-clock minute. Two visits to one state a minute apart must still
     # compare equal, or whether a loop is caught depends on when the run happens to cross a minute.
     state = {key: value for key, value in load_saved_state(repo).items() if key not in IGNORED_STATE_KEYS}
-    stateText = MINUTE_STAMP.sub("<minute>", json.dumps(state, sort_keys=True))
-    return stateText + "#" + plan_progress(repo)
+    state_text = MINUTE_STAMP.sub("<minute>", json.dumps(state, sort_keys=True))
+    return state_text + "#" + plan_progress(repo)
 
 
 # ---------- the explorer ----------
 
 class Node:
-    def __init__(self, repo, presets, action, agent, history, stepsInSegment, seenInSegment, handbacks,
-                 ancestorsInSegment=frozenset(), ancestorAnswers=None, answerCount=0):
-        self.ancestorsInSegment = ancestorsInSegment
-        self.ancestorAnswers = ancestorAnswers or {}
-        self.answerCount = answerCount
+    def __init__(self, repo, presets, action, agent, history, steps_in_segment, seen_in_segment, handbacks,
+                 ancestors_in_segment=frozenset(), ancestor_answers=None, answer_count=0, hand_back_commands=()):
+        self.hand_back_commands = hand_back_commands
+        self.ancestors_in_segment = ancestors_in_segment
+        self.ancestor_answers = ancestor_answers or {}
+        self.answer_count = answer_count
         self.repo = repo
         self.presets = presets
         self.action = action
         self.agent = agent
         self.history = history
-        self.stepsInSegment = stepsInSegment
-        self.seenInSegment = seenInSegment
+        self.steps_in_segment = steps_in_segment
+        self.seen_in_segment = seen_in_segment
         self.handbacks = handbacks
 
 
@@ -337,28 +438,86 @@ def user_answers(repo):
     # What the user can say after a hand-back: each is one more entry verb into a new run.
     state = load_saved_state(repo)
     stage = state.get("stage")
-    answers = []
+    reason = state.get("stopReason")
+    is_stopped = stage == "stopped"
+    answers = [
+        ("resume", ["resume"], None),
+        ("start", ["start"], None),
+        ("start --restart", ["start", "--restart"], None),
+        ("start after-review", ["start", "after-review"], None),
+    ]
     if stage in ("impact-coder", "impact-review"):
         ruling = ["--by", "user", "--ruling", "the user's words"]
-        sessionRuling = ["--by", "session", "--ruling", "the session's words"]
-        answers += [("decide adopt", ["decide", "adopt", *ruling], None), ("decide keep", ["decide", "keep", *ruling], None),
-                    ("decide adopt by session", ["decide", "adopt", *sessionRuling], None),
-                    ("decide keep by session", ["decide", "keep", *sessionRuling], None),
-                    ("decide keep without --by", ["decide", "keep", "--ruling", "the user's words"], None),
-                    ("decide keep without a ruling", ["decide", "keep"], None),
-                    ("decide discuss", ["decide", "discuss"], None), ("decide bogus", ["decide", "maybe"], None)]
+        session_ruling = ["--by", "session", "--ruling", "the session's words"]
+        answers += [
+            ("decide adopt", ["decide", "adopt", *ruling], None),
+            ("decide keep", ["decide", "keep", *ruling], None),
+            ("decide adopt by session", ["decide", "adopt", *session_ruling], None),
+            ("decide keep by session", ["decide", "keep", *session_ruling], None),
+            ("decide keep without --by", ["decide", "keep", "--ruling", "the user's words"], None),
+            ("decide keep without a ruling", ["decide", "keep"], None),
+            ("decide discuss", ["decide", "discuss"], None),
+            ("decide bogus", ["decide", "maybe"], None),
+        ]
     if stage == "asks":
         count = len(state.get("asks", []))
-        answers += [("asks-done all accepted", ["asks-done"] + ["accepted"] * count, None),
-                    ("asks-done all rejected", ["asks-done"] + ["rejected"] * count, None),
-                    ("asks-done all modified", ["asks-done"] + sum([["modified", "--change", "use X"]] * count, []), None)]
-    if stage == "stopped" and state.get("stopReason") == "invalid-packet":
+        answers += [
+            ("asks-done all accepted", ["asks-done"] + ["accepted"] * count, None),
+            ("asks-done all rejected", ["asks-done"] + ["rejected"] * count, None),
+            (
+                "asks-done all modified",
+                ["asks-done", *functools.reduce(operator.iadd, [["modified", "--change", "use X"]] * count, [])],
+                None,
+            ),
+        ]
+    if stage == "skill":
+        answers += [
+            ("skill-done pass", ["skill-done", "pass"], None),
+            ("skill-done fail", ["skill-done", "fail"], None),
+        ]
+    if is_stopped and reason == "invalid-packet":
         answers += [("review-again", ["review-again"], None)]
-    if stage == "stopped" and state.get("stopReason") in ("verification", "plan-format"):
+    if is_stopped and code_step.awaits_resumed_review(state):
+        answers += [("review-again", ["review-again"], None),
+                    ("resume after SendMessage to the review-loop", ["resume"], send_message_to(REVIEW_AGENT_ID))]
+    if is_stopped and code_step.awaits_resumed_coder(state):
+        answers += [("resume after SendMessage to the coder", ["resume"], send_message_to(state["resumableCoderId"]))]
+    if is_stopped and reason in ("verification", "plan-format"):
         answers += [("verify (still failing)", ["verify"], None),
                     ("verify (fixed)", ["verify"], lambda repo: write_text(repo, "verify.flag", "ok\n"))]
-    answers += [("start", ["start"], None)]
     return answers
+
+
+def verb_words(quoted_text):
+    # "python3 <path>/code_step.py start --restart" and "start --restart" both give ["start", "--restart"]. Text that is
+    # not a script verb, or that holds a placeholder the user fills in, gives None.
+    words = quoted_text.replace("COMMAND: ", "").split("code_step.py ", 1)[-1].strip()
+    if "<" in words or words.split(" ", 1)[0] not in NAMEABLE_VERBS:
+        return None
+
+    try:
+        return shlex.split(words)
+    except ValueError:
+        return None
+
+
+def named_commands(text):
+    # Every script command the text tells the reader to run: inside backticks, or on a COMMAND: line.
+    candidates = BACKTICKED_TEXT.findall(text)
+    candidates += [line for line in text.splitlines() if line.startswith("COMMAND: ")]
+    commands = []
+    for candidate in candidates:
+        argv = verb_words(candidate)
+        if argv and argv not in commands:
+            commands.append(argv)
+    return commands
+
+
+def saved_say_text(repo):
+    # say.md, then question.md: the two files a hand-back points to.
+    state_folder = repo / ".git/code-step"
+    saved_files = [state_folder / "say.md", state_folder / "question.md"]
+    return "".join(saved_file.read_text() for saved_file in saved_files if saved_file.exists())
 
 
 def commit_everything(repo):
@@ -371,82 +530,87 @@ def children_of(node):
     state = load_saved_state(node.repo)
     stage = state.get("stage")
     children = []
-    waitingOn = None
-    isPlanEdit = stage == "plan-coder" and node.action in ("dispatch", "wait")
-    if node.action == "wait" and not isPlanEdit:
-        waitingOn = "coder" if stage in ("coder", "asks-coder") else "review-loop"
+    waiting_on = None
+    is_plan_edit = stage == "plan-coder" and node.action in ("dispatch", "wait")
+    if node.action == "wait" and not is_plan_edit:
+        waiting_on = "coder" if stage in ("coder", "asks-coder") else "review-loop"
     if node.action == "dispatch" and node.agent in ("coder", "review-loop"):
         # The agent has not handed back when the verb that follows the dispatch runs: the verb says to run it again.
-        verb = "after-review" if node.agent == "review-loop" else "after-coder"
-        setup = lambda repo: None
-        if isPlanEdit:
-            # The saved dispatch is older than the wait cap by now: date it again so the wait itself is tried.
-            verb, setup = "after-plan-edit", date_dispatch_now
-        children.append(("[no report yet]", setup, [verb], NO_ROW_YET_PRESETS))
-    if isPlanEdit:
+        # A plan-edit dispatch is older than the wait cap by now: date it again so the wait itself is tried.
+        setup = date_dispatch_now_and_launch if is_plan_edit else launch_the_pending_dispatch
+        children.append(("[no report yet]", setup, ["resume"], NO_ROW_YET_PRESETS))
+        if node.agent == "review-loop":
+            children.append(("[no report yet, launch not logged]", lambda repo: None, ["resume"], NO_ROW_YET_PRESETS))
+    if is_plan_edit:
         for name in PLAN_EDIT_OUTCOMES:
             def setup(repo, name=name):
                 apply_plan_edit_outcome(repo, name, state["plan"])
                 save_report(repo, "coder", "plan edited")
-            children.append((f"[plan-edit coder: {name}]", setup, ["after-plan-edit"]))
-    elif waitingOn == "coder" or (node.action == "dispatch" and node.agent == "coder"):
+            children.append((f"[plan-edit coder: {name}]", setup, ["resume"]))
+    elif waiting_on == "coder" or (node.action == "dispatch" and node.agent == "coder"):
         for name in CODER_OUTCOMES:
             def setup(repo, name=name):
                 report = apply_coder_outcome(repo, name, f"v{len(node.history)}")
                 if report is not None:
                     save_report(repo, "coder", report)
-            children.append((f"[coder: {name}]", setup, ["after-coder"]))
-    elif waitingOn == "review-loop" or (node.action == "dispatch" and node.agent == "review-loop"):
-        isAnswered = state.get("planImpact", "none") != "none"
+            children.append((f"[coder: {name}]", setup, ["resume"]))
+    elif waiting_on == "review-loop" or (node.action == "dispatch" and node.agent == "review-loop"):
+        is_answered = state.get("planImpact", "none") != "none"
         for name, message in REVIEW_OUTCOMES.items():
             # A reviewer re-raises an answered question unless the dispatch tells it the question is resolved.
-            if name.startswith("plan-impact") and isAnswered and "RESOLVED" in state.get("lastReviewPrompt", ""):
+            if name.startswith("plan-impact") and is_answered and "RESOLVED" in state.get("lastReviewPrompt", ""):
                 continue
             def setup(repo, message=message):
+                launch_the_pending_dispatch(repo)
                 if message is not None:
                     save_report(repo, "review-loop", message)
-            children.append((f"[review-loop: {name}]", setup, ["after-review"]))
+            children.append((f"[review-loop: {name}]", setup, ["resume"]))
+        if node.action == "dispatch":
+            def setup_other_agent(repo):
+                launch_the_pending_dispatch(repo)
+                save_report(repo, "review-loop", REVIEW_OUTCOMES["converged-clean"], agent_id="other-agent")
+            children.append(("[review-loop: converged-clean from another agent]", setup_other_agent, ["resume"],
+                             NO_ROW_YET_PRESETS))
     elif node.action in ("invoke-skill", "dispatch"):
         for verdict in ("pass", "fail", "bogus"):
             children.append((f"[skill result: {verdict}]", lambda repo: None, ["skill-done", verdict]))
     elif node.action == "auto-advance":
-        modifier = state.get("modifier")
-        startVerb = ["start"] + ([modifier] if modifier else [])
-        children.append(("[auto-advance, commit not run]", lambda repo: None, startVerb))
-        children.append(("[auto-advance, commit run first]", commit_everything, startVerb))
+        children.append(("[auto-advance, commit not run]", lambda repo: None, ["resume"]))
+        children.append(("[auto-advance, commit run first]", commit_everything, ["resume"]))
     return children
 
 
 class Explorer:
-    def __init__(self, template):
+    def __init__(self, template, node_budget=NODE_BUDGET):
         self.template = template
-        self.nodeCount = 0
+        self.node_budget = node_budget
+        self.node_count = 0
         self.visited = {}
         self.edges = collections.defaultdict(list)
         self.failures = []
         self.queue = collections.deque()
-        self.budgetHit = False
+        self.budget_hit = False
         self.roots = []
-        self.planEditCallsFromWait = 0
+        self.plan_edit_calls_from_wait = 0
 
     def new_repo(self):
-        self.nodeCount += 1
-        target = TMP_ROOT / f"n{self.nodeCount}"
+        self.node_count += 1
+        target = TMP_ROOT / f"budget{self.node_budget}-n{self.node_count}"
         shutil.copytree(self.template, target, symlinks=True)
         return target
 
-    def run_step(self, parent, repo, label, argv, presets, newSegment, nodeId, callPresets=None):
+    def run_step(self, parent, repo, label, argv, presets, new_segment, node_id, call_presets=None):
         # Run one verb on the copied repo. Returns the new node, or None when the path ended (pass or fail).
-        verbText = " ".join(argv)
-        history = parent.history + [f"{label} {verbText}"] if parent else [f"{verbText}"]
-        steps = 1 if newSegment else parent.stepsInSegment + 1
-        seen = frozenset() if newSegment else parent.seenInSegment
-        handbacks = (parent.handbacks + (1 if newSegment else 0)) if parent else 0
+        verb_text = " ".join(argv)
+        history = [*parent.history, f"{label} {verb_text}"] if parent else [f"{verb_text}"]
+        steps = 1 if new_segment else parent.steps_in_segment + 1
+        seen = frozenset() if new_segment else parent.seen_in_segment
+        handbacks = (parent.handbacks + (1 if new_segment else 0)) if parent else 0
 
-        stepKey = (verbText, label if not newSegment else "", state_signature(repo))
-        if stepKey in seen:
-            self.failures.append(Failure("repeated (verb, state)", history, f"{verbText} on {stepKey[2][:600]}",
-                                         self.cycle_of(history, stepKey, parent)))
+        step_key = (verb_text, label if not new_segment else "", state_signature(repo))
+        if step_key in seen:
+            self.failures.append(Failure("repeated (verb, state)", history, f"{verb_text} on {step_key[2][:600]}",
+                                         self.cycle_of(history, step_key, parent)))
             return "fail"
         if steps > STEP_LIMIT:
             self.failures.append(Failure(f"over the {STEP_LIMIT}-step limit", history, "", history[-6:]))
@@ -454,9 +618,9 @@ class Explorer:
 
         if parent and parent.action == "wait" and label.startswith("[plan-edit coder:") \
                 and load_saved_state(parent.repo).get("stage") == "plan-coder":
-            self.planEditCallsFromWait += 1
+            self.plan_edit_calls_from_wait += 1
 
-        output, crash = call_script(repo, {**presets, **(callPresets or {})}, argv)
+        output, crash = call_script(repo, {**presets, **(call_presets or {})}, argv)
         action, agent = parse_action(output)
         if crash:
             self.failures.append(Failure("crash", history, crash.strip().splitlines()[-1], history[-2:]))
@@ -464,27 +628,37 @@ class Explorer:
         if action is None:
             self.failures.append(Failure("no ACTION line", history, output.strip()[-200:], history[-2:]))
             return "fail"
-        isRuledDecision = (argv[0] == "decide" and argv[1:2] in (["adopt"], ["keep"]) and "--ruling" in argv
-                           and argv[argv.index("--by") + 1:][:1] in (["user"], ["session"]) if "--by" in argv else False)
-        isAnswer = newSegment and (isRuledDecision or argv[0] == "asks-done")
-        answerCount = (parent.answerCount if parent else 0) + (1 if isAnswer else 0)
-        ancestorsInSegment = frozenset() if newSegment or parent is None else parent.ancestorsInSegment | {parent.nodeId}
-        ancestorAnswers = dict(parent.ancestorAnswers) if parent and argv[0] != "start" else {}
-        if parent and argv[0] != "start":
-            ancestorAnswers[parent.nodeId] = parent.answerCount
-        node = Node(repo, presets, action, agent, history, steps, seen | {stepKey}, handbacks, ancestorsInSegment,
-                    ancestorAnswers, answerCount)
+        is_ruled_decision = (
+            argv[0] == "decide"
+            and argv[1:2] in (["adopt"], ["keep"])
+            and "--ruling" in argv
+            and argv[argv.index("--by") + 1 :][:1] in (["user"], ["session"])
+            if "--by" in argv
+            else False
+        )
+        is_answer = new_segment and (is_ruled_decision or argv[0] == "asks-done")
+        answer_count = (parent.answer_count if parent else 0) + (1 if is_answer else 0)
+        ancestors_in_segment = (
+            frozenset() if new_segment or parent is None else parent.ancestors_in_segment | {parent.node_id}
+        )
+        starts_again = argv[0] == "start"
+        ancestor_answers = dict(parent.ancestor_answers) if parent and not starts_again else {}
+        if parent and not starts_again:
+            ancestor_answers[parent.node_id] = parent.answer_count
+        hand_back_commands = named_commands(output + saved_say_text(repo)) if action in HAND_BACK_ACTIONS else ()
+        node = Node(repo, presets, action, agent, history, steps, seen | {step_key}, handbacks, ancestors_in_segment,
+                    ancestor_answers, answer_count, hand_back_commands)
         return node
 
-    def cycle_of(self, history, stepKey, parent):
+    def cycle_of(self, history, step_key, parent):
         # The verbs between the first and the second call of the repeated pair.
-        verbText, label = stepKey[0], stepKey[1]
-        marker = f"{label} {verbText}" if label else verbText
+        verb_text, label = step_key[0], step_key[1]
+        marker = f"{label} {verb_text}" if label else verb_text
         positions = [index for index, entry in enumerate(history[:-1]) if entry == marker]
         start = positions[-1] if positions else 0
         return history[start:]
 
-    def cycle_between(self, node, nodeId):
+    def cycle_between(self, node, node_id):
         # The calls since this configuration was last seen: they are the loop.
         return node.history[-8:]
 
@@ -492,114 +666,157 @@ class Explorer:
         state = state_signature(node.repo)
         return (node.action, node.agent, tuple(sorted(node.presets.items())), state)
 
-    def explore_root(self, rootLabel, argv, presets):
+    def explore_root(self, root_label, argv, presets):
         repo = self.new_repo()
         result = self.run_step(None, repo, "", argv, presets, True, None)
         if result == "fail":
             return None
-        rootId = self.register(result, None, rootLabel)
-        self.roots.append(rootId)
-        return rootId
+        root_id = self.register(result, None, root_label)
+        self.roots.append(root_id)
+        return root_id
 
-    def register(self, node, parentId, label):
-        nodeId = self.node_id(node)
-        node.nodeId = nodeId
-        if nodeId in node.ancestorsInSegment:
-            self.failures.append(Failure("repeated (verb, state)", node.history, f"back at {nodeId[0]} {nodeId[1] or ''} on "
-                                         f"{nodeId[3][:600]}", self.cycle_between(node, nodeId)))
-            self.edges[parentId].append("LEAF")
+    def register(self, node, parent_id, label):
+        node_id = self.node_id(node)
+        node.node_id = node_id
+        if node_id in node.ancestors_in_segment:
+            self.failures.append(
+                Failure(
+                    "repeated (verb, state)",
+                    node.history,
+                    f"back at {node_id[0]} {node_id[1] or ''} on {node_id[3][:600]}",
+                    self.cycle_between(node, node_id),
+                )
+            )
+            self.edges[parent_id].append("LEAF")
             return None
-        if nodeId in node.ancestorAnswers and node.answerCount > node.ancestorAnswers[nodeId]:
+        if node_id in node.ancestor_answers and node.answer_count > node.ancestor_answers[node_id]:
             self.failures.append(Failure("question answered, then asked again (across hand-backs)", node.history,
-                                         f"back at {nodeId[0]} {nodeId[1] or ''} on {nodeId[3][:600]}",
-                                         self.cycle_between(node, nodeId)))
-            self.edges[parentId].append("LEAF")
+                                         f"back at {node_id[0]} {node_id[1] or ''} on {node_id[3][:600]}",
+                                         self.cycle_between(node, node_id)))
+            self.edges[parent_id].append("LEAF")
             return None
-        if parentId is not None:
-            self.edges[parentId].append(nodeId)
-        if nodeId in self.visited:
+        if parent_id is not None:
+            self.edges[parent_id].append(node_id)
+        if node_id in self.visited:
             shutil.rmtree(node.repo, ignore_errors=True)
-            return nodeId
-        self.visited[nodeId] = True
-        self.queue.append((nodeId, node))
-        return nodeId
+            return node_id
+        self.visited[node_id] = True
+        self.queue.append((node_id, node))
+        return node_id
 
-    def expand(self, nodeId, node):
+    def check_named_commands(self, node):
+        # A hand-back that names a command for the user to run must not name one the script then refuses.
+        for argv in node.hand_back_commands:
+            if self.node_count > self.node_budget:
+                self.budget_hit = True
+                return
+
+            repo = self.new_repo()
+            shutil.rmtree(repo)
+            shutil.copytree(node.repo, repo, symlinks=True)
+            output, crash = call_script(repo, node.presets, argv)
+            shutil.rmtree(repo, ignore_errors=True)
+            history = [*node.history, f"[user: the named command] {' '.join(argv)}"]
+            if crash:
+                self.failures.append(Failure("crash", history, crash.strip().splitlines()[-1], history[-2:]))
+                continue
+
+            refusal = next((line for line in output.splitlines() if line.startswith("Refused:")), None)
+            if refusal:
+                self.failures.append(Failure("dead end: a named command is refused", history, refusal, history[-2:]))
+
+    def expand(self, node_id, node):
         if node.action in HAND_BACK_ACTIONS:
+            self.check_named_commands(node)
             if node.handbacks >= MAX_HANDBACKS:
                 return
             for label, argv, setup in user_answers(node.repo):
-                self.step_child(node, nodeId, f"[user: {label}]", argv, setup, True)
+                self.step_child(node, node_id, f"[user: {label}]", argv, setup, True)
             return
-        for label, setup, argv, *callPresets in children_of(node):
-            self.step_child(node, nodeId, label, argv, setup, False, callPresets[0] if callPresets else {})
+        for label, setup, argv, *call_presets in children_of(node):
+            self.step_child(node, node_id, label, argv, setup, False, call_presets[0] if call_presets else {})
 
-    def step_child(self, node, nodeId, label, argv, setup, newSegment, callPresets=None):
-        if self.nodeCount > NODE_BUDGET:
-            self.budgetHit = True
+    def step_child(self, node, node_id, label, argv, setup, new_segment, call_presets=None):
+        if self.node_count > self.node_budget:
+            self.budget_hit = True
             return
         repo = self.new_repo()
         shutil.rmtree(repo)
         shutil.copytree(node.repo, repo, symlinks=True)
         if setup:
             setup(repo)
-        result = self.run_step(node, repo, label, argv, node.presets, newSegment, nodeId, callPresets or {})
+        result = self.run_step(node, repo, label, argv, node.presets, new_segment, node_id, call_presets or {})
         if result == "fail":
             shutil.rmtree(repo, ignore_errors=True)
-            self.edges[nodeId].append("LEAF")
+            self.edges[node_id].append("LEAF")
             return
-        self.register(result, nodeId, label)
+        self.register(result, node_id, label)
 
     def run(self, entries):
-        for rootLabel, argv, presets in entries:
-            self.explore_root(rootLabel, argv, presets)
+        for root_label, argv, presets in entries:
+            self.explore_root(root_label, argv, presets)
         while self.queue:
-            nodeId, node = self.queue.popleft()
-            self.expand(nodeId, node)
+            node_id, node = self.queue.popleft()
+            self.expand(node_id, node)
             if node.action not in HAND_BACK_ACTIONS and not children_of(node):
-                self.edges[nodeId].append("LEAF")
+                self.edges[node_id].append("LEAF")
             shutil.rmtree(node.repo, ignore_errors=True)
-            if not self.edges[nodeId]:
-                self.edges[nodeId].append("LEAF")
-            if self.nodeCount > NODE_BUDGET:
-                self.budgetHit = True
+            if not self.edges[node_id]:
+                self.edges[node_id].append("LEAF")
+            if self.node_count > self.node_budget:
+                self.budget_hit = True
                 break
 
     def path_count(self):
         # Complete paths from the start verbs to a leaf. A shared tail counts once per way of reaching it.
         counts = {}
-        onStack = set()
+        on_stack = set()
         sys.setrecursionlimit(20000)
 
-        def count(nodeId):
-            if nodeId == "LEAF" or nodeId is None or nodeId in onStack:
+        def count(node_id):
+            if node_id == "LEAF" or node_id is None or node_id in on_stack:
                 return 1
-            if nodeId in counts:
-                return counts[nodeId]
-            onStack.add(nodeId)
-            total = sum(count(child) for child in self.edges.get(nodeId, [])) or 1
-            onStack.discard(nodeId)
-            counts[nodeId] = total
+            if node_id in counts:
+                return counts[node_id]
+            on_stack.add(node_id)
+            total = sum(count(child) for child in self.edges.get(node_id, [])) or 1
+            on_stack.discard(node_id)
+            counts[node_id] = total
             return total
 
-        return sum(count(rootId) for rootId in self.roots) + len(self.failures)
+        return sum(count(root_id) for root_id in self.roots) + len(self.failures)
 
 
 def entry_verbs():
     none = {}
-    impactKeep = {"CODE_STEP_IMPACT_DECISION": "keep"}
-    impactAdopt = {"CODE_STEP_IMPACT_DECISION": "adopt"}
-    presetSets = [none, impactKeep, impactAdopt, {"CODE_STEP_ASKS_OUTCOME": "accepted"},
-                  {**impactKeep, "CODE_STEP_ASKS_OUTCOME": "accepted"}]
-    verbs = [["start", PLAN_A], ["start", PLAN_A, "+fast"], ["start"], ["start", "--task", "add a thing"],
-             ["start", "docs/other/single.md"], ["start", "docs/other/no-status.md"], ["start", "docs/other/no-criteria.md"],
-             ["start", "docs/missing.md"],
-             ["after-coder"], ["after-review"], ["after-plan-edit"], ["decide", "keep"], ["asks-done", "accepted"],
-             ["skill-done", "pass"], ["verify"]]
-    if hasattr(codeStep, "command_standalone"):
+    impact_keep = {"CODE_STEP_IMPACT_DECISION": "keep"}
+    impact_adopt = {"CODE_STEP_IMPACT_DECISION": "adopt"}
+    preset_sets = [none, impact_keep, impact_adopt, {"CODE_STEP_ASKS_OUTCOME": "accepted"},
+                  {**impact_keep, "CODE_STEP_ASKS_OUTCOME": "accepted"}]
+    verbs = [
+        ["start", PLAN_A],
+        ["start", PLAN_A, "+fast"],
+        ["start"],
+        ["start", "--task", "add a thing"],
+        ["start", "docs/other/single.md"],
+        ["start", "docs/other/no-status.md"],
+        ["start", "docs/other/no-criteria.md"],
+        ["start", "docs/missing.md"],
+        ["start", "continue"],
+        ["start", "after-review"],
+        ["start", PLAN_A, "--phase", "2", "—", "brief"],
+        ["start", f"{PLAN_A} --phase 2 — brief"],
+        ["start", "fix", "a", "typo"],
+        ["start", "--phase", "2", "—", "brief"],
+        ["resume"],
+        ["decide", "keep"],
+        ["asks-done", "accepted"],
+        ["skill-done", "pass"],
+    ]
+    if hasattr(code_step, "command_standalone"):
         verbs += [["review"], ["fix", "null guard in orders.ts"], ["fix"], ["fix", "no-review", "null guard"]]
     entries = []
-    for presets in presetSets:
+    for presets in preset_sets:
         for argv in verbs:
             if presets is not none and argv not in (["start", PLAN_A], ["start", "--task", "add a thing"]):
                 continue
@@ -624,17 +841,27 @@ def explore_all():
     return explorer, entries
 
 
+def explore_plan_edit(template, entries):
+    adopt_entries = [entry for entry in entries if "impact=adopt" in entry[0]]
+    explorer = Explorer(template, PLAN_EDIT_NODE_BUDGET)
+    explorer.run(adopt_entries)
+    return explorer, adopt_entries
+
+
 def summarize(explorer, entries):
     grouped = collections.OrderedDict()
     for failure in explorer.failures:
         signature = (failure.kind, tuple(step.split("] ", 1)[-1] if "] " in step else step for step in failure.cycle),
                      tuple(step for step in failure.cycle))
         grouped.setdefault(signature, []).append(failure)
-    lines = [f"entry verbs x preset sets: {len(entries)} starts; script calls (nodes): {explorer.nodeCount}; "
-             f"distinct configurations: {len(explorer.visited)}; paths explored: {explorer.path_count()}; failing paths: {len(explorer.failures)}; "
-             f"distinct failures: {len(grouped)}"
-             + ("; stopped at the node budget (breadth-first, shortest paths first)" if explorer.budgetHit else "")]
-    for signature, failures in grouped.items():
+    lines = [
+        f"entry verbs x preset sets: {len(entries)} starts; script calls (nodes): {explorer.node_count}; "
+        f"distinct configurations: {len(explorer.visited)}; paths explored: {explorer.path_count()}; failing paths: "
+        f"{len(explorer.failures)}; "
+        f"distinct failures: {len(grouped)}"
+        + ("; stopped at the node budget (breadth-first, shortest paths first)" if explorer.budget_hit else "")
+    ]
+    for failures in grouped.values():
         shortest = min(failures, key=lambda failure: len(failure.history))
         lines.append(f"--- {len(failures)} path(s) with this loop")
         lines.append(describe(shortest))
@@ -651,7 +878,11 @@ class TerminationTest(unittest.TestCase):
         report = summarize(explorer, entries)
         print("\n" + report)
         self.assertEqual([], explorer.failures, report)
-        self.assertGreater(explorer.planEditCallsFromWait, 0)
+
+        plan_edit_explorer, adopt_entries = explore_plan_edit(explorer.template, entries)
+        plan_edit_report = summarize(plan_edit_explorer, adopt_entries)
+        self.assertEqual([], plan_edit_explorer.failures, plan_edit_report)
+        self.assertGreater(plan_edit_explorer.plan_edit_calls_from_wait, 0)
 
 
 if __name__ == "__main__":

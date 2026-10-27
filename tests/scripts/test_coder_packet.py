@@ -7,7 +7,7 @@ import unittest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 REAL_CLAUDE = pathlib.Path(os.environ.get("CODE_STEP_REAL_CLAUDE") or REPO_ROOT / "claude" / ".claude")
-PACKET = pathlib.Path(os.environ.get("CODER_PACKET_SCRIPT") or REAL_CLAUDE / "scripts" / "coder-packet.py")
+PACKET = pathlib.Path(os.environ.get("CODER_PACKET_SCRIPT") or REAL_CLAUDE / "scripts" / "code" / "coder_packet.py")
 
 WHOLE_ID = "6"
 DOTTED_ID = "6.1"
@@ -30,15 +30,15 @@ whole body
 
 class CoderPacketTest(unittest.TestCase):
     def setUp(self):
-        tempDirectory = tempfile.TemporaryDirectory()
-        self.addCleanup(tempDirectory.cleanup)
-        self.repo = pathlib.Path(tempDirectory.name)
+        temp_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_directory.cleanup)
+        self.repo = pathlib.Path(temp_directory.name)
         subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True, capture_output=True)
         self.env = dict(os.environ, HOME=str(self.repo))
 
-    def packet(self, planText, phaseNumber):
-        (self.repo / "plan.md").write_text(planText)
-        return subprocess.run([sys.executable, str(PACKET), str(self.repo / "plan.md"), phaseNumber], cwd=self.repo,
+    def packet(self, plan_text, phase_number):
+        (self.repo / "plan.md").write_text(plan_text)
+        return subprocess.run([sys.executable, str(PACKET), str(self.repo / "plan.md"), phase_number], cwd=self.repo,
                               env=self.env, capture_output=True, text=True)
 
     def test_a_phase_reads_its_own_section_when_a_dotted_phase_of_the_same_prefix_comes_first(self):
@@ -54,12 +54,25 @@ class CoderPacketTest(unittest.TestCase):
         self.assertIn(f"plan.md lines 8-11 (Phase {DOTTED_ID})", result.stdout)
 
     def test_a_phase_is_not_found_when_the_plan_has_only_its_dotted_phase(self):
-        planWithOnlyTheDottedPhase = PLAN_WITH_A_DOTTED_PHASE_FIRST.split(f"## Phase {WHOLE_ID}: Whole")[0]
+        plan_with_only_the_dotted_phase = PLAN_WITH_A_DOTTED_PHASE_FIRST.split(f"## Phase {WHOLE_ID}: Whole")[0]
 
-        result = self.packet(planWithOnlyTheDottedPhase, WHOLE_ID)
+        result = self.packet(plan_with_only_the_dotted_phase, WHOLE_ID)
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn(f"no Phase {WHOLE_ID} heading in the plan", result.stderr)
+
+    def test_a_plan_outside_any_git_repository_stops_with_a_message(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        plan = pathlib.Path(outside.name) / "plan.md"
+        plan.write_text(PLAN_WITH_A_DOTTED_PHASE_FIRST)
+
+        result = subprocess.run([sys.executable, str(PACKET), str(plan), WHOLE_ID], cwd=outside.name, env=self.env,
+                                capture_output=True, text=True)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("is not inside a git repository", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
 
 
 if __name__ == "__main__":

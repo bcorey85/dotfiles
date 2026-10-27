@@ -93,7 +93,7 @@ refute "paths: excluded dir" "$out" "b/f.txt"
 unset CLAUDE_TOOLKIT_TELEMETRY  # a session that exports it would turn the switch on for "switch absent" below
 fakehome="$work/home"
 mkdir -p "$fakehome/.claude"
-[ -x "$here/../../scripts/telemetry_enabled.sh" ] || fail "helper missing" "$here/../../scripts/telemetry_enabled.sh"
+[ -x "$here/../../scripts/telemetry/telemetry_enabled.sh" ] || fail "helper missing" "$here/../../scripts/telemetry/telemetry_enabled.sh"
 
 if command -v ledger >/dev/null 2>&1; then
   ledger_root="$work/ledger-root"
@@ -102,7 +102,7 @@ if command -v ledger >/dev/null 2>&1; then
   # switch absent: no row
   AGENT_LEDGER_ROOT="$ledger_root" HOME="$fakehome" "$scope" root="$work/wt" caller=review >/dev/null
   [ -z "$(review_scope_rows)" ] && pass "log: switch absent, no row" || fail "log: switch absent, no row" "got: $(review_scope_rows)"
-  touch "$fakehome/.claude/toolkit-telemetry"
+  export CLAUDE_TOOLKIT_TELEMETRY=1
 
   out=$(AGENT_LEDGER_ROOT="$ledger_root" HOME="$fakehome" "$scope" root="$work/wt" caller=review)
   refute "log: nothing on stdout" "$out" '"skill"'
@@ -148,12 +148,12 @@ out=$("$scope" root="$work/pushed")
 assert "default branch: MERGE_BASE is the pushed tip" "$out" "MERGE_BASE=$fork"
 
 # --- family 9: branch-base missing or failing --------------------------------------
-out=$(BRANCH_BASE_SCRIPT=/nonexistent "$scope" root="$work/pushed" 2>"$work/err.txt")
+out=$(BRANCH_BASE_SCRIPT=/nonexistent "$scope" root="$work/pushed" base=HEAD 2>"$work/err.txt")
 assert "no branch-base: MERGE_BASE empty" "$out" "MERGE_BASE=
 "
 assert "no branch-base: other sections still printed" "$out" "SHORTSTAT="
 assert "no branch-base: reason on stderr" "$(cat "$work/err.txt")" "MERGE_BASE empty: not executable at /nonexistent"
-out=$(BRANCH_BASE_SCRIPT=/bin/false "$scope" root="$work/pushed" 2>"$work/err.txt")
+out=$(BRANCH_BASE_SCRIPT=/bin/false "$scope" root="$work/pushed" base=HEAD 2>"$work/err.txt")
 assert "failing branch-base: exit code on stderr" "$(cat "$work/err.txt")" "MERGE_BASE empty: branch-base exit 1"
 
 newrepo "$work/nobase" trunk

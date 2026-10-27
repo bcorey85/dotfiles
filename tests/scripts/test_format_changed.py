@@ -1,4 +1,4 @@
-"""Checks for format-changed.py, the Stop and UserPromptSubmit hook that formats the files a turn changed.
+"""Checks for format_changed.py, the Stop and UserPromptSubmit hook that formats the files a turn changed.
 
 Formatters are fake executables on PATH that record their arguments, run inside temp git repos.
 Set HOOK_SCRIPTS_DIR to run against another directory of scripts."""
@@ -11,7 +11,9 @@ import tempfile
 import time
 import unittest
 
-SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts") / "format-changed.py"
+import toolkit_paths
+
+SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.GATES_DIR) / "format_changed.py"
 
 FAKE_TOOL = """#!/bin/sh
 {
@@ -36,74 +38,183 @@ PARITY_SCENARIOS = [
     {"name": "stop without snapshot", "steps": [write({"a.ts": "x\n"}), STOP]},
     {"name": "prompt only", "steps": [write({"a.ts": "x\n"}), PROMPT]},
     {"name": "preexisting dirty file is left alone", "steps": [write({"a.ts": "x\n"}), PROMPT, STOP]},
-    {"name": "preexisting dirty file edited again", "steps": [write({"a.ts": "x\n"}), PROMPT, write({"a.ts": "y\n"}), STOP]},
-    {"name": "all extensions", "steps": [PROMPT, write({
-        "a.ts": "1", "b.tsx": "1", "c.js": "1", "d.jsx": "1", "e.vue": "1", "f.json": "1", "g.css": "1", "h.scss": "1",
-        "i.md": "1", "j.txt": "1", "k.py": "1", "l.TS": "1", "m": "1"}), STOP]},
-    {"name": "format-only files skip the linter", "steps": [PROMPT, write({"a.json": "1", "b.md": "1"}), STOP],
-     "path_tools": ["npx", "oxlint"]},
+    {
+        "name": "preexisting dirty file edited again",
+        "steps": [write({"a.ts": "x\n"}), PROMPT, write({"a.ts": "y\n"}), STOP],
+    },
+    {
+        "name": "all extensions",
+        "steps": [
+            PROMPT,
+            write(
+                {
+                    "a.ts": "1",
+                    "b.tsx": "1",
+                    "c.js": "1",
+                    "d.jsx": "1",
+                    "e.vue": "1",
+                    "f.json": "1",
+                    "g.css": "1",
+                    "h.scss": "1",
+                    "i.md": "1",
+                    "j.txt": "1",
+                    "k.py": "1",
+                    "l.TS": "1",
+                    "m": "1",
+                }
+            ),
+            STOP,
+        ],
+    },
+    {
+        "name": "format-only files skip the linter",
+        "steps": [PROMPT, write({"a.json": "1", "b.md": "1"}), STOP],
+        "path_tools": ["npx", "oxlint"],
+    },
     {"name": "unformattable files do nothing", "steps": [PROMPT, write({"a.txt": "1"}), STOP]},
-    {"name": "oxlint and oxfmt on PATH", "path_tools": ["npx", "oxlint", "oxfmt"],
-     "steps": [PROMPT, write({"a.ts": "1", "b.json": "1"}), STOP]},
+    {
+        "name": "oxlint and oxfmt on PATH",
+        "path_tools": ["npx", "oxlint", "oxfmt"],
+        "steps": [PROMPT, write({"a.ts": "1", "b.json": "1"}), STOP],
+    },
     {"name": "oxlint on PATH only", "path_tools": ["npx", "oxlint"], "steps": [PROMPT, write({"a.ts": "1"}), STOP]},
     {"name": "oxfmt on PATH only", "path_tools": ["npx", "oxfmt"], "steps": [PROMPT, write({"a.ts": "1"}), STOP]},
-    {"name": "local oxlint and oxfmt", "local_tools": ["oxlint", "oxfmt"],
-     "steps": [PROMPT, write({"a.ts": "1"}), STOP]},
-    {"name": "local eslint only", "local_tools": ["eslint"], "steps": [PROMPT, write({"a.vue": "1", "b.md": "1"}), STOP]},
-    {"name": "local eslint and oxlint prefers oxlint", "local_tools": ["eslint", "oxlint"],
-     "steps": [PROMPT, write({"a.js": "1"}), STOP]},
+    {
+        "name": "local oxlint and oxfmt",
+        "local_tools": ["oxlint", "oxfmt"],
+        "steps": [PROMPT, write({"a.ts": "1"}), STOP],
+    },
+    {
+        "name": "local eslint only",
+        "local_tools": ["eslint"],
+        "steps": [PROMPT, write({"a.vue": "1", "b.md": "1"}), STOP],
+    },
+    {
+        "name": "local eslint and oxlint prefers oxlint",
+        "local_tools": ["eslint", "oxlint"],
+        "steps": [PROMPT, write({"a.js": "1"}), STOP],
+    },
     {"name": "no npx on PATH", "path_tools": [], "steps": [PROMPT, write({"a.ts": "1"}), STOP]},
     {"name": "second stop formats nothing new", "steps": [PROMPT, write({"a.ts": "1"}), STOP, STOP]},
-    {"name": "deleted file is skipped", "tracked": {"gone.ts": "1\n"},
-     "steps": [PROMPT, write({"gone.ts": None}), STOP]},
+    {
+        "name": "deleted file is skipped",
+        "tracked": {"gone.ts": "1\n"},
+        "steps": [PROMPT, write({"gone.ts": None}), STOP],
+    },
     {"name": "tracked file modified", "tracked": {"t.ts": "1\n"}, "steps": [PROMPT, write({"t.ts": "2\n"}), STOP]},
-    {"name": "tracked file modified before the prompt", "tracked": {"t.ts": "1\n"},
-     "steps": [write({"t.ts": "2\n"}), PROMPT, STOP]},
+    {
+        "name": "tracked file modified before the prompt",
+        "tracked": {"t.ts": "1\n"},
+        "steps": [write({"t.ts": "2\n"}), PROMPT, STOP],
+    },
     {"name": "staged new file", "steps": [PROMPT, write({"s.ts": "1"}), {"do": "git", "args": ["add", "s.ts"]}, STOP]},
-    {"name": "ignored file is not dirty", "tracked": {".gitignore": "ignored.ts\n"},
-     "steps": [PROMPT, write({"ignored.ts": "1", "seen.ts": "1"}), STOP]},
-    {"name": "nested paths and spaces", "steps": [PROMPT, write({"src/a b.ts": "1", "src/deep/c.md": "1", "-dash.ts": "1"}), STOP]},
-    {"name": "sort order of mixed names", "steps": [PROMPT, write({"b.ts": "1", "B.ts": "1", "a.ts": "1", "_u.ts": "1",
-                                                                   "A-1.ts": "1", "a_1.ts": "1", "a1.ts": "1"}), STOP]},
+    {
+        "name": "ignored file is not dirty",
+        "tracked": {".gitignore": "ignored.ts\n"},
+        "steps": [PROMPT, write({"ignored.ts": "1", "seen.ts": "1"}), STOP],
+    },
+    {
+        "name": "nested paths and spaces",
+        "steps": [PROMPT, write({"src/a b.ts": "1", "src/deep/c.md": "1", "-dash.ts": "1"}), STOP],
+    },
+    {
+        "name": "sort order of mixed names",
+        "steps": [
+            PROMPT,
+            write({"b.ts": "1", "B.ts": "1", "a.ts": "1", "_u.ts": "1", "A-1.ts": "1", "a_1.ts": "1", "a1.ts": "1"}),
+            STOP,
+        ],
+    },
     {"name": "unicode name", "steps": [PROMPT, write({"caf\u00e9.ts": "1", "\u65e5\u672c.md": "1"}), STOP]},
     {"name": "same content in two files", "steps": [PROMPT, write({"a.ts": "same", "b.ts": "same"}), STOP]},
-    {"name": "commit between prompt and stop", "tracked": {},
-     "steps": [PROMPT, write({"c.ts": "1"}), {"do": "git", "args": ["add", "-A"]},
-               {"do": "git", "args": ["commit", "-q", "-m", "c"]}, STOP]},
+    {
+        "name": "commit between prompt and stop",
+        "tracked": {},
+        "steps": [
+            PROMPT,
+            write({"c.ts": "1"}),
+            {"do": "git", "args": ["add", "-A"]},
+            {"do": "git", "args": ["commit", "-q", "-m", "c"]},
+            STOP,
+        ],
+    },
     {"name": "repo without commits", "no_commit": True, "steps": [PROMPT, write({"n.ts": "1"}), STOP]},
     {"name": "not a repo", "no_repo": True, "steps": [PROMPT, write({"n.ts": "1"}), STOP]},
-    {"name": "cwd in a subdirectory", "steps": [write({"sub/x.txt": "1"}), PROMPT, write({"top.ts": "1", "sub/n.ts": "1"}),
-                                                {"do": "hook", "event": "Stop", "cwd": "{REPO}/sub"}]},
-    {"name": "cwd missing falls back to PWD", "steps": [{"do": "hook", "event": "UserPromptSubmit", "payload": {"cwd": ""}},
-                                                         write({"a.ts": "1"}),
-                                                         {"do": "hook", "event": "Stop", "payload": {"cwd": ""}}]},
+    {
+        "name": "cwd in a subdirectory",
+        "steps": [
+            write({"sub/x.txt": "1"}),
+            PROMPT,
+            write({"top.ts": "1", "sub/n.ts": "1"}),
+            {"do": "hook", "event": "Stop", "cwd": "{REPO}/sub"},
+        ],
+    },
+    {
+        "name": "cwd missing falls back to PWD",
+        "steps": [
+            {"do": "hook", "event": "UserPromptSubmit", "payload": {"cwd": ""}},
+            write({"a.ts": "1"}),
+            {"do": "hook", "event": "Stop", "payload": {"cwd": ""}},
+        ],
+    },
     {"name": "cwd not a directory", "steps": [{"do": "hook", "event": "Stop", "cwd": "/nonexistent/dir"}]},
-    {"name": "no session id", "steps": [PROMPT, write({"a.ts": "1"}),
-                                         {"do": "hook", "event": "Stop", "payload": {"session_id": ""}}]},
+    {
+        "name": "no session id",
+        "steps": [PROMPT, write({"a.ts": "1"}), {"do": "hook", "event": "Stop", "payload": {"session_id": ""}}],
+    },
     {"name": "null session id", "steps": [{"do": "hook", "event": "Stop", "payload": {"session_id": None}}]},
-    {"name": "numeric session id", "steps": [{"do": "hook", "event": "UserPromptSubmit", "payload": {"session_id": 5}},
-                                              write({"a.ts": "1"}),
-                                              {"do": "hook", "event": "Stop", "payload": {"session_id": 5}}]},
-    {"name": "other sessions do not share snapshots",
-     "steps": [PROMPT, write({"a.ts": "1"}), {"do": "hook", "event": "Stop", "payload": {"session_id": "other"}}]},
+    {
+        "name": "numeric session id",
+        "steps": [
+            {"do": "hook", "event": "UserPromptSubmit", "payload": {"session_id": 5}},
+            write({"a.ts": "1"}),
+            {"do": "hook", "event": "Stop", "payload": {"session_id": 5}},
+        ],
+    },
+    {
+        "name": "other sessions do not share snapshots",
+        "steps": [PROMPT, write({"a.ts": "1"}), {"do": "hook", "event": "Stop", "payload": {"session_id": "other"}}],
+    },
     {"name": "other event", "steps": [PROMPT, write({"a.ts": "1"}), {"do": "hook", "event": "SessionStart"}]},
     {"name": "event missing", "steps": [{"do": "hook", "event": "x", "raw": '{"session_id":"s","cwd":"/"}'}]},
-    {"name": "event is number", "steps": [{"do": "hook", "event": "x", "raw": '{"hook_event_name":5,"session_id":"s"}'}]},
-    {"name": "skip hooks on stop", "steps": [PROMPT, write({"a.ts": "1"}),
-                                              {"do": "hook", "event": "Stop", "env": {"CLAUDE_SKIP_HOOKS": "1"}}]},
-    {"name": "skip hooks on prompt", "steps": [{"do": "hook", "event": "UserPromptSubmit", "env": {"CLAUDE_SKIP_HOOKS": "1"}},
-                                                write({"a.ts": "1"}), STOP]},
-    {"name": "empty skip hooks still runs", "steps": [PROMPT, write({"a.ts": "1"}),
-                                                       {"do": "hook", "event": "Stop", "env": {"CLAUDE_SKIP_HOOKS": ""}}]},
+    {
+        "name": "event is number",
+        "steps": [{"do": "hook", "event": "x", "raw": '{"hook_event_name":5,"session_id":"s"}'}],
+    },
+    {
+        "name": "skip hooks on stop",
+        "steps": [PROMPT, write({"a.ts": "1"}), {"do": "hook", "event": "Stop", "env": {"CLAUDE_SKIP_HOOKS": "1"}}],
+    },
+    {
+        "name": "skip hooks on prompt",
+        "steps": [
+            {"do": "hook", "event": "UserPromptSubmit", "env": {"CLAUDE_SKIP_HOOKS": "1"}},
+            write({"a.ts": "1"}),
+            STOP,
+        ],
+    },
+    {
+        "name": "empty skip hooks still runs",
+        "steps": [PROMPT, write({"a.ts": "1"}), {"do": "hook", "event": "Stop", "env": {"CLAUDE_SKIP_HOOKS": ""}}],
+    },
     {"name": "empty stdin", "steps": [{"do": "hook", "event": "x", "raw": ""}]},
     {"name": "invalid json", "steps": [{"do": "hook", "event": "x", "raw": "not json"}]},
     {"name": "array payload", "steps": [{"do": "hook", "event": "x", "raw": "[1]"}]},
     {"name": "null payload", "steps": [{"do": "hook", "event": "x", "raw": "null"}]},
-    {"name": "old snapshots deleted", "steps": [{"do": "seed-state", "name": "old-1", "days": 4},
-                                                 {"do": "seed-state", "name": "new-1", "days": 1}, PROMPT]},
+    {
+        "name": "old snapshots deleted",
+        "steps": [
+            {"do": "seed-state", "name": "old-1", "days": 4},
+            {"do": "seed-state", "name": "new-1", "days": 1},
+            PROMPT,
+        ],
+    },
     {"name": "snapshot just over two days is kept", "steps": [{"do": "seed-state", "name": "edge", "days": 2}, PROMPT]},
     {"name": "snapshot three days old is deleted", "steps": [{"do": "seed-state", "name": "three", "days": 3}, PROMPT]},
-    {"name": "old snapshot of own session is replaced", "steps": [PROMPT, {"do": "age", "days": 5}, write({"a.ts": "1"}), STOP]},
+    {
+        "name": "old snapshot of own session is replaced",
+        "steps": [PROMPT, {"do": "age", "days": 5}, write({"a.ts": "1"}), STOP],
+    },
     {"name": "prompt refreshes the snapshot", "steps": [PROMPT, write({"a.ts": "1"}), PROMPT, STOP]},
     {"name": "files deleted since snapshot", "steps": [write({"a.ts": "1"}), PROMPT, write({"a.ts": None}), STOP]},
 ]
@@ -122,7 +233,7 @@ class Repo:
         for directory in (self.home, self.bin, self.repo):
             directory.mkdir()
         self.log = root / "tools.log"
-        self.environment = {"PATH": "%s:/usr/bin:/bin" % self.bin, "HOME": str(self.home), "TMPDIR": str(root),
+        self.environment = {"PATH": f"{self.bin}:/usr/bin:/bin", "HOME": str(self.home), "TMPDIR": str(root),
                             "FAKE_LOG": str(self.log), "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
                             "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t", "GIT_CONFIG_GLOBAL": "/dev/null",
                             "GIT_CONFIG_SYSTEM": "/dev/null", "PWD": str(self.repo)}
@@ -135,8 +246,12 @@ class Repo:
         self.git("commit", "-q", "-m", "seed")
 
     def git(self, *arguments, cwd=None):
-        return subprocess.run(["git"] + list(arguments), cwd=str(self.repo if cwd is None else cwd), env=self.environment,
-                              capture_output=True)
+        return subprocess.run(
+            ["git", *list(arguments)],
+            cwd=str(self.repo if cwd is None else cwd),
+            env=self.environment,
+            capture_output=True,
+        )
 
     def put(self, relative, content):
         target = self.repo / relative
@@ -152,8 +267,13 @@ class Repo:
     def hook(self, event, session="s1", cwd=None, raw=None, extra_env=None):
         payload = {"hook_event_name": event, "session_id": session, "cwd": str(self.repo) if cwd is None else cwd}
         environment = dict(self.environment, **(extra_env or {}))
-        return subprocess.run([sys.executable, str(SCRIPT)], input=(raw if raw is not None else json.dumps(payload)).encode(),
-                              capture_output=True, env=environment, cwd=str(self.repo))
+        return subprocess.run(
+            [sys.executable, str(SCRIPT)],
+            input=(raw if raw is not None else json.dumps(payload)).encode(),
+            capture_output=True,
+            env=environment,
+            cwd=str(self.repo),
+        )
 
     def calls(self):
         if not self.log.exists():
@@ -212,19 +332,37 @@ class FormatChangedTest(unittest.TestCase):
         self.repo.put("top.ts", "1")
         self.repo.hook("Stop", cwd=str(self.repo.repo / "sub"))
         log = self.repo.log.read_text()
-        self.assertIn("cwd=%s\n" % self.repo.repo.resolve(), log)
+        self.assertIn(f"cwd={self.repo.repo.resolve()}\n", log)
         self.assertEqual(self.repo.calls()[0][1][-1], "top.ts")
 
     def test_extension_selection(self):
-        names = ["a.ts", "b.tsx", "c.js", "d.jsx", "e.vue", "f.json", "g.css", "h.scss", "i.md", "j.txt", "k.py", "l.TS", "m"]
-        self.turn({name: "1" for name in names})
-        self.assertEqual(self.repo.calls()[0][1][3:], sorted(name for name in names if name not in ("j.txt", "k.py", "l.TS", "m")))
+        names = [
+            "a.ts",
+            "b.tsx",
+            "c.js",
+            "d.jsx",
+            "e.vue",
+            "f.json",
+            "g.css",
+            "h.scss",
+            "i.md",
+            "j.txt",
+            "k.py",
+            "l.TS",
+            "m",
+        ]
+        self.turn(dict.fromkeys(names, "1"))
+        self.assertEqual(
+            self.repo.calls()[0][1][3:], sorted(name for name in names if name not in ("j.txt", "k.py", "l.TS", "m"))
+        )
 
     def test_oxlint_then_oxfmt_when_on_path(self):
         self.repo.tool("oxlint")
         self.repo.tool("oxfmt")
         self.turn({"a.ts": "1", "b.json": "1"})
-        self.assertEqual(self.repo.calls(), [("npx", ["oxlint", "--fix", "a.ts"]), ("npx", ["oxfmt", "a.ts", "b.json"])])
+        self.assertEqual(
+            self.repo.calls(), [("npx", ["oxlint", "--fix", "a.ts"]), ("npx", ["oxfmt", "a.ts", "b.json"])]
+        )
 
     def test_local_eslint_is_used_without_oxlint(self):
         self.repo.tool("eslint", local=True)
@@ -243,7 +381,13 @@ class FormatChangedTest(unittest.TestCase):
     def test_format_only_files_skip_the_linter(self):
         self.repo.tool("oxlint")
         self.turn({"a.json": "1", "b.css": "1", "c.scss": "1", "d.md": "1"})
-        self.assertEqual(self.repo.calls(), [("npx", ["--yes", "prettier", "--write", "a.json", "b.css", "c.scss", "d.md"])])
+        self.assertEqual(
+            self.repo.calls(), [("npx", ["--yes", "prettier", "--write", "a.json", "b.css", "c.scss", "d.md"])]
+        )
+
+    def test_plan_files_are_never_formatted(self):
+        self.turn({"docs/plans/login/spec.md": "1", "docs/plans/login/shards.json": "1", "docs/notes.md": "1"})
+        self.assertEqual(self.repo.calls(), [("npx", ["--yes", "prettier", "--write", "docs/notes.md"])])
 
     def test_nothing_formattable_runs_nothing(self):
         self.turn({"a.txt": "1"})
@@ -308,6 +452,12 @@ class FormatChangedTest(unittest.TestCase):
         self.repo.hook("Stop")
         self.assertEqual(self.repo.calls(), [])
 
+    def test_stop_with_format_hook_off_formats_nothing(self):
+        self.repo.hook("UserPromptSubmit")
+        self.repo.put("a.ts", "1")
+        self.repo.hook("Stop", extra_env={"CLAUDE_FORMAT_HOOK_OFF": "1"})
+        self.assertEqual(self.repo.calls(), [])
+
     def test_sessions_do_not_share_snapshots(self):
         self.repo.hook("UserPromptSubmit", session="one")
         self.repo.put("a.ts", "1")
@@ -346,6 +496,10 @@ class FormatChangedTest(unittest.TestCase):
 
     def test_skip_hooks_exits_quietly_and_writes_nothing(self):
         finished = self.repo.hook("UserPromptSubmit", extra_env={"CLAUDE_SKIP_HOOKS": "1"})
+        self.assertEqual((finished.returncode, finished.stdout, self.repo.state_files()), (0, b"", []))
+
+    def test_format_hook_off_exits_quietly_and_writes_nothing(self):
+        finished = self.repo.hook("UserPromptSubmit", extra_env={"CLAUDE_FORMAT_HOOK_OFF": "1"})
         self.assertEqual((finished.returncode, finished.stdout, self.repo.state_files()), (0, b"", []))
 
     def test_empty_skip_hooks_still_runs(self):

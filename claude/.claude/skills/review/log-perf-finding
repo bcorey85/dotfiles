@@ -36,7 +36,7 @@ for required in repo file_line finding principle; do
   fi
 done
 
-"$script_dir/../../scripts/telemetry_enabled.sh" 2>/dev/null || exit 0
+"$script_dir/../../scripts/telemetry/telemetry_enabled.sh" 2>/dev/null || exit 0
 
 if [ ! -f "$out" ]; then
   printf '# Backend Perf - Findings Log\n\n' > "$out"

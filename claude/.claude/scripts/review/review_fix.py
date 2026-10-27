@@ -1,0 +1,816 @@
+#!/usr/bin/env python3
+"""review_fix.py: the fixed steps of /review and /fix as a script. The main session dispatches review-loop, runs
+`packet`, and does exactly what the ACTION lines say. The script reads the packet through handback.py, routes on status,
+renders the packet, logs the rows, posts the Aikido replies, and prints what the model still judges.
+
+  review_fix.py packet --skill review|fix [options] [< packet]
+      --scope branch-exit|standalone   scope of the ask rows (review passes branch-exit when it dispatched with base=)
+      --lane <lane>  lane of the ask and escape rows (default none for review, code for fix); `ledger registry` lists
+                     the allowed values
+      --source conversation|cc|handoff (fix) where the findings came from; escapes log only for conversation
+      --escape "file=<p>|class=<c>|severity=<s>|gate_missed=<g>|guard=<r>|desc=<one line>"   (fix, repeatable)
+      --aikido "<path>:<line>=<comment_id>"                                                 (fix, repeatable)
+      With empty stdin, `packet` reads this session's latest review-loop hand-back, which handback.py's hook stored,
+      and refuses when the session has no dispatch on record. When the loop ended without handing back, it prints
+      `ACTION: stop-no-handback` and leaves the saved state alone: re-dispatch once, then stop and show the user the
+      loop's final text on a second miss. When the loop's latest stop left a background agent running (the
+      stop row review_loop_gate.py stores), it prints `ACTION: wait-for-loop` and exits 3: do not re-dispatch, end the
+      turn, and run `packet` again when the review-loop's completion notice arrives. That counts no miss. A second
+      `packet` on the same stop row (saved per skill in <git dir>/review-fix/waits.json) prints `ACTION: stop`
+      and exits 2: show the user, do not re-dispatch. A new stop row waits again.
+      A re-run on the same hand-back (the same stored row; the same text, for a packet on stdin) repeats no side
+      effect: posted replies, logged escapes and the nvim-jump are kept in the state. Two dispatches that return the
+      same text are two runs.
+  review_fix.py escape --escape "..."...   log escape rows from the saved packet state (fix, repeatable)
+  review_fix.py asks-done [--by <user|session>] <outcome>...
+                                         one outcome per ask, in order: accepted | rejected | modified, optional
+                                         ":<one line note>" after it, accepted and not stored. Logs one row per ask,
+                                         once. --by session when the session ruled on the asks itself; default user.
+  review_fix.py decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>" [--plan <path>]
+                                         Only --by user is the user's own word.
+  review_fix.py decide discuss          print the decide commands for a plan-impact ruling and record nothing.
+
+State lives in <git dir>/review-fix/state.json. A packet that does not parse stops with exit 2 and an instruction to
+mark the gate dirty. Env REVIEW_FIX_CLAUDE_DIR overrides the toolkit folder; REVIEW_FIX_NVIM_JUMP and REVIEW_FIX_GH
+override the nvim-jump and gh commands; HANDBACK_STORE_DIR overrides the hand-back store;
+CLAUDE_CODE_SESSION_ID names the session."""
+import argparse
+import datetime
+import hashlib
+import json
+import os
+import pathlib
+import sys
+import time
+
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../code")]
+import code_step_core
+import handback
+import plan_format
+import script_utils
+from handback import PacketError, item_text
+from script_utils import one_line, run_command, split_location
+
+CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
+SOURCES = ["conversation", "cc", "handoff"]
+ASK_OUTCOMES = ["accepted", "rejected", "modified"]
+PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
+DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
+DECIDE_SCRIPT = "python3 ~/.claude/scripts/review/review_fix.py"
+PLAN_ARG_NOTE = "--plan <the plan path, when the handoff names one>"
+DECIDE_USAGE = f'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>" {PLAN_ARG_NOTE}'
+DECIDE_BY_NOTE = ("If the user told you to make the call yourself, or you rule without asking, pass `--by session` in "
+                  "place of `--by user`. A session ruling never changes the acceptance criteria.")
+MARK_CLEAN = "~/.claude/scripts/review/review-gate-mark clean"
+MARK_DIRTY = "~/.claude/scripts/review/review-gate-mark dirty"
+NOTHING_OUTSTANDING = "No issues found that warrant auto-fix. Ready for `/commit`."
+LOGGED_HEADING = "LOGGED / POSTED (mention failures, never block on them):"
+FINISHED_STAGES = ("done", "redispatch")
+PLAN_IMPACT_PREFIX = "PLAN-IMPACT"
+PLAN_IMPACT = "plan-impact"
+NEW_FINDING_ID = "new-finding-id"
+# Exit code of `wait-for-loop`: non-zero so no caller reads it as a finished run, and not 2, the code of a real stop.
+WAIT_EXIT_CODE = 3
+VERBS = ("packet", "escape", "asks-done", "decide")
+
+
+class UsageError(Exception):
+    pass
+
+
+class NoHandbackError(Exception):
+    """The review-loop was dispatched and ended without calling SubagentHandback."""
+    def __init__(self, last_hand_back_id):
+        super().__init__("dispatched, no hand-back since " + last_hand_back_id)
+        self.last_hand_back_id = last_hand_back_id
+
+
+class LoopWaitingError(Exception):
+    """The review-loop stopped its turn while an agent it launched in the background still runs. `stop_ts` is the time
+    of the stop row that showed it."""
+    def __init__(self, stop_ts):
+        super().__init__(f"waiting since {stop_ts}")
+        self.stop_ts = stop_ts
+
+
+# ---------- shell helpers ----------
+
+def review_fix_dir():
+    found = script_utils.git_output(".", "rev-parse", "--path-format=absolute", "--git-path", "review-fix")
+    if found is None:
+        raise UsageError("not inside a git repo")
+    return pathlib.Path(found)
+
+
+def state_file():
+    return review_fix_dir() / "state.json"
+
+
+def read_state():
+    """The saved state, or None when there is none or it is unreadable."""
+    path = state_file()
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except ValueError:
+        return None
+
+
+def load_fix_state():
+    path = state_file()
+    if not path.exists():
+        raise UsageError("no packet was processed yet. Run `packet` first.")
+    state = read_state()
+    if state is None:
+        raise UsageError(f"{path} is not readable JSON")
+    return state
+
+
+def save_fix_state(state):
+    path = state_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=1))
+
+
+# ---------- options ----------
+
+def parse_escape(spec):
+    fields = {}
+    for part in spec.split("|"):
+        name, separator, value = part.partition("=")
+        if not separator:
+            raise UsageError(f"--escape part {part!r} is not key=value (separate parts with |)")
+        fields[name.strip()] = value.strip()
+    missing = [name for name in ("file", "class", "severity", "gate_missed", "guard", "desc") if not fields.get(name)]
+    if missing:
+        raise UsageError(f"--escape {spec!r} lacks {', '.join(missing)}")
+    extra = sorted(set(fields) - {"file", "class", "severity", "gate_missed", "guard", "desc", "lane"})
+    if extra:
+        raise UsageError(f"--escape has unknown keys: {', '.join(extra)}")
+    return fields
+
+
+def parse_aikido(spec):
+    target, separator, comment_id = spec.rpartition("=")
+    path, line = split_location(target)
+    if not separator or not path or not line or not comment_id.strip().isdigit():
+        raise UsageError(f"--aikido {spec!r} is not <path>:<line>=<numeric comment id>")
+    return {"path": path, "line": line, "comment_id": comment_id.strip()}
+
+
+def argument_parser(name):
+    parser = argparse.ArgumentParser(prog=f"review_fix.py {name}", add_help=False)
+    parser.error = lambda message: (_ for _ in ()).throw(UsageError(message))
+    return parser
+
+
+def packet_arguments(argv):
+    parser = argument_parser("packet")
+    parser.add_argument("--skill", required=True, choices=["review", "fix"])
+    parser.add_argument("--scope", default="standalone", choices=["branch-exit", "standalone"])
+    parser.add_argument("--lane")
+    parser.add_argument("--source", default="handoff", choices=SOURCES)
+    parser.add_argument("--escape", action="append", default=[])
+    parser.add_argument("--aikido", action="append", default=[])
+    options = parser.parse_args(argv)
+    options.lane = options.lane or ("code" if options.skill == "fix" else "none")
+    options.escapes = [parse_escape(spec) for spec in options.escape]
+    options.aikido_targets = [parse_aikido(spec) for spec in options.aikido]
+    if options.skill == "review" and (options.escapes or options.aikido_targets):
+        raise UsageError("--escape and --aikido belong to /fix only")
+    return options
+
+
+# ---------- actions ----------
+
+def is_outstanding(packet):
+    return any(packet[key] for key in ("fixed", "ask", "skipped_fp", "nit", "findings_remaining"))
+
+
+def print_user_block(text):
+    print("-----BEGIN USER TEXT (paste verbatim)-----")
+    print(text)
+    print("-----END USER TEXT-----")
+
+
+def print_action(action, *lines):
+    print(f"ACTION: {action}")
+    for line in lines:
+        print(line)
+
+
+def stop_for_parse_failure(error, raw_message):
+    print_action("stop-parse-failure",
+                 "The review-loop packet did not parse. Nothing was routed, logged or posted.",
+                 *[f"- {problem}" for problem in error.problems],
+                 f"If you ran `{MARK_CLEAN}` alongside this call, run `{MARK_DIRTY}` now as its own Bash command.",
+                 "Then show the user the raw packet and the problems above. Do not guess the missing fields.",
+                 "Do not re-dispatch to repair the packet unless the user asks.")
+    print("RAW PACKET (first 1500 chars):")
+    print(raw_message[:1500])
+
+
+def count_hand_back_miss(skill, last_hand_back_id):
+    """Misses of this caller since the session's last hand-back. /review and /fix each keep their own count; a new
+    hand-back starts it again."""
+    path = review_fix_dir() / "misses.json"
+    try:
+        misses = json.loads(path.read_text())
+    except (OSError, ValueError):
+        misses = {}
+    entry = misses.get(skill) or {}
+    count = (entry.get("count", 0) if entry.get("since") == last_hand_back_id else 0) + 1
+    misses[skill] = {"since": last_hand_back_id, "count": count}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(misses))
+    return count
+
+
+def stop_for_missing_hand_back(skill, last_hand_back_id):
+    """The loop ended without calling SubagentHandback. The saved stage of any earlier run is left alone."""
+    misses = count_hand_back_miss(skill, last_hand_back_id)
+    keep_dirty = f"If you ran `{MARK_CLEAN}` alongside this call, run `{MARK_DIRTY}` now as its own Bash command."
+    if misses < 2:
+        print_action("stop-no-handback",
+                     "The review-loop ended without calling SubagentHandback, so no packet is stored. Nothing was "
+                     "routed, logged or posted, and the earlier run's state is untouched.",
+                     "Re-dispatch review-loop once with the same arguments, then run `packet` again.",
+                     keep_dirty)
+        return
+    print_action("stop-no-handback",
+                 f"The review-loop ended {misses} times in a row without calling SubagentHandback. Nothing was routed, "
+                 "logged or posted, and the earlier run's state is untouched.",
+                 "Stop. Do not re-dispatch again. Show the user the loop's final text as it returned.",
+                 keep_dirty)
+
+
+def waited_on_stop(skill, stop_ts):
+    """True when this caller already got `wait-for-loop` for the stop row at `stop_ts`; otherwise records it. A new
+    stop row has a new ts, so it waits again."""
+    path = review_fix_dir() / "waits.json"
+    try:
+        waits = json.loads(path.read_text())
+    except (OSError, ValueError):
+        waits = {}
+    if waits.get(skill) == stop_ts:
+        return True
+    waits[skill] = stop_ts
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(waits))
+    return False
+
+
+def wait_for_loop(skill, stop_ts):
+    """The loop stopped while a background agent it launched still runs; the harness resumes it when that agent
+    reports. No miss is counted and no packet state is saved. A second `packet` on the same stop row stops: the agent
+    has not reported, and the wait must not go on unbounded."""
+    if waited_on_stop(skill, stop_ts):
+        print_action("stop",
+                     f"The review-loop has been waiting since {time.strftime('%H:%M:%S', time.localtime(stop_ts))} "
+                     "on an agent it launched and has not handed "
+                     "back. Nothing was routed, logged or posted.",
+                     "Show the user this. Do not re-dispatch review-loop: a second loop would edit the same files as "
+                     "the first.")
+        return 2
+    print_action("wait-for-loop",
+                 "The review-loop is waiting on an agent it launched in the background. Nothing was routed, logged or "
+                 "posted.",
+                 "Do not re-dispatch review-loop: a second loop would edit the same files as the first.",
+                 "End your turn. Run `packet` again when the review-loop's completion notice arrives.")
+    return WAIT_EXIT_CODE
+
+
+def stop_for_unreviewed(skill):
+    """The loop handed back clean after a code change with no reviewer run: the review did not happen."""
+    keep_dirty = f"If you ran `{MARK_CLEAN}` alongside this call, run `{MARK_DIRTY}` now as its own Bash command."
+    print_action("stop-no-reviewer",
+                 "The review-loop handed back clean but dispatched no reviewer after its last code change. Nothing was "
+                 "routed, logged or posted.",
+                 f"Re-dispatch review-loop with the same arguments for a real review pass, then run "
+                 f"`packet --skill {skill}` again. Do not mark the gate clean.",
+                 keep_dirty)
+    return 2
+
+
+def present_plan_impact(packet, state):
+    state.update({"stage": "plan-impact", "plan_impact": packet["plan_impact"]})
+    save_fix_state(state)
+    print_action(
+        "ask-user-plan-impact",
+        "Call AskUserQuestion now. Do not re-dispatch and do not triage this as an ask. Question: assumed, then "
+        "found, then what changes, taken from this block:",
+        packet["plan_impact"],
+        f"Options, in this order: {' / '.join(PLAN_IMPACT_OPTIONS)}.",
+        f'Then run: {DECIDE_SCRIPT} decide <adopt|keep> --by user --ruling "<the decision in one line>" '
+        f"{PLAN_ARG_NOTE}",
+        DECIDE_BY_NOTE,
+        f"Counters held for the re-dispatch: iter={packet['iter']} "
+        f"spec_iter={packet['spec_iter'] if packet['spec_iter'] is not None else 'absent'}",
+    )
+
+
+def run_nvim_jump(asks):
+    command = os.environ.get("REVIEW_FIX_NVIM_JUMP", "nvim-jump")
+    arguments = []
+    for item in asks:
+        if not item.get("file_line"):
+            continue
+        path, line = split_location(item["file_line"])
+        arguments += ["--note", one_line(item["question"], 160), f"{path}:{line}" if line else path]
+    if not arguments:
+        return "no ask names a file:line: nothing to jump to."
+    code, output = run_command([command, *arguments])
+    if code == 2 or code == 127:
+        return "nvim-jump is not installed: skip jumping."
+    if code == 1:
+        return "no nvim owns this directory: anchors printed only."
+    return "jumped to the first ask: ]k and [k step the rest." if code == 0 else f"nvim-jump exit {code}: {output}"
+
+
+def gate_mark_line():
+    return f"Gate: `{MARK_CLEAN}` as its own Bash command, unless it already ran in parallel with this call."
+
+
+def present_packet_asks(packet, state):
+    asks = packet["ask"]
+    if "jumped" not in state:
+        state["jumped"] = run_nvim_jump(asks)
+    state.update({"stage": "asks", "asks": asks})
+    save_fix_state(state)
+    lines = [
+        f"The script ran nvim-jump for all asks ({state['jumped']}). Do not run it again.",
+        "Present each ask below with its question and its proposed change, and wait for the user's direction. "
+        "Never auto-fix an ask. If the repo's CLAUDE.md hands ask decisions to the session, decide each ask "
+        "yourself and add `--by session` to asks-done; otherwise wait for the user.",
+        f"After the user answers, run once: python3 ~/.claude/scripts/review/review_fix.py asks-done "
+        f"<outcome> x{len(asks)}  (accepted: make the proposed change | rejected: leave the code as it stands | "
+        "modified: make the user's change instead; optional ':<one line note>', accepted and not stored)",
+        gate_mark_line(),
+    ]
+    for number, item in enumerate(asks, 1):
+        ask_class = item["class"] + (f" (was {item['class_raw']})" if item.get("class_raw") else "")
+        lines.append(f"{number}. {item.get('file_line') or 'no file:line'}  [{item['gate']}/{ask_class}]")
+        lines.append(f"   {item['question']}")
+        if item.get("change"):
+            lines.append(f"   Proposed change: {item['change']}")
+    print_action("present-asks", *lines)
+
+
+def log_escapes(state, escapes, lane):
+    """Escape rows from the saved packet state. A file that was logged already is skipped."""
+    if not escapes:
+        return []
+    if state.get("source") != "conversation":
+        return [f"escape rows skipped: findings came from {state.get('source')}, not the conversation."]
+    if state.get("status") not in handback.CLEAN_STATUSES:
+        return [f"escape rows skipped: the packet status was {state.get('status')}, so no fix was applied."]
+    notes = []
+    logged = state.setdefault("escapes_logged", [])
+    for fields in escapes:
+        file = script_utils.normalize_path(fields["file"])
+        if file in logged:
+            notes.append(f"escape for {file} already logged: skipped.")
+            continue
+        if file not in state.get("fixed_paths", []):
+            notes.append(f"escape for {file} not logged: no fixed[] entry names that file (not applied).")
+            continue
+        repo = script_utils.repo_name(".")
+        code, output = run_command(["bash", str(CLAUDE_DIR / "scripts/telemetry/log-escape"), f"repo={repo}",
+                                    "stage_found=walkthrough", f"gate_missed={fields['gate_missed']}",
+                                    f"class={fields['class']}", f"severity={fields['severity']}",
+                                    f"lane={fields.get('lane') or lane}", f"guard={fields['guard']}",
+                                    f"desc={one_line(fields['desc'])}", f"file={file}"])
+        if code == 0:
+            logged.append(file)
+            notes.append(f"escape logged for {file} (guard={fields['guard']})")
+        else:
+            notes.append(f"escape log FAILED for {file}: {output}. Mention it and continue.")
+    save_fix_state(state)
+    return notes
+
+
+def aikido_reply(target, packet):
+    where = (script_utils.normalize_path(target["path"]), target["line"])
+    named = f"{where[0]}:{where[1]}"
+    for item in packet["fixed"]:
+        if where in handback.entry_locations(item):
+            return f"Fixed — {one_line(item.get('finding', ''), 160)}"
+    for item in packet["skipped_fp"]:
+        if named in item_text(item, "item", "finding", "file_line") or where in handback.entry_locations(item):
+            return f"@AikidoSec ignore: {one_line(item.get('reason', 'no reason given'), 200)}"
+    for item in packet["findings_remaining"] + packet["ask"]:
+        if where in handback.entry_locations(item):
+            reason = item.get("question") or item.get("finding") or "open"
+            return f"Not fixed in this pass: {packet['status']} — {one_line(reason, 160)}"
+    return f"Not fixed in this pass: {packet['status']} — no matching entry in the packet"
+
+
+def post_aikido_replies(packet, targets, state):
+    """(reply lines for the user text, failure notes). A comment id that got a reply is never posted to again."""
+    if not targets:
+        return [], []
+    posted = state.setdefault("aikido_posted", {})
+    pending = [target for target in targets if target["comment_id"] not in posted]
+    lines = [
+        f"- {posted[target['comment_id']]} (already posted)" for target in targets if target["comment_id"] in posted
+    ]
+    if not pending:
+        return lines, []
+    gh = os.environ.get("REVIEW_FIX_GH", "gh")
+    code_repo, repo_slug = run_command([gh, "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"])
+    code_pr, pr_number = run_command([gh, "pr", "view", "--json", "number", "--jq", ".number"])
+    if code_repo != 0 or code_pr != 0:
+        return lines, [
+            "Aikido replies NOT posted: gh could not name the repo or PR "
+            f"({one_line(repo_slug + ' ' + pr_number, 160)}). "
+            "Report it and continue."
+        ]
+    failures = []
+    for target in pending:
+        reply = aikido_reply(target, packet)
+        code, output = run_command([gh, "api", "--method", "POST",
+                                    f"repos/{repo_slug}/pulls/{pr_number}/comments/{target['comment_id']}/replies",
+                                    "-f", f"body={reply}"])
+        where = f"{target['path']}:{target['line']}"
+        if code == 0:
+            posted[target["comment_id"]] = f"{where}: {reply}"
+            lines.append(f"- {where}: {reply}")
+        else:
+            failures.append(f"{where} reply FAILED: {one_line(output, 160)}")
+    save_fix_state(state)
+    return lines, failures
+
+
+# ---------- the packet ----------
+
+def active_code_step(session_id):
+    """(state path, stage) of a /code run that owns this session's review hand-backs, else None. A run pinned to a
+    different session does not count."""
+    try:
+        code_step = code_step_core.load_state(".")
+    except code_step_core.StateFileError:
+        return None
+    if code_step is None or code_step.get("stage") not in code_step_core.REVIEW_HANDBACK_STAGES:
+        return None
+    if code_step.get("sessionId") != session_id:
+        return None
+    return code_step_core.state_dir(".") / "state.json", code_step["stage"]
+
+
+def hand_back_id(stored_row, session_id):
+    """The run id of a stored hand-back row; `none:<session>` when the session has no hand-back yet, so sessions in
+    one repo never share a miss count."""
+    if stored_row is None:
+        return f"none:{session_id}"
+    return f"handback:{stored_row.get('agent_id')}:{stored_row.get('ts')}"
+
+
+def saved_hand_back(session_id):
+    """The latest review-loop hand-back row of this session. Raises NoHandbackError when the loop was dispatched and
+    never handed back, and LoopWaitingError when it stopped to wait on a background agent."""
+    if not session_id:
+        raise PacketError(["the packet on stdin is empty and CLAUDE_CODE_SESSION_ID is not set, so no saved "
+                           "hand-back can be looked up"])
+    code_step = active_code_step(session_id)
+    if code_step:
+        raise PacketError([f"a /code run owns this session's review hand-backs (code-step state {code_step[0]}, stage "
+                           f"{code_step[1]}): its packet goes through code_step.py resume, not `packet`"])
+    seen = handback.latest(session_id)
+    gap = handback.hand_back_gap(seen)
+    if gap == handback.NO_DISPATCH:
+        raise PacketError([f"this session has no review-loop dispatch on record (session {session_id}): a hand-back "
+                           "from another session or an older run is never taken as current"])
+    if gap == handback.LOOP_WAITING:
+        raise LoopWaitingError(seen["stop"]["ts"])
+    if gap:
+        raise NoHandbackError(hand_back_id(seen["handback"], session_id))
+    return seen["handback"]
+
+
+def read_message():
+    """(packet text, run id, whether the loop handed back clean with no reviewer run).
+    A saved hand-back is one run per stored row (agent id and time), so two dispatches that return the same text are
+    two runs. A packet on stdin has no row: its text hash is the run id."""
+    stdin_text = "" if sys.stdin.isatty() else sys.stdin.read()
+    if stdin_text.strip():
+        return stdin_text, "stdin:" + hashlib.sha1(stdin_text.encode("utf-8")).hexdigest(), False
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    stored_row = saved_hand_back(session_id)
+    return stored_row["message"], hand_back_id(stored_row, session_id), bool(stored_row.get("no_reviewer"))
+
+
+def new_state(options, packet, packet_id):
+    previous = read_state() or {}
+    same_run = previous.get("packet_id") == packet_id
+    fixed_paths = []
+    for item in packet["fixed"]:
+        fixed_paths += [path for path in handback.entry_paths(item) if path not in fixed_paths]
+    state = {"skill": options.skill, "scope": options.scope, "lane": options.lane, "iter": packet["iter"],
+             "spec_iter": packet["spec_iter"], "status": packet["status"], "repo": script_utils.repo_name("."),
+             "branch": script_utils.current_branch(".") or "-", "packet_id": packet_id,
+             "source": options.source, "fixed_paths": fixed_paths}
+    if same_run:
+        for key in (
+            "stage",
+            "asks",
+            "jumped",
+            "aikido_posted",
+            "escapes_logged",
+            "asks_logged",
+            "plan_impact",
+        ):
+            if key in previous:
+                state[key] = previous[key]
+    return state
+
+
+def print_logged(notes):
+    if not notes:
+        return
+    print(LOGGED_HEADING)
+    print("\n".join("- " + note for note in notes))
+
+
+def blocker_lines(packet):
+    return ["- " + one_line(item_text(item, "finding", "item"), 400) for item in packet["blockers"]]
+
+
+def remaining_lines(packet):
+    return ["- " + item_text(item, "disposition", "finding", "file_line") for item in packet["findings_remaining"]]
+
+
+# The statuses that stop the caller: (the instruction, the packet's entry lines under it).
+STOP_STATUSES = {
+    "critical-blocker": ("Present these blockers and wait for direction. Do not re-dispatch. Do not run /fix. "
+                         "Do not mark the gate.", blocker_lines),
+    "cap-reached": ("The review cap was reached. Report these findings; the user decides. Do not re-dispatch. Do not "
+                    "run /fix. Do not mark the gate: the session stays dirty, so git commit stays blocked.",
+                    remaining_lines),
+}
+
+
+def stop_for_status(packet, options, state):
+    save_fix_state(state)
+    replies, failures = post_aikido_replies(packet, options.aikido_targets, state)
+
+    instruction, entry_lines = STOP_STATUSES[packet["status"]]
+    print_action("stop", instruction, *entry_lines(packet))
+    if replies:
+        print("AIKIDO REPLIES POSTED:")
+        print("\n".join(replies))
+    print_logged(failures)
+
+
+def command_packet(argv):
+    options = packet_arguments(argv)
+    try:
+        message, packet_id, unreviewed = read_message()
+    except NoHandbackError as error:
+        stop_for_missing_hand_back(options.skill, error.last_hand_back_id)
+        return 2
+    except LoopWaitingError as error:
+        return wait_for_loop(options.skill, error.stop_ts)
+    packet = handback.load(message)
+    if unreviewed:
+        return stop_for_unreviewed(options.skill)
+    state = new_state(options, packet, packet_id)
+    if state.get("stage") in FINISHED_STAGES:
+        return print_action("done", f"This packet was already processed (stage {state['stage']}). Nothing was "
+                            "logged or posted again. Continue from the step the first output named.")
+
+    if packet["status"] == "plan-impact":
+        return present_plan_impact(packet, state)
+    if packet["status"] in STOP_STATUSES:
+        return stop_for_status(packet, options, state)
+
+    save_fix_state(state)
+    notes = log_escapes(state, options.escapes, options.lane)
+    replies, failures = post_aikido_replies(packet, options.aikido_targets, state)
+    notes += failures
+    if packet["ask"]:
+        fill_packet_ask_ids(packet, state)
+        present_packet_asks(packet, state)
+    else:
+        print_action("render-and-finish", gate_mark_line())
+    sections = [("Aikido replies", replies)] if replies else []
+    print_user_block(handback.render(packet, options.skill, sections))
+    print_logged(notes)
+    if options.skill == "review" and not is_outstanding(packet):
+        print(f"Nothing is outstanding: say \"{NOTHING_OUTSTANDING}\"")
+    print("MODEL STILL DOES: " + model_duties(packet, options))
+
+
+def model_duties(packet, options):
+    duties = []
+    if packet["ask"]:
+        duties.append("present each ask and judge the user's answer")
+    if options.skill == "fix":
+        duties.append("recommend /eng-spec if a finding needs architectural rethinking")
+        if options.source == "conversation" and not options.escapes:
+            duties.append("if a fixed finding was a defect in code /review already passed, run "
+                          "`review_fix.py escape --escape ...` (class, severity, gate_missed, guard)")
+    duties.append("write the closing line to the user; add nothing the block already says")
+    return "; ".join(duties) + "."
+
+
+def command_escape(argv):
+    parser = argument_parser("escape")
+    parser.add_argument("--escape", action="append", default=[])
+    options = parser.parse_args(argv)
+    escapes = [parse_escape(spec) for spec in options.escape]
+    if not escapes:
+        raise UsageError("escape needs at least one --escape")
+    state = load_fix_state()
+    if state.get("skill") != "fix":
+        raise UsageError("escape rows belong to /fix; the saved packet came from /review.")
+    print_action("done", *["- " + note for note in log_escapes(state, escapes, state["lane"])])
+
+
+# ---------- asks ----------
+
+def is_plan_impact_ask(item):
+    return any(str(item.get(key) or "").lstrip().startswith(PLAN_IMPACT_PREFIX) for key in ("finding", "question"))
+
+
+def log_ask_outcome(state, item, outcome, finding_id, decided_by="user"):
+    """(exit code, output) of the outcome row's log call."""
+    return run_command(["bash", str(CLAUDE_DIR / "skills/review/log-review-finding"), "kind=finding",
+                        f"finding_id={finding_id}", *handback.ask_row_fields(state, item), f"ask_outcome={outcome}",
+                        f"ask_decided_by={decided_by}"])
+
+
+def fill_packet_ask_ids(packet, state):
+    """Give every ask without a valid finding_id the id of the ask row the loop logged for it, matched on file and
+    line, or of an ask row logged here when the loop logged none. A valid id the loop wrote stays. A plan-impact ask
+    is not a finding and gets none. An ask whose row cannot be logged gets none, and asks-done reports it. A repeat of
+    the same packet keeps the asks saved the first time, so no ask row is logged twice."""
+    if state.get("asks"):
+        packet["ask"] = state["asks"]
+        return
+
+    finding_asks = [item for item in packet["ask"] if not is_plan_impact_ask(item)]
+    handback.supply_ask_finding_ids(finding_asks, os.environ.get("CLAUDE_CODE_SESSION_ID", ""),
+                                    CLAUDE_DIR / "skills/review/log-review-finding", state)
+
+
+def read_outcomes(argv, asks):
+    """The outcome word of each ask. A note after `:` is accepted and dropped."""
+    if len(argv) != len(asks):
+        raise UsageError(f"{len(asks)} ask(s) waiting but {len(argv)} outcome(s) given")
+    outcomes = [word.partition(":")[0] for word in argv]
+    for word, outcome in zip(argv, outcomes, strict=True):
+        if outcome not in ASK_OUTCOMES:
+            raise UsageError(f"outcome {word!r} is not one of {'|'.join(ASK_OUTCOMES)}")
+    return outcomes
+
+
+def log_fix_ask_outcomes(state, asks, outcomes, decided_by="user"):
+    """(ask counts of this call: plan-impact asks skipped, outcomes logged under a new finding_id; failure lines). An
+    ask that is logged or skipped joins asks_logged and is never tried again."""
+    logged = state.setdefault("asks_logged", [])
+    ask_counts = {PLAN_IMPACT: 0, NEW_FINDING_ID: 0}
+    failures = []
+    for index, (item, outcome) in enumerate(zip(asks, outcomes, strict=True)):
+        if index in logged:
+            continue
+        if is_plan_impact_ask(item):
+            ask_counts[PLAN_IMPACT] += 1
+            logged.append(index)
+            continue
+
+        finding_id, new_finding_id_note = handback.ask_outcome_finding_id(item)
+        code, output = log_ask_outcome(state, item, outcome, finding_id, decided_by)
+        if code == 0:
+            logged.append(index)
+            if new_finding_id_note:
+                print(f"review-fix: {new_finding_id_note}", file=sys.stderr)
+                ask_counts[NEW_FINDING_ID] += 1
+            continue
+        path, line = split_location(item.get("file_line") or "-")
+        failures.append(f"{path}:{line}: {one_line(output, 160)}")
+    return ask_counts, failures
+
+
+def command_asks_done(argv):
+    state = load_fix_state()
+    asks = state.get("asks") or []
+    if state.get("stage") == "done" and asks:
+        return print_action("done", "The ask outcomes were already logged. Run nothing more.")
+    if state.get("stage") != "asks" or not asks:
+        raise UsageError("no asks are waiting. `asks-done` follows a packet that carried ask[] entries.")
+    outcome_words, decided_by = script_utils.pop_option(argv, "--by")
+    if decided_by is None:
+        decided_by = "user"
+    if decided_by not in ("user", "session"):
+        raise UsageError(f"asks-done --by needs user or session, not {decided_by!r}")
+    outcomes = read_outcomes(outcome_words, asks)
+
+    ask_counts, failures = log_fix_ask_outcomes(state, asks, outcomes, decided_by)
+    if not failures:
+        state["stage"] = "done"
+    save_fix_state(state)
+
+    rows_logged = sum(1 for index in state["asks_logged"] if not is_plan_impact_ask(asks[index]))
+    summary = f"Logged {rows_logged} of {len(asks)} ask outcome row(s)."
+    if decided_by == "session":
+        summary += " The session ruled, not the user."
+    if ask_counts[PLAN_IMPACT]:
+        summary += f" {ask_counts[PLAN_IMPACT]} plan-impact ask(s) are not logged as findings."
+    if ask_counts[NEW_FINDING_ID]:
+        summary += (f" {ask_counts[NEW_FINDING_ID]} ask(s) without a valid finding_id are logged under a new "
+                    "finding_id.")
+    if failures:
+        summary += " Failures (mention, never block; run the same asks-done again to retry only these):"
+    print_action("done", summary, *["- " + failure for failure in failures])
+    print("MODEL STILL DOES: act on accepted/modified asks as the user directed (dispatch a coder, or edit in scope).")
+
+
+# ---------- plan-impact ruling ----------
+
+def discuss_commands():
+    commands = []
+    for by, words in (("user", "the decision in one line"), ("session", "your reason")):
+        for decision in ("adopt", "keep"):
+            commands.append(f'{DECIDE_SCRIPT} decide {decision} --by {by} --ruling "<{words}>" {PLAN_ARG_NOTE}')
+    return commands
+
+
+def command_decide(argv):
+    parser = argument_parser("decide")
+    parser.add_argument("decision", choices=sorted(DECISION_WORDS))
+    parser.add_argument("--ruling", default="")
+    parser.add_argument("--plan", default="")
+    parser.add_argument("--by", nargs="?", const="", default=None)
+    options = parser.parse_args(argv)
+    state = load_fix_state()
+    if state.get("stage") != "plan-impact":
+        raise UsageError("no plan-impact is waiting.")
+    if options.decision == "discuss":
+        return print_action("discuss", "Discuss the plan impact with the user, then run one of these. Do not "
+                            "re-dispatch yet.", *discuss_commands(), DECIDE_BY_NOTE)
+    if options.by not in ("user", "session"):
+        raise UsageError(f"decide {options.decision} needs --by user or --by session. Usage: `{DECIDE_USAGE}`. "
+                         f"{DECIDE_BY_NOTE}")
+    if not options.ruling.strip():
+        raise UsageError(f"decide {options.decision} needs --ruling. Usage: `{DECIDE_USAGE}`.")
+    plan_path = pathlib.Path(options.plan) if options.plan else None
+    if plan_path is not None and not plan_path.exists():
+        raise UsageError(f"--plan {options.plan} does not exist")
+
+    choice = DECISION_WORDS[options.decision]
+    owner = plan_format.ruling_owner(".", options.by)
+    ruled_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    entry = plan_format.ruling_deviation(None, choice, owner, ruled_at, options.ruling, state["plan_impact"])
+    if plan_path is not None:
+        plan_format.append_deviation(plan_path, entry)
+
+    spec = state.get("spec_iter")
+    session_note = " The session ruled, not the user." if options.by == "session" else ""
+    lines = [f"plan_impact: RESOLVED - {choice}.{session_note} Ruling: {one_line(options.ruling)}",
+             f"iter={state['iter']}"]
+    if spec is not None:
+        lines.append(f"spec_iter={spec}")
+    state["stage"] = "redispatch"
+    save_fix_state(state)
+    print_action(
+        "redispatch",
+        (
+            f"Recorded in {options.plan} under ## Plan Deviations."
+            if options.plan
+            else "No --plan was given: add these lines under ## Plan Deviations in the plan yourself, then continue:"
+        ),
+        *entry,
+        'Re-dispatch review-loop (same Agent call, model: "sonnet") with the same arguments as the first dispatch '
+        "and these lines added, both counters kept:",
+        *lines,
+    )
+
+
+def main():
+    arguments = sys.argv[1:]
+    if not arguments or arguments[0] not in VERBS:
+        print(__doc__)
+        return 2
+    command = arguments[0]
+    handlers = {"packet": command_packet, "escape": command_escape, "asks-done": command_asks_done,
+                "decide": command_decide}
+    try:
+        return handlers[command](arguments[1:]) or 0
+    except PacketError as error:
+        stop_for_parse_failure(error, error.raw)
+        try:
+            if state_file().exists():
+                save_fix_state({**load_fix_state(), "stage": "parse-failed"})
+        except UsageError:
+            pass
+        return 2
+    except UsageError as error:
+        print_action("stop-usage", f"review_fix.py {command}: {error}",
+                     f"If you ran `{MARK_CLEAN}` alongside this call, run `{MARK_DIRTY}` now. Fix the call and run "
+                     "it again.")
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

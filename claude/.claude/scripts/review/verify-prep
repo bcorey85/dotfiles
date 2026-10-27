@@ -1,0 +1,313 @@
+#!/usr/bin/env python3
+"""verify-prep [<ticket|dir>] [--base <ref>] [--ticket-file <path>]
+
+Fixed first steps of /verify-branch: resolve the task dir, read the criteria, measure the diff, decide whether a
+branch-wide code review ran on the current tree, and print the dispatches. Exit codes:
+  0 ready   2 loud failure (no criteria, missing file, no base, empty diff, detached HEAD, unknown option)
+  3 several task dirs: ask which   4 no plan found: ticket-only (fetch the ticket, rerun with --ticket-file)
+
+Runs from any directory in the repo: relative paths are read against the directory it ran in, and git and the
+resolver run from the repo top level.
+"""
+import os
+import pathlib
+import sys
+
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+import plan_format
+import verify_common as vc
+
+REVIEW_PROMPT = ("Branch-wide deep review: review the whole branch diff against its base branch (git diff "
+                 "{base}...HEAD), backend and frontend together. This is the only review of cross-phase interactions. "
+                 "Report findings with file:line and severity.")
+UNTRACKED_LISTED = 20
+
+
+def parse_args(argv):
+    options = {"base": None, "ticketFile": None, "target": ""}
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg in ("--base", "--ticket-file"):
+            index += 1
+            if index >= len(argv):
+                raise vc.VerifyError(f"{arg} needs a value", 2)
+            options["base" if arg == "--base" else "ticketFile"] = argv[index]
+        elif arg.startswith("-"):
+            raise vc.VerifyError(
+                f"unknown option {arg}; usage: verify-prep [<ticket|dir>] [--base <ref>] [--ticket-file <path>]"
+            )
+        elif options["target"]:
+            raise vc.VerifyError(f"unexpected second argument {arg!r} (already have {options['target']!r}); "
+                          "usage: verify-prep [<ticket|dir>] [--base <ref>] [--ticket-file <path>]")
+        else:
+            options["target"] = arg
+        index += 1
+    return options
+
+
+def against_original_cwd(value, original_cwd, must_exist):
+    """`value` as an absolute path when it is relative to the directory the command ran in. With must_exist, a value
+    that names nothing there is a ticket id or a repo-relative name for the resolver and stays as given."""
+    if not value or pathlib.Path(value).is_absolute():
+        return value
+    candidate = pathlib.Path(original_cwd) / value
+    if must_exist and not candidate.exists():
+        return value
+    return str(candidate)
+
+
+def find_in_dir(task_dir, fixed_name, glob_pattern):
+    """The task-dir file `fixed_name`, else the single `glob_pattern` match (legacy `<KEY>-00-ticket.md` names)."""
+    fixed = task_dir / fixed_name
+    if fixed.is_file():
+        return fixed
+    matches = sorted(task_dir.glob(glob_pattern))
+    if len(matches) > 1:
+        raise vc.VerifyError(f"{task_dir} holds several {glob_pattern}: {', '.join(m.name for m in matches)}")
+    return matches[0] if matches else None
+
+
+def resolve_inputs(target, ticket_file, top):
+    """(mode, ticket_path, plan_path|None, note). Raises Fail for the ask / ticket-only exits. The resolver runs from
+    the
+    repo top level; a relative `target` or `ticketFile` has been made absolute by the caller."""
+    if ticket_file:
+        path = pathlib.Path(ticket_file)
+        if not path.is_file():
+            raise vc.VerifyError(f"--ticket-file {ticket_file} does not exist")
+        return "ticket-only", path, None, "plan: none (ticket-only)"
+
+    resolver = vc.script_path("RESOLVE_TASK_DIR_SCRIPT", "scripts/tools/resolve-task-dir.sh")
+    done = vc.run(["bash", resolver, target], cwd=top)
+    output = done.stdout.strip()
+    code = done.returncode
+    if code == 3:
+        raise vc.VerifyError("several matches; ask the user which:\n" + output, 3)
+    if code == 4:
+        raise vc.VerifyError(
+            "no plan or task dir found. Ticket-only: fetch the ticket per _shared/jira-ticket.md, write its "
+            "raw fields to <scratchpad>/<KEY>-ticket.md, then rerun with --ticket-file <that path>.\n"
+            + done.stderr.strip(),
+            4,
+        )
+    if code not in (0, 5):
+        raise vc.VerifyError(f"resolve-task-dir.sh exited {code}: {done.stderr.strip()}")
+
+    if code == 5:
+        flat = top / output
+        return "flat", flat, flat, "legacy flat plan: it is both ticket and plan"
+
+    task_dir = top / output
+    ticket = find_in_dir(task_dir, "00-ticket.md", "*-00-ticket.md")
+    if ticket is None:
+        raise vc.VerifyError(f"{task_dir}: no 00-ticket.md or *-00-ticket.md")
+    spec = find_in_dir(task_dir, "spec.md", "*-05-plan.md")
+    if spec is None:
+        return "dir", ticket, None, f"{task_dir.name} has no spec.md or *-05-plan.md: ticket-only (plan: none)"
+    return "dir", ticket, spec, f"task dir {output}"
+
+
+def read_criteria(mode, ticket_path, plan_path):
+    """(counts, criteriaPath|None). Every source is parsed here so a bad file fails at prep; verify-log reads them
+    again when it prints the checklist, so it keeps the counts, the ids, and the ticket labels and lines."""
+    ticket_entries = vc.ticket_criteria(ticket_path.read_text(), str(ticket_path))
+    counts = {"ticket": len(ticket_entries), "ticketLabels": [entry["label"] for entry in ticket_entries],
+              "ticketLines": [f"{entry['label']}: {entry['text']}" for entry in ticket_entries],
+              "criteriaFileIds": 0, "manualOnly": 0, "manualVerification": 0, "ids": []}
+
+    criteria_path = None
+    candidate = ticket_path.parent / "acceptance-criteria.md"
+    if mode == "dir" and candidate.is_file():
+        entries, manual_entries = vc.parse_criteria_file(candidate.read_text(), str(candidate))
+        if not entries and not manual_entries:
+            raise vc.VerifyError(f"{candidate} exists but holds no `- **ACn** — text` lines")
+        criteria_path = str(candidate)
+        counts["criteriaFileIds"] = len(entries) + len(manual_entries)
+        counts["manualOnly"] = len(manual_entries)
+        counts["ids"] = sorted({entry["id"] for entry in [*entries, *manual_entries]},
+                               key=lambda ac_id: int(ac_id[2:]))
+    if plan_path is not None:
+        counts["manualVerification"] = len(vc.manual_items(plan_path.read_text(), str(plan_path)))
+    return counts, criteria_path
+
+
+def parse_numstat(raw):
+    """[(added, removed, newPath)] from `git diff --numstat -z`; a rename lists its new path. Binary files count 0."""
+    fields = raw.split("\0")
+    changes = []
+    index = 0
+    while index < len(fields) and fields[index]:
+        added, removed, name = fields[index].split("\t", 2)
+        if name == "":
+            name = fields[index + 2]
+            index += 3
+        else:
+            index += 1
+        changes.append((0 if added == "-" else int(added), 0 if removed == "-" else int(removed), name))
+    return changes
+
+
+def parse_status(raw):
+    """(trackedChanges, untrackedPaths) from `git status --porcelain -z`; a rename's old path is not a second entry."""
+    fields = raw.split("\0")
+    tracked = 0
+    untracked = []
+    index = 0
+    while index < len(fields) and fields[index]:
+        entry = fields[index]
+        if entry.startswith("??"):
+            untracked.append(entry[3:])
+        else:
+            tracked += 1
+        index += 2 if entry[0] in "RC" or entry[1] in "RC" else 1
+    return tracked, untracked
+
+
+def measure_diff(top, merge_base):
+    changes = parse_numstat(vc.run(["git", "diff", "--numstat", "-z", merge_base], cwd=top, check=True).stdout)
+    status = vc.run(["git", "status", "--porcelain", "-z", "--untracked-files=all"], cwd=top, check=True).stdout
+    tracked, untracked = parse_status(status)
+    insertions = sum(added for added, _, _ in changes)
+    deletions = sum(removed for _, removed, _ in changes)
+    churn = sorted(((added + removed, name) for added, removed, name in changes), reverse=True)
+    return {"files": len(changes), "insertions": insertions, "deletions": deletions,
+            "diffLoc": insertions + deletions, "uncommitted": tracked, "untracked": untracked,
+            "hotspots": [name for _, name in churn[:5]]}
+
+
+def untracked_note(untracked):
+    if not untracked:
+        return ""
+    listed = ", ".join(untracked[:UNTRACKED_LISTED])
+    more = f" (+{len(untracked) - UNTRACKED_LISTED} more)" if len(untracked) > UNTRACKED_LISTED else ""
+    return f"untracked files, not in any git diff: {listed}{more}"
+
+
+def print_plan(context):
+    lines = []
+    lines.append(f"verify-prep: {context['note']}")
+    lines.append(f"ticket: {context['ticket']}")
+    lines.append(f"plan: {context['plan'] or 'none'}")
+    lines.append(f"base: {context['baseRef']} (merge-base {context['mergeBase'][:10]})")
+    gate_env_text = plan_format.gate_env_text(context["gateEnv"])
+    gate_env_lines = ["  " + line for line in gate_env_text.splitlines()]
+    diff = context["diff"]
+    lines.append(
+        f"diff: {diff['files']} files, +{diff['insertions']} -{diff['deletions']} (diff_loc={diff['diffLoc']}); "
+        f"{diff['uncommitted']} uncommitted, {len(diff['untracked'])} untracked"
+    )
+    untracked = untracked_note(diff["untracked"])
+    if untracked:
+        lines.append(f"  {untracked}")
+    criteria = context["criteria"]
+    lines.append(f"ticket ACs: {criteria['ticket']}; acceptance-criteria.md ids: {criteria['criteriaFileIds']} "
+                 f"({criteria['manualOnly']} manual-only); plan Manual Verification items: "
+                 f"{criteria['manualVerification']}")
+    lines.append("")
+
+    step = 1
+    if not context["review"]["ran"]:
+        lines.append(f"STEP {step}: branch-wide code review has NOT run on this tree "
+                     f"({context['review']['reason']}).")
+        lines.append("  Dispatch Agent subagent_type=code-reviewer (omit model) with this prompt:")
+        lines.append("  ---")
+        lines.append("  " + REVIEW_PROMPT.format(base=context["mergeBase"]))
+        lines += gate_env_lines
+        if diff["uncommitted"]:
+            lines.append(f"  {diff['uncommitted']} uncommitted file(s) are outside `base...HEAD`: also read `git diff` "
+                         "(working tree).")
+        if untracked:
+            lines.append(f"  {untracked}: read them too.")
+        lines.append("  ---")
+        lines.append("  Route its findings with /review and fix them. THEN log the review, after the fixes. Write the "
+                     "findings to a JSON list ([] when none) of")
+        lines.append(
+            '  {"desc","file","line","actioned", optional "class","disposition"} and run. `actioned` is required '
+            "(fixed|skipped_fp|deferred|ask|none);"
+        )
+        lines.append('  a finding with disposition fix (the default) cannot have actioned none: fix it, mark it '
+                     'skipped_fp, or defer it.')
+        lines.append("  verify-log review --result <PASS|PASS WITH WARNINGS|NEEDS CHANGES> --rows <file|->")
+        lines.append("  Then rerun verify-prep (it must report the review as ran) before STEP 2.")
+        step += 1
+    else:
+        lines.append(f"REVIEW: ran. {context['review']['reason']}. Skip the code-reviewer dispatch.")
+    lines.append(f"STEP {step}: dispatch Agent subagent_type=plan-verifier (omit model), prompt exactly:")
+    lines.append("  ---")
+    lines.append("  scope: branch")
+    lines.append(f"  ticket: {context['ticket']}")
+    lines.append(f"  plan: {context['plan'] or 'none'}")
+    lines.append(f"  diff scope: base {context['mergeBase']} ({context['baseRef']}); `git diff {context['mergeBase']}` "
+                 "covers committed and uncommitted changes")
+    if untracked:
+        lines.append(f"  {untracked}: they are part of the branch.")
+    if not context["review"]["read"]:
+        lines.append(f"  review state: not read from the ledger ({context['review']['reason']}); this checkout's "
+                     "own record of the logged review stood in. Name this skipped input in your report.")
+    lines += gate_env_lines
+    lines += [f"  {ticket_line}" for ticket_line in criteria["ticketLines"]]
+    lines.append("  ---")
+    lines.append("  Then convert its verdict table to rows JSON and run: verify-log --rows <file> "
+                 "(see SKILL.md for the row shape).")
+    return "\n".join(lines)
+
+
+def excluded_from_fingerprint(mode, ticket_path, plan_path, top):
+    """The repo-relative task dir (the plan file itself in flat mode), or None for a ticket-only run."""
+    if mode == "dir":
+        return vc.repo_relative(ticket_path.parent, top)
+    if mode == "flat":
+        return vc.repo_relative(plan_path, top)
+    return None
+
+
+def main(argv):
+    options = parse_args(argv)
+    original_cwd = os.getcwd()
+    top = vc.repo_top(original_cwd)
+    branch = vc.require_branch(top)
+
+    target = against_original_cwd(options["target"], original_cwd, must_exist=True)
+    ticket_file = against_original_cwd(options["ticketFile"], original_cwd, must_exist=False)
+    mode, ticket_path, plan_path, note = resolve_inputs(target, ticket_file, top)
+    criteria, criteria_path = read_criteria(mode, ticket_path, plan_path)
+    base_ref, merge_base = vc.find_base(top, options["base"])
+    repo = vc.script_utils.repo_name(top)
+    diff = measure_diff(top, merge_base)
+    if diff["files"] == 0:
+        raise vc.VerifyError(f"diff vs {base_ref} is empty: nothing to verify")
+
+    exclude_rel = excluded_from_fingerprint(mode, ticket_path, plan_path, top)
+    fingerprint = vc.branch_fingerprint(top, merge_base, exclude_rel)
+
+    state_path = vc.context_path(repo, branch)
+    earlier_context = {}
+    if state_path.is_file():
+        try:
+            earlier_context = vc.load_context(state_path)
+        except ValueError:
+            earlier_context = {}
+    earlier_escapes = earlier_context.get("escapes", [])
+    review_logged_tree = earlier_context.get("reviewLoggedTree")
+    review = vc.review_state(repo, branch, fingerprint, review_logged_tree)
+
+    plan_file = plan_path or ticket_path
+    plan_rel = vc.repo_relative(plan_file, top) or str(plan_file)
+    gate_env = plan_format.repo_gate_env(top, vc.repo_relative(plan_path, top) if plan_path else None)
+    context = {"repo": repo, "branch": branch, "note": note, "ticket": str(ticket_path),
+               "plan": str(plan_path) if plan_path else None, "planRel": plan_rel, "criteriaPath": criteria_path,
+               "gateEnv": gate_env,
+               "baseRef": base_ref, "mergeBase": merge_base, "diff": diff, "criteria": criteria,
+               "excludeRel": exclude_rel, "fingerprint": fingerprint, "review": review,
+               "reviewLoggedTree": review_logged_tree, "logged": False, "escapes": earlier_escapes}
+    vc.save_context(state_path, context)
+    print(print_plan(context))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except vc.VerifyError as error:
+        vc.die(error)

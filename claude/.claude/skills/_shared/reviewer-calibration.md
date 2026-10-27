@@ -52,7 +52,9 @@ Every finding carries **exactly one disposition**. The disposition names what sh
 - **`ask`** — a human has to answer something before anything is done. Two shapes
   qualify and only these two: (a) you believe there is a problem but cannot confirm the
   premise, or (b) the problem is real and more than one correction is defensible, so
-  picking one is a design call. Never auto-fixed.
+  picking one is a design call. Never auto-fixed. Write every `ask` as one proposed
+  change: the question names any alternatives, and the change is the one edit an
+  `accepted` answer makes. A `rejected` answer leaves the code as it stands.
 - **`nit`** — real, optional, and cheap to ignore. Reported exactly once, never fixed,
   never re-reviewed, never re-raised on a later pass. **Budget: at most two per run,
   and none at all in a run that reports any `fix`.** A nit costs the reader the same

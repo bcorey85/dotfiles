@@ -33,9 +33,14 @@
 #              reset-keys`) is overwritten on the next toggle. herdr's own
 #              auto_switch is deliberately off: it keys off the terminal's
 #              reported appearance rather than ~/.cache/theme-mode.
-#   - tuios:   runs theme = "none", so its panes and chrome take ghostty's
-#              colours. After the ghostty reload this script runs
-#              `tuios theme reload`, which makes every client ask again.
+#   - tuios:   this script writes ~/.config/tuios/themes/theme-mode.json
+#              (machine-local) from the family's ghostty theme file: the
+#              sixteen, plus a chrome object that puts the accents on the
+#              palette's cyan (teal) and the dialogs on its background. The
+#              stowed config selects theme = "theme-mode". theme = "none" would
+#              take the panes from ghostty but keep tuios's own accents and
+#              grey dialogs. Every client watches the themes dir; this script
+#              also runs `tuios theme reload`.
 #   - starship: this script regenerates the REAL ~/.config/starship.toml from
 #              the stowed ~/.config/starship.toml.template with the active
 #              `palette =` line swapped to `<family>-<mode>` — a two-axis
@@ -56,6 +61,7 @@
 #   theme-mode status                 current family + mode
 #   theme-mode herdr                  rebuild herdr's config from its template
 #                                     and reload it, theme unchanged (prefix+r)
+#   theme-mode tuios                  rewrite tuios's theme file, theme unchanged
 #
 # Adding a family = six touchpoints, kept in sync by hand:
 #   1. families() + ghostty_theme() + claude_theme_file() below
@@ -507,7 +513,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
     # dredge (nvim colors/dredge.lua). Both modes share the scope table below.
     dredge:*)
       bg="#1c1e20"; panel="#151719"; panelAlt="#292b2d"; border="#414244"
-      accent="#74c2b5"; accentMuted="#414244"; text="#c1c8d2"; muted="#9b9fa6"
+      accent="#6bada2"; accentMuted="#414244"; text="#c1c8d2"; muted="#9b9fa6"
       # Words must stay >= RGB distance 28 from the line wash, or hunk
       # replaces them with its own blend of the sign colour. Words separate by
       # chroma, not lightness. The washes share one lightness. Red reads
@@ -520,10 +526,10 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       sAdd="#5da37e"; sRem="#be6146"; lnFg="#777b82"
       badgeAdd="#74d5a1"; badgeRem="#fb784f"; badgeNeu="#d7bb70"
       fRename="#5da37e"; fMod="#5da37e"; fUntracked="#5da37e"; note="#151719"
-      kw="#858990"; str="#74c2b5"; num="#c88191"; fn="#9c9ae3"; typ="#c1c8d2"; punct="#7c8187"; op="#7c8187"
-      konst="#c88191"; esc="#c88191"; cmt="#b4a999"; param="#c1c8d2"
-      attr="#c1c8d2"; tag="#858990"; vbi="#c1c8d2"; lang="#c88191"; imp="#858990"; pre="#858990"
-      prim="#c1c8d2"; ns="#c1c8d2"; mac="#9c9ae3"; bfn="#c1c8d2"; var="#9c9ae3"; key="#c1c8d2"; cls="#9c9ae3"
+      kw="#858990"; str="#6bada2"; num="#c58392"; fn="#9897d3"; typ="#c1c8d2"; punct="#7c8187"; op="#7c8187"
+      konst="#c58392"; esc="#c58392"; cmt="#b2a99d"; param="#c1c8d2"
+      attr="#c1c8d2"; tag="#858990"; vbi="#c1c8d2"; lang="#c58392"; imp="#858990"; pre="#858990"
+      prim="#c1c8d2"; ns="#c1c8d2"; mac="#9897d3"; bfn="#c1c8d2"; var="#9897d3"; key="#c1c8d2"; cls="#9897d3"
       # Colour marks definitions. Builtins, uses, calls and members are plain text.
       use="#c1c8d2"; call="#c1c8d2"; mem="#c1c8d2"
       # Match nvim's tree-sitter colours where one-dark-pro's own selectors
@@ -1293,12 +1299,12 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:*)
       base_name="one-dark"
-      accent="#6aaea2" panel_bg="#151719" surface_dim="#292b2d"
+      accent="#4c8e84" panel_bg="#151719" surface_dim="#292b2d"
       surface0="#343638" surface1="#414244"
       overlay0="#7c8086" overlay1="#9b9fa6"
       text="#c1c8d2" subtext0="#9b9fa6"
-      green="#8dd09b" yellow="#d7bb70" red="#ec817a"
-      blue="#85beef" teal="#74c2b5" peach="#f6a981"
+      green="#8dd09b" yellow="#d7bb70" red="#ed8c84"
+      blue="#85beef" teal="#6bada2" peach="#f6a981"
       ;;
   esac
 
@@ -1371,13 +1377,82 @@ herdr_apply() { # <family> <mode> — regenerate the live config, reload the ser
   command -v herdr >/dev/null 2>&1 && herdr server reload-config >/dev/null 2>&1 || true
 }
 
-tuios_apply() { # — make every tuios client read the terminal's colours again
+ghostty_theme_file() { # <family> <mode> -> the ghostty theme's file, empty if none found
+  # Custom themes live in the stowed themes/ dir; builtins ship in ghostty's
+  # resources dir (GHOSTTY_RESOURCES_DIR inside ghostty, else the distro or
+  # macOS app path).
+  local ghostty_theme_name themes_dir
+  ghostty_theme_name="$(ghostty_theme "$1" "$2")"
+
+  for themes_dir in "$(dirname "$GHOSTTY_SWITCH")/themes" \
+    "${GHOSTTY_RESOURCES_DIR:-/usr/share/ghostty}/themes" \
+    "/Applications/Ghostty.app/Contents/Resources/ghostty/themes"; do
+    if [ -f "$themes_dir/$ghostty_theme_name" ]; then
+      echo "$themes_dir/$ghostty_theme_name"
+      return 0
+    fi
+  done
+}
+
+tuios_theme() { # <ghostty theme file> <family> <mode> -> the tuios theme JSON
+  # A ghostty theme file is `key = value` lines: `palette = N=#rrggbb` for the
+  # sixteen, then background / foreground / cursor-color. tuios calls slot 5
+  # `purple`, not magenta. The chrome names slots, not hex, so it follows the
+  # palette: accent (logo, selected row, window-mode pill), accent_bright
+  # (focused border in window mode) and success (terminal-mode pill, focused
+  # border in terminal mode) all take the teal. surface fills every dialog; the
+  # rest of the ramp and the text inks derive from it.
+  local is_dark="true"
+  [ "$3" = "light" ] && is_dark="false"
+
+  awk -v display_name="theme-mode ($2 $3)" -v is_dark="$is_dark" '
+    BEGIN { split("black red green yellow blue purple cyan white", slot_names, " ") }
+    {
+      line = $0
+      gsub(/[ \t]/, "", line)
+      split(line, field, "=")
+    }
+    field[1] == "palette" && field[2] ~ /^[0-9]+$/ {
+      n = field[2] + 0
+      if (n < 8) colours[slot_names[n + 1]] = field[3]
+      else if (n < 16) colours["bright_" slot_names[n - 7]] = field[3]
+    }
+    field[1] == "background" { colours["bg"] = field[2] }
+    field[1] == "foreground" { colours["fg"] = field[2] }
+    field[1] == "cursor-color" { colours["cursor"] = field[2] }
+    END {
+      printf "{\n  \"id\": \"theme-mode\",\n  \"display_name\": \"%s\",\n  \"dark\": %s", display_name, is_dark
+      key_count = split("fg bg cursor black red green yellow blue purple cyan white bright_black bright_red bright_green bright_yellow bright_blue bright_purple bright_cyan bright_white", keys, " ")
+      for (i = 1; i <= key_count; i++) {
+        if (keys[i] in colours) printf ",\n  \"%s\": \"%s\"", keys[i], colours[keys[i]]
+      }
+      printf ",\n  \"chrome\": {\n    \"accent\": \"cyan\",\n    \"accent_bright\": \"cyan\",\n    \"success\": \"cyan\""
+      if ("bg" in colours) printf ",\n    \"surface\": \"%s\"", colours["bg"]
+      printf "\n  }\n}\n"
+    }
+  ' "$1"
+}
+
+tuios_apply() { # <family> <mode> — write tuios's theme file, reload every client
   command -v tuios >/dev/null 2>&1 || return 0
 
-  # tuios runs theme = "none" (tuios/.config/tuios/config.d/dotfiles.toml), so
-  # it has no palette of its own: it asks ghostty. ghostty reloads on the
-  # SIGUSR2 in apply() asynchronously, so give it a moment before tuios asks.
-  sleep 0.3
+  local ghostty_file
+  ghostty_file="$(ghostty_theme_file "$1" "$2")"
+  [ -n "$ghostty_file" ] || return 0
+
+  # Written beside the theme and renamed into place: every tuios client watches
+  # this dir, so a half-written *.json would be read. The temp name is not
+  # *.json, so it is never loaded.
+  local themes_dir="${XDG_CONFIG_HOME:-$HOME/.config}/tuios/themes"
+  local theme_tmp
+  mkdir -p "$themes_dir"
+  theme_tmp="$(mktemp "$themes_dir/.theme-mode.XXXXXX")"
+  if ! tuios_theme "$ghostty_file" "$1" "$2" >"$theme_tmp"; then
+    rm -f "$theme_tmp"
+    return 0
+  fi
+  mv "$theme_tmp" "$themes_dir/theme-mode.json"
+
   tuios theme reload >/dev/null 2>&1 || true
 }
 
@@ -1467,8 +1542,8 @@ apply() { # <family> <mode> — write state and repaint herdr + ghostty
   # the active palette, then reload the running server. No-op without herdr.
   herdr_apply "$family" "$mode"
 
-  # tuios: follows ghostty's colours. No-op without tuios.
-  tuios_apply
+  # tuios: its theme file, from the family's ghostty palette. No-op without tuios.
+  tuios_apply "$family" "$mode"
 
   # hunk: one builtin theme id per family x mode, edited in place. No-op for a
   # family with no mapping.
@@ -1500,8 +1575,9 @@ case "$arg" in
   list) families ;;
   status) echo "$(current_family) $(current_mode)" ;;
   herdr) herdr_apply "$(current_family)" "$(current_mode)" ;;
+  tuios) tuios_apply "$(current_family)" "$(current_mode)" ;;
   *)
-    echo "usage: theme-mode [dark|light|toggle] | use <family> [mode] | list | status | herdr" >&2
+    echo "usage: theme-mode [dark|light|toggle] | use <family> [mode] | list | status | herdr | tuios" >&2
     exit 2
     ;;
 esac

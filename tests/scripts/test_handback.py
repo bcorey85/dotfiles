@@ -9,7 +9,9 @@ import tempfile
 import time
 import unittest
 
-SCRIPT = pathlib.Path(os.environ.get("HANDBACK_SCRIPT") or pathlib.Path.home() / ".claude" / "scripts" / "handback.py")
+import toolkit_paths
+
+SCRIPT = pathlib.Path(os.environ.get("HANDBACK_SCRIPT") or toolkit_paths.REVIEW_DIR / "handback.py")
 SESSION = "sess-1"
 
 spec = importlib.util.spec_from_file_location("handback_under_test", str(SCRIPT))
@@ -29,8 +31,10 @@ NUMBERED = """status: converged
 iter: 1
 fixed: []
 ask:
-1. finding: cap on retries | file_line: src/retry.ts:10 | question: cap at 3? | gate: code-reviewer | class: smell
-2) finding: add index | file_line: src/db.ts:5 | question: index tenant_id? | gate: perf-reviewer | class: perf
+1. finding: cap on retries | file_line: src/retry.ts:10 | question: cap at 3? | \
+change: stop the retry loop after 3 tries | gate: code-reviewer | class: smell
+2) finding: add index | file_line: src/db.ts:5 | question: index tenant_id? | \
+change: add an index on orders.tenant_id | gate: perf-reviewer | class: perf
 Closing note from the loop.
 """
 
@@ -101,7 +105,9 @@ class ParseTest(HandbackTestBase):
         self.assertEqual(pairs["file_line"], "a.ts:1")
 
     def test_a_field_name_after_punctuation_and_space_starts_a_field_and_a_question_mark_stays(self):
-        pairs = handback.parse_inline_pairs("finding: x. question: cap it? gate: code-reviewer; class: smell | file_line: a.ts:1")
+        pairs = handback.parse_inline_pairs(
+            "finding: x. question: cap it? gate: code-reviewer; class: smell | file_line: a.ts:1"
+        )
         self.assertEqual(pairs["question"], "cap it?")
         self.assertEqual((pairs["gate"], pairs["class"], pairs["file_line"]), ("code-reviewer", "smell", "a.ts:1"))
 
@@ -109,14 +115,17 @@ class ParseTest(HandbackTestBase):
         packet = handback.parse("status (final): converged\niter: 1\nfixed: []\n")
         self.assertEqual(packet["status"], "converged")
 
-    def test_perf_smell_files_touched_and_principle_are_packet_keys(self):
-        packet = handback.parse("status: converged\niter: 1\nfixed: []\nperf:\n- {finding: n+1}\nsmell: []\n"
-                                "files_touched: []\nprinciple: batch\n")
-        self.assertEqual(packet["principle"], "batch")
-        self.assertIn("n+1", packet["perf"])
+    def test_files_touched_is_a_packet_key_and_perf_smell_principle_are_trailer(self):
+        packet = handback.parse("status: converged\niter: 1\nfixed: []\nfiles_touched: [a.py]\n\nperf: n+1\n"
+                                "smell: []\nprinciple: batch\n")
+        self.assertEqual(packet["files_touched"], "[a.py]")
+        self.assertFalse({"perf", "smell", "principle"} & set(packet))
+        self.assertIn("principle: batch", packet["trailer"])
 
     def test_flow_list_split_over_lines_parses(self):
-        packet = handback.load("status: converged\niter: 1\nfixed: [{finding: a, file_line: a.ts:1},\n {finding: b, file_line: b.ts:2}]\n")
+        packet = handback.load(
+            "status: converged\niter: 1\nfixed: [{finding: a, file_line: a.ts:1},\n {finding: b, file_line: b.ts:2}]\n"
+        )
         self.assertEqual([item["finding"] for item in packet["fixed"]], ["a", "b"])
 
     def test_json_style_list_parses(self):
@@ -129,9 +138,21 @@ class ParseTest(HandbackTestBase):
         self.assertNotIn('"', packet["fixed"][0]["finding"])
 
     def test_plain_text_fixed_entry_becomes_a_mapping_with_its_path(self):
-        packet = handback.load("status: converged\niter: 1\nfixed:\n  - removed the dead branch | src/a.ts:4 | blocker: no\n")
+        packet = handback.load(
+            "status: converged\niter: 1\nfixed:\n  - removed the dead branch | src/a.ts:4 | blocker: no\n"
+        )
         self.assertEqual(packet["fixed"][0]["file_line"], "src/a.ts:4")
         self.assertEqual(packet["fixed"][0]["blocker"], "no")
+
+    def test_an_entry_that_is_neither_text_nor_a_mapping_is_a_problem(self):
+        for text, problem in (("status: converged\niter: 1\nfixed: [null]\n", "fixed entry has no finding: 'None'"),
+                              ("status: converged\niter: 1\nfixed: [5]\n", "fixed entry has no finding: '5'"),
+                              ("status: converged\niter: 1\nfixed: []\nask: [null]\n", "ask entry has no question"),
+                              ("status: converged\niter: 1\nfixed: []\nask: [[\"q\"]]\n", "ask entry has no question")):
+            with self.subTest(text=text), self.assertRaises(handback.PacketError) as raised:
+                handback.load(text)
+            self.assertTrue([found for found in raised.exception.problems if found.startswith(problem)],
+                            raised.exception.problems)
 
     def test_missing_spec_iter_is_none_and_missing_iter_is_a_problem(self):
         self.assertIsNone(handback.load(CONVERGED)["spec_iter"])
@@ -141,6 +162,21 @@ class ParseTest(HandbackTestBase):
 
 
 class ValidateTest(HandbackTestBase):
+    def test_an_ask_carries_its_one_proposed_change_as_its_own_field(self):
+        packet = handback.load(NUMBERED)
+
+        self.assertEqual("cap at 3?", packet["ask"][0]["question"])
+        self.assertEqual("stop the retry loop after 3 tries", packet["ask"][0]["change"])
+
+    def test_an_either_or_ask_with_no_proposed_change_is_refused(self):
+        either_or = NUMBERED.replace(" | change: stop the retry loop after 3 tries", "").replace(
+            "question: cap at 3?", "question: cap at 3, or keep retrying with backoff?")
+
+        with self.assertRaises(handback.PacketError) as raised:
+            handback.load(either_or)
+
+        self.assertIn("ask entry has no change", raised.exception.problems[0])
+
     def test_unknown_ask_class_becomes_other_and_the_raw_class_is_kept(self):
         packet = handback.load(NUMBERED.replace("class: smell", "class: ops"))
         self.assertEqual((packet["ask"][0]["class"], packet["ask"][0]["class_raw"]), ("other", "ops"))
@@ -153,11 +189,14 @@ class ValidateTest(HandbackTestBase):
         self.assertEqual(packet["ask"][1]["gate"], "code-reviewer")
 
     def test_every_status_word_validates_with_its_required_fields(self):
-        cases = {"converged": CONVERGED,
-                 "deferred": "status: deferred\niter: 1\nfixed: []\nfindings_remaining:\n- {finding: x, file_line: a.ts:1}\n",
-                 "critical-blocker": "status: critical-blocker\niter: 1\nblockers:\n- bad thing\n",
-                 "cap-reached": "status: cap-reached\niter: 2\nfindings_remaining:\n- {finding: x, file_line: a.ts:1}\n",
-                 "plan-impact": "status: plan-impact\niter: 1\nspec_iter: 0\nplan_impact: assumed a, found b\n"}
+        cases = {
+            "converged": CONVERGED,
+            "deferred": "status: deferred\niter: 1\nfixed: []\nfindings_remaining:\n- {finding: x, file_line: "
+                        "a.ts:1}\n",
+            "critical-blocker": "status: critical-blocker\niter: 1\nblockers:\n- bad thing\n",
+            "cap-reached": "status: cap-reached\niter: 2\nfindings_remaining:\n- {finding: x, file_line: a.ts:1}\n",
+            "plan-impact": "status: plan-impact\niter: 1\nspec_iter: 0\nplan_impact: assumed a, found b\n",
+        }
         for status, text in cases.items():
             self.assertEqual(handback.load(text)["status"], status)
 
@@ -178,10 +217,13 @@ class ValidateTest(HandbackTestBase):
                 handback.load(text)
 
     def test_cap_reached_with_a_key_present_but_empty_is_a_problem_and_a_missing_key_is_another(self):
-        for text in ("status: cap-reached\niter: 2\nfindings_remaining: [] (none open)\n", "status: cap-reached\niter: 2\n"):
-            with self.assertRaises(handback.PacketError) as raised:
+        for text, absence in (
+            ("status: cap-reached\niter: 2\nfindings_remaining: [] (none open)\n", "empty"),
+            ("status: cap-reached\niter: 2\n", "missing"),
+        ):
+            with self.subTest(text=text), self.assertRaises(handback.PacketError) as raised:
                 handback.load(text)
-            self.assertIn("findings_remaining", raised.exception.problems[0])
+            self.assertIn(f"status is cap-reached but findings_remaining is {absence}", raised.exception.problems)
 
     def test_pending_report_is_not_a_packet(self):
         with self.assertRaises(handback.PacketError):
@@ -196,22 +238,83 @@ class AskFindingIdTest(unittest.TestCase):
         self.assertEqual(handback.ask_finding_id({"finding_id": "  a1b2c3d4e5f60001\t"}), "a1b2c3d4e5f60001")
 
     def test_a_placeholder_or_damaged_id_is_none(self):
-        notIds = ["none logged", "none", "-", "n/a", "", "   ", "a1b2c3d4e5f6000", "a1b2c3d4e5f600011",
+        not_ids = ["none logged", "none", "-", "n/a", "", "   ", "a1b2c3d4e5f6000", "a1b2c3d4e5f600011",
                   "A1B2C3D4E5F60001", "a1b2c3d4e5f6000g", "a1b2c3d4 e5f60001", "a1b2c3d4e5f60001\nx"]
-        for notId in notIds:
-            with self.subTest(findingId=notId):
-                self.assertIsNone(handback.ask_finding_id({"finding_id": notId}))
+        for not_id in not_ids:
+            with self.subTest(finding_id=not_id):
+                self.assertIsNone(handback.ask_finding_id({"finding_id": not_id}))
 
     def test_a_missing_or_non_string_id_is_none(self):
         for entry in [{}, {"finding_id": None}, {"finding_id": 1234567890123456}, {"finding_id": ["a1b2c3d4e5f60001"]},
-                      "a1b2c3d4e5f60001 in plain text"]:
+                      handback.entry_from_text("a1b2c3d4e5f60001 in plain text", "question")]:
             with self.subTest(entry=entry):
                 self.assertIsNone(handback.ask_finding_id(entry))
 
 
+class AskParsedFindingIdTest(unittest.TestCase):
+    def test_a_finding_id_the_loop_wrote_survives_parsing_in_block_and_flow_style(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "  - finding: x\n    finding_id: a1b2c3d4e5f60001\n    file_line: a.ts:1\n    question: q?\n"
+                "    change: c\n"
+                "  - {finding: y, finding_id: a1b2c3d4e5f60002, file_line: b.ts:2, question: q?, change: c}\n")
+        packet = handback.load(text)
+        self.assertEqual([handback.ask_finding_id(item) for item in packet["ask"]],
+                         ["a1b2c3d4e5f60001", "a1b2c3d4e5f60002"])
+
+
+class ClaimLoggedAskIdTest(unittest.TestCase):
+    def logged_rows(self):
+        return [{"file": "src/retry.ts", "line": 10, "finding_id": "a1b2c3d4e5f60001"},
+                {"file": "src/db.ts", "line": 5, "finding_id": "a1b2c3d4e5f60002"}]
+
+    def test_an_ask_takes_the_id_of_the_logged_row_at_its_file_and_line(self):
+        logged_rows = self.logged_rows()
+        ask = {"file_line": "src/db.ts:5"}
+        self.assertEqual(handback.claim_logged_ask_id(ask, logged_rows), "a1b2c3d4e5f60002")
+
+    def test_a_logged_row_is_claimed_once(self):
+        logged_rows = self.logged_rows()
+        ask = {"file_line": "src/db.ts:5"}
+        handback.claim_logged_ask_id(ask, logged_rows)
+        self.assertIsNone(handback.claim_logged_ask_id(ask, logged_rows))
+        self.assertEqual(len(logged_rows), 1)
+
+    def test_a_row_logged_with_a_shorter_path_still_matches_the_ask_path(self):
+        logged_rows = [{"file": "spec.md", "line": 314, "finding_id": "a1b2c3d4e5f60003"}]
+        ask = {"file_line": "docs/guide/spec.md:314"}
+        self.assertEqual(handback.claim_logged_ask_id(ask, logged_rows), "a1b2c3d4e5f60003")
+
+    def test_another_line_or_file_or_a_partial_name_is_no_match(self):
+        for file_line in ["src/db.ts:6", "src/other.ts:5", "mydb.ts:5", "", "-"]:
+            with self.subTest(file_line=file_line):
+                self.assertIsNone(handback.claim_logged_ask_id({"file_line": file_line}, self.logged_rows()))
+
+
+class AskOutcomeFindingIdTest(unittest.TestCase):
+    def test_a_valid_id_is_kept_with_no_note(self):
+        self.assertEqual(handback.ask_outcome_finding_id({"finding_id": " a1b2c3d4e5f60001 "}),
+                         ("a1b2c3d4e5f60001", None))
+
+    def test_a_placeholder_id_gets_a_new_id_in_the_writer_shape_and_a_note_naming_both(self):
+        new_finding_id, note = handback.ask_outcome_finding_id({"finding_id": "not logged (no id was printed)"})
+
+        self.assertEqual(handback.ask_finding_id({"finding_id": new_finding_id}), new_finding_id)
+        self.assertIn("ignored 'not logged (no id was printed)'", note)
+        self.assertIn(f"logged under new finding_id {new_finding_id}", note)
+
+    def test_a_missing_id_gets_a_fresh_id_on_every_call(self):
+        first_new_id, first_note = handback.ask_outcome_finding_id({})
+        second_new_id, _ = handback.ask_outcome_finding_id({})
+
+        self.assertNotEqual(first_new_id, second_new_id)
+        self.assertIn("(no finding_id)", first_note)
+
+
 class RenderTest(HandbackTestBase):
     def test_findings_remaining_show_on_converged(self):
-        text = CONVERGED.replace("ask: []", 'ask: []\nfindings_remaining: [{disposition: fix, finding: left over, file_line: a.ts:1}]')
+        text = CONVERGED.replace(
+            "ask: []", "ask: []\nfindings_remaining: [{disposition: fix, finding: left over, file_line: a.ts:1}]"
+        )
         self.assertIn("### Findings remaining", handback.render(handback.load(text), "review"))
 
     def test_bare_not_applicable_closure_with_empty_fixed_prints_one_line(self):
@@ -238,7 +341,7 @@ class RenderTest(HandbackTestBase):
 class StoreTest(HandbackTestBase):
     def test_latest_reports_dispatch_handback_and_pending(self):
         self.assertEqual(handback.latest(SESSION),
-                         {"dispatch": None, "handback": None, "unanswered": 0, "pending": False})
+                         {"dispatch": None, "handback": None, "stop": None, "unanswered": 0, "pending": False})
         handback.record(SESSION, "dispatch")
         self.assertTrue(handback.latest(SESSION)["pending"])
         handback.record(SESSION, "handback", status="converged", message="m")
@@ -277,6 +380,48 @@ class StoreTest(HandbackTestBase):
         handback.record(SESSION, "dispatch")
         seen = handback.latest(SESSION)
         self.assertEqual(handback.hand_back_gap(seen), handback.REDISPATCHED)
+
+    def test_a_stop_with_an_open_background_agent_is_a_wait_until_a_later_stop_or_a_hand_back(self):
+        handback.record(SESSION, "dispatch")
+        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=1)
+        self.assertEqual(handback.hand_back_gap(handback.latest(SESSION)), handback.LOOP_WAITING)
+        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=0)
+        self.assertEqual(handback.hand_back_gap(handback.latest(SESSION)), handback.NO_HANDBACK)
+        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=2)
+        handback.record(SESSION, "handback", status="converged", message="m")
+        self.assertIsNone(handback.hand_back_gap(handback.latest(SESSION)))
+
+    def test_a_stop_the_gate_blocked_is_not_the_standing_stop(self):
+        handback.record(SESSION, "dispatch")
+        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=0, ask_rows=[{"file": "a", "line": 1}])
+        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=0, ask_rows=[], blocked=True)
+        self.assertEqual(handback.latest(SESSION)["stop"]["ask_rows"], [{"file": "a", "line": 1}])
+
+    def test_the_settled_stop_is_the_awaited_agents_unblocked_stop_at_or_after_the_hand_back(self):
+        before = handback.record(SESSION, "stop", agent_id="a1", open_dispatches=0)["ts"]
+        handback.record(SESSION, "stop", agent_id="a2", open_dispatches=0)
+        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=0, blocked=True)
+        self.assertIsNone(handback.settled_stop_row(SESSION, "a1", before + 0.0001))
+        settled = handback.record(SESSION, "stop", agent_id="a1", open_dispatches=0, ask_rows=[])
+        self.assertEqual(handback.settled_stop_row(SESSION, "a1", before + 0.0001), settled)
+
+    def test_a_wait_after_a_redispatch_is_not_redispatched_and_a_new_dispatch_clears_an_old_stop(self):
+        handback.record(SESSION, "dispatch")
+        handback.record(SESSION, "handback", status="converged", message="m")
+        handback.record(SESSION, "dispatch")
+        handback.record(SESSION, "stop", agent_id="a2", open_dispatches=1)
+        self.assertEqual(handback.hand_back_gap(handback.latest(SESSION)), handback.LOOP_WAITING)
+        handback.record(SESSION, "dispatch")
+        self.assertEqual(handback.hand_back_gap(handback.latest(SESSION)), handback.REDISPATCHED)
+
+    def test_false_clean_reason_refuses_clean_while_the_loop_waits(self):
+        handback.record(SESSION, "dispatch")
+        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=1)
+        self.assertIn("waiting on a background agent", handback.false_clean_reason(SESSION))
+        handback.record(SESSION, "handback", status="converged", message="m")
+        handback.record(SESSION, "dispatch")
+        handback.record(SESSION, "stop", agent_id="a2", open_dispatches=1)
+        self.assertIn("waiting on a background agent", handback.false_clean_reason(SESSION))
 
     def test_a_stored_hand_back_with_no_dispatch_row_has_its_own_reason(self):
         handback.record(SESSION, "handback", status="converged", message="m")
@@ -337,7 +482,7 @@ class CliTest(HandbackTestBase):
         self.assertIn("ok: status=converged", out)
 
     def test_check_rejects_a_bad_packet_with_the_reason_on_stderr(self):
-        code, out, err = self.run_cli(["check"], "status: nope\niter: 1\n")
+        code, _out, err = self.run_cli(["check"], "status: nope\niter: 1\n")
         self.assertEqual(code, 1)
         self.assertIn("status is 'nope'", err)
 
@@ -345,14 +490,9 @@ class CliTest(HandbackTestBase):
         self.assertEqual(self.run_cli(["check"], "")[0], 1)
 
     def test_no_arguments_prints_usage_and_exits_2(self):
-        code, out, err = self.run_cli([])
+        code, _out, err = self.run_cli([])
         self.assertEqual(code, 2)
         self.assertIn("handback.py", err)
-
-    def test_latest_prints_the_session_rows_as_json(self):
-        handback.record(SESSION, "dispatch")
-        code, out, err = self.run_cli(["latest", SESSION])
-        self.assertEqual(json.loads(out)["pending"], True)
 
 
 class HookTest(HandbackTestBase):
@@ -363,10 +503,14 @@ class HookTest(HandbackTestBase):
                 "tool_input": {"message": message}}
 
     def fire(self, event, *arguments):
-        return self.run_cli(["hook", *arguments], json.dumps(event))
+        kind = {"Agent": "dispatch", "SubagentHandback": "handback"}[event["tool_name"]]
+        return self.run_cli(["hook", *(arguments or [kind])], json.dumps(event))
 
     def test_review_loop_dispatch_and_good_hand_back_are_stored_without_output(self):
         self.assertEqual(self.fire(self.event("Agent"))[:2], (0, ""))
+        reviewer = {"session_id": SESSION, "tool_name": "Agent", "agent_type": "review-loop", "agent_id": "a1",
+                    "tool_input": {"subagent_type": "code-reviewer"}}
+        self.assertEqual(self.fire(reviewer)[:2], (0, ""))
         self.assertEqual(self.fire(self.event("SubagentHandback"))[:2], (0, ""))
         seen = handback.latest(SESSION)
         self.assertEqual(seen["handback"]["status"], "converged")
@@ -379,18 +523,18 @@ class HookTest(HandbackTestBase):
 
     def test_bad_packet_is_denied_once_per_agent_then_stored_as_invalid(self):
         bad = self.event("SubagentHandback", message="status: pending")
-        code, out, err = self.fire(bad)
+        code, out, _ = self.fire(bad)
         decision = json.loads(out)["hookSpecificOutput"]
         self.assertEqual((code, decision["permissionDecision"]), (0, "deny"))
         self.assertIn("status is", decision["permissionDecisionReason"])
         self.assertIsNone(handback.latest(SESSION)["handback"])
-        code, out, err = self.fire(bad)
+        code, out, _err = self.fire(bad)
         self.assertEqual((code, out), (0, ""))
         self.assertEqual(handback.latest(SESSION)["handback"]["status"], "invalid")
 
     def test_a_different_agent_id_is_denied_afresh(self):
         self.fire(self.event("SubagentHandback", message="junk"))
-        code, out, err = self.fire(self.event("SubagentHandback", message="junk", agent_id="a2"))
+        _code, out, _err = self.fire(self.event("SubagentHandback", message="junk", agent_id="a2"))
         self.assertIn("deny", out)
 
     def test_an_unknown_kind_argument_does_nothing_and_never_acts_as_handback(self):
@@ -399,9 +543,11 @@ class HookTest(HandbackTestBase):
         self.assertIn("unknown kind", err)
         self.assertFalse(self.store.exists())
 
-    def test_an_explicit_kind_overrides_the_tool_name(self):
-        self.fire(self.event("Agent"), "dispatch")
-        self.assertIsNotNone(handback.latest(SESSION)["dispatch"])
+    def test_no_kind_argument_does_nothing(self):
+        code, out, err = self.run_cli(["hook"], json.dumps(self.event("Agent")))
+        self.assertEqual((code, out), (0, ""))
+        self.assertIn("unknown kind", err)
+        self.assertFalse(self.store.exists())
 
     def test_event_without_a_session_id_records_nothing(self):
         event = self.event("Agent")
@@ -410,8 +556,129 @@ class HookTest(HandbackTestBase):
         self.assertFalse(self.store.exists())
 
     def test_unreadable_event_exits_zero_and_blocks_nothing(self):
-        code, out, err = self.run_cli(["hook"], "not json")
+        code, out, err = self.run_cli(["hook", "handback"], "not json")
         self.assertEqual((code, out), (0, ""))
+        self.assertIn("handback hook:", err)
+        self.assertNotIn("unknown kind", err)
+        self.assertFalse(self.store.exists())
+
+
+class ReviewerRequiredTest(HandbackTestBase):
+    def dispatch(self, agent_type, calling_agent_id=None, prompt=""):
+        """A PreToolUse Agent event: from the main session, or from the subagent `calling_agent_id`."""
+        event = {"session_id": SESSION, "tool_name": "Agent",
+                 "tool_input": {"subagent_type": agent_type, "prompt": prompt}}
+        if calling_agent_id:
+            event.update({"agent_type": "review-loop", "agent_id": calling_agent_id})
+        self.assertEqual(self.run_cli(["hook", "dispatch"], json.dumps(event))[:2], (0, ""))
+
+    def hand_back(self, agent_id="a1", message=CONVERGED):
+        event = {"session_id": SESSION, "tool_name": "SubagentHandback", "agent_type": "review-loop",
+                 "agent_id": agent_id, "tool_input": {"message": message}}
+        return self.run_cli(["hook", "handback"], json.dumps(event))[:2]
+
+    def assert_denied(self, result):
+        code, out = result
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_clean_hand_back_with_no_reviewer_is_denied_once_then_stored_flagged_and_refused(self):
+        self.dispatch("review-loop")
+        self.dispatch("coder", "a1")
+        self.assert_denied(self.hand_back())
+        self.assertIsNone(handback.latest(SESSION)["handback"])
+        self.assertEqual(self.hand_back(), (0, ""))
+        self.assertIn("no reviewer", handback.false_clean_reason(SESSION))
+
+    def test_reviewer_dispatched_after_the_coder_passes(self):
+        self.dispatch("review-loop")
+        self.dispatch("coder", "a1")
+        self.dispatch("code-reviewer", "a1")
+        self.assertEqual(self.hand_back(), (0, ""))
+        self.assertIsNone(handback.false_clean_reason(SESSION))
+
+    def test_reviewer_with_no_coder_step_passes(self):
+        self.dispatch("review-loop")
+        self.dispatch("perf-reviewer-deep", "a1")
+        self.assertEqual(self.hand_back(), (0, ""))
+        self.assertIsNone(handback.false_clean_reason(SESSION))
+
+    def test_coder_dispatched_after_the_last_reviewer_is_denied(self):
+        self.dispatch("review-loop")
+        self.dispatch("code-reviewer", "a1")
+        self.dispatch("backend-coder-deep", "a1")
+        self.assert_denied(self.hand_back())
+
+    def test_no_review_mode_dispatch_passes_with_no_reviewer(self):
+        self.dispatch("review-loop", prompt="scope: branch\nno-review\n")
+        self.dispatch("coder", "a1")
+        self.assertEqual(self.hand_back(), (0, ""))
+        self.assertIsNone(handback.false_clean_reason(SESSION))
+
+    def test_a_normal_loop_is_denied_after_a_later_no_review_loop_claimed_the_exemption(self):
+        self.dispatch("review-loop")
+        self.dispatch("review-loop", prompt="no-review")
+        self.dispatch("coder", "a1")
+        self.dispatch("coder", "a2")
+        self.assertEqual(self.hand_back("a2"), (0, ""))
+        self.assert_denied(self.hand_back("a1"))
+
+    def test_a_no_review_loop_passes_though_a_normal_loop_was_dispatched_after_it(self):
+        self.dispatch("review-loop", prompt="no-review")
+        self.dispatch("review-loop")
+        self.dispatch("coder", "a1")
+        self.assertEqual(self.hand_back("a1"), (0, ""))
+        self.assertIsNone(handback.false_clean_reason(SESSION))
+
+    def test_each_no_review_dispatch_exempts_one_hand_back(self):
+        self.dispatch("review-loop", prompt="no-review")
+        self.dispatch("review-loop", prompt="no-review")
+        self.assertEqual(self.hand_back("a1"), (0, ""))
+        self.assertEqual(self.hand_back("a2"), (0, ""))
+        self.assertEqual(self.hand_back("a1"), (0, ""))
+        self.assert_denied(self.hand_back("a3"))
+
+    def test_reviewer_dispatched_by_another_agent_id_does_not_count(self):
+        self.dispatch("review-loop")
+        self.dispatch("coder", "a1")
+        self.dispatch("code-reviewer", "a2")
+        self.assert_denied(self.hand_back())
+
+    def test_cap_exit_coder_after_the_second_review_passes_when_converged(self):
+        self.dispatch("review-loop")
+        self.dispatch("code-reviewer", "a1")
+        self.dispatch("coder", "a1")
+        self.dispatch("code-reviewer", "a1")
+        self.dispatch("coder", "a1")
+        self.assertEqual(self.hand_back(message=CONVERGED.replace("iter: 1", "iter: 2")), (0, ""))
+        self.assertIsNone(handback.false_clean_reason(SESSION))
+
+    def test_cap_exit_coder_after_the_second_review_passes_when_deferred(self):
+        self.dispatch("review-loop")
+        self.dispatch("code-reviewer", "a1")
+        self.dispatch("coder", "a1")
+        self.dispatch("code-reviewer", "a1")
+        self.dispatch("coder", "a1")
+        message = ("status: deferred\niter: 2\nfixed: []\n"
+                   "findings_remaining:\n- {finding: x, file_line: a.ts:1}\n")
+        self.assertEqual(self.hand_back(message=message), (0, ""))
+        self.assertIsNone(handback.false_clean_reason(SESSION))
+
+    def test_round_two_hand_back_with_no_reviewer_ever_run_is_denied(self):
+        self.dispatch("review-loop")
+        self.dispatch("coder", "a1")
+        self.assert_denied(self.hand_back(message=CONVERGED.replace("iter: 1", "iter: 2")))
+
+    def test_round_two_reviewer_by_another_agent_id_does_not_exempt_the_trailing_coder(self):
+        self.dispatch("review-loop")
+        self.dispatch("code-reviewer", "a2")
+        self.dispatch("coder", "a1")
+        self.assert_denied(self.hand_back(message=CONVERGED.replace("iter: 1", "iter: 2")))
+
+    def test_other_agent_types_are_not_steps(self):
+        self.dispatch("review-loop")
+        self.dispatch("Explore", "a1")
+        self.assert_denied(self.hand_back())
 
 
 if __name__ == "__main__":

@@ -1,20 +1,23 @@
-"""Scratch checks for the code-step.py fixes: packet block scalars, questions in say.md, say.md cleared on a
+"""Scratch checks for the code_step.py fixes: packet block scalars, questions in say.md, say.md cleared on a
 resumed run, the plan-edit coder after an adopted change, and the per-file change fallback."""
 import importlib.util
 import json
 import os
 import pathlib
 import subprocess
-import sys
 import tempfile
 import time
 import unittest
 
-SCRIPT = pathlib.Path(os.environ.get("CODE_STEP_SCRIPT") or
-                      pathlib.Path(__file__).resolve().parents[2] / "claude" / ".claude" / "scripts" / "code-step.py")
+import toolkit_paths
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+REPO_CODE_STEP = REPO_ROOT / "claude" / ".claude" / "scripts" / "code" / "code_step.py"
+SCRIPT = pathlib.Path(os.environ.get("CODE_STEP_SCRIPT") or REPO_CODE_STEP)
 spec = importlib.util.spec_from_file_location("code_step", SCRIPT)
-codeStep = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(codeStep)
+code_step = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(code_step)
+import code_step_core  # noqa: E402
 
 PLAN = """# Plan
 
@@ -48,7 +51,7 @@ The loop stopped on a plan question.
 """
 
 
-REAL_CLAUDE_DIR = pathlib.Path(os.environ.get("CODE_STEP_REAL_CLAUDE") or pathlib.Path.home() / ".claude")
+REAL_CLAUDE_DIR = pathlib.Path(os.environ.get("CODE_STEP_REAL_CLAUDE") or toolkit_paths.CLAUDE_DIR)
 RULING = "the importer is right, so drop the header row"
 
 
@@ -56,10 +59,10 @@ def git(repo, *args):
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
 
 
-def make_repo(testCase):
+def make_repo(test_case):
     # The repo sits beside a throwaway home, so the script reads no real home and never waits for a hand-back.
     root = tempfile.TemporaryDirectory(prefix="codestep-")
-    testCase.addCleanup(root.cleanup)
+    test_case.addCleanup(root.cleanup)
     repo = pathlib.Path(root.name) / "repo"
     repo.mkdir()
     (repo.parent / "home").mkdir()
@@ -84,19 +87,32 @@ def read_state(repo):
 
 
 def say_text(repo):
-    sayFile = repo / ".git" / "code-step" / "say.md"
-    return sayFile.read_text() if sayFile.exists() else ""
+    # say.md, then question.md: the two files the /code skill hands back.
+    state_folder = repo / ".git" / "code-step"
+    saved_files = [state_folder / "say.md", state_folder / "question.md"]
+    return "".join(saved_file.read_text() for saved_file in saved_files if saved_file.exists())
 
 
-def save_report(repo, agentType, stage, message):
-    row = {"ts": time.time(), "agent_type": agentType, "agent_id": f"{agentType}-1", "stage": stage, "message": message}
-    with (repo / ".git" / "code-step" / "reports.jsonl").open("a") as reportsFile:
-        reportsFile.write(json.dumps(row) + "\n")
+def save_report(repo, agent_type, stage, message):
+    # Logs what the hooks log for one agent of the run: its dispatch, its launch and its hand-back. A review-loop
+    # hand-back counts only from the agent that the pending review dispatch launched.
+    run_id = "20260101T000000-1"
+    state = read_state(repo)
+    state["runId"] = run_id
+    state["dispatchAt"] = time.time()
+    write_state(repo, state)
+    agent_id = f"{agent_type}-1"
+    dispatch_id = f"d{len(code_step_core.read_events(repo, run_id)) + 1}"
+    code_step_core.log_event(repo, run_id, "dispatch", "session-1", id=dispatch_id, agent_type=agent_type,
+                             stage=stage)
+    code_step_core.log_event(repo, run_id, "launch", "session-1", agent_id=agent_id, dispatch=dispatch_id)
+    code_step_core.log_event(repo, run_id, "handback", "session-1", agent_id=agent_id, agent_type=agent_type,
+                             message=message)
 
 
 def run(repo, *args):
-    env = dict(os.environ, HOME=str(repo.parent / "home"), CODE_STEP_WAIT_SECONDS="0",
-               CODE_STEP_CLAUDE_DIR=str(REAL_CLAUDE_DIR))
+    env = dict(os.environ, HOME=str(repo.parent / "home"), CODE_STEP_WAIT_SECONDS="0", CODE_STEP_REVIEW_LOOP="agent",
+               CODE_STEP_CLAUDE_DIR=str(REAL_CLAUDE_DIR), CODE_STEP_NVIM_JUMP="true")
     done = subprocess.run(["python3", str(SCRIPT), *args], cwd=repo, capture_output=True, text=True, env=env)
     return done.stdout + done.stderr
 
@@ -118,9 +134,11 @@ class PlanImpactFlowTest(unittest.TestCase):
         self.assertIn("ACTION: ask-user", output)
         self.assertNotIn("AskUserQuestion", output + say_text(repo))
         self.assertIn("## Question for the user", say_text(repo))
-        self.assertIn("`decide adopt --by user --ruling \"<the user's answer>\"`", say_text(repo))
-        self.assertEqual(read_state(repo)["impact"],
-                         "PLAN-IMPACT:\n  assumed: the CSV has a header row\n\n  found: the importer rejects a header row")
+        self.assertIn("`decide adopt --by user --ruling \"<the decision in one line>\"`", say_text(repo))
+        self.assertEqual(
+            read_state(repo)["impact"],
+            "PLAN-IMPACT:\n  assumed: the CSV has a header row\n\n  found: the importer rejects a header row",
+        )
 
     def test_resume_verb_clears_old_say_text(self):
         repo = make_repo(self)
@@ -153,22 +171,22 @@ class PlanImpactFlowTest(unittest.TestCase):
         write_state(repo, state)
         (repo / "a.py").write_text("a = 2\n")
 
-        adoptOutput = run(repo, "decide", "adopt", "--by", "user", "--ruling", RULING)
-        stateAfterAdopt = read_state(repo)
+        adopt_output = run(repo, "decide", "adopt", "--by", "user", "--ruling", RULING)
+        state_after_adopt = read_state(repo)
         (repo / "plan.md").write_text((repo / "plan.md").read_text().replace("with a header row", "with no header row"))
-        reviewOutput = run(repo, "after-plan-edit")
-        stateAfterEdit = read_state(repo)
+        review_output = run(repo, "resume")
+        state_after_edit = read_state(repo)
 
-        self.assertIn("AGENT: coder", adoptOutput)
-        self.assertIn("Edit only the plan file plan.md", adoptOutput)
-        self.assertIn("after-plan-edit", adoptOutput)
-        self.assertEqual(stateAfterAdopt["stage"], "plan-coder")
+        self.assertIn("AGENT: coder", adopt_output)
+        self.assertIn("Edit only the plan file plan.md", adopt_output)
+        self.assertIn("code_step.py resume", adopt_output)
+        self.assertEqual(state_after_adopt["stage"], "plan-coder")
         self.assertIn("## Plan Deviations", (repo / "plan.md").read_text())
-        self.assertIn("AGENT: review-loop", reviewOutput)
-        self.assertEqual(stateAfterEdit["stage"], "review")
-        self.assertEqual(stateAfterEdit["flagged"], [])
-        self.assertNotIn("planEditBaseline", stateAfterEdit)
-        self.assertIn("Decision: Adopt plan change", reviewOutput)
+        self.assertIn("AGENT: review-loop", review_output)
+        self.assertEqual(state_after_edit["stage"], "review")
+        self.assertEqual(state_after_edit["flagged"], [])
+        self.assertNotIn("planEditBaseline", state_after_edit)
+        self.assertIn("Decision: Adopt plan change", review_output)
 
     def test_plan_coder_code_edit_is_flagged_and_reviewed(self):
         repo = make_repo(self)
@@ -179,10 +197,10 @@ class PlanImpactFlowTest(unittest.TestCase):
         run(repo, "decide", "adopt", "--by", "user", "--ruling", RULING)
         (repo / "b.py").write_text("b = 2\n")
         run(repo, "after-plan-edit")
-        stateAfterEdit = read_state(repo)
+        state_after_edit = read_state(repo)
 
-        self.assertIn("b.py", stateAfterEdit["files"])
-        self.assertTrue(any("b.py" in flag for flag in stateAfterEdit["flagged"]))
+        self.assertIn("b.py", state_after_edit["files"])
+        self.assertTrue(any("b.py" in flag for flag in state_after_edit["flagged"]))
 
     def test_keep_goes_straight_to_review(self):
         repo = make_repo(self)
@@ -203,11 +221,11 @@ class PlanImpactFlowTest(unittest.TestCase):
 
         run(repo, "decide", "adopt", "--by", "user", "--ruling", RULING)
 
-        planText = (repo / "plan.md").read_text()
-        self.assertIn("## Plan Deviations", planText)
-        self.assertIn("The user's words:", planText)
-        self.assertIn("  > " + RULING, planText)
-        self.assertIn("Ruled by t at", planText)
+        plan_text = (repo / "plan.md").read_text()
+        self.assertIn("## Plan Deviations", plan_text)
+        self.assertIn("  The ruling: " + RULING + "\n", plan_text)
+        self.assertNotIn("  > " + RULING, plan_text)
+        self.assertIn("Ruled by t at", plan_text)
         self.assertEqual(read_state(repo)["ruling"]["words"], RULING)
 
     def test_review_dispatch_after_decide_carries_the_resolved_block(self):
@@ -269,12 +287,12 @@ class ReviewReportEdgeTest(unittest.TestCase):
         repo = make_repo(self)
         write_state(repo, coder_state(repo, ["a.py"]))
         save_report(repo, "review-loop", "review", REVIEW_PACKET)
-        firstOutput = run(repo, "after-review")
+        first_output = run(repo, "after-review")
         run(repo, "decide", "keep", "--by", "user", "--ruling", RULING)
 
         output = run(repo, "after-review")
 
-        self.assertIn("ACTION: ask-user", firstOutput)
+        self.assertIn("ACTION: ask-user", first_output)
         self.assertIn("ACTION: stop", output)
         self.assertNotIn("ACTION: ask-user", output)
         self.assertIn("review-loop", say_text(repo))

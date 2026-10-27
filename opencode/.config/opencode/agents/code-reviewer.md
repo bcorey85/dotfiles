@@ -107,7 +107,7 @@ Apply **Disposition** from calibration. An unreachable path is not a finding at 
 [Each line carries the correction, not just the complaint — an item with no fix is an `ask`.]
 
 ### Ask
-[file:line — issue — the question the human has to answer]
+[file:line — issue — the question the human has to answer — change: the one edit an `accepted` answer makes]
 [Never auto-fixed. If the code contradicts the plan or ticket, say so here in those words.]
 
 ### Nit

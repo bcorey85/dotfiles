@@ -14,10 +14,10 @@ the verify scripts call:
   anything else                          exits 64
 
 `ledger write` records nothing and exits with the code in FAKE_LEDGER_WRITE_EXIT when that is set
-to a nonzero number.
+to a nonzero number. It refuses a row that carries a key named in FAKE_LEDGER_UNKNOWN_FIELDS (comma
+separated) as an older build does: `reject: field_unknown <key>` on stderr, exit 2.
 
-`no_ledger_env(directory)` returns env entries whose PATH holds only bash, jq, git and dirname, so
-no `ledger` is found, plus an AGENT_LEDGER_ROOT under `directory`.
+`path_without_ledger(path)` returns `path` with every directory that holds a `ledger` left out.
 
 The real writer keys the branch before it stores it; this stand-in compares the raw branch the
 scripts send, which is the same value the real one is given.
@@ -25,7 +25,6 @@ scripts send, which is the same value the real one is given.
 import json
 import os
 import pathlib
-import shutil
 
 LEDGER_SOURCE = '''#!/usr/bin/env python3
 import json
@@ -50,6 +49,10 @@ if len(args) >= 2 and args[0] == "write":
         sys.stdin.read()
         sys.exit(writeExit)
     row = json.loads(sys.stdin.read())
+    unknownFields = [key for key in os.environ.get("FAKE_LEDGER_UNKNOWN_FIELDS", "").split(",") if key in row]
+    if unknownFields:
+        print(f"reject: field_unknown {unknownFields[0]}", file=sys.stderr)
+        sys.exit(2)
     row["_type"] = args[1]
     row["_cwd"] = os.getcwd()
     if "--session" in args:
@@ -83,37 +86,26 @@ sys.exit(64)
 
 def install(directory):
     """Plant the stand-in under `directory`; return the env entries that put it first on PATH."""
-    binDirectory = pathlib.Path(directory) / "fake-ledger-bin"
-    binDirectory.mkdir(parents=True, exist_ok=True)
-    ledger = binDirectory / "ledger"
+    bin_directory = pathlib.Path(directory) / "fake-ledger-bin"
+    bin_directory.mkdir(parents=True, exist_ok=True)
+    ledger = bin_directory / "ledger"
     ledger.write_text(LEDGER_SOURCE)
     ledger.chmod(0o755)
     return {
-        "PATH": f"{binDirectory}{os.pathsep}{os.environ['PATH']}",
+        "PATH": f"{bin_directory}{os.pathsep}{os.environ['PATH']}",
         "FAKE_LEDGER_ROWS": str(pathlib.Path(directory) / "fake-ledger-rows.jsonl"),
     }
 
 
-NO_LEDGER_TOOLS = ("bash", "jq", "git", "dirname")
+def path_without_ledger(path):
+    """`path`, a PATH string, without the directories that hold a `ledger` (the stand-in's included)."""
+    return os.pathsep.join(part for part in path.split(os.pathsep) if not os.path.exists(os.path.join(part, "ledger")))
 
 
-def no_ledger_env(directory):
-    """Env entries with a PATH of only the tools the writers need and no `ledger`."""
-    binDirectory = pathlib.Path(directory) / "no-ledger-bin"
-    binDirectory.mkdir(parents=True, exist_ok=True)
-    for tool in NO_LEDGER_TOOLS:
-        link = binDirectory / tool
-        if not link.exists():
-            link.symlink_to(shutil.which(tool))
-    ledgerRoot = pathlib.Path(directory) / "no-ledger-root"
-    ledgerRoot.mkdir(parents=True, exist_ok=True)
-    return {"PATH": str(binDirectory), "AGENT_LEDGER_ROOT": str(ledgerRoot)}
-
-
-def recorded_rows(env, rowType=None):
-    """The rows the stand-in recorded, oldest first; only those of `rowType` when given."""
-    rowsPath = pathlib.Path(env["FAKE_LEDGER_ROWS"])
-    if not rowsPath.is_file():
+def recorded_rows(env, row_type=None):
+    """The rows the stand-in recorded, oldest first; only those of `row_type` when given."""
+    rows_path = pathlib.Path(env["FAKE_LEDGER_ROWS"])
+    if not rows_path.is_file():
         return []
-    rows = [json.loads(line) for line in rowsPath.read_text().splitlines() if line.strip()]
-    return [row for row in rows if rowType is None or row["_type"] == rowType]
+    rows = [json.loads(line) for line in rows_path.read_text().splitlines() if line.strip()]
+    return [row for row in rows if row_type is None or row["_type"] == row_type]

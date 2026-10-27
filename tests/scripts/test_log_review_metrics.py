@@ -8,14 +8,16 @@ import unittest
 
 import fake_ledger
 
-os.environ.pop("CLAUDE_TOOLKIT_TELEMETRY", None)  # the switch file alone decides in these tests
-
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 REAL_CLAUDE = REPO_ROOT / "claude" / ".claude"
-SCRIPT = pathlib.Path(os.environ.get("LOG_REVIEW_METRICS_SCRIPT") or REAL_CLAUDE / "skills" / "review" / "log-review-metrics")
-TELEMETRY_ENABLED_SCRIPT = pathlib.Path(os.environ.get("TELEMETRY_ENABLED_SCRIPT") or REAL_CLAUDE / "scripts" / "telemetry_enabled.sh")
-KV_SCRIPT = REAL_CLAUDE / "scripts" / "_kv.sh"
-LEDGER_WRITE_SCRIPT = REAL_CLAUDE / "scripts" / "ledger-write"
+SCRIPT = pathlib.Path(
+    os.environ.get("LOG_REVIEW_METRICS_SCRIPT") or REAL_CLAUDE / "skills" / "review" / "log-review-metrics"
+)
+TELEMETRY_ENABLED_SCRIPT = pathlib.Path(
+    os.environ.get("TELEMETRY_ENABLED_SCRIPT") or REAL_CLAUDE / "scripts" / "telemetry" / "telemetry_enabled.sh"
+)
+KV_SCRIPT = REAL_CLAUDE / "scripts" / "lib" / "_kv.sh"
+LEDGER_WRITE_SCRIPT = REAL_CLAUDE / "scripts" / "telemetry" / "ledger-write"
 
 GIT_ENV = {
     "GIT_AUTHOR_NAME": "t",
@@ -29,88 +31,122 @@ GIT_ENV = {
 
 class LogReviewMetricsRepoTest(unittest.TestCase):
     def setUp(self):
-        tempDir = tempfile.TemporaryDirectory()
-        self.addCleanup(tempDir.cleanup)
-        self.root = pathlib.Path(tempDir.name)
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.root = pathlib.Path(temp_dir.name)
         self.home = self.root / "home"
         (self.home / ".claude").mkdir(parents=True)
-        (self.home / ".claude" / "toolkit-telemetry").touch()
-        reviewDir = self.root / "claude" / "skills" / "review"
-        self.scriptsDir = self.root / "claude" / "scripts"
-        reviewDir.mkdir(parents=True)
-        self.scriptsDir.mkdir()
-        self.script = reviewDir / "log-review-metrics"
+        review_dir = self.root / "claude" / "skills" / "review"
+        self.scripts_dir = self.root / "claude" / "scripts"
+        review_dir.mkdir(parents=True)
+        telemetry_dir = self.scripts_dir / "telemetry"
+        telemetry_dir.mkdir(parents=True)
+        (self.scripts_dir / "lib").mkdir()
+        self.script = review_dir / "log-review-metrics"
         shutil.copy2(SCRIPT, self.script)
-        shutil.copy2(TELEMETRY_ENABLED_SCRIPT, self.scriptsDir / "telemetry_enabled.sh")
-        shutil.copy2(KV_SCRIPT, self.scriptsDir / "_kv.sh")
-        shutil.copy2(LEDGER_WRITE_SCRIPT, self.scriptsDir / "ledger-write")
-        self.ledgerEnv = fake_ledger.install(self.root)
+        shutil.copy2(TELEMETRY_ENABLED_SCRIPT, telemetry_dir / "telemetry_enabled.sh")
+        shutil.copy2(KV_SCRIPT, self.scripts_dir / "lib" / "_kv.sh")
+        shutil.copy2(LEDGER_WRITE_SCRIPT, telemetry_dir / "ledger-write")
+        self.ledger_env = fake_ledger.install(self.root)
 
-        self.mainRepo = self.root / "mainrepo"
-        self.mainRepo.mkdir()
-        self.git(self.mainRepo, "init", "-q")
-        (self.mainRepo / "README.md").write_text("hello\n", encoding="utf-8")
-        self.git(self.mainRepo, "add", "README.md")
-        self.git(self.mainRepo, "commit", "-q", "-m", "init")
+        self.main_repo = self.root / "mainrepo"
+        self.main_repo.mkdir()
+        self.git(self.main_repo, "init", "-q")
+        (self.main_repo / "README.md").write_text("hello\n", encoding="utf-8")
+        self.git(self.main_repo, "add", "README.md")
+        self.git(self.main_repo, "commit", "-q", "-m", "init")
         self.worktree = self.root / "wt-some-branch"
-        self.git(self.mainRepo, "worktree", "add", "-q", "-b", "some-branch", str(self.worktree))
+        self.git(self.main_repo, "worktree", "add", "-q", "-b", "some-branch", str(self.worktree))
 
     def git(self, cwd, *args):
         env = {**os.environ, **GIT_ENV}
         return subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True).stdout
 
-    def runMetrics(self, *args):
-        env = {**os.environ, **GIT_ENV, "HOME": str(self.home), **self.ledgerEnv}
+    def run_metrics(self, *args):
+        env = {**os.environ, **GIT_ENV, "HOME": str(self.home), "CLAUDE_TOOLKIT_TELEMETRY": "1",
+               **self.ledger_env}
         return subprocess.run([str(self.script), *args], env=env, cwd=self.worktree, capture_output=True, text=True)
 
-    def loggedMetricsRowAt(self, outValue, expectedLogPath, *args):
-        metricsRun = self.runMetrics(f"out={outValue}", "iter=7", *args)
-        self.assertEqual(metricsRun.returncode, 0, metricsRun.stderr)
+    def logged_metrics_row_at(self, out_value, expected_log_path, *args):
+        metrics_run = self.run_metrics(f"out={out_value}", "iter=7", *args)
+        self.assertEqual(metrics_run.returncode, 0, metrics_run.stderr)
 
-        loggedLines = expectedLogPath.read_text().splitlines()
-        self.assertEqual(len(loggedLines), 1)
+        logged_lines = expected_log_path.read_text().splitlines()
+        self.assertEqual(len(logged_lines), 1)
 
-        metricsRow = json.loads(loggedLines[0])
-        self.assertEqual(metricsRow["iter"], "7")
-        return metricsRow
+        metrics_row = json.loads(logged_lines[0])
+        self.assertEqual(metrics_row["iter"], "7")
+        return metrics_row
 
-    def ledgerRow(self, *args):
-        metricsRun = self.runMetrics("iter=7", "result=PASS", *args)
-        self.assertEqual(metricsRun.returncode, 0, metricsRun.stderr)
-        rows = fake_ledger.recorded_rows(self.ledgerEnv, "review_metrics")
+    def ledger_row(self, *args):
+        metrics_run = self.run_metrics("iter=7", "result=PASS", *args)
+        self.assertEqual(metrics_run.returncode, 0, metrics_run.stderr)
+        rows = fake_ledger.recorded_rows(self.ledger_env, "review_metrics")
         self.assertEqual(len(rows), 1)
         return rows[0]
 
     def test_the_writer_runs_in_the_callers_checkout_and_sends_no_repo(self):
-        row = self.ledgerRow()
+        row = self.ledger_row()
         self.assertEqual(row["_cwd"], str(self.worktree.resolve()))
         self.assertNotIn("repo", row)
 
     def test_a_caller_repo_is_never_sent(self):
-        self.assertNotIn("repo", self.ledgerRow("repo=wt-some-branch"))
+        self.assertNotIn("repo", self.ledger_row("repo=wt-some-branch"))
 
     def test_the_branch_is_sent_as_branch_key_and_the_result_with_underscores(self):
-        row = self.ledgerRow("result=PASS WITH WARNINGS")
+        row = self.ledger_row("result=PASS WITH WARNINGS")
         self.assertEqual((row["branch_key"], row["result"]), ("some-branch", "PASS_WITH_WARNINGS"))
         self.assertNotIn("branch", row)
 
+    def test_result_words_are_stored_as_their_verdict(self):
+        stored = {
+            "PASS (NITS ONLY)": "PASS_WITH_WARNINGS",
+            "NEEDS CHANGES": "NEEDS_CHANGES",
+            "NOT DISPATCHED": "NOT_DISPATCHED",
+        }
+        for sent, expected in stored.items():
+            with self.subTest(result=sent):
+                row = self.ledger_row(f"result={sent}")
+                self.assertEqual(row["result"], expected)
+                self.reset_recorded_rows()
+
+    def test_counts_by_name_are_stored_lowercase_with_underscores_in_both_forms(self):
+        for key in ("specialists", "fixed_classes"):
+            for form in ("Code-Reviewer:2,perf-reviewer:1", '{"Code-Reviewer":2,"perf-reviewer":1}'):
+                with self.subTest(key=key, form=form):
+                    row = self.ledger_row(f"{key}={form}")
+                    self.assertEqual({name: int(count) for name, count in row[key].items()},
+                                     {"code_reviewer": 2, "perf_reviewer": 1})
+                    self.reset_recorded_rows()
+
+    def reset_recorded_rows(self):
+        pathlib.Path(self.ledger_env["FAKE_LEDGER_ROWS"]).write_text("", encoding="utf-8")
+
     def test_leading_tilde_slash_expands_to_home(self):
-        homeLogPath = self.home / "x"
-        self.loggedMetricsRowAt("~/x", homeLogPath)
+        home_log_path = self.home / "x"
+        self.logged_metrics_row_at("~/x", home_log_path)
 
     def test_tilde_user_is_not_expanded(self):
-        tildeUserDir = self.worktree / "~user"
-        tildeUserDir.mkdir()
-        tildeUserLogPath = tildeUserDir / "x"
-        self.loggedMetricsRowAt("~user/x", tildeUserLogPath)
+        tilde_user_dir = self.worktree / "~user"
+        tilde_user_dir.mkdir()
+        tilde_user_log_path = tilde_user_dir / "x"
+        self.logged_metrics_row_at("~user/x", tilde_user_log_path)
 
     def test_tilde_inside_a_path_is_literal(self):
-        tildeInNameLogPath = self.root / "a~b.jsonl"
-        self.loggedMetricsRowAt(tildeInNameLogPath, tildeInNameLogPath)
+        tilde_in_name_log_path = self.root / "a~b.jsonl"
+        self.logged_metrics_row_at(tilde_in_name_log_path, tilde_in_name_log_path)
 
     def test_bare_tilde_expands_to_home_directory_and_exits_nonzero(self):
-        metricsRun = self.runMetrics("out=~", "iter=7")
-        self.assertNotEqual(metricsRun.returncode, 0)
+        metrics_run = self.run_metrics("out=~", "iter=7")
+        self.assertNotEqual(metrics_run.returncode, 0)
+
+    def test_help_prints_usage_and_writes_nothing(self):
+        for flag in ("--help", "-h"):
+            with self.subTest(flag=flag):
+                metrics_run = self.run_metrics(flag)
+                self.assertEqual((metrics_run.returncode, metrics_run.stderr), (0, ""))
+                self.assertIn("usage: log-review-metrics key=value", metrics_run.stdout)
+                self.assertEqual(fake_ledger.recorded_rows(self.ledger_env), [])
 
 
 if __name__ == "__main__":

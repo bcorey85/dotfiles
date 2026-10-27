@@ -24,7 +24,7 @@
 #   COMMON
 #     repo=<basename>
 #     branch=<git branch>
-#     lane=eng-spec|code|other|none
+#     lane=eng-spec|code|verify|stage|test-audit|other|none
 #     scope=phase|branch-exit|standalone
 #       phase       gate ran at a /code phase boundary, on that phase's diff
 #       branch-exit gate ran in a closing phase, on the whole-branch diff
@@ -46,6 +46,10 @@
 #       --shortstat on its scope, insertions+deletions). Review-defect-detection
 #       degrades with the size of the change under review, so a gate's yield is
 #       uninterpretable without it. Measure it; do not estimate it.
+#     diff_base=<ref>             in place of diff_loc: this script measures it, from
+#       the merge-base of <ref> and HEAD to the working tree, untracked files
+#       included. Refused with diff_loc, on a finding row, or for a ref git cannot
+#       resolve. Never stored.
 #     result=PASS|PASS WITH WARNINGS|NEEDS CHANGES|NOT DISPATCHED   (optional)
 #       Case and -/_ spelling are normalized, and the words gates reach for when
 #       none of the four fit are folded in: clean and intent-aligned are PASS,
@@ -71,7 +75,12 @@
 #       other = last resort, and it is read as one. A run whose findings are
 #       mostly `other` has told the analysis nothing about what the gate catches.
 #     file=<path>                 repo-relative
+#       file=unlocated: the finding names no file (a plan promise with no test).
+#       The row is sent with no file and no line; refused with a line=.
 #     line=<n>                    0 when the finding names no line
+#       gate=test-intent-reviewer refuses a finding row with no file, or a file
+#       and no line above 0: each of its findings names a test file:line, or is
+#       file=unlocated.
 #     actioned=fixed|skipped_fp|deferred|ask|none
 #       fixed      code changed because of this finding
 #       skipped_fp judged a false positive
@@ -82,31 +91,40 @@
 #     fix_induced=yes|no|bug      (optional) the finding names code a previous
 #       fix in this loop introduced, not code the coder originally wrote.
 #       `bug` sets blocker=yes.
-#     source=round|fix-diff|last-pass|class|gate   (review-loop `fix` rows) where
-#       the finding came from: a full review, the first or the second fix-diff
-#       pass, an open class member at the round cap, or the execution gate. Only
-#       last-pass and class may defer. A code-reviewer `fix` row with
+#     source=round|class|gate   (review-loop `fix` rows) where the finding came
+#       from: a full review, an open class member at the round cap, or the
+#       execution gate. Only class may defer. A code-reviewer `fix` row with
 #       actioned=deferred at scope phase or standalone is refused without one.
+#     ask_decided_by=user|session  (optional, ask outcome rows) who ruled on the ask:
+#       the user, or the session itself when the repo hands ask decisions to it.
+#       A ledger build that refuses the field gets the row without it.
 #
 # Every value is sent as a JSON string, except n_findings=null, which is sent as JSON null; `ledger write` types it. The row goes to
 # `ledger write review_run|review_finding`, which adds the date, repo and session,
 # keys `file=` and `branch=` into path_key and branch_key, and holds the deferred
 # queue. desc, date, schema_version, repo, session, kind and out are accepted and
 # never stored. A caller's out=<path> redirect is a metrics write: it happens only
-# while the metrics switch is on (CLAUDE_TOOLKIT_TELEMETRY=1, or the file
-# ~/.claude/toolkit-telemetry).
+# while the metrics switch is on (CLAUDE_TOOLKIT_TELEMETRY=1).
 #
 # Prints finding_id=<id> (run_id=<id> for a run row). The id is minted here unless
 # the caller passes finding_id= or run_id=. A later row for the same finding_id
 # supersedes the earlier one, so an ask outcome passes the id its ask row printed.
 # An ask outcome (actioned=ask with ask_outcome=) with no finding_id writes nothing,
-# prints one stderr line and exits 0. With no `ledger` on PATH the write is skipped
-# silently and everything else runs as before. A row `ledger write` refuses exits 2.
+# prints one stderr line and exits 0. With no `ledger` on PATH `ledger-write` drops the
+# row (kind=finding or run), prints one stderr line and everything else runs as before.
+# A row `ledger write` refuses exits 2.
+#
+# A row logged on a dirty tree carries snapshot=<sha>: a commit on HEAD of that tree, untracked
+# files included, kept under refs/review-snapshots/<id>. A later row for the same id sends the
+# commit its first row saved. The user's index and working tree are not touched. Snapshot refs
+# older than 90 days are deleted when a new one is saved. A ledger build that refuses the field
+# gets the row without it, and the ref is deleted.
 set -euo pipefail
 
 script_dir=$(dirname -- "${BASH_SOURCE[0]}")
-# shellcheck source=../../scripts/_kv.sh
-source "$script_dir/../../scripts/_kv.sh"
+# shellcheck source=../../scripts/lib/_kv.sh
+source "$script_dir/../../scripts/lib/_kv.sh"
+kv_help_exit "${BASH_SOURCE[0]}" "$@"
 
 # --check as the first argument runs every validation below, writes nothing, ignores the
 # telemetry switch and exits 0 when the arguments would be logged.
@@ -129,6 +147,29 @@ json=$(jq -cn \
   '{}
    + (if $b != "" then {branch: $b} else {} end)
    + (if $h != "" then {head: $h, dirty: $d} else {} end)')
+
+# Prints the tree of the working tree, untracked files included, built in a temp index seeded
+# from the real one. The user's index is not touched.
+working_tree_tree() {
+  local real_index temp_index tree
+  real_index=$(git rev-parse --git-path index) || return 1
+  temp_index=$(mktemp) || return 1
+  if [ -f "$real_index" ]; then cp -- "$real_index" "$temp_index"; else rm -f -- "$temp_index"; fi
+
+  tree=$(GIT_INDEX_FILE=$temp_index git add -A && GIT_INDEX_FILE=$temp_index git write-tree) || tree=""
+  rm -f -- "$temp_index"
+  [ -n "$tree" ] || return 1
+  printf '%s\n' "$tree"
+}
+
+# Prints insertions + deletions from the merge-base of $1 and HEAD to the working tree.
+measure_diff_loc() {
+  local merge_base tree
+  merge_base=$(git merge-base "$1" HEAD 2>/dev/null) || return 1
+  tree=$(working_tree_tree) || return 1
+
+  git diff --numstat "$merge_base" "$tree" | awk '$1 != "-" { lines += $1 + $2 } END { print lines + 0 }'
+}
 
 swallowed_pair=$'[ \t\n\r\f\v][A-Za-z_][A-Za-z0-9_]*='
 
@@ -213,9 +254,9 @@ if [ "$kind" = finding ]; then
   fi_val=$(jq -r '.fix_induced // ""' <<< "$json")
   [ "$fi_val" != bug ] || json=$(jq -c '.blocker = "yes"' <<< "$json")
 
-  # The review loop sends every `fix` finding to a coder except two kinds. A
-  # deferred row goes to a branch-exit queue that most branches never read, so
-  # a wrong deferral drops the finding.
+  # The review loop sends every `fix` finding to a coder but an open class
+  # member at the round cap. A deferred row goes to a branch-exit queue that most
+  # branches never read, so a wrong deferral drops the finding.
   source=$(jq -r '.source // ""' <<< "$json")
   disposition=$(jq -r '.disposition // ""' <<< "$json")
   actioned=$(jq -r '.actioned // ""' <<< "$json")
@@ -223,12 +264,11 @@ if [ "$kind" = finding ]; then
   if [ "$disposition" = fix ] && [ "$actioned" = deferred ]; then
     loop_row=no
     [ "$gate" = code-reviewer ] && { [ "$scope" = phase ] || [ "$scope" = standalone ]; } && loop_row=yes
-    if [ -n "$source" ] && [ "$source" != last-pass ] && [ "$source" != class ] \
+    if [ -n "$source" ] && [ "$source" != class ] \
       || { [ -z "$source" ] && [ "$loop_row" = yes ]; }; then
-      echo "refusing to log: a review-loop fix finding defers only from the second fix-diff pass" >&2
-      echo "(source=last-pass) or as an open class member at the round cap (source=class)." >&2
-      echo "A full review's, the first fix-diff pass's and the execution gate's fix findings get" >&2
-      echo "a coder at any iter. Dispatch one, read its diff, then log the row with actioned=fixed." >&2
+      echo "refusing to log: a review-loop fix finding defers only as an open class member at the" >&2
+      echo "round cap (source=class). A full review's and the execution gate's fix findings get a" >&2
+      echo "coder at any iter. Dispatch one, then log the row with actioned=fixed." >&2
       exit 1
     fi
   fi
@@ -239,6 +279,34 @@ fi
 if [ "$kind" = run ] && [ "$(jq -r 'has("n_findings")' <<< "$json")" != true ]; then
   echo "refusing to log: kind=run needs n_findings=<n> (0 for a silent run, null for an uncounted report)." >&2
   exit 1
+fi
+
+# A typed diff_loc is a guess at the size of the change the gate read; diff_base has it measured.
+diff_base=$(jq -r '.diff_base // ""' <<< "$json")
+if [ -n "$diff_base" ]; then
+  [ "$kind" = run ] || { echo "refusing to log: diff_base= belongs on a kind=run row." >&2; exit 1; }
+  if [ "$(jq -r 'has("diff_loc")' <<< "$json")" = true ]; then
+    echo "refusing to log: pass diff_base=<ref> or diff_loc=<n>, not both." >&2
+    exit 1
+  fi
+  if ! diff_loc=$(measure_diff_loc "$diff_base"); then
+    echo "refusing to log: cannot measure diff_loc from diff_base=$diff_base (no merge-base with HEAD)." >&2
+    exit 1
+  fi
+  json=$(jq -c --arg n "$diff_loc" 'del(.diff_base) | .diff_loc = $n' <<< "$json")
+fi
+
+# file=unlocated says the finding names no file; a guessed file would join it to the wrong code.
+if [ "$kind" = finding ]; then
+  file=$(jq -r '.file // ""' <<< "$json")
+  line=$(jq -r '.line // ""' <<< "$json")
+  if [ "$file" = unlocated ]; then
+    [ -z "$line" ] || { echo "refusing to log: file=unlocated takes no line=." >&2; exit 1; }
+    json=$(jq -c 'del(.file)' <<< "$json")
+  elif [ "$gate" = test-intent-reviewer ] && { [ -z "$file" ] || ! [[ $line =~ ^[1-9][0-9]*$ ]]; }; then
+    echo "refusing to log: a test-intent-reviewer finding names its test file= and line= (above 0), or is file=unlocated." >&2
+    exit 1
+  fi
 fi
 
 # An ask outcome supersedes its ask row by finding_id. Without one it would add a
@@ -254,6 +322,40 @@ fi
 
 [ -z "$check_only" ] || exit 0
 
+SNAPSHOT_REFS=refs/review-snapshots
+SNAPSHOT_KEEP_DAYS=90
+
+# Prints a commit on HEAD of the working tree.
+save_snapshot() {
+  local tree
+  tree=$(working_tree_tree) || return 1
+
+  git commit-tree "$tree" -p "$head" -m "review snapshot $id"
+}
+
+prune_snapshots() {
+  local now cutoff
+  now=$(date +%s)
+  cutoff=$(( now - SNAPSHOT_KEEP_DAYS * 86400 ))
+  git for-each-ref --format='%(committerdate:unix) %(refname)' "$SNAPSHOT_REFS/" \
+    | awk -v cutoff="$cutoff" '$1 < cutoff { print "delete " $2 }' \
+    | git update-ref --stdin
+}
+
+# Sends $1 to the ledger writer and keeps what it printed on stderr in writer_stderr.
+send_row() {
+  local rc=0
+  case "$kind" in
+    run)
+      { writer_stderr=$(printf '%s\n' "$1" | bash "$script_dir/../../scripts/telemetry/ledger-write" review_run 2>&1 >&3); } 3>&1 || rc=$?
+      ;;
+    finding)
+      { writer_stderr=$(printf '%s\n' "$1" | bash "$script_dir/../../scripts/telemetry/ledger-write" review_finding 2>&1 >&3); } 3>&1 || rc=$?
+      ;;
+  esac
+  return "$rc"
+}
+
 id_key=run_id
 [ "$kind" = finding ] && id_key=finding_id
 id=$(jq -r --arg k "$id_key" '.[$k] // ""' <<< "$json")
@@ -262,19 +364,49 @@ if [ -z "$id" ]; then
   json=$(jq -c --arg k "$id_key" --arg v "$id" '.[$k] = $v' <<< "$json")
 fi
 
+if [ -n "$redirected" ] && ! "$script_dir/../../scripts/telemetry/telemetry_enabled.sh" 2>/dev/null; then
+  echo "$id_key=$id"
+  exit 0
+fi
+
+snapshot_ref="$SNAPSHOT_REFS/$id"
+snapshot=$(git rev-parse -q --verify "$snapshot_ref^{commit}" 2>/dev/null || true)
+if [ -z "$snapshot" ] && [ "$dirty" = 1 ]; then
+  if snapshot=$(save_snapshot) && git update-ref "$snapshot_ref" "$snapshot"; then
+    prune_snapshots
+  else
+    echo "log-review-finding: could not save the reviewed tree; the row is logged without snapshot" >&2
+    snapshot=""
+  fi
+fi
+[ -z "$snapshot" ] || json=$(jq -c --arg s "$snapshot" '.snapshot = $s' <<< "$json")
+
 # desc is free text and never stored. file and branch go to the writer raw; it keys
 # them (path_key, branch_key) and drops a dash or empty value.
 payload=$(jq -c '
   del(.desc, .kind)
   | with_entries(.key |= (if . == "file" then "path_key" elif . == "branch" then "branch_key" else . end))' <<< "$json")
 
-write_row() {
-  [ -z "$redirected" ] || "$script_dir/../../scripts/telemetry_enabled.sh" 2>/dev/null || return 0
-  printf '%s\n' "$payload" | bash "$script_dir/../../scripts/ledger-write" "review_$kind"
-}
-
 write_rc=0
-write_row || write_rc=$?
+send_row "$payload" || write_rc=$?
+
+# An older ledger build refuses a field it does not know. Drop each refused optional field and
+# retry, so the row still lands. The writer names one field per refusal, so allow one retry per field.
+for _retry in 1 2; do
+  [ "$write_rc" -eq 2 ] || break
+  refused_field=""
+  for optional_field in snapshot ask_decided_by; do
+    [[ $writer_stderr == *"field_unknown $optional_field"* ]] && refused_field=$optional_field
+  done
+  [ -n "$refused_field" ] || break
+  [ "$refused_field" != snapshot ] || git update-ref -d "$snapshot_ref"
+  echo "note: this ledger build does not store $refused_field; the row is logged without it" >&2
+  payload=$(jq -c --arg f "$refused_field" 'del(.[$f])' <<< "$payload")
+  write_rc=0
+  send_row "$payload" || write_rc=$?
+done
+
+[ -z "$writer_stderr" ] || printf '%s\n' "$writer_stderr" >&2
 [ "$write_rc" -eq 0 ] || exit "$write_rc"
 
 echo "$id_key=$id"

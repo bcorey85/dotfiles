@@ -1,4 +1,4 @@
-"""Checks for test-edit-telemetry.py, the log-only PreToolUse hook that records edits to test files."""
+"""Checks for test_edit_telemetry.py, the log-only PreToolUse hook that records edits to test files."""
 import json
 import os
 import pathlib
@@ -8,10 +8,10 @@ import sys
 import tempfile
 import unittest
 
-os.environ.pop("CLAUDE_TOOLKIT_TELEMETRY", None)  # the switch file alone decides in these tests
+import toolkit_paths
 
-SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or pathlib.Path.home() / ".claude" / "scripts")
-SCRIPT = SCRIPTS_DIR / "test-edit-telemetry.py"
+SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.TELEMETRY_DIR)
+SCRIPT = SCRIPTS_DIR / "test_edit_telemetry.py"
 
 TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
@@ -23,11 +23,11 @@ class TestEditTelemetryTest(unittest.TestCase):
         self.root = pathlib.Path(self.tmp.name).resolve()
         self.home = self.root / "home"
         (self.home / ".claude").mkdir(parents=True)
-        (self.home / ".claude" / "toolkit-telemetry").touch()
         self.log = self.home / ".claude" / "test-edit-telemetry.jsonl"
 
     def run_hook(self, payload, env=None, cwd=None, stderr=""):
-        environment = {"PATH": os.environ["PATH"], "HOME": str(self.home), "TMPDIR": str(self.root)}
+        environment = {"PATH": os.environ["PATH"], "HOME": str(self.home), "TMPDIR": str(self.root),
+                       "CLAUDE_TOOLKIT_TELEMETRY": "1"}
         environment.update(env or {})
         stdin = payload if isinstance(payload, str) else json.dumps(payload)
         finished = subprocess.run([sys.executable, str(SCRIPT)], input=stdin, capture_output=True, text=True,
@@ -116,17 +116,17 @@ class TestEditTelemetryTest(unittest.TestCase):
 
     def test_unopenable_log_is_ignored(self):
         self.log.mkdir()
-        shell_message = "test-edit-telemetry: cannot open %s: Is a directory\n" % self.log
+        shell_message = f"test-edit-telemetry: cannot open {self.log}: Is a directory\n"
         self.edit("/r/a_test.py", stderr=shell_message)
 
-    def test_missing_claude_directory_means_switch_off(self):
-        self.home = self.root / "nohome"
-        self.home.mkdir()
-        self.edit("/r/a_test.py")
-        self.assertFalse((self.home / ".claude").exists())
+    def test_switch_off_writes_nothing(self):
+        payload = {"hook_event_name": "PreToolUse", "tool_name": "Edit",
+                   "tool_input": {"file_path": "/r/a_test.py", "new_string": "assert x == 1"}}
+        self.run_hook(payload, env={"CLAUDE_TOOLKIT_TELEMETRY": "0"})
+        self.assertFalse(self.log.exists())
 
     def test_control_characters_are_escaped_like_jq(self):
-        self.run_hook({"tool_name": "Edit", "tool_input": {"file_path": "/r/a_test.py", "new_string": "a\x01\x7f\n\"b"}})
+        self.run_hook({"tool_name": "Edit", "tool_input": {"file_path": "/r/a_test.py", "new_string": 'a\x01\x7f\n"b'}})
         self.assertIn('"snippet":"a\\u0001\\u007f\\n\\"b"', self.log.read_text())
 
     def test_non_string_snippet_logs_nothing(self):

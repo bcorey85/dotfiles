@@ -2,7 +2,7 @@
 name: spec-criteria
 description: "Drafts the acceptance-criteria file from ticket, decision ledger and finalized plan. Dispatched by /eng-spec after finalization, before any coder."
 model: sonnet
-tools: Read, Glob, Grep, Write
+tools: Read, Glob, Grep, Write, Edit
 color: yellow
 ---
 
@@ -23,6 +23,8 @@ without reading the code.
   and it pins the implementation you were handed rather than the intent.
 
 Derive from the **ticket**, using the plan only for reach. Ticket/plan divergence → write the ticket's, flag it.
+
+Copy each ticket acceptance criterion verbatim into one AC; a split or reworded one needs a sign-off.
 
 ## Damage-path sweep — before you finish
 

@@ -25,6 +25,8 @@ Work block log: 649 interpreter-inline blocks since Aug 31, the top block reason
 
 interpreter-inline blocks per day, and the share within 10 minutes of the previous block, in the next intake.
 
+Read 2026-10-24 on the work block log through 2026-10-22: interpreter-inline blocks per day fell from a median of 11.07 (range 8.14 to 27.86) to 8.11. Better. Kept. Watch closed.
+
 ## Back-out
 
 remove the hook entry from `settings.json`

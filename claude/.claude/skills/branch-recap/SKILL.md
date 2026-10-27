@@ -29,16 +29,15 @@ Nothing unstaged → receipt line `residue: none — all phases staged clean`.
 Per-phase residue of the review round budget comes due here — skip this step and deferral was deletion.
 
 ```bash
-if command -v ledger >/dev/null 2>&1; then
-  ledger yield --deferred
-else
-  echo "deferred: not tracked (ledger not installed)"
-fi
+~/.claude/scripts/tools/ledger_deferred.py
 ```
 
-`ledger yield --deferred` reads the current repo and branch from the cwd and prints a header line, then one row per deferred finding: `finding_id, ts, gate, class, disposition, blocker, fix_induced, line, actioned, gate_agent_run_id, session`. `actioned=1` means a later edit to the finding's file landed inside its gate run's window.
+It runs `ledger yield --deferred`, which reads the current repo and branch from the cwd and prints a header line, then one row per deferred finding: `finding_id, ts, gate, class, disposition, blocker, fix_induced, line, actioned, gate_agent_run_id, session`. `actioned=1` means a later edit to the finding's file landed inside its gate run's window. While the ledger cache is behind, the script waits up to about 90 s for it to catch up. Do not retry it yourself.
 
-Without `ledger` the queue went unread: the recap says `deferred: not tracked (ledger not installed)` and never `deferred: none`.
+When the queue goes unread, the script prints the recap line, and the recap uses it as printed, never `deferred: none`:
+- no `ledger`: `deferred: not tracked (ledger not installed)`.
+- exit 75, the cache still behind after the wait: `deferred: not read (<reason>)` and the command that brings the cache up to date.
+- other ledger failure: `deferred: not read (<reason>)`.
 
 Read the queue against the **branch** diff — some findings died when a later phase resolved them. A row with `actioned=1` is marked **likely stale**. For the rest, read the gate agent transcript locally — `~/.claude/projects/*/<session>/subagents/agent-<gate_agent_run_id>.jsonl` — and match the row to its finding by gate, class and line. The ledger keeps no description, so the transcript is where the finding's text lives.
 
@@ -69,7 +68,7 @@ Spec: <task-dir>
 - <any REQUIRES-MUTATION items with their KILLED/SURVIVED/EQUIVALENT/INDETERMINATE verdicts, or marked unrouted-and-open>
 
 ### Deferred findings             (round budget, read at branch bound)
-- <fixed / stale / carried, one line each, with the gate and disposition each came from; or "none"; or "not tracked (ledger not installed)">
+- <fixed / stale / carried, one line each, with the gate and disposition each came from; or "none"; or "not tracked (ledger not installed)"; or "not read (<reason>)" with the command that brings the cache up to date; or "not read (<reason>)">
 
 ### Smoke-test checklist          (from the /verify-branch closing phase)
 - <every human-only item, with steps>
@@ -85,13 +84,13 @@ Next: read the residue → run the smoke checklist → /adr → stage → /commi
 Persist (non-blocking; on failure mention and continue):
 
 ```bash
-if "$HOME/.claude/scripts/telemetry_enabled.sh" 2>/dev/null; then
+if "$HOME/.claude/scripts/telemetry/telemetry_enabled.sh" 2>/dev/null; then
   jq -cn --arg test_audit "<clean|culled|no_receipt>" --argjson culled <n culled> \
     --argjson coverage_lost <n coverage lost> --argjson residue <unstaged count> \
     --argjson files <changed-file count> --arg branch_key "$(git rev-parse --abbrev-ref HEAD)" \
     '{test_audit: $test_audit, culled: $culled, coverage_lost: $coverage_lost, residue: $residue,
       files: $files, branch_key: $branch_key}' \
-    | "$HOME/.claude/scripts/ledger-write" branch_recap
+    | "$HOME/.claude/scripts/telemetry/ledger-write" branch_recap
 fi
 ```
 

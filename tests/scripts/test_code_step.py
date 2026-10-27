@@ -3197,15 +3197,25 @@ class CodeStepTest(unittest.TestCase):
             self.commit_lines(),
         )
 
-    def test_the_commit_command_leaves_out_files_that_were_dirty_before_the_phase(self):
+    def test_the_commit_command_leaves_out_files_that_were_dirty_before_the_phase_and_untouched_by_it(self):
+        (self.repo / "backend/src/existing.ts").write_text("export const a = 2\n")
+        self.finish_phase_one()
+        self.assertEqual(1, len(self.commit_lines()))
+        self.assertNotIn("existing.ts", self.commit_lines()[0])
+        self.assertIn("Dirty before the phase and left out of the commit: backend/src/existing.ts", self.said())
+        self.assertNotIn("Edited by this phase", self.said())
+
+    def test_the_commit_command_includes_a_file_that_was_dirty_before_the_phase_and_edited_by_it(self):
         (self.repo / "backend/src/existing.ts").write_text("export const a = 2\n")
         self.coder_round()
         (self.repo / "backend/src/existing.ts").write_text("export const a = 3\n")
         self.hook("review-loop", self.LOOP_OK)
         self.step("after-review")
         self.assertEqual(1, len(self.commit_lines()))
-        self.assertNotIn("existing.ts", self.commit_lines()[0])
-        self.assertIn("Dirty before the phase and left out of the commit: backend/src/existing.ts", self.said())
+        self.assertIn(" backend/src/existing.ts", self.commit_lines()[0])
+        self.assertIn("Edited by this phase, was dirty before", self.said())
+        self.assertIn("backend/src/existing.ts", self.said().split("Edited by this phase, was dirty before")[1])
+        self.assertNotIn("left out of the commit: backend/src/existing.ts", self.said())
 
     def test_the_commit_command_includes_the_plan_when_it_was_dirty_before_the_phase_and_says_so(self):
         (self.repo / self.plan).write_text(self.plan_text().replace("Add orders.", "Add orders and returns."))
@@ -3331,7 +3341,7 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("start", "--restart", "docs/plans/orders/missing.md")
         self.assertIn("ACTION: ask-user", out)
         state = self.state()
-        self.assertEqual("stopped", state["stage"])
+        self.assertIsNone(state.get("stage"))
         self.assertNotIn("dispatchAt", state)
 
     def test_start_takes_flag_like_words_after_the_task_start_as_task_text(self):
@@ -3464,7 +3474,7 @@ class CodeStepTest(unittest.TestCase):
         bare = self.tmp / "bare"
         bare.mkdir()
         for name in (SCRIPT.name, "script_utils.py", "plan_format.py", "reviewed_tree.py",
-                     *toolkit_paths.CODE_STEP_MODULES, "test_run_output.py"):
+                     *toolkit_paths.CODE_STEP_MODULES, "test_run_output.py", "shell_command.py"):
             shutil.copy(toolkit_paths.script_in(SCRIPTS_ROOT, name), bare / name)
         env = dict(self.env, PYTHONPATH="")
         script = str(bare / SCRIPT.name)
@@ -4156,7 +4166,7 @@ class CodeStepTest(unittest.TestCase):
             self.assertIn(f"Phase {number} (gate: the data team signs off)", out)
         state = self.state()
         self.assertNotIn("dispatchAt", state)
-        self.assertEqual("stopped", state["stage"])
+        self.assertIsNone(state.get("stage"))
 
     def test_a_gated_phase_that_is_done_is_not_named_when_start_stops_at_an_open_one(self):
         self.mark_phases_done(1)
@@ -5299,15 +5309,26 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertNotIn("gate-env:", self.printed_prompt(out))
 
-    def test_the_coder_gate_runs_its_commands_with_the_gate_variables_of_the_repo(self):
+    def test_the_coder_gate_runs_its_commands_with_the_gate_variables_of_the_plan_alone(self):
         self.set_verification("- [ ] **Env**: passes - `GATE_X=1 npx vitest run`")
         self.add_plan_with_gate("other", 'GATE_Y="two words" cargo test')
 
         out = self.start_phase_one()
 
         gate = json.loads((self.repo / ".git/coder-gate.json").read_text())
-        self.assertEqual({"GATE_X": "1", "GATE_Y": "two words"}, gate["env"])
-        self.assertIn('With: GATE_X=1 GATE_Y="two words".', out)
+        self.assertEqual({"GATE_X": "1"}, gate["env"])
+        self.assertIn("With: GATE_X=1.", out)
+
+    def test_a_plan_dispatch_names_only_its_own_gate_values_and_none_another_plan_sets(self):
+        self.set_verification("- [ ] **Env**: passes - `GATE_PORT=5001 npx vitest run`")
+        self.add_plan_with_gate("other", "GATE_PORT=6002 GATE_PROJECT=other cargo test")
+
+        out = self.start_phase_one()
+
+        prompt = self.printed_prompt(out)
+        self.assertIn("gate-env: GATE_PORT=5001", prompt)
+        self.assertNotIn("6002", prompt)
+        self.assertNotIn("GATE_PROJECT", prompt)
 
     def test_the_coder_gate_given_no_gate_variables_stores_none_and_says_nothing_about_them(self):
         out = self.start_phase_one()

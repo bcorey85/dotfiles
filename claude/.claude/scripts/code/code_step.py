@@ -2,11 +2,12 @@
 """code_step.py: the routing of /code as a script. The forked Sonnet subagent of /code runs one verb, reads its
 ACTION lines, does exactly that, and runs the next verb. The script builds every prompt and every argument.
 
-  code_step.py start [<plan>] [+fast|+deep] [--phase <id>] [--restart]
+  code_step.py start [<plan>] [+fast|+deep] [--phase <id>] [--restart] [<run notes>]
                                                 next phase of the plan (or the named one): checks, gate, packet, the
                                                 exact coder dispatch. `start --help` prints usage. --restart drops an
                                                 unfinished run first.
   code_step.py start --task "<text>"           planless work: the coder dispatch without gate or packet
+  code_step.py start --task-file <path>        the same, with the text read from a file
   code_step.py resume                           do the next step of the saved run, whatever stage or stop it is in
   code_step.py decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"
                                                 only --by user is the user's own word: a session ruling never changes
@@ -16,7 +17,7 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
   code_step.py asks-done [--by <user|session>] <outcome>...
                                                 log the answer to each ask[] entry, then run the phase gates;
                                                 --by session when the session ruled itself, default user
-  code_step.py skill-done <pass|fail> [--evidence "<text>"]...
+  code_step.py skill-done <pass|fail> [--evidence "<text>"]... [--finding "<text>"]...
                                                 a closing phase's skill returned: mark it done (pass) or stop (fail);
                                                 at pass, give one --evidence per open Success Criteria item and the
                                                 script writes it into the plan
@@ -58,13 +59,13 @@ import time
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import plan_format
 from code_step_boundary import (
-    command_skill_done,
     command_tick,
     command_verify,
     finish_phase,
     settle_criteria_guard,
     verification_format_failure,
 )
+from code_step_closing import command_skill_done_with_question
 from code_step_core import (
     CODER,
     CODER_STAGES,
@@ -95,6 +96,7 @@ from code_step_core import (
     sent_message_since,
     state_dir,
     stop_review_script,
+    stop_with_question,
     take_handback,
     timed_command,
     wait_for_handback,
@@ -226,6 +228,9 @@ def unreviewable_outcome(repo_dir, state, report, changed_files, changed_now):
     return None
 
 
+CODER_REPORT_STOP_LINES = 6
+
+
 def stop_on_coder_report(repo_dir, state, report, agent_id):
     # The run stops on the coder's report: the user answers it, and the coder resumed with SendMessage goes on.
     state["stage"] = "stopped"
@@ -239,9 +244,15 @@ def stop_on_coder_report(repo_dir, state, report, agent_id):
                 else "")
     resume_text = (" If the user answers the coder's blocker, resume that coder with SendMessage, then run "
                   f"{timed_command(RESUME_VERB)}.")
-    emit("stop", "The coder produced no reviewable change, or recommended /eng-spec. Do not dispatch a "
-         "review. Do not mark the phase done." + tick_text + resume_text
-         + " Relay the coder's report to the user:", report)
+    report_lines = [line for line in report.splitlines() if line.strip()][:CODER_REPORT_STOP_LINES]
+    next_step = (f"if the user answers the coder's blocker, resume that coder with SendMessage, then run "
+                 f"`{script_command(RESUME_VERB)}`. To dispatch a new coder for the phase, "
+                 f"{restart_instruction(state)}.")
+    stop_with_question(
+        repo_dir, "the coder produced no reviewable change, or recommended /eng-spec.", report_lines, next_step,
+        "The coder produced no reviewable change, or recommended /eng-spec. Do not dispatch a "
+        "review. Do not mark the phase done." + tick_text + resume_text
+        + " Relay the coder's report to the user:", report)
 
 
 def record_coder_report(repo_dir, state, report, gate, changed_files):
@@ -361,9 +372,12 @@ def coder_answer_sent(repo_dir, state):
 
 
 def review_answer_sent(repo_dir, state):
-    # The user resumed the review-loop that the wait cap stopped on.
+    # The user resumed the review-loop that the wait cap stopped on, or it handed back late on its own.
     launch_id = awaited_agent_id(repo_dir, state)
-    return launch_id is not None and sent_message_since(repo_dir, state, state["resumableReview"], launch_id)
+    if launch_id is None:
+        return False
+    return (awaited_handback(repo_dir, state) is not None
+            or sent_message_since(repo_dir, state, state["resumableReview"], launch_id))
 
 
 def stopped_route(repo_dir, state):
@@ -591,7 +605,7 @@ def main():
     verb = sys.argv[1] if len(sys.argv) > 1 else ""
     args = sys.argv[2:]
     verbs = {"start": command_start, RESUME_VERB: command_resume, "decide": command_decide,
-             "asks-done": command_asks_done, "skill-done": command_skill_done, "verify": command_verify,
+             "asks-done": command_asks_done, "skill-done": command_skill_done_with_question, "verify": command_verify,
              "tick": command_tick, "review-again": command_review_again, "abort": command_abort}
     verbs.update(dict.fromkeys(RESUME_ALIASES, command_resume))
     if verb in HOOK_VERBS:

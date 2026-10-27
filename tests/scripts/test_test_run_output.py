@@ -48,6 +48,25 @@ class MatchesNoTestTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertFalse(test_run_output.matches_no_test(command, 0, ""))
 
+    def test_a_runner_piped_into_another_command_is_not_judged(self):
+        commands = [
+            "cargo test --lib totals 2>&1 | rg -q 'test result: ok\\. 25 passed'",
+            "cargo test --lib totals |& rg -q 25",
+            "pytest -k totals | tail -1",
+            "npx vitest run -t totals | grep -q passed",
+            "npx jest --testNamePattern totals | rg -q passed",
+            "cd app && cargo test totals | rg -q passed && echo ok",
+        ]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertFalse(test_run_output.matches_no_test(command, 0, ""))
+
+    def test_a_runner_after_a_pipeline_is_still_judged(self):
+        commands = ["echo go | cat && cargo test totals", "ls | wc -l; npx vitest run -t totals"]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertTrue(test_run_output.matches_no_test(command, 0, ""))
+
     def test_a_filtered_mocha_run_that_passed_is_not_a_no_match(self):
         self.assertFalse(test_run_output.matches_no_test("npx mocha --grep totals", 0, PASSING_SUMMARIES["mocha"]))
 

@@ -148,10 +148,14 @@ def is_ban(line, command):
 def criteria_in_plan(lines, repo_dir):
     """(label, line, command, code_lines) for each Automated Verification item that gets a command, in plan order;
     label is `<phase>.<n>` with n counting from 1 across the whole plan. Items with no command to run come back with
-    command None."""
+    command None. A closing phase's items are left out: its skill checks them from the session's evidence and runs no
+    command, as the plan check reads them."""
     spans, _ = plan_format.phase_spans(lines)
     criteria = []
     for phase_id, section in spans:
+        if plan_format.closing_skill(section["title"]):
+            continue
+
         section_lines = lines[section["start"]:section["end"]]
         code_lines = phase_code_lines(lines, section)
         for _, line in plan_format.automated_verification_rows(section_lines):

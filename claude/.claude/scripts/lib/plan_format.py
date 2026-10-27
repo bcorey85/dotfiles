@@ -510,20 +510,34 @@ def gate_env_words_in(prompt_text):
 
 def repo_gate_env(repo_root, plan_rel=None):
     """The environment variables the repo's gate commands need: what `gate_env` reads from the plans under
-    docs/plans/*/spec.md. The plan `planRel` (a path under repoRoot) decides its own names. A name only other plans set
-    counts when they all give it the same value; a name they give different values is left out, since no plan says
-    which one this run needs."""
+    docs/plans/*/spec.md. A run whose own plan `planRel` (a path under repoRoot) is readable gets only that plan's
+    names. A run with no readable plan takes a name the other plans set when they all give it the same value; a name
+    they give different values is left out, since no plan says which one this run needs."""
     root = pathlib.Path(repo_root)
-    chosen = {}
 
     if plan_rel:
-        try:
-            own_text = (root / plan_rel).read_text()
-        except OSError:
-            own_text = ""
-        for assignment in gate_env(own_text):
-            chosen[assignment.split("=", 1)[0]] = assignment
+        own_assignments = own_plan_gate_env(root, plan_rel)
+        if own_assignments is not None:
+            return own_assignments
 
+    return agreed_gate_env(root, plan_rel)
+
+
+def own_plan_gate_env(root, plan_rel):
+    """The run's own plan's assignments, the last one per name winning, or None when the plan cannot be read."""
+    try:
+        own_text = (root / plan_rel).read_text()
+    except OSError:
+        return None
+
+    chosen = {}
+    for assignment in gate_env(own_text):
+        chosen[assignment.split("=", 1)[0]] = assignment
+    return list(chosen.values())
+
+
+def agreed_gate_env(root, plan_rel):
+    """The assignments of every plan but `plan_rel` whose name all those plans give the same value."""
     seen = {}
     for plan_path in sorted(root.glob(PLAN_FILES_GLOB)):
         if plan_rel and plan_path.resolve() == (root / plan_rel).resolve():
@@ -535,10 +549,7 @@ def repo_gate_env(repo_root, plan_rel=None):
         for assignment in assignments:
             seen.setdefault(assignment.split("=", 1)[0], set()).add(assignment)
 
-    for name, variants in seen.items():
-        if name not in chosen and len(variants) == 1:
-            chosen[name] = next(iter(variants))
-    return list(chosen.values())
+    return [next(iter(variants)) for variants in seen.values() if len(variants) == 1]
 
 
 CLOSING_TITLE_END = r"\b(?!\s*\w)"

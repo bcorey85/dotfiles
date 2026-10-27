@@ -22,6 +22,7 @@ from code_step_core import (
     REVIEW_LOOP_SCRIPT,
     ask_user,
     awaited_agent_id,
+    awaited_handback,
     awaits_resumed_review,
     branch_label,
     dispatch_marker,
@@ -33,9 +34,11 @@ from code_step_core import (
     log_event,
     open_dispatch,
     phase_coder_reports,
+    plan_edit_open_choices,
     prompt_with_gate_env,
     record_dispatch,
     record_ruled_asks,
+    restart_instruction,
     ruled_asks_lines,
     runs_review_script,
     save_state,
@@ -44,6 +47,7 @@ from code_step_core import (
     session_pin,
     state_dir,
     stop_review_script,
+    stop_with_question,
     take_handback,
     timed_command,
     wait_for_handback,
@@ -273,7 +277,12 @@ def plan_edit_prompt(state, criteria_path):
             f"each one you rewrite, add `Signed off by {ruling['by']}, {ruling['at']}: <the change in one line>`. "
             "Keep every other criterion as it is.",
         ]
-    lines += ["", "Report each line you changed as `<file>:<line number>: <new text>`."]
+    lines += [
+        "",
+        "Report each line you changed as `<file>:<line number>: <new text>`. Ask the user nothing and make no choice "
+        "that is theirs. For each choice the ruling leaves open, end the report with one line: "
+        "`OPEN CHOICE: <the choice in one line>`. The script hands each such line to the user.",
+    ]
     return "\n".join(lines)
 
 
@@ -316,6 +325,8 @@ def command_after_plan_edit(repo_dir, state, args):
     if not wait_for_handback(repo_dir, state, RESUME_VERB):
         return
     state["sessionId"] = session_pin() or state.get("sessionId")
+    plan_edit_handback = awaited_handback(repo_dir, state) or {}
+    open_choices = plan_edit_open_choices(plan_edit_handback.get("message", ""))
 
     had_criteria_guard = state.get("criteriaGuard") is not None
     criteria_message = settle_criteria_guard(repo_dir, state, branch_label(repo_dir))
@@ -344,6 +355,9 @@ def command_after_plan_edit(repo_dir, state, args):
     if criteria_path and criteria_path in edited_files and state["ruling"]["byUser"]:
         plan_note += f" The acceptance criteria in {criteria_path} changed too: read them before you stage."
     say(repo_dir, plan_note)
+    if open_choices:
+        choice_lines = [f"- {choice}" for choice in open_choices]
+        say(repo_dir, "\n".join(["The plan-edit coder left these choices to the user:", *choice_lines]))
 
     emit_review_dispatch(repo_dir, state)
 
@@ -559,6 +573,11 @@ def carried_findings(module, packet):
     return lines
 
 
+def review_stop_next_step(state):
+    # The command after a review stop: the phase started over, once the user has ruled on the findings.
+    return f"after the user rules on the findings, {restart_instruction(state)} to start the phase over."
+
+
 def stop_on_review_status(repo_dir, state, module, packet):
     # True after the stop or question a packet status that ends the run prints.
     status = packet["status"]
@@ -572,15 +591,22 @@ def stop_on_review_status(repo_dir, state, module, packet):
     if status == "critical-blocker":
         state["stage"] = "stopped"
         save_state(repo_dir, state)
-        emit("stop", "Review found a critical blocker. Present these to the user. Do not mark the phase done.",
-             *["- " + module.item_text(item, "finding", "file_line") for item in packet["blockers"]])
+        blocker_lines = ["- " + module.item_text(item, "finding", "file_line") for item in packet["blockers"]]
+        stop_with_question(
+            repo_dir, "the review found a critical blocker.", [line[2:] for line in blocker_lines],
+            review_stop_next_step(state),
+            "Review found a critical blocker. Present these to the user. Do not mark the phase done.", *blocker_lines)
         return True
     if status == "cap-reached":
         state["stage"] = "stopped"
         save_state(repo_dir, state)
-        emit("stop", "The review cap was reached. Report these findings to the user. Do not mark the phase "
-             "done. The session stays dirty, so git commit stays blocked.",
-             *["- " + module.item_text(item, "finding", "file_line") for item in packet["findings_remaining"]])
+        remaining_lines = ["- " + module.item_text(item, "finding", "file_line")
+                           for item in packet["findings_remaining"]]
+        stop_with_question(
+            repo_dir, "the review cap was reached with findings still open.", [line[2:] for line in remaining_lines],
+            review_stop_next_step(state),
+            "The review cap was reached. Report these findings to the user. Do not mark the phase "
+            "done. The session stays dirty, so git commit stays blocked.", *remaining_lines)
         return True
     return False
 

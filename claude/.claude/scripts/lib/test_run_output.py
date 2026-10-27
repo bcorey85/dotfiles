@@ -1,6 +1,8 @@
 """How to read a test runner's output: whether a filtered run reported any passed test."""
 import re
 
+from shell_command import parse_piped_commands
+
 TEST_RUNNER = re.compile(r"\b(?:pytest|vitest|jest|mocha|cargo\s+test|go\s+test|bun\s+test"
                          r"|(?:npm|pnpm|yarn|npx)\b.*\btest)\b")
 TEST_FILTER = re.compile(r"(?:^|\s)(?:-k|-t|-run|--testNamePattern|--test-name-pattern|--grep|--filter)(?:[\s=]|$)"
@@ -46,14 +48,32 @@ def cargo_test_is_filtered(command):
     return False
 
 
+def command_without_piped_stages(command):
+    """The command text with each pipeline stage that feeds a later stage left out: the last stage owns the output
+    and the exit code, so an earlier stage's report never reaches them. A command that cannot be read as shell
+    comes back whole."""
+    try:
+        commands = parse_piped_commands(command)
+    except ValueError:
+        return command
+
+    owners = []
+    for index, (words, _redirections, _piped) in enumerate(commands):
+        feeds_pipe = index + 1 < len(commands) and commands[index + 1][2]
+        if not feeds_pipe:
+            owners.append(" ".join(words))
+    return "\n".join(owners)
+
+
 def matches_no_test(command, code, output):
     """True for a filtered test run that exits 0 and reports no passed test. A filter that matches nothing exits 0
     in vitest, jest and cargo, so the exit code alone reads it as passing. A runner inside a command substitution
-    is not judged: the outer output does not carry its report."""
-    if code != 0 or not TEST_RUNNER.search(SUBSTITUTION.sub("", command)):
+    or piped into another command is not judged: the output does not carry its report."""
+    judged = command_without_piped_stages(SUBSTITUTION.sub("", command))
+    if code != 0 or not TEST_RUNNER.search(judged):
         return False
 
-    is_filtered = TEST_FILTER.search(command) or cargo_test_is_filtered(command)
+    is_filtered = TEST_FILTER.search(judged) or cargo_test_is_filtered(judged)
     if not is_filtered:
         return False
     return passed_test_count(output) == 0

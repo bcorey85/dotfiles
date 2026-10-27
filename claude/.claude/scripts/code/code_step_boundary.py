@@ -80,7 +80,9 @@ TAIL_FOLLOWS = re.compile(r"^(?:-[A-Za-z0-9]*[fF][A-Za-z0-9]*|--follow(?:=\w+)?)
 VERIFICATION_ITEM_SHAPE = (
     "Each Automated Verification item is one line in one of three shapes. (1) One backticked command that starts with "
     "a program on PATH (with at least one argument) or an executable file in the repo, for example the line "
-    "'- [ ] **Name**: what it checks - `npm test`'. (2) N/A, for example '- [ ] N/A - docs only'. (3) A tag that "
+    "'- [ ] **Name**: what it checks - `npm test`'. A check that needs a variable assignment, `&&`, a pipe or a "
+    "subshell goes in an executable repo script, run as `path/to/script args`; the script's comments name no ticket "
+    "or plan path. (2) N/A, for example '- [ ] N/A - docs only'. (3) A tag that "
     "says CI or a person runs it, for example '- [ ] **CI-verified**: the pipeline runs it' or '- [ ] Human-only: "
     "look at the page'. This script never runs the third shape.")
 
@@ -304,12 +306,14 @@ def verification_format_failure(plan_lines, plan_name, repo_dir, entries):
             elif not entry["closing"]:
                 problem = verification_item_problem(line, repo_dir)
             if problem:
-                problems.append(f"{plan_name}:{section['start'] + index + 1}: {line.strip()[:100]} - {problem}")
+                problems.append(f"{plan_name}:{section['start'] + index + 1}: Phase {entry['number']}: "
+                                f"{line.strip()[:100]} - {problem}")
 
     if not problems:
         return None
 
-    return ("The plan has Automated Verification items that cannot run. Fix each line:\n" + "\n".join(problems) + "\n"
+    return ("The plan has Automated Verification items that cannot run. Every open phase is checked at each start, "
+            "so a later phase's line stops the first phase's start. Fix each line:\n" + "\n".join(problems) + "\n"
             + VERIFICATION_ITEM_SHAPE)
 
 
@@ -463,9 +467,40 @@ def ticket_prefix(state):
     return ""
 
 
-def commit_message(state):
-    recorded_behavior = state.get("behavior") or []
-    message = recorded_behavior[0] if recorded_behavior else (state.get("title") or "phase work")
+PLAN_COMMIT_LINE = re.compile(r"^\W*Commit\b[\s:*]*`([^`]+)`", re.IGNORECASE)
+EMPTY_SUMMARY = re.compile(r"none\b", re.IGNORECASE)
+
+
+def planned_commit_subject(repo_dir, state):
+    # The subject a `Commit `...`` line in the phase's own plan section names, or "" when the phase has none.
+    plan_name = state.get("plan")
+    phase_id = state.get("phase")
+    if not plan_name or phase_id is None:
+        return ""
+
+    plan_path = pathlib.Path(repo_dir) / plan_name
+    if not plan_path.is_file():
+        return ""
+
+    plan_lines = plan_path.read_text().splitlines()
+    section = plan_format.phase_section(plan_lines, phase_id)
+    if not section:
+        return ""
+
+    for line in plan_lines[section["start"]:section["end"]]:
+        found = PLAN_COMMIT_LINE.match(line)
+        if found:
+            return found.group(1).strip()
+    return ""
+
+
+def commit_message(repo_dir, state):
+    message = planned_commit_subject(repo_dir, state)
+    if not message:
+        recorded_behavior = state.get("behavior") or []
+        summary = recorded_behavior[0].strip() if recorded_behavior else ""
+        has_summary = bool(summary) and not EMPTY_SUMMARY.match(summary)
+        message = summary if has_summary else (state.get("title") or "phase work")
     prefix = ticket_prefix(state)
     if prefix and not message.lower().startswith(prefix.lower()):
         message = prefix + message
@@ -473,10 +508,10 @@ def commit_message(state):
 
 
 def phase_commit(repo_dir, state):
-    # The phase's own changed files: dirty now, and not dirty before the phase started. Files that were dirty before
-    # stay out of the command, except the plan: the script ticks the phase in it, so the commit carries it even when it
-    # held other uncommitted edits before the phase. The commit names its files after `--`, so it takes only those
-    # files from the index and leaves anything the user staged by hand staged and uncommitted.
+    # The phase's own changed files: dirty now, and either not dirty before the phase started or with content that
+    # differs from the baseline hash. Files that were dirty before and are unchanged stay out of the command. The plan
+    # is always in it when it changed: the script ticks the phase there. The commit names its files after `--`, so it
+    # takes only those files from the index and leaves anything the user staged by hand staged and uncommitted.
     # Returns (text for the user, the commit command line, the files it commits); the text and line are "" with no
     # files.
     baseline = state.get("baseline") or {}
@@ -484,18 +519,25 @@ def phase_commit(repo_dir, state):
     plan_name = state.get("plan")
     changed_since = [name for name in dirty_now if name in baseline and dirty_now[name] != baseline[name]]
     plan_had_earlier_edits = plan_name in changed_since
-    own_files = [name for name in dirty_now if name not in baseline or (name == plan_name and plan_had_earlier_edits)]
-    left_out = [name for name in changed_since if name != plan_name]
+    own_files = [name for name in dirty_now if name not in baseline or name in changed_since]
+    left_out = [name for name in dirty_now if name in baseline and name not in changed_since]
+    edited_dirty = [name for name in changed_since if name != plan_name]
     if not own_files:
         return "", "", []
 
-    message = commit_message(state)
+    message = commit_message(repo_dir, state)
     quoted_files = " ".join(shlex.quote(name) for name in own_files)
     commit_line = f"git add -- {quoted_files} && git commit -m {shlex.quote(message)} -- {quoted_files}"
     lines = ["Files changed by this phase:", *diff_stat_rows(repo_dir, own_files), ""]
     if plan_had_earlier_edits:
         lines += [
             f"{plan_name} had uncommitted edits before the phase. The commit includes them with the phase tick.",
+            "",
+        ]
+    if edited_dirty:
+        lines += [
+            "Edited by this phase, was dirty before (the commit mixes the earlier edits with this phase's): "
+            + ", ".join(edited_dirty),
             "",
         ]
     if left_out:

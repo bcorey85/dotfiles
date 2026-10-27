@@ -213,6 +213,95 @@ class RunRetryingTest(unittest.TestCase):
         self.assertEqual((2, [2]), (self.runs(), self.sleeps))
 
 
+class AttemptsWithinTest(unittest.TestCase):
+    def test_the_tries_are_the_most_whose_growing_pauses_fit_the_wait(self):
+        cases = [(18, 3, 4), (90, 3, 8), (2, 3, 1), (3, 3, 2), (0, 3, 1), (83, 3, 7), (84, 3, 8)]
+        for wait, backoff, expected in cases:
+            with self.subTest(wait=wait, backoff=backoff):
+                self.assertEqual(expected, script_utils.attempts_within(wait, backoff))
+
+
+class LedgerFailureReasonTest(unittest.TestCase):
+    def test_the_reason_is_the_last_stderr_line_or_the_exit_code(self):
+        cases = [("first\nlast\n", "last"), ("", "exited 3"), ("\n  \n", "exited 3")]
+        for stderr, expected in cases:
+            with self.subTest(stderr=stderr):
+                done = subprocess.CompletedProcess(["ledger"], 3, stdout="", stderr=stderr)
+                self.assertEqual(expected, script_utils.ledger_failure_reason(done))
+
+
+class ReadLedgerTest(unittest.TestCase):
+    """A planted `ledger` that logs each call. The pause between tries is 0 unless a test sets it."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = pathlib.Path(folder.name)
+        self.calls = self.folder / "calls"
+        environment = unittest.mock.patch.dict(os.environ, {
+            "PATH": os.pathsep.join([str(self.folder), "/usr/bin", "/bin"]),
+            script_utils.LEDGER_BACKOFF_ENV: "0", script_utils.LEDGER_CALL_TIMEOUT_ENV: "10"})
+        environment.start()
+        self.addCleanup(environment.stop)
+
+    def plant(self, body):
+        stub = self.folder / "ledger"
+        stub.write_text(f'#!/bin/sh\necho x >> "{self.calls}"\ntries=$(wc -l < "{self.calls}")\n{body}')
+        stub.chmod(0o755)
+
+    def tries(self):
+        return len(self.calls.read_text().split())
+
+    def test_a_ledger_busy_for_six_tries_is_waited_for_and_its_answer_returned(self):
+        self.plant('[ "$tries" -le 6 ] && { echo "cache behind" >&2; exit 75; }\necho "the answer: $*"\n')
+
+        done = script_utils.read_ledger(["yield", "--deferred"])
+
+        self.assertEqual((0, "the answer: yield --deferred\n", 7), (done.returncode, done.stdout, self.tries()))
+
+    def test_another_failure_is_returned_after_one_try(self):
+        self.plant('echo "broken schema" >&2\nexit 1\n')
+
+        done = script_utils.read_ledger(["yield", "--deferred"])
+
+        self.assertEqual((1, "broken schema\n", 1), (done.returncode, done.stderr, self.tries()))
+
+    def test_a_ledger_that_stays_busy_raises_with_its_stderr_line_and_the_wait(self):
+        self.plant('echo "cache behind: too many shard rows are not loaded yet; retry" >&2\nexit 75\n')
+
+        with self.assertRaises(script_utils.LedgerBusyError) as raised:
+            script_utils.read_ledger(["yield", "--deferred"])
+
+        self.assertEqual("ledger yield --deferred: cache behind: too many shard rows are not loaded yet; retry "
+                         "(0 s of pauses)", str(raised.exception))
+        self.assertEqual(8, self.tries())
+
+    def test_the_wait_in_the_message_is_the_sum_of_the_pauses(self):
+        busy = subprocess.CompletedProcess(["ledger"], 75, "", "cache behind\n")
+        with unittest.mock.patch.dict(os.environ, {script_utils.LEDGER_BACKOFF_ENV: "3"}), \
+                unittest.mock.patch.object(script_utils, "run_retrying", return_value=busy) as retrying:
+            self.plant("exit 75\n")
+            with self.assertRaises(script_utils.LedgerBusyError) as raised:
+                script_utils.read_ledger(["yield", "--deferred"])
+
+        self.assertEqual("ledger yield --deferred: cache behind (84 s of pauses)", str(raised.exception))
+        self.assertEqual(8, retrying.call_args.args[2])
+
+    def test_a_ledger_that_never_answers_raises_busy(self):
+        self.plant("exec sleep 30\n")
+        os.environ[script_utils.LEDGER_CALL_TIMEOUT_ENV] = "0.3"
+
+        with self.assertRaises(script_utils.LedgerBusyError) as raised:
+            script_utils.read_ledger(["yield", "--deferred"])
+
+        self.assertIn("no answer within 0.3 s", str(raised.exception))
+        self.assertEqual(8, self.tries())
+
+    def test_no_ledger_on_path_raises_not_installed(self):
+        with self.assertRaises(script_utils.LedgerNotInstalledError):
+            script_utils.read_ledger(["yield", "--deferred"])
+
+
 class RunProcessTest(unittest.TestCase):
     def setUp(self):
         folder = tempfile.TemporaryDirectory()

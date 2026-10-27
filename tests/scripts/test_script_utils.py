@@ -15,6 +15,7 @@ import unittest.mock
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = pathlib.Path(os.environ.get("SCRIPT_UTILS_SCRIPT")
                       or REPO_ROOT / "claude" / ".claude" / "scripts" / "lib" / "script_utils.py")
+sys.path.insert(0, str(SCRIPT.parent.parent / "telemetry"))
 module_spec = importlib.util.spec_from_file_location("script_utils", SCRIPT)
 script_utils = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(script_utils)
@@ -240,6 +241,7 @@ class ReadLedgerTest(unittest.TestCase):
         self.calls = self.folder / "calls"
         environment = unittest.mock.patch.dict(os.environ, {
             "PATH": os.pathsep.join([str(self.folder), "/usr/bin", "/bin"]),
+            "CARGO_HOME": str(self.folder / "cargo"),
             script_utils.LEDGER_BACKOFF_ENV: "0", script_utils.LEDGER_CALL_TIMEOUT_ENV: "10"})
         environment.start()
         self.addCleanup(environment.stop)
@@ -297,9 +299,62 @@ class ReadLedgerTest(unittest.TestCase):
         self.assertIn("no answer within 0.3 s", str(raised.exception))
         self.assertEqual(8, self.tries())
 
-    def test_no_ledger_on_path_raises_not_installed(self):
+    def test_no_ledger_on_path_or_in_the_cargo_folder_raises_not_installed(self):
         with self.assertRaises(script_utils.LedgerNotInstalledError):
             script_utils.read_ledger(["yield", "--deferred"])
+
+    def test_the_ledger_in_the_cargo_bin_folder_answers_when_path_has_none(self):
+        cargo_bin = self.folder / "cargo" / "bin"
+        cargo_bin.mkdir(parents=True)
+        stub = cargo_bin / "ledger"
+        stub.write_text('#!/bin/sh\necho "cargo ledger: $*"\n')
+        stub.chmod(0o755)
+
+        done = script_utils.read_ledger(["yield", "--deferred"])
+
+        self.assertEqual((0, "cargo ledger: yield --deferred\n"), (done.returncode, done.stdout))
+
+
+class MissingLedgerWarningTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = pathlib.Path(folder.name)
+        environment = unittest.mock.patch.dict(os.environ, {
+            "PATH": os.pathsep.join([str(self.folder), "/usr/bin", "/bin"]),
+            "CARGO_HOME": str(self.folder / "cargo"), "CLAUDE_TOOLKIT_TELEMETRY": "1"})
+        environment.start()
+        self.addCleanup(environment.stop)
+
+    def test_telemetry_on_with_no_ledger_names_the_jsonl_fallback(self):
+        warning = script_utils.missing_ledger_warning()
+
+        self.assertIn("No ledger found on PATH or in the cargo bin folder ($CARGO_HOME/bin, default ~/.cargo/bin)",
+                      warning)
+        self.assertIn("jsonl files under ~/.claude", warning)
+
+    def test_no_ledger_when_cargo_home_and_home_are_unset_gives_none_not_a_guess(self):
+        del os.environ["CARGO_HOME"]
+        os.environ["HOME"] = ""
+
+        self.assertIsNone(script_utils.ledger_bin())
+
+    def test_a_directory_named_ledger_in_the_cargo_bin_folder_is_not_a_ledger(self):
+        (self.folder / "cargo" / "bin" / "ledger").mkdir(parents=True)
+
+        self.assertIsNone(script_utils.ledger_bin())
+
+    def test_telemetry_off_gives_no_warning(self):
+        os.environ["CLAUDE_TOOLKIT_TELEMETRY"] = "0"
+
+        self.assertIsNone(script_utils.missing_ledger_warning())
+
+    def test_a_ledger_on_path_gives_no_warning(self):
+        stub = self.folder / "ledger"
+        stub.write_text("#!/bin/sh\n")
+        stub.chmod(0o755)
+
+        self.assertIsNone(script_utils.missing_ledger_warning())
 
 
 class RunProcessTest(unittest.TestCase):

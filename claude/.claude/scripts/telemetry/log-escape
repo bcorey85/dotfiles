@@ -88,7 +88,7 @@
 # guard's record carries the value); stage_found, gate_missed, severity
 # and lane fold to `other` silently. `ledger registry` lists the allowed values.
 # desc and scan_flagged are dropped, file becomes path_key and
-# branch becomes branch_key. With no `ledger` on PATH `ledger-write` appends the
+# branch becomes branch_key. With no ledger found (PATH, then `${CARGO_HOME:-~/.cargo}/bin`) `ledger-write` appends the
 # row to ~/.claude/review-escapes.jsonl and prints one stderr line. A row `ledger write` refuses exits 2.
 set -euo pipefail
 

@@ -9,8 +9,9 @@ A commit or reset deletes the message files git leaves for a squash merge or `ch
 then.
 Files under docs/plans/ are never formatted: a plan's later Edits and its review shards quote its text exactly, and a
 reflow between turns makes them miss.
-CLAUDE_SKIP_HOOKS set to any non-empty value exits 0. Snapshots live in ~/.claude/state/format-changed and
-snapshots older than 2 days are deleted on every run.
+CLAUDE_SKIP_HOOKS or CLAUDE_FORMAT_HOOK_OFF set to any non-empty value exits 0: the scripted review loop sets
+CLAUDE_FORMAT_HOOK_OFF in every child session it starts, so no reflow lands between a coder pass and a review.
+Snapshots live in ~/.claude/state/format-changed and snapshots older than 2 days are deleted on every run.
 """
 import contextlib
 import locale
@@ -96,7 +97,7 @@ def snapshot_difference(snapshot_lines):
 
 
 def main():
-    if os.environ.get("CLAUDE_SKIP_HOOKS"):
+    if os.environ.get("CLAUDE_SKIP_HOOKS") or os.environ.get("CLAUDE_FORMAT_HOOK_OFF"):
         return 0
     try:
         text = sys.stdin.buffer.read().decode("utf-8", "replace").rstrip("\n")

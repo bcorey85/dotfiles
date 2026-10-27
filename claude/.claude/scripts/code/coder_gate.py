@@ -73,7 +73,6 @@ WHOLE_PACKAGE_PATHS = {".", "./"}
 SHELL_OPERATORS = {"&&", "||", ";", "|", "&", "(", ")"}
 REDIRECT_CHARS = set("<>&")
 FILES_PLACEHOLDER = re.compile(r"\{files(?::([^{}]*))?\}")
-ENV_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 
 
 def gate_path(cwd):
@@ -274,23 +273,6 @@ def whole_package_reason(command, cwd):
                       "Run the targeted command from the recipe directly on the changed files."])
 
 
-def environment_from_assignments(assignments):
-    # {name: value} for NAME=value shell words such as `A=1` or `B="two words"`. Exits on a word that is not one.
-    environment = {}
-    for assignment in assignments:
-        try:
-            words = shlex.split(assignment)
-        except ValueError:
-            words = []
-        is_one_assignment = len(words) == 1 and ENV_ASSIGNMENT.match(words[0])
-        if not is_one_assignment:
-            sys.exit(f"coder-gate: --env needs NAME=value, got {assignment!r}")
-
-        name, value = words[0].split("=", 1)
-        environment[name] = value
-    return environment
-
-
 def set_gate(commands, gate_assignments=()):
     gate_file = gate_path(".")
     if gate_file is None:
@@ -315,7 +297,10 @@ def set_gate(commands, gate_assignments=()):
                  + "\n".join(refused_lines) + "\nName the test files, test names or lint paths that the phase "
                  "changes, or use {files}. The review loop runs the full check command once, at its end.")
 
-    environment = environment_from_assignments(gate_assignments)
+    try:
+        environment = script_utils.environment_from_assignments(gate_assignments)
+    except ValueError as error:
+        sys.exit(f"coder-gate: --env {error}")
     gate = {"repoRoot": repo_root, "commands": commands, "env": environment, "setAt": time.time(), "coders": {}}
     script_utils.write_text_atomically(gate_file, json.dumps(gate, indent=1))
     print(f"coder gate set: {len(commands)} command(s)")

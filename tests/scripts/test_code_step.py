@@ -157,10 +157,12 @@ class CodeStepTest(unittest.TestCase):
         self.env = dict(os.environ, CODE_STEP_CLAUDE_DIR=str(self.claude), **self.GIT_IDENTITY,
                         CODE_STEP_NVIM_JUMP=str(self.nvim_jump),
                         HOME=str(self.home), CODE_STEP_WAIT_SECONDS="0", CLAUDE_CODE_SESSION_ID=self.SESSION,
+                        CODE_STEP_REVIEW_LOOP="agent",
                         HANDBACK_STORE_DIR=str(self.tmp / "handback-store"),
                         PYTHONPATH=str(HANDBACK_SCRIPT.parent))
         self.env.pop("CODE_STEP_IMPACT_DECISION", None)
         self.env.pop("CODE_STEP_ASKS_OUTCOME", None)
+        self.env.pop("CLAUDE_FORMAT_HOOK_OFF", None)
         self.plan = "docs/plans/orders/spec.md"
         self.gate_commands = ["true"]
 
@@ -1717,6 +1719,16 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn(expected, (self.repo / ".git/code-step/say.log").read_text())
         again = run(self.repo, self.env, "say-hook", stdin=json.dumps({"cwd": str(self.repo)}))
         self.assertEqual("", again.stdout)
+
+    def test_say_hook_of_a_child_session_leaves_the_text_for_the_main_session(self):
+        self.coder_round()
+        expected = self.said().strip()
+        child_env = {**self.env, "CLAUDE_FORMAT_HOOK_OFF": "1"}
+        result = run(
+            self.repo, child_env, "say-hook", stdin=json.dumps({"cwd": str(self.repo), "hook_event_name": "Stop"})
+        )
+        self.assertEqual(("", 0), (result.stdout, result.returncode))
+        self.assertEqual(expected, self.said().strip())
 
     def test_say_hook_is_silent_without_a_run(self):
         result = run(self.repo, self.env, "say-hook", stdin=json.dumps({"cwd": str(self.repo)}))

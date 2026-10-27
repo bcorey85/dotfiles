@@ -288,6 +288,10 @@ def plan_write_failure(plan, plan_lines, plan_name, repo_dir):
 
 def command_say_hook():
     # Stop hook: print the saved user-facing text as the hook's systemMessage, keep a copy in say.log, empty say.md.
+    # A child session of the scripted review loop sets CLAUDE_FORMAT_HOOK_OFF: its Stop must not take the main
+    # session's text.
+    if os.environ.get("CLAUDE_FORMAT_HOOK_OFF"):
+        return
     try:
         event = json.loads(sys.stdin.read() or "{}")
         directory = state_dir(pathlib.Path(event.get("cwd") or os.getcwd()))

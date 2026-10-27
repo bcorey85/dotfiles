@@ -2,6 +2,7 @@
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 
@@ -18,25 +19,33 @@ from code_step_core import (
     CLAUDE_DIR,
     RESUME_VERB,
     REVIEW_LOOP,
+    REVIEW_LOOP_SCRIPT,
     ask_user,
     awaited_agent_id,
     awaits_resumed_review,
     branch_label,
+    dispatch_marker,
     emit,
     emit_dispatch,
     file_hashes,
     load_handback,
     load_state,
+    log_event,
     open_dispatch,
     phase_coder_reports,
+    prompt_with_gate_env,
+    record_dispatch,
     record_ruled_asks,
     ruled_asks_lines,
+    runs_review_script,
     save_state,
     say,
     script_command,
     session_pin,
     state_dir,
+    stop_review_script,
     take_handback,
+    timed_command,
     wait_for_handback,
     wait_for_loop_stop,
 )
@@ -293,6 +302,7 @@ def emit_plan_edit_dispatch(repo_dir, state):
 
 
 def command_review_again(repo_dir, state, args):
+    stop_review_script(state)
     state.pop("stopReason", None)
     state.pop("resumableReview", None)
     state.pop("resumeWaitAt", None)
@@ -484,7 +494,44 @@ def emit_review_dispatch(repo_dir, state):
         summary += [f"  {path}:{note['lines']} - {note['note']}" for note in notes]
     summary.append("Auto-dispatching review to check the implementation before committing.")
     say(repo_dir, "\n".join(summary))
+    if runs_review_script():
+        return launch_review_script(repo_dir, state, prompt)
     emit_dispatch(repo_dir, state, RESUME_VERB, prompt=prompt, agent="review-loop", model="sonnet")
+
+
+def launch_review_script(repo_dir, state, prompt):
+    # The review loop runs as review_loop_script.py, detached. The dispatch and launch rows stand in for the Agent
+    # call's, and the store gets the dispatch row the Agent hook writes for a review-loop, so the clean mark finds it.
+    module, import_error = load_handback()
+    if module is None:
+        return emit("stop", f"Cannot launch the review loop script: {import_error}. Tell the user.")
+
+    prompt = prompt_with_gate_env(repo_dir, state, prompt)
+    marked_prompt, _dispatch_prompt_file = record_dispatch(repo_dir, state, RESUME_VERB, REVIEW_LOOP, "script", prompt)
+    _run_id, dispatch_id = dispatch_marker(marked_prompt)
+    agent_id = f"loop-script-{state['runId']}-{dispatch_id}"
+    session_id = state.get("sessionId") or session_pin() or ""
+    module.record(session_id, "dispatch", no_review=False)
+
+    code_step_dir = state_dir(repo_dir)
+    script_dir = code_step_dir / "loop-script" / agent_id
+    script_dir.mkdir(parents=True, exist_ok=True)
+    prompt_file = script_dir / "prompt.txt"
+    prompt_file.write_text(prompt + "\n")
+    log_path = script_dir / "script.log"
+    command = [sys.executable, str(REVIEW_LOOP_SCRIPT), repo_dir, "--state-dir", str(code_step_dir),
+               "--session", session_id, "--run-id", state["runId"], "--agent-id", agent_id,
+               "--prompt-file", str(prompt_file)]
+    with log_path.open("w") as log:
+        process = subprocess.Popen(command, cwd=repo_dir, stdin=subprocess.DEVNULL, stdout=log,
+                                   stderr=subprocess.STDOUT, start_new_session=True)
+
+    log_event(repo_dir, state["runId"], "launch", session_id, agent_id=agent_id, dispatch=dispatch_id)
+    state["reviewScriptPid"] = process.pid
+    state["reviewScriptLog"] = str(log_path)
+    save_state(repo_dir, state)
+    emit("wait", f"The review loop runs as a script; its log is {log_path}. Do not dispatch an agent. Run "
+         f"{timed_command(RESUME_VERB)} to wait for its hand-back.")
 
 
 def load_review_packet(repo_dir, state, message):

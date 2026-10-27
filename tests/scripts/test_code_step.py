@@ -464,7 +464,7 @@ class CodeStepTest(unittest.TestCase):
                           "cd crate && cargo test --test side_streams"],
                          [command for command in gate["commands"] if "cargo" in command])
 
-    def make_helper_phase_with_verification(self, verification_line):
+    def make_helper_phase_with_verification(self, verification_line, start_arguments=()):
         (self.repo / "crate/src").mkdir(parents=True)
         (self.repo / "crate/tests/common").mkdir(parents=True)
         (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
@@ -475,13 +475,24 @@ class CodeStepTest(unittest.TestCase):
         old = "- [ ] **Prohibition**: no console.log - `git grep -n --untracked console.log -- backend/src/orders.ts`"
         self.assertIn(old, plan_text)
         (self.repo / self.plan).write_text(plan_text.replace(old, verification_line))
-        self.start_phase_one()
+        self.start_phase_one(*start_arguments)
         return json.loads((self.repo / ".git/coder-gate.json").read_text())["commands"]
 
     def test_gate_takes_the_cargo_commands_the_phase_lists_in_place_of_the_derived_ones(self):
         commands = self.make_helper_phase_with_verification("- [ ] Orders test passes: `cargo test --test orders`")
 
         self.assertIn("cargo test --test orders", commands)
+        self.assertEqual([], [command for command in commands if "cargo test --tests" in command])
+        self.assertEqual([], [command for command in commands if "cargo clippy" in command])
+
+    def test_gate_takes_the_listed_cargo_commands_when_the_phase_is_started_with_the_phase_option(self):
+        listed_rows = ("- [ ] Orders test passes: `cargo test --test orders`\n"
+                       "- [ ] Orders test passes under nextest: `cargo nextest run --test orders`")
+        commands = self.make_helper_phase_with_verification(listed_rows,
+                                                            start_arguments=("--phase", "1"))
+
+        self.assertIn("cargo test --test orders", commands)
+        self.assertIn("cargo nextest run --test orders", commands)
         self.assertEqual([], [command for command in commands if "cargo test --tests" in command])
         self.assertEqual([], [command for command in commands if "cargo clippy" in command])
 
@@ -670,6 +681,45 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("order matters", self.said())
         self.assertIn("-> exit 0", out)
         self.assertEqual(self.state()["stage"], "review")
+
+    def test_after_coder_does_not_read_the_gate_stamp_as_the_coders_report(self):
+        stamp = ('\n\nHAND-BACK GATE: timeout after 1 run(s), failed: none, skipped (no changed files): none.\n'
+                 'HAND-BACK GATE TIMEOUT: these commands timed out after 1200 s with no test result:\n'
+                 '  `cargo test --tests`, output tail:\nERROR: column reference "id" is ambiguous')
+        self.begin_coder()
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended" + stamp)
+
+        out = self.step("after-coder")
+
+        self.assertIn("flagged: none", out)
+        self.assertNotIn("ambiguous", out)
+
+    def test_the_handoff_takes_no_file_change_from_the_gate_stamp_output_tail(self):
+        stamp = ('\n\nHAND-BACK GATE: timeout after 1 run(s), failed: none, skipped (no changed files): none.\n'
+                 'HAND-BACK GATE TIMEOUT: these commands timed out after 1200 s with no test result:\n'
+                 '  `cargo test --tests`, output tail:\n- backend/src/orders.ts: 1 failed')
+        self.begin_coder()
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended" + stamp)
+
+        out = self.step("after-coder")
+
+        self.assertIn("path: backend/src/orders.ts", out)
+        self.assertNotIn("change: 1 failed", out)
+
+    def test_after_coder_reports_a_gate_command_that_timed_out_as_timed_out_not_exit_0(self):
+        self.begin_coder()
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+        gate_path = self.repo / ".git/coder-gate.json"
+        gate = json.loads(gate_path.read_text())
+        timed_out_command = gate["commands"][0]
+        gate["coders"]["a1"] = {"runs": 1, "denies": 0, "failed": [], "skipped": [],
+                                "timed_out": [timed_out_command], "result": "timeout"}
+        gate_path.write_text(json.dumps(gate))
+
+        out = self.step("after-coder")
+
+        self.assertIn(f"{timed_out_command} -> timed out at the hand-back gate, no test result", out)
+        self.assertNotIn(f"{timed_out_command} -> exit 0", out)
 
     def test_after_coder_ignores_files_dirty_before_start(self):
         (self.repo / "backend/src/existing.ts").write_text("export const a = 2\n")

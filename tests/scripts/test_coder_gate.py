@@ -1,6 +1,8 @@
 """Tests for coder_gate.py: the variables a gate runs its commands with, the scope of a check command (whole suite,
 targeted, unresolved), how a make target or docker call is resolved, and the refusal the bash hook gives."""
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -133,6 +135,56 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         self.assertIn("must run inside a git work tree", done.stderr)
         self.assertNotIn("Traceback", done.stderr)
 
+    def gate_hook_with_timeout(self, timeout_seconds):
+        # Runs the hook in this process, so the timeout constant can be set; returns what the hook printed.
+        gate = load_gate_module()
+        gate.COMMAND_TIMEOUT_SECONDS = timeout_seconds
+        event = {"agent_type": "coder", "agent_id": "a1", "cwd": str(self.repo),
+                 "tool_input": {"message": "BEHAVIOR: done"}}
+        printed = io.StringIO()
+        with mock.patch.dict(os.environ, self.env), mock.patch.object(sys, "stdin", io.StringIO(json.dumps(event))), \
+                contextlib.redirect_stdout(printed):
+            gate.run_hook()
+        return printed.getvalue()
+
+    def test_the_hook_allows_a_gate_whose_only_command_timed_out_and_stamps_the_timeout(self):
+        command = "echo FAILED test_one; sleep 5"
+        self.gate_set(command)
+
+        printed = self.gate_hook_with_timeout(1)
+
+        coder = self.stored_gate()["coders"]["a1"]
+        self.assertEqual("timeout", coder["result"])
+        self.assertEqual([], coder["failed"])
+        self.assertEqual([command], coder["timed_out"])
+        output = json.loads(printed)["hookSpecificOutput"]
+        self.assertEqual("allow", output["permissionDecision"])
+        message = output["updatedInput"]["message"]
+        self.assertIn(f"`{command}`", message)
+        self.assertIn("timed out after 1 s with no test result", message)
+        self.assertIn("they are not among the failures", message)
+        self.assertIn("FAILED test_one", message)
+
+    def test_the_hook_still_denies_a_real_failure_that_ran_beside_a_timeout(self):
+        self.gate_set("sleep 5", "exit 3")
+
+        printed = self.gate_hook_with_timeout(1)
+
+        coder = self.stored_gate()["coders"]["a1"]
+        self.assertEqual("deny", coder["result"])
+        self.assertEqual(["exit 3"], coder["failed"])
+        self.assertEqual(["sleep 5"], coder["timed_out"])
+        self.assertEqual("deny", json.loads(printed)["hookSpecificOutput"]["permissionDecision"])
+
+    def test_clear_prints_the_timed_out_commands_apart_from_the_failed_ones(self):
+        self.gate_set("sleep 5")
+        self.gate_hook_with_timeout(1)
+
+        cleared = subprocess.run([sys.executable, "-B", str(GATE_SCRIPT), "clear"], cwd=self.repo, env=self.env,
+                                 capture_output=True, text=True)
+
+        self.assertIn("failed: none, timed out (no test result): sleep 5", cleared.stdout)
+
     def test_a_gate_stored_before_variables_existed_still_runs(self):
         self.gate_set("true")
         gate = self.stored_gate()
@@ -155,7 +207,7 @@ class RunCommandsTests(unittest.TestCase):
         return self.gate.run_commands({"repoRoot": str(self.repo), "commands": list(commands), "env": env or {}})
 
     def test_a_failing_command_reports_its_exit_code_and_both_streams(self):
-        failures, skipped = self.run_gate_commands("echo to-stdout; echo to-stderr >&2; exit 3")
+        failures, skipped, _ = self.run_gate_commands("echo to-stdout; echo to-stderr >&2; exit 3")
 
         self.assertEqual([], skipped)
         (_command, outcome, output), = failures
@@ -164,7 +216,7 @@ class RunCommandsTests(unittest.TestCase):
         self.assertIn("to-stderr", output)
 
     def test_the_gate_variables_reach_the_command(self):
-        failures, _ = self.run_gate_commands('test "$GATE_PROBE" = set', env={"GATE_PROBE": "set"})
+        failures, _, _ = self.run_gate_commands('test "$GATE_PROBE" = set', env={"GATE_PROBE": "set"})
 
         self.assertEqual([], failures)
 
@@ -173,11 +225,14 @@ class RunCommandsTests(unittest.TestCase):
         self.gate.COMMAND_TIMEOUT_SECONDS = 1
         started = time.monotonic()
 
-        failures, _ = self.run_gate_commands(f"echo before; (sleep 3; touch {marker}) & wait")
+        command = f"echo before; (sleep 3; touch {marker}) & wait"
+
+        failures, _, timed_out = self.run_gate_commands(command)
 
         self.assertLess(time.monotonic() - started, 3)
-        (_command, outcome, output), = failures
-        self.assertEqual("timeout after 1 s", outcome)
+        self.assertEqual([], failures)
+        (timed_out_command, output), = timed_out
+        self.assertEqual(command, timed_out_command)
         self.assertIn("before", output)
         time.sleep(3)
         self.assertFalse(marker.exists())

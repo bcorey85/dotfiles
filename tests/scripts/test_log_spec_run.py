@@ -88,6 +88,16 @@ class LogSpecRunRepoTest(unittest.TestCase):
         self.assertNotIn("slug", spec_run_row)
         self.assertNotIn("out", spec_run_row)
 
+    def test_help_prints_usage_and_writes_nothing(self):
+        env = {**os.environ, **GIT_ENV, "HOME": str(self.home), "CLAUDE_TOOLKIT_TELEMETRY": "1", **self.ledger_env}
+        for flag in ("--help", "-h"):
+            with self.subTest(flag=flag):
+                done = subprocess.run([str(self.script), flag], env=env, cwd=self.worktree,
+                                      capture_output=True, text=True)
+                self.assertEqual((done.returncode, done.stderr), (0, ""))
+                self.assertIn("usage: log-spec-run key=value", done.stdout)
+                self.assertEqual(fake_ledger.recorded_rows(self.ledger_env), [])
+
 
 if __name__ == "__main__":
     unittest.main()

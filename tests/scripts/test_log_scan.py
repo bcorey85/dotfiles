@@ -110,6 +110,14 @@ class LogScanTest(unittest.TestCase):
         self.assertFalse((self.home / ".claude" / "scan-runs.jsonl").exists())
         self.assertEqual(len(self.scan_rows()), 1)
 
+    def test_help_prints_usage_and_writes_nothing(self):
+        for flag in ("--help", "-h"):
+            with self.subTest(flag=flag):
+                done = self.run_scan(flag)
+                self.assertEqual((done.returncode, done.stderr), (0, ""))
+                self.assertIn("usage: log-scan key=value", done.stdout)
+                self.assertEqual(fake_ledger.recorded_rows(self.ledger_env), [])
+
 
 if __name__ == "__main__":
     unittest.main()

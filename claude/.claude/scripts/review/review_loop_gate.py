@@ -17,7 +17,8 @@
     A background dispatch is a launch whose result starts with `Async agent launched`, a SendMessage that
       resumed an agent (`Resuming agent <id>`) with no later agent message or task notification from it, or a
       shell call whose result record names a `backgroundTaskId` (run in the background, or moved there by its
-      timeout) with no later task notification for it.
+      timeout) with no task notification for it. A shell whose result comes before the loop's last delivered
+      SubagentHandback is no open work: the caller already holds the packet.
     Every review-loop SubagentStop appends a `kind=stop` row to the session's hand-back store (agent_id and
       the count of open background dispatches), through handback.record. A count of one or more means the loop
       is waiting: `review_fix.py packet` prints `ACTION: wait-for-loop`, not stop-no-handback. A row with 0 ends
@@ -194,7 +195,9 @@ class LoopTranscript:
         self.messages_sent = []  # (transcript line, SendMessage recipient)
         self.send_lines = {}  # SendMessage tool_use_id -> (transcript line, recipient)
         self.resumes = []  # (transcript line, agent id, SendMessage tool_use_id) of each resume
-        self.background_shells = []  # tool_use_ids of the shell calls that run on in the background
+        self.background_shells = []  # (transcript line, tool_use_id) of the shell calls that run on in the background
+        self.handback_ids = set()  # tool_use_ids of the SubagentHandback calls
+        self.handback_lines = []  # the transcript lines of the SubagentHandback calls a hook did not deny
         self.finding_rows_logged = 0  # per-finding ledger rows the loop's own Bash calls wrote
         self.metrics_logged = False
         self.finding_calls = {}  # Bash tool_use_id -> the key=value fields of each `kind=finding` call, in order
@@ -219,7 +222,7 @@ class LoopTranscript:
 
         shell_result = rec.get("toolUseResult")
         if isinstance(shell_result, dict) and shell_result.get("backgroundTaskId"):
-            self.background_shells += [block.get("tool_use_id") for block in blocks
+            self.background_shells += [(n, block.get("tool_use_id")) for block in blocks
                                        if block.get("type") == "tool_result"]
 
     def read_reports(self, n, carrier):
@@ -237,6 +240,9 @@ class LoopTranscript:
             self.last_text = block["text"]
         elif block.get("type") == "tool_use":
             self.read_tool_use(n, block)
+        elif block.get("type") == "tool_result" and block.get("tool_use_id") in self.handback_ids:
+            if not block.get("is_error"):
+                self.handback_lines.append(n)
         elif block.get("type") == "tool_result" and block.get("tool_use_id") in self.kinds:
             self.results[block["tool_use_id"]] = text_of(block.get("content"))
         elif block.get("type") == "tool_result" and block.get("tool_use_id") in self.send_lines:
@@ -282,6 +288,8 @@ class LoopTranscript:
         elif block.get("name") == "SendMessage":
             self.messages_sent.append((n, tool_input.get("to")))
             self.send_lines[block.get("id")] = (n, tool_input.get("to"))
+        elif block.get("name") == "SubagentHandback":
+            self.handback_ids.add(block.get("id"))
         elif block.get("name") == "Bash":
             self.read_command(n, block.get("id"), str(tool_input.get("command") or ""))
 
@@ -332,10 +340,13 @@ class LoopTranscript:
     def open_dispatches(self):
         """The count of background dispatches that have not reported back, including each background resume of an
         agent whose earlier notification already closed its launch, and each background shell call with no task
-        notification yet."""
+        notification yet, unless its result comes before the loop's last delivered SubagentHandback (the caller
+        already holds the packet)."""
         open_launches = self.open_launches()
         open_resumes = [resume for resume in self.resumes if self.resume_is_open(*resume, open_launches)]
-        open_shells = [tool_use_id for tool_use_id in self.background_shells if tool_use_id not in self.notifications]
+        last_handback = max(self.handback_lines, default=-1)
+        open_shells = [tool_use_id for line, tool_use_id in self.background_shells
+                       if line > last_handback and tool_use_id not in self.notifications]
         return len(open_launches) + len(open_resumes) + len(open_shells)
 
 

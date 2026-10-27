@@ -598,6 +598,37 @@ class RunRowTest(unittest.TestCase):
         self.assertEqual([], fake_ledger.recorded_rows(self.env, "review_finding"))
         self.assertFalse(os.path.exists(os.path.join(self.home, ".claude", "review-findings.jsonl")))
 
+    def stop_rows_after_hand_back(self, hand_back_is_error):
+        """Stop the loop whose shell moved to the background before its hand-back; return the stop rows."""
+        store = os.path.join(self.tmp.name, "store")
+        self.env["HANDBACK_STORE_DIR"] = store
+        fixture = FIXTURES / "loop_shell_moved_to_background_by_timeout.jsonl"
+        with open(fixture, encoding="utf-8") as fh:
+            call, moved, _ = map(json.loads, fh)
+        hand_back = {"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "toolu_handback", "name": "SubagentHandback", "input": {"message": "done"}}]}}
+        hand_back_result = {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_handback", "content": "ok",
+             "is_error": hand_back_is_error}]}}
+        records = self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))],
+                            [call, moved, hand_back, hand_back_result])
+
+        self.stop(records)
+
+        with open(os.path.join(store, "s1.jsonl"), encoding="utf-8") as fh:
+            return [row for row in map(json.loads, fh) if row["kind"] == "stop"]
+
+    def test_a_shell_moved_to_the_background_before_the_hand_back_does_not_hold_the_run_rows(self):
+        stops = self.stop_rows_after_hand_back(hand_back_is_error=False)
+
+        self.assertEqual([0], [row["open_dispatches"] for row in stops])
+        self.assertEqual(["code-reviewer"], [row["gate"] for row in self.rows()])
+
+    def test_a_shell_moved_to_the_background_before_a_denied_hand_back_stays_open(self):
+        stops = self.stop_rows_after_hand_back(hand_back_is_error=True)
+
+        self.assertEqual([1], [row["open_dispatches"] for row in stops])
+
     def test_open_background_dispatch_writes_nothing(self):
         records = self.loop(
             [dispatch("t_code", "code-reviewer"), result("t_code", "Async agent launched\nagentId: acode")]

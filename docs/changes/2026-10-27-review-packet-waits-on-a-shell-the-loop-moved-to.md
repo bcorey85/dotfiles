@@ -8,7 +8,7 @@ kind: "fix"
 components: ["script/review-loop-gate", "script/review-fix", "script/handback", "skill/review", "skill/fix"]
 evidence: ["judgment"]
 watches: []
-test: "tests/scripts/test_review_fix_script.py::ReviewFixScriptTest::test_a_loop_that_stops_on_a_shell_its_timeout_moved_to_the_background_gets_wait_for_loop"
+test: "tests/scripts/test_review_loop_gate.py::StopRowTest::test_a_shell_moved_to_the_background_is_open_until_its_task_notification"
 asked: ""
 proof: []
 unmeasured: ""
@@ -29,9 +29,12 @@ unmeasured: ""
 - Queue item `review-fix-packet-says-stop-no-handback-while`: a /review session got `stop-no-handback` while its
   review-loop still waited on a suite its timeout had moved to the background. The packet said to re-dispatch a second
   loop over the same files.
-- Over 1040 real review-loop transcripts, the gate parsed 1040. 13 end with an open background shell; 11 of those have
-  no other open work, so the old gate stored 0 for them.
-- The new tests fail on the base commit (`[0, 0] != [1, 0]`; packet exits 2 with `stop-no-handback`) and pass after.
+- Over 1043 real review-loop transcripts, the gate parsed 1043. 13 end with an open background shell. 8 of those
+  delivered a hand-back with the shell still running, so the caller already held the packet and the stop row stays 0.
+  3 were real waits. The other 2 stay nonzero either way: `agent-a2efcdbf7bd48e45c` (shell before a denied hand-back,
+  plus an open coder launch) and `agent-a6dfd80695d5a453a` (no hand-back, two open launches, count 3). The gate counts
+  a shell only when its result comes after the last delivered SubagentHandback and it has no task notification.
+- The gate test fails on the base commit (`[0, 0] != [1, 0]`) and passes after.
 
 ## Result
 

@@ -2,7 +2,7 @@
 name: spec-criteria
 description: "Drafts the acceptance-criteria file from ticket, decision ledger and finalized plan. Dispatched by /eng-spec after finalization, before any coder."
 model: sonnet
-tools: Read, Glob, Grep, Write, Edit
+tools: Bash, Read, Glob, Grep, Write, Edit
 color: yellow
 ---
 
@@ -50,6 +50,10 @@ Write `<task-dir>/acceptance-criteria.md`:
 
 - **AC7** — <criterion no automated test can cover, and why>
 ```
+
+Number the ids flat, `AC1` to `ACn`, each used once across every section: never a lettered sub-id such as `AC1a`. A verbatim ticket AC line holds the ticket's words only; put a manual-only reason on the next indented line.
+
+Before you return, run `python3 ~/.claude/scripts/code/code_step.py plan check <the spec path>` and fix `acceptance-criteria.md` until every row it still prints starts with the spec's path; return those rows unedited. Never edit `spec.md`. Use Bash for that command only.
 
 **Prose, out of the shipped tree.** Never stubs, never placeholders under `tests/`, never ids/paths into `tests/` or `src` (`_shared/code-vocabulary.md`).
 

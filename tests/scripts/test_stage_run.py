@@ -73,6 +73,22 @@ class StageRunTest(unittest.TestCase):
     def add_barrel(self):
         self.write("src/index.ts", "export * from './a';\n")
 
+    def test_committed_branch_changes_are_read_against_the_base_without_staging(self):
+        self.git("branch", "-M", "main")
+        self.git("checkout", "-q", "-b", "feature")
+        self.write("src/widget.ts", "export const widget = 1;\n")
+        self.git("add", "src/widget.ts")
+        self.git("commit", "-q", "-m", "widget")
+
+        result = self.run_stage("--run")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("`src/widget.ts`", result.stdout)
+        self.assertIn("branch diff against `main` (all changes committed) in report-only mode", result.stdout)
+        self.assertEqual([row["path"] for row in self.jump_rows(result.stdout)], ["src/widget.ts"])
+        self.assertEqual(self.staged_paths(), [])
+        self.assertEqual(self.metrics_rows(), [])
+
     def test_empty_diff_is_clean_and_logs_a_row(self):
         result = self.run_stage("--run")
         self.assertEqual(result.returncode, 0, result.stderr)

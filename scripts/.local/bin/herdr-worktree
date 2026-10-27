@@ -120,7 +120,14 @@ if [ -n "${TUIOS_SOCKET:-}" ]; then
     created=$(herdr-api workspace create --cwd "$worktree" --label "$label" --focus) \
         || { echo "herdr-worktree: workspace create failed" >&2; exit 1; }
 else
-    created=$(herdr worktree create --cwd "$checkout" --branch "$branch" --base "$base" \
+    # herdr makes worktrees only from the repo's main checkout, so a run from a
+    # linked worktree hands it the main checkout. Resolve the base here first:
+    # HEAD and relative refs mean something else in the main checkout.
+    if [ "$checkout" != "$main_checkout" ]; then
+        base=$(git rev-parse --verify "$base^{commit}") \
+            || { echo "herdr-worktree: cannot resolve base $base" >&2; exit 1; }
+    fi
+    created=$(herdr worktree create --cwd "$main_checkout" --branch "$branch" --base "$base" \
         --path "$worktree" --label "$label" --focus) \
         || { echo "herdr-worktree: herdr worktree create failed" >&2; exit 1; }
 fi

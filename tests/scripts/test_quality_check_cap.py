@@ -126,6 +126,31 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assert_allowed(self.pre("cargo test", agent_id="coder-1"))
         self.assert_allowed(self.pre("cargo test", agent_id="reviewer-1"))
 
+    def test_a_subagent_that_edits_after_its_own_run_runs_the_target_once_then_is_capped(self):
+        self.post("cargo test", agent_id="coder-1", agent_type="coder")
+        self.assert_denied(self.pre("cargo test", agent_id="coder-1", agent_type="coder"))
+        self.assert_allowed(self.edit(agent_id="coder-1", agent_type="coder"))
+        self.assert_allowed(self.pre("cargo test", agent_id="coder-1", agent_type="coder"))
+        self.post("cargo test", agent_id="coder-1", agent_type="coder")
+        self.assert_denied(self.pre("cargo test", agent_id="coder-1", agent_type="coder"))
+
+    def test_a_denied_chain_names_the_matched_fragment_and_says_the_other_steps_run_as_their_own_call(self):
+        self.post("cargo fmt --check && cargo test && cargo clippy")
+        reason = self.assert_denied(self.pre("cargo fmt --check && cargo test && cargo clippy"))
+        self.assertTrue(reason.startswith(DENY_START + "cargo test' already ran this session"), reason)
+        self.assertIn("none of its other steps ran", reason)
+        self.assertIn("Send the other steps again without it, as their own call.", reason)
+
+    def test_a_denied_check_piped_into_another_command_has_no_chain_advice(self):
+        self.post("pytest 2>&1 | tail -30")
+        reason = self.assert_denied(self.pre("pytest 2>&1 | tail -30"))
+        self.assertNotIn("other steps", reason)
+
+    def test_a_denied_single_check_has_no_chain_advice(self):
+        self.post("cargo test")
+        reason = self.assert_denied(self.pre("cargo test"))
+        self.assertNotIn("other steps", reason)
+
     def test_an_agent_id_cannot_name_a_path_outside_the_session_state(self):
         self.post("cargo test", agent_id="../../escape/x y")
         self.assert_denied(self.pre("cargo test", agent_id="../../escape/x y"))

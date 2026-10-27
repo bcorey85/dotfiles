@@ -570,7 +570,7 @@ def start_plan_run(repo_dir, previous, branch, parsed, start_command):
         return start_closing_phase(repo_dir, plan_rel, lane, parsed.modifier, entry, closing_skill_name, section,
                                    branch, parsed.phase_id)
 
-    if not check_acceptance_criteria(repo_dir, plan_lines, plan_rel):
+    if not check_acceptance_criteria(repo_dir, plan_rel):
         return
     start_phase_coder(repo_dir, previous, branch, parsed, {
         "plan_rel": plan_rel, "lane": lane, "entry": entry, "section": section, "has_phases": bool(plan["sections"])})
@@ -662,14 +662,11 @@ def emit_closing_skill(repo_dir, plan_rel, number, title, skill, section):
     )
 
 
-def check_acceptance_criteria(repo_dir, plan_lines, plan_rel):
-    has_criteria_section = any(plan_format.ACCEPTANCE_HEADING.match(line) for line in plan_lines)
-    if not has_criteria_section:
+def check_acceptance_criteria(repo_dir, plan_rel):
+    if plan_format.missing_criteria_failure(repo_dir / plan_rel) is None:
         return True
+
     criteria_path = criteria_rel(plan_rel)
-    criteria = repo_dir / criteria_path
-    if criteria.is_file() and criteria.read_text().strip():
-        return True
 
     note = f"{criteria_path} is missing or empty"
     run_command(["bash", str(SCRIPTS_DIR / "telemetry" / "log-scan"), f"repo={repo_dir.name}", "scan=acceptance-stub",

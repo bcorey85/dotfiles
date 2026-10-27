@@ -1,16 +1,19 @@
 """code_step_core.py: what every part of code_step.py shares: the constants, the git and state-file helpers, the
 event log of a run, the hand-back matcher and the printed output.
 
-Installed beside code_step.py. Imports run one way: code_step_core, code_step_boundary, code_step_hooks, code_step.
+Installed beside code_step.py. Imports run one way: code_step_core, code_step_boundary, code_step_hooks,
+code_step_gates, code_step_start, code_step_report, code_step_review, code_step.
 
 A hand-back is one `handback` event in the run's events.jsonl, written by the log hook. A verb that waits for an agent
 looks for the newest hand-back event of the awaited agent's id after the time it was dispatched."""
+import contextlib
 import datetime
 import json
 import os
 import pathlib
 import re
 import shutil
+import signal
 import sys
 import time
 
@@ -37,6 +40,8 @@ LAUNCH_EXPECTED_SECONDS = 60
 BASH_TIMEOUT_MS = 600000
 CODER = "coder"
 REVIEW_LOOP = "review-loop"
+REVIEW_LOOP_SCRIPT = SCRIPTS_DIR / "review" / "review_loop_script.py"
+FINISHED_REVIEW_SCRIPT_KEYS = ("reviewScriptPid", "resumableReview", "resumeWaitAt")
 RESUME_VERB = "resume"
 RESUME_LINE = "When the {noun} is fixed, run `python3 ~/.claude/scripts/code/code_step.py {verb}`."
 TICKET_ID = re.compile(r"^[A-Za-z]+-\d+$")
@@ -249,14 +254,19 @@ def record_dispatch(repo_dir, state, verb, agent_type, model, prompt):
     return marked_prompt, prompt_file
 
 
+def prompt_with_gate_env(repo_dir, state, prompt):
+    # The prompt, with the repo's gate env vars appended when it has any.
+    gate_env = plan_format.repo_gate_env(repo_dir, state.get("plan"))
+    gate_env_text = plan_format.gate_env_text(gate_env)
+    if not gate_env_text:
+        return prompt
+    return f"{prompt.rstrip()}\n\n{gate_env_text}"
+
+
 def emit_dispatch(repo_dir, state, verb, *lines, prompt, agent, model=None):
     # The one way a dispatch reaches the fork: logged and saved first, then printed with the path of the saved prompt.
     # Every agent it dispatches runs a gate, so the repo's gate env vars go in the prompt.
-    plan_rel = state.get("plan")
-    gate_env = plan_format.repo_gate_env(repo_dir, plan_rel)
-    gate_env_text = plan_format.gate_env_text(gate_env)
-    if gate_env_text:
-        prompt = f"{prompt.rstrip()}\n\n{gate_env_text}"
+    prompt = prompt_with_gate_env(repo_dir, state, prompt)
 
     marked_prompt, prompt_file = record_dispatch(repo_dir, state, verb, agent, model, prompt)
 
@@ -267,6 +277,8 @@ def open_dispatch(state):
     # A dispatch is open from here until the dispatched agent's hand-back event is newer than dispatchAt. The session
     # that opens it pins the run: a new session that resumes the run reads the events of the agents it launches.
     state["dispatchAt"] = time.time()
+    # A finished review script's pid would read as gone on the next wait; launch_review_script sets it after this.
+    state.pop("reviewScriptPid", None)
     state["sessionId"] = session_pin() or state.get("sessionId")
     if not state.get("runId"):
         state["runId"] = script_utils.sortable_unique_id()
@@ -274,10 +286,17 @@ def open_dispatch(state):
 
 def abandon_open_dispatch(repo_dir, previous):
     # A run that starts over leaves no open dispatch behind: the stage becomes stopped and dispatchAt goes. The
-    # baseline stays, so a restart of the same phase keeps its own-files record.
-    if previous.get("dispatchAt") is None or previous.get("stage") not in HOOK_STAGES:
-        return
+    # baseline stays, so a restart of the same phase keeps its own-files record. A review script still running,
+    # including one a wait-cap stop left running, is killed; stopping it drops the pid and the resume keys from the
+    # saved state.
     abandoned = dict(previous)
+    had_review_script = stop_review_script(abandoned) is not None
+
+    if abandoned.get("dispatchAt") is None or abandoned.get("stage") not in HOOK_STAGES:
+        if had_review_script:
+            save_state(repo_dir, abandoned)
+        return
+
     abandoned.pop("dispatchAt")
     abandoned["stage"] = "stopped"
     save_state(repo_dir, abandoned)
@@ -307,7 +326,8 @@ def awaits_resumed_coder(state):
 
 def awaits_resumed_review(state):
     # The wait for a review-loop gave up at the cap and stopped the run. The user may resume that review-loop with
-    # SendMessage: its hand-back, still after dispatchAt, then counts as the pending review.
+    # SendMessage, or keep waiting on a review script that still runs: its hand-back, still after dispatchAt, then
+    # counts as the pending review.
     return state.get("stage") == "stopped" and bool(state.get("resumableReview"))
 
 
@@ -336,6 +356,23 @@ def awaited_handback(repo_dir, state):
     if since is None or not state.get("runId"):
         return None
     return handback_event(read_events(repo_dir, state["runId"]), awaited_agent_id(repo_dir, state), since)
+
+
+def take_handback(repo_dir, state, agent_type, missing_text):
+    # The hand-back event of the agent the verb waited for, after a resumed agent is put back in its stage; None after
+    # printing the stop. A resumed agent that has not handed back yet gets its own stop.
+    is_resumed = awaits_resumed_coder(state) or awaits_resumed_review(state)
+    handback = awaited_handback(repo_dir, state)
+    if handback is None:
+        return emit("stop", resumed_agent_pending_stop(agent_type) if is_resumed else missing_text)
+
+    pin_session(repo_dir, state)
+    state.pop("reviewScriptPid", None)
+    if awaits_resumed_coder(state):
+        put_resumed_coder_back(repo_dir, state)
+    elif awaits_resumed_review(state):
+        put_resumed_review_back(repo_dir, state)
+    return handback
 
 
 def is_dispatch_open(cwd, state):
@@ -508,9 +545,43 @@ def launch_has_no_agent_id(repo_dir, state):
     return standing["launched"] is not None and not standing["launched"].get("agent_id")
 
 
+def runs_review_script():
+    # The review loop runs as review_loop_script.py; CODE_STEP_REVIEW_LOOP=agent dispatches the review-loop agent.
+    return os.environ.get("CODE_STEP_REVIEW_LOOP", "script") != "agent"
+
+
+def review_script_running(state):
+    pid = state.get("reviewScriptPid")
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def stop_review_script(state):
+    # Kills the running review loop script and every claude call it started. The caller saves the state.
+    pid = state.pop("reviewScriptPid", None)
+    if pid is None:
+        return None
+    # A killed script leaves nothing to resume.
+    for finished_key in FINISHED_REVIEW_SCRIPT_KEYS:
+        state.pop(finished_key, None)
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(pid, signal.SIGTERM)
+    return pid
+
+
 def handback_or_unlaunched(repo_dir, state, agent_type, cap_spent):
     if awaited_handback(repo_dir, state):
         return "handback", None
+    if state.get("reviewScriptPid") and not review_script_running(state):
+        # The script writes its hand-back, then exits: a hand-back that landed after the first read still counts.
+        return ("handback", None) if awaited_handback(repo_dir, state) else ("script-gone", None)
     if launch_has_no_agent_id(repo_dir, state):
         return "no-agent-id", None
     if cap_spent:
@@ -544,6 +615,8 @@ def wait_for_handback(repo_dir, state, verb):
         return False
     if found and found[0] == "no-agent-id":
         return stop_on_launch_without_agent_id(repo_dir, state, agent_type)
+    if found and found[0] == "script-gone":
+        return stop_on_gone_review_script(repo_dir, state)
     if found:
         return True
     if until_cap <= limit:
@@ -575,6 +648,18 @@ def wait_for_loop_stop(state, module, handback):
               "may be missed, so an ask it logged may get a second ask row.", file=sys.stderr)
 
 
+def stop_on_gone_review_script(repo_dir, state):
+    log_path = state.get("reviewScriptLog", "")
+    # A wait-cap stop before this one left the review resumable; a gone script has nothing left to resume.
+    for finished_key in FINISHED_REVIEW_SCRIPT_KEYS:
+        state.pop(finished_key, None)
+    state.update({"stage": "stopped", "stopReason": "invalid-packet"})
+    save_state(repo_dir, state)
+    emit("stop", f"The review loop script exited with no hand-back. Show the user its log: {log_path}",
+         "To review the same diff again, invoke Skill code with `review-again`.")
+    return False
+
+
 def stop_on_launch_without_agent_id(repo_dir, state, agent_type):
     # A review-loop goes on to its own no-launch-record stop. A coder stops here, with the restart text.
     if agent_type == REVIEW_LOOP:
@@ -595,7 +680,12 @@ def stop_on_launch_without_agent_id(repo_dir, state, agent_type):
 def stop_at_wait_cap(repo_dir, state, agent_type, clock_start, total_cap):
     stopped_at = time.time()
     state.pop("stopReason", None)
-    if agent_type == REVIEW_LOOP:
+    if agent_type == REVIEW_LOOP and state.get("reviewScriptPid"):
+        state["resumableReview"] = stopped_at
+        resume_text = (f" The review loop runs as a script; its log is {state.get('reviewScriptLog', '')}. If the user "
+                       f"wants it to keep waiting, run {timed_command(RESUME_VERB)}. If the user wants it killed and a "
+                       f"new loop started on the same diff, run `{INSTALLED_COMMAND} review-again`.")
+    elif agent_type == REVIEW_LOOP:
         state["resumableReview"] = stopped_at
         resume_text = (f" If the user resumes it with SendMessage, run {timed_command(RESUME_VERB)}. If it died, "
                        f"the user's word to review the same diff again runs `{INSTALLED_COMMAND} review-again`.")

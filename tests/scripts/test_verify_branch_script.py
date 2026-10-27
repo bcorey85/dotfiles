@@ -1317,6 +1317,7 @@ class ReviewLogTest(VerifyBranchBase):
         self.assertIn("REVIEW: ran", self.prep(cwd=self.repo / "src").stdout)
 
 
+@unittest.skipUnless(os.environ.get("REAL_PLANS"), "real-plan sweep runs only with REAL_PLANS=1")
 class RealPlansTest(unittest.TestCase):
     """Every real task dir under ~/dev/*/docs/{plans,eng-specs}/: the criteria parse, and no id is silently dropped."""
 

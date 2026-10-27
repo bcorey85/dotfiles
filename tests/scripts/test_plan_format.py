@@ -406,6 +406,7 @@ class LoudFailureTest(unittest.TestCase):
         self.assert_fails_at("#### Manual Verification:\n\n- N/A beyond tests\n  detail\n", 4)
 
 
+@unittest.skipUnless(os.environ.get("REAL_PLANS"), "real-plan sweep runs only with REAL_PLANS=1")
 class RealPlansTest(unittest.TestCase):
     """Every real plan under ~/dev/*/docs/{plans,eng-specs}/ parses, and every section yields phase-tagged items."""
 

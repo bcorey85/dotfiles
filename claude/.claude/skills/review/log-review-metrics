@@ -14,7 +14,7 @@
 # date, schema_version, repo, session and desc are accepted and never stored; the
 # writer adds the date, repo and session, and keys `branch=` into branch_key (with no
 # ledger, stored raw in the local jsonl file).
-# With no `ledger` on PATH `ledger-write` appends the row to
+# With no ledger found (PATH, then `${CARGO_HOME:-~/.cargo}/bin`) `ledger-write` appends the row to
 # ~/.claude/review-metrics.jsonl and prints one stderr line. A row `ledger write`
 # refuses exits 2.
 #

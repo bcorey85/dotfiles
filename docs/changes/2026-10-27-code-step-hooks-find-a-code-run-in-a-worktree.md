@@ -38,7 +38,8 @@ unmeasured: ""
 
 ## Result
 
-- All code_step test files pass in the worktree; ruff is clean.
+- After the merge of master's scripted review loop, the code_step test files pass: 1079 tests, 477 inherited skips.
+  Ruff is clean. The scripted loop does not remove the bug: the coder's launch and hand-back still went unlogged.
 
 ## Watch
 

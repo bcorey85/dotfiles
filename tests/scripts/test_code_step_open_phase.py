@@ -23,6 +23,8 @@ code_step = importlib.util.module_from_spec(loaded)
 loaded.loader.exec_module(code_step)
 import code_step_boundary
 import code_step_core
+import code_step_review
+import code_step_start
 
 PLAN = "docs/plans/orders.md"
 
@@ -117,15 +119,15 @@ class AskOutcomesReachLaterPasses(TempRepo):
     def rule(self, outcome, change=None):
         state = {"stage": "asks", "plan": PLAN, "phase": "2", "asks": [dict(self.ASK)], "lane": "code", "iter": 1}
         change_args = ["--change", change] if change else []
-        with mock.patch.object(code_step, "log_ask_outcomes"), \
-                mock.patch.object(code_step, "apply_asks_or_finish") as apply:
-            code_step.command_asks_done(self.repo, state, [outcome, *change_args])
+        with mock.patch.object(code_step_review, "log_ask_outcomes"), \
+                mock.patch.object(code_step_review, "apply_asks_or_finish") as apply:
+            code_step_review.command_asks_done(self.repo, state, [outcome, *change_args])
         apply.assert_called_once()
 
     def handoff(self, plan=PLAN):
         state = {"plan": plan, "phase": "4", "files": [], "changes": {}, "why": {}, "testsRun": "none",
                  "flagged": [], "iter": 0}
-        return code_step.handoff_block(self.repo, state)
+        return code_step_review.handoff_block(self.repo, state)
 
     def test_a_ruled_ask_is_in_the_review_handoff_of_a_later_phase(self):
         self.rule("rejected")
@@ -145,16 +147,16 @@ class AskOutcomesReachLaterPasses(TempRepo):
     def test_the_closing_refactor_phase_prompt_lists_the_ruled_ask(self):
         self.rule("rejected")
 
-        _result, out = self.run_quietly(code_step.emit_closing_skill, self.repo, PLAN, "4", "Refactor", "refactor",
-                                        "")
+        _result, out = self.run_quietly(code_step_start.emit_closing_skill, self.repo, PLAN, "4", "Refactor",
+                                        "refactor", "")
 
         self.assertIn("Asks already ruled in this run", out)
         self.assertIn("the retry loop has no cap", out)
 
     def test_a_run_with_no_ruled_ask_prints_no_ruled_asks_section(self):
         self.assertNotIn("ruled-asks", self.handoff())
-        _result, out = self.run_quietly(code_step.emit_closing_skill, self.repo, PLAN, "4", "Refactor", "refactor",
-                                        "")
+        _result, out = self.run_quietly(code_step_start.emit_closing_skill, self.repo, PLAN, "4", "Refactor",
+                                        "refactor", "")
         self.assertNotIn("already ruled", out)
 
     def test_another_plan_does_not_see_the_ruling(self):

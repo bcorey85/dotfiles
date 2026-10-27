@@ -10,6 +10,11 @@
    Returns `UNRESOLVED after 2 cycles` → a question is entangled with the goal.
    Put it to the user and re-dispatch; don't wave it through.
 
+   **The user cancels while research runs** → delete only
+   `<task-dir>/01-questions.md` with a plain `rm <path>` (no flags), then stop
+   `goal-blind-researcher` and tell the user the directory is left for them to
+   remove. Stopping it does not stop the child it waits on; that child finds its questions file gone and writes nothing.
+
 6. **Walk the user through `02-research.md` one section at a time, in the doc's
    own order — never a goal-curated selection.** Present one, stop, wait. Log
    whatever the exchange settles (corrected premise, constraint, ruled-out

@@ -72,6 +72,8 @@ DENY_TEXT = ("' already ran this session and nothing has been edited since. Re-r
              "failure in one batch, then run it once more. If it still fails after that batch fix, stop and ask "
              "the user. To repeat a check on purpose, run it in one `for i in 1 2 3; do <check>; done` loop. If you "
              "believe this deny is wrong, stop and tell the user what you were about to run.")
+CHAIN_DENY_TEXT = (" This call was denied as a whole because of that fragment alone: none of its other steps ran. "
+                   "Send the other steps again without it, as their own call.")
 
 
 class DenyError(Exception):
@@ -409,7 +411,9 @@ def run(raw, state):
         edited_since_run = newer(run_file, state_dir + "/edits")
         if (edited_since_run and not changed_since_run(check_cwd, run_file)
                 and not tree_changed_since_run(check_cwd, run_file)):
-            raise DenyError("[quality-check-cap] '" + norm + DENY_TEXT)
+            is_real_chain = any(op in ("&&", "||", ";", "&") and step.strip() for op, step in steps[1:])
+            chain_text = CHAIN_DENY_TEXT if is_real_chain else ""
+            raise DenyError("[quality-check-cap] '" + norm + DENY_TEXT + chain_text)
 
 
 def main():

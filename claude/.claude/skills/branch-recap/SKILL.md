@@ -30,21 +30,31 @@ Per-phase residue of the review round budget comes due here — skip this step a
 
 ```bash
 if command -v ledger >/dev/null 2>&1; then
-  ledger yield --deferred
+  for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    ledger yield --deferred; ledger_exit=$?
+    [ "$ledger_exit" -ne 75 ] && break
+    [ "$attempt" -lt 12 ] && sleep 5
+  done
+  if [ "$ledger_exit" -eq 75 ]; then echo "deferred: not read (cache busy or behind)"
+  elif [ "$ledger_exit" -ne 0 ]; then echo "deferred: not read (ledger exit $ledger_exit)"; fi
 else
   echo "deferred: not tracked (ledger not installed)"
 fi
 ```
 
-`ledger yield --deferred` reads the current repo and branch from the cwd and prints a header line, then one row per deferred finding: `finding_id, ts, gate, class, disposition, blocker, fix_induced, line, actioned, gate_agent_run_id, session`. `actioned=1` means a later edit to the finding's file landed inside its gate run's window.
+`ledger yield --deferred` reads the current repo and branch from the cwd and prints a header line, then one row per deferred finding: `finding_id, ts, gate, class, disposition, blocker, fix_induced, line, actioned, gate_agent_run_id, session`. `actioned=1` means a later edit to the finding's file landed inside its gate run's window. Exit 75 means its cache is busy (locked) or behind and a catch-up runs; the loop retries for up to 60 seconds.
 
-Without `ledger` the queue went unread: the recap says `deferred: not tracked (ledger not installed)` and never `deferred: none`.
+Without `ledger`, or with a cache still busy or behind after the retries, or a ledger exit other than 0, the queue went unread: the recap says `deferred: not tracked (ledger not installed)`, `deferred: not read (cache busy or behind)` or `deferred: not read (ledger exit <code>)`, and never `deferred: none`.
 
 Read the queue against the **branch** diff — some findings died when a later phase resolved them. A row with `actioned=1` is marked **likely stale**. For the rest, read the gate agent transcript locally — `~/.claude/projects/*/<session>/subagents/agent-<gate_agent_run_id>.jsonl` — and match the row to its finding by gate, class and line. The ledger keeps no description, so the transcript is where the finding's text lives.
 
 Triage: **fix now** (`/fix`), **stale** (later phase resolved — say which), **carry** (real but out-of-scope — `/escape` so branch-filtering doesn't lose it). Header only → `deferred: none`, else `deferred: <n> fixed, <n> stale, <n> carried of <m>`.
 
 A deferred `blocker` (or `fix_induced=bug`) is a loop bug, not a work item — escalate as such.
+
+## Step 2b: Companion branches
+
+A plan step in another repo leaves a branch there that nothing tracks once this PR merges. For each other repo the spec's phases or handover list name, run `gh pr list --repo <owner/name> --head <branch> --state all` on the branch the plan names. Tell a pushed branch from a never-pushed one with `git ls-remote --heads <remote-url> <branch>` (empty output: not pushed). A pushed branch with no PR goes first under **Companion branches** as `<repo>@<branch> — no PR`, and the recap's `Next:` line starts with opening that PR. A branch that is not pushed is listed as `<repo>@<branch> — not pushed`, and `Next:` never says to open a PR for it; it says to push it. No other repo named → `companions: none`.
 
 ## Step 3: The recap
 
@@ -69,7 +79,10 @@ Spec: <task-dir>
 - <any REQUIRES-MUTATION items with their KILLED/SURVIVED/EQUIVALENT/INDETERMINATE verdicts, or marked unrouted-and-open>
 
 ### Deferred findings             (round budget, read at branch bound)
-- <fixed / stale / carried, one line each, with the gate and disposition each came from; or "none"; or "not tracked (ledger not installed)">
+- <fixed / stale / carried, one line each, with the gate and disposition each came from; or "none"; or "not tracked (ledger not installed)"; or "not read (cache busy or behind)"; or "not read (ledger exit <code>)">
+
+### Companion branches            (Step 2b)
+- <repo>@<branch> — <PR url, or "no PR", or "not pushed">; or "none"
 
 ### Smoke-test checklist          (from the /verify-branch closing phase)
 - <every human-only item, with steps>

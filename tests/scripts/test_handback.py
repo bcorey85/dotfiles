@@ -417,11 +417,11 @@ class StoreTest(HandbackTestBase):
     def test_false_clean_reason_refuses_clean_while_the_loop_waits(self):
         handback.record(SESSION, "dispatch")
         handback.record(SESSION, "stop", agent_id="a1", open_dispatches=1)
-        self.assertIn("waiting on a background agent", handback.false_clean_reason(SESSION))
+        self.assertIn("waiting on a background agent or shell", handback.false_clean_reason(SESSION))
         handback.record(SESSION, "handback", status="converged", message="m")
         handback.record(SESSION, "dispatch")
         handback.record(SESSION, "stop", agent_id="a2", open_dispatches=1)
-        self.assertIn("waiting on a background agent", handback.false_clean_reason(SESSION))
+        self.assertIn("waiting on a background agent or shell", handback.false_clean_reason(SESSION))
 
     def test_a_stored_hand_back_with_no_dispatch_row_has_its_own_reason(self):
         handback.record(SESSION, "handback", status="converged", message="m")

@@ -208,11 +208,11 @@ class CodeStepTest(unittest.TestCase):
             return None
         return json.loads(finished.stdout)["hookSpecificOutput"]
 
-    def hook(self, agent_type, message, agent_id="a1", session=SESSION, launched=True):
+    def hook(self, agent_type, message, agent_id="a1", session=SESSION, launched=True, cwd=None):
         # The fork hands back. The PreToolUse hooks of settings.json see the call: the coder gate may deny it or stamp
         # its message, the hand-back packet hook may deny it, and so may the code-step hook. A hand-back that goes
         # through is logged by the PostToolUse log hook with the message as stamped; a denied one never reaches it.
-        event = {"agent_type": agent_type, "agent_id": agent_id, "cwd": str(self.repo),
+        event = {"agent_type": agent_type, "agent_id": agent_id, "cwd": cwd or str(self.repo),
                  "tool_input": {"message": message}}
         if session:
             event["session_id"] = session
@@ -237,7 +237,7 @@ class CodeStepTest(unittest.TestCase):
         stamped_message = message
         if gate_decision is not None:
             stamped_message = gate_decision["updatedInput"]["message"]
-        self.hand_back(stamped_message, agent_type, agent_id, session=session)
+        self.hand_back(stamped_message, agent_type, agent_id, session=session, cwd=cwd or str(self.repo))
         return result
 
     def commit_all(self):
@@ -3411,8 +3411,8 @@ class CodeStepTest(unittest.TestCase):
 
     # ---------- the fork's stop ----------
 
-    def stop_hook(self, session=SESSION, agent_type=code_step_core.FORK_AGENT_TYPE):
-        event = {"agent_type": agent_type, "cwd": str(self.repo), "session_id": session}
+    def stop_hook(self, session=SESSION, agent_type=code_step_core.FORK_AGENT_TYPE, cwd=None):
+        event = {"agent_type": agent_type, "cwd": cwd or str(self.repo), "session_id": session}
         return run(self.repo, self.env, "stop-hook", stdin=json.dumps(event)).stdout
 
     def test_the_stop_hook_blocks_the_fork_twice_while_a_dispatch_is_open(self):
@@ -4427,20 +4427,20 @@ class CodeStepTest(unittest.TestCase):
         fixture["tool_response"].update(tool_response or {})
         return self.log_hook(fixture["tool_name"], fixture["tool_input"], fixture["tool_response"], **extra)
 
-    def launch_agent(self, prompt, agent_id="a1", subagent_type="coder", session=SESSION):
+    def launch_agent(self, prompt, agent_id="a1", subagent_type="coder", session=SESSION, **extra):
         return self.log_fixture("agent_launch", {"subagent_type": subagent_type, "prompt": prompt},
-                                {"agentId": agent_id}, session_id=session)
+                                {"agentId": agent_id}, session_id=session, **extra)
 
     def send_message(self, to, **extra):
         return self.log_fixture("send_message", {"to": to, "recipient": to}, **extra)
 
-    def hand_back(self, message, agent_type, agent_id, session=SESSION):
+    def hand_back(self, message, agent_type, agent_id, session=SESSION, **extra):
         return self.log_fixture("subagent_handback", {"message": message}, agent_type=agent_type, agent_id=agent_id,
-                                session_id=session)
+                                session_id=session, **extra)
 
-    def dispatch_hook(self, prompt, subagent_type="coder", session=SESSION):
+    def dispatch_hook(self, prompt, subagent_type="coder", session=SESSION, cwd=None):
         event = {"tool_name": "Agent", "tool_input": {"subagent_type": subagent_type, "prompt": prompt},
-                 "cwd": str(self.repo)}
+                 "cwd": cwd or str(self.repo)}
         if session:
             event["session_id"] = session
         return run(self.repo, self.env, "dispatch-hook", stdin=json.dumps(event)).stdout
@@ -4876,6 +4876,115 @@ class CodeStepTest(unittest.TestCase):
         waited = self.step("after-coder")
 
         self.assertIn("ACTION: wait", waited)
+
+    def test_a_launch_and_hand_back_from_a_session_whose_cwd_is_another_checkout_reach_the_run(self):
+        # /code runs in a worktree while the session's cwd stays in another checkout, so the fork's Agent and
+        # SubagentHandback hook events carry a cwd outside the run's repo.
+        session_cwd = self.home / "session-checkout"
+        self.make_other_checkout(session_cwd)
+        out = self.start_phase_one()
+        self.pass_coder_gate()
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.launch_agent(self.printed_prompt(out), cwd=str(session_cwd))
+        self.age_dispatches(120)
+        self.wait_env(1, "0.2")
+
+        waited = self.step("after-coder")
+
+        self.assertIn("ACTION: wait", waited)
+        self.assertNotIn("no Agent call for it was launched", waited)
+        report = "BEHAVIOR: orders exist\nWHY: backend/src/orders.ts 3-5 — order matters\nREVIEW: recommended"
+        self.hand_back(report, "coder", "a1", cwd=str(session_cwd))
+        reviewed = self.step("after-coder")
+        self.assertIn("AGENT: review-loop", reviewed)
+
+    def make_other_checkout(self, session_cwd):
+        # A git checkout that holds the state of a finished run of this session, as the session's own cwd can.
+        session_cwd.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=session_cwd, check=True)
+        state_folder = session_cwd / ".git/code-step"
+        state_folder.mkdir()
+        (state_folder / "state.json").write_text(
+            json.dumps({"stage": "done", "sessionId": self.SESSION, "runId": "old-run"}))
+
+    def pin_session_repo(self, session=SESSION):
+        pinned_sessions = self.home / ".claude/state/code-step-sessions"
+        pinned_sessions.mkdir(parents=True, exist_ok=True)
+        (pinned_sessions / session).write_text(str(self.repo) + "\n")
+
+    def test_the_stop_hook_of_a_session_whose_cwd_is_another_checkout_blocks_the_fork(self):
+        session_cwd = self.home / "session-checkout"
+        self.make_other_checkout(session_cwd)
+        self.start_phase_one()
+
+        first = json.loads(self.stop_hook(cwd=str(session_cwd)))
+
+        self.assertEqual("block", first["decision"])
+
+    def test_an_early_fork_hand_back_from_a_session_whose_cwd_is_another_checkout_is_denied(self):
+        session_cwd = self.home / "session-checkout"
+        self.make_other_checkout(session_cwd)
+        self.start_phase_one()
+
+        self.hook("code-fork", "done", cwd=str(session_cwd), launched=False)
+
+        blocks = self.events_named("fork-block")
+        self.assertEqual(["handback-deny"], [block["kind"] for block in blocks])
+
+    def test_a_thin_prompt_from_a_session_whose_cwd_is_another_checkout_is_denied(self):
+        session_cwd = self.home / "session-checkout"
+        self.make_other_checkout(session_cwd)
+        self.start_phase_one()
+
+        result = self.dispatch_hook("do the thing", cwd=str(session_cwd))
+
+        self.assertIn("pass its whole text", self.denial_reason(result))
+
+    def test_the_say_hook_of_a_session_whose_cwd_is_another_checkout_relays_the_run_text(self):
+        session_cwd = self.home / "session-checkout"
+        self.make_other_checkout(session_cwd)
+        self.coder_round()
+        expected = self.said().strip()
+        event = {"cwd": str(session_cwd), "session_id": self.SESSION, "hook_event_name": "Stop"}
+
+        result = run(self.repo, self.env, "say-hook", stdin=json.dumps(event))
+
+        self.assertEqual({"systemMessage": expected}, json.loads(result.stdout))
+        self.assertEqual("", self.said())
+
+    def test_the_plan_hook_of_a_session_whose_cwd_is_another_checkout_checks_the_run_plan(self):
+        session_cwd = self.home / "session-checkout"
+        self.make_other_checkout(session_cwd)
+        self.start_phase_one()
+        item = "- [ ] **Check**: the orders pass - `RUN npx vitest run`"
+        (self.repo / self.plan).write_text(self.bad_item_plan(item))
+        bad_line = self.plan_text().splitlines().index(item) + 1
+        plan_path = str(self.repo / self.plan)
+        event = {"cwd": str(session_cwd), "session_id": self.SESSION, "tool_input": {"file_path": plan_path}}
+
+        result = run(self.repo, self.env, "plan-hook", stdin=json.dumps(event))
+
+        self.assertEqual(2, result.returncode)
+        self.assertIn(f"{self.plan}:{bad_line}:", result.stderr)
+
+    def test_a_launch_from_another_session_whose_cwd_is_another_checkout_is_not_logged(self):
+        session_cwd = self.home / "session-checkout"
+        session_cwd.mkdir()
+        out = self.start_phase_one()
+        self.pin_session_repo("sess-other")
+
+        self.launch_agent(self.printed_prompt(out), session="sess-other", cwd=str(session_cwd))
+
+        self.assertEqual([], self.events_named("launch"))
+
+    def test_dispatch_hook_leaves_a_call_carrying_another_runs_marker_alone(self):
+        self.start_phase_one()
+        other_run_prompt = "code-step-dispatch: other-run/d1\nNot the saved prompt."
+
+        result = self.dispatch_hook(other_run_prompt)
+
+        self.assertEqual("", result)
+        self.assertEqual([], self.events_named("fork-block"))
 
     def test_a_wait_on_a_fresh_dispatch_with_no_launch_keeps_waiting(self):
         self.begin_coder()

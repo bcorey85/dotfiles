@@ -40,6 +40,7 @@ REVIEW_LOOP = "review-loop"
 RESUME_VERB = "resume"
 RESUME_LINE = "When the {noun} is fixed, run `python3 ~/.claude/scripts/code/code_step.py {verb}`."
 TICKET_ID = re.compile(r"^[A-Za-z]+-\d+$")
+SESSION_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
 HOOK_STAGES = ("coder", "review", "asks-coder", "plan-coder")
 # The stages in which the run owns its session's review-loop hand-backs, so review_fix.py `packet` refuses to read
 # their saved hand-back.
@@ -78,9 +79,15 @@ class StateFileError(Exception):
 
 def load_state(cwd):
     directory = state_dir(cwd)
-    if directory is None or not (directory / "state.json").exists():
+    if directory is None:
         return None
+    return read_state_file(directory)
+
+
+def read_state_file(directory):
     state_file = directory / "state.json"
+    if not state_file.exists():
+        return None
     try:
         return json.loads(state_file.read_text())
     except ValueError:
@@ -96,6 +103,41 @@ def save_state(cwd, state):
     directory = state_dir(cwd)
     directory.mkdir(parents=True, exist_ok=True)
     script_utils.write_text_atomically(directory / "state.json", json.dumps(state, indent=1))
+
+    register_session_repo(cwd, state.get("sessionId"))
+
+
+def session_repos_file(session_id):
+    # The list of repos whose /code state a session pinned, or None for an id that is not a plain name. A hook event
+    # carries the session's cwd, which is another checkout when /code runs in a worktree, so the hooks read this list.
+    if not isinstance(session_id, str) or not SESSION_ID_PATTERN.fullmatch(session_id):
+        return None
+    return pathlib.Path.home() / ".claude" / "state" / "code-step-sessions" / session_id
+
+
+def session_repo_dirs(session_id):
+    # The repos the session pinned that still exist, in the order it pinned them.
+    repos_file = session_repos_file(session_id)
+    if repos_file is None:
+        return []
+    try:
+        listed = repos_file.read_text().splitlines()
+    except OSError:
+        return []
+    return [repo for repo in listed if repo and pathlib.Path(repo).is_dir()]
+
+
+def register_session_repo(cwd, session_id):
+    repos_file = session_repos_file(session_id)
+    if repos_file is None:
+        return
+
+    repo = str(pathlib.Path(cwd).resolve())
+    if repo in session_repo_dirs(session_id):
+        return
+    repos_file.parent.mkdir(parents=True, exist_ok=True)
+    with repos_file.open("a") as listing:
+        listing.write(repo + "\n")
 
 
 RULED_ASKS_FILE = "ruled-asks.json"

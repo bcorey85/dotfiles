@@ -275,7 +275,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v ledger >/dev/null 2>&1 && ledger hook skill-use; exit 0"
+            "command": "~/.claude/scripts/telemetry/ledger-hook skill-use"
           }
         ]
       },
@@ -458,7 +458,7 @@
           },
           {
             "type": "command",
-            "command": "command -v ledger >/dev/null 2>&1 && ledger hook test-edit; exit 0"
+            "command": "~/.claude/scripts/telemetry/ledger-hook test-edit"
           }
         ]
       },
@@ -535,7 +535,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v ledger >/dev/null 2>&1 && ledger hook session-start; exit 0",
+            "command": "~/.claude/scripts/telemetry/ledger-hook session-start",
             "async": true
           }
         ]
@@ -545,7 +545,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v ledger >/dev/null 2>&1 && ledger hook doctor; exit 0",
+            "command": "~/.claude/scripts/telemetry/ledger-hook doctor",
             "timeout": 5
           }
         ]
@@ -606,7 +606,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v ledger >/dev/null 2>&1 && ledger hook session-end; exit 0"
+            "command": "~/.claude/scripts/telemetry/ledger-hook session-end"
           }
         ]
       },
@@ -642,7 +642,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v ledger >/dev/null 2>&1 && ledger hook subagent-stop; exit 0",
+            "command": "~/.claude/scripts/telemetry/ledger-hook subagent-stop",
             "async": true
           }
         ]
@@ -674,7 +674,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v ledger >/dev/null 2>&1 && ledger hook stop; exit 0",
+            "command": "~/.claude/scripts/telemetry/ledger-hook stop",
             "async": true
           }
         ]
@@ -694,7 +694,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v ledger >/dev/null 2>&1 && ledger hook stop-failure; exit 0",
+            "command": "~/.claude/scripts/telemetry/ledger-hook stop-failure",
             "async": true
           }
         ]
@@ -714,7 +714,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v ledger >/dev/null 2>&1 && ledger hook skill-use; exit 0"
+            "command": "~/.claude/scripts/telemetry/ledger-hook skill-use"
           },
           {
             "type": "command",

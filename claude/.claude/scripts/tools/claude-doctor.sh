@@ -98,11 +98,20 @@ for pair in \
     print_warn "scripts/$script exists but is not registered in settings.json — $label inactive"
   fi
 done
+if grep -Eq 'ledger-hook (skill-use|test-edit)' <<<"$reg_blob"; then
+  # shellcheck source=../lib/_ledger.sh
+  source "$CLAUDE_DIR/scripts/lib/_ledger.sh"
+  if ! ledger_bin >/dev/null; then
+    print_warn "ledger-hook registered but no ledger found on PATH or in the cargo bin folder (\$CARGO_HOME/bin, default ~/.cargo/bin): skill_use and test_edit rows are not captured"
+  else
+    print_success "ledger-hook registered, ledger found"
+  fi
+fi
 if grep -Eq 'ledger hook (skill-use|test-edit)' <<<"$reg_blob"; then
   if ! command -v ledger >/dev/null 2>&1; then
-    print_warn "ledger hooks registered but ledger is not on PATH: skill_use and test_edit rows are not captured"
+    print_warn "inline 'ledger hook' registered but no ledger on PATH: the inline form finds only a PATH ledger; switch it to ledger-hook, which also checks the cargo bin folder (\$CARGO_HOME/bin, default ~/.cargo/bin)"
   else
-    print_success "ledger hooks registered, ledger on PATH"
+    print_success "inline 'ledger hook' registered, ledger found on PATH"
   fi
 fi
 

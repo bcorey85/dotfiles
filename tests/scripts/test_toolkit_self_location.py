@@ -54,6 +54,7 @@ ALLOWED_HITS = [
     ("scripts/gates/emit_orchestration.py", "MISSING_WARNING = ", PRINTED),
     ("scripts/gates/emit_orchestration.py", "os.path.join(os.environ.get", "injects the user's own rules file"),
     ("scripts/lib/script_utils.py", "Installed as ~/.claude/scripts/lib/script_utils.py", "docstring text"),
+    ("scripts/lib/script_utils.py", "under ~/.claude, where the ledger's readers", PRINTED),
     ("scripts/review/review_fix.py", "DECIDE_SCRIPT = ", PRINTED),
     ("scripts/review/review_fix.py", "MARK_CLEAN = ", PRINTED),
     ("scripts/review/review_fix.py", "MARK_DIRTY = ", PRINTED),

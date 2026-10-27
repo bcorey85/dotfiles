@@ -233,6 +233,8 @@ with_ledger_scope=$("$scope" root="$repo" merge_base=HEAD caller=review 2>/dev/n
 before=$(scalar "select (select count(*) from review_finding) + (select count(*) from review_run) + (select count(*) from review_metrics) + (select count(*) from spec_run) + (select count(*) from review_scope)")
 
 PATH="$bare_path" command -v ledger >/dev/null 2>&1 && fail "no ledger: PATH still finds ledger" "$bare_path"
+# The writers also look in the cargo bin folder; the fallback HOME below has none.
+unset CARGO_HOME
 
 # Without a ledger each writer appends one row to its old jsonl file and prints one stderr line
 # naming it. The fallback gets its own HOME, so the retired-file check below still reads the
@@ -244,7 +246,7 @@ fallback_lines() { # file name -> the number of rows in $fallback_home/.claude/<
 }
 expect_appended() { # name file name -> stderr is the one writer line naming the file
   expect "$1: stderr is one appended line" \
-    "ledger-write: ledger not on PATH; row appended to $fallback_home/.claude/$2" "$(cat "$work/err.txt")"
+    "ledger-write: no ledger found; row appended to $fallback_home/.claude/$2" "$(cat "$work/err.txt")"
   expect "$1: one row in $2" 1 "$(fallback_lines "$2")"
 }
 

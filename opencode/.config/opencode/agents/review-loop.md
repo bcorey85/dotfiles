@@ -261,7 +261,7 @@ bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git re
 The Step 6 class-closure receipt is NOT logged here — it lives in the packet as
 prose. Do not add an enum for it.
 
-`fix`/`ask`/`nit` are how many findings carried each disposition this run, across every reviewer; `blocker` is how many of the `fix` ones carried the flag. `nit` counts `nit[]` entries only — **`load_bearing_clean` is not a nit** (it would inflate the noise metric when a gate comes back clean). `fix` does not equal `fixed + skipped_fp`. Routing moves some `fix` findings to `ask[]` or `blockers`, and the budget defers others. `smells` = `[smell]` findings the smell specialist returned this run (0 when it didn't fire). `culled` = diff-added tests deleted this run; always 0 (kept for schema stability). `comment_noise` = `[comment-noise]` fixes applied. If the script fails, mention it and continue — telemetry never blocks.
+`fix`/`ask`/`nit` are how many findings carried each disposition this run, across every reviewer; a `fix` finding routed to `ask[]` counts under `ask`, not `fix`. `blocker` is how many of the `fix` ones carried the flag. `nit` counts `nit[]` entries only — **`load_bearing_clean` is not a nit**. `fix` does not equal `fixed + skipped_fp`: routing moves some `fix` findings to `blockers`, and the budget defers others. `smells` = `[smell]` findings the smell specialist returned this run (0 when it didn't fire). `culled` = diff-added tests deleted this run; always 0. `comment_noise` = `[comment-noise]` fixes applied. If the script fails, mention it and continue — telemetry never blocks.
 
 ### Step 7b: Per-finding rows
 

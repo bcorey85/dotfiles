@@ -498,15 +498,21 @@ def closure_check(repo, out, fixed):
         '"open": ["<file:line - defect - correction>", ...]}. "open" is empty when every class is closed.'
     )
     reply = claude_call("class-closure", prompt, repo, out, model="sonnet", tools="Read,Grep")
-    for match in reversed(list(re.finditer(r"\{.*\}", reply, re.S))):
+    # Decode from each "{" back to front: prose before the object can hold braces of its own ("{CUBE}").
+    decoder = json.JSONDecoder()
+    brace_positions = [match.start() for match in re.finditer(r"\{", reply)]
+    for position in reversed(brace_positions):
         try:
-            parsed = json.loads(match.group(0))
-            parsed_open = parsed.get("open")
-            open_findings = ([item for item in parsed_open if isinstance(item, str) and item.strip()]
-                             if isinstance(parsed_open, list) else [])
-            return {"receipt": str(parsed.get("receipt", "")), "open": open_findings}
+            parsed, _ = decoder.raw_decode(reply, position)
         except json.JSONDecodeError:
             continue
+        if not isinstance(parsed, dict) or "open" not in parsed:
+            continue
+
+        parsed_open = parsed.get("open")
+        open_findings = ([item for item in parsed_open if isinstance(item, str) and item.strip()]
+                         if isinstance(parsed_open, list) else [])
+        return {"receipt": str(parsed.get("receipt", "")), "open": open_findings}
     raise ValueError(f'the class-closure reply holds no {{"receipt": .., "open": [..]}} object: {reply!r}')
 
 
@@ -589,11 +595,13 @@ def telemetry(repo, lane, scope_fields, iter_count, tallies, run_rows):
 
 # ---------- the loop ----------
 
-def tally_review(tallies, parsed):
-    tallies["fix"] += len(parsed["fix"])
-    tallies["ask"] += len(parsed["ask"])
+def tally_review(tallies, parsed, fixes, design):
+    """Adds one review to the metrics tallies. A design-decision fix goes to the user as an ask, so it counts under
+    ask, not fix."""
+    tallies["fix"] += len(fixes)
+    tallies["ask"] += len(parsed["ask"]) + len(design)
     tallies["nit"] += len(parsed["nit"])
-    tallies["blocker"] += sum("[blocker]" in item.lower() for item in parsed["fix"])
+    tallies["blocker"] += sum("[blocker]" in item.lower() for item in fixes)
     every_finding = parsed["fix"] + parsed["ask"] + parsed["nit"]
     tallies["smells"] += sum("[smell]" in item.lower() for item in every_finding)
     if parsed["assessment"] == "NEEDS CHANGES":
@@ -666,15 +674,15 @@ class LoopRun:
 
         round_fix, round_nits = [], []
         for (agent, owned), parsed in zip(self.dispatches, reviews, strict=True):
-            tally_review(self.tallies, parsed)
+            design = [item for item in parsed["fix"] if "[design-decision]" in item.lower()]
+            fixes = [item for item in parsed["fix"] if item not in design]
+            tally_review(self.tallies, parsed, fixes, design)
 
             plan_changes = [item for item in parsed["ask"] if PLAN_CHANGE_MARK.match(item)]
             if plan_changes:
                 self.stop("plan-change", plan_changes)
                 break
 
-            design = [item for item in parsed["fix"] if "[design-decision]" in item.lower()]
-            fixes = [item for item in parsed["fix"] if item not in design]
             self.asks += parsed["ask"] + design
             self.ask_gates.update(dict.fromkeys(parsed["ask"] + design, agent))
             round_nits += parsed["nit"]

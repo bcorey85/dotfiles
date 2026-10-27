@@ -15,7 +15,7 @@ comes back in the packet.
 
 - `mode`: `review-first` (callers `/code`, `/review`) or `fix-first` (callers `/fix`, `/cc`, `/verify-branch`).
 - `caller`: `code` | `review` | `fix` — for telemetry.
-- `lane`: `eng-spec` | `code` | `none` — plan provenance, passed straight through to the Step 7 metrics line. Absent → `none`. Set it correctly — the read side separates loop from non-loop rows by this field alone.
+- `lane`: `eng-spec` | `code` | `test-audit` | `none` — plan provenance, passed straight through to the Step 7 metrics line. Absent → `none`. Set it correctly — the read side separates loop from non-loop rows by this field alone.
 - `plan: <path>` — the plan file for this work, when the caller has one, with `phase: <N>` when the work is one phase of it. Pass both to every reviewer you dispatch.
 - `handoff:` block — schema in `~/.claude/skills/_shared/handoff-block.md`. May be absent (manual `/review`).
 - `base: <ref>` — the ref the review diffs against. Absent → `HEAD`, the working-tree changes. `/review base=<ref>` passes it for a whole-branch review.

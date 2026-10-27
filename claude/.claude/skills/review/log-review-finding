@@ -24,7 +24,7 @@
 #   COMMON
 #     repo=<basename>
 #     branch=<git branch>
-#     lane=eng-spec|code|other|none
+#     lane=eng-spec|code|verify|stage|test-audit|other|none
 #     scope=phase|branch-exit|standalone
 #       phase       gate ran at a /code phase boundary, on that phase's diff
 #       branch-exit gate ran in a closing phase, on the whole-branch diff
@@ -46,6 +46,10 @@
 #       --shortstat on its scope, insertions+deletions). Review-defect-detection
 #       degrades with the size of the change under review, so a gate's yield is
 #       uninterpretable without it. Measure it; do not estimate it.
+#     diff_base=<ref>             in place of diff_loc: this script measures it, from
+#       the merge-base of <ref> and HEAD to the working tree, untracked files
+#       included. Refused with diff_loc, on a finding row, or for a ref git cannot
+#       resolve. Never stored.
 #     result=PASS|PASS WITH WARNINGS|NEEDS CHANGES|NOT DISPATCHED   (optional)
 #       Case and -/_ spelling are normalized, and the words gates reach for when
 #       none of the four fit are folded in: clean and intent-aligned are PASS,
@@ -71,7 +75,12 @@
 #       other = last resort, and it is read as one. A run whose findings are
 #       mostly `other` has told the analysis nothing about what the gate catches.
 #     file=<path>                 repo-relative
+#       file=unlocated: the finding names no file (a plan promise with no test).
+#       The row is sent with no file and no line; refused with a line=.
 #     line=<n>                    0 when the finding names no line
+#       gate=test-intent-reviewer refuses a finding row with no file, or a file
+#       and no line above 0: each of its findings names a test file:line, or is
+#       file=unlocated.
 #     actioned=fixed|skipped_fp|deferred|ask|none
 #       fixed      code changed because of this finding
 #       skipped_fp judged a false positive
@@ -137,6 +146,29 @@ json=$(jq -cn \
   '{}
    + (if $b != "" then {branch: $b} else {} end)
    + (if $h != "" then {head: $h, dirty: $d} else {} end)')
+
+# Prints the tree of the working tree, untracked files included, built in a temp index seeded
+# from the real one. The user's index is not touched.
+working_tree_tree() {
+  local real_index temp_index tree
+  real_index=$(git rev-parse --git-path index) || return 1
+  temp_index=$(mktemp) || return 1
+  if [ -f "$real_index" ]; then cp -- "$real_index" "$temp_index"; else rm -f -- "$temp_index"; fi
+
+  tree=$(GIT_INDEX_FILE=$temp_index git add -A && GIT_INDEX_FILE=$temp_index git write-tree) || tree=""
+  rm -f -- "$temp_index"
+  [ -n "$tree" ] || return 1
+  printf '%s\n' "$tree"
+}
+
+# Prints insertions + deletions from the merge-base of $1 and HEAD to the working tree.
+measure_diff_loc() {
+  local merge_base tree
+  merge_base=$(git merge-base "$1" HEAD 2>/dev/null) || return 1
+  tree=$(working_tree_tree) || return 1
+
+  git diff --numstat "$merge_base" "$tree" | awk '$1 != "-" { lines += $1 + $2 } END { print lines + 0 }'
+}
 
 swallowed_pair=$'[ \t\n\r\f\v][A-Za-z_][A-Za-z0-9_]*='
 
@@ -248,6 +280,34 @@ if [ "$kind" = run ] && [ "$(jq -r 'has("n_findings")' <<< "$json")" != true ]; 
   exit 1
 fi
 
+# A typed diff_loc is a guess at the size of the change the gate read; diff_base has it measured.
+diff_base=$(jq -r '.diff_base // ""' <<< "$json")
+if [ -n "$diff_base" ]; then
+  [ "$kind" = run ] || { echo "refusing to log: diff_base= belongs on a kind=run row." >&2; exit 1; }
+  if [ "$(jq -r 'has("diff_loc")' <<< "$json")" = true ]; then
+    echo "refusing to log: pass diff_base=<ref> or diff_loc=<n>, not both." >&2
+    exit 1
+  fi
+  if ! diff_loc=$(measure_diff_loc "$diff_base"); then
+    echo "refusing to log: cannot measure diff_loc from diff_base=$diff_base (no merge-base with HEAD)." >&2
+    exit 1
+  fi
+  json=$(jq -c --arg n "$diff_loc" 'del(.diff_base) | .diff_loc = $n' <<< "$json")
+fi
+
+# file=unlocated says the finding names no file; a guessed file would join it to the wrong code.
+if [ "$kind" = finding ]; then
+  file=$(jq -r '.file // ""' <<< "$json")
+  line=$(jq -r '.line // ""' <<< "$json")
+  if [ "$file" = unlocated ]; then
+    [ -z "$line" ] || { echo "refusing to log: file=unlocated takes no line=." >&2; exit 1; }
+    json=$(jq -c 'del(.file)' <<< "$json")
+  elif [ "$gate" = test-intent-reviewer ] && { [ -z "$file" ] || ! [[ $line =~ ^[1-9][0-9]*$ ]]; }; then
+    echo "refusing to log: a test-intent-reviewer finding names its test file= and line= (above 0), or is file=unlocated." >&2
+    exit 1
+  fi
+fi
+
 # An ask outcome supersedes its ask row by finding_id. Without one it would add a
 # second finding to every count, so nothing is written. This runs before minting: a
 # refused call mints no id and prints no finding_id=.
@@ -265,16 +325,10 @@ SNAPSHOT_REFS=refs/review-snapshots
 SNAPSHOT_KEEP_DAYS=90
 ledger_write="$script_dir/../../scripts/telemetry/ledger-write"
 
-# Prints a commit on HEAD of the working tree, built in a temp index seeded from the real one.
+# Prints a commit on HEAD of the working tree.
 save_snapshot() {
-  local real_index temp_index tree
-  real_index=$(git rev-parse --git-path index) || return 1
-  temp_index=$(mktemp) || return 1
-  if [ -f "$real_index" ]; then cp -- "$real_index" "$temp_index"; else rm -f -- "$temp_index"; fi
-
-  tree=$(GIT_INDEX_FILE=$temp_index git add -A && GIT_INDEX_FILE=$temp_index git write-tree) || tree=""
-  rm -f -- "$temp_index"
-  [ -n "$tree" ] || return 1
+  local tree
+  tree=$(working_tree_tree) || return 1
 
   git commit-tree "$tree" -p "$head" -m "review snapshot $id"
 }

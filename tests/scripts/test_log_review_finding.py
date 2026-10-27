@@ -30,7 +30,7 @@ RUN_ARGS = ["kind=run", "gate=code-reviewer", "n_findings=1", "lane=none"]
 FINDING_ARGS = ["kind=finding", "gate=code-reviewer", "disposition=ask", "class=bug", "lane=none", "actioned=ask"]
 
 
-class ReviewSnapshotTest(unittest.TestCase):
+class LoggerRepoCase(unittest.TestCase):
     def setUp(self):
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
@@ -48,7 +48,7 @@ class ReviewSnapshotTest(unittest.TestCase):
         done = subprocess.run(["git", *args], cwd=self.repo, env=git_env, check=True, capture_output=True, text=True)
         return done.stdout.strip()
 
-    def log(self, args, extra_env=None):
+    def log(self, args, extra_env=None, expected_exit=0):
         caller_env = {key: value for key, value in os.environ.items() if not key.startswith(("CLAUDE_", "REVIEW_"))}
         env = {
             **caller_env,
@@ -60,7 +60,7 @@ class ReviewSnapshotTest(unittest.TestCase):
         }
         command = ["bash", str(LOG_REVIEW_FINDING), *args]
         done = subprocess.run(command, cwd=self.repo, env=env, capture_output=True, text=True)
-        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.returncode, expected_exit, done.stderr)
         return done
 
     def make_dirty(self):
@@ -77,6 +77,8 @@ class ReviewSnapshotTest(unittest.TestCase):
     def snapshot_refs(self):
         return self.git("for-each-ref", "--format=%(refname)", "refs/review-snapshots/").splitlines()
 
+
+class ReviewSnapshotTest(LoggerRepoCase):
     def test_a_dirty_tree_is_saved_as_a_commit_on_head_and_the_index_and_working_tree_do_not_change(self):
         self.make_dirty()
         before = self.user_tree_state()
@@ -158,6 +160,70 @@ class ReviewSnapshotTest(unittest.TestCase):
 
         (run_row,) = fake_ledger.recorded_rows(self.ledger_env, "review_run")
         self.assertEqual(self.snapshot_refs(), [f"refs/review-snapshots/{run_row['run_id']}"])
+
+
+TEST_AUDIT_RUN_ARGS = ["kind=run", "gate=test-intent-reviewer", "n_findings=2", "lane=test-audit", "scope=branch-exit"]
+TEST_AUDIT_FINDING_ARGS = ["kind=finding", "gate=test-intent-reviewer", "disposition=fix", "class=weak-assertion",
+                           "lane=test-audit", "scope=branch-exit", "actioned=fixed"]
+
+
+class TestAuditRowTest(LoggerRepoCase):
+    def make_branch_with_uncommitted_fixes(self):
+        """A branch commit of 2 added lines, then an unstaged 1-line edit and an untracked 3-line file."""
+        self.git("checkout", "-q", "-b", "feature")
+        (self.repo / "branch.txt").write_text("a\nb\n")
+        self.git("add", "branch.txt")
+        self.git("commit", "-q", "-m", "branch work")
+        (self.repo / "kept.txt").write_text("fixed\n")
+        (self.repo / "added_test.txt").write_text("x\ny\nz\n")
+
+    def test_diff_base_measures_the_branch_and_the_working_tree_and_is_not_stored(self):
+        self.make_branch_with_uncommitted_fixes()
+        before = self.user_tree_state()
+        self.log([*TEST_AUDIT_RUN_ARGS, "diff_base=main"])
+
+        self.assertEqual(self.user_tree_state(), before)
+        (run_row,) = fake_ledger.recorded_rows(self.ledger_env, "review_run")
+        self.assertEqual(run_row["diff_loc"], "7")
+        self.assertNotIn("diff_base", run_row)
+
+    def test_diff_base_with_a_typed_diff_loc_is_refused(self):
+        done = self.log([*TEST_AUDIT_RUN_ARGS, "diff_base=main", "diff_loc=40"], expected_exit=1)
+
+        self.assertIn("not both", done.stderr)
+        self.assertEqual(fake_ledger.recorded_rows(self.ledger_env, "review_run"), [])
+
+    def test_diff_base_naming_no_ref_is_refused(self):
+        done = self.log([*TEST_AUDIT_RUN_ARGS, "diff_base=planted-missing-ref"], expected_exit=1)
+
+        self.assertIn("cannot measure", done.stderr)
+        self.assertEqual(fake_ledger.recorded_rows(self.ledger_env, "review_run"), [])
+
+    def test_an_unlocated_finding_is_sent_with_no_file_and_no_line(self):
+        self.log([*TEST_AUDIT_FINDING_ARGS, "file=unlocated"])
+
+        (finding_row,) = fake_ledger.recorded_rows(self.ledger_env, "review_finding")
+        self.assertNotIn("path_key", finding_row)
+        self.assertNotIn("line", finding_row)
+
+    def test_an_unlocated_finding_with_a_line_is_refused(self):
+        self.log([*TEST_AUDIT_FINDING_ARGS, "file=unlocated", "line=4"], expected_exit=1)
+
+        self.assertEqual(fake_ledger.recorded_rows(self.ledger_env, "review_finding"), [])
+
+    def test_a_test_intent_finding_with_line_0_or_no_file_is_refused(self):
+        for location_args in (["file=src/app.test.ts", "line=0"], ["line=12"]):
+            with self.subTest(location_args=location_args):
+                done = self.log([*TEST_AUDIT_FINDING_ARGS, *location_args], expected_exit=1)
+
+                self.assertIn("file=unlocated", done.stderr)
+        self.assertEqual(fake_ledger.recorded_rows(self.ledger_env, "review_finding"), [])
+
+    def test_a_test_intent_finding_with_its_test_file_and_line_is_sent(self):
+        self.log([*TEST_AUDIT_FINDING_ARGS, "file=src/app.test.ts", "line=12"])
+
+        (finding_row,) = fake_ledger.recorded_rows(self.ledger_env, "review_finding")
+        self.assertEqual((finding_row["path_key"], finding_row["line"]), ("src/app.test.ts", "12"))
 
 
 if __name__ == "__main__":

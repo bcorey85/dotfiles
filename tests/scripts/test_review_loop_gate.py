@@ -408,6 +408,14 @@ class RunRowTest(unittest.TestCase):
                          (code["_type"], code["result"], code["lane"], code["phase"], code["_session"]))
         self.assertEqual("PASS_WITH_WARNINGS", rows["smell-reviewer"]["result"])
 
+    def test_a_fix_loop_dispatched_from_a_test_audit_writes_its_run_rows_under_the_test_audit_lane(self):
+        records = [user("review loop\nlane: test-audit"), dispatch("t_code", "code-reviewer"),
+                   result("t_code", indented(CODE_REPORT)), bash("npm test > /tmp/review-gate.log 2>&1")]
+        self.assertEqual(self.stop(records), "")
+
+        (code,) = self.rows()
+        self.assertEqual("test-audit", code["lane"])
+
     def test_background_reports_arrive_in_the_opposite_order_and_keep_their_own_count(self):
         records = self.loop(
             [dispatch("t_smell", "smell-reviewer"), result("t_smell", "Async agent launched\nagentId: asmell")],

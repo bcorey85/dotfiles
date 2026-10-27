@@ -16,6 +16,7 @@ Thin wrapper over the `review-loop` agent (`mode: fix-first`). A script parses t
 
 1. **Dispatch the loop** in your first response. `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"`. Pass, verbatim:
    - `mode: fix-first`, `caller: fix`
+   - `lane: <lane>` when the args name one (`lane: test-audit` from a test audit); else none
    - the findings, from whichever source applies: `/cc` entries (`path`, `line`, `body`, `id` — highest priority, user-authored), a `/review` handoff block, or the conversation
    - any `handoff:` block (schema: `~/.claude/skills/_shared/handoff-block.md`), `iter=N`, and any `+fast` / `+deep` modifier
    - `no-review` if present — the agent then verifies via the execution gate and returns without a reviewer pass
@@ -25,7 +26,7 @@ Thin wrapper over the `review-loop` agent (`mode: fix-first`). A script parses t
 2. **Run the script on the returned packet.** Decide the flags before you run it; the script applies the rules. It reads the packet a hook saved, for this session, when the loop handed back. Do not paste it. Running the step again repeats no side effect.
 
    ```bash
-   python3 ~/.claude/scripts/review/review_fix.py packet --skill fix --source <conversation|cc|handoff> [--lane <eng-spec|code|other>] \
+   python3 ~/.claude/scripts/review/review_fix.py packet --skill fix --source <conversation|cc|handoff> [--lane <eng-spec|code|test-audit|other>] \
      [--escape "file=<path>|class=<class>|severity=<high|medium|low>|gate_missed=<review|drift-gate|test-intent|stage|coder|eng-spec>|guard=<type|convention|gotcha|rule|check|none|n-a>|desc=<one line>"]... \
      [--aikido "<path>:<line>=<comment_id>"]...
    ```

@@ -272,9 +272,8 @@ class ReviewScriptTest(base.CodeStepTest):
         self.step("resume")
 
         question = self.real_question_file().read_text()
-        self.assertIn("The run is at stage stopped", question)
+        self.assertEqual({}, self.state())
         self.assertNotIn("SendMessage", question)
-        self.assertFalse(self.state().get("resumableReview"))
 
     def test_the_taken_hand_back_forgets_the_finished_script(self):
         self.coder_round()

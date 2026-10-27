@@ -3,6 +3,7 @@
 # and review-flow files; a missing ruff stops the run), then checks for any duplicate code
 # (tests/duplicate_code.py), then runs every unit test under tests/, one process per test
 # file, nproc at a time. The tests run even when the lint fails. Exits non-zero on any failure.
+# `REAL_PLANS=1 bash tests/run.sh` also parses every real plan under ~/dev.
 set -euo pipefail
 
 repoRoot="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

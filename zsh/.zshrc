@@ -150,11 +150,71 @@ bindkey -e  # use emacs keybindings (ctrl+a/e/u) despite EDITOR=nvim
 # wrapping them, -F skips the pager when output fits one screen, -X leaves the
 # output on screen on exit. Scoped to psql so $PAGER stays unset elsewhere.
 export PSQL_PAGER='less -SFX'
+# pyenv installs and manages versions and venvs, but its shims stay off PATH:
+# every shim call re-runs pyenv (~1 s). Before each prompt, this puts the
+# selected version's own bin dir first on PATH instead, with no forks.
 if command -v pyenv &>/dev/null; then
   export PYENV_ROOT="$HOME/.pyenv"
-  export PATH="$PYENV_ROOT/bin:$PATH"
-  eval "$(pyenv init --path)"
-  eval "$(pyenv virtualenv-init -)"
+  eval "$(pyenv init - zsh)"
+  path=(${path:#$PYENV_ROOT/shims})
+
+  # Same precedence as pyenv: PYENV_VERSION, nearest .python-version, global.
+  _pyenv_selected_version() {
+    REPLY=${PYENV_VERSION%%:*}
+    [[ -n $REPLY ]] && return
+
+    local dir=$PWD version_file=
+    while true; do
+      if [[ -f $dir/.python-version ]]; then
+        version_file=$dir/.python-version
+        break
+      fi
+      [[ $dir == / ]] && break
+      dir=${dir:h}
+    done
+    [[ -z $version_file && -f $PYENV_ROOT/version ]] && version_file=$PYENV_ROOT/version
+    [[ -z $version_file ]] && return
+
+    local -a version_lines=(${(f)"$(<$version_file)"})
+    REPLY=${version_lines[1]// /}
+  }
+
+  # An exact name (3.10.14, a venv) wins; a prefix (3.10) takes the newest 3.10.x.
+  _pyenv_version_prefix() {
+    REPLY=
+    local version_name=$1
+    [[ -z $version_name || $version_name == system ]] && return
+
+    if [[ -d $PYENV_ROOT/versions/$version_name/bin ]]; then
+      REPLY=$PYENV_ROOT/versions/$version_name
+      return
+    fi
+
+    local -a prefix_matches=($PYENV_ROOT/versions/$version_name.<->(N/n))
+    (( $#prefix_matches )) && REPLY=$prefix_matches[-1]
+  }
+
+  _pyenv_path_hook() {
+    _pyenv_selected_version
+    _pyenv_version_prefix $REPLY
+    local version_prefix=$REPLY
+    [[ $version_prefix == $_PYENV_ACTIVE_PREFIX ]] && return
+
+    [[ -n $_PYENV_ACTIVE_PREFIX ]] && path=(${path:#$_PYENV_ACTIVE_PREFIX/bin})
+    [[ -n $version_prefix ]] && path=($version_prefix/bin $path)
+    typeset -g _PYENV_ACTIVE_PREFIX=$version_prefix
+
+    # pipenv and editors read VIRTUAL_ENV, as pyenv-virtualenv's auto-activate set it.
+    if [[ -f $version_prefix/pyvenv.cfg ]]; then
+      export VIRTUAL_ENV=$version_prefix
+    else
+      unset VIRTUAL_ENV
+    fi
+  }
+
+  autoload -Uz add-zsh-hook
+  add-zsh-hook precmd _pyenv_path_hook
+  _pyenv_path_hook
 fi
 
 export PIPENV_VERBOSITY=-1

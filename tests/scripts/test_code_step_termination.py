@@ -66,8 +66,7 @@ CLAUDE_STUB = TMP_ROOT / "claude"
 (CLAUDE_STUB / "scripts").mkdir(parents=True)
 (CLAUDE_STUB / "skills/review").mkdir(parents=True)
 for script_name in ("coder_gate.py", "coder_packet.py", "plan_format.py", "script_utils.py", "resolve-task-dir.sh",
-                    "code_step_core.py", "code_step_boundary.py", "code_step_hooks.py", "shell_command.py",
-                    "makefile_text.py", "test_run_output.py"):
+                    *toolkit_paths.CODE_STEP_MODULES, "shell_command.py", "makefile_text.py", "test_run_output.py"):
     try:
         source_file = toolkit_paths.script_in(SCRIPTS_ROOT, script_name)
     except FileNotFoundError:

@@ -513,7 +513,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
     # dredge (nvim colors/dredge.lua). Both modes share the scope table below.
     dredge:*)
       bg="#1c1e20"; panel="#151719"; panelAlt="#292b2d"; border="#414244"
-      accent="#74c2b5"; accentMuted="#414244"; text="#c1c8d2"; muted="#9b9fa6"
+      accent="#6bada2"; accentMuted="#414244"; text="#c1c8d2"; muted="#9b9fa6"
       # Words must stay >= RGB distance 28 from the line wash, or hunk
       # replaces them with its own blend of the sign colour. Words separate by
       # chroma, not lightness. The washes share one lightness. Red reads
@@ -526,10 +526,10 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       sAdd="#5da37e"; sRem="#be6146"; lnFg="#777b82"
       badgeAdd="#74d5a1"; badgeRem="#fb784f"; badgeNeu="#d7bb70"
       fRename="#5da37e"; fMod="#5da37e"; fUntracked="#5da37e"; note="#151719"
-      kw="#858990"; str="#74c2b5"; num="#c88191"; fn="#9c9ae3"; typ="#c1c8d2"; punct="#7c8187"; op="#7c8187"
-      konst="#c88191"; esc="#c88191"; cmt="#b4a999"; param="#c1c8d2"
-      attr="#c1c8d2"; tag="#858990"; vbi="#c1c8d2"; lang="#c88191"; imp="#858990"; pre="#858990"
-      prim="#c1c8d2"; ns="#c1c8d2"; mac="#9c9ae3"; bfn="#c1c8d2"; var="#9c9ae3"; key="#c1c8d2"; cls="#9c9ae3"
+      kw="#858990"; str="#6bada2"; num="#c58392"; fn="#9c9bde"; typ="#c1c8d2"; punct="#7c8187"; op="#7c8187"
+      konst="#c58392"; esc="#c58392"; cmt="#b2a99d"; param="#c1c8d2"
+      attr="#c1c8d2"; tag="#858990"; vbi="#c1c8d2"; lang="#c58392"; imp="#858990"; pre="#858990"
+      prim="#c1c8d2"; ns="#c1c8d2"; mac="#9c9bde"; bfn="#c1c8d2"; var="#9c9bde"; key="#c1c8d2"; cls="#9c9bde"
       # Colour marks definitions. Builtins, uses, calls and members are plain text.
       use="#c1c8d2"; call="#c1c8d2"; mem="#c1c8d2"
       # Match nvim's tree-sitter colours where one-dark-pro's own selectors
@@ -1303,8 +1303,8 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       surface0="#343638" surface1="#414244"
       overlay0="#7c8086" overlay1="#9b9fa6"
       text="#c1c8d2" subtext0="#9b9fa6"
-      green="#8dd09b" yellow="#d7bb70" red="#ec817a"
-      blue="#85beef" teal="#74c2b5" peach="#f6a981"
+      green="#8dd09b" yellow="#d7bb70" red="#ed8c84"
+      blue="#85beef" teal="#6bada2" peach="#f6a981"
       ;;
   esac
 

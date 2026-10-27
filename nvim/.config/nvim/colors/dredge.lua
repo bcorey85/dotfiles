@@ -11,7 +11,7 @@
 -- classes. Keys, fields, attributes, parameters and builtins (self, JSON) are
 -- fg. Literals are dusty rose (h 5; light is pinker, h 355 C 0.14; None, numbers, booleans,
 -- symbols, escapes, regex).
--- Strings are sea teal (h 182, dark C 0.080); comments are sand (h 80, C 0.025; light C 0.034). No italics: hunk can't render
+-- Strings are sea teal (h 182, dark L 0.70 C 0.070); comments are sand (h 80, C 0.020; light C 0.034). No italics: hunk can't render
 -- them, and the two must match.
 -- Light mirrors dark's hues and order: comments sit between fg and the
 -- keywords. Code accents keep OKLab dE >= 0.17 from the near-black fg, or thin
@@ -48,19 +48,19 @@ palettes.dark = {
   fg = "#c1c8d2",
   fg_bright = "#d4dbe5",
 
-  red = "#ec817a",
+  red = "#ed8c84",
   amber = "#f6a981",
   yellow = "#d7bb70",
   green = "#8dd09b",
-  teal = "#74c2b5",
+  teal = "#6bada2",
   blue = "#85beef",
   magenta = "#c799c9",
 
   kw = "#858990",
-  fn = "#9c9ae3",
-  remark = "#b4a999",
-  str = "#74c2b5",
-  const = "#c88191",
+  fn = "#9c9bde",
+  remark = "#b2a99d",
+  str = "#6bada2",
+  const = "#c58392",
 
   added = "#5da37e",
   removed = "#be6146",
@@ -73,8 +73,8 @@ palettes.dark = {
   search = "#5b4032",
 
   term = {
-    "#151719", "#ec817a", "#8dd09b", "#d7bb70", "#85beef", "#c799c9", "#74c2b5", "#c1c8d2",
-    "#777b81", "#f69d96", "#aee4b8", "#e9d296", "#a7d3f8", "#d8b1d9", "#b1dfd6", "#d4dbe5",
+    "#151719", "#ed8c84", "#8dd09b", "#d7bb70", "#85beef", "#c799c9", "#6bada2", "#c1c8d2",
+    "#777b81", "#f9aea7", "#aee4b8", "#e9d296", "#a7d3f8", "#d8b1d9", "#b1dfd6", "#d4dbe5",
   },
 }
 

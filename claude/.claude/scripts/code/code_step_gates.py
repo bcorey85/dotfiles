@@ -16,6 +16,11 @@ TEST_SUFFIXES = ".test.ts,.test.tsx,.spec.ts,.spec.tsx,.test.js,.test.jsx"
 TEST_FILE = re.compile(r"\.(test|spec)\.|(^|/)test_[^/]*\.py$|_test\.py$")
 BARE_CARGO_MANIFEST = re.compile(r"`(Cargo\.toml)`")
 PATH_IN_BACKTICKS = re.compile(r"`([\w.@-]+(?:/[\w.@\[\]()-]+)+\.\w+)(?::\d+(?:-\d+)?)?`")
+PYTHON_RUNNERS = (("uv.lock", ["uv", "run"]), ("poetry.lock", ["poetry", "run"]), ("pdm.lock", ["pdm", "run"]),
+                  ("Pipfile.lock", ["pipenv", "run"]))
+VENV_DIRECTORIES = (".venv", "venv")
+SHELL_OPERATORS = {"&&", "||", ";", "|", "&"}
+ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
 
 def nearest_directory_with(repo_dir, rel_path, manifest_name):
@@ -58,19 +63,70 @@ def script_package_commands(repo_dir, package_dir, paths):
     return commands
 
 
-def python_commands(repo_dir, paths):
+def listed_python_runner(repo_dir, phase_section):
+    # The words before `pytest` in the first pytest command the phase's Automated Verification lists, such as
+    # ["uv", "run"] or ["DJANGO_SETTINGS_MODULE=app.test", ".venv/bin/python", "-m"], or None when it lists none. A
+    # command that changes directory or chains another command before pytest gives no runner.
+    for _, line in plan_format.automated_verification_rows(phase_section.splitlines()):
+        if plan_format.runs_no_command(line):
+            continue
+
+        command = verification_command(line, repo_dir)
+        if not command:
+            continue
+
+        try:
+            words = shlex.split(command)
+        except ValueError:
+            continue
+        if "pytest" not in words:
+            continue
+
+        runner = words[:words.index("pytest")]
+        chains_a_command = any(word in SHELL_OPERATORS or word == "cd" for word in runner)
+        if not chains_a_command:
+            return runner
+    return None
+
+
+def project_python_runner(repo_dir):
+    # The runner the repo's lock file or virtualenv names, or None when it names none.
+    for lock_file, runner in PYTHON_RUNNERS:
+        if (repo_dir / lock_file).is_file():
+            return runner
+
+    for venv in VENV_DIRECTORIES:
+        if (repo_dir / venv / "bin/python").is_file():
+            return [f"{venv}/bin/python", "-m"]
+    return None
+
+
+def python_commands(repo_dir, paths, listed_runner=None):
+    # Tests run through the phase's listed pytest runner, else the repo's lock file or virtualenv, else python3. Ruff
+    # runs through the same runner, except a bare system python, where ruff is usually its own program.
     python_paths = [p for p in paths if p.endswith(".py")]
     if not python_paths or not any(
         (repo_dir / name).is_file() for name in ("pyproject.toml", "pytest.ini", "setup.cfg")
     ):
         return []
+
+    runner = listed_runner if listed_runner is not None else project_python_runner(repo_dir)
+    if runner is None:
+        runner = ["python3", "-m"]
+    program_words = [word for word in runner if not ENV_ASSIGNMENT.match(word)]
+    runs_system_python = program_words[:1] in (["python"], ["python3"])
+    ruff_runner = [] if runs_system_python else runner
+
     commands = []
     pyproject = (repo_dir / "pyproject.toml")
     if pyproject.is_file() and "ruff" in pyproject.read_text():
-        commands.append("ruff check {files:.py}")
+        ruff_command = shlex.join([*ruff_runner, "ruff", "check"])
+        commands.append(f"{ruff_command} {{files:.py}}")
+
     test_paths = [p for p in python_paths if TEST_FILE.search(p)]
     scope = " ".join(shlex.quote(p) for p in test_paths) or "{files:_test.py}"
-    commands.append(f"python3 -m pytest {scope}")
+    pytest_command = shlex.join([*runner, "pytest"])
+    commands.append(f"{pytest_command} {scope}")
     return commands
 
 
@@ -176,5 +232,6 @@ def derive_gate_commands(repo_dir, phase_section):
     root_manifests = BARE_CARGO_MANIFEST.findall(phase_section)
     listed_cargo = listed_cargo_commands(repo_dir, phase_section)
     commands += listed_cargo or cargo_commands(repo_dir, paths + root_manifests)
-    commands += python_commands(repo_dir, paths)
+    listed_runner = listed_python_runner(repo_dir, phase_section)
+    commands += python_commands(repo_dir, paths, listed_runner)
     return commands

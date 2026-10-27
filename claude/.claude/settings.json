@@ -507,6 +507,10 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/scripts/review/handback.py hook handback"
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/scripts/review/open_child_gate.py"
           }
         ]
       },
@@ -516,6 +520,15 @@
             "command": "tuios agent-hook claude-code --integration 3",
             "timeout": 5,
             "type": "command"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/agent-model-guard.sh"
           }
         ]
       }
@@ -579,6 +592,15 @@
             "command": "tuios agent-hook claude-code --integration 3",
             "timeout": 5,
             "type": "command"
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/warn-skip-hooks.sh"
           }
         ]
       }

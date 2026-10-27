@@ -90,6 +90,7 @@ from code_step_core import (
     refuse,
     repo_root_or_exit,
     restart_instruction,
+    review_script_running,
     save_state,
     say,
     script_command,
@@ -150,24 +151,32 @@ NO_CODER_REPORT = ("No coder report was saved. The log-hook (code_step.py log-ho
 # ---------- plan check ----------
 
 def command_plan(args):
-    if len(args) < 2 or args[0] not in ("check", "parse"):
-        sys.exit("usage: code_step.py plan check|parse <path>")
-    plan_lines = pathlib.Path(args[1]).read_text().splitlines()
+    # `plan check --final <path>` also fails a spec whose criteria file was never written.
+    final = args[1:2] == ["--final"] and args[0] == "check"
+    path_args = args[2:] if final else args[1:]
+    if not path_args or args[0] not in ("check", "parse"):
+        sys.exit("usage: code_step.py plan check [--final]|parse <path>")
+    plan_path = path_args[0]
+
+    plan_lines = pathlib.Path(plan_path).read_text().splitlines()
     plan = plan_format.parse_plan_with_closing_phases(plan_lines)
     if args[0] == "parse":
         return print(json.dumps(plan, indent=1))
-    for row in plan_format.plan_failure_rows(plan, args[1]):
+    for row in plan_format.plan_failure_rows(plan, plan_path):
         print(row)
-    manual_failure = plan_format.manual_format_failure(plan_lines, args[1])
+    manual_failure = plan_format.manual_format_failure(plan_lines, plan_path)
     if manual_failure:
         print(manual_failure)
-    verification_failure = verification_format_failure(plan_lines, args[1], pathlib.Path.cwd(), plan["entries"])
+    verification_failure = verification_format_failure(plan_lines, plan_path, pathlib.Path.cwd(), plan["entries"])
     if verification_failure:
         print(verification_failure)
-    ac_failures = plan_format.spec_ac_failures(pathlib.Path(args[1]))
+    ac_failures = plan_format.spec_ac_failures(pathlib.Path(plan_path))
     for row in ac_failures:
         print(row)
-    sys.exit(1 if plan["failures"] or manual_failure or verification_failure or ac_failures else 0)
+    criteria_failure = plan_format.missing_criteria_failure(pathlib.Path(plan_path)) if final else None
+    if criteria_failure:
+        print(criteria_failure)
+    sys.exit(1 if plan["failures"] or manual_failure or verification_failure or ac_failures or criteria_failure else 0)
 
 
 # ---------- coder hand-back ----------
@@ -519,14 +528,19 @@ def command_resume(args):
     RESUME_HANDLERS.get(route, ask_about_unrecorded_state)(repo_dir, state)
 
 
-def abort_dropped_lines(repo_dir, state, criteria_message, archive_path):
+def abort_dropped_lines(repo_dir, state, criteria_message, archive_path, script_pid,
+                       review_script_was_running):
     # What `abort` tells the user it dropped, one line each. The dispatch line reads the launch log, so call it before
     # the state moves.
     lines = [f"Dropped the /code run: {phase_label(state)} at stage {state['stage']}."]
     if criteria_message:
         lines.append(criteria_message)
 
-    if state.get("dispatchAt") is not None:
+    if script_pid is not None and review_script_was_running:
+        lines.append(f"Killed the review loop script (pid {script_pid}) and its claude calls.")
+    elif script_pid is not None:
+        lines.append(f"The review loop script (pid {script_pid}) had already exited.")
+    elif state.get("dispatchAt") is not None:
         agent_id = awaited_agent_id(repo_dir, state)
         agent_text = f"agent {agent_id}" if agent_id else "an agent whose launch was not logged"
         lines.append(f"A dispatch was still open: {agent_text} may still be running. The user can stop it.")
@@ -556,14 +570,16 @@ def command_abort(args):
         criteria_message = settle_criteria_guard(repo_dir, state, branch_label(repo_dir))
         save_state(repo_dir, state)
 
-    stop_review_script(state)
+    review_script_was_running = review_script_running(state)
+    script_pid = stop_review_script(state)
     clear_say(repo_dir)
     clear_question(repo_dir)
     run_command(["python3", str(SCRIPTS_DIR / "code" / "coder_gate.py"), "clear"], repo_dir)
 
     directory = state_dir(repo_dir)
     archive_path = directory / f"aborted-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json"
-    lines = abort_dropped_lines(repo_dir, state, criteria_message, archive_path)
+    lines = abort_dropped_lines(repo_dir, state, criteria_message, archive_path, script_pid,
+                                review_script_was_running)
     (directory / "state.json").rename(archive_path)
     emit("stop", *lines)
 

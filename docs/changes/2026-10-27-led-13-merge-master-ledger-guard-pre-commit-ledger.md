@@ -1,9 +1,9 @@
 ---
 type: "Change"
 title: "LED-13: merge master; ledger guard pre-commit; ledger-write drops jsonl fallback; the review loop's agent-usage row writer removed"
-description: "Merge master into the guard-migration branch. The pre-commit hook runs the ledger guard before the change-ledger gate. ledger-write no longer appends to a local file when ledger is missing: it prints one stderr line, drops the row and exits 0. The review-loop script no longer writes an agent-usage row. coder_gate rows carry timed_out again."
+description: "Merge master into the guard-migration branch. The pre-commit hook runs the ledger guard before the change-ledger gate. ledger-write no longer appends to a local file when ledger is missing: it prints one stderr line, drops the row and exits 0. The review-loop script no longer writes an agent-usage row. coder_gate rows carry timed_out and setup_faults again."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T14:08:58-05:00"}
-seq: 90
+seq: 93
 kind: "fix"
 components: ["script/code-step", "script/coder-gate", "script/deferred-push-check", "script/ledger-write", "script/review-loop-gate", "script/review-loop-script", "skill/audit", "skill/review"]
 evidence: ["judgment"]
@@ -35,17 +35,18 @@ unmeasured: ""
   the branch changes, and lists `file:line (class)` without a description. With no ledger, a busy ledger or any
   ledger failure it exits 0 with no output. `REVIEW_FINDINGS_FILE` is no longer read. `script_utils.py` gains
   `query_ledger_rows_once`, `parse_tsv_rows` and `ledger_keys` for it.
-- `coder_gate.py` writes `timed_out` (count of timed-out commands) on its `coder_gate` row, and result `timeout` when
-  no command failed and one timed out.
+- `coder_gate.py` writes `timed_out` and `setup_faults` (counts of commands that timed out and that could not run) on
+  its `coder_gate` row. The result is `setup-fault` when no command failed and one could not run, else `timeout` when
+  one timed out.
 - `log-review-check` runs `ledger worker --once` before its queries and asserts it exits 0.
 
 ## Evidence
 
 - Before: `ledger-write` with no ledger appended rows to files under `~/.claude`; the review-loop script appended an
-  agent-usage row; the coder gate row carried no `timed_out`; `log-review-check` failed 3 cases with "cache busy"
+  agent-usage row; the coder gate row carried no `timed_out` or `setup_faults`; `log-review-check` failed 3 cases with "cache busy"
   (exit 75).
 - `tests/scripts/test_pre_commit_hook.py`, `test_ledger_write.py`, `test_coder_gate.py`,
-  `test_review_loop_script.py`, `test_review_loop_gate.py`, `test_deferred_push_check.py` and
+  `test_code_step.py`, `test_review_loop_script.py`, `test_review_loop_gate.py`, `test_deferred_push_check.py` and
   `skills/review/log-review-check` cover each path.
 
 ## Result

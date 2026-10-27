@@ -136,7 +136,8 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         self.assertNotIn("Traceback", done.stderr)
 
     def gate_hook_with_timeout(self, timeout_seconds):
-        # Runs the hook in this process, so the timeout constant can be set; returns what the hook printed.
+        # Runs the hook in this process, so the timeout constant can be set and the append_gate_log calls captured;
+        # returns what the hook printed.
         gate = load_gate_module()
         gate.COMMAND_TIMEOUT_SECONDS = timeout_seconds
         event = {"agent_type": "coder", "agent_id": "a1", "cwd": str(self.repo),
@@ -183,6 +184,16 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         self.assertEqual((1, 1), (gate_log_call.kwargs["failed"], gate_log_call.kwargs["timed_out"]))
         self.assertEqual("deny", json.loads(printed)["hookSpecificOutput"]["permissionDecision"])
 
+    def test_the_gate_row_of_a_setup_fault_run_carries_the_setup_fault_result_and_count(self):
+        self.gate_set("exit 127", "true")
+
+        self.gate_hook_with_timeout(30)
+
+        (gate_log_call,) = self.gate_log_calls
+        self.assertEqual("setup-fault", gate_log_call.args[0])
+        self.assertEqual((0, 0, 1), (gate_log_call.kwargs["failed"], gate_log_call.kwargs["timed_out"],
+                                     gate_log_call.kwargs["setup_faults"]))
+
     def test_clear_prints_the_timed_out_commands_apart_from_the_failed_ones(self):
         self.gate_set("sleep 5")
         self.gate_hook_with_timeout(1)
@@ -191,6 +202,64 @@ class CoderGateEnvironmentTests(unittest.TestCase):
                                  capture_output=True, text=True)
 
         self.assertIn("failed: none, timed out (no test result): sleep 5", cleared.stdout)
+
+    def test_a_missing_program_is_a_setup_fault_that_allows_the_hand_back_and_names_the_command(self):
+        command = "no-such-runner-for-the-gate pytest tests/test_one.py"
+        self.gate_set(command)
+
+        hook = self.gate_hook()
+
+        coder = self.stored_gate()["coders"]["a1"]
+        self.assertEqual("setup-fault", coder["result"])
+        self.assertEqual(0, coder["denies"])
+        self.assertEqual([], coder["failed"])
+        self.assertEqual([command], coder["setup_faults"])
+        output = json.loads(hook.stdout)["hookSpecificOutput"]
+        self.assertEqual("allow", output["permissionDecision"])
+        message = output["updatedInput"]["message"]
+        self.assertIn("HAND-BACK GATE SETUP FAULT", message)
+        self.assertIn(f"`{command}`", message)
+        self.assertIn("they are not among the failures", message)
+
+    def test_a_module_missing_from_outside_the_repo_never_spends_a_deny(self):
+        self.gate_set("""echo "ModuleNotFoundError: No module named 'sqlalchemy'"; exit 2""")
+
+        for _ in range(4):
+            hook = self.gate_hook()
+            self.assertEqual("allow", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
+
+        coder = self.stored_gate()["coders"]["a1"]
+        self.assertEqual("setup-fault", coder["result"])
+        self.assertEqual(0, coder["denies"])
+
+    def test_a_missing_repo_module_or_a_missing_module_beside_a_failed_test_still_denies(self):
+        (self.repo / "app").mkdir()
+        commands = {
+            "repo module": """echo "ModuleNotFoundError: No module named 'app.models'"; exit 2""",
+            "failed test": """echo "No module named 'yaml'"; echo "1 failed, 2 passed"; exit 1""",
+        }
+        for case, command in commands.items():
+            with self.subTest(case=case):
+                (self.repo / ".git/coder-gate.json").unlink(missing_ok=True)
+                self.gate_set(command)
+
+                hook = self.gate_hook()
+
+                self.assertEqual("deny", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
+                self.assertEqual([command], self.stored_gate()["coders"]["a1"]["failed"])
+
+    def test_a_real_failure_beside_a_setup_fault_denies_with_only_the_real_failure(self):
+        self.gate_set("exit 127", "echo assertion-broke; exit 3")
+
+        hook = self.gate_hook()
+
+        coder = self.stored_gate()["coders"]["a1"]
+        self.assertEqual("deny", coder["result"])
+        self.assertEqual(["echo assertion-broke; exit 3"], coder["failed"])
+        self.assertEqual(["exit 127"], coder["setup_faults"])
+        reason = json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("assertion-broke", reason)
+        self.assertNotIn("`exit 127`", reason)
 
     def test_a_gate_stored_before_variables_existed_still_runs(self):
         self.gate_set("true")

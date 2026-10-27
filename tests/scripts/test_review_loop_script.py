@@ -275,6 +275,49 @@ class ReviewLoopScriptTest(unittest.TestCase):
         _, packet = self.stored_packet()
         self.assertEqual(packet["status"], "converged")
 
+    def launch_with_dirty_gate(self):
+        # What /code leaves behind when it launches the loop: the dispatch row and a dirty commit gate. Nothing else
+        # runs after the script, as when the /code run ended before the loop handed back.
+        store = self.scratch / "handback"
+        store.mkdir()
+        (store / f"{SESSION}.jsonl").write_text(json.dumps({"kind": "dispatch", "session_id": SESSION}) + "\n")
+        gate_dir = self.scratch / "home" / ".claude" / "state" / "review-gate"
+        gate_dir.mkdir(parents=True)
+        (gate_dir / SESSION).write_text("dirty\n")
+
+    def commit_gate_reply(self):
+        hook_input = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": SESSION,
+                      "cwd": str(self.repo), "tool_input": {"command": "git commit -m phase"}}
+        env = {"PATH": os.environ["PATH"], "HOME": str(self.scratch / "home"), "TMPDIR": str(self.scratch)}
+        gate = toolkit_paths.REVIEW_DIR / "review_commit_gate.py"
+        finished = subprocess.run([sys.executable, str(gate)], input=json.dumps(hook_input), capture_output=True,
+                                  text=True, env=env, cwd=str(self.repo))
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        return finished.stdout
+
+    def test_converged_loop_lets_the_commit_through_when_its_code_run_ended_first(self):
+        self.launch_with_dirty_gate()
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(self.commit_gate_reply(), "")
+
+    def test_failed_loop_leaves_the_commit_gate_closed(self):
+        self.launch_with_dirty_gate()
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+        })
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("no converged /review", self.commit_gate_reply())
+
     def test_failed_reviewer_call_is_a_critical_blocker_not_a_clean_review(self):
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}],

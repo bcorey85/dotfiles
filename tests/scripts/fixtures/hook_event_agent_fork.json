@@ -1,0 +1,9 @@
+{
+ "hook_event_name": "PreToolUse",
+ "tool_name": "Agent",
+ "tool_input": {
+  "description": "/code LED-13 Phase 6 with --phase",
+  "subagent_type": "fork",
+  "prompt": "<prompt text>"
+ }
+}

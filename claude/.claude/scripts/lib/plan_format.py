@@ -502,9 +502,9 @@ def gate_env_text(gate_env_assignments):
 
 def repo_gate_env(repo_root, plan_rel=None):
     """The environment variables the repo's gate commands need: what `gate_env` reads from the plans under
-    docs/plans/*/spec.md. The plan `planRel` (a path under repoRoot) decides its own names. A name only other plans set
-    counts when they all give it the same value; a name they give different values is left out, since no plan says
-    which one this run needs."""
+    docs/plans/*/spec.md. A run whose own plan `planRel` (a path under repoRoot) is readable gets only that plan's
+    names. A run with no readable plan takes a name the other plans set when they all give it the same value; a name
+    they give different values is left out, since no plan says which one this run needs."""
     root = pathlib.Path(repo_root)
     chosen = {}
 
@@ -512,9 +512,11 @@ def repo_gate_env(repo_root, plan_rel=None):
         try:
             own_text = (root / plan_rel).read_text()
         except OSError:
-            own_text = ""
-        for assignment in gate_env(own_text):
-            chosen[assignment.split("=", 1)[0]] = assignment
+            own_text = None
+        if own_text is not None:
+            for assignment in gate_env(own_text):
+                chosen[assignment.split("=", 1)[0]] = assignment
+            return list(chosen.values())
 
     seen = {}
     for plan_path in sorted(root.glob(PLAN_FILES_GLOB)):

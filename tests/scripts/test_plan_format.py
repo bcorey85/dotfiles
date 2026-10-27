@@ -622,11 +622,17 @@ class RepoGateEnvTest(unittest.TestCase):
 
         self.assertEqual(["A=2"], plan_format.repo_gate_env(self.root, own_plan))
 
-    def test_the_plan_of_the_run_keeps_the_names_the_other_plans_agree_on(self):
+    def test_the_plan_of_the_run_takes_no_name_that_only_other_plans_set(self):
         self.write_plan("one", "B=9 cargo test")
         own_plan = self.write_plan("two", "A=2 cargo test")
 
-        self.assertEqual(["A=2", "B=9"], sorted(plan_format.repo_gate_env(self.root, own_plan)))
+        self.assertEqual(["A=2"], plan_format.repo_gate_env(self.root, own_plan))
+
+    def test_a_plan_with_no_names_gives_none_even_when_other_plans_agree(self):
+        self.write_plan("one", "B=9 cargo test")
+        own_plan = self.write_plan("two", "cargo test")
+
+        self.assertEqual([], plan_format.repo_gate_env(self.root, own_plan))
 
     def test_shell_junk_in_other_plans_adds_no_names_and_literal_settings_stay(self):
         self.write_plan("one", "n=$(ledger count) && test 1 = 1")

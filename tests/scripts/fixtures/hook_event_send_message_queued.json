@@ -1,0 +1,21 @@
+{
+ "tool_name": "SendMessage",
+ "tool_input": {
+  "to": "add023eaef2d493b0",
+  "summary": "Add D76 and D77 as unmet decisions",
+  "message": "<message text>",
+  "type": "message",
+  "recipient": "add023eaef2d493b0",
+  "recipient_kind": "agent",
+  "content": "<message text>"
+ },
+ "tool_response": {
+  "success": true,
+  "message": "Message queued for delivery to add023eaef2d493b0 at its next tool round. If it finishes first, it is resumed with the message and notifies again, so wait for that notification before resending.",
+  "pin": {
+   "id": "add023eaef2d493b0",
+   "name": "add023eaef2d493b0",
+   "ref": "d79b03"
+  }
+ }
+}

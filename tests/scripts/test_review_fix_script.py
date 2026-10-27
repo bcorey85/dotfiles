@@ -11,6 +11,7 @@ import toolkit_paths
 
 SCRIPT = pathlib.Path(os.environ.get("REVIEW_FIX_SCRIPT") or toolkit_paths.REVIEW_DIR / "review_fix.py")
 HANDBACK = SCRIPT.parent / "handback.py"
+LOOP_GATE = SCRIPT.parent / "review_loop_gate.py"
 SESSION = "11111111-aaaa-bbbb-cccc-222222222222"
 OTHER_SESSION = "99999999-aaaa-bbbb-cccc-888888888888"
 CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR") or toolkit_paths.CLAUDE_DIR)
@@ -856,6 +857,24 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("stop-no-handback", output)
         self.assertEqual(self.misses(), {})
 
+    def test_a_loop_that_stops_on_a_shell_its_timeout_moved_to_the_background_gets_wait_for_loop(self):
+        fixtures = pathlib.Path(__file__).resolve().parent / "fixtures"
+        fixture = fixtures / "loop_shell_moved_to_background_by_timeout.jsonl"
+        call_and_moved = fixture.read_text().splitlines()[:2]
+        transcript = self.temp_root / "loop.jsonl"
+        transcript.write_text("\n".join(call_and_moved) + "\n")
+        stop = {"hook_event_name": "SubagentStop", "agent_type": "review-loop", "session_id": SESSION,
+                "agent_id": "a1", "agent_transcript_path": str(transcript)}
+        self.dispatch()
+
+        subprocess.run(["python3", "-I", str(LOOP_GATE)], input=json.dumps(stop), text=True, capture_output=True,
+                       env=self.environment(), check=True)
+        code, output = self.packet("")
+
+        self.assertEqual(code, 3, output)
+        self.assertIn("ACTION: wait-for-loop", output)
+        self.assertNotIn("stop-no-handback", output)
+
     def test_a_second_packet_on_the_same_stop_row_stops_and_a_new_stop_row_waits_again(self):
         self.dispatch()
         self.stop_row(1)
@@ -864,7 +883,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 2, output)
         self.assertIn("ACTION: stop\n", output)
         clock = time.strftime("%H:%M:%S", time.localtime(1000.5))
-        self.assertIn(f"waiting since {clock} on an agent it launched and has not handed back", output)
+        waited_on = "on an agent or shell it started in the background and has not handed back"
+        self.assertIn(f"waiting since {clock} {waited_on}", output)
         self.assertNotIn("1000.5", output)
         self.assertIn("Do not re-dispatch", output)
         self.assertNotIn("wait-for-loop", output)

@@ -1299,7 +1299,7 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:*)
       base_name="one-dark"
-      accent="#6aaea2" panel_bg="#151719" surface_dim="#292b2d"
+      accent="#6bada2" panel_bg="#151719" surface_dim="#292b2d"
       surface0="#343638" surface1="#414244"
       overlay0="#7c8086" overlay1="#9b9fa6"
       text="#c1c8d2" subtext0="#9b9fa6"

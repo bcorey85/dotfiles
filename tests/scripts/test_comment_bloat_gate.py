@@ -13,7 +13,9 @@ SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.G
 SCRIPT = SCRIPTS_DIR / "comment_bloat_gate.py"
 
 # Split so this file does not itself carry the plan-path marker the gate looks for.
-MARKER_LINE = 'SPEC = "dev/agent-ledger-LED-7/docs/' + 'plans/LED-7-watch-metrics/spec.md"'
+MARKER_LINE = "# see dev/agent-ledger-LED-7/docs/" + "plans/LED-7-watch-metrics/spec.md"
+
+PHASE_WORD = "Pha" + "se"
 
 FILLER = "\n".join(f"value_{index} = {index}" for index in range(40)) + "\n"
 
@@ -55,6 +57,14 @@ class CommentBloatGateTest(unittest.TestCase):
             "tool_input": {"file_path": path, key: new_text},
         }
         return self.run_hook(json.dumps(payload), env)
+
+    def edit_replacing(self, path, old_text, new_text):
+        payload = {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Edit",
+            "tool_input": {"file_path": path, "old_string": old_text, "new_string": new_text},
+        }
+        return self.run_hook(json.dumps(payload))
 
     def assert_blocked(self, finished):
         self.assertEqual(finished.returncode, 2, finished.stderr)
@@ -161,6 +171,108 @@ class CommentBloatGateTest(unittest.TestCase):
                 path = self.source("a.py", "x = 1\n" + sample + "\n")
                 self.assert_allowed(self.edit(path, sample))
 
+    def test_marker_text_inside_a_string_literal_passes_but_a_comment_after_it_blocks(self):
+        fixture = f'plan = "## {PHASE_WORD} 1: Build\\n## {PHASE_WORD} 2: Refactor"'
+        path = self.source("test_plan.py", "x = 1\n" + fixture + "\n")
+        self.assert_allowed(self.edit(path, fixture))
+        commented = fixture + "  # " + PHASE_WORD + " 3"
+        path = self.source("test_plan.py", "x = 1\n" + commented + "\n")
+        self.assert_blocked(self.edit(path, commented))
+
+    def test_plan_fixture_in_a_triple_quoted_string_passes(self):
+        content = f'PLAN = """\n## {PHASE_WORD} 1: Build\n## {PHASE_WORD} 2: Refactor\n"""\n'
+        path = self.source("test_plan.py", content)
+        self.assert_allowed(self.edit(path, content, tool="Write"))
+
+    def test_plan_fixture_in_a_multi_line_template_literal_passes(self):
+        content = f'const plan = `\n## {PHASE_WORD} 1: Build\n## {PHASE_WORD} 2: Refactor\n`;\n'
+        path = self.source("plan.test.ts", content)
+        self.assert_allowed(self.edit(path, content, tool="Write"))
+
+    def test_marker_in_a_test_name_blocks(self):
+        ac_word = "A" + "C3"
+        samples = (f'it("{ac_word} rejects an empty name", () => {{', f'describe("{PHASE_WORD} 6 render", () => {{',
+                   f'it.each([1, 2])("{ac_word} rejects %s", (n) => {{', f'test.each`a`("{ac_word} x", () => {{')
+        for sample in samples:
+            with self.subTest(sample=sample):
+                path = self.source("a.test.ts", "const x = 1;\n" + sample + "\n")
+                self.assert_blocked(self.edit(path, sample))
+
+    def test_marker_in_a_go_run_a_subtest_or_a_param_id_blocks(self):
+        ac_word = "A" + "C3"
+        samples = (("a_test.go", f't.Run("{ac_word} rejects an empty name", func(t *testing.T) {{'),
+                   ("test_a.py", f'    with self.subTest("{PHASE_WORD} 6 render"):'),
+                   ("test_a.py", f'    pytest.param(1, id="{ac_word} rejects empty"),'),
+                   ("a.test.ts",
+                    f'it("renders", () => {{ it("{ac_word} x", () => {{}}); it("{ac_word} y", () => {{}}); }});'))
+        for name, sample in samples:
+            with self.subTest(sample=sample):
+                path = self.source(name, "x = 1\n" + sample + "\n")
+                self.assert_blocked(self.edit(path, sample))
+
+    def test_marker_in_a_param_id_list_blocks(self):
+        sample = f'    pytest.mark.parametrize("n", [1, 2], ids=["{"A" + "C3"} empty", "b"])'
+        path = self.source("test_a.py", "x = 1\n" + sample + "\n")
+        self.assert_blocked(self.edit(path, sample))
+
+    def test_marker_in_a_subtest_msg_keyword_blocks(self):
+        sample = f'    with self.subTest(msg="{PHASE_WORD} 6 render"):'
+        path = self.source("test_a.py", "x = 1\n" + sample + "\n")
+        self.assert_blocked(self.edit(path, sample))
+
+    def test_a_marker_in_a_string_that_is_not_a_test_name_passes(self):
+        samples = (("a.ts", f'const ok = pattern.test("{PHASE_WORD} 2");'),
+                   ("a.ts", f'it("renders", () => f("## {PHASE_WORD} 3"));'),
+                   ("a.py", f'half = len(rows) // 2; plan = "## {PHASE_WORD} 1"'),
+                   ("a.ts", f'this.#plan = parse("## {PHASE_WORD} 1")'))
+        for name, sample in samples:
+            with self.subTest(sample=sample):
+                path = self.source(name, "x = 1\n" + sample + "\n")
+                self.assert_allowed(self.edit(path, sample))
+
+    def test_marker_on_a_docstring_continuation_line_with_contractions_blocks(self):
+        for sample in (f"    It's the {PHASE_WORD} 6 renderer, isn't it.", f'    Returns the "{PHASE_WORD} 3" rows.'):
+            for prefix in ("", "r"):
+                with self.subTest(sample=sample, prefix=prefix):
+                    content = f'def f():\n    {prefix}"""Render.\n' + sample + '\n    """\n'
+                    path = self.source("a.py", content)
+                    self.assert_blocked(self.edit(path, content, tool="Write"))
+
+    def test_formatter_wrapped_plan_fixtures_pass(self):
+        samples = (f'plan = textwrap.dedent(\n    """\n    ## {PHASE_WORD} 1: Build\n    """\n)\n',
+                   f'PLANS = [\n    """\n## {PHASE_WORD} 1\n""",\n]\n')
+        for sample in samples:
+            with self.subTest(sample=sample):
+                path = self.source("a.py", sample)
+                self.assert_allowed(self.edit(path, sample, tool="Write"))
+
+    def test_marker_after_a_backtick_in_a_quoted_string_blocks(self):
+        content = f'const fence = "```";\nconst x = 1;\n// {PHASE_WORD} 2 leftover\n'
+        path = self.source("a.ts", content)
+        self.assert_blocked(self.edit(path, content, tool="Write"))
+
+    def test_marker_after_a_template_closed_on_a_line_with_a_url_slash_pair_blocks(self):
+        content = f"const h = `\n  <p>hi</p>\n  see https://x.com/docs`;\n// {PHASE_WORD} 1: leak\nconst y = 2;\n"
+        path = self.source("a.ts", content)
+        self.assert_blocked(self.edit(path, content, tool="Write"))
+
+    def test_marker_in_a_comment_on_the_line_that_closes_a_data_string_blocks(self):
+        content = f'X = """\ndata\n"""  # {PHASE_WORD} 2 leftover\n'
+        path = self.source("a.py", content)
+        self.assert_blocked(self.edit(path, content, tool="Write"))
+
+    def test_marker_on_a_block_comment_line_without_a_star_blocks(self):
+        sample = f"    It's the {PHASE_WORD} 6 renderer, isn't it."
+        content = "const x = 1;\n/*\n" + sample + "\n*/\n"
+        path = self.source("a.ts", content)
+        self.assert_blocked(self.edit(path, content, tool="Write"))
+
+    def test_marker_in_a_trailing_comment_with_quotes_blocks(self):
+        for sample in ("x = 1  # it's Phase 3 now, isn't it", 'foo("a")  # see "Phase 3"'):
+            with self.subTest(sample=sample):
+                path = self.source("a.py", "x = 1\n" + sample + "\n")
+                self.assert_blocked(self.edit(path, sample))
+
     def test_uppercase_markers_are_case_sensitive(self):
         path = self.source("a.py", "x = 1\n# ac4 done\n# d4: x\n# pd3\n")
         self.assert_allowed(self.edit(path, "# ac4 done\n# d4: x\n# pd3"))
@@ -207,8 +319,19 @@ class CommentBloatGateTest(unittest.TestCase):
         path = self.source("a.py", FILLER + comments)
         stderr = self.assert_blocked(self.edit(path, comments))
         self.assertEqual(stderr, "comment-bloat-gate: a.py is 27% comments (15/55 non-blank lines), cap ~20%. "
-                                 "Delete the comments this edit added, or rename/split so they are unnecessary. "
-                                 "Never add code to lower the ratio.\n")
+                                 "Delete the comments this edit added, or rename/split so they are unnecessary; "
+                                 "a comment the task requires stays, named in the hand-back. Never add code to "
+                                 "lower the ratio.\n")
+
+    def test_rewording_an_existing_comment_in_an_over_cap_file_passes(self):
+        comments = "\n".join(f"# note {index}" for index in range(15)) + "\n"
+        path = self.source("a.py", FILLER + comments)
+        self.assert_allowed(self.edit_replacing(path, "# note 3", "# a clearer note 3"))
+
+    def test_an_edit_that_adds_a_comment_line_in_an_over_cap_file_blocks(self):
+        comments = "\n".join(f"# note {index}" for index in range(15)) + "\n"
+        path = self.source("a.py", FILLER + comments)
+        self.assert_blocked(self.edit_replacing(path, "# note 3", "# note 3\n# one more line"))
 
     def test_density_at_threshold_passes(self):
         comments = "\n".join(f"# note {index}" for index in range(10)) + "\n"

@@ -19,8 +19,9 @@ git rev-parse --show-toplevel && git status --porcelain
 ```
 
 - Not a git repo → stop.
-- **Lock file exists** (`${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration/lock.json`, or the old `~/.claude/calibration-lock.json`) → STOP. A previous
-  run mutated and never restored. Restore from `backup_path` first (step 5), then delete the lock — a gate blocking deletion means report-and-stop, never another mechanism. Never seed over an unrestored seed; the lock is shared with `mutation-tester` (by `.kind`) on purpose.
+- **Lock file exists** (`${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration/lock.json`, or the old `~/.claude/calibration-lock.json`) → STOP. If
+  `python3 ~/.claude/scripts/gates/calibration_guard.py --live --session-pid "$PPID"` exits 0 the lock is live: report its owner and worktree, never restore or delete. Otherwise a previous
+  run mutated and never restored: restore from `backup_path` first (step 5) onto the absolute file that `python3 ~/.claude/scripts/gates/calibration_guard.py --session-pid "$PPID"` prints (the lock's `worktree` joined with its `file`), then delete the lock — a gate blocking deletion means report-and-stop, never another mechanism. Never seed over an unrestored seed; the lock is shared with `mutation-tester` (by `.kind`) on purpose.
 - Empty diff → stop: "nothing to calibrate; run this on a converged branch
   before you read it."
 
@@ -61,12 +62,13 @@ Hash the file's CONTENT, never `git diff`: for an untracked file the diff is emp
 ```bash
 jq -n --arg f "<target>" --arg b "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration/backups/$(basename <target>).bak" \
       --arg h "<pre-mutation hash>" --arg c "<class>" --arg l "<line>" \
-      '{ts: (now|todate), kind: "calibrate", file: $f, backup_path: $b,
-        pre_hash: $h, class: $c, line: $l}' \
+      --arg w "$(git rev-parse --show-toplevel)" --argjson p "$PPID" \
+      '{ts: (now|todate), kind: "calibrate", writer: "calibrate", file: $f, backup_path: $b,
+        pre_hash: $h, class: $c, line: $l, worktree: $w, owner_pid: $p}' \
   > "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration"/lock.json
 ```
 
-The lock is the safety net (`calibration_guard.py` shouts on sessions starting with one present). Apply with **Edit** — one line, minimal, unmarked.
+The lock is the safety net (`calibration_guard.py` shouts on a session start when the lock is stale, older than 60 minutes or its owner process gone, and only notes a live one). Apply with **Edit** — one line, minimal, unmarked.
 
 ## Step 3: Run the reviewer blind
 
@@ -93,6 +95,8 @@ Dispatch the loop's reviewer at the cheap tier for a floor on recall: `Agent`, `
 
 Restore the file from `backup_path` using **Write** (not `git checkout` — that
 would destroy the real uncommitted work in that file alongside the seed).
+For a stale lock, restore to the absolute file that `python3 ~/.claude/scripts/gates/calibration_guard.py --session-pid "$PPID"` prints (the lock's `worktree` joined with its
+`file`), never onto the lock's raw `file`, and verify `pre_hash` on that path.
 
 Then VERIFY the tree is back, by hash, not by eyeball:
 

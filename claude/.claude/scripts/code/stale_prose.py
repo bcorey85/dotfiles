@@ -27,11 +27,7 @@ import source_text
 
 PROSE_SUFFIXES = (".md", ".mdx", ".rst", ".txt")
 DESCRIPTION_SUFFIXES = (".yaml", ".yml", ".json")
-COMMENT_STYLE_OF_SUFFIX = {
-    ".ts": "slash", ".tsx": "slash", ".js": "slash", ".jsx": "slash", ".mjs": "slash", ".go": "slash",
-    ".rs": "slash", ".java": "slash", ".kt": "slash", ".py": "hash_triple", ".rb": "hash",
-}
-CODE_SUFFIXES = tuple(COMMENT_STYLE_OF_SUFFIX)
+CODE_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".go", ".rs", ".java", ".kt", ".py", ".rb")
 DESCRIPTION_LINE = re.compile(r"""^\s*(?:-\s+)?["']?(?:description|summary|title)["']?\s*:""", re.IGNORECASE)
 PLAIN_LOWERCASE = re.compile(r"[a-z]+")
 PLAN_EXCLUDES = (":(exclude)docs/plans/",)
@@ -78,7 +74,7 @@ DECLARATIONS_OF_SUFFIX = {
     ".rb": [r"^\s*def\s+(?:self\.)?(?P<name>\w+[?!]?)", r"^\s*(?:class|module)\s+(?P<name>\w+)",
             r"^\s*(?P<name>[A-Z]\w*)\s*=(?!=)"],
 }
-for _suffix in (".ts", ".tsx", ".js", ".jsx", ".mjs"):
+for _suffix in (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"):
     DECLARATIONS_OF_SUFFIX[_suffix] = JS_DECLARATIONS
 DECLARATION_PATTERNS = {suffix: [re.compile(pattern) for pattern in patterns]
                         for suffix, patterns in DECLARATIONS_OF_SUFFIX.items()}
@@ -145,7 +141,7 @@ def old_literals_of_value_only_change(removed_lines, added_lines):
 def comment_numbers_of_text(text, path):
     """The numbers of the comment lines of a file's text (string lines too, for a Python file). Lines are split on
     "\\n" only, as git numbers them."""
-    return source_text.comment_line_numbers(text.split("\n"), COMMENT_STYLE_OF_SUFFIX[suffix_of(path)])
+    return source_text.comment_line_numbers(text.split("\n"), source_text.comment_style_of(path))
 
 
 def working_tree_text(root, path):
@@ -180,7 +176,7 @@ def changed_symbols(diff_files, root, base):
     body_changed = set()
     for file_diff in diff_files:
         suffix = suffix_of(file_diff.path)
-        if suffix not in CODE_SUFFIXES:
+        if suffix not in DECLARATION_PATTERNS:
             continue
 
         merge_declarations(removed, declared_in(file_diff, "removed", suffix,
@@ -237,7 +233,7 @@ def is_prose_line(root, path, number, text, comment_cache):
         return True
     if suffix in DESCRIPTION_SUFFIXES:
         return DESCRIPTION_LINE.match(text) is not None
-    if suffix not in COMMENT_STYLE_OF_SUFFIX:
+    if source_text.comment_style_of(path) is None:
         return False
 
     if path not in comment_cache:

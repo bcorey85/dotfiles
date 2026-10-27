@@ -3,6 +3,7 @@ import os
 import pathlib
 import subprocess
 import tempfile
+import time
 import unittest
 
 import fake_ledger
@@ -833,6 +834,60 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("Show the user the loop's final text", output)
         self.assertNotIn("Re-dispatch review-loop once", output)
         self.assertEqual(self.saved_stage(), "asks")
+
+    def stop_row(self, open_dispatches, session=SESSION, ts=1000.5):
+        row = {"kind": "stop", "ts": ts, "session_id": session, "agent_id": "a1", "open_dispatches": open_dispatches}
+        with open(self.store_dir / (session + ".jsonl"), "a", encoding="utf-8") as store:
+            store.write(json.dumps(row) + "\n")
+
+    def misses(self):
+        path = self.repo / ".git" / "review-fix" / "misses.json"
+        return json.loads(path.read_text()) if path.exists() else {}
+
+    def test_a_loop_waiting_on_a_background_agent_gets_wait_for_loop_and_no_miss(self):
+        self.dispatch()
+        self.stop_row(1)
+        code, output = self.packet("")
+        self.assertEqual(code, 3, output)
+        self.assertIn("ACTION: wait-for-loop", output)
+        self.assertIn("Do not re-dispatch", output)
+        self.assertNotIn("stop-no-handback", output)
+        self.assertEqual(self.misses(), {})
+
+    def test_a_second_packet_on_the_same_stop_row_stops_and_a_new_stop_row_waits_again(self):
+        self.dispatch()
+        self.stop_row(1)
+        self.packet("")
+        code, output = self.packet("")
+        self.assertEqual(code, 2, output)
+        self.assertIn("ACTION: stop\n", output)
+        clock = time.strftime("%H:%M:%S", time.localtime(1000.5))
+        self.assertIn(f"waiting since {clock} on an agent it launched and has not handed back", output)
+        self.assertNotIn("1000.5", output)
+        self.assertIn("Do not re-dispatch", output)
+        self.assertNotIn("wait-for-loop", output)
+        self.assertEqual(self.misses(), {})
+        self.stop_row(1, ts=2000.5)
+        code, output = self.packet("")
+        self.assertEqual(code, 3, output)
+        self.assertIn("ACTION: wait-for-loop", output)
+
+    def test_a_later_stop_with_nothing_open_and_no_hand_back_is_a_miss_again(self):
+        self.dispatch()
+        self.stop_row(1)
+        self.stop_row(0)
+        code, output = self.packet("")
+        self.assertEqual(code, 2, output)
+        self.assertIn("ACTION: stop-no-handback", output)
+        self.assertIn("Re-dispatch review-loop once", output)
+
+    def test_a_hand_back_after_the_wait_is_read_normally(self):
+        self.dispatch()
+        self.stop_row(1)
+        self.hand_back()
+        code, output = self.packet("")
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: render-and-finish", output)
 
     def test_sessions_in_one_repo_keep_separate_miss_counts(self):
         self.dispatch(OTHER_SESSION)

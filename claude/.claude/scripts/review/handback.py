@@ -9,7 +9,10 @@
                                         bad packet once per agent so the loop can repair it. Any other argument does
                                         nothing.
 
-Importers use parse, validate, load, render, record, latest, hand_back_gap and false_clean_reason. A validated packet's
+Importers use parse, validate, load, render, record, latest, hand_back_gap and false_clean_reason. The store also holds
+a `stop` row that review_loop_gate.py writes at each review-loop stop (agent_id, open_dispatches). `latest` keeps the
+last one after the last dispatch; while it shows open_dispatches > 0 and no hand-back is current, hand_back_gap returns
+LOOP_WAITING, and a later stop with none open, a hand-back or a new dispatch ends the wait. A validated packet's
 fixed, skipped_fp, findings_remaining and ask entries are all mappings. The store is one append-only JSON-lines file per
 session under $HANDBACK_STORE_DIR (default ~/.claude/state/handback), keyed by the hook event's session_id, which is
 the value of CLAUDE_CODE_SESSION_ID inside a Bash call."""
@@ -521,12 +524,14 @@ def record(session_id, kind, **fields):
 
 
 def latest(session_id):
-    """{"dispatch": last review-loop dispatch row or None, "handback": last hand-back row or None, "unanswered": the
-    number of dispatches after the last hand-back (all of them when there is none), "pending": unanswered > 0}. A
-    hand-back clears every dispatch before it, so a dispatch that another hook denied blocks nothing once a later
-    dispatch hands back. A row holds kind, ts, session_id; a hand-back row also agent_id, status, problems, message.
-    Rows are ordered by append, not by clock."""
-    standing = {"dispatch": None, "handback": None, "unanswered": 0, "pending": False}
+    """{"dispatch": last review-loop dispatch row or None, "handback": last hand-back row or None, "stop": the last
+    review-loop stop row after the last dispatch or None, "unanswered": the number of dispatches after the last
+    hand-back (all of them when there is none), "pending": unanswered > 0}. A hand-back clears every dispatch before
+    it, so a dispatch that another hook denied blocks nothing once a later dispatch hands back. A row holds kind, ts,
+    session_id; a hand-back row also agent_id, status, problems, message; a stop row also agent_id and
+    open_dispatches, the background agents the loop still waited on when it stopped. Rows are ordered by append, not
+    by clock."""
+    standing = {"dispatch": None, "handback": None, "stop": None, "unanswered": 0, "pending": False}
     if not session_id:
         return standing
     try:
@@ -536,7 +541,10 @@ def latest(session_id):
     for row in stored_rows:
         if row.get("kind") == "dispatch":
             standing["dispatch"] = row
+            standing["stop"] = None
             standing["unanswered"] += 1
+        elif row.get("kind") == "stop":
+            standing["stop"] = row
         elif row.get("kind") == "handback":
             standing["handback"] = row
             standing["unanswered"] = 0
@@ -547,19 +555,23 @@ def latest(session_id):
 NO_DISPATCH = "no-dispatch"
 NO_HANDBACK = "no-handback"
 REDISPATCHED = "redispatched"
+LOOP_WAITING = "loop-waiting"
 
 
 def hand_back_gap(seen):
     """Why the session has no current hand-back, from a `latest` result: NO_DISPATCH (the session never dispatched a
-    review-loop), NO_HANDBACK (dispatched, nothing came back), REDISPATCHED (dispatched again after a hand-back), or
-    None when the latest hand-back is current. The one rule that /review, /fix and the commit gate share."""
+    review-loop), LOOP_WAITING (the loop's latest stop left a background agent running, so it will resume and may
+    still hand back), NO_HANDBACK (dispatched, nothing came back), REDISPATCHED (dispatched again after a hand-back),
+    or None when the latest hand-back is current. The one rule that /review, /fix and the commit gate share."""
     if seen["dispatch"] is None:
         return NO_DISPATCH
+    if seen["handback"] is not None and not seen["pending"]:
+        return None
+    if seen["stop"] is not None and seen["stop"].get("open_dispatches", 0) > 0:
+        return LOOP_WAITING
     if seen["handback"] is None:
         return NO_HANDBACK
-    if seen["pending"]:
-        return REDISPATCHED
-    return None
+    return REDISPATCHED
 
 
 def false_clean_reason(session_id):
@@ -568,6 +580,8 @@ def false_clean_reason(session_id):
     call. An empty session id is refused."""
     seen = latest(session_id)
     gap = hand_back_gap(seen)
+    if gap == LOOP_WAITING:
+        return "the review-loop is waiting on a background agent it launched and has not handed back"
     if seen["handback"] is None:
         return "no review-loop hand-back is stored for this session"
     if gap == NO_DISPATCH:

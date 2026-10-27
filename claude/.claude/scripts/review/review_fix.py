@@ -13,7 +13,11 @@ renders the packet, logs the rows, posts the Aikido replies, and prints what the
       With empty stdin, `packet` reads this session's latest review-loop hand-back, which handback.py's hook stored,
       and refuses when the session has no dispatch on record. When the loop ended without handing back, it prints
       `ACTION: stop-no-handback` and leaves the saved state alone: re-dispatch once, then stop and show the user the
-      loop's final text on a second miss.
+      loop's final text on a second miss. When the loop's latest stop left a background agent running (the
+      stop row review_loop_gate.py stores), it prints `ACTION: wait-for-loop` and exits 3: do not re-dispatch, end the
+      turn, and run `packet` again when the review-loop's completion notice arrives. That counts no miss. A second
+      `packet` on the same stop row (saved per skill in <git dir>/review-fix/waits.json) prints `ACTION: stop`
+      and exits 2: show the user, do not re-dispatch. A new stop row waits again.
       A re-run on the same hand-back (the same stored row; the same text, for a packet on stdin) repeats no side
       effect: posted replies, logged escapes and the nvim-jump are kept in the state. Two dispatches that return the
       same text are two runs.
@@ -37,6 +41,7 @@ import json
 import os
 import pathlib
 import sys
+import time
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../code")]
 import code_step_core
@@ -64,6 +69,8 @@ FINISHED_STAGES = ("done", "redispatch")
 PLAN_IMPACT_PREFIX = "PLAN-IMPACT"
 PLAN_IMPACT = "plan-impact"
 NEW_FINDING_ID = "new-finding-id"
+# Exit code of `wait-for-loop`: non-zero so no caller reads it as a finished run, and not 2, the code of a real stop.
+WAIT_EXIT_CODE = 3
 VERBS = ("packet", "escape", "asks-done", "decide")
 
 
@@ -76,6 +83,14 @@ class NoHandbackError(Exception):
     def __init__(self, last_hand_back_id):
         super().__init__("dispatched, no hand-back since " + last_hand_back_id)
         self.last_hand_back_id = last_hand_back_id
+
+
+class LoopWaitingError(Exception):
+    """The review-loop stopped its turn while an agent it launched in the background still runs. `stop_ts` is the time
+    of the stop row that showed it."""
+    def __init__(self, stop_ts):
+        super().__init__(f"waiting since {stop_ts}")
+        self.stop_ts = stop_ts
 
 
 # ---------- shell helpers ----------
@@ -228,6 +243,42 @@ def stop_for_missing_hand_back(skill, last_hand_back_id):
                  "logged or posted, and the earlier run's state is untouched.",
                  "Stop. Do not re-dispatch again. Show the user the loop's final text as it returned.",
                  keep_dirty)
+
+
+def waited_on_stop(skill, stop_ts):
+    """True when this caller already got `wait-for-loop` for the stop row at `stop_ts`; otherwise records it. A new
+    stop row has a new ts, so it waits again."""
+    path = review_fix_dir() / "waits.json"
+    try:
+        waits = json.loads(path.read_text())
+    except (OSError, ValueError):
+        waits = {}
+    if waits.get(skill) == stop_ts:
+        return True
+    waits[skill] = stop_ts
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(waits))
+    return False
+
+
+def wait_for_loop(skill, stop_ts):
+    """The loop stopped while a background agent it launched still runs; the harness resumes it when that agent
+    reports. No miss is counted and no packet state is saved. A second `packet` on the same stop row stops: the agent
+    has not reported, and the wait must not go on unbounded."""
+    if waited_on_stop(skill, stop_ts):
+        print_action("stop",
+                     f"The review-loop has been waiting since {time.strftime('%H:%M:%S', time.localtime(stop_ts))} "
+                     "on an agent it launched and has not handed "
+                     "back. Nothing was routed, logged or posted.",
+                     "Show the user this. Do not re-dispatch review-loop: a second loop would edit the same files as "
+                     "the first.")
+        return 2
+    print_action("wait-for-loop",
+                 "The review-loop is waiting on an agent it launched in the background. Nothing was routed, logged or "
+                 "posted.",
+                 "Do not re-dispatch review-loop: a second loop would edit the same files as the first.",
+                 "End your turn. Run `packet` again when the review-loop's completion notice arrives.")
+    return WAIT_EXIT_CODE
 
 
 def stop_for_unreviewed(skill):
@@ -416,8 +467,8 @@ def hand_back_id(stored_row, session_id):
 
 
 def saved_hand_back(session_id):
-    """The latest review-loop hand-back row of this session. Raises NoHandback when the loop was dispatched and never
-    handed back."""
+    """The latest review-loop hand-back row of this session. Raises NoHandbackError when the loop was dispatched and
+    never handed back, and LoopWaitingError when it stopped to wait on a background agent."""
     if not session_id:
         raise PacketError(["the packet on stdin is empty and CLAUDE_CODE_SESSION_ID is not set, so no saved "
                            "hand-back can be looked up"])
@@ -430,6 +481,8 @@ def saved_hand_back(session_id):
     if gap == handback.NO_DISPATCH:
         raise PacketError([f"this session has no review-loop dispatch on record (session {session_id}): a hand-back "
                            "from another session or an older run is never taken as current"])
+    if gap == handback.LOOP_WAITING:
+        raise LoopWaitingError(seen["stop"]["ts"])
     if gap:
         raise NoHandbackError(hand_back_id(seen["handback"], session_id))
     return seen["handback"]
@@ -516,6 +569,8 @@ def command_packet(argv):
     except NoHandbackError as error:
         stop_for_missing_hand_back(options.skill, error.last_hand_back_id)
         return 2
+    except LoopWaitingError as error:
+        return wait_for_loop(options.skill, error.stop_ts)
     packet = handback.load(message)
     if unreviewed:
         return stop_for_unreviewed(options.skill)

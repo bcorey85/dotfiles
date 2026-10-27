@@ -302,7 +302,7 @@ class RenderTest(HandbackTestBase):
 class StoreTest(HandbackTestBase):
     def test_latest_reports_dispatch_handback_and_pending(self):
         self.assertEqual(handback.latest(SESSION),
-                         {"dispatch": None, "handback": None, "unanswered": 0, "pending": False})
+                         {"dispatch": None, "handback": None, "stop": None, "unanswered": 0, "pending": False})
         handback.record(SESSION, "dispatch")
         self.assertTrue(handback.latest(SESSION)["pending"])
         handback.record(SESSION, "handback", status="converged", message="m")
@@ -341,6 +341,34 @@ class StoreTest(HandbackTestBase):
         handback.record(SESSION, "dispatch")
         seen = handback.latest(SESSION)
         self.assertEqual(handback.hand_back_gap(seen), handback.REDISPATCHED)
+
+    def test_a_stop_with_an_open_background_agent_is_a_wait_until_a_later_stop_or_a_hand_back(self):
+        handback.record(SESSION, "dispatch")
+        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=1)
+        self.assertEqual(handback.hand_back_gap(handback.latest(SESSION)), handback.LOOP_WAITING)
+        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=0)
+        self.assertEqual(handback.hand_back_gap(handback.latest(SESSION)), handback.NO_HANDBACK)
+        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=2)
+        handback.record(SESSION, "handback", status="converged", message="m")
+        self.assertIsNone(handback.hand_back_gap(handback.latest(SESSION)))
+
+    def test_a_wait_after_a_redispatch_is_not_redispatched_and_a_new_dispatch_clears_an_old_stop(self):
+        handback.record(SESSION, "dispatch")
+        handback.record(SESSION, "handback", status="converged", message="m")
+        handback.record(SESSION, "dispatch")
+        handback.record(SESSION, "stop", agent_id="a2", open_dispatches=1)
+        self.assertEqual(handback.hand_back_gap(handback.latest(SESSION)), handback.LOOP_WAITING)
+        handback.record(SESSION, "dispatch")
+        self.assertEqual(handback.hand_back_gap(handback.latest(SESSION)), handback.REDISPATCHED)
+
+    def test_false_clean_reason_refuses_clean_while_the_loop_waits(self):
+        handback.record(SESSION, "dispatch")
+        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=1)
+        self.assertIn("waiting on a background agent", handback.false_clean_reason(SESSION))
+        handback.record(SESSION, "handback", status="converged", message="m")
+        handback.record(SESSION, "dispatch")
+        handback.record(SESSION, "stop", agent_id="a2", open_dispatches=1)
+        self.assertIn("waiting on a background agent", handback.false_clean_reason(SESSION))
 
     def test_a_stored_hand_back_with_no_dispatch_row_has_its_own_reason(self):
         handback.record(SESSION, "handback", status="converged", message="m")

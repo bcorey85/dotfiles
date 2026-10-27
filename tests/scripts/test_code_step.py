@@ -3967,9 +3967,11 @@ class CodeStepTest(unittest.TestCase):
 
     # ---------- a review-loop resumed after the wait cap is the pending review ----------
 
-    def stop_the_review_at_the_wait_cap(self):
+    def stop_the_review_at_the_wait_cap(self, queued_message=False):
         self.coder_round()
         self.launch_the_pending_review("r1")
+        if queued_message:
+            self.log_fixture("send_message_queued", {"to": "r1", "recipient": "r1"})
         self.age_dispatches(100)
         self.set_state(dispatchAt=time.time() - 100)
         self.wait_env(1, "0.2", waits=3)

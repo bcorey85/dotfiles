@@ -99,9 +99,7 @@ class HandBackTest(base.CodeStepTest):
 
         self.assert_stop_question("the closing phase's check failed")
 
-    def test_a_review_loop_that_hands_back_after_the_wait_cap_is_routed_on_its_report(self):
-        self.stop_the_review_at_the_wait_cap()
-        self.assertIn("has not handed back in", self.question())
+    def assert_resume_takes_the_late_hand_back(self):
         self.hook("review-loop", self.LOOP_OK, agent_id="r1")
 
         out = self.step("resume")
@@ -109,25 +107,21 @@ class HandBackTest(base.CodeStepTest):
         self.assertNotIn("ACTION: ask-user", out)
         self.assertNotIn("never handed back", self.question())
         self.assertNotIn("has not handed back in", self.question())
-
-    def test_a_review_loop_messaged_before_the_wait_cap_that_hands_back_after_it_is_recorded_on_resume(self):
-        # The fork sends the running loop a queued SendMessage, the wait cap stops the run, and the loop hands back
-        # after the stop: resume takes that hand-back, with no second SendMessage after the stop.
-        self.coder_round()
-        self.launch_the_pending_review("r1")
-        self.log_fixture("send_message_queued", {"to": "r1", "recipient": "r1"})
-        self.age_dispatches(100)
-        self.set_state(dispatchAt=time.time() - 100)
-        self.wait_env(1, "0.2", waits=3)
-        self.assertIn("ACTION: stop", self.step("after-review"))
-
-        self.hook("review-loop", self.LOOP_OK, agent_id="r1")
-        out = self.step("resume")
-
-        self.assertNotIn("ACTION: ask-user", out)
         self.assertIn("marked done", out)
         self.assertNotEqual("stopped", self.state()["stage"])
         self.assertNotIn("resumableReview", self.state())
+
+    def test_a_review_loop_that_hands_back_after_the_wait_cap_is_routed_on_its_report(self):
+        self.stop_the_review_at_the_wait_cap()
+        self.assertIn("has not handed back in", self.question())
+
+        self.assert_resume_takes_the_late_hand_back()
+
+    def test_a_review_loop_messaged_before_the_wait_cap_that_hands_back_after_it_is_recorded_on_resume(self):
+        # The incident shape: the fork's SendMessage was queued before the stop, and none came after it.
+        self.stop_the_review_at_the_wait_cap(queued_message=True)
+
+        self.assert_resume_takes_the_late_hand_back()
 
     def test_the_plan_edit_coders_open_choice_reaches_the_hand_back_and_the_prompt_says_where_it_goes(self):
         self.coder_round(self.IMPACT_REPORT)

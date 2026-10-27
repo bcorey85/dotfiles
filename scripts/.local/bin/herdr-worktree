@@ -9,7 +9,7 @@
 #   --prompt the brief the forked session starts working on at once. Only with
 #            --fork.
 #   --base   the ref to branch off. Defaults to origin's default branch, fetched
-#           first, or HEAD when the repo has no origin.
+#            first, or HEAD when the repo has no origin.
 #
 # The worktree lands beside the main checkout: <repo>-<TICKET-NUM> for a
 # TICKET-NUM-desc branch, otherwise <repo>-<desc> (feature/ and fix/ dropped,

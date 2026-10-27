@@ -146,6 +146,19 @@ def register_session_repo(cwd, session_id):
         listing.write(repo + "\n")
 
 
+def is_run_open(state):
+    return state.get("stage") not in (None, "done")
+
+
+def holds_open_run(repo, session_id):
+    state = load_state(repo)
+    return state is not None and is_run_open(state) and state.get("sessionId") == session_id
+
+
+def session_open_run_repos(session_id):
+    return [repo for repo in session_repo_dirs(session_id) if holds_open_run(repo, session_id)]
+
+
 RULED_ASKS_FILE = "ruled-asks.json"
 
 
@@ -306,10 +319,18 @@ def prompt_with_gate_env(repo_dir, state, prompt):
     return f"{prompt.rstrip()}\n\n{gate_env_text}"
 
 
+def checkout_line(repo_dir):
+    # The agent starts in the session's cwd, which is another checkout when /code runs in a worktree or another repo.
+    checkout = pathlib.Path(repo_dir).resolve()
+    return (f"This run's checkout is {checkout}. Read, edit and run commands only there: use absolute paths under it "
+            "and run each Bash command from it. Name this checkout in the prompt of every agent you dispatch.")
+
+
 def emit_dispatch(repo_dir, state, verb, *lines, prompt, agent, model=None):
     # The one way a dispatch reaches the fork: logged and saved first, then printed with the path of the saved prompt.
     # Every agent it dispatches runs a gate, so the repo's gate env vars go in the prompt.
-    prompt = prompt_with_gate_env(repo_dir, state, prompt)
+    prompt_in_checkout = f"{checkout_line(repo_dir)}\n\n{prompt}"
+    prompt = prompt_with_gate_env(repo_dir, state, prompt_in_checkout)
 
     marked_prompt, prompt_file = record_dispatch(repo_dir, state, verb, agent, model, prompt)
 

@@ -4926,8 +4926,10 @@ class CodeStepTest(unittest.TestCase):
 
     # ---------- a dispatch whose Agent call never left ----------
 
-    def age_dispatches(self, seconds):
-        events_file = self.repo / ".git/code-step/runs" / self.state()["runId"] / "events.jsonl"
+    def age_dispatches(self, seconds, checkout=None):
+        checkout = checkout or self.repo
+        run_id = json.loads(run(checkout, self.env, "status").stdout)["runId"]
+        events_file = checkout / ".git/code-step/runs" / run_id / "events.jsonl"
         rows = [json.loads(line) for line in events_file.read_text().splitlines()]
         for row in rows:
             row["ts"] -= seconds

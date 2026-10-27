@@ -8,10 +8,12 @@ import unittest
 import fake_ledger
 import toolkit_paths
 
+REVIEW_SKILL_DIR = toolkit_paths.CLAUDE_DIR / "skills" / "review"
+
 CHECK_SCRIPTS = (
     (pathlib.Path(os.environ.get("LOG_ESCAPE_CHECK_SCRIPT") or toolkit_paths.TELEMETRY_DIR / "log-escape-check"),
      "usage: log-escape-check [tmpdir]"),
-    (pathlib.Path(os.environ.get("LOG_REVIEW_CHECK_SCRIPT") or toolkit_paths.CLAUDE_DIR / "skills" / "review" / "log-review-check"),
+    (pathlib.Path(os.environ.get("LOG_REVIEW_CHECK_SCRIPT") or REVIEW_SKILL_DIR / "log-review-check"),
      "usage: log-review-check [tmpdir]"),
 )
 

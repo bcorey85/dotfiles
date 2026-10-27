@@ -185,17 +185,15 @@ def review_ran(repo, branch, fingerprint):
     """(ran, reason). A branch-exit code-reviewer run row that verify-log wrote (it carries REVIEW_MARKER and a tree
     fingerprint) counts when its fingerprint equals `fingerprint`. `ledger yield --review-trees` lists the
     fingerprints of the checkout the process runs in, so `repo` and `branch` come from that checkout. Raises
-    script_utils.LedgerBusyError when the ledger is still busy or behind after the shared wait."""
+    script_utils.LedgerUnreadError when the ledger is not installed, stays busy after the shared wait, or fails."""
     try:
         listed = script_utils.read_ledger(["yield", "--review-trees"])
-    except script_utils.LedgerNotInstalledError:
-        return False, "ledger not installed"
     except OSError as error:
-        raise VerifyError(f"cannot run ledger: {error}") from error
+        raise script_utils.LedgerUnreadError(f"ledger yield --review-trees: cannot run ledger: {error}") from error
 
-    error_lines = listed.stderr.strip().splitlines()
     if listed.returncode != 0:
-        raise VerifyError(error_lines[-1] if error_lines else f"ledger yield --review-trees exited {listed.returncode}")
+        raise script_utils.LedgerUnreadError(
+            f"ledger yield --review-trees: {script_utils.ledger_failure_reason(listed)}")
 
     trees = listed.stdout.splitlines()[1:]
     if not trees:
@@ -206,12 +204,12 @@ def review_ran(repo, branch, fingerprint):
 
 
 def review_state(repo, branch, fingerprint, logged_tree):
-    """{"read", "ran", "reason"} for the context's `review`. read is True when the ledger answered. When it stays busy,
-    read is False, and the review counts as ran only when verify-log logged one for this same tree from this branch's
-    saved context (`logged_tree` is the fingerprint it saved there)."""
+    """{"read", "ran", "reason"} for the context's `review`. read is True when the ledger answered. When it gives no
+    answer (not installed, busy or failing), read is False, and the review counts as ran only when verify-log logged
+    one for this same tree from this branch's saved context (`logged_tree` is the fingerprint it saved there)."""
     try:
         ran, reason = review_ran(repo, branch, fingerprint)
-    except script_utils.LedgerBusyError as error:
+    except script_utils.LedgerUnreadError as error:
         logged_here = logged_tree == fingerprint
         record = ("verify-log logged a review of this tree from this checkout" if logged_here
                   else "no review of this tree was logged from this checkout")

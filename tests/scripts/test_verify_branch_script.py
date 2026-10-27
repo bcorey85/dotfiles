@@ -227,16 +227,20 @@ class VerifyBranchBase(unittest.TestCase):
     def context(self):
         return json.loads(next((self.temp_root / "state").glob("*.json")).read_text())
 
-    def busy_ledger_env(self):
-        """Env with a `ledger` first on PATH whose reads exit 75, as when its cache is behind; writes go through."""
-        busy_dir = self.temp_root / "busy-ledger-bin"
-        busy_dir.mkdir(exist_ok=True)
-        busy = busy_dir / "ledger"
+    def failing_reads_env(self, stderr_line, exit_code):
+        """Env with a `ledger` first on PATH whose reads print stderr_line and exit exit_code; writes go through."""
+        reads_dir = self.temp_root / f"ledger-reads-exit-{exit_code}-bin"
+        reads_dir.mkdir(exist_ok=True)
+        reads = reads_dir / "ledger"
         writer = shutil.which("ledger", path=self.ledger_env["PATH"])
-        busy.write_text(f"#!/bin/sh\nif [ \"$1\" = yield ]; then echo 'ledger: cache behind, retry' >&2; exit 75; fi\n"
-                        f"exec '{writer}' \"$@\"\n")
-        busy.chmod(0o755)
-        return {"PATH": f"{busy_dir}{os.pathsep}{self.env['PATH']}", "LEDGER_READ_BACKOFF_SECONDS": "0"}
+        reads.write_text(f"#!/bin/sh\nif [ \"$1\" = yield ]; then echo '{stderr_line}' >&2; exit {exit_code}; fi\n"
+                         f"exec '{writer}' \"$@\"\n")
+        reads.chmod(0o755)
+        return {"PATH": f"{reads_dir}{os.pathsep}{self.env['PATH']}", "LEDGER_READ_BACKOFF_SECONDS": "0"}
+
+    def busy_ledger_env(self):
+        """Reads exit 75, as when the ledger cache is behind."""
+        return self.failing_reads_env("ledger: cache behind, retry", 75)
 
     def reviewed_tree(self):
         """A committed plan, one more source file, and a logged branch-wide review of exactly that tree."""
@@ -582,6 +586,22 @@ class PrepTest(VerifyBranchBase):
         self.assertEqual(second.returncode, 2)
         self.assertIn("already covers", second.stderr)
         self.assertIn("REVIEW: ran", self.prep(extra_env=busy_env).stdout)
+
+    def test_a_failing_ledger_read_never_blocks_the_run(self):
+        self.task_dir()
+        failing_env = self.failing_reads_env("ledger yield: broken schema", 1)
+        first_prep = self.prep(extra_env=failing_env)
+
+        logged = self.log_review(extra_env=failing_env)
+        second_prep = self.prep(extra_env=failing_env)
+
+        self.assertEqual(first_prep.returncode, 0, first_prep.stderr)
+        self.assertIn("NOT run", first_prep.stdout)
+        self.assertEqual(logged.returncode, 0, logged.stderr)
+        self.assertEqual(second_prep.returncode, 0, second_prep.stderr)
+        self.assertIn("REVIEW: ran", second_prep.stdout)
+        self.assertIn("ledger yield: broken schema", second_prep.stdout)
+        self.assertIn("review state: not read from the ledger", second_prep.stdout)
 
     def test_review_row_for_old_head_with_no_content_change_still_counts(self):
         self.reviewed_tree()

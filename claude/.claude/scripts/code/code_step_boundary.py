@@ -507,10 +507,10 @@ def commit_message(repo_dir, state):
 
 
 def phase_commit(repo_dir, state):
-    # The phase's own changed files: dirty now, and not dirty before the phase started. Files that were dirty before
-    # stay out of the command, except the plan: the script ticks the phase in it, so the commit carries it even when it
-    # held other uncommitted edits before the phase. The commit names its files after `--`, so it takes only those
-    # files from the index and leaves anything the user staged by hand staged and uncommitted.
+    # The phase's own changed files: dirty now, and either not dirty before the phase started or with content that
+    # differs from the baseline hash. Files that were dirty before and are unchanged stay out of the command. The plan
+    # is always in it when it changed: the script ticks the phase there. The commit names its files after `--`, so it
+    # takes only those files from the index and leaves anything the user staged by hand staged and uncommitted.
     # Returns (text for the user, the commit command line, the files it commits); the text and line are "" with no
     # files.
     baseline = state.get("baseline") or {}
@@ -518,8 +518,9 @@ def phase_commit(repo_dir, state):
     plan_name = state.get("plan")
     changed_since = [name for name in dirty_now if name in baseline and dirty_now[name] != baseline[name]]
     plan_had_earlier_edits = plan_name in changed_since
-    own_files = [name for name in dirty_now if name not in baseline or (name == plan_name and plan_had_earlier_edits)]
-    left_out = [name for name in changed_since if name != plan_name]
+    own_files = [name for name in dirty_now if name not in baseline or name in changed_since]
+    left_out = [name for name in dirty_now if name in baseline and name not in changed_since]
+    edited_dirty = [name for name in changed_since if name != plan_name]
     if not own_files:
         return "", "", []
 
@@ -530,6 +531,12 @@ def phase_commit(repo_dir, state):
     if plan_had_earlier_edits:
         lines += [
             f"{plan_name} had uncommitted edits before the phase. The commit includes them with the phase tick.",
+            "",
+        ]
+    if edited_dirty:
+        lines += [
+            "Edited by this phase, was dirty before (the commit mixes the earlier edits with this phase's): "
+            + ", ".join(edited_dirty),
             "",
         ]
     if left_out:

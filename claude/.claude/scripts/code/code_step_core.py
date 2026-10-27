@@ -1,7 +1,8 @@
 """code_step_core.py: what every part of code_step.py shares: the constants, the git and state-file helpers, the
 event log of a run, the hand-back matcher and the printed output.
 
-Installed beside code_step.py. Imports run one way: code_step_core, code_step_boundary, code_step_hooks, code_step.
+Installed beside code_step.py. Imports run one way: code_step_core, code_step_boundary, code_step_hooks,
+code_step_gates, code_step_start, code_step_report, code_step_review, code_step.
 
 A hand-back is one `handback` event in the run's events.jsonl, written by the log hook. A verb that waits for an agent
 looks for the newest hand-back event of the awaited agent's id after the time it was dispatched."""
@@ -335,6 +336,22 @@ def awaited_handback(repo_dir, state):
     if since is None or not state.get("runId"):
         return None
     return handback_event(read_events(repo_dir, state["runId"]), awaited_agent_id(repo_dir, state), since)
+
+
+def take_handback(repo_dir, state, agent_type, missing_text):
+    # The hand-back event of the agent the verb waited for, after a resumed agent is put back in its stage; None after
+    # printing the stop. A resumed agent that has not handed back yet gets its own stop.
+    is_resumed = awaits_resumed_coder(state) or awaits_resumed_review(state)
+    handback = awaited_handback(repo_dir, state)
+    if handback is None:
+        return emit("stop", resumed_agent_pending_stop(agent_type) if is_resumed else missing_text)
+
+    pin_session(repo_dir, state)
+    if awaits_resumed_coder(state):
+        put_resumed_coder_back(repo_dir, state)
+    elif awaits_resumed_review(state):
+        put_resumed_review_back(repo_dir, state)
+    return handback
 
 
 def is_dispatch_open(cwd, state):

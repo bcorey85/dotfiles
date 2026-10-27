@@ -40,7 +40,7 @@ max-complexity = 10
 "claude/.claude/scripts/telemetry/log_skill_use.py" = ["SIM115"]
 "claude/.claude/scripts/telemetry/test_edit_telemetry.py" = ["SIM115"]
 # The en dash (U+2013) is the character the plan and heading parsers must accept, so the strings keep it.
-"claude/.claude/scripts/code/code_step.py" = ["RUF001"]
+"claude/.claude/scripts/code/code_step_report.py" = ["RUF001"]
 "claude/.claude/scripts/lib/plan_format.py" = ["RUF001"]
 "claude/.claude/scripts/review/verify_common.py" = ["RUF001"]
 "tests/scripts/test_adr_flow.py" = ["RUF001"]

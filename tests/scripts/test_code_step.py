@@ -35,6 +35,8 @@ code_step = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(code_step)
 import code_step_boundary  # noqa: E402
 import code_step_core  # noqa: E402
+import code_step_gates  # noqa: E402
+import code_step_report  # noqa: E402
 import plan_format  # noqa: E402
 
 PLAN = """# Orders Plan
@@ -133,9 +135,8 @@ class CodeStepTest(unittest.TestCase):
         (self.claude / "skills/review").mkdir(parents=True)
         for name in ("coder_gate.py", "resolve-task-dir.sh"):
             stage_script(REAL_CLAUDE / "scripts", name, self.claude / "scripts")
-        for name in ("coder_packet.py", "plan_format.py", "script_utils.py", "code_step_core.py",
-                     "code_step_boundary.py", "code_step_hooks.py", "shell_command.py", "makefile_text.py",
-                     "test_run_output.py"):
+        for name in ("coder_packet.py", "plan_format.py", "script_utils.py", *toolkit_paths.CODE_STEP_MODULES,
+                     "shell_command.py", "makefile_text.py", "test_run_output.py"):
             stage_script(SCRIPTS_ROOT, name, self.claude / "scripts")
         self.log = self.tmp / "calls.log"
         (self.claude / "scripts" / "telemetry").mkdir()
@@ -541,7 +542,7 @@ class CodeStepTest(unittest.TestCase):
                 clippy = "cd crate && cargo clippy --all-targets -- -D warnings"
                 wanted = [clippy] + ([f"cd crate && {expected}"] if expected else [])
 
-                self.assertEqual(wanted, code_step.cargo_commands(self.repo, [path]))
+                self.assertEqual(wanted, code_step_gates.cargo_commands(self.repo, [path]))
 
     def test_cargo_commands_are_merged_per_crate_without_duplicates_and_never_run_a_whole_crate(self):
         for crate in ("one", "two"):
@@ -550,7 +551,7 @@ class CodeStepTest(unittest.TestCase):
             (self.repo / crate / "Cargo.toml").write_text(f'[package]\nname = "{crate}"\n')
         paths = ["one/src/a.rs", "two/src/b.rs", "one/src/a.rs", "one/src/lib.rs", "one/Cargo.toml", "one/src/c.rs"]
 
-        commands = code_step.cargo_commands(self.repo, paths)
+        commands = code_step_gates.cargo_commands(self.repo, paths)
 
         clippy = "cargo clippy --all-targets -- -D warnings"
         self.assertEqual([f"cd one && {clippy}", "cd one && cargo test --lib --bins",
@@ -564,7 +565,7 @@ class CodeStepTest(unittest.TestCase):
         paths = ["crate/tests/side_streams.rs", "crate/src/a.rs", "crate/tests/common/mod.rs", "crate/src/bin/tool.rs",
                  "crate/tests/orders.rs"]
 
-        commands = code_step.cargo_commands(self.repo, paths)
+        commands = code_step_gates.cargo_commands(self.repo, paths)
 
         self.assertEqual(["cd crate && cargo clippy --all-targets -- -D warnings", "cd crate && cargo test --tests"],
                          commands)
@@ -575,7 +576,7 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "lib/src/lib.rs").write_text("")
         (self.repo / "lib/Cargo.toml").write_text('[package]\nname = "lib"\n')
 
-        commands = code_step.cargo_commands(self.repo, ["lib/src/store/query.rs", "lib/src/orders.rs"])
+        commands = code_step_gates.cargo_commands(self.repo, ["lib/src/store/query.rs", "lib/src/orders.rs"])
 
         self.assertEqual(["cd lib && cargo clippy --all-targets -- -D warnings", "cd lib && cargo test --lib --bins"],
                          commands)
@@ -585,7 +586,7 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "lib/src/lib.rs").write_text("")
         (self.repo / "lib/Cargo.toml").write_text('[package]\nname = "lib"\n')
 
-        commands = code_step.cargo_commands(self.repo, ["lib/src/lib.rs"])
+        commands = code_step_gates.cargo_commands(self.repo, ["lib/src/lib.rs"])
 
         self.assertEqual(["cd lib && cargo clippy --all-targets -- -D warnings", "cd lib && cargo test --lib --bins"],
                          commands)
@@ -595,7 +596,7 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "both/src/lib.rs").write_text("")
         (self.repo / "both/Cargo.toml").write_text('[package]\nname = "both"\n')
 
-        commands = code_step.cargo_commands(self.repo, ["both/src/bin/tool.rs"])
+        commands = code_step_gates.cargo_commands(self.repo, ["both/src/bin/tool.rs"])
 
         self.assertEqual(["cd both && cargo clippy --all-targets -- -D warnings", "cd both && cargo test --bin tool"],
                          commands)
@@ -605,8 +606,8 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "tool/src/main.rs").write_text("")
         (self.repo / "tool/Cargo.toml").write_text('[package]\nname = "tool"\n')
 
-        commands = code_step.cargo_commands(self.repo, ["tool/src/store/query.rs", "tool/src/store/mod.rs",
-                                                        "tool/src/main.rs"])
+        commands = code_step_gates.cargo_commands(self.repo, ["tool/src/store/query.rs", "tool/src/store/mod.rs",
+                                                              "tool/src/main.rs"])
 
         self.assertEqual(["cd tool && cargo clippy --all-targets -- -D warnings", "cd tool && cargo test --bins"],
                          commands)
@@ -617,7 +618,7 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "both/src/main.rs").write_text("")
         (self.repo / "both/Cargo.toml").write_text('[package]\nname = "both"\n')
 
-        commands = code_step.cargo_commands(self.repo, ["both/src/store.rs", "both/src/main.rs"])
+        commands = code_step_gates.cargo_commands(self.repo, ["both/src/store.rs", "both/src/main.rs"])
 
         self.assertEqual(["cd both && cargo clippy --all-targets -- -D warnings", "cd both && cargo test --lib --bins"],
                          commands)
@@ -626,7 +627,7 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "Cargo.toml").write_text('[package]\nname = "root-crate"\n')
         (self.repo / "src").mkdir()
 
-        commands = code_step.cargo_commands(self.repo, ["Cargo.toml", "benches/speed.rs", "build.rs"])
+        commands = code_step_gates.cargo_commands(self.repo, ["Cargo.toml", "benches/speed.rs", "build.rs"])
 
         self.assertEqual(["cargo clippy --all-targets -- -D warnings"], commands)
 
@@ -2874,10 +2875,10 @@ class CodeStepTest(unittest.TestCase):
 
     def test_ambiguous_wording_is_flagged_but_unambiguous_is_not(self):
         self.assertEqual(["The plan is ambiguous about rounding."],
-                         code_step.coder_flags("The plan is ambiguous about rounding."))
-        self.assertEqual(["Two ambiguities remain."], code_step.coder_flags("Two ambiguities remain."))
-        self.assertEqual([], code_step.coder_flags("The spec was unambiguous."))
-        self.assertEqual([], code_step.coder_flags("No ambiguities found."))
+                         code_step_report.coder_flags("The plan is ambiguous about rounding."))
+        self.assertEqual(["Two ambiguities remain."], code_step_report.coder_flags("Two ambiguities remain."))
+        self.assertEqual([], code_step_report.coder_flags("The spec was unambiguous."))
+        self.assertEqual([], code_step_report.coder_flags("No ambiguities found."))
 
     def test_start_clears_say_text_left_by_a_finished_phase_but_keeps_the_auto_advance_text(self):
         self.finish_phase_one()
@@ -3450,8 +3451,8 @@ class CodeStepTest(unittest.TestCase):
     def test_missing_handback_module_stops_the_run_and_writes_no_gate_file(self):
         bare = self.tmp / "bare"
         bare.mkdir()
-        for name in (SCRIPT.name, "script_utils.py", "plan_format.py", "reviewed_tree.py", "code_step_core.py",
-                     "code_step_boundary.py", "code_step_hooks.py", "test_run_output.py"):
+        for name in (SCRIPT.name, "script_utils.py", "plan_format.py", "reviewed_tree.py",
+                     *toolkit_paths.CODE_STEP_MODULES, "test_run_output.py"):
             shutil.copy(toolkit_paths.script_in(SCRIPTS_ROOT, name), bare / name)
         env = dict(self.env, PYTHONPATH="")
         script = str(bare / SCRIPT.name)
@@ -3752,7 +3753,7 @@ class CodeStepTest(unittest.TestCase):
         }
         for name, report in shapes.items():
             with self.subTest(name):
-                found = code_step.plan_impact_block(report)
+                found = code_step_report.plan_impact_block(report)
                 self.assertIsNotNone(found)
                 self.assertNotIn("block not found", found)
                 self.assertIn("assumed", found)
@@ -5045,13 +5046,13 @@ class CodeStepTest(unittest.TestCase):
                  "tail -n 5 -f app.log", "tail --follow app.log", "FOO=1 sleep 5", "/usr/bin/watch ls",
                  "tail -Fn5 app.log", "tail -fn20 x")
 
-        with unittest.mock.patch.object(code_step.shutil, "which", return_value="/usr/bin/anything"):
+        with unittest.mock.patch.object(shutil, "which", return_value="/usr/bin/anything"):
             for span in spans:
                 with self.subTest(span=span):
                     self.assertFalse(code_step_boundary.starts_like_a_program_here(span, self.repo))
 
     def test_tail_without_follow_is_a_fallback_command(self):
-        with unittest.mock.patch.object(code_step.shutil, "which", return_value="/usr/bin/tail"):
+        with unittest.mock.patch.object(shutil, "which", return_value="/usr/bin/tail"):
             for span in ("tail -n 5 app.log", "tail app.log", "tail -c 20 app.log"):
                 with self.subTest(span=span):
                     self.assertTrue(code_step_boundary.starts_like_a_program_here(span, self.repo))
@@ -5075,7 +5076,7 @@ class CodeStepTest(unittest.TestCase):
                 self.assertFalse(code_step_boundary.starts_like_a_program_here(span, self.repo))
 
     def test_a_relative_path_is_never_looked_up_from_the_working_directory_as_a_path_program(self):
-        with unittest.mock.patch.object(code_step.shutil, "which", return_value="/anywhere/tool"):
+        with unittest.mock.patch.object(shutil, "which", return_value="/anywhere/tool"):
             self.assertFalse(code_step_boundary.starts_like_a_program_here("../tool --x", self.repo))
             self.assertFalse(code_step_boundary.starts_like_a_program_here("sub/tool --x", self.repo))
             self.assertTrue(code_step_boundary.starts_like_a_program_here("tool --x", self.repo))

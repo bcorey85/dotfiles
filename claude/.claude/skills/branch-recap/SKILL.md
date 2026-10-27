@@ -45,6 +45,10 @@ Triage: **fix now** (`/fix`), **stale** (later phase resolved — say which), **
 
 A deferred `blocker` (or `fix_induced=bug`) is a loop bug, not a work item — escalate as such.
 
+## Step 2b: Companion branches
+
+A plan step in another repo leaves a branch there that nothing tracks once this PR merges. For each other repo the spec's phases or handover list name, run `gh pr list --repo <owner/name> --head <branch> --state all` on the branch the plan names. Tell a pushed branch from a never-pushed one with `git ls-remote --heads <remote-url> <branch>` (empty output: not pushed). A pushed branch with no PR goes first under **Companion branches** as `<repo>@<branch> — no PR`, and the recap's `Next:` line starts with opening that PR. A branch that is not pushed is listed as `<repo>@<branch> — not pushed`, and `Next:` never says to open a PR for it; it says to push it. No other repo named → `companions: none`.
+
 ## Step 3: The recap
 
 Assemble from session holdings (walkthroughs, packets, receipts, `git status`). **Never dispatch an agent for prose, never re-read code for a system map** (`/orient`'s job). No handoff (fresh session) → change map from `git diff --stat`, marked `derived from diff`.
@@ -69,6 +73,9 @@ Spec: <task-dir>
 
 ### Deferred findings             (round budget, read at branch bound)
 - <fixed / stale / carried, one line each, with the gate and disposition each came from; or "none"; or "not tracked (ledger not installed)"; or "not read (<reason>)" with the command that brings the cache up to date; or "not read (<reason>)">
+
+### Companion branches            (Step 2b)
+- <repo>@<branch> — <PR url, or "no PR", or "not pushed">; or "none"
 
 ### Smoke-test checklist          (from the /verify-branch closing phase)
 - <every human-only item, with steps>

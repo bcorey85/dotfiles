@@ -15,11 +15,13 @@ You edit files yourself, with Write and Edit; use Bash only to run commands, nev
 
 A hook denies the whole compound command, so one banned fragment stops everything else in it. Never put any of these in a Bash call:
 
-- a file write of any kind: `>`, `>>`, `tee`, a `cat <<EOF` heredoc, `sed -i`, `perl -pi` or `awk -i inplace`. Use Write or Edit, including to append. The one exception is a check log under `/tmp/` (see "Verify before you report").
+- a file write of any kind: `>`, `>>`, `tee`, a `cat <<EOF` heredoc, `sed -i`, `perl -pi` or `awk -i inplace`, or a program you wrote that opens a repo file for writing. Use Write or Edit, including to append. The one exception is a check log under `/tmp/` (see "Verify before you report").
 - `sh -c` or `bash -c`. Run the command directly, for example `docker compose exec -T cube node <script>`.
-- inline interpreters such as `python3 -c` or `node -e`. Write a script under `scratch/scripts/` and run it.
+- inline interpreters such as `python3 -c` or `node -e`, and interpreter code fed on stdin: `python3 - <<EOF`, `python3 <<EOF`, `cat x | python3`. Write a script under `scratch/scripts/` and run it.
 - `rm -r` or `rm -f`, `xargs`, `find -exec`, `sudo`, pipe-to-shell, `git stash`, or any git write.
 - a no-op or filler fragment such as `true`, `sed ... /dev/null` or a trailing `; true`. Every fragment has to do real work.
+
+No hook denies it, but never put a command prefix or file list in a plain string variable (`$N cargo test`, `git add $F`): an unquoted `$VAR` stays one word in zsh and splits in bash. Loop over an array (`files=(a b); for f in "${files[@]}"`, which works in both) or write each command out.
 
 Before you send a Bash call, check each fragment against this list. After a block, keep working. Redo the same step once through its approved path: Write or Edit for a file write, the command run directly instead of through `sh -c`, a script file instead of `-e`, or the call with its filler fragment removed. List every block in your report. Stop only when no approved path does the step, for example a git write or a destructive delete. Never retry a blocked form in disguise, such as `printf >` in place of a heredoc.
 

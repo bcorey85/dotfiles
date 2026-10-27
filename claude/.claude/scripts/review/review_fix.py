@@ -13,7 +13,7 @@ renders the packet, logs the rows, posts the Aikido replies, and prints what the
       With empty stdin, `packet` reads this session's latest review-loop hand-back, which handback.py's hook stored,
       and refuses when the session has no dispatch on record. When the loop ended without handing back, it prints
       `ACTION: stop-no-handback` and leaves the saved state alone: re-dispatch once, then stop and show the user the
-      loop's final text on a second miss. When the loop's latest stop left a background agent running (the
+      loop's final text on a second miss. When the loop's latest stop left a background agent or shell running (the
       stop row review_loop_gate.py stores), it prints `ACTION: wait-for-loop` and exits 3: do not re-dispatch, end the
       turn, and run `packet` again when the review-loop's completion notice arrives. That counts no miss. A second
       `packet` on the same stop row (saved per skill in <git dir>/review-fix/waits.json) prints `ACTION: stop`
@@ -86,8 +86,8 @@ class NoHandbackError(Exception):
 
 
 class LoopWaitingError(Exception):
-    """The review-loop stopped its turn while an agent it launched in the background still runs. `stop_ts` is the time
-    of the stop row that showed it."""
+    """The review-loop stopped its turn while an agent or shell it started in the background still runs. `stop_ts` is
+    the time of the stop row that showed it."""
     def __init__(self, stop_ts):
         super().__init__(f"waiting since {stop_ts}")
         self.stop_ts = stop_ts
@@ -262,20 +262,20 @@ def waited_on_stop(skill, stop_ts):
 
 
 def wait_for_loop(skill, stop_ts):
-    """The loop stopped while a background agent it launched still runs; the harness resumes it when that agent
-    reports. No miss is counted and no packet state is saved. A second `packet` on the same stop row stops: the agent
+    """The loop stopped while a background agent or shell it started still runs; the harness resumes it when that work
+    reports. No miss is counted and no packet state is saved. A second `packet` on the same stop row stops: the work
     has not reported, and the wait must not go on unbounded."""
     if waited_on_stop(skill, stop_ts):
         print_action("stop",
                      f"The review-loop has been waiting since {time.strftime('%H:%M:%S', time.localtime(stop_ts))} "
-                     "on an agent it launched and has not handed "
-                     "back. Nothing was routed, logged or posted.",
+                     "on an agent or shell it started in the background and has not handed back. Nothing was routed, "
+                     "logged or posted.",
                      "Show the user this. Do not re-dispatch review-loop: a second loop would edit the same files as "
                      "the first.")
         return 2
     print_action("wait-for-loop",
-                 "The review-loop is waiting on an agent it launched in the background. Nothing was routed, logged or "
-                 "posted.",
+                 "The review-loop is waiting on an agent or shell it started in the background. Nothing was routed, "
+                 "logged or posted.",
                  "Do not re-dispatch review-loop: a second loop would edit the same files as the first.",
                  "End your turn. Run `packet` again when the review-loop's completion notice arrives.")
     return WAIT_EXIT_CODE
@@ -444,9 +444,11 @@ def post_aikido_replies(packet, targets, state):
 
 # ---------- the packet ----------
 
-def active_code_step(session_id):
+def active_code_step(session_id, hand_back_agent_id):
     """(state path, stage) of a /code run that owns this session's review hand-backs, else None. A run pinned to a
-    different session does not count."""
+    different session does not count. The run owns only the hand-back of an agent it launched, so a hand-back from
+    another review-loop agent (a standalone /review while the run is paused or before its launch is logged) is not
+    the run's."""
     try:
         code_step = code_step_core.load_state(".")
     except code_step_core.StateFileError:
@@ -454,6 +456,10 @@ def active_code_step(session_id):
     if code_step is None or code_step.get("stage") not in code_step_core.REVIEW_HANDBACK_STAGES:
         return None
     if code_step.get("sessionId") != session_id:
+        return None
+    events = code_step_core.read_events(".", code_step.get("runId")) if code_step.get("runId") else []
+    launched_agent_ids = {event.get("agent_id") for event in events if event.get("event") == "launch"}
+    if not hand_back_agent_id or hand_back_agent_id not in launched_agent_ids:
         return None
     return code_step_core.state_dir(".") / "state.json", code_step["stage"]
 
@@ -468,15 +474,16 @@ def hand_back_id(stored_row, session_id):
 
 def saved_hand_back(session_id):
     """The latest review-loop hand-back row of this session. Raises NoHandbackError when the loop was dispatched and
-    never handed back, and LoopWaitingError when it stopped to wait on a background agent."""
+    never handed back, and LoopWaitingError when it stopped to wait on a background agent or shell."""
     if not session_id:
         raise PacketError(["the packet on stdin is empty and CLAUDE_CODE_SESSION_ID is not set, so no saved "
                            "hand-back can be looked up"])
-    code_step = active_code_step(session_id)
+    seen = handback.latest(session_id)
+    stored_row = seen["handback"] or {}
+    code_step = active_code_step(session_id, stored_row.get("agent_id"))
     if code_step:
         raise PacketError([f"a /code run owns this session's review hand-backs (code-step state {code_step[0]}, stage "
                            f"{code_step[1]}): its packet goes through code_step.py resume, not `packet`"])
-    seen = handback.latest(session_id)
     gap = handback.hand_back_gap(seen)
     if gap == handback.NO_DISPATCH:
         raise PacketError([f"this session has no review-loop dispatch on record (session {session_id}): a hand-back "

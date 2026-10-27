@@ -23,7 +23,10 @@ timeout (1200 s) gave no test result: it is stored as timed_out, apart from fail
 with no failures and a timed-out command has the result "timeout". On a pass, a timeout or the cap, it appends the
 gate result to the hand-back message, so the caller reads the report as final. The stamp names each timed-out command
 with the last 600 characters of its output, and says that the gate got no result from it: the command is too broad,
-or a test hangs. With no gate, a gate
+or a test hangs. A failure that shows the environment cannot run the check (exit 126 or 127, a runner that cannot
+start the program, or a missing module from outside the repo with no failed test) is a setup fault: it never denies the
+call or counts toward the cap, a run with only setup faults has the result "setup-fault", and the stamp names each one
+with its output tail. With no gate, a gate
 older than 6 hours or another agent type, the hand-back goes through untouched. Parallel coders take turns."""
 import fcntl
 import json
@@ -72,6 +75,12 @@ WHOLE_PACKAGE_PATHS = {".", "./"}
 SHELL_OPERATORS = {"&&", "||", ";", "|", "&", "(", ")"}
 REDIRECT_CHARS = set("<>&")
 FILES_PLACEHOLDER = re.compile(r"\{files(?::([^{}]*))?\}")
+# Exit codes and runner text that mean the check never ran: the shell found no program or could not run it, or uv or
+# poetry could not start one.
+COMMAND_NOT_RUN_CODES = {126, 127}
+RUNNER_CANNOT_START = re.compile(r"Failed to spawn: |Command not found: ")
+MISSING_MODULE = re.compile(r"No module named '?([A-Za-z_][\w.]*)")
+TESTS_FAILED = re.compile(r"\b\d+ failed\b")
 
 
 def gate_path(cwd):
@@ -316,8 +325,10 @@ def clear_gate():
         failed_commands = ", ".join(coder["failed"]) or "none"
         timed_out_commands = ", ".join(coder.get("timed_out", [])) or "none"
         skipped_commands = ", ".join(coder.get("skipped", [])) or "none"
+        setup_fault_commands = ", ".join(coder.get("setup_faults", [])) or "none"
         print(f"coder gate: {coder['result']} after {coder['runs']} run(s), failed: {failed_commands}, "
-              f"timed out (no test result): {timed_out_commands}, skipped: {skipped_commands}")
+              f"timed out (no test result): {timed_out_commands}, "
+              f"setup fault (no test result): {setup_fault_commands}, skipped: {skipped_commands}")
     if not gate["coders"]:
         print("coder gate: never ran, no coder handed back through it")
 
@@ -386,6 +397,39 @@ def run_commands(gate):
     return failures, skipped, timed_out
 
 
+def is_repo_module(module_name, repo_root):
+    top_name = module_name.split(".")[0]
+    for base in (pathlib.Path(repo_root), pathlib.Path(repo_root) / "src"):
+        if (base / top_name).is_dir() or (base / f"{top_name}.py").is_file():
+            return True
+    return False
+
+
+def is_setup_fault(code, output, repo_root):
+    # A failure that says the environment cannot run the check, not that a check failed: the program is missing, the
+    # runner cannot start it, or a module outside the repo is missing and no test ran to a failure. A missing repo
+    # module or a name that does not import is a real defect.
+    if code in COMMAND_NOT_RUN_CODES or RUNNER_CANNOT_START.search(output):
+        return True
+
+    missing_modules = MISSING_MODULE.findall(output)
+    if not missing_modules or TESTS_FAILED.search(output):
+        return False
+    return not any(is_repo_module(name, repo_root) for name in missing_modules)
+
+
+def split_setup_faults(failures, repo_root):
+    real_failures = []
+    setup_faults = []
+    for command, outcome, output in failures:
+        code = int(outcome.removeprefix("exit "))
+        if is_setup_fault(code, output, repo_root):
+            setup_faults.append((command, output))
+        else:
+            real_failures.append((command, outcome, output))
+    return real_failures, setup_faults
+
+
 def denial(failures):
     chunks = []
     for command, outcome, output in failures:
@@ -414,28 +458,38 @@ def stamped_handback(tool_input, coder):
                   f"test result:{timed_out_lines}\nThe gate got no result from these commands; they are not among "
                   "the failures. The command is too broad for the gate, or a test hangs. Read the output tail for a "
                   "failure printed before the hang.")
+    setup_fault_commands = coder.get("setup_faults", [])
+    if setup_fault_commands:
+        tails = coder.get("setup_fault_tails", {})
+        setup_fault_lines = "".join(f"\n  `{command}`, output tail:\n{tails.get(command, '')}"
+                                    for command in setup_fault_commands)
+        stamp += ("\nHAND-BACK GATE SETUP FAULT: these commands could not run the checks in this environment:"
+                  f"{setup_fault_lines}\nThe gate got no test result from these commands; they are not among the "
+                  "failures. The command misses the repo's test runner or virtualenv, or a dependency is not "
+                  "installed. Run the repo's own test command for these files.")
     stamped_input = dict(tool_input)
     stamped_input["message"] = str(tool_input.get("message", "")) + stamp
     return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow",
                                    "updatedInput": stamped_input}}
 
 
-def append_gate_log(result, run=None, seconds=None, failed=None, timed_out=None, agent_run_id=None):
+def append_gate_log(result, run=None, seconds=None, failed=None, timed_out=None, setup_faults=None,
+                    agent_run_id=None):
     # Records one gate event through `ledger-write coder_gate`. The ledger stamps the time and the repo. A failed
     # write prints one stderr line and never changes the verdict.
     if not script_utils.telemetry_switch_on():
         return
 
     fields = {"result": result, "run": run, "seconds": seconds, "failed": failed, "timed_out": timed_out,
-              "agent_run_id": agent_run_id}
+              "setup_faults": setup_faults, "agent_run_id": agent_run_id}
     row = {name: value for name, value in fields.items() if value is not None}
     script_utils.ledger_write("coder_gate", row, "coder-gate: gate row")
 
 
-def log_gate_run(coder, seconds, failed_count, timed_out_count, agent_id):
+def log_gate_run(coder, seconds, failed_count, timed_out_count, setup_fault_count, agent_id):
     agent_run_id = None if agent_id == "unknown" else agent_id
     append_gate_log(coder["result"], run=coder["runs"], seconds=seconds, failed=failed_count,
-                    timed_out=timed_out_count, agent_run_id=agent_run_id)
+                    timed_out=timed_out_count, setup_faults=setup_fault_count, agent_run_id=agent_run_id)
 
 
 def run_hook():
@@ -459,6 +513,8 @@ def run_hook():
         failures, skipped, timed_out = run_commands(gate)
         seconds = round(time.time() - started)
 
+        failures, setup_faults = split_setup_faults(failures, gate["repoRoot"])
+
         agent_id = event.get("agent_id") or "unknown"
         coder = gate["coders"].get(agent_id, {"runs": 0, "denies": 0, "failed": [], "result": "none"})
         coder["runs"] += 1
@@ -466,8 +522,10 @@ def run_hook():
         coder["skipped"] = skipped
         coder["timed_out"] = [command for command, _ in timed_out]
         coder["timed_out_tails"] = {command: output[-TIMEOUT_TAIL_CHARS:] for command, output in timed_out}
+        coder["setup_faults"] = [command for command, _ in setup_faults]
+        coder["setup_fault_tails"] = {command: output[-TIMEOUT_TAIL_CHARS:] for command, output in setup_faults}
         if not failures:
-            coder["result"] = "timeout" if timed_out else "pass"
+            coder["result"] = "setup-fault" if setup_faults else "timeout" if timed_out else "pass"
         elif coder["denies"] >= MAX_DENIES:
             coder["result"] = "cap"
         else:
@@ -476,7 +534,7 @@ def run_hook():
         gate["coders"][agent_id] = coder
         script_utils.write_text_atomically(gate_file, json.dumps(gate, indent=1))
 
-    log_gate_run(coder, seconds, len(failures), len(timed_out), agent_id)
+    log_gate_run(coder, seconds, len(failures), len(timed_out), len(setup_faults), agent_id)
 
     if coder["result"] == "deny":
         print(json.dumps(denial(failures)))

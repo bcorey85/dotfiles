@@ -20,8 +20,8 @@ overlap: "The open escape watches read every review run; this one guards against
 - New `review/review_loop_script.py`, ported from the benched `loop_driver.py`. It writes the hand-back packet, the
   run event, the hand-back store row and the review-loop-gate stop row that the agent's hooks wrote.
 - `code_step_review.emit_review_dispatch` launches the script detached and prints `ACTION: wait`. `resume` waits for
-  its hand-back. A script that exits with no hand-back stops with its log and the `review-again` line. `abort` and
-  `review-again` kill a running script.
+  its hand-back. A script that exits with no hand-back stops with its log and the `review-again` line. `abort`,
+  `review-again` and `start --restart` kill a running script.
 - The full check comes from the repo CLAUDE.md `Quality check` line. Without one, a haiku check-finder reads the
   repo's docs, Makefile, package and CI files. If it names none, the run stops as critical-blocker before any
   reviewer.

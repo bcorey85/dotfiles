@@ -95,6 +95,7 @@ set -euo pipefail
 script_dir=$(dirname -- "${BASH_SOURCE[0]}")
 # shellcheck source=../lib/_kv.sh
 source "$script_dir/../lib/_kv.sh"
+kv_help_exit "${BASH_SOURCE[0]}" "$@"
 
 # --check as the first argument runs every validation below, writes nothing, ignores the
 # telemetry switch and exits 0 when the arguments would be logged.

@@ -1,11 +1,7 @@
 """code_step_restart.py: when `start` may replace an open run, and how it drops one.
 
 Imports run one way: code_step_core, code_step_restart, code_step."""
-from code_step_core import session_pin, state_dir
-
-
-def is_run_open(previous):
-    return previous.get("stage") not in (None, "done")
+from code_step_core import is_run_open, session_pin, state_dir
 
 
 def reopens_stopped_run(previous):

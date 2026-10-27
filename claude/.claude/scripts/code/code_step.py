@@ -41,7 +41,8 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
 
 One coder runs per phase. The current skill's two parallel coders for deliverables that share no file are dropped by
 design.
-Run from the repo root. State lives in <git dir>/code-step/. Env CODE_STEP_CLAUDE_DIR overrides the toolkit folder;
+Run `start` from the repo root; every later verb and `status` goes on in the checkout of the session's open run.
+State lives in <git dir>/code-step/. Env CODE_STEP_CLAUDE_DIR overrides the toolkit folder;
 CODE_STEP_NVIM_JUMP overrides the nvim-jump command.
 Each run also keeps <git dir>/code-step/runs/<run id>/events.jsonl and one prompt-<dispatch id>.txt per dispatch. The
 hooks write only that log; the verbs read it and write state.json.
@@ -58,6 +59,7 @@ import time
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import plan_format
+import script_utils
 from code_step_boundary import (
     command_tick,
     command_verify,
@@ -85,6 +87,7 @@ from code_step_core import (
     dispatch_since,
     emit,
     file_hashes,
+    holds_open_run,
     load_state,
     phase_coder_reports,
     refuse,
@@ -95,6 +98,8 @@ from code_step_core import (
     say,
     script_command,
     sent_message_since,
+    session_open_run_repos,
+    session_pin,
     state_dir,
     stop_review_script,
     stop_with_question,
@@ -589,8 +594,32 @@ def command_status():
     print(json.dumps(state, indent=1) if state else "no code-step state")
 
 
+def enter_run_checkout():
+    # Every verb after `start` runs in the checkout of the session's open run, wherever the shell stands: a run started
+    # in a worktree or another repo keeps every step there. False after a stop.
+    session_id = session_pin()
+    cwd_repo = script_utils.repo_root(os.getcwd())
+    if session_id is None or (cwd_repo is not None and holds_open_run(cwd_repo, session_id)):
+        return True
+
+    open_run_repos = session_open_run_repos(session_id)
+    if len(open_run_repos) > 1:
+        checkout_lines = [f"- {repo}" for repo in open_run_repos]
+        emit("stop", "This session has an open /code run in each of these checkouts, and the current directory is in "
+             "none of them:", *checkout_lines,
+             "Tell the user. On their word, run the verb again from the checkout of the run to go on with: "
+             f"`cd <checkout> && {script_command('status')}` shows that run.")
+        return False
+
+    if open_run_repos:
+        os.chdir(open_run_repos[0])
+    return True
+
+
 def run_status():
     try:
+        if not enter_run_checkout():
+            return
         command_status()
     except StateFileError as error:
         print(error)
@@ -605,10 +634,14 @@ VERB_USAGE = ("usage: code_step.py start|resume|decide|asks-done|skill-done|veri
 
 
 def run_verb(verb, handler, args):
-    clear_question(repo_root_or_exit())
-    if verb in VERBS_THAT_CLEAR_SAY:
-        clear_say(repo_root_or_exit())
     try:
+        if verb != "start" and not enter_run_checkout():
+            return
+
+        clear_question(repo_root_or_exit())
+        if verb in VERBS_THAT_CLEAR_SAY:
+            clear_say(repo_root_or_exit())
+
         if verb in STAGE_GUARDS:
             run_guarded_verb(verb, handler, args)
         else:

@@ -107,7 +107,7 @@ LAYOUTS = (
      lambda level, title: bool(INTENT_SECTIONS.match(title))),
 )
 ASSESSMENT = re.compile(r"Overall Assessment\*{0,2}:?\s*\**(PASS WITH WARNINGS|PASS|NEEDS CHANGES)")
-PROMPT_LANE = re.compile(r"(?im)^[ \t>*`-]*lane[`*]*[ \t]*:[ \t`*]*(eng-spec|code|other|none)\b")
+PROMPT_LANE = re.compile(r"(?im)^[ \t>*`-]*lane[`*]*[ \t]*:[ \t`*]*(eng-spec|code|test-audit|other|none)\b")
 PROMPT_PLAN = re.compile(r"(?im)^[ \t>*`-]*plan[`*]*[ \t]*:[ \t`*]*(\S+?)[`*]*[ \t]*$")
 FINDING_CALL = re.compile(r"log-review-finding\s+kind=finding\b")
 METRICS_CALL = re.compile(r"log-review-metrics\b")

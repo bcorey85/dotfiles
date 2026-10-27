@@ -54,8 +54,7 @@ class LedgerDeferredTest(unittest.TestCase):
         self.assertEqual(75, done.returncode)
         self.assertEqual(
             f"deferred: not read (ledger yield --deferred: {BUSY_LINE} (0 s of pauses)). "
-            "Run `ledger worker --once`, then `~/.claude/scripts/tools/ledger_deferred.py` "
-            "to read the queue.\n", done.stdout)
+            f"Run `ledger worker --once`, then `{SCRIPT.resolve()}` to read the queue.\n", done.stdout)
 
     def test_another_failure_prints_the_ledger_stderr_and_its_exit_code(self):
         self.plant('echo "ledger yield: not inside a git repository" >&2\nexit 3\n')

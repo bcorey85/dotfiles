@@ -405,6 +405,7 @@ class ResumeTest(base.CodeStepTest):
         self.coder_round()
         self.hook("review-loop", BLOCKER_PACKET)
         self.step("resume")
+        self.set_state(stopReason=None)
         self.assertEqual("stopped", self.state()["stage"])
         before = self.state_bytes()
 
@@ -414,6 +415,24 @@ class ResumeTest(base.CodeStepTest):
         self.assertIn(f"`{self.own_command('status')}`", self.said())
         self.assertIn("start --restart", self.said())
         self.assertEqual(before, self.state_bytes())
+
+    def test_a_review_blocker_stop_records_its_reason_and_resume_and_review_again_do_not_point_at_each_other(self):
+        self.coder_round()
+        self.hook("review-loop", BLOCKER_PACKET)
+        self.step("resume")
+        self.assertEqual(("stopped", "review-blocker"), (self.state()["stage"], self.state()["stopReason"]))
+        review_again = self.own_command("review-again")
+
+        resume_out = self.step("resume")
+
+        self.assertIn("ACTION: ask-user", resume_out)
+        self.assertIn(f"`{review_again}`", self.said())
+        self.assertNotIn("Refused", resume_out)
+
+        review_again_out = self.step("review-again")
+
+        self.assertNotIn("Refused", review_again_out)
+        self.assertIn("AGENT: review-loop", review_again_out)
 
     def test_resume_at_a_stop_for_a_guarded_verb_prints_the_state_and_names_that_verb(self):
         self.leave_unreadable_packet()

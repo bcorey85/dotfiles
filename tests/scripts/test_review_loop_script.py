@@ -612,6 +612,39 @@ class ReviewLoopScriptTest(unittest.TestCase):
         coder_calls = [call for call in self.fake_calls() if call["key"] == "coder"]
         self.assertEqual(len(coder_calls), 1)
 
+    RULED_PLAN = ("# Plan\n\n## Automated Verification\n\n- [ ] **Build-verified**: `CARGO_BUILD_JOBS=4 cargo build`\n"
+                  "- [ ] **Lint-clean**: `cargo clippy`\n\n## Constraints\n\n"
+                  "- C1: run builds with `CARGO_BUILD_JOBS=4` while the timing slice runs.\n")
+
+    def test_a_fix_on_a_plan_line_a_ruling_covers_becomes_an_ask(self):
+        self.commit_files({"plan.md": self.RULED_PLAN})
+        drift_review = FIX_REVIEW.replace("`app.py:2` the limit is wrong for `limit`",
+                                          "`plan.md:5` the build line drifted from the plan; restore `cargo build`")
+
+        completed = self.run_script({"code-reviewer": [{"result": drift_review}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual([entry["file_line"] for entry in packet["ask"]], ["plan.md:5"])
+        self.assertIn("ruling", packet["ask"][0]["question"])
+        self.assertEqual(packet["fixed"], [])
+        self.assertNotIn("coder", [call["key"] for call in self.fake_calls()])
+
+    def test_a_fix_on_an_unruled_plan_line_still_goes_to_the_coder(self):
+        self.commit_files({"plan.md": self.RULED_PLAN})
+        lint_review = FIX_REVIEW.replace("`app.py:2` the limit is wrong for `limit`",
+                                         "`plan.md:6` the lint line names the wrong command")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": lint_review}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1."}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["ask"], [])
+        self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 1)
+
     def test_ask_finding_id_reaches_packet_and_stop_row(self):
         ask_review = "## Fix\nNone\n\n## Ask\n- `app.py:3` should the limit be configurable?\n\n## Nit\nNone\n"
 

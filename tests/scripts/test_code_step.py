@@ -2677,6 +2677,35 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("not evaluated", out)
         self.assertTrue(self.refactor_status_line(self.plan_text()).startswith("- [x]"))
 
+    def test_the_gate_leaves_plan_and_doc_folders_out_of_the_counts(self):
+        (self.repo / "docs/plans/T-1").mkdir(parents=True)
+        (self.repo / "docs/plans/T-1/spec.md").write_text("plan line\n" * 700)
+
+        out = self.start_refactor_phase_with_branch_lines("backend/src", 20)
+
+        self.assertIn("largest module backend/src 20 added lines (trigger 100), branch 20 added lines", out)
+        self.assertIn("Not triggered", out)
+
+    FOLDED_GATE_CRITERIA = (
+        "\nSweep.\n\n### Success Criteria\n\n#### Automated Verification\n\n"
+        "- [ ] Quality checks green\n\n"
+        "#### Manual Verification\n\n"
+        "- [ ] **Manual-verified**: no new cast or fallback dodges a root cause; the concentration gate is\n"
+        "  evaluated, with both counts stated\n\n"
+    )
+
+    def test_refactor_skill_done_pass_writes_the_simplify_record_under_a_manual_item_that_names_the_gate(self):
+        self.start_refactor_phase_with_branch_lines("backend/src", 120, self.FOLDED_GATE_CRITERIA)
+
+        out = self.step("skill-done", "pass", "--evidence", "ruff green", "--simplify", "backend/src; concentrated")
+
+        self.assertNotIn("no open concentration-gate item", out)
+        text = self.plan_text()
+        self.assertTrue(self.refactor_status_line(text).startswith("- [x]"))
+        self.assertIn("- [ ] **Manual-verified**: no new cast or fallback dodges a root cause; the concentration gate "
+                      "is\n  evaluated, with both counts stated\n  - Done: simplify backend/src (concentrated)\n", text)
+        self.assertIn("- [x] Quality checks green\n  - Done: ruff green\n", text)
+
     def test_closing_phase_prompt_names_the_open_items_and_the_command(self):
         out = self.start_closing_phase_with_criteria()
 

@@ -15,7 +15,12 @@ import time
 import plan_format
 import reviewed_tree
 import script_utils
-from code_step_concentration import concentration_gate_position, missing_gate_item_lines
+from code_step_concentration import (
+    concentration_gate_position,
+    manual_gate_item_end,
+    missing_gate_item_lines,
+    with_manual_gate_lines,
+)
 from code_step_core import (
     INSTALLED_COMMAND,
     RESUME_LINE,
@@ -891,18 +896,27 @@ def record_closing_evidence(repo_dir, state, evidence, simplify_done_texts, reru
 
     plan_lines = plan_path.read_text().split("\n")
     items, offset = phase_open_items(plan_lines, state["phase"])
-    if stop_for_missing_gate_item(items, simplify_done_texts, rerun_command):
+
+    manual_gate_end = None
+    if simplify_done_texts and concentration_gate_position(items) is None:
+        manual_gate_end = manual_gate_item_end(plan_lines, state["phase"])
+    if manual_gate_end is None and stop_for_missing_gate_item(items, simplify_done_texts, rerun_command):
         return False
+
     if len(items) != len(evidence):
         listing = evidence_request_lines(items) or ["The phase has no open Success Criteria items: run "
                                                     "`skill-done pass` with no `--evidence`."]
         emit("stop", f"skill-done pass got {len(evidence)} --evidence values for {len(items)} open items. Nothing "
              "was changed.", *listing)
         return False
-    if not items:
-        return True
 
     shifted = [{**item, "index": item["index"] + offset, "end": item["end"] + offset} for item in items]
+    if manual_gate_end is not None:
+        plan_lines, shifted = with_manual_gate_lines(plan_lines, shifted, manual_gate_end, simplify_done_texts)
+        simplify_done_texts = ()
+    if not items and manual_gate_end is None:
+        return True
+
     recorded = with_simplify_lines(items, evidence, simplify_done_texts)
     plan_path.write_text("\n".join(plan_format.write_item_evidence(plan_lines, shifted, recorded)))
     return True

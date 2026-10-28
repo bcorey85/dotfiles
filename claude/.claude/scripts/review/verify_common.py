@@ -44,9 +44,6 @@ def script_path(env_name, installed_relative):
 
 # ---------- markdown parsing ----------
 
-heading_level = plan_format.heading_level
-
-
 def raising_verify_error(plan_reader):
     """The reader, with the PlanFormatError it raises raised as a VerifyError."""
     @functools.wraps(plan_reader)
@@ -71,7 +68,7 @@ def parse_criteria_file(text, name="acceptance-criteria.md"):
     manual_entries = []
     in_manual = False
     for number, line in enumerate(text.splitlines(), 1):
-        if heading_level(line):
+        if plan_format.heading_level(line):
             in_manual = bool(re.match(r"^#+\s+manual only", line, re.I))
             continue
         match = ID_LINE.match(line)
@@ -86,29 +83,25 @@ def parse_criteria_file(text, name="acceptance-criteria.md"):
     return entries, manual_entries
 
 
+@raising_verify_error
 def manual_items(plan_text, name):
     """Unchecked Manual Verification items in a plan, tagged human-only from the heading or the item.
 
     The items of a phase moved to another ticket (`[-]` in Phase Status) are not listed: this branch does not owe them.
     The section grammar is plan_format's; a line it does not parse, and a moved line with no ticket key or no Plan
     Deviations line, raise Fail with `name:line`."""
-    try:
-        parsed = plan_format.manual_verification(plan_text, name)
-        moved_ids = {entry["number"] for entry in plan_format.moved_phases(plan_text, name)}
-    except plan_format.PlanFormatError as error:
-        raise VerifyError(str(error)) from error
+    parsed = plan_format.manual_verification(plan_text, name)
+    moved_ids = {entry["number"] for entry in plan_format.moved_phases(plan_text, name)}
     return [{"text": item["text"], "humanOnly": item["humanOnly"]} for item in parsed
             if not item["checked"] and item["phase"] not in moved_ids]
 
 
+@raising_verify_error
 def moved_phase_notes(plan_text, name):
     """One line per phase moved to another ticket: `Phase <id> moved to <KEY>`, with the count of its unchecked Manual
     Verification items, which move with it. [] when no phase is moved."""
-    try:
-        parsed = plan_format.manual_verification(plan_text, name)
-        moved_entries = plan_format.moved_phases(plan_text, name)
-    except plan_format.PlanFormatError as error:
-        raise VerifyError(str(error)) from error
+    parsed = plan_format.manual_verification(plan_text, name)
+    moved_entries = plan_format.moved_phases(plan_text, name)
     notes = []
     for entry in moved_entries:
         unchecked = sum(1 for item in parsed if item["phase"] == entry["number"] and not item["checked"])

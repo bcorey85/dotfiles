@@ -561,7 +561,8 @@ def finish_planless(repo_dir, state):
     commit_text, _, _ = phase_commit(repo_dir, state)
     if commit_text:
         say(repo_dir, commit_text)
-    emit("stop", "Planless task reviewed. Tell the user the result.")
+    commit_note = " Nothing is committed: run the commit command above." if commit_text else ""
+    emit("stop", f"Planless task reviewed.{commit_note} Tell the user the result.")
 
 
 def load_finishing_plan(repo_dir, state):

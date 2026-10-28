@@ -352,8 +352,12 @@ def date_dispatch_now_and_launch(repo):
 def apply_plan_edit_outcome(repo, name, plan_path):
     if name == "plan-not-edited":
         return
-    plan_file = repo / plan_path
-    plan_file.write_text(plan_file.read_text().replace("Add orders.", "Add orders, with the adopted change."))
+    if plan_path is None:
+        # A planless run has no plan file: the coder edits the branch's plan doc.
+        write_text(repo, "docs/plans/orders-notes.md", "# Orders\n\nAdd orders, with the adopted change.\n")
+    else:
+        plan_file = repo / plan_path
+        plan_file.write_text(plan_file.read_text().replace("Add orders.", "Add orders, with the adopted change."))
     if name == "plan-edited-and-stray-file":
         write_text(repo, "backend/src/stray.ts", "export const s = 1\n")
 

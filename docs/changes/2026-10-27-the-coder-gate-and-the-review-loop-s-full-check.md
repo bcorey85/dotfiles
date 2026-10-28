@@ -3,7 +3,7 @@ type: "Change"
 title: "The coder gate and the review loop's full check run the repo's own test command"
 description: "The hand-back gate runs the plan phase's listed test commands verbatim instead of a bare pytest, vitest or jest it builds itself; a run that found no test or no package manifest is a setup fault, not a code failure; the full check stops as setup-fault with no coder repair; failure text keeps the failing test's name; a round-two prompt goes on stdin."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T21:03:12-05:00"}
-seq: 148
+seq: 152
 kind: "fix"
 components: ["script/code-step", "script/coder-gate", "script/review-loop-script", "script/handback", "script/review-fix", "agent/review-loop", "skill/coder-core"]
 evidence: ["judgment"]

@@ -3,7 +3,7 @@ type: "Change"
 title: "herdr-phase-change sends the next phase's prompt only after /clear takes effect"
 description: "An orchestrator sent a worker /clear and then /code as two herdr agent prompt calls with a wait between them. The worker was already done, so the wait returned at once, and the pane got one input, /clear/code ..., which ran on the full eng-spec context. A new herdr-phase-change script sends /clear, waits for herdr to report a new session id for the pane, and only then sends the prompt. If the id does not change in time it sends nothing more and exits 1. The orchestration rules name the script for every phase change."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T04:20:34-05:00"}
-seq: 164
+seq: 172
 kind: "fix"
 components: ["script/herdr-phase-change", "rule/orchestration"]
 evidence: ["judgment"]

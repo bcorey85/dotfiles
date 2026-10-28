@@ -146,8 +146,8 @@ class ReviewFixScriptTest(unittest.TestCase):
     def git(self, *args):
         subprocess.run(["git", *args], cwd=self.repo, env={**os.environ, **GIT_ENV}, check=True, capture_output=True)
 
-    def run_script(self, args, stdin="", **extra):
-        done = subprocess.run(["python3", "-I", str(SCRIPT), *args], cwd=self.repo, input=stdin, text=True,
+    def run_script(self, args, stdin="", cwd=None, **extra):
+        done = subprocess.run(["python3", "-I", str(SCRIPT), *args], cwd=cwd or self.repo, input=stdin, text=True,
                               capture_output=True, env=self.environment(**extra))
         return done.returncode, done.stdout + done.stderr
 
@@ -403,6 +403,19 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("stop-usage", output)
 
     # ---------- asks ----------
+
+    def test_asks_done_from_another_repo_names_the_directory_it_looked_in(self):
+        other_repo = self.temp_root / "otherrepo"
+        other_repo.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=other_repo, env={**os.environ, **GIT_ENV}, check=True,
+                       capture_output=True)
+        self.packet(WITH_ASK)
+
+        code, output = self.run_script(["asks-done", "accepted", "rejected"], cwd=other_repo)
+
+        self.assertEqual(code, 2, output)
+        self.assertIn(f"no packet was processed in {other_repo}/.git/review-fix", output)
+        self.assertIn("run this call there", output)
 
     def test_asks_are_jumped_listed_and_logged_with_their_outcomes(self):
         code, output = self.packet(WITH_ASK, "--scope", "branch-exit")

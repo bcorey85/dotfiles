@@ -38,10 +38,13 @@ from script_utils import first_number, one_line, unquote
 STATUSES = ["converged", "deferred", "plan-impact", "critical-blocker", "cap-reached", "setup-fault"]
 CLEAN_STATUSES = ("converged", "deferred")
 PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers", "findings_remaining", "plan_impact",
-               "ask", "class_closure", "full_check", "files_touched", "nit", "load_bearing_clean",
-               "tool_fault", "blocked_agents"]
-LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched", "blocked_agents"]
-SCALAR_KEYS = ("status", "iter", "spec_iter", "full_check", "load_bearing_clean", "tool_fault")
+               "ask", "class_closure", "full_check", "full_check_command", "full_check_summary", "files_touched",
+               "check_changed", "check_rewrote_edited", "check_created", "nit", "load_bearing_clean", "tool_fault",
+               "blocked_agents"]
+LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched", "check_changed",
+             "check_rewrote_edited", "check_created", "blocked_agents"]
+SCALAR_KEYS = ("status", "iter", "spec_iter", "full_check", "full_check_command", "full_check_summary",
+               "load_bearing_clean", "tool_fault")
 # The list fields whose entries validate turns into mappings, and the key a plain-text entry's text goes under.
 ENTRY_TEXT_KEYS = {"fixed": "finding", "skipped_fp": "item", "findings_remaining": "finding", "ask": "question"}
 # The field each status requires, and the word for its absence. cap-reached says "missing" when the key is absent.
@@ -206,7 +209,8 @@ def flow_item(chunk):
 
 def split_top_level_items(body):
     """Split a list body at its item markers. A marker indented deeper than the shallowest one is a sub-bullet:
-    it stays inside its parent item. Chunk 0 is the lead prose before the first marker."""
+    it stays inside its parent item, and so does a marker of the other kind (bullet or numbered) at the shallowest
+    indent. Chunk 0 is the lead prose before the first marker."""
     markers = list(ITEM_START.finditer(body))
     if not markers:
         return [body]
@@ -215,8 +219,12 @@ def split_top_level_items(body):
         marker_line = marker.group(0).rsplit("\n", 1)[-1]
         return len(marker_line) - len(marker_line.lstrip())
 
+    def is_bullet(marker):
+        return marker.group(0).lstrip().startswith("-")
+
     shallowest = min(indent_of(marker) for marker in markers)
-    top_level = [marker for marker in markers if indent_of(marker) == shallowest]
+    first_kind = is_bullet(next(marker for marker in markers if indent_of(marker) == shallowest))
+    top_level = [marker for marker in markers if indent_of(marker) == shallowest and is_bullet(marker) == first_kind]
     chunks = []
     position = 0
     for marker in top_level:
@@ -224,6 +232,18 @@ def split_top_level_items(body):
         position = marker.end()
     chunks.append(body[position:])
     return chunks
+
+
+def mapping_with_trailing_lines(chunk):
+    """A mapping followed by more lines of the same item: the lines add to its question,
+    or to its finding when it has no question."""
+    groups = script_utils.top_level_braces(chunk)
+    trailing = chunk[len(groups[0]):].strip() if groups and chunk.startswith(groups[0]) else ""
+    flow_fields = parse_flow_mapping(groups[0]) if trailing else None
+    if flow_fields:
+        key = "question" if "question" in flow_fields else "finding"
+        flow_fields[key] = f"{flow_fields.get(key, '')}\n{trailing}".strip()
+    return flow_fields
 
 
 def read_list(raw):
@@ -252,6 +272,8 @@ def read_list(raw):
         if not chunk:
             continue
         flow_fields = parse_flow_mapping(chunk) if chunk.startswith("{") and chunk.endswith("}") else None
+        if chunk.startswith("{") and not flow_fields:
+            flow_fields = mapping_with_trailing_lines(chunk)
         if flow_fields:
             list_entries.append(flow_fields)
             continue
@@ -403,6 +425,8 @@ def read_header(raw):
     header = {"status": status, "iter": iter_round, "spec_iter": spec_iter,
               "class_closure": raw.get("class_closure", "").strip(),
               "full_check": raw.get("full_check", "").strip(),
+              "full_check_command": raw.get("full_check_command", "").strip(),
+              "full_check_summary": raw.get("full_check_summary", "").strip(),
               "load_bearing_clean": raw.get("load_bearing_clean", "").strip(),
               "tool_fault": raw.get("tool_fault", "").strip(),
               "plan_impact": raw.get("plan_impact", "").strip()}
@@ -540,6 +564,24 @@ def unreviewed_fix_section(packet):
             [f"- No reviewer ran after the loop's last fix. Its files are among: {named_paths}"])
 
 
+def full_check_lines(packet):
+    """The full check's lines for the user: a check that did not run or ran unverified, and the files it changed or
+    created."""
+    lines = []
+    if packet["full_check"].startswith(("not run", "unverified")):
+        lines.append("Full check: " + packet["full_check"])
+    if packet["check_changed"]:
+        lines.append("Changed by the full check, not by the coder (restore with `git checkout --` or keep): "
+                     + ", ".join(packet["check_changed"]))
+    if packet["check_rewrote_edited"]:
+        lines.append("Hold coder edits and a full check rewrite, so review them (do not restore): "
+                     + ", ".join(packet["check_rewrote_edited"]))
+    if packet["check_created"]:
+        lines.append("Created by the full check, not by the coder (delete or keep): "
+                     + ", ".join(packet["check_created"]))
+    return lines
+
+
 def render(packet, skill, sections=()):
     """The user-facing text. `sections` are (heading, lines) pairs placed before the trailer."""
     lines = ["### Fixed"]
@@ -556,8 +598,7 @@ def render(packet, skill, sections=()):
         if skill == "review" and packet["status"] == "converged" and owes_receipt and receipt_is_missing(closure):
             lines.append("The class-closure receipt is missing or names no repaired finding. Do not present this "
                          "run as clean.")
-    if packet["full_check"].startswith("not run"):
-        lines.append("Full check: " + packet["full_check"])
+    lines += full_check_lines(packet)
     load_bearing = packet["load_bearing_clean"]
     if load_bearing and load_bearing.lower() not in ("none", "omitted"):
         lines.append("Load-bearing: " + load_bearing)
@@ -802,7 +843,7 @@ def unchecked_code_reason(event, session_id, agent_id, message):
     try:
         import review_loop_gate  # imports this module at its top, so it loads here, not at ours
         transcript = review_loop_gate.LoopTranscript(script_utils.agent_transcript_path(event))
-        in_ci = review_loop_gate.full_suite_in_ci(event.get("cwd"))
+        in_ci = review_loop_gate.full_suite_in_ci(transcript, event.get("cwd"))
         ungated, _open_dispatches = review_loop_gate.scan(transcript, message, in_ci)
         last_step = review_loop_gate.last_code_step(transcript)
     except Exception as error:

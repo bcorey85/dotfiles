@@ -45,9 +45,8 @@ mark.
 
 ```
 each iteration:
-  1. check cap   → if iter >= 2: no full review → the cap exit (Step 5c), WITHOUT dispatching a reviewer
-     the cap stops a reviewer, never a coder: a second-round `fix` finding got its coder in step 5 before this check,
-     and only the execution gate (Step 6) reads that coder's diff
+  1. check cap   → if iter >= 2: no full review → the cap exit (Step 5c); a coder change after the last reviewer gets one scoped reviewer (see Rules)
+     the cap stops a reviewer, never a coder: a second-round `fix` finding got its coder in step 5 before this check
   2. dispatch reviewer → `iter++` at the dispatch, whatever it returns
      first round only: on a large diff, the structure reviewer and the test-reviewer go out in the SAME message (Step 3a)
      later rounds: re-review by every reviewer that filed a `fix` last round
@@ -161,8 +160,7 @@ Record every resolved finding into `fixed[]` as `{finding, file_line, blocker}` 
 
 **PLAN-IMPACT pass-through**: scan each coder report for a `PLAN-IMPACT:` block (`coder-core` requires `PLAN-IMPACT: yes` as the report's last line when one exists). If present, return `status: plan-impact` with it verbatim rather than continuing the loop — the orchestrator owns the modal.
 
-Build `prior-issues` from the coder report as Step 5b does, add the coder's changed files to the next review's scope, then re-enter step 1. If no full review follows, only the execution gate (Step 6) reads this fix diff.
-
+Build `prior-issues` from the coder report as Step 5b does, add the coder's changed files to the next review's scope, then re-enter step 1.
 **Docs-only fixes end the loop.** When every finding the coder applied — each `fix` and each applied small item — carries class `docs`, dispatch no further review. Go to Step 6.
 
 ## Step 5b: `mode: fix-first`
@@ -208,6 +206,10 @@ Steps 7 and 7b. Unless one of those returns first, return `status: deferred` if
 `findings_remaining` holds a finding, else `status: converged`. At `iter >= 2`
 the `fix` findings of a gate failure get one coder per invocation: after the
 repair, run the gate once more; a second failure returns `status: critical-blocker`, or `status: setup-fault` when the gate could not run.
+Exception to "no full review": when any coder (a second-round fix coder, or a gate-repair coder before its gate re-run)
+changed files after the last reviewer, dispatch one reviewer scoped to the changed files (not a full review). Its `fix`
+findings get no coder: they go to `findings_remaining` and the status is `cap-reached`. If that reviewer cannot run,
+return `status: cap-reached` with `findings_remaining` naming the unreviewed files.
 
 ## Step 6: Convergence — the execution gate
 
@@ -217,12 +219,15 @@ repair, run the gate once more; a second failure returns `status: critical-block
 
 `<branch>` is the `BRANCH` from Step 0 with each `/` as `-`, written literally. Other sessions write to `/tmp` too, so never use a name without the branch. A handoff `tests-run` never exempts it: that run covered only the changed files. Copy the result on the script's first line into the packet's `full_check`:
 - `passed` → proceed.
-- `failed (exit N)` → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above. A missing module the repo does not declare as a dependency is a code failure and gets one coder repair.
-- `setup fault (exit N)` → the check could not run here (no program, a runner that cannot start, no package manifest, no test found). Return `status: setup-fault` with the printed lines in `blockers`; dispatch no coder.
+- `unverified (exit 0, no runner summary)` → the command exited 0 but printed no test runner summary, so no test is known to have run. No finding; proceed. Never call it a pass.
+- `failed (exit N)`, or `failed (exit 0, summary reports failures)` → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above. A missing module from outside the repo that the repo's dependency files do not declare is a code failure and gets one coder repair.
+- `setup fault (exit N)` → the check could not run here (no program, a runner that cannot start, no package manifest, no test found, a package-manager or engine version mismatch). Return `status: setup-fault` with the printed lines in `blockers`; dispatch no coder.
 - `not run (timeout)` → no finding. Proceed.
 - `not run (environment gap: No module named 'X')` → the check's interpreter lacks a module the repo declares as a dependency. No finding; never a blocker. Proceed.
 - `not run (check-command error: <line>)` → a step of the command stopped on a path that does not exist. No finding. Proceed.
 - `not run (CI)` → the repo's CLAUDE.md holds `Full suite: CI`. Run the tests of the files this phase changed, by name, once, redirected to the same log. A failure there is a `fix` finding carrying `blocker`.
+
+Any test count you report comes from the script's `summary:` line, never from other output. Call a run the full suite only when it ran the CLAUDE.md quality-check command; name any other run by its exact command. Paths on the `changed by the check:` and `created by the check:` lines are the check's own writes, left in place: neither goes in `files_touched`. Paths on `rewrote edited files:` hold coder edits the check then rewrote: they stay in `files_touched`. A path an earlier run in this invocation named on `changed by the check:` or `created by the check:` stays there unless a coder edited it.
 
 When neither CLAUDE.md nor the repo's task runners or CI config name a full check, do not run the script: set `full_check` to `not run (no check found; the coder's scoped tests stand)` and proceed.
 
@@ -286,7 +291,12 @@ findings_remaining: [{disposition, finding, file_line}]  # status=deferred | cap
 plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
 ask: [{finding, file_line, question, change, gate, class}]  # never auto-fixed; the user answers these; change is the one edit an accepted answer makes; gate/class ride along so the caller can log the outcome. Log each ask row with the same file and line as its file_line; the caller reads the id from that row, so leave finding_id out
 class_closure: <the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a — fixed[] empty>
-full_check: passed | failed (exit N) | setup fault (exit N) | not run (CI) | not run (timeout) | not run (check-command error: <line>) | not run (no check found; the coder's scoped tests stand) | not run (environment gap: <line>)  # the Step 6 result
+full_check: passed | unverified (exit 0, no runner summary) | failed (exit N) | failed (exit 0, summary reports failures) | setup fault (exit N) | not run (CI) | not run (timeout) | not run (check-command error: <line>) | not run (no check found; the coder's scoped tests stand) | not run (environment gap: <line>)  # the Step 6 result
+full_check_command: <the exact command full_check.py ran>
+full_check_summary: <the script's `summary:` line>  # passed | unverified only
+check_changed: [<path>]                  # the `changed by the check:` paths from every full_check.py run in this invocation
+check_rewrote_edited: [<path>]           # the `rewrote edited files:` paths from every full_check.py run in this invocation
+check_created: [<path>]                  # the `created by the check:` paths from every full_check.py run in this invocation
 files_touched: [<path>]
 nit: [<one line each>]                   # a small item ends `applied` or `skipped: <reason>`
 load_bearing_clean: <one line, or omitted>
@@ -301,9 +311,11 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 ## What NOT to do
 
 - **Never write a file yourself**: no `>`, no `>>`, no `tee`, no `sed -i`, no heredoc. Every source change goes through a coder dispatch; the only writes you cause are the helper scripts under `~/.claude/skills/review/`. If none fits, say so in the packet and stop.
+- **Never write a ledger row anywhere but through its logger.** Call `~/.claude/skills/review/log-review-finding` by that full path; it is not on PATH. If the call fails, add `ledger: <its error line>` to `nit` and go on; never write the row to a file of your own.
 - **Never put the plan file in `files_touched`, and never let a coder edit it.** The plan changes only through a plan-edit dispatch from the caller. A finding that needs a plan change returns as `status: plan-impact`. The hand-back hook denies a packet that names the plan file.
 - **Never run `review-gate-mark`.** The clean mark belongs to your CALLER.
 - **Never emit a response that holds text and no tool call** — the orchestrator sees only the packet. The two exceptions are the turn straight after a dispatch stub and the final packet.
 - **Never return `converged` with an empty `fixed[]` when a fix coder of this invocation repaired a finding.**
+- **Never return `converged` or `deferred` when a coder changed files after the last reviewer ran (a `no-review` invocation and a docs-only fix that ends the loop excepted).** Past the round budget, run one more reviewer on those files, or return `status: cap-reached` with `findings_remaining` naming the unreviewed files. The extra reviewer's `fix` findings get no coder: they go to `findings_remaining` and the status is `cap-reached`.
 - **Never poll for a dispatched subagent.** After the launch stub, end your response. The result arrives as a notification that re-invokes you. No `sleep`, no `until` loop, no `echo waiting`.
 - **Independent tool calls go in one response.** Batch them whenever neither call's input depends on the other's output — every log call of Steps 7 and 7b in one response.

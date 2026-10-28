@@ -25,9 +25,10 @@ gate result to the hand-back message, so the caller reads the report as final. T
 with the last 600 characters of its output, and says that the gate got no result from it: the command is too broad,
 or a test hangs. A failure that shows the environment cannot run the check (exit 126 or 127, a runner that cannot
 start the program, no package manifest where it ran, a run that found no test to run, a `manage.py test` run that
-exits 0 after running none, a missing module from outside the repo with no failed test, or, under pytest, a Django
-settings error with no failed test unless the coder changed a settings module or an app config) is a setup fault: it
-never denies the call or counts toward the cap, a run with only setup faults has the result "setup-fault", and the
+exits 0 after running none, a package-manager or engine version mismatch, a missing module from outside the repo with
+no failed test, or, under pytest, a Django settings error with no failed test unless the coder changed a settings
+module or an app config) is a setup fault: it never denies the call or counts toward the cap, a run with only setup
+faults has the result "setup-fault", and the
 stamp names each one with its output tail. A denial lists the failing tests above the output tail. With no gate, a gate
 older than 6 hours or another agent type, the hand-back goes through untouched. Parallel coders take turns.
 A failure whose output names a path that does not exist where the command ran (pytest's `file or directory not
@@ -281,8 +282,8 @@ def stamped_handback(tool_input, coder):
         stamp += ("\nHAND-BACK GATE SETUP FAULT: these commands could not run the checks in this environment:"
                   f"{setup_fault_lines}\nThe gate got no test result from these commands; they are not among the "
                   "failures. The command misses the repo's test runner or virtualenv, or a dependency is not "
-                  "installed, or no package manifest is where it ran, or it ran no test. Run the repo's own test "
-                  "command for these files.")
+                  "installed, or no package manifest is where it ran, or it ran no test, or the package-manager "
+                  "or engine version does not match. Run the repo's own test command for these files.")
     command_error_lines = coder.get("command_error_lines", {})
     if command_error_lines:
         error_lines = "".join(f"\n  `{command}`: {line}" for command, line in command_error_lines.items())

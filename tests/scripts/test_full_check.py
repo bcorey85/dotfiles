@@ -21,13 +21,84 @@ class FullCheckTest(unittest.TestCase):
         self.repo = pathlib.Path(scratch.name)
         self.log = self.repo / "review-gate.log"
 
-    def check(self, command, claude_md=None, timeout=None):
+    def check(self, command, claude_md=None, timeout=None, env=None):
         if claude_md is not None:
             (self.repo / "CLAUDE.md").write_text(claude_md)
         argv = [sys.executable, "-B", str(SCRIPT), str(self.repo), "--log", str(self.log)]
         if timeout is not None:
             argv += ["--timeout", str(timeout)]
-        return subprocess.run([*argv, "--", command], capture_output=True, text=True, timeout=60)
+        return subprocess.run([*argv, "--", command], capture_output=True, text=True, timeout=60, env=env)
+
+    def pyenv_root_with_a_python3_shim(self):
+        pyenv_root = self.repo / "pyenv-root"
+        shim = pyenv_root / "shims" / "python3"
+        shim.parent.mkdir(parents=True)
+        shim.write_text("#!/bin/sh\necho pinned python3\n")
+        shim.chmod(0o755)
+        return pyenv_root
+
+    def test_a_repo_with_a_python_version_file_runs_python3_through_the_pyenv_shims(self):
+        (self.repo / ".python-version").write_text("3.12.4\n")
+        pyenv_root = self.pyenv_root_with_a_python3_shim()
+
+        completed = self.check("python3", env={**os.environ, "PYENV_ROOT": str(pyenv_root)})
+
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: passed", completed.stdout)
+        self.assertEqual(self.log.read_text(), "pinned python3\n")
+
+    def test_a_repo_with_no_python_version_file_keeps_the_path_as_it_is(self):
+        pyenv_root = self.pyenv_root_with_a_python3_shim()
+
+        self.check("command -v python3", env={**os.environ, "PYENV_ROOT": str(pyenv_root)})
+
+        self.assertNotIn(str(pyenv_root), self.log.read_text())
+
+    def missing_module_check(self, module):
+        return self.check(f"echo \"ModuleNotFoundError: No module named '{module}'\"; exit 1")
+
+    def test_a_missing_declared_module_is_an_environment_gap_not_a_failure(self):
+        (self.repo / "requirements-dev.txt").write_text("# dev tools\n-r requirements.txt\nruff==0.6.9\n")
+
+        completed = self.missing_module_check("ruff")
+
+        self.assertEqual(completed.returncode, 0, completed.stdout)
+        self.assertEqual(completed.stdout.splitlines()[0],
+                         "full check: not run (environment gap: No module named 'ruff')")
+
+    def test_a_missing_undeclared_module_is_a_failure(self):
+        (self.repo / "requirements.txt").write_text("flask>=3\n")
+
+        completed = self.missing_module_check("requests")
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: failed (exit 1)")
+
+    def test_each_dependency_file_shape_declares_its_modules_by_normalized_name(self):
+        dependency_files = {
+            "pyproject.toml": ('[project]\ndependencies = ["Typing_Extensions>=4"]\n'
+                               '[project.optional-dependencies]\ndev = ["pytest-cov"]\n'
+                               '[dependency-groups]\nlint = ["mypy", {include-group = "test"}]\n'
+                               '[tool.poetry.group.docs.dependencies]\nsphinx = "^7"\n'),
+            "setup.cfg": "[options]\ninstall_requires =\n    attrs>=23\n[options.extras_require]\nyaml = PyYAML\n",
+            "Pipfile": '[packages]\nrich = "*"\n[dev-packages]\nblack = "*"\n',
+        }
+        for name, text in dependency_files.items():
+            (self.repo / name).write_text(text)
+
+        for module in ("typing_extensions", "pytest_cov", "mypy", "sphinx.ext", "attrs", "yaml", "rich", "black"):
+            with self.subTest(module=module):
+                completed = self.missing_module_check(module)
+
+                expected = "full check: not run" if module != "yaml" else "full check: failed"
+                self.assertTrue(completed.stdout.startswith(expected), completed.stdout)
+
+    def test_a_missing_module_of_the_repo_itself_is_a_failure(self):
+        (self.repo / "orders").mkdir()
+
+        completed = self.missing_module_check("orders.totals")
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: failed (exit 1)")
 
     def test_a_passing_check_prints_passed(self):
         completed = self.check("echo ok")

@@ -9,13 +9,14 @@ scope, first-round reviewers (code, plus smell and test reviewers on a large dif
 re-review by every reviewer that filed a fix and owns a changed file (the smell reviewer only past the size bar), the
 two-round cap, the full-check execution gate, the class-closure check, telemetry rows, and the hand-back packet.
 The full check runs through full_check.py: none in a repo whose CLAUDE.md holds `Full suite: CI`, where the coder
-calls run the changed files' tests, and a check past CHECK_TIMEOUT_SECONDS is killed with its process group. Either
-is no failure: the packet's `full_check` says `not run (CI)` or `not run (timeout)`.
+calls run the changed files' tests, none in a repo where no check is found, and a check past CHECK_TIMEOUT_SECONDS is
+killed with its process group. None is a failure: the packet's `full_check` says `not run (CI)`,
+`not run (no check found; ...)` or `not run (timeout)`.
 
 Model steps are `claude -p` calls in auto permission mode, each with CLAUDE_FORMAT_HOOK_OFF=1 in its environment: the
 reviewers (agents code-reviewer, smell-reviewer, test-reviewer), the fix coder (agent coder) and the class-closure
 judgment (Sonnet). When the repo CLAUDE.md names no `Quality check` line, a Haiku check-finder call names the full
-check; when it names none, the run stops as critical-blocker before any reviewer. A Sonnet disposition call runs
+check; when it names none, the review runs with no full check. A Sonnet disposition call runs
 only when a reviewer's output has no Fix/Ask/Nit sections the parser can read. Every call is logged to
 <state dir>/loop-script/<agent id>/calls.jsonl with its session id, role, wall time and token counts.
 
@@ -439,8 +440,8 @@ def coder_prompt(repo, findings, small_items, files, gate_env=()):
 
 def check_command_for(repo, out):
     """The repo's full check: a CLAUDE.md `Quality check: \\`<command>\\`` line, else what a haiku call reads from the
-    repo's docs, task runners and CI config. None when CI runs the repo's full suite: full_check.run then runs
-    nothing."""
+    repo's docs, task runners and CI config. None when CI runs the repo's full suite or the finder names no check:
+    full_check.run then runs nothing."""
     if full_check.full_suite_runs_in_ci(repo):
         return None
 
@@ -460,7 +461,9 @@ def check_command_for(repo, out):
         command = parsed.get("command")
         if isinstance(command, str) and command.strip():
             return command.strip()
-        raise ValueError(f"no full check found in {repo}: {parsed.get('reason') or 'the check finder named none'}")
+        print(f"review-loop-script: no full check found in {repo}: "
+              f"{parsed.get('reason') or 'the check finder named none'}", file=sys.stderr)
+        return None
     raise ValueError(f'the check-finder reply holds no {{"command": ..}} object: {reply!r}')
 
 

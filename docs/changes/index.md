@@ -25,6 +25,7 @@ okf_version: "0.2"
 
 # 2026-10-27
 
+* [A repo with no check found is reviewed, and the hand-back says no full check ran](2026-10-27-a-repo-with-no-check-found-is-reviewed.md) - When neither CLAUDE.md nor the check finder names a full check, the review loop runs its review with the coder's scoped tests standing as the check, and the packet's full_check says so, in place of a critical-blocker stop that a restart only repeats.
 * [A /code fork replies at once to a mid-run scope message](2026-10-27-a-code-fork-replies-at-once-to-a-mid-run-scope-message.md) - The /code skill says a run takes no scope change mid-run: the fork replies to the sender with SendMessage at once and never passes the message on.
 * [A live review loop script past the wait cap keeps the wait going](2026-10-27-a-live-review-loop-script-past-the-wait-cap.md) - /code counts a running review loop script's wait cap from its last calls.jsonl or full-check.log write, and its cap stop says the script is still running, not that it died.
 * [A coder escalates to /eng-spec only through a marker line](2026-10-27-a-coder-escalates-to-eng-spec-only-through-a-marker.md) - code_step stops a run for /eng-spec only on a `RECOMMEND: eng-spec` line, so a coder report that says no /eng-spec is needed goes on to review.

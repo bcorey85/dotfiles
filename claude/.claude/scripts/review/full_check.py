@@ -6,8 +6,8 @@
 Runs the command, given as one quoted word or as plain words, through the shell in the repo, output to the log, and
 prints `full check: <result>` first: `passed`, `failed (exit N)` with the log's last lines after it,
 `not run (timeout)` when the command runs past the limit, or `not run (CI)` when the repo's CLAUDE.md holds the line
-`Full suite: CI` (the command does not run then). A command past the limit is killed with its whole process group,
-so no test process outlives the check.
+`Full suite: CI` (the command does not run then). `run` with no command returns `not run (no check found; ...)`.
+A command past the limit is killed with its whole process group, so no test process outlives the check.
 Exit 0, or 1 when the check failed.
 """
 
@@ -25,6 +25,7 @@ LIST_MARKER = re.compile(r"^\s*[-*]\s+")
 PASSED = "passed"
 NOT_RUN_CI = "not run (CI)"
 NOT_RUN_TIMEOUT = "not run (timeout)"
+NOT_RUN_NO_CHECK = "not run (no check found; the coder's scoped tests stand)"
 # Under the Bash tool's 600 s ceiling, so a loop's shell call ends before the tool moves it to the background.
 DEFAULT_TIMEOUT_SECONDS = 540
 TAIL_LINES = 40
@@ -45,6 +46,8 @@ def run(repo, check_command, log, timeout, env=None, on_start=None):
     of the process group the check leads."""
     if full_suite_runs_in_ci(repo):
         return NOT_RUN_CI, ""
+    if check_command is None:
+        return NOT_RUN_NO_CHECK, ""
 
     with pathlib.Path(log).open("w") as handle:
         process = subprocess.Popen(check_command, shell=True, cwd=repo, stdout=handle, stderr=subprocess.STDOUT,

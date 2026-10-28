@@ -206,10 +206,13 @@ class TestAuditRowTest(LoggerRepoCase):
         self.assertNotIn("path_key", finding_row)
         self.assertNotIn("line", finding_row)
 
-    def test_an_unlocated_finding_with_a_line_is_refused(self):
-        self.log([*TEST_AUDIT_FINDING_ARGS, "file=unlocated", "line=4"], expected_exit=1)
+    def test_an_unlocated_finding_with_a_line_is_sent_without_the_line_and_warns(self):
+        done = self.log([*TEST_AUDIT_FINDING_ARGS, "file=unlocated", "line=4"])
 
-        self.assertEqual(fake_ledger.recorded_rows(self.ledger_env, "review_finding"), [])
+        (finding_row,) = fake_ledger.recorded_rows(self.ledger_env, "review_finding")
+        self.assertNotIn("path_key", finding_row)
+        self.assertNotIn("line", finding_row)
+        self.assertIn("line=4 dropped", done.stderr)
 
     def test_a_test_intent_finding_with_line_0_or_no_file_is_refused(self):
         for location_args in (["file=src/app.test.ts", "line=0"], ["line=12"]):

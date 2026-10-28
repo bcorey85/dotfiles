@@ -20,6 +20,7 @@ from code_step_core import (
     RESUME_VERB,
     REVIEW_LOOP,
     REVIEW_LOOP_SCRIPT,
+    REVIEW_SCRIPT_AGENT_PREFIX,
     ask_user,
     awaited_agent_id,
     awaited_handback,
@@ -509,7 +510,7 @@ def launch_review_script(repo_dir, state, prompt):
     prompt = prompt_with_gate_env(repo_dir, state, prompt)
     marked_prompt, _dispatch_prompt_file = record_dispatch(repo_dir, state, RESUME_VERB, REVIEW_LOOP, "script", prompt)
     _run_id, dispatch_id = dispatch_marker(marked_prompt)
-    agent_id = f"loop-script-{state['runId']}-{dispatch_id}"
+    agent_id = f"{REVIEW_SCRIPT_AGENT_PREFIX}{state['runId']}-{dispatch_id}"
     session_id = run_session_id(state)
     module.record(session_id, "dispatch", no_review=False)
 

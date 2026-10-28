@@ -33,6 +33,8 @@ VENV_DIRECTORIES = (".venv", "venv")
 SHELL_OPERATORS = {"&&", "||", ";", "|", "&"}
 ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 DJANGO_TEST_FILE = re.compile(r"(^|/)test[^/]*\.py$")
+# `manage.py test` asks before it deletes a test database a killed run left behind; the gate has no one to answer.
+NO_INPUT_OPTIONS = {"--noinput", "--no-input"}
 PYTEST_DJANGO_SETTINGS = re.compile(r"DJANGO_SETTINGS_MODULE|--ds\b", re.IGNORECASE)
 
 
@@ -229,7 +231,8 @@ def python_test_command(runner, test_paths, django_options, manage_script="manag
 
     python_words = runner[:-1] if runner[-1:] == ["-m"] else [*runner, "python"]
     labels = [django_test_label(path, manage_dir) for path in labeled_paths]
-    return shlex.join([*python_words, manage_script, "test", *labels, *django_options])
+    prompt_options = [] if NO_INPUT_OPTIONS & set(django_options) else ["--noinput"]
+    return shlex.join([*python_words, manage_script, "test", *labels, *django_options, *prompt_options])
 
 
 def python_commands(repo_dir, paths, listed_runner=None, listed_django=None, phase_lists_pytest=False, *,

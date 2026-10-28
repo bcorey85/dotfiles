@@ -17,6 +17,7 @@ from code_step_boundary import (
     stop_while_plan_edit_coder_is_out,
     verification_format_failure,
 )
+from code_step_concentration import REFACTOR_SKILL, concentration_gate, gate_lines, simplify_option
 from code_step_core import (
     INSTALLED_COMMAND,
     RESUME_LINE,
@@ -636,7 +637,9 @@ def start_closing_phase(repo_dir, plan_rel, lane, modifier, entry, skill, sectio
 
 def emit_closing_skill(repo_dir, plan_rel, number, title, skill, section):
     open_items = plan_format.open_success_items(section.split("\n")) if section else []
-    pass_command = evidence_command_shape(len(open_items))
+    is_refactor = skill == REFACTOR_SKILL
+    gate = concentration_gate(repo_dir) if is_refactor else None
+    pass_command = evidence_command_shape(len(open_items)) + simplify_option(gate)
     verdict_step = (f"run `{pass_command}` when the phase's Success "
                    "Criteria hold, or `skill-done fail --finding \"<one line>\"` (one `--finding` per open finding) "
                    "when they do not (for the Verify pass, any MISSING criterion fails it)")
@@ -645,6 +648,7 @@ def emit_closing_skill(repo_dir, plan_rel, number, title, skill, section):
         if section
         else []
     )
+    gate_report = gate_lines(gate) if is_refactor else []
     ruled_asks = ruled_asks_lines(repo_dir, plan_rel)
     ruled_lines = (
         ["Asks already ruled in this run. Never raise one of them again, and never undo its outcome:",
@@ -658,6 +662,7 @@ def emit_closing_skill(repo_dir, plan_rel, number, title, skill, section):
         f"`{skill}`; a coder is not dispatched.",
         *section_lines,
         *ruled_lines,
+        *gate_report,
         *evidence_request_lines(open_items),
         f"The skill needs judgment. When it returns, {verdict_step}.",
     )

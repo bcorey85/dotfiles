@@ -18,7 +18,8 @@ WORK_HOOKS = ("scripts/bash-safety-gate.sh", "scripts/block-credential-read.sh",
               "scripts/agent-model-guard.sh", "scripts/warn-skip-hooks.sh")
 CODE_STEP_MODULES = ("code_step_core.py", "code_step_boundary.py", "code_step_hooks.py", "code_step_gates.py",
                      "code_step_start.py", "code_step_report.py", "code_step_review.py", "code_step_closing.py",
-                     "code_step_restart.py", "code_step_start_args.py")
+                     "code_step_restart.py", "code_step_start_args.py",
+                     "code_step_concentration.py")
 # A Python older than 3.14, or None: its pathlib raises on a path test of a word longer than a file name may be, where
 # 3.14 returns False, so a long-text test runs the script under it.
 PRE_314_PYTHON = shutil.which("python3.13") or shutil.which("python3.12") or shutil.which("python3.11")

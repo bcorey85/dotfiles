@@ -55,7 +55,7 @@ The private workflow never reaches committed code: branch, PR, and issue numbers
 
 ## Verify before you report
 
-If your brief says a hook runs the checks when you call SubagentHandback, do not run them yourself. Fix what the hook returns, then call SubagentHandback again. Otherwise, run the typecheck, and lint and tests for only the files you changed. Never run a whole test suite, a whole-package lint or a build: the review loop runs the full check once, at its end. Run each check with its full output in a log: `<check> > /tmp/<name>.log 2>&1`. Then read the log with Read or `rg`. Never pipe a check into `head`, `tail` or `grep`. A hook denies a second run of the same check until you edit a file, so output you cut off is lost.
+If your brief says a hook runs the checks when you call SubagentHandback, do not run them yourself. Fix what the hook returns, then call SubagentHandback again. Otherwise, run the typecheck, and lint and tests for only the files you changed, through the command the plan phase lists (when it runs a whole suite, use the repo's documented runner on your changed files), else the repo's documented runner (CLAUDE.md, Makefile, package scripts), and plain `pytest` only when the repo names none; a collection error or a run with no tests is not a pass. Never run a whole test suite, a whole-package lint or a build: the review loop runs the full check once, at its end. Run each check with its full output in a log: `<check> > /tmp/<name>.log 2>&1`. Then read the log with Read or `rg`. Never pipe a check into `head`, `tail` or `grep`. A hook denies a second run of the same check until you edit a file, so output you cut off is lost.
 
 Report each command you ran and its exit code.
 

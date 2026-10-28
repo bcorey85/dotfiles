@@ -99,6 +99,20 @@ class MatchesNoTestTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertFalse(test_run_output.matches_no_test(command, 0, NO_TEST_OUTPUTS["cargo"]))
 
+    def test_a_check_that_only_names_a_test_does_not_run_tests(self):
+        for command in ("git grep -n test -- src", "ruff check tests/", "test -f out.txt", "npm run lint",
+                        "cd tests && ls", "ruff check test", "npx eslint test", "mypy test-utils"):
+            with self.subTest(command=command):
+                self.assertFalse(test_run_output.runs_tests(command))
+
+    def test_a_step_of_a_command_that_runs_tests_is_a_test_run(self):
+        for command in ("npm run test:unit", "go test ./pkg/...", "FOO=1 vitest run a.test.ts", "npx mocha a.js",
+                        "npm run typecheck && npm test", "cd pkg && npm test", "(cd pkg && pytest)", "a&&pytest",
+                        "pipenv run python backend/manage.py test app.tests", "make test-consistency ARGS=a.test.ts",
+                        "pnpm --filter api test"):
+            with self.subTest(command=command):
+                self.assertTrue(test_run_output.runs_tests(command))
+
 
 if __name__ == "__main__":
     unittest.main()

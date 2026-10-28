@@ -201,11 +201,11 @@ their original `gate` and disposition; do not re-grade them on the way out.
 Steps 7 and 7b. Unless one of those returns first, return `status: deferred` if
 `findings_remaining` holds a finding, else `status: converged`. At `iter >= 2`
 the `fix` findings of a gate failure get one coder per invocation: after the
-repair, run the gate once more; a second failure returns `status: critical-blocker`.
+repair, run the gate once more; a second failure returns `status: critical-blocker`, or `status: setup-fault` when the gate could not run.
 
 ## Step 6: Convergence — the execution gate
 
-**Execution gate (before declaring convergence)**: the phase's one full run. Code changed in the phase whenever this loop runs, so always run the project's full quality-check command (from project CLAUDE.md) ONCE, after the last code change, redirected to `/tmp/review-gate-<branch>.log`: the current branch name with each `/` as `-`, written literally. Other sessions write to `/tmp` too, so never use a name without the branch. A handoff `tests-run` never exempts it: that run covered only the changed files. Exit 0 → proceed. Non-zero → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above.
+**Execution gate (before declaring convergence)**: the phase's one full run. Code changed in the phase whenever this loop runs, so always run the project's full quality-check command (from project CLAUDE.md) ONCE, after the last code change, redirected to `/tmp/review-gate-<branch>.log`: the current branch name with each `/` as `-`, written literally. Other sessions write to `/tmp` too, so never use a name without the branch. A handoff `tests-run` never exempts it: that run covered only the changed files. Exit 0 → proceed. Non-zero → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above. A failure that shows the check could not run (exit 126 or 127, a runner that cannot start, no package.json where it ran, a run that found no test) returns `status: setup-fault` with the log tail in `blockers`; dispatch no coder. A missing module from outside the repo is a code failure and gets one coder repair.
 
 **Exception**: failures in acceptance spec tests (`*.spec.*`, or any test the plan's `Acceptance Criteria` file names as covering a criterion) are critical BLOCKERS — never route them to auto-fix. Either the code is wrong or the intent changed, and only the user decides which; an auto-fixer's cheapest path to green is editing the spec.
 
@@ -258,11 +258,11 @@ and `nit[]`, on every pass, and the Step 7 metrics line. The stop hook blocks th
 Return exactly this, and nothing else of substance:
 
 ```
-status: converged | plan-impact | deferred | cap-reached | critical-blocker
+status: converged | plan-impact | deferred | cap-reached | critical-blocker | setup-fault
 iter: <n>                                # correctness rounds run
 fixed: [{finding, file_line, blocker}]   # `fix` findings you resolved — NEVER omit; a silent repair is a bug
 skipped_fp: [{item, reason}]             # `fix` findings dropped as false positives
-blockers: [<one line each>]              # status=critical-blocker
+blockers: [<one line each>]              # status=critical-blocker | setup-fault (the full check could not run here)
 findings_remaining: [{disposition, finding, file_line}]  # status=deferred | cap-reached
 plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
 ask: [{finding, file_line, question, change, gate, class}]  # never auto-fixed; the user answers these; change is the one edit an accepted answer makes; gate/class ride along so the caller can log the outcome. Log each ask row with the same file and line as its file_line; the caller reads the id from that row, so leave finding_id out

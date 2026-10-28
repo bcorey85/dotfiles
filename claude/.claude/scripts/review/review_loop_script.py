@@ -48,6 +48,7 @@ import plan_format
 import review_loop_gate
 import reviewed_tree
 import script_utils
+from check_output import is_setup_fault, tail_with_failing_tests
 
 SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
 ROUND_BUDGET = 2
@@ -102,7 +103,8 @@ CHECK_FINDER = (
     'Name the one shell command, run from the repo root, that runs this repo\'s full quality check: the lint, type '
     'check and test steps its CI gate runs. Read CLAUDE.md, AGENTS.md, the README, the Makefile, package.json, '
     'pyproject.toml and the files under .github/workflows to find it. Chain steps with && when no single target '
-    'runs them all. Name only commands those files name. Run nothing.\n\n'
+    'runs them all. Name only commands those files name. A step for a package in a subfolder is written '
+    '`(cd <folder> && <step>)`; leave a JS step out when the repo has no package.json. Run nothing.\n\n'
     'End your reply with one JSON object: {{"command": "<shell command>"}}, or {{"command": null, "reason": '
     '"<what is missing>"}} when the files name no check.'
 )
@@ -133,8 +135,9 @@ def token_total(payload):
 
 
 def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None):
-    """One `claude -p` model step. Returns the result text. A call that fails or prints no JSON reply raises."""
-    command = ["claude", "-p", prompt, "--output-format", "json", "--permission-mode", "auto"]
+    """One `claude -p` model step. Returns the result text. A call that fails or prints no JSON reply raises. The
+    prompt goes on stdin: a round-two prompt holds the fix diff and can pass the 128 KB limit of one argument."""
+    command = ["claude", "-p", "--output-format", "json", "--permission-mode", "auto"]
     if agent:
         command += ["--agent", agent]
     if model:
@@ -150,8 +153,9 @@ def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None):
         LIVE_CHILDREN.add(pid)
 
     try:
-        return_code, stdout, stderr = script_utils.run_process(command, repo, timeout=CALL_TIMEOUT_SECONDS,
-                                                               env=CHILD_ENV, on_start=child_started)
+        return_code, stdout, stderr = script_utils.run_process(command, repo, stdin=prompt,
+                                                               timeout=CALL_TIMEOUT_SECONDS, env=CHILD_ENV,
+                                                               on_start=child_started)
     finally:
         LIVE_CHILDREN.difference_update(child_pids)
     wall = round(now() - started, 1)
@@ -439,12 +443,18 @@ def check_command_for(repo, out):
 
 
 def run_full_check(repo, out, check_command, gate_env=()):
+    """(exit code, output tail, whether a failure is a setup fault). The tail lists the failing tests above its last
+    40 lines."""
     log = out / "full-check.log"
     assignments = script_utils.environment_from_assignments(gate_env)
     with log.open("w") as handle:
         completed = subprocess.run(check_command, shell=True, cwd=repo, stdout=handle, stderr=subprocess.STDOUT,
                                    timeout=CHECK_TIMEOUT_SECONDS, env={**os.environ, **assignments})
-    return completed.returncode, "\n".join(log.read_text().splitlines()[-40:])
+    output = log.read_text()
+    tail = "\n".join(output.splitlines()[-40:])
+    return (completed.returncode, tail_with_failing_tests(output, tail),
+            completed.returncode != 0
+            and is_setup_fault(completed.returncode, output, repo, include_missing_modules=False))
 
 
 def file_texts(repo):
@@ -725,8 +735,12 @@ class LoopRun:
 
     def full_check_pass(self, check_command):
         """The full check, with one coder repair when it fails outside a spec file."""
-        code, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
+        code, tail, setup_fault = run_full_check(self.repo, self.out, check_command, self.gate_env)
         if code == 0:
+            return
+
+        if setup_fault:
+            self.stop_on_setup_fault(check_command, tail)
             return
 
         gate_findings = [f"full check failed (`{check_command}`), last lines:\n{tail}"]
@@ -737,9 +751,21 @@ class LoopRun:
         _report, _diffs, gate_changed = self.repair("coder-gate", gate_findings)
         self.fixed += gate_findings
         self.files_touched.update(gate_changed)
-        code, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
-        if code != 0:
-            self.stop("critical-blocker", [f"full check still failing after one repair:\n{tail}"])
+        self.recheck_full_check(check_command, "full check still failing after one repair")
+
+    def recheck_full_check(self, check_command, failure_heading):
+        """The full check after a coder repair: a setup fault stops as `setup-fault`, any other failure as
+        `critical-blocker`."""
+        code, tail, setup_fault = run_full_check(self.repo, self.out, check_command, self.gate_env)
+        if setup_fault:
+            self.stop_on_setup_fault(check_command, tail)
+        elif code != 0:
+            self.stop("critical-blocker", [f"{failure_heading}:\n{tail}"])
+
+    def stop_on_setup_fault(self, check_command, tail):
+        """The full check could not run here, which no coder repair changes: stop for the user."""
+        self.stop("setup-fault", [f"the full check could not run in this environment (`{check_command}`), full "
+                                  f"log {self.out / 'full-check.log'}, last lines:\n{tail}"])
 
     def class_closure_pass(self, check_command):
         """The class-closure judgment on the fixes, and one coder pass with a full check on any class left open."""
@@ -752,9 +778,7 @@ class LoopRun:
         self.fixed += closure["open"]
         self.files_touched.update(class_changed)
         self.next_round()
-        code, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
-        if code != 0:
-            self.stop("critical-blocker", [f"full check failing after the class repair:\n{tail}"])
+        self.recheck_full_check(check_command, "full check failing after the class repair")
 
     def outcome(self, ask_ids, ask_rows):
         return {
@@ -762,7 +786,7 @@ class LoopRun:
             "iter": self.iter_count,
             "fixed": self.fixed,
             "skipped_fp": self.skipped_fp,
-            "blockers": self.remaining if self.status == "critical-blocker" else [],
+            "blockers": self.remaining if self.status in handback.BLOCKER_STATUSES else [],
             "plan_change": self.remaining if self.status == "plan-change" else [],
             "asks": self.asks,
             "ask_gates": self.ask_gates,

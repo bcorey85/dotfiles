@@ -578,6 +578,16 @@ def review_stop_next_step(state):
     return f"after the user rules on the findings, {restart_instruction(state)} to start the phase over."
 
 
+# The statuses that stop on the packet's blockers: (the question, the instruction to the caller).
+BLOCKER_STOP_TEXT = {
+    "critical-blocker": ("the review found a critical blocker.",
+                         "Review found a critical blocker. Present these to the user. Do not mark the phase done."),
+    "setup-fault": ("the review's full check could not run here.",
+                    "The full check could not run here. This is a toolkit or environment fault, not a code failure. "
+                    "Present these to the user. Do not mark the phase done."),
+}
+
+
 def stop_on_review_status(repo_dir, state, module, packet):
     # True after the stop or question a packet status that ends the run prints.
     status = packet["status"]
@@ -588,14 +598,14 @@ def stop_on_review_status(repo_dir, state, module, packet):
         save_state(repo_dir, state)
         emit_plan_impact_modal(state["impact"], repo_dir, state["carriedFindings"])
         return True
-    if status == "critical-blocker":
+    if status in BLOCKER_STOP_TEXT:
+        question, instruction = BLOCKER_STOP_TEXT[status]
         state["stage"] = "stopped"
         save_state(repo_dir, state)
         blocker_lines = ["- " + module.item_text(item, "finding", "file_line") for item in packet["blockers"]]
         stop_with_question(
-            repo_dir, "the review found a critical blocker.", [line[2:] for line in blocker_lines],
-            review_stop_next_step(state),
-            "Review found a critical blocker. Present these to the user. Do not mark the phase done.", *blocker_lines)
+            repo_dir, question, [line[2:] for line in blocker_lines], review_stop_next_step(state), instruction,
+            *blocker_lines)
         return True
     if status == "cap-reached":
         state["stage"] = "stopped"

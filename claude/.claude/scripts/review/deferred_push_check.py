@@ -41,19 +41,18 @@ CLOSING_LINE = ("Before this push opens a PR, fix each one with /fix, or name it
 def git_subcommand(words):
     # Returns the git subcommand, skipping global options such as `-C dir`; None when words are not a git call.
     if not words or words[0] != "git":
-        return None, []
+        return None
     index = 1
     while index < len(words) and words[index].startswith("-"):
         index += 2 if words[index] in GIT_OPTIONS_WITH_VALUE else 1
     if index >= len(words):
-        return None, []
-    return words[index], words[index + 1:]
+        return None
+    return words[index]
 
 
 def is_trigger(command):
     for words in statements(command):
-        subcommand, _ = git_subcommand(words)
-        if subcommand == "push":
+        if git_subcommand(words) == "push":
             return True
         if words[:3] == ["gh", "pr", "create"]:
             return True

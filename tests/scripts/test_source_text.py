@@ -123,9 +123,12 @@ class StringDataLineNumbersTest(unittest.TestCase):
     def test_a_triple_quote_on_its_own_line_is_data_after_an_opening_bracket_comma_or_equals(self):
         for opener in ("plan = textwrap.dedent(", "PLANS = [", "x = {", "f(a,", "x ="):
             with self.subTest(opener=opener):
-                lines = [opener, '    """', "## body", '""",', "]"]
+                lines = [opener, '    """## body', "## body", '""",', "]"]
 
-                self.assertEqual({3}, source_text.string_data_regions(lines, "hash_triple")[0])
+                regions = source_text.string_data_regions(lines, "hash_triple")
+
+                self.assertEqual({3}, regions.numbers)
+                self.assertEqual({2: "    "}, regions.openings)
 
     def test_a_triple_quote_on_its_own_line_after_a_colon_or_at_module_top_is_a_docstring(self):
         for lines in (['def f():', '    """', "body", '    """'], ['"""', "body", '"""']):
@@ -147,27 +150,34 @@ class StringDataLineNumbersTest(unittest.TestCase):
     def test_a_template_closes_at_the_first_unescaped_backtick_of_the_raw_line_even_with_a_slash_pair_before_it(self):
         lines = ["const h = `", "  <p>hi</p>", "  see https://x.com/docs`;", "// Phase 1: leak", "const y = 2;"]
 
-        self.assertEqual(({2}, {3: ";"}), source_text.string_data_regions(lines, "slash"))
+        self.assertEqual(({2}, {3: ";"}, {1: "const h = "}), source_text.string_data_regions(lines, "slash"))
+
+    def test_a_line_that_closes_one_template_and_opens_another_keeps_only_the_code_between_them(self):
+        lines = ["const a = `", "x", "`; const b = `## Phase 1", "y", "`;"]
+
+        regions = source_text.string_data_regions(lines, "slash")
+
+        self.assertEqual(({2, 4}, {3: "; const b = ", 5: ";"}, {1: "const a = "}), regions)
 
     def test_an_escaped_backtick_inside_a_template_does_not_close_it(self):
         lines = ["const h = `", "  a \\` b", "  c`;", "const y = 2;"]
 
-        self.assertEqual(({2}, {3: ";"}), source_text.string_data_regions(lines, "slash"))
+        self.assertEqual(({2}, {3: ";"}, {1: "const h = "}), source_text.string_data_regions(lines, "slash"))
 
     def test_a_block_comment_body_line_with_an_odd_backtick_does_not_open_a_template(self):
         lines = ["/*", "  uses a ` tick", "*/", "const y = 2;"]
 
-        self.assertEqual((set(), {}), source_text.string_data_regions(lines, "slash"))
+        self.assertEqual((set(), {}, {}), source_text.string_data_regions(lines, "slash"))
 
     def test_an_apostrophe_inside_a_template_on_one_line_does_not_open_a_template(self):
         lines = ["warn(`can't find ${x}`, 'warn');", "// leftover note", "const y = 2;"]
 
-        self.assertEqual((set(), {}), source_text.string_data_regions(lines, "slash"))
+        self.assertEqual((set(), {}, {}), source_text.string_data_regions(lines, "slash"))
 
     def test_a_backtick_in_a_trailing_block_comment_does_not_open_a_template(self):
         lines = ["foo(); /* it`s */", "// leftover note", "const y = 2;"]
 
-        self.assertEqual((set(), {}), source_text.string_data_regions(lines, "slash"))
+        self.assertEqual((set(), {}, {}), source_text.string_data_regions(lines, "slash"))
 
     def test_a_triple_quote_inside_a_single_quoted_literal_does_not_open_a_string(self):
         lines = ["x = '\"\"\"'", "a", "b"]
@@ -179,6 +189,26 @@ class StringDataLineNumbersTest(unittest.TestCase):
 
         self.assertEqual({2}, source_text.string_data_regions(lines, "hash_triple")[0])
         self.assertEqual({3: "  # Phase 2 leftover"}, source_text.string_data_regions(lines, "hash_triple")[1])
+
+    def test_an_opening_line_is_listed_with_the_text_before_its_opening_quote(self):
+        lines = [
+            'PLAN = """## Phase 1', "more", '"""',
+            "f(\"a\", '''x", "y", "'''",
+            "const t = `a", "`",
+            "f(`a`, `x", "`",
+        ]
+
+        python_openings = source_text.string_data_regions(lines[:6], "hash_triple").openings
+
+        self.assertEqual({1: "PLAN = ", 4: 'f("a", '}, python_openings)
+        self.assertEqual({1: "const t = "}, source_text.string_data_regions(lines[6:8], "slash").openings)
+        self.assertEqual({1: "f(`a`, "}, source_text.string_data_regions(lines[8:], "slash").openings)
+
+    def test_a_docstring_and_a_closed_string_are_not_openings(self):
+        lines = ["def f():", '    """Doc.', "    more", '    """', 'x = """a"""', "tick = `a`"]
+
+        self.assertEqual({}, source_text.string_data_regions(lines[:5], "hash_triple").openings)
+        self.assertEqual({}, source_text.string_data_regions(lines[5:], "slash").openings)
 
     def test_other_styles_give_no_lines(self):
         self.assertEqual(set(), source_text.string_data_regions(['x = """', "a", '"""'], "hash")[0])

@@ -9,8 +9,9 @@ scope, first-round reviewers (code, plus smell and test reviewers on a large dif
 re-review by every reviewer that filed a fix and owns a changed file (the smell reviewer only past the size bar), the
 two-round cap, the full-check execution gate, the class-closure check, telemetry rows, and the hand-back packet.
 The full check runs through full_check.py: none in a repo whose CLAUDE.md holds `Full suite: CI`, where the coder
-calls run the changed files' tests, and a check past CHECK_TIMEOUT_SECONDS is killed with its process group. Either
-is no failure: the packet's `full_check` says `not run (CI)` or `not run (timeout)`.
+calls run the changed files' tests, and a check past CHECK_TIMEOUT_SECONDS is killed with its process group. A check
+that fails on a missing third-party module is an environment gap. None is a failure: the packet's `full_check` says
+`not run (CI)`, `not run (timeout)` or `not run (environment gap: ...)`.
 
 Model steps are `claude -p` calls in auto permission mode, each with CLAUDE_FORMAT_HOOK_OFF=1 in its environment: the
 reviewers (agents code-reviewer, smell-reviewer, test-reviewer), the fix coder (agent coder) and the class-closure

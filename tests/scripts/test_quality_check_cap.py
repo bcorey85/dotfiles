@@ -70,6 +70,9 @@ class QualityCheckCapTest(unittest.TestCase):
         folder = self.state_root / session
         return sorted(p.name for p in folder.iterdir()) if folder.exists() else []
 
+    def run_records(self, session="s1"):
+        return [name for name in self.state_files(session) if not name.endswith(".start")]
+
     def load_module(self):
         sys.path.insert(0, str(SCRIPT.parent))
         self.addCleanup(sys.path.remove, str(SCRIPT.parent))
@@ -280,6 +283,101 @@ class QualityCheckCapTest(unittest.TestCase):
         self.fire("PostToolUseFailure", command="pytest", error="Exit code 1\nFAILED")
         self.assert_denied(self.pre("pytest"))
 
+    def test_a_check_whose_redirect_could_not_be_opened_never_ran_and_is_not_recorded(self):
+        ruff = "ruff check a.py"
+        self.fire("PostToolUseFailure", command=ruff + " > gone/ruff.log 2>&1",
+                  error="Exit code 1\nzsh: no such file or directory: gone/ruff.log")
+        self.post(ruff + " &> " + str(self.tmp / "gone" / "ruff.log") + "; true")
+        self.assertEqual(self.run_records(), [])
+        self.assert_allowed(self.pre(ruff + " > /tmp/check.log 2>&1"))
+        self.assert_allowed(self.pre(ruff))
+
+    def test_a_check_whose_redirect_opened_or_cannot_be_resolved_is_recorded(self):
+        (self.work / "logs").mkdir()
+        (self.work / "logs" / "ruff.log").write_text("")
+        for command in ("ruff check a.py > logs/ruff.log 2>&1", "ruff check b.py > $LOG_DIR/ruff.log",
+                        "ruff check c.py 2>/dev/null"):
+            with self.subTest(command=command):
+                self.fire("PostToolUseFailure", command=command, error="Exit code 1")
+                self.assert_denied(self.pre(command))
+
+    def test_a_check_whose_command_names_a_quoted_redirect_character_or_a_spaced_file_is_recorded(self):
+        (self.work / "my log.txt").write_text("")
+        for command in ('pytest -k "a > b"', 'ruff check . > "my log.txt" 2>&1'):
+            with self.subTest(command=command):
+                self.post(command)
+                self.assert_denied(self.pre(command))
+
+    def test_a_check_that_deletes_its_own_log_is_recorded(self):
+        command = "ruff check . > /tmp/x.log; cat /tmp/x.log; rm /tmp/x.log"
+        self.post(command)
+        self.assert_denied(self.pre(command))
+
+    def test_a_check_with_an_output_redirect_into_a_missing_folder_is_not_recorded(self):
+        for command in ("ruff check . >> gone/x.log", "ruff check . 2> gone/x.log"):
+            with self.subTest(command=command):
+                self.post(command)
+                self.assertEqual(self.run_records(), [])
+
+    def test_a_check_that_writes_into_the_repo_is_still_capped(self):
+        repo = self.make_committed_repo()
+        outputs = {"ruff check . > check.log 2>&1": "check.log", "pytest -q": ".coverage"}
+        for command, output in outputs.items():
+            with self.subTest(command=command):
+                self.assert_allowed(self.pre(command, cwd=repo))
+                (repo / output).write_text("out\n")
+                self.post(command, cwd=repo)
+                self.assert_denied(self.pre(command, cwd=repo))
+
+    def test_an_edit_made_while_a_check_in_a_repo_ran_allows_a_rerun(self):
+        repo = self.make_committed_repo()
+        self.assert_allowed(self.pre("pytest -q", cwd=repo))
+        (repo / "check.log").write_text("out\n")
+        self.assert_allowed(self.edit())
+        self.post("pytest -q", cwd=repo)
+        self.assert_allowed(self.pre("pytest -q", cwd=repo))
+
+    def test_a_check_after_a_formatter_joined_by_a_semicolon_is_capped_after_its_own_run(self):
+        command = "cargo fmt; cargo clippy"
+        self.assert_allowed(self.pre(command))
+        self.post(command)
+        self.assert_denied(self.pre(command))
+
+    def test_a_skipped_pre_leaves_no_start_mark_for_the_post(self):
+        self.assert_allowed(self.pre("pytest -q"))
+        self.assert_allowed(self.edit())
+        self.assert_allowed(self.pre("pytest -q #skip-quality-cap"))
+        self.assertEqual(self.state_files(), ["edits"])
+        self.post("pytest -q")
+        self.assert_denied(self.pre("pytest -q"))
+
+    def test_a_formatter_exempt_pre_leaves_no_start_mark_for_the_post(self):
+        self.assert_allowed(self.pre("pytest -q"))
+        self.assert_allowed(self.edit())
+        self.assert_allowed(self.pre("prettier --write . && pytest -q"))
+        self.assertEqual(self.state_files(), ["edits"])
+        self.post("pytest -q")
+        self.assert_denied(self.pre("pytest -q"))
+
+    def test_an_edit_made_while_a_check_ran_allows_a_rerun(self):
+        self.assert_allowed(self.pre("pytest -q"))
+        self.assert_allowed(self.edit(agent_id="coder-1"))
+        self.post("pytest -q")
+        self.assert_allowed(self.pre("pytest -q"))
+        self.post("pytest -q")
+        self.assert_denied(self.pre("pytest -q"))
+
+    def test_a_subagent_that_edits_after_the_sessions_run_runs_the_target_once_then_is_capped(self):
+        for agent_id in ("coder-1", None):
+            with self.subTest(agent_id=agent_id):
+                agent = {"agent_id": agent_id} if agent_id else {}
+                self.assert_allowed(self.pre("make test"))
+                self.post("make test")
+                self.assert_allowed(self.edit(**agent))
+                self.assert_allowed(self.pre("make test", **agent))
+                self.post("make test", **agent)
+                self.assert_denied(self.pre("make test", **agent))
+
     def test_a_timeout_records_nothing(self):
         self.fire("PostToolUseFailure", command="pytest", error="Exit code 143\n\nCommand timed out after 2m 0s",
                   is_interrupt=False, tool_use_id="toolu_01", duration_ms=120000)
@@ -308,7 +406,7 @@ class QualityCheckCapTest(unittest.TestCase):
     def test_a_run_ended_by_a_signal_is_not_recorded_and_the_rerun_is_allowed(self):
         for code in (129, 137, 144, 192):
             self.fire("PostToolUseFailure", command="pytest", error=f"Exit code {code}\nTerminated")
-            self.assertEqual(self.state_files(), [])
+            self.assertEqual(self.run_records(), [])
             self.assert_allowed(self.pre("pytest"))
 
     def test_a_signal_exit_leaves_an_earlier_record_of_another_check_alone(self):
@@ -422,7 +520,8 @@ class QualityCheckCapTest(unittest.TestCase):
     def test_stderr_redirects_and_pipe_stderr_are_not_a_lone_ampersand(self):
         self.post("pytest -q 2>&1 | tail -5")
         self.assert_denied(self.pre("pytest -q"))
-        for command in ("eslint . &> /tmp/c.log", "mypy src |& tail -5"):
+        (self.work / "c.log").write_text("")
+        for command in ("eslint . &> c.log", "mypy src |& tail -5"):
             self.post(command)
             self.assert_denied(self.pre(command))
 
@@ -584,8 +683,9 @@ class QualityCheckCapTest(unittest.TestCase):
                            ruff + " 2>&1 | tee /tmp/check.log | tail -5"):
             with self.subTest(command=redirected):
                 self.assert_allowed(self.pre(redirected))
-        self.post(ruff + " > /tmp/check.log 2>&1")
-        self.assert_denied(self.pre(ruff + " > /tmp/check.log 2>&1"))
+        (self.work / "check.log").write_text("")
+        self.post(ruff + " > check.log 2>&1")
+        self.assert_denied(self.pre(ruff + " > check.log 2>&1"))
 
     def test_head_and_grep_cut_the_output_too(self):
         for index, cut in enumerate(("| head -20", "| grep -c error", "2>&1 | grep -E 'E[0-9]+'")):
@@ -635,7 +735,7 @@ class QualityCheckCapTest(unittest.TestCase):
         reason = self.assert_denied(self.pre("pytest -q"))
         self.assertIn("fix every failure in one batch, then run it once more with its output redirected to "
                       "/tmp/check.log", reason)
-        self.assertIn("`for i in 1 2 3; do <check>; done`", reason)
+        self.assertIn("one loop over two or more values, `for i in 1 2 3; do <check>; done`", reason)
         self.assert_allowed(self.pre("for i in 1 2 3; do pytest -q; done"))
         self.edit()
         self.assert_allowed(self.pre("pytest -q > /tmp/check.log 2>&1"))

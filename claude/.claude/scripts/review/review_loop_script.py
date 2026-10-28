@@ -8,6 +8,9 @@ optional `structure-pass: skip`), a blank line, then the handoff block. The scri
 scope, first-round reviewers (code, plus smell and test reviewers on a large diff), disposition routing, one fix coder,
 re-review by every reviewer that filed a fix and owns a changed file (the smell reviewer only past the size bar), the
 two-round cap, the full-check execution gate, the class-closure check, telemetry rows, and the hand-back packet.
+The full check runs through full_check.py: none in a repo whose CLAUDE.md holds `Full suite: CI`, where the coder
+calls run the changed files' tests, and a check past CHECK_TIMEOUT_SECONDS is killed with its process group. Either
+is no failure: the packet's `full_check` says `not run (CI)` or `not run (timeout)`.
 
 Model steps are `claude -p` calls in auto permission mode, each with CLAUDE_FORMAT_HOOK_OFF=1 in its environment: the
 reviewers (agents code-reviewer, smell-reviewer, test-reviewer), the fix coder (agent coder) and the class-closure
@@ -29,12 +32,12 @@ the fix-first mode.
 import argparse
 import contextlib
 import difflib
+import hashlib
 import json
 import os
 import pathlib
 import re
 import signal
-import subprocess
 import sys
 import threading
 import time
@@ -43,6 +46,7 @@ from concurrent.futures import ThreadPoolExecutor
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib", "telemetry")]
 import code_step_core
+import full_check
 import handback
 import plan_format
 import review_loop_gate
@@ -51,6 +55,7 @@ import script_utils
 
 SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
 ROUND_BUDGET = 2
+REFILE_SIMILARITY = 0.8
 LARGE_ADDED_LINES = 40
 SPLIT_FILES = 5
 SPLIT_LINES = 300
@@ -107,11 +112,16 @@ CHECK_FINDER = (
     '"<what is missing>"}} when the files name no check.'
 )
 
-# A reviewer ask, or a coder report line, that says the fix would change the approved plan.
-PLAN_CHANGE_MARK = re.compile(r"plan[-_ ]?impact", re.I)
+# A reviewer ask that says the fix would change the approved plan. An ask may open with its file:line and its
+# bracketed tags, in either order.
+PLAN_CHANGE_MARK = re.compile(r"(?:(?:`?[\w./-]+\.\w+:\d+`?|\[[\w-]+\])[\s—\N{EN DASH}:-]*)*plan[-_ ]?impact", re.I)
 PLAN_CHANGE_YES = re.compile(r"plan[-_ ]?impact:\s*yes\s*$", re.I | re.M)
 # The marker before the one edit an accepted ask makes: `... — the question — change: the edit`.
 ASK_CHANGE_MARK = re.compile(r"\bchange:", re.I)
+FINDING_CLASS_TAG = re.compile(r"\[(" + "|".join(map(re.escape, handback.CLASSES)) + r")\]", re.I)
+CLASS_TAG_RULE = ("Tag each Fix, Ask and Nit item with its class in brackets, right after its file:line, or first when "
+                  "it names none. One of: " + " ".join(f"[{name}]" for name in handback.CLASSES) + ".")
+ASSESSMENT_LINE = re.compile(r"\W*overall assessment\b", re.I)
 
 CALLS = []
 CALLS_LOCK = threading.Lock()
@@ -181,7 +191,8 @@ def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None):
             handle.write(json.dumps(record) + "\n")
 
     if return_code != 0 or not replied:
-        raise RuntimeError(f"the {role} call failed (exit {return_code}); reply {raw}, stderr {errors}")
+        said = f" saying \"{script_utils.one_line(text)}\"" if text.strip() else ""
+        raise RuntimeError(f"the {role} call failed (exit {return_code}){said}; reply {raw}, stderr {errors}")
     return text
 
 
@@ -281,6 +292,7 @@ def review_scope_lines(repo, owned, prior_issues, open_asks):
 def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff="", open_asks=(), brief=""):
     lines = review_scope_lines(repo, owned, prior_issues, open_asks)
     lines.append("Your scope is the owned files listed under Review scope (this round).")
+    lines.append(CLASS_TAG_RULE)
     if fix_diff:
         lines.append("Round-one fix diff (what the coder changed since the first review; "
                      "review only the owned files under Review scope (this round)):")
@@ -308,6 +320,8 @@ def review_section_findings(block):
         if not stripped:
             continue
         if re.fullmatch(r"\[?(none|n/a|omitted|empty)[^\]]*\]?\.?", stripped, re.I):
+            continue
+        if ASSESSMENT_LINE.match(stripped):
             continue
         found.append(stripped)
     return found
@@ -385,20 +399,28 @@ def merge_findings(findings):
     return merged
 
 
+FINDING_FILE = re.compile(r"([\w./-]+\.\w+):(\d+)")
+
+
 def finding_file(line):
-    match = re.search(r"([\w./-]+\.\w+):(\d+)", line)
+    match = FINDING_FILE.search(line)
     return (match.group(1), int(match.group(2))) if match else ("", 0)
 
 
 def finding_class(line):
-    lowered = line.lower()
-    if "[smell]" in lowered:
-        return "smell"
-    if re.search(r"readme|comment|docstring|doc says|docs", lowered):
-        return "docs"
-    if "test" in lowered and re.search(r"assert|coverage|gap|only", lowered):
-        return "test-gap"
-    return "bug"
+    """The class the reviewer tagged the finding with, which the tag rule puts right after the file:line; `other` when
+    it tagged none."""
+    located = FINDING_FILE.search(line)
+    match = FINDING_CLASS_TAG.search(line, located.end() if located else 0) or FINDING_CLASS_TAG.search(line)
+    return match.group(1).lower() if match else "other"
+
+
+def finding_title(line):
+    """The finding's text with its file:line and bracketed tags taken out, lowercased, punctuation folded to spaces.
+    A refile keeps it when the coder's edit moves the line."""
+    title = re.sub(r"`?" + FINDING_FILE.pattern + r"`?", " ", line)
+    title = re.sub(r"\[[\w-]+\]", " ", title)
+    return re.sub(r"\W+", " ", title).strip().lower()
 
 
 def coder_prompt(repo, findings, small_items, files, gate_env=()):
@@ -417,7 +439,11 @@ def coder_prompt(repo, findings, small_items, files, gate_env=()):
 
 def check_command_for(repo, out):
     """The repo's full check: a CLAUDE.md `Quality check: \\`<command>\\`` line, else what a haiku call reads from the
-    repo's docs, task runners and CI config."""
+    repo's docs, task runners and CI config. None when CI runs the repo's full suite: full_check.run then runs
+    nothing."""
+    if full_check.full_suite_runs_in_ci(repo):
+        return None
+
     claude_md = pathlib.Path(repo) / "CLAUDE.md"
     text = claude_md.read_text() if claude_md.is_file() else ""
     match = re.search(r"^\s*[-*]?\s*Quality check:\s*`([^`]+)`", text, re.I | re.M)
@@ -439,12 +465,20 @@ def check_command_for(repo, out):
 
 
 def run_full_check(repo, out, check_command, gate_env=()):
-    log = out / "full-check.log"
+    """(the full_check result, the log's last lines). A SIGTERM kills the check's process group with the claude
+    calls."""
     assignments = script_utils.environment_from_assignments(gate_env)
-    with log.open("w") as handle:
-        completed = subprocess.run(check_command, shell=True, cwd=repo, stdout=handle, stderr=subprocess.STDOUT,
-                                   timeout=CHECK_TIMEOUT_SECONDS, env={**os.environ, **assignments})
-    return completed.returncode, "\n".join(log.read_text().splitlines()[-40:])
+    check_pids = []
+
+    def check_started(pid):
+        check_pids.append(pid)
+        LIVE_CHILDREN.add(pid)
+
+    try:
+        return full_check.run(repo, check_command, out / "full-check.log", CHECK_TIMEOUT_SECONDS,
+                              env={**os.environ, **assignments}, on_start=check_started)
+    finally:
+        LIVE_CHILDREN.difference_update(check_pids)
 
 
 def file_texts(repo):
@@ -468,11 +502,35 @@ def added_source_lines(diffs):
     return total
 
 
+class CoderCallError(RuntimeError):
+    """A coder call that failed after it may have edited the tree. `changed` lists the paths whose text differs."""
+
+    def __init__(self, message, changed):
+        super().__init__(message)
+        self.changed = changed
+
+
+def changed_paths(before, after):
+    """The sorted paths whose text differs between two file_texts snapshots; a missing path reads as empty text."""
+    return sorted(path for path in set(before) | set(after) if before.get(path, "") != after.get(path, ""))
+
+
 def coder_call(role, prompt, repo, out):
     """The fix coder. Returns (report, diffs, changed): the diffs of what it changed feed the round-two brief, and
-    the global FIX_DIFFS feeds the class-closure check; changed lists the paths whose text differs."""
+    the global FIX_DIFFS feeds the class-closure check; changed lists the paths whose text differs. A failed call
+    raises CoderCallError naming the files it changed before it died."""
     before = file_texts(repo)
-    report = claude_call(role, prompt, repo, out, agent="coder")
+    try:
+        report = claude_call(role, prompt, repo, out, agent="coder")
+    except RuntimeError as error:
+        after = file_texts(repo)
+        changed = changed_paths(before, after)
+        if not changed:
+            raise
+        message = (f"{error}; it changed {', '.join(changed)} before it died, so the tree holds a partial fix "
+                   "that may fail its checks")
+        raise CoderCallError(message, changed) from error
+
     after = file_texts(repo)
     start = len(FIX_DIFFS)
     paths = sorted(set(before) | set(after))
@@ -483,7 +541,7 @@ def coder_call(role, prompt, repo, out):
                                                lineterm=""))
         if difference:
             FIX_DIFFS.append("\n".join(difference))
-    changed = [path for path in paths if before.get(path, "") != after.get(path, "")]
+    changed = changed_paths(before, after)
     return report, FIX_DIFFS[start:], changed
 
 
@@ -564,7 +622,26 @@ def log_call(repo, command):
     return code, output
 
 
-def telemetry(repo, lane, scope_fields, iter_count, tallies, run_rows):
+def stable_finding_id(session, lane, scope_fields, gate, spot):
+    """The ledger id of one finding. The same reviewer filing the same finding again, in a later round or a rerun of
+    this review, gets the same id, so its row supersedes the earlier one instead of adding a second. The spot is the
+    file and the finding's title plus a `#n` ordinal among same-title findings in that file; the line is left out, so a
+    finding whose line moved keeps its id."""
+    key = "\0".join([session, lane, *scope_fields, gate, spot])
+    return hashlib.sha256(key.encode()).hexdigest()[:handback.FINDING_ID_HEX_LEN]
+
+
+def new_spot(path, title, entries):
+    """The spot of a new finding: the file and title with the lowest `#n` ordinal no entry holds. A refile rewrites an
+    earlier entry's title but keeps its spot, so the ordinal is checked against spots, not titles."""
+    taken = {entry["spot"] for entry in entries}
+    number = 1
+    while f"{path}\0{title}#{number}" in taken:
+        number += 1
+    return f"{path}\0{title}#{number}"
+
+
+def telemetry(repo, session, lane, scope_fields, iter_count, tallies, run_rows):
     """Writes the metrics row, and each run and finding row. Returns ({ask text: finding_id}, ask_rows): the id that
     log-review-finding printed for each ask row, and the {file, line, finding_id} entries the stop row carries."""
     log_call(repo, [str(SKILLS / "log-review-metrics"), f"lane={lane}", f"iter={iter_count}", f"fix={tallies['fix']}",
@@ -575,13 +652,14 @@ def telemetry(repo, lane, scope_fields, iter_count, tallies, run_rows):
     ask_ids, ask_rows = {}, []
     for row in run_rows:
         log_call(repo, [logger, "kind=run", f"lane={lane}", *scope_fields, f"iter={row['iter']}",
-                        f"gate={row['gate']}", f"n_findings={row['n']}", f"diff_loc={row['loc']}",
+                        f"gate={row['gate']}", f"n_findings={len(row['findings'])}", f"diff_loc={row['loc']}",
                         f"result={row['result']}"])
         for finding in row["findings"]:
             path, line = finding_file(finding["text"])
             location = [f"file={path}", f"line={line}"] if path else [f"file={UNLOCATED}"]
-            command = [logger, "kind=finding", f"lane={lane}", *scope_fields, f"iter={row['iter']}",
-                       f"gate={row['gate']}", f"disposition={finding['disposition']}",
+            finding_id = stable_finding_id(session, lane, scope_fields, row["gate"], finding["spot"])
+            command = [logger, "kind=finding", f"finding_id={finding_id}", f"lane={lane}", *scope_fields,
+                       f"iter={row['iter']}", f"gate={row['gate']}", f"disposition={finding['disposition']}",
                        f"class={finding_class(finding['text'])}", *location, f"actioned={finding['actioned']}"]
             if finding["disposition"] == "fix":
                 command.append(f"source={finding['source']}")
@@ -595,19 +673,19 @@ def telemetry(repo, lane, scope_fields, iter_count, tallies, run_rows):
 
 # ---------- the loop ----------
 
-def tally_review(tallies, parsed, fixes, design):
-    """Adds one review to the metrics tallies. A design-decision fix goes to the user as an ask, so it counts under
-    ask, not fix."""
-    tallies["fix"] += len(fixes)
-    tallies["ask"] += len(parsed["ask"]) + len(design)
-    tallies["nit"] += len(parsed["nit"])
-    tallies["blocker"] += sum("[blocker]" in item.lower() for item in fixes)
-    every_finding = parsed["fix"] + parsed["ask"] + parsed["nit"]
-    tallies["smells"] += sum("[smell]" in item.lower() for item in every_finding)
-    if parsed["assessment"] == "NEEDS CHANGES":
+def tally_review(tallies, findings, assessment):
+    """Adds one review's new findings ({disposition: [texts]}) to the metrics tallies, so a finding refiled in a later
+    round counts once."""
+    tallies["fix"] += len(findings["fix"])
+    tallies["ask"] += len(findings["ask"])
+    tallies["nit"] += len(findings["nit"])
+    tallies["blocker"] += sum("[blocker]" in item.lower() for item in findings["fix"])
+    every_finding = findings["fix"] + findings["ask"] + findings["nit"]
+    tallies["smells"] += sum(finding_class(item) == "smell" for item in every_finding)
+    if assessment == "NEEDS CHANGES":
         tallies["result"] = "NEEDS CHANGES"
-    elif parsed["assessment"] and tallies["result"] == "PASS":
-        tallies["result"] = parsed["assessment"]
+    elif assessment and tallies["result"] == "PASS":
+        tallies["result"] = assessment
 
 
 def prior_issue_entries(round_findings, skips):
@@ -638,9 +716,15 @@ class LoopRun:
         self.prior_issues = []
         self.status = "converged"
         self.class_closure = NO_CLOSURE
+        self.full_check = ""
         self.round_two_fix_diff = ""
         self.files = {}
         self.dispatches = []
+        self.filed = {}  # {(reviewer, file): [finding entries]}, so a refiled finding updates its first row
+        self.round_claimed = set()  # ids of the entries this round filed or refiled, so no two reports share one
+        self.round_fixes = []  # the fix entries this round's reviewers filed, for fix_round to mark
+        self.check_fixed = 0  # findings the full check and the class closure fixed, which file no finding row
+        self.last_pass = ""
 
     def next_round(self):
         self.iter_count += 1
@@ -657,44 +741,88 @@ class LoopRun:
         text = claude_call(f"review{self.iter_count}-{agent}", prompt, self.repo, self.out, agent=agent)
         return parse_review(text) or disposition_call(text, self.repo, self.out)
 
+    def earlier_filing(self, entries, finding):
+        """The entry from an earlier round that this finding refiles: not yet claimed this round, with the same
+        disposition and a near title. None when it is new."""
+        return next((entry for entry in entries if id(entry) not in self.round_claimed
+                     and entry["disposition"] == finding["disposition"]
+                     and script_utils.text_similarity(entry["title"], finding["title"]) >= REFILE_SIMILARITY), None)
+
     def filing_row(self, agent, owned, parsed, fixes, design):
-        loc = sum(self.files[path][0] for path in owned if path in self.files)
-        findings = [{"text": item, "disposition": "fix", "actioned": "fixed", "source": "round"} for item in fixes]
-        findings += [{"text": item, "disposition": "ask", "actioned": "ask", "source": ""}
+        """The run row of one review. A fix starts `actioned: none`; fix_round sets it once the coder returns. A
+        finding this reviewer filed in an earlier round, in the same file with the same disposition and the same or
+        near title, updates that round's entry and stays off this row, wherever its line moved."""
+        reported = [{"text": item, "disposition": "fix", "actioned": "none", "source": "round"} for item in fixes]
+        reported += [{"text": item, "disposition": "ask", "actioned": "ask", "source": ""}
                      for item in parsed["ask"] + design]
-        findings += [{"text": item, "disposition": "nit", "actioned": "none", "source": ""} for item in parsed["nit"]]
-        return {"iter": self.iter_count - 1, "gate": agent, "n": len(findings), "loc": loc,
-                "result": parsed["assessment"] or "PASS", "findings": findings}
+        reported += [{"text": item, "disposition": "nit", "actioned": "none", "source": ""} for item in parsed["nit"]]
+
+        findings = []
+        for finding in reported:
+            path = finding_file(finding["text"])[0] or UNLOCATED
+            finding["title"] = finding_title(finding["text"])
+            entries = self.filed.setdefault((agent, path), [])
+            earlier = self.earlier_filing(entries, finding)
+            if earlier:
+                finding["spot"] = earlier["spot"]
+                if finding["disposition"] == "ask":
+                    finding["text"] = earlier["text"]
+                earlier.update(finding)
+                finding = earlier
+            else:
+                finding["spot"] = new_spot(path, finding["title"], entries)
+                entries.append(finding)
+                findings.append(finding)
+            self.round_claimed.add(id(finding))
+            if finding["disposition"] == "fix":
+                self.round_fixes.append(finding)
+
+        loc = sum(self.files[path][0] for path in owned if path in self.files)
+        return {"iter": self.iter_count, "gate": agent, "loc": loc, "result": parsed["assessment"] or "PASS",
+                "findings": findings}
 
     def review_round(self):
         """Runs the round's reviewers in parallel and sorts their findings. Returns (round_fix, round_nits). A
         plan-change ask stops the loop and leaves the reviews after it unread."""
         with ThreadPoolExecutor(max_workers=len(self.dispatches)) as pool:
             reviews = list(pool.map(self.review_one, self.dispatches))
+        self.last_pass = "reviewer"
 
+        self.round_claimed, self.round_fixes = set(), []
         round_fix, round_nits = [], []
         for (agent, owned), parsed in zip(self.dispatches, reviews, strict=True):
             design = [item for item in parsed["fix"] if "[design-decision]" in item.lower()]
             fixes = [item for item in parsed["fix"] if item not in design]
-            tally_review(self.tallies, parsed, fixes, design)
 
             plan_changes = [item for item in parsed["ask"] if PLAN_CHANGE_MARK.match(item)]
             if plan_changes:
+                tally_review(self.tallies, {"fix": fixes, "ask": parsed["ask"] + design, "nit": parsed["nit"]},
+                             parsed["assessment"])
                 self.stop("plan-change", plan_changes)
                 break
 
-            self.asks += parsed["ask"] + design
-            self.ask_gates.update(dict.fromkeys(parsed["ask"] + design, agent))
+            row = self.filing_row(agent, owned, parsed, fixes, design)
+            new_findings = {disposition: [finding["text"] for finding in row["findings"]
+                                          if finding["disposition"] == disposition]
+                            for disposition in ("fix", "ask", "nit")}
+            tally_review(self.tallies, new_findings, parsed["assessment"])
+            self.asks += new_findings["ask"]
+            self.ask_gates.update(dict.fromkeys(new_findings["ask"], agent))
             round_nits += parsed["nit"]
             round_fix.append((agent, fixes))
-            self.run_rows.append(self.filing_row(agent, owned, parsed, fixes, design))
+            self.run_rows.append(row)
         return round_fix, round_nits
 
     def repair(self, call_name, findings, nits=()):
         """One coder pass on the findings. Returns (report, diffs, changed files)."""
         before = scope(self.repo)
         prompt = coder_prompt(self.repo, findings, list(nits), list(before), self.gate_env)
-        return coder_call(call_name, prompt, self.repo, self.out)
+        self.last_pass = "coder"
+        try:
+            return coder_call(call_name, prompt, self.repo, self.out)
+        except CoderCallError as error:
+            self.files_touched.update(error.changed)
+            raise
 
     def fix_round(self, round_fix, round_nits):
         """The coder pass on the round's merged fixes, and the plan for the next round. Returns False when the loop
@@ -713,6 +841,9 @@ class LoopRun:
         self.skipped_fp += [{"item": round_findings[number - 1], "reason": line}
                             for number, line in sorted(skips.items())]
         skipped_findings = [round_findings[number - 1] for number in sorted(skips)]
+        for finding in self.round_fixes:
+            skipped = any(finding["text"] in item for item in skipped_findings)
+            finding["actioned"] = "skipped_fp" if skipped else "fixed"
         self.fixed += [item for item in round_findings if item not in skipped_findings]
         self.files_touched.update(changed)
         self.prior_issues = prior_issue_entries(round_findings, skips)
@@ -724,9 +855,10 @@ class LoopRun:
         return not (changed and all(path.endswith(".md") for path in changed))
 
     def full_check_pass(self, check_command):
-        """The full check, with one coder repair when it fails outside a spec file."""
-        code, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
-        if code == 0:
+        """The full check, with one coder repair when it fails outside a spec file. A check that did not run, in CI
+        or past its time limit, is no failure."""
+        self.full_check, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
+        if not full_check.is_failure(self.full_check):
             return
 
         gate_findings = [f"full check failed (`{check_command}`), last lines:\n{tail}"]
@@ -736,9 +868,10 @@ class LoopRun:
 
         _report, _diffs, gate_changed = self.repair("coder-gate", gate_findings)
         self.fixed += gate_findings
+        self.check_fixed += len(gate_findings)
         self.files_touched.update(gate_changed)
-        code, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
-        if code != 0:
+        self.full_check, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
+        if full_check.is_failure(self.full_check):
             self.stop("critical-blocker", [f"full check still failing after one repair:\n{tail}"])
 
     def class_closure_pass(self, check_command):
@@ -750,10 +883,11 @@ class LoopRun:
 
         _report, _diffs, class_changed = self.repair("coder-class", closure["open"])
         self.fixed += closure["open"]
+        self.check_fixed += len(closure["open"])
         self.files_touched.update(class_changed)
         self.next_round()
-        code, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
-        if code != 0:
+        self.full_check, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
+        if full_check.is_failure(self.full_check):
             self.stop("critical-blocker", [f"full check failing after the class repair:\n{tail}"])
 
     def outcome(self, ask_ids, ask_rows):
@@ -769,12 +903,14 @@ class LoopRun:
             "ask_ids": ask_ids,
             "ask_rows": ask_rows,
             "class_closure": self.class_closure,
+            "full_check": self.full_check,
             "files_touched": sorted(self.files_touched),
             "nits": self.nits,
+            "unreviewed_fix": self.last_pass == "coder",
         }
 
 
-def run_loop(repo, out, header, handoff, progress):
+def run_loop(repo, out, session, header, handoff, progress):
     """Walks the graph. Returns the outcome mapping. `progress` holds what a crash still reports: iter, fixed and
     files_touched, updated in place as the loop goes."""
     lane = header["lane"]
@@ -802,9 +938,10 @@ def run_loop(repo, out, header, handoff, progress):
     if loop.status == "converged":
         loop.class_closure_pass(check_command)
 
-    loop.tallies["fixed"] = len(loop.fixed)
-    loop.tallies["skipped_fp"] = len(loop.skipped_fp)
-    ask_ids, ask_rows = telemetry(repo, lane, scope_fields, loop.iter_count, loop.tallies, loop.run_rows)
+    every_actioned = [finding["actioned"] for row in loop.run_rows for finding in row["findings"]]
+    loop.tallies["fixed"] = every_actioned.count("fixed") + loop.check_fixed
+    loop.tallies["skipped_fp"] = every_actioned.count("skipped_fp")
+    ask_ids, ask_rows = telemetry(repo, session, lane, scope_fields, loop.iter_count, loop.tallies, loop.run_rows)
     return loop.outcome(ask_ids, ask_rows)
 
 
@@ -855,6 +992,8 @@ def packet_message(outcome):
         "files_touched": outcome["files_touched"],
         "nit": [finding_entry(text) for text in outcome["nits"]],
     }
+    if outcome["full_check"]:
+        fields["full_check"] = outcome["full_check"]
     if outcome["plan_change"]:
         fields["plan_impact"] = script_utils.one_line("; ".join(outcome["plan_change"]), limit=None)
     lines = []
@@ -868,7 +1007,9 @@ def crash_outcome(progress, reason):
     return {"status": "critical-blocker", "iter": progress["iter"], "fixed": fixed,
             "skipped_fp": [], "blockers": [reason], "plan_change": [], "asks": [],
             "ask_gates": {}, "ask_ids": {}, "ask_rows": [], "class_closure": "none - the run ended in an error",
-            "files_touched": sorted(progress["files_touched"]), "nits": []}
+            "full_check": "",
+            "files_touched": sorted(progress["files_touched"]), "nits": [],
+            "unreviewed_fix": False}
 
 
 # ---------- hand-back rows ----------
@@ -877,8 +1018,9 @@ def report_write_failure(what, error):
     print(f"review-loop-script: {what} not written, {type(error).__name__}: {error}", file=sys.stderr)
 
 
-def write_handback_rows(repo, args, message, status, ask_rows):
-    # The driver's skipped re-reviews are its benched routes, so no clean row counts as unreviewed.
+def write_handback_rows(repo, args, message, status, ask_rows, unreviewed_fix):
+    # The driver's skipped re-reviews are its benched routes, so a clean row never sets no_reviewer;
+    # a coder pass after the last reviewer round sets unreviewed_fix.
     try:
         code_step_core.log_event(repo, args.run_id, "handback", args.session, agent_id=args.agent_id,
                                  agent_type=handback.REVIEW_LOOP, message=message)
@@ -886,7 +1028,7 @@ def write_handback_rows(repo, args, message, status, ask_rows):
         report_write_failure("run event", error)
     try:
         handback.record(args.session, "handback", agent_id=args.agent_id, status=status, problems=[], message=message,
-                        no_reviewer=False)
+                        no_reviewer=False, unreviewed_fix=unreviewed_fix and status in handback.CLEAN_STATUSES)
     except Exception as error:
         report_write_failure("hand-back row", error)
     review_loop_gate.record_stop({"session_id": args.session, "agent_id": args.agent_id}, 0, ask_rows)
@@ -961,7 +1103,7 @@ def main(argv=None):
     outcome = None
     try:
         header, handoff = read_prompt(args.prompt_file)
-        outcome = run_loop(repo, out, header, handoff, progress)
+        outcome = run_loop(repo, out, args.session, header, handoff, progress)
         message = packet_message(outcome)
         handback.load(message)
     except handback.PacketError as error:
@@ -981,7 +1123,7 @@ def main(argv=None):
 
     status = handback.load(message)["status"]
     (out / "packet.txt").write_text(message + "\n")
-    write_handback_rows(repo, args, message, status, outcome["ask_rows"])
+    write_handback_rows(repo, args, message, status, outcome["ask_rows"], outcome["unreviewed_fix"])
     write_usage_row(repo, started)
     print(message)
     return exit_code

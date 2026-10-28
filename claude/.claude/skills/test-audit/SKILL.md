@@ -41,7 +41,7 @@ Log the firing (non-blocking; skip if audit skipped):
 
 Then per-finding rows per `~/.claude/skills/_shared/finding-log.md` (read it): `gate=test-intent-reviewer lane=test-audit scope=branch-exit`. Zero-finding audits still log `kind=run`.
 
-- The run row passes `diff_base=<the base ref of the branch diff>`, never `diff_loc=`. The script measures the branch and the working tree, so the audit's uncommitted fixes count.
+- The finding-log `kind=run` row passes `diff_base=<the base ref of the branch diff>`, never `diff_loc=`. The metrics row above takes no diff field. The script measures the branch and the working tree, so the audit's uncommitted fixes count.
 - Each finding row passes the test `file=` and `line=` the auditor's finding names. A finding that names only a plan promise, such as an `absent` WEAK, passes `file=unlocated` and no line. Never guess a file.
 
 ## What NOT to do

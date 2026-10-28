@@ -19,6 +19,7 @@ comes back in the packet.
 - `plan: <path>` — the plan file for this work, when the caller has one, with `phase: <N>` when the work is one phase of it. Pass both to every reviewer you dispatch.
 - `handoff:` block — schema in `~/.claude/skills/_shared/handoff-block.md`. May be absent (manual `/review`).
 - `base: <ref>` — the ref the review diffs against. Absent → `HEAD`, the working-tree changes. `/review base=<ref>` passes it for a whole-branch review.
+- `repo: <path>` — the repo or worktree under review. Absent → the repo of the first absolute path the dispatch prompt names (a `Repo:` line, a worktree, a handoff file), else your cwd.
 - Modifiers: `+fast` → pass `model: "haiku"` to each reviewer you dispatch. `+fast` never skips a reviewer: you never review the diff yourself. `+deep` changes nothing in this loop.
 - `no-review` (fix-first only): dispatch the fix coder, verify via the execution gate, return without a reviewer pass.
 
@@ -28,10 +29,12 @@ Your first action is one Bash call. It appends the invocation line and prints
 the review scope:
 
 ```bash
-~/.claude/skills/review/review-scope caller=<caller> [base=<ref>]
+~/.claude/skills/review/review-scope caller=<caller> root=<repo> [base=<ref>]
 ```
 
-Run it by this path as one plain command. A worktree-isolated session refuses a command that holds `$HOME`, a variable, `$(...)` or a second statement. Add `base=<ref>` only when the dispatch gave one. Exit 3 is a STOP: the branch has no merge base. Do nothing else, and return the script's message as the blocker of a `status: critical-blocker` packet, telling the caller to pass `base=<ref>`. On any other failure, continue, and take the file list from `git status --porcelain` instead.
+Run it by this path as one plain command. A worktree-isolated session refuses a command that holds `$HOME`, a variable, `$(...)` or a second statement. Write `root=` with the repo's absolute path, literally. When the repo is a file path (a handoff file), write `root=` with that path's directory, literally. Add `base=<ref>` only when the dispatch gave one.
+
+`ROOT` in the output is the repo for the whole loop. When ROOT differs from your cwd, run each git, check and log command (Steps 6, 7 and 7b included) as `cd <ROOT> && <command>` in one call; otherwise run it plain. Put `Repo root: <ROOT>` in every reviewer and coder prompt. Exit 3 is a STOP: the branch has no merge base. Do nothing else, and return the script's message as the blocker of a `status: critical-blocker` packet, telling the caller to pass `base=<ref>`. An empty `ROOT=` or exit 2 "cannot enter" is also a STOP: return a `status: critical-blocker` packet naming the repo path you could not use. On any other failure, continue, and take the file list from `git status --porcelain` in the repo from Inputs, by the same rule: `cd <repo> &&` only when it differs from your cwd.
 
 ## Loop ordering (GATE-CRITICAL — do not reorder)
 
@@ -60,6 +63,7 @@ each iteration:
 
 - **Handoff block**: if present, it is the review scope. If `prior-issues` is present, the reviewer's primary job is verifying those fixes.
 - **`ruled-asks`**: each line is an ask the user already ruled on, with its outcome. Pass them to every reviewer. A finding that matches one is already ruled: drop it, never return it in `ask[]` or `plan_impact`, and never fix against a `rejected` outcome.
+- **`carried-findings`**: each line is open from an earlier review. Pass them to every reviewer. Each one that still holds is a finding of this round.
 
 - **Resolved `plan_impact`**: a handoff `plan_impact` that starts `RESOLVED` is the user's ruling. Pass it to every reviewer as the standard the code must meet. Never return it as `plan-impact`; return `plan-impact` only for a disagreement the ruling does not settle.
 
@@ -205,7 +209,15 @@ repair, run the gate once more; a second failure returns `status: critical-block
 
 ## Step 6: Convergence — the execution gate
 
-**Execution gate (before declaring convergence)**: the phase's one full run. Code changed in the phase whenever this loop runs, so always run the project's full quality-check command (from project CLAUDE.md) ONCE, after the last code change, redirected to `/tmp/review-gate-<branch>.log`: the current branch name with each `/` as `-`, written literally. Other sessions write to `/tmp` too, so never use a name without the branch. A handoff `tests-run` never exempts it: that run covered only the changed files. Exit 0 → proceed. Non-zero → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above.
+**Execution gate (before declaring convergence)**: the phase's one full run. Code changed in the phase whenever this loop runs, so always run the project's full quality-check command (from `<ROOT>/CLAUDE.md` (read it)) ONCE, after the last code change, with the Bash timeout at 600000:
+
+`python3 ~/.claude/scripts/review/full_check.py <ROOT> --log /tmp/review-gate-<branch>.log -- '<command>'`
+
+`<branch>` is the `BRANCH` from Step 0 with each `/` as `-`, written literally. Other sessions write to `/tmp` too, so never use a name without the branch. A handoff `tests-run` never exempts it: that run covered only the changed files. Copy the result on the script's first line into the packet's `full_check`:
+- `passed` → proceed.
+- `failed (exit N)` → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above.
+- `not run (timeout)` → no finding. Proceed.
+- `not run (CI)` → the repo's CLAUDE.md holds `Full suite: CI`. Run the tests of the files this phase changed, by name, once, redirected to the same log. A failure there is a `fix` finding carrying `blocker`.
 
 **Exception**: failures in acceptance spec tests (`*.spec.*`, or any test the plan's `Acceptance Criteria` file names as covering a criterion) are critical BLOCKERS — never route them to auto-fix. Either the code is wrong or the intent changed, and only the user decides which; an auto-fixer's cheapest path to green is editing the spec.
 
@@ -237,7 +249,7 @@ Gate passed and class closed → go to Step 7.
 `${CLAUDE_SKILL_DIR}` does not resolve inside an agent. Use the absolute path:
 
 ```bash
-~/.claude/skills/review/log-review-metrics lane=<lane> iter=<N> fix=<n> ask=<n> nit=<n> blocker=<n> fixed=<n> skipped_fp=<n> test_intent_ran=0 culled=<n> comment_noise=<n> smells=<n> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
+~/.claude/skills/review/log-review-metrics lane=<lane> iter=<N> fix=<n> ask=<n> nit=<n> blocker=<n> fixed=<n> skipped_fp=<n> test_intent_ran=0 culled=<n> comment_noise=<n> smells=<n> result=<PASS|PASS_WITH_WARNINGS|NEEDS_CHANGES>
 ```
 
 The Step 6 class-closure receipt is NOT logged here — it lives in the packet as
@@ -267,6 +279,7 @@ findings_remaining: [{disposition, finding, file_line}]  # status=deferred | cap
 plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
 ask: [{finding, file_line, question, change, gate, class}]  # never auto-fixed; the user answers these; change is the one edit an accepted answer makes; gate/class ride along so the caller can log the outcome. Log each ask row with the same file and line as its file_line; the caller reads the id from that row, so leave finding_id out
 class_closure: <the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a — fixed[] empty>
+full_check: passed | failed (exit N) | not run (CI) | not run (timeout)  # the Step 6 result
 files_touched: [<path>]
 nit: [<one line each>]                   # a small item ends `applied` or `skipped: <reason>`
 load_bearing_clean: <one line, or omitted>

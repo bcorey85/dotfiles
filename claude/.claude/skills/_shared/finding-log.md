@@ -12,7 +12,7 @@ Run after dispositions are known (`actioned` real, not predicted). Telemetry nev
 
 # ONE run row per gate dispatched — INCLUDING gates that returned nothing.
 ~/.claude/skills/review/log-review-finding kind=run lane=<lane> scope=<phase|branch-exit|standalone> [phase=<index>] iter=<N> \
-  gate=<agent name> n_findings=<n> <diff_loc=<n>|diff_base=<ref>> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES|NOT DISPATCHED>
+  gate=<agent name> n_findings=<n> <diff_loc=<n>|diff_base=<ref>> result=<PASS|PASS_WITH_WARNINGS|NEEDS_CHANGES|NOT_DISPATCHED>
 
 # ONE finding row per finding that gate emitted.
 ~/.claude/skills/review/log-review-finding kind=finding lane=<lane> scope=<phase|branch-exit|standalone> [phase=<index>] iter=<N> \
@@ -40,7 +40,7 @@ Run after dispositions are known (`actioned` real, not predicted). Telemetry nev
 - `class=` uses the escape vocabulary so the caught and escaped sides
   cross-tabulate. Do not invent values — unknown ones store as `other` and are counted in the yield header.
 - **`other` is a last resort.** Reach for `docs` when the prose is wrong about the code (stale comment, wrong quantity, contradicting doc, over-cap volume).
-- **`result=` is the gate's verdict.** Gates with no pass/fail vocabulary still owe one (`PASS` clean/intent-aligned, `NEEDS CHANGES` gaps/residue, `NOT DISPATCHED` surface-unmatched). Omit only with genuinely no verdict.
+- **`result=` is the gate's verdict, one of the four tokens above, with underscores.** The tool refuses any other value. Gates with no pass/fail vocabulary still owe one (`PASS` clean/intent-aligned, `NEEDS_CHANGES` gaps/residue, `NOT_DISPATCHED` surface-unmatched). Omit only with genuinely no verdict.
 
 - **`desc=` is accepted and never stored.** The ledger keeps no free text. Leave it off new calls.
 - **Asks:** log an `actioned=ask` finding row with the same `file=` and `line=` as the ask's `file_line`. The caller reads the printed `finding_id=<id>` from the transcript and logs the outcome under it with `ask_outcome=`, which supersedes the ask row. The writer refuses an ask outcome with no `finding_id`.

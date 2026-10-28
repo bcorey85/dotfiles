@@ -679,6 +679,41 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(len(ids_by_session[1]), 1)
         self.assertFalse(ids_by_session[0] & ids_by_session[1])
 
+    def load_script_module(self):
+        loader = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
+        module = importlib.util.module_from_spec(loader)
+        loader.loader.exec_module(module)
+        return module
+
+    def test_a_multi_line_ask_with_a_blank_line_paragraph_parses_as_one_located_ask(self):
+        module = self.load_script_module()
+        review = ("## Fix\nNone\n\n## Ask\n- `app.py:3` should the limit be configurable?\n"
+                  "  It is fixed at 10 today.\n\n  Change if accepted: read it from settings\n\n## Nit\nNone\n")
+
+        asks = module.parse_review(review)["ask"]
+
+        self.assertEqual(len(asks), 1)
+        self.assertEqual(module.located(asks[0]), "app.py:3")
+
+    def test_two_ask_bullets_stay_two_items(self):
+        module = self.load_script_module()
+        review = ("## Fix\nNone\n\n## Ask\n- `app.py:3` first question?\n  more on the first\n"
+                  "2. `app.py:4` second question?\n\n## Nit\nNone\n")
+
+        asks = module.parse_review(review)["ask"]
+
+        self.assertEqual(len(asks), 2)
+        self.assertTrue(asks[1].startswith("`app.py:4` second"))
+
+    def test_change_if_accepted_marker_splits_question_from_change(self):
+        module = self.load_script_module()
+
+        entry = module.ask_entry("`app.py:3` should it be configurable? Change if accepted: read from settings",
+                                 "code-reviewer", None)
+
+        self.assertEqual(entry["change"], "read from settings")
+        self.assertEqual(entry["question"], "`app.py:3` should it be configurable?")
+
     def test_the_finding_id_changes_with_the_gate(self):
         loader = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
         module = importlib.util.module_from_spec(loader)
@@ -947,6 +982,32 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 2)
         metrics = fake_ledger.recorded_rows(self.env, "review_metrics")
         self.assertEqual(metrics[0]["fixed"], "2")
+
+    def test_the_class_closure_prompt_names_one_diff_file_per_path_and_holds_no_diff_text(self):
+        (self.repo / "generated").mkdir()
+        self.commit_files({"generated/snapshot.json": "{}\n"})
+        snapshot = "".join(f'{{"row": {number}, "marker": "SNAPSHOT-LINE"}}\n' for number in range(20000))
+        self.assertGreater(len(snapshot), 400_000)
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "generated/snapshot.json": snapshot}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        closure_prompt = next(call["prompt"] for call in self.fake_calls() if call["key"] == "closure")
+        self.assertLess(len(closure_prompt), 6000)
+        self.assertNotIn("SNAPSHOT-LINE", closure_prompt)
+        self.assertNotIn("limit = 20", closure_prompt)
+
+        diff_files = sorted((self.state_dir / "loop-script" / AGENT_ID / "fix-diffs").rglob("*.diff"))
+        self.assertEqual([path.name for path in diff_files], ["app.py.diff", "snapshot.json.diff"])
+        app_diff_file = diff_files[0]
+        self.assertIn("-limit = 2", app_diff_file.read_text())
+        self.assertIn(f"- app.py (+2 -2): {app_diff_file}", closure_prompt)
+        self.assertIn("- generated/snapshot.json (+20000 -0): regenerated, do not read", closure_prompt)
+        self.assertNotIn(str(diff_files[1]), closure_prompt)
 
     def test_a_class_closure_reply_with_braces_in_its_prose_still_reads_the_closing_object(self):
         closure = f"Closed. Every `{{CUBE}}.flag` site re-read.\n\n```json\n{CLOSED}\n```"

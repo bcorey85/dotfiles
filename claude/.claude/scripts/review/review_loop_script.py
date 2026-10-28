@@ -103,7 +103,7 @@ CLOSURE_RULES = (
     'N-1 were never re-read. Close it by re-enumerating them and stating where each one lands.\n'
     '- Proxy predicate: the fix removed a cheap check standing in for the property actually needed. '
     'Close it by naming the other members that proxy was covering for.\n'
-    'Work from the fix diff; read a file only to see a member the diff does not show. If a fixed finding '
+    'Work from the fix diff files; read a repo file only to see a member the diff does not show. If a fixed finding '
     'is class-shaped and the class is NOT closed (some member still has the defect), list those members '
     'as open findings, each with file and line and the one correction. You may not edit files.'
 )
@@ -126,7 +126,9 @@ CHECK_FINDER = (
 PLAN_CHANGE_MARK = re.compile(r"(?:(?:`?[\w./-]+\.\w+:\d+`?|\[[\w-]+\])[\s—\N{EN DASH}:-]*)*plan[-_ ]?impact", re.I)
 PLAN_CHANGE_YES = re.compile(r"plan[-_ ]?impact:\s*yes\s*$", re.I | re.M)
 # The marker before the one edit an accepted ask makes: `... — the question — change: the edit`.
-ASK_CHANGE_MARK = re.compile(r"\bchange:", re.I)
+ASK_CHANGE_MARK = re.compile(r"\bchange(?:\s+if\s+accepted)?:", re.I)
+ITEM_MARKER = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+")
+ITEM_MARKER_STRIP = re.compile(r"^\s*(?:[-*]+|\d+[.)])\s+")
 FINDING_CLASS_TAG = re.compile(r"\[(" + "|".join(map(re.escape, handback.CLASSES)) + r")\]", re.I)
 CLASS_TAG_RULE = ("Tag each Fix, Ask and Nit item with its class in brackets, right after its file:line, or first when "
                   "it names none. One of: " + " ".join(f"[{name}]" for name in handback.CLASSES) + ".")
@@ -134,7 +136,11 @@ ASSESSMENT_LINE = re.compile(r"\W*overall assessment\b", re.I)
 
 CALLS = []
 CALLS_LOCK = threading.Lock()
-FIX_DIFFS = []
+# One entry per path a coder call changed: {"path", "added", "removed", "diff_file"}. Feeds the class-closure check,
+# which names the diff files in its prompt and never inlines their text.
+FIX_DIFF_STATS = []
+# Folders whose files a tool regenerates: a closure call has no reason to read their diffs.
+GENERATED_DIRS = ("generated",)
 # Process-group leaders of the claude calls now running: each call starts its own session, so the group kill that
 # stops this script does not reach them.
 LIVE_CHILDREN = set()
@@ -325,16 +331,21 @@ def section(text, name):
 def review_section_findings(block):
     if not block:
         return []
+    # A bullet or numbered marker starts an item; any other line, after a blank line too, continues the item before it.
     found = []
     for line in block.splitlines():
-        stripped = re.sub(r"^\s*(?:[-*]+|\d+[.)])\s+", "", line).strip()
+        starts_item = bool(ITEM_MARKER.match(line))
+        stripped = ITEM_MARKER_STRIP.sub("", line).strip()
         if not stripped:
             continue
         if re.fullmatch(r"\[?(none|n/a|omitted|empty)[^\]]*\]?\.?", stripped, re.I):
             continue
         if ASSESSMENT_LINE.match(stripped):
             continue
-        found.append(stripped)
+        if starts_item or not found:
+            found.append(stripped)
+            continue
+        found[-1] = f"{found[-1]} {stripped}"
     return found
 
 
@@ -539,8 +550,9 @@ def changed_paths(before, after):
 
 def coder_call(role, prompt, repo, out):
     """The fix coder. Returns (report, diffs, changed): the diffs of what it changed feed the round-two brief, and
-    the global FIX_DIFFS feeds the class-closure check; changed lists the paths whose text differs. A failed call
-    raises CoderCallError naming the files it changed before it died."""
+    one diff file per changed path under `out` (listed in the global FIX_DIFF_STATS) feeds the class-closure check;
+    changed lists the paths whose text differs. A failed call raises CoderCallError naming the files it changed
+    before it died."""
     before = file_texts(repo)
     try:
         report = claude_call(role, prompt, repo, out, agent="coder")
@@ -554,17 +566,42 @@ def coder_call(role, prompt, repo, out):
         raise CoderCallError(message, changed) from error
 
     after = file_texts(repo)
-    start = len(FIX_DIFFS)
+    diffs = []
     paths = sorted(set(before) | set(after))
     for path in paths:
         old_lines = before.get(path, "").splitlines()
         new_lines = after.get(path, "").splitlines()
         difference = list(difflib.unified_diff(old_lines, new_lines, f"a/{path}", f"b/{path}", n=DIFF_CONTEXT,
                                                lineterm=""))
-        if difference:
-            FIX_DIFFS.append("\n".join(difference))
+        if not difference:
+            continue
+        diff_text = "\n".join(difference)
+        diffs.append(diff_text)
+        diff_file = out / "fix-diffs" / role / f"{path}.diff"
+        diff_file.parent.mkdir(parents=True, exist_ok=True)
+        diff_file.write_text(diff_text)
+        added = sum(1 for line in difference if line.startswith("+") and not line.startswith("+++"))
+        removed = sum(1 for line in difference if line.startswith("-") and not line.startswith("---"))
+        FIX_DIFF_STATS.append({"path": path, "added": added, "removed": removed, "diff_file": str(diff_file)})
     changed = changed_paths(before, after)
-    return report, FIX_DIFFS[start:], changed
+    return report, diffs, changed
+
+
+def is_generated_path(path):
+    """Whether the path sits under a folder a tool regenerates."""
+    return any(part in GENERATED_DIRS for part in pathlib.PurePosixPath(path).parts[:-1])
+
+
+def diff_stat_lines(stats):
+    """One line per changed path: its path, lines added and removed, and the file holding its diff."""
+    lines = []
+    for stat in stats:
+        counts = f"+{stat['added']} -{stat['removed']}"
+        if is_generated_path(stat["path"]):
+            lines.append(f"- {stat['path']} ({counts}): regenerated, do not read")
+        else:
+            lines.append(f"- {stat['path']} ({counts}): {stat['diff_file']}")
+    return lines
 
 
 def closure_check(repo, out, fixed):
@@ -572,7 +609,9 @@ def closure_check(repo, out, fixed):
         return {"receipt": NO_CLOSURE, "open": []}
     prompt = (
         f"Repo root: {repo}\n\n{CLOSURE_RULES}\n\nfixed[]:\n" + "\n".join(f"- {item}" for item in fixed)
-        + "\n\nThe fix diff (what the coder changed, with surrounding context):\n" + "\n\n".join(FIX_DIFFS)
+        + f"\n\nWhat the coder changed, one diff file per path under {out / 'fix-diffs'} (path, lines added and "
+        "removed, diff file). Read only the diff files for paths a fixed[] finding names; never read a path marked "
+        "regenerated.\n" + "\n".join(diff_stat_lines(FIX_DIFF_STATS))
         + '\n\nEnd your reply with one JSON object: {"receipt": "<the enumeration, or none plus each fixed finding '
         'and why it fits neither shape>", '
         '"open": ["<file:line - defect - correction>", ...]}. "open" is empty when every class is closed.'

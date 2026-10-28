@@ -39,7 +39,8 @@ edit and pin its behavior without a recorded failing run.
 
 ## Result
 
-The touched test files pass. The script-mode walk stops at its node budget with no failing path.
+The touched test files pass and ruff is clean on them. The script-mode walk stops at its node budget with no failing
+path.
 
 ## Watch
 

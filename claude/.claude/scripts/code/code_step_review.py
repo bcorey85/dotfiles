@@ -69,7 +69,8 @@ ASKS_DONE_USAGE = ("asks-done needs one outcome per ask: accepted, rejected or m
 STAGE_GUARDS = {
     "decide": {"stages": ("impact-coder", "impact-review"),
                "message": "decide needs a pending PLAN-IMPACT and one word: adopt, keep or discuss."},
-    "review-again": {"stages": ("stopped",), "stopReasons": ("invalid-packet", "cap-reached", "false-clean", "review-crashed"),
+    "review-again": {"stages": ("stopped",),
+                     "stopReasons": ("invalid-packet", "cap-reached", "false-clean", "review-crashed"),
                      "message": "review-again ran with no unreadable review packet, capped review, unmarked review "
                                 "gate or silent review-loop pending."},
     "asks-done": {"stages": ("asks",), "message": ASKS_DONE_USAGE},

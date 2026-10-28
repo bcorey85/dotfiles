@@ -67,7 +67,7 @@ from code_step_start_args import (
 from script_utils import run_command
 
 START_USAGE = ('usage: code_step.py start [--repo <path>] [<plan>] [+fast|+deep] [--phase <id>] [--restart] '
-               '[<run notes>]\n'
+               '[--headless] [<run notes>]\n'
                '       code_step.py start [--repo <path>] --task "<task text>"\n'
                '       code_step.py start [--repo <path>] --task-file <path>\n'
                '--phase <id> starts the named phase; the text after a plan file or ticket id and its phase is the '
@@ -75,7 +75,8 @@ START_USAGE = ('usage: code_step.py start [--repo <path>] [<plan>] [+fast|+deep]
                'ticket id or directory, is the task text. --task-file reads the task text from a file, as it is. A '
                'flag before the text, or after a plan, must be known. --restart drops an unfinished run and starts '
                'over. --repo runs everything in that checkout, not the current directory; so does a `Repo: <path>` '
-               'or `Repo root: <path>` first line in the task file.')
+               'or `Repo root: <path>` first line in the task file. --headless is for a run no person watches: a '
+               'phase that would wait for sign-off commits and goes on to the next phase.')
 FOLLOW_UP_HINT = ("A follow-up change to a finished plan needs the task text: invoke Skill code with "
                   "`start --task \"<text>\"`.")
 # The verbs that older printed commands still name. Each one now does what `resume` does.
@@ -90,7 +91,7 @@ def usage_error(message):
 
 
 StartArgs = collections.namedtuple("StartArgs", "modifier plan_args task_text phase_id restart positional_words "
-                                   "run_notes", defaults=(None,))
+                                   "run_notes headless", defaults=(None, False))
 
 
 def phase_flag_value(args, position):
@@ -101,12 +102,12 @@ def phase_flag_value(args, position):
 
 
 def reject_unknown_flag(word):
-    # --restart is the one flag besides --phase, --task, --task-file and --repo. --help prints usage and exits 0
-    # before any state is touched; any other flag exits 2.
+    # --restart and --headless are the flags besides --phase, --task, --task-file and --repo. --help prints usage and
+    # exits 0 before any state is touched; any other flag exits 2.
     if word in ("--help", "-h"):
         print(START_USAGE)
         sys.exit(0)
-    if word != "--restart":
+    if word not in ("--restart", "--headless"):
         usage_error(f"unknown flag {word}")
 
 
@@ -127,7 +128,7 @@ def parse_start_args(args):
     task_text = None
     positional_words = None
     phase_id = None
-    restart = False
+    switches = set()
     position = 0
     while position < len(args):
         word = args[position]
@@ -156,12 +157,13 @@ def parse_start_args(args):
             modifiers.append(word)
         elif is_flag(word):
             reject_unknown_flag(word)
-            restart = True
+            switches.add(word)
         else:
             plan_args.append(word)
         position += 1
     modifier = "+deep" if "+deep" in modifiers else "+fast" if modifiers else None
-    return StartArgs(modifier, plan_args, task_text, phase_id, restart, positional_words)
+    return StartArgs(modifier, plan_args, task_text, phase_id, "--restart" in switches, positional_words,
+                     headless="--headless" in switches)
 
 
 def phase_label(state):
@@ -571,8 +573,7 @@ def start_plan_run(repo_dir, previous, branch, parsed, start_command):
         return emit("stop", f"Phase {number} is a closing phase and takes no run notes: they were not passed on. "
                     "Tell the user.")
     if closing_skill_name:
-        return start_closing_phase(repo_dir, plan_rel, lane, parsed.modifier, entry, closing_skill_name, section,
-                                   branch, parsed.phase_id)
+        return start_closing_phase(repo_dir, plan_rel, lane, parsed, entry, closing_skill_name, section, branch)
 
     if not check_acceptance_criteria(repo_dir, plan_rel):
         return
@@ -608,7 +609,7 @@ def start_phase_coder(repo_dir, previous, branch, parsed, phase):
              "modifier": parsed.modifier, "risk": entry["risk"] if entry else "high",
              "title": entry["title"] if entry else "", "gateCommands": commands, "baseline": baseline,
              "baseHead": base_head, "startedAt": time.time(), "phaseText": section if use_packet else None,
-             "onlyPhase": parsed.phase_id, "sessionId": session_pin(), "runId": run_id}
+             "onlyPhase": parsed.phase_id, "headless": parsed.headless, "sessionId": session_pin(), "runId": run_id}
     open_dispatch(state)
     save_state(repo_dir, state)
     model = "haiku" if parsed.modifier == "+fast" else None
@@ -629,10 +630,11 @@ def start_planless(repo_dir, modifier, task_text, branch="-"):
     emit_dispatch(repo_dir, state, RESUME_VERB, prompt=prompt, agent="coder", model=model)
 
 
-def start_closing_phase(repo_dir, plan_rel, lane, modifier, entry, skill, section, branch, only_phase=None):
+def start_closing_phase(repo_dir, plan_rel, lane, parsed, entry, skill, section, branch):
     state = {"stage": "skill", "plan": plan_rel, "lane": lane, "phase": entry["number"], "branch": branch,
-             "modifier": modifier, "risk": entry["risk"], "title": entry["title"], "gateCommands": [], "behavior": [],
-             "baseline": file_hashes(repo_dir), "onlyPhase": only_phase, "sessionId": session_pin()}
+             "modifier": parsed.modifier, "risk": entry["risk"], "title": entry["title"], "gateCommands": [],
+             "behavior": [], "baseline": file_hashes(repo_dir), "onlyPhase": parsed.phase_id,
+             "headless": parsed.headless, "sessionId": session_pin()}
     save_state(repo_dir, state)
     emit_closing_skill(repo_dir, plan_rel, entry["number"], entry["title"], skill, section)
 

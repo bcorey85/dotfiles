@@ -3,7 +3,7 @@ saved criteria copy, the Automated Verification runner, the phase boundary and t
 verify).
 
 Imports run one way: code_step_core, code_step_boundary, code_step_hooks, code_step_gates, code_step_start,
-code_step_report, code_step_review, code_step."""
+code_step_report, code_step_review, code_step. The phase-end block text is in code_step_phase_end."""
 import datetime
 import os
 import pathlib
@@ -39,6 +39,7 @@ from code_step_core import (
     script_command,
     session_pin,
 )
+from code_step_phase_end import block_a, block_b_or_c, manual_groups_of
 from script_utils import git_output, run_command
 from test_run_output import matches_no_test
 
@@ -391,6 +392,14 @@ def run_verification_commands(repo_dir, phase_section):
 # ---------- phase boundary ----------
 
 def boundary_decision(state, entries, number):
+    # A run started with --headless has no person to sign off a phase: it commits and goes on wherever block B waits.
+    block, risk_label = sign_off_decision(state, entries, number)
+    if block == "B" and state.get("headless"):
+        return "A", f"{risk_label}, headless"
+    return block, risk_label
+
+
+def sign_off_decision(state, entries, number):
     # A run started with --phase N ends after phase N, whatever other phases are still open. A run never starts a phase
     # past an open gated one, so when a gated phase comes first (or only gated phases are open) this is the last phase
     # the run can do.
@@ -627,17 +636,6 @@ def run_phase_verification(repo_dir, state, section):
     return verify_results, skipped
 
 
-def manual_item_line(item):
-    return f"- [{'x' if item['checked'] else ' '}] {item['text']}"
-
-
-def manual_groups_of(manual_items):
-    return {
-        "verified": [manual_item_line(i) for i in manual_items if i["verified"]],
-        "notRun": [manual_item_line(i) for i in manual_items if not i["humanOnly"] and not i["verified"]],
-        "humanOnly": [manual_item_line(i) for i in manual_items if i["humanOnly"] and not i["checked"]]}
-
-
 def done_line_of(state, section, verify_results, skipped, reopened):
     # The one line that says what the phase's close ran.
     number = state["phase"]
@@ -660,89 +658,6 @@ def done_line_of(state, section, verify_results, skipped, reopened):
     return done_line
 
 
-def block_a(number, manual_groups, next_number):
-    verified_count, not_run_count, human_count = (
-        len(manual_groups[name]) for name in ("verified", "notRun", "humanOnly")
-    )
-    return (
-        f"Phase {number} complete - machine gates green (review ✓, execution ✓, automated-verification ✓). "
-        f"Risk: low. Manual verification: {verified_count} verified, {not_run_count} agent-run items not yet run "
-        f"(/verify-branch runs them at the end of the branch), {human_count} human-only deferred to the "
-        f"/verify-branch packet.\n-> Auto-advancing to Phase {next_number} in-session (no /clear; interrupt anytime)."
-    )
-
-
-def block_heading(block, number, risk_label, state, has_open_gate):
-    # The first line of block B or C: which phase is complete and why the run stops here.
-    if block == "B":
-        return f"Phase {number} complete. Risk: {risk_label}. Phase-level sign-off requested."
-    if number is None:
-        return "The plan is complete."
-    if state.get("onlyPhase") == number:
-        return f"Phase {number} complete (the phase this run was started for)."
-    # Open gated phases mean the plan is not complete, so this phase is not the last one.
-    return f"Phase {number} complete." if has_open_gate else f"Phase {number} complete (last phase)."
-
-
-def block_sections(state, manual_groups):
-    parts = []
-    behavior = state.get("behavior") or []
-    if behavior:
-        parts += ["Behavior delta (observable change + its proof, max 3 - no internals, no paths):",
-                  *[f"- {line}" for line in behavior[:3]], ""]
-    parts += ["Read first (/stage queue, blast-radius order):", "<<STAGE QUEUE>>", ""]
-    if manual_groups["verified"]:
-        parts += ["Verified (checked, or marked agent-verified in the plan):", *manual_groups["verified"], ""]
-    if manual_groups["notRun"]:
-        parts += ["Agent-run, not yet run (/verify-branch runs these at the end of the branch):",
-                  *manual_groups["notRun"], ""]
-    if manual_groups["humanOnly"]:
-        parts += ["Human-only verification remaining:", *manual_groups["humanOnly"], ""]
-    return parts
-
-
-def block_b_next_steps(number, next_number, manual_groups):
-    reads_queue = manual_groups["verified"] or manual_groups["humanOnly"]
-    queue_steps = ["Read the queue (`]k`/`[k` in nvim)"] if reads_queue else ["Read the /stage queue"]
-    if manual_groups["verified"]:
-        queue_steps.append("spot-check the verified items")
-    if manual_groups["humanOnly"]:
-        queue_steps.append("run the human-only items")
-    step1 = "; ".join(queue_steps) + "."
-    return [
-        "Next:",
-        f"  1. {step1}",
-        f"  2. Stage what you've read, then run /clear and /code to start Phase {next_number} fresh. "
-        "To keep this context, confirm here.",
-        "",
-        "Or give feedback now for revisions to Phase " + number + ".",
-    ]
-
-
-def block_c_next_steps(is_only_phase, gate_block_message, moved_text):
-    if is_only_phase:
-        return ["This run was started for this phase only. Other phases may be open; run `resume` when the user "
-                "asks for the next one."]
-    if gate_block_message:
-        return [f"No phase starts on its own: {gate_block_message} Tell the user. The plan is not complete."]
-    if moved_text:
-        return [f"All other phases are complete or moved to another ticket ({moved_text}). Next: /verify-branch "
-                "(completeness + review packet; includes the remaining human-only checks), then you open the PR."]
-    return ["All phases complete. Next: /verify-branch (completeness + review packet; includes the remaining "
-            "human-only checks), then you open the PR."]
-
-
-def block_b_or_c(block, number, risk_label, state, manual_groups, next_number, gate_block_message="", moved_text=""):
-    has_open_gate = number is not None and bool(gate_block_message)
-    heading = block_heading(block, number, risk_label, state, has_open_gate)
-    parts = [heading, "", *block_sections(state, manual_groups)]
-    if block == "B":
-        return "\n".join(parts + block_b_next_steps(number, next_number, manual_groups))
-
-    is_only_phase = number is not None and state.get("onlyPhase") == number
-    return "\n".join(parts + block_c_next_steps(is_only_phase, gate_block_message, moved_text))
-
-
 def announce_boundary(repo_dir, state, boundary):
     # What the user and the session see once the phase is closed. Block A auto-advances; B and C wait for the user.
     block, number = boundary["block"], state["phase"]
@@ -757,7 +672,7 @@ def announce_boundary(repo_dir, state, boundary):
 
     if block == "A":
         next_start = f"{INSTALLED_COMMAND} {RESUME_VERB}"
-        say(repo_dir, block_a(number, boundary["manual_groups"], boundary["next_number"]))
+        say(repo_dir, block_a(number, boundary["risk_label"], boundary["manual_groups"], boundary["next_number"]))
         commit_line = boundary["commit_line"]
         commit_step = f"First run this commit command as a Bash call: {commit_line}\nThen " if commit_line else ""
         emit("auto-advance", "The user sees block A at the end of the turn. "

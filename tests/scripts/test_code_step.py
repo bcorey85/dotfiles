@@ -690,6 +690,117 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertEqual(["poetry run ruff check {files:.py}", "poetry run pytest tests/test_models.py"], commands)
 
+    def django_phase(self, verification=""):
+        phase = "**File**: `app/models.py`\n**File**: `app/tests/test_models.py`\n"
+        if verification:
+            phase += f"\n#### Automated Verification:\n\n- [ ] **Tests**: models pass - `{verification}`\n"
+        return phase
+
+    def test_a_django_repo_without_pytest_django_settings_runs_manage_py_test_on_dotted_labels(self):
+        (self.repo / "manage.py").write_text("")
+        (self.repo / "pyproject.toml").write_text("[tool.ruff]\n[tool.pytest.ini_options]\naddopts = '-q'\n")
+
+        commands = code_step_gates.derive_gate_commands(self.repo, self.django_phase())
+
+        self.assertEqual(["ruff check {files:.py}", "python3 manage.py test app.tests.test_models"], commands)
+
+    def test_a_django_repo_runs_manage_py_test_through_the_runner_the_lock_file_names(self):
+        (self.repo / "manage.py").write_text("")
+        (self.repo / "pyproject.toml").write_text("")
+        (self.repo / "uv.lock").write_text("")
+
+        commands = code_step_gates.derive_gate_commands(self.repo, self.django_phase())
+
+        self.assertEqual(["uv run python manage.py test app.tests.test_models"], commands)
+
+    def test_a_django_repo_with_pytest_django_settings_keeps_pytest(self):
+        settings_files = {
+            "pytest.ini": "[pytest]\nDJANGO_SETTINGS_MODULE = app.settings\n",
+            "pyproject.toml": "[tool.pytest.ini_options]\naddopts = '--ds=app.settings'\n",
+            "setup.cfg": "[tool:pytest]\nDJANGO_SETTINGS_MODULE = app.settings\n",
+            "tox.ini": "[pytest]\nDJANGO_SETTINGS_MODULE = app.settings\n",
+            "conftest.py": "import os\nos.environ.setdefault('DJANGO_SETTINGS_MODULE', 'app.settings')\n",
+        }
+        for name, text in settings_files.items():
+            with self.subTest(name=name):
+                repo = self.tmp / f"django-{name}"
+                repo.mkdir()
+                (repo / "manage.py").write_text("")
+                (repo / "pyproject.toml").write_text("")
+                (repo / name).write_text(text)
+
+                commands = code_step_gates.derive_gate_commands(repo, self.django_phase())
+
+                self.assertEqual(["python3 -m pytest app/tests/test_models.py"], commands)
+
+    def test_a_listed_whole_suite_manage_py_test_runs_on_the_changed_test_modules_with_its_runner_and_options(self):
+        (self.repo / "manage.py").write_text("")
+        (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
+        (self.repo / "uv.lock").write_text("")
+        phase = self.django_phase("DJANGO_SETTINGS_MODULE=app.test poetry run python manage.py test --keepdb")
+
+        commands = code_step_gates.derive_gate_commands(self.repo, phase)
+
+        self.assertEqual(["DJANGO_SETTINGS_MODULE=app.test poetry run python -m ruff check {files:.py}",
+                          "DJANGO_SETTINGS_MODULE=app.test poetry run python manage.py test "
+                          "app.tests.test_models --keepdb"], commands)
+
+    def test_a_listed_whole_suite_manage_py_test_keeps_the_interpreter_name_behind_a_launcher(self):
+        (self.repo / "manage.py").write_text("")
+        phase = self.django_phase("uv run python3 manage.py test")
+
+        commands = code_step_gates.derive_gate_commands(self.repo, phase)
+
+        self.assertEqual(["uv run python3 manage.py test app.tests.test_models"], commands)
+
+    def test_a_django_phase_that_names_an_app_tests_module_runs_it(self):
+        (self.repo / "manage.py").write_text("")
+        phase = "**File**: `app/models.py`\n**File**: `app/tests.py`\n"
+
+        commands = code_step_gates.derive_gate_commands(self.repo, phase)
+
+        self.assertEqual(["python3 manage.py test app.tests"], commands)
+
+    def test_a_listed_manage_py_test_option_keeps_its_value_and_the_labels_go_before_the_options(self):
+        cases = {
+            "python manage.py test --settings app.test":
+                "python manage.py test app.tests.test_models --settings app.test",
+            "python manage.py test --parallel": "python manage.py test app.tests.test_models --parallel",
+        }
+        (self.repo / "manage.py").write_text("")
+        for listed, expected in cases.items():
+            with self.subTest(listed=listed):
+                commands = code_step_gates.derive_gate_commands(self.repo, self.django_phase(listed))
+
+                self.assertEqual([expected], commands)
+
+    def test_a_listed_whole_suite_manage_py_test_wins_over_pytest_django_settings(self):
+        (self.repo / "manage.py").write_text("")
+        (self.repo / "pytest.ini").write_text("[pytest]\nDJANGO_SETTINGS_MODULE = app.settings\n")
+        phase = self.django_phase("python manage.py test")
+
+        commands = code_step_gates.derive_gate_commands(self.repo, phase)
+
+        self.assertEqual(["python manage.py test app.tests.test_models"], commands)
+
+    def test_a_phase_that_lists_a_whole_suite_pytest_keeps_pytest_in_a_django_repo(self):
+        (self.repo / "manage.py").write_text("")
+        (self.repo / "pyproject.toml").write_text("")
+        for listed, expected in (("python -m pytest", "python -m pytest app/tests/test_models.py"),
+                                 ("cd app && pytest", "python3 -m pytest app/tests/test_models.py")):
+            with self.subTest(listed=listed):
+                commands = code_step_gates.derive_gate_commands(self.repo, self.django_phase(listed))
+
+                self.assertEqual([expected], commands)
+
+    def test_a_django_phase_that_names_no_test_file_runs_no_test_command(self):
+        (self.repo / "manage.py").write_text("")
+        (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
+
+        commands = code_step_gates.derive_gate_commands(self.repo, "**File**: `app/models.py`\n")
+
+        self.assertEqual(["ruff check {files:.py}"], commands)
+
     def test_a_listed_pytest_command_that_changes_directory_gives_no_runner_to_ruff(self):
         (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
         (self.repo / "uv.lock").write_text("")

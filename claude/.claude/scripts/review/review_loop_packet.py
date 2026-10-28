@@ -69,14 +69,11 @@ def packet_message(outcome):
         summary = full_check.summary_text(outcome["full_check"], outcome["full_check_summaries"])
         if summary is not None:
             fields["full_check_summary"] = script_utils.one_line(summary, limit=None)
-    if outcome["check_changed"]:
-        fields["check_changed"] = outcome["check_changed"]
-    if outcome["check_rewrote_edited"]:
-        fields["check_rewrote_edited"] = outcome["check_rewrote_edited"]
-    if outcome["check_created"]:
-        fields["check_created"] = outcome["check_created"]
-    if outcome.get("tool_fault"):
-        fields["tool_fault"] = outcome["tool_fault"]
+    if outcome["scoped_tests"]:
+        fields["scoped_tests"] = script_utils.one_line(outcome["scoped_tests"], limit=None)
+    for key in ("check_changed", "check_rewrote_edited", "check_created", "tool_fault"):
+        if outcome.get(key):
+            fields[key] = outcome[key]
     if outcome["plan_change"]:
         fields["plan_impact"] = script_utils.one_line("; ".join(outcome["plan_change"]), limit=None)
     lines = []
@@ -94,7 +91,7 @@ def crash_outcome(progress, reason):
             "full_check": "", "full_check_command": "", "full_check_summaries": [], "check_changed": [],
             "check_rewrote_edited": [], "check_created": [],
             "files_touched": sorted(progress["files_touched"]), "nits": [],
-            "unreviewed_fix": False, "tool_fault": reason}
+            "unreviewed_fix": False, "scoped_tests": "", "tool_fault": reason}
 
 
 def report_write_failure(what, error):

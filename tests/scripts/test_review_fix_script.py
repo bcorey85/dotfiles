@@ -975,7 +975,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: render-and-finish", output)
         self.assertIn("### Last fix not reviewed", output)
-        self.assertIn("src/orders.ts, src/util.ts", output)
+        self.assertIn("Their files are among: src/orders.ts, src/util.ts", output)
+        self.assertIn("Review-again is not advised: it ends on an unreviewed fix the same way.", output)
 
     def test_a_converged_hand_back_ending_on_a_reviewer_names_no_unreviewed_fix(self):
         self.dispatch()

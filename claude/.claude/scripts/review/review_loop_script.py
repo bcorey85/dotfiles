@@ -52,6 +52,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib", "telemetry")]
+import code_step_core
+import coder_gate
 import full_check
 import handback
 import plan_format
@@ -60,6 +62,7 @@ from review_loop_findings import (
     PLAN_CHANGE_MARK,
     PLAN_CHANGE_YES,
     UNLOCATED,
+    absent_file_split,
     finding_class,
     finding_file,
     finding_title,
@@ -82,6 +85,8 @@ CHECK_TIMEOUT_SECONDS = 900
 LOG_TIMEOUT_SECONDS = 60
 TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
 NO_CLOSURE = "n/a - fixed[] empty"
+ABSENT_FILE_REASON = "the file is not in the tree"
+NO_CHANGE_REASON = "the coder made no change"
 TERMINAL_PANE_ENV = ("HERDR_ENV", "HERDR_PANE_ID", "HERDR_SOCKET_PATH", "TUIOS_SOCKET")
 CHILD_ENV = {**{name: value for name, value in os.environ.items() if name not in TERMINAL_PANE_ENV},
              "CLAUDE_FORMAT_HOOK_OFF": "1"}
@@ -628,6 +633,8 @@ class LoopRun:
         self.round_fixes = []  # the fix entries this round's reviewers filed, for fix_round to mark
         self.check_fixed = 0  # findings the full check and the class closure fixed, which file no finding row
         self.last_pass = ""
+        self.untested_fix = False  # a coder pass that no passed full check ran after
+        self.scoped_tests = ""
 
     def next_round(self):
         self.iter_count += 1
@@ -693,7 +700,10 @@ class LoopRun:
 
         self.round_claimed, self.round_fixes = set(), []
         round_fix, round_nits = [], []
-        for (agent, owned), parsed in zip(self.dispatches, reviews, strict=True):
+        tree_paths = git_lines(self.repo, "ls-files", "--cached", "--others", "--exclude-standard")
+        for (agent, owned), review in zip(self.dispatches, reviews, strict=True):
+            parsed, absent = absent_file_split(self.repo, tree_paths, review)
+            self.skipped_fp += [{"item": item, "reason": ABSENT_FILE_REASON} for item in absent]
             design = [item for item in parsed["fix"] if "[design-decision]" in item.lower()]
             fixes = [item for item in parsed["fix"] if item not in design]
 
@@ -721,6 +731,7 @@ class LoopRun:
         before = scope(self.repo)
         prompt = coder_prompt(self.repo, findings, list(nits), list(before), self.gate_env)
         self.last_pass = "coder"
+        self.untested_fix = True
         try:
             return coder_call(call_name, prompt, self.repo, self.out)
         except CoderCallError as error:
@@ -744,6 +755,10 @@ class LoopRun:
         self.skipped_fp += [{"item": round_findings[number - 1], "reason": line}
                             for number, line in sorted(skips.items())]
         skipped_findings = [round_findings[number - 1] for number in sorted(skips)]
+        if not changed:
+            unchanged = [item for item in round_findings if item not in skipped_findings]
+            self.skipped_fp += [{"item": item, "reason": NO_CHANGE_REASON} for item in unchanged]
+            skipped_findings += unchanged
         for finding in self.round_fixes:
             skipped = any(finding["text"] in item for item in skipped_findings)
             finding["actioned"] = "skipped_fp" if skipped else "fixed"
@@ -777,10 +792,17 @@ class LoopRun:
             return
 
         _report, _diffs, gate_changed = self.repair("coder-gate", gate_findings)
-        self.fixed += gate_findings
-        self.check_fixed += len(gate_findings)
-        self.files_touched.update(gate_changed)
+        self.mark_repaired(gate_findings, gate_changed)
         self.recheck_full_check(check_command, "full check still failing after one repair")
+
+    def mark_repaired(self, findings, changed):
+        """A repair's findings go to fixed when it changed a file, else to skipped_fp."""
+        if not changed:
+            self.skipped_fp += [{"item": item, "reason": NO_CHANGE_REASON} for item in findings]
+            return
+        self.fixed += findings
+        self.check_fixed += len(findings)
+        self.files_touched.update(changed)
 
     def run_check(self, check_command):
         """Run the full check, keep its result, command and details for the packet. Returns the log's tail.
@@ -790,6 +812,8 @@ class LoopRun:
         edits it itself. A rewrote_edited file holds coder work and always counts as touched."""
         self.full_check_command = check_command or ""
         self.full_check, tail, details = run_full_check(self.repo, self.out, check_command, self.gate_env)
+        if self.full_check == full_check.PASSED:
+            self.untested_fix = False
         check_wrote = set(self.check_details["changed"]) | set(self.check_details["created"])
         details["rewrote_edited"] = [path for path in details["rewrote_edited"]
                                      if path not in check_wrote or path in self.files_touched]
@@ -824,11 +848,15 @@ class LoopRun:
             return
 
         _report, _diffs, class_changed = self.repair("coder-class", closure["open"])
-        self.fixed += closure["open"]
-        self.check_fixed += len(closure["open"])
-        self.files_touched.update(class_changed)
+        self.mark_repaired(closure["open"], class_changed)
         self.next_round()
         self.recheck_full_check(check_command, "full check failing after the class repair")
+
+    def scoped_tests_pass(self, gate_commands):
+        """The phase's scoped tests after a fix that no passed full check ran after. A red one stops the loop."""
+        self.scoped_tests, tails = coder_gate.run_scoped_tests(self.repo, gate_commands, self.gate_env)
+        if tails:
+            self.stop("critical-blocker", ["scoped tests failing after the last fix:\n" + "\n\n".join(tails)])
 
     def outcome(self, ask_ids, ask_rows):
         return {
@@ -852,10 +880,11 @@ class LoopRun:
             "files_touched": sorted(self.files_touched | set(self.check_details["rewrote_edited"])),
             "nits": self.nits,
             "unreviewed_fix": self.last_pass == "coder",
+            "scoped_tests": self.scoped_tests,
         }
 
 
-def run_loop(repo, out, session, header, handoff, progress):
+def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
     """Walks the graph. Returns the outcome mapping. `progress` holds what a crash still reports: iter, fixed and
     files_touched, updated in place as the loop goes."""
     lane = header["lane"]
@@ -882,6 +911,8 @@ def run_loop(repo, out, session, header, handoff, progress):
         loop.full_check_pass(check_command)
     if loop.status == "converged":
         loop.class_closure_pass(check_command)
+    if loop.status == "converged" and loop.untested_fix:
+        loop.scoped_tests_pass(list(gate_commands))
 
     every_actioned = [finding["actioned"] for row in loop.run_rows for finding in row["findings"]]
     loop.tallies["fixed"] = every_actioned.count("fixed") + loop.check_fixed
@@ -925,7 +956,8 @@ def main(argv=None):
     outcome = None
     try:
         header, handoff = read_prompt(args.prompt_file)
-        outcome = run_loop(repo, out, args.session, header, handoff, progress)
+        run_state = code_step_core.read_state_file(pathlib.Path(args.state_dir)) or {}
+        outcome = run_loop(repo, out, args.session, header, handoff, progress, run_state.get("gateCommands", []))
         message = packet_message(outcome)
         handback.load(message)
     except handback.PacketError as error:

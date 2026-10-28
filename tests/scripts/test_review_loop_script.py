@@ -95,6 +95,11 @@ CLEAN_REVIEW = "## Fix\nNone\n\n## Ask\nNone\n\n## Nit\nNone\n\nOverall Assessme
 FIX_REVIEW = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
               "Overall Assessment: NEEDS CHANGES\n")
 CLOSED = '{"receipt": "one exit, all re-read", "open": []}'
+FIX_THEN_CLEAN = {
+    "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+    "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+    "closure": [{"result": CLOSED}],
+}
 
 
 def git(cwd, *args):
@@ -217,6 +222,85 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual((usage[0]["agent"], usage[0]["model"], usage[0]["driver"]),
                          ("review-loop", "script", "script"))
         self.assertEqual((usage[0]["calls"], usage[0]["tokens"]), (4, 80))
+
+    def run_with_scoped_tests(self, gate_commands, scenario):
+        self.state_dir.mkdir()
+        (self.state_dir / "state.json").write_text(json.dumps({"gateCommands": gate_commands}))
+        return self.run_script(scenario)
+
+    def test_a_fix_the_full_check_did_not_verify_reruns_the_scoped_tests_before_the_hand_back(self):
+        completed = self.run_with_scoped_tests(["grep -q 'limit = 20' app.py"], FIX_THEN_CLEAN)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["scoped_tests"], "passed")
+        self.assertIn("Scoped tests after the last fix: passed", handback.render(packet, "review"))
+
+    def test_a_scoped_test_left_red_by_the_last_fix_stops_the_loop(self):
+        completed = self.run_with_scoped_tests(["grep -q 'limit = 99' app.py"], FIX_THEN_CLEAN)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertEqual(packet["scoped_tests"], "failed: grep -q 'limit = 99' app.py")
+        self.assertIn("grep -q 'limit = 99' app.py", packet["blockers"][0])
+
+    def test_a_loop_that_made_no_fix_runs_no_scoped_tests(self):
+        completed = self.run_with_scoped_tests(["false"], {"code-reviewer": [{"result": CLEAN_REVIEW}],
+                                                           "smell-reviewer": [{"result": CLEAN_REVIEW}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual((packet["status"], packet["scoped_tests"]), ("converged", ""))
+
+    def test_a_fix_with_no_scoped_test_commands_says_none_ran(self):
+        completed = self.run_with_scoped_tests([], FIX_THEN_CLEAN)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["scoped_tests"], "not run (no scoped test commands)")
+
+    def test_a_finding_on_a_file_absent_from_the_tree_is_skipped_and_never_sent_to_the_coder(self):
+        ghost_review = FIX_REVIEW.replace("app.py:2", "ghost.py:2")
+
+        completed = self.run_script({"code-reviewer": [{"result": ghost_review}],
+                                     "smell-reviewer": [{"result": CLEAN_REVIEW}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual((packet["status"], packet["fixed"]), ("converged", []))
+        self.assertEqual(packet["skipped_fp"][0]["file_line"], "ghost.py:2")
+        self.assertEqual(packet["skipped_fp"][0]["reason"], "the file is not in the tree")
+        self.assertNotIn("coder", [call["key"] for call in self.fake_calls()])
+
+    def test_a_finding_on_an_untracked_file_reaches_the_coder(self):
+        (self.repo / "fresh.py").write_text(APP_BEFORE)
+        fresh_review = FIX_REVIEW.replace("app.py:2", "fresh.py:2")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": fresh_review}, {"result": CLEAN_REVIEW}],
+            "smell-reviewer": [{"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {str(self.repo / "fresh.py"): APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["fixed"][0]["file_line"], "fresh.py:2")
+
+    def test_a_fix_the_coder_made_no_change_for_is_skipped_not_listed_as_fixed(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1."}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["fixed"], [])
+        self.assertEqual(packet["skipped_fp"][0]["file_line"], "app.py:2")
+        self.assertEqual(packet["skipped_fp"][0]["reason"], "the coder made no change")
 
     def test_a_round_two_fix_diff_over_one_argument_limit_reaches_the_reviewer_whole(self):
         long_fix = "".join(f"limit_{line} = {line}\n" for line in range(12000))
@@ -935,7 +1019,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
-            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}, {"result": "Closed the class."}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Closed the class.", "edits": {"app.py": APP_AFTER_EDIT}}],
             "closure": [{"result": closure}],
         })
 

@@ -6,6 +6,7 @@ became. The fixtures are those of test_code_step.py; its own tests run there, no
 
 run: python3 -m unittest test_code_step_resume
 """
+import fcntl
 import json
 import pathlib
 import shutil
@@ -355,6 +356,36 @@ class ResumeTest(base.CodeStepTest):
 
         self.assertEqual(self.NEW_SESSION, pinned_session)
         self.assert_first_phase_ticked()
+
+    # ---------- one verb at a time on a run ----------
+
+    def hold_the_verb_lock(self):
+        lock_file = self.enterContext(open(self.repo / ".git/code-step/verb.lock", "a+"))
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return lock_file
+
+    def test_a_resume_while_another_verb_runs_on_the_run_stops_and_changes_nothing(self):
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        before = self.state_bytes()
+        lock_file = self.hold_the_verb_lock()
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("another code_step verb is running on this run", out)
+        self.assertEqual(before, self.state_bytes())
+        lock_file.close()
+        self.assertIn("Phase 1 marked done", self.step("resume"))
+
+    def test_an_abort_runs_while_another_verb_holds_the_run(self):
+        self.coder_round()
+        self.hold_the_verb_lock()
+
+        out = self.step("abort")
+
+        self.assertNotIn("another code_step verb is running", out)
+        self.assertFalse((self.repo / ".git/code-step/state.json").exists())
 
     # ---------- resume by saved state ----------
 

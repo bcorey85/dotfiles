@@ -119,6 +119,28 @@ def finding_file(line):
     return (match.group(1), int(match.group(2))) if match else ("", 0)
 
 
+def names_absent_file(repo, tree_paths, finding):
+    """True when the finding's file:line names a path that is not on disk and matches no path git lists."""
+    path = finding_file(finding)[0]
+    if not path or (pathlib.Path(repo) / path).exists():
+        return False
+    return not any(known == path or known.endswith("/" + path) for known in tree_paths)
+
+
+def absent_file_split(repo, tree_paths, review):
+    """(the review without its findings on a file neither on disk nor in git, those findings). A plan-change ask
+    stays: it is about the plan, not the file."""
+    kept, absent = {}, []
+    for disposition in ("fix", "ask", "nit"):
+        kept[disposition] = []
+        for item in review[disposition]:
+            if names_absent_file(repo, tree_paths, item) and not PLAN_CHANGE_MARK.match(item):
+                absent.append(item)
+            else:
+                kept[disposition].append(item)
+    return {**review, **kept}, absent
+
+
 def finding_class(line):
     """The class the reviewer tagged the finding with, which the tag rule puts right after the file:line; `other` when
     it tagged none."""

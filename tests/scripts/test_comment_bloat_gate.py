@@ -193,6 +193,17 @@ class CommentBloatGateTest(unittest.TestCase):
         path = self.source("test_plan.py", "x = 1\n" + fixture + "\n")
         self.assert_allowed(self.edit(path, fixture))
 
+    def test_a_plan_path_in_a_test_file_string_passes_but_one_in_its_comment_blocks(self):
+        plan_path = "docs/" + "plans/auth.md"
+        fixture = f'PLAN_PATH = "{plan_path}"'
+        for name in ("tests/fixtures.py", "test_plan.py", "plan.test.ts"):
+            with self.subTest(name=name):
+                path = self.source(name, "x = 1\n" + fixture + "\n")
+                self.assert_allowed(self.edit(path, fixture))
+        commented = f"x = 2  # see {plan_path}"
+        path = self.source("tests/fixtures.py", "x = 1\n" + commented + "\n")
+        self.assert_blocked(self.edit(path, commented))
+
     def test_plan_fixture_in_a_triple_quoted_string_passes(self):
         content = f'PLAN = """\n## {PHASE_WORD} 1: Build\n## {PHASE_WORD} 2: Refactor\n"""\n'
         path = self.source("test_plan.py", content)

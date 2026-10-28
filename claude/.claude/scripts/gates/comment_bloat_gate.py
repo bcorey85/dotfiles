@@ -13,6 +13,7 @@ import sys
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import hook_input
 import script_utils
+import source_paths
 import source_text
 from hook_input import emit_stderr
 
@@ -29,7 +30,8 @@ COMMENT_LINE = re.compile(r"^" + SPACE + r"*(//|#|\*(" + SPACE + r"|$)|--|;|/\*|
 # A bare docstring/JSDoc delimiter is structure, not prose.
 DELIMITER_LINE = re.compile(r"^" + SPACE + r"*(\"\"\"|'''|/\*\*?|\*/)" + SPACE + r"*$")
 
-# A plan path or provenance in a shipped string still leaks, so these search the whole line, strings included.
+# A plan path or provenance in a shipped string still leaks, so outside test files these search the whole line,
+# strings included.
 RAW_LINE_MARKERS = [re.compile(pattern, re.I) for pattern in (
     r"docs/plans/",
     r"per the (architect|plan|spec|ledger)",
@@ -129,7 +131,9 @@ def marker_rows(file_lines, comments_only=False, file_path=""):
     comments_only limits the scan to comment lines, for formats whose values are data, not prose. Lines inside a
     multi-line string held as data are not searched; on the line that opens one, only the text before the opening
     quote is, and on the line that closes one, only the text after the closing quote; on a template-literal line
-    that closes one and opens another, only the text between them."""
+    that closes one and opens another, only the text between them. In a test file the raw-line markers also skip
+    string text: a plan path there is fixture data."""
+    in_test_file = source_paths.is_test_path(file_path)
     style = source_text.comment_style_of(file_path)
     comment_numbers = comment_numbers_of(file_lines, style)
     string_data_numbers, closing_tails, openings = source_text.string_data_regions(file_lines, style)
@@ -150,7 +154,8 @@ def marker_rows(file_lines, comments_only=False, file_path=""):
             raw = line
             searched = line if is_comment else searchable_text(line, style)
 
-        if marker_hit(f"{number}:{raw}", f"{number}:{searched}"):
+        raw_row = f"{number}:{searched}" if in_test_file else f"{number}:{raw}"
+        if marker_hit(raw_row, f"{number}:{searched}"):
             rows.append((number, line))
     return rows
 

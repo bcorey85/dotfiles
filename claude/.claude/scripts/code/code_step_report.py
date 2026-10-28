@@ -64,14 +64,22 @@ def first_plan_impact(messages):
 ALREADY_DONE_LINE = re.compile(
     r"^[ \t>*`_-]*ALREADY-DONE[*`_]*:[ \t]*(?:ask[ \t]*)?(\d+)[ \t]*(?:—|–|--?)[ \t]*(.*)$", re.M
 )
+PASSING_CHECK = re.compile(r"`[^`]+`[ \t]*->[ \t]*exit 0")
 
 
 def already_done_ask_numbers(repo_dir, report):
     # The numbers of the asks the coder says need no edit. Each one counts only when its ALREADY-DONE line holds nothing
-    # but a file:line (a closing period, comma or semicolon aside) and that file exists in the repo.
+    # but a file:line whose file exists in the repo, or a backticked command that exited 0 (a verify-only ask), a
+    # closing period, comma or semicolon aside.
     numbers = set()
     for match in ALREADY_DONE_LINE.finditer(report):
-        location = script_utils.PATH_LINE.fullmatch(match.group(2).strip().rstrip(".,;"))
+        evidence = match.group(2).strip().rstrip(".,;")
+
+        if PASSING_CHECK.fullmatch(evidence):
+            numbers.add(int(match.group(1)))
+            continue
+
+        location = script_utils.PATH_LINE.fullmatch(evidence)
         if location and (repo_dir / script_utils.normalize_path(location.group(1))).is_file():
             numbers.add(int(match.group(1)))
     return numbers

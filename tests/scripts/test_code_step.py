@@ -3074,6 +3074,16 @@ class CodeStepTest(unittest.TestCase):
     def test_asks_coder_already_done_line_with_a_closing_period_finishes_the_phase(self):
         self.assert_already_done_line_finishes_the_phase("ALREADY-DONE: 1 — backend/src/orders.ts:2.")
 
+    def test_asks_coder_already_done_line_naming_a_passing_check_finishes_the_phase(self):
+        self.assert_already_done_line_finishes_the_phase(
+            "ALREADY-DONE: 1 — `npm test -- orders` -> exit 0\nRan the tests; they pass, so nothing changed.")
+
+    def test_asks_coder_already_done_line_naming_a_failing_check_stops(self):
+        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 — `npm test -- orders` -> exit 1")
+
+    def test_asks_coder_already_done_line_naming_a_check_with_text_after_its_exit_stops(self):
+        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 — `npm test -- orders` -> exit 0 but 2 skipped")
+
     def test_asks_coder_already_done_line_for_another_ask_number_does_not_count(self):
         self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 2 — backend/src/orders.ts:2")
 

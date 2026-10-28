@@ -9,7 +9,8 @@
                                         bad packet once per agent so the loop can repair it. Any other argument does
                                         nothing.
 
-Importers use parse, validate, load, render, record, latest, hand_back_gap and false_clean_reason. The store also holds
+Importers use parse, validate, load, render, record, latest, hand_back_gap, false_clean_reason,
+ended_on_unreviewed_fix, fixed_paths, unreviewed_streak and unreviewed_fix_section. The store also holds
 a `stop` row that review_loop_gate.py writes at each review-loop stop (agent_id, open_dispatches). `latest` keeps the
 last one after the last dispatch; while it shows open_dispatches > 0 and no hand-back is current, hand_back_gap returns
 LOOP_WAITING, and a later stop with none open, a hand-back or a new dispatch ends the wait. A validated packet's
@@ -512,6 +513,21 @@ def render_items(lines, heading, items, item_line):
     lines += [item_line(item) for item in items]
 
 
+def fixed_paths(packet):
+    """Every path the packet's fixed[] entries name, once each, in order."""
+    paths = []
+    for item in packet["fixed"]:
+        paths += [path for path in entry_paths(item) if path not in paths]
+    return paths
+
+
+def unreviewed_fix_section(packet):
+    """The (heading, lines) section for a clean hand-back whose last step was a coder: no reviewer read that fix."""
+    named_paths = ", ".join(fixed_paths(packet)) or "none named in fixed[]"
+    return ("Last fix not reviewed",
+            [f"- No reviewer ran after the loop's last fix. Its files are among: {named_paths}"])
+
+
 def render(packet, skill, sections=()):
     """The user-facing text. `sections` are (heading, lines) pairs placed before the trailer."""
     lines = ["### Fixed"]
@@ -586,10 +602,10 @@ def latest(session_id):
     review-loop stop row after the last dispatch or None, "unanswered": the number of dispatches after the last
     hand-back (all of them when there is none), "pending": unanswered > 0}. A hand-back clears every dispatch before
     it, so a dispatch that another hook denied blocks nothing once a later dispatch hands back. A row holds kind, ts,
-    session_id; a hand-back row also agent_id, status, problems, message; a stop row also agent_id,
-    open_dispatches (the background agents and shells the loop still waited on when it stopped) and ask_rows. A
-    stop the gate blocked is not a stop: the loop went on, so such a row is skipped. Rows are ordered by append, not by
-    clock."""
+    session_id; a hand-back row also agent_id, status, problems, message, no_reviewer, unreviewed_fix; a stop row
+    also agent_id, open_dispatches (the background agents and shells the loop still waited on when it stopped) and
+    ask_rows. A stop the gate blocked is not a stop: the loop went on, so such a row is skipped. Rows are ordered by
+    append, not by clock."""
     standing = {"dispatch": None, "handback": None, "stop": None, "unanswered": 0, "pending": False}
     if not session_id:
         return standing
@@ -668,21 +684,36 @@ def false_clean_reason(session_id):
     if status not in CLEAN_STATUSES:
         return f"the latest review-loop hand-back is {status}"
     if seen["handback"].get("no_reviewer"):
-        return "the review-loop handed back clean with no reviewer run after its last code change"
+        return "the review-loop handed back clean with no reviewer run"
     return None
 
 
-def ran_reviewer(session_id, agent_id, iter_round):
-    """False when the review-loop agent `agent_id` dispatched no reviewer at all, or, below round 2, none after its
-    last coder dispatch. From round 2 on, no full review follows a coder, so one reviewer dispatch is enough. Coders
-    resumed with SendMessage are not counted: the hook sees only the recipient's id, not its type."""
+def loop_steps(session_id, agent_id):
+    """The review-loop agent `agent_id`'s coder and reviewer dispatches, in order. Coders resumed with SendMessage are
+    not counted: the hook sees only the recipient's id, not its type."""
     stored_rows = script_utils.read_jsonl(session_file(session_id))
-    steps = [row["step"] for row in stored_rows if row.get("kind") == "step" and row.get("agent_id") == agent_id]
+    return [row["step"] for row in stored_rows if row.get("kind") == "step" and row.get("agent_id") == agent_id]
 
-    if iter_round >= 2:
-        return "reviewer" in steps
-    after_coder = steps[len(steps) - steps[::-1].index("coder"):] if "coder" in steps else steps
-    return "reviewer" in after_coder
+
+def unreviewed_streak(session_id):
+    """How many of the session's latest hand-backs in a row were clean with no reviewer run. 0 when the latest one had
+    a reviewer."""
+    stored_rows = script_utils.read_jsonl(session_file(session_id))
+    hand_backs = [row for row in stored_rows if row.get("kind") == "handback"]
+
+    streak = 0
+    for row in reversed(hand_backs):
+        if not row.get("no_reviewer"):
+            break
+        streak += 1
+    return streak
+
+
+def ended_on_unreviewed_fix(session_id, agent_id):
+    """True when the latest stored hand-back of `agent_id` was clean and its last step was a coder after a reviewer."""
+    stored_rows = script_utils.read_jsonl(session_file(session_id))
+    hand_backs = [row for row in stored_rows if row.get("kind") == "handback" and row.get("agent_id") == agent_id]
+    return bool(hand_backs) and bool(hand_backs[-1].get("unreviewed_fix"))
 
 
 def claim_no_review(session_id, agent_id):
@@ -734,24 +765,27 @@ def handle_hook(event, kind):
         return None
     message = str(tool_input.get("message", ""))
     agent_id = event.get("agent_id") or "unknown"
-    iter_round = None
     try:
         packet = load(message)
-        status, problems, iter_round = packet["status"], [], packet["iter"]
+        status, problems = packet["status"], []
     except PacketError as error:
         status, problems = "invalid", error.problems
     if problems and not was_recorded(session_id, agent_id, "rejected"):
         record(session_id, "rejected", agent_id=agent_id, problems=problems)
         return ("The review-loop packet does not parse: " + "; ".join(problems) +
                 ". Fix the packet to the schema in your instructions and hand back again.")
-    unreviewed = (status in CLEAN_STATUSES and not ran_reviewer(session_id, agent_id, iter_round)
+    steps = loop_steps(session_id, agent_id)
+    unreviewed = (status in CLEAN_STATUSES and "reviewer" not in steps
                   and not claim_no_review(session_id, agent_id))
     if unreviewed and not was_recorded(session_id, agent_id, "unreviewed"):
         record(session_id, "unreviewed", agent_id=agent_id)
-        return ("This review-loop hand-back is clean but no reviewer ran after the last code change. Dispatch the "
-                "code-reviewer on the diff, fix what it finds, then hand back again.")
+        return ("This review-loop hand-back is clean but no reviewer ran. Dispatch the code-reviewer on the diff, fix "
+                "what it finds, then hand back again.")
+
+    unreviewed_fix = (status in CLEAN_STATUSES and "reviewer" in steps
+                      and steps[-1:] == ["coder"])
     record(session_id, "handback", agent_id=agent_id, status=status, problems=problems, message=message,
-           no_reviewer=unreviewed)
+           no_reviewer=unreviewed, unreviewed_fix=unreviewed_fix)
     return None
 
 

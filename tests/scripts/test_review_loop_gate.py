@@ -112,6 +112,30 @@ class ReviewLoopGateTest(unittest.TestCase):
                    dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "agentId: a7bf12f9c51bc4875")]
         self.assertIn("No full check ran", json.loads(self.stop(records))["reason"])
 
+    def test_a_delivered_hand_back_ends_the_full_check_block_but_a_stop_without_one_keeps_it(self):
+        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        handing_back = {"type": "tool_use", "id": "toolu_hb", "name": "SubagentHandback",
+                        "input": {"message": "status: converged"}}
+        delivered = [{"type": "assistant", "message": {"role": "assistant", "content": [handing_back]}},
+                     result("toolu_hb", "delivered")]
+        self.assertIn("No full check ran", json.loads(self.stop(records))["reason"])
+        self.assertEqual(self.stop([*records, *delivered]), "")
+
+    def test_a_denied_hand_back_does_not_end_the_full_check_block(self):
+        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        handing_back = {"type": "tool_use", "id": "toolu_hb", "name": "SubagentHandback",
+                        "input": {"message": "status: converged"}}
+        denied = [{"type": "assistant", "message": {"role": "assistant", "content": [handing_back]}},
+                  {"type": "user", "message": {"role": "user", "content": [
+                      {"type": "tool_result", "tool_use_id": "toolu_hb", "content": "denied", "is_error": True}]}}]
+        self.assertIn("No full check ran", json.loads(self.stop([*records, *denied]))["reason"])
+
+    def test_a_plan_impact_report_owes_no_full_check(self):
+        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        self.assertIn("No full check ran", json.loads(self.stop(records))["reason"])
+        out = self.stop(records, last_assistant_message="status: plan-impact\niter: 1\nplan_impact: a, b\n")
+        self.assertNotIn("No full check ran", out)
+
     def test_full_check_after_reviewed_coder_passes(self):
         records = [user("review loop"),
                    dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),

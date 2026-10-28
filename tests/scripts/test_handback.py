@@ -61,6 +61,14 @@ class HandbackTestBase(unittest.TestCase):
                               capture_output=True, env=env)
         return done.returncode, done.stdout, done.stderr
 
+    def dispatch(self, agent_type, calling_agent_id=None, prompt=""):
+        """A PreToolUse Agent event: from the main session, or from the subagent `calling_agent_id`."""
+        event = {"session_id": SESSION, "tool_name": "Agent",
+                 "tool_input": {"subagent_type": agent_type, "prompt": prompt}}
+        if calling_agent_id:
+            event.update({"agent_type": "review-loop", "agent_id": calling_agent_id})
+        self.assertEqual(self.run_cli(["hook", "dispatch"], json.dumps(event))[:2], (0, ""))
+
 
 class ParseTest(HandbackTestBase):
     def test_numbered_asks_split_into_items_and_closing_prose_goes_to_the_trailer(self):
@@ -564,14 +572,6 @@ class HookTest(HandbackTestBase):
 
 
 class ReviewerRequiredTest(HandbackTestBase):
-    def dispatch(self, agent_type, calling_agent_id=None, prompt=""):
-        """A PreToolUse Agent event: from the main session, or from the subagent `calling_agent_id`."""
-        event = {"session_id": SESSION, "tool_name": "Agent",
-                 "tool_input": {"subagent_type": agent_type, "prompt": prompt}}
-        if calling_agent_id:
-            event.update({"agent_type": "review-loop", "agent_id": calling_agent_id})
-        self.assertEqual(self.run_cli(["hook", "dispatch"], json.dumps(event))[:2], (0, ""))
-
     def hand_back(self, agent_id="a1", message=CONVERGED):
         event = {"session_id": SESSION, "tool_name": "SubagentHandback", "agent_type": "review-loop",
                  "agent_id": agent_id, "tool_input": {"message": message}}
@@ -635,7 +635,6 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.dispatch("review-loop", prompt="no-review")
         self.assertEqual(self.hand_back("a1"), (0, ""))
         self.assertEqual(self.hand_back("a2"), (0, ""))
-        self.assertEqual(self.hand_back("a1"), (0, ""))
         self.assert_denied(self.hand_back("a3"))
 
     def test_reviewer_dispatched_by_another_agent_id_does_not_count(self):
@@ -679,6 +678,103 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.dispatch("review-loop")
         self.dispatch("Explore", "a1")
         self.assert_denied(self.hand_back())
+
+
+def transcript_line(block, record_type="assistant"):
+    return {"type": record_type, "message": {"role": record_type, "content": [block]}}
+
+
+def coder_step(tool_use_id):
+    return transcript_line({"type": "tool_use", "id": tool_use_id, "name": "Agent",
+                            "input": {"subagent_type": "coder", "prompt": "go"}})
+
+
+def full_check_run(tool_use_id):
+    return transcript_line({"type": "tool_use", "id": tool_use_id, "name": "Bash",
+                            "input": {"command": "npm test > /tmp/review-gate.log 2>&1"}})
+
+
+class OneCheckedHandBackTest(HandbackTestBase):
+    def setUp(self):
+        super().setUp()
+        self.transcript = self.tmp / "loop.jsonl"
+        for agent_type in ("review-loop", "coder", "code-reviewer"):
+            self.dispatch(agent_type, None if agent_type == "review-loop" else "a1")
+
+    def send_hand_back(self, agent_id="a1", message=CONVERGED):
+        event = {"session_id": SESSION, "tool_name": "SubagentHandback", "agent_type": "review-loop",
+                 "agent_id": agent_id, "agent_transcript_path": str(self.transcript),
+                 "tool_input": {"message": message}}
+        return self.run_cli(["hook", "handback"], json.dumps(event))
+
+    def hand_back(self, steps, agent_id="a1", message=CONVERGED):
+        self.transcript.write_text("".join(json.dumps(step) + "\n" for step in steps), encoding="utf-8")
+        _code, out, _err = self.send_hand_back(agent_id, message)
+        return out
+
+    def handback_rows(self):
+        lines = (self.store / f"{SESSION}.jsonl").read_text(encoding="utf-8").splitlines()
+        rows = [json.loads(line) for line in lines]
+        return [row for row in rows if row["kind"] == "handback"]
+
+    def test_a_clean_hand_back_with_a_code_change_after_the_last_full_check_is_denied(self):
+        out = self.hand_back([full_check_run("t1"), coder_step("t2")])
+        decision = json.loads(out)["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+        self.assertIn("Step 6 execution gate", decision["permissionDecisionReason"])
+        self.assertEqual(self.handback_rows(), [])
+
+    def test_a_cap_reached_hand_back_with_a_code_change_after_the_last_full_check_is_denied(self):
+        message = ("status: cap-reached\niter: 2\n"
+                   "findings_remaining:\n- {finding: x, file_line: a.ts:1}\n")
+        out = self.hand_back([full_check_run("t1"), coder_step("t2")], message=message)
+        self.assertIn("Step 6 execution gate", json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"])
+        self.assertEqual(self.handback_rows(), [])
+
+    def test_a_plan_impact_hand_back_with_a_code_change_after_the_last_full_check_passes(self):
+        message = "status: plan-impact\niter: 1\nspec_iter: 0\nplan_impact: assumed a, found b\n"
+        out = self.hand_back([full_check_run("t1"), coder_step("t2")], message=message)
+        self.assertEqual(out, "")
+        self.assertEqual(len(self.handback_rows()), 1)
+
+    def test_a_clean_hand_back_after_a_full_check_passes(self):
+        self.assertEqual(self.hand_back([coder_step("t1"), full_check_run("t2")]), "")
+        self.assertEqual(len(self.handback_rows()), 1)
+
+    def test_a_second_hand_back_on_the_same_unchecked_state_passes(self):
+        steps = [full_check_run("t1"), coder_step("t2")]
+        self.assertIn("deny", self.hand_back(steps))
+        self.assertEqual(self.hand_back(steps), "")
+        self.assertEqual(len(self.handback_rows()), 1)
+
+    def test_a_new_code_change_after_a_denial_is_denied_again(self):
+        self.assertIn("deny", self.hand_back([full_check_run("t1"), coder_step("t2")]))
+        self.assertIn("deny", self.hand_back([full_check_run("t1"), coder_step("t2"), full_check_run("t3"),
+                                              coder_step("t4")]))
+
+    def test_an_unreadable_transcript_never_blocks(self):
+        self.transcript.write_text("not json\n", encoding="utf-8")
+        code, out, _err = self.send_hand_back()
+        self.assertEqual((code, out), (0, ""))
+        self.assertEqual(len(self.handback_rows()), 1)
+
+    def test_the_transcript_is_found_under_the_session_transcript_when_the_event_names_none(self):
+        steps_file = self.tmp / "session" / "subagents" / "agent-a1.jsonl"
+        steps_file.parent.mkdir(parents=True)
+        steps_file.write_text(json.dumps(coder_step("t1")) + "\n", encoding="utf-8")
+        event = {"session_id": SESSION, "tool_name": "SubagentHandback", "agent_type": "review-loop",
+                 "agent_id": "a1", "transcript_path": str(self.tmp / "session.jsonl"),
+                 "tool_input": {"message": CONVERGED}}
+        self.assertIn("deny", self.run_cli(["hook", "handback"], json.dumps(event))[1])
+
+    def test_a_second_hand_back_from_an_agent_with_a_stored_report_is_denied_and_adds_no_row(self):
+        steps = [coder_step("t1"), full_check_run("t2")]
+        self.assertEqual(self.hand_back(steps), "")
+        out = self.hand_back(steps)
+        decision = json.loads(out)["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+        self.assertIn("SendMessage", decision["permissionDecisionReason"])
+        self.assertEqual(len(self.handback_rows()), 1)
 
 
 if __name__ == "__main__":

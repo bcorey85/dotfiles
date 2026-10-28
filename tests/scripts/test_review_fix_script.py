@@ -1155,12 +1155,14 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.write_code_step(stage="done", sessionId=SESSION)
         self.assertEqual(self.packet("")[0], 0)
 
-    def test_every_stage_that_owns_review_hand_backs_blocks_and_plan_coder_does_not(self):
+    def test_every_stage_that_owns_review_hand_backs_blocks(self):
         for stage in ("coder", "asks-coder"):
             with self.subTest(stage=stage):
                 self.seed()
                 self.write_launched_run("a1", stage=stage)
                 self.assertEqual(self.packet("")[0], 2)
+
+    def test_plan_coder_stage_does_not_block(self):
         self.seed()
         self.write_code_step(stage="plan-coder", sessionId=SESSION)
         self.assertEqual(self.packet("")[0], 0)
@@ -1256,7 +1258,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(
             (row["class"], row["gate"], row["path_key"], row["line"]), ("other", "code-reviewer", "a.ts", "1")
         )
-        self.assertNotIn("ops", json.dumps(row))
+        self.assertNotIn("ops", row.values())
         self.assertNotIn("desc", row)
 
     def test_a_plan_impact_ask_is_presented_but_not_logged(self):

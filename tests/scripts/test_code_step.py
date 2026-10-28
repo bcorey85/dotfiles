@@ -212,7 +212,15 @@ class CodeStepTest(unittest.TestCase):
             return None
         return json.loads(finished.stdout)["hookSpecificOutput"]
 
-    def hook(self, agent_type, message, agent_id="a1", session=SESSION, launched=True, cwd=None):
+    def next_default_agent_id(self, agent_type):
+        # A review-loop agent hands back once; each later default hand-back in a test is a new agent. Coders keep a1.
+        if agent_type != "review-loop":
+            return "a1"
+        self.default_loop_hand_backs = getattr(self, "default_loop_hand_backs", 0) + 1
+        return f"a{self.default_loop_hand_backs}"
+
+    def hook(self, agent_type, message, agent_id=None, session=SESSION, launched=True, cwd=None):
+        agent_id = agent_id or self.next_default_agent_id(agent_type)
         # The fork hands back. The PreToolUse hooks of settings.json see the call: the coder gate may deny it or stamp
         # its message, the hand-back packet hook may deny it, and so may the code-step hook. A hand-back that goes
         # through is logged by the PostToolUse log hook with the message as stamped; a denied one never reaches it.

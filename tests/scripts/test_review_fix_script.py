@@ -1077,6 +1077,34 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("ACTION: wait-for-loop", output)
         self.assertNotIn("stop-no-handback", output)
 
+    def test_a_loop_that_hands_back_before_its_background_reviewer_reports_gets_wait_for_loop(self):
+        full_check = {"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "t_full", "name": "Bash",
+             "input": {"command": "npm test > /tmp/review-gate.log 2>&1"}}]}}
+        launch = {"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "t_rev", "name": "Agent",
+             "input": {"subagent_type": "code-reviewer", "prompt": "review"}}]}}
+        launched = {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "t_rev",
+             "content": [{"type": "text", "text": "Async agent launched\nagentId: arev"}]}]}}
+        transcript = self.temp_root / "loop.jsonl"
+        transcript.write_text("".join(json.dumps(line) + "\n" for line in (full_check, launch, launched)))
+        loop_event = {"session_id": SESSION, "agent_type": "review-loop", "agent_id": "a1",
+                      "agent_transcript_path": str(transcript)}
+        self.dispatch()
+
+        _code, denied = self.hook({**loop_event, "tool_name": "SubagentHandback", "tool_input": {"message": BLOCKER}},
+                                  "handback")
+        subprocess.run(["python3", "-I", str(LOOP_GATE)], input=json.dumps({**loop_event,
+                                                                            "hook_event_name": "SubagentStop"}),
+                       text=True, capture_output=True, env=self.environment(), check=True)
+        code, output = self.packet("")
+
+        self.assertIn('"permissionDecision": "deny"', denied)
+        self.assertEqual(code, 3, output)
+        self.assertIn("ACTION: wait-for-loop", output)
+        self.assertNotIn("ACTION: stop", output)
+
     def test_a_second_packet_on_the_same_stop_row_stops_and_a_new_stop_row_waits_again(self):
         self.dispatch()
         self.stop_row(1)

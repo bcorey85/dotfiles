@@ -15,7 +15,7 @@ Transform the task document into "document what exists" questions — the resear
 
 - A source document path (e.g. `docs/plans/<slug>/00-ticket.md`, or an external file to snapshot)
 - A task directory under `docs/plans/` (or a slug to create one)
-- Optionally: flagged questions with intent-free rewrites from a leak-check round — when present, apply those edits to the existing questions file with the Edit tool instead of regenerating from scratch.
+- Optionally: flagged questions with intent-free rewrites from a leak-check round. When present, repair the existing questions file instead of regenerating it: replace each flagged question's whole line with the Edit tool. A dispatch that says to apply the rewrites word for word → put in each rewrite exactly as given.
 
 ## Process
 
@@ -23,13 +23,14 @@ Transform the task document into "document what exists" questions — the resear
 2. Snapshot the source to `DIR/00-ticket.md` so the folder is self-contained, unless it is already there. If the source already lives _inside_ `DIR` under a different name, **rename it (`mv`) to the canonical name — do not copy**, or you leave a duplicate sibling. If it lives outside `DIR`, copy it verbatim. Never overwrite an existing snapshot.
 3. Read the source document fully. Identify the components, patterns, and systems it touches.
 4. Generate 5–12 questions, ordered foundational (data/types) → surface (UI/API). Cover: data flow, types/interfaces, existing patterns, test patterns, error handling.
-5. Write `DIR/01-questions.md` in the format below.
+5. Write `DIR/01-questions.md` in the format below. Then run `python3 ~/.claude/scripts/tools/questions_check.py check DIR/01-questions.md`, fix each line it names, and rerun until it exits 0. Run it again after every repair.
 6. Return ONLY the questions file path and a one-line count (e.g. "9 questions written"). Do NOT summarize the source document or quote the questions in your reply.
 
 ## Question Rules
 
 - Frame every question as "document what exists" — never "how to change/build".
 - Each question targets a specific area or vertical slice of the codebase.
+- Write each question on its own line as `N. <whole question>?`. A repair rewrites the flagged question as a new whole sentence; never delete a clause in place.
 - NEVER mention what is being built or why in the question text or the exploration map.
 - A skilled engineer reading the questions should know exactly which codebase areas the research will explore — and nothing about the goal.
 

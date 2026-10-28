@@ -32,21 +32,8 @@ STDIN_PROGRAM_FILES = {"-", "/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"}
 # Redirections that carry code inside the command: a heredoc or a here-string. A file read with `<` is a script file,
 # as in `python3 <file>`.
 STDIN_CODE_REDIRECTIONS = {"<<", "<<<"}
-# By interpreter family: the name pattern, the flags after which it runs no program from stdin (a module, a version,
-# help), and the options that take the next word as their value. nodejs is the node family.
-INTERPRETER_FAMILIES = {
-    "python": {"name": r"python[\d.]*", "no_stdin_code_flags": {"-m", "-V", "-VV", "--version", "-h", "--help"},
-               "value_options": {"-W", "-X", "-Q"}},
-    "perl": {"name": r"perl", "no_stdin_code_flags": {"-v", "-V", "--version", "-h", "--help"},
-             "value_options": {"-I", "-M", "-C"}},
-    "ruby": {"name": r"ruby", "no_stdin_code_flags": {"-v", "--version", "-h", "--help"},
-             "value_options": {"-I", "-r", "-C", "-E"}},
-    "node": {"name": r"node(?:js)?", "no_stdin_code_flags": {"-v", "--version", "-h", "--help"},
-             "value_options": {"-r", "--require", "--import", "-C", "--conditions"}},
-    "php": {"name": r"php", "no_stdin_code_flags": {"-v", "--version", "-h", "--help"},
-            "value_options": {"-d", "-c", "-r"}},
-}
-INTERPRETER = re.compile("|".join(family["name"] for family in INTERPRETER_FAMILIES.values()), re.I)
+INTERPRETER_FAMILIES = shell_command.INTERPRETER_FAMILIES
+INTERPRETER =re.compile("|".join(family["name"] for family in INTERPRETER_FAMILIES.values()), re.I)
 MANAGE_SCRIPT = "manage.py"
 TEXT = ("Inline interpreter runs (python3 -c, node -e, perl -e, manage.py shell -c) and code fed on stdin to a bare "
         "interpreter (python3 -, python3 <<'EOF', cat file | python3) are blocked. Do not retry another inline form. "

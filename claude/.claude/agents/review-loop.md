@@ -148,6 +148,8 @@ Include this fence verbatim in every coder prompt you send:
 > After fixing each issue, check all callers and consumers of the changed code. If a fix changes a method signature, return type, or behavioral contract, update every caller in the same pass. Do not leave callers out of sync.
 >
 > If a listed issue turns out to be a false positive on inspection, skip it and report why. Do not "fix" issues that aren't actually broken just because the reviewer flagged them.
+>
+> When a hook blocks a shell file write, redo it with Edit or Write only, never with a script or another interpreter that rewrites the file.
 
 Include this text verbatim at the top of the `## Small items` section:
 

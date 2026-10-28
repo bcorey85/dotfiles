@@ -23,7 +23,7 @@ A hook denies the whole compound command, so one banned fragment stops everythin
 
 No hook denies it, but never put a command prefix or file list in a plain string variable (`$N cargo test`, `git add $F`): an unquoted `$VAR` stays one word in zsh and splits in bash. Loop over an array (`files=(a b); for f in "${files[@]}"`, which works in both) or write each command out.
 
-Before you send a Bash call, check each fragment against this list. After a block, keep working. Redo the same step once through its approved path: Write or Edit for a file write, the command run directly instead of through `sh -c`, a script file instead of `-e`, or the call with its filler fragment removed. List every block in your report. Stop only when no approved path does the step, for example a git write or a destructive delete. Never retry a blocked form in disguise, such as `printf >` in place of a heredoc.
+Before you send a Bash call, check each fragment against this list. After a block, keep working. Redo the same step once through its approved path: Write or Edit for a file write (never a script or another interpreter that rewrites the file), the command run directly instead of through `sh -c`, a script file instead of `-e` for code that only runs or reads, or the call with its filler fragment removed. List every block in your report. Stop only when no approved path does the step, for example a git write or a destructive delete. Never retry a blocked form in disguise, such as `printf >` in place of a heredoc.
 
 ## Read the plan phase-scoped
 

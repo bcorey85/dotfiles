@@ -34,6 +34,7 @@ from code_step_core import (
     script_command,
     session_pin,
 )
+from code_step_usage import VERB_USAGES
 from script_utils import git_output, run_command
 from test_run_output import matches_no_test
 
@@ -863,7 +864,7 @@ def with_simplify_lines(items, evidence, simplify_done_texts):
     if not simplify_done_texts:
         return evidence
 
-    simplify_lines = [f"\n  - Done: {text}" for text in simplify_done_texts]
+    simplify_lines = [f"\n  {plan_format.DONE_PREFIX}{text}" for text in simplify_done_texts]
 
     gate_position = concentration_gate_position(items)
     combined = list(evidence)
@@ -939,7 +940,7 @@ def tick_entry_stop(state, plan, number):
 def tick_plan_stop(repo_dir, state, args):
     # The stop text when `tick` has no plan run to act on, or None.
     if len(args) != 1:
-        return "usage: code_step.py tick <phase id>"
+        return VERB_USAGES["tick"].splitlines()[0]
     if state is None or not state.get("plan"):
         return "tick needs a plan run: there is no saved plan state. Run `start <plan>` first."
 
@@ -983,4 +984,14 @@ def command_tick(args):
 
 
 def command_verify(repo_dir, state, args):
+    # The user's fix of the plan's verification lines is the phase text from here on, so a later stop does not call it
+    # stale.
+    if state.get("plan") and state.get("phase") is not None:
+        try:
+            plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
+        except OSError:
+            plan_lines = None
+        if plan_lines is not None:
+            state["phaseText"] = plan_format.phase_text(plan_lines, state["phase"])
+
     finish_phase(repo_dir, state)

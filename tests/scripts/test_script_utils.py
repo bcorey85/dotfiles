@@ -135,6 +135,14 @@ class LinesAddedTest(unittest.TestCase):
         self.assertEqual([], script_utils.lines_added(["a", "b"], ["a"]))
 
 
+class UsageRequestedTest(unittest.TestCase):
+    def test_only_an_exact_help_word_asks_for_usage(self):
+        cases = [(["--help"], True), (["decide", "-h"], True), (["--helpful"], False), (["help"], False), ([], False)]
+        for words, expected in cases:
+            with self.subTest(words=words):
+                self.assertEqual(expected, script_utils.usage_requested(words))
+
+
 class WaitForTest(unittest.TestCase):
     def test_returns_the_value_the_check_finds_at_once(self):
         self.assertEqual("row", script_utils.wait_for(lambda: "row", 5, 0.01))

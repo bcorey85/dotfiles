@@ -187,6 +187,8 @@ def command_plan(args):
     verification_failure = verification_format_failure(plan_lines, plan_path, pathlib.Path.cwd(), plan["entries"])
     if verification_failure:
         print(verification_failure)
+    for row in plan_format.plain_verification_item_warnings(plan_lines, plan_path):
+        print(row)
     ac_failures = plan_format.spec_ac_failures(pathlib.Path(plan_path))
     for row in ac_failures:
         print(row)

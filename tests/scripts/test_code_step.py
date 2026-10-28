@@ -3903,8 +3903,8 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("docs/plans/orders/spec.md | +1 -1", said)
         self.assertEqual(
             [
-                "git add -- backend/src/orders.ts docs/plans/orders/spec.md && git commit -m 'orders exist' -- "
-                "backend/src/orders.ts docs/plans/orders/spec.md"
+                "git add -- backend/src/orders.ts docs/plans/orders/spec.md && "
+                "git commit -m 'orders exist (phase 1)' -- backend/src/orders.ts docs/plans/orders/spec.md"
             ],
             self.commit_lines(),
         )

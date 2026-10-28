@@ -543,6 +543,20 @@ def planned_commit_subject(repo_dir, state):
     return ""
 
 
+def spec_step_suffix(state, message):
+    # " (phase A2)" for a plan run's phase, " (plan <folder>)" for a plan run with no phase; "" for a planless run or
+    # a subject that already names the phase.
+    if not state.get("plan"):
+        return ""
+    if state.get("phase") is None:
+        return f" (plan {pathlib.PurePosixPath(state['plan']).parent.name})"
+
+    phase_name = f"phase {state['phase']}"
+    if phase_name.lower() in message.lower():
+        return ""
+    return f" ({phase_name})"
+
+
 def commit_message(repo_dir, state):
     message = planned_commit_subject(repo_dir, state)
     if not message:
@@ -550,6 +564,8 @@ def commit_message(repo_dir, state):
         summary = recorded_behavior[0].strip() if recorded_behavior else ""
         has_summary = bool(summary) and not EMPTY_SUMMARY.match(summary)
         message = summary if has_summary else (state.get("title") or "phase work")
+        message += spec_step_suffix(state, message)
+
     prefix = ticket_prefix(state)
     if prefix and not message.lower().startswith(prefix.lower()):
         message = prefix + message

@@ -191,6 +191,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["files_touched"], ["app.py"])
         self.assertIn("one exit, all re-read", packet["class_closure"])
         self.assertEqual((row["agent_id"], row["status"], row["no_reviewer"]), (AGENT_ID, "converged", False))
+        self.assertFalse(row["unreviewed_fix"])
 
         handback_events = [event for event in self.run_events() if event["event"] == "handback"]
         self.assertEqual(len(handback_events), 1)
@@ -334,6 +335,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         _, packet = self.stored_packet()
         self.assertEqual(packet["status"], "critical-blocker")
         self.assertIn("still failing after one repair", packet["blockers"][0])
+        self.assertFalse(self.stored_packet()[0]["unreviewed_fix"])
         self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 2)
 
     def test_ask_finding_id_reaches_packet_and_stop_row(self):
@@ -751,6 +753,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         _, packet = self.stored_packet()
         self.assertEqual((packet["status"], packet["iter"]), ("converged", 3))
         self.assertIn(open_member, [entry["finding"] for entry in packet["fixed"]])
+        self.assertTrue(self.stored_packet()[0]["unreviewed_fix"])
         self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 2)
         metrics = fake_ledger.recorded_rows(self.env, "review_metrics")
         self.assertEqual(metrics[0]["fixed"], "2")
@@ -903,6 +906,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "converged")
         self.assertEqual(packet["findings_remaining"], [])
         self.assertFalse(row["no_reviewer"])
+        self.assertTrue(row["unreviewed_fix"])
 
     @unittest.skipIf(os.geteuid() == 0, "root reads a mode 000 file")
     def test_crash_writes_a_critical_blocker_packet_and_the_rows(self):

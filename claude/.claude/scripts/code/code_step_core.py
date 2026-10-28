@@ -900,27 +900,55 @@ def restart_instruction(state, restart_command="start --restart"):
 def stale_phase_reason(repo_dir, state):
     # Why the saved run's phase no longer matches the plan file, or None when it still does (or the run keeps no phase
     # text to compare: a finished run, a planless run, a closing phase). A phase the run's own gates ticked is not
-    # stale.
+    # stale. It also returns None while a review script is still running, and at a plan-fix stop whose phase was
+    # edited or whose plan cannot be read.
     saved_text = state.get("phaseText")
     if state["stage"] == "done" or not state.get("plan") or state.get("phase") is None or saved_text is None:
         return None
 
-    # These stages are the ones where the plan is edited on purpose: a plan-edit coder, a ruling on a plan change, a
-    # fix of the plan's verification lines. The run reads the plan again when it leaves them.
-    if state["stage"] in PLAN_EDIT_STAGES or state.get("stopReason") in PLAN_EDIT_STOP_REASONS:
+    # These stages are the ones where the plan is edited on purpose: a plan-edit coder, a ruling on a plan change.
+    # The run reads the plan again when it leaves them.
+    if state["stage"] in PLAN_EDIT_STAGES:
         return None
+
+    # A review script still running is waited on, not dropped: a restart would kill it.
+    if review_script_running(state):
+        return None
+
+    # A stop for a plan fix still goes on when the phase is edited, but not when the phase id is gone: a split or a
+    # renumber leaves nothing to verify. An unreadable plan goes on to the stop.
+    is_plan_fix_stop = state.get("stopReason") in PLAN_EDIT_STOP_REASONS
 
     try:
         plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
     except OSError:
-        return f"{state['plan']} cannot be read"
+        return None if is_plan_fix_stop else f"{state['plan']} cannot be read"
 
     current_text = plan_format.phase_text(plan_lines, state["phase"])
     if current_text is None:
         return f"Phase {state['phase']} is no longer in {state['plan']}"
-    if plan_format.phase_wording(current_text) != plan_format.phase_wording(saved_text):
-        return f"the text of Phase {state['phase']} in {state['plan']} changed since the run started"
-    return None
+    if is_plan_fix_stop:
+        return None
+
+    current_wording = plan_format.phase_wording(current_text)
+    saved_wording = plan_format.phase_wording(saved_text)
+    if current_wording == saved_wording:
+        return None
+
+    changed_lines = changed_wording_lines(saved_wording, current_wording)
+    changed_lines_note = f" ({changed_lines})" if changed_lines else ""
+    return f"the text of Phase {state['phase']} in {state['plan']} changed since the run started{changed_lines_note}"
+
+
+def changed_wording_lines(saved_wording, current_wording):
+    # The lines the run started with that are gone, and the lines now in their place, each cut to 120 characters.
+    saved_lines = saved_wording.split("\n")
+    current_lines = current_wording.split("\n")
+    removed = script_utils.lines_added(current_lines, saved_lines)[:3]
+    added = script_utils.lines_added(saved_lines, current_lines)[:3]
+    removed_text = "; ".join(f"was: {line.strip()[:120]}" for line in removed)
+    added_text = "; ".join(f"now: {line.strip()[:120]}" for line in added)
+    return "; ".join(part for part in (removed_text, added_text) if part)
 
 
 def stop_a_silent_coder(repo_dir, state, stopped_at):

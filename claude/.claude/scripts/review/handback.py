@@ -71,7 +71,8 @@ INLINE_KEY_AT = re.compile(r"(?:^|\n\s*|([,.;|?!)])\s+)(" + "|".join(ITEM_KEYS) 
 KEPT_DELIMITERS = "?!)"
 ITEM_KEY_START = re.compile(r"(?:{})\s*:".format("|".join(ITEM_KEYS)))
 STALE_STORE_SECONDS = 7 * 86400
-FINDING_ID_PATTERN = re.compile(r"[0-9a-f]{16}")
+FINDING_ID_HEX_LEN = 16
+FINDING_ID_PATTERN = re.compile(rf"[0-9a-f]{{{FINDING_ID_HEX_LEN}}}")
 # A line `log-review-finding` prints for each finding row it writes.
 PRINTED_FINDING_ID = re.compile(r"(?m)^finding_id=(" + FINDING_ID_PATTERN.pattern + r")\s*$")
 

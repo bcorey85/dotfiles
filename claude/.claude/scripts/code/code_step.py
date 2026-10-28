@@ -149,6 +149,7 @@ from code_step_review import (
     command_review_again,
     emit_plan_impact_modal,
     emit_review_dispatch,
+    guarded_verb_runs,
     left_findings_open,
     prior_issues,
 )
@@ -390,10 +391,7 @@ def run_guarded_verb(verb, handler, args):
     repo_dir = repo_root_or_exit()
     os.chdir(repo_dir)
     state = load_state(repo_dir)
-    at_stage = state is not None and state["stage"] in guard["stages"]
-    reason_allowed = "stopReasons" not in guard or (state or {}).get("stopReason") in guard["stopReasons"]
-    resumed_review = verb == "review-again" and state is not None and awaits_resumed_review(state)
-    if not (at_stage and reason_allowed) and not resumed_review:
+    if not guarded_verb_runs(verb, state):
         return refuse(guard["message"], script_command(RESUME_VERB))
     handler(repo_dir, state, args)
 

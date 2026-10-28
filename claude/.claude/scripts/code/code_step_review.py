@@ -35,6 +35,7 @@ from code_step_core import (
     load_state,
     log_event,
     open_dispatch,
+    phase_code_in_place,
     phase_coder_reports,
     plan_edit_open_choices,
     prompt_with_gate_env,
@@ -67,7 +68,8 @@ ASKS_DONE_USAGE = ("asks-done needs one outcome per ask: accepted, rejected or m
                    "user's change after it as `--change \"<text>\"`. `--by user` or `--by session` says who ruled.")
 # The state each guarded verb needs: the stages it may run at, the stop reasons it accepts when the stage is "stopped",
 # and the refusal text when the state is anything else. `start`, `tick` and `resume` run at any stage and are not in
-# the table. A review-loop resumed after the wait cap also counts for review-again.
+# the table. A review-loop resumed after the wait cap also counts for review-again, and a converged review of the
+# phase's code counts for verify.
 STAGE_GUARDS = {
     "decide": {"stages": ("impact-coder", "impact-review"),
                "message": "decide needs a pending PLAN-IMPACT and one word: adopt, keep or discuss."},
@@ -80,8 +82,28 @@ STAGE_GUARDS = {
     "asks-done": {"stages": ("asks",), "message": ASKS_DONE_USAGE},
     "skill-done": {"stages": ("skill",), "message": "skill-done ran with no closing-phase skill pending."},
     "verify": {"stages": ("stopped",), "stopReasons": PLAN_EDIT_STOP_REASONS,
-               "message": "verify ran with no failed Automated Verification or unparsed Manual Verification pending."},
+               "message": "verify ran with no converged review, failed Automated Verification or unparsed Manual "
+                          "Verification pending."},
 }
+
+
+def guarded_verb_runs(verb, state):
+    # The saved state lets a STAGE_GUARDS verb run.
+    if state is None:
+        return False
+
+    guard = STAGE_GUARDS[verb]
+    at_stage = state["stage"] in guard["stages"]
+    reason_allowed = "stopReasons" not in guard or state.get("stopReason") in guard["stopReasons"]
+    if at_stage and reason_allowed:
+        return True
+    if verb == "review-again":
+        return awaits_resumed_review(state)
+    if verb == "verify":
+        return phase_code_in_place(state)
+    return False
+
+
 NO_REVIEW_PACKET = ("No review-loop packet was saved. The log-hook (code_step.py log-hook) is not installed. "
                     "Tell the user.")
 

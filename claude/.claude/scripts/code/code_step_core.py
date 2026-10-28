@@ -412,6 +412,14 @@ def awaits_resumed_review(state):
     return state.get("stage") == "stopped" and bool(state.get("resumableReview"))
 
 
+def phase_code_in_place(state):
+    # The phase's review converged and no coder works on it since, so `verify` may run its checks and close it.
+    module, _import_error = load_handback()
+    if module is None or state.get("stage") in (*CODER_STAGES, "plan-coder", "skill", "done"):
+        return False
+    return state.get("reviewStatus") in module.CLEAN_STATUSES
+
+
 def awaited_agent_id(repo_dir, state):
     # The agent the next verb waits for: the coder resumed after a stop, else the agent the newest dispatch launched
     # (a review-loop resumed with SendMessage keeps that id). None when no launch is logged yet.

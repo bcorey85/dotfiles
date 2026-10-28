@@ -21,10 +21,14 @@ REFUSAL = "The concentration gate is not evaluated, so the refactor phase is not
 GATE_CRITERION = "Concentration gate evaluated (module dispatched with the trigger named, or both counts stated)"
 
 
+def names_concentration_gate(text):
+    return re.search(r"concentration[\s-]+gate", text, re.I) is not None
+
+
 def concentration_gate_position(items):
     # The position of the concentration-gate item among the open items, or None when there is none.
     for position, item in enumerate(items):
-        if re.search(r"concentration[\s-]+gate", item["text"], re.I):
+        if names_concentration_gate(item["text"]):
             return position
     return None
 
@@ -36,6 +40,12 @@ def is_refactor_phase(state):
 def module_of(path):
     # A module is the directory a file sits in; a file at the repo root is the module ".".
     return str(pathlib.PurePosixPath(path).parent)
+
+
+def is_gate_counted(path):
+    # Source the gate counts: no test, lockfile or generated file, and nothing under a docs folder (plans, ADRs).
+    folders = pathlib.PurePosixPath(path).parts[:-1]
+    return is_counted_source(path) and "docs" not in folders
 
 
 def branch_numstat(repo_dir, base=None):
@@ -64,7 +74,7 @@ def concentration_gate(repo_dir, base=None):
     if numstat_text is None:
         return None
 
-    by_module = added_lines_by_group(numstat_text, module_of, lambda path: not is_counted_source(path))
+    by_module = added_lines_by_group(numstat_text, module_of, lambda path: not is_gate_counted(path))
     module, largest = max(by_module.items(), key=lambda pair: pair[1], default=("-", 0))
     branch = sum(by_module.values())
     trigger = None
@@ -172,3 +182,30 @@ def gate_stop_lines(gate, simplify_records):
         f"Run `/refactor simplify <module>`, then repeat `skill-done pass` with `{SIMPLIFY_FORM}` "
         "(the module you ran it on and the trigger that named it).",
     ]
+
+
+def manual_gate_item_end(plan_lines, phase):
+    # The line index after the phase's open Manual Verification item that names the concentration gate (after its
+    # indented continuation lines), or None when there is none. A plan may fold the gate into such an item.
+    for item in plan_format.manual_verification("\n".join(plan_lines)):
+        if item["phase"] != phase or item["checked"] or not names_concentration_gate(item["text"]):
+            continue
+
+        end = item["line"]
+        while end < len(plan_lines) and plan_lines[end].strip() and plan_lines[end][0] in " \t":
+            end += 1
+        return end
+    return None
+
+
+def with_manual_gate_lines(plan_lines, shifted_items, manual_gate_end, simplify_done_texts):
+    # `plan_lines` with a Done line per simplify text under the Manual Verification gate item, its box left open for
+    # the person, and the open items moved past the inserted lines.
+    simplify_lines = [f"  - Done: {text}" for text in simplify_done_texts]
+    written = plan_lines[:manual_gate_end] + simplify_lines + plan_lines[manual_gate_end:]
+
+    moved_by = len(simplify_lines)
+    moved_items = [item if item["index"] < manual_gate_end
+                   else {**item, "index": item["index"] + moved_by, "end": item["end"] + moved_by}
+                   for item in shifted_items]
+    return written, moved_items

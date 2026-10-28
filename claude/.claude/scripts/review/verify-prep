@@ -24,7 +24,7 @@ VERIFIER_RUN_RULES = (
     "Run each Automated Verification command the plan lists, as written. Beyond those, run only the file of a "
     "covering test that the plan's commands do not run. Run no other test and no suite sweep of your own.",
     "Outside the plan's own commands, never run a test or command that snapshots, edits, creates or deletes files "
-    "outside this checkout (~/.claude, ~/.config, sibling repos). A tool reading its own config (git, npm) is "
+    "outside this checkout (the home config folders, sibling repos). A tool reading its own config (git, npm) is "
     "fine. A covering test file this forbids is not run: its criterion can still be covered by reading the test; "
     "note that it was not run. A Manual Verification item whose command does this is human-only: do not run it.",
     "Run every command in the foreground and read its output from the call. Start no background run, and leave "

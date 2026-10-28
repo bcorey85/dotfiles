@@ -288,6 +288,7 @@ full_check: passed | failed (exit N) | setup fault (exit N) | not run (CI) | not
 files_touched: [<path>]
 nit: [<one line each>]                   # a small item ends `applied` or `skipped: <reason>`
 load_bearing_clean: <one line, or omitted>
+blocked_agents:                          # one `- <agent>: <step it skipped> (<the refused call>)` line per entry: each reviewer report's `Blocked:` line, and any other refusal a subagent reports; omitted when none
 ```
 
 `load_bearing_clean`: if a high-blast-radius file in scope (enforcement

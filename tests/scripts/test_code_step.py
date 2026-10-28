@@ -5996,6 +5996,14 @@ class CodeForkToolsTest(unittest.TestCase):
         self.assertNotIn("SendMessage", disallowed_tools)
         self.assertIn("takes no scope change mid-run", skill.read_text())
 
+    def test_the_code_fork_hands_a_question_back_even_when_the_task_names_a_session_to_ask(self):
+        skill = REAL_CLAUDE / "skills" / "code" / "SKILL.md"
+
+        skill_text = skill.read_text()
+
+        self.assertIn("Never send a question by message", skill_text)
+        self.assertIn("that session relays it", skill_text)
+
 
 if __name__ == "__main__":
     unittest.main()

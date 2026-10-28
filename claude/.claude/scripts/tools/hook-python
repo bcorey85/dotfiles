@@ -1,0 +1,32 @@
+#!/bin/sh
+# Runs a hook's Python script on a real interpreter, skipping a version manager's python3 shim wherever it can:
+# pyenv's shim spends a second or more starting up, and one tool call fires a dozen Python hooks. Runs on pyenv's
+# version, from PYENV_VERSION or $PYENV_ROOT/version; otherwise the first python3 on PATH outside a shims folder;
+# otherwise plain python3. A pyenv version the launcher cannot find under versions/ (a prefix such as 3.12) runs on
+# the shim.
+
+pyenv_root="${PYENV_ROOT:-$HOME/.pyenv}"
+pyenv_version="$PYENV_VERSION"
+if [ -z "$pyenv_version" ] && [ -r "$pyenv_root/version" ]; then
+    read -r pyenv_version < "$pyenv_root/version"
+fi
+pyenv_python="$pyenv_root/versions/${pyenv_version%%:*}/bin/python3"
+if [ -n "$pyenv_version" ] && [ "$pyenv_version" != system ]; then
+    if [ -x "$pyenv_python" ]; then
+        exec "$pyenv_python" "$@"
+    fi
+    exec python3 "$@"
+fi
+
+set -f
+IFS=:
+for path_dir in $PATH; do
+    case "$path_dir" in
+        */shims) continue ;;
+    esac
+    if [ -x "$path_dir/python3" ]; then
+        exec "$path_dir/python3" "$@"
+    fi
+done
+
+exec python3 "$@"

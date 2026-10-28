@@ -4,14 +4,16 @@
     full_check.py <repo> --log <path> [--timeout <seconds>] -- '<command>'
 
 Runs the command, given as one quoted word or as plain words, through the shell in the repo, output to the log, and
-prints `full check: <result>` first: `passed`, `failed (exit N)` with the log's last lines after it,
-`not run (timeout)` when the command runs past the limit, or `not run (CI)` when the repo's CLAUDE.md holds the line
-`Full suite: CI` (the command does not run then). `run` with no command returns `not run (no check found; ...)`.
+prints `full check: <result>` first: `passed`, `failed (exit N)` with the failing tests and the log's last lines
+after it, `setup fault (exit N)` with the same when the environment could not run the check (no program, a runner
+that cannot start, no package manifest, no test found), `not run (timeout)` when the command runs past the limit,
+or `not run (CI)` when the repo's CLAUDE.md holds the line `Full suite: CI` (the command does not run then).
+`run` with no command returns `not run (no check found; ...)`.
 A command past the limit is killed with its whole process group, so no test process outlives the check. A repo with
 a `.python-version` file runs the command with the pyenv shims first on PATH. A failed check whose log says
 `No module named X`, for an X that the repo declares as a dependency (requirements*.txt, pyproject.toml, setup.cfg
 or Pipfile, by normalized name), prints `not run (environment gap: No module named 'X')`.
-Exit 0, or 1 when the check failed.
+Exit 0, or 1 when the check failed or hit a setup fault.
 """
 
 import argparse
@@ -25,11 +27,16 @@ import subprocess
 import sys
 import tomllib
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "lib"))
+from check_output import is_setup_fault, tail_with_failing_tests
+
 FULL_SUITE_IN_CI = "Full suite: CI"
 LIST_MARKER = re.compile(r"^\s*[-*]\s+")
 PASSED = "passed"
 NOT_RUN_CI = "not run (CI)"
 NOT_RUN_TIMEOUT = "not run (timeout)"
+# The check could not run here: no program, a runner that cannot start, no package manifest, or no test found.
+SETUP_FAULT = "setup fault"
 NOT_RUN_NO_CHECK = "not run (no check found; the coder's scoped tests stand)"
 MISSING_MODULE = re.compile(r"No module named '?([A-Za-z_][\w.]*)'?")
 REQUIREMENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
@@ -177,20 +184,29 @@ def run(repo, check_command, log, timeout, env=None, on_start=None):
             process.wait()
             exit_code = None
 
-    log_text = pathlib.Path(log).read_text(errors="replace")
-    tail = "\n".join(log_text.splitlines()[-TAIL_LINES:])
+    output = pathlib.Path(log).read_text(errors="replace")
+    tail = "\n".join(output.splitlines()[-TAIL_LINES:])
     if exit_code is None:
         return NOT_RUN_TIMEOUT, tail
-    if exit_code != 0:
-        gap = environment_gap(repo, log_text)
-        if gap:
-            return f"not run (environment gap: {gap})", tail
-        return f"failed (exit {exit_code})", tail
-    return PASSED, tail
+    if exit_code == 0:
+        return PASSED, tail
+
+    tail = tail_with_failing_tests(output, tail)
+    gap = environment_gap(repo, output)
+    if gap:
+        return f"not run (environment gap: {gap})", tail
+    # A missing module is a code failure here: the change may use a dependency it did not declare.
+    if is_setup_fault(exit_code, output, repo, include_missing_modules=False):
+        return f"{SETUP_FAULT} (exit {exit_code})", tail
+    return f"failed (exit {exit_code})", tail
 
 
 def is_failure(result):
     return result.startswith("failed")
+
+
+def is_setup_fault_result(result):
+    return result.startswith(SETUP_FAULT)
 
 
 def main(argv):
@@ -211,7 +227,7 @@ def main(argv):
 
     result, tail = run(args.repo, check_command, args.log, args.timeout)
     print(f"full check: {result}")
-    if is_failure(result):
+    if is_failure(result) or is_setup_fault_result(result):
         print(tail)
         return 1
     return 0

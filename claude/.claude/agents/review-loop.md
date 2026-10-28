@@ -205,7 +205,7 @@ their original `gate` and disposition; do not re-grade them on the way out.
 Steps 7 and 7b. Unless one of those returns first, return `status: deferred` if
 `findings_remaining` holds a finding, else `status: converged`. At `iter >= 2`
 the `fix` findings of a gate failure get one coder per invocation: after the
-repair, run the gate once more; a second failure returns `status: critical-blocker`.
+repair, run the gate once more; a second failure returns `status: critical-blocker`, or `status: setup-fault` when the gate could not run.
 
 ## Step 6: Convergence — the execution gate
 
@@ -215,7 +215,8 @@ repair, run the gate once more; a second failure returns `status: critical-block
 
 `<branch>` is the `BRANCH` from Step 0 with each `/` as `-`, written literally. Other sessions write to `/tmp` too, so never use a name without the branch. A handoff `tests-run` never exempts it: that run covered only the changed files. Copy the result on the script's first line into the packet's `full_check`:
 - `passed` → proceed.
-- `failed (exit N)` → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above.
+- `failed (exit N)` → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above. A missing module from outside the repo is a code failure and gets one coder repair.
+- `setup fault (exit N)` → the check could not run here (no program, a runner that cannot start, no package manifest, no test found). Return `status: setup-fault` with the printed lines in `blockers`; dispatch no coder.
 - `not run (timeout)` → no finding. Proceed.
 - `not run (environment gap: No module named 'X')` → the check's interpreter lacks a module the repo declares as a dependency. No finding; never a blocker. Proceed.
 - `not run (CI)` → the repo's CLAUDE.md holds `Full suite: CI`. Run the tests of the files this phase changed, by name, once, redirected to the same log. A failure there is a `fix` finding carrying `blocker`.
@@ -273,16 +274,16 @@ and `nit[]`, on every pass, and the Step 7 metrics line. The stop hook blocks th
 Return exactly this, and nothing else of substance:
 
 ```
-status: converged | plan-impact | deferred | cap-reached | critical-blocker
+status: converged | plan-impact | deferred | cap-reached | critical-blocker | setup-fault
 iter: <n>                                # correctness rounds run
 fixed: [{finding, file_line, blocker}]   # `fix` findings you resolved — NEVER omit; a silent repair is a bug
 skipped_fp: [{item, reason}]             # `fix` findings dropped as false positives
-blockers: [<one line each>]              # status=critical-blocker
+blockers: [<one line each>]              # status=critical-blocker | setup-fault (the full check could not run here)
 findings_remaining: [{disposition, finding, file_line}]  # status=deferred | cap-reached
 plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
 ask: [{finding, file_line, question, change, gate, class}]  # never auto-fixed; the user answers these; change is the one edit an accepted answer makes; gate/class ride along so the caller can log the outcome. Log each ask row with the same file and line as its file_line; the caller reads the id from that row, so leave finding_id out
 class_closure: <the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a — fixed[] empty>
-full_check: passed | failed (exit N) | not run (CI) | not run (timeout) | not run (no check found; the coder's scoped tests stand) | not run (environment gap: <line>)  # the Step 6 result
+full_check: passed | failed (exit N) | setup fault (exit N) | not run (CI) | not run (timeout) | not run (no check found; the coder's scoped tests stand) | not run (environment gap: <line>)  # the Step 6 result
 files_touched: [<path>]
 nit: [<one line each>]                   # a small item ends `applied` or `skipped: <reason>`
 load_bearing_clean: <one line, or omitted>

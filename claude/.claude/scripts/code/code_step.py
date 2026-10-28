@@ -153,7 +153,13 @@ from code_step_review import (
     left_findings_open,
     prior_issues,
 )
-from code_step_start import RESUME_ALIASES, command_start, emit_closing_skill, phase_label
+from code_step_start import (
+    RESUME_ALIASES,
+    command_start,
+    emit_closing_skill,
+    phase_label,
+    stopped_run_restart_instruction,
+)
 from code_step_usage import VERB_USAGES, check_verb_arguments, print_usage_if_asked
 from script_utils import run_command
 
@@ -461,7 +467,7 @@ def ask_about_stopped_coder(repo_dir, state, answer=None):
     phase_tick = (f" If the user says Phase {state['phase']} is done, run `tick {state['phase']}`."
                  if state.get("plan") and state.get("phase") else "")
     report = stopped_coder_report(repo_dir, state)
-    restart_instruction_text = restart_instruction(state)
+    restart_instruction_text = stopped_run_restart_instruction(repo_dir, state)
     coder_id = state["resumableCoderId"]
     if answer is None:
         send_step = f"Send the user's answer to agent {coder_id} with SendMessage, then run resume."
@@ -489,7 +495,7 @@ def ask_about_unrecorded_state(repo_dir, state):
     if guarded_verb:
         next_step = f"When the cause is fixed, run `{guarded_verb}`."
     else:
-        restart_instruction_text = restart_instruction(state)
+        restart_instruction_text = stopped_run_restart_instruction(repo_dir, state)
         status_command = script_command("status")
         next_step = (
             f"Run `{status_command}` to read the saved state. To start the phase over, {restart_instruction_text}."
@@ -528,7 +534,7 @@ def ask_about_stale_phase(repo_dir, state):
 
 
 def ask_about_coder_cap(repo_dir, state):
-    restart_instruction_text = restart_instruction(state)
+    restart_instruction_text = stopped_run_restart_instruction(repo_dir, state)
     ask_user(repo_dir, "The coder never handed back and cannot be resumed here: it is a plan-edit coder, or "
              f"its launch has no agent id. To dispatch the phase coder again, {restart_instruction_text}.")
 

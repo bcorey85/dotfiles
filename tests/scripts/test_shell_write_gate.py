@@ -27,6 +27,12 @@ class ShellWriteGateTest(unittest.TestCase):
         (self.repo / "untracked.txt").write_text("x\n")
         subprocess.run(["git", "-C", str(self.repo), "add", "tracked.txt"], check=True)
 
+    def make_outside_dir(self):
+        # A real directory outside every temp root: under the real home, not the test's HOME, which sits in TMPDIR.
+        outside = pathlib.Path(tempfile.mkdtemp(dir=pathlib.Path.home(), prefix=".shell-write-gate-test-"))
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        return outside
+
     def run_hook(self, stdin, env_extra=None, script=None):
         env = {"PATH": os.environ["PATH"], "HOME": str(self.home), "TMPDIR": str(self.tmp)}
         env.update(env_extra or {})
@@ -170,19 +176,17 @@ class ShellWriteGateTest(unittest.TestCase):
             self.assertIn(f"{self.repo}/tracked.txt is git-tracked", reason)
 
     def test_a_coder_new_file_rule_is_skipped_for_a_relative_target_after_a_directory_change(self):
-        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
-        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        outside = self.make_outside_dir()
         for command in ("cd sub && echo x > new.py", "pushd sub && echo x > new.py", "popd; echo x > new.py",
                         "if true; then cd sub; fi; echo x > new.py", "echo $(cd sub; echo x > new.py)",
                         "command cd sub && echo x | tee new.py", "cd 'unterminated; echo x > new.py"):
             self.assert_allowed(command, agent="coder", cwd=str(outside))
         for command in ("echo x > new.py", "echo cd sub; echo x > new.py", "echo 'cd sub' > new.py",
-                        "cd sub && echo x > /var/tmp/not-a-temp-dir/new.py", "cd sub && echo x > $UNSET_DIR/new.py"):
+                        "cd sub && echo x > /srv/not-a-temp-dir/new.py", "cd sub && echo x > $UNSET_DIR/new.py"):
             self.assert_denied(command, agent="coder", cwd=str(outside))
 
     def test_a_coder_is_not_denied_for_a_redirect_like_text_after_a_substitution_in_quotes(self):
-        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
-        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        outside = self.make_outside_dir()
         for command in ('echo "Result: $(true) => ok" | cat', 'git commit -m "Bump to $(cat VERSION) -> faster"'):
             self.assert_allowed(command, agent="coder", cwd=str(outside))
 
@@ -205,8 +209,7 @@ class ShellWriteGateTest(unittest.TestCase):
             self.assertIn("tracked.txt is git-tracked", reason)
 
     def test_heredoc_bodies_and_comments_inside_shell_c_code_are_not_read_as_redirects(self):
-        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
-        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        outside = self.make_outside_dir()
         for command in ('bash -c "cat > /tmp/x.txt <<EOF\nfoo > /opt/bar.txt\nEOF"',
                         'bash -c "echo hi # > /opt/bar.txt"'):
             self.assert_allowed(command, agent="coder", cwd=str(outside))
@@ -223,8 +226,7 @@ class ShellWriteGateTest(unittest.TestCase):
             self.assertIn("tracked.txt is git-tracked", reason)
 
     def test_a_coder_may_write_a_new_file_in_code_a_runner_takes(self):
-        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
-        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        outside = self.make_outside_dir()
         for command in ('docker exec c sed -i s/a/b/ /app/conf',
                         'podman exec c sh -c "echo x > /app/new.txt"',
                         'kubectl exec p -- bash -c "echo x > /app/new.txt"',
@@ -237,8 +239,7 @@ class ShellWriteGateTest(unittest.TestCase):
             self.assert_allowed(command, agent="coder", cwd=str(outside))
 
     def test_a_tee_inside_a_container_is_no_new_file_on_the_host(self):
-        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
-        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        outside = self.make_outside_dir()
         for command in ("echo x | docker exec -i web tee /app/config.yml",
                         "docker compose exec web tee /srv/new.txt < /dev/null"):
             self.assert_allowed(command, agent="coder", cwd=str(outside))
@@ -259,8 +260,7 @@ class ShellWriteGateTest(unittest.TestCase):
             self.assertIn("in-place editing of f.txt bypasses", reason)
 
     def test_gt_inside_quotes_is_not_a_redirect_for_coders(self):
-        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
-        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        outside = self.make_outside_dir()
         for agent in ("coder", "backend-coder"):
             for command in ('rg -n "(x) => x.id" src', "jq '.[] | select(.n > 3)' data.json",
                             "git log --format='%h > %s' -5", 'rg -n "count > 0" src',
@@ -269,8 +269,7 @@ class ShellWriteGateTest(unittest.TestCase):
                 self.assert_allowed(command)
 
     def test_coder_variants_are_covered_by_the_new_file_rule(self):
-        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
-        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        outside = self.make_outside_dir()
         for agent in ("backend-coder", "frontend-coder-deep", "coder-deep"):
             reason = self.assert_denied("echo hi > helper.py", agent=agent, cwd=str(outside))
             self.assertIn("Write tool", reason)
@@ -282,22 +281,19 @@ class ShellWriteGateTest(unittest.TestCase):
         self.assert_allowed("echo hi > tracked.txt " + HINT, agent="reviewer")
 
     def test_coder_target_with_temp_variable_is_checked_after_expansion(self):
-        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
-        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        outside = self.make_outside_dir()
         for target in ("$TMPDIR/check.log", "${TMPDIR}/check.log", "$HOME/check.log"):
             self.assert_allowed(f"echo hi > {target}", agent="coder", cwd=str(outside))
 
     def test_coder_target_with_unresolved_variable_is_denied(self):
-        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
-        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        outside = self.make_outside_dir()
         for target in ("$PWD/out.log", "$UNSET_DIR/check.log"):
             reason = self.assert_denied(f"pytest > {target}", agent="coder", cwd=str(outside))
             self.assertIn(target, reason)
             self.assertIn("cannot resolve", reason)
 
     def test_coder_target_through_home_is_checked_against_the_temp_dir_rule(self):
-        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
-        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        outside = self.make_outside_dir()
         for target in ("$HOME/new.py", "${HOME}/new.py"):
             payload = {"tool_input": {"command": f"echo hi > {target}"}, "cwd": str(self.repo), "agent_type": "coder"}
             reason = self.denied(self.run_hook(json.dumps(payload), env_extra={"HOME": str(outside)}))
@@ -306,13 +302,11 @@ class ShellWriteGateTest(unittest.TestCase):
     def test_regex_fallback_finds_the_redirect_target(self):
         reason = self.assert_denied("grep 'x\\|y' f > tracked.txt")
         self.assertIn("tracked.txt is git-tracked", reason)
-        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
-        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        outside = self.make_outside_dir()
         self.assert_allowed("grep 'x\\|y' 'a > new.py' src", agent="coder", cwd=str(outside))
 
     def test_clobber_and_merge_redirects_onto_tracked_files_are_denied(self):
-        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
-        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        outside = self.make_outside_dir()
         for command in ("echo x >| tracked.txt", "echo x >&tracked.txt", "echo x >& tracked.txt",
                         "grep 'x\\|y' f >| tracked.txt", "grep 'x\\|y' f >&tracked.txt"):
             reason = self.assert_denied(command)
@@ -569,9 +563,20 @@ class ShellWriteGateTest(unittest.TestCase):
         self.assertIn(HINT, self.assert_denied(f"python3 {script}"))
         self.assert_allowed(f"python3 {script} {HINT}")
 
+    def test_a_coder_may_redirect_into_a_new_log_under_var_tmp_but_not_onto_a_tracked_file_there(self):
+        log_folder = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp", prefix="shell-write-gate-test-"))
+        self.addCleanup(shutil.rmtree, log_folder, ignore_errors=True)
+        subprocess.run(["git", "init", "-q", str(log_folder)], check=True)
+        (log_folder / "tracked.log").write_text("x\n")
+        subprocess.run(["git", "-C", str(log_folder), "add", "tracked.log"], check=True)
+
+        self.assert_allowed(f"cargo clippy > {log_folder}/clippy.log 2>&1", agent="coder")
+        reason = self.assert_denied(f"cargo clippy > {log_folder}/tracked.log 2>&1", agent="coder")
+
+        self.assertIn(f"{log_folder}/tracked.log is git-tracked", reason)
+
     def test_coder_new_file_outside_temp_dir_denied_naming_write(self):
-        outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
-        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        outside = self.make_outside_dir()
         temp_dir = self.tmp / "tempdir"
         temp_dir.mkdir()
         env = {"TMPDIR": str(temp_dir)}

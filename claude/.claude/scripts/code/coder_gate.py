@@ -270,6 +270,31 @@ def sort_failures(failures, repo_root):
     return real_failures, setup_faults, command_errors
 
 
+def run_scoped_tests(repo_root, commands, gate_env=()):
+    # (one-line result, the failing commands' tails). The scoped commands, run as the gate runs them, outside a hook.
+    if not commands:
+        return "not run (no scoped test commands)", []
+
+    gate = {"commands": commands, "repoRoot": repo_root,
+            "env": script_utils.environment_from_assignments(gate_env)}
+    failures, skipped, timed_out = run_commands(gate)
+    failures, setup_faults, command_errors = sort_failures(failures, repo_root)
+
+    if failures:
+        tails = [f"`{command}` ({outcome}):\n{tail_with_failing_tests(output, output[-TAIL_CHARS:])}"
+                 for command, outcome, output in failures]
+        return "failed: " + "; ".join(command for command, _outcome, _output in failures), tails
+    if setup_faults:
+        return "setup fault: " + "; ".join(command for command, _output in setup_faults), []
+    if command_errors:
+        return "command error: " + "; ".join(f"{command} ({line})" for command, line in command_errors), []
+    if timed_out:
+        return "not run (timeout): " + "; ".join(command for command, _output in timed_out), []
+    if len(skipped) == len(commands):
+        return "not run (no changed file matches)", []
+    return "passed", []
+
+
 def denial(failures):
     chunks = []
     for command, outcome, output in failures:

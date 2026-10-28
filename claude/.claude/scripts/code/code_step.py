@@ -58,6 +58,8 @@ code_step_boundary (criteria guard, verification runner, phase boundary), code_s
 commands), code_step_start (the start verb), code_step_report (reading a coder report), code_step_review
 (plan-impact modal, plan-edit dispatch, review dispatch, review packet, asks), code_step_usage (usage text and the
 `resume` argument parser) and this file."""
+import contextlib
+import fcntl
 import functools
 import json
 import os
@@ -682,19 +684,50 @@ VERB_USAGE = ("usage: code_step.py start|resume|decide|asks-done|skill-done|veri
               "|log-hook|dispatch-hook|stop-hook|say-hook|status|plan|plan-hook")
 
 
+@contextlib.contextmanager
+def verb_lock(repo, verb):
+    # One verb at a time on a run: a second copy (a resumed agent beside a live one) stops before it reads the state.
+    # abort skips the lock so a stuck verb can still be dropped. A checkout with no state folder has no run to share.
+    folder = state_dir(repo)
+    if verb == "abort" or folder is None or not folder.is_dir():
+        yield True
+        return
+
+    with open(folder / "verb.lock", "a+") as lock_file:
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            lock_file.seek(0)
+            holder = lock_file.read().strip() or "unknown"
+            emit("stop", f"another code_step verb is running on this run (pid {holder}). Do not start another verb "
+                 "and do not resume a second copy of the agent: wait for that verb's output.")
+            yield False
+            return
+
+        lock_file.truncate(0)
+        lock_file.write(str(os.getpid()))
+        lock_file.flush()
+        yield True
+
+
 def run_verb(verb, handler, args):
     try:
         if verb != "start" and not enter_run_checkout():
             return
 
-        clear_question(repo_root_or_exit())
-        if verb in VERBS_THAT_CLEAR_SAY:
-            clear_say(repo_root_or_exit())
+        repo = repo_root_or_exit()
+        with verb_lock(repo, verb) as holds_lock:
+            if not holds_lock:
+                return
 
-        if verb in STAGE_GUARDS:
-            run_guarded_verb(verb, handler, args)
-        else:
-            handler(args)
+            clear_question(repo)
+            if verb in VERBS_THAT_CLEAR_SAY:
+                clear_say(repo)
+
+            if verb in STAGE_GUARDS:
+                run_guarded_verb(verb, handler, args)
+            else:
+                handler(args)
     except StateFileError as error:
         emit("stop", f"{error}. Tell the user to delete that file, then run `start`.")
 

@@ -6379,5 +6379,35 @@ class CodeForkToolsTest(unittest.TestCase):
         self.assertIn("that session relays it", skill_text)
 
 
+class StateDirTest(unittest.TestCase):
+    def setUp(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.repo = pathlib.Path(temp_dir.name)
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True, capture_output=True)
+
+    def test_one_verb_asks_git_for_the_state_folder_once(self):
+        real_run = subprocess.run
+        git_calls = []
+
+        def counting_run(command, *args, **options):
+            git_calls.append(command)
+            return real_run(command, *args, **options)
+
+        with unittest.mock.patch.object(subprocess, "run", counting_run):
+            first = code_step_core.state_dir(self.repo)
+            second = code_step_core.state_dir(str(self.repo))
+
+        self.assertEqual(first, second)
+        self.assertEqual(self.repo.resolve() / ".git" / "code-step", first)
+        self.assertEqual(1, len(git_calls))
+
+    def test_a_folder_outside_a_repo_has_no_state_folder(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+
+        self.assertIsNone(code_step_core.state_dir(outside.name))
+
+
 if __name__ == "__main__":
     unittest.main()

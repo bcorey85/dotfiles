@@ -60,6 +60,7 @@ CODER_STAGES = ("coder", "asks-coder")
 # The agent the /code skill forks into (its `agent:` line). It has no Edit or Write tool.
 FORK_AGENT_TYPE = "code-fork"
 SAY_MAX_AGE_SECONDS = 6 * 3600
+STATE_DIRS = {}  # resolved folder -> the code-step state folder git named for it
 
 
 # ---------- git and state file ----------
@@ -79,10 +80,16 @@ def repo_root_or_exit(path=None):
 
 
 def state_dir(cwd):
+    # One verb asks for the state folder many times: git names it once per resolved folder.
+    resolved_cwd = os.path.realpath(cwd)
+    if resolved_cwd in STATE_DIRS:
+        return STATE_DIRS[resolved_cwd]
+
     found = git_output(cwd, "rev-parse", "--path-format=absolute", "--git-path", "code-step")
     if found is None:
         return None
-    return pathlib.Path(found)
+    STATE_DIRS[resolved_cwd] = pathlib.Path(found)
+    return STATE_DIRS[resolved_cwd]
 
 
 class StateFileError(Exception):

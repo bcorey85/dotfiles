@@ -442,6 +442,7 @@ class ResumeTest(base.CodeStepTest):
         self.assertIn("`verify`", self.said())
 
     def test_resume_from_a_new_session_at_a_closing_phase_invokes_its_skill_again(self):
+        self.on_feature_branch()
         self.finish_phase_one()
         self.mark_phases_done(1, 2, 3)
         self.step("start", self.plan)

@@ -15,6 +15,7 @@ import time
 import plan_format
 import reviewed_tree
 import script_utils
+from code_step_concentration import concentration_gate_position, missing_gate_item_lines
 from code_step_core import (
     INSTALLED_COMMAND,
     RESUME_LINE,
@@ -27,6 +28,7 @@ from code_step_core import (
     load_handback,
     load_state,
     repo_root_or_exit,
+    run_session_id,
     save_state,
     say,
     script_command,
@@ -423,10 +425,14 @@ def mark_review_gate_clean(repo_dir, state):
         emit("stop", f"The phase stays open: its review loop ended {review_status}, not converged. Nothing is "
              "committed and the review gate is not marked clean. Report to the user what the review waits on.")
         return False
-    reviewing_session = state.get("sessionId") or session_pin()
+    reviewing_session = run_session_id(state)
     reason = module.false_clean_reason(reviewing_session)
     if reason:
-        emit("stop", f"The review gate is not marked clean: {reason}. Tell the user.")
+        state["stage"] = "stopped"
+        state["stopReason"] = "false-clean"
+        save_state(repo_dir, state)
+        emit("stop", f"The review gate is not marked clean: {reason}. Nothing is committed.",
+             "To review the same diff again, invoke Skill code with `review-again`.")
         return False
     gate_dir = pathlib.Path.home() / ".claude" / "state" / "review-gate"
     gate_dir.mkdir(parents=True, exist_ok=True)
@@ -854,15 +860,41 @@ def phase_open_items(plan_lines, number):
     return plan_format.open_success_items(plan_lines[section["start"]:section["end"]]), section["start"]
 
 
-def record_closing_evidence(repo_dir, state, evidence):
-    # Writes each open item's evidence into the plan. Returns False, after a stop, when the evidence count does not
-    # match the open items; nothing is written then.
+def with_simplify_lines(items, evidence, simplify_done_texts):
+    # `evidence` with each given Done text added as a Done line under the concentration-gate item's evidence.
+    if not simplify_done_texts:
+        return evidence
+
+    simplify_lines = [f"\n  - Done: {text}" for text in simplify_done_texts]
+
+    gate_position = concentration_gate_position(items)
+    combined = list(evidence)
+    combined[gate_position] += "".join(simplify_lines)
+    return combined
+
+
+def stop_for_missing_gate_item(items, simplify_done_texts, rerun_command):
+    # Emits a stop and returns True when a simplify record has no open concentration-gate item to be written under.
+    # `rerun_command` is the refused `skill-done pass` when the gate triggered, else None.
+    if not simplify_done_texts or concentration_gate_position(items) is not None:
+        return False
+
+    emit("stop", *missing_gate_item_lines(rerun_command))
+    return True
+
+
+def record_closing_evidence(repo_dir, state, evidence, simplify_done_texts, rerun_command):
+    # Writes each open item's evidence into the plan, and the simplify Done texts under the concentration-gate item.
+    # Returns False, after a stop, when the evidence count does not match the open items or a simplify record has no
+    # open concentration-gate item; nothing is written then.
     plan_path = repo_dir / state["plan"]
     if not plan_path.is_file():
         return True
 
     plan_lines = plan_path.read_text().split("\n")
     items, offset = phase_open_items(plan_lines, state["phase"])
+    if stop_for_missing_gate_item(items, simplify_done_texts, rerun_command):
+        return False
     if len(items) != len(evidence):
         listing = evidence_request_lines(items) or ["The phase has no open Success Criteria items: run "
                                                     "`skill-done pass` with no `--evidence`."]
@@ -873,11 +905,12 @@ def record_closing_evidence(repo_dir, state, evidence):
         return True
 
     shifted = [{**item, "index": item["index"] + offset, "end": item["end"] + offset} for item in items]
-    plan_path.write_text("\n".join(plan_format.write_item_evidence(plan_lines, shifted, evidence)))
+    recorded = with_simplify_lines(items, evidence, simplify_done_texts)
+    plan_path.write_text("\n".join(plan_format.write_item_evidence(plan_lines, shifted, recorded)))
     return True
 
 
-def command_skill_done(repo_dir, state, args):
+def command_skill_done(repo_dir, state, args, simplify_done_texts=(), rerun_command=None):
     words, evidence = script_utils.pop_repeated_option(args, "--evidence")
     verdict = words[0].lower() if words else "pass"
     if verdict not in ("pass", "fail"):
@@ -887,7 +920,7 @@ def command_skill_done(repo_dir, state, args):
         save_state(repo_dir, state)
         return emit("stop", "The closing phase's check failed (a MISSING criterion, or an unmet Success Criteria). "
                     "Do not mark the phase done. Report what failed to the user.")
-    if not record_closing_evidence(repo_dir, state, evidence):
+    if not record_closing_evidence(repo_dir, state, evidence, simplify_done_texts, rerun_command):
         return
     finish_phase(repo_dir, state, skip_verification=True)
 

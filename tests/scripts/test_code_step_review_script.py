@@ -41,14 +41,17 @@ if mode == "hang":
     signal.signal(signal.SIGTERM, terminated)
     (out / "started").write_text(str(os.getpid()))
     time.sleep(60)
-if mode in ("converged", "plan-impact"):
+if mode in ("converged", "plan-impact", "unreviewed-fix"):
     message = "status: converged\\niter: 1\\nfixed: []\\nask: []\\nnit: []"
+    if mode == "unreviewed-fix":
+        message = ("status: converged\\niter: 2\\nfixed: [{finding: f, file_line: src/orders.ts:4, blocker: false}]"
+                   "\\nask: []\\nnit: []")
     if mode == "plan-impact":
         message = "status: plan-impact\\niter: 1\\nplan_impact: |\\n    PLAN-IMPACT:\\n      found: B\\n"
     code_step_core.log_event(arguments[0], options["--run-id"], "handback", options["--session"],
                              agent_id=options["--agent-id"], agent_type="review-loop", message=message)
     handback.record(options["--session"], "handback", agent_id=options["--agent-id"], status="converged",
-                    problems=[], message=message, no_reviewer=False)
+                    problems=[], message=message, no_reviewer=False, unreviewed_fix=mode == "unreviewed-fix")
 """
 
 
@@ -101,12 +104,33 @@ class ReviewScriptTest(base.CodeStepTest):
         self.assertEqual(agent_id, options["--agent-id"])
         prompt_text = pathlib.Path(options["--prompt-file"]).read_text()
         self.assertTrue(prompt_text.startswith("mode: review-first\ncaller: code\n"), prompt_text)
+        self.assertIn(f"repo: {self.repo}\n", prompt_text)
         self.wait_for_script_exit(state["reviewScriptPid"])
 
         out = self.step("resume")
 
         self.assert_first_phase_ticked()
         self.assert_marked_clean(out)
+
+    def test_a_hand_back_ending_on_an_unreviewed_fix_finishes_and_names_the_fix_files(self):
+        self.env["FAKE_LOOP_MODE"] = "unreviewed-fix"
+        self.coder_round()
+        self.wait_for_script_exit(self.state()["reviewScriptPid"])
+
+        out = self.step("resume")
+
+        self.assert_first_phase_ticked()
+        self.assert_marked_clean(out)
+        self.assertIn("### Last fix not reviewed", self.said())
+        self.assertIn("Its files are among: src/orders.ts", self.said())
+
+    def test_a_converged_hand_back_ending_on_a_reviewer_names_no_unreviewed_fix(self):
+        self.coder_round()
+        self.wait_for_script_exit(self.state()["reviewScriptPid"])
+
+        self.step("resume")
+
+        self.assertNotIn("Last fix not reviewed", self.said())
 
     def test_a_script_that_exits_with_no_hand_back_stops_with_its_log_and_the_review_again_line(self):
         self.env["FAKE_LOOP_MODE"] = "silent"

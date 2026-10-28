@@ -132,6 +132,11 @@ def lines_added(before_lines, after_lines):
     return added
 
 
+def text_similarity(first, second):
+    """How alike two strings are, from 0 to 1. Long strings are compared in full, with no junk heuristic."""
+    return difflib.SequenceMatcher(None, first, second, autojunk=False).ratio()
+
+
 def wait_for(check, timeout_seconds, interval_seconds):
     """Call check() until it returns a truthy value, then return that value. Check once, then every
     interval_seconds, for at most timeout_seconds. Return None when nothing was found in that time."""

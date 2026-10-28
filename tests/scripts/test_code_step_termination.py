@@ -24,8 +24,10 @@ import pathlib
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 import traceback
@@ -61,12 +63,65 @@ NAMEABLE_VERBS = ("start", "resume", "decide", "asks-done", "skill-done", "revie
                   "after-coder", "after-review", "after-plan-edit")
 BACKTICKED_TEXT = re.compile(r"`([^`\n]+)`")
 
-TMP_ROOT = pathlib.Path(tempfile.mkdtemp(prefix="termination-"))
+TMP_DIR_NAME = re.compile(r"termination-(\d+)-")
+# A run in another pid namespace can look dead from here, so a tree is swept only once it has gone untouched longer than
+# tests/parallel_tests.py lets any test file run.
+STALE_TREE_SECONDS = float(os.environ.get("TEST_FILE_TIMEOUT_SECONDS") or 1200)
+
+
+def pid_is_alive(pid):
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, OverflowError):
+        return False
+    except PermissionError:
+        return True
+
+    return True
+
+
+def sweep_dead_runs_tmp_dirs(tmp_parent):
+    """Remove the temp trees of earlier runs that were killed before their cleanup ran.
+
+    A tree is named for the pid that made it. Only a tree whose pid is gone and that has gone untouched for
+    STALE_TREE_SECONDS is removed: a tree of a live run, or one with no pid in its name, belongs to another session.
+    """
+    for tmp_dir in pathlib.Path(tmp_parent).glob("termination-*"):
+        name_match = TMP_DIR_NAME.match(tmp_dir.name)
+        if name_match is None:
+            continue
+
+        if pid_is_alive(int(name_match.group(1))):
+            continue
+
+        try:
+            tree_mtime = tmp_dir.stat().st_mtime
+        except FileNotFoundError:
+            continue
+
+        tree_age_seconds = time.time() - tree_mtime
+        if tree_age_seconds < STALE_TREE_SECONDS:
+            continue
+
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def remove_tmp_root_on_sigterm(signal_number, frame):
+    # Raising SystemExit here would be swallowed inside a test body. Remove the tree, then die by the signal.
+    shutil.rmtree(TMP_ROOT, ignore_errors=True)
+    signal.signal(signal_number, signal.SIG_DFL)
+    os.kill(os.getpid(), signal_number)
+
+
+sweep_dead_runs_tmp_dirs(tempfile.gettempdir())
+TMP_ROOT = pathlib.Path(tempfile.mkdtemp(prefix=f"termination-{os.getpid()}-"))
+signal.signal(signal.SIGTERM, remove_tmp_root_on_sigterm)
 CLAUDE_STUB = TMP_ROOT / "claude"
 (CLAUDE_STUB / "scripts").mkdir(parents=True)
 (CLAUDE_STUB / "skills/review").mkdir(parents=True)
 for script_name in ("coder_gate.py", "coder_packet.py", "plan_format.py", "script_utils.py", "resolve-task-dir.sh",
-                    *toolkit_paths.CODE_STEP_MODULES, "shell_command.py", "makefile_text.py", "test_run_output.py"):
+                    *toolkit_paths.CODE_STEP_MODULES, "shell_command.py", "makefile_text.py", "test_run_output.py",
+                    "numstat.py", "source_paths.py", "branch-base"):
     try:
         source_file = toolkit_paths.script_in(SCRIPTS_ROOT, script_name)
     except FileNotFoundError:
@@ -174,6 +229,8 @@ REVIEW_OUTCOMES = {
                     f'[{ASK_ONE}]',
     "critical-blocker": 'status: critical-blocker\niter: 1\nblockers:\n- {finding: "b", file_line: "a.ts:1"}',
     "cap-reached": 'status: cap-reached\niter: 3\nfindings_remaining:\n- {finding: "r", file_line: "a.ts:1"}',
+    "cap-reached-ask": f'status: cap-reached\niter: 3\nfindings_remaining:\n- {{finding: "r", file_line: "a.ts:1"}}\n'
+                       f'ask: [{ASK_ONE}]',
     "plan-impact": "status: plan-impact\niter: 1\nplan_impact: |\n  assumed: a\n  changes: b",
     "plan-impact-no-description": "status: plan-impact\niter: 1",
     "no-status": "iter: 1\nfixed: []",
@@ -296,8 +353,8 @@ def apply_plan_edit_outcome(repo, name, plan_path):
 
 # ---------- repo and script calls ----------
 
-def build_template():
-    template = TMP_ROOT / "template"
+def build_template(name="template"):
+    template = TMP_ROOT / name
     template.mkdir()
     subprocess.run(
         ["git", "init", "-q", "-b", "ORD-1-work", "--template="], cwd=template, check=True, capture_output=True
@@ -416,7 +473,13 @@ class Node:
         self.ancestors_in_segment = ancestors_in_segment
         self.ancestor_answers = ancestor_answers or {}
         self.answer_count = answer_count
+        # repo is a directory only until register files the node; a queued node lives on as its snapshot
+        # (gzipped tar bytes).
         self.repo = repo
+        self.snapshot = None
+        # The parsed saved state stays in memory, so expanding the node needs no unpacked directory.
+        self.saved_state = load_saved_state(repo)
+        self.stage = self.saved_state.get("stage")
         self.presets = presets
         self.action = action
         self.agent = agent
@@ -424,6 +487,21 @@ class Node:
         self.steps_in_segment = steps_in_segment
         self.seen_in_segment = seen_in_segment
         self.handbacks = handbacks
+
+
+def pack_repo(repo):
+    # The repo as gzipped tar bytes, so a queued node holds memory and no directory. Gzip shrinks the 512-byte tar
+    # blocks of the many small .git files, which dominate an uncompressed snapshot.
+    packed = io.BytesIO()
+    with tarfile.open(fileobj=packed, mode="w:gz", compresslevel=1) as archive:
+        archive.add(repo, arcname=".")
+    return packed.getvalue()
+
+
+def unpack_repo(snapshot, target):
+    target.mkdir()
+    with tarfile.open(fileobj=io.BytesIO(snapshot)) as archive:
+        archive.extractall(target, filter="fully_trusted")
 
 
 class Failure:
@@ -434,9 +512,8 @@ class Failure:
         self.cycle = cycle
 
 
-def user_answers(repo):
+def user_answers(state):
     # What the user can say after a hand-back: each is one more entry verb into a new run.
-    state = load_saved_state(repo)
     stage = state.get("stage")
     reason = state.get("stopReason")
     is_stopped = stage == "stopped"
@@ -475,7 +552,7 @@ def user_answers(repo):
             ("skill-done pass", ["skill-done", "pass"], None),
             ("skill-done fail", ["skill-done", "fail"], None),
         ]
-    if is_stopped and reason == "invalid-packet":
+    if is_stopped and reason in ("invalid-packet", "cap-reached"):
         answers += [("review-again", ["review-again"], None)]
     if is_stopped and code_step.awaits_resumed_review(state):
         answers += [("review-again", ["review-again"], None),
@@ -527,7 +604,7 @@ def commit_everything(repo):
 
 def children_of(node):
     # Each child: (label, setup function on the copied repo, argv for the next verb, presets).
-    state = load_saved_state(node.repo)
+    state = node.saved_state
     stage = state.get("stage")
     children = []
     waiting_on = None
@@ -592,12 +669,29 @@ class Explorer:
         self.budget_hit = False
         self.roots = []
         self.plan_edit_calls_from_wait = 0
+        self.queued_snapshot_bytes = 0
+        self.peak_snapshot_bytes = 0
 
-    def new_repo(self):
+    def new_repo(self, snapshot=None):
+        # One node's directory: a copy of the template, or the unpacked snapshot of the node it continues.
         self.node_count += 1
         target = TMP_ROOT / f"budget{self.node_budget}-n{self.node_count}"
-        shutil.copytree(self.template, target, symlinks=True)
+        if snapshot is None:
+            shutil.copytree(self.template, target, symlinks=True)
+        else:
+            unpack_repo(snapshot, target)
         return target
+
+    def queue_node(self, node_id, node):
+        # A queued node keeps its repo as gzipped tar bytes; register deletes its directory.
+        node.snapshot = pack_repo(node.repo)
+        self.queued_snapshot_bytes += len(node.snapshot)
+        self.peak_snapshot_bytes = max(self.peak_snapshot_bytes, self.queued_snapshot_bytes)
+        self.queue.append((node_id, node))
+
+    def release_snapshot(self, node):
+        self.queued_snapshot_bytes -= len(node.snapshot)
+        node.snapshot = None
 
     def run_step(self, parent, repo, label, argv, presets, new_segment, node_id, call_presets=None):
         # Run one verb on the copied repo. Returns the new node, or None when the path ended (pass or fail).
@@ -617,7 +711,7 @@ class Explorer:
             return "fail"
 
         if parent and parent.action == "wait" and label.startswith("[plan-edit coder:") \
-                and load_saved_state(parent.repo).get("stage") == "plan-coder":
+                and parent.stage == "plan-coder":
             self.plan_edit_calls_from_wait += 1
 
         output, crash = call_script(repo, {**presets, **(call_presets or {})}, argv)
@@ -670,12 +764,21 @@ class Explorer:
         repo = self.new_repo()
         result = self.run_step(None, repo, "", argv, presets, True, None)
         if result == "fail":
+            shutil.rmtree(repo, ignore_errors=True)
             return None
         root_id = self.register(result, None, root_label)
         self.roots.append(root_id)
         return root_id
 
     def register(self, node, parent_id, label):
+        # Whatever the verdict, the node's directory is gone when this returns.
+        try:
+            return self.place_node(node, parent_id)
+        finally:
+            shutil.rmtree(node.repo, ignore_errors=True)
+            node.repo = None
+
+    def place_node(self, node, parent_id):
         node_id = self.node_id(node)
         node.node_id = node_id
         if node_id in node.ancestors_in_segment:
@@ -698,10 +801,9 @@ class Explorer:
         if parent_id is not None:
             self.edges[parent_id].append(node_id)
         if node_id in self.visited:
-            shutil.rmtree(node.repo, ignore_errors=True)
             return node_id
         self.visited[node_id] = True
-        self.queue.append((node_id, node))
+        self.queue_node(node_id, node)
         return node_id
 
     def check_named_commands(self, node):
@@ -711,9 +813,7 @@ class Explorer:
                 self.budget_hit = True
                 return
 
-            repo = self.new_repo()
-            shutil.rmtree(repo)
-            shutil.copytree(node.repo, repo, symlinks=True)
+            repo = self.new_repo(node.snapshot)
             output, crash = call_script(repo, node.presets, argv)
             shutil.rmtree(repo, ignore_errors=True)
             history = [*node.history, f"[user: the named command] {' '.join(argv)}"]
@@ -725,24 +825,31 @@ class Explorer:
             if refusal:
                 self.failures.append(Failure("dead end: a named command is refused", history, refusal, history[-2:]))
 
+    def read_children(self, node):
+        # Returns the user answers (hand-back) or the script's next steps, each as the args of step_child.
+        # It reads only the node's in-memory saved state, so no node directory is unpacked here.
+        if node.action in HAND_BACK_ACTIONS:
+            if node.handbacks >= MAX_HANDBACKS:
+                return []
+            answers = user_answers(node.saved_state)
+            return [(f"[user: {label}]", argv, setup, True, {}) for label, argv, setup in answers]
+        return [(label, argv, setup, False, call_presets[0] if call_presets else {})
+                for label, setup, argv, *call_presets in children_of(node)]
+
     def expand(self, node_id, node):
+        # Returns True when the script has nothing left to do after this node.
         if node.action in HAND_BACK_ACTIONS:
             self.check_named_commands(node)
-            if node.handbacks >= MAX_HANDBACKS:
-                return
-            for label, argv, setup in user_answers(node.repo):
-                self.step_child(node, node_id, f"[user: {label}]", argv, setup, True)
-            return
-        for label, setup, argv, *call_presets in children_of(node):
-            self.step_child(node, node_id, label, argv, setup, False, call_presets[0] if call_presets else {})
+        steps = self.read_children(node)
+        for label, argv, setup, new_segment, call_presets in steps:
+            self.step_child(node, node_id, label, argv, setup, new_segment, call_presets)
+        return node.action not in HAND_BACK_ACTIONS and not steps
 
     def step_child(self, node, node_id, label, argv, setup, new_segment, call_presets=None):
         if self.node_count > self.node_budget:
             self.budget_hit = True
             return
-        repo = self.new_repo()
-        shutil.rmtree(repo)
-        shutil.copytree(node.repo, repo, symlinks=True)
+        repo = self.new_repo(node.snapshot)
         if setup:
             setup(repo)
         result = self.run_step(node, repo, label, argv, node.presets, new_segment, node_id, call_presets or {})
@@ -757,10 +864,10 @@ class Explorer:
             self.explore_root(root_label, argv, presets)
         while self.queue:
             node_id, node = self.queue.popleft()
-            self.expand(node_id, node)
-            if node.action not in HAND_BACK_ACTIONS and not children_of(node):
+            is_leaf = self.expand(node_id, node)
+            if is_leaf:
                 self.edges[node_id].append("LEAF")
-            shutil.rmtree(node.repo, ignore_errors=True)
+            self.release_snapshot(node)
             if not self.edges[node_id]:
                 self.edges[node_id].append("LEAF")
             if self.node_count > self.node_budget:
@@ -858,7 +965,7 @@ def summarize(explorer, entries):
         f"entry verbs x preset sets: {len(entries)} starts; script calls (nodes): {explorer.node_count}; "
         f"distinct configurations: {len(explorer.visited)}; paths explored: {explorer.path_count()}; failing paths: "
         f"{len(explorer.failures)}; "
-        f"distinct failures: {len(grouped)}"
+        f"distinct failures: {len(grouped)}; peak queued snapshots: {explorer.peak_snapshot_bytes} bytes"
         + ("; stopped at the node budget (breadth-first, shortest paths first)" if explorer.budget_hit else "")
     ]
     for failures in grouped.values():
@@ -868,6 +975,15 @@ def summarize(explorer, entries):
     return "\n".join(lines)
 
 
+def dump_visited_nodes(explorer, dump_path):
+    # Opt-in (TERMINATION_NODE_DUMP): the sorted visited node ids, then the walk's counts, to compare two walks.
+    # Mask run ids, SHAs and epochs in both dumps before comparing them.
+    lines = sorted(repr(node_id) for node_id in explorer.visited)
+    lines += [f"node_count={explorer.node_count}", f"paths={explorer.path_count()}",
+              f"failures={len(explorer.failures)}"]
+    pathlib.Path(dump_path).write_text("\n".join(lines) + "\n")
+
+
 class TerminationTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
@@ -875,6 +991,9 @@ class TerminationTest(unittest.TestCase):
 
     def test_every_path_ends_in_a_stop_or_a_hand_back(self):
         explorer, entries = explore_all()
+        dump_path = os.environ.get("TERMINATION_NODE_DUMP")
+        if dump_path:
+            dump_visited_nodes(explorer, dump_path)
         report = summarize(explorer, entries)
         print("\n" + report)
         self.assertEqual([], explorer.failures, report)
@@ -883,6 +1002,73 @@ class TerminationTest(unittest.TestCase):
         plan_edit_report = summarize(plan_edit_explorer, adopt_entries)
         self.assertEqual([], plan_edit_explorer.failures, plan_edit_report)
         self.assertGreater(plan_edit_explorer.plan_edit_calls_from_wait, 0)
+
+    def test_a_walk_stopped_at_its_budget_leaves_no_node_copy_on_disk(self):
+        small_budget = 20
+        explorer = Explorer(build_template("template-small-budget"), small_budget)
+        explorer.run(entry_verbs()[:2])
+
+        self.assertTrue(explorer.budget_hit, "the walk must stop at its budget for the frontier to be queued")
+        leftover = sorted(path.name for path in TMP_ROOT.glob(f"budget{small_budget}-*"))
+        self.assertEqual([], leftover)
+
+    def test_the_sweep_removes_only_the_tmp_trees_of_dead_runs(self):
+        dead_pid = 4194304  # above the largest pid Linux can assign, so no process holds it
+
+        scratch_parent = pathlib.Path(tempfile.mkdtemp(prefix="sweep-test-"))
+        self.addCleanup(shutil.rmtree, scratch_parent, ignore_errors=True)
+        dead_tree = scratch_parent / f"termination-{dead_pid}-x"
+        (dead_tree / "budget5-n1").mkdir(parents=True)
+        (dead_tree / "budget5-n1" / "node.txt").write_text("copy")
+        stale_mtime = time.time() - STALE_TREE_SECONDS - 60
+        os.utime(dead_tree, (stale_mtime, stale_mtime))
+        recent_dead_tree = scratch_parent / f"termination-{dead_pid}-z"
+        recent_dead_tree.mkdir()
+        live_tree = scratch_parent / f"termination-{os.getpid()}-y"
+        live_tree.mkdir()
+        os.utime(live_tree, (stale_mtime, stale_mtime))
+        unowned_tree = scratch_parent / "termination-abc123"
+        unowned_tree.mkdir()
+        os.utime(unowned_tree, (stale_mtime, stale_mtime))
+
+        sweep_dead_runs_tmp_dirs(scratch_parent)
+
+        self.assertFalse(dead_tree.exists(), "the stale tree of a dead run must be removed")
+        self.assertTrue(recent_dead_tree.exists(), "a recently touched tree must stay, whatever its pid")
+        self.assertTrue(live_tree.exists(), "the tree of a live run must stay")
+        self.assertTrue(unowned_tree.exists(), "a tree with no pid in its name must stay")
+
+    def test_sigterm_removes_the_tmp_tree_and_ends_the_run_with_the_signal(self):
+        child_code = (
+            "import os, signal, time, test_code_step_termination as t\n"
+            "print(t.TMP_ROOT, flush=True)\n"
+            "os.kill(os.getpid(), signal.SIGTERM)\n"
+            "time.sleep(60)\n"
+        )
+        child = subprocess.run([sys.executable, "-c", child_code], cwd=HERE, capture_output=True, text=True,
+                               timeout=120)
+        self.assertTrue(child.stdout.strip(), child.stderr)
+        child_tmp_root = pathlib.Path(child.stdout.strip().splitlines()[0])
+        self.addCleanup(shutil.rmtree, child_tmp_root, ignore_errors=True)
+
+        self.assertEqual(-signal.SIGTERM, child.returncode, child.stderr)
+        self.assertFalse(child_tmp_root.exists(), "SIGTERM must remove the temp tree")
+
+    def test_a_walk_holds_one_node_copy_on_disk_at_a_time(self):
+        small_budget = 21
+        explorer = Explorer(build_template("template-peak-budget"), small_budget)
+        copies_seen = []
+        real_call_script = call_script
+
+        def counting_call_script(repo, presets, argv):
+            copies_seen.append(len(list(TMP_ROOT.glob(f"budget{small_budget}-*"))))
+            return real_call_script(repo, presets, argv)
+
+        with mock.patch.object(sys.modules[__name__], "call_script", side_effect=counting_call_script):
+            explorer.run(entry_verbs()[:2])
+
+        self.assertGreater(len(copies_seen), 1)
+        self.assertEqual(1, max(copies_seen))
 
 
 if __name__ == "__main__":

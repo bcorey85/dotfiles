@@ -847,10 +847,17 @@ def stop_at_wait_cap(repo_dir, state, agent_type, clock_start, total_cap):
                        silent_text + " Do not dispatch it again and do not wait longer. Tell the user." + resume_text)
 
 
+def carried_start_words(state):
+    # The start flags a run passes on to its next phase and to a restart: its modifier and --headless.
+    modifier_words = [state["modifier"]] if state.get("modifier") else []
+    headless_words = ["--headless"] if state.get("headless") else []
+    return modifier_words + headless_words
+
+
 def restart_instruction(state, restart_command="start --restart"):
     # A restart with no task text resolves the branch's plan, which is the wrong work for a run that had no plan.
-    # A plan run keeps its single phase and its modifier through the restart.
-    modifier_words = [state["modifier"]] if state.get("modifier") else []
+    # A plan run keeps its single phase, its modifier and --headless through the restart.
+    modifier_words = carried_start_words(state)
     if state.get("plan"):
         phase_words = ["--phase", str(state["onlyPhase"])] if state.get("onlyPhase") else []
         return "run `" + " ".join([restart_command, *phase_words, *modifier_words]) + "`"

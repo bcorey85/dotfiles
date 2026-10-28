@@ -1744,6 +1744,33 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("ACTION: stop-block-B", out)
         self.assertIn("low - exception", self.said())
 
+    def test_a_headless_run_commits_and_advances_where_a_phase_would_wait_for_sign_off(self):
+        self.coder_round(start_options=("--headless",))
+        self.hook("review-loop", self.LOOP_OK)
+
+        out = self.step("after-review")
+
+        self.assertIn("ACTION: auto-advance", out)
+        self.assertIn("git add -- ", out)
+        self.assertIn("Risk: low - Phase 1 calibration, headless", self.said())
+        self.assertIn("Auto-advancing to Phase 2", self.said())
+
+    def test_a_headless_run_stays_headless_on_the_next_phase(self):
+        self.coder_round(start_options=("--headless",))
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("after-review")
+        self.commit_all()
+
+        self.step("resume")
+
+        self.assertEqual("2", self.state()["phase"])
+        self.assertTrue(self.state()["headless"])
+        (self.repo / "backend/src/totals.ts").write_text("export const t = 1\n")
+        self.hook("coder", "BEHAVIOR: totals\nThere is an ambiguity in the rounding rule.")
+        self.step("after-coder")
+        self.hook("review-loop", self.LOOP_OK)
+        self.assertIn("ACTION: auto-advance", self.step("after-review"))
+
     def test_cap_reached_and_blocker_stop_without_marking(self):
         self.coder_round()
         self.hook(

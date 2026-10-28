@@ -635,6 +635,29 @@ class ResumeTest(base.CodeStepTest):
 
         self.assertIn("AGENT: review-loop", out)
 
+    def test_a_restart_over_the_coder_cap_refuses_until_that_coder_is_stopped(self):
+        cap_stop = self.stop_the_coder_at_the_wait_cap(launched_as="c1")
+        self.assertIn("stop coder c1 with TaskStop", cap_stop)
+        before = self.state_bytes()
+
+        refused = self.step("start", "--restart")
+
+        self.assertTrue(refused.startswith("Refused: coder c1 of the stopped run has not handed back"), refused)
+        self.assertIn(f"COMMAND: {self.own_command('start --coder-stopped --restart')}", refused)
+        self.assertEqual(before, self.state_bytes())
+
+        restarted = self.step("start", "--coder-stopped", "--restart")
+
+        self.assertIn("AGENT: coder", restarted)
+
+    def test_a_restart_over_the_coder_cap_goes_on_once_that_coder_handed_back(self):
+        self.stop_the_coder_at_the_wait_cap(launched_as="c1")
+        self.hook("coder", self.CODER_REPORT, agent_id="c1")
+
+        out = self.step("start", "--restart")
+
+        self.assertIn("AGENT: coder", out)
+
     def test_the_coder_cap_with_no_launch_record_asks_for_a_restart(self):
         self.stop_the_coder_at_the_wait_cap()
         self.assertEqual("coder-cap", self.state()["stopReason"])

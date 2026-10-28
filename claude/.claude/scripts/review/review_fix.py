@@ -312,10 +312,13 @@ def present_plan_impact(packet, state):
     save_fix_state(state)
     print_action(
         "ask-user-plan-impact",
-        "Call AskUserQuestion now. Do not re-dispatch and do not triage this as an ask. Question: assumed, then "
-        "found, then what changes, taken from this block:",
+        "Call AskUserQuestion now. Without that tool, ask the same question in plain text, list the options numbered, "
+        "end the turn and wait for the reply. Do not re-dispatch and do not triage this as an ask. Question: assumed, "
+        "then found, then what changes, taken from this block:",
         packet["plan_impact"],
         f"Options, in this order: {' / '.join(PLAN_IMPACT_OPTIONS)}.",
+        "Map the answer, picked or typed, to adopt, keep or discuss. For adopt or keep, put the user's words in "
+        "--ruling; for discuss, run `decide discuss`.",
         f'Then run: {DECIDE_SCRIPT} decide <adopt|keep> --by user --ruling "<the decision in one line>" '
         f"{PLAN_ARG_NOTE}",
         DECIDE_BY_NOTE,
@@ -482,11 +485,9 @@ def post_aikido_replies(packet, targets, state):
 
 # ---------- the packet ----------
 
-def active_code_step(session_id, hand_back_agent_id):
-    """(state path, stage) of a /code run that owns this session's review hand-backs, else None. A run pinned to a
-    different session does not count. The run owns only the hand-back of an agent it launched, so a hand-back from
-    another review-loop agent (a standalone /review while the run is paused or before its launch is logged) is not
-    the run's."""
+def code_run_at_review(session_id):
+    """(state, events) of a /code run of this session at a stage that owns review hand-backs, else None. A run pinned
+    to a different session does not count."""
     try:
         code_step = code_step_core.load_state(".")
     except code_step_core.StateFileError:
@@ -496,10 +497,42 @@ def active_code_step(session_id, hand_back_agent_id):
     if code_step.get("sessionId") != session_id:
         return None
     events = code_step_core.read_events(".", code_step.get("runId")) if code_step.get("runId") else []
+    return code_step, events
+
+
+def code_step_owner(code_step):
+    return code_step_core.state_dir(".") / "state.json", code_step["stage"]
+
+
+def active_code_step(session_id, hand_back_agent_id):
+    """(state path, stage) of a /code run that owns this session's review hand-backs, else None. The run owns only
+    the hand-back of an agent it launched, so a hand-back from another review-loop agent (a standalone /review while
+    the run is paused or before its launch is logged) is not the run's."""
+    code_run = code_run_at_review(session_id)
+    if code_run is None:
+        return None
+
+    code_step, events = code_run
     launched_agent_ids = {event.get("agent_id") for event in events if event.get("event") == "launch"}
     if not hand_back_agent_id or hand_back_agent_id not in launched_agent_ids:
         return None
-    return code_step_core.state_dir(".") / "state.json", code_step["stage"]
+    return code_step_owner(code_step)
+
+
+def code_step_pending_review(session_id, stored_row):
+    """(state path, stage) of a /code run that dispatched a review-loop after the stored hand-back (or at all, when
+    there is none), else None: the pending dispatch is the run's, so its retry goes through the run."""
+    code_run = code_run_at_review(session_id)
+    if code_run is None:
+        return None
+
+    code_step, events = code_run
+    since = stored_row.get("ts", 0) if stored_row else 0
+    run_review_dispatches = [event for event in events if event.get("event") == "dispatch"
+                             and event.get("agent_type") == "review-loop" and event.get("ts", 0) > since]
+    if not run_review_dispatches:
+        return None
+    return code_step_owner(code_step)
 
 
 def hand_back_id(stored_row, session_id):
@@ -517,19 +550,25 @@ def saved_hand_back(session_id):
         raise PacketError(["the packet on stdin is empty and CLAUDE_CODE_SESSION_ID is not set, so no saved "
                            "hand-back can be looked up"])
     seen = handback.latest(session_id)
+    gap = handback.hand_back_gap(seen)
     stored_row = seen["handback"] or {}
-    code_step = active_code_step(session_id, stored_row.get("agent_id"))
+    # A pending dispatch (waiting, never handed back, or re-dispatched) is newer than any stored hand-back, so the
+    # stored hand-back's owner is not the answer: the run owns it only when the run dispatched it.
+    if gap in (handback.LOOP_WAITING, handback.NO_HANDBACK, handback.REDISPATCHED):
+        code_step = code_step_pending_review(session_id, seen["handback"])
+    else:
+        code_step = active_code_step(session_id, stored_row.get("agent_id"))
     if code_step:
         raise PacketError([f"a /code run owns this session's review hand-backs (code-step state {code_step[0]}, stage "
                            f"{code_step[1]}): its packet goes through code_step.py resume, not `packet`"])
-    gap = handback.hand_back_gap(seen)
+
+    if gap == handback.LOOP_WAITING:
+        raise LoopWaitingError(seen["stop"]["ts"])
+    if gap in (handback.NO_HANDBACK, handback.REDISPATCHED):
+        raise NoHandbackError(hand_back_id(seen["handback"], session_id))
     if gap == handback.NO_DISPATCH:
         raise PacketError([f"this session has no review-loop dispatch on record (session {session_id}): a hand-back "
                            "from another session or an older run is never taken as current"])
-    if gap == handback.LOOP_WAITING:
-        raise LoopWaitingError(seen["stop"]["ts"])
-    if gap:
-        raise NoHandbackError(hand_back_id(seen["handback"], session_id))
     return seen["handback"]
 
 

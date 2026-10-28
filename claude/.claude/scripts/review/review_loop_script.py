@@ -10,9 +10,11 @@ re-review by every reviewer that filed a fix and owns a changed file (the smell 
 two-round cap, the full-check execution gate, the class-closure check, telemetry rows, and the hand-back packet.
 The full check runs through full_check.py: none in a repo whose CLAUDE.md holds `Full suite: CI`, where the coder
 calls run the changed files' tests, none in a repo where no check is found, and a check past CHECK_TIMEOUT_SECONDS is
-killed with its process group. A check that fails on a missing module the repo declares as a dependency is an
-environment gap. None is a failure: the packet's `full_check` says `not run (CI)`, `not run (no check found; ...)`,
-`not run (timeout)` or `not run (environment gap: ...)`.
+killed with its process group, and a check whose step stops on a missing path is a check-command error. A check
+that fails on a missing module the repo declares as a dependency is an environment gap. None is a failure: the
+packet's `full_check` says `not run (CI)`, `not run (no check found; ...)`, `not run (timeout)`,
+`not run (check-command error: ...)` or `not run (environment gap: ...)`. A failed check's blocker holds the failing
+step's lines.
 
 Model steps are `claude -p` calls in auto permission mode, each with CLAUDE_FORMAT_HOOK_OFF=1 in its environment: the
 reviewers (agents code-reviewer, smell-reviewer, test-reviewer), the fix coder (agent coder) and the class-closure
@@ -109,7 +111,9 @@ CHECK_FINDER = (
     'Name the one shell command, run from the repo root, that runs this repo\'s full quality check: the lint, type '
     'check and test steps its CI gate runs. Read CLAUDE.md, AGENTS.md, the README, the Makefile, package.json, '
     'pyproject.toml and the files under .github/workflows to find it. Chain steps with && when no single target '
-    'runs them all. Name only commands those files name. Run nothing.\n\n'
+    'runs them all. A workflow\'s or job\'s defaults.run.working-directory holds for every run step that sets no '
+    'working-directory of its own: write each such step as (cd <dir> && <step>), so no step\'s directory carries '
+    'into the next. Name only commands those files name. Run nothing.\n\n'
     'End your reply with one JSON object: {{"command": "<shell command>"}}, or {{"command": null, "reason": '
     '"<what is missing>"}} when the files name no check.'
 )
@@ -867,7 +871,7 @@ class LoopRun:
         if not full_check.is_failure(self.full_check):
             return
 
-        gate_findings = [f"full check failed (`{check_command}`), last lines:\n{tail}"]
+        gate_findings = [f"full check failed (`{check_command}`), failing lines:\n{tail}"]
         if re.search(r"\.spec\.", tail):
             self.stop("critical-blocker", gate_findings)
             return

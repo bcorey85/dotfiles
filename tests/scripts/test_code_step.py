@@ -3804,6 +3804,22 @@ class CodeStepTest(unittest.TestCase):
         self.assertIsNone(self.gate_mark())
         self.assertNotIn("- [x] Phase 1:", self.plan_text())
 
+    def test_review_again_recovers_a_false_clean_stop_in_place(self):
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        shutil.rmtree(self.tmp / "handback-store")
+
+        stop = self.step("after-review")
+        self.assertIn("invoke Skill code with `review-again`", stop)
+        self.assertNotIn("Tell the user", stop)
+        self.assertEqual("false-clean", self.state()["stopReason"])
+
+        again = self.step("review-again")
+        self.assertIn("AGENT: review-loop", again)
+        self.assertEqual("review", self.state()["stage"])
+        self.hook("review-loop", self.LOOP_OK, agent_id="a2")
+        self.assertIn("ACTION: stop-block-B", self.step("after-review"))
+
     def test_missing_handback_module_stops_the_run_and_writes_no_gate_file(self):
         bare = self.tmp / "bare"
         bare.mkdir()

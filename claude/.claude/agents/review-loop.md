@@ -219,6 +219,8 @@ repair, run the gate once more; a second failure returns `status: critical-block
 - `not run (timeout)` → no finding. Proceed.
 - `not run (CI)` → the repo's CLAUDE.md holds `Full suite: CI`. Run the tests of the files this phase changed, by name, once, redirected to the same log. A failure there is a `fix` finding carrying `blocker`.
 
+When neither CLAUDE.md nor the repo's task runners or CI config name a full check, do not run the script: set `full_check` to `not run (no check found; the coder's scoped tests stand)` and proceed.
+
 **Exception**: failures in acceptance spec tests (`*.spec.*`, or any test the plan's `Acceptance Criteria` file names as covering a criterion) are critical BLOCKERS — never route them to auto-fix. Either the code is wrong or the intent changed, and only the user decides which; an auto-fixer's cheapest path to green is editing the spec.
 
 Never skip this because the review "looked clean".
@@ -279,7 +281,7 @@ findings_remaining: [{disposition, finding, file_line}]  # status=deferred | cap
 plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
 ask: [{finding, file_line, question, change, gate, class}]  # never auto-fixed; the user answers these; change is the one edit an accepted answer makes; gate/class ride along so the caller can log the outcome. Log each ask row with the same file and line as its file_line; the caller reads the id from that row, so leave finding_id out
 class_closure: <the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a — fixed[] empty>
-full_check: passed | failed (exit N) | not run (CI) | not run (timeout)  # the Step 6 result
+full_check: passed | failed (exit N) | not run (CI) | not run (timeout) | not run (no check found; the coder's scoped tests stand)  # the Step 6 result
 files_touched: [<path>]
 nit: [<one line each>]                   # a small item ends `applied` or `skipped: <reason>`
 load_bearing_clean: <one line, or omitted>

@@ -307,16 +307,18 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "converged")
         self.assertEqual(self.fake_calls()[0]["key"], "check-finder")
 
-    def test_no_check_found_stops_before_any_reviewer_call(self):
+    def test_a_repo_with_no_check_found_is_reviewed_and_its_packet_says_no_full_check_ran(self):
         no_check = '{"command": null, "reason": "no CI config or task runner"}'
 
-        completed = self.run_script({"check-finder": [{"result": no_check}]}, claude_md="No check named here.\n")
+        completed = self.run_script({"check-finder": [{"result": no_check}],
+                                     "code-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    claude_md="No check named here.\n")
 
-        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], "critical-blocker")
-        self.assertIn("no CI config or task runner", packet["blockers"][0])
-        self.assertEqual([call["key"] for call in self.fake_calls()], ["check-finder"])
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["full_check"], "not run (no check found; the coder's scoped tests stand)")
+        self.assertIn("code-reviewer", [call["key"] for call in self.fake_calls()])
 
     def test_plan_change_ask_maps_to_plan_impact(self):
         ask_review = (f"## Fix\nNone\n\n## Ask\n- {PLAN_CHANGE_STATUS}: the fix needs a new column the plan "

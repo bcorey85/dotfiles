@@ -16,8 +16,32 @@ CARGO_VALUE_OPTIONS = {"--test", "--bin", "--example", "--bench", "-p", "--packa
                        "-F", "--target", "--manifest-path", "--profile", "-j", "--jobs", "--target-dir",
                        "--color", "--config", "-Z", "--message-format"}
 # `N passed` (pytest, vitest, jest, playwright, cargo), `N passing` (mocha), `N pass` (bun).
-PASSED_TESTS = re.compile(r"(\d+) pass(?:ed|ing)?\b")
-GO_PACKAGE_OK = re.compile(r"^ok\s+\S+.*$", re.MULTILINE)
+PASSED_TESTS = re.compile(r"([1-9]\d*) pass(?:ed|ing)?\b")
+GO_PACKAGE_OK = re.compile(r"^ok[ \t]+\S+\t(?:[\d.]+s|\(cached\)).*$", re.MULTILINE)
+MAX_RUNNER_SUMMARIES = 5
+# The mark node --test's spec reporter prints in front of a summary line.
+INFO_MARK = "\N{INFORMATION SOURCE}"
+# The one-line summaries: pytest (with or without the `=` bars), vitest, jest, mocha, cargo, bun, playwright and
+# node --test.
+SUMMARY_LINES = (
+    re.compile(r"^=+ .*\b\d+ (?:passed|failed|errors?)\b.* in [\d.:]+s.*=+$", re.MULTILINE),
+    re.compile(r"^\d+ (?:passed|failed|errors?)\b.* in [\d.:]+s\b.*$", re.MULTILINE),
+    re.compile(r"^[ \t]*Tests {2,}[1-9]\d* (?:passed|failed).*$", re.MULTILINE),
+    re.compile(r"^Tests:\s.*\btotal\b.*$", re.MULTILINE),
+    re.compile(r"^[ \t]*[1-9]\d* passing\b.*$", re.MULTILINE),
+    re.compile(r"^test result: (?:FAILED\. |\w+\. (?=[1-9]))\d+ passed.*$", re.MULTILINE),
+    re.compile(r"^[ \t]*[1-9]\d* pass$", re.MULTILINE),
+    re.compile(r"^[ \t]*[1-9]\d* (?:passed|failed)\b.*\([\d.]+m?s\)$", re.MULTILINE),
+    re.compile(rf"^(?:#|{INFO_MARK}) pass [1-9]\d*$", re.MULTILINE),
+    # The failure counts, kept only above zero: mocha, bun, node --test, playwright and go.
+    re.compile(r"^[ \t]*[1-9]\d* failing\b.*$", re.MULTILINE),
+    re.compile(r"^[ \t]*[1-9]\d* fail$", re.MULTILINE),
+    re.compile(rf"^(?:#|{INFO_MARK}) fail [1-9]\d*$", re.MULTILINE),
+    re.compile(r"^[ \t]*[1-9]\d* failed$", re.MULTILINE),
+    re.compile(r"^FAIL\t\S+.*$", re.MULTILINE),
+)
+# unittest and Django: `Ran N tests in Xs`, then `OK` or `FAILED (...)` on a later line.
+UNITTEST_SUMMARY = re.compile(r"^(Ran [1-9]\d* tests? in [\d.]+s)\s*\n+\s*(OK\b[^\n]*|FAILED\b[^\n]*)", re.MULTILINE)
 # A command substitution `$(...)` or backticks: its runner's output goes into the outer command, not into its report.
 SUBSTITUTION = re.compile(r"\$\([^)]*\)|`[^`]*`")
 GO_NO_TESTS = "[no tests to run]"
@@ -61,6 +85,26 @@ def passed_test_count(output):
     total = sum(int(number) for number in PASSED_TESTS.findall(output))
     total += sum(1 for line in GO_PACKAGE_OK.findall(output) if GO_NO_TESTS not in line)
     return total
+
+
+def runner_summaries(output, limit=MAX_RUNNER_SUMMARIES):
+    """The runner's own summary lines in the output, in the order printed, without repeats, at most
+    `limit` (None for all): pytest, unittest and Django, vitest, jest, mocha, cargo, bun, playwright, node --test and
+    go. A chained command prints one per runner. Go's package lines count as one summary. Empty when the output
+    holds none."""
+    found = []
+    for pattern in SUMMARY_LINES:
+        found += [(match.start(), match.group(0).strip(" =\t")) for match in pattern.finditer(output)]
+
+    for match in UNITTEST_SUMMARY.finditer(output):
+        found.append((match.start(), f"{match.group(1)}: {match.group(2)}"))
+
+    go_packages = [match for match in GO_PACKAGE_OK.finditer(output) if GO_NO_TESTS not in match.group(0)]
+    if go_packages:
+        found.append((go_packages[0].start(), f"go: {len(go_packages)} packages ok"))
+
+    ordered = [text for _position, text in sorted(found)]
+    return list(dict.fromkeys(ordered))[:limit]
 
 
 def cargo_test_is_filtered(command):

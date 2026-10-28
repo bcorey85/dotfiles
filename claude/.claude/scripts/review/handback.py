@@ -798,7 +798,7 @@ def unchecked_code_reason(event, session_id, agent_id, message):
     return review_loop_gate.GATE_REASON
 
 
-def plan_edit_reason(event, packet):
+def hand_back_plan_edit_reason(event, packet):
     """review_loop_gate.PLAN_EDIT_REASON when the packet, of any status but plan-impact, has a files_touched that
     names the plan file of the loop's dispatch prompt, else None. A transcript that cannot be read never blocks."""
     if packet is None or packet["status"] == "plan-impact":
@@ -878,7 +878,8 @@ def handle_hook(event, kind):
         record(session_id, "unreviewed", agent_id=agent_id)
         return ("This review-loop hand-back is clean but no reviewer ran. Dispatch the code-reviewer on the diff, fix "
                 "what it finds, then hand back again.")
-    gate_reason = unchecked_code_reason(event, session_id, agent_id, message) or plan_edit_reason(event, packet)
+    gate_reason = (unchecked_code_reason(event, session_id, agent_id, message)
+                   or hand_back_plan_edit_reason(event, packet))
     if gate_reason:
         return gate_reason
 

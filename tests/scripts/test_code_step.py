@@ -3862,8 +3862,51 @@ class CodeStepTest(unittest.TestCase):
         self.hook("review-loop", self.LOOP_OK)
         out = self.step("after-review")
         self.assertIn("Planless task reviewed", out)
+        self.assertIn("Nothing is committed: run the commit command above.", out)
         self.assertEqual(["git add -- backend/src/orders.ts && git commit -m 'orders exist' -- backend/src/orders.ts"],
                          self.commit_lines())
+
+    def test_a_planless_adopt_dispatches_a_coder_for_the_plan_docs_then_reviews_and_commits_its_edit(self):
+        self.step("start", "--task", "add orders")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", self.CODER_REPORT)
+        self.step("after-coder")
+        self.hook("review-loop", "status: plan-impact\niter: 1\nplan_impact: |\n    PLAN-IMPACT:\n      found: B\n")
+        self.step("after-review")
+
+        out = self.step("decide", "adopt", "--by", "session", "--ruling", "drop the header")
+        self.assertIn("AGENT: coder", out)
+        self.assertNotIn("AGENT: review-loop", out)
+        self.assertEqual("plan-coder", self.state()["stage"])
+        self.assertIn("No plan file is tied to this run.", out)
+        self.assertIn("`## Plan Deviations`", out)
+
+        (self.repo / self.plan).write_text(self.plan_text() + "\nadopted step\n")
+        out = self.step("after-plan-edit")
+        self.assertIn("AGENT: review-loop", out)
+        self.assertIn(f"    - path: {self.plan}", out)
+        self.assertIn("flagged: none", out)
+        self.assertIn(f"The plan docs {self.plan} now state the ruling.", self.said())
+
+        self.hook("review-loop", self.LOOP_OK)
+        out = self.step("after-review")
+        self.assertIn("Planless task reviewed", out)
+        self.assertEqual([f"git add -- backend/src/orders.ts {self.plan} && git commit -m 'orders exist' -- "
+                          f"backend/src/orders.ts {self.plan}"], self.commit_lines())
+
+    def test_a_planless_adopt_flags_a_code_file_the_plan_doc_coder_changed(self):
+        self.step("start", "--task", "add orders")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", self.CODER_REPORT)
+        self.step("after-coder")
+        self.hook("review-loop", "status: plan-impact\niter: 1\nplan_impact: |\n    PLAN-IMPACT:\n      found: B\n")
+        self.step("after-review")
+        self.step("decide", "adopt", "--by", "session", "--ruling", "drop the header")
+
+        (self.repo / "backend/src/extra.ts").write_text("export const x = 1\n")
+        out = self.step("after-plan-edit")
+        self.assertIn("AGENT: review-loop", out)
+        self.assertIn("the plan-edit coder also changed backend/src/extra.ts", out)
 
     # ---------- the wait ends only on the right agent's report ----------
 

@@ -248,9 +248,36 @@ def command_decide(repo_dir, state, args, ruling_by=None):
         return emit("stop", f"The plan file {state['plan']} is missing (a branch switch?). Tell the user.")
 
     record_ruling(repo_dir, state, decision, by, ruling_words, ruling_by)
-    if decision == PLAN_IMPACT_OPTIONS[0] and state.get("plan"):
+    if decision == PLAN_IMPACT_OPTIONS[0]:
         return emit_plan_edit_dispatch(repo_dir, state)
     emit_review_dispatch(repo_dir, state)
+
+
+def planless_plan_edit_prompt(state):
+    # A planless run has no plan file of its own: the coder finds the branch's plan docs the ruling overturns.
+    ruling = state["ruling"]
+    ruled_by = "The user ruled" if ruling["byUser"] else "The ruling"
+    return "\n".join([
+        "No plan file is tied to this run. The review found that the code and this branch's plan docs disagree:",
+        "",
+        state["impact"],
+        "",
+        f"{ruled_by} ({ruling['by']}, {ruling['at']}):",
+        "",
+        ruling["words"],
+        "",
+        "Find the plan docs of this branch that state the side the ruling overturns: start with the files the "
+        "disagreement names, then `docs/plans/`. In each one, rewrite every step, Automated Verification command and "
+        "Success Criteria line that the ruling contradicts, so that it states the ruling, and add an entry under its "
+        "`## Plan Deviations` section (add the section when it has none) with the ruling, who made it and when. Edit "
+        "Markdown plan docs only: no code, no test and no acceptance criteria file, and run no check. When no plan "
+        "doc states the overturned side, change nothing and say so.",
+        "",
+        "Report each line you changed as `<file>:<line number>: <new text>`. Ask the user nothing and make no choice "
+        "that is theirs. For each choice the ruling leaves open, a change to an acceptance criterion included, end "
+        "the report with one line: `OPEN CHOICE: <the choice in one line>`. The script hands each such line to the "
+        "user.",
+    ])
 
 
 def plan_edit_prompt(state, criteria_path):
@@ -294,14 +321,21 @@ def plan_edit_prompt(state, criteria_path):
 def emit_plan_edit_dispatch(repo_dir, state):
     # An adopted change stays only in Plan Deviations unless the steps that contradict it change too, and the
     # reviewer then reads the old step and raises the same disagreement again.
-    criteria_path = criteria_file(repo_dir, state)
     ruling = state["ruling"]
-    if not ruling["byUser"]:
+    has_plan = bool(state.get("plan"))
+    criteria_path = criteria_file(repo_dir, state) if has_plan else None
+    if has_plan and not ruling["byUser"]:
         save_criteria_guard(repo_dir, state)
     state.update({"stage": "plan-coder", "planEditBaseline": file_hashes(repo_dir),
                   "followUpBefore": change_snapshot(repo_dir)})
     open_dispatch(state)
     save_state(repo_dir, state)
+
+    if not has_plan:
+        headline = (f"The plan change was adopted by {ruling['by']}. Dispatch a coder to rewrite the branch's plan "
+                    "docs it contradicts.")
+        prompt = planless_plan_edit_prompt(state)
+        return emit_dispatch(repo_dir, state, RESUME_VERB, headline, prompt=prompt, agent="coder")
 
     prompt = plan_edit_prompt(state, criteria_path)
     if ruling["byUser"]:
@@ -330,6 +364,47 @@ def command_review_again(repo_dir, state, args):
     emit_review_dispatch(repo_dir, state)
 
 
+def flag_stray_plan_edits(state, stray_files):
+    # A file the plan-edit coder had no leave to change goes to the review, flagged.
+    if not stray_files:
+        return
+
+    state["files"] += [name for name in stray_files if name not in state["files"]]
+    state["flagged"].append("the plan-edit coder also changed " + ", ".join(stray_files))
+    state["exception"] = True
+
+
+def settle_plan_edit(repo_dir, state, edited_files):
+    # Flag the stray edits, refresh the phase text from the edited plan, and return the note for the user.
+    criteria_path = criteria_file(repo_dir, state)
+    allowed_files = (state["plan"], criteria_path) if state["ruling"]["byUser"] else (state["plan"],)
+    flag_stray_plan_edits(state, [name for name in edited_files if name not in allowed_files])
+
+    plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
+    state["phaseText"] = plan_format.phase_text(plan_lines, state["phase"])
+
+    plan_note = f"The plan {state['plan']} now states the ruling."
+    if criteria_path and criteria_path in edited_files and state["ruling"]["byUser"]:
+        plan_note += f" The acceptance criteria in {criteria_path} changed too: read them before you stage."
+    return plan_note
+
+
+def is_planless_plan_doc(name):
+    # A Markdown doc the planless plan-edit coder may change: any but an acceptance criteria file.
+    return name.endswith(".md") and os.path.basename(name) != "acceptance-criteria.md"
+
+
+def settle_planless_plan_edit(state, edited_files):
+    # The edited plan docs join the review's files, any other edit is flagged; returns the note for the user.
+    plan_docs = [name for name in edited_files if is_planless_plan_doc(name)]
+    flag_stray_plan_edits(state, [name for name in edited_files if name not in plan_docs])
+    state["files"] += [name for name in plan_docs if name not in state["files"]]
+
+    if not plan_docs:
+        return "The plan-edit coder changed no plan doc."
+    return f"The plan docs {', '.join(plan_docs)} now state the ruling."
+
+
 def command_after_plan_edit(repo_dir, state, args):
     if not wait_for_handback(repo_dir, state, RESUME_VERB):
         return
@@ -349,20 +424,10 @@ def command_after_plan_edit(repo_dir, state, args):
     changed_now = file_hashes(repo_dir)
     edited_files = [name for name, digest in changed_now.items() if baseline.get(name) != digest]
 
-    criteria_path = criteria_file(repo_dir, state)
-    allowed_files = (state["plan"], criteria_path) if state["ruling"]["byUser"] else (state["plan"],)
-    stray_files = [name for name in edited_files if name not in allowed_files]
-    if stray_files:
-        state["files"] += [name for name in stray_files if name not in state["files"]]
-        state["flagged"].append("the plan-edit coder also changed " + ", ".join(stray_files))
-        state["exception"] = True
-
-    plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
-    state["phaseText"] = plan_format.phase_text(plan_lines, state["phase"])
-
-    plan_note = f"The plan {state['plan']} now states the ruling."
-    if criteria_path and criteria_path in edited_files and state["ruling"]["byUser"]:
-        plan_note += f" The acceptance criteria in {criteria_path} changed too: read them before you stage."
+    if state.get("plan"):
+        plan_note = settle_plan_edit(repo_dir, state, edited_files)
+    else:
+        plan_note = settle_planless_plan_edit(state, edited_files)
     say(repo_dir, plan_note)
     if open_choices:
         choice_lines = [f"- {choice}" for choice in open_choices]

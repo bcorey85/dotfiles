@@ -984,6 +984,19 @@ class ResumeTest(base.CodeStepTest):
         self.assertNotIn("stale", out)
         self.assertIn("AGENT: review-loop", out)
 
+    def test_a_resume_after_a_phase_was_inserted_above_the_runs_phase_while_the_coder_was_out_is_stale(self):
+        self.begin_coder()
+        inserted = self.plan_text().replace("## Phase 1: Walking skeleton",
+                                            "## Phase 1: Inserted work\n\nOther work.\n\n## Phase 8: Walking skeleton")
+        self.assertNotEqual(self.plan_text(), inserted)
+        (self.repo / self.plan).write_text(inserted)
+        self.hook("coder", self.CODER_REPORT)
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: ask-user", out)
+        self.assertIn("changed since the run started", (self.repo / ".git/code-step/question.md").read_text())
+
     def test_a_resume_at_the_asks_after_the_review_loop_edited_the_phase_text_is_not_stale(self):
         self.coder_round()
         (self.repo / self.plan).write_text(self.plan_with_phase_one_test_file_changed())
@@ -991,9 +1004,12 @@ class ResumeTest(base.CodeStepTest):
         self.step("after-review")
         self.assertEqual("asks", self.state()["stage"])
 
-        self.step("resume")
+        out = self.step("resume")
 
         self.assertNotIn("stale", self.said())
+        self.assertEqual("asks", self.state()["stage"])
+        self.assertIn("ACTION: ask-user", out)
+        self.assertIn("Proposed change: export o as a const", (self.repo / ".git/code-step/question.md").read_text())
 
     def test_a_plan_edit_after_the_review_loop_handed_back_is_still_stale(self):
         self.coder_round()

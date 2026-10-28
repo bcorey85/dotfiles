@@ -24,9 +24,10 @@ with no failures and a timed-out command has the result "timeout". On a pass, a 
 gate result to the hand-back message, so the caller reads the report as final. The stamp names each timed-out command
 with the last 600 characters of its output, and says that the gate got no result from it: the command is too broad,
 or a test hangs. A failure that shows the environment cannot run the check (exit 126 or 127, a runner that cannot
-start the program, or a missing module from outside the repo with no failed test) is a setup fault: it never denies the
-call or counts toward the cap, a run with only setup faults has the result "setup-fault", and the stamp names each one
-with its output tail. With no gate, a gate
+start the program, no package manifest where it ran, a run that found no test to run, or a missing module from
+outside the repo with no failed test) is a setup fault: it never denies the call or counts toward the cap, a run
+with only setup faults has the result "setup-fault", and the stamp names each one with its output tail. A denial
+lists the failing tests above the output tail. With no gate, a gate
 older than 6 hours or another agent type, the hand-back goes through untouched. Parallel coders take turns."""
 import fcntl
 import json
@@ -39,8 +40,8 @@ import time
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in ("lib", "telemetry")]
 import script_utils
-from makefile_text import load_makefile, parse_make_arguments
-from shell_command import docker_forwarded_variables, docker_set_variables, unwrap_docker, without_assignments
+from check_output import is_setup_fault, tail_with_failing_tests
+from check_scope import scanned_command
 
 MAX_DENIES = 3
 MAX_GATE_AGE_SECONDS = 6 * 3600
@@ -49,39 +50,10 @@ TAIL_CHARS = 6000
 TIMEOUT_TAIL_CHARS = 600
 GATE_LOG = pathlib.Path.home() / ".claude/coder-gate.jsonl"
 
-# A simple command that starts with one of these runs tests or lint. With no path, test name or changed-files flag
-# after it, it covers the whole package. "test" and "lint" also match script names such as "test:unit".
-CHECK_RUN_PREFIXES = [
-    ["npm", "test"], ["npm", "t"], ["npm", "run", "test"], ["yarn", "test"], ["yarn", "run", "test"],
-    ["pnpm", "test"], ["pnpm", "run", "test"], ["bun", "test"], ["npx", "vitest"], ["npx", "jest"],
-    ["vitest"], ["jest"], ["pytest"], ["python", "-m", "pytest"], ["python3", "-m", "pytest"],
-    ["uv", "run", "pytest"],
-    ["npm", "run", "lint"], ["yarn", "lint"], ["yarn", "run", "lint"], ["pnpm", "lint"], ["pnpm", "run", "lint"],
-    ["npx", "eslint"], ["eslint"], ["ruff", "check"],
-]
-# A build always covers the whole package.
-BUILD_PREFIXES = [
-    ["npm", "run", "build"], ["yarn", "build"], ["yarn", "run", "build"], ["pnpm", "build"], ["pnpm", "run", "build"],
-    ["bun", "run", "build"],
-]
-SCRIPT_VARIANT_WORDS = ("test", "lint", "build")
 WHOLE_PACKAGE_REASON = ("This command runs a whole test suite, lints a whole package or runs a build. Run the "
                         "typecheck, and lint and tests for only the files you changed. The review loop runs the full "
                         "check once, at its end.")
-SCOPE_RANK = {"none": 0, "targeted": 1, "unresolved": 2, "whole": 3}
-MAKE_PROGRAMS = ("make", "gmake")
-MAX_MAKE_DEPTH = 5
-CHANGED_FILES_FLAGS = ("--changed", "--onlyChanged")
-WHOLE_PACKAGE_PATHS = {".", "./"}
-SHELL_OPERATORS = {"&&", "||", ";", "|", "&", "(", ")"}
-REDIRECT_CHARS = set("<>&")
 FILES_PLACEHOLDER = re.compile(r"\{files(?::([^{}]*))?\}")
-# Exit codes and runner text that mean the check never ran: the shell found no program or could not run it, or uv or
-# poetry could not start one.
-COMMAND_NOT_RUN_CODES = {126, 127}
-RUNNER_CANNOT_START = re.compile(r"Failed to spawn: |Command not found: ")
-MISSING_MODULE = re.compile(r"No module named '?([A-Za-z_][\w.]*)")
-TESTS_FAILED = re.compile(r"\b\d+ failed\b")
 
 
 def gate_path(cwd):
@@ -89,178 +61,6 @@ def gate_path(cwd):
     if git_path is None:
         return None
     return pathlib.Path(git_path)
-
-
-def simple_commands(command):
-    # Split a shell line at its operators and drop redirections such as `> out.log` and `2>&1`.
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
-    words = []
-    skip_redirect_target = False
-    for token in lexer:
-        if token in SHELL_OPERATORS:
-            yield words
-            words = []
-            continue
-        if set(token) <= REDIRECT_CHARS:
-            if words and words[-1].isdigit():
-                words.pop()
-            skip_redirect_target = True
-            continue
-        if skip_redirect_target:
-            skip_redirect_target = False
-            continue
-        words.append(token)
-    yield words
-
-
-def matches_prefix(words, prefix):
-    if len(words) < len(prefix):
-        return False
-    for word, expected in zip(words, prefix, strict=False):
-        script_variant = expected in SCRIPT_VARIANT_WORDS and word.startswith(expected + ":")
-        if word != expected and not script_variant:
-            return False
-    return True
-
-
-def direct_check_scope(words):
-    # "whole" for a build or a test or lint run with no path, test name or changed-files flag, "targeted" for one
-    # with, "none" for any other command.
-    if any(matches_prefix(words, prefix) for prefix in BUILD_PREFIXES):
-        return "whole"
-
-    for prefix in CHECK_RUN_PREFIXES:
-        if not matches_prefix(words, prefix):
-            continue
-        scope_words = [word for word in words[len(prefix):]
-                      if word.startswith(CHANGED_FILES_FLAGS)
-                      or not (word.startswith("-") or word == "run" or word in WHOLE_PACKAGE_PATHS)]
-        return "targeted" if scope_words else "whole"
-    return "none"
-
-
-class CheckScan:
-    # What a command line runs: the widest scope found, and the make recipe commands that run a whole suite.
-    def __init__(self):
-        self.scope = "none"
-        self.whole_recipes = []
-        self.visited_depths = {}
-
-    def note(self, scope):
-        if SCOPE_RANK[scope] > SCOPE_RANK[self.scope]:
-            self.scope = scope
-
-
-def scan_command(command, cwd, scan, depth=0, recipe=None):
-    # recipe is (the make call, the target) while the command is a line of a make recipe.
-    try:
-        simple_command_list = list(simple_commands(command))
-    except ValueError:
-        # shlex cannot split some valid shell, such as $'...' quotes. Let the command through.
-        scan.note("unresolved")
-        return
-
-    for words in simple_command_list:
-        written_command = shlex.join(words)
-        command_words = without_assignments(words)
-        assigned_names = {word.split("=", 1)[0] for word in words[:len(words) - len(command_words)]}
-        words = command_words
-        if len(words) == 2 and words[0] == "cd":
-            cwd = pathlib.Path(cwd) / words[1]
-            continue
-        scan_words(words, written_command, cwd, scan, depth, recipe, assigned_names)
-
-
-def scan_words(words, written_command, cwd, scan, depth, recipe, assigned_names=frozenset()):
-    # written_command is the simple command as written, with its NAME=value words and any docker call; words are
-    # the same command with the NAME=value words dropped, which is what gets judged. assigned_names holds the names
-    # of the NAME=value words that came before the command.
-    inner_words = unwrap_docker(words)
-    forwarded_names = docker_forwarded_variables(words)
-    set_names = docker_set_variables(words)
-    if inner_words is not None:
-        words = without_assignments(inner_words)
-    if not words:
-        return
-
-    if pathlib.PurePath(words[0]).name in MAKE_PROGRAMS:
-        # A NAME=value right before make can narrow the target, as one after it does. One before a docker call
-        # reaches the make inside the container only when the call forwards it with -e NAME or --env NAME. A docker
-        # -e NAME=value or --env NAME=value sets one inside the container, so it reaches the make as well.
-        reaches_make = assigned_names if inner_words is None else (assigned_names & forwarded_names) | set_names
-        if reaches_make:
-            scan.note("unresolved")
-            return
-        scan_make(words, written_command, cwd, scan, depth, recipe)
-        return
-
-    scope = direct_check_scope(words)
-    scan.note(scope)
-    if scope == "whole" and recipe:
-        scan.whole_recipes.append((*recipe, written_command))
-
-
-def scan_make(words, written_command, cwd, scan, depth, recipe):
-    arguments = parse_make_arguments(words[1:])
-    # Printing the commands (-n), answering a question (-q), touching the targets (-t) or printing help (-h) runs no
-    # recipe line except one marked `+` or one that names `$(MAKE)`, which is not judged.
-    if arguments.runs_no_recipe:
-        return
-
-    # A NAME=value argument can narrow the target, so the call is let through.
-    if arguments.has_variable_assignment or depth >= MAX_MAKE_DEPTH:
-        scan.note("unresolved")
-        return
-
-    directory = pathlib.Path(cwd) / arguments.directory
-    makefile = load_makefile(directory, arguments.files)
-    if makefile is None:
-        scan.note("unresolved")
-        return
-
-    make_call = recipe[0] if recipe else written_command
-    targets = arguments.targets or [makefile.default_goal]
-    for target in targets:
-        if target is None or not makefile.has_rule(target):
-            scan.note("unresolved")
-            continue
-        scan_target(makefile, (directory, tuple(arguments.files)), target, scan, depth + 1, make_call)
-
-
-def scan_target(makefile, makefile_key, target, scan, depth, make_call):
-    visit_key = (*makefile_key, target)
-    # A target scanned at a shallower depth has had all of its prerequisites and recipe read.
-    scanned_depth = scan.visited_depths.get(visit_key)
-    if scanned_depth is not None and scanned_depth <= depth:
-        return
-
-    if depth > MAX_MAKE_DEPTH:
-        scan.note("unresolved")
-        return
-    scan.visited_depths[visit_key] = depth
-
-    # A prerequisite with no rule is a file, not a target.
-    for prerequisite in makefile.all_prerequisites(target):
-        if makefile.has_rule(prerequisite):
-            scan_target(makefile, makefile_key, prerequisite, scan, depth + 1, make_call)
-
-    directory = makefile_key[0]
-    for recipe_command in makefile.recipe_commands(target):
-        scan_command(recipe_command, directory, scan, depth, (make_call, target))
-
-
-def command_check_scope(command, cwd):
-    # "whole" when the command runs a whole test suite, lint or build, "targeted" when it runs one on named files,
-    # "unresolved" when what it runs cannot be read from the text (so it is let through), else "none". A make target
-    # or docker exec is judged by the commands it runs.
-    return scanned_command(command, cwd).scope
-
-
-def scanned_command(command, cwd):
-    scan = CheckScan()
-    scan_command(command, cwd, scan)
-    return scan
 
 
 def whole_recipe_lines(scan):
@@ -272,7 +72,7 @@ def whole_recipe_lines(scan):
 def whole_package_reason(command, cwd):
     # The refusal text for a command that runs a whole suite, else None.
     scan = scanned_command(command, cwd)
-    if scan.scope != "whole":
+    if not scan.runs_whole():
         return None
 
     recipe_lines = whole_recipe_lines(scan)
@@ -296,7 +96,7 @@ def set_gate(commands, gate_assignments=()):
     refused_lines = []
     for command in commands:
         scan = scanned_command(command, repo_root)
-        if scan.scope != "whole":
+        if not scan.runs_whole():
             continue
 
         refused_lines.append(f"  {command}")
@@ -398,27 +198,6 @@ def run_commands(gate):
     return failures, skipped, timed_out
 
 
-def is_repo_module(module_name, repo_root):
-    top_name = module_name.split(".")[0]
-    for base in (pathlib.Path(repo_root), pathlib.Path(repo_root) / "src"):
-        if (base / top_name).is_dir() or (base / f"{top_name}.py").is_file():
-            return True
-    return False
-
-
-def is_setup_fault(code, output, repo_root):
-    # A failure that says the environment cannot run the check, not that a check failed: the program is missing, the
-    # runner cannot start it, or a module outside the repo is missing and no test ran to a failure. A missing repo
-    # module or a name that does not import is a real defect.
-    if code in COMMAND_NOT_RUN_CODES or RUNNER_CANNOT_START.search(output):
-        return True
-
-    missing_modules = MISSING_MODULE.findall(output)
-    if not missing_modules or TESTS_FAILED.search(output):
-        return False
-    return not any(is_repo_module(name, repo_root) for name in missing_modules)
-
-
 def split_setup_faults(failures, repo_root):
     real_failures = []
     setup_faults = []
@@ -434,7 +213,8 @@ def split_setup_faults(failures, repo_root):
 def denial(failures):
     chunks = []
     for command, outcome, output in failures:
-        chunks.append(f"=== `{command}` failed ({outcome}), output tail ===\n{output[-TAIL_CHARS:]}")
+        tail = tail_with_failing_tests(output, output[-TAIL_CHARS:])
+        chunks.append(f"=== `{command}` failed ({outcome}), output tail ===\n{tail}")
     failure_text = "\n\n".join(chunks)
     reason = ("The hand-back gate ran the phase's checks and they failed.\n\n" + failure_text
               + "\n\nFix these. Do not run the checks yourself. Then call SubagentHandback again.")
@@ -467,7 +247,8 @@ def stamped_handback(tool_input, coder):
         stamp += ("\nHAND-BACK GATE SETUP FAULT: these commands could not run the checks in this environment:"
                   f"{setup_fault_lines}\nThe gate got no test result from these commands; they are not among the "
                   "failures. The command misses the repo's test runner or virtualenv, or a dependency is not "
-                  "installed. Run the repo's own test command for these files.")
+                  "installed, or no package manifest is where it ran, or it ran no test. Run the repo's own test "
+                  "command for these files.")
     stamped_input = dict(tool_input)
     stamped_input["message"] = str(tool_input.get("message", "")) + stamp
     return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow",

@@ -4,12 +4,20 @@ import pathlib
 import re
 import shlex
 
+import check_scope
 import plan_format
 import script_utils
+import test_run_output
 from code_step_boundary import verification_command
 
 CARGO_CLIPPY = "cargo clippy --all-targets -- -D warnings"
 RUNS_CARGO = re.compile(r"(?:^|&&\s*)cargo\s")
+UNKNOWN_FAMILY = "unknown"
+TEST_FAMILY_PATTERNS = {
+    "js": re.compile(r"\b(?:vitest|jest|mocha)\b|\b(?:npm|pnpm|yarn|bun|npx)\b.*\btest\b"),
+    "python": re.compile(r"\bpytest\b|\bmanage\.py\s+test\b"),
+    "cargo": re.compile(r"\bcargo\s+(?:test|nextest)\b"),
+}
 TYPECHECK_SCRIPTS = ["typecheck", "type-check", "check-types", "tsc"]
 SCRIPT_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".mts", ".mjs")
 TEST_SUFFIXES = ".test.ts,.test.tsx,.spec.ts,.spec.tsx,.test.js,.test.jsx"
@@ -32,7 +40,7 @@ def in_directory(command, package_rel):
     return f"cd {shlex.quote(package_rel)} && {command}" if package_rel else command
 
 
-def script_package_commands(repo_dir, package_dir, paths):
+def script_package_commands(repo_dir, package_dir, paths, derives_tests):
     package_json = json.loads((package_dir / "package.json").read_text())
     scripts = package_json.get("scripts", {})
     dependencies = {**package_json.get("dependencies", {}), **package_json.get("devDependencies", {})}
@@ -52,6 +60,14 @@ def script_package_commands(repo_dir, package_dir, paths):
     if ("eslint" in dependencies or "lint" in scripts) and source_suffixes:
         commands.append(in_directory("npx eslint {files:" + ",".join(source_suffixes) + "}", package_rel))
 
+    if not derives_tests:
+        return commands
+
+    # A phase that names no script file in the package (a Python file under a folder that holds a package.json) has
+    # no script test to derive.
+    if not any(p.endswith(SCRIPT_SUFFIXES) for p in relative_paths):
+        return commands
+
     test_paths = [p for p in relative_paths if TEST_FILE.search(p)]
     runner = "vitest run" if "vitest" in dependencies else "jest" if "jest" in dependencies else None
     if runner:
@@ -63,18 +79,24 @@ def script_package_commands(repo_dir, package_dir, paths):
     return commands
 
 
-def listed_python_runner(repo_dir, phase_section):
-    # The words before `pytest` in the first pytest command the phase's Automated Verification lists, such as
-    # ["uv", "run"] or ["DJANGO_SETTINGS_MODULE=app.test", ".venv/bin/python", "-m"], or None when it lists none. A
-    # command that changes directory or chains another command before pytest gives no runner.
+def listed_commands(repo_dir, phase_section):
+    # The commands the phase's Automated Verification lists, read the way the phase boundary reads them, each once.
+    listed = []
     for _, line in plan_format.automated_verification_rows(phase_section.splitlines()):
         if plan_format.runs_no_command(line):
             continue
 
         command = verification_command(line, repo_dir)
-        if not command:
-            continue
+        if command and command not in listed:
+            listed.append(command)
+    return listed
 
+
+def listed_python_runner(listed):
+    # The words before `pytest` in the first listed pytest command, such as ["uv", "run"] or
+    # ["DJANGO_SETTINGS_MODULE=app.test", ".venv/bin/python", "-m"], or None when it lists none. A command that
+    # changes directory or chains another command before pytest gives no runner.
+    for command in listed:
         try:
             words = shlex.split(command)
         except ValueError:
@@ -101,7 +123,7 @@ def project_python_runner(repo_dir):
     return None
 
 
-def python_commands(repo_dir, paths, listed_runner=None):
+def python_commands(repo_dir, paths, listed_runner=None, *, derives_tests):
     # Tests run through the phase's listed pytest runner, else the repo's lock file or virtualenv, else python3. Ruff
     # runs through the same runner, except a bare system python, where ruff is usually its own program.
     python_paths = [p for p in paths if p.endswith(".py")]
@@ -122,6 +144,9 @@ def python_commands(repo_dir, paths, listed_runner=None):
     if pyproject.is_file() and "ruff" in pyproject.read_text():
         ruff_command = shlex.join([*ruff_runner, "ruff", "check"])
         commands.append(f"{ruff_command} {{files:.py}}")
+
+    if not derives_tests:
+        return commands
 
     test_paths = [p for p in python_paths if TEST_FILE.search(p)]
     scope = " ".join(shlex.quote(p) for p in test_paths) or "{files:_test.py}"
@@ -166,7 +191,7 @@ def cargo_test_scope(crate_dir, file_in_crate):
     return "--bins"
 
 
-def cargo_commands(repo_dir, paths):
+def cargo_commands(repo_dir, paths, derives_tests):
     commands_by_crate = {}
     for path in paths:
         is_rust_file = path.endswith(".rs")
@@ -178,7 +203,7 @@ def cargo_commands(repo_dir, paths):
             continue
 
         crate_commands = commands_by_crate.setdefault(crate_dir, [CARGO_CLIPPY])
-        if not is_rust_file:
+        if not is_rust_file or not derives_tests:
             continue
 
         path_in_crate = str((repo_dir / path).relative_to(crate_dir))
@@ -197,24 +222,21 @@ def cargo_commands(repo_dir, paths):
     return commands
 
 
-def listed_cargo_commands(repo_dir, phase_section):
-    # The cargo commands the phase's Automated Verification lists, read the way the phase boundary reads them.
-    listed = []
-    for _, line in plan_format.automated_verification_rows(phase_section.splitlines()):
-        if plan_format.runs_no_command(line):
-            continue
+def takes_listed_test_command(command, repo_dir):
+    # A listed test command the gate can store: `coder_gate.py set` refuses one that runs a whole suite.
+    return test_run_output.runs_tests(command) and not check_scope.runs_whole_check(command, str(repo_dir))
 
-        command = verification_command(line, repo_dir)
-        if not command:
-            continue
 
-        command_without_env = script_utils.without_leading_env_assignments(command)
-        if RUNS_CARGO.search(command_without_env) and command not in listed:
-            listed.append(command)
-    return listed
+def test_command_families(command):
+    # The runner families a listed test command runs: "js", "python" or "cargo", read from its text. A command that
+    # names none of them, such as `make test-consistency` or `just test`, is the UNKNOWN_FAMILY.
+    families = {family for family, runs_family in TEST_FAMILY_PATTERNS.items() if runs_family.search(command)}
+    return families or {UNKNOWN_FAMILY}
 
 
 def derive_gate_commands(repo_dir, phase_section):
+    # The phase's listed test commands that run less than a whole suite are the gate's test commands, verbatim, and no
+    # test command is derived. A phase that lists none of those gets the test commands derived from the files it names.
     paths = []
     for match in PATH_IN_BACKTICKS.finditer(phase_section):
         if match.group(1) not in paths:
@@ -226,12 +248,20 @@ def derive_gate_commands(repo_dir, phase_section):
         if package_dir is not None:
             by_package.setdefault(package_dir, []).append(path)
 
+    listed = listed_commands(repo_dir, phase_section)
+    listed_tests = [command for command in listed if takes_listed_test_command(command, repo_dir)]
+    listed_families = set().union(*(test_command_families(command) for command in listed_tests))
+    derives_js_tests = not listed_families & {"js", UNKNOWN_FAMILY}
+    derives_python_tests = not listed_families & {"python", UNKNOWN_FAMILY}
+    derives_cargo_tests = not listed_families & {"cargo", UNKNOWN_FAMILY}
+
     commands = []
     for package_dir, package_paths in by_package.items():
-        commands += script_package_commands(repo_dir, package_dir, package_paths)
+        commands += script_package_commands(repo_dir, package_dir, package_paths, derives_js_tests)
     root_manifests = BARE_CARGO_MANIFEST.findall(phase_section)
-    listed_cargo = listed_cargo_commands(repo_dir, phase_section)
-    commands += listed_cargo or cargo_commands(repo_dir, paths + root_manifests)
-    listed_runner = listed_python_runner(repo_dir, phase_section)
-    commands += python_commands(repo_dir, paths, listed_runner)
+    listed_cargo = [command for command in listed
+                    if RUNS_CARGO.search(script_utils.without_leading_env_assignments(command))]
+    commands += listed_cargo or cargo_commands(repo_dir, paths + root_manifests, derives_cargo_tests)
+    commands += python_commands(repo_dir, paths, listed_python_runner(listed), derives_tests=derives_python_tests)
+    commands += [command for command in listed_tests if command not in commands]
     return commands

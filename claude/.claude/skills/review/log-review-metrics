@@ -7,10 +7,11 @@
 # Every value is sent as a JSON string; `ledger write review_metrics` types it.
 # `specialists=` and `fixed_classes=` are counts by name, as a JSON object
 # (`{"code-reviewer":2}`) or as `name:count,name:count`; names are stored lowercase
-# with underscores for hyphens (`code_reviewer`). `result=` takes the spaced
-# words (PASS WITH WARNINGS, NEEDS CHANGES, NOT DISPATCHED); they are stored with
-# underscores, and `PASS (NITS ONLY)` is stored as PASS_WITH_WARNINGS, as
-# log-review-finding folds it. clean, residue and findings are stored as sent.
+# with underscores for hyphens (`code_reviewer`). `result=` is required on a ledger row
+# and takes PASS, PASS_WITH_WARNINGS, NEEDS_CHANGES or NOT_DISPATCHED (any case, with
+# spaces or - for _; `PASS (NITS ONLY)` is PASS_WITH_WARNINGS, as log-review-finding
+# folds it), or clean, findings or residue, stored as sent. Any other result, or an
+# arg with no `=`, is refused (exit 1).
 # date, schema_version, repo, session and desc are accepted and never stored; the
 # writer adds the date, repo and session, and keys `branch=` into branch_key (with no
 # ledger, stored raw in the local jsonl file).
@@ -28,6 +29,7 @@ script_dir=$(dirname -- "${BASH_SOURCE[0]}")
 # shellcheck source=../../scripts/lib/_kv.sh
 source "$script_dir/../../scripts/lib/_kv.sh"
 kv_help_exit "${BASH_SOURCE[0]}" "$@"
+kv_refuse_bare_words "$@"
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 out=""
 # Second-draft rows route to the second-draft log even when the caller forgets
@@ -81,8 +83,19 @@ payload=$(jq -c '
     elif $norm == "PASS" then "PASS"
     elif $norm | test("^NEEDS CHANGES") then "NEEDS_CHANGES"
     elif $norm | test("^NOT DISPATCHED") then "NOT_DISPATCHED"
-    else gsub(" "; "_") end;
+    else . end;
   del(.desc)
   | (if .result then .result |= result_verdict else . end)
   | with_entries(.key |= (if . == "branch" then "branch_key" else . end))' <<< "$json")
+
+result=$(jq -r '.result // ""' <<< "$payload")
+case "$result" in
+  PASS|PASS_WITH_WARNINGS|NEEDS_CHANGES|NOT_DISPATCHED|clean|findings|residue) ;;
+  *)
+    echo "refusing to log: result='$result' is not PASS, PASS_WITH_WARNINGS, NEEDS_CHANGES, NOT_DISPATCHED," \
+      "clean, findings or residue." >&2
+    exit 1
+    ;;
+esac
+
 printf '%s\n' "$payload" | bash "$script_dir/../../scripts/telemetry/ledger-write" review_metrics

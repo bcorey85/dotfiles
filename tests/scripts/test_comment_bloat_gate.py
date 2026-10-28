@@ -184,6 +184,30 @@ class CommentBloatGateTest(unittest.TestCase):
         path = self.source("test_plan.py", content)
         self.assert_allowed(self.edit(path, content, tool="Write"))
 
+    def test_marker_on_the_opening_line_of_a_multi_line_data_string_passes(self):
+        samples = (("test_plan.py", f'PLAN = """## {PHASE_WORD} 1: Build\n## {PHASE_WORD} 2: Refactor\n"""\n'),
+                   ("plan.test.ts", f"const plan = `## {PHASE_WORD} 1: Build\n## {PHASE_WORD} 2: Refactor\n`;\n"),
+                   ("test_plan.py",
+                    f'PLAN = textwrap.dedent(\n    """## {PHASE_WORD} 1: Build\n'
+                    f'    ## {PHASE_WORD} 2: Refactor\n    """)\n'),
+                   ("a.py", f'x = render("{PHASE_WORD} 2 note", """\ndata\n""")\n'),
+                   ("a.ts", f'const x = render("{PHASE_WORD} 2 note", `\ndata\n`);\n'))
+        for name, content in samples:
+            with self.subTest(name=name):
+                path = self.source(name, content)
+                self.assert_allowed(self.edit(path, content, tool="Write"))
+
+    def test_marker_before_the_opening_quote_of_a_multi_line_data_string_blocks(self):
+        ac_word = "A" + "C7"
+        samples = (("a.py", f'x = f({ac_word}, """\ndata\n""")\n'),
+                   ("a.py", f'def f():\n    """{PHASE_WORD} 6 renderer.\n    body\n    """\n'),
+                   ("a.ts", f'it("{PHASE_WORD} 2 leftover", () => run(`\ndata\n`));\n'),
+                   ("a.ts", f'it(`{PHASE_WORD} 2 leftover`, () => run(`\ndata\n`));\n'))
+        for name, content in samples:
+            with self.subTest(content=content):
+                path = self.source(name, content)
+                self.assert_blocked(self.edit(path, content, tool="Write"))
+
     def test_plan_fixture_in_a_multi_line_template_literal_passes(self):
         content = f'const plan = `\n## {PHASE_WORD} 1: Build\n## {PHASE_WORD} 2: Refactor\n`;\n'
         path = self.source("plan.test.ts", content)

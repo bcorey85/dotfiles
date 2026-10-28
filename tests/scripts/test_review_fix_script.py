@@ -416,6 +416,136 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("desc", finding_rows[1])
         self.assertEqual(finding_rows[0]["iter"], "1")
 
+    STOP_ASKS = (
+        "ask:\n"
+        "  - {finding: retry count, finding_id: a1b2c3d4e5f60021, file_line: src/retry.ts:10, "
+        "question: cap at 3?, change: cap at 3, gate: code-reviewer, class: smell}\n"
+        "  - {finding: no index, finding_id: a1b2c3d4e5f60022, file_line: src/db.ts:5, "
+        "question: add an index?, change: add the index, gate: perf-reviewer, class: perf}\n"
+    )
+
+    def assert_stop_packet_asks_are_printed_and_logged(self, text):
+        code, output = self.packet(text)
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertIn("Do not re-dispatch", output)
+        self.assertIn("1. src/retry.ts:10  [code-reviewer/smell]", output)
+        self.assertIn("2. src/db.ts:5  [perf-reviewer/perf]", output)
+        self.assertIn("Proposed change: add the index", output)
+        self.assertIn("asks-done <outcome> x2", output)
+        self.assertNotIn("review-gate-mark clean", output)
+
+        code, output = self.run_script(["asks-done", "accepted", "rejected"])
+        self.assertEqual(code, 0, output)
+        rows = self.ledger_writes()
+        self.assertEqual([row["ask_outcome"] for row in rows], ["accepted", "rejected"])
+        self.assertEqual([row["finding_id"] for row in rows], ["a1b2c3d4e5f60021", "a1b2c3d4e5f60022"])
+        self.assertEqual(self.stored_stage(), "done")
+
+    def test_a_cap_reached_packet_with_asks_prints_them_and_asks_done_logs_their_outcomes(self):
+        self.assert_stop_packet_asks_are_printed_and_logged(CAP + self.STOP_ASKS)
+
+    def test_a_critical_blocker_packet_with_asks_prints_them_and_asks_done_logs_their_outcomes(self):
+        self.assert_stop_packet_asks_are_printed_and_logged(BLOCKER + self.STOP_ASKS)
+
+    ONE_ASK = CLEAN_EMPTY.replace(
+        "ask: []", "ask:\n  - {finding: first, finding_id: a1b2c3d4e5f60031, file_line: one.ts:1, question: first?, "
+                  "change: c, gate: code-reviewer, class: smell}")
+
+    def stored_state(self):
+        return json.loads((self.repo / ".git" / "review-fix" / "state.json").read_text())
+
+    def test_a_second_packet_keeps_the_first_packets_unanswered_asks_and_asks_done_names_the_packet(self):
+        self.packet(self.ONE_ASK)
+        first_id = self.stored_state()["packet_id"]
+        code, output = self.packet(WITH_ASK)
+        second_id = self.stored_state()["packet_id"]
+        self.assertNotEqual(first_id, second_id)
+        self.assertIn(f"asks-done --packet {second_id} <outcome> x2", output)
+        code, output = self.packet(WITH_ASK)
+        self.assertIn(f"asks-done --packet {second_id} <outcome> x2", output)
+        self.assertEqual([waiting["packet_id"] for waiting in self.stored_state()["waiting_packets"]], [first_id])
+
+        code, output = self.run_script(["asks-done", "accepted", "accepted"])
+        self.assertEqual(code, 2, output)
+        self.assertIn(first_id, output)
+        self.assertIn(second_id, output)
+        self.assertIn("one.ts:1 first?", output)
+        self.assertIn("src/retry.ts:10", output)
+        self.assertEqual(self.ledger_writes(), [])
+
+        code, output = self.run_script(["asks-done", "--packet", first_id, "accepted"])
+        self.assertEqual(code, 0, output)
+        self.assertEqual([row["finding_id"] for row in self.ledger_writes()], ["a1b2c3d4e5f60031"])
+        self.assertEqual(self.stored_state()["waiting_packets"], [])
+
+        code, output = self.run_script(["asks-done", "--packet", second_id, "accepted", "rejected"])
+        self.assertEqual(code, 0, output)
+        rows = self.ledger_writes()
+        self.assertEqual([row["finding_id"] for row in rows],
+                         ["a1b2c3d4e5f60031", "a1b2c3d4e5f60001", "a1b2c3d4e5f60002"])
+        self.assertEqual(self.stored_stage(), "done")
+
+        code, output = self.run_script(["asks-done", "accepted", "accepted"])
+        self.assertIn("already logged", output)
+
+    def ask_packet_numbered(self, number):
+        return CLEAN_EMPTY.replace(
+            "ask: []", f"ask:\n  - {{finding: f{number}, finding_id: a1b2c3d4e5f6004{number}, "
+                      f"file_line: n{number}.ts:1, question: q{number}?, change: c, gate: code-reviewer, "
+                      "class: smell}")
+
+    def test_three_packets_in_a_row_all_keep_their_unanswered_asks(self):
+        packet_ids = []
+        for number in (1, 2, 3):
+            self.packet(self.ask_packet_numbered(number))
+            packet_ids.append(self.stored_state()["packet_id"])
+        self.assertEqual(3, len(set(packet_ids)))
+
+        code, output = self.run_script(["asks-done", "accepted"])
+        self.assertEqual(code, 2, output)
+        for packet_id in packet_ids:
+            self.assertIn(packet_id, output)
+
+    def test_asks_done_refuses_a_packet_id_that_is_not_waiting_and_logs_nothing(self):
+        self.packet(self.ONE_ASK)
+        self.packet(WITH_ASK)
+        code, output = self.run_script(["asks-done", "--packet", "no-such-packet", "accepted"])
+        self.assertEqual(code, 2, output)
+        self.assertIn("is not a packet with unanswered asks", output)
+        self.assertEqual(self.ledger_writes(), [])
+
+    def test_a_held_packet_whose_rows_failed_to_log_stays_held(self):
+        self.packet(self.ONE_ASK)
+        first_id = self.stored_state()["packet_id"]
+        self.packet(WITH_ASK)
+
+        _code, output = self.run_script(["asks-done", "--packet", first_id, "accepted"], FAKE_LEDGER_WRITE_EXIT="2")
+        self.assertIn("Failures", output)
+        held_ids = [kept["packet_id"] for kept in self.stored_state()["waiting_packets"]]
+        self.assertEqual([first_id], held_ids)
+
+    def test_a_packet_that_fails_to_parse_keeps_the_previous_packets_unanswered_asks(self):
+        self.packet(self.ONE_ASK)
+        first_id = self.stored_state()["packet_id"]
+        code, output = self.packet("status: bogus")
+        self.assertEqual(code, 2, output)
+        self.assertEqual(first_id, self.stored_state()["packet_id"])
+
+        code, output = self.run_script(["asks-done", "accepted"])
+        self.assertEqual(code, 0, output)
+        self.assertEqual([row["finding_id"] for row in self.ledger_writes()], ["a1b2c3d4e5f60031"])
+
+    def test_the_next_good_packet_after_a_parse_failure_carries_the_earlier_packets_asks(self):
+        self.packet(self.ONE_ASK)
+        first_id = self.stored_state()["packet_id"]
+        code, output = self.packet("status: bogus")
+        self.assertEqual(code, 2, output)
+
+        self.packet(WITH_ASK)
+        held_ids = [kept["packet_id"] for kept in self.stored_state()["waiting_packets"]]
+        self.assertEqual([first_id], held_ids)
+
     def test_nvim_jump_with_no_owner_is_silent_and_still_lists_the_asks(self):
         code, output = self.packet(WITH_ASK, JUMP_EXIT="1")
         self.assertEqual(code, 0, output)
@@ -637,13 +767,6 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_spec_iter_without_a_number_is_a_parse_failure(self):
         self.assert_parse_failure(PLAN_IMPACT.replace("spec_iter: 2", "spec_iter: many"), "spec_iter has no number")
-
-    def test_a_parse_failure_cancels_the_asks_of_the_previous_packet(self):
-        self.packet(WITH_ASK)
-        self.packet("status: bogus")
-        code, output = self.run_script(["asks-done", "accepted", "accepted"])
-        self.assertEqual(code, 2, output)
-        self.assertEqual(self.ledger_writes(), [])
 
     # ---------- whitespace and format tolerance ----------
 

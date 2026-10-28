@@ -30,7 +30,8 @@ switch is on, one agent-usage row. Exit 0 on a normal finish; exit 1 when the ru
 validation (a critical-blocker packet and the rows are still written). A SIGTERM (abort, review-again, start
 --restart) kills every running claude call and exits 143 with no packet and no rows.
 
-review_loop_findings.py reads the reviewers' text; review_loop_packet.py writes the packet and the hand-back rows.
+review_loop_findings.py reads the reviewers' text; review_loop_closure.py runs the class-closure check;
+review_loop_packet.py writes the packet and the hand-back rows.
 
 Not covered: the second-order caller supplement, the critical-blocker judgment (a reviewer routes it as an ask), and
 the fix-first mode.
@@ -58,6 +59,7 @@ import full_check
 import handback
 import plan_format
 import script_utils
+from review_loop_closure import FIX_DIFF_STATS, NO_CLOSURE, closure_check
 from review_loop_findings import (
     PLAN_CHANGE_MARK,
     PLAN_CHANGE_YES,
@@ -85,7 +87,6 @@ CALL_TIMEOUT_SECONDS = 1800
 CHECK_TIMEOUT_SECONDS = 900
 LOG_TIMEOUT_SECONDS = 60
 TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
-NO_CLOSURE = "n/a - fixed[] empty"
 ABSENT_FILE_REASON = "the file is not in the tree"
 NO_CHANGE_REASON = "the coder made no change"
 TERMINAL_PANE_ENV = ("HERDR_ENV", "HERDR_PANE_ID", "HERDR_SOCKET_PATH", "TUIOS_SOCKET")
@@ -112,18 +113,6 @@ SMALL_ITEMS = (
     'item never widens the change: no rename, no restructure, no new abstraction.'
 )
 
-CLOSURE_RULES = (
-    'For each finding in fixed[], ask whether it is class-shaped: one member of an enumerable set of '
-    'ways the same mistake can occur. Two shapes qualify:\n'
-    '- Enumerable exit/branch space: the fix touched one of N exits, cases, or branches, and the other '
-    'N-1 were never re-read. Close it by re-enumerating them and stating where each one lands.\n'
-    '- Proxy predicate: the fix removed a cheap check standing in for the property actually needed. '
-    'Close it by naming the other members that proxy was covering for.\n'
-    'Work from the fix diff files; read a repo file only to see a member the diff does not show. If a fixed finding '
-    'is class-shaped and the class is NOT closed (some member still has the defect), list those members '
-    'as open findings, each with file and line and the one correction. You may not edit files.'
-)
-
 CHECK_FINDER = (
     'Repo root: {repo}\n\n'
     'Name the one shell command, run from the repo root, that runs this repo\'s full quality check: the lint, type '
@@ -142,11 +131,6 @@ CLASS_TAG_RULE = ("Tag each Fix, Ask and Nit item with its class in brackets, ri
 
 CALLS = []
 CALLS_LOCK = threading.Lock()
-# One entry per path a coder call changed: {"path", "added", "removed", "diff_file"}. Feeds the class-closure check,
-# which names the diff files in its prompt and never inlines their text.
-FIX_DIFF_STATS = []
-# Folders whose files a tool regenerates: a closure call has no reason to read their diffs.
-GENERATED_DIRS = ("generated",)
 # Process-group leaders of the claude calls now running: each call starts its own session, so the group kill that
 # stops this script does not reach them.
 LIVE_CHILDREN = set()
@@ -472,45 +456,6 @@ def coder_call(role, prompt, repo, out):
         FIX_DIFF_STATS.append({"path": path, "added": added, "removed": removed, "diff_file": str(diff_file)})
     changed = changed_paths(before, after)
     return report, diffs, changed
-
-
-def is_generated_path(path):
-    """Whether the path sits under a folder a tool regenerates."""
-    return any(part in GENERATED_DIRS for part in pathlib.PurePosixPath(path).parts[:-1])
-
-
-def diff_stat_lines(stats):
-    """One line per changed path: its path, lines added and removed, and the file holding its diff."""
-    lines = []
-    for stat in stats:
-        counts = f"+{stat['added']} -{stat['removed']}"
-        if is_generated_path(stat["path"]):
-            lines.append(f"- {stat['path']} ({counts}): regenerated, do not read")
-        else:
-            lines.append(f"- {stat['path']} ({counts}): {stat['diff_file']}")
-    return lines
-
-
-def closure_check(repo, out, fixed):
-    if not fixed:
-        return {"receipt": NO_CLOSURE, "open": []}
-    prompt = (
-        f"Repo root: {repo}\n\n{CLOSURE_RULES}\n\nfixed[]:\n" + "\n".join(f"- {item}" for item in fixed)
-        + f"\n\nWhat the coder changed, one diff file per path under {out / 'fix-diffs'} (path, lines added and "
-        "removed, diff file). Read only the diff files for paths a fixed[] finding names; never read a path marked "
-        "regenerated.\n" + "\n".join(diff_stat_lines(FIX_DIFF_STATS))
-        + '\n\nEnd your reply with one JSON object: {"receipt": "<the enumeration, or none plus each fixed finding '
-        'and why it fits neither shape>", '
-        '"open": ["<file:line - defect - correction>", ...]}. "open" is empty when every class is closed.'
-    )
-    reply = claude_call("class-closure", prompt, repo, out, model="sonnet", tools="Read,Grep")
-    parsed = last_json_object(reply, ("open",))
-    if parsed is not None:
-        parsed_open = parsed.get("open")
-        open_findings = ([item for item in parsed_open if isinstance(item, str) and item.strip()]
-                         if isinstance(parsed_open, list) else [])
-        return {"receipt": str(parsed.get("receipt", "")), "open": open_findings}
-    raise ValueError(f'the class-closure reply holds no {{"receipt": .., "open": [..]}} object: {reply!r}')
 
 
 def skipped_issues(report, issue_count):
@@ -877,7 +822,7 @@ class LoopRun:
 
     def class_closure_pass(self, check_command):
         """The class-closure judgment on the fixes, and one coder pass with a full check on any class left open."""
-        closure = closure_check(self.repo, self.out, self.fixed)
+        closure = closure_check(self.repo, self.out, self.fixed, claude_call)
         self.class_closure = closure["receipt"]
         if not closure["open"]:
             return

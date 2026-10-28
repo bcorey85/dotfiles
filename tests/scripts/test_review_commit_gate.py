@@ -580,6 +580,13 @@ class NotesOnlyCommitTest(GateCase):
     def test_a_commit_behind_a_git_option_valued_by_a_short_dollar_substitution_is_denied(self):
         self.assert_commit_denied_when_dirty_and_silent_when_clean("git -C $(pwd) commit -m y")
 
+    def test_a_commit_behind_a_git_option_joined_to_a_quoted_heredoc_is_denied(self):
+        self.assert_commit_denied_when_dirty_and_silent_when_clean(
+            "git -p\"\"$(cat <<'EOF'\nmsg (body)\nEOF\n)\"\" commit -m y")
+
+    def test_a_commit_behind_a_git_option_joined_to_an_unquoted_substitution_with_a_space_is_denied(self):
+        self.assert_commit_denied_when_dirty_and_silent_when_clean("git -C$(echo a b) commit -m y")
+
     def test_a_commit_behind_a_git_option_valued_by_a_backtick_substitution_is_denied(self):
         self.assert_commit_denied_when_dirty_and_silent_when_clean("git -C `git rev-parse --show-toplevel` commit -m y")
 

@@ -118,6 +118,9 @@ READ_ONLY_PROGRAMS = ("echo", "printf", "true", "pwd", "ls")
 HEREDOC_WORD = re.compile(r"\$\(cat <<'(?P<tag>[A-Za-z_]\w*)'\n(?:(?!(?P=tag)\n).*\n)*(?P=tag)\n\)")
 # In the command text the message is a double-quoted string; unquoted, the output is split into words.
 HEREDOC_MESSAGE = re.compile(r'"' + HEREDOC_WORD.pattern + r'"')
+# A quoted heredoc, a `$( )` with no parens inside, or a backtick span. Its spaces and newlines do not end the word it
+# sits in, so is_commit_command also reads the text with each span shrunk to `$S`.
+SUBSTITUTION_SPAN = re.compile(HEREDOC_WORD.pattern + r"|\$\([^()]*\)|`[^`]*`")
 GIT_GLOBAL_OPTIONS_WITH_VALUE = ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix",
                                  "--config-env", "--attr-source")
 GIT_GLOBAL_FLAGS = ("-p", "--paginate", "-P", "--no-pager", "--bare", "--no-replace-objects", "--literal-pathspecs",
@@ -246,8 +249,14 @@ def is_commit_command(command):
     global options (a known one that takes a value is followed by it, which may be quoted or a substitution), then
     `commit` counts, whether or not shlex can read the command. A git simple command with global options before
     `commit` counts too. A command shlex cannot read also counts when `git`, then only option-like words with an
-    optional value each, then `commit` appears in it."""
+    optional value each, then `commit` appears in it. Both readings run on the text as written and on the text with
+    each substitution span shrunk, so `git -p""$(cat <<'X' ...)"" commit` counts too."""
     joined = LINE_CONTINUATION.sub("", command)
+    shrunk = SUBSTITUTION_SPAN.sub("$S", joined)
+    return reads_as_commit(joined) or (shrunk != joined and reads_as_commit(shrunk))
+
+
+def reads_as_commit(joined):
     if COMMIT.search(joined) or GIT_THEN_COMMIT.search(joined):
         return True
     try:

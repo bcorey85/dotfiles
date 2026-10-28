@@ -427,7 +427,11 @@ def mark_review_gate_clean(repo_dir, state):
     reviewing_session = state.get("sessionId") or session_pin()
     reason = module.false_clean_reason(reviewing_session)
     if reason:
-        emit("stop", f"The review gate is not marked clean: {reason}. Tell the user.")
+        state["stage"] = "stopped"
+        state["stopReason"] = "false-clean"
+        save_state(repo_dir, state)
+        emit("stop", f"The review gate is not marked clean: {reason}. Nothing is committed.",
+             "To review the same diff again, invoke Skill code with `review-again`.")
         return False
     gate_dir = pathlib.Path.home() / ".claude" / "state" / "review-gate"
     gate_dir.mkdir(parents=True, exist_ok=True)

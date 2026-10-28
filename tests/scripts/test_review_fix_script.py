@@ -264,6 +264,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("ACTION: ask-user-plan-impact", output)
         self.assertIn("the queue is at-most-once", output)
         self.assertIn("Adopt plan change / Keep plan as written / Discuss", output)
+        self.assertIn("Without that tool, ask the same question in plain text", output)
         self.assertIn("iter=1 spec_iter=2", output)
 
         plan_file = self.temp_root / "plan.md"
@@ -1247,6 +1248,26 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_hand_back_of_the_agent_the_code_run_launched_is_still_refused(self):
         self.write_launched_run("a1")
         self.seed()
+        code, output = self.packet("")
+        self.assertEqual(code, 2, output)
+        self.assertIn("code_step.py resume", output)
+
+    def test_pending_standalone_dispatch_after_the_code_run_s_hand_back_reports_no_hand_back_not_the_owner(self):
+        self.write_launched_run("a1")
+        self.seed()
+        self.dispatch()
+        code, output = self.packet("")
+        self.assertEqual(code, 2, output)
+        self.assertIn("ACTION: stop-no-handback", output)
+        self.assertNotIn("code_step.py resume", output)
+
+    def test_pending_review_loop_dispatch_the_code_run_logged_after_its_hand_back_is_still_the_run_s(self):
+        events = self.write_launched_run("a1").parent / "runs" / "run1" / "events.jsonl"
+        self.seed()
+        with events.open("a") as events_file:
+            events_file.write(json.dumps({"event": "dispatch", "id": "d2", "ts": time.time() + 1,
+                                          "agent_type": "review-loop", "stage": "review"}) + "\n")
+        self.dispatch()
         code, output = self.packet("")
         self.assertEqual(code, 2, output)
         self.assertIn("code_step.py resume", output)

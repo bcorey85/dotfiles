@@ -219,11 +219,17 @@ def finish_without_review(repo_dir, state, changed_files, coder_stage, say_text)
 
 
 def coder_flagged(state, gate, report, is_ask_fix):
-    # The report's open points, with the hand-back gate's cap and the flags an asks-coder inherits.
+    # The report's open points, with the hand-back gate's cap, its command errors and the flags an asks-coder
+    # inherits. A command error is no code failure, so it is flagged apart from the cap.
     flagged = list(state.get("flagged", [])) if is_ask_fix else []
-    capped = [coder for coder in (gate or {"coders": {}})["coders"].values() if coder["result"] == "cap"]
-    for coder in capped:
-        flagged.append("hand-back gate cap: " + ", ".join(coder["failed"]) + " still failing after 3 denials")
+    coders = (gate or {"coders": {}})["coders"].values()
+    for coder in coders:
+        if coder["result"] == "cap":
+            flagged.append("hand-back gate cap: " + ", ".join(coder["failed"]) + " still failing after 3 denials")
+
+        for command, line in coder.get("command_error_lines", {}).items():
+            flagged.append(f"hand-back gate command error, not a code failure: `{command}` names a missing path "
+                           f"({line})")
     return flagged + coder_flags(report)
 
 

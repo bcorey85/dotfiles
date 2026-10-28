@@ -280,6 +280,20 @@ class ChangeFallbackTest(unittest.TestCase):
         self.assertIn("change: writes the CSV export", output)
 
 
+class GateFlagTest(unittest.TestCase):
+    def test_a_gate_command_error_is_flagged_apart_from_the_cap_as_no_code_failure(self):
+        missing_line = "ERROR: file or directory not found: backend/app/tests/test_x.py"
+        gate = {"coders": {"a1": {"result": "cap", "failed": ["pytest app/tests/test_y.py"],
+                                  "command_errors": ["pytest backend/app/tests/test_x.py"],
+                                  "command_error_lines": {"pytest backend/app/tests/test_x.py": missing_line}}}}
+
+        flagged = code_step.coder_flagged({}, gate, "", is_ask_fix=False)
+
+        self.assertEqual(["hand-back gate cap: pytest app/tests/test_y.py still failing after 3 denials",
+                          "hand-back gate command error, not a code failure: `pytest backend/app/tests/test_x.py` "
+                          f"names a missing path ({missing_line})"], flagged)
+
+
 class ReviewReportEdgeTest(unittest.TestCase):
     # Defect: after-review re-reads the old packet when the reviewer saved no new one.
     @unittest.expectedFailure

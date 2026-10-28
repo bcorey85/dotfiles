@@ -820,8 +820,29 @@ class CodeStepTest(unittest.TestCase):
 
         commands = code_step_gates.derive_gate_commands(self.repo, phase)
 
-        self.assertEqual(["cd backend && npm run typecheck", "poetry run ruff check {files:.py}",
+        self.assertEqual(["cd backend && npm run typecheck", "poetry run python -m ruff check {files:.py}",
                           "poetry run python backend/manage.py test app.tests"], commands)
+
+    def test_a_listed_whole_suite_manage_py_test_in_a_subfolder_labels_the_modules_from_that_folder(self):
+        (self.repo / "backend/manage.py").write_text("")
+        (self.repo / "Pipfile.lock").write_text("")
+        phase = ("**File**: `backend/app/models.py`\n**File**: `backend/app/tests/test_models.py`\n"
+                 "**File**: `docs/test_notes.py`\n\n#### Automated Verification:\n\n"
+                 "- [ ] **Tests**: models pass - `pipenv run python backend/manage.py test --keepdb`\n")
+
+        commands = code_step_gates.derive_gate_commands(self.repo, phase)
+
+        self.assertEqual(["cd backend && npm run typecheck",
+                          "pipenv run python backend/manage.py test app.tests.test_models --keepdb"], commands)
+
+    def test_a_manage_py_in_the_subfolder_above_the_phase_files_runs_manage_py_test_from_there(self):
+        (self.repo / "backend/manage.py").write_text("")
+        phase = "**File**: `backend/app/models.py`\n**File**: `backend/app/tests/test_models.py`\n"
+
+        commands = code_step_gates.derive_gate_commands(self.repo, phase)
+
+        self.assertEqual(["cd backend && npm run typecheck", "python3 backend/manage.py test app.tests.test_models"],
+                         commands)
 
     def test_a_listed_test_command_that_changes_directory_is_taken_verbatim(self):
         (self.repo / "pyproject.toml").write_text("")

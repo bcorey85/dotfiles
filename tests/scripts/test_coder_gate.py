@@ -333,6 +333,53 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         self.assertIn("assertion-broke", reason)
         self.assertNotIn("`exit 127`", reason)
 
+    def test_a_missing_test_path_is_a_command_error_that_never_spends_a_deny(self):
+        commands = {
+            "pytest": """echo "ERROR: file or directory not found: backend/app/tests/test_x.py"; exit 4""",
+            "python script": "python3 missing/manage.py test app.tests",
+        }
+        for case, command in commands.items():
+            with self.subTest(case=case):
+                (self.repo / ".git/coder-gate.json").unlink(missing_ok=True)
+                self.gate_set(command)
+
+                for _ in range(4):
+                    hook = self.gate_hook()
+                    self.assertEqual("allow", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
+
+                coder = self.stored_gate()["coders"]["a1"]
+                self.assertEqual("command-error", coder["result"])
+                self.assertEqual(0, coder["denies"])
+                self.assertEqual([], coder["failed"])
+                self.assertEqual([command], coder["command_errors"])
+                message = json.loads(hook.stdout)["hookSpecificOutput"]["updatedInput"]["message"]
+                self.assertIn("HAND-BACK GATE COMMAND ERROR", message)
+                self.assertIn(f"`{command}`: ", message)
+                self.assertIn("they are not among the failures and spent no denial", message)
+
+    def test_a_missing_path_line_for_a_path_that_exists_still_denies(self):
+        (self.repo / "tests").mkdir()
+        (self.repo / "tests/test_x.py").write_text("")
+        command = """echo "ERROR: file or directory not found: tests/test_x.py"; exit 4"""
+        self.gate_set(command)
+
+        hook = self.gate_hook()
+
+        self.assertEqual("deny", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
+        self.assertEqual([command], self.stored_gate()["coders"]["a1"]["failed"])
+
+    def test_a_real_failure_beside_a_command_error_denies_with_only_the_real_failure(self):
+        missing = "python3 missing/manage.py test app.tests"
+        self.gate_set(missing, "echo assertion-broke; exit 3")
+
+        hook = self.gate_hook()
+
+        coder = self.stored_gate()["coders"]["a1"]
+        self.assertEqual("deny", coder["result"])
+        self.assertEqual(["echo assertion-broke; exit 3"], coder["failed"])
+        self.assertEqual([missing], coder["command_errors"])
+        self.assertNotIn(f"`{missing}`", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecisionReason"])
+
     def test_a_gate_stored_before_variables_existed_still_runs(self):
         self.gate_set("true")
         gate = self.stored_gate()

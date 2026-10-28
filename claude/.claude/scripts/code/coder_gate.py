@@ -29,7 +29,11 @@ exits 0 after running none, a missing module from outside the repo with no faile
 settings error with no failed test unless the coder changed a settings module or an app config) is a setup fault: it
 never denies the call or counts toward the cap, a run with only setup faults has the result "setup-fault", and the
 stamp names each one with its output tail. A denial lists the failing tests above the output tail. With no gate, a gate
-older than 6 hours or another agent type, the hand-back goes through untouched. Parallel coders take turns."""
+older than 6 hours or another agent type, the hand-back goes through untouched. Parallel coders take turns.
+A failure whose output names a path that does not exist where the command ran (pytest's `file or directory not
+found`, python's `can't open file`, a shell or `cd` error) is a command error: the command is wrong, not the code. It
+never denies the call or counts toward the cap, a run whose only failures are command errors has the result
+"command-error", and the stamp names each one with its missing-path line."""
 import fcntl
 import json
 import os
@@ -41,7 +45,7 @@ import time
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in ("lib", "telemetry")]
 import script_utils
-from check_output import is_django_settings_fault, is_setup_fault, tail_with_failing_tests
+from check_output import is_django_settings_fault, is_setup_fault, missing_path, tail_with_failing_tests
 from check_scope import scanned_command
 
 MAX_DENIES = 3
@@ -131,9 +135,11 @@ def clear_gate():
         timed_out_commands = ", ".join(coder.get("timed_out", [])) or "none"
         skipped_commands = ", ".join(coder.get("skipped", [])) or "none"
         setup_fault_commands = ", ".join(coder.get("setup_faults", [])) or "none"
+        command_error_commands = ", ".join(coder.get("command_errors", [])) or "none"
         print(f"coder gate: {coder['result']} after {coder['runs']} run(s), failed: {failed_commands}, "
               f"timed out (no test result): {timed_out_commands}, "
-              f"setup fault (no test result): {setup_fault_commands}, skipped: {skipped_commands}")
+              f"setup fault (no test result): {setup_fault_commands}, "
+              f"command error (missing path): {command_error_commands}, skipped: {skipped_commands}")
     if not gate["coders"]:
         print("coder gate: never ran, no coder handed back through it")
 
@@ -206,17 +212,36 @@ def run_commands(gate):
     return failures, skipped, timed_out
 
 
-def split_setup_faults(failures, repo_root):
+def missing_path_line(command, output, repo_root):
+    # The output line that names a path missing from the work tree where the command ran, else None.
+    missing = missing_path(output.splitlines())
+    if missing is None:
+        return None
+
+    line, path = missing
+    directory = pathlib.Path(command_directory(command, repo_root))
+    if (directory / path).exists():
+        return None
+    return line
+
+
+def sort_failures(failures, repo_root):
+    # (real failures, setup faults, command errors). A command error names a path that does not exist: the command
+    # is wrong, not the code.
     real_failures = []
     setup_faults = []
+    command_errors = []
     changed_file_list = changed_files(repo_root) if failures else []
     for command, outcome, output in failures:
         code = int(outcome.removeprefix("exit "))
-        if is_setup_fault(code, output, repo_root) or is_django_settings_fault(command, output, changed_file_list):
+        error_line = missing_path_line(command, output, repo_root)
+        if error_line:
+            command_errors.append((command, error_line))
+        elif is_setup_fault(code, output, repo_root) or is_django_settings_fault(command, output, changed_file_list):
             setup_faults.append((command, output))
         else:
             real_failures.append((command, outcome, output))
-    return real_failures, setup_faults
+    return real_failures, setup_faults, command_errors
 
 
 def denial(failures):
@@ -257,6 +282,13 @@ def stamped_handback(tool_input, coder):
                   f"{setup_fault_lines}\nThe gate got no test result from these commands; they are not among the "
                   "failures. The command misses the repo's test runner or virtualenv, or a dependency is not "
                   "installed, or no package manifest is where it ran, or it ran no test. Run the repo's own test "
+                  "command for these files.")
+    command_error_lines = coder.get("command_error_lines", {})
+    if command_error_lines:
+        error_lines = "".join(f"\n  `{command}`: {line}" for command, line in command_error_lines.items())
+        stamp += ("\nHAND-BACK GATE COMMAND ERROR: these commands name a path that does not exist where they ran:"
+                  f"{error_lines}\nThe gate got no test result from these commands; they are not among the "
+                  "failures and spent no denial. The gate command is wrong, not the code. Run the repo's own test "
                   "command for these files.")
     stamped_input = dict(tool_input)
     stamped_input["message"] = str(tool_input.get("message", "")) + stamp
@@ -301,7 +333,7 @@ def run_hook():
         failures, skipped, timed_out = run_commands(gate)
         seconds = round(time.time() - started)
 
-        failures, setup_faults = split_setup_faults(failures, gate["repoRoot"])
+        failures, setup_faults, command_errors = sort_failures(failures, gate["repoRoot"])
 
         agent_id = event.get("agent_id") or "unknown"
         coder = gate["coders"].get(agent_id, {"runs": 0, "denies": 0, "failed": [], "result": "none"})
@@ -312,8 +344,13 @@ def run_hook():
         coder["timed_out_tails"] = {command: output[-TIMEOUT_TAIL_CHARS:] for command, output in timed_out}
         coder["setup_faults"] = [command for command, _ in setup_faults]
         coder["setup_fault_tails"] = {command: output[-TIMEOUT_TAIL_CHARS:] for command, output in setup_faults}
+        coder["command_errors"] = [command for command, _ in command_errors]
+        coder["command_error_lines"] = dict(command_errors)
         if not failures:
-            coder["result"] = "setup-fault" if setup_faults else "timeout" if timed_out else "pass"
+            if command_errors:
+                coder["result"] = "command-error"
+            else:
+                coder["result"] = "setup-fault" if setup_faults else "timeout" if timed_out else "pass"
         elif coder["denies"] >= MAX_DENIES:
             coder["result"] = "cap"
         else:

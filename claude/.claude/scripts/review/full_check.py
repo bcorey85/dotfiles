@@ -35,7 +35,7 @@ import tomllib
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 
 import script_utils
-from check_output import is_setup_fault, tail_with_failing_tests
+from check_output import is_setup_fault, missing_path, tail_with_failing_tests
 
 FULL_SUITE_IN_CI = "Full suite: CI"
 LIST_MARKER = re.compile(r"^\s*[-*]\s+")
@@ -54,13 +54,6 @@ TAIL_LINES = 40
 LINT_RULE_LINE = re.compile(r"^[A-Z]+\d+ ")
 LINT_LOCATION_LINE = re.compile(r"^\s*--> \S+:\d+:\d+")
 TEST_FAILURE_LINE = re.compile(r"^(?:FAIL|ERROR|FAILED)\b:?\s")
-# A step that stops on a path that does not exist. The command is wrong, not the code, when the path did not exist at
-# the diff base either.
-MISSING_PATH_LINES = (
-    re.compile(r"^fatal: ambiguous argument '(?P<path>.*)': unknown revision or path not in the working tree"),
-    re.compile(r"^\S*sh: (?:line \d+: )?(?:cd: )?(?P<path>\S+): No such file or directory"),
-    re.compile(r"^\S*sh: \d+: cd: can't cd to (?P<path>\S+)"),
-)
 
 
 def full_suite_runs_in_ci(repo):
@@ -194,10 +187,6 @@ def failing_step_lines(log_lines):
     return picked
 
 
-def missing_path_match(line):
-    return next((match for pattern in MISSING_PATH_LINES if (match := pattern.match(line))), None)
-
-
 def existed_at_base(repo, base, path):
     """True when the base tree holds the path, as a file or a folder, from the repo root or from any folder below it
     (a CI step can run in a subfolder). A path outside the repo, or a base git cannot read, never existed there."""
@@ -252,11 +241,12 @@ def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD")
     if gap:
         return f"not run (environment gap: {gap})", tail
 
-    missing_path_line = next((line for line in log_lines[-TAIL_LINES:] if missing_path_match(line)), None)
-    if missing_path_line:
-        missing_path = missing_path_match(missing_path_line).group("path")
-        if not existed_at_base(repo, base, missing_path):
-            return f"not run (check-command error: {missing_path_line.strip()})", tail
+    # The command is wrong, not the code, when the missing path did not exist at the diff base either.
+    missing = missing_path(log_lines[-TAIL_LINES:])
+    if missing:
+        missing_path_line, path = missing
+        if not existed_at_base(repo, base, path):
+            return f"not run (check-command error: {missing_path_line})", tail
 
     tail = tail_with_failing_tests(log_text, tail)
     # An undeclared missing module is a code failure here: the change may use a dependency it did not declare.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run every tests/scripts/test_*.py file as its own process, `nproc` at a time, slowest first.
 
-  parallel_tests.py                       run the suite, print one line per file, print failing output, exit 1 on failure
+  parallel_tests.py                       run the suite, print one line per file and failing output; exit 1 on failure
   parallel_tests.py test_a.py test_b.py   run only the named files from tests/scripts; an unknown name exits non-zero
   parallel_tests.py --worker FILE I N     (internal) run the tests of FILE whose position mod N is I
 
@@ -122,11 +122,15 @@ def main(file_names=()):
     workers = os.cpu_count() or 1
     wall_started = time.monotonic()
     per_file = {}
+    # The guard puts a failing `ledger` first on PATH and an empty CARGO_HOME in this process's environment, which every
+    # test process inherits, so no test reaches the ledger this machine installed.
+    # The guard comes from this file's own tree: a REPO_ROOT suite need not hold toolkit_paths.
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "scripts"))
+    toolkit_paths = importlib.import_module("toolkit_paths")
+    toolkit_paths.guard_real_ledger()
     with tempfile.TemporaryDirectory() as config_folder:
-        environment = fixed_git_environment(write_fixed_git_config(config_folder))
-        # The scripts find the ledger in the cargo bin folder when PATH has none. An empty CARGO_HOME keeps a test that
-        # hides the ledger from PATH off the ledger this machine installed.
-        environment["CARGO_HOME"] = str(pathlib.Path(config_folder) / "cargo")
+        fixed_git_config = write_fixed_git_config(config_folder)
+        environment = fixed_git_environment(fixed_git_config)
         job_runner = functools.partial(run_job, environment=environment)
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
             for test_file, test_count, seconds, passed, output in pool.map(job_runner, jobs):
@@ -151,8 +155,8 @@ def main(file_names=()):
         for output in per_file[test_file]["failures"]:
             print(output)
     wall = time.monotonic() - wall_started
-    print(f"\n{total_tests} tests in {len(per_file)} files, wall-clock {wall:.1f}s, sum of per-file seconds {total_seconds:.1f}s, "
-          f"{len(failed_files)} failed")
+    print(f"\n{total_tests} tests in {len(per_file)} files, wall-clock {wall:.1f}s, "
+          f"sum of per-file seconds {total_seconds:.1f}s, {len(failed_files)} failed")
     return 1 if failed_files else 0
 
 

@@ -915,20 +915,63 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("ACTION: render-and-finish", output)
 
     def test_a_clean_hand_back_flagged_as_unreviewed_stops_with_a_re_dispatch_instruction(self):
-        self.dispatch()
-        coder = {"session_id": SESSION, "tool_name": "Agent", "agent_type": "review-loop", "agent_id": "a1",
-                 "tool_input": {"subagent_type": "coder"}}
-        self.hook(coder, "dispatch")
-        self.hand_back_without_reviewer()
-        self.hand_back_without_reviewer()
+        self.unreviewed_loop("a1")
         code, output = self.packet("")
         self.assertEqual(code, 2, output)
         self.assertIn("ACTION: stop-no-reviewer", output)
         self.assertNotIn("render-and-finish", output)
 
-    def hand_back_without_reviewer(self):
+    def test_a_hand_back_with_no_reviewer_run_re_dispatches_with_the_round_count_kept(self):
+        self.unreviewed_loop("a1", CONVERGED.replace("iter: 1", "iter: 2"))
+        code, output = self.packet("")
+        self.assertEqual(code, 2, output)
+        self.assertIn("Re-dispatch review-loop once", output)
+        self.assertIn("\niter=2\n", output)
+
+    def test_a_second_unreviewed_hand_back_in_a_row_says_stop_and_no_re_dispatch(self):
+        self.unreviewed_loop("a1", CONVERGED.replace("iter: 1", "iter: 2"))
+        self.packet("")
+        self.unreviewed_loop("a2", CONVERGED.replace("iter: 1", "iter: 2"))
+        code, output = self.packet("")
+        self.assertEqual(code, 2, output)
+        self.assertIn("ACTION: stop-no-reviewer", output)
+        self.assertIn("2 times in a row", output)
+        self.assertIn("Do not re-dispatch again", output)
+        self.assertNotIn("Re-dispatch review-loop once", output)
+
+    def test_a_converged_hand_back_ending_on_a_fix_finishes_and_names_the_unreviewed_fix_files(self):
+        self.dispatch()
+        self.hand_back_after_steps(["code-reviewer", "coder"])
+        code, output = self.packet("")
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: render-and-finish", output)
+        self.assertIn("### Last fix not reviewed", output)
+        self.assertIn("src/orders.ts, src/util.ts", output)
+
+    def test_a_converged_hand_back_ending_on_a_reviewer_names_no_unreviewed_fix(self):
+        self.dispatch()
+        self.hand_back_after_steps(["coder", "code-reviewer"])
+        code, output = self.packet("")
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("Last fix not reviewed", output)
+
+    def hand_back_after_steps(self, subagents, agent_id="a1"):
+        for subagent in subagents:
+            self.hook({"session_id": SESSION, "tool_name": "Agent", "agent_type": "review-loop", "agent_id": agent_id,
+                       "tool_input": {"subagent_type": subagent}}, "dispatch")
         return self.hook({"session_id": SESSION, "tool_name": "SubagentHandback", "agent_type": "review-loop",
-                          "agent_id": "a1", "tool_input": {"message": CONVERGED}}, "handback")
+                          "agent_id": agent_id, "tool_input": {"message": CONVERGED}}, "handback")
+
+    def unreviewed_loop(self, agent_id, message=CONVERGED):
+        """A dispatched loop whose only step is a coder hands back clean twice: the hook denies the first and stores
+        the second flagged unreviewed."""
+        self.dispatch()
+        coder = {"session_id": SESSION, "tool_name": "Agent", "agent_type": "review-loop", "agent_id": agent_id,
+                 "tool_input": {"subagent_type": "coder"}}
+        self.hook(coder, "dispatch")
+        for _ in range(2):
+            self.hook({"session_id": SESSION, "tool_name": "SubagentHandback", "agent_type": "review-loop",
+                       "agent_id": agent_id, "tool_input": {"message": message}}, "handback")
 
     def test_session_with_no_dispatch_on_record_is_refused(self):
         code, output = self.packet("")

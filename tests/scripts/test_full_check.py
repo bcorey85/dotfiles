@@ -53,17 +53,49 @@ class FullCheckTest(unittest.TestCase):
 
         self.assertNotIn(str(pyenv_root), self.log.read_text())
 
-    def test_a_missing_third_party_module_is_an_environment_gap_not_a_failure(self):
-        completed = self.check("echo \"ModuleNotFoundError: No module named 'ruff'\"; exit 1")
+    def missing_module_check(self, module):
+        return self.check(f"echo \"ModuleNotFoundError: No module named '{module}'\"; exit 1")
+
+    def test_a_missing_declared_module_is_an_environment_gap_not_a_failure(self):
+        (self.repo / "requirements-dev.txt").write_text("# dev tools\n-r requirements.txt\nruff==0.6.9\n")
+
+        completed = self.missing_module_check("ruff")
 
         self.assertEqual(completed.returncode, 0, completed.stdout)
         self.assertEqual(completed.stdout.splitlines()[0],
                          "full check: not run (environment gap: No module named 'ruff')")
 
+    def test_a_missing_undeclared_module_is_a_failure(self):
+        (self.repo / "requirements.txt").write_text("flask>=3\n")
+
+        completed = self.missing_module_check("requests")
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: failed (exit 1)")
+
+    def test_each_dependency_file_shape_declares_its_modules_by_normalized_name(self):
+        dependency_files = {
+            "pyproject.toml": ('[project]\ndependencies = ["Typing_Extensions>=4"]\n'
+                               '[project.optional-dependencies]\ndev = ["pytest-cov"]\n'
+                               '[dependency-groups]\nlint = ["mypy", {include-group = "test"}]\n'
+                               '[tool.poetry.group.docs.dependencies]\nsphinx = "^7"\n'),
+            "setup.cfg": "[options]\ninstall_requires =\n    attrs>=23\n[options.extras_require]\nyaml = PyYAML\n",
+            "Pipfile": '[packages]\nrich = "*"\n[dev-packages]\nblack = "*"\n',
+        }
+        for name, text in dependency_files.items():
+            (self.repo / name).write_text(text)
+
+        for module in ("typing_extensions", "pytest_cov", "mypy", "sphinx.ext", "attrs", "yaml", "rich", "black"):
+            with self.subTest(module=module):
+                completed = self.missing_module_check(module)
+
+                expected = "full check: not run" if module != "yaml" else "full check: failed"
+                self.assertTrue(completed.stdout.startswith(expected), completed.stdout)
+
     def test_a_missing_module_of_the_repo_itself_is_a_failure(self):
         (self.repo / "orders").mkdir()
 
-        completed = self.check("echo \"ModuleNotFoundError: No module named 'orders.totals'\"; exit 1")
+        completed = self.missing_module_check("orders.totals")
 
         self.assertEqual(completed.returncode, 1)
         self.assertEqual(completed.stdout.splitlines()[0], "full check: failed (exit 1)")

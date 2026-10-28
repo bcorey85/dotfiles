@@ -327,6 +327,15 @@ class RenderTest(HandbackTestBase):
         packet = handback.load(CONVERGED.replace("class_closure: enumerated every query\n", ""))
         self.assertIn("receipt is missing", handback.render(packet, "review"))
 
+    def test_a_full_check_that_did_not_run_says_so_and_a_passed_one_prints_nothing(self):
+        for full_check in ("not run (CI)", "not run (timeout)"):
+            with self.subTest(full_check=full_check):
+                packet = handback.load(CONVERGED + f"full_check: {full_check}\n")
+
+                self.assertIn(f"Full check: {full_check}", handback.render(packet, "review"))
+        passed = handback.load(CONVERGED + "full_check: passed\n")
+        self.assertNotIn("Full check", handback.render(passed, "review"))
+
     def test_sections_print_before_the_trailer(self):
         packet = handback.load(NUMBERED)
         rendered = handback.render(packet, "fix", [("Aikido replies", ["- a.ts:1: Fixed"])])

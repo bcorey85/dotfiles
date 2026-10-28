@@ -19,7 +19,8 @@ VERB_USAGES = {
                   'One outcome per ask, in order.'),
     "skill-done": ('usage: code_step.py skill-done <pass|fail> [--evidence "<text>"]... [--finding "<text>"]...\n'
                    'A closing phase\'s skill returned.'),
-    "verify": "usage: code_step.py verify\nRe-runs the phase gates after a failed Automated Verification was fixed.",
+    "verify": ("usage: code_step.py verify\nRuns the phase gates and closes the phase, after a failed Automated "
+               "Verification was fixed or once the phase's review converged."),
     "review-again": ("usage: code_step.py review-again\n"
                      "Dispatches the review loop again on the same diff, after a stop that names it."),
     "tick": "usage: code_step.py tick <phase id>\nMarks a phase done that the user finished outside /code.",

@@ -166,6 +166,8 @@ def tests_run_text(gate, state):
                 parts.append(f"{command} -> timed out at the hand-back gate, no test result")
             elif command in coder.get("setup_faults", []):
                 parts.append(f"{command} -> could not run at the hand-back gate (setup fault), no test result")
+            elif command in coder.get("command_errors", []):
+                parts.append(f"{command} -> command error at the hand-back gate (missing path), no test result")
             elif command in coder.get("skipped", []):
                 parts.append(f"{command} -> skipped, no changed files")
             else:

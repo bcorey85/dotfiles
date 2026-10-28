@@ -357,6 +357,15 @@ class RenderTest(HandbackTestBase):
         rendered = handback.render(handback.load(text), "review")
         self.assertLess(rendered.index("[blocker]"), rendered.index("small"))
 
+    def test_a_blocked_agent_and_the_step_it_skipped_print_under_their_own_heading(self):
+        blocked_line = "test-reviewer: Step 1 test map skipped (credential hook denied a bulk cp)"
+        packet = handback.load(CONVERGED + f"blocked_agents:\n- {blocked_line}\n")
+
+        rendered = handback.render(packet, "review")
+
+        self.assertIn(f"### Blocked agents (not reviewed)\n- {blocked_line}", rendered)
+        self.assertNotIn("Blocked agents", handback.render(handback.load(CONVERGED), "review"))
+
 
 class StoreTest(HandbackTestBase):
     def test_a_dispatch_row_names_the_repo_its_prompt_or_cwd_holds(self):

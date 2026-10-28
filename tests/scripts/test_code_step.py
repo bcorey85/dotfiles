@@ -5897,6 +5897,15 @@ class CodeForkToolsTest(unittest.TestCase):
         disallowed_tools = {tool.strip() for tool in disallowed.split(",")}
         self.assertLessEqual({"Edit", "Write", "NotebookEdit"}, disallowed_tools)
 
+    def test_the_code_fork_can_reply_at_once_to_a_mid_run_scope_message(self):
+        skill = REAL_CLAUDE / "skills" / "code" / "SKILL.md"
+        agent = REAL_CLAUDE / "agents" / f"{code_step_core.FORK_AGENT_TYPE}.md"
+        disallowed = frontmatter_value(agent, "disallowedTools") or ""
+
+        disallowed_tools = {tool.strip() for tool in disallowed.split(",")}
+        self.assertNotIn("SendMessage", disallowed_tools)
+        self.assertIn("takes no scope change mid-run", skill.read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

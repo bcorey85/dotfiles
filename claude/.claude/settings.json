@@ -235,9 +235,9 @@
       {
         "hooks": [
           {
+            "type": "command",
             "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5,
-            "type": "command"
+            "timeout": 5
           }
         ]
       }
@@ -344,9 +344,9 @@
       {
         "hooks": [
           {
+            "type": "command",
             "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5,
-            "type": "command"
+            "timeout": 5
           }
         ]
       }
@@ -364,9 +364,9 @@
       {
         "hooks": [
           {
+            "type": "command",
             "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5,
-            "type": "command"
+            "timeout": 5
           }
         ]
       }
@@ -385,28 +385,28 @@
           },
           {
             "type": "command",
-            "if": "Bash(*rg*)",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/rg_path_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/rg_path_gate.py",
+            "if": "Bash(*rg*)"
           },
           {
             "type": "command",
-            "if": "Bash(*git*)",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/git_discipline_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/git_discipline_gate.py",
+            "if": "Bash(*git*)"
           },
           {
             "type": "command",
-            "if": "Bash(*gh*)",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/git_discipline_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/git_discipline_gate.py",
+            "if": "Bash(*gh*)"
           },
           {
             "type": "command",
-            "if": "Bash(*git*)",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/review_commit_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/review_commit_gate.py",
+            "if": "Bash(*git*)"
           },
           {
             "type": "command",
-            "if": "Bash(*review-gate-mark*)",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/review_commit_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/review_commit_gate.py",
+            "if": "Bash(*review-gate-mark*)"
           },
           {
             "type": "command",
@@ -426,13 +426,13 @@
           },
           {
             "type": "command",
-            "if": "Bash(*git*)",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/deferred_push_check.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/deferred_push_check.py",
+            "if": "Bash(*git*)"
           },
           {
             "type": "command",
-            "if": "Bash(*gh*)",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/deferred_push_check.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/deferred_push_check.py",
+            "if": "Bash(*gh*)"
           }
         ]
       },
@@ -517,9 +517,9 @@
       {
         "hooks": [
           {
+            "type": "command",
             "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5,
-            "type": "command"
+            "timeout": 5
           }
         ]
       },
@@ -589,9 +589,9 @@
       {
         "hooks": [
           {
+            "type": "command",
             "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5,
-            "type": "command"
+            "timeout": 5
           }
         ]
       },
@@ -617,9 +617,9 @@
       {
         "hooks": [
           {
+            "type": "command",
             "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5,
-            "type": "command"
+            "timeout": 5
           }
         ]
       }
@@ -654,9 +654,9 @@
       {
         "hooks": [
           {
+            "type": "command",
             "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5,
-            "type": "command"
+            "timeout": 5
           }
         ]
       }
@@ -686,9 +686,9 @@
       {
         "hooks": [
           {
+            "type": "command",
             "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5,
-            "type": "command"
+            "timeout": 5
           }
         ]
       }
@@ -706,9 +706,9 @@
       {
         "hooks": [
           {
+            "type": "command",
             "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5,
-            "type": "command"
+            "timeout": 5
           }
         ]
       }
@@ -733,9 +733,9 @@
       {
         "hooks": [
           {
+            "type": "command",
             "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5,
-            "type": "command"
+            "timeout": 5
           }
         ]
       }
@@ -744,9 +744,9 @@
       {
         "hooks": [
           {
+            "type": "command",
             "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 310,
-            "type": "command"
+            "timeout": 310
           }
         ]
       }
@@ -755,9 +755,9 @@
       {
         "hooks": [
           {
+            "type": "command",
             "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5,
-            "type": "command"
+            "timeout": 5
           }
         ]
       }
@@ -766,9 +766,9 @@
       {
         "hooks": [
           {
+            "type": "command",
             "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5,
-            "type": "command"
+            "timeout": 5
           }
         ]
       }
@@ -777,9 +777,9 @@
       {
         "hooks": [
           {
+            "type": "command",
             "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5,
-            "type": "command"
+            "timeout": 5
           }
         ]
       }
@@ -831,7 +831,7 @@
       "effortLevel": "medium"
     },
     "claude-opus-5-5": {
-      "effortLevel": "high"
+      "effortLevel": "medium"
     }
   },
   "awaySummaryEnabled": false,

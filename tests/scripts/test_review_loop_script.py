@@ -354,7 +354,9 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertFalse(self.stored_packet()[0]["unreviewed_fix"])
         self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 2)
 
-    def test_a_full_check_missing_a_third_party_module_converges_with_the_environment_gap(self):
+    def test_a_full_check_missing_a_declared_module_converges_with_the_environment_gap(self):
+        self.commit_files({"requirements.txt": "ruff==0.6.9\n"})
+
         completed = self.run_script({
             "code-reviewer": [{"result": CLEAN_REVIEW}],
         }, quality_check="echo \"No module named 'ruff'\"; exit 1")

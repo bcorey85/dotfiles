@@ -25,7 +25,7 @@ okf_version: "0.2"
 
 # 2026-10-27
 
-* [The full check runs under the repo's pinned Python, and a missing module is an environment gap](2026-10-27-the-full-check-runs-under-the-repos-pinned-python.md) - full_check.py puts the pyenv shims first on PATH in a repo with a .python-version file, and a check that fails on a missing third-party module reports an environment gap that never stops the phase.
+* [The full check runs under the repo's pinned Python, and a missing module is an environment gap](2026-10-27-the-full-check-runs-under-the-repos-pinned-python.md) - full_check.py puts the pyenv shims first on PATH in a repo with a .python-version file, and a check that fails on a missing module the repo declares as a dependency reports an environment gap that never stops the phase.
 * [A /code fork replies at once to a mid-run scope message](2026-10-27-a-code-fork-replies-at-once-to-a-mid-run-scope-message.md) - The /code skill says a run takes no scope change mid-run: the fork replies to the sender with SendMessage at once and never passes the message on.
 * [A live review loop script past the wait cap keeps the wait going](2026-10-27-a-live-review-loop-script-past-the-wait-cap.md) - /code counts a running review loop script's wait cap from its last calls.jsonl or full-check.log write, and its cap stop says the script is still running, not that it died.
 * [A coder escalates to /eng-spec only through a marker line](2026-10-27-a-coder-escalates-to-eng-spec-only-through-a-marker.md) - code_step stops a run for /eng-spec only on a `RECOMMEND: eng-spec` line, so a coder report that says no /eng-spec is needed goes on to review.

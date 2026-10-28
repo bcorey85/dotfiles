@@ -217,7 +217,7 @@ repair, run the gate once more; a second failure returns `status: critical-block
 - `passed` → proceed.
 - `failed (exit N)` → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above.
 - `not run (timeout)` → no finding. Proceed.
-- `not run (environment gap: No module named 'X')` → the check's interpreter lacks a third-party module. No finding; never a blocker. Proceed.
+- `not run (environment gap: No module named 'X')` → the check's interpreter lacks a module the repo declares as a dependency. No finding; never a blocker. Proceed.
 - `not run (CI)` → the repo's CLAUDE.md holds `Full suite: CI`. Run the tests of the files this phase changed, by name, once, redirected to the same log. A failure there is a `fix` finding carrying `blocker`.
 
 **Exception**: failures in acceptance spec tests (`*.spec.*`, or any test the plan's `Acceptance Criteria` file names as covering a criterion) are critical BLOCKERS — never route them to auto-fix. Either the code is wrong or the intent changed, and only the user decides which; an auto-fixer's cheapest path to green is editing the spec.

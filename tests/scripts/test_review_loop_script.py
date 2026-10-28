@@ -36,7 +36,9 @@ import sys
 import time
 
 args = sys.argv[1:]
-prompt = args[args.index("-p") + 1]
+prompt = sys.stdin.read()
+if "-p" not in args:
+    sys.exit("fake claude: called without -p")
 agent = args[args.index("--agent") + 1] if "--agent" in args else None
 key = agent or ("closure" if "class-shaped" in prompt
                 else "check-finder" if "full quality check" in prompt else "disposition")
@@ -212,6 +214,22 @@ class ReviewLoopScriptTest(unittest.TestCase):
                          ("review-loop", "script", "script"))
         self.assertEqual((usage[0]["calls"], usage[0]["tokens"]), (4, 80))
 
+    def test_a_round_two_prompt_over_one_argument_limit_reaches_the_reviewer_whole(self):
+        long_fix = "".join(f"limit_{line} = {line}\n" for line in range(12000))
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": long_fix}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual((packet["status"], packet["iter"]), ("converged", 2))
+        round_two_prompt = [call["prompt"] for call in self.fake_calls() if call["key"] == "code-reviewer"][1]
+        self.assertGreater(len(round_two_prompt.encode()), 131072)
+        self.assertIn("limit_11999 = 11999", round_two_prompt)
+
     def test_untracked_binary_file_does_not_stop_a_clean_review(self):
         (self.repo / "logo.png").write_bytes(b"\x89PNG\xff\xfe\x00")
 
@@ -322,6 +340,59 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "critical-blocker")
         self.assertIn("still failing after one repair", packet["blockers"][0])
         self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 2)
+
+    def test_a_failing_full_check_keeps_the_failing_test_name_that_the_tail_cut_off(self):
+        failing_line = "FAIL: test_x (app.tests.T)"
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}, {"result": "Repaired."}],
+        }, quality_check=f"echo '{failing_line}'; seq 1 200; exit 1")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn(f"Failing tests:\n{failing_line}", packet["blockers"][0])
+
+    def test_a_full_check_that_finds_no_package_manifest_stops_as_a_setup_fault_with_no_coder_repair(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+        }, quality_check="echo 'ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND No package.json found'; exit 1")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "setup-fault")
+        blocker = packet["blockers"][0]
+        self.assertIn("could not run in this environment", blocker)
+        self.assertIn("ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND", blocker)
+        self.assertNotIn("toolkit or environment fault", blocker)
+        self.assertNotIn("coder", [call["key"] for call in self.fake_calls()])
+
+    def test_a_full_check_that_misses_a_module_from_outside_the_repo_gets_one_coder_repair(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Repaired."}],
+        }, quality_check="echo \"ModuleNotFoundError: No module named 'requests'\"; exit 1")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("still failing after one repair", packet["blockers"][0])
+        self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 1)
+
+    def test_a_setup_fault_in_the_full_check_after_the_coder_repair_stops_as_a_setup_fault(self):
+        check = ("if test -f .git/check-ran; then echo ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND; "
+                 "else touch .git/check-ran; echo 'FAIL: test_x'; fi; exit 1")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1."}],
+        }, quality_check=check)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "setup-fault")
+        coder_calls = [call for call in self.fake_calls() if call["key"] == "coder"]
+        self.assertEqual(len(coder_calls), 1)
 
     def test_ask_finding_id_reaches_packet_and_stop_row(self):
         ask_review = "## Fix\nNone\n\n## Ask\n- `app.py:3` should the limit be configurable?\n\n## Nit\nNone\n"

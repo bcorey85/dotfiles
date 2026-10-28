@@ -29,7 +29,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import script_utils
 from script_utils import first_number, one_line, unquote
 
-STATUSES = ["converged", "deferred", "plan-impact", "critical-blocker", "cap-reached"]
+STATUSES = ["converged", "deferred", "plan-impact", "critical-blocker", "cap-reached", "setup-fault"]
 CLEAN_STATUSES = ("converged", "deferred")
 PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers", "findings_remaining", "plan_impact",
                "ask", "class_closure", "files_touched", "nit", "load_bearing_clean"]
@@ -39,8 +39,9 @@ SCALAR_KEYS = ("status", "iter", "spec_iter", "load_bearing_clean")
 ENTRY_TEXT_KEYS = {"fixed": "finding", "skipped_fp": "item", "findings_remaining": "finding", "ask": "question"}
 # The field each status requires, and the word for its absence. cap-reached says "missing" when the key is absent.
 STATUS_REQUIRES = {"plan-impact": ("plan_impact", "empty"), "critical-blocker": ("blockers", "empty"),
-                   "cap-reached": ("findings_remaining", "empty"),
+                   "setup-fault": ("blockers", "empty"), "cap-reached": ("findings_remaining", "empty"),
                    "deferred": ("findings_remaining", "missing or empty")}
+BLOCKER_STATUSES = {status for status, (field, _) in STATUS_REQUIRES.items() if field == "blockers"}
 ITEM_KEYS = [
     "disposition",
     "smell",

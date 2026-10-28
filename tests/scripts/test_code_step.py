@@ -137,7 +137,7 @@ class CodeStepTest(unittest.TestCase):
         for name in ("coder_gate.py", "resolve-task-dir.sh"):
             stage_script(REAL_CLAUDE / "scripts", name, self.claude / "scripts")
         for name in ("coder_packet.py", "plan_format.py", "script_utils.py", *toolkit_paths.CODE_STEP_MODULES,
-                     "shell_command.py", "makefile_text.py", "test_run_output.py"):
+                     *toolkit_paths.CODE_STEP_LIB_MODULES):
             stage_script(SCRIPTS_ROOT, name, self.claude / "scripts")
         self.log = self.tmp / "calls.log"
         (self.claude / "scripts" / "telemetry").mkdir()
@@ -492,9 +492,10 @@ class CodeStepTest(unittest.TestCase):
     def test_gate_takes_the_cargo_commands_the_phase_lists_in_place_of_the_derived_ones(self):
         commands = self.make_helper_phase_with_verification("- [ ] Orders test passes: `cargo test --test orders`")
 
-        self.assertIn("cargo test --test orders", commands)
+        self.assertEqual(1, commands.count("cargo test --test orders"))
         self.assertEqual([], [command for command in commands if "cargo test --tests" in command])
         self.assertEqual([], [command for command in commands if "cargo clippy" in command])
+        self.assertIn("cd backend && npx vitest run src/orders.test.ts", commands)
 
     def test_gate_takes_the_listed_cargo_commands_when_the_phase_is_started_with_the_phase_option(self):
         listed_rows = ("- [ ] Orders test passes: `cargo test --test orders`\n"
@@ -545,7 +546,7 @@ class CodeStepTest(unittest.TestCase):
                 clippy = "cd crate && cargo clippy --all-targets -- -D warnings"
                 wanted = [clippy] + ([f"cd crate && {expected}"] if expected else [])
 
-                self.assertEqual(wanted, code_step_gates.cargo_commands(self.repo, [path]))
+                self.assertEqual(wanted, code_step_gates.cargo_commands(self.repo, [path], derives_tests=True))
 
     def test_cargo_commands_are_merged_per_crate_without_duplicates_and_never_run_a_whole_crate(self):
         for crate in ("one", "two"):
@@ -554,7 +555,7 @@ class CodeStepTest(unittest.TestCase):
             (self.repo / crate / "Cargo.toml").write_text(f'[package]\nname = "{crate}"\n')
         paths = ["one/src/a.rs", "two/src/b.rs", "one/src/a.rs", "one/src/lib.rs", "one/Cargo.toml", "one/src/c.rs"]
 
-        commands = code_step_gates.cargo_commands(self.repo, paths)
+        commands = code_step_gates.cargo_commands(self.repo, paths, derives_tests=True)
 
         clippy = "cargo clippy --all-targets -- -D warnings"
         self.assertEqual([f"cd one && {clippy}", "cd one && cargo test --lib --bins",
@@ -568,7 +569,7 @@ class CodeStepTest(unittest.TestCase):
         paths = ["crate/tests/side_streams.rs", "crate/src/a.rs", "crate/tests/common/mod.rs", "crate/src/bin/tool.rs",
                  "crate/tests/orders.rs"]
 
-        commands = code_step_gates.cargo_commands(self.repo, paths)
+        commands = code_step_gates.cargo_commands(self.repo, paths, derives_tests=True)
 
         self.assertEqual(["cd crate && cargo clippy --all-targets -- -D warnings", "cd crate && cargo test --tests"],
                          commands)
@@ -579,7 +580,8 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "lib/src/lib.rs").write_text("")
         (self.repo / "lib/Cargo.toml").write_text('[package]\nname = "lib"\n')
 
-        commands = code_step_gates.cargo_commands(self.repo, ["lib/src/store/query.rs", "lib/src/orders.rs"])
+        commands = code_step_gates.cargo_commands(self.repo, ["lib/src/store/query.rs", "lib/src/orders.rs"],
+                                                derives_tests=True)
 
         self.assertEqual(["cd lib && cargo clippy --all-targets -- -D warnings", "cd lib && cargo test --lib --bins"],
                          commands)
@@ -589,7 +591,7 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "lib/src/lib.rs").write_text("")
         (self.repo / "lib/Cargo.toml").write_text('[package]\nname = "lib"\n')
 
-        commands = code_step_gates.cargo_commands(self.repo, ["lib/src/lib.rs"])
+        commands = code_step_gates.cargo_commands(self.repo, ["lib/src/lib.rs"], derives_tests=True)
 
         self.assertEqual(["cd lib && cargo clippy --all-targets -- -D warnings", "cd lib && cargo test --lib --bins"],
                          commands)
@@ -599,7 +601,7 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "both/src/lib.rs").write_text("")
         (self.repo / "both/Cargo.toml").write_text('[package]\nname = "both"\n')
 
-        commands = code_step_gates.cargo_commands(self.repo, ["both/src/bin/tool.rs"])
+        commands = code_step_gates.cargo_commands(self.repo, ["both/src/bin/tool.rs"], derives_tests=True)
 
         self.assertEqual(["cd both && cargo clippy --all-targets -- -D warnings", "cd both && cargo test --bin tool"],
                          commands)
@@ -610,7 +612,7 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "tool/Cargo.toml").write_text('[package]\nname = "tool"\n')
 
         commands = code_step_gates.cargo_commands(self.repo, ["tool/src/store/query.rs", "tool/src/store/mod.rs",
-                                                              "tool/src/main.rs"])
+                                                              "tool/src/main.rs"], derives_tests=True)
 
         self.assertEqual(["cd tool && cargo clippy --all-targets -- -D warnings", "cd tool && cargo test --bins"],
                          commands)
@@ -621,7 +623,8 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "both/src/main.rs").write_text("")
         (self.repo / "both/Cargo.toml").write_text('[package]\nname = "both"\n')
 
-        commands = code_step_gates.cargo_commands(self.repo, ["both/src/store.rs", "both/src/main.rs"])
+        commands = code_step_gates.cargo_commands(self.repo, ["both/src/store.rs", "both/src/main.rs"],
+                                                derives_tests=True)
 
         self.assertEqual(["cd both && cargo clippy --all-targets -- -D warnings", "cd both && cargo test --lib --bins"],
                          commands)
@@ -630,7 +633,8 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "Cargo.toml").write_text('[package]\nname = "root-crate"\n')
         (self.repo / "src").mkdir()
 
-        commands = code_step_gates.cargo_commands(self.repo, ["Cargo.toml", "benches/speed.rs", "build.rs"])
+        commands = code_step_gates.cargo_commands(self.repo, ["Cargo.toml", "benches/speed.rs", "build.rs"],
+                                                derives_tests=True)
 
         self.assertEqual(["cargo clippy --all-targets -- -D warnings"], commands)
 
@@ -651,7 +655,7 @@ class CodeStepTest(unittest.TestCase):
                     (repo / marker).parent.mkdir(parents=True, exist_ok=True)
                     (repo / marker).write_text("")
 
-                commands = code_step_gates.python_commands(repo, ["app/a.py", "tests/test_a.py"])
+                commands = code_step_gates.python_commands(repo, ["app/a.py", "tests/test_a.py"], derives_tests=True)
 
                 self.assertEqual(expected, commands)
 
@@ -664,17 +668,70 @@ class CodeStepTest(unittest.TestCase):
         commands = code_step_gates.derive_gate_commands(self.repo, phase)
 
         self.assertEqual(["DJANGO_SETTINGS_MODULE=app.test poetry run ruff check {files:.py}",
-                          "DJANGO_SETTINGS_MODULE=app.test poetry run pytest tests/test_models.py"], commands)
+                          "DJANGO_SETTINGS_MODULE=app.test poetry run pytest tests/"], commands)
 
-    def test_a_listed_pytest_command_that_changes_directory_gives_no_runner(self):
-        (self.repo / "pyproject.toml").write_text("")
+    def test_a_listed_pytest_command_with_no_path_is_replaced_by_the_derived_scoped_run(self):
+        (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
         (self.repo / "uv.lock").write_text("")
-        phase = ("**File**: `tests/test_models.py`\n\n#### Automated Verification:\n\n"
+        phase = ("**File**: `app/models.py`\n**File**: `tests/test_models.py`\n\n#### Automated Verification:\n\n"
+                 "- [ ] **Tests**: models pass - `poetry run pytest`\n")
+
+        commands = code_step_gates.derive_gate_commands(self.repo, phase)
+
+        self.assertEqual(["poetry run ruff check {files:.py}", "poetry run pytest tests/test_models.py"], commands)
+
+    def test_a_listed_pytest_command_that_changes_directory_gives_no_runner_to_ruff(self):
+        (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
+        (self.repo / "uv.lock").write_text("")
+        phase = ("**File**: `app/models.py`\n\n#### Automated Verification:\n\n"
                  "- [ ] **Tests**: models pass - `cd api && poetry run pytest tests/`\n")
 
         commands = code_step_gates.derive_gate_commands(self.repo, phase)
 
-        self.assertEqual(["uv run pytest tests/test_models.py"], commands)
+        self.assertEqual(["uv run ruff check {files:.py}", "cd api && poetry run pytest tests/"], commands)
+
+    def test_a_listed_django_test_command_is_the_gates_test_command_and_no_pytest_runs(self):
+        (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
+        (self.repo / "poetry.lock").write_text("")
+        phase = ("**File**: `backend/app/models.py`\n**File**: `backend/app/tests/test_models.py`\n\n"
+                 "#### Automated Verification:\n\n"
+                 "- [ ] **Tests**: models pass - `poetry run python backend/manage.py test app.tests`\n")
+
+        commands = code_step_gates.derive_gate_commands(self.repo, phase)
+
+        self.assertEqual(["cd backend && npm run typecheck", "poetry run ruff check {files:.py}",
+                          "poetry run python backend/manage.py test app.tests"], commands)
+
+    def test_a_listed_test_command_that_changes_directory_is_taken_verbatim(self):
+        (self.repo / "pyproject.toml").write_text("")
+        (self.repo / "poetry.lock").write_text("")
+        phase = ("**File**: `backend/app/tests/test_models.py`\n\n#### Automated Verification:\n\n"
+                 "- [ ] **Tests**: models pass - `cd backend && poetry run python manage.py test app.tests`\n")
+
+        commands = code_step_gates.derive_gate_commands(self.repo, phase)
+
+        self.assertIn("cd backend && poetry run python manage.py test app.tests", commands)
+        self.assertEqual([], [command for command in commands if "pytest" in command or "vitest" in command])
+
+    def test_a_listed_make_target_with_forwarded_arguments_replaces_the_derived_vitest_command(self):
+        (self.repo / "pkg/src").mkdir(parents=True)
+        (self.repo / "pkg/package.json").write_text('{"devDependencies": {"vitest": "1"}}')
+        phase = ("**File**: `pkg/src/a.consistency.test.ts`\n\n#### Automated Verification:\n\n"
+                 "- [ ] **Tests**: consistency - `make test-consistency ARGS=\"src/a.consistency.test.ts\"`\n")
+
+        commands = code_step_gates.derive_gate_commands(self.repo, phase)
+
+        self.assertEqual(['make test-consistency ARGS="src/a.consistency.test.ts"'], commands)
+
+    def test_a_listed_test_command_the_gate_would_refuse_is_not_taken(self):
+        (self.repo / "pkg/src").mkdir(parents=True)
+        (self.repo / "pkg/package.json").write_text('{"devDependencies": {"vitest": "1"}}')
+        phase = ("**File**: `pkg/src/a.test.ts`\n\n#### Automated Verification:\n\n"
+                 "- [ ] **Tests**: all pass - `npm test`\n")
+
+        commands = code_step_gates.derive_gate_commands(self.repo, phase)
+
+        self.assertEqual(["cd pkg && npx vitest run src/a.test.ts"], commands)
 
     def test_a_listed_system_python_runner_keeps_ruff_as_its_own_program(self):
         (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
@@ -683,7 +740,7 @@ class CodeStepTest(unittest.TestCase):
 
         commands = code_step_gates.derive_gate_commands(self.repo, phase)
 
-        self.assertEqual(["ruff check {files:.py}", "python -m pytest tests/test_models.py"], commands)
+        self.assertEqual(["ruff check {files:.py}", "python -m pytest tests/"], commands)
 
     def test_a_verification_item_may_start_with_an_environment_setting(self):
         item = "- [ ] **Tests**: the streams pass - `CARGO_BUILD_JOBS=4 cargo test --test side_streams`"
@@ -3555,7 +3612,8 @@ class CodeStepTest(unittest.TestCase):
         bare = self.tmp / "bare"
         bare.mkdir()
         for name in (SCRIPT.name, "script_utils.py", "plan_format.py", "reviewed_tree.py",
-                     *toolkit_paths.CODE_STEP_MODULES, "test_run_output.py", "shell_command.py"):
+                     *toolkit_paths.CODE_STEP_MODULES, "coder_gate.py",
+                     *toolkit_paths.CODE_STEP_LIB_MODULES):
             shutil.copy(toolkit_paths.script_in(SCRIPTS_ROOT, name), bare / name)
         env = dict(self.env, PYTHONPATH="")
         script = str(bare / SCRIPT.name)

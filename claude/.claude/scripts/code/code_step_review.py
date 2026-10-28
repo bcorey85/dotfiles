@@ -652,6 +652,13 @@ def command_after_review(repo_dir, state, args):
     if packet["spec_iter"] is not None:
         state["spec_iter"] = packet["spec_iter"]
     state["packet"] = packet
+    rewrote_edited = set(state.get("checkRewroteEdited") or []) | set(packet["check_rewrote_edited"])
+    created = set(state.get("checkCreated") or []) | set(packet["check_created"])
+    changed = set(state.get("checkChanged") or []) | set(packet["check_changed"])
+    coder_edited = rewrote_edited | set(packet["files_touched"])
+    state["checkCreated"] = sorted(created - coder_edited)
+    state["checkChanged"] = sorted(changed - coder_edited)
+    state["checkRewroteEdited"] = sorted(rewrote_edited)
     state["reviewStatus"] = packet["status"]
     if stop_on_review_status(repo_dir, state, module, packet):
         return

@@ -33,9 +33,12 @@ from script_utils import first_number, one_line, unquote
 STATUSES = ["converged", "deferred", "plan-impact", "critical-blocker", "cap-reached", "setup-fault"]
 CLEAN_STATUSES = ("converged", "deferred")
 PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers", "findings_remaining", "plan_impact",
-               "ask", "class_closure", "full_check", "files_touched", "nit", "load_bearing_clean"]
-LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched"]
-SCALAR_KEYS = ("status", "iter", "spec_iter", "full_check", "load_bearing_clean")
+               "ask", "class_closure", "full_check", "full_check_command", "full_check_summary", "files_touched",
+               "check_changed", "check_rewrote_edited", "check_created", "nit", "load_bearing_clean"]
+LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched", "check_changed",
+             "check_rewrote_edited", "check_created"]
+SCALAR_KEYS = ("status", "iter", "spec_iter", "full_check", "full_check_command", "full_check_summary",
+               "load_bearing_clean")
 # The list fields whose entries validate turns into mappings, and the key a plain-text entry's text goes under.
 ENTRY_TEXT_KEYS = {"fixed": "finding", "skipped_fp": "item", "findings_remaining": "finding", "ask": "question"}
 # The field each status requires, and the word for its absence. cap-reached says "missing" when the key is absent.
@@ -394,6 +397,8 @@ def read_header(raw):
     header = {"status": status, "iter": iter_round, "spec_iter": spec_iter,
               "class_closure": raw.get("class_closure", "").strip(),
               "full_check": raw.get("full_check", "").strip(),
+              "full_check_command": raw.get("full_check_command", "").strip(),
+              "full_check_summary": raw.get("full_check_summary", "").strip(),
               "load_bearing_clean": raw.get("load_bearing_clean", "").strip(),
               "plan_impact": raw.get("plan_impact", "").strip()}
     return header, problems
@@ -530,6 +535,24 @@ def unreviewed_fix_section(packet):
             [f"- No reviewer ran after the loop's last fix. Its files are among: {named_paths}"])
 
 
+def full_check_lines(packet):
+    """The full check's lines for the user: a check that did not run or ran unverified, and the files it changed or
+    created."""
+    lines = []
+    if packet["full_check"].startswith(("not run", "unverified")):
+        lines.append("Full check: " + packet["full_check"])
+    if packet["check_changed"]:
+        lines.append("Changed by the full check, not by the coder (restore with `git checkout --` or keep): "
+                     + ", ".join(packet["check_changed"]))
+    if packet["check_rewrote_edited"]:
+        lines.append("Hold coder edits and a full check rewrite, so review them (do not restore): "
+                     + ", ".join(packet["check_rewrote_edited"]))
+    if packet["check_created"]:
+        lines.append("Created by the full check, not by the coder (delete or keep): "
+                     + ", ".join(packet["check_created"]))
+    return lines
+
+
 def render(packet, skill, sections=()):
     """The user-facing text. `sections` are (heading, lines) pairs placed before the trailer."""
     lines = ["### Fixed"]
@@ -546,8 +569,7 @@ def render(packet, skill, sections=()):
         if skill == "review" and packet["status"] == "converged" and owes_receipt and receipt_is_missing(closure):
             lines.append("The class-closure receipt is missing or names no repaired finding. Do not present this "
                          "run as clean.")
-    if packet["full_check"].startswith("not run"):
-        lines.append("Full check: " + packet["full_check"])
+    lines += full_check_lines(packet)
     load_bearing = packet["load_bearing_clean"]
     if load_bearing and load_bearing.lower() not in ("none", "omitted"):
         lines.append("Load-bearing: " + load_bearing)

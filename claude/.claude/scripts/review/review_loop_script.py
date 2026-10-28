@@ -10,7 +10,8 @@ re-review by every reviewer that filed a fix and owns a changed file (the smell 
 two-round cap, the full-check execution gate, the class-closure check, telemetry rows, and the hand-back packet.
 The full check runs through full_check.py: none in a repo whose CLAUDE.md holds `Full suite: CI`, where the coder
 calls run the changed files' tests, and a check past CHECK_TIMEOUT_SECONDS is killed with its process group. Either
-is no failure: the packet's `full_check` says `not run (CI)` or `not run (timeout)`.
+is no failure: the packet's `full_check` says `not run (CI)` or `not run (timeout)`. An exit 0 with no runner
+summary is no failure either: it says `unverified (exit 0, no runner summary)`.
 
 Model steps are `claude -p` calls in auto permission mode, each with CLAUDE_FORMAT_HOOK_OFF=1 in its environment: the
 reviewers (agents code-reviewer, smell-reviewer, test-reviewer), the fix coder (agent coder) and the class-closure
@@ -52,6 +53,7 @@ import plan_format
 import review_loop_gate
 import reviewed_tree
 import script_utils
+from worktree_snapshot import CHANGE_KINDS
 
 SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
 ROUND_BUDGET = 2
@@ -468,8 +470,9 @@ def check_command_for(repo, out):
 
 
 def run_full_check(repo, out, check_command, gate_env=()):
-    """(the full_check result, the log's last lines, with the failing tests above them). A SIGTERM kills the check's
-    process group with the claude calls."""
+    """(the full_check result, the log's last lines with the failing tests above them, the run's details: runner
+    summaries and the files the check changed or created). A SIGTERM kills the check's process group with the claude
+    calls."""
     assignments = script_utils.environment_from_assignments(gate_env)
     check_pids = []
 
@@ -720,6 +723,8 @@ class LoopRun:
         self.status = "converged"
         self.class_closure = NO_CLOSURE
         self.full_check = ""
+        self.full_check_command = ""
+        self.check_details = {"summaries": [], **{kind: [] for kind in CHANGE_KINDS}}
         self.round_two_fix_diff = ""
         self.files = {}
         self.dispatches = []
@@ -859,8 +864,9 @@ class LoopRun:
 
     def full_check_pass(self, check_command):
         """The full check, with one coder repair when it fails outside a spec file. A check that did not run, in CI
-        or past its time limit, is no failure; one the environment could not run stops as `setup-fault`."""
-        self.full_check, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
+        or past its time limit, and one that exited 0 with no runner summary, is no failure and gets no repair; one the
+        environment could not run stops as `setup-fault`."""
+        tail = self.run_check(check_command)
         if full_check.is_setup_fault_result(self.full_check):
             self.stop_on_setup_fault(check_command, tail)
             return
@@ -879,10 +885,30 @@ class LoopRun:
         self.files_touched.update(gate_changed)
         self.recheck_full_check(check_command, "full check still failing after one repair")
 
+    def run_check(self, check_command):
+        """Run the full check, keep its result, command and details for the packet. Returns the log's tail.
+        The changed, rewrote_edited and created paths add up across runs; the summaries are the latest run's. The
+        check leaves the files it rewrote or created in place, and a repair measures its changes as the text
+        difference around its own call, so a changed or created file reaches files_touched only when the repair coder
+        edits it itself. A rewrote_edited file holds coder work and always counts as touched."""
+        self.full_check_command = check_command
+        self.full_check, tail, details = run_full_check(self.repo, self.out, check_command, self.gate_env)
+        check_wrote = set(self.check_details["changed"]) | set(self.check_details["created"])
+        details["rewrote_edited"] = [path for path in details["rewrote_edited"]
+                                     if path not in check_wrote or path in self.files_touched]
+        for key in CHANGE_KINDS:
+            details[key] = sorted(set(self.check_details[key]) | set(details[key]))
+        details["rewrote_edited"] = sorted(set(details["rewrote_edited"])
+                                           | ((set(details["changed"]) | set(details["created"])) & self.files_touched))
+        for key in ("changed", "created"):
+            details[key] = [path for path in details[key] if path not in details["rewrote_edited"]]
+        self.check_details = details
+        return tail
+
     def recheck_full_check(self, check_command, failure_heading):
         """The full check after a coder repair: a setup fault stops as `setup-fault`, any other failure as
         `critical-blocker`."""
-        self.full_check, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
+        tail = self.run_check(check_command)
         if full_check.is_setup_fault_result(self.full_check):
             self.stop_on_setup_fault(check_command, tail)
         elif full_check.is_failure(self.full_check):
@@ -921,7 +947,12 @@ class LoopRun:
             "ask_rows": ask_rows,
             "class_closure": self.class_closure,
             "full_check": self.full_check,
-            "files_touched": sorted(self.files_touched),
+            "full_check_command": self.full_check_command,
+            "full_check_summaries": self.check_details["summaries"],
+            "check_changed": self.check_details["changed"],
+            "check_rewrote_edited": self.check_details["rewrote_edited"],
+            "check_created": self.check_details["created"],
+            "files_touched": sorted(self.files_touched | set(self.check_details["rewrote_edited"])),
             "nits": self.nits,
             "unreviewed_fix": self.last_pass == "coder",
         }
@@ -1011,6 +1042,16 @@ def packet_message(outcome):
     }
     if outcome["full_check"]:
         fields["full_check"] = outcome["full_check"]
+        fields["full_check_command"] = script_utils.one_line(outcome["full_check_command"], limit=None)
+        summary = full_check.summary_text(outcome["full_check"], outcome["full_check_summaries"])
+        if summary is not None:
+            fields["full_check_summary"] = script_utils.one_line(summary, limit=None)
+    if outcome["check_changed"]:
+        fields["check_changed"] = outcome["check_changed"]
+    if outcome["check_rewrote_edited"]:
+        fields["check_rewrote_edited"] = outcome["check_rewrote_edited"]
+    if outcome["check_created"]:
+        fields["check_created"] = outcome["check_created"]
     if outcome["plan_change"]:
         fields["plan_impact"] = script_utils.one_line("; ".join(outcome["plan_change"]), limit=None)
     lines = []
@@ -1024,7 +1065,8 @@ def crash_outcome(progress, reason):
     return {"status": "critical-blocker", "iter": progress["iter"], "fixed": fixed,
             "skipped_fp": [], "blockers": [reason], "plan_change": [], "asks": [],
             "ask_gates": {}, "ask_ids": {}, "ask_rows": [], "class_closure": "none - the run ended in an error",
-            "full_check": "",
+            "full_check": "", "full_check_command": "", "full_check_summaries": [], "check_changed": [],
+            "check_rewrote_edited": [], "check_created": [],
             "files_touched": sorted(progress["files_touched"]), "nits": [],
             "unreviewed_fix": False}
 

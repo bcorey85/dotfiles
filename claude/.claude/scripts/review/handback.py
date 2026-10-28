@@ -781,7 +781,7 @@ def unchecked_code_reason(event, session_id, agent_id, message):
     try:
         import review_loop_gate  # imports this module at its top, so it loads here, not at ours
         transcript = review_loop_gate.LoopTranscript(script_utils.agent_transcript_path(event))
-        in_ci = review_loop_gate.full_suite_in_ci(event.get("cwd"))
+        in_ci = review_loop_gate.full_suite_in_ci(transcript, event.get("cwd"))
         ungated, _open_dispatches = review_loop_gate.scan(transcript, message, in_ci)
         last_step = review_loop_gate.last_code_step(transcript)
     except Exception as error:

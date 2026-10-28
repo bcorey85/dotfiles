@@ -418,9 +418,10 @@ def last_code_step(transcript):
     return max(transcript.steps(script_utils.CODERS), default=0)
 
 
-def full_suite_in_ci(cwd):
-    """True when the repo holding cwd (the process cwd when empty) leaves its full suite to CI."""
-    repo = script_utils.repo_root(cwd or os.getcwd())
+def full_suite_in_ci(transcript, cwd):
+    """True when the repo the loop reviewed (else the repo holding cwd, the process cwd when empty) leaves its full
+    suite to CI."""
+    repo = script_utils.repo_root(transcript.reviewed_root() or cwd or os.getcwd())
     return repo is not None and full_check_script.full_suite_runs_in_ci(repo)
 
 
@@ -715,7 +716,7 @@ def record_stop(hook, open_dispatches, ask_rows=(), blocked=False):
 def check_stop(hook):
     try:
         transcript = LoopTranscript(hook["agent_transcript_path"])
-        in_ci = full_suite_in_ci(transcript.reviewed_root() or hook.get("cwd"))
+        in_ci = full_suite_in_ci(transcript, hook.get("cwd"))
         scanned = scan(transcript, hook.get("last_assistant_message"), in_ci)
     except Exception:
         # A transcript the gate cannot read still ends an earlier wait: with no row, the last open count would stand.

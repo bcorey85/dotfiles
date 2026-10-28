@@ -33,9 +33,9 @@ from script_utils import first_number, one_line, unquote
 STATUSES = ["converged", "deferred", "plan-impact", "critical-blocker", "cap-reached"]
 CLEAN_STATUSES = ("converged", "deferred")
 PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers", "findings_remaining", "plan_impact",
-               "ask", "class_closure", "files_touched", "nit", "load_bearing_clean"]
+               "ask", "class_closure", "full_check", "files_touched", "nit", "load_bearing_clean"]
 LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched"]
-SCALAR_KEYS = ("status", "iter", "spec_iter", "load_bearing_clean")
+SCALAR_KEYS = ("status", "iter", "spec_iter", "full_check", "load_bearing_clean")
 # The list fields whose entries validate turns into mappings, and the key a plain-text entry's text goes under.
 ENTRY_TEXT_KEYS = {"fixed": "finding", "skipped_fp": "item", "findings_remaining": "finding", "ask": "question"}
 # The field each status requires, and the word for its absence. cap-reached says "missing" when the key is absent.
@@ -392,6 +392,7 @@ def read_header(raw):
 
     header = {"status": status, "iter": iter_round, "spec_iter": spec_iter,
               "class_closure": raw.get("class_closure", "").strip(),
+              "full_check": raw.get("full_check", "").strip(),
               "load_bearing_clean": raw.get("load_bearing_clean", "").strip(),
               "plan_impact": raw.get("plan_impact", "").strip()}
     return header, problems
@@ -544,6 +545,8 @@ def render(packet, skill, sections=()):
         if skill == "review" and packet["status"] == "converged" and owes_receipt and receipt_is_missing(closure):
             lines.append("The class-closure receipt is missing or names no repaired finding. Do not present this "
                          "run as clean.")
+    if packet["full_check"].startswith("not run"):
+        lines.append("Full check: " + packet["full_check"])
     load_bearing = packet["load_bearing_clean"]
     if load_bearing and load_bearing.lower() not in ("none", "omitted"):
         lines.append("Load-bearing: " + load_bearing)

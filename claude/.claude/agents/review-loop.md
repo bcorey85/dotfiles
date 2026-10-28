@@ -209,7 +209,15 @@ repair, run the gate once more; a second failure returns `status: critical-block
 
 ## Step 6: Convergence — the execution gate
 
-**Execution gate (before declaring convergence)**: the phase's one full run. Code changed in the phase whenever this loop runs, so always run the project's full quality-check command (from `<ROOT>/CLAUDE.md` (read it)) ONCE, after the last code change, redirected to `/tmp/review-gate-<branch>.log`: the `BRANCH` from Step 0 with each `/` as `-`, written literally. Other sessions write to `/tmp` too, so never use a name without the branch. A handoff `tests-run` never exempts it: that run covered only the changed files. Exit 0 → proceed. Non-zero → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above.
+**Execution gate (before declaring convergence)**: the phase's one full run. Code changed in the phase whenever this loop runs, so always run the project's full quality-check command (from `<ROOT>/CLAUDE.md` (read it)) ONCE, after the last code change, with the Bash timeout at 600000:
+
+`python3 ~/.claude/scripts/review/full_check.py <ROOT> --log /tmp/review-gate-<branch>.log -- '<command>'`
+
+`<branch>` is the `BRANCH` from Step 0 with each `/` as `-`, written literally. Other sessions write to `/tmp` too, so never use a name without the branch. A handoff `tests-run` never exempts it: that run covered only the changed files. Copy the result on the script's first line into the packet's `full_check`:
+- `passed` → proceed.
+- `failed (exit N)` → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above.
+- `not run (timeout)` → no finding. Proceed.
+- `not run (CI)` → the repo's CLAUDE.md holds `Full suite: CI`. Run the tests of the files this phase changed, by name, once, redirected to the same log. A failure there is a `fix` finding carrying `blocker`.
 
 **Exception**: failures in acceptance spec tests (`*.spec.*`, or any test the plan's `Acceptance Criteria` file names as covering a criterion) are critical BLOCKERS — never route them to auto-fix. Either the code is wrong or the intent changed, and only the user decides which; an auto-fixer's cheapest path to green is editing the spec.
 
@@ -271,6 +279,7 @@ findings_remaining: [{disposition, finding, file_line}]  # status=deferred | cap
 plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
 ask: [{finding, file_line, question, change, gate, class}]  # never auto-fixed; the user answers these; change is the one edit an accepted answer makes; gate/class ride along so the caller can log the outcome. Log each ask row with the same file and line as its file_line; the caller reads the id from that row, so leave finding_id out
 class_closure: <the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a — fixed[] empty>
+full_check: passed | failed (exit N) | not run (CI) | not run (timeout)  # the Step 6 result
 files_touched: [<path>]
 nit: [<one line each>]                   # a small item ends `applied` or `skipped: <reason>`
 load_bearing_clean: <one line, or omitted>

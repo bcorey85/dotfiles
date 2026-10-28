@@ -17,7 +17,10 @@ unmeasured: ""
 ## Change
 
 - `handback.fold_bullets_into_asks`: in the `ask` list, a plain-text entry that follows a mapping ask adds to that ask's
-  question, or to its finding when it has no question. Plain-text asks with no mapping before them stay separate asks.
+  question, or to its finding when it has no question. A mapping entry with no file_line and no finding adds its fields
+  to that ask; only question and change are joined with a newline, any other field keeps the lead's value. A bullet
+  that carries a `| path:line` field starts a new ask; a location at the start of a fact bullet
+  does not. Plain-text asks with no mapping before them stay separate asks.
 - `code_step.py asks-done` with the wrong count adds "N ask(s) wait: give N outcome(s), in order." to its refusal.
 
 ## Evidence
@@ -29,6 +32,8 @@ unmeasured: ""
 
 - The new parse test reads one ask holding every bullet; test_code_step_cap_reached.py's
   `test_asks_done_with_the_wrong_number_of_outcomes_names_how_many_it_expects` reads the count. Both failed before.
+  Four more parse tests in test_handback.py pin the edges: a mid-sentence or leading location stays in the ask, a
+  `| path:line` bullet is its own ask, and a key-only mapping joins the lead ask.
 
 ## Watch
 

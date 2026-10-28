@@ -19,9 +19,10 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
                                                 a criterion
   code_step.py decide discuss                   ask the user how to rule when the code and the plan disagree; records
                                                 nothing
-  code_step.py asks-done [--by <user|session>] <outcome>...
+  code_step.py asks-done [--by <user|session>] [--also "<text>"] <outcome>...
                                                 log the answer to each ask[] entry, then run the phase gates;
-                                                --by session when the session ruled itself, default user
+                                                --by session when the session ruled itself, default user;
+                                                --also: other work for the coder, kept even if every ask is rejected
   code_step.py skill-done <pass|fail> [--evidence "<text>"]... [--finding "<text>"]...
                                                 a closing phase's skill returned: mark it done (pass) or stop (fail);
                                                 at pass, give one --evidence per open Success Criteria item and the

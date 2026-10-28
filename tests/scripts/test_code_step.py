@@ -3531,6 +3531,24 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("The user's change: rename it to orderCount", out)
         self.assertNotIn("add the user's exact change", out)
 
+    def test_also_text_reaches_the_asks_coder_prompt(self):
+        out = self.apply_first_ask("accepted", "--also", "also rename the helper to orderCount")
+        self.assertIn("AGENT: coder", out)
+        self.assertIn("[accepted] f - keep?", out)
+        self.assertIn("also rename the helper to orderCount", out)
+
+    def test_every_ask_rejected_with_also_text_still_dispatches_a_coder_for_it(self):
+        out = self.apply_first_ask("rejected", "--also", "also rename the helper to orderCount")
+        self.assertIn("AGENT: coder", out)
+        self.assertIn("also rename the helper to orderCount", out)
+        self.assertNotIn("Phase 1 marked done", out)
+        self.assertEqual("asks-coder", self.state()["stage"])
+
+    def test_also_flag_without_text_stops(self):
+        out = self.apply_first_ask("accepted", "--also")
+        self.assertIn("ACTION: stop", out)
+        self.assertEqual("asks", self.state()["stage"])
+
     def test_modified_ask_without_a_change_text_stops(self):
         out = self.apply_first_ask("modified")
         self.assertIn("ACTION: stop", out)

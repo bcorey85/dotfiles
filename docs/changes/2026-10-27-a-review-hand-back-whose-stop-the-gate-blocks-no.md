@@ -18,8 +18,8 @@ unmeasured: ""
 
 - `code_step_core.awaited_handback` returns a review-loop agent's hand-back only after the review-loop gate wrote an
   unblocked stop row for that agent at or after it. A blocked stop row means the loop went back to work, so the wait
-  goes on for its next hand-back. With no stop row after the stop-row wait (15 s, or 0 with
-  `CODE_STEP_WAIT_SECONDS=0`), the hand-back counts as before.
+  goes on for its next hand-back. Only the hand-back wait waits for the stop row, up to 15 s. With no stop row by then,
+  or when the wait ends first, the hand-back counts as before. Every other reader counts a hand-back with no stop row.
 - Coders and the review-loop script are not affected: they stop with no gate.
 - A verb that finds only a hand-back with a blocked stop prints `ACTION: wait` and says to run `resume` again. Before,
   it took that packet.

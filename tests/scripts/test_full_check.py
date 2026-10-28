@@ -71,6 +71,15 @@ class FullCheckTest(unittest.TestCase):
         self.assertEqual(completed.stdout.splitlines()[0],
                          "full check: not run (environment gap: No module named 'ruff')")
 
+    def test_a_missing_declared_module_is_reported_ahead_of_a_setup_fault_marker(self):
+        (self.repo / "requirements-dev.txt").write_text("ruff==0.6.9\n")
+
+        completed = self.check("echo \"ModuleNotFoundError: No module named 'ruff'\"; "
+                               "echo ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND; exit 1")
+
+        self.assertEqual(completed.stdout.splitlines()[0],
+                         "full check: not run (environment gap: No module named 'ruff')")
+
     def test_a_missing_undeclared_module_is_a_failure(self):
         (self.repo / "requirements.txt").write_text("flask>=3\n")
 

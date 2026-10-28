@@ -2371,6 +2371,19 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("invoke Skill code with `review-again`", out)
         self.assertEqual("tool-fault", self.state()["stopReason"])
 
+    def test_a_tool_fault_with_a_reviewer_question_stops_as_a_tool_fault_without_carrying_a_blocker(self):
+        self.coder_round()
+        ask = ('{"finding": "f", "file_line": "backend/src/orders.ts:2", "question": "keep the cache?", '
+               '"change": "drop the cache", "gate": "code-reviewer", "class": "correctness"}')
+        self.hook("review-loop", self.TOOL_FAULT_PACKET + f"\nfixed: []\nask: [{ask}]")
+
+        self.step("after-review")
+
+        state = self.state()
+        self.assertEqual("tool-fault", state["stopReason"])
+        self.assertEqual("stopped", state["stage"])
+        self.assertNotIn("blockerCarried", state)
+
     def test_review_again_after_a_crashed_review_call_dispatches_the_review_loop(self):
         self.coder_round()
         self.hook("review-loop", self.TOOL_FAULT_PACKET)

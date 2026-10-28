@@ -218,7 +218,7 @@ return `status: cap-reached` with `findings_remaining` naming the unreviewed fil
 `<branch>` is the `BRANCH` from Step 0 with each `/` as `-`, written literally. Other sessions write to `/tmp` too, so never use a name without the branch. A handoff `tests-run` never exempts it: that run covered only the changed files. Copy the result on the script's first line into the packet's `full_check`:
 - `passed` → proceed.
 - `unverified (exit 0, no runner summary)` → the command exited 0 but printed no test runner summary, so no test is known to have run. No finding; proceed. Never call it a pass.
-- `failed (exit N)`, or `failed (exit 0, summary reports failures)` → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above. A missing module from outside the repo is a code failure and gets one coder repair.
+- `failed (exit N)`, or `failed (exit 0, summary reports failures)` → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above. A missing module from outside the repo that the repo's dependency files do not declare is a code failure and gets one coder repair.
 - `setup fault (exit N)` → the check could not run here (no program, a runner that cannot start, no package manifest, no test found, a package-manager or engine version mismatch). Return `status: setup-fault` with the printed lines in `blockers`; dispatch no coder.
 - `not run (timeout)` → no finding. Proceed.
 - `not run (environment gap: No module named 'X')` → the check's interpreter lacks a module the repo declares as a dependency. No finding; never a blocker. Proceed.

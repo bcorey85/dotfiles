@@ -859,15 +859,44 @@ class ReviewedWorkCommitTest(GateCase):
 
     def test_a_converged_hand_back_after_the_coder_lets_the_commit_through_without_a_mark(self):
         (self.repo / "base.py").write_text("changed\n")
-        self.store_dir.mkdir(parents=True, exist_ok=True)
-        rows = [{"kind": "dispatch", "session_id": "s1", "ts": time.time()},
-                {"kind": "handback", "session_id": "s1", "status": "converged", "message": "", "ts": time.time()}]
-        (self.store_dir / "s1.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+        self.seed_repo_handback(self.repo)
         self.assert_silent(self.commit("git commit -a -m x"))
         self.assert_silent(self.dispatch())
         self.assert_commit_denied(self.commit("git commit -a -m x"))
 
-    def test_a_merge_commit_after_a_literal_cd_passes_and_other_cd_forms_get_no_merge_credit(self):
+    def seed_repo_handback(self, repo):
+        """A converged hand-back, stored now, answering a review-loop dispatch of repo."""
+        self.store_dir.mkdir(parents=True, exist_ok=True)
+        rows = [{"kind": "dispatch", "session_id": "s1", "ts": time.time(), "repo": os.path.realpath(repo)},
+                {"kind": "handback", "session_id": "s1", "status": "converged", "message": "", "ts": time.time()}]
+        (self.store_dir / "s1.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+
+    def test_a_hand_back_of_another_repo_gives_this_repo_no_credit(self):
+        other = self.make_repo("other")
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(other)
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+        self.assert_silent(self.commit("git commit -a -m x", cwd=other))
+
+    def test_a_cd_in_any_shape_is_judged_against_the_cwd_and_every_cd_target(self):
+        clean = self.make_repo("clean")
+        transcript = self.coder_transcript("a1", self.repo / "base.py")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        for command in (f"true || cd {clean} && git commit --allow-empty -m x",
+                        f"echo a | cd {clean} && git commit --allow-empty -m x",
+                        f'eval "cd {clean}" && git commit --allow-empty -m x',
+                        f"C=cd; $C {clean} && git commit --allow-empty -m x"):
+            with self.subTest(command=command):
+                self.assert_commit_denied(self.commit(command, session="s2", transcript_path=transcript))
+        for command in (f"cd {self.repo} && cd {clean} && git commit --allow-empty -m x",
+                        f"cd {self.tmp} && cd repo; cd {clean}; git commit --allow-empty -m x",
+                        "C=cd; $C $HOME && git commit --allow-empty -m x"):
+            with self.subTest(command=command):
+                self.assert_commit_denied(self.commit(command, cwd=clean, session="s2", transcript_path=transcript))
+        self.assert_silent(self.commit(f"cd {clean} && git commit --allow-empty -m x", cwd=clean, session="s2",
+                                       transcript_path=transcript))
+
+    def test_a_merge_commit_passes_after_any_cd_when_every_candidate_is_clean_or_merging(self):
         self.git(self.repo, "checkout", "-q", "-b", "side")
         (self.repo / "side.py").write_text("side\n")
         self.git(self.repo, "add", "side.py")
@@ -877,11 +906,13 @@ class ReviewedWorkCommitTest(GateCase):
         self.git(self.repo, "add", "main.py")
         self.git(self.repo, "commit", "-q", "-m", "main")
         self.git(self.repo, "merge", "--no-commit", "--no-ff", "side")
-        self.assert_silent(self.commit(f"cd {self.repo} && git commit --no-edit", cwd=self.tmp))
-        for command in (f"(cd {self.repo} && git commit --no-edit)", f"{{ cd {self.repo}; }} && git commit --no-edit",
-                        f"cd {self.repo}; git commit --no-edit", f"cd {self.repo} || git commit --no-edit"):
+        for command in (f"cd {self.repo} && git commit --no-edit", f"(cd {self.repo} && git commit --no-edit)",
+                        f"{{ cd {self.repo}; }} && git commit --no-edit", f"cd {self.repo} || git commit --no-edit"):
             with self.subTest(command=command):
-                self.assert_commit_denied(self.commit(command, cwd=self.tmp))
+                self.assert_silent(self.commit(command, cwd=self.tmp))
+        other = self.make_repo("other")
+        self.assert_commit_denied(self.commit(f"cd {self.repo} && git commit --no-edit", cwd=other))
+        self.assert_commit_denied(self.commit("cd $TARGET && git commit --no-edit", cwd=self.tmp))
 
     def test_a_no_review_order_survives_peer_messages_summaries_and_shell_echoes(self):
         transcript = self.write_transcript(

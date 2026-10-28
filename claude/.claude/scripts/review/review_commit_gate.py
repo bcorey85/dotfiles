@@ -47,21 +47,27 @@ A dirty repo still commits in four more cases, each checked against something a 
   - the commit concludes a merge (the repo it commits in has a MERGE_HEAD)
   - the working tree of the repo it commits in is the tree a converged review covered (reviewed_tree.py), so work
     that converged in /code's review-loop, or in /review, commits after a later coder dispatch that edited nothing
-  - the session's latest review-loop hand-back is current, converged or deferred, and came after the coder work
-    that made the repo dirty, however the run that launched the loop closed.
-That repo is the one `git -C <dir>` names (every -C joined), after each leading `cd <dir> &&` step, relative to the
-hook input's cwd, else the cwd. A command with `--git-dir` or `--work-tree`, or with any other `cd`, `pushd` or
-`popd`, has none: it is judged against every repo and gets no merge or reviewed-tree credit.
+  - the session's latest review-loop hand-back is current, converged or deferred, came after the coder work that
+    made the repo dirty, and answers a review-loop dispatch of that repo (its `repo:` line, else the session cwd),
+    however the run that launched the loop closed.
+With no `cd`, `pushd` or `popd` in its text, the commit runs in the one repo `git -C <dir>` names (every -C joined),
+relative to the hook input's cwd, else the cwd; `--git-dir` or `--work-tree` leaves it unknown. A command that
+changes folder anywhere is judged against every candidate repo (candidate_repo_dirs): the cwd plus each folder a
+word of the command names. Each candidate must be clean or earn one of the credits above. The gate never follows
+the chain's shape. A target no word names (a `$`, a backtick, `eval`, `popd`, `cd -`) adds an unknown candidate.
+An unknown repo is judged against every repo and gets no merge, reviewed-tree or hand-back credit.
 
 State: ~/.claude/state/review-gate/<session>, one line per record: `clean` (a clean mark; earlier lines no longer
 count), or a JSON event {"kind": "dispatch"|"dirty", "ts", "agent"}. A plain `dirty` line, from
 before events carried a time, counts from the file's last change. Hook JSON in, one permissionDecision line out,
 exit 0. On an internal error PreToolUse asks the user; PostToolUse stays silent.
 """
+import contextlib
 import json
 import os
 import posixpath
 import re
+import shlex
 import sys
 import time
 
@@ -77,7 +83,15 @@ CODERS = ("coder", "coder-deep", "backend-coder", "backend-coder-deep", "fronten
 # The tools that write a file, and the input key that names it.
 EDITING_TOOLS = {"Edit": "file_path", "Write": "file_path", "MultiEdit": "file_path", "NotebookEdit": "notebook_path"}
 AGENT_ID = re.compile(r"[A-Za-z0-9_-]+")
-DIRECTORY_CHANGERS = ("cd", "pushd", "popd")
+# A command that changes folder anywhere in its text. The gate never parses where the chain leads.
+CHANGES_FOLDER = re.compile(r"(?<![\w./-])(?:cd|pushd|popd)(?![\w./-])")
+# A folder change whose target no word of the command names.
+UNKNOWN_TARGET = re.compile(r"[$`]|(?<![\w./-])(?:eval|source|popd)(?![\w./-])"
+                            r"|(?<![\w./-])(?:cd|pushd)[ \t]+-(?![\w./-])|(?<![\w./-])pushd[ \t]*(?:$|[;&|)\n])"
+                            r"|--git-dir|--work-tree|GIT_DIR|GIT_WORK_TREE",
+                            re.MULTILINE)
+BARE_CD = re.compile(r"(?<![\w./-])cd[ \t]*(?:$|[;&|)\n])", re.MULTILINE)
+WORD_BREAK = re.compile(r"""[\s;&|()<>{}=`'"]+""")
 # `(?!-)`: `git commit-tree` and `git commit-graph` write objects and move no branch.
 COMMIT = re.compile(r"\bgit[ \t\r\f\v]+commit\b(?!-)")
 LINE_CONTINUATION = re.compile(r"\\\r?\n")
@@ -496,40 +510,56 @@ def user_ordered_no_review(root):
     return latest_prompt is not None and latest_prompt.lstrip().startswith(NO_REVIEW_MARKER)
 
 
-def followed_cd(words, step, next_operator):
-    """The folder a step moves to when it is a plain `cd <literal folder>` that `&&` follows, else None."""
-    if len(words) != 2 or words[0] != "cd" or not step.lstrip().startswith("cd"):
-        return None
-    if next_operator != "&&" or words[1] == "-" or EXPANDING_CHARS & set(words[1]):
-        return None
-    return words[1]
+def candidate_repo_dirs(command, cwd):
+    """The directories a commit in the command may run in; None stands for one the gate cannot name. A command with
+    no `cd`, `pushd` or `popd` anywhere in its text commits in the one directory commit_repo_dir reads. Otherwise
+    every candidate counts, whatever the shape of the chain: the cwd, each word of the command (quoted words split
+    on spaces) that names a directory read from the cwd or from another candidate, and HOME for a bare `cd`. A `$`,
+    a backtick, `eval`, `source`, `popd`, `cd -`, a bare `pushd`, a git dir or work-tree option or variable adds
+    None."""
+    if not CHANGES_FOLDER.search(command):
+        return [commit_repo_dir(command, cwd)]
+
+    candidates = [os.path.normpath(cwd)] if cwd else [None]
+    if UNKNOWN_TARGET.search(command) or not cwd:
+        candidates.append(None)
+    if BARE_CD.search(command):
+        candidates.append(os.path.expanduser("~"))
+
+    words = set(WORD_BREAK.split(command))
+    with contextlib.suppress(ValueError):
+        words.update(shlex.split(command))
+    words.discard("")
+    found_new = True
+    while found_new:
+        found_new = False
+        for base in [candidate for candidate in candidates if candidate]:
+            for word in words:
+                path = os.path.normpath(os.path.join(base, os.path.expanduser(word)))
+                if path not in candidates and os.path.isdir(path):
+                    candidates.append(path)
+                    found_new = True
+
+    # A folder outside every work tree holds no repo to commit in.
+    return [candidate for candidate in candidates
+            if candidate is None or script_utils.repo_root(candidate, timeout=GIT_TIMEOUT_SECONDS)]
 
 
 def commit_repo_dir(command, cwd):
-    """The directory a `git commit` in the command runs in: the cwd, moved by each leading `cd <dir> &&` step and
-    by each `git -C <dir>` before the subcommand. None when the command cannot be read, holds no commit, changes
-    folder any other way (a `cd` in a group or a subshell, `pushd`, `popd`), or uses an option that moves the repo
+    """The directory a `git commit` in the command runs in: the cwd, moved by each `git -C <dir>` before the
+    subcommand. None when the command cannot be read, holds no commit, or uses an option that moves the repo
     (--git-dir, --work-tree) the gate does not follow."""
     if not cwd:
         return None
-    steps = split_command_steps(LINE_CONTINUATION.sub("", command))
-    directory = cwd
-    for position, (_, step) in enumerate(steps):
+    for _, step in split_command_steps(LINE_CONTINUATION.sub("", command)):
         try:
             simple_commands = split_simple_commands(step)
         except ValueError:
             return None
-        next_operator = steps[position + 1][0] if position + 1 < len(steps) else ""
         for words in simple_commands:
-            committed_in = commit_dir(words, directory)
+            committed_in = commit_dir(words, cwd)
             if committed_in is not None:
                 return committed_in or None
-            if posixpath.basename(words[0]) == "git" or not set(words) & set(DIRECTORY_CHANGERS):
-                continue
-            moved_to = followed_cd(words, step, next_operator)
-            if moved_to is None or len(simple_commands) != 1:
-                return None
-            directory = os.path.join(directory, moved_to)
     return None
 
 
@@ -560,40 +590,54 @@ def concludes_merge(repo_dir):
     return bool(merge_head)
 
 
-def review_handed_back_since(session, dirty_at):
-    """True when the session's latest review-loop hand-back is current, converged or deferred, and was stored after
-    `dirty_at`."""
+def review_handed_back_since(session, dirty_at, repo_top):
+    """True when the session's latest review-loop hand-back is current, converged or deferred, was stored after
+    `dirty_at`, and answers a dispatch that reviewed repo_top."""
+    if repo_top is None:
+        return False
     try:
         import handback
     except ImportError:
         return False
     if handback.false_clean_reason(session) is not None:
         return False
-    handed_back_at = handback.latest(session)["handback"].get("ts")
+    seen = handback.latest(session)
+    if seen["dispatch"].get("repo") != repo_top:
+        return False
+    handed_back_at = seen["handback"].get("ts")
     return isinstance(handed_back_at, (int, float)) and handed_back_at > dirty_at
 
 
+def holds_unreviewed_work(repo_dir, events, session, transcript_path):
+    """True when a commit in repo_dir would ship coder work that no merge, reviewed tree or converged hand-back
+    covers. A repo_dir of None, or one outside a work tree, is judged against every repo."""
+    repo_top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS) if repo_dir else None
+    repo_top = str(repo_top) if repo_top else None
+    dirty_at = dirty_since(events, repo_top, transcript_path)
+    if dirty_at is None:
+        return False
+
+    if repo_dir and (concludes_merge(repo_dir) or reviewed_tree.is_reviewed(session, repo_dir)):
+        return False
+    return not review_handed_back_since(session, dirty_at, repo_top)
+
+
 def check_commit(command, root, state_file, session):
-    """Deny a commit in a dirty repo, unless the user ordered it without review, it concludes a merge, the tree is
-    the one a converged review covered, a converged review handed back after the repo became dirty, or it ships only
-    notes."""
+    """Deny a commit when any directory it may run in holds unreviewed coder work, unless the user ordered it
+    without review or it ships only notes."""
     events = gate_events(state_file)
     if not events:
         return
     if user_ordered_no_review(root):
         return
 
-    repo_dir = commit_repo_dir(command, jq_field(root, "cwd"))
-    repo_top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS) if repo_dir else None
-    dirty_at = dirty_since(events, str(repo_top) if repo_top else None, jq_field(root, "transcript_path"))
-    if dirty_at is None:
+    cwd = jq_field(root, "cwd")
+    transcript_path = jq_field(root, "transcript_path")
+    dirty_dirs = [repo_dir for repo_dir in candidate_repo_dirs(command, cwd)
+                  if holds_unreviewed_work(repo_dir, events, session, transcript_path)]
+    if not dirty_dirs:
         return
-
-    if repo_dir and (concludes_merge(repo_dir) or reviewed_tree.is_reviewed(session, repo_dir)):
-        return
-    if review_handed_back_since(session, dirty_at):
-        return
-    if ships_only_notes(command, jq_field(root, "cwd")):
+    if ships_only_notes(command, cwd):
         return
     raise DenyError(
         "[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "

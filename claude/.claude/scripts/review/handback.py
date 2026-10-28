@@ -64,6 +64,8 @@ CLASSES = ["bug", "smell", "duplication", "complexity", "plan-drift", "test-gap"
            "correctness", "docs", "other"]
 REVIEW_LOOP = "review-loop"
 NO_REVIEW_MODE = re.compile(r"(?im)^[ \t>*`-]*no-review\b")
+REPO_LINE = re.compile(r"(?m)^[ \t]*repo:[ \t]*(\S[^\n]*?)[ \t]*$")
+GIT_TIMEOUT_SECONDS = 10
 DEFAULT_GATE = "code-reviewer"
 FENCE_OPEN = "```"
 BLOCKER_TEXT = re.compile(r"\[blocker\]|\bblocker\s*[:=]\s*(?:yes|true)\b", re.I)
@@ -586,7 +588,8 @@ def latest(session_id):
     review-loop stop row after the last dispatch or None, "unanswered": the number of dispatches after the last
     hand-back (all of them when there is none), "pending": unanswered > 0}. A hand-back clears every dispatch before
     it, so a dispatch that another hook denied blocks nothing once a later dispatch hands back. A row holds kind, ts,
-    session_id; a hand-back row also agent_id, status, problems, message; a stop row also agent_id,
+    session_id; a dispatch row also no_review and repo (the top level of the repo it reviews, or None); a hand-back
+    row also agent_id, status, problems, message; a stop row also agent_id,
     open_dispatches (the background agents and shells the loop still waited on when it stopped) and ask_rows. A
     stop the gate blocked is not a stop: the loop went on, so such a row is skipped. Rows are ordered by append, not by
     clock."""
@@ -713,6 +716,17 @@ def deny_line(reason):
                                               "permissionDecisionReason": reason}})
 
 
+def reviewed_repo(prompt, cwd):
+    """The top level of the repo a review-loop dispatch reviews: the prompt's `repo:` line, read from cwd, else cwd.
+    None when neither lies in a work tree."""
+    named = REPO_LINE.search(prompt)
+    directory = os.path.join(cwd or "", os.path.expanduser(named.group(1))) if named else cwd
+    if not directory:
+        return None
+    top = script_utils.repo_root(directory, timeout=GIT_TIMEOUT_SECONDS)
+    return str(top) if top else None
+
+
 def handle_hook(event, kind):
     """Record a review-loop dispatch or hand-back. Returns the deny reason for a bad packet seen the first time from
     its agent, else None."""
@@ -728,7 +742,8 @@ def handle_hook(event, kind):
                 record(session_id, "step", agent_id=event.get("agent_id") or "unknown", step=step)
         elif subagent_type == REVIEW_LOOP:
             prompt = str(tool_input.get("prompt") or "")
-            record(session_id, "dispatch", no_review=NO_REVIEW_MODE.search(prompt) is not None)
+            record(session_id, "dispatch", no_review=NO_REVIEW_MODE.search(prompt) is not None,
+                   repo=reviewed_repo(prompt, event.get("cwd")))
         return None
     if kind != "handback" or event.get("agent_type") != REVIEW_LOOP:
         return None

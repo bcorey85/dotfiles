@@ -1,0 +1,83 @@
+#!/bin/bash
+# Clear a settled Claude agent's conversation, then send it the next phase's
+# first prompt.
+#
+# Usage: herdr-phase-change [--timeout <seconds>] <agent> <prompt>
+#   agent      a live agent name or pane id.
+#   prompt     the new phase's first prompt, e.g. "/code docs/plans/x/plan.md".
+#   --timeout  seconds bounding each of the two waits: for /clear to take effect,
+#              then for the pane to settle. Defaults to 30.
+#
+# `herdr agent wait` returns at once on a pane already in `done`, so it is no
+# barrier between two prompts: a prompt sent too soon after /clear lands in the
+# same input as `/clear/code ...` and runs on the old context. This sends
+# /clear, waits until herdr reports a new session id for the pane (Claude's
+# SessionStart hook reports it once /clear has run), and only then sends the
+# prompt. If the id does not change in time it sends nothing more and exits 1:
+# read the pane with `herdr agent read` before you retry.
+
+set -euo pipefail
+export PATH="$HOME/.local/bin:$PATH"
+
+usage() { sed -n '2,/^$/s/^# \{0,1\}//p' "$0"; }
+
+timeout_seconds=30
+target=""
+prompt=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -h|--help) usage; exit 0 ;;
+        --timeout)
+            [ $# -ge 2 ] || { echo "herdr-phase-change: --timeout needs seconds" >&2; exit 1; }
+            [[ "${2:-}" =~ ^[1-9][0-9]*$ ]] || { echo "herdr-phase-change: --timeout needs whole seconds" >&2; exit 1; }
+            timeout_seconds="$2"
+            shift
+            ;;
+        -*) echo "herdr-phase-change: unknown option: $1" >&2; usage >&2; exit 1 ;;
+        *)
+            if [ -z "$target" ]; then
+                target="$1"
+            elif [ -z "$prompt" ]; then
+                prompt="$1"
+            else
+                echo "herdr-phase-change: give one agent and one prompt" >&2
+                exit 1
+            fi
+            ;;
+    esac
+    shift
+done
+
+[ -n "$target" ] && [ -n "$prompt" ] || { usage >&2; exit 1; }
+
+agent_field() {
+    herdr-api agent get "$target" | jq -r ".result.agent.$1 // empty" || true
+}
+
+status=$(agent_field agent_status)
+case "$status" in
+    idle|done) ;;
+    *) echo "herdr-phase-change: $target is ${status:-not found}; send nothing until it is idle or done" >&2; exit 1 ;;
+esac
+
+old_session=$(agent_field agent_session.value)
+[ -n "$old_session" ] \
+    || { echo "herdr-phase-change: $target reports no session id, so /clear cannot be confirmed" >&2; exit 1; }
+
+herdr-api agent prompt "$target" "/clear" >/dev/null
+
+deadline=$((SECONDS + timeout_seconds))
+new_session="$old_session"
+while [ "$new_session" = "$old_session" ]; do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+        echo "herdr-phase-change: /clear did not take effect in ${timeout_seconds}s ($target still reports session $old_session); sent nothing more. Read the pane before you retry." >&2
+        exit 1
+    fi
+    sleep 0.5
+    new_session=$(agent_field agent_session.value)
+    [ -n "$new_session" ] || new_session="$old_session"
+done
+
+herdr-api agent wait "$target" --until idle --until "done" --timeout "$((timeout_seconds * 1000))" >/dev/null \
+    || { echo "herdr-phase-change: $target did not settle after /clear; sent nothing more. Read the pane before you retry." >&2; exit 1; }
+herdr-api agent prompt "$target" "$prompt"

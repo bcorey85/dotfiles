@@ -101,6 +101,7 @@ class ReviewScriptTest(base.CodeStepTest):
         self.assertEqual(agent_id, options["--agent-id"])
         prompt_text = pathlib.Path(options["--prompt-file"]).read_text()
         self.assertTrue(prompt_text.startswith("mode: review-first\ncaller: code\n"), prompt_text)
+        self.assertIn(f"repo: {self.repo}\n", prompt_text)
         self.wait_for_script_exit(state["reviewScriptPid"])
 
         out = self.step("resume")

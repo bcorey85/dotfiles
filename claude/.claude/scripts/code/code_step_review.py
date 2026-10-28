@@ -17,6 +17,7 @@ from code_step_boundary import (
 )
 from code_step_core import (
     CLAUDE_DIR,
+    PLAN_EDIT_STOP_REASONS,
     RESUME_VERB,
     REVIEW_LOOP,
     REVIEW_LOOP_SCRIPT,
@@ -56,6 +57,7 @@ from code_step_core import (
     wait_for_loop_stop,
 )
 from code_step_report import ENG_SPEC_MARKER, change_line, coder_message_without_gate_stamp
+from code_step_usage import DECIDE_COMMAND
 from script_utils import git_output, run_command
 from source_paths import is_counted_source
 
@@ -69,13 +71,15 @@ ASKS_DONE_USAGE = ("asks-done needs one outcome per ask: accepted, rejected or m
 STAGE_GUARDS = {
     "decide": {"stages": ("impact-coder", "impact-review"),
                "message": "decide needs a pending PLAN-IMPACT and one word: adopt, keep or discuss."},
-    "review-again": {"stages": ("stopped",), "stopReasons": ("invalid-packet", "cap-reached", "false-clean",
-                                                            "tool-fault"),
+    "review-again": {"stages": ("stopped",),
+                     "stopReasons": ("invalid-packet", "cap-reached", "false-clean", "tool-fault", "critical-blocker",
+                                     "setup-fault"),
                      "message": "review-again ran with no unreadable review packet, capped review, crashed review "
-                                "call, unmarked review gate or silent review-loop pending."},
+                                "call, unmarked review gate, critical blocker, setup fault or silent review-loop "
+                                "pending."},
     "asks-done": {"stages": ("asks",), "message": ASKS_DONE_USAGE},
     "skill-done": {"stages": ("skill",), "message": "skill-done ran with no closing-phase skill pending."},
-    "verify": {"stages": ("stopped",), "stopReasons": ("verification", "plan-format"),
+    "verify": {"stages": ("stopped",), "stopReasons": PLAN_EDIT_STOP_REASONS,
                "message": "verify ran with no failed Automated Verification or unparsed Manual Verification pending."},
 }
 NO_REVIEW_PACKET = ("No review-loop packet was saved. The log-hook (code_step.py log-hook) is not installed. "
@@ -192,9 +196,6 @@ def resolved_plan_impact(state):
     return "\n".join(lines)
 
 
-DECIDE_USAGE = 'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"'
-
-
 def decision_for_word(repo_dir, state, word):
     # The decision the word names, or None after the stop or the question it printed (a blank word, an unknown word, or
     # discuss).
@@ -213,7 +214,7 @@ def decision_for_word(repo_dir, state, word):
 def ruling_problem(word, by, ruling_words):
     # The stop text for a ruling that lacks who made it or what it says, or None.
     if by not in ("user", "session"):
-        return f"decide {word} needs --by user or --by session. Usage: `{DECIDE_USAGE}`. {DECIDE_BY_NOTE}"
+        return f"decide {word} needs --by user or --by session. Usage: `{DECIDE_COMMAND}`. {DECIDE_BY_NOTE}"
     if not ruling_words:
         return (f"decide {word} needs the ruling's words: {decide_call(word)}. {DECIDE_BY_NOTE} "
                 "Hand back and ask the main session for them.")
@@ -620,14 +621,23 @@ def is_capped_review(state):
     return state.get("reviewStatus") == "cap-reached"
 
 
+def left_findings_open(state):
+    # The review ended with findings open (a cap, or a critical blocker with asks): its rulings go to one more review
+    # of the whole phase, and the review gate stays dirty until that review ends clean.
+    return state.get("reviewStatus") in ("cap-reached", "critical-blocker")
+
+
 def carried_findings(module, packet, include_asks=True):
-    # What a plan-impact or cap-reached round leaves open for the next review: its asks (unless the asks route rules
-    # them), its remaining findings and its closing prose (where the loop lists fix findings it did not dispatch),
-    # each on one line.
+    # What a plan-impact, critical-blocker or cap-reached round leaves open for the next review: its asks (unless the
+    # asks route rules them), its blockers, its remaining findings and its closing prose (where the loop lists fix
+    # findings it did not dispatch), each on one line.
     lines = []
     if include_asks:
-        lines += [f"ask: {ask_text(item)} ({item.get('file_line', '-')})" for item in packet["ask"]]
-    lines += ["finding: " + module.item_text(item, "finding", "file_line") for item in packet["findings_remaining"]]
+        lines += ["ask: " + line for line in ask_lines(packet)]
+    lines += ["blocker: " + script_utils.one_line(module.item_text(item, "finding", "file_line"), 800)
+              for item in packet["blockers"]]
+    lines += ["finding: " + script_utils.one_line(module.item_text(item, "finding", "file_line"), 800)
+              for item in packet["findings_remaining"]]
     if packet["trailer"]:
         lines.append("loop note: " + script_utils.one_line(packet["trailer"], 800))
     return lines
@@ -646,6 +656,20 @@ BLOCKER_STOP_TEXT = {
                     "The full check could not run here. This is a toolkit or environment fault, not a code failure. "
                     "Present these to the user. Do not mark the phase done."),
 }
+
+
+def blocker_stop_next_step(state):
+    # A critical blocker the user can clear without a code change (a missing tool, a broken environment) goes on with
+    # one command: the review runs again on the same diff.
+    review_again_command = script_command("review-again")
+    return (f"if the blocker is a fault of the environment and the user has fixed it, run `{review_again_command}` to "
+            f"review the same diff again. Otherwise {review_stop_next_step(state)}")
+
+
+def ask_lines(packet):
+    # The reviewer's questions for the user, one line each, with the file and line they concern.
+    return [f"{script_utils.one_line(ask_text(item), 800)} ({item.get('file_line', '-')})"
+            for item in packet.get("ask", [])]
 
 
 def stop_on_review_status(repo_dir, state, module, packet):
@@ -668,14 +692,22 @@ def stop_on_review_status(repo_dir, state, module, packet):
             "Tool fault: " + packet["tool_fault"],
             "To run the review again on the same diff, invoke Skill code with `review-again`.")
         return True
+    if status == "critical-blocker" and packet["ask"] and not state.get("blockerCarried"):
+        # With asks, the asks route takes the rulings first, as after a cap: the blockers go to the review after it.
+        # Only the first blocker stop of a phase takes it, so a preset ruling cannot loop with no human.
+        state["blockerCarried"] = True
+        state["carriedFindings"] = carried_findings(module, packet, include_asks=False)
+        return False
     if status in BLOCKER_STOP_TEXT:
         question, instruction = BLOCKER_STOP_TEXT[status]
-        state["stage"] = "stopped"
+        state.update({"stage": "stopped", "stopReason": status})
         save_state(repo_dir, state)
-        blocker_lines = ["- " + module.item_text(item, "finding", "file_line") for item in packet["blockers"]]
+
+        blocker_lines = ["- " + script_utils.one_line(module.item_text(item, "finding", "file_line"), 800)
+                         for item in packet["blockers"]]
         stop_with_question(
-            repo_dir, question, [line[2:] for line in blocker_lines], review_stop_next_step(state), instruction,
-            *blocker_lines)
+            repo_dir, question, [line[2:] for line in blocker_lines], blocker_stop_next_step(state), instruction,
+            *blocker_lines, questions=ask_lines(packet))
         return True
     if status == "cap-reached":
         # The first cap of a phase sends the open findings to one more review-loop pass with a fresh round budget.
@@ -700,7 +732,8 @@ def stop_on_review_status(repo_dir, state, module, packet):
             repo_dir, "the review cap was reached with findings still open.", [line[2:] for line in remaining_lines],
             next_step,
             "The review cap was reached. Report these findings to the user. Do not mark the phase "
-            "done. The session stays dirty, so git commit stays blocked.", *remaining_lines)
+            "done. The session stays dirty, so git commit stays blocked.", *remaining_lines,
+            questions=ask_lines(packet))
         return True
     return False
 
@@ -728,6 +761,13 @@ def command_after_review(repo_dir, state, args):
     if packet["spec_iter"] is not None:
         state["spec_iter"] = packet["spec_iter"]
     state["packet"] = packet
+    rewrote_edited = set(state.get("checkRewroteEdited") or []) | set(packet["check_rewrote_edited"])
+    created = set(state.get("checkCreated") or []) | set(packet["check_created"])
+    changed = set(state.get("checkChanged") or []) | set(packet["check_changed"])
+    coder_edited = rewrote_edited | set(packet["files_touched"])
+    state["checkCreated"] = sorted(created - coder_edited)
+    state["checkChanged"] = sorted(changed - coder_edited)
+    state["checkRewroteEdited"] = sorted(rewrote_edited)
     state["reviewStatus"] = packet["status"]
     if stop_on_review_status(repo_dir, state, module, packet):
         return
@@ -790,19 +830,21 @@ def present_asks(repo_dir, state, asks):
 
 
 def ask_the_user(repo_dir, state, asks):
-    # A capped review leaves the gate dirty: the review after the rulings marks it.
-    is_capped = is_capped_review(state)
-    if not is_capped and not mark_review_gate_clean(repo_dir, state):
+    # A review that left findings open leaves the gate dirty: the review after the rulings marks it.
+    is_open = left_findings_open(state)
+    if not is_open and not mark_review_gate_clean(repo_dir, state):
         state["stage"] = "stopped"
         save_state(repo_dir, state)
         return
 
     state["stage"] = "asks"
     save_state(repo_dir, state)
-    capped_lines = []
-    if is_capped:
-        capped_lines = ["", "The review cap was reached with these still open. After asks-done, one more review-loop "
-                        "pass gets the rulings and these:", *[f"- {line}" for line in state["carriedFindings"]]]
+    open_findings_lines = []
+    if is_open:
+        cause = "The review cap was reached" if is_capped_review(state) else "The review stopped on a critical blocker"
+        open_findings_lines = ["", f"{cause} with these still open. After asks-done, "
+                                   "one more review-loop pass gets the rulings and these:",
+                               *[f"- {line}" for line in state["carriedFindings"]]]
     ask_user(
         repo_dir,
         f"ask the user about each review ask below in plain text and wait for the answers. Each answer is accepted "
@@ -811,7 +853,7 @@ def ask_the_user(repo_dir, state, asks):
         "a modified outcome, add `--change \"<the user's change text>\"`. If the repo's CLAUDE.md hands ask "
         "decisions to the session, decide each ask yourself instead of asking, and add `--by session` to asks-done.",
         *numbered_ask_lines(asks),
-        *capped_lines,
+        *open_findings_lines,
     )
 
 
@@ -890,14 +932,15 @@ def asks_coder_prompt(accepted_asks):
 
 def apply_asks_or_finish(repo_dir, state, outcomes, change_texts):
     # An accepted or modified ask is owed work: a coder applies it, then a review of that coder's diff runs (none when
-    # the diff is docs only) before the phase can finish. After a capped review, that review covers the whole phase
-    # and runs even on a docs-only diff, or when every ask was rejected with no coder before it.
+    # the diff is docs only) before the phase can finish. After a review that left findings open (a cap or a critical
+    # blocker), that review covers the whole phase and runs even on a docs-only diff, or when every ask was rejected
+    # with no coder before it.
     accepted_asks = [
         [item, outcome, change_text]
         for item, outcome, change_text in zip(state["asks"], outcomes, change_texts, strict=False)
         if outcome != "rejected"
     ]
-    if not accepted_asks and is_capped_review(state):
+    if not accepted_asks and left_findings_open(state):
         state["iter"] = 0
         return emit_review_dispatch(repo_dir, state)
     if not accepted_asks:
@@ -910,8 +953,8 @@ def apply_asks_or_finish(repo_dir, state, outcomes, change_texts):
     open_dispatch(state)
     save_state(repo_dir, state)
     model = "haiku" if state.get("modifier") == "+fast" else None
-    if is_capped_review(state):
-        review_sentence = ("One more review of the whole phase runs after it, with the findings the capped review "
+    if left_findings_open(state):
+        review_sentence = ("One more review of the whole phase runs after it, with the findings the last review "
                            "left open.")
     else:
         review_sentence = ("A review of that coder's diff runs after it (none when the diff is docs only) before the "

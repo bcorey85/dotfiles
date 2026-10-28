@@ -2176,6 +2176,8 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("ACTION: stop", out)
         self.assertNotIn("AGENT: review-loop", out)
         self.assertEqual("stopped", self.state()["stage"])
+        self.assertIn("The coder produced no reviewable change.", out)
+        self.assertNotIn("recommended /eng-spec", out)
 
     def test_coder_recommending_eng_spec_stops_instead_of_reviewing(self):
         self.begin_coder()
@@ -2183,6 +2185,7 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("after-coder")
         self.assertIn("ACTION: stop", out)
         self.assertNotIn("AGENT: review-loop", out)
+        self.assertIn("The coder recommended /eng-spec.", out)
 
     def test_a_coder_report_that_only_mentions_eng_spec_goes_on_to_review(self):
         out = self.coder_round("The task is not architectural, so no /eng-spec is needed.\n" + self.CODER_REPORT)
@@ -2526,6 +2529,19 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("Prompt is too long", out)
         self.assertIn("invoke Skill code with `review-again`", out)
         self.assertEqual("tool-fault", self.state()["stopReason"])
+
+    def test_a_tool_fault_with_a_reviewer_question_stops_as_a_tool_fault_without_carrying_a_blocker(self):
+        self.coder_round()
+        ask = ('{"finding": "f", "file_line": "backend/src/orders.ts:2", "question": "keep the cache?", '
+               '"change": "drop the cache", "gate": "code-reviewer", "class": "correctness"}')
+        self.hook("review-loop", self.TOOL_FAULT_PACKET + f"\nfixed: []\nask: [{ask}]")
+
+        self.step("after-review")
+
+        state = self.state()
+        self.assertEqual("tool-fault", state["stopReason"])
+        self.assertEqual("stopped", state["stage"])
+        self.assertNotIn("blockerCarried", state)
 
     def test_review_again_after_a_crashed_review_call_dispatches_the_review_loop(self):
         self.coder_round()
@@ -3378,6 +3394,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("marked done", out)
         self.assertEqual("stopped", self.state()["stage"])
         self.assertIn("- [ ] Phase 1:", self.plan_text())
+        return out
 
     def test_asks_coder_that_changed_nothing_and_has_an_open_question_stops(self):
         self.assert_unchanged_asks_coder_stops("Open question: which name should the rename use?")
@@ -3464,7 +3481,8 @@ class CodeStepTest(unittest.TestCase):
         self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nOpen question: which name should it use?")
 
     def test_asks_coder_already_done_line_with_an_eng_spec_recommendation_stops(self):
-        self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nRECOMMEND: eng-spec")
+        out = self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nRECOMMEND: eng-spec")
+        self.assertIn("The coder recommended /eng-spec.", out)
 
     def test_asks_coder_already_done_line_with_a_plan_impact_report_stops(self):
         self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\n" + self.IMPACT_REPORT)
@@ -4313,6 +4331,92 @@ class CodeStepTest(unittest.TestCase):
         commit_line = self.state()["commitLine"]
         self.assertNotIn("other", commit_line)
         self.assertIn("docs/plans/orders/spec.md", commit_line)
+
+    def test_a_file_the_full_check_created_stays_out_of_the_commit_line_and_is_named_with_a_delete_hint(self):
+        (self.repo / "backend/src/fresh.ts").write_text("export const fresh = 1\n")
+        (self.repo / "dist-out.js").write_text("built by the check\n")
+        state = {"baseline": {}, "plan": None, "checkCreated": ["dist-out.js"]}
+
+        text, commit_line, own_files = code_step_boundary.phase_commit(self.repo, state)
+
+        self.assertIn("backend/src/fresh.ts", own_files)
+        self.assertNotIn("dist-out.js", own_files)
+        self.assertNotIn("dist-out.js", commit_line)
+        self.assertIn("Created by the full check, not by the coder, and left out of the commit: dist-out.js", text)
+        self.assertIn("rm -- dist-out.js", text)
+
+    def test_a_tracked_file_the_full_check_changed_stays_out_of_the_commit_line_and_is_named_with_a_restore_hint(self):
+        (self.repo / "backend/src/fresh.ts").write_text("export const fresh = 1\n")
+        (self.repo / "generated.ts").write_text("rewritten by the check\n")
+        state = {"baseline": {}, "plan": None, "checkChanged": ["generated.ts"]}
+
+        text, commit_line, own_files = code_step_boundary.phase_commit(self.repo, state)
+
+        self.assertIn("backend/src/fresh.ts", own_files)
+        self.assertNotIn("generated.ts", own_files)
+        self.assertNotIn("generated.ts", commit_line)
+        self.assertIn("Changed by the full check, not by the coder, and left out of the commit: generated.ts", text)
+        self.assertIn("git checkout -- generated.ts", text)
+
+    def test_a_file_the_coder_edited_and_the_check_rewrote_stays_in_the_commit_with_a_warning_and_no_restore_hint(self):
+        (self.repo / "generated.ts").write_text("edited by the coder, then rewritten by the check\n")
+        state = {"baseline": {}, "plan": None, "checkRewroteEdited": ["generated.ts"]}
+
+        text, commit_line, own_files = code_step_boundary.phase_commit(self.repo, state)
+
+        self.assertIn("generated.ts", own_files)
+        self.assertIn("generated.ts", commit_line)
+        self.assertIn("Rewritten by the full check after the coder edited them, and kept in the commit: generated.ts",
+                      text)
+        self.assertNotIn("git checkout", text)
+
+    def test_a_file_named_both_changed_and_rewrote_edited_by_the_check_stays_in_the_commit_without_a_restore_hint(self):
+        (self.repo / "generated.ts").write_text("edited by the coder, then rewritten by the check\n")
+        state = {"baseline": {}, "plan": None, "checkChanged": ["generated.ts"],
+                 "checkRewroteEdited": ["generated.ts"]}
+
+        text, commit_line, own_files = code_step_boundary.phase_commit(self.repo, state)
+
+        self.assertIn("generated.ts", own_files)
+        self.assertIn("generated.ts", commit_line)
+        self.assertIn("kept in the commit: generated.ts", text)
+        self.assertNotIn("git checkout", text)
+
+    def test_the_files_a_hand_back_packet_says_the_check_touched_are_saved_and_left_out_of_the_commit(self):
+        self.coder_round()
+        (self.repo / "generated.ts").write_text("rewritten by the check\n")
+        (self.repo / "dist").mkdir()
+        (self.repo / "dist/out.js").write_text("built by the check\n")
+        self.hook("review-loop", self.LOOP_OK + '\ncheck_changed: ["generated.ts"]\ncheck_created: ["dist/out.js"]'
+                  '\ncheck_rewrote_edited: ["edited.ts"]')
+        self.step("after-review")
+        state = self.state()
+        self.assertEqual((["generated.ts"], ["dist/out.js"], ["edited.ts"]),
+                         (state["checkChanged"], state["checkCreated"], state["checkRewroteEdited"]))
+
+        text, commit_line, own_files = code_step_boundary.phase_commit(self.repo, state)
+
+        self.assertIn("backend/src/orders.ts", own_files)
+        for left_out in ("generated.ts", "dist/out.js"):
+            self.assertNotIn(left_out, own_files)
+            self.assertNotIn(left_out, commit_line)
+            self.assertIn(left_out, text)
+
+    def test_a_file_the_packet_says_the_coder_touched_is_not_kept_as_changed_or_created_by_the_check(self):
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK + '\nfiles_touched: ["generated.ts", "dist/out.js"]'
+                  '\ncheck_changed: ["generated.ts", "other.ts"]\ncheck_created: ["dist/out.js", "made.txt"]')
+        self.step("after-review")
+        state = self.state()
+        self.assertEqual((["other.ts"], ["made.txt"]), (state["checkChanged"], state["checkCreated"]))
+
+    def test_a_hand_back_packet_without_check_files_leaves_empty_lists_in_the_state(self):
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("after-review")
+        state = self.state()
+        self.assertEqual(([], []), (state["checkChanged"], state["checkCreated"]))
+        self.assertEqual([], state["checkRewroteEdited"])
 
     def test_the_commit_subject_carries_the_ticket_id_of_the_plan_folder_or_branch(self):
         self.assertEqual("LED-15: ", code_step_boundary.ticket_prefix({"plan": "docs/plans/LED-15-recap/spec.md"}))
@@ -6239,6 +6343,14 @@ class CodeForkToolsTest(unittest.TestCase):
         disallowed_tools = {tool.strip() for tool in disallowed.split(",")}
         self.assertNotIn("SendMessage", disallowed_tools)
         self.assertIn("takes no scope change mid-run", skill.read_text())
+
+    def test_the_code_fork_hands_a_question_back_even_when_the_task_names_a_session_to_ask(self):
+        skill = REAL_CLAUDE / "skills" / "code" / "SKILL.md"
+
+        skill_text = skill.read_text()
+
+        self.assertIn("Never send a question by message", skill_text)
+        self.assertIn("that session relays it", skill_text)
 
 
 if __name__ == "__main__":

@@ -40,6 +40,7 @@ from code_step_core import (
     session_pin,
 )
 from code_step_phase_end import block_a, block_b_or_c, manual_groups_of
+from code_step_usage import VERB_USAGES
 from script_utils import git_output, run_command
 from test_run_output import matches_no_test
 
@@ -533,7 +534,11 @@ def phase_commit(repo_dir, state):
     # Returns (text for the user, the commit command line, the files it commits); the text and line are "" with no
     # files.
     baseline = state.get("baseline") or {}
-    dirty_now = file_hashes(repo_dir)
+    rewrote_edited_by_check = sorted(set(state.get("checkRewroteEdited") or []))
+    created_by_check = sorted(set(state.get("checkCreated") or []) - set(rewrote_edited_by_check))
+    changed_by_check = sorted(set(state.get("checkChanged") or []) - set(rewrote_edited_by_check))
+    left_by_check = {*created_by_check, *changed_by_check}
+    dirty_now = {name: digest for name, digest in file_hashes(repo_dir).items() if name not in left_by_check}
     plan_name = state.get("plan")
     changed_since = [name for name in dirty_now if name in baseline and dirty_now[name] != baseline[name]]
     plan_had_earlier_edits = plan_name in changed_since
@@ -542,6 +547,33 @@ def phase_commit(repo_dir, state):
     edited_dirty = [name for name in changed_since if name != plan_name]
     if not own_files:
         return "", "", []
+
+    check_changed_note = []
+    if changed_by_check:
+        quoted_changed = " ".join(shlex.quote(name) for name in changed_by_check)
+        check_changed_note = [
+            "Changed by the full check, not by the coder, and left out of the commit: " + ", ".join(changed_by_check),
+            f"Restore them with: git checkout -- {quoted_changed}",
+            "",
+        ]
+
+    check_rewrote_edited_note = []
+    if rewrote_edited_by_check:
+        check_rewrote_edited_note = [
+            "Rewritten by the full check after the coder edited them, and kept in the commit: "
+            + ", ".join(rewrote_edited_by_check),
+            "Review their diff before you commit: they hold the coder's edits and the check's rewrite.",
+            "",
+        ]
+
+    check_created_note = []
+    if created_by_check:
+        quoted_created = " ".join(shlex.quote(name) for name in created_by_check)
+        check_created_note = [
+            "Created by the full check, not by the coder, and left out of the commit: " + ", ".join(created_by_check),
+            f"Delete them with: rm -- {quoted_created}",
+            "",
+        ]
 
     message = commit_message(repo_dir, state)
     quoted_files = " ".join(shlex.quote(name) for name in own_files)
@@ -560,6 +592,9 @@ def phase_commit(repo_dir, state):
         ]
     if left_out:
         lines += ["Dirty before the phase and left out of the commit: " + ", ".join(left_out), ""]
+    lines += check_changed_note
+    lines += check_rewrote_edited_note
+    lines += check_created_note
     lines += ["Commit command (not run by the script):", commit_line]
     return "\n".join(lines), commit_line, own_files
 
@@ -784,7 +819,7 @@ def with_simplify_lines(items, evidence, simplify_done_texts):
     if not simplify_done_texts:
         return evidence
 
-    simplify_lines = [f"\n  - Done: {text}" for text in simplify_done_texts]
+    simplify_lines = [f"\n  {plan_format.DONE_PREFIX}{text}" for text in simplify_done_texts]
 
     gate_position = concentration_gate_position(items)
     combined = list(evidence)
@@ -869,7 +904,7 @@ def tick_entry_stop(state, plan, number):
 def tick_plan_stop(repo_dir, state, args):
     # The stop text when `tick` has no plan run to act on, or None.
     if len(args) != 1:
-        return "usage: code_step.py tick <phase id>"
+        return VERB_USAGES["tick"].splitlines()[0]
     if state is None or not state.get("plan"):
         return "tick needs a plan run: there is no saved plan state. Run `start <plan>` first."
 
@@ -913,4 +948,14 @@ def command_tick(args):
 
 
 def command_verify(repo_dir, state, args):
+    # The user's fix of the plan's verification lines is the phase text from here on, so a later stop does not call it
+    # stale.
+    if state.get("plan") and state.get("phase") is not None:
+        try:
+            plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
+        except OSError:
+            plan_lines = None
+        if plan_lines is not None:
+            state["phaseText"] = plan_format.phase_text(plan_lines, state["phase"])
+
     finish_phase(repo_dir, state)

@@ -9,7 +9,8 @@
       it dispatched — is the last code change; with none, the loop start is, since the phase changed
       code before the loop ran. A handoff `tests-run` never exempts it. A loop returning
       `status: plan-impact` owes no check, and neither does a loop in a repo whose CLAUDE.md holds the line
-      `Full suite: CI` (full_check.full_suite_runs_in_ci): CI runs that repo's full suite. A stop with a
+      `Full suite: CI` (full_check.full_suite_runs_in_ci): CI runs that repo's full suite. That repo is the one the loop
+      reviewed (reviewed_root), else the hook cwd. A stop with a
       delivered SubagentHandback (one no hook denied) skips this check and the plan-file check.
       A second stop in a row passes (stop_hook_active), so a stuck loop cannot spin. The block
       reason reaches the loop as context and it keeps working. Register with matcher
@@ -417,9 +418,10 @@ def last_code_step(transcript):
     return max(transcript.steps(script_utils.CODERS), default=0)
 
 
-def full_suite_in_ci(cwd):
-    """True when the repo holding cwd (the process cwd when empty) leaves its full suite to CI."""
-    repo = script_utils.repo_root(cwd or os.getcwd())
+def full_suite_in_ci(transcript, cwd):
+    """True when the repo the loop reviewed (else the repo holding cwd, the process cwd when empty) leaves its full
+    suite to CI."""
+    repo = script_utils.repo_root(transcript.reviewed_root() or cwd or os.getcwd())
     return repo is not None and full_check_script.full_suite_runs_in_ci(repo)
 
 
@@ -723,7 +725,7 @@ def record_stop(hook, open_dispatches, ask_rows=(), blocked=False):
 def check_stop(hook):
     try:
         transcript = LoopTranscript(hook["agent_transcript_path"])
-        in_ci = full_suite_in_ci(hook.get("cwd"))
+        in_ci = full_suite_in_ci(transcript, hook.get("cwd"))
         scanned = scan(transcript, hook.get("last_assistant_message"), in_ci)
     except Exception:
         # A transcript the gate cannot read still ends an earlier wait: with no row, the last open count would stand.

@@ -24,6 +24,7 @@ You route nothing. `code_step.py` decides, and you run what it prints. Run `star
 3. Your hand-back is the contents of `<git dir>/code-step/say.md` verbatim, then the contents of `<git dir>/code-step/question.md` verbatim (`<git dir>` is the git dir of the run's checkout, the repo `start` ran in; `git -C <checkout> rev-parse --path-format=absolute --git-path code-step` prints the folder; read each file only when it exists and is not empty; a missing file adds nothing), then the `stage` queue if you ran it, then the lines printed after a `stop` or `judgment` ACTION. Add nothing else.
 4. Never write a prompt, a handoff block or a status yourself. Never edit the plan.
 5. A run takes no scope change mid-run. When a message reaches you during the run, reply at once with SendMessage to its sender (`main`, or the `from` address of a cross-session message): `/code takes no scope change mid-run; it was not applied. Wait for the hand-back, then start a new /code run with the change.` Then go on with the step you were on. Never pass the message to a coder or a review.
+6. Never send a question by message, even when the task text names a session or orchestrator to ask. A question reaches the session that ran /code only through question.md in your hand-back (rule 3), and that session relays it.
 
 ## Task
 

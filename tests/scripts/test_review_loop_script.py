@@ -341,7 +341,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("changed app.py before it died", packet["blockers"][0])
 
     def test_check_finder_names_the_full_check_when_claude_md_has_no_line(self):
-        completed = self.run_script({"check-finder": [{"result": 'Found it in the Makefile. {"command": "true"}'}],
+        found = 'Found it in the Makefile. {"command": "touch full-check-ran.flag"}'
+        completed = self.run_script({"check-finder": [{"result": found}],
                                      "code-reviewer": [{"result": CLEAN_REVIEW}],
                                      "smell-reviewer": [{"result": CLEAN_REVIEW}]},
                                     claude_md="Run make ci before you push.\n")
@@ -349,7 +350,28 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
         self.assertEqual(packet["status"], "converged")
+        self.assertTrue((self.repo / "full-check-ran.flag").is_file())
         self.assertEqual(self.fake_calls()[0]["key"], "check-finder")
+
+    def test_check_finder_command_holding_braces_still_runs(self):
+        found = json.dumps({"command": 'test -z "${SKIP}" && touch full-check-ran.flag'})
+        completed = self.run_script({"check-finder": [{"result": found}],
+                                     "code-reviewer": [{"result": CLEAN_REVIEW}],
+                                     "smell-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    claude_md="Run make ci before you push.\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertTrue((self.repo / "full-check-ran.flag").is_file())
+
+    def test_check_finder_reply_with_a_later_object_still_reads_the_command(self):
+        found = '{"command": "touch full-check-ran.flag"}\nCI config: {"ci": "github"}'
+        completed = self.run_script({"check-finder": [{"result": found}],
+                                     "code-reviewer": [{"result": CLEAN_REVIEW}],
+                                     "smell-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    claude_md="Run make ci before you push.\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertTrue((self.repo / "full-check-ran.flag").is_file())
 
     def test_a_repo_with_no_check_found_is_reviewed_and_its_packet_says_no_full_check_ran(self):
         no_check = '{"command": null, "reason": "no CI config or task runner"}'
@@ -940,6 +962,24 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "converged")
         self.assertIn("one exit, all re-read", packet["class_closure"])
 
+    def test_a_disposition_reply_with_braces_in_its_prose_still_reads_the_findings_object(self):
+        finding = "`app.py:2` the limit is 5, should be 20"
+        disposition = ('Kept the {fix} placeholder as written.\n\n'
+                       + json.dumps({"fix": [finding], "ask": [], "nit": []}))
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": "The limit looks wrong."}, {"result": CLEAN_REVIEW}],
+            "disposition": [{"result": disposition}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertIn(finding, [entry["finding"] for entry in packet["fixed"]])
+        self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 1)
+
     def test_a_coder_report_of_plan_impact_stops_with_the_report_and_no_second_review(self):
         report = "Cannot fix 1: it needs a new column the plan rules out.\nplan-impact: yes"
 
@@ -1037,13 +1077,128 @@ class ReviewLoopScriptTest(unittest.TestCase):
                 self.assertEqual((packet["status"], packet["full_check"]), ("converged", "not run (CI)"))
                 self.assertEqual([call["key"] for call in self.fake_calls()], ["code-reviewer"])
 
+    def test_a_full_check_that_exits_zero_with_no_runner_summary_is_unverified_and_gets_no_repair(self):
+        check = "echo 496 tests registered"
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]}, quality_check=check)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["full_check"], "unverified (exit 0, no runner summary)")
+        self.assertEqual((packet["full_check_command"], packet["full_check_summary"]), (check, "not found"))
+        self.assertNotIn("coder", [call["key"] for call in self.fake_calls()])
+
+    def test_a_passed_full_check_puts_the_command_and_the_runner_summary_in_the_packet(self):
+        check = "echo '4000 passed in 41.2s'"
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]}, quality_check=check)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["full_check"], "passed")
+        self.assertEqual((packet["full_check_command"], packet["full_check_summary"]), (check, "4000 passed in 41.2s"))
+
+    def test_files_a_check_rewrote_or_created_are_reported_and_never_reach_files_touched(self):
+        check = "echo generated v2 > notes.py; echo built > made.txt; echo '2 passed in 1s'"
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]}, quality_check=check)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual((packet["check_changed"], packet["check_created"]), (["notes.py"], ["made.txt"]))
+        self.assertEqual(packet["files_touched"], [])
+        self.assertEqual((self.repo / "notes.py").read_text(), "generated v2\n")
+
+    def test_a_file_the_check_rewrote_over_edits_it_held_before_is_reported_and_counts_as_touched(self):
+        check = "echo 'edited again' >> notes.py; echo '2 passed in 1s'"
+        (self.repo / "notes.py").write_text("edited by the coder\n")
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]}, quality_check=check)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["check_rewrote_edited"], ["notes.py"])
+        self.assertEqual((packet["check_changed"], packet["files_touched"]), ([], ["notes.py"]))
+
+    def test_a_file_the_first_failing_check_created_is_still_in_the_packet_after_the_repair_and_recheck(self):
+        check = "echo built > made.txt; echo 'FAIL: test_x'; exit 1"
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Repaired.", "edits": {"app.py": APP_FIXED}}, {"result": "Repaired."}],
+        }, quality_check=check)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["check_created"], ["made.txt"])
+
+    def test_a_failing_check_that_rewrote_a_tracked_file_leaves_it_out_of_the_repairs_files_touched(self):
+        check = "echo generated v2 > notes.py; echo 'FAIL: test_x'; exit 1"
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Repaired.", "edits": {"app.py": APP_FIXED}}, {"result": "Repaired."}],
+        }, quality_check=check)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertEqual(packet["files_touched"], ["app.py"])
+        self.assertEqual(packet["check_changed"], ["notes.py"])
+
+    def test_a_file_the_check_rewrote_counts_as_touched_when_the_repair_coder_edits_it_too(self):
+        check = "echo generated v2 > notes.py; echo 'FAIL: test_x'; exit 1"
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Repaired.", "edits": {"notes.py": "repaired by the coder\n"}},
+                      {"result": "Repaired."}],
+        }, quality_check=check)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["files_touched"], ["notes.py"])
+        self.assertEqual(packet["check_rewrote_edited"], ["notes.py"])
+        self.assertNotIn("notes.py", packet["check_changed"])
+
+    def test_a_file_the_check_changed_and_a_repair_coder_then_edited_is_reported_as_edited_not_changed(self):
+        check = ("if [ -f marker ]; then echo '2 passed in 1s'; else echo x > marker; "
+                 "echo generated v2 > notes.py; echo 'FAIL: test_x'; exit 1; fi")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Repaired.", "edits": {"notes.py": "repaired by the coder\n"}},
+                      {"result": "Repaired."}],
+            "closure": [{"result": CLOSED}],
+        }, quality_check=check)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertIn("notes.py", packet["files_touched"])
+        self.assertNotIn("notes.py", packet["check_changed"])
+        self.assertIn("notes.py", packet["check_rewrote_edited"])
+
+    def test_a_recheck_that_rewrites_a_file_an_earlier_run_changed_leaves_it_changed_when_no_coder_edited_it(self):
+        check = "echo run >> counter.txt; cp counter.txt notes.py; echo 'FAIL: test_x'; exit 1"
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Repaired.", "edits": {"app.py": APP_FIXED}}, {"result": "Repaired."}],
+        }, quality_check=check)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["check_changed"], ["notes.py"])
+        self.assertNotIn("notes.py", packet["check_rewrote_edited"])
+
     def test_a_full_check_past_its_limit_is_not_run_and_no_failure(self):
         spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
         loop_script = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(loop_script)
 
         with mock.patch.object(loop_script, "CHECK_TIMEOUT_SECONDS", 1):
-            result, _tail = loop_script.run_full_check(self.repo, self.scratch, "sleep 30")
+            result, _tail, _details = loop_script.run_full_check(self.repo, self.scratch, "sleep 30")
 
         self.assertEqual(result, "not run (timeout)")
         self.assertFalse(loop_script.full_check.is_failure(result))
@@ -1100,9 +1255,116 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         row, packet = self.stored_packet()
         self.assertEqual(packet["status"], "converged")
-        self.assertEqual(packet["findings_remaining"], [])
+        keys = [call["key"] for call in self.fake_calls()]
+        self.assertEqual((keys.count("code-reviewer"), keys.count("coder")), (2, 2))
         self.assertFalse(row["no_reviewer"])
         self.assertTrue(row["unreviewed_fix"])
+
+    def call_keys(self):
+        return [call["key"] for call in self.fake_calls()]
+
+    def test_a_fix_that_changes_only_markdown_ends_the_rounds_with_no_second_review(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}],
+            "coder": [{"result": "Fixed 1 in the docs.", "edits": {"CHANGES.md": "the limit is 20\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(self.call_keys().count("code-reviewer"), 1)
+        self.assertEqual(packet["files_touched"], ["CHANGES.md"])
+        self.assertTrue(row["unreviewed_fix"])
+
+    def test_a_fix_that_changes_only_a_test_file_leaves_no_source_reviewer_for_round_two(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}],
+            "coder": [{"result": "Fixed 1 with a test.", "edits": {"app.test.py": "assert limit == 20\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(self.call_keys().count("code-reviewer"), 1)
+        self.assertNotIn("test-reviewer", self.call_keys())
+
+    def test_a_new_source_file_with_a_test_sends_the_test_reviewer_and_reads_its_tagged_bullets(self):
+        (self.repo / "util.py").write_text("limit = 20\n")
+        (self.repo / "util.test.py").write_text("assert limit == 20\n")
+        tagged = ("- ask: `util.test.py:1` should this test pin the limit from the config?\n"
+                  "- nit: `util.test.py:1` name the test for the limit\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "test-reviewer": [{"result": tagged}],
+            "smell-reviewer": [{"result": CLEAN_REVIEW}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertIn("test-reviewer", self.call_keys())
+        self.assertEqual([entry["gate"] for entry in packet["ask"]], ["test-reviewer"])
+        self.assertEqual(packet["ask"][0]["file_line"], "util.test.py:1")
+        self.assertEqual([entry["file_line"] for entry in packet["nit"]], ["util.test.py:1"])
+
+    def test_a_full_check_failing_in_a_spec_file_stops_with_no_repair_coder(self):
+        failing_spec = "echo 'FAIL src/orders.spec.ts'; exit 1"
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]}, quality_check=failing_spec)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("orders.spec.ts", packet["blockers"][0])
+        self.assertNotIn("coder", self.call_keys())
+
+    def test_a_full_check_that_fails_after_the_class_repair_is_a_critical_blocker(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Closed the class.", "edits": {"broken.flag": "x\n"}}],
+            "closure": [{"result": '{"receipt": "one site left", "open": ["app.py:4 - same limit - fix it"]}'}],
+        }, quality_check="test ! -f broken.flag")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("failing after the class repair", packet["blockers"][0])
+        self.assertEqual(self.call_keys().count("coder"), 2)
+
+    def test_a_coder_skip_line_moves_the_finding_to_skipped_and_out_of_fixed(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "SKIPPED 1: the limit is meant to be 5", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["fixed"], [])
+        self.assertEqual(len(packet["skipped_fp"]), 1)
+        self.assertEqual(packet["skipped_fp"][0]["file_line"], "app.py:2")
+        self.assertIn("meant to be 5", packet["skipped_fp"][0]["reason"])
+
+    def test_a_nit_gets_its_file_line_in_the_packet_and_unlocated_when_it_names_none(self):
+        nit_review = ("## Fix\nNone\n\n## Ask\nNone\n\n## Nit\n- `app.py:3` rename `limit`\n- tidy the module\n\n"
+                      "Overall Assessment: PASS\n")
+
+        completed = self.run_script({"code-reviewer": [{"result": nit_review}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual([entry["file_line"] for entry in packet["nit"]], ["app.py:3", "unlocated"])
+
+    def test_no_usage_row_is_written_when_telemetry_is_off(self):
+        self.env["CLAUDE_TOOLKIT_TELEMETRY"] = "0"
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertFalse((self.scratch / "agent-usage.jsonl").exists())
 
     @unittest.skipIf(os.geteuid() == 0, "root reads a mode 000 file")
     def test_crash_writes_a_critical_blocker_packet_and_the_rows(self):

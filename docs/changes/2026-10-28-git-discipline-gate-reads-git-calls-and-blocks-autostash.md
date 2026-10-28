@@ -3,7 +3,7 @@ type: "Change"
 title: "git-discipline-gate reads git calls in command position and blocks autostash"
 description: "The gate parses each git call past git's own options and wrapper words, blocks stash in every form but list and show, blocks autostash on pull, rebase and merge, and lets git words inside heredocs, quotes and comments pass."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T18:00:00-05:00"}
-seq: 162
+seq: 170
 kind: "fix"
 components: ["script/git-discipline-gate"]
 evidence: ["judgment"]

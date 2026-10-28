@@ -3,7 +3,7 @@ type: "Change"
 title: "test-reviewer reads files in place, and the review packet names each blocked agent"
 description: "test-reviewer never copies the tree into a scratchpad and reports a refused call on a `Blocked:` line; review-loop carries it in a `blocked_agents` packet field, which handback renders under its own heading."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T15:00:00-05:00"}
-seq: 161
+seq: 169
 kind: "fix"
 components: ["agent/test-reviewer", "agent/review-loop", "script/handback"]
 evidence: ["judgment"]

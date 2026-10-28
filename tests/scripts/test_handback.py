@@ -145,6 +145,34 @@ class ParseTest(HandbackTestBase):
         self.assertIn("first part", packet["fixed"][0]["finding"])
         self.assertNotIn('"', packet["fixed"][0]["finding"])
 
+    def test_one_multi_line_ask_with_numbered_lines_inside_it_is_one_ask(self):
+        text = ('status: converged\niter: 1\nfixed: []\nask:\n'
+                '- {finding: "f", file_line: "a.ts:1", question: "which one?", change: "do it"}\n'
+                '1. the first option reads the cache\n'
+                '2. the second option reads the table\n')
+        packet = handback.load(text)
+        self.assertEqual(len(packet["ask"]), 1)
+        self.assertIn("which one?", packet["ask"][0]["question"])
+        self.assertIn("the second option reads the table", packet["ask"][0]["question"])
+        self.assertEqual(packet["ask"][0]["change"], "do it")
+
+    def test_bullet_lines_inside_a_numbered_ask_stay_in_that_ask(self):
+        numbered_first = ('status: converged\niter: 1\nfixed: []\nask:\n'
+                          '1. which cache? change: pick one\n'
+                          '- the first option reads the cache\n'
+                          '2. which table? change: pick one\n')
+        packet = handback.load(numbered_first)
+        self.assertEqual(len(packet["ask"]), 2)
+        self.assertIn("the first option reads the cache", packet["ask"][0]["question"])
+
+    def test_numbered_lines_after_a_blocker_mapping_stay_in_its_finding_text(self):
+        packet = handback.load(
+            'status: critical-blocker\niter: 1\nblockers:\n'
+            '- {finding: "bad", file_line: "a.ts:1"}\n'
+            '1. first detail\n2. second detail\n'
+        )
+        self.assertIn("second detail", packet["blockers"][0]["finding"])
+
     def test_plain_text_fixed_entry_becomes_a_mapping_with_its_path(self):
         packet = handback.load(
             "status: converged\niter: 1\nfixed:\n  - removed the dead branch | src/a.ts:4 | blocker: no\n"
@@ -346,6 +374,28 @@ class RenderTest(HandbackTestBase):
                 self.assertIn(f"Full check: {full_check}", handback.render(packet, "review"))
         passed = handback.load(CONVERGED + "full_check: passed\n")
         self.assertNotIn("Full check", handback.render(passed, "review"))
+
+    def test_the_unverified_full_check_and_its_new_fields_parse_and_the_created_files_render(self):
+        packet = handback.load(
+            CONVERGED + "full_check: unverified (exit 0, no runner summary)\n"
+            "full_check_command: make test\nfull_check_summary: not found\n"
+            'check_changed: ["gen.ts"]\ncheck_created: ["dist/out.js"]\n')
+
+        self.assertEqual("unverified (exit 0, no runner summary)", packet["full_check"])
+        self.assertEqual(("make test", "not found"), (packet["full_check_command"], packet["full_check_summary"]))
+        self.assertEqual((["gen.ts"], ["dist/out.js"]), (packet["check_changed"], packet["check_created"]))
+        rendered = handback.render(packet, "review")
+        self.assertIn("Full check: unverified (exit 0, no runner summary)", rendered)
+        self.assertIn("Changed by the full check, not by the coder (restore with `git checkout --` or keep): gen.ts",
+                      rendered)
+        self.assertIn("Created by the full check, not by the coder (delete or keep): dist/out.js", rendered)
+
+    def test_files_the_check_rewrote_after_the_coder_edited_them_parse_and_render_a_review_warning(self):
+        packet = handback.load(CONVERGED + 'check_rewrote_edited: ["edited.ts"]\n')
+
+        self.assertEqual(["edited.ts"], packet["check_rewrote_edited"])
+        rendered = handback.render(packet, "review")
+        self.assertIn("Hold coder edits and a full check rewrite, so review them (do not restore): edited.ts", rendered)
 
     def test_sections_print_before_the_trailer(self):
         packet = handback.load(NUMBERED)
@@ -819,6 +869,26 @@ class OneCheckedHandBackTest(HandbackTestBase):
 
         self.assertEqual(self.hand_back([full_check_run("t1"), coder_step("t2")], cwd=str(repo)), "")
         self.assertEqual(len(self.handback_rows()), 1)
+
+    def make_repos(self, reviewed_claude_md, cwd_claude_md):
+        reviewed, other = self.tmp / "reviewed-repo", self.tmp / "other-repo"
+        for repo, claude_md in ((reviewed, reviewed_claude_md), (other, cwd_claude_md)):
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            (repo / "CLAUDE.md").write_text(claude_md, encoding="utf-8")
+        prompt = {"type": "user", "message": {"role": "user", "content": f"review loop\nrepo: {reviewed}"}}
+        return prompt, str(other)
+
+    def test_a_hand_back_for_a_reviewed_repo_whose_full_suite_runs_in_ci_passes_from_another_cwd(self):
+        prompt, other = self.make_repos("- Full suite: CI\n", "# Other repo\n")
+
+        self.assertEqual(self.hand_back([prompt, full_check_run("t1"), coder_step("t2")], cwd=other), "")
+        self.assertEqual(len(self.handback_rows()), 1)
+
+    def test_a_hand_back_for_a_reviewed_repo_without_the_ci_line_is_denied_though_the_cwd_has_it(self):
+        prompt, other = self.make_repos("# Repo\n", "- Full suite: CI\n")
+
+        out = self.hand_back([prompt, full_check_run("t1"), coder_step("t2")], cwd=other)
+        self.assertIn("Step 6 execution gate", json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"])
 
     def test_a_clean_hand_back_after_a_full_check_passes(self):
         self.assertEqual(self.hand_back([coder_step("t1"), full_check_run("t2")]), "")

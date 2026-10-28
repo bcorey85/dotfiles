@@ -32,6 +32,8 @@ Installed 2026-10-20. Known gap: the guard against a plan file moved into the ta
 
 The four `closing-scripts-*` entries cover `adr` together with `verify-branch` and `refactor`. They read main-session cache read, output, responses and active seconds per turn, expected down.
 
+Reading, 2026-10-27 intake: three BETTER and one WORSE, kept, all four closed. The numbers and the reason the active-time reading stands apart are in the refactor-flow change of 2026-10-20.
+
 ## Back-out
 
 Restore the previous `skills/adr/SKILL.md` from the dotfiles history and delete `skills/adr/scripts/adr-flow.py`.

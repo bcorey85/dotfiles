@@ -281,6 +281,30 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("review2-code-reviewer call failed", packet["blockers"][0])
         self.assertFalse(row["no_reviewer"])
 
+    def test_the_second_reviewer_reads_the_fix_diff_from_a_file_not_from_its_prompt(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        second_prompt = [call["prompt"] for call in self.fake_calls() if call["key"] == "code-reviewer"][1]
+        self.assertNotIn("+limit = 20", second_prompt)
+        diff_path = re.search(r"^Round-one fix diff.*: (\S+)$", second_prompt, re.M).group(1)
+        self.assertIn("+limit = 20", pathlib.Path(diff_path).read_text())
+
+    def test_a_too_long_reviewer_prompt_is_a_tool_fault_not_a_finding(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": "Prompt is too long", "exit": 1}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+        })
+
+        self.assertNotEqual(completed.returncode, 0)
+        _, packet = self.stored_packet()
+        self.assertIn("Prompt is too long", packet["tool_fault"])
+        self.assertIn("review2-code-reviewer call failed", packet["tool_fault"])
+
     def test_coder_that_dies_after_editing_reports_its_files_and_its_reply(self):
         limit_hit = "You've hit your usage limit"
 

@@ -9,13 +9,15 @@ scope, first-round reviewers (code, plus smell and test reviewers on a large dif
 re-review by every reviewer that filed a fix and owns a changed file (the smell reviewer only past the size bar), the
 two-round cap, the full-check execution gate, the class-closure check, telemetry rows, and the hand-back packet.
 The full check runs through full_check.py: none in a repo whose CLAUDE.md holds `Full suite: CI`, where the coder
-calls run the changed files' tests, and a check past CHECK_TIMEOUT_SECONDS is killed with its process group. Either
-is no failure: the packet's `full_check` says `not run (CI)` or `not run (timeout)`.
+calls run the changed files' tests, none in a repo where no check is found, and a check past CHECK_TIMEOUT_SECONDS is
+killed with its process group. A check that fails on a missing module the repo declares as a dependency is an
+environment gap. None is a failure: the packet's `full_check` says `not run (CI)`, `not run (no check found; ...)`,
+`not run (timeout)` or `not run (environment gap: ...)`.
 
 Model steps are `claude -p` calls in auto permission mode, each with CLAUDE_FORMAT_HOOK_OFF=1 in its environment: the
 reviewers (agents code-reviewer, smell-reviewer, test-reviewer), the fix coder (agent coder) and the class-closure
 judgment (Sonnet). When the repo CLAUDE.md names no `Quality check` line, a Haiku check-finder call names the full
-check; when it names none, the run stops as critical-blocker before any reviewer. A Sonnet disposition call runs
+check; when it names none, the review runs with no full check. A Sonnet disposition call runs
 only when a reviewer's output has no Fix/Ask/Nit sections the parser can read. Every call is logged to
 <state dir>/loop-script/<agent id>/calls.jsonl with its session id, role, wall time and token counts.
 
@@ -292,18 +294,18 @@ def review_scope_lines(repo, owned, prior_issues, open_asks):
     return lines
 
 
-def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff="", open_asks=(), brief=""):
+def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_asks=(), brief=""):
+    # The fix diff goes in a file the reviewer reads: inlined, a large diff runs the call past its prompt limit.
     lines = review_scope_lines(repo, owned, prior_issues, open_asks)
     lines.append("Your scope is the owned files listed under Review scope (this round).")
     lines.append(CLASS_TAG_RULE)
-    if fix_diff:
-        lines.append("Round-one fix diff (what the coder changed since the first review; "
-                     "review only the owned files under Review scope (this round)):")
-        lines.append(fix_diff)
+    if fix_diff_path:
+        lines.append("Round-one fix diff (what the coder changed since the first review; read it, and review only "
+                     "the owned files under Review scope (this round)): " + fix_diff_path)
     if agent == "test-reviewer":
         lines.append("Source under test: the diff's non-test files.")
     if agent == "smell-reviewer":
-        lines.append("Bound: the round-one fix diff." if fix_diff else "Bound: the diff under first review.")
+        lines.append("Bound: the round-one fix diff." if fix_diff_path else "Bound: the diff under first review.")
     if brief:
         lines.append(brief)
     return "\n".join(lines)
@@ -442,8 +444,8 @@ def coder_prompt(repo, findings, small_items, files, gate_env=()):
 
 def check_command_for(repo, out):
     """The repo's full check: a CLAUDE.md `Quality check: \\`<command>\\`` line, else what a haiku call reads from the
-    repo's docs, task runners and CI config. None when CI runs the repo's full suite: full_check.run then runs
-    nothing."""
+    repo's docs, task runners and CI config. None when CI runs the repo's full suite or the finder names no check:
+    full_check.run then runs nothing."""
     if full_check.full_suite_runs_in_ci(repo):
         return None
 
@@ -463,7 +465,9 @@ def check_command_for(repo, out):
         command = parsed.get("command")
         if isinstance(command, str) and command.strip():
             return command.strip()
-        raise ValueError(f"no full check found in {repo}: {parsed.get('reason') or 'the check finder named none'}")
+        print(f"review-loop-script: no full check found in {repo}: "
+              f"{parsed.get('reason') or 'the check finder named none'}", file=sys.stderr)
+        return None
     raise ValueError(f'the check-finder reply holds no {{"command": ..}} object: {reply!r}')
 
 
@@ -720,7 +724,7 @@ class LoopRun:
         self.status = "converged"
         self.class_closure = NO_CLOSURE
         self.full_check = ""
-        self.round_two_fix_diff = ""
+        self.round_two_fix_diff_path = ""
         self.files = {}
         self.dispatches = []
         self.filed = {}  # {(reviewer, file): [finding entries]}, so a refiled finding updates its first row
@@ -739,7 +743,7 @@ class LoopRun:
 
     def review_one(self, dispatch):
         agent, owned = dispatch
-        prompt = reviewer_prompt(self.repo, agent, owned, self.prior_issues, self.round_two_fix_diff,
+        prompt = reviewer_prompt(self.repo, agent, owned, self.prior_issues, self.round_two_fix_diff_path,
                                  tuple(self.asks), self.brief)
         text = claude_call(f"review{self.iter_count}-{agent}", prompt, self.repo, self.out, agent=agent)
         return parse_review(text) or disposition_call(text, self.repo, self.out)
@@ -853,7 +857,9 @@ class LoopRun:
 
         self.files = scope(self.repo)
         if self.iter_count < ROUND_BUDGET:
-            self.round_two_fix_diff = "\n\n".join(coder_diffs)
+            fix_diff_file = self.out / f"round{self.iter_count}-fix.diff"
+            fix_diff_file.write_text("\n\n".join(coder_diffs))
+            self.round_two_fix_diff_path = str(fix_diff_file)
             self.dispatches = second_round_plan(round_fix, changed, skipped_findings, coder_diffs)
         return not (changed and all(path.endswith(".md") for path in changed))
 
@@ -1011,6 +1017,8 @@ def packet_message(outcome):
     }
     if outcome["full_check"]:
         fields["full_check"] = outcome["full_check"]
+    if outcome.get("tool_fault"):
+        fields["tool_fault"] = outcome["tool_fault"]
     if outcome["plan_change"]:
         fields["plan_impact"] = script_utils.one_line("; ".join(outcome["plan_change"]), limit=None)
     lines = []
@@ -1020,13 +1028,14 @@ def packet_message(outcome):
 
 
 def crash_outcome(progress, reason):
+    # A crash is a tool fault, not a finding: tool_fault tells code_step to offer review-again.
     fixed = [item for item in progress["fixed"] if isinstance(item, str) and item.strip()]
     return {"status": "critical-blocker", "iter": progress["iter"], "fixed": fixed,
             "skipped_fp": [], "blockers": [reason], "plan_change": [], "asks": [],
             "ask_gates": {}, "ask_ids": {}, "ask_rows": [], "class_closure": "none - the run ended in an error",
             "full_check": "",
             "files_touched": sorted(progress["files_touched"]), "nits": [],
-            "unreviewed_fix": False}
+            "unreviewed_fix": False, "tool_fault": reason}
 
 
 # ---------- hand-back rows ----------

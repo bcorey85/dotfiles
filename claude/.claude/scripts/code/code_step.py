@@ -124,6 +124,7 @@ from code_step_report import (
     every_accepted_ask_already_done,
     first_plan_impact,
     gate_results,
+    recommends_eng_spec,
     resolve_report_paths,
     tests_run_text,
     why_by_file,
@@ -238,16 +239,17 @@ def coder_changed_files(repo_dir, state, changed_now):
 
 def unreviewable_outcome(repo_dir, state, report, changed_files, changed_now):
     # "converged" when the asks coder changed nothing and named, for each confirmed ask, the file:line that already
-    # does it or the check that passed; "stop" for a report with no reviewable change or one that recommends
-    # /eng-spec; else None. Any other report with no change (a failed edit, a blocked hook, a question) stops.
+    # does it or the check that passed; "stop" for a report with no reviewable change or one whose marker line
+    # recommends /eng-spec; else None. Any other report with no change (a failed edit, a blocked hook, a question)
+    # stops.
     is_ask_fix = state["stage"] == "asks-coder"
     asks_coder_changed_nothing = is_ask_fix and changed_now == state.get("asksBaseline")
-    recommends_eng_spec = "/eng-spec" in report
-    report_raises_blocker = recommends_eng_spec or bool(first_plan_impact([report])) or bool(coder_flags(report))
+    escalates = recommends_eng_spec(report)
+    report_raises_blocker = escalates or bool(first_plan_impact([report])) or bool(coder_flags(report))
     if asks_coder_changed_nothing and not report_raises_blocker and every_accepted_ask_already_done(
             repo_dir, state, report):
         return "converged"
-    if not changed_files or asks_coder_changed_nothing or recommends_eng_spec:
+    if not changed_files or asks_coder_changed_nothing or escalates:
         return "stop"
     return None
 

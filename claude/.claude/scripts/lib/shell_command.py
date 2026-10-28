@@ -64,6 +64,23 @@ RUNNER_WRAPPERS = {
     "poetry": {"-C", "--directory", "-P", "--project"},
     "pipenv": {"--python", "--pypi-mirror"},
 }
+# By interpreter family: the name pattern, the flags after which it runs no program from stdin or a script (a module,
+# a version, help), the options that take the next word as their value, the letters that end a short-flag cluster
+# whose next word is code (`-c`, `-Bc`, `-le`), and the long flags that take the next word as code. nodejs is the
+# node family.
+INTERPRETER_FAMILIES = {
+    "python": {"name": r"python[\d.]*", "no_stdin_code_flags": {"-m", "-V", "-VV", "--version", "-h", "--help"},
+               "value_options": {"-W", "-X", "-Q"}, "inline_code_letters": "c", "inline_code_flags": set()},
+    "perl": {"name": r"perl", "no_stdin_code_flags": {"-v", "-V", "--version", "-h", "--help"},
+             "value_options": {"-I", "-M", "-C"}, "inline_code_letters": "eE", "inline_code_flags": set()},
+    "ruby": {"name": r"ruby", "no_stdin_code_flags": {"-v", "--version", "-h", "--help"},
+             "value_options": {"-I", "-r", "-C", "-E"}, "inline_code_letters": "e", "inline_code_flags": set()},
+    "node": {"name": r"node(?:js)?", "no_stdin_code_flags": {"-v", "--version", "-h", "--help"},
+             "value_options": {"-r", "--require", "--import", "-C", "--conditions"}, "inline_code_letters": "ep",
+             "inline_code_flags": {"--print", "--eval"}},
+    "php": {"name": r"php", "no_stdin_code_flags": {"-v", "--version", "-h", "--help"},
+            "value_options": {"-d", "-c", "-r"}, "inline_code_letters": "r", "inline_code_flags": set()},
+}
 
 
 def redirection_writes_file(operator, target):
@@ -253,6 +270,15 @@ def command_after_wrappers(words, peel_containers=True):
             words = rest[1:] if name == "timeout" else rest
         else:
             return words
+
+
+def segment_words(segment):
+    """The words of one command text, quotes removed: shlex.split reads back what shlex.join wrote, so quoted inline
+    code stays one word. Text shlex cannot read (an unbalanced quote) is split on whitespace."""
+    try:
+        return shlex.split(segment)
+    except ValueError:
+        return [word for word in re.split(r"[ \t\n]+", segment) if word]
 
 
 def names_code_runner(command):

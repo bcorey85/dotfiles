@@ -453,6 +453,122 @@ class ShellWriteGateTest(unittest.TestCase):
     def test_main_session_still_gets_skip_comment_in_deny_text(self):
         self.assertIn(HINT, self.assert_denied("sed -i s/a/b/ f"))
 
+    # interpreter writes
+
+    def test_script_that_reads_a_tracked_file_and_writes_a_temp_file_passes(self):
+        script = self.tmp / "convert.py"
+        script.write_text("import json\nconfig = json.load(open('tracked.txt'))\n"
+                          f"open('{self.tmp}/out.json', 'w').write('y')\n")
+        self.assert_allowed(f"python3 {script}", agent="coder")
+        self.assert_allowed(f"python3 -c \"x = open('tracked.txt').read(); open('{self.tmp}/o', 'w').write(x)\"")
+
+    def test_script_written_and_run_in_the_same_command_is_read_from_its_heredoc(self):
+        script = self.tmp / "rewrite.py"
+        command = f"cat > {script} <<'PY'\nopen('tracked.txt', 'w').write('y')\nPY\npython3 {script}"
+        self.assertIn(f"{self.repo}/tracked.txt", self.assert_denied(command, agent="coder"))
+
+    def test_untracked_script_that_writes_a_tracked_file_is_denied_naming_edit(self):
+        script = self.tmp / "rewrite.py"
+        script.write_text("import pathlib\npathlib.Path('tracked.txt').write_text('y\\n')\n")
+        reason = self.assert_denied(f"python3 {script}", agent="coder")
+        self.assertIn(f"{self.repo}/tracked.txt", reason)
+        self.assertIn("Edit tool", reason)
+        self.assertNotIn(HINT, reason)
+
+    def test_untracked_script_given_a_tracked_file_as_argument_is_denied(self):
+        script = self.tmp / "rewrite.py"
+        script.write_text("import sys\nwith open(sys.argv[1], 'w') as f:\n    f.write('y')\n")
+        self.assert_denied(f"python3 {script} tracked.txt")
+
+    def test_inline_code_that_writes_a_tracked_file_is_denied(self):
+        self.assert_denied("node -e \"require('fs').writeFileSync('tracked.txt', 'y')\"")
+
+    def test_inline_code_with_operator_characters_that_writes_a_tracked_file_is_denied(self):
+        commands = (
+            "python3 -c \"import pathlib; pathlib.Path('tracked.txt').write_text('y')\"",
+            "python3 -c \"x = 1 > 0; open('tracked.txt','w').write('y')\"",
+            "node -e \"[1].forEach(() => require('fs').writeFileSync('tracked.txt', 'y'))\"",
+            "perl -e 'open(my $f, \">\", \"tracked.txt\")'",
+            "python3 -Bc \"open('tracked.txt','w')\"",
+            "perl -le 'open(my $f, \">\", \"tracked.txt\")'",
+            "node --eval \"require('fs').writeFileSync('tracked.txt', 'y')\"",
+            "node -p \"require('fs').writeFileSync('tracked.txt', 'y')\"",
+            "python3 -W ignore -c \"open('tracked.txt','w')\"",
+            "python3 -c \"import shutil; shutil.copy('untracked.txt', 'tracked.txt')\"",
+            "deno eval \"Deno.writeTextFileSync('tracked.txt', 'y')\"",
+            "deno eval -p \"Deno.writeTextFileSync('tracked.txt', 'y')\"",
+            "bun -e \"Bun.write('tracked.txt', 'y')\"",
+            "npx -p tsx tsx -e \"require('fs').writeFileSync('tracked.txt', 'y')\"",
+            "npx tsx -e \"require('fs').createWriteStream('tracked.txt')\"",
+            "pypy3 -c \"open('tracked.txt','w')\"",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                self.assert_denied(command)
+
+    def test_coder_inline_code_that_writes_a_tracked_file_is_denied_without_skip_hint(self):
+        reason = self.assert_denied("python3 -c \"import pathlib; pathlib.Path('tracked.txt').write_text('y')\"",
+                                    agent="coder")
+        self.assertIn("This agent has no way to skip this gate.", reason)
+        self.assertNotIn(HINT, reason)
+
+    def test_script_after_a_value_flag_is_read_as_the_script(self):
+        script = self.tmp / "rewrite.py"
+        script.write_text("open('tracked.txt', 'w').write('y')\n")
+        self.assert_denied(f"python3 -W ignore {script}")
+        self.assert_denied(f"node -r ts-node/register {script}")
+
+    def test_script_after_a_flag_that_takes_no_value_is_checked_as_a_script(self):
+        script = self.tmp / "rewrite.py"
+        script.write_text("open('tracked.txt', 'w').write('y')\n")
+        ruby_script = self.tmp / "rewrite.rb"
+        ruby_script.write_text("File.write('tracked.txt', 'y')\n")
+        deno_script = self.tmp / "rewrite.ts"
+        deno_script.write_text("Deno.writeTextFileSync('tracked.txt', 'y')\n")
+        commands = (
+            f"python3 -I {script}",
+            f"python3 -E {script}",
+            f"ruby -E UTF-8 {ruby_script}",
+            f"npx -p tsx tsx {deno_script}",
+            f"deno run -c cfg.json {deno_script}",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                self.assert_denied(command)
+
+    def test_git_ignored_script_that_writes_a_tracked_file_passes(self):
+        (self.repo / ".gitignore").write_text("dist/\n")
+        (self.repo / "dist").mkdir()
+        (self.repo / "dist" / "server.js").write_text("require('fs').writeFileSync('tracked.txt', 'y')\n")
+        self.assert_allowed("node dist/server.js")
+
+    def test_script_that_reads_a_tracked_file_and_prints_a_quoted_arrow_passes(self):
+        reader = self.tmp / "read.py"
+        reader.write_text("data = open('tracked.txt').read()\nprint(data)\nprint('> quoted')\n")
+        self.assert_allowed(f"python3 {reader}")
+
+    def test_interpreter_runs_that_write_no_tracked_file_pass(self):
+        script = self.tmp / "rewrite.py"
+        script.write_text("import sys\nwith open(sys.argv[1], 'w') as f:\n    f.write('y')\n")
+        reader = self.tmp / "read.py"
+        reader.write_text("print(open('tracked.txt').read())\n")
+        for command in (f"python3 {script} untracked.txt", f"python3 {reader}", "python3 -m json.tool tracked.txt",
+                        "python3 -c \"print(open('tracked.txt').read().split('>'))\"",
+                        "python3 -c \"print(open('tracked.txt').read(), '>')\""):
+            with self.subTest(command=command):
+                self.assert_allowed(command)
+
+    def test_tracked_script_that_writes_a_tracked_file_passes(self):
+        (self.repo / "build.py").write_text("open('tracked.txt', 'w').write('y')\n")
+        subprocess.run(["git", "-C", str(self.repo), "add", "build.py"], check=True)
+        self.assert_allowed("python3 build.py")
+
+    def test_main_session_skip_comment_disarms_the_interpreter_check(self):
+        script = self.tmp / "rewrite.py"
+        script.write_text("open('tracked.txt', 'w').write('y')\n")
+        self.assertIn(HINT, self.assert_denied(f"python3 {script}"))
+        self.assert_allowed(f"python3 {script} {HINT}")
+
     def test_coder_new_file_outside_temp_dir_denied_naming_write(self):
         outside = pathlib.Path(tempfile.mkdtemp(dir="/var/tmp"))
         self.addCleanup(shutil.rmtree, outside, ignore_errors=True)

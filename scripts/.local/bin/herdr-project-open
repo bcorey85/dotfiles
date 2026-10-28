@@ -36,5 +36,5 @@ herdr-api workspace focus "$ws" >/dev/null
 
 # Only fresh workspaces get the layout.
 if [[ "$dir" == "$HOME/dev/"* ]]; then
-  herdr-dev "$dir" "$ws"
+  herdr-dev "$dir" "$ws" >/dev/null
 fi

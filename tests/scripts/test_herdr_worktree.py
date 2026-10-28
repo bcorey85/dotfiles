@@ -1,9 +1,12 @@
-"""Runs herdr-worktree against stub herdr commands.
+"""Runs herdr-worktree and herdr-dev against stub herdr commands.
 
-Checks the checkout it asks herdr to branch from and the brief it hands herdr-dev.
+Checks the checkout herdr-worktree asks herdr to branch from, the brief it hands herdr-dev, its check that the fork
+started, and how herdr-dev types the claude command.
 """
 import os
 import pathlib
+import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -11,8 +14,13 @@ import unittest
 
 from stubs import write_stub
 
-HERDR_WORKTREE = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin" / "herdr-worktree"
+BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
+HERDR_WORKTREE = BIN_DIR / "herdr-worktree"
+HERDR_DEV = BIN_DIR / "herdr-dev"
 CREATED_WORKSPACE = '{"result":{"workspace":{"workspace_id":"w1"}}}'
+CLAUDE_PANE = '{"result":{"pane":{"agent":"claude","agent_session":{"value":"s1"}}}}'
+SHELL_PANE = '{"result":{"pane":{"agent":null}}}'
+FORK_COMMAND = "claude --resume s1 --fork-session -- \"$(cat '/tmp/brief')\" && rm -f '/tmp/brief'"
 
 
 def git(cwd, *args):
@@ -41,9 +49,10 @@ class HerdrWorktreeTest(unittest.TestCase):
         write_stub(self.bin_dir / "herdr-api", "exit 0")
         write_stub(self.bin_dir / "herdr-dev", "exit 0")
 
-    def run_herdr_worktree(self, cwd, *args):
+    def run_herdr_worktree(self, cwd, *args, fork_start_timeout="30"):
         env = {key: value for key, value in os.environ.items() if key != "TUIOS_SOCKET"}
         env["HOME"] = str(self.root)
+        env["HERDR_WORKTREE_FORK_TIMEOUT"] = fork_start_timeout
         env["PATH"] = f"{self.bin_dir}:{env['PATH']}"
         return subprocess.run([str(self.bin_dir / "herdr-worktree"), *args], cwd=cwd, env=env,
                               capture_output=True, text=True)
@@ -70,11 +79,19 @@ class HerdrWorktreeTest(unittest.TestCase):
         herdr_args = self.herdr_args.read_text().splitlines()
         self.assertEqual(herdr_args[herdr_args.index("--base") + 1], linked_head)
 
-    def test_a_fork_from_a_linked_worktree_starts_the_forked_session_on_the_prompt_file(self):
-        claude_pane = '{"result":{"pane":{"agent":"claude","agent_session":{"value":"s1"}}}}'
-        write_stub(self.bin_dir / "herdr-api", f"[ \"$1 $2\" != \"pane current\" ] || echo '{claude_pane}'")
+    def stub_fork(self, fork_pane):
+        """The current pane runs claude; the new workspace's claude pane w1:p1 answers `pane get` with fork_pane."""
+        write_stub(self.bin_dir / "herdr-api", f"""case "$1 $2" in
+    "pane current") echo '{CLAUDE_PANE}' ;;
+    "pane get") echo '{fork_pane}' ;;
+esac""")
         herdr_dev_args = self.root / "herdr-dev-args"
-        write_stub(self.bin_dir / "herdr-dev", f'printf "%s\\0" "$@" > {herdr_dev_args}')
+        write_stub(self.bin_dir / "herdr-dev", f'printf "%s\\0" "$@" > {herdr_dev_args}\n'
+                                               f'echo w1:p1\nprintf "%s\\n" {shlex.quote(FORK_COMMAND)}')
+        return herdr_dev_args
+
+    def test_a_fork_from_a_linked_worktree_starts_the_forked_session_on_the_prompt_file(self):
+        herdr_dev_args = self.stub_fork(CLAUDE_PANE)
         brief = "Fix the \"limit\" bug.\nThe fork owns it now.\n"
         brief_file = self.root / "brief.md"
         brief_file.write_text(brief)
@@ -85,6 +102,59 @@ class HerdrWorktreeTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 0, finished.stderr)
         herdr_dev_values = herdr_dev_args.read_text().split("\0")
         self.assertEqual(herdr_dev_values[2:4], ["s1", brief.rstrip("\n")])
+
+    def test_a_fork_whose_pane_never_shows_claude_exits_non_zero_naming_the_pane_and_its_command(self):
+        self.stub_fork(SHELL_PANE)
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "Fix it.", "fix/new-thing",
+                                           fork_start_timeout="1")
+
+        self.assertNotEqual(finished.returncode, 0)
+        self.assertIn("w1:p1", finished.stderr)
+        self.assertIn(FORK_COMMAND, finished.stderr)
+
+
+class HerdrDevTest(unittest.TestCase):
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.root = pathlib.Path(os.path.realpath(scratch.name))
+        self.bin_dir = self.root / "bin"
+        self.bin_dir.mkdir()
+        self.herdr_calls = self.root / "herdr-calls"
+        write_stub(self.bin_dir / "herdr-api", f"""printf '%s\\n' "$*" >> {self.herdr_calls}
+case "$1 $2" in
+    "workspace get") echo '{{"result":{{"workspace":{{"active_tab_id":"w1:t1"}}}}}}' ;;
+    "pane list") echo '{{"result":{{"panes":[{{"tab_id":"w1:t1","pane_id":"w1:p1"}}]}}}}' ;;
+    "pane split") echo '{{"result":{{"pane":{{"pane_id":"w1:p2"}}}}}}' ;;
+    "tab create") echo '{{"result":{{"tab":{{"tab_id":"w1:t2"}},"root_pane":{{"pane_id":"w1:p3"}}}}}}' ;;
+esac""")
+
+    def run_herdr_dev(self, *args):
+        env = {key: value for key, value in os.environ.items() if key != "TUIOS_SOCKET"}
+        env["HOME"] = str(self.root)
+        env["PATH"] = f"{self.bin_dir}:{env['PATH']}"
+        return subprocess.run([str(HERDR_DEV), str(self.root), "w1", *args], env=env, capture_output=True, text=True)
+
+    def test_the_claude_command_is_typed_after_the_shell_prompt_shows_and_the_input_line_is_cleared(self):
+        finished = self.run_herdr_dev("s1", "Fix it.")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        claude_pane_calls = [call for call in self.herdr_calls.read_text().splitlines() if " w1:p1" in call]
+        typed = next(index for index, call in enumerate(claude_pane_calls) if call.startswith("pane send-text"))
+        self.assertTrue(claude_pane_calls[typed - 2].startswith("pane wait-output"), claude_pane_calls)
+        self.assertEqual(claude_pane_calls[typed - 1], "pane send-keys w1:p1 ctrl+u")
+
+    def test_the_prompt_file_is_removed_only_after_claude_succeeds_and_both_go_to_stdout(self):
+        finished = self.run_herdr_dev("s1", "Fix it.")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        claude_pane, claude_command = finished.stdout.splitlines()
+        self.assertEqual(claude_pane, "w1:p1")
+        prompt_file = re.search(r"cat '([^']+)'", claude_command).group(1)
+        self.addCleanup(os.remove, prompt_file)
+        self.assertEqual(pathlib.Path(prompt_file).read_text(), "Fix it.")
+        self.assertTrue(claude_command.endswith(f"&& rm -f '{prompt_file}'"), claude_command)
 
 
 if __name__ == "__main__":

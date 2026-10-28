@@ -318,6 +318,7 @@ class FullCheckSideEffectsTest(unittest.TestCase):
             "node test": "printf '# tests 5\\n# pass 3\\n# fail 2\\n'",
             "playwright": "printf '  2 failed\\n  3 passed (5.2s)\\n'",
             "go": "printf 'ok  \\texample.com/a\\t0.1s\\nFAIL\\texample.com/b\\t0.2s\\n'",
+            "dotfiles suite": "echo '9 tests in 2 files, wall-clock 1.0s, sum of per-file seconds 1.5s, 1 failed'",
         }
         for runner, command in cases.items():
             with self.subTest(runner):
@@ -336,6 +337,7 @@ class FullCheckSideEffectsTest(unittest.TestCase):
             "node test": "printf '# tests 3\\n# pass 3\\n# fail 0\\n'",
             "playwright": "printf '  3 passed (5.2s)\\n'",
             "go": "printf 'ok  \\texample.com/a\\t0.1s\\n'",
+            "dotfiles suite": "echo '9 tests in 2 files, wall-clock 1.0s, sum of per-file seconds 1.5s, 0 failed'",
         }
         for name, command in cases.items():
             with self.subTest(name):

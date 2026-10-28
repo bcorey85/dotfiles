@@ -199,6 +199,21 @@ class MatchesNoTestTest(unittest.TestCase):
         cached = "ok  \texample.com/a\t(cached)\n"
         self.assertEqual(["go: 1 packages ok"], test_run_output.runner_summaries(cached))
 
+    def test_the_dotfiles_suite_total_is_the_summary_of_a_passing_run(self):
+        total = "3679 tests in 95 files, wall-clock 428.1s, sum of per-file seconds 1400.6s, 0 failed"
+        output = f"test_a.py    3 tests    0.1s OK\n\n{total}\n"
+
+        self.assertEqual([total], test_run_output.runner_summaries(output))
+        self.assertEqual([], test_run_output.runner_summaries(
+            "0 tests in 0 files, wall-clock 0.0s, sum of per-file seconds 0.0s, 0 failed\n"))
+
+    def test_the_dotfiles_suite_total_is_kept_when_it_counts_failed_files(self):
+        total = "3679 tests in 95 files, wall-clock 428.1s, sum of per-file seconds 1400.6s, 2 failed"
+
+        found = test_run_output.runner_summaries(f"test_a.py    3 tests    0.1s FAILED\n\n{total}\nFAILED: tests\n")
+
+        self.assertEqual([total], found)
+
     def test_a_limit_of_none_returns_every_summary(self):
         cargo_lines = "".join(f"test result: ok. {count} passed; 0 failed\n" for count in range(1, 8))
 

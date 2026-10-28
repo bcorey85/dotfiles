@@ -87,6 +87,12 @@ blockers:
   - "public API field rename"
 """
 
+SETUP_FAULT = """status: setup-fault
+iter: 1
+blockers:
+  - "the full check could not run: no package.json"
+"""
+
 CAP = """status: cap-reached
 iter: 2 of 2
 findings_remaining:
@@ -233,6 +239,15 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("ACTION: stop", output)
         self.assertIn("auth bypass needs a design decision", output)
         self.assertIn("public API field rename", output)
+        self.assertIn("Do not mark the gate", output)
+        self.assertNotIn("render-and-finish", output)
+
+    def test_a_setup_fault_stops_without_a_mark_and_says_it_is_not_a_code_failure(self):
+        code, output = self.packet(SETUP_FAULT)
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertIn("no package.json", output)
+        self.assertIn("toolkit or environment fault, not a code failure", output)
         self.assertIn("Do not mark the gate", output)
         self.assertNotIn("render-and-finish", output)
 

@@ -107,7 +107,8 @@ CHECK_FINDER = (
     'Name the one shell command, run from the repo root, that runs this repo\'s full quality check: the lint, type '
     'check and test steps its CI gate runs. Read CLAUDE.md, AGENTS.md, the README, the Makefile, package.json, '
     'pyproject.toml and the files under .github/workflows to find it. Chain steps with && when no single target '
-    'runs them all. Name only commands those files name. Run nothing.\n\n'
+    'runs them all. Name only commands those files name. A step for a package in a subfolder is written '
+    '`(cd <folder> && <step>)`; leave a JS step out when the repo has no package.json. Run nothing.\n\n'
     'End your reply with one JSON object: {{"command": "<shell command>"}}, or {{"command": null, "reason": '
     '"<what is missing>"}} when the files name no check.'
 )
@@ -143,8 +144,9 @@ def token_total(payload):
 
 
 def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None):
-    """One `claude -p` model step. Returns the result text. A call that fails or prints no JSON reply raises."""
-    command = ["claude", "-p", prompt, "--output-format", "json", "--permission-mode", "auto"]
+    """One `claude -p` model step. Returns the result text. A call that fails or prints no JSON reply raises. The
+    prompt goes on stdin: a round-two prompt holds the fix diff and can pass the 128 KB limit of one argument."""
+    command = ["claude", "-p", "--output-format", "json", "--permission-mode", "auto"]
     if agent:
         command += ["--agent", agent]
     if model:
@@ -160,8 +162,9 @@ def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None):
         LIVE_CHILDREN.add(pid)
 
     try:
-        return_code, stdout, stderr = script_utils.run_process(command, repo, timeout=CALL_TIMEOUT_SECONDS,
-                                                               env=CHILD_ENV, on_start=child_started)
+        return_code, stdout, stderr = script_utils.run_process(command, repo, stdin=prompt,
+                                                               timeout=CALL_TIMEOUT_SECONDS, env=CHILD_ENV,
+                                                               on_start=child_started)
     finally:
         LIVE_CHILDREN.difference_update(child_pids)
     wall = round(now() - started, 1)
@@ -465,8 +468,8 @@ def check_command_for(repo, out):
 
 
 def run_full_check(repo, out, check_command, gate_env=()):
-    """(the full_check result, the log's last lines). A SIGTERM kills the check's process group with the claude
-    calls."""
+    """(the full_check result, the log's last lines, with the failing tests above them). A SIGTERM kills the check's
+    process group with the claude calls."""
     assignments = script_utils.environment_from_assignments(gate_env)
     check_pids = []
 
@@ -856,8 +859,12 @@ class LoopRun:
 
     def full_check_pass(self, check_command):
         """The full check, with one coder repair when it fails outside a spec file. A check that did not run, in CI
-        or past its time limit, is no failure."""
+        or past its time limit, is no failure; one the environment could not run stops as `setup-fault`."""
         self.full_check, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
+        if full_check.is_setup_fault_result(self.full_check):
+            self.stop_on_setup_fault(check_command, tail)
+            return
+
         if not full_check.is_failure(self.full_check):
             return
 
@@ -870,9 +877,21 @@ class LoopRun:
         self.fixed += gate_findings
         self.check_fixed += len(gate_findings)
         self.files_touched.update(gate_changed)
+        self.recheck_full_check(check_command, "full check still failing after one repair")
+
+    def recheck_full_check(self, check_command, failure_heading):
+        """The full check after a coder repair: a setup fault stops as `setup-fault`, any other failure as
+        `critical-blocker`."""
         self.full_check, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
-        if full_check.is_failure(self.full_check):
-            self.stop("critical-blocker", [f"full check still failing after one repair:\n{tail}"])
+        if full_check.is_setup_fault_result(self.full_check):
+            self.stop_on_setup_fault(check_command, tail)
+        elif full_check.is_failure(self.full_check):
+            self.stop("critical-blocker", [f"{failure_heading}:\n{tail}"])
+
+    def stop_on_setup_fault(self, check_command, tail):
+        """The full check could not run here, which no coder repair changes: stop for the user."""
+        self.stop("setup-fault", [f"the full check could not run in this environment (`{check_command}`), full "
+                                  f"log {self.out / 'full-check.log'}, last lines:\n{tail}"])
 
     def class_closure_pass(self, check_command):
         """The class-closure judgment on the fixes, and one coder pass with a full check on any class left open."""
@@ -886,9 +905,7 @@ class LoopRun:
         self.check_fixed += len(closure["open"])
         self.files_touched.update(class_changed)
         self.next_round()
-        self.full_check, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
-        if full_check.is_failure(self.full_check):
-            self.stop("critical-blocker", [f"full check failing after the class repair:\n{tail}"])
+        self.recheck_full_check(check_command, "full check failing after the class repair")
 
     def outcome(self, ask_ids, ask_rows):
         return {
@@ -896,7 +913,7 @@ class LoopRun:
             "iter": self.iter_count,
             "fixed": self.fixed,
             "skipped_fp": self.skipped_fp,
-            "blockers": self.remaining if self.status == "critical-blocker" else [],
+            "blockers": self.remaining if self.status in handback.BLOCKER_STATUSES else [],
             "plan_change": self.remaining if self.status == "plan-change" else [],
             "asks": self.asks,
             "ask_gates": self.ask_gates,

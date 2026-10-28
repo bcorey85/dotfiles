@@ -18,6 +18,8 @@ REAL_CLAUDE = pathlib.Path(os.environ.get("CODE_STEP_REAL_CLAUDE") or HERE.paren
 GATE_SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or REAL_CLAUDE / "scripts" / "code") / "coder_gate.py"
 GIT_IDENTITY = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t",
                 "GIT_COMMITTER_EMAIL": "t@example.com"}
+sys.path.insert(0, str(GATE_SCRIPT.parent.parent / "lib"))
+import check_scope  # noqa: E402
 
 
 class CoderGateEnvironmentTests(unittest.TestCase):
@@ -230,6 +232,14 @@ class CoderGateEnvironmentTests(unittest.TestCase):
                 self.assertEqual("deny", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
                 self.assertEqual([command], self.stored_gate()["coders"]["a1"]["failed"])
 
+    def test_a_denial_lists_the_failing_test_that_the_output_tail_cut_off(self):
+        self.gate_set("""echo "FAIL: test_x (app.tests.T)"; seq 1 3000; exit 1""")
+
+        hook = self.gate_hook()
+
+        reason = json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("Failing tests:\nFAIL: test_x (app.tests.T)", reason)
+
     def test_a_real_failure_beside_a_setup_fault_denies_with_only_the_real_failure(self):
         self.gate_set("exit 127", "echo assertion-broke; exit 3")
 
@@ -316,7 +326,7 @@ class CommandCheckScopeTests(unittest.TestCase):
         (makefile_folder / name).write_text(text)
 
     def scope(self, command):
-        return self.gate.command_check_scope(command, self.project)
+        return check_scope.command_check_scope(command, self.project)
 
     def test_importing_the_module_runs_no_command(self):
         with mock.patch.object(sys, "argv", ["coder_gate.py", "not-a-verb"]):
@@ -331,10 +341,33 @@ class CommandCheckScopeTests(unittest.TestCase):
             "jest --onlyChanged": "targeted",
             "git status": "none",
             "pytest 'unclosed": "unresolved",
+            "poetry run pytest": "whole",
+            "pipenv run pytest": "whole",
+            "poetry run pytest tests/test_x.py": "targeted",
+            ".venv/bin/python -m pytest": "whole",
+            ".venv/bin/python -m pytest tests/test_x.py": "targeted",
+            "python manage.py test": "whole",
+            "pipenv run python manage.py test": "whole",
+            "python manage.py test --noinput": "whole",
+            "python manage.py test app.tests": "targeted",
+            "python manage.py migrate": "none",
+            "python manage.py test -v 2": "whole",
+            "python manage.py test --settings x": "whole",
+            "./manage.py test": "whole",
+            "python backend/manage.py test": "whole",
+            "poetry run python backend/manage.py test app.tests": "targeted",
+            "python3.12 -m pytest": "whole",
+            "uv run pytest": "whole",
+            "timeout 60 docker exec c pytest": "whole",
         }
         for command, expected in cases.items():
             with self.subTest(command=command):
                 self.assertEqual(expected, self.scope(command))
+
+    def test_make_behind_a_runner_wrapper_is_read_from_the_makefile(self):
+        self.write_makefile("test:\n\tpytest\n")
+
+        self.assertEqual("whole", self.scope("poetry run make test"))
 
     def test_make_target_whose_recipe_runs_the_whole_suite_is_whole(self):
         self.write_makefile("test:\n\tpytest\n")
@@ -415,6 +448,18 @@ class CommandCheckScopeTests(unittest.TestCase):
         self.write_makefile("test:\n\tpytest $(TESTS)\n")
 
         self.assertEqual("unresolved", self.scope("TESTS=tests/a.py make test"))
+
+    def test_an_assignment_dropped_by_a_wrapper_lets_make_through_and_a_wrapper_inside_docker_is_peeled(self):
+        self.write_makefile("test:\n\tnpm test\n")
+        cases = {
+            "env TESTS=a make test": "unresolved",
+            "TESTS=a make test": "unresolved",
+            "docker exec x timeout 60 make test": "whole",
+            "docker exec x env TESTS=a make test": "unresolved",
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(expected, self.scope(command))
 
     def test_an_assignment_before_a_docker_call_lets_the_inner_make_through_only_when_the_call_forwards_it(self):
         self.write_makefile("test:\n\tpytest\n")

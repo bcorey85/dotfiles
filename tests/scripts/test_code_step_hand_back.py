@@ -8,6 +8,7 @@ import time
 
 import test_code_step as base
 
+SETUP_FAULT_PACKET = "status: setup-fault\niter: 1\nblockers:\n  - finding: no package.json\n    file_line: none"
 BLOCKER_PACKET = "status: critical-blocker\niter: 1\nblockers:\n  - finding: b\n    file_line: backend/src/orders.ts:1"
 CAP_PACKET = "status: cap-reached\niter: 2\nfindings_remaining:\n  - finding: x\n    file_line: a.ts:1"
 
@@ -52,6 +53,16 @@ class HandBackTest(base.CodeStepTest):
         self.assertIn("ACTION: stop", out)
         question_text = self.assert_stop_question("the review found a critical blocker", "b - backend/src/orders.ts:1")
         self.assertIn("start --restart", question_text)
+
+    def test_a_setup_fault_stop_writes_question_md_with_each_blocker_and_says_it_is_not_a_code_failure(self):
+        self.coder_round()
+        self.hook("review-loop", SETUP_FAULT_PACKET)
+
+        out = self.step("after-review")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertEqual(1, out.count("toolkit or environment fault, not a code failure"))
+        self.assert_stop_question("the review's full check could not run here", "no package.json")
 
     def test_a_review_cap_stop_writes_question_md_with_each_open_finding(self):
         self.coder_round()

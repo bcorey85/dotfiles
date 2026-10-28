@@ -185,11 +185,11 @@ their original `gate` and disposition; do not re-grade them on the way out.
 returns first, return `status: deferred` if `findings_remaining` holds a finding,
 else `status: converged`. At `iter >= 2` the `fix` findings of a gate failure get
 one coder per invocation: after the repair, run the gate once more;
-a second failure returns `status: critical-blocker`.
+a second failure returns `status: critical-blocker`, or `status: setup-fault` when the gate could not run.
 
 ## Step 6: Convergence — the execution gate
 
-**Execution gate (before declaring convergence)**: If the handoff's `tests-run` shows a real command with exit 0, accept it. If it is "none", missing, or has no exit code while code changed: run the project's quality-check command (from project AGENTS.md) ONCE, redirected to `/tmp/review-gate.log`. Exit 0 → proceed. Non-zero → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above.
+**Execution gate (before declaring convergence)**: If the handoff's `tests-run` shows a real command with exit 0, accept it. If it is "none", missing, or has no exit code while code changed: run the project's quality-check command (from project AGENTS.md) ONCE, redirected to `/tmp/review-gate.log`. Exit 0 → proceed. Non-zero → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above. A failure that shows the check could not run (exit 126 or 127, a runner that cannot start, no package.json where it ran, a run that found no test) returns `status: setup-fault` with the log tail in `blockers`; dispatch no coder. A missing module from outside the repo is a code failure and gets one coder repair.
 
 **Exception**: failures in acceptance spec tests (`*.spec.*`, or any test the plan's `Acceptance Criteria` file names as covering a criterion) are critical BLOCKERS — never route them to auto-fix. Either the code is wrong or the intent changed, and only the user decides which; an auto-fixer's cheapest path to green is editing the spec.
 
@@ -275,12 +275,12 @@ that returned nothing. Runs after Step 6b so `actioned` is real.
 Return exactly this, and nothing else of substance:
 
 ```
-status: converged | plan-impact | deferred | cap-reached | critical-blocker
+status: converged | plan-impact | deferred | cap-reached | critical-blocker | setup-fault
 iter: <n>                                # correctness rounds run
 spec_iter: <n>                           # specialist re-entries consumed (cap 2)
 fixed: [{finding, file_line, blocker}]   # `fix` findings you resolved — NEVER omit; a silent repair is a bug
 skipped_fp: [{item, reason}]             # `fix` findings dropped as false positives
-blockers: [<one line each>]              # status=critical-blocker
+blockers: [<one line each>]              # status=critical-blocker | setup-fault (the full check could not run here)
 findings_remaining: [{disposition, finding, file_line}]  # status=deferred | cap-reached
 plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
 ask: [{finding, file_line, question, change, gate, class}]  # never auto-fixed; the user answers these; change is the one edit an accepted answer makes; gate/class ride along so the caller can log the outcome

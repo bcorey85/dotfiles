@@ -1,5 +1,6 @@
-"""Checks that every toolkit Python file parses at the oldest Python ruff.toml targets. Hooks run as bare python3, and
-a hook that hits a SyntaxError fails open: the harness prints the error and lets the call through."""
+"""Checks that every toolkit Python file parses at the oldest Python ruff.toml targets. Hooks run on whatever python3
+hook-python finds, and a hook that hits a SyntaxError fails open: the harness prints the error and lets the call
+through."""
 import ast
 import json
 import re
@@ -11,7 +12,7 @@ import toolkit_paths
 TOOLKIT_ROOT = toolkit_paths.CLAUDE_DIR.resolve().parents[1]
 RUFF_CONFIG = TOOLKIT_ROOT / "ruff.toml"
 SETTINGS = toolkit_paths.CLAUDE_DIR / "settings.json"
-PYTHON_HOOK = re.compile(r"python3 ~/\.claude/(\S+)")
+PYTHON_HOOK = re.compile(r"hook-python ~/\.claude/(\S+)")
 
 
 def oldest_python_version():
@@ -35,7 +36,7 @@ def linted_python_files():
 
 
 def python_hook_scripts():
-    """The script file of every settings.json hook that runs as `python3 ~/.claude/<script>`."""
+    """The script file of every settings.json hook that runs as `... hook-python ~/.claude/<script>`."""
     settings = json.loads(SETTINGS.read_text())
 
     hook_scripts = set()

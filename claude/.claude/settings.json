@@ -248,7 +248,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/calibration_refs_guard.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/calibration_refs_guard.py"
           }
         ]
       },
@@ -257,7 +257,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/quality_check_cap.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/quality_check_cap.py"
           }
         ]
       },
@@ -266,7 +266,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/quality_check_cap.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/quality_check_cap.py"
           }
         ]
       },
@@ -284,11 +284,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/review/review_commit_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/review_commit_gate.py"
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/telemetry/log_agent_usage.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/telemetry/log_agent_usage.py"
           }
         ]
       },
@@ -297,19 +297,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/claudemd_linecount.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/claudemd_linecount.py"
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/dead_prose_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/dead_prose_gate.py"
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/comment_bloat_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/comment_bloat_gate.py"
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/stale_citation_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/stale_citation_gate.py"
           }
         ]
       },
@@ -318,7 +318,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/batch_reads_nudge.py",
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/batch_reads_nudge.py",
             "timeout": 5
           }
         ]
@@ -328,7 +328,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/code/code_step.py plan-hook"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/code_step.py plan-hook"
           }
         ]
       },
@@ -337,7 +337,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/code/code_step.py log-hook"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/code_step.py log-hook"
           }
         ]
       },
@@ -357,7 +357,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/quality_check_cap.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/quality_check_cap.py"
           }
         ]
       },
@@ -381,58 +381,58 @@
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/inline_interpreter_hint.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/inline_interpreter_hint.py"
           },
           {
             "type": "command",
             "if": "Bash(*rg*)",
-            "command": "python3 ~/.claude/scripts/gates/rg_path_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/rg_path_gate.py"
           },
           {
             "type": "command",
             "if": "Bash(*git*)",
-            "command": "python3 ~/.claude/scripts/gates/git_discipline_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/git_discipline_gate.py"
           },
           {
             "type": "command",
             "if": "Bash(*gh*)",
-            "command": "python3 ~/.claude/scripts/gates/git_discipline_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/git_discipline_gate.py"
           },
           {
             "type": "command",
             "if": "Bash(*git*)",
-            "command": "python3 ~/.claude/scripts/review/review_commit_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/review_commit_gate.py"
           },
           {
             "type": "command",
             "if": "Bash(*review-gate-mark*)",
-            "command": "python3 ~/.claude/scripts/review/review_commit_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/review_commit_gate.py"
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/shell_write_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/shell_write_gate.py"
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/quality_check_cap.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/quality_check_cap.py"
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/code/coder_gate.py bash-hook"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/coder_gate.py bash-hook"
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/wait_loop_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/wait_loop_gate.py"
           },
           {
             "type": "command",
             "if": "Bash(*git*)",
-            "command": "python3 ~/.claude/scripts/review/deferred_push_check.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/deferred_push_check.py"
           },
           {
             "type": "command",
             "if": "Bash(*gh*)",
-            "command": "python3 ~/.claude/scripts/review/deferred_push_check.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/deferred_push_check.py"
           }
         ]
       },
@@ -454,7 +454,7 @@
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/spec_budget_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/spec_budget_gate.py"
           },
           {
             "type": "command",
@@ -467,19 +467,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/agent_model_guard.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/agent_model_guard.py"
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/review/review_loop_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/review_loop_gate.py"
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/review/handback.py hook dispatch"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/handback.py hook dispatch"
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/code/code_step.py dispatch-hook"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/code_step.py dispatch-hook"
           }
         ]
       },
@@ -497,20 +497,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/code/coder_gate.py hook",
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/coder_gate.py hook",
             "timeout": 3600
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/code/code_step.py hook"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/code_step.py hook"
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/review/handback.py hook handback"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/handback.py hook handback"
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/review/open_child_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/open_child_gate.py"
           }
         ]
       },
@@ -559,7 +559,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/emit_orchestration.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/emit_orchestration.py"
           }
         ]
       },
@@ -568,11 +568,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/warn_skip_hooks.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/warn_skip_hooks.py"
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/calibration_guard.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/calibration_guard.py"
           }
         ]
       },
@@ -630,7 +630,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/review/review_loop_gate.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/review_loop_gate.py"
           }
         ]
       },
@@ -638,7 +638,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/code/code_step.py stop-hook"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/code_step.py stop-hook"
           }
         ]
       },
@@ -666,11 +666,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/format_changed.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/format_changed.py"
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/code/code_step.py say-hook"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/code_step.py say-hook"
           }
         ]
       },
@@ -722,7 +722,7 @@
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/scripts/gates/format_changed.py"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/format_changed.py"
           },
           {
             "type": "command",

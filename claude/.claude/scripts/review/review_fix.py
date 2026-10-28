@@ -22,10 +22,13 @@ renders the packet, logs the rows, posts the Aikido replies, and prints what the
       effect: posted replies, logged escapes and the nvim-jump are kept in the state. Two dispatches that return the
       same text are two runs.
   review_fix.py escape --escape "..."...   log escape rows from the saved packet state (fix, repeatable)
-  review_fix.py asks-done [--by <user|session>] <outcome>...
+  review_fix.py asks-done [--by <user|session>] [--packet <packet_id>] <outcome>...
                                          one outcome per ask, in order: accepted | rejected | modified, optional
                                          ":<one line note>" after it, accepted and not stored. Logs one row per ask,
                                          once. --by session when the session ruled on the asks itself; default user.
+                                         Answers one packet. When a second packet handed back before the first one's
+                                         asks were answered, both wait: asks-done then refuses and lists them, and
+                                         --packet <packet_id> names the one the outcomes belong to.
   review_fix.py decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>" [--plan <path>]
                                          Only --by user is the user's own word.
   review_fix.py decide discuss          print the decide commands for a plan-impact ruling and record nothing.
@@ -333,28 +336,52 @@ def gate_mark_line():
     return f"Gate: `{MARK_CLEAN}` as its own Bash command, unless it already ran in parallel with this call."
 
 
-def present_packet_asks(packet, state):
+def save_packet_asks(packet, state):
+    """Run nvim-jump once, save the packet's asks with stage `asks`, and return them."""
     asks = packet["ask"]
     if "jumped" not in state:
         state["jumped"] = run_nvim_jump(asks)
     state.update({"stage": "asks", "asks": asks})
     save_fix_state(state)
-    lines = [
-        f"The script ran nvim-jump for all asks ({state['jumped']}). Do not run it again.",
-        "Present each ask below with its question and its proposed change, and wait for the user's direction. "
-        "Never auto-fix an ask. If the repo's CLAUDE.md hands ask decisions to the session, decide each ask "
-        "yourself and add `--by session` to asks-done; otherwise wait for the user.",
-        f"After the user answers, run once: python3 ~/.claude/scripts/review/review_fix.py asks-done "
-        f"<outcome> x{len(asks)}  (accepted: make the proposed change | rejected: leave the code as it stands | "
-        "modified: make the user's change instead; optional ':<one line note>', accepted and not stored)",
-        gate_mark_line(),
-    ]
+    return asks
+
+
+def jumped_line(state):
+    return f"The script ran nvim-jump for all asks ({state['jumped']}). Do not run it again."
+
+
+def asks_done_line(asks, state):
+    """The asks-done command for the packet in `state`. It names --packet when another packet still waits, so the
+    command runs as printed."""
+    packet_flag = f"--packet {state['packet_id']} " if state.get("waiting_packets") else ""
+    return (f"After the user answers, run once: python3 ~/.claude/scripts/review/review_fix.py asks-done "
+            f"{packet_flag}<outcome> x{len(asks)}  (accepted: make the proposed change | rejected: leave the code as "
+            "it stands | modified: make the user's change instead; optional ':<one line note>', accepted and not "
+            "stored)")
+
+
+def ask_listing_lines(asks):
+    lines = []
     for number, item in enumerate(asks, 1):
         ask_class = item["class"] + (f" (was {item['class_raw']})" if item.get("class_raw") else "")
         lines.append(f"{number}. {item.get('file_line') or 'no file:line'}  [{item['gate']}/{ask_class}]")
         lines.append(f"   {item['question']}")
         if item.get("change"):
             lines.append(f"   Proposed change: {item['change']}")
+    return lines
+
+
+def present_packet_asks(packet, state):
+    asks = save_packet_asks(packet, state)
+    lines = [
+        jumped_line(state),
+        "Present each ask below with its question and its proposed change, and wait for the user's direction. "
+        "Never auto-fix an ask. If the repo's CLAUDE.md hands ask decisions to the session, decide each ask "
+        "yourself and add `--by session` to asks-done; otherwise wait for the user.",
+        asks_done_line(asks, state),
+        gate_mark_line(),
+        *ask_listing_lines(asks),
+    ]
     print_action("present-asks", *lines)
 
 
@@ -511,6 +538,7 @@ def read_message():
 def new_state(options, packet, packet_id):
     previous = read_state() or {}
     same_run = previous.get("packet_id") == packet_id
+    waiting_packets = [] if same_run else carried_waiting_packets(previous)
     fixed_paths = []
     for item in packet["fixed"]:
         fixed_paths += [path for path in handback.entry_paths(item) if path not in fixed_paths]
@@ -527,10 +555,28 @@ def new_state(options, packet, packet_id):
             "escapes_logged",
             "asks_logged",
             "plan_impact",
+            "waiting_packets",
         ):
             if key in previous:
                 state[key] = previous[key]
+    if waiting_packets:
+        state["waiting_packets"] = waiting_packets
     return state
+
+
+def has_unanswered_asks(packet_state):
+    asks = packet_state.get("asks") or []
+    logged = packet_state.get("asks_logged", [])
+    return any(index not in logged for index in range(len(asks)))
+
+
+def carried_waiting_packets(previous):
+    """The packets still waiting for their asks to be answered when a different packet replaces `previous`: the ones
+    `previous` already kept, then `previous` itself when it holds unanswered asks. Oldest first, one flat list."""
+    carried = list(previous.get("waiting_packets") or [])
+    if has_unanswered_asks(previous):
+        carried.append({key: value for key, value in previous.items() if key != "waiting_packets"})
+    return carried
 
 
 def print_logged(notes):
@@ -560,10 +606,16 @@ STOP_STATUSES = {
 
 def stop_for_status(packet, options, state):
     save_fix_state(state)
+    if packet["ask"]:
+        fill_packet_ask_ids(packet, state)
+        save_packet_asks(packet, state)
     replies, failures = post_aikido_replies(packet, options.aikido_targets, state)
 
     instruction, entry_lines = STOP_STATUSES[packet["status"]]
-    print_action("stop", instruction, *entry_lines(packet))
+    ask_lines = []
+    if packet["ask"]:
+        ask_lines = [jumped_line(state), asks_done_line(packet["ask"], state), *ask_listing_lines(packet["ask"])]
+    print_action("stop", instruction, *entry_lines(packet), *ask_lines)
     if replies:
         print("AIKIDO REPLIES POSTED:")
         print("\n".join(replies))
@@ -703,26 +755,75 @@ def log_fix_ask_outcomes(state, asks, outcomes, decided_by="user"):
     return ask_counts, failures
 
 
-def command_asks_done(argv):
-    state = load_fix_state()
-    asks = state.get("asks") or []
-    if state.get("stage") == "done" and asks:
-        return print_action("done", "The ask outcomes were already logged. Run nothing more.")
-    if state.get("stage") != "asks" or not asks:
-        raise UsageError("no asks are waiting. `asks-done` follows a packet that carried ask[] entries.")
+def waiting_ask_packets(state):
+    """The packets that hold unanswered asks: the current one, then the kept ones, oldest first."""
+    waiting = []
+    # A stage-asks state with every ask already logged is a retry that asks-done must still accept.
+    if has_unanswered_asks(state) or (state.get("stage") == "asks" and state.get("asks")):
+        waiting.append(state)
+    waiting += [kept for kept in state.get("waiting_packets") or [] if has_unanswered_asks(kept)]
+    return waiting
+
+
+def waiting_packet_lines(waiting):
+    lines = []
+    for packet_state in waiting:
+        asks = packet_state["asks"]
+        first = asks[0]
+        lines.append(f"- {packet_state['packet_id']}: {len(asks)} ask(s); first: "
+                     f"{first.get('file_line') or 'no file:line'} {one_line(first['question'], 120)}")
+    return lines
+
+
+def choose_asks_packet(waiting, packet_id):
+    """The one waiting packet the outcomes belong to. Refuses when several wait and none is named."""
+    if packet_id is None and len(waiting) == 1:
+        return waiting[0]
+    if packet_id is None:
+        raise UsageError("more than one packet holds unanswered asks. Rerun asks-done with --packet <packet_id> for "
+                         "the one you answer:\n" + "\n".join(waiting_packet_lines(waiting)))
+    for packet_state in waiting:
+        if packet_state["packet_id"] == packet_id:
+            return packet_state
+    raise UsageError(f"--packet {packet_id!r} is not a packet with unanswered asks. Waiting:\n"
+                     + "\n".join(waiting_packet_lines(waiting)))
+
+
+def asks_done_options(argv):
+    """(outcome words, who decided, the named packet_id or None) of an asks-done call."""
     outcome_words, decided_by = script_utils.pop_option(argv, "--by")
     if decided_by is None:
         decided_by = "user"
     if decided_by not in ("user", "session"):
         raise UsageError(f"asks-done --by needs user or session, not {decided_by!r}")
+
+    outcome_words, packet_id = script_utils.pop_option(outcome_words, "--packet")
+    if packet_id == "":
+        raise UsageError("asks-done --packet needs a packet_id")
+    return outcome_words, decided_by, packet_id
+
+
+def command_asks_done(argv):
+    state = load_fix_state()
+    waiting = waiting_ask_packets(state)
+    if not waiting:
+        if state.get("stage") == "done" and state.get("asks"):
+            return print_action("done", "The ask outcomes were already logged. Run nothing more.")
+        raise UsageError("no asks are waiting. `asks-done` follows a packet that carried ask[] entries.")
+
+    outcome_words, decided_by, packet_id = asks_done_options(argv)
+    target = choose_asks_packet(waiting, packet_id)
+    asks = target["asks"]
     outcomes = read_outcomes(outcome_words, asks)
 
-    ask_counts, failures = log_fix_ask_outcomes(state, asks, outcomes, decided_by)
-    if not failures:
+    ask_counts, failures = log_fix_ask_outcomes(target, asks, outcomes, decided_by)
+    if not failures and target is state:
         state["stage"] = "done"
+    if not failures and target is not state:
+        state["waiting_packets"] = [kept for kept in state["waiting_packets"] if kept is not target]
     save_fix_state(state)
 
-    rows_logged = sum(1 for index in state["asks_logged"] if not is_plan_impact_ask(asks[index]))
+    rows_logged = sum(1 for index in target["asks_logged"] if not is_plan_impact_ask(asks[index]))
     summary = f"Logged {rows_logged} of {len(asks)} ask outcome row(s)."
     if decided_by == "session":
         summary += " The session ruled, not the user."

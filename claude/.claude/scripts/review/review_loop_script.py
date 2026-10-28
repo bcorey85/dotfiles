@@ -498,15 +498,21 @@ def closure_check(repo, out, fixed):
         '"open": ["<file:line - defect - correction>", ...]}. "open" is empty when every class is closed.'
     )
     reply = claude_call("class-closure", prompt, repo, out, model="sonnet", tools="Read,Grep")
-    for match in reversed(list(re.finditer(r"\{.*\}", reply, re.S))):
+    # Decode from each "{" back to front: prose before the object can hold braces of its own ("{CUBE}").
+    decoder = json.JSONDecoder()
+    brace_positions = [match.start() for match in re.finditer(r"\{", reply)]
+    for position in reversed(brace_positions):
         try:
-            parsed = json.loads(match.group(0))
-            parsed_open = parsed.get("open")
-            open_findings = ([item for item in parsed_open if isinstance(item, str) and item.strip()]
-                             if isinstance(parsed_open, list) else [])
-            return {"receipt": str(parsed.get("receipt", "")), "open": open_findings}
+            parsed, _ = decoder.raw_decode(reply, position)
         except json.JSONDecodeError:
             continue
+        if not isinstance(parsed, dict) or "open" not in parsed:
+            continue
+
+        parsed_open = parsed.get("open")
+        open_findings = ([item for item in parsed_open if isinstance(item, str) and item.strip()]
+                         if isinstance(parsed_open, list) else [])
+        return {"receipt": str(parsed.get("receipt", "")), "open": open_findings}
     raise ValueError(f'the class-closure reply holds no {{"receipt": .., "open": [..]}} object: {reply!r}')
 
 

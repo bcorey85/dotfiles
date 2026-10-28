@@ -84,6 +84,7 @@ from code_step_core import (
     awaits_resumed_coder,
     awaits_resumed_review,
     branch_label,
+    carried_start_words,
     clear_question,
     clear_say,
     committed_since,
@@ -495,7 +496,7 @@ def resume_start(repo_dir, state):
 
 
 def resume_done(repo_dir, state):
-    command_start([state["modifier"]] if state.get("modifier") else [])
+    command_start(carried_start_words(state))
 
 
 def resume_after_coder(repo_dir, state):

@@ -25,7 +25,7 @@ okf_version: "0.2"
 
 # 2026-10-28
 
-* [Plan check fails a plain bullet under Automated Verification](2026-10-28-plan-check-fails-a-plain-bullet-under-automated-verification.md) - A top-level list item under `#### Automated Verification` that is not a checkbox fails the strict read with its file, line and the checkbox form, instead of being skipped unrun.
+* [A plain bullet under Automated Verification is read as an open check](2026-10-28-a-plain-bullet-under-automated-verification-is-read-as-an-open-check.md) - A top-level list item under `#### Automated Verification` that is not a checkbox is read as an open `- [ ]` item, and plan check prints a file:line warning for it, instead of the item being skipped unrun.
 
 # 2026-10-27
 

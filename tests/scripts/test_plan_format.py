@@ -508,12 +508,13 @@ AUTOMATED_PLAN = """# Plan
 
 
 class AutomatedVerificationRowsTest(unittest.TestCase):
-    def test_rows_are_the_checkbox_items_under_the_automated_heading_with_their_indexes(self):
+    def test_rows_are_the_top_level_items_under_the_automated_heading_with_their_indexes(self):
         lines = AUTOMATED_PLAN.splitlines()
 
         rows = plan_format.automated_verification_rows(lines)
 
-        self.assertEqual([6, 7], [index for index, _ in rows])
+        self.assertEqual([6, 7, 9], [index for index, _ in rows])
+        self.assertEqual("- [ ] N/A not an item", rows[2][1])
         self.assertTrue(rows[0][1].startswith("- [ ] **Test-verified**"))
 
     def test_a_manual_verification_item_and_a_level_three_heading_are_not_rows(self):
@@ -544,27 +545,40 @@ class AutomatedVerificationRowsTest(unittest.TestCase):
                 self.assertIn(plan_format.AUTOMATED_HEADING, str(raised.exception))
                 self.assertIn("#### Manual Verification:", str(raised.exception))
 
-    def test_a_plain_list_item_under_automated_verification_raises_with_its_file_line_and_the_checkbox_form(self):
-        for item in ("- `make test`", "* `make test`", "1. `make test`", "- N/A — docs only"):
+    def test_a_plain_list_item_under_automated_verification_is_read_as_an_open_box(self):
+        for strict in (False, True):
+            with self.subTest(strict=strict):
+                lines = ["#### Automated Verification:", "- [ ] a `x`", "- `make test`", "* `make lint`", "1. `make b`"]
+
+                rows = plan_format.automated_verification_rows(lines, strict=strict)
+
+                self.assertEqual([(1, "- [ ] a `x`"), (2, "- [ ] `make test`"), (3, "- [ ] `make lint`"),
+                                  (4, "- [ ] `make b`")], rows)
+
+    def test_a_plain_n_a_list_item_is_read_as_an_n_a_item(self):
+        for item in ("- N/A — docs only", "- N/A: recap only", "- N/A. No gates."):
             with self.subTest(item=item):
-                lines = ["#### Automated Verification:", "- [ ] a `x`", item]
+                lines = ["#### Automated Verification:", item]
 
-                with self.assertRaises(plan_format.PlanFormatError) as raised:
-                    plan_format.automated_verification_rows(lines, "plan.md", 10, strict=True)
+                [(_, line)] = plan_format.automated_verification_rows(lines)
 
-                self.assertIn("plan.md:12:", str(raised.exception))
-                self.assertIn("- [ ] <check>", str(raised.exception))
+                self.assertTrue(plan_format.NO_AUTOMATED_CHECK.match(line))
 
     def test_indented_lines_and_items_outside_the_section_are_not_plain_list_items(self):
         lines = ["- `make test`", "#### Automated Verification:", "- [ ] a `x`", "  - Done: ran it", "   1. step",
                  "#### Manual Verification:", "- open the page"]
 
         self.assertEqual([(2, "- [ ] a `x`")], plan_format.automated_verification_rows(lines, strict=True))
+        self.assertEqual([], plan_format.plain_verification_item_warnings(lines))
 
-    def test_a_plain_list_item_is_skipped_unless_strict(self):
-        lines = ["#### Automated Verification:", "- `make test`"]
+    def test_a_plain_list_item_warns_with_its_file_line_and_the_checkbox_form(self):
+        lines = ["#### Automated Verification:", "- [ ] a `x`", "- `make test`"]
 
-        self.assertEqual([], plan_format.automated_verification_rows(lines))
+        warnings = plan_format.plain_verification_item_warnings(lines, "plan.md", 10)
+
+        self.assertEqual(1, len(warnings))
+        self.assertIn("plan.md:12: warning:", warnings[0])
+        self.assertIn("- [ ] <check>", warnings[0])
 
     def test_a_misworded_heading_reads_as_no_items_unless_strict(self):
         lines = ["#### Verification (automated)", "- [ ] a `x`"]

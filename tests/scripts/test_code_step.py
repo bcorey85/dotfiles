@@ -5518,15 +5518,23 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn(f":{bad_line}:", result.stdout)
         self.assertIn("#### Automated Verification", result.stdout)
 
-    def test_plan_check_fails_a_plain_bullet_under_automated_verification_with_its_line_and_the_checkbox_form(self):
+    def test_plan_check_warns_on_a_plain_bullet_under_automated_verification_and_passes(self):
         text = self.bad_item_plan("- `git grep -n --untracked console.log -- backend/src/orders.ts`")
         bad_line = text.splitlines().index("- `git grep -n --untracked console.log -- backend/src/orders.ts`") + 1
 
         result = self.plan_check(text)
 
-        self.assertEqual(1, result.returncode)
-        self.assertIn(f":{bad_line}:", result.stdout)
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertIn(f":{bad_line}: warning:", result.stdout)
         self.assertIn("- [ ] <check>", result.stdout)
+
+    def test_plan_check_fails_a_plain_bullet_with_no_backticked_command_like_a_box(self):
+        text = self.bad_item_plan("- **Check**: the orders pass, see the log")
+
+        result = self.plan_check(text)
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("it has no backticked command and is not marked N/A", result.stdout)
 
     def test_plan_check_fails_an_item_with_no_backticked_command(self):
         text = self.bad_item_plan("- [ ] **Check**: the orders pass, see the log")

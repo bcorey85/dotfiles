@@ -214,7 +214,15 @@ class CodeStepTest(unittest.TestCase):
             return None
         return json.loads(finished.stdout)["hookSpecificOutput"]
 
-    def hook(self, agent_type, message, agent_id="a1", session=SESSION, launched=True, cwd=None):
+    def next_default_agent_id(self, agent_type):
+        # A review-loop agent hands back once; each later default hand-back in a test is a new agent. Coders keep a1.
+        if agent_type != "review-loop":
+            return "a1"
+        self.default_loop_hand_backs = getattr(self, "default_loop_hand_backs", 0) + 1
+        return f"a{self.default_loop_hand_backs}"
+
+    def hook(self, agent_type, message, agent_id=None, session=SESSION, launched=True, cwd=None):
+        agent_id = agent_id or self.next_default_agent_id(agent_type)
         # The fork hands back. The PreToolUse hooks of settings.json see the call: the coder gate may deny it or stamp
         # its message, the hand-back packet hook may deny it, and so may the code-step hook. A hand-back that goes
         # through is logged by the PostToolUse log hook with the message as stamped; a denied one never reaches it.
@@ -1486,8 +1494,6 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("- [x] Phase 1:", self.plan_text())
         self.assertIn("- [ ] Phase 2:", self.plan_text())
 
-    LOOP_OK_SECOND_ROUND = "status: converged\niter: 2\nfixed: []\nask: []\nnit: []"
-
     def test_a_hand_back_whose_stop_the_gate_blocked_leaves_the_phase_open(self):
         self.coder_round()
         self.hook("review-loop", self.LOOP_OK)
@@ -1501,18 +1507,18 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("- [ ] Phase 1:", self.plan_text())
         self.assertEqual("review", self.state()["stage"])
 
-    def test_the_hand_back_after_a_blocked_stop_marks_the_phase_done(self):
+    def test_the_stop_after_a_blocked_stop_marks_the_phase_done_with_the_one_delivered_hand_back(self):
+        # The hand-back hook denies a loop's second hand-back, so the first packet stands once a later stop passes.
         self.coder_round()
         self.hook("review-loop", self.LOOP_OK)
         self.logged_stop_row([], blocked=True)
         self.step("after-review")
-        self.hook("review-loop", self.LOOP_OK_SECOND_ROUND, launched=False)
         self.logged_stop_row([])
 
         out = self.step("after-review")
 
         self.assertIn("Phase 1 marked done", out)
-        self.assertEqual(2, self.state()["iter"])
+        self.assertEqual(1, self.state()["iter"])
 
     def test_resume_waits_out_a_stop_the_gate_blocks_after_the_hand_back(self):
         self.coder_round()
@@ -1520,18 +1526,14 @@ class CodeStepTest(unittest.TestCase):
         self.hook("review-loop", self.LOOP_OK)
         self.late_stop_row(0.5, [], blocked=True)
 
-        def hand_back_and_stop():
-            self.hook("review-loop", self.LOOP_OK_SECOND_ROUND)
-            self.logged_stop_row([])
-
-        timer = threading.Timer(1.5, hand_back_and_stop)
+        timer = threading.Timer(1.5, self.logged_stop_row, args=([],))
         self.addCleanup(timer.cancel)
         timer.start()
 
         out = self.step("resume")
 
         self.assertIn("Phase 1 marked done", out)
-        self.assertEqual(2, self.state()["iter"])
+        self.assertEqual(1, self.state()["iter"])
 
     def test_failed_prohibition_blocks_marking(self):
         self.coder_round(source="console.log(1)\n")
@@ -2015,13 +2017,22 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("ACTION: stop", out)
         self.assertNotIn("AGENT: review-loop", out)
         self.assertEqual("stopped", self.state()["stage"])
+        self.assertIn("The coder produced no reviewable change.", out)
+        self.assertNotIn("recommended /eng-spec", out)
 
     def test_coder_recommending_eng_spec_stops_instead_of_reviewing(self):
         self.begin_coder()
-        self.hook("coder", "This is architectural, I recommend /eng-spec.")
+        self.hook("coder", "This is architectural.\nRECOMMEND: eng-spec")
         out = self.step("after-coder")
         self.assertIn("ACTION: stop", out)
         self.assertNotIn("AGENT: review-loop", out)
+        self.assertIn("The coder recommended /eng-spec.", out)
+
+    def test_a_coder_report_that_only_mentions_eng_spec_goes_on_to_review(self):
+        out = self.coder_round("The task is not architectural, so no /eng-spec is needed.\n" + self.CODER_REPORT)
+
+        self.assertIn("AGENT: review-loop", out)
+        self.assertEqual("review", self.state()["stage"])
 
     def test_deleted_file_counts_as_changed(self):
         self.start_phase_one()
@@ -2343,6 +2354,32 @@ class CodeStepTest(unittest.TestCase):
         again = self.step("review-again")
         self.assertIn("AGENT: review-loop", again)
         self.assertIn(self.SKIP_LINE, again)
+
+    TOOL_FAULT_PACKET = ("status: critical-blocker\niter: 2\nblockers:\n  - the review2-code-reviewer call failed "
+                         "(exit 1) saying \"Prompt is too long\"\ntool_fault: the review2-code-reviewer call failed "
+                         "(exit 1) saying \"Prompt is too long\"")
+
+    def test_a_crashed_review_call_stops_as_a_tool_fault_not_as_a_blocker(self):
+        self.coder_round()
+        self.hook("review-loop", self.TOOL_FAULT_PACKET)
+
+        out = self.step("after-review")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertNotIn("critical blocker", out)
+        self.assertIn("Prompt is too long", out)
+        self.assertIn("invoke Skill code with `review-again`", out)
+        self.assertEqual("tool-fault", self.state()["stopReason"])
+
+    def test_review_again_after_a_crashed_review_call_dispatches_the_review_loop(self):
+        self.coder_round()
+        self.hook("review-loop", self.TOOL_FAULT_PACKET)
+        self.step("after-review")
+
+        out = self.step("review-again")
+
+        self.assertIn("AGENT: review-loop", out)
+        self.assertEqual("review", self.state()["stage"])
 
     def test_review_again_with_no_unreadable_packet_pending_stops(self):
         self.start_phase_one()
@@ -2938,6 +2975,46 @@ class CodeStepTest(unittest.TestCase):
         self.finish_phase_one()
         self.assertIn("- [x] Phase 1:", self.plan_text())
 
+    GIT_GREP_PRESENCE = ("- [ ] **Presence**: the export exists - "
+                         "`git grep -n --untracked 'export const o' -- backend/src/orders.ts`")
+
+    def test_a_git_grep_presence_check_passes_plan_check_and_verify_on_a_hit(self):
+        self.set_verification(self.GIT_GREP_PRESENCE)
+        plan_check = subprocess.run([sys.executable, str(SCRIPT), "plan", "check", self.plan],
+                                    cwd=self.repo, capture_output=True, text=True)
+        self.assertEqual(plan_check.returncode, 0, plan_check.stdout + plan_check.stderr)
+
+        outcome = self.finish_phase_one()
+        self.assertNotIn("Automated Verification failed", outcome)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+
+    def test_a_git_grep_presence_check_fails_on_no_hit(self):
+        self.set_verification(self.GIT_GREP_PRESENCE.replace("export const o", "export const missing"))
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        self.assertIn("Automated Verification failed", self.step("after-review"))
+
+    def test_a_git_grep_line_with_no_wording_is_a_ban_and_fails_on_a_hit(self):
+        self.set_verification("- [ ] **Rename**: the old name is gone - "
+                              "`git grep -n --untracked 'export const o' -- backend/src/orders.ts`")
+        outcome = self.finish_phase_one()
+        self.assertIn("Automated Verification failed", outcome)
+        self.assertIn("unless its text says it checks presence", outcome)
+
+    def test_a_git_grep_line_with_presence_and_ban_wording_is_a_ban(self):
+        line = "- [ ] **Prohibition**: no match, the call must not exist - `git grep -n x -- src`"
+        self.assertTrue(code_step_boundary.is_search_ban("git grep -n x -- src", line))
+
+    def test_a_test_n_wrapped_git_grep_is_not_a_ban(self):
+        command = 'test -n "$(git grep -n --untracked \'export const o\' -- backend/src/orders.ts)"'
+        line = f"- [ ] **Check**: the export is there - `{command}`"
+        self.assertFalse(code_step_boundary.is_search_ban(command, line))
+
+        self.set_verification(line)
+        outcome = self.finish_phase_one()
+        self.assertNotIn("Automated Verification failed", outcome)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+
 
     # ---------- defects from the second code review ----------
 
@@ -3116,6 +3193,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("marked done", out)
         self.assertEqual("stopped", self.state()["stage"])
         self.assertIn("- [ ] Phase 1:", self.plan_text())
+        return out
 
     def test_asks_coder_that_changed_nothing_and_has_an_open_question_stops(self):
         self.assert_unchanged_asks_coder_stops("Open question: which name should the rename use?")
@@ -3202,7 +3280,8 @@ class CodeStepTest(unittest.TestCase):
         self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nOpen question: which name should it use?")
 
     def test_asks_coder_already_done_line_with_an_eng_spec_recommendation_stops(self):
-        self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nThe rest needs /eng-spec.")
+        out = self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nRECOMMEND: eng-spec")
+        self.assertIn("The coder recommended /eng-spec.", out)
 
     def test_asks_coder_already_done_line_with_a_plan_impact_report_stops(self):
         self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\n" + self.IMPACT_REPORT)
@@ -5993,6 +6072,15 @@ class CodeForkToolsTest(unittest.TestCase):
 
         disallowed_tools = {tool.strip() for tool in disallowed.split(",")}
         self.assertLessEqual({"Edit", "Write", "NotebookEdit"}, disallowed_tools)
+
+    def test_the_code_fork_can_reply_at_once_to_a_mid_run_scope_message(self):
+        skill = REAL_CLAUDE / "skills" / "code" / "SKILL.md"
+        agent = REAL_CLAUDE / "agents" / f"{code_step_core.FORK_AGENT_TYPE}.md"
+        disallowed = frontmatter_value(agent, "disallowedTools") or ""
+
+        disallowed_tools = {tool.strip() for tool in disallowed.split(",")}
+        self.assertNotIn("SendMessage", disallowed_tools)
+        self.assertIn("takes no scope change mid-run", skill.read_text())
 
 
 if __name__ == "__main__":

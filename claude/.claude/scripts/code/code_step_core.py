@@ -38,12 +38,16 @@ HANDBACK_POLL_SECONDS = 2
 STOP_ROW_WAIT_SECONDS = 15
 HANDBACK_TOTAL_WAIT_MULTIPLE = 3
 LAUNCH_EXPECTED_SECONDS = 60
+PLAN_EDIT_STAGES = ("plan-coder", "impact-coder", "impact-review")
+PLAN_EDIT_STOP_REASONS = ("verification", "plan-format")
 BASH_TIMEOUT_MS = 600000
 CODER = "coder"
 REVIEW_LOOP = "review-loop"
 REVIEW_LOOP_SCRIPT = SCRIPTS_DIR / "review" / "review_loop_script.py"
 REVIEW_SCRIPT_AGENT_PREFIX = "loop-script-"
 FINISHED_REVIEW_SCRIPT_KEYS = ("reviewScriptPid", "resumableReview", "resumeWaitAt")
+# The files beside the review loop script's log that it writes as it works: a write to one restarts the wait cap.
+REVIEW_SCRIPT_PROGRESS_FILES = ("calls.jsonl", "full-check.log")
 RESUME_VERB = "resume"
 RESUME_LINE = "When the {noun} is fixed, run `python3 ~/.claude/scripts/code/code_step.py {verb}`."
 TICKET_ID = re.compile(r"^[A-Za-z]+-\d+$")
@@ -66,10 +70,11 @@ def git_names(cwd, *args):
     return [name for name in (output or "").split("\0") if name]
 
 
-def repo_root_or_exit():
-    root = script_utils.repo_root(os.getcwd())
+def repo_root_or_exit(path=None):
+    # The repo root of `path`, or of the current directory when there is no path.
+    root = script_utils.repo_root(path or os.getcwd())
     if root is None:
-        sys.exit("code-step: not inside a git repo")
+        sys.exit(f"code-step: {path + ' is ' if path else ''}not inside a git repo")
     return root
 
 
@@ -451,7 +456,30 @@ def newest_handback(repo_dir, state):
     since = dispatch_since(state)
     if since is None or not state.get("runId"):
         return None
-    return handback_event(read_events(repo_dir, state["runId"]), awaited_agent_id(repo_dir, state), since)
+
+    events = read_events(repo_dir, state["runId"])
+    agent_id = awaited_agent_id(repo_dir, state)
+    if agent_id is None:
+        return finished_report_without_launch(events, state, since)
+    return handback_event(events, agent_id, since)
+
+
+def finished_report_without_launch(events, state, since):
+    # The Agent call went out but no agent id reached the log (no launch row, or one without an agent id): the agent's
+    # hand-back, of the type the dispatch asked for and after the dispatch, shows that it ran and finished. Without it
+    # a resume would print the dispatch again and launch a second agent.
+    # Inside the launch grace the Agent call may still come, and a report then is another agent's.
+    if time.time() - since < launch_grace_seconds():
+        return None
+
+    awaited_type = expected_agent(state)
+    reports = [event for event in events if event.get("event") == "handback" and event.get("agent_type") == awaited_type
+               and is_after(event, since)]
+    return max(reports, key=lambda event: event["ts"]) if reports else None
+
+
+def launch_grace_seconds():
+    return float(os.environ.get("CODE_STEP_LAUNCH_SECONDS", LAUNCH_EXPECTED_SECONDS))
 
 
 def awaited_handback(repo_dir, state, wait_for_stop=False):
@@ -469,7 +497,7 @@ def take_handback(repo_dir, state, agent_type, missing_text):
     handback = awaited_handback(repo_dir, state)
     if handback is None and newest_handback(repo_dir, state) is not None:
         return emit("wait", f"The {agent_type} handed back, but its stop was blocked, so it is still working. Do not "
-                    f"dispatch it again. Run {timed_command(RESUME_VERB)} to wait for its next hand-back.")
+                    f"dispatch it again. Run {timed_command(RESUME_VERB)} to wait for its next stop.")
     if handback is None:
         return emit("stop", resumed_agent_pending_stop(agent_type) if is_resumed else missing_text)
 
@@ -601,8 +629,7 @@ def unlaunched_dispatch(repo_dir, state, agent_type):
     if dispatch.get("stage") != state["stage"] or dispatch.get("agent_type") != agent_type:
         return None
 
-    grace_seconds = float(os.environ.get("CODE_STEP_LAUNCH_SECONDS", LAUNCH_EXPECTED_SECONDS))
-    if time.time() - dispatch["ts"] < grace_seconds:
+    if time.time() - dispatch["ts"] < launch_grace_seconds():
         return None
     return dispatch
 
@@ -670,6 +697,29 @@ def review_script_running(state):
     return True
 
 
+def review_script_progress_at(state):
+    # The newest write to a running review loop script's progress files, or None.
+    log_path = state.get("reviewScriptLog")
+    if not log_path or not review_script_running(state):
+        return None
+
+    script_dir = pathlib.Path(log_path).parent
+    write_times = []
+    for progress_name in REVIEW_SCRIPT_PROGRESS_FILES:
+        with contextlib.suppress(OSError):
+            write_times.append((script_dir / progress_name).stat().st_mtime)
+    return max(write_times, default=None)
+
+
+def cap_clock_start(repo_dir, state, since, wait_started):
+    # A running review loop script's cap counts from its last progress when that is later than the wait clock.
+    clock_start = wait_clock_start(repo_dir, state, since, wait_started)
+    progress_at = review_script_progress_at(state)
+    if progress_at is None:
+        return clock_start
+    return max(clock_start, progress_at)
+
+
 def stop_review_script(state):
     # Kills the running review loop script and every claude call it started. The caller saves the state.
     pid = state.pop("reviewScriptPid", None)
@@ -711,7 +761,7 @@ def wait_for_handback(repo_dir, state, verb):
     agent_type = expected_agent(state)
     total_cap = limit * float(os.environ.get("CODE_STEP_WAIT_MULTIPLE", HANDBACK_TOTAL_WAIT_MULTIPLE))
     wait_started = time.time()
-    clock_start = wait_clock_start(repo_dir, state, since, wait_started)
+    clock_start = cap_clock_start(repo_dir, state, since, wait_started)
     # The wait ends at the cap, not at the end of the wait that passes it.
     until_cap = max(0.0, clock_start + total_cap - wait_started)
 
@@ -731,7 +781,9 @@ def wait_for_handback(repo_dir, state, verb):
     if awaited_handback(repo_dir, state):
         return True
 
-    if until_cap <= limit:
+    # Progress during this wait moves the cap past it.
+    progressed_at = cap_clock_start(repo_dir, state, since, wait_started)
+    if until_cap <= limit and progressed_at <= clock_start:
         stop_at_wait_cap(repo_dir, state, agent_type, clock_start, total_cap)
         return False
 
@@ -808,7 +860,13 @@ def stop_at_wait_cap(repo_dir, state, agent_type, clock_start, total_cap):
     state.pop("resumeWaitAt", None)
     save_state(repo_dir, state)
     silent_text = (f"The {agent_type} has not handed back in {stopped_at - clock_start:.0f} seconds, counted from "
-                   f"{dispatch_time_text(clock_start)} (the cap is {total_cap:g}). It may have died or been stopped.")
+                   f"{dispatch_time_text(clock_start)} (the cap is {total_cap:g}).")
+    if review_script_running(state):
+        progress_names = " or ".join(REVIEW_SCRIPT_PROGRESS_FILES)
+        silent_text += (f" Its script (pid {state['reviewScriptPid']}) is still running and has written no "
+                        f"{progress_names} in that time.")
+    else:
+        silent_text += " It may have died or been stopped."
     stop_with_question(repo_dir, silent_text, [], resume_text.strip(),
                        silent_text + " Do not dispatch it again and do not wait longer. Tell the user." + resume_text)
 
@@ -823,6 +881,32 @@ def restart_instruction(state, restart_command="start --restart"):
 
     planless_words = [restart_command, *modifier_words, "--task", "\"<the task text>\""]
     return "ask the user for the task text, then run `" + " ".join(planless_words) + "`"
+
+
+def stale_phase_reason(repo_dir, state):
+    # Why the saved run's phase no longer matches the plan file, or None when it still does (or the run keeps no phase
+    # text to compare: a finished run, a planless run, a closing phase). A phase the run's own gates ticked is not
+    # stale.
+    saved_text = state.get("phaseText")
+    if state["stage"] == "done" or not state.get("plan") or state.get("phase") is None or saved_text is None:
+        return None
+
+    # These stages are the ones where the plan is edited on purpose: a plan-edit coder, a ruling on a plan change, a
+    # fix of the plan's verification lines. The run reads the plan again when it leaves them.
+    if state["stage"] in PLAN_EDIT_STAGES or state.get("stopReason") in PLAN_EDIT_STOP_REASONS:
+        return None
+
+    try:
+        plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
+    except OSError:
+        return f"{state['plan']} cannot be read"
+
+    current_text = plan_format.phase_text(plan_lines, state["phase"])
+    if current_text is None:
+        return f"Phase {state['phase']} is no longer in {state['plan']}"
+    if plan_format.phase_wording(current_text) != plan_format.phase_wording(saved_text):
+        return f"the text of Phase {state['phase']} in {state['plan']} changed since the run started"
+    return None
 
 
 def stop_a_silent_coder(repo_dir, state, stopped_at):
@@ -869,13 +953,19 @@ def say_file(repo_dir):
     return say_file_in(directory) if directory is not None else pathlib.Path("say.md")
 
 
-def say(repo_dir, text):
+def say(repo_dir, text, replaces_blocks_starting=None):
     # User-facing text goes to a file the /code subagent hands back verbatim, so the model never has to copy it.
+    # A block that starts with `replaces_blocks_starting` takes the place of the earlier blocks that start with it.
     directory = state_dir(repo_dir)
     if directory is None:
         return
     directory.mkdir(parents=True, exist_ok=True)
-    with open(say_file_in(directory), "a") as say_handle:
+    say_path = say_file_in(directory)
+    if replaces_blocks_starting and say_path.exists():
+        kept_blocks = [block for block in say_path.read_text().split("\n\n")
+                       if block.strip() and not block.startswith(replaces_blocks_starting)]
+        say_path.write_text("".join(block + "\n\n" for block in kept_blocks))
+    with open(say_path, "a") as say_handle:
         say_handle.write(own_path(text).rstrip() + "\n\n")
 
 
@@ -917,14 +1007,21 @@ def ask_user(repo_dir, instruction, *question_lines):
     emit("ask-user", f"The question for the user is in {question_file(repo_dir)}. Hand back.")
 
 
-def stop_with_question(repo_dir, why, items, next_step, *stop_lines):
+def stop_with_question(repo_dir, why, items, next_step, *stop_lines, questions=()):
     # A stop on an agent's report or silence: question.md names why the run stopped, each open item on one line and
-    # the command that goes on, so the hand-back never rests on free text alone.
+    # the command that goes on, so the hand-back never rests on free text alone. The reviewer's questions for the user
+    # come under their own heading, apart from the findings.
     item_lines = [f"- {script_utils.one_line(item, 300)}" for item in items] or ["- (none reported)"]
+    question_lines = []
+    spaced_question_lines = []
+    if questions:
+        question_lines = ["Open questions:", *(f"- {script_utils.one_line(question, 300)}" for question in questions)]
+        spaced_question_lines = [*question_lines, ""]
+
     write_question(repo_dir, ["## The run stopped", "", "Main session: tell the user why the run stopped and what "
                               "waits on them.", "", "Why: " + why, "", "Open items:", *item_lines, "",
-                              "Next: " + next_step])
-    emit("stop", *stop_lines)
+                              *spaced_question_lines, "Next: " + next_step])
+    emit("stop", *stop_lines, *question_lines)
 
 
 def emit(action, *lines, prompt=None, agent=None, model=None, prompt_file=None):

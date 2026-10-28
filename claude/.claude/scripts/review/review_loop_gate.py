@@ -9,7 +9,9 @@
       it dispatched — is the last code change; with none, the loop start is, since the phase changed
       code before the loop ran. A handoff `tests-run` never exempts it. A loop returning
       `status: plan-impact` owes no check, and neither does a loop in a repo whose CLAUDE.md holds the line
-      `Full suite: CI` (full_check.full_suite_runs_in_ci): CI runs that repo's full suite.
+      `Full suite: CI` (full_check.full_suite_runs_in_ci): CI runs that repo's full suite. That repo is the one the loop
+      reviewed (reviewed_root), else the hook cwd. A stop with a
+      delivered SubagentHandback (one no hook denied) skips this check.
       A second stop in a row passes (stop_hook_active), so a stuck loop cannot spin. The block
       reason reaches the loop as context and it keeps working. Register with matcher
       `review-loop`; the agent_type check below still guards an unscoped entry.
@@ -146,6 +148,8 @@ NIT_REASON = ("The packet lists {owed} nit(s) but only {logged} `disposition=nit
 METRICS_REASON = ("The last metrics line was logged before the last reviewer round, or its counts differ from the "
                   "packet's. Log the Step 7 metrics line again with the final counts (fixed={fixed}, "
                   "skipped_fp={skipped_fp}), then return the packet.")
+RETURN_TAIL = "then return the packet."
+DELIVERED_TAIL = "then stop: the packet was already delivered, and a second hand-back is denied."
 PLAN_EDIT_REASON = ("The packet's files_touched names the plan file {plan}. A review fix never edits the plan. Revert "
                     "that edit, and return the finding that needs a plan change as `status: plan-impact`.")
 GATE_REASON = ("No full check ran after the last code change in this phase. A scoped run, including the "
@@ -409,10 +413,22 @@ class LoopTranscript:
         return len(open_launches) + len(open_resumes) + len(open_shells)
 
 
+def last_code_step(transcript):
+    """The transcript line of the loop's last coder dispatch or message to a coder, 0 when there is none."""
+    return max(transcript.steps(script_utils.CODERS), default=0)
+
+
+def full_suite_in_ci(transcript, cwd):
+    """True when the repo the loop reviewed (else the repo holding cwd, the process cwd when empty) leaves its full
+    suite to CI."""
+    repo = script_utils.repo_root(transcript.reviewed_root() or cwd or os.getcwd())
+    return repo is not None and full_check_script.full_suite_runs_in_ci(repo)
+
+
 def scan(transcript, final=None, full_suite_in_ci=False):
     """(no full check ran after the last code change, the count of background dispatches that have not reported).
     final is the loop's last message; the transcript's last text stands in when it is None."""
-    last_step = max(transcript.steps(script_utils.CODERS), default=0)
+    last_step = last_code_step(transcript)
     last_full = max(transcript.full_checks, default=-1)
 
     plan_impact = PLAN_IMPACT.search(transcript.last_text if final is None else final)
@@ -435,9 +451,10 @@ def final_packet(transcript, final):
         return None
 
 
-def ledger_reasons(transcript, final):
+def ledger_reasons(transcript, final, delivered=False):
     """The reasons for a block when the packet owes ledger rows the loop did not write, or when it names the plan file
-    as touched. Nothing when the packet does not parse: a stop check never guesses."""
+    as touched. Nothing when the packet does not parse: a stop check never guesses. After a delivered hand-back the
+    ledger reasons tell the loop to stop, since a second hand-back is denied."""
     packet = final_packet(transcript, final)
     if packet is None:
         return []
@@ -453,6 +470,8 @@ def ledger_reasons(transcript, final):
     elif stale_metrics(transcript, packet):
         reasons.append(METRICS_REASON.format(fixed=len(packet.get("fixed") or []),
                                              skipped_fp=len(packet.get("skipped_fp") or [])))
+    if delivered:
+        reasons = [reason.replace(RETURN_TAIL, DELIVERED_TAIL) for reason in reasons]
 
     plan = PROMPT_PLAN.search(transcript.prompt or "")
     if plan and touches_plan(packet.get("files_touched") or [], plan.group(1)):
@@ -697,17 +716,20 @@ def record_stop(hook, open_dispatches, ask_rows=(), blocked=False):
 def check_stop(hook):
     try:
         transcript = LoopTranscript(hook["agent_transcript_path"])
-        repo = script_utils.repo_root(hook.get("cwd") or os.getcwd())
-        full_suite_in_ci = repo is not None and full_check_script.full_suite_runs_in_ci(repo)
-        scanned = scan(transcript, hook.get("last_assistant_message"), full_suite_in_ci)
+        in_ci = full_suite_in_ci(transcript, hook.get("cwd"))
+        scanned = scan(transcript, hook.get("last_assistant_message"), in_ci)
     except Exception:
         # A transcript the gate cannot read still ends an earlier wait: with no row, the last open count would stand.
         record_stop(hook, 0)
         raise
     try:
-        why = [] if hook.get("stop_hook_active") else reasons_for(scanned)
+        # A delivered hand-back passed the hand-back hook's gate, unless that gate failed open on an error
+        # (it never blocks on its own failure) or let a repeat on the same code state through; pushing work after
+        # delivery only makes the loop hand back a second time.
+        delivered = bool(transcript.handback_lines)
+        why = [] if hook.get("stop_hook_active") or delivered else reasons_for(scanned)
         if not hook.get("stop_hook_active") and not scanned[1]:
-            why += ledger_reasons(transcript, hook.get("last_assistant_message"))
+            why += ledger_reasons(transcript, hook.get("last_assistant_message"), delivered)
     except Exception:
         record_stop(hook, scanned[1], transcript.ask_rows)
         raise

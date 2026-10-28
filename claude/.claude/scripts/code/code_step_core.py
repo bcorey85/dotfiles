@@ -518,19 +518,34 @@ def take_handback(repo_dir, state, agent_type, missing_text):
     return handback
 
 
-def refresh_phase_text(repo_dir, state):
-    # The run's own agent handed back: the phase text it left in the plan is the run's from here on, so the agent's
-    # own plan edits never make the run stale. A plan that cannot be read, or that lost the phase, keeps the saved text
-    # for the stale check to report. The caller saves the state.
+def own_phase_text(repo_dir, state):
+    # The plan's current section for the run's phase when the run's own agent may have left it: the plan reads, the
+    # phase exists and its heading is the saved one. Otherwise None, and the stale check decides.
     if state.get("phaseText") is None or not state.get("plan") or state.get("phase") is None:
-        return
+        return None
 
     try:
         plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
     except OSError:
-        return
+        return None
 
     current_text = plan_format.phase_text(plan_lines, state["phase"])
+    if current_text is None:
+        return None
+
+    # Any heading change, including one the agent made, is treated as an outside edit (a phase inserted or reordered
+    # leaves another phase under this number) and is left for the stale check.
+    saved_heading = state["phaseText"].split("\n", 1)[0].strip()
+    if current_text.split("\n", 1)[0].strip() != saved_heading:
+        return None
+    return current_text
+
+
+def refresh_phase_text(repo_dir, state):
+    # The run's own agent handed back: the phase text it left in the plan is the run's from here on, so the agent's
+    # own edits to the phase's body do not make the run stale; a changed heading is left for the stale check. The
+    # caller saves the state.
+    current_text = own_phase_text(repo_dir, state)
     if current_text is not None:
         state["phaseText"] = current_text
 

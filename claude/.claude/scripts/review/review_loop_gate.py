@@ -8,7 +8,8 @@
       filter (see NON_SCOPING_FLAGS). The last coder step — a dispatch, or a SendMessage to a coder
       it dispatched — is the last code change; with none, the loop start is, since the phase changed
       code before the loop ran. A handoff `tests-run` never exempts it. A loop returning
-      `status: plan-impact` owes no check.
+      `status: plan-impact` owes no check, and neither does a loop in a repo whose CLAUDE.md holds the line
+      `Full suite: CI` (full_check.full_suite_runs_in_ci): CI runs that repo's full suite.
       A second stop in a row passes (stop_hook_active), so a stuck loop cannot spin. The block
       reason reaches the loop as context and it keeps working. Register with matcher
       `review-loop`; the agent_type check below still guards an unscoped entry.
@@ -50,6 +51,7 @@ import subprocess
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+import full_check as full_check_script
 import handback
 import script_utils
 
@@ -78,8 +80,9 @@ NON_SCOPING_FLAGS = {
     "vitest": ("--project",),
     "dotnet": ("--project",),
 }
-GATE_LOG = re.compile(r"(?:>\s*|\btee\s+(?:-a\s+)?)\S*review-gate[\w.-]*\.log")
-CHECKER = re.compile(r"(?:\A|[;&|(]\s*|\n\s*)(?:cd\s+\S+\s*&&\s*)?(?:[A-Za-z_]\w*=\S+\s+)*"
+GATE_LOG = re.compile(r"(?:>\s*|\btee\s+(?:-a\s+)?|--log[=\s]+)\S*review-gate[\w.-]*\.log")
+# A checker opens the command, a segment of it, or the words after `--` that full_check.py runs.
+CHECKER = re.compile(r"(?:\A|[;&|(]\s*|\n\s*|\s--\s+['\"]?)(?:cd\s+\S+\s*&&\s*)?(?:[A-Za-z_]\w*=\S+\s+)*"
                      r"(?:(?:time|npx|bunx|uv\s+run|poetry\s+run|python3?\s+-m|bundle\s+exec)\s+)*"
                      r"(?P<checker>(?:npm|pnpm|yarn|bun)\s+(?:(?:-F|--filter|workspace)\s+\S+\s+)?(?:run\s+)?"
                      r"[\w:-]*(?:test|lint|typecheck|type-check|check|build)[\w:-]*"
@@ -130,7 +133,7 @@ PLAN_EDIT_REASON = ("The packet's files_touched names the plan file {plan}. A re
                     "that edit, and return the finding that needs a plan change as `status: plan-impact`.")
 GATE_REASON = ("No full check ran after the last code change in this phase. A scoped run, including the "
                "handoff's tests-run, does not count. Run the Step 6 execution gate now: the project's full "
-               "quality-check command once, redirected to /tmp/review-gate.log. Route any failure as Step 6 "
+               "quality-check command once, through Step 6's full_check.py call. Route the result as Step 6 "
                "says, then return the packet.")
 HANDOFF_REASON = ("A review-loop dispatch from /code carries no handoff block. Build it per "
                   "~/.claude/skills/_shared/handoff-block.md and dispatch again.")
@@ -350,14 +353,14 @@ class LoopTranscript:
         return len(open_launches) + len(open_resumes) + len(open_shells)
 
 
-def scan(transcript, final=None):
+def scan(transcript, final=None, full_suite_in_ci=False):
     """(no full check ran after the last code change, the count of background dispatches that have not reported).
     final is the loop's last message; the transcript's last text stands in when it is None."""
     last_step = max(transcript.steps(script_utils.CODERS), default=0)
     last_full = max(transcript.full_checks, default=-1)
 
     plan_impact = PLAN_IMPACT.search(transcript.last_text if final is None else final)
-    ungated = last_full < last_step and not plan_impact
+    ungated = last_full < last_step and not plan_impact and not full_suite_in_ci
     return ungated, transcript.open_dispatches()
 
 
@@ -599,7 +602,9 @@ def record_stop(hook, open_dispatches, ask_rows=(), blocked=False):
 def check_stop(hook):
     try:
         transcript = LoopTranscript(hook["agent_transcript_path"])
-        scanned = scan(transcript, hook.get("last_assistant_message"))
+        repo = script_utils.repo_root(hook.get("cwd") or os.getcwd())
+        full_suite_in_ci = repo is not None and full_check_script.full_suite_runs_in_ci(repo)
+        scanned = scan(transcript, hook.get("last_assistant_message"), full_suite_in_ci)
     except Exception:
         # A transcript the gate cannot read still ends an earlier wait: with no row, the last open count would stand.
         record_stop(hook, 0)

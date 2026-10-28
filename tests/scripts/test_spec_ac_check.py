@@ -121,5 +121,18 @@ class FinalPlanCheckTest(unittest.TestCase):
         self.assertEqual((done.returncode, done.stdout, done.stderr), (0, "", ""))
 
 
+
+class PlanHelpTest(unittest.TestCase):
+    def test_a_help_flag_after_plan_or_a_plan_subcommand_prints_usage_and_exits_zero(self):
+        for words in (["--help"], ["-h"], ["check", "--help"], ["check", "--final", "--help"], ["parse", "--help"]):
+            with self.subTest(words=words), tempfile.TemporaryDirectory() as empty_dir:
+                done = subprocess.run([sys.executable, str(CODE_STEP), "plan", *words], cwd=empty_dir,
+                                      capture_output=True, text=True, check=False)
+
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertIn("usage: code_step.py plan", done.stdout)
+                self.assertNotIn("Traceback", done.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

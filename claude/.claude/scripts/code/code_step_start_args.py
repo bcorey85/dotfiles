@@ -11,8 +11,55 @@ import plan_format
 import script_utils
 from code_step_core import TICKET_ID, script_command
 
+START_MODIFIERS = ("+fast", "+deep")
+
+
+def looks_like_plan_argument(word):
+    # A word with whitespace is task text that happens to name a file, unless it is itself a file (a real plan whose
+    # path has a space). Words are tested with os.path, not pathlib: before Python 3.14, pathlib raises on a word
+    # longer than a file name may be, which is any long task text.
+    if script_utils.has_whitespace(word) and not os.path.isfile(word):
+        return False
+
+    return (looks_like_plan_path(word) or TICKET_ID.match(word) is not None or os.path.isfile(word)
+            or os.path.isdir(word))
+
+
+def looks_like_plan_path(argument):
+    return "/" in argument or argument.endswith(".md")
+
+
+def is_flag(word):
+    return word.startswith("-") and len(word) > 1
+
+
+def starts_task_text(word):
+    return word not in START_MODIFIERS and not is_flag(word) and not looks_like_plan_argument(word)
+
+
+def flag_words_end(args):
+    # Where the flags end: at `--task` or at the first word that starts task text, the point parse_start_args stops
+    # reading flags. The value after --task-file, --phase and --repo is not a word that starts the text.
+    position = 0
+    while position < len(args):
+        word = args[position]
+        if word == "--task":
+            return position
+        if word in ("--task-file", "--phase", "--repo"):
+            position += 2
+            continue
+        if starts_task_text(word):
+            return position
+        position += 1
+
+    return len(args)
+
 
 class TaskFileError(Exception):
+    pass
+
+
+class RepoFlagError(Exception):
     pass
 
 
@@ -30,6 +77,67 @@ def read_task_file(args, flag_position):
     if not task_text.strip():
         raise TaskFileError(f"the task file {path_text} is empty")
     return task_text
+
+
+LEADING_FLAG_WORDS = ("--task", "--phase", "--repo", "--restart", "+fast", "+deep")
+TASK_FILE_REPO_LINE = re.compile(r"^Repo(?: root)?:[ \t]*(\S.*?)[ \t]*$")
+
+
+def split_quoted_flags(args):
+    # The args /code receives as one string, `--task "<text>"` or `+deep --task <text>`, as the words the shell would
+    # have given. Any other args come back as they were.
+    if len(args) != 1 or not args[0].startswith(LEADING_FLAG_WORDS) or not script_utils.has_whitespace(args[0]):
+        return args
+
+    try:
+        return shlex.split(args[0])
+    except ValueError:
+        return args[0].split()
+
+
+def task_file_repo(args):
+    # The path on the `Repo:` or `Repo root:` line that opens the task file named by `--task-file`, or None.
+    flag_stops_at = flag_words_end(args)
+    if "--task-file" not in args[:flag_stops_at]:
+        return None
+
+    flag_position = args.index("--task-file")
+    try:
+        task_text = read_task_file(args, flag_position)
+    except TaskFileError:
+        return None
+
+    first_line = next((line for line in task_text.splitlines() if line.strip()), "")
+    repo_line = TASK_FILE_REPO_LINE.match(first_line)
+    return repo_line.group(1) if repo_line else None
+
+
+def start_repo_path(args):
+    # The checkout `start` runs in: the path after `--repo` (before any `--task` text), else the `Repo:` line of the
+    # task file, else None for the current directory. A `--repo` with no path, or a flag in its place, raises.
+    flag_stops_at = flag_words_end(args)
+    for position, word in enumerate(args[:flag_stops_at]):
+        if word != "--repo":
+            continue
+
+        if position + 1 >= len(args) or args[position + 1].startswith("-"):
+            raise RepoFlagError("--repo needs a path")
+        return args[position + 1]
+
+    return task_file_repo(args)
+
+
+def absolute_path_args(args):
+    # The args with the path after `--task-file` and after `--repo` (before any `--task` text) made absolute against
+    # the current directory, so they still name the same files once `start` moves to another checkout.
+    flag_stops_at = flag_words_end(args)
+    absolute = list(args)
+    for position, word in enumerate(args[:flag_stops_at]):
+        is_path_next = position + 1 < flag_stops_at and not args[position + 1].startswith("-")
+        if word in ("--task-file", "--repo") and is_path_next:
+            absolute[position + 1] = os.path.abspath(args[position + 1])
+
+    return absolute
 
 
 def phase_flag_position(words):
@@ -72,14 +180,17 @@ def is_plan_reference(word):
     return (word.endswith(".md") and os.path.isfile(word)) or TICKET_ID.match(word) is not None
 
 
-def carry_run_notes(parsed):
+def carry_run_notes(parsed, saved_plan=None):
     # A phase run's text after the plan is its run notes. `<plan file or ticket id> [--phase <id> | Phase <id>] <text>`
-    # comes back with the plan, the phase and the notes set and no task text. Any other text stays task text.
+    # comes back with the plan, the phase and the notes set and no task text. An explicit `--phase <id>` with no plan
+    # named takes the saved plan. Any other text stays task text.
     if not parsed.positional_words:
         return parsed
 
     words = script_utils.words_of_arguments(parsed.positional_words)
     plan_words, text_words, phase_id, _ = split_plan_words(words, parsed)
+    if not plan_words and phase_id is not None and saved_plan:
+        plan_words = [saved_plan]
     if phase_id is None:
         phase_id, text_words = leading_phase_words(text_words)
 
@@ -99,7 +210,7 @@ def run_notes_lines(run_notes):
     return ["", "Run notes from the user. They bind this run; the plan stays the spec:", run_notes]
 
 
-def outside_repo_plan_refusal(repo_dir, parsed):
+def outside_repo_plan_refusal(repo_dir, parsed, repo_flags):
     # (reason, commands, notes) for a first plan argument that is a file outside the repo and is no plan, or None. A
     # plan is kept by its path in the repo, so a file outside it can only be task text: the rerun reads it as that. A
     # file that parses as a plan goes on to the stop that asks for a plan inside the repo.
@@ -119,6 +230,6 @@ def outside_repo_plan_refusal(repo_dir, parsed):
         return None
 
     modifier_words = [parsed.modifier] if parsed.modifier else []
-    command = script_command(shlex.join(["start", *modifier_words, "--task-file", str(plan_path)]))
+    command = script_command(shlex.join(["start", *repo_flags, *modifier_words, "--task-file", str(plan_path)]))
     return (f"{plan_path} is outside the repo and is not a plan.", [command],
             ("The command reads the file as the task text. A plan file has to be inside the repo.",))

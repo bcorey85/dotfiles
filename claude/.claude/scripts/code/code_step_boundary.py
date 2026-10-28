@@ -16,6 +16,7 @@ import plan_format
 import reviewed_tree
 import script_utils
 import shell_command
+from check_output import tail_with_failing_tests
 from code_step_concentration import (
     concentration_gate_position,
     manual_gate_item_end,
@@ -680,7 +681,8 @@ def stop_for_unparsed_items(repo_dir, state, unparsed, ran_text):
 def stop_for_failed_commands(repo_dir, state, failed):
     state.update({"stage": "stopped", "stopReason": "verification"})
     save_state(repo_dir, state)
-    failure_lines = [f"- `{command}` exit {code}: {output[-400:]}" for command, code, output in failed]
+    failure_lines = [f"- `{command}` exit {code}: {tail_with_failing_tests(output, output[-400:])}"
+                     for command, code, output in failed]
     emit("stop", "Automated Verification failed. Do not mark the phase done. Report to the user:", *failure_lines,
          RESUME_LINE.format(noun="failure", verb="verify"))
 
@@ -785,7 +787,9 @@ def close_phase(repo_dir, state, plan_path, plan, section, manual_items, verific
     announce_boundary(repo_dir, state, boundary)
 
 
-def finish_phase(repo_dir, state, skip_verification=False):
+def finish_phase(repo_dir, state, skip_verification=False, verification=None):
+    # `verification` is the (results, skipped commands) of a passing Automated Verification run the caller already
+    # made over the phase section, so the checks do not run twice.
     if not skip_verification and not mark_review_gate_clean(repo_dir, state):
         return
 
@@ -797,8 +801,9 @@ def finish_phase(repo_dir, state, skip_verification=False):
         return
     plan_path, plan_lines, plan, section = loaded
 
-    verification = ([], [])
-    if not skip_verification:
+    if skip_verification:
+        verification = ([], [])
+    elif verification is None:
         verification = run_phase_verification(repo_dir, state, section)
         if verification is None:
             return

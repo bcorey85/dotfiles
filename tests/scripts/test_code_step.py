@@ -2911,6 +2911,37 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("Phase 1 marked done", out)
         self.assertIn("- [x] Phase 1:", self.plan_text())
 
+    def test_verify_closes_a_reviewed_phase_stopped_for_another_reason(self):
+        self.coder_round(source="console.log(1)\n")
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("after-review")
+        self.set_state(stopReason="tool-fault")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+
+        out = self.step("verify")
+
+        self.assertIn("Phase 1 marked done", out)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+
+    def test_verify_is_refused_while_a_coder_works(self):
+        self.begin_coder()
+
+        out = self.step("verify")
+
+        self.assertTrue(out.startswith("Refused: "), out)
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+
+    def test_a_failed_verification_keeps_the_failing_test_names_above_the_tail(self):
+        failing_run = "print('FAIL: test_totals (orders.tests.OrderTest)'); print('x' * 1000); raise SystemExit(1)"
+        self.set_verification(f'- [ ] **Tests**: orders pass - `python3 -c "{failing_run}"`')
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+
+        out = self.step("after-review")
+
+        self.assertIn("Automated Verification failed", out)
+        self.assertIn("Failing tests:\nFAIL: test_totals (orders.tests.OrderTest)", out)
+
     def test_start_does_not_inherit_the_fast_modifier(self):
         self.assertIn("MODEL: haiku", self.start_phase_one("+fast"))
         out = self.step("start", "--restart")

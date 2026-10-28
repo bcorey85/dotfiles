@@ -76,7 +76,7 @@
 #       mostly `other` has told the analysis nothing about what the gate catches.
 #     file=<path>                 repo-relative
 #       file=unlocated: the finding names no file (a plan promise with no test).
-#       The row is sent with no file and no line; refused with a line=.
+#       The row is sent with no file and no line; a line= is dropped with a warning.
 #     line=<n>                    0 when the finding names no line
 #       gate=test-intent-reviewer refuses a finding row with no file, or a file
 #       and no line above 0: each of its findings names a test file:line, or is
@@ -297,8 +297,8 @@ if [ "$kind" = finding ]; then
   file=$(jq -r '.file // ""' <<< "$json")
   line=$(jq -r '.line // ""' <<< "$json")
   if [ "$file" = unlocated ]; then
-    [ -z "$line" ] || { echo "refusing to log: file=unlocated takes no line=." >&2; exit 1; }
-    json=$(jq -c 'del(.file)' <<< "$json")
+    [ -z "$line" ] || echo "log-review-finding: file=unlocated takes no line=; line=$line dropped." >&2
+    json=$(jq -c 'del(.file, .line)' <<< "$json")
   elif [ "$gate" = test-intent-reviewer ] && { [ -z "$file" ] || ! [[ $line =~ ^[1-9][0-9]*$ ]]; }; then
     echo "refusing to log: a test-intent-reviewer finding names its test file= and line= (above 0), or is file=unlocated." >&2
     exit 1

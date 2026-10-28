@@ -13,6 +13,8 @@ from code_step_boundary import (
     criteria_rel,
     evidence_command_shape,
     evidence_request_lines,
+    finish_phase,
+    run_verification_commands,
     settle_criteria_guard,
     stop_while_plan_edit_coder_is_out,
     verification_format_failure,
@@ -50,6 +52,7 @@ from code_step_core import (
 )
 from code_step_gates import derive_gate_commands
 from code_step_report import ENG_SPEC_BRIEF
+from code_step_review import guarded_verb_runs
 from code_step_start_args import (
     START_MODIFIERS,
     RepoFlagError,
@@ -267,12 +270,16 @@ def open_run_refusal(repo_dir, previous, args, parsed, repo_flags):
     stale_reason = stale_phase_reason(repo_dir, previous)
     if stale_reason:
         reason += f" The run is stale: {stale_reason}."
+    verify_commands = []
+    if guarded_verb_runs("verify", previous):
+        reason += " Run `verify` first: it runs the phase's checks and closes the phase when they pass."
+        verify_commands = [script_command("verify")]
     if not args:
-        return reason, [resume_command], ()
+        return reason, verify_commands or [resume_command], ()
 
     started_by = previous.get("sessionId")
     if started_by and session_pin() and started_by != session_pin():
-        return reason, [script_command("status")], (
+        return reason, [*verify_commands, script_command("status")], (
             "The run was started by another session, and `start --restart` would drop it: run that only on the "
             "user's word. To run in another checkout, pass `--repo <path>`.",)
 
@@ -280,7 +287,7 @@ def open_run_refusal(repo_dir, previous, args, parsed, repo_flags):
     plain_text_words = plain_task_words(parsed)
     if plain_text_words:
         restart_command = task_command(plain_text_words, parsed.modifier, *repo_flags, "--restart")
-    return reason, [resume_command, restart_command], (
+    return reason, [*verify_commands, resume_command, restart_command], (
         "`resume` goes on with the open run. `start --restart` drops it and starts over.",)
 
 
@@ -624,6 +631,21 @@ def start_plan_run(repo_dir, previous, branch, parsed, start_command):
         "plan_rel": plan_rel, "lane": lane, "entry": entry, "section": section, "has_phases": bool(plan["sections"])})
 
 
+def finish_passing_restart(repo_dir, previous, section):
+    # A restart over a phase whose code was reviewed goes to verify when every Automated Verification command passes
+    # on the code in place, and no coder is dispatched. False when a check fails, cannot run, or none runs.
+    results, skipped, unparsed = run_verification_commands(repo_dir, section)
+    has_failure = any(code != 0 for _command, code, _output in results)
+    if unparsed or not results or has_failure:
+        return False
+
+    restarted = {**previous, "phaseText": section}
+    print("The phase's Automated Verification passes on the code in place, so no coder is dispatched; the phase goes "
+          "to verify.")
+    finish_phase(repo_dir, restarted, verification=(results, skipped))
+    return True
+
+
 def start_phase_coder(repo_dir, previous, branch, parsed, phase):
     plan_rel, entry, section = phase["plan_rel"], phase["entry"], phase["section"]
     number = entry["number"] if entry else None
@@ -631,6 +653,12 @@ def start_phase_coder(repo_dir, previous, branch, parsed, phase):
     state_phase = number if use_packet else None
     is_same_unfinished_phase = (previous.get("plan") == plan_rel and previous.get("phase") == state_phase
                              and previous.get("stage") not in (None, "done") and previous.get("baseline") is not None)
+    # Run notes ask the coder for more work, so a restart that brings them always dispatches one.
+    restarts_reviewed_phase = (parsed.restart and is_same_unfinished_phase and not parsed.run_notes
+                               and (previous.get("reviewRan") or previous.get("reviewStatus") is not None))
+    if restarts_reviewed_phase and finish_passing_restart(repo_dir, previous, section):
+        return
+
     baseline = previous["baseline"] if is_same_unfinished_phase else file_hashes(repo_dir)
     base_head = (
         previous.get("baseHead") if is_same_unfinished_phase and previous.get("baseHead") else head_commit(repo_dir)

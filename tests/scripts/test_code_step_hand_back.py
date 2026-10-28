@@ -9,7 +9,8 @@ import time
 import test_code_step as base
 
 CRASHED_PACKET = ("status: critical-blocker\niter: 0\nblockers:\n  - finding: \"the review loop script failed with "
-                  "RuntimeError: the code-reviewer call failed (exit 1) saying Prompt is too long\"\n    file_line: unlocated")
+                  "RuntimeError: the code-reviewer call failed (exit 1) saying Prompt is too long\"\n"
+                  "    file_line: unlocated")
 BLOCKER_PACKET = "status: critical-blocker\niter: 1\nblockers:\n  - finding: b\n    file_line: backend/src/orders.ts:1"
 CAP_PACKET = "status: cap-reached\niter: 2\nfindings_remaining:\n  - finding: x\n    file_line: a.ts:1"
 
@@ -62,7 +63,8 @@ class HandBackTest(base.CodeStepTest):
         out = self.step("after-review")
 
         self.assertIn("ACTION: stop", out)
-        question_text = self.assert_stop_question("the review did not run to the end", "the review loop script failed with RuntimeError")
+        question_text = self.assert_stop_question(
+            "the review did not run to the end", "the review loop script failed with RuntimeError")
         self.assertIn("Prompt is too long", question_text)
         self.assertNotIn("critical blocker", question_text)
         self.assertIn("review-again", question_text)

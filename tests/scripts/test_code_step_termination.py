@@ -406,7 +406,7 @@ def launch_stand_in_review_loop(real_popen, command, **options):
         return StandInLoopProcess(dead_process_id())
 
     repo = pathlib.Path(options["cwd"])
-    argv_options = dict(zip(command[3::2], command[4::2]))
+    argv_options = dict(zip(command[3::2], command[4::2], strict=True))
     message = REVIEW_OUTCOMES[mode]
     store_review_loop_report(repo, message, argv_options["--agent-id"])
     code_step_core.log_event(repo, argv_options["--run-id"], "handback", argv_options["--session"],

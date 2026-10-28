@@ -471,7 +471,7 @@ def take_handback(repo_dir, state, agent_type, missing_text):
     handback = awaited_handback(repo_dir, state)
     if handback is None and newest_handback(repo_dir, state) is not None:
         return emit("wait", f"The {agent_type} handed back, but its stop was blocked, so it is still working. Do not "
-                    f"dispatch it again. Run {timed_command(RESUME_VERB)} to wait for its next hand-back.")
+                    f"dispatch it again. Run {timed_command(RESUME_VERB)} to wait for its next stop.")
     if handback is None:
         return emit("stop", resumed_agent_pending_stop(agent_type) if is_resumed else missing_text)
 

@@ -362,6 +362,8 @@ AUTOMATED_HEADING = "#### Automated Verification"
 # A level 2 or 3 heading that opens an acceptance-criteria section, in any wording that starts with "Acceptance".
 ACCEPTANCE_HEADING = re.compile(r"^#{2,3}\s+acceptance\b", re.IGNORECASE)
 AUTOMATED_ITEM = re.compile(r"^- \[[ x]\]")
+# A top-level list item of any marker: "- x", "* x", "+ x", "1. x", "1) x".
+TOP_LEVEL_LIST_ITEM = re.compile(r"^(?:[-*+]|\d+[.)])\s")
 AUTOMATED_ITEM_BOX = re.compile(r"^- \[[ x]\]\s*")
 PLAN_FILES_GLOB = "docs/plans/*/spec.md"
 GATE_ENV_HINT = "(Put these variables before every test, check or build command you run.)"
@@ -378,11 +380,35 @@ DEFERRED_TAG_NAMES = {"ci-verified": "CI-verified", "human-only": "human-only"}
 
 
 def automated_verification_rows(lines, name="plan", first_line=1, strict=False):
-    """(index, line) for each `- [ ]` or `- [x]` item under a `#### Automated Verification` heading, in file order. The
-    list ends at the next `#### ` heading, a heading of level 1 to 3, or a `---` rule. A `#### ` heading that names
-    automated verification in other words raises PlanFormatError when `strict` is set (`name:line:`; `first_line` is
-    the file line of lines[0]), because its items would otherwise be read as absent. A Manual Verification heading is
-    never misworded."""
+    """(index, line) for each item under a `#### Automated Verification` heading, in file order. A top-level list item
+    that is not a checkbox (`- \\`make test\\``, `1. N/A — docs only`) is read as an open box: its line comes back as
+    `- [ ] <text>`. See verification_list_items for where the list ends and what `strict` raises."""
+    verification_items = []
+    for index, line in verification_list_items(lines, name, first_line, strict):
+        if not AUTOMATED_ITEM.match(line):
+            line = TOP_LEVEL_LIST_ITEM.sub("- [ ] ", line, count=1)
+        verification_items.append((index, line))
+    return verification_items
+
+
+def plain_verification_item_warnings(lines, name="plan", first_line=1):
+    """One `name:line: warning:` row for each top-level list item under Automated Verification that is not a checkbox,
+    which automated_verification_rows reads as an open box."""
+    return [
+        f"{name}:{first_line + index}: warning: list item `{line.strip()[:80]}` under `{AUTOMATED_HEADING}` is not a "
+        f"checkbox; it is read as an open `- [ ]` check. Write it as `- [ ] <check>` (or `- [ ] N/A — <reason>`), or "
+        f"move it out of the section"
+        for index, line in verification_list_items(lines, name, first_line)
+        if not AUTOMATED_ITEM.match(line)
+    ]
+
+
+def verification_list_items(lines, name="plan", first_line=1, strict=False):
+    """(index, line) for each top-level list item under a `#### Automated Verification` heading, checkbox or not, in
+    file order. The list ends at the next `#### ` heading, a heading of level 1 to 3, or a `---` rule. A `#### `
+    heading that names automated verification in other words raises PlanFormatError when `strict` is set
+    (`name:line:`; `first_line` is the file line of lines[0]), because its items would otherwise be read as absent. A
+    Manual Verification heading is never misworded."""
     verification_items = []
     inside = False
     for index, line in enumerate(lines):
@@ -399,7 +425,7 @@ def automated_verification_rows(lines, name="plan", first_line=1, strict=False):
             continue
         if re.match(r"#{1,3} ", line) or line.strip() == "---":
             inside = False
-        if inside and AUTOMATED_ITEM.match(line):
+        if inside and TOP_LEVEL_LIST_ITEM.match(line):
             verification_items.append((index, line))
     return verification_items
 

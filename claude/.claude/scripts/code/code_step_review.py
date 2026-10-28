@@ -69,9 +69,10 @@ ASKS_DONE_USAGE = ("asks-done needs one outcome per ask: accepted, rejected or m
 STAGE_GUARDS = {
     "decide": {"stages": ("impact-coder", "impact-review"),
                "message": "decide needs a pending PLAN-IMPACT and one word: adopt, keep or discuss."},
-    "review-again": {"stages": ("stopped",), "stopReasons": ("invalid-packet", "cap-reached", "false-clean"),
-                     "message": "review-again ran with no unreadable review packet, capped review, unmarked review "
-                                "gate or silent review-loop pending."},
+    "review-again": {"stages": ("stopped",), "stopReasons": ("invalid-packet", "cap-reached", "false-clean",
+                                                            "tool-fault"),
+                     "message": "review-again ran with no unreadable review packet, capped review, crashed review "
+                                "call, unmarked review gate or silent review-loop pending."},
     "asks-done": {"stages": ("asks",), "message": ASKS_DONE_USAGE},
     "skill-done": {"stages": ("skill",), "message": "skill-done ran with no closing-phase skill pending."},
     "verify": {"stages": ("stopped",), "stopReasons": ("verification", "plan-format"),
@@ -581,6 +582,16 @@ def stop_on_review_status(repo_dir, state, module, packet):
         state["carriedFindings"] = carried_findings(module, packet)
         save_state(repo_dir, state)
         emit_plan_impact_modal(state["impact"], repo_dir, state["carriedFindings"])
+        return True
+    if packet["tool_fault"]:
+        state.update({"stage": "stopped", "stopReason": "tool-fault"})
+        save_state(repo_dir, state)
+        stop_with_question(
+            repo_dir, "a review call failed, so the review did not finish; it found nothing.",
+            [packet["tool_fault"]], "to run the review again on the same diff, invoke Skill code with `review-again`.",
+            "The review did not run to the end: a tool fault, not a finding. Do not mark the phase done.",
+            "Tool fault: " + packet["tool_fault"],
+            "To run the review again on the same diff, invoke Skill code with `review-again`.")
         return True
     if status == "critical-blocker":
         state["stage"] = "stopped"

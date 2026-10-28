@@ -289,18 +289,18 @@ def review_scope_lines(repo, owned, prior_issues, open_asks):
     return lines
 
 
-def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff="", open_asks=(), brief=""):
+def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_asks=(), brief=""):
+    # The fix diff goes in a file the reviewer reads: inlined, a large diff runs the call past its prompt limit.
     lines = review_scope_lines(repo, owned, prior_issues, open_asks)
     lines.append("Your scope is the owned files listed under Review scope (this round).")
     lines.append(CLASS_TAG_RULE)
-    if fix_diff:
-        lines.append("Round-one fix diff (what the coder changed since the first review; "
-                     "review only the owned files under Review scope (this round)):")
-        lines.append(fix_diff)
+    if fix_diff_path:
+        lines.append("Round-one fix diff (what the coder changed since the first review; read it, and review only "
+                     "the owned files under Review scope (this round)): " + fix_diff_path)
     if agent == "test-reviewer":
         lines.append("Source under test: the diff's non-test files.")
     if agent == "smell-reviewer":
-        lines.append("Bound: the round-one fix diff." if fix_diff else "Bound: the diff under first review.")
+        lines.append("Bound: the round-one fix diff." if fix_diff_path else "Bound: the diff under first review.")
     if brief:
         lines.append(brief)
     return "\n".join(lines)
@@ -717,7 +717,7 @@ class LoopRun:
         self.status = "converged"
         self.class_closure = NO_CLOSURE
         self.full_check = ""
-        self.round_two_fix_diff = ""
+        self.round_two_fix_diff_path = ""
         self.files = {}
         self.dispatches = []
         self.filed = {}  # {(reviewer, file): [finding entries]}, so a refiled finding updates its first row
@@ -736,7 +736,7 @@ class LoopRun:
 
     def review_one(self, dispatch):
         agent, owned = dispatch
-        prompt = reviewer_prompt(self.repo, agent, owned, self.prior_issues, self.round_two_fix_diff,
+        prompt = reviewer_prompt(self.repo, agent, owned, self.prior_issues, self.round_two_fix_diff_path,
                                  tuple(self.asks), self.brief)
         text = claude_call(f"review{self.iter_count}-{agent}", prompt, self.repo, self.out, agent=agent)
         return parse_review(text) or disposition_call(text, self.repo, self.out)
@@ -850,7 +850,9 @@ class LoopRun:
 
         self.files = scope(self.repo)
         if self.iter_count < ROUND_BUDGET:
-            self.round_two_fix_diff = "\n\n".join(coder_diffs)
+            fix_diff_file = self.out / f"round{self.iter_count}-fix.diff"
+            fix_diff_file.write_text("\n\n".join(coder_diffs))
+            self.round_two_fix_diff_path = str(fix_diff_file)
             self.dispatches = second_round_plan(round_fix, changed, skipped_findings, coder_diffs)
         return not (changed and all(path.endswith(".md") for path in changed))
 
@@ -994,6 +996,8 @@ def packet_message(outcome):
     }
     if outcome["full_check"]:
         fields["full_check"] = outcome["full_check"]
+    if outcome.get("tool_fault"):
+        fields["tool_fault"] = outcome["tool_fault"]
     if outcome["plan_change"]:
         fields["plan_impact"] = script_utils.one_line("; ".join(outcome["plan_change"]), limit=None)
     lines = []
@@ -1003,13 +1007,14 @@ def packet_message(outcome):
 
 
 def crash_outcome(progress, reason):
+    # A crash is a tool fault, not a finding: tool_fault tells code_step to offer review-again.
     fixed = [item for item in progress["fixed"] if isinstance(item, str) and item.strip()]
     return {"status": "critical-blocker", "iter": progress["iter"], "fixed": fixed,
             "skipped_fp": [], "blockers": [reason], "plan_change": [], "asks": [],
             "ask_gates": {}, "ask_ids": {}, "ask_rows": [], "class_closure": "none - the run ended in an error",
             "full_check": "",
             "files_touched": sorted(progress["files_touched"]), "nits": [],
-            "unreviewed_fix": False}
+            "unreviewed_fix": False, "tool_fault": reason}
 
 
 # ---------- hand-back rows ----------

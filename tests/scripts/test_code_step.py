@@ -2293,6 +2293,32 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("AGENT: review-loop", again)
         self.assertIn(self.SKIP_LINE, again)
 
+    TOOL_FAULT_PACKET = ("status: critical-blocker\niter: 2\nblockers:\n  - the review2-code-reviewer call failed "
+                         "(exit 1) saying \"Prompt is too long\"\ntool_fault: the review2-code-reviewer call failed "
+                         "(exit 1) saying \"Prompt is too long\"")
+
+    def test_a_crashed_review_call_stops_as_a_tool_fault_not_as_a_blocker(self):
+        self.coder_round()
+        self.hook("review-loop", self.TOOL_FAULT_PACKET)
+
+        out = self.step("after-review")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertNotIn("critical blocker", out)
+        self.assertIn("Prompt is too long", out)
+        self.assertIn("invoke Skill code with `review-again`", out)
+        self.assertEqual("tool-fault", self.state()["stopReason"])
+
+    def test_review_again_after_a_crashed_review_call_dispatches_the_review_loop(self):
+        self.coder_round()
+        self.hook("review-loop", self.TOOL_FAULT_PACKET)
+        self.step("after-review")
+
+        out = self.step("review-again")
+
+        self.assertIn("AGENT: review-loop", out)
+        self.assertEqual("review", self.state()["stage"])
+
     def test_review_again_with_no_unreadable_packet_pending_stops(self):
         self.start_phase_one()
         out = self.step("review-again")

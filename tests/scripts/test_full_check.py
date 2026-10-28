@@ -131,7 +131,9 @@ class FullCheckTest(unittest.TestCase):
         self.assertIn("FAIL: test_rounding (test_money.MoneyTest)", completed.stdout.splitlines())
 
     def test_a_step_on_a_missing_path_is_a_check_command_error_not_a_failure(self):
-        for command in ("git init -q && git diff --exit-code missing/schema.json", "cd missing-dir && true"):
+        for command in ("git init -q && git diff --exit-code missing/schema.json", "cd missing-dir && true",
+                        "python3 missing/manage.py test",
+                        "echo 'ERROR: file or directory not found: missing/test_x.py'; exit 4"):
             with self.subTest(command=command):
                 completed = self.check(command)
 

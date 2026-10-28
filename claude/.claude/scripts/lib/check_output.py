@@ -28,6 +28,14 @@ DJANGO_SETTINGS_ERROR = re.compile(r"ImproperlyConfigured|settings are not confi
 PYTEST_COMMAND = re.compile(r"\bpytest\b")
 SYNTAX_ERROR = re.compile(r"\bSyntaxError\b")
 DJANGO_CONFIG_FILE = re.compile(r"(?:^|/)(?:[^/]*settings[^/]*\.py|apps\.py|settings/[^/]+)$")
+# A step that stops on a path that does not exist: git, the shell, `cd`, pytest and python given a script.
+MISSING_PATH_LINES = (
+    re.compile(r"^fatal: ambiguous argument '(?P<path>.*)': unknown revision or path not in the working tree"),
+    re.compile(r"^\S*sh: (?:line \d+: )?(?:cd: )?(?P<path>\S+): No such file or directory"),
+    re.compile(r"^\S*sh: \d+: cd: can't cd to (?P<path>\S+)"),
+    re.compile(r"^ERROR: file or directory not found: (?P<path>\S+)"),
+    re.compile(r"^\S*python[\d.]*: can't open file '(?P<path>[^']+)': \[Errno 2\] No such file or directory"),
+)
 
 
 def is_repo_module(module_name, repo_root):
@@ -50,6 +58,15 @@ def tail_with_failing_tests(output, tail):
     if not missing:
         return tail
     return "Failing tests:\n" + "\n".join(missing) + "\n\n" + tail
+
+
+def missing_path(lines):
+    """(line, path) for the first line that says a step stopped on a path that does not exist, else None."""
+    for line in lines:
+        match = next((match for pattern in MISSING_PATH_LINES if (match := pattern.match(line))), None)
+        if match:
+            return line.strip(), match.group("path")
+    return None
 
 
 def is_setup_fault(code, output, repo_root, include_missing_modules=True):

@@ -78,7 +78,7 @@ WHOLE_SUITE = re.compile(r"^(?:(?:cd \S+ && )?(?:npm|pnpm|yarn) (?:run )?(?:test
 TICKET_IN_NAME = re.compile(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]+-\d+)(?![A-Za-z0-9])")
 COMMAND_START = re.compile(r"^(?:" + script_utils.ENV_PREFIX.pattern + r")?"
                            r"(cd |npm |npx |pnpm |yarn |git |node |python3? |pytest|ruff |bash |curl |make "
-                           r"|cargo |go |deno |bun |uv |poetry |tsc\b|eslint |vitest|jest|mvn |gradle |\./"
+                           r"|cargo |go |deno |bun |uv |poetry |pipenv |pdm |tsc\b|eslint |vitest|jest|mvn |gradle |\./"
                            r"|dotnet |docker |just |rake |bundle |ruby |php |composer |mix |swift |sbt |bazel |tox\b"
                            r"|mypy |pyright|sh )")
 # Programs that a prose span can start with but that are never a check: they start a session, never end or wait for

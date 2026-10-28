@@ -130,16 +130,18 @@ def lists_pytest(listed):
 
 
 def listed_django_test(listed):
-    # (runner, options) of the first listed `<python> manage.py test` command, or None when the phase lists none. The
-    # runner is in the form of a pytest runner: ["uv", "run", "python", "-m"] for `uv run python manage.py test`, so
-    # ruff runs through the same words. The options are the flags after `test` with their values ("--keepdb",
-    # "--settings app.test"); the listed test labels are dropped, because the gate scopes the run to the changed test
-    # modules. A command that chains another command first gives none.
+    # (runner, options, manage script) of the first listed `<python> [<dir>/]manage.py test` command, or None when the
+    # phase lists none. The runner is in the form of a pytest runner: ["uv", "run", "python", "-m"] for
+    # `uv run python manage.py test`, so ruff runs through the same words. The options are the flags after `test` with
+    # their values ("--keepdb", "--settings app.test"); the listed test labels are dropped, because the gate scopes
+    # the run to the changed test modules. The manage script is the word as listed: `backend/manage.py`. A command
+    # that chains another command first gives none.
     for words in listed_words(listed):
-        if "manage.py" not in words:
+        manage_index = next((index for index, word in enumerate(words)
+                             if pathlib.PurePosixPath(word).name == "manage.py"), None)
+        if manage_index is None:
             continue
 
-        manage_index = words.index("manage.py")
         is_test_command = words[manage_index + 1:manage_index + 2] == ["test"]
         runs_python = manage_index > 0 and pathlib.PurePosixPath(words[manage_index - 1]).name.startswith("python")
         if not (is_test_command and runs_python) or chains_a_command(words[:manage_index]):
@@ -151,7 +153,16 @@ def listed_django_test(listed):
             follows_value_option = position and after_test[position - 1] in check_scope.MANAGE_TEST_VALUE_OPTIONS
             if word.startswith("-") or follows_value_option:
                 options.append(word)
-        return [*words[:manage_index], "-m"], options
+        return [*words[:manage_index], "-m"], options, words[manage_index]
+    return None
+
+
+def nearest_manage_script(repo_dir, python_paths):
+    # The repo-relative path of the manage.py nearest above the first Python path that has one, else None.
+    for path in python_paths:
+        manage_dir = nearest_directory_with(repo_dir, path, "manage.py")
+        if manage_dir is not None:
+            return (manage_dir / "manage.py").relative_to(repo_dir).as_posix()
     return None
 
 
@@ -197,42 +208,50 @@ def project_python_runner(repo_dir):
     return None
 
 
-def django_test_label(test_path):
-    return ".".join(pathlib.PurePosixPath(test_path).with_suffix("").parts)
+def django_test_label(test_path, manage_dir):
+    # The dotted module of a test file, from the folder that holds manage.py.
+    relative_path = pathlib.PurePosixPath(test_path).relative_to(manage_dir)
+    return ".".join(relative_path.with_suffix("").parts)
 
 
-def python_test_command(runner, test_paths, django_options):
-    # pytest on the changed test files, or, when django_options is a list, `manage.py test` on their dotted labels,
-    # labels before options. A Django phase that names no test file gives no test command: `manage.py test` with no
-    # label runs the whole suite, which the gate refuses.
+def python_test_command(runner, test_paths, django_options, manage_script="manage.py"):
+    # pytest on the changed test files, or, when django_options is a list, `<manage_script> test` on the dotted labels
+    # of the ones under the manage script's folder, labels before options. A Django phase that names no test file
+    # there gives no test command: `manage.py test` with no label runs the whole suite, which the gate refuses.
     if django_options is None:
         scope = " ".join(shlex.quote(p) for p in test_paths) or "{files:_test.py}"
         return f"{shlex.join([*runner, 'pytest'])} {scope}"
 
-    if not test_paths:
+    manage_dir = pathlib.PurePosixPath(manage_script).parent
+    labeled_paths = [path for path in test_paths if pathlib.PurePosixPath(path).is_relative_to(manage_dir)]
+    if not labeled_paths:
         return None
 
     python_words = runner[:-1] if runner[-1:] == ["-m"] else [*runner, "python"]
-    labels = [django_test_label(path) for path in test_paths]
-    return shlex.join([*python_words, "manage.py", "test", *labels, *django_options])
+    labels = [django_test_label(path, manage_dir) for path in labeled_paths]
+    return shlex.join([*python_words, manage_script, "test", *labels, *django_options])
 
 
 def python_commands(repo_dir, paths, listed_runner=None, listed_django=None, phase_lists_pytest=False, *,
                     derives_tests):
     # Tests run through the phase's listed runner, else the repo's lock file or virtualenv, else python3. Ruff runs
     # through the same runner, except a bare system python, where ruff is usually its own program. The tests are
-    # `manage.py test` when the phase lists one, or when the repo has a root manage.py, no pytest-django settings and
-    # the phase lists no pytest command; otherwise pytest.
+    # `manage.py test` when the phase lists one, or when a manage.py sits at the root or above the phase's Python
+    # files, no pytest-django settings sit beside it or at the root and the phase lists no pytest command; otherwise
+    # pytest.
     python_paths = [p for p in paths if p.endswith(".py")]
+    manage_script = nearest_manage_script(repo_dir, python_paths)
     has_config = any((repo_dir / name).is_file() for name in ("pyproject.toml", "pytest.ini", "setup.cfg", "manage.py"))
-    if not python_paths or not has_config:
+    if not python_paths or not (has_config or manage_script):
         return []
 
     django_options = None
     if listed_django:
-        listed_runner, django_options = listed_django
-    elif not phase_lists_pytest and (repo_dir / "manage.py").is_file() and not has_pytest_django_settings(repo_dir):
-        django_options = []
+        listed_runner, django_options, manage_script = listed_django
+    elif not phase_lists_pytest and manage_script:
+        manage_dir = (repo_dir / manage_script).parent
+        if not has_pytest_django_settings(repo_dir) and not has_pytest_django_settings(manage_dir):
+            django_options = []
 
     runner = listed_runner if listed_runner is not None else project_python_runner(repo_dir)
     if runner is None:
@@ -252,7 +271,7 @@ def python_commands(repo_dir, paths, listed_runner=None, listed_django=None, pha
 
     test_file = DJANGO_TEST_FILE if django_options is not None else TEST_FILE
     test_paths = [p for p in python_paths if test_file.search(p)]
-    test_command = python_test_command(runner, test_paths, django_options)
+    test_command = python_test_command(runner, test_paths, django_options, manage_script)
     if test_command:
         commands.append(test_command)
     return commands

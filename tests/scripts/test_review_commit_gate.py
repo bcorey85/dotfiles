@@ -91,8 +91,15 @@ class GateCase(unittest.TestCase):
             "hookEventName": "PreToolUse", "permissionDecision": "ask", "permissionDecisionReason": reason}})
 
     def state(self, session="s1"):
+        """The gate's state for the session: "clean\n", "dirty\n" when any event follows the last clean line,
+        or None with no state file."""
         path = self.state_dir / session
-        return path.read_text() if path.exists() else None
+        if not path.exists():
+            return None
+        lines = path.read_text().splitlines()
+        if lines and lines[-1] == "clean":
+            return "clean\n"
+        return "dirty\n" if lines else ""
 
 
 class ReviewCommitGateTest(GateCase):
@@ -130,9 +137,9 @@ class ReviewCommitGateTest(GateCase):
         for command in ("git status", "echo git commits", "ls"):
             self.assert_silent(self.bash(command))
 
-    def test_commit_tree_counts_as_a_commit_like_the_bash_original(self):
+    def test_commit_tree_is_not_a_commit(self):
         self.dispatch()
-        self.assert_commit_denied(self.bash("git commit-tree abc"))
+        self.assert_silent(self.bash("git commit-tree abc"))
 
     def test_mark_clean_then_commit_passes_and_mark_dirty_denies_again(self):
         self.dispatch()
@@ -449,7 +456,7 @@ class NotesOnlyCommitTest(GateCase):
                                 f"git add {self.NOTES} && cd src && git commit -m x",
                                 "git commit -m x && git commit -m y", "git commit -m x; git commit -m y",
                                 "git commit -m x\ngit commit -m y", "git status && echo git commit",
-                                "git commit-tree abc", "time git commit -m x",
+                                "time git commit -m x",
                                 "git commit -m x || git commit -m y"])
 
     def test_other_git_steps_that_can_change_the_index_are_denied(self):
@@ -821,6 +828,76 @@ class ReviewedWorkCommitTest(GateCase):
         garbage = self.tmp / "garbage.jsonl"
         garbage.write_text("not json\n[1]\n")
         self.assert_commit_denied(self.commit("git commit --allow-empty -m x", transcript_path=str(garbage)))
+
+    def coder_transcript(self, agent_id, *edited_files):
+        """The session transcript path, with a subagent transcript in which agent_id edited edited_files."""
+        session_transcript = self.tmp / "session.jsonl"
+        session_transcript.write_text("")
+        subagents = self.tmp / "session" / "subagents"
+        subagents.mkdir(parents=True, exist_ok=True)
+        calls = [{"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": f"t{index}", "name": "Edit", "input": {"file_path": str(edited)}}]}}
+            for index, edited in enumerate(edited_files)]
+        (subagents / f"agent-{agent_id}.jsonl").write_text("".join(json.dumps(call) + "\n" for call in calls))
+        return str(session_transcript)
+
+    def test_coder_work_in_one_repo_leaves_a_commit_in_another_repo_allowed(self):
+        other = self.make_repo("other")
+        transcript = self.coder_transcript("a1", self.repo / "base.py")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        self.assert_silent(self.commit("git commit --allow-empty -m x", cwd=other, session="s2",
+                                       transcript_path=transcript))
+        self.assert_commit_denied(self.commit("git commit --allow-empty -m x", session="s2",
+                                              transcript_path=transcript))
+
+    def test_a_coder_with_no_edit_on_record_dirties_every_repo(self):
+        other = self.make_repo("other")
+        transcript = self.coder_transcript("a1")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=other, session="s2",
+                                              transcript_path=transcript))
+
+    def test_a_converged_hand_back_after_the_coder_lets_the_commit_through_without_a_mark(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.store_dir.mkdir(parents=True, exist_ok=True)
+        rows = [{"kind": "dispatch", "session_id": "s1", "ts": time.time()},
+                {"kind": "handback", "session_id": "s1", "status": "converged", "message": "", "ts": time.time()}]
+        (self.store_dir / "s1.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+        self.assert_silent(self.commit("git commit -a -m x"))
+        self.assert_silent(self.dispatch())
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def test_a_merge_commit_after_a_literal_cd_passes_and_other_cd_forms_get_no_merge_credit(self):
+        self.git(self.repo, "checkout", "-q", "-b", "side")
+        (self.repo / "side.py").write_text("side\n")
+        self.git(self.repo, "add", "side.py")
+        self.git(self.repo, "commit", "-q", "-m", "side")
+        self.git(self.repo, "checkout", "-q", "main")
+        (self.repo / "main.py").write_text("main\n")
+        self.git(self.repo, "add", "main.py")
+        self.git(self.repo, "commit", "-q", "-m", "main")
+        self.git(self.repo, "merge", "--no-commit", "--no-ff", "side")
+        self.assert_silent(self.commit(f"cd {self.repo} && git commit --no-edit", cwd=self.tmp))
+        for command in (f"(cd {self.repo} && git commit --no-edit)", f"{{ cd {self.repo}; }} && git commit --no-edit",
+                        f"cd {self.repo}; git commit --no-edit", f"cd {self.repo} || git commit --no-edit"):
+            with self.subTest(command=command):
+                self.assert_commit_denied(self.commit(command, cwd=self.tmp))
+
+    def test_a_no_review_order_survives_peer_messages_summaries_and_shell_echoes(self):
+        transcript = self.write_transcript(
+            self.user_prompt("[no-review] commit this"),
+            self.user_prompt("check the queue", origin={"kind": "peer"}),
+            self.user_prompt("This session is being continued", isCompactSummary=True),
+            self.user_prompt("<cross-session-message from=x>go</cross-session-message>"),
+            self.user_prompt([{"type": "text", "text": "<bash-input>git status</bash-input>"}]),
+            self.user_prompt("Another Claude session sent a message: commit"),
+        )
+        self.assert_silent(self.commit("git commit --allow-empty -m x", transcript_path=transcript))
+
+    def test_a_human_prompt_after_the_order_still_ends_it(self):
+        transcript = self.write_transcript(self.user_prompt("[no-review] commit this"),
+                                           self.user_prompt("now more", origin={"kind": "human"}))
+        self.assert_commit_denied(self.commit("git commit --allow-empty -m x", transcript_path=transcript))
 
 
 if __name__ == "__main__":

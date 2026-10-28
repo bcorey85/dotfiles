@@ -113,11 +113,12 @@ def marker_rows(file_lines, comments_only=False, file_path=""):
     """Numbered non-blank lines carrying a workflow marker, ordered by line number.
 
     comments_only limits the scan to comment lines, for formats whose values are data, not prose. Lines inside a
-    multi-line string held as data are not searched; on the line that closes one, only the text after the closing
-    quote is."""
+    multi-line string held as data are not searched; on the line that opens one, only the text before the opening
+    quote is, and on the line that closes one, only the text after the closing quote; on a template-literal line
+    that closes one and opens another, only the text between them."""
     style = source_text.comment_style_of(file_path)
     comment_numbers = comment_numbers_of(file_lines, style)
-    string_data_numbers, closing_tails = source_text.string_data_regions(file_lines, style)
+    string_data_numbers, closing_tails, openings = source_text.string_data_regions(file_lines, style)
     rows = []
     for number, line in enumerate(file_lines, 1):
         if not NONBLANK.search(line) or number in string_data_numbers:
@@ -127,6 +128,8 @@ def marker_rows(file_lines, comments_only=False, file_path=""):
             continue
         if number in closing_tails:
             searched = searchable_text(closing_tails[number], style)
+        elif number in openings:
+            searched = searchable_text(openings[number], style)
         else:
             searched = line if is_comment else searchable_text(line, style)
         row = f"{number}:{searched}"

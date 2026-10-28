@@ -461,7 +461,8 @@ def emit_review_dispatch(repo_dir, state):
     behavior_fallback = state["behavior"][0] if state["behavior"] and is_one_file else None
     state["changes"] = {path: change_line(report, path, state["files"], behavior_fallback, path in untracked_files)
                         for path in state["files"]}
-    header = ["mode: review-first", "caller: code", f"lane: {state['lane']}"]
+    header = ["mode: review-first", "caller: code", f"lane: {state['lane']}",
+              f"repo: {repo_dir}"]
     if state.get("plan"):
         header.append(f"plan: {state['plan']}")
         if state.get("phase"):

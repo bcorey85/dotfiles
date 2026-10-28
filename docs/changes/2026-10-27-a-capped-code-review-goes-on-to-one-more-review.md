@@ -3,7 +3,7 @@ type: "Change"
 title: "A capped /code review goes on to one more review-loop pass"
 description: "A /code review that stops at the round cap takes the user's rulings on its asks, or `review-again` when it has none, and sends the open findings to one more review-loop pass in place of a phase restart."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T17:23:25-05:00"}
-seq: 120
+seq: 126
 kind: "fix"
 components: ["script/code-step", "agent/review-loop"]
 evidence: ["judgment"]

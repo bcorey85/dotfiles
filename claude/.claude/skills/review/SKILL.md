@@ -22,6 +22,7 @@ Thin wrapper over the `review-loop` agent. A script parses the returned packet, 
    - any `+fast` / `+deep` modifier and `iter=N`
    - if `$ARGUMENTS` names a file path and no handoff block was given, scope the review to that file only
    - `base: <ref>` when `$ARGUMENTS` holds `base=<ref>`: the loop then reviews every change since that ref, commits included
+   - `repo: <absolute path>` when the work lives outside your cwd's repo (a sibling worktree)
 
 2. **Run the script on the returned packet.** The script reads the packet a hook saved, for this session, when the loop handed back. Do not paste it. Running it again repeats no side effect:
 

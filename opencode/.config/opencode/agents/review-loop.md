@@ -255,7 +255,7 @@ Runs ONCE post-gate (Step 6), pre-logging (Step 7), on the **settled** diff. Ski
 `${CLAUDE_SKILL_DIR}` does not resolve inside an agent. Use the absolute path:
 
 ```bash
-bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> spec_iter=<N> fix=<n> ask=<n> nit=<n> blocker=<n> fixed=<n> skipped_fp=<n> test_intent_ran=0 culled=<n> comment_noise=<n> smells=<n> specialists=<security,perf,smell|none> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
+bash "$HOME/.claude/skills/review/log-review-metrics" repo="$(basename "$(git rev-parse --show-toplevel)")" lane=<lane> iter=<N> spec_iter=<N> fix=<n> ask=<n> nit=<n> blocker=<n> fixed=<n> skipped_fp=<n> test_intent_ran=0 culled=<n> comment_noise=<n> smells=<n> specialists=<security,perf,smell|none> result=<PASS|PASS_WITH_WARNINGS|NEEDS_CHANGES>
 ```
 
 The Step 6 class-closure receipt is NOT logged here — it lives in the packet as

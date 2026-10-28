@@ -62,10 +62,13 @@ unmeasured: ""
 
 ## Result
 
-- Full suite with its lint step: 3235 tests in 89 files, 0 failed, ruff clean.
+- Full suite after the merge with master: 3371 tests in 93 files, 0 failed; ruff and the duplicate check clean.
 - The review loop converged. Its open questions were decided: the scan code moved to `lib/check_scope.py`; a
   missing outside module stays a code failure in the full check; Playwright and unittest were not added to the
-  test-command rule, since no session listed either.
+  test-command rule, since no session listed either; a listed test command replaces only its own runner's derived
+  tests; Django `-k`/`--tag` option handling and moving `runs_tests` were left as they are.
+- Master's `full_check.py` now carries the setup-fault reading and the failing-test lines, so the scripted loop and
+  the agent loop both print `setup fault (exit N)` and stop with `status: setup-fault`.
 
 ## Watch
 

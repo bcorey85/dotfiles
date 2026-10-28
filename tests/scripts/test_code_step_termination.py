@@ -22,6 +22,7 @@ import json
 import os
 import pathlib
 import re
+import runpy
 import shlex
 import shutil
 import signal
@@ -148,7 +149,8 @@ GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAM
            "CLAUDE_CODE_SESSION_ID": "sess-termination", "CODE_STEP_NVIM_JUMP": "true",
            # The explorer makes no Agent calls and takes minutes: no dispatch may age into the launch grace period.
            "CODE_STEP_LAUNCH_SECONDS": "1000000"}
-NO_ROW_YET_PRESETS = {"CODE_STEP_WAIT_SECONDS": "0.2", "CODE_STEP_POLL_SECONDS": "0.05"}
+# The walk runs each verb in-process, so no row lands during the wait: any wait longer than one poll reads the same.
+NO_ROW_YET_PRESETS = {"CODE_STEP_WAIT_SECONDS": "0.02", "CODE_STEP_POLL_SECONDS": "0.01"}
 
 # code_step.py reads CODE_STEP_CLAUDE_DIR once, at import. Set it only while the module loads, so the real log
 # scripts and the live ~/.claude files are never reached and other test modules keep their environment.
@@ -158,6 +160,8 @@ code_step = importlib.util.module_from_spec(module_spec)
 with mock.patch.dict(os.environ, {"CODE_STEP_CLAUDE_DIR": str(CLAUDE_STUB)}):
     module_spec.loader.exec_module(code_step)
 import code_step_core
+
+RUN_COMMAND_MODULES = (code_step, sys.modules["code_step_start"], sys.modules["code_step_review"])
 
 PLAN_DIR = "docs/plans/ORD-1-orders"
 PLAN_A = f"{PLAN_DIR}/spec.md"
@@ -438,6 +442,50 @@ def launch_stand_in_review_loop(real_popen, command, **options):
     return StandInLoopProcess(dead_process_id())
 
 
+def run_staged_script_in_process(real_run_command, command, cwd=None, stdin=None, timeout=None):
+    # A `python3 <staged script>` command runs in-process, as __main__, and returns what run_command returns: a
+    # python3 start per call cost about half of each node. Every other command runs as the script runs it.
+    is_staged_script = (not isinstance(command, str) and command[0] == "python3" and len(command) > 1
+                        and pathlib.Path(command[1]).is_relative_to(CLAUDE_STUB))
+    if not is_staged_script or stdin is not None:
+        return real_run_command(command, cwd, stdin=stdin, timeout=timeout)
+
+    script_output = io.StringIO()
+    previous_argv, previous_path = sys.argv, list(sys.path)
+    sys.argv = [str(word) for word in command[1:]]
+    exit_code = 0
+    try:
+        with contextlib.chdir(cwd or "."), contextlib.redirect_stdout(script_output), \
+                contextlib.redirect_stderr(script_output):
+            try:
+                runpy.run_path(command[1], run_name="__main__")
+            except SystemExit as stopped:
+                exit_code = process_exit_code(stopped, script_output)
+    finally:
+        sys.argv, sys.path[:] = previous_argv, previous_path
+    return exit_code, script_output.getvalue().strip()
+
+
+def process_exit_code(stopped, script_output):
+    # The exit code a python3 process gives for this SystemExit; a message goes to its output, as python3 prints it.
+    if stopped.code is None:
+        return 0
+    if isinstance(stopped.code, int):
+        return stopped.code
+    script_output.write(f"{stopped.code}\n")
+    return 1
+
+
+@contextlib.contextmanager
+def in_process_staged_scripts():
+    # Every code-step module that runs a staged script through run_command runs it in-process instead.
+    with contextlib.ExitStack() as patches:
+        for module in RUN_COMMAND_MODULES:
+            in_process = functools.partial(run_staged_script_in_process, module.run_command)
+            patches.enter_context(mock.patch.object(module, "run_command", in_process))
+        yield
+
+
 def call_script(repo, presets, argv):
     # Run one verb in-process. Returns (stdout, crashTraceback or None).
     script_env = {name: value for name, value in os.environ.items()
@@ -457,6 +505,7 @@ def call_script(repo, presets, argv):
                 mock.patch.object(subprocess, "Popen",
                                   lambda command, **options: launch_stand_in_review_loop(real_popen, command,
                                                                                          **options)), \
+                in_process_staged_scripts(), \
                 contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
             try:
                 code_step.main()
@@ -1158,6 +1207,21 @@ class TerminationTest(unittest.TestCase):
 
         self.assertGreater(len(copies_seen), 1)
         self.assertEqual(1, max(copies_seen))
+
+    def test_a_staged_script_run_in_process_gives_what_its_process_gives(self):
+        repo = build_template("template-in-process")
+        gate_script = str(CLAUDE_STUB / "scripts" / "code" / "coder_gate.py")
+        real_run_command = code_step.run_command
+
+        for gate_arguments in (["clear"], ["set"]):
+            command = ["python3", gate_script, *gate_arguments]
+            process_result = real_run_command(command, repo)
+            with mock.patch.object(subprocess, "Popen", wraps=subprocess.Popen) as watched_popen:
+                in_process_result = run_staged_script_in_process(real_run_command, command, repo)
+
+            launched_programs = [launch.args[0][0] for launch in watched_popen.call_args_list]
+            self.assertEqual(process_result, in_process_result)
+            self.assertNotIn("python3", launched_programs)
 
 
 if __name__ == "__main__":

@@ -24,7 +24,10 @@ with no failures and a timed-out command has the result "timeout". On a pass, a 
 gate result to the hand-back message, so the caller reads the report as final. The stamp names each timed-out command
 with the last 600 characters of its output, and says that the gate got no result from it: the command is too broad,
 or a test hangs. A failure that shows the environment cannot run the check (exit 126 or 127, a runner that cannot
-start the program, or a missing module from outside the repo with no failed test) is a setup fault: it never denies the
+start the program, a missing module from outside the repo with no failed test, or, under a pytest command, a Django
+settings error such as ImproperlyConfigured with no failed test, or a pytest exit 4, either one unless the coder
+changed a settings module or an app config) is a setup fault; a SyntaxError, a missing repo module, a missing test
+file or a conftest that fails on the repo's own code is never one. A setup fault never denies the
 call or counts toward the cap, a run with only setup faults has the result "setup-fault", and the stamp names each one
 with its output tail. With no gate, a gate
 older than 6 hours or another agent type, the hand-back goes through untouched. Parallel coders take turns."""
@@ -82,6 +85,17 @@ COMMAND_NOT_RUN_CODES = {126, 127}
 RUNNER_CANNOT_START = re.compile(r"Failed to spawn: |Command not found: ")
 MISSING_MODULE = re.compile(r"No module named '?([A-Za-z_][\w.]*)")
 TESTS_FAILED = re.compile(r"\b\d+ failed\b")
+# pytest exits 4 on a usage or configuration error, which includes pytest-django's missing-settings error.
+PYTEST_USAGE_ERROR_CODE = 4
+PYTEST_REAL_USAGE_ERRORS = ("while loading conftest", "file or directory not found", "ERROR: not found:")
+PYTEST_COMMAND = re.compile(r"\bpytest\b")
+DJANGO_SETTINGS_ERROR = re.compile(r"ImproperlyConfigured|settings are not configured|Apps aren't loaded yet")
+CODERS_OWN_SYNTAX_ERROR = re.compile(r"\bSyntaxError\b")
+# manage.py test exits 0 when its labels hold no Django tests, as pytest-style tests do, so a run of none is a failure.
+DJANGO_TEST_COMMAND = re.compile(r"\bmanage\.py\s+test\b")
+DJANGO_RAN_NO_TESTS = re.compile(r"^Ran 0 tests\b", re.MULTILINE)
+# A file whose change can itself raise a Django settings error: a settings module or an app config.
+DJANGO_CONFIG_FILE = re.compile(r"(?:^|/)(?:[^/]*settings[^/]*\.py|apps\.py|settings/[^/]+)$")
 
 
 def gate_path(cwd):
@@ -357,13 +371,20 @@ def changed_files(directory):
     return sorted(set(names))
 
 
-def fill_files(command, repo_root):
+def cached_changed_files(directory, changed_cache):
+    # changed_files once per directory for a whole hook run, shared by {files} and the setup-fault check.
+    if directory not in changed_cache:
+        changed_cache[directory] = changed_files(directory)
+    return changed_cache[directory]
+
+
+def fill_files(command, repo_root, changed_cache):
     # Returns the command with each {files} filled, or None when a placeholder keeps no file.
     if not FILES_PLACEHOLDER.search(command):
         return command
 
     directory = command_directory(command, repo_root)
-    changed_file_list = changed_files(directory)
+    changed_file_list = cached_changed_files(directory, changed_cache)
 
     filled_command = command
     for match in FILES_PLACEHOLDER.finditer(command):
@@ -376,14 +397,15 @@ def fill_files(command, repo_root):
     return filled_command
 
 
-def run_commands(gate):
+def run_commands(gate, changed_cache=None):
     # A command that hit the timeout gave no test result, so timed_out holds (command, output so far), never failures.
     failures = []
     skipped = []
     timed_out = []
     environment = {**os.environ, **gate.get("env", {})}
+    changed_cache = {} if changed_cache is None else changed_cache
     for command in gate["commands"]:
-        filled_command = fill_files(command, gate["repoRoot"])
+        filled_command = fill_files(command, gate["repoRoot"], changed_cache)
         if filled_command is None:
             skipped.append(command)
             continue
@@ -395,6 +417,10 @@ def run_commands(gate):
             continue
         if code != 0:
             failures.append((command, f"exit {code}", stdout + stderr))
+            continue
+
+        if DJANGO_TEST_COMMAND.search(command) and DJANGO_RAN_NO_TESTS.search(stdout + stderr):
+            failures.append((command, "ran no tests", stdout + stderr))
     return failures, skipped, timed_out
 
 
@@ -406,12 +432,29 @@ def is_repo_module(module_name, repo_root):
     return False
 
 
-def is_setup_fault(code, output, repo_root):
+def is_setup_fault(code, output, repo_root, command, changed_file_list):
     # A failure that says the environment cannot run the check, not that a check failed: the program is missing, the
     # runner cannot start it, or a module outside the repo is missing and no test ran to a failure. A missing repo
-    # module or a name that does not import is a real defect.
+    # module or a name that does not import is a real defect, and so is a SyntaxError. Under pytest, a Django settings
+    # error or a usage or config error (exit 4) means the runner is not configured, not that the code is wrong, unless
+    # the coder changed a settings module or an app config, which can raise the settings error itself. Under
+    # manage.py test the settings are loaded, so a settings error comes from the repo's code. A conftest that fails to
+    # import also exits 4, and that is a real defect.
     if code in COMMAND_NOT_RUN_CODES or RUNNER_CANNOT_START.search(output):
         return True
+
+    if CODERS_OWN_SYNTAX_ERROR.search(output):
+        return False
+
+    if code == PYTEST_USAGE_ERROR_CODE and PYTEST_COMMAND.search(command):
+        if any(text in output for text in PYTEST_REAL_USAGE_ERRORS):
+            missing_modules = MISSING_MODULE.findall(output)
+            return bool(missing_modules) and not any(is_repo_module(name, repo_root) for name in missing_modules)
+
+        return not any(DJANGO_CONFIG_FILE.search(name) for name in changed_file_list)
+
+    if PYTEST_COMMAND.search(command) and DJANGO_SETTINGS_ERROR.search(output) and not TESTS_FAILED.search(output):
+        return not any(DJANGO_CONFIG_FILE.search(name) for name in changed_file_list)
 
     missing_modules = MISSING_MODULE.findall(output)
     if not missing_modules or TESTS_FAILED.search(output):
@@ -419,12 +462,20 @@ def is_setup_fault(code, output, repo_root):
     return not any(is_repo_module(name, repo_root) for name in missing_modules)
 
 
-def split_setup_faults(failures, repo_root):
+def split_setup_faults(failures, repo_root, changed_cache):
+    if not failures:
+        return [], []
+
     real_failures = []
     setup_faults = []
+    changed_file_list = cached_changed_files(repo_root, changed_cache)
     for command, outcome, output in failures:
+        if not outcome.startswith("exit "):
+            real_failures.append((command, outcome, output))
+            continue
+
         code = int(outcome.removeprefix("exit "))
-        if is_setup_fault(code, output, repo_root):
+        if is_setup_fault(code, output, repo_root, command, changed_file_list):
             setup_faults.append((command, output))
         else:
             real_failures.append((command, outcome, output))
@@ -508,10 +559,11 @@ def run_hook():
             return
 
         started = time.time()
-        failures, skipped, timed_out = run_commands(gate)
+        changed_cache = {}
+        failures, skipped, timed_out = run_commands(gate, changed_cache)
         seconds = round(time.time() - started)
 
-        failures, setup_faults = split_setup_faults(failures, gate["repoRoot"])
+        failures, setup_faults = split_setup_faults(failures, gate["repoRoot"], changed_cache)
 
         agent_id = event.get("agent_id") or "unknown"
         coder = gate["coders"].get(agent_id, {"runs": 0, "denies": 0, "failed": [], "result": "none"})

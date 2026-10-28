@@ -29,7 +29,9 @@ unmeasured: ""
 
 ## Result
 
-Pending.
+- Net 19 lines removed across the three scripts (90 added, 109 deleted); no test changed.
+- Full suite after the merge with the simplify integration branch: 3679 tests in 95 files, 0 failed; ruff and the
+  duplicate check clean. The review loop converged with no behavior change found.
 
 ## Watch
 

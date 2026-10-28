@@ -765,7 +765,25 @@ def deny_line(reason):
 
 ALREADY_DELIVERED_REASON = ("Your report was already delivered; a second hand-back cannot reach the caller. Use "
                             "SendMessage for anything further, then stop.")
+OPEN_WORK_REASON = ("{count} agent(s) or shell(s) you started in the background have not reported back. Do not hand "
+                    "back yet: end your turn and wait for each task notification, act on what it reports, then hand "
+                    "back.")
 UNCHECKED_KIND = "unchecked-code"
+
+
+def open_work_reason(event):
+    """OPEN_WORK_REASON when the loop's own transcript shows a background dispatch or shell that has not reported
+    back, else None. A transcript that cannot be read never blocks."""
+    try:
+        import review_loop_gate  # imports this module at its top, so it loads here, not at ours
+        transcript = review_loop_gate.LoopTranscript(script_utils.agent_transcript_path(event))
+        open_dispatches = transcript.open_dispatches()
+    except Exception as error:
+        print(f"handback hook: open-work gate skipped, {type(error).__name__}: {error}", file=sys.stderr)
+        return None
+    if not open_dispatches:
+        return None
+    return OPEN_WORK_REASON.format(count=open_dispatches)
 
 
 def last_unchecked_step(session_id, agent_id):
@@ -878,7 +896,8 @@ def handle_hook(event, kind):
         record(session_id, "unreviewed", agent_id=agent_id)
         return ("This review-loop hand-back is clean but no reviewer ran. Dispatch the code-reviewer on the diff, fix "
                 "what it finds, then hand back again.")
-    gate_reason = (unchecked_code_reason(event, session_id, agent_id, message)
+    gate_reason = (open_work_reason(event)
+                   or unchecked_code_reason(event, session_id, agent_id, message)
                    or hand_back_plan_edit_reason(event, packet))
     if gate_reason:
         return gate_reason

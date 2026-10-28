@@ -505,6 +505,15 @@ def pre_tool_use_deny(reason):
                                              "permissionDecisionReason": reason}}))
 
 
+def agent_transcript_path(hook):
+    """The calling subagent's transcript: the path the hook event names, else the one under the session transcript."""
+    named = hook.get("agent_transcript_path")
+    if named:
+        return named
+    session_transcript = hook["transcript_path"]
+    return os.path.join(session_transcript[:-len(".jsonl")], "subagents", f"agent-{hook['agent_id']}.jsonl")
+
+
 def telemetry_switch_on():
     """The toolkit metrics switch from telemetry/telemetry_enabled.py. A missing helper counts as off."""
     try:

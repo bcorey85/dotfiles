@@ -8,8 +8,8 @@
       filter (see NON_SCOPING_FLAGS). The last coder step — a dispatch, or a SendMessage to a coder
       it dispatched — is the last code change; with none, the loop start is, since the phase changed
       code before the loop ran. A handoff `tests-run` never exempts it. A loop returning
-      `status: plan-impact` owes no check.
-      A second stop in a row passes (stop_hook_active), so a stuck loop cannot spin. The block
+      `status: plan-impact` owes no check. A stop with a delivered SubagentHandback (one no hook denied) skips
+      this check. A second stop in a row passes (stop_hook_active), so a stuck loop cannot spin. The block
       reason reaches the loop as context and it keeps working. Register with matcher
       `review-loop`; the agent_type check below still guards an unscoped entry.
     A stop while a background dispatch (`Async agent launched`) has not yet reported back, by task
@@ -350,10 +350,15 @@ class LoopTranscript:
         return len(open_launches) + len(open_resumes) + len(open_shells)
 
 
+def last_code_step(transcript):
+    """The transcript line of the loop's last coder dispatch or message to a coder, 0 when there is none."""
+    return max(transcript.steps(script_utils.CODERS), default=0)
+
+
 def scan(transcript, final=None):
     """(no full check ran after the last code change, the count of background dispatches that have not reported).
     final is the loop's last message; the transcript's last text stands in when it is None."""
-    last_step = max(transcript.steps(script_utils.CODERS), default=0)
+    last_step = last_code_step(transcript)
     last_full = max(transcript.full_checks, default=-1)
 
     plan_impact = PLAN_IMPACT.search(transcript.last_text if final is None else final)
@@ -605,7 +610,10 @@ def check_stop(hook):
         record_stop(hook, 0)
         raise
     try:
-        why = [] if hook.get("stop_hook_active") else reasons_for(scanned)
+        # A delivered hand-back passed the hand-back hook's full-check gate, unless that gate failed open on an
+        # unreadable transcript; pushing work after delivery only makes the loop hand back a second time.
+        delivered = bool(transcript.handback_lines)
+        why = [] if hook.get("stop_hook_active") or delivered else reasons_for(scanned)
         if not hook.get("stop_hook_active") and not scanned[1]:
             why += ledger_reasons(transcript, hook.get("last_assistant_message"))
     except Exception:

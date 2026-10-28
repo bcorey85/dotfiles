@@ -20,6 +20,7 @@ import sys
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import handback
 import review_loop_gate
+import script_utils
 
 GATED_AGENT = "goal-blind-researcher"
 DENIED_KIND = "open_child_denied"
@@ -31,20 +32,11 @@ DENY_REASON = (
 )
 
 
-def own_transcript_path(hook):
-    """The calling subagent's transcript: the path the event names, else the one under the session transcript."""
-    named = hook.get("agent_transcript_path")
-    if named:
-        return named
-    session_transcript = hook["transcript_path"]
-    return os.path.join(session_transcript[:-len(".jsonl")], "subagents", f"agent-{hook['agent_id']}.jsonl")
-
-
 def deny_reason_for(hook):
     """The deny reason when the hook is a goal-blind-researcher hand-back with a child still open, else None."""
     if hook.get("agent_type") != GATED_AGENT:
         return None
-    transcript = review_loop_gate.LoopTranscript(own_transcript_path(hook))
+    transcript = review_loop_gate.LoopTranscript(script_utils.agent_transcript_path(hook))
     open_children = transcript.open_dispatches()
     if not open_children:
         return None

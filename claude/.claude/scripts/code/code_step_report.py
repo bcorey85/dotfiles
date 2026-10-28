@@ -17,6 +17,13 @@ def coder_flags(report):
     return flagged
 
 
+ENG_SPEC_RECOMMENDATION = re.compile(r"^[ \t>*`_-]*RECOMMEND[*`_]*:[ \t]*[*`_]*/eng-spec\b", re.M)
+
+
+def recommends_eng_spec_line(report):
+    return bool(ENG_SPEC_RECOMMENDATION.search(report))
+
+
 PLAN_IMPACT_HEADER = re.compile(r"^[ \t>*`_-]*PLAN-IMPACT[*`_]*:?[*`_]*[ \t]*$")
 PLAN_IMPACT_KEY = re.compile(r"^[ \t>*`_-]*(?:assumed|found|changes)[*`_]*:", re.I)
 

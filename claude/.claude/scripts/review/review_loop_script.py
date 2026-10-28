@@ -60,6 +60,9 @@ LARGE_ADDED_LINES = 40
 SPLIT_FILES = 5
 SPLIT_LINES = 300
 DIFF_CONTEXT = 12
+# A reviewer prompt carries the round-one fix diff inline; past this many characters the diff is cut, so the call stays
+# under the model's prompt limit.
+MAX_INLINE_FIX_DIFF_CHARS = 120000
 CALL_TIMEOUT_SECONDS = 1800
 CHECK_TIMEOUT_SECONDS = 900
 LOG_TIMEOUT_SECONDS = 60
@@ -289,6 +292,15 @@ def review_scope_lines(repo, owned, prior_issues, open_asks):
     return lines
 
 
+def inline_fix_diff(fix_diff):
+    if len(fix_diff) <= MAX_INLINE_FIX_DIFF_CHARS:
+        return fix_diff
+
+    kept = fix_diff[:MAX_INLINE_FIX_DIFF_CHARS].rsplit("\n", 1)[0]
+    return (f"{kept}\n[fix diff cut at {len(kept)} of {len(fix_diff)} characters: read the rest of an owned file "
+            f"with `git diff HEAD -- <file>`]")
+
+
 def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff="", open_asks=(), brief=""):
     lines = review_scope_lines(repo, owned, prior_issues, open_asks)
     lines.append("Your scope is the owned files listed under Review scope (this round).")
@@ -296,7 +308,7 @@ def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff="", open_asks=(),
     if fix_diff:
         lines.append("Round-one fix diff (what the coder changed since the first review; "
                      "review only the owned files under Review scope (this round)):")
-        lines.append(fix_diff)
+        lines.append(inline_fix_diff(fix_diff))
     if agent == "test-reviewer":
         lines.append("Source under test: the diff's non-test files.")
     if agent == "smell-reviewer":
@@ -352,6 +364,20 @@ def parse_review(text):
             "assessment": assessment.group(1).strip() if assessment else ""}
 
 
+def last_json_object(reply, keys):
+    """The last JSON object in a model reply that holds one of keys. Prose before it can hold braces of its own
+    ("{CUBE}"), so decoding starts at each "{" from the back. None when the reply holds no such object."""
+    decoder = json.JSONDecoder()
+    for brace in reversed([match.start() for match in re.finditer(r"\{", reply)]):
+        try:
+            parsed, _ = decoder.raw_decode(reply, brace)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict) and any(key in parsed for key in keys):
+            return parsed
+    return None
+
+
 def disposition_call(text, repo, out):
     prompt = (
         "Below is a code reviewer's output. Copy each finding into one of three lists without changing its words: "
@@ -360,12 +386,8 @@ def disposition_call(text, repo, out):
         '{"fix": [..], "ask": [..], "nit": [..]}.\n\n' + text
     )
     reply = claude_call("disposition", prompt, repo, out, model="sonnet")
-    match = re.search(r"\{.*\}", reply, re.S)
-    try:
-        parsed = json.loads(match.group(0)) if match else None
-    except json.JSONDecodeError:
-        parsed = None
-    if not isinstance(parsed, dict):
+    parsed = last_json_object(reply, ("fix", "ask", "nit"))
+    if parsed is None:
         raise ValueError(f'the disposition reply holds no {{"fix": [..], "ask": [..], "nit": [..]}} object: {reply!r}')
     return {"fix": parsed.get("fix", []), "ask": parsed.get("ask", []), "nit": parsed.get("nit", []), "assessment": ""}
 
@@ -452,11 +474,8 @@ def check_command_for(repo, out):
 
     reply = claude_call("check-finder", CHECK_FINDER.format(repo=repo), repo, out, model="haiku",
                         tools="Read,Glob,Grep")
-    for found in reversed(list(re.finditer(r"\{.*?\}", reply, re.S))):
-        try:
-            parsed = json.loads(found.group(0))
-        except json.JSONDecodeError:
-            continue
+    parsed = last_json_object(reply, ("command", "reason"))
+    if parsed is not None:
         command = parsed.get("command")
         if isinstance(command, str) and command.strip():
             return command.strip()
@@ -556,17 +575,8 @@ def closure_check(repo, out, fixed):
         '"open": ["<file:line - defect - correction>", ...]}. "open" is empty when every class is closed.'
     )
     reply = claude_call("class-closure", prompt, repo, out, model="sonnet", tools="Read,Grep")
-    # Decode from each "{" back to front: prose before the object can hold braces of its own ("{CUBE}").
-    decoder = json.JSONDecoder()
-    brace_positions = [match.start() for match in re.finditer(r"\{", reply)]
-    for position in reversed(brace_positions):
-        try:
-            parsed, _ = decoder.raw_decode(reply, position)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(parsed, dict) or "open" not in parsed:
-            continue
-
+    parsed = last_json_object(reply, ("open",))
+    if parsed is not None:
         parsed_open = parsed.get("open")
         open_findings = ([item for item in parsed_open if isinstance(item, str) and item.strip()]
                          if isinstance(parsed_open, list) else [])

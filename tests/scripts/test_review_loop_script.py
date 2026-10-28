@@ -297,7 +297,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("changed app.py before it died", packet["blockers"][0])
 
     def test_check_finder_names_the_full_check_when_claude_md_has_no_line(self):
-        completed = self.run_script({"check-finder": [{"result": 'Found it in the Makefile. {"command": "true"}'}],
+        found = 'Found it in the Makefile. {"command": "touch full-check-ran.flag"}'
+        completed = self.run_script({"check-finder": [{"result": found}],
                                      "code-reviewer": [{"result": CLEAN_REVIEW}],
                                      "smell-reviewer": [{"result": CLEAN_REVIEW}]},
                                     claude_md="Run make ci before you push.\n")
@@ -305,6 +306,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
         self.assertEqual(packet["status"], "converged")
+        self.assertTrue((self.repo / "full-check-ran.flag").is_file())
         self.assertEqual(self.fake_calls()[0]["key"], "check-finder")
 
     def test_no_check_found_stops_before_any_reviewer_call(self):
@@ -788,6 +790,18 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "converged")
         self.assertIn("one exit, all re-read", packet["class_closure"])
 
+    def test_a_disposition_reply_with_braces_in_its_prose_still_reads_the_findings_object(self):
+        disposition = 'Kept the {fix} placeholder as written.\n\n{"fix": [], "ask": [], "nit": []}'
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": "Nothing to report here."}],
+            "disposition": [{"result": disposition}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+
     def test_a_coder_report_of_plan_impact_stops_with_the_report_and_no_second_review(self):
         report = "Cannot fix 1: it needs a new column the plan rules out.\nplan-impact: yes"
 
@@ -897,6 +911,31 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertFalse(loop_script.full_check.is_failure(result))
         self.assertEqual(loop_script.LIVE_CHILDREN, set())
 
+    def test_a_round_one_fix_diff_past_the_prompt_limit_is_cut_with_a_note_to_read_the_rest_from_git(self):
+        spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
+        loop_script = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(loop_script)
+        huge_fix_diff = "\n".join(f"+line {number} of a very large fix" for number in range(200000))
+
+        with mock.patch.object(loop_script, "review_scope_lines", return_value=["Review scope (this round):"]):
+            prompt = loop_script.reviewer_prompt(self.repo, "code-reviewer", ["src/a.py"], [], huge_fix_diff)
+
+        self.assertLess(len(prompt), loop_script.MAX_INLINE_FIX_DIFF_CHARS + 2000)
+        self.assertIn("cut at", prompt)
+        self.assertIn("git diff", prompt)
+        self.assertIn("+line 0 of a very large fix", prompt)
+
+    def test_a_round_one_fix_diff_inside_the_prompt_limit_is_inlined_whole(self):
+        spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
+        loop_script = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(loop_script)
+
+        with mock.patch.object(loop_script, "review_scope_lines", return_value=["Review scope (this round):"]):
+            prompt = loop_script.reviewer_prompt(self.repo, "code-reviewer", ["src/a.py"], [], "+small fix")
+
+        self.assertIn("+small fix", prompt)
+        self.assertNotIn("cut at", prompt)
+
     def test_sigterm_kills_the_process_group_of_a_running_claude_call(self):
         self.env["FAKE_CLAUDE_HANG"] = "1"
         (self.fake_dir / "scenario.json").write_text(json.dumps({"code-reviewer": [{"result": CLEAN_REVIEW}]}))
@@ -948,9 +987,116 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         row, packet = self.stored_packet()
         self.assertEqual(packet["status"], "converged")
-        self.assertEqual(packet["findings_remaining"], [])
+        keys = [call["key"] for call in self.fake_calls()]
+        self.assertEqual((keys.count("code-reviewer"), keys.count("coder")), (2, 2))
         self.assertFalse(row["no_reviewer"])
         self.assertTrue(row["unreviewed_fix"])
+
+    def call_keys(self):
+        return [call["key"] for call in self.fake_calls()]
+
+    def test_a_fix_that_changes_only_markdown_ends_the_rounds_with_no_second_review(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}],
+            "coder": [{"result": "Fixed 1 in the docs.", "edits": {"CHANGES.md": "the limit is 20\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(self.call_keys().count("code-reviewer"), 1)
+        self.assertEqual(packet["files_touched"], ["CHANGES.md"])
+        self.assertTrue(row["unreviewed_fix"])
+
+    def test_a_fix_that_changes_only_a_test_file_leaves_no_source_reviewer_for_round_two(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}],
+            "coder": [{"result": "Fixed 1 with a test.", "edits": {"app.test.py": "assert limit == 20\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(self.call_keys().count("code-reviewer"), 1)
+        self.assertNotIn("test-reviewer", self.call_keys())
+
+    def test_a_new_source_file_with_a_test_sends_the_test_reviewer_and_reads_its_tagged_bullets(self):
+        (self.repo / "util.py").write_text("limit = 20\n")
+        (self.repo / "util.test.py").write_text("assert limit == 20\n")
+        tagged = ("- ask: `util.test.py:1` should this test pin the limit from the config?\n"
+                  "- nit: `util.test.py:1` name the test for the limit\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "test-reviewer": [{"result": tagged}],
+            "smell-reviewer": [{"result": CLEAN_REVIEW}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertIn("test-reviewer", self.call_keys())
+        self.assertEqual([entry["gate"] for entry in packet["ask"]], ["test-reviewer"])
+        self.assertEqual(packet["ask"][0]["file_line"], "util.test.py:1")
+        self.assertEqual([entry["file_line"] for entry in packet["nit"]], ["util.test.py:1"])
+
+    def test_a_full_check_failing_in_a_spec_file_stops_with_no_repair_coder(self):
+        failing_spec = "echo 'FAIL src/orders.spec.ts'; exit 1"
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]}, quality_check=failing_spec)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("orders.spec.ts", packet["blockers"][0])
+        self.assertNotIn("coder", self.call_keys())
+
+    def test_a_full_check_that_fails_after_the_class_repair_is_a_critical_blocker(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Closed the class.", "edits": {"broken.flag": "x\n"}}],
+            "closure": [{"result": '{"receipt": "one site left", "open": ["app.py:4 - same limit - fix it"]}'}],
+        }, quality_check="test ! -f broken.flag")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("failing after the class repair", packet["blockers"][0])
+        self.assertEqual(self.call_keys().count("coder"), 2)
+
+    def test_a_coder_skip_line_moves_the_finding_to_skipped_and_out_of_fixed(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "SKIPPED 1: the limit is meant to be 5", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["fixed"], [])
+        self.assertEqual(len(packet["skipped_fp"]), 1)
+        self.assertEqual(packet["skipped_fp"][0]["file_line"], "app.py:2")
+        self.assertIn("meant to be 5", packet["skipped_fp"][0]["reason"])
+
+    def test_a_nit_gets_its_file_line_in_the_packet_and_unlocated_when_it_names_none(self):
+        nit_review = ("## Fix\nNone\n\n## Ask\nNone\n\n## Nit\n- `app.py:3` rename `limit`\n- tidy the module\n\n"
+                      "Overall Assessment: PASS\n")
+
+        completed = self.run_script({"code-reviewer": [{"result": nit_review}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual([entry["file_line"] for entry in packet["nit"]], ["app.py:3", "unlocated"])
+
+    def test_no_usage_row_is_written_when_telemetry_is_off(self):
+        self.env["CLAUDE_TOOLKIT_TELEMETRY"] = "0"
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertFalse((self.scratch / "agent-usage.jsonl").exists())
 
     @unittest.skipIf(os.geteuid() == 0, "root reads a mode 000 file")
     def test_crash_writes_a_critical_blocker_packet_and_the_rows(self):

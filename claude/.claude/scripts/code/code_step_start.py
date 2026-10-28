@@ -600,7 +600,7 @@ def start_phase_coder(repo_dir, previous, branch, parsed, phase):
 
     phase_description = f"Phase {number} of `{plan_rel}`" if use_packet else f"`{plan_rel}`"
     prompt = (f"Implement {phase_description}. Read the plan phase-scoped.\n"
-              "If the task turns out architectural, report back and recommend /eng-spec.\n\n" + packet_body).rstrip()
+              "If the task turns out architectural, report back with the line `RECOMMEND: /eng-spec`.\n\n" + packet_body).rstrip()
     prompt = "\n".join([prompt, *run_notes_lines(parsed.run_notes)])
     state = {"stage": "coder", "plan": plan_rel, "lane": phase["lane"], "phase": state_phase, "branch": branch,
              "modifier": parsed.modifier, "risk": entry["risk"] if entry else "high",
@@ -622,7 +622,7 @@ def start_planless(repo_dir, modifier, task_text, branch="-"):
     open_dispatch(state)
     save_state(repo_dir, state)
     prompt = (f"Implement: {task_text}\nRun the typecheck, and lint and tests for only the files you changed, once, "
-              "after all edits. If the task turns out architectural, report back and recommend /eng-spec.")
+              "after all edits. If the task turns out architectural, report back with the line `RECOMMEND: /eng-spec`.")
     model = "haiku" if modifier == "+fast" else None
     emit_dispatch(repo_dir, state, RESUME_VERB, prompt=prompt, agent="coder", model=model)
 

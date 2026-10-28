@@ -362,6 +362,8 @@ AUTOMATED_HEADING = "#### Automated Verification"
 # A level 2 or 3 heading that opens an acceptance-criteria section, in any wording that starts with "Acceptance".
 ACCEPTANCE_HEADING = re.compile(r"^#{2,3}\s+acceptance\b", re.IGNORECASE)
 AUTOMATED_ITEM = re.compile(r"^- \[[ x]\]")
+# A top-level list item of any marker: "- x", "* x", "+ x", "1. x", "1) x".
+TOP_LEVEL_LIST_ITEM = re.compile(r"^(?:[-*+]|\d+[.)])\s")
 AUTOMATED_ITEM_BOX = re.compile(r"^- \[[ x]\]\s*")
 PLAN_FILES_GLOB = "docs/plans/*/spec.md"
 GATE_ENV_HINT = "(Put these variables before every test, check or build command you run.)"
@@ -382,7 +384,7 @@ def automated_verification_rows(lines, name="plan", first_line=1, strict=False):
     list ends at the next `#### ` heading, a heading of level 1 to 3, or a `---` rule. A `#### ` heading that names
     automated verification in other words raises PlanFormatError when `strict` is set (`name:line:`; `first_line` is
     the file line of lines[0]), because its items would otherwise be read as absent. A Manual Verification heading is
-    never misworded."""
+    never misworded. A top-level list item in the list that is not a checkbox raises the same way under `strict`."""
     verification_items = []
     inside = False
     for index, line in enumerate(lines):
@@ -399,8 +401,17 @@ def automated_verification_rows(lines, name="plan", first_line=1, strict=False):
             continue
         if re.match(r"#{1,3} ", line) or line.strip() == "---":
             inside = False
-        if inside and AUTOMATED_ITEM.match(line):
+        if not inside:
+            continue
+
+        if AUTOMATED_ITEM.match(line):
             verification_items.append((index, line))
+        elif strict and TOP_LEVEL_LIST_ITEM.match(line):
+            raise PlanFormatError(
+                f"{name}:{first_line + index}: list item `{line.strip()[:80]}` under `{AUTOMATED_HEADING}` is not a "
+                f"checkbox, so it is never run; write it as `- [ ] <check>` (or `- [ ] N/A — <reason>`), or move it "
+                f"out of the section"
+            )
     return verification_items
 
 

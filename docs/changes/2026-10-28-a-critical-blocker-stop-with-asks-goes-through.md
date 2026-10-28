@@ -3,7 +3,7 @@ type: "Change"
 title: "A critical-blocker stop with asks goes through asks-done"
 description: "A /code run stopped by a critical blocker that carries asks now takes the user's rulings through asks-done and carries the blockers into one more review, as a cap-reached stop with asks already does."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-28T00:23:28-05:00"}
-seq: 163
+seq: 165
 kind: "fix"
 components: ["script/code-step", "script/handback"]
 evidence: ["judgment"]
@@ -19,8 +19,8 @@ unmeasured: "Asks dropped at a blocker stop are not marked in any intake log, so
 - A critical-blocker packet with asks goes to the asks stage the way a cap-reached packet with asks does: the user
   rules, `asks-done` records the rulings, and the blockers are carried into one more whole-phase review.
 - The open-findings check that the cap-reached route used now also treats a critical-blocker review status as open; carried findings now include the packet's blockers. One route serves both stops.
-- The second critical-blocker stop of a phase (which stops on `review-blocker`) now lists each packet ask as a
-  `- ask: <text> (<file_line>)` line, so the user sees the asks it would otherwise drop.
+- The second critical-blocker stop of a phase lists each packet ask among its open questions, so the user sees
+  the asks it would otherwise drop.
 - The packet parser keeps an ask whose text carries a differently marked list as one ask.
 
 ## Evidence

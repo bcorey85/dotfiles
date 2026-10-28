@@ -66,6 +66,14 @@ class ReviewScriptTest(base.CodeStepTest):
         self.env.pop("CODE_STEP_REVIEW_LOOP")
         self.env.update(FAKE_LOOP_OUT=str(self.fake_out), FAKE_LOOP_MODE="converged")
 
+    def age_script_output(self, seconds):
+        # A script that wrote since the cap began is not silent: its folder (script.log, calls.jsonl) is aged with the
+        # dispatch so the wait cap counts a script that went quiet.
+        output_dir = pathlib.Path(self.state()["reviewScriptLog"]).parent
+        aged_at = time.time() - seconds
+        for output_file in output_dir.iterdir():
+            os.utime(output_file, (aged_at, aged_at))
+
     def wait_for_file(self, name):
         marker = self.fake_out / name
         deadline = time.time() + 20
@@ -221,6 +229,7 @@ class ReviewScriptTest(base.CodeStepTest):
         self.coder_round()
         self.wait_for_file("started")
         self.age_dispatches(100)
+        self.age_script_output(100)
         self.set_state(dispatchAt=time.time() - 100)
         self.wait_env(1, "0.2", waits=3)
 
@@ -282,6 +291,7 @@ class ReviewScriptTest(base.CodeStepTest):
         self.coder_round()
         self.wait_for_file("started")
         self.age_dispatches(100)
+        self.age_script_output(100)
         self.set_state(dispatchAt=time.time() - 100)
         self.wait_env(1, "0.2", waits=3)
         self.assertIn("ACTION: stop", self.step("after-review"))
@@ -304,6 +314,7 @@ class ReviewScriptTest(base.CodeStepTest):
         self.coder_round()
         script_pid = int(self.wait_for_file("started").read_text())
         self.age_dispatches(100)
+        self.age_script_output(100)
         self.set_state(dispatchAt=time.time() - 100)
         self.wait_env(1, "0.2", waits=3)
         self.assertIn("ACTION: stop", self.step("after-review"))
@@ -325,6 +336,7 @@ class ReviewScriptTest(base.CodeStepTest):
         self.coder_round()
         started_pid = self.wait_for_file("started").read_text()
         self.age_dispatches(100)
+        self.age_script_output(100)
         self.set_state(dispatchAt=time.time() - 100)
         self.wait_env(1, "0.2", waits=3)
         self.assertIn("ACTION: stop", self.step("after-review"))
@@ -338,6 +350,7 @@ class ReviewScriptTest(base.CodeStepTest):
         self.coder_round()
         self.wait_for_file("started")
         self.age_dispatches(100)
+        self.age_script_output(100)
         self.set_state(dispatchAt=time.time() - 100)
         self.wait_env(1, "0.2", waits=3)
         self.assertIn("ACTION: stop", self.step("after-review"))

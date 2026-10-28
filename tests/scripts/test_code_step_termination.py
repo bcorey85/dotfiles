@@ -57,6 +57,7 @@ NODE_BUDGET = 5000
 # The plan-edit coder is reached only through an adopted plan change, deep in the tree. A second, small exploration
 # over those entries alone makes sure the plan-edit wait is covered whatever the other entries spend of the budget.
 PLAN_EDIT_NODE_BUDGET = 1500
+SCRIPT_NODE_BUDGET = 1500
 HAND_BACK_ACTIONS = ("ask-user", "stop", "rerun", "judgment", "stop-block-B", "stop-block-C")
 # The verbs a hand-back may name for the user to run.
 NAMEABLE_VERBS = ("start", "resume", "decide", "asks-done", "skill-done", "review-again", "tick", "verify",
@@ -392,6 +393,44 @@ def build_template(name="template"):
     return template
 
 
+def dead_process_id():
+    finished = subprocess.Popen(["true"])
+    finished.wait()
+    return finished.pid
+
+
+STAND_IN_LAUNCHES = collections.Counter()
+
+
+def finish_script_loop(repo):
+    STAND_IN_LAUNCHES["[script finished or gone]"] += 1
+
+
+class StandInLoopProcess:
+    def __init__(self, pid):
+        self.pid = pid
+
+
+def launch_stand_in_review_loop(real_popen, command, **options):
+    # The review loop script runs detached; the walk answers its launch inline. A "silent" script is already gone
+    # with no hand-back, as a crashed one is. Any other mode hands back that review outcome before the verb returns.
+    if len(command) < 2 or not str(command[1]).endswith("review_loop_script.py"):
+        return real_popen(command, **options)
+
+    mode = os.environ["FAKE_LOOP_MODE"]
+    STAND_IN_LAUNCHES[mode] += 1
+    if mode == "silent":
+        return StandInLoopProcess(dead_process_id())
+
+    repo = pathlib.Path(options["cwd"])
+    argv_options = dict(zip(command[3::2], command[4::2], strict=True))
+    message = REVIEW_OUTCOMES[mode]
+    store_review_loop_report(repo, message, argv_options["--agent-id"])
+    code_step_core.log_event(repo, argv_options["--run-id"], "handback", argv_options["--session"],
+                             agent_id=argv_options["--agent-id"], agent_type="review-loop", message=message)
+    return StandInLoopProcess(dead_process_id())
+
+
 def call_script(repo, presets, argv):
     # Run one verb in-process. Returns (stdout, crashTraceback or None).
     script_env = {name: value for name, value in os.environ.items()
@@ -406,7 +445,11 @@ def call_script(repo, presets, argv):
     captured = io.StringIO()
     crash = None
     try:
+        real_popen = subprocess.Popen
         with mock.patch.dict(os.environ, script_env, clear=True), \
+                mock.patch.object(subprocess, "Popen",
+                                  lambda command, **options: launch_stand_in_review_loop(real_popen, command,
+                                                                                         **options)), \
                 contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
             try:
                 code_step.main()
@@ -561,7 +604,7 @@ def user_answers(state):
             ("skill-done pass", ["skill-done", "pass"], None),
             ("skill-done fail", ["skill-done", "fail"], None),
         ]
-    if is_stopped and reason in ("invalid-packet", "cap-reached", "review-blocker"):
+    if is_stopped and reason in ("invalid-packet", "cap-reached", "critical-blocker", "setup-fault"):
         answers += [("review-again", ["review-again"], None)]
     if is_stopped and code_step.awaits_resumed_review(state):
         answers += [("review-again", ["review-again"], None),
@@ -640,6 +683,9 @@ def children_of(node):
                 if report is not None:
                     save_report(repo, "coder", report)
             children.append((f"[coder: {name}]", setup, ["resume"]))
+    elif waiting_on == "review-loop" and node.presets.get("CODE_STEP_REVIEW_LOOP") == "script":
+        # The script has handed back or is gone by the time the next verb runs; no agent report is saved.
+        children.append(("[script finished or gone]", finish_script_loop, ["resume"]))
     elif waiting_on == "review-loop" or (node.action == "dispatch" and node.agent == "review-loop"):
         is_answered = state.get("planImpact", "none") != "none"
         for name, message in REVIEW_OUTCOMES.items():
@@ -941,6 +987,20 @@ def entry_verbs():
     return entries
 
 
+SCRIPT_LOOP_MODES = ("converged-clean", "converged-fixed", "converged-ask1", "plan-impact", "critical-blocker",
+                     "cap-reached", "silent")
+
+
+def script_entry_verbs():
+    # The review loop runs as a detached script: each entry fixes what that script does after its launch.
+    entries = []
+    for mode in SCRIPT_LOOP_MODES:
+        presets = {"CODE_STEP_REVIEW_LOOP": "script", "FAKE_LOOP_MODE": mode}
+        for argv in (["start", PLAN_A], ["start", "--task", "add a thing"]):
+            entries.append((f"{' '.join(argv)} [script loop: {mode}]", argv, presets))
+    return entries
+
+
 def describe(failure):
     lines = [f"FAIL {failure.kind}: {len(failure.history)} calls"]
     lines += [f"    {number + 1:>2}. {step}" for number, step in enumerate(failure.history)]
@@ -1011,6 +1071,19 @@ class TerminationTest(unittest.TestCase):
         plan_edit_report = summarize(plan_edit_explorer, adopt_entries)
         self.assertEqual([], plan_edit_explorer.failures, plan_edit_report)
         self.assertGreater(plan_edit_explorer.plan_edit_calls_from_wait, 0)
+
+    def test_every_path_with_the_review_loop_as_a_script_ends_in_a_stop_or_a_hand_back(self):
+        explorer = Explorer(build_template("template-script-loop"), SCRIPT_NODE_BUDGET)
+        entries = script_entry_verbs()
+        STAND_IN_LAUNCHES.clear()
+        explorer.run(entries)
+        report = summarize(explorer, entries)
+        print("\n" + report)
+        self.assertEqual([], explorer.failures, report)
+        self.assertGreater(explorer.node_count, len(entries))
+        for mode in SCRIPT_LOOP_MODES:
+            self.assertGreater(STAND_IN_LAUNCHES[mode], 0, f"the walk never launched the stand-in in mode {mode}")
+        self.assertGreater(STAND_IN_LAUNCHES["[script finished or gone]"], 0)
 
     def test_a_walk_stopped_at_its_budget_leaves_no_node_copy_on_disk(self):
         small_budget = 20
